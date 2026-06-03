@@ -16,6 +16,13 @@
   const counter = document.getElementById('counter');
   const tiles = gardenGrid.querySelectorAll('.grid-tile');
 
+  // ── Garden Journal ──
+  const gardenJournal = document.getElementById('gardenJournal');
+  const journalTimeline = document.getElementById('journalTimeline');
+  const journalEmpty = document.getElementById('journalEmpty');
+  let journalRevealed = false;
+  let journalEntries = [];
+
   // Color palettes for tile flowers (pinks, oranges, purples, blues, yellows)
   const petalPalettes = [
     ['#f472b6', '#ec4899', '#db2777'],  // pinks
@@ -30,6 +37,9 @@
   ];
 
   const centerColors = ['#fbbf24', '#fde68a', '#fcd34d', '#f59e0b', '#eab308'];
+
+  // Store tile colors for journal swatches
+  const tileColorMap = {};
 
   const gridMessages = [
     "your garden is growing",
@@ -124,6 +134,73 @@
     }
   }
 
+  function formatTime(date) {
+    const hours = date.getHours();
+    const minutes = date.getMinutes();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    const displayHours = hours % 12 || 12;
+    const displayMinutes = minutes < 10 ? '0' + minutes : minutes;
+    return displayHours + ':' + displayMinutes + ' ' + ampm;
+  }
+
+  function revealJournal() {
+    if (journalRevealed) return;
+    journalRevealed = true;
+
+    gardenJournal.classList.add('visible');
+    gardenJournal.setAttribute('aria-hidden', 'false');
+  }
+
+  function addJournalEntry(tileIndex, petalColor) {
+    // Reveal journal on first entry
+    if (!journalRevealed) {
+      // Small delay so it appears after the grid
+      setTimeout(function () {
+        revealJournal();
+      }, 600);
+    }
+
+    // Hide empty state
+    if (journalEmpty) {
+      journalEmpty.style.display = 'none';
+    }
+
+    const now = new Date();
+    const timeStr = formatTime(now);
+    const entry = {
+      tileIndex: tileIndex,
+      petalColor: petalColor,
+      time: timeStr,
+      timestamp: now.getTime()
+    };
+    journalEntries.push(entry);
+
+    // Create entry element
+    const entryEl = document.createElement('div');
+    entryEl.classList.add('journal-entry');
+    entryEl.setAttribute('role', 'listitem');
+
+    entryEl.innerHTML =
+      '<div class="entry-timeline-dot"></div>' +
+      '<div class="entry-content">' +
+        '<p class="entry-text"><strong>Tile ' + (tileIndex + 1) + '</strong> &mdash; planted at ' + timeStr + '</p>' +
+        '<p class="entry-time">flower #' + journalEntries.length + ' in your garden</p>' +
+      '</div>' +
+      '<div class="entry-swatch" style="background: ' + petalColor + '" aria-hidden="true"></div>';
+
+    // Insert at top of timeline
+    journalTimeline.insertBefore(entryEl, journalTimeline.firstChild);
+
+    // Pulse the journal to draw attention
+    gardenJournal.classList.remove('pulse');
+    // Force reflow to restart animation
+    void gardenJournal.offsetWidth;
+    gardenJournal.classList.add('pulse');
+
+    // Scroll to top to show new entry
+    journalTimeline.scrollTop = 0;
+  }
+
   function updateCounter() {
     counter.innerHTML = 'planted <span>' + plantedCount + '</span> / ' + totalTiles;
     counter.style.opacity = '1';
@@ -150,6 +227,11 @@
     // Apply random colors
     applyTileColors(tileEl, tileIndex);
 
+    // Store the primary petal color for journal swatch
+    const palette = petalPalettes[tileIndex % petalPalettes.length];
+    const primaryColor = palette[0];
+    tileColorMap[tileIndex] = primaryColor;
+
     // Mark as planted
     tileEl.classList.add('planted');
     tileEl.setAttribute('aria-label', 'Tile ' + (tileIndex + 1) + ' planted');
@@ -173,6 +255,9 @@
 
       plantedCount++;
       updateCounter();
+
+      // Add journal entry
+      addJournalEntry(tileIndex, primaryColor);
 
       // Update grid hint with a new message
       gridHint.style.opacity = '0';

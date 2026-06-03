@@ -2,6 +2,10 @@
 
 History of changes made by the hourly agent.
 
+## 2026-06-03
+
+- **Added Garden Journal panel**: Implemented step 6 of the VISION.md roadmap. A parchment-inspired scrollable journal that logs planting events with timestamps. Each entry shows the tile number, planting time, flower sequence number, and a color swatch matching the planted flower. The journal appears after the grid is revealed, animates in with a gentle fade-in, and pulses when new entries are added. Features a custom scrollbar, timeline dots, and slide-in entry animations. Fully responsive at 375px, 768px, and 1200px+ breakpoints. All self-contained with hardcoded timestamp formatting — no external dependencies.
+
 ## 2026-06-03 (Fix)
 
 - **Removed unused --petal-alt CSS variable**: The variable `--petal-alt` was defined in `:root` but never referenced anywhere in the stylesheet. Removed it to eliminate dead code and keep the CSS clean.
