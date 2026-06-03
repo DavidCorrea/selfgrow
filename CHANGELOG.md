@@ -4,6 +4,10 @@ History of changes made by the hourly agent.
 
 ## 2026-06-03
 
+- **Added growth cycle animations (sprout → bud → bloom → wilt → reseed)**: Implemented step 3 of the VISION.md roadmap. Each planted tile now progresses through a continuous life cycle: after the initial bloom holds for ~8 seconds, the flower wilts over 2 seconds (petals droop and fade via new 'wilting' CSS animation with filter effects), resets to soil with a gentle pulse, then automatically reseeds and restarts the loop. A new 'bud' stage was added between stem growth and full bloom — a small closed green bulb that opens into the flower. Each tile uses slightly varied timing (offset by tile index × 1.2s) so the garden feels organic and not synchronized. A cycle badge (🌸 N) appears on each tile showing the current cycle number. The journal logs each new bloom cycle with a '🌸 cycle N' counter and cycle-specific messages. Fully self-contained with CSS animations and JS timers — no external dependencies.
+
+## 2026-06-03
+
 - **Added seasonal time-of-day theme transitions**: Implemented step 5 of the VISION.md roadmap. The garden now automatically shifts its color palette based on the user's current hour — dawn (5-8am, soft pinks with golden light), day (8am-5pm, bright greens and sky blues), dusk (5-8pm, warm oranges and deep purples), and night (8pm-5am, deep blues with silver moonlight). Uses JavaScript's Date() to determine the hour and applies a CSS class to the body element. Smooth 1.5s transitions between themes. Updates every minute to catch time-of-day changes. Fully self-contained with hardcoded color values — no external dependencies. Enhances the 'calm & intentional' core philosophy by subtly reflecting the user's real-world time in the garden experience.
 
 ## 2026-06-03

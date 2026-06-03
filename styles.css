@@ -670,7 +670,152 @@ body::before {
   box-shadow: 0 0 0.2rem rgba(251, 191, 36, 0.5);
 }
 
-/* Gentle sway after bloom */
+/* ── Growth Cycle Stages ── */
+
+/* Bud stage: small closed bulb before bloom */
+.tile-bud {
+  position: relative;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  margin-bottom: 0.1rem;
+}
+
+.tile-sprout.budding .tile-bud {
+  animation: tileBudForm 0.5s ease-out forwards;
+}
+
+@keyframes tileBudForm {
+  0% {
+    width: 0;
+    height: 0;
+    opacity: 0;
+    transform: scale(0);
+  }
+  100% {
+    width: 0.8rem;
+    height: 0.9rem;
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tile-bud-petal {
+  position: absolute;
+  width: 0.35rem;
+  height: 0.45rem;
+  background: var(--leaf);
+  border-radius: 50% 50% 40% 40%;
+  top: 50%;
+  left: 50%;
+  transform-origin: 50% 100%;
+  opacity: 0.85;
+}
+
+.tile-bud-petal--1 { transform: translate(-50%, -80%) rotate(-20deg); }
+.tile-bud-petal--2 { transform: translate(-50%, -80%) rotate(20deg); }
+.tile-bud-petal--3 {
+  width: 0.3rem;
+  height: 0.4rem;
+  background: var(--stem);
+  transform: translate(-50%, -70%) rotate(0deg);
+}
+
+/* Bud opens into bloom */
+.tile-sprout.blooming .tile-bud {
+  animation: tileBudOpen 0.6s ease-out forwards;
+}
+
+@keyframes tileBudOpen {
+  0% {
+    width: 0.8rem;
+    height: 0.9rem;
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    width: 0;
+    height: 0;
+    opacity: 0;
+    transform: scale(0);
+  }
+}
+
+/* Wilt animation: petals droop and fade */
+.tile-sprout.wilting .tile-flower {
+  animation: tileWilt 2s ease-in forwards;
+  transform-origin: bottom center;
+}
+
+@keyframes tileWilt {
+  0% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+    filter: brightness(1) saturate(1);
+  }
+  40% {
+    opacity: 0.85;
+    transform: scale(0.95) rotate(8deg);
+    filter: brightness(0.85) saturate(0.8);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.7) rotate(20deg);
+    filter: brightness(0.6) saturate(0.5);
+  }
+}
+
+/* Wilt leaves too */
+.tile-sprout.wilting .tile-leaf {
+  animation: tileLeafWilt 2s ease-in forwards;
+}
+
+@keyframes tileLeafWilt {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0.3;
+    transform: scale(0.8) rotate(10deg);
+  }
+}
+
+/* Wilt stem slightly */
+.tile-sprout.wilting .tile-stem {
+  animation: tileStemWilt 2s ease-in forwards;
+}
+
+@keyframes tileStemWilt {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.4;
+  }
+}
+
+/* Soil pulse when reseeding */
+.grid-tile.reseeding .tile-soil {
+  animation: soilPulse 0.6s ease-out;
+}
+
+@keyframes soilPulse {
+  0% {
+    transform: translateX(-50%) scale(1);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+  }
+  50% {
+    transform: translateX(-50%) scale(1.08);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4), 0 0 0.8rem rgba(74, 222, 128, 0.3);
+  }
+  100% {
+    transform: translateX(-50%) scale(1);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+  }
+}
+
+/* Gentle sway after bloom (only during grown/blooming stage) */
 .tile-sprout.grown .tile-flower {
   animation: tileSway 3s ease-in-out infinite;
   transform-origin: bottom center;
@@ -679,6 +824,36 @@ body::before {
 @keyframes tileSway {
   0%, 100% { transform: rotate(-3deg); }
   50% { transform: rotate(3deg); }
+}
+
+/* Cycle badge on tile */
+.tile-cycle-badge {
+  position: absolute;
+  top: 0.3rem;
+  right: 0.3rem;
+  font-size: 0.55rem;
+  color: var(--text-muted);
+  background: rgba(17, 24, 39, 0.7);
+  border: 1px solid rgba(74, 222, 128, 0.2);
+  border-radius: 0.4rem;
+  padding: 0.1rem 0.3rem;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  z-index: 10;
+  letter-spacing: 0.03em;
+}
+
+.tile-cycle-badge.visible {
+  opacity: 1;
+}
+
+@media (max-width: 375px) {
+  .tile-cycle-badge {
+    font-size: 0.5rem;
+    top: 0.2rem;
+    right: 0.2rem;
+  }
 }
 
 /* Tile sparkle */
@@ -938,6 +1113,10 @@ body::before {
     border-radius: 1rem;
   }
 
+  .tile-bud {
+    margin-bottom: 0.05rem;
+  }
+
   .journal-timeline {
     max-height: 10rem;
   }
@@ -954,6 +1133,13 @@ body::before {
 }
 
 @media (min-width: 768px) {
+  .tile-cycle-badge {
+    font-size: 0.65rem;
+    top: 0.4rem;
+    right: 0.4rem;
+    padding: 0.15rem 0.4rem;
+  }
+
   .card {
     padding: 3rem 2.5rem;
   }
@@ -1148,6 +1334,10 @@ body.theme-night {
   }
 
   .sprout.grown .flower {
+    animation: none;
+  }
+
+  .tile-sprout.grown .tile-flower {
     animation: none;
   }
 

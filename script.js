@@ -70,6 +70,28 @@
   // Store tile colors for journal swatches
   const tileColorMap = {};
 
+  // ── Growth Cycle State ──
+  // Each planted tile tracks its cycle count and stage
+  const tileCycleState = {}; // tileIndex -> { cycle: number, stage: string }
+
+  // Growth cycle timing (ms) — base values, per-tile offsets applied
+  const CYCLE_HOLD_BLOOM = 8000;   // hold bloom for ~8s
+  const CYCLE_WILT_DURATION = 2000; // wilt over ~2s
+  const CYCLE_PAUSE_AFTER_WILT = 1500; // brief pause after wilt before reset
+  const CYCLE_SEED_OFFSET = 1200;   // extra offset per tile index to desync
+
+  const cycleMessages = [
+    "a new cycle begins",
+    "life renews itself",
+    "the garden breathes",
+    "from soil, life returns",
+    "nature's rhythm continues",
+  ];
+
+  function getRandomCycleMessage() {
+    return cycleMessages[Math.floor(Math.random() * cycleMessages.length)];
+  }
+
   const gridMessages = [
     "your garden is growing",
     "each tile holds a new possibility",
@@ -180,7 +202,7 @@
     gardenJournal.setAttribute('aria-hidden', 'false');
   }
 
-  function addJournalEntry(tileIndex, petalColor) {
+  function addJournalEntry(tileIndex, petalColor, cycleNum) {
     // Reveal journal on first entry
     if (!journalRevealed) {
       // Small delay so it appears after the grid
@@ -200,7 +222,8 @@
       tileIndex: tileIndex,
       petalColor: petalColor,
       time: timeStr,
-      timestamp: now.getTime()
+      timestamp: now.getTime(),
+      cycle: cycleNum || 1
     };
     journalEntries.push(entry);
 
@@ -209,11 +232,16 @@
     entryEl.classList.add('journal-entry');
     entryEl.setAttribute('role', 'listitem');
 
+    const isCycle = cycleNum && cycleNum > 1;
+    const entryLabel = isCycle
+      ? '<strong>Tile ' + (tileIndex + 1) + '</strong> &mdash; 🌸 cycle ' + cycleNum + ' at ' + timeStr
+      : '<strong>Tile ' + (tileIndex + 1) + '</strong> &mdash; planted at ' + timeStr;
+
     entryEl.innerHTML =
       '<div class="entry-timeline-dot"></div>' +
       '<div class="entry-content">' +
-        '<p class="entry-text"><strong>Tile ' + (tileIndex + 1) + '</strong> &mdash; planted at ' + timeStr + '</p>' +
-        '<p class="entry-time">flower #' + journalEntries.length + ' in your garden</p>' +
+        '<p class="entry-text">' + entryLabel + '</p>' +
+        '<p class="entry-time">' + (isCycle ? getRandomCycleMessage() : 'flower #' + journalEntries.length + ' in your garden') + '</p>' +
       '</div>' +
       '<div class="entry-swatch" style="background: ' + petalColor + '" aria-hidden="true"></div>';
 
@@ -248,6 +276,111 @@
     updateCounter();
   }
 
+  function startGrowthCycle(tileEl, tileIndex) {
+    const state = tileCycleState[tileIndex];
+    if (!state) return;
+
+    const tileSprout = tileEl.querySelector('.tile-sprout');
+    const tileSeed = tileEl.querySelector('.tile-seed');
+    const badge = tileEl.querySelector('.tile-cycle-badge');
+    const palette = petalPalettes[tileIndex % petalPalettes.length];
+    const primaryColor = palette[0];
+
+    // Reset all sprout animation classes
+    tileSprout.classList.remove('growing', 'budding', 'blooming', 'grown', 'wilting');
+    tileEl.classList.remove('reseeding');
+    tileSeed.classList.remove('visible');
+
+    // Show soil pulse for reseed
+    tileEl.classList.add('reseeding');
+
+    // Show seed drop
+    tileSeed.classList.add('visible');
+
+    // Start sprout growth after seed lands
+    var seedTimeout = setTimeout(function () {
+      tileSprout.classList.add('growing');
+    }, 500);
+
+    // After stem + leaves grow, show bud stage
+    var budTimeout = setTimeout(function () {
+      tileSprout.classList.remove('growing');
+      tileSprout.classList.add('budding');
+    }, 1400);
+
+    // Bud opens into bloom
+    var bloomTimeout = setTimeout(function () {
+      tileSprout.classList.remove('budding');
+      tileSprout.classList.add('blooming');
+    }, 2000);
+
+    // After bloom animation completes, switch to grown (sway) state
+    var grownTimeout = setTimeout(function () {
+      tileSprout.classList.remove('blooming');
+      tileSprout.classList.add('grown');
+      createTileSparkles(tileEl);
+
+      // Update cycle badge
+      if (badge) {
+        badge.textContent = '🌸 ' + state.cycle;
+        badge.classList.add('visible');
+      }
+
+      // Add journal entry for cycle 2+
+      if (state.cycle > 1) {
+        addJournalEntry(tileIndex, primaryColor, state.cycle);
+      }
+
+      // Update grid hint with cycle message on subsequent cycles
+      if (state.cycle > 1) {
+        gridHint.style.opacity = '0';
+        setTimeout(function () {
+          gridHint.textContent = getRandomCycleMessage();
+          gridHint.style.opacity = '1';
+        }, 300);
+      }
+
+      // Schedule wilt phase — varied timing per tile
+      var offset = tileIndex * CYCLE_SEED_OFFSET;
+      var wiltDelay = CYCLE_HOLD_BLOOM + offset;
+
+      var wiltTimeout = setTimeout(function () {
+        // Check tile is still planted (hasn't been removed)
+        if (!tileEl.classList.contains('planted')) return;
+
+        tileSprout.classList.remove('grown');
+        tileSprout.classList.add('wilting');
+
+        // After wilt completes, reset and restart cycle
+        var restartTimeout = setTimeout(function () {
+          if (!tileEl.classList.contains('planted')) return;
+
+          // Hide badge during transition
+          if (badge) {
+            badge.classList.remove('visible');
+          }
+
+          // Increment cycle
+          state.cycle++;
+
+          // Restart the growth cycle
+          startGrowthCycle(tileEl, tileIndex);
+        }, CYCLE_WILT_DURATION + CYCLE_PAUSE_AFTER_WILT);
+
+        // Store timeout on state so it could be cleared if needed
+        state.timeouts = state.timeouts || [];
+        state.timeouts.push(restartTimeout);
+      }, wiltDelay);
+
+      state.timeouts = state.timeouts || [];
+      state.timeouts.push(wiltTimeout);
+
+    }, 2700);
+
+    state.timeouts = state.timeouts || [];
+    state.timeouts.push(seedTimeout, budTimeout, bloomTimeout, grownTimeout);
+  }
+
   function plantTile(tileEl) {
     if (tileEl.classList.contains('planted')) return;
 
@@ -260,6 +393,9 @@
     const palette = petalPalettes[tileIndex % petalPalettes.length];
     const primaryColor = palette[0];
     tileColorMap[tileIndex] = primaryColor;
+
+    // Initialize cycle state
+    tileCycleState[tileIndex] = { cycle: 1, stage: 'planted', timeouts: [] };
 
     // Mark as planted
     tileEl.classList.add('planted');
@@ -275,18 +411,39 @@
       tileSprout.classList.add('growing');
     }, 500);
 
-    // After bloom, switch to grown state and show sparkles
+    // After stem + leaves grow, show bud stage (new!)
     setTimeout(function () {
       const tileSprout = tileEl.querySelector('.tile-sprout');
       tileSprout.classList.remove('growing');
+      tileSprout.classList.add('budding');
+    }, 1400);
+
+    // Bud opens into bloom
+    setTimeout(function () {
+      const tileSprout = tileEl.querySelector('.tile-sprout');
+      tileSprout.classList.remove('budding');
+      tileSprout.classList.add('blooming');
+    }, 2000);
+
+    // After bloom animation completes, switch to grown (sway) state
+    setTimeout(function () {
+      const tileSprout = tileEl.querySelector('.tile-sprout');
+      tileSprout.classList.remove('blooming');
       tileSprout.classList.add('grown');
       createTileSparkles(tileEl);
+
+      // Show cycle badge
+      const badge = tileEl.querySelector('.tile-cycle-badge');
+      if (badge) {
+        badge.textContent = '🌸 1';
+        badge.classList.add('visible');
+      }
 
       plantedCount++;
       updateCounter();
 
       // Add journal entry
-      addJournalEntry(tileIndex, primaryColor);
+      addJournalEntry(tileIndex, primaryColor, 1);
 
       // Update grid hint with a new message
       gridHint.style.opacity = '0';
@@ -294,7 +451,32 @@
         gridHint.textContent = getRandomGridMessage();
         gridHint.style.opacity = '1';
       }, 300);
-    }, 2200);
+
+      // Schedule the first wilt → reseed cycle
+      var offset = tileIndex * CYCLE_SEED_OFFSET;
+      var firstWiltDelay = CYCLE_HOLD_BLOOM + offset;
+
+      setTimeout(function () {
+        if (!tileEl.classList.contains('planted')) return;
+
+        tileSprout.classList.remove('grown');
+        tileSprout.classList.add('wilting');
+
+        // After wilt completes, reset and restart cycle
+        setTimeout(function () {
+          if (!tileEl.classList.contains('planted')) return;
+
+          // Hide badge during transition
+          if (badge) {
+            badge.classList.remove('visible');
+          }
+
+          // Increment cycle and restart
+          tileCycleState[tileIndex].cycle = 2;
+          startGrowthCycle(tileEl, tileIndex);
+        }, CYCLE_WILT_DURATION + CYCLE_PAUSE_AFTER_WILT);
+      }, firstWiltDelay);
+    }, 2700);
   }
 
   // Tile click handlers
