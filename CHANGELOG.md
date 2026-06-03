@@ -2,6 +2,14 @@
 
 History of changes made by the hourly agent.
 
+## 2026-06-03 (Fix)
+
+- **Removed unused --petal-alt CSS variable**: The variable `--petal-alt` was defined in `:root` but never referenced anywhere in the stylesheet. Removed it to eliminate dead code and keep the CSS clean.
+
+## 2026-06-03
+
+- **Added 3x9 garden grid of plantable tiles**: After the welcome seed blooms and its message fades, a 3x3 grid of soil tiles fades in below the main flower. Each tile can be clicked to plant a seed that grows into a unique flower with randomized petal colors from a palette of pinks, oranges, purples, blues, and yellows. The grid uses CSS-only animations for the planting sequence (seed drop → stem grow → leaf pop → flower bloom), staggered per tile. A counter tracks how many of the 9 tiles have been planted. Implements step 2 of the VISION.md roadmap ('Garden Grid'). Fully responsive at 375px, 768px, and 1200px+ breakpoints. All self-contained with hardcoded color palettes — no external dependencies.
+
 ## 2026-06-03
 
 - **Added welcome screen with seed-bloom micro-interaction**: Established the project's first identity with a centered card featuring the title "selfgrow", a tagline, and an interactive CSS-animated seed that sprouts into a flower when clicked. Includes dark gradient background, soft glow card, sparkle particles on bloom, and responsive layout (375px–1200px+). All self-contained with zero external dependencies.

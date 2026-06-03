@@ -20,7 +20,6 @@
   --stem: #22c55e;
   --leaf: #16a34a;
   --petal: #f472b6;
-  --petal-alt: #fb923c;
   --center: #fbbf24;
 }
 
@@ -385,6 +384,325 @@ body::before {
   }
 }
 
+/* Garden Grid Wrapper */
+.garden-grid-wrapper {
+  opacity: 0;
+  transform: translateY(1.5rem);
+  transition: opacity 0.8s ease, transform 0.8s ease;
+  margin-top: 2rem;
+  width: 100%;
+  max-width: 32rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.garden-grid-wrapper.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.grid-hint {
+  font-size: clamp(0.75rem, 2vw, 0.9rem);
+  color: var(--text-muted);
+  text-align: center;
+  margin-bottom: 1rem;
+  letter-spacing: 0.05em;
+  min-height: 1.2em;
+  transition: opacity 0.5s ease;
+}
+
+.counter {
+  font-size: clamp(0.7rem, 1.8vw, 0.85rem);
+  color: var(--text-muted);
+  text-align: center;
+  margin-top: 1rem;
+  letter-spacing: 0.08em;
+  min-height: 1.2em;
+  transition: opacity 0.4s ease;
+}
+
+.counter span {
+  color: var(--stem);
+  font-weight: 600;
+}
+
+/* Garden Grid */
+.garden-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  width: 100%;
+  max-width: 24rem;
+  margin: 0 auto;
+}
+
+/* Grid Tile */
+.grid-tile {
+  position: relative;
+  aspect-ratio: 1;
+  background: rgba(17, 24, 39, 0.6);
+  border: 1px solid var(--card-border);
+  border-radius: 1rem;
+  cursor: pointer;
+  outline: none;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  padding-bottom: 15%;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease, background 0.3s ease;
+}
+
+.grid-tile:hover,
+.grid-tile:focus-visible {
+  border-color: rgba(74, 222, 128, 0.4);
+  box-shadow: 0 0 1.5rem rgba(74, 222, 128, 0.1);
+  background: rgba(17, 24, 39, 0.8);
+}
+
+.grid-tile.planted {
+  cursor: default;
+  border-color: rgba(74, 222, 128, 0.25);
+}
+
+.grid-tile.planted:hover,
+.grid-tile.planted:focus-visible {
+  box-shadow: none;
+}
+
+/* Tile Soil */
+.tile-soil {
+  position: absolute;
+  bottom: 12%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 70%;
+  height: 22%;
+  background: linear-gradient(180deg, var(--soil-light), var(--soil));
+  border-radius: 50%;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+  z-index: 1;
+}
+
+/* Tile Seed */
+.tile-seed {
+  position: absolute;
+  bottom: calc(12% + 14%);
+  left: 50%;
+  transform: translateX(-50%) scale(0);
+  width: 0.45rem;
+  height: 0.6rem;
+  background: linear-gradient(135deg, var(--seed-light), var(--seed));
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  opacity: 0;
+  z-index: 2;
+}
+
+.tile-seed.visible {
+  opacity: 1;
+  transform: translateX(-50%) scale(1);
+  animation: tileSeedDrop 0.4s ease-out;
+}
+
+@keyframes tileSeedDrop {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-1.2rem) scale(0.5);
+  }
+  60% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0.1rem) scale(1.1);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
+/* Tile Sprout */
+.tile-sprout {
+  position: absolute;
+  bottom: calc(12% + 15%);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.tile-sprout.growing {
+  opacity: 1;
+  animation: tileSproutAppear 0.6s ease-out forwards;
+}
+
+@keyframes tileSproutAppear {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) scaleY(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(-50%) scaleY(1);
+  }
+}
+
+.tile-stem {
+  width: 0.12rem;
+  height: 0;
+  background: linear-gradient(180deg, var(--stem), var(--leaf));
+  border-radius: 0.06rem;
+  transform-origin: bottom center;
+}
+
+.tile-sprout.growing .tile-stem {
+  animation: tileStemGrow 0.7s ease-out forwards;
+  animation-delay: 0.2s;
+}
+
+@keyframes tileStemGrow {
+  0% { height: 0; }
+  100% { height: 1.8rem; }
+}
+
+/* Tile Leaves */
+.tile-leaf {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+}
+
+.tile-leaf--left {
+  left: -0.06rem;
+  bottom: 0.8rem;
+  background: var(--leaf);
+  border-radius: 0 50% 50% 50%;
+}
+
+.tile-leaf--right {
+  right: -0.06rem;
+  bottom: 1.1rem;
+  background: var(--leaf);
+  border-radius: 50% 0 50% 50%;
+}
+
+.tile-sprout.growing .tile-leaf--left {
+  animation: tileLeafGrowLeft 0.5s ease-out forwards;
+  animation-delay: 0.7s;
+}
+
+.tile-sprout.growing .tile-leaf--right {
+  animation: tileLeafGrowRight 0.5s ease-out forwards;
+  animation-delay: 0.85s;
+}
+
+@keyframes tileLeafGrowLeft {
+  0% { width: 0; height: 0; opacity: 0; }
+  100% { width: 0.75rem; height: 0.5rem; opacity: 1; }
+}
+
+@keyframes tileLeafGrowRight {
+  0% { width: 0; height: 0; opacity: 0; }
+  100% { width: 0.65rem; height: 0.45rem; opacity: 1; }
+}
+
+/* Tile Flower */
+.tile-flower {
+  position: relative;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  margin-bottom: 0.1rem;
+}
+
+.tile-sprout.growing .tile-flower {
+  animation: tileFlowerBloom 0.6s ease-out forwards;
+  animation-delay: 1.1s;
+}
+
+@keyframes tileFlowerBloom {
+  0% {
+    width: 0;
+    height: 0;
+    opacity: 0;
+    transform: scale(0) rotate(0deg);
+  }
+  100% {
+    width: 1.5rem;
+    height: 1.5rem;
+    opacity: 1;
+    transform: scale(1) rotate(360deg);
+  }
+}
+
+.tile-petal {
+  position: absolute;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50% 0 50% 50%;
+  top: 50%;
+  left: 50%;
+  transform-origin: 0 0;
+  opacity: 0.9;
+}
+
+.tile-petal--1 { transform: translate(-50%, -50%) rotate(0deg) translateY(-0.45rem); }
+.tile-petal--2 { transform: translate(-50%, -50%) rotate(60deg) translateY(-0.45rem); }
+.tile-petal--3 { transform: translate(-50%, -50%) rotate(120deg) translateY(-0.45rem); }
+.tile-petal--4 { transform: translate(-50%, -50%) rotate(180deg) translateY(-0.45rem); }
+.tile-petal--5 { transform: translate(-50%, -50%) rotate(240deg) translateY(-0.45rem); }
+.tile-petal--6 { transform: translate(-50%, -50%) rotate(300deg) translateY(-0.45rem); }
+
+.tile-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 0.35rem;
+  height: 0.35rem;
+  background: var(--center);
+  border-radius: 50%;
+  box-shadow: 0 0 0.2rem rgba(251, 191, 36, 0.5);
+}
+
+/* Gentle sway after bloom */
+.tile-sprout.grown .tile-flower {
+  animation: tileSway 3s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+@keyframes tileSway {
+  0%, 100% { transform: rotate(-3deg); }
+  50% { transform: rotate(3deg); }
+}
+
+/* Tile sparkle */
+.tile-sparkle {
+  position: absolute;
+  width: 0.2rem;
+  height: 0.2rem;
+  background: var(--center);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: tileSparkleFly 0.8s ease-out forwards;
+  z-index: 5;
+}
+
+@keyframes tileSparkleFly {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--tx), var(--ty)) scale(0);
+  }
+}
+
 /* Responsive adjustments */
 @media (max-width: 375px) {
   .card {
@@ -399,6 +717,15 @@ body::before {
   .soil {
     width: 5rem;
     height: 2rem;
+  }
+
+  .garden-grid {
+    gap: 0.5rem;
+    max-width: 16rem;
+  }
+
+  .grid-tile {
+    border-radius: 0.75rem;
   }
 }
 
@@ -425,6 +752,11 @@ body::before {
   .sprout {
     bottom: 3.5rem;
   }
+
+  .garden-grid {
+    gap: 0.75rem;
+    max-width: 22rem;
+  }
 }
 
 @media (min-width: 1200px) {
@@ -434,6 +766,11 @@ body::before {
 
   .title {
     font-size: 3.5rem;
+  }
+
+  .garden-grid {
+    gap: 1rem;
+    max-width: 26rem;
   }
 }
 
@@ -452,7 +789,8 @@ body::before {
     animation: none;
   }
 
-  .sparkle {
+  .sparkle,
+  .tile-sparkle {
     display: none;
   }
 
