@@ -7,6 +7,32 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <main class="container">
+    <div class="card" id="welcomeCard">
+      <h1 class="title">selfgrow</h1>
+      <p class="tagline">a living, growing digital garden</p>
+      <div class="garden" id="garden" aria-label="Plant a seed" tabindex="0" role="button">
+        <div class="soil"></div>
+        <div class="seed" id="seed"></div>
+        <div class="sprout" id="sprout">
+          <div class="stem"></div>
+          <div class="leaf leaf--left"></div>
+          <div class="leaf leaf--right"></div>
+          <div class="flower">
+            <div class="petal petal--1"></div>
+            <div class="petal petal--2"></div>
+            <div class="petal petal--3"></div>
+            <div class="petal petal--4"></div>
+            <div class="petal petal--5"></div>
+            <div class="petal petal--6"></div>
+            <div class="center"></div>
+          </div>
+        </div>
+      </div>
+      <p class="hint" id="hint">click the soil to plant a seed</p>
+      <p class="message" id="message"></p>
+    </div>
+  </main>
   <script src="script.js"></script>
 </body>
 </html>
