@@ -45,6 +45,262 @@
   const counter = document.getElementById('counter');
   const tiles = gardenGrid.querySelectorAll('.grid-tile');
 
+  // ── Tending Toolbar ──
+  const tendingToolbar = document.getElementById('tendingToolbar');
+  const tendingHint = document.getElementById('tendingHint');
+  const wateringCanBtn = document.getElementById('wateringCanBtn');
+  let wateringMode = false;
+  let wateredTiles = {}; // tileIndex -> boolean
+  let tendingRevealed = false;
+
+  const wateringMessages = [
+    "your garden is growing",
+    "each tile holds a new possibility",
+    "life finds a way",
+    "tend it gently",
+    "watch it flourish",
+  ];
+
+  const wateringHintMessages = [
+    "click a watered tile to speed up its growth",
+    "water accelerates the life cycle",
+    "your plants love the extra care",
+  ];
+
+  function getRandomWateringMessage() {
+    return wateringMessages[Math.floor(Math.random() * wateringMessages.length)];
+  }
+
+  function getRandomWateringHint() {
+    return wateringHintMessages[Math.floor(Math.random() * wateringHintMessages.length)];
+  }
+
+  function revealTending() {
+    if (tendingRevealed) return;
+    tendingRevealed = true;
+
+    tendingToolbar.classList.add('visible');
+    tendingToolbar.setAttribute('aria-hidden', 'false');
+
+    tendingHint.textContent = getRandomWateringHint();
+    tendingHint.style.opacity = '1';
+  }
+
+  function createWaterDroplets(tileEl) {
+    const drop = document.createElement('div');
+    drop.classList.add('tile-water-drop');
+    tileEl.appendChild(drop);
+
+    setTimeout(function () {
+      drop.remove();
+    }, 700);
+  }
+
+  function createWaterSparkles(tileEl) {
+    const rect = tileEl.getBoundingClientRect();
+    const centerX = rect.width / 2;
+    const centerY = rect.height * 0.4;
+
+    for (let i = 0; i < 8; i++) {
+      const sparkle = document.createElement('div');
+      sparkle.classList.add('tile-water-sparkle');
+      const angle = (Math.PI * 2 * i) / 8;
+      const distance = 1.5 + Math.random() * 2;
+      const tx = Math.cos(angle) * distance * 10 + 'px';
+      const ty = Math.sin(angle) * distance * 10 + 'px';
+      sparkle.style.setProperty('--tx', tx);
+      sparkle.style.setProperty('--ty', ty);
+      sparkle.style.left = centerX + 'px';
+      sparkle.style.top = centerY + 'px';
+      tileEl.appendChild(sparkle);
+
+      setTimeout(function () {
+        sparkle.remove();
+      }, 900);
+    }
+  }
+
+  function addWateredIcon(tileEl) {
+    // Remove existing icon if present
+    const existing = tileEl.querySelector('.tile-watered-icon');
+    if (existing) existing.remove();
+
+    const icon = document.createElement('div');
+    icon.classList.add('tile-watered-icon');
+    icon.textContent = '💧';
+    icon.setAttribute('aria-hidden', 'true');
+    tileEl.appendChild(icon);
+
+    // Trigger animation in next frame
+    requestAnimationFrame(function () {
+      icon.classList.add('visible');
+    });
+  }
+
+  function applySpeedBoost(tileEl) {
+    const sprout = tileEl.querySelector('.tile-sprout');
+    if (sprout) {
+      sprout.classList.add('water-bloom');
+      setTimeout(function () {
+        sprout.classList.remove('water-bloom');
+      }, 1000);
+    }
+  }
+
+  function toggleWateringMode() {
+    wateringMode = !wateringMode;
+
+    if (wateringMode) {
+      wateringCanBtn.classList.add('active');
+      wateringCanBtn.setAttribute('aria-pressed', 'true');
+      tendingHint.style.opacity = '0';
+      setTimeout(function () {
+        tendingHint.textContent = 'click on planted tiles to water them';
+        tendingHint.style.opacity = '1';
+      }, 300);
+
+      // Add watering-target class to all planted tiles
+      tiles.forEach(function (tile) {
+        if (tile.classList.contains('planted')) {
+          tile.classList.add('watering-target');
+        }
+      });
+    } else {
+      wateringCanBtn.classList.remove('active');
+      wateringCanBtn.setAttribute('aria-pressed', 'false');
+      tendingHint.style.opacity = '0';
+      setTimeout(function () {
+        tendingHint.textContent = getRandomWateringHint();
+        tendingHint.style.opacity = '1';
+      }, 300);
+
+      // Remove watering-target class from all tiles
+      tiles.forEach(function (tile) {
+        tile.classList.remove('watering-target');
+      });
+    }
+  }
+
+  function waterTile(tileEl, tileIndex) {
+    if (wateredTiles[tileIndex]) return; // Already watered
+
+    wateredTiles[tileIndex] = true;
+
+    // Mark tile as watered
+    tileEl.classList.add('watered');
+
+    // Create water droplet animation
+    createWaterDroplets(tileEl);
+
+    // Create extra water sparkles
+    createWaterSparkles(tileEl);
+
+    // Add watered icon
+    addWateredIcon(tileEl);
+
+    // Apply bloom glow effect
+    applySpeedBoost(tileEl);
+
+    // Apply speed-up: halve the cycle timers for this tile
+    const state = tileCycleState[tileIndex];
+    if (state) {
+      // Mark the tile with a speed-up flag class that CSS hooks into
+      const sprout = tileEl.querySelector('.tile-sprout');
+      if (sprout) {
+        sprout.classList.add('speed-up');
+      }
+
+      // If the tile is in grown stage, trigger early wilt to speed up the cycle
+      if (sprout && sprout.classList.contains('grown')) {
+        // Trigger wilt in 2 seconds instead of the normal hold time
+        var speedWiltTimeout = setTimeout(function () {
+          if (!tileEl.classList.contains('planted')) return;
+          // Check sprout still has grown class (hasn't already started wilting)
+          if (!sprout.classList.contains('grown')) return;
+
+          sprout.classList.remove('grown');
+          sprout.classList.add('wilting');
+
+          var speedRestartTimeout = setTimeout(function () {
+            if (!tileEl.classList.contains('planted')) return;
+
+            const badge = tileEl.querySelector('.tile-cycle-badge');
+            if (badge) {
+              badge.classList.remove('visible');
+            }
+
+            // Reset from watered
+            wateredTiles[tileIndex] = false;
+            tileEl.classList.remove('watered');
+            const icon = tileEl.querySelector('.tile-watered-icon');
+            if (icon) icon.remove();
+            if (sprout) sprout.classList.remove('speed-up');
+
+            state.cycle++;
+            startGrowthCycle(tileEl, tileIndex);
+          }, CYCLE_WILT_DURATION + CYCLE_PAUSE_AFTER_WILT);
+
+          state.timeouts = state.timeouts || [];
+          state.timeouts.push(speedRestartTimeout);
+        }, 2000);
+
+        state.timeouts = state.timeouts || [];
+        state.timeouts.push(speedWiltTimeout);
+      } else {
+        // For tiles in other stages, the speed-up CSS class handles the acceleration
+        // The natural cycle will proceed with faster CSS animations
+        // After the current cycle completes, reset watered state
+        var resetTimeout = setTimeout(function () {
+          wateredTiles[tileIndex] = false;
+          tileEl.classList.remove('watered');
+          const icon = tileEl.querySelector('.tile-watered-icon');
+          if (icon) icon.remove();
+          if (sprout) sprout.classList.remove('speed-up');
+        }, 8000);
+
+        state.timeouts = state.timeouts || [];
+        state.timeouts.push(resetTimeout);
+      }
+    }
+
+    // Add journal entry for watering
+    const palette = petalPalettes[tileIndex % petalPalettes.length];
+    addJournalEntry(tileIndex, palette[0], state ? state.cycle : 1);
+    // Override the last journal entry text to show watering
+    const firstEntry = journalTimeline.firstChild;
+    if (firstEntry) {
+      const textEl = firstEntry.querySelector('.entry-text');
+      if (textEl) {
+        textEl.innerHTML = '<strong>Tile ' + (tileIndex + 1) + '</strong> &mdash; 💧 watered';
+      }
+      const timeEl = firstEntry.querySelector('.entry-time');
+      if (timeEl) {
+        timeEl.textContent = 'growth speed increased by 50%';
+      }
+    }
+
+    // Update hint
+    tendingHint.style.opacity = '0';
+    setTimeout(function () {
+      tendingHint.textContent = 'growth speed increased by 50% ✨';
+      tendingHint.style.opacity = '1';
+    }, 300);
+  }
+
+  wateringCanBtn.addEventListener('click', function () {
+    toggleWateringMode();
+  });
+
+  wateringCanBtn.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggleWateringMode();
+    }
+  });
+
+  // Override plantTile to reveal tending and handle watering click
+  var originalPlantTileFn = plantTile;
+
   // ── Garden Journal ──
   const gardenJournal = document.getElementById('gardenJournal');
   const journalTimeline = document.getElementById('journalTimeline');
@@ -442,6 +698,9 @@
       plantedCount++;
       updateCounter();
 
+      // Reveal tending toolbar on first plant
+      revealTending();
+
       // Add journal entry
       addJournalEntry(tileIndex, primaryColor, 1);
 
@@ -482,12 +741,22 @@
   // Tile click handlers
   tiles.forEach(function (tile) {
     tile.addEventListener('click', function () {
-      plantTile(tile);
+      if (wateringMode && tile.classList.contains('planted')) {
+        const tileIndex = parseInt(tile.getAttribute('data-tile'), 10);
+        waterTile(tile, tileIndex);
+      } else {
+        plantTile(tile);
+      }
     });
     tile.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
-        plantTile(tile);
+        if (wateringMode && tile.classList.contains('planted')) {
+          const tileIndex = parseInt(tile.getAttribute('data-tile'), 10);
+          waterTile(tile, tileIndex);
+        } else {
+          plantTile(tile);
+        }
       }
     });
   });

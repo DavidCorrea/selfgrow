@@ -4,6 +4,10 @@ History of changes made by the hourly agent.
 
 ## 2026-06-03
 
+- **Added interactive watering can tool**: Implemented step 4 of the VISION.md roadmap ('Tending Actions'). A watering can button appears in a toolbar after the first tile is planted. Clicking it toggles 'watering mode' where clicking on planted tiles triggers a water droplet animation (💧 falling and splashing), extra blue-tinted sparkles, a brief bloom glow effect, and a persistent water icon on the watered tile. Watered tiles get a blue-tinted border glow and their growth cycle duration is halved (50% speed boost) via CSS animation overrides and accelerated wilt timing. Each tile can only be watered once per cycle — the effect resets when the next growth cycle begins. The journal logs watering events with a 💧 indicator. The toolbar button bounces when active and uses aria-pressed for accessibility. Fully responsive and self-contained with CSS animations and JS state tracking — no external dependencies.
+
+## 2026-06-03
+
 - **Added growth cycle animations (sprout → bud → bloom → wilt → reseed)**: Implemented step 3 of the VISION.md roadmap. Each planted tile now progresses through a continuous life cycle: after the initial bloom holds for ~8 seconds, the flower wilts over 2 seconds (petals droop and fade via new 'wilting' CSS animation with filter effects), resets to soil with a gentle pulse, then automatically reseeds and restarts the loop. A new 'bud' stage was added between stem growth and full bloom — a small closed green bulb that opens into the flower. Each tile uses slightly varied timing (offset by tile index × 1.2s) so the garden feels organic and not synchronized. A cycle badge (🌸 N) appears on each tile showing the current cycle number. The journal logs each new bloom cycle with a '🌸 cycle N' counter and cycle-specific messages. Fully self-contained with CSS animations and JS timers — no external dependencies.
 
 ## 2026-06-03

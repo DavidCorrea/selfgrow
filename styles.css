@@ -879,6 +879,267 @@ body::before {
   }
 }
 
+/* ── Tending Toolbar ── */
+.tending-toolbar {
+  opacity: 0;
+  transform: translateY(1rem);
+  transition: opacity 0.8s ease, transform 0.8s ease;
+  margin-top: 1.5rem;
+  width: 100%;
+  max-width: 32rem;
+  margin-left: auto;
+  margin-right: auto;
+  text-align: center;
+}
+
+.tending-toolbar.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.tending-hint {
+  font-size: clamp(0.75rem, 2vw, 0.9rem);
+  color: var(--text-muted);
+  margin-bottom: 1rem;
+  letter-spacing: 0.05em;
+  min-height: 1.2em;
+  transition: opacity 0.5s ease;
+}
+
+.tending-tools {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.tool-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.75rem 1.25rem;
+  background: rgba(17, 24, 39, 0.6);
+  border: 1px solid var(--card-border);
+  border-radius: 1rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease, background 0.3s ease, color 0.3s ease, transform 0.2s ease;
+}
+
+.tool-btn:hover,
+.tool-btn:focus-visible {
+  border-color: rgba(74, 222, 128, 0.4);
+  box-shadow: 0 0 1.5rem rgba(74, 222, 128, 0.1);
+  background: rgba(17, 24, 39, 0.8);
+  color: var(--text-primary);
+  transform: translateY(-2px);
+}
+
+.tool-btn.active {
+  border-color: rgba(96, 165, 250, 0.6);
+  box-shadow: 0 0 2rem rgba(96, 165, 250, 0.2);
+  background: rgba(96, 165, 250, 0.1);
+  color: var(--text-primary);
+}
+
+.tool-btn.active .tool-icon {
+  animation: toolBounce 0.6s ease-in-out infinite;
+}
+
+@keyframes toolBounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+.tool-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.tool-label {
+  font-size: clamp(0.65rem, 1.5vw, 0.75rem);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* ── Watering Mode ── */
+.grid-tile.watering-target {
+  cursor: crosshair;
+}
+
+/* Water droplet tile overlay */
+.tile-water-drop {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 1.2rem;
+  height: 1.2rem;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.tile-water-drop::before {
+  content: '💧';
+  font-size: 1.2rem;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  animation: waterDropFall 0.6s ease-in forwards;
+}
+
+@keyframes waterDropFall {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -200%) scale(0.5);
+  }
+  40% {
+    opacity: 1;
+    transform: translate(-50%, -40%) scale(1.1);
+  }
+  60% {
+    opacity: 1;
+    transform: translate(-50%, -30%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, 20%) scale(0.3);
+  }
+}
+
+/* Watered tile shimmer */
+.tile-watered-icon {
+  position: absolute;
+  bottom: 0.25rem;
+  left: 0.25rem;
+  font-size: 0.65rem;
+  opacity: 0;
+  z-index: 10;
+  transform: scale(0);
+  transition: opacity 0.4s ease 0.3s, transform 0.4s ease 0.3s;
+  pointer-events: none;
+}
+
+.tile-watered-icon.visible {
+  opacity: 0.8;
+  transform: scale(1);
+  animation: waterIconPulse 2s ease-in-out infinite;
+}
+
+@keyframes waterIconPulse {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50% { opacity: 0.9; transform: scale(1.1); }
+}
+
+/* Watering glow effect on tile border */
+.grid-tile.watered {
+  border-color: rgba(96, 165, 250, 0.4);
+  box-shadow:
+    0 0 1.5rem rgba(96, 165, 250, 0.15),
+    0 0 3rem rgba(96, 165, 250, 0.05);
+}
+
+.grid-tile.watered:hover,
+.grid-tile.watered:focus-visible {
+  box-shadow:
+    0 0 1.5rem rgba(96, 165, 250, 0.2),
+    0 0 3rem rgba(96, 165, 250, 0.08);
+}
+
+/* Water sparkle effect (extra bloom sparkles) */
+.tile-water-sparkle {
+  position: absolute;
+  width: 0.25rem;
+  height: 0.25rem;
+  background: #93c5fd;
+  border-radius: 50%;
+  pointer-events: none;
+  animation: waterSparkleFly 0.9s ease-out forwards;
+  z-index: 5;
+  box-shadow: 0 0 0.15rem rgba(147, 197, 253, 0.8);
+}
+
+@keyframes waterSparkleFly {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--tx), var(--ty)) scale(0);
+  }
+}
+
+/* Bloom glow effect for watered tiles */
+.tile-sprout.water-bloom .tile-flower {
+  animation: waterBloomGlow 1s ease-out;
+}
+
+@keyframes waterBloomGlow {
+  0% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.5) saturate(1.3);
+    box-shadow: 0 0 1rem rgba(251, 191, 36, 0.4);
+  }
+  100% {
+    filter: brightness(1);
+  }
+}
+
+/* Speed-up growth animation overrides for watered tiles */
+.tile-sprout.speed-up .tile-stem {
+  animation-duration: 0.35s !important;
+  animation-delay: 0.1s !important;
+}
+
+.tile-sprout.speed-up .tile-leaf--left {
+  animation-duration: 0.25s !important;
+  animation-delay: 0.35s !important;
+}
+
+.tile-sprout.speed-up .tile-leaf--right {
+  animation-duration: 0.25s !important;
+  animation-delay: 0.425s !important;
+}
+
+.tile-sprout.speed-up .tile-bud {
+  animation-duration: 0.25s !important;
+}
+
+.tile-sprout.speed-up.tile-sprout.blooming .tile-bud {
+  animation-duration: 0.3s !important;
+}
+
+.tile-sprout.speed-up .tile-flower {
+  animation-duration: 0.3s !important;
+}
+
+@media (max-width: 375px) {
+  .tool-btn {
+    padding: 0.6rem 1rem;
+    border-radius: 0.75rem;
+  }
+
+  .tool-icon {
+    font-size: 1.25rem;
+  }
+
+  .tile-water-drop {
+    width: 1rem;
+    height: 1rem;
+  }
+
+  .tile-water-drop::before {
+    font-size: 1rem;
+  }
+}
+
 /* ── Garden Journal ── */
 .garden-journal {
   opacity: 0;
