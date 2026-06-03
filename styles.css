@@ -32,6 +32,7 @@ body {
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
   color: var(--text-primary);
   overflow: hidden;
+  transition: background 1.5s ease, color 1.5s ease;
 }
 
 /* Subtle background particles */
@@ -1004,6 +1005,136 @@ body::before {
     max-height: 16rem;
   }
 }
+
+/* ── Seasonal Time-of-Day Themes ── */
+/* Dawn: soft pinks/peaks with golden light */
+body.theme-dawn {
+  --bg-deep: #1a0a14;
+  --bg-mid: #2d1520;
+  --card-bg: rgba(45, 21, 32, 0.85);
+  --card-border: rgba(251, 207, 232, 0.2);
+  --glow: rgba(251, 182, 200, 0.3);
+  --text-primary: #fce7f3;
+  --text-secondary: #d4a0b9;
+  --text-muted: #a07088;
+  --soil: #4a2c2a;
+  --soil-light: #6b3d3a;
+  --seed: #c9a86c;
+  --seed-light: #e8c98a;
+  --stem: #a7c4a0;
+  --leaf: #7da875;
+  --petal: #f9a8d4;
+  --center: #fde68a;
+}
+
+body.theme-dawn::before {
+  background:
+    radial-gradient(1px 1px at 20% 30%, rgba(251, 182, 200, 0.2), transparent),
+    radial-gradient(1px 1px at 80% 20%, rgba(253, 230, 138, 0.15), transparent),
+    radial-gradient(1px 1px at 60% 70%, rgba(251, 207, 232, 0.18), transparent),
+    radial-gradient(1px 1px at 40% 80%, rgba(251, 182, 200, 0.12), transparent),
+    radial-gradient(1px 1px at 90% 60%, rgba(253, 230, 138, 0.15), transparent),
+    radial-gradient(1px 1px at 10% 90%, rgba(251, 207, 232, 0.15), transparent);
+}
+
+/* Day: bright greens and sky blues */
+body.theme-day {
+  --bg-deep: #0c1a10;
+  --bg-mid: #142618;
+  --card-bg: rgba(20, 38, 24, 0.85);
+  --card-border: rgba(74, 222, 128, 0.2);
+  --glow: rgba(74, 222, 128, 0.3);
+  --text-primary: #dcfce7;
+  --text-secondary: #86d9a0;
+  --text-muted: #5a9968;
+  --soil: #3d2b1f;
+  --soil-light: #5c4033;
+  --seed: #8b6914;
+  --seed-light: #b8860b;
+  --stem: #22c55e;
+  --leaf: #16a34a;
+  --petal: #67e8f9;
+  --center: #fbbf24;
+}
+
+body.theme-day::before {
+  background:
+    radial-gradient(1px 1px at 20% 30%, rgba(74, 222, 128, 0.2), transparent),
+    radial-gradient(1px 1px at 80% 20%, rgba(103, 232, 249, 0.15), transparent),
+    radial-gradient(1px 1px at 60% 70%, rgba(74, 222, 128, 0.18), transparent),
+    radial-gradient(1px 1px at 40% 80%, rgba(103, 232, 249, 0.12), transparent),
+    radial-gradient(1px 1px at 90% 60%, rgba(74, 222, 128, 0.15), transparent),
+    radial-gradient(1px 1px at 10% 90%, rgba(103, 232, 249, 0.15), transparent);
+}
+
+/* Dusk: warm oranges and deep purples */
+body.theme-dusk {
+  --bg-deep: #140a1a;
+  --bg-mid: #221030;
+  --card-bg: rgba(34, 16, 48, 0.85);
+  --card-border: rgba(251, 146, 60, 0.2);
+  --glow: rgba(251, 146, 60, 0.25);
+  --text-primary: #ffedd5;
+  --text-secondary: #c9a0d4;
+  --text-muted: #8a6899;
+  --soil: #3d2018;
+  --soil-light: #5c3528;
+  --seed: #a88018;
+  --seed-light: #d4a828;
+  --stem: #a78bfa;
+  --leaf: #8b5cf6;
+  --petal: #fb923c;
+  --center: #fcd34d;
+}
+
+body.theme-dusk::before {
+  background:
+    radial-gradient(1px 1px at 20% 30%, rgba(251, 146, 60, 0.2), transparent),
+    radial-gradient(1px 1px at 80% 20%, rgba(167, 139, 250, 0.18), transparent),
+    radial-gradient(1px 1px at 60% 70%, rgba(251, 146, 60, 0.15), transparent),
+    radial-gradient(1px 1px at 40% 80%, rgba(167, 139, 250, 0.2), transparent),
+    radial-gradient(1px 1px at 90% 60%, rgba(252, 211, 77, 0.15), transparent),
+    radial-gradient(1px 1px at 10% 90%, rgba(251, 146, 60, 0.18), transparent);
+}
+
+/* Night: deep blues with silver moonlight */
+body.theme-night {
+  --bg-deep: #060912;
+  --bg-mid: #0c1220;
+  --card-bg: rgba(12, 18, 32, 0.85);
+  --card-border: rgba(148, 163, 184, 0.15);
+  --glow: rgba(148, 163, 184, 0.2);
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --soil: #1e293b;
+  --soil-light: #334155;
+  --seed: #64748b;
+  --seed-light: #94a3b8;
+  --stem: #475569;
+  --leaf: #334155;
+  --petal: #cbd5e1;
+  --center: #e2e8f0;
+}
+
+body.theme-night::before {
+  background:
+    radial-gradient(1px 1px at 20% 30%, rgba(148, 163, 184, 0.15), transparent),
+    radial-gradient(1px 1px at 80% 20%, rgba(226, 232, 240, 0.1), transparent),
+    radial-gradient(1px 1px at 60% 70%, rgba(148, 163, 184, 0.12), transparent),
+    radial-gradient(1px 1px at 40% 80%, rgba(226, 232, 240, 0.08), transparent),
+    radial-gradient(1px 1px at 90% 60%, rgba(148, 163, 184, 0.1), transparent),
+    radial-gradient(1px 1px at 10% 90%, rgba(226, 232, 240, 0.1), transparent);
+}
+
+/* Smooth theme transitions for themed states */
+body.theme-dawn,
+body.theme-day,
+body.theme-dusk,
+body.theme-night {
+  background: linear-gradient(135deg, var(--bg-deep) 0%, var(--bg-mid) 50%, var(--bg-deep) 100%);
+}
+
 
 /* Reduced motion support */
 @media (prefers-reduced-motion: reduce) {

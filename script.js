@@ -1,6 +1,35 @@
 (function () {
   'use strict';
 
+  // ── Seasonal Time-of-Day Theme ──
+  function applyTimeTheme() {
+    const hour = new Date().getHours();
+    let theme;
+
+    if (hour >= 5 && hour < 8) {
+      // Dawn: 5am - 7:59am
+      theme = 'dawn';
+    } else if (hour >= 8 && hour < 17) {
+      // Day: 8am - 4:59pm
+      theme = 'day';
+    } else if (hour >= 17 && hour < 20) {
+      // Dusk: 5pm - 7:59pm
+      theme = 'dusk';
+    } else {
+      // Night: 8pm - 4:59am
+      theme = 'night';
+    }
+
+    document.body.classList.remove('theme-dawn', 'theme-day', 'theme-dusk', 'theme-night');
+    document.body.classList.add('theme-' + theme);
+  }
+
+  // Apply theme on load
+  applyTimeTheme();
+
+  // Update theme every minute to catch transitions
+  setInterval(applyTimeTheme, 60000);
+
   // ── Welcome Garden (existing seed-bloom) ──
   const garden = document.getElementById('garden');
   const seed = document.getElementById('seed');

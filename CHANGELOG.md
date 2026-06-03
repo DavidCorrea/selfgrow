@@ -4,6 +4,10 @@ History of changes made by the hourly agent.
 
 ## 2026-06-03
 
+- **Added seasonal time-of-day theme transitions**: Implemented step 5 of the VISION.md roadmap. The garden now automatically shifts its color palette based on the user's current hour — dawn (5-8am, soft pinks with golden light), day (8am-5pm, bright greens and sky blues), dusk (5-8pm, warm oranges and deep purples), and night (8pm-5am, deep blues with silver moonlight). Uses JavaScript's Date() to determine the hour and applies a CSS class to the body element. Smooth 1.5s transitions between themes. Updates every minute to catch time-of-day changes. Fully self-contained with hardcoded color values — no external dependencies. Enhances the 'calm & intentional' core philosophy by subtly reflecting the user's real-world time in the garden experience.
+
+## 2026-06-03
+
 - **Added Garden Journal panel**: Implemented step 6 of the VISION.md roadmap. A parchment-inspired scrollable journal that logs planting events with timestamps. Each entry shows the tile number, planting time, flower sequence number, and a color swatch matching the planted flower. The journal appears after the grid is revealed, animates in with a gentle fade-in, and pulses when new entries are added. Features a custom scrollbar, timeline dots, and slide-in entry animations. Fully responsive at 375px, 768px, and 1200px+ breakpoints. All self-contained with hardcoded timestamp formatting — no external dependencies.
 
 ## 2026-06-03 (Fix)
