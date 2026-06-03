@@ -1,4 +1,4 @@
-name: Hourly Agent
+name: builder-team
 
 on:
   schedule:
@@ -23,7 +23,7 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Run agent script
-        run: node agent-runner.mjs
+      - name: Run Builder Team agents
+        run: node builder-team.mjs
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
