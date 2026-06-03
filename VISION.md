@@ -22,6 +22,8 @@ The app starts simple — a seed that blooms — and grows into a richer experie
 5. **Seasonal Themes** — Visual shifts that reflect seasons or time of day.
 6. **Garden Journal** — A log of what has grown, what has changed, and what's coming next.
 
+7. **Garden Persistence** — Save garden state to localStorage so planted tiles, growth cycles, and journal entries survive page refreshes, making the garden truly persistent across visits.
+
 ## Design Principles
 
 - Dark, nature-inspired palette with soft glows

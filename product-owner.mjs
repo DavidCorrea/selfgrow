@@ -263,7 +263,7 @@ async function main() {
   }
 
   // Commit and push with the agent's summary as the commit message
-  const commitMessage = "Product Owner: " + result.summary;
+  const commitMessage = result.summary;
   try {
     execSync(
       'git config user.name "github-actions[bot]" && ' +
