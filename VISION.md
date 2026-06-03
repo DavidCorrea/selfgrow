@@ -24,6 +24,8 @@ The app starts simple — a seed that blooms — and grows into a richer experie
 
 7. **Garden Persistence** — Save garden state to localStorage so planted tiles, growth cycles, and journal entries survive page refreshes, making the garden truly persistent across visits.
 
+8. **Ambient Soundscape** — Soft, procedurally generated ambient audio (birdsong, gentle breeze, water droplets) that shifts with the time-of-day themes, deepening the meditative quality of the garden. Users can toggle the soundscape on/off.
+
 ## Design Principles
 
 - Dark, nature-inspired palette with soft glows
