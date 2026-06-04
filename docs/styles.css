@@ -35,7 +35,7 @@ body {
   overflow-x: hidden;
   overflow-y: auto;
   transition: background 1.5s ease, color 1.5s ease;
-  padding: 2rem 0;
+  padding: 1.5rem 1rem;
 }
 
 /* Subtle background particles */
@@ -54,28 +54,103 @@ body::before {
   z-index: 0;
 }
 
+/* ── Layout Container ── */
 .container {
   position: relative;
   z-index: 1;
   width: 100%;
   max-width: 32rem;
-  padding: 1rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
 }
 
+/* Two-column top row: welcome card + garden grid side by side */
+.top-row {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Two-column bottom row: stats + journal side by side */
+.bottom-row {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* ── Tablet breakpoint (768px+) ── */
 @media (min-width: 768px) {
+  body {
+    padding: 2rem 1.5rem;
+  }
+
   .container {
     max-width: 48rem;
-    padding: 1.5rem;
+    padding: 0;
+    gap: 2rem;
+  }
+
+  .top-row {
+    gap: 2rem;
+  }
+
+  .bottom-row {
+    gap: 2rem;
   }
 }
 
+/* ── Desktop breakpoint (1200px+) ── */
 @media (min-width: 1200px) {
+  body {
+    padding: 2.5rem 2rem;
+  }
+
   .container {
-    max-width: 64rem;
-    padding: 2rem;
+    max-width: 72rem;
+    gap: 2.5rem;
+  }
+
+  /* Top row: welcome card + garden grid side by side */
+  .top-row {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 2.5rem;
+  }
+
+  .top-row .card {
+    flex: 0 0 28rem;
+    max-width: 28rem;
+  }
+
+  .top-row .garden-grid-wrapper {
+    flex: 1 1 auto;
+    max-width: none;
+    margin-top: 0;
+  }
+
+  /* Bottom row: stats + journal side by side */
+  .bottom-row {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 2.5rem;
+  }
+
+  .bottom-row .garden-stats {
+    flex: 1 1 55%;
+    max-width: none;
+    margin-top: 0;
+  }
+
+  .bottom-row .garden-journal {
+    flex: 1 1 45%;
+    max-width: none;
+    margin-top: 0;
   }
 }
 
+/* ── Welcome Card ── */
 .card {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
@@ -402,28 +477,15 @@ body::before {
   }
 }
 
-/* Garden Grid Wrapper */
+/* ── Garden Grid Wrapper ── */
 .garden-grid-wrapper {
   opacity: 0;
   transform: translateY(1.5rem);
   transition: opacity 0.8s ease, transform 0.8s ease;
-  margin-top: 2rem;
   width: 100%;
   max-width: 32rem;
   margin-left: auto;
   margin-right: auto;
-}
-
-@media (min-width: 768px) {
-  .garden-grid-wrapper {
-    max-width: 48rem;
-  }
-}
-
-@media (min-width: 1200px) {
-  .garden-grid-wrapper {
-    max-width: 64rem;
-  }
 }
 
 .garden-grid-wrapper.visible {
@@ -456,6 +518,22 @@ body::before {
   font-weight: 600;
 }
 
+/* ── Tablet: grid wrapper ── */
+@media (min-width: 768px) {
+  .garden-grid-wrapper {
+    max-width: 48rem;
+  }
+}
+
+/* ── Desktop: grid wrapper inside top-row ── */
+@media (min-width: 1200px) {
+  .top-row .garden-grid-wrapper {
+    max-width: none;
+    margin-left: 0;
+    margin-right: 0;
+  }
+}
+
 /* Garden Grid */
 .garden-grid {
   display: grid;
@@ -475,8 +553,9 @@ body::before {
 
 @media (min-width: 1200px) {
   .garden-grid {
-    max-width: 34rem;
+    max-width: 36rem;
     gap: 1.25rem;
+    margin: 0 auto;
   }
 }
 
@@ -927,24 +1006,11 @@ body::before {
   opacity: 0;
   transform: translateY(1rem);
   transition: opacity 0.8s ease, transform 0.8s ease;
-  margin-top: 1.5rem;
   width: 100%;
   max-width: 32rem;
   margin-left: auto;
   margin-right: auto;
   text-align: center;
-}
-
-@media (min-width: 768px) {
-  .tending-toolbar {
-    max-width: 48rem;
-  }
-}
-
-@media (min-width: 1200px) {
-  .tending-toolbar {
-    max-width: 64rem;
-  }
 }
 
 .tending-toolbar.visible {
@@ -1018,6 +1084,18 @@ body::before {
   font-size: clamp(0.65rem, 1.5vw, 0.75rem);
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+@media (min-width: 768px) {
+  .tending-toolbar {
+    max-width: 48rem;
+  }
+}
+
+@media (min-width: 1200px) {
+  .tending-toolbar {
+    max-width: 72rem;
+  }
 }
 
 /* ── Watering Mode ── */
@@ -1200,7 +1278,6 @@ body::before {
   opacity: 0;
   transform: translateY(2rem);
   transition: opacity 0.8s ease, transform 0.8s ease;
-  margin-top: 2rem;
   width: 100%;
   max-width: 32rem;
   margin-left: auto;
@@ -1214,22 +1291,6 @@ body::before {
     inset 0 1px 0 rgba(255, 255, 255, 0.03);
   position: relative;
   overflow: hidden;
-}
-
-@media (min-width: 768px) {
-  .garden-journal {
-    max-width: 48rem;
-    padding: 2rem;
-    border-radius: 1.5rem;
-  }
-}
-
-@media (min-width: 1200px) {
-  .garden-journal {
-    max-width: 64rem;
-    padding: 2.5rem;
-    border-radius: 1.75rem;
-  }
 }
 
 /* Parchment texture overlay */
@@ -1430,12 +1491,29 @@ body::before {
   opacity: 1;
 }
 
+@media (min-width: 768px) {
+  .garden-journal {
+    max-width: 48rem;
+    padding: 2rem;
+    border-radius: 1.5rem;
+  }
+}
+
+@media (min-width: 1200px) {
+  .bottom-row .garden-journal {
+    max-width: none;
+    margin-left: 0;
+    margin-right: 0;
+    padding: 2rem;
+    border-radius: 1.5rem;
+  }
+}
+
 /* ── Garden Reflection Stats ── */
 .garden-stats {
   opacity: 0;
   transform: translateY(2rem);
   transition: opacity 0.8s ease, transform 0.8s ease;
-  margin-top: 1.5rem;
   width: 100%;
   max-width: 32rem;
   margin-left: auto;
@@ -1449,22 +1527,6 @@ body::before {
     inset 0 1px 0 rgba(255, 255, 255, 0.02);
   position: relative;
   overflow: hidden;
-}
-
-@media (min-width: 768px) {
-  .garden-stats {
-    max-width: 48rem;
-    padding: 2rem;
-    border-radius: 1.5rem;
-  }
-}
-
-@media (min-width: 1200px) {
-  .garden-stats {
-    max-width: 64rem;
-    padding: 2.5rem;
-    border-radius: 1.75rem;
-  }
 }
 
 .garden-stats::before {
@@ -1637,6 +1699,24 @@ body::before {
   box-shadow: 0 0 1.5rem rgba(100, 116, 139, 0.04);
 }
 
+@media (min-width: 768px) {
+  .garden-stats {
+    max-width: 48rem;
+    padding: 2rem;
+    border-radius: 1.5rem;
+  }
+}
+
+@media (min-width: 1200px) {
+  .bottom-row .garden-stats {
+    max-width: none;
+    margin-left: 0;
+    margin-right: 0;
+    padding: 2rem;
+    border-radius: 1.5rem;
+  }
+}
+
 /* Restoring overlay */
 .restoring-overlay {
   position: fixed;
@@ -1673,9 +1753,7 @@ body::before {
   .journal-last-tended {
     font-size: 0.55rem;
   }
-}
 
-@media (max-width: 375px) {
   .garden-stats {
     padding: 1rem;
     border-radius: 1rem;

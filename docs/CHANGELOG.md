@@ -4,6 +4,10 @@ History of changes made by the hourly agent.
 
 ## 2026-06-04
 
+- **Modernized layout with responsive multi-column design (closes #4)**: The app previously stacked all sections in a single narrow column even on 1200px+ screens, wasting horizontal space and looking outdated. Introduced a modern two-column layout: on desktop (1200px+), the welcome card and garden grid sit side-by-side in a top row, while the stats panel and journal sit side-by-side in a bottom row. The toolbar flows full-width between the two rows. On tablets (768px+), elements widen with larger padding and gaps. Mobile (below 768px) retains the single-column stack. Added a flexbox gap-based spacing system for smoother section transitions. All changes are CSS-only with minor HTML structural adjustments (wrapping sections in `.top-row` and `.bottom-row` divs). Fully responsive at 375px, 768px, and 1200px+ breakpoints.
+
+## 2026-06-04
+
 - **Widen layout for larger viewports**: The container, garden grid wrapper, garden grid, journal, stats, and toolbar were all capped at 32rem max-width, leaving large empty margins on tablets and desktop. On 768px+ screens the container now expands to 48rem and the grid to 28rem with larger gaps; on 1200px+ screens the container expands to 64rem and the grid to 34rem. Card padding, journal padding, stats padding, toolbar button sizing, and timeline max-heights all scale up at both breakpoints. This is a pure CSS change — no HTML or JS modifications — and aligns the layout with the VISION.md principle of being responsive from 375px to 1200px+.
 
 ## 2026-06-04
