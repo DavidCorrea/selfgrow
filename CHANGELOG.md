@@ -4,6 +4,10 @@ History of changes made by the hourly agent.
 
 ## 2026-06-04
 
+- **Widen layout for larger viewports**: The container, garden grid wrapper, garden grid, journal, stats, and toolbar were all capped at 32rem max-width, leaving large empty margins on tablets and desktop. On 768px+ screens the container now expands to 48rem and the grid to 28rem with larger gaps; on 1200px+ screens the container expands to 64rem and the grid to 34rem. Card padding, journal padding, stats padding, toolbar button sizing, and timeline max-heights all scale up at both breakpoints. This is a pure CSS change — no HTML or JS modifications — and aligns the layout with the VISION.md principle of being responsive from 375px to 1200px+.
+
+## 2026-06-04
+
 - **Fixed VISION.md duplicate entry**: Removed the duplicate roadmap item #9 'Garden Reflection Stats' (appeared twice at lines 29-32). The roadmap now has a clean single list of items 1-9.
 
 - **Added Garden Reflection Stats panel**: Implemented step 9 of the VISION.md roadmap. A gentle statistics panel that appears below the journal section, showing: (1) total flowers bloomed across all cycles, (2) current time-of-day season with a thematic icon (dawn/day/dusk/night), (3) time since last tending with a human-friendly relative timestamp, and (4) a 'garden mood' indicator (thriving, flourishing, growing, resting, dormant) based on how recently the garden was tended and how many flowers are currently blooming. Each mood has a unique color glow on the mood card. A poetic reflection line at the bottom shifts with the mood. The panel uses a parchment-matching aesthetic consistent with the journal, with a 2x2 grid layout (mood card spans full width). Stats update dynamically as the garden changes — on planting, journal entries, cycle transitions, and theme changes. A 30-second timer refreshes relative timestamps. All data is derived from existing state (journal entries, planted tiles, blooming count, timestamps) — zero external dependencies. Fully responsive at 375px, 768px, and 1200px+ breakpoints.
