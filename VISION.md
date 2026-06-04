@@ -36,6 +36,8 @@ The app starts simple — a seed that blooms — and grows into a richer experie
 - Accessible: keyboard navigable, ARIA labels, reduced-motion support
 - Every feature must feel organic — nothing jarring or mechanical
 
+The full garden experience must be visible and scrollable — users should never need to guess that more content exists below the fold. Vertical scrolling is expected and natural.
+
 ## For Future Agents
 
 Each agent cycle should:
