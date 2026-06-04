@@ -2,6 +2,14 @@
 
 History of changes made by the hourly agent.
 
+## 2026-06-03 (Fix)
+
+- **Removed dead code**: Cleaned up three unused variables/functions. Removed `originalPlantTileFn` (was assigned `plantTile` but never used — leftover from refactoring). Removed `wateringMessages` array and `getRandomWateringMessage()` function (both were never referenced; `getRandomWateringHint()` uses `wateringHintMessages` instead). Removed `hasSavedGarden` variable (was assigned but never read). Also wrapped the `restoreGardenState()` call in a guard to check `savedState && savedState.plantedCount > 0` directly, eliminating the need for the separate boolean. Keeps the codebase clean and free of stale references.
+
+## 2026-06-03
+
+- **Added garden persistence via localStorage**: Implemented step 7 of the VISION.md roadmap. The garden state (planted tiles, growth cycle states, watering status, journal entries, planted count, and UI visibility flags) is now saved to localStorage whenever state changes occur (planting, watering, cycle transitions, journal entries). On page load, the saved state is restored — planted tiles appear in their last known growth stage with correct cycle badges, watered icons, and journal entries intact. A brief 'restoring your garden...' overlay appears during restoration. A 'last tended' timestamp is shown in the journal header with human-friendly relative time (e.g., 'last tended 5 min ago at 3:42 PM'). Growth cycle timers are automatically restarted on restore. The welcome seed-bloom interaction is preserved for first-time visitors. Fully self-contained using only the browser's localStorage API — no external dependencies.
+
 ## 2026-06-03
 
 - **Added interactive watering can tool**: Implemented step 4 of the VISION.md roadmap ('Tending Actions'). A watering can button appears in a toolbar after the first tile is planted. Clicking it toggles 'watering mode' where clicking on planted tiles triggers a water droplet animation (💧 falling and splashing), extra blue-tinted sparkles, a brief bloom glow effect, and a persistent water icon on the watered tile. Watered tiles get a blue-tinted border glow and their growth cycle duration is halved (50% speed boost) via CSS animation overrides and accelerated wilt timing. Each tile can only be watered once per cycle — the effect resets when the next growth cycle begins. The journal logs watering events with a 💧 indicator. The toolbar button bounces when active and uses aria-pressed for accessibility. Fully responsive and self-contained with CSS animations and JS state tracking — no external dependencies.

@@ -1,6 +1,316 @@
 (function () {
   'use strict';
 
+  // ── Garden Persistence (localStorage) ──
+  var STORAGE_KEY = 'selfgrow_garden_state';
+
+  function saveGardenState() {
+    var state = {
+      version: 1,
+      lastTended: Date.now(),
+      plantedTiles: {},
+      wateredTiles: {},
+      tileCycleState: {},
+      tileColorMap: {},
+      journalEntries: journalEntries,
+      plantedCount: plantedCount,
+      gridRevealed: gridRevealed,
+      journalRevealed: journalRevealed,
+      tendingRevealed: tendingRevealed
+    };
+
+    // Save per-tile state
+    tiles.forEach(function (tile) {
+      var tileIndex = parseInt(tile.getAttribute('data-tile'), 10);
+      if (tile.classList.contains('planted')) {
+        state.plantedTiles[tileIndex] = true;
+      }
+      if (wateredTiles[tileIndex]) {
+        state.wateredTiles[tileIndex] = true;
+      }
+      if (tileCycleState[tileIndex]) {
+        state.tileCycleState[tileIndex] = {
+          cycle: tileCycleState[tileIndex].cycle,
+          stage: tileCycleState[tileIndex].stage || 'planted'
+        };
+      }
+      if (tileColorMap[tileIndex]) {
+        state.tileColorMap[tileIndex] = tileColorMap[tileIndex];
+      }
+    });
+
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (e) {
+      // localStorage might be full or unavailable
+    }
+  }
+
+  function loadGardenState() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function formatLastTended(timestamp) {
+    var date = new Date(timestamp);
+    var now = new Date();
+    var diffMs = now.getTime() - date.getTime();
+    var diffMins = Math.floor(diffMs / 60000);
+    var diffHours = Math.floor(diffMs / 3600000);
+    var diffDays = Math.floor(diffMs / 86400000);
+
+    var timeStr = formatTime(date);
+
+    if (diffMins < 1) return 'last tended just now at ' + timeStr;
+    if (diffMins < 60) return 'last tended ' + diffMins + ' min ago at ' + timeStr;
+    if (diffHours < 24) return 'last tended ' + diffHours + ' hr ago at ' + timeStr;
+    if (diffDays < 7) return 'last tended ' + diffDays + ' day' + (diffDays > 1 ? 's' : '') + ' ago at ' + timeStr;
+    return 'last tended on ' + (date.getMonth() + 1) + '/' + date.getDate() + ' at ' + timeStr;
+  }
+
+  function showRestoringOverlay() {
+    var overlay = document.createElement('div');
+    overlay.classList.add('restoring-overlay');
+    overlay.id = 'restoringOverlay';
+    overlay.innerHTML = '<span class="restoring-text">🌱 restoring your garden...</span>';
+    document.body.appendChild(overlay);
+    // Trigger fade-in
+    requestAnimationFrame(function () {
+      overlay.classList.add('visible');
+    });
+  }
+
+  function hideRestoringOverlay() {
+    var overlay = document.getElementById('restoringOverlay');
+    if (overlay) {
+      overlay.classList.remove('visible');
+      setTimeout(function () {
+        overlay.remove();
+      }, 600);
+    }
+  }
+
+  function restoreGardenState(state) {
+    if (!state) return;
+
+    // Show restoring overlay
+    showRestoringOverlay();
+
+    // Restore journal entries array
+    if (state.journalEntries && state.journalEntries.length > 0) {
+      journalEntries = state.journalEntries;
+    }
+
+    // Restore counts
+    if (state.plantedCount) plantedCount = state.plantedCount;
+    if (state.gridRevealed) gridRevealed = true;
+    if (state.journalRevealed) journalRevealed = true;
+    if (state.tendingRevealed) tendingRevealed = true;
+
+    // Restore watered tiles tracking
+    if (state.wateredTiles) {
+      wateredTiles = state.wateredTiles;
+    }
+
+    // Restore tile color map
+    if (state.tileColorMap) {
+      tileColorMap = state.tileColorMap;
+    }
+
+    // Restore tile cycle state
+    if (state.tileCycleState) {
+      for (var idx in state.tileCycleState) {
+        tileCycleState[idx] = {
+          cycle: state.tileCycleState[idx].cycle,
+          stage: state.tileCycleState[idx].stage,
+          timeouts: []
+        };
+      }
+    }
+
+    // Reveal grid if it was revealed
+    if (gridRevealed) {
+      gardenGridWrapper.classList.add('visible');
+      gardenGridWrapper.setAttribute('aria-hidden', 'false');
+      gridHint.textContent = getRandomGridMessage();
+      gridHint.style.opacity = '1';
+      updateCounter();
+    }
+
+    // Reveal tending toolbar if it was revealed
+    if (tendingRevealed) {
+      tendingToolbar.classList.add('visible');
+      tendingToolbar.setAttribute('aria-hidden', 'false');
+      tendingHint.textContent = getRandomWateringHint();
+      tendingHint.style.opacity = '1';
+    }
+
+    // Reveal journal if it was revealed and populate entries
+    if (journalRevealed && journalEntries.length > 0) {
+      gardenJournal.classList.add('visible');
+      gardenJournal.setAttribute('aria-hidden', 'false');
+
+      // Hide empty state
+      if (journalEmpty) {
+        journalEmpty.style.display = 'none';
+      }
+
+      // Rebuild journal entries in reverse order (newest first)
+      for (var i = journalEntries.length - 1; i >= 0; i--) {
+        var entry = journalEntries[i];
+        var entryEl = document.createElement('div');
+        entryEl.classList.add('journal-entry');
+        entryEl.setAttribute('role', 'listitem');
+
+        var isCycle = entry.type === 'cycle';
+        var isWatered = entry.type === 'watered';
+        var entryLabel;
+        if (isWatered) {
+          entryLabel = '<strong>Tile ' + (entry.tileIndex + 1) + '</strong> &mdash; 💧 watered';
+        } else if (isCycle) {
+          entryLabel = '<strong>Tile ' + (entry.tileIndex + 1) + '</strong> &mdash; 🌸 cycle ' + entry.cycle + ' at ' + entry.time;
+        } else {
+          entryLabel = '<strong>Tile ' + (entry.tileIndex + 1) + '</strong> &mdash; planted at ' + entry.time;
+        }
+
+        var subText;
+        if (isWatered) {
+          subText = entry.subText || 'growth speed increased by 50%';
+        } else if (isCycle) {
+          subText = getRandomCycleMessage();
+        } else {
+          subText = 'flower #' + (i + 1) + ' in your garden';
+        }
+
+        entryEl.innerHTML =
+          '<div class="entry-timeline-dot"></div>' +
+          '<div class="entry-content">' +
+            '<p class="entry-text">' + entryLabel + '</p>' +
+            '<p class="entry-time">' + subText + '</p>' +
+          '</div>' +
+          '<div class="entry-swatch" style="background: ' + entry.petalColor + '" aria-hidden="true"></div>';
+
+        journalTimeline.insertBefore(entryEl, journalTimeline.firstChild);
+      }
+    }
+
+    // Show last tended timestamp
+    if (state.lastTended) {
+      var lastTendedEl = document.getElementById('journalLastTended');
+      if (lastTendedEl) {
+        lastTendedEl.textContent = formatLastTended(state.lastTended);
+        lastTendedEl.classList.add('visible');
+      }
+    }
+
+    // Restore planted tiles visually and restart their growth cycles
+    var plantedIndices = [];
+    if (state.plantedTiles) {
+      for (var pIdx in state.plantedTiles) {
+        plantedIndices.push(parseInt(pIdx, 10));
+      }
+    }
+
+    // Sort so we restore in order
+    plantedIndices.sort(function (a, b) { return a - b; });
+
+    // Restore each planted tile with a staggered delay for visual effect
+    plantedIndices.forEach(function (tileIndex, i) {
+      var tileEl = tiles[tileIndex];
+      if (!tileEl) return;
+
+      var delay = i * 200;
+      setTimeout(function () {
+        restorePlantedTile(tileEl, tileIndex, state);
+      }, delay);
+    });
+
+    // Hide overlay after all tiles are restored
+    var totalDelay = plantedIndices.length * 200 + 600;
+    setTimeout(function () {
+      hideRestoringOverlay();
+    }, totalDelay);
+  }
+
+  function restorePlantedTile(tileEl, tileIndex, state) {
+    // Apply colors
+    applyTileColors(tileEl, tileIndex);
+
+    // Mark as planted
+    tileEl.classList.add('planted');
+    tileEl.setAttribute('aria-label', 'Tile ' + (tileIndex + 1) + ' planted');
+
+    // Apply watered state if it was watered
+    if (wateredTiles[tileIndex]) {
+      tileEl.classList.add('watered');
+      addWateredIcon(tileEl);
+    }
+
+    // Get cycle info
+    var cycle = 1;
+    if (tileCycleState[tileIndex]) {
+      cycle = tileCycleState[tileIndex].cycle;
+    }
+
+    // Show the tile in its grown/blooming state immediately
+    var tileSprout = tileEl.querySelector('.tile-sprout');
+    var tileSeed = tileEl.querySelector('.tile-seed');
+    var badge = tileEl.querySelector('.tile-cycle-badge');
+
+    // Skip grow animation — show as fully grown
+    tileSeed.classList.remove('visible');
+    tileSprout.classList.remove('growing', 'budding', 'blooming', 'wilting');
+    tileSprout.classList.add('grown');
+
+    // Show cycle badge
+    if (badge) {
+      badge.textContent = '🌸 ' + cycle;
+      badge.classList.add('visible');
+    }
+
+    // Restart the growth cycle from the grown stage
+    // Schedule wilt after a delay based on cycle timing
+    var offset = tileIndex * CYCLE_SEED_OFFSET;
+    var wiltDelay = CYCLE_HOLD_BLOOM + offset;
+
+    var wiltTimeout = setTimeout(function () {
+      if (!tileEl.classList.contains('planted')) return;
+      if (!tileSprout.classList.contains('grown')) return;
+
+      tileSprout.classList.remove('grown');
+      tileSprout.classList.add('wilting');
+
+      var restartTimeout = setTimeout(function () {
+        if (!tileEl.classList.contains('planted')) return;
+
+        if (badge) {
+          badge.classList.remove('visible');
+        }
+
+        // Reset watered state
+        wateredTiles[tileIndex] = false;
+        tileEl.classList.remove('watered');
+        var icon = tileEl.querySelector('.tile-watered-icon');
+        if (icon) icon.remove();
+        tileSprout.classList.remove('speed-up');
+
+        tileCycleState[tileIndex].cycle++;
+        startGrowthCycle(tileEl, tileIndex);
+      }, CYCLE_WILT_DURATION + CYCLE_PAUSE_AFTER_WILT);
+
+      tileCycleState[tileIndex].timeouts = tileCycleState[tileIndex].timeouts || [];
+      tileCycleState[tileIndex].timeouts.push(restartTimeout);
+    }, wiltDelay);
+
+    tileCycleState[tileIndex].timeouts = tileCycleState[tileIndex].timeouts || [];
+    tileCycleState[tileIndex].timeouts.push(wiltTimeout);
+  }
+
   // ── Seasonal Time-of-Day Theme ──
   function applyTimeTheme() {
     const hour = new Date().getHours();
@@ -30,6 +340,9 @@
   // Update theme every minute to catch transitions
   setInterval(applyTimeTheme, 60000);
 
+  // ── Restore Garden from localStorage ──
+  var savedState = loadGardenState();
+
   // ── Welcome Garden (existing seed-bloom) ──
   const garden = document.getElementById('garden');
   const seed = document.getElementById('seed');
@@ -53,23 +366,11 @@
   let wateredTiles = {}; // tileIndex -> boolean
   let tendingRevealed = false;
 
-  const wateringMessages = [
-    "your garden is growing",
-    "each tile holds a new possibility",
-    "life finds a way",
-    "tend it gently",
-    "watch it flourish",
-  ];
-
   const wateringHintMessages = [
     "click a watered tile to speed up its growth",
     "water accelerates the life cycle",
     "your plants love the extra care",
   ];
-
-  function getRandomWateringMessage() {
-    return wateringMessages[Math.floor(Math.random() * wateringMessages.length)];
-  }
 
   function getRandomWateringHint() {
     return wateringHintMessages[Math.floor(Math.random() * wateringHintMessages.length)];
@@ -266,6 +567,11 @@
     // Add journal entry for watering
     const palette = petalPalettes[tileIndex % petalPalettes.length];
     addJournalEntry(tileIndex, palette[0], state ? state.cycle : 1);
+    // Override the last journal entry to mark as watered type
+    if (journalEntries.length > 0) {
+      journalEntries[journalEntries.length - 1].type = 'watered';
+      journalEntries[journalEntries.length - 1].subText = 'growth speed increased by 50%';
+    }
     // Override the last journal entry text to show watering
     const firstEntry = journalTimeline.firstChild;
     if (firstEntry) {
@@ -285,6 +591,9 @@
       tendingHint.textContent = 'growth speed increased by 50% ✨';
       tendingHint.style.opacity = '1';
     }, 300);
+
+    // Save state
+    saveGardenState();
   }
 
   wateringCanBtn.addEventListener('click', function () {
@@ -297,9 +606,6 @@
       toggleWateringMode();
     }
   });
-
-  // Override plantTile to reveal tending and handle watering click
-  var originalPlantTileFn = plantTile;
 
   // ── Garden Journal ──
   const gardenJournal = document.getElementById('gardenJournal');
@@ -474,12 +780,14 @@
 
     const now = new Date();
     const timeStr = formatTime(now);
+    const isCycle = cycleNum && cycleNum > 1;
     const entry = {
       tileIndex: tileIndex,
       petalColor: petalColor,
       time: timeStr,
       timestamp: now.getTime(),
-      cycle: cycleNum || 1
+      cycle: cycleNum || 1,
+      type: isCycle ? 'cycle' : 'plant'
     };
     journalEntries.push(entry);
 
@@ -488,8 +796,7 @@
     entryEl.classList.add('journal-entry');
     entryEl.setAttribute('role', 'listitem');
 
-    const isCycle = cycleNum && cycleNum > 1;
-    const entryLabel = isCycle
+    var entryLabel = isCycle
       ? '<strong>Tile ' + (tileIndex + 1) + '</strong> &mdash; 🌸 cycle ' + cycleNum + ' at ' + timeStr
       : '<strong>Tile ' + (tileIndex + 1) + '</strong> &mdash; planted at ' + timeStr;
 
@@ -512,6 +819,9 @@
 
     // Scroll to top to show new entry
     journalTimeline.scrollTop = 0;
+
+    // Save state
+    saveGardenState();
   }
 
   function updateCounter() {
@@ -621,6 +931,9 @@
 
           // Restart the growth cycle
           startGrowthCycle(tileEl, tileIndex);
+
+          // Save state on cycle change
+          saveGardenState();
         }, CYCLE_WILT_DURATION + CYCLE_PAUSE_AFTER_WILT);
 
         // Store timeout on state so it could be cleared if needed
@@ -703,6 +1016,9 @@
 
       // Add journal entry
       addJournalEntry(tileIndex, primaryColor, 1);
+
+      // Save state
+      saveGardenState();
 
       // Update grid hint with a new message
       gridHint.style.opacity = '0';
@@ -793,6 +1109,9 @@
     setTimeout(function () {
       revealGrid();
     }, 5000);
+
+    // Save state
+    saveGardenState();
   }
 
   garden.addEventListener('click', plantSeed);
@@ -802,4 +1121,9 @@
       plantSeed();
     }
   });
+
+  // ── Restore saved garden after all functions are ready ──
+  if (savedState && savedState.plantedCount > 0) {
+    restoreGardenState(savedState);
+  }
 })();
