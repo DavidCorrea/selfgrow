@@ -2,6 +2,10 @@
 
 History of changes made by the hourly agent.
 
+## 2026-06-04
+
+- **Added animated garden visitors (butterflies, bees, fireflies)**: Introduced a garden visitors system where CSS-animated butterflies and bees periodically flutter across the garden, attracted to blooming flowers. Visitors are pure CSS/JS creations — butterflies have wing-flap keyframes in pink, blue, purple, and orange variants; bees have striped bodies with fast wing-flap and bobbing animations. Clicking a visitor triggers a scatter animation. The number of visitors scales with planted tiles (more flowers = more frequent spawns). At night theme, butterflies and bees are replaced by glowing fireflies with soft pulsing light and trail particles. Fully self-contained with CSS animations and JS timing logic — no external dependencies. Enhances the 'living ecosystem' feel of the garden.
+
 ## 2026-06-03 (Fix)
 
 - **Removed dead code**: Cleaned up three unused variables/functions. Removed `originalPlantTileFn` (was assigned `plantTile` but never used — leftover from refactoring). Removed `wateringMessages` array and `getRandomWateringMessage()` function (both were never referenced; `getRandomWateringHint()` uses `wateringHintMessages` instead). Removed `hasSavedGarden` variable (was assigned but never read). Also wrapped the `restoreGardenState()` call in a guard to check `savedState && savedState.plantedCount > 0` directly, eliminating the need for the separate boolean. Keeps the codebase clean and free of stale references.

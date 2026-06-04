@@ -1636,6 +1636,414 @@ body.theme-night {
 }
 
 
+/* ── Garden Visitors ── */
+.visitors-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+  overflow: hidden;
+}
+
+.visitor {
+  position: absolute;
+  pointer-events: auto;
+  cursor: pointer;
+  z-index: 51;
+  transition: transform 0.3s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.visitor:focus-visible {
+  outline: 2px solid rgba(74, 222, 128, 0.6);
+  outline-offset: 2px;
+  border-radius: 50%;
+}
+
+.visitor:hover {
+  transform: scale(1.15);
+}
+
+/* Scatter animation when clicked */
+.visitor.scattering {
+  animation: visitorScatter 0.8s ease-out forwards !important;
+}
+
+@keyframes visitorScatter {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--scatter-x, 60px), var(--scatter-y, -80px)) scale(0.3);
+  }
+}
+
+/* ── Butterfly ── */
+.butterfly {
+  width: 1.5rem;
+  height: 1.2rem;
+  position: relative;
+}
+
+.butterfly-body {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 0.15rem;
+  height: 0.8rem;
+  background: #1e293b;
+  border-radius: 0.1rem;
+  z-index: 2;
+}
+
+.butterfly-wing {
+  position: absolute;
+  top: 50%;
+  width: 0.65rem;
+  height: 0.85rem;
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  z-index: 1;
+  transform-origin: center center;
+}
+
+.butterfly-wing--left {
+  left: 50%;
+  transform: translateX(-100%) translateY(-50%);
+  animation: wingFlapLeft 0.25s ease-in-out infinite;
+}
+
+.butterfly-wing--right {
+  right: 50%;
+  transform: translateX(100%) translateY(-50%);
+  animation: wingFlapRight 0.25s ease-in-out infinite;
+}
+
+@keyframes wingFlapLeft {
+  0%, 100% {
+    transform: translateX(-100%) translateY(-50%) rotateY(0deg);
+  }
+  50% {
+    transform: translateX(-100%) translateY(-50%) rotateY(70deg);
+  }
+}
+
+@keyframes wingFlapRight {
+  0%, 100% {
+    transform: translateX(100%) translateY(-50%) rotateY(0deg);
+  }
+  50% {
+    transform: translateX(100%) translateY(-50%) rotateY(-70deg);
+  }
+}
+
+/* Butterfly color variants */
+.butterfly--pink .butterfly-wing--left,
+.butterfly--pink .butterfly-wing--right {
+  background: linear-gradient(135deg, #f472b6, #ec4899);
+  box-shadow: 0 0 0.3rem rgba(244, 114, 182, 0.4);
+}
+
+.butterfly--blue .butterfly-wing--left,
+.butterfly--blue .butterfly-wing--right {
+  background: linear-gradient(135deg, #60a5fa, #3b82f6);
+  box-shadow: 0 0 0.3rem rgba(96, 165, 250, 0.4);
+}
+
+.butterfly--purple .butterfly-wing--left,
+.butterfly--purple .butterfly-wing--right {
+  background: linear-gradient(135deg, #a78bfa, #8b5cf6);
+  box-shadow: 0 0 0.3rem rgba(167, 139, 250, 0.4);
+}
+
+.butterfly--orange .butterfly-wing--left,
+.butterfly--orange .butterfly-wing--right {
+  background: linear-gradient(135deg, #fb923c, #f97316);
+  box-shadow: 0 0 0.3rem rgba(251, 146, 60, 0.4);
+}
+
+/* Butterfly flutter path animation */
+.butterfly.flutter-path {
+  animation: butterflyFlutter 4s ease-in-out infinite;
+}
+
+@keyframes butterflyFlutter {
+  0% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(15px, -12px);
+  }
+  50% {
+    transform: translate(-10px, -5px);
+  }
+  75% {
+    transform: translate(8px, -18px);
+  }
+  100% {
+    transform: translate(0, 0);
+  }
+}
+
+/* ── Bee ── */
+.bee {
+  width: 1.4rem;
+  height: 1rem;
+  position: relative;
+  animation: beeBob 0.4s ease-in-out infinite;
+}
+
+@keyframes beeBob {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+.bee-body {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 0.7rem;
+  height: 0.5rem;
+  background: linear-gradient(90deg, #fbbf24 30%, #1e293b 30%, #1e293b 45%, #fbbf24 45%, #fbbf24 70%, #1e293b 70%, #1e293b 85%, #fbbf24 85%);
+  border-radius: 40% 40% 40% 40% / 50% 50% 50% 50%;
+  z-index: 2;
+}
+
+.bee-wing {
+  position: absolute;
+  width: 0.45rem;
+  height: 0.3rem;
+  background: rgba(203, 213, 225, 0.6);
+  border-radius: 50%;
+  z-index: 3;
+  transform-origin: bottom center;
+}
+
+.bee-wing--left {
+  top: 10%;
+  left: 20%;
+  animation: beeWingFlap 0.08s ease-in-out infinite;
+}
+
+.bee-wing--right {
+  top: 10%;
+  right: 20%;
+  animation: beeWingFlap 0.08s ease-in-out infinite;
+  animation-delay: 0.04s;
+}
+
+@keyframes beeWingFlap {
+  0%, 100% {
+    transform: rotateX(0deg);
+  }
+  50% {
+    transform: rotateX(60deg);
+  }
+}
+
+.bee-stinger {
+  position: absolute;
+  right: -0.1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0;
+  height: 0;
+  border-left: 0.15rem solid #1e293b;
+  border-top: 0.06rem solid transparent;
+  border-bottom: 0.06rem solid transparent;
+  z-index: 1;
+}
+
+/* Bee flight path */
+.bee.flutter-path {
+  animation: beeFly 3s ease-in-out infinite, beeBob 0.4s ease-in-out infinite;
+}
+
+@keyframes beeFly {
+  0% {
+    transform: translate(0, 0);
+  }
+  33% {
+    transform: translate(-12px, 8px);
+  }
+  66% {
+    transform: translate(10px, -6px);
+  }
+  100% {
+    transform: translate(0, 0);
+  }
+}
+
+/* ── Firefly (night theme) ── */
+.firefly {
+  width: 0.5rem;
+  height: 0.5rem;
+  position: relative;
+}
+
+.firefly-glow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 0.35rem;
+  height: 0.35rem;
+  background: #fde68a;
+  border-radius: 50%;
+  box-shadow:
+    0 0 0.3rem 0.15rem rgba(253, 230, 138, 0.6),
+    0 0 0.6rem 0.3rem rgba(253, 230, 138, 0.3),
+    0 0.1rem 0.9rem 0.45rem rgba(253, 230, 138, 0.15);
+  animation: fireflyPulse 2.5s ease-in-out infinite;
+  z-index: 2;
+}
+
+@keyframes fireflyPulse {
+  0%, 100% {
+    opacity: 0.3;
+    box-shadow:
+      0 0 0.2rem 0.1rem rgba(253, 230, 138, 0.3),
+      0 0 0.4rem 0.2rem rgba(253, 230, 138, 0.15);
+  }
+  50% {
+    opacity: 1;
+    box-shadow:
+      0 0 0.4rem 0.2rem rgba(253, 230, 138, 0.8),
+      0 0 0.8rem 0.4rem rgba(253, 230, 138, 0.4),
+      0 0 1.2rem 0.6rem rgba(253, 230, 138, 0.2);
+  }
+}
+
+.firefly.flutter-path {
+  animation: fireflyDrift 6s ease-in-out infinite;
+}
+
+@keyframes fireflyDrift {
+  0% {
+    transform: translate(0, 0);
+  }
+  20% {
+    transform: translate(20px, -15px);
+  }
+  40% {
+    transform: translate(-15px, -25px);
+  }
+  60% {
+    transform: translate(10px, -10px);
+  }
+  80% {
+    transform: translate(-20px, -20px);
+  }
+  100% {
+    transform: translate(0, 0);
+  }
+}
+
+/* Firefly trail / sparkle */
+.firefly-trail {
+  position: absolute;
+  width: 0.15rem;
+  height: 0.15rem;
+  background: rgba(253, 230, 138, 0.5);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: fireflyTrailFade 1.5s ease-out forwards;
+  z-index: 1;
+}
+
+@keyframes fireflyTrailFade {
+  0% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+}
+
+/* Visitor landing animation */
+.visitor.landing {
+  animation: visitorLand 0.5s ease-out forwards !important;
+}
+
+@keyframes visitorLand {
+  0% {
+    transform: scale(1.3);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Visitor leaving animation */
+.visitor.leaving {
+  animation: visitorLeave 0.6s ease-out forwards !important;
+}
+
+@keyframes visitorLeave {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.5) translateY(-2rem);
+  }
+}
+
+/* Responsive visitor sizes */
+@media (max-width: 375px) {
+  .butterfly {
+    width: 1.2rem;
+    height: 0.95rem;
+  }
+
+  .butterfly-wing {
+    width: 0.5rem;
+    height: 0.65rem;
+  }
+
+  .bee {
+    width: 1.1rem;
+    height: 0.8rem;
+  }
+
+  .bee-body {
+    width: 0.55rem;
+    height: 0.4rem;
+  }
+}
+
+@media (min-width: 1200px) {
+  .butterfly {
+    width: 1.8rem;
+    height: 1.45rem;
+  }
+
+  .butterfly-wing {
+    width: 0.8rem;
+    height: 1.05rem;
+  }
+
+  .bee {
+    width: 1.7rem;
+    height: 1.2rem;
+  }
+
+  .bee-body {
+    width: 0.85rem;
+    height: 0.6rem;
+  }
+}
+
 /* Reduced motion support */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -1656,7 +2064,9 @@ body.theme-night {
   }
 
   .sparkle,
-  .tile-sparkle {
+  .tile-sparkle,
+  .visitor,
+  .firefly-trail {
     display: none;
   }
 

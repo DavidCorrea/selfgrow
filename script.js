@@ -1126,4 +1126,320 @@
   if (savedState && savedState.plantedCount > 0) {
     restoreGardenState(savedState);
   }
+
+  // ── Garden Visitors System ──
+  var visitorsLayer = document.getElementById('visitorsLayer');
+  var activeVisitors = [];
+  var visitorIdCounter = 0;
+  var visitorSpawnTimer = null;
+  var fireflyTrailTimer = null;
+
+  // Butterfly color variants
+  var butterflyColors = ['pink', 'blue', 'purple', 'orange'];
+
+  // Check if current theme is night
+  function isNightTheme() {
+    return document.body.classList.contains('theme-night');
+  }
+
+  // Get the number of blooming (grown) tiles
+  function getBloomingCount() {
+    var count = 0;
+    tiles.forEach(function (tile) {
+      if (tile.classList.contains('planted')) {
+        var sprout = tile.querySelector('.tile-sprout');
+        if (sprout && sprout.classList.contains('grown')) {
+          count++;
+        }
+      }
+    });
+    return count;
+  }
+
+  // Get total planted count
+  function getPlantedCount() {
+    var count = 0;
+    tiles.forEach(function (tile) {
+      if (tile.classList.contains('planted')) count++;
+    });
+    return count;
+  }
+
+  // Get a random blooming tile's position, or null
+  function getRandomBloomingTileRect() {
+    var bloomingTiles = [];
+    tiles.forEach(function (tile) {
+      if (tile.classList.contains('planted')) {
+        var sprout = tile.querySelector('.tile-sprout');
+        if (sprout && sprout.classList.contains('grown')) {
+          bloomingTiles.push(tile);
+        }
+      }
+    });
+    if (bloomingTiles.length === 0) return null;
+    var tile = bloomingTiles[Math.floor(Math.random() * bloomingTiles.length)];
+    return tile.getBoundingClientRect();
+  }
+
+  // Create a butterfly element
+  function createButterfly() {
+    var color = butterflyColors[Math.floor(Math.random() * butterflyColors.length)];
+    var butterfly = document.createElement('div');
+    butterfly.classList.add('visitor', 'butterfly', 'butterfly--' + color, 'flutter-path');
+    butterfly.setAttribute('role', 'img');
+    butterfly.setAttribute('aria-label', 'Butterfly');
+    butterfly.setAttribute('tabindex', '0');
+
+    butterfly.innerHTML =
+      '<div class="butterfly-wing butterfly-wing--left"></div>' +
+      '<div class="butterfly-wing butterfly-wing--right"></div>' +
+      '<div class="butterfly-body"></div>';
+
+    return butterfly;
+  }
+
+  // Create a bee element
+  function createBee() {
+    var bee = document.createElement('div');
+    bee.classList.add('visitor', 'bee', 'flutter-path');
+    bee.setAttribute('role', 'img');
+    bee.setAttribute('aria-label', 'Bee');
+    bee.setAttribute('tabindex', '0');
+
+    bee.innerHTML =
+      '<div class="bee-wing bee-wing--left"></div>' +
+      '<div class="bee-wing bee-wing--right"></div>' +
+      '<div class="bee-body"></div>' +
+      '<div class="bee-stinger"></div>';
+
+    return bee;
+  }
+
+  // Create a firefly element
+  function createFirefly() {
+    var firefly = document.createElement('div');
+    firefly.classList.add('visitor', 'firefly', 'flutter-path');
+    firefly.setAttribute('role', 'img');
+    firefly.setAttribute('aria-label', 'Firefly');
+    firefly.setAttribute('tabindex', '0');
+
+    firefly.innerHTML = '<div class="firefly-glow"></div>';
+
+    return firefly;
+  }
+
+  // Position an element at a random screen position
+  function positionRandomly(el) {
+    var maxX = Math.max(0, window.innerWidth - 40);
+    var maxY = Math.max(0, window.innerHeight - 40);
+    var x = Math.random() * maxX;
+    var y = Math.random() * maxY;
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+  }
+
+  // Position an element near a tile rect
+  function positionNearTile(el, rect) {
+    var offsetX = (Math.random() - 0.5) * rect.width * 1.5;
+    var offsetY = (Math.random() - 0.5) * rect.height * 1.5;
+    var x = rect.left + rect.width / 2 + offsetX;
+    var y = rect.top + rect.height / 2 + offsetY;
+    // Clamp to viewport
+    x = Math.max(10, Math.min(window.innerWidth - 30, x));
+    y = Math.max(10, Math.min(window.innerHeight - 30, y));
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+  }
+
+  // Handle visitor click — scatter
+  function handleVisitorClick(visitorEl) {
+    if (visitorEl.classList.contains('scattering') ||
+        visitorEl.classList.contains('leaving')) return;
+
+    // Stop all path animations
+    visitorEl.classList.remove('flutter-path');
+
+    // Set scatter direction (random)
+    var scatterX = (Math.random() - 0.5) * 140;
+    var scatterY = -40 - Math.random() * 80;
+    visitorEl.style.setProperty('--scatter-x', scatterX + 'px');
+    visitorEl.style.setProperty('--scatter-y', scatterY + 'px');
+
+    visitorEl.classList.add('scattering');
+
+    // Remove after animation
+    setTimeout(function () {
+      removeVisitor(visitorEl);
+    }, 900);
+  }
+
+  // Remove a visitor from DOM and tracking
+  function removeVisitor(visitorEl) {
+    var id = parseInt(visitorEl.getAttribute('data-visitor-id'), 10);
+    activeVisitors = activeVisitors.filter(function (v) { return v !== id; });
+    if (visitorEl.parentNode) {
+      visitorEl.remove();
+    }
+  }
+
+  // Spawn a new visitor
+  function spawnVisitor() {
+    var planted = getPlantedCount();
+    if (planted === 0) return;
+
+    var blooming = getBloomingCount();
+    var isNight = isNightTheme();
+
+    var visitorEl;
+
+    if (isNight) {
+      // Night: only fireflies
+      visitorEl = createFirefly();
+    } else {
+      // Day/Dawn/Dusk: butterflies and bees
+      if (Math.random() < 0.6) {
+        visitorEl = createButterfly();
+      } else {
+        visitorEl = createBee();
+      }
+    }
+
+    var id = visitorIdCounter++;
+    visitorEl.setAttribute('data-visitor-id', id);
+    activeVisitors.push(id);
+
+    // Position: attracted to blooming flowers
+    var tileRect = getRandomBloomingTileRect();
+    if (tileRect && Math.random() < 0.6) {
+      positionNearTile(visitorEl, tileRect);
+    } else {
+      positionRandomly(visitorEl);
+    }
+
+    // Add click handler
+    visitorEl.addEventListener('click', function (e) {
+      e.stopPropagation();
+      handleVisitorClick(visitorEl);
+    });
+    visitorEl.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        e.stopPropagation();
+        handleVisitorClick(visitorEl);
+      }
+    });
+
+    visitorsLayer.appendChild(visitorEl);
+
+    // Landing animation
+    visitorEl.classList.add('landing');
+    setTimeout(function () {
+      visitorEl.classList.remove('landing');
+    }, 500);
+
+    // Schedule departure
+    var lifetime = 4000 + Math.random() * 6000; // 4-10 seconds
+    setTimeout(function () {
+      if (!visitorEl.parentNode) return;
+      if (visitorEl.classList.contains('scattering')) return;
+
+      visitorEl.classList.add('leaving');
+      setTimeout(function () {
+        removeVisitor(visitorEl);
+      }, 700);
+    }, lifetime);
+  }
+
+  // Create firefly trail particles
+  function createFireflyTrails() {
+    if (!isNightTheme()) return;
+
+    var fireflies = visitorsLayer.querySelectorAll('.firefly:not(.scattering):not(.leaving)');
+    fireflies.forEach(function (firefly) {
+      if (Math.random() < 0.3) {
+        var trail = document.createElement('div');
+        trail.classList.add('firefly-trail');
+        trail.style.left = firefly.style.left;
+        trail.style.top = firefly.style.top;
+        visitorsLayer.appendChild(trail);
+        setTimeout(function () {
+          trail.remove();
+        }, 1500);
+      }
+    });
+  }
+
+  // Schedule the next visitor spawn
+  function scheduleNextSpawn() {
+    if (visitorSpawnTimer) clearTimeout(visitorSpawnTimer);
+
+    var planted = getPlantedCount();
+    if (planted === 0) return;
+
+    // More planted tiles = more frequent spawns
+    // Base: 5s, decreases by 500ms per planted tile, min 1.5s
+    var interval = Math.max(1500, 5000 - (planted * 500));
+    // Add some randomness
+    interval += Math.random() * 2000;
+
+    visitorSpawnTimer = setTimeout(function () {
+      spawnVisitor();
+      scheduleNextSpawn();
+    }, interval);
+  }
+
+  // Start the visitor system
+  function startVisitors() {
+    if (visitorSpawnTimer) clearTimeout(visitorSpawnTimer);
+    scheduleNextSpawn();
+
+    // Firefly trail timer
+    if (fireflyTrailTimer) clearInterval(fireflyTrailTimer);
+    fireflyTrailTimer = setInterval(createFireflyTrails, 500);
+  }
+
+  // Stop the visitor system
+  function stopVisitors() {
+    if (visitorSpawnTimer) clearTimeout(visitorSpawnTimer);
+    if (fireflyTrailTimer) clearInterval(fireflyTrailTimer);
+  }
+
+  // Clear all existing visitors (used on theme change)
+  function clearAllVisitors() {
+    var existing = visitorsLayer.querySelectorAll('.visitor');
+    existing.forEach(function (el) {
+      el.remove();
+    });
+    activeVisitors = [];
+  }
+
+  // Watch for theme changes to swap visitors
+  var lastThemeCheck = false;
+  setInterval(function () {
+    var currentNight = isNightTheme();
+    if (currentNight !== lastThemeCheck) {
+      lastThemeCheck = currentNight;
+      // Theme changed — clear visitors so new ones match the theme
+      clearAllVisitors();
+    }
+  }, 2000);
+
+  // Start visitors when grid is revealed
+  var originalRevealGrid = revealGrid;
+  revealGrid = function () {
+    originalRevealGrid();
+    startVisitors();
+  };
+
+  // Also start on restore if grid is already revealed
+  var originalRestoreGardenState = restoreGardenState;
+  restoreGardenState = function (state) {
+    originalRestoreGardenState(state);
+    if (gridRevealed) {
+      startVisitors();
+    }
+  };
+
+  // Update theme check initial state
+  lastThemeCheck = isNightTheme();
 })();
