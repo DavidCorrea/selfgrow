@@ -1,6 +1,7 @@
 // ── Shared Mutable State ──
 // All modules read/write these shared objects to coordinate behavior.
 
+export var currentWeather = { value: 'sunny' };
 export var plantedCount = { value: 0 };
 export var gridRevealed = { value: false };
 export var journalRevealed = { value: false };
@@ -55,6 +56,38 @@ export var wateringHintMessages = [
   "water accelerates the life cycle",
   "your plants love the extra care",
 ];
+
+export var weatherMessages = {
+  sunny: [
+    "sunlight quickens the blooms",
+    "warm rays coax the petals open",
+    "the garden basks in golden light",
+    "sunlight weaves through every leaf",
+  ],
+  rainy: [
+    "a gentle rain nourishes your garden",
+    "raindrops kiss the soil and roots drink deep",
+    "the garden sighs in the rain",
+    "soft rain feeds every waiting seed",
+  ],
+  cloudy: [
+    "clouds gather, the garden rests in grey",
+    "a quiet stillness settles over the soil",
+    "the garden breathes under overcast skies",
+    "soft diffused light wraps the garden",
+  ],
+  snowy: [
+    "snow blankets the garden in stillness",
+    "frost slows the pulse of the garden",
+    "the garden sleeps beneath a white veil",
+    "snow hushes every growing thing",
+  ],
+};
+
+export function getRandomWeatherMessage(weather) {
+  var msgs = weatherMessages[weather] || weatherMessages.sunny;
+  return msgs[Math.floor(Math.random() * msgs.length)];
+}
 
 export function getRandomGridMessage() {
   return gridMessages[Math.floor(Math.random() * gridMessages.length)];

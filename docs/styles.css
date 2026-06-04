@@ -2933,3 +2933,165 @@ body.theme-night {
     transition: none;
   }
 }
+
+/* ── Weather-Growth Integration Styles ── */
+
+/* Rain: auto-water effect on tiles */
+.grid-tile.rain-watered {
+  border-color: rgba(96, 165, 250, 0.35);
+  box-shadow:
+    0 0 1.2rem rgba(96, 165, 250, 0.12),
+    0 0 2.5rem rgba(96, 165, 250, 0.04);
+  transition: border-color 0.6s ease, box-shadow 0.6s ease;
+}
+
+/* Rain tile droplets */
+.tile-rain-drop {
+  position: absolute;
+  top: 15%;
+  width: 0.12rem;
+  height: 0.5rem;
+  background: linear-gradient(180deg, rgba(147, 197, 253, 0.6), rgba(96, 165, 250, 0.2));
+  border-radius: 0 0 50% 50%;
+  pointer-events: none;
+  z-index: 10;
+  animation: tileRainFall 0.6s ease-in forwards;
+  animation-delay: var(--drop-delay, 0s);
+}
+
+@keyframes tileRainFall {
+  0% {
+    opacity: 0;
+    transform: translateY(-0.5rem) scaleY(0.5);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(2rem) scaleY(0.3);
+  }
+}
+
+/* Rain bloom glow on sprout */
+.tile-sprout.rain-bloom .tile-flower {
+  animation: rainBloomGlow 1.5s ease-out;
+}
+
+@keyframes rainBloomGlow {
+  0% {
+    filter: brightness(1);
+  }
+  40% {
+    filter: brightness(1.3) saturate(1.2);
+    box-shadow: 0 0 0.8rem rgba(96, 165, 250, 0.3);
+  }
+  100% {
+    filter: brightness(1);
+  }
+}
+
+/* Weather glow classes applied to tiles */
+.grid-tile.weather-sunny-glow {
+  border-color: rgba(251, 191, 36, 0.2);
+  box-shadow:
+    0 0 1rem rgba(251, 191, 36, 0.06),
+    0 0 2rem rgba(251, 191, 36, 0.02);
+  transition: border-color 0.8s ease, box-shadow 0.8s ease;
+}
+
+.grid-tile.weather-rainy-glow {
+  border-color: rgba(96, 165, 250, 0.2);
+  box-shadow:
+    0 0 1rem rgba(96, 165, 250, 0.06),
+    0 0 2rem rgba(96, 165, 250, 0.02);
+  transition: border-color 0.8s ease, box-shadow 0.8s ease;
+}
+
+.grid-tile.weather-snowy-dormant {
+  border-color: rgba(226, 232, 240, 0.12);
+  box-shadow:
+    0 0 1rem rgba(226, 232, 240, 0.04),
+    0 0 2rem rgba(226, 232, 240, 0.01);
+  transition: border-color 0.8s ease, box-shadow 0.8s ease;
+}
+
+/* Snowy: dormant sway — slower, more subdued */
+.grid-tile.weather-snowy-dormant .tile-sprout.grown .tile-flower {
+  animation: snowSway 5s ease-in-out infinite;
+}
+
+@keyframes snowSway {
+  0%, 100% { transform: rotate(-1deg); }
+  50% { transform: rotate(1deg); }
+}
+
+/* Sunny: gentle warm pulse on grown flowers */
+.grid-tile.weather-sunny-glow .tile-sprout.grown .tile-flower {
+  animation: sunWarmPulse 3.5s ease-in-out infinite;
+}
+
+@keyframes sunWarmPulse {
+  0%, 100% {
+    filter: brightness(1);
+    transform: rotate(-2deg);
+  }
+  50% {
+    filter: brightness(1.08);
+    transform: rotate(2deg);
+  }
+}
+
+/* ── Weather Journal Entry Styles ── */
+.journal-entry--weather {
+  background: rgba(17, 24, 39, 0.3);
+  border-radius: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.journal-entry--weather .entry-timeline-dot--weather {
+  background: rgba(148, 163, 184, 0.5);
+  box-shadow: 0 0 0.4rem rgba(148, 163, 184, 0.2);
+}
+
+.journal-entry--weather .entry-timeline-dot--weather::after {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.journal-entry--weather .entry-swatch--weather {
+  border-color: rgba(148, 163, 184, 0.2);
+  box-shadow: 0 0 0.4rem rgba(148, 163, 184, 0.1);
+}
+
+.journal-entry--weather .entry-text {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+/* Reduced motion: disable weather-growth animations */
+@media (prefers-reduced-motion: reduce) {
+  .tile-rain-drop {
+    animation: none !important;
+    display: none;
+  }
+
+  .tile-sprout.rain-bloom .tile-flower,
+  .grid-tile.weather-sunny-glow .tile-sprout.grown .tile-flower,
+  .grid-tile.weather-snowy-dormant .tile-sprout.grown .tile-flower {
+    animation: none !important;
+  }
+}
+
+/* Responsive: weather-growth styles */
+@media (max-width: 375px) {
+  .tile-rain-drop {
+    height: 0.35rem;
+  }
+
+  .grid-tile.rain-watered {
+    box-shadow:
+      0 0 0.8rem rgba(96, 165, 250, 0.1),
+      0 0 1.5rem rgba(96, 165, 250, 0.03);
+  }
+}

@@ -1,9 +1,114 @@
-import { dom, plantedCount, gridRevealed, tendingRevealed, journalRevealed, wateredTiles, tileCycleState, tileColorMap, petalPalettes, CYCLE_HOLD_BLOOM, CYCLE_WILT_DURATION, CYCLE_PAUSE_AFTER_WILT, CYCLE_SEED_OFFSET, totalTiles, getRandomGridMessage, getRandomWateringHint, getRandomCycleMessage } from './state.js';
+import { dom, plantedCount, gridRevealed, tendingRevealed, journalRevealed, journalEntries, wateredTiles, tileCycleState, tileColorMap, petalPalettes, CYCLE_HOLD_BLOOM, CYCLE_WILT_DURATION, CYCLE_PAUSE_AFTER_WILT, CYCLE_SEED_OFFSET, totalTiles, getRandomGridMessage, getRandomWateringHint, getRandomCycleMessage } from './state.js';
 import { saveGardenState, applyTileColors } from './persistence.js';
 import { addJournalEntry } from './journal.js';
 import { notifyStatsChange } from './stats.js';
+import { getCurrentWeather, getWeatherModifier, onWeatherChange } from './weather.js';
 
 var wateringMode = false;
+
+// ── Weather-Aware Growth Timing ──
+// Returns a duration multiplier based on current weather
+function getWeatherGrowthMultiplier() {
+  var mod = getWeatherModifier();
+  return mod ? mod.growthMultiplier : 1.0;
+}
+
+// Apply weather-scaled delay, ensuring a minimum so things don't feel instant
+function weatherScaled(baseMs) {
+  var scaled = baseMs * getWeatherGrowthMultiplier();
+  return Math.max(scaled, 200); // minimum 200ms so animations remain visible
+}
+
+// ── Weather Auto-Water Effect ──
+// When rain is active, all planted tiles get auto-watered
+function applyRainToAllTiles() {
+  var tiles = dom.tiles;
+  if (!tiles) return;
+
+  tiles.forEach(function (tile) {
+    if (!tile.classList.contains('planted')) return;
+    if (tile.classList.contains('rain-watered')) return;
+
+    var tileIndex = parseInt(tile.getAttribute('data-tile'), 10);
+
+    tile.classList.add('rain-watered');
+
+    // Create rain droplets on tile
+    createRainTileDroplets(tile);
+
+    // Apply blue glow effect
+    var sprout = tile.querySelector('.tile-sprout');
+    if (sprout) {
+      sprout.classList.add('rain-bloom');
+      setTimeout(function () {
+        sprout.classList.remove('rain-bloom');
+      }, 1500);
+    }
+
+    // If tile is in grown state, accelerate wilt (rain speeds growth)
+    var state = tileCycleState[tileIndex];
+    if (state && sprout && sprout.classList.contains('grown')) {
+      // The rain acts like a gentle water — mark it
+      if (!wateredTiles[tileIndex]) {
+        wateredTiles[tileIndex] = true;
+      }
+    }
+  });
+}
+
+function removeRainFromAllTiles() {
+  var tiles = dom.tiles;
+  if (!tiles) return;
+
+  tiles.forEach(function (tile) {
+    tile.classList.remove('rain-watered');
+    var tileIndex = parseInt(tile.getAttribute('data-tile'), 10);
+    // Reset the rain-watered flag but keep manual watering intact
+    // (rain is continuous, not a one-time water)
+  });
+}
+
+function createRainTileDroplets(tileEl) {
+  for (var i = 0; i < 4; i++) {
+    var drop = document.createElement('div');
+    drop.classList.add('tile-rain-drop');
+    drop.style.left = (20 + Math.random() * 60) + '%';
+    drop.style.setProperty('--drop-delay', (i * 0.15) + 's');
+    tileEl.appendChild(drop);
+
+    (function (d) {
+      setTimeout(function () { d.remove(); }, 800);
+    })(drop);
+  }
+}
+
+// ── Weather Change Handler ──
+onWeatherChange(function (newWeather, oldWeather) {
+  if (newWeather === 'rainy') {
+    applyRainToAllTiles();
+  } else if (oldWeather === 'rainy') {
+    removeRainFromAllTiles();
+  }
+
+  // Update all tiles with weather-specific classes
+  var tiles = dom.tiles;
+  if (!tiles) return;
+
+  tiles.forEach(function (tile) {
+    // Remove all weather state classes
+    tile.classList.remove('weather-sunny-glow', 'weather-rainy-glow', 'weather-snowy-dormant');
+    // Add current
+    if (newWeather === 'sunny') {
+      tile.classList.add('weather-sunny-glow');
+    } else if (newWeather === 'rainy') {
+      tile.classList.add('weather-rainy-glow');
+    } else if (newWeather === 'snowy') {
+      tile.classList.add('weather-snowy-dormant');
+    }
+  });
+});
+
+// ── Tile Visual Effects ──
 
 function createTileSparkles(tileEl) {
   var rect = tileEl.getBoundingClientRect();
@@ -63,7 +168,7 @@ function createWaterSparkles(tileEl) {
   }
 }
 
-function addWateredIcon(tileEl) {
+export function addWateredIcon(tileEl) {
   var existing = tileEl.querySelector('.tile-watered-icon');
   if (existing) existing.remove();
 
@@ -151,19 +256,29 @@ export function startGrowthCycle(tileEl, tileIndex) {
   tileEl.classList.add('reseeding');
   tileSeed.classList.add('visible');
 
+  // Weather-scaled timings
+  var wsm = getWeatherGrowthMultiplier();
+  var seedDelay = weatherScaled(500);
+  var budDelay = weatherScaled(1400);
+  var bloomDelay = weatherScaled(2000);
+  var grownDelay = weatherScaled(2700);
+  var holdBloom = weatherScaled(CYCLE_HOLD_BLOOM);
+  var wiltDur = weatherScaled(CYCLE_WILT_DURATION);
+  var pauseWilt = weatherScaled(CYCLE_PAUSE_AFTER_WILT);
+
   var seedTimeout = setTimeout(function () {
     tileSprout.classList.add('growing');
-  }, 500);
+  }, seedDelay);
 
   var budTimeout = setTimeout(function () {
     tileSprout.classList.remove('growing');
     tileSprout.classList.add('budding');
-  }, 1400);
+  }, budDelay);
 
   var bloomTimeout = setTimeout(function () {
     tileSprout.classList.remove('budding');
     tileSprout.classList.add('blooming');
-  }, 2000);
+  }, bloomDelay);
 
   var grownTimeout = setTimeout(function () {
     tileSprout.classList.remove('blooming');
@@ -189,8 +304,8 @@ export function startGrowthCycle(tileEl, tileIndex) {
       }, 300);
     }
 
-    var offset = tileIndex * CYCLE_SEED_OFFSET;
-    var wiltDelay = CYCLE_HOLD_BLOOM + offset;
+    var offset = tileIndex * CYCLE_SEED_OFFSET * wsm;
+    var wiltDelay = holdBloom + offset;
 
     var wiltTimeout = setTimeout(function () {
       if (!tileEl.classList.contains('planted')) return;
@@ -208,7 +323,7 @@ export function startGrowthCycle(tileEl, tileIndex) {
         state.cycle++;
         startGrowthCycle(tileEl, tileIndex);
         saveGardenState();
-      }, CYCLE_WILT_DURATION + CYCLE_PAUSE_AFTER_WILT);
+      }, wiltDur + pauseWilt);
 
       state.timeouts = state.timeouts || [];
       state.timeouts.push(restartTimeout);
@@ -217,7 +332,7 @@ export function startGrowthCycle(tileEl, tileIndex) {
     state.timeouts = state.timeouts || [];
     state.timeouts.push(wiltTimeout);
 
-  }, 2700);
+  }, grownDelay);
 
   state.timeouts = state.timeouts || [];
   state.timeouts.push(seedTimeout, budTimeout, bloomTimeout, grownTimeout);
@@ -238,25 +353,48 @@ export function plantTile(tileEl) {
   tileEl.classList.add('planted');
   tileEl.setAttribute('aria-label', 'Tile ' + (tileIndex + 1) + ' planted');
 
+  // Apply current weather visual class
+  var weather = getCurrentWeather();
+  if (weather === 'sunny') {
+    tileEl.classList.add('weather-sunny-glow');
+  } else if (weather === 'rainy') {
+    tileEl.classList.add('weather-rainy-glow');
+    // If it's already raining, auto-water this tile
+    tileEl.classList.add('rain-watered');
+    createRainTileDroplets(tileEl);
+  } else if (weather === 'snowy') {
+    tileEl.classList.add('weather-snowy-dormant');
+  }
+
   var tileSeed = tileEl.querySelector('.tile-seed');
   tileSeed.classList.add('visible');
+
+  // Weather-scaled timings for initial plant
+  var wsm = getWeatherGrowthMultiplier();
+  var seedDelay = weatherScaled(500);
+  var budDelay = weatherScaled(1400);
+  var bloomDelay = weatherScaled(2000);
+  var grownDelay = weatherScaled(2700);
+  var holdBloom = weatherScaled(CYCLE_HOLD_BLOOM);
+  var wiltDur = weatherScaled(CYCLE_WILT_DURATION);
+  var pauseWilt = weatherScaled(CYCLE_PAUSE_AFTER_WILT);
 
   setTimeout(function () {
     var tileSprout = tileEl.querySelector('.tile-sprout');
     tileSprout.classList.add('growing');
-  }, 500);
+  }, seedDelay);
 
   setTimeout(function () {
     var tileSprout = tileEl.querySelector('.tile-sprout');
     tileSprout.classList.remove('growing');
     tileSprout.classList.add('budding');
-  }, 1400);
+  }, budDelay);
 
   setTimeout(function () {
     var tileSprout = tileEl.querySelector('.tile-sprout');
     tileSprout.classList.remove('budding');
     tileSprout.classList.add('blooming');
-  }, 2000);
+  }, bloomDelay);
 
   setTimeout(function () {
     var tileSprout = tileEl.querySelector('.tile-sprout');
@@ -286,8 +424,8 @@ export function plantTile(tileEl) {
       }, 300);
     }
 
-    var offset = tileIndex * CYCLE_SEED_OFFSET;
-    var firstWiltDelay = CYCLE_HOLD_BLOOM + offset;
+    var offset = tileIndex * CYCLE_SEED_OFFSET * wsm;
+    var firstWiltDelay = holdBloom + offset;
 
     setTimeout(function () {
       if (!tileEl.classList.contains('planted')) return;
@@ -304,9 +442,9 @@ export function plantTile(tileEl) {
 
         tileCycleState[tileIndex].cycle = 2;
         startGrowthCycle(tileEl, tileIndex);
-      }, CYCLE_WILT_DURATION + CYCLE_PAUSE_AFTER_WILT);
+      }, wiltDur + pauseWilt);
     }, firstWiltDelay);
-  }, 2700);
+  }, grownDelay);
 }
 
 export function toggleWateringMode() {
@@ -389,7 +527,7 @@ export function waterTile(tileEl, tileIndex) {
 
           state.cycle++;
           startGrowthCycle(tileEl, tileIndex);
-        }, CYCLE_WILT_DURATION + CYCLE_PAUSE_AFTER_WILT);
+        }, weatherScaled(CYCLE_WILT_DURATION) + weatherScaled(CYCLE_PAUSE_AFTER_WILT));
 
         state.timeouts = state.timeouts || [];
         state.timeouts.push(speedRestartTimeout);

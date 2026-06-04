@@ -91,3 +91,86 @@ export function addJournalEntry(tileIndex, petalColor, cycleNum) {
 
   saveGardenState();
 }
+
+// ── Weather Journal Entry ──
+// Adds a weather transition entry to the journal with a poetic message.
+// Called by weather.js when the weather state changes.
+export function addWeatherEntry(weatherState, message) {
+  var gardenJournal = dom.gardenJournal;
+  var journalTimeline = dom.journalTimeline;
+  var journalEmpty = dom.journalEmpty;
+
+  if (!journalRevealed.value) {
+    setTimeout(function () {
+      revealJournal();
+    }, 600);
+  }
+
+  if (journalEmpty) {
+    journalEmpty.style.display = 'none';
+  }
+
+  var now = new Date();
+  var timeStr = formatTime(now);
+
+  var entry = {
+    tileIndex: -1,
+    petalColor: getWeatherColor(weatherState),
+    time: timeStr,
+    timestamp: now.getTime(),
+    cycle: 0,
+    type: 'weather',
+    weatherState: weatherState,
+    weatherMessage: message
+  };
+  journalEntries.push(entry);
+
+  // Only create DOM entry if journal timeline exists
+  if (journalTimeline) {
+    var weatherEmoji = getWeatherEmoji(weatherState);
+
+    var entryEl = document.createElement('div');
+    entryEl.classList.add('journal-entry', 'journal-entry--weather');
+    entryEl.setAttribute('role', 'listitem');
+
+    entryEl.innerHTML =
+      '<div class="entry-timeline-dot entry-timeline-dot--weather"></div>' +
+      '<div class="entry-content">' +
+        '<p class="entry-text">' + weatherEmoji + ' ' + message + '</p>' +
+        '<p class="entry-time">' + timeStr + ' &mdash; the sky shifts</p>' +
+      '</div>' +
+      '<div class="entry-swatch entry-swatch--weather" style="background: ' + getWeatherColor(weatherState) + '" aria-hidden="true"></div>';
+
+    journalTimeline.insertBefore(entryEl, journalTimeline.firstChild);
+
+    if (gardenJournal) {
+      gardenJournal.classList.remove('pulse');
+      void gardenJournal.offsetWidth;
+      gardenJournal.classList.add('pulse');
+    }
+
+    journalTimeline.scrollTop = 0;
+  }
+
+  saveGardenState();
+}
+
+function getWeatherEmoji(weatherState) {
+  var emojis = {
+    sunny: '☀️',
+    rainy: '🌧️',
+    cloudy: '☁️',
+    snowy: '❄️'
+  };
+  return emojis[weatherState] || '🌤️';
+}
+
+function getWeatherColor(weatherState) {
+  var colors = {
+    sunny: '#fbbf24',
+    rainy: '#60a5fa',
+    cloudy: '#94a3b8',
+    snowy: '#e2e8f0'
+  };
+  return colors[weatherState] || '#94a3b8';
+}

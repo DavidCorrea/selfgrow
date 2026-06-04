@@ -7,6 +7,7 @@ import { startVisitors, initVisitors } from './js/visitors.js';
 import { initSoundscape } from './js/soundscape.js';
 import { initStats } from './js/stats.js';
 
+
 (function () {
   'use strict';
 
@@ -158,13 +159,6 @@ import { initStats } from './js/stats.js';
 
   // ── Initialize Visitors ──
   initVisitors();
-
-  // ── Override revealGrid to also start visitors ──
-  var originalRevealGrid = revealGrid;
-  revealGrid = function () {
-    originalRevealGrid();
-    startVisitors();
-  };
 
   // ── Initialize Soundscape ──
   initSoundscape();

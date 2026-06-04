@@ -238,12 +238,12 @@ export function startVisitors() {
   fireflyTrailTimer = setInterval(createFireflyTrails, 500);
 }
 
-export function stopVisitors() {
+function stopVisitors() {
   if (visitorSpawnTimer) clearTimeout(visitorSpawnTimer);
   if (fireflyTrailTimer) clearInterval(fireflyTrailTimer);
 }
 
-export function clearAllVisitors() {
+function clearAllVisitors() {
   var visitorsLayer = dom.visitorsLayer || document.getElementById('visitorsLayer');
   var existing = visitorsLayer.querySelectorAll('.visitor');
   existing.forEach(function (el) {

@@ -1,4 +1,7 @@
 import { dom, journalEntries, wateredTiles, tileCycleState, tileColorMap, plantedCount, gridRevealed, journalRevealed, tendingRevealed, petalPalettes, centerColors, getRandomGridMessage, getRandomWateringHint, getRandomCycleMessage, CYCLE_HOLD_BLOOM, CYCLE_SEED_OFFSET, CYCLE_WILT_DURATION, CYCLE_PAUSE_AFTER_WILT } from './state.js';
+import { addWateredIcon } from './tiles.js';
+import { formatTime } from './journal.js';
+import { getCurrentWeather, getWeatherModifier } from './weather.js';
 
 var STORAGE_KEY = 'selfgrow_garden_state';
 
@@ -54,15 +57,6 @@ export function loadGardenState() {
   } catch (e) {
     return null;
   }
-}
-
-export function formatTime(date) {
-  var hours = date.getHours();
-  var minutes = date.getMinutes();
-  var ampm = hours >= 12 ? 'PM' : 'AM';
-  var displayHours = hours % 12 || 12;
-  var displayMinutes = minutes < 10 ? '0' + minutes : minutes;
-  return displayHours + ':' + displayMinutes + ' ' + ampm;
 }
 
 export function formatLastTended(timestamp) {
@@ -121,43 +115,19 @@ export function applyTileColors(tileEl, tileIndex) {
   return palette;
 }
 
-function addWateredIcon(tileEl) {
-  var existing = tileEl.querySelector('.tile-watered-icon');
-  if (existing) existing.remove();
-
-  var icon = document.createElement('div');
-  icon.classList.add('tile-watered-icon');
-  icon.textContent = '💧';
-  icon.setAttribute('aria-hidden', 'true');
-  tileEl.appendChild(icon);
-
-  requestAnimationFrame(function () {
-    icon.classList.add('visible');
-  });
+function getWeatherEmoji(weatherState) {
+  var emojis = { sunny: '☀️', rainy: '🌧️', cloudy: '☁️', snowy: '❄️' };
+  return emojis[weatherState] || '🌤️';
 }
 
-function createTileSparkles(tileEl) {
-  var rect = tileEl.getBoundingClientRect();
-  var centerX = rect.width / 2;
-  var centerY = rect.height * 0.35;
-
-  for (var i = 0; i < 6; i++) {
-    var sparkle = document.createElement('div');
-    sparkle.classList.add('tile-sparkle');
-    var angle = (Math.PI * 2 * i) / 6;
-    var distance = 1.5 + Math.random() * 1.5;
-    var tx = Math.cos(angle) * distance * 8 + 'px';
-    var ty = Math.sin(angle) * distance * 8 + 'px';
-    sparkle.style.setProperty('--tx', tx);
-    sparkle.style.setProperty('--ty', ty);
-    sparkle.style.left = centerX + 'px';
-    sparkle.style.top = centerY + 'px';
-    tileEl.appendChild(sparkle);
-
-    (function (s) {
-      setTimeout(function () { s.remove(); }, 800);
-    })(sparkle);
-  }
+function getWeatherDefaultMessage(weatherState) {
+  var msgs = {
+    sunny: 'sunlight quickens the blooms',
+    rainy: 'a gentle rain nourishes your garden',
+    cloudy: 'the garden breathes under overcast skies',
+    snowy: 'snow blankets the garden in stillness'
+  };
+  return msgs[weatherState] || 'the sky shifts';
 }
 
 export function restoreGardenState(state, callbacks) {
@@ -240,8 +210,12 @@ export function restoreGardenState(state, callbacks) {
 
       var isCycle = entry.type === 'cycle';
       var isWatered = entry.type === 'watered';
+      var isWeather = entry.type === 'weather';
       var entryLabel;
-      if (isWatered) {
+      if (isWeather) {
+        var weatherEmoji = getWeatherEmoji(entry.weatherState);
+        entryLabel = weatherEmoji + ' ' + (entry.weatherMessage || getWeatherDefaultMessage(entry.weatherState));
+      } else if (isWatered) {
         entryLabel = '<strong>Tile ' + (entry.tileIndex + 1) + '</strong> &mdash; 💧 watered';
       } else if (isCycle) {
         entryLabel = '<strong>Tile ' + (entry.tileIndex + 1) + '</strong> &mdash; 🌸 cycle ' + entry.cycle + ' at ' + entry.time;
@@ -250,7 +224,9 @@ export function restoreGardenState(state, callbacks) {
       }
 
       var subText;
-      if (isWatered) {
+      if (isWeather) {
+        subText = entry.time + ' &mdash; the sky shifts';
+      } else if (isWatered) {
         subText = entry.subText || 'growth speed increased by 50%';
       } else if (isCycle) {
         subText = getRandomCycleMessage();
@@ -258,13 +234,18 @@ export function restoreGardenState(state, callbacks) {
         subText = 'flower #' + (i + 1) + ' in your garden';
       }
 
+      var dotClass = isWeather ? 'entry-timeline-dot entry-timeline-dot--weather' : 'entry-timeline-dot';
+      var swatchClass = isWeather ? 'entry-swatch entry-swatch--weather' : 'entry-swatch';
+      var entryClass = isWeather ? 'journal-entry journal-entry--weather' : 'journal-entry';
+      entryEl.classList = entryClass;
+
       entryEl.innerHTML =
-        '<div class="entry-timeline-dot"></div>' +
+        '<div class="' + dotClass + '"></div>' +
         '<div class="entry-content">' +
           '<p class="entry-text">' + entryLabel + '</p>' +
           '<p class="entry-time">' + subText + '</p>' +
         '</div>' +
-        '<div class="entry-swatch" style="background: ' + entry.petalColor + '" aria-hidden="true"></div>';
+        '<div class="' + swatchClass + '" style="background: ' + entry.petalColor + '" aria-hidden="true"></div>';
 
       journalTimeline.insertBefore(entryEl, journalTimeline.firstChild);
     }
@@ -320,6 +301,16 @@ function restorePlantedTile(tileEl, tileIndex, state, startGrowthCycle, updateCo
     addWateredIcon(tileEl);
   }
 
+  // Apply current weather visual class to restored tile
+  var currentW = getCurrentWeather();
+  if (currentW === 'sunny') {
+    tileEl.classList.add('weather-sunny-glow');
+  } else if (currentW === 'rainy') {
+    tileEl.classList.add('weather-rainy-glow');
+  } else if (currentW === 'snowy') {
+    tileEl.classList.add('weather-snowy-dormant');
+  }
+
   var cycle = 1;
   if (tileCycleState[tileIndex]) {
     cycle = tileCycleState[tileIndex].cycle;
@@ -340,8 +331,18 @@ function restorePlantedTile(tileEl, tileIndex, state, startGrowthCycle, updateCo
 
   var gridHint = dom.gridHint;
 
-  var offset = tileIndex * CYCLE_SEED_OFFSET;
-  var wiltDelay = CYCLE_HOLD_BLOOM + offset;
+  // Use weather-scaled timing on restore so weather affects growth correctly
+  var wMod = getWeatherModifier();
+  var wsm = wMod ? wMod.growthMultiplier : 1.0;
+  var weatherScaled = function (baseMs) {
+    return Math.max(baseMs * wsm, 200);
+  };
+
+  var offset = tileIndex * CYCLE_SEED_OFFSET * wsm;
+  var holdBloom = weatherScaled(CYCLE_HOLD_BLOOM);
+  var wiltDur = weatherScaled(CYCLE_WILT_DURATION);
+  var pauseWilt = weatherScaled(CYCLE_PAUSE_AFTER_WILT);
+  var wiltDelay = holdBloom + offset;
 
   var wiltTimeout = setTimeout(function () {
     if (!tileEl.classList.contains('planted')) return;
@@ -365,7 +366,7 @@ function restorePlantedTile(tileEl, tileIndex, state, startGrowthCycle, updateCo
 
       tileCycleState[tileIndex].cycle++;
       startGrowthCycle(tileEl, tileIndex);
-    }, CYCLE_WILT_DURATION + CYCLE_PAUSE_AFTER_WILT);
+    }, wiltDur + pauseWilt);
 
     tileCycleState[tileIndex].timeouts = tileCycleState[tileIndex].timeouts || [];
     tileCycleState[tileIndex].timeouts.push(restartTimeout);

@@ -244,7 +244,7 @@ export function startSoundscape() {
   if (soundscapeIcon) soundscapeIcon.textContent = '🔊';
 }
 
-export function stopSoundscape() {
+function stopSoundscape() {
   if (!audioCtx || !masterGain) return;
 
   masterGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.5);
