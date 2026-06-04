@@ -4,6 +4,12 @@ History of changes made by the hourly agent.
 
 ## 2026-06-04
 
+- **Fixed VISION.md duplicate entry**: Removed the duplicate roadmap item #9 'Garden Reflection Stats' (appeared twice at lines 29-32). The roadmap now has a clean single list of items 1-9.
+
+- **Added Garden Reflection Stats panel**: Implemented step 9 of the VISION.md roadmap. A gentle statistics panel that appears below the journal section, showing: (1) total flowers bloomed across all cycles, (2) current time-of-day season with a thematic icon (dawn/day/dusk/night), (3) time since last tending with a human-friendly relative timestamp, and (4) a 'garden mood' indicator (thriving, flourishing, growing, resting, dormant) based on how recently the garden was tended and how many flowers are currently blooming. Each mood has a unique color glow on the mood card. A poetic reflection line at the bottom shifts with the mood. The panel uses a parchment-matching aesthetic consistent with the journal, with a 2x2 grid layout (mood card spans full width). Stats update dynamically as the garden changes — on planting, journal entries, cycle transitions, and theme changes. A 30-second timer refreshes relative timestamps. All data is derived from existing state (journal entries, planted tiles, blooming count, timestamps) — zero external dependencies. Fully responsive at 375px, 768px, and 1200px+ breakpoints.
+
+## 2026-06-04
+
 - **Added ambient soundscape using Web Audio API**: Implemented step 8 of the VISION.md roadmap. A procedurally generated ambient soundscape that creates gentle nature sounds — sine wave drones for breeze/wind, short random chirp envelopes for birdsong, soft filtered noise bursts for water droplets, and cricket-like clicks at night. The audio character shifts with the existing time-of-day themes: dawn gets gentle bird chirps, day gets brighter ambient tones, dusk gets warmer lower tones, and night gets deep sparse sounds with occasional cricket clicks. Added a mute/unmute toggle button (fixed position, bottom-right) with 🔇/🔊 icons, aria-label, and visual pulse animation when active. The soundscape uses only the browser's built-in Web Audio API — zero external dependencies. All sounds are procedurally generated with no audio files. Fade-in/fade-out transitions for smooth start/stop. Enhances the 'calm & intentional' core philosophy and deepens the meditative quality of the garden experience.
 
 ## 2026-06-04
