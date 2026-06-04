@@ -26,6 +26,10 @@ The app starts simple — a seed that blooms — and grows into a richer experie
 
 8. **Ambient Soundscape** — Soft, procedurally generated ambient audio (birdsong, gentle breeze, water droplets) that shifts with the time-of-day themes, deepening the meditative quality of the garden. Users can toggle the soundscape on/off.
 
+9. **Garden Reflection Stats** — A gentle statistics panel or expanded journal section that shows the garden's overall health: total flowers bloomed, current season, time since last tending, a "garden mood" based on how well-tended it is. Not gamification — just a mirror held up to show the caretaker what they've nurtured. Purely additive to the journal, never replacing the organic feel.
+
+9. **Garden Reflection Stats** — A gentle statistics panel or expanded journal section that shows the garden's overall health: total flowers bloomed, current season, time since last tending, a "garden mood" based on how well-tended it is. Not gamification — just a mirror held up to show the caretaker what they've nurtured. Purely additive to the journal, never replacing the organic feel.
+
 ## Design Principles
 
 - Dark, nature-inspired palette with soft glows
