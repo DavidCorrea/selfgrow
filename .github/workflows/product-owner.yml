@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  issues: read
 
 jobs:
   refine-vision:
@@ -22,6 +23,11 @@ jobs:
 
       - name: Install dependencies
         run: npm install
+
+      - name: Fetch open issues
+        run: gh issue list --state open --json number,title,body,labels,createdAt --limit 20 > /tmp/open-issues.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run Product Owner agent
         run: node product-owner.mjs
