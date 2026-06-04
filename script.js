@@ -630,7 +630,7 @@
   const centerColors = ['#fbbf24', '#fde68a', '#fcd34d', '#f59e0b', '#eab308'];
 
   // Store tile colors for journal swatches
-  const tileColorMap = {};
+  let tileColorMap = {};
 
   // ── Growth Cycle State ──
   // Each planted tile tracks its cycle count and stage
