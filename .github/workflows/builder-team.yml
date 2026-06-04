@@ -4,9 +4,12 @@ on:
   schedule:
     - cron: '0 * * * *'
   workflow_dispatch:
+  issues:
+    types: [opened, reopened]
 
 permissions:
   contents: write
+  issues: write
 
 jobs:
   run-agent:
@@ -22,6 +25,11 @@ jobs:
 
       - name: Install dependencies
         run: npm install
+
+      - name: Fetch open issues
+        run: gh issue list --state open --json number,title,body,labels,createdAt --limit 20 > /tmp/open-issues.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run Builder Team agents
         run: node builder-team.mjs

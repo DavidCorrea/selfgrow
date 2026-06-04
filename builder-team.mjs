@@ -8,6 +8,7 @@ import {
 import { execSync } from "child_process";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
+import fs from "fs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MAX_SCOUT_RETRIES = 3;
@@ -91,11 +92,77 @@ function extractJSON(text) {
 }
 
 // ---------------------------------------------------------------------------
+// Issue helpers
+// ---------------------------------------------------------------------------
+
+function loadOpenIssues() {
+  try {
+    const raw = fs.readFileSync("/tmp/open-issues.json", "utf-8");
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+async function closeIssue(issueNumber, commitMessage) {
+  const comment = "Fixed in commit: " + commitMessage + "\n\nThis issue has been addressed by the Builder Team.";
+  try {
+    execSync(
+      'gh issue comment ' + issueNumber + ' --body "' + comment.replace(/"/g, '\\"') + '"',
+      { cwd: __dirname, maxBuffer: 10 * 1024 * 1024 }
+    );
+    execSync(
+      'gh issue close ' + issueNumber,
+      { cwd: __dirname, maxBuffer: 10 * 1024 * 1024 }
+    );
+    console.log("Closed issue #" + issueNumber);
+  } catch (e) {
+    console.log("Could not close issue #" + issueNumber + ":", (e.message || "").slice(0, 200));
+  }
+}
+
+async function labelIssue(issueNumber, label) {
+  try {
+    execSync(
+      'gh issue edit ' + issueNumber + ' --add-label "' + label + '"',
+      { cwd: __dirname, maxBuffer: 10 * 1024 * 1024 }
+    );
+    console.log("Labeled issue #" + issueNumber + " as \"" + label + "\"");
+  } catch (e) {
+    console.log("Could not label issue #" + issueNumber + ":", (e.message || "").slice(0, 200));
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Agent prompts
 // ---------------------------------------------------------------------------
 
-function buildScoutPrompt(feedback) {
-  let prompt =
+function buildScoutPrompt(feedback, openIssues) {
+  const hasIssues = openIssues && openIssues.length > 0;
+
+  let prompt = "";
+
+  if (hasIssues) {
+    prompt +=
+`You are the SCOUT agent. There are open GitHub issues that need attention. Your PRIMARY job is to evaluate and propose fixes for reported issues before suggesting new features.
+
+## Open GitHub Issues
+${JSON.stringify(openIssues, null, 2)}
+
+## Your Task
+1. Read the open issues above carefully.
+2. For each issue, determine: Is this a real bug? Can it be fixed? Is it already fixed?
+3. Pick the MOST IMPORTANT fixable issue and propose a fix.
+4. If NO issues are fixable (all invalid, already fixed, or out of scope), then fall back to proposing a new feature.
+
+## Context Gathering
+1. Read index.html, styles.css, script.js — see what is on the page.
+2. Read CHANGELOG.md — see what has been added before.
+3. Read VISION.md if it exists — understand the app direction.
+4. Run \`git log --oneline -20\` for commit history.
+`;
+  } else {
+    prompt +=
 `You are the SCOUT agent. Explore the current state of the project and propose ONE new feature or content addition.
 
 ## Context Gathering (Do This First)
@@ -104,12 +171,34 @@ function buildScoutPrompt(feedback) {
 3. Read VISION.md if it exists — understand the app direction.
 4. Run \`git log --oneline -20\` for commit history.
 `;
+  }
 
   if (feedback) {
     prompt += "\n## Feedback From Validator (Previous Attempt Was Rejected)\n" + feedback + "\n";
   }
 
-  prompt +=
+  if (hasIssues) {
+    prompt +=
+`
+## Guidelines
+- Keep the fix SELF-CONTAINED. No external services, APIs, or third-party integrations.
+- If fixing an issue, reference which issue number you are addressing.
+- CLEANUP IS VALID: If the page has gotten messy or has orphaned/broken elements, you may propose a cleanup.
+
+## Your Output
+Respond with ONLY a valid JSON object:
+
+{
+  "appConcept": "If VISION.md exists paste its one-sentence concept here. If not, invent a one-sentence concept.",
+  "suggestion": "One concise sentence describing what to fix or add.",
+  "details": "A short paragraph explaining what to build and why.",
+  "files": ["index.html", "styles.css"],
+  "issueNumber": <number or null>,
+  "issueAction": "fix, close-invalid, or null"
+}
+`;
+  } else {
+    prompt +=
 `
 ## Guidelines
 - Keep the feature SELF-CONTAINED. No external services, APIs, or third-party integrations.
@@ -124,9 +213,12 @@ Respond with ONLY a valid JSON object:
   "appConcept": "If VISION.md exists paste its one-sentence concept here. If not, invent a one-sentence concept.",
   "suggestion": "One concise sentence describing what to add.",
   "details": "A short paragraph explaining what to build and why.",
-  "files": ["index.html", "styles.css"]
+  "files": ["index.html", "styles.css"],
+  "issueNumber": null,
+  "issueAction": null
 }
 `;
+  }
 
   return prompt;
 }
@@ -145,6 +237,7 @@ function buildValidatorPrompt(scoutOutput) {
 - REJECT if the exact idea already exists.
 - REJECT if the appConcept is incoherent or empty.
 - REJECT if the proposal requires external services or APIs.
+- REJECT if the issueAction is "close-invalid" — invalid issues should just be labeled, not built.
 - APPROVE otherwise — be loose and permissive.
 
 ## SCOUT OUTPUT
@@ -197,7 +290,7 @@ ${validatorOutput}
 After implementing, respond with ONLY a valid JSON object:
 
 {
-  "commitMessage": "Short descriptive commit message (imperative mood, e.g. 'Add habit tracker with localStorage')",
+  "commitMessage": "Short descriptive commit message (imperative mood, e.g. 'Fix tile animation stutter on mobile')",
   "summary": "One sentence describing what was built and any issues fixed."
 }
 `;
@@ -246,8 +339,18 @@ If everything is good:
 // ---------------------------------------------------------------------------
 
 async function main() {
+  const openIssues = await loadOpenIssues();
+  const hasIssues = openIssues.length > 0;
+
+  if (hasIssues) {
+    console.log("Found " + openIssues.length + " open issue(s). Prioritizing fixes.");
+  } else {
+    console.log("No open issues. Proceeding with feature exploration.");
+  }
+
   let approved = false;
   let feedback = null;
+  let addressedIssue = null;
 
   for (let attempt = 1; attempt <= MAX_SCOUT_RETRIES; attempt++) {
     console.log("\n--- Scout Attempt " + attempt + " ---");
@@ -255,7 +358,7 @@ async function main() {
     // 1. Scout
     const scoutOutput = await runAgent({
       label: "Scout",
-      systemPrompt: buildScoutPrompt(feedback),
+      systemPrompt: buildScoutPrompt(feedback, openIssues),
       tools: ["read", "bash"],
     });
     const scoutJSON = extractJSON(scoutOutput);
@@ -263,6 +366,33 @@ async function main() {
       console.log("Scout output failed to parse, retrying...");
       feedback = "Output was not valid JSON. Respond with valid JSON only.";
       continue;
+    }
+
+    // If the Scout identified an invalid issue, label and skip
+    if (scoutJSON.issueAction === "close-invalid" && scoutJSON.issueNumber) {
+      console.log("Scout: issue #" + scoutJSON.issueNumber + " is invalid/out of scope.");
+      await labelIssue(scoutJSON.issueNumber, "invalid");
+      const comment = "Reviewed by the Builder Team — this issue is not actionable or is out of scope for the current vision of the project.";
+      try {
+        execSync(
+          'gh issue comment ' + scoutJSON.issueNumber + ' --body "' + comment + '"',
+          { cwd: __dirname, maxBuffer: 10 * 1024 * 1024 }
+        );
+        execSync(
+          'gh issue close ' + scoutJSON.issueNumber,
+          { cwd: __dirname, maxBuffer: 10 * 1024 * 1024 }
+        );
+        console.log("Closed issue #" + scoutJSON.issueNumber + " as invalid.");
+      } catch (e) {
+        console.log("Could not close issue:", (e.message || "").slice(0, 200));
+      }
+      return;
+    }
+
+    // Track which issue we're addressing
+    if (scoutJSON.issueNumber) {
+      addressedIssue = scoutJSON.issueNumber;
+      console.log("Scout: addressing issue #" + addressedIssue);
     }
 
     // 2. Validator
@@ -316,7 +446,7 @@ async function main() {
 
       if (!reviewerJSON) {
         console.log("Reviewer output failed to parse, sending back to Builder...");
-        reviewerFeedback = "The Reviewer output could not be parsed. Check your work for obvious issues.";
+        reviewerFeedback = "The Reviewer output could not be parsed. Check your your work for obvious issues.";
         continue;
       }
 
@@ -341,7 +471,7 @@ async function main() {
         execSync(
           'git config user.name "github-actions[bot]" && ' +
           'git config user.email "github-actions[bot]@users.noreply.github.com" && ' +
-          'git add -A && git commit -m "' + commitMessage + '" && git push',
+          'git add -A && git commit -m "' + commitMessage.replace(/"/g, '\\"') + '" && git push',
           { cwd: __dirname, maxBuffer: 10 * 1024 * 1024 }
         );
         console.log("Committed and pushed: " + commitMessage);
@@ -355,6 +485,11 @@ async function main() {
       }
     } catch (e) {
       console.log("Commit/push issue:", (e.message || "").slice(0, 200));
+    }
+
+    // Close the addressed issue
+    if (addressedIssue) {
+      await closeIssue(addressedIssue, commitMessage);
     }
 
     console.log("\nPipeline complete.");
