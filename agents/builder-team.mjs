@@ -16,6 +16,20 @@ const MAX_SCOUT_RETRIES = 3;
 const MAX_BUILDER_RETRIES = 3;
 
 // ---------------------------------------------------------------------------
+// Shared constraints (used by all agents)
+// ---------------------------------------------------------------------------
+
+const SHARED_CONSTRAINTS = [
+  "Self-contained only — no external services, APIs, or third-party integrations.",
+  "Use fake/hardcoded data where needed.",
+  "Responsive: relative units (rem, em, %, vw/vh) and media queries. Test mentally at 375px, 768px, 1200px+.",
+  "Accessible: keyboard navigable, ARIA labels, reduced-motion support.",
+  "CSS-only animations where possible (GPU-friendly).",
+  "Dark, nature-inspired palette with soft glows.",
+  "Every feature must feel organic — nothing jarring or mechanical.",
+].join("\n");
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -145,32 +159,18 @@ function buildScoutPrompt(feedback, openIssues) {
 
   if (hasIssues) {
     prompt +=
-`You are the SCOUT agent. There are open GitHub issues that need attention. Your PRIMARY job is to evaluate and propose fixes for reported issues before suggesting new features.
+`You are the SCOUT. Your job is to assess the project and propose ONE change.
+
+There are open GitHub issues that need attention. Evaluate them first — a real, fixable bug takes priority over new features. But you may also propose a new feature, a refactor, or a cleanup if no issue is actionable.
 
 ## Open GitHub Issues
 ${JSON.stringify(openIssues, null, 2)}
-
-## Your Task
-1. Read the open issues above carefully.
-2. For each issue, determine: Is this a real bug? Can it be fixed? Is it already fixed?
-3. Pick the MOST IMPORTANT fixable issue and propose a fix.
-4. If NO issues are fixable (all invalid, already fixed, or out of scope), then fall back to proposing a new feature.
-
-## Context Gathering
-1. Read docs/index.html, docs/styles.css, docs/script.js — see what is on the page.
-2. Read docs/CHANGELOG.md — see what has been added before.
-3. Read docs/VISION.md if it exists — understand the app direction.
-4. Run \`git log --oneline -20\` for commit history.
 `;
   } else {
     prompt +=
-`You are the SCOUT agent. Explore the current state of the project and propose ONE new feature or content addition.
+`You are the SCOUT. Your job is to assess the project and propose ONE change.
 
-## Context Gathering (Do This First)
-1. Read docs/index.html, docs/styles.css, docs/script.js — see what is on the page.
-2. Read docs/CHANGELOG.md — see what has been added before.
-3. Read docs/VISION.md if it exists — understand the app direction.
-4. Run \`git log --oneline -20\` for commit history.
+Explore the codebase, changelog, and vision to understand where things stand. Then propose something that moves the project forward — a new feature, a refactor, a cleanup, or a content addition.
 `;
   }
 
@@ -178,61 +178,36 @@ ${JSON.stringify(openIssues, null, 2)}
     prompt += "\n## Feedback From Validator (Previous Attempt Was Rejected)\n" + feedback + "\n";
   }
 
-  if (hasIssues) {
-    prompt +=
+  prompt +=
 `
-## Guidelines
-- Keep the fix SELF-CONTAINED. No external services, APIs, or third-party integrations.
+## Constraints
+${SHARED_CONSTRAINTS}
 - If fixing an issue, reference which issue number you are addressing.
-- CLEANUP IS VALID: If the page has gotten messy or has orphaned/broken elements, you may propose a cleanup.
+- Refactors are valid: if code has gotten messy, duplicated, or hard to follow, propose cleaning it up.
+- Cleanup is valid: orphaned elements, dead code, or visual inconsistencies from previous runs are fair game.
 
-## Your Output
+## Output
+
 Respond with ONLY a valid JSON object:
 
 {
   "appConcept": "If VISION.md exists paste its one-sentence concept here. If not, invent a one-sentence concept.",
-  "suggestion": "One concise sentence describing what to fix or add.",
+  "suggestion": "One concise sentence describing the change.",
   "details": "A short paragraph explaining what to build and why.",
   "files": ["docs/index.html", "docs/styles.css"],
   "issueNumber": <number or null>,
   "issueAction": "fix, close-invalid, or null"
 }
 `;
-  } else {
-    prompt +=
-`
-## Guidelines
-- Keep the feature SELF-CONTAINED. No external services, APIs, or third-party integrations.
-- Use fake/hardcoded data if needed — that is perfectly fine.
-- Be creative: quotes, animations, interactive elements, visual components, micro-games, etc.
-- CLEANUP IS VALID: If the page has gotten messy or has orphaned/broken elements from previous runs, you may propose a cleanup feature.
-
-## Your Output
-Respond with ONLY a valid JSON object:
-
-{
-  "appConcept": "If VISION.md exists paste its one-sentence concept here. If not, invent a one-sentence concept.",
-  "suggestion": "One concise sentence describing what to add.",
-  "details": "A short paragraph explaining what to build and why.",
-  "files": ["docs/index.html", "docs/styles.css"],
-  "issueNumber": null,
-  "issueAction": null
-}
-`;
-  }
 
   return prompt;
 }
 
 function buildValidatorPrompt(scoutOutput) {
   return (
-`You are the VALIDATOR agent. Review the Scout's proposal below.
+`You are the VALIDATOR. Review the Scout's proposal below.
 
-## Steps
-1. Review the SCOUT OUTPUT below.
-2. Read docs/index.html, docs/styles.css, docs/script.js — check if this already exists.
-3. Read docs/CHANGELOG.md — check if this was done before.
-4. Read docs/VISION.md if it exists — check alignment.
+Assess whether the proposal is novel, feasible, and aligned with the project. Check the codebase and changelog to verify it doesn't already exist or contradict the vision.
 
 ## Decision Criteria
 - REJECT if the exact idea already exists.
@@ -244,7 +219,8 @@ function buildValidatorPrompt(scoutOutput) {
 ## SCOUT OUTPUT
 ${scoutOutput}
 
-## Your Output
+## Output
+
 Respond with ONLY a valid JSON object:
 
 {
@@ -258,21 +234,16 @@ Respond with ONLY a valid JSON object:
 
 function buildBuilderPrompt(validatorOutput, reviewerFeedback, issueNumber, issueTitle) {
   const issueContext = issueNumber
-    ? `## Issue Context\nYou are fixing issue #${issueNumber}: "${issueTitle}". Your commit message MUST reference this issue (e.g., "Fix layout overflow on mobile (closes #${issueNumber})").\n`
+    ? `You are fixing issue #${issueNumber}: "${issueTitle}". Your commit message MUST reference this issue (e.g., "Fix layout overflow on mobile (closes #${issueNumber})").\n`
     : "";
 
   let prompt =
-`You are the BUILDER agent. Implement the approved feature described in the Validator output below.
+`You are the BUILDER. Implement the approved proposal described in the Validator output below.
 
-## Steps
-1. Read the VALIDATOR OUTPUT below — it contains the Scout's full proposal.
-2. Read the files you need to modify.
-3. Implement the feature. Self-contained, lightweight, no external dependencies.
-   - MUST be responsive: use relative units (rem, em, %, vw/vh) and media queries. Test mentally at 375px, 768px, 1200px+.
-   - Use fake/hardcoded data if needed.
-4. Update docs/CHANGELOG.md — append: "## <date>\\n<what you added and why>"
-5. If the Scout proposed a new appConcept and docs/VISION.md does not exist, create docs/VISION.md.
-6. Do NOT commit or push — the pipeline handles that.
+Read the proposal, explore the files you need to modify, and implement the change. Keep it self-contained, lightweight, and well-organized.
+
+## Constraints
+${SHARED_CONSTRAINTS}
 
 ## Code Organization
 - docs/script.js is the main entry point. It can import from other files (e.g. \`import { initTheme } from './js/theme.js'\`).
@@ -280,6 +251,11 @@ function buildBuilderPrompt(validatorOutput, reviewerFeedback, issueNumber, issu
 - You MAY also split docs/styles.css into separate files under docs/css/ (e.g. docs/css/tiles.css, docs/css/visitors.css, docs/css/soundscape.css, etc.) and add corresponding \`<link>\` tags in index.html.
 - If you split code into modules, remember to add \`<script type="module">\` tags or keep imports in script.js.
 - Keep it simple — only split if it genuinely improves clarity.
+
+## After Implementing
+- Update docs/CHANGELOG.md — append a new entry with today's date and what you added.
+- If the Scout proposed a new appConcept and docs/VISION.md does not exist, create docs/VISION.md.
+- Do NOT commit or push — the pipeline handles that.
 ${issueContext}`;
 
   if (reviewerFeedback) {
@@ -298,7 +274,8 @@ Fix ALL issues above. You may edit any file. Do not introduce new issues.
 ## VALIDATOR OUTPUT
 ${validatorOutput}
 
-## Your Output
+## Output
+
 After implementing, respond with ONLY a valid JSON object:
 
 {
@@ -312,24 +289,12 @@ After implementing, respond with ONLY a valid JSON object:
 
 function buildReviewerPrompt() {
   return (
-`You are the REVIEWER agent. Review the ENTIRE page for quality — not just the latest change. Previous runs may have left broken code; catch it all.
+`You are the REVIEWER. Review the entire page for quality — not just the latest change. Previous runs may have left broken code; catch it all.
 
-## Steps
-1. Read docs/index.html — valid HTML, unclosed tags, viewport meta, no orphaned elements. Check that all \`<link>\` and \`<script>\` tags point to existing files.
-2. Read docs/styles.css and any docs/css/*.css files — balanced braces, responsive design, no dead code.
-3. Read docs/script.js and any docs/js/*.js files — no syntax errors, no external API references, no unused code, imports/exports are consistent.
-4. Run \`node --check docs/script.js\` to verify JS syntax (note: ES module syntax may require --experimental-vm-modules; skip if it's a browser-only module).
-5. Read docs/CHANGELOG.md — verify a recent entry exists.
-6. Read docs/VISION.md if it exists — check page aligns with concept.
+Read through the HTML, CSS, JS, changelog, and vision. Check for broken markup, syntax errors, dead code, missing responsive patterns, external API references, and drift from the project's vision. Verify the changelog has a recent entry.
 
-## What to Look For
-- Broken HTML (unclosed tags, orphaned elements from previous runs)
-- CSS syntax errors, missing responsive patterns, dead code
-- JS syntax errors, external API references, unused code
-- Missing CHANGELOG update
-- Content that drifts from VISION.md
+## Output
 
-## Your Output
 Respond with ONLY a valid JSON object:
 
 {
