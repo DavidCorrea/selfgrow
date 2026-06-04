@@ -7,10 +7,11 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { execSync } from "child_process";
 import { fileURLToPath } from "url";
-import { dirname } from "path";
+import { dirname, join } from "path";
 import fs from "fs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const repoRoot = join(__dirname, "..");
 const MAX_SCOUT_RETRIES = 3;
 const MAX_BUILDER_RETRIES = 3;
 
@@ -28,7 +29,7 @@ function runAgent({ label, systemPrompt, tools }) {
   const loader = new DefaultResourceLoader({ cwd: __dirname, agentDir: __dirname });
   return loader.reload().then(() =>
     createAgentSession({
-      cwd: __dirname,
+      cwd: repoRoot,
       sessionManager: SessionManager.inMemory(),
       resourceLoader: loader,
       model,
@@ -109,11 +110,11 @@ async function closeIssue(issueNumber, commitMessage) {
   try {
     execSync(
       'gh issue comment ' + issueNumber + ' --body "' + comment.replace(/"/g, '\\"') + '"',
-      { cwd: __dirname, maxBuffer: 10 * 1024 * 1024 }
+      { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }
     );
     execSync(
       'gh issue close ' + issueNumber,
-      { cwd: __dirname, maxBuffer: 10 * 1024 * 1024 }
+      { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }
     );
     console.log("Closed issue #" + issueNumber);
   } catch (e) {
@@ -125,7 +126,7 @@ async function labelIssue(issueNumber, label) {
   try {
     execSync(
       'gh issue edit ' + issueNumber + ' --add-label "' + label + '"',
-      { cwd: __dirname, maxBuffer: 10 * 1024 * 1024 }
+      { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }
     );
     console.log("Labeled issue #" + issueNumber + " as \"" + label + "\"");
   } catch (e) {
@@ -156,9 +157,9 @@ ${JSON.stringify(openIssues, null, 2)}
 4. If NO issues are fixable (all invalid, already fixed, or out of scope), then fall back to proposing a new feature.
 
 ## Context Gathering
-1. Read index.html, styles.css, script.js — see what is on the page.
-2. Read CHANGELOG.md — see what has been added before.
-3. Read VISION.md if it exists — understand the app direction.
+1. Read docs/index.html, docs/styles.css, docs/script.js — see what is on the page.
+2. Read docs/CHANGELOG.md — see what has been added before.
+3. Read docs/VISION.md if it exists — understand the app direction.
 4. Run \`git log --oneline -20\` for commit history.
 `;
   } else {
@@ -166,9 +167,9 @@ ${JSON.stringify(openIssues, null, 2)}
 `You are the SCOUT agent. Explore the current state of the project and propose ONE new feature or content addition.
 
 ## Context Gathering (Do This First)
-1. Read index.html, styles.css, script.js — see what is on the page.
-2. Read CHANGELOG.md — see what has been added before.
-3. Read VISION.md if it exists — understand the app direction.
+1. Read docs/index.html, docs/styles.css, docs/script.js — see what is on the page.
+2. Read docs/CHANGELOG.md — see what has been added before.
+3. Read docs/VISION.md if it exists — understand the app direction.
 4. Run \`git log --oneline -20\` for commit history.
 `;
   }
@@ -192,7 +193,7 @@ Respond with ONLY a valid JSON object:
   "appConcept": "If VISION.md exists paste its one-sentence concept here. If not, invent a one-sentence concept.",
   "suggestion": "One concise sentence describing what to fix or add.",
   "details": "A short paragraph explaining what to build and why.",
-  "files": ["index.html", "styles.css"],
+  "files": ["docs/index.html", "docs/styles.css"],
   "issueNumber": <number or null>,
   "issueAction": "fix, close-invalid, or null"
 }
@@ -213,7 +214,7 @@ Respond with ONLY a valid JSON object:
   "appConcept": "If VISION.md exists paste its one-sentence concept here. If not, invent a one-sentence concept.",
   "suggestion": "One concise sentence describing what to add.",
   "details": "A short paragraph explaining what to build and why.",
-  "files": ["index.html", "styles.css"],
+  "files": ["docs/index.html", "docs/styles.css"],
   "issueNumber": null,
   "issueAction": null
 }
@@ -229,9 +230,9 @@ function buildValidatorPrompt(scoutOutput) {
 
 ## Steps
 1. Review the SCOUT OUTPUT below.
-2. Read index.html, styles.css, script.js — check if this already exists.
-3. Read CHANGELOG.md — check if this was done before.
-4. Read VISION.md if it exists — check alignment.
+2. Read docs/index.html, docs/styles.css, docs/script.js — check if this already exists.
+3. Read docs/CHANGELOG.md — check if this was done before.
+4. Read docs/VISION.md if it exists — check alignment.
 
 ## Decision Criteria
 - REJECT if the exact idea already exists.
@@ -255,7 +256,11 @@ Respond with ONLY a valid JSON object:
   );
 }
 
-function buildBuilderPrompt(validatorOutput, reviewerFeedback) {
+function buildBuilderPrompt(validatorOutput, reviewerFeedback, issueNumber, issueTitle) {
+  const issueContext = issueNumber
+    ? `## Issue Context\nYou are fixing issue #${issueNumber}: "${issueTitle}". Your commit message MUST reference this issue (e.g., "Fix layout overflow on mobile (closes #${issueNumber})").\n`
+    : "";
+
   let prompt =
 `You are the BUILDER agent. Implement the approved feature described in the Validator output below.
 
@@ -265,10 +270,17 @@ function buildBuilderPrompt(validatorOutput, reviewerFeedback) {
 3. Implement the feature. Self-contained, lightweight, no external dependencies.
    - MUST be responsive: use relative units (rem, em, %, vw/vh) and media queries. Test mentally at 375px, 768px, 1200px+.
    - Use fake/hardcoded data if needed.
-4. Update CHANGELOG.md — append: "## <date>\\n<what you added and why>"
-5. If the Scout proposed a new appConcept and VISION.md does not exist, create VISION.md.
+4. Update docs/CHANGELOG.md — append: "## <date>\\n<what you added and why>"
+5. If the Scout proposed a new appConcept and docs/VISION.md does not exist, create docs/VISION.md.
 6. Do NOT commit or push — the pipeline handles that.
-`;
+
+## Code Organization
+- docs/script.js is the main entry point. It can import from other files (e.g. \`import { initTheme } from './js/theme.js'\`).
+- You MAY create new files under docs/js/ to keep code organized (e.g. docs/js/tiles.js, docs/js/visitors.js, docs/js/soundscape.js, etc.).
+- You MAY also split docs/styles.css into separate files under docs/css/ (e.g. docs/css/tiles.css, docs/css/visitors.css, docs/css/soundscape.css, etc.) and add corresponding \`<link>\` tags in index.html.
+- If you split code into modules, remember to add \`<script type="module">\` tags or keep imports in script.js.
+- Keep it simple — only split if it genuinely improves clarity.
+${issueContext}`;
 
   if (reviewerFeedback) {
     prompt +=
@@ -290,7 +302,7 @@ ${validatorOutput}
 After implementing, respond with ONLY a valid JSON object:
 
 {
-  "commitMessage": "Short descriptive commit message (imperative mood, e.g. 'Fix tile animation stutter on mobile')",
+  "commitMessage": "Short descriptive commit message (imperative mood, e.g. 'Fix tile animation stutter on mobile' or 'Fix layout overflow on mobile (closes #3)')",
   "summary": "One sentence describing what was built and any issues fixed."
 }
 `;
@@ -303,12 +315,12 @@ function buildReviewerPrompt() {
 `You are the REVIEWER agent. Review the ENTIRE page for quality — not just the latest change. Previous runs may have left broken code; catch it all.
 
 ## Steps
-1. Read index.html — valid HTML, unclosed tags, viewport meta, no orphaned elements.
-2. Read styles.css — balanced braces, responsive design, no dead code.
-3. Read script.js — no syntax errors, no external API references, no unused code.
-4. Run \`node --check script.js\` to verify JS syntax.
-5. Read CHANGELOG.md — verify a recent entry exists.
-6. Read VISION.md if it exists — check page aligns with concept.
+1. Read docs/index.html — valid HTML, unclosed tags, viewport meta, no orphaned elements. Check that all \`<link>\` and \`<script>\` tags point to existing files.
+2. Read docs/styles.css and any docs/css/*.css files — balanced braces, responsive design, no dead code.
+3. Read docs/script.js and any docs/js/*.js files — no syntax errors, no external API references, no unused code, imports/exports are consistent.
+4. Run \`node --check docs/script.js\` to verify JS syntax (note: ES module syntax may require --experimental-vm-modules; skip if it's a browser-only module).
+5. Read docs/CHANGELOG.md — verify a recent entry exists.
+6. Read docs/VISION.md if it exists — check page aligns with concept.
 
 ## What to Look For
 - Broken HTML (unclosed tags, orphaned elements from previous runs)
@@ -351,6 +363,7 @@ async function main() {
   let approved = false;
   let feedback = null;
   let addressedIssue = null;
+  let addressedIssueTitle = null;
 
   for (let attempt = 1; attempt <= MAX_SCOUT_RETRIES; attempt++) {
     console.log("\n--- Scout Attempt " + attempt + " ---");
@@ -376,11 +389,11 @@ async function main() {
       try {
         execSync(
           'gh issue comment ' + scoutJSON.issueNumber + ' --body "' + comment + '"',
-          { cwd: __dirname, maxBuffer: 10 * 1024 * 1024 }
+          { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }
         );
         execSync(
           'gh issue close ' + scoutJSON.issueNumber,
-          { cwd: __dirname, maxBuffer: 10 * 1024 * 1024 }
+          { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }
         );
         console.log("Closed issue #" + scoutJSON.issueNumber + " as invalid.");
       } catch (e) {
@@ -392,7 +405,9 @@ async function main() {
     // Track which issue we're addressing
     if (scoutJSON.issueNumber) {
       addressedIssue = scoutJSON.issueNumber;
-      console.log("Scout: addressing issue #" + addressedIssue);
+      const issue = openIssues.find((i) => i.number === addressedIssue);
+      addressedIssueTitle = issue ? issue.title : "Unknown issue";
+      console.log("Scout: addressing issue #" + addressedIssue + " — " + addressedIssueTitle);
     }
 
     // 2. Validator
@@ -427,7 +442,7 @@ async function main() {
       // Build
       const builderOutput = await runAgent({
         label: "Builder",
-        systemPrompt: buildBuilderPrompt(validatorOutput, reviewerFeedback),
+        systemPrompt: buildBuilderPrompt(validatorOutput, reviewerFeedback, addressedIssue, addressedIssueTitle),
         tools: ["read", "bash", "edit", "write"],
       });
       const builderJSON = extractJSON(builderOutput);
@@ -466,18 +481,18 @@ async function main() {
 
     // Commit and push
     try {
-      const status = execSync("git status --porcelain", { cwd: __dirname }).toString().trim();
+      const status = execSync("git status --porcelain", { cwd: repoRoot }).toString().trim();
       if (status) {
         execSync(
           'git config user.name "github-actions[bot]" && ' +
           'git config user.email "github-actions[bot]@users.noreply.github.com" && ' +
           'git add -A && git commit -m "' + commitMessage.replace(/"/g, '\\"') + '" && git push',
-          { cwd: __dirname, maxBuffer: 10 * 1024 * 1024 }
+          { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }
         );
         console.log("Committed and pushed: " + commitMessage);
       } else {
         try {
-          execSync("git push", { cwd: __dirname, maxBuffer: 10 * 1024 * 1024 });
+          execSync("git push", { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 });
           console.log("Pushed existing commit.");
         } catch {
           console.log("Nothing to push.");

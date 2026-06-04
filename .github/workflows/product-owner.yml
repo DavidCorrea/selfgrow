@@ -30,6 +30,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run Product Owner agent
-        run: node product-owner.mjs
+        run: node agents/product-owner.mjs
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}

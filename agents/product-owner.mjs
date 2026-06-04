@@ -7,10 +7,11 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { execSync } from "child_process";
 import { fileURLToPath } from "url";
-import { dirname } from "path";
+import { dirname, join } from "path";
 import fs from "fs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const repoRoot = join(__dirname, "..");
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -26,7 +27,7 @@ function runAgent({ systemPrompt }) {
   const loader = new DefaultResourceLoader({ cwd: __dirname, agentDir: __dirname });
   return loader.reload().then(() =>
     createAgentSession({
-      cwd: __dirname,
+      cwd: repoRoot,
       sessionManager: SessionManager.inMemory(),
       resourceLoader: loader,
       model,
@@ -85,9 +86,9 @@ function buildProductOwnerPrompt() {
     "",
     "## Context Gathering (Do This First)",
     "",
-    "1. Read `VISION.md` — the current vision.",
-    "2. Read `CHANGELOG.md` — what has been built so far.",
-    "3. Read `index.html`, `styles.css`, `script.js` — see what is actually on the page.",
+    "1. Read `docs/VISION.md` — the current vision.",
+    "2. Read `docs/CHANGELOG.md` — what has been built so far.",
+    "3. Read `docs/index.html`, `docs/styles.css`, `docs/script.js` — see what is actually on the page. If there are files in `docs/js/` or `docs/css/`, skim them to understand the full codebase structure.",
     "4. Read `/tmp/open-issues.json` — open GitHub issues filed by users (may not exist if no issues).",
     "",
     "## Rules for Refinement",
@@ -187,7 +188,7 @@ function applyRefinement(parsed) {
     return { changed: false };
   }
 
-  const visionPath = __dirname + "/VISION.md";
+  const visionPath = repoRoot + "/docs/VISION.md";
   const current = fs.readFileSync(visionPath, "utf-8");
 
   if (action === "append") {
@@ -258,7 +259,7 @@ async function main() {
 
   // Show what changed
   try {
-    const diff = execSync("git diff VISION.md", { cwd: __dirname }).toString();
+    const diff = execSync("git diff docs/VISION.md", { cwd: repoRoot }).toString();
     console.log("\nDiff:\n" + diff);
   } catch {
     // ignore diff errors
@@ -270,10 +271,10 @@ async function main() {
     execSync(
       'git config user.name "github-actions[bot]" && ' +
       'git config user.email "github-actions[bot]@users.noreply.github.com" && ' +
-      'git add VISION.md && ' +
+      'git add docs/VISION.md && ' +
       'git commit -m "' + commitMessage.replace(/"/g, '\\"') + '" && ' +
       'git push',
-      { cwd: __dirname, maxBuffer: 10 * 1024 * 1024 }
+      { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }
     );
     console.log("Committed and pushed: " + commitMessage);
   } catch (e) {
