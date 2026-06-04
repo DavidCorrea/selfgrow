@@ -4,6 +4,10 @@ History of changes made by the hourly agent.
 
 ## 2026-06-04
 
+- **Added ambient soundscape using Web Audio API**: Implemented step 8 of the VISION.md roadmap. A procedurally generated ambient soundscape that creates gentle nature sounds — sine wave drones for breeze/wind, short random chirp envelopes for birdsong, soft filtered noise bursts for water droplets, and cricket-like clicks at night. The audio character shifts with the existing time-of-day themes: dawn gets gentle bird chirps, day gets brighter ambient tones, dusk gets warmer lower tones, and night gets deep sparse sounds with occasional cricket clicks. Added a mute/unmute toggle button (fixed position, bottom-right) with 🔇/🔊 icons, aria-label, and visual pulse animation when active. The soundscape uses only the browser's built-in Web Audio API — zero external dependencies. All sounds are procedurally generated with no audio files. Fade-in/fade-out transitions for smooth start/stop. Enhances the 'calm & intentional' core philosophy and deepens the meditative quality of the garden experience.
+
+## 2026-06-04
+
 - **Added animated garden visitors (butterflies, bees, fireflies)**: Introduced a garden visitors system where CSS-animated butterflies and bees periodically flutter across the garden, attracted to blooming flowers. Visitors are pure CSS/JS creations — butterflies have wing-flap keyframes in pink, blue, purple, and orange variants; bees have striped bodies with fast wing-flap and bobbing animations. Clicking a visitor triggers a scatter animation. The number of visitors scales with planted tiles (more flowers = more frequent spawns). At night theme, butterflies and bees are replaced by glowing fireflies with soft pulsing light and trail particles. Fully self-contained with CSS animations and JS timing logic — no external dependencies. Enhances the 'living ecosystem' feel of the garden.
 
 ## 2026-06-03 (Fix)
