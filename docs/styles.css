@@ -1,18 +1,26 @@
+/* ═══════════════════════════════════════════════════════════
+   selfgrow — App Shell Styles
+   Contained viewport dashboard layout
+   ═══════════════════════════════════════════════════════════ */
+
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
 
+/* ─── CSS Custom Properties ─── */
 :root {
-  --bg-deep: #0a0e17;
-  --bg-mid: #111827;
-  --card-bg: rgba(17, 24, 39, 0.85);
-  --card-border: rgba(74, 222, 128, 0.15);
-  --glow: rgba(74, 222, 128, 0.25);
+  --bg-deep: #080c14;
+  --bg-shell: #0b1019;
+  --bg-panel: #0f1724;
+  --bg-panel-alt: #111b2b;
+  --card-bg: rgba(15, 23, 36, 0.92);
+  --card-border: rgba(74, 222, 128, 0.12);
+  --glow: rgba(74, 222, 128, 0.15);
   --text-primary: #e2e8f0;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
+  --text-secondary: #8892a4;
+  --text-muted: #4f5b6e;
   --soil: #3d2b1f;
   --soil-light: #5c4033;
   --seed: #8b6914;
@@ -21,21 +29,34 @@
   --leaf: #16a34a;
   --petal: #f472b6;
   --center: #fbbf24;
+
+  /* Panel-specific tokens */
+  --journal-bg: #1a1612;
+  --journal-border: #3d3528;
+  --journal-text: #c4a882;
+  --stats-bg: #14181f;
+  --stats-border: #2a3040;
+  --toolbar-bg: rgba(15, 23, 36, 0.7);
+
+  /* Accent colors used sparingly */
+  --accent-warm: #d4a574;
+  --accent-blue: #60a5fa;
+  --accent-purple: #a78bfa;
+}
+
+/* ─── Body: Locked Viewport ─── */
+html, body {
+  height: 100%;
+  overflow: hidden;
 }
 
 body {
-  min-height: 100vh;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: flex-start;
-  background: linear-gradient(135deg, var(--bg-deep) 0%, var(--bg-mid) 50%, #0f172a 100%);
+  background: var(--bg-deep);
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
   color: var(--text-primary);
-  overflow-x: hidden;
-  overflow-y: auto;
   transition: background 1.5s ease, color 1.5s ease;
-  padding: 1.5rem 1rem;
 }
 
 /* Subtle background particles */
@@ -44,159 +65,128 @@ body::before {
   position: fixed;
   inset: 0;
   background:
-    radial-gradient(1px 1px at 20% 30%, rgba(74, 222, 128, 0.15), transparent),
-    radial-gradient(1px 1px at 80% 20%, rgba(74, 222, 128, 0.1), transparent),
-    radial-gradient(1px 1px at 60% 70%, rgba(74, 222, 128, 0.12), transparent),
-    radial-gradient(1px 1px at 40% 80%, rgba(74, 222, 128, 0.08), transparent),
-    radial-gradient(1px 1px at 90% 60%, rgba(74, 222, 128, 0.1), transparent),
-    radial-gradient(1px 1px at 10% 90%, rgba(74, 222, 128, 0.1), transparent);
+    radial-gradient(1px 1px at 20% 30%, rgba(74, 222, 128, 0.1), transparent),
+    radial-gradient(1px 1px at 80% 20%, rgba(74, 222, 128, 0.07), transparent),
+    radial-gradient(1px 1px at 60% 70%, rgba(74, 222, 128, 0.08), transparent),
+    radial-gradient(1px 1px at 40% 80%, rgba(74, 222, 128, 0.05), transparent),
+    radial-gradient(1px 1px at 90% 60%, rgba(74, 222, 128, 0.07), transparent),
+    radial-gradient(1px 1px at 10% 90%, rgba(74, 222, 128, 0.07), transparent);
   pointer-events: none;
   z-index: 0;
 }
 
-/* ── Layout Container ── */
-.container {
+/* ─── App Shell: Fixed Viewport Grid ─── */
+.app-shell {
   position: relative;
   z-index: 1;
-  width: 100%;
-  max-width: 32rem;
-  padding: 0;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  grid-template-columns: 1fr;
+  height: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  padding: 0.75rem;
+  gap: 0.5rem;
+}
+
+/* ─── Header Bar ─── */
+.app-header {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem 1rem 0.5rem;
+  flex-shrink: 0;
+  gap: 0.1rem;
 }
 
-/* Two-column top row: welcome card + garden grid side by side */
-.top-row {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-}
-
-/* Two-column bottom row: stats + journal side by side */
-.bottom-row {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-}
-
-/* ── Tablet breakpoint (768px+) ── */
-@media (min-width: 768px) {
-  body {
-    padding: 2rem 1.5rem;
-  }
-
-  .container {
-    max-width: 48rem;
-    padding: 0;
-    gap: 2rem;
-  }
-
-  .top-row {
-    gap: 2rem;
-  }
-
-  .bottom-row {
-    gap: 2rem;
-  }
-}
-
-/* ── Desktop breakpoint (1200px+) ── */
-@media (min-width: 1200px) {
-  body {
-    padding: 2.5rem 2rem;
-  }
-
-  .container {
-    max-width: 72rem;
-    gap: 2.5rem;
-  }
-
-  /* Top row: welcome card + garden grid side by side */
-  .top-row {
-    flex-direction: row;
-    align-items: flex-start;
-    gap: 2.5rem;
-  }
-
-  .top-row .card {
-    flex: 0 0 28rem;
-    max-width: 28rem;
-  }
-
-  .top-row .garden-grid-wrapper {
-    flex: 1 1 auto;
-    max-width: none;
-    margin-top: 0;
-  }
-
-  /* Bottom row: stats + journal side by side */
-  .bottom-row {
-    flex-direction: row;
-    align-items: flex-start;
-    gap: 2.5rem;
-  }
-
-  .bottom-row .garden-stats {
-    flex: 1 1 55%;
-    max-width: none;
-    margin-top: 0;
-  }
-
-  .bottom-row .garden-journal {
-    flex: 1 1 45%;
-    max-width: none;
-    margin-top: 0;
-  }
-}
-
-/* ── Welcome Card ── */
-.card {
-  background: var(--card-bg);
-  border: 1px solid var(--card-border);
-  border-radius: 1.5rem;
-  padding: 2.5rem 2rem;
-  text-align: center;
-  box-shadow:
-    0 0 3rem var(--glow),
-    0 0 6rem rgba(74, 222, 128, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(12px);
-  transition: box-shadow 0.5s ease;
-}
-
-.card.glow-intensify {
-  box-shadow:
-    0 0 4rem var(--glow),
-    0 0 8rem rgba(74, 222, 128, 0.15),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
-}
-
-.title {
-  font-size: clamp(2rem, 6vw, 3rem);
+.app-title {
+  font-size: clamp(1.25rem, 3vw, 1.75rem);
   font-weight: 700;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   background: linear-gradient(135deg, #4ade80, #22d3ee, #a78bfa);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  margin-bottom: 0.5rem;
+  line-height: 1.2;
 }
 
-.tagline {
-  font-size: clamp(0.85rem, 2.5vw, 1.1rem);
-  color: var(--text-secondary);
+.app-tagline {
+  font-size: clamp(0.6rem, 1.2vw, 0.75rem);
+  color: var(--text-muted);
   font-weight: 300;
-  letter-spacing: 0.08em;
-  margin-bottom: 2rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* ─── Main Stage: Grid Layout ─── */
+.app-stage {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: auto auto;
+  gap: 0.5rem;
+  min-height: 0; /* Critical: allows children to shrink */
+  overflow: hidden;
+}
+
+/* ─── Panels ─── */
+.panel {
+  min-height: 0; /* Critical for nested scrolling */
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Welcome Panel: the seed-bloom hero */
+.panel--welcome {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Grid Panel: the dominant focal point */
+.panel--grid {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Sidebar Panel: stats + journal stacked */
+.panel--sidebar {
+  gap: 0.5rem;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* ─── Welcome Card ─── */
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 1.5rem;
+  padding: 1rem 1.5rem;
+  text-align: center;
+  box-shadow:
+    0 0 2rem rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  transition: box-shadow 0.5s ease;
+  flex-shrink: 0;
+}
+
+.card.glow-intensify {
+  box-shadow:
+    0 0 3rem var(--glow),
+    0 0 6rem rgba(74, 222, 128, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 /* Garden area */
 .garden {
   position: relative;
-  width: 10rem;
-  height: 10rem;
-  margin: 0 auto 1.5rem;
+  width: 7rem;
+  height: 7rem;
+  margin: 0 auto 0.5rem;
   cursor: pointer;
   outline: none;
 }
@@ -208,11 +198,11 @@ body::before {
 
 .soil {
   position: absolute;
-  bottom: 1.5rem;
+  bottom: 1rem;
   left: 50%;
   transform: translateX(-50%);
-  width: 6rem;
-  height: 2.5rem;
+  width: 4.5rem;
+  height: 1.75rem;
   background: linear-gradient(180deg, var(--soil-light), var(--soil));
   border-radius: 50%;
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
@@ -221,11 +211,11 @@ body::before {
 /* Seed */
 .seed {
   position: absolute;
-  bottom: 2.8rem;
+  bottom: 2rem;
   left: 50%;
   transform: translateX(-50%) scale(0);
-  width: 0.75rem;
-  height: 1rem;
+  width: 0.55rem;
+  height: 0.75rem;
   background: linear-gradient(135deg, var(--seed-light), var(--seed));
   border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
   opacity: 0;
@@ -256,7 +246,7 @@ body::before {
 /* Sprout */
 .sprout {
   position: absolute;
-  bottom: 3rem;
+  bottom: 2.25rem;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -283,7 +273,7 @@ body::before {
 }
 
 .stem {
-  width: 0.2rem;
+  width: 0.15rem;
   height: 0;
   background: linear-gradient(180deg, var(--stem), var(--leaf));
   border-radius: 0.1rem;
@@ -297,7 +287,7 @@ body::before {
 
 @keyframes stemGrow {
   0% { height: 0; }
-  100% { height: 3rem; }
+  100% { height: 2.25rem; }
 }
 
 /* Leaves */
@@ -309,15 +299,15 @@ body::before {
 }
 
 .leaf--left {
-  left: -0.1rem;
-  bottom: 1.5rem;
+  left: -0.08rem;
+  bottom: 1rem;
   background: var(--leaf);
   border-radius: 0 50% 50% 50%;
 }
 
 .leaf--right {
-  right: -0.1rem;
-  bottom: 2rem;
+  right: -0.08rem;
+  bottom: 1.4rem;
   background: var(--leaf);
   border-radius: 50% 0 50% 50%;
 }
@@ -339,8 +329,8 @@ body::before {
     opacity: 0;
   }
   100% {
-    width: 1.2rem;
-    height: 0.8rem;
+    width: 0.9rem;
+    height: 0.6rem;
     opacity: 1;
   }
 }
@@ -352,8 +342,8 @@ body::before {
     opacity: 0;
   }
   100% {
-    width: 1rem;
-    height: 0.7rem;
+    width: 0.75rem;
+    height: 0.55rem;
     opacity: 1;
   }
 }
@@ -364,7 +354,7 @@ body::before {
   width: 0;
   height: 0;
   opacity: 0;
-  margin-bottom: 0.2rem;
+  margin-bottom: 0.15rem;
 }
 
 .sprout.growing .flower {
@@ -380,8 +370,8 @@ body::before {
     transform: scale(0) rotate(0deg);
   }
   100% {
-    width: 2.5rem;
-    height: 2.5rem;
+    width: 1.75rem;
+    height: 1.75rem;
     opacity: 1;
     transform: scale(1) rotate(360deg);
   }
@@ -389,8 +379,8 @@ body::before {
 
 .petal {
   position: absolute;
-  width: 0.8rem;
-  height: 0.8rem;
+  width: 0.55rem;
+  height: 0.55rem;
   background: var(--petal);
   border-radius: 50% 0 50% 50%;
   top: 50%;
@@ -399,20 +389,20 @@ body::before {
   opacity: 0.9;
 }
 
-.petal--1 { transform: translate(-50%, -50%) rotate(0deg) translateY(-0.7rem); }
-.petal--2 { transform: translate(-50%, -50%) rotate(60deg) translateY(-0.7rem); }
-.petal--3 { transform: translate(-50%, -50%) rotate(120deg) translateY(-0.7rem); }
-.petal--4 { transform: translate(-50%, -50%) rotate(180deg) translateY(-0.7rem); }
-.petal--5 { transform: translate(-50%, -50%) rotate(240deg) translateY(-0.7rem); }
-.petal--6 { transform: translate(-50%, -50%) rotate(300deg) translateY(-0.7rem); }
+.petal--1 { transform: translate(-50%, -50%) rotate(0deg) translateY(-0.5rem); }
+.petal--2 { transform: translate(-50%, -50%) rotate(60deg) translateY(-0.5rem); }
+.petal--3 { transform: translate(-50%, -50%) rotate(120deg) translateY(-0.5rem); }
+.petal--4 { transform: translate(-50%, -50%) rotate(180deg) translateY(-0.5rem); }
+.petal--5 { transform: translate(-50%, -50%) rotate(240deg) translateY(-0.5rem); }
+.petal--6 { transform: translate(-50%, -50%) rotate(300deg) translateY(-0.5rem); }
 
 .center {
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 0.6rem;
-  height: 0.6rem;
+  width: 0.4rem;
+  height: 0.4rem;
   background: var(--center);
   border-radius: 50%;
   box-shadow: 0 0 0.3rem rgba(251, 191, 36, 0.5);
@@ -431,9 +421,9 @@ body::before {
 
 /* Hint & message text */
 .hint {
-  font-size: clamp(0.75rem, 2vw, 0.9rem);
+  font-size: 0.7rem;
   color: var(--text-muted);
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   transition: opacity 0.5s ease;
 }
 
@@ -442,9 +432,9 @@ body::before {
 }
 
 .message {
-  font-size: clamp(0.85rem, 2.5vw, 1rem);
+  font-size: 0.75rem;
   color: var(--text-secondary);
-  min-height: 1.5em;
+  min-height: 1.2em;
   opacity: 0;
   transform: translateY(0.5rem);
   transition: opacity 0.6s ease, transform 0.6s ease;
@@ -458,8 +448,8 @@ body::before {
 /* Sparkle particles on bloom */
 .sparkle {
   position: absolute;
-  width: 0.3rem;
-  height: 0.3rem;
+  width: 0.25rem;
+  height: 0.25rem;
   background: var(--center);
   border-radius: 50%;
   pointer-events: none;
@@ -477,15 +467,22 @@ body::before {
   }
 }
 
-/* ── Garden Grid Wrapper ── */
+/* ═══════════════════════════════════════════════════════════
+   Garden Grid — Earth tones, subtle, warm
+   ═══════════════════════════════════════════════════════════ */
+
 .garden-grid-wrapper {
   opacity: 0;
-  transform: translateY(1.5rem);
+  transform: translateY(1rem);
   transition: opacity 0.8s ease, transform 0.8s ease;
   width: 100%;
-  max-width: 32rem;
-  margin-left: auto;
-  margin-right: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  min-height: 0;
+  justify-content: center;
+  padding: 0.25rem;
 }
 
 .garden-grid-wrapper.visible {
@@ -494,22 +491,22 @@ body::before {
 }
 
 .grid-hint {
-  font-size: clamp(0.75rem, 2vw, 0.9rem);
+  font-size: 0.65rem;
   color: var(--text-muted);
   text-align: center;
-  margin-bottom: 1rem;
+  margin-bottom: 0.35rem;
   letter-spacing: 0.05em;
-  min-height: 1.2em;
+  min-height: 1em;
   transition: opacity 0.5s ease;
 }
 
 .counter {
-  font-size: clamp(0.7rem, 1.8vw, 0.85rem);
+  font-size: 0.65rem;
   color: var(--text-muted);
   text-align: center;
-  margin-top: 1rem;
+  margin-top: 0.35rem;
   letter-spacing: 0.08em;
-  min-height: 1.2em;
+  min-height: 1em;
   transition: opacity 0.4s ease;
 }
 
@@ -518,54 +515,29 @@ body::before {
   font-weight: 600;
 }
 
-/* ── Tablet: grid wrapper ── */
-@media (min-width: 768px) {
-  .garden-grid-wrapper {
-    max-width: 48rem;
-  }
-}
-
-/* ── Desktop: grid wrapper inside top-row ── */
-@media (min-width: 1200px) {
-  .top-row .garden-grid-wrapper {
-    max-width: none;
-    margin-left: 0;
-    margin-right: 0;
-  }
-}
-
 /* Garden Grid */
 .garden-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 0.75rem;
+  gap: 0.5rem;
   width: 100%;
-  max-width: 24rem;
-  margin: 0 auto;
+  max-width: 20rem;
 }
 
 @media (min-width: 768px) {
   .garden-grid {
-    max-width: 28rem;
-    gap: 1rem;
+    max-width: 24rem;
+    gap: 0.75rem;
   }
 }
 
-@media (min-width: 1200px) {
-  .garden-grid {
-    max-width: 36rem;
-    gap: 1.25rem;
-    margin: 0 auto;
-  }
-}
-
-/* Grid Tile */
+/* Grid Tile — earth-tone tile styling */
 .grid-tile {
   position: relative;
   aspect-ratio: 1;
-  background: rgba(17, 24, 39, 0.6);
-  border: 1px solid var(--card-border);
-  border-radius: 1rem;
+  background: rgba(15, 20, 16, 0.7);
+  border: 1px solid rgba(90, 110, 80, 0.2);
+  border-radius: 0.85rem;
   cursor: pointer;
   outline: none;
   overflow: hidden;
@@ -579,14 +551,14 @@ body::before {
 
 .grid-tile:hover,
 .grid-tile:focus-visible {
-  border-color: rgba(74, 222, 128, 0.4);
-  box-shadow: 0 0 1.5rem rgba(74, 222, 128, 0.1);
-  background: rgba(17, 24, 39, 0.8);
+  border-color: rgba(90, 110, 80, 0.4);
+  box-shadow: 0 0 1rem rgba(74, 222, 128, 0.06);
+  background: rgba(15, 20, 16, 0.85);
 }
 
 .grid-tile.planted {
   cursor: default;
-  border-color: rgba(74, 222, 128, 0.25);
+  border-color: rgba(90, 110, 80, 0.3);
 }
 
 .grid-tile.planted:hover,
@@ -614,8 +586,8 @@ body::before {
   bottom: calc(12% + 14%);
   left: 50%;
   transform: translateX(-50%) scale(0);
-  width: 0.45rem;
-  height: 0.6rem;
+  width: 0.35rem;
+  height: 0.45rem;
   background: linear-gradient(135deg, var(--seed-light), var(--seed));
   border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
   opacity: 0;
@@ -674,7 +646,7 @@ body::before {
 }
 
 .tile-stem {
-  width: 0.12rem;
+  width: 0.1rem;
   height: 0;
   background: linear-gradient(180deg, var(--stem), var(--leaf));
   border-radius: 0.06rem;
@@ -688,7 +660,7 @@ body::before {
 
 @keyframes tileStemGrow {
   0% { height: 0; }
-  100% { height: 1.8rem; }
+  100% { height: 1.4rem; }
 }
 
 /* Tile Leaves */
@@ -700,15 +672,15 @@ body::before {
 }
 
 .tile-leaf--left {
-  left: -0.06rem;
-  bottom: 0.8rem;
+  left: -0.05rem;
+  bottom: 0.6rem;
   background: var(--leaf);
   border-radius: 0 50% 50% 50%;
 }
 
 .tile-leaf--right {
-  right: -0.06rem;
-  bottom: 1.1rem;
+  right: -0.05rem;
+  bottom: 0.85rem;
   background: var(--leaf);
   border-radius: 50% 0 50% 50%;
 }
@@ -725,12 +697,12 @@ body::before {
 
 @keyframes tileLeafGrowLeft {
   0% { width: 0; height: 0; opacity: 0; }
-  100% { width: 0.75rem; height: 0.5rem; opacity: 1; }
+  100% { width: 0.55rem; height: 0.35rem; opacity: 1; }
 }
 
 @keyframes tileLeafGrowRight {
   0% { width: 0; height: 0; opacity: 0; }
-  100% { width: 0.65rem; height: 0.45rem; opacity: 1; }
+  100% { width: 0.5rem; height: 0.32rem; opacity: 1; }
 }
 
 /* Tile Flower */
@@ -739,7 +711,7 @@ body::before {
   width: 0;
   height: 0;
   opacity: 0;
-  margin-bottom: 0.1rem;
+  margin-bottom: 0.05rem;
 }
 
 .tile-sprout.growing .tile-flower {
@@ -755,8 +727,8 @@ body::before {
     transform: scale(0) rotate(0deg);
   }
   100% {
-    width: 1.5rem;
-    height: 1.5rem;
+    width: 1.1rem;
+    height: 1.1rem;
     opacity: 1;
     transform: scale(1) rotate(360deg);
   }
@@ -764,8 +736,8 @@ body::before {
 
 .tile-petal {
   position: absolute;
-  width: 0.5rem;
-  height: 0.5rem;
+  width: 0.35rem;
+  height: 0.35rem;
   border-radius: 50% 0 50% 50%;
   top: 50%;
   left: 50%;
@@ -773,34 +745,34 @@ body::before {
   opacity: 0.9;
 }
 
-.tile-petal--1 { transform: translate(-50%, -50%) rotate(0deg) translateY(-0.45rem); }
-.tile-petal--2 { transform: translate(-50%, -50%) rotate(60deg) translateY(-0.45rem); }
-.tile-petal--3 { transform: translate(-50%, -50%) rotate(120deg) translateY(-0.45rem); }
-.tile-petal--4 { transform: translate(-50%, -50%) rotate(180deg) translateY(-0.45rem); }
-.tile-petal--5 { transform: translate(-50%, -50%) rotate(240deg) translateY(-0.45rem); }
-.tile-petal--6 { transform: translate(-50%, -50%) rotate(300deg) translateY(-0.45rem); }
+.tile-petal--1 { transform: translate(-50%, -50%) rotate(0deg) translateY(-0.32rem); }
+.tile-petal--2 { transform: translate(-50%, -50%) rotate(60deg) translateY(-0.32rem); }
+.tile-petal--3 { transform: translate(-50%, -50%) rotate(120deg) translateY(-0.32rem); }
+.tile-petal--4 { transform: translate(-50%, -50%) rotate(180deg) translateY(-0.32rem); }
+.tile-petal--5 { transform: translate(-50%, -50%) rotate(240deg) translateY(-0.32rem); }
+.tile-petal--6 { transform: translate(-50%, -50%) rotate(300deg) translateY(-0.32rem); }
 
 .tile-center {
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 0.35rem;
-  height: 0.35rem;
+  width: 0.25rem;
+  height: 0.25rem;
   background: var(--center);
   border-radius: 50%;
-  box-shadow: 0 0 0.2rem rgba(251, 191, 36, 0.5);
+  box-shadow: 0 0 0.15rem rgba(251, 191, 36, 0.5);
 }
 
 /* ── Growth Cycle Stages ── */
 
-/* Bud stage: small closed bulb before bloom */
+/* Bud stage */
 .tile-bud {
   position: relative;
   width: 0;
   height: 0;
   opacity: 0;
-  margin-bottom: 0.1rem;
+  margin-bottom: 0.05rem;
 }
 
 .tile-sprout.budding .tile-bud {
@@ -815,8 +787,8 @@ body::before {
     transform: scale(0);
   }
   100% {
-    width: 0.8rem;
-    height: 0.9rem;
+    width: 0.6rem;
+    height: 0.7rem;
     opacity: 1;
     transform: scale(1);
   }
@@ -824,8 +796,8 @@ body::before {
 
 .tile-bud-petal {
   position: absolute;
-  width: 0.35rem;
-  height: 0.45rem;
+  width: 0.25rem;
+  height: 0.35rem;
   background: var(--leaf);
   border-radius: 50% 50% 40% 40%;
   top: 50%;
@@ -837,8 +809,8 @@ body::before {
 .tile-bud-petal--1 { transform: translate(-50%, -80%) rotate(-20deg); }
 .tile-bud-petal--2 { transform: translate(-50%, -80%) rotate(20deg); }
 .tile-bud-petal--3 {
-  width: 0.3rem;
-  height: 0.4rem;
+  width: 0.22rem;
+  height: 0.3rem;
   background: var(--stem);
   transform: translate(-50%, -70%) rotate(0deg);
 }
@@ -850,8 +822,8 @@ body::before {
 
 @keyframes tileBudOpen {
   0% {
-    width: 0.8rem;
-    height: 0.9rem;
+    width: 0.6rem;
+    height: 0.7rem;
     opacity: 1;
     transform: scale(1);
   }
@@ -863,7 +835,7 @@ body::before {
   }
 }
 
-/* Wilt animation: petals droop and fade */
+/* Wilt animation */
 .tile-sprout.wilting .tile-flower {
   animation: tileWilt 2s ease-in forwards;
   transform-origin: bottom center;
@@ -887,34 +859,22 @@ body::before {
   }
 }
 
-/* Wilt leaves too */
 .tile-sprout.wilting .tile-leaf {
   animation: tileLeafWilt 2s ease-in forwards;
 }
 
 @keyframes tileLeafWilt {
-  0% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  100% {
-    opacity: 0.3;
-    transform: scale(0.8) rotate(10deg);
-  }
+  0% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0.3; transform: scale(0.8) rotate(10deg); }
 }
 
-/* Wilt stem slightly */
 .tile-sprout.wilting .tile-stem {
   animation: tileStemWilt 2s ease-in forwards;
 }
 
 @keyframes tileStemWilt {
-  0% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0.4;
-  }
+  0% { opacity: 1; }
+  100% { opacity: 0.4; }
 }
 
 /* Soil pulse when reseeding */
@@ -929,7 +889,7 @@ body::before {
   }
   50% {
     transform: translateX(-50%) scale(1.08);
-    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4), 0 0 0.8rem rgba(74, 222, 128, 0.3);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4), 0 0 0.8rem rgba(74, 222, 128, 0.2);
   }
   100% {
     transform: translateX(-50%) scale(1);
@@ -937,7 +897,7 @@ body::before {
   }
 }
 
-/* Gentle sway after bloom (only during grown/blooming stage) */
+/* Gentle sway after bloom */
 .tile-sprout.grown .tile-flower {
   animation: tileSway 3s ease-in-out infinite;
   transform-origin: bottom center;
@@ -951,14 +911,14 @@ body::before {
 /* Cycle badge on tile */
 .tile-cycle-badge {
   position: absolute;
-  top: 0.3rem;
-  right: 0.3rem;
-  font-size: 0.55rem;
+  top: 0.2rem;
+  right: 0.2rem;
+  font-size: 0.45rem;
   color: var(--text-muted);
-  background: rgba(17, 24, 39, 0.7);
-  border: 1px solid rgba(74, 222, 128, 0.2);
-  border-radius: 0.4rem;
-  padding: 0.1rem 0.3rem;
+  background: rgba(10, 14, 12, 0.7);
+  border: 1px solid rgba(90, 110, 80, 0.2);
+  border-radius: 0.3rem;
+  padding: 0.05rem 0.2rem;
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.4s ease;
@@ -970,19 +930,11 @@ body::before {
   opacity: 1;
 }
 
-@media (max-width: 375px) {
-  .tile-cycle-badge {
-    font-size: 0.5rem;
-    top: 0.2rem;
-    right: 0.2rem;
-  }
-}
-
 /* Tile sparkle */
 .tile-sparkle {
   position: absolute;
-  width: 0.2rem;
-  height: 0.2rem;
+  width: 0.15rem;
+  height: 0.15rem;
   background: var(--center);
   border-radius: 50%;
   pointer-events: none;
@@ -1001,16 +953,21 @@ body::before {
   }
 }
 
-/* ── Tending Toolbar ── */
+/* ═══════════════════════════════════════════════════════════
+   Tending Toolbar — Slim inline strip
+   ═══════════════════════════════════════════════════════════ */
+
 .tending-toolbar {
   opacity: 0;
-  transform: translateY(1rem);
+  transform: translateY(0.5rem);
   transition: opacity 0.8s ease, transform 0.8s ease;
   width: 100%;
-  max-width: 32rem;
-  margin-left: auto;
-  margin-right: auto;
+  flex-shrink: 0;
   text-align: center;
+  padding: 0.25rem 0.5rem;
+  background: var(--toolbar-bg);
+  border-top: 1px solid rgba(74, 222, 128, 0.06);
+  border-bottom: 1px solid rgba(74, 222, 128, 0.04);
 }
 
 .tending-toolbar.visible {
@@ -1019,18 +976,18 @@ body::before {
 }
 
 .tending-hint {
-  font-size: clamp(0.75rem, 2vw, 0.9rem);
+  font-size: 0.6rem;
   color: var(--text-muted);
-  margin-bottom: 1rem;
+  margin-bottom: 0.25rem;
   letter-spacing: 0.05em;
-  min-height: 1.2em;
+  min-height: 1em;
   transition: opacity 0.5s ease;
 }
 
 .tending-tools {
   display: flex;
   justify-content: center;
-  gap: 1rem;
+  gap: 0.75rem;
   flex-wrap: wrap;
 }
 
@@ -1038,11 +995,11 @@ body::before {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.75rem 1.25rem;
-  background: rgba(17, 24, 39, 0.6);
-  border: 1px solid var(--card-border);
-  border-radius: 1rem;
+  gap: 0.2rem;
+  padding: 0.4rem 1rem;
+  background: rgba(15, 23, 36, 0.5);
+  border: 1px solid rgba(74, 222, 128, 0.12);
+  border-radius: 0.75rem;
   color: var(--text-secondary);
   cursor: pointer;
   outline: none;
@@ -1052,17 +1009,17 @@ body::before {
 
 .tool-btn:hover,
 .tool-btn:focus-visible {
-  border-color: rgba(74, 222, 128, 0.4);
-  box-shadow: 0 0 1.5rem rgba(74, 222, 128, 0.1);
-  background: rgba(17, 24, 39, 0.8);
+  border-color: rgba(74, 222, 128, 0.3);
+  box-shadow: 0 0 1rem rgba(74, 222, 128, 0.08);
+  background: rgba(15, 23, 36, 0.7);
   color: var(--text-primary);
   transform: translateY(-2px);
 }
 
 .tool-btn.active {
-  border-color: rgba(96, 165, 250, 0.6);
-  box-shadow: 0 0 2rem rgba(96, 165, 250, 0.2);
-  background: rgba(96, 165, 250, 0.1);
+  border-color: rgba(96, 165, 250, 0.5);
+  box-shadow: 0 0 1.5rem rgba(96, 165, 250, 0.15);
+  background: rgba(96, 165, 250, 0.08);
   color: var(--text-primary);
 }
 
@@ -1072,30 +1029,18 @@ body::before {
 
 @keyframes toolBounce {
   0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-4px); }
+  50% { transform: translateY(-3px); }
 }
 
 .tool-icon {
-  font-size: 1.5rem;
+  font-size: 1.2rem;
   line-height: 1;
 }
 
 .tool-label {
-  font-size: clamp(0.65rem, 1.5vw, 0.75rem);
+  font-size: 0.55rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-}
-
-@media (min-width: 768px) {
-  .tending-toolbar {
-    max-width: 48rem;
-  }
-}
-
-@media (min-width: 1200px) {
-  .tending-toolbar {
-    max-width: 72rem;
-  }
 }
 
 /* ── Watering Mode ── */
@@ -1103,21 +1048,20 @@ body::before {
   cursor: crosshair;
 }
 
-/* Water droplet tile overlay */
 .tile-water-drop {
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 1.2rem;
-  height: 1.2rem;
+  width: 1rem;
+  height: 1rem;
   pointer-events: none;
   z-index: 10;
 }
 
 .tile-water-drop::before {
   content: '💧';
-  font-size: 1.2rem;
+  font-size: 1rem;
   position: absolute;
   top: 50%;
   left: 50%;
@@ -1144,12 +1088,11 @@ body::before {
   }
 }
 
-/* Watered tile shimmer */
 .tile-watered-icon {
   position: absolute;
-  bottom: 0.25rem;
-  left: 0.25rem;
-  font-size: 0.65rem;
+  bottom: 0.15rem;
+  left: 0.15rem;
+  font-size: 0.5rem;
   opacity: 0;
   z-index: 10;
   transform: scale(0);
@@ -1158,42 +1101,40 @@ body::before {
 }
 
 .tile-watered-icon.visible {
-  opacity: 0.8;
+  opacity: 0.7;
   transform: scale(1);
   animation: waterIconPulse 2s ease-in-out infinite;
 }
 
 @keyframes waterIconPulse {
-  0%, 100% { opacity: 0.6; transform: scale(1); }
-  50% { opacity: 0.9; transform: scale(1.1); }
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.1); }
 }
 
-/* Watering glow effect on tile border */
 .grid-tile.watered {
-  border-color: rgba(96, 165, 250, 0.4);
+  border-color: rgba(96, 165, 250, 0.3);
   box-shadow:
-    0 0 1.5rem rgba(96, 165, 250, 0.15),
-    0 0 3rem rgba(96, 165, 250, 0.05);
+    0 0 1rem rgba(96, 165, 250, 0.1),
+    0 0 2rem rgba(96, 165, 250, 0.03);
 }
 
 .grid-tile.watered:hover,
 .grid-tile.watered:focus-visible {
   box-shadow:
-    0 0 1.5rem rgba(96, 165, 250, 0.2),
-    0 0 3rem rgba(96, 165, 250, 0.08);
+    0 0 1rem rgba(96, 165, 250, 0.15),
+    0 0 2rem rgba(96, 165, 250, 0.05);
 }
 
-/* Water sparkle effect (extra bloom sparkles) */
 .tile-water-sparkle {
   position: absolute;
-  width: 0.25rem;
-  height: 0.25rem;
+  width: 0.2rem;
+  height: 0.2rem;
   background: #93c5fd;
   border-radius: 50%;
   pointer-events: none;
   animation: waterSparkleFly 0.9s ease-out forwards;
   z-index: 5;
-  box-shadow: 0 0 0.15rem rgba(147, 197, 253, 0.8);
+  box-shadow: 0 0 0.1rem rgba(147, 197, 253, 0.8);
 }
 
 @keyframes waterSparkleFly {
@@ -1207,22 +1148,14 @@ body::before {
   }
 }
 
-/* Bloom glow effect for watered tiles */
 .tile-sprout.water-bloom .tile-flower {
   animation: waterBloomGlow 1s ease-out;
 }
 
 @keyframes waterBloomGlow {
-  0% {
-    filter: brightness(1);
-  }
-  50% {
-    filter: brightness(1.5) saturate(1.3);
-    box-shadow: 0 0 1rem rgba(251, 191, 36, 0.4);
-  }
-  100% {
-    filter: brightness(1);
-  }
+  0% { filter: brightness(1); }
+  50% { filter: brightness(1.5) saturate(1.3); box-shadow: 0 0 0.8rem rgba(251, 191, 36, 0.3); }
+  100% { filter: brightness(1); }
 }
 
 /* Speed-up growth animation overrides for watered tiles */
@@ -1253,44 +1186,26 @@ body::before {
   animation-duration: 0.3s !important;
 }
 
-@media (max-width: 375px) {
-  .tool-btn {
-    padding: 0.6rem 1rem;
-    border-radius: 0.75rem;
-  }
+/* ═══════════════════════════════════════════════════════════
+   Garden Journal — Warm parchment panel
+   ═══════════════════════════════════════════════════════════ */
 
-  .tool-icon {
-    font-size: 1.25rem;
-  }
-
-  .tile-water-drop {
-    width: 1rem;
-    height: 1rem;
-  }
-
-  .tile-water-drop::before {
-    font-size: 1rem;
-  }
-}
-
-/* ── Garden Journal ── */
 .garden-journal {
   opacity: 0;
-  transform: translateY(2rem);
+  transform: translateY(1rem);
   transition: opacity 0.8s ease, transform 0.8s ease;
   width: 100%;
-  max-width: 32rem;
-  margin-left: auto;
-  margin-right: auto;
-  background: linear-gradient(145deg, rgba(30, 27, 22, 0.9), rgba(25, 22, 18, 0.95));
-  border: 1px solid rgba(139, 119, 80, 0.25);
-  border-radius: 1.25rem;
-  padding: 1.5rem;
+  background: var(--journal-bg);
+  border: 1px solid var(--journal-border);
+  border-radius: 0.85rem;
+  padding: 0.75rem;
   box-shadow:
-    0 0 2rem rgba(74, 222, 128, 0.05),
-    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    0 0 1.5rem rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.02);
   position: relative;
   overflow: hidden;
+  flex-shrink: 0;
+  max-height: 45%;
 }
 
 /* Parchment texture overlay */
@@ -1299,9 +1214,9 @@ body::before {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse at 20% 50%, rgba(139, 119, 80, 0.08), transparent 50%),
-    radial-gradient(ellipse at 80% 20%, rgba(74, 222, 128, 0.04), transparent 40%),
-    radial-gradient(ellipse at 50% 80%, rgba(139, 119, 80, 0.06), transparent 45%);
+    radial-gradient(ellipse at 20% 50%, rgba(139, 119, 80, 0.06), transparent 50%),
+    radial-gradient(ellipse at 80% 20%, rgba(74, 222, 128, 0.03), transparent 40%),
+    radial-gradient(ellipse at 50% 80%, rgba(139, 119, 80, 0.04), transparent 45%);
   pointer-events: none;
   z-index: 0;
 }
@@ -1318,40 +1233,40 @@ body::before {
 @keyframes journalPulse {
   0% {
     box-shadow:
-      0 0 2rem rgba(74, 222, 128, 0.05),
-      inset 0 1px 0 rgba(255, 255, 255, 0.03);
+      0 0 1.5rem rgba(0, 0, 0, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.02);
   }
   50% {
     box-shadow:
-      0 0 3rem rgba(74, 222, 128, 0.2),
-      0 0 5rem rgba(74, 222, 128, 0.08),
-      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      0 0 2rem rgba(168, 139, 100, 0.15),
+      0 0 4rem rgba(168, 139, 100, 0.05),
+      inset 0 1px 0 rgba(255, 255, 255, 0.04);
   }
   100% {
     box-shadow:
-      0 0 2rem rgba(74, 222, 128, 0.05),
-      inset 0 1px 0 rgba(255, 255, 255, 0.03);
+      0 0 1.5rem rgba(0, 0, 0, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.02);
   }
 }
 
 .journal-header {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  margin-bottom: 1.25rem;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
   position: relative;
   z-index: 1;
 }
 
 .journal-icon {
-  font-size: 1.25rem;
-  filter: drop-shadow(0 0 0.3rem rgba(74, 222, 128, 0.3));
+  font-size: 0.9rem;
+  filter: drop-shadow(0 0 0.2rem rgba(168, 139, 100, 0.3));
 }
 
 .journal-title {
-  font-size: clamp(1rem, 3vw, 1.25rem);
+  font-size: 0.8rem;
   font-weight: 600;
-  color: rgba(74, 222, 128, 0.85);
+  color: var(--journal-text);
   letter-spacing: 0.04em;
   margin: 0;
 }
@@ -1359,36 +1274,35 @@ body::before {
 .journal-timeline {
   position: relative;
   z-index: 1;
-  max-height: 14rem;
+  max-height: 7rem;
   overflow-y: auto;
-  padding-right: 0.5rem;
+  padding-right: 0.25rem;
 }
 
-/* Custom scrollbar for journal */
 .journal-timeline::-webkit-scrollbar {
-  width: 0.35rem;
+  width: 0.25rem;
 }
 
 .journal-timeline::-webkit-scrollbar-track {
-  background: rgba(139, 119, 80, 0.1);
-  border-radius: 0.2rem;
+  background: rgba(139, 119, 80, 0.08);
+  border-radius: 0.15rem;
 }
 
 .journal-timeline::-webkit-scrollbar-thumb {
-  background: rgba(74, 222, 128, 0.3);
-  border-radius: 0.2rem;
+  background: rgba(168, 139, 100, 0.25);
+  border-radius: 0.15rem;
 }
 
 .journal-timeline::-webkit-scrollbar-thumb:hover {
-  background: rgba(74, 222, 128, 0.5);
+  background: rgba(168, 139, 100, 0.4);
 }
 
 .journal-empty {
-  font-size: clamp(0.8rem, 2vw, 0.9rem);
+  font-size: 0.7rem;
   color: var(--text-muted);
   font-style: italic;
   text-align: center;
-  padding: 1.5rem 0;
+  padding: 1rem 0;
   letter-spacing: 0.03em;
 }
 
@@ -1396,11 +1310,11 @@ body::before {
 .journal-entry {
   display: flex;
   align-items: flex-start;
-  gap: 0.75rem;
-  padding: 0.75rem 0;
-  border-bottom: 1px solid rgba(139, 119, 80, 0.12);
+  gap: 0.5rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid rgba(139, 119, 80, 0.08);
   opacity: 0;
-  transform: translateX(-1rem);
+  transform: translateX(-0.75rem);
   animation: entrySlideIn 0.5s ease-out forwards;
 }
 
@@ -1411,7 +1325,7 @@ body::before {
 @keyframes entrySlideIn {
   0% {
     opacity: 0;
-    transform: translateX(-1rem);
+    transform: translateX(-0.75rem);
   }
   100% {
     opacity: 1;
@@ -1421,12 +1335,12 @@ body::before {
 
 .entry-timeline-dot {
   flex-shrink: 0;
-  width: 0.6rem;
-  height: 0.6rem;
-  background: rgba(74, 222, 128, 0.7);
+  width: 0.4rem;
+  height: 0.4rem;
+  background: rgba(168, 139, 100, 0.6);
   border-radius: 50%;
-  margin-top: 0.35rem;
-  box-shadow: 0 0 0.4rem rgba(74, 222, 128, 0.4);
+  margin-top: 0.25rem;
+  box-shadow: 0 0 0.3rem rgba(168, 139, 100, 0.3);
   position: relative;
 }
 
@@ -1436,9 +1350,9 @@ body::before {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 0.25rem;
-  height: 0.25rem;
-  background: rgba(255, 255, 255, 0.6);
+  width: 0.15rem;
+  height: 0.15rem;
+  background: rgba(255, 255, 255, 0.5);
   border-radius: 50%;
 }
 
@@ -1448,9 +1362,9 @@ body::before {
 }
 
 .entry-text {
-  font-size: clamp(0.78rem, 2vw, 0.88rem);
+  font-size: 0.68rem;
   color: var(--text-secondary);
-  line-height: 1.4;
+  line-height: 1.35;
   letter-spacing: 0.02em;
 }
 
@@ -1460,25 +1374,25 @@ body::before {
 }
 
 .entry-time {
-  font-size: clamp(0.65rem, 1.5vw, 0.75rem);
+  font-size: 0.55rem;
   color: var(--text-muted);
-  margin-top: 0.2rem;
-  letter-spacing: 0.05em;
+  margin-top: 0.1rem;
+  letter-spacing: 0.04em;
 }
 
 .entry-swatch {
   flex-shrink: 0;
-  width: 1.5rem;
-  height: 1.5rem;
+  width: 1rem;
+  height: 1rem;
   border-radius: 50%;
-  border: 2px solid rgba(139, 119, 80, 0.3);
-  margin-top: 0.15rem;
-  box-shadow: 0 0 0.5rem rgba(74, 222, 128, 0.1);
+  border: 2px solid rgba(139, 119, 80, 0.2);
+  margin-top: 0.1rem;
+  box-shadow: 0 0 0.3rem rgba(168, 139, 100, 0.08);
 }
 
 /* Journal Last Tendered timestamp */
 .journal-last-tended {
-  font-size: clamp(0.6rem, 1.4vw, 0.7rem);
+  font-size: 0.5rem;
   color: var(--text-muted);
   margin-left: auto;
   letter-spacing: 0.04em;
@@ -1491,42 +1405,25 @@ body::before {
   opacity: 1;
 }
 
-@media (min-width: 768px) {
-  .garden-journal {
-    max-width: 48rem;
-    padding: 2rem;
-    border-radius: 1.5rem;
-  }
-}
+/* ═══════════════════════════════════════════════════════════
+   Garden Reflection Stats — Dark matte panel
+   ═══════════════════════════════════════════════════════════ */
 
-@media (min-width: 1200px) {
-  .bottom-row .garden-journal {
-    max-width: none;
-    margin-left: 0;
-    margin-right: 0;
-    padding: 2rem;
-    border-radius: 1.5rem;
-  }
-}
-
-/* ── Garden Reflection Stats ── */
 .garden-stats {
   opacity: 0;
-  transform: translateY(2rem);
+  transform: translateY(1rem);
   transition: opacity 0.8s ease, transform 0.8s ease;
   width: 100%;
-  max-width: 32rem;
-  margin-left: auto;
-  margin-right: auto;
-  background: linear-gradient(145deg, rgba(30, 27, 22, 0.88), rgba(22, 20, 16, 0.93));
-  border: 1px solid rgba(139, 119, 80, 0.2);
-  border-radius: 1.25rem;
-  padding: 1.5rem;
+  background: var(--stats-bg);
+  border: 1px solid var(--stats-border);
+  border-radius: 0.85rem;
+  padding: 0.75rem;
   box-shadow:
-    0 0 2rem rgba(74, 222, 128, 0.04),
-    inset 0 1px 0 rgba(255, 255, 255, 0.02);
+    0 0 1.5rem rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.015);
   position: relative;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .garden-stats::before {
@@ -1534,8 +1431,8 @@ body::before {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse at 30% 40%, rgba(139, 119, 80, 0.06), transparent 50%),
-    radial-gradient(ellipse at 70% 60%, rgba(74, 222, 128, 0.03), transparent 40%);
+    radial-gradient(ellipse at 30% 40%, rgba(139, 119, 80, 0.04), transparent 50%),
+    radial-gradient(ellipse at 70% 60%, rgba(74, 222, 128, 0.02), transparent 40%);
   pointer-events: none;
   z-index: 0;
 }
@@ -1548,21 +1445,21 @@ body::before {
 .stats-header {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  margin-bottom: 1.25rem;
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
   position: relative;
   z-index: 1;
 }
 
 .stats-icon {
-  font-size: 1.15rem;
-  filter: drop-shadow(0 0 0.25rem rgba(139, 119, 80, 0.3));
+  font-size: 0.85rem;
+  filter: drop-shadow(0 0 0.15rem rgba(139, 119, 80, 0.2));
 }
 
 .stats-title {
-  font-size: clamp(0.95rem, 2.8vw, 1.15rem);
+  font-size: 0.78rem;
   font-weight: 600;
-  color: rgba(139, 119, 80, 0.8);
+  color: rgba(139, 119, 80, 0.7);
   letter-spacing: 0.04em;
   margin: 0;
 }
@@ -1570,16 +1467,16 @@ body::before {
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 0.75rem;
+  gap: 0.4rem;
   position: relative;
   z-index: 1;
 }
 
 .stat-card {
-  background: rgba(17, 24, 39, 0.5);
-  border: 1px solid rgba(139, 119, 80, 0.15);
-  border-radius: 0.85rem;
-  padding: 1rem 0.75rem;
+  background: rgba(17, 24, 39, 0.4);
+  border: 1px solid rgba(139, 119, 80, 0.1);
+  border-radius: 0.6rem;
+  padding: 0.5rem 0.4rem;
   text-align: center;
   transition: border-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
   position: relative;
@@ -1590,16 +1487,16 @@ body::before {
   content: '';
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse at 50% 0%, rgba(74, 222, 128, 0.06), transparent 60%);
+  background: radial-gradient(ellipse at 50% 0%, rgba(74, 222, 128, 0.04), transparent 60%);
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.3s ease;
 }
 
 .stat-card:hover {
-  border-color: rgba(139, 119, 80, 0.3);
-  box-shadow: 0 0 1.2rem rgba(74, 222, 128, 0.06);
-  transform: translateY(-2px);
+  border-color: rgba(139, 119, 80, 0.2);
+  box-shadow: 0 0 0.8rem rgba(74, 222, 128, 0.04);
+  transform: translateY(-1px);
 }
 
 .stat-card:hover::after {
@@ -1612,26 +1509,26 @@ body::before {
 
 .stat-emoji {
   display: block;
-  font-size: 1.5rem;
-  margin-bottom: 0.35rem;
-  filter: drop-shadow(0 0 0.3rem rgba(74, 222, 128, 0.15));
+  font-size: 1.1rem;
+  margin-bottom: 0.15rem;
+  filter: drop-shadow(0 0 0.2rem rgba(74, 222, 128, 0.1));
 }
 
 .stat-value {
   display: block;
-  font-size: clamp(1.1rem, 3vw, 1.4rem);
+  font-size: 0.95rem;
   font-weight: 700;
-  color: rgba(74, 222, 128, 0.9);
+  color: rgba(74, 222, 128, 0.85);
   letter-spacing: 0.03em;
   line-height: 1.2;
 }
 
 .stat-label {
   display: block;
-  font-size: clamp(0.6rem, 1.5vw, 0.72rem);
+  font-size: 0.5rem;
   color: var(--text-muted);
   letter-spacing: 0.05em;
-  margin-top: 0.2rem;
+  margin-top: 0.1rem;
   text-transform: uppercase;
 }
 
@@ -1639,14 +1536,14 @@ body::before {
   position: relative;
   z-index: 1;
   text-align: center;
-  font-size: clamp(0.72rem, 1.8vw, 0.85rem);
+  font-size: 0.62rem;
   color: var(--text-muted);
   font-style: italic;
-  margin-top: 1.25rem;
+  margin-top: 0.6rem;
   margin-bottom: 0;
   letter-spacing: 0.04em;
-  line-height: 1.5;
-  min-height: 1.5em;
+  line-height: 1.4;
+  min-height: 1.2em;
   opacity: 0;
   transition: opacity 0.6s ease;
 }
@@ -1661,348 +1558,41 @@ body::before {
 }
 
 @keyframes statPop {
-  0% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.15);
-    color: rgba(74, 222, 128, 1);
-  }
-  100% {
-    transform: scale(1);
-  }
+  0% { transform: scale(1); }
+  50% { transform: scale(1.12); color: rgba(74, 222, 128, 1); }
+  100% { transform: scale(1); }
 }
 
 /* Mood-specific card glows */
 .stat-card--mood.mood-thriving {
-  border-color: rgba(74, 222, 128, 0.3);
-  box-shadow: 0 0 1.5rem rgba(74, 222, 128, 0.08);
+  border-color: rgba(74, 222, 128, 0.25);
+  box-shadow: 0 0 1rem rgba(74, 222, 128, 0.06);
 }
 
 .stat-card--mood.mood-flourishing {
-  border-color: rgba(251, 191, 36, 0.25);
-  box-shadow: 0 0 1.5rem rgba(251, 191, 36, 0.06);
+  border-color: rgba(251, 191, 36, 0.2);
+  box-shadow: 0 0 1rem rgba(251, 191, 36, 0.04);
 }
 
 .stat-card--mood.mood-growing {
-  border-color: rgba(96, 165, 250, 0.25);
-  box-shadow: 0 0 1.5rem rgba(96, 165, 250, 0.06);
+  border-color: rgba(96, 165, 250, 0.2);
+  box-shadow: 0 0 1rem rgba(96, 165, 250, 0.04);
 }
 
 .stat-card--mood.mood-resting {
-  border-color: rgba(139, 119, 80, 0.25);
-  box-shadow: 0 0 1.5rem rgba(139, 119, 80, 0.06);
+  border-color: rgba(139, 119, 80, 0.2);
+  box-shadow: 0 0 1rem rgba(139, 119, 80, 0.04);
 }
 
 .stat-card--mood.mood-dormant {
-  border-color: rgba(100, 116, 139, 0.2);
-  box-shadow: 0 0 1.5rem rgba(100, 116, 139, 0.04);
+  border-color: rgba(100, 116, 139, 0.15);
+  box-shadow: 0 0 1rem rgba(100, 116, 139, 0.03);
 }
 
-@media (min-width: 768px) {
-  .garden-stats {
-    max-width: 48rem;
-    padding: 2rem;
-    border-radius: 1.5rem;
-  }
-}
+/* ═══════════════════════════════════════════════════════════
+   Garden Visitors
+   ═══════════════════════════════════════════════════════════ */
 
-@media (min-width: 1200px) {
-  .bottom-row .garden-stats {
-    max-width: none;
-    margin-left: 0;
-    margin-right: 0;
-    padding: 2rem;
-    border-radius: 1.5rem;
-  }
-}
-
-/* Restoring overlay */
-.restoring-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(10, 14, 23, 0.85);
-  backdrop-filter: blur(8px);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.5s ease;
-}
-
-.restoring-overlay.visible {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.restoring-text {
-  font-size: clamp(0.85rem, 2.5vw, 1.1rem);
-  color: var(--text-secondary);
-  letter-spacing: 0.08em;
-  animation: restoringPulse 1.5s ease-in-out infinite;
-}
-
-@keyframes restoringPulse {
-  0%, 100% { opacity: 0.5; }
-  50% { opacity: 1; }
-}
-
-@media (max-width: 375px) {
-  .journal-last-tended {
-    font-size: 0.55rem;
-  }
-
-  .garden-stats {
-    padding: 1rem;
-    border-radius: 1rem;
-  }
-
-  .stats-grid {
-    gap: 0.5rem;
-  }
-
-  .stat-card {
-    padding: 0.75rem 0.5rem;
-    border-radius: 0.65rem;
-  }
-
-  .stat-emoji {
-    font-size: 1.2rem;
-  }
-
-  .stats-poem {
-    margin-top: 0.75rem;
-  }
-}
-
-/* Responsive adjustments */
-@media (max-width: 375px) {
-  .card {
-    padding: 1.5rem 1rem;
-  }
-
-  .garden {
-    width: 8rem;
-    height: 8rem;
-  }
-
-  .soil {
-    width: 5rem;
-    height: 2rem;
-  }
-
-  .garden-grid {
-    gap: 0.5rem;
-    max-width: 16rem;
-  }
-
-  .grid-tile {
-    border-radius: 0.75rem;
-  }
-
-  .garden-journal {
-    padding: 1rem;
-    border-radius: 1rem;
-  }
-
-  .tile-bud {
-    margin-bottom: 0.05rem;
-  }
-
-  .journal-timeline {
-    max-height: 10rem;
-  }
-
-  .journal-entry {
-    gap: 0.5rem;
-    padding: 0.6rem 0;
-  }
-
-  .entry-swatch {
-    width: 1.2rem;
-    height: 1.2rem;
-  }
-}
-
-@media (min-width: 768px) {
-  .tile-cycle-badge {
-    font-size: 0.65rem;
-    top: 0.4rem;
-    right: 0.4rem;
-    padding: 0.15rem 0.4rem;
-  }
-
-  .card {
-    padding: 3rem 2.5rem;
-  }
-
-  .garden {
-    width: 12rem;
-    height: 12rem;
-  }
-
-  .soil {
-    width: 7rem;
-    height: 3rem;
-    bottom: 2rem;
-  }
-
-  .seed {
-    bottom: 3.3rem;
-  }
-
-  .sprout {
-    bottom: 3.5rem;
-  }
-}
-
-@media (min-width: 1200px) {
-  .card {
-    padding: 3.5rem 3rem;
-  }
-
-  .title {
-    font-size: 3.5rem;
-  }
-
-  .stat-emoji {
-    font-size: 1.75rem;
-  }
-}
-
-/* ── Seasonal Time-of-Day Themes ── */
-/* Dawn: soft pinks/peaks with golden light */
-body.theme-dawn {
-  --bg-deep: #1a0a14;
-  --bg-mid: #2d1520;
-  --card-bg: rgba(45, 21, 32, 0.85);
-  --card-border: rgba(251, 207, 232, 0.2);
-  --glow: rgba(251, 182, 200, 0.3);
-  --text-primary: #fce7f3;
-  --text-secondary: #d4a0b9;
-  --text-muted: #a07088;
-  --soil: #4a2c2a;
-  --soil-light: #6b3d3a;
-  --seed: #c9a86c;
-  --seed-light: #e8c98a;
-  --stem: #a7c4a0;
-  --leaf: #7da875;
-  --petal: #f9a8d4;
-  --center: #fde68a;
-}
-
-body.theme-dawn::before {
-  background:
-    radial-gradient(1px 1px at 20% 30%, rgba(251, 182, 200, 0.2), transparent),
-    radial-gradient(1px 1px at 80% 20%, rgba(253, 230, 138, 0.15), transparent),
-    radial-gradient(1px 1px at 60% 70%, rgba(251, 207, 232, 0.18), transparent),
-    radial-gradient(1px 1px at 40% 80%, rgba(251, 182, 200, 0.12), transparent),
-    radial-gradient(1px 1px at 90% 60%, rgba(253, 230, 138, 0.15), transparent),
-    radial-gradient(1px 1px at 10% 90%, rgba(251, 207, 232, 0.15), transparent);
-}
-
-/* Day: bright greens and sky blues */
-body.theme-day {
-  --bg-deep: #0c1a10;
-  --bg-mid: #142618;
-  --card-bg: rgba(20, 38, 24, 0.85);
-  --card-border: rgba(74, 222, 128, 0.2);
-  --glow: rgba(74, 222, 128, 0.3);
-  --text-primary: #dcfce7;
-  --text-secondary: #86d9a0;
-  --text-muted: #5a9968;
-  --soil: #3d2b1f;
-  --soil-light: #5c4033;
-  --seed: #8b6914;
-  --seed-light: #b8860b;
-  --stem: #22c55e;
-  --leaf: #16a34a;
-  --petal: #67e8f9;
-  --center: #fbbf24;
-}
-
-body.theme-day::before {
-  background:
-    radial-gradient(1px 1px at 20% 30%, rgba(74, 222, 128, 0.2), transparent),
-    radial-gradient(1px 1px at 80% 20%, rgba(103, 232, 249, 0.15), transparent),
-    radial-gradient(1px 1px at 60% 70%, rgba(74, 222, 128, 0.18), transparent),
-    radial-gradient(1px 1px at 40% 80%, rgba(103, 232, 249, 0.12), transparent),
-    radial-gradient(1px 1px at 90% 60%, rgba(74, 222, 128, 0.15), transparent),
-    radial-gradient(1px 1px at 10% 90%, rgba(103, 232, 249, 0.15), transparent);
-}
-
-/* Dusk: warm oranges and deep purples */
-body.theme-dusk {
-  --bg-deep: #140a1a;
-  --bg-mid: #221030;
-  --card-bg: rgba(34, 16, 48, 0.85);
-  --card-border: rgba(251, 146, 60, 0.2);
-  --glow: rgba(251, 146, 60, 0.25);
-  --text-primary: #ffedd5;
-  --text-secondary: #c9a0d4;
-  --text-muted: #8a6899;
-  --soil: #3d2018;
-  --soil-light: #5c3528;
-  --seed: #a88018;
-  --seed-light: #d4a828;
-  --stem: #a78bfa;
-  --leaf: #8b5cf6;
-  --petal: #fb923c;
-  --center: #fcd34d;
-}
-
-body.theme-dusk::before {
-  background:
-    radial-gradient(1px 1px at 20% 30%, rgba(251, 146, 60, 0.2), transparent),
-    radial-gradient(1px 1px at 80% 20%, rgba(167, 139, 250, 0.18), transparent),
-    radial-gradient(1px 1px at 60% 70%, rgba(251, 146, 60, 0.15), transparent),
-    radial-gradient(1px 1px at 40% 80%, rgba(167, 139, 250, 0.2), transparent),
-    radial-gradient(1px 1px at 90% 60%, rgba(252, 211, 77, 0.15), transparent),
-    radial-gradient(1px 1px at 10% 90%, rgba(251, 146, 60, 0.18), transparent);
-}
-
-/* Night: deep blues with silver moonlight */
-body.theme-night {
-  --bg-deep: #060912;
-  --bg-mid: #0c1220;
-  --card-bg: rgba(12, 18, 32, 0.85);
-  --card-border: rgba(148, 163, 184, 0.15);
-  --glow: rgba(148, 163, 184, 0.2);
-  --text-primary: #e2e8f0;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-  --soil: #1e293b;
-  --soil-light: #334155;
-  --seed: #64748b;
-  --seed-light: #94a3b8;
-  --stem: #475569;
-  --leaf: #334155;
-  --petal: #cbd5e1;
-  --center: #e2e8f0;
-}
-
-body.theme-night::before {
-  background:
-    radial-gradient(1px 1px at 20% 30%, rgba(148, 163, 184, 0.15), transparent),
-    radial-gradient(1px 1px at 80% 20%, rgba(226, 232, 240, 0.1), transparent),
-    radial-gradient(1px 1px at 60% 70%, rgba(148, 163, 184, 0.12), transparent),
-    radial-gradient(1px 1px at 40% 80%, rgba(226, 232, 240, 0.08), transparent),
-    radial-gradient(1px 1px at 90% 60%, rgba(148, 163, 184, 0.1), transparent),
-    radial-gradient(1px 1px at 10% 90%, rgba(226, 232, 240, 0.1), transparent);
-}
-
-/* Smooth theme transitions for themed states */
-body.theme-dawn,
-body.theme-day,
-body.theme-dusk,
-body.theme-night {
-  background: linear-gradient(135deg, var(--bg-deep) 0%, var(--bg-mid) 50%, var(--bg-deep) 100%);
-}
-
-
-/* ── Garden Visitors ── */
 .visitors-layer {
   position: fixed;
   inset: 0;
@@ -2030,7 +1620,6 @@ body.theme-night {
   transform: scale(1.15);
 }
 
-/* Scatter animation when clicked */
 .visitor.scattering {
   animation: visitorScatter 0.8s ease-out forwards !important;
 }
@@ -2046,10 +1635,10 @@ body.theme-night {
   }
 }
 
-/* ── Butterfly ── */
+/* Butterfly */
 .butterfly {
-  width: 1.5rem;
-  height: 1.2rem;
+  width: 1.2rem;
+  height: 0.95rem;
   position: relative;
 }
 
@@ -2058,8 +1647,8 @@ body.theme-night {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 0.15rem;
-  height: 0.8rem;
+  width: 0.12rem;
+  height: 0.6rem;
   background: #1e293b;
   border-radius: 0.1rem;
   z-index: 2;
@@ -2068,8 +1657,8 @@ body.theme-night {
 .butterfly-wing {
   position: absolute;
   top: 50%;
-  width: 0.65rem;
-  height: 0.85rem;
+  width: 0.5rem;
+  height: 0.65rem;
   border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
   z-index: 1;
   transform-origin: center center;
@@ -2088,86 +1677,62 @@ body.theme-night {
 }
 
 @keyframes wingFlapLeft {
-  0%, 100% {
-    transform: translateX(-100%) translateY(-50%) rotateY(0deg);
-  }
-  50% {
-    transform: translateX(-100%) translateY(-50%) rotateY(70deg);
-  }
+  0%, 100% { transform: translateX(-100%) translateY(-50%) rotateY(0deg); }
+  50% { transform: translateX(-100%) translateY(-50%) rotateY(70deg); }
 }
 
 @keyframes wingFlapRight {
-  0%, 100% {
-    transform: translateX(100%) translateY(-50%) rotateY(0deg);
-  }
-  50% {
-    transform: translateX(100%) translateY(-50%) rotateY(-70deg);
-  }
+  0%, 100% { transform: translateX(100%) translateY(-50%) rotateY(0deg); }
+  50% { transform: translateX(100%) translateY(-50%) rotateY(-70deg); }
 }
 
-/* Butterfly color variants */
 .butterfly--pink .butterfly-wing--left,
 .butterfly--pink .butterfly-wing--right {
   background: linear-gradient(135deg, #f472b6, #ec4899);
-  box-shadow: 0 0 0.3rem rgba(244, 114, 182, 0.4);
+  box-shadow: 0 0 0.2rem rgba(244, 114, 182, 0.3);
 }
 
 .butterfly--blue .butterfly-wing--left,
 .butterfly--blue .butterfly-wing--right {
   background: linear-gradient(135deg, #60a5fa, #3b82f6);
-  box-shadow: 0 0 0.3rem rgba(96, 165, 250, 0.4);
+  box-shadow: 0 0 0.2rem rgba(96, 165, 250, 0.3);
 }
 
 .butterfly--purple .butterfly-wing--left,
 .butterfly--purple .butterfly-wing--right {
   background: linear-gradient(135deg, #a78bfa, #8b5cf6);
-  box-shadow: 0 0 0.3rem rgba(167, 139, 250, 0.4);
+  box-shadow: 0 0 0.2rem rgba(167, 139, 250, 0.3);
 }
 
 .butterfly--orange .butterfly-wing--left,
 .butterfly--orange .butterfly-wing--right {
   background: linear-gradient(135deg, #fb923c, #f97316);
-  box-shadow: 0 0 0.3rem rgba(251, 146, 60, 0.4);
+  box-shadow: 0 0 0.2rem rgba(251, 146, 60, 0.3);
 }
 
-/* Butterfly flutter path animation */
 .butterfly.flutter-path {
   animation: butterflyFlutter 4s ease-in-out infinite;
 }
 
 @keyframes butterflyFlutter {
-  0% {
-    transform: translate(0, 0);
-  }
-  25% {
-    transform: translate(15px, -12px);
-  }
-  50% {
-    transform: translate(-10px, -5px);
-  }
-  75% {
-    transform: translate(8px, -18px);
-  }
-  100% {
-    transform: translate(0, 0);
-  }
+  0% { transform: translate(0, 0); }
+  25% { transform: translate(12px, -10px); }
+  50% { transform: translate(-8px, -4px); }
+  75% { transform: translate(6px, -14px); }
+  100% { transform: translate(0, 0); }
 }
 
-/* ── Bee ── */
+/* Bee */
 .bee {
-  width: 1.4rem;
-  height: 1rem;
+  width: 1.1rem;
+  height: 0.8rem;
   position: relative;
   animation: beeBob 0.4s ease-in-out infinite;
 }
 
 @keyframes beeBob {
-  0%, 100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-3px);
-  }
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
 }
 
 .bee-body {
@@ -2175,8 +1740,8 @@ body.theme-night {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 0.7rem;
-  height: 0.5rem;
+  width: 0.55rem;
+  height: 0.4rem;
   background: linear-gradient(90deg, #fbbf24 30%, #1e293b 30%, #1e293b 45%, #fbbf24 45%, #fbbf24 70%, #1e293b 70%, #1e293b 85%, #fbbf24 85%);
   border-radius: 40% 40% 40% 40% / 50% 50% 50% 50%;
   z-index: 2;
@@ -2184,9 +1749,9 @@ body.theme-night {
 
 .bee-wing {
   position: absolute;
-  width: 0.45rem;
-  height: 0.3rem;
-  background: rgba(203, 213, 225, 0.6);
+  width: 0.35rem;
+  height: 0.25rem;
+  background: rgba(203, 213, 225, 0.5);
   border-radius: 50%;
   z-index: 3;
   transform-origin: bottom center;
@@ -2206,51 +1771,38 @@ body.theme-night {
 }
 
 @keyframes beeWingFlap {
-  0%, 100% {
-    transform: rotateX(0deg);
-  }
-  50% {
-    transform: rotateX(60deg);
-  }
+  0%, 100% { transform: rotateX(0deg); }
+  50% { transform: rotateX(60deg); }
 }
 
 .bee-stinger {
   position: absolute;
-  right: -0.1rem;
+  right: -0.08rem;
   top: 50%;
   transform: translateY(-50%);
   width: 0;
   height: 0;
-  border-left: 0.15rem solid #1e293b;
-  border-top: 0.06rem solid transparent;
-  border-bottom: 0.06rem solid transparent;
+  border-left: 0.12rem solid #1e293b;
+  border-top: 0.05rem solid transparent;
+  border-bottom: 0.05rem solid transparent;
   z-index: 1;
 }
 
-/* Bee flight path */
 .bee.flutter-path {
   animation: beeFly 3s ease-in-out infinite, beeBob 0.4s ease-in-out infinite;
 }
 
 @keyframes beeFly {
-  0% {
-    transform: translate(0, 0);
-  }
-  33% {
-    transform: translate(-12px, 8px);
-  }
-  66% {
-    transform: translate(10px, -6px);
-  }
-  100% {
-    transform: translate(0, 0);
-  }
+  0% { transform: translate(0, 0); }
+  33% { transform: translate(-10px, 6px); }
+  66% { transform: translate(8px, -5px); }
+  100% { transform: translate(0, 0); }
 }
 
-/* ── Firefly (night theme) ── */
+/* Firefly */
 .firefly {
-  width: 0.5rem;
-  height: 0.5rem;
+  width: 0.4rem;
+  height: 0.4rem;
   position: relative;
 }
 
@@ -2259,14 +1811,14 @@ body.theme-night {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 0.35rem;
-  height: 0.35rem;
+  width: 0.28rem;
+  height: 0.28rem;
   background: #fde68a;
   border-radius: 50%;
   box-shadow:
-    0 0 0.3rem 0.15rem rgba(253, 230, 138, 0.6),
-    0 0 0.6rem 0.3rem rgba(253, 230, 138, 0.3),
-    0 0.1rem 0.9rem 0.45rem rgba(253, 230, 138, 0.15);
+    0 0 0.2rem 0.1rem rgba(253, 230, 138, 0.5),
+    0 0 0.4rem 0.2rem rgba(253, 230, 138, 0.25),
+    0 0.05rem 0.6rem 0.3rem rgba(253, 230, 138, 0.1);
   animation: fireflyPulse 2.5s ease-in-out infinite;
   z-index: 2;
 }
@@ -2275,15 +1827,15 @@ body.theme-night {
   0%, 100% {
     opacity: 0.3;
     box-shadow:
-      0 0 0.2rem 0.1rem rgba(253, 230, 138, 0.3),
-      0 0 0.4rem 0.2rem rgba(253, 230, 138, 0.15);
+      0 0 0.15rem 0.08rem rgba(253, 230, 138, 0.25),
+      0 0 0.3rem 0.15rem rgba(253, 230, 138, 0.12);
   }
   50% {
     opacity: 1;
     box-shadow:
-      0 0 0.4rem 0.2rem rgba(253, 230, 138, 0.8),
-      0 0 0.8rem 0.4rem rgba(253, 230, 138, 0.4),
-      0 0 1.2rem 0.6rem rgba(253, 230, 138, 0.2);
+      0 0 0.3rem 0.15rem rgba(253, 230, 138, 0.7),
+      0 0 0.6rem 0.3rem rgba(253, 230, 138, 0.35),
+      0 0 0.9rem 0.45rem rgba(253, 230, 138, 0.15);
   }
 }
 
@@ -2292,32 +1844,19 @@ body.theme-night {
 }
 
 @keyframes fireflyDrift {
-  0% {
-    transform: translate(0, 0);
-  }
-  20% {
-    transform: translate(20px, -15px);
-  }
-  40% {
-    transform: translate(-15px, -25px);
-  }
-  60% {
-    transform: translate(10px, -10px);
-  }
-  80% {
-    transform: translate(-20px, -20px);
-  }
-  100% {
-    transform: translate(0, 0);
-  }
+  0% { transform: translate(0, 0); }
+  20% { transform: translate(15px, -12px); }
+  40% { transform: translate(-12px, -20px); }
+  60% { transform: translate(8px, -8px); }
+  80% { transform: translate(-15px, -15px); }
+  100% { transform: translate(0, 0); }
 }
 
-/* Firefly trail / sparkle */
 .firefly-trail {
   position: absolute;
-  width: 0.15rem;
-  height: 0.15rem;
-  background: rgba(253, 230, 138, 0.5);
+  width: 0.12rem;
+  height: 0.12rem;
+  background: rgba(253, 230, 138, 0.4);
   border-radius: 50%;
   pointer-events: none;
   animation: fireflyTrailFade 1.5s ease-out forwards;
@@ -2325,132 +1864,41 @@ body.theme-night {
 }
 
 @keyframes fireflyTrailFade {
-  0% {
-    opacity: 0.6;
-    transform: scale(1);
-  }
-  100% {
-    opacity: 0;
-    transform: scale(0.3);
-  }
+  0% { opacity: 0.5; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.3); }
 }
 
-/* Visitor landing animation */
 .visitor.landing {
   animation: visitorLand 0.5s ease-out forwards !important;
 }
 
 @keyframes visitorLand {
-  0% {
-    transform: scale(1.3);
-  }
-  100% {
-    transform: scale(1);
-  }
+  0% { transform: scale(1.3); }
+  100% { transform: scale(1); }
 }
 
-/* Visitor leaving animation */
 .visitor.leaving {
   animation: visitorLeave 0.6s ease-out forwards !important;
 }
 
 @keyframes visitorLeave {
-  0% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  100% {
-    opacity: 0;
-    transform: scale(0.5) translateY(-2rem);
-  }
+  0% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.5) translateY(-2rem); }
 }
 
-/* Responsive visitor sizes */
-@media (max-width: 375px) {
-  .butterfly {
-    width: 1.2rem;
-    height: 0.95rem;
-  }
+/* ═══════════════════════════════════════════════════════════
+   Soundscape Toggle
+   ═══════════════════════════════════════════════════════════ */
 
-  .butterfly-wing {
-    width: 0.5rem;
-    height: 0.65rem;
-  }
-
-  .bee {
-    width: 1.1rem;
-    height: 0.8rem;
-  }
-
-  .bee-body {
-    width: 0.55rem;
-    height: 0.4rem;
-  }
-}
-
-@media (min-width: 1200px) {
-  .butterfly {
-    width: 1.8rem;
-    height: 1.45rem;
-  }
-
-  .butterfly-wing {
-    width: 0.8rem;
-    height: 1.05rem;
-  }
-
-  .bee {
-    width: 1.7rem;
-    height: 1.2rem;
-  }
-
-  .bee-body {
-    width: 0.85rem;
-    height: 0.6rem;
-  }
-}
-
-/* Reduced motion support */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-
-  .sprout.grown .flower {
-    animation: none;
-  }
-
-  .tile-sprout.grown .tile-flower {
-    animation: none;
-  }
-
-  .sparkle,
-  .tile-sparkle,
-  .visitor,
-  .firefly-trail {
-    display: none;
-  }
-
-  .message {
-    transition: none;
-  }
-}
-
-/* ── Soundscape Toggle ── */
 .soundscape-toggle {
   position: fixed;
-  bottom: 1.5rem;
-  right: 1.5rem;
+  bottom: 1rem;
+  right: 1rem;
   z-index: 100;
-  width: 3rem;
-  height: 3rem;
+  width: 2.5rem;
+  height: 2.5rem;
   border-radius: 50%;
-  background: rgba(17, 24, 39, 0.8);
+  background: rgba(15, 23, 36, 0.8);
   border: 1px solid var(--card-border);
   cursor: pointer;
   display: flex;
@@ -2464,9 +1912,9 @@ body.theme-night {
 
 .soundscape-toggle:hover,
 .soundscape-toggle:focus-visible {
-  background: rgba(17, 24, 39, 0.95);
-  border-color: rgba(74, 222, 128, 0.4);
-  box-shadow: 0 0 1.5rem rgba(74, 222, 128, 0.15);
+  background: rgba(15, 23, 36, 0.95);
+  border-color: rgba(74, 222, 128, 0.3);
+  box-shadow: 0 0 1rem rgba(74, 222, 128, 0.1);
   transform: scale(1.05);
 }
 
@@ -2475,12 +1923,12 @@ body.theme-night {
 }
 
 .soundscape-toggle.active {
-  border-color: rgba(74, 222, 128, 0.5);
-  box-shadow: 0 0 2rem rgba(74, 222, 128, 0.2);
+  border-color: rgba(74, 222, 128, 0.4);
+  box-shadow: 0 0 1.5rem rgba(74, 222, 128, 0.15);
 }
 
 .soundscape-icon {
-  font-size: 1.25rem;
+  font-size: 1rem;
   line-height: 1;
   transition: transform 0.3s ease;
 }
@@ -2490,48 +1938,201 @@ body.theme-night {
 }
 
 @keyframes soundPulse {
-  0%, 100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.15);
-  }
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.12); }
 }
 
-@media (max-width: 375px) {
-  .soundscape-toggle {
-    bottom: 1rem;
-    right: 1rem;
-    width: 2.5rem;
-    height: 2.5rem;
-  }
+/* ═══════════════════════════════════════════════════════════
+   Restoring Overlay
+   ═══════════════════════════════════════════════════════════ */
 
-  .soundscape-icon {
-    font-size: 1rem;
-  }
+.restoring-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 12, 20, 0.9);
+  backdrop-filter: blur(8px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.5s ease;
 }
 
-@media (min-width: 768px) {
-  .soundscape-toggle {
-    bottom: 2rem;
-    right: 2rem;
-    width: 3.5rem;
-    height: 3.5rem;
-  }
-
-  .soundscape-icon {
-    font-size: 1.5rem;
-  }
+.restoring-overlay.visible {
+  opacity: 1;
+  pointer-events: auto;
 }
 
-@media (min-width: 1200px) {
-  .soundscape-toggle {
-    bottom: 2.5rem;
-    right: 2.5rem;
-  }
+.restoring-text {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  letter-spacing: 0.08em;
+  animation: restoringPulse 1.5s ease-in-out infinite;
 }
 
-/* ── Weather System ── */
+@keyframes restoringPulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Seasonal Time-of-Day Themes
+   ═══════════════════════════════════════════════════════════ */
+
+body.theme-dawn {
+  --bg-deep: #1a0a14;
+  --bg-shell: #1e0e1a;
+  --bg-panel: #2d1520;
+  --card-bg: rgba(45, 21, 32, 0.9);
+  --card-border: rgba(251, 207, 232, 0.15);
+  --glow: rgba(251, 182, 200, 0.2);
+  --text-primary: #fce7f3;
+  --text-secondary: #d4a0b9;
+  --text-muted: #a07088;
+  --soil: #4a2c2a;
+  --soil-light: #6b3d3a;
+  --seed: #c9a86c;
+  --seed-light: #e8c98a;
+  --stem: #a7c4a0;
+  --leaf: #7da875;
+  --petal: #f9a8d4;
+  --center: #fde68a;
+  --journal-bg: #2a1a1e;
+  --journal-border: #4a2a38;
+  --journal-text: #d4a0b9;
+  --stats-bg: #1e1028;
+  --stats-border: #3a2040;
+}
+
+body.theme-dawn::before {
+  background:
+    radial-gradient(1px 1px at 20% 30%, rgba(251, 182, 200, 0.15), transparent),
+    radial-gradient(1px 1px at 80% 20%, rgba(253, 230, 138, 0.1), transparent),
+    radial-gradient(1px 1px at 60% 70%, rgba(251, 207, 232, 0.12), transparent),
+    radial-gradient(1px 1px at 40% 80%, rgba(251, 182, 200, 0.08), transparent),
+    radial-gradient(1px 1px at 90% 60%, rgba(253, 230, 138, 0.1), transparent),
+    radial-gradient(1px 1px at 10% 90%, rgba(251, 207, 232, 0.1), transparent);
+}
+
+body.theme-day {
+  --bg-deep: #0c1a10;
+  --bg-shell: #0e1e12;
+  --bg-panel: #142618;
+  --card-bg: rgba(20, 38, 24, 0.9);
+  --card-border: rgba(74, 222, 128, 0.15);
+  --glow: rgba(74, 222, 128, 0.2);
+  --text-primary: #dcfce7;
+  --text-secondary: #86d9a0;
+  --text-muted: #5a9968;
+  --soil: #3d2b1f;
+  --soil-light: #5c4033;
+  --seed: #8b6914;
+  --seed-light: #b8860b;
+  --stem: #22c55e;
+  --leaf: #16a34a;
+  --petal: #67e8f9;
+  --center: #fbbf24;
+  --journal-bg: #1a2010;
+  --journal-border: #3d4a28;
+  --journal-text: #a0c482;
+  --stats-bg: #141f10;
+  --stats-border: #2a3a20;
+}
+
+body.theme-day::before {
+  background:
+    radial-gradient(1px 1px at 20% 30%, rgba(74, 222, 128, 0.15), transparent),
+    radial-gradient(1px 1px at 80% 20%, rgba(103, 232, 249, 0.1), transparent),
+    radial-gradient(1px 1px at 60% 70%, rgba(74, 222, 128, 0.12), transparent),
+    radial-gradient(1px 1px at 40% 80%, rgba(103, 232, 249, 0.08), transparent),
+    radial-gradient(1px 1px at 90% 60%, rgba(74, 222, 128, 0.1), transparent),
+    radial-gradient(1px 1px at 10% 90%, rgba(103, 232, 249, 0.1), transparent);
+}
+
+body.theme-dusk {
+  --bg-deep: #140a1a;
+  --bg-shell: #1a0e22;
+  --bg-panel: #221030;
+  --card-bg: rgba(34, 16, 48, 0.9);
+  --card-border: rgba(251, 146, 60, 0.15);
+  --glow: rgba(251, 146, 60, 0.18);
+  --text-primary: #ffedd5;
+  --text-secondary: #c9a0d4;
+  --text-muted: #8a6899;
+  --soil: #3d2018;
+  --soil-light: #5c3528;
+  --seed: #a88018;
+  --seed-light: #d4a828;
+  --stem: #a78bfa;
+  --leaf: #8b5cf6;
+  --petal: #fb923c;
+  --center: #fcd34d;
+  --journal-bg: #2a1a12;
+  --journal-border: #4a3520;
+  --journal-text: #d4b080;
+  --stats-bg: #1e1018;
+  --stats-border: #3a2030;
+}
+
+body.theme-dusk::before {
+  background:
+    radial-gradient(1px 1px at 20% 30%, rgba(251, 146, 60, 0.15), transparent),
+    radial-gradient(1px 1px at 80% 20%, rgba(167, 139, 250, 0.12), transparent),
+    radial-gradient(1px 1px at 60% 70%, rgba(251, 146, 60, 0.1), transparent),
+    radial-gradient(1px 1px at 40% 80%, rgba(167, 139, 250, 0.15), transparent),
+    radial-gradient(1px 1px at 90% 60%, rgba(252, 211, 77, 0.1), transparent),
+    radial-gradient(1px 1px at 10% 90%, rgba(251, 146, 60, 0.12), transparent);
+}
+
+body.theme-night {
+  --bg-deep: #060912;
+  --bg-shell: #080c18;
+  --bg-panel: #0c1220;
+  --card-bg: rgba(12, 18, 32, 0.9);
+  --card-border: rgba(148, 163, 184, 0.1);
+  --glow: rgba(148, 163, 184, 0.12);
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --soil: #1e293b;
+  --soil-light: #334155;
+  --seed: #64748b;
+  --seed-light: #94a3b8;
+  --stem: #475569;
+  --leaf: #334155;
+  --petal: #cbd5e1;
+  --center: #e2e8f0;
+  --journal-bg: #121822;
+  --journal-border: #2a3545;
+  --journal-text: #8899aa;
+  --stats-bg: #0e1420;
+  --stats-border: #1e2a3a;
+}
+
+body.theme-night::before {
+  background:
+    radial-gradient(1px 1px at 20% 30%, rgba(148, 163, 184, 0.1), transparent),
+    radial-gradient(1px 1px at 80% 20%, rgba(226, 232, 240, 0.07), transparent),
+    radial-gradient(1px 1px at 60% 70%, rgba(148, 163, 184, 0.08), transparent),
+    radial-gradient(1px 1px at 40% 80%, rgba(226, 232, 240, 0.05), transparent),
+    radial-gradient(1px 1px at 90% 60%, rgba(148, 163, 184, 0.07), transparent),
+    radial-gradient(1px 1px at 10% 90%, rgba(226, 232, 240, 0.07), transparent);
+}
+
+/* Smooth theme transitions */
+body.theme-dawn,
+body.theme-day,
+body.theme-dusk,
+body.theme-night {
+  background: linear-gradient(135deg, var(--bg-deep) 0%, var(--bg-shell) 50%, var(--bg-deep) 100%);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Weather System
+   ═══════════════════════════════════════════════════════════ */
+
 .weather-overlay {
   position: fixed;
   inset: 0;
@@ -2550,42 +2151,25 @@ body.theme-night {
   pointer-events: none;
 }
 
-/* Active weather states */
-.weather-overlay.weather-active-sunny .weather-sunny {
-  opacity: 1;
-}
-
-.weather-overlay.weather-active-rainy .weather-rain {
-  opacity: 1;
-}
-
-.weather-overlay.weather-active-cloudy .weather-cloudy {
-  opacity: 1;
-}
-
+.weather-overlay.weather-active-sunny .weather-sunny,
+.weather-overlay.weather-active-rainy .weather-rain,
+.weather-overlay.weather-active-cloudy .weather-cloudy,
 .weather-overlay.weather-active-snowy .weather-snow {
   opacity: 1;
 }
 
-/* Show overlay when any weather is active */
 .weather-overlay[class*="weather-active-"] {
   opacity: 1;
 }
 
-/* ── Sunny: Light Rays ── */
+/* Sunny */
 .sun-ray {
   position: absolute;
   top: -10%;
   left: 50%;
   width: 40%;
   height: 120%;
-  background: linear-gradient(
-    180deg,
-    rgba(253, 230, 138, 0.12) 0%,
-    rgba(253, 230, 138, 0.06) 30%,
-    rgba(253, 230, 138, 0.02) 60%,
-    transparent 100%
-  );
+  background: linear-gradient(180deg, rgba(253, 230, 138, 0.08) 0%, rgba(253, 230, 138, 0.04) 30%, rgba(253, 230, 138, 0.01) 60%, transparent 100%);
   transform-origin: top center;
   transform: translateX(-50%) rotate(var(--ray-angle, 0deg));
   animation: sunRayPulse 4s ease-in-out infinite;
@@ -2594,39 +2178,25 @@ body.theme-night {
 }
 
 @keyframes sunRayPulse {
-  0%, 100% {
-    opacity: 0.4;
-  }
-  50% {
-    opacity: 0.8;
-  }
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.7; }
 }
 
-/* Warm overlay tint for sunny */
 .weather-sunny::before {
   content: '';
   position: absolute;
   inset: 0;
-  background: radial-gradient(
-    ellipse at 50% 0%,
-    rgba(253, 230, 138, 0.06) 0%,
-    transparent 60%
-  );
+  background: radial-gradient(ellipse at 50% 0%, rgba(253, 230, 138, 0.04) 0%, transparent 60%);
   pointer-events: none;
 }
 
-/* ── Rain: Falling Droplets ── */
+/* Rain */
 .rain-drop {
   position: absolute;
   top: -5%;
   width: 1.5px;
-  height: 1rem;
-  background: linear-gradient(
-    180deg,
-    transparent 0%,
-    rgba(147, 197, 253, var(--drop-opacity, 0.3)) 30%,
-    rgba(147, 197, 253, calc(var(--drop-opacity, 0.3) * 1.5)) 100%
-  );
+  height: 0.8rem;
+  background: linear-gradient(180deg, transparent 0%, rgba(147, 197, 253, var(--drop-opacity, 0.25)) 30%, rgba(147, 197, 253, calc(var(--drop-opacity, 0.25) * 1.5)) 100%);
   border-radius: 0 0 1px 1px;
   animation: rainFall var(--drop-duration, 0.8s) linear infinite;
   animation-delay: var(--drop-delay, 0s);
@@ -2634,48 +2204,27 @@ body.theme-night {
 }
 
 @keyframes rainFall {
-  0% {
-    transform: translateY(-2rem);
-    opacity: 0;
-  }
-  10% {
-    opacity: 1;
-  }
-  90% {
-    opacity: 1;
-  }
-  100% {
-    transform: translateY(105vh);
-    opacity: 0;
-  }
+  0% { transform: translateY(-2rem); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateY(105vh); opacity: 0; }
 }
 
-/* Rain overlay tint */
 .weather-rain::before {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(
-    180deg,
-    rgba(30, 41, 59, 0.15) 0%,
-    rgba(30, 41, 59, 0.08) 50%,
-    rgba(30, 41, 59, 0.12) 100%
-  );
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.1) 0%, rgba(30, 41, 59, 0.05) 50%, rgba(30, 41, 59, 0.08) 100%);
   pointer-events: none;
 }
 
-/* ── Cloudy: Drifting Clouds & Mist ── */
+/* Cloudy */
 .cloud {
   position: absolute;
   left: -20%;
   width: 30%;
   height: 8%;
-  background: radial-gradient(
-    ellipse at center,
-    rgba(148, 163, 184, var(--cloud-opacity, 0.2)) 0%,
-    rgba(148, 163, 184, calc(var(--cloud-opacity, 0.2) * 0.5)) 40%,
-    transparent 70%
-  );
+  background: radial-gradient(ellipse at center, rgba(148, 163, 184, var(--cloud-opacity, 0.15)) 0%, rgba(148, 163, 184, calc(var(--cloud-opacity, 0.15) * 0.5)) 40%, transparent 70%);
   border-radius: 50%;
   top: var(--cloud-y, 20%);
   animation: cloudDrift var(--cloud-duration, 10s) linear infinite;
@@ -2685,20 +2234,10 @@ body.theme-night {
 }
 
 @keyframes cloudDrift {
-  0% {
-    transform: translateX(0);
-    opacity: 0;
-  }
-  10% {
-    opacity: 1;
-  }
-  90% {
-    opacity: 1;
-  }
-  100% {
-    transform: translateX(130vw);
-    opacity: 0;
-  }
+  0% { transform: translateX(0); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateX(130vw); opacity: 0; }
 }
 
 .mist-layer {
@@ -2707,13 +2246,7 @@ body.theme-night {
   right: 0;
   height: 30%;
   bottom: var(--mist-y, 30%);
-  background: linear-gradient(
-    180deg,
-    transparent 0%,
-    rgba(148, 163, 184, var(--mist-opacity, 0.1)) 30%,
-    rgba(148, 163, 184, calc(var(--mist-opacity, 0.1) * 1.5)) 60%,
-    transparent 100%
-  );
+  background: linear-gradient(180deg, transparent 0%, rgba(148, 163, 184, var(--mist-opacity, 0.08)) 30%, rgba(148, 163, 184, calc(var(--mist-opacity, 0.08) * 1.5)) 60%, transparent 100%);
   animation: mistDrift var(--mist-duration, 8s) ease-in-out infinite;
   animation-delay: var(--mist-delay, 0s);
   pointer-events: none;
@@ -2721,90 +2254,62 @@ body.theme-night {
 }
 
 @keyframes mistDrift {
-  0%, 100% {
-    transform: translateX(-3%);
-    opacity: 0.6;
-  }
-  50% {
-    transform: translateX(3%);
-    opacity: 1;
-  }
+  0%, 100% { transform: translateX(-3%); opacity: 0.5; }
+  50% { transform: translateX(3%); opacity: 0.9; }
 }
 
-/* Cloudy overlay tint */
 .weather-cloudy::before {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(
-    180deg,
-    rgba(51, 65, 85, 0.1) 0%,
-    rgba(71, 85, 105, 0.06) 50%,
-    rgba(51, 65, 85, 0.1) 100%
-  );
+  background: linear-gradient(180deg, rgba(51, 65, 85, 0.08) 0%, rgba(71, 85, 105, 0.04) 50%, rgba(51, 65, 85, 0.08) 100%);
   pointer-events: none;
 }
 
-/* ── Snow: Floating Flakes ── */
+/* Snow */
 .snow-flake {
   position: absolute;
   top: -3%;
-  width: var(--flake-size, 0.5rem);
-  height: var(--flake-size, 0.5rem);
-  background: rgba(255, 255, 255, var(--flake-opacity, 0.8));
+  width: var(--flake-size, 0.4rem);
+  height: var(--flake-size, 0.4rem);
+  background: rgba(255, 255, 255, var(--flake-opacity, 0.7));
   border-radius: 50%;
   animation: snowFall var(--flake-duration, 6s) linear infinite;
   animation-delay: var(--flake-delay, 0s);
   pointer-events: none;
-  box-shadow: 0 0 0.3rem rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 0.2rem rgba(255, 255, 255, 0.2);
 }
 
 @keyframes snowFall {
-  0% {
-    transform: translate(0, -1rem) rotate(0deg);
-    opacity: 0;
-  }
-  10% {
-    opacity: 1;
-  }
-  90% {
-    opacity: 1;
-  }
-  100% {
-    transform: translate(var(--flake-drift, 20px), 105vh) rotate(360deg);
-    opacity: 0;
-  }
+  0% { transform: translate(0, -1rem) rotate(0deg); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translate(var(--flake-drift, 20px), 105vh) rotate(360deg); opacity: 0; }
 }
 
-/* Snow overlay tint */
 .weather-snow::before {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(
-    180deg,
-    rgba(226, 232, 240, 0.04) 0%,
-    rgba(226, 232, 240, 0.02) 50%,
-    rgba(226, 232, 240, 0.06) 100%
-  );
+  background: linear-gradient(180deg, rgba(226, 232, 240, 0.03) 0%, rgba(226, 232, 240, 0.015) 50%, rgba(226, 232, 240, 0.04) 100%);
   pointer-events: none;
 }
 
-/* ── Weather Icon Indicator ── */
+/* Weather Icon Indicator */
 .weather-icon {
   position: fixed;
-  bottom: 5rem;
-  right: 1.5rem;
+  bottom: 4rem;
+  right: 1rem;
   z-index: 100;
-  width: 2.5rem;
-  height: 2.5rem;
+  width: 2rem;
+  height: 2rem;
   border-radius: 50%;
-  background: rgba(17, 24, 39, 0.7);
+  background: rgba(15, 23, 36, 0.7);
   border: 1px solid var(--card-border);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.1rem;
+  font-size: 0.9rem;
   backdrop-filter: blur(8px);
   pointer-events: none;
   opacity: 0;
@@ -2817,23 +2322,22 @@ body.theme-night {
   transform: scale(1);
 }
 
-/* Weather label */
 .weather-label {
   position: fixed;
-  bottom: 4.2rem;
-  right: 1.5rem;
+  bottom: 3.4rem;
+  right: 1rem;
   z-index: 100;
-  font-size: 0.6rem;
+  font-size: 0.5rem;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  background: rgba(17, 24, 39, 0.6);
-  padding: 0.15rem 0.5rem;
-  border-radius: 0.4rem;
+  background: rgba(15, 23, 36, 0.5);
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.3rem;
   backdrop-filter: blur(4px);
   pointer-events: none;
   opacity: 0;
-  transform: translateY(0.3rem);
+  transform: translateY(0.2rem);
   transition: opacity 0.6s ease, transform 0.6s ease;
   white-space: nowrap;
 }
@@ -2843,74 +2347,691 @@ body.theme-night {
   transform: translateY(0);
 }
 
-/* Weather icon transition animation */
 .weather-icon.changing {
   animation: weatherIconChange 0.5s ease-out;
 }
 
 @keyframes weatherIconChange {
-  0% {
-    transform: scale(1);
+  0% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
+/* ── Weather-Growth Integration ── */
+.grid-tile.rain-watered {
+  border-color: rgba(96, 165, 250, 0.3);
+  box-shadow: 0 0 0.8rem rgba(96, 165, 250, 0.08), 0 0 1.5rem rgba(96, 165, 250, 0.03);
+  transition: border-color 0.6s ease, box-shadow 0.6s ease;
+}
+
+.tile-rain-drop {
+  position: absolute;
+  top: 15%;
+  width: 0.1rem;
+  height: 0.4rem;
+  background: linear-gradient(180deg, rgba(147, 197, 253, 0.5), rgba(96, 165, 250, 0.15));
+  border-radius: 0 0 50% 50%;
+  pointer-events: none;
+  z-index: 10;
+  animation: tileRainFall 0.6s ease-in forwards;
+  animation-delay: var(--drop-delay, 0s);
+}
+
+@keyframes tileRainFall {
+  0% { opacity: 0; transform: translateY(-0.4rem) scaleY(0.5); }
+  30% { opacity: 1; transform: translateY(0) scaleY(1); }
+  100% { opacity: 0; transform: translateY(1.5rem) scaleY(0.3); }
+}
+
+.tile-sprout.rain-bloom .tile-flower {
+  animation: rainBloomGlow 1.5s ease-out;
+}
+
+@keyframes rainBloomGlow {
+  0% { filter: brightness(1); }
+  40% { filter: brightness(1.2) saturate(1.15); box-shadow: 0 0 0.6rem rgba(96, 165, 250, 0.2); }
+  100% { filter: brightness(1); }
+}
+
+.grid-tile.weather-sunny-glow {
+  border-color: rgba(251, 191, 36, 0.15);
+  box-shadow: 0 0 0.8rem rgba(251, 191, 36, 0.04), 0 0 1.5rem rgba(251, 191, 36, 0.015);
+  transition: border-color 0.8s ease, box-shadow 0.8s ease;
+}
+
+.grid-tile.weather-rainy-glow {
+  border-color: rgba(96, 165, 250, 0.15);
+  box-shadow: 0 0 0.8rem rgba(96, 165, 250, 0.04), 0 0 1.5rem rgba(96, 165, 250, 0.015);
+  transition: border-color 0.8s ease, box-shadow 0.8s ease;
+}
+
+.grid-tile.weather-snowy-dormant {
+  border-color: rgba(226, 232, 240, 0.08);
+  box-shadow: 0 0 0.8rem rgba(226, 232, 240, 0.03), 0 0 1.5rem rgba(226, 232, 240, 0.01);
+  transition: border-color 0.8s ease, box-shadow 0.8s ease;
+}
+
+.grid-tile.weather-snowy-dormant .tile-sprout.grown .tile-flower {
+  animation: snowSway 5s ease-in-out infinite;
+}
+
+@keyframes snowSway {
+  0%, 100% { transform: rotate(-1deg); }
+  50% { transform: rotate(1deg); }
+}
+
+.grid-tile.weather-sunny-glow .tile-sprout.grown .tile-flower {
+  animation: sunWarmPulse 3.5s ease-in-out infinite;
+}
+
+@keyframes sunWarmPulse {
+  0%, 100% { filter: brightness(1); transform: rotate(-2deg); }
+  50% { filter: brightness(1.06); transform: rotate(2deg); }
+}
+
+/* Weather Journal Entry */
+.journal-entry--weather {
+  background: rgba(17, 24, 39, 0.25);
+  border-radius: 0.4rem;
+  margin-bottom: 0.15rem;
+}
+
+.journal-entry--weather .entry-timeline-dot--weather {
+  background: rgba(148, 163, 184, 0.4);
+  box-shadow: 0 0 0.3rem rgba(148, 163, 184, 0.15);
+}
+
+.journal-entry--weather .entry-timeline-dot--weather::after {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.journal-entry--weather .entry-swatch--weather {
+  border-color: rgba(148, 163, 184, 0.15);
+  box-shadow: 0 0 0.3rem rgba(148, 163, 184, 0.08);
+}
+
+.journal-entry--weather .entry-text {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+/* ── Self-Seeding / Volunteer Plants ── */
+.grid-tile.volunteer {
+  border-color: rgba(168, 153, 133, 0.25);
+  box-shadow: 0 0 0.8rem rgba(168, 153, 133, 0.06), 0 0 1.5rem rgba(168, 153, 133, 0.02);
+  transition: border-color 0.6s ease, box-shadow 0.6s ease;
+}
+
+.grid-tile.volunteer:hover,
+.grid-tile.volunteer:focus-visible {
+  box-shadow: 0 0 1rem rgba(168, 153, 133, 0.12), 0 0 2rem rgba(168, 153, 133, 0.04);
+}
+
+.grid-tile.volunteer-pulse {
+  animation: volunteerPulseHint 2.5s ease-in-out;
+}
+
+@keyframes volunteerPulseHint {
+  0%, 100% {
+    border-color: rgba(90, 110, 80, 0.2);
+    box-shadow: none;
+    background: rgba(15, 20, 16, 0.7);
   }
-  50% {
-    transform: scale(1.3);
+  30% {
+    border-color: rgba(168, 153, 133, 0.3);
+    box-shadow: 0 0 1rem rgba(168, 153, 133, 0.08), 0 0 2rem rgba(168, 153, 133, 0.03);
+    background: rgba(30, 27, 22, 0.65);
   }
-  100% {
-    transform: scale(1);
+  60% {
+    border-color: rgba(168, 153, 133, 0.4);
+    box-shadow: 0 0 1.2rem rgba(168, 153, 133, 0.1), 0 0 2.5rem rgba(168, 153, 133, 0.04);
+    background: rgba(30, 27, 22, 0.7);
   }
 }
 
-/* ── Responsive Weather ── */
-@media (max-width: 375px) {
-  .weather-icon {
-    bottom: 4rem;
-    right: 1rem;
-    width: 2rem;
+.volunteer-seed-fall {
+  position: absolute;
+  top: 5%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0.25rem;
+  height: 0.35rem;
+  background: linear-gradient(135deg, #c9a86c, #a88a50);
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  z-index: 10;
+  pointer-events: none;
+  animation: volunteerSeedFall 1s ease-in forwards;
+}
+
+@keyframes volunteerSeedFall {
+  0% { opacity: 0; transform: translateX(-50%) translateY(-1.5rem) scale(0.6) rotate(-15deg); }
+  20% { opacity: 1; }
+  60% { transform: translateX(-50%) translateY(0.6rem) scale(1) rotate(5deg); }
+  80% { transform: translateX(-50%) translateY(0.8rem) scale(0.95) rotate(0deg); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(0.8rem) scale(0.8) rotate(0deg); }
+}
+
+.grid-tile.volunteer-landing .tile-sprout {
+  animation: volunteerLand 0.6s ease-out;
+}
+
+@keyframes volunteerLand {
+  0% { transform: translateX(-50%) scaleY(0.3); opacity: 0; }
+  100% { transform: translateX(-50%) scaleY(1); opacity: 1; }
+}
+
+.volunteer-sparkle {
+  position: absolute;
+  width: 0.15rem;
+  height: 0.15rem;
+  background: #d4a574;
+  border-radius: 50%;
+  pointer-events: none;
+  animation: volunteerSparkleFly 0.8s ease-out forwards;
+  z-index: 5;
+  box-shadow: 0 0 0.1rem rgba(212, 165, 116, 0.5);
+}
+
+@keyframes volunteerSparkleFly {
+  0% { opacity: 1; transform: translate(0, 0) scale(1); }
+  100% { opacity: 0; transform: translate(var(--tx), var(--ty)) scale(0); }
+}
+
+.grid-tile.volunteer .tile-cycle-badge {
+  border-color: rgba(168, 153, 133, 0.25);
+}
+
+.grid-tile.volunteer .tile-sprout.grown .tile-flower {
+  animation: volunteerSway 3.5s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+@keyframes volunteerSway {
+  0%, 100% { transform: rotate(-4deg); }
+  50% { transform: rotate(4deg); }
+}
+
+.journal-entry--volunteer {
+  background: rgba(45, 35, 22, 0.2);
+  border-radius: 0.4rem;
+  margin-bottom: 0.15rem;
+}
+
+.journal-entry--volunteer .entry-timeline-dot--volunteer {
+  background: rgba(168, 153, 133, 0.5);
+  box-shadow: 0 0 0.3rem rgba(168, 153, 133, 0.2);
+}
+
+.journal-entry--volunteer .entry-timeline-dot--volunteer::after {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.journal-entry--volunteer .entry-swatch--volunteer {
+  border-color: rgba(168, 153, 133, 0.25);
+  box-shadow: 0 0 0.3rem rgba(168, 153, 133, 0.1);
+}
+
+.journal-entry--volunteer .entry-text {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.journal-entry--volunteer .entry-text strong {
+  color: rgba(168, 153, 133, 0.85);
+}
+
+.stat-card--volunteers .stat-value {
+  color: rgba(168, 153, 133, 0.85);
+}
+
+.stat-card--volunteers .stat-emoji {
+  filter: drop-shadow(0 0 0.2rem rgba(168, 153, 133, 0.15));
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Responsive Breakpoints
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Tablet (768px+) ── */
+@media (min-width: 768px) {
+  .app-shell {
+    padding: 1rem;
+    gap: 0.75rem;
+  }
+
+  .app-header {
+    padding: 0.5rem 1rem 0.75rem;
+  }
+
+  .app-stage {
+    gap: 0.75rem;
+  }
+
+  .card {
+    padding: 1.25rem 2rem;
+  }
+
+  .garden {
+    width: 8rem;
+    height: 8rem;
+  }
+
+  .soil {
+    width: 5rem;
     height: 2rem;
-    font-size: 0.9rem;
+    bottom: 1.25rem;
+  }
+
+  .seed {
+    bottom: 2.3rem;
+  }
+
+  .sprout {
+    bottom: 2.5rem;
+  }
+
+  .garden-grid {
+    max-width: 24rem;
+    gap: 0.75rem;
+  }
+
+  .panel--sidebar {
+    gap: 0.75rem;
+  }
+
+  .garden-journal {
+    padding: 1rem;
+    max-height: 50%;
+  }
+
+  .journal-timeline {
+    max-height: 9rem;
+  }
+
+  .garden-stats {
+    padding: 1rem;
+  }
+
+  .stats-grid {
+    gap: 0.5rem;
+  }
+
+  .stat-card {
+    padding: 0.65rem 0.5rem;
+  }
+
+  .tending-toolbar {
+    padding: 0.4rem 0.75rem;
+  }
+
+  .tool-btn {
+    padding: 0.5rem 1.25rem;
+  }
+
+  .soundscape-toggle {
+    bottom: 1.5rem;
+    right: 1.5rem;
+    width: 3rem;
+    height: 3rem;
+  }
+
+  .soundscape-icon {
+    font-size: 1.25rem;
+  }
+
+  .weather-icon {
+    bottom: 5rem;
+    right: 1.5rem;
+    width: 2.5rem;
+    height: 2.5rem;
+    font-size: 1.1rem;
   }
 
   .weather-label {
-    bottom: 3.4rem;
-    right: 1rem;
-    font-size: 0.5rem;
-  }
-
-  .rain-drop {
-    height: 0.75rem;
+    bottom: 4.2rem;
+    right: 1.5rem;
+    font-size: 0.55rem;
   }
 }
 
-@media (min-width: 768px) {
+/* ── Desktop (1200px+) ── */
+@media (min-width: 1200px) {
+  .app-shell {
+    padding: 0.75rem 1.5rem;
+    gap: 0.5rem;
+  }
+
+  .app-stage {
+    grid-template-columns: 220px 1fr 280px;
+    grid-template-rows: 1fr;
+    gap: 0.75rem;
+    align-items: stretch;
+  }
+
+  .panel--welcome {
+    justify-content: center;
+  }
+
+  .card {
+    padding: 1.5rem 1.25rem;
+    border-radius: 1.25rem;
+  }
+
+  .garden {
+    width: 7.5rem;
+    height: 7.5rem;
+  }
+
+  .panel--grid {
+    justify-content: center;
+  }
+
+  .garden-grid {
+    max-width: 26rem;
+    gap: 0.65rem;
+  }
+
+  .panel--sidebar {
+    gap: 0.5rem;
+    overflow-y: auto;
+  }
+
+  .garden-journal {
+    padding: 0.75rem;
+    max-height: 55%;
+  }
+
+  .journal-timeline {
+    max-height: 8rem;
+  }
+
+  .garden-stats {
+    padding: 0.75rem;
+  }
+
+  .stats-grid {
+    gap: 0.4rem;
+  }
+
+  .stat-card {
+    padding: 0.5rem 0.4rem;
+  }
+
+  .stat-emoji {
+    font-size: 1rem;
+  }
+
+  .stat-value {
+    font-size: 0.85rem;
+  }
+
+  .stat-label {
+    font-size: 0.45rem;
+  }
+
+  .tending-toolbar {
+    padding: 0.3rem 1rem;
+  }
+
+  .tool-btn {
+    padding: 0.4rem 1rem;
+  }
+
+  .soundscape-toggle {
+    bottom: 2rem;
+    right: 2rem;
+  }
+
   .weather-icon {
     bottom: 5.5rem;
     right: 2rem;
-    width: 3rem;
-    height: 3rem;
-    font-size: 1.3rem;
   }
 
   .weather-label {
     bottom: 4.6rem;
     right: 2rem;
-    font-size: 0.65rem;
   }
 }
 
-@media (min-width: 1200px) {
+/* ── Large Desktop (1440px+) ── */
+@media (min-width: 1440px) {
+  .app-stage {
+    grid-template-columns: 240px 1fr 300px;
+  }
+
+  .garden-grid {
+    max-width: 28rem;
+    gap: 0.75rem;
+  }
+}
+
+/* ── Small Mobile (below 375px) ── */
+@media (max-width: 375px) {
+  .app-shell {
+    padding: 0.5rem;
+    gap: 0.35rem;
+  }
+
+  .app-header {
+    padding: 0.15rem 0.5rem 0.35rem;
+  }
+
+  .app-title {
+    font-size: 1.1rem;
+  }
+
+  .app-tagline {
+    font-size: 0.5rem;
+  }
+
+  .card {
+    padding: 0.75rem 1rem;
+    border-radius: 1rem;
+  }
+
+  .garden {
+    width: 5.5rem;
+    height: 5.5rem;
+  }
+
+  .soil {
+    width: 3.5rem;
+    height: 1.25rem;
+    bottom: 0.75rem;
+  }
+
+  .seed {
+    bottom: 1.5rem;
+    width: 0.4rem;
+    height: 0.55rem;
+  }
+
+  .sprout {
+    bottom: 1.7rem;
+  }
+
+  .hint {
+    font-size: 0.6rem;
+  }
+
+  .message {
+    font-size: 0.65rem;
+  }
+
+  .garden-grid {
+    gap: 0.35rem;
+    max-width: 14rem;
+  }
+
+  .grid-tile {
+    border-radius: 0.6rem;
+  }
+
+  .tile-cycle-badge {
+    font-size: 0.38rem;
+    top: 0.12rem;
+    right: 0.12rem;
+  }
+
+  .garden-journal {
+    padding: 0.5rem;
+    border-radius: 0.65rem;
+    max-height: 40%;
+  }
+
+  .journal-timeline {
+    max-height: 5rem;
+  }
+
+  .journal-title {
+    font-size: 0.65rem;
+  }
+
+  .journal-icon {
+    font-size: 0.7rem;
+  }
+
+  .entry-text {
+    font-size: 0.58rem;
+  }
+
+  .entry-time {
+    font-size: 0.48rem;
+  }
+
+  .entry-swatch {
+    width: 0.75rem;
+    height: 0.75rem;
+  }
+
+  .garden-stats {
+    padding: 0.5rem;
+    border-radius: 0.65rem;
+  }
+
+  .stats-title {
+    font-size: 0.65rem;
+  }
+
+  .stats-icon {
+    font-size: 0.7rem;
+  }
+
+  .stat-emoji {
+    font-size: 0.85rem;
+  }
+
+  .stat-value {
+    font-size: 0.75rem;
+  }
+
+  .stat-label {
+    font-size: 0.42rem;
+  }
+
+  .stats-poem {
+    font-size: 0.52rem;
+    margin-top: 0.4rem;
+  }
+
+  .tending-toolbar {
+    padding: 0.15rem 0.35rem;
+  }
+
+  .tool-btn {
+    padding: 0.3rem 0.75rem;
+    border-radius: 0.5rem;
+  }
+
+  .tool-icon {
+    font-size: 1rem;
+  }
+
+  .tool-label {
+    font-size: 0.45rem;
+  }
+
+  .soundscape-toggle {
+    bottom: 0.75rem;
+    right: 0.75rem;
+    width: 2rem;
+    height: 2rem;
+  }
+
+  .soundscape-icon {
+    font-size: 0.85rem;
+  }
+
   .weather-icon {
-    bottom: 6rem;
-    right: 2.5rem;
+    bottom: 3.25rem;
+    right: 0.75rem;
+    width: 1.75rem;
+    height: 1.75rem;
+    font-size: 0.75rem;
   }
 
   .weather-label {
-    bottom: 5.1rem;
-    right: 2.5rem;
+    bottom: 2.75rem;
+    right: 0.75rem;
+    font-size: 0.42rem;
+  }
+
+  .journal-last-tended {
+    font-size: 0.42rem;
+  }
+
+  .butterfly {
+    width: 1rem;
+    height: 0.75rem;
+  }
+
+  .butterfly-wing {
+    width: 0.4rem;
+    height: 0.5rem;
+  }
+
+  .bee {
+    width: 0.9rem;
+    height: 0.65rem;
+  }
+
+  .bee-body {
+    width: 0.45rem;
+    height: 0.3rem;
   }
 }
 
-/* Reduced motion: disable weather animations */
+/* ═══════════════════════════════════════════════════════════
+   Reduced Motion
+   ═══════════════════════════════════════════════════════════ */
+
 @media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .sprout.grown .flower,
+  .tile-sprout.grown .tile-flower {
+    animation: none;
+  }
+
+  .sparkle,
+  .tile-sparkle,
+  .visitor,
+  .firefly-trail,
+  .volunteer-sparkle {
+    display: none;
+  }
+
+  .message {
+    transition: none;
+  }
+
   .weather-overlay,
   .weather-layer,
   .rain-drop,
@@ -2928,389 +3049,18 @@ body.theme-night {
     display: none;
   }
 
-  .weather-icon,
-  .weather-label {
-    transition: none;
-  }
-}
-
-/* ── Weather-Growth Integration Styles ── */
-
-/* Rain: auto-water effect on tiles */
-.grid-tile.rain-watered {
-  border-color: rgba(96, 165, 250, 0.35);
-  box-shadow:
-    0 0 1.2rem rgba(96, 165, 250, 0.12),
-    0 0 2.5rem rgba(96, 165, 250, 0.04);
-  transition: border-color 0.6s ease, box-shadow 0.6s ease;
-}
-
-/* Rain tile droplets */
-.tile-rain-drop {
-  position: absolute;
-  top: 15%;
-  width: 0.12rem;
-  height: 0.5rem;
-  background: linear-gradient(180deg, rgba(147, 197, 253, 0.6), rgba(96, 165, 250, 0.2));
-  border-radius: 0 0 50% 50%;
-  pointer-events: none;
-  z-index: 10;
-  animation: tileRainFall 0.6s ease-in forwards;
-  animation-delay: var(--drop-delay, 0s);
-}
-
-@keyframes tileRainFall {
-  0% {
-    opacity: 0;
-    transform: translateY(-0.5rem) scaleY(0.5);
-  }
-  30% {
-    opacity: 1;
-    transform: translateY(0) scaleY(1);
-  }
-  100% {
-    opacity: 0;
-    transform: translateY(2rem) scaleY(0.3);
-  }
-}
-
-/* Rain bloom glow on sprout */
-.tile-sprout.rain-bloom .tile-flower {
-  animation: rainBloomGlow 1.5s ease-out;
-}
-
-@keyframes rainBloomGlow {
-  0% {
-    filter: brightness(1);
-  }
-  40% {
-    filter: brightness(1.3) saturate(1.2);
-    box-shadow: 0 0 0.8rem rgba(96, 165, 250, 0.3);
-  }
-  100% {
-    filter: brightness(1);
-  }
-}
-
-/* Weather glow classes applied to tiles */
-.grid-tile.weather-sunny-glow {
-  border-color: rgba(251, 191, 36, 0.2);
-  box-shadow:
-    0 0 1rem rgba(251, 191, 36, 0.06),
-    0 0 2rem rgba(251, 191, 36, 0.02);
-  transition: border-color 0.8s ease, box-shadow 0.8s ease;
-}
-
-.grid-tile.weather-rainy-glow {
-  border-color: rgba(96, 165, 250, 0.2);
-  box-shadow:
-    0 0 1rem rgba(96, 165, 250, 0.06),
-    0 0 2rem rgba(96, 165, 250, 0.02);
-  transition: border-color 0.8s ease, box-shadow 0.8s ease;
-}
-
-.grid-tile.weather-snowy-dormant {
-  border-color: rgba(226, 232, 240, 0.12);
-  box-shadow:
-    0 0 1rem rgba(226, 232, 240, 0.04),
-    0 0 2rem rgba(226, 232, 240, 0.01);
-  transition: border-color 0.8s ease, box-shadow 0.8s ease;
-}
-
-/* Snowy: dormant sway — slower, more subdued */
-.grid-tile.weather-snowy-dormant .tile-sprout.grown .tile-flower {
-  animation: snowSway 5s ease-in-out infinite;
-}
-
-@keyframes snowSway {
-  0%, 100% { transform: rotate(-1deg); }
-  50% { transform: rotate(1deg); }
-}
-
-/* Sunny: gentle warm pulse on grown flowers */
-.grid-tile.weather-sunny-glow .tile-sprout.grown .tile-flower {
-  animation: sunWarmPulse 3.5s ease-in-out infinite;
-}
-
-@keyframes sunWarmPulse {
-  0%, 100% {
-    filter: brightness(1);
-    transform: rotate(-2deg);
-  }
-  50% {
-    filter: brightness(1.08);
-    transform: rotate(2deg);
-  }
-}
-
-/* ── Weather Journal Entry Styles ── */
-.journal-entry--weather {
-  background: rgba(17, 24, 39, 0.3);
-  border-radius: 0.5rem;
-  margin-bottom: 0.25rem;
-}
-
-.journal-entry--weather .entry-timeline-dot--weather {
-  background: rgba(148, 163, 184, 0.5);
-  box-shadow: 0 0 0.4rem rgba(148, 163, 184, 0.2);
-}
-
-.journal-entry--weather .entry-timeline-dot--weather::after {
-  background: rgba(255, 255, 255, 0.4);
-}
-
-.journal-entry--weather .entry-swatch--weather {
-  border-color: rgba(148, 163, 184, 0.2);
-  box-shadow: 0 0 0.4rem rgba(148, 163, 184, 0.1);
-}
-
-.journal-entry--weather .entry-text {
-  color: var(--text-secondary);
-  font-style: italic;
-}
-
-/* Reduced motion: disable weather-growth animations */
-@media (prefers-reduced-motion: reduce) {
-  .tile-rain-drop {
+  .tile-rain-drop,
+  .volunteer-seed-fall {
     animation: none !important;
     display: none;
   }
 
+  .grid-tile.volunteer-pulse,
+  .grid-tile.volunteer-landing .tile-sprout,
+  .grid-tile.volunteer .tile-sprout.grown .tile-flower,
   .tile-sprout.rain-bloom .tile-flower,
   .grid-tile.weather-sunny-glow .tile-sprout.grown .tile-flower,
   .grid-tile.weather-snowy-dormant .tile-sprout.grown .tile-flower {
     animation: none !important;
-  }
-}
-
-/* ── Self-Seeding / Volunteer Plants ── */
-
-/* Volunteer tile base styling */
-.grid-tile.volunteer {
-  /* Subtle wildflower tint on border */
-  border-color: rgba(168, 153, 133, 0.3);
-  box-shadow:
-    0 0 1.2rem rgba(168, 153, 133, 0.08),
-    0 0 2.5rem rgba(168, 153, 133, 0.03);
-  transition: border-color 0.6s ease, box-shadow 0.6s ease;
-}
-
-.grid-tile.volunteer:hover,
-.grid-tile.volunteer:focus-visible {
-  box-shadow:
-    0 0 1.5rem rgba(168, 153, 133, 0.15),
-    0 0 3rem rgba(168, 153, 133, 0.05);
-}
-
-/* Pre-seed pulse: organic glow hint on empty tile */
-.grid-tile.volunteer-pulse {
-  animation: volunteerPulseHint 2.5s ease-in-out;
-}
-
-@keyframes volunteerPulseHint {
-  0%, 100% {
-    border-color: var(--card-border);
-    box-shadow: none;
-    background: rgba(17, 24, 39, 0.6);
-  }
-  30% {
-    border-color: rgba(168, 153, 133, 0.35);
-    box-shadow:
-      0 0 1.5rem rgba(168, 153, 133, 0.12),
-      0 0 3rem rgba(168, 153, 133, 0.04);
-    background: rgba(30, 27, 22, 0.7);
-  }
-  60% {
-    border-color: rgba(168, 153, 133, 0.45);
-    box-shadow:
-      0 0 2rem rgba(168, 153, 133, 0.15),
-      0 0 4rem rgba(168, 153, 133, 0.06);
-    background: rgba(30, 27, 22, 0.75);
-  }
-}
-
-/* Falling seed animation */
-.volunteer-seed-fall {
-  position: absolute;
-  top: 5%;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 0.3rem;
-  height: 0.45rem;
-  background: linear-gradient(135deg, #c9a86c, #a88a50);
-  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
-  z-index: 10;
-  pointer-events: none;
-  animation: volunteerSeedFall 1s ease-in forwards;
-}
-
-@keyframes volunteerSeedFall {
-  0% {
-    opacity: 0;
-    transform: translateX(-50%) translateY(-2rem) scale(0.6) rotate(-15deg);
-  }
-  20% {
-    opacity: 1;
-  }
-  60% {
-    transform: translateX(-50%) translateY(0.8rem) scale(1) rotate(5deg);
-  }
-  80% {
-    transform: translateX(-50%) translateY(1rem) scale(0.95) rotate(0deg);
-  }
-  100% {
-    opacity: 0;
-    transform: translateX(-50%) translateY(1rem) scale(0.8) rotate(0deg);
-  }
-}
-
-/* Landing transition for volunteer */
-.grid-tile.volunteer-landing .tile-sprout {
-  animation: volunteerLand 0.6s ease-out;
-}
-
-@keyframes volunteerLand {
-  0% {
-    transform: translateX(-50%) scaleY(0.3);
-    opacity: 0;
-  }
-  100% {
-    transform: translateX(-50%) scaleY(1);
-    opacity: 1;
-  }
-}
-
-/* Volunteer sparkles — warm earthy tint */
-.volunteer-sparkle {
-  position: absolute;
-  width: 0.2rem;
-  height: 0.2rem;
-  background: #d4a574;
-  border-radius: 50%;
-  pointer-events: none;
-  animation: volunteerSparkleFly 0.8s ease-out forwards;
-  z-index: 5;
-  box-shadow: 0 0 0.15rem rgba(212, 165, 116, 0.6);
-}
-
-@keyframes volunteerSparkleFly {
-  0% {
-    opacity: 1;
-    transform: translate(0, 0) scale(1);
-  }
-  100% {
-    opacity: 0;
-    transform: translate(var(--tx), var(--ty)) scale(0);
-  }
-}
-
-/* Volunteer badge variant */
-.grid-tile.volunteer .tile-cycle-badge {
-  /* slightly warmer badge border */
-  border-color: rgba(168, 153, 133, 0.3);
-}
-
-/* Volunteer gentle sway — slightly wilder than regular */
-.grid-tile.volunteer .tile-sprout.grown .tile-flower {
-  animation: volunteerSway 3.5s ease-in-out infinite;
-  transform-origin: bottom center;
-}
-
-@keyframes volunteerSway {
-  0%, 100% {
-    transform: rotate(-4deg);
-  }
-  50% {
-    transform: rotate(4deg);
-  }
-}
-
-/* ── Volunteer Journal Entry Styles ── */
-.journal-entry--volunteer {
-  background: rgba(45, 35, 22, 0.25);
-  border-radius: 0.5rem;
-  margin-bottom: 0.25rem;
-}
-
-.journal-entry--volunteer .entry-timeline-dot--volunteer {
-  background: rgba(168, 153, 133, 0.6);
-  box-shadow: 0 0 0.4rem rgba(168, 153, 133, 0.3);
-}
-
-.journal-entry--volunteer .entry-timeline-dot--volunteer::after {
-  background: rgba(255, 255, 255, 0.5);
-}
-
-.journal-entry--volunteer .entry-swatch--volunteer {
-  border-color: rgba(168, 153, 133, 0.3);
-  box-shadow: 0 0 0.4rem rgba(168, 153, 133, 0.15);
-}
-
-.journal-entry--volunteer .entry-text {
-  color: var(--text-secondary);
-  font-style: italic;
-}
-
-.journal-entry--volunteer .entry-text strong {
-  color: rgba(168, 153, 133, 0.9);
-}
-
-/* ── Volunteer Stat Card ── */
-.stat-card--volunteers .stat-value {
-  color: rgba(168, 153, 133, 0.9);
-}
-
-.stat-card--volunteers .stat-emoji {
-  filter: drop-shadow(0 0 0.25rem rgba(168, 153, 133, 0.2));
-}
-
-/* Reduced motion: disable volunteer animations */
-@media (prefers-reduced-motion: reduce) {
-  .volunteer-seed-fall {
-    animation: none !important;
-    display: none;
-  }
-
-  .grid-tile.volunteer-pulse {
-    animation: none !important;
-  }
-
-  .grid-tile.volunteer-landing .tile-sprout {
-    animation: none !important;
-  }
-
-  .grid-tile.volunteer .tile-sprout.grown .tile-flower {
-    animation: none;
-  }
-
-  .volunteer-sparkle {
-    display: none;
-  }
-}
-
-/* Responsive: volunteer styles */
-@media (max-width: 375px) {
-  .volunteer-seed-fall {
-    width: 0.25rem;
-    height: 0.35rem;
-  }
-
-  .grid-tile.volunteer {
-    box-shadow:
-      0 0 0.8rem rgba(168, 153, 133, 0.06),
-      0 0 1.5rem rgba(168, 153, 133, 0.02);
-  }
-}
-
-/* Responsive: weather-growth styles */
-@media (max-width: 375px) {
-  .tile-rain-drop {
-    height: 0.35rem;
-  }
-
-  .grid-tile.rain-watered {
-    box-shadow:
-      0 0 0.8rem rgba(96, 165, 250, 0.1),
-      0 0 1.5rem rgba(96, 165, 250, 0.03);
   }
 }

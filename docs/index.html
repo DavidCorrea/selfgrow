@@ -7,261 +7,315 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <main class="container">
-    <div class="top-row">
-      <div class="card" id="welcomeCard">
-        <h1 class="title">selfgrow</h1>
-        <p class="tagline">a living, growing digital garden</p>
-        <div class="garden" id="garden" aria-label="Plant a seed" tabindex="0" role="button">
-          <div class="soil"></div>
-          <div class="seed" id="seed"></div>
-          <div class="sprout" id="sprout">
-            <div class="stem"></div>
-            <div class="leaf leaf--left"></div>
-            <div class="leaf leaf--right"></div>
-            <div class="flower">
-              <div class="petal petal--1"></div>
-              <div class="petal petal--2"></div>
-              <div class="petal petal--3"></div>
-              <div class="petal petal--4"></div>
-              <div class="petal petal--5"></div>
-              <div class="petal petal--6"></div>
-              <div class="center"></div>
-            </div>
-          </div>
-        </div>
-        <p class="hint" id="hint">click the soil to plant a seed</p>
-        <p class="message" id="message"></p>
-      </div>
+  <div class="app-shell">
+    <!-- ── Header Bar ── -->
+    <header class="app-header" role="banner">
+      <h1 class="app-title">selfgrow</h1>
+      <p class="app-tagline">a living, growing digital garden</p>
+    </header>
 
-      <div class="garden-grid-wrapper" id="gardenGridWrapper" aria-hidden="true">
-        <p class="grid-hint" id="gridHint"></p>
-        <div class="garden-grid" id="gardenGrid" role="group" aria-label="Garden grid">
-          <div class="grid-tile" data-tile="0" tabindex="0" role="button" aria-label="Plant tile 1">
-            <div class="tile-cycle-badge" data-badge="0">🌸 1</div>
-            <div class="tile-soil"></div>
-            <div class="tile-seed"></div>
-            <div class="tile-sprout">
-              <div class="tile-stem"></div>
-              <div class="tile-leaf tile-leaf--left"></div>
-              <div class="tile-leaf tile-leaf--right"></div>
-              <div class="tile-bud">
-                <div class="tile-bud-petal tile-bud-petal--1"></div>
-                <div class="tile-bud-petal tile-bud-petal--2"></div>
-                <div class="tile-bud-petal tile-bud-petal--3"></div>
-              </div>
-              <div class="tile-flower">
-                <div class="tile-petal tile-petal--1"></div>
-                <div class="tile-petal tile-petal--2"></div>
-                <div class="tile-petal tile-petal--3"></div>
-                <div class="tile-petal tile-petal--4"></div>
-                <div class="tile-petal tile-petal--5"></div>
-                <div class="tile-petal tile-petal--6"></div>
-                <div class="tile-center"></div>
+    <!-- ── Main Stage ── -->
+    <div class="app-stage">
+      <!-- Left: Welcome / Seed Card -->
+      <section class="panel panel--welcome" id="welcomePanel" aria-label="Welcome garden">
+        <div class="card" id="welcomeCard">
+          <div class="garden" id="garden" aria-label="Plant a seed" tabindex="0" role="button">
+            <div class="soil"></div>
+            <div class="seed" id="seed"></div>
+            <div class="sprout" id="sprout">
+              <div class="stem"></div>
+              <div class="leaf leaf--left"></div>
+              <div class="leaf leaf--right"></div>
+              <div class="flower">
+                <div class="petal petal--1"></div>
+                <div class="petal petal--2"></div>
+                <div class="petal petal--3"></div>
+                <div class="petal petal--4"></div>
+                <div class="petal petal--5"></div>
+                <div class="petal petal--6"></div>
+                <div class="center"></div>
               </div>
             </div>
           </div>
-          <div class="grid-tile" data-tile="1" tabindex="0" role="button" aria-label="Plant tile 2">
-            <div class="tile-cycle-badge" data-badge="1">🌸 1</div>
-            <div class="tile-soil"></div>
-            <div class="tile-seed"></div>
-            <div class="tile-sprout">
-              <div class="tile-stem"></div>
-              <div class="tile-leaf tile-leaf--left"></div>
-              <div class="tile-leaf tile-leaf--right"></div>
-              <div class="tile-bud">
-                <div class="tile-bud-petal tile-bud-petal--1"></div>
-                <div class="tile-bud-petal tile-bud-petal--2"></div>
-                <div class="tile-bud-petal tile-bud-petal--3"></div>
+          <p class="hint" id="hint">click the soil to plant a seed</p>
+          <p class="message" id="message"></p>
+        </div>
+      </section>
+
+      <!-- Center: Garden Grid (dominant focal point) -->
+      <section class="panel panel--grid" id="gridPanel" aria-label="Garden grid">
+        <div class="garden-grid-wrapper" id="gardenGridWrapper" aria-hidden="true">
+          <p class="grid-hint" id="gridHint"></p>
+          <div class="garden-grid" id="gardenGrid" role="group" aria-label="Garden grid">
+            <div class="grid-tile" data-tile="0" tabindex="0" role="button" aria-label="Plant tile 1">
+              <div class="tile-cycle-badge" data-badge="0">🌸 1</div>
+              <div class="tile-soil"></div>
+              <div class="tile-seed"></div>
+              <div class="tile-sprout">
+                <div class="tile-stem"></div>
+                <div class="tile-leaf tile-leaf--left"></div>
+                <div class="tile-leaf tile-leaf--right"></div>
+                <div class="tile-bud">
+                  <div class="tile-bud-petal tile-bud-petal--1"></div>
+                  <div class="tile-bud-petal tile-bud-petal--2"></div>
+                  <div class="tile-bud-petal tile-bud-petal--3"></div>
+                </div>
+                <div class="tile-flower">
+                  <div class="tile-petal tile-petal--1"></div>
+                  <div class="tile-petal tile-petal--2"></div>
+                  <div class="tile-petal tile-petal--3"></div>
+                  <div class="tile-petal tile-petal--4"></div>
+                  <div class="tile-petal tile-petal--5"></div>
+                  <div class="tile-petal tile-petal--6"></div>
+                  <div class="tile-center"></div>
+                </div>
               </div>
-              <div class="tile-flower">
-                <div class="tile-petal tile-petal--1"></div>
-                <div class="tile-petal tile-petal--2"></div>
-                <div class="tile-petal tile-petal--3"></div>
-                <div class="tile-petal tile-petal--4"></div>
-                <div class="tile-petal tile-petal--5"></div>
-                <div class="tile-petal tile-petal--6"></div>
-                <div class="tile-center"></div>
+            </div>
+            <div class="grid-tile" data-tile="1" tabindex="0" role="button" aria-label="Plant tile 2">
+              <div class="tile-cycle-badge" data-badge="1">🌸 1</div>
+              <div class="tile-soil"></div>
+              <div class="tile-seed"></div>
+              <div class="tile-sprout">
+                <div class="tile-stem"></div>
+                <div class="tile-leaf tile-leaf--left"></div>
+                <div class="tile-leaf tile-leaf--right"></div>
+                <div class="tile-bud">
+                  <div class="tile-bud-petal tile-bud-petal--1"></div>
+                  <div class="tile-bud-petal tile-bud-petal--2"></div>
+                  <div class="tile-bud-petal tile-bud-petal--3"></div>
+                </div>
+                <div class="tile-flower">
+                  <div class="tile-petal tile-petal--1"></div>
+                  <div class="tile-petal tile-petal--2"></div>
+                  <div class="tile-petal tile-petal--3"></div>
+                  <div class="tile-petal tile-petal--4"></div>
+                  <div class="tile-petal tile-petal--5"></div>
+                  <div class="tile-petal tile-petal--6"></div>
+                  <div class="tile-center"></div>
+                </div>
+              </div>
+            </div>
+            <div class="grid-tile" data-tile="2" tabindex="0" role="button" aria-label="Plant tile 3">
+              <div class="tile-cycle-badge" data-badge="2">🌸 1</div>
+              <div class="tile-soil"></div>
+              <div class="tile-seed"></div>
+              <div class="tile-sprout">
+                <div class="tile-stem"></div>
+                <div class="tile-leaf tile-leaf--left"></div>
+                <div class="tile-leaf tile-leaf--right"></div>
+                <div class="tile-bud">
+                  <div class="tile-bud-petal tile-bud-petal--1"></div>
+                  <div class="tile-bud-petal tile-bud-petal--2"></div>
+                  <div class="tile-bud-petal tile-bud-petal--3"></div>
+                </div>
+                <div class="tile-flower">
+                  <div class="tile-petal tile-petal--1"></div>
+                  <div class="tile-petal tile-petal--2"></div>
+                  <div class="tile-petal tile-petal--3"></div>
+                  <div class="tile-petal tile-petal--4"></div>
+                  <div class="tile-petal tile-petal--5"></div>
+                  <div class="tile-petal tile-petal--6"></div>
+                  <div class="tile-center"></div>
+                </div>
+              </div>
+            </div>
+            <div class="grid-tile" data-tile="3" tabindex="0" role="button" aria-label="Plant tile 4">
+              <div class="tile-cycle-badge" data-badge="3">🌸 1</div>
+              <div class="tile-soil"></div>
+              <div class="tile-seed"></div>
+              <div class="tile-sprout">
+                <div class="tile-stem"></div>
+                <div class="tile-leaf tile-leaf--left"></div>
+                <div class="tile-leaf tile-leaf--right"></div>
+                <div class="tile-bud">
+                  <div class="tile-bud-petal tile-bud-petal--1"></div>
+                  <div class="tile-bud-petal tile-bud-petal--2"></div>
+                  <div class="tile-bud-petal tile-bud-petal--3"></div>
+                </div>
+                <div class="tile-flower">
+                  <div class="tile-petal tile-petal--1"></div>
+                  <div class="tile-petal tile-petal--2"></div>
+                  <div class="tile-petal tile-petal--3"></div>
+                  <div class="tile-petal tile-petal--4"></div>
+                  <div class="tile-petal tile-petal--5"></div>
+                  <div class="tile-petal tile-petal--6"></div>
+                  <div class="tile-center"></div>
+                </div>
+              </div>
+            </div>
+            <div class="grid-tile" data-tile="4" tabindex="0" role="button" aria-label="Plant tile 5">
+              <div class="tile-cycle-badge" data-badge="4">🌸 1</div>
+              <div class="tile-soil"></div>
+              <div class="tile-seed"></div>
+              <div class="tile-sprout">
+                <div class="tile-stem"></div>
+                <div class="tile-leaf tile-leaf--left"></div>
+                <div class="tile-leaf tile-leaf--right"></div>
+                <div class="tile-bud">
+                  <div class="tile-bud-petal tile-bud-petal--1"></div>
+                  <div class="tile-bud-petal tile-bud-petal--2"></div>
+                  <div class="tile-bud-petal tile-bud-petal--3"></div>
+                </div>
+                <div class="tile-flower">
+                  <div class="tile-petal tile-petal--1"></div>
+                  <div class="tile-petal tile-petal--2"></div>
+                  <div class="tile-petal tile-petal--3"></div>
+                  <div class="tile-petal tile-petal--4"></div>
+                  <div class="tile-petal tile-petal--5"></div>
+                  <div class="tile-petal tile-petal--6"></div>
+                  <div class="tile-center"></div>
+                </div>
+              </div>
+            </div>
+            <div class="grid-tile" data-tile="5" tabindex="0" role="button" aria-label="Plant tile 6">
+              <div class="tile-cycle-badge" data-badge="5">🌸 1</div>
+              <div class="tile-soil"></div>
+              <div class="tile-seed"></div>
+              <div class="tile-sprout">
+                <div class="tile-stem"></div>
+                <div class="tile-leaf tile-leaf--left"></div>
+                <div class="tile-leaf tile-leaf--right"></div>
+                <div class="tile-bud">
+                  <div class="tile-bud-petal tile-bud-petal--1"></div>
+                  <div class="tile-bud-petal tile-bud-petal--2"></div>
+                  <div class="tile-bud-petal tile-bud-petal--3"></div>
+                </div>
+                <div class="tile-flower">
+                  <div class="tile-petal tile-petal--1"></div>
+                  <div class="tile-petal tile-petal--2"></div>
+                  <div class="tile-petal tile-petal--3"></div>
+                  <div class="tile-petal tile-petal--4"></div>
+                  <div class="tile-petal tile-petal--5"></div>
+                  <div class="tile-petal tile-petal--6"></div>
+                  <div class="tile-center"></div>
+                </div>
+              </div>
+            </div>
+            <div class="grid-tile" data-tile="6" tabindex="0" role="button" aria-label="Plant tile 7">
+              <div class="tile-cycle-badge" data-badge="6">🌸 1</div>
+              <div class="tile-soil"></div>
+              <div class="tile-seed"></div>
+              <div class="tile-sprout">
+                <div class="tile-stem"></div>
+                <div class="tile-leaf tile-leaf--left"></div>
+                <div class="tile-leaf tile-leaf--right"></div>
+                <div class="tile-bud">
+                  <div class="tile-bud-petal tile-bud-petal--1"></div>
+                  <div class="tile-bud-petal tile-bud-petal--2"></div>
+                  <div class="tile-bud-petal tile-bud-petal--3"></div>
+                </div>
+                <div class="tile-flower">
+                  <div class="tile-petal tile-petal--1"></div>
+                  <div class="tile-petal tile-petal--2"></div>
+                  <div class="tile-petal tile-petal--3"></div>
+                  <div class="tile-petal tile-petal--4"></div>
+                  <div class="tile-petal tile-petal--5"></div>
+                  <div class="tile-petal tile-petal--6"></div>
+                  <div class="tile-center"></div>
+                </div>
+              </div>
+            </div>
+            <div class="grid-tile" data-tile="7" tabindex="0" role="button" aria-label="Plant tile 8">
+              <div class="tile-cycle-badge" data-badge="7">🌸 1</div>
+              <div class="tile-soil"></div>
+              <div class="tile-seed"></div>
+              <div class="tile-sprout">
+                <div class="tile-stem"></div>
+                <div class="tile-leaf tile-leaf--left"></div>
+                <div class="tile-leaf tile-leaf--right"></div>
+                <div class="tile-bud">
+                  <div class="tile-bud-petal tile-bud-petal--1"></div>
+                  <div class="tile-bud-petal tile-bud-petal--2"></div>
+                  <div class="tile-bud-petal tile-bud-petal--3"></div>
+                </div>
+                <div class="tile-flower">
+                  <div class="tile-petal tile-petal--1"></div>
+                  <div class="tile-petal tile-petal--2"></div>
+                  <div class="tile-petal tile-petal--3"></div>
+                  <div class="tile-petal tile-petal--4"></div>
+                  <div class="tile-petal tile-petal--5"></div>
+                  <div class="tile-petal tile-petal--6"></div>
+                  <div class="tile-center"></div>
+                </div>
+              </div>
+            </div>
+            <div class="grid-tile" data-tile="8" tabindex="0" role="button" aria-label="Plant tile 9">
+              <div class="tile-cycle-badge" data-badge="8">🌸 1</div>
+              <div class="tile-soil"></div>
+              <div class="tile-seed"></div>
+              <div class="tile-sprout">
+                <div class="tile-stem"></div>
+                <div class="tile-leaf tile-leaf--left"></div>
+                <div class="tile-leaf tile-leaf--right"></div>
+                <div class="tile-bud">
+                  <div class="tile-bud-petal tile-bud-petal--1"></div>
+                  <div class="tile-bud-petal tile-bud-petal--2"></div>
+                  <div class="tile-bud-petal tile-bud-petal--3"></div>
+                </div>
+                <div class="tile-flower">
+                  <div class="tile-petal tile-petal--1"></div>
+                  <div class="tile-petal tile-petal--2"></div>
+                  <div class="tile-petal tile-petal--3"></div>
+                  <div class="tile-petal tile-petal--4"></div>
+                  <div class="tile-petal tile-petal--5"></div>
+                  <div class="tile-petal tile-petal--6"></div>
+                  <div class="tile-center"></div>
+                </div>
               </div>
             </div>
           </div>
-          <div class="grid-tile" data-tile="2" tabindex="0" role="button" aria-label="Plant tile 3">
-            <div class="tile-cycle-badge" data-badge="2">🌸 1</div>
-            <div class="tile-soil"></div>
-            <div class="tile-seed"></div>
-            <div class="tile-sprout">
-              <div class="tile-stem"></div>
-              <div class="tile-leaf tile-leaf--left"></div>
-              <div class="tile-leaf tile-leaf--right"></div>
-              <div class="tile-bud">
-                <div class="tile-bud-petal tile-bud-petal--1"></div>
-                <div class="tile-bud-petal tile-bud-petal--2"></div>
-                <div class="tile-bud-petal tile-bud-petal--3"></div>
-              </div>
-              <div class="tile-flower">
-                <div class="tile-petal tile-petal--1"></div>
-                <div class="tile-petal tile-petal--2"></div>
-                <div class="tile-petal tile-petal--3"></div>
-                <div class="tile-petal tile-petal--4"></div>
-                <div class="tile-petal tile-petal--5"></div>
-                <div class="tile-petal tile-petal--6"></div>
-                <div class="tile-center"></div>
-              </div>
+          <p class="counter" id="counter" aria-live="polite"></p>
+        </div>
+      </section>
+
+      <!-- Right: Sidebar (Stats + Journal) -->
+      <aside class="panel panel--sidebar" role="complementary" aria-label="Garden info">
+        <!-- Garden Reflection Stats -->
+        <div class="garden-stats" id="gardenStats" aria-hidden="true">
+          <div class="stats-header">
+            <span class="stats-icon">📜</span>
+            <h2 class="stats-title">garden reflections</h2>
+          </div>
+          <div class="stats-grid">
+            <div class="stat-card" id="statFlowersCard">
+              <span class="stat-emoji" id="statFlowersEmoji">🌸</span>
+              <span class="stat-value" id="statFlowersValue">0</span>
+              <span class="stat-label" id="statFlowersLabel">flowers bloomed</span>
+            </div>
+            <div class="stat-card" id="statSeasonCard">
+              <span class="stat-emoji" id="statSeasonEmoji">☀️</span>
+              <span class="stat-value" id="statSeasonValue">—</span>
+              <span class="stat-label">current season</span>
+            </div>
+            <div class="stat-card" id="statTendedCard">
+              <span class="stat-emoji" id="statTendedEmoji">🌱</span>
+              <span class="stat-value" id="statTendedValue">—</span>
+              <span class="stat-label">last tended</span>
+            </div>
+            <div class="stat-card stat-card--mood" id="statMoodCard">
+              <span class="stat-emoji" id="statMoodEmoji">✨</span>
+              <span class="stat-value" id="statMoodValue">—</span>
+              <span class="stat-label">garden mood</span>
             </div>
           </div>
-          <div class="grid-tile" data-tile="3" tabindex="0" role="button" aria-label="Plant tile 4">
-            <div class="tile-cycle-badge" data-badge="3">🌸 1</div>
-            <div class="tile-soil"></div>
-            <div class="tile-seed"></div>
-            <div class="tile-sprout">
-              <div class="tile-stem"></div>
-              <div class="tile-leaf tile-leaf--left"></div>
-              <div class="tile-leaf tile-leaf--right"></div>
-              <div class="tile-bud">
-                <div class="tile-bud-petal tile-bud-petal--1"></div>
-                <div class="tile-bud-petal tile-bud-petal--2"></div>
-                <div class="tile-bud-petal tile-bud-petal--3"></div>
-              </div>
-              <div class="tile-flower">
-                <div class="tile-petal tile-petal--1"></div>
-                <div class="tile-petal tile-petal--2"></div>
-                <div class="tile-petal tile-petal--3"></div>
-                <div class="tile-petal tile-petal--4"></div>
-                <div class="tile-petal tile-petal--5"></div>
-                <div class="tile-petal tile-petal--6"></div>
-                <div class="tile-center"></div>
-              </div>
-            </div>
+          <p class="stats-poem" id="statsPoem"></p>
+        </div>
+
+        <!-- Garden Journal -->
+        <div class="garden-journal" id="gardenJournal" aria-hidden="true">
+          <div class="journal-header">
+            <span class="journal-icon">🌿</span>
+            <h2 class="journal-title">your garden's story</h2>
+            <span class="journal-last-tended" id="journalLastTended" aria-label="Last tended timestamp"></span>
           </div>
-          <div class="grid-tile" data-tile="4" tabindex="0" role="button" aria-label="Plant tile 5">
-            <div class="tile-cycle-badge" data-badge="4">🌸 1</div>
-            <div class="tile-soil"></div>
-            <div class="tile-seed"></div>
-            <div class="tile-sprout">
-              <div class="tile-stem"></div>
-              <div class="tile-leaf tile-leaf--left"></div>
-              <div class="tile-leaf tile-leaf--right"></div>
-              <div class="tile-bud">
-                <div class="tile-bud-petal tile-bud-petal--1"></div>
-                <div class="tile-bud-petal tile-bud-petal--2"></div>
-                <div class="tile-bud-petal tile-bud-petal--3"></div>
-              </div>
-              <div class="tile-flower">
-                <div class="tile-petal tile-petal--1"></div>
-                <div class="tile-petal tile-petal--2"></div>
-                <div class="tile-petal tile-petal--3"></div>
-                <div class="tile-petal tile-petal--4"></div>
-                <div class="tile-petal tile-petal--5"></div>
-                <div class="tile-petal tile-petal--6"></div>
-                <div class="tile-center"></div>
-              </div>
-            </div>
-          </div>
-          <div class="grid-tile" data-tile="5" tabindex="0" role="button" aria-label="Plant tile 6">
-            <div class="tile-cycle-badge" data-badge="5">🌸 1</div>
-            <div class="tile-soil"></div>
-            <div class="tile-seed"></div>
-            <div class="tile-sprout">
-              <div class="tile-stem"></div>
-              <div class="tile-leaf tile-leaf--left"></div>
-              <div class="tile-leaf tile-leaf--right"></div>
-              <div class="tile-bud">
-                <div class="tile-bud-petal tile-bud-petal--1"></div>
-                <div class="tile-bud-petal tile-bud-petal--2"></div>
-                <div class="tile-bud-petal tile-bud-petal--3"></div>
-              </div>
-              <div class="tile-flower">
-                <div class="tile-petal tile-petal--1"></div>
-                <div class="tile-petal tile-petal--2"></div>
-                <div class="tile-petal tile-petal--3"></div>
-                <div class="tile-petal tile-petal--4"></div>
-                <div class="tile-petal tile-petal--5"></div>
-                <div class="tile-petal tile-petal--6"></div>
-                <div class="tile-center"></div>
-              </div>
-            </div>
-          </div>
-          <div class="grid-tile" data-tile="6" tabindex="0" role="button" aria-label="Plant tile 7">
-            <div class="tile-cycle-badge" data-badge="6">🌸 1</div>
-            <div class="tile-soil"></div>
-            <div class="tile-seed"></div>
-            <div class="tile-sprout">
-              <div class="tile-stem"></div>
-              <div class="tile-leaf tile-leaf--left"></div>
-              <div class="tile-leaf tile-leaf--right"></div>
-              <div class="tile-bud">
-                <div class="tile-bud-petal tile-bud-petal--1"></div>
-                <div class="tile-bud-petal tile-bud-petal--2"></div>
-                <div class="tile-bud-petal tile-bud-petal--3"></div>
-              </div>
-              <div class="tile-flower">
-                <div class="tile-petal tile-petal--1"></div>
-                <div class="tile-petal tile-petal--2"></div>
-                <div class="tile-petal tile-petal--3"></div>
-                <div class="tile-petal tile-petal--4"></div>
-                <div class="tile-petal tile-petal--5"></div>
-                <div class="tile-petal tile-petal--6"></div>
-                <div class="tile-center"></div>
-              </div>
-            </div>
-          </div>
-          <div class="grid-tile" data-tile="7" tabindex="0" role="button" aria-label="Plant tile 8">
-            <div class="tile-cycle-badge" data-badge="7">🌸 1</div>
-            <div class="tile-soil"></div>
-            <div class="tile-seed"></div>
-            <div class="tile-sprout">
-              <div class="tile-stem"></div>
-              <div class="tile-leaf tile-leaf--left"></div>
-              <div class="tile-leaf tile-leaf--right"></div>
-              <div class="tile-bud">
-                <div class="tile-bud-petal tile-bud-petal--1"></div>
-                <div class="tile-bud-petal tile-bud-petal--2"></div>
-                <div class="tile-bud-petal tile-bud-petal--3"></div>
-              </div>
-              <div class="tile-flower">
-                <div class="tile-petal tile-petal--1"></div>
-                <div class="tile-petal tile-petal--2"></div>
-                <div class="tile-petal tile-petal--3"></div>
-                <div class="tile-petal tile-petal--4"></div>
-                <div class="tile-petal tile-petal--5"></div>
-                <div class="tile-petal tile-petal--6"></div>
-                <div class="tile-center"></div>
-              </div>
-            </div>
-          </div>
-          <div class="grid-tile" data-tile="8" tabindex="0" role="button" aria-label="Plant tile 9">
-            <div class="tile-cycle-badge" data-badge="8">🌸 1</div>
-            <div class="tile-soil"></div>
-            <div class="tile-seed"></div>
-            <div class="tile-sprout">
-              <div class="tile-stem"></div>
-              <div class="tile-leaf tile-leaf--left"></div>
-              <div class="tile-leaf tile-leaf--right"></div>
-              <div class="tile-bud">
-                <div class="tile-bud-petal tile-bud-petal--1"></div>
-                <div class="tile-bud-petal tile-bud-petal--2"></div>
-                <div class="tile-bud-petal tile-bud-petal--3"></div>
-              </div>
-              <div class="tile-flower">
-                <div class="tile-petal tile-petal--1"></div>
-                <div class="tile-petal tile-petal--2"></div>
-                <div class="tile-petal tile-petal--3"></div>
-                <div class="tile-petal tile-petal--4"></div>
-                <div class="tile-petal tile-petal--5"></div>
-                <div class="tile-petal tile-petal--6"></div>
-                <div class="tile-center"></div>
-              </div>
-            </div>
+          <div class="journal-timeline" id="journalTimeline" role="log" aria-label="Garden journal entries">
+            <p class="journal-empty" id="journalEmpty">your journal awaits its first entry...</p>
           </div>
         </div>
-        <p class="counter" id="counter" aria-live="polite"></p>
-      </div>
+      </aside>
     </div>
 
-    <!-- Garden Visitors Layer -->
-    <div class="visitors-layer" id="visitorsLayer" aria-hidden="true"></div>
-
-    <!-- Tending Toolbar -->
+    <!-- ── Tending Toolbar (slim inline strip) ── -->
     <div class="tending-toolbar" id="tendingToolbar" aria-hidden="true">
       <p class="tending-hint" id="tendingHint"></p>
       <div class="tending-tools">
@@ -271,57 +325,16 @@
         </button>
       </div>
     </div>
+  </div>
 
-    <!-- Soundscape Toggle -->
-    <button class="soundscape-toggle" id="soundscapeToggle" aria-label="Toggle ambient soundscape" title="Toggle ambient sounds">
-      <span class="soundscape-icon" id="soundscapeIcon">🔇</span>
-    </button>
+  <!-- Garden Visitors Layer -->
+  <div class="visitors-layer" id="visitorsLayer" aria-hidden="true"></div>
 
-    <div class="bottom-row">
-      <!-- Garden Reflection Stats -->
-      <div class="garden-stats" id="gardenStats" aria-hidden="true">
-        <div class="stats-header">
-          <span class="stats-icon">📜</span>
-          <h2 class="stats-title">garden reflections</h2>
-        </div>
-        <div class="stats-grid">
-          <div class="stat-card" id="statFlowersCard">
-            <span class="stat-emoji" id="statFlowersEmoji">🌸</span>
-            <span class="stat-value" id="statFlowersValue">0</span>
-            <span class="stat-label" id="statFlowersLabel">flowers bloomed</span>
-          </div>
-          <div class="stat-card" id="statSeasonCard">
-            <span class="stat-emoji" id="statSeasonEmoji">☀️</span>
-            <span class="stat-value" id="statSeasonValue">—</span>
-            <span class="stat-label">current season</span>
-          </div>
-          <div class="stat-card" id="statTendedCard">
-            <span class="stat-emoji" id="statTendedEmoji">🌱</span>
-            <span class="stat-value" id="statTendedValue">—</span>
-            <span class="stat-label">last tended</span>
-          </div>
-          <div class="stat-card stat-card--mood" id="statMoodCard">
-            <span class="stat-emoji" id="statMoodEmoji">✨</span>
-            <span class="stat-value" id="statMoodValue">—</span>
-            <span class="stat-label">garden mood</span>
-          </div>
-        </div>
-        <p class="stats-poem" id="statsPoem"></p>
-      </div>
+  <!-- Soundscape Toggle -->
+  <button class="soundscape-toggle" id="soundscapeToggle" aria-label="Toggle ambient soundscape" title="Toggle ambient sounds">
+    <span class="soundscape-icon" id="soundscapeIcon">🔇</span>
+  </button>
 
-      <!-- Garden Journal -->
-      <div class="garden-journal" id="gardenJournal" aria-hidden="true">
-        <div class="journal-header">
-          <span class="journal-icon">🌿</span>
-          <h2 class="journal-title">your garden's story</h2>
-          <span class="journal-last-tended" id="journalLastTended" aria-label="Last tended timestamp"></span>
-        </div>
-        <div class="journal-timeline" id="journalTimeline" role="log" aria-label="Garden journal entries">
-          <p class="journal-empty" id="journalEmpty">your journal awaits its first entry...</p>
-        </div>
-      </div>
-    </div>
-  </main>
   <script type="module" src="script.js"></script>
 </body>
 </html>
