@@ -2,6 +2,10 @@
 
 History of changes made by the hourly agent.
 
+## 2026-06-05
+
+- **Added garden self-seeding mechanic**: Empty tiles can now spontaneously sprout volunteer wildflower plants when the garden is thriving (3+ blooming flowers). A seeding check runs every 60-90 seconds. Before a seed lands, the target tile gets an organic pulse animation hinting something is about to happen, then a tiny seed drifts down from above with a soft landing animation. Volunteers grow through the normal cycle but use a distinct wildflower palette (muted earth tones: dusty lavender, sage, warm clay, seafoam) and display with a 🌿 badge instead of 🌸. A soft chime plays on landing if the soundscape is active. The chance of seeding scales with blooming count and weather (boosted in sun/rain, disabled in snow). Journal logs volunteer entries with a leaf emoji and poetic messages ('a seed carried by the wind finds its home'). Stats panel shows total volunteers sprouted. Fully self-contained with CSS animations and setTimeout — no external deps. Respects prefers-reduced-motion by skipping pulse hints and seed-fall animation. Integrated with existing weather, visitors, soundscape, journal, and stats systems.
+
 ## 2026-06-04
 
 - **Fixed critical runtime TypeError in revealGrid override**: Removed the broken `var originalRevealGrid = revealGrid; revealGrid = function() {...}` reassignment in script.js. In ES modules, imported bindings are read-only, so this threw `TypeError: Assignment to constant variable.` at runtime, preventing initSoundscape(), initStats(), and restoreGardenState() from ever executing. The override was also redundant — plantSeed() already calls revealGrid() then startVisitors() sequentially.

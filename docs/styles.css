@@ -3083,6 +3083,225 @@ body.theme-night {
   }
 }
 
+/* ── Self-Seeding / Volunteer Plants ── */
+
+/* Volunteer tile base styling */
+.grid-tile.volunteer {
+  /* Subtle wildflower tint on border */
+  border-color: rgba(168, 153, 133, 0.3);
+  box-shadow:
+    0 0 1.2rem rgba(168, 153, 133, 0.08),
+    0 0 2.5rem rgba(168, 153, 133, 0.03);
+  transition: border-color 0.6s ease, box-shadow 0.6s ease;
+}
+
+.grid-tile.volunteer:hover,
+.grid-tile.volunteer:focus-visible {
+  box-shadow:
+    0 0 1.5rem rgba(168, 153, 133, 0.15),
+    0 0 3rem rgba(168, 153, 133, 0.05);
+}
+
+/* Pre-seed pulse: organic glow hint on empty tile */
+.grid-tile.volunteer-pulse {
+  animation: volunteerPulseHint 2.5s ease-in-out;
+}
+
+@keyframes volunteerPulseHint {
+  0%, 100% {
+    border-color: var(--card-border);
+    box-shadow: none;
+    background: rgba(17, 24, 39, 0.6);
+  }
+  30% {
+    border-color: rgba(168, 153, 133, 0.35);
+    box-shadow:
+      0 0 1.5rem rgba(168, 153, 133, 0.12),
+      0 0 3rem rgba(168, 153, 133, 0.04);
+    background: rgba(30, 27, 22, 0.7);
+  }
+  60% {
+    border-color: rgba(168, 153, 133, 0.45);
+    box-shadow:
+      0 0 2rem rgba(168, 153, 133, 0.15),
+      0 0 4rem rgba(168, 153, 133, 0.06);
+    background: rgba(30, 27, 22, 0.75);
+  }
+}
+
+/* Falling seed animation */
+.volunteer-seed-fall {
+  position: absolute;
+  top: 5%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0.3rem;
+  height: 0.45rem;
+  background: linear-gradient(135deg, #c9a86c, #a88a50);
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  z-index: 10;
+  pointer-events: none;
+  animation: volunteerSeedFall 1s ease-in forwards;
+}
+
+@keyframes volunteerSeedFall {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-2rem) scale(0.6) rotate(-15deg);
+  }
+  20% {
+    opacity: 1;
+  }
+  60% {
+    transform: translateX(-50%) translateY(0.8rem) scale(1) rotate(5deg);
+  }
+  80% {
+    transform: translateX(-50%) translateY(1rem) scale(0.95) rotate(0deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(1rem) scale(0.8) rotate(0deg);
+  }
+}
+
+/* Landing transition for volunteer */
+.grid-tile.volunteer-landing .tile-sprout {
+  animation: volunteerLand 0.6s ease-out;
+}
+
+@keyframes volunteerLand {
+  0% {
+    transform: translateX(-50%) scaleY(0.3);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(-50%) scaleY(1);
+    opacity: 1;
+  }
+}
+
+/* Volunteer sparkles — warm earthy tint */
+.volunteer-sparkle {
+  position: absolute;
+  width: 0.2rem;
+  height: 0.2rem;
+  background: #d4a574;
+  border-radius: 50%;
+  pointer-events: none;
+  animation: volunteerSparkleFly 0.8s ease-out forwards;
+  z-index: 5;
+  box-shadow: 0 0 0.15rem rgba(212, 165, 116, 0.6);
+}
+
+@keyframes volunteerSparkleFly {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--tx), var(--ty)) scale(0);
+  }
+}
+
+/* Volunteer badge variant */
+.grid-tile.volunteer .tile-cycle-badge {
+  /* slightly warmer badge border */
+  border-color: rgba(168, 153, 133, 0.3);
+}
+
+/* Volunteer gentle sway — slightly wilder than regular */
+.grid-tile.volunteer .tile-sprout.grown .tile-flower {
+  animation: volunteerSway 3.5s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+@keyframes volunteerSway {
+  0%, 100% {
+    transform: rotate(-4deg);
+  }
+  50% {
+    transform: rotate(4deg);
+  }
+}
+
+/* ── Volunteer Journal Entry Styles ── */
+.journal-entry--volunteer {
+  background: rgba(45, 35, 22, 0.25);
+  border-radius: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.journal-entry--volunteer .entry-timeline-dot--volunteer {
+  background: rgba(168, 153, 133, 0.6);
+  box-shadow: 0 0 0.4rem rgba(168, 153, 133, 0.3);
+}
+
+.journal-entry--volunteer .entry-timeline-dot--volunteer::after {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.journal-entry--volunteer .entry-swatch--volunteer {
+  border-color: rgba(168, 153, 133, 0.3);
+  box-shadow: 0 0 0.4rem rgba(168, 153, 133, 0.15);
+}
+
+.journal-entry--volunteer .entry-text {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.journal-entry--volunteer .entry-text strong {
+  color: rgba(168, 153, 133, 0.9);
+}
+
+/* ── Volunteer Stat Card ── */
+.stat-card--volunteers .stat-value {
+  color: rgba(168, 153, 133, 0.9);
+}
+
+.stat-card--volunteers .stat-emoji {
+  filter: drop-shadow(0 0 0.25rem rgba(168, 153, 133, 0.2));
+}
+
+/* Reduced motion: disable volunteer animations */
+@media (prefers-reduced-motion: reduce) {
+  .volunteer-seed-fall {
+    animation: none !important;
+    display: none;
+  }
+
+  .grid-tile.volunteer-pulse {
+    animation: none !important;
+  }
+
+  .grid-tile.volunteer-landing .tile-sprout {
+    animation: none !important;
+  }
+
+  .grid-tile.volunteer .tile-sprout.grown .tile-flower {
+    animation: none;
+  }
+
+  .volunteer-sparkle {
+    display: none;
+  }
+}
+
+/* Responsive: volunteer styles */
+@media (max-width: 375px) {
+  .volunteer-seed-fall {
+    width: 0.25rem;
+    height: 0.35rem;
+  }
+
+  .grid-tile.volunteer {
+    box-shadow:
+      0 0 0.8rem rgba(168, 153, 133, 0.06),
+      0 0 1.5rem rgba(168, 153, 133, 0.02);
+  }
+}
+
 /* Responsive: weather-growth styles */
 @media (max-width: 375px) {
   .tile-rain-drop {

@@ -1,4 +1,4 @@
-import { dom, journalEntries, plantedCount } from './state.js';
+import { dom, journalEntries, plantedCount, totalVolunteers } from './state.js';
 import { getCurrentSeasonName } from './theme.js';
 import { getBloomingCount, getPlantedCount } from './visitors.js';
 
@@ -52,6 +52,8 @@ function getTotalFlowersBloomed() {
     if (entry.type === 'plant') {
       total += 1;
     } else if (entry.type === 'cycle') {
+      total += 1;
+    } else if (entry.type === 'volunteer') {
       total += 1;
     }
   }
@@ -223,6 +225,10 @@ export function updateStats() {
     if (plantedCount.value === 0 && journalEntries.length === 0) {
       poemText = 'plant a seed to begin your garden\'s story';
     }
+    var volunteers = totalVolunteers.value;
+    if (volunteers > 0 && plantedCount.value > 0) {
+      poemText += ' · ' + volunteers + ' volunteer' + (volunteers !== 1 ? 's' : '') + ' sprouted';
+    }
     if (statsPoem.textContent !== poemText) {
       statsPoem.textContent = poemText;
       statsPoem.classList.remove('visible');
@@ -246,6 +252,35 @@ export function notifyStatsChange() {
   setTimeout(function () { updateStats(); }, 100);
 }
 
+function updateVolunteerStat() {
+  var volunteers = totalVolunteers.value;
+  var statCard = document.getElementById('statVolunteersCard');
+  if (!statCard && volunteers > 0) {
+    var statsGrid = document.querySelector('.stats-grid');
+    if (!statsGrid) return;
+    var statEl = document.createElement('div');
+    statEl.classList.add('stat-card', 'stat-card--volunteers');
+    statEl.id = 'statVolunteersCard';
+    statEl.innerHTML =
+      '<span class="stat-emoji">🌿</span>' +
+      '<span class="stat-value" id="statVolunteersValue">' + volunteers + '</span>' +
+      '<span class="stat-label" id="statVolunteersLabel">' + (volunteers === 1 ? 'volunteer sprouted' : 'volunteers sprouted') + '</span>';
+    statsGrid.appendChild(statEl);
+    statEl.style.opacity = '0';
+    statEl.style.transform = 'translateY(0.5rem)';
+    requestAnimationFrame(function () {
+      statEl.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
+      statEl.style.opacity = '1';
+      statEl.style.transform = 'translateY(0)';
+    });
+  } else if (statCard && volunteers > 0) {
+    var valEl = document.getElementById('statVolunteersValue');
+    var lblEl = document.getElementById('statVolunteersLabel');
+    if (valEl) valEl.textContent = '' + volunteers;
+    if (lblEl) lblEl.textContent = volunteers === 1 ? 'volunteer sprouted' : 'volunteers sprouted';
+  }
+}
+
 export function initStats() {
   scheduleStatsUpdate();
 
@@ -257,4 +292,8 @@ export function initStats() {
       updateStats();
     }
   }, 60000);
+
+  setInterval(function () {
+    updateVolunteerStat();
+  }, 15000);
 }

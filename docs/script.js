@@ -6,6 +6,7 @@ import { plantTile, startGrowthCycle, updateCounter, revealGrid, toggleWateringM
 import { startVisitors, initVisitors } from './js/visitors.js';
 import { initSoundscape } from './js/soundscape.js';
 import { initStats } from './js/stats.js';
+import { startSelfSeeding } from './js/selfseeding.js';
 
 
 (function () {
@@ -165,6 +166,9 @@ import { initStats } from './js/stats.js';
 
   // ── Initialize Stats ──
   initStats();
+
+  // ── Initialize Self-Seeding ──
+  startSelfSeeding();
 
   // ── Restore saved garden after all functions are ready ──
   if (savedState && savedState.plantedCount > 0) {

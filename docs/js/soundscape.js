@@ -223,6 +223,10 @@ function scheduleSounds(config) {
   }
 }
 
+export function isSoundscapeEnabled() {
+  return isSoundscapeActive;
+}
+
 export function startSoundscape() {
   initAudioContext();
   if (audioCtx.state === 'suspended') {

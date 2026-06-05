@@ -1,4 +1,4 @@
-import { dom, journalEntries, wateredTiles, tileCycleState, tileColorMap, plantedCount, gridRevealed, journalRevealed, tendingRevealed, petalPalettes, centerColors, getRandomGridMessage, getRandomWateringHint, getRandomCycleMessage, CYCLE_HOLD_BLOOM, CYCLE_SEED_OFFSET, CYCLE_WILT_DURATION, CYCLE_PAUSE_AFTER_WILT } from './state.js';
+import { dom, journalEntries, wateredTiles, tileCycleState, tileColorMap, plantedCount, totalVolunteers, gridRevealed, journalRevealed, tendingRevealed, petalPalettes, centerColors, getRandomGridMessage, getRandomWateringHint, getRandomCycleMessage, CYCLE_HOLD_BLOOM, CYCLE_SEED_OFFSET, CYCLE_WILT_DURATION, CYCLE_PAUSE_AFTER_WILT } from './state.js';
 import { addWateredIcon } from './tiles.js';
 import { formatTime } from './journal.js';
 import { getCurrentWeather, getWeatherModifier } from './weather.js';
@@ -15,6 +15,7 @@ export function saveGardenState() {
     tileColorMap: {},
     journalEntries: journalEntries,
     plantedCount: plantedCount.value,
+    totalVolunteers: totalVolunteers.value,
     gridRevealed: gridRevealed.value,
     journalRevealed: journalRevealed.value,
     tendingRevealed: tendingRevealed.value
@@ -33,7 +34,8 @@ export function saveGardenState() {
       if (tileCycleState[tileIndex]) {
         state.tileCycleState[tileIndex] = {
           cycle: tileCycleState[tileIndex].cycle,
-          stage: tileCycleState[tileIndex].stage || 'planted'
+          stage: tileCycleState[tileIndex].stage || 'planted',
+          isVolunteer: tileCycleState[tileIndex].isVolunteer || false
         };
       }
       if (tileColorMap[tileIndex]) {
@@ -145,6 +147,7 @@ export function restoreGardenState(state, callbacks) {
   }
 
   if (state.plantedCount) plantedCount.value = state.plantedCount;
+  if (state.totalVolunteers) totalVolunteers.value = state.totalVolunteers;
   if (state.gridRevealed) gridRevealed.value = true;
   if (state.journalRevealed) journalRevealed.value = true;
   if (state.tendingRevealed) tendingRevealed.value = true;
@@ -219,6 +222,8 @@ export function restoreGardenState(state, callbacks) {
         entryLabel = '<strong>Tile ' + (entry.tileIndex + 1) + '</strong> &mdash; 💧 watered';
       } else if (isCycle) {
         entryLabel = '<strong>Tile ' + (entry.tileIndex + 1) + '</strong> &mdash; 🌸 cycle ' + entry.cycle + ' at ' + entry.time;
+      } else if (entry.type === 'volunteer') {
+        entryLabel = '🌿 <strong>Tile ' + (entry.tileIndex + 1) + '</strong> &mdash; volunteer at ' + entry.time;
       } else {
         entryLabel = '<strong>Tile ' + (entry.tileIndex + 1) + '</strong> &mdash; planted at ' + entry.time;
       }
@@ -230,13 +235,16 @@ export function restoreGardenState(state, callbacks) {
         subText = entry.subText || 'growth speed increased by 50%';
       } else if (isCycle) {
         subText = getRandomCycleMessage();
+      } else if (entry.type === 'volunteer') {
+        subText = entry.subText || 'a seed carried by the wind finds its home';
       } else {
         subText = 'flower #' + (i + 1) + ' in your garden';
       }
 
-      var dotClass = isWeather ? 'entry-timeline-dot entry-timeline-dot--weather' : 'entry-timeline-dot';
-      var swatchClass = isWeather ? 'entry-swatch entry-swatch--weather' : 'entry-swatch';
-      var entryClass = isWeather ? 'journal-entry journal-entry--weather' : 'journal-entry';
+      var isVolunteer = entry.type === 'volunteer';
+      var dotClass = isWeather ? 'entry-timeline-dot entry-timeline-dot--weather' : (isVolunteer ? 'entry-timeline-dot entry-timeline-dot--volunteer' : 'entry-timeline-dot');
+      var swatchClass = isWeather ? 'entry-swatch entry-swatch--weather' : (isVolunteer ? 'entry-swatch entry-swatch--volunteer' : 'entry-swatch');
+      var entryClass = isWeather ? 'journal-entry journal-entry--weather' : (isVolunteer ? 'journal-entry journal-entry--volunteer' : 'journal-entry');
       entryEl.classList = entryClass;
 
       entryEl.innerHTML =
@@ -291,10 +299,19 @@ export function restoreGardenState(state, callbacks) {
 }
 
 function restorePlantedTile(tileEl, tileIndex, state, startGrowthCycle, updateCounter, addJournalEntry) {
+  // Check if this was a volunteer tile
+  var cycleData = state.tileCycleState && state.tileCycleState[tileIndex] ? state.tileCycleState[tileIndex] : null;
+  var wasVolunteer = cycleData && cycleData.isVolunteer;
+
   applyTileColors(tileEl, tileIndex);
 
   tileEl.classList.add('planted');
-  tileEl.setAttribute('aria-label', 'Tile ' + (tileIndex + 1) + ' planted');
+  if (wasVolunteer) {
+    tileEl.classList.add('volunteer');
+    tileEl.setAttribute('aria-label', 'Tile ' + (tileIndex + 1) + ' volunteer plant');
+  } else {
+    tileEl.setAttribute('aria-label', 'Tile ' + (tileIndex + 1) + ' planted');
+  }
 
   if (wateredTiles[tileIndex]) {
     tileEl.classList.add('watered');
@@ -325,7 +342,7 @@ function restorePlantedTile(tileEl, tileIndex, state, startGrowthCycle, updateCo
   tileSprout.classList.add('grown');
 
   if (badge) {
-    badge.textContent = '🌸 ' + cycle;
+    badge.textContent = wasVolunteer ? '🌿 ' + cycle : '🌸 ' + cycle;
     badge.classList.add('visible');
   }
 
