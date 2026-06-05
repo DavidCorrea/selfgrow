@@ -8,6 +8,7 @@ export var journalRevealed = { value: false };
 export var tendingRevealed = { value: false };
 export var journalEntries = [];
 export var wateredTiles = {};
+export var fertilizedTiles = {};
 export var tileCycleState = {};
 export var tileColorMap = {};
 export var totalVolunteers = { value: 0 };
@@ -58,6 +59,21 @@ export var wateringHintMessages = [
   "your plants love the extra care",
 ];
 
+export var fertilizeHintMessages = [
+  "click a planted tile to enrich its soil",
+  "fertilizer boosts growth permanently by 30%",
+  "a one-time gift to the earth",
+];
+
+export var fertilizeMessages = [
+  "amber nutrients seep into the soil, awakening dormant roots",
+  "the earth drinks deep of golden nourishment",
+  "warm minerals weave through root and stem alike",
+  "a gentle alchemy transforms the soil beneath",
+  "the garden sighs in gratitude as richness spreads",
+  "olive and amber — the colors of enduring growth",
+];
+
 export var weatherMessages = {
   sunny: [
     "sunlight quickens the blooms",
@@ -100,4 +116,12 @@ export function getRandomCycleMessage() {
 
 export function getRandomWateringHint() {
   return wateringHintMessages[Math.floor(Math.random() * wateringHintMessages.length)];
+}
+
+export function getRandomFertilizeHint() {
+  return fertilizeHintMessages[Math.floor(Math.random() * fertilizeHintMessages.length)];
+}
+
+export function getRandomFertilizeMessage() {
+  return fertilizeMessages[Math.floor(Math.random() * fertilizeMessages.length)];
 }

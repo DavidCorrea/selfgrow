@@ -1043,6 +1043,123 @@ body::before {
   text-transform: uppercase;
 }
 
+/* ── Fertilize Mode ── */
+.grid-tile.fertilize-target {
+  cursor: cell;
+}
+
+.tile-fertilize-sparkle {
+  position: absolute;
+  width: 0.18rem;
+  height: 0.18rem;
+  border-radius: 50%;
+  pointer-events: none;
+  animation: fertilizeSparkleFly 1s ease-out forwards;
+  z-index: 5;
+}
+
+@keyframes fertilizeSparkleFly {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: translate(calc(var(--tx) * 0.5), calc(var(--ty) * 0.5 - 0.3rem)) scale(1.2);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--tx), var(--ty)) scale(0);
+  }
+}
+
+.tile-fertilized-icon {
+  position: absolute;
+  bottom: 0.15rem;
+  right: 0.15rem;
+  font-size: 0.5rem;
+  opacity: 0;
+  z-index: 10;
+  transform: scale(0);
+  transition: opacity 0.4s ease 0.3s, transform 0.4s ease 0.3s;
+  pointer-events: none;
+}
+
+.tile-fertilized-icon.visible {
+  opacity: 0.75;
+  transform: scale(1);
+  animation: fertilizeIconPulse 3s ease-in-out infinite;
+}
+
+@keyframes fertilizeIconPulse {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50% { opacity: 0.9; transform: scale(1.08); }
+}
+
+.grid-tile.fertilized {
+  border-color: rgba(180, 140, 60, 0.4);
+  box-shadow:
+    0 0 0.8rem rgba(180, 140, 60, 0.08),
+    0 0 1.5rem rgba(180, 140, 60, 0.03);
+}
+
+.grid-tile.fertilized:hover,
+.grid-tile.fertilized:focus-visible {
+  box-shadow:
+    0 0 1rem rgba(180, 140, 60, 0.15),
+    0 0 2rem rgba(180, 140, 60, 0.05);
+}
+
+.grid-tile.fertilized .tile-soil {
+  background: linear-gradient(180deg, #6b5a3e, #4a3c28);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3), 0 0 0.4rem rgba(180, 140, 60, 0.1);
+}
+
+/* Fertilized tile growth boost - permanent 30% speed increase */
+.tile-sprout.fertilized-boost .tile-stem {
+  animation-duration: 0.49s !important;
+  animation-delay: 0.14s !important;
+}
+
+.tile-sprout.fertilized-boost .tile-leaf--left {
+  animation-duration: 0.35s !important;
+  animation-delay: 0.49s !important;
+}
+
+.tile-sprout.fertilized-boost .tile-leaf--right {
+  animation-duration: 0.35s !important;
+  animation-delay: 0.595s !important;
+}
+
+.tile-sprout.fertilized-boost .tile-bud {
+  animation-duration: 0.35s !important;
+}
+
+.tile-sprout.fertilized-boost.tile-sprout.blooming .tile-bud {
+  animation-duration: 0.42s !important;
+}
+
+.tile-sprout.fertilized-boost .tile-flower {
+  animation-duration: 0.42s !important;
+}
+
+/* Soil enrichment glow effect on fertilize */
+.grid-tile.fertilize-glow .tile-soil {
+  animation: soilEnrichGlow 1.2s ease-out;
+}
+
+@keyframes soilEnrichGlow {
+  0% {
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+  }
+  40% {
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3), 0 0 1rem rgba(180, 140, 60, 0.25), 0 0 2rem rgba(180, 140, 60, 0.08);
+  }
+  100% {
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3), 0 0 0.4rem rgba(180, 140, 60, 0.1);
+  }
+}
+
 /* ── Watering Mode ── */
 .grid-tile.watering-target {
   cursor: crosshair;
@@ -1184,6 +1301,34 @@ body::before {
 
 .tile-sprout.speed-up .tile-flower {
   animation-duration: 0.3s !important;
+}
+
+/* Combined water + fertilize boost */
+.tile-sprout.speed-up.fertilized-boost .tile-stem {
+  animation-duration: 0.245s !important;
+  animation-delay: 0.07s !important;
+}
+
+.tile-sprout.speed-up.fertilized-boost .tile-leaf--left {
+  animation-duration: 0.175s !important;
+  animation-delay: 0.245s !important;
+}
+
+.tile-sprout.speed-up.fertilized-boost .tile-leaf--right {
+  animation-duration: 0.175s !important;
+  animation-delay: 0.2975s !important;
+}
+
+.tile-sprout.speed-up.fertilized-boost .tile-bud {
+  animation-duration: 0.175s !important;
+}
+
+.tile-sprout.speed-up.fertilized-boost.tile-sprout.blooming .tile-bud {
+  animation-duration: 0.21s !important;
+}
+
+.tile-sprout.speed-up.fertilized-boost .tile-flower {
+  animation-duration: 0.21s !important;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -2455,6 +2600,15 @@ body.theme-night {
   font-style: italic;
 }
 
+/* ── Fertilized Stat Card ── */
+.stat-card--fertilized .stat-value {
+  color: rgba(180, 140, 60, 0.85);
+}
+
+.stat-card--fertilized .stat-emoji {
+  filter: drop-shadow(0 0 0.2rem rgba(180, 140, 60, 0.15));
+}
+
 /* ── Self-Seeding / Volunteer Plants ── */
 .grid-tile.volunteer {
   border-color: rgba(168, 153, 133, 0.25);
@@ -3050,7 +3204,8 @@ body.theme-night {
   }
 
   .tile-rain-drop,
-  .volunteer-seed-fall {
+  .volunteer-seed-fall,
+  .tile-fertilize-sparkle {
     animation: none !important;
     display: none;
   }
@@ -3060,7 +3215,9 @@ body.theme-night {
   .grid-tile.volunteer .tile-sprout.grown .tile-flower,
   .tile-sprout.rain-bloom .tile-flower,
   .grid-tile.weather-sunny-glow .tile-sprout.grown .tile-flower,
-  .grid-tile.weather-snowy-dormant .tile-sprout.grown .tile-flower {
+  .grid-tile.weather-snowy-dormant .tile-sprout.grown .tile-flower,
+  .grid-tile.fertilize-glow .tile-soil,
+  .tile-fertilized-icon {
     animation: none !important;
   }
 }

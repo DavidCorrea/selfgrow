@@ -2,7 +2,7 @@ import { dom, gridRevealed } from './js/state.js';
 import { saveGardenState, loadGardenState, restoreGardenState } from './js/persistence.js';
 import { initTheme } from './js/theme.js';
 import { addJournalEntry, getRandomMessage } from './js/journal.js';
-import { plantTile, startGrowthCycle, updateCounter, revealGrid, toggleWateringMode, waterTile, isWateringMode } from './js/tiles.js';
+import { plantTile, startGrowthCycle, updateCounter, revealGrid, toggleWateringMode, waterTile, isWateringMode, toggleFertilizeMode, fertilizeTile, isFertilizeMode } from './js/tiles.js';
 import { startVisitors, initVisitors } from './js/visitors.js';
 import { initSoundscape } from './js/soundscape.js';
 import { initStats } from './js/stats.js';
@@ -27,6 +27,7 @@ import { startSelfSeeding } from './js/selfseeding.js';
   dom.tendingToolbar = document.getElementById('tendingToolbar');
   dom.tendingHint = document.getElementById('tendingHint');
   dom.wateringCanBtn = document.getElementById('wateringCanBtn');
+  dom.fertilizeBtn = document.getElementById('fertilizeBtn');
   dom.gardenJournal = document.getElementById('gardenJournal');
   dom.journalTimeline = document.getElementById('journalTimeline');
   dom.journalEmpty = document.getElementById('journalEmpty');
@@ -126,8 +127,10 @@ import { startSelfSeeding } from './js/selfseeding.js';
   // ── Tile click handlers ──
   dom.tiles.forEach(function (tile) {
     tile.addEventListener('click', function () {
-      if (isWateringMode() && tile.classList.contains('planted')) {
-        var tileIndex = parseInt(tile.getAttribute('data-tile'), 10);
+      var tileIndex = parseInt(tile.getAttribute('data-tile'), 10);
+      if (isFertilizeMode() && tile.classList.contains('planted')) {
+        fertilizeTile(tile, tileIndex);
+      } else if (isWateringMode() && tile.classList.contains('planted')) {
         waterTile(tile, tileIndex);
       } else {
         plantTile(tile);
@@ -136,8 +139,10 @@ import { startSelfSeeding } from './js/selfseeding.js';
     tile.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
-        if (isWateringMode() && tile.classList.contains('planted')) {
-          var tileIndex = parseInt(tile.getAttribute('data-tile'), 10);
+        var tileIndex = parseInt(tile.getAttribute('data-tile'), 10);
+        if (isFertilizeMode() && tile.classList.contains('planted')) {
+          fertilizeTile(tile, tileIndex);
+        } else if (isWateringMode() && tile.classList.contains('planted')) {
           waterTile(tile, tileIndex);
         } else {
           plantTile(tile);
@@ -155,6 +160,18 @@ import { startSelfSeeding } from './js/selfseeding.js';
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       toggleWateringMode();
+    }
+  });
+
+  // ── Fertilize button ──
+  dom.fertilizeBtn.addEventListener('click', function () {
+    toggleFertilizeMode();
+  });
+
+  dom.fertilizeBtn.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggleFertilizeMode();
     }
   });
 

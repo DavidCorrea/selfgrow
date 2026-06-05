@@ -440,7 +440,7 @@ export function startSelfSeeding() {
 }
 
 // ── Stop Self-Seeding ──
-export function stopSelfSeeding() {
+function stopSelfSeeding() {
   isSeedingActive = false;
   if (seedingTimer) {
     clearTimeout(seedingTimer);
@@ -453,13 +453,4 @@ export function stopSelfSeeding() {
   pendingPulseTiles = [];
 }
 
-// ── Get Total Volunteers (for stats) ──
-export function getTotalVolunteers() {
-  return totalVolunteers.value;
-}
 
-// ── Check if a tile is a volunteer ──
-export function isVolunteerTile(tileIndex) {
-  var state = tileCycleState[tileIndex];
-  return state && state.isVolunteer === true;
-}

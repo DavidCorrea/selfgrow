@@ -1,5 +1,5 @@
-import { dom, journalEntries, wateredTiles, tileCycleState, tileColorMap, plantedCount, totalVolunteers, gridRevealed, journalRevealed, tendingRevealed, petalPalettes, centerColors, getRandomGridMessage, getRandomWateringHint, getRandomCycleMessage, CYCLE_HOLD_BLOOM, CYCLE_SEED_OFFSET, CYCLE_WILT_DURATION, CYCLE_PAUSE_AFTER_WILT } from './state.js';
-import { addWateredIcon } from './tiles.js';
+import { dom, journalEntries, wateredTiles, fertilizedTiles, tileCycleState, tileColorMap, plantedCount, totalVolunteers, gridRevealed, journalRevealed, tendingRevealed, petalPalettes, centerColors, getRandomGridMessage, getRandomWateringHint, getRandomCycleMessage, CYCLE_HOLD_BLOOM, CYCLE_SEED_OFFSET, CYCLE_WILT_DURATION, CYCLE_PAUSE_AFTER_WILT } from './state.js';
+import { addWateredIcon, addFertilizedIcon } from './tiles.js';
 import { formatTime } from './journal.js';
 import { getCurrentWeather, getWeatherModifier } from './weather.js';
 
@@ -11,6 +11,7 @@ export function saveGardenState() {
     lastTended: Date.now(),
     plantedTiles: {},
     wateredTiles: {},
+    fertilizedTiles: {},
     tileCycleState: {},
     tileColorMap: {},
     journalEntries: journalEntries,
@@ -30,6 +31,9 @@ export function saveGardenState() {
       }
       if (wateredTiles[tileIndex]) {
         state.wateredTiles[tileIndex] = true;
+      }
+      if (fertilizedTiles[tileIndex]) {
+        state.fertilizedTiles[tileIndex] = true;
       }
       if (tileCycleState[tileIndex]) {
         state.tileCycleState[tileIndex] = {
@@ -158,6 +162,12 @@ export function restoreGardenState(state, callbacks) {
     }
   }
 
+  if (state.fertilizedTiles) {
+    for (var fKey in state.fertilizedTiles) {
+      fertilizedTiles[fKey] = state.fertilizedTiles[fKey];
+    }
+  }
+
   if (state.tileColorMap) {
     for (var cKey in state.tileColorMap) {
       tileColorMap[cKey] = state.tileColorMap[cKey];
@@ -213,11 +223,14 @@ export function restoreGardenState(state, callbacks) {
 
       var isCycle = entry.type === 'cycle';
       var isWatered = entry.type === 'watered';
+      var isFertilized = entry.type === 'fertilized';
       var isWeather = entry.type === 'weather';
       var entryLabel;
       if (isWeather) {
         var weatherEmoji = getWeatherEmoji(entry.weatherState);
         entryLabel = weatherEmoji + ' ' + (entry.weatherMessage || getWeatherDefaultMessage(entry.weatherState));
+      } else if (isFertilized) {
+        entryLabel = '<strong>Tile ' + (entry.tileIndex + 1) + '</strong> &mdash; 🌾 fertilized';
       } else if (isWatered) {
         entryLabel = '<strong>Tile ' + (entry.tileIndex + 1) + '</strong> &mdash; 💧 watered';
       } else if (isCycle) {
@@ -231,6 +244,8 @@ export function restoreGardenState(state, callbacks) {
       var subText;
       if (isWeather) {
         subText = entry.time + ' &mdash; the sky shifts';
+      } else if (isFertilized) {
+        subText = entry.subText || 'soil enriched — growth permanently boosted by 30%';
       } else if (isWatered) {
         subText = entry.subText || 'growth speed increased by 50%';
       } else if (isCycle) {
@@ -316,6 +331,14 @@ function restorePlantedTile(tileEl, tileIndex, state, startGrowthCycle, updateCo
   if (wateredTiles[tileIndex]) {
     tileEl.classList.add('watered');
     addWateredIcon(tileEl);
+  }
+
+  if (fertilizedTiles[tileIndex]) {
+    tileEl.classList.add('fertilized');
+    addFertilizedIcon(tileEl);
+    if (tileCycleState[tileIndex]) {
+      tileCycleState[tileIndex].fertilized = true;
+    }
   }
 
   // Apply current weather visual class to restored tile

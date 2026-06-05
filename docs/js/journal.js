@@ -1,4 +1,4 @@
-import { dom, journalEntries, tileColorMap, petalPalettes, plantedCount, journalRevealed, getRandomCycleMessage } from './state.js';
+import { dom, journalEntries, journalRevealed, getRandomCycleMessage } from './state.js';
 import { saveGardenState } from './persistence.js';
 
 var messages = [

@@ -1,4 +1,4 @@
-import { dom, journalEntries, plantedCount, totalVolunteers } from './state.js';
+import { dom, journalEntries, plantedCount, totalVolunteers, fertilizedTiles } from './state.js';
 import { getCurrentSeasonName } from './theme.js';
 import { getBloomingCount, getPlantedCount } from './visitors.js';
 
@@ -44,6 +44,14 @@ var moodStates = {
     moodClass: 'mood-dormant'
   }
 };
+
+function getFertilizedCount() {
+  var count = 0;
+  for (var key in fertilizedTiles) {
+    if (fertilizedTiles[key]) count++;
+  }
+  return count;
+}
 
 function getTotalFlowersBloomed() {
   var total = 0;
@@ -296,4 +304,37 @@ export function initStats() {
   setInterval(function () {
     updateVolunteerStat();
   }, 15000);
+
+  setInterval(function () {
+    updateFertilizedStat();
+  }, 15000);
+}
+
+function updateFertilizedStat() {
+  var count = getFertilizedCount();
+  var statCard = document.getElementById('statFertilizedCard');
+  if (!statCard && count > 0) {
+    var statsGrid = document.querySelector('.stats-grid');
+    if (!statsGrid) return;
+    var statEl = document.createElement('div');
+    statEl.classList.add('stat-card', 'stat-card--fertilized');
+    statEl.id = 'statFertilizedCard';
+    statEl.innerHTML =
+      '<span class="stat-emoji">🌾</span>' +
+      '<span class="stat-value" id="statFertilizedValue">' + count + '</span>' +
+      '<span class="stat-label" id="statFertilizedLabel">' + (count === 1 ? 'tile fertilized' : 'tiles fertilized') + '</span>';
+    statsGrid.appendChild(statEl);
+    statEl.style.opacity = '0';
+    statEl.style.transform = 'translateY(0.5rem)';
+    requestAnimationFrame(function () {
+      statEl.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
+      statEl.style.opacity = '1';
+      statEl.style.transform = 'translateY(0)';
+    });
+  } else if (statCard && count > 0) {
+    var valEl = document.getElementById('statFertilizedValue');
+    var lblEl = document.getElementById('statFertilizedLabel');
+    if (valEl) valEl.textContent = '' + count;
+    if (lblEl) lblEl.textContent = count === 1 ? 'tile fertilized' : 'tiles fertilized';
+  }
 }

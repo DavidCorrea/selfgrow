@@ -1,10 +1,11 @@
-import { dom, plantedCount, gridRevealed, tendingRevealed, journalRevealed, journalEntries, wateredTiles, tileCycleState, tileColorMap, petalPalettes, CYCLE_HOLD_BLOOM, CYCLE_WILT_DURATION, CYCLE_PAUSE_AFTER_WILT, CYCLE_SEED_OFFSET, totalTiles, getRandomGridMessage, getRandomWateringHint, getRandomCycleMessage } from './state.js';
+import { dom, plantedCount, gridRevealed, tendingRevealed, journalEntries, wateredTiles, fertilizedTiles, tileCycleState, tileColorMap, petalPalettes, CYCLE_HOLD_BLOOM, CYCLE_WILT_DURATION, CYCLE_PAUSE_AFTER_WILT, CYCLE_SEED_OFFSET, totalTiles, getRandomGridMessage, getRandomWateringHint, getRandomCycleMessage, getRandomFertilizeHint, getRandomFertilizeMessage } from './state.js';
 import { saveGardenState, applyTileColors } from './persistence.js';
 import { addJournalEntry } from './journal.js';
 import { notifyStatsChange } from './stats.js';
 import { getCurrentWeather, getWeatherModifier, onWeatherChange } from './weather.js';
 
 var wateringMode = false;
+var fertilizeMode = false;
 
 // ── Weather-Aware Growth Timing ──
 // Returns a duration multiplier based on current weather
@@ -233,7 +234,8 @@ function revealTending() {
   }
 
   if (tendingHint) {
-    tendingHint.textContent = getRandomWateringHint();
+    var hints = [getRandomWateringHint(), getRandomFertilizeHint()];
+    tendingHint.textContent = hints[Math.floor(Math.random() * hints.length)];
     tendingHint.style.opacity = '1';
   }
 }
@@ -249,9 +251,15 @@ export function startGrowthCycle(tileEl, tileIndex) {
   var primaryColor = palette[0];
   var gridHint = dom.gridHint;
 
-  tileSprout.classList.remove('growing', 'budding', 'blooming', 'grown', 'wilting');
+  var wasFertilized = tileEl.classList.contains('fertilized');
+  tileSprout.classList.remove('growing', 'budding', 'blooming', 'grown', 'wilting', 'fertilized-boost');
   tileEl.classList.remove('reseeding');
   tileSeed.classList.remove('visible');
+
+  // Re-apply fertilized boost if tile was fertilized
+  if (wasFertilized && tileSprout) {
+    tileSprout.classList.add('fertilized-boost');
+  }
 
   tileEl.classList.add('reseeding');
   tileSeed.classList.add('visible');
@@ -587,3 +595,166 @@ export function waterTile(tileEl, tileIndex) {
 export function isWateringMode() {
   return wateringMode;
 }
+
+// ── Fertilize Mode ──
+
+function createFertilizeSparkles(tileEl) {
+  var rect = tileEl.getBoundingClientRect();
+  var centerX = rect.width / 2;
+  var centerY = rect.height * 0.4;
+
+  var colors = ['#d4a574', '#c9a86c', '#a88a50', '#8b7355', '#fbbf24'];
+
+  for (var i = 0; i < 10; i++) {
+    var sparkle = document.createElement('div');
+    sparkle.classList.add('tile-fertilize-sparkle');
+    var angle = (Math.PI * 2 * i) / 10;
+    var distance = 1 + Math.random() * 2;
+    var tx = Math.cos(angle) * distance * 10 + 'px';
+    var ty = Math.sin(angle) * distance * 10 + 'px';
+    sparkle.style.setProperty('--tx', tx);
+    sparkle.style.setProperty('--ty', ty);
+    sparkle.style.left = centerX + 'px';
+    sparkle.style.top = centerY + 'px';
+    sparkle.style.background = colors[Math.floor(Math.random() * colors.length)];
+    tileEl.appendChild(sparkle);
+
+    (function (s) {
+      setTimeout(function () { s.remove(); }, 1000);
+    })(sparkle);
+  }
+}
+
+export function addFertilizedIcon(tileEl) {
+  var existing = tileEl.querySelector('.tile-fertilized-icon');
+  if (existing) existing.remove();
+
+  var icon = document.createElement('div');
+  icon.classList.add('tile-fertilized-icon');
+  icon.textContent = '🌾';
+  icon.setAttribute('aria-hidden', 'true');
+  tileEl.appendChild(icon);
+
+  requestAnimationFrame(function () {
+    icon.classList.add('visible');
+  });
+}
+
+export function toggleFertilizeMode() {
+  var fertilizeBtn = dom.fertilizeBtn;
+  var tendingHint = dom.tendingHint;
+  var tiles = dom.tiles;
+
+  fertilizeMode = !fertilizeMode;
+
+  // Turn off watering mode if it was on
+  if (fertilizeMode && wateringMode) {
+    wateringMode = false;
+    var wateringCanBtn = dom.wateringCanBtn;
+    if (wateringCanBtn) {
+      wateringCanBtn.classList.remove('active');
+      wateringCanBtn.setAttribute('aria-pressed', 'false');
+    }
+    tiles.forEach(function (tile) {
+      tile.classList.remove('watering-target');
+    });
+  }
+
+  if (fertilizeMode) {
+    fertilizeBtn.classList.add('active');
+    fertilizeBtn.setAttribute('aria-pressed', 'true');
+    tendingHint.style.opacity = '0';
+    setTimeout(function () {
+      tendingHint.textContent = 'click on planted tiles to fertilize them';
+      tendingHint.style.opacity = '1';
+    }, 300);
+
+    tiles.forEach(function (tile) {
+      if (tile.classList.contains('planted')) {
+        tile.classList.add('fertilize-target');
+      }
+    });
+  } else {
+    fertilizeBtn.classList.remove('active');
+    fertilizeBtn.setAttribute('aria-pressed', 'false');
+    tendingHint.style.opacity = '0';
+    setTimeout(function () {
+      tendingHint.textContent = getRandomFertilizeHint();
+      tendingHint.style.opacity = '1';
+    }, 300);
+
+    tiles.forEach(function (tile) {
+      tile.classList.remove('fertilize-target');
+    });
+  }
+}
+
+export function fertilizeTile(tileEl, tileIndex) {
+  var tendingHint = dom.tendingHint;
+
+  if (fertilizedTiles[tileIndex]) return;
+
+  fertilizedTiles[tileIndex] = true;
+
+  tileEl.classList.add('fertilized');
+  tileEl.classList.add('fertilize-glow');
+  createFertilizeSparkles(tileEl);
+  addFertilizedIcon(tileEl);
+
+  // Apply permanent growth speed boost (30% faster)
+  var state = tileCycleState[tileIndex];
+  if (state) {
+    state.fertilized = true;
+  }
+
+  // Apply boost class to sprout for CSS animation speed-up
+  var sprout = tileEl.querySelector('.tile-sprout');
+  if (sprout) {
+    sprout.classList.add('fertilized-boost');
+  }
+
+  // Remove glow class after animation completes
+  setTimeout(function () {
+    tileEl.classList.remove('fertilize-glow');
+  }, 1200);
+
+  var palette = petalPalettes[tileIndex % petalPalettes.length];
+  addJournalEntry(tileIndex, palette[0], state ? state.cycle : 1);
+
+  if (journalEntries.length > 0) {
+    journalEntries[journalEntries.length - 1].type = 'fertilized';
+    journalEntries[journalEntries.length - 1].subText = getRandomFertilizeMessage();
+  }
+
+  var journalTimeline = dom.journalTimeline;
+  if (journalTimeline) {
+    var firstEntry = journalTimeline.firstChild;
+    if (firstEntry) {
+      var textEl = firstEntry.querySelector('.entry-text');
+      if (textEl) {
+        textEl.innerHTML = '<strong>Tile ' + (tileIndex + 1) + '</strong> &mdash; 🌾 fertilized';
+      }
+      var timeEl = firstEntry.querySelector('.entry-time');
+      if (timeEl) {
+        timeEl.textContent = getRandomFertilizeMessage();
+      }
+    }
+  }
+
+  if (tendingHint) {
+    tendingHint.style.opacity = '0';
+    setTimeout(function () {
+      tendingHint.textContent = 'soil enriched — growth permanently boosted by 30% 🌾';
+      tendingHint.style.opacity = '1';
+    }, 300);
+  }
+
+  saveGardenState();
+  notifyStatsChange();
+}
+
+export function isFertilizeMode() {
+  return fertilizeMode;
+}
+
+
