@@ -2,7 +2,7 @@ import { dom, gridRevealed } from './js/state.js';
 import { saveGardenState, loadGardenState, restoreGardenState } from './js/persistence.js';
 import { initTheme } from './js/theme.js';
 import { addJournalEntry, getRandomMessage } from './js/journal.js';
-import { plantTile, startGrowthCycle, updateCounter, revealGrid, toggleWateringMode, waterTile, isWateringMode, toggleFertilizeMode, fertilizeTile, isFertilizeMode } from './js/tiles.js';
+import { plantTile, startGrowthCycle, updateCounter, revealGrid, toggleWateringMode, waterTile, isWateringMode, toggleFertilizeMode, fertilizeTile, isFertilizeMode, togglePruneMode, pruneTile, isPruneMode } from './js/tiles.js';
 import { startVisitors, initVisitors } from './js/visitors.js';
 import { initSoundscape } from './js/soundscape.js';
 import { initStats } from './js/stats.js';
@@ -27,6 +27,7 @@ import { startSelfSeeding } from './js/selfseeding.js';
   dom.tendingToolbar = document.getElementById('tendingToolbar');
   dom.tendingHint = document.getElementById('tendingHint');
   dom.wateringCanBtn = document.getElementById('wateringCanBtn');
+  dom.pruneBtn = document.getElementById('pruneBtn');
   dom.fertilizeBtn = document.getElementById('fertilizeBtn');
   dom.gardenJournal = document.getElementById('gardenJournal');
   dom.journalTimeline = document.getElementById('journalTimeline');
@@ -128,7 +129,9 @@ import { startSelfSeeding } from './js/selfseeding.js';
   dom.tiles.forEach(function (tile) {
     tile.addEventListener('click', function () {
       var tileIndex = parseInt(tile.getAttribute('data-tile'), 10);
-      if (isFertilizeMode() && tile.classList.contains('planted')) {
+      if (isPruneMode() && tile.classList.contains('planted')) {
+        pruneTile(tile, tileIndex);
+      } else if (isFertilizeMode() && tile.classList.contains('planted')) {
         fertilizeTile(tile, tileIndex);
       } else if (isWateringMode() && tile.classList.contains('planted')) {
         waterTile(tile, tileIndex);
@@ -140,7 +143,9 @@ import { startSelfSeeding } from './js/selfseeding.js';
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         var tileIndex = parseInt(tile.getAttribute('data-tile'), 10);
-        if (isFertilizeMode() && tile.classList.contains('planted')) {
+        if (isPruneMode() && tile.classList.contains('planted')) {
+          pruneTile(tile, tileIndex);
+        } else if (isFertilizeMode() && tile.classList.contains('planted')) {
           fertilizeTile(tile, tileIndex);
         } else if (isWateringMode() && tile.classList.contains('planted')) {
           waterTile(tile, tileIndex);
@@ -160,6 +165,18 @@ import { startSelfSeeding } from './js/selfseeding.js';
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       toggleWateringMode();
+    }
+  });
+
+  // ── Prune button ──
+  dom.pruneBtn.addEventListener('click', function () {
+    togglePruneMode();
+  });
+
+  dom.pruneBtn.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      togglePruneMode();
     }
   });
 

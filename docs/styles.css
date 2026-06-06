@@ -524,13 +524,6 @@ body::before {
   max-width: 20rem;
 }
 
-@media (min-width: 768px) {
-  .garden-grid {
-    max-width: 24rem;
-    gap: 0.75rem;
-  }
-}
-
 /* Grid Tile — earth-tone tile styling */
 .grid-tile {
   position: relative;
@@ -1280,31 +1273,31 @@ body::before {
 }
 
 /* Fertilized tile growth boost - permanent 30% speed increase */
-.tile-sprout.fertilized-boost .tile-stem {
-  animation-duration: 0.49s !important;
-  animation-delay: 0.14s !important;
+.tile-sprout.fertilized-boost.growing .tile-stem {
+  animation-duration: 0.49s;
+  animation-delay: 0.14s;
 }
 
-.tile-sprout.fertilized-boost .tile-leaf--left {
-  animation-duration: 0.35s !important;
-  animation-delay: 0.49s !important;
+.tile-sprout.fertilized-boost.growing .tile-leaf--left {
+  animation-duration: 0.35s;
+  animation-delay: 0.49s;
 }
 
-.tile-sprout.fertilized-boost .tile-leaf--right {
-  animation-duration: 0.35s !important;
-  animation-delay: 0.595s !important;
+.tile-sprout.fertilized-boost.growing .tile-leaf--right {
+  animation-duration: 0.35s;
+  animation-delay: 0.595s;
 }
 
-.tile-sprout.fertilized-boost .tile-bud {
-  animation-duration: 0.35s !important;
+.tile-sprout.fertilized-boost.budding .tile-bud {
+  animation-duration: 0.35s;
 }
 
-.tile-sprout.fertilized-boost.tile-sprout.blooming .tile-bud {
-  animation-duration: 0.42s !important;
+.tile-sprout.fertilized-boost.blooming .tile-bud {
+  animation-duration: 0.42s;
 }
 
-.tile-sprout.fertilized-boost .tile-flower {
-  animation-duration: 0.42s !important;
+.tile-sprout.fertilized-boost.growing .tile-flower {
+  animation-duration: 0.42s;
 }
 
 /* Soil enrichment glow effect on fertilize */
@@ -1322,6 +1315,190 @@ body::before {
   100% {
     box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3), 0 0 0.4rem rgba(180, 140, 60, 0.1);
   }
+}
+
+/* ── Prune Mode ── */
+.grid-tile.prune-target {
+  cursor: cell;
+}
+
+/* Prune button active state — warm sage/olive accent */
+#pruneBtn.active {
+  border-color: rgba(132, 168, 90, 0.5);
+  box-shadow: 0 0 1.5rem rgba(132, 168, 90, 0.15);
+  background: rgba(132, 168, 90, 0.08);
+  color: var(--text-primary);
+}
+
+#pruneBtn.active .tool-icon {
+  animation: toolBounce 0.6s ease-in-out infinite;
+}
+
+/* Snip arc animation — scissor arcs sweep across the tile */
+.tile-snip-arc {
+  position: absolute;
+  width: 1.2rem;
+  height: 1.2rem;
+  border: 2px solid rgba(168, 200, 120, 0.7);
+  border-radius: 50%;
+  border-bottom-color: transparent;
+  border-left-color: transparent;
+  pointer-events: none;
+  z-index: 10;
+  transform: translate(-50%, -50%) scale(0) rotate(calc(var(--arc-side, 1) * 45deg));
+  animation: snipArcSweep 0.5s ease-out forwards;
+}
+
+@keyframes snipArcSweep {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0) rotate(calc(var(--arc-side, 1) * 20deg));
+  }
+  40% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.1) rotate(calc(var(--arc-side, 1) * 45deg));
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.6) rotate(calc(var(--arc-side, 1) * 70deg));
+  }
+}
+
+/* Leaf scatter particles */
+.tile-prune-leaf {
+  position: absolute;
+  width: 0.25rem;
+  height: 0.18rem;
+  border-radius: 0 60% 60% 60%;
+  pointer-events: none;
+  z-index: 8;
+  animation: leafScatterFall 1s ease-out forwards;
+}
+
+@keyframes leafScatterFall {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0deg) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--tx), var(--ty)) rotate(var(--leaf-rot, 180deg)) scale(0.4);
+  }
+}
+
+/* Pruning trim animation on the tile */
+.grid-tile.pruning {
+  animation: tilePruneTrim 0.6s ease-out;
+}
+
+@keyframes tilePruneTrim {
+  0% {
+    transform: scale(1);
+    box-shadow: none;
+  }
+  30% {
+    transform: scale(0.96);
+    box-shadow: 0 0 1rem rgba(132, 168, 90, 0.15);
+  }
+  60% {
+    transform: scale(1.02);
+    box-shadow: 0 0 0.6rem rgba(132, 168, 90, 0.1);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: none;
+  }
+}
+
+/* Pruned state: flower collapses, stem persists briefly */
+.tile-sprout.pruned {
+  opacity: 1;
+}
+
+.tile-sprout.pruned .tile-flower {
+  animation: pruneFlowerCollapse 0.5s ease-in forwards;
+  transform-origin: bottom center;
+}
+
+@keyframes pruneFlowerCollapse {
+  0% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+    filter: brightness(1) saturate(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(0.8) rotate(5deg);
+    filter: brightness(0.85) saturate(0.8);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.4) rotate(10deg);
+    filter: brightness(0.6) saturate(0.5);
+  }
+}
+
+.tile-sprout.pruned .tile-leaf {
+  animation: pruneLeafFade 0.5s ease-in forwards;
+}
+
+@keyframes pruneLeafFade {
+  0% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0.4; transform: scale(0.85) rotate(3deg); }
+}
+
+.tile-sprout.pruned .tile-stem {
+  animation: pruneStemFade 0.5s ease-in forwards;
+}
+
+@keyframes pruneStemFade {
+  0% { opacity: 1; }
+  100% { opacity: 0.6; }
+}
+
+/* Pruned tile border accent */
+.grid-tile.pruned-tile {
+  border-color: rgba(132, 168, 90, 0.35);
+  box-shadow:
+    0 0 0.8rem rgba(132, 168, 90, 0.08),
+    0 0 1.5rem rgba(132, 168, 90, 0.03);
+}
+
+.grid-tile.pruned-tile:hover,
+.grid-tile.pruned-tile:focus-visible {
+  box-shadow:
+    0 0 1rem rgba(132, 168, 90, 0.15),
+    0 0 2rem rgba(132, 168, 90, 0.05);
+}
+
+/* Prune journal entry styling */
+.journal-entry--pruned {
+  background: rgba(45, 50, 30, 0.2);
+  border-radius: 0.4rem;
+  margin-bottom: 0.15rem;
+}
+
+.journal-entry--pruned .entry-timeline-dot--pruned {
+  background: rgba(132, 168, 90, 0.5);
+  box-shadow: 0 0 0.3rem rgba(132, 168, 90, 0.2);
+}
+
+.journal-entry--pruned .entry-timeline-dot--pruned::after {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.journal-entry--pruned .entry-swatch--pruned {
+  border-color: rgba(132, 168, 90, 0.25);
+  box-shadow: 0 0 0.3rem rgba(132, 168, 90, 0.1);
+}
+
+.journal-entry--pruned .entry-text {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.journal-entry--pruned .entry-text strong {
+  color: rgba(132, 168, 90, 0.85);
 }
 
 /* ── Watering Mode ── */
@@ -1440,101 +1617,101 @@ body::before {
 }
 
 /* Speed-up growth animation overrides for watered tiles */
-.tile-sprout.speed-up .tile-stem {
-  animation-duration: 0.35s !important;
-  animation-delay: 0.1s !important;
+.tile-sprout.speed-up.growing .tile-stem {
+  animation-duration: 0.35s;
+  animation-delay: 0.1s;
 }
 
-.tile-sprout.speed-up .tile-leaf--left {
-  animation-duration: 0.25s !important;
-  animation-delay: 0.35s !important;
+.tile-sprout.speed-up.growing .tile-leaf--left {
+  animation-duration: 0.25s;
+  animation-delay: 0.35s;
 }
 
-.tile-sprout.speed-up .tile-leaf--right {
-  animation-duration: 0.25s !important;
-  animation-delay: 0.425s !important;
+.tile-sprout.speed-up.growing .tile-leaf--right {
+  animation-duration: 0.25s;
+  animation-delay: 0.425s;
 }
 
-.tile-sprout.speed-up .tile-bud {
-  animation-duration: 0.25s !important;
+.tile-sprout.speed-up.budding .tile-bud {
+  animation-duration: 0.25s;
 }
 
-.tile-sprout.speed-up.tile-sprout.blooming .tile-bud {
-  animation-duration: 0.3s !important;
+.tile-sprout.speed-up.blooming .tile-bud {
+  animation-duration: 0.3s;
 }
 
-.tile-sprout.speed-up .tile-flower {
-  animation-duration: 0.3s !important;
+.tile-sprout.speed-up.growing .tile-flower {
+  animation-duration: 0.3s;
 }
 
 /* Speed-up overrides for regrowth stages */
 .tile-sprout.speed-up.regrowing .tile-stem {
-  animation-duration: 0.56s !important;
+  animation-duration: 0.56s;
 }
 
 .tile-sprout.speed-up.regrowing .tile-leaf {
-  animation-duration: 0.56s !important;
+  animation-duration: 0.56s;
 }
 
 .tile-sprout.speed-up.regrow-bud .tile-bud {
-  animation-duration: 0.35s !important;
+  animation-duration: 0.35s;
 }
 
 .tile-sprout.speed-up.regrow-bloom .tile-bud {
-  animation-duration: 0.35s !important;
+  animation-duration: 0.35s;
 }
 
 .tile-sprout.speed-up.regrow-bloom .tile-flower {
-  animation-duration: 0.49s !important;
+  animation-duration: 0.49s;
 }
 
 /* Fertilized boost overrides for regrowth stages */
 .tile-sprout.fertilized-boost.regrowing .tile-stem {
-  animation-duration: 0.56s !important;
+  animation-duration: 0.56s;
 }
 
 .tile-sprout.fertilized-boost.regrowing .tile-leaf {
-  animation-duration: 0.56s !important;
+  animation-duration: 0.56s;
 }
 
 .tile-sprout.fertilized-boost.regrow-bud .tile-bud {
-  animation-duration: 0.35s !important;
+  animation-duration: 0.35s;
 }
 
 .tile-sprout.fertilized-boost.regrow-bloom .tile-bud {
-  animation-duration: 0.35s !important;
+  animation-duration: 0.35s;
 }
 
 .tile-sprout.fertilized-boost.regrow-bloom .tile-flower {
-  animation-duration: 0.49s !important;
+  animation-duration: 0.49s;
 }
 
 /* Combined water + fertilize boost */
-.tile-sprout.speed-up.fertilized-boost .tile-stem {
-  animation-duration: 0.245s !important;
-  animation-delay: 0.07s !important;
+.tile-sprout.speed-up.fertilized-boost.growing .tile-stem {
+  animation-duration: 0.245s;
+  animation-delay: 0.07s;
 }
 
-.tile-sprout.speed-up.fertilized-boost .tile-leaf--left {
-  animation-duration: 0.175s !important;
-  animation-delay: 0.245s !important;
+.tile-sprout.speed-up.fertilized-boost.growing .tile-leaf--left {
+  animation-duration: 0.175s;
+  animation-delay: 0.245s;
 }
 
-.tile-sprout.speed-up.fertilized-boost .tile-leaf--right {
-  animation-duration: 0.175s !important;
-  animation-delay: 0.2975s !important;
+.tile-sprout.speed-up.fertilized-boost.growing .tile-leaf--right {
+  animation-duration: 0.175s;
+  animation-delay: 0.2975s;
 }
 
-.tile-sprout.speed-up.fertilized-boost .tile-bud {
-  animation-duration: 0.175s !important;
+.tile-sprout.speed-up.fertilized-boost.budding .tile-bud {
+  animation-duration: 0.175s;
 }
 
-.tile-sprout.speed-up.fertilized-boost.tile-sprout.blooming .tile-bud {
-  animation-duration: 0.21s !important;
+.tile-sprout.speed-up.fertilized-boost.blooming .tile-bud {
+  animation-duration: 0.21s;
 }
 
-.tile-sprout.speed-up.fertilized-boost .tile-flower {
-  animation-duration: 0.21s !important;
+.tile-sprout.speed-up.fertilized-boost.growing .tile-flower {
+  animation-duration: 0.21s;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1971,8 +2148,8 @@ body::before {
   transform: scale(1.15);
 }
 
-.visitor.scattering {
-  animation: visitorScatter 0.8s ease-out forwards !important;
+.visitors-layer .visitor.scattering {
+  animation: visitorScatter 0.8s ease-out forwards;
 }
 
 @keyframes visitorScatter {
@@ -2219,8 +2396,8 @@ body::before {
   100% { opacity: 0; transform: scale(0.3); }
 }
 
-.visitor.landing {
-  animation: visitorLand 0.5s ease-out forwards !important;
+.visitors-layer .visitor.landing {
+  animation: visitorLand 0.5s ease-out forwards;
 }
 
 @keyframes visitorLand {
@@ -2228,8 +2405,8 @@ body::before {
   100% { transform: scale(1); }
 }
 
-.visitor.leaving {
-  animation: visitorLeave 0.6s ease-out forwards !important;
+.visitors-layer .visitor.leaving {
+  animation: visitorLeave 0.6s ease-out forwards;
 }
 
 @keyframes visitorLeave {
@@ -3411,7 +3588,9 @@ body.theme-night {
 
   .tile-rain-drop,
   .volunteer-seed-fall,
-  .tile-fertilize-sparkle {
+  .tile-fertilize-sparkle,
+  .tile-snip-arc,
+  .tile-prune-leaf {
     animation: none !important;
     display: none;
   }
@@ -3422,6 +3601,10 @@ body.theme-night {
   .tile-sprout.rain-bloom .tile-flower,
   .grid-tile.weather-sunny-glow .tile-sprout.grown .tile-flower,
   .grid-tile.weather-snowy-dormant .tile-sprout.grown .tile-flower,
+  .grid-tile.pruning,
+  .tile-sprout.pruned .tile-flower,
+  .tile-sprout.pruned .tile-leaf,
+  .tile-sprout.pruned .tile-stem,
   .grid-tile.fertilize-glow .tile-soil,
   .tile-fertilized-icon,
   .tile-sprout.regrowing .tile-stem,

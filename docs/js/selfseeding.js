@@ -439,18 +439,6 @@ export function startSelfSeeding() {
   seedingTimer = setTimeout(attemptSeeding, 60000);
 }
 
-// ── Stop Self-Seeding ──
-function stopSelfSeeding() {
-  isSeedingActive = false;
-  if (seedingTimer) {
-    clearTimeout(seedingTimer);
-    seedingTimer = null;
-  }
-  // Clean up any pending pulse hints
-  pendingPulseTiles.forEach(function (tileEl) {
-    tileEl.classList.remove('volunteer-pulse');
-  });
-  pendingPulseTiles = [];
-}
+
 
 

@@ -9,6 +9,7 @@ export var tendingRevealed = { value: false };
 export var journalEntries = [];
 export var wateredTiles = {};
 export var fertilizedTiles = {};
+export var prunedTiles = {};
 export var tileCycleState = {};
 export var tileColorMap = {};
 export var totalVolunteers = { value: 0 };
@@ -37,7 +38,7 @@ export var petalPalettes = [
 
 export var centerColors = ['#fbbf24', '#fde68a', '#fcd34d', '#f59e0b', '#eab308'];
 
-export var gridMessages = [
+var gridMessages = [
   "your garden is growing",
   "each tile holds a new possibility",
   "life finds a way",
@@ -45,7 +46,7 @@ export var gridMessages = [
   "watch it flourish",
 ];
 
-export var cycleMessages = [
+var cycleMessages = [
   "a new cycle begins",
   "life renews itself",
   "the garden breathes",
@@ -53,19 +54,19 @@ export var cycleMessages = [
   "nature's rhythm continues",
 ];
 
-export var wateringHintMessages = [
+var wateringHintMessages = [
   "click a watered tile to speed up its growth",
   "water accelerates the life cycle",
   "your plants love the extra care",
 ];
 
-export var fertilizeHintMessages = [
+var fertilizeHintMessages = [
   "click a planted tile to enrich its soil",
   "fertilizer boosts growth permanently by 30%",
   "a one-time gift to the earth",
 ];
 
-export var fertilizeMessages = [
+var fertilizeMessages = [
   "amber nutrients seep into the soil, awakening dormant roots",
   "the earth drinks deep of golden nourishment",
   "warm minerals weave through root and stem alike",
@@ -74,7 +75,23 @@ export var fertilizeMessages = [
   "olive and amber — the colors of enduring growth",
 ];
 
-export var weatherMessages = {
+var pruneMessages = [
+  "you pinch away what has faded, inviting renewal",
+  "a careful cut makes room for fresh blooms",
+  "with gentle snips, you guide the garden's breath",
+  "what is trimmed away returns as tomorrow's growth",
+  "the shears whisper: less is more",
+  "a tidy cut — and the garden exhales",
+  "old petals fall, new buds already dream",
+];
+
+var pruneHintMessages = [
+  "click a planted tile to trim it back",
+  "pruning skips the wilt and restarts growth",
+  "cut away the faded to invite fresh life",
+];
+
+var weatherMessages = {
   sunny: [
     "sunlight quickens the blooms",
     "warm rays coax the petals open",
@@ -124,4 +141,12 @@ export function getRandomFertilizeHint() {
 
 export function getRandomFertilizeMessage() {
   return fertilizeMessages[Math.floor(Math.random() * fertilizeMessages.length)];
+}
+
+export function getRandomPruneMessage() {
+  return pruneMessages[Math.floor(Math.random() * pruneMessages.length)];
+}
+
+export function getRandomPruneHint() {
+  return pruneHintMessages[Math.floor(Math.random() * pruneHintMessages.length)];
 }

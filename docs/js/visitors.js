@@ -238,11 +238,6 @@ export function startVisitors() {
   fireflyTrailTimer = setInterval(createFireflyTrails, 500);
 }
 
-function stopVisitors() {
-  if (visitorSpawnTimer) clearTimeout(visitorSpawnTimer);
-  if (fireflyTrailTimer) clearInterval(fireflyTrailTimer);
-}
-
 function clearAllVisitors() {
   var visitorsLayer = dom.visitorsLayer || document.getElementById('visitorsLayer');
   var existing = visitorsLayer.querySelectorAll('.visitor');

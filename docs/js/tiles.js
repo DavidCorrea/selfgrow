@@ -1,11 +1,12 @@
-import { dom, plantedCount, gridRevealed, tendingRevealed, journalEntries, wateredTiles, fertilizedTiles, tileCycleState, tileColorMap, petalPalettes, CYCLE_HOLD_BLOOM, CYCLE_WILT_DURATION, CYCLE_PAUSE_AFTER_WILT, CYCLE_SEED_OFFSET, totalTiles, getRandomGridMessage, getRandomWateringHint, getRandomCycleMessage, getRandomFertilizeHint, getRandomFertilizeMessage } from './state.js';
-import { saveGardenState, applyTileColors } from './persistence.js';
+import { dom, plantedCount, gridRevealed, tendingRevealed, journalEntries, wateredTiles, fertilizedTiles, prunedTiles, tileCycleState, tileColorMap, petalPalettes, CYCLE_HOLD_BLOOM, CYCLE_WILT_DURATION, CYCLE_PAUSE_AFTER_WILT, CYCLE_SEED_OFFSET, totalTiles, getRandomGridMessage, getRandomWateringHint, getRandomCycleMessage, getRandomFertilizeHint, getRandomFertilizeMessage, getRandomPruneMessage, getRandomPruneHint } from './state.js';
+import { saveGardenState, applyTileColors, addWateredIcon, addFertilizedIcon } from './persistence.js';
 import { addJournalEntry } from './journal.js';
 import { notifyStatsChange } from './stats.js';
 import { getCurrentWeather, getWeatherModifier, onWeatherChange } from './weather.js';
 
 var wateringMode = false;
 var fertilizeMode = false;
+var pruneMode = false;
 
 // ── Weather-Aware Growth Timing ──
 // Returns a duration multiplier based on current weather
@@ -169,7 +170,7 @@ function createWaterSparkles(tileEl) {
   }
 }
 
-export function addWateredIcon(tileEl) {
+function addWateredIcon(tileEl) {
   var existing = tileEl.querySelector('.tile-watered-icon');
   if (existing) existing.remove();
 
@@ -234,7 +235,7 @@ function revealTending() {
   }
 
   if (tendingHint) {
-    var hints = [getRandomWateringHint(), getRandomFertilizeHint()];
+    var hints = [getRandomWateringHint(), getRandomFertilizeHint(), getRandomPruneHint()];
     tendingHint.textContent = hints[Math.floor(Math.random() * hints.length)];
     tendingHint.style.opacity = '1';
   }
@@ -565,6 +566,32 @@ export function toggleWateringMode() {
 
   wateringMode = !wateringMode;
 
+  // Turn off other modes if watering was just activated
+  if (wateringMode) {
+    if (fertilizeMode) {
+      fertilizeMode = false;
+      var fertilizeBtn = dom.fertilizeBtn;
+      if (fertilizeBtn) {
+        fertilizeBtn.classList.remove('active');
+        fertilizeBtn.setAttribute('aria-pressed', 'false');
+      }
+      tiles.forEach(function (tile) {
+        tile.classList.remove('fertilize-target');
+      });
+    }
+    if (pruneMode) {
+      pruneMode = false;
+      var pruneBtnLocal = dom.pruneBtn;
+      if (pruneBtnLocal) {
+        pruneBtnLocal.classList.remove('active');
+        pruneBtnLocal.setAttribute('aria-pressed', 'false');
+      }
+      tiles.forEach(function (tile) {
+        tile.classList.remove('prune-target');
+      });
+    }
+  }
+
   if (wateringMode) {
     wateringCanBtn.classList.add('active');
     wateringCanBtn.setAttribute('aria-pressed', 'true');
@@ -728,7 +755,7 @@ function createFertilizeSparkles(tileEl) {
   }
 }
 
-export function addFertilizedIcon(tileEl) {
+function addFertilizedIcon(tileEl) {
   var existing = tileEl.querySelector('.tile-fertilized-icon');
   if (existing) existing.remove();
 
@@ -750,17 +777,30 @@ export function toggleFertilizeMode() {
 
   fertilizeMode = !fertilizeMode;
 
-  // Turn off watering mode if it was on
-  if (fertilizeMode && wateringMode) {
-    wateringMode = false;
-    var wateringCanBtn = dom.wateringCanBtn;
-    if (wateringCanBtn) {
-      wateringCanBtn.classList.remove('active');
-      wateringCanBtn.setAttribute('aria-pressed', 'false');
+  // Turn off other modes if they were on
+  if (fertilizeMode) {
+    if (wateringMode) {
+      wateringMode = false;
+      var wateringCanBtn = dom.wateringCanBtn;
+      if (wateringCanBtn) {
+        wateringCanBtn.classList.remove('active');
+        wateringCanBtn.setAttribute('aria-pressed', 'false');
+      }
+      tiles.forEach(function (tile) {
+        tile.classList.remove('watering-target');
+      });
     }
-    tiles.forEach(function (tile) {
-      tile.classList.remove('watering-target');
-    });
+    if (pruneMode) {
+      pruneMode = false;
+      var pruneBtnLocal = dom.pruneBtn;
+      if (pruneBtnLocal) {
+        pruneBtnLocal.classList.remove('active');
+        pruneBtnLocal.setAttribute('aria-pressed', 'false');
+      }
+      tiles.forEach(function (tile) {
+        tile.classList.remove('prune-target');
+      });
+    }
   }
 
   if (fertilizeMode) {
@@ -858,6 +898,206 @@ export function fertilizeTile(tileEl, tileIndex) {
 
 export function isFertilizeMode() {
   return fertilizeMode;
+}
+
+// ── Prune Mode ──
+
+function createLeafScatter(tileEl) {
+  var rect = tileEl.getBoundingClientRect();
+  var centerX = rect.width / 2;
+  var centerY = rect.height * 0.35;
+
+  var leafColors = ['#6b8f5e', '#7da86b', '#5a7a4d', '#8ab87a', '#4a6a3d', '#a0c48a'];
+
+  for (var i = 0; i < 8; i++) {
+    var leaf = document.createElement('div');
+    leaf.classList.add('tile-prune-leaf');
+    var angle = (Math.PI * 2 * i) / 8 + (Math.random() - 0.5) * 0.5;
+    var distance = 1.5 + Math.random() * 2.5;
+    var tx = Math.cos(angle) * distance * 12 + 'px';
+    var ty = Math.sin(angle) * distance * 12 + 0.5 + 'rem';
+    leaf.style.setProperty('--tx', tx);
+    leaf.style.setProperty('--ty', ty);
+    leaf.style.setProperty('--leaf-rot', (Math.random() * 360) + 'deg');
+    leaf.style.left = centerX + 'px';
+    leaf.style.top = centerY + 'px';
+    leaf.style.background = leafColors[Math.floor(Math.random() * leafColors.length)];
+    tileEl.appendChild(leaf);
+
+    (function (l) {
+      setTimeout(function () { l.remove(); }, 1200);
+    })(leaf);
+  }
+}
+
+function createSnipArcs(tileEl) {
+  var rect = tileEl.getBoundingClientRect();
+  var centerX = rect.width / 2;
+  var centerY = rect.height * 0.35;
+
+  for (var i = 0; i < 2; i++) {
+    var arc = document.createElement('div');
+    arc.classList.add('tile-snip-arc');
+    arc.style.left = centerX + 'px';
+    arc.style.top = centerY + 'px';
+    arc.style.setProperty('--arc-side', i === 0 ? '-1' : '1');
+    tileEl.appendChild(arc);
+
+    (function (a) {
+      setTimeout(function () { a.remove(); }, 600);
+    })(arc);
+  }
+}
+
+export function togglePruneMode() {
+  var pruneBtn = dom.pruneBtn;
+  var tendingHint = dom.tendingHint;
+  var tiles = dom.tiles;
+
+  pruneMode = !pruneMode;
+
+  // Turn off other modes if they were on
+  if (pruneMode) {
+    if (wateringMode) {
+      wateringMode = false;
+      var wateringCanBtn = dom.wateringCanBtn;
+      if (wateringCanBtn) {
+        wateringCanBtn.classList.remove('active');
+        wateringCanBtn.setAttribute('aria-pressed', 'false');
+      }
+      tiles.forEach(function (tile) {
+        tile.classList.remove('watering-target');
+      });
+    }
+    if (fertilizeMode) {
+      fertilizeMode = false;
+      var fertilizeBtn = dom.fertilizeBtn;
+      if (fertilizeBtn) {
+        fertilizeBtn.classList.remove('active');
+        fertilizeBtn.setAttribute('aria-pressed', 'false');
+      }
+      tiles.forEach(function (tile) {
+        tile.classList.remove('fertilize-target');
+      });
+    }
+  }
+
+  if (pruneMode) {
+    pruneBtn.classList.add('active');
+    pruneBtn.setAttribute('aria-pressed', 'true');
+    tendingHint.style.opacity = '0';
+    setTimeout(function () {
+      tendingHint.textContent = 'click on planted tiles to prune them';
+      tendingHint.style.opacity = '1';
+    }, 300);
+
+    tiles.forEach(function (tile) {
+      if (tile.classList.contains('planted')) {
+        tile.classList.add('prune-target');
+      }
+    });
+  } else {
+    pruneBtn.classList.remove('active');
+    pruneBtn.setAttribute('aria-pressed', 'false');
+    tendingHint.style.opacity = '0';
+    setTimeout(function () {
+      tendingHint.textContent = getRandomPruneHint();
+      tendingHint.style.opacity = '1';
+    }, 300);
+
+    tiles.forEach(function (tile) {
+      tile.classList.remove('prune-target');
+    });
+  }
+}
+
+export function pruneTile(tileEl, tileIndex) {
+  var tendingHint = dom.tendingHint;
+
+  // Visual effects: snip arcs + leaf scatter
+  createSnipArcs(tileEl);
+  createLeafScatter(tileEl);
+
+  // Add pruning class for the trim animation
+  tileEl.classList.add('pruning');
+  setTimeout(function () {
+    tileEl.classList.remove('pruning');
+  }, 800);
+
+  // Clear all pending timeouts for this tile
+  var state = tileCycleState[tileIndex];
+  if (state && state.timeouts) {
+    state.timeouts.forEach(function (t) { clearTimeout(t); });
+    state.timeouts = [];
+  }
+
+  var sprout = tileEl.querySelector('.tile-sprout');
+  var badge = tileEl.querySelector('.tile-cycle-badge');
+
+  // Reset visual state: collapse flower back to stem
+  if (sprout) {
+    sprout.classList.remove('growing', 'budding', 'blooming', 'grown', 'wilting', 'dormant', 'regrowing', 'regrow-bud', 'regrow-bloom', 'regrow-wilt', 'speed-up');
+    sprout.classList.add('pruned');
+
+    setTimeout(function () {
+      if (!tileEl.classList.contains('planted')) return;
+      sprout.classList.remove('pruned');
+
+      // Hide badge during regrowth
+      if (badge) {
+        badge.classList.remove('visible');
+      }
+
+      // Start fresh growth cycle from perennial regrowth path
+      // Increment cycle counter
+      if (state) {
+        state.cycle++;
+      }
+      startGrowthCycle(tileEl, tileIndex);
+      saveGardenState();
+    }, 600);
+  }
+
+  // Track pruning
+  prunedTiles[tileIndex] = true;
+
+  // Add journal entry
+  var palette = petalPalettes[tileIndex % petalPalettes.length];
+  addJournalEntry(tileIndex, palette[0], state ? state.cycle : 1);
+
+  if (journalEntries.length > 0) {
+    journalEntries[journalEntries.length - 1].type = 'pruned';
+    journalEntries[journalEntries.length - 1].subText = getRandomPruneMessage();
+  }
+
+  var journalTimeline = dom.journalTimeline;
+  if (journalTimeline) {
+    var firstEntry = journalTimeline.firstChild;
+    if (firstEntry) {
+      var textEl = firstEntry.querySelector('.entry-text');
+      if (textEl) {
+        textEl.innerHTML = '<strong>Tile ' + (tileIndex + 1) + '</strong> &mdash; ✂️ pruned';
+      }
+      var timeEl = firstEntry.querySelector('.entry-time');
+      if (timeEl) {
+        timeEl.textContent = getRandomPruneMessage();
+      }
+    }
+  }
+
+  if (tendingHint) {
+    tendingHint.style.opacity = '0';
+    setTimeout(function () {
+      tendingHint.textContent = getRandomPruneMessage() + ' ✂️';
+      tendingHint.style.opacity = '1';
+    }, 300);
+  }
+
+  notifyStatsChange();
+}
+
+export function isPruneMode() {
+  return pruneMode;
 }
 
 

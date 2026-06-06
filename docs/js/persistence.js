@@ -1,5 +1,5 @@
-import { dom, journalEntries, wateredTiles, fertilizedTiles, tileCycleState, tileColorMap, plantedCount, totalVolunteers, gridRevealed, journalRevealed, tendingRevealed, petalPalettes, centerColors, getRandomGridMessage, getRandomWateringHint, getRandomCycleMessage, CYCLE_HOLD_BLOOM, CYCLE_SEED_OFFSET, CYCLE_WILT_DURATION, CYCLE_PAUSE_AFTER_WILT } from './state.js';
-import { addWateredIcon, addFertilizedIcon } from './tiles.js';
+import { dom, journalEntries, wateredTiles, fertilizedTiles, prunedTiles, tileCycleState, tileColorMap, plantedCount, totalVolunteers, gridRevealed, journalRevealed, tendingRevealed, petalPalettes, centerColors, getRandomGridMessage, getRandomWateringHint, getRandomCycleMessage, CYCLE_HOLD_BLOOM, CYCLE_SEED_OFFSET, CYCLE_WILT_DURATION, CYCLE_PAUSE_AFTER_WILT } from './state.js';
+
 import { formatTime } from './journal.js';
 import { getCurrentWeather, getWeatherModifier } from './weather.js';
 
@@ -12,6 +12,7 @@ export function saveGardenState() {
     plantedTiles: {},
     wateredTiles: {},
     fertilizedTiles: {},
+    prunedTiles: {},
     tileCycleState: {},
     tileColorMap: {},
     journalEntries: journalEntries,
@@ -34,6 +35,9 @@ export function saveGardenState() {
       }
       if (fertilizedTiles[tileIndex]) {
         state.fertilizedTiles[tileIndex] = true;
+      }
+      if (prunedTiles[tileIndex]) {
+        state.prunedTiles[tileIndex] = true;
       }
       if (tileCycleState[tileIndex]) {
         state.tileCycleState[tileIndex] = {
@@ -65,7 +69,7 @@ export function loadGardenState() {
   }
 }
 
-export function formatLastTended(timestamp) {
+function formatLastTended(timestamp) {
   var date = new Date(timestamp);
   var now = new Date();
   var diffMs = now.getTime() - date.getTime();
@@ -82,7 +86,7 @@ export function formatLastTended(timestamp) {
   return 'last tended on ' + (date.getMonth() + 1) + '/' + date.getDate() + ' at ' + timeStr;
 }
 
-export function showRestoringOverlay() {
+function showRestoringOverlay() {
   var overlay = document.createElement('div');
   overlay.classList.add('restoring-overlay');
   overlay.id = 'restoringOverlay';
@@ -93,7 +97,7 @@ export function showRestoringOverlay() {
   });
 }
 
-export function hideRestoringOverlay() {
+function hideRestoringOverlay() {
   var overlay = document.getElementById('restoringOverlay');
   if (overlay) {
     overlay.classList.remove('visible');
@@ -119,6 +123,36 @@ export function applyTileColors(tileEl, tileIndex) {
   }
 
   return palette;
+}
+
+export function addWateredIcon(tileEl) {
+  var existing = tileEl.querySelector('.tile-watered-icon');
+  if (existing) existing.remove();
+
+  var icon = document.createElement('div');
+  icon.classList.add('tile-watered-icon');
+  icon.textContent = '💧';
+  icon.setAttribute('aria-hidden', 'true');
+  tileEl.appendChild(icon);
+
+  requestAnimationFrame(function () {
+    icon.classList.add('visible');
+  });
+}
+
+export function addFertilizedIcon(tileEl) {
+  var existing = tileEl.querySelector('.tile-fertilized-icon');
+  if (existing) existing.remove();
+
+  var icon = document.createElement('div');
+  icon.classList.add('tile-fertilized-icon');
+  icon.textContent = '🌾';
+  icon.setAttribute('aria-hidden', 'true');
+  tileEl.appendChild(icon);
+
+  requestAnimationFrame(function () {
+    icon.classList.add('visible');
+  });
 }
 
 function getWeatherEmoji(weatherState) {
@@ -165,6 +199,12 @@ export function restoreGardenState(state, callbacks) {
   if (state.fertilizedTiles) {
     for (var fKey in state.fertilizedTiles) {
       fertilizedTiles[fKey] = state.fertilizedTiles[fKey];
+    }
+  }
+
+  if (state.prunedTiles) {
+    for (var pKey in state.prunedTiles) {
+      prunedTiles[pKey] = state.prunedTiles[pKey];
     }
   }
 
@@ -224,11 +264,14 @@ export function restoreGardenState(state, callbacks) {
       var isCycle = entry.type === 'cycle';
       var isWatered = entry.type === 'watered';
       var isFertilized = entry.type === 'fertilized';
+      var isPruned = entry.type === 'pruned';
       var isWeather = entry.type === 'weather';
       var entryLabel;
       if (isWeather) {
         var weatherEmoji = getWeatherEmoji(entry.weatherState);
         entryLabel = weatherEmoji + ' ' + (entry.weatherMessage || getWeatherDefaultMessage(entry.weatherState));
+      } else if (isPruned) {
+        entryLabel = '<strong>Tile ' + (entry.tileIndex + 1) + '</strong> &mdash; ✂️ pruned';
       } else if (isFertilized) {
         entryLabel = '<strong>Tile ' + (entry.tileIndex + 1) + '</strong> &mdash; 🌾 fertilized';
       } else if (isWatered) {
@@ -244,6 +287,8 @@ export function restoreGardenState(state, callbacks) {
       var subText;
       if (isWeather) {
         subText = entry.time + ' &mdash; the sky shifts';
+      } else if (isPruned) {
+        subText = entry.subText || 'you pinch away what has faded, inviting renewal';
       } else if (isFertilized) {
         subText = entry.subText || 'soil enriched — growth permanently boosted by 30%';
       } else if (isWatered) {
@@ -257,9 +302,9 @@ export function restoreGardenState(state, callbacks) {
       }
 
       var isVolunteer = entry.type === 'volunteer';
-      var dotClass = isWeather ? 'entry-timeline-dot entry-timeline-dot--weather' : (isVolunteer ? 'entry-timeline-dot entry-timeline-dot--volunteer' : 'entry-timeline-dot');
-      var swatchClass = isWeather ? 'entry-swatch entry-swatch--weather' : (isVolunteer ? 'entry-swatch entry-swatch--volunteer' : 'entry-swatch');
-      var entryClass = isWeather ? 'journal-entry journal-entry--weather' : (isVolunteer ? 'journal-entry journal-entry--volunteer' : 'journal-entry');
+      var dotClass = isWeather ? 'entry-timeline-dot entry-timeline-dot--weather' : (isPruned ? 'entry-timeline-dot entry-timeline-dot--pruned' : (isVolunteer ? 'entry-timeline-dot entry-timeline-dot--volunteer' : 'entry-timeline-dot'));
+      var swatchClass = isWeather ? 'entry-swatch entry-swatch--weather' : (isPruned ? 'entry-swatch entry-swatch--pruned' : (isVolunteer ? 'entry-swatch entry-swatch--volunteer' : 'entry-swatch'));
+      var entryClass = isWeather ? 'journal-entry journal-entry--weather' : (isPruned ? 'journal-entry journal-entry--pruned' : (isVolunteer ? 'journal-entry journal-entry--volunteer' : 'journal-entry'));
       entryEl.classList = entryClass;
 
       entryEl.innerHTML =

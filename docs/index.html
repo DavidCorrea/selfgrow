@@ -17,7 +17,7 @@
     <!-- ── Main Stage ── -->
     <div class="app-stage">
       <!-- Left: Welcome / Seed Card -->
-      <section class="panel panel--welcome" id="welcomePanel" aria-label="Welcome garden">
+      <section class="panel panel--welcome" aria-label="Welcome garden">
         <div class="card" id="welcomeCard">
           <div class="garden" id="garden" aria-label="Plant a seed" tabindex="0" role="button">
             <div class="soil"></div>
@@ -43,7 +43,7 @@
       </section>
 
       <!-- Center: Garden Grid (dominant focal point) -->
-      <section class="panel panel--grid" id="gridPanel" aria-label="Garden grid">
+      <section class="panel panel--grid" aria-label="Garden grid">
         <div class="garden-grid-wrapper" id="gardenGridWrapper" aria-hidden="true">
           <p class="grid-hint" id="gridHint"></p>
           <div class="garden-grid" id="gardenGrid" role="group" aria-label="Garden grid">
@@ -277,17 +277,17 @@
             <h2 class="stats-title">garden reflections</h2>
           </div>
           <div class="stats-grid">
-            <div class="stat-card" id="statFlowersCard">
+            <div class="stat-card">
               <span class="stat-emoji" id="statFlowersEmoji">🌸</span>
               <span class="stat-value" id="statFlowersValue">0</span>
               <span class="stat-label" id="statFlowersLabel">flowers bloomed</span>
             </div>
-            <div class="stat-card" id="statSeasonCard">
+            <div class="stat-card">
               <span class="stat-emoji" id="statSeasonEmoji">☀️</span>
               <span class="stat-value" id="statSeasonValue">—</span>
               <span class="stat-label">current season</span>
             </div>
-            <div class="stat-card" id="statTendedCard">
+            <div class="stat-card">
               <span class="stat-emoji" id="statTendedEmoji">🌱</span>
               <span class="stat-value" id="statTendedValue">—</span>
               <span class="stat-label">last tended</span>
@@ -322,6 +322,10 @@
         <button class="tool-btn" id="wateringCanBtn" aria-label="Watering can" title="Water your plants">
           <span class="tool-icon">🚿</span>
           <span class="tool-label">water</span>
+        </button>
+        <button class="tool-btn" id="pruneBtn" aria-label="Prune" title="Prune your plants">
+          <span class="tool-icon">✂️</span>
+          <span class="tool-label">prune</span>
         </button>
         <button class="tool-btn" id="fertilizeBtn" aria-label="Fertilize" title="Enrich the soil">
           <span class="tool-icon">🌾</span>

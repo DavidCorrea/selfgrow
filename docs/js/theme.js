@@ -1,6 +1,6 @@
 // ── Seasonal Time-of-Day Theme ──
 
-export function applyTimeTheme() {
+function applyTimeTheme() {
   var hour = new Date().getHours();
   var theme;
 

@@ -146,7 +146,7 @@ function revealStats() {
   }
 }
 
-export function updateStats() {
+function updateStats() {
   var gardenStats = dom.gardenStats;
   var statFlowersValue = dom.statFlowersValue;
   var statFlowersEmoji = dom.statFlowersEmoji;
@@ -246,7 +246,7 @@ export function updateStats() {
   }
 }
 
-export function scheduleStatsUpdate() {
+function scheduleStatsUpdate() {
   if (statsUpdateTimer) clearInterval(statsUpdateTimer);
   statsUpdateTimer = setInterval(function () {
     if (statsRevealed) {

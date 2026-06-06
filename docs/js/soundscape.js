@@ -227,7 +227,7 @@ export function isSoundscapeEnabled() {
   return isSoundscapeActive;
 }
 
-export function startSoundscape() {
+function startSoundscape() {
   initAudioContext();
   if (audioCtx.state === 'suspended') {
     audioCtx.resume();
