@@ -9,6 +9,7 @@ import { getBloomingCount } from './visitors.js';
 import { isSoundscapeEnabled } from './soundscape.js';
 import { notifyStatsChange } from './stats.js';
 import { startGrowthCycle } from './tiles.js';
+import { recordBloom } from './garden-rings.js';
 
 var seedingTimer = null;
 var isSeedingActive = false;
@@ -286,6 +287,9 @@ function plantVolunteer(tileEl) {
 
     // Add entry through journal system
     addVolunteerJournalEntry(journalEntry, tileIndex, wildPalette[0], msg);
+
+    // Record bloom for garden rings
+    recordBloom(tileIndex, 1);
 
     // Update stats
     notifyStatsChange();

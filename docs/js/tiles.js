@@ -1,8 +1,11 @@
 import { dom, plantedCount, gridRevealed, tendingRevealed, journalEntries, wateredTiles, fertilizedTiles, prunedTiles, tileCycleState, tileColorMap, petalPalettes, CYCLE_HOLD_BLOOM, CYCLE_WILT_DURATION, CYCLE_PAUSE_AFTER_WILT, CYCLE_SEED_OFFSET, totalTiles, getRandomGridMessage, getRandomWateringHint, getRandomCycleMessage, getRandomFertilizeHint, getRandomFertilizeMessage, getRandomPruneMessage, getRandomPruneHint } from './state.js';
 import { saveGardenState, applyTileColors, addWateredIcon, addFertilizedIcon } from './persistence.js';
+// Note: addWateredIcon and addFertilizedIcon are imported from persistence.js
+// to avoid circular dependency. Do NOT re-declare them locally below.
 import { addJournalEntry } from './journal.js';
 import { notifyStatsChange } from './stats.js';
 import { triggerGardenComplete } from './celebration.js';
+import { recordBloom } from './garden-rings.js';
 import { getCurrentWeather, getWeatherModifier, onWeatherChange } from './weather.js';
 
 var wateringMode = false;
@@ -171,21 +174,6 @@ function createWaterSparkles(tileEl) {
   }
 }
 
-function addWateredIcon(tileEl) {
-  var existing = tileEl.querySelector('.tile-watered-icon');
-  if (existing) existing.remove();
-
-  var icon = document.createElement('div');
-  icon.classList.add('tile-watered-icon');
-  icon.textContent = '💧';
-  icon.setAttribute('aria-hidden', 'true');
-  tileEl.appendChild(icon);
-
-  requestAnimationFrame(function () {
-    icon.classList.add('visible');
-  });
-}
-
 function applySpeedBoost(tileEl) {
   var sprout = tileEl.querySelector('.tile-sprout');
   if (sprout) {
@@ -265,7 +253,7 @@ export function startGrowthCycle(tileEl, tileIndex) {
   if (isRegrow) {
     // ── Perennial regrowth: keep stem & leaves, only collapse flower ──
     tileSprout.classList.remove('growing', 'budding', 'blooming', 'grown', 'wilting', 'fertilized-boost', 'dormant', 'regrowing', 'regrow-bud', 'regrow-bloom', 'regrow-wilt');
-    tileEl.classList.remove('reseeding');
+    tileEl.classList.remove('reseeding', 'pruned-tile');
     tileSeed.classList.remove('visible');
 
     // Re-apply fertilized boost if tile was fertilized
@@ -314,6 +302,7 @@ export function startGrowthCycle(tileEl, tileIndex) {
         addJournalEntry(tileIndex, primaryColor, state.cycle);
       }
 
+      recordBloom(tileIndex, state.cycle);
       notifyStatsChange();
 
       if (state.cycle > 1 && gridHint) {
@@ -406,6 +395,7 @@ export function startGrowthCycle(tileEl, tileIndex) {
         addJournalEntry(tileIndex, primaryColor, state.cycle);
       }
 
+      recordBloom(tileIndex, state.cycle);
       notifyStatsChange();
 
       if (state.cycle > 1 && gridHint) {
@@ -526,6 +516,7 @@ export function plantTile(tileEl) {
 
     revealTending();
     addJournalEntry(tileIndex, primaryColor, 1);
+    recordBloom(tileIndex, 1);
     saveGardenState();
     notifyStatsChange();
 
@@ -759,21 +750,6 @@ function createFertilizeSparkles(tileEl) {
       setTimeout(function () { s.remove(); }, 1000);
     })(sparkle);
   }
-}
-
-function addFertilizedIcon(tileEl) {
-  var existing = tileEl.querySelector('.tile-fertilized-icon');
-  if (existing) existing.remove();
-
-  var icon = document.createElement('div');
-  icon.classList.add('tile-fertilized-icon');
-  icon.textContent = '🌾';
-  icon.setAttribute('aria-hidden', 'true');
-  tileEl.appendChild(icon);
-
-  requestAnimationFrame(function () {
-    icon.classList.add('visible');
-  });
 }
 
 export function toggleFertilizeMode() {
@@ -1026,6 +1002,7 @@ export function pruneTile(tileEl, tileIndex) {
 
   // Add pruning class for the trim animation
   tileEl.classList.add('pruning');
+  tileEl.classList.add('pruned-tile');
   setTimeout(function () {
     tileEl.classList.remove('pruning');
   }, 800);

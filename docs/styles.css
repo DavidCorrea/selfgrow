@@ -2118,6 +2118,138 @@ body::before {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   Garden Rings — Bloom History Visualization
+   Concentric softly glowing rings representing each
+   bloom cycle completed across the entire garden.
+   ═══════════════════════════════════════════════════════════ */
+
+.garden-rings {
+  opacity: 0;
+  transform: translateY(0.75rem);
+  transition: opacity 0.8s ease, transform 0.8s ease;
+  position: relative;
+  z-index: 1;
+  margin-top: 0.75rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid rgba(139, 119, 80, 0.08);
+}
+
+.garden-rings.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.garden-rings-header {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+}
+
+.garden-rings-icon {
+  font-size: 0.75rem;
+  filter: drop-shadow(0 0 0.15rem rgba(139, 119, 80, 0.2));
+}
+
+.garden-rings-title {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: rgba(139, 119, 80, 0.6);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.garden-rings-viewport {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 0.5rem 0;
+}
+
+.rings-concentric {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 5rem;
+}
+
+.ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 2px solid;
+  opacity: 0;
+  transform: scale(0.7);
+  animation: ringFadeIn 0.8s ease-out forwards;
+  will-change: transform, opacity;
+}
+
+.ring--new {
+  animation: ringBloomIn 1s ease-out forwards;
+}
+
+.ring--fadeout {
+  animation: ringFadeOut 0.6s ease-in forwards;
+  pointer-events: none;
+}
+
+@keyframes ringFadeIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+}
+
+@keyframes ringBloomIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.05);
+  }
+  100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+}
+
+@keyframes ringFadeOut {
+  0% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+}
+
+.garden-rings-caption {
+  text-align: center;
+  font-size: 0.55rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-top: 0.4rem;
+  letter-spacing: 0.03em;
+  line-height: 1.4;
+  min-height: 1em;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+
+.garden-rings.visible .garden-rings-caption {
+  opacity: 1;
+}
+
+/* ═══════════════════════════════════════════════════════════
    Garden Visitors
    ═══════════════════════════════════════════════════════════ */
 
@@ -3334,6 +3466,15 @@ body.theme-night {
     gap: 0.5rem;
   }
 
+  .garden-rings {
+    margin-top: 0.6rem;
+    padding-top: 0.5rem;
+  }
+
+  .rings-concentric {
+    min-height: 5.5rem;
+  }
+
   .stat-card {
     padding: 0.65rem 0.5rem;
   }
@@ -3677,6 +3818,18 @@ body.theme-night {
     width: 0.45rem;
     height: 0.3rem;
   }
+
+  .garden-rings-viewport {
+    padding: 0.25rem 0;
+  }
+
+  .rings-concentric {
+    min-height: 3.5rem;
+  }
+
+  .garden-rings-caption {
+    font-size: 0.45rem;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -3773,5 +3926,21 @@ body.theme-night {
   .tile-sprout.dormant .tile-leaf,
   .tile-sprout.dormant .tile-stem {
     animation: none !important;
+  }
+
+  .ring,
+  .ring--new,
+  .ring--fadeout {
+    animation: none !important;
+    opacity: 0.6 !important;
+    transform: scale(1) !important;
+  }
+
+  .ring--fadeout {
+    display: none;
+  }
+
+  .garden-rings {
+    transition-duration: 0.01ms !important;
   }
 }

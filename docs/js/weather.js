@@ -264,27 +264,6 @@ function startWeather() {
   weatherTimer = setTimeout(advanceWeather, nextInterval);
 }
 
-// Stop the weather cycle
-function stopWeather() {
-  isWeatherActive = false;
-  if (weatherTimer) {
-    clearTimeout(weatherTimer);
-    weatherTimer = null;
-  }
-  var overlay = document.getElementById('weatherOverlay');
-  if (overlay) {
-    overlay.remove();
-  }
-  var iconEl = document.getElementById('weatherIcon');
-  if (iconEl) {
-    iconEl.remove();
-  }
-  var labelEl = document.getElementById('weatherLabel');
-  if (labelEl) {
-    labelEl.remove();
-  }
-}
-
 // Initialize weather after a short delay (let the garden load first)
 setTimeout(function () {
   startWeather();
