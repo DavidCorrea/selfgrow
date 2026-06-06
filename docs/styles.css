@@ -908,6 +908,170 @@ body::before {
   50% { transform: rotate(3deg); }
 }
 
+/* ── Perennial Regrowth (Cycle 2+) ── */
+
+/* Dormant state: stem & leaves stay visible, flower collapses */
+.tile-sprout.dormant {
+  opacity: 1;
+}
+
+.tile-sprout.dormant .tile-flower {
+  animation: regrowFlowerCollapse 0.6s ease-in forwards;
+  transform-origin: bottom center;
+}
+
+@keyframes regrowFlowerCollapse {
+  0% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+    filter: brightness(1) saturate(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(0.85) rotate(6deg);
+    filter: brightness(0.8) saturate(0.7);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.5) rotate(12deg);
+    filter: brightness(0.5) saturate(0.4);
+  }
+}
+
+.tile-sprout.dormant .tile-leaf {
+  animation: regrowLeafFade 0.6s ease-in forwards;
+}
+
+@keyframes regrowLeafFade {
+  0% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0.5; transform: scale(0.9); }
+}
+
+.tile-sprout.dormant .tile-stem {
+  animation: regrowStemFade 0.6s ease-in forwards;
+}
+
+@keyframes regrowStemFade {
+  0% { opacity: 1; }
+  100% { opacity: 0.7; }
+}
+
+/* Regrowing state: stem & leaves gently brighten back, new bud emerges from top */
+.tile-sprout.regrowing {
+  opacity: 1;
+}
+
+.tile-sprout.regrowing .tile-stem {
+  animation: regrowStemRestore 0.8s ease-out forwards;
+}
+
+@keyframes regrowStemRestore {
+  0% { opacity: 0.7; }
+  100% { opacity: 1; }
+}
+
+.tile-sprout.regrowing .tile-leaf {
+  animation: regrowLeafRestore 0.8s ease-out forwards;
+}
+
+@keyframes regrowLeafRestore {
+  0% { opacity: 0.5; transform: scale(0.9); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* Regrow bud: emerges from stem top */
+.tile-sprout.regrow-bud {
+  opacity: 1;
+}
+
+.tile-sprout.regrow-bud .tile-bud {
+  animation: tileBudForm 0.5s ease-out forwards;
+}
+
+.tile-sprout.regrow-bud .tile-stem {
+  opacity: 1;
+}
+
+.tile-sprout.regrow-bud .tile-leaf {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* Regrow bloom: bud opens into flower */
+.tile-sprout.regrow-bloom {
+  opacity: 1;
+}
+
+.tile-sprout.regrow-bloom .tile-bud {
+  animation: tileBudOpen 0.5s ease-out forwards;
+}
+
+.tile-sprout.regrow-bloom .tile-flower {
+  animation: regrowFlowerBloom 0.7s ease-out forwards;
+  animation-delay: 0.35s;
+}
+
+@keyframes regrowFlowerBloom {
+  0% {
+    width: 0;
+    height: 0;
+    opacity: 0;
+    transform: scale(0) rotate(0deg);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.08) rotate(370deg);
+  }
+  100% {
+    width: 1.1rem;
+    height: 1.1rem;
+    opacity: 1;
+    transform: scale(1) rotate(360deg);
+  }
+}
+
+/* ── Regrow Wilt: flower-only collapse, stem persists ── */
+.tile-sprout.regrow-wilt .tile-flower {
+  animation: regrowWiltFlower 1.6s ease-in forwards;
+  transform-origin: bottom center;
+}
+
+@keyframes regrowWiltFlower {
+  0% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+    filter: brightness(1) saturate(1);
+  }
+  40% {
+    opacity: 0.85;
+    transform: scale(0.92) rotate(6deg);
+    filter: brightness(0.85) saturate(0.8);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.6) rotate(15deg);
+    filter: brightness(0.55) saturate(0.45);
+  }
+}
+
+.tile-sprout.regrow-wilt .tile-leaf {
+  animation: regrowWiltLeaf 1.6s ease-in forwards;
+}
+
+@keyframes regrowWiltLeaf {
+  0% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0.5; transform: scale(0.88) rotate(4deg); }
+}
+
+.tile-sprout.regrow-wilt .tile-stem {
+  animation: regrowWiltStem 1.6s ease-in forwards;
+}
+
+@keyframes regrowWiltStem {
+  0% { opacity: 1; }
+  100% { opacity: 0.7; }
+}
+
 /* Cycle badge on tile */
 .tile-cycle-badge {
   position: absolute;
@@ -1301,6 +1465,48 @@ body::before {
 
 .tile-sprout.speed-up .tile-flower {
   animation-duration: 0.3s !important;
+}
+
+/* Speed-up overrides for regrowth stages */
+.tile-sprout.speed-up.regrowing .tile-stem {
+  animation-duration: 0.56s !important;
+}
+
+.tile-sprout.speed-up.regrowing .tile-leaf {
+  animation-duration: 0.56s !important;
+}
+
+.tile-sprout.speed-up.regrow-bud .tile-bud {
+  animation-duration: 0.35s !important;
+}
+
+.tile-sprout.speed-up.regrow-bloom .tile-bud {
+  animation-duration: 0.35s !important;
+}
+
+.tile-sprout.speed-up.regrow-bloom .tile-flower {
+  animation-duration: 0.49s !important;
+}
+
+/* Fertilized boost overrides for regrowth stages */
+.tile-sprout.fertilized-boost.regrowing .tile-stem {
+  animation-duration: 0.56s !important;
+}
+
+.tile-sprout.fertilized-boost.regrowing .tile-leaf {
+  animation-duration: 0.56s !important;
+}
+
+.tile-sprout.fertilized-boost.regrow-bud .tile-bud {
+  animation-duration: 0.35s !important;
+}
+
+.tile-sprout.fertilized-boost.regrow-bloom .tile-bud {
+  animation-duration: 0.35s !important;
+}
+
+.tile-sprout.fertilized-boost.regrow-bloom .tile-flower {
+  animation-duration: 0.49s !important;
 }
 
 /* Combined water + fertilize boost */
@@ -3217,7 +3423,18 @@ body.theme-night {
   .grid-tile.weather-sunny-glow .tile-sprout.grown .tile-flower,
   .grid-tile.weather-snowy-dormant .tile-sprout.grown .tile-flower,
   .grid-tile.fertilize-glow .tile-soil,
-  .tile-fertilized-icon {
+  .tile-fertilized-icon,
+  .tile-sprout.regrowing .tile-stem,
+  .tile-sprout.regrowing .tile-leaf,
+  .tile-sprout.regrow-bud .tile-bud,
+  .tile-sprout.regrow-bloom .tile-bud,
+  .tile-sprout.regrow-bloom .tile-flower,
+  .tile-sprout.regrow-wilt .tile-flower,
+  .tile-sprout.regrow-wilt .tile-leaf,
+  .tile-sprout.regrow-wilt .tile-stem,
+  .tile-sprout.dormant .tile-flower,
+  .tile-sprout.dormant .tile-leaf,
+  .tile-sprout.dormant .tile-stem {
     animation: none !important;
   }
 }

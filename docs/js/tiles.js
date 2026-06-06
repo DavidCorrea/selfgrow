@@ -251,99 +251,202 @@ export function startGrowthCycle(tileEl, tileIndex) {
   var primaryColor = palette[0];
   var gridHint = dom.gridHint;
 
+  var isRegrow = state.cycle > 1;
   var wasFertilized = tileEl.classList.contains('fertilized');
-  tileSprout.classList.remove('growing', 'budding', 'blooming', 'grown', 'wilting', 'fertilized-boost');
-  tileEl.classList.remove('reseeding');
-  tileSeed.classList.remove('visible');
-
-  // Re-apply fertilized boost if tile was fertilized
-  if (wasFertilized && tileSprout) {
-    tileSprout.classList.add('fertilized-boost');
-  }
-
-  tileEl.classList.add('reseeding');
-  tileSeed.classList.add('visible');
 
   // Weather-scaled timings
   var wsm = getWeatherGrowthMultiplier();
-  var seedDelay = weatherScaled(500);
-  var budDelay = weatherScaled(1400);
-  var bloomDelay = weatherScaled(2000);
-  var grownDelay = weatherScaled(2700);
   var holdBloom = weatherScaled(CYCLE_HOLD_BLOOM);
   var wiltDur = weatherScaled(CYCLE_WILT_DURATION);
   var pauseWilt = weatherScaled(CYCLE_PAUSE_AFTER_WILT);
 
-  var seedTimeout = setTimeout(function () {
-    tileSprout.classList.add('growing');
-  }, seedDelay);
+  if (isRegrow) {
+    // ── Perennial regrowth: keep stem & leaves, only collapse flower ──
+    tileSprout.classList.remove('growing', 'budding', 'blooming', 'grown', 'wilting', 'fertilized-boost', 'dormant', 'regrowing', 'regrow-bud', 'regrow-bloom', 'regrow-wilt');
+    tileEl.classList.remove('reseeding');
+    tileSeed.classList.remove('visible');
 
-  var budTimeout = setTimeout(function () {
-    tileSprout.classList.remove('growing');
-    tileSprout.classList.add('budding');
-  }, budDelay);
-
-  var bloomTimeout = setTimeout(function () {
-    tileSprout.classList.remove('budding');
-    tileSprout.classList.add('blooming');
-  }, bloomDelay);
-
-  var grownTimeout = setTimeout(function () {
-    tileSprout.classList.remove('blooming');
-    tileSprout.classList.add('grown');
-    createTileSparkles(tileEl);
-
-    if (badge) {
-      badge.textContent = '🌸 ' + state.cycle;
-      badge.classList.add('visible');
+    // Re-apply fertilized boost if tile was fertilized
+    if (wasFertilized && tileSprout) {
+      tileSprout.classList.add('fertilized-boost');
     }
 
-    if (state.cycle > 1) {
-      addJournalEntry(tileIndex, primaryColor, state.cycle);
-    }
+    // Brief dormant state (stem & leaves persist visibly)
+    tileSprout.classList.add('dormant');
 
-    notifyStatsChange();
+    var regrowDormantDelay = weatherScaled(600);
+    var regrowBudDelay = regrowDormantDelay + weatherScaled(800);
+    var regrowBloomDelay = regrowBudDelay + weatherScaled(900);
+    var regrowGrownDelay = regrowBloomDelay + weatherScaled(700);
 
-    if (state.cycle > 1 && gridHint) {
-      gridHint.style.opacity = '0';
-      setTimeout(function () {
-        gridHint.textContent = getRandomCycleMessage();
-        gridHint.style.opacity = '1';
-      }, 300);
-    }
-
-    var offset = tileIndex * CYCLE_SEED_OFFSET * wsm;
-    var wiltDelay = holdBloom + offset;
-
-    var wiltTimeout = setTimeout(function () {
+    var regrowDormantTimeout = setTimeout(function () {
       if (!tileEl.classList.contains('planted')) return;
+      tileSprout.classList.remove('dormant');
+      tileSprout.classList.add('regrowing');
+    }, regrowDormantDelay);
 
-      tileSprout.classList.remove('grown');
-      tileSprout.classList.add('wilting');
+    var regrowBudTimeout = setTimeout(function () {
+      if (!tileEl.classList.contains('planted')) return;
+      tileSprout.classList.remove('regrowing');
+      tileSprout.classList.add('regrow-bud');
+    }, regrowBudDelay);
 
-      var restartTimeout = setTimeout(function () {
+    var regrowBloomTimeout = setTimeout(function () {
+      if (!tileEl.classList.contains('planted')) return;
+      tileSprout.classList.remove('regrow-bud');
+      tileSprout.classList.add('regrow-bloom');
+    }, regrowBloomDelay);
+
+    var regrowGrownTimeout = setTimeout(function () {
+      if (!tileEl.classList.contains('planted')) return;
+      tileSprout.classList.remove('regrow-bloom');
+      tileSprout.classList.add('grown');
+      createTileSparkles(tileEl);
+
+      if (badge) {
+        badge.textContent = '🌸 ' + state.cycle;
+        badge.classList.add('visible');
+      }
+
+      if (state.cycle > 1) {
+        addJournalEntry(tileIndex, primaryColor, state.cycle);
+      }
+
+      notifyStatsChange();
+
+      if (state.cycle > 1 && gridHint) {
+        gridHint.style.opacity = '0';
+        setTimeout(function () {
+          gridHint.textContent = getRandomCycleMessage();
+          gridHint.style.opacity = '1';
+        }, 300);
+      }
+
+      var offset = tileIndex * CYCLE_SEED_OFFSET * wsm;
+      var wiltDelay = holdBloom + offset;
+
+      var regrowWiltTimeout = setTimeout(function () {
         if (!tileEl.classList.contains('planted')) return;
 
-        if (badge) {
-          badge.classList.remove('visible');
-        }
+        tileSprout.classList.remove('grown');
+        tileSprout.classList.add('regrow-wilt');
 
-        state.cycle++;
-        startGrowthCycle(tileEl, tileIndex);
-        saveGardenState();
-      }, wiltDur + pauseWilt);
+        var regrowRestartTimeout = setTimeout(function () {
+          if (!tileEl.classList.contains('planted')) return;
+
+          tileSprout.classList.remove('regrow-wilt');
+
+          if (badge) {
+            badge.classList.remove('visible');
+          }
+
+          state.cycle++;
+          startGrowthCycle(tileEl, tileIndex);
+          saveGardenState();
+        }, wiltDur + pauseWilt);
+
+        state.timeouts = state.timeouts || [];
+        state.timeouts.push(regrowRestartTimeout);
+      }, wiltDelay);
 
       state.timeouts = state.timeouts || [];
-      state.timeouts.push(restartTimeout);
-    }, wiltDelay);
+      state.timeouts.push(regrowWiltTimeout);
+
+    }, regrowGrownDelay);
 
     state.timeouts = state.timeouts || [];
-    state.timeouts.push(wiltTimeout);
+    state.timeouts.push(regrowDormantTimeout, regrowBudTimeout, regrowBloomTimeout, regrowGrownTimeout);
 
-  }, grownDelay);
+  } else {
+    // ── First cycle: full seed → stem → bud → bloom ──
+    tileSprout.classList.remove('growing', 'budding', 'blooming', 'grown', 'wilting', 'fertilized-boost', 'dormant', 'regrowing', 'regrow-bud', 'regrow-bloom');
+    tileEl.classList.remove('reseeding');
+    tileSeed.classList.remove('visible');
 
-  state.timeouts = state.timeouts || [];
-  state.timeouts.push(seedTimeout, budTimeout, bloomTimeout, grownTimeout);
+    // Re-apply fertilized boost if tile was fertilized
+    if (wasFertilized && tileSprout) {
+      tileSprout.classList.add('fertilized-boost');
+    }
+
+    tileEl.classList.add('reseeding');
+    tileSeed.classList.add('visible');
+
+    var seedDelay = weatherScaled(500);
+    var budDelay = weatherScaled(1400);
+    var bloomDelay = weatherScaled(2000);
+    var grownDelay = weatherScaled(2700);
+
+    var seedTimeout = setTimeout(function () {
+      tileSprout.classList.add('growing');
+    }, seedDelay);
+
+    var budTimeout = setTimeout(function () {
+      tileSprout.classList.remove('growing');
+      tileSprout.classList.add('budding');
+    }, budDelay);
+
+    var bloomTimeout = setTimeout(function () {
+      tileSprout.classList.remove('budding');
+      tileSprout.classList.add('blooming');
+    }, bloomDelay);
+
+    var grownTimeout = setTimeout(function () {
+      tileSprout.classList.remove('blooming');
+      tileSprout.classList.add('grown');
+      createTileSparkles(tileEl);
+
+      if (badge) {
+        badge.textContent = '🌸 ' + state.cycle;
+        badge.classList.add('visible');
+      }
+
+      if (state.cycle > 1) {
+        addJournalEntry(tileIndex, primaryColor, state.cycle);
+      }
+
+      notifyStatsChange();
+
+      if (state.cycle > 1 && gridHint) {
+        gridHint.style.opacity = '0';
+        setTimeout(function () {
+          gridHint.textContent = getRandomCycleMessage();
+          gridHint.style.opacity = '1';
+        }, 300);
+      }
+
+      var offset = tileIndex * CYCLE_SEED_OFFSET * wsm;
+      var wiltDelay = holdBloom + offset;
+
+      var wiltTimeout = setTimeout(function () {
+        if (!tileEl.classList.contains('planted')) return;
+
+        tileSprout.classList.remove('grown');
+        tileSprout.classList.add('wilting');
+
+        var restartTimeout = setTimeout(function () {
+          if (!tileEl.classList.contains('planted')) return;
+
+          if (badge) {
+            badge.classList.remove('visible');
+          }
+
+          state.cycle++;
+          startGrowthCycle(tileEl, tileIndex);
+          saveGardenState();
+        }, wiltDur + pauseWilt);
+
+        state.timeouts = state.timeouts || [];
+        state.timeouts.push(restartTimeout);
+      }, wiltDelay);
+
+      state.timeouts = state.timeouts || [];
+      state.timeouts.push(wiltTimeout);
+
+    }, grownDelay);
+
+    state.timeouts = state.timeouts || [];
+    state.timeouts.push(seedTimeout, budTimeout, bloomTimeout, grownTimeout);
+  }
 }
 
 export function plantTile(tileEl) {

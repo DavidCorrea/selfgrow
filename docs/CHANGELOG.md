@@ -2,6 +2,10 @@
 
 History of changes made by the hourly agent.
 
+## 2026-06-06
+
+- **Implemented perennial regrowth animation for cycle 2+ (closes #6)**: Fixed the jarring reset behavior where tiles would completely disappear and restart from seed on cycle 2+. For cycle 1+, the full seed→stem→bud→bloom animation plays. For cycle 2+, the plant now behaves like a perennial: the stem and leaves persist in a dormant state while only the flower collapses, then a new bud emerges from the top of the existing stem and blooms — no seed replant, no stem regrow. Changes: `startGrowthCycle()` in `js/tiles.js` now branches on `state.cycle > 1` to use the regrowth path (dormant → regrowing → regrow-bud → regrow-bloom → grown), and `styles.css` adds new `.dormant`, `.regrowing`, `.regrow-bud`, `.regrow-bloom`, and `.regrow-wilt` classes with organically-timed CSS animations. The existing `wilting` class is preserved for cycle 1 where the full plant collapse is correct. All new animations respect `prefers-reduced-motion`.
+
 ## 2026-06-05
 
 - **Fixed module export/import issues**: Fixed CRITICAL runtime error where `addFertilizedIcon` in `js/tiles.js` was missing the `export` keyword but was imported by `js/persistence.js` — this would cause a module load failure. Removed dead imports: `journalRevealed` from `js/tiles.js`; `tileColorMap`, `petalPalettes`, and `plantedCount` from `js/journal.js`. Removed dead exports: `isTileFertilized` from `js/tiles.js`; `getTotalVolunteers`, `isVolunteerTile`, and `stopSelfSeeding` from `js/selfseeding.js` — none were imported by any module. All issues identified by the Reviewer are now resolved.
