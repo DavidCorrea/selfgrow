@@ -2,6 +2,7 @@ import { dom, plantedCount, gridRevealed, tendingRevealed, journalEntries, water
 import { saveGardenState, applyTileColors, addWateredIcon, addFertilizedIcon } from './persistence.js';
 import { addJournalEntry } from './journal.js';
 import { notifyStatsChange } from './stats.js';
+import { triggerGardenComplete } from './celebration.js';
 import { getCurrentWeather, getWeatherModifier, onWeatherChange } from './weather.js';
 
 var wateringMode = false;
@@ -527,6 +528,11 @@ export function plantTile(tileEl) {
     addJournalEntry(tileIndex, primaryColor, 1);
     saveGardenState();
     notifyStatsChange();
+
+    // Check if all tiles are planted — trigger completion celebration
+    if (plantedCount.value >= totalTiles) {
+      triggerGardenComplete();
+    }
 
     if (gridHint) {
       gridHint.style.opacity = '0';

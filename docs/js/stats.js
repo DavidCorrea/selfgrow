@@ -1,4 +1,4 @@
-import { dom, journalEntries, plantedCount, totalVolunteers, fertilizedTiles } from './state.js';
+import { dom, journalEntries, plantedCount, totalTiles, totalVolunteers, fertilizedTiles } from './state.js';
 import { getCurrentSeasonName } from './theme.js';
 import { getBloomingCount, getPlantedCount } from './visitors.js';
 
@@ -42,6 +42,12 @@ var moodStates = {
     emoji: '💤',
     poem: 'the seeds of return are planted — your garden awaits your touch',
     moodClass: 'mood-dormant'
+  },
+  complete: {
+    label: 'complete',
+    emoji: '🌾',
+    poem: 'nine seeds, nine stories — your garden is whole, a living tapestry of care',
+    moodClass: 'mood-complete'
   }
 };
 
@@ -96,6 +102,9 @@ function computeGardenMood() {
 
   if (planted === 0 && blooming === 0) {
     return moodStates.dormant;
+  }
+  if (planted >= totalTiles) {
+    return moodStates.complete;
   }
   if (blooming >= 3 && diffHours < 1) {
     return moodStates.thriving;
@@ -223,7 +232,7 @@ function updateStats() {
   }
   if (statMoodCard) {
     statMoodCard.classList.remove(
-      'mood-thriving', 'mood-flourishing', 'mood-growing', 'mood-resting', 'mood-dormant'
+      'mood-thriving', 'mood-flourishing', 'mood-growing', 'mood-resting', 'mood-dormant', 'mood-complete'
     );
     statMoodCard.classList.add(mood.moodClass);
   }

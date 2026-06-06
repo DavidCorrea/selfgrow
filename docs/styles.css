@@ -3126,6 +3126,147 @@ body.theme-night {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   Garden Completion Celebration
+   ═══════════════════════════════════════════════════════════ */
+
+/* Golden glow overlay — full screen warm wash */
+.celebration-glow-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at 50% 40%,
+    rgba(251, 191, 36, 0.12) 0%,
+    rgba(245, 158, 11, 0.06) 30%,
+    rgba(234, 179, 8, 0.02) 55%,
+    transparent 75%
+  );
+  opacity: 0;
+  transition: opacity 2s ease;
+}
+
+.celebration-glow-overlay.active {
+  opacity: 1;
+}
+
+/* Drifting particles container */
+.celebration-particles {
+  position: fixed;
+  inset: 0;
+  z-index: 61;
+  pointer-events: none;
+  overflow: hidden;
+  opacity: 1;
+  transition: opacity 1.5s ease;
+}
+
+.celebration-particles.fading {
+  opacity: 0;
+}
+
+/* Individual drifting particle */
+.celebration-particle {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  animation: celebrationDrift 3s ease-out forwards;
+  opacity: 0;
+}
+
+@keyframes celebrationDrift {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.3);
+  }
+  15% {
+    opacity: 1;
+    transform: translate(calc(var(--drift-x) * 0.2), calc(var(--drift-y) * 0.15)) scale(1);
+  }
+  60% {
+    opacity: 0.8;
+    transform: translate(calc(var(--drift-x) * 0.7), calc(var(--drift-y) * 0.6)) scale(0.8);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--drift-x), var(--drift-y)) scale(0.2);
+  }
+}
+
+/* Grid golden glow */
+.garden-grid-wrapper.celebration-grid-glow {
+  transition: box-shadow 1.5s ease;
+}
+
+.garden-grid-wrapper.celebration-grid-glow .garden-grid {
+  animation: gridGoldenGlow 8s ease-in-out;
+}
+
+@keyframes gridGoldenGlow {
+  0% {
+    box-shadow: none;
+  }
+  10% {
+    box-shadow:
+      0 0 2rem rgba(251, 191, 36, 0.15),
+      0 0 4rem rgba(245, 158, 11, 0.08),
+      0 0 6rem rgba(234, 179, 8, 0.03);
+  }
+  70% {
+    box-shadow:
+      0 0 2rem rgba(251, 191, 36, 0.12),
+      0 0 4rem rgba(245, 158, 11, 0.06),
+      0 0 6rem rgba(234, 179, 8, 0.02);
+  }
+  100% {
+    box-shadow: none;
+  }
+}
+
+/* Completion journal entry styling */
+.journal-entry--completion {
+  background: rgba(60, 45, 15, 0.25);
+  border-radius: 0.4rem;
+  margin-bottom: 0.15rem;
+}
+
+.journal-entry--completion .entry-timeline-dot--completion {
+  background: rgba(251, 191, 36, 0.6);
+  box-shadow: 0 0 0.4rem rgba(251, 191, 36, 0.3);
+}
+
+.journal-entry--completion .entry-timeline-dot--completion::after {
+  background: rgba(253, 230, 138, 0.6);
+}
+
+.journal-entry--completion .entry-swatch--completion {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  border-color: rgba(251, 191, 36, 0.35);
+  box-shadow: 0 0 0.4rem rgba(251, 191, 36, 0.15);
+}
+
+.journal-entry--completion .entry-text {
+  color: rgba(251, 191, 36, 0.9);
+  font-style: italic;
+}
+
+/* ── Complete Mood State ── */
+.stat-card--mood.mood-complete {
+  border-color: rgba(251, 191, 36, 0.3);
+  box-shadow:
+    0 0 1.2rem rgba(251, 191, 36, 0.08),
+    0 0 2.4rem rgba(251, 191, 36, 0.03);
+}
+
+.stat-card--mood.mood-complete .stat-value {
+  color: rgba(251, 191, 36, 0.9);
+}
+
+.stat-card--mood.mood-complete .stat-emoji {
+  filter: drop-shadow(0 0 0.25rem rgba(251, 191, 36, 0.2));
+}
+
+/* ═══════════════════════════════════════════════════════════
    Responsive Breakpoints
    ═══════════════════════════════════════════════════════════ */
 
@@ -3590,9 +3731,22 @@ body.theme-night {
   .volunteer-seed-fall,
   .tile-fertilize-sparkle,
   .tile-snip-arc,
-  .tile-prune-leaf {
+  .tile-prune-leaf,
+  .celebration-particle {
     animation: none !important;
     display: none;
+  }
+
+  .celebration-glow-overlay {
+    transition-duration: 0.01ms !important;
+  }
+
+  .celebration-particles {
+    display: none;
+  }
+
+  .garden-grid-wrapper.celebration-grid-glow .garden-grid {
+    animation: none !important;
   }
 
   .grid-tile.volunteer-pulse,
