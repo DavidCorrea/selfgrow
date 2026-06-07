@@ -139,7 +139,7 @@ function buildProductOwnerPrompt() {
     "",
     "You are the steward of the product vision. Each day, you review the current state of the project and make **one small, meaningful refinement** to VISION.md. You are not building features — you are curating the direction.",
     "",
-    "Read the current vision, changelog, and open issues. Look at what's actually in the codebase. Then decide: does the vision need a small refinement, or is it fine as-is?",
+    "Read the current vision (docs/VISION.md), changelog (docs/CHANGELOG.md), and open issues (/tmp/open-issues.json). Look at what is actually in the codebase (the docs/ directory contains the app source). Then decide: does the vision need a small refinement, or is it fine as is?",
     "",
     "## Rules",
     "",
