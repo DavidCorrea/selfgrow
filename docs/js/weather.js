@@ -113,7 +113,7 @@ function createWeatherOverlay() {
   var rainLayer = document.createElement('div');
   rainLayer.classList.add('weather-layer', 'weather-rain');
   rainLayer.id = 'weatherRain';
-  for (var r = 0; r < 60; r++) {
+  for (var r = 0; r < 24; r++) {
     var drop = document.createElement('div');
     drop.classList.add('rain-drop');
     drop.style.left = Math.random() * 100 + '%';
@@ -128,7 +128,7 @@ function createWeatherOverlay() {
   var cloudyLayer = document.createElement('div');
   cloudyLayer.classList.add('weather-layer', 'weather-cloudy');
   cloudyLayer.id = 'weatherCloudy';
-  for (var c = 0; c < 4; c++) {
+  for (var c = 0; c < 2; c++) {
     var cloud = document.createElement('div');
     cloud.classList.add('cloud');
     cloud.style.setProperty('--cloud-y', (15 + c * 20) + '%');
@@ -138,22 +138,20 @@ function createWeatherOverlay() {
     cloudyLayer.appendChild(cloud);
   }
   // Mist layers
-  for (var m = 0; m < 3; m++) {
-    var mist = document.createElement('div');
-    mist.classList.add('mist-layer');
-    mist.style.setProperty('--mist-y', (30 + m * 25) + '%');
-    mist.style.setProperty('--mist-delay', (m * 2) + 's');
-    mist.style.setProperty('--mist-duration', (6 + m * 1.5) + 's');
-    mist.style.setProperty('--mist-opacity', (0.08 + m * 0.04));
-    cloudyLayer.appendChild(mist);
-  }
+  var mist = document.createElement('div');
+  mist.classList.add('mist-layer');
+  mist.style.setProperty('--mist-y', '30%');
+  mist.style.setProperty('--mist-delay', '0s');
+  mist.style.setProperty('--mist-duration', '8s');
+  mist.style.setProperty('--mist-opacity', '0.1');
+  cloudyLayer.appendChild(mist);
   overlay.appendChild(cloudyLayer);
 
   // Snow layer: flakes
   var snowLayer = document.createElement('div');
   snowLayer.classList.add('weather-layer', 'weather-snow');
   snowLayer.id = 'weatherSnow';
-  for (var s = 0; s < 50; s++) {
+  for (var s = 0; s < 20; s++) {
     var flake = document.createElement('div');
     flake.classList.add('snow-flake');
     flake.style.left = Math.random() * 100 + '%';

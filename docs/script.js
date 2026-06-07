@@ -7,7 +7,8 @@ import { startVisitors, initVisitors } from './js/visitors.js';
 import { initSoundscape } from './js/soundscape.js';
 import { initStats } from './js/stats.js';
 import { startSelfSeeding } from './js/selfseeding.js';
-import { initGardenRings, recordBloom, notifyStatsRevealed } from './js/garden-rings.js';
+import { initGardenRings, notifyStatsRevealed } from './js/garden-rings.js';
+import { initGardenGallery } from './js/garden-gallery.js';
 
 
 (function () {
@@ -205,6 +206,9 @@ import { initGardenRings, recordBloom, notifyStatsRevealed } from './js/garden-r
 
   // ── Initialize Garden Rings ──
   initGardenRings();
+
+  // ── Initialize Garden Gallery ──
+  initGardenGallery();
 
   // ── Initialize Self-Seeding ──
   startSelfSeeding();

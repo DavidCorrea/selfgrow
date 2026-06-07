@@ -5,6 +5,10 @@ var activeVisitors = [];
 var visitorIdCounter = 0;
 var visitorSpawnTimer = null;
 var fireflyTrailTimer = null;
+var visitorsPaused = false;
+
+var MAX_CONCURRENT_VISITORS = 5;
+var MIN_SPAWN_INTERVAL = 3000;
 
 var butterflyColors = ['pink', 'blue', 'purple', 'orange'];
 
@@ -138,6 +142,8 @@ function removeVisitor(visitorEl) {
 
 function spawnVisitor() {
   if (plantedCount.value === 0) return;
+  if (visitorsPaused) return;
+  if (activeVisitors.length >= MAX_CONCURRENT_VISITORS) return;
 
   var blooming = getBloomingCount();
   var isNight = isNightTheme();
@@ -198,6 +204,7 @@ function spawnVisitor() {
 }
 
 function createFireflyTrails() {
+  if (visitorsPaused) return;
   var visitorsLayer = dom.visitorsLayer || document.getElementById('visitorsLayer');
   if (!isNightTheme()) return;
 
@@ -221,7 +228,7 @@ function scheduleNextSpawn() {
 
   if (plantedCount.value === 0) return;
 
-  var interval = Math.max(1500, 5000 - (plantedCount.value * 500));
+  var interval = Math.max(MIN_SPAWN_INTERVAL, 5000 - (plantedCount.value * 500));
   interval += Math.random() * 2000;
 
   visitorSpawnTimer = setTimeout(function () {
@@ -258,4 +265,24 @@ export function initVisitors() {
   }, 2000);
 
   lastThemeCheck = isNightTheme();
+
+  // Pause visitor animations when tab is hidden
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) {
+      visitorsPaused = true;
+    } else {
+      visitorsPaused = false;
+    }
+  });
+
+  // Use IntersectionObserver to pause visitors when off-screen
+  var visitorsLayer = dom.visitorsLayer || document.getElementById('visitorsLayer');
+  if (visitorsLayer && 'IntersectionObserver' in window) {
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        visitorsPaused = !entry.isIntersecting;
+      });
+    }, { threshold: 0 });
+    observer.observe(visitorsLayer);
+  }
 }

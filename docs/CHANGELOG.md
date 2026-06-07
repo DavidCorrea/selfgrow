@@ -4,6 +4,14 @@ History of changes made by the hourly agent.
 
 ## 2026-06-07
 
+- **Fixed Garden Gallery bugs and dead import (closes #8)**: (1) Fixed CRITICAL ReferenceError — `updateGalleryScene()` was called in `openGallery()` but the function was never defined; renamed the call to the correct `updateGalleryStats()` function so the gallery modal renders properly. (2) Fixed `getBloomTimeline()` reading `entry.color` and `entry.tile` which don't exist on journal entries — changed to `entry.petalColor` and `entry.tileIndex` so the bloom timeline shows correct flower colors and tile numbers. (3) Removed dead `recordBloom` import from `script.js` — it was imported from `garden-rings.js` but never used in that file.
+
+## 2026-06-07
+
+- **Added Garden Gallery modal and performance optimizations (closes #8)**: Added a 'Garden Gallery' button in the stats panel that opens a modal with a GPU-accelerated canvas visualization of all bloomed flowers — showing flower counts by color with animated bars, a bloom timeline, and an animated garden scene with gently swaying flowers that pauses when the modal is closed. Fixed performance issues causing PC heating with 30k bloomed flowers by: (1) reducing weather particle counts by 60% (24 rain drops, 20 snow flakes, 2 clouds, 1 mist layer instead of 60/50/4/3); (2) limiting concurrent visitors to 5 max with 3-second minimum spawn intervals; (3) adding `content-visibility: auto` and `contain: strict` to tile CSS for off-screen rendering optimization; (4) using `IntersectionObserver` and `visibilitychange` to pause visitor animations when the tab is hidden or visitors are off-screen. The gallery gives users a meaningful way to appreciate their flowers while the optimizations fix the heating issue.
+
+## 2026-06-07
+
 - **Capped ringsData array to prevent unbounded growth (closes #7)**: The `ringsData` array in `js/garden-rings.js` grew without bound — every bloom cycle across the entire session pushed a new entry, and the full array was serialized to localStorage on every bloom event. While SVG rendering was already capped at 20 circles (`SVG_MAX_RINGS`), the underlying data array could reach hundreds of entries over a long session, causing increasing serialization/deserialization cost and localStorage bloat. Added a cap of `SVG_MAX_RINGS` (20) entries after each `push()` in `recordBloom()` and after `rebuildFromJournal()`, so memory usage and localStorage cost stay constant regardless of session length.
 
 ## 2026-06-06
