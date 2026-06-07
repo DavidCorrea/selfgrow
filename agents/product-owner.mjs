@@ -148,7 +148,7 @@ function buildProductOwnerPrompt() {
     "- **Additive over rewrites.** Prefer appending a new idea over restructuring old ones.",
     "- **Ground in reality.** Your refinement should reflect what exists in the code, not invent disconnected fantasies.",
     "- **Think like a product owner:** user experience, emotional resonance, coherence, next steps, design philosophy.",
-    "- **If nothing needs refinement**, respond with ONLY: `NO_CHANGE` — do not touch any files.",
+    "- **If nothing needs refinement**, respond with a JSON object where `action` is `no_change`.",
     "",
     "## Valuable Refinements",
     "",
@@ -170,22 +170,30 @@ function buildProductOwnerPrompt() {
     "",
     "## Output",
     "",
-    "If you have a refinement, output ONLY a JSON object:",
+    "Respond with ONLY a valid JSON object. The `action` field must be one of: `append`, `refine`, or `no_change`.",
+    "",
+    "For a refinement (append or refine):",
     "",
     "```json",
     "{",
+    "  \"action\": \"append\",",
     "  \"section\": \"The section header to edit (e.g. 'Core Philosophy', 'Design Principles', 'Direction')\",",
-    "  \"action\": \"append or refine\",",
     "  \"content\": \"The exact text to add or the refined text to replace with\",",
     "  \"summary\": \"One imperative sentence describing the decision, e.g. 'Add garden sounds to roadmap' or 'Clarify that growth should feel unhurried'\"",
     "}",
     "```",
     "",
-    "- If `action` is `append`: your content will be added to the end of the specified section.",
-    "- If `action` is `refine`: you must also include the `oldText` key containing the EXACT existing text to replace.",
-    "- `summary` is required and will be used as the commit message — write it as an imperative phrase, concise and specific.",
+    "- If `action` is `refine`, you must also include the `oldText` key containing the EXACT existing text to replace.",
+    "- `summary` is required and will be used as the commit message.",
     "",
-    "If nothing needs refinement, output ONLY: NO_CHANGE",
+    "If nothing needs refinement:",
+    "",
+    "```json",
+    "{",
+    "  \"action\": \"no_change\",",
+    "  \"summary\": \"Brief reason why no refinement is needed, e.g. 'Vision is coherent with current codebase'\"",
+    "}",
+    "```",
   ].join("\n");
 }
 
@@ -195,10 +203,6 @@ function buildProductOwnerPrompt() {
 
 function parseOutput(rawOutput) {
   const trimmed = rawOutput.trim();
-
-  if (trimmed === "NO_CHANGE") {
-    return { changed: false };
-  }
 
   const blockMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
   const candidate = blockMatch ? blockMatch[1].trim() : trimmed;
@@ -235,8 +239,8 @@ function escapeRegex(str) {
 }
 
 function applyRefinement(parsed) {
-  if (!parsed || parsed.changed === false) {
-    return { changed: false };
+  if (!parsed || parsed.action === "no_change") {
+    return { changed: false, reason: parsed?.summary || "No refinement needed." };
   }
 
   const { section, action, content, oldText, summary } = parsed;
@@ -304,13 +308,15 @@ async function main() {
     return;
   }
 
-  if (parsed.changed === false) {
-    log("info", "Product Owner: no refinement needed today.");
+  if (parsed.action === "no_change") {
+    log("info", `Product Owner: no refinement needed. ${parsed.summary || ""}`);
+    printRunSummary();
     return;
   }
 
   const result = applyRefinement(parsed);
   if (!result.changed) {
+    printRunSummary();
     return;
   }
 
