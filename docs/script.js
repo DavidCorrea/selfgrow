@@ -11,6 +11,7 @@ import { initGardenRings, notifyStatsRevealed } from './js/garden-rings.js';
 import { initGardenGallery } from './js/garden-gallery.js';
 import { initGardenMoments, notifyMomentsRevealed } from './js/garden-moments.js';
 import { initGardenHistory, captureGardenVisit, revealHistoryToggle } from './js/garden-history.js';
+import { exportGarden, importGarden } from './js/export-import.js';
 
 
 (function () {
@@ -221,6 +222,40 @@ import { initGardenHistory, captureGardenVisit, revealHistoryToggle } from './js
 
   // ── Initialize Self-Seeding ──
   startSelfSeeding();
+
+  // ── Initialize Export/Import Buttons ──
+  var exportBtn = document.getElementById('exportGardenBtn');
+  var importBtn = document.getElementById('importGardenBtn');
+  var exportImportContainer = document.getElementById('exportImportButtons');
+
+  if (exportBtn) {
+    exportBtn.addEventListener('click', function () {
+      exportGarden();
+    });
+  }
+
+  if (importBtn) {
+    importBtn.addEventListener('click', function () {
+      importGarden();
+    });
+  }
+
+  // Show export/import buttons when stats are revealed
+  var statsRevealedObserver = setInterval(function () {
+    if (dom.gardenStats && dom.gardenStats.classList.contains('visible')) {
+      if (exportImportContainer) {
+        exportImportContainer.style.opacity = '0';
+        exportImportContainer.style.transform = 'translateY(0.5rem)';
+        exportImportContainer.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+        exportImportContainer.setAttribute('aria-hidden', 'false');
+        requestAnimationFrame(function () {
+          exportImportContainer.style.opacity = '1';
+          exportImportContainer.style.transform = 'translateY(0)';
+        });
+      }
+      clearInterval(statsRevealedObserver);
+    }
+  }, 500);
 
   // ── Restore saved garden after all functions are ready ──
   if (savedState && savedState.plantedCount > 0) {
