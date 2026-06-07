@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-06-07
+
+- **Fixed layout to use available screen space effectively (closes #9)**: Restructured the layout to introduce a centered max-width container (72rem/1152px, 80rem/1280px at 1440px+) on `.app-shell` so content doesn't stretch edge-to-edge. Introduced a 3-column grid (`200px 1fr 220px`) at 768px instead of 1200px, making effective use of tablet screen real estate. The garden grid now uses `max-width: 100%` to fill its column naturally, becoming the dominant visual element. Consistent 0.75rem gap spacing between all panels. On narrow viewports (<768px), the single-column stack is maintained with proper padding. At 1200px, columns widen to `220px 1fr 280px`; at 1440px, `240px 1fr 300px` with 80rem container. All changes are CSS-only — no HTML or JS modifications.
+
 History of changes made by the hourly agent.
 
 ## 2026-06-07
