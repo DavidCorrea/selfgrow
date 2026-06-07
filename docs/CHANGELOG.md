@@ -8,6 +8,10 @@ History of changes made by the hourly agent.
 
 ## 2026-06-07
 
+- **Added Garden Export/Import system for sharing between devices**: Users can now download their full garden state as a JSON file ('Export Garden' button) and restore from a previously exported file ('Import Garden' button). The export serializes all garden data — planted tiles, growth cycles, journal entries, colors, weather, stats — into a downloadable 'selfgrow-garden-YYYY-MM-DD.json' file with a poetic header comment. On import, a gentle confirmation modal warns that the current garden will be replaced, then writes to localStorage and triggers a page reload to restore via the existing restoreGardenState pipeline. The buttons use the existing gallery-btn styling for visual consistency, appearing below the stats poem when the stats panel is revealed. The import modal uses a soft purple accent with a swaying leaf icon, and error states show a gentle toast notification. Fully self-contained — uses only browser-native Blob, FileReader, and localStorage APIs. Responsive, keyboard-navigable, respects prefers-reduced-motion, and uses the dark nature palette with soft glows. Created `js/export-import.js` module, added `.export-import-btns`, `.import-modal`, `.import-error` styles. Integrated buttons into the stats panel in index.html.
+
+## 2026-06-07
+
 - **Added Garden History timeline showing evolution across sessions**: A new collapsible 'garden history' section in the journal panel that records a lightweight snapshot (date/time, planted count, mood, flower count, weather) on each visit. Snapshots persist via localStorage, capped at 20 to prevent bloat. Visit cards are styled like pressed flowers — small, subtle, earth-tone — with the dominant weather emoji, mood indicator, and a poetic reflection line. A toggle button (📖) in the journal header opens/closes the history. Creates a sense that the garden has a continuous life across sessions, deepening emotional resonance. Created `js/garden-history.js` module, added `.garden-history`, `.history-toggle`, `.history-visit-card` styles. Integrated with existing state, weather, and stats systems.
 
 ## 2026-06-07
