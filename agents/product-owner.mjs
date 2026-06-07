@@ -1,204 +1,18 @@
-import {
-  AuthStorage,
-  createAgentSession,
-  DefaultResourceLoader,
-  ModelRegistry,
-  SessionManager,
-} from "@earendil-works/pi-coding-agent";
 import { execSync } from "child_process";
-import { fileURLToPath } from "url";
-import { dirname, join } from "path";
 import fs from "fs";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const repoRoot = join(__dirname, "..");
-const RAW_OUTPUT_MAX_CHARS = 2000;
-
-// ---------------------------------------------------------------------------
-// Structured logger
-// ---------------------------------------------------------------------------
-
-const runLog = [];
-
-function log(level, message, data) {
-  const entry = { time: new Date().toISOString(), level, message, data };
-  runLog.push(entry);
-  const prefix = `[${entry.time}] [${level.toUpperCase()}]`;
-  if (data !== undefined) {
-    console.log(prefix, message);
-    console.log(JSON.stringify(data, null, 2));
-  } else {
-    console.log(prefix, message);
-  }
-}
-
-function ghAnnotation(kind, message) {
-  const level = kind === "error" ? "error" : "warning";
-  console.log(`::${level}::${message}`);
-}
-
-function truncate(str, max = RAW_OUTPUT_MAX_CHARS) {
-  if (str.length <= max) return str;
-  return str.slice(0, max) + `\n... [truncated, ${str.length} total chars]`;
-}
-
-function printRunSummary() {
-  console.log("\n" + "=".repeat(60));
-  console.log("RUN SUMMARY");
-  console.log("=".repeat(60));
-  for (const entry of runLog) {
-    const icon =
-      entry.level === "error" ? "❌" :
-      entry.level === "warn"  ? "⚠️" :
-      entry.level === "info"  ? "ℹ️" : "  ";
-    console.log(`${icon} [${entry.level.toUpperCase()}] ${entry.message}`);
-  }
-  console.log("=".repeat(60) + "\n");
-}
-
-function errorData(e) {
-  return {
-    message: e.message || String(e),
-    stack: e.stack || null,
-  };
-}
+import {
+  repoRoot,
+  promptsDir,
+  log,
+  ghAnnotation,
+  truncate,
+  printRunSummary,
+  errorData,
+  loadPrompt,
+} from "./shared.mjs";
 
 // ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function runAgent({ systemPrompt }) {
-  const authStorage = AuthStorage.create();
-  const modelRegistry = ModelRegistry.create(authStorage);
-  const model = modelRegistry.getAll().find(
-    (m) => m.provider === "openrouter" && m.id === "openrouter/owl-alpha"
-  );
-
-  const loader = new DefaultResourceLoader({ cwd: __dirname, agentDir: __dirname });
-  const startTime = Date.now();
-  log("info", "Product Owner agent started");
-
-  return loader.reload().then(() =>
-    createAgentSession({
-      cwd: repoRoot,
-      sessionManager: SessionManager.inMemory(),
-      resourceLoader: loader,
-      model,
-      authStorage,
-      modelRegistry,
-      tools: ["read", "write", "edit"],
-    }).then(({ session }) => {
-      let output = "";
-      session.subscribe((event) => {
-        if (
-          event.type === "message_update" &&
-          event.assistantMessageEvent.type === "text_delta"
-        ) {
-          output += event.assistantMessageEvent.delta;
-        }
-      });
-
-      return session
-        .prompt(systemPrompt)
-        .then(() => {
-          const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-          const messages = session.state.messages;
-          const lastAssistant = [...messages].reverse().find(
-            (m) => m.role === "assistant"
-          );
-          if (lastAssistant && lastAssistant.content) {
-            const fullText = Array.isArray(lastAssistant.content)
-              ? lastAssistant.content
-                  .filter((c) => c.type === "text")
-                  .map((c) => c.text)
-                  .join("")
-              : lastAssistant.content;
-            if (fullText) output = fullText;
-          }
-          log("info", `Product Owner agent completed in ${elapsed}s`);
-          session.dispose();
-          return output;
-        })
-        .catch((err) => {
-          session.dispose();
-          throw err;
-        });
-    })
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Product Owner Agent prompt
-// ---------------------------------------------------------------------------
-
-function buildProductOwnerPrompt() {
-  return [
-    "You are the PRODUCT OWNER for a project called **selfgrow** — a living, growing digital garden web app.",
-    "",
-    "## Your Role",
-    "",
-    "You are the steward of the product vision. Each day, you review the current state of the project and make **one small, meaningful refinement** to VISION.md. You are not building features — you are curating the direction.",
-    "",
-    "Read the current vision (docs/VISION.md), changelog (docs/CHANGELOG.md), and open issues (/tmp/open-issues.json). Look at what is actually in the codebase (the docs/ directory contains the app source). Then decide: does the vision need a small refinement, or is it fine as is?",
-    "",
-    "## Rules",
-    "",
-    "- **Be minimal.** Add or change ONE small thing per run. A single sentence, a new bullet, a clarifying phrase.",
-    "- **Never remove existing entries.** Only add or refine.",
-    "- **Additive over rewrites.** Prefer appending a new idea over restructuring old ones.",
-    "- **Ground in reality.** Your refinement should reflect what exists in the code, not invent disconnected fantasies.",
-    "- **Think like a product owner:** user experience, emotional resonance, coherence, next steps, design philosophy.",
-    "- **If nothing needs refinement**, respond with a JSON object where `action` is `no_change`.",
-    "",
-    "## Valuable Refinements",
-    "",
-    "- Add a new roadmap item that naturally follows from what's built",
-    "- Refine the language in Core Philosophy or Design Principles to more accurately reflect the current app",
-    "- Add a clarifying \"why\" to an existing principle",
-    "- Note an emotional or experiential quality the garden should evoke",
-    "- Suggest a future direction that builds on the current trajectory",
-    "- Add a constraint or guideline that would improve coherence",
-    "- Address a user-reported issue — if an open bug or feature request is relevant, the refinement can respond to it",
-    "",
-    "## Refinements to Avoid",
-    "",
-    "- Rewriting existing sections (too noisy)",
-    "- Adding roadmap items unrelated to the garden metaphor",
-    "- Copying what's already in CHANGELOG.md into VISION.md",
-    "- Generic platitudes (\"users love simplicity\")",
-    "- Anything that contradicts the self-contained, calm, agent-driven philosophy",
-    "",
-    "## Output",
-    "",
-    "Respond with ONLY a valid JSON object. The `action` field must be one of: `append`, `refine`, or `no_change`.",
-    "",
-    "For a refinement (append or refine):",
-    "",
-    "```json",
-    "{",
-    "  \"action\": \"append\",",
-    "  \"section\": \"The section header to edit (e.g. 'Core Philosophy', 'Design Principles', 'Direction')\",",
-    "  \"content\": \"The exact text to add or the refined text to replace with\",",
-    "  \"summary\": \"One imperative sentence describing the decision, e.g. 'Add garden sounds to roadmap' or 'Clarify that growth should feel unhurried'\"",
-    "}",
-    "```",
-    "",
-    "- If `action` is `refine`, you must also include the `oldText` key containing the EXACT existing text to replace.",
-    "- `summary` is required and will be used as the commit message.",
-    "",
-    "If nothing needs refinement:",
-    "",
-    "```json",
-    "{",
-    "  \"action\": \"no_change\",",
-    "  \"summary\": \"Brief reason why no refinement is needed, e.g. 'Vision is coherent with current codebase'\"",
-    "}",
-    "```",
-  ].join("\n");
-}
-
-// ---------------------------------------------------------------------------
-// Parse Product Owner output and apply change
+// Parse Product Owner output
 // ---------------------------------------------------------------------------
 
 function parseOutput(rawOutput) {
@@ -231,6 +45,19 @@ function parseOutput(rawOutput) {
     }
   }
 
+  // Validate envelope
+  if (!parsed.status || !parsed.summary || !parsed.data || !parsed.outcome) {
+    log("warn", "Product Owner response missing required envelope fields (status, summary, data, outcome)", {
+      rawOutput: truncate(rawOutput),
+    });
+    return null;
+  }
+
+  if (parsed.status === "error") {
+    log("warn", `Product Owner reported an error: ${parsed.summary}`);
+    return null;
+  }
+
   return parsed;
 }
 
@@ -239,14 +66,15 @@ function escapeRegex(str) {
 }
 
 function applyRefinement(parsed) {
-  if (!parsed || parsed.action === "no_change") {
+  if (!parsed || parsed.outcome === "skip") {
     return { changed: false, reason: parsed?.summary || "No refinement needed." };
   }
 
-  const { section, action, content, oldText, summary } = parsed;
+  const { action, section, content, oldText } = parsed.data;
+  const summary = parsed.summary;
 
   if (!section || !action || !content || !summary) {
-    log("warn", "Missing required fields in Product Owner output.", { parsed });
+    log("warn", "Missing required fields in Product Owner output.", { parsed: parsed.data });
     return { changed: false };
   }
 
@@ -300,15 +128,16 @@ async function main() {
   log("info", "--- Product Owner Daily Review ---");
 
   const rawOutput = await runAgent({
-    systemPrompt: buildProductOwnerPrompt(),
+    systemPrompt: loadPrompt("product-owner"),
   });
 
   const parsed = parseOutput(rawOutput);
   if (!parsed) {
+    printRunSummary();
     return;
   }
 
-  if (parsed.action === "no_change") {
+  if (parsed.outcome === "skip") {
     log("info", `Product Owner: no refinement needed. ${parsed.summary || ""}`);
     printRunSummary();
     return;
@@ -320,7 +149,6 @@ async function main() {
     return;
   }
 
-  // Show what changed
   try {
     const diff = execSync("git diff docs/VISION.md", { cwd: repoRoot }).toString();
     log("info", "Diff:", diff);
@@ -328,7 +156,6 @@ async function main() {
     // ignore diff errors
   }
 
-  // Commit and push with the agent's summary as the commit message
   const commitMessage = result.summary;
   try {
     execSync(
