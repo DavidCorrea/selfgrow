@@ -2117,10 +2117,12 @@ body::before {
   box-shadow: 0 0 1rem rgba(100, 116, 139, 0.03);
 }
 
+
 /* ═══════════════════════════════════════════════════════════
    Garden Rings — Bloom History Visualization
    Concentric softly glowing rings representing each
    bloom cycle completed across the entire garden.
+   Uses a single SVG element for GPU-efficient rendering.
    ═══════════════════════════════════════════════════════════ */
 
 .garden-rings {
@@ -2174,25 +2176,24 @@ body::before {
   justify-content: center;
   width: 100%;
   min-height: 5rem;
+  contain: paint;
 }
 
-.ring {
-  position: absolute;
-  border-radius: 50%;
-  border: 2px solid;
+.rings-svg {
+  width: 100%;
+  height: auto;
+  max-width: 14rem;
+  overflow: visible;
+}
+
+.ring-circle {
   opacity: 0;
-  transform: scale(0.7);
+  transform-origin: center;
   animation: ringFadeIn 0.8s ease-out forwards;
-  will-change: transform, opacity;
 }
 
-.ring--new {
+.ring-circle--new {
   animation: ringBloomIn 1s ease-out forwards;
-}
-
-.ring--fadeout {
-  animation: ringFadeOut 0.6s ease-in forwards;
-  pointer-events: none;
 }
 
 @keyframes ringFadeIn {
@@ -2218,17 +2219,6 @@ body::before {
   100% {
     opacity: 0.6;
     transform: scale(1);
-  }
-}
-
-@keyframes ringFadeOut {
-  0% {
-    opacity: 0.6;
-    transform: scale(1);
-  }
-  100% {
-    opacity: 0;
-    transform: scale(0.5);
   }
 }
 
@@ -3928,16 +3918,11 @@ body.theme-night {
     animation: none !important;
   }
 
-  .ring,
-  .ring--new,
-  .ring--fadeout {
+  .ring-circle,
+  .ring-circle--new {
     animation: none !important;
     opacity: 0.6 !important;
     transform: scale(1) !important;
-  }
-
-  .ring--fadeout {
-    display: none;
   }
 
   .garden-rings {

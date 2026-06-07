@@ -2,6 +2,10 @@
 
 History of changes made by the hourly agent.
 
+## 2026-06-07
+
+- **Capped ringsData array to prevent unbounded growth (closes #7)**: The `ringsData` array in `js/garden-rings.js` grew without bound — every bloom cycle across the entire session pushed a new entry, and the full array was serialized to localStorage on every bloom event. While SVG rendering was already capped at 20 circles (`SVG_MAX_RINGS`), the underlying data array could reach hundreds of entries over a long session, causing increasing serialization/deserialization cost and localStorage bloat. Added a cap of `SVG_MAX_RINGS` (20) entries after each `push()` in `recordBloom()` and after `rebuildFromJournal()`, so memory usage and localStorage cost stay constant regardless of session length.
+
 ## 2026-06-06
 
 - **Fixed Reviewer issue — dead CSS class `.grid-tile.pruned-tile`**: The `.pruned-tile` styles were defined in `styles.css` (border-color, box-shadow, hover variants) but the `pruneTile()` function in `js/tiles.js` never added this class to the grid-tile element. Added `tileEl.classList.add('pruned-tile')` in `pruneTile()` and `tileEl.classList.remove('pruned-tile')` in `startGrowthCycle()` so the class is properly applied when a tile is pruned and removed when it begins regrowing. All issues are now resolved.
