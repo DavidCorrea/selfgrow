@@ -12,6 +12,56 @@ import fs from "fs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(__dirname, "..");
+const RAW_OUTPUT_MAX_CHARS = 2000;
+
+// ---------------------------------------------------------------------------
+// Structured logger
+// ---------------------------------------------------------------------------
+
+const runLog = [];
+
+function log(level, message, data) {
+  const entry = { time: new Date().toISOString(), level, message, data };
+  runLog.push(entry);
+  const prefix = `[${entry.time}] [${level.toUpperCase()}]`;
+  if (data !== undefined) {
+    console.log(prefix, message);
+    console.log(JSON.stringify(data, null, 2));
+  } else {
+    console.log(prefix, message);
+  }
+}
+
+function ghAnnotation(kind, message) {
+  const level = kind === "error" ? "error" : "warning";
+  console.log(`::${level}::${message}`);
+}
+
+function truncate(str, max = RAW_OUTPUT_MAX_CHARS) {
+  if (str.length <= max) return str;
+  return str.slice(0, max) + `\n... [truncated, ${str.length} total chars]`;
+}
+
+function printRunSummary() {
+  console.log("\n" + "=".repeat(60));
+  console.log("RUN SUMMARY");
+  console.log("=".repeat(60));
+  for (const entry of runLog) {
+    const icon =
+      entry.level === "error" ? "❌" :
+      entry.level === "warn"  ? "⚠️" :
+      entry.level === "info"  ? "ℹ️" : "  ";
+    console.log(`${icon} [${entry.level.toUpperCase()}] ${entry.message}`);
+  }
+  console.log("=".repeat(60) + "\n");
+}
+
+function errorData(e) {
+  return {
+    message: e.message || String(e),
+    stack: e.stack || null,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -25,6 +75,9 @@ function runAgent({ systemPrompt }) {
   );
 
   const loader = new DefaultResourceLoader({ cwd: __dirname, agentDir: __dirname });
+  const startTime = Date.now();
+  log("info", "Product Owner agent started");
+
   return loader.reload().then(() =>
     createAgentSession({
       cwd: repoRoot,
@@ -48,6 +101,7 @@ function runAgent({ systemPrompt }) {
       return session
         .prompt(systemPrompt)
         .then(() => {
+          const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
           const messages = session.state.messages;
           const lastAssistant = [...messages].reverse().find(
             (m) => m.role === "assistant"
@@ -61,6 +115,7 @@ function runAgent({ systemPrompt }) {
               : lastAssistant.content;
             if (fullText) output = fullText;
           }
+          log("info", `Product Owner agent completed in ${elapsed}s`);
           session.dispose();
           return output;
         })
@@ -157,9 +212,17 @@ function parseOutput(rawOutput) {
       try {
         parsed = JSON.parse(objMatch[0]);
       } catch {
+        log("warn", "Product Owner output could not be parsed as JSON", {
+          rawOutput: truncate(rawOutput),
+        });
+        ghAnnotation("warning", "Product Owner: output could not be parsed as JSON");
         return null;
       }
     } else {
+      log("warn", "Product Owner output could not be parsed as JSON (no JSON object found)", {
+        rawOutput: truncate(rawOutput),
+      });
+      ghAnnotation("warning", "Product Owner: output could not be parsed as JSON");
       return null;
     }
   }
@@ -179,7 +242,7 @@ function applyRefinement(parsed) {
   const { section, action, content, oldText, summary } = parsed;
 
   if (!section || !action || !content || !summary) {
-    console.log("Missing required fields in Product Owner output.");
+    log("warn", "Missing required fields in Product Owner output.", { parsed });
     return { changed: false };
   }
 
@@ -193,7 +256,7 @@ function applyRefinement(parsed) {
     );
     const match = current.match(sectionRegex);
     if (!match) {
-      console.log(`Section "${section}" not found in VISION.md.`);
+      log("warn", `Section "${section}" not found in VISION.md.`);
       return { changed: false };
     }
 
@@ -202,23 +265,23 @@ function applyRefinement(parsed) {
     });
 
     fs.writeFileSync(visionPath, updated, "utf-8");
-    console.log(`Appended to section "${section}".`);
+    log("info", `Appended to section "${section}".`);
 
   } else if (action === "refine") {
     if (!oldText) {
-      console.log("Refine action requires oldText.");
+      log("warn", "Refine action requires oldText.");
       return { changed: false };
     }
     if (!current.includes(oldText)) {
-      console.log("oldText not found in VISION.md.");
+      log("warn", "oldText not found in VISION.md.");
       return { changed: false };
     }
     const updated = current.replace(oldText, content);
     fs.writeFileSync(visionPath, updated, "utf-8");
-    console.log(`Refined text in section "${section}".`);
+    log("info", `Refined text in section "${section}".`);
 
   } else {
-    console.log(`Unknown action: ${action}`);
+    log("warn", `Unknown action: ${action}`);
     return { changed: false };
   }
 
@@ -230,7 +293,7 @@ function applyRefinement(parsed) {
 // ---------------------------------------------------------------------------
 
 async function main() {
-  console.log("\n--- Product Owner Daily Review ---\n");
+  log("info", "--- Product Owner Daily Review ---");
 
   const rawOutput = await runAgent({
     systemPrompt: buildProductOwnerPrompt(),
@@ -238,12 +301,11 @@ async function main() {
 
   const parsed = parseOutput(rawOutput);
   if (!parsed) {
-    console.log("Could not parse Product Owner output. No changes made.");
     return;
   }
 
   if (parsed.changed === false) {
-    console.log("Product Owner: no refinement needed today.");
+    log("info", "Product Owner: no refinement needed today.");
     return;
   }
 
@@ -255,7 +317,7 @@ async function main() {
   // Show what changed
   try {
     const diff = execSync("git diff docs/VISION.md", { cwd: repoRoot }).toString();
-    console.log("\nDiff:\n" + diff);
+    log("info", "Diff:", diff);
   } catch {
     // ignore diff errors
   }
@@ -271,13 +333,18 @@ async function main() {
       'git push',
       { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }
     );
-    console.log("Committed and pushed: " + commitMessage);
+    log("info", `Committed and pushed: ${commitMessage}`);
   } catch (e) {
-    console.log("Commit/push issue:", (e.message || "").slice(0, 200));
+    log("error", "Commit/push failed", errorData(e));
+    ghAnnotation("error", `Commit/push failed: ${e.message}`);
   }
+
+  printRunSummary();
 }
 
 main().catch((err) => {
-  console.error("Product Owner failed:", err);
+  log("error", "Product Owner failed", errorData(err));
+  ghAnnotation("error", `Product Owner failed: ${err.message || err}`);
+  printRunSummary();
   process.exit(1);
 });

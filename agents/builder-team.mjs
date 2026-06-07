@@ -14,6 +14,49 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(__dirname, "..");
 const MAX_SCOUT_RETRIES = 3;
 const MAX_BUILDER_RETRIES = 3;
+const RAW_OUTPUT_MAX_CHARS = 2000;
+
+// ---------------------------------------------------------------------------
+// Structured logger
+// ---------------------------------------------------------------------------
+
+const runLog = [];
+
+function log(level, message, data) {
+  const entry = { time: new Date().toISOString(), level, message, data };
+  runLog.push(entry);
+  const prefix = `[${entry.time}] [${level.toUpperCase()}]`;
+  if (data !== undefined) {
+    console.log(prefix, message);
+    console.log(JSON.stringify(data, null, 2));
+  } else {
+    console.log(prefix, message);
+  }
+}
+
+function ghAnnotation(kind, message) {
+  const level = kind === "error" ? "error" : "warning";
+  console.log(`::${level}::${message}`);
+}
+
+function truncate(str, max = RAW_OUTPUT_MAX_CHARS) {
+  if (str.length <= max) return str;
+  return str.slice(0, max) + `\n... [truncated, ${str.length} total chars]`;
+}
+
+function printRunSummary() {
+  console.log("\n" + "=".repeat(60));
+  console.log("RUN SUMMARY");
+  console.log("=".repeat(60));
+  for (const entry of runLog) {
+    const icon =
+      entry.level === "error" ? "❌" :
+      entry.level === "warn"  ? "⚠️" :
+      entry.level === "info"  ? "ℹ️" : "  ";
+    console.log(`${icon} [${entry.level.toUpperCase()}] ${entry.message}`);
+  }
+  console.log("=".repeat(60) + "\n");
+}
 
 // ---------------------------------------------------------------------------
 // Shared constraints (used by all agents)
@@ -41,6 +84,9 @@ function runAgent({ label, systemPrompt, tools }) {
   );
 
   const loader = new DefaultResourceLoader({ cwd: __dirname, agentDir: __dirname });
+  const startTime = Date.now();
+  log("info", `${label} agent started`);
+
   return loader.reload().then(() =>
     createAgentSession({
       cwd: repoRoot,
@@ -64,6 +110,7 @@ function runAgent({ label, systemPrompt, tools }) {
       return session
         .prompt(systemPrompt)
         .then(() => {
+          const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
           const messages = session.state.messages;
           const lastAssistant = [...messages].reverse().find(
             (m) => m.role === "assistant"
@@ -77,6 +124,7 @@ function runAgent({ label, systemPrompt, tools }) {
               : lastAssistant.content;
             if (fullText) output = fullText;
           }
+          log("info", `${label} agent completed in ${elapsed}s`);
           session.dispose();
           return output;
         })
@@ -88,7 +136,7 @@ function runAgent({ label, systemPrompt, tools }) {
   );
 }
 
-function extractJSON(text) {
+function extractJSON(label, text) {
   const blockMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
   const candidate = blockMatch ? blockMatch[1].trim() : text.trim();
   try {
@@ -99,10 +147,114 @@ function extractJSON(text) {
       try {
         return JSON.parse(objMatch[0]);
       } catch {
+        log("warn", `${label} output could not be parsed as JSON`, {
+          rawOutput: truncate(text),
+        });
+        ghAnnotation("warning", `${label}: output could not be parsed as JSON`);
         return null;
       }
     }
+    log("warn", `${label} output could not be parsed as JSON (no JSON object found)`, {
+      rawOutput: truncate(text),
+    });
+    ghAnnotation("warning", `${label}: output could not be parsed as JSON`);
     return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Git branch helpers
+// ---------------------------------------------------------------------------
+
+function slugify(str) {
+  return str
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 40);
+}
+
+function createBranchName(issueNumber, issueTitle, suggestion) {
+  if (issueNumber) {
+    return `agent/issue-${issueNumber}-${slugify(issueTitle)}`;
+  }
+  return `agent/feature-${slugify(suggestion)}`;
+}
+
+function gitExec(args, opts = {}) {
+  const cmd = "git " + args;
+  return execSync(cmd, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024, ...opts }).toString().trim();
+}
+
+/**
+ * Create and checkout a new branch from main.
+ */
+function createBranch(branchName) {
+  try {
+    gitExec("fetch origin");
+    gitExec("checkout main");
+    gitExec(`checkout -b ${branchName}`);
+    log("info", `Created branch: ${branchName}`);
+  } catch (e) {
+    // Branch may already exist from a previous run — reset it to main
+    log("warn", `Branch ${branchName} may already exist, resetting to main.`);
+    gitExec("checkout main");
+    gitExec(`branch -D ${branchName}`);
+    gitExec(`checkout -b ${branchName}`);
+    log("info", `Recreated branch: ${branchName}`);
+  }
+}
+
+/**
+ * Merge origin/main into the current branch. Returns { clean: true } on success,
+ * or { clean: false, conflictedFiles, statusOutput } on conflict.
+ */
+function mergeMainIntoBranch() {
+  try {
+    gitExec("fetch origin");
+    gitExec("merge origin/main --no-edit");
+    log("info", "Merged origin/main into branch — clean.");
+    return { clean: true };
+  } catch (e) {
+    const status = gitExec("status --porcelain");
+    const conflicted = status
+      .split("\n")
+      .filter((l) => l.startsWith("UU") || l.startsWith("AA") || l.startsWith("DD"))
+      .map((l) => l.slice(3));
+    log("warn", "Merge conflict when pulling main into branch", {
+      conflictedFiles: conflicted,
+    });
+    return { clean: false, conflictedFiles: conflicted, statusOutput: status };
+  }
+}
+
+/**
+ * Abort a merge and return to the pre-merge state.
+ */
+function abortMerge() {
+  try {
+    gitExec("merge --abort");
+    log("info", "Aborted merge.");
+  } catch {
+    // ignore — may not be in a merge
+  }
+}
+
+/**
+ * Fast-forward merge the branch into main, push, and delete the branch.
+ */
+function mergeBranchToMain(branchName) {
+  gitExec("checkout main");
+  gitExec(`merge --ff-only ${branchName}`);
+  log("info", `Fast-forward merged ${branchName} into main.`);
+  gitExec("push origin main");
+  log("info", "Pushed main.");
+  gitExec(`branch -d ${branchName}`);
+  log("info", `Deleted local branch ${branchName}.`);
+  try {
+    gitExec(`push origin --delete ${branchName}`);
+  } catch {
+    // remote branch may not exist — fine
   }
 }
 
@@ -130,9 +282,9 @@ async function closeIssue(issueNumber, commitMessage) {
       'gh issue close ' + issueNumber,
       { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }
     );
-    console.log("Closed issue #" + issueNumber);
+    log("info", `Closed issue #${issueNumber}`);
   } catch (e) {
-    console.log("Could not close issue #" + issueNumber + ":", (e.message || "").slice(0, 200));
+    log("warn", `Could not close issue #${issueNumber}`, errorData(e));
   }
 }
 
@@ -142,9 +294,9 @@ async function labelIssue(issueNumber, label) {
       'gh issue edit ' + issueNumber + ' --add-label "' + label + '"',
       { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }
     );
-    console.log("Labeled issue #" + issueNumber + " as \"" + label + "\"");
+    log("info", `Labeled issue #${issueNumber} as "${label}"`);
   } catch (e) {
-    console.log("Could not label issue #" + issueNumber + ":", (e.message || "").slice(0, 200));
+    log("warn", `Could not label issue #${issueNumber}`, errorData(e));
   }
 }
 
@@ -287,6 +439,38 @@ After implementing, respond with ONLY a valid JSON object:
   return prompt;
 }
 
+function buildMergeConflictPrompt(conflictedFiles, statusOutput, originalCommitMessage) {
+  return (
+`You are the BUILDER. Your branch has merge conflicts with origin/main that need to be resolved.
+
+## Conflicted Files
+${conflictedFiles.join("\n")}
+
+## Git Status
+${statusOutput}
+
+## Original Work
+Your original commit message was: "${originalCommitMessage}"
+
+## What To Do
+1. Read each conflicted file carefully.
+2. Resolve the conflicts by keeping the best version of each change — your work AND the incoming changes from main should coexist when possible.
+3. Look for conflict markers (\`<<<<<<<\`, \`=======\`, \`>>>>>>>\`) and replace each conflicted section with the correct resolved code.
+4. After resolving all conflicts, stage the files with \`git add\` and commit with a message like "Resolve merge conflicts with origin/main".
+5. Do NOT run any other commands or make other changes — just fix the conflicts.
+
+## Output
+
+After resolving, respond with ONLY a valid JSON object:
+
+{
+  "resolvedFiles": ["file1.js", "file2.css"],
+  "summary": "One sentence describing how conflicts were resolved."
+}
+`
+  );
+}
+
 function buildReviewerPrompt() {
   return (
 `You are the REVIEWER. Review the entire page for quality — not just the latest change. Previous runs may have left broken code; catch it all.
@@ -320,9 +504,9 @@ async function main() {
   const hasIssues = openIssues.length > 0;
 
   if (hasIssues) {
-    console.log("Found " + openIssues.length + " open issue(s). Prioritizing fixes.");
+    log("info", `Found ${openIssues.length} open issue(s). Prioritizing fixes.`);
   } else {
-    console.log("No open issues. Proceeding with feature exploration.");
+    log("info", "No open issues. Proceeding with feature exploration.");
   }
 
   let approved = false;
@@ -331,7 +515,7 @@ async function main() {
   let addressedIssueTitle = null;
 
   for (let attempt = 1; attempt <= MAX_SCOUT_RETRIES; attempt++) {
-    console.log("\n--- Scout Attempt " + attempt + " ---");
+    log("info", `--- Scout Attempt ${attempt} ---`);
 
     // 1. Scout
     const scoutOutput = await runAgent({
@@ -339,16 +523,15 @@ async function main() {
       systemPrompt: buildScoutPrompt(feedback, openIssues),
       tools: ["read", "bash"],
     });
-    const scoutJSON = extractJSON(scoutOutput);
+    const scoutJSON = extractJSON("Scout", scoutOutput);
     if (!scoutJSON) {
-      console.log("Scout output failed to parse, retrying...");
       feedback = "Output was not valid JSON. Respond with valid JSON only.";
       continue;
     }
 
     // If the Scout identified an invalid issue, label and skip
     if (scoutJSON.issueAction === "close-invalid" && scoutJSON.issueNumber) {
-      console.log("Scout: issue #" + scoutJSON.issueNumber + " is invalid/out of scope.");
+      log("info", `Scout: issue #${scoutJSON.issueNumber} is invalid/out of scope.`);
       await labelIssue(scoutJSON.issueNumber, "invalid");
       const comment = "Reviewed by the Builder Team — this issue is not actionable or is out of scope for the current vision of the project.";
       try {
@@ -360,9 +543,9 @@ async function main() {
           'gh issue close ' + scoutJSON.issueNumber,
           { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }
         );
-        console.log("Closed issue #" + scoutJSON.issueNumber + " as invalid.");
+        log("info", `Closed issue #${scoutJSON.issueNumber} as invalid.`);
       } catch (e) {
-        console.log("Could not close issue:", (e.message || "").slice(0, 200));
+        log("warn", "Could not close issue", errorData(e));
       }
       return;
     }
@@ -372,7 +555,7 @@ async function main() {
       addressedIssue = scoutJSON.issueNumber;
       const issue = openIssues.find((i) => i.number === addressedIssue);
       addressedIssueTitle = issue ? issue.title : "Unknown issue";
-      console.log("Scout: addressing issue #" + addressedIssue + " — " + addressedIssueTitle);
+      log("info", `Scout: addressing issue #${addressedIssue} — ${addressedIssueTitle}`);
     }
 
     // 2. Validator
@@ -381,28 +564,32 @@ async function main() {
       systemPrompt: buildValidatorPrompt(scoutOutput),
       tools: ["read", "bash"],
     });
-    const validatorJSON = extractJSON(validatorOutput);
+    const validatorJSON = extractJSON("Validator", validatorOutput);
     if (!validatorJSON) {
-      console.log("Validator output failed to parse, retrying...");
       feedback = "Output was not valid JSON. Respond with valid JSON only.";
       continue;
     }
 
     const { decision, reason } = validatorJSON;
-    console.log("Validator: " + decision + " — " + reason);
+    log("info", `Validator: ${decision} — ${reason}`);
 
     if (decision !== "APPROVED") {
       feedback = reason;
+      log("warn", `Validator rejected: ${reason}`);
       continue;
     }
 
-    // 3. Builder <-> Reviewer loop
+    // 3. Create a feature branch
+    const branchName = createBranchName(addressedIssue, addressedIssueTitle, scoutJSON.suggestion);
+    createBranch(branchName);
+
+    // 4. Builder <-> Reviewer loop (on the branch)
     approved = true;
     let reviewerFeedback = null;
     let commitMessage = "Agent build";
 
     for (let buildAttempt = 1; buildAttempt <= MAX_BUILDER_RETRIES; buildAttempt++) {
-      console.log("\n--- Build Attempt " + buildAttempt + " ---");
+      log("info", `--- Build Attempt ${buildAttempt} ---`);
 
       // Build
       const builderOutput = await runAgent({
@@ -410,10 +597,10 @@ async function main() {
         systemPrompt: buildBuilderPrompt(validatorOutput, reviewerFeedback, addressedIssue, addressedIssueTitle),
         tools: ["read", "bash", "edit", "write"],
       });
-      const builderJSON = extractJSON(builderOutput);
+      const builderJSON = extractJSON("Builder", builderOutput);
       if (builderJSON && builderJSON.commitMessage) {
         commitMessage = builderJSON.commitMessage;
-        console.log("Builder summary: " + (builderJSON.summary || "n/a"));
+        log("info", `Builder summary: ${builderJSON.summary || "n/a"}`);
       }
 
       // Review
@@ -422,66 +609,130 @@ async function main() {
         systemPrompt: buildReviewerPrompt(),
         tools: ["read", "bash"],
       });
-      const reviewerJSON = extractJSON(reviewerOutput);
+      const reviewerJSON = extractJSON("Reviewer", reviewerOutput);
 
       if (!reviewerJSON) {
-        console.log("Reviewer output failed to parse, sending back to Builder...");
         reviewerFeedback = "The Reviewer output could not be parsed. Check your your work for obvious issues.";
         continue;
       }
 
       if (reviewerJSON.decision === "APPROVED") {
-        console.log("Reviewer: APPROVED");
+        log("info", "Reviewer: APPROVED");
         break;
       }
 
       const issueCount = reviewerJSON.issues ? reviewerJSON.issues.length : 0;
-      console.log("Reviewer: NEEDS_FIX — " + issueCount + " issue(s)");
+      log("warn", `Reviewer: NEEDS_FIX — ${issueCount} issue(s)`, {
+        issues: reviewerJSON.issues,
+      });
       reviewerFeedback = reviewerJSON.issues ? reviewerJSON.issues.join("\n- ") : "Unknown issues found.";
 
       if (buildAttempt === MAX_BUILDER_RETRIES) {
-        console.log("Max build retries reached. Committing as-is.");
+        log("warn", "Max build retries reached. Committing as-is.");
       }
     }
 
-    // Commit and push
+    // 5. Commit on the branch
     try {
-      const status = execSync("git status --porcelain", { cwd: repoRoot }).toString().trim();
+      const status = gitExec("status --porcelain");
       if (status) {
-        execSync(
-          'git config user.name "github-actions[bot]" && ' +
-          'git config user.email "github-actions[bot]@users.noreply.github.com" && ' +
-          'git add -A && git commit -m "' + commitMessage.replace(/"/g, '\\"') + '" && git push',
-          { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }
-        );
-        console.log("Committed and pushed: " + commitMessage);
+        gitExec('config user.name "github-actions[bot]"');
+        gitExec('config user.email "github-actions[bot]@users.noreply.github.com"');
+        gitExec("add -A");
+        gitExec(`commit -m "${commitMessage.replace(/"/g, '\\"')}"`);
+        gitExec(`push origin ${branchName}`);
+        log("info", `Committed and pushed branch: ${commitMessage}`);
       } else {
-        try {
-          execSync("git push", { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 });
-          console.log("Pushed existing commit.");
-        } catch {
-          console.log("Nothing to push.");
-        }
+        gitExec(`push origin ${branchName}`);
+        log("info", "Pushed existing commits on branch.");
       }
     } catch (e) {
-      console.log("Commit/push issue:", (e.message || "").slice(0, 200));
+      log("error", "Branch commit/push failed", errorData(e));
+      ghAnnotation("error", `Branch commit/push failed: ${e.message}`);
+      break;
     }
 
-    // Close the addressed issue
+    // 6. Merge main into branch to pick up any concurrent changes
+    const mergeResult = mergeMainIntoBranch();
+    if (!mergeResult.clean) {
+      // Ask the Builder to resolve merge conflicts
+      log("info", "Sending merge conflicts to Builder for resolution.");
+      const conflictPrompt = buildMergeConflictPrompt(mergeResult.conflictedFiles, mergeResult.statusOutput, commitMessage);
+      const resolverOutput = await runAgent({
+        label: "Builder",
+        systemPrompt: conflictPrompt,
+        tools: ["read", "bash", "edit", "write"],
+      });
+      const resolverJSON = extractJSON("Builder", resolverOutput);
+
+      // Check if conflicts are resolved
+      const remaining = gitExec("diff --name-only --diff-filter=U");
+      if (remaining) {
+        log("error", "Builder could not resolve all merge conflicts. Aborting.", {
+          remainingConflicts: remaining.split("\n"),
+        });
+        ghAnnotation("error", `Merge conflicts could not be resolved automatically. Branch: ${branchName}`);
+        abortMerge();
+        break;
+      }
+
+      // Commit the merge resolution
+      gitExec("add -A");
+      const resolutionMessage = `Resolve merge conflicts with origin/main (closes #${addressedIssue || "n/a"})`;
+      gitExec(`commit -m "${resolutionMessage}"`);
+      gitExec(`push origin ${branchName}`);
+      log("info", "Merge conflicts resolved and pushed.");
+
+      // Re-run review after conflict resolution
+      const postMergeReviewerOutput = await runAgent({
+        label: "Reviewer",
+        systemPrompt: buildReviewerPrompt(),
+        tools: ["read", "bash"],
+      });
+      const postMergeReviewerJSON = extractJSON("Reviewer", postMergeReviewerOutput);
+      if (postMergeReviewerJSON && postMergeReviewerJSON.decision !== "APPROVED") {
+        log("warn", "Post-merge review found issues. Committing as-is.", {
+          issues: postMergeReviewerJSON.issues,
+        });
+      }
+    }
+
+    // 7. Fast-forward merge into main, push, and clean up
+    try {
+      mergeBranchToMain(branchName);
+    } catch (e) {
+      log("error", "Failed to merge branch into main", errorData(e));
+      ghAnnotation("error", `Failed to merge ${branchName} into main: ${e.message}`);
+      break;
+    }
+
+    // 8. Close the addressed issue
     if (addressedIssue) {
       await closeIssue(addressedIssue, commitMessage);
     }
 
-    console.log("\nPipeline complete.");
+    log("info", "Pipeline complete.");
     break;
   }
 
   if (!approved) {
-    console.log("No proposal approved after retries. Exiting.");
+    log("warn", "No proposal approved after retries. Exiting.");
+    ghAnnotation("warning", "No proposal approved after retries.");
   }
+
+  printRunSummary();
+}
+
+function errorData(e) {
+  return {
+    message: e.message || String(e),
+    stack: e.stack || null,
+  };
 }
 
 main().catch((err) => {
-  console.error("Pipeline failed:", err);
+  log("error", "Pipeline failed", errorData(err));
+  ghAnnotation("error", `Pipeline failed: ${err.message || err}`);
+  printRunSummary();
   process.exit(1);
 });
