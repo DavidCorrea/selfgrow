@@ -9,6 +9,8 @@ import { initStats } from './js/stats.js';
 import { startSelfSeeding } from './js/selfseeding.js';
 import { initGardenRings, notifyStatsRevealed } from './js/garden-rings.js';
 import { initGardenGallery } from './js/garden-gallery.js';
+import { initGardenMoments, notifyMomentsRevealed } from './js/garden-moments.js';
+import { initGardenHistory, captureGardenVisit, revealHistoryToggle } from './js/garden-history.js';
 
 
 (function () {
@@ -207,8 +209,15 @@ import { initGardenGallery } from './js/garden-gallery.js';
   // ── Initialize Garden Rings ──
   initGardenRings();
 
+  // ── Initialize Garden Moments ──
+  initGardenMoments();
+  notifyMomentsRevealed();
+
   // ── Initialize Garden Gallery ──
   initGardenGallery();
+
+  // ── Initialize Garden History ──
+  initGardenHistory();
 
   // ── Initialize Self-Seeding ──
   startSelfSeeding();
@@ -226,5 +235,9 @@ import { initGardenGallery } from './js/garden-gallery.js';
     if (gridRevealed.value) {
       startVisitors();
     }
+    // Capture a visit snapshot after restore
+    setTimeout(function () {
+      captureGardenVisit();
+    }, 1000);
   }
 })();

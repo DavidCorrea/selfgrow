@@ -15,15 +15,21 @@
 
 The app starts simple — a seed that blooms — and grows into a richer experience:
 
-1. **Seed & Bloom** — Interactive welcome with a CSS-animated seed-to-flower micro-interaction.
-2. **Garden Grid** — A grid of plantable tiles where users can grow different flora.
-3. **Growth Cycles** — Time-based progression: seeds sprout, grow, bloom, and seed again.
-4. **Tending Actions** — Water, prune, fertilize — small interactions that affect growth.
-5. **Seasonal Themes** — Visual shifts that reflect seasons or time of day.
-6. **Garden Journal** — A log of what has grown, what has changed, and what's coming next.
-7. **Garden Persistence** — Save garden state to localStorage so planted tiles, growth cycles, and journal entries survive page refreshes, making the garden truly persistent across visits.
-8. **Ambient Soundscape** — Soft, procedurally generated ambient audio (birdsong, gentle breeze, water droplets) that shifts with the time-of-day themes, deepening the meditative quality of the garden. Users can toggle the soundscape on/off.
-9. **Garden Reflection Stats** — A gentle statistics panel or expanded journal section that shows the garden's overall health: total flowers bloomed, current season, time since last tending, a "garden mood" based on how well-tended it is. Not gamification — just a mirror held up to show the caretaker what they've nurtured. Purely additive to the journal, never replacing the organic feel.
-10. **Garden Moments** — A way to capture and share a snapshot of the garden at a point in time: the current layout of tiles, bloom colors, weather, season, and mood rendered as a small shareable card or image. Not social media — just a quiet way to say "here is my garden today." Deepens the emotional resonance by making moments tangible without breaking the calm atmosphere.
+1. **Seed & Bloom** — Interactive welcome with a CSS-animated seed-to-flower micro-interaction. ✅
+2. **Garden Grid** — A grid of plantable tiles where users can grow different flora. ✅
+3. **Growth Cycles** — Time-based progression: seeds sprout, grow, bloom, and seed again. ✅
+4. **Tending Actions** — Water, prune, fertilize — small interactions that affect growth. ✅
+5. **Seasonal Themes** — Visual shifts that reflect seasons or time of day. ✅
+6. **Garden Journal** — A log of what has grown, what has changed, and what's coming next. ✅
+7. **Garden Persistence** — Save garden state to localStorage so planted tiles, growth cycles, and journal entries survive page refreshes, making the garden truly persistent across visits. ✅
+8. **Ambient Soundscape** — Soft, procedurally generated ambient audio (birdsong, gentle breeze, water droplets) that shifts with the time-of-day themes, deepening the meditative quality of the garden. Users can toggle the soundscape on/off. ✅
+9. **Garden Reflection Stats** — A gentle statistics panel or expanded journal section that shows the garden's overall health: total flowers bloomed, current season, time since last tending, a "garden mood" based on how well-tended it is. Not gamification — just a mirror held up to show the caretaker what they've nurtured. Purely additive to the journal, never replacing the organic feel. ✅
+10. **Garden Moments** — A way to capture and share a snapshot of the garden at a point in time: the current layout of tiles, bloom colors, weather, season, and mood rendered as a small shareable card or image. Not social media — just a quiet way to say "here is my garden today." Deepens the emotional resonance by making moments tangible without breaking the calm atmosphere. ✅
 
-10. **Garden Moments** — A way to capture and share a snapshot of the garden at a point in time: the current layout of tiles, bloom colors, weather, season, and mood rendered as a small shareable card or image. Not social media — just a quiet way to say "here is my garden today." Deepens the emotional resonance by making moments tangible without breaking the calm atmosphere.
+## Completed Features
+
+All core vision items have been implemented. Future enhancements could include:
+- Garden export/import for sharing between devices
+- Additional flower types and garden decorations
+- Weather forecast affecting garden predictions
+- Garden history timeline showing evolution over multiple sessions

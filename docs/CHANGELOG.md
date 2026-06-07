@@ -4,6 +4,10 @@ History of changes made by the hourly agent.
 
 ## 2026-06-07
 
+- **Added Garden History timeline showing evolution across sessions**: A new collapsible 'garden history' section in the journal panel that records a lightweight snapshot (date/time, planted count, mood, flower count, weather) on each visit. Snapshots persist via localStorage, capped at 20 to prevent bloat. Visit cards are styled like pressed flowers — small, subtle, earth-tone — with the dominant weather emoji, mood indicator, and a poetic reflection line. A toggle button (📖) in the journal header opens/closes the history. Creates a sense that the garden has a continuous life across sessions, deepening emotional resonance. Created `js/garden-history.js` module, added `.garden-history`, `.history-toggle`, `.history-visit-card` styles. Integrated with existing state, weather, and stats systems.
+
+## 2026-06-07
+
 - **Fixed Garden Gallery bugs and dead import (closes #8)**: (1) Fixed CRITICAL ReferenceError — `updateGalleryScene()` was called in `openGallery()` but the function was never defined; renamed the call to the correct `updateGalleryStats()` function so the gallery modal renders properly. (2) Fixed `getBloomTimeline()` reading `entry.color` and `entry.tile` which don't exist on journal entries — changed to `entry.petalColor` and `entry.tileIndex` so the bloom timeline shows correct flower colors and tile numbers. (3) Removed dead `recordBloom` import from `script.js` — it was imported from `garden-rings.js` but never used in that file.
 
 ## 2026-06-07
