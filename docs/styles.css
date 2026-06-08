@@ -4884,9 +4884,10 @@ body.theme-night {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 1.5rem;
-  height: 1.5rem;
-  padding: 0;
+  gap: 0.3rem;
+  width: auto;
+  height: auto;
+  padding: 0.25rem 0.5rem;
   margin-left: auto;
   background: rgba(12, 16, 24, 0.5);
   border: 1px solid rgba(90, 110, 80, 0.15);
@@ -4924,6 +4925,21 @@ body.theme-night {
   font-size: 0.7rem;
   line-height: 1;
   filter: drop-shadow(0 0 0.1rem rgba(139, 119, 80, 0.15));
+}
+
+.history-toggle__label {
+  font-size: 0.55rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  line-height: 1;
+  transition: color 0.3s ease;
+}
+
+.history-toggle:hover .history-toggle__label,
+.history-toggle:focus-visible .history-toggle__label,
+.history-toggle.active .history-toggle__label {
+  color: var(--journal-text);
 }
 
 /* ── History Section ── */
@@ -5167,12 +5183,15 @@ body.theme-night {
 /* ── Tablet (768px+) ── */
 @media (min-width: 768px) {
   .history-toggle {
-    width: 1.75rem;
-    height: 1.75rem;
+    padding: 0.3rem 0.6rem;
   }
 
   .history-toggle__icon {
     font-size: 0.8rem;
+  }
+
+  .history-toggle__label {
+    font-size: 0.6rem;
   }
 
   .garden-history.visible {
@@ -5239,12 +5258,15 @@ body.theme-night {
 /* ── Small Mobile (below 375px) ── */
 @media (max-width: 375px) {
   .history-toggle {
-    width: 1.35rem;
-    height: 1.35rem;
+    padding: 0.2rem 0.35rem;
   }
 
   .history-toggle__icon {
     font-size: 0.6rem;
+  }
+
+  .history-toggle__label {
+    font-size: 0.48rem;
   }
 
   .garden-history.visible {
@@ -5812,30 +5834,125 @@ body.theme-night {
   animation: toolBounce 0.6s ease-in-out infinite;
 }
 
-/* Collect Target Highlight */
+/* Seed Plant Target Highlight */
+.grid-tile.seed-plant-target {
+  cursor: pointer;
+  animation: seedPlantPulse 1.8s ease-in-out infinite;
+}
+
+/* ── Pulsing Seed Overlay on Blooming Tiles (Collect Mode) ── */
+.tile-seed-overlay {
+  position: absolute;
+  top: 0.2rem;
+  left: 0.2rem;
+  z-index: 10;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.2rem;
+  height: 1.2rem;
+  background: rgba(201, 168, 108, 0.12);
+  border: 1px solid rgba(201, 168, 108, 0.25);
+  border-radius: 50%;
+  animation: seedOverlayPulse 2s ease-in-out infinite;
+}
+
+.tile-seed-overlay__icon {
+  font-size: 0.65rem;
+  line-height: 1;
+  filter: drop-shadow(0 0 0.15rem rgba(201, 168, 108, 0.4));
+  animation: seedOverlayBob 2s ease-in-out infinite;
+}
+
+@keyframes seedOverlayPulse {
+  0%, 100% {
+    box-shadow: 0 0 0.3rem rgba(201, 168, 108, 0.1);
+    border-color: rgba(201, 168, 108, 0.25);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 0.8rem rgba(201, 168, 108, 0.25);
+    border-color: rgba(201, 168, 108, 0.45);
+    transform: scale(1.1);
+  }
+}
+
+@keyframes seedOverlayBob {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-0.1rem);
+  }
+}
+
+/* Enhanced collect target glow — more prominent */
 .grid-tile.seed-collect-target {
   cursor: pointer;
+  border-color: rgba(201, 168, 108, 0.3);
+  box-shadow: 0 0 1rem rgba(201, 168, 108, 0.08);
+}
+
+.grid-tile.seed-collect-target:hover,
+.grid-tile.seed-collect-target:focus-visible {
+  border-color: rgba(201, 168, 108, 0.5);
+  box-shadow: 0 0 1.5rem rgba(201, 168, 108, 0.15);
 }
 
 .grid-tile.seed-collect-target .tile-sprout.grown .tile-flower {
-  animation: seedCollectGlow 1.5s ease-in-out infinite;
+  animation: seedCollectGlowEnhanced 1.5s ease-in-out infinite;
 }
 
-@keyframes seedCollectGlow {
+@keyframes seedCollectGlowEnhanced {
   0%, 100% {
     filter: brightness(1);
     box-shadow: none;
   }
   50% {
-    filter: brightness(1.2) saturate(1.15);
-    box-shadow: 0 0 1rem rgba(201, 168, 108, 0.25);
+    filter: brightness(1.3) saturate(1.2);
+    box-shadow: 0 0 1.2rem rgba(201, 168, 108, 0.35), 0 0 2rem rgba(201, 168, 108, 0.1);
   }
 }
 
-/* Seed Plant Target Highlight */
-.grid-tile.seed-plant-target {
-  cursor: pointer;
-  animation: seedPlantPulse 1.8s ease-in-out infinite;
+/* ── Persistent Collect Instruction Banner ── */
+.collect-instruction-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.75rem;
+  margin-bottom: 0.25rem;
+  background: rgba(201, 168, 108, 0.06);
+  border: 1px solid rgba(201, 168, 108, 0.15);
+  border-radius: 0.6rem;
+  opacity: 0;
+  transform: translateY(-0.3rem);
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+.collect-instruction-banner.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.collect-instruction-banner__icon {
+  font-size: 0.85rem;
+  line-height: 1;
+  filter: drop-shadow(0 0 0.2rem rgba(201, 168, 108, 0.3));
+  animation: bannerSeedBob 2s ease-in-out infinite;
+}
+
+@keyframes bannerSeedBob {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-0.08rem) rotate(5deg); }
+}
+
+.collect-instruction-banner__text {
+  font-size: 0.62rem;
+  color: var(--accent-warm);
+  letter-spacing: 0.04em;
+  line-height: 1.3;
 }
 
 @keyframes seedPlantPulse {
@@ -5936,6 +6053,30 @@ body.theme-night {
 
 /* ── Seed Collection Responsive ── */
 @media (max-width: 375px) {
+  .tile-seed-overlay {
+    width: 1rem;
+    height: 1rem;
+    top: 0.15rem;
+    left: 0.15rem;
+  }
+
+  .tile-seed-overlay__icon {
+    font-size: 0.55rem;
+  }
+
+  .collect-instruction-banner {
+    padding: 0.25rem 0.5rem;
+    gap: 0.3rem;
+  }
+
+  .collect-instruction-banner__icon {
+    font-size: 0.7rem;
+  }
+
+  .collect-instruction-banner__text {
+    font-size: 0.52rem;
+  }
+
   .seed-packets-panel {
     padding: 0.5rem;
   }
@@ -5994,12 +6135,16 @@ body.theme-night {
 @media (prefers-reduced-motion: reduce) {
   .grid-tile.seed-collect-target .tile-sprout.grown .tile-flower,
   .grid-tile.seed-plant-target,
-  .seed-packet.selected::after {
+  .seed-packet.selected::after,
+  .tile-seed-overlay,
+  .tile-seed-overlay__icon,
+  .collect-instruction-banner__icon {
     animation: none !important;
   }
 
   .seed-packet,
-  .seed-packets-panel {
+  .seed-packets-panel,
+  .collect-instruction-banner {
     transition-duration: 0.01ms !important;
   }
 }

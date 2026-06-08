@@ -2,6 +2,12 @@
 
 ## 2026-06-08
 
+- **Removed dead imports `fertilizedTiles` and `totalVolunteers` from garden-moments.js (closes #10)**: Both were imported from state.js but never referenced anywhere in the file's logic. Removed them from the import statement to keep the module clean.
+
+- **Improved UX clarity for history toggle and seed collection mode (closes #10)**: Added a visible "history" label alongside the 📖 icon in the journal header so users can clearly identify the button's purpose. Enhanced seed collection mode with a pulsing 🌰 seed icon overlay on each blooming tile and a persistent instruction banner ("Tap a blooming flower to collect its seeds") that appears in the toolbar when collect mode is active. Both changes use existing CSS animation patterns, require no external dependencies, and respect `prefers-reduced-motion`.
+
+## 2026-06-08
+
 - **Removed dead `revealHistoryToggle` export from garden-history.js**: The function was exported but no longer imported anywhere in script.js (the import was removed in a previous cleanup but the export was left behind). Removed the unused export to keep the codebase clean.
 
 - **Fixed welcome card not updating on garden restore**: When returning to a saved garden, the welcome card now transitions to a 'garden keeper' state showing the bloomed flower with a personalized returning-visitor message (e.g. 'welcome back, garden keeper — 5 flowers blooming') instead of still showing 'click the soil to plant a seed' alongside a thriving grid. Added `restoreWelcomeCard()` export in `persistence.js` that sets the sprout to its grown state, fades out the hint, shows a contextual message with the current flower count, and intensifies the card glow. In `script.js`, the `planted` flag is now set to `true` during restoration so the seed-planting animation is skipped for returning visitors.

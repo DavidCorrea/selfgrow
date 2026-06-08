@@ -1,4 +1,4 @@
-import { dom, plantedCount, totalTiles, tileColorMap, tileFlowerTypeMap, journalEntries, totalVolunteers, fertilizedTiles } from './state.js';
+import { dom, plantedCount, totalTiles, tileColorMap, tileFlowerTypeMap, journalEntries } from './state.js';
 import { getCurrentSeasonName } from './theme.js';
 import { getCurrentWeather } from './weather.js';
 import { getBloomingCount, getPlantedCount } from './visitors.js';

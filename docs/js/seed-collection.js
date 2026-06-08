@@ -460,6 +460,50 @@ function exitPlantMode() {
   }
 }
 
+// ── Persistent instruction banner ──
+function showCollectInstructionBanner() {
+  var toolbar = dom.tendingToolbar;
+  if (!toolbar) return;
+
+  var existing = document.getElementById('collectInstructionBanner');
+  if (existing) {
+    existing.classList.add('visible');
+    return;
+  }
+
+  var banner = document.createElement('div');
+  banner.classList.add('collect-instruction-banner');
+  banner.id = 'collectInstructionBanner';
+  banner.setAttribute('role', 'status');
+  banner.setAttribute('aria-live', 'polite');
+  banner.innerHTML =
+    '<span class="collect-instruction-banner__icon" aria-hidden="true">🌰</span>' +
+    '<span class="collect-instruction-banner__text">Tap a blooming flower to collect its seeds</span>';
+
+  // Insert before the toolbar's hint text
+  var hint = dom.tendingHint;
+  if (hint) {
+    toolbar.insertBefore(banner, hint);
+  } else {
+    toolbar.appendChild(banner);
+  }
+
+  // Trigger fade-in
+  requestAnimationFrame(function () {
+    banner.classList.add('visible');
+  });
+}
+
+function hideCollectInstructionBanner() {
+  var banner = document.getElementById('collectInstructionBanner');
+  if (banner) {
+    banner.classList.remove('visible');
+    setTimeout(function () {
+      banner.remove();
+    }, 400);
+  }
+}
+
 // ── Exit collect mode ──
 function exitCollectMode() {
   collectMode = false;
@@ -483,8 +527,14 @@ function exitCollectMode() {
   if (tiles) {
     tiles.forEach(function (tile) {
       tile.classList.remove('seed-collect-target');
+      // Remove pulsing seed overlay
+      var overlay = tile.querySelector('.tile-seed-overlay');
+      if (overlay) overlay.remove();
     });
   }
+
+  // Hide instruction banner
+  hideCollectInstructionBanner();
 }
 
 // ── Toggle collect mode ──
@@ -514,17 +564,28 @@ export function toggleCollectMode() {
       }, 300);
     }
 
-    // Highlight blooming tiles
+    // Highlight blooming tiles and add pulsing seed overlay
     if (tiles) {
       tiles.forEach(function (tile) {
         if (tile.classList.contains('planted')) {
           var sprout = tile.querySelector('.tile-sprout');
           if (sprout && sprout.classList.contains('grown')) {
             tile.classList.add('seed-collect-target');
+            // Add pulsing seed icon overlay
+            if (!tile.querySelector('.tile-seed-overlay')) {
+              var overlay = document.createElement('div');
+              overlay.classList.add('tile-seed-overlay');
+              overlay.setAttribute('aria-hidden', 'true');
+              overlay.innerHTML = '<span class="tile-seed-overlay__icon">🌰</span>';
+              tile.appendChild(overlay);
+            }
           }
         }
       });
     }
+
+    // Show persistent instruction banner
+    showCollectInstructionBanner();
   } else {
     exitCollectMode();
   }

@@ -213,7 +213,7 @@ function createHistoryToggle() {
   btn.setAttribute('aria-expanded', 'false');
   btn.setAttribute('title', 'Garden history');
   btn.type = 'button';
-  btn.innerHTML = '<span class="history-toggle__icon">📖</span>';
+  btn.innerHTML = '<span class="history-toggle__icon" aria-hidden="true">📖</span><span class="history-toggle__label">history</span>';
 
   btn.addEventListener('click', function () {
     toggleHistory();
