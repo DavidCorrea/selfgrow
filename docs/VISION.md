@@ -11,6 +11,8 @@
 - **Calm & intentional**: Soft animations, gentle colors, and mindful interactions. This is a place to pause.
 - **Agent-driven evolution**: Autonomous agents (Scout → Validator → Builder) iteratively expand the garden, each building on the last.
 
+- **Alive & responsive**: The garden should feel like a living thing — creatures visit, weather shifts, flowers sway, and the space breathes. Every return visit should feel like coming home to something that has continued growing in your absence.
+
 ## Direction
 
 The app starts simple — a seed that blooms — and grows into a richer experience:
