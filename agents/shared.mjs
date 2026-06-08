@@ -171,29 +171,70 @@ export function fillTemplate(template, replacements) {
 // ---------------------------------------------------------------------------
 
 export function extractJSON(label, text) {
+  // Try to extract from a fenced code block first
   const blockMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
   const candidate = blockMatch ? blockMatch[1].trim() : text.trim();
+
+  // Try direct parse first
   try {
     return JSON.parse(candidate);
-  } catch {
-    const objMatch = candidate.match(/\{[\s\S]*\}/);
-    if (objMatch) {
-      try {
-        return JSON.parse(objMatch[0]);
-      } catch {
-        log("warn", `${label} output could not be parsed as JSON`, {
-          rawOutput: truncate(text),
-        });
-        ghAnnotation("warning", `${label}: output could not be parsed as JSON`);
-        return null;
+  } catch { /* fall through */ }
+
+  // Try to find a complete JSON object by matching braces.
+  // This handles stray characters after the closing brace (e.g. extra } or prose).
+  const jsonObj = extractFirstJSONObject(candidate);
+  if (jsonObj) {
+    try {
+      return JSON.parse(jsonObj);
+    } catch { /* fall through */ }
+  }
+
+  log("warn", `${label} output could not be parsed as JSON`, {
+    rawOutput: truncate(text),
+  });
+  ghAnnotation("warning", `${label}: output could not be parsed as JSON`);
+  return null;
+}
+
+/**
+ * Extract the first complete JSON object from a string by counting brace depth.
+ * Handles braces inside JSON strings correctly.
+ */
+function extractFirstJSONObject(text) {
+  const start = text.indexOf("{");
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) {
+        return text.slice(start, i + 1);
       }
     }
-    log("warn", `${label} output could not be parsed as JSON (no JSON object found)`, {
-      rawOutput: truncate(text),
-    });
-    ghAnnotation("warning", `${label}: output could not be parsed as JSON`);
-    return null;
   }
+
+  return null;
 }
 
 /**
