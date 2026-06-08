@@ -5602,3 +5602,405 @@ body.theme-night {
     height: 0.25rem;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Seed Collection & Replanting
+   ═══════════════════════════════════════════════════════════ */
+
+/* Seed Packets Panel */
+.seed-packets-panel {
+  opacity: 0;
+  transform: translateY(0.75rem);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+  width: 100%;
+  background: rgba(18, 15, 12, 0.6);
+  border: 1px solid rgba(139, 119, 80, 0.12);
+  border-radius: 0.85rem;
+  padding: 0.65rem;
+  box-shadow:
+    0 0 1rem rgba(0, 0, 0, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.015);
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.seed-packets-panel.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.seed-packets-header {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+}
+
+.seed-packets-icon {
+  font-size: 0.8rem;
+  filter: drop-shadow(0 0 0.15rem rgba(139, 119, 80, 0.25));
+}
+
+.seed-packets-title {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: rgba(139, 119, 80, 0.65);
+  letter-spacing: 0.04em;
+  margin: 0;
+  flex: 1;
+}
+
+.seed-packets-count {
+  font-size: 0.55rem;
+  font-weight: 700;
+  color: rgba(139, 119, 80, 0.5);
+  background: rgba(139, 119, 80, 0.08);
+  border: 1px solid rgba(139, 119, 80, 0.12);
+  border-radius: 0.4rem;
+  padding: 0.05rem 0.3rem;
+  letter-spacing: 0.03em;
+}
+
+.seed-packets__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 8rem;
+  overflow-y: auto;
+  padding-right: 0.15rem;
+}
+
+.seed-packets__list::-webkit-scrollbar {
+  width: 0.2rem;
+}
+
+.seed-packets__list::-webkit-scrollbar-track {
+  background: rgba(139, 119, 80, 0.05);
+  border-radius: 0.1rem;
+}
+
+.seed-packets__list::-webkit-scrollbar-thumb {
+  background: rgba(139, 119, 80, 0.2);
+  border-radius: 0.1rem;
+}
+
+.seed-packets__empty {
+  font-size: 0.58rem;
+  color: var(--text-muted);
+  font-style: italic;
+  text-align: center;
+  padding: 0.6rem 0.25rem;
+  letter-spacing: 0.03em;
+  opacity: 0.7;
+}
+
+/* Seed Packet Card */
+.seed-packet {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.45rem;
+  background: rgba(25, 21, 16, 0.5);
+  border: 1px solid rgba(139, 119, 80, 0.1);
+  border-radius: 0.55rem;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.3s ease, background 0.3s ease, box-shadow 0.3s ease, transform 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.seed-packet:hover,
+.seed-packet:focus-visible {
+  border-color: rgba(201, 168, 108, 0.35);
+  background: rgba(35, 28, 20, 0.6);
+  box-shadow: 0 0 0.8rem rgba(201, 168, 108, 0.06);
+  transform: translateY(-1px);
+}
+
+.seed-packet.selected {
+  border-color: rgba(201, 168, 108, 0.5);
+  background: rgba(45, 36, 24, 0.7);
+  box-shadow:
+    0 0 1rem rgba(201, 168, 108, 0.1),
+    0 0 2rem rgba(201, 168, 108, 0.04);
+}
+
+.seed-packet.selected::after {
+  content: '🌱';
+  position: absolute;
+  right: 0.35rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.6rem;
+  opacity: 0.7;
+  animation: seedSelectedPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes seedSelectedPulse {
+  0%, 100% { opacity: 0.5; transform: translateY(-50%) scale(1); }
+  50% { opacity: 0.9; transform: translateY(-50%) scale(1.15); }
+}
+
+.seed-packet__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.seed-packet__emoji {
+  font-size: 0.85rem;
+  line-height: 1.2;
+  filter: drop-shadow(0 0 0.15rem rgba(201, 168, 108, 0.2));
+}
+
+.seed-packet__type {
+  font-size: 0.55rem;
+  font-weight: 600;
+  color: rgba(201, 168, 108, 0.8);
+  letter-spacing: 0.03em;
+}
+
+.seed-packet__date {
+  font-size: 0.45rem;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+
+.seed-packet__swatches {
+  display: flex;
+  gap: 0.12rem;
+  flex-shrink: 0;
+}
+
+.seed-packet__swatch {
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 0.15rem rgba(255, 255, 255, 0.03);
+}
+
+.seed-packet__plant-hint {
+  display: none;
+  font-size: 0.42rem;
+  color: rgba(201, 168, 108, 0.5);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  position: absolute;
+  right: 0.35rem;
+  bottom: 0.2rem;
+}
+
+.seed-packet:hover .seed-packet__plant-hint,
+.seed-packet:focus-visible .seed-packet__plant-hint {
+  display: block;
+}
+
+/* Seed Collect Button Active State */
+#seedCollectBtn.active {
+  border-color: rgba(201, 168, 108, 0.5);
+  box-shadow: 0 0 1.5rem rgba(201, 168, 108, 0.15);
+  background: rgba(201, 168, 108, 0.08);
+  color: var(--text-primary);
+}
+
+#seedCollectBtn.active .tool-icon {
+  animation: toolBounce 0.6s ease-in-out infinite;
+}
+
+/* Collect Target Highlight */
+.grid-tile.seed-collect-target {
+  cursor: pointer;
+}
+
+.grid-tile.seed-collect-target .tile-sprout.grown .tile-flower {
+  animation: seedCollectGlow 1.5s ease-in-out infinite;
+}
+
+@keyframes seedCollectGlow {
+  0%, 100% {
+    filter: brightness(1);
+    box-shadow: none;
+  }
+  50% {
+    filter: brightness(1.2) saturate(1.15);
+    box-shadow: 0 0 1rem rgba(201, 168, 108, 0.25);
+  }
+}
+
+/* Seed Plant Target Highlight */
+.grid-tile.seed-plant-target {
+  cursor: pointer;
+  animation: seedPlantPulse 1.8s ease-in-out infinite;
+}
+
+@keyframes seedPlantPulse {
+  0%, 100% {
+    border-color: rgba(90, 110, 80, 0.2);
+    box-shadow: none;
+    background: rgba(15, 20, 16, 0.7);
+  }
+  50% {
+    border-color: rgba(201, 168, 108, 0.3);
+    box-shadow: 0 0 1rem rgba(201, 168, 108, 0.08), 0 0 2rem rgba(201, 168, 108, 0.03);
+    background: rgba(25, 21, 16, 0.6);
+  }
+}
+
+/* Seed Collect Sparkle */
+.tile-seed-collect-sparkle {
+  position: absolute;
+  width: 0.2rem;
+  height: 0.2rem;
+  border-radius: 50%;
+  pointer-events: none;
+  animation: seedCollectSparkleFly 0.9s ease-out forwards;
+  z-index: 5;
+  box-shadow: 0 0 0.15rem rgba(201, 168, 108, 0.5);
+}
+
+@keyframes seedCollectSparkleFly {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--tx), var(--ty)) scale(0);
+  }
+}
+
+/* Seed Collect Journal Entry */
+.journal-entry--seed-collect {
+  background: rgba(35, 28, 18, 0.25);
+  border-radius: 0.4rem;
+  margin-bottom: 0.15rem;
+}
+
+.journal-entry--seed-collect .entry-timeline-dot--seed-collect {
+  background: rgba(201, 168, 108, 0.5);
+  box-shadow: 0 0 0.3rem rgba(201, 168, 108, 0.2);
+}
+
+.journal-entry--seed-collect .entry-timeline-dot--seed-collect::after {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.journal-entry--seed-collect .entry-swatch--seed-collect {
+  border-color: rgba(201, 168, 108, 0.25);
+  box-shadow: 0 0 0.3rem rgba(201, 168, 108, 0.1);
+}
+
+.journal-entry--seed-collect .entry-text {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.journal-entry--seed-collect .entry-text strong {
+  color: rgba(201, 168, 108, 0.85);
+}
+
+/* Seed Plant Journal Entry */
+.journal-entry--seed-plant {
+  background: rgba(20, 30, 18, 0.25);
+  border-radius: 0.4rem;
+  margin-bottom: 0.15rem;
+}
+
+.journal-entry--seed-plant .entry-timeline-dot--seed-plant {
+  background: rgba(74, 222, 128, 0.4);
+  box-shadow: 0 0 0.3rem rgba(74, 222, 128, 0.15);
+}
+
+.journal-entry--seed-plant .entry-timeline-dot--seed-plant::after {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.journal-entry--seed-plant .entry-swatch--seed-plant {
+  border-color: rgba(74, 222, 128, 0.2);
+  box-shadow: 0 0 0.3rem rgba(74, 222, 128, 0.08);
+}
+
+.journal-entry--seed-plant .entry-text {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.journal-entry--seed-plant .entry-text strong {
+  color: rgba(74, 222, 128, 0.8);
+}
+
+/* ── Seed Collection Responsive ── */
+@media (max-width: 375px) {
+  .seed-packets-panel {
+    padding: 0.5rem;
+  }
+
+  .seed-packets__list {
+    max-height: 6rem;
+  }
+
+  .seed-packet {
+    padding: 0.3rem 0.35rem;
+    gap: 0.35rem;
+  }
+
+  .seed-packet__emoji {
+    font-size: 0.7rem;
+  }
+
+  .seed-packet__type {
+    font-size: 0.48rem;
+  }
+
+  .seed-packet__date {
+    font-size: 0.4rem;
+  }
+
+  .seed-packet__swatch {
+    width: 0.28rem;
+    height: 0.28rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .seed-packets-panel {
+    padding: 0.75rem;
+  }
+
+  .seed-packets__list {
+    max-height: 9rem;
+  }
+
+  .seed-packet {
+    padding: 0.4rem 0.55rem;
+  }
+
+  .seed-packets-title {
+    font-size: 0.72rem;
+  }
+}
+
+@media (min-width: 1200px) {
+  .seed-packets__list {
+    max-height: 10rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .grid-tile.seed-collect-target .tile-sprout.grown .tile-flower,
+  .grid-tile.seed-plant-target,
+  .seed-packet.selected::after {
+    animation: none !important;
+  }
+
+  .seed-packet,
+  .seed-packets-panel {
+    transition-duration: 0.01ms !important;
+  }
+}
+

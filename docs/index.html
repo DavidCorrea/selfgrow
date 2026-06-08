@@ -311,6 +311,18 @@
           </div>
         </div>
 
+        <!-- Seed Packets Panel -->
+        <div class="seed-packets-panel" id="seedPacketsPanel" aria-hidden="true">
+          <div class="seed-packets-header">
+            <span class="seed-packets-icon">🌰</span>
+            <h2 class="seed-packets-title">seed packets</h2>
+            <span class="seed-packets-count" id="seedPacketsCount" aria-label="Seed packet count">0</span>
+          </div>
+          <div class="seed-packets__list" id="seedPacketsList" role="list" aria-label="Collected seed packets">
+            <p class="seed-packets__empty">collect seeds from blooming flowers...</p>
+          </div>
+        </div>
+
         <!-- Garden Journal -->
         <div class="garden-journal" id="gardenJournal" aria-hidden="true">
           <div class="journal-header">
@@ -340,6 +352,10 @@
         <button class="tool-btn" id="fertilizeBtn" aria-label="Fertilize" title="Enrich the soil">
           <span class="tool-icon">🌾</span>
           <span class="tool-label">fertilize</span>
+        </button>
+        <button class="tool-btn" id="seedCollectBtn" aria-label="Collect seeds" title="Collect seeds from blooming flowers">
+          <span class="tool-icon">🌰</span>
+          <span class="tool-label">seeds</span>
         </button>
       </div>
     </div>

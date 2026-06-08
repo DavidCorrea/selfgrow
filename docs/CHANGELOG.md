@@ -2,7 +2,11 @@
 
 ## 2026-06-08
 
+- **Removed dead `revealHistoryToggle` export from garden-history.js**: The function was exported but no longer imported anywhere in script.js (the import was removed in a previous cleanup but the export was left behind). Removed the unused export to keep the codebase clean.
+
 - **Fixed welcome card not updating on garden restore**: When returning to a saved garden, the welcome card now transitions to a 'garden keeper' state showing the bloomed flower with a personalized returning-visitor message (e.g. 'welcome back, garden keeper — 5 flowers blooming') instead of still showing 'click the soil to plant a seed' alongside a thriving grid. Added `restoreWelcomeCard()` export in `persistence.js` that sets the sprout to its grown state, fades out the hint, shows a contextual message with the current flower count, and intensifies the card glow. In `script.js`, the `planted` flag is now set to `true` during restoration so the seed-planting animation is skipped for returning visitors.
+
+- **Added Seed Collection & Replanting system**: Users can now collect seeds from blooming flowers by activating the new 🌰 'seeds' tool in the toolbar and clicking on grown (blooming) tiles. Collected seeds capture the flower's morphology type (daisy/tulip/rose/star/lily), petal color palette, and center color. Seeds appear in a new 'Seed Packets' panel in the sidebar (above the journal) as illustrated cards showing the flower type emoji, name, collection date, and color swatches. Users can select a seed packet to enter planting mode, then click an empty tile to plant that specific flower type with its original color palette instead of a random one. Seeds are consumed on planting and persist via localStorage between sessions. Blooming tiles glow warmly when collect mode is active, and empty tiles pulse invitingly when a seed is selected for planting. Journal entries are logged for both collecting and planting events. The collection count badge updates in real-time.
 
 ## 2026-06-08
 

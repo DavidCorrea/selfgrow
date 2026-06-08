@@ -30,7 +30,8 @@ The app starts simple — a seed that blooms — and grows into a richer experie
 11. **Garden History Timeline** — A collapsible section in the journal panel that records chronological visit snapshots (date/time, planted count, mood, flower count, weather) with poetic descriptions, persisting via localStorage. ✅
 12. **Garden Export/Import** — Download full garden state as a JSON file and restore from a previously exported file, enabling sharing between devices. ✅
 13. **Distinct Flower Morphology** — Five unique CSS flower types (daisy, tulip, rose, star, lily) with distinct petal shapes, sizes, and arrangements, making each planted tile visually unique. ✅
+14. **Seed Collection & Replanting** — Collect seeds from blooming flowers, preserving flower type, color palette, and collection date. Plant collected seeds on empty tiles to grow specific flower types with their original colors. Seeds persist via localStorage. ✅
 
 ## Completed Features
 
-All core vision items and major enhancements have been implemented, including Garden Reflection Stats, Garden Moments, Garden History, Garden Export/Import, Garden Gallery, Garden Rings bloom visualization, garden completion celebration, self-seeding volunteer plants, weather system with growth integration, and distinct flower type morphology. The garden is a fully-featured living digital ecosystem.
+All core vision items and major enhancements have been implemented, including Garden Reflection Stats, Garden Moments, Garden History, Garden Export/Import, Garden Gallery, Garden Rings bloom visualization, garden completion celebration, self-seeding volunteer plants, weather system with growth integration, distinct flower type morphology, and Seed Collection & Replanting. The garden is a fully-featured living digital ecosystem.

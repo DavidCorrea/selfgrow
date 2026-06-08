@@ -14,6 +14,7 @@ export var tileCycleState = {};
 export var tileColorMap = {};
 export var totalVolunteers = { value: 0 };
 export var tileFlowerTypeMap = {};
+export var seedCollection = [];
 
 // DOM refs (set by main script.js after DOM ready)
 export var dom = {};

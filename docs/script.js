@@ -12,6 +12,7 @@ import { initGardenGallery } from './js/garden-gallery.js';
 import { initGardenMoments, notifyMomentsRevealed } from './js/garden-moments.js';
 import { initGardenHistory, captureGardenVisit } from './js/garden-history.js';
 import { exportGarden, importGarden } from './js/export-import.js';
+import { initSeedCollection, toggleCollectMode, collectSeed, isCollectMode, isPlantMode, plantSelectedSeed } from './js/seed-collection.js';
 
 
 (function () {
@@ -52,6 +53,10 @@ import { exportGarden, importGarden } from './js/export-import.js';
   dom.statMoodEmoji = document.getElementById('statMoodEmoji');
   dom.statMoodCard = document.getElementById('statMoodCard');
   dom.statsPoem = document.getElementById('statsPoem');
+  dom.seedCollectBtn = document.getElementById('seedCollectBtn');
+  dom.seedPacketsPanel = document.getElementById('seedPacketsPanel');
+  dom.seedPacketsList = document.getElementById('seedPacketsList');
+  dom.seedPacketsCount = document.getElementById('seedPacketsCount');
 
   // ── Initialize Theme ──
   initTheme();
@@ -134,13 +139,17 @@ import { exportGarden, importGarden } from './js/export-import.js';
   dom.tiles.forEach(function (tile) {
     tile.addEventListener('click', function () {
       var tileIndex = parseInt(tile.getAttribute('data-tile'), 10);
-      if (isPruneMode() && tile.classList.contains('planted')) {
+      if (isCollectMode() && tile.classList.contains('planted')) {
+        collectSeed(tile, tileIndex);
+      } else if (isPlantMode() && !tile.classList.contains('planted')) {
+        plantSelectedSeed(tile, tileIndex);
+      } else if (isPruneMode() && tile.classList.contains('planted')) {
         pruneTile(tile, tileIndex);
       } else if (isFertilizeMode() && tile.classList.contains('planted')) {
         fertilizeTile(tile, tileIndex);
       } else if (isWateringMode() && tile.classList.contains('planted')) {
         waterTile(tile, tileIndex);
-      } else {
+      } else if (!tile.classList.contains('planted')) {
         plantTile(tile);
       }
     });
@@ -148,13 +157,17 @@ import { exportGarden, importGarden } from './js/export-import.js';
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         var tileIndex = parseInt(tile.getAttribute('data-tile'), 10);
-        if (isPruneMode() && tile.classList.contains('planted')) {
+        if (isCollectMode() && tile.classList.contains('planted')) {
+          collectSeed(tile, tileIndex);
+        } else if (isPlantMode() && !tile.classList.contains('planted')) {
+          plantSelectedSeed(tile, tileIndex);
+        } else if (isPruneMode() && tile.classList.contains('planted')) {
           pruneTile(tile, tileIndex);
         } else if (isFertilizeMode() && tile.classList.contains('planted')) {
           fertilizeTile(tile, tileIndex);
         } else if (isWateringMode() && tile.classList.contains('planted')) {
           waterTile(tile, tileIndex);
-        } else {
+        } else if (!tile.classList.contains('planted')) {
           plantTile(tile);
         }
       }
@@ -196,6 +209,21 @@ import { exportGarden, importGarden } from './js/export-import.js';
       toggleFertilizeMode();
     }
   });
+
+  // ── Seed Collect button ──
+  dom.seedCollectBtn.addEventListener('click', function () {
+    toggleCollectMode();
+  });
+
+  dom.seedCollectBtn.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggleCollectMode();
+    }
+  });
+
+  // ── Initialize Seed Collection ──
+  initSeedCollection();
 
   // ── Initialize Visitors ──
   initVisitors();
