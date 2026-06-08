@@ -1,4 +1,4 @@
-import { dom, journalEntries, wateredTiles, fertilizedTiles, prunedTiles, tileCycleState, tileColorMap, plantedCount, totalVolunteers, gridRevealed, journalRevealed, tendingRevealed } from './state.js';
+import { dom, journalEntries, wateredTiles, fertilizedTiles, prunedTiles, tileCycleState, tileColorMap, tileFlowerTypeMap, plantedCount, totalVolunteers, gridRevealed, journalRevealed, tendingRevealed } from './state.js';
 import { getCurrentWeather } from './weather.js';
 
 var importModal = null;
@@ -19,6 +19,7 @@ function getGardenStateJSON() {
     prunedTiles: {},
     tileCycleState: {},
     tileColorMap: {},
+    tileFlowerTypeMap: {},
     journalEntries: journalEntries,
     plantedCount: plantedCount.value,
     totalVolunteers: totalVolunteers.value,
@@ -53,6 +54,9 @@ function getGardenStateJSON() {
       }
       if (tileColorMap[tileIndex]) {
         state.tileColorMap[tileIndex] = tileColorMap[tileIndex];
+      }
+      if (tileFlowerTypeMap[tileIndex]) {
+        state.tileFlowerTypeMap[tileIndex] = tileFlowerTypeMap[tileIndex];
       }
     });
   }
@@ -263,49 +267,4 @@ export function importGarden() {
   importInput.click();
 }
 
-// ─── Button Creation ───
 
-export function createExportImportButtons() {
-  var gardenStats = dom.gardenStats;
-  if (!gardenStats) return;
-
-  // Check if buttons already exist
-  if (document.getElementById('exportImportButtons')) return;
-
-  var container = document.createElement('div');
-  container.id = 'exportImportButtons';
-  container.classList.add('export-import-btns');
-
-  // Export button
-  var exportBtn = document.createElement('button');
-  exportBtn.classList.add('gallery-btn', 'export-btn');
-  exportBtn.setAttribute('aria-label', 'Export garden to file');
-  exportBtn.innerHTML =
-    '<span class="gallery-btn__icon">📤</span>' +
-    '<span class="gallery-btn__label">export garden</span>';
-  exportBtn.addEventListener('click', function () {
-    exportGarden();
-  });
-
-  // Import button
-  var importBtn = document.createElement('button');
-  importBtn.classList.add('gallery-btn', 'import-btn');
-  importBtn.setAttribute('aria-label', 'Import garden from file');
-  importBtn.innerHTML =
-    '<span class="gallery-btn__icon">📥</span>' +
-    '<span class="gallery-btn__label">import garden</span>';
-  importBtn.addEventListener('click', function () {
-    importGarden();
-  });
-
-  container.appendChild(exportBtn);
-  container.appendChild(importBtn);
-
-  // Insert after the stats poem (or at the end of garden-stats)
-  var statsPoem = dom.statsPoem;
-  if (statsPoem && statsPoem.parentNode === gardenStats) {
-    gardenStats.insertBefore(container, statsPoem.nextSibling);
-  } else {
-    gardenStats.appendChild(container);
-  }
-}

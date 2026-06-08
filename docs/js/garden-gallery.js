@@ -328,10 +328,6 @@ export function closeGallery() {
   }
 }
 
-export function isGalleryOpen() {
-  return galleryVisible;
-}
-
 export function initGardenGallery() {
   // Add gallery button to stats panel
   var gardenStats = dom.gardenStats || document.getElementById('gardenStats');

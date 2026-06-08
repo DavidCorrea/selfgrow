@@ -191,16 +191,4 @@ export function triggerGardenComplete() {
   }, celebrationDuration);
 }
 
-// ── Reset (for testing or future use) ──
-export function resetCelebration() {
-  celebrationTriggered = false;
-  if (celebrationTimer) {
-    clearTimeout(celebrationTimer);
-    celebrationTimer = null;
-  }
-  var overlay = document.querySelector('.celebration-glow-overlay');
-  if (overlay) overlay.remove();
-  var particles = document.querySelector('.celebration-particles');
-  if (particles) particles.remove();
-  removeGridGlow();
-}
+

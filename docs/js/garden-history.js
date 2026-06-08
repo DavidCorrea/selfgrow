@@ -379,15 +379,6 @@ export function captureGardenVisit() {
   }
 }
 
-// ── Public: Called when garden state changes significantly ──
-export function notifyGardenHistory() {
-  if (!shouldAutoCapture()) return;
-  if (plantedCount.value > 0 || journalEntries.length > 0) {
-    var snapshot = captureSnapshot();
-    saveSnapshot(snapshot);
-  }
-}
-
 // ── Public: Reveal the toggle button ──
 export function revealHistoryToggle() {
   createHistoryToggle();

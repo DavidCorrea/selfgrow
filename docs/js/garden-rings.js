@@ -112,7 +112,6 @@ function createRingsContainer() {
 }
 
 // ── SVG ring geometry constants ──
-var SVG_CENTER = 100;
 var SVG_BASE_RADIUS = 20;
 var SVG_RADIUS_STEP = 6;
 var SVG_MAX_RINGS = 20;

@@ -23,13 +23,12 @@ The app starts simple — a seed that blooms — and grows into a richer experie
 6. **Garden Journal** — A log of what has grown, what has changed, and what's coming next. ✅
 7. **Garden Persistence** — Save garden state to localStorage so planted tiles, growth cycles, and journal entries survive page refreshes, making the garden truly persistent across visits. ✅
 8. **Ambient Soundscape** — Soft, procedurally generated ambient audio (birdsong, gentle breeze, water droplets) that shifts with the time-of-day themes, deepening the meditative quality of the garden. Users can toggle the soundscape on/off. ✅
-9. **Garden Reflection Stats** — A gentle statistics panel or expanded journal section that shows the garden's overall health: total flowers bloomed, current season, time since last tending, a "garden mood" based on how well-tended it is. Not gamification — just a mirror held up to show the caretaker what they've nurtured. Purely additive to the journal, never replacing the organic feel. ✅
-10. **Garden Moments** — A way to capture and share a snapshot of the garden at a point in time: the current layout of tiles, bloom colors, weather, season, and mood rendered as a small shareable card or image. Not social media — just a quiet way to say "here is my garden today." Deepens the emotional resonance by making moments tangible without breaking the calm atmosphere. ✅
+9. **Garden Reflection Stats** — A gentle statistics panel showing the garden's overall health: total flowers bloomed, current season, time since last tending, and a "garden mood" based on how well-tended it is. ✅
+10. **Garden Moments** — A way to capture and share a snapshot of the garden at a point in time: the current layout of tiles, bloom colors, weather, season, and mood rendered as a small shareable card. ✅
+11. **Garden History Timeline** — A collapsible section in the journal panel that records chronological visit snapshots (date/time, planted count, mood, flower count, weather) with poetic descriptions, persisting via localStorage. ✅
+12. **Garden Export/Import** — Download full garden state as a JSON file and restore from a previously exported file, enabling sharing between devices. ✅
+13. **Distinct Flower Morphology** — Five unique CSS flower types (daisy, tulip, rose, star, lily) with distinct petal shapes, sizes, and arrangements, making each planted tile visually unique. ✅
 
 ## Completed Features
 
-All core vision items have been implemented. Future enhancements could include:
-- Garden export/import for sharing between devices
-- Additional flower types and garden decorations
-- Weather forecast affecting garden predictions
-- Garden history timeline showing evolution over multiple sessions
+All core vision items and major enhancements have been implemented, including Garden Reflection Stats, Garden Moments, Garden History, Garden Export/Import, Garden Gallery, Garden Rings bloom visualization, garden completion celebration, self-seeding volunteer plants, weather system with growth integration, and distinct flower type morphology. The garden is a fully-featured living digital ecosystem.

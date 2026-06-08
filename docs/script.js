@@ -10,7 +10,7 @@ import { startSelfSeeding } from './js/selfseeding.js';
 import { initGardenRings, notifyStatsRevealed } from './js/garden-rings.js';
 import { initGardenGallery } from './js/garden-gallery.js';
 import { initGardenMoments, notifyMomentsRevealed } from './js/garden-moments.js';
-import { initGardenHistory, captureGardenVisit, revealHistoryToggle } from './js/garden-history.js';
+import { initGardenHistory, captureGardenVisit } from './js/garden-history.js';
 import { exportGarden, importGarden } from './js/export-import.js';
 
 

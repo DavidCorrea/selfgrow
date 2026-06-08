@@ -4540,6 +4540,340 @@ body.theme-night {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   Flower Type Morphology
+   Each flower type (daisy, tulip, rose, star, lily) gets
+   distinct petal shapes, sizes, and arrangements using
+   only CSS transforms, border-radius, and pseudo-elements
+   on the existing .tile-petal elements.
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Shared: base petal reset for typed flowers ── */
+.tile-sprout[class*="flower-"] .tile-petal {
+  border-radius: 50% 0 50% 50%;
+  transition: transform 0.6s ease, border-radius 0.6s ease, width 0.6s ease, height 0.6s ease;
+}
+
+/* ── DAISY: elongated oval petals, larger center ── */
+.tile-sprout.flower-daisy .tile-petal {
+  width: 0.28rem;
+  height: 0.48rem;
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+}
+
+.tile-sprout.flower-daisy .tile-petal--1 { transform: translate(-50%, -50%) rotate(0deg) translateY(-0.36rem); }
+.tile-sprout.flower-daisy .tile-petal--2 { transform: translate(-50%, -50%) rotate(60deg) translateY(-0.36rem); }
+.tile-sprout.flower-daisy .tile-petal--3 { transform: translate(-50%, -50%) rotate(120deg) translateY(-0.36rem); }
+.tile-sprout.flower-daisy .tile-petal--4 { transform: translate(-50%, -50%) rotate(180deg) translateY(-0.36rem); }
+.tile-sprout.flower-daisy .tile-petal--5 { transform: translate(-50%, -50%) rotate(240deg) translateY(-0.36rem); }
+.tile-sprout.flower-daisy .tile-petal--6 { transform: translate(-50%, -50%) rotate(300deg) translateY(-0.36rem); }
+
+.tile-sprout.flower-daisy .tile-center {
+  width: 0.32rem;
+  height: 0.32rem;
+  box-shadow: 0 0 0.2rem rgba(251, 191, 36, 0.6), 0 0 0.4rem rgba(251, 191, 36, 0.2);
+}
+
+/* ── TULIP: cupped/funnel-shaped petals forming a cup ── */
+.tile-sprout.flower-tulip .tile-flower {
+  width: 0.85rem;
+  height: 0.95rem;
+}
+
+.tile-sprout.flower-tulip .tile-petal {
+  width: 0.3rem;
+  height: 0.5rem;
+  border-radius: 50% 50% 20% 20% / 70% 70% 30% 30%;
+}
+
+.tile-sprout.flower-tulip .tile-petal--1 {
+  transform: translate(-50%, -50%) rotate(-15deg) translateY(-0.2rem);
+  border-radius: 60% 40% 20% 20% / 80% 60% 30% 30%;
+}
+.tile-sprout.flower-tulip .tile-petal--2 {
+  transform: translate(-50%, -50%) rotate(15deg) translateY(-0.2rem);
+  border-radius: 40% 60% 20% 20% / 60% 80% 30% 30%;
+}
+.tile-sprout.flower-tulip .tile-petal--3 {
+  transform: translate(-50%, -50%) rotate(0deg) translateY(-0.3rem);
+  border-radius: 50% 50% 20% 20% / 70% 70% 30% 30%;
+}
+.tile-sprout.flower-tulip .tile-petal--4 {
+  transform: translate(-50%, -50%) rotate(165deg) translateY(-0.15rem);
+  opacity: 0.5;
+  width: 0.22rem;
+  height: 0.35rem;
+}
+.tile-sprout.flower-tulip .tile-petal--5 {
+  transform: translate(-50%, -50%) rotate(195deg) translateY(-0.15rem);
+  opacity: 0.5;
+  width: 0.22rem;
+  height: 0.35rem;
+}
+.tile-sprout.flower-tulip .tile-petal--6 {
+  transform: translate(-50%, -50%) rotate(180deg) translateY(-0.22rem);
+  opacity: 0.35;
+  width: 0.2rem;
+  height: 0.3rem;
+}
+
+.tile-sprout.flower-tulip .tile-center {
+  width: 0.18rem;
+  height: 0.18rem;
+  opacity: 0.7;
+}
+
+/* ── ROSE: layered/spiral petals with tighter center ── */
+.tile-sprout.flower-rose .tile-flower {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.tile-sprout.flower-rose .tile-petal {
+  width: 0.32rem;
+  height: 0.38rem;
+  border-radius: 40% 60% 50% 50% / 50% 50% 50% 50%;
+}
+
+/* Inner layer: 3 petals tight around center */
+.tile-sprout.flower-rose .tile-petal--1 {
+  transform: translate(-50%, -50%) rotate(20deg) translateY(-0.14rem);
+  width: 0.26rem;
+  height: 0.3rem;
+  border-radius: 50% 50% 40% 40%;
+}
+.tile-sprout.flower-rose .tile-petal--2 {
+  transform: translate(-50%, -50%) rotate(140deg) translateY(-0.14rem);
+  width: 0.26rem;
+  height: 0.3rem;
+  border-radius: 50% 50% 40% 40%;
+}
+.tile-sprout.flower-rose .tile-petal--3 {
+  transform: translate(-50%, -50%) rotate(260deg) translateY(-0.14rem);
+  width: 0.26rem;
+  height: 0.3rem;
+  border-radius: 50% 50% 40% 40%;
+}
+
+/* Outer layer: 3 petals wider, slightly rotated */
+.tile-sprout.flower-rose .tile-petal--4 {
+  transform: translate(-50%, -50%) rotate(0deg) translateY(-0.38rem);
+  border-radius: 45% 55% 50% 50% / 55% 45% 50% 50%;
+}
+.tile-sprout.flower-rose .tile-petal--5 {
+  transform: translate(-50%, -50%) rotate(120deg) translateY(-0.38rem);
+  border-radius: 45% 55% 50% 50% / 55% 45% 50% 50%;
+}
+.tile-sprout.flower-rose .tile-petal--6 {
+  transform: translate(-50%, -50%) rotate(240deg) translateY(-0.38rem);
+  border-radius: 45% 55% 50% 50% / 55% 45% 50% 50%;
+}
+
+.tile-sprout.flower-rose .tile-center {
+  width: 0.2rem;
+  height: 0.2rem;
+  box-shadow: 0 0 0.12rem rgba(251, 191, 36, 0.4);
+}
+
+/* ── STAR: pointed narrow petals in a star pattern ── */
+.tile-sprout.flower-star .tile-flower {
+  width: 1.2rem;
+  height: 1.2rem;
+}
+
+.tile-sprout.flower-star .tile-petal {
+  width: 0.18rem;
+  height: 0.55rem;
+  border-radius: 50% 50% 10% 10% / 80% 80% 20% 20%;
+}
+
+.tile-sprout.flower-star .tile-petal--1 { transform: translate(-50%, -50%) rotate(0deg) translateY(-0.42rem); }
+.tile-sprout.flower-star .tile-petal--2 { transform: translate(-50%, -50%) rotate(60deg) translateY(-0.42rem); }
+.tile-sprout.flower-star .tile-petal--3 { transform: translate(-50%, -50%) rotate(120deg) translateY(-0.42rem); }
+.tile-sprout.flower-star .tile-petal--4 { transform: translate(-50%, -50%) rotate(180deg) translateY(-0.42rem); }
+.tile-sprout.flower-star .tile-petal--5 { transform: translate(-50%, -50%) rotate(240deg) translateY(-0.42rem); }
+.tile-sprout.flower-star .tile-petal--6 { transform: translate(-50%, -50%) rotate(300deg) translateY(-0.42rem); }
+
+.tile-sprout.flower-star .tile-center {
+  width: 0.22rem;
+  height: 0.22rem;
+  border-radius: 50%;
+  box-shadow: 0 0 0.15rem rgba(251, 191, 36, 0.5);
+}
+
+/* ── LILY: recurved petals with prominent stamens ── */
+.tile-sprout.flower-lily .tile-flower {
+  width: 1.1rem;
+  height: 1.05rem;
+}
+
+.tile-sprout.flower-lily .tile-petal {
+  width: 0.3rem;
+  height: 0.52rem;
+  border-radius: 30% 70% 40% 60% / 60% 60% 40% 40%;
+}
+
+/* Petals curve backward (recurved) via rotation + position */
+.tile-sprout.flower-lily .tile-petal--1 {
+  transform: translate(-50%, -50%) rotate(-25deg) translateY(-0.3rem);
+  border-radius: 20% 80% 30% 70% / 50% 70% 30% 50%;
+}
+.tile-sprout.flower-lily .tile-petal--2 {
+  transform: translate(-50%, -50%) rotate(25deg) translateY(-0.3rem);
+  border-radius: 80% 20% 70% 30% / 70% 50% 50% 30%;
+}
+.tile-sprout.flower-lily .tile-petal--3 {
+  transform: translate(-50%, -50%) rotate(90deg) translateY(-0.3rem);
+  border-radius: 50% 50% 30% 70% / 60% 40% 60% 40%;
+}
+.tile-sprout.flower-lily .tile-petal--4 {
+  transform: translate(-50%, -50%) rotate(155deg) translateY(-0.28rem);
+  border-radius: 70% 30% 60% 40% / 40% 60% 40% 60%;
+}
+.tile-sprout.flower-lily .tile-petal--5 {
+  transform: translate(-50%, -50%) rotate(205deg) translateY(-0.28rem);
+  border-radius: 30% 70% 40% 60% / 60% 40% 60% 40%;
+}
+.tile-sprout.flower-lily .tile-petal--6 {
+  transform: translate(-50%, -50%) rotate(270deg) translateY(-0.3rem);
+  border-radius: 50% 50% 70% 30% / 40% 60% 40% 60%;
+}
+
+.tile-sprout.flower-lily .tile-center {
+  width: 0.2rem;
+  height: 0.2rem;
+  box-shadow: 0 0 0.1rem rgba(251, 191, 36, 0.35);
+}
+
+/* Lily stamen pseudo-elements — thin lines radiating from center */
+.tile-sprout.flower-lily .tile-flower::before,
+.tile-sprout.flower-lily .tile-flower::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0.04rem;
+  height: 0.28rem;
+  background: rgba(251, 191, 36, 0.5);
+  border-radius: 0.02rem;
+  transform-origin: bottom center;
+  z-index: 3;
+}
+
+.tile-sprout.flower-lily .tile-flower::before {
+  transform: translate(-50%, -100%) rotate(-30deg);
+}
+
+.tile-sprout.flower-lily .tile-flower::after {
+  transform: translate(-50%, -100%) rotate(30deg);
+}
+
+/* ── WILDFLOWER (volunteer): irregular, asymmetric petals with a rustic charm ── */
+.tile-sprout.flower-wildflower .tile-flower {
+  width: 1.2rem;
+  height: 1.15rem;
+}
+
+.tile-sprout.flower-wildflower .tile-petal {
+  width: 0.26rem;
+  height: 0.42rem;
+  border-radius: 55% 45% 50% 50% / 65% 55% 35% 45%;
+  opacity: 0.85;
+}
+
+.tile-sprout.flower-wildflower .tile-petal--1 {
+  transform: translate(-50%, -50%) rotate(-8deg) translateY(-0.35rem);
+  border-radius: 60% 40% 50% 50% / 70% 50% 30% 50%;
+}
+
+.tile-sprout.flower-wildflower .tile-petal--2 {
+  transform: translate(-50%, -50%) rotate(55deg) translateY(-0.32rem) scaleX(0.9);
+  border-radius: 45% 55% 45% 55% / 55% 65% 35% 45%;
+}
+
+.tile-sprout.flower-wildflower .tile-petal--3 {
+  transform: translate(-50%, -50%) rotate(125deg) translateY(-0.3rem) scaleY(1.05);
+  border-radius: 50% 50% 40% 60% / 60% 55% 40% 45%;
+}
+
+.tile-sprout.flower-wildflower .tile-petal--4 {
+  transform: translate(-50%, -50%) rotate(192deg) translateY(-0.28rem) scaleX(0.88);
+  border-radius: 40% 60% 55% 45% / 50% 60% 40% 50%;
+}
+
+.tile-sprout.flower-wildflower .tile-petal--5 {
+  transform: translate(-50%, -50%) rotate(250deg) translateY(-0.33rem) scale(0.92);
+  border-radius: 55% 45% 45% 55% / 65% 50% 35% 50%;
+}
+
+.tile-sprout.flower-wildflower .tile-petal--6 {
+  transform: translate(-50%, -50%) rotate(310deg) translateY(-0.26rem) scaleY(0.85);
+  width: 0.22rem;
+  height: 0.36rem;
+  border-radius: 48% 52% 52% 48% / 48% 62% 38% 52%;
+}
+
+.tile-sprout.flower-wildflower .tile-center {
+  width: 0.3rem;
+  height: 0.3rem;
+  box-shadow: 0 0 0.12rem rgba(251, 191, 36, 0.35);
+}
+
+/* ── Moment card mini-flower morphology ── */
+.moment-flower.flower-daisy .moment-petal {
+  width: 0.16rem;
+  height: 0.28rem;
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+}
+
+.moment-flower.flower-daisy .moment-flower__center {
+  width: 0.14rem;
+  height: 0.14rem;
+}
+
+.moment-flower.flower-tulip .moment-petal {
+  width: 0.18rem;
+  height: 0.28rem;
+  border-radius: 50% 50% 20% 20% / 70% 70% 30% 30%;
+}
+
+.moment-flower.flower-rose .moment-petal {
+  width: 0.18rem;
+  height: 0.22rem;
+  border-radius: 40% 60% 50% 50% / 50% 50% 50% 50%;
+}
+
+.moment-flower.flower-star .moment-petal {
+  width: 0.1rem;
+  height: 0.32rem;
+  border-radius: 50% 50% 10% 10% / 80% 80% 20% 20%;
+}
+
+.moment-flower.flower-lily .moment-petal {
+  width: 0.18rem;
+  height: 0.3rem;
+  border-radius: 30% 70% 40% 60% / 60% 60% 40% 40%;
+}
+
+.moment-flower.flower-wildflower .moment-petal {
+  width: 0.14rem;
+  height: 0.24rem;
+  border-radius: 55% 45% 50% 50% / 65% 55% 35% 45%;
+  opacity: 0.85;
+}
+
+.moment-flower.flower-wildflower .moment-flower__center {
+  width: 0.12rem;
+  height: 0.12rem;
+}
+
+/* ── Reduced Motion: disable petal transitions ── */
+@media (prefers-reduced-motion: reduce) {
+  .tile-sprout[class*="flower-"] .tile-petal {
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
    Garden History Timeline
    Collapsible section in the journal panel showing
    chronological visit snapshots — the garden's memory

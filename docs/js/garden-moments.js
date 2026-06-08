@@ -1,4 +1,4 @@
-import { dom, plantedCount, totalTiles, tileColorMap, journalEntries, totalVolunteers, fertilizedTiles } from './state.js';
+import { dom, plantedCount, totalTiles, tileColorMap, tileFlowerTypeMap, journalEntries, totalVolunteers, fertilizedTiles } from './state.js';
 import { getCurrentSeasonName } from './theme.js';
 import { getCurrentWeather } from './weather.js';
 import { getBloomingCount, getPlantedCount } from './visitors.js';
@@ -166,6 +166,10 @@ function buildMomentCard() {
       var flower = document.createElement('div');
       flower.classList.add('moment-flower');
       flower.style.setProperty('--flower-color', tileColor);
+      var fType = tileFlowerTypeMap[i];
+      if (fType) {
+        flower.classList.add('flower-' + fType);
+      }
 
       var center = document.createElement('div');
       center.classList.add('moment-flower__center');
