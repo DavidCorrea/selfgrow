@@ -1,5 +1,5 @@
 import { dom, gridRevealed } from './js/state.js';
-import { saveGardenState, loadGardenState, restoreGardenState } from './js/persistence.js';
+import { saveGardenState, loadGardenState, restoreGardenState, restoreWelcomeCard } from './js/persistence.js';
 import { initTheme } from './js/theme.js';
 import { addJournalEntry, getRandomMessage } from './js/journal.js';
 import { plantTile, startGrowthCycle, updateCounter, revealGrid, toggleWateringMode, waterTile, isWateringMode, toggleFertilizeMode, fertilizeTile, isFertilizeMode, togglePruneMode, pruneTile, isPruneMode } from './js/tiles.js';
@@ -259,6 +259,8 @@ import { exportGarden, importGarden } from './js/export-import.js';
 
   // ── Restore saved garden after all functions are ready ──
   if (savedState && savedState.plantedCount > 0) {
+    planted = true;
+    restoreWelcomeCard(savedState);
     restoreGardenState(
       savedState,
       {

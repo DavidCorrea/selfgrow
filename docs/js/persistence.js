@@ -187,6 +187,51 @@ function getWeatherDefaultMessage(weatherState) {
   return msgs[weatherState] || 'the sky shifts';
 }
 
+export function restoreWelcomeCard(state) {
+  if (!state || !state.plantedCount || state.plantedCount === 0) return;
+
+  var seed = dom.seed;
+  var sprout = dom.sprout;
+  var hint = dom.hint;
+  var message = dom.message;
+  var card = dom.card;
+  var garden = dom.garden;
+
+  if (hint) {
+    hint.classList.add('fade-out');
+  }
+
+  if (card) {
+    card.classList.add('glow-intensify');
+  }
+
+  if (seed) {
+    seed.classList.add('visible');
+  }
+
+  if (sprout) {
+    sprout.classList.add('grown');
+  }
+
+  var count = state.plantedCount || 0;
+
+  if (message) {
+    var returningMessages = [
+      'welcome back, garden keeper — ' + count + ' flower' + (count !== 1 ? 's' : '') + ' blooming',
+      'your garden remembers you — ' + count + ' flower' + (count !== 1 ? 's' : '') + ' await',
+      'the soil stirs with familiarity — ' + count + ' bloom' + (count !== 1 ? 's' : '') + ' strong',
+      'you return to find ' + count + ' flower' + (count !== 1 ? 's' : '') + ' thriving',
+      'the garden has been waiting — ' + count + ' bloom' + (count !== 1 ? 's' : '') + ' greet you'
+    ];
+    message.textContent = returningMessages[Math.floor(Math.random() * returningMessages.length)];
+    message.classList.add('visible');
+  }
+
+  if (garden) {
+    garden.setAttribute('aria-label', 'Your garden — ' + count + ' flowers blooming');
+  }
+}
+
 export function restoreGardenState(state, callbacks) {
   if (!state) return;
 
