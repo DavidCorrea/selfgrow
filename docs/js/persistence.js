@@ -1,4 +1,4 @@
-import { dom, journalEntries, wateredTiles, fertilizedTiles, prunedTiles, tileCycleState, tileColorMap, plantedCount, totalVolunteers, gridRevealed, journalRevealed, tendingRevealed, petalPalettes, centerColors, getRandomGridMessage, getRandomWateringHint, getRandomCycleMessage, CYCLE_HOLD_BLOOM, CYCLE_SEED_OFFSET, CYCLE_WILT_DURATION, CYCLE_PAUSE_AFTER_WILT } from './state.js';
+import { dom, journalEntries, wateredTiles, fertilizedTiles, prunedTiles, tileCycleState, tileColorMap, tileFlowerTypeMap, plantedCount, totalVolunteers, gridRevealed, journalRevealed, tendingRevealed, petalPalettes, centerColors, flowerTypes, getRandomGridMessage, getRandomWateringHint, getRandomCycleMessage, CYCLE_HOLD_BLOOM, CYCLE_SEED_OFFSET, CYCLE_WILT_DURATION, CYCLE_PAUSE_AFTER_WILT } from './state.js';
 
 import { formatTime } from './journal.js';
 import { getCurrentWeather, getWeatherModifier } from './weather.js';
@@ -15,6 +15,7 @@ export function saveGardenState() {
     prunedTiles: {},
     tileCycleState: {},
     tileColorMap: {},
+    tileFlowerTypeMap: {},
     journalEntries: journalEntries,
     plantedCount: plantedCount.value,
     totalVolunteers: totalVolunteers.value,
@@ -43,11 +44,15 @@ export function saveGardenState() {
         state.tileCycleState[tileIndex] = {
           cycle: tileCycleState[tileIndex].cycle,
           stage: tileCycleState[tileIndex].stage || 'planted',
-          isVolunteer: tileCycleState[tileIndex].isVolunteer || false
+          isVolunteer: tileCycleState[tileIndex].isVolunteer || false,
+          flowerType: tileCycleState[tileIndex].flowerType || tileFlowerTypeMap[tileIndex] || null
         };
       }
       if (tileColorMap[tileIndex]) {
         state.tileColorMap[tileIndex] = tileColorMap[tileIndex];
+      }
+      if (tileFlowerTypeMap[tileIndex]) {
+        state.tileFlowerTypeMap[tileIndex] = tileFlowerTypeMap[tileIndex];
       }
     });
   }
@@ -107,7 +112,7 @@ function hideRestoringOverlay() {
   }
 }
 
-export function applyTileColors(tileEl, tileIndex) {
+export function applyTileColors(tileEl, tileIndex, flowerType) {
   var palette = petalPalettes[tileIndex % petalPalettes.length];
   var centerColor = centerColors[tileIndex % centerColors.length];
   var petalEls = tileEl.querySelectorAll('.tile-petal');
@@ -120,6 +125,18 @@ export function applyTileColors(tileEl, tileIndex) {
   if (centerEl) {
     centerEl.style.background = centerColor;
     centerEl.style.boxShadow = '0 0 0.2rem rgba(251, 191, 36, 0.5)';
+  }
+
+  // Apply flower type CSS class for morphology
+  if (flowerType) {
+    var sproutEl = tileEl.querySelector('.tile-sprout');
+    if (sproutEl) {
+      // Remove any existing flower type classes
+      flowerTypes.forEach(function (ft) {
+        sproutEl.classList.remove('flower-' + ft);
+      });
+      sproutEl.classList.add('flower-' + flowerType);
+    }
   }
 
   return palette;
@@ -214,12 +231,20 @@ export function restoreGardenState(state, callbacks) {
     }
   }
 
+  if (state.tileFlowerTypeMap) {
+    for (var fKey in state.tileFlowerTypeMap) {
+      tileFlowerTypeMap[fKey] = state.tileFlowerTypeMap[fKey];
+    }
+  }
+
   if (state.tileCycleState) {
     for (var idx in state.tileCycleState) {
       tileCycleState[idx] = {
         cycle: state.tileCycleState[idx].cycle,
         stage: state.tileCycleState[idx].stage,
-        timeouts: []
+        timeouts: [],
+        flowerType: state.tileCycleState[idx].flowerType || null,
+        isVolunteer: state.tileCycleState[idx].isVolunteer || false
       };
     }
   }
@@ -363,7 +388,8 @@ function restorePlantedTile(tileEl, tileIndex, state, startGrowthCycle, updateCo
   var cycleData = state.tileCycleState && state.tileCycleState[tileIndex] ? state.tileCycleState[tileIndex] : null;
   var wasVolunteer = cycleData && cycleData.isVolunteer;
 
-  applyTileColors(tileEl, tileIndex);
+  var savedFlowerType = tileFlowerTypeMap[tileIndex];
+  applyTileColors(tileEl, tileIndex, savedFlowerType);
 
   tileEl.classList.add('planted');
   if (wasVolunteer) {
@@ -401,9 +427,19 @@ function restorePlantedTile(tileEl, tileIndex, state, startGrowthCycle, updateCo
     cycle = tileCycleState[tileIndex].cycle;
   }
 
+  // Restore flower type CSS class on sprout
+  var fType = tileFlowerTypeMap[tileIndex];
   var tileSprout = tileEl.querySelector('.tile-sprout');
   var tileSeed = tileEl.querySelector('.tile-seed');
   var badge = tileEl.querySelector('.tile-cycle-badge');
+
+  if (fType && tileSprout) {
+    flowerTypes.forEach(function (ft) {
+      tileSprout.classList.remove('flower-' + ft);
+    });
+    tileSprout.classList.remove('flower-wildflower');
+    tileSprout.classList.add('flower-' + fType);
+  }
 
   tileSeed.classList.remove('visible');
   tileSprout.classList.remove('growing', 'budding', 'blooming', 'wilting');

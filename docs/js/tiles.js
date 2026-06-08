@@ -1,4 +1,4 @@
-import { dom, plantedCount, gridRevealed, tendingRevealed, journalEntries, wateredTiles, fertilizedTiles, prunedTiles, tileCycleState, tileColorMap, petalPalettes, CYCLE_HOLD_BLOOM, CYCLE_WILT_DURATION, CYCLE_PAUSE_AFTER_WILT, CYCLE_SEED_OFFSET, totalTiles, getRandomGridMessage, getRandomWateringHint, getRandomCycleMessage, getRandomFertilizeHint, getRandomFertilizeMessage, getRandomPruneMessage, getRandomPruneHint } from './state.js';
+import { dom, plantedCount, gridRevealed, tendingRevealed, journalEntries, wateredTiles, fertilizedTiles, prunedTiles, tileCycleState, tileColorMap, tileFlowerTypeMap, petalPalettes, flowerTypes, CYCLE_HOLD_BLOOM, CYCLE_WILT_DURATION, CYCLE_PAUSE_AFTER_WILT, CYCLE_SEED_OFFSET, totalTiles, getRandomGridMessage, getRandomWateringHint, getRandomCycleMessage, getRandomFertilizeHint, getRandomFertilizeMessage, getRandomPruneMessage, getRandomPruneHint, getRandomFlowerType } from './state.js';
 import { saveGardenState, applyTileColors, addWateredIcon, addFertilizedIcon } from './persistence.js';
 // Note: addWateredIcon and addFertilizedIcon are imported from persistence.js
 // to avoid circular dependency. Do NOT re-declare them locally below.
@@ -235,6 +235,16 @@ export function startGrowthCycle(tileEl, tileIndex) {
   if (!state) return;
 
   var tileSprout = tileEl.querySelector('.tile-sprout');
+
+  // Re-apply flower type class (it gets removed during cycle transitions)
+  var fType = state.flowerType || tileFlowerTypeMap[tileIndex];
+  if (fType && tileSprout) {
+    flowerTypes.forEach(function (ft) {
+      tileSprout.classList.remove('flower-' + ft);
+    });
+    tileSprout.classList.remove('flower-wildflower');
+    tileSprout.classList.add('flower-' + fType);
+  }
   var tileSeed = tileEl.querySelector('.tile-seed');
   var badge = tileEl.querySelector('.tile-cycle-badge');
   var palette = petalPalettes[tileIndex % petalPalettes.length];
@@ -447,11 +457,15 @@ export function plantTile(tileEl) {
   var tileIndex = parseInt(tileEl.getAttribute('data-tile'), 10);
   var gridHint = dom.gridHint;
 
-  var palette = applyTileColors(tileEl, tileIndex);
+  // Assign a random flower morphology type
+  var flowerType = getRandomFlowerType();
+  tileFlowerTypeMap[tileIndex] = flowerType;
+
+  var palette = applyTileColors(tileEl, tileIndex, flowerType);
   var primaryColor = palette[0];
   tileColorMap[tileIndex] = primaryColor;
 
-  tileCycleState[tileIndex] = { cycle: 1, stage: 'planted', timeouts: [] };
+  tileCycleState[tileIndex] = { cycle: 1, stage: 'planted', timeouts: [], flowerType: flowerType };
 
   tileEl.classList.add('planted');
   tileEl.setAttribute('aria-label', 'Tile ' + (tileIndex + 1) + ' planted');

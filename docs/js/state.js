@@ -13,6 +13,7 @@ export var prunedTiles = {};
 export var tileCycleState = {};
 export var tileColorMap = {};
 export var totalVolunteers = { value: 0 };
+export var tileFlowerTypeMap = {};
 
 // DOM refs (set by main script.js after DOM ready)
 export var dom = {};
@@ -37,6 +38,12 @@ export var petalPalettes = [
 ];
 
 export var centerColors = ['#fbbf24', '#fde68a', '#fcd34d', '#f59e0b', '#eab308'];
+
+export var flowerTypes = ['daisy', 'tulip', 'rose', 'star', 'lily'];
+
+export function getRandomFlowerType() {
+  return flowerTypes[Math.floor(Math.random() * flowerTypes.length)];
+}
 
 var gridMessages = [
   "your garden is growing",

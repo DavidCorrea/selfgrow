@@ -2,7 +2,7 @@
 // When the garden is thriving, volunteer seeds spontaneously sprout on empty tiles.
 // This makes the garden feel like a living, self-sustaining ecosystem.
 
-import { dom, tileCycleState, tileColorMap, plantedCount, journalEntries, totalVolunteers, totalTiles } from './state.js';
+import { dom, tileCycleState, tileColorMap, tileFlowerTypeMap, plantedCount, journalEntries, totalVolunteers, totalTiles } from './state.js';
 import { saveGardenState } from './persistence.js';
 import { getCurrentWeather, getWeatherModifier } from './weather.js';
 import { getBloomingCount } from './visitors.js';
@@ -198,7 +198,16 @@ function plantVolunteer(tileEl) {
 
   tileColorMap[tileIndex] = wildPalette[0];
 
-  tileCycleState[tileIndex] = { cycle: 1, stage: 'volunteer', timeouts: [], isVolunteer: true };
+  // Volunteers get the 'wildflower' morphology
+  tileFlowerTypeMap[tileIndex] = 'wildflower';
+
+  tileCycleState[tileIndex] = { cycle: 1, stage: 'volunteer', timeouts: [], isVolunteer: true, flowerType: 'wildflower' };
+
+  // Apply wildflower CSS class to sprout
+  var sproutEl = tileEl.querySelector('.tile-sprout');
+  if (sproutEl) {
+    sproutEl.classList.add('flower-wildflower');
+  }
 
   tileEl.classList.add('planted', 'volunteer', 'volunteer-landing');
   tileEl.setAttribute('aria-label', 'Tile ' + (tileIndex + 1) + ' volunteer plant');
