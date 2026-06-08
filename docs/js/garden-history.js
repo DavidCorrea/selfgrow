@@ -379,7 +379,4 @@ export function captureGardenVisit() {
   }
 }
 
-// ── Public: Reveal the toggle button ──
-export function revealHistoryToggle() {
-  createHistoryToggle();
-}
+

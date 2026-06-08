@@ -301,6 +301,7 @@ export function startGrowthCycle(tileEl, tileIndex) {
       if (!tileEl.classList.contains('planted')) return;
       tileSprout.classList.remove('regrow-bloom');
       tileSprout.classList.add('grown');
+      tileSprout.classList.add('fresh-bloom');
       createTileSparkles(tileEl);
 
       if (badge) {
@@ -330,6 +331,7 @@ export function startGrowthCycle(tileEl, tileIndex) {
         if (!tileEl.classList.contains('planted')) return;
 
         tileSprout.classList.remove('grown');
+        tileSprout.classList.remove('fresh-bloom');
         tileSprout.classList.add('regrow-wilt');
 
         var regrowRestartTimeout = setTimeout(function () {
@@ -517,6 +519,7 @@ export function plantTile(tileEl) {
     var tileSprout = tileEl.querySelector('.tile-sprout');
     tileSprout.classList.remove('blooming');
     tileSprout.classList.add('grown');
+    tileSprout.classList.add('fresh-bloom');
     createTileSparkles(tileEl);
 
     var badge = tileEl.querySelector('.tile-cycle-badge');
@@ -554,6 +557,7 @@ export function plantTile(tileEl) {
       if (!tileEl.classList.contains('planted')) return;
 
       tileSprout.classList.remove('grown');
+      tileSprout.classList.remove('fresh-bloom');
       tileSprout.classList.add('wilting');
 
       setTimeout(function () {

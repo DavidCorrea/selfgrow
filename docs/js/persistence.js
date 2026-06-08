@@ -127,16 +127,20 @@ export function applyTileColors(tileEl, tileIndex, flowerType) {
     centerEl.style.boxShadow = '0 0 0.2rem rgba(251, 191, 36, 0.5)';
   }
 
+  var sproutEl = tileEl.querySelector('.tile-sprout');
+
+  // Set the bloom glow color from the tile's primary petal color
+  if (sproutEl) {
+    sproutEl.style.setProperty('--bloom-color', palette[0]);
+  }
+
   // Apply flower type CSS class for morphology
-  if (flowerType) {
-    var sproutEl = tileEl.querySelector('.tile-sprout');
-    if (sproutEl) {
-      // Remove any existing flower type classes
-      flowerTypes.forEach(function (ft) {
-        sproutEl.classList.remove('flower-' + ft);
-      });
-      sproutEl.classList.add('flower-' + flowerType);
-    }
+  if (flowerType && sproutEl) {
+    // Remove any existing flower type classes
+    flowerTypes.forEach(function (ft) {
+      sproutEl.classList.remove('flower-' + ft);
+    });
+    sproutEl.classList.add('flower-' + flowerType);
   }
 
   return palette;
@@ -457,6 +461,10 @@ function restorePlantedTile(tileEl, tileIndex, state, startGrowthCycle, updateCo
     }
   }
 
+  if (prunedTiles[tileIndex]) {
+    tileEl.classList.add('pruned-tile');
+  }
+
   // Apply current weather visual class to restored tile
   var currentW = getCurrentWeather();
   if (currentW === 'sunny') {
@@ -489,6 +497,7 @@ function restorePlantedTile(tileEl, tileIndex, state, startGrowthCycle, updateCo
   tileSeed.classList.remove('visible');
   tileSprout.classList.remove('growing', 'budding', 'blooming', 'wilting');
   tileSprout.classList.add('grown');
+  tileSprout.classList.add('fresh-bloom');
 
   if (badge) {
     badge.textContent = wasVolunteer ? '🌿 ' + cycle : '🌸 ' + cycle;

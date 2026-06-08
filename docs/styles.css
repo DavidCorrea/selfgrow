@@ -906,6 +906,56 @@ body::before {
   50% { transform: rotate(3deg); }
 }
 
+/* ── Fresh-Bloom Life Force Glow ── */
+/* GPU-friendly pseudo-element glow that pulses on first bloom
+   and gently fades over the hold-bloom period (~8s). Uses the
+   tile's own --glow-color (set from petal palette via inline style
+   on the tile-sprout) so each bloom feels unique. */
+.tile-sprout.fresh-bloom {
+  --glow-color: var(--bloom-color, rgba(74, 222, 128, 0.4));
+}
+
+.tile-sprout.fresh-bloom::after {
+  content: '';
+  position: absolute;
+  top: 10%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at center,
+    var(--glow-color) 0%,
+    rgba(74, 222, 128, 0.15) 40%,
+    transparent 70%
+  );
+  opacity: 0;
+  pointer-events: none;
+  z-index: 1;
+  animation: bloomPulse 8s ease-out forwards;
+  will-change: opacity, transform;
+}
+
+@keyframes bloomPulse {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.6);
+  }
+  8% {
+    opacity: 0.7;
+    transform: translateX(-50%) scale(1.1);
+  }
+  20% {
+    opacity: 0.5;
+    transform: translateX(-50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.85);
+  }
+}
+
 /* ── Perennial Regrowth (Cycle 2+) ── */
 
 /* Dormant state: stem & leaves stay visible, flower collapses */
@@ -2853,22 +2903,6 @@ body::before {
   line-height: 1.35;
 }
 
-/* ── Reduced Motion ── */
-@media (prefers-reduced-motion: reduce) {
-  .import-modal,
-  .import-modal__content {
-    transition-duration: 0.01ms !important;
-  }
-
-  .import-modal__icon {
-    animation: none;
-  }
-
-  .import-error {
-    transition-duration: 0.01ms !important;
-  }
-}
-
 /* ── Responsive ── */
 @media (max-width: 375px) {
   .export-import-btns {
@@ -3966,17 +4000,6 @@ body.theme-night {
   flex-shrink: 0;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .gallery-modal,
-  .gallery-modal__content {
-    transition-duration: 0.01ms !important;
-  }
-
-  .gallery-modal__canvas {
-    display: none;
-  }
-}
-
 /* ═══════════════════════════════════════════════════════════
    Responsive Breakpoints
    ═══════════════════════════════════════════════════════════ */
@@ -4537,6 +4560,60 @@ body.theme-night {
   .garden-rings {
     transition-duration: 0.01ms !important;
   }
+
+  /* Consolidated from scattered reduced-motion blocks below */
+  .tile-sprout.fresh-bloom::after {
+    animation-duration: 0.01ms !important;
+    opacity: 0 !important;
+  }
+
+  .import-modal,
+  .import-modal__content {
+    transition-duration: 0.01ms !important;
+  }
+
+  .import-modal__icon {
+    animation: none;
+  }
+
+  .import-error {
+    transition-duration: 0.01ms !important;
+  }
+
+  .gallery-modal,
+  .gallery-modal__content {
+    transition-duration: 0.01ms !important;
+  }
+
+  .gallery-modal__canvas {
+    display: none;
+  }
+
+  .tile-sprout[class*="flower-"] .tile-petal {
+    transition-duration: 0.01ms !important;
+  }
+
+  .history-visit-card {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: translateX(0) !important;
+  }
+
+  .garden-history {
+    transition-duration: 0.01ms !important;
+  }
+
+  .moment-flower {
+    animation: none !important;
+    transform: scale(1) !important;
+    opacity: 1 !important;
+  }
+
+  .moment-card__poem {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: translateY(0) !important;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -4866,13 +4943,6 @@ body.theme-night {
   height: 0.12rem;
 }
 
-/* ── Reduced Motion: disable petal transitions ── */
-@media (prefers-reduced-motion: reduce) {
-  .tile-sprout[class*="flower-"] .tile-petal {
-    transition-duration: 0.01ms !important;
-  }
-}
-
 /* ═══════════════════════════════════════════════════════════
    Garden History Timeline
    Collapsible section in the journal panel showing
@@ -5149,19 +5219,6 @@ body.theme-night {
 
 .garden-history.visible::-webkit-scrollbar-thumb:hover {
   background: rgba(139, 119, 80, 0.25);
-}
-
-/* ── Reduced Motion ── */
-@media (prefers-reduced-motion: reduce) {
-  .history-visit-card {
-    animation: none !important;
-    opacity: 1 !important;
-    transform: translateX(0) !important;
-  }
-
-  .garden-history {
-    transition-duration: 0.01ms !important;
-  }
 }
 
 /* ── Tablet (768px+) ── */
@@ -5520,21 +5577,6 @@ body.theme-night {
   100% {
     opacity: 1;
     transform: translateY(0);
-  }
-}
-
-/* ── Reduced Motion ── */
-@media (prefers-reduced-motion: reduce) {
-  .moment-flower {
-    animation: none !important;
-    transform: scale(1) !important;
-    opacity: 1 !important;
-  }
-
-  .moment-card__poem {
-    animation: none !important;
-    opacity: 1 !important;
-    transform: translateY(0) !important;
   }
 }
 

@@ -241,7 +241,11 @@ import { exportGarden, importGarden } from './js/export-import.js';
   }
 
   // Show export/import buttons when stats are revealed
+  // Self-terminating observer: clears when stats become visible or after 30s
+  var statsRevealedObserverPollCount = 0;
+  var statsRevealedObserverMaxPolls = 60; // 60 x 500ms = 30s max
   var statsRevealedObserver = setInterval(function () {
+    statsRevealedObserverPollCount++;
     if (dom.gardenStats && dom.gardenStats.classList.contains('visible')) {
       if (exportImportContainer) {
         exportImportContainer.style.opacity = '0';
@@ -253,6 +257,8 @@ import { exportGarden, importGarden } from './js/export-import.js';
           exportImportContainer.style.transform = 'translateY(0)';
         });
       }
+      clearInterval(statsRevealedObserver);
+    } else if (statsRevealedObserverPollCount >= statsRevealedObserverMaxPolls) {
       clearInterval(statsRevealedObserver);
     }
   }, 500);
