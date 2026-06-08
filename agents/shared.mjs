@@ -15,6 +15,13 @@ import { execSync } from "child_process";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import fs from "fs";
+import {
+  AuthStorage,
+  createAgentSession,
+  DefaultResourceLoader,
+  ModelRegistry,
+  SessionManager,
+} from "@earendil-works/pi-coding-agent";
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -23,6 +30,70 @@ import fs from "fs";
 export const __dirname = dirname(fileURLToPath(import.meta.url));
 export const repoRoot = join(__dirname, "..");
 export const promptsDir = join(__dirname, "prompts");
+
+// ---------------------------------------------------------------------------
+// Agent runner
+// ---------------------------------------------------------------------------
+
+export function runAgent({ label = "Agent", systemPrompt, tools = ["read"] }) {
+  const authStorage = AuthStorage.create();
+  const modelRegistry = ModelRegistry.create(authStorage);
+  const model = modelRegistry.getAll().find(
+    (m) => m.provider === "openrouter" && m.id === "openrouter/owl-alpha"
+  );
+
+  const loader = new DefaultResourceLoader({ cwd: __dirname, agentDir: __dirname });
+  const startTime = Date.now();
+  log("info", `${label} agent started`);
+
+  return loader.reload().then(() =>
+    createAgentSession({
+      cwd: repoRoot,
+      sessionManager: SessionManager.inMemory(),
+      resourceLoader: loader,
+      model,
+      authStorage,
+      modelRegistry,
+      tools,
+    }).then(({ session }) => {
+      let output = "";
+      session.subscribe((event) => {
+        if (
+          event.type === "message_update" &&
+          event.assistantMessageEvent.type === "text_delta"
+        ) {
+          output += event.assistantMessageEvent.delta;
+        }
+      });
+
+      return session
+        .prompt(systemPrompt)
+        .then(() => {
+          const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+          const messages = session.state.messages;
+          const lastAssistant = [...messages].reverse().find(
+            (m) => m.role === "assistant"
+          );
+          if (lastAssistant && lastAssistant.content) {
+            const fullText = Array.isArray(lastAssistant.content)
+              ? lastAssistant.content
+                  .filter((c) => c.type === "text")
+                  .map((c) => c.text)
+                  .join("")
+              : lastAssistant.content;
+            if (fullText) output = fullText;
+          }
+          log("info", `${label} agent completed in ${elapsed}s`);
+          session.dispose();
+          return output;
+        })
+        .catch((err) => {
+          session.dispose();
+          throw err;
+        });
+    })
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Structured logger

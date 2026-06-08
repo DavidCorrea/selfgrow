@@ -2,13 +2,13 @@ import { execSync } from "child_process";
 import fs from "fs";
 import {
   repoRoot,
-  promptsDir,
   log,
   ghAnnotation,
   truncate,
   printRunSummary,
   errorData,
   loadPrompt,
+  runAgent,
 } from "./shared.mjs";
 
 // ---------------------------------------------------------------------------
@@ -128,6 +128,7 @@ async function main() {
   log("info", "--- Product Owner Daily Review ---");
 
   const rawOutput = await runAgent({
+    label: "Product Owner",
     systemPrompt: loadPrompt("product-owner"),
   });
 
