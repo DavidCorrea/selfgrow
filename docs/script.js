@@ -13,6 +13,7 @@ import { initGardenMoments, notifyMomentsRevealed } from './js/garden-moments.js
 import { initGardenHistory, captureGardenVisit } from './js/garden-history.js';
 import { exportGarden, importGarden } from './js/export-import.js';
 import { initSeedCollection, toggleCollectMode, collectSeed, isCollectMode, isPlantMode, plantSelectedSeed } from './js/seed-collection.js';
+import { initMilestones } from './js/milestones.js';
 
 
 (function () {
@@ -250,6 +251,9 @@ import { initSeedCollection, toggleCollectMode, collectSeed, isCollectMode, isPl
 
   // ── Initialize Self-Seeding ──
   startSelfSeeding();
+
+  // ── Initialize Milestones ──
+  initMilestones();
 
   // ── Initialize Export/Import Buttons ──
   var exportBtn = document.getElementById('exportGardenBtn');

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-06-09
+
+- **Added Garden Milestones system (implements VISION.md #15)**: A gentle, non-competitive recognition system that tracks four organic growth milestones — first bloom, all five flower types collected, ten flowers bloomed, and seven distinct days of tending. Milestone unlocks appear as warm amber/gold notification cards in the journal timeline with poetic descriptions, a soft breathing glow animation, and GPU-friendly transforms. Milestone state persists via localStorage so they never re-trigger. The `recordTendDay()` function tracks distinct calendar days with garden interactions (watering, fertilizing, pruning) to detect the 7-day milestone. All milestone checks are triggered from existing bloom/plant/collection events — no polling or external services. CSS respects `prefers-reduced-motion` and uses relative units for responsive sizing at 375px, 768px, and 1200px+.
+
 ## 2026-06-08
 
 - **Removed dead imports `fertilizedTiles` and `totalVolunteers` from garden-moments.js (closes #10)**: Both were imported from state.js but never referenced anywhere in the file's logic. Removed them from the import statement to keep the module clean.

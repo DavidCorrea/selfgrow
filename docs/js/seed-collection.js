@@ -4,6 +4,7 @@ import { addJournalEntry } from './journal.js';
 import { notifyStatsChange } from './stats.js';
 import { startGrowthCycle, updateCounter } from './tiles.js';
 import { triggerGardenComplete } from './celebration.js';
+import { checkCollectionMilestone } from './milestones.js';
 
 // ── Seed Collection State ──
 var collectMode = false;
@@ -237,6 +238,7 @@ export function collectSeed(tileEl, tileIndex) {
   }
 
   notifyStatsChange();
+  checkCollectionMilestone();
   return true;
 }
 

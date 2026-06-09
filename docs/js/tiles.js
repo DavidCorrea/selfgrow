@@ -7,6 +7,7 @@ import { notifyStatsChange } from './stats.js';
 import { triggerGardenComplete } from './celebration.js';
 import { recordBloom } from './garden-rings.js';
 import { getCurrentWeather, getWeatherModifier, onWeatherChange } from './weather.js';
+import { checkBloomMilestone, recordTendDay } from './milestones.js';
 
 var wateringMode = false;
 var fertilizeMode = false;
@@ -314,6 +315,7 @@ export function startGrowthCycle(tileEl, tileIndex) {
 
       recordBloom(tileIndex, state.cycle);
       notifyStatsChange();
+      checkBloomMilestone();
 
       if (state.cycle > 1 && gridHint) {
         gridHint.style.opacity = '0';
@@ -407,6 +409,7 @@ export function startGrowthCycle(tileEl, tileIndex) {
 
       recordBloom(tileIndex, state.cycle);
       notifyStatsChange();
+      checkBloomMilestone();
 
       if (state.cycle > 1 && gridHint) {
         gridHint.style.opacity = '0';
@@ -533,6 +536,7 @@ export function plantTile(tileEl) {
     recordBloom(tileIndex, 1);
     saveGardenState();
     notifyStatsChange();
+    checkBloomMilestone();
 
     // Check if all tiles are planted — trigger completion celebration
     if (plantedCount.value >= totalTiles) {
@@ -731,6 +735,7 @@ export function waterTile(tileEl, tileIndex) {
 
   saveGardenState();
   notifyStatsChange();
+  recordTendDay();
 }
 
 export function isWateringMode() {
@@ -890,6 +895,7 @@ export function fertilizeTile(tileEl, tileIndex) {
 
   saveGardenState();
   notifyStatsChange();
+  recordTendDay();
 }
 
 export function isFertilizeMode() {
@@ -1091,6 +1097,7 @@ export function pruneTile(tileEl, tileIndex) {
   }
 
   notifyStatsChange();
+  recordTendDay();
 }
 
 export function isPruneMode() {
