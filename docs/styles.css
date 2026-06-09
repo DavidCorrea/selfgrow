@@ -6793,3 +6793,148 @@ body.weather-snowy::after {
   }
 }
 
+/* ═══════════════════════════════════════════════════════════
+   Garden Aging — Welcome Back Banner
+   ═══════════════════════════════════════════════════════════ */
+
+.welcome-back-banner {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.92);
+  z-index: 150;
+  width: 85vw;
+  max-width: 28rem;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.8s ease, transform 0.8s ease;
+}
+
+.welcome-back-banner--visible {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+  pointer-events: auto;
+}
+
+.welcome-back-banner__glow {
+  position: absolute;
+  inset: -1.5rem;
+  background: radial-gradient(ellipse at 50% 50%, rgba(74, 222, 128, 0.12) 0%, rgba(74, 222, 128, 0.04) 40%, transparent 70%);
+  border-radius: 2rem;
+  animation: welcomeGlow 3s ease-in-out infinite;
+  pointer-events: none;
+  z-index: -1;
+}
+
+@keyframes welcomeGlow {
+  0%, 100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+}
+
+.welcome-back-banner__content {
+  position: relative;
+  z-index: 1;
+  background: rgba(11, 16, 25, 0.95);
+  border: 1px solid rgba(74, 222, 128, 0.18);
+  border-radius: 1.25rem;
+  padding: 1.5rem 1.25rem;
+  box-shadow:
+    0 0 3rem rgba(0, 0, 0, 0.4),
+    0 0 1.5rem rgba(74, 222, 128, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  text-align: center;
+}
+
+.welcome-back-banner__heading {
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  background: linear-gradient(135deg, #4ade80, #22d3ee);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin: 0 0 0.25rem;
+  line-height: 1.2;
+}
+
+.welcome-back-banner__time {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  margin: 0 0 0.75rem;
+  text-transform: uppercase;
+}
+
+.welcome-back-banner__poem {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  font-style: italic;
+  margin: 0;
+}
+
+/* Welcome-back journal entry styling */
+.journal-entry--welcome-back {
+  background: rgba(20, 30, 20, 0.3);
+  border-radius: 0.5rem;
+  margin-bottom: 0.2rem;
+  border-left: 2px solid rgba(74, 222, 128, 0.2);
+}
+
+.journal-entry--welcome-back .entry-timeline-dot--welcome-back {
+  background: rgba(74, 222, 128, 0.5);
+  box-shadow: 0 0 0.4rem rgba(74, 222, 128, 0.2);
+}
+
+.journal-entry--welcome-back .entry-text {
+  color: rgba(74, 222, 128, 0.85);
+  font-style: italic;
+}
+
+/* ── Reduced Motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .welcome-back-banner,
+  .welcome-back-banner__glow {
+    transition-duration: 0.01ms !important;
+    animation: none !important;
+  }
+}
+
+/* ── Responsive ── */
+@media (max-width: 375px) {
+  .welcome-back-banner__content {
+    padding: 1.25rem 1rem;
+  }
+
+  .welcome-back-banner__heading {
+    font-size: 0.95rem;
+  }
+
+  .welcome-back-banner__poem {
+    font-size: 0.62rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .welcome-back-banner__heading {
+    font-size: 1.3rem;
+  }
+
+  .welcome-back-banner__poem {
+    font-size: 0.78rem;
+  }
+}
+
+@media (min-width: 1440px) {
+  .app-shell {
+    max-width: 80rem;
+  }
+}
+

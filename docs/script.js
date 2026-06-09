@@ -15,6 +15,7 @@ import { exportGarden, importGarden } from './js/export-import.js';
 import { initSeedCollection, toggleCollectMode, collectSeed, isCollectMode, isPlantMode, plantSelectedSeed } from './js/seed-collection.js';
 import { initMilestones } from './js/milestones.js';
 import { initMilestonesPanel, renderMilestones } from './js/milestones-panel.js';
+import { simulateGardenAging, renderAgingResults, setupUnloadTimestamp, recordVisitTimestamp } from './js/garden-aging.js';
 
 
 (function () {
@@ -293,6 +294,9 @@ import { initMilestonesPanel, renderMilestones } from './js/milestones-panel.js'
     }
   }, 500);
 
+  // ── Setup unload timestamp for garden aging ──
+  setupUnloadTimestamp();
+
   // ── Restore saved garden after all functions are ready ──
   if (savedState && savedState.plantedCount > 0) {
     planted = true;
@@ -308,9 +312,17 @@ import { initMilestonesPanel, renderMilestones } from './js/milestones-panel.js'
     if (gridRevealed.value) {
       startVisitors();
     }
-    // Capture a visit snapshot after restore
+    // Simulate garden aging after restoration so it builds on restored state
     setTimeout(function () {
+      simulateGardenAging();
+      renderAgingResults();
       captureGardenVisit();
     }, 1000);
+  } else {
+    // No saved garden — still simulate aging for weather/state
+    setTimeout(function () {
+      simulateGardenAging();
+      renderAgingResults();
+    }, 500);
   }
 })();
