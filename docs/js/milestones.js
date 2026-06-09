@@ -185,6 +185,13 @@ function unlockMilestone(milestone) {
   unlockedIds.push(milestone.id);
   persistUnlocked();
   notifyMilestone(milestone);
+
+  // Dispatch custom event so milestones panel can re-render
+  try {
+    window.dispatchEvent(new CustomEvent('milestoneUnlocked', { detail: { id: milestone.id } }));
+  } catch (e) {
+    // CustomEvent may not be available in very old browsers; silently fail
+  }
 }
 
 // ── Create Milestone Notification in Journal ──

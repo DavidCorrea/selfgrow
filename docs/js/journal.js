@@ -1,6 +1,8 @@
 import { dom, journalEntries, journalRevealed, getRandomCycleMessage } from './state.js';
 import { saveGardenState } from './persistence.js';
 
+var MAX_JOURNAL_ENTRIES = 30;
+
 var messages = [
   "a tiny seed finds its place in the soil",
   "with patience, it reaches toward the light",
@@ -60,6 +62,15 @@ export function addJournalEntry(tileIndex, petalColor, cycleNum) {
     type: isCycle ? 'cycle' : 'plant'
   };
   journalEntries.push(entry);
+
+  // Cap journal entries to prevent unbounded growth
+  if (journalEntries.length > MAX_JOURNAL_ENTRIES) {
+    journalEntries.splice(0, journalEntries.length - MAX_JOURNAL_ENTRIES);
+    // Remove oldest DOM entries from timeline
+    while (journalTimeline.children.length > MAX_JOURNAL_ENTRIES) {
+      journalTimeline.removeChild(journalTimeline.lastChild);
+    }
+  }
 
   var entryEl = document.createElement('div');
   entryEl.classList.add('journal-entry');
@@ -124,6 +135,15 @@ export function addWeatherEntry(weatherState, message) {
     weatherMessage: message
   };
   journalEntries.push(entry);
+
+  // Cap journal entries to prevent unbounded growth
+  if (journalEntries.length > MAX_JOURNAL_ENTRIES) {
+    journalEntries.splice(0, journalEntries.length - MAX_JOURNAL_ENTRIES);
+    // Remove oldest DOM entries from timeline
+    while (journalTimeline.children.length > MAX_JOURNAL_ENTRIES) {
+      journalTimeline.removeChild(journalTimeline.lastChild);
+    }
+  }
 
   // Only create DOM entry if journal timeline exists
   if (journalTimeline) {

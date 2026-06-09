@@ -14,6 +14,7 @@ import { initGardenHistory, captureGardenVisit } from './js/garden-history.js';
 import { exportGarden, importGarden } from './js/export-import.js';
 import { initSeedCollection, toggleCollectMode, collectSeed, isCollectMode, isPlantMode, plantSelectedSeed } from './js/seed-collection.js';
 import { initMilestones } from './js/milestones.js';
+import { initMilestonesPanel, renderMilestones } from './js/milestones-panel.js';
 
 
 (function () {
@@ -254,6 +255,9 @@ import { initMilestones } from './js/milestones.js';
 
   // ── Initialize Milestones ──
   initMilestones();
+
+  // ── Initialize Milestones Panel ──
+  initMilestonesPanel();
 
   // ── Initialize Export/Import Buttons ──
   var exportBtn = document.getElementById('exportGardenBtn');
