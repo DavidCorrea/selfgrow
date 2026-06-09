@@ -39,8 +39,14 @@ export function runAgent({ label = "Agent", systemPrompt, tools = ["read"] }) {
   const authStorage = AuthStorage.create();
   const modelRegistry = ModelRegistry.create(authStorage);
   const model = modelRegistry.getAll().find(
-    (m) => m.provider === "openrouter" && m.id === "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free"
+    (m) => `${m.provider}/${m.id}` === "openrouter/nvidia/nemotron-3-super-120b-a12b:free"
   );
+  if (!model) {
+    log("error", "Model not found in registry. Available models:", {
+      available: modelRegistry.getAll().map((m) => `${m.provider}/${m.id}`),
+    });
+    throw new Error("Agent model not found");
+  }
 
   const loader = new DefaultResourceLoader({ cwd: __dirname, agentDir: __dirname });
   const startTime = Date.now();
