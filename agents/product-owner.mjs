@@ -9,57 +9,12 @@ import {
   errorData,
   loadPrompt,
   runAgent,
+  extractAgentResponse,
 } from "./shared.mjs";
 
 // ---------------------------------------------------------------------------
-// Parse Product Owner output
+// Apply refinement to VISION.md
 // ---------------------------------------------------------------------------
-
-function parseOutput(rawOutput) {
-  const trimmed = rawOutput.trim();
-
-  const blockMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-  const candidate = blockMatch ? blockMatch[1].trim() : trimmed;
-
-  let parsed;
-  try {
-    parsed = JSON.parse(candidate);
-  } catch {
-    const objMatch = candidate.match(/\{[\s\S]*\}/);
-    if (objMatch) {
-      try {
-        parsed = JSON.parse(objMatch[0]);
-      } catch {
-        log("warn", "Product Owner output could not be parsed as JSON", {
-          rawOutput: truncate(rawOutput),
-        });
-        ghAnnotation("warning", "Product Owner: output could not be parsed as JSON");
-        return null;
-      }
-    } else {
-      log("warn", "Product Owner output could not be parsed as JSON (no JSON object found)", {
-        rawOutput: truncate(rawOutput),
-      });
-      ghAnnotation("warning", "Product Owner: output could not be parsed as JSON");
-      return null;
-    }
-  }
-
-  // Validate envelope
-  if (!parsed.status || !parsed.summary || !parsed.data || !parsed.outcome) {
-    log("warn", "Product Owner response missing required envelope fields (status, summary, data, outcome)", {
-      rawOutput: truncate(rawOutput),
-    });
-    return null;
-  }
-
-  if (parsed.status === "error") {
-    log("warn", `Product Owner reported an error: ${parsed.summary}`);
-    return null;
-  }
-
-  return parsed;
-}
 
 function escapeRegex(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -132,7 +87,7 @@ async function main() {
     systemPrompt: loadPrompt("product-owner"),
   });
 
-  const parsed = parseOutput(rawOutput);
+  const parsed = extractAgentResponse("Product Owner", rawOutput);
   if (!parsed) {
     printRunSummary();
     return;

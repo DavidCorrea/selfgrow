@@ -39,7 +39,7 @@ export function runAgent({ label = "Agent", systemPrompt, tools = ["read"] }) {
   const authStorage = AuthStorage.create();
   const modelRegistry = ModelRegistry.create(authStorage);
   const model = modelRegistry.getAll().find(
-    (m) => m.provider === "openrouter" && m.id === "openrouter/owl-alpha"
+    (m) => m.provider === "openrouter" && m.id === "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free"
   );
 
   const loader = new DefaultResourceLoader({ cwd: __dirname, agentDir: __dirname });
@@ -178,7 +178,9 @@ export function extractJSON(label, text) {
   // Try direct parse first
   try {
     return JSON.parse(candidate);
-  } catch { /* fall through */ }
+  } catch (e) {
+    log("debug", `${label} direct JSON parse failed: ${e.message}`);
+  }
 
   // Try to find a complete JSON object by matching braces.
   // This handles stray characters after the closing brace (e.g. extra } or prose).
@@ -186,7 +188,13 @@ export function extractJSON(label, text) {
   if (jsonObj) {
     try {
       return JSON.parse(jsonObj);
-    } catch { /* fall through */ }
+    } catch (e) {
+      log("debug", `${label} extracted JSON object parse failed: ${e.message}`, {
+        extracted: truncate(jsonObj),
+      });
+    }
+  } else {
+    log("debug", `${label}: no JSON object found in output`);
   }
 
   log("warn", `${label} output could not be parsed as JSON`, {
