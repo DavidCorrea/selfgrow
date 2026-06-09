@@ -1,5 +1,5 @@
 import { dom, journalEntries, plantedCount, totalTiles, totalVolunteers, fertilizedTiles } from './state.js';
-import { getCurrentSeasonName } from './theme.js';
+import { getCurrentSeasonName, getCurrentCalendarSeason } from './theme.js';
 import { getBloomingCount, getPlantedCount } from './visitors.js';
 
 var statsRevealed = false;
@@ -10,6 +10,13 @@ var seasonConfig = {
   day: { label: 'day', emoji: '☀️', poem: 'light bathes every leaf and petal' },
   dusk: { label: 'dusk', emoji: '🌇', poem: 'golden hour soothes the garden' },
   night: { label: 'night', emoji: '🌙', poem: 'the garden dreams under starlight' }
+};
+
+var gardenSeasonConfig = {
+  spring: { label: 'spring', emoji: '🌷' },
+  summer: { label: 'summer', emoji: '🌻' },
+  autumn: { label: 'autumn', emoji: '🍂' },
+  winter: { label: 'winter', emoji: '❄️' }
 };
 
 var moodStates = {
@@ -194,11 +201,13 @@ function updateStats() {
 
   var seasonName = getCurrentSeasonName();
   var season = seasonConfig[seasonName];
+  var gardenSeasonName = getCurrentCalendarSeason();
+  var gardenSeason = gardenSeasonConfig[gardenSeasonName];
   if (statSeasonValue) {
-    statSeasonValue.textContent = season.label;
+    statSeasonValue.textContent = gardenSeason ? gardenSeason.label : season.label;
   }
   if (statSeasonEmoji) {
-    statSeasonEmoji.textContent = season.emoji;
+    statSeasonEmoji.textContent = gardenSeason ? gardenSeason.emoji : season.emoji;
   }
 
   var lastTimestamp = null;

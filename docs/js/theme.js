@@ -25,12 +25,23 @@ export function getCurrentTheme() {
   return 'night';
 }
 
+// Returns the time-of-day name (dawn/day/dusk/night)
+// Kept for backward compatibility with stats.js which uses it for mood/poem display
 export function getCurrentSeasonName() {
   var hour = new Date().getHours();
   if (hour >= 5 && hour < 8) return 'dawn';
   if (hour >= 8 && hour < 17) return 'day';
   if (hour >= 17 && hour < 20) return 'dusk';
   return 'night';
+}
+
+// Returns the calendar-based garden season (spring/summer/autumn/winter)
+export function getCurrentCalendarSeason() {
+  var month = new Date().getMonth();
+  if (month >= 2 && month <= 4) return 'spring';
+  if (month >= 5 && month <= 7) return 'summer';
+  if (month >= 8 && month <= 10) return 'autumn';
+  return 'winter';
 }
 
 export function isNightTheme() {

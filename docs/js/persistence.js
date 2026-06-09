@@ -336,8 +336,12 @@ export function restoreGardenState(state, callbacks) {
       var isFertilized = entry.type === 'fertilized';
       var isPruned = entry.type === 'pruned';
       var isWeather = entry.type === 'weather';
+      var isVolunteer = entry.type === 'volunteer';
+      var isSeason = entry.type === 'season' || entry.type === 'spring-dew' || entry.type === 'spring-butterfly' || entry.type === 'summer-shimmer' || entry.type === 'autumn-leaves' || entry.type === 'autumn-frost' || entry.type === 'winter-frost' || entry.type.indexOf('season') === 0;
       var entryLabel;
-      if (isWeather) {
+      if (isSeason) {
+        entryLabel = entry.seasonMessage || entry.weatherMessage || ('🌿 a rare moment in the garden');
+      } else if (isWeather) {
         var weatherEmoji = getWeatherEmoji(entry.weatherState);
         entryLabel = weatherEmoji + ' ' + (entry.weatherMessage || getWeatherDefaultMessage(entry.weatherState));
       } else if (isPruned) {
@@ -355,7 +359,9 @@ export function restoreGardenState(state, callbacks) {
       }
 
       var subText;
-      if (isWeather) {
+      if (isSeason) {
+        subText = entry.time + ' &mdash; a rare moment';
+      } else if (isWeather) {
         subText = entry.time + ' &mdash; the sky shifts';
       } else if (isPruned) {
         subText = entry.subText || 'you pinch away what has faded, inviting renewal';
@@ -372,9 +378,9 @@ export function restoreGardenState(state, callbacks) {
       }
 
       var isVolunteer = entry.type === 'volunteer';
-      var dotClass = isWeather ? 'entry-timeline-dot entry-timeline-dot--weather' : (isPruned ? 'entry-timeline-dot entry-timeline-dot--pruned' : (isVolunteer ? 'entry-timeline-dot entry-timeline-dot--volunteer' : 'entry-timeline-dot'));
-      var swatchClass = isWeather ? 'entry-swatch entry-swatch--weather' : (isPruned ? 'entry-swatch entry-swatch--pruned' : (isVolunteer ? 'entry-swatch entry-swatch--volunteer' : 'entry-swatch'));
-      var entryClass = isWeather ? 'journal-entry journal-entry--weather' : (isPruned ? 'journal-entry journal-entry--pruned' : (isVolunteer ? 'journal-entry journal-entry--volunteer' : 'journal-entry'));
+      var dotClass = isSeason ? 'entry-timeline-dot entry-timeline-dot--season-event' : (isWeather ? 'entry-timeline-dot entry-timeline-dot--weather' : (isPruned ? 'entry-timeline-dot entry-timeline-dot--pruned' : (isVolunteer ? 'entry-timeline-dot entry-timeline-dot--volunteer' : 'entry-timeline-dot')));
+      var swatchClass = isSeason ? 'entry-swatch entry-swatch--season-event' : (isWeather ? 'entry-swatch entry-swatch--weather' : (isPruned ? 'entry-swatch entry-swatch--pruned' : (isVolunteer ? 'entry-swatch entry-swatch--volunteer' : 'entry-swatch')));
+      var entryClass = isSeason ? 'journal-entry journal-entry--season-event' : (isWeather ? 'journal-entry journal-entry--weather' : (isPruned ? 'journal-entry journal-entry--pruned' : (isVolunteer ? 'journal-entry journal-entry--volunteer' : 'journal-entry')));
       entryEl.classList = entryClass;
 
       entryEl.innerHTML =
