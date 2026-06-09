@@ -197,13 +197,19 @@ function setWeatherState(state) {
 
   var oldWeather = currentWeather.value;
 
-  // Remove all weather state classes
+  // Remove all weather state classes from overlay
   weatherStates.forEach(function (s) {
     overlay.classList.remove('weather-active-' + s);
   });
 
-  // Add the new state class
+  // Add the new state class to overlay
   overlay.classList.add('weather-active-' + state);
+
+  // Toggle weather class on body for atmosphere layer theming
+  weatherStates.forEach(function (s) {
+    document.body.classList.remove('weather-' + s);
+  });
+  document.body.classList.add('weather-' + state);
 
   // Update icon
   var iconEl = document.getElementById('weatherIcon');

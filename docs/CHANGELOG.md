@@ -2,6 +2,8 @@
 
 ## 2026-06-09
 
+- **Added Garden Atmosphere system**: A CSS-animated `body::after` layer with 12 floating pollen/dust motes that drift upward and across the viewport with staggered timing. Particle colors shift organically with the four time-of-day themes (dawn=pink/gold, day=green/cyan, dusk=orange/purple, night=silver/blue). Weather states add atmospheric filter shifts — sunny warms the motes, rainy adds blue tint, cloudy desaturates to grey haze, snowy brightens to white crystals. All animations are pure CSS transforms (GPU-friendly), respect `prefers-reduced-motion`, and use relative units for responsive behavior at all breakpoints. The effect is subtle and organic — like watching dust motes float in a sunbeam.
+
 - **Added Garden Milestones system (implements VISION.md #15)**: A gentle, non-competitive recognition system that tracks four organic growth milestones — first bloom, all five flower types collected, ten flowers bloomed, and seven distinct days of tending. Milestone unlocks appear as warm amber/gold notification cards in the journal timeline with poetic descriptions, a soft breathing glow animation, and GPU-friendly transforms. Milestone state persists via localStorage so they never re-trigger. The `recordTendDay()` function tracks distinct calendar days with garden interactions (watering, fertilizing, pruning) to detect the 7-day milestone. All milestone checks are triggered from existing bloom/plant/collection events — no polling or external services. CSS respects `prefers-reduced-motion` and uses relative units for responsive sizing at 375px, 768px, and 1200px+.
 
 ## 2026-06-08

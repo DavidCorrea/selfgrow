@@ -6150,6 +6150,205 @@ body.theme-night {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   Garden Atmosphere — Floating pollen, dust motes, and ambient glows
+   Pure CSS-animated particles that drift with theme and weather.
+   Like watching dust motes float in a sunbeam.
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Keyframes: ambient particle drift ── */
+@keyframes moteDrift1 {
+  0% { transform: translate(0, 0) scale(1); opacity: 0; }
+  10% { opacity: 0.7; }
+  50% { transform: translate(8vw, -12vh) scale(1.1); opacity: 0.5; }
+  90% { opacity: 0.3; }
+  100% { transform: translate(15vw, -28vh) scale(0.6); opacity: 0; }
+}
+
+@keyframes moteDrift2 {
+  0% { transform: translate(0, 0) scale(0.8); opacity: 0; }
+  15% { opacity: 0.6; }
+  50% { transform: translate(-6vw, -18vh) scale(1); opacity: 0.4; }
+  85% { opacity: 0.2; }
+  100% { transform: translate(-12vw, -35vh) scale(0.5); opacity: 0; }
+}
+
+@keyframes moteDrift3 {
+  0% { transform: translate(0, 0) scale(1.1); opacity: 0; }
+  12% { opacity: 0.55; }
+  45% { transform: translate(5vw, -10vh) scale(0.9); opacity: 0.45; }
+  88% { opacity: 0.15; }
+  100% { transform: translate(10vw, -22vh) scale(0.4); opacity: 0; }
+}
+
+@keyframes moteDrift4 {
+  0% { transform: translate(0, 0) scale(0.7); opacity: 0; }
+  18% { opacity: 0.65; }
+  55% { transform: translate(-4vw, -20vh) scale(1.05); opacity: 0.35; }
+  92% { opacity: 0.1; }
+  100% { transform: translate(-9vw, -32vh) scale(0.5); opacity: 0; }
+}
+
+@keyframes moteDrift5 {
+  0% { transform: translate(0, 0) scale(0.9); opacity: 0; }
+  8% { opacity: 0.5; }
+  40% { transform: translate(12vw, -8vh) scale(1.15); opacity: 0.4; }
+  82% { opacity: 0.2; }
+  100% { transform: translate(20vw, -25vh) scale(0.55); opacity: 0; }
+}
+
+@keyframes moteDrift6 {
+  0% { transform: translate(0, 0) scale(1); opacity: 0; }
+  20% { opacity: 0.6; }
+  60% { transform: translate(-7vw, -15vh) scale(0.85); opacity: 0.3; }
+  95% { opacity: 0.05; }
+  100% { transform: translate(-14vw, -30vh) scale(0.35); opacity: 0; }
+}
+
+/* ── body::after: the atmosphere layer ── */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+  background:
+    /* Mote 1 — top-left quadrant, drifts right-up */
+    radial-gradient(2px 2px at 15% 80%, var(--mote-color-1, rgba(251, 182, 200, 0.6)), transparent),
+    /* Mote 2 — top-right, drifts left-up */
+    radial-gradient(2.5px 2.5px at 75% 85%, var(--mote-color-2, rgba(253, 230, 138, 0.5)), transparent),
+    /* Mote 3 — center, gentle drift */
+    radial-gradient(1.5px 1.5px at 45% 75%, var(--mote-color-3, rgba(251, 207, 232, 0.55)), transparent),
+    /* Mote 4 — lower-left */
+    radial-gradient(2px 2px at 25% 90%, var(--mote-color-4, rgba(167, 139, 250, 0.45)), transparent),
+    /* Mote 5 — right side */
+    radial-gradient(1.8px 1.8px at 85% 70%, var(--mote-color-5, rgba(251, 182, 200, 0.5)), transparent),
+    /* Mote 6 — center-left */
+    radial-gradient(2.2px 2.2px at 35% 82%, var(--mote-color-6, rgba(253, 230, 138, 0.4)), transparent),
+    /* Mote 7 — bottom center */
+    radial-gradient(1.6px 1.6px at 55% 92%, var(--mote-color-7, rgba(148, 163, 184, 0.5)), transparent),
+    /* Mote 8 — top area */
+    radial-gradient(2px 2px at 65% 78%, var(--mote-color-8, rgba(251, 207, 232, 0.45)), transparent),
+    /* Mote 9 — left edge */
+    radial-gradient(1.4px 1.4px at 10% 85%, var(--mote-color-9, rgba(251, 146, 60, 0.5)), transparent),
+    /* Mote 10 — far right */
+    radial-gradient(2.3px 2.3px at 92% 80%, var(--mote-color-10, rgba(167, 139, 250, 0.4)), transparent),
+    /* Mote 11 — mid area */
+    radial-gradient(1.7px 1.7px at 50% 88%, var(--mote-color-11, rgba(253, 230, 138, 0.5)), transparent),
+    /* Mote 12 — scattered */
+    radial-gradient(1.9px 1.9px at 70% 92%, var(--mote-color-12, rgba(148, 163, 184, 0.45)), transparent);
+  animation:
+    moteDrift1 18s ease-in-out infinite,
+    moteDrift2 22s ease-in-out infinite,
+    moteDrift3 20s ease-in-out infinite,
+    moteDrift4 24s ease-in-out infinite,
+    moteDrift5 19s ease-in-out infinite,
+    moteDrift6 21s ease-in-out infinite,
+    moteDrift1 25s ease-in-out infinite 4s,
+    moteDrift2 23s ease-in-out infinite 7s,
+    moteDrift3 17s ease-in-out infinite 2s,
+    moteDrift4 26s ease-in-out infinite 5s,
+    moteDrift5 20s ease-in-out infinite 9s,
+    moteDrift6 22s ease-in-out infinite 3s;
+}
+
+/* ── Theme-reactive mote colors ── */
+
+/* Dawn: pink & gold motes */
+body.theme-dawn {
+  --mote-color-1: rgba(251, 182, 200, 0.6);
+  --mote-color-2: rgba(253, 230, 138, 0.55);
+  --mote-color-3: rgba(251, 207, 232, 0.5);
+  --mote-color-4: rgba(253, 230, 138, 0.45);
+  --mote-color-5: rgba(251, 182, 200, 0.5);
+  --mote-color-6: rgba(253, 230, 138, 0.4);
+  --mote-color-7: rgba(251, 207, 232, 0.55);
+  --mote-color-8: rgba(251, 182, 200, 0.45);
+  --mote-color-9: rgba(253, 230, 138, 0.5);
+  --mote-color-10: rgba(251, 207, 232, 0.4);
+  --mote-color-11: rgba(251, 182, 200, 0.5);
+  --mote-color-12: rgba(253, 230, 138, 0.45);
+}
+
+/* Day: green & cyan motes */
+body.theme-day {
+  --mote-color-1: rgba(74, 222, 128, 0.5);
+  --mote-color-2: rgba(103, 232, 249, 0.45);
+  --mote-color-3: rgba(74, 222, 128, 0.55);
+  --mote-color-4: rgba(103, 232, 249, 0.4);
+  --mote-color-5: rgba(74, 222, 128, 0.5);
+  --mote-color-6: rgba(103, 232, 249, 0.45);
+  --mote-color-7: rgba(74, 222, 128, 0.4);
+  --mote-color-8: rgba(103, 232, 249, 0.5);
+  --mote-color-9: rgba(74, 222, 128, 0.45);
+  --mote-color-10: rgba(103, 232, 249, 0.35);
+  --mote-color-11: rgba(74, 222, 128, 0.5);
+  --mote-color-12: rgba(103, 232, 249, 0.4);
+}
+
+/* Dusk: orange & purple motes */
+body.theme-dusk {
+  --mote-color-1: rgba(251, 146, 60, 0.55);
+  --mote-color-2: rgba(167, 139, 250, 0.5);
+  --mote-color-3: rgba(252, 211, 77, 0.45);
+  --mote-color-4: rgba(167, 139, 250, 0.55);
+  --mote-color-5: rgba(251, 146, 60, 0.45);
+  --mote-color-6: rgba(252, 211, 77, 0.5);
+  --mote-color-7: rgba(167, 139, 250, 0.4);
+  --mote-color-8: rgba(251, 146, 60, 0.5);
+  --mote-color-9: rgba(252, 211, 77, 0.45);
+  --mote-color-10: rgba(167, 139, 250, 0.4);
+  --mote-color-11: rgba(251, 146, 60, 0.5);
+  --mote-color-12: rgba(252, 211, 77, 0.45);
+}
+
+/* Night: silver & blue motes */
+body.theme-night {
+  --mote-color-1: rgba(148, 163, 184, 0.4);
+  --mote-color-2: rgba(226, 232, 240, 0.35);
+  --mote-color-3: rgba(148, 163, 184, 0.45);
+  --mote-color-4: rgba(226, 232, 240, 0.3);
+  --mote-color-5: rgba(148, 163, 184, 0.4);
+  --mote-color-6: rgba(226, 232, 240, 0.35);
+  --mote-color-7: rgba(148, 163, 184, 0.35);
+  --mote-color-8: rgba(226, 232, 240, 0.4);
+  --mote-color-9: rgba(148, 163, 184, 0.3);
+  --mote-color-10: rgba(226, 232, 240, 0.25);
+  --mote-color-11: rgba(148, 163, 184, 0.4);
+  --mote-color-12: rgba(226, 232, 240, 0.35);
+}
+
+/* ── Weather-reactive atmosphere shifts ── */
+
+/* Sunny: warm golden motes, slightly larger */
+body.weather-sunny::after {
+  filter: brightness(1.15) saturate(1.2);
+}
+
+/* Rainy: blue-tinted mist particles, more diffuse */
+body.weather-rainy::after {
+  filter: brightness(0.85) saturate(0.7) hue-rotate(15deg);
+}
+
+/* Cloudy: grey haze, desaturated */
+body.weather-cloudy::after {
+  filter: saturate(0.4) brightness(0.9);
+}
+
+/* Snowy: white drifting crystals, brighter */
+body.weather-snowy::after {
+  filter: brightness(1.3) saturate(0.5);
+}
+
+/* ── Reduced motion: hide atmosphere ── */
+@media (prefers-reduced-motion: reduce) {
+  body::after {
+    animation: none !important;
+    display: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
    Garden Milestones — Gentle, non-competitive recognition
    ═══════════════════════════════════════════════════════════ */
 
