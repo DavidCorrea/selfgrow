@@ -3,8 +3,6 @@ import fs from "fs";
 import {
   repoRoot,
   log,
-  ghAnnotation,
-  truncate,
   printRunSummary,
   errorData,
   loadPrompt,
@@ -87,7 +85,9 @@ async function main() {
     systemPrompt: loadPrompt("product-owner"),
   });
 
-  const parsed = extractAgentResponse("Product Owner", rawOutput);
+  const parsed = extractAgentResponse("Product Owner", rawOutput, {
+    requiredDataFields: ["action"],
+  });
   if (!parsed) {
     printRunSummary();
     return;
@@ -124,16 +124,14 @@ async function main() {
     );
     log("info", `Committed and pushed: ${commitMessage}`);
   } catch (e) {
-    log("error", "Commit/push failed", errorData(e));
-    ghAnnotation("error", `Commit/push failed: ${e.message}`);
+    log("error", `Commit/push failed: ${e.message}`);
   }
 
   printRunSummary();
 }
 
 main().catch((err) => {
-  log("error", "Product Owner failed", errorData(err));
-  ghAnnotation("error", `Product Owner failed: ${err.message || err}`);
+  log("error", `Product Owner failed: ${err.message || err}`);
   printRunSummary();
   process.exit(1);
 });

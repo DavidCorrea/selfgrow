@@ -2,7 +2,6 @@ import {
   __dirname,
   repoRoot,
   log,
-  ghAnnotation,
   printRunSummary,
   errorData,
   loadPrompt,
@@ -113,7 +112,9 @@ async function main() {
       systemPrompt: buildScoutPrompt(feedback, openIssues),
       tools: ["read", "bash"],
     });
-    const scoutResult = extractAgentResponse("Scout", scoutOutput);
+    const scoutResult = extractAgentResponse("Scout", scoutOutput, {
+      requiredDataFields: ["appConcept", "suggestion", "details", "files"],
+    });
     if (!scoutResult) continue;
     const { data: scoutData } = scoutResult;
 
@@ -152,7 +153,9 @@ async function main() {
       systemPrompt: buildValidatorPrompt(scoutOutput),
       tools: ["read", "bash"],
     });
-    const validatorResult = extractAgentResponse("Validator", validatorOutput);
+    const validatorResult = extractAgentResponse("Validator", validatorOutput, {
+      requiredDataFields: ["reason"],
+    });
     if (!validatorResult) continue;
     const { outcome, data: validatorData } = validatorResult;
 
@@ -183,7 +186,10 @@ async function main() {
         tools: ["read", "bash", "edit", "write"],
       });
       // Builder is a worker — parse JSON but don't require outcome
-      const builderResult = extractAgentResponse("Builder", builderOutput, { requireOutcome: false });
+      const builderResult = extractAgentResponse("Builder", builderOutput, {
+        requireOutcome: false,
+        requiredDataFields: ["commitMessage"],
+      });
       if (builderResult && builderResult.data.commitMessage) {
         commitMessage = builderResult.data.commitMessage;
         log("info", `Builder summary: ${builderResult.summary}`);
@@ -195,7 +201,9 @@ async function main() {
         systemPrompt: buildReviewerPrompt(),
         tools: ["read", "bash"],
       });
-      const reviewerResult = extractAgentResponse("Reviewer", reviewerOutput);
+      const reviewerResult = extractAgentResponse("Reviewer", reviewerOutput, {
+        requiredDataFields: ["issues"],
+      });
       if (!reviewerResult) {
         reviewerFeedback = "The Reviewer output could not be parsed. Check your your work for obvious issues.";
         continue;
@@ -232,8 +240,7 @@ async function main() {
         log("info", "Pushed existing commits on branch.");
       }
     } catch (e) {
-      log("error", "Branch commit/push failed", errorData(e));
-      ghAnnotation("error", `Branch commit/push failed: ${e.message}`);
+      log("error", `Branch commit/push failed: ${e.message}`);
       break;
     }
 
@@ -248,14 +255,17 @@ async function main() {
         tools: ["read", "bash", "edit", "write"],
       });
       // Conflict resolver is a worker — parse JSON but don't require outcome
-      extractAgentResponse("Builder", resolverOutput, { requireOutcome: false });
+      extractAgentResponse("Builder", resolverOutput, {
+        requireOutcome: false,
+        requiredDataFields: ["resolvedFiles"],
+      });
 
       const remaining = gitExec("diff --name-only --diff-filter=U");
       if (remaining) {
-        log("error", "Builder could not resolve all merge conflicts. Aborting.", {
+        log("error", `Builder could not resolve all merge conflicts — aborting`, {
+          branch: branchName,
           remainingConflicts: remaining.split("\n"),
         });
-        ghAnnotation("error", `Merge conflicts could not be resolved automatically. Branch: ${branchName}`);
         abortMerge();
         break;
       }
@@ -270,7 +280,9 @@ async function main() {
         systemPrompt: buildReviewerPrompt(),
         tools: ["read", "bash"],
       });
-      const postMergeResult = extractAgentResponse("Reviewer", postMergeOutput);
+      const postMergeResult = extractAgentResponse("Reviewer", postMergeOutput, {
+        requiredDataFields: ["issues"],
+      });
       if (postMergeResult && postMergeResult.outcome !== "approve") {
         log("warn", "Post-merge review found issues. Committing as-is.", {
           issues: postMergeResult.data.issues,
@@ -282,8 +294,7 @@ async function main() {
     try {
       mergeBranchToMain(branchName);
     } catch (e) {
-      log("error", "Failed to merge branch into main", errorData(e));
-      ghAnnotation("error", `Failed to merge ${branchName} into main: ${e.message}`);
+      log("error", `Failed to merge ${branchName} into main: ${e.message}`);
       break;
     }
 
@@ -297,16 +308,14 @@ async function main() {
   }
 
   if (!approved) {
-    log("warn", "No proposal approved after retries. Exiting.");
-    ghAnnotation("warning", "No proposal approved after retries.");
+    log("warn", "No proposal approved after retries.");
   }
 
   printRunSummary();
 }
 
 main().catch((err) => {
-  log("error", "Pipeline failed", errorData(err));
-  ghAnnotation("error", `Pipeline failed: ${err.message || err}`);
+  log("error", `Pipeline failed: ${err.message || err}`);
   printRunSummary();
   process.exit(1);
 });

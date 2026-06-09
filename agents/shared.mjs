@@ -39,14 +39,8 @@ export function runAgent({ label = "Agent", systemPrompt, tools = ["read"] }) {
   const authStorage = AuthStorage.create();
   const modelRegistry = ModelRegistry.create(authStorage);
   const model = modelRegistry.getAll().find(
-    (m) => `${m.provider}/${m.id}` === "openrouter/nvidia/nemotron-3-super-120b-a12b:free"
+    (m) => `${m.provider}/${m.id}` === "openrouter/openrouter/owl-alpha"
   );
-  if (!model) {
-    log("error", "Model not found in registry. Available models:", {
-      available: modelRegistry.getAll().map((m) => `${m.provider}/${m.id}`),
-    });
-    throw new Error("Agent model not found");
-  }
 
   const loader = new DefaultResourceLoader({ cwd: __dirname, agentDir: __dirname });
   const startTime = Date.now();
@@ -114,6 +108,7 @@ export function getRunLog() {
 export function log(level, message, data) {
   const entry = { time: new Date().toISOString(), level, message, data };
   runLog.push(entry);
+  if (level === "debug") return; // debug entries collected but not printed
   const prefix = `[${entry.time}] [${level.toUpperCase()}]`;
   if (data !== undefined) {
     console.log(prefix, message);
@@ -121,11 +116,9 @@ export function log(level, message, data) {
   } else {
     console.log(prefix, message);
   }
-}
-
-export function ghAnnotation(kind, message) {
-  const level = kind === "error" ? "error" : "warning";
-  console.log(`::${level}::${message}`);
+  if (level === "warn" || level === "error") {
+    console.log(`::${level}::${message}`);
+  }
 }
 
 const RAW_OUTPUT_MAX_CHARS = 2000;
@@ -147,6 +140,7 @@ export function printRunSummary() {
   console.log("RUN SUMMARY");
   console.log("=".repeat(60));
   for (const entry of runLog) {
+    if (entry.level === "debug") continue;
     const icon =
       entry.level === "error" ? "❌" :
       entry.level === "warn"  ? "⚠️" :
@@ -184,29 +178,18 @@ export function extractJSON(label, text) {
   // Try direct parse first
   try {
     return JSON.parse(candidate);
-  } catch (e) {
-    log("debug", `${label} direct JSON parse failed: ${e.message}`);
-  }
+  } catch { /* fall through */ }
 
   // Try to find a complete JSON object by matching braces.
-  // This handles stray characters after the closing brace (e.g. extra } or prose).
   const jsonObj = extractFirstJSONObject(candidate);
   if (jsonObj) {
     try {
       return JSON.parse(jsonObj);
-    } catch (e) {
-      log("debug", `${label} extracted JSON object parse failed: ${e.message}`, {
-        extracted: truncate(jsonObj),
-      });
-    }
-  } else {
-    log("debug", `${label}: no JSON object found in output`);
+    } catch { /* fall through */ }
   }
 
-  log("warn", `${label} output could not be parsed as JSON`, {
-    rawOutput: truncate(text),
-  });
-  ghAnnotation("warning", `${label}: output could not be parsed as JSON`);
+  const snippet = text.length > 200 ? text.slice(0, 200) + "…" : text;
+  log("warn", `${label}: output could not be parsed as JSON`, { raw: snippet });
   return null;
 }
 
@@ -252,36 +235,41 @@ function extractFirstJSONObject(text) {
 }
 
 /**
- * Parse and validate the standard agent response envelope.
- * Returns the parsed object on success, or null on parse failure or error status.
+ * Parse and validate the standard agent response envelope + data shape.
  *
- * Required fields: status, summary, data
- * Gate agents also require: outcome ("approve" | "reject" | "revise" | "skip")
+ * @param {string} label - Agent name for logging
+ * @param {string} text - Raw agent output
+ * @param {object} options
+ * @param {boolean} [options.requireOutcome=true] - Whether outcome field is required
+ * @param {string[]} [options.requiredDataFields] - Required fields in data object
+ * @returns {object|null} Parsed response or null on failure
  */
-export function extractAgentResponse(label, text, { requireOutcome = true } = {}) {
+export function extractAgentResponse(label, text, { requireOutcome = true, requiredDataFields = [] } = {}) {
   const parsed = extractJSON(label, text);
   if (!parsed) return null;
 
   if (!parsed.status || !parsed.summary || !parsed.data) {
-    log("warn", `${label} response missing required envelope fields (status, summary, data)`, {
-      rawOutput: truncate(text),
-    });
-    ghAnnotation("warning", `${label}: response missing envelope fields`);
+    log("warn", `${label}: response missing required envelope fields (status, summary, data)`);
     return null;
   }
 
   if (requireOutcome && !parsed.outcome) {
-    log("warn", `${label} response missing required envelope field: outcome`, {
-      rawOutput: truncate(text),
-    });
-    ghAnnotation("warning", `${label}: response missing outcome field`);
+    log("warn", `${label}: response missing required envelope field: outcome`);
     return null;
   }
 
   if (parsed.status === "error") {
-    log("warn", `${label} reported an error: ${parsed.summary}`);
-    ghAnnotation("warning", `${label}: ${parsed.summary}`);
+    log("warn", `${label}: ${parsed.summary}`);
     return null;
+  }
+
+  // Validate data shape
+  if (requiredDataFields.length > 0) {
+    const missing = requiredDataFields.filter((f) => !(f in parsed.data));
+    if (missing.length > 0) {
+      log("warn", `${label}: data missing required fields: ${missing.join(", ")}`);
+      return null;
+    }
   }
 
   return parsed;
