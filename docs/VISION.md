@@ -32,6 +32,8 @@ The app starts simple — a seed that blooms — and grows into a richer experie
 13. **Distinct Flower Morphology** — Five unique CSS flower types (daisy, tulip, rose, star, lily) with distinct petal shapes, sizes, and arrangements, making each planted tile visually unique. ✅
 14. **Seed Collection & Replanting** — Collect seeds from blooming flowers, preserving flower type, color palette, and collection date. Plant collected seeds on empty tiles to grow specific flower types with their original colors. Seeds persist via localStorage. ✅
 
+15. **Garden Milestones** — Gentle, non-competitive recognition of growth milestones (first bloom, all five flower types collected, 10 flowers bloomed, garden tended for 7 days) that appear as soft notifications in the journal. Milestones celebrate the gardener's journey without gamification pressure, fitting the calm and intentional philosophy.
+
 ## Completed Features
 
 All core vision items and major enhancements have been implemented, including Garden Reflection Stats, Garden Moments, Garden History, Garden Export/Import, Garden Gallery, Garden Rings bloom visualization, garden completion celebration, self-seeding volunteer plants, weather system with growth integration, distinct flower type morphology, and Seed Collection & Replanting. The garden is a fully-featured living digital ecosystem.
