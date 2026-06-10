@@ -40,7 +40,7 @@ export var petalPalettes = [
 
 export var centerColors = ['#fbbf24', '#fde68a', '#fcd34d', '#f59e0b', '#eab308'];
 
-export var flowerTypes = ['daisy', 'tulip', 'rose', 'star', 'lily'];
+export var flowerTypes = ['daisy', 'tulip', 'rose', 'star', 'lily', 'moonflower'];
 
 export function getRandomFlowerType() {
   return flowerTypes[Math.floor(Math.random() * flowerTypes.length)];

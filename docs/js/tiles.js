@@ -1,4 +1,5 @@
 import { dom, plantedCount, gridRevealed, tendingRevealed, journalEntries, wateredTiles, fertilizedTiles, prunedTiles, tileCycleState, tileColorMap, tileFlowerTypeMap, petalPalettes, flowerTypes, CYCLE_HOLD_BLOOM, CYCLE_WILT_DURATION, CYCLE_PAUSE_AFTER_WILT, CYCLE_SEED_OFFSET, totalTiles, getRandomGridMessage, getRandomWateringHint, getRandomCycleMessage, getRandomFertilizeHint, getRandomFertilizeMessage, getRandomPruneMessage, getRandomPruneHint, getRandomFlowerType } from './state.js';
+import { isNightTheme } from './theme.js';
 import { saveGardenState, applyTileColors, addWateredIcon, addFertilizedIcon } from './persistence.js';
 // Note: addWateredIcon and addFertilizedIcon are imported from persistence.js
 // to avoid circular dependency. Do NOT re-declare them locally below.
@@ -245,6 +246,17 @@ export function startGrowthCycle(tileEl, tileIndex) {
     });
     tileSprout.classList.remove('flower-wildflower');
     tileSprout.classList.add('flower-' + fType);
+
+    // Moonflower: closed bud during day, blooming at night
+    if (fType === 'moonflower') {
+      if (isNightTheme()) {
+        tileSprout.classList.remove('moonflower-closed');
+        tileSprout.classList.add('moonflower-bloom');
+      } else {
+        tileSprout.classList.remove('moonflower-bloom');
+        tileSprout.classList.add('moonflower-closed');
+      }
+    }
   }
   var tileSeed = tileEl.querySelector('.tile-seed');
   var badge = tileEl.querySelector('.tile-cycle-badge');

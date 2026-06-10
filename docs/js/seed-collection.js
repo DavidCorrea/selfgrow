@@ -17,7 +17,8 @@ var seedTypeIcons = {
   tulip: '🌷',
   rose: '🌹',
   star: '⭐',
-  lily: '💐'
+  lily: '💐',
+  moonflower: '🌙'
 };
 
 // ── Seed Type Labels ──
@@ -26,7 +27,8 @@ var seedTypeLabels = {
   tulip: 'Tulip',
   rose: 'Rose',
   star: 'Star',
-  lily: 'Lily'
+  lily: 'Lily',
+  moonflower: 'Moonflower'
 };
 
 // ── Save seed collection to localStorage ──

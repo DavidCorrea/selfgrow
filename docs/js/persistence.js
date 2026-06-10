@@ -2,6 +2,7 @@ import { dom, journalEntries, wateredTiles, fertilizedTiles, prunedTiles, tileCy
 
 import { formatTime } from './journal.js';
 import { getCurrentWeather, getWeatherModifier } from './weather.js';
+import { isNightTheme } from './theme.js';
 
 var STORAGE_KEY = 'selfgrow_garden_state';
 
@@ -136,6 +137,17 @@ export function applyTileColors(tileEl, tileIndex, flowerType) {
         sproutEl.classList.remove('flower-' + ft);
       });
       sproutEl.classList.add('flower-' + flowerType);
+
+      // Moonflower: closed bud during day, blooming at night
+      if (flowerType === 'moonflower') {
+        if (isNightTheme()) {
+          sproutEl.classList.remove('moonflower-closed');
+          sproutEl.classList.add('moonflower-bloom');
+        } else {
+          sproutEl.classList.remove('moonflower-bloom');
+          sproutEl.classList.add('moonflower-closed');
+        }
+      }
     }
   }
 
@@ -490,6 +502,17 @@ function restorePlantedTile(tileEl, tileIndex, state, startGrowthCycle, updateCo
     });
     tileSprout.classList.remove('flower-wildflower');
     tileSprout.classList.add('flower-' + fType);
+
+    // Moonflower: closed bud during day, blooming at night
+    if (fType === 'moonflower') {
+      if (isNightTheme()) {
+        tileSprout.classList.remove('moonflower-closed');
+        tileSprout.classList.add('moonflower-bloom');
+      } else {
+        tileSprout.classList.remove('moonflower-bloom');
+        tileSprout.classList.add('moonflower-closed');
+      }
+    }
   }
 
   tileSeed.classList.remove('visible');

@@ -5459,6 +5459,210 @@ body.theme-night {
   box-shadow: 0 0 0.12rem rgba(251, 191, 36, 0.35);
 }
 
+/* ── MOONFLOWER: luminous silvery-white elongated petals, silver center, prominent stamen ── */
+.tile-sprout.flower-moonflower .tile-flower {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.tile-sprout.flower-moonflower .tile-petal {
+  width: 0.22rem;
+  height: 0.58rem;
+  background: linear-gradient(180deg, #e2e8f0, #cbd5e1);
+  border-radius: 50% 50% 20% 20% / 80% 80% 20% 20%;
+  box-shadow: 0 0 0.12rem rgba(226, 232, 240, 0.3);
+}
+
+.tile-sprout.flower-moonflower .tile-petal--1 {
+  transform: translate(-50%, -50%) rotate(-10deg) translateY(-0.4rem);
+  border-radius: 40% 60% 20% 20% / 70% 80% 20% 20%;
+}
+.tile-sprout.flower-moonflower .tile-petal--2 {
+  transform: translate(-50%, -50%) rotate(10deg) translateY(-0.4rem);
+  border-radius: 60% 40% 20% 20% / 80% 70% 20% 20%;
+}
+.tile-sprout.flower-moonflower .tile-petal--3 {
+  transform: translate(-50%, -50%) rotate(50deg) translateY(-0.36rem) scaleX(0.92);
+}
+.tile-sprout.flower-moonflower .tile-petal--4 {
+  transform: translate(-50%, -50%) rotate(130deg) translateY(-0.36rem) scaleX(0.92);
+}
+.tile-sprout.flower-moonflower .tile-petal--5 {
+  transform: translate(-50%, -50%) rotate(190deg) translateY(-0.38rem) scaleY(0.95);
+  border-radius: 50% 50% 20% 20% / 75% 75% 20% 20%;
+}
+.tile-sprout.flower-moonflower .tile-petal--6 {
+  transform: translate(-50%, -50%) rotate(270deg) translateY(-0.35rem) scaleY(0.88);
+  width: 0.2rem;
+  height: 0.5rem;
+}
+
+.tile-sprout.flower-moonflower .tile-center {
+  width: 0.28rem;
+  height: 0.28rem;
+  background: linear-gradient(135deg, #94a3b8, #64748b);
+  box-shadow: 0 0 0.15rem rgba(148, 163, 184, 0.4), 0 0 0.3rem rgba(148, 163, 184, 0.15);
+}
+
+/* Moonflower stamen — three thin silver lines radiating from center */
+.tile-sprout.flower-moonflower .tile-flower::before,
+.tile-sprout.flower-moonflower .tile-flower::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0.03rem;
+  height: 0.25rem;
+  background: rgba(148, 163, 184, 0.6);
+  border-radius: 0.02rem;
+  transform-origin: bottom center;
+  z-index: 3;
+}
+
+.tile-sprout.flower-moonflower .tile-flower::before {
+  transform: translate(-50%, -100%) rotate(-25deg);
+}
+
+.tile-sprout.flower-moonflower .tile-flower::after {
+  transform: translate(-50%, -100%) rotate(25deg);
+}
+
+/* Third stamen using box-shadow trick on a new element isn't possible with just ::before/::after,
+   so we use the center's own pseudo-element via box-shadow on the center itself */
+.tile-sprout.flower-moonflower .tile-center::after {
+  content: '';
+  position: absolute;
+  bottom: 50%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0.03rem;
+  height: 0.22rem;
+  background: rgba(148, 163, 184, 0.5);
+  border-radius: 0.02rem;
+  transform-origin: bottom center;
+  z-index: 4;
+}
+
+/* ── Moonflower: closed bud state (daytime) ── */
+.tile-sprout.moonflower-closed .tile-flower {
+  width: 0.5rem;
+  height: 0.65rem;
+}
+
+.tile-sprout.moonflower-closed .tile-petal {
+  width: 0.18rem;
+  height: 0.35rem;
+  background: linear-gradient(180deg, #94a3b8, #64748b);
+  border-radius: 50% 50% 30% 30% / 70% 70% 30% 30%;
+  box-shadow: none;
+}
+
+.tile-sprout.moonflower-closed .tile-petal--1 {
+  transform: translate(-50%, -50%) rotate(-12deg) translateY(-0.2rem);
+}
+.tile-sprout.moonflower-closed .tile-petal--2 {
+  transform: translate(-50%, -50%) rotate(12deg) translateY(-0.2rem);
+}
+.tile-sprout.moonflower-closed .tile-petal--3 {
+  transform: translate(-50%, -50%) rotate(0deg) translateY(-0.28rem);
+  width: 0.16rem;
+  height: 0.3rem;
+}
+.tile-sprout.moonflower-closed .tile-petal--4 {
+  transform: translate(-50%, -50%) rotate(168deg) translateY(-0.15rem);
+  opacity: 0.4;
+  width: 0.14rem;
+  height: 0.25rem;
+}
+.tile-sprout.moonflower-closed .tile-petal--5 {
+  transform: translate(-50%, -50%) rotate(192deg) translateY(-0.15rem);
+  opacity: 0.4;
+  width: 0.14rem;
+  height: 0.25rem;
+}
+.tile-sprout.moonflower-closed .tile-petal--6 {
+  transform: translate(-50%, -50%) rotate(180deg) translateY(-0.2rem);
+  opacity: 0.3;
+  width: 0.12rem;
+  height: 0.22rem;
+}
+
+.tile-sprout.moonflower-closed .tile-center {
+  width: 0.15rem;
+  height: 0.15rem;
+  background: #64748b;
+  box-shadow: none;
+}
+
+.tile-sprout.moonflower-closed .tile-flower::before,
+.tile-sprout.moonflower-closed .tile-flower::after,
+.tile-sprout.moonflower-closed .tile-center::after {
+  display: none;
+}
+
+/* ── Moonflower: night bloom animation ── */
+/* Scoped under body.theme-night so it only activates after dark */
+body.theme-night .tile-sprout.flower-moonflower.moonflower-bloom .tile-flower {
+  animation: moonflowerGlow 3.5s ease-in-out infinite;
+}
+
+@keyframes moonflowerGlow {
+  0%, 100% {
+    filter: brightness(1);
+    box-shadow: 0 0 0.3rem rgba(226, 232, 240, 0.15);
+  }
+  50% {
+    filter: brightness(1.15);
+    box-shadow: 0 0 0.6rem rgba(226, 232, 240, 0.3), 0 0 1rem rgba(148, 163, 184, 0.1);
+  }
+}
+
+body.theme-night .tile-sprout.flower-moonflower.moonflower-bloom .tile-petal {
+  animation: moonflowerPetalGlow 3.5s ease-in-out infinite;
+}
+
+@keyframes moonflowerPetalGlow {
+  0%, 100% {
+    box-shadow: 0 0 0.12rem rgba(226, 232, 240, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 0.25rem rgba(226, 232, 240, 0.5), 0 0 0.5rem rgba(148, 163, 184, 0.2);
+  }
+}
+
+body.theme-night .tile-sprout.flower-moonflower.moonflower-bloom .tile-center {
+  animation: moonflowerCenterGlow 3.5s ease-in-out infinite;
+}
+
+@keyframes moonflowerCenterGlow {
+  0%, 100% {
+    box-shadow: 0 0 0.15rem rgba(148, 163, 184, 0.4), 0 0 0.3rem rgba(148, 163, 184, 0.15);
+  }
+  50% {
+    box-shadow: 0 0 0.3rem rgba(148, 163, 184, 0.6), 0 0 0.6rem rgba(148, 163, 184, 0.25), 0 0 0.9rem rgba(226, 232, 240, 0.1);
+  }
+}
+
+/* Moonflower opening transition: when night falls, bloom opens */
+.tile-sprout.flower-moonflower.moonflower-bloom {
+  animation: moonflowerOpen 1.2s ease-out forwards;
+}
+
+@keyframes moonflowerOpen {
+  0% {
+    opacity: 0.7;
+    transform: scale(0.85);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.03);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 /* ── Moment card mini-flower morphology ── */
 .moment-flower.flower-daisy .moment-petal {
   width: 0.16rem;
@@ -5507,10 +5711,33 @@ body.theme-night {
   height: 0.12rem;
 }
 
+.moment-flower.flower-moonflower .moment-petal {
+  width: 0.12rem;
+  height: 0.3rem;
+  background: linear-gradient(180deg, #e2e8f0, #cbd5e1);
+  border-radius: 50% 50% 20% 20% / 80% 80% 20% 20%;
+}
+
+.moment-flower.flower-moonflower .moment-flower__center {
+  width: 0.1rem;
+  height: 0.1rem;
+  background: #94a3b8;
+}
+
 /* ── Reduced Motion: disable petal transitions ── */
 @media (prefers-reduced-motion: reduce) {
   .tile-sprout[class*="flower-"] .tile-petal {
     transition-duration: 0.01ms !important;
+  }
+
+  body.theme-night .tile-sprout.flower-moonflower.moonflower-bloom .tile-flower,
+  body.theme-night .tile-sprout.flower-moonflower.moonflower-bloom .tile-petal,
+  body.theme-night .tile-sprout.flower-moonflower.moonflower-bloom .tile-center {
+    animation: none !important;
+  }
+
+  .tile-sprout.flower-moonflower.moonflower-bloom {
+    animation: none !important;
   }
 }
 
