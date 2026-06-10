@@ -363,6 +363,7 @@ function shouldAutoCapture() {
 // ── Public: Initialize ──
 export function initGardenHistory() {
   createHistoryToggle();
+  createHistorySection();
 
   // Only capture if there's meaningful garden state
   if (plantedCount.value > 0 || journalEntries.length > 0) {

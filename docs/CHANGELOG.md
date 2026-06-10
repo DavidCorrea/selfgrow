@@ -2,6 +2,8 @@
 
 ## 2026-06-10
 
+- **Fixed history button not working — garden history section never created (closes #14)**: Added the missing `createHistorySection()` call inside `initGardenHistory()` so the `#gardenHistory` DOM element is created before the toggle button is clicked. Without this, `toggleHistory()` looked for `#gardenHistory` in the DOM, found nothing, and returned early — making the 📖 button do nothing. All CSS and rendering logic already existed; the section simply was never instantiated into the DOM. Files changed: `docs/js/garden-history.js`.
+
 - **Added custom inline SVG favicon (closes #12)**: Added a self-contained SVG favicon via data URI featuring a nature-inspired leaf sprout design — a soft green leaf shape with a stem, small offshoot veins, and a glowing bud at the top, all rendered in the project's dark palette (#080c14 background) with luminous green/teal accents (#16a34a, #22c55e, #4ade80) and a subtle radial glow. No external files required.
 
 ## 2026-06-10
