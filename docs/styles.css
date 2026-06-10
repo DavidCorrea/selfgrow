@@ -7990,8 +7990,7 @@ body.weather-snowy::after {
    ═══════════════════════════════════════════════════════════ */
 
 /* ── Base Season Overlay ── */
-body[class*="season-"]::after {
-  content: '';
+.season-overlay {
   position: fixed;
   inset: 0;
   pointer-events: none;
@@ -8001,7 +8000,7 @@ body[class*="season-"]::after {
 }
 
 /* ── Spring: soft green-pink tint, drifting petals ── */
-.season-spring::after {
+.season-overlay.season-spring {
   background:
     radial-gradient(ellipse at 30% 80%, rgba(147, 217, 160, 0.06) 0%, transparent 50%),
     radial-gradient(ellipse at 70% 20%, rgba(251, 207, 232, 0.04) 0%, transparent 45%),
@@ -8072,7 +8071,7 @@ body.season-spring {
 }
 
 /* ── Summer: warm golden shimmer ── */
-.season-summer::after {
+.season-overlay.season-summer {
   background:
     radial-gradient(ellipse at 50% 0%, rgba(252, 211, 77, 0.06) 0%, transparent 55%),
     radial-gradient(ellipse at 20% 80%, rgba(251, 191, 36, 0.04) 0%, transparent 45%),
@@ -8139,7 +8138,7 @@ body.season-summer {
 }
 
 /* ── Autumn: warm amber color wash, drifting leaves ── */
-.season-autumn::after {
+.season-overlay.season-autumn {
   background:
     radial-gradient(ellipse at 40% 70%, rgba(194, 136, 74, 0.06) 0%, transparent 50%),
     radial-gradient(ellipse at 60% 30%, rgba(251, 191, 36, 0.03) 0%, transparent 45%),
@@ -8204,7 +8203,7 @@ body.season-autumn {
 }
 
 /* ── Winter: cool blue-grey tint, frost borders ── */
-.season-winter::after {
+.season-overlay.season-winter {
   background:
     radial-gradient(ellipse at 50% 50%, rgba(184, 200, 224, 0.04) 0%, transparent 55%),
     radial-gradient(ellipse at 30% 20%, rgba(148, 163, 184, 0.03) 0%, transparent 45%),
@@ -8359,7 +8358,7 @@ body.season-winter .stat-card--mood .stat-value {
     transition-duration: 0.01ms !important;
   }
 
-  body[class*="season-"]::after {
+  .season-overlay {
     transition-duration: 0.01ms !important;
   }
 

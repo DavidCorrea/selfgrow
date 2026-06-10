@@ -58,11 +58,26 @@ export function getCurrentGardenSeason() {
 }
 
 // Apply the season class to <body> (layered on top of time-of-day classes)
+// and manage the dedicated season overlay div (separate from body::after atmosphere)
 function applySeasonClass(season) {
   var body = document.body;
   // Remove any existing season classes
   body.classList.remove('season-spring', 'season-summer', 'season-autumn', 'season-winter');
   body.classList.add('season-' + season);
+
+  // Manage the dedicated season overlay div
+  var overlay = document.getElementById('seasonOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'seasonOverlay';
+    overlay.classList.add('season-overlay');
+    overlay.setAttribute('aria-hidden', 'true');
+    // Insert as first child of body so it sits behind app content
+    body.insertBefore(overlay, body.firstChild);
+  }
+  // Remove season classes and add current
+  overlay.classList.remove('season-spring', 'season-summer', 'season-autumn', 'season-winter');
+  overlay.classList.add('season-' + season);
 }
 
 // Check if the season has changed since last visit — if so, log a journal entry
@@ -276,7 +291,7 @@ function applyDewEvent(config) {
 function getRandomBloomingTile() {
   var tiles = document.querySelectorAll('.grid-tile.planted .tile-sprout.grown');
   if (!tiles || tiles.length === 0) return null;
-  var arr = Array.from(tiles);
+  var arr = Array.prototype.slice.call(tiles);
   return arr[Math.floor(Math.random() * arr.length)].closest('.grid-tile');
 }
 

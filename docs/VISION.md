@@ -38,8 +38,4 @@ The app starts simple — a seed that blooms — and grows into a richer experie
 
 ## Completed Features
 
-All core vision items and major enhancements have been implemented, including Garden Reflection Stats, Garden Moments, Garden History, Garden Export/Import, Garden Gallery, Garden Rings bloom visualization, garden completion celebration, self-seeding volunteer plants, weather system with growth integration, six flower type morphology (including the night-blooming moonflower), Seed Collection & Replanting, Garden Ground Creatures (ladybugs, snails, worms), Meteorological Seasons with calendar-based overlays, Garden Aging between visits, and Garden Milestones. The garden is a fully-featured living digital ecosystem.
-
-## Completed Features
-
-All core vision items and major enhancements have been implemented, including Garden Reflection Stats, Garden Moments, Garden History, Garden Export/Import, Garden Gallery, Garden Rings bloom visualization, garden completion celebration, self-seeding volunteer plants, weather system with growth integration, distinct flower type morphology, and Seed Collection & Replanting. The garden is a fully-featured living digital ecosystem.
+All core vision items and major enhancements have been implemented, including Garden Reflection Stats, Garden Moments, Garden History, Garden Export/Import, Garden Gallery, Garden Rings bloom visualization, garden completion celebration, self-seeding volunteer plants, weather system with growth integration, six flower type morphology (including the night-blooming moonflower), Seed Collection & Replanting, Garden Ground Creatures (ladybugs, snails, worms), Meteorological Seasons with calendar-based overlays, Garden Aging between visits, Garden Milestones, and Ecosystem Interactions. The garden is a fully-featured living digital ecosystem.

@@ -289,8 +289,8 @@ export function restoreGardenState(state, callbacks) {
   }
 
   if (state.tileFlowerTypeMap) {
-    for (var fKey in state.tileFlowerTypeMap) {
-      tileFlowerTypeMap[fKey] = state.tileFlowerTypeMap[fKey];
+    for (var ftKey in state.tileFlowerTypeMap) {
+      tileFlowerTypeMap[ftKey] = state.tileFlowerTypeMap[ftKey];
     }
   }
 
