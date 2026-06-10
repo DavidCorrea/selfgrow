@@ -34,6 +34,12 @@ The app starts simple — a seed that blooms — and grows into a richer experie
 
 15. **Garden Milestones** — Gentle, non-competitive recognition of growth milestones (first bloom, all five flower types collected, 10 flowers bloomed, garden tended for 7 days) that appear as soft notifications in the journal. Milestones celebrate the gardener's journey without gamification pressure, fitting the calm and intentional philosophy.
 
+16. **Ecosystem Interactions** — Creatures and plants influence each other: bees visiting blooming flowers boost their growth speed, ladybugs resting on a tile gently wilt nearby weeds, and seasonal creatures (earthworms in spring, crickets in summer) emerge only in their matching season. The garden becomes a web of small relationships rather than independent systems.
+
+## Completed Features
+
+All core vision items and major enhancements have been implemented, including Garden Reflection Stats, Garden Moments, Garden History, Garden Export/Import, Garden Gallery, Garden Rings bloom visualization, garden completion celebration, self-seeding volunteer plants, weather system with growth integration, six flower type morphology (including the night-blooming moonflower), Seed Collection & Replanting, Garden Ground Creatures (ladybugs, snails, worms), Meteorological Seasons with calendar-based overlays, Garden Aging between visits, and Garden Milestones. The garden is a fully-featured living digital ecosystem.
+
 ## Completed Features
 
 All core vision items and major enhancements have been implemented, including Garden Reflection Stats, Garden Moments, Garden History, Garden Export/Import, Garden Gallery, Garden Rings bloom visualization, garden completion celebration, self-seeding volunteer plants, weather system with growth integration, distinct flower type morphology, and Seed Collection & Replanting. The garden is a fully-featured living digital ecosystem.
