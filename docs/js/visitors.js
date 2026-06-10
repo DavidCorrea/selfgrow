@@ -207,6 +207,22 @@ function spawnVisitor() {
     visitorEl.classList.remove('landing');
   }, 500);
 
+  // Dispatch sighting event for creature encyclopedia
+  var sightingType = null;
+  if (visitorEl.classList.contains('butterfly')) {
+    sightingType = 'butterfly';
+  } else if (visitorEl.classList.contains('bee')) {
+    sightingType = 'bee';
+  } else if (visitorEl.classList.contains('firefly')) {
+    sightingType = 'firefly';
+  }
+
+  if (sightingType && typeof window !== 'undefined' && window.dispatchEvent) {
+    window.dispatchEvent(new CustomEvent('visitorSpawned', {
+      detail: { type: sightingType }
+    }));
+  }
+
   var lifetime = 4000 + Math.random() * 6000;
   setTimeout(function () {
     if (!visitorEl.parentNode) return;

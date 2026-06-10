@@ -325,6 +325,13 @@ function spawnCreature() {
     creatureEl.classList.remove('ground-creature--entering');
   }, 400);
 
+  // Dispatch sighting event for creature encyclopedia
+  if (type && typeof window !== 'undefined' && window.dispatchEvent) {
+    window.dispatchEvent(new CustomEvent('groundCreatureSpawned', {
+      detail: { type: type }
+    }));
+  }
+
   // Set crawl direction (random)
   var direction = Math.random() < 0.5 ? 'left' : 'right';
   creatureEl.setAttribute('data-direction', direction);

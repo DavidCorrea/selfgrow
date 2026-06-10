@@ -20,6 +20,7 @@ import { simulateGardenAging, renderAgingResults, setupUnloadTimestamp, recordVi
 import { initGardenSeasons } from './js/garden-seasons.js';
 import { initGroundCreatures, startGroundCreatures, setGroundCreaturesEnabled, isGroundCreaturesEnabled } from './js/ground-creatures.js';
 import { startEcosystem, initEcosystem } from './js/ecosystem.js';
+import { initCreatureEncyclopedia } from './js/creature-encyclopedia.js';
 
 
 (function () {
@@ -279,6 +280,9 @@ import { startEcosystem, initEcosystem } from './js/ecosystem.js';
 
   // ── Initialize Ecosystem Interactions ──
   initEcosystem();
+
+  // ── Initialize Creature Encyclopedia ──
+  initCreatureEncyclopedia();
 
   // ── Ground Creatures Toggle ──
   var groundCreaturesToggle = dom.groundCreaturesToggle;
