@@ -10,6 +10,7 @@ import { isSoundscapeEnabled } from './soundscape.js';
 import { notifyStatsChange } from './stats.js';
 import { startGrowthCycle } from './tiles.js';
 import { recordBloom } from './garden-rings.js';
+import { visibleSetTimeout } from './visibility-manager.js';
 
 var seedingTimer = null;
 var isSeedingActive = false;
@@ -440,7 +441,7 @@ function scheduleNextAttempt() {
 
   // Check every 60-90 seconds
   var interval = 60000 + Math.random() * 30000;
-  seedingTimer = setTimeout(attemptSeeding, interval);
+  seedingTimer = visibleSetTimeout(attemptSeeding, interval);
 }
 
 // ── Start Self-Seeding ──
@@ -449,7 +450,7 @@ export function startSelfSeeding() {
   isSeedingActive = true;
 
   // First attempt after 60 seconds
-  seedingTimer = setTimeout(attemptSeeding, 60000);
+  seedingTimer = visibleSetTimeout(attemptSeeding, 60000);
 }
 
 

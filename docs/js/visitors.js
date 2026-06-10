@@ -1,6 +1,7 @@
 import { dom, plantedCount } from './state.js';
 import { isNightTheme } from './theme.js';
 import { getCurrentGardenSeason } from './garden-seasons.js';
+import { visibleSetTimeout, visibleClearTimeout, visibleSetInterval, visibleClearInterval } from './visibility-manager.js';
 
 var activeVisitors = [];
 var visitorIdCounter = 0;
@@ -255,18 +256,18 @@ function scheduleNextSpawn() {
     interval *= 1.6;
   }
 
-  visitorSpawnTimer = setTimeout(function () {
+  visitorSpawnTimer = visibleSetTimeout(function () {
     spawnVisitor();
     scheduleNextSpawn();
   }, interval);
 }
 
 export function startVisitors() {
-  if (visitorSpawnTimer) clearTimeout(visitorSpawnTimer);
+  if (visitorSpawnTimer) visibleClearTimeout(visitorSpawnTimer);
   scheduleNextSpawn();
 
-  if (fireflyTrailTimer) clearInterval(fireflyTrailTimer);
-  fireflyTrailTimer = setInterval(createFireflyTrails, 500);
+  if (fireflyTrailTimer) visibleClearInterval(fireflyTrailTimer);
+  fireflyTrailTimer = visibleSetInterval(createFireflyTrails, 500);
 }
 
 function clearAllVisitors() {
@@ -280,7 +281,7 @@ function clearAllVisitors() {
 
 export function initVisitors() {
   var lastThemeCheck = false;
-  setInterval(function () {
+  visibleSetInterval(function () {
     var currentNight = isNightTheme();
     if (currentNight !== lastThemeCheck) {
       lastThemeCheck = currentNight;
@@ -289,15 +290,6 @@ export function initVisitors() {
   }, 2000);
 
   lastThemeCheck = isNightTheme();
-
-  // Pause visitor animations when tab is hidden
-  document.addEventListener('visibilitychange', function () {
-    if (document.hidden) {
-      visitorsPaused = true;
-    } else {
-      visitorsPaused = false;
-    }
-  });
 
   // Use IntersectionObserver to pause visitors when off-screen
   var visitorsLayer = dom.visitorsLayer || document.getElementById('visitorsLayer');

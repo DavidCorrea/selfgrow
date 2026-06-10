@@ -1,6 +1,7 @@
 import { currentWeather, getRandomWeatherMessage } from './state.js';
 import { addWeatherEntry as addWeatherJournalEntry } from './journal.js';
 import { notifyStatsChange } from './stats.js';
+import { visibleSetTimeout } from './visibility-manager.js';
 
 // ── Weather System ──
 // Four weather states: sunny, rainy, cloudy, snowy
@@ -184,7 +185,7 @@ function createWeatherOverlay() {
   document.body.appendChild(labelEl);
 
   // Make icon and label visible after a short delay for fade-in
-  setTimeout(function () {
+  visibleSetTimeout(function () {
     iconEl.classList.add('visible');
     labelEl.classList.add('visible');
   }, 2500);
@@ -253,7 +254,7 @@ function advanceWeather() {
 
   // Schedule next transition: 2-3 minutes (120-180s)
   var nextInterval = (120000 + Math.random() * 60000);
-  weatherTimer = setTimeout(advanceWeather, nextInterval);
+  weatherTimer = visibleSetTimeout(advanceWeather, nextInterval);
 }
 
 // Start the weather cycle
@@ -265,10 +266,10 @@ function startWeather() {
 
   // Schedule first transition
   var nextInterval = (120000 + Math.random() * 60000);
-  weatherTimer = setTimeout(advanceWeather, nextInterval);
+  weatherTimer = visibleSetTimeout(advanceWeather, nextInterval);
 }
 
 // Initialize weather after a short delay (let the garden load first)
-setTimeout(function () {
+visibleSetTimeout(function () {
   startWeather();
 }, 2000);

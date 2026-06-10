@@ -7,6 +7,7 @@
 import { dom, plantedCount } from './state.js';
 import { getCurrentGardenSeason } from './garden-seasons.js';
 import { getSeasonWeightedCreatureType, isCreatureSeasonAllowed } from './ecosystem.js';
+import { visibleSetTimeout, visibleClearTimeout } from './visibility-manager.js';
 
 var activeCreatures = [];
 var creatureIdCounter = 0;
@@ -368,7 +369,7 @@ function scheduleNextSpawn() {
   var interval = Math.max(MIN_SPAWN_INTERVAL, 8000 - (plantedCount.value * 800));
   interval += Math.random() * 4000;
 
-  creatureSpawnTimer = setTimeout(function () {
+  creatureSpawnTimer = visibleSetTimeout(function () {
     spawnCreature();
     scheduleNextSpawn();
   }, interval);
@@ -443,27 +444,22 @@ function createCricket() {
 // ── Public API ──
 
 export function startGroundCreatures() {
-  if (creatureSpawnTimer) clearTimeout(creatureSpawnTimer);
+  if (creatureSpawnTimer) visibleClearTimeout(creatureSpawnTimer);
   scheduleNextSpawn();
 }
 
 export function stopGroundCreatures() {
   if (creatureSpawnTimer) {
-    clearTimeout(creatureSpawnTimer);
+    visibleClearTimeout(creatureSpawnTimer);
     creatureSpawnTimer = null;
   }
   clearAllCreatures();
 }
 
 export function initGroundCreatures() {
-  // Pause when tab is hidden
-  document.addEventListener('visibilitychange', function () {
-    if (document.hidden) {
-      creaturesPaused = true;
-    } else {
-      creaturesPaused = false;
-    }
-  });
+  // Visibility pause is now handled centrally by visibility-manager.js
+  // via the tab-hidden body class and wrapped timers
+
 
   // Pause when garden grid is off-screen
   var gardenGrid = dom.gardenGrid;
@@ -482,7 +478,7 @@ export function setGroundCreaturesEnabled(enabled) {
   if (!enabled) {
     clearAllCreatures();
     if (creatureSpawnTimer) {
-      clearTimeout(creatureSpawnTimer);
+      visibleClearTimeout(creatureSpawnTimer);
       creatureSpawnTimer = null;
     }
   } else {

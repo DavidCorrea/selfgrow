@@ -1,4 +1,5 @@
 // ── Seasonal Time-of-Day Theme ──
+import { visibleSetInterval } from './visibility-manager.js';
 
 function applyTimeTheme() {
   var hour = new Date().getHours();
@@ -50,5 +51,5 @@ export function isNightTheme() {
 
 export function initTheme() {
   applyTimeTheme();
-  setInterval(applyTimeTheme, 60000);
+  visibleSetInterval(applyTimeTheme, 60000);
 }

@@ -1,5 +1,6 @@
 import { dom } from './state.js';
 import { getCurrentTheme } from './theme.js';
+import { visibleSetInterval } from './visibility-manager.js';
 
 var audioCtx = null;
 var isSoundscapeActive = false;
@@ -320,7 +321,7 @@ export function initSoundscape() {
   });
 
   var lastSoundscapeTheme = getCurrentTheme();
-  setInterval(function () {
+  visibleSetInterval(function () {
     var currentTheme = getCurrentTheme();
     if (currentTheme !== lastSoundscapeTheme) {
       lastSoundscapeTheme = currentTheme;

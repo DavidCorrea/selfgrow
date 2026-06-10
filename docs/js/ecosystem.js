@@ -7,6 +7,7 @@
 import { dom, plantedCount, journalEntries, tileCycleState } from './state.js';
 import { addJournalEntry } from './journal.js';
 import { getCurrentGardenSeason } from './garden-seasons.js';
+import { visibleSetInterval, visibleClearInterval } from './visibility-manager.js';
 
 var ecosystemInterval = null;
 var ecosystemPaused = false;
@@ -363,14 +364,14 @@ function ecosystemTick() {
 // ── Public API ──
 
 export function startEcosystem() {
-  if (ecosystemInterval) clearInterval(ecosystemInterval);
+  if (ecosystemInterval) visibleClearInterval(ecosystemInterval);
   // Run ecosystem tick every 3 seconds
-  ecosystemInterval = setInterval(ecosystemTick, 3000);
+  ecosystemInterval = visibleSetInterval(ecosystemTick, 3000);
 }
 
 export function stopEcosystem() {
   if (ecosystemInterval) {
-    clearInterval(ecosystemInterval);
+    visibleClearInterval(ecosystemInterval);
     ecosystemInterval = null;
   }
 }
@@ -384,14 +385,8 @@ export function resumeEcosystem() {
 }
 
 export function initEcosystem() {
-  // Pause when tab is hidden
-  document.addEventListener('visibilitychange', function () {
-    if (document.hidden) {
-      ecosystemPaused = true;
-    } else {
-      ecosystemPaused = false;
-    }
-  });
+  // Visibility pause is now handled centrally by visibility-manager.js
+  // via the tab-hidden body class and wrapped timers
 }
 
 // Apply ecosystem growth multipliers to weather-scaled timing

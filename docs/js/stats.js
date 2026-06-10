@@ -1,6 +1,7 @@
 import { dom, journalEntries, plantedCount, totalTiles, totalVolunteers, fertilizedTiles } from './state.js';
 import { getCurrentSeasonName, getCurrentCalendarSeason } from './theme.js';
 import { getBloomingCount, getPlantedCount } from './visitors.js';
+import { visibleSetInterval, visibleClearInterval, visibleSetTimeout } from './visibility-manager.js';
 
 var statsRevealed = false;
 var statsUpdateTimer = null;
@@ -265,8 +266,8 @@ function updateStats() {
 }
 
 function scheduleStatsUpdate() {
-  if (statsUpdateTimer) clearInterval(statsUpdateTimer);
-  statsUpdateTimer = setInterval(function () {
+  if (statsUpdateTimer) visibleClearInterval(statsUpdateTimer);
+  statsUpdateTimer = visibleSetInterval(function () {
     if (statsRevealed) {
       updateStats();
     }
@@ -275,7 +276,7 @@ function scheduleStatsUpdate() {
 
 // Called by other modules to notify stats of changes
 export function notifyStatsChange() {
-  setTimeout(function () { updateStats(); }, 100);
+  visibleSetTimeout(function () { updateStats(); }, 100);
 }
 
 function updateVolunteerStat() {
@@ -310,22 +311,32 @@ function updateVolunteerStat() {
 export function initStats() {
   scheduleStatsUpdate();
 
+  // Single consolidated interval replaces the 3 separate ones below
   var lastStatsTheme = getCurrentSeasonName();
-  setInterval(function () {
+  var lastVolunteerCount = totalVolunteers.value;
+  var lastFertilizedCount = getFertilizedCount();
+
+  var consolidatedTimer = visibleSetInterval(function () {
+    // Theme check (was 60s)
     var currentTheme = getCurrentSeasonName();
     if (currentTheme !== lastStatsTheme) {
       lastStatsTheme = currentTheme;
       updateStats();
     }
-  }, 60000);
 
-  setInterval(function () {
-    updateVolunteerStat();
-  }, 15000);
+    // Volunteer stat check (was 15s)
+    if (totalVolunteers.value !== lastVolunteerCount) {
+      lastVolunteerCount = totalVolunteers.value;
+      updateVolunteerStat();
+    }
 
-  setInterval(function () {
-    updateFertilizedStat();
-  }, 15000);
+    // Fertilized stat check (was 15s)
+    var currentFertilized = getFertilizedCount();
+    if (currentFertilized !== lastFertilizedCount) {
+      lastFertilizedCount = currentFertilized;
+      updateFertilizedStat();
+    }
+  }, 30000);
 }
 
 function updateFertilizedStat() {

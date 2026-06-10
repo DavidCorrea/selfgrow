@@ -7670,6 +7670,41 @@ body.weather-snowy::after {
   }
 }
 
+/* ── Tab-hidden: pause all infinite CSS animations ── */
+/* When the tab is hidden, visibility-manager.js adds .tab-hidden to body.
+   This sets animation-play-state: paused on all animated overlay and
+   atmospheric elements, eliminating GPU cycles in background tabs. */
+body.tab-hidden .weather-overlay,
+body.tab-hidden .weather-layer,
+body.tab-hidden .rain-drop,
+body.tab-hidden .snow-flake,
+body.tab-hidden .cloud,
+body.tab-hidden .mist-layer,
+body.tab-hidden .sun-ray,
+body.tab-hidden::after,
+body.tab-hidden .visitor,
+body.tab-hidden .firefly-trail,
+body.tab-hidden .ground-creature,
+body.tab-hidden .flutter-path,
+body.tab-hidden .tile-sprout.grown .tile-flower,
+body.tab-hidden .flower-sway,
+body.tab-hidden .sparkle,
+body.tab-hidden .tile-sparkle,
+body.tab-hidden .volunteer-sparkle,
+body.tab-hidden .pollination-sparkle,
+body.tab-hidden .pest-cleaned-sparkle,
+body.tab-hidden .celebration-particle,
+body.tab-hidden .ring-circle,
+body.tab-hidden .moteDrift1,
+body.tab-hidden .moteDrift2,
+body.tab-hidden .moteDrift3,
+body.tab-hidden .moteDrift4,
+body.tab-hidden .moteDrift5,
+body.tab-hidden .moteDrift6 {
+  animation-play-state: paused !important;
+  transition-duration: 0.01ms !important;
+}
+
 /* ═══════════════════════════════════════════════════════════
    Garden Milestones — Gentle, non-competitive recognition
    ═══════════════════════════════════════════════════════════ */

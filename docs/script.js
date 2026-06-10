@@ -1,4 +1,5 @@
 import { dom, gridRevealed } from './js/state.js';
+import { initVisibilityManager } from './js/visibility-manager.js';
 import { saveGardenState, loadGardenState, restoreGardenState, restoreWelcomeCard } from './js/persistence.js';
 import { initTheme } from './js/theme.js';
 import { addJournalEntry, getRandomMessage } from './js/journal.js';
@@ -65,6 +66,9 @@ import { startEcosystem, initEcosystem } from './js/ecosystem.js';
   dom.seedPacketsPanel = document.getElementById('seedPacketsPanel');
   dom.seedPacketsList = document.getElementById('seedPacketsList');
   dom.seedPacketsCount = document.getElementById('seedPacketsCount');
+
+  // ── Initialize Visibility Manager (must be first) ──
+  initVisibilityManager();
 
   // ── Initialize Theme ──
   initTheme();
