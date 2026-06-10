@@ -17,6 +17,7 @@ import { initMilestones } from './js/milestones.js';
 import { initMilestonesPanel, renderMilestones } from './js/milestones-panel.js';
 import { simulateGardenAging, renderAgingResults, setupUnloadTimestamp, recordVisitTimestamp } from './js/garden-aging.js';
 import { initGardenSeasons } from './js/garden-seasons.js';
+import { initGroundCreatures, startGroundCreatures, setGroundCreaturesEnabled, isGroundCreaturesEnabled } from './js/ground-creatures.js';
 
 
 (function () {
@@ -45,6 +46,8 @@ import { initGardenSeasons } from './js/garden-seasons.js';
   dom.visitorsLayer = document.getElementById('visitorsLayer');
   dom.soundscapeToggle = document.getElementById('soundscapeToggle');
   dom.soundscapeIcon = document.getElementById('soundscapeIcon');
+  dom.groundCreaturesToggle = document.getElementById('groundCreaturesToggle');
+  dom.groundCreaturesIcon = document.getElementById('groundCreaturesIcon');
   dom.gardenStats = document.getElementById('gardenStats');
   dom.statFlowersValue = document.getElementById('statFlowersValue');
   dom.statFlowersEmoji = document.getElementById('statFlowersEmoji');
@@ -126,6 +129,7 @@ import { initGardenSeasons } from './js/garden-seasons.js';
     setTimeout(function () {
       revealGrid();
       startVisitors();
+      startGroundCreatures();
     }, 5000);
 
     saveGardenState();
@@ -264,6 +268,38 @@ import { initGardenSeasons } from './js/garden-seasons.js';
   // ── Initialize Garden Seasons ──
   initGardenSeasons();
 
+  // ── Initialize Ground Creatures ──
+  initGroundCreatures();
+
+  // ── Ground Creatures Toggle ──
+  var groundCreaturesToggle = dom.groundCreaturesToggle;
+  var groundCreaturesIcon = dom.groundCreaturesIcon;
+  if (groundCreaturesToggle) {
+    // Default is enabled, so show active state
+    groundCreaturesToggle.classList.add('active');
+    groundCreaturesToggle.addEventListener('click', function () {
+      var enabled = isGroundCreaturesEnabled();
+      setGroundCreaturesEnabled(!enabled);
+      if (!enabled) {
+        groundCreaturesToggle.classList.add('active');
+      } else {
+        groundCreaturesToggle.classList.remove('active');
+      }
+    });
+    groundCreaturesToggle.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        var enabled = isGroundCreaturesEnabled();
+        setGroundCreaturesEnabled(!enabled);
+        if (!enabled) {
+          groundCreaturesToggle.classList.add('active');
+        } else {
+          groundCreaturesToggle.classList.remove('active');
+        }
+      }
+    });
+  }
+
   // ── Initialize Export/Import Buttons ──
   var exportBtn = document.getElementById('exportGardenBtn');
   var importBtn = document.getElementById('importGardenBtn');
@@ -315,6 +351,7 @@ import { initGardenSeasons } from './js/garden-seasons.js';
     );
     if (gridRevealed.value) {
       startVisitors();
+      startGroundCreatures();
     }
     // Simulate garden aging after restoration so it builds on restored state
     setTimeout(function () {
