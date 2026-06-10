@@ -18,6 +18,7 @@ import { initMilestonesPanel, renderMilestones } from './js/milestones-panel.js'
 import { simulateGardenAging, renderAgingResults, setupUnloadTimestamp, recordVisitTimestamp } from './js/garden-aging.js';
 import { initGardenSeasons } from './js/garden-seasons.js';
 import { initGroundCreatures, startGroundCreatures, setGroundCreaturesEnabled, isGroundCreaturesEnabled } from './js/ground-creatures.js';
+import { startEcosystem, initEcosystem } from './js/ecosystem.js';
 
 
 (function () {
@@ -130,6 +131,7 @@ import { initGroundCreatures, startGroundCreatures, setGroundCreaturesEnabled, i
       revealGrid();
       startVisitors();
       startGroundCreatures();
+      startEcosystem();
     }, 5000);
 
     saveGardenState();
@@ -271,6 +273,9 @@ import { initGroundCreatures, startGroundCreatures, setGroundCreaturesEnabled, i
   // ── Initialize Ground Creatures ──
   initGroundCreatures();
 
+  // ── Initialize Ecosystem Interactions ──
+  initEcosystem();
+
   // ── Ground Creatures Toggle ──
   var groundCreaturesToggle = dom.groundCreaturesToggle;
   var groundCreaturesIcon = dom.groundCreaturesIcon;
@@ -352,6 +357,7 @@ import { initGroundCreatures, startGroundCreatures, setGroundCreaturesEnabled, i
     if (gridRevealed.value) {
       startVisitors();
       startGroundCreatures();
+      startEcosystem();
     }
     // Simulate garden aging after restoration so it builds on restored state
     setTimeout(function () {

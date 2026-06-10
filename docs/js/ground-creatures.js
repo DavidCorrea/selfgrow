@@ -5,6 +5,8 @@
 // ═══════════════════════════════════════════════════════════
 
 import { dom, plantedCount } from './state.js';
+import { getCurrentGardenSeason } from './garden-seasons.js';
+import { getSeasonWeightedCreatureType, isCreatureSeasonAllowed } from './ecosystem.js';
 
 var activeCreatures = [];
 var creatureIdCounter = 0;
@@ -16,7 +18,7 @@ var MAX_CONCURRENT_CREATURES = 4;
 var MIN_SPAWN_INTERVAL = 5000;
 
 // ── Creature type definitions ──
-var creatureTypes = ['ladybug', 'snail', 'worm'];
+var creatureTypes = ['ladybug', 'snail', 'worm', 'cricket'];
 
 function getTiles() {
   return dom.tiles || document.querySelectorAll('.grid-tile');
@@ -262,15 +264,18 @@ function spawnCreature() {
   var tile = getRandomPlantedTile();
   if (!tile) return;
 
-  // Pick a random creature type, weighted
-  var rand = Math.random();
-  var type;
-  if (rand < 0.4) {
-    type = 'ladybug';
-  } else if (rand < 0.75) {
-    type = 'snail';
-  } else {
-    type = 'worm';
+  // Pick a creature type weighted by current season
+  var type = getSeasonWeightedCreatureType();
+
+  // Double-check season gating (belt-and-suspenders with the weighted function)
+  if (!isCreatureSeasonAllowed(type)) {
+    // Fallback to a season-appropriate type
+    var season = getCurrentGardenSeason();
+    if (season === 'winter') {
+      type = Math.random() < 0.6 ? 'snail' : 'ladybug';
+    } else {
+      type = 'snail';
+    }
   }
 
   var creatureEl;
@@ -278,12 +283,18 @@ function spawnCreature() {
     creatureEl = createLadybug();
   } else if (type === 'snail') {
     creatureEl = createSnail();
+  } else if (type === 'cricket') {
+    creatureEl = createCricket();
   } else {
     creatureEl = createWorm();
   }
 
   var gardenGrid = dom.gardenGrid;
   if (!gardenGrid) return;
+
+  // Store the tile index the creature spawned on for ecosystem interactions
+  var spawnTileIndex = parseInt(tile.getAttribute('data-tile'), 10);
+  creatureEl.setAttribute('data-spawn-tile', spawnTileIndex);
 
   var id = creatureIdCounter++;
   creatureEl.setAttribute('data-creature-id', id);
@@ -371,6 +382,62 @@ function clearAllCreatures() {
     el.remove();
   });
   activeCreatures = [];
+}
+
+// ── Cricket (summer-only ground creature) ──
+
+function createCricket() {
+  var el = document.createElement('div');
+  el.classList.add('ground-creature', 'ground-creature--cricket');
+  el.setAttribute('role', 'img');
+  el.setAttribute('aria-label', 'Cricket');
+  el.setAttribute('tabindex', '0');
+
+  // Body
+  var body = document.createElement('div');
+  body.classList.add('cricket-body');
+
+  // Head
+  var head = document.createElement('div');
+  head.classList.add('cricket-head');
+
+  // Eyes
+  var eyeLeft = document.createElement('div');
+  eyeLeft.classList.add('cricket-eye', 'cricket-eye--left');
+  var eyeRight = document.createElement('div');
+  eyeRight.classList.add('cricket-eye', 'cricket-eye--right');
+  head.appendChild(eyeLeft);
+  head.appendChild(eyeRight);
+
+  // Antennae
+  var antennaLeft = document.createElement('div');
+  antennaLeft.classList.add('cricket-antenna', 'cricket-antenna--left');
+  var antennaRight = document.createElement('div');
+  antennaRight.classList.add('cricket-antenna', 'cricket-antenna--right');
+
+  // Legs (hind legs for jumping)
+  var hindLegLeft = document.createElement('div');
+  hindLegLeft.classList.add('cricket-leg', 'cricket-leg--hind-left');
+  var hindLegRight = document.createElement('div');
+  hindLegRight.classList.add('cricket-leg', 'cricket-leg--hind-right');
+
+  // Wings (folded)
+  var wingLeft = document.createElement('div');
+  wingLeft.classList.add('cricket-wing', 'cricket-wing--left');
+  var wingRight = document.createElement('div');
+  wingRight.classList.add('cricket-wing', 'cricket-wing--right');
+
+  body.appendChild(hindLegLeft);
+  body.appendChild(hindLegRight);
+  body.appendChild(wingLeft);
+  body.appendChild(wingRight);
+
+  el.appendChild(body);
+  el.appendChild(head);
+  el.appendChild(antennaLeft);
+  el.appendChild(antennaRight);
+
+  return el;
 }
 
 // ── Public API ──

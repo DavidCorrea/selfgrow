@@ -1,5 +1,6 @@
 import { dom, plantedCount } from './state.js';
 import { isNightTheme } from './theme.js';
+import { getCurrentGardenSeason } from './garden-seasons.js';
 
 var activeVisitors = [];
 var visitorIdCounter = 0;
@@ -150,13 +151,27 @@ function spawnVisitor() {
 
   var visitorEl;
 
+  var season = getCurrentGardenSeason();
+
   if (isNight) {
-    visitorEl = createFirefly();
+    // Fireflies are summer-only — they glow on warm evenings
+    if (season === 'summer') {
+      visitorEl = createFirefly();
+    } else {
+      // Other nights: occasional butterfly or bee
+      visitorEl = Math.random() < 0.7 ? createButterfly() : createBee();
+    }
   } else {
-    if (Math.random() < 0.6) {
+    // Bees are more common during spring and summer (pollination season)
+    var beeWeight = (season === 'spring' || season === 'summer') ? 0.45 : 0.20;
+    var roll = Math.random();
+    if (roll < beeWeight) {
+      visitorEl = createBee();
+    } else if (roll < beeWeight + 0.40) {
       visitorEl = createButterfly();
     } else {
-      visitorEl = createBee();
+      // Second chance for butterfly or bee
+      visitorEl = Math.random() < 0.5 ? createButterfly() : createBee();
     }
   }
 
@@ -228,8 +243,17 @@ function scheduleNextSpawn() {
 
   if (plantedCount.value === 0) return;
 
+  var season = getCurrentGardenSeason();
   var interval = Math.max(MIN_SPAWN_INTERVAL, 5000 - (plantedCount.value * 500));
   interval += Math.random() * 2000;
+
+  // Summer has more activity (bees, butterflies, fireflies at night)
+  if (season === 'summer') {
+    interval *= 0.75;
+  } else if (season === 'winter') {
+    // Winter has fewer flying visitors
+    interval *= 1.6;
+  }
 
   visitorSpawnTimer = setTimeout(function () {
     spawnVisitor();

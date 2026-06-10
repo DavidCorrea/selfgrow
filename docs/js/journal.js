@@ -35,7 +35,7 @@ function revealJournal() {
   }
 }
 
-export function addJournalEntry(tileIndex, petalColor, cycleNum) {
+export function addJournalEntry(tileIndex, petalColor, cycleNum, options) {
   var gardenJournal = dom.gardenJournal;
   var journalTimeline = dom.journalTimeline;
   var journalEmpty = dom.journalEmpty;
@@ -53,14 +53,18 @@ export function addJournalEntry(tileIndex, petalColor, cycleNum) {
   var now = new Date();
   var timeStr = formatTime(now);
   var isCycle = cycleNum && cycleNum > 1;
+  var entryType = (options && options.type) ? options.type : (isCycle ? 'cycle' : 'plant');
   var entry = {
     tileIndex: tileIndex,
     petalColor: petalColor,
     time: timeStr,
     timestamp: now.getTime(),
     cycle: cycleNum || 1,
-    type: isCycle ? 'cycle' : 'plant'
+    type: entryType
   };
+  if (options && options.subText) {
+    entry.subText = options.subText;
+  }
   journalEntries.push(entry);
 
   // Cap journal entries to prevent unbounded growth
@@ -74,21 +78,40 @@ export function addJournalEntry(tileIndex, petalColor, cycleNum) {
 
   var entryEl = document.createElement('div');
   entryEl.classList.add('journal-entry');
+  // Add type-specific CSS class for styled entries (e.g., journal-entry--pollinated)
+  if (entryType && entryType !== 'plant' && entryType !== 'cycle') {
+    entryEl.classList.add('journal-entry--' + entryType);
+  }
   entryEl.setAttribute('role', 'listitem');
 
-  var entryLabel = isCycle
-    ? '<strong>Tile ' + (tileIndex + 1) + '</strong> &mdash; 🌸 cycle ' + cycleNum + ' at ' + timeStr
-    : '<strong>Tile ' + (tileIndex + 1) + '</strong> &mdash; planted at ' + timeStr;
+  var entryLabel;
+  var entrySubText;
+  if (options && options.customLabel) {
+    entryLabel = options.customLabel;
+    entrySubText = options.subText || '';
+  } else if (isCycle) {
+    entryLabel = '<strong>Tile ' + (tileIndex + 1) + '</strong> &mdash; 🌸 cycle ' + cycleNum + ' at ' + timeStr;
+    entrySubText = getRandomCycleMessage();
+  } else {
+    entryLabel = '<strong>Tile ' + (tileIndex + 1) + '</strong> &mdash; planted at ' + timeStr;
+    entrySubText = 'flower #' + journalEntries.length + ' in your garden';
+  }
+
+  var subHtml = entrySubText ? '<p class="entry-time">' + entrySubText + '</p>' : '';
+  var dotClass = entryType && entryType !== 'plant' && entryType !== 'cycle' ? 'entry-timeline-dot entry-timeline-dot--' + entryType : 'entry-timeline-dot';
+  var swatchClass = entryType && entryType !== 'plant' && entryType !== 'cycle' ? 'entry-swatch entry-swatch--' + entryType : 'entry-swatch';
 
   entryEl.innerHTML =
-    '<div class="entry-timeline-dot"></div>' +
+    '<div class="' + dotClass + '"></div>' +
     '<div class="entry-content">' +
       '<p class="entry-text">' + entryLabel + '</p>' +
-      '<p class="entry-time">' + (isCycle ? getRandomCycleMessage() : 'flower #' + journalEntries.length + ' in your garden') + '</p>' +
+      subHtml +
     '</div>' +
-    '<div class="entry-swatch" style="background: ' + petalColor + '" aria-hidden="true"></div>';
+    '<div class="' + swatchClass + '" style="background: ' + petalColor + '" aria-hidden="true"></div>';
 
-  journalTimeline.insertBefore(entryEl, journalTimeline.firstChild);
+  if (journalTimeline) {
+    journalTimeline.insertBefore(entryEl, journalTimeline.firstChild);
+  }
 
   if (gardenJournal) {
     gardenJournal.classList.remove('pulse');

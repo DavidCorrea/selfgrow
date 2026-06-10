@@ -8,6 +8,7 @@ import { notifyStatsChange } from './stats.js';
 import { triggerGardenComplete } from './celebration.js';
 import { recordBloom } from './garden-rings.js';
 import { getCurrentWeather, getWeatherModifier, onWeatherChange } from './weather.js';
+import { getEcosystemGrowthMultiplier } from './ecosystem.js';
 import { checkBloomMilestone, recordTendDay } from './milestones.js';
 
 var wateringMode = false;
@@ -22,8 +23,12 @@ function getWeatherGrowthMultiplier() {
 }
 
 // Apply weather-scaled delay, ensuring a minimum so things don't feel instant
-function weatherScaled(baseMs) {
+function weatherScaled(baseMs, tileIndex) {
   var scaled = baseMs * getWeatherGrowthMultiplier();
+  // Apply ecosystem growth multiplier (e.g., bee pollination = 25% boost)
+  if (tileIndex !== undefined && tileIndex !== null) {
+    scaled *= getEcosystemGrowthMultiplier(tileIndex);
+  }
   return Math.max(scaled, 200); // minimum 200ms so animations remain visible
 }
 
@@ -267,11 +272,11 @@ export function startGrowthCycle(tileEl, tileIndex) {
   var isRegrow = state.cycle > 1;
   var wasFertilized = tileEl.classList.contains('fertilized');
 
-  // Weather-scaled timings
+  // Weather-scaled timings (also applies ecosystem multipliers like bee pollination)
   var wsm = getWeatherGrowthMultiplier();
-  var holdBloom = weatherScaled(CYCLE_HOLD_BLOOM);
-  var wiltDur = weatherScaled(CYCLE_WILT_DURATION);
-  var pauseWilt = weatherScaled(CYCLE_PAUSE_AFTER_WILT);
+  var holdBloom = weatherScaled(CYCLE_HOLD_BLOOM, tileIndex);
+  var wiltDur = weatherScaled(CYCLE_WILT_DURATION, tileIndex);
+  var pauseWilt = weatherScaled(CYCLE_PAUSE_AFTER_WILT, tileIndex);
 
   if (isRegrow) {
     // ── Perennial regrowth: keep stem & leaves, only collapse flower ──
@@ -501,15 +506,15 @@ export function plantTile(tileEl) {
   var tileSeed = tileEl.querySelector('.tile-seed');
   tileSeed.classList.add('visible');
 
-  // Weather-scaled timings for initial plant
+  // Weather-scaled timings for initial plant (also applies ecosystem multipliers)
   var wsm = getWeatherGrowthMultiplier();
   var seedDelay = weatherScaled(500);
   var budDelay = weatherScaled(1400);
   var bloomDelay = weatherScaled(2000);
   var grownDelay = weatherScaled(2700);
-  var holdBloom = weatherScaled(CYCLE_HOLD_BLOOM);
-  var wiltDur = weatherScaled(CYCLE_WILT_DURATION);
-  var pauseWilt = weatherScaled(CYCLE_PAUSE_AFTER_WILT);
+  var holdBloom = weatherScaled(CYCLE_HOLD_BLOOM, tileIndex);
+  var wiltDur = weatherScaled(CYCLE_WILT_DURATION, tileIndex);
+  var pauseWilt = weatherScaled(CYCLE_PAUSE_AFTER_WILT, tileIndex);
 
   setTimeout(function () {
     var tileSprout = tileEl.querySelector('.tile-sprout');
