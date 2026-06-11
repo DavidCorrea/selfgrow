@@ -379,7 +379,7 @@ export function startGrowthCycle(tileEl, tileIndex) {
 
   } else {
     // ── First cycle: full seed → stem → bud → bloom ──
-    tileSprout.classList.remove('growing', 'budding', 'blooming', 'grown', 'wilting', 'fertilized-boost', 'dormant', 'regrowing', 'regrow-bud', 'regrow-bloom');
+    tileSprout.classList.remove('growing', 'budding', 'budding-hold', 'blooming', 'grown', 'wilting', 'fertilized-boost', 'dormant', 'regrowing', 'regrow-bud', 'regrow-bloom');
     tileEl.classList.remove('reseeding');
     tileSeed.classList.remove('visible');
 
@@ -393,8 +393,9 @@ export function startGrowthCycle(tileEl, tileIndex) {
 
     var seedDelay = weatherScaled(500);
     var budDelay = weatherScaled(1400);
-    var bloomDelay = weatherScaled(2000);
-    var grownDelay = weatherScaled(2700);
+    var budHoldDelay = budDelay + weatherScaled(200);
+    var bloomDelay = budHoldDelay + weatherScaled(100);
+    var grownDelay = bloomDelay + weatherScaled(700);
 
     var seedTimeout = setTimeout(function () {
       tileSprout.classList.add('growing');
@@ -405,8 +406,13 @@ export function startGrowthCycle(tileEl, tileIndex) {
       tileSprout.classList.add('budding');
     }, budDelay);
 
-    var bloomTimeout = setTimeout(function () {
+    var budHoldTimeout = setTimeout(function () {
       tileSprout.classList.remove('budding');
+      tileSprout.classList.add('budding-hold');
+    }, budHoldDelay);
+
+    var bloomTimeout = setTimeout(function () {
+      tileSprout.classList.remove('budding-hold');
       tileSprout.classList.add('blooming');
     }, bloomDelay);
 
@@ -467,7 +473,7 @@ export function startGrowthCycle(tileEl, tileIndex) {
     }, grownDelay);
 
     state.timeouts = state.timeouts || [];
-    state.timeouts.push(seedTimeout, budTimeout, bloomTimeout, grownTimeout);
+    state.timeouts.push(seedTimeout, budTimeout, budHoldTimeout, bloomTimeout, grownTimeout);
   }
 }
 
@@ -510,8 +516,9 @@ export function plantTile(tileEl) {
   var wsm = getWeatherGrowthMultiplier();
   var seedDelay = weatherScaled(500);
   var budDelay = weatherScaled(1400);
-  var bloomDelay = weatherScaled(2000);
-  var grownDelay = weatherScaled(2700);
+  var budHoldDelay = budDelay + weatherScaled(200);
+  var bloomDelay = budHoldDelay + weatherScaled(100);
+  var grownDelay = bloomDelay + weatherScaled(700);
   var holdBloom = weatherScaled(CYCLE_HOLD_BLOOM, tileIndex);
   var wiltDur = weatherScaled(CYCLE_WILT_DURATION, tileIndex);
   var pauseWilt = weatherScaled(CYCLE_PAUSE_AFTER_WILT, tileIndex);
@@ -530,6 +537,12 @@ export function plantTile(tileEl) {
   setTimeout(function () {
     var tileSprout = tileEl.querySelector('.tile-sprout');
     tileSprout.classList.remove('budding');
+    tileSprout.classList.add('budding-hold');
+  }, budHoldDelay);
+
+  setTimeout(function () {
+    var tileSprout = tileEl.querySelector('.tile-sprout');
+    tileSprout.classList.remove('budding-hold');
     tileSprout.classList.add('blooming');
   }, bloomDelay);
 
