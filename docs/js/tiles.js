@@ -241,6 +241,14 @@ export function startGrowthCycle(tileEl, tileIndex) {
   var state = tileCycleState[tileIndex];
   if (!state) return;
 
+  // Clear any pending timeouts from previous cycle to prevent accumulation
+  if (state.timeouts && state.timeouts.length > 0) {
+    state.timeouts.forEach(function (t) {
+      if (t) clearTimeout(t);
+    });
+    state.timeouts = [];
+  }
+
   var tileSprout = tileEl.querySelector('.tile-sprout');
 
   // Re-apply flower type class (it gets removed during cycle transitions)
@@ -516,24 +524,29 @@ export function plantTile(tileEl) {
   var wiltDur = weatherScaled(CYCLE_WILT_DURATION, tileIndex);
   var pauseWilt = weatherScaled(CYCLE_PAUSE_AFTER_WILT, tileIndex);
 
-  setTimeout(function () {
+  var timeouts = tileCycleState[tileIndex].timeouts;
+
+  var seedTimeout = setTimeout(function () {
     var tileSprout = tileEl.querySelector('.tile-sprout');
     tileSprout.classList.add('growing');
   }, seedDelay);
+  timeouts.push(seedTimeout);
 
-  setTimeout(function () {
+  var budTimeout = setTimeout(function () {
     var tileSprout = tileEl.querySelector('.tile-sprout');
     tileSprout.classList.remove('growing');
     tileSprout.classList.add('budding');
   }, budDelay);
+  timeouts.push(budTimeout);
 
-  setTimeout(function () {
+  var bloomTimeout = setTimeout(function () {
     var tileSprout = tileEl.querySelector('.tile-sprout');
     tileSprout.classList.remove('budding');
     tileSprout.classList.add('blooming');
   }, bloomDelay);
+  timeouts.push(bloomTimeout);
 
-  setTimeout(function () {
+  var grownTimeout = setTimeout(function () {
     var tileSprout = tileEl.querySelector('.tile-sprout');
     tileSprout.classList.remove('blooming');
     tileSprout.classList.add('grown');
@@ -571,13 +584,13 @@ export function plantTile(tileEl) {
     var offset = tileIndex * CYCLE_SEED_OFFSET * wsm;
     var firstWiltDelay = holdBloom + offset;
 
-    setTimeout(function () {
+    var wiltTimeout = setTimeout(function () {
       if (!tileEl.classList.contains('planted')) return;
 
       tileSprout.classList.remove('grown');
       tileSprout.classList.add('wilting');
 
-      setTimeout(function () {
+      var restartTimeout = setTimeout(function () {
         if (!tileEl.classList.contains('planted')) return;
 
         if (badge) {
@@ -587,8 +600,11 @@ export function plantTile(tileEl) {
         tileCycleState[tileIndex].cycle = 2;
         startGrowthCycle(tileEl, tileIndex);
       }, wiltDur + pauseWilt);
+      timeouts.push(restartTimeout);
     }, firstWiltDelay);
+    timeouts.push(wiltTimeout);
   }, grownDelay);
+  timeouts.push(grownTimeout);
 }
 
 export function toggleWateringMode() {
