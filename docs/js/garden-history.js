@@ -325,6 +325,12 @@ function renderHistoryCards() {
 var historyVisible = false;
 
 function toggleHistory() {
+  // Lazy-create the section on first open
+  if (!sectionCreated) {
+    createHistorySection();
+    sectionCreated = true;
+  }
+
   var historySection = document.getElementById('gardenHistory');
   var toggleBtn = document.getElementById('historyToggleBtn');
   if (!historySection) return;
@@ -361,9 +367,10 @@ function shouldAutoCapture() {
 }
 
 // ── Public: Initialize ──
+var sectionCreated = false;
+
 export function initGardenHistory() {
   createHistoryToggle();
-  createHistorySection();
 
   // Only capture if there's meaningful garden state
   if (plantedCount.value > 0 || journalEntries.length > 0) {

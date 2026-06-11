@@ -1,0 +1,277 @@
+/* ═══════════════════════════════════════════════════════════
+   Milestones Panel — Persistent sidebar panel
+   Shows journey progress: unlocked achievements and locked hints
+   ═══════════════════════════════════════════════════════════ */
+
+.milestones-panel {
+  opacity: 0;
+  transform: translateY(1rem);
+  transition: opacity 0.8s ease, transform 0.8s ease;
+  width: 100%;
+  background: var(--stats-bg);
+  border: 1px solid var(--stats-border);
+  border-radius: 0.85rem;
+  padding: 0.65rem 0.75rem;
+  box-shadow:
+    0 0 1.5rem rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.015);
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.milestones-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 30% 40%, rgba(217, 169, 80, 0.04), transparent 50%),
+    radial-gradient(ellipse at 70% 60%, rgba(251, 191, 36, 0.02), transparent 40%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.milestones-panel.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.milestones-header {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+  position: relative;
+  z-index: 1;
+}
+
+.milestones-icon {
+  font-size: 0.85rem;
+  filter: drop-shadow(0 0 0.15rem rgba(217, 169, 80, 0.25));
+}
+
+.milestones-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: rgba(217, 169, 80, 0.7);
+  letter-spacing: 0.04em;
+  margin: 0;
+}
+
+.milestones-progress {
+  font-size: 0.58rem;
+  color: var(--text-muted);
+  margin-left: auto;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.milestones-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Milestone Card ── */
+.milestone-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid transparent;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease, background 0.3s ease;
+}
+
+.milestone-card--unlocked {
+  background: linear-gradient(
+    135deg,
+    rgba(251, 191, 36, 0.05) 0%,
+    rgba(217, 169, 80, 0.03) 50%,
+    rgba(251, 191, 36, 0.015) 100%
+  );
+  border-color: rgba(217, 169, 80, 0.15);
+}
+
+.milestone-card--unlocked:hover,
+.milestone-card--unlocked:focus-within {
+  border-color: rgba(251, 191, 36, 0.3);
+  box-shadow: 0 0 0.8rem rgba(251, 191, 36, 0.08);
+}
+
+.milestone-card--locked {
+  background: rgba(17, 24, 39, 0.3);
+  border-color: rgba(100, 116, 139, 0.08);
+  opacity: 0.55;
+}
+
+.milestone-card--locked:hover,
+.milestone-card--locked:focus-within {
+  opacity: 0.7;
+}
+
+/* ── Icon ── */
+.milestone-card__icon {
+  flex-shrink: 0;
+  font-size: 0.95rem;
+  line-height: 1.3;
+  animation: milestoneIconBreathe 5s ease-in-out infinite;
+  filter: drop-shadow(0 0 0.2rem rgba(251, 191, 36, 0.3));
+}
+
+@keyframes milestoneIconBreathe {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 0.2rem rgba(251, 191, 36, 0.3));
+  }
+  50% {
+    transform: scale(1.06);
+    filter: drop-shadow(0 0 0.35rem rgba(251, 191, 36, 0.45));
+  }
+}
+
+.milestone-card__icon--locked {
+  filter: none;
+  animation: none;
+  color: var(--text-muted);
+}
+
+/* ── Body ── */
+.milestone-card__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.milestone-card__title {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #d4a574;
+  letter-spacing: 0.02em;
+  line-height: 1.3;
+}
+
+.milestone-card__title--locked {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.milestone-card__poem {
+  font-size: 0.55rem;
+  font-style: italic;
+  color: rgba(168, 139, 100, 0.7);
+  line-height: 1.4;
+  margin-top: 0.08rem;
+  letter-spacing: 0.02em;
+}
+
+.milestone-card__poem--locked {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ── Reduced Motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .milestone-panel {
+    transition-duration: 0.01ms !important;
+  }
+
+  .milestone-card__icon {
+    animation: none !important;
+  }
+
+  .milestone-card {
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── Responsive ── */
+@media (max-width: 375px) {
+  .milestones-panel {
+    padding: 0.5rem 0.6rem;
+  }
+
+  .milestones-icon {
+    font-size: 0.75rem;
+  }
+
+  .milestones-title {
+    font-size: 0.7rem;
+  }
+
+  .milestones-progress {
+    font-size: 0.52rem;
+  }
+
+  .milestone-card {
+    gap: 0.4rem;
+    padding: 0.35rem 0.4rem;
+  }
+
+  .milestone-card__icon {
+    font-size: 0.85rem;
+  }
+
+  .milestone-card__title {
+    font-size: 0.62rem;
+  }
+
+  .milestone-card__poem {
+    font-size: 0.5rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .milestones-panel {
+    padding: 0.75rem 0.85rem;
+  }
+
+  .milestones-icon {
+    font-size: 0.9rem;
+  }
+
+  .milestones-title {
+    font-size: 0.82rem;
+  }
+
+  .milestone-card {
+    gap: 0.55rem;
+    padding: 0.45rem 0.55rem;
+  }
+
+  .milestone-card__icon {
+    font-size: 1.05rem;
+  }
+
+  .milestone-card__title {
+    font-size: 0.72rem;
+  }
+
+  .milestone-card__poem {
+    font-size: 0.6rem;
+  }
+}
+
+@media (min-width: 1200px) {
+  .milestones-panel {
+    padding: 0.8rem 0.9rem;
+  }
+
+  .milestones-title {
+    font-size: 0.85rem;
+  }
+
+  .milestone-card__icon {
+    font-size: 1.15rem;
+  }
+
+  .milestone-card__title {
+    font-size: 0.74rem;
+  }
+
+  .milestone-card__poem {
+    font-size: 0.62rem;
+  }
+}
+

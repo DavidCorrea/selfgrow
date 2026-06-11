@@ -1,0 +1,448 @@
+/* ═══════════════════════════════════════════════════════════
+   Garden History Timeline
+   Collapsible section in the journal panel showing
+   chronological visit snapshots — the garden's memory
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── History Toggle Button ── */
+.history-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  width: auto;
+  height: auto;
+  padding: 0.25rem 0.5rem;
+  margin-left: auto;
+  background: rgba(12, 16, 24, 0.5);
+  border: 1px solid rgba(90, 110, 80, 0.15);
+  border-radius: 0.4rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  outline: none;
+  font-family: inherit;
+  flex-shrink: 0;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease, background 0.3s ease, color 0.3s ease, transform 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.history-toggle:hover,
+.history-toggle:focus-visible {
+  border-color: rgba(139, 119, 80, 0.3);
+  box-shadow: 0 0 0.6rem rgba(139, 119, 80, 0.08);
+  background: rgba(20, 18, 14, 0.6);
+  color: var(--journal-text);
+  transform: translateY(-1px);
+}
+
+.history-toggle:focus-visible {
+  box-shadow: 0 0 0 2px rgba(139, 119, 80, 0.4);
+}
+
+.history-toggle.active {
+  border-color: rgba(139, 119, 80, 0.35);
+  background: rgba(20, 18, 14, 0.7);
+  color: var(--journal-text);
+  box-shadow: 0 0 0.8rem rgba(139, 119, 80, 0.06);
+}
+
+.history-toggle__icon {
+  font-size: 0.7rem;
+  line-height: 1;
+  filter: drop-shadow(0 0 0.1rem rgba(139, 119, 80, 0.15));
+}
+
+.history-toggle__label {
+  font-size: 0.55rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  line-height: 1;
+  transition: color 0.3s ease;
+}
+
+.history-toggle:hover .history-toggle__label,
+.history-toggle:focus-visible .history-toggle__label,
+.history-toggle.active .history-toggle__label {
+  color: var(--journal-text);
+}
+
+/* ── History Section ── */
+.garden-history {
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-height 0.5s ease, opacity 0.4s ease, padding 0.4s ease;
+  border-bottom: 1px solid rgba(139, 119, 80, 0.08);
+  margin-bottom: 0;
+}
+
+.garden-history.visible {
+  max-height: 20rem;
+  opacity: 1;
+  padding-bottom: 0.4rem;
+  margin-bottom: 0.4rem;
+  overflow-y: auto;
+}
+
+.garden-history__header {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0 0.4rem;
+}
+
+.garden-history__title {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: rgba(139, 119, 80, 0.65);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.garden-history__count {
+  font-size: 0.5rem;
+  color: var(--text-muted);
+  letter-spacing: 0.03em;
+  margin-left: auto;
+}
+
+.garden-history__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.garden-history__empty {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  font-style: italic;
+  text-align: center;
+  padding: 0.5rem 0;
+  letter-spacing: 0.03em;
+}
+
+/* ── Visit Card (pressed flower style) ── */
+.history-visit-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  padding: 0.4rem 0.45rem;
+  background: rgba(26, 22, 18, 0.35);
+  border: 1px solid rgba(90, 80, 60, 0.12);
+  border-radius: 0.5rem;
+  position: relative;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateX(-0.5rem);
+  animation: historyCardSlideIn 0.4s ease-out forwards;
+  transition: border-color 0.3s ease, background 0.3s ease;
+}
+
+.history-visit-card:hover {
+  border-color: rgba(139, 119, 80, 0.2);
+  background: rgba(30, 26, 20, 0.4);
+}
+
+.history-visit-card--latest {
+  border-color: rgba(139, 119, 80, 0.2);
+  background: rgba(30, 26, 20, 0.35);
+}
+
+.history-visit-card--latest::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2px;
+  height: 100%;
+  background: rgba(139, 119, 80, 0.3);
+  border-radius: 2px 0 0 2px;
+}
+
+@keyframes historyCardSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateX(-0.5rem);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Stagger card animations */
+.garden-history__list .history-visit-card:nth-child(1) { animation-delay: 0.05s; }
+.garden-history__list .history-visit-card:nth-child(2) { animation-delay: 0.1s; }
+.garden-history__list .history-visit-card:nth-child(3) { animation-delay: 0.15s; }
+.garden-history__list .history-visit-card:nth-child(4) { animation-delay: 0.2s; }
+.garden-history__list .history-visit-card:nth-child(5) { animation-delay: 0.25s; }
+.garden-history__list .history-visit-card:nth-child(6) { animation-delay: 0.3s; }
+.garden-history__list .history-visit-card:nth-child(7) { animation-delay: 0.35s; }
+.garden-history__list .history-visit-card:nth-child(8) { animation-delay: 0.4s; }
+.garden-history__list .history-visit-card:nth-child(9) { animation-delay: 0.45s; }
+.garden-history__list .history-visit-card:nth-child(10) { animation-delay: 0.5s; }
+
+/* Weather icon on card */
+.history-visit-card__weather {
+  flex-shrink: 0;
+  font-size: 0.9rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 12, 10, 0.4);
+  border-radius: 0.35rem;
+  border: 1px solid rgba(90, 80, 60, 0.1);
+}
+
+/* Card body */
+.history-visit-card__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+/* Mood row */
+.history-visit-card__mood {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.history-visit-card__mood-emoji {
+  font-size: 0.7rem;
+  line-height: 1;
+}
+
+.history-visit-card__mood-label {
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: rgba(139, 119, 80, 0.75);
+  letter-spacing: 0.03em;
+  text-transform: capitalize;
+}
+
+/* Stats row */
+.history-visit-card__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.history-visit-card__stat {
+  font-size: 0.52rem;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/* Poem */
+.history-visit-card__poem {
+  font-size: 0.55rem;
+  color: rgba(168, 139, 100, 0.6);
+  font-style: italic;
+  line-height: 1.35;
+  letter-spacing: 0.02em;
+  margin: 0;
+}
+
+/* Time column */
+.history-visit-card__time {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.05rem;
+}
+
+.history-visit-card__relative {
+  font-size: 0.55rem;
+  font-weight: 600;
+  color: rgba(139, 119, 80, 0.6);
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.history-visit-card__date {
+  font-size: 0.45rem;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+
+/* ── Scrollbar for history section ── */
+.garden-history.visible::-webkit-scrollbar {
+  width: 0.2rem;
+}
+
+.garden-history.visible::-webkit-scrollbar-track {
+  background: rgba(139, 119, 80, 0.05);
+  border-radius: 0.1rem;
+}
+
+.garden-history.visible::-webkit-scrollbar-thumb {
+  background: rgba(139, 119, 80, 0.15);
+  border-radius: 0.1rem;
+}
+
+.garden-history.visible::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 119, 80, 0.25);
+}
+
+/* ── Reduced Motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .history-visit-card {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: translateX(0) !important;
+  }
+
+  .garden-history {
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── Tablet (768px+) ── */
+@media (min-width: 768px) {
+  .history-toggle {
+    padding: 0.3rem 0.6rem;
+  }
+
+  .history-toggle__icon {
+    font-size: 0.8rem;
+  }
+
+  .history-toggle__label {
+    font-size: 0.6rem;
+  }
+
+  .garden-history.visible {
+    max-height: 24rem;
+  }
+
+  .history-visit-card {
+    padding: 0.5rem 0.55rem;
+    gap: 0.55rem;
+  }
+
+  .history-visit-card__weather {
+    width: 1.75rem;
+    height: 1.75rem;
+    font-size: 1rem;
+  }
+
+  .history-visit-card__mood-label {
+    font-size: 0.65rem;
+  }
+
+  .history-visit-card__stat {
+    font-size: 0.56rem;
+  }
+
+  .history-visit-card__poem {
+    font-size: 0.6rem;
+  }
+
+  .history-visit-card__relative {
+    font-size: 0.6rem;
+  }
+
+  .history-visit-card__date {
+    font-size: 0.5rem;
+  }
+}
+
+/* ── Desktop (1200px+) ── */
+@media (min-width: 1200px) {
+  .garden-history.visible {
+    max-height: 18rem;
+  }
+
+  .history-visit-card {
+    padding: 0.4rem 0.45rem;
+  }
+
+  .history-visit-card__weather {
+    width: 1.5rem;
+    height: 1.5rem;
+    font-size: 0.9rem;
+  }
+
+  .history-visit-card__mood-label {
+    font-size: 0.6rem;
+  }
+
+  .history-visit-card__poem {
+    font-size: 0.55rem;
+  }
+}
+
+/* ── Small Mobile (below 375px) ── */
+@media (max-width: 375px) {
+  .history-toggle {
+    padding: 0.2rem 0.35rem;
+  }
+
+  .history-toggle__icon {
+    font-size: 0.6rem;
+  }
+
+  .history-toggle__label {
+    font-size: 0.48rem;
+  }
+
+  .garden-history.visible {
+    max-height: 16rem;
+  }
+
+  .garden-history__title {
+    font-size: 0.55rem;
+  }
+
+  .garden-history__count {
+    font-size: 0.42rem;
+  }
+
+  .history-visit-card {
+    padding: 0.3rem 0.35rem;
+    gap: 0.35rem;
+  }
+
+  .history-visit-card__weather {
+    width: 1.25rem;
+    height: 1.25rem;
+    font-size: 0.75rem;
+  }
+
+  .history-visit-card__mood-emoji {
+    font-size: 0.6rem;
+  }
+
+  .history-visit-card__mood-label {
+    font-size: 0.5rem;
+  }
+
+  .history-visit-card__stats {
+    gap: 0.25rem;
+  }
+
+  .history-visit-card__stat {
+    font-size: 0.45rem;
+  }
+
+  .history-visit-card__poem {
+    font-size: 0.48rem;
+  }
+
+  .history-visit-card__relative {
+    font-size: 0.48rem;
+  }
+
+  .history-visit-card__date {
+    font-size: 0.38rem;
+  }
+}
+

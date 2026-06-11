@@ -1,0 +1,304 @@
+/* ═══════════════════════════════════════════════════════════
+   Garden Moments — Capture & View Garden Snapshots
+   A quiet way to remember "here is my garden today"
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Moment Card (inside modal) ── */
+.moment-card {
+  width: 100%;
+  background: rgba(12, 16, 24, 0.7);
+  border: 1px solid rgba(90, 110, 80, 0.2);
+  border-radius: 1rem;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Subtle glow behind the card */
+.moment-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 0%, rgba(74, 222, 128, 0.03), transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.moment-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Card Header ── */
+.moment-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(90, 110, 80, 0.1);
+}
+
+.moment-card__season {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: rgba(74, 222, 128, 0.8);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.moment-card__time {
+  font-size: 0.55rem;
+  color: var(--text-muted);
+  letter-spacing: 0.03em;
+}
+
+/* ── Mini Garden Grid ── */
+.moment-card__grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.35rem;
+  padding: 0.5rem;
+  background: rgba(10, 14, 18, 0.5);
+  border-radius: 0.6rem;
+  border: 1px solid rgba(90, 110, 80, 0.1);
+}
+
+.moment-tile {
+  aspect-ratio: 1;
+  background: rgba(30, 25, 20, 0.4);
+  border-radius: 0.35rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(60, 50, 40, 0.2);
+}
+
+.moment-tile--planted {
+  background: rgba(20, 30, 20, 0.5);
+  border-color: rgba(74, 222, 128, 0.15);
+}
+
+/* Mini flower in moment tile */
+.moment-flower {
+  position: relative;
+  width: 0.8rem;
+  height: 0.8rem;
+  transform: scale(0);
+  animation: momentFlowerPop 0.5s ease-out forwards;
+}
+
+@keyframes momentFlowerPop {
+  0% {
+    transform: scale(0) rotate(0deg);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.1) rotate(10deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+.moment-flower__center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 0.2rem;
+  height: 0.2rem;
+  background: #fbbf24;
+  border-radius: 50%;
+  box-shadow: 0 0 0.15rem rgba(251, 191, 36, 0.5);
+  z-index: 2;
+}
+
+.moment-petal {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0.22rem;
+  height: 0.22rem;
+  background: var(--flower-color, #f472b6);
+  border-radius: 50% 0 50% 50%;
+  transform-origin: 0 0;
+  opacity: 0.9;
+}
+
+/* Stagger the flower animations */
+.moment-tile:nth-child(1) .moment-flower { animation-delay: 0.1s; }
+.moment-tile:nth-child(2) .moment-flower { animation-delay: 0.15s; }
+.moment-tile:nth-child(3) .moment-flower { animation-delay: 0.2s; }
+.moment-tile:nth-child(4) .moment-flower { animation-delay: 0.25s; }
+.moment-tile:nth-child(5) .moment-flower { animation-delay: 0.3s; }
+.moment-tile:nth-child(6) .moment-flower { animation-delay: 0.35s; }
+.moment-tile:nth-child(7) .moment-flower { animation-delay: 0.4s; }
+.moment-tile:nth-child(8) .moment-flower { animation-delay: 0.45s; }
+.moment-tile:nth-child(9) .moment-flower { animation-delay: 0.5s; }
+
+/* ── Color Strip ── */
+.moment-card__colors {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  padding: 0.25rem 0;
+}
+
+.moment-color-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 0 0.2rem rgba(0, 0, 0, 0.2);
+}
+
+/* ── Stats Row ── */
+.moment-card__stats {
+  display: flex;
+  justify-content: space-around;
+  gap: 0.5rem;
+  padding: 0.4rem;
+  background: rgba(15, 20, 25, 0.4);
+  border-radius: 0.5rem;
+  border: 1px solid rgba(90, 110, 80, 0.08);
+}
+
+.moment-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+}
+
+.moment-stat__emoji {
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.moment-stat__value {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: rgba(74, 222, 128, 0.85);
+  letter-spacing: 0.02em;
+}
+
+.moment-stat__label {
+  font-size: 0.42rem;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* ── Poem ── */
+.moment-card__poem {
+  text-align: center;
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+  font-style: italic;
+  line-height: 1.5;
+  letter-spacing: 0.03em;
+  padding: 0.25rem 0.5rem;
+  opacity: 0;
+  animation: momentPoemFadeIn 0.8s ease-out forwards;
+  animation-delay: 0.6s;
+}
+
+@keyframes momentPoemFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(0.3rem);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Reduced Motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .moment-flower {
+    animation: none !important;
+    transform: scale(1) !important;
+    opacity: 1 !important;
+  }
+
+  .moment-card__poem {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: translateY(0) !important;
+  }
+}
+
+/* ── Tablet (768px+) ── */
+@media (min-width: 768px) {
+  .moment-card {
+    padding: 1.25rem;
+  }
+
+  .moment-card__grid {
+    gap: 0.5rem;
+    padding: 0.75rem;
+  }
+
+  .moment-flower {
+    width: 1rem;
+    height: 1rem;
+  }
+
+  .moment-petal {
+    width: 0.28rem;
+    height: 0.28rem;
+  }
+
+  .moment-flower__center {
+    width: 0.25rem;
+    height: 0.25rem;
+  }
+
+  .moment-stat__emoji {
+    font-size: 1.1rem;
+  }
+
+  .moment-stat__value {
+    font-size: 0.8rem;
+  }
+
+  .moment-stat__label {
+    font-size: 0.48rem;
+  }
+
+  .moment-card__poem {
+    font-size: 0.72rem;
+  }
+}
+
+/* ── Desktop (1200px+) ── */
+@media (min-width: 1200px) {
+  .moment-card {
+    padding: 1rem;
+  }
+
+  .moment-card__grid {
+    gap: 0.4rem;
+    padding: 0.6rem;
+  }
+
+  .moment-flower {
+    width: 0.9rem;
+    height: 0.9rem;
+  }
+
+  .moment-petal {
+    width: 0.25rem;
+    height: 0.25rem;
+  }
+}
+

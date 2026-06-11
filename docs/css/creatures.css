@@ -1,0 +1,733 @@
+/* ═══════════════════════════════════════════════════════════
+   Ground Creatures
+   Small CSS-animated critters that crawl across planted tiles
+   ═══════════════════════════════════════════════════════════ */
+
+.ground-creature {
+  position: absolute;
+  pointer-events: auto;
+  z-index: 15;
+  cursor: pointer;
+  transition: transform 0.3s ease, opacity 0.4s ease;
+  -webkit-tap-highlight-color: transparent;
+  will-change: transform;
+}
+
+.ground-creature:focus-visible {
+  outline: 2px solid rgba(74, 222, 128, 0.6);
+  outline-offset: 2px;
+  border-radius: 50%;
+}
+
+.ground-creature:hover {
+  transform: scale(1.15);
+}
+
+/* ── Entrance animation ── */
+.ground-creature--entering {
+  animation: creatureEnter 0.4s ease-out forwards;
+}
+
+@keyframes creatureEnter {
+  0% {
+    opacity: 0;
+    transform: scale(0) translateY(0.3rem);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.1) translateY(-0.05rem);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* ── Leaving animation ── */
+.ground-creature--leaving {
+  animation: creatureLeave 0.6s ease-out forwards;
+}
+
+@keyframes creatureLeave {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.3) translateY(0.5rem);
+  }
+}
+
+/* ── Facing direction ── */
+.ground-creature--facing-left {
+  transform: scaleX(-1);
+}
+
+.ground-creature--facing-left:hover {
+  transform: scaleX(-1) scale(1.15);
+}
+
+/* ── LADYBUG ── */
+.ground-creature--ladybug {
+  width: 0.65rem;
+  height: 0.55rem;
+}
+
+.ladybug-head {
+  position: absolute;
+  top: 0.08rem;
+  left: -0.08rem;
+  width: 0.22rem;
+  height: 0.2rem;
+  background: #1a1a1a;
+  border-radius: 50% 40% 40% 50%;
+  z-index: 3;
+}
+
+.ladybug-body {
+  position: absolute;
+  top: 0;
+  left: 0.08rem;
+  width: 0.55rem;
+  height: 0.45rem;
+  background: linear-gradient(135deg, #ef4444, #dc2626, #b91c1c);
+  border-radius: 50% 50% 45% 45% / 55% 55% 45% 45%;
+  z-index: 2;
+  box-shadow: 0 0.02rem 0.06rem rgba(0, 0, 0, 0.3), inset 0 -0.03rem 0.06rem rgba(0, 0, 0, 0.2);
+}
+
+/* Spots */
+.ladybug-spot {
+  position: absolute;
+  background: #1a1a1a;
+  border-radius: 50%;
+  z-index: 3;
+}
+
+.ladybug-spot--1 {
+  width: 0.1rem;
+  height: 0.1rem;
+  top: 0.1rem;
+  left: 0.15rem;
+}
+
+.ladybug-spot--2 {
+  width: 0.09rem;
+  height: 0.09rem;
+  top: 0.12rem;
+  right: 0.1rem;
+}
+
+.ladybug-spot--3 {
+  width: 0.08rem;
+  height: 0.08rem;
+  bottom: 0.08rem;
+  left: 0.2rem;
+}
+
+.ladybug-spot--4 {
+  width: 0.07rem;
+  height: 0.07rem;
+  bottom: 0.1rem;
+  right: 0.15rem;
+}
+
+/* Wings (for flutter) */
+.ladybug-wing {
+  position: absolute;
+  top: 0.05rem;
+  width: 0.22rem;
+  height: 0.3rem;
+  background: rgba(239, 68, 68, 0.6);
+  border-radius: 50% 50% 30% 30%;
+  z-index: 1;
+  opacity: 0;
+  transform-origin: center bottom;
+}
+
+.ladybug-wing--left {
+  left: 0.1rem;
+  transform: rotate(-20deg);
+}
+
+.ladybug-wing--right {
+  right: 0.05rem;
+  transform: rotate(20deg);
+}
+
+.ground-creature--ladybug:hover .ladybug-wing {
+  opacity: 0.8;
+  animation: ladybugWingFlutter 0.15s ease-in-out 2;
+}
+
+@keyframes ladybugWingFlutter {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(15deg); }
+}
+
+/* Legs */
+.ladybug-leg {
+  position: absolute;
+  width: 0.12rem;
+  height: 0.02rem;
+  background: #1a1a1a;
+  border-radius: 0.01rem;
+  z-index: 1;
+  bottom: 0.06rem;
+}
+
+.ladybug-leg--left-1 { left: 0.1rem; transform: rotate(15deg); transform-origin: right center; }
+.ladybug-leg--left-2 { left: 0.06rem; bottom: 0.12rem; transform: rotate(25deg); transform-origin: right center; }
+.ladybug-leg--left-3 { left: 0.1rem; bottom: 0.18rem; transform: rotate(35deg); transform-origin: right center; }
+.ladybug-leg--right-1 { right: 0.1rem; transform: rotate(-15deg); transform-origin: left center; }
+.ladybug-leg--right-2 { right: 0.06rem; bottom: 0.12rem; transform: rotate(-25deg); transform-origin: left center; }
+.ladybug-leg--right-3 { right: 0.1rem; bottom: 0.18rem; transform: rotate(-35deg); transform-origin: left center; }
+
+/* Antennae */
+.ladybug-antenna {
+  position: absolute;
+  top: 0;
+  width: 0.1rem;
+  height: 0.02rem;
+  background: #1a1a1a;
+  border-radius: 0.01rem;
+  z-index: 4;
+  transform-origin: right center;
+}
+
+.ladybug-antenna--left {
+  left: -0.02rem;
+  transform: rotate(-30deg);
+}
+
+.ladybug-antenna--right {
+  left: 0.05rem;
+  transform: rotate(-15deg);
+}
+
+/* Ladybug crawl animation */
+.ground-creature--ladybug.ground-creature--crawling {
+  animation: ladybugCrawl 3s ease-in-out infinite;
+}
+
+@keyframes ladybugCrawl {
+  0% { transform: translateX(0) translateY(0); }
+  25% { transform: translateX(0.4rem) translateY(-0.05rem); }
+  50% { transform: translateX(0.8rem) translateY(0); }
+  75% { transform: translateX(0.4rem) translateY(0.05rem); }
+  100% { transform: translateX(0) translateY(0); }
+}
+
+.ground-creature--ladybug.ground-creature--crawling.ground-creature--facing-left {
+  animation: ladybugCrawlLeft 3s ease-in-out infinite;
+}
+
+@keyframes ladybugCrawlLeft {
+  0% { transform: scaleX(-1) translateX(0) translateY(0); }
+  25% { transform: scaleX(-1) translateX(0.4rem) translateY(-0.05rem); }
+  50% { transform: scaleX(-1) translateX(0.8rem) translateY(0); }
+  75% { transform: scaleX(-1) translateX(0.4rem) translateY(0.05rem); }
+  100% { transform: scaleX(-1) translateX(0) translateY(0); }
+}
+
+/* Ladybug flying away */
+.ground-creature--flying-away {
+  animation: ladybugFlyAway 0.7s ease-out forwards;
+}
+
+@keyframes ladybugFlyAway {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  30% {
+    opacity: 0.9;
+    transform: translateY(-0.8rem) scale(0.85);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-2rem) scale(0.4);
+  }
+}
+
+/* ── SNAIL ── */
+.ground-creature--snail {
+  width: 0.75rem;
+  height: 0.5rem;
+}
+
+.snail-shell {
+  position: absolute;
+  top: 0;
+  left: 0.15rem;
+  width: 0.4rem;
+  height: 0.35rem;
+  background: linear-gradient(135deg, #92703a, #7a5c2e, #5e4520);
+  border-radius: 50% 50% 40% 40% / 60% 60% 40% 40%;
+  z-index: 3;
+  box-shadow: inset 0 -0.03rem 0.08rem rgba(0, 0, 0, 0.3), 0 0.02rem 0.04rem rgba(0, 0, 0, 0.2);
+}
+
+.snail-shell-spiral {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 0.2rem;
+  height: 0.2rem;
+  border: 0.03rem solid rgba(94, 69, 32, 0.5);
+  border-radius: 50%;
+  border-right-color: transparent;
+  border-bottom-color: transparent;
+}
+
+.snail-body {
+  position: absolute;
+  bottom: 0.08rem;
+  left: 0.35rem;
+  width: 0.35rem;
+  height: 0.14rem;
+  background: linear-gradient(180deg, #a89070, #8a7558);
+  border-radius: 0 60% 40% 0;
+  z-index: 2;
+}
+
+.snail-head {
+  position: absolute;
+  bottom: 0.06rem;
+  right: 0;
+  width: 0.12rem;
+  height: 0.16rem;
+  background: linear-gradient(180deg, #9a8568, #7a6548);
+  border-radius: 50% 60% 40% 50%;
+  z-index: 2;
+}
+
+.snail-eye-stalk {
+  position: absolute;
+  top: -0.12rem;
+  width: 0.02rem;
+  height: 0.14rem;
+  background: #7a6548;
+  border-radius: 0.01rem;
+  transform-origin: bottom center;
+  z-index: 3;
+}
+
+.snail-eye-stalk--left {
+  left: 0.02rem;
+  transform: rotate(-15deg);
+}
+
+.snail-eye-stalk--right {
+  right: 0.02rem;
+  transform: rotate(15deg);
+}
+
+.snail-eye {
+  position: absolute;
+  top: -0.03rem;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0.035rem;
+  height: 0.035rem;
+  background: #1a1a1a;
+  border-radius: 50%;
+}
+
+/* Snail trail */
+.snail-trail {
+  position: absolute;
+  bottom: 0.04rem;
+  left: 0.4rem;
+  width: 0;
+  height: 0.03rem;
+  background: rgba(180, 200, 160, 0.2);
+  border-radius: 0 0.02rem 0.02rem 0;
+  z-index: 1;
+  transition: width 3s ease-out;
+}
+
+.ground-creature--snail.ground-creature--crawling .snail-trail {
+  width: 1rem;
+}
+
+/* Snail crawl - very slow */
+.ground-creature--snail.ground-creature--crawling {
+  animation: snailCrawl 6s ease-in-out infinite;
+}
+
+@keyframes snailCrawl {
+  0% { transform: translateX(0); }
+  40% { transform: translateX(0.6rem); }
+  60% { transform: translateX(0.55rem); }
+  100% { transform: translateX(0); }
+}
+
+.ground-creature--snail.ground-creature--crawling.ground-creature--facing-left {
+  animation: snailCrawlLeft 6s ease-in-out infinite;
+}
+
+@keyframes snailCrawlLeft {
+  0% { transform: scaleX(-1) translateX(0); }
+  40% { transform: scaleX(-1) translateX(0.6rem); }
+  60% { transform: scaleX(-1) translateX(0.55rem); }
+  100% { transform: scaleX(-1) translateX(0); }
+}
+
+/* Snail retreating into shell */
+.ground-creature--retreating .snail-body,
+.ground-creature--retreating .snail-head,
+.ground-creature--retreating .snail-eye-stalk {
+  animation: snailRetreat 0.6s ease-in forwards;
+}
+
+@keyframes snailRetreat {
+  0% { opacity: 1; transform: translateX(0); }
+  100% { opacity: 0; transform: translateX(-0.2rem); }
+}
+
+.ground-creature--retreating .snail-shell {
+  animation: snailShellPulse 0.6s ease-in;
+}
+
+@keyframes snailShellPulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
+
+/* ── WORM ── */
+.ground-creature--worm {
+  width: 0.8rem;
+  height: 0.18rem;
+}
+
+.worm-segment {
+  position: absolute;
+  bottom: 0;
+  height: 0.12rem;
+  background: linear-gradient(180deg, #c4788a, #a86078);
+  border-radius: 0 50% 50% 0;
+  z-index: 2;
+  transform-origin: left center;
+}
+
+.worm-segment--1 {
+  left: 0;
+  width: 0.18rem;
+  height: 0.1rem;
+  bottom: 0.02rem;
+  border-radius: 50% 50% 50% 50%;
+}
+
+.worm-segment--2 {
+  left: 0.14rem;
+  width: 0.16rem;
+  height: 0.11rem;
+  bottom: 0.015rem;
+}
+
+.worm-segment--3 {
+  left: 0.27rem;
+  width: 0.14rem;
+}
+
+.worm-segment--4 {
+  left: 0.38rem;
+  width: 0.13rem;
+  height: 0.1rem;
+  bottom: 0.025rem;
+}
+
+.worm-segment--5 {
+  left: 0.48rem;
+  width: 0.12rem;
+  height: 0.08rem;
+  bottom: 0.03rem;
+}
+
+.worm-head {
+  position: absolute;
+  bottom: 0;
+  left: -0.04rem;
+  width: 0.12rem;
+  height: 0.1rem;
+  background: linear-gradient(180deg, #d4889a, #b87088);
+  border-radius: 50% 40% 40% 50%;
+  z-index: 3;
+  box-shadow: 0 0.01rem 0.03rem rgba(0, 0, 0, 0.15);
+}
+
+/* Worm wiggle animation */
+.ground-creature--worm.ground-creature--crawling .worm-segment--1 {
+  animation: wormWiggle1 0.8s ease-in-out infinite;
+}
+
+.ground-creature--worm.ground-creature--crawling .worm-segment--2 {
+  animation: wormWiggle2 0.8s ease-in-out infinite;
+  animation-delay: 0.05s;
+}
+
+.ground-creature--worm.ground-creature--crawling .worm-segment--3 {
+  animation: wormWiggle3 0.8s ease-in-out infinite;
+  animation-delay: 0.1s;
+}
+
+.ground-creature--worm.ground-creature--crawling .worm-segment--4 {
+  animation: wormWiggle2 0.8s ease-in-out infinite;
+  animation-delay: 0.15s;
+}
+
+.ground-creature--worm.ground-creature--crawling .worm-segment--5 {
+  animation: wormWiggle1 0.8s ease-in-out infinite;
+  animation-delay: 0.2s;
+}
+
+.ground-creature--worm.ground-creature--crawling .worm-head {
+  animation: wormHeadBob 0.8s ease-in-out infinite;
+}
+
+@keyframes wormWiggle1 {
+  0%, 100% { transform: translateY(0) scaleY(1); }
+  50% { transform: translateY(-0.02rem) scaleY(1.15); }
+}
+
+@keyframes wormWiggle2 {
+  0%, 100% { transform: translateY(0) scaleY(1); }
+  50% { transform: translateY(0.015rem) scaleY(0.85); }
+}
+
+@keyframes wormWiggle3 {
+  0%, 100% { transform: translateY(0); }
+  33% { transform: translateY(-0.015rem); }
+  66% { transform: translateY(0.015rem); }
+}
+
+@keyframes wormHeadBob {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-0.02rem) rotate(-5deg); }
+  75% { transform: translateY(0.01rem) rotate(5deg); }
+}
+
+/* Worm body forward movement while wiggling */
+.ground-creature--worm.ground-creature--crawling {
+  animation: wormForward 5s ease-in-out infinite;
+}
+
+@keyframes wormForward {
+  0% { transform: translateX(0); }
+  30% { transform: translateX(0.5rem); }
+  70% { transform: translateX(0.45rem); }
+  100% { transform: translateX(0); }
+}
+
+.ground-creature--worm.ground-creature--crawling.ground-creature--facing-left {
+  animation: wormForwardLeft 5s ease-in-out infinite;
+}
+
+@keyframes wormForwardLeft {
+  0% { transform: scaleX(-1) translateX(0); }
+  30% { transform: scaleX(-1) translateX(0.5rem); }
+  70% { transform: scaleX(-1) translateX(0.45rem); }
+  100% { transform: scaleX(-1) translateX(0); }
+}
+
+/* Worm burrowing */
+.ground-creature--burrowing {
+  animation: wormBurrow 0.7s ease-in forwards;
+}
+
+@keyframes wormBurrow {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+  40% {
+    opacity: 0.8;
+    transform: translateY(0.1rem) scaleY(0.7);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(0.3rem) scaleY(0.2);
+  }
+}
+
+/* ── CRICKET ── */
+.ground-creature--cricket {
+  width: 0.7rem;
+  height: 0.45rem;
+}
+
+.cricket-body {
+  position: absolute;
+  top: 0.05rem;
+  left: 0.1rem;
+  width: 0.5rem;
+  height: 0.3rem;
+  background: linear-gradient(135deg, #6b8f5e, #4a6a3d);
+  border-radius: 40% 50% 45% 40% / 50% 55% 45% 50%;
+  z-index: 2;
+  box-shadow: 0 0.02rem 0.04rem rgba(0, 0, 0, 0.2);
+}
+
+.cricket-head {
+  position: absolute;
+  top: 0.08rem;
+  left: -0.05rem;
+  width: 0.2rem;
+  height: 0.2rem;
+  background: linear-gradient(135deg, #7da86b, #5a8a4d);
+  border-radius: 50% 40% 40% 50%;
+  z-index: 3;
+}
+
+.cricket-eye {
+  position: absolute;
+  top: 0.04rem;
+  width: 0.04rem;
+  height: 0.04rem;
+  background: #1a1a1a;
+  border-radius: 50%;
+  z-index: 4;
+}
+
+.cricket-eye--left {
+  left: 0.03rem;
+}
+
+.cricket-eye--right {
+  left: 0.1rem;
+}
+
+.cricket-antenna {
+  position: absolute;
+  top: -0.08rem;
+  width: 0.015rem;
+  height: 0.14rem;
+  background: #5a8a4d;
+  border-radius: 0.01rem;
+  z-index: 4;
+  transform-origin: bottom center;
+}
+
+.cricket-antenna--left {
+  left: 0.04rem;
+  transform: rotate(-25deg);
+}
+
+.cricket-antenna--right {
+  left: 0.12rem;
+  transform: rotate(10deg);
+}
+
+.cricket-leg {
+  position: absolute;
+  background: #4a6a3d;
+  border-radius: 0.01rem;
+  z-index: 1;
+}
+
+.cricket-leg--hind-left {
+  bottom: -0.06rem;
+  left: 0.12rem;
+  width: 0.18rem;
+  height: 0.025rem;
+  transform: rotate(-15deg);
+  transform-origin: top left;
+}
+
+.cricket-leg--hind-right {
+  bottom: -0.06rem;
+  left: 0.25rem;
+  width: 0.18rem;
+  height: 0.025rem;
+  transform: rotate(10deg);
+  transform-origin: top right;
+}
+
+.cricket-wing {
+  position: absolute;
+  top: 0.02rem;
+  width: 0.2rem;
+  height: 0.22rem;
+  background: rgba(107, 143, 94, 0.4);
+  border-radius: 30% 70% 40% 60%;
+  z-index: 1;
+}
+
+.cricket-wing--left {
+  left: 0.15rem;
+}
+
+.cricket-wing--right {
+  left: 0.3rem;
+}
+
+/* Cricket hop animation */
+.ground-creature--cricket.ground-creature--crawling {
+  animation: cricketHop 2s ease-in-out infinite;
+}
+
+@keyframes cricketHop {
+  0% { transform: translateX(0) translateY(0); }
+  20% { transform: translateX(0.15rem) translateY(0); }
+  30% { transform: translateX(0.2rem) translateY(-0.12rem); }
+  40% { transform: translateX(0.35rem) translateY(0); }
+  60% { transform: translateX(0.35rem) translateY(0); }
+  70% { transform: translateX(0.5rem) translateY(-0.1rem); }
+  80% { transform: translateX(0.6rem) translateY(0); }
+  100% { transform: translateX(0) translateY(0); }
+}
+
+.ground-creature--cricket.ground-creature--crawling.ground-creature--facing-left {
+  animation: cricketHopLeft 2s ease-in-out infinite;
+}
+
+@keyframes cricketHopLeft {
+  0% { transform: scaleX(-1) translateX(0) translateY(0); }
+  20% { transform: scaleX(-1) translateX(0.15rem) translateY(0); }
+  30% { transform: scaleX(-1) translateX(0.2rem) translateY(-0.12rem); }
+  40% { transform: scaleX(-1) translateX(0.35rem) translateY(0); }
+  60% { transform: scaleX(-1) translateX(0.35rem) translateY(0); }
+  70% { transform: scaleX(-1) translateX(0.5rem) translateY(-0.1rem); }
+  80% { transform: scaleX(-1) translateX(0.6rem) translateY(0); }
+  100% { transform: scaleX(-1) translateX(0) translateY(0); }
+}
+
+/* Cricket chirp visual — subtle wing vibration */
+.ground-creature--cricket.ground-creature--crawling .cricket-wing--left {
+  animation: cricketChirp 0.1s ease-in-out infinite;
+}
+
+.ground-creature--cricket.ground-creature--crawling .cricket-wing--right {
+  animation: cricketChirp 0.1s ease-in-out infinite;
+  animation-delay: 0.05s;
+}
+
+@keyframes cricketChirp {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(5deg); }
+}
+
+/* Cricket leaving */
+.ground-creature--cricket.ground-creature--leaving {
+  animation: cricketHopAway 0.6s ease-out forwards;
+}
+
+@keyframes cricketHopAway {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  40% {
+    opacity: 0.8;
+    transform: translateY(-0.3rem) scale(0.9);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-0.8rem) scale(0.4);
+  }
+}
+

@@ -1,0 +1,168 @@
+/* ═══════════════════════════════════════════════════════════
+   Garden Milestones — Gentle, non-competitive recognition
+   ═══════════════════════════════════════════════════════════ */
+
+.milestone-notification {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.55rem 0.65rem 0.6rem;
+  margin: 0.25rem 0 0.35rem;
+  border-bottom: 1px solid rgba(217, 169, 80, 0.1);
+  opacity: 0;
+  transform: translateX(-1rem) scale(0.97);
+  border-radius: 0.5rem;
+  background: linear-gradient(
+    135deg,
+    rgba(251, 191, 36, 0.06) 0%,
+    rgba(217, 169, 80, 0.04) 50%,
+    rgba(251, 191, 36, 0.02) 100%
+  );
+  box-shadow:
+    0 0 1.2rem rgba(251, 191, 36, 0.08),
+    inset 0 0 0.8rem rgba(251, 191, 36, 0.04);
+  transition:
+    opacity 0.7s ease-out,
+    transform 0.7s ease-out,
+    box-shadow 0.7s ease-out;
+  will-change: opacity, transform;
+}
+
+.milestone-notification--visible {
+  opacity: 1;
+  transform: translateX(0) scale(1);
+}
+
+.milestone-icon {
+  flex-shrink: 0;
+  font-size: 1.1rem;
+  line-height: 1;
+  margin-top: 0.1rem;
+  animation: milestoneBreathe 4s ease-in-out infinite;
+  filter: drop-shadow(0 0 0.3rem rgba(251, 191, 36, 0.35));
+}
+
+@keyframes milestoneBreathe {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 0.3rem rgba(251, 191, 36, 0.35));
+  }
+  50% {
+    transform: scale(1.08);
+    filter: drop-shadow(0 0 0.5rem rgba(251, 191, 36, 0.5));
+  }
+}
+
+.milestone-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.milestone-text {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #d4a574;
+  letter-spacing: 0.02em;
+  line-height: 1.3;
+}
+
+.milestone-poem {
+  font-size: 0.68rem;
+  font-style: italic;
+  color: rgba(168, 139, 100, 0.85);
+  line-height: 1.45;
+  margin-top: 0.15rem;
+}
+
+.milestone-time {
+  font-size: 0.58rem;
+  color: rgba(139, 119, 80, 0.55);
+  margin-top: 0.25rem;
+  letter-spacing: 0.03em;
+}
+
+/* ── Milestone Hover/Focus ── */
+.milestone-notification:hover {
+  box-shadow:
+    0 0 1.6rem rgba(251, 191, 36, 0.12),
+    inset 0 0 1rem rgba(251, 191, 36, 0.06);
+}
+
+/* ── Milestone Reduced Motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .milestone-notification {
+    transition-duration: 0.01ms !important;
+    transform: none !important;
+    opacity: 1 !important;
+  }
+
+  .milestone-icon {
+    animation: none !important;
+  }
+}
+
+/* ── Milestone Responsive ── */
+@media (max-width: 375px) {
+  .milestone-notification {
+    gap: 0.5rem;
+    padding: 0.45rem 0.5rem 0.5rem;
+  }
+
+  .milestone-icon {
+    font-size: 0.95rem;
+  }
+
+  .milestone-text {
+    font-size: 0.72rem;
+  }
+
+  .milestone-poem {
+    font-size: 0.62rem;
+  }
+
+  .milestone-time {
+    font-size: 0.52rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .milestone-notification {
+    gap: 0.75rem;
+    padding: 0.6rem 0.75rem 0.65rem;
+  }
+
+  .milestone-icon {
+    font-size: 1.25rem;
+  }
+
+  .milestone-text {
+    font-size: 0.82rem;
+  }
+
+  .milestone-poem {
+    font-size: 0.72rem;
+  }
+
+  .milestone-time {
+    font-size: 0.6rem;
+  }
+}
+
+@media (min-width: 1200px) {
+  .milestone-notification {
+    padding: 0.65rem 0.8rem 0.7rem;
+  }
+
+  .milestone-icon {
+    font-size: 1.35rem;
+  }
+
+  .milestone-text {
+    font-size: 0.85rem;
+  }
+
+  .milestone-poem {
+    font-size: 0.74rem;
+  }
+}
+

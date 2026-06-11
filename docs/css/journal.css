@@ -1,0 +1,219 @@
+/* ═══════════════════════════════════════════════════════════
+   Garden Journal — Warm parchment panel
+   ═══════════════════════════════════════════════════════════ */
+
+.garden-journal {
+  opacity: 0;
+  transform: translateY(1rem);
+  transition: opacity 0.8s ease, transform 0.8s ease;
+  width: 100%;
+  background: var(--journal-bg);
+  border: 1px solid var(--journal-border);
+  border-radius: 0.85rem;
+  padding: 0.75rem;
+  box-shadow:
+    0 0 1.5rem rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+  max-height: 45%;
+}
+
+/* Parchment texture overlay */
+.garden-journal::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 20% 50%, rgba(139, 119, 80, 0.06), transparent 50%),
+    radial-gradient(ellipse at 80% 20%, rgba(74, 222, 128, 0.03), transparent 40%),
+    radial-gradient(ellipse at 50% 80%, rgba(139, 119, 80, 0.04), transparent 45%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.garden-journal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.garden-journal.pulse {
+  animation: journalPulse 0.6s ease-out;
+}
+
+@keyframes journalPulse {
+  0% {
+    box-shadow:
+      0 0 1.5rem rgba(0, 0, 0, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  }
+  50% {
+    box-shadow:
+      0 0 2rem rgba(168, 139, 100, 0.15),
+      0 0 4rem rgba(168, 139, 100, 0.05),
+      inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+  100% {
+    box-shadow:
+      0 0 1.5rem rgba(0, 0, 0, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  }
+}
+
+.journal-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+  position: relative;
+  z-index: 1;
+}
+
+.journal-icon {
+  font-size: 0.9rem;
+  filter: drop-shadow(0 0 0.2rem rgba(168, 139, 100, 0.3));
+}
+
+.journal-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--journal-text);
+  letter-spacing: 0.04em;
+  margin: 0;
+}
+
+.journal-timeline {
+  position: relative;
+  z-index: 1;
+  max-height: 7rem;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.journal-timeline::-webkit-scrollbar {
+  width: 0.25rem;
+}
+
+.journal-timeline::-webkit-scrollbar-track {
+  background: rgba(139, 119, 80, 0.08);
+  border-radius: 0.15rem;
+}
+
+.journal-timeline::-webkit-scrollbar-thumb {
+  background: rgba(168, 139, 100, 0.25);
+  border-radius: 0.15rem;
+}
+
+.journal-timeline::-webkit-scrollbar-thumb:hover {
+  background: rgba(168, 139, 100, 0.4);
+}
+
+.journal-empty {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-style: italic;
+  text-align: center;
+  padding: 1rem 0;
+  letter-spacing: 0.03em;
+}
+
+/* Journal Entry */
+.journal-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid rgba(139, 119, 80, 0.08);
+  opacity: 0;
+  transform: translateX(-0.75rem);
+  animation: entrySlideIn 0.5s ease-out forwards;
+}
+
+.journal-entry:last-child {
+  border-bottom: none;
+}
+
+@keyframes entrySlideIn {
+  0% {
+    opacity: 0;
+    transform: translateX(-0.75rem);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.entry-timeline-dot {
+  flex-shrink: 0;
+  width: 0.4rem;
+  height: 0.4rem;
+  background: rgba(168, 139, 100, 0.6);
+  border-radius: 50%;
+  margin-top: 0.25rem;
+  box-shadow: 0 0 0.3rem rgba(168, 139, 100, 0.3);
+  position: relative;
+}
+
+.entry-timeline-dot::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 0.15rem;
+  height: 0.15rem;
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: 50%;
+}
+
+.entry-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.entry-text {
+  font-size: 0.68rem;
+  color: var(--text-secondary);
+  line-height: 1.35;
+  letter-spacing: 0.02em;
+}
+
+.entry-text strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.entry-time {
+  font-size: 0.55rem;
+  color: var(--text-muted);
+  margin-top: 0.1rem;
+  letter-spacing: 0.04em;
+}
+
+.entry-swatch {
+  flex-shrink: 0;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  border: 2px solid rgba(139, 119, 80, 0.2);
+  margin-top: 0.1rem;
+  box-shadow: 0 0 0.3rem rgba(168, 139, 100, 0.08);
+}
+
+/* Journal Last Tendered timestamp */
+.journal-last-tended {
+  font-size: 0.5rem;
+  color: var(--text-muted);
+  margin-left: auto;
+  letter-spacing: 0.04em;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+  white-space: nowrap;
+}
+
+.journal-last-tended.visible {
+  opacity: 1;
+}
+

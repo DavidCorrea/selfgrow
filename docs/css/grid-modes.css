@@ -1,0 +1,604 @@
+/* ═══════════════════════════════════════════════════════════
+   Tending Toolbar — Slim inline strip
+   ═══════════════════════════════════════════════════════════ */
+
+.tending-toolbar {
+  opacity: 0;
+  transform: translateY(0.5rem);
+  transition: opacity 0.8s ease, transform 0.8s ease;
+  width: 100%;
+  flex-shrink: 0;
+  text-align: center;
+  padding: 0.25rem 0.5rem;
+  background: var(--toolbar-bg);
+  border-top: 1px solid rgba(74, 222, 128, 0.06);
+  border-bottom: 1px solid rgba(74, 222, 128, 0.04);
+}
+
+.tending-toolbar.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.tending-hint {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  margin-bottom: 0.25rem;
+  letter-spacing: 0.05em;
+  min-height: 1em;
+  transition: opacity 0.5s ease;
+}
+
+.tending-tools {
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.tool-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.4rem 1rem;
+  background: rgba(15, 23, 36, 0.5);
+  border: 1px solid rgba(74, 222, 128, 0.12);
+  border-radius: 0.75rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease, background 0.3s ease, color 0.3s ease, transform 0.2s ease;
+}
+
+.tool-btn:hover,
+.tool-btn:focus-visible {
+  border-color: rgba(74, 222, 128, 0.3);
+  box-shadow: 0 0 1rem rgba(74, 222, 128, 0.08);
+  background: rgba(15, 23, 36, 0.7);
+  color: var(--text-primary);
+  transform: translateY(-2px);
+}
+
+.tool-btn.active {
+  border-color: rgba(96, 165, 250, 0.5);
+  box-shadow: 0 0 1.5rem rgba(96, 165, 250, 0.15);
+  background: rgba(96, 165, 250, 0.08);
+  color: var(--text-primary);
+}
+
+.tool-btn.active .tool-icon {
+  animation: toolBounce 0.6s ease-in-out infinite;
+}
+
+@keyframes toolBounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+.tool-icon {
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.tool-label {
+  font-size: 0.55rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* ── Fertilize Mode ── */
+.grid-tile.fertilize-target {
+  cursor: cell;
+}
+
+.tile-fertilize-sparkle {
+  position: absolute;
+  width: 0.18rem;
+  height: 0.18rem;
+  border-radius: 50%;
+  pointer-events: none;
+  animation: fertilizeSparkleFly 1s ease-out forwards;
+  z-index: 5;
+}
+
+@keyframes fertilizeSparkleFly {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: translate(calc(var(--tx) * 0.5), calc(var(--ty) * 0.5 - 0.3rem)) scale(1.2);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--tx), var(--ty)) scale(0);
+  }
+}
+
+.tile-fertilized-icon {
+  position: absolute;
+  bottom: 0.15rem;
+  right: 0.15rem;
+  font-size: 0.5rem;
+  opacity: 0;
+  z-index: 10;
+  transform: scale(0);
+  transition: opacity 0.4s ease 0.3s, transform 0.4s ease 0.3s;
+  pointer-events: none;
+}
+
+.tile-fertilized-icon.visible {
+  opacity: 0.75;
+  transform: scale(1);
+  animation: fertilizeIconPulse 3s ease-in-out infinite;
+}
+
+@keyframes fertilizeIconPulse {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50% { opacity: 0.9; transform: scale(1.08); }
+}
+
+.grid-tile.fertilized {
+  border-color: rgba(180, 140, 60, 0.4);
+  box-shadow:
+    0 0 0.8rem rgba(180, 140, 60, 0.08),
+    0 0 1.5rem rgba(180, 140, 60, 0.03);
+}
+
+.grid-tile.fertilized:hover,
+.grid-tile.fertilized:focus-visible {
+  box-shadow:
+    0 0 1rem rgba(180, 140, 60, 0.15),
+    0 0 2rem rgba(180, 140, 60, 0.05);
+}
+
+.grid-tile.fertilized .tile-soil {
+  background: linear-gradient(180deg, #6b5a3e, #4a3c28);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3), 0 0 0.4rem rgba(180, 140, 60, 0.1);
+}
+
+/* Fertilized tile growth boost - permanent 30% speed increase */
+.tile-sprout.fertilized-boost.growing .tile-stem {
+  animation-duration: 0.49s;
+  animation-delay: 0.14s;
+}
+
+.tile-sprout.fertilized-boost.growing .tile-leaf--left {
+  animation-duration: 0.35s;
+  animation-delay: 0.49s;
+}
+
+.tile-sprout.fertilized-boost.growing .tile-leaf--right {
+  animation-duration: 0.35s;
+  animation-delay: 0.595s;
+}
+
+.tile-sprout.fertilized-boost.budding .tile-bud {
+  animation-duration: 0.35s;
+}
+
+.tile-sprout.fertilized-boost.blooming .tile-bud {
+  animation-duration: 0.42s;
+}
+
+.tile-sprout.fertilized-boost.growing .tile-flower {
+  animation-duration: 0.42s;
+}
+
+/* Soil enrichment glow effect on fertilize */
+.grid-tile.fertilize-glow .tile-soil {
+  animation: soilEnrichGlow 1.2s ease-out;
+}
+
+@keyframes soilEnrichGlow {
+  0% {
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+  }
+  40% {
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3), 0 0 1rem rgba(180, 140, 60, 0.25), 0 0 2rem rgba(180, 140, 60, 0.08);
+  }
+  100% {
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3), 0 0 0.4rem rgba(180, 140, 60, 0.1);
+  }
+}
+
+/* ── Prune Mode ── */
+.grid-tile.prune-target {
+  cursor: cell;
+}
+
+/* Prune button active state — warm sage/olive accent */
+#pruneBtn.active {
+  border-color: rgba(132, 168, 90, 0.5);
+  box-shadow: 0 0 1.5rem rgba(132, 168, 90, 0.15);
+  background: rgba(132, 168, 90, 0.08);
+  color: var(--text-primary);
+}
+
+#pruneBtn.active .tool-icon {
+  animation: toolBounce 0.6s ease-in-out infinite;
+}
+
+/* Snip arc animation — scissor arcs sweep across the tile */
+.tile-snip-arc {
+  position: absolute;
+  width: 1.2rem;
+  height: 1.2rem;
+  border: 2px solid rgba(168, 200, 120, 0.7);
+  border-radius: 50%;
+  border-bottom-color: transparent;
+  border-left-color: transparent;
+  pointer-events: none;
+  z-index: 10;
+  transform: translate(-50%, -50%) scale(0) rotate(calc(var(--arc-side, 1) * 45deg));
+  animation: snipArcSweep 0.5s ease-out forwards;
+}
+
+@keyframes snipArcSweep {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0) rotate(calc(var(--arc-side, 1) * 20deg));
+  }
+  40% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.1) rotate(calc(var(--arc-side, 1) * 45deg));
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.6) rotate(calc(var(--arc-side, 1) * 70deg));
+  }
+}
+
+/* Leaf scatter particles */
+.tile-prune-leaf {
+  position: absolute;
+  width: 0.25rem;
+  height: 0.18rem;
+  border-radius: 0 60% 60% 60%;
+  pointer-events: none;
+  z-index: 8;
+  animation: leafScatterFall 1s ease-out forwards;
+}
+
+@keyframes leafScatterFall {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0deg) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--tx), var(--ty)) rotate(var(--leaf-rot, 180deg)) scale(0.4);
+  }
+}
+
+/* Pruning trim animation on the tile */
+.grid-tile.pruning {
+  animation: tilePruneTrim 0.6s ease-out;
+}
+
+@keyframes tilePruneTrim {
+  0% {
+    transform: scale(1);
+    box-shadow: none;
+  }
+  30% {
+    transform: scale(0.96);
+    box-shadow: 0 0 1rem rgba(132, 168, 90, 0.15);
+  }
+  60% {
+    transform: scale(1.02);
+    box-shadow: 0 0 0.6rem rgba(132, 168, 90, 0.1);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: none;
+  }
+}
+
+/* Pruned state: flower collapses, stem persists briefly */
+.tile-sprout.pruned {
+  opacity: 1;
+}
+
+.tile-sprout.pruned .tile-flower {
+  animation: pruneFlowerCollapse 0.5s ease-in forwards;
+  transform-origin: bottom center;
+}
+
+@keyframes pruneFlowerCollapse {
+  0% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+    filter: brightness(1) saturate(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(0.8) rotate(5deg);
+    filter: brightness(0.85) saturate(0.8);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.4) rotate(10deg);
+    filter: brightness(0.6) saturate(0.5);
+  }
+}
+
+.tile-sprout.pruned .tile-leaf {
+  animation: pruneLeafFade 0.5s ease-in forwards;
+}
+
+@keyframes pruneLeafFade {
+  0% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0.4; transform: scale(0.85) rotate(3deg); }
+}
+
+.tile-sprout.pruned .tile-stem {
+  animation: pruneStemFade 0.5s ease-in forwards;
+}
+
+@keyframes pruneStemFade {
+  0% { opacity: 1; }
+  100% { opacity: 0.6; }
+}
+
+/* Pruned tile border accent */
+.grid-tile.pruned-tile {
+  border-color: rgba(132, 168, 90, 0.35);
+  box-shadow:
+    0 0 0.8rem rgba(132, 168, 90, 0.08),
+    0 0 1.5rem rgba(132, 168, 90, 0.03);
+}
+
+.grid-tile.pruned-tile:hover,
+.grid-tile.pruned-tile:focus-visible {
+  box-shadow:
+    0 0 1rem rgba(132, 168, 90, 0.15),
+    0 0 2rem rgba(132, 168, 90, 0.05);
+}
+
+/* Prune journal entry styling */
+.journal-entry--pruned {
+  background: rgba(45, 50, 30, 0.2);
+  border-radius: 0.4rem;
+  margin-bottom: 0.15rem;
+}
+
+.journal-entry--pruned .entry-timeline-dot--pruned {
+  background: rgba(132, 168, 90, 0.5);
+  box-shadow: 0 0 0.3rem rgba(132, 168, 90, 0.2);
+}
+
+.journal-entry--pruned .entry-timeline-dot--pruned::after {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.journal-entry--pruned .entry-swatch--pruned {
+  border-color: rgba(132, 168, 90, 0.25);
+  box-shadow: 0 0 0.3rem rgba(132, 168, 90, 0.1);
+}
+
+.journal-entry--pruned .entry-text {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.journal-entry--pruned .entry-text strong {
+  color: rgba(132, 168, 90, 0.85);
+}
+
+/* ── Watering Mode ── */
+.grid-tile.watering-target {
+  cursor: crosshair;
+}
+
+.tile-water-drop {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 1rem;
+  height: 1rem;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.tile-water-drop::before {
+  content: '💧';
+  font-size: 1rem;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  animation: waterDropFall 0.6s ease-in forwards;
+}
+
+@keyframes waterDropFall {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -200%) scale(0.5);
+  }
+  40% {
+    opacity: 1;
+    transform: translate(-50%, -40%) scale(1.1);
+  }
+  60% {
+    opacity: 1;
+    transform: translate(-50%, -30%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, 20%) scale(0.3);
+  }
+}
+
+.tile-watered-icon {
+  position: absolute;
+  bottom: 0.15rem;
+  left: 0.15rem;
+  font-size: 0.5rem;
+  opacity: 0;
+  z-index: 10;
+  transform: scale(0);
+  transition: opacity 0.4s ease 0.3s, transform 0.4s ease 0.3s;
+  pointer-events: none;
+}
+
+.tile-watered-icon.visible {
+  opacity: 0.7;
+  transform: scale(1);
+  animation: waterIconPulse 2s ease-in-out infinite;
+}
+
+@keyframes waterIconPulse {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.1); }
+}
+
+.grid-tile.watered {
+  border-color: rgba(96, 165, 250, 0.3);
+  box-shadow:
+    0 0 1rem rgba(96, 165, 250, 0.1),
+    0 0 2rem rgba(96, 165, 250, 0.03);
+}
+
+.grid-tile.watered:hover,
+.grid-tile.watered:focus-visible {
+  box-shadow:
+    0 0 1rem rgba(96, 165, 250, 0.15),
+    0 0 2rem rgba(96, 165, 250, 0.05);
+}
+
+.tile-water-sparkle {
+  position: absolute;
+  width: 0.2rem;
+  height: 0.2rem;
+  background: #93c5fd;
+  border-radius: 50%;
+  pointer-events: none;
+  animation: waterSparkleFly 0.9s ease-out forwards;
+  z-index: 5;
+  box-shadow: 0 0 0.1rem rgba(147, 197, 253, 0.8);
+}
+
+@keyframes waterSparkleFly {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--tx), var(--ty)) scale(0);
+  }
+}
+
+.tile-sprout.water-bloom .tile-flower {
+  animation: waterBloomGlow 1s ease-out;
+}
+
+@keyframes waterBloomGlow {
+  0% { filter: brightness(1); }
+  50% { filter: brightness(1.5) saturate(1.3); box-shadow: 0 0 0.8rem rgba(251, 191, 36, 0.3); }
+  100% { filter: brightness(1); }
+}
+
+/* Speed-up growth animation overrides for watered tiles */
+.tile-sprout.speed-up.growing .tile-stem {
+  animation-duration: 0.35s;
+  animation-delay: 0.1s;
+}
+
+.tile-sprout.speed-up.growing .tile-leaf--left {
+  animation-duration: 0.25s;
+  animation-delay: 0.35s;
+}
+
+.tile-sprout.speed-up.growing .tile-leaf--right {
+  animation-duration: 0.25s;
+  animation-delay: 0.425s;
+}
+
+.tile-sprout.speed-up.budding .tile-bud {
+  animation-duration: 0.25s;
+}
+
+.tile-sprout.speed-up.blooming .tile-bud {
+  animation-duration: 0.3s;
+}
+
+.tile-sprout.speed-up.growing .tile-flower {
+  animation-duration: 0.3s;
+}
+
+/* Speed-up overrides for regrowth stages */
+.tile-sprout.speed-up.regrowing .tile-stem {
+  animation-duration: 0.56s;
+}
+
+.tile-sprout.speed-up.regrowing .tile-leaf {
+  animation-duration: 0.56s;
+}
+
+.tile-sprout.speed-up.regrow-bud .tile-bud {
+  animation-duration: 0.35s;
+}
+
+.tile-sprout.speed-up.regrow-bloom .tile-bud {
+  animation-duration: 0.35s;
+}
+
+.tile-sprout.speed-up.regrow-bloom .tile-flower {
+  animation-duration: 0.49s;
+}
+
+/* Fertilized boost overrides for regrowth stages */
+.tile-sprout.fertilized-boost.regrowing .tile-stem {
+  animation-duration: 0.56s;
+}
+
+.tile-sprout.fertilized-boost.regrowing .tile-leaf {
+  animation-duration: 0.56s;
+}
+
+.tile-sprout.fertilized-boost.regrow-bud .tile-bud {
+  animation-duration: 0.35s;
+}
+
+.tile-sprout.fertilized-boost.regrow-bloom .tile-bud {
+  animation-duration: 0.35s;
+}
+
+.tile-sprout.fertilized-boost.regrow-bloom .tile-flower {
+  animation-duration: 0.49s;
+}
+
+/* Combined water + fertilize boost */
+.tile-sprout.speed-up.fertilized-boost.growing .tile-stem {
+  animation-duration: 0.245s;
+  animation-delay: 0.07s;
+}
+
+.tile-sprout.speed-up.fertilized-boost.growing .tile-leaf--left {
+  animation-duration: 0.175s;
+  animation-delay: 0.245s;
+}
+
+.tile-sprout.speed-up.fertilized-boost.growing .tile-leaf--right {
+  animation-duration: 0.175s;
+  animation-delay: 0.2975s;
+}
+
+.tile-sprout.speed-up.fertilized-boost.budding .tile-bud {
+  animation-duration: 0.175s;
+}
+
+.tile-sprout.speed-up.fertilized-boost.blooming .tile-bud {
+  animation-duration: 0.21s;
+}
+
+.tile-sprout.speed-up.fertilized-boost.growing .tile-flower {
+  animation-duration: 0.21s;
+}
+

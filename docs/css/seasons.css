@@ -1,0 +1,400 @@
+/* ═══════════════════════════════════════════════════════════
+   Garden Seasons — Calendar-Based Meteorological Seasons
+   Pure CSS overlays layered on top of time-of-day themes.
+   Each season adds a body class that tints the atmosphere.
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Base Season Overlay ── */
+body[class*="season-"]::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.05;
+  transition: opacity 2s ease;
+}
+
+/* ── Spring: soft green-pink tint, drifting petals ── */
+.season-spring::after {
+  background:
+    radial-gradient(ellipse at 30% 80%, rgba(147, 217, 160, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 70% 20%, rgba(251, 207, 232, 0.04) 0%, transparent 45%),
+    radial-gradient(ellipse at 50% 50%, rgba(147, 217, 160, 0.03) 0%, transparent 60%);
+}
+
+body.season-spring {
+  --glow: rgba(147, 217, 160, 0.18);
+}
+
+/* Spring drifting petal motes */
+.season-spring .visitors-layer::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(2px 3px at 15% 90%, rgba(251, 207, 232, 0.5), transparent),
+    radial-gradient(2px 2px at 45% 85%, rgba(244, 114, 182, 0.4), transparent),
+    radial-gradient(1.5px 3px at 75% 92%, rgba(251, 207, 232, 0.45), transparent),
+    radial-gradient(2px 2px at 90% 88%, rgba(244, 114, 182, 0.35), transparent);
+  animation: springPetals 12s ease-in-out infinite;
+  opacity: 0.6;
+}
+
+@keyframes springPetals {
+  0%, 100% {
+    opacity: 0.4;
+    transform: translateY(0) translateX(0);
+  }
+  25% {
+    opacity: 0.6;
+    transform: translateY(-30px) translateX(10px);
+  }
+  50% {
+    opacity: 0.5;
+    transform: translateY(-50px) translateX(-5px);
+  }
+  75% {
+    opacity: 0.7;
+    transform: translateY(-20px) translateX(15px);
+  }
+}
+
+/* Morning dew sparkle on blooming tiles */
+.grid-tile.season-dew-sparkle .tile-sprout.grown .tile-flower {
+  animation: dewSparkle 3s ease-out;
+}
+
+@keyframes dewSparkle {
+  0% {
+    filter: brightness(1) drop-shadow(0 0 0 transparent);
+  }
+  30% {
+    filter: brightness(1.15) drop-shadow(0 0 0.3rem rgba(186, 230, 253, 0.5));
+  }
+  60% {
+    filter: brightness(1.08) drop-shadow(0 0 0.15rem rgba(186, 230, 253, 0.3));
+  }
+  100% {
+    filter: brightness(1) drop-shadow(0 0 0 transparent);
+  }
+}
+
+/* Spring tile glow */
+.season-spring .grid-tile.planted {
+  border-color: rgba(147, 217, 160, 0.12);
+}
+
+/* ── Summer: warm golden shimmer ── */
+.season-summer::after {
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(252, 211, 77, 0.06) 0%, transparent 55%),
+    radial-gradient(ellipse at 20% 80%, rgba(251, 191, 36, 0.04) 0%, transparent 45%),
+    radial-gradient(ellipse at 80% 60%, rgba(245, 158, 11, 0.03) 0%, transparent 50%);
+}
+
+body.season-summer {
+  --glow: rgba(252, 211, 77, 0.15);
+}
+
+/* Summer shimmer particles via visitors layer */
+.season-summer .visitors-layer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(1px 1px at 25% 40%, rgba(252, 211, 77, 0.6), transparent),
+    radial-gradient(1px 1px at 55% 60%, rgba(251, 191, 36, 0.5), transparent),
+    radial-gradient(1.5px 1.5px at 75% 30%, rgba(245, 158, 11, 0.4), transparent);
+  animation: summerShimmer 5s ease-in-out infinite;
+  opacity: 0.5;
+}
+
+@keyframes summerShimmer {
+  0%, 100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 0.6;
+    transform: translateY(-10px);
+  }
+}
+
+/* Golden shimmer on targeted tiles */
+.grid-tile.season-golden-shimmer {
+  animation: goldenShimmerGlow 4s ease-out;
+  border-color: rgba(252, 211, 77, 0.3) !important;
+}
+
+@keyframes goldenShimmerGlow {
+  0% {
+    box-shadow: 0 0 0 0 rgba(252, 211, 77, 0);
+  }
+  30% {
+    box-shadow:
+      0 0 1rem rgba(252, 211, 77, 0.15),
+      0 0 2rem rgba(251, 191, 36, 0.08);
+  }
+  70% {
+    box-shadow:
+      0 0 0.8rem rgba(252, 211, 77, 0.1),
+      0 0 1.5rem rgba(251, 191, 36, 0.05);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(252, 211, 77, 0);
+  }
+}
+
+/* Summer intensified flower glow */
+.season-summer .tile-sprout.grown .tile-flower {
+  filter: brightness(1.05);
+}
+
+/* ── Autumn: warm amber color wash, drifting leaves ── */
+.season-autumn::after {
+  background:
+    radial-gradient(ellipse at 40% 70%, rgba(194, 136, 74, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 60% 30%, rgba(251, 191, 36, 0.03) 0%, transparent 45%),
+    radial-gradient(ellipse at 20% 50%, rgba(180, 83, 9, 0.03) 0%, transparent 55%);
+}
+
+body.season-autumn {
+  --glow: rgba(194, 136, 74, 0.15);
+}
+
+/* Autumn drifting leaf particles */
+.season-autumn .visitors-layer::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(2px 3px at 30% 20%, rgba(194, 136, 74, 0.5), transparent),
+    radial-gradient(2px 2px at 60% 15%, rgba(180, 83, 9, 0.4), transparent),
+    radial-gradient(1.5px 2px at 80% 25%, rgba(217, 119, 6, 0.45), transparent);
+  animation: autumnLeavesDrift 14s ease-in-out infinite;
+  opacity: 0.5;
+}
+
+@keyframes autumnLeavesDrift {
+  0%, 100% {
+    opacity: 0.35;
+    transform: translateY(0) translateX(0) rotate(0deg);
+  }
+  33% {
+    opacity: 0.55;
+    transform: translateY(20px) translateX(15px) rotate(5deg);
+  }
+  66% {
+    opacity: 0.45;
+    transform: translateY(35px) translateX(-10px) rotate(-3deg);
+  }
+}
+
+/* Leaf drift on wilted tiles */
+.grid-tile.season-leaf-drift {
+  animation: autumnTileLeafsway 6s ease-out;
+}
+
+@keyframes autumnTileLeafsway {
+  0% {
+    box-shadow: none;
+  }
+  20% {
+    box-shadow:
+      0 0 1.5rem rgba(194, 136, 74, 0.12),
+      0 0 3rem rgba(180, 83, 9, 0.05);
+  }
+  100% {
+    box-shadow: none;
+  }
+}
+
+/* Autumn tile warm border tint */
+.season-autumn .grid-tile.planted {
+  border-color: rgba(194, 136, 74, 0.1);
+}
+
+/* ── Winter: cool blue-grey tint, frost borders ── */
+.season-winter::after {
+  background:
+    radial-gradient(ellipse at 50% 50%, rgba(184, 200, 224, 0.04) 0%, transparent 55%),
+    radial-gradient(ellipse at 30% 20%, rgba(148, 163, 184, 0.03) 0%, transparent 45%),
+    radial-gradient(ellipse at 70% 80%, rgba(203, 213, 225, 0.03) 0%, transparent 50%);
+}
+
+body.season-winter {
+  --glow: rgba(184, 200, 224, 0.12);
+}
+
+/* Winter snow crystal particles via visitors layer */
+.season-winter .visitors-layer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(2px 2px at 20% 30%, rgba(203, 213, 225, 0.5), transparent),
+    radial-gradient(1.5px 1.5px at 50% 20%, rgba(226, 232, 240, 0.4), transparent),
+    radial-gradient(2px 2px at 70% 35%, rgba(203, 213, 225, 0.45), transparent),
+    radial-gradient(1px 1px at 90% 25%, rgba(226, 232, 240, 0.35), transparent);
+  animation: winterSnowCrystals 10s ease-in-out infinite;
+  opacity: 0.45;
+}
+
+@keyframes winterSnowCrystals {
+  0%, 100% {
+    opacity: 0.3;
+    transform: translateY(0) translateX(0);
+  }
+  50% {
+    opacity: 0.5;
+    transform: translateY(15px) translateX(-8px);
+  }
+}
+
+/* Frost border on tiles */
+.grid-tile.season-frost-border {
+  animation: frostBorderCrystallize 5s ease-out;
+}
+
+@keyframes frostBorderCrystallize {
+  0% {
+    border-color: rgba(90, 110, 80, 0.2);
+    box-shadow: none;
+  }
+  25% {
+    border-color: rgba(184, 200, 224, 0.4);
+    box-shadow:
+      0 0 0.8rem rgba(184, 200, 224, 0.1),
+      0 0 1.5rem rgba(203, 213, 225, 0.05),
+      inset 0 0 0.5rem rgba(184, 200, 224, 0.04);
+  }
+  75% {
+    border-color: rgba(184, 200, 224, 0.3);
+    box-shadow:
+      0 0 0.5rem rgba(184, 200, 224, 0.06),
+      inset 0 0 0.3rem rgba(184, 200, 224, 0.02);
+  }
+  100% {
+    border-color: rgba(90, 110, 80, 0.2);
+    box-shadow: none;
+  }
+}
+
+/* Winter tile subtle blue border */
+.season-winter .grid-tile {
+  border-color: rgba(184, 200, 224, 0.06);
+}
+
+/* ── Season Journal Entry Styling ── */
+.journal-entry--season {
+  background: rgba(30, 40, 25, 0.15);
+  border-radius: 0.4rem;
+  margin-bottom: 0.15rem;
+}
+
+.journal-entry--season .entry-timeline-dot--season {
+  background: rgba(147, 217, 160, 0.5);
+  box-shadow: 0 0 0.3rem rgba(147, 217, 160, 0.2);
+}
+
+.journal-entry--season .entry-timeline-dot--season::after {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.journal-entry--season .entry-swatch--season {
+  border-color: rgba(147, 217, 160, 0.25);
+  box-shadow: 0 0 0.3rem rgba(147, 217, 160, 0.1);
+}
+
+.journal-entry--season .entry-text {
+  color: rgba(147, 217, 160, 0.85);
+  font-style: italic;
+}
+
+/* Season event journal entry (leaf/butterfly/frost/shimmer events) */
+.journal-entry--season-event {
+  background: rgba(40, 35, 20, 0.15);
+  border-radius: 0.4rem;
+  margin-bottom: 0.15rem;
+}
+
+.journal-entry--season-event .entry-timeline-dot--season-event {
+  background: rgba(252, 211, 77, 0.5);
+  box-shadow: 0 0 0.25rem rgba(252, 211, 77, 0.15);
+}
+
+.journal-entry--season-event .entry-swatch--season-event {
+  background: rgba(252, 211, 77, 0.3);
+  border-color: rgba(252, 211, 77, 0.2);
+  box-shadow: 0 0 0.3rem rgba(252, 211, 77, 0.08);
+}
+
+.journal-entry--season-event .entry-text {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+/* ── Season-specific stat card accents ── */
+body.season-spring .stat-card--mood .stat-value {
+  color: rgba(147, 217, 160, 0.85);
+}
+
+body.season-summer .stat-card--mood .stat-value {
+  color: rgba(252, 211, 77, 0.85);
+}
+
+body.season-autumn .stat-card--mood .stat-value {
+  color: rgba(194, 136, 74, 0.85);
+}
+
+body.season-winter .stat-card--mood .stat-value {
+  color: rgba(184, 200, 224, 0.85);
+}
+
+/* ── Reduced Motion: disable season animations ── */
+@media (prefers-reduced-motion: reduce) {
+  .season-spring .visitors-layer::before,
+  .season-summer .visitors-layer::after,
+  .season-autumn .visitors-layer::before,
+  .season-winter .visitors-layer::after {
+    animation: none !important;
+    opacity: 0.2;
+  }
+
+  .grid-tile.season-dew-sparkle .tile-sprout.grown .tile-flower,
+  .grid-tile.season-golden-shimmer,
+  .grid-tile.season-leaf-drift,
+  .grid-tile.season-frost-border {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  body[class*="season-"]::after {
+    transition-duration: 0.01ms !important;
+  }
+
+  .season-summer .tile-sprout.grown .tile-flower {
+    filter: none;
+  }
+}
+
+/* ── Responsive: season effects ── */
+@media (max-width: 375px) {
+  .season-spring .visitors-layer::before,
+  .season-summer .visitors-layer::after,
+  .season-autumn .visitors-layer::before,
+  .season-winter .visitors-layer::after {
+    opacity: 0.3;
+  }
+
+  .journal-entry--season .entry-text,
+  .journal-entry--season-event .entry-text {
+    font-size: 0.55rem;
+  }
+}
+

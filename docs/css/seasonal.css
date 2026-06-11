@@ -1,0 +1,468 @@
+/* ═══════════════════════════════════════════════════════════
+   Weather System
+   ═══════════════════════════════════════════════════════════ */
+
+.weather-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 2s ease;
+}
+
+.weather-layer {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 2.5s ease;
+  pointer-events: none;
+}
+
+.weather-overlay.weather-active-sunny .weather-sunny,
+.weather-overlay.weather-active-rainy .weather-rain,
+.weather-overlay.weather-active-cloudy .weather-cloudy,
+.weather-overlay.weather-active-snowy .weather-snow {
+  opacity: 1;
+}
+
+.weather-overlay[class*="weather-active-"] {
+  opacity: 1;
+}
+
+/* Sunny */
+.sun-ray {
+  position: absolute;
+  top: -10%;
+  left: 50%;
+  width: 40%;
+  height: 120%;
+  background: linear-gradient(180deg, rgba(253, 230, 138, 0.08) 0%, rgba(253, 230, 138, 0.04) 30%, rgba(253, 230, 138, 0.01) 60%, transparent 100%);
+  transform-origin: top center;
+  transform: translateX(-50%) rotate(var(--ray-angle, 0deg));
+  animation: sunRayPulse 4s ease-in-out infinite;
+  animation-delay: var(--ray-delay, 0s);
+  pointer-events: none;
+}
+
+@keyframes sunRayPulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.7; }
+}
+
+.weather-sunny::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 0%, rgba(253, 230, 138, 0.04) 0%, transparent 60%);
+  pointer-events: none;
+}
+
+/* Rain */
+.rain-drop {
+  position: absolute;
+  top: -5%;
+  width: 1.5px;
+  height: 0.8rem;
+  background: linear-gradient(180deg, transparent 0%, rgba(147, 197, 253, var(--drop-opacity, 0.25)) 30%, rgba(147, 197, 253, calc(var(--drop-opacity, 0.25) * 1.5)) 100%);
+  border-radius: 0 0 1px 1px;
+  animation: rainFall var(--drop-duration, 0.8s) linear infinite;
+  animation-delay: var(--drop-delay, 0s);
+  pointer-events: none;
+}
+
+@keyframes rainFall {
+  0% { transform: translateY(-2rem); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateY(105vh); opacity: 0; }
+}
+
+.weather-rain::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.1) 0%, rgba(30, 41, 59, 0.05) 50%, rgba(30, 41, 59, 0.08) 100%);
+  pointer-events: none;
+}
+
+/* Cloudy */
+.cloud {
+  position: absolute;
+  left: -20%;
+  width: 30%;
+  height: 8%;
+  background: radial-gradient(ellipse at center, rgba(148, 163, 184, var(--cloud-opacity, 0.15)) 0%, rgba(148, 163, 184, calc(var(--cloud-opacity, 0.15) * 0.5)) 40%, transparent 70%);
+  border-radius: 50%;
+  top: var(--cloud-y, 20%);
+  animation: cloudDrift var(--cloud-duration, 10s) linear infinite;
+  animation-delay: var(--cloud-delay, 0s);
+  pointer-events: none;
+  filter: blur(8px);
+}
+
+@keyframes cloudDrift {
+  0% { transform: translateX(0); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateX(130vw); opacity: 0; }
+}
+
+.mist-layer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 30%;
+  bottom: var(--mist-y, 30%);
+  background: linear-gradient(180deg, transparent 0%, rgba(148, 163, 184, var(--mist-opacity, 0.08)) 30%, rgba(148, 163, 184, calc(var(--mist-opacity, 0.08) * 1.5)) 60%, transparent 100%);
+  animation: mistDrift var(--mist-duration, 8s) ease-in-out infinite;
+  animation-delay: var(--mist-delay, 0s);
+  pointer-events: none;
+  filter: blur(20px);
+}
+
+@keyframes mistDrift {
+  0%, 100% { transform: translateX(-3%); opacity: 0.5; }
+  50% { transform: translateX(3%); opacity: 0.9; }
+}
+
+.weather-cloudy::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(51, 65, 85, 0.08) 0%, rgba(71, 85, 105, 0.04) 50%, rgba(51, 65, 85, 0.08) 100%);
+  pointer-events: none;
+}
+
+/* Snow */
+.snow-flake {
+  position: absolute;
+  top: -3%;
+  width: var(--flake-size, 0.4rem);
+  height: var(--flake-size, 0.4rem);
+  background: rgba(255, 255, 255, var(--flake-opacity, 0.7));
+  border-radius: 50%;
+  animation: snowFall var(--flake-duration, 6s) linear infinite;
+  animation-delay: var(--flake-delay, 0s);
+  pointer-events: none;
+  box-shadow: 0 0 0.2rem rgba(255, 255, 255, 0.2);
+}
+
+@keyframes snowFall {
+  0% { transform: translate(0, -1rem) rotate(0deg); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translate(var(--flake-drift, 20px), 105vh) rotate(360deg); opacity: 0; }
+}
+
+.weather-snow::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(226, 232, 240, 0.03) 0%, rgba(226, 232, 240, 0.015) 50%, rgba(226, 232, 240, 0.04) 100%);
+  pointer-events: none;
+}
+
+/* Weather Icon Indicator */
+.weather-icon {
+  position: fixed;
+  bottom: 4rem;
+  right: 1rem;
+  z-index: 100;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: rgba(15, 23, 36, 0.7);
+  border: 1px solid var(--card-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.8);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+
+.weather-icon.visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.weather-label {
+  position: fixed;
+  bottom: 3.4rem;
+  right: 1rem;
+  z-index: 100;
+  font-size: 0.5rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  background: rgba(15, 23, 36, 0.5);
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.3rem;
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(0.2rem);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+  white-space: nowrap;
+}
+
+.weather-label.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.weather-icon.changing {
+  animation: weatherIconChange 0.5s ease-out;
+}
+
+@keyframes weatherIconChange {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
+/* ── Weather-Growth Integration ── */
+.grid-tile.rain-watered {
+  border-color: rgba(96, 165, 250, 0.3);
+  box-shadow: 0 0 0.8rem rgba(96, 165, 250, 0.08), 0 0 1.5rem rgba(96, 165, 250, 0.03);
+  transition: border-color 0.6s ease, box-shadow 0.6s ease;
+}
+
+.tile-rain-drop {
+  position: absolute;
+  top: 15%;
+  width: 0.1rem;
+  height: 0.4rem;
+  background: linear-gradient(180deg, rgba(147, 197, 253, 0.5), rgba(96, 165, 250, 0.15));
+  border-radius: 0 0 50% 50%;
+  pointer-events: none;
+  z-index: 10;
+  animation: tileRainFall 0.6s ease-in forwards;
+  animation-delay: var(--drop-delay, 0s);
+}
+
+@keyframes tileRainFall {
+  0% { opacity: 0; transform: translateY(-0.4rem) scaleY(0.5); }
+  30% { opacity: 1; transform: translateY(0) scaleY(1); }
+  100% { opacity: 0; transform: translateY(1.5rem) scaleY(0.3); }
+}
+
+.tile-sprout.rain-bloom .tile-flower {
+  animation: rainBloomGlow 1.5s ease-out;
+}
+
+@keyframes rainBloomGlow {
+  0% { filter: brightness(1); }
+  40% { filter: brightness(1.2) saturate(1.15); box-shadow: 0 0 0.6rem rgba(96, 165, 250, 0.2); }
+  100% { filter: brightness(1); }
+}
+
+.grid-tile.weather-sunny-glow {
+  border-color: rgba(251, 191, 36, 0.15);
+  box-shadow: 0 0 0.8rem rgba(251, 191, 36, 0.04), 0 0 1.5rem rgba(251, 191, 36, 0.015);
+  transition: border-color 0.8s ease, box-shadow 0.8s ease;
+}
+
+.grid-tile.weather-rainy-glow {
+  border-color: rgba(96, 165, 250, 0.15);
+  box-shadow: 0 0 0.8rem rgba(96, 165, 250, 0.04), 0 0 1.5rem rgba(96, 165, 250, 0.015);
+  transition: border-color 0.8s ease, box-shadow 0.8s ease;
+}
+
+.grid-tile.weather-snowy-dormant {
+  border-color: rgba(226, 232, 240, 0.08);
+  box-shadow: 0 0 0.8rem rgba(226, 232, 240, 0.03), 0 0 1.5rem rgba(226, 232, 240, 0.01);
+  transition: border-color 0.8s ease, box-shadow 0.8s ease;
+}
+
+.grid-tile.weather-snowy-dormant .tile-sprout.grown .tile-flower {
+  animation: snowSway 5s ease-in-out infinite;
+}
+
+@keyframes snowSway {
+  0%, 100% { transform: rotate(-1deg); }
+  50% { transform: rotate(1deg); }
+}
+
+.grid-tile.weather-sunny-glow .tile-sprout.grown .tile-flower {
+  animation: sunWarmPulse 3.5s ease-in-out infinite;
+}
+
+@keyframes sunWarmPulse {
+  0%, 100% { filter: brightness(1); transform: rotate(-2deg); }
+  50% { filter: brightness(1.06); transform: rotate(2deg); }
+}
+
+/* Weather Journal Entry */
+.journal-entry--weather {
+  background: rgba(17, 24, 39, 0.25);
+  border-radius: 0.4rem;
+  margin-bottom: 0.15rem;
+}
+
+.journal-entry--weather .entry-timeline-dot--weather {
+  background: rgba(148, 163, 184, 0.4);
+  box-shadow: 0 0 0.3rem rgba(148, 163, 184, 0.15);
+}
+
+.journal-entry--weather .entry-timeline-dot--weather::after {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.journal-entry--weather .entry-swatch--weather {
+  border-color: rgba(148, 163, 184, 0.15);
+  box-shadow: 0 0 0.3rem rgba(148, 163, 184, 0.08);
+}
+
+.journal-entry--weather .entry-text {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+/* ── Fertilized Stat Card ── */
+.stat-card--fertilized .stat-value {
+  color: rgba(180, 140, 60, 0.85);
+}
+
+.stat-card--fertilized .stat-emoji {
+  filter: drop-shadow(0 0 0.2rem rgba(180, 140, 60, 0.15));
+}
+
+/* ── Self-Seeding / Volunteer Plants ── */
+.grid-tile.volunteer {
+  border-color: rgba(168, 153, 133, 0.25);
+  box-shadow: 0 0 0.8rem rgba(168, 153, 133, 0.06), 0 0 1.5rem rgba(168, 153, 133, 0.02);
+  transition: border-color 0.6s ease, box-shadow 0.6s ease;
+}
+
+.grid-tile.volunteer:hover,
+.grid-tile.volunteer:focus-visible {
+  box-shadow: 0 0 1rem rgba(168, 153, 133, 0.12), 0 0 2rem rgba(168, 153, 133, 0.04);
+}
+
+.grid-tile.volunteer-pulse {
+  animation: volunteerPulseHint 2.5s ease-in-out;
+}
+
+@keyframes volunteerPulseHint {
+  0%, 100% {
+    border-color: rgba(90, 110, 80, 0.2);
+    box-shadow: none;
+    background: rgba(15, 20, 16, 0.7);
+  }
+  30% {
+    border-color: rgba(168, 153, 133, 0.3);
+    box-shadow: 0 0 1rem rgba(168, 153, 133, 0.08), 0 0 2rem rgba(168, 153, 133, 0.03);
+    background: rgba(30, 27, 22, 0.65);
+  }
+  60% {
+    border-color: rgba(168, 153, 133, 0.4);
+    box-shadow: 0 0 1.2rem rgba(168, 153, 133, 0.1), 0 0 2.5rem rgba(168, 153, 133, 0.04);
+    background: rgba(30, 27, 22, 0.7);
+  }
+}
+
+.volunteer-seed-fall {
+  position: absolute;
+  top: 5%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0.25rem;
+  height: 0.35rem;
+  background: linear-gradient(135deg, #c9a86c, #a88a50);
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  z-index: 10;
+  pointer-events: none;
+  animation: volunteerSeedFall 1s ease-in forwards;
+}
+
+@keyframes volunteerSeedFall {
+  0% { opacity: 0; transform: translateX(-50%) translateY(-1.5rem) scale(0.6) rotate(-15deg); }
+  20% { opacity: 1; }
+  60% { transform: translateX(-50%) translateY(0.6rem) scale(1) rotate(5deg); }
+  80% { transform: translateX(-50%) translateY(0.8rem) scale(0.95) rotate(0deg); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(0.8rem) scale(0.8) rotate(0deg); }
+}
+
+.grid-tile.volunteer-landing .tile-sprout {
+  animation: volunteerLand 0.6s ease-out;
+}
+
+@keyframes volunteerLand {
+  0% { transform: translateX(-50%) scaleY(0.3); opacity: 0; }
+  100% { transform: translateX(-50%) scaleY(1); opacity: 1; }
+}
+
+.volunteer-sparkle {
+  position: absolute;
+  width: 0.15rem;
+  height: 0.15rem;
+  background: #d4a574;
+  border-radius: 50%;
+  pointer-events: none;
+  animation: volunteerSparkleFly 0.8s ease-out forwards;
+  z-index: 5;
+  box-shadow: 0 0 0.1rem rgba(212, 165, 116, 0.5);
+}
+
+@keyframes volunteerSparkleFly {
+  0% { opacity: 1; transform: translate(0, 0) scale(1); }
+  100% { opacity: 0; transform: translate(var(--tx), var(--ty)) scale(0); }
+}
+
+.grid-tile.volunteer .tile-cycle-badge {
+  border-color: rgba(168, 153, 133, 0.25);
+}
+
+.grid-tile.volunteer .tile-sprout.grown .tile-flower {
+  animation: volunteerSway 3.5s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+@keyframes volunteerSway {
+  0%, 100% { transform: rotate(-4deg); }
+  50% { transform: rotate(4deg); }
+}
+
+.journal-entry--volunteer {
+  background: rgba(45, 35, 22, 0.2);
+  border-radius: 0.4rem;
+  margin-bottom: 0.15rem;
+}
+
+.journal-entry--volunteer .entry-timeline-dot--volunteer {
+  background: rgba(168, 153, 133, 0.5);
+  box-shadow: 0 0 0.3rem rgba(168, 153, 133, 0.2);
+}
+
+.journal-entry--volunteer .entry-timeline-dot--volunteer::after {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.journal-entry--volunteer .entry-swatch--volunteer {
+  border-color: rgba(168, 153, 133, 0.25);
+  box-shadow: 0 0 0.3rem rgba(168, 153, 133, 0.1);
+}
+
+.journal-entry--volunteer .entry-text {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.journal-entry--volunteer .entry-text strong {
+  color: rgba(168, 153, 133, 0.85);
+}
+
+.stat-card--volunteers .stat-value {
+  color: rgba(168, 153, 133, 0.85);
+}
+
+.stat-card--volunteers .stat-emoji {
+  filter: drop-shadow(0 0 0.2rem rgba(168, 153, 133, 0.15));
+}
+

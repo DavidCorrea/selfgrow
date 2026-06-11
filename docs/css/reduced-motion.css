@@ -1,0 +1,109 @@
+/* ═══════════════════════════════════════════════════════════
+   Reduced Motion
+   ═══════════════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .sprout.grown .flower,
+  .tile-sprout.grown .tile-flower {
+    animation: none;
+  }
+
+  .sparkle,
+  .tile-sparkle,
+  .visitor,
+  .firefly-trail,
+  .volunteer-sparkle,
+  .ground-creature {
+    display: none;
+  }
+
+  .message {
+    transition: none;
+  }
+
+  .weather-overlay,
+  .weather-layer,
+  .rain-drop,
+  .snow-flake,
+  .cloud,
+  .mist-layer,
+  .sun-ray {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .rain-drop,
+  .snow-flake,
+  .cloud {
+    display: none;
+  }
+
+  .tile-rain-drop,
+  .volunteer-seed-fall,
+  .tile-fertilize-sparkle,
+  .tile-snip-arc,
+  .tile-prune-leaf,
+  .celebration-particle {
+    animation: none !important;
+    display: none;
+  }
+
+  .celebration-glow-overlay {
+    transition-duration: 0.01ms !important;
+  }
+
+  .celebration-particles {
+    display: none;
+  }
+
+  .garden-grid-wrapper.celebration-grid-glow .garden-grid {
+    animation: none !important;
+  }
+
+  .grid-tile.volunteer-pulse,
+  .grid-tile.volunteer-landing .tile-sprout,
+  .grid-tile.volunteer .tile-sprout.grown .tile-flower,
+  .tile-sprout.rain-bloom .tile-flower,
+  .grid-tile.weather-sunny-glow .tile-sprout.grown .tile-flower,
+  .grid-tile.weather-snowy-dormant .tile-sprout.grown .tile-flower,
+  .grid-tile.pruning,
+  .tile-sprout.pruned .tile-flower,
+  .tile-sprout.pruned .tile-leaf,
+  .tile-sprout.pruned .tile-stem,
+  .grid-tile.fertilize-glow .tile-soil,
+  .tile-fertilized-icon,
+  .tile-sprout.regrowing .tile-stem,
+  .tile-sprout.regrowing .tile-leaf,
+  .tile-sprout.regrow-bud .tile-bud,
+  .tile-sprout.regrow-bloom .tile-bud,
+  .tile-sprout.regrow-bloom .tile-flower,
+  .tile-sprout.regrow-wilt .tile-flower,
+  .tile-sprout.regrow-wilt .tile-leaf,
+  .tile-sprout.regrow-wilt .tile-stem,
+  .tile-sprout.dormant .tile-flower,
+  .tile-sprout.dormant .tile-leaf,
+  .tile-sprout.dormant .tile-stem {
+    animation: none !important;
+  }
+
+  .ring-circle,
+  .ring-circle--new {
+    animation: none !important;
+    opacity: 0.6 !important;
+    transform: scale(1) !important;
+  }
+
+  .garden-rings {
+    transition-duration: 0.01ms !important;
+  }
+}
+

@@ -178,6 +178,12 @@ function createPanel() {
 // ── Toggle panel visibility ──
 
 function toggleEncyclopedia() {
+  // Lazy-create the panel and start observation on first open
+  if (!panelCreated) {
+    createPanel();
+    setupPassiveObservation();
+  }
+
   var panel = document.getElementById('creatureEncyclopedia');
   var toggleBtn = document.getElementById('encyclopediaToggle');
   if (!panel) return;
@@ -370,9 +376,7 @@ function setupPassiveObservation() {
 export function initCreatureEncyclopedia() {
   // Wait for DOM to be ready
   visibleSetTimeout(function () {
-    createPanel();
     setupSpawnListeners();
-    setupPassiveObservation();
   }, 100);
 }
 

@@ -1,0 +1,155 @@
+/* ═══════════════════════════════════════════════════════════
+   Ecosystem Interactions
+   Creatures and plants influence each other:
+   - Bee pollination glow on blooming flowers
+   - Ladybug pest-cleaned effect on adjacent tiles
+   - Season-gated creature indicators
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Bee Pollination ── */
+.grid-tile.bee-pollinated {
+  border-color: rgba(251, 191, 36, 0.4);
+  box-shadow:
+    0 0 1rem rgba(251, 191, 36, 0.12),
+    0 0 2rem rgba(251, 191, 36, 0.04);
+}
+
+.tile-sprout.pollination-glow .tile-flower {
+  animation: pollinationGlow 1.5s ease-in-out;
+}
+
+@keyframes pollinationGlow {
+  0% { filter: brightness(1) saturate(1); }
+  40% { filter: brightness(1.4) saturate(1.3); box-shadow: 0 0 0.6rem rgba(251, 191, 36, 0.3); }
+  100% { filter: brightness(1) saturate(1); }
+}
+
+.pollination-sparkle {
+  position: absolute;
+  width: 0.15rem;
+  height: 0.15rem;
+  background: #fbbf24;
+  border-radius: 50%;
+  pointer-events: none;
+  animation: pollinationSparkleFly 1.2s ease-out forwards;
+  z-index: 6;
+  box-shadow: 0 0 0.1rem rgba(251, 191, 36, 0.5);
+}
+
+@keyframes pollinationSparkleFly {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--tx), var(--ty)) scale(0.2);
+  }
+}
+
+/* ── Ladybug Pest Control ── */
+.grid-tile.pest-cleaned {
+  border-color: rgba(132, 200, 100, 0.35);
+  box-shadow:
+    0 0 0.8rem rgba(132, 200, 100, 0.1),
+    0 0 1.5rem rgba(132, 200, 100, 0.03);
+}
+
+.tile-sprout.pest-cleaned-glow .tile-flower {
+  animation: pestCleanedGlow 1.2s ease-out;
+}
+
+@keyframes pestCleanedGlow {
+  0% { filter: brightness(1) saturate(1); }
+  50% { filter: brightness(1.3) saturate(1.2); box-shadow: 0 0 0.5rem rgba(132, 200, 100, 0.25); }
+  100% { filter: brightness(1) saturate(1); }
+}
+
+.pest-cleaned-sparkle {
+  position: absolute;
+  width: 0.12rem;
+  height: 0.12rem;
+  background: #84c864;
+  border-radius: 50%;
+  pointer-events: none;
+  animation: pestCleanedSparkleFly 0.9s ease-out forwards;
+  z-index: 6;
+  box-shadow: 0 0 0.08rem rgba(132, 200, 100, 0.4);
+}
+
+@keyframes pestCleanedSparkleFly {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--tx), var(--ty)) scale(0.2);
+  }
+}
+
+/* ── Season-Gated Creature Indicators ── */
+/* Subtle seasonal aura on the garden grid when creatures are season-active */
+body.season-spring .garden-grid {
+  --season-creature-glow: rgba(147, 217, 160, 0.04);
+}
+
+body.season-summer .garden-grid {
+  --season-creature-glow: rgba(252, 211, 77, 0.04);
+}
+
+body.season-autumn .garden-grid {
+  --season-creature-glow: rgba(194, 136, 74, 0.04);
+}
+
+body.season-winter .garden-grid {
+  --season-creature-glow: rgba(184, 200, 224, 0.04);
+}
+
+/* ── Ecosystem Journal Entry Styling ── */
+.journal-entry--pollinated {
+  background: rgba(251, 191, 36, 0.04);
+  border-radius: 0.4rem;
+  margin-bottom: 0.15rem;
+}
+
+.journal-entry--pollinated .entry-timeline-dot--pollinated {
+  background: rgba(251, 191, 36, 0.5);
+  box-shadow: 0 0 0.3rem rgba(251, 191, 36, 0.2);
+}
+
+.journal-entry--pollinated .entry-text strong {
+  color: rgba(251, 191, 36, 0.85);
+}
+
+.journal-entry--pest-cleaned {
+  background: rgba(132, 200, 100, 0.04);
+  border-radius: 0.4rem;
+  margin-bottom: 0.15rem;
+}
+
+.journal-entry--pest-cleaned .entry-timeline-dot--pest-cleaned {
+  background: rgba(132, 200, 100, 0.5);
+  box-shadow: 0 0 0.3rem rgba(132, 200, 100, 0.2);
+}
+
+.journal-entry--pest-cleaned .entry-text strong {
+  color: rgba(132, 200, 100, 0.85);
+}
+
+/* ── Reduced Motion for Ecosystem ── */
+@media (prefers-reduced-motion: reduce) {
+  .tile-sprout.pollination-glow .tile-flower,
+  .tile-sprout.pest-cleaned-glow .tile-flower {
+    animation: none;
+  }
+
+  .pollination-sparkle,
+  .pest-cleaned-sparkle {
+    animation: none;
+    display: none;
+  }
+}
+
+
+

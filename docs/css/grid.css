@@ -1,0 +1,647 @@
+/* ═══════════════════════════════════════════════════════════
+   Garden Grid — Earth tones, subtle, warm
+   ═══════════════════════════════════════════════════════════ */
+
+.garden-grid-wrapper {
+  opacity: 0;
+  transform: translateY(1rem);
+  transition: opacity 0.8s ease, transform 0.8s ease;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  min-height: 0;
+  justify-content: center;
+  padding: 0.25rem;
+}
+
+.garden-grid-wrapper.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.grid-hint {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-align: center;
+  margin-bottom: 0.35rem;
+  letter-spacing: 0.05em;
+  min-height: 1em;
+  transition: opacity 0.5s ease;
+}
+
+.counter {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-align: center;
+  margin-top: 0.35rem;
+  letter-spacing: 0.08em;
+  min-height: 1em;
+  transition: opacity 0.4s ease;
+}
+
+.counter span {
+  color: var(--stem);
+  font-weight: 600;
+}
+
+/* Garden Grid */
+.garden-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  width: 100%;
+  max-width: 100%;
+  position: relative;
+  z-index: 10;
+}
+
+/* Grid Tile — earth-tone tile styling */
+.grid-tile {
+  position: relative;
+  aspect-ratio: 1;
+  background: rgba(15, 20, 16, 0.7);
+  border: 1px solid rgba(90, 110, 80, 0.2);
+  border-radius: 0.85rem;
+  cursor: pointer;
+  outline: none;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  padding-bottom: 15%;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease, background 0.3s ease;
+  content-visibility: auto;
+  contain: strict;
+}
+
+.grid-tile:hover,
+.grid-tile:focus-visible {
+  border-color: rgba(90, 110, 80, 0.4);
+  box-shadow: 0 0 1rem rgba(74, 222, 128, 0.06);
+  background: rgba(15, 20, 16, 0.85);
+}
+
+.grid-tile.planted {
+  cursor: default;
+  border-color: rgba(90, 110, 80, 0.3);
+}
+
+.grid-tile.planted:hover,
+.grid-tile.planted:focus-visible {
+  box-shadow: none;
+}
+
+/* Tile Soil */
+.tile-soil {
+  position: absolute;
+  bottom: 12%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 70%;
+  height: 22%;
+  background: linear-gradient(180deg, var(--soil-light), var(--soil));
+  border-radius: 50%;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+  z-index: 1;
+}
+
+/* Tile Seed */
+.tile-seed {
+  position: absolute;
+  bottom: calc(12% + 14%);
+  left: 50%;
+  transform: translateX(-50%) scale(0);
+  width: 0.35rem;
+  height: 0.45rem;
+  background: linear-gradient(135deg, var(--seed-light), var(--seed));
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  opacity: 0;
+  z-index: 2;
+}
+
+.tile-seed.visible {
+  opacity: 1;
+  transform: translateX(-50%) scale(1);
+  animation: tileSeedDrop 0.4s ease-out;
+}
+
+@keyframes tileSeedDrop {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-1.2rem) scale(0.5);
+  }
+  60% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0.1rem) scale(1.1);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
+/* Tile Sprout */
+.tile-sprout {
+  position: absolute;
+  bottom: calc(12% + 15%);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.tile-sprout.growing {
+  opacity: 1;
+  animation: tileSproutAppear 0.6s ease-out forwards;
+}
+
+@keyframes tileSproutAppear {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) scaleY(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(-50%) scaleY(1);
+  }
+}
+
+.tile-stem {
+  width: 0.1rem;
+  height: 0;
+  background: linear-gradient(180deg, var(--stem), var(--leaf));
+  border-radius: 0.06rem;
+  transform-origin: bottom center;
+}
+
+.tile-sprout.growing .tile-stem {
+  animation: tileStemGrow 0.7s ease-out forwards;
+  animation-delay: 0.2s;
+}
+
+@keyframes tileStemGrow {
+  0% { height: 0; }
+  100% { height: 1.4rem; }
+}
+
+/* Tile Leaves */
+.tile-leaf {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+}
+
+.tile-leaf--left {
+  left: -0.05rem;
+  bottom: 0.6rem;
+  background: var(--leaf);
+  border-radius: 0 50% 50% 50%;
+}
+
+.tile-leaf--right {
+  right: -0.05rem;
+  bottom: 0.85rem;
+  background: var(--leaf);
+  border-radius: 50% 0 50% 50%;
+}
+
+.tile-sprout.growing .tile-leaf--left {
+  animation: tileLeafGrowLeft 0.5s ease-out forwards;
+  animation-delay: 0.7s;
+}
+
+.tile-sprout.growing .tile-leaf--right {
+  animation: tileLeafGrowRight 0.5s ease-out forwards;
+  animation-delay: 0.85s;
+}
+
+@keyframes tileLeafGrowLeft {
+  0% { width: 0; height: 0; opacity: 0; }
+  100% { width: 0.55rem; height: 0.35rem; opacity: 1; }
+}
+
+@keyframes tileLeafGrowRight {
+  0% { width: 0; height: 0; opacity: 0; }
+  100% { width: 0.5rem; height: 0.32rem; opacity: 1; }
+}
+
+/* Tile Flower */
+.tile-flower {
+  position: relative;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  margin-bottom: 0.05rem;
+}
+
+.tile-sprout.growing .tile-flower {
+  animation: tileFlowerBloom 0.6s ease-out forwards;
+  animation-delay: 1.1s;
+}
+
+@keyframes tileFlowerBloom {
+  0% {
+    width: 0;
+    height: 0;
+    opacity: 0;
+    transform: scale(0) rotate(0deg);
+  }
+  100% {
+    width: 1.1rem;
+    height: 1.1rem;
+    opacity: 1;
+    transform: scale(1) rotate(360deg);
+  }
+}
+
+.tile-petal {
+  position: absolute;
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 50% 0 50% 50%;
+  top: 50%;
+  left: 50%;
+  transform-origin: 0 0;
+  opacity: 0.9;
+}
+
+.tile-petal--1 { transform: translate(-50%, -50%) rotate(0deg) translateY(-0.32rem); }
+.tile-petal--2 { transform: translate(-50%, -50%) rotate(60deg) translateY(-0.32rem); }
+.tile-petal--3 { transform: translate(-50%, -50%) rotate(120deg) translateY(-0.32rem); }
+.tile-petal--4 { transform: translate(-50%, -50%) rotate(180deg) translateY(-0.32rem); }
+.tile-petal--5 { transform: translate(-50%, -50%) rotate(240deg) translateY(-0.32rem); }
+.tile-petal--6 { transform: translate(-50%, -50%) rotate(300deg) translateY(-0.32rem); }
+
+.tile-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 0.25rem;
+  height: 0.25rem;
+  background: var(--center);
+  border-radius: 50%;
+  box-shadow: 0 0 0.15rem rgba(251, 191, 36, 0.5);
+}
+
+/* ── Growth Cycle Stages ── */
+
+/* Bud stage */
+.tile-bud {
+  position: relative;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  margin-bottom: 0.05rem;
+}
+
+.tile-sprout.budding .tile-bud {
+  animation: tileBudForm 0.5s ease-out forwards;
+}
+
+@keyframes tileBudForm {
+  0% {
+    width: 0;
+    height: 0;
+    opacity: 0;
+    transform: scale(0);
+  }
+  100% {
+    width: 0.6rem;
+    height: 0.7rem;
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tile-bud-petal {
+  position: absolute;
+  width: 0.25rem;
+  height: 0.35rem;
+  background: var(--leaf);
+  border-radius: 50% 50% 40% 40%;
+  top: 50%;
+  left: 50%;
+  transform-origin: 50% 100%;
+  opacity: 0.85;
+}
+
+.tile-bud-petal--1 { transform: translate(-50%, -80%) rotate(-20deg); }
+.tile-bud-petal--2 { transform: translate(-50%, -80%) rotate(20deg); }
+.tile-bud-petal--3 {
+  width: 0.22rem;
+  height: 0.3rem;
+  background: var(--stem);
+  transform: translate(-50%, -70%) rotate(0deg);
+}
+
+/* Bud opens into bloom */
+.tile-sprout.blooming .tile-bud {
+  animation: tileBudOpen 0.6s ease-out forwards;
+}
+
+@keyframes tileBudOpen {
+  0% {
+    width: 0.6rem;
+    height: 0.7rem;
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    width: 0;
+    height: 0;
+    opacity: 0;
+    transform: scale(0);
+  }
+}
+
+/* Wilt animation */
+.tile-sprout.wilting .tile-flower {
+  animation: tileWilt 2s ease-in forwards;
+  transform-origin: bottom center;
+}
+
+@keyframes tileWilt {
+  0% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+    filter: brightness(1) saturate(1);
+  }
+  40% {
+    opacity: 0.85;
+    transform: scale(0.95) rotate(8deg);
+    filter: brightness(0.85) saturate(0.8);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.7) rotate(20deg);
+    filter: brightness(0.6) saturate(0.5);
+  }
+}
+
+.tile-sprout.wilting .tile-leaf {
+  animation: tileLeafWilt 2s ease-in forwards;
+}
+
+@keyframes tileLeafWilt {
+  0% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0.3; transform: scale(0.8) rotate(10deg); }
+}
+
+.tile-sprout.wilting .tile-stem {
+  animation: tileStemWilt 2s ease-in forwards;
+}
+
+@keyframes tileStemWilt {
+  0% { opacity: 1; }
+  100% { opacity: 0.4; }
+}
+
+/* Soil pulse when reseeding */
+.grid-tile.reseeding .tile-soil {
+  animation: soilPulse 0.6s ease-out;
+}
+
+@keyframes soilPulse {
+  0% {
+    transform: translateX(-50%) scale(1);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+  }
+  50% {
+    transform: translateX(-50%) scale(1.08);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4), 0 0 0.8rem rgba(74, 222, 128, 0.2);
+  }
+  100% {
+    transform: translateX(-50%) scale(1);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+  }
+}
+
+/* Gentle sway after bloom */
+.tile-sprout.grown .tile-flower {
+  animation: tileSway 3s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+@keyframes tileSway {
+  0%, 100% { transform: rotate(-3deg); }
+  50% { transform: rotate(3deg); }
+}
+
+/* ── Perennial Regrowth (Cycle 2+) ── */
+
+/* Dormant state: stem & leaves stay visible, flower collapses */
+.tile-sprout.dormant {
+  opacity: 1;
+}
+
+.tile-sprout.dormant .tile-flower {
+  animation: regrowFlowerCollapse 0.6s ease-in forwards;
+  transform-origin: bottom center;
+}
+
+@keyframes regrowFlowerCollapse {
+  0% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+    filter: brightness(1) saturate(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(0.85) rotate(6deg);
+    filter: brightness(0.8) saturate(0.7);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.5) rotate(12deg);
+    filter: brightness(0.5) saturate(0.4);
+  }
+}
+
+.tile-sprout.dormant .tile-leaf {
+  animation: regrowLeafFade 0.6s ease-in forwards;
+}
+
+@keyframes regrowLeafFade {
+  0% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0.5; transform: scale(0.9); }
+}
+
+.tile-sprout.dormant .tile-stem {
+  animation: regrowStemFade 0.6s ease-in forwards;
+}
+
+@keyframes regrowStemFade {
+  0% { opacity: 1; }
+  100% { opacity: 0.7; }
+}
+
+/* Regrowing state: stem & leaves gently brighten back, new bud emerges from top */
+.tile-sprout.regrowing {
+  opacity: 1;
+}
+
+.tile-sprout.regrowing .tile-stem {
+  animation: regrowStemRestore 0.8s ease-out forwards;
+}
+
+@keyframes regrowStemRestore {
+  0% { opacity: 0.7; }
+  100% { opacity: 1; }
+}
+
+.tile-sprout.regrowing .tile-leaf {
+  animation: regrowLeafRestore 0.8s ease-out forwards;
+}
+
+@keyframes regrowLeafRestore {
+  0% { opacity: 0.5; transform: scale(0.9); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* Regrow bud: emerges from stem top */
+.tile-sprout.regrow-bud {
+  opacity: 1;
+}
+
+.tile-sprout.regrow-bud .tile-bud {
+  animation: tileBudForm 0.5s ease-out forwards;
+}
+
+.tile-sprout.regrow-bud .tile-stem {
+  opacity: 1;
+}
+
+.tile-sprout.regrow-bud .tile-leaf {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* Regrow bloom: bud opens into flower */
+.tile-sprout.regrow-bloom {
+  opacity: 1;
+}
+
+.tile-sprout.regrow-bloom .tile-bud {
+  animation: tileBudOpen 0.5s ease-out forwards;
+}
+
+.tile-sprout.regrow-bloom .tile-flower {
+  animation: regrowFlowerBloom 0.7s ease-out forwards;
+  animation-delay: 0.35s;
+}
+
+@keyframes regrowFlowerBloom {
+  0% {
+    width: 0;
+    height: 0;
+    opacity: 0;
+    transform: scale(0) rotate(0deg);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.08) rotate(370deg);
+  }
+  100% {
+    width: 1.1rem;
+    height: 1.1rem;
+    opacity: 1;
+    transform: scale(1) rotate(360deg);
+  }
+}
+
+/* ── Regrow Wilt: flower-only collapse, stem persists ── */
+.tile-sprout.regrow-wilt .tile-flower {
+  animation: regrowWiltFlower 1.6s ease-in forwards;
+  transform-origin: bottom center;
+}
+
+@keyframes regrowWiltFlower {
+  0% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+    filter: brightness(1) saturate(1);
+  }
+  40% {
+    opacity: 0.85;
+    transform: scale(0.92) rotate(6deg);
+    filter: brightness(0.85) saturate(0.8);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.6) rotate(15deg);
+    filter: brightness(0.55) saturate(0.45);
+  }
+}
+
+.tile-sprout.regrow-wilt .tile-leaf {
+  animation: regrowWiltLeaf 1.6s ease-in forwards;
+}
+
+@keyframes regrowWiltLeaf {
+  0% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0.5; transform: scale(0.88) rotate(4deg); }
+}
+
+.tile-sprout.regrow-wilt .tile-stem {
+  animation: regrowWiltStem 1.6s ease-in forwards;
+}
+
+@keyframes regrowWiltStem {
+  0% { opacity: 1; }
+  100% { opacity: 0.7; }
+}
+
+/* Cycle badge on tile */
+.tile-cycle-badge {
+  position: absolute;
+  top: 0.2rem;
+  right: 0.2rem;
+  font-size: 0.45rem;
+  color: var(--text-muted);
+  background: rgba(10, 14, 12, 0.7);
+  border: 1px solid rgba(90, 110, 80, 0.2);
+  border-radius: 0.3rem;
+  padding: 0.05rem 0.2rem;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  z-index: 10;
+  letter-spacing: 0.03em;
+}
+
+.tile-cycle-badge.visible {
+  opacity: 1;
+}
+
+/* Tile sparkle */
+.tile-sparkle {
+  position: absolute;
+  width: 0.15rem;
+  height: 0.15rem;
+  background: var(--center);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: tileSparkleFly 0.8s ease-out forwards;
+  z-index: 5;
+}
+
+@keyframes tileSparkleFly {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--tx), var(--ty)) scale(0);
+  }
+}
+

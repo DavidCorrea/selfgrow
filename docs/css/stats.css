@@ -1,0 +1,185 @@
+/* ═══════════════════════════════════════════════════════════
+   Garden Reflection Stats — Dark matte panel
+   ═══════════════════════════════════════════════════════════ */
+
+.garden-stats {
+  opacity: 0;
+  transform: translateY(1rem);
+  transition: opacity 0.8s ease, transform 0.8s ease;
+  width: 100%;
+  background: var(--stats-bg);
+  border: 1px solid var(--stats-border);
+  border-radius: 0.85rem;
+  padding: 0.75rem;
+  box-shadow:
+    0 0 1.5rem rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.015);
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.garden-stats::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 30% 40%, rgba(139, 119, 80, 0.04), transparent 50%),
+    radial-gradient(ellipse at 70% 60%, rgba(74, 222, 128, 0.02), transparent 40%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.garden-stats.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.stats-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
+  position: relative;
+  z-index: 1;
+}
+
+.stats-icon {
+  font-size: 0.85rem;
+  filter: drop-shadow(0 0 0.15rem rgba(139, 119, 80, 0.2));
+}
+
+.stats-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: rgba(139, 119, 80, 0.7);
+  letter-spacing: 0.04em;
+  margin: 0;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.4rem;
+  position: relative;
+  z-index: 1;
+}
+
+.stat-card {
+  background: rgba(17, 24, 39, 0.4);
+  border: 1px solid rgba(139, 119, 80, 0.1);
+  border-radius: 0.6rem;
+  padding: 0.5rem 0.4rem;
+  text-align: center;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 0%, rgba(74, 222, 128, 0.04), transparent 60%);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.stat-card:hover {
+  border-color: rgba(139, 119, 80, 0.2);
+  box-shadow: 0 0 0.8rem rgba(74, 222, 128, 0.04);
+  transform: translateY(-1px);
+}
+
+.stat-card:hover::after {
+  opacity: 1;
+}
+
+.stat-card--mood {
+  grid-column: 1 / -1;
+}
+
+.stat-emoji {
+  display: block;
+  font-size: 1.1rem;
+  margin-bottom: 0.15rem;
+  filter: drop-shadow(0 0 0.2rem rgba(74, 222, 128, 0.1));
+}
+
+.stat-value {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: rgba(74, 222, 128, 0.85);
+  letter-spacing: 0.03em;
+  line-height: 1.2;
+}
+
+.stat-label {
+  display: block;
+  font-size: 0.5rem;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+  margin-top: 0.1rem;
+  text-transform: uppercase;
+}
+
+.stats-poem {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-top: 0.6rem;
+  margin-bottom: 0;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+  min-height: 1.2em;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+
+.stats-poem.visible {
+  opacity: 1;
+}
+
+/* Stat update animation */
+.stat-value.updating {
+  animation: statPop 0.4s ease-out;
+}
+
+@keyframes statPop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.12); color: rgba(74, 222, 128, 1); }
+  100% { transform: scale(1); }
+}
+
+/* Mood-specific card glows */
+.stat-card--mood.mood-thriving {
+  border-color: rgba(74, 222, 128, 0.25);
+  box-shadow: 0 0 1rem rgba(74, 222, 128, 0.06);
+}
+
+.stat-card--mood.mood-flourishing {
+  border-color: rgba(251, 191, 36, 0.2);
+  box-shadow: 0 0 1rem rgba(251, 191, 36, 0.04);
+}
+
+.stat-card--mood.mood-growing {
+  border-color: rgba(96, 165, 250, 0.2);
+  box-shadow: 0 0 1rem rgba(96, 165, 250, 0.04);
+}
+
+.stat-card--mood.mood-resting {
+  border-color: rgba(139, 119, 80, 0.2);
+  box-shadow: 0 0 1rem rgba(139, 119, 80, 0.04);
+}
+
+.stat-card--mood.mood-dormant {
+  border-color: rgba(100, 116, 139, 0.15);
+  box-shadow: 0 0 1rem rgba(100, 116, 139, 0.03);
+}
+
+
