@@ -49,7 +49,8 @@ function getGardenStateJSON() {
         state.tileCycleState[tileIndex] = {
           cycle: tileCycleState[tileIndex].cycle,
           stage: tileCycleState[tileIndex].stage || 'planted',
-          isVolunteer: tileCycleState[tileIndex].isVolunteer || false
+          isVolunteer: tileCycleState[tileIndex].isVolunteer || false,
+          flowerType: tileCycleState[tileIndex].flowerType || null
         };
       }
       if (tileColorMap[tileIndex]) {

@@ -8,6 +8,7 @@ import { dom, journalEntries, plantedCount, totalTiles } from './state.js';
 import { saveGardenState } from './persistence.js';
 import { formatTime } from './journal.js';
 import { getBloomingCount } from './visitors.js';
+import { visibleSetInterval } from './visibility-manager.js';
 
 var SEASON_STATE_KEY = 'selfgrow_last_season';
 
@@ -198,12 +199,39 @@ function triggerSpringEvent(config) {
   if (blooming >= 2) {
     applyDewEvent(config);
     // Maybe also spawn extra butterflies
-    var extraButterflies = document.querySelectorAll('.visitors-layer .butterfly').length < 6;
-    if (extraButterflies) {
-      addRareJournalEntry(config.emoji + ' ' + config.butterflyMessage, 'spring-butterfly');
+    var currentButterflies = document.querySelectorAll('.visitors-layer .butterfly').length;
+    if (currentButterflies < 6) {
+      spawnExtraButterflies(6 - currentButterflies);
     }
+    addRareJournalEntry(config.emoji + ' ' + config.butterflyMessage, 'spring-butterfly');
   } else {
     addRareJournalEntry(config.emoji + ' ' + config.dewMessage, 'spring-dew');
+  }
+}
+
+function spawnExtraButterflies(count) {
+  var visitorsLayer = dom.visitorsLayer;
+  if (!visitorsLayer) return;
+
+  var colors = ['pink', 'blue', 'purple', 'orange'];
+  for (var i = 0; i < count; i++) {
+    var butterfly = document.createElement('div');
+    butterfly.classList.add('visitor', 'butterfly', 'butterfly--' + colors[Math.floor(Math.random() * colors.length)], 'flutter-path');
+    butterfly.setAttribute('aria-hidden', 'true');
+    butterfly.style.left = (10 + Math.random() * 80) + '%';
+    butterfly.style.top = (10 + Math.random() * 60) + '%';
+    butterfly.style.animationDelay = (Math.random() * 2) + 's';
+    visitorsLayer.appendChild(butterfly);
+
+    // Remove after a duration
+    setTimeout(function () {
+      if (butterfly.parentNode) {
+        butterfly.classList.add('leaving');
+        setTimeout(function () {
+          if (butterfly.parentNode) butterfly.remove();
+        }, 600);
+      }
+    }, 8000 + Math.random() * 4000);
   }
 }
 
@@ -363,7 +391,7 @@ export function initGardenSeasons() {
   triggerRareEvent(currentSeason);
 
   // 5. Reapply season class periodically in case of long-lived page sessions
-  setInterval(function() {
+  visibleSetInterval(function() {
     var updated = getCurrentGardenSeason();
     if (updated !== currentSeason) {
       currentSeason = updated;

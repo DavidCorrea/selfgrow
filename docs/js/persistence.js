@@ -389,10 +389,10 @@ export function restoreGardenState(state, callbacks) {
         subText = 'flower #' + (i + 1) + ' in your garden';
       }
 
-      var isVolunteer = entry.type === 'volunteer';
-      var dotClass = isSeason ? 'entry-timeline-dot entry-timeline-dot--season-event' : (isWeather ? 'entry-timeline-dot entry-timeline-dot--weather' : (isPruned ? 'entry-timeline-dot entry-timeline-dot--pruned' : (isVolunteer ? 'entry-timeline-dot entry-timeline-dot--volunteer' : 'entry-timeline-dot')));
-      var swatchClass = isSeason ? 'entry-swatch entry-swatch--season-event' : (isWeather ? 'entry-swatch entry-swatch--weather' : (isPruned ? 'entry-swatch entry-swatch--pruned' : (isVolunteer ? 'entry-swatch entry-swatch--volunteer' : 'entry-swatch')));
-      var entryClass = isSeason ? 'journal-entry journal-entry--season-event' : (isWeather ? 'journal-entry journal-entry--weather' : (isPruned ? 'journal-entry journal-entry--pruned' : (isVolunteer ? 'journal-entry journal-entry--volunteer' : 'journal-entry')));
+      var isVolunteerType = entry.type === 'volunteer';
+      var dotClass = isSeason ? 'entry-timeline-dot entry-timeline-dot--season-event' : (isWeather ? 'entry-timeline-dot entry-timeline-dot--weather' : (isPruned ? 'entry-timeline-dot entry-timeline-dot--pruned' : (isVolunteerType ? 'entry-timeline-dot entry-timeline-dot--volunteer' : 'entry-timeline-dot')));
+      var swatchClass = isSeason ? 'entry-swatch entry-swatch--season-event' : (isWeather ? 'entry-swatch entry-swatch--weather' : (isPruned ? 'entry-swatch entry-swatch--pruned' : (isVolunteerType ? 'entry-swatch entry-swatch--volunteer' : 'entry-swatch')));
+      var entryClass = isSeason ? 'journal-entry journal-entry--season-event' : (isWeather ? 'journal-entry journal-entry--weather' : (isPruned ? 'journal-entry journal-entry--pruned' : (isVolunteerType ? 'journal-entry journal-entry--volunteer' : 'journal-entry')));
       entryEl.classList = entryClass;
 
       entryEl.innerHTML =

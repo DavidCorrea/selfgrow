@@ -256,7 +256,7 @@ function createFireflyTrails() {
 }
 
 function scheduleNextSpawn() {
-  if (visitorSpawnTimer) clearTimeout(visitorSpawnTimer);
+  if (visitorSpawnTimer) visibleClearTimeout(visitorSpawnTimer);
 
   if (plantedCount.value === 0) return;
 

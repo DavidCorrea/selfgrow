@@ -526,6 +526,7 @@ body::before {
   width: 100%;
   max-width: 100%;
   position: relative;
+  z-index: 10;
 }
 
 /* Grid Tile — earth-tone tile styling */
@@ -3388,6 +3389,113 @@ body::before {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   Garden Whispers Toggle
+   ═══════════════════════════════════════════════════════════ */
+
+.whispers-toggle {
+  position: fixed;
+  bottom: 1rem;
+  right: 7rem;
+  z-index: 100;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  background: rgba(15, 23, 36, 0.8);
+  border: 1px solid var(--card-border);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  outline: none;
+  transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease, transform 0.2s ease;
+  backdrop-filter: blur(8px);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.whispers-toggle:hover,
+.whispers-toggle:focus-visible {
+  background: rgba(15, 23, 36, 0.95);
+  border-color: rgba(74, 222, 128, 0.3);
+  box-shadow: 0 0 1rem rgba(74, 222, 128, 0.1);
+  transform: scale(1.05);
+}
+
+.whispers-toggle:focus-visible {
+  box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.4);
+}
+
+.whispers-toggle.active {
+  border-color: rgba(74, 222, 128, 0.4);
+  box-shadow: 0 0 1.5rem rgba(74, 222, 128, 0.15);
+}
+
+.whispers-icon {
+  font-size: 1rem;
+  line-height: 1;
+  transition: transform 0.3s ease;
+}
+
+.whispers-toggle.active .whispers-icon {
+  animation: whisperPulse 2.5s ease-in-out infinite;
+}
+
+@keyframes whisperPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Garden Whispers
+   ═══════════════════════════════════════════════════════════ */
+
+.garden-whisper {
+  position: absolute;
+  z-index: 20;
+  pointer-events: none;
+  font-size: 0.65rem;
+  color: rgba(226, 232, 240, 0.6);
+  text-shadow: 0 0 0.5rem rgba(74, 222, 128, 0.15), 0 0 1rem rgba(74, 222, 128, 0.08);
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+  text-align: center;
+  max-width: 80%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  transform: translateY(0) rotate(var(--whisper-rot, 0deg));
+  animation: whisperFloat 12s ease-in-out forwards;
+  will-change: transform, opacity;
+}
+
+@keyframes whisperFloat {
+  0% {
+    opacity: 0;
+    transform: translateY(0) rotate(var(--whisper-rot, 0deg)) scale(0.9);
+  }
+  15% {
+    opacity: 0.7;
+    transform: translateY(-0.3rem) rotate(var(--whisper-rot, 0deg)) scale(1);
+  }
+  85% {
+    opacity: 0.7;
+    transform: translateY(-1.2rem) rotate(var(--whisper-rot, 0deg)) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-1.8rem) rotate(var(--whisper-rot, 0deg)) scale(0.95);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .garden-whisper {
+    animation: none !important;
+    transition: opacity 0.3s ease !important;
+    transform: translateY(0) rotate(var(--whisper-rot, 0deg)) !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
    Garden Export / Import
    Save and restore garden state between devices
    ═══════════════════════════════════════════════════════════ */
@@ -4892,6 +5000,17 @@ body.theme-night {
     font-size: 1.25rem;
   }
 
+  .whispers-toggle {
+    bottom: 1.5rem;
+    right: 8.5rem;
+    width: 3rem;
+    height: 3rem;
+  }
+
+  .whispers-icon {
+    font-size: 1.25rem;
+  }
+
   .weather-icon {
     bottom: 5rem;
     right: 1.5rem;
@@ -4999,6 +5118,11 @@ body.theme-night {
   .soundscape-toggle {
     bottom: 2rem;
     right: 2rem;
+  }
+
+  .whispers-toggle {
+    bottom: 2rem;
+    right: 9rem;
   }
 
   .weather-icon {
@@ -5194,6 +5318,17 @@ body.theme-night {
   }
 
   .soundscape-icon {
+    font-size: 0.85rem;
+  }
+
+  .whispers-toggle {
+    bottom: 0.75rem;
+    right: 5.5rem;
+    width: 2rem;
+    height: 2rem;
+  }
+
+  .whispers-icon {
     font-size: 0.85rem;
   }
 
@@ -8923,4 +9058,6 @@ body.season-winter .garden-grid {
     display: none;
   }
 }
+
+
 

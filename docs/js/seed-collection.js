@@ -195,39 +195,11 @@ export function collectSeed(tileEl, tileIndex) {
 
   // Journal entry
   var fType = seedTypeLabels[seed.flowerType] || 'flower';
-  addJournalEntry(tileIndex, seed.palette[0], state.cycle);
-  if (journalEntries.length > 0) {
-    journalEntries[journalEntries.length - 1].type = 'seed-collect';
-    journalEntries[journalEntries.length - 1].subText = 'collected a ' + fType + ' seed packet';
-  }
-
-  // Update journal DOM with seed-collect styling
-  var journalTimeline = dom.journalTimeline;
-  if (journalTimeline) {
-    var firstEntry = journalTimeline.firstChild;
-    if (firstEntry) {
-      firstEntry.classList.remove('journal-entry');
-      firstEntry.classList.add('journal-entry', 'journal-entry--seed-collect');
-      var dotEl = firstEntry.querySelector('.entry-timeline-dot');
-      if (dotEl) {
-        dotEl.classList.remove('entry-timeline-dot');
-        dotEl.classList.add('entry-timeline-dot', 'entry-timeline-dot--seed-collect');
-      }
-      var swatchEl = firstEntry.querySelector('.entry-swatch');
-      if (swatchEl) {
-        swatchEl.classList.remove('entry-swatch');
-        swatchEl.classList.add('entry-swatch', 'entry-swatch--seed-collect');
-      }
-      var textEl = firstEntry.querySelector('.entry-text');
-      if (textEl) {
-        textEl.innerHTML = '<strong>Tile ' + (tileIndex + 1) + '</strong> &mdash; 🌰 seed collected';
-      }
-      var timeEl = firstEntry.querySelector('.entry-time');
-      if (timeEl) {
-        timeEl.textContent = fType + ' seed packet added to collection';
-      }
-    }
-  }
+  addJournalEntry(tileIndex, seed.palette[0], state.cycle, {
+    type: 'seed-collect',
+    subText: 'collected a ' + fType + ' seed packet',
+    customLabel: '<strong>Tile ' + (tileIndex + 1) + '</strong> &mdash; 🌰 seed collected'
+  });
 
   // Update hint
   var tendingHint = dom.tendingHint;
@@ -386,39 +358,11 @@ export function plantSelectedSeed(tileEl, tileIndex) {
   exitPlantMode();
 
   // Journal entry
-  addJournalEntry(tileIndex, palette[0], 1);
-  if (journalEntries.length > 0) {
-    journalEntries[journalEntries.length - 1].type = 'seed-plant';
-    journalEntries[journalEntries.length - 1].subText = 'planted a ' + fType + ' from collected seed';
-  }
-
-  // Update journal DOM with seed-plant styling
-  var journalTimeline = dom.journalTimeline;
-  if (journalTimeline) {
-    var firstEntry = journalTimeline.firstChild;
-    if (firstEntry) {
-      firstEntry.classList.remove('journal-entry');
-      firstEntry.classList.add('journal-entry', 'journal-entry--seed-plant');
-      var dotEl2 = firstEntry.querySelector('.entry-timeline-dot');
-      if (dotEl2) {
-        dotEl2.classList.remove('entry-timeline-dot');
-        dotEl2.classList.add('entry-timeline-dot', 'entry-timeline-dot--seed-plant');
-      }
-      var swatchEl2 = firstEntry.querySelector('.entry-swatch');
-      if (swatchEl2) {
-        swatchEl2.classList.remove('entry-swatch');
-        swatchEl2.classList.add('entry-swatch', 'entry-swatch--seed-plant');
-      }
-      var textEl = firstEntry.querySelector('.entry-text');
-      if (textEl) {
-        textEl.innerHTML = '<strong>Tile ' + (tileIndex + 1) + '</strong> &mdash; 🌱 ' + fType + ' from seed';
-      }
-      var timeEl = firstEntry.querySelector('.entry-time');
-      if (timeEl) {
-        timeEl.textContent = 'planted from collected seed packet';
-      }
-    }
-  }
+  addJournalEntry(tileIndex, palette[0], 1, {
+    type: 'seed-plant',
+    subText: 'planted a ' + fType + ' from collected seed',
+    customLabel: '<strong>Tile ' + (tileIndex + 1) + '</strong> &mdash; 🌱 ' + fType + ' from seed'
+  });
 
   // Update hint
   var tendingHint = dom.tendingHint;

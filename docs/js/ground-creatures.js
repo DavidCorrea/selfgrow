@@ -368,7 +368,7 @@ function spawnCreature() {
 }
 
 function scheduleNextSpawn() {
-  if (creatureSpawnTimer) clearTimeout(creatureSpawnTimer);
+  if (creatureSpawnTimer) visibleClearTimeout(creatureSpawnTimer);
 
   if (!creaturesEnabled) return;
   if (plantedCount.value === 0) return;

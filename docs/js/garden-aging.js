@@ -89,17 +89,20 @@ function simulateWeatherCycles(hoursElapsed) {
   return weatherLog;
 }
 
+// ── Shared weather messages (used by both addSimulatedWeatherEntries and renderWeatherEntries) ──
+
+var WEATHER_MESSAGES = {
+  sunny: ['the sun returned in your absence', 'golden light warmed the soil', 'the garden basked in remembered sunshine'],
+  rainy: ['rain fell gently while you were away', 'a quiet rain nourished the earth', 'raindrops visited the garden in silence'],
+  cloudy: ['clouds drifted through a grey sky', 'the garden rested under overcast heavens', 'soft grey light held the garden']
+};
+
 // ── Add weather entries for simulated changes ──
 
 function addSimulatedWeatherEntries(weatherLog) {
   if (weatherLog.length === 0) return;
 
   var now = Date.now();
-  var messages = {
-    sunny: ['the sun returned in your absence', 'golden light warmed the soil', 'the garden basked in remembered sunshine'],
-    rainy: ['rain fell gently while you were away', 'a quiet rain nourished the earth', 'raindrops visited the garden in silence'],
-    cloudy: ['clouds drifted through a grey sky', 'the garden rested under overcast heavens', 'soft grey light held the garden']
-  };
 
   weatherLog.forEach(function (state, i) {
     var timeOffset = now + (i + 1) * 1000; // stagger timestamps
@@ -111,7 +114,7 @@ function addSimulatedWeatherEntries(weatherLog) {
     var displayMinutes = minutes < 10 ? '0' + minutes : '' + minutes;
     var timeStr = displayHours + ':' + displayMinutes + ' ' + ampm;
 
-    var msgs = messages[state] || messages.sunny;
+    var msgs = WEATHER_MESSAGES[state] || WEATHER_MESSAGES.sunny;
     var msg = msgs[Math.floor(Math.random() * msgs.length)];
 
     var entry = {
@@ -144,15 +147,7 @@ function renderWeatherEntries(weatherLog) {
 
   journalTimeline.scrollTop = 0;
 
-  // Remove old weather entries we may have added (remove from front = oldest)
-  // We'll just prepend in reverse order
   var emojis = { sunny: '☀️', rainy: '🌧️', cloudy: '☁️' };
-  var messages = {
-    sunny: ['the sun returned in your absence', 'golden light warmed the soil', 'the garden basked in remembered sunshine'],
-    rainy: ['rain fell gently while you were away', 'a quiet rain nourished the earth', 'raindrops visited the garden in silence'],
-    cloudy: ['clouds drifted through a grey sky', 'the garden rested under overcast heavens', 'soft grey light held the garden']
-  };
-
   var now = Date.now();
 
   // Add in reverse (newest first) so they appear correctly in the prepend-order timeline
@@ -166,7 +161,7 @@ function renderWeatherEntries(weatherLog) {
     var displayHours = hours % 12 || 12;
     var displayMinutes = minutes < 10 ? '0' + minutes : '' + minutes;
     var timeStr = displayHours + ':' + displayMinutes + ' ' + ampm;
-    var msgs = messages[state] || messages.sunny;
+    var msgs = WEATHER_MESSAGES[state] || WEATHER_MESSAGES.sunny;
     var msg = msgs[Math.floor(Math.random() * msgs.length)];
 
     var entryEl = document.createElement('div');
@@ -636,8 +631,23 @@ export function renderAgingResults() {
   if (!journalTimeline) return;
 
   // ── Weather entries ──
+  // Check if weather entries were already added to the journal DOM
+  // by looking for existing weather entries with 'while you were away' text
   if (results.weatherLog && results.weatherLog.length > 0) {
-    renderWeatherEntries(results.weatherLog);
+    var hasWeatherEntries = false;
+    for (var w = 0; w < journalTimeline.children.length; w++) {
+      var wChild = journalTimeline.children[w];
+      if (wChild.classList.contains('journal-entry--weather')) {
+        var wTextEl = wChild.querySelector('.entry-time');
+        if (wTextEl && wTextEl.textContent.indexOf('while you were away') !== -1) {
+          hasWeatherEntries = true;
+          break;
+        }
+      }
+    }
+    if (!hasWeatherEntries) {
+      renderWeatherEntries(results.weatherLog);
+    }
   }
 
   // ── Volunteer entry ──

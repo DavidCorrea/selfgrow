@@ -21,6 +21,7 @@ import { initGardenSeasons } from './js/garden-seasons.js';
 import { initGroundCreatures, startGroundCreatures, setGroundCreaturesEnabled, isGroundCreaturesEnabled } from './js/ground-creatures.js';
 import { startEcosystem, initEcosystem } from './js/ecosystem.js';
 import { initCreatureEncyclopedia } from './js/creature-encyclopedia.js';
+import { initGardenWhispers, setWhispersEnabled, isWhispersEnabled } from './js/garden-whispers.js';
 
 
 (function () {
@@ -308,6 +309,37 @@ import { initCreatureEncyclopedia } from './js/creature-encyclopedia.js';
           groundCreaturesToggle.classList.add('active');
         } else {
           groundCreaturesToggle.classList.remove('active');
+        }
+      }
+    });
+  }
+
+  // ── Initialize Garden Whispers ──
+  initGardenWhispers();
+
+  // ── Garden Whispers Toggle ──
+  var whispersToggle = document.getElementById('whispersToggle');
+  var whispersIcon = document.getElementById('whispersIcon');
+  if (whispersToggle) {
+    whispersToggle.classList.add('active');
+    whispersToggle.addEventListener('click', function () {
+      var enabled = isWhispersEnabled();
+      setWhispersEnabled(!enabled);
+      if (!enabled) {
+        whispersToggle.classList.add('active');
+      } else {
+        whispersToggle.classList.remove('active');
+      }
+    });
+    whispersToggle.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        var enabled = isWhispersEnabled();
+        setWhispersEnabled(!enabled);
+        if (!enabled) {
+          whispersToggle.classList.add('active');
+        } else {
+          whispersToggle.classList.remove('active');
         }
       }
     });
