@@ -1,7 +1,23 @@
 import { dom, journalEntries, journalRevealed, getRandomCycleMessage } from './state.js';
 import { saveGardenState } from './persistence.js';
 
-var MAX_JOURNAL_ENTRIES = 30;
+export var MAX_JOURNAL_ENTRIES = 50;
+
+// ── Centralized Cap ──
+// Trims both the journalEntries array and the journalTimeline DOM
+// to MAX_JOURNAL_ENTRIES, removing oldest entries first.
+// Call this after ANY direct push to journalEntries.
+export function capJournalEntries() {
+  var journalTimeline = dom.journalTimeline;
+  if (journalEntries.length > MAX_JOURNAL_ENTRIES) {
+    journalEntries.splice(0, journalEntries.length - MAX_JOURNAL_ENTRIES);
+  }
+  if (journalTimeline) {
+    while (journalTimeline.children.length > MAX_JOURNAL_ENTRIES) {
+      journalTimeline.removeChild(journalTimeline.lastChild);
+    }
+  }
+}
 
 var messages = [
   "a tiny seed finds its place in the soil",
@@ -67,15 +83,6 @@ export function addJournalEntry(tileIndex, petalColor, cycleNum, options) {
   }
   journalEntries.push(entry);
 
-  // Cap journal entries to prevent unbounded growth
-  if (journalEntries.length > MAX_JOURNAL_ENTRIES) {
-    journalEntries.splice(0, journalEntries.length - MAX_JOURNAL_ENTRIES);
-    // Remove oldest DOM entries from timeline
-    while (journalTimeline.children.length > MAX_JOURNAL_ENTRIES) {
-      journalTimeline.removeChild(journalTimeline.lastChild);
-    }
-  }
-
   var entryEl = document.createElement('div');
   entryEl.classList.add('journal-entry');
   // Add type-specific CSS class for styled entries (e.g., journal-entry--pollinated)
@@ -112,6 +119,9 @@ export function addJournalEntry(tileIndex, petalColor, cycleNum, options) {
   if (journalTimeline) {
     journalTimeline.insertBefore(entryEl, journalTimeline.firstChild);
   }
+
+  // Cap after adding the new DOM entry so array and DOM stay in sync
+  capJournalEntries();
 
   if (gardenJournal) {
     gardenJournal.classList.remove('pulse');
@@ -159,15 +169,6 @@ export function addWeatherEntry(weatherState, message) {
   };
   journalEntries.push(entry);
 
-  // Cap journal entries to prevent unbounded growth
-  if (journalEntries.length > MAX_JOURNAL_ENTRIES) {
-    journalEntries.splice(0, journalEntries.length - MAX_JOURNAL_ENTRIES);
-    // Remove oldest DOM entries from timeline
-    while (journalTimeline.children.length > MAX_JOURNAL_ENTRIES) {
-      journalTimeline.removeChild(journalTimeline.lastChild);
-    }
-  }
-
   // Only create DOM entry if journal timeline exists
   if (journalTimeline) {
     var weatherEmoji = getWeatherEmoji(weatherState);
@@ -186,13 +187,16 @@ export function addWeatherEntry(weatherState, message) {
 
     journalTimeline.insertBefore(entryEl, journalTimeline.firstChild);
 
-    if (gardenJournal) {
-      gardenJournal.classList.remove('pulse');
-      void gardenJournal.offsetWidth;
-      gardenJournal.classList.add('pulse');
-    }
-
     journalTimeline.scrollTop = 0;
+  }
+
+  // Cap after adding the new DOM entry so array and DOM stay in sync
+  capJournalEntries();
+
+  if (gardenJournal) {
+    gardenJournal.classList.remove('pulse');
+    void gardenJournal.offsetWidth;
+    gardenJournal.classList.add('pulse');
   }
 
   saveGardenState();

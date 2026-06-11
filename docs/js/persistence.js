@@ -1,4 +1,5 @@
 import { dom, journalEntries, wateredTiles, fertilizedTiles, prunedTiles, tileCycleState, tileColorMap, tileFlowerTypeMap, plantedCount, totalVolunteers, gridRevealed, journalRevealed, tendingRevealed, petalPalettes, centerColors, flowerTypes, getRandomGridMessage, getRandomWateringHint, getRandomCycleMessage, CYCLE_HOLD_BLOOM, CYCLE_SEED_OFFSET, CYCLE_WILT_DURATION, CYCLE_PAUSE_AFTER_WILT } from './state.js';
+import { capJournalEntries } from './journal.js';
 
 import { formatTime } from './journal.js';
 import { getCurrentWeather, getWeatherModifier } from './weather.js';
@@ -256,6 +257,7 @@ export function restoreGardenState(state, callbacks) {
   if (state.journalEntries && state.journalEntries.length > 0) {
     journalEntries.length = 0;
     state.journalEntries.forEach(function (e) { journalEntries.push(e); });
+    capJournalEntries();
   }
 
   if (state.plantedCount) plantedCount.value = state.plantedCount;

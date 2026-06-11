@@ -3,6 +3,7 @@
 // This makes the garden feel like a living, self-sustaining ecosystem.
 
 import { dom, tileCycleState, tileColorMap, tileFlowerTypeMap, plantedCount, journalEntries, totalVolunteers, totalTiles } from './state.js';
+import { capJournalEntries } from './journal.js';
 import { saveGardenState } from './persistence.js';
 import { getCurrentWeather, getWeatherModifier } from './weather.js';
 import { getBloomingCount } from './visitors.js';
@@ -377,6 +378,7 @@ function addVolunteerJournalEntry(entry, tileIndex, petalColor, message) {
   var journalEmpty = dom.journalEmpty;
 
   journalEntries.push(entry);
+  capJournalEntries();
 
   if (journalEmpty) {
     journalEmpty.style.display = 'none';

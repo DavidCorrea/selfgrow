@@ -5,6 +5,7 @@
 // Composes existing systems: weather cycling, self-seeding, growth cycles, journal.
 
 import { dom, currentWeather, plantedCount, tileCycleState, tileColorMap, tileFlowerTypeMap, totalVolunteers, journalEntries, petalPalettes } from './state.js';
+import { capJournalEntries } from './journal.js';
 import { saveGardenState } from './persistence.js';
 import { getBloomingCount } from './visitors.js';
 import { startGrowthCycle } from './tiles.js';
@@ -130,10 +131,7 @@ function addSimulatedWeatherEntries(weatherLog) {
     journalEntries.push(entry);
   });
 
-  // Cap journal entries
-  if (journalEntries.length > 30) {
-    journalEntries.splice(0, journalEntries.length - 30);
-  }
+  capJournalEntries();
 }
 
 function getWeatherColor(state) {
@@ -538,7 +536,7 @@ function addVolunteerJournalEntry(result) {
     type: 'volunteer',
     subText: 'a seed carried by the wind finds its home'
   });
-  if (journalEntries.length > 30) journalEntries.splice(0, journalEntries.length - 30);
+  capJournalEntries();
 }
 
 function addGrowthJournalEntry(result) {
@@ -552,7 +550,7 @@ function addGrowthJournalEntry(result) {
     cycle: result.newCycle,
     type: 'cycle'
   });
-  if (journalEntries.length > 30) journalEntries.splice(0, journalEntries.length - 30);
+  capJournalEntries();
 }
 
 function formatSimpleTime(date) {
@@ -710,12 +708,7 @@ export function renderAgingResults() {
   }
 
   // ── Trim journal entries if needed ──
-  if (journalEntries.length > 30) {
-    journalEntries.splice(0, journalEntries.length - 30);
-    while (journalTimeline.children.length > 30) {
-      journalTimeline.removeChild(journalTimeline.lastChild);
-    }
-  }
+  capJournalEntries();
 }
 
 // ── Public: Record timestamp on page unload ──

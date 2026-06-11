@@ -6,7 +6,7 @@
 
 import { dom, journalEntries, plantedCount, totalTiles } from './state.js';
 import { saveGardenState } from './persistence.js';
-import { formatTime } from './journal.js';
+import { formatTime, capJournalEntries } from './journal.js';
 import { getBloomingCount } from './visitors.js';
 import { visibleSetInterval } from './visibility-manager.js';
 
@@ -119,6 +119,7 @@ function addSeasonJournalEntry(season) {
     seasonMessage: config.poem,
   };
   journalEntries.push(entry);
+  capJournalEntries();
 
   var entryEl = document.createElement('div');
   entryEl.classList.add('journal-entry', 'journal-entry--season');
@@ -332,6 +333,7 @@ function addRareJournalEntry(message, type) {
     seasonMessage: message,
   };
   journalEntries.push(entry);
+  capJournalEntries();
 
   var entryEl = document.createElement('div');
   entryEl.classList.add('journal-entry', 'journal-entry--season-event');
