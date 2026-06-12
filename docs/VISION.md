@@ -13,6 +13,8 @@
 
 - **Alive & responsive**: The garden should feel like a living thing — creatures visit, weather shifts, flowers sway, and the space breathes. Every return visit should feel like coming home to something that has continued growing in your absence.
 
+- **Organic motion**: Every animation in the garden should feel botanical — never snapping or popping, always easing. Stems grow upward gradually, buds form before flowers open, and blooms scale and fade in gently. Even under varying growth speeds, the motion quality stays consistent: unhurried, fluid, and alive. A spin or abrupt appearance breaks the illusion of life.
+
 ## Direction
 
 The app starts simple — a seed that blooms — and grows into a richer experience:
