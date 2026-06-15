@@ -13,7 +13,7 @@
 
 - **Alive & responsive**: The garden should feel like a living thing — creatures visit, weather shifts, flowers sway, and the space breathes. Every return visit should feel like coming home to something that has continued growing in your absence.
 
-- **Organic motion**: Every animation in the garden should feel botanical — never snapping or popping, always easing. Stems grow upward gradually, buds form before flowers open, and blooms scale and fade in gently. Even under varying growth speeds, the motion quality stays consistent: unhurried, fluid, and alive. A spin or abrupt appearance breaks the illusion of life. The bloom sequence must always play in order — bud forms → bud opens → flower eases in — and the easing animation must never be skipped under fast growth or weather-accelerated conditions; if the flower snaps in, the illusion of life is broken.
+- **Organic motion**: Every animation in the garden should feel botanical — never snapping or popping, always easing. Stems grow upward gradually, buds form before flowers open, and blooms scale and fade in gently. Even under varying growth speeds, the motion quality stays consistent: unhurried, fluid, and alive. A spin or abrupt appearance breaks the illusion of life — the garden should feel like watching real growth, not a cartoon. The bloom sequence must always play in order — bud forms → bud opens → flower eases in — and the easing animation must never be skipped under fast growth or weather-accelerated conditions; if the flower snaps in, the illusion of life is broken. This is the primary way the garden feels *alive* rather than *animated* — when motion respects the pace of real botanical growth, the user's breath slows with it.
 
 ## Direction
 
