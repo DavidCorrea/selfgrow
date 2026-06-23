@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-06-23
+
+- **Implemented lazy observation for Creature Encyclopedia panel to stop background interval work when hidden (closes #19).**
+
 ## 2026-06-11
 
 - **Fixed memory leak — untracked timeouts in plantTile() accumulate indefinitely (closes #15)**: The `plantTile()` function in `tiles.js` created 6 `setTimeout` calls whose IDs were never stored in `state.timeouts`, making them impossible to clean up on prune or cycle restart. This caused memory to grow continuously the longer the garden stayed open. Fix: (1) All 6 timeout IDs from `plantTile()` are now captured and pushed into `tileCycleState[tileIndex].timeouts` so they get properly cleaned up. (2) Added a cleanup pass at the start of `startGrowthCycle()` that clears any pending timeouts from the previous cycle and resets the array before scheduling new ones — preventing stale timeout references from accumulating across cycle restarts. Files changed: `docs/js/tiles.js`.

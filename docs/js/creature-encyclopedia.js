@@ -6,7 +6,7 @@
 // ═══════════════════════════════════════════════════════════
 
 import { dom } from './state.js';
-import { visibleSetTimeout, visibleClearTimeout, visibleSetInterval } from './visibility-manager.js';
+import { visibleSetTimeout, visibleClearTimeout, visibleSetInterval, visibleClearInterval } from './visibility-manager.js';
 
 var STORAGE_KEY = 'selfgrow_creature_encyclopedia';
 
@@ -189,10 +189,12 @@ function toggleEncyclopedia() {
     panel.setAttribute('aria-hidden', 'false');
     if (toggleBtn) toggleBtn.classList.add('active');
     renderEncyclopedia();
+    startPassiveObservation();
   } else {
     panel.classList.remove('visible');
     panel.setAttribute('aria-hidden', 'true');
     if (toggleBtn) toggleBtn.classList.remove('active');
+    stopPassiveObservation();
   }
 }
 
@@ -302,9 +304,10 @@ function setupSpawnListeners() {
 
 // ── Periodic sighting check (passive observation from existing creatures) ──
 
-function setupPassiveObservation() {
-  // Every 15 seconds, check for active creatures and record sightings
-  // This catches creatures that were spawned before the encyclopedia existed
+function startPassiveObservation() {
+  // Start an interval only while the encyclopedia panel is open.
+  // This checks for active creatures every 15 seconds and records sightings.
+  if (sightingRefreshTimer) return; // already running
   sightingRefreshTimer = visibleSetInterval(function () {
     if (!encyclopediaOpen) return;
 
@@ -314,55 +317,37 @@ function setupPassiveObservation() {
     var sightings = loadSightings();
     var changed = false;
 
-    // Check for active visitors
+    // Active visitors
     if (visitorsLayer) {
       var butterflies = visitorsLayer.querySelectorAll('.butterfly');
       var bees = visitorsLayer.querySelectorAll('.bee');
       var fireflies = visitorsLayer.querySelectorAll('.firefly');
-
-      if (butterflies.length > 0 && !sightings['butterfly']) {
-        recordSighting('butterfly');
-        changed = true;
-      }
-      if (bees.length > 0 && !sightings['bee']) {
-        recordSighting('bee');
-        changed = true;
-      }
-      if (fireflies.length > 0 && !sightings['firefly']) {
-        recordSighting('firefly');
-        changed = true;
-      }
+      if (butterflies.length > 0 && !sightings['butterfly']) { recordSighting('butterfly'); changed = true; }
+      if (bees.length > 0 && !sightings['bee']) { recordSighting('bee'); changed = true; }
+      if (fireflies.length > 0 && !sightings['firefly']) { recordSighting('firefly'); changed = true; }
     }
 
-    // Check for active ground creatures
+    // Active ground creatures
     if (gardenGrid) {
       var ladybugs = gardenGrid.querySelectorAll('.ground-creature--ladybug');
       var snails = gardenGrid.querySelectorAll('.ground-creature--snail');
       var worms = gardenGrid.querySelectorAll('.ground-creature--worm');
       var crickets = gardenGrid.querySelectorAll('.ground-creature--cricket');
-
-      if (ladybugs.length > 0 && !sightings['ladybug']) {
-        recordSighting('ladybug');
-        changed = true;
-      }
-      if (snails.length > 0 && !sightings['snail']) {
-        recordSighting('snail');
-        changed = true;
-      }
-      if (worms.length > 0 && !sightings['worm']) {
-        recordSighting('worm');
-        changed = true;
-      }
-      if (crickets.length > 0 && !sightings['cricket']) {
-        recordSighting('cricket');
-        changed = true;
-      }
+      if (ladybugs.length > 0 && !sightings['ladybug']) { recordSighting('ladybug'); changed = true; }
+      if (snails.length > 0 && !sightings['snail']) { recordSighting('snail'); changed = true; }
+      if (worms.length > 0 && !sightings['worm']) { recordSighting('worm'); changed = true; }
+      if (crickets.length > 0 && !sightings['cricket']) { recordSighting('cricket'); changed = true; }
     }
 
-    if (changed) {
-      renderEncyclopedia();
-    }
+    if (changed) renderEncyclopedia();
   }, 15000);
+}
+
+function stopPassiveObservation() {
+  if (sightingRefreshTimer) {
+    visibleClearInterval(sightingRefreshTimer);
+    sightingRefreshTimer = null;
+  }
 }
 
 // ── Public API ──
@@ -372,7 +357,8 @@ export function initCreatureEncyclopedia() {
   visibleSetTimeout(function () {
     createPanel();
     setupSpawnListeners();
-    setupPassiveObservation();
+    // Passive observation starts only when the encyclopedia panel is opened.
+    // Removed erroneous call to undefined setupPassiveObservation.
   }, 100);
 }
 
