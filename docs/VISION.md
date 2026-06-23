@@ -18,6 +18,8 @@
 
 - **Effortless performance**: The garden should feel effortless — no stutters when many flowers bloom at once, no lag on first load, no background work from closed panels. A closed panel costs nothing until opened — hidden panels do not render, do not bind listeners, and do not run any lifecycle logic until first opened, fully honoring the claim that closed work is wasted work. The initial load should be quick and lightweight. Performance is not a feature but a dimension of calm: when the garden runs smoothly, the user's breath slows with it. If the user can feel the code working, the illusion of life is broken.
 
+- **Inclusive experience**: All animations respect users' reduced‑motion preferences and provide accessible alternatives, ensuring the garden remains calm and welcoming for everyone.
+
 ## Direction
 
 The app starts simple — a seed that blooms — and grows into a richer experience:
