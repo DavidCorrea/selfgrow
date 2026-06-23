@@ -2,6 +2,9 @@
 
 ## 2026-06-23
 
+- **Fixed missing flower visibility on restored tiles (closes #21)**: Added explicit styling to ensure the `.tile-flower` element becomes visible when a tile is restored from saved state, preventing empty soil appearance despite bloom counts.
+- **Implemented lazy loading for heavy modules and preloaded critical stylesheet to improve first load performance (closes #18).**
+
 - **Implemented lazy loading for heavy modules and preloaded critical stylesheet to improve first load performance (closes #18).**
 
 - **Implemented lazy observation for Creature Encyclopedia panel to stop background interval work when hidden (closes #19).**

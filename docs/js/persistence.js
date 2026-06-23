@@ -523,6 +523,13 @@ function restorePlantedTile(tileEl, tileIndex, state, startGrowthCycle, updateCo
     badge.textContent = wasVolunteer ? '🌿 ' + cycle : '🌸 ' + cycle;
     badge.classList.add('visible');
   }
+  // Ensure flower element is visible on restored tiles
+  var tileFlower = tileEl.querySelector('.tile-flower');
+  if (tileFlower) {
+    tileFlower.style.opacity = '1';
+    tileFlower.style.width = '1.1rem';
+    tileFlower.style.height = '1.1rem';
+  }
 
   var gridHint = dom.gridHint;
 
