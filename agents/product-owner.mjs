@@ -1,13 +1,14 @@
-import { execSync } from "child_process";
 import fs from "fs";
 import {
   repoRoot,
   log,
+  withLogGroup,
   printRunSummary,
-  errorData,
   loadPrompt,
   runAgent,
   extractAgentResponse,
+  gitExec,
+  configureGitIdentity,
 } from "./shared.mjs";
 
 // ---------------------------------------------------------------------------
@@ -77,61 +78,79 @@ function applyRefinement(parsed) {
 // Main
 // ---------------------------------------------------------------------------
 
-async function main() {
-  log("info", "--- Product Owner Daily Review ---");
+/**
+ * Commit VISION.md and push to main, surviving concurrent pushes by rebasing
+ * on rejection and retrying.
+ */
+function commitAndPushVision(commitMessage, { retries = 5 } = {}) {
+  configureGitIdentity();
+  gitExec("add docs/VISION.md");
+  gitExec(`commit -m "${commitMessage.replace(/"/g, '\\"')}"`);
 
-  const rawOutput = await runAgent({
-    label: "Product Owner",
-    systemPrompt: loadPrompt("product-owner"),
-  });
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      gitExec("push origin HEAD:main");
+      log("info", `Committed and pushed (attempt ${attempt}): ${commitMessage}`);
+      return;
+    } catch (e) {
+      if (attempt === retries) {
+        throw new Error(`Push to main rejected after ${retries} attempts: ${e.message}`);
+      }
+      log("warn", `Push rejected, rebasing on origin/main and retrying (${attempt}/${retries}).`);
+      gitExec("fetch origin");
+      gitExec("rebase origin/main");
+    }
+  }
+}
+
+async function main() {
+  log("info", "=== Product Owner Daily Review ===");
+
+  const rawOutput = await withLogGroup("Product Owner", () =>
+    runAgent({
+      label: "Product Owner",
+      systemPrompt: loadPrompt("product-owner"),
+    })
+  );
 
   const parsed = extractAgentResponse("Product Owner", rawOutput, {
     requiredDataFields: ["action"],
   });
   if (!parsed) {
-    printRunSummary();
+    printRunSummary("Product Owner");
     return;
   }
 
   if (parsed.outcome === "skip") {
     log("info", `Product Owner: no refinement needed. ${parsed.summary || ""}`);
-    printRunSummary();
+    printRunSummary("Product Owner");
     return;
   }
 
   const result = applyRefinement(parsed);
   if (!result.changed) {
-    printRunSummary();
+    log("info", `Product Owner: no change applied. ${result.reason || ""}`);
+    printRunSummary("Product Owner");
     return;
   }
 
   try {
-    const diff = execSync("git diff docs/VISION.md", { cwd: repoRoot }).toString();
-    log("info", "Diff:", diff);
+    log("info", "VISION.md diff:", gitExec("diff docs/VISION.md"));
   } catch {
     // ignore diff errors
   }
 
-  const commitMessage = result.summary;
   try {
-    execSync(
-      'git config user.name "github-actions[bot]" && ' +
-      'git config user.email "github-actions[bot]@users.noreply.github.com" && ' +
-      'git add docs/VISION.md && ' +
-      'git commit -m "' + commitMessage.replace(/"/g, '\\"') + '" && ' +
-      'git push',
-      { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }
-    );
-    log("info", `Committed and pushed: ${commitMessage}`);
+    commitAndPushVision(result.summary);
   } catch (e) {
     log("error", `Commit/push failed: ${e.message}`);
   }
 
-  printRunSummary();
+  printRunSummary("Product Owner");
 }
 
 main().catch((err) => {
   log("error", `Product Owner failed: ${err.message || err}`);
-  printRunSummary();
+  printRunSummary("Product Owner");
   process.exit(1);
 });

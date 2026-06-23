@@ -35,14 +35,58 @@ export const promptsDir = join(__dirname, "prompts");
 // Agent runner
 // ---------------------------------------------------------------------------
 
-export function runAgent({ label = "Agent", systemPrompt, tools = ["read"] }) {
+export const MODEL_ID = "openrouter/nex-agi/nex-n2-pro:free";
+
+// Default kickoff turn when a caller doesn't supply one. The agent's full role
+// lives in the system prompt; this just tells it to begin.
+const DEFAULT_TASK =
+  "Carry out the task described in your instructions now, then respond with the required JSON object and nothing else.";
+
+/**
+ * Run a single one-shot agent.
+ *
+ * @param {object} opts
+ * @param {string} [opts.label]          - Name for logging.
+ * @param {string} opts.systemPrompt     - The agent's role/instructions. Set as the
+ *                                          actual system prompt (not a user message).
+ * @param {string} [opts.task]           - The user turn that kicks the agent off.
+ * @param {string[]} [opts.tools]        - Allowed tool names.
+ * @param {string} [opts.thinkingLevel]  - "off" | "low" | "medium" | "high".
+ */
+export function runAgent({
+  label = "Agent",
+  systemPrompt,
+  task = DEFAULT_TASK,
+  tools = ["read"],
+  thinkingLevel = "low",
+}) {
   const authStorage = AuthStorage.create();
   const modelRegistry = ModelRegistry.create(authStorage);
   const model = modelRegistry.getAll().find(
-    (m) => `${m.provider}/${m.id}` === "openrouter/openrouter/owl-alpha"
+    (m) => `${m.provider}/${m.id}` === MODEL_ID
   );
+  if (!model) {
+    throw new Error(
+      `Model "${MODEL_ID}" not found in the registry. ` +
+        `Check OPENROUTER_API_KEY and that the model id is still valid.`
+    );
+  }
 
-  const loader = new DefaultResourceLoader({ cwd: __dirname, agentDir: __dirname });
+  // Set our role as the real system prompt and run with a clean, deterministic
+  // resource set — no ambient skills/extensions/context files from disk (~/.pi),
+  // and no default APPEND_SYSTEM.md. Discovery is rooted at the repo, matching
+  // the session cwd the agent actually reads and edits in.
+  const loader = new DefaultResourceLoader({
+    cwd: repoRoot,
+    agentDir: repoRoot,
+    systemPrompt,
+    appendSystemPrompt: [],
+    noSkills: true,
+    noExtensions: true,
+    noPromptTemplates: true,
+    noThemes: true,
+    noContextFiles: true,
+  });
   const startTime = Date.now();
   log("info", `${label} agent started`);
 
@@ -52,6 +96,7 @@ export function runAgent({ label = "Agent", systemPrompt, tools = ["read"] }) {
       sessionManager: SessionManager.inMemory(),
       resourceLoader: loader,
       model,
+      thinkingLevel,
       authStorage,
       modelRegistry,
       tools,
@@ -67,7 +112,7 @@ export function runAgent({ label = "Agent", systemPrompt, tools = ["read"] }) {
       });
 
       return session
-        .prompt(systemPrompt)
+        .prompt(task)
         .then(() => {
           const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
           const messages = session.state.messages;
@@ -100,6 +145,7 @@ export function runAgent({ label = "Agent", systemPrompt, tools = ["read"] }) {
 // ---------------------------------------------------------------------------
 
 const runLog = [];
+const isGitHubActions = Boolean(process.env.GITHUB_ACTIONS);
 
 export function getRunLog() {
   return runLog;
@@ -116,8 +162,48 @@ export function log(level, message, data) {
   } else {
     console.log(prefix, message);
   }
-  if (level === "warn" || level === "error") {
-    console.log(`::${level}::${message}`);
+  // Surface warnings/errors as GitHub Actions annotations (shown in the run summary UI).
+  if (isGitHubActions && (level === "warn" || level === "error")) {
+    const ghLevel = level === "warn" ? "warning" : "error";
+    console.log(`::${ghLevel}::${escapeWorkflowData(message)}`);
+  }
+}
+
+// Escape per GitHub's workflow-command rules so annotations render literally.
+function escapeWorkflowData(str) {
+  return String(str).replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
+}
+
+/**
+ * Group subsequent log output under a collapsible section in the Actions log.
+ * Returns a function that closes the group. No-op outside GitHub Actions.
+ */
+export function logGroup(title) {
+  if (isGitHubActions) console.log(`::group::${escapeWorkflowData(title)}`);
+  else console.log(`\n--- ${title} ---`);
+  return () => {
+    if (isGitHubActions) console.log("::endgroup::");
+  };
+}
+
+/** Run an async block wrapped in a collapsible Actions log group. */
+export async function withLogGroup(title, fn) {
+  const end = logGroup(title);
+  try {
+    return await fn();
+  } finally {
+    end();
+  }
+}
+
+/** Append a Markdown line to the GitHub Actions job summary, if available. */
+export function appendJobSummary(markdown) {
+  const file = process.env.GITHUB_STEP_SUMMARY;
+  if (!file) return;
+  try {
+    fs.appendFileSync(file, markdown + "\n");
+  } catch {
+    // best-effort — never fail a run over a summary write
   }
 }
 
@@ -135,19 +221,38 @@ export function errorData(e) {
   };
 }
 
-export function printRunSummary() {
+export function printRunSummary(title = "Run Summary") {
+  const icon = (level) =>
+    level === "error" ? "❌" :
+    level === "warn"  ? "⚠️" :
+    level === "info"  ? "ℹ️" : "  ";
+
   console.log("\n" + "=".repeat(60));
-  console.log("RUN SUMMARY");
+  console.log(title.toUpperCase());
   console.log("=".repeat(60));
   for (const entry of runLog) {
     if (entry.level === "debug") continue;
-    const icon =
-      entry.level === "error" ? "❌" :
-      entry.level === "warn"  ? "⚠️" :
-      entry.level === "info"  ? "ℹ️" : "  ";
-    console.log(`${icon} [${entry.level.toUpperCase()}] ${entry.message}`);
+    console.log(`${icon(entry.level)} [${entry.level.toUpperCase()}] ${entry.message}`);
   }
   console.log("=".repeat(60) + "\n");
+
+  // Mirror the summary into the GitHub Actions job summary panel.
+  const errors = runLog.filter((e) => e.level === "error").length;
+  const warns = runLog.filter((e) => e.level === "warn").length;
+  const lines = [
+    `## ${title}`,
+    "",
+    `**Result:** ${errors > 0 ? "❌ errors" : warns > 0 ? "⚠️ completed with warnings" : "✅ clean"} `
+      + `· ${errors} error(s), ${warns} warning(s)`,
+    "",
+    "| | Level | Message |",
+    "| --- | --- | --- |",
+    ...runLog
+      .filter((e) => e.level !== "debug")
+      .map((e) => `| ${icon(e.level)} | ${e.level.toUpperCase()} | ${String(e.message).replace(/\|/g, "\\|")} |`),
+    "",
+  ];
+  appendJobSummary(lines.join("\n"));
 }
 
 // ---------------------------------------------------------------------------
@@ -155,7 +260,11 @@ export function printRunSummary() {
 // ---------------------------------------------------------------------------
 
 export function loadPrompt(name) {
-  return fs.readFileSync(join(promptsDir, `${name}.md`), "utf-8");
+  const raw = fs.readFileSync(join(promptsDir, `${name}.md`), "utf-8");
+  // Inline shared partials referenced as {{include:partial-name}} (one level).
+  return raw.replace(/\{\{include:([\w-]+)\}\}/g, (_, partial) =>
+    fs.readFileSync(join(promptsDir, `${partial}.md`), "utf-8").trim()
+  );
 }
 
 export function fillTemplate(template, replacements) {
@@ -284,8 +393,21 @@ export function gitExec(args, opts = {}) {
   return execSync(cmd, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024, ...opts }).toString().trim();
 }
 
+let gitIdentityConfigured = false;
+
+/**
+ * Set the committer identity once per process. Idempotent — safe to call from
+ * any code path that is about to create a commit.
+ */
+export function configureGitIdentity() {
+  if (gitIdentityConfigured) return;
+  gitExec('config user.name "github-actions[bot]"');
+  gitExec('config user.email "github-actions[bot]@users.noreply.github.com"');
+  gitIdentityConfigured = true;
+}
+
 export function slugify(str) {
-  return str
+  return (str || "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "")
@@ -293,25 +415,42 @@ export function slugify(str) {
 }
 
 export function createBranchName(issueNumber, issueTitle, suggestion) {
-  if (issueNumber) {
-    return `agent/issue-${issueNumber}-${slugify(issueTitle)}`;
+  // A short run-scoped suffix keeps branch names unique across reruns so a
+  // failed prior run on the same issue can't cause a non-fast-forward push.
+  const runId = process.env.GITHUB_RUN_ID;
+  const suffix = runId ? `-${runId}` : "";
+  const base = issueNumber
+    ? `agent/issue-${issueNumber}-${slugify(issueTitle) || "fix"}`
+    : `agent/feature-${slugify(suggestion) || "change"}`;
+  return `${base}${suffix}`;
+}
+
+/**
+ * Delete a branch on origin if it exists. Best-effort — never throws.
+ */
+export function deleteRemoteBranch(branchName) {
+  try {
+    gitExec(`push origin --delete ${branchName}`);
+    log("info", `Deleted remote branch ${branchName}.`);
+  } catch {
+    // remote branch may not exist — fine
   }
-  return `agent/feature-${slugify(suggestion)}`;
 }
 
 export function createBranch(branchName) {
+  gitExec("fetch origin");
+  gitExec("checkout main");
+  // Base the branch on the real remote tip, not a possibly-stale local main.
+  gitExec("reset --hard origin/main");
+  // Clear any leftover branch of the same name from a prior failed run.
   try {
-    gitExec("fetch origin");
-    gitExec("checkout main");
-    gitExec(`checkout -b ${branchName}`);
-    log("info", `Created branch: ${branchName}`);
-  } catch (e) {
-    log("warn", `Branch ${branchName} may already exist, resetting to main.`);
-    gitExec("checkout main");
     gitExec(`branch -D ${branchName}`);
-    gitExec(`checkout -b ${branchName}`);
-    log("info", `Recreated branch: ${branchName}`);
+  } catch {
+    // local branch may not exist — fine
   }
+  deleteRemoteBranch(branchName);
+  gitExec(`checkout -b ${branchName}`);
+  log("info", `Created branch: ${branchName}`);
 }
 
 export function mergeMainIntoBranch() {
@@ -342,46 +481,145 @@ export function abortMerge() {
   }
 }
 
-export function mergeBranchToMain(branchName) {
-  gitExec("checkout main");
-  gitExec(`merge --ff-only ${branchName}`);
-  log("info", `Fast-forward merged ${branchName} into main.`);
-  gitExec("push origin main");
-  log("info", "Pushed main.");
-  gitExec(`branch -d ${branchName}`);
-  log("info", `Deleted local branch ${branchName}.`);
+export function abortRebase() {
   try {
-    gitExec(`push origin --delete ${branchName}`);
+    gitExec("rebase --abort");
+    log("info", "Aborted rebase.");
   } catch {
-    // remote branch may not exist — fine
+    // ignore — may not be in a rebase
   }
+}
+
+/**
+ * Land a branch on main, surviving concurrent pushes from other runs.
+ *
+ * Each attempt re-fetches origin/main, rebases the branch on top of it, then
+ * fast-forwards main and pushes. If the push is rejected (another run advanced
+ * origin/main in between), we retry from a fresh fetch.
+ */
+export function mergeBranchToMain(branchName, { retries = 5 } = {}) {
+  let pushed = false;
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    gitExec("fetch origin");
+    gitExec(`checkout ${branchName}`);
+    try {
+      gitExec("rebase origin/main");
+    } catch (e) {
+      // Leave no half-finished rebase behind for callers' cleanup.
+      abortRebase();
+      throw new Error(`Rebase of ${branchName} onto origin/main failed: ${e.message}`);
+    }
+    gitExec("checkout main");
+    gitExec("reset --hard origin/main");
+    gitExec(`merge --ff-only ${branchName}`);
+    try {
+      gitExec("push origin main");
+      log("info", `Merged ${branchName} into main and pushed (attempt ${attempt}).`);
+      pushed = true;
+      break;
+    } catch (e) {
+      if (attempt === retries) {
+        throw new Error(`Push to main rejected after ${retries} attempts: ${e.message}`);
+      }
+      log("warn", `Push to main rejected, retrying (${attempt}/${retries}).`);
+    }
+  }
+  if (!pushed) return;
+
+  try {
+    gitExec(`branch -d ${branchName}`);
+    log("info", `Deleted local branch ${branchName}.`);
+  } catch {
+    // not fully merged according to git — leave it for inspection
+  }
+  deleteRemoteBranch(branchName);
 }
 
 // ---------------------------------------------------------------------------
 // GitHub issue helpers
 // ---------------------------------------------------------------------------
 
+export const OPEN_ISSUES_PATH = process.env.OPEN_ISSUES_PATH || "/tmp/open-issues.json";
+
 export function loadOpenIssues() {
+  if (!fs.existsSync(OPEN_ISSUES_PATH)) {
+    log("info", `No open-issues file at ${OPEN_ISSUES_PATH}; proceeding without issues.`);
+    return [];
+  }
   try {
-    const raw = fs.readFileSync("/tmp/open-issues.json", "utf-8");
-    return JSON.parse(raw);
-  } catch {
+    return JSON.parse(fs.readFileSync(OPEN_ISSUES_PATH, "utf-8"));
+  } catch (e) {
+    log("warn", `Failed to read/parse ${OPEN_ISSUES_PATH}; proceeding without issues.`, errorData(e));
     return [];
   }
 }
 
-export async function closeIssue(issueNumber, commitMessage) {
-  const comment = "Fixed in commit: " + commitMessage + "\n\nThis issue has been addressed by the Builder Team.";
+// Post a comment by piping the body over stdin, so arbitrary Markdown/prose
+// (backticks, $, quotes, newlines) is never interpreted by the shell.
+function ghComment(issueNumber, body) {
+  execSync(`gh issue comment ${issueNumber} --body-file -`, {
+    cwd: repoRoot,
+    input: body,
+    maxBuffer: 10 * 1024 * 1024,
+  });
+}
+
+/**
+ * Comment with what was actually done, then close the issue.
+ *
+ * @param {number} issueNumber
+ * @param {object} info
+ * @param {string} [info.summary]       - Builder's description of what changed (the "why/what").
+ * @param {string} [info.commitMessage] - Commit subject line.
+ * @param {string} [info.commitSha]     - Full commit SHA on main.
+ */
+export async function closeIssue(issueNumber, info = {}) {
+  // Tolerate the legacy `closeIssue(n, commitMessage)` call shape.
+  if (typeof info === "string") info = { commitMessage: info };
+  const { summary, commitMessage, commitSha } = info;
+
+  const lines = ["## ✅ Resolved by the Builder Team", ""];
+  if (summary) lines.push(summary, "");
+  if (commitMessage) {
+    const shortSha = commitSha ? `\`${commitSha.slice(0, 7)}\` — ` : "";
+    lines.push(`**Commit:** ${shortSha}${commitMessage}`);
+  }
+  const body =
+    lines.join("\n").trim() || "This issue has been addressed by the Builder Team.";
+
   try {
-    execSync(
-      `gh issue comment ${issueNumber} --body "${comment.replace(/"/g, '\\"')}"`,
-      { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }
-    );
-    execSync(
-      `gh issue close ${issueNumber}`,
-      { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }
-    );
+    ghComment(issueNumber, body);
+    execSync(`gh issue close ${issueNumber}`, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 });
     log("info", `Closed issue #${issueNumber}`);
+  } catch (e) {
+    log("warn", `Could not close issue #${issueNumber}`, errorData(e));
+  }
+}
+
+export async function commentIssue(issueNumber, body) {
+  try {
+    ghComment(issueNumber, body);
+  } catch (e) {
+    log("warn", `Could not comment on issue #${issueNumber}`, errorData(e));
+  }
+}
+
+/** Label, comment, and close an issue the Scout judged invalid / out of scope. */
+export async function closeIssueAsInvalid(issueNumber, reason) {
+  await labelIssue(issueNumber, "invalid");
+  const lines = ["## Closed by the Builder Team", ""];
+  if (reason) {
+    lines.push("After review, this isn't something the team will act on right now:", "", reason);
+  } else {
+    lines.push(
+      "After review, this issue isn't actionable or is out of scope for the current vision of the project."
+    );
+  }
+  lines.push("", "_If you think this was closed in error, reopen the issue with more detail._");
+  await commentIssue(issueNumber, lines.join("\n"));
+  try {
+    execSync(`gh issue close ${issueNumber}`, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 });
+    log("info", `Closed issue #${issueNumber} as invalid.`);
   } catch (e) {
     log("warn", `Could not close issue #${issueNumber}`, errorData(e));
   }

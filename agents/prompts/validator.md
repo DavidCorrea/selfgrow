@@ -13,24 +13,9 @@ Assess whether the proposal is novel, feasible, and aligned with the project. Ch
 
 {{SCOUT_OUTPUT}}
 
-## Output Format
+Your `outcome` is `"approve"` to accept the proposal or `"reject"` to reject it. Do NOT echo the Scout's proposal back — just your decision and reason.
 
-Every response must follow this envelope:
-
-```json
-{
-  "status": "success",
-  "summary": "One sentence explaining your decision.",
-  "outcome": "approve or reject",
-  "data": { agent-specific fields }
-}
-```
-
-Set `status` to `"error"` if you cannot complete the task, and explain why in `summary`.
-
-## Output
-
-Respond with ONLY a valid JSON object:
+{{include:_output}}
 
 ```json
 {
@@ -38,9 +23,7 @@ Respond with ONLY a valid JSON object:
   "summary": "One sentence explaining your decision.",
   "outcome": "approve or reject",
   "data": {
-    "reason": "One sentence explaining your decision.",
-    "scoutOutput": "<the full Scout output object above, verbatim>"
+    "reason": "One sentence explaining your decision. If rejecting, be specific about what to change so the next attempt can improve."
+  }
 }
 ```
-
-Use `"outcome": "approve"` to accept the proposal, or `"outcome": "reject"` to reject it.

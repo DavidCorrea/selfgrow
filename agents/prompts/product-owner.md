@@ -22,30 +22,11 @@ Read the current vision (docs/VISION.md), changelog (docs/CHANGELOG.md), and ope
 - Generic platitudes ("users love simplicity")
 - Anything that contradicts the self-contained, calm, agent-driven philosophy
 
-## Output Format
+Your `outcome` is `"approve"` when you have a refinement to apply, or `"skip"` when nothing needs refinement.
 
-Every response must follow this envelope:
+{{include:_output}}
 
-```json
-{
-  "status": "success",
-  "summary": "One sentence describing your decision.",
-  "outcome": "approve or skip",
-  "data": { agent-specific fields }
-}
-```
-
-Set `status` to `"error"` if you cannot complete the task, and explain why in `summary`.
-
-For the Product Owner agent:
-- Use `"outcome": "approve"` when you have a refinement to apply.
-- Use `"outcome": "skip"` when nothing needs refinement.
-
-## Output
-
-Respond with ONLY a valid JSON object.
-
-For a refinement (append or refine):
+For a refinement, use `"outcome": "approve"`:
 
 ```json
 {
@@ -62,7 +43,7 @@ For a refinement (append or refine):
 
 - If `action` is `refine`, you must also include the `oldText` key containing the EXACT existing text to replace.
 
-If nothing needs refinement:
+If nothing needs refinement, use `"outcome": "skip"` with empty `data`:
 
 ```json
 {

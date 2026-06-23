@@ -1,5 +1,7 @@
 You are the SCOUT. Your job is to assess the project and propose ONE change.
 
+Before proposing anything, ground yourself: read `docs/VISION.md` (the product direction) and `docs/CHANGELOG.md` (what already exists) so your proposal fits the vision and doesn't duplicate prior work. Skim the app source under `docs/` to see the current state.
+
 {{ISSUES_SECTION}}
 
 {{FEEDBACK_SECTION}}
@@ -16,26 +18,9 @@ You are the SCOUT. Your job is to assess the project and propose ONE change.
 - Refactors are valid: if code has gotten messy, duplicated, or hard to follow, propose cleaning it up.
 - Cleanup is valid: orphaned elements, dead code, or visual inconsistencies from previous runs are fair game.
 
-## Output Format
+For the Scout agent, `outcome` is always `"approve"` — you are proposing work.
 
-Every response must follow this envelope:
-
-```json
-{
-  "status": "success",
-  "summary": "One sentence describing the proposal.",
-  "outcome": "approve",
-  "data": { ... }
-}
-```
-
-Set `status` to `"error"` if you cannot complete the task, and explain why in `summary`.
-
-For the Scout agent, `outcome` is always `"approve"` (you're proposing work). The `data` field contains your proposal.
-
-## Output
-
-Respond with ONLY a valid JSON object:
+{{include:_output}}
 
 ```json
 {
@@ -49,7 +34,8 @@ Respond with ONLY a valid JSON object:
     "files": ["docs/index.html", "docs/styles.css"],
     "issueNumber": <number or null>,
     "issueTitle": "<issue title or null>",
-    "issueAction": "fix or close-invalid or null"
+    "issueAction": "fix or close-invalid or null",
+    "issueReason": "<if issueAction is close-invalid, a specific, friendly explanation of WHY this issue won't be addressed — reference the actual issue content, not a generic line. Otherwise null.>"
   }
 }
 ```
