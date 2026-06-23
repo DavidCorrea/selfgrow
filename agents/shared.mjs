@@ -35,7 +35,7 @@ export const promptsDir = join(__dirname, "prompts");
 // Agent runner
 // ---------------------------------------------------------------------------
 
-export const MODEL_ID = "openrouter/nex-agi/nex-n2-pro:free";
+export const MODEL_ID = "openrouter/openai/gpt-oss-120b:free";
 
 // Default kickoff turn when a caller doesn't supply one. The agent's full role
 // lives in the system prompt; this just tells it to begin.
@@ -119,6 +119,15 @@ export function runAgent({
           const lastAssistant = [...messages].reverse().find(
             (m) => m.role === "assistant"
           );
+          // The model can fail without throwing — the error lands on the
+          // assistant message as stopReason "error". Surface it loudly instead
+          // of returning empty output (which looks like an unparseable response).
+          if (lastAssistant && lastAssistant.stopReason === "error") {
+            session.dispose();
+            throw new Error(
+              `${label} model call failed: ${lastAssistant.errorMessage || "unknown error"}`
+            );
+          }
           if (lastAssistant && lastAssistant.content) {
             const fullText = Array.isArray(lastAssistant.content)
               ? lastAssistant.content
