@@ -2,6 +2,8 @@
 
 ## 2026-06-23
 
+- **Implemented lazy loading for heavy modules and preloaded critical stylesheet to improve first load performance (closes #18).**
+
 - **Implemented lazy observation for Creature Encyclopedia panel to stop background interval work when hidden (closes #19).**
 - **Refined bloom animation: removed spin, made bud→flower scale‑only opening for smoother bloom (closes #20).**
 

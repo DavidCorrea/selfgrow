@@ -4,25 +4,46 @@ import { saveGardenState, loadGardenState, restoreGardenState, restoreWelcomeCar
 import { initTheme } from './js/theme.js';
 import { addJournalEntry, getRandomMessage } from './js/journal.js';
 import { plantTile, startGrowthCycle, updateCounter, revealGrid, toggleWateringMode, waterTile, isWateringMode, toggleFertilizeMode, fertilizeTile, isFertilizeMode, togglePruneMode, pruneTile, isPruneMode } from './js/tiles.js';
-import { startVisitors, initVisitors } from './js/visitors.js';
-import { initSoundscape } from './js/soundscape.js';
-import { initStats } from './js/stats.js';
-import { startSelfSeeding } from './js/selfseeding.js';
-import { initGardenRings, notifyStatsRevealed } from './js/garden-rings.js';
-import { initGardenGallery } from './js/garden-gallery.js';
-import { initGardenMoments, notifyMomentsRevealed } from './js/garden-moments.js';
-import { initGardenHistory, captureGardenVisit } from './js/garden-history.js';
-import { exportGarden, importGarden } from './js/export-import.js';
-import { initSeedCollection, toggleCollectMode, collectSeed, isCollectMode, isPlantMode, plantSelectedSeed } from './js/seed-collection.js';
-import { initMilestones } from './js/milestones.js';
-import { initMilestonesPanel, renderMilestones } from './js/milestones-panel.js';
-import { simulateGardenAging, renderAgingResults, setupUnloadTimestamp, recordVisitTimestamp } from './js/garden-aging.js';
-import { initGardenSeasons } from './js/garden-seasons.js';
-import { initGroundCreatures, startGroundCreatures, setGroundCreaturesEnabled, isGroundCreaturesEnabled } from './js/ground-creatures.js';
-import { startEcosystem, initEcosystem } from './js/ecosystem.js';
-import { initCreatureEncyclopedia } from './js/creature-encyclopedia.js';
-import { initGardenWhispers, setWhispersEnabled, isWhispersEnabled } from './js/garden-whispers.js';
-
+// Lazy-loaded modules will be imported dynamically after initial render
+// Placeholder functions to be replaced by dynamic imports
+let startVisitors = () => {};
+let initVisitors = () => {};
+let initSoundscape = () => {};
+let initStats = () => {};
+let notifyStatsRevealed = () => {};
+let startSelfSeeding = () => {};
+let initGardenRings = () => {};
+let initGardenGallery = () => {};
+let initGardenMoments = () => {};
+let notifyMomentsRevealed = () => {};
+let initGardenHistory = () => {};
+let captureGardenVisit = () => {};
+let exportGarden = () => {};
+let importGarden = () => {};
+let initSeedCollection = () => {};
+let toggleCollectMode = () => {};
+let collectSeed = () => {};
+let isCollectMode = () => false;
+let isPlantMode = () => false;
+let plantSelectedSeed = () => {};
+let initMilestones = () => {};
+let initMilestonesPanel = () => {};
+let renderMilestones = () => {};
+let simulateGardenAging = () => {};
+let renderAgingResults = () => {};
+let setupUnloadTimestamp = () => {};
+let recordVisitTimestamp = () => {};
+let initGardenSeasons = () => {};
+let initGroundCreatures = () => {};
+let startGroundCreatures = () => {};
+let setGroundCreaturesEnabled = () => {};
+let isGroundCreaturesEnabled = () => false;
+let startEcosystem = () => {};
+let initEcosystem = () => {};
+let initCreatureEncyclopedia = () => {};
+let initGardenWhispers = () => {};
+let setWhispersEnabled = () => {};
+let isWhispersEnabled = () => false;
 
 (function () {
   'use strict';
@@ -135,9 +156,9 @@ import { initGardenWhispers, setWhispersEnabled, isWhispersEnabled } from './js/
 
     setTimeout(function () {
       revealGrid();
-      startVisitors();
-      startGroundCreatures();
-      startEcosystem();
+      if (typeof startVisitors === 'function') startVisitors();
+      if (typeof startGroundCreatures === 'function') startGroundCreatures();
+      if (typeof startEcosystem === 'function') startEcosystem();
     }, 5000);
 
     saveGardenState();
@@ -412,4 +433,105 @@ import { initGardenWhispers, setWhispersEnabled, isWhispersEnabled } from './js/
       renderAgingResults();
     }, 500);
   }
+
+  // Lazy-load optional heavy modules after initial load
+  function loadOptionalModules() {
+    Promise.all([
+      import('./js/visitors.js'),
+      import('./js/soundscape.js'),
+      import('./js/stats.js'),
+      import('./js/garden-rings.js'),
+      import('./js/garden-moments.js'),
+      import('./js/garden-history.js'),
+      import('./js/export-import.js'),
+      import('./js/seed-collection.js'),
+      import('./js/milestones.js'),
+      import('./js/milestones-panel.js'),
+      import('./js/garden-aging.js'),
+      import('./js/garden-seasons.js'),
+      import('./js/ground-creatures.js'),
+      import('./js/ecosystem.js'),
+      import('./js/creature-encyclopedia.js'),
+      import('./js/garden-whispers.js')
+    ]).then((modules) => {
+      const [
+        visitors,
+        soundscape,
+        stats,
+        gardenRings,
+        gardenMoments,
+        gardenHistory,
+        exportImport,
+        seedCollection,
+        milestones,
+        milestonesPanel,
+        gardenAging,
+        gardenSeasons,
+        groundCreatures,
+        ecosystem,
+        creatureEncyclopedia,
+        gardenWhispers
+      ] = modules;
+      startVisitors = visitors.startVisitors;
+      initVisitors = visitors.initVisitors;
+      initSoundscape = soundscape.initSoundscape;
+      initStats = stats.initStats;
+      notifyStatsRevealed = stats.notifyStatsRevealed || (() => {});
+      startSelfSeeding = gardenAging.startSelfSeeding || (() => {});
+      initGardenRings = gardenRings.initGardenRings;
+      initGardenGallery = gardenRings.initGardenGallery || (() => {});
+      initGardenMoments = gardenMoments.initGardenMoments;
+      notifyMomentsRevealed = gardenMoments.notifyMomentsRevealed || (() => {});
+      initGardenHistory = gardenHistory.initGardenHistory;
+      captureGardenVisit = gardenHistory.captureGardenVisit;
+      exportGarden = exportImport.exportGarden;
+      importGarden = exportImport.importGarden;
+      initSeedCollection = seedCollection.initSeedCollection;
+      toggleCollectMode = seedCollection.toggleCollectMode;
+      collectSeed = seedCollection.collectSeed;
+      isCollectMode = seedCollection.isCollectMode;
+      isPlantMode = seedCollection.isPlantMode;
+      plantSelectedSeed = seedCollection.plantSelectedSeed;
+      initMilestones = milestones.initMilestones;
+      initMilestonesPanel = milestonesPanel.initMilestonesPanel;
+      renderMilestones = milestonesPanel.renderMilestones;
+      simulateGardenAging = gardenAging.simulateGardenAging;
+      renderAgingResults = gardenAging.renderAgingResults;
+      setupUnloadTimestamp = gardenAging.setupUnloadTimestamp;
+      recordVisitTimestamp = gardenAging.recordVisitTimestamp;
+      initGardenSeasons = gardenSeasons.initGardenSeasons;
+      initGroundCreatures = groundCreatures.initGroundCreatures;
+      startGroundCreatures = groundCreatures.startGroundCreatures;
+      setGroundCreaturesEnabled = groundCreatures.setGroundCreaturesEnabled;
+      isGroundCreaturesEnabled = groundCreatures.isGroundCreaturesEnabled;
+      startEcosystem = ecosystem.startEcosystem;
+      initEcosystem = ecosystem.initEcosystem;
+      initCreatureEncyclopedia = creatureEncyclopedia.initCreatureEncyclopedia;
+      initGardenWhispers = gardenWhispers.initGardenWhispers;
+      setWhispersEnabled = gardenWhispers.setWhispersEnabled;
+      isWhispersEnabled = gardenWhispers.isWhispersEnabled;
+      // Re-initialize modules that need immediate setup
+      initVisitors();
+      // Start visitors after initialization
+      if (typeof startVisitors === 'function') startVisitors();
+      initSoundscape();
+      initStats();
+      notifyStatsRevealed();
+      initGardenRings();
+      initGardenMoments();
+      notifyMomentsRevealed();
+      initGardenGallery();
+      initGardenHistory();
+      initSeedCollection();
+      initMilestones();
+      initMilestonesPanel();
+      initGardenSeasons();
+      initGroundCreatures();
+      initEcosystem();
+      initCreatureEncyclopedia();
+      initGardenWhispers();
+    });
+  }
+
+  loadOptionalModules();
 })();
