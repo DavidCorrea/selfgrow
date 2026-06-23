@@ -9,6 +9,34 @@ import { getBloomingCount } from './visitors.js';
 import { isSoundscapeEnabled } from './soundscape.js';
 import { notifyStatsChange } from './stats.js';
 import { startGrowthCycle } from './tiles.js';
+
+// Bloom animation pooling to limit concurrent bloom animations
+const MAX_CONCURRENT_BLOOMS = 6;
+let bloomQueue = [];
+let activeBlooms = 0;
+function processBloomQueue() {
+  if (activeBlooms >= MAX_CONCURRENT_BLOOMS) return;
+  const item = bloomQueue.shift();
+  if (!item) return;
+  activeBlooms++;
+  item.action();
+  setTimeout(() => {
+    activeBlooms--;
+    processBloomQueue();
+  }, 800);
+}
+function enqueueBloom(action) {
+  if (activeBlooms < MAX_CONCURRENT_BLOOMS) {
+    activeBlooms++;
+    action();
+    setTimeout(() => {
+      activeBlooms--;
+      processBloomQueue();
+    }, 800);
+  } else {
+    bloomQueue.push({action});
+  }
+}
 import { recordBloom } from './garden-rings.js';
 import { visibleSetTimeout } from './visibility-manager.js';
 
@@ -255,7 +283,7 @@ function plantVolunteer(tileEl) {
     var sprout = tileEl.querySelector('.tile-sprout');
     if (sprout) {
       sprout.classList.remove('budding');
-      sprout.classList.add('blooming');
+      enqueueBloom(() => { sprout.classList.add('blooming'); });
     }
   }, bloomDelay);
 

@@ -237,6 +237,33 @@ function revealTending() {
   }
 }
 
+const MAX_CONCURRENT_BLOOMS = 6;
+let bloomQueue = [];
+let activeBlooms = 0;
+function processBloomQueue() {
+  if (activeBlooms >= MAX_CONCURRENT_BLOOMS) return;
+  const item = bloomQueue.shift();
+  if (!item) return;
+  activeBlooms++;
+  item.action();
+  setTimeout(() => {
+    activeBlooms--;
+    processBloomQueue();
+  }, 800);
+}
+function enqueueBloom(action) {
+  if (activeBlooms < MAX_CONCURRENT_BLOOMS) {
+    activeBlooms++;
+    action();
+    setTimeout(() => {
+      activeBlooms--;
+      processBloomQueue();
+    }, 800);
+  } else {
+    bloomQueue.push({action});
+  }
+}
+
 export function startGrowthCycle(tileEl, tileIndex) {
   var state = tileCycleState[tileIndex];
   if (!state) return;
@@ -320,7 +347,9 @@ export function startGrowthCycle(tileEl, tileIndex) {
     var regrowBloomTimeout = setTimeout(function () {
       if (!tileEl.classList.contains('planted')) return;
       tileSprout.classList.remove('regrow-bud');
-      tileSprout.classList.add('regrow-bloom');
+      enqueueBloom(() => {
+        tileSprout.classList.add('regrow-bloom');
+      });
     }, regrowBloomDelay);
 
     var regrowGrownTimeout = setTimeout(function () {
@@ -414,8 +443,10 @@ export function startGrowthCycle(tileEl, tileIndex) {
     }, budDelay);
 
     var bloomTimeout = setTimeout(function () {
-      tileSprout.classList.remove('budding');
-      tileSprout.classList.add('blooming');
+      enqueueBloom(() => {
+        tileSprout.classList.remove('budding');
+        tileSprout.classList.add('blooming');
+      });
     }, bloomDelay);
 
     var grownTimeout = setTimeout(function () {
@@ -540,9 +571,11 @@ export function plantTile(tileEl) {
   timeouts.push(budTimeout);
 
   var bloomTimeout = setTimeout(function () {
-    var tileSprout = tileEl.querySelector('.tile-sprout');
-    tileSprout.classList.remove('budding');
-    tileSprout.classList.add('blooming');
+    enqueueBloom(() => {
+      var tileSprout = tileEl.querySelector('.tile-sprout');
+      tileSprout.classList.remove('budding');
+      tileSprout.classList.add('blooming');
+    });
   }, bloomDelay);
   timeouts.push(bloomTimeout);
 

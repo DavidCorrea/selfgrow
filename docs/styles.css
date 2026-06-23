@@ -816,6 +816,9 @@ body::before {
 }
 
 /* Bud opens into bloom */
+.tile-sprout.blooming, .tile-sprout.regrow-bloom {
+  will-change: transform, opacity;
+}
 .tile-sprout.blooming .tile-bud {
   animation: tileBudOpen 0.6s ease-out forwards;
 }
