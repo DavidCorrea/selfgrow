@@ -3,6 +3,7 @@
 ## 2026-06-23
 
 - **Implemented lazy observation for Creature Encyclopedia panel to stop background interval work when hidden (closes #19).**
+- **Refined bloom animation: removed spin, made bud→flower scale‑only opening for smoother bloom (closes #20).**
 
 ## 2026-06-11
 
