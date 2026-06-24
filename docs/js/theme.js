@@ -9,7 +9,7 @@ function applyTimeTheme() {
     theme = 'dawn';
   } else if (hour >= 8 && hour < 17) {
     theme = 'day';
-  } else if (hour >= 17 && hour < 20) {
+  } else if (hour >= 18 && hour < 20) {
     theme = 'dusk';
   } else {
     theme = 'night';
