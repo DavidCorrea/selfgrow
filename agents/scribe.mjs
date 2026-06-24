@@ -8,6 +8,7 @@ import {
   fillTemplate,
   runAgent,
   getWikiDir,
+  readVision,
   readChangelog,
   publishWiki,
 } from "./shared.mjs";
@@ -20,15 +21,11 @@ function cleanMarkdown(text) {
   return t;
 }
 
-const HOME = `# selfgrow — the living garden wiki
-
-selfgrow is a self-contained digital garden that tends and grows itself, guided
-by an autonomous team of agents. This wiki is its living record.
-
-- **[Vision](Vision)** — the garden's north star (curated by the Product Owner).
-- **[Changelog](Changelog)** — the dated record of what changed (written by the Builder).
-- **[The Garden's Story](Garden-Story)** — how the garden has grown over time.
-`;
+// Derive a project name from the Vision's top heading (e.g. "# Foo — Vision" → "Foo").
+function projectName() {
+  const m = readVision().match(/^#\s+(.+)$/m);
+  return (m ? m[1] : "This project").replace(/\s*[—–-]\s*vision\s*$/i, "").trim() || "This project";
+}
 
 async function main() {
   log("info", "=== Scribe — publish wiki ===");
@@ -40,7 +37,7 @@ async function main() {
     return;
   }
 
-  // Garden Story — LLM narrative from the canonical changelog (in the wiki).
+  // Story — LLM narrative from the canonical changelog (in the wiki).
   const story = await withLogGroup("Scribe", () =>
     runAgent({
       label: "Scribe",
@@ -50,15 +47,23 @@ async function main() {
   );
   const storyMd = cleanMarkdown(story);
   if (storyMd) {
-    fs.writeFileSync(join(dir, "Garden-Story.md"), storyMd + "\n", "utf-8");
+    fs.writeFileSync(join(dir, "Story.md"), storyMd + "\n", "utf-8");
   } else {
-    log("warn", "Scribe: empty story output — leaving Garden-Story unchanged.");
+    log("warn", "Scribe: empty story output — leaving Story unchanged.");
   }
 
   // Home / index.
-  fs.writeFileSync(join(dir, "Home.md"), HOME, "utf-8");
+  const home = `# ${projectName()} — wiki
 
-  publishWiki("Update wiki: garden story + home");
+The living record of this project, maintained by its autonomous agents.
+
+- **[Vision](Vision)** — the north star (curated by the Product Owner).
+- **[Changelog](Changelog)** — the dated record of what changed (written by the Builder).
+- **[The Story So Far](Story)** — how the project has grown over time.
+`;
+  fs.writeFileSync(join(dir, "Home.md"), home, "utf-8");
+
+  publishWiki("Update wiki: story + home");
   printRunSummary("Scribe");
 }
 

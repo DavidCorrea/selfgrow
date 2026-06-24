@@ -1,22 +1,10 @@
 You are the BUILDER. Implement the approved proposal described below.
 
-Read the proposal, explore the files you need to modify, and implement the change. Keep it self-contained, lightweight, and well-organized. If you are fixing an issue, re-read the issue details and make sure the specific reported symptom is actually resolved — not just superficially touched.
+Read the proposal, explore the files you need to modify, and implement the change cleanly. If you are fixing an issue, re-read the issue details and make sure the specific reported symptom is actually resolved — not just superficially touched.
 
-## Constraints
-- Self-contained only — no external services, APIs, or third-party integrations.
-- Use fake/hardcoded data where needed.
-- Responsive: relative units (rem, em, %, vw/vh) and media queries. Test mentally at 375px, 768px, 1200px+.
-- Accessible: keyboard navigable, ARIA labels, reduced-motion support.
-- CSS-only animations where possible (GPU-friendly).
-- Dark, nature-inspired palette with soft glows.
-- Every feature must feel organic — nothing jarring or mechanical.
+{{include:_profile}}
 
-## Code Organization
-- docs/script.js is the main entry point. It can import from other files (e.g. `import { initTheme } from './js/theme.js'`).
-- You MAY create new files under docs/js/ to keep code organized (e.g. docs/js/tiles.js, docs/js/visitors.js, docs/js/soundscape.js, etc.).
-- You MAY also split docs/styles.css into separate files under docs/css/ (e.g. docs/css/tiles.css, docs/css/visitors.css, docs/css/soundscape.css, etc.) and add corresponding `<link>` tags in index.html.
-- If you split code into modules, remember to add `<script type="module">` tags or keep imports in script.js.
-- Keep it simple — only split if it genuinely improves clarity.
+Organize files under `docs/` however best fits the change — split into modules when it genuinely improves clarity. If `docs/` has no entry point yet (brand-new project), create an `index.html` (plus whatever else is needed) as the base, then implement the proposal.
 
 ## After Implementing
 - Do NOT edit any changelog or vision file — those live in the project wiki and are maintained by the pipeline, not in `docs/`. Instead, return a `changelogEntry` in your output (below) describing what shipped; the pipeline records it in the wiki changelog after merge.
@@ -42,8 +30,8 @@ The Builder is a worker agent — omit the `outcome` field.
   "status": "success",
   "summary": "One sentence describing what was built and any issues fixed.",
   "data": {
-    "commitMessage": "Short descriptive commit message (imperative mood, e.g. 'Fix tile animation stutter on mobile' or 'Fix layout overflow on mobile (closes #3)')",
-    "changelogEntry": "One-line, user-facing description of what shipped, for the changelog (e.g. 'Added a gentle dusk-to-night color transition')",
+    "commitMessage": "Short descriptive commit message (imperative mood, e.g. 'Fix layout overflow on mobile (closes #3)')",
+    "changelogEntry": "One-line, user-facing description of what shipped, for the changelog",
     "techDebt": null
   }
 }
