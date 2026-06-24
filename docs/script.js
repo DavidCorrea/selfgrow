@@ -1,4 +1,5 @@
 import { dom, gridRevealed } from './js/state.js';
+import { initWeatherSound } from './js/weatherSound.js';
 import { initVisibilityManager } from './js/visibility-manager.js';
 import { saveGardenState, loadGardenState, restoreGardenState, restoreWelcomeCard } from './js/persistence.js';
 import { initTheme, getCurrentTheme, getCurrentCalendarSeason } from './js/theme.js';
@@ -536,6 +537,7 @@ let isWhispersEnabled = () => false;
       const [
         visitors,
         soundscape,
+        weatherSound,
         stats,
         gardenRings,
         gardenMoments,
@@ -554,6 +556,7 @@ let isWhispersEnabled = () => false;
       startVisitors = visitors.startVisitors;
       initVisitors = visitors.initVisitors;
       initSoundscape = soundscape.initSoundscape;
+      // Initialize weather sound after unlocking audio interaction
       initStats = stats.initStats;
       notifyStatsRevealed = stats.notifyStatsRevealed || (() => {});
       startSelfSeeding = gardenAging.startSelfSeeding || (() => {});
