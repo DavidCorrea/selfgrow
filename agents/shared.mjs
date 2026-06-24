@@ -13,8 +13,9 @@
 
 import { execSync } from "child_process";
 import { fileURLToPath } from "url";
-import { dirname, join } from "path";
+import { dirname, join, relative, extname } from "path";
 import fs from "fs";
+import http from "http";
 import {
   AuthStorage,
   createAgentSession,
@@ -1117,4 +1118,126 @@ export function pushWiki(dir, message) {
   } catch (e) {
     log("warn", "Wiki: push failed.", errorData(e));
   }
+}
+
+// ---------------------------------------------------------------------------
+// Layered build verification: syntax → static analysis (lint) → runtime smoke.
+// Cheap checks first; stop at the first failing layer. ESLint and Playwright
+// are best-effort — if a tool isn't installed, that layer is skipped (warned),
+// never blocking the pipeline.
+// ---------------------------------------------------------------------------
+
+function listJsFiles(dir) {
+  const out = [];
+  const walk = (d) => {
+    let entries;
+    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const p = join(d, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (/\.m?js$/.test(e.name)) out.push(p);
+    }
+  };
+  walk(dir);
+  return out;
+}
+
+const STATIC_MIME = {
+  ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript",
+  ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml",
+  ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+  ".gif": "image/gif", ".ico": "image/x-icon", ".webp": "image/webp",
+  ".woff": "font/woff", ".woff2": "font/woff2", ".ttf": "font/ttf",
+};
+
+function startStaticServer(rootDir) {
+  return new Promise((resolve) => {
+    const server = http.createServer((req, res) => {
+      let p = decodeURIComponent((req.url || "/").split("?")[0]);
+      if (p.endsWith("/")) p += "index.html";
+      const filePath = join(rootDir, p);
+      if (!filePath.startsWith(rootDir)) { res.writeHead(403); res.end(); return; }
+      fs.readFile(filePath, (err, data) => {
+        if (err) { res.writeHead(404); res.end("not found"); return; }
+        res.writeHead(200, { "Content-Type": STATIC_MIME[extname(filePath)] || "application/octet-stream" });
+        res.end(data);
+      });
+    });
+    server.listen(0, "127.0.0.1", () => resolve({ server, port: server.address().port }));
+  });
+}
+
+/**
+ * Verify the built app under `relDir`. Returns { ok, layer, errors }:
+ *   - layer "syntax"  — a JS file fails `node --check`
+ *   - layer "lint"    — ESLint reports an error (e.g. no-undef: undefined function)
+ *   - layer "runtime" — the page throws a console error / uncaught exception / failed load
+ * ok:true (layer null) means all available layers passed (or were skipped).
+ */
+export async function verifyBuild(relDir = "docs") {
+  const dir = join(repoRoot, relDir);
+  const rel = (f) => relative(repoRoot, f);
+
+  // Layer 1 — syntax.
+  const syntaxErrors = [];
+  for (const f of listJsFiles(dir)) {
+    try {
+      execSync(`node --check "${f}"`, { cwd: repoRoot, stdio: "pipe" });
+    } catch (e) {
+      syntaxErrors.push(`${rel(f)}: ${String(e.stderr || e.message).split("\n")[0]}`);
+    }
+  }
+  if (syntaxErrors.length) return { ok: false, layer: "syntax", errors: syntaxErrors };
+
+  // Layer 2 — static analysis (ESLint, best-effort).
+  try {
+    const { ESLint } = await import("eslint");
+    const eslint = new ESLint();
+    const results = await eslint.lintFiles([join(relDir, "**/*.js"), join(relDir, "**/*.mjs")]);
+    const lintErrors = [];
+    for (const r of results) {
+      for (const m of r.messages) {
+        if (m.severity === 2) lintErrors.push(`${rel(r.filePath)}:${m.line} ${m.message} (${m.ruleId || "parse"})`);
+      }
+    }
+    if (lintErrors.length) return { ok: false, layer: "lint", errors: [...new Set(lintErrors)] };
+  } catch (e) {
+    log("warn", "Verify: ESLint unavailable — skipping lint layer.", errorData(e));
+  }
+
+  // Layer 3 — runtime smoke (Playwright, best-effort).
+  if (!fs.existsSync(join(dir, "index.html"))) {
+    log("info", "Verify: no index.html yet — skipping runtime check.");
+    return { ok: true, layer: null, errors: [] };
+  }
+  let chromium;
+  try {
+    ({ chromium } = await import("playwright"));
+  } catch (e) {
+    log("warn", "Verify: Playwright unavailable — skipping runtime check.", errorData(e));
+    return { ok: true, layer: null, errors: [] };
+  }
+
+  const { server, port } = await startStaticServer(dir);
+  const errors = [];
+  let browser;
+  try {
+    browser = await chromium.launch();
+    const page = await browser.newPage();
+    page.on("console", (m) => { if (m.type() === "error") errors.push(`console: ${m.text()}`); });
+    page.on("pageerror", (e) => errors.push(`uncaught: ${e.message}`));
+    page.on("requestfailed", (r) => {
+      const t = r.failure()?.errorText || "";
+      if (!/aborted/i.test(t)) errors.push(`failed load: ${r.url()} (${t})`);
+    });
+    await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: "networkidle", timeout: 20000 });
+    await page.waitForTimeout(2500);
+  } catch (e) {
+    errors.push(`navigation: ${e.message}`);
+  } finally {
+    if (browser) await browser.close();
+    server.close();
+  }
+  if (errors.length) return { ok: false, layer: "runtime", errors: [...new Set(errors)] };
+  return { ok: true, layer: null, errors: [] };
 }

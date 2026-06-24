@@ -25,6 +25,7 @@ import {
   closePR,
   appendChangelogEntry,
   publishWiki,
+  verifyBuild,
   runAgent,
 } from "./shared.mjs";
 
@@ -258,6 +259,16 @@ async function main() {
       if (builderResult.summary) builderSummary = builderResult.summary;
       log("info", `Builder: ${builderResult.summary}`);
 
+      // Layered verify (syntax → lint → runtime) on the working tree BEFORE
+      // committing. Failures go straight back to the Builder to fix — broken
+      // code never reaches the PR or the merge.
+      const verify = await withLogGroup("Verify", () => verifyBuild());
+      if (!verify.ok) {
+        log("warn", `Verify failed at the ${verify.layer} check — ${verify.errors.length} issue(s).`, { errors: verify.errors });
+        reviewerFeedback = `Your change fails the automated ${verify.layer} check. Fix these specific problems, then return your result:\n- ${verify.errors.join("\n- ")}`;
+        continue;
+      }
+
       // Commit + push this attempt's work.
       try {
         if (gitExec("status --porcelain")) {
@@ -372,6 +383,13 @@ async function main() {
         abandon(`Conflict resolution failed: ${e.message}`, true);
         break;
       }
+    }
+
+    // Final gate: the branch (now merged with latest main) must still pass verify.
+    const finalVerify = await withLogGroup("Verify (pre-merge)", () => verifyBuild());
+    if (!finalVerify.ok) {
+      abandon(`Failed the ${finalVerify.layer} check after merging main:\n- ${finalVerify.errors.join("\n- ")}`, true);
+      break;
     }
 
     // 8. Approve (as the PAT user — a different identity than the bot author) and merge.

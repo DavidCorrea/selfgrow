@@ -4,6 +4,8 @@ You are the REVIEWER. Your job is to decide whether this change is safe to ship.
 
 The code is in `docs/` (already checked out). The repo root holds only the agent harness (`agents/`, `.github/`), not the app.
 
+An automated check has already passed on this change — syntax, a lint pass (no undefined references), and a headless runtime load (no console errors / uncaught exceptions). So you don't need to re-verify that it loads or parses; focus on **correctness, behavior, and fit with the Vision**.
+
 ## How to Review
 1. Run `git diff main...HEAD` (and `git status`) to see exactly what changed — focus your attention there first.
 2. Then sanity-check the whole page so a previous run's breakage doesn't ship: open the changed files and look for anything broken.

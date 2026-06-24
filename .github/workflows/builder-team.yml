@@ -43,6 +43,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install Playwright browser (runtime verify)
+        run: npx playwright install --with-deps chromium
+
       - name: Fetch open issues
         run: gh issue list --state open --json number,title,body,labels,createdAt --limit 20 > "$RUNNER_TEMP/open-issues.json"
         env:
