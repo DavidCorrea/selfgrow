@@ -1,0 +1,41 @@
+:root {
+  /* Dusk gradient */
+  --bg-dusk: linear-gradient(180deg, #ffb347, #ffcc33);
+  /* Night gradient */
+  --bg-night: linear-gradient(180deg, #2c3e50, #000428);
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: var(--bg-dusk);
+  background-size: cover;
+  will-change: background;
+}
+
+/* When sunset data attribute is present, animate gradient */
+body[data-sunset] {
+  animation: duskToNight 300s forwards; /* 5 minutes */
+}
+
+@keyframes duskToNight {
+  from {
+    background: var(--bg-dusk);
+  }
+  to {
+    background: var(--bg-night);
+  }
+}
+
+/* Respect reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  body[data-sunset] {
+    animation: none;
+    background: var(--bg-night);
+  }
+}
