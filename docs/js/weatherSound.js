@@ -2,12 +2,13 @@ import { onWeatherChange, getCurrentWeather } from './weather.js';
 import { isSoundscapeEnabled } from './soundscape.js';
 import { dom } from './state.js';
 
-// Audio file mapping for weather layers
+// Audio file mapping for weather layers – paths adjusted to location of audio assets
 const weatherLayers = {
-  rain: 'audio/rain.mp3',
-  thunder: 'audio/thunder.mp3',
-  wind: 'audio/wind.mp3',
-  breeze: 'audio/breeze.mp3'
+  // Currently only rain audio is available; other layers are placeholders and will be ignored if missing.
+  rain: '../audio/rain.mp3'
+  // thunder: '../audio/thunder.mp3',
+  // wind: '../audio/wind.mp3',
+  // breeze: '../audio/breeze.mp3'
 };
 
 let audioCtx = null;
@@ -27,11 +28,13 @@ function createAudioElements() {
     const audio = new Audio(src);
     audio.loop = true;
     audio.preload = 'auto';
+    // Do not autoplay immediately – defer until user interaction to satisfy browser policies.
+    audio.muted = true; // start muted to allow autoplay without user gesture
     audioElements[name] = audio;
     // Connect to Web Audio for smooth gain control
     const source = audioCtx.createMediaElementSource(audio);
     const gain = audioCtx.createGain();
-    gain.gain.value = 0; // start muted
+    gain.gain.value = 0; // start muted via gain
     source.connect(gain).connect(audioCtx.destination);
     gainNodes[name] = gain;
   }
@@ -40,14 +43,14 @@ function createAudioElements() {
 function getLayersForWeather(state) {
   switch (state) {
     case 'rainy':
-      return ['rain', 'thunder'];
+      return ['rain'];
     case 'cloudy':
-      return ['wind'];
+      return [];
     case 'snowy':
-      return ['wind', 'breeze'];
+      return [];
     case 'sunny':
     default:
-      return ['breeze'];
+      return [];
   }
 }
 
@@ -56,6 +59,20 @@ function fadeGain(gainNode, toValue, duration) {
   gainNode.gain.cancelScheduledValues(now);
   gainNode.gain.setValueAtTime(gainNode.gain.value, now);
   gainNode.gain.linearRampToValueAtTime(toValue, now + duration);
+}
+
+function startAudioIfNeeded(layers) {
+  // Resume AudioContext and unmute elements after a user interaction.
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+  layers.forEach(name => {
+    const audio = audioElements[name];
+    if (audio && audio.paused) {
+      audio.muted = false;
+      audio.play().catch(() => {});
+    }
+  });
 }
 
 function crossFadeToWeather(newWeather) {
@@ -78,8 +95,9 @@ function crossFadeToWeather(newWeather) {
     const gain = gainNodes[name];
     const audio = audioElements[name];
     if (gain && audio) {
-      if (audio.paused) audio.play();
-      fadeGain(gain, 0.3, 2); // modest volume so it blends with base soundscape
+      // Ensure audio is playing (may have been paused previously)
+      if (audio.paused) audio.play().catch(() => {});
+      fadeGain(gain, isSoundscapeEnabled() ? 0.3 : 0, 2);
     }
   });
 
@@ -99,19 +117,12 @@ function crossFadeToWeather(newWeather) {
 function handleToggleChange() {
   if (!audioCtx) return;
   const enabled = isSoundscapeEnabled();
-  const now = audioCtx.currentTime;
-  const target = enabled ? 0.3 : 0;
-  // Apply to currently active layers
   const layers = getLayersForWeather(activeWeather || getCurrentWeather());
+  startAudioIfNeeded(layers);
+  const target = enabled ? 0.3 : 0;
   layers.forEach(name => {
     const gain = gainNodes[name];
     if (gain) fadeGain(gain, target, 0.5);
-    if (enabled) {
-      if (audioCtx.state === 'suspended') {
-        audioCtx.resume();
-      }
-      if (audioElements[name] && audioElements[name].paused) audioElements[name].play();
-    }
   });
 }
 
@@ -126,12 +137,12 @@ export function initWeatherSound() {
   initAudioContext();
   createAudioElements();
 
-  // Start with current weather
+  // Determine current weather and layers
   activeWeather = getCurrentWeather();
   const layers = getLayersForWeather(activeWeather);
+
+  // Prepare gains based on soundscape toggle – actual playback starts on first user interaction.
   layers.forEach(name => {
-    const audio = audioElements[name];
-    if (audio) audio.play();
     const gain = gainNodes[name];
     if (gain) fadeGain(gain, isSoundscapeEnabled() ? 0.3 : 0, 1);
   });
@@ -141,6 +152,15 @@ export function initWeatherSound() {
     if (reducedMotion) return;
     crossFadeToWeather(newWeather);
   });
+
+  // Attach a one‑time user‑interaction listener to unlock audio playback.
+  const unlockAudio = () => {
+    startAudioIfNeeded(layers);
+    document.removeEventListener('click', unlockAudio);
+    document.removeEventListener('keydown', unlockAudio);
+  };
+  document.addEventListener('click', unlockAudio);
+  document.addEventListener('keydown', unlockAudio);
 
   // Listen for global soundscape toggle changes via DOM button
   const toggleBtn = dom.soundscapeToggle;

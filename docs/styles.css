@@ -315,6 +315,54 @@ body::before {
   border-radius: 50% 0 50% 50%;
 }
 
+/* Leaf sway animation for idle (grown, non‑blooming) plants */
+
+/* Grid tile leaf sway */
+@media (prefers-reduced-motion: no-preference) {
+  .sprout.grown:not(.blooming) .leaf--left,
+  .sprout.grown:not(.blooming) .leaf--right,
+  .tile-sprout.grown:not(.blooming) .tile-leaf--left,
+  .tile-sprout.grown:not(.blooming) .tile-leaf--right {
+    animation: leafSway 4s ease-in-out infinite;
+    transform-origin: bottom center;
+  }
+}
+
+@keyframes leafSway {
+  0%, 100% { transform: rotateZ(0deg) translateY(0); }
+  50% { transform: rotateZ(2deg) translateY(-0.1rem); }
+}
+
+/* Reduce motion fallback – no animation */
+@media (prefers-reduced-motion: reduce) {
+  .sprout.grown:not(.blooming) .leaf--left,
+  .sprout.grown:not(.blooming) .leaf--right,
+  .tile-sprout.grown:not(.blooming) .tile-leaf--left,
+  .tile-sprout.grown:not(.blooming) .tile-leaf--right {
+    animation: none;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sprout.grown:not(.blooming) .leaf--left,
+  .sprout.grown:not(.blooming) .leaf--right {
+    animation: leafSway 4s ease-in-out infinite;
+    transform-origin: bottom center;
+  }
+}
+
+@keyframes leafSway {
+  0%, 100% { transform: rotateZ(0deg) translateY(0); }
+  50% { transform: rotateZ(2deg) translateY(-0.1rem); }
+}
+
+/* Reduce motion fallback – no animation */
+@media (prefers-reduced-motion: reduce) {
+  .sprout.grown:not(.blooming) .leaf--left,
+  .sprout.grown:not(.blooming) .leaf--right {
+    animation: none;
+  }
+}
+
 .sprout.growing .leaf--left {
   animation: leafGrowLeft 0.6s ease-out forwards;
   animation-delay: 1s;
