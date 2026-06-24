@@ -16,6 +16,8 @@ import {
   readVision,
   closeIssue,
   closeIssueAsInvalid,
+  createIssue,
+  TECH_DEBT_LABEL,
   moveCard,
   createPR,
   approvePR,
@@ -215,6 +217,7 @@ async function main() {
     let commitMessage = "Agent build";
     let builderSummary = null;
     let builderChangelogEntry = null;
+    let builderTechDebt = null;
     let builderEverSucceeded = false;
     let reviewerApproved = false;
     let prNumber = null;
@@ -251,6 +254,7 @@ async function main() {
       builderEverSucceeded = true;
       if (builderResult.data.commitMessage) commitMessage = builderResult.data.commitMessage;
       if (builderResult.data.changelogEntry) builderChangelogEntry = builderResult.data.changelogEntry;
+      if (builderResult.data.techDebt) builderTechDebt = builderResult.data.techDebt;
       if (builderResult.summary) builderSummary = builderResult.summary;
       log("info", `Builder: ${builderResult.summary}`);
 
@@ -391,7 +395,22 @@ async function main() {
       publishWiki(`Changelog: ${commitMessage}`);
     }
 
-    // 10. Close the issue with a meaningful summary, mark the card Done.
+    // 10. File any tech debt the Builder flagged → a new ticket the PM prioritizes
+    //     (one per run, deduped against current open tickets, left unprioritized).
+    if (builderTechDebt && builderTechDebt.title && builderTechDebt.body) {
+      const td = builderTechDebt;
+      const dup = openIssues.some(
+        (i) => (i.title || "").toLowerCase().trim() === td.title.toLowerCase().trim()
+      );
+      if (dup) {
+        log("info", `Tech debt: "${td.title}" already tracked — skipping.`);
+      } else {
+        const n = createIssue(td.title, td.body, [TECH_DEBT_LABEL]);
+        if (n) moveCard(n, "Todo"); // PM assigns priority on its next run
+      }
+    }
+
+    // 11. Close the issue with a meaningful summary, mark the card Done.
     if (addressedIssue) {
       await closeIssue(addressedIssue, { summary: builderSummary, commitMessage, commitSha });
       moveCard(addressedIssue, "Done");

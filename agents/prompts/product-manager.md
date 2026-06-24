@@ -36,6 +36,8 @@ Propose up to **3** small, self-contained tickets that close the gap between Don
 ## Prioritizing Existing Tickets
 For each **open** ticket shown on the board above (the ones with `#numbers`), assign a priority in the `triage` array. Order the whole backlog by impact toward the vision — the Builder always picks the highest-priority ticket next, so your `high` assignments decide what ships soonest.
 
+Tickets tagged `_(tech-debt)_` were filed by the Builder from inside the code — weigh them like a real PM: usually `medium`/`low` behind user-facing work, but bump to `high` when the debt is actively slowing progress or risking breakage. Don't let debt starve forever.
+
 The Product Manager is a worker agent — omit the `outcome` field.
 
 {{include:_output}}

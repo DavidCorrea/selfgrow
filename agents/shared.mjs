@@ -664,12 +664,32 @@ export function fetchOpenIssues(limit = 100) {
 // Marks issues the agents create, so issue-triggered workflows can skip their
 // own creations and avoid self-trigger loops.
 export const AGENT_LABEL = "agent";
+// Marks Builder-filed code-health tickets so the PM (and humans) can spot them.
+export const TECH_DEBT_LABEL = "tech-debt";
 
-/** Create a new issue (body piped over stdin for safety). Returns its number, or null. */
-export function createIssue(title, body) {
+const _ensuredLabels = new Set();
+function ensureLabel(name, color = "ededed") {
+  if (_ensuredLabels.has(name)) return;
+  _ensuredLabels.add(name);
+  try {
+    execSync(`gh label create "${name}" --color ${color} --force`, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 });
+  } catch {
+    // exists / no perms — non-fatal
+  }
+}
+
+/**
+ * Create a new issue (body piped over stdin for safety). Always carries the
+ * `agent` label; pass extra labels (e.g. tech-debt) as the third arg. Ensures
+ * each label exists first. Returns the new issue number, or null.
+ */
+export function createIssue(title, body, labels = []) {
+  const all = [AGENT_LABEL, ...labels];
+  all.forEach((l) => ensureLabel(l, l === TECH_DEBT_LABEL ? "d4c5f9" : "ededed"));
+  const labelArgs = all.map((l) => `--label "${l}"`).join(" ");
   try {
     const out = execSync(
-      `gh issue create --title "${String(title).replace(/"/g, '\\"')}" --label "${AGENT_LABEL}" --body-file -`,
+      `gh issue create --title "${String(title).replace(/"/g, '\\"')}" ${labelArgs} --body-file -`,
       { cwd: repoRoot, input: body || "", maxBuffer: 10 * 1024 * 1024 }
     ).toString().trim();
     const match = out.match(/\/issues\/(\d+)/);
@@ -882,6 +902,19 @@ export function getBoardSnapshot() {
   const openIssues = fetchOpenIssues();
   const boardItems = listProjectItems();
 
+  // Labels per open ticket (so the board shows priority / tech-debt tags). The
+  // `agent` marker is internal plumbing — hide it.
+  const labelsByNumber = new Map(
+    openIssues.map((i) => [
+      i.number,
+      (i.labels || []).map((l) => l.name || l).filter((n) => n !== "agent"),
+    ])
+  );
+  const tag = (num) => {
+    const labs = num != null ? labelsByNumber.get(num) || [] : [];
+    return labs.length ? ` _(${labs.join(", ")})_` : "";
+  };
+
   const groups = {};
   for (const it of boardItems) (groups[it.status] ||= []).push(it);
   const onBoard = new Set(boardItems.map((i) => i.number).filter((n) => n != null));
@@ -894,7 +927,7 @@ export function getBoardSnapshot() {
     ? Object.entries(groups)
         .map(([status, list]) =>
           `**${status}** (${list.length}):\n` +
-          list.map((i) => `- ${i.number ? "#" + i.number + " " : ""}${i.title}`).join("\n")
+          list.map((i) => `- ${i.number ? "#" + i.number + " " : ""}${i.title}${tag(i.number)}`).join("\n")
         )
         .join("\n\n")
     : "(no tickets yet — the board is empty)";

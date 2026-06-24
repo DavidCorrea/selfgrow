@@ -22,6 +22,9 @@ Read the proposal, explore the files you need to modify, and implement the chang
 - Do NOT edit any changelog or vision file — those live in the project wiki and are maintained by the pipeline, not in `docs/`. Instead, return a `changelogEntry` in your output (below) describing what shipped; the pipeline records it in the wiki changelog after merge.
 - Do NOT commit or push — the pipeline handles that.
 
+## Tech Debt (optional)
+If, while working, you hit something genuinely worth a separate cleanup ticket — a module that should be split, real duplication, a fragile pattern, a missing guard/abstraction — you MAY return a single `techDebt` ticket (below). The pipeline files it as a `tech-debt` ticket for the Product Manager to prioritize. Hold a HIGH bar: name the specific file/module and the concrete improvement. This is NOT for vague "could be cleaner" nitpicks or for the work you just did — most builds should return `techDebt: null`.
+
 {{ISSUE_CONTEXT}}
 
 {{REVIEWER_FEEDBACK}}
@@ -40,7 +43,10 @@ The Builder is a worker agent — omit the `outcome` field.
   "summary": "One sentence describing what was built and any issues fixed.",
   "data": {
     "commitMessage": "Short descriptive commit message (imperative mood, e.g. 'Fix tile animation stutter on mobile' or 'Fix layout overflow on mobile (closes #3)')",
-    "changelogEntry": "One-line, user-facing description of what shipped, for the changelog (e.g. 'Added a gentle dusk-to-night color transition')"
+    "changelogEntry": "One-line, user-facing description of what shipped, for the changelog (e.g. 'Added a gentle dusk-to-night color transition')",
+    "techDebt": null
   }
 }
+
+`techDebt`, when present, is `{ "title": "Imperative cleanup title", "body": "Which file/module, what's wrong, and the concrete improvement." }` — otherwise `null`.
 ```
