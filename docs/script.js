@@ -141,25 +141,42 @@ let isWhispersEnabled = () => false;
     card.classList.add('glow-intensify');
     seed.classList.add('visible');
 
-    setTimeout(function () {
-      sprout.classList.add('growing');
-    }, 800);
-
-    setTimeout(function () {
-      sprout.classList.remove('growing');
+    // Reduced‑motion handling: bypass growth animation delays
+    var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) {
+      // Instantly show grown sprout and final bloom state
       sprout.classList.add('grown');
       createSparkles();
-
       message.textContent = getRandomMessage();
       message.classList.add('visible');
-    }, 3500);
+      // Reveal grid after a short pause to keep order
+      setTimeout(function () {
+        revealGrid();
+        if (typeof startVisitors === 'function') startVisitors();
+        if (typeof startGroundCreatures === 'function') startGroundCreatures();
+        if (typeof startEcosystem === 'function') startEcosystem();
+      }, 200);
+    } else {
+      setTimeout(function () {
+        sprout.classList.add('growing');
+      }, 800);
 
-    setTimeout(function () {
-      revealGrid();
-      if (typeof startVisitors === 'function') startVisitors();
-      if (typeof startGroundCreatures === 'function') startGroundCreatures();
-      if (typeof startEcosystem === 'function') startEcosystem();
-    }, 5000);
+      setTimeout(function () {
+        sprout.classList.remove('growing');
+        sprout.classList.add('grown');
+        createSparkles();
+
+        message.textContent = getRandomMessage();
+        message.classList.add('visible');
+      }, 3500);
+
+      setTimeout(function () {
+        revealGrid();
+        if (typeof startVisitors === 'function') startVisitors();
+        if (typeof startGroundCreatures === 'function') startGroundCreatures();
+        if (typeof startEcosystem === 'function') startEcosystem();
+      }, 5000);
+    }
 
     saveGardenState();
   }
