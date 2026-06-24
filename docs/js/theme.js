@@ -9,14 +9,18 @@ function applyTimeTheme() {
     theme = 'dawn';
   } else if (hour >= 8 && hour < 17) {
     theme = 'day';
-  } else if (hour >= 17 && hour < 20) {
+  } else if (hour >= 18 && hour < 20) {
     theme = 'dusk';
   } else {
     theme = 'night';
   }
 
-  document.body.classList.remove('theme-dawn', 'theme-day', 'theme-dusk', 'theme-night');
+  document.body.classList.remove('theme-dawn', 'theme-day', 'theme-dusk', 'theme-night', 'dusk-to-night');
   document.body.classList.add('theme-' + theme);
+  if (theme === 'dusk' && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    // Trigger dusk to night transition over 5 minutes
+    document.body.classList.add('dusk-to-night');
+  }
 }
 
 export function getCurrentTheme() {
@@ -32,7 +36,7 @@ export function getCurrentSeasonName() {
   var hour = new Date().getHours();
   if (hour >= 5 && hour < 8) return 'dawn';
   if (hour >= 8 && hour < 17) return 'day';
-  if (hour >= 17 && hour < 20) return 'dusk';
+  if (hour >= 18 && hour < 20) return 'dusk';
   return 'night';
 }
 

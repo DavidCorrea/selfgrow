@@ -13,6 +13,7 @@
 :root {
   --bg-deep: #080c14;
   --bg-shell: #0b1019;
+  --bg-dusk: #3b1c0a; /* warm dusk background */
   --bg-panel: #0f1724;
   --bg-panel-alt: #111b2b;
   --card-bg: rgba(15, 23, 36, 0.92);
@@ -57,6 +58,28 @@ body {
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
   color: var(--text-primary);
   transition: background 1.5s ease, color 1.5s ease;
+}
+
+/* Theme background colors */
+.theme-dawn { background: #2a1a0a; }
+.theme-day { background: var(--bg-shell); }
+.theme-dusk { background: var(--bg-dusk); }
+.theme-night { background: var(--bg-deep); }
+
+/* Dusk to night gradual transition (5 minutes) */
+@media (prefers-reduced-motion: no-preference) {
+  .theme-dusk.dusk-to-night {
+    animation: duskToNight 300s forwards; /* 5 minutes */
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-dusk { background: var(--bg-deep); }
+}
+
+@keyframes duskToNight {
+  from { background: var(--bg-dusk); }
+  to { background: var(--bg-deep); }
 }
 
 /* Subtle background particles */
