@@ -23,12 +23,25 @@ function getWeatherGrowthMultiplier() {
 }
 
 // Apply weather-scaled delay, ensuring a minimum so things don't feel instant
+/**
+ * Scale a base duration based on weather, ecosystem, and optional garden sleep mode.
+ *
+ * The garden can enter a "sleep" state during night‑time cycles. When active the
+ * global `window.__gardenSleepFactor` is set to `0.5` which slows all growth‑related
+ * timers by 50 %.
+ * The factor defaults to `1` when the garden is awake.
+ */
 function weatherScaled(baseMs, tileIndex) {
   var scaled = baseMs * getWeatherGrowthMultiplier();
   // Apply ecosystem growth multiplier (e.g., bee pollination = 25% boost)
   if (tileIndex !== undefined && tileIndex !== null) {
     scaled *= getEcosystemGrowthMultiplier(tileIndex);
   }
+  // Apply garden‑sleep factor if present (defaults to 1).
+  var sleepFactor = typeof window !== 'undefined' && window.__gardenSleepFactor != null
+    ? window.__gardenSleepFactor
+    : 1;
+  scaled *= sleepFactor;
   return Math.max(scaled, 200); // minimum 200ms so animations remain visible
 }
 

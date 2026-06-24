@@ -2,6 +2,7 @@ import { dom, gridRevealed } from './js/state.js';
 import { initVisibilityManager } from './js/visibility-manager.js';
 import { saveGardenState, loadGardenState, restoreGardenState, restoreWelcomeCard } from './js/persistence.js';
 import { initTheme, getCurrentTheme, getCurrentCalendarSeason } from './js/theme.js';
+import { initSleepMode } from './js/sleepMode.js';
 import { addJournalEntry, getRandomMessage } from './js/journal.js';
 import { plantTile, startGrowthCycle, updateCounter, revealGrid, toggleWateringMode, waterTile, isWateringMode, toggleFertilizeMode, fertilizeTile, isFertilizeMode, togglePruneMode, pruneTile, isPruneMode } from './js/tiles.js';
 // Lazy-loaded modules will be imported dynamically after initial render
@@ -95,6 +96,8 @@ let isWhispersEnabled = () => false;
 
   // ── Initialize Theme ──
   initTheme();
+  // Initialize garden sleep mode for night cycles
+  initSleepMode();
 
   // ── Morning Greeting Ritual (after night)
   (function(){

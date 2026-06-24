@@ -263,7 +263,8 @@ function simulateVolunteer(hoursElapsed) {
 
   // Schedule wilt so the growth cycle continues
   var wMod = getWeatherModifier();
-  var mult = wMod ? wMod.growthMultiplier : 1.0;
+  var sleepFactor = typeof window !== 'undefined' && window.__gardenSleepFactor != null ? window.__gardenSleepFactor : 1;
+  var mult = (wMod ? wMod.growthMultiplier : 1.0) * sleepFactor;
   var holdBloom = Math.max(8000 * mult, 200);
   var offset = tileIndex * 1200 * mult;
 
