@@ -1,4 +1,5 @@
 import { dom, gridRevealed } from './js/state.js';
+import { maybeShowMeditationTimer } from './meditation-timer.js';
 import { initWeatherSound } from './js/weatherSound.js';
 import { initVisibilityManager } from './js/visibility-manager.js';
 import { saveGardenState, loadGardenState, restoreGardenState, restoreWelcomeCard } from './js/persistence.js';
@@ -155,6 +156,10 @@ let isWhispersEnabled = () => false;
     document.body.appendChild(overlay);
     // trigger fade in
     requestAnimationFrame(()=>{ requestAnimationFrame(()=>{ overlay.classList.add('visible'); }); });
+    // After greeting appears, offer meditation timer
+    setTimeout(() => {
+      maybeShowMeditationTimer();
+    }, 800);
   }
 
 

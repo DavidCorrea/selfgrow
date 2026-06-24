@@ -1,0 +1,63 @@
+/* Styles for meditation timer overlay */
+.meditation-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+}
+
+.meditation-card {
+  background: rgba(255, 255, 255, 0.9);
+  padding: 2rem;
+  border-radius: 1rem;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  text-align: center;
+  max-width: 300px;
+}
+
+.timer-svg {
+  width: 150px;
+  height: 150px;
+  margin: 1rem auto;
+}
+
+.timer-circle {
+  fill: none;
+  stroke: #c0c0c0;
+  stroke-width: 10;
+}
+
+.timer-progress {
+  fill: none;
+  stroke: #4a90e2;
+  stroke-width: 10;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+}
+
+.controls button {
+  margin: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-size: 1rem;
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  background: #4a90e2;
+  color: white;
+}
+
+.controls button:hover {
+  background: #357ab8;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timer-progress {
+    animation: none !important;
+    transition: none !important;
+  }
+}
