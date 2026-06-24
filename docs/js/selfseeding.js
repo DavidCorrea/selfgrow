@@ -253,7 +253,8 @@ function plantVolunteer(tileEl) {
 
   // Weather-scaled timings for volunteer growth
   var wsm = getWeatherModifier();
-  var mult = wsm ? wsm.growthMultiplier : 1.0;
+  var sleepFactor = typeof window !== 'undefined' && window.__gardenSleepFactor != null ? window.__gardenSleepFactor : 1;
+  var mult = (wsm ? wsm.growthMultiplier : 1.0) * sleepFactor;
   function weatherScaled(baseMs) { return Math.max(baseMs * mult, 200); }
 
   var seedDelay = weatherScaled(500);
