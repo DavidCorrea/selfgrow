@@ -13,6 +13,7 @@ import {
   abortMerge,
   deleteRemoteBranch,
   loadOpenIssues,
+  readVision,
   closeIssue,
   closeIssueAsInvalid,
   moveCard,
@@ -33,7 +34,7 @@ const MAX_BUILDER_RETRIES = 5;
 // Prompt builders
 // ---------------------------------------------------------------------------
 
-function buildScoutPrompt(feedback, openIssues) {
+function buildScoutPrompt(feedback, openIssues, vision) {
   const issuesSection = `Pick exactly ONE of the open tickets below to work on, and plan its implementation. Choose by priority: a \`priority:high\` label beats \`priority:medium\` beats \`priority:low\` beats unlabeled; break ties by what most moves the project forward. Do NOT invent work outside these tickets.
 
 ## Open Tickets (each includes its labels — priority is one of them)
@@ -47,12 +48,14 @@ ${feedback}`
   return fillTemplate(loadPrompt("scout"), {
     ISSUES_SECTION: issuesSection,
     FEEDBACK_SECTION: feedbackSection,
+    VISION: vision,
   });
 }
 
-function buildValidatorPrompt(scoutOutput) {
+function buildValidatorPrompt(scoutOutput, vision) {
   return fillTemplate(loadPrompt("validator"), {
     SCOUT_OUTPUT: scoutOutput,
+    VISION: vision,
   });
 }
 
@@ -131,6 +134,10 @@ async function main() {
   }
   log("info", `Found ${openIssues.length} open ticket(s). Picking the highest-priority one.`);
 
+  // Product vision (from the wiki) grounds the Scout's plan and the Validator's
+  // alignment check — they no longer read it from a repo file.
+  const vision = readVision();
+
   let approved = false;
   let feedback = null;
   let addressedIssue = null;
@@ -144,7 +151,7 @@ async function main() {
     const scoutOutput = await withLogGroup(`Scout (attempt ${attempt})`, () =>
       runAgent({
         label: "Scout",
-        systemPrompt: buildScoutPrompt(feedback, openIssues),
+        systemPrompt: buildScoutPrompt(feedback, openIssues, vision),
         tools: ["read", "bash"],
       })
     );
@@ -175,7 +182,7 @@ async function main() {
     const validatorOutput = await withLogGroup("Validator", () =>
       runAgent({
         label: "Validator",
-        systemPrompt: buildValidatorPrompt(scoutOutput),
+        systemPrompt: buildValidatorPrompt(scoutOutput, vision),
         tools: ["read", "bash"],
       })
     );

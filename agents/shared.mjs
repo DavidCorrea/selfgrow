@@ -743,7 +743,9 @@ export function setIssuePriority(issueNumber, priority, currentLabels = []) {
 // (set GH_TOKEN to a PAT in CI — the default GITHUB_TOKEN can't access Projects).
 // ---------------------------------------------------------------------------
 
-export const PROJECT_OWNER = process.env.GH_PROJECT_OWNER || "DavidCorrea";
+// "@me" references the authenticated user (the PAT owner). Passing a literal
+// login makes `gh project` fail with "unknown owner type"; @me avoids that.
+export const PROJECT_OWNER = process.env.GH_PROJECT_OWNER || "@me";
 export const PROJECT_NUMBER = process.env.GH_PROJECT_NUMBER || "3";
 
 function ghProjectJson(args) {

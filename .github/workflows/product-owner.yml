@@ -34,5 +34,5 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           # PAT carries `project` scope (for board cards) and covers issue creation.
           GH_TOKEN: ${{ secrets.AGENT_PAT }}
-          GH_PROJECT_OWNER: DavidCorrea
+          GH_PROJECT_OWNER: '@me'
           GH_PROJECT_NUMBER: '3'

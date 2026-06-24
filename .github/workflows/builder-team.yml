@@ -57,6 +57,6 @@ jobs:
           # PR as a DIFFERENT identity, so the PAT can legitimately approve it.
           GH_TOKEN: ${{ secrets.AGENT_PAT }}
           BOT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_PROJECT_OWNER: DavidCorrea
+          GH_PROJECT_OWNER: '@me'
           GH_PROJECT_NUMBER: '3'
           OPEN_ISSUES_PATH: ${{ runner.temp }}/open-issues.json
