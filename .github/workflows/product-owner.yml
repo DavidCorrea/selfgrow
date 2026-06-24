@@ -2,27 +2,23 @@ name: product-owner
 
 on:
   schedule:
-    - cron: '0 8 * * *'
+    # Weekly — the vision is a slow-moving north star, not a daily edit.
+    - cron: '0 8 * * 1'
   workflow_dispatch:
 
 permissions:
-  contents: write
-
-# Shares the writer lock with builder-team so the two never push main at once.
-concurrency:
-  group: agent-main-writer
-  cancel-in-progress: false
+  contents: read
 
 jobs:
   refine-vision:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      # The PO edits the Vision in the wiki (a separate repo), not main — so no
+      # main write and no shared writer lock are needed.
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          # Full history is required for the rebase-on-rejection push to main.
-          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -36,3 +32,7 @@ jobs:
         run: node agents/product-owner.mjs
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # PAT carries `project` scope (for board cards) and covers issue creation.
+          GH_TOKEN: ${{ secrets.AGENT_PAT }}
+          GH_PROJECT_OWNER: DavidCorrea
+          GH_PROJECT_NUMBER: '3'

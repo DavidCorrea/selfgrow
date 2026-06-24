@@ -19,8 +19,7 @@ Read the proposal, explore the files you need to modify, and implement the chang
 - Keep it simple — only split if it genuinely improves clarity.
 
 ## After Implementing
-- Update docs/CHANGELOG.md — append a new entry with today's date and what you added.
-- If the Scout proposed a new appConcept and docs/VISION.md does not exist, create docs/VISION.md.
+- Do NOT edit any changelog or vision file — those live in the project wiki and are maintained by the pipeline, not in `docs/`. Instead, return a `changelogEntry` in your output (below) describing what shipped; the pipeline records it in the wiki changelog after merge.
 - Do NOT commit or push — the pipeline handles that.
 
 {{ISSUE_CONTEXT}}
@@ -40,7 +39,8 @@ The Builder is a worker agent — omit the `outcome` field.
   "status": "success",
   "summary": "One sentence describing what was built and any issues fixed.",
   "data": {
-    "commitMessage": "Short descriptive commit message (imperative mood, e.g. 'Fix tile animation stutter on mobile' or 'Fix layout overflow on mobile (closes #3)')"
+    "commitMessage": "Short descriptive commit message (imperative mood, e.g. 'Fix tile animation stutter on mobile' or 'Fix layout overflow on mobile (closes #3)')",
+    "changelogEntry": "One-line, user-facing description of what shipped, for the changelog (e.g. 'Added a gentle dusk-to-night color transition')"
   }
 }
 ```

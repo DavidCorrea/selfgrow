@@ -4,12 +4,16 @@ on:
   schedule:
     - cron: '0 * * * *'
   workflow_dispatch:
-  issues:
-    types: [opened, reopened]
+  # Kicked off after the Product Manager finishes grooming/prioritizing the backlog.
+  # (Builder is deliberately NOT triggered by issue events.)
+  workflow_run:
+    workflows: ["product-manager"]
+    types: [completed]
 
 permissions:
   contents: write
   issues: write
+  pull-requests: write
 
 # Serialize every workflow that writes to main (builder-team + product-owner)
 # so concurrent runs never race on branches or the push to main.
@@ -21,6 +25,9 @@ jobs:
   run-agent:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # When kicked by the PM, only run if the PM actually completed successfully
+    # (skip the guarded-off agent-issue runs).
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -45,5 +52,11 @@ jobs:
         run: node agents/builder-team.mjs
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # AGENT_PAT (= the user) is the default token: Projects, issues, and
+          # approving/merging the PR. BOT_TOKEN (= github-actions[bot]) opens the
+          # PR as a DIFFERENT identity, so the PAT can legitimately approve it.
+          GH_TOKEN: ${{ secrets.AGENT_PAT }}
+          BOT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_PROJECT_OWNER: DavidCorrea
+          GH_PROJECT_NUMBER: '3'
           OPEN_ISSUES_PATH: ${{ runner.temp }}/open-issues.json

@@ -1,0 +1,52 @@
+name: product-manager
+
+on:
+  schedule:
+    # Daily — grooms the backlog toward the vision.
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+  issues:
+    # Triage inbound issues. The job guard below skips the agent's own creations.
+    types: [opened, reopened]
+  # Re-groom right after the Product Owner evolves the vision.
+  workflow_run:
+    workflows: ["product-owner"]
+    types: [completed]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  groom-backlog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Run on cron/dispatch; on issues only when NOT the agent's own creation
+    # (else the PM loops on itself); on a PO run only when it succeeded.
+    if: >-
+      ${{
+        (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        || (github.event_name == 'issues' && !contains(github.event.issue.labels.*.name, 'agent'))
+        || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+      }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Product Manager agent
+        run: node agents/product-manager.mjs
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # PAT carries `project` scope (board) and covers issue creation.
+          GH_TOKEN: ${{ secrets.AGENT_PAT }}
+          GH_PROJECT_OWNER: DavidCorrea
+          GH_PROJECT_NUMBER: '3'

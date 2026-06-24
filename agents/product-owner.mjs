@@ -1,18 +1,20 @@
 import fs from "fs";
 import {
-  repoRoot,
   log,
   withLogGroup,
   printRunSummary,
   loadPrompt,
+  fillTemplate,
   runAgent,
   extractAgentResponse,
-  gitExec,
-  configureGitIdentity,
+  getBoardSnapshot,
+  readVision,
+  wikiPath,
+  publishWiki,
 } from "./shared.mjs";
 
 // ---------------------------------------------------------------------------
-// Apply refinement to VISION.md
+// Apply a refinement to the canonical Vision page (in the wiki)
 // ---------------------------------------------------------------------------
 
 function escapeRegex(str) {
@@ -32,40 +34,40 @@ function applyRefinement(parsed) {
     return { changed: false };
   }
 
-  const visionPath = repoRoot + "/docs/VISION.md";
-  const current = fs.readFileSync(visionPath, "utf-8");
+  const visionPath = wikiPath("Vision.md");
+  if (!visionPath) {
+    log("warn", "Wiki unavailable — cannot edit the vision.");
+    return { changed: false };
+  }
+  let current;
+  try {
+    current = fs.readFileSync(visionPath, "utf-8");
+  } catch {
+    log("warn", "Vision.md not found in the wiki (seed it first).");
+    return { changed: false };
+  }
 
   if (action === "append") {
-    const sectionRegex = new RegExp(
-      `(${escapeRegex(section)}[\\s\\S]*?)(?=\\n## |$)`,
-      "i"
-    );
+    const sectionRegex = new RegExp(`(${escapeRegex(section)}[\\s\\S]*?)(?=\\n## |$)`, "i");
     const match = current.match(sectionRegex);
     if (!match) {
-      log("warn", `Section "${section}" not found in VISION.md.`);
+      log("warn", `Section "${section}" not found in Vision.`);
       return { changed: false };
     }
-
-    const updated = current.replace(sectionRegex, (fullMatch) => {
-      return fullMatch.trimEnd() + "\n\n" + content + "\n";
-    });
-
+    const updated = current.replace(sectionRegex, (fullMatch) => fullMatch.trimEnd() + "\n\n" + content + "\n");
     fs.writeFileSync(visionPath, updated, "utf-8");
     log("info", `Appended to section "${section}".`);
-
   } else if (action === "refine") {
     if (!oldText) {
       log("warn", "Refine action requires oldText.");
       return { changed: false };
     }
     if (!current.includes(oldText)) {
-      log("warn", "oldText not found in VISION.md.");
+      log("warn", "oldText not found in Vision.");
       return { changed: false };
     }
-    const updated = current.replace(oldText, content);
-    fs.writeFileSync(visionPath, updated, "utf-8");
+    fs.writeFileSync(visionPath, current.replace(oldText, content), "utf-8");
     log("info", `Refined text in section "${section}".`);
-
   } else {
     log("warn", `Unknown action: ${action}`);
     return { changed: false };
@@ -75,77 +77,50 @@ function applyRefinement(parsed) {
 }
 
 // ---------------------------------------------------------------------------
-// Main
+// Main — steward the vision (canonical in the wiki); the PM owns the backlog
 // ---------------------------------------------------------------------------
 
-/**
- * Commit VISION.md and push to main, surviving concurrent pushes by rebasing
- * on rejection and retrying.
- */
-function commitAndPushVision(commitMessage, { retries = 5 } = {}) {
-  configureGitIdentity();
-  gitExec("add docs/VISION.md");
-  gitExec(`commit -m "${commitMessage.replace(/"/g, '\\"')}"`);
-
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      gitExec("push origin HEAD:main");
-      log("info", `Committed and pushed (attempt ${attempt}): ${commitMessage}`);
-      return;
-    } catch (e) {
-      if (attempt === retries) {
-        throw new Error(`Push to main rejected after ${retries} attempts: ${e.message}`);
-      }
-      log("warn", `Push rejected, rebasing on origin/main and retrying (${attempt}/${retries}).`);
-      gitExec("fetch origin");
-      gitExec("rebase origin/main");
-    }
-  }
-}
-
 async function main() {
-  log("info", "=== Product Owner Daily Review ===");
+  log("info", "=== Product Owner — Vision Review ===");
+
+  const { boardState } = getBoardSnapshot();
+  const vision = readVision();
+  if (vision.startsWith("(Vision unavailable")) {
+    log("error", "Wiki not reachable / not seeded — skipping vision review.");
+    printRunSummary("Product Owner");
+    return;
+  }
 
   const rawOutput = await withLogGroup("Product Owner", () =>
     runAgent({
       label: "Product Owner",
-      systemPrompt: loadPrompt("product-owner"),
+      systemPrompt: fillTemplate(loadPrompt("product-owner"), {
+        VISION: vision,
+        BOARD_STATE: boardState,
+      }),
     })
   );
 
-  const parsed = extractAgentResponse("Product Owner", rawOutput, {
-    requiredDataFields: ["action"],
-  });
+  const parsed = extractAgentResponse("Product Owner", rawOutput, {});
   if (!parsed) {
     printRunSummary("Product Owner");
     return;
   }
 
   if (parsed.outcome === "skip") {
-    log("info", `Product Owner: no refinement needed. ${parsed.summary || ""}`);
+    log("info", `Product Owner: no vision change. ${parsed.summary || ""}`);
     printRunSummary("Product Owner");
     return;
   }
 
   const result = applyRefinement(parsed);
   if (!result.changed) {
-    log("info", `Product Owner: no change applied. ${result.reason || ""}`);
+    log("info", `Product Owner: no vision change applied. ${result.reason || ""}`);
     printRunSummary("Product Owner");
     return;
   }
 
-  try {
-    log("info", "VISION.md diff:", gitExec("diff docs/VISION.md"));
-  } catch {
-    // ignore diff errors
-  }
-
-  try {
-    commitAndPushVision(result.summary);
-  } catch (e) {
-    log("error", `Commit/push failed: ${e.message}`);
-  }
-
+  publishWiki(result.summary);
   printRunSummary("Product Owner");
 }
 

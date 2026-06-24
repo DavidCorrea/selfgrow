@@ -645,3 +645,441 @@ export async function labelIssue(issueNumber, label) {
     log("warn", `Could not label issue #${issueNumber}`, errorData(e));
   }
 }
+
+/** Fetch open issues live via gh. Returns [] on failure. */
+export function fetchOpenIssues(limit = 100) {
+  try {
+    return JSON.parse(
+      execSync(
+        `gh issue list --state open --json number,title,body,labels --limit ${limit}`,
+        { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }
+      ).toString()
+    );
+  } catch (e) {
+    log("warn", "Could not fetch open issues.", errorData(e));
+    return [];
+  }
+}
+
+// Marks issues the agents create, so issue-triggered workflows can skip their
+// own creations and avoid self-trigger loops.
+export const AGENT_LABEL = "agent";
+
+/** Create a new issue (body piped over stdin for safety). Returns its number, or null. */
+export function createIssue(title, body) {
+  try {
+    const out = execSync(
+      `gh issue create --title "${String(title).replace(/"/g, '\\"')}" --label "${AGENT_LABEL}" --body-file -`,
+      { cwd: repoRoot, input: body || "", maxBuffer: 10 * 1024 * 1024 }
+    ).toString().trim();
+    const match = out.match(/\/issues\/(\d+)/);
+    const number = match ? Number(match[1]) : null;
+    log("info", `Created issue #${number}: ${title}`);
+    return number;
+  } catch (e) {
+    log("warn", `Could not create issue "${title}"`, errorData(e));
+    return null;
+  }
+}
+
+// Priority is expressed as a single label so it shows on board cards and is
+// visible to the Builder via the issue's labels.
+export const PRIORITY_LABELS = { high: "priority:high", medium: "priority:medium", low: "priority:low" };
+
+/** Ensure the priority labels and the `agent` marker label exist. Best-effort, idempotent. */
+export function ensurePriorityLabels() {
+  const labels = [
+    [PRIORITY_LABELS.high, "d73a4a"],
+    [PRIORITY_LABELS.medium, "fbca04"],
+    [PRIORITY_LABELS.low, "0e8a16"],
+    [AGENT_LABEL, "ededed"],
+  ];
+  for (const [name, color] of labels) {
+    try {
+      execSync(`gh label create "${name}" --color ${color} --force`, {
+        cwd: repoRoot,
+        maxBuffer: 10 * 1024 * 1024,
+      });
+    } catch {
+      // label may already exist / no perms — non-fatal
+    }
+  }
+}
+
+/**
+ * Set an issue's priority to a single level, clearing any other priority label.
+ * `currentLabels` is the issue's existing label names (so we only remove ones
+ * actually present). Best-effort; returns boolean.
+ */
+export function setIssuePriority(issueNumber, priority, currentLabels = []) {
+  const target = PRIORITY_LABELS[priority];
+  if (!target) {
+    log("warn", `Priority: unknown level "${priority}" for #${issueNumber}.`);
+    return false;
+  }
+  const removes = Object.values(PRIORITY_LABELS)
+    .filter((l) => l !== target && currentLabels.includes(l))
+    .map((l) => `--remove-label "${l}"`)
+    .join(" ");
+  try {
+    execSync(`gh issue edit ${issueNumber} --add-label "${target}" ${removes}`.trim(), {
+      cwd: repoRoot,
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    log("info", `Priority: #${issueNumber} → ${priority}.`);
+    return true;
+  } catch (e) {
+    log("warn", `Could not set priority on #${issueNumber}.`, errorData(e));
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// GitHub Projects (Kanban board) helpers
+//
+// All board operations are BEST-EFFORT: they log and return false/null on any
+// failure and never throw, so the board can never break the build/commit flow.
+// Requires `gh` authenticated with a token carrying the `project` scope
+// (set GH_TOKEN to a PAT in CI — the default GITHUB_TOKEN can't access Projects).
+// ---------------------------------------------------------------------------
+
+export const PROJECT_OWNER = process.env.GH_PROJECT_OWNER || "DavidCorrea";
+export const PROJECT_NUMBER = process.env.GH_PROJECT_NUMBER || "3";
+
+function ghProjectJson(args) {
+  return JSON.parse(
+    execSync(`gh ${args}`, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }).toString()
+  );
+}
+
+let _projectMeta = null;
+
+/**
+ * Discover and cache the project's node id, the Status field id, and a
+ * {columnName: optionId} map. Returns null if it can't be resolved.
+ */
+export function getProjectMeta() {
+  if (_projectMeta) return _projectMeta;
+  try {
+    const view = ghProjectJson(
+      `project view ${PROJECT_NUMBER} --owner ${PROJECT_OWNER} --format json`
+    );
+    const fieldsRaw = ghProjectJson(
+      `project field-list ${PROJECT_NUMBER} --owner ${PROJECT_OWNER} --format json`
+    );
+    const fields = Array.isArray(fieldsRaw) ? fieldsRaw : fieldsRaw.fields || [];
+    const statusField = fields.find((f) => f.name === "Status");
+    if (!view.id || !statusField || !statusField.id) {
+      log("warn", "Board: could not resolve project id or Status field — skipping board updates.");
+      return null;
+    }
+    const options = {};
+    (statusField.options || []).forEach((o) => { options[o.name] = o.id; });
+    _projectMeta = { projectId: view.id, statusFieldId: statusField.id, options };
+    return _projectMeta;
+  } catch (e) {
+    log("warn", "Board: project discovery failed — skipping board updates.", errorData(e));
+    return null;
+  }
+}
+
+function repoIssueUrl(issueNumber) {
+  const repo = ghProjectJson("repo view --json nameWithOwner").nameWithOwner;
+  return `https://github.com/${repo}/issues/${issueNumber}`;
+}
+
+/** Find the board item id for an issue number, or null if it isn't on the board. */
+function findProjectItemId(issueNumber) {
+  try {
+    const res = ghProjectJson(
+      `project item-list ${PROJECT_NUMBER} --owner ${PROJECT_OWNER} --format json --limit 200`
+    );
+    const items = res.items || [];
+    const match = items.find((it) => it.content && it.content.number === Number(issueNumber));
+    return match ? match.id : null;
+  } catch (e) {
+    log("warn", `Board: could not list items for issue #${issueNumber}.`, errorData(e));
+    return null;
+  }
+}
+
+/**
+ * List every board item with its column (Status). Returns
+ * [{ number, title, status }] — number is null for draft items. [] on failure.
+ */
+export function listProjectItems() {
+  try {
+    const res = ghProjectJson(
+      `project item-list ${PROJECT_NUMBER} --owner ${PROJECT_OWNER} --format json --limit 200`
+    );
+    return (res.items || []).map((it) => ({
+      number: it.content && typeof it.content.number === "number" ? it.content.number : null,
+      title: it.title || (it.content && it.content.title) || "(untitled)",
+      status: it.status || "No Status",
+    }));
+  } catch (e) {
+    log("warn", "Board: could not list items.", errorData(e));
+    return [];
+  }
+}
+
+/** Add an issue to the board; returns the item id (or null). Idempotent in effect. */
+export function addIssueToProject(issueNumber) {
+  const existing = findProjectItemId(issueNumber);
+  if (existing) return existing;
+  try {
+    const res = ghProjectJson(
+      `project item-add ${PROJECT_NUMBER} --owner ${PROJECT_OWNER} --url ${repoIssueUrl(issueNumber)} --format json`
+    );
+    log("info", `Board: added issue #${issueNumber}.`);
+    return res.id || null;
+  } catch (e) {
+    log("warn", `Board: could not add issue #${issueNumber}.`, errorData(e));
+    return null;
+  }
+}
+
+/**
+ * Move an issue's card to a named Status column (e.g. "In Progress", "Done").
+ * Adds the issue to the board first if needed. Best-effort; returns boolean.
+ */
+export function moveCard(issueNumber, statusName) {
+  const meta = getProjectMeta();
+  if (!meta) return false;
+  const optionId = meta.options[statusName];
+  if (!optionId) {
+    log("warn", `Board: no column "${statusName}" — skipping move for #${issueNumber}.`);
+    return false;
+  }
+  const itemId = findProjectItemId(issueNumber) || addIssueToProject(issueNumber);
+  if (!itemId) return false;
+  try {
+    execSync(
+      `gh project item-edit --id ${itemId} --project-id ${meta.projectId} ` +
+        `--field-id ${meta.statusFieldId} --single-select-option-id ${optionId}`,
+      { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }
+    );
+    log("info", `Board: moved issue #${issueNumber} → "${statusName}".`);
+    return true;
+  } catch (e) {
+    log("warn", `Board: could not move issue #${issueNumber} to "${statusName}".`, errorData(e));
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shared snapshots (used by both the Product Owner and Product Manager)
+// ---------------------------------------------------------------------------
+
+/**
+ * Snapshot of the project's tickets: live open issues, raw board items, and a
+ * human-readable board grouped by column (with any un-boarded open issues folded
+ * into a "Todo (not yet on board)" group so nothing is invisible).
+ */
+export function getBoardSnapshot() {
+  const openIssues = fetchOpenIssues();
+  const boardItems = listProjectItems();
+
+  const groups = {};
+  for (const it of boardItems) (groups[it.status] ||= []).push(it);
+  const onBoard = new Set(boardItems.map((i) => i.number).filter((n) => n != null));
+  for (const iss of openIssues) {
+    if (!onBoard.has(iss.number)) {
+      (groups["Todo (not yet on board)"] ||= []).push({ number: iss.number, title: iss.title });
+    }
+  }
+  const boardState = Object.keys(groups).length
+    ? Object.entries(groups)
+        .map(([status, list]) =>
+          `**${status}** (${list.length}):\n` +
+          list.map((i) => `- ${i.number ? "#" + i.number + " " : ""}${i.title}`).join("\n")
+        )
+        .join("\n\n")
+    : "(no tickets yet — the board is empty)";
+
+  return { openIssues, boardItems, boardState };
+}
+
+// The wiki is the canonical home for Vision + Changelog. Clone it once per run
+// and cache the directory; agents read/write the pages there.
+let _wikiDir;
+export function getWikiDir() {
+  if (_wikiDir !== undefined) return _wikiDir;
+  _wikiDir = cloneWiki() || null;
+  return _wikiDir;
+}
+
+/** Absolute path to a page inside the cloned wiki, or null if the wiki is unreachable. */
+export function wikiPath(pageFile) {
+  const dir = getWikiDir();
+  return dir ? join(dir, pageFile) : null;
+}
+
+/** Read the canonical Vision page from the wiki. */
+export function readVision() {
+  const p = wikiPath("Vision.md");
+  if (p) { try { return fs.readFileSync(p, "utf-8"); } catch {} }
+  return "(Vision unavailable — wiki not reachable or not yet seeded)";
+}
+
+/** Read the canonical Changelog page from the wiki. */
+export function readChangelog() {
+  const p = wikiPath("Changelog.md");
+  if (p) { try { return fs.readFileSync(p, "utf-8"); } catch {} }
+  return "(Changelog unavailable — wiki not reachable or not yet seeded)";
+}
+
+/** Commit and push the cached wiki clone. Best-effort. */
+export function publishWiki(message) {
+  const dir = getWikiDir();
+  if (dir) pushWiki(dir, message);
+}
+
+/**
+ * Append a dated bullet to the wiki Changelog page (grouped under today's date
+ * header, matching the existing format). Writes to the clone; call publishWiki()
+ * after to push. Returns false if the wiki is unreachable.
+ */
+export function appendChangelogEntry(entry) {
+  const p = wikiPath("Changelog.md");
+  if (!p) {
+    log("warn", "Changelog: wiki unavailable; entry not recorded.");
+    return false;
+  }
+  let content = "";
+  try { content = fs.readFileSync(p, "utf-8"); } catch {}
+  const date = new Date().toISOString().slice(0, 10);
+  const header = `## ${date}`;
+  const bullet = `- ${String(entry).trim()}`;
+  if (!content.trim()) {
+    content = `# Changelog\n\n${header}\n\n${bullet}\n`;
+  } else if (content.includes(header)) {
+    content = content.replace(header, `${header}\n${bullet}`);
+  } else {
+    const title = content.match(/^# .*$/m);
+    content = title
+      ? content.replace(title[0], `${title[0]}\n\n${header}\n\n${bullet}`)
+      : `# Changelog\n\n${header}\n\n${bullet}\n\n${content}`;
+  }
+  fs.writeFileSync(p, content, "utf-8");
+  log("info", `Changelog: recorded entry under ${date}.`);
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// GitHub Wiki (a separate .wiki.git repo — no content API, so we use git)
+// ---------------------------------------------------------------------------
+
+/**
+ * Clone the repo's wiki into `dir` using the token in the environment. Returns
+ * the dir, or null if it fails (e.g. the wiki isn't enabled/initialized yet).
+ * Best-effort — never throws.
+ */
+export function cloneWiki(dir = "/tmp/selfgrow-wiki") {
+  try {
+    const repo = JSON.parse(
+      execSync("gh repo view --json nameWithOwner", { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }).toString()
+    ).nameWithOwner;
+    const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN || "";
+    const url = `https://x-access-token:${token}@github.com/${repo}.wiki.git`;
+    execSync(`rm -rf "${dir}" && git clone "${url}" "${dir}"`, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 });
+    execSync(`git -C "${dir}" config user.name "github-actions[bot]"`, { maxBuffer: 10 * 1024 * 1024 });
+    execSync(`git -C "${dir}" config user.email "github-actions[bot]@users.noreply.github.com"`, { maxBuffer: 10 * 1024 * 1024 });
+    log("info", `Wiki: cloned ${repo}.wiki.`);
+    return dir;
+  } catch (e) {
+    log("warn", "Wiki: clone failed — is the wiki enabled and initialized (create one page in the UI first)?", errorData(e));
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Pull Requests (two identities: the bot opens, the PAT approves — so a real
+// approval is possible without a human, since you can't approve your own PR)
+// ---------------------------------------------------------------------------
+
+const patToken = () => process.env.GH_TOKEN || process.env.AGENT_PAT || "";
+const botToken = () => process.env.BOT_TOKEN || process.env.GITHUB_TOKEN || "";
+
+function ghAs(token, args, opts = {}) {
+  return execSync(`gh ${args}`, {
+    cwd: repoRoot,
+    maxBuffer: 10 * 1024 * 1024,
+    ...opts,
+    env: { ...process.env, GH_TOKEN: token },
+  });
+}
+
+/** Open a PR from `branchName` into main as the bot. Returns PR number, or null. */
+export function createPR(branchName, title, body) {
+  try {
+    const out = ghAs(
+      botToken(),
+      `pr create --base main --head ${branchName} --title "${String(title).replace(/"/g, '\\"')}" --body-file -`,
+      { input: body || "" }
+    ).toString().trim();
+    const m = out.match(/\/pull\/(\d+)/);
+    const num = m ? Number(m[1]) : null;
+    log("info", `PR: opened #${num} for ${branchName}.`);
+    return num;
+  } catch (e) {
+    log("warn", `PR: could not open for ${branchName}.`, errorData(e));
+    return null;
+  }
+}
+
+/** Submit an approving review as the PAT user (a different identity than the bot author). */
+export function approvePR(prNumber, body) {
+  try {
+    ghAs(patToken(), `pr review ${prNumber} --approve --body-file -`, {
+      input: body || "Approved by the Reviewer agent.",
+    });
+    log("info", `PR: approved #${prNumber}.`);
+    return true;
+  } catch (e) {
+    log("warn", `PR: could not approve #${prNumber}.`, errorData(e));
+    return false;
+  }
+}
+
+/** Merge a PR with a merge commit and delete its branch. Best-effort. */
+export function mergePR(prNumber) {
+  try {
+    ghAs(patToken(), `pr merge ${prNumber} --merge --delete-branch`);
+    log("info", `PR: merged #${prNumber}.`);
+    return true;
+  } catch (e) {
+    log("warn", `PR: could not merge #${prNumber}.`, errorData(e));
+    return false;
+  }
+}
+
+/** Close (revoke) a PR without merging, optionally leaving a comment. Deletes the branch. */
+export function closePR(prNumber, comment) {
+  try {
+    if (comment) ghAs(patToken(), `pr comment ${prNumber} --body-file -`, { input: comment });
+    ghAs(patToken(), `pr close ${prNumber} --delete-branch`);
+    log("info", `PR: closed #${prNumber}.`);
+    return true;
+  } catch (e) {
+    log("warn", `PR: could not close #${prNumber}.`, errorData(e));
+    return false;
+  }
+}
+
+/** Commit and push staged wiki changes in `dir`. No-op if nothing changed. Best-effort. */
+export function pushWiki(dir, message) {
+  try {
+    const status = execSync(`git -C "${dir}" status --porcelain`, { maxBuffer: 10 * 1024 * 1024 }).toString().trim();
+    if (!status) {
+      log("info", "Wiki: no changes to publish.");
+      return;
+    }
+    execSync(`git -C "${dir}" add -A`, { maxBuffer: 10 * 1024 * 1024 });
+    execSync(`git -C "${dir}" commit -m "${message.replace(/"/g, '\\"')}"`, { maxBuffer: 10 * 1024 * 1024 });
+    execSync(`git -C "${dir}" push`, { maxBuffer: 10 * 1024 * 1024 });
+    log("info", "Wiki: published.");
+  } catch (e) {
+    log("warn", "Wiki: push failed.", errorData(e));
+  }
+}
