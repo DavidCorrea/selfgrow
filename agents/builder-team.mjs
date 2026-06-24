@@ -29,9 +29,11 @@ import {
   runAgent,
 } from "./shared.mjs";
 
-const MAX_SCOUT_RETRIES = 3;
+const MAX_SCOUT_RETRIES = 2;
 // Up to this many build → review cycles on a PR before we revoke (close) it.
-const MAX_BUILDER_RETRIES = 5;
+// Kept modest because each cycle is several slow free-model calls + a verify;
+// the job has a wall-clock budget.
+const MAX_BUILDER_RETRIES = 3;
 
 // ---------------------------------------------------------------------------
 // Prompt builders
