@@ -15,8 +15,12 @@ function applyTimeTheme() {
     theme = 'night';
   }
 
-  document.body.classList.remove('theme-dawn', 'theme-day', 'theme-dusk', 'theme-night');
+  document.body.classList.remove('theme-dawn', 'theme-day', 'theme-dusk', 'theme-night', 'dusk-to-night');
   document.body.classList.add('theme-' + theme);
+  if (theme === 'dusk' && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    // Trigger dusk to night transition over 5 minutes
+    document.body.classList.add('dusk-to-night');
+  }
 }
 
 export function getCurrentTheme() {
