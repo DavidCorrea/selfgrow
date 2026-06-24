@@ -1,4 +1,4 @@
-import { dom, journalEntries, journalRevealed, getRandomCycleMessage } from './state.js';
+import { dom, journalEntries, journalRevealed, getRandomCycleMessage, plantedCount } from './state.js';
 import { saveGardenState } from './persistence.js';
 
 var MAX_JOURNAL_ENTRIES = 30;
@@ -24,7 +24,15 @@ export function formatTime(date) {
   return displayHours + ':' + displayMinutes + ' ' + ampm;
 }
 
+import { recordVisit, getVisitsThisWeek, hasWeeklyRitualShown, setWeeklyRitualShown } from './visits.js';
+import { getBloomingCount } from './visitors.js';
+
 function revealJournal() {
+  // Record a visit each time the journal is opened
+  recordVisit();
+  // Show weekly ritual if conditions met
+  maybeShowWeeklyRitual();
+
   if (journalRevealed.value) return;
   journalRevealed.value = true;
 
@@ -33,6 +41,54 @@ function revealJournal() {
     gardenJournal.classList.add('visible');
     gardenJournal.setAttribute('aria-hidden', 'false');
   }
+}
+
+// Helper to maybe show weekly ritual
+function maybeShowWeeklyRitual() {
+  // Ensure journal DOM elements exist
+  if (!dom.journalTimeline) return;
+  if (hasWeeklyRitualShown()) return;
+  const visits = getVisitsThisWeek();
+  if (visits.length < 7) return;
+  // Build summary
+  const planted = plantedCount.value;
+  const blooming = getBloomingCount();
+  const mood = (function(){
+    // simple mood based on blooming
+    if (blooming >= 3) return 'thriving';
+    if (blooming >= 2) return 'flourishing';
+    return 'growing';
+  })();
+  const poem = `this week the garden ${mood} with ${blooming} blooms and ${planted} planted tiles`; // simple poetic line
+  const card = document.createElement('div');
+  card.className = 'journal-entry journal-entry--weekly-ritual';
+  card.setAttribute('role', 'dialog');
+  card.setAttribute('aria-modal', 'true');
+  // Dismiss button
+  const dismissBtn = document.createElement('button');
+  dismissBtn.className = 'weekly-ritual-dismiss';
+  dismissBtn.setAttribute('aria-label', 'Dismiss weekly reflection');
+  dismissBtn.innerHTML = '&times;';
+  dismissBtn.addEventListener('click', function(){
+    card.remove();
+  });
+  // Content
+  const content = document.createElement('div');
+  content.className = 'weekly-ritual-content';
+  content.innerHTML = `<p class="weekly-ritual-poem">${poem}</p>`;
+  card.appendChild(dismissBtn);
+  card.appendChild(content);
+  // Dismiss on Escape key
+  card.addEventListener('keydown', function(e){
+    if (e.key === 'Escape') {
+      card.remove();
+    }
+  });
+  // Insert at top of timeline
+  dom.journalTimeline.insertBefore(card, dom.journalTimeline.firstChild);
+  // Ensure focus for accessibility
+  dismissBtn.focus();
+  setWeeklyRitualShown();
 }
 
 export function addJournalEntry(tileIndex, petalColor, cycleNum, options) {
