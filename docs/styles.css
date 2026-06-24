@@ -422,6 +422,28 @@ body::before {
   50% { transform: rotate(2deg); }
 }
 
+/* Reduced‑motion fallback: instantly show final bloom without animations */
+@media (prefers-reduced-motion: reduce) {
+  .sprout.growing .flower {
+    animation: none !important;
+    width: 1.75rem !important;
+    height: 1.75rem !important;
+    opacity: 1 !important;
+    transform: scale(1) rotate(360deg) !important;
+  }
+  .tile-sprout.budding .tile-bud,
+  .tile-sprout.blooming .tile-bud {
+    animation: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    opacity: 0 !important;
+    transform: scale(0) !important;
+  }
+  .sprout.grown .flower {
+    animation: none !important;
+  }
+}
+
 /* Hint & message text */
 .hint {
   font-size: 0.7rem;
