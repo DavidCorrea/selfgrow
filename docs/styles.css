@@ -4031,21 +4031,6 @@ body.theme-night::before {
 .night-sleep-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.3);
-  pointer-events: none;
-  z-index: 5;
-}
-body.night-sleep::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.3);
-  pointer-events: none;
-  z-index: 5;
-}
-  content: '';
-  position: fixed;
-  inset: 0;
   background: rgba(0, 0, 0, 0.3); /* 30% dim */
   pointer-events: none;
   z-index: 5;
