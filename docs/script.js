@@ -1,7 +1,7 @@
 import { dom, gridRevealed } from './js/state.js';
 import { initVisibilityManager } from './js/visibility-manager.js';
 import { saveGardenState, loadGardenState, restoreGardenState, restoreWelcomeCard } from './js/persistence.js';
-import { initTheme } from './js/theme.js';
+import { initTheme, getCurrentTheme, getCurrentCalendarSeason } from './js/theme.js';
 import { addJournalEntry, getRandomMessage } from './js/journal.js';
 import { plantTile, startGrowthCycle, updateCounter, revealGrid, toggleWateringMode, waterTile, isWateringMode, toggleFertilizeMode, fertilizeTile, isFertilizeMode, togglePruneMode, pruneTile, isPruneMode } from './js/tiles.js';
 // Lazy-loaded modules will be imported dynamically after initial render
@@ -95,6 +95,64 @@ let isWhispersEnabled = () => false;
 
   // ── Initialize Theme ──
   initTheme();
+
+  // ── Morning Greeting Ritual (after night)
+  (function(){
+    const currentTheme = getCurrentTheme();
+    const prevTheme = localStorage.getItem('selfgrow_last_theme');
+    if (prevTheme === 'night' && currentTheme !== 'night') {
+      showMorningGreeting();
+    }
+    // Update stored theme for next load
+    localStorage.setItem('selfgrow_last_theme', currentTheme);
+  })();
+
+  function showMorningGreeting(){
+    const seasonalPoems = {
+      spring: [
+        "blossoms whisper in the early light",
+        "new buds greet the waking sun",
+        "soft green unfurls with hope"
+      ],
+      summer: [
+        "bright petals drink the warm dawn",
+        "sun‑kissed leaves hum with life",
+        "golden rays greet the garden"
+      ],
+      autumn: [
+        "crimson leaves shimmer at sunrise",
+        "cool breath wakes amber flowers",
+        "the hush of fall greets the day"
+      ],
+      winter: [
+        "frosted hush greets the pale light",
+        "quiet snow glitters in dawn",
+        "stillness breathes a soft promise"
+      ]
+    };
+    const season = getCurrentCalendarSeason();
+    const poems = seasonalPoems[season] || seasonalPoems.spring;
+    const poem = poems[Math.floor(Math.random()*poems.length)];
+    const overlay = document.createElement('div');
+    overlay.className = 'morning-greeting';
+    overlay.setAttribute('role','dialog');
+    overlay.setAttribute('aria-modal','true');
+    overlay.innerHTML = `
+      <div class="morning-greeting__content">
+        <p class="morning-greeting__text">Good morning, gardener</p>
+        <p class="morning-greeting__poem">${poem}</p>
+      </div>`;
+    function dismiss(){
+      overlay.classList.remove('visible');
+      setTimeout(()=>{ if(overlay.parentNode){ overlay.parentNode.removeChild(overlay);} }, 500);
+    }
+    overlay.addEventListener('click', dismiss);
+    document.addEventListener('keydown', function(e){ if(e.key==='Escape'){ dismiss(); } });
+    document.body.appendChild(overlay);
+    // trigger fade in
+    requestAnimationFrame(()=>{ requestAnimationFrame(()=>{ overlay.classList.add('visible'); }); });
+  }
+
 
   // ── Restore Garden from localStorage ──
   var savedState = loadGardenState();
