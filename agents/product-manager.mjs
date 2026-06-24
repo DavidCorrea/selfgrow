@@ -48,7 +48,7 @@ function groomBacklog(proposed, openIssues, boardTitles) {
     }
     const number = createIssue(item.title, item.body);
     if (number) {
-      moveCard(number, "Todo"); // best-effort; also adds it to the board
+      moveCard(number, "Backlog"); // best-effort; also adds it to the board
       setIssuePriority(number, item.priority || "medium", []);
       seen.add(key);
       created++;
@@ -71,7 +71,7 @@ function triageExisting(openIssues, boardItems, triage) {
 
   for (const iss of openIssues) {
     if (!onBoard.has(iss.number)) {
-      moveCard(iss.number, "Todo"); // pull inbound issues onto the board
+      moveCard(iss.number, "Backlog"); // pull inbound issues onto the board
     }
     const priority = priorityOf.get(iss.number);
     if (priority) {

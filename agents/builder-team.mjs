@@ -224,7 +224,7 @@ async function main() {
       log("warn", `Abandoning ticket: ${reason}`);
       if (closePr && prNumber) closePR(prNumber, reason);
       cleanupBranch(branchName);
-      if (addressedIssue) moveCard(addressedIssue, "Todo"); // return to the backlog
+      if (addressedIssue) moveCard(addressedIssue, "Backlog"); // return to the backlog
       abandoned = true;
     };
 
