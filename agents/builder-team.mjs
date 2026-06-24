@@ -205,11 +205,11 @@ async function main() {
     createBranch(branchName);
 
     // Reflect "work started" on the Kanban board (best-effort).
-    if (addressedIssue) moveCard(addressedIssue, "In Progress");
+    if (addressedIssue) moveCard(addressedIssue, "In progress");
 
     // 4. Build → open PR → review/address loop (capped at MAX_BUILDER_RETRIES).
     //    Each attempt commits + pushes so the PR reflects the work and the
-    //    Reviewer sees a real diff. The card moves Todo → In Progress → In Review.
+    //    Reviewer sees a real diff. The card moves Todo → In progress → In review.
     approved = true;
     let reviewerFeedback = null;
     let commitMessage = "Agent build";
@@ -283,7 +283,7 @@ async function main() {
           abandon("Could not open PR.", false);
           break;
         }
-        if (addressedIssue) moveCard(addressedIssue, "In Review");
+        if (addressedIssue) moveCard(addressedIssue, "In review");
       }
 
       // Review the open PR.
@@ -379,7 +379,7 @@ async function main() {
     }
     approvePR(prNumber, "Approved by the Reviewer agent — all blocking issues resolved.");
     if (!mergePR(prNumber)) {
-      log("error", "PR merge failed — leaving PR open and card In Review for inspection.");
+      log("error", "PR merge failed — leaving PR open and card In review for inspection.");
       break;
     }
     try { gitExec("checkout main"); } catch {}

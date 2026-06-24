@@ -17,7 +17,7 @@ This is the current Vision (from the wiki):
 {{VISION}}
 
 ## The Board (what the garden has actually become)
-The project's shipped and in-flight tickets, grouped by column — **Done** = shipped, **In Progress** = active, **Todo / Backlog** = queued. Use this (and the **Done** column above) to judge whether the vision still describes reality, or whether what's been built has opened a new horizon worth naming.
+The project's shipped and in-flight tickets, grouped by column — **Done** = shipped, **In progress** = active, **Todo / Backlog** = queued. Use this (and the **Done** column above) to judge whether the vision still describes reality, or whether what's been built has opened a new horizon worth naming.
 
 {{BOARD_STATE}}
 

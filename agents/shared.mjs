@@ -842,7 +842,7 @@ export function addIssueToProject(issueNumber) {
 }
 
 /**
- * Move an issue's card to a named Status column (e.g. "In Progress", "Done").
+ * Move an issue's card to a named Status column (e.g. "In progress", "Done").
  * Adds the issue to the board first if needed. Best-effort; returns boolean.
  */
 export function moveCard(issueNumber, statusName) {

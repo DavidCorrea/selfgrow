@@ -14,7 +14,7 @@ This is the current Vision (from the wiki) — what the garden is and is becomin
 {{VISION}}
 
 ## The Board (what's shipped, active, and queued)
-The project's tickets, grouped by column: **Done** = already shipped, **In Progress** = being built right now, **Todo / Backlog** = queued. Your ideas should come from the **gap between what's Done and the Vision** — the next things that move the garden toward its north star.
+The project's tickets, grouped by column: **Done** = already shipped, **In progress** = being built right now, **Todo / Backlog** = queued. Your ideas should come from the **gap between what's Done and the Vision** — the next things that move the garden toward its north star.
 
 {{BOARD_STATE}}
 
@@ -31,7 +31,7 @@ Propose up to **3** small, self-contained tickets that close the gap between Don
 - Dark, nature-inspired palette; CSS-only animations where possible.
 - Every feature must feel organic — calm, never jarring or mechanical.
 
-**Never propose anything already on the board above — not in Todo, In Progress, or Done.** Quality over quantity: return an empty `backlog` array if nothing is genuinely worth adding next.
+**Never propose anything already on the board above — not in Todo, In progress, or Done.** Quality over quantity: return an empty `backlog` array if nothing is genuinely worth adding next.
 
 ## Prioritizing Existing Tickets
 For each **open** ticket shown on the board above (the ones with `#numbers`), assign a priority in the `triage` array. Order the whole backlog by impact toward the vision — the Builder always picks the highest-priority ticket next, so your `high` assignments decide what ships soonest.
