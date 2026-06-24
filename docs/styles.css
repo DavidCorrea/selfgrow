@@ -8037,6 +8037,64 @@ body.tab-hidden .moteDrift6 {
    Garden Aging — Welcome Back Banner
    ═══════════════════════════════════════════════════════════ */
 
+/* ═══════════════════════════════════════════════════════════
+   Morning Greeting Ritual Overlay
+   ═══════════════════════════════════════════════════════════ */
+.morning-greeting {
+  position: fixed;
+  top: 45%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.9);
+  z-index: 150;
+  width: 85vw;
+  max-width: 28rem;
+  background: rgba(30, 30, 30, 0.9);
+  border-radius: 0.6rem;
+  padding: 1.2rem 1rem;
+  text-align: center;
+  color: #fff;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.8s ease, transform 0.8s ease;
+}
+
+.morning-greeting.visible {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+  pointer-events: auto;
+}
+
+.morning-greeting__content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.morning-greeting__text {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.morning-greeting__poem {
+  font-size: 0.9rem;
+  font-style: italic;
+  margin: 0;
+  color: #ccc;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .morning-greeting, .morning-greeting.visible {
+    transition: none;
+  }
+}
+
+/* End of Morning Greeting */
+
+/* ═══════════════════════════════════════════════════════════
+   Garden Aging — Welcome Back Banner
+   ═══════════════════════════════════════════════════════════ */
+
 .welcome-back-banner {
   position: fixed;
   top: 50%;
