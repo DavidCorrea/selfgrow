@@ -517,6 +517,7 @@ let isWhispersEnabled = () => false;
     Promise.all([
       import('./js/visitors.js'),
       import('./js/soundscape.js'),
+      import('./js/weatherSound.js'),
       import('./js/stats.js'),
       import('./js/garden-rings.js'),
       import('./js/garden-moments.js'),
@@ -593,6 +594,7 @@ let isWhispersEnabled = () => false;
       // Start visitors after initialization
       if (typeof startVisitors === 'function') startVisitors();
       initSoundscape();
+      initWeatherSound();
       initStats();
       notifyStatsRevealed();
       initGardenRings();
