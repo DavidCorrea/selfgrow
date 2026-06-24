@@ -1192,7 +1192,9 @@ export async function verifyBuild(relDir = "docs") {
   // Layer 2 — static analysis (ESLint, best-effort).
   try {
     const { ESLint } = await import("eslint");
-    const eslint = new ESLint();
+    // Don't throw when a pattern matches nothing (no .mjs files, or an empty
+    // docs/ on a brand-new project) — that's not a verification failure.
+    const eslint = new ESLint({ errorOnUnmatchedPattern: false });
     const results = await eslint.lintFiles([join(relDir, "**/*.js"), join(relDir, "**/*.mjs")]);
     const lintErrors = [];
     for (const r of results) {
