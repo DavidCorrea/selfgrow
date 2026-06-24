@@ -1,4 +1,5 @@
 import { dom, plantedCount, gridRevealed, tendingRevealed, journalEntries, wateredTiles, fertilizedTiles, prunedTiles, tileCycleState, tileColorMap, tileFlowerTypeMap, petalPalettes, flowerTypes, CYCLE_HOLD_BLOOM, CYCLE_WILT_DURATION, CYCLE_PAUSE_AFTER_WILT, CYCLE_SEED_OFFSET, totalTiles, getRandomGridMessage, getRandomWateringHint, getRandomCycleMessage, getRandomFertilizeHint, getRandomFertilizeMessage, getRandomPruneMessage, getRandomPruneHint, getRandomFlowerType } from './state.js';
+import { emitPollen } from './pollen.js';
 import { isNightTheme } from './theme.js';
 import { saveGardenState, applyTileColors, addWateredIcon, addFertilizedIcon } from './persistence.js';
 // Note: addWateredIcon and addFertilizedIcon are imported from persistence.js
@@ -370,6 +371,7 @@ export function startGrowthCycle(tileEl, tileIndex) {
       tileSprout.classList.remove('regrow-bloom');
       tileSprout.classList.add('grown');
       createTileSparkles(tileEl);
+      emitPollen(tileEl);
 
       if (badge) {
         badge.textContent = '🌸 ' + state.cycle;
@@ -466,6 +468,7 @@ export function startGrowthCycle(tileEl, tileIndex) {
       tileSprout.classList.remove('blooming');
       tileSprout.classList.add('grown');
       createTileSparkles(tileEl);
+      emitPollen(tileEl);
 
       if (badge) {
         badge.textContent = '🌸 ' + state.cycle;
