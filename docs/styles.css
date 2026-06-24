@@ -8091,6 +8091,32 @@ body.tab-hidden .moteDrift6 {
 
 /* End of Morning Greeting */
 
+/* Weekly Ritual Styling */
+.journal-entry--weekly-ritual {
+  background: rgba(30, 30, 30, 0.85);
+  border-left: 3px solid rgba(74, 222, 128, 0.6);
+  padding: 0.6rem 0.8rem;
+  margin-bottom: 0.4rem;
+  position: relative;
+  border-radius: 0.4rem;
+  color: var(--journal-text);
+}
+.weekly-ritual-dismiss {
+  position: absolute;
+  top: 0.2rem;
+  right: 0.4rem;
+  background: transparent;
+  border: none;
+  color: var(--journal-text);
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+.weekly-ritual-content p {
+  margin: 0;
+  font-style: italic;
+}
+
+
 /* ═══════════════════════════════════════════════════════════
    Garden Aging — Welcome Back Banner
    ═══════════════════════════════════════════════════════════ */
