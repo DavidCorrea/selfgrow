@@ -6,6 +6,8 @@ import {
   fillTemplate,
   runAgent,
   extractAgentResponse,
+  extractJSON,
+  errorData,
   getBoardSnapshot,
   readVision,
   createIssue,
@@ -16,17 +18,99 @@ import {
   visualCritique,
 } from "./shared.mjs";
 
-const norm = (t) => (t || "").toLowerCase().trim();
-
 // Keep the backlog from growing unbounded — the PM only tops it up to this many
 // open issues, so builder-team can drain it over time.
 const BACKLOG_CEILING = Number(process.env.BACKLOG_CEILING || 6);
+
+// How much title-token overlap (intersection / smaller set) counts as a near-dup.
+const NEAR_DUP_THRESHOLD = 0.6;
+
+// Generic ticket-phrasing words carry no topic — drop them so "Add a journal"
+// and "Introduce the journal" both reduce to {journal} and match.
+const STOPWORDS = new Set([
+  "a", "an", "the", "to", "of", "for", "and", "or", "in", "on", "with",
+  "add", "create", "introduce", "implement", "build", "make", "new",
+  "support", "enable", "improve", "update", "fix", "page", "feature",
+]);
+
+// Conservative singularize so "cycles" matches "cycle" — trim a trailing plural
+// "s" only (keep short words and "...ss" like "process" intact).
+function singularize(word) {
+  return word.length > 3 && word.endsWith("s") && !word.endsWith("ss")
+    ? word.slice(0, -1)
+    : word;
+}
+
+// Reduce a title to its meaningful content words (lowercased, depunctuated,
+// singularized), dropping generic phrasing words.
+function titleTokens(title) {
+  return new Set(
+    (title || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .map(singularize)
+      .filter((w) => w.length > 2 && !STOPWORDS.has(w))
+  );
+}
+
+// True when `title`'s content words overlap an existing title's heavily enough
+// to be the same idea reworded. Overlap coefficient is lenient on length, so a
+// short title contained in a longer one still matches.
+function isNearDuplicate(title, existingTokenSets) {
+  const a = titleTokens(title);
+  if (a.size === 0) return false;
+  for (const b of existingTokenSets) {
+    if (b.size === 0) continue;
+    let shared = 0;
+    for (const w of a) if (b.has(w)) shared++;
+    if (shared / Math.min(a.size, b.size) >= NEAR_DUP_THRESHOLD) return true;
+  }
+  return false;
+}
+
+/**
+ * Second-line dedup: a model call that catches reworded duplicates the token
+ * overlap missed (same goal, different vocabulary). Best-effort — on any failure
+ * it keeps every proposal rather than risk dropping good tickets.
+ */
+async function filterSemanticDuplicates(proposals, existingTitles) {
+  if (proposals.length === 0 || existingTitles.length === 0) return proposals;
+
+  const systemPrompt = `You are deduplicating a product backlog.
+
+Existing tickets:
+${existingTitles.map((t) => `- ${t}`).join("\n")}
+
+Proposed new tickets:
+${proposals.map((p, i) => `${i}. ${p.title} — ${p.body}`).join("\n")}
+
+Return ONLY JSON: {"duplicates": [<index>, ...]} listing the indexes of proposed tickets that are substantially the same as an EXISTING ticket above — the same feature or goal, even if worded differently. Use an empty array if none are duplicates.`;
+
+  try {
+    const out = await withLogGroup("Dedup check", () =>
+      runAgent({ label: "PM dedup", systemPrompt, tools: [] })
+    );
+    const parsed = extractJSON("PM dedup", out);
+    const dupes = new Set(
+      (parsed && Array.isArray(parsed.duplicates) ? parsed.duplicates : []).map(Number)
+    );
+    const kept = proposals.filter((_, i) => !dupes.has(i));
+    if (kept.length < proposals.length) {
+      log("info", `Dedup: semantic pass dropped ${proposals.length - kept.length} proposal(s).`);
+    }
+    return kept;
+  } catch (e) {
+    log("warn", "Dedup: semantic pass failed — keeping the heuristic survivors.", errorData(e));
+    return proposals;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Backlog grooming — create prioritized tickets on the board (best-effort)
 // ---------------------------------------------------------------------------
 
-function groomBacklog(proposed, openIssues, boardTitles) {
+async function groomBacklog(proposed, openIssues, boardTitles) {
   if (!Array.isArray(proposed) || proposed.length === 0) {
     log("info", "Backlog: no tickets proposed.");
     return;
@@ -38,22 +122,33 @@ function groomBacklog(proposed, openIssues, boardTitles) {
   }
 
   // Dedup against everything on the board (incl. shipped/Done) and all open issues.
-  const seen = new Set([...openIssues.map((i) => norm(i.title)), ...boardTitles.map(norm)]);
-  let created = 0;
+  const existingTitles = [...openIssues.map((i) => i.title), ...boardTitles].filter(Boolean);
+
+  // Pass 1 — deterministic: drop exact and reworded near-duplicate titles, and
+  // dedup later proposals against ones we've already accepted this run.
+  const tokenSets = existingTitles.map(titleTokens);
+  const heuristicSurvivors = [];
   for (const item of proposed) {
-    if (created >= room) break;
     if (!item || !item.title || !item.body) continue;
-    const key = norm(item.title);
-    if (seen.has(key)) {
-      log("info", `Backlog: skipping duplicate "${item.title}".`);
+    if (isNearDuplicate(item.title, tokenSets)) {
+      log("info", `Backlog: skipping near-duplicate "${item.title}".`);
       continue;
     }
+    heuristicSurvivors.push(item);
+    tokenSets.push(titleTokens(item.title));
+  }
+
+  // Pass 2 — semantic: a model call catches reworded dupes the tokens missed.
+  const survivors = await filterSemanticDuplicates(heuristicSurvivors, existingTitles);
+
+  let created = 0;
+  for (const item of survivors) {
+    if (created >= room) break;
     const number = createIssue(item.title, item.body);
     if (number) {
       moveCard(number, "Backlog"); // best-effort; also adds it to the board
       setIssuePriority(number, item.priority || "medium", []);
       recordTicket("created", number, item.title);
-      seen.add(key);
       created++;
     }
   }
@@ -120,7 +215,7 @@ async function main() {
   // 1. Triage + prioritize existing open tickets (pull inbound onto the board).
   triageExisting(openIssues, boardItems, data.triage);
   // 2. Create new prioritized tickets toward the vision.
-  groomBacklog(data.backlog, openIssues, boardItems.map((i) => i.title));
+  await groomBacklog(data.backlog, openIssues, boardItems.map((i) => i.title));
 
   printRunSummary("Product Manager");
 }
