@@ -6,10 +6,16 @@
   const STORAGE_KEY = 'reducedMotion';
   const toggleId = 'reducedMotionToggle';
 
-  // Initialise flag from storage or default to false
+  // Initialise flag from storage; if not set, respect system prefers-reduced-motion
   let enabled = false;
   try {
-    enabled = localStorage.getItem(STORAGE_KEY) === 'true';
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored !== null) {
+      enabled = stored === 'true';
+    } else {
+      // No explicit preference saved; use OS setting
+      enabled = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    }
   } catch (_) {}
   window.reducedMotionEnabled = enabled;
 
@@ -21,6 +27,7 @@
       document.documentElement.classList.remove('reduced-motion');
     }
   }
+  // Ensure class is set based on initial state
   applyClass();
 
   // Update toggle UI when DOM is ready
