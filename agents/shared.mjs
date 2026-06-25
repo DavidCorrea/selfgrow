@@ -60,15 +60,17 @@ export function runAgent({
   task = DEFAULT_TASK,
   tools = ["read"],
   thinkingLevel = "low",
+  modelId = MODEL_ID,
+  images,
 }) {
   const authStorage = AuthStorage.create();
   const modelRegistry = ModelRegistry.create(authStorage);
   const model = modelRegistry.getAll().find(
-    (m) => `${m.provider}/${m.id}` === MODEL_ID
+    (m) => `${m.provider}/${m.id}` === modelId
   );
   if (!model) {
     throw new Error(
-      `Model "${MODEL_ID}" not found in the registry. ` +
+      `Model "${modelId}" not found in the registry. ` +
         `Check OPENROUTER_API_KEY and that the model id is still valid.`
     );
   }
@@ -113,7 +115,7 @@ export function runAgent({
       });
 
       return session
-        .prompt(task)
+        .prompt(task, images && images.length ? { images } : undefined)
         .then(() => {
           const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
           const messages = session.state.messages;
@@ -1254,7 +1256,21 @@ export async function verifyBuild(relDir = "docs") {
 // ---------------------------------------------------------------------------
 
 // A free VLM by default; swap via env as OpenRouter's free lineup rotates.
-export const VISION_MODEL = process.env.VISION_MODEL || "google/gemma-4-31b-it:free";
+// Vision models tried in order — on a rate-limit/error, fall through to the next.
+// Free VLMs share tight, shared limits, so a fallback chain matters far more than
+// retrying one model. These are pi registry ids (provider/id) and must be
+// image-capable; override via env (comma-separated).
+export const VISION_MODELS = (
+  process.env.VISION_MODEL ||
+  [
+    "openrouter/google/gemma-4-31b-it:free",
+    "openrouter/nvidia/nemotron-nano-12b-v2-vl:free",
+    "openrouter/google/gemma-4-26b-a4b-it:free",
+  ].join(",")
+)
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 
 const VISION_VIEWPORTS = [
   { label: "desktop", width: 1280, height: 800 },
@@ -1289,17 +1305,127 @@ function buildVisionPrompt(vision) {
   ].join("\n");
 }
 
+// Most interactive elements the sweep will exercise per run.
+const MAX_INTERACTIONS = 12;
+
 /**
- * Screenshot the built site and return a vision model's text critique of visible
- * defects — or null when it can't run (no page yet, Playwright or API key missing,
- * model error) or sees nothing wrong. Never throws.
+ * Drive the app like a user: click each interactive element and record what
+ * happens — a JS error it triggers (high-confidence bug) or no DOM effect at all
+ * (low-confidence; a canvas/JS-only app can legitimately not change the DOM).
+ * Returns a list of human-readable findings. Best-effort; never throws.
+ */
+async function exploreInteractions(browser, url) {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  const errors = [];
+  page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
+  page.on("pageerror", (e) => errors.push(e.message));
+
+  // Tag the interactive elements so we can re-locate each one to click it.
+  const tagTargets = () =>
+    page.evaluate((limit) => {
+      const sel = 'a[href], button, input, select, textarea, [role="button"], [onclick]';
+      const found = new Set(document.querySelectorAll(sel));
+      for (const el of document.querySelectorAll("*")) {
+        if (getComputedStyle(el).cursor === "pointer") found.add(el);
+      }
+      return Array.from(found).slice(0, limit).map((el, i) => {
+        el.setAttribute("data-explore-id", String(i));
+        const text = (el.innerText || el.value || el.getAttribute("aria-label") || "")
+          .trim().replace(/\s+/g, " ");
+        return { id: i, tag: el.tagName.toLowerCase(), label: (text || el.tagName.toLowerCase()).slice(0, 40) };
+      });
+    }, MAX_INTERACTIONS);
+
+  const findings = [];
+  const base = url.split("#")[0];
+  try {
+    await page.goto(url, { waitUntil: "networkidle", timeout: 20000 });
+    const targets = await tagTargets();
+    for (const t of targets) {
+      const loc = page.locator(`[data-explore-id="${t.id}"]`);
+      if ((await loc.count()) === 0) continue; // DOM changed out from under us
+      const errBefore = errors.length;
+      const htmlBefore = await page.evaluate(() => document.body.innerHTML);
+      try {
+        await loc.click({ timeout: 2000 });
+      } catch (e) {
+        findings.push(`"${t.label}" — could not be clicked: ${String(e.message).split("\n")[0]}`);
+        continue;
+      }
+      await page.waitForTimeout(500);
+      const newErrors = errors.slice(errBefore);
+      if (newErrors.length) {
+        findings.push(`"${t.label}" — triggered a JS error: ${newErrors[0]}`);
+      } else if (page.url().split("#")[0] !== base) {
+        findings.push(`"${t.label}" — navigated away to ${page.url()}`);
+        await page.goto(url, { waitUntil: "networkidle", timeout: 20000 }).catch(() => {});
+        await tagTargets().catch(() => {});
+      } else if (!["input", "textarea", "select"].includes(t.tag)) {
+        // Form fields legitimately don't mutate the DOM on click; only flag others.
+        const htmlAfter = await page.evaluate(() => document.body.innerHTML);
+        if (htmlAfter === htmlBefore) {
+          findings.push(`"${t.label}" — looks interactive but had no visible effect (may be canvas/JS-only).`);
+        }
+      }
+    }
+  } catch (e) {
+    findings.push(`interaction sweep stopped early: ${String(e.message).split("\n")[0]}`);
+  } finally {
+    await page.close().catch(() => {});
+  }
+  return findings;
+}
+
+/**
+ * Resolve the vision-model chain against pi's ACTUAL registry, so a pi upgrade
+ * that renames/removes a model degrades cleanly instead of silently failing:
+ *   1. keep configured models that exist; warn (distinctly) about any that don't,
+ *   2. if none remain, auto-discover free image-capable OpenRouter models pi
+ *      currently knows (excluding meta-routers) so the check keeps working.
+ * Returns an ordered list of model ids (possibly empty).
+ */
+function resolveVisionModels() {
+  let all;
+  try {
+    all = ModelRegistry.create(AuthStorage.create()).getAll();
+  } catch (e) {
+    log("warn", "Visual check: could not read pi's model registry — using configured ids as-is.", errorData(e));
+    return VISION_MODELS;
+  }
+  const idOf = (m) => `${m.provider}/${m.id}`;
+  const present = [];
+  for (const id of VISION_MODELS) {
+    if (all.some((m) => idOf(m) === id)) present.push(id);
+    else log("warn", `Visual check: "${id}" is not in pi's registry (version drift?) — skipping it.`);
+  }
+  if (present.length) return present;
+
+  const discovered = all
+    .filter(
+      (m) =>
+        m.provider === "openrouter" &&
+        Array.isArray(m.input) && m.input.includes("image") &&
+        m.cost && Number(m.cost.input) === 0 && Number(m.cost.output) === 0 &&
+        m.id !== "auto" && m.id !== "openrouter/free" // skip meta-routers
+    )
+    .map(idOf)
+    .slice(0, 4);
+  if (discovered.length) {
+    log("warn", `Visual check: no configured vision model is in pi's registry — auto-discovered ${discovered.length} free image model(s): ${discovered.join(", ")}.`);
+  } else {
+    log("warn", "Visual check: no configured or discoverable vision models — skipping the appearance critique.");
+  }
+  return discovered;
+}
+
+/**
+ * Review the built site: drive its interactive elements to catch functional
+ * breakage (no model needed) AND screenshot it for a vision-model critique of
+ * appearance. The vision call goes through pi (runAgent) like every other model
+ * call. Returns a combined report (Defects / Polish / Functional), or null when
+ * nothing can run (no page yet, Playwright missing) or nothing is produced. Never throws.
  */
 export async function visualCritique(vision, relDir = "docs") {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    log("info", "Visual check: no OPENROUTER_API_KEY — skipping.");
-    return null;
-  }
   const dir = join(repoRoot, relDir);
   if (!fs.existsSync(join(dir, "index.html"))) {
     log("info", "Visual check: no index.html yet — skipping.");
@@ -1314,54 +1440,88 @@ export async function visualCritique(vision, relDir = "docs") {
   }
 
   const { server, port } = await startStaticServer(dir);
+  const url = `http://127.0.0.1:${port}/`;
   const shots = [];
+  let functional = [];
   let browser;
   try {
     browser = await chromium.launch();
+  } catch (e) {
+    log("warn", "Visual check: could not launch browser — skipping.", errorData(e));
+    server.close();
+    return null;
+  }
+
+  // Static screenshots for the visual critique (best-effort).
+  try {
     for (const vp of VISION_VIEWPORTS) {
       const page = await browser.newPage({ viewport: { width: vp.width, height: vp.height } });
-      await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: "networkidle", timeout: 20000 });
+      await page.goto(url, { waitUntil: "networkidle", timeout: 20000 });
       await page.waitForTimeout(1500);
       const png = await page.screenshot({ fullPage: true });
-      shots.push({ label: vp.label, dataUrl: `data:image/png;base64,${png.toString("base64")}` });
+      shots.push({ label: vp.label, data: png.toString("base64") });
       await page.close();
     }
   } catch (e) {
-    log("warn", "Visual check: screenshot capture failed — skipping.", errorData(e));
-    return null;
-  } finally {
-    if (browser) await browser.close();
-    server.close();
+    log("warn", "Visual check: screenshot capture failed.", errorData(e));
   }
 
-  // One message, both viewports — the model compares them in a single pass.
-  const content = [{ type: "text", text: buildVisionPrompt(vision) }];
-  for (const s of shots) {
-    content.push({ type: "text", text: `[${s.label} viewport]` });
-    content.push({ type: "image_url", image_url: { url: s.dataUrl } });
-  }
-
+  // Drive the app and record what breaks (best-effort, deterministic).
   try {
-    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: VISION_MODEL, messages: [{ role: "user", content }] }),
-    });
-    if (!res.ok) {
-      log("warn", `Visual check: ${VISION_MODEL} returned HTTP ${res.status} — skipping.`);
-      return null;
-    }
-    const json = await res.json();
-    const text = (json.choices?.[0]?.message?.content || "").trim();
-    if (!text) {
-      log("warn", "Visual check: empty critique — skipping.");
-      return null;
-    }
-    // Log the full critique so each run's behavior is visible in the run log.
-    log("info", `Visual critique (${VISION_MODEL}):\n${text}`);
-    return text;
+    functional = await exploreInteractions(browser, url);
   } catch (e) {
-    log("warn", "Visual check: model call failed — skipping.", errorData(e));
+    log("warn", "Visual check: interaction sweep failed.", errorData(e));
+  }
+
+  await browser.close().catch(() => {});
+  server.close();
+
+  // Ask a vision model about appearance, through pi (same path as every other
+  // model call). Try each model in the chain until one answers — free VLMs
+  // rate-limit constantly, so the next in line usually picks up the slack.
+  let visualText = null;
+  if (shots.length && process.env.OPENROUTER_API_KEY) {
+    const images = shots.map((s) => ({ type: "image", data: s.data, mimeType: "image/png" }));
+    const task = `Review the attached screenshots and report as instructed. The images, in order, are: ${shots.map((s) => s.label).join(", ")}.`;
+    for (const modelId of resolveVisionModels()) {
+      try {
+        const out = await runAgent({
+          label: `Vision (${modelId})`,
+          modelId,
+          systemPrompt: buildVisionPrompt(vision),
+          task,
+          images,
+          tools: [],
+          thinkingLevel: "off",
+        });
+        visualText = (out || "").trim() || null;
+        if (visualText) {
+          log("info", `Visual check: critique from ${modelId}.`);
+          break;
+        }
+        log("warn", `Visual check: ${modelId} returned empty — trying next.`);
+      } catch (e) {
+        log("warn", `Visual check: ${modelId} call failed — trying next.`, errorData(e));
+      }
+    }
+    if (!visualText) {
+      log("warn", "Visual check: every vision model was unavailable — skipping the appearance critique.");
+    }
+  } else if (shots.length) {
+    log("info", "Visual check: no OPENROUTER_API_KEY — skipping the appearance critique.");
+  }
+
+  // Combine the model's visual critique with the deterministic interaction findings.
+  const parts = [];
+  if (visualText) parts.push(visualText);
+  if (functional.length) {
+    parts.push(`## Functional (observed behavior)\n${functional.map((f) => `- ${f}`).join("\n")}`);
+  }
+  if (!parts.length) {
+    log("info", "Visual check: no critique produced.");
     return null;
   }
+  const report = parts.join("\n\n");
+  log("info", `App review (visual + interaction sweep):\n${report}`);
+  return report;
 }
