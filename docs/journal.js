@@ -77,11 +77,5 @@
   // Initial render
   render();
 
-  // Toggle button handling – the button is added in settings UI
-  const toggleBtn = document.getElementById('journalToggle');
-  if (toggleBtn) {
-    toggleBtn.addEventListener('click', () => {
-      panel.classList.toggle('open');
-    });
-  }
+  // Toggle button handling moved to settings.js for accessibility and unified behavior.
 })();
