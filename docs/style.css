@@ -83,21 +83,21 @@ body {
   margin: 0;
   padding: 0;
   height: 100vh;
-  display: flex;
-  justify-content: center;
-  align-items: center;
+  width: 100vw;
+  overflow: hidden;
   background: #f0f4f8;
   font-family: sans-serif;
 }
 
 .garden {
   position: relative;
-  width: 300px;
-  height: 300px;
-  border: 2px solid #8fa;
-  border-radius: 10px;
+  width: 100vw;
+  height: 100vh;
+  border: none;
   background: radial-gradient(circle at bottom, #c8e6c9, #a5d6a7);
   overflow: hidden;
+  box-sizing: border-box;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
 .seed {
