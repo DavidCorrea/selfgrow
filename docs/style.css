@@ -1,4 +1,11 @@
 /* Basic garden container styling */
+
+/* Creature styling */
+.creature {
+  pointer-events: none;
+  /* Ensure they appear above other elements */
+  z-index: 10;
+}
 /* Weather state classes */
 .garden.weather-clear {
   background: radial-gradient(circle at bottom, #c8e6c9, #a5d6a7);
