@@ -1,0 +1,35 @@
+name: reset
+
+# One-time, run manually with the other workflows paused: closes all open
+# issues, clears the board, and resets the wiki changelog for a fresh project.
+# Safe to delete after running.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Reset GitHub state
+        run: node agents/reset.mjs
+        env:
+          GH_TOKEN: ${{ secrets.AGENT_PAT }}
+          GH_PROJECT_OWNER: '@me'
+          GH_PROJECT_NUMBER: '3'
