@@ -1,4 +1,77 @@
 /* Basic garden container styling */
+/* Weather state classes */
+.garden.weather-clear {
+  background: radial-gradient(circle at bottom, #c8e6c9, #a5d6a7);
+  transition: background 5s ease;
+}
+.garden.weather-mist {
+  background: radial-gradient(circle at bottom, #e0e0e0, #cfd8dc);
+  transition: background 5s ease;
+}
+.garden.weather-rain {
+  background: radial-gradient(circle at bottom, #bbdefb, #90caf9);
+  transition: background 5s ease;
+}
+.garden.weather-sun {
+  background: radial-gradient(circle at bottom, #ffecb3, #ffe082);
+  transition: background 5s ease;
+}
+
+/* Particle container */
+.particles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* Raindrop */
+.raindrop {
+  position: absolute;
+  top: -10px;
+  width: 2px;
+  height: 12px;
+  background: rgba(173,216,230,0.7);
+  border-radius: 1px;
+  animation: fall 1s linear infinite;
+}
+@keyframes fall {
+  to { transform: translateY(310px); }
+}
+
+/* Mist particle */
+.mist-particle {
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  background: rgba(255,255,255,0.6);
+  border-radius: 50%;
+  animation: drift 6s ease-in-out infinite;
+}
+@keyframes drift {
+  0% { transform: translateY(0) translateX(0); opacity: 0.6; }
+  50% { opacity: 0.2; }
+  100% { transform: translateY(-60px) translateX(20px); opacity: 0.6; }
+}
+
+/* Sun */
+.sun {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  width: 50px;
+  height: 50px;
+  margin-left: -25px;
+  background: radial-gradient(circle, #ffeb3b 0%, #fbc02d 70%);
+  border-radius: 50%;
+  box-shadow: 0 0 20px 5px rgba(255,235,59,0.6);
+  animation: pulse 4s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%,100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
 body {
   margin: 0;
   padding: 0;
