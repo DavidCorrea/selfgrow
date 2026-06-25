@@ -63,6 +63,27 @@ class Creature {
     this.x = Math.max(0, Math.min(maxX, this.x));
     const maxY = Math.max(0, garden.clientHeight - 20);
     this.y = Math.max(0, Math.min(maxY, this.y));
+    // Attempt pollination if near a plant
+    const now = Date.now();
+    if (!this.lastPollinate || now - this.lastPollinate > 1000) {
+      const plants = document.querySelectorAll('.plant');
+      const gardenRect = document.getElementById('garden').getBoundingClientRect();
+      for (const p of plants) {
+        const rect = p.getBoundingClientRect();
+        const px = rect.left - gardenRect.left + rect.width / 2;
+        const py = rect.top - gardenRect.top + rect.height / 2;
+        const dx = px - this.x;
+        const dy = py - this.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 30) { // within pollination range
+          if (typeof p.pollinate === 'function') {
+            p.pollinate();
+            this.lastPollinate = now;
+          }
+          break;
+        }
+      }
+    }
     this.updatePos();
   }
 }
