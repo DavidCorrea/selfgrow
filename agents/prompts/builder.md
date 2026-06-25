@@ -4,6 +4,10 @@ Read the proposal, explore the files you need to modify, and implement the chang
 
 {{include:_profile}}
 
+{{include:_coding-standards}}
+
+Follow the coding standards above in everything you write — the Reviewer checks against them.
+
 Organize files under `docs/` however best fits the change — split into modules when it genuinely improves clarity. If `docs/` has no entry point yet (brand-new project), create an `index.html` (plus whatever else is needed) as the base, then implement the proposal.
 
 ## After Implementing
