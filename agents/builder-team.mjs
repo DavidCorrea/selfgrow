@@ -247,14 +247,23 @@ async function main() {
       for (let buildAttempt = 1; buildAttempt <= MAX_BUILDER_RETRIES; buildAttempt++) {
         log("info", `=== Build Attempt ${buildAttempt}/${MAX_BUILDER_RETRIES} ===`);
 
-        const builderOutput = await withLogGroup(`Builder (attempt ${buildAttempt})`, () =>
-          runAgent({
-            label: "Builder",
-            systemPrompt: buildBuilderPrompt(scoutOutput, reviewerFeedback, addressedIssueObj),
-            tools: ["read", "bash", "edit", "write"],
-            thinkingLevel: "medium",
-          })
-        );
+        let builderOutput;
+        try {
+          builderOutput = await withLogGroup(`Builder (attempt ${buildAttempt})`, () =>
+            runAgent({
+              label: "Builder",
+              systemPrompt: buildBuilderPrompt(scoutOutput, reviewerFeedback, addressedIssueObj),
+              tools: ["read", "bash", "edit", "write"],
+              thinkingLevel: "medium",
+            })
+          );
+        } catch (e) {
+          // Transient model/provider errors (rate limit, upstream harmony-parse
+          // glitch) — retry the next attempt rather than abandoning. Only a
+          // persistent failure (all attempts) falls through to abandon below.
+          log("warn", `Builder model call failed (attempt ${buildAttempt}/${MAX_BUILDER_RETRIES}) — retrying: ${e.message || e}`);
+          continue;
+        }
         const builderResult = extractAgentResponse("Builder", builderOutput, {
           requireOutcome: false,
           requiredDataFields: ["commitMessage"],
