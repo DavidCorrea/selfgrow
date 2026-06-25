@@ -40,6 +40,11 @@ function animateSeed(timestamp) {
 
   if (progress < 1) {
     requestAnimationFrame(animateSeed);
+  } else {
+    // Log seed sprouted event
+    if (window.garden && typeof window.garden.logEvent === 'function') {
+      window.garden.logEvent('seedSprouted');
+    }
   }
 }
 
@@ -55,6 +60,10 @@ if (prefersReduced) {
 
 // Helper to create and animate a plant element
 function spawnPlant() {
+  // Log plant spawn event
+  if (window.garden && typeof window.garden.logEvent === 'function') {
+    window.garden.logEvent('plantSpawned');
+  }
   // Determine current season for visual variation
   const season = window.seasonManager && window.seasonManager.isEnabled ? window.seasonManager.getSeason() : null;
 
