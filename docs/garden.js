@@ -12,6 +12,10 @@ if (!garden) {
 const seed = document.createElement('div');
 seed.className = 'seed';
 garden.appendChild(seed);
+// Dispatch event when seed is ready (will be handled later)
+function dispatchSeedEvent(){
+  document.dispatchEvent(new CustomEvent('seedSprouted'));
+}
 
 // Easing function – easeOutCubic
 function easeOutCubic(t) {
@@ -38,6 +42,9 @@ function animateSeed(timestamp) {
 
   if (progress < 1) {
     requestAnimationFrame(animateSeed);
+  } else {
+    // Animation completed - notify journal
+    dispatchSeedEvent();
   }
 }
 
@@ -45,6 +52,7 @@ if (prefersReduced) {
   // Instantly set to final state
   seed.style.transform = 'scale(1)';
   seed.style.opacity = '1';
+  dispatchSeedEvent();
 } else {
   requestAnimationFrame(animateSeed);
 }

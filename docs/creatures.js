@@ -78,8 +78,14 @@ function loadCreatures() {
     for (let i = 0; i < 3; i++) {
       const x = Math.random() * maxX;
       const y = Math.random() * maxY;
-      creatures.push(new Creature('c' + i, x, y));
+      const creature = new Creature('c' + i, x, y);
+      creatures.push(creature);
+      // Dispatch event for creature creation/visit
+      document.dispatchEvent(new CustomEvent('creatureCreated'));
     }
+  } else {
+    // Dispatch events for each loaded creature
+    creatures.forEach(() => document.dispatchEvent(new CustomEvent('creatureCreated')));
   }
   return creatures;
 }

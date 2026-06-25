@@ -108,6 +108,8 @@ function applyState(state) {
       startSun();
       break;
   }
+  // Dispatch weather change event for journal
+  document.dispatchEvent(new CustomEvent('weatherChanged', { detail: { state: state.name } }));
 }
 
 function nextState() {
