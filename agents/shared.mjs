@@ -162,21 +162,19 @@ export function getRunLog() {
 }
 
 export function log(level, message, data) {
-  const entry = { time: new Date().toISOString(), level, message, data };
-  runLog.push(entry);
+  runLog.push({ level, message, data });
   if (level === "debug") return; // debug entries collected but not printed
-  const prefix = `[${entry.time}] [${level.toUpperCase()}]`;
-  if (data !== undefined) {
-    console.log(prefix, message);
-    console.log(JSON.stringify(data, null, 2));
-  } else {
-    console.log(prefix, message);
-  }
-  // Surface warnings/errors as GitHub Actions annotations (shown in the run summary UI).
+
+  // In CI, warnings/errors become native annotations — they render inline once
+  // AND surface at the top of the run. Don't also print a plain line (that's the
+  // doubling). Elsewhere, a minimal level tag keeps info lines clean.
   if (isGitHubActions && (level === "warn" || level === "error")) {
     const ghLevel = level === "warn" ? "warning" : "error";
     console.log(`::${ghLevel}::${escapeWorkflowData(message)}`);
+  } else {
+    console.log(level === "info" ? message : `${level.toUpperCase()}: ${message}`);
   }
+  if (data !== undefined) console.log(JSON.stringify(data, null, 2));
 }
 
 // Escape per GitHub's workflow-command rules so annotations render literally.
@@ -232,37 +230,44 @@ export function errorData(e) {
 }
 
 export function printRunSummary(title = "Run Summary") {
-  const icon = (level) =>
-    level === "error" ? "❌" :
-    level === "warn"  ? "⚠️" :
-    level === "info"  ? "ℹ️" : "  ";
+  const errors = runLog.filter((e) => e.level === "error");
+  const warns = runLog.filter((e) => e.level === "warn");
+  const steps = runLog.filter((e) => e.level !== "debug");
+  const result = errors.length ? "errors" : warns.length ? "completed with warnings" : "clean";
 
-  console.log("\n" + "=".repeat(60));
-  console.log(title.toUpperCase());
-  console.log("=".repeat(60));
+  // Compact stdout recap — the result line plus just the warnings/errors. The
+  // full per-line story already streamed live during the run, so don't replay it.
+  console.log(`\n=== ${title}: ${result} · ${errors.length} error(s), ${warns.length} warning(s) ===`);
   for (const entry of runLog) {
-    if (entry.level === "debug") continue;
-    console.log(`${icon(entry.level)} [${entry.level.toUpperCase()}] ${entry.message}`);
+    if (entry.level === "warn" || entry.level === "error") {
+      console.log(`  ${entry.level.toUpperCase()}: ${entry.message}`);
+    }
   }
-  console.log("=".repeat(60) + "\n");
 
-  // Mirror the summary into the GitHub Actions job summary panel.
-  const errors = runLog.filter((e) => e.level === "error").length;
-  const warns = runLog.filter((e) => e.level === "warn").length;
-  const lines = [
-    `## ${title}`,
-    "",
-    `**Result:** ${errors > 0 ? "❌ errors" : warns > 0 ? "⚠️ completed with warnings" : "✅ clean"} `
-      + `· ${errors} error(s), ${warns} warning(s)`,
-    "",
-    "| | Level | Message |",
-    "| --- | --- | --- |",
-    ...runLog
-      .filter((e) => e.level !== "debug")
-      .map((e) => `| ${icon(e.level)} | ${e.level.toUpperCase()} | ${String(e.message).replace(/\|/g, "\\|")} |`),
-    "",
-  ];
-  appendJobSummary(lines.join("\n"));
+  // The GitHub job-summary panel renders full markdown, so surface the result
+  // and any problems as compact alert callouts, and tuck the routine step log
+  // into a collapsed <details> — far tighter than a row-per-line table.
+  const icon = (level) => (level === "error" ? "❌" : level === "warn" ? "⚠️" : "ℹ️");
+  const oneLine = (s) => String(s).replace(/\s*\n\s*/g, " ").trim();
+  const badge = errors.length
+    ? "❌ **errors**"
+    : warns.length
+    ? "⚠️ **completed with warnings**"
+    : "✅ **clean**";
+
+  const md = [`## ${title}`, "", `${badge} · ${errors.length} error(s) · ${warns.length} warning(s)`];
+  if (errors.length) {
+    md.push("", "> [!CAUTION]");
+    errors.forEach((e) => md.push(`> ${oneLine(e.message)}  `));
+  }
+  if (warns.length) {
+    md.push("", "> [!WARNING]");
+    warns.forEach((w) => md.push(`> ${oneLine(w.message)}  `));
+  }
+  md.push("", `<details><summary>Full run log · ${steps.length} steps</summary>`, "");
+  steps.forEach((e) => md.push(`- ${icon(e.level)} ${oneLine(e.message)}`));
+  md.push("", "</details>", "");
+  appendJobSummary(md.join("\n"));
 }
 
 // ---------------------------------------------------------------------------

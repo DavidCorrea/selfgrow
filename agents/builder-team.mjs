@@ -5,6 +5,7 @@ import {
   loadPrompt,
   fillTemplate,
   extractAgentResponse,
+  errorData,
   gitExec,
   configureGitIdentity,
   createBranchName,
@@ -234,210 +235,223 @@ async function main() {
       abandoned = true;
     };
 
-    for (let buildAttempt = 1; buildAttempt <= MAX_BUILDER_RETRIES; buildAttempt++) {
-      log("info", `=== Build Attempt ${buildAttempt}/${MAX_BUILDER_RETRIES} ===`);
+    // Everything from here on touches live state (the branch, the PR, the
+    // board card). Any uncaught throw — most commonly a model call dying on
+    // rate limits — must still abandon cleanly, or the branch and card are
+    // orphaned. Route every such error through abandon().
+    try {
+      for (let buildAttempt = 1; buildAttempt <= MAX_BUILDER_RETRIES; buildAttempt++) {
+        log("info", `=== Build Attempt ${buildAttempt}/${MAX_BUILDER_RETRIES} ===`);
 
-      const builderOutput = await withLogGroup(`Builder (attempt ${buildAttempt})`, () =>
-        runAgent({
-          label: "Builder",
-          systemPrompt: buildBuilderPrompt(scoutOutput, reviewerFeedback, addressedIssueObj),
-          tools: ["read", "bash", "edit", "write"],
-          thinkingLevel: "medium",
-        })
-      );
-      const builderResult = extractAgentResponse("Builder", builderOutput, {
-        requireOutcome: false,
-        requiredDataFields: ["commitMessage"],
-      });
-      if (!builderResult) {
-        log("warn", "Builder produced no valid response this attempt.");
-        reviewerFeedback = "Your previous response could not be parsed. Re-implement and return the required JSON envelope.";
-        continue;
-      }
-      builderEverSucceeded = true;
-      if (builderResult.data.commitMessage) commitMessage = builderResult.data.commitMessage;
-      if (builderResult.data.changelogEntry) builderChangelogEntry = builderResult.data.changelogEntry;
-      if (builderResult.data.techDebt) builderTechDebt = builderResult.data.techDebt;
-      if (builderResult.summary) builderSummary = builderResult.summary;
-      log("info", `Builder: ${builderResult.summary}`);
-
-      // Layered verify (syntax → lint → runtime) on the working tree BEFORE
-      // committing. Failures go straight back to the Builder to fix — broken
-      // code never reaches the PR or the merge.
-      const verify = await withLogGroup("Verify", () => verifyBuild());
-      if (!verify.ok) {
-        log("warn", `Verify failed at the ${verify.layer} check — ${verify.errors.length} issue(s).`, { errors: verify.errors });
-        reviewerFeedback = `Your change fails the automated ${verify.layer} check. Fix these specific problems, then return your result:\n- ${verify.errors.join("\n- ")}`;
-        continue;
-      }
-
-      // Commit + push this attempt's work.
-      try {
-        if (gitExec("status --porcelain")) {
-          gitExec("add -A");
-          gitExec(`commit -m "${commitMessage.replace(/"/g, '\\"')}"`);
-          log("info", `Committed: ${commitMessage}`);
+        const builderOutput = await withLogGroup(`Builder (attempt ${buildAttempt})`, () =>
+          runAgent({
+            label: "Builder",
+            systemPrompt: buildBuilderPrompt(scoutOutput, reviewerFeedback, addressedIssueObj),
+            tools: ["read", "bash", "edit", "write"],
+            thinkingLevel: "medium",
+          })
+        );
+        const builderResult = extractAgentResponse("Builder", builderOutput, {
+          requireOutcome: false,
+          requiredDataFields: ["commitMessage"],
+        });
+        if (!builderResult) {
+          log("warn", "Builder produced no valid response this attempt.");
+          reviewerFeedback = "Your previous response could not be parsed. Re-implement and return the required JSON envelope.";
+          continue;
         }
-        if (gitExec(`rev-list --count main..${branchName}`) === "0") {
-          if (!prNumber) {
-            abandon("Builder produced no changes.", false);
-            break;
+        builderEverSucceeded = true;
+        if (builderResult.data.commitMessage) commitMessage = builderResult.data.commitMessage;
+        if (builderResult.data.changelogEntry) builderChangelogEntry = builderResult.data.changelogEntry;
+        if (builderResult.data.techDebt) builderTechDebt = builderResult.data.techDebt;
+        if (builderResult.summary) builderSummary = builderResult.summary;
+        log("info", `Builder: ${builderResult.summary}`);
+
+        // Layered verify (syntax → lint → runtime) on the working tree BEFORE
+        // committing. Failures go straight back to the Builder to fix — broken
+        // code never reaches the PR or the merge.
+        const verify = await withLogGroup("Verify", () => verifyBuild());
+        if (!verify.ok) {
+          log("warn", `Verify failed at the ${verify.layer} check — ${verify.errors.length} issue(s).`, { errors: verify.errors });
+          reviewerFeedback = `Your change fails the automated ${verify.layer} check. Fix these specific problems, then return your result:\n- ${verify.errors.join("\n- ")}`;
+          continue;
+        }
+
+        // Commit + push this attempt's work.
+        try {
+          if (gitExec("status --porcelain")) {
+            gitExec("add -A");
+            gitExec(`commit -m "${commitMessage.replace(/"/g, '\\"')}"`);
+            log("info", `Committed: ${commitMessage}`);
           }
-          log("warn", "No new changes this attempt; re-reviewing the existing PR.");
-        } else {
-          gitExec(`push origin ${branchName}`);
-        }
-      } catch (e) {
-        abandon(`Build pipeline error: ${e.message}`, true);
-        break;
-      }
-
-      // Open the PR once, after the first push (as the bot).
-      if (!prNumber) {
-        const prBody = `${builderSummary || commitMessage}${addressedIssue ? `\n\nRefs #${addressedIssue}` : ""}`;
-        prNumber = createPR(branchName, commitMessage, prBody);
-        if (!prNumber) {
-          abandon("Could not open PR.", false);
+          if (gitExec(`rev-list --count main..${branchName}`) === "0") {
+            if (!prNumber) {
+              abandon("Builder produced no changes.", false);
+              break;
+            }
+            log("warn", "No new changes this attempt; re-reviewing the existing PR.");
+          } else {
+            gitExec(`push origin ${branchName}`);
+          }
+        } catch (e) {
+          abandon(`Build pipeline error: ${e.message}`, true);
           break;
         }
-        if (addressedIssue) moveCard(addressedIssue, "In review");
+
+        // Open the PR once, after the first push (as the bot).
+        if (!prNumber) {
+          const prBody = `${builderSummary || commitMessage}${addressedIssue ? `\n\nRefs #${addressedIssue}` : ""}`;
+          prNumber = createPR(branchName, commitMessage, prBody);
+          if (!prNumber) {
+            abandon("Could not open PR.", false);
+            break;
+          }
+          if (addressedIssue) moveCard(addressedIssue, "In review");
+        }
+
+        // Review the open PR.
+        const reviewContext = [
+          builderSummary ? `The Builder reports: ${builderSummary}` : null,
+          addressedIssueObj ? `This change should fix issue #${addressedIssueObj.number}: "${addressedIssueObj.title}".` : null,
+          `This is PR #${prNumber} on branch ${branchName}.`,
+        ].filter(Boolean).join("\n");
+        const reviewerOutput = await withLogGroup(`Reviewer (attempt ${buildAttempt})`, () =>
+          runAgent({
+            label: "Reviewer",
+            systemPrompt: buildReviewerPrompt(reviewContext),
+            tools: ["read", "bash"],
+          })
+        );
+        const reviewerResult = extractAgentResponse("Reviewer", reviewerOutput, {
+          requiredDataFields: ["issues"],
+        });
+        if (!reviewerResult) {
+          reviewerFeedback = "The Reviewer output could not be parsed. Check your work for obvious issues.";
+          continue;
+        }
+        if (reviewerResult.outcome === "approve") {
+          log("info", "Reviewer: APPROVED");
+          reviewerApproved = true;
+          break;
+        }
+        const issueCount = reviewerResult.data.issues ? reviewerResult.data.issues.length : 0;
+        log("warn", `Reviewer: REVISE — ${issueCount} issue(s)`, { issues: reviewerResult.data.issues });
+        reviewerFeedback = reviewerResult.data.issues ? reviewerResult.data.issues.join("\n- ") : "Unknown issues found.";
       }
 
-      // Review the open PR.
-      const reviewContext = [
-        builderSummary ? `The Builder reports: ${builderSummary}` : null,
-        addressedIssueObj ? `This change should fix issue #${addressedIssueObj.number}: "${addressedIssueObj.title}".` : null,
-        `This is PR #${prNumber} on branch ${branchName}.`,
-      ].filter(Boolean).join("\n");
-      const reviewerOutput = await withLogGroup(`Reviewer (attempt ${buildAttempt})`, () =>
-        runAgent({
-          label: "Reviewer",
-          systemPrompt: buildReviewerPrompt(reviewContext),
-          tools: ["read", "bash"],
-        })
-      );
-      const reviewerResult = extractAgentResponse("Reviewer", reviewerOutput, {
-        requiredDataFields: ["issues"],
-      });
-      if (!reviewerResult) {
-        reviewerFeedback = "The Reviewer output could not be parsed. Check your work for obvious issues.";
-        continue;
-      }
-      if (reviewerResult.outcome === "approve") {
-        log("info", "Reviewer: APPROVED");
-        reviewerApproved = true;
+      if (abandoned) break;
+
+      // 5. Builder never produced usable work / no PR — clean up.
+      if (!builderEverSucceeded || !prNumber) {
+        abandon("Builder failed on every attempt.", false);
         break;
       }
-      const issueCount = reviewerResult.data.issues ? reviewerResult.data.issues.length : 0;
-      log("warn", `Reviewer: REVISE — ${issueCount} issue(s)`, { issues: reviewerResult.data.issues });
-      reviewerFeedback = reviewerResult.data.issues ? reviewerResult.data.issues.join("\n- ") : "Unknown issues found.";
-    }
 
-    if (abandoned) break;
-
-    // 5. Builder never produced usable work / no PR — clean up.
-    if (!builderEverSucceeded || !prNumber) {
-      abandon("Builder failed on every attempt.", false);
-      break;
-    }
-
-    // 6. Not approved within the cap → revoke the PR, return ticket to the backlog.
-    if (!reviewerApproved) {
-      abandon(
-        `Closed automatically after ${MAX_BUILDER_RETRIES} review cycles without approval. Returning to the backlog for a fresh attempt.`,
-        true
-      );
-      break;
-    }
-
-    // 7. Bring the branch up to date with main so the PR is mergeable.
-    const mergeResult = mergeMainIntoBranch();
-    if (!mergeResult.clean) {
-      log("warn", "Merge conflict with origin/main — sending to Builder for resolution.", {
-        conflictedFiles: mergeResult.conflictedFiles,
-      });
-      const conflictPrompt = buildMergeConflictPrompt(mergeResult.conflictedFiles, mergeResult.statusOutput, commitMessage);
-      const resolverOutput = await withLogGroup("Builder (conflict resolution)", () =>
-        runAgent({
-          label: "Builder",
-          systemPrompt: conflictPrompt,
-          tools: ["read", "bash", "edit", "write"],
-          thinkingLevel: "medium",
-        })
-      );
-      extractAgentResponse("Builder", resolverOutput, { requireOutcome: false, requiredDataFields: ["resolvedFiles"] });
-
-      if (gitExec("diff --name-only --diff-filter=U")) {
-        abortMerge();
-        abandon("Unresolved merge conflicts with main.", true);
+      // 6. Not approved within the cap → revoke the PR, return ticket to the backlog.
+      if (!reviewerApproved) {
+        abandon(
+          `Closed automatically after ${MAX_BUILDER_RETRIES} review cycles without approval. Returning to the backlog for a fresh attempt.`,
+          true
+        );
         break;
       }
+
+      // 7. Bring the branch up to date with main so the PR is mergeable.
+      const mergeResult = mergeMainIntoBranch();
+      if (!mergeResult.clean) {
+        log("warn", "Merge conflict with origin/main — sending to Builder for resolution.", {
+          conflictedFiles: mergeResult.conflictedFiles,
+        });
+        const conflictPrompt = buildMergeConflictPrompt(mergeResult.conflictedFiles, mergeResult.statusOutput, commitMessage);
+        const resolverOutput = await withLogGroup("Builder (conflict resolution)", () =>
+          runAgent({
+            label: "Builder",
+            systemPrompt: conflictPrompt,
+            tools: ["read", "bash", "edit", "write"],
+            thinkingLevel: "medium",
+          })
+        );
+        extractAgentResponse("Builder", resolverOutput, { requireOutcome: false, requiredDataFields: ["resolvedFiles"] });
+
+        if (gitExec("diff --name-only --diff-filter=U")) {
+          abortMerge();
+          abandon("Unresolved merge conflicts with main.", true);
+          break;
+        }
+        try {
+          const resolveMsg = addressedIssue
+            ? `Resolve merge conflicts with origin/main (refs #${addressedIssue})`
+            : "Resolve merge conflicts with origin/main";
+          gitExec("add -A");
+          gitExec(`commit -m "${resolveMsg}"`);
+          gitExec(`push origin ${branchName}`);
+          log("info", "Merge conflicts resolved and pushed.");
+        } catch (e) {
+          abortMerge();
+          abandon(`Conflict resolution failed: ${e.message}`, true);
+          break;
+        }
+      }
+
+      // Final gate: the branch (now merged with latest main) must still pass verify.
+      const finalVerify = await withLogGroup("Verify (pre-merge)", () => verifyBuild());
+      if (!finalVerify.ok) {
+        abandon(`Failed the ${finalVerify.layer} check after merging main:\n- ${finalVerify.errors.join("\n- ")}`, true);
+        break;
+      }
+
+      // 8. Approve (as the PAT user — a different identity than the bot author) and merge.
+      let commitSha = null;
       try {
-        const resolveMsg = addressedIssue
-          ? `Resolve merge conflicts with origin/main (refs #${addressedIssue})`
-          : "Resolve merge conflicts with origin/main";
-        gitExec("add -A");
-        gitExec(`commit -m "${resolveMsg}"`);
-        gitExec(`push origin ${branchName}`);
-        log("info", "Merge conflicts resolved and pushed.");
-      } catch (e) {
-        abortMerge();
-        abandon(`Conflict resolution failed: ${e.message}`, true);
+        commitSha = gitExec(`rev-parse ${branchName}`);
+      } catch {
+        // non-fatal — comment just omits the SHA
+      }
+      approvePR(prNumber, "Approved by the Reviewer agent — all blocking issues resolved.");
+      if (!mergePR(prNumber)) {
+        log("error", "PR merge failed — leaving PR open and card In review for inspection.");
         break;
       }
-    }
+      try { gitExec("checkout main"); } catch {}
 
-    // Final gate: the branch (now merged with latest main) must still pass verify.
-    const finalVerify = await withLogGroup("Verify (pre-merge)", () => verifyBuild());
-    if (!finalVerify.ok) {
-      abandon(`Failed the ${finalVerify.layer} check after merging main:\n- ${finalVerify.errors.join("\n- ")}`, true);
-      break;
-    }
-
-    // 8. Approve (as the PAT user — a different identity than the bot author) and merge.
-    let commitSha = null;
-    try {
-      commitSha = gitExec(`rev-parse ${branchName}`);
-    } catch {
-      // non-fatal — comment just omits the SHA
-    }
-    approvePR(prNumber, "Approved by the Reviewer agent — all blocking issues resolved.");
-    if (!mergePR(prNumber)) {
-      log("error", "PR merge failed — leaving PR open and card In review for inspection.");
-      break;
-    }
-    try { gitExec("checkout main"); } catch {}
-
-    // 9. Record the change in the canonical changelog (wiki). Best-effort — the
-    //    code has already merged, so a wiki hiccup can't undo the feature.
-    const entry = builderChangelogEntry || `${commitMessage}${addressedIssue ? ` (closes #${addressedIssue})` : ""}`;
-    if (appendChangelogEntry(entry)) {
-      publishWiki(`Changelog: ${commitMessage}`);
-    }
-
-    // 10. File any tech debt the Builder flagged → a new ticket the PM prioritizes
-    //     (one per run, deduped against current open tickets, left unprioritized).
-    if (builderTechDebt && builderTechDebt.title && builderTechDebt.body) {
-      const td = builderTechDebt;
-      const dup = openIssues.some(
-        (i) => (i.title || "").toLowerCase().trim() === td.title.toLowerCase().trim()
-      );
-      if (dup) {
-        log("info", `Tech debt: "${td.title}" already tracked — skipping.`);
-      } else {
-        const n = createIssue(td.title, td.body, [TECH_DEBT_LABEL]);
-        if (n) moveCard(n, "Todo"); // PM assigns priority on its next run
+      // 9. Record the change in the canonical changelog (wiki). Best-effort — the
+      //    code has already merged, so a wiki hiccup can't undo the feature.
+      const entry = builderChangelogEntry || `${commitMessage}${addressedIssue ? ` (closes #${addressedIssue})` : ""}`;
+      if (appendChangelogEntry(entry)) {
+        publishWiki(`Changelog: ${commitMessage}`);
       }
-    }
 
-    // 11. Close the issue with a meaningful summary, mark the card Done.
-    if (addressedIssue) {
-      await closeIssue(addressedIssue, { summary: builderSummary, commitMessage, commitSha });
-      moveCard(addressedIssue, "Done");
-    }
+      // 10. File any tech debt the Builder flagged → a new ticket the PM prioritizes
+      //     (one per run, deduped against current open tickets, left unprioritized).
+      if (builderTechDebt && builderTechDebt.title && builderTechDebt.body) {
+        const td = builderTechDebt;
+        const dup = openIssues.some(
+          (i) => (i.title || "").toLowerCase().trim() === td.title.toLowerCase().trim()
+        );
+        if (dup) {
+          log("info", `Tech debt: "${td.title}" already tracked — skipping.`);
+        } else {
+          const n = createIssue(td.title, td.body, [TECH_DEBT_LABEL]);
+          if (n) moveCard(n, "Todo"); // PM assigns priority on its next run
+        }
+      }
 
-    log("info", "Pipeline complete — PR approved and merged.");
-    break;
+      // 11. Close the issue with a meaningful summary, mark the card Done.
+      if (addressedIssue) {
+        await closeIssue(addressedIssue, { summary: builderSummary, commitMessage, commitSha });
+        moveCard(addressedIssue, "Done");
+      }
+
+      log("info", "Pipeline complete — PR approved and merged.");
+      break;
+    } catch (buildError) {
+      // An unhandled throw mid-build (e.g. the model stopped responding on rate
+      // limits) would otherwise leave the branch pushed and the card stuck "In
+      // progress". Surface it loudly, then abandon so cleanup runs.
+      log("error", `Unrecoverable error mid-build: ${buildError.message || buildError}`, errorData(buildError));
+      abandon(`Aborted by an unexpected error (e.g. model rate limit): ${buildError.message || buildError}`, true);
+      break;
+    }
   }
 
   if (!approved) {
