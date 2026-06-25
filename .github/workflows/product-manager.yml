@@ -51,10 +51,22 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Chromium is needed to screenshot the app for the visual check.
+      - name: Cache Playwright browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Playwright browser (visual check)
+        run: npx playwright install --with-deps chromium
+
       - name: Run Product Manager agent
         run: node agents/product-manager.mjs
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # Vision model for the appearance check (a free VLM; swap as the free lineup rotates).
+          VISION_MODEL: google/gemma-4-31b-it:free
           # PAT carries `project` scope (board) and covers issue creation.
           GH_TOKEN: ${{ secrets.AGENT_PAT }}
           GH_PROJECT_OWNER: '@me'

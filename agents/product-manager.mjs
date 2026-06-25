@@ -13,6 +13,7 @@ import {
   ensurePriorityLabels,
   setIssuePriority,
   recordTicket,
+  visualCritique,
 } from "./shared.mjs";
 
 const norm = (t) => (t || "").toLowerCase().trim();
@@ -90,12 +91,19 @@ async function main() {
   const vision = readVision();
   ensurePriorityLabels();
 
+  // A vision model looks at the live app and judges it against the Vision — the
+  // only place appearance is assessed, since the agents themselves can't see.
+  // Best-effort; anchored to the Vision so "quality" means fidelity to intent.
+  const critique = await withLogGroup("Visual check", () => visualCritique(vision));
+  const visualObservations = critique || "(no visual issues observed this run)";
+
   const rawOutput = await withLogGroup("Product Manager", () =>
     runAgent({
       label: "Product Manager",
       systemPrompt: fillTemplate(loadPrompt("product-manager"), {
         VISION: vision,
         BOARD_STATE: boardState,
+        VISUAL_OBSERVATIONS: visualObservations,
       }),
       tools: ["read", "bash"],
     })

@@ -1242,3 +1242,126 @@ export async function verifyBuild(relDir = "docs") {
   if (errors.length) return { ok: false, layer: "runtime", errors: [...new Set(errors)] };
   return { ok: true, layer: null, errors: [] };
 }
+
+// ---------------------------------------------------------------------------
+// Visual critique — give the (text-only) agents a pair of eyes.
+//
+// The build/verify model can't see, so appearance is judged here: screenshot the
+// built site at desktop + mobile widths and ask a VISION model to describe
+// high-confidence layout/visual defects. It's a pure describer — text in, text
+// out — whose findings feed the Product Manager (which turns real defects into
+// tickets). Best-effort: any failure returns null and the caller proceeds.
+// ---------------------------------------------------------------------------
+
+// A free VLM by default; swap via env as OpenRouter's free lineup rotates.
+export const VISION_MODEL = process.env.VISION_MODEL || "google/gemma-4-31b-it:free";
+
+const VISION_VIEWPORTS = [
+  { label: "desktop", width: 1280, height: 800 },
+  { label: "mobile", width: 390, height: 844 },
+];
+
+// "Quality" only means something relative to intent, so the critique is anchored
+// to the Vision and split into two lanes: high-confidence Defects (near-certain,
+// → tickets) and Vision-anchored Polish judged against a fixed rubric (→ optional
+// suggestions). A fixed rubric keeps a subjective judgment consistent run to run.
+function buildVisionPrompt(vision) {
+  return [
+    "You are reviewing screenshots of a browser-only web app at desktop and mobile widths.",
+    "",
+    "The app's intended experience (its north star) is:",
+    vision && vision.trim() ? vision.trim() : "(not provided)",
+    "",
+    "Report in exactly these two sections, using these headings:",
+    "",
+    "## Defects",
+    "Specific, high-confidence things that are visibly broken: overlapping elements, content cut " +
+      "off or overflowing the viewport, unreadable contrast, broken/missing images, empty or " +
+      "collapsed regions, unstyled content. One concise bullet each, naming the viewport. If there " +
+      "are none, write: none.",
+    "",
+    "## Polish",
+    "How well does the app embody the intended experience above? Give ONE short line per dimension — " +
+      "the dimension, a brief verdict, and (only if weak) one concrete improvement. Dimensions: " +
+      "visual hierarchy, spacing & alignment, typography & readability, color & contrast cohesion, " +
+      "responsiveness (desktop vs mobile), interaction affordance, density. Tie every judgment to the " +
+      "intended experience. Do not invent problems or give generic praise; if a dimension is fine, say so briefly.",
+  ].join("\n");
+}
+
+/**
+ * Screenshot the built site and return a vision model's text critique of visible
+ * defects — or null when it can't run (no page yet, Playwright or API key missing,
+ * model error) or sees nothing wrong. Never throws.
+ */
+export async function visualCritique(vision, relDir = "docs") {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    log("info", "Visual check: no OPENROUTER_API_KEY — skipping.");
+    return null;
+  }
+  const dir = join(repoRoot, relDir);
+  if (!fs.existsSync(join(dir, "index.html"))) {
+    log("info", "Visual check: no index.html yet — skipping.");
+    return null;
+  }
+  let chromium;
+  try {
+    ({ chromium } = await import("playwright"));
+  } catch (e) {
+    log("warn", "Visual check: Playwright unavailable — skipping.", errorData(e));
+    return null;
+  }
+
+  const { server, port } = await startStaticServer(dir);
+  const shots = [];
+  let browser;
+  try {
+    browser = await chromium.launch();
+    for (const vp of VISION_VIEWPORTS) {
+      const page = await browser.newPage({ viewport: { width: vp.width, height: vp.height } });
+      await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: "networkidle", timeout: 20000 });
+      await page.waitForTimeout(1500);
+      const png = await page.screenshot({ fullPage: true });
+      shots.push({ label: vp.label, dataUrl: `data:image/png;base64,${png.toString("base64")}` });
+      await page.close();
+    }
+  } catch (e) {
+    log("warn", "Visual check: screenshot capture failed — skipping.", errorData(e));
+    return null;
+  } finally {
+    if (browser) await browser.close();
+    server.close();
+  }
+
+  // One message, both viewports — the model compares them in a single pass.
+  const content = [{ type: "text", text: buildVisionPrompt(vision) }];
+  for (const s of shots) {
+    content.push({ type: "text", text: `[${s.label} viewport]` });
+    content.push({ type: "image_url", image_url: { url: s.dataUrl } });
+  }
+
+  try {
+    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: VISION_MODEL, messages: [{ role: "user", content }] }),
+    });
+    if (!res.ok) {
+      log("warn", `Visual check: ${VISION_MODEL} returned HTTP ${res.status} — skipping.`);
+      return null;
+    }
+    const json = await res.json();
+    const text = (json.choices?.[0]?.message?.content || "").trim();
+    if (!text) {
+      log("warn", "Visual check: empty critique — skipping.");
+      return null;
+    }
+    // Log the full critique so each run's behavior is visible in the run log.
+    log("info", `Visual critique (${VISION_MODEL}):\n${text}`);
+    return text;
+  } catch (e) {
+    log("warn", "Visual check: model call failed — skipping.", errorData(e));
+    return null;
+  }
+}

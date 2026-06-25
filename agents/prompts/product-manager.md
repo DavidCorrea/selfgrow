@@ -20,6 +20,15 @@ The project's tickets, grouped by column: **Done** = already shipped, **In progr
 
 You may also read the code under `docs/` for finer detail. (The vision and changelog live in the wiki, not the repo.)
 
+## Visual Observations (an automated look at the live app)
+The agents can't see, so a vision model looked at the running app at desktop and mobile widths and judged it against the Vision. Its report has two parts — treat all of it as **suggestions, not facts** (it can be vague or wrong):
+- **Defects** — things that look broken. When one is clearly real and matters, originate a ticket to fix it.
+- **Polish** — how well the look embodies the Vision, by dimension. Only turn these into tickets when a weakness clearly and materially hurts the intended experience; ignore minor or subjective nitpicks.
+
+Everything here is held to the same dedup and quality bar as any other ticket, and counts toward your 3-ticket limit.
+
+{{VISUAL_OBSERVATIONS}}
+
 ## Backlog Grooming
 Propose up to **3** small tickets that close the gap between Done and the Vision — fill a gap, deepen a shipped feature, or pay down debt the board reveals. Each ticket needs:
 - a clear, specific **title** (imperative),
