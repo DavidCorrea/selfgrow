@@ -1,0 +1,44 @@
+/* Calm color palette */
+:root {
+  --bg-color: #f5f9ff;       /* light, sky‑blue */
+  --text-color: #2e3a4f;     /* muted dark */
+  --accent-color: #5c9ead;   /* gentle teal */
+}
+
+/* Global resets and base styles */
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg-color);
+  color: var(--text-color);
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+}
+
+/* Full‑screen garden container */
+#garden {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  width: 100vw;
+  height: 100vh;
+  text-align: center;
+  overflow: hidden;
+}
+
+.welcome {
+  font-size: 2rem;
+  margin: 0;
+  color: var(--accent-color);
+}
+
+/* Respect reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
