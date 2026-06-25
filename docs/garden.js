@@ -55,8 +55,15 @@ if (prefersReduced) {
 
 // Helper to create and animate a plant element
 function spawnPlant() {
+  // Determine current season for visual variation
+  const season = window.seasonManager && window.seasonManager.isEnabled ? window.seasonManager.getSeason() : null;
+
   const plant = document.createElement('div');
   plant.className = 'plant';
+  // Apply season class for color changes
+  if (season) {
+    plant.classList.add('plant-' + season);
+  }
 
   // Random size between 20px and 50px
   const size = 20 + Math.random() * 30;
