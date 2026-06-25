@@ -13,7 +13,8 @@ import {
   mergeMainIntoBranch,
   abortMerge,
   deleteRemoteBranch,
-  loadOpenIssues,
+  fetchOpenIssues,
+  recordTicket,
   readVision,
   closeIssue,
   closeIssueAsInvalid,
@@ -129,7 +130,7 @@ function cleanupBranch(branchName) {
 async function main() {
   configureGitIdentity();
 
-  const openIssues = await loadOpenIssues();
+  const openIssues = fetchOpenIssues(20);
 
   // The Builder works only on existing tickets — never invents work. If the
   // backlog is empty, there's nothing to do; the Product Manager fills it.
@@ -231,7 +232,10 @@ async function main() {
       log("warn", `Abandoning ticket: ${reason}`);
       if (closePr && prNumber) closePR(prNumber, reason);
       cleanupBranch(branchName);
-      if (addressedIssue) moveCard(addressedIssue, "Backlog"); // return to the backlog
+      if (addressedIssue) {
+        moveCard(addressedIssue, "Backlog"); // return to the backlog
+        recordTicket("failed", addressedIssue, addressedIssueTitle, reason);
+      }
       abandoned = true;
     };
 
@@ -432,7 +436,10 @@ async function main() {
           log("info", `Tech debt: "${td.title}" already tracked — skipping.`);
         } else {
           const n = createIssue(td.title, td.body, [TECH_DEBT_LABEL]);
-          if (n) moveCard(n, "Todo"); // PM assigns priority on its next run
+          if (n) {
+            moveCard(n, "Todo"); // PM assigns priority on its next run
+            recordTicket("created", n, td.title);
+          }
         }
       }
 
@@ -440,6 +447,7 @@ async function main() {
       if (addressedIssue) {
         await closeIssue(addressedIssue, { summary: builderSummary, commitMessage, commitSha });
         moveCard(addressedIssue, "Done");
+        recordTicket("done", addressedIssue, addressedIssueTitle);
       }
 
       log("info", "Pipeline complete — PR approved and merged.");

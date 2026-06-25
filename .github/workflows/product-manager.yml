@@ -17,6 +17,15 @@ permissions:
   contents: read
   issues: write
 
+# Creating a batch of tickets fires one issues.opened event per ticket, each
+# spinning up another product-manager run (guard-skipped, but it still completes
+# and so still kicks builder-team via workflow_run). Collapse that burst into a
+# single run. cancel-in-progress: false so a self-fired run never aborts an
+# in-flight grooming run — the redundant pending runs just supersede each other.
+concurrency:
+  group: product-manager
+  cancel-in-progress: false
+
 jobs:
   groom-backlog:
     runs-on: ubuntu-latest

@@ -22,7 +22,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  run-agent:
+  build-ticket:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     # When kicked by the PM, only run if the PM actually completed successfully
@@ -52,11 +52,6 @@ jobs:
       - name: Install Playwright browser (runtime verify)
         run: npx playwright install --with-deps chromium
 
-      - name: Fetch open issues
-        run: gh issue list --state open --json number,title,body,labels,createdAt --limit 20 > "$RUNNER_TEMP/open-issues.json"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Run Builder Team agents
         run: node agents/builder-team.mjs
         env:
@@ -68,4 +63,3 @@ jobs:
           BOT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_PROJECT_OWNER: '@me'
           GH_PROJECT_NUMBER: '3'
-          OPEN_ISSUES_PATH: ${{ runner.temp }}/open-issues.json

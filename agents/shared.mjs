@@ -161,6 +161,20 @@ export function getRunLog() {
   return runLog;
 }
 
+// Tickets the run affected — this, not the step log, is what the summary reports.
+const ticketOutcomes = [];
+
+/**
+ * Record a ticket this run acted on, for the end-of-run summary.
+ * @param {string} status - what happened: "done" | "failed" | "created"
+ * @param {number} number - issue number
+ * @param {string} title  - issue title
+ * @param {string} [detail] - optional context (e.g. the reason a build failed)
+ */
+export function recordTicket(status, number, title, detail) {
+  ticketOutcomes.push({ status, number, title, detail });
+}
+
 export function log(level, message, data) {
   runLog.push({ level, message, data });
   if (level === "debug") return; // debug entries collected but not printed
@@ -230,43 +244,33 @@ export function errorData(e) {
 }
 
 export function printRunSummary(title = "Run Summary") {
-  const errors = runLog.filter((e) => e.level === "error");
-  const warns = runLog.filter((e) => e.level === "warn");
-  const steps = runLog.filter((e) => e.level !== "debug");
-  const result = errors.length ? "errors" : warns.length ? "completed with warnings" : "clean";
+  const errors = runLog.filter((e) => e.level === "error").length;
+  const warns = runLog.filter((e) => e.level === "warn").length;
+  const result = errors ? "errors" : warns ? "completed with warnings" : "clean";
 
-  // Compact stdout recap — the result line plus just the warnings/errors. The
-  // full per-line story already streamed live during the run, so don't replay it.
-  console.log(`\n=== ${title}: ${result} · ${errors.length} error(s), ${warns.length} warning(s) ===`);
+  const oneLine = (s) => String(s).replace(/\s*\n\s*/g, " ").trim();
+  const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+  const ticketLine = (t) =>
+    `${cap(t.status)} — #${t.number} ${t.title}${t.detail ? ` (${oneLine(t.detail)})` : ""}`;
+
+  // Compact stdout recap — result, the tickets we touched, then any warn/error.
+  // The full per-line story already streamed live, so don't replay it.
+  console.log(`\n=== ${title}: ${result} · ${errors} error(s), ${warns} warning(s) ===`);
+  ticketOutcomes.forEach((t) => console.log(`  ${ticketLine(t)}`));
   for (const entry of runLog) {
     if (entry.level === "warn" || entry.level === "error") {
       console.log(`  ${entry.level.toUpperCase()}: ${entry.message}`);
     }
   }
 
-  // The GitHub job-summary panel renders full markdown, so surface the result
-  // and any problems as compact alert callouts, and tuck the routine step log
-  // into a collapsed <details> — far tighter than a row-per-line table.
-  const icon = (level) => (level === "error" ? "❌" : level === "warn" ? "⚠️" : "ℹ️");
-  const oneLine = (s) => String(s).replace(/\s*\n\s*/g, " ").trim();
-  const badge = errors.length
-    ? "❌ **errors**"
-    : warns.length
-    ? "⚠️ **completed with warnings**"
-    : "✅ **clean**";
-
-  const md = [`## ${title}`, "", `${badge} · ${errors.length} error(s) · ${warns.length} warning(s)`];
-  if (errors.length) {
-    md.push("", "> [!CAUTION]");
-    errors.forEach((e) => md.push(`> ${oneLine(e.message)}  `));
+  // The GitHub job-summary panel reports the result line and, below it, the
+  // tickets this run affected — that's the whole story worth keeping there.
+  const md = [`## ${title}`, "", `${result} · ${errors} error(s) · ${warns} warning(s)`, ""];
+  if (ticketOutcomes.length) {
+    ticketOutcomes.forEach((t) => md.push(`- ${ticketLine(t)}`));
+  } else {
+    md.push("_No tickets affected._");
   }
-  if (warns.length) {
-    md.push("", "> [!WARNING]");
-    warns.forEach((w) => md.push(`> ${oneLine(w.message)}  `));
-  }
-  md.push("", `<details><summary>Full run log · ${steps.length} steps</summary>`, "");
-  steps.forEach((e) => md.push(`- ${icon(e.level)} ${oneLine(e.message)}`));
-  md.push("", "</details>", "");
   appendJobSummary(md.join("\n"));
 }
 
@@ -445,7 +449,10 @@ export function createBranchName(issueNumber, issueTitle, suggestion) {
  */
 export function deleteRemoteBranch(branchName) {
   try {
-    gitExec(`push origin --delete ${branchName}`);
+    // Best-effort: the branch usually doesn't exist on origin (run-scoped names
+    // are unique), so capture stderr rather than leak git's "remote ref does not
+    // exist" to the console.
+    gitExec(`push origin --delete ${branchName}`, { stdio: "pipe" });
     log("info", `Deleted remote branch ${branchName}.`);
   } catch {
     // remote branch may not exist — fine
@@ -457,9 +464,11 @@ export function createBranch(branchName) {
   gitExec("checkout main");
   // Base the branch on the real remote tip, not a possibly-stale local main.
   gitExec("reset --hard origin/main");
-  // Clear any leftover branch of the same name from a prior failed run.
+  // Clear any leftover branch of the same name from a prior failed run. With
+  // run-scoped names this is usually a no-op, so capture stderr rather than leak
+  // git's "branch not found" to the console.
   try {
-    gitExec(`branch -D ${branchName}`);
+    gitExec(`branch -D ${branchName}`, { stdio: "pipe" });
   } catch {
     // local branch may not exist — fine
   }
@@ -554,21 +563,6 @@ export function mergeBranchToMain(branchName, { retries = 5 } = {}) {
 // GitHub issue helpers
 // ---------------------------------------------------------------------------
 
-export const OPEN_ISSUES_PATH = process.env.OPEN_ISSUES_PATH || "/tmp/open-issues.json";
-
-export function loadOpenIssues() {
-  if (!fs.existsSync(OPEN_ISSUES_PATH)) {
-    log("info", `No open-issues file at ${OPEN_ISSUES_PATH}; proceeding without issues.`);
-    return [];
-  }
-  try {
-    return JSON.parse(fs.readFileSync(OPEN_ISSUES_PATH, "utf-8"));
-  } catch (e) {
-    log("warn", `Failed to read/parse ${OPEN_ISSUES_PATH}; proceeding without issues.`, errorData(e));
-    return [];
-  }
-}
-
 // Post a comment by piping the body over stdin, so arbitrary Markdown/prose
 // (backticks, $, quotes, newlines) is never interpreted by the shell.
 function ghComment(issueNumber, body) {
@@ -657,7 +651,7 @@ export function fetchOpenIssues(limit = 100) {
   try {
     return JSON.parse(
       execSync(
-        `gh issue list --state open --json number,title,body,labels --limit ${limit}`,
+        `gh issue list --state open --json number,title,body,labels,createdAt --limit ${limit}`,
         { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }
       ).toString()
     );

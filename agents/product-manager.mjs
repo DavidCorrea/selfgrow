@@ -12,6 +12,7 @@ import {
   moveCard,
   ensurePriorityLabels,
   setIssuePriority,
+  recordTicket,
 } from "./shared.mjs";
 
 const norm = (t) => (t || "").toLowerCase().trim();
@@ -50,6 +51,7 @@ function groomBacklog(proposed, openIssues, boardTitles) {
     if (number) {
       moveCard(number, "Backlog"); // best-effort; also adds it to the board
       setIssuePriority(number, item.priority || "medium", []);
+      recordTicket("created", number, item.title);
       seen.add(key);
       created++;
     }
