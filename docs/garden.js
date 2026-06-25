@@ -4,6 +4,8 @@
 // All animations respect the user's reduced‑motion preference.
 
 const garden = document.getElementById('garden');
+// Global pause flag for garden animations
+window.isGardenPaused = false;
 if (!garden) {
   console.error('Garden container not found');
 }
@@ -106,6 +108,19 @@ if (!prefersReduced) {
   } catch (_) {}
 
   // Spawn a new plant every 30 seconds
-  setInterval(spawnPlant, 30000);
+  const intervalId = setInterval(spawnPlant, 30000);
+  // expose for pause control
+  window.gardenSpawnInterval = intervalId;
+  window.setGardenPaused = function(paused) {
+    window.isGardenPaused = paused;
+    if (paused) {
+      clearInterval(window.gardenSpawnInterval);
+    } else {
+      // restart interval if not already running
+      if (!window.gardenSpawnInterval) {
+        window.gardenSpawnInterval = setInterval(spawnPlant, 30000);
+      }
+    }
+  };
 }
 

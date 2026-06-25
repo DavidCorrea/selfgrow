@@ -39,6 +39,7 @@ function interpolateColor(start, end, t) {
 }
 
 let startTime = null;
+let lightingRAF = null;
 
 function updateLighting(timestamp) {
   if (!startTime) startTime = timestamp;
@@ -70,12 +71,25 @@ function updateLighting(timestamp) {
   overlay.style.backgroundColor = color;
 
   if (!prefersReduced) {
-    requestAnimationFrame(updateLighting);
+  // expose control for pause UI
+  window.pauseLighting = function() {
+    if (lightingRAF) {
+      cancelAnimationFrame(lightingRAF);
+      lightingRAF = null;
+    }
+  };
+  window.resumeLighting = function() {
+    if (!window.isGardenPaused && !lightingRAF) {
+      lightingRAF = requestAnimationFrame(updateLighting);
+    }
+  };
+
+    lightingRAF = requestAnimationFrame(updateLighting);
   }
 }
 
 if (overlay && !prefersReduced) {
-  requestAnimationFrame(updateLighting);
+  // lighting animation started above
 } else if (overlay) {
   // Reduced motion – show night overlay instantly
   overlay.style.backgroundColor = NIGHT_COLOR;
