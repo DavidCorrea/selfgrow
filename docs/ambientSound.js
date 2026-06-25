@@ -46,9 +46,16 @@
     const toggle = document.getElementById(TOGGLE_ID);
     if (!toggle) return; // UI may be missing in some contexts
     toggle.checked = enabled;
+    // Ensure accessibility: use role="switch" and aria-checked reflects state
+    toggle.setAttribute('role', 'switch');
+    toggle.setAttribute('aria-checked', String(enabled));
+    // Disable when reduced motion is enabled
+    toggle.disabled = !!window.reducedMotionEnabled;
     toggle.addEventListener('change', (e) => {
       enabled = e.target.checked;
       try { localStorage.setItem(STORAGE_KEY, String(enabled)); } catch (_) {}
+      // Update ARIA attribute
+      toggle.setAttribute('aria-checked', String(enabled));
       updatePlayback();
     });
   }
@@ -56,11 +63,35 @@
   // React to reduced‑motion changes (the reducedMotion script mutates the same toggle)
   function hookReducedMotionToggle() {
     const rmToggle = document.getElementById('reducedMotionToggle');
+    const ambToggle = document.getElementById(TOGGLE_ID);
     if (!rmToggle) return;
     rmToggle.addEventListener('change', () => {
       // reducedMotionEnabled will be updated by reducedMotion.js before this fires.
+      // Disable ambient sound toggle when reduced motion is enabled
+      if (ambToggle) {
+        const rmEnabled = !!window.reducedMotionEnabled;
+        ambToggle.disabled = rmEnabled;
+        if (rmEnabled) {
+          // Force ambient sound off
+          enabled = false;
+          ambToggle.checked = false;
+          ambToggle.setAttribute('aria-checked', 'false');
+          try { localStorage.setItem(STORAGE_KEY, String(enabled)); } catch (_) {}
+        }
+      }
       updatePlayback();
     });
+    // Initial sync in case reduced motion is already enabled
+    const rmEnabledInit = !!window.reducedMotionEnabled;
+    if (ambToggle) {
+      ambToggle.disabled = rmEnabledInit;
+      if (rmEnabledInit) {
+        enabled = false;
+        ambToggle.checked = false;
+        ambToggle.setAttribute('aria-checked', 'false');
+        try { localStorage.setItem(STORAGE_KEY, String(enabled)); } catch (_) {}
+      }
+    }
   }
 
   // Run after DOM is ready
