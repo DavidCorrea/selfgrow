@@ -75,6 +75,22 @@ function spawnPlant() {
   plant.style.transform = 'scale(0.1)';
   plant.style.opacity = '0';
 
+  // Pollination support
+  plant.bloomState = 0; // 0 = normal, 1 = boosted
+  plant.pollinate = function() {
+    const currentScale = parseFloat(this.style.transform.replace('scale(','').replace(')','')) || 1;
+    const boosted = currentScale * 1.2;
+    const originalTransition = this.style.transition;
+    this.style.transition = 'transform 0.5s ease-out';
+    this.style.transform = `scale(${boosted})`;
+    setTimeout(() => {
+      this.style.transform = `scale(${currentScale})`;
+      setTimeout(() => { this.style.transition = originalTransition; }, 500);
+    }, 500);
+    this.bloomState = 1;
+    setTimeout(() => { this.bloomState = 0; }, 2000);
+  };
+
   garden.appendChild(plant);
 
   // Trigger growth animation on next frame
