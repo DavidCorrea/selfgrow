@@ -17,10 +17,17 @@
   <!-- Light overlay for sunrise/sunset -->
   <div id="lightOverlay" class="light-overlay"></div>
 </div>
+  <script type="module" src="season.js"></script>
   <script type="module" src="garden.js"></script>
   <script type="module" src="weather.js"></script>
   <script type="module" src="creatures.js"></script>
   <script type="module" src="app.js"></script>
   <script type="module" src="pause.js"></script>
+  <div id="settings" style="position: absolute; top: 10px; right: 10px; background: rgba(255,255,255,0.8); padding: 5px; border-radius: 4px; z-index: 30;">
+    <label>
+      <input type="checkbox" id="seasonToggle" checked /> Seasonal Mode
+    </label>
+  </div>
+  <script type="module" src="settings.js"></script>
 </body>
 </html>

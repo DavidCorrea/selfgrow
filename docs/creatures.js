@@ -30,7 +30,13 @@ class Creature {
 
   step() {
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const speed = reduced ? 0.1 : 0.5; // slower if reduced motion preferred
+    // Adjust speed based on season
+    let speed = reduced ? 0.1 : 0.5; // base speed
+    const season = window.seasonManager && window.seasonManager.isEnabled ? window.seasonManager.getSeason() : null;
+    if (season) {
+      const factors = { spring: 1.2, summer: 1, fall: 0.8, winter: 0.5 };
+      speed *= factors[season] || 1;
+    }
     // random walk with slight bias toward nearest flower
     // Treat plants as flowers for biasing movement
     const flowers = document.querySelectorAll('.plant');
