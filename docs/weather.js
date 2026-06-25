@@ -94,6 +94,10 @@ function startSun() {
 }
 
 function applyState(state) {
+  // Log weather change event
+  if (window.garden && typeof window.garden.logEvent === 'function') {
+    window.garden.logEvent('weatherChanged', state.name);
+  }
   switch (state.name) {
     case 'clear':
       startClear();
