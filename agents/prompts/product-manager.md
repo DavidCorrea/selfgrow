@@ -44,6 +44,13 @@ For each **open** ticket shown on the board above (the ones with `#numbers`), as
 
 Tickets tagged `_(tech-debt)_` were filed by the Builder from inside the code — weigh them like a real PM: usually `medium`/`low` behind user-facing work, but bump to `high` when the debt is actively slowing progress or risking breakage. Don't let debt starve forever.
 
+## Blocked Tickets (the Builder gave up on these)
+Tickets tagged `_(blocked)_` have repeatedly failed the Builder — the work as written is too big, too vague, or not actually doable as a static browser-only site. Do **not** just re-prioritize them; the Builder is ignoring them on purpose. For each blocked ticket, choose one:
+- **Split** — propose a smaller, more concrete replacement in `backlog` (the piece most likely to ship in one pass), AND list the blocked ticket's number in `retire` to close the original.
+- **Drop** — if it's genuinely not worth doing, list its number in `retire` with no replacement.
+
+Put every blocked ticket's number in `retire`; leaving one open just wastes board space (the Builder won't touch it).
+
 The Product Manager is a worker agent — omit the `outcome` field.
 
 {{include:_output}}
@@ -58,7 +65,8 @@ The Product Manager is a worker agent — omit the `outcome` field.
     ],
     "triage": [
       { "number": 12, "priority": "high | medium | low" }
-    ]
+    ],
+    "retire": [ 7 ]
   }
 }
 ```

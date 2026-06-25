@@ -757,6 +757,124 @@ export function setIssuePriority(issueNumber, priority, currentLabels = []) {
 }
 
 // ---------------------------------------------------------------------------
+// Failure tracking — stop the Builder re-picking tickets it can't ship
+//
+// A ticket the Builder repeatedly abandons would otherwise be picked again every
+// run (the Scout always takes the highest-priority open ticket), starving the
+// whole backlog. We count failed attempts on the issue itself (an `attempts:N`
+// label) and, once it crosses a threshold, park it with `blocked` — the Builder
+// skips blocked tickets, and the Product Manager splits or retires them.
+// ---------------------------------------------------------------------------
+
+export const BLOCKED_LABEL = "blocked";
+const ATTEMPTS_LABEL_RE = /^attempts:(\d+)$/;
+
+/** An issue's label names as plain strings (gh returns objects; humans add strings). */
+export function labelNames(issue) {
+  return (issue?.labels || []).map((l) => l.name || l);
+}
+
+/** Cumulative failed-attempt count the Builder has recorded on an issue (0 if none). */
+export function attemptCount(issue) {
+  for (const name of labelNames(issue)) {
+    const m = name.match(ATTEMPTS_LABEL_RE);
+    if (m) return Number(m[1]);
+  }
+  return 0;
+}
+
+export function isBlocked(issue) {
+  return labelNames(issue).includes(BLOCKED_LABEL);
+}
+
+/**
+ * Record that a Builder run failed to ship `issue`. Bumps its `attempts:N`
+ * label; once the count reaches `maxAttempts` the ticket is parked (the `blocked`
+ * label + demoted to low) so the Scout stops re-picking it and the PM can split
+ * or retire it. Best-effort; returns the new attempt count.
+ */
+export function recordTicketFailure(issue, reason, maxAttempts) {
+  const number = issue?.number;
+  if (!number) return 0;
+
+  const current = attemptCount(issue);
+  const next = current + 1;
+  const nextLabel = `attempts:${next}`;
+  ensureLabel(nextLabel, "e4b8b8");
+
+  const edits = [`--add-label "${nextLabel}"`];
+  const prevLabel = `attempts:${current}`;
+  if (current > 0 && labelNames(issue).includes(prevLabel)) edits.push(`--remove-label "${prevLabel}"`);
+  try {
+    execSync(`gh issue edit ${number} ${edits.join(" ")}`, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 });
+  } catch (e) {
+    log("warn", `Could not bump attempt count on #${number}.`, errorData(e));
+  }
+
+  if (next >= maxAttempts) {
+    parkBlockedTicket(number, next, reason, labelNames(issue));
+  } else {
+    log("info", `Ticket #${number}: failed attempt ${next}/${maxAttempts}.`);
+  }
+  return next;
+}
+
+function parkBlockedTicket(number, attempts, reason, currentLabels) {
+  ensureLabel(BLOCKED_LABEL, "b60205");
+  try {
+    execSync(`gh issue edit ${number} --add-label "${BLOCKED_LABEL}"`, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 });
+  } catch (e) {
+    log("warn", `Could not block #${number}.`, errorData(e));
+  }
+  // Demote so it sinks even if a human later unblocks it without re-triaging.
+  setIssuePriority(number, "low", currentLabels);
+
+  const body = [
+    "## ⛔ Parked by the Builder Team",
+    "",
+    `The Builder failed to ship this ticket ${attempts} time(s); most recent reason:`,
+    "",
+    `> ${reason || "no detail"}`,
+    "",
+    "It's now **blocked** so the Builder stops retrying it. The Product Manager should split it into a smaller, concrete ticket or retire it.",
+  ].join("\n");
+  try {
+    ghComment(number, body);
+  } catch (e) {
+    log("warn", `Could not comment on blocked #${number}.`, errorData(e));
+  }
+  log("warn", `Ticket #${number} parked as blocked after ${attempts} failed attempt(s).`);
+}
+
+/** Close a ticket the Product Manager decided to retire (split/superseded/won't-do). */
+export async function retireIssue(number, reason) {
+  const body = ["## Retired by the Product Manager", "", reason || "Superseded or no longer worth building in its current form."].join("\n");
+  try {
+    ghComment(number, body);
+    execSync(`gh issue close ${number}`, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 });
+    log("info", `Retired issue #${number}.`);
+  } catch (e) {
+    log("warn", `Could not retire #${number}.`, errorData(e));
+  }
+}
+
+/**
+ * Best-effort: dispatch another agent workflow by file name (demand-driven
+ * refill). Uses GH_TOKEN (the PAT), so the caller workflow's `permissions:` block
+ * doesn't gate it; the target workflow just needs a `workflow_dispatch` trigger.
+ */
+export function triggerWorkflow(workflowFile) {
+  try {
+    execSync(`gh workflow run ${workflowFile}`, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 });
+    log("info", `Dispatched workflow ${workflowFile}.`);
+    return true;
+  } catch (e) {
+    log("warn", `Could not dispatch workflow ${workflowFile}.`, errorData(e));
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // GitHub Projects (Kanban board) helpers
 //
 // All board operations are BEST-EFFORT: they log and return false/null on any

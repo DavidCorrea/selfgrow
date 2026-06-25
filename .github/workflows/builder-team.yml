@@ -2,7 +2,10 @@ name: builder-team
 
 on:
   schedule:
-    - cron: '0 * * * *'
+    # Daily safety net only. Day-to-day the Builder is demand-driven: the PM run
+    # kicks it via workflow_run, and when it drains the backlog low it kicks the
+    # PM back (which kicks the Builder again). The cron just covers a broken chain.
+    - cron: '0 7 * * *'
   workflow_dispatch:
   # Kicked off after the Product Manager finishes grooming/prioritizing the backlog.
   # (Builder is deliberately NOT triggered by issue events.)

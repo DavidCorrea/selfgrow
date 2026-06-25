@@ -15,6 +15,7 @@ import {
   ensurePriorityLabels,
   setIssuePriority,
   recordTicket,
+  retireIssue,
   visualCritique,
 } from "./shared.mjs";
 
@@ -179,6 +180,25 @@ function triageExisting(openIssues, boardItems, triage) {
   }
 }
 
+/**
+ * Close the tickets the PM chose to retire (blocked tickets it split or dropped).
+ * Returns the set of retired issue numbers. Best-effort.
+ */
+async function retireBlocked(retire) {
+  const numbers = (Array.isArray(retire) ? retire : [])
+    .map((n) => Number(typeof n === "object" && n ? n.number : n))
+    .filter((n) => Number.isInteger(n) && n > 0);
+  const retired = new Set();
+  for (const number of numbers) {
+    await retireIssue(number, "Retired by the Product Manager — repeatedly failed to ship; split into a smaller ticket or dropped.");
+    moveCard(number, "Done"); // reflect the closure on the board (best-effort)
+    recordTicket("retired", number, `#${number}`);
+    retired.add(number);
+  }
+  if (retired.size) log("info", `Retired ${retired.size} blocked ticket(s).`);
+  return retired;
+}
+
 async function main() {
   log("info", "=== Product Manager — Backlog Grooming ===");
 
@@ -212,10 +232,15 @@ async function main() {
   }
 
   const data = parsed.data || {};
-  // 1. Triage + prioritize existing open tickets (pull inbound onto the board).
-  triageExisting(openIssues, boardItems, data.triage);
-  // 2. Create new prioritized tickets toward the vision.
-  await groomBacklog(data.backlog, openIssues, boardItems.map((i) => i.title));
+  // 1. Retire blocked tickets the PM gave up on (split into fresh tickets via
+  //    `backlog`, or dropped outright). Done first so closing them frees backlog
+  //    room for the grooming pass below.
+  const retired = await retireBlocked(data.retire);
+  const remainingOpen = openIssues.filter((i) => !retired.has(i.number));
+  // 2. Triage + prioritize existing open tickets (pull inbound onto the board).
+  triageExisting(remainingOpen, boardItems, data.triage);
+  // 3. Create new prioritized tickets toward the vision.
+  await groomBacklog(data.backlog, remainingOpen, boardItems.map((i) => i.title));
 
   printRunSummary("Product Manager");
 }

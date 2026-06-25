@@ -15,6 +15,9 @@ import {
   deleteRemoteBranch,
   fetchOpenIssues,
   recordTicket,
+  recordTicketFailure,
+  isBlocked,
+  triggerWorkflow,
   readVision,
   closeIssue,
   closeIssueAsInvalid,
@@ -36,6 +39,20 @@ const MAX_SCOUT_RETRIES = 2;
 // Kept modest because each cycle is several slow free-model calls + a verify;
 // the job has a wall-clock budget.
 const MAX_BUILDER_RETRIES = 3;
+
+// Cross-run failures a single ticket may rack up before it's parked (blocked) so
+// the Scout stops re-picking it every run. See recordTicketFailure in shared.
+const MAX_TICKET_ATTEMPTS = Number(process.env.MAX_TICKET_ATTEMPTS || 2);
+
+// Drain several tickets per run (better runner utilization — one npm ci +
+// Playwright install amortized over multiple builds) up to a wall-clock budget,
+// kept under the job's 60-minute timeout.
+const MAX_TICKETS_PER_RUN = Number(process.env.MAX_TICKETS_PER_RUN || 3);
+const RUN_BUDGET_MS = Number(process.env.BUILD_RUN_BUDGET_MINUTES || 45) * 60 * 1000;
+
+// When buildable tickets dip below this after a run, ask the Product Manager to
+// refill — so the backlog is replenished on demand, not only on its daily cron.
+const BACKLOG_FLOOR = Number(process.env.BACKLOG_FLOOR || 2);
 
 // ---------------------------------------------------------------------------
 // Prompt builders
@@ -124,28 +141,17 @@ function cleanupBranch(branchName) {
 }
 
 // ---------------------------------------------------------------------------
-// Main pipeline
+// Build a single ticket: Scout → Validator → Builder → review → merge.
+//
+// Returns { addressedIssue, addressedIssueObj, outcome, reason, ticketFault }:
+//   outcome "merged"    — PR approved and merged.
+//   outcome "invalid"   — Scout judged the ticket out of scope; it was closed.
+//   outcome "abandoned" — a ticket was engaged but couldn't ship (ticketFault
+//                         tells the caller whether to count it as a failure).
+//   outcome "none"      — no ticket could even be planned (Scout produced nothing).
 // ---------------------------------------------------------------------------
 
-async function main() {
-  configureGitIdentity();
-
-  const openIssues = fetchOpenIssues(20);
-
-  // The Builder works only on existing tickets — never invents work. If the
-  // backlog is empty, there's nothing to do; the Product Manager fills it.
-  if (openIssues.length === 0) {
-    log("info", "No open tickets — nothing to build. (The Product Manager grooms the backlog.)");
-    printRunSummary("Builder Team");
-    return;
-  }
-  log("info", `Found ${openIssues.length} open ticket(s). Picking the highest-priority one.`);
-
-  // Product vision (from the wiki) grounds the Scout's plan and the Validator's
-  // alignment check — they no longer read it from a repo file.
-  const vision = readVision();
-
-  let approved = false;
+async function buildTicket(openIssues, vision) {
   let feedback = null;
   let addressedIssue = null;
   let addressedIssueTitle = null;
@@ -168,12 +174,12 @@ async function main() {
     if (!scoutResult) continue;
     const { data: scoutData } = scoutResult;
 
-    // If the Scout identified an invalid issue, label and skip
+    // If the Scout identified an invalid issue, label, close, and report it.
     if (scoutData.issueAction === "close-invalid" && scoutData.issueNumber) {
       log("info", `Scout: issue #${scoutData.issueNumber} is invalid/out of scope.`);
       await closeIssueAsInvalid(scoutData.issueNumber, scoutData.issueReason);
-      printRunSummary("Builder Team");
-      return;
+      const obj = openIssues.find((i) => i.number === scoutData.issueNumber);
+      return { addressedIssue: scoutData.issueNumber, addressedIssueObj: obj, outcome: "invalid" };
     }
 
     // Track which issue we're addressing
@@ -217,7 +223,6 @@ async function main() {
     // 4. Build → open PR → review/address loop (capped at MAX_BUILDER_RETRIES).
     //    Each attempt commits + pushes so the PR reflects the work and the
     //    Reviewer sees a real diff. The card moves Todo → In progress → In review.
-    approved = true;
     let reviewerFeedback = null;
     let commitMessage = "Agent build";
     let builderSummary = null;
@@ -226,9 +231,14 @@ async function main() {
     let builderEverSucceeded = false;
     let reviewerApproved = false;
     let prNumber = null;
-    let abandoned = false;
 
-    const abandon = (reason, closePr) => {
+    // How this ticket ended up — set by abandon()/the merge path and returned to
+    // the drain loop, which decides whether to count it as a failure.
+    let outcomeKind = null; // "abandoned" | "merged"
+    let outcomeReason = null;
+    let ticketFault = true;
+
+    const abandon = (reason, closePr, fault = true) => {
       log("warn", `Abandoning ticket: ${reason}`);
       if (closePr && prNumber) closePR(prNumber, reason);
       cleanupBranch(branchName);
@@ -236,7 +246,9 @@ async function main() {
         moveCard(addressedIssue, "Backlog"); // return to the backlog
         recordTicket("failed", addressedIssue, addressedIssueTitle, reason);
       }
-      abandoned = true;
+      outcomeKind = "abandoned";
+      outcomeReason = reason;
+      ticketFault = fault;
     };
 
     // Everything from here on touches live state (the branch, the PR, the
@@ -307,7 +319,7 @@ async function main() {
             gitExec(`push origin ${branchName}`);
           }
         } catch (e) {
-          abandon(`Build pipeline error: ${e.message}`, true);
+          abandon(`Build pipeline error: ${e.message}`, true, false);
           break;
         }
 
@@ -316,7 +328,7 @@ async function main() {
           const prBody = `${builderSummary || commitMessage}${addressedIssue ? `\n\nRefs #${addressedIssue}` : ""}`;
           prNumber = createPR(branchName, commitMessage, prBody);
           if (!prNumber) {
-            abandon("Could not open PR.", false);
+            abandon("Could not open PR.", false, false);
             break;
           }
           if (addressedIssue) moveCard(addressedIssue, "In review");
@@ -352,12 +364,14 @@ async function main() {
         reviewerFeedback = reviewerResult.data.issues ? reviewerResult.data.issues.join("\n- ") : "Unknown issues found.";
       }
 
-      if (abandoned) break;
+      if (outcomeKind === "abandoned") {
+        return { addressedIssue, addressedIssueObj, outcome: "abandoned", reason: outcomeReason, ticketFault };
+      }
 
       // 5. Builder never produced usable work / no PR — clean up.
       if (!builderEverSucceeded || !prNumber) {
         abandon("Builder failed on every attempt.", false);
-        break;
+        return { addressedIssue, addressedIssueObj, outcome: "abandoned", reason: outcomeReason, ticketFault };
       }
 
       // 6. Not approved within the cap → revoke the PR, return ticket to the backlog.
@@ -366,7 +380,7 @@ async function main() {
           `Closed automatically after ${MAX_BUILDER_RETRIES} review cycles without approval. Returning to the backlog for a fresh attempt.`,
           true
         );
-        break;
+        return { addressedIssue, addressedIssueObj, outcome: "abandoned", reason: outcomeReason, ticketFault };
       }
 
       // 7. Bring the branch up to date with main so the PR is mergeable.
@@ -389,7 +403,7 @@ async function main() {
         if (gitExec("diff --name-only --diff-filter=U")) {
           abortMerge();
           abandon("Unresolved merge conflicts with main.", true);
-          break;
+          return { addressedIssue, addressedIssueObj, outcome: "abandoned", reason: outcomeReason, ticketFault };
         }
         try {
           const resolveMsg = addressedIssue
@@ -401,8 +415,8 @@ async function main() {
           log("info", "Merge conflicts resolved and pushed.");
         } catch (e) {
           abortMerge();
-          abandon(`Conflict resolution failed: ${e.message}`, true);
-          break;
+          abandon(`Conflict resolution failed: ${e.message}`, true, false);
+          return { addressedIssue, addressedIssueObj, outcome: "abandoned", reason: outcomeReason, ticketFault };
         }
       }
 
@@ -410,7 +424,7 @@ async function main() {
       const finalVerify = await withLogGroup("Verify (pre-merge)", () => verifyBuild());
       if (!finalVerify.ok) {
         abandon(`Failed the ${finalVerify.layer} check after merging main:\n- ${finalVerify.errors.join("\n- ")}`, true);
-        break;
+        return { addressedIssue, addressedIssueObj, outcome: "abandoned", reason: outcomeReason, ticketFault };
       }
 
       // 8. Approve (as the PAT user — a different identity than the bot author) and merge.
@@ -423,7 +437,7 @@ async function main() {
       approvePR(prNumber, "Approved by the Reviewer agent — all blocking issues resolved.");
       if (!mergePR(prNumber)) {
         log("error", "PR merge failed — leaving PR open and card In review for inspection.");
-        break;
+        return { addressedIssue, addressedIssueObj, outcome: "abandoned", reason: "PR merge failed.", ticketFault: false };
       }
       try { gitExec("checkout main"); } catch {}
 
@@ -460,21 +474,105 @@ async function main() {
       }
 
       log("info", "Pipeline complete — PR approved and merged.");
-      break;
+      return { addressedIssue, addressedIssueObj, outcome: "merged" };
     } catch (buildError) {
       // An unhandled throw mid-build (e.g. the model stopped responding on rate
       // limits) would otherwise leave the branch pushed and the card stuck "In
-      // progress". Surface it loudly, then abandon so cleanup runs.
+      // progress". Surface it loudly, then abandon so cleanup runs. Infra fault,
+      // not the ticket's — don't count it toward blocking.
       log("error", `Unrecoverable error mid-build: ${buildError.message || buildError}`, errorData(buildError));
-      abandon(`Aborted by an unexpected error (e.g. model rate limit): ${buildError.message || buildError}`, true);
+      abandon(`Aborted by an unexpected error (e.g. model rate limit): ${buildError.message || buildError}`, true, false);
+      return { addressedIssue, addressedIssueObj, outcome: "abandoned", reason: outcomeReason, ticketFault };
+    }
+  }
+
+  // The Scout retries were exhausted without ever approving a plan.
+  if (addressedIssue) {
+    return {
+      addressedIssue,
+      addressedIssueObj,
+      outcome: "abandoned",
+      reason: feedback ? `No workable plan after ${MAX_SCOUT_RETRIES} attempts: ${feedback}` : "No workable plan produced.",
+      ticketFault: true,
+    };
+  }
+  return { addressedIssue: null, addressedIssueObj: null, outcome: "none" };
+}
+
+// ---------------------------------------------------------------------------
+// Demand-driven refill — ask the PM to groom when the backlog runs low.
+// ---------------------------------------------------------------------------
+
+function maybeReplenishBacklog(mergedCount) {
+  // Only kick the PM when we actually shipped something this run. A run that
+  // merged nothing means the PM (which just triggered us) already had its turn
+  // and produced no buildable work — kicking it again would spin a tight
+  // builder⇄PM loop on an empty backlog. Real progress is the gate.
+  if (mergedCount === 0) {
+    log("info", "No tickets merged this run — not kicking the PM (avoids an empty-backlog loop).");
+    return;
+  }
+  const buildable = fetchOpenIssues(50).filter((i) => !isBlocked(i)).length;
+  if (buildable < BACKLOG_FLOOR) {
+    log("info", `Backlog low (${buildable} buildable < floor ${BACKLOG_FLOOR}) — asking the Product Manager to refill.`);
+    triggerWorkflow("product-manager.yml");
+  } else {
+    log("info", `Backlog OK (${buildable} buildable ≥ floor ${BACKLOG_FLOOR}) — no refill needed.`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Main — drain the highest-priority tickets within a wall-clock budget.
+// ---------------------------------------------------------------------------
+
+async function main() {
+  configureGitIdentity();
+
+  // Product vision (from the wiki) grounds the Scout's plan and the Validator's
+  // alignment check — they no longer read it from a repo file.
+  const vision = readVision();
+
+  const attempted = new Set(); // tickets engaged this run — never re-pick them
+  const deadline = Date.now() + RUN_BUDGET_MS;
+  let mergedCount = 0;
+
+  for (let n = 1; n <= MAX_TICKETS_PER_RUN; n++) {
+    if (Date.now() > deadline) {
+      log("info", `Time budget (${Math.round(RUN_BUDGET_MS / 60000)}m) reached — stopping after ${mergedCount} merge(s).`);
+      break;
+    }
+
+    // The Builder works only on existing, unblocked tickets it hasn't already
+    // tried this run — never invents work. If none remain, the PM fills the
+    // backlog (kicked below when it's low).
+    const candidates = fetchOpenIssues(20)
+      .filter((i) => !isBlocked(i))
+      .filter((i) => !attempted.has(i.number));
+    if (candidates.length === 0) {
+      log("info", n === 1
+        ? "No buildable tickets — nothing to build. (The Product Manager grooms the backlog.)"
+        : `Backlog drained this run — built ${mergedCount}.`);
+      break;
+    }
+
+    log("info", `=== Ticket ${n}/${MAX_TICKETS_PER_RUN} — ${candidates.length} buildable ticket(s) on the board ===`);
+    const result = await buildTicket(candidates, vision);
+
+    if (result.addressedIssue) attempted.add(result.addressedIssue);
+    if (result.outcome === "merged") mergedCount++;
+    if (result.outcome === "abandoned" && result.ticketFault) {
+      // Cross-run failure accounting — parks a perpetually-failing ticket so it
+      // stops monopolizing the Builder.
+      recordTicketFailure(result.addressedIssueObj, result.reason, MAX_TICKET_ATTEMPTS);
+    }
+    if (result.outcome === "none") {
+      log("info", "No ticket could be planned this pass — stopping.");
       break;
     }
   }
 
-  if (!approved) {
-    log("warn", "No proposal approved after retries.");
-  }
-
+  log("info", `Run complete — ${mergedCount} ticket(s) merged.`);
+  maybeReplenishBacklog(mergedCount);
   printRunSummary("Builder Team");
 }
 
