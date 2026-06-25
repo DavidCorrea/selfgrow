@@ -25,7 +25,13 @@ const seedDuration = 5000; // 5 seconds for full growth
 let seedStartTime = null;
 
 // Reduced motion check – if user prefers reduced motion, we simply show the final state instantly.
-const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+// Determine if reduced‑motion should be applied. Preference can come from the
+// media query or from the user‑controlled toggle (exposed via
+// `window.reducedMotionEnabled`). The toggle overrides the media query.
+const prefersReduced = (() => {
+  if (window.reducedMotionEnabled) return true;
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+})();
 
 function animateSeed(timestamp) {
   if (!seedStartTime) seedStartTime = timestamp;
