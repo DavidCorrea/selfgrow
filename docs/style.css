@@ -105,3 +105,15 @@ body {
   transform-origin: bottom center;
   opacity: 0;
 }
+
+/* Plant element spawned by autonomous agent */
+.plant {
+  position: absolute;
+  bottom: 0; /* will be adjusted via inline style */
+  background: radial-gradient(circle, #66bb6a 0%, #388e3c 70%);
+  border-radius: 50%;
+  transform-origin: bottom center;
+  /* Growth and fade transitions */
+  transition: transform 2s ease-out, opacity 2s ease-out;
+  opacity: 0;
+}
