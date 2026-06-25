@@ -24,17 +24,11 @@
   <script type="module" src="creatures.js"></script>
   <script type="module" src="app.js"></script>
   <script type="module" src="pause.js"></script>
-  <div id="settings" style="position: absolute; top: 10px; right: 10px; background: rgba(255,255,255,0.8); padding: 5px; border-radius: 4px; z-index: 30;">
-    <label>
-      <input type="checkbox" id="seasonToggle" checked /> Seasonal Mode
-    </label>
-    <label style="margin-left:5px;">
-      <input type="checkbox" id="reducedMotionToggle" /> Reduced Motion
-    </label>
-    <label style="margin-left:5px;">
-      <input type="checkbox" id="ambientSoundToggle" checked /> Ambient Sound
-    </label>
-    <button id="journalToggle" aria-label="Journal" style="margin-left:5px;">Journal</button>
+  <div id="settings" class="settings-panel">
+    <label class="settings-label"><input type="checkbox" id="seasonToggle" checked /> Seasonal Mode</label>
+    <label class="settings-label"><input type="checkbox" id="reducedMotionToggle" /> Reduced Motion</label>
+    <label class="settings-label"><input type="checkbox" id="ambientSoundToggle" checked /> Ambient Sound</label>
+    <button id="journalToggle" aria-label="Journal" class="settings-button">Journal</button>
 </div>
   <script type="module" src="settings.js"></script>
   <script type="module" src="ambientSound.js"></script>
