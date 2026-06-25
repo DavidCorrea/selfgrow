@@ -1,4 +1,5 @@
 // season.js – manages four‑season cycle and provides API for other modules
+// Updated to ensure the animation loop restarts correctly when seasonal mode is re‑enabled.
 // A full year spans 30 real days (30 * 24 * 60 * 60 * 1000 ms). Each season is 7.5 days.
 // The manager updates a data attribute on the document element for CSS styling
 // and exposes getSeason() / getProgress() methods. The current mode (enabled/disabled)
@@ -28,12 +29,14 @@ function loadEnabled() {
 function setEnabled(val) {
   window.seasonManager.isEnabled = val;
   localStorage.setItem('seasonalMode', val.toString());
-  // When disabled, clear data attribute
-  if (!val) {
-    document.documentElement.removeAttribute('data-season');
-  } else {
-    // Force update immediately
+  if (val) {
+    // Re‑enable: force an immediate update; updateSeason will schedule the loop
     updateSeason();
+  } else {
+    // Disable: stop the loop and clean up attributes
+    stopLoop();
+    document.documentElement.removeAttribute('data-season');
+    document.documentElement.style.removeProperty('--season-progress');
   }
 }
 
@@ -52,15 +55,37 @@ function getProgress() {
   return (elapsed % SEASON_MS) / SEASON_MS; // 0‑1 within current season
 }
 
+let animationFrameId = null;
+
+function startLoop() {
+  // Begin the animation loop if not already running
+  if (animationFrameId === null) {
+    animationFrameId = requestAnimationFrame(updateSeason);
+  }
+}
+
+function stopLoop() {
+  // Cancel any scheduled frame and clear the id
+  if (animationFrameId !== null) {
+    cancelAnimationFrame(animationFrameId);
+    animationFrameId = null;
+  }
+}
+
 function updateSeason() {
-  if (!window.seasonManager.isEnabled) return;
+  if (!window.seasonManager.isEnabled) {
+    // If disabled, ensure loop stops and exit early
+    stopLoop();
+    return;
+  }
   const season = getSeason();
   if (season) {
     document.documentElement.setAttribute('data-season', season);
     // Also expose as CSS custom property for possible use in animations
     document.documentElement.style.setProperty('--season-progress', getProgress());
   }
-  requestAnimationFrame(updateSeason);
+  // Schedule next frame and keep the id updated
+  animationFrameId = requestAnimationFrame(updateSeason);
 }
 
 // Initialize manager object on window for other modules to access
@@ -74,5 +99,5 @@ window.seasonManager = {
 
 if (window.seasonManager.isEnabled) {
   // Start the animation loop that keeps the data attribute up‑to‑date
-  requestAnimationFrame(updateSeason);
+  startLoop();
 }
