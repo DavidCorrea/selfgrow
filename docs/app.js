@@ -2,7 +2,10 @@
 // The lighting cycle follows the same total duration as the weather cycle (60 seconds).
 // It respects the user's reduced‑motion preference.
 
-const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function isReducedMotion() {
+  return window.reducedMotionEnabled || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+const prefersReduced = isReducedMotion();
 const overlay = document.getElementById('lightOverlay');
 if (!overlay) {
   console.error('Light overlay element not found');

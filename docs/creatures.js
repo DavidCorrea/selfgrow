@@ -29,7 +29,7 @@ class Creature {
   }
 
   step() {
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const reduced = window.reducedMotionEnabled || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     // Adjust speed based on season
     let speed = reduced ? 0.1 : 0.5; // base speed
     const season = window.seasonManager && window.seasonManager.isEnabled ? window.seasonManager.getSeason() : null;

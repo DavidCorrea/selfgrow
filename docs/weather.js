@@ -10,7 +10,9 @@ if (!garden) {
   console.error('Garden container not found (weather.js)');
 }
 
-const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function isReducedMotion() {
+  return window.reducedMotionEnabled || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
 
 // Create a container for particles (mist, rain, sun)
 const particlesContainer = document.createElement('div');
@@ -124,13 +126,13 @@ function nextState() {
   const next = weatherStates[currentIndex];
   applyState(next);
   // Schedule next transition unless reduced motion
-  if (!prefersReduced) {
+  if (!isReducedMotion()) {
     setTimeout(nextState, next.duration);
   }
 }
 
 // Initialize
-if (!prefersReduced) {
+if (!isReducedMotion()) {
   // Start with the first state immediately
   applyState(weatherStates[currentIndex]);
   setTimeout(nextState, weatherStates[currentIndex].duration);
