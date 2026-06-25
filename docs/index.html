@@ -5,8 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SelfGrow Garden</title>
   <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="pause.css" />
 </head>
 <body>
+  <button id="pauseBtn" aria-label="Pause & Breathe" class="pause-button">Pause</button>
+  <div id="pauseOverlay" class="pause-overlay" hidden>
+    <div class="breathing-circle"></div>
+    <audio id="breathAudio" src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAIlYAAB9AAACABAAZGF0YQAAAAA=" loop></audio>
+  </div>
   <div id="garden" class="garden">
   <!-- Light overlay for sunrise/sunset -->
   <div id="lightOverlay" class="light-overlay"></div>
@@ -15,5 +21,6 @@
   <script type="module" src="weather.js"></script>
   <script type="module" src="creatures.js"></script>
   <script type="module" src="app.js"></script>
+  <script type="module" src="pause.js"></script>
 </body>
 </html>
