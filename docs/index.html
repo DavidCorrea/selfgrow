@@ -3,35 +3,37 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SelfGrow Garden</title>
+  <title>SelfGrow</title>
   <link rel="stylesheet" href="style.css" />
-  <link rel="stylesheet" href="pause.css" />
 </head>
 <body>
-  <button id="pauseBtn" aria-label="Pause & Breathe" class="pause-button">Pause</button>
-  <div id="pauseOverlay" class="pause-overlay" hidden>
-    <div class="breathing-circle"></div>
-    <audio id="breathAudio" src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAIlYAAB9AAACABAAZGF0YQAAAAA=" loop></audio>
+  <header class="top-bar">
+    <h1 class="logo">SelfGrow</h1>
+    <nav class="controls">
+      <button id="settingsBtn" class="btn">Settings</button>
+      <button id="pauseBtn" class="btn">Pause</button>
+    </nav>
+  </header>
+
+  <main class="content">
+    <p>Welcome to your digital garden. Grow mindfully.</p>
+  </main>
+
+  <!-- Pause overlay -->
+  <div id="pauseOverlay" class="overlay hidden">
+    <div class="overlay-content">
+      <h2>Paused</h2>
+      <p>The garden is taking a quiet moment.</p>
+      <button id="resumeBtn" class="btn">Resume</button>
+    </div>
   </div>
-  <div id="garden" class="garden">
-  <!-- Light overlay for sunrise/sunset -->
-  <div id="lightOverlay" class="light-overlay"></div>
-</div>
-  <script type="module" src="reducedMotion.js"></script>
-<script type="module" src="season.js"></script>
-  <script type="module" src="garden.js"></script>
-  <script type="module" src="weather.js"></script>
-  <script type="module" src="creatures.js"></script>
-  <script type="module" src="app.js"></script>
-  <script type="module" src="pause.js"></script>
-  <div id="settings" class="settings-panel">
-    <label class="settings-label"><input type="checkbox" id="seasonToggle" checked /> Seasonal Mode</label>
-    <label class="settings-label"><input type="checkbox" id="reducedMotionToggle" /> Reduced Motion</label>
-    <label class="settings-label"><input type="checkbox" id="ambientSoundToggle" checked /> Ambient Sound</label>
-    <button id="journalToggle" aria-label="Journal" class="settings-button">Journal</button>
-</div>
-  <script type="module" src="settings.js"></script>
-  <script type="module" src="ambientSound.js"></script>
-  <script type="module" src="journal.js"></script>
+
+  <script>
+    const pauseBtn = document.getElementById('pauseBtn');
+    const resumeBtn = document.getElementById('resumeBtn');
+    const overlay = document.getElementById('pauseOverlay');
+    pauseBtn.addEventListener('click', () => overlay.classList.remove('hidden'));
+    resumeBtn.addEventListener('click', () => overlay.classList.add('hidden'));
+  </script>
 </body>
 </html>
