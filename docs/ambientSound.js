@@ -21,7 +21,7 @@
   audio.preload = 'auto';
 
   // Determine initial enabled state
-  let enabled = true; // default on
+  let enabled = false; // default off
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored !== null) {
