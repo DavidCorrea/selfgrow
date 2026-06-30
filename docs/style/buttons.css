@@ -1,0 +1,27 @@
+/* Button component styles – subtle hover and focus interactions */
+
+/* Base button inherits from .btn defined in style.css */
+.btn {
+  /* Ensure smooth transitions for background and transform */
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+/* Hover and focus states: gentle background shift and slight scale up */
+.btn:hover,
+.btn:focus {
+  background: #a1d5a0; /* lighter sage */
+  transform: translateY(-1px) scale(1.02);
+}
+
+/* Focus-visible outline for keyboard navigation – subtle primary color */
+.btn:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+
+/* Respect prefers-reduced-motion – disable transitions */
+@media (prefers-reduced-motion: reduce) {
+  .btn {
+    transition: none;
+  }
+}
