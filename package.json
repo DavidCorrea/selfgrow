@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "^0.79.10"
+    "@earendil-works/pi-coding-agent": "^0.80.2"
   },
   "devDependencies": {
     "eslint": "^10.5.0",

@@ -36,7 +36,37 @@ export const promptsDir = join(__dirname, "prompts");
 // Agent runner
 // ---------------------------------------------------------------------------
 
-export const MODEL_ID = "openrouter/openai/gpt-oss-120b:free";
+// Text models tried in order — on a rate-limit / error / empty response, fall
+// through to the next. Free models share tight, shared limits, so a fallback
+// chain matters far more than retrying one model (this mirrors VISION_MODELS).
+// These are pi registry ids (provider/id); override via env TEXT_MODEL
+// (comma-separated). Unknown ids degrade cleanly — resolveTextModels() drops any
+// the registry doesn't know and auto-discovers free models when none remain.
+export const TEXT_MODELS = (
+  process.env.TEXT_MODEL ||
+  // These ids must exist in pi's bundled model snapshot (pi-ai's
+  // models.generated.js) — the registry is NOT fetched live from OpenRouter, so
+  // an id pi doesn't know is skipped, not requested. Verified against the
+  // installed pi version; re-check after bumping pi, as its free lineup rotates.
+  [
+    "openrouter/openai/gpt-oss-120b:free",
+    "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+    "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
+    "openrouter/qwen/qwen3-next-80b-a3b-instruct:free",
+    "openrouter/meta-llama/llama-3.3-70b-instruct:free",
+    "openrouter/qwen/qwen3-coder:free",
+    "openrouter/nvidia/nemotron-3-nano-30b-a3b:free",
+    "openrouter/google/gemma-4-31b-it:free",
+    "openrouter/openai/gpt-oss-20b:free",
+    "openrouter/nvidia/nemotron-nano-9b-v2:free",
+  ].join(",")
+)
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+// Back-compat: the historical single-model default is just the head of the chain.
+export const MODEL_ID = TEXT_MODELS[0];
 
 // Default kickoff turn when a caller doesn't supply one. The agent's full role
 // lives in the system prompt; this just tells it to begin.
@@ -44,7 +74,51 @@ const DEFAULT_TASK =
   "Carry out the task described in your instructions now, then respond with the required JSON object and nothing else.";
 
 /**
- * Run a single one-shot agent.
+ * Resolve the text-model chain against pi's ACTUAL registry, so a pi upgrade or
+ * a rotated-out free model degrades cleanly instead of throwing on the first id:
+ *   1. keep configured TEXT_MODELS that exist; warn (distinctly) about any that don't,
+ *   2. if none remain, auto-discover free OpenRouter text models pi currently
+ *      knows (excluding meta-routers) so agents keep running.
+ * Returns an ordered list of model ids (possibly empty). Mirrors resolveVisionModels.
+ */
+function resolveTextModels() {
+  let all;
+  try {
+    all = ModelRegistry.create(AuthStorage.create()).getAll();
+  } catch (e) {
+    log("warn", "Model chain: could not read pi's registry — using configured ids as-is.", errorData(e));
+    return TEXT_MODELS;
+  }
+  const idOf = (m) => `${m.provider}/${m.id}`;
+  const present = [];
+  for (const id of TEXT_MODELS) {
+    if (all.some((m) => idOf(m) === id)) present.push(id);
+    else log("warn", `Model chain: "${id}" is not in pi's registry (rotated out / version drift?) — skipping it.`);
+  }
+  if (present.length) return present;
+
+  const discovered = all
+    .filter(
+      (m) =>
+        m.provider === "openrouter" &&
+        m.cost && Number(m.cost.input) === 0 && Number(m.cost.output) === 0 &&
+        m.id !== "auto" && m.id !== "openrouter/free" // skip meta-routers
+    )
+    .map(idOf)
+    .slice(0, 4);
+  if (discovered.length) {
+    log("warn", `Model chain: no configured text model is in pi's registry — auto-discovered ${discovered.length} free model(s): ${discovered.join(", ")}.`);
+  } else {
+    log("warn", "Model chain: no configured or discoverable free text models.");
+  }
+  return discovered;
+}
+
+/**
+ * Run a one-shot agent. With no explicit `modelId`, tries the TEXT_MODELS chain
+ * in order until one answers — free models rate-limit constantly, so the next in
+ * line usually picks up the slack. Pass an explicit `modelId` to pin a single
+ * model (the vision path does this, driving its own chain).
  *
  * @param {object} opts
  * @param {string} [opts.label]          - Name for logging.
@@ -53,8 +127,45 @@ const DEFAULT_TASK =
  * @param {string} [opts.task]           - The user turn that kicks the agent off.
  * @param {string[]} [opts.tools]        - Allowed tool names.
  * @param {string} [opts.thinkingLevel]  - "off" | "low" | "medium" | "high".
+ * @param {string} [opts.modelId]        - Pin a single model; omit to use the chain.
  */
-export function runAgent({
+export async function runAgent(opts) {
+  const { modelId, label = "Agent" } = opts;
+
+  // Explicit model: run exactly that one (caller owns any fallback, e.g. vision).
+  if (modelId) return runAgentOnce(opts);
+
+  // No explicit model: try each model in the chain until one returns content.
+  const chain = resolveTextModels();
+  if (!chain.length) {
+    throw new Error(
+      "No usable text model in pi's registry. " +
+        "Check OPENROUTER_API_KEY and TEXT_MODEL."
+    );
+  }
+  let lastErr;
+  for (const id of chain) {
+    const attemptLabel = chain.length > 1 ? `${label} (${id})` : label;
+    try {
+      const out = await runAgentOnce({ ...opts, modelId: id, label: attemptLabel });
+      if ((out || "").trim()) return out;
+      log("warn", `${label}: ${id} returned empty — trying next model.`);
+    } catch (e) {
+      lastErr = e;
+      log("warn", `${label}: ${id} failed — trying next model.`, errorData(e));
+    }
+  }
+  throw new Error(
+    `${label}: every text model in the chain was unavailable.` +
+      (lastErr ? ` Last error: ${lastErr.message}` : "")
+  );
+}
+
+/**
+ * Run a single one-shot agent against exactly one model. The chain logic lives in
+ * runAgent; this is the per-model attempt.
+ */
+function runAgentOnce({
   label = "Agent",
   systemPrompt,
   task = DEFAULT_TASK,
