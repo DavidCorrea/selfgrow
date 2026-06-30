@@ -1,77 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SelfGrow</title>
-  <link rel="stylesheet" href="style.css" />
-  <link rel="stylesheet" href="style/buttons.css" />
+<meta charset="UTF-8" />
+<title>Selfgrow Garden</title>
+<link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <header class="top-bar">
-    <h1 class="logo">SelfGrow</h1>
-    <nav class="controls">
-      <button id="settingsBtn" class="btn">Settings</button>
-      <button id="pauseBtn" class="btn">Pause</button>
-    </nav>
-  </header>
-
-  <main class="content">
-    <p>Welcome to your digital garden. Grow mindfully.</p>
-  </main>
-
-  <!-- Settings panel -->
-  <div id="settingsPanel" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
-    <div class="overlay-content">
-      <h2 id="settingsTitle">Settings</h2>
-      <form id="settingsForm">
-        <label>
-          <input type="checkbox" id="ambientSoundToggle" /> Ambient Sound
-        </label><br/>
-        <label>
-          <input type="checkbox" id="reducedMotionToggle" /> Reduced Motion
-        </label><br/>
-        <label>
-          <input type="checkbox" id="seasonToggle" /> Seasonal Mode
-        </label>
-      </form>
-      <button id="closeSettingsBtn" class="btn">Close</button>
-    </div>
-  </div>
-
-  <!-- Pause overlay -->
-  <div id="pauseOverlay" class="overlay hidden">
-    <div class="overlay-content">
-      <h2>Paused</h2>
-      <p>The garden is taking a quiet moment.</p>
-      <button id="resumeBtn" class="btn">Resume</button>
-    </div>
-  </div>
-
-  <script>
-    // Settings panel toggle
-    const settingsBtn = document.getElementById('settingsBtn');
-    const settingsPanel = document.getElementById('settingsPanel');
-    const closeSettingsBtn = document.getElementById('closeSettingsBtn');
-    settingsBtn.addEventListener('click', () => settingsPanel.classList.remove('hidden'));
-    closeSettingsBtn.addEventListener('click', () => settingsPanel.classList.add('hidden'));
-    // Close on Escape key
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && !settingsPanel.classList.contains('hidden')) {
-        settingsPanel.classList.add('hidden');
-      }
-    });
-
-    const pauseBtn = document.getElementById('pauseBtn');
-    const resumeBtn = document.getElementById('resumeBtn');
-    const overlay = document.getElementById('pauseOverlay');
-    pauseBtn.addEventListener('click', () => overlay.classList.remove('hidden'));
-    resumeBtn.addEventListener('click', () => overlay.classList.add('hidden'));
-  </script>
-  <!-- Load functional scripts -->
-  <script src="reducedMotion.js"></script>
-  <script src="ambientSound.js"></script>
-  <script src="season.js"></script>
-  <script src="settings.js"></script>
+  <div id="garden"></div>
+  <button id="toggle-flora" aria-pressed="true">Disable Flora</button>
+  <script type="module" src="flora.js"></script>
 </body>
 </html>
