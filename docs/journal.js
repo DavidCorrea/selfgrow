@@ -67,12 +67,9 @@
     const entries = loadEntries();
     // Preserve filter UI across renders
     panel.innerHTML = '';
-    // Re-attach the filter UI (filterDiv is retained in closure)
     if (filterDiv) panel.appendChild(filterDiv);
     const title = document.createElement('h2');
     title.textContent = 'Garden Journal';
-    title.style.fontSize = '1.1rem';
-    title.style.marginTop = '0';
     panel.appendChild(title);
     const list = document.createElement('div');
     // Show most recent first
@@ -107,6 +104,15 @@
   // Expose API
   window.garden = window.garden || {};
   window.garden.logEvent = logEvent;
+
+  // --- Panel toggle -------------------------------------------------------
+  const toggleBtn = document.getElementById('journalToggle');
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', () => {
+      panel.classList.toggle('open');
+      toggleBtn.setAttribute('aria-expanded', panel.classList.contains('open'));
+    });
+  }
 
   // Ensure we have a stored lastSeason on first load
   if (!localStorage.getItem('lastSeason') && window.seasonManager && typeof window.seasonManager.getSeason === 'function') {

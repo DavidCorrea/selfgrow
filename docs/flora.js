@@ -4,18 +4,24 @@
 const garden = document.getElementById('garden');
 const toggleBtn = document.getElementById('toggle-flora');
 
-// Configurable parameters (feel free to tweak)
+// Config (feel free to tweak)
 const CONFIG = {
   // Approximate number of plants based on visible area (per 2000px²)
   density: 0.0005, // plants per pixel²
   minSize: 20, // px diameter
   maxSize: 80,
-  growthDuration: 2000, // ms (matches CSS)
-  fadeDuration: 3000, // ms (matches CSS)
+  growthDuration: 2000, // ms
+  fadeDuration: 3000, // ms
   // Lifespan before start fading (random range)
   lifespanMin: 10000,
   lifespanMax: 30000,
 };
+
+// Sync CSS custom properties with CONFIG
+function syncCssVars() {
+  garden.style.setProperty('--growth-duration', `${CONFIG.growthDuration}ms`);
+  garden.style.setProperty('--fade-duration', `${CONFIG.fadeDuration}ms`);
+}
 
 let enabled = true; // default on
 let spawnInterval = null;
@@ -122,6 +128,9 @@ function toggle() {
     start();
   }
 }
+
+// Sync CSS variables on load
+syncCssVars();
 
 // Initial setup
 toggleBtn.addEventListener('click', toggle);
