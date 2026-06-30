@@ -2,13 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Selfgrow Garden</title>
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div id="garden"></div>
   <button id="toggle-flora" aria-pressed="true">Disable Flora</button>
-  <button id="journalToggle" aria-pressed="false">Journal</button>
+  <button id="journalToggle" aria-expanded="false" aria-controls="journalPanel">Journal</button>
   <script type="module" src="season.js"></script>
   <script type="module" src="journal.js"></script>
   <script type="module" src="flora.js"></script>
