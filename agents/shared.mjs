@@ -1537,6 +1537,32 @@ function buildVisionPrompt(vision) {
 // Most interactive elements the sweep will exercise per run.
 const MAX_INTERACTIONS = 12;
 
+// A sample value the sweep types into text fields, so form-driven behavior
+// (validation, persistence, errors) gets exercised — not just clicks.
+const FILL_VALUE = "Automated review test entry";
+const TEXT_INPUT_TYPES = ["", "text", "search", "email", "url", "tel", "password", "number"];
+
+// Exercise one element the way a user would: type into text fields, choose an
+// option in selects, click everything else. Returns the verb performed so the
+// caller can phrase findings and skip the no-effect check for fills/selects.
+async function exerciseTarget(loc, t) {
+  if (t.tag === "select") {
+    try {
+      await loc.selectOption({ index: 1 });
+      return "select";
+    } catch {
+      await loc.click({ timeout: 2000 });
+      return "click";
+    }
+  }
+  if (t.tag === "textarea" || (t.tag === "input" && TEXT_INPUT_TYPES.includes(t.type))) {
+    await loc.fill(FILL_VALUE, { timeout: 2000 });
+    return "fill";
+  }
+  await loc.click({ timeout: 2000 });
+  return "click";
+}
+
 /**
  * Drive the app like a user: click each interactive element and record what
  * happens — a JS error it triggers (high-confidence bug) or no DOM effect at all
@@ -1561,12 +1587,18 @@ async function exploreInteractions(browser, url) {
         el.setAttribute("data-explore-id", String(i));
         const text = (el.innerText || el.value || el.getAttribute("aria-label") || "")
           .trim().replace(/\s+/g, " ");
-        return { id: i, tag: el.tagName.toLowerCase(), label: (text || el.tagName.toLowerCase()).slice(0, 40) };
+        return {
+          id: i,
+          tag: el.tagName.toLowerCase(),
+          type: (el.getAttribute("type") || "").toLowerCase(),
+          label: (text || el.tagName.toLowerCase()).slice(0, 40),
+        };
       });
     }, MAX_INTERACTIONS);
 
   const findings = [];
   const base = url.split("#")[0];
+  let afterShot = null;
   try {
     await page.goto(url, { waitUntil: "networkidle", timeout: 20000 });
     const targets = await tagTargets();
@@ -1575,34 +1607,39 @@ async function exploreInteractions(browser, url) {
       if ((await loc.count()) === 0) continue; // DOM changed out from under us
       const errBefore = errors.length;
       const htmlBefore = await page.evaluate(() => document.body.innerHTML);
+      let action;
       try {
-        await loc.click({ timeout: 2000 });
+        action = await exerciseTarget(loc, t);
       } catch (e) {
-        findings.push(`"${t.label}" — could not be clicked: ${String(e.message).split("\n")[0]}`);
+        findings.push(`"${t.label}" — could not be exercised: ${String(e.message).split("\n")[0]}`);
         continue;
       }
       await page.waitForTimeout(500);
       const newErrors = errors.slice(errBefore);
       if (newErrors.length) {
-        findings.push(`"${t.label}" — triggered a JS error: ${newErrors[0]}`);
+        findings.push(`"${t.label}" — ${action} triggered a JS error: ${newErrors[0]}`);
       } else if (page.url().split("#")[0] !== base) {
         findings.push(`"${t.label}" — navigated away to ${page.url()}`);
         await page.goto(url, { waitUntil: "networkidle", timeout: 20000 }).catch(() => {});
         await tagTargets().catch(() => {});
-      } else if (!["input", "textarea", "select"].includes(t.tag)) {
-        // Form fields legitimately don't mutate the DOM on click; only flag others.
+      } else if (action === "click" && !["input", "textarea", "select"].includes(t.tag)) {
+        // Only clicked controls are expected to mutate the DOM; fills/selects
+        // change their own value, not structure, so they're not "no-effect" bugs.
         const htmlAfter = await page.evaluate(() => document.body.innerHTML);
         if (htmlAfter === htmlBefore) {
           findings.push(`"${t.label}" — looks interactive but had no visible effect (may be canvas/JS-only).`);
         }
       }
     }
+    // Capture the post-interaction state so the vision critique can judge the app
+    // as the user leaves it (panels open, fields filled) — not just its first paint.
+    afterShot = (await page.screenshot({ fullPage: true })).toString("base64");
   } catch (e) {
     findings.push(`interaction sweep stopped early: ${String(e.message).split("\n")[0]}`);
   } finally {
     await page.close().catch(() => {});
   }
-  return findings;
+  return { findings, afterShot };
 }
 
 /**
@@ -1695,9 +1732,15 @@ export async function visualCritique(vision, relDir = "docs") {
     log("warn", "Visual check: screenshot capture failed.", errorData(e));
   }
 
-  // Drive the app and record what breaks (best-effort, deterministic).
+  // Drive the app and record what breaks (best-effort, deterministic). The sweep
+  // also returns a post-interaction screenshot, so the vision critique can judge
+  // the app's exercised state (panels open, fields filled), not just first paint.
   try {
-    functional = await exploreInteractions(browser, url);
+    const sweep = await exploreInteractions(browser, url);
+    functional = sweep.findings;
+    if (sweep.afterShot) {
+      shots.push({ label: "desktop (after interacting)", data: sweep.afterShot });
+    }
   } catch (e) {
     log("warn", "Visual check: interaction sweep failed.", errorData(e));
   }

@@ -26,18 +26,25 @@ The agents can't see or click, so an automated pass viewed the running app (desk
 - **Polish** — how well the look embodies the Vision, by dimension. Only turn these into tickets when a weakness clearly and materially hurts the intended experience; ignore minor or subjective nitpicks.
 - **Functional** — what happened when controls were clicked. A reported **JS error** is a real bug → ticket it. A **"no visible effect"** note is a weak signal (the app may be canvas/JS-only) → only ticket it if it's clearly a dead control.
 
-Everything here is held to the same dedup and quality bar as any other ticket, and counts toward your 3-ticket limit.
+Everything here is held to the same dedup and quality bar as any other ticket.
 
 {{VISUAL_OBSERVATIONS}}
 
 ## Backlog Grooming
-Propose up to **3** small tickets that close the gap between Done and the Vision — fill a gap, deepen a shipped feature, or pay down debt the board reveals. Each ticket needs:
-- a clear, specific **title** (imperative),
-- a **body** describing what to build and why, scoped so the Builder can finish it in one pass.
+Propose as many small tickets as are genuinely worth building to close the gap between Done and the Vision — fill a gap, deepen a shipped feature, or pay down debt the board reveals. There is no cap, so let the work — not a quota — decide the count. Each ticket needs:
+- a clear, specific **title** (imperative) that names the actual feature or area — not a vague intention,
+- a **body** stating *what to build* and *why it matters to the experience*, grounded in a concrete gap, a Defect from the app review, or observed behavior — not a generic idea,
+- **acceptanceCriteria**: 2–4 concrete, checkable statements describing what is true when the ticket ships (what the user can see or do). This is the Builder's definition of done.
+
+A ticket is **meaningful** when someone reading only its title and acceptance criteria knows exactly what to build and how to tell it's finished. Avoid:
+- vague intentions ("Improve the journal", "Polish the UI", "Make it feel nicer") — say what specifically changes and to what end,
+- subjective nitpicks with no clear win,
+- pure refactors with no user-facing payoff,
+- anything you can't write a checkable acceptance criterion for — that's the signal it's still too vague to build.
 
 Tickets must fit the Vision and the project's shipping rules: a static, browser-only site under `docs/`, no build step. **If nothing has shipped yet (empty Done / empty `docs/`), propose foundational tickets first** — the initial page and core experience before any enrichment.
 
-**Never propose anything already on the board above — not in Todo, In progress, or Done.** Quality over quantity: return an empty `backlog` array if nothing is genuinely worth adding next.
+**Never propose anything already on the board above — not in Todo, In progress, or Done.** Quality over quantity: return an empty `backlog` array if nothing is genuinely worth adding next. A few sharp tickets beat a long list of filler — with no cap, the discipline shifts to you: add a ticket only if it earns its place.
 
 ## Prioritizing Existing Tickets
 For each **open** ticket shown on the board above (the ones with `#numbers`), assign a priority in the `triage` array. Order the whole backlog by impact toward the vision — the Builder always picks the highest-priority ticket next, so your `high` assignments decide what ships soonest.
@@ -61,7 +68,12 @@ The Product Manager is a worker agent — omit the `outcome` field.
   "summary": "One sentence describing what you queued and prioritized.",
   "data": {
     "backlog": [
-      { "title": "Short imperative ticket title", "body": "What to build and why, scoped for one Builder pass.", "priority": "high | medium | low" }
+      {
+        "title": "Short imperative ticket title that names the feature/area",
+        "body": "What to build and why it matters to the experience, grounded in a specific gap, defect, or observed behavior. Scoped for one Builder pass.",
+        "acceptanceCriteria": ["A concrete, checkable statement of what's true when this ships", "..."],
+        "priority": "high | medium | low"
+      }
     ],
     "triage": [
       { "number": 12, "priority": "high | medium | low" }

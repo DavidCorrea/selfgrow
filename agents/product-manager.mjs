@@ -19,10 +19,6 @@ import {
   visualCritique,
 } from "./shared.mjs";
 
-// Keep the backlog from growing unbounded — the PM only tops it up to this many
-// open issues, so builder-team can drain it over time.
-const BACKLOG_CEILING = Number(process.env.BACKLOG_CEILING || 6);
-
 // How much title-token overlap (intersection / smaller set) counts as a near-dup.
 const NEAR_DUP_THRESHOLD = 0.6;
 
@@ -111,14 +107,23 @@ Return ONLY JSON: {"duplicates": [<index>, ...]} listing the indexes of proposed
 // Backlog grooming — create prioritized tickets on the board (best-effort)
 // ---------------------------------------------------------------------------
 
+// Compose the issue body the Builder reads: the PM's description followed by the
+// acceptance criteria as a checklist, so "what to build" and "how we know it's
+// done" travel together on the ticket. Criteria are optional and defensive.
+function formatTicketBody(item) {
+  const parts = [String(item.body || "").trim()];
+  const criteria = (Array.isArray(item.acceptanceCriteria) ? item.acceptanceCriteria : [])
+    .map((c) => String(c).trim())
+    .filter(Boolean);
+  if (criteria.length) {
+    parts.push(`## Acceptance criteria\n${criteria.map((c) => `- [ ] ${c}`).join("\n")}`);
+  }
+  return parts.join("\n\n");
+}
+
 async function groomBacklog(proposed, openIssues, boardTitles) {
   if (!Array.isArray(proposed) || proposed.length === 0) {
     log("info", "Backlog: no tickets proposed.");
-    return;
-  }
-  const room = BACKLOG_CEILING - openIssues.length;
-  if (room <= 0) {
-    log("info", `Backlog: ${openIssues.length} open issue(s) ≥ ceiling ${BACKLOG_CEILING} — not creating new tickets.`);
     return;
   }
 
@@ -144,8 +149,7 @@ async function groomBacklog(proposed, openIssues, boardTitles) {
 
   let created = 0;
   for (const item of survivors) {
-    if (created >= room) break;
-    const number = createIssue(item.title, item.body);
+    const number = createIssue(item.title, formatTicketBody(item));
     if (number) {
       moveCard(number, "Backlog"); // best-effort; also adds it to the board
       setIssuePriority(number, item.priority || "medium", []);
@@ -153,7 +157,7 @@ async function groomBacklog(proposed, openIssues, boardTitles) {
       created++;
     }
   }
-  log("info", `Backlog: created ${created} ticket(s) (ceiling ${BACKLOG_CEILING}, ${openIssues.length} already open).`);
+  log("info", `Backlog: created ${created} ticket(s) (${openIssues.length} already open).`);
 }
 
 /**
@@ -233,8 +237,8 @@ async function main() {
 
   const data = parsed.data || {};
   // 1. Retire blocked tickets the PM gave up on (split into fresh tickets via
-  //    `backlog`, or dropped outright). Done first so closing them frees backlog
-  //    room for the grooming pass below.
+  //    `backlog`, or dropped outright). Done first so retired tickets drop out of
+  //    `remainingOpen` and don't skew the grooming pass's dedup below.
   const retired = await retireBlocked(data.retire);
   const remainingOpen = openIssues.filter((i) => !retired.has(i.number));
   // 2. Triage + prioritize existing open tickets (pull inbound onto the board).
