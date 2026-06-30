@@ -1,46 +1,32 @@
-/* Basic layout */
 body {
+  font-family: Arial, sans-serif;
   margin: 0;
-  overflow: hidden;
-  background: #e8f5e9; /* light green */
-  font-family: sans-serif;
+  padding: 1rem;
+  background: #f5f5f5;
+  color: #333;
 }
-#garden {
-  position: relative;
-  width: 100vw;
-  height: 100vh;
-  overflow: hidden;
-}
-/* Plant style */
-.plant {
-  position: absolute;
-  background: radial-gradient(circle at 30% 30%, #4caf50, #2e7d32);
-  border-radius: 50%;
-  /* start small */
-  transform: scale(0);
-  opacity: 0;
-  pointer-events: none;
-}
-/* Animation */
-@media (prefers-reduced-motion: no-preference) {
-  .plant.grow {
-    transition: transform 2s ease-out, opacity 2s ease-out;
-    transform: scale(1);
-    opacity: 1;
-  }
-  .plant.fade {
-    transition: opacity 3s ease-out;
-    opacity: 0;
-  }
-}
-/* Button */
-#toggle-flora {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  padding: 0.5rem 1rem;
-  background: #ffffffaa;
-  border: 1px solid #888;
+
+#journalPanel {
+  max-width: 800px;
+  margin: auto;
+  background: #fff;
+  padding: 1rem;
   border-radius: 4px;
-  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.journal-entry {
+  background: #fafafa;
+  padding: 0.8rem;
+  margin-bottom: 0.8rem;
+  border-radius: 4px;
+  border-left: 4px solid transparent;
+}
+
+.journal-entry.seasonal {
+  border-left-color: #4caf50;
+}
+
+#filter {
+  margin-bottom: 1rem;
 }
