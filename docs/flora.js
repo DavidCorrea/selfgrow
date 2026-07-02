@@ -17,6 +17,9 @@ const CONFIG = {
   lifespanMax: 30000,
 };
 
+// Season names for seasonal filtering
+const SEASON_NAMES = ['spring', 'summer', 'fall', 'winter'];
+
 // Sync CSS custom properties with CONFIG
 function syncCssVars() {
   garden.style.setProperty('--growth-duration', `${CONFIG.growthDuration}ms`);
@@ -34,6 +37,10 @@ const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 function createPlant() {
   const plant = document.createElement('div');
   plant.className = 'plant';
+
+  // Assign a random season to the plant for seasonal filtering
+  const season = SEASON_NAMES[Math.floor(Math.random() * SEASON_NAMES.length)];
+  plant.setAttribute('data-season', season);
 
   const size = randInt(CONFIG.minSize, CONFIG.maxSize);
   plant.style.width = `${size}px`;
