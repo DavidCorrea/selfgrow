@@ -22,6 +22,50 @@ function applySeasonEnabled() {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
+  // Helper to show a brief toast notification
+  function showToast(message) {
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('show'));
+    setTimeout(() => {
+      toast.classList.remove('show');
+      setTimeout(() => toast.remove(), 300);
+    }, 2000);
+  }
+
+  // Save current settings to localStorage and show confirmation
+  function saveSettings() {
+    try {
+      const rmToggle = document.getElementById('reducedMotionToggle');
+      const ambientToggle = document.getElementById('ambientSoundToggle');
+      if (rmToggle) {
+        localStorage.setItem('reducedMotion', String(rmToggle.checked));
+        window.reducedMotionEnabled = rmToggle.checked;
+        if (rmToggle.checked) {
+          document.documentElement.classList.add('reduced-motion');
+        } else {
+          document.documentElement.classList.remove('reduced-motion');
+        }
+      }
+      if (ambientToggle) {
+        localStorage.setItem('ambientSound', String(ambientToggle.checked));
+      }
+      if (window.seasonalFilter) {
+        const enabled = Boolean(window.seasonalFilter.enabled);
+        localStorage.setItem('seasonalFilterEnabled', String(enabled));
+      }
+    } catch (e) {
+      console.error('Failed to save settings', e);
+    }
+    showToast('Settings saved');
+  }
+
+  const saveBtn = document.getElementById('saveSettingsBtn');
+  if (saveBtn) {
+    saveBtn.addEventListener('click', saveSettings);
+  }
   // Initialise seasonal toggle UI
   updateToggle();
   const seasonCheckbox = document.getElementById('seasonToggle');
