@@ -199,110 +199,19 @@ html[data-season="winter"] #garden { background: linear-gradient(180deg, #e3f2fd
   margin-left: 0.5rem;
 }
 
-/* Flora toggle button */
-#toggle-flora {
-  flex-shrink: 0;
-}
-
-#journalToggle {
-  flex-shrink: 0;
-}
-
-/* Moth agent styles */
-.moth {
+/* Firefly styles */
+.firefly {
   position: absolute;
-  /* Default color for day (moth hidden anyway, but for consistency) */
-  color: #666;
-  /* Smooth transform transitions for any non-animated changes */
-  transition: transform 0.3s ease-out;
-  will-change: transform;
+  width: 6px;
+  height: 6px;
+  background: radial-gradient(circle, rgba(255,255,180,0.9) 0%, rgba(255,255,0,0) 70%);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: fireflyGlow 2s infinite ease-in-out;
+  display: none;
 }
 
-/* Night mode - moth becomes pale/white for visibility against dark overlay */
-body.night .moth {
-  color: #e0e0e0;
-  filter: drop-shadow(0 0 2px rgba(255,255,255,0.3));
-}
-
-/* Reduced motion - ensure moth is hidden */
-html.reduced-motion .moth,
-.reduced-motion .moth {
-  display: none !important;
-}
-
-/* Responsive adjustments */
-@media (max-width: 480px) {
-  body {
-    padding: calc(var(--spacing-unit) * 0.75);
-    gap: calc(var(--panel-gap) * 0.75);
-  }
-
-  #journalPanel {
-    max-width: 100vw;
-    border-radius: 0;
-    border-radius: var(--radius) var(--radius) 0 0;
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    max-height: 75vh;
-    z-index: 100;
-    box-shadow: 0 -4px 20px rgba(0,0,0,0.15);
-  }
-
-  #journalPanel:not(.open) {
-    display: none;
-  }
-
-  #garden {
-    min-height: calc(100vh - 120px);
-  }
-
-  button {
-    padding: 0.6rem 0.8rem;
-  }
-}
-
-/* High contrast mode support */
-@media (prefers-contrast: high) {
-  :root {
-    --border-color: #000;
-    --text-secondary: #333;
-    --shadow: 0 2px 4px rgba(0,0,0,0.2);
-    --shadow-hover: 0 4px 8px rgba(0,0,0,0.3);
-  }
-
-  .journal-entry.seasonal {
-    border-left-width: 5px;
-  }
-}
-
-/* Reduced motion */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-}
-
-/* Print styles */
-@media print {
-  button,
-  #journalPanel:not(.open) {
-    display: none !important;
-  }
-
-  #journalPanel.open {
-    position: static;
-    max-height: none;
-    box-shadow: none;
-    border: 1px solid #000;
-  }
-
-  body {
-    background: #fff;
-  }
+@keyframes fireflyGlow {
+  0%, 100% { opacity: 0.6; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.2); }
 }
