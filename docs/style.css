@@ -1,5 +1,17 @@
 /* style.css – responsive, calm, garden-themed styles */
 
+/* Day counter overlay */
+.day-counter {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  opacity: 0.8;
+  background: rgba(255,255,255,0.5);
+  padding: 0.2rem 0.4rem;
+  border-radius: var(--radius);
+  pointer-events: none;
+}
+
+
 :root {
   --heading-scale: clamp(1.5rem, 4vw, 2.5rem);
   --body-size: clamp(0.95rem, 1.8vw, 1.1rem);
