@@ -3,6 +3,17 @@
 const toggleBtn = document.getElementById('toggle-seasonal');
 let seasonalFilterEnabled = false; // tracks whether filter is active
 
+// Expose control for external modules (e.g., settings)
+window.seasonalFilter = {
+  get enabled() { return seasonalFilterEnabled; },
+  set enabled(val) {
+    seasonalFilterEnabled = Boolean(val);
+    updateButtonState();
+    applySeasonalFilter();
+    try { localStorage.setItem('seasonalFilterEnabled', String(seasonalFilterEnabled)); } catch (_) {}
+  }
+};
+
 // Determine current season
 function getCurrentSeason() {
   return window.seasonManager.getSeason() || 'unknown';
@@ -45,11 +56,21 @@ const observer = new MutationObserver((mutations) => {
 });
 observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-season'] });
 
-// Initialize: set initial state based on button's current aria-pressed attribute
+// Initialize: restore saved preference or default to button's aria-pressed attribute
 (function init() {
-  const initialPressed = toggleBtn.getAttribute('aria-pressed') === 'true';
-  seasonalFilterEnabled = initialPressed;
+  // Try to load from localStorage
+  try {
+    const stored = localStorage.getItem('seasonalFilterEnabled');
+    if (stored !== null) {
+      seasonalFilterEnabled = stored === 'true';
+    } else {
+      const initialPressed = toggleBtn.getAttribute('aria-pressed') === 'true';
+      seasonalFilterEnabled = initialPressed;
+    }
+  } catch (_) {
+    const initialPressed = toggleBtn.getAttribute('aria-pressed') === 'true';
+    seasonalFilterEnabled = initialPressed;
+  }
   updateButtonState();
-  // Apply filter immediately to match initial state
   applySeasonalFilter();
 })();
