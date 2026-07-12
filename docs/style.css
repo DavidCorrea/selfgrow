@@ -208,6 +208,28 @@ html[data-season="winter"] #garden { background: linear-gradient(180deg, #e3f2fd
   flex-shrink: 0;
 }
 
+/* Moth agent styles */
+.moth {
+  position: absolute;
+  /* Default color for day (moth hidden anyway, but for consistency) */
+  color: #666;
+  /* Smooth transform transitions for any non-animated changes */
+  transition: transform 0.3s ease-out;
+  will-change: transform;
+}
+
+/* Night mode - moth becomes pale/white for visibility against dark overlay */
+body.night .moth {
+  color: #e0e0e0;
+  filter: drop-shadow(0 0 2px rgba(255,255,255,0.3));
+}
+
+/* Reduced motion - ensure moth is hidden */
+html.reduced-motion .moth,
+.reduced-motion .moth {
+  display: none !important;
+}
+
 /* Responsive adjustments */
 @media (max-width: 480px) {
   body {
