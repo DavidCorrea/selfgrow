@@ -199,6 +199,17 @@ html[data-season="winter"] #garden { background: linear-gradient(180deg, #e3f2fd
   margin-left: 0.5rem;
 }
 
+/* Reflection entry actions */
+.journal-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.journal-entry.reflection {
+  border-left-color: var(--accent-fall);
+}
+
 /* Firefly styles */
 .firefly {
   position: absolute;

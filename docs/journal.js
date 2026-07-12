@@ -1,6 +1,12 @@
-// journal.js – handles garden event journal UI and storage, including automatic seasonal entries
-
+// journal.js – handles garden event journal UI and storage, including automatic seasonal entries and daily reflection prompts
 (() => {
+  let prompts = {};
+  // Load prompts data asynchronously
+  fetch('./prompts.json')
+    .then(r => r.json())
+    .then(data => { prompts = data; render(); })
+    .catch(err => console.error('Failed to load prompts', err));
+
   const STORAGE_KEY = 'gardenJournal';
   const panel = document.createElement('div');
   panel.id = 'journalPanel';
@@ -61,8 +67,35 @@
     }
   }
 
+  // --- Automatic daily reflection prompt -----------------------------------
+  function getPseudoWeather(date) {
+    const dayCount = Math.floor(date.getTime() / (1000 * 60 * 60 * 24));
+    const states = ['sunny', 'cloudy', 'rainy'];
+    return states[dayCount % states.length];
+  }
+
+  function generateReflectionIfNeeded() {
+    const today = new Date();
+    const todayKey = today.toISOString().split('T')[0]; // YYYY-MM-DD
+    if (localStorage.getItem('lastPromptDate') === todayKey) return;
+    if (!window.seasonManager || typeof window.seasonManager.getSeason !== 'function') return;
+    const season = window.seasonManager.getSeason();
+    const weather = getPseudoWeather(today);
+    const seasonPrompts = prompts[season?.toLowerCase()] || {};
+    const weatherPrompts = seasonPrompts[weather] || [];
+    if (weatherPrompts.length === 0) return;
+    const idx = Math.floor(today.getTime() / (1000 * 60 * 60 * 24)) % weatherPrompts.length;
+    const prompt = weatherPrompts[idx];
+    const entries = loadEntries();
+    entries.push({ timestamp: Date.now(), type: 'Reflection', details: prompt, saved: false, dismissed: false });
+    saveEntries(entries);
+    localStorage.setItem('lastPromptDate', todayKey);
+  }
+
   // --- Rendering ----------------------------------------------------------
   function render() {
+    generateSeasonEntryIfNeeded();
+    generateReflectionIfNeeded();
     generateSeasonEntryIfNeeded();
     const entries = loadEntries();
     // Preserve filter UI across renders
@@ -77,7 +110,7 @@
       const e = entries[i];
       if (showSeasonalOnly && e.type !== 'Seasonal') continue;
       const entryDiv = document.createElement('div');
-      entryDiv.className = 'journal-entry' + (e.type === 'Seasonal' ? ' seasonal' : '');
+      entryDiv.className = 'journal-entry' + (e.type === 'Seasonal' ? ' seasonal' : '') + (e.type === 'Reflection' ? ' reflection' : '');
       const tsSpan = document.createElement('span');
       tsSpan.className = 'journal-timestamp';
       tsSpan.textContent = formatTimestamp(e.timestamp);
@@ -88,6 +121,38 @@
       entryDiv.appendChild(tsSpan);
       entryDiv.appendChild(typeSpan);
       entryDiv.appendChild(detailsSpan);
+
+      // Actions for reflection entries
+      if (e.type === 'Reflection') {
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'journal-actions';
+        const dismissBtn = document.createElement('button');
+        dismissBtn.textContent = 'Dismiss';
+        dismissBtn.addEventListener('click', () => {
+          const all = loadEntries();
+          const idx = all.findIndex(item => item.timestamp === e.timestamp && item.type === 'Reflection');
+          if (idx !== -1) {
+            all.splice(idx, 1);
+            saveEntries(all);
+            render();
+          }
+        });
+        const saveBtn = document.createElement('button');
+        saveBtn.textContent = e.saved ? 'Saved' : 'Save';
+        saveBtn.disabled = e.saved;
+        saveBtn.addEventListener('click', () => {
+          const all = loadEntries();
+          const idx = all.findIndex(item => item.timestamp === e.timestamp && item.type === 'Reflection');
+          if (idx !== -1) {
+            all[idx].saved = true;
+            saveEntries(all);
+            render();
+          }
+        });
+        actionsDiv.appendChild(saveBtn);
+        actionsDiv.appendChild(dismissBtn);
+        entryDiv.appendChild(actionsDiv);
+      }
       list.appendChild(entryDiv);
     }
     panel.appendChild(list);
