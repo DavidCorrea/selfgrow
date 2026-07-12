@@ -43,6 +43,7 @@ function interpolateColor(start, end, t) {
 
 let startTime = null;
 let lightingRAF = null;
+let isNight = false; // track night state for events
 
 function updateLighting(timestamp) {
   if (!startTime) startTime = timestamp;
@@ -72,6 +73,22 @@ function updateLighting(timestamp) {
   }
 
   overlay.style.backgroundColor = color;
+
+  // Determine night state: night when not in day period (sunrise to before sunset)
+  const isDay = (elapsed >= SUNRISE_DURATION) && (elapsed < DAY_DURATION - SUNSET_DURATION);
+  const newIsNight = !isDay;
+  if (newIsNight !== isNight) {
+    isNight = newIsNight;
+    // Dispatch custom event for time change
+    const evt = new CustomEvent('timeChange', { detail: { night: isNight } });
+    document.dispatchEvent(evt);
+    // Toggle body class for CSS and other scripts
+    if (isNight) {
+      document.body.classList.add('night');
+    } else {
+      document.body.classList.remove('night');
+    }
+  }
 
   if (!prefersReduced) {
   // expose control for pause UI
