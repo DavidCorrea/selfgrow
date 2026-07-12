@@ -1,0 +1,22 @@
+{
+  "spring": {
+    "sunny": ["What new growth are you nurturing today?"],
+    "cloudy": ["What subtle changes are you noticing?"],
+    "rainy": ["How does rain inspire your thoughts?"]
+  },
+  "summer": {
+    "sunny": ["What warmth do you feel within?"],
+    "cloudy": ["What shade do you seek today?"],
+    "rainy": ["What cool relief do you welcome?"]
+  },
+  "autumn": {
+    "sunny": ["What harvest are you gathering?"],
+    "cloudy": ["What colors are fading for you?"],
+    "rainy": ["What quiet moments does rain bring?"]
+  },
+  "winter": {
+    "sunny": ["What quiet light do you cherish?"],
+    "cloudy": ["What stillness surrounds you?"],
+    "rainy": ["What warmth do you create inside?"]
+  }
+}
