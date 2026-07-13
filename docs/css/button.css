@@ -1,0 +1,17 @@
+/*
+ * Standardized button margins for calm, consistent visual rhythm.
+ * All interactive buttons share the same horizontal and vertical margins.
+ * This helps maintain density without crowding or isolation across the UI.
+ */
+
+:root {
+  /* Base margin values – can be tuned globally if needed */
+  --button-margin-vertical: 0.25rem;
+  --button-margin-horizontal: 0.25rem;
+}
+
+/* Apply uniform margins to all button elements and button utility classes */
+button,
+.btn {
+  margin: var(--button-margin-vertical) var(--button-margin-horizontal);
+}
