@@ -128,6 +128,7 @@
         actionsDiv.className = 'journal-actions';
         const dismissBtn = document.createElement('button');
         dismissBtn.textContent = 'Dismiss';
+        dismissBtn.classList.add('secondary');
         dismissBtn.addEventListener('click', () => {
           const all = loadEntries();
           const idx = all.findIndex(item => item.timestamp === e.timestamp && item.type === 'Reflection');
@@ -140,6 +141,7 @@
         const saveBtn = document.createElement('button');
         saveBtn.textContent = e.saved ? 'Saved' : 'Save';
         saveBtn.disabled = e.saved;
+        saveBtn.classList.add('primary');
         saveBtn.addEventListener('click', () => {
           const all = loadEntries();
           const idx = all.findIndex(item => item.timestamp === e.timestamp && item.type === 'Reflection');
