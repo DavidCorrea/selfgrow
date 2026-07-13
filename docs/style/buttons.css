@@ -1,5 +1,33 @@
 /* Button component styles – subtle hover and focus interactions */
 
+/* Primary button – higher contrast and slightly larger */
+.btn.primary {
+  background: var(--accent-spring);
+  color: #fff;
+  border-color: var(--accent-spring);
+  font-weight: 600;
+  font-size: clamp(0.85rem, 1.6vw, 0.95rem);
+}
+
+.btn.primary:hover,
+.btn.primary:focus {
+  background: #66bb6a; /* slightly darker */
+}
+
+/* Secondary button – muted appearance */
+.btn.secondary {
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  border-color: var(--border-color);
+  opacity: 0.9;
+}
+
+.btn.secondary:hover,
+.btn.secondary:focus {
+  background: #f0f0f0;
+}
+
+
 /* Base button inherits from .btn defined in style.css */
 .btn {
   /* Ensure smooth transitions for background and transform */
