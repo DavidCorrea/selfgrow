@@ -257,3 +257,78 @@ html[data-season="winter"] #garden { background: linear-gradient(180deg, #e3f2fd
   0%, 100% { opacity: 0.6; transform: scale(0.8); }
   50% { opacity: 1; transform: scale(1.2); }
 }
+
+/* Settings panel toggle */
+.settings-toggle {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  width: 2.5rem;
+  height: 2.5rem;
+  background: var(--bg-panel);
+  border: none;
+  border-radius: 50%;
+  font-size: 1.5rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  transition: background-color var(--transition-fast);
+}
+.settings-toggle:hover {
+  background: #f0f0f0;
+}
+.settings-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}
+
+.settings-panel {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(8px);
+    border-top-left-radius: var(--radius);
+    border-top-right-radius: var(--radius);
+  color: var(--text-primary);
+  padding: var(--spacing-unit);
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height var(--transition-medium) ease;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  z-index: 950;
+}
+.settings-panel.open {
+  max-height: 80vh;
+}
+@media (prefers-reduced-motion: reduce) {
+  .settings-toggle,
+  .settings-panel {
+    transition: none;
+  }
+}
+
+/* Ensure controls inside panel have proper styling */
+.settings-panel .controls {
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  width: 100%;
+  justify-content: center;
+}
+
+/* Adjust button sizes inside panel on small screens */
+@media (max-width: 480px) {
+  .settings-panel .controls {
+    gap: 0.25rem;
+  }
+  .settings-panel .controls button {
+    padding: 0.4rem 0.8rem;
+    font-size: clamp(0.75rem, 1.4vw, 0.85rem);
+  }
+}
