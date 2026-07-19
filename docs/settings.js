@@ -119,4 +119,29 @@ window.addEventListener('DOMContentLoaded', () => {
     // Initialise attribute
     syncAria();
   }
+
+  // Settings panel toggle
+  const settingsToggleBtn = document.getElementById('settingsToggleBtn');
+  const settingsPanel = document.getElementById('settingsPanel');
+  if (settingsToggleBtn && settingsPanel) {
+    const togglePanel = () => {
+      const isOpen = settingsPanel.classList.toggle('open');
+      settingsToggleBtn.setAttribute('aria-expanded', String(isOpen));
+      if (isOpen) {
+        // Move focus to first focusable element inside panel
+        const firstFocusable = settingsPanel.querySelector('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+        if (firstFocusable) firstFocusable.focus();
+      }
+    };
+    settingsToggleBtn.addEventListener('click', togglePanel);
+    // Close on Escape key
+    document.addEventListener('keydown', (e) => {
+      if (settingsPanel.classList.contains('open') && e.key === 'Escape') {
+        e.preventDefault();
+        settingsPanel.classList.remove('open');
+        settingsToggleBtn.setAttribute('aria-expanded', 'false');
+        settingsToggleBtn.focus();
+      }
+    });
+  }
 });
