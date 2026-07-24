@@ -13,11 +13,33 @@ import {
   publishWiki,
 } from "./shared.mjs";
 
-// Strip accidental code fences / preamble the model might wrap around the page.
+// The Scribe is the one agent that returns prose rather than the JSON envelope,
+// so its output needs unwrapping before it becomes a wiki page: strip code fences,
+// and unwrap a JSON envelope if the model produced one anyway (it has — a page
+// once shipped reading `{ "markdown": "# The Story So Far\n..." }`, braces and
+// escapes and all, because a stray JSON instruction outranked the prompt).
 function cleanMarkdown(text) {
   let t = (text || "").trim();
+
+  if (t.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(t);
+      const body = parsed.markdown ?? parsed.content ?? parsed.body ?? parsed.story;
+      if (typeof body === "string" && body.trim()) t = body.trim();
+    } catch {
+      // Not JSON after all — fall through and treat it as the prose it looks like.
+    }
+  }
+
   const fence = t.match(/```(?:markdown|md)?\s*([\s\S]*?)\s*```/);
   if (fence) t = fence[1].trim();
+
+  // A page that isn't the story is worse than no update at all, since it
+  // overwrites a good one. Require the heading the prompt asks for.
+  if (!/^#\s+/.test(t)) {
+    log("warn", "Scribe: output doesn't start with a Markdown heading — refusing to publish it.");
+    return "";
+  }
   return t;
 }
 
@@ -42,6 +64,10 @@ async function main() {
     runAgent({
       label: "Scribe",
       systemPrompt: fillTemplate(loadPrompt("scribe"), { CHANGELOG: readChangelog() }),
+      // Override the default kickoff turn, which tells agents to answer with the
+      // JSON envelope. This is the one agent whose output IS the artifact, so
+      // asking for JSON here contradicts its own prompt — and the task won.
+      task: "Write the page now. Respond with only the Markdown body of the page — no JSON, no envelope, no code fences.",
       tools: ["read"],
     })
   );
