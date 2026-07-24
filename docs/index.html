@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>The Museum of Small Machines</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --ink: #1a1a1a;
+    --ink-soft: #4a4a4a;
+    --paper: #f7f6f3;
+    --rule: #cfcbc2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #ececec;
+      --ink-soft: #b0b0b0;
+      --paper: #16161a;
+      --rule: #3a3a42;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    background: var(--paper);
+    color: var(--ink);
+    font: 1rem/1.6 ui-serif, Georgia, "Times New Roman", serif;
+  }
+  main { max-width: 34rem; }
+  h1 {
+    margin: 0 0 0.75rem;
+    font-size: clamp(1.5rem, 5vw, 2.25rem);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .label {
+    margin: 0 0 1.25rem;
+    padding-bottom: 1.25rem;
+    border-bottom: 1px solid var(--rule);
+    color: var(--ink-soft);
+    font-size: 0.8125rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  p { margin: 0 0 1rem; }
+  p:last-child { margin-bottom: 0; color: var(--ink-soft); }
+</style>
+</head>
+<body>
+  <main>
+    <h1>The Museum of Small Machines</h1>
+    <p class="label">Exhibit 0 &middot; The Empty Room</p>
+    <p>
+      The museum has been founded but not yet furnished. There are no machines on
+      the plinths, no labels on the walls, and nothing here that moves.
+    </p>
+    <p>
+      Its exhibits are built one at a time. When the first machine arrives, it will
+      stand in this room — able to be started, stopped, stepped through, and asked
+      whether its own rules still hold.
+    </p>
+  </main>
+</body>
+</html>
