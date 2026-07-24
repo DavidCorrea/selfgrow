@@ -16,7 +16,7 @@ import {
   setIssuePriority,
   recordTicket,
   retireIssue,
-  visualCritique,
+  reviewApp,
 } from "./shared.mjs";
 
 // How much title-token overlap (intersection / smaller set) counts as a near-dup.
@@ -210,11 +210,10 @@ async function main() {
   const vision = readVision();
   ensurePriorityLabels();
 
-  // A vision model looks at the live app and judges it against the Vision — the
-  // only place appearance is assessed, since the agents themselves can't see.
-  // Best-effort; anchored to the Vision so "quality" means fidelity to intent.
-  const critique = await withLogGroup("Visual check", () => visualCritique(vision));
-  const visualObservations = critique || "(no visual issues observed this run)";
+  // Measure the live app and exercise its controls. No model is involved, so this
+  // runs every time and costs nothing against the daily request cap.
+  const review = await withLogGroup("App review", () => reviewApp());
+  const appObservations = review || "(no defects measured and nothing broke when exercised)";
 
   const rawOutput = await withLogGroup("Product Manager", () =>
     runAgent({
@@ -222,7 +221,7 @@ async function main() {
       systemPrompt: fillTemplate(loadPrompt("product-manager"), {
         VISION: vision,
         BOARD_STATE: boardState,
-        VISUAL_OBSERVATIONS: visualObservations,
+        APP_OBSERVATIONS: appObservations,
       }),
       tools: ["read", "bash"],
     })

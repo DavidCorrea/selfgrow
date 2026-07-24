@@ -1,11 +1,12 @@
 name: builder-team
 
 on:
-  schedule:
-    # Daily safety net only. Day-to-day the Builder is demand-driven: the PM run
-    # kicks it via workflow_run, and when it drains the backlog low it kicks the
-    # PM back (which kicks the Builder again). The cron just covers a broken chain.
-    - cron: '0 7 * * *'
+  # No cron. The Builder has exactly one automatic entry point: product-manager's
+  # daily run grooms the backlog and kicks it via workflow_run below. A cron here
+  # would fire IN ADDITION to that chain on the same day, and since the free tier
+  # caps REQUESTS per day, a duplicate Builder run costs a full day's allowance to
+  # redo work the chain already did. A broken chain self-heals at the next daily
+  # PM run; use workflow_dispatch to recover sooner.
   workflow_dispatch:
   # Kicked off after the Product Manager finishes grooming/prioritizing the backlog.
   # (Builder is deliberately NOT triggered by issue events.)
@@ -59,6 +60,11 @@ jobs:
         run: node agents/builder-team.mjs
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # The Builder is where the day's requests should go — it is the only
+          # agent that ships code. This is the bulk of the free tier's 50/day,
+          # leaving room for the PM's grooming and the weekly PO/Scribe runs.
+          # Checked between tickets, so a ticket already in flight still finishes.
+          MODEL_REQUEST_BUDGET: '34'
           # AGENT_PAT (= the user) is the default token: Projects, issues, and
           # approving/merging the PR. BOT_TOKEN (= github-actions[bot]) opens the
           # PR as a DIFFERENT identity, so the PAT can legitimately approve it.

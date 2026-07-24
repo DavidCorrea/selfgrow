@@ -2,16 +2,19 @@ name: product-manager
 
 on:
   schedule:
-    # Daily — grooms the backlog toward the vision.
-    - cron: '0 8 * * *'
+    # Daily, and the single entry point for the day's work: groom the backlog,
+    # then kick the Builder via workflow_run. Deliberately just after OpenRouter's
+    # free-tier cap resets at 00:00 UTC, so the chain runs against a full day's
+    # request allowance rather than whatever a previous run left behind.
+    - cron: '30 0 * * *'
   workflow_dispatch:
   issues:
     # Triage inbound issues. The job guard below skips the agent's own creations.
     types: [opened, reopened]
-  # Re-groom right after the Product Owner evolves the vision.
-  workflow_run:
-    workflows: ["product-owner"]
-    types: [completed]
+  # NOTE: deliberately NOT triggered by the Product Owner. Re-grooming the instant
+  # the vision changes cost a whole extra PM+Builder chain every week, and the
+  # vision is a slow-moving north star — the next daily run picks it up within
+  # hours, which is soon enough for a weekly edit.
 
 permissions:
   contents: read
@@ -31,12 +34,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # Run on cron/dispatch; on issues only when NOT the agent's own creation
-    # (else the PM loops on itself); on a PO run only when it succeeded.
+    # (else the PM loops on itself, and each loop costs model requests).
     if: >-
       ${{
         (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
         || (github.event_name == 'issues' && !contains(github.event.issue.labels.*.name, 'agent'))
-        || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
       }}
     steps:
       - uses: actions/checkout@v4
@@ -58,17 +60,17 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
-      - name: Install Playwright browser (visual check)
+      - name: Install Playwright browser (app review — measures the live app)
         run: npx playwright install --with-deps chromium
 
       - name: Run Product Manager agent
         run: node agents/product-manager.mjs
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          # Vision models for the appearance check (pi registry ids, image-capable),
-          # tried in order on rate-limit/error since free VLMs share tight limits.
-          # Comma-separated; swap as the free lineup rotates.
-          VISION_MODEL: "openrouter/google/gemma-4-31b-it:free,openrouter/nvidia/nemotron-nano-12b-v2-vl:free,openrouter/google/gemma-4-26b-a4b-it:free"
+          # Grooming is 1 model call, plus 1 for the semantic dedup pass. The
+          # allowance covers a couple of chain fallbacks and no more — the day's
+          # requests belong to the Builder.
+          MODEL_REQUEST_BUDGET: '6'
           # PAT carries `project` scope (board) and covers issue creation.
           GH_TOKEN: ${{ secrets.AGENT_PAT }}
           GH_PROJECT_OWNER: '@me'

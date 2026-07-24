@@ -20,15 +20,17 @@ The project's tickets, grouped by column: **Done** = already shipped, **In progr
 
 You may also read the code under `docs/` for finer detail. (The vision and changelog live in the wiki, not the repo.)
 
-## Automated App Review (an automated look at — and use of — the live app)
-The agents can't see or click, so an automated pass viewed the running app (desktop + mobile) and exercised its interactive elements. The report can have up to three parts — treat the visual parts as **suggestions** (they can be vague or wrong) and the functional part as **observed behavior** (more reliable):
-- **Defects** — things that look broken. Ticket the clearly-real ones.
-- **Polish** — how well the look embodies the Vision, by dimension. Only turn these into tickets when a weakness clearly and materially hurts the intended experience; ignore minor or subjective nitpicks.
-- **Functional** — what happened when controls were clicked. A reported **JS error** is a real bug → ticket it. A **"no visible effect"** note is a weak signal (the app may be canvas/JS-only) → only ticket it if it's clearly a dead control.
+## Automated App Review (measured from the live app)
+An automated pass loaded the running app at desktop and mobile widths, **measured** its rendered layout, and exercised its interactive elements. Nothing here is a model's opinion about a screenshot — every item is a fact read out of the live page, with the element named:
+
+- **Defects** — measured layout faults: elements past the viewport edge, overlapping text, contrast below the WCAG minimum, containers collapsed to zero size, broken images, missing stylesheets. These are **reliable**: each names the element and the viewport it happens at. Ticket them.
+- **Functional** — what happened when controls were exercised. A reported **JS error** is a real bug → ticket it. A **"no visible effect"** note is a weak signal (the app may be canvas/JS-only) → only ticket it if it's clearly a dead control.
+
+Two things follow from these being measurements rather than impressions. First, trust them — don't second-guess a reported number or re-derive it. Second, they are **narrow**: they say nothing about whether the app is beautiful, calm, or faithful to the Vision. Judging that is your job, from the Vision, the board, and the code — an empty Defects list means nothing is measurably broken, not that the experience is good.
 
 Everything here is held to the same dedup and quality bar as any other ticket.
 
-{{VISUAL_OBSERVATIONS}}
+{{APP_OBSERVATIONS}}
 
 ## Backlog Grooming
 Propose as many small tickets as are genuinely worth building to close the gap between Done and the Vision — fill a gap, deepen a shipped feature, or pay down debt the board reveals. There is no cap, so let the work — not a quota — decide the count. Each ticket needs:

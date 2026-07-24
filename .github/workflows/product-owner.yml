@@ -32,6 +32,8 @@ jobs:
         run: node agents/product-owner.mjs
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # One vision judgement per week; the allowance covers a fallback or two.
+          MODEL_REQUEST_BUDGET: '3'
           # PAT carries `project` scope (for board cards) and covers issue creation.
           GH_TOKEN: ${{ secrets.AGENT_PAT }}
           GH_PROJECT_OWNER: '@me'

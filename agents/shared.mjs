@@ -17,10 +17,9 @@ import { dirname, join, relative, extname } from "path";
 import fs from "fs";
 import http from "http";
 import {
-  AuthStorage,
   createAgentSession,
   DefaultResourceLoader,
-  ModelRegistry,
+  ModelRuntime,
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
 
@@ -38,7 +37,7 @@ export const promptsDir = join(__dirname, "prompts");
 
 // Text models tried in order — on a rate-limit / error / empty response, fall
 // through to the next. Free models share tight, shared limits, so a fallback
-// chain matters far more than retrying one model (this mirrors VISION_MODELS).
+// chain matters far more than retrying one model.
 // These are pi registry ids (provider/id); override via env TEXT_MODEL
 // (comma-separated). Unknown ids degrade cleanly — resolveTextModels() drops any
 // the registry doesn't know and auto-discovers free models when none remain.
@@ -48,17 +47,20 @@ export const TEXT_MODELS = (
   // models.generated.js) — the registry is NOT fetched live from OpenRouter, so
   // an id pi doesn't know is skipped, not requested. Verified against the
   // installed pi version; re-check after bumping pi, as its free lineup rotates.
+  // Ordered biggest/most-capable first, with the coding-tuned models high up —
+  // most runs are Builder runs. Verified against pi 0.82.0's snapshot.
+  //
+  // Deliberately SHORT. Each fallback is a real request charged against the daily
+  // cap, so a long tail of weak models mostly buys wasted requests: by the time
+  // the 7th model is answering, the output is rarely worth building on. One
+  // model per provider family keeps the fallbacks genuinely independent.
   [
-    "openrouter/openai/gpt-oss-120b:free",
     "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
     "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
-    "openrouter/qwen/qwen3-next-80b-a3b-instruct:free",
-    "openrouter/meta-llama/llama-3.3-70b-instruct:free",
-    "openrouter/qwen/qwen3-coder:free",
-    "openrouter/nvidia/nemotron-3-nano-30b-a3b:free",
+    "openrouter/inclusionai/ling-3.0-flash:free",
+    "openrouter/poolside/laguna-m.1:free",
+    "openrouter/cohere/north-mini-code:free",
     "openrouter/google/gemma-4-31b-it:free",
-    "openrouter/openai/gpt-oss-20b:free",
-    "openrouter/nvidia/nemotron-nano-9b-v2:free",
   ].join(",")
 )
   .split(",")
@@ -68,10 +70,79 @@ export const TEXT_MODELS = (
 // Back-compat: the historical single-model default is just the head of the chain.
 export const MODEL_ID = TEXT_MODELS[0];
 
+// Never send thinkingLevel "off": every free model in pi's snapshot is a
+// reasoning model, and some endpoints reject a disabled-reasoning request
+// outright ("Reasoning is mandatory for this endpoint and cannot be disabled",
+// HTTP 400) — a wasted request against the daily cap. "low" is the real floor.
+export const MIN_THINKING_LEVEL = "low";
+
 // Default kickoff turn when a caller doesn't supply one. The agent's full role
 // lives in the system prompt; this just tells it to begin.
 const DEFAULT_TASK =
   "Carry out the task described in your instructions now, then respond with the required JSON object and nothing else.";
+
+// Meta-routers dispatch to an arbitrary underlying model, so a run using one is
+// not reproducible — never auto-discover them.
+const META_ROUTER_IDS = new Set(["auto", "openrouter/free", "openrouter/fusion"]);
+
+// pi's model/auth runtime. Creation is async and reads ~/.pi auth + the bundled
+// model snapshot, so it's built once and shared by every model call in the run.
+// Credentials still come from OPENROUTER_API_KEY via pi-ai's env lookup.
+let modelRuntimePromise;
+function getModelRuntime() {
+  // No network refresh: resolve ids against pi's bundled snapshot, so a run's
+  // model lineup can't shift underneath it mid-flight.
+  modelRuntimePromise ??= ModelRuntime.create({ allowModelNetwork: false });
+  return modelRuntimePromise;
+}
+
+const modelIdOf = (m) => `${m.provider}/${m.id}`;
+
+/**
+ * True when an error is OpenRouter's ACCOUNT-WIDE free-request cap, not a
+ * per-model limit. This distinction is the difference between one wasted request
+ * and a whole chain of them: the cap is shared by every free model, so falling
+ * through to the next model cannot possibly succeed. Callers must stop the chain
+ * immediately instead of burning the rest of it on a guaranteed failure.
+ */
+export function isDailyQuotaExhausted(err) {
+  return /free-models-per-day|free_models_per_day/i.test(err?.message || "");
+}
+
+// ---------------------------------------------------------------------------
+// Request budget — the free tier caps REQUESTS per day (50 on the free tier),
+// not tokens, so requests are the scarce resource to spend deliberately. Every
+// attempt counts, including ones that fail or return empty, because the cap is
+// charged on the call and not on the result.
+//
+// This is a per-run allowance, checked between units of work (never mid-ticket,
+// which would strand a half-built PR). It exists so one run can't drain the
+// whole day and starve every later run.
+// ---------------------------------------------------------------------------
+
+export const MODEL_REQUEST_BUDGET = Number(process.env.MODEL_REQUEST_BUDGET || 20);
+
+let modelRequestCount = 0;
+
+/** How many model requests this run has spent (successes and failures alike). */
+export function getModelRequestCount() {
+  return modelRequestCount;
+}
+
+/** True once the run has spent its request allowance. */
+export function isRequestBudgetSpent() {
+  return modelRequestCount >= MODEL_REQUEST_BUDGET;
+}
+
+/** Every model pi knows, or null when the runtime can't be read. */
+async function getAllModels() {
+  try {
+    return (await getModelRuntime()).getModels();
+  } catch (e) {
+    log("warn", "Model chain: could not read pi's registry.", errorData(e));
+    return null;
+  }
+}
 
 /**
  * Resolve the text-model chain against pi's ACTUAL registry, so a pi upgrade or
@@ -79,20 +150,17 @@ const DEFAULT_TASK =
  *   1. keep configured TEXT_MODELS that exist; warn (distinctly) about any that don't,
  *   2. if none remain, auto-discover free OpenRouter text models pi currently
  *      knows (excluding meta-routers) so agents keep running.
- * Returns an ordered list of model ids (possibly empty). Mirrors resolveVisionModels.
+ * Returns an ordered list of model ids (possibly empty).
  */
-function resolveTextModels() {
-  let all;
-  try {
-    all = ModelRegistry.create(AuthStorage.create()).getAll();
-  } catch (e) {
-    log("warn", "Model chain: could not read pi's registry — using configured ids as-is.", errorData(e));
+async function resolveTextModels() {
+  const all = await getAllModels();
+  if (!all) {
+    log("warn", "Model chain: using configured ids as-is.");
     return TEXT_MODELS;
   }
-  const idOf = (m) => `${m.provider}/${m.id}`;
   const present = [];
   for (const id of TEXT_MODELS) {
-    if (all.some((m) => idOf(m) === id)) present.push(id);
+    if (all.some((m) => modelIdOf(m) === id)) present.push(id);
     else log("warn", `Model chain: "${id}" is not in pi's registry (rotated out / version drift?) — skipping it.`);
   }
   if (present.length) return present;
@@ -102,9 +170,9 @@ function resolveTextModels() {
       (m) =>
         m.provider === "openrouter" &&
         m.cost && Number(m.cost.input) === 0 && Number(m.cost.output) === 0 &&
-        m.id !== "auto" && m.id !== "openrouter/free" // skip meta-routers
+        !META_ROUTER_IDS.has(m.id)
     )
-    .map(idOf)
+    .map(modelIdOf)
     .slice(0, 4);
   if (discovered.length) {
     log("warn", `Model chain: no configured text model is in pi's registry — auto-discovered ${discovered.length} free model(s): ${discovered.join(", ")}.`);
@@ -136,7 +204,7 @@ export async function runAgent(opts) {
   if (modelId) return runAgentOnce(opts);
 
   // No explicit model: try each model in the chain until one returns content.
-  const chain = resolveTextModels();
+  const chain = await resolveTextModels();
   if (!chain.length) {
     throw new Error(
       "No usable text model in pi's registry. " +
@@ -152,6 +220,15 @@ export async function runAgent(opts) {
       log("warn", `${label}: ${id} returned empty — trying next model.`);
     } catch (e) {
       lastErr = e;
+      // The daily cap is account-wide — every remaining model shares it, so
+      // continuing would burn one request per model to fail identically.
+      if (isDailyQuotaExhausted(e)) {
+        throw new Error(
+          `${label}: OpenRouter's daily free-request cap is exhausted — stopping ` +
+            `without trying the remaining ${chain.length - chain.indexOf(id) - 1} model(s). ` +
+            `The cap is per account, not per model, so it resets at 00:00 UTC.`
+        );
+      }
       log("warn", `${label}: ${id} failed — trying next model.`, errorData(e));
     }
   }
@@ -165,20 +242,19 @@ export async function runAgent(opts) {
  * Run a single one-shot agent against exactly one model. The chain logic lives in
  * runAgent; this is the per-model attempt.
  */
-function runAgentOnce({
+async function runAgentOnce({
   label = "Agent",
   systemPrompt,
   task = DEFAULT_TASK,
   tools = ["read"],
-  thinkingLevel = "low",
+  thinkingLevel = MIN_THINKING_LEVEL,
   modelId = MODEL_ID,
-  images,
 }) {
-  const authStorage = AuthStorage.create();
-  const modelRegistry = ModelRegistry.create(authStorage);
-  const model = modelRegistry.getAll().find(
-    (m) => `${m.provider}/${m.id}` === modelId
-  );
+  // Clamp rather than trust the caller — "off" costs a request and returns 400
+  // on reasoning-mandatory endpoints (see MIN_THINKING_LEVEL).
+  if (thinkingLevel === "off") thinkingLevel = MIN_THINKING_LEVEL;
+  const modelRuntime = await getModelRuntime();
+  const model = modelRuntime.getModels().find((m) => modelIdOf(m) === modelId);
   if (!model) {
     throw new Error(
       `Model "${modelId}" not found in the registry. ` +
@@ -202,7 +278,9 @@ function runAgentOnce({
     noContextFiles: true,
   });
   const startTime = Date.now();
-  log("info", `${label} agent started`);
+  // Count the attempt, not the success — the daily cap is charged either way.
+  modelRequestCount++;
+  log("info", `${label} agent started (request ${modelRequestCount}/${MODEL_REQUEST_BUDGET} this run)`);
 
   return loader.reload().then(() =>
     createAgentSession({
@@ -211,8 +289,7 @@ function runAgentOnce({
       resourceLoader: loader,
       model,
       thinkingLevel,
-      authStorage,
-      modelRegistry,
+      modelRuntime,
       tools,
     }).then(({ session }) => {
       let output = "";
@@ -226,7 +303,7 @@ function runAgentOnce({
       });
 
       return session
-        .prompt(task, images && images.length ? { images } : undefined)
+        .prompt(task)
         .then(() => {
           const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
           const messages = session.state.messages;
@@ -368,7 +445,8 @@ export function printRunSummary(title = "Run Summary") {
 
   // Compact stdout recap — result, the tickets we touched, then any warn/error.
   // The full per-line story already streamed live, so don't replay it.
-  console.log(`\n=== ${title}: ${result} · ${errors} error(s), ${warns} warning(s) ===`);
+  const spend = `${modelRequestCount} model request(s)`;
+  console.log(`\n=== ${title}: ${result} · ${errors} error(s), ${warns} warning(s) · ${spend} ===`);
   ticketOutcomes.forEach((t) => console.log(`  ${ticketLine(t)}`));
   for (const entry of runLog) {
     if (entry.level === "warn" || entry.level === "error") {
@@ -378,7 +456,7 @@ export function printRunSummary(title = "Run Summary") {
 
   // The GitHub job-summary panel reports the result line and, below it, the
   // tickets this run affected — that's the whole story worth keeping there.
-  const md = [`## ${title}`, "", `${result} · ${errors} error(s) · ${warns} warning(s)`, ""];
+  const md = [`## ${title}`, "", `${result} · ${errors} error(s) · ${warns} warning(s) · ${spend}`, ""];
   if (ticketOutcomes.length) {
     ticketOutcomes.forEach((t) => md.push(`- ${ticketLine(t)}`));
   } else {
@@ -1475,63 +1553,202 @@ export async function verifyBuild(relDir = "docs") {
 }
 
 // ---------------------------------------------------------------------------
-// Visual critique — give the (text-only) agents a pair of eyes.
+// App review — judge the built site WITHOUT a vision model.
 //
-// The build/verify model can't see, so appearance is judged here: screenshot the
-// built site at desktop + mobile widths and ask a VISION model to describe
-// high-confidence layout/visual defects. It's a pure describer — text in, text
-// out — whose findings feed the Product Manager (which turns real defects into
-// tickets). Best-effort: any failure returns null and the caller proceeds.
+// The agents can't see, but "can't see" turned out not to require a pair of eyes:
+// everything a screenshot critique was asked to spot — overflow, overlap,
+// unreadable contrast, collapsed regions, broken images, unstyled content — is a
+// measurable property of the rendered page. So the browser measures it directly
+// via getBoundingClientRect + getComputedStyle, and reports exact selectors
+// instead of "something looks off on mobile".
+//
+// This is deterministic, costs ZERO model requests, and cannot invent a defect
+// that isn't there — which matters more than it sounds: a hallucinated defect
+// became a ticket, and the Builder then spent real requests "fixing" nothing.
 // ---------------------------------------------------------------------------
 
-// A free VLM by default; swap via env as OpenRouter's free lineup rotates.
-// Vision models tried in order — on a rate-limit/error, fall through to the next.
-// Free VLMs share tight, shared limits, so a fallback chain matters far more than
-// retrying one model. These are pi registry ids (provider/id) and must be
-// image-capable; override via env (comma-separated).
-export const VISION_MODELS = (
-  process.env.VISION_MODEL ||
-  [
-    "openrouter/google/gemma-4-31b-it:free",
-    "openrouter/nvidia/nemotron-nano-12b-v2-vl:free",
-    "openrouter/google/gemma-4-26b-a4b-it:free",
-  ].join(",")
-)
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
-
-const VISION_VIEWPORTS = [
+// Viewports the layout is measured at. Defects are reported per viewport, since
+// nearly all of them are width-dependent.
+const REVIEW_VIEWPORTS = [
   { label: "desktop", width: 1280, height: 800 },
   { label: "mobile", width: 390, height: 844 },
 ];
 
-// "Quality" only means something relative to intent, so the critique is anchored
-// to the Vision and split into two lanes: high-confidence Defects (near-certain,
-// → tickets) and Vision-anchored Polish judged against a fixed rubric (→ optional
-// suggestions). A fixed rubric keeps a subjective judgment consistent run to run.
-function buildVisionPrompt(vision) {
-  return [
-    "You are reviewing screenshots of a browser-only web app at desktop and mobile widths.",
-    "",
-    "The app's intended experience (its north star) is:",
-    vision && vision.trim() ? vision.trim() : "(not provided)",
-    "",
-    "Report in exactly these two sections, using these headings:",
-    "",
-    "## Defects",
-    "Specific, high-confidence things that are visibly broken: overlapping elements, content cut " +
-      "off or overflowing the viewport, unreadable contrast, broken/missing images, empty or " +
-      "collapsed regions, unstyled content. One concise bullet each, naming the viewport. If there " +
-      "are none, write: none.",
-    "",
-    "## Polish",
-    "How well does the app embody the intended experience above? Give ONE short line per dimension — " +
-      "the dimension, a brief verdict, and (only if weak) one concrete improvement. Dimensions: " +
-      "visual hierarchy, spacing & alignment, typography & readability, color & contrast cohesion, " +
-      "responsiveness (desktop vs mobile), interaction affordance, density. Tie every judgment to the " +
-      "intended experience. Do not invent problems or give generic praise; if a dimension is fine, say so briefly.",
-  ].join("\n");
+// Caps so one badly-broken page can't produce a thousand-line report. The point
+// is to name the worst offenders, not to enumerate every instance.
+const MAX_DEFECTS_PER_KIND = 5;
+// WCAG AA: 4.5:1 for body text, 3:1 for large text (>=24px, or >=19px bold).
+const CONTRAST_MIN_NORMAL = 4.5;
+const CONTRAST_MIN_LARGE = 3;
+
+/**
+ * Measure layout/appearance defects in the page as rendered. Runs entirely in the
+ * browser and returns plain strings. Anything genuinely subjective (does this feel
+ * calm? is the hierarchy right?) is deliberately NOT here — this function only
+ * reports things that are true or false, never matters of taste.
+ */
+async function measureLayoutDefects(page) {
+  return page.evaluate(
+    ({ maxPerKind, minNormal, minLarge }) => {
+      const defects = [];
+      const add = (kind, list, msg) => {
+        if (list.length < maxPerKind) {
+          list.push(msg);
+          defects.push(msg);
+        }
+      };
+
+      // A short, stable, human-readable handle for an element.
+      const describe = (el) => {
+        const id = el.id ? `#${el.id}` : "";
+        const cls = el.classList.length ? `.${[...el.classList].slice(0, 2).join(".")}` : "";
+        const text = (el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 30);
+        return `${el.tagName.toLowerCase()}${id}${cls}${text ? ` ("${text}")` : ""}`;
+      };
+
+      // An element can have a healthy box of its own and still be invisible,
+      // because an ancestor collapsed to nothing and clips it. Such children are
+      // not on screen, so measuring their overlap or contrast reports defects the
+      // visitor can never see.
+      const isClippedByAncestor = (el) => {
+        for (let node = el.parentElement; node && node !== document.body; node = node.parentElement) {
+          const s = getComputedStyle(node);
+          if (s.overflow === "hidden" || s.overflow === "clip") {
+            const r = node.getBoundingClientRect();
+            if (r.width === 0 || r.height === 0) return true;
+          }
+        }
+        return false;
+      };
+
+      const isRendered = (el, style, rect) =>
+        style.display !== "none" &&
+        style.visibility !== "hidden" &&
+        Number(style.opacity) !== 0 &&
+        rect.width > 0 &&
+        rect.height > 0 &&
+        !isClippedByAncestor(el);
+
+      // --- Unstyled content: no author CSS applied at all. -------------------
+      if (document.styleSheets.length === 0) {
+        defects.push("no stylesheet is applied — the page is rendering unstyled.");
+      }
+
+      // --- Page-level horizontal overflow. ----------------------------------
+      const doc = document.scrollingElement || document.documentElement;
+      if (doc.scrollWidth > window.innerWidth + 1) {
+        defects.push(
+          `the page scrolls horizontally: content is ${doc.scrollWidth}px wide in a ${window.innerWidth}px viewport.`
+        );
+      }
+
+      const all = [...document.querySelectorAll("body *")].slice(0, 1500);
+      const visible = [];
+      const overflowing = [];
+      const collapsed = [];
+      const brokenImages = [];
+      const lowContrast = [];
+
+      for (const el of all) {
+        const style = getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+
+        // --- Broken images. -------------------------------------------------
+        if (el.tagName === "IMG" && el.complete && el.naturalWidth === 0) {
+          add("broken", brokenImages, `broken or missing image: ${describe(el)} (src="${el.getAttribute("src") || ""}")`);
+          continue;
+        }
+
+        // --- Collapsed containers: has children but no rendered size. -------
+        if (
+          style.display !== "none" &&
+          el.children.length > 0 &&
+          (rect.width === 0 || rect.height === 0) &&
+          style.position !== "absolute" &&
+          style.position !== "fixed"
+        ) {
+          add("collapsed", collapsed, `collapsed container (${Math.round(rect.width)}x${Math.round(rect.height)}) despite ${el.children.length} child element(s): ${describe(el)}`);
+        }
+
+        if (!isRendered(el, style, rect)) continue;
+
+        // --- Elements past the right edge. ----------------------------------
+        if (rect.right > window.innerWidth + 1 && rect.left < window.innerWidth) {
+          add("overflow", overflowing, `element runs ${Math.round(rect.right - window.innerWidth)}px past the right edge: ${describe(el)}`);
+        }
+
+        // Track leaf-ish text nodes for overlap + contrast.
+        const ownText = [...el.childNodes].some(
+          (n) => n.nodeType === 3 && n.textContent.trim().length > 0
+        );
+        if (ownText) visible.push({ el, rect, style });
+      }
+
+      // --- Contrast of text against its effective background. ---------------
+      const parseColor = (c) => {
+        const m = c.match(/rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/);
+        return m ? { r: +m[1], g: +m[2], b: +m[3], a: m[4] === undefined ? 1 : +m[4] } : null;
+      };
+      // Walk up until an ancestor paints an opaque background; default to white.
+      const effectiveBackground = (el) => {
+        for (let node = el; node && node !== document.documentElement; node = node.parentElement) {
+          const bg = parseColor(getComputedStyle(node).backgroundColor);
+          if (bg && bg.a > 0.5) return bg;
+        }
+        const bodyBg = parseColor(getComputedStyle(document.body).backgroundColor);
+        return bodyBg && bodyBg.a > 0.5 ? bodyBg : { r: 255, g: 255, b: 255, a: 1 };
+      };
+      const luminance = ({ r, g, b }) => {
+        const ch = [r, g, b].map((v) => {
+          const s = v / 255;
+          return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+        });
+        return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
+      };
+
+      for (const { el, style } of visible) {
+        const fg = parseColor(style.color);
+        if (!fg || fg.a < 0.5) continue;
+        const bg = effectiveBackground(el);
+        const l1 = luminance(fg);
+        const l2 = luminance(bg);
+        const ratio = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+        const size = parseFloat(style.fontSize) || 16;
+        const bold = Number(style.fontWeight) >= 700;
+        const floor = size >= 24 || (size >= 19 && bold) ? minLarge : minNormal;
+        if (ratio < floor) {
+          add("contrast", lowContrast, `text contrast ${ratio.toFixed(2)}:1 is below the ${floor}:1 minimum (${style.color} on rgb(${bg.r},${bg.g},${bg.b})): ${describe(el)}`);
+        }
+      }
+
+      // --- Overlapping text: two text elements sharing the same pixels. -----
+      const overlaps = [];
+      for (let i = 0; i < visible.length && overlaps.length < maxPerKind; i++) {
+        for (let j = i + 1; j < visible.length && overlaps.length < maxPerKind; j++) {
+          const a = visible[i];
+          const b = visible[j];
+          // Nested elements legitimately share space — only compare siblings.
+          if (a.el.contains(b.el) || b.el.contains(a.el)) continue;
+          const w = Math.min(a.rect.right, b.rect.right) - Math.max(a.rect.left, b.rect.left);
+          const h = Math.min(a.rect.bottom, b.rect.bottom) - Math.max(a.rect.top, b.rect.top);
+          if (w <= 0 || h <= 0) continue;
+          const areaA = a.rect.width * a.rect.height;
+          const areaB = b.rect.width * b.rect.height;
+          const share = (w * h) / Math.min(areaA, areaB);
+          if (share > 0.4) {
+            add("overlap", overlaps, `text overlaps (${Math.round(share * 100)}% of the smaller box): ${describe(a.el)} over ${describe(b.el)}`);
+          }
+        }
+      }
+
+      return defects;
+    },
+    {
+      maxPerKind: MAX_DEFECTS_PER_KIND,
+      minNormal: CONTRAST_MIN_NORMAL,
+      minLarge: CONTRAST_MIN_LARGE,
+    }
+  );
 }
 
 // Most interactive elements the sweep will exercise per run.
@@ -1598,7 +1815,7 @@ async function exploreInteractions(browser, url) {
 
   const findings = [];
   const base = url.split("#")[0];
-  let afterShot = null;
+  let postDefects = [];
   try {
     await page.goto(url, { waitUntil: "networkidle", timeout: 20000 });
     const targets = await tagTargets();
@@ -1631,169 +1848,104 @@ async function exploreInteractions(browser, url) {
         }
       }
     }
-    // Capture the post-interaction state so the vision critique can judge the app
-    // as the user leaves it (panels open, fields filled) — not just its first paint.
-    afterShot = (await page.screenshot({ fullPage: true })).toString("base64");
+    // Measure the app as the user LEAVES it — panels open, fields filled. First
+    // paint is the easy case; a layout usually breaks once something is expanded,
+    // and this state is unreachable from a fresh page load.
+    postDefects = await measureLayoutDefects(page, "desktop, after interacting");
   } catch (e) {
     findings.push(`interaction sweep stopped early: ${String(e.message).split("\n")[0]}`);
   } finally {
     await page.close().catch(() => {});
   }
-  return { findings, afterShot };
+  return { findings, postDefects };
 }
-
 /**
- * Resolve the vision-model chain against pi's ACTUAL registry, so a pi upgrade
- * that renames/removes a model degrades cleanly instead of silently failing:
- *   1. keep configured models that exist; warn (distinctly) about any that don't,
- *   2. if none remain, auto-discover free image-capable OpenRouter models pi
- *      currently knows (excluding meta-routers) so the check keeps working.
- * Returns an ordered list of model ids (possibly empty).
+ * Review the built site with no model involved at all: measure the rendered
+ * layout at each viewport, then drive every interactive element and record what
+ * breaks. Returns a `## Defects` / `## Functional` report for the Product Manager,
+ * or null when there's nothing to review (no page yet, Playwright missing).
+ *
+ * Costs zero model requests and never throws — any failure degrades to a partial
+ * report or null, and the caller proceeds.
  */
-function resolveVisionModels() {
-  let all;
-  try {
-    all = ModelRegistry.create(AuthStorage.create()).getAll();
-  } catch (e) {
-    log("warn", "Visual check: could not read pi's model registry — using configured ids as-is.", errorData(e));
-    return VISION_MODELS;
-  }
-  const idOf = (m) => `${m.provider}/${m.id}`;
-  const present = [];
-  for (const id of VISION_MODELS) {
-    if (all.some((m) => idOf(m) === id)) present.push(id);
-    else log("warn", `Visual check: "${id}" is not in pi's registry (version drift?) — skipping it.`);
-  }
-  if (present.length) return present;
-
-  const discovered = all
-    .filter(
-      (m) =>
-        m.provider === "openrouter" &&
-        Array.isArray(m.input) && m.input.includes("image") &&
-        m.cost && Number(m.cost.input) === 0 && Number(m.cost.output) === 0 &&
-        m.id !== "auto" && m.id !== "openrouter/free" // skip meta-routers
-    )
-    .map(idOf)
-    .slice(0, 4);
-  if (discovered.length) {
-    log("warn", `Visual check: no configured vision model is in pi's registry — auto-discovered ${discovered.length} free image model(s): ${discovered.join(", ")}.`);
-  } else {
-    log("warn", "Visual check: no configured or discoverable vision models — skipping the appearance critique.");
-  }
-  return discovered;
-}
-
-/**
- * Review the built site: drive its interactive elements to catch functional
- * breakage (no model needed) AND screenshot it for a vision-model critique of
- * appearance. The vision call goes through pi (runAgent) like every other model
- * call. Returns a combined report (Defects / Polish / Functional), or null when
- * nothing can run (no page yet, Playwright missing) or nothing is produced. Never throws.
- */
-export async function visualCritique(vision, relDir = "docs") {
+export async function reviewApp(relDir = "docs") {
   const dir = join(repoRoot, relDir);
   if (!fs.existsSync(join(dir, "index.html"))) {
-    log("info", "Visual check: no index.html yet — skipping.");
+    log("info", "App review: no index.html yet — skipping.");
     return null;
   }
   let chromium;
   try {
     ({ chromium } = await import("playwright"));
   } catch (e) {
-    log("warn", "Visual check: Playwright unavailable — skipping.", errorData(e));
+    log("warn", "App review: Playwright unavailable — skipping.", errorData(e));
     return null;
   }
 
   const { server, port } = await startStaticServer(dir);
   const url = `http://127.0.0.1:${port}/`;
-  const shots = [];
+  // defect message -> the viewports it occurs at. Most faults reproduce at every
+  // width, and repeating each one per viewport buried the width-specific ones
+  // (which are the interesting kind) in three times as much text.
+  const defectsByViewport = new Map();
+  const recordDefects = (label, messages) => {
+    for (const msg of messages) {
+      if (!defectsByViewport.has(msg)) defectsByViewport.set(msg, []);
+      defectsByViewport.get(msg).push(label);
+    }
+  };
   let functional = [];
   let browser;
   try {
     browser = await chromium.launch();
   } catch (e) {
-    log("warn", "Visual check: could not launch browser — skipping.", errorData(e));
+    log("warn", "App review: could not launch browser — skipping.", errorData(e));
     server.close();
     return null;
   }
 
-  // Static screenshots for the visual critique (best-effort).
-  try {
-    for (const vp of VISION_VIEWPORTS) {
-      const page = await browser.newPage({ viewport: { width: vp.width, height: vp.height } });
+  // Measure the layout at each viewport (best-effort per viewport, so one bad
+  // width still lets the others report).
+  for (const vp of REVIEW_VIEWPORTS) {
+    let page;
+    try {
+      page = await browser.newPage({ viewport: { width: vp.width, height: vp.height } });
       await page.goto(url, { waitUntil: "networkidle", timeout: 20000 });
+      // The garden animates in; let it settle so we measure a steady state.
       await page.waitForTimeout(1500);
-      const png = await page.screenshot({ fullPage: true });
-      shots.push({ label: vp.label, data: png.toString("base64") });
-      await page.close();
+      recordDefects(vp.label, await measureLayoutDefects(page));
+    } catch (e) {
+      log("warn", `App review: could not measure the ${vp.label} layout.`, errorData(e));
+    } finally {
+      if (page) await page.close().catch(() => {});
     }
-  } catch (e) {
-    log("warn", "Visual check: screenshot capture failed.", errorData(e));
   }
 
-  // Drive the app and record what breaks (best-effort, deterministic). The sweep
-  // also returns a post-interaction screenshot, so the vision critique can judge
-  // the app's exercised state (panels open, fields filled), not just first paint.
+  // Drive the app and record what breaks, then measure the state it's left in.
   try {
     const sweep = await exploreInteractions(browser, url);
     functional = sweep.findings;
-    if (sweep.afterShot) {
-      shots.push({ label: "desktop (after interacting)", data: sweep.afterShot });
-    }
+    recordDefects("desktop, after interacting", sweep.postDefects);
   } catch (e) {
-    log("warn", "Visual check: interaction sweep failed.", errorData(e));
+    log("warn", "App review: interaction sweep failed.", errorData(e));
   }
 
   await browser.close().catch(() => {});
   server.close();
 
-  // Ask a vision model about appearance, through pi (same path as every other
-  // model call). Try each model in the chain until one answers — free VLMs
-  // rate-limit constantly, so the next in line usually picks up the slack.
-  let visualText = null;
-  if (shots.length && process.env.OPENROUTER_API_KEY) {
-    const images = shots.map((s) => ({ type: "image", data: s.data, mimeType: "image/png" }));
-    const task = `Review the attached screenshots and report as instructed. The images, in order, are: ${shots.map((s) => s.label).join(", ")}.`;
-    for (const modelId of resolveVisionModels()) {
-      try {
-        const out = await runAgent({
-          label: `Vision (${modelId})`,
-          modelId,
-          systemPrompt: buildVisionPrompt(vision),
-          task,
-          images,
-          tools: [],
-          thinkingLevel: "off",
-        });
-        visualText = (out || "").trim() || null;
-        if (visualText) {
-          log("info", `Visual check: critique from ${modelId}.`);
-          break;
-        }
-        log("warn", `Visual check: ${modelId} returned empty — trying next.`);
-      } catch (e) {
-        log("warn", `Visual check: ${modelId} call failed — trying next.`, errorData(e));
-      }
-    }
-    if (!visualText) {
-      log("warn", "Visual check: every vision model was unavailable — skipping the appearance critique.");
-    }
-  } else if (shots.length) {
-    log("info", "Visual check: no OPENROUTER_API_KEY — skipping the appearance critique.");
-  }
-
-  // Combine the model's visual critique with the deterministic interaction findings.
   const parts = [];
-  if (visualText) parts.push(visualText);
+  if (defectsByViewport.size) {
+    const lines = [...defectsByViewport].map(([msg, labels]) => `- ${msg} (at: ${labels.join("; ")})`);
+    parts.push(`## Defects (measured in the rendered page)\n${lines.join("\n")}`);
+  }
   if (functional.length) {
     parts.push(`## Functional (observed behavior)\n${functional.map((f) => `- ${f}`).join("\n")}`);
   }
   if (!parts.length) {
-    log("info", "Visual check: no critique produced.");
+    log("info", "App review: no defects measured and nothing broke when exercised.");
     return null;
   }
   const report = parts.join("\n\n");
-  log("info", `App review (visual + interaction sweep):\n${report}`);
+  log("info", `App review (measured layout + interaction sweep):\n${report}`);
   return report;
 }

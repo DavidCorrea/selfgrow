@@ -2,8 +2,10 @@ name: scribe
 
 on:
   schedule:
-    # Weekly — refresh the wiki narrative as the garden grows.
-    - cron: '0 9 * * 1'
+    # Weekly — refresh the wiki narrative as the garden grows. On Thursday rather
+    # than Monday so it doesn't share a day (and a request budget) with the
+    # Product Owner run.
+    - cron: '0 9 * * 4'
   workflow_dispatch:
 
 permissions:
@@ -30,5 +32,7 @@ jobs:
         run: node agents/scribe.mjs
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # One narrative refresh per week; the allowance covers a fallback or two.
+          MODEL_REQUEST_BUDGET: '3'
           # PAT used for `gh repo view` and to clone/push the wiki repo.
           GH_TOKEN: ${{ secrets.AGENT_PAT }}

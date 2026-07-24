@@ -32,6 +32,8 @@ import {
   publishWiki,
   verifyBuild,
   runAgent,
+  isRequestBudgetSpent,
+  MODEL_REQUEST_BUDGET,
 } from "./shared.mjs";
 
 const MAX_SCOUT_RETRIES = 2;
@@ -49,10 +51,6 @@ const MAX_TICKET_ATTEMPTS = Number(process.env.MAX_TICKET_ATTEMPTS || 2);
 // kept under the job's 60-minute timeout.
 const MAX_TICKETS_PER_RUN = Number(process.env.MAX_TICKETS_PER_RUN || 3);
 const RUN_BUDGET_MS = Number(process.env.BUILD_RUN_BUDGET_MINUTES || 45) * 60 * 1000;
-
-// When buildable tickets dip below this after a run, ask the Product Manager to
-// refill — so the backlog is replenished on demand, not only on its daily cron.
-const BACKLOG_FLOOR = Number(process.env.BACKLOG_FLOOR || 2);
 
 // ---------------------------------------------------------------------------
 // Prompt builders
@@ -512,12 +510,17 @@ function maybeReplenishBacklog(mergedCount) {
     log("info", "No tickets merged this run — not kicking the PM (avoids an empty-backlog loop).");
     return;
   }
+  // Refill only when the backlog is genuinely EMPTY, not merely low. Kicking the
+  // PM starts a whole second PM→Builder chain, and on the free tier a day only
+  // affords about one: a "low" backlog still has work for tomorrow's run, so
+  // spending today's remaining requests to top it up buys nothing. Empty is
+  // different — without a refill tomorrow's run would have nothing to do at all.
   const buildable = fetchOpenIssues(50).filter((i) => !isBlocked(i)).length;
-  if (buildable < BACKLOG_FLOOR) {
-    log("info", `Backlog low (${buildable} buildable < floor ${BACKLOG_FLOOR}) — asking the Product Manager to refill.`);
+  if (buildable === 0) {
+    log("info", "Backlog empty — asking the Product Manager to refill so the next run has work.");
     triggerWorkflow("product-manager.yml");
   } else {
-    log("info", `Backlog OK (${buildable} buildable ≥ floor ${BACKLOG_FLOOR}) — no refill needed.`);
+    log("info", `Backlog has ${buildable} buildable ticket(s) — leaving the refill to the next daily run.`);
   }
 }
 
@@ -539,6 +542,12 @@ async function main() {
   for (let n = 1; n <= MAX_TICKETS_PER_RUN; n++) {
     if (Date.now() > deadline) {
       log("info", `Time budget (${Math.round(RUN_BUDGET_MS / 60000)}m) reached — stopping after ${mergedCount} merge(s).`);
+      break;
+    }
+    // Checked between tickets, never mid-ticket — stopping inside buildTicket
+    // would strand a half-reviewed PR.
+    if (isRequestBudgetSpent()) {
+      log("info", `Model-request budget (${MODEL_REQUEST_BUDGET}) spent — stopping after ${mergedCount} merge(s) to leave requests for later runs.`);
       break;
     }
 
