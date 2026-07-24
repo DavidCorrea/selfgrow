@@ -68,6 +68,9 @@ async function main() {
       // JSON envelope. This is the one agent whose output IS the artifact, so
       // asking for JSON here contradicts its own prompt — and the task won.
       task: "Write the page now. Respond with only the Markdown body of the page — no JSON, no envelope, no code fences.",
+      // This agent's answer is prose, so the chain must not reject it for
+      // lacking the JSON envelope every other agent returns.
+      expectJson: false,
       tools: ["read"],
     })
   );

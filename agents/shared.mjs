@@ -198,7 +198,7 @@ async function resolveTextModels() {
  * @param {string} [opts.modelId]        - Pin a single model; omit to use the chain.
  */
 export async function runAgent(opts) {
-  const { modelId, label = "Agent" } = opts;
+  const { modelId, label = "Agent", expectJson = true } = opts;
 
   // Explicit model: run exactly that one (caller owns any fallback, e.g. vision).
   if (modelId) return runAgentOnce(opts);
@@ -216,8 +216,18 @@ export async function runAgent(opts) {
     const attemptLabel = chain.length > 1 ? `${label} (${id})` : label;
     try {
       const out = await runAgentOnce({ ...opts, modelId: id, label: attemptLabel });
-      if ((out || "").trim()) return out;
-      log("warn", `${label}: ${id} returned empty — trying next model.`);
+      if ((out || "").trim()) {
+        // "Non-empty" is not the same as "usable". A model can answer with a
+        // leaked tool-call tag or a paragraph of prose where the envelope should
+        // be — which used to end the run on the first model, because the chain
+        // only fell through on errors and empty strings. Unusable is a failure.
+        if (!expectJson || containsParseableJSON(out)) return out;
+        log("warn", `${label}: ${id} answered without usable JSON — trying next model.`, {
+          raw: out.length > 120 ? out.slice(0, 120) + "…" : out,
+        });
+      } else {
+        log("warn", `${label}: ${id} returned empty — trying next model.`);
+      }
     } catch (e) {
       lastErr = e;
       // The daily cap is account-wide — every remaining model shares it, so
@@ -233,7 +243,7 @@ export async function runAgent(opts) {
     }
   }
   throw new Error(
-    `${label}: every text model in the chain was unavailable.` +
+    `${label}: no model in the chain produced a usable answer.` +
       (lastErr ? ` Last error: ${lastErr.message}` : "")
   );
 }
@@ -510,6 +520,30 @@ export function extractJSON(label, text) {
   const snippet = text.length > 200 ? text.slice(0, 200) + "…" : text;
   log("warn", `${label}: output could not be parsed as JSON`, { raw: snippet });
   return null;
+}
+
+/**
+ * Quietly test whether text contains a parseable JSON object, for deciding
+ * whether to accept a model's answer or fall through to the next model. Unlike
+ * extractJSON this logs nothing — a rejected attempt is routine, not a problem.
+ */
+function containsParseableJSON(text) {
+  const t = (text || "").trim();
+  if (!t) return false;
+  const block = t.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  const candidate = block ? block[1].trim() : t;
+  try {
+    JSON.parse(candidate);
+    return true;
+  } catch { /* fall through */ }
+  const obj = extractFirstJSONObject(candidate);
+  if (!obj) return false;
+  try {
+    JSON.parse(obj);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
