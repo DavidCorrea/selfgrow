@@ -67,10 +67,11 @@ jobs:
         run: node agents/product-manager.mjs
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          # Grooming is 1 model call, plus 1 for the semantic dedup pass. The
-          # allowance covers a couple of chain fallbacks and no more — the day's
-          # requests belong to the Builder.
-          MODEL_REQUEST_BUDGET: '6'
+          # Grooming is 1 model call plus 1 for the semantic dedup pass, so this is
+          # mostly slack for chain fallbacks. Part of a ~250/day ceiling shared
+          # with the Builder (180), PO (10) and Scribe (10) — the day's requests
+          # still belong to the Builder, which is the only agent that ships code.
+          MODEL_REQUEST_BUDGET: '30'
           # PAT carries `project` scope (board) and covers issue creation.
           GH_TOKEN: ${{ secrets.AGENT_PAT }}
           GH_PROJECT_OWNER: '@me'

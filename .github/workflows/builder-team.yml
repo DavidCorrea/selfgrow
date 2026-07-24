@@ -61,10 +61,16 @@ jobs:
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           # The Builder is where the day's requests should go — it is the only
-          # agent that ships code. This is the bulk of the free tier's 50/day,
-          # leaving room for the PM's grooming and the weekly PO/Scribe runs.
+          # agent that ships code. Sized against a ~250/day ceiling shared with
+          # the other agents (PM 30 + PO 10 + Scribe 10), so the worst single day
+          # lands near 220 and leaves headroom for a retry storm.
           # Checked between tickets, so a ticket already in flight still finishes.
-          MODEL_REQUEST_BUDGET: '34'
+          #
+          # At this size the binding constraint is no longer requests but
+          # wall-clock: BUILD_RUN_BUDGET_MINUTES (45) inside a 60-minute job
+          # timeout. That is deliberate — time and quality are healthier limits
+          # than a quota, and this budget is now a runaway backstop, not a diet.
+          MODEL_REQUEST_BUDGET: '180'
           # AGENT_PAT (= the user) is the default token: Projects, issues, and
           # approving/merging the PR. BOT_TOKEN (= github-actions[bot]) opens the
           # PR as a DIFFERENT identity, so the PAT can legitimately approve it.

@@ -32,7 +32,8 @@ jobs:
         run: node agents/scribe.mjs
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          # One narrative refresh per week; the allowance covers a fallback or two.
-          MODEL_REQUEST_BUDGET: '3'
+          # One narrative refresh per week. Part of a ~250/day ceiling shared with
+          # the Builder (180), PM (30) and PO (10).
+          MODEL_REQUEST_BUDGET: '10'
           # PAT used for `gh repo view` and to clone/push the wiki repo.
           GH_TOKEN: ${{ secrets.AGENT_PAT }}
