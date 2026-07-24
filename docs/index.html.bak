@@ -42,6 +42,5 @@
   <script src="fireflyAgent.js"></script>
   <script src="aria-live.js"></script>
   <script type="module" src="settings.js"></script>
-  <script type="module" src="welcomeBack.js"></script>
 </body>
 </html>
