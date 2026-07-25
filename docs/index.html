@@ -66,6 +66,14 @@
       the rule that grew it, ready to be re-seeded, walked generation by
       generation, and asked whether its own properties still hold.
     </p>
+    <generation-stepper generation="0"></generation-stepper>
   </main>
+
+  <script type="module">
+    import { GenerationStepper } from './components/generation-stepper.js';
+    // The custom element is auto-registered when the module is imported.
+    // No further setup needed — the <generation-stepper> tag in the HTML
+    // is upgraded automatically by the browser's custom element registry.
+  </script>
 </body>
 </html>
