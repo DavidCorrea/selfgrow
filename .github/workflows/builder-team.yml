@@ -30,12 +30,50 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # One reader decides who builds what. Nothing claims a ticket, so nothing can
+  # race for one — see agents/plan-build.mjs.
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.assign.outputs.matrix }}
+      count: ${{ steps.assign.outputs.count }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Assign tickets to slots
+        id: assign
+        run: node agents/plan-build.mjs
+        env:
+          GH_TOKEN: ${{ secrets.AGENT_PAT }}
+          # Every extra slot is another branch that may touch the same file, so
+          # this stays small on purpose.
+          PARALLEL_BUILDERS: '2'
+
   build-ticket:
+    needs: plan
+    # Nothing buildable means no jobs at all, rather than a slot that spins up a
+    # runner, installs Chromium and finds nothing to do.
+    if: ${{ needs.plan.outputs.count != '0' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    # When kicked by the PM, only run if the PM actually completed successfully
-    # (skip the guarded-off agent-issue runs).
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    strategy:
+      # One slot failing must not cancel its siblings: their work is unrelated by
+      # construction, and a cancelled builder can leave a branch and an open PR.
+      fail-fast: false
+      max-parallel: 2
+      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
+    name: build #${{ matrix.ticket }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -64,17 +102,20 @@ jobs:
         run: node agents/builder-team.mjs
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          # The Builder is where the day's requests should go — it is the only
-          # agent that ships code. Sized against a ~250/day ceiling shared with
-          # the other agents (PM 30 + PO 10 + Scribe 10), so the worst single day
-          # lands near 220 and leaves headroom for a retry storm.
+          # PER SLOT, not per run: with PARALLEL_BUILDERS=2 the Builder's real
+          # daily draw is twice this. 90 x 2 = 180, which with PM 30 and one
+          # weekly agent (10) keeps the worst day near 220, under the ~250 ceiling.
+          # Raising PARALLEL_BUILDERS without lowering this multiplies the spend.
           # Checked between tickets, so a ticket already in flight still finishes.
           #
-          # At this size the binding constraint is no longer requests but
-          # wall-clock: BUILD_RUN_BUDGET_MINUTES (45) inside a 60-minute job
-          # timeout. That is deliberate — time and quality are healthier limits
-          # than a quota, and this budget is now a runaway backstop, not a diet.
-          MODEL_REQUEST_BUDGET: '180'
+          # The binding constraint is anyway wall-clock, not requests:
+          # BUILD_RUN_BUDGET_MINUTES (45) inside a 60-minute job timeout. That is
+          # deliberate — time and quality are healthier limits than a quota, and
+          # this budget is a runaway backstop, not a diet.
+          MODEL_REQUEST_BUDGET: '90'
+          # This slot's ticket, assigned by the plan job. The Builder narrows to
+          # exactly this ticket so it cannot wander onto a sibling slot's work.
+          TICKET_NUMBER: ${{ matrix.ticket }}
           # AGENT_PAT (= the user) is the default token: Projects, issues, and
           # approving/merging the PR. BOT_TOKEN (= github-actions[bot]) opens the
           # PR as a DIFFERENT identity, so the PAT can legitimately approve it.

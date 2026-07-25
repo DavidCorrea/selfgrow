@@ -54,7 +54,14 @@ const MAX_TICKET_ATTEMPTS = Number(process.env.MAX_TICKET_ATTEMPTS || 2);
 // Drain several tickets per run (better runner utilization — one npm ci +
 // Playwright install amortized over multiple builds) up to a wall-clock budget,
 // kept under the job's 60-minute timeout.
-const MAX_TICKETS_PER_RUN = Number(process.env.MAX_TICKETS_PER_RUN || 3);
+// When TICKET_NUMBER is set, this run is one slot of a parallel build and owns
+// exactly that ticket — the assignment was made once, up front, by plan-build.mjs.
+// Draining more than its own ticket would collide with a sibling slot's work.
+const ASSIGNED_TICKET = Number(process.env.TICKET_NUMBER || 0) || null;
+
+const MAX_TICKETS_PER_RUN = ASSIGNED_TICKET
+  ? 1
+  : Number(process.env.MAX_TICKETS_PER_RUN || 3);
 const RUN_BUDGET_MS = Number(process.env.BUILD_RUN_BUDGET_MINUTES || 45) * 60 * 1000;
 
 // ---------------------------------------------------------------------------
@@ -619,7 +626,17 @@ async function main() {
     const open = fetchOpenIssues(100);
     const openNumbers = new Set(open.map((i) => i.number));
     const untried = open.filter((i) => !attempted.has(i.number));
-    const candidates = untried.filter((i) => isBuildable(i, openNumbers));
+    let candidates = untried.filter((i) => isBuildable(i, openNumbers));
+
+    // A parallel slot sees only its own ticket, so the Scout cannot wander onto
+    // work a sibling slot is already building.
+    if (ASSIGNED_TICKET) {
+      candidates = candidates.filter((i) => i.number === ASSIGNED_TICKET);
+      if (!candidates.length) {
+        log("info", `Assigned ticket #${ASSIGNED_TICKET} is no longer available (closed, parked, or newly blocked) — nothing to do.`);
+        break;
+      }
+    }
 
     if (candidates.length === 0) {
       const waiting = untried
