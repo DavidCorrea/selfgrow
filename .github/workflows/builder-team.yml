@@ -7,12 +7,16 @@ on:
   # caps REQUESTS per day, a duplicate Builder run costs a full day's allowance to
   # redo work the chain already did. A broken chain self-heals at the next daily
   # PM run; use workflow_dispatch to recover sooner.
+  # workflow_dispatch is the ONLY trigger. The Product Manager dispatches this
+  # explicitly at the end of a run that actually left buildable work (see
+  # kickBuilder in product-manager.mjs).
+  #
+  # It used to trigger on `workflow_run` from product-manager, which fires when a
+  # PM run COMPLETES — including runs whose job was skipped by a guard, and
+  # including every run in a self-triggered burst. One grooming pass that created
+  # 8 tickets produced 9 Builder runs. "The PM finished" and "there is work to
+  # build" are different facts, and only the PM knows the second one.
   workflow_dispatch:
-  # Kicked off after the Product Manager finishes grooming/prioritizing the backlog.
-  # (Builder is deliberately NOT triggered by issue events.)
-  workflow_run:
-    workflows: ["product-manager"]
-    types: [completed]
 
 permissions:
   contents: write

@@ -8,23 +8,25 @@ on:
     # request allowance rather than whatever a previous run left behind.
     - cron: '30 0 * * *'
   workflow_dispatch:
-  issues:
-    # Triage inbound issues. The job guard below skips the agent's own creations.
-    types: [opened, reopened]
-  # NOTE: deliberately NOT triggered by the Product Owner. Re-grooming the instant
-  # the vision changes cost a whole extra PM+Builder chain every week, and the
-  # vision is a slow-moving north star — the next daily run picks it up within
-  # hours, which is soon enough for a weekly edit.
+  # NOTE: deliberately NOT triggered by `issues`. Grooming CREATES issues, so an
+  # issues.opened trigger made the PM trigger itself once per ticket: an 8-ticket
+  # run spawned 8 more PM runs. A job-level `if` guard skipped the work but could
+  # not stop the runs existing, and a skipped run still *completes*, which used to
+  # kick the Builder anyway. Inbound human issues are picked up by the next daily
+  # run instead.
+  #
+  # Also deliberately NOT triggered by the Product Owner: re-grooming the instant
+  # the vision changes cost a whole extra chain every week, and the vision is a
+  # slow-moving north star.
 
 permissions:
   contents: read
   issues: write
 
-# Creating a batch of tickets fires one issues.opened event per ticket, each
-# spinning up another product-manager run (guard-skipped, but it still completes
-# and so still kicks builder-team via workflow_run). Collapse that burst into a
-# single run. cancel-in-progress: false so a self-fired run never aborts an
-# in-flight grooming run — the redundant pending runs just supersede each other.
+# Never groom twice at once: two concurrent runs would dedup their proposals
+# against a board neither has finished writing to, and create the same tickets
+# twice. cancel-in-progress: false so a manual dispatch queues behind an
+# in-flight run rather than aborting it mid-write.
 concurrency:
   group: product-manager
   cancel-in-progress: false
@@ -33,13 +35,6 @@ jobs:
   groom-backlog:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # Run on cron/dispatch; on issues only when NOT the agent's own creation
-    # (else the PM loops on itself, and each loop costs model requests).
-    if: >-
-      ${{
-        (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
-        || (github.event_name == 'issues' && !contains(github.event.issue.labels.*.name, 'agent'))
-      }}
     steps:
       - uses: actions/checkout@v4
         with:

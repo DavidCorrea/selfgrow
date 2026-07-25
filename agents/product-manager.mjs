@@ -17,6 +17,9 @@ import {
   recordTicket,
   retireIssue,
   reviewApp,
+  fetchOpenIssues,
+  isBlocked,
+  triggerWorkflow,
 } from "./shared.mjs";
 
 // How much title-token overlap (intersection / smaller set) counts as a near-dup.
@@ -101,6 +104,25 @@ Return ONLY JSON: {"duplicates": [<index>, ...]} listing the indexes of proposed
     log("warn", "Dedup: semantic pass failed — keeping the heuristic survivors.", errorData(e));
     return proposals;
   }
+}
+
+/**
+ * Hand off to the Builder — but only when grooming actually left something
+ * buildable. The Builder used to start whenever a PM run merely *completed*,
+ * which is a different fact: guard-skipped runs and self-triggered bursts all
+ * "complete", so a single grooming pass could start it nine times. Dispatching it
+ * here means one grooming pass leads to at most one Builder run, and none at all
+ * when the board is empty. Best-effort: a failed dispatch just means the next
+ * daily run picks the work up.
+ */
+function kickBuilder() {
+  const buildable = fetchOpenIssues(50).filter((i) => !isBlocked(i));
+  if (buildable.length === 0) {
+    log("info", "No buildable tickets after grooming — not starting the Builder.");
+    return;
+  }
+  log("info", `${buildable.length} buildable ticket(s) — starting the Builder.`);
+  triggerWorkflow("builder-team.yml");
 }
 
 // ---------------------------------------------------------------------------
@@ -245,6 +267,7 @@ async function main() {
   // 3. Create new prioritized tickets toward the vision.
   await groomBacklog(data.backlog, remainingOpen, boardItems.map((i) => i.title));
 
+  kickBuilder();
   printRunSummary("Product Manager");
 }
 
