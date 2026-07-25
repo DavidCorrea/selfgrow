@@ -409,8 +409,8 @@
           ></textarea>
         </div>
         <div class="controls">
-          <button id="runBtn" class="primary" type="button">Run (Ctrl+Enter)</button>
-          <button id="clearBtn" type="button">Clear</button>
+          <button id="runBtn" class="primary" type="button" aria-keyshortcuts="Enter">Run (Enter)</button>
+          <button id="clearBtn" type="button" aria-keyshortcuts="Escape">Clear (Escape)</button>
           <span class="sr-only" aria-live="polite" id="runStatus"></span>
         </div>
       </div>
@@ -441,35 +441,93 @@
   </footer>
 
   <script>
-    // Placeholder for language runtime - to be implemented
+    // Placeholder for language runtime - to be implemented in #147
     const editor = document.getElementById('editor');
     const output = document.getElementById('output');
     const runBtn = document.getElementById('runBtn');
     const clearBtn = document.getElementById('clearBtn');
     const runStatus = document.getElementById('runStatus');
 
-    // Disable run button until runtime is available
-    runBtn.disabled = true;
-    runStatus.textContent = 'Language runtime not yet implemented';
+    // Runtime-agnostic run function — will be replaced by actual runtime in #147
+    let run = (source) => {
+      throw new Error('Language runtime not yet implemented');
+    };
+
+    // Expose for runtime to override
+    window.__selfgrowSetRun = (fn) => { run = fn; };
+
+    function announce(message) {
+      runStatus.textContent = message;
+      // Also ensure output region announces by updating its textContent
+      if (message && !message.startsWith('Error') && !message.startsWith('Cleared')) {
+        // Output content itself is the announcement for results
+        output.textContent = message;
+      }
+    }
+
+    function setOutput(text, isError = false) {
+      output.textContent = text;
+      output.className = isError ? 'output-error' : 'output-value';
+      // aria-live on #output will announce the new textContent
+    }
 
     function clear() {
       editor.value = '';
       output.textContent = '';
       output.className = '';
       editor.focus();
-      runStatus.textContent = 'Cleared';
+      announce('Cleared');
+    }
+
+    async function handleRun() {
+      const source = editor.value.trim();
+      if (!source) {
+        announce('Empty program');
+        setOutput('', false);
+        return;
+      }
+      try {
+        runBtn.disabled = true;
+        const result = run(source);
+        // Support both sync and async run functions
+        const resolved = result instanceof Promise ? await result : result;
+        const resultText = resolved === undefined ? '' : String(resolved);
+        setOutput(resultText, false);
+        announce(resultText || '(no output)');
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setOutput(msg, true);
+        announce(`Error: ${msg}`);
+      } finally {
+        runBtn.disabled = false;
+      }
     }
 
     clearBtn.addEventListener('click', clear);
+    runBtn.addEventListener('click', handleRun);
 
-    // Tab handling for indentation
+    // Keyboard shortcuts
     editor.addEventListener('keydown', (e) => {
+      // Tab for indentation
       if (e.key === 'Tab') {
         e.preventDefault();
         const start = editor.selectionStart;
         const end = editor.selectionEnd;
         editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(end);
         editor.selectionStart = editor.selectionEnd = start + 2;
+        return;
+      }
+      // Enter to run, Shift+Enter for newline
+      if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        handleRun();
+        return;
+      }
+      // Escape to clear output
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        clear();
+        return;
       }
     });
   </script>
