@@ -43,7 +43,7 @@ export function checkProperties(form, generation, properties) {
     // If a predicate needs generation, it should close over it.
     try {
       result[key] = !!predicate(structuredClone(form));
-    } catch (e) {
+    } catch {
       // If predicate throws, treat as false.
       result[key] = false;
     }
