@@ -938,6 +938,8 @@ export function ensurePriorityLabels() {
     [PRIORITY_LABELS.medium, "fbca04"],
     [PRIORITY_LABELS.low, "0e8a16"],
     [AGENT_LABEL, "ededed"],
+    // Muted grey-blue: waiting is a normal state, not a warning.
+    [WAITING_LABEL, "c5def5"],
   ];
   for (const [name, color] of labels) {
     try {
@@ -1057,6 +1059,47 @@ export function isBuildable(issue, openNumbers) {
 export function dependencyLine(numbers) {
   const deps = (numbers || []).filter((n) => Number.isInteger(n) && n > 0);
   return deps.length ? `Blocked by: ${deps.map((n) => `#${n}`).join(", ")}` : "";
+}
+
+// Shown on tickets whose prerequisites haven't shipped, so the board answers
+// "why isn't this moving?" at a glance instead of only inside the issue body.
+// Distinct from BLOCKED_LABEL ("parked, it keeps failing") — this one is normal.
+export const WAITING_LABEL = "waiting";
+
+/**
+ * Reconcile the `waiting` label across the open backlog: add it to tickets with
+ * unmet dependencies, remove it from tickets that have been released. Derived
+ * from the bodies every time rather than tracked, so it cannot drift — and it is
+ * removal that matters most, since a stale `waiting` on buildable work would
+ * misreport a healthy backlog as a stuck one.
+ *
+ * Best-effort and quiet: label edits are cosmetic, so a failure never interrupts
+ * the caller. Returns the number of labels changed.
+ */
+export function syncWaitingLabels(openIssues) {
+  const issues = Array.isArray(openIssues) ? openIssues : [];
+  const openNumbers = new Set(issues.map((i) => i.number));
+  let changed = 0;
+
+  for (const issue of issues) {
+    const waiting = unmetDependencies(issue, openNumbers).length > 0;
+    const labelled = labelNames(issue).includes(WAITING_LABEL);
+    if (waiting === labelled) continue;
+    const flag = waiting ? "--add-label" : "--remove-label";
+    try {
+      execSync(`gh issue edit ${issue.number} ${flag} "${WAITING_LABEL}"`, {
+        cwd: repoRoot,
+        maxBuffer: 10 * 1024 * 1024,
+      });
+      changed++;
+      log("info", waiting
+        ? `#${issue.number} labelled ${WAITING_LABEL} (waits on ${unmetDependencies(issue, openNumbers).map((d) => `#${d}`).join(", ")}).`
+        : `#${issue.number} released — ${WAITING_LABEL} label removed.`);
+    } catch (e) {
+      log("warn", `Could not update the ${WAITING_LABEL} label on #${issue.number}.`, errorData(e));
+    }
+  }
+  return changed;
 }
 
 /**

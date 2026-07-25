@@ -22,6 +22,7 @@ import {
   isBuildable,
   triggerWorkflow,
   dependencyLine,
+  syncWaitingLabels,
 } from "./shared.mjs";
 
 // How much title-token overlap (intersection / smaller set) counts as a near-dup.
@@ -120,6 +121,9 @@ Return ONLY JSON: {"duplicates": [<index>, ...]} listing the indexes of proposed
 function kickBuilder() {
   const open = fetchOpenIssues(100);
   const openNumbers = new Set(open.map((i) => i.number));
+  // Reconcile the `waiting` labels now that this run's tickets exist, so the
+  // board shows what is held back before the Builder even starts.
+  syncWaitingLabels(open);
   const buildable = open.filter((i) => isBuildable(i, openNumbers));
   if (buildable.length === 0) {
     log("info", "No buildable tickets after grooming — not starting the Builder.");

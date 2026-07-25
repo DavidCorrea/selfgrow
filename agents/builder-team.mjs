@@ -19,6 +19,7 @@ import {
   isBlocked,
   isBuildable,
   unmetDependencies,
+  syncWaitingLabels,
   triggerWorkflow,
   readVision,
   closeIssue,
@@ -586,7 +587,13 @@ async function main() {
     const result = await buildTicket(candidates, vision);
 
     if (result.addressedIssue) attempted.add(result.addressedIssue);
-    if (result.outcome === "merged") mergedCount++;
+    if (result.outcome === "merged") {
+      mergedCount++;
+      // Shipping a ticket is the only thing that releases work waiting on it, so
+      // clear the `waiting` labels it just satisfied rather than leaving the board
+      // claiming tickets are held back by something already merged.
+      syncWaitingLabels(fetchOpenIssues(100));
+    }
     if (result.outcome === "abandoned" && result.ticketFault) {
       // Cross-run failure accounting — parks a perpetually-failing ticket so it
       // stops monopolizing the Builder.
