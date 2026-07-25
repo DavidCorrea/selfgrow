@@ -124,9 +124,21 @@ export const MODEL_REQUEST_BUDGET = Number(process.env.MODEL_REQUEST_BUDGET || 2
 
 let modelRequestCount = 0;
 
+// Agent TURNS, which is what OpenRouter actually charges: one completion request
+// per turn of the agentic loop, so a session that makes 20 tool calls costs ~20
+// requests while modelRequestCount above records 1. The budget still counts
+// sessions; this only measures the gap, so the budget can be re-expressed in the
+// real unit once we know the multiplier. See runAgent.
+let modelTurnCount = 0;
+
 /** How many model requests this run has spent (successes and failures alike). */
 export function getModelRequestCount() {
   return modelRequestCount;
+}
+
+/** Real OpenRouter requests this run made — one per agent turn, not per session. */
+export function getModelTurnCount() {
+  return modelTurnCount;
 }
 
 /** True once the run has spent its request allowance. */
@@ -338,11 +350,28 @@ async function runAgentOnce({
               : lastAssistant.content;
             if (fullText) output = fullText;
           }
-          log("info", `${label} agent completed in ${elapsed}s`);
+          // A session is ONE budget unit but many OpenRouter requests: the
+          // agentic loop issues a completion per turn, so every tool call is
+          // another charge against the daily cap. Count assistant messages —
+          // that's one per turn — to expose the multiplier the budget ignores.
+          // Measurement only for now; nothing spends against this yet.
+          const turns = messages.filter((m) => m.role === "assistant").length;
+          modelTurnCount += turns;
+          log(
+            "info",
+            `${label} agent completed in ${elapsed}s — ${turns} turn(s), ` +
+              `${modelTurnCount} real request(s) this run vs ${modelRequestCount} counted`
+          );
           session.dispose();
           return output;
         })
         .catch((err) => {
+          // A session that throws still spent every turn it took to get there —
+          // and retry loops are exactly where the cap goes — so count before
+          // rethrowing rather than under-reporting the expensive case.
+          modelTurnCount += (session.state?.messages || []).filter(
+            (m) => m.role === "assistant"
+          ).length;
           session.dispose();
           throw err;
         });
@@ -455,7 +484,10 @@ export function printRunSummary(title = "Run Summary") {
 
   // Compact stdout recap — result, the tickets we touched, then any warn/error.
   // The full per-line story already streamed live, so don't replay it.
-  const spend = `${modelRequestCount} model request(s)`;
+  // Both units, because they differ by an order of magnitude and only the second
+  // one is what the daily cap counts.
+  const spend =
+    `${modelRequestCount} agent session(s), ${modelTurnCount} model request(s)`;
   console.log(`\n=== ${title}: ${result} · ${errors} error(s), ${warns} warning(s) · ${spend} ===`);
   ticketOutcomes.forEach((t) => console.log(`  ${ticketLine(t)}`));
   for (const entry of runLog) {
