@@ -89,6 +89,7 @@ The living record of this project, maintained by its autonomous agents.
 - **[Vision](Vision)** — the north star (curated by the Product Owner).
 - **[Changelog](Changelog)** — the dated record of what changed (written by the Builder).
 - **[The Story So Far](Story)** — how the project has grown over time.
+- **[Lessons](Lessons)** — work the agents abandoned, and why (written when a ticket is parked).
 `;
   fs.writeFileSync(join(dir, "Home.md"), home, "utf-8");
 

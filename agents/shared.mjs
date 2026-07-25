@@ -1436,6 +1436,53 @@ export function appendChangelogEntry(entry) {
   return true;
 }
 
+/**
+ * Record why a ticket was given up on, newest first, on the wiki's Lessons page.
+ *
+ * Without this the pipeline has no memory: a ticket parks, its Builder run's logs
+ * age out, and the next Scout re-derives the same dead end from scratch — paying
+ * again to learn what the project already knew. The page is fed back into the
+ * Scout's context, so a failure becomes information instead of just a stopped
+ * ticket. Best-effort.
+ */
+export function appendLesson(entry) {
+  const p = wikiPath("Lessons.md");
+  if (!p) {
+    log("warn", "Lessons: wiki unavailable; post-mortem not recorded.");
+    return false;
+  }
+  let content = "";
+  try { content = fs.readFileSync(p, "utf-8"); } catch {}
+  const date = new Date().toISOString().slice(0, 10);
+  const block = `## ${date} — ${String(entry.title || "").trim()}\n\n${String(entry.body || "").trim()}\n`;
+  const heading = "# Lessons";
+  const intro =
+    "What the agents have tried and abandoned, and why. Read this before planning " +
+    "work that resembles anything below — the point of writing it down is not to " +
+    "learn it twice.";
+
+  if (!content.trim()) {
+    content = `${heading}\n\n${intro}\n\n${block}`;
+  } else {
+    // Newest first, so a Scout reading top-down meets the most recent dead ends
+    // first: insert above the newest existing entry, or append when there is none.
+    const firstEntry = content.indexOf("\n## ");
+    content = firstEntry === -1
+      ? `${content.trimEnd()}\n\n${block}`
+      : `${content.slice(0, firstEntry + 1)}${block}\n${content.slice(firstEntry + 1)}`;
+  }
+  fs.writeFileSync(p, content, "utf-8");
+  log("info", `Lessons: recorded a post-mortem for "${entry.title}".`);
+  return true;
+}
+
+/** Read the wiki's Lessons page (past dead ends), or "" when there are none. */
+export function readLessons() {
+  const p = wikiPath("Lessons.md");
+  if (p) { try { return fs.readFileSync(p, "utf-8"); } catch {} }
+  return "";
+}
+
 // ---------------------------------------------------------------------------
 // GitHub Wiki (a separate .wiki.git repo — no content API, so we use git)
 // ---------------------------------------------------------------------------

@@ -22,6 +22,8 @@ import {
   syncWaitingLabels,
   triggerWorkflow,
   readVision,
+  readLessons,
+  appendLesson,
   closeIssue,
   closeIssueAsInvalid,
   createIssue,
@@ -59,6 +61,20 @@ const RUN_BUDGET_MS = Number(process.env.BUILD_RUN_BUDGET_MINUTES || 45) * 60 * 
 // Prompt builders
 // ---------------------------------------------------------------------------
 
+/**
+ * Past dead ends, for the Scout to read before planning. Framed as advice rather
+ * than prohibition: a lesson explains why something failed once, which is a
+ * reason to plan differently, not proof that the work is impossible.
+ */
+function buildLessonsSection() {
+  const lessons = readLessons().trim();
+  if (!lessons) return "";
+  return `## Lessons From Abandoned Work
+Tickets the Builder previously gave up on, newest first, and why. If your ticket resembles one of these, plan around what went wrong — a smaller slice, a different approach, or a prerequisite first. These are warnings from experience, not rules: a lesson describes one failed attempt, not a verdict that the work cannot be done.
+
+${lessons}`;
+}
+
 function buildScoutPrompt(feedback, openIssues, vision) {
   const issuesSection = `Pick exactly ONE of the open tickets below to work on, and plan its implementation. Choose by priority: a \`priority:high\` label beats \`priority:medium\` beats \`priority:low\` beats unlabeled; break ties by what most moves the project forward. Do NOT invent work outside these tickets.
 
@@ -73,6 +89,7 @@ ${feedback}`
   return fillTemplate(loadPrompt("scout"), {
     ISSUES_SECTION: issuesSection,
     FEEDBACK_SECTION: feedbackSection,
+    LESSONS_SECTION: buildLessonsSection(),
     VISION: vision,
   });
 }
@@ -120,6 +137,44 @@ function buildReviewerPrompt(changeContext = "") {
     ? `## Change Context\n${changeContext}`
     : "";
   return fillTemplate(loadPrompt("reviewer"), { CHANGE_CONTEXT: section });
+}
+
+/**
+ * Write down why a ticket was abandoned, on the wiki's Lessons page, so the next
+ * Scout to plan something similar starts from what was learned instead of
+ * rediscovering it. Best-effort in every direction: a failed model call or an
+ * unreachable wiki costs a warning, never the run — this records history, it
+ * doesn't change what the Builder does next.
+ */
+async function writePostMortem(issue, reason) {
+  if (!issue?.number) return;
+  try {
+    const raw = await withLogGroup("Post-mortem", () =>
+      runAgent({
+        label: "Post-mortem",
+        systemPrompt: fillTemplate(loadPrompt("post-mortem"), {
+          TICKET_TITLE: issue.title || `#${issue.number}`,
+          TICKET_NUMBER: String(issue.number),
+          TICKET_BODY: (issue.body || "(no description)").slice(0, 2000),
+          FAILURE_REASONS: reason || "(no reason was recorded)",
+        }),
+        tools: [],
+      })
+    );
+    const parsed = extractAgentResponse("Post-mortem", raw, { requireOutcome: false });
+    const lesson = parsed?.data?.lesson;
+    if (!lesson) {
+      log("warn", `Post-mortem: no lesson produced for #${issue.number}.`);
+      return;
+    }
+    appendLesson({
+      title: `#${issue.number} ${issue.title || ""}`.trim(),
+      body: `${lesson}\n\n_Parked after ${MAX_TICKET_ATTEMPTS} attempts._`,
+    });
+    publishWiki(`Record why #${issue.number} was abandoned`);
+  } catch (e) {
+    log("warn", `Post-mortem: could not record a lesson for #${issue.number}.`, errorData(e));
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -597,7 +652,12 @@ async function main() {
     if (result.outcome === "abandoned" && result.ticketFault) {
       // Cross-run failure accounting — parks a perpetually-failing ticket so it
       // stops monopolizing the Builder.
-      recordTicketFailure(result.addressedIssueObj, result.reason, MAX_TICKET_ATTEMPTS);
+      const attempts = recordTicketFailure(result.addressedIssueObj, result.reason, MAX_TICKET_ATTEMPTS);
+      // Parked for good: write down why, while the reason is still in hand. After
+      // this run the logs are the only record, and nothing reads those.
+      if (attempts >= MAX_TICKET_ATTEMPTS) {
+        await writePostMortem(result.addressedIssueObj, result.reason);
+      }
     }
     if (result.outcome === "none") {
       log("info", "No ticket could be planned this pass — stopping.");

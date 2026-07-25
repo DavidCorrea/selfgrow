@@ -13,6 +13,8 @@ The current code is in `docs/` (already checked out). Run `ls docs/` and read th
 
 {{FEEDBACK_SECTION}}
 
+{{LESSONS_SECTION}}
+
 ## Planning Rules
 - Your plan must follow the Vision and the shipping rules above. Beyond those, design and library choices are yours.
 - Always set `issueNumber` to the ticket you picked.
