@@ -1,0 +1,50 @@
+name: curator
+
+on:
+  schedule:
+    # Weekly, and on a day of its own. Curation is the slowest-moving judgement in
+    # the pipeline — a week of shipping is the smallest amount of change worth
+    # re-reading the whole collection over.
+    - cron: '0 9 * * 6'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+# One curator at a time: two concurrent runs would read the same collection and
+# propose the same removals twice.
+concurrency:
+  group: curator
+  cancel-in-progress: false
+
+jobs:
+  review-collection:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Curator agent
+        run: node agents/curator.mjs
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # One judgement per week over the whole collection; the rest is slack for
+          # chain fallbacks. Part of a ~250/day ceiling shared with the Builder
+          # (180), PM (30), PO (10) and Scribe (10) — and it lands on Saturday, a
+          # day none of the others use.
+          MODEL_REQUEST_BUDGET: '10'
+          # PAT carries `project` scope (board) and covers issue creation.
+          GH_TOKEN: ${{ secrets.AGENT_PAT }}
+          GH_PROJECT_OWNER: '@me'
+          GH_PROJECT_NUMBER: '3'
