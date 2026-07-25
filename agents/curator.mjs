@@ -1,7 +1,7 @@
 // CURATOR — the only agent that subtracts.
 //
 // The PM proposes, the Builder ships, the PO grows the Vision: every other agent
-// makes the guide bigger. The Vision commits to being "curated, not accumulated",
+// makes the language bigger. The Vision commits to being "curated, not accumulated",
 // and nothing else in the pipeline can honour that, so this agent exists purely to
 // ask what should go.
 //
@@ -33,46 +33,46 @@ import {
 // is indistinguishable from a bug, and the damage is hard to walk back.
 const MAX_PROPOSALS = 2;
 
-// Below this the collection is too thin to prune — removing from a guide with a
-// handful of specimens makes it worse, whatever their individual quality.
-const MIN_SPECIMENS_TO_CURATE = 4;
+// Below this the language is too thin to prune — early on almost everything is
+// load-bearing, so removing anything makes it worse whatever its quality.
+const MIN_CAPABILITIES_TO_CURATE = 4;
 
-const SPECIMEN_DIR = join(repoRoot, "docs", "specimens");
+const CAPABILITY_DIR = join(repoRoot, "docs", "capabilities");
 
 /**
- * Read the shipped specimens. The Curator is judging craft, so it gets the actual
- * source rather than a file listing — a title says almost nothing about whether a
- * specimen earns its page.
+ * Read the shipped capabilities. The Curator is judging craft, so it gets the
+ * actual source rather than a file listing — a name says almost nothing about
+ * whether a capability earns its place.
  */
-function readSpecimens() {
+function readCapabilities() {
   let entries;
   try {
-    entries = fs.readdirSync(SPECIMEN_DIR, { withFileTypes: true });
+    entries = fs.readdirSync(CAPABILITY_DIR, { withFileTypes: true });
   } catch {
     return [];
   }
   return entries
     .filter((e) => e.isFile() && /\.m?js$/.test(e.name))
     .map((e) => {
-      const path = join(SPECIMEN_DIR, e.name);
+      const path = join(CAPABILITY_DIR, e.name);
       let source = "";
       try { source = fs.readFileSync(path, "utf-8"); } catch { /* unreadable — report the name alone */ }
       return { name: e.name, source };
     });
 }
 
-function formatSpecimens(specimens) {
-  return specimens
-    .map((s) => `### docs/specimens/${s.name}\n\`\`\`js\n${s.source.slice(0, 4000)}\n\`\`\``)
+function formatCapabilities(capabilities) {
+  return capabilities
+    .map((s) => `### docs/capabilities/${s.name}\n\`\`\`js\n${s.source.slice(0, 4000)}\n\`\`\``)
     .join("\n\n");
 }
 
 async function main() {
-  log("info", "=== Curator — review the collection ===");
+  log("info", "=== Curator — review the language ===");
 
-  const specimens = readSpecimens();
-  if (specimens.length < MIN_SPECIMENS_TO_CURATE) {
-    log("info", `Only ${specimens.length} specimen(s) — too few to curate (needs ${MIN_SPECIMENS_TO_CURATE}). Nothing to do.`);
+  const capabilities = readCapabilities();
+  if (capabilities.length < MIN_CAPABILITIES_TO_CURATE) {
+    log("info", `Only ${capabilities.length} capability(ies) — too few to curate (needs ${MIN_CAPABILITIES_TO_CURATE}). Nothing to do.`);
     printRunSummary("Curator");
     return;
   }
@@ -83,7 +83,7 @@ async function main() {
       label: "Curator",
       systemPrompt: fillTemplate(loadPrompt("curator"), {
         VISION: readVision(),
-        SPECIMENS: formatSpecimens(specimens),
+        CAPABILITIES: formatCapabilities(capabilities),
         BOARD_STATE: boardState,
       }),
       tools: ["read"],
@@ -127,7 +127,7 @@ async function main() {
     if (number) {
       moveCard(number, "Backlog");
       // Curation is never urgent. It should never outrank the work that makes the
-      // guide better, only fill the gaps between it.
+      // language better, only fill the gaps between it.
       setIssuePriority(number, "low", []);
       recordTicket("created", number, item.title);
     }

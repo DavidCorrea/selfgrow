@@ -39,11 +39,9 @@ jobs:
         run: node agents/curator.mjs
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          # One judgement per week over the whole collection; the rest is slack for
-          # chain fallbacks. Part of a ~250/day ceiling shared with the Builder
-          # (180), PM (30), PO (10) and Scribe (10) — and it lands on Saturday, a
-          # day none of the others use.
-          MODEL_REQUEST_BUDGET: '10'
+          # One judgement per week over the whole language. Part of a ~1000/day account limit
+          # shared with the Builder (250 x 3 slots) and the PM (100).
+          MODEL_REQUEST_BUDGET: '50'
           # PAT carries `project` scope (board) and covers issue creation.
           GH_TOKEN: ${{ secrets.AGENT_PAT }}
           GH_PROJECT_OWNER: '@me'

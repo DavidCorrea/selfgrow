@@ -56,9 +56,9 @@ jobs:
         run: node agents/plan-build.mjs
         env:
           GH_TOKEN: ${{ secrets.AGENT_PAT }}
-          # Every extra slot is another branch that may touch the same file, so
-          # this stays small on purpose.
-          PARALLEL_BUILDERS: '2'
+          # Three slots. Every extra one is another branch that may touch the same
+          # file, and the per-slot request budget multiplies by this number.
+          PARALLEL_BUILDERS: '3'
 
   build-ticket:
     needs: plan
@@ -66,12 +66,12 @@ jobs:
     # runner, installs Chromium and finds nothing to do.
     if: ${{ needs.plan.outputs.count != '0' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     strategy:
       # One slot failing must not cancel its siblings: their work is unrelated by
       # construction, and a cancelled builder can leave a branch and an open PR.
       fail-fast: false
-      max-parallel: 2
+      max-parallel: 3
       matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
     name: build #${{ matrix.ticket }}
     steps:
@@ -102,17 +102,17 @@ jobs:
         run: node agents/builder-team.mjs
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          # PER SLOT, not per run: with PARALLEL_BUILDERS=2 the Builder's real
-          # daily draw is twice this. 90 x 2 = 180, which with PM 30 and one
-          # weekly agent (10) keeps the worst day near 220, under the ~250 ceiling.
-          # Raising PARALLEL_BUILDERS without lowering this multiplies the spend.
+          # PER SLOT, not per run: with PARALLEL_BUILDERS=3 the Builder's real
+          # daily draw is three times this. 250 x 3 = 750, which with the PM's 100
+          # and one weekly agent (50) puts the worst day near 900 against the
+          # account's 1000/day. Raising PARALLEL_BUILDERS without lowering this
+          # multiplies the spend — the sum is what matters, not the number here.
           # Checked between tickets, so a ticket already in flight still finishes.
-          #
-          # The binding constraint is anyway wall-clock, not requests:
-          # BUILD_RUN_BUDGET_MINUTES (45) inside a 60-minute job timeout. That is
-          # deliberate — time and quality are healthier limits than a quota, and
-          # this budget is a runaway backstop, not a diet.
-          MODEL_REQUEST_BUDGET: '90'
+          MODEL_REQUEST_BUDGET: '250'
+          # Requests are no longer the scarce thing — time is. A slot cannot spend
+          # 250 requests inside the old 45 minutes, so the wall clock is raised to
+          # match; without this the extra allowance simply cannot be reached.
+          BUILD_RUN_BUDGET_MINUTES: '100'
           # This slot's ticket, assigned by the plan job. The Builder narrows to
           # exactly this ticket so it cannot wander onto a sibling slot's work.
           TICKET_NUMBER: ${{ matrix.ticket }}
