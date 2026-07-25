@@ -17,6 +17,8 @@ import {
   recordTicket,
   recordTicketFailure,
   isBlocked,
+  isBuildable,
+  unmetDependencies,
   triggerWorkflow,
   readVision,
   closeIssue,
@@ -515,7 +517,9 @@ function maybeReplenishBacklog(mergedCount) {
   // affords about one: a "low" backlog still has work for tomorrow's run, so
   // spending today's remaining requests to top it up buys nothing. Empty is
   // different — without a refill tomorrow's run would have nothing to do at all.
-  const buildable = fetchOpenIssues(50).filter((i) => !isBlocked(i)).length;
+  const open = fetchOpenIssues(100);
+  const openNumbers = new Set(open.map((i) => i.number));
+  const buildable = open.filter((i) => isBuildable(i, openNumbers)).length;
   if (buildable === 0) {
     log("info", "Backlog empty — asking the Product Manager to refill so the next run has work.");
     triggerWorkflow("product-manager.yml");
@@ -551,16 +555,30 @@ async function main() {
       break;
     }
 
-    // The Builder works only on existing, unblocked tickets it hasn't already
-    // tried this run — never invents work. If none remain, the PM fills the
-    // backlog (kicked below when it's low).
-    const candidates = fetchOpenIssues(20)
-      .filter((i) => !isBlocked(i))
-      .filter((i) => !attempted.has(i.number));
+    // The Builder works only on existing tickets it hasn't already tried this
+    // run — never invents work. A ticket is available when it isn't parked AND
+    // everything it declared "Blocked by:" has shipped, so foundations get built
+    // before the work that stands on them. Re-read every pass: a merge this run
+    // may have just released the next ticket.
+    const open = fetchOpenIssues(100);
+    const openNumbers = new Set(open.map((i) => i.number));
+    const untried = open.filter((i) => !attempted.has(i.number));
+    const candidates = untried.filter((i) => isBuildable(i, openNumbers));
+
     if (candidates.length === 0) {
-      log("info", n === 1
-        ? "No buildable tickets — nothing to build. (The Product Manager grooms the backlog.)"
-        : `Backlog drained this run — built ${mergedCount}.`);
+      const waiting = untried
+        .filter((i) => !isBlocked(i))
+        .map((i) => `#${i.number} waits on ${unmetDependencies(i, openNumbers).map((d) => `#${d}`).join(", ")}`)
+        .filter((s) => !s.endsWith("waits on "));
+      if (waiting.length) {
+        // Not idle — every remaining ticket is waiting on something. Say what, so
+        // a stuck backlog is diagnosable instead of looking like an empty one.
+        log("info", `Nothing available: ${waiting.join("; ")}.`);
+      } else {
+        log("info", n === 1
+          ? "No buildable tickets — nothing to build. (The Product Manager grooms the backlog.)"
+          : `Backlog drained this run — built ${mergedCount}.`);
+      }
       break;
     }
 

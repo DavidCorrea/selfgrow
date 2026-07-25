@@ -1010,6 +1010,55 @@ export function isBlocked(issue) {
   return labelNames(issue).includes(BLOCKED_LABEL);
 }
 
+// ---------------------------------------------------------------------------
+// Ticket dependencies
+//
+// A ticket declares what must ship before it, as one line in its body:
+//   Blocked by: #134, #135
+//
+// This is deliberately NOT the `blocked` label, which means something else:
+// "parked after failing repeatedly, a human or the PM should split it". A ticket
+// waiting its turn hasn't failed at all, and marking it blocked would invite the
+// PM to retire work that is perfectly good and simply not ready yet.
+//
+// A dependency counts as met once its issue is closed, so the ordering resolves
+// itself as the Builder ships: no state to maintain, and the whole graph is
+// visible in the issue body a human reads.
+// ---------------------------------------------------------------------------
+
+const DEPENDS_ON_LINE_RE = /^[ \t]*(?:blocked by|depends on)[ \t]*:[ \t]*(.+)$/im;
+
+/** Issue numbers this ticket declares it must wait for (may be empty). */
+export function dependencyNumbers(issue) {
+  const line = (issue?.body || "").match(DEPENDS_ON_LINE_RE);
+  if (!line) return [];
+  const found = line[1].match(/#(\d+)/g) || [];
+  return [...new Set(found.map((s) => Number(s.slice(1))))].filter((n) => n !== issue?.number);
+}
+
+/**
+ * Dependencies that haven't shipped yet, given the set of still-open issue
+ * numbers. A dependency that is closed — or that never existed / was retired —
+ * is treated as met, so a stale reference can never strand a ticket forever.
+ */
+export function unmetDependencies(issue, openNumbers) {
+  return dependencyNumbers(issue).filter((n) => openNumbers.has(n));
+}
+
+/**
+ * True when the Builder may pick this ticket up now: not parked, and everything
+ * it declared it depends on has shipped.
+ */
+export function isBuildable(issue, openNumbers) {
+  return !isBlocked(issue) && unmetDependencies(issue, openNumbers).length === 0;
+}
+
+/** The `Blocked by:` line for an issue body, or "" when there are no deps. */
+export function dependencyLine(numbers) {
+  const deps = (numbers || []).filter((n) => Number.isInteger(n) && n > 0);
+  return deps.length ? `Blocked by: ${deps.map((n) => `#${n}`).join(", ")}` : "";
+}
+
 /**
  * Record that a Builder run failed to ship `issue`. Bumps its `attempts:N`
  * label; once the count reaches `maxAttempts` the ticket is parked (the `blocked`

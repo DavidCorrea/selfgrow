@@ -19,7 +19,9 @@ import {
   reviewApp,
   fetchOpenIssues,
   isBlocked,
+  isBuildable,
   triggerWorkflow,
+  dependencyLine,
 } from "./shared.mjs";
 
 // How much title-token overlap (intersection / smaller set) counts as a near-dup.
@@ -116,7 +118,9 @@ Return ONLY JSON: {"duplicates": [<index>, ...]} listing the indexes of proposed
  * daily run picks the work up.
  */
 function kickBuilder() {
-  const buildable = fetchOpenIssues(50).filter((i) => !isBlocked(i));
+  const open = fetchOpenIssues(100);
+  const openNumbers = new Set(open.map((i) => i.number));
+  const buildable = open.filter((i) => isBuildable(i, openNumbers));
   if (buildable.length === 0) {
     log("info", "No buildable tickets after grooming — not starting the Builder.");
     return;
@@ -132,7 +136,7 @@ function kickBuilder() {
 // Compose the issue body the Builder reads: the PM's description followed by the
 // acceptance criteria as a checklist, so "what to build" and "how we know it's
 // done" travel together on the ticket. Criteria are optional and defensive.
-function formatTicketBody(item) {
+function formatTicketBody(item, dependencyNumbers = []) {
   const parts = [String(item.body || "").trim()];
   const criteria = (Array.isArray(item.acceptanceCriteria) ? item.acceptanceCriteria : [])
     .map((c) => String(c).trim())
@@ -140,7 +144,45 @@ function formatTicketBody(item) {
   if (criteria.length) {
     parts.push(`## Acceptance criteria\n${criteria.map((c) => `- [ ] ${c}`).join("\n")}`);
   }
+  const deps = dependencyLine(dependencyNumbers);
+  if (deps) parts.push(deps);
   return parts.join("\n\n");
+}
+
+// A ticket may declare what must ship first as `dependsOn`, holding either an
+// existing ticket ("#134") or the exact title of another ticket in the same batch
+// — the PM has no numbers for work it is proposing in the very same breath.
+function normalizeTitle(title) {
+  return String(title || "").trim().toLowerCase();
+}
+
+/**
+ * Order proposals so a ticket is always created after the ones it depends on,
+ * which is what lets its body reference their real issue numbers. Depth-first,
+ * with visited-tracking that breaks dependency cycles by simply emitting the
+ * ticket anyway — a cycle is the model's mistake, and refusing to create any of
+ * the tickets would be a worse outcome than creating them unordered.
+ */
+function orderByDependencies(items) {
+  const byTitle = new Map(items.map((i) => [normalizeTitle(i.title), i]));
+  const ordered = [];
+  const state = new Map(); // title -> "visiting" | "done"
+
+  const visit = (item) => {
+    const key = normalizeTitle(item.title);
+    if (state.get(key) === "done") return;
+    if (state.get(key) === "visiting") return; // cycle — stop descending
+    state.set(key, "visiting");
+    for (const dep of Array.isArray(item.dependsOn) ? item.dependsOn : []) {
+      const depItem = byTitle.get(normalizeTitle(dep));
+      if (depItem && depItem !== item) visit(depItem);
+    }
+    state.set(key, "done");
+    ordered.push(item);
+  };
+
+  items.forEach(visit);
+  return ordered;
 }
 
 async function groomBacklog(proposed, openIssues, boardTitles) {
@@ -169,14 +211,35 @@ async function groomBacklog(proposed, openIssues, boardTitles) {
   // Pass 2 — semantic: a model call catches reworded dupes the tokens missed.
   const survivors = await filterSemanticDuplicates(heuristicSurvivors, existingTitles);
 
+  // Create dependencies before the tickets that wait on them, so each body can
+  // name real issue numbers.
+  const numberByTitle = new Map();
   let created = 0;
-  for (const item of survivors) {
-    const number = createIssue(item.title, formatTicketBody(item));
+  for (const item of orderByDependencies(survivors)) {
+    // Resolve each declared dependency to an issue number: "#134" points at an
+    // existing ticket, anything else at another ticket in this batch. A reference
+    // that resolves to nothing is dropped rather than guessed at — a dependency
+    // on a ticket that was deduped away is already satisfied by the ticket that
+    // survived in its place.
+    const deps = [];
+    for (const raw of Array.isArray(item.dependsOn) ? item.dependsOn : []) {
+      const ref = String(raw).trim();
+      const explicit = ref.match(/^#?(\d+)$/);
+      const number = explicit ? Number(explicit[1]) : numberByTitle.get(normalizeTitle(ref));
+      if (number) deps.push(number);
+      else log("info", `Backlog: "${item.title}" references unknown dependency "${ref}" — ignoring it.`);
+    }
+
+    const number = createIssue(item.title, formatTicketBody(item, deps));
     if (number) {
+      numberByTitle.set(normalizeTitle(item.title), number);
       moveCard(number, "Backlog"); // best-effort; also adds it to the board
       setIssuePriority(number, item.priority || "medium", []);
       recordTicket("created", number, item.title);
       created++;
+      if (deps.length) {
+        log("info", `Backlog: #${number} "${item.title}" waits on ${deps.map((d) => `#${d}`).join(", ")}.`);
+      }
     }
   }
   log("info", `Backlog: created ${created} ticket(s) (${openIssues.length} already open).`);

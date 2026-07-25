@@ -37,6 +37,15 @@ Propose as many small tickets as are genuinely worth building to close the gap b
 - a clear, specific **title** (imperative) that names the actual feature or area — not a vague intention,
 - a **body** stating *what to build* and *why it matters to the experience*, grounded in a concrete gap, a Defect from the app review, or observed behavior — not a generic idea,
 - **acceptanceCriteria**: 2–4 concrete, checkable statements describing what is true when the ticket ships (what the user can see or do). This is the Builder's definition of done.
+- **dependsOn** *(optional)*: what must ship **before** this ticket can be built. The Builder works one ticket at a time and will not pick a ticket up until everything it depends on has shipped, so this is how you sequence foundations before the work that stands on them.
+
+### Sequencing with `dependsOn`
+Each entry is either the **exact title** of another ticket in this same response, or an existing ticket as `"#12"`. Use it whenever a ticket would fail if built first — a feature that needs a shared engine, a panel that needs the thing it displays.
+
+- Depend on what you genuinely need and nothing more. Every dependency you add makes the backlog narrower, and a chain where each ticket waits on the last means only one ticket is ever buildable.
+- Prefer a shallow shape: a few foundations everything depends on, then independent work in parallel.
+- Never make two tickets depend on each other.
+- Do not use `dependsOn` to express mere preference about ordering — that is what `priority` is for. Reserve it for work that would actually break.
 
 A ticket is **meaningful** when someone reading only its title and acceptance criteria knows exactly what to build and how to tell it's finished. Avoid:
 - vague intentions ("Improve the journal", "Polish the UI", "Make it feel nicer") — say what specifically changes and to what end,
@@ -74,7 +83,8 @@ The Product Manager is a worker agent — omit the `outcome` field.
         "title": "Short imperative ticket title that names the feature/area",
         "body": "What to build and why it matters to the experience, grounded in a specific gap, defect, or observed behavior. Scoped for one Builder pass.",
         "acceptanceCriteria": ["A concrete, checkable statement of what's true when this ships", "..."],
-        "priority": "high | medium | low"
+        "priority": "high | medium | low",
+        "dependsOn": ["Exact title of another ticket in this response", "#12"]
       }
     ],
     "triage": [
