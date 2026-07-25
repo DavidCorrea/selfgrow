@@ -66,6 +66,9 @@ jobs:
           # fallbacks and retries. Part of a ~1000/day account limit shared with
           # the Builder (250 x 3 slots) and the weekly agents (50 each) — the
           # day's requests still belong to the Builder, the only agent shipping code.
+          # REAL requests (one per agent turn), not sessions. The PM runs three sessions
+          # — app review, the main grooming pass, the dedup check — so ~100 covers it
+          # with room for a slow pass, and leaves the day's remainder to the Builder.
           MODEL_REQUEST_BUDGET: '100'
           # PAT carries `project` scope (board) and covers issue creation.
           GH_TOKEN: ${{ secrets.AGENT_PAT }}

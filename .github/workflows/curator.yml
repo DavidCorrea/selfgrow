@@ -41,7 +41,10 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           # One judgement per week over the whole language. Part of a ~1000/day account limit
           # shared with the Builder (250 x 3 slots) and the PM (100).
-          MODEL_REQUEST_BUDGET: '50'
+          # REAL requests (one per agent turn), not sessions — see isRequestBudgetSpent.
+          # This agent makes exactly one session, so the budget is a ceiling on how
+          # long that session may run before runAgent refuses to continue.
+          MODEL_REQUEST_BUDGET: '150'
           # PAT carries `project` scope (board) and covers issue creation.
           GH_TOKEN: ${{ secrets.AGENT_PAT }}
           GH_PROJECT_OWNER: '@me'

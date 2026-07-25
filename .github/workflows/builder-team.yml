@@ -1,15 +1,19 @@
 name: builder-team
 
 on:
-  # Every four hours, on top of the Product Manager's dispatch. A cron used to be
-  # ruled out as a duplicate of that chain that would cost a full day's request
-  # allowance, but measured runs spend ~7 requests per slot, not the 250 ceiling,
-  # and a cron that finds nothing buildable costs ZERO model requests: the plan job
-  # below is pure gh API, and build-ticket doesn't run at all when count is 0. So a
-  # redundant firing is free and a productive one is cheap. Six firings a day cannot
-  # exceed 540 requests even at the budget ceiling (see MODEL_REQUEST_BUDGET).
+  # Twice a day, 00:00 and 12:00 UTC. 00:00 is deliberate: it's when OpenRouter's
+  # free-model cap resets, so that tick runs on a full allowance.
+  #
+  # The frequency is set by the DAY'S BUDGET, not by how often we'd like to build.
+  # A shipped ticket costs 100-150 real requests (Scout + Builder + Reviewer +
+  # Validator, some retried), the account gets 1000/day, so the day affords 6-8
+  # tickets TOTAL. 2 ticks x 2 slots x 160 = 640 worst case, leaving room for the
+  # Product Manager (100) and a weekly agent (150). Adding ticks doesn't add
+  # throughput once the budget is the binding constraint — it just means later
+  # ticks fail on an empty allowance. A tick with nothing buildable is still free:
+  # the plan job is pure gh API and build-ticket is skipped when count is 0.
   schedule:
-    - cron: '0 */4 * * *'
+    - cron: '0 0,12 * * *'
 
   # The Product Manager also dispatches this explicitly at the end of a run that
   # actually left buildable work (see kickBuilder in product-manager.mjs), so newly
@@ -60,9 +64,13 @@ jobs:
         run: node agents/plan-build.mjs
         env:
           GH_TOKEN: ${{ secrets.AGENT_PAT }}
-          # Three slots. Every extra one is another branch that may touch the same
-          # file, and the per-slot request budget multiplies by this number.
-          PARALLEL_BUILDERS: '3'
+          # Two slots. Every extra one is another branch that may touch the same
+          # file, and the per-slot request budget multiplies by this number. Was 3,
+          # dropped because free models also carry a 20 requests-per-MINUTE ceiling
+          # that the credit purchase does not lift — three slots each running an
+          # agentic loop burst past it, and a third slot cannot add throughput when
+          # the day's request budget is already the binding constraint.
+          PARALLEL_BUILDERS: '2'
 
   build-ticket:
     needs: plan
@@ -75,7 +83,7 @@ jobs:
       # One slot failing must not cancel its siblings: their work is unrelated by
       # construction, and a cancelled builder can leave a branch and an open PR.
       fail-fast: false
-      max-parallel: 3
+      max-parallel: 2
       matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
     name: build #${{ matrix.ticket }}
     steps:
@@ -106,20 +114,26 @@ jobs:
         run: node agents/builder-team.mjs
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          # PER SLOT, PER RUN — and now there are up to 7 runs a day (6 cron
-          # firings plus the PM's dispatch), so the multiplier is slots x runs:
-          # 30 x 3 x 7 = 630 worst case, which with the PM's 100 and one weekly
-          # agent (50) leaves room under the account's 1000/day. It was 250 back
-          # when only one run existed per day; at that size a single pathological
-          # run (retry loops, merge conflicts) could eat the whole day, so the
-          # ceiling protected nothing. 30 is still ~4x what a real slot spends.
-          # Raising PARALLEL_BUILDERS or the cron frequency without lowering this
-          # multiplies the spend — the product is what matters, not the number here.
-          # Checked between tickets, so a ticket already in flight still finishes.
-          MODEL_REQUEST_BUDGET: '30'
-          # Sized to the request budget above, and kept well inside both the job's
-          # 120-minute timeout and the 4-hour cron interval so a slot can never
-          # still be running when its successor fires (concurrency would queue it).
+          # REAL OpenRouter requests (one per agent turn), per slot, per run. This
+          # number used to count agent SESSIONS, which understated the charge by
+          # ~16x: a "250" slot authorised several thousand requests and the whole
+          # 1000/day account fell over while the counter read 62.
+          #
+          # 160 is sized to finish ONE ticket — Scout + Builder + Reviewer +
+          # Validator is 100-150 requests with a retry or two. Below ~100 a slot
+          # cannot ship anything and merely burns the allowance getting partway.
+          # The day's arithmetic: 2 ticks x 2 slots x 160 = 640, plus the Product
+          # Manager (100) and one weekly agent (150), against 1000.
+          #
+          # Enforced in two places now, not zero: runAgent refuses to start a
+          # session once the budget is spent, and the build->review loop stops
+          # before an optional RETRY when the remainder is thin, so the run ends
+          # with a reviewable PR instead of a stranded one.
+          MODEL_REQUEST_BUDGET: '160'
+          # Wall-clock backstop for a slot that stalls rather than spends. Only
+          # gates BETWEEN tickets, so in slot mode (one ticket) it never fires —
+          # the request budget above is the real limit and the job's timeout is
+          # the last resort.
           BUILD_RUN_BUDGET_MINUTES: '60'
           # This slot's ticket, assigned by the plan job. The Builder narrows to
           # exactly this ticket so it cannot wander onto a sibling slot's work.
