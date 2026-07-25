@@ -1,15 +1,19 @@
 name: builder-team
 
 on:
-  # No cron. The Builder has exactly one automatic entry point: product-manager's
-  # daily run grooms the backlog and kicks it via workflow_run below. A cron here
-  # would fire IN ADDITION to that chain on the same day, and since the free tier
-  # caps REQUESTS per day, a duplicate Builder run costs a full day's allowance to
-  # redo work the chain already did. A broken chain self-heals at the next daily
-  # PM run; use workflow_dispatch to recover sooner.
-  # workflow_dispatch is the ONLY trigger. The Product Manager dispatches this
-  # explicitly at the end of a run that actually left buildable work (see
-  # kickBuilder in product-manager.mjs).
+  # Every four hours, on top of the Product Manager's dispatch. A cron used to be
+  # ruled out as a duplicate of that chain that would cost a full day's request
+  # allowance, but measured runs spend ~7 requests per slot, not the 250 ceiling,
+  # and a cron that finds nothing buildable costs ZERO model requests: the plan job
+  # below is pure gh API, and build-ticket doesn't run at all when count is 0. So a
+  # redundant firing is free and a productive one is cheap. Six firings a day cannot
+  # exceed 540 requests even at the budget ceiling (see MODEL_REQUEST_BUDGET).
+  schedule:
+    - cron: '0 */4 * * *'
+
+  # The Product Manager also dispatches this explicitly at the end of a run that
+  # actually left buildable work (see kickBuilder in product-manager.mjs), so newly
+  # groomed tickets start building immediately instead of waiting for the next tick.
   #
   # It used to trigger on `workflow_run` from product-manager, which fires when a
   # PM run COMPLETES — including runs whose job was skipped by a guard, and
@@ -102,17 +106,21 @@ jobs:
         run: node agents/builder-team.mjs
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          # PER SLOT, not per run: with PARALLEL_BUILDERS=3 the Builder's real
-          # daily draw is three times this. 250 x 3 = 750, which with the PM's 100
-          # and one weekly agent (50) puts the worst day near 900 against the
-          # account's 1000/day. Raising PARALLEL_BUILDERS without lowering this
-          # multiplies the spend — the sum is what matters, not the number here.
+          # PER SLOT, PER RUN — and now there are up to 7 runs a day (6 cron
+          # firings plus the PM's dispatch), so the multiplier is slots x runs:
+          # 30 x 3 x 7 = 630 worst case, which with the PM's 100 and one weekly
+          # agent (50) leaves room under the account's 1000/day. It was 250 back
+          # when only one run existed per day; at that size a single pathological
+          # run (retry loops, merge conflicts) could eat the whole day, so the
+          # ceiling protected nothing. 30 is still ~4x what a real slot spends.
+          # Raising PARALLEL_BUILDERS or the cron frequency without lowering this
+          # multiplies the spend — the product is what matters, not the number here.
           # Checked between tickets, so a ticket already in flight still finishes.
-          MODEL_REQUEST_BUDGET: '250'
-          # Requests are no longer the scarce thing — time is. A slot cannot spend
-          # 250 requests inside the old 45 minutes, so the wall clock is raised to
-          # match; without this the extra allowance simply cannot be reached.
-          BUILD_RUN_BUDGET_MINUTES: '100'
+          MODEL_REQUEST_BUDGET: '30'
+          # Sized to the request budget above, and kept well inside both the job's
+          # 120-minute timeout and the 4-hour cron interval so a slot can never
+          # still be running when its successor fires (concurrency would queue it).
+          BUILD_RUN_BUDGET_MINUTES: '60'
           # This slot's ticket, assigned by the plan job. The Builder narrows to
           # exactly this ticket so it cannot wander onto a sibling slot's work.
           TICKET_NUMBER: ${{ matrix.ticket }}
