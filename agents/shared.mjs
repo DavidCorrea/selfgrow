@@ -933,6 +933,41 @@ export async function closeIssueAsInvalid(issueNumber, reason) {
   }
 }
 
+/**
+ * Comment and close a ticket that was replaced by smaller pieces.
+ *
+ * Deliberately not closeIssue(), which announces "✅ Resolved by the Builder Team"
+ * — nothing was built here, and a reader following the trail needs to land on the
+ * children rather than believe the work shipped.
+ *
+ * @param {number} issueNumber
+ * @param {number[]} childNumbers - the replacements, in build order
+ * @param {string} [why]          - the Scout's one-line reason it was too big
+ */
+export async function closeIssueAsSplit(issueNumber, childNumbers, why) {
+  const lines = ["## Split by the Builder Team", ""];
+  lines.push(
+    why
+      ? `This ticket was too big to ship in one Builder pass: ${why}`
+      : "This ticket was too big to ship in one Builder pass."
+  );
+  lines.push(
+    "",
+    "It has been replaced by these tickets, which build in this order:",
+    "",
+    ...childNumbers.map((n, i) => `${i + 1}. #${n}`),
+    "",
+    "_No work was lost — closing this one only means it is tracked in the pieces above._"
+  );
+  await commentIssue(issueNumber, lines.join("\n"));
+  try {
+    execSync(`gh issue close ${issueNumber}`, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 });
+    log("info", `Closed issue #${issueNumber} as split.`);
+  } catch (e) {
+    log("warn", `Could not close issue #${issueNumber}`, errorData(e));
+  }
+}
+
 export async function labelIssue(issueNumber, label) {
   try {
     execSync(
