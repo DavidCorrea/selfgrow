@@ -18,6 +18,8 @@ import {
   recordTicketFailure,
   isBlocked,
   isBuildable,
+  isRequestBudgetLow,
+  isDailyQuotaExhausted,
   unmetDependencies,
   syncWaitingLabels,
   triggerWorkflow,
@@ -320,6 +322,18 @@ async function buildTicket(openIssues, vision) {
     // orphaned. Route every such error through abandon().
     try {
       for (let buildAttempt = 1; buildAttempt <= MAX_BUILDER_RETRIES; buildAttempt++) {
+        // Safe checkpoint: the first attempt always runs, but a RETRY is optional
+        // work, and a retry started on a nearly-empty budget produces the worst
+        // outcome available — an unreviewed PR and a dead run. Stop while the PR
+        // from the previous attempt is still intact and reviewable next run.
+        if (buildAttempt > 1 && isRequestBudgetLow()) {
+          log(
+            "warn",
+            `Request budget nearly spent — not starting build attempt ${buildAttempt}. ` +
+              `The PR stands as-is and the next run picks up the review.`
+          );
+          break;
+        }
         log("info", `=== Build Attempt ${buildAttempt}/${MAX_BUILDER_RETRIES} ===`);
 
         let builderOutput;
@@ -333,6 +347,10 @@ async function buildTicket(openIssues, vision) {
             })
           );
         } catch (e) {
+          // Running out of budget, or out of daily quota, is not transient: every
+          // remaining attempt is guaranteed to fail the same way, and retrying
+          // just spends the reserve confirming it. Propagate instead.
+          if (e.budgetExhausted || isDailyQuotaExhausted(e)) throw e;
           // Transient model/provider errors (rate limit, upstream harmony-parse
           // glitch) — retry the next attempt rather than abandoning. Only a
           // persistent failure (all attempts) falls through to abandon below.

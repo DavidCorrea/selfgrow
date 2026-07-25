@@ -106,6 +106,7 @@ const modelIdOf = (m) => `${m.provider}/${m.id}`;
  * immediately instead of burning the rest of it on a guaranteed failure.
  */
 export function isDailyQuotaExhausted(err) {
+  if (err?.quotaExhausted) return true; // already recognised and re-labelled once
   return /free-models-per-day|free_models_per_day/i.test(err?.message || "");
 }
 
@@ -141,9 +142,27 @@ export function getModelTurnCount() {
   return modelTurnCount;
 }
 
-/** True once the run has spent its request allowance. */
+/**
+ * True once the run has spent its request allowance.
+ *
+ * Measured in TURNS, because that's what OpenRouter charges. This used to compare
+ * sessions against the budget, which made every ceiling in .github/workflows/ read
+ * roughly 16x smaller than the spend it authorised — a "250-request" slot was
+ * thousands of real requests, and the account's 1000/day fell over while the
+ * counter still read 62.
+ */
 export function isRequestBudgetSpent() {
-  return modelRequestCount >= MODEL_REQUEST_BUDGET;
+  return modelTurnCount >= MODEL_REQUEST_BUDGET;
+}
+
+/**
+ * True while fewer than `reserve` requests remain — a soft stop for work that is
+ * worth starting only if it can finish. Draining the budget to zero mid-ticket is
+ * how a run ends with an unreviewed PR and nothing merged; leaving a reserve is
+ * how the day still ships something.
+ */
+export function isRequestBudgetLow(reserve = 60) {
+  return modelTurnCount >= MODEL_REQUEST_BUDGET - reserve;
 }
 
 /** Every model pi knows, or null when the runtime can't be read. */
@@ -242,14 +261,24 @@ export async function runAgent(opts) {
       }
     } catch (e) {
       lastErr = e;
+      // Our own budget, like the account cap below, is not per-model: the next
+      // model in the chain would be refused identically. Rethrow the original so
+      // the budgetExhausted marker survives for callers that branch on it —
+      // wrapping it here is what made the gate look like a model failure and
+      // burn the whole chain proving it.
+      if (e.budgetExhausted) throw e;
       // The daily cap is account-wide — every remaining model shares it, so
       // continuing would burn one request per model to fail identically.
       if (isDailyQuotaExhausted(e)) {
-        throw new Error(
+        const err = new Error(
           `${label}: OpenRouter's daily free-request cap is exhausted — stopping ` +
             `without trying the remaining ${chain.length - chain.indexOf(id) - 1} model(s). ` +
             `The cap is per account, not per model, so it resets at 00:00 UTC.`
         );
+        // The rewritten message no longer matches the provider's wording, so
+        // isDailyQuotaExhausted would stop recognising its own error. Mark it.
+        err.quotaExhausted = true;
+        throw err;
       }
       log("warn", `${label}: ${id} failed — trying next model.`, errorData(e));
     }
@@ -299,6 +328,19 @@ async function runAgentOnce({
     noThemes: true,
     noContextFiles: true,
   });
+  // Hard floor. The soft checks at safe checkpoints should stop a run long before
+  // this fires, but turns are only known once a session ENDS, so without a gate
+  // here a single long session can overrun the whole allowance unobserved. Typed
+  // so callers can tell "out of budget" from "the model failed".
+  if (isRequestBudgetSpent()) {
+    const err = new Error(
+      `Request budget spent (${modelTurnCount}/${MODEL_REQUEST_BUDGET} requests) — ` +
+        `refusing to start ${label}. Raise MODEL_REQUEST_BUDGET or wait for the 00:00 UTC reset.`
+    );
+    err.budgetExhausted = true;
+    throw err;
+  }
+
   const startTime = Date.now();
   // Count the attempt, not the success — the daily cap is charged either way.
   modelRequestCount++;
