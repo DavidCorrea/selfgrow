@@ -1601,11 +1601,121 @@ function startStaticServer(rootDir) {
   });
 }
 
+// How many generations each specimen is grown when checking its invariants.
+// Deep enough for a rule to go wrong, shallow enough to stay fast.
+const SPECIMEN_GENERATIONS = 12;
+// Seeds used for the growth checks. Two arbitrary seeds catch a specimen that
+// only holds together for seed 0.
+const SPECIMEN_SEEDS = [1, 7];
+
+/**
+ * Run every specimen's own promises against it, in a real browser: grow it,
+ * assert the invariants it declares, and grow it a second time to prove the
+ * result is reproducible.
+ *
+ * This is the Vision's "provable, not merely plausible" made executable. It
+ * needs no model, so it costs nothing and cannot be talked out of a failure —
+ * unlike a reviewer, which can be persuaded by confident-sounding code.
+ *
+ * Returns an array of failure strings (empty when everything holds). A project
+ * with no specimens yet passes.
+ */
+async function checkSpecimens(browser, url, dir) {
+  const specimenDir = join(dir, "specimens");
+  const files = fs
+    .readdirSync(specimenDir, { withFileTypes: true })
+    .filter((e) => e.isFile() && /\.m?js$/.test(e.name))
+    .map((e) => e.name);
+  if (!files.length) return [];
+
+  const page = await browser.newPage();
+  const failures = [];
+  try {
+    await page.goto(url, { waitUntil: "networkidle", timeout: 20000 });
+    for (const file of files) {
+      const result = await page.evaluate(
+        async ({ file, generations, seeds }) => {
+          const problems = [];
+          let mod;
+          try {
+            mod = await import(`./specimens/${file}`);
+          } catch (e) {
+            return [`${file}: could not be imported — ${e.message}`];
+          }
+
+          for (const fn of ["grow", "checkInvariants", "render"]) {
+            if (typeof mod[fn] !== "function") problems.push(`${file}: does not export ${fn}()`);
+          }
+          if (!mod.meta || !mod.meta.rule) {
+            problems.push(`${file}: meta.rule is missing — a specimen must state the rule that grows it`);
+          }
+          if (problems.length) return problems;
+
+          for (const seed of seeds) {
+            for (let generation = 0; generation <= generations; generation++) {
+              let state;
+              try {
+                state = mod.grow(seed, generation);
+              } catch (e) {
+                problems.push(`${file}: grow(${seed}, ${generation}) threw — ${e.message}`);
+                break;
+              }
+
+              // Determinism: the same inputs must produce the same state. Serialising
+              // both and comparing catches a stray Math.random() or clock read, which
+              // is invisible until a form refuses to be returned to.
+              let again;
+              try {
+                again = mod.grow(seed, generation);
+              } catch (e) {
+                problems.push(`${file}: grow(${seed}, ${generation}) threw on a second call — ${e.message}`);
+                break;
+              }
+              if (JSON.stringify(state) !== JSON.stringify(again)) {
+                problems.push(
+                  `${file}: grow(${seed}, ${generation}) is not deterministic — two calls produced different states, so the same seed no longer grows the same form`
+                );
+                break;
+              }
+
+              try {
+                const found = mod.checkInvariants(state, generation) || [];
+                if (found.length) {
+                  // Report the FIRST generation where it breaks and move on. Once a
+                  // rule has gone wrong it usually stays wrong, and twelve copies of
+                  // one failure buries the other specimens' findings.
+                  for (const msg of found) {
+                    problems.push(`${file}: invariant broken at seed ${seed}, generation ${generation} — ${msg}`);
+                  }
+                  break;
+                }
+              } catch (e) {
+                problems.push(`${file}: checkInvariants(seed ${seed}, generation ${generation}) threw — ${e.message}`);
+                break;
+              }
+            }
+          }
+          return problems;
+        },
+        { file, generations: SPECIMEN_GENERATIONS, seeds: SPECIMEN_SEEDS }
+      );
+      failures.push(...result);
+    }
+  } catch (e) {
+    log("warn", "Verify: specimen checks could not run.", errorData(e));
+  } finally {
+    await page.close().catch(() => {});
+  }
+  return failures;
+}
+
 /**
  * Verify the built app under `relDir`. Returns { ok, layer, errors }:
- *   - layer "syntax"  — a JS file fails `node --check`
- *   - layer "lint"    — ESLint reports an error (e.g. no-undef: undefined function)
- *   - layer "runtime" — the page throws a console error / uncaught exception / failed load
+ *   - layer "syntax"   — a JS file fails `node --check`
+ *   - layer "lint"     — ESLint reports an error (e.g. no-undef: undefined function)
+ *   - layer "runtime"  — the page throws a console error / uncaught exception / failed load
+ *   - layer "specimen" — a specimen broke its own declared invariants, or grew
+ *                        differently from the same seed twice
  * ok:true (layer null) means all available layers passed (or were skipped).
  */
 export async function verifyBuild(relDir = "docs") {
@@ -1670,11 +1780,27 @@ export async function verifyBuild(relDir = "docs") {
     await page.waitForTimeout(2500);
   } catch (e) {
     errors.push(`navigation: ${e.message}`);
-  } finally {
-    if (browser) await browser.close();
-    server.close();
   }
+
+  // Layer 4 — each specimen against its own declared promises. Only worth running
+  // when the page itself is sound; invariant failures on a page that is already
+  // throwing would just be noise from the same root cause.
+  let specimenFailures = [];
+  if (!errors.length && fs.existsSync(join(dir, "specimens"))) {
+    try {
+      specimenFailures = await checkSpecimens(browser, `http://127.0.0.1:${port}/`, dir);
+    } catch (e) {
+      log("warn", "Verify: specimen layer failed to run.", errorData(e));
+    }
+  }
+
+  if (browser) await browser.close().catch(() => {});
+  server.close();
+
   if (errors.length) return { ok: false, layer: "runtime", errors: [...new Set(errors)] };
+  if (specimenFailures.length) {
+    return { ok: false, layer: "specimen", errors: [...new Set(specimenFailures)] };
+  }
   return { ok: true, layer: null, errors: [] };
 }
 

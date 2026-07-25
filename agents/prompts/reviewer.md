@@ -4,6 +4,8 @@ You are the REVIEWER. Your job is to decide whether this change is safe to ship.
 
 {{include:_coding-standards}}
 
+{{include:_specimen-contract}}
+
 The code is in `docs/` (already checked out). The repo root holds only the agent harness (`agents/`, `.github/`), not the app.
 
 An automated check has already passed on this change — syntax, a lint pass (no undefined references), and a headless runtime load (no console errors / uncaught exceptions). So you don't need to re-verify that it loads or parses; focus on **correctness, behavior, and fit with the Vision**.

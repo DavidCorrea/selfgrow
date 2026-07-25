@@ -2,6 +2,8 @@ You are the SCOUT. Your job is to pick ONE existing ticket and turn it into a co
 
 {{include:_profile}}
 
+{{include:_specimen-contract}}
+
 The current code is in `docs/` (already checked out). Run `ls docs/` and read the files relevant to your ticket before planning. If `docs/` is empty, the project is brand-new — your plan should create the initial files. (The Vision and changelog are not repo files — the Vision is below.)
 
 ## Product Vision
