@@ -376,7 +376,7 @@ class Parser {
       return { type: 'Boolean', value: token.value === 'true' };
     }
 
-    // Parenthesized expression
+    // Parenthesized expression or function call
     if (this.matchPunctuation('(')) {
       const expr = this.parseExpression();
       this.expectPunctuation(')');
@@ -387,13 +387,16 @@ class Parser {
       return expr;
     }
 
-    // Lambda: (Params?) => Expr
-    if (token.value === '(') {
-      // We already handled '(' above; check for lambda after ')'
-      // This is handled by the paren case above checking for '(' after expr
+    // fn keyword as expression: fn(Params) = Expr  (lambda)
+    if (token.type === TT.KEYWORD && token.value === 'fn') {
+      this.advance();
+      this.expectPunctuation('(');
+      const params = this.parseParamList();
+      this.expectPunctuation(')');
+      this.expectOperator('=');
+      const body = this.parseExpression();
+      return { type: 'FnExpr', params, body };
     }
-
-    // Lambda shorthand: identifier '(' ... ) '=>' — handled by call check
 
     // Identifier
     if (token.type === TT.IDENTIFIER) {
@@ -464,16 +467,25 @@ class EvalError extends Error {
   }
 }
 
+// Built-in functions available in every evaluation environment
 const BUILTINS = {
   print: {
+    __builtin: true,
     fn: (args) => {
       const str = args.map((a) => formatValue(a)).join('');
-      // We store the printed output in a special key
       return { __printed: str, __value: undefined };
     },
     arity: -1,
   },
 };
+
+function makeInitialEnv() {
+  const env = {};
+  for (const [name, builtin] of Object.entries(BUILTINS)) {
+    env[name] = builtin;
+  }
+  return env;
+}
 
 function formatValue(value) {
   if (value === null || value === undefined) return '';
@@ -540,20 +552,39 @@ function evaluate(ast, env, steps) {
         body: ast.body,
         env: { ...env },
       };
-      const newEnv = { ...env, [ast.name]: closure };
-      return evaluate({ type: 'Identifier', name: ast.name }, newEnv, steps);
+      // Propagate function definition to outer scope so subsequent statements can call it
+      env[ast.name] = closure;
+      return closure;
+    }
+
+    case 'FnExpr': {
+      // Lambda expression: create a closure without adding it to any env
+      const closure = {
+        __closure: true,
+        params: ast.params,
+        body: ast.body,
+        env: { ...env },
+      };
+      return closure;
     }
 
     case 'Call': {
       const callee = evaluate(ast.callee, env, steps);
       const args = ast.args.map((arg) => evaluate(arg, env, steps));
 
-      // Handle printed values (side-effect capture)
+      // Handle printed values (side-effect capture from previous calls)
       let printed = '';
       if (callee && callee.__printed !== undefined) {
         printed = callee.__printed;
       }
 
+      // Built-in functions
+      if (callee && callee.__builtin) {
+        const result = callee.fn(args, steps);
+        return result;
+      }
+
+      // User-defined closures
       if (callee && callee.__closure) {
         if (callee.params.length !== args.length) {
           throw new EvalError(`Function ${describeCallee(ast.callee)} expects ${callee.params.length} arguments but got ${args.length}`);
@@ -567,17 +598,6 @@ function evaluate(ast, env, steps) {
           printed += result.__printed;
         }
         return result && result.__value !== undefined ? result.__value : result;
-      }
-
-      // Built-in functions
-      const builtin = BUILTINS[callee && callee.__name];
-      // Also check if callee is a string that matches a builtin name (for Identifier calls)
-      if (!builtin && ast.callee.type === 'Identifier') {
-        const name = ast.callee.name;
-        if (BUILTINS[name]) {
-          const result = BUILTINS[name].fn(args);
-          return result;
-        }
       }
 
       throw new EvalError(`${describeCallee(ast.callee)} is not a function`);
@@ -649,6 +669,8 @@ function describeCallee(callee) {
 
 function prettyPrint(value) {
   if (value === null || value === undefined) return '';
+  // Values from builtins like print carry __printed output
+  if (value && value.__printed !== undefined) return value.__printed;
   return formatValue(value);
 }
 
@@ -663,7 +685,8 @@ export function run(source) {
   try {
     const ast = parse(source);
     const steps = { count: 0 };
-    const result = evaluate(ast, {}, steps);
+    const env = makeInitialEnv();
+    const result = evaluate(ast, env, steps);
     return prettyPrint(result);
   } catch (err) {
     if (err instanceof EvalError) {
