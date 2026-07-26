@@ -15,7 +15,6 @@ import {
   fetchOpenIssues,
   isBuildable,
   unmetDependencies,
-  attemptCount,
   PRIORITY_LABELS,
 } from "./shared.mjs";
 
@@ -66,11 +65,19 @@ function main() {
     return;
   }
 
-  // Highest priority first; then fewest previous failures, so a ticket that has
-  // already burned attempts doesn't keep crowding out fresh work; then oldest, so
-  // ordering is stable and a re-run assigns the same tickets to the same slots.
+  // Highest priority first, then oldest, so ordering is stable and a re-run
+  // assigns the same tickets to the same slots.
+  //
+  // Attempt count is deliberately NOT a tiebreak. It used to be, on the reasoning
+  // that a ticket which has burned attempts shouldn't crowd out fresh work — but
+  // that inverts the project's priorities in practice. Hard, foundational tickets
+  // are exactly the ones that fail once, and demoting them means every easy
+  // peripheral ticket overtakes them forever: the runtime core sat at attempts:1
+  // while a skip-link fix shipped ahead of it. Perpetual failures are already
+  // handled properly by parking at MAX_TICKET_ATTEMPTS; they don't need a second
+  // mechanism that quietly reorders the roadmap.
   const ordered = [...buildable].sort(
-    (a, b) => priorityRank(a) - priorityRank(b) || attemptCount(a) - attemptCount(b) || a.number - b.number
+    (a, b) => priorityRank(a) - priorityRank(b) || a.number - b.number
   );
 
   const assigned = ordered.slice(0, SLOTS).map((issue, index) => ({

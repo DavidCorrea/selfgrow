@@ -47,20 +47,33 @@ export const TEXT_MODELS = (
   // models.generated.js) — the registry is NOT fetched live from OpenRouter, so
   // an id pi doesn't know is skipped, not requested. Verified against the
   // installed pi version; re-check after bumping pi, as its free lineup rotates.
-  // Ordered biggest/most-capable first, with the coding-tuned models high up —
-  // most runs are Builder runs. Verified against pi 0.82.0's snapshot.
+  // Ordered by ENVELOPE RELIABILITY, not by size. "Biggest first" was the old
+  // rule and it was actively expensive: measured over one day, the 550B head
+  // answered without usable JSON in 18 of 42 sessions and returned empty in 6 more
+  // — a 57% failure rate — and each failure is a COMPLETED session that gets
+  // discarded. One such Scout session ran 101 turns before failing, burning 63% of
+  // that run's whole allowance before any work started.
+  //
+  // Size also buys nothing here: docs/ is a single 16K file, so a 1M context
+  // window is dead weight next to actually returning the JSON the agents parse.
+  //
+  // ling-3.0-flash led on the evidence available (3 of 3 usable), followed by the
+  // models OpenRouter reports as supporting structured_outputs — an imperfect but
+  // real proxy for envelope discipline. nemotron-ultra stays last: capable, and
+  // worth having when everything above it has failed, but not worth paying for
+  // first. Confirm with `node agents/model-probe.mjs` before trusting this order.
   //
   // Deliberately SHORT. Each fallback is a real request charged against the daily
   // cap, so a long tail of weak models mostly buys wasted requests: by the time
   // the 7th model is answering, the output is rarely worth building on. One
   // model per provider family keeps the fallbacks genuinely independent.
   [
-    "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
-    "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
     "openrouter/inclusionai/ling-3.0-flash:free",
-    "openrouter/poolside/laguna-m.1:free",
+    "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
+    "openrouter/google/gemma-4-26b-a4b-it:free",
+    "openrouter/openai/gpt-oss-20b:free",
     "openrouter/cohere/north-mini-code:free",
-    "openrouter/google/gemma-4-31b-it:free",
+    "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
   ].join(",")
 )
   .split(",")

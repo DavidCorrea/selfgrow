@@ -56,6 +56,13 @@ const MAX_BUILDER_RETRIES = 3;
 // the Scout stops re-picking it every run. See recordTicketFailure in shared.
 const MAX_TICKET_ATTEMPTS = Number(process.env.MAX_TICKET_ATTEMPTS || 2);
 
+// Requests held back for the steps AFTER the Builder — Reviewer, and a possible
+// address-feedback pass — so a completed build always gets the chance to become a
+// merge. Sized from real sessions rather than a guess: a Reviewer runs a few turns
+// to tens, and on #149 a single Builder took 66. Too small a reserve and the run
+// throws away finished work; too large and it never starts anything.
+const BUILD_TAIL_RESERVE = Number(process.env.BUILD_TAIL_RESERVE || 80);
+
 // Drain several tickets per run (better runner utilization — one npm ci +
 // Playwright install amortized over multiple builds) up to a wall-clock budget,
 // kept under the job's 60-minute timeout.
@@ -434,15 +441,25 @@ async function buildTicket(openIssues, vision) {
     // orphaned. Route every such error through abandon().
     try {
       for (let buildAttempt = 1; buildAttempt <= MAX_BUILDER_RETRIES; buildAttempt++) {
-        // Safe checkpoint: the first attempt always runs, but a RETRY is optional
-        // work, and a retry started on a nearly-empty budget produces the worst
-        // outcome available — an unreviewed PR and a dead run. Stop while the PR
-        // from the previous attempt is still intact and reviewable next run.
-        if (buildAttempt > 1 && isRequestBudgetLow()) {
+        // Never START a build we cannot afford to FINISH.
+        //
+        // A Builder session is the most expensive thing here (measured: 66 turns,
+        // 36 minutes) and it is worthless without the Reviewer that follows it. On
+        // #149 the Builder ran to completion, the Reviewer was then refused on
+        // budget, and the whole thing was thrown away — the run spent its entire
+        // allowance and shipped nothing. Reserve enough for the finishing steps
+        // BEFORE the expensive one, so the cheap tail can always run.
+        //
+        // A retry is additionally optional: stop and leave the previous attempt's
+        // PR intact and reviewable rather than starting work that strands it.
+        if (isRequestBudgetLow(BUILD_TAIL_RESERVE)) {
           log(
             "warn",
-            `Request budget nearly spent — not starting build attempt ${buildAttempt}. ` +
-              `The PR stands as-is and the next run picks up the review.`
+            buildAttempt > 1
+              ? `Request budget nearly spent — not starting build attempt ${buildAttempt}. ` +
+                  `The PR stands as-is and the next run picks up the review.`
+              : `Request budget nearly spent — not starting the Builder, which could not be ` +
+                  `reviewed or merged on what remains. Leaving #${addressedIssue} for the next run.`
           );
           break;
         }
