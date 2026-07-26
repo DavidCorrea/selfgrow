@@ -439,117 +439,113 @@
     <p>selfgrow — a self-growing functional language. Examples are tests. No build step.</p>
   </footer>
 
-import { run } from './lang/run.js';
-import { capabilitiesPromise } from './lang/capabilities/index.js';
+  <script type="module">
+    import { run, capabilityMeta } from './lang/run.js';
 
-// Wait for capabilities to load
-await capabilitiesPromise;
+    const editor = document.getElementById('editor');
+    const output = document.getElementById('output');
+    const runBtn = document.getElementById('runBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const runStatus = document.getElementById('runStatus');
+    const capabilityList = document.getElementById('capabilityList');
 
-// Now capabilityMeta should be populated
-import { capabilityMeta } from './lang/run.js';
+    function announce(message) {
+      runStatus.textContent = message;
+    }
 
-const editor = document.getElementById('editor');
-const output = document.getElementById('output');
-const runBtn = document.getElementById('runBtn');
-const clearBtn = document.getElementById('clearBtn');
-const runStatus = document.getElementById('runStatus');
-const capabilityList = document.getElementById('capabilityList');
+    function setOutput(text, isError = false) {
+      output.textContent = text;
+      output.className = isError ? 'output-error' : 'output-value';
+    }
 
-function announce(message) {
-  runStatus.textContent = message;
-}
+    function clear() {
+      editor.value = '';
+      output.textContent = '';
+      output.className = '';
+      editor.focus();
+      announce('Cleared');
+    }
 
-function setOutput(text, isError = false) {
-  output.textContent = text;
-  output.className = isError ? 'output-error' : 'output-value';
-}
+    function handleRun() {
+      const source = editor.value.trim();
+      if (!source) {
+        announce('Empty program');
+        setOutput('', false);
+        return;
+      }
+      runBtn.disabled = true;
+      try {
+        const result = run(source);
+        const resultText = result === undefined ? '' : String(result);
+        setOutput(resultText, false);
+        announce(resultText || '(no output)');
+      } catch (err) {
+        const message = err.message || String(err);
+        setOutput(`Error: ${message}`, true);
+        announce(`Error: ${message}`);
+      } finally {
+        runBtn.disabled = false;
+      }
+    }
 
-function clear() {
-  editor.value = '';
-  output.textContent = '';
-  output.className = '';
-  editor.focus();
-  announce('Cleared');
-}
+    // --- Dynamically render capability reference from module metadata ---
 
-function handleRun() {
-  const source = editor.value.trim();
-  if (!source) {
-    announce('Empty program');
-    setOutput('', false);
-    return;
-  }
-  runBtn.disabled = true;
-  try {
-    const result = run(source);
-    const resultText = result === undefined ? '' : String(result);
-    setOutput(resultText, false);
-    announce(resultText || '(no output)');
-  } catch (err) {
-    const message = err.message || String(err);
-    setOutput(`Error: ${message}`, true);
-    announce(`Error: ${message}`);
-  } finally {
-    runBtn.disabled = false;
-  }
-}
-
-// Dynamically render capability reference from module metadata
-function renderCapabilities() {
-  capabilityList.innerHTML = capabilityMeta
-    .map((cap) => {
-      const examplesHtml = cap.examples
-        .map((ex) => {
-          return `<div class="example">
-            <code class="example-source">${escapeHtml(ex.source)}</code>
-            <span class="example-arrow" aria-hidden="true">→</span>
-            <span class="example-result">${escapeHtml(String(ex.result))}</span>
+    function renderCapabilities() {
+      capabilityList.innerHTML = capabilityMeta
+        .map((cap) => {
+          const examplesHtml = cap.examples
+            .map((ex) => {
+              return `<div class="example">
+                <code class="example-source">${escapeHtml(ex.source)}</code>
+                <span class="example-arrow" aria-hidden="true">→</span>
+                <span class="example-result">${escapeHtml(String(ex.result))}</span>
+              </div>`;
+            })
+            .join('');
+          return `<div class="capability-item" role="listitem">
+            <div class="capability-name">${escapeHtml(cap.name)}</div>
+            <div class="capability-summary">${escapeHtml(cap.summary)}</div>
+            ${examplesHtml ? `<div class="capability-examples">${examplesHtml}</div>` : ''}
           </div>`;
         })
         .join('');
-      return `<div class="capability-item" role="listitem">
-        <div class="capability-name">${escapeHtml(cap.name)}</div>
-        <div class="capability-summary">${escapeHtml(cap.summary)}</div>
-        ${examplesHtml ? `<div class="capability-examples">${examplesHtml}</div>` : ''}
-      </div>`;
-    })
-    .join('');
-}
+    }
 
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
 
-renderCapabilities();
+    renderCapabilities();
 
-clearBtn.addEventListener('click', clear);
-runBtn.addEventListener('click', handleRun);
+    clearBtn.addEventListener('click', clear);
+    runBtn.addEventListener('click', handleRun);
 
-// Keyboard shortcuts
-editor.addEventListener('keydown', (e) => {
-  // Tab for indentation
-  if (e.key === 'Tab') {
-    e.preventDefault();
-    const start = editor.selectionStart;
-    const end = editor.selectionEnd;
-    editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(end);
-    editor.selectionStart = editor.selectionEnd = start + 2;
-    return;
-  }
-  // Enter to run, Shift+Enter for newline
-  if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
-    e.preventDefault();
-    handleRun();
-    return;
-  }
-  // Escape to clear output
-  if (e.key === 'Escape') {
-    e.preventDefault();
-    clear();
-    return;
-  }
-});
+    // Keyboard shortcuts
+    editor.addEventListener('keydown', (e) => {
+      // Tab for indentation
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const start = editor.selectionStart;
+        const end = editor.selectionEnd;
+        editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(end);
+        editor.selectionStart = editor.selectionEnd = start + 2;
+        return;
+      }
+      // Enter to run, Shift+Enter for newline
+      if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        handleRun();
+        return;
+      }
+      // Escape to clear output
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        clear();
+        return;
+      }
+    });
+  </script>
 </body>
 </html>

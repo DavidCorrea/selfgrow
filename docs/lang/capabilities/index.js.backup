@@ -1,0 +1,11 @@
+/**
+ * Barrel file — imports all capability modules so the registry can discover them.
+ * Adding a new .js file to this directory requires an import here.
+ */
+import { meta as arithmeticMeta, register as registerArithmetic, checkProperties as checkArithmetic } from './arithmetic.js';
+
+export const capabilities = [
+  { meta: arithmeticMeta, register: registerArithmetic, checkProperties: checkArithmetic },
+];
+
+export default capabilities;

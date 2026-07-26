@@ -1,0 +1,28 @@
+/**
+ * Registry — discovers and registers all capability modules.
+ * Waits for the dynamic loader to fetch all capability modules.
+ */
+import { createInterpreter } from './interpreter.js';
+import capabilitiesPromise from './capabilities/index.js';
+
+export const interpreter = createInterpreter();
+
+export const capabilityMeta = [];
+
+// Wait for capabilities to load, then register them
+capabilitiesPromise.then((capabilities) => {
+  for (const cap of capabilities) {
+    cap.register(interpreter);
+    capabilityMeta.push(cap.meta);
+  }
+}).catch((err) => {
+  console.error('Failed to load capabilities:', err);
+});
+
+/**
+ * Run a selfgrow program using the registered interpreter.
+ * Capability functions are available as identifiers during evaluation.
+ */
+export function run(source) {
+  return interpreter.run(source);
+}
