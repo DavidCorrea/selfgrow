@@ -2,10 +2,21 @@
  * Runtime core for the selfgrow language.
  * Parses source into an AST, evaluates it, and returns the printed result.
  * Uses a step counter to detect and terminate infinite loops.
- * Throws user-facing error messages (not stack traces) for all errors.
+ * Throws SelfgrowError subclasses (ParseError, TypeError, RuntimeError, TimeoutError)
+ * so the playground can render helpful, structured error messages.
  */
+import { SelfgrowError, ParseError, TypeError, RuntimeError, TimeoutError } from './errors.js';
 
 const MAX_STEPS = 100000;
+
+// --- Location helper ---
+
+function getLocation(source, offset) {
+  const lines = source.slice(0, offset).split('\n');
+  const line = lines.length;
+  const column = lines[lines.length - 1].length + 1;
+  return { line, column, offset };
+}
 
 // --- Token types ---
 const TT = {
@@ -91,7 +102,10 @@ function tokenize(source) {
         }
         pos++;
       }
-      if (pos >= source.length) throw new Error('Unterminated string');
+      if (pos >= source.length) {
+        const loc = getLocation(source, pos);
+        throw new ParseError('Unterminated string', 'a closing quote', 'end of input', loc);
+      }
       pos++; // skip closing quote
       tokens.push({ type: TT.STRING, value: str, start: pos - str.length - 2 });
       continue;
@@ -132,7 +146,13 @@ function tokenize(source) {
       continue;
     }
 
-    throw new Error(`Unexpected character '${ch}' at position ${pos}`);
+    const loc = getLocation(source, pos);
+    throw new ParseError(
+      `Unexpected character '${ch}'`,
+      'a valid character',
+      `'${ch}'`,
+      loc
+    );
   }
 
   tokens.push({ type: TT.EOF, value: '', start: pos });
@@ -142,8 +162,9 @@ function tokenize(source) {
 // --- Parser ---
 
 class Parser {
-  constructor(tokens) {
+  constructor(tokens, source) {
     this.tokens = tokens;
+    this.source = source;
     this.pos = 0;
   }
 
@@ -160,7 +181,13 @@ class Parser {
     if (token.type !== type || (value !== undefined && token.value !== value)) {
       const got = token.type === TT.EOF ? 'end of input' : `'${token.value}'`;
       const expected = value !== undefined ? `'${value}'` : type;
-      throw new Error(`Expected ${expected} but got ${got} at position ${token.start}`);
+      const loc = getLocation(this.source, token.start);
+      throw new ParseError(
+        `Expected ${expected}, found ${got}`,
+        expected,
+        got,
+        loc
+      );
     }
     return token;
   }
@@ -408,7 +435,13 @@ class Parser {
       return { type: 'Identifier', name: token.value };
     }
 
-    throw new Error(`Unexpected token '${token.value}' at position ${token.start}`);
+    const loc = getLocation(this.source, token.start);
+    throw new ParseError(
+      `Unexpected token '${token.value}'`,
+      'an operand',
+      token.type === TT.EOF ? 'end of input' : `'${token.value}'`,
+      loc
+    );
   }
 
   parseArgList() {
@@ -453,19 +486,12 @@ class Parser {
 
 function parse(source) {
   const tokens = tokenize(source);
-  const parser = new Parser(tokens);
+  const parser = new Parser(tokens, source);
   const ast = parser.parseProgram();
   return ast;
 }
 
 // --- Evaluator ---
-
-class EvalError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = 'EvalError';
-  }
-}
 
 // Built-in functions available in every evaluation environment
 const BUILTINS = {
@@ -502,7 +528,12 @@ function evaluate(ast, env, steps) {
   // Step counter — abort if we exceed the limit
   steps.count++;
   if (steps.count > MAX_STEPS) {
-    throw new EvalError('Program did not finish — the evaluation exceeded the maximum step count, which usually means an infinite loop.');
+    throw new TimeoutError(
+      'Program did not finish — the evaluation exceeded the maximum step count, which usually means an infinite loop.',
+      'program completion',
+      'step limit exceeded',
+      null
+    );
   }
 
   switch (ast.type) {
@@ -536,7 +567,12 @@ function evaluate(ast, env, steps) {
 
     case 'Identifier': {
       if (ast.name in env) return env[ast.name];
-      throw new EvalError(`Unknown identifier: ${ast.name}`);
+      throw new RuntimeError(
+        `Unknown identifier: ${ast.name}`,
+        'a defined identifier',
+        `undefined identifier '${ast.name}'`,
+        null
+      );
     }
 
     case 'Let': {
@@ -587,7 +623,12 @@ function evaluate(ast, env, steps) {
       // User-defined closures
       if (callee && callee.__closure) {
         if (callee.params.length !== args.length) {
-          throw new EvalError(`Function ${describeCallee(ast.callee)} expects ${callee.params.length} arguments but got ${args.length}`);
+          throw new TypeError(
+            `Function ${describeCallee(ast.callee)} expects ${callee.params.length} arguments but got ${args.length}`,
+            `${callee.params.length} arguments`,
+            `${args.length} arguments`,
+            null
+          );
         }
         const closureEnv = { ...callee.env };
         callee.params.forEach((param, i) => {
@@ -600,7 +641,12 @@ function evaluate(ast, env, steps) {
         return result && result.__value !== undefined ? result.__value : result;
       }
 
-      throw new EvalError(`${describeCallee(ast.callee)} is not a function`);
+      throw new TypeError(
+        `${describeCallee(ast.callee)} is not a function`,
+        'a function',
+        describeValue(callee),
+        null
+      );
     }
 
     case 'BinOp': {
@@ -612,7 +658,7 @@ function evaluate(ast, env, steps) {
         case '-': return left - right;
         case '*': return left * right;
         case '/':
-          if (right === 0) throw new EvalError('Division by zero');
+          if (right === 0) throw new RuntimeError('Division by zero', 'a non-zero divisor', '0', null);
           return left / right;
         case '==': return left === right;
         case '!=': return left !== right;
@@ -622,7 +668,7 @@ function evaluate(ast, env, steps) {
         case '>=': return left >= right;
         case 'and': return left && right;
         case 'or': return left || right;
-        default: throw new EvalError(`Unknown operator: ${ast.op}`);
+        default: throw new TypeError(`Unknown operator: ${ast.op}`, 'a valid operator', `'${ast.op}'`, null);
       }
     }
 
@@ -631,7 +677,7 @@ function evaluate(ast, env, steps) {
       switch (ast.op) {
         case '-': return -operand;
         case 'not': return !operand;
-        default: throw new EvalError(`Unknown unary operator: ${ast.op}`);
+        default: throw new TypeError(`Unknown unary operator: ${ast.op}`, 'a valid unary operator', `'${ast.op}'`, null);
       }
     }
 
@@ -656,13 +702,22 @@ function evaluate(ast, env, steps) {
     }
 
     default:
-      throw new EvalError(`Unknown AST node type: ${ast.type}`);
+      throw new RuntimeError(`Unknown AST node type: ${ast.type}`, 'a valid AST node type', `'${ast.type}'`, null);
   }
 }
 
 function describeCallee(callee) {
   if (callee.type === 'Identifier') return callee.name;
   return 'expression';
+}
+
+function describeValue(value) {
+  if (value === null || value === undefined) return 'null';
+  if (typeof value === 'string') return `'${value}'`;
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value === 'number') return String(value);
+  if (value && value.__closure) return 'a closure';
+  return typeof value;
 }
 
 // --- Pretty-printer ---
@@ -678,8 +733,8 @@ function prettyPrint(value) {
 
 /**
  * Run a selfgrow program and return its printed result as a string.
- * Throws a user-facing error message for syntax errors, unknown identifiers,
- * infinite loops, or runtime errors — never a stack trace.
+ * Throws SelfgrowError subclasses (ParseError, TypeError, RuntimeError, TimeoutError)
+ * for recoverable errors — never a generic Error or stack trace.
  */
 export function run(source) {
   try {
@@ -689,9 +744,14 @@ export function run(source) {
     const result = evaluate(ast, env, steps);
     return prettyPrint(result);
   } catch (err) {
-    if (err instanceof EvalError) {
-      throw new Error(err.message);
+    if (err instanceof SelfgrowError) {
+      throw err;
     }
-    throw new Error(err.message || String(err));
+    throw new RuntimeError(
+      err.message || String(err),
+      null,
+      null,
+      null
+    );
   }
 }
