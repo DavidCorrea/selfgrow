@@ -443,7 +443,7 @@
   </footer>
 
   <script type="module">
-    import { run } from './lang/run.js';
+
 
     const editor = document.getElementById('editor');
     const output = document.getElementById('output');
@@ -505,6 +505,8 @@
             reject(errData);
           }
           pendingRequests.clear();
+          worker.terminate();
+          worker = null;
         });
       }
       return worker;
