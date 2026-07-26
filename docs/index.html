@@ -442,21 +442,14 @@
     <p>selfgrow — a self-growing functional language. Examples are tests. No build step.</p>
   </footer>
 
-  <script>
-    // Placeholder for language runtime - to be implemented in #147
+  <script type="module">
+    import { run } from './lang/run.js';
+
     const editor = document.getElementById('editor');
     const output = document.getElementById('output');
     const runBtn = document.getElementById('runBtn');
     const clearBtn = document.getElementById('clearBtn');
     const runStatus = document.getElementById('runStatus');
-
-    // Runtime-agnostic run function — will be replaced by actual runtime in #147
-    let run = (source) => {
-      throw new Error('Language runtime not yet implemented');
-    };
-
-    // Expose for runtime to override
-    window.__selfgrowSetRun = (fn) => { run = fn; };
 
     function announce(message) {
       runStatus.textContent = message;
