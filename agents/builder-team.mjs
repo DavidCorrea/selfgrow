@@ -58,10 +58,10 @@ const MAX_TICKET_ATTEMPTS = Number(process.env.MAX_TICKET_ATTEMPTS || 2);
 
 // Requests held back for the steps AFTER the Builder — Reviewer, and a possible
 // address-feedback pass — so a completed build always gets the chance to become a
-// merge. Sized from real sessions rather than a guess: a Reviewer runs a few turns
-// to tens, and on #149 a single Builder took 66. Too small a reserve and the run
-// throws away finished work; too large and it never starts anything.
-const BUILD_TAIL_RESERVE = Number(process.env.BUILD_TAIL_RESERVE || 80);
+// merge. Too small and the run throws away finished work, as it did on #149; too
+// large and it never starts anything. Sized from merged tickets, where a Reviewer
+// ran 7-9 turns, so 40 covers the tail several times over against a 150 budget.
+const BUILD_TAIL_RESERVE = Number(process.env.BUILD_TAIL_RESERVE || 40);
 
 // Drain several tickets per run (better runner utilization — one npm ci +
 // Playwright install amortized over multiple builds) up to a wall-clock budget,

@@ -4,14 +4,13 @@ on:
   # Once a day, just after 00:00 UTC — when OpenRouter's free-model cap resets, so
   # the tick runs on a full allowance.
   #
-  # The frequency is set by the DAY'S BUDGET, not by how often we'd like to build.
-  # A ticket costs 250-400 real requests (measured, not estimated: see
-  # MODEL_REQUEST_BUDGET below), and the account gets 1000/day — so the day affords
-  # about TWO tickets, which is exactly what one tick with two slots builds. A
-  # second tick cannot add throughput once requests are the binding constraint; it
-  # would only fail later on an emptied allowance, which is how #149 died.
-  # A tick with nothing buildable is still free: the plan job is pure gh API and
-  # build-ticket is skipped when count is 0.
+  # One tick is enough because a tick now QUEUES four tickets and builds them one
+  # after another (see max-parallel below), and a merged ticket measured 33-50 real
+  # requests — so a single run's realistic draw is ~160 against a 1000/day cap.
+  # Requests stopped being the binding constraint once the head model was fixed;
+  # runner wall-clock is, which is why the queue lives inside one run rather than
+  # across more ticks. A tick with nothing buildable is still free: the plan job is
+  # pure gh API and build-ticket is skipped when count is 0.
   schedule:
     - cron: '5 0 * * *'
 
@@ -64,13 +63,13 @@ jobs:
         run: node agents/plan-build.mjs
         env:
           GH_TOKEN: ${{ secrets.AGENT_PAT }}
-          # Two slots. Every extra one is another branch that may touch the same
-          # file, and the per-slot request budget multiplies by this number. Was 3,
-          # dropped because free models also carry a 20 requests-per-MINUTE ceiling
-          # that the credit purchase does not lift — three slots each running an
-          # agentic loop burst past it, and a third slot cannot add throughput when
-          # the day's request budget is already the binding constraint.
-          PARALLEL_BUILDERS: '2'
+          # How many tickets this run QUEUES, not how many run at once — the matrix
+          # is capped at max-parallel 1 below, so these execute one after another.
+          # Four is affordable because a measured ticket is ~40 requests: 4 x 150
+          # (the per-slot ceiling) is 600 worst case, and realistically ~160.
+          # Same-file collisions are no longer a reason to keep this small, since
+          # sequential slots build on each other's merges rather than racing them.
+          PARALLEL_BUILDERS: '4'
 
   build-ticket:
     needs: plan
@@ -83,7 +82,19 @@ jobs:
       # One slot failing must not cancel its siblings: their work is unrelated by
       # construction, and a cancelled builder can leave a branch and an open PR.
       fail-fast: false
-      max-parallel: 2
+      # SEQUENTIAL, not parallel — the matrix is a queue here, not a fan-out.
+      #
+      # Tickets are logically independent but not independent ON DISK, and running
+      # them concurrently loses the race outright: #158 ("add a timeout guard to the
+      # runtime") created docs/lang/run.js, and #149 ("implement the runtime core in
+      # docs/lang/run.js") then died on unresolved merge conflicts after building
+      # cleanly — its whole session discarded, and a strike against the ticket.
+      #
+      # At 1 each slot checks out AFTER the previous one merged, so it builds on
+      # what shipped instead of racing it. Throughput barely suffers: a measured
+      # ticket costs ~40 requests and ~2 minutes of model time, so the day's cap
+      # affords far more sequential tickets than the runner has hours to burst.
+      max-parallel: 1
       matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
     name: build #${{ matrix.ticket }}
     steps:
@@ -119,18 +130,17 @@ jobs:
           # ~16x: a "250" slot authorised several thousand requests and the whole
           # 1000/day account fell over while the counter read 62.
           #
-          # 160 was an estimate built on ~16 turns per session and it was wrong.
-          # Measured on #149: sessions ran 101, 5, 38, 2 and 66 turns, and the
-          # ticket had spent 212 requests before the Reviewer even started — so the
-          # budget ran out mid-ticket and the finished build was discarded. 400
-          # covers a real ticket including a retry, with BUILD_TAIL_RESERVE keeping
-          # the Reviewer affordable.
+          # Sized from tickets that actually MERGED, which is the only measurement
+          # worth trusting here. Two of them, both on ling-3.0-flash: #158 shipped
+          # in 33 requests across 4 sessions, #149 built and reviewed in 50 across
+          # 5. Earlier figures (150, then 400) were taken from runs on the old head
+          # model, which spent ~85% of every ticket on sessions it then discarded —
+          # measuring the waste, not the work.
           #
-          # The day's arithmetic: 1 tick x 2 slots x 400 = 800, plus the Product
-          # Manager (100), against 1000. That is TWO tickets a day, which is what
-          # 1000 requests actually buys at this cost per ticket — the earlier
-          # "6-8 tickets" figure assumed sessions an order of magnitude cheaper
-          # than they measured.
+          # 150 is ~3x a real ticket, which absorbs a retry and a merge-conflict
+          # pass without letting one pathological session eat the queue behind it.
+          # The day: 4 queued tickets x 150 = 600 worst case, ~160 expected, plus
+          # the Product Manager (100), against 1000.
           #
           # Enforced in three places: runAgent refuses to start a session once the
           # budget is spent, the build->review loop refuses to START a Builder it
@@ -138,7 +148,7 @@ jobs:
           # when the remainder is thin. The middle one is the important one — it is
           # what stops a run from spending everything on a build and then throwing
           # it away for want of a Reviewer.
-          MODEL_REQUEST_BUDGET: '400'
+          MODEL_REQUEST_BUDGET: '150'
           # Wall-clock backstop for a slot that stalls rather than spends. Only
           # gates BETWEEN tickets, so in slot mode (one ticket) it never fires —
           # the request budget above is the real limit and the job's timeout is
