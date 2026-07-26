@@ -443,7 +443,7 @@
   </footer>
 
   <script type="module">
-    import { run } from './lang/run.js';
+
 
     const editor = document.getElementById('editor');
     const output = document.getElementById('output');
@@ -474,27 +474,100 @@
       announce('Cleared');
     }
 
-    async function handleRun() {
+    // --- Worker-based execution ---
+
+    let worker = null;
+    const pendingRequests = new Map();
+    let requestId = 0;
+
+    function getWorker() {
+      if (!worker) {
+        worker = new Worker(new URL('./lang/worker.js', import.meta.url), { type: 'module' });
+        worker.addEventListener('message', (event) => {
+          const { id, result, error } = event.data;
+          const { resolve, reject } = pendingRequests.get(id) || {};
+          pendingRequests.delete(id);
+          if (error) {
+            reject(error);
+          } else {
+            resolve(result);
+          }
+        });
+        worker.addEventListener('error', (event) => {
+          const errData = {
+            type: 'RuntimeError',
+            message: event.message || 'Worker error',
+            expected: null,
+            found: null,
+            location: null,
+          };
+          for (const [, { reject }] of pendingRequests) {
+            reject(errData);
+          }
+          pendingRequests.clear();
+          worker.terminate();
+          worker = null;
+        });
+      }
+      return worker;
+    }
+
+    function handleRun() {
       const source = editor.value.trim();
       if (!source) {
         announce('Empty program');
         setOutput('', false);
         return;
       }
+      runBtn.disabled = true;
+      const id = requestId++;
+      const promise = new Promise((resolve, reject) => {
+        pendingRequests.set(id, { resolve, reject });
+      });
+      getWorker().postMessage({ source, id });
+      promise
+        .then((result) => {
+          const resultText = result === undefined ? '' : String(result);
+          setOutput(resultText, false);
+          announce(resultText || '(no output)');
+        })
+        .catch((errData) => {
+          const formatted = formatError(errData);
+          setOutput(formatted, true);
+          announce(`Error: ${errData.message || String(errData)}`);
+          highlightErrorLocation(errData);
+        })
+        .finally(() => {
+          runBtn.disabled = false;
+        });
+    }
+
+    function formatError(errData) {
+      const type = errData.type || 'Error';
+      const message = errData.message || 'Unknown error';
+      let formatted = `${type}: ${message}`;
+      if (errData.expected && errData.found) {
+        formatted += `\n  Expected: ${errData.expected}\n  Found: ${errData.found}`;
+      }
+      if (errData.location) {
+        const { line, column, offset } = errData.location;
+        formatted += `\n  at line ${line}, column ${column} (offset ${offset})`;
+      }
+      return formatted;
+    }
+
+    function highlightErrorLocation(errData) {
+      if (!errData.location || typeof errData.location.offset !== 'number') {
+        return;
+      }
+      const offset = errData.location.offset;
+      const totalLength = editor.value.length;
+      if (offset < 0 || offset > totalLength) return;
+      editor.focus();
       try {
-        runBtn.disabled = true;
-        const result = run(source);
-        // Support both sync and async run functions
-        const resolved = result instanceof Promise ? await result : result;
-        const resultText = resolved === undefined ? '' : String(resolved);
-        setOutput(resultText, false);
-        announce(resultText || '(no output)');
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        setOutput(msg, true);
-        announce(`Error: ${msg}`);
-      } finally {
-        runBtn.disabled = false;
+        editor.setSelectionRange(offset, offset);
+      } catch (_) {
+        // setSelectionRange can throw in some edge cases; gracefully ignore
       }
     }
 
