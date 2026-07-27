@@ -444,6 +444,8 @@
 
   <script type="module">
 
+    import { run } from './lang/run.js';
+    import { registry } from './lang/interpreter.js';
 
     const editor = document.getElementById('editor');
     const output = document.getElementById('output');
@@ -598,6 +600,102 @@
         return;
       }
     });
+
+    // --- Reference section rendering ---
+
+    function renderReference() {
+      const list = document.getElementById('capabilityList');
+      if (!list) return;
+      const placeholder = list.parentElement.querySelector('p');
+      if (placeholder) placeholder.style.display = 'none';
+      list.innerHTML = '';
+
+      for (const [, cap] of registry.entries()) {
+        if (!cap.meta) continue;
+
+        const item = document.createElement('div');
+        item.className = 'capability-item';
+        item.setAttribute('role', 'listitem');
+
+        const nameEl = document.createElement('h3');
+        nameEl.className = 'capability-name';
+        nameEl.textContent = cap.meta.name;
+        item.appendChild(nameEl);
+
+        const summaryEl = document.createElement('p');
+        summaryEl.className = 'capability-summary';
+        summaryEl.textContent = cap.meta.summary;
+        item.appendChild(summaryEl);
+
+        if (cap.meta.examples && cap.meta.examples.length > 0) {
+          const examplesEl = document.createElement('div');
+          examplesEl.className = 'capability-examples';
+          examplesEl.setAttribute('role', 'list');
+          examplesEl.setAttribute('aria-label', `Examples for ${cap.meta.name}`);
+
+          cap.meta.examples.forEach((example) => {
+            const exampleEl = document.createElement('div');
+            exampleEl.className = 'example';
+            exampleEl.setAttribute('role', 'listitem');
+
+            const sourceEl = document.createElement('code');
+            sourceEl.className = 'example-source';
+            sourceEl.textContent = example.source;
+            exampleEl.appendChild(sourceEl);
+
+            const arrowEl = document.createElement('span');
+            arrowEl.className = 'example-arrow';
+            arrowEl.textContent = '\u2192';
+            arrowEl.setAttribute('aria-hidden', 'true');
+            exampleEl.appendChild(arrowEl);
+
+            const expectedEl = document.createElement('span');
+            expectedEl.className = 'example-result';
+            expectedEl.textContent = example.result;
+            exampleEl.appendChild(expectedEl);
+
+            const runBtn = document.createElement('button');
+            runBtn.type = 'button';
+            runBtn.textContent = 'Run';
+            runBtn.setAttribute('aria-label', `Run example: ${example.source}`);
+
+            const runResult = document.createElement('span');
+            runResult.className = 'example-result';
+            runResult.style.marginLeft = '0.5rem';
+            runResult.setAttribute('aria-live', 'polite');
+
+            runBtn.addEventListener('click', () => {
+              runBtn.disabled = true;
+              try {
+                const actual = run(example.source);
+                if (actual === example.result) {
+                  runResult.textContent = `\u2713 ${actual}`;
+                  runResult.style.color = '';
+                } else {
+                  runResult.textContent = `\u2717 expected "${example.result}", got "${actual}"`;
+                  runResult.style.color = 'var(--error)';
+                }
+              } catch (err) {
+                runResult.textContent = `\u2717 Error: ${err.message || String(err)}`;
+                runResult.style.color = 'var(--error)';
+              } finally {
+                runBtn.disabled = false;
+              }
+            });
+
+            exampleEl.appendChild(runBtn);
+            exampleEl.appendChild(runResult);
+            examplesEl.appendChild(exampleEl);
+          });
+
+          item.appendChild(examplesEl);
+        }
+
+        list.appendChild(item);
+      }
+    }
+
+    renderReference();
   </script>
 </body>
 </html>

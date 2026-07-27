@@ -28,7 +28,7 @@ function registerPrint(interpreter) {
   });
 }
 
-registry.set(meta.name, { name: meta.name, registerFn: registerPrint });
+registry.set(meta.name, { meta, registerFn: registerPrint });
 
 export function checkProperties(run) {
   const failures = [];
