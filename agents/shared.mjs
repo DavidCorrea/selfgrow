@@ -1512,6 +1512,67 @@ export function isBuildable(issue, openNumbers) {
   return !isBlocked(issue) && unmetDependencies(issue, openNumbers).length === 0;
 }
 
+const PRIORITY_RANK = {
+  [PRIORITY_LABELS.high]: 0,
+  [PRIORITY_LABELS.medium]: 1,
+  [PRIORITY_LABELS.low]: 2,
+};
+
+/** A ticket's own priority as a sortable rank; unlabelled sorts last. */
+export function priorityRank(issue) {
+  const names = (issue.labels || []).map((l) => l.name || l);
+  for (const [label, rank] of Object.entries(PRIORITY_RANK)) {
+    if (names.includes(label)) return rank;
+  }
+  return 3;
+}
+
+/**
+ * The rank a ticket should be BUILT at: the best priority among itself and
+ * everything that transitively waits on it.
+ *
+ * A blocker is worth exactly what it unblocks. #170 is priority:low but gates
+ * #171 -> #172 -> #173, all priority:high, so on its own label it sorts behind
+ * every trivial ticket on the board — and the three tickets that actually matter
+ * stay unreachable while the pipeline ships peripheral work. Rank it as high and
+ * the chain starts moving.
+ *
+ * Deliberately does NOT relabel the ticket. The label is what a human said this
+ * work is worth; this is only the order to do it in, and conflating the two would
+ * quietly rewrite the roadmap on the board.
+ */
+export function effectivePriorityRank(issue, openIssues) {
+  let best = priorityRank(issue);
+  const seen = new Set([issue.number]);
+  let frontier = new Set([issue.number]);
+  // Widen a level at a time: dependents of the ticket, then their dependents.
+  // Cycles are possible in hand-written "Blocked by:" lines, so `seen` guards
+  // termination rather than assuming the graph is acyclic.
+  while (frontier.size && best > 0) {
+    const next = new Set();
+    for (const candidate of openIssues) {
+      if (seen.has(candidate.number)) continue;
+      if (!dependencyNumbers(candidate).some((dep) => frontier.has(dep))) continue;
+      seen.add(candidate.number);
+      best = Math.min(best, priorityRank(candidate));
+      next.add(candidate.number);
+    }
+    frontier = next;
+  }
+  return best;
+}
+
+/** Open tickets that transitively wait on this one, best priority first. */
+export function dependentsOf(issue, openIssues) {
+  return openIssues
+    .filter(
+      (other) =>
+        other.number !== issue.number &&
+        dependencyNumbers(other).includes(issue.number)
+    )
+    .sort((a, b) => priorityRank(a) - priorityRank(b));
+}
+
 /** The `Blocked by:` line for an issue body, or "" when there are no deps. */
 export function dependencyLine(numbers) {
   const deps = (numbers || []).filter((n) => Number.isInteger(n) && n > 0);

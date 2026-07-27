@@ -34,7 +34,8 @@ import {
   getDailySpend,
   isLedgerActive,
   DAILY_REQUEST_CAP,
-  PRIORITY_LABELS,
+  priorityRank,
+  effectivePriorityRank,
 } from "./shared.mjs";
 
 // Most tickets one run will attempt, one after another. A ceiling on the queue,
@@ -55,20 +56,6 @@ const BUILDER_DAY_BUDGET = Number(process.env.BUILDER_DAY_BUDGET || 600);
 // more). Used to size the queue, not to ration it: a run given fewer requests than
 // this would spend everything it has and throw the half-built work away.
 const MIN_TICKET_BUDGET = Number(process.env.MIN_TICKET_BUDGET || 100);
-
-const PRIORITY_RANK = {
-  [PRIORITY_LABELS.high]: 0,
-  [PRIORITY_LABELS.medium]: 1,
-  [PRIORITY_LABELS.low]: 2,
-};
-
-function priorityRank(issue) {
-  const names = (issue.labels || []).map((l) => l.name || l);
-  for (const [label, rank] of Object.entries(PRIORITY_RANK)) {
-    if (names.includes(label)) return rank;
-  }
-  return 3; // unlabelled sorts last
-}
 
 function writeOutput({ count = 0, queue = 0, budget = 0 } = {}) {
   const out = process.env.GITHUB_OUTPUT;
@@ -112,8 +99,12 @@ function main() {
   // while a skip-link fix shipped ahead of it. Perpetual failures are already
   // handled properly by parking at MAX_TICKET_ATTEMPTS; they don't need a second
   // mechanism that quietly reorders the roadmap.
+  // Ranked by what each ticket UNBLOCKS, not only by its own label — a blocker is
+  // worth what waits on it. See effectivePriorityRank.
   const ordered = [...buildable].sort(
-    (a, b) => priorityRank(a) - priorityRank(b) || a.number - b.number
+    (a, b) =>
+      effectivePriorityRank(a, open) - effectivePriorityRank(b, open) ||
+      a.number - b.number
   );
 
   // What the day has actually got left, not what the Builder is nominally allowed.
@@ -162,7 +153,13 @@ function main() {
   // for first — but it re-reads the board between tickets, so both what comes
   // second and how many there are can legitimately change mid-run.
   for (const issue of ordered.slice(0, queue)) {
-    log("info", `  #${issue.number} ${issue.title}`);
+    // Say when a ticket is being built above its own label, and why. A low ticket
+    // sorting first otherwise looks like the ordering is broken.
+    const lifted =
+      effectivePriorityRank(issue, open) < priorityRank(issue)
+        ? " (lifted — it unblocks higher-priority work)"
+        : "";
+    log("info", `  #${issue.number} ${issue.title}${lifted}`);
   }
   if (ordered.length > queue) {
     log("info", `${ordered.length - queue} more buildable ticket(s) left for the next run.`);

@@ -18,6 +18,8 @@ import {
   recordTicketFailure,
   isBlocked,
   isBuildable,
+  dependentsOf,
+  effectivePriorityRank,
   isRequestBudgetLow,
   isDailyQuotaExhausted,
   unmetDependencies,
@@ -100,7 +102,7 @@ ${lessons}`;
 }
 
 function buildScoutPrompt(feedback, openIssues, vision) {
-  const issuesSection = `Pick exactly ONE of the open tickets below to work on, and plan its implementation. Choose by priority: a \`priority:high\` label beats \`priority:medium\` beats \`priority:low\` beats unlabeled; break ties by what most moves the project forward. Do NOT invent work outside these tickets.
+  const issuesSection = `Pick exactly ONE of the open tickets below to work on, and plan its implementation. The list is already in the order we want them built — prefer the first unless it is genuinely unworkable. Choose by priority: a \`priority:high\` label beats \`priority:medium\` beats \`priority:low\` beats unlabeled, EXCEPT that a ticket with an \`unblocks\` field counts as the highest priority among the tickets it unblocks — a blocker is worth what waits on it. Break ties by what most moves the project forward. Do NOT invent work outside these tickets.
 
 ## Open Tickets (each includes its labels — priority is one of them)
 ${JSON.stringify(openIssues, null, 2)}`;
@@ -793,6 +795,31 @@ async function main() {
     const openNumbers = new Set(open.map((i) => i.number));
     const untried = open.filter((i) => !attempted.has(i.number));
     let candidates = untried.filter((i) => isBuildable(i, openNumbers));
+
+    // Rank by what each ticket unblocks, not only by its own label, and say so in
+    // the ticket itself. The Scout chooses from labels, so sorting alone would not
+    // move it: #170 is priority:low and gates a chain of three priority:high
+    // tickets, and on its label the Scout will reach past it every time.
+    candidates = [...candidates]
+      .map((issue) => {
+        const unblocks = dependentsOf(issue, open);
+        if (!unblocks.length) return issue;
+        return {
+          ...issue,
+          unblocks: unblocks.map((d) => ({
+            number: d.number,
+            title: d.title,
+            priority: (d.labels || [])
+              .map((l) => l.name || l)
+              .find((n) => n.startsWith("priority:")) || "unlabeled",
+          })),
+        };
+      })
+      .sort(
+        (a, b) =>
+          effectivePriorityRank(a, open) - effectivePriorityRank(b, open) ||
+          a.number - b.number
+      );
 
     // A parallel slot sees only its own ticket, so the Scout cannot wander onto
     // work a sibling slot is already building.
