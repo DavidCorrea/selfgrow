@@ -1,9 +1,10 @@
 /**
  * Runtime bootstrap for the selfgrow language.
  *
- * Dynamically imports all capability modules listed in the manifest,
- * so they self-register with the interpreter registry at module load time.
- * Then creates a fresh interpreter instance and runs the source program.
+ * Uses top-level await to eagerly import all capability modules listed
+ * in the manifest at module load time, so they self-register with the
+ * interpreter registry before run() is ever called. This makes run()
+ * synchronous — it just creates an interpreter and evaluates source.
  *
  * To add a new capability, add its entry to docs/capabilities/manifest.js.
  * No changes needed here.
@@ -13,23 +14,22 @@ import { entries } from '../capabilities/manifest.js';
 
 const capabilitiesBase = new URL('../capabilities/', import.meta.url);
 
+// Eagerly import all capability modules so their top-level registration
+// runs before this module's exports are available. Top-level await
+// blocks module evaluation until all imports resolve.
+await Promise.all(
+  entries.map(({ specifier }) => import(new URL(specifier, capabilitiesBase).href))
+);
+
 /**
  * Run a selfgrow program and return its printed result.
  *
- * Dynamically loads all registered capability modules so they
- * self-register with the interpreter, creates a fresh interpreter,
- * and evaluates the source.
+ * All capabilities are pre-loaded (and self-registered) during module
+ * import. Creates a fresh interpreter instance for each call.
  * @param {string} source
- * @returns {Promise<string>} The printed output of the program
+ * @returns {string} The printed output of the program
  */
-export async function run(source) {
-  // Import all capability modules so their top-level registration runs.
-  // Each module calls registry.set(...) at load time to register itself.
-  for (const { specifier } of entries) {
-    await import(new URL(specifier, capabilitiesBase).href);
-  }
-
+export function run(source) {
   const interpreter = createInterpreter();
   return interpreter.run(source);
 }
-
