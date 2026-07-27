@@ -70,9 +70,9 @@ function priorityRank(issue) {
   return 3; // unlabelled sorts last
 }
 
-function writeOutput({ count = 0, budget = 0 } = {}) {
+function writeOutput({ count = 0, queue = 0, budget = 0 } = {}) {
   const out = process.env.GITHUB_OUTPUT;
-  const payload = `count=${count}\nbudget=${budget}\n`;
+  const payload = `count=${count}\nqueue=${queue}\nbudget=${budget}\n`;
   if (out) fs.appendFileSync(out, payload);
   else console.log(payload.trim()); // local runs just print it
 }
@@ -143,24 +143,35 @@ function main() {
   // does NOT ration the run — the Builder spends the pool as the tickets in front
   // of it actually cost, and a cheap first ticket leaves more for the second. It
   // only decides where to stop asking for more work.
-  const count = Math.min(MAX_TICKETS, ordered.length, Math.floor(dayBudget / MIN_TICKET_BUDGET));
+  //
+  // Deliberately NOT capped at the number buildable RIGHT NOW. Shipping a ticket
+  // is what releases the tickets waiting on it, so the board grows during the run:
+  // #152 is the only buildable ticket as this is written, and merging it frees
+  // #153 and #168 immediately. Sizing the queue to a count taken before the first
+  // build would stop the run at one and leave two tickets it had just unblocked
+  // for tomorrow — which is precisely the frozen line-up the matrix imposed and
+  // this job exists to avoid.
+  const queue = Math.min(MAX_TICKETS, Math.floor(dayBudget / MIN_TICKET_BUDGET));
 
   log(
     "info",
-    `${ordered.length} buildable ticket(s), ${dayBudget} request(s) in the pool — ` +
-      `queueing ${count}, in priority order:`
+    `${ordered.length} buildable ticket(s) now, ${dayBudget} request(s) in the pool — ` +
+      `queue capped at ${queue}. Highest priority first:`
   );
   // The Builder re-picks by this same ordering, so these are what it should reach
-  // for — but it re-reads the board between tickets, so a merge that unblocks
-  // something can legitimately change what comes second.
-  for (const issue of ordered.slice(0, count)) {
+  // for first — but it re-reads the board between tickets, so both what comes
+  // second and how many there are can legitimately change mid-run.
+  for (const issue of ordered.slice(0, queue)) {
     log("info", `  #${issue.number} ${issue.title}`);
   }
-  if (ordered.length > count) {
-    log("info", `${ordered.length - count} more buildable ticket(s) left for the next run.`);
+  if (ordered.length > queue) {
+    log("info", `${ordered.length - queue} more buildable ticket(s) left for the next run.`);
   }
 
-  writeOutput({ count, budget: dayBudget });
+  // `count` only answers "is there anything to do at all", which is what gates the
+  // build job. `queue` is how far the run may go, and is deliberately the larger
+  // of the two whenever the board is expected to grow.
+  writeOutput({ count: ordered.length, queue, budget: dayBudget });
   printRunSummary("Plan build");
 }
 

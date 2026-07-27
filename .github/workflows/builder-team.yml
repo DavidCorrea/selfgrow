@@ -53,6 +53,7 @@ jobs:
     timeout-minutes: 10
     outputs:
       count: ${{ steps.plan.outputs.count }}
+      queue: ${{ steps.plan.outputs.queue }}
       budget: ${{ steps.plan.outputs.budget }}
     steps:
       - uses: actions/checkout@v4
@@ -165,10 +166,13 @@ jobs:
           # Above all of them sits the account's real limit — the shared daily
           # ledger in shared.mjs, which every job reads before it spends.
           MODEL_REQUEST_BUDGET: ${{ needs.plan.outputs.budget }}
-          # How many tickets to attempt, sized by the plan job against the day's
-          # remaining requests. Not a target — the run stops on whichever of the
-          # board, the pool, or the clock empties first.
-          MAX_TICKETS_PER_RUN: ${{ needs.plan.outputs.count }}
+          # How far the run may go, sized by the plan job against the day's
+          # remaining requests — NOT the number buildable when it looked. Merging a
+          # ticket releases the ones waiting on it, so the board grows mid-run, and
+          # a ceiling taken before the first build would leave freshly-unblocked
+          # work for tomorrow. Not a target either: the run stops on whichever of
+          # the board, the pool, or the clock empties first.
+          MAX_TICKETS_PER_RUN: ${{ needs.plan.outputs.queue }}
           # Wall-clock budget, checked between tickets, so the run stops cleanly
           # after a merge instead of being killed mid-ticket by the job timeout
           # (360) and leaving a branch and an open PR behind. It has to cover the
