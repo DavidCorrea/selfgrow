@@ -444,6 +444,10 @@
 
   <script type="module">
 
+    import { getAllMeta } from './lang/capabilities/registry.js';
+
+    // Import core capability so it self-registers before we populate the reference.
+    import './lang/capabilities/core.js';
 
     const editor = document.getElementById('editor');
     const output = document.getElementById('output');
@@ -598,6 +602,61 @@
         return;
       }
     });
+
+    // --- Capability reference rendering ---
+
+    /**
+     * Populate the #capabilityList element with metadata from
+     * the registry so the reference section reflects what
+     * the language actually supports.
+     */
+    function renderCapabilities() {
+      const list = document.getElementById('capabilityList');
+      const meta = getAllMeta();
+      if (meta.length === 0) {
+        list.innerHTML = '<p style="color: var(--fg-muted);">No capabilities registered.</p>';
+        return;
+      }
+      list.innerHTML = '';
+      for (const cap of meta) {
+        const item = document.createElement('div');
+        item.className = 'capability-item';
+        item.setAttribute('role', 'listitem');
+
+        const name = document.createElement('div');
+        name.className = 'capability-name';
+        name.textContent = cap.name;
+
+        const summary = document.createElement('div');
+        summary.className = 'capability-summary';
+        summary.textContent = cap.summary;
+
+        const examples = document.createElement('div');
+        examples.className = 'capability-examples';
+        for (const ex of cap.examples) {
+          const exEl = document.createElement('code');
+          exEl.className = 'example';
+          exEl.innerHTML =
+            '<span class="example-source">' + escapeHtml(ex.source) + '</span>' +
+            '<span class="example-arrow">&rarr;</span>' +
+            '<span class="example-result">' + escapeHtml(ex.result) + '</span>';
+          examples.appendChild(exEl);
+        }
+
+        item.appendChild(name);
+        item.appendChild(summary);
+        item.appendChild(examples);
+        list.appendChild(item);
+      }
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    renderCapabilities();
   </script>
 </body>
 </html>

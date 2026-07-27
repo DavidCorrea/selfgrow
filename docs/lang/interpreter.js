@@ -2,19 +2,21 @@
  * Interpreter core for the selfgrow language.
  *
  * The interpreter is extensible through capabilities that register
- * themselves at module load time via the global registry (a Map
- * keyed by capability name in this module).
+ * themselves at module load time via the capability registry
+ * (docs/lang/capabilities/registry.js).
  *
- * createInterpreter() returns an object with register(cap) and run(source) methods.
- * Capabilities register by calling interpreter.register({ name, registerFn }) at
- * module load time. When run() is called, it creates a fresh evaluation state,
- * loads all registered capabilities (calling their registerFn with the extensions
- * API), then evaluates source.
+ * createInterpreter() returns an object with functions (builtins map),
+ * register(cap), addBuiltin(name, fn), and run(source) methods.
+ * Capabilities register by calling interpreter.register(cap) where cap
+ * has meta, registerFn, and optional checkFn. registerFn receives the
+ * interpreter instance and can call interpreter.addBuiltin() to inject
+ * builtins into interpreter.functions.
  *
  * No capability names are hardcoded in the interpreter core — all builtins,
  * keywords, and evaluation rules come from registered capabilities.
  */
 import { SelfgrowError, ParseError, TypeError, RuntimeError, TimeoutError } from './errors.js';
+import { getAllCapabilities } from './capabilities/registry.js';
 
 const MAX_STEPS = 100000;
 
@@ -29,9 +31,6 @@ const TT = {
   PUNCTUATION: 'punctuation',
   EOF: 'eof',
 };
-
-// === Global capability registry (Map keyed by capability name) ===
-export const registry = new Map();
 
 // ============================================================
 // Tokenizer
@@ -463,29 +462,48 @@ function runProgram(source, keywords, builtins) {
 
 /**
  * Create a new interpreter instance.
- * All instances share the same global capability registry.
- * The returned interpreter has register(cap) and run(source) methods.
+ * All instances share the same global capability registry
+ * (docs/lang/capabilities/registry.js). The returned interpreter
+ * has functions (builtins map), register(cap), addBuiltin(name, fn),
+ * and run(source) methods.
+ *
+ * Capabilities register by calling interpreter.register(cap), which
+ * invokes cap.registerFn(interpreter). registerFn receives the interpreter
+ * instance and can call interpreter.addBuiltin(name, fn) to inject
+ * builtins into interpreter.functions.
  */
 export function createInterpreter() {
   return {
+    /** Builtins map — capabilities populate this during registration. */
+    functions: {},
+
     /**
-     * Register a capability with the global registry.
-     * @param {{ name: string, registerFn: Function }} cap
+     * Register a capability with the interpreter.
+     * Calls cap.registerFn(this) so the capability can add builtins
+     * via interpreter.addBuiltin(name, fn).
+     * @param {{ meta: object, registerFn: Function }} cap
      */
     register(cap) {
-      if (!cap || typeof cap.name !== 'string') {
-        throw new Error('Capability must be an object with a string "name" property');
+      if (!cap || typeof cap.registerFn !== 'function') {
+        throw new Error('Capability must have a registerFn function');
       }
-      if (typeof cap.registerFn !== 'function') {
-        throw new Error(`Capability "${cap.name}" must have a registerFn function`);
-      }
-      registry.set(cap.name, cap);
+      cap.registerFn(this);
+    },
+
+    /**
+     * Add a builtin function to interpreter.functions.
+     * @param {string} name
+     * @param {Function} fn
+     */
+    addBuiltin(name, fn) {
+      this.functions[name] = { __builtin: true, fn, arity: fn.arity ?? -1 };
     },
 
     /**
      * Run a selfgrow program and return its printed result.
-     * Creates a fresh interpreter state (keywords set + builtins map) and loads
-     * all registered capabilities via their registerFn before evaluation.
+     * Creates a fresh interpreter state (keywords set + builtins map),
+     * loads all registered capabilities from the global registry,
+     * then evaluates source.
      * @param {string} source
      * @returns {string} The printed output of the program
      */
@@ -497,20 +515,17 @@ export function createInterpreter() {
         'true', 'false',
       ]);
 
-      // Builtins start empty — populated by capabilities
+      // Load all registered capabilities first so they can
+      // inject builtins into interpreter.functions.
+      for (const cap of getAllCapabilities()) {
+        this.register(cap);
+      }
+
+      // Builtins come from interpreter.functions — populated by
+      // capabilities during registration above.
       const builtins = {};
-
-      // Extension API passed to each capability's registerFn
-      const extensions = {
-        addKeyword(kw) { keywords.add(kw); },
-        addBuiltin(name, fn) { builtins[name] = { __builtin: true, fn, arity: fn.arity ?? -1 }; },
-      };
-
-      // Load all registered capabilities (in insertion order)
-      for (const cap of registry.values()) {
-        if (typeof cap.registerFn === 'function') {
-          cap.registerFn(extensions);
-        }
+      for (const [name, builtin] of Object.entries(this.functions)) {
+        builtins[name] = builtin;
       }
 
       return runProgram(source, keywords, builtins);

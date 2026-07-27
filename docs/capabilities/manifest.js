@@ -1,17 +1,15 @@
 /**
  * Capability manifest — lists all capability module specifiers
  * so the bootstrap can dynamically import them.
- *
- * This module itself is also a capability (name: 'manifest') that
- * makes the manifest entries available as a builtin so programs
- * can introspect what capabilities exist.
+ * Updated to use the new registry pattern (docs/lang/capabilities/registry.js).
  *
  * To add a new capability, add its URL (relative to this file)
- * to the list below. The bootstrap will import it eagerly.
+ * to the entries list below. The bootstrap will import it eagerly.
  */
-import { registry } from '../lang/interpreter.js';
+import { registerCapability } from '../lang/capabilities/registry.js';
 
 export const entries = [
+  { name: 'core', specifier: '../lang/capabilities/core.js' },
   { name: 'manifest', specifier: './manifest.js' },
   { name: 'print', specifier: './print.js' },
 ];
@@ -22,7 +20,7 @@ export const meta = {
   name: 'manifest',
   summary: 'Lists the capabilities available for dynamic loading',
   examples: [
-    { source: 'manifest()', result: 'manifest,print' },
+    { source: 'manifest()', result: 'core,manifest,print' },
   ],
 };
 
@@ -32,21 +30,7 @@ function registerManifest(interpreter) {
   });
 }
 
-registry.set(meta.name, { name: meta.name, registerFn: registerManifest });
-
-/**
- * Register the manifest capability with the interpreter,
- * adding the manifest() builtin that returns a comma-separated
- * list of available capability names.
- */
-export function register(interpreter) {
-  registerManifest(interpreter);
-}
-
-/**
- * Verify that the manifest builtin lists all registered capabilities.
- */
-export function checkProperties(run) {
+registerCapability(meta, registerManifest, function(run) {
   const failures = [];
   const result = run('manifest()');
   if (!result.includes('print')) {
@@ -55,5 +39,8 @@ export function checkProperties(run) {
   if (!result.includes('manifest')) {
     failures.push('manifest() must list manifest capability');
   }
+  if (!result.includes('core')) {
+    failures.push('manifest() must list core capability');
+  }
   return failures;
-}
+});

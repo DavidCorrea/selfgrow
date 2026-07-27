@@ -1,8 +1,10 @@
 /**
  * Print capability — adds the `print` builtin function to the language.
- * This capability registers itself with the interpreter at module load time.
+ * Updated to use the new registry pattern (docs/lang/capabilities/registry.js).
+ * This capability registers itself with the registry at module load time
+ * using registerCapability(meta, registerFn, checkFn).
  */
-import { registry } from '../lang/interpreter.js';
+import { registerCapability } from '../lang/capabilities/registry.js';
 
 export const meta = {
   name: 'print',
@@ -28,21 +30,16 @@ function registerPrint(interpreter) {
   });
 }
 
-registry.set(meta.name, { name: meta.name, registerFn: registerPrint });
-
-export function checkProperties(run) {
+registerCapability(meta, registerPrint, function(run) {
   const failures = [];
-  const result = run('print("hello")');
-  if (result !== 'hello') {
+  if (run('print("hello")') !== 'hello') {
     failures.push('print("hello") should return "hello"');
   }
-  const numResult = run('print(1 + 2)');
-  if (numResult !== '3') {
+  if (run('print(1 + 2)') !== '3') {
     failures.push('print(1 + 2) should return "3"');
   }
-  const boolResult = run('print(true)');
-  if (boolResult !== 'true') {
+  if (run('print(true)') !== 'true') {
     failures.push('print(true) should return "true"');
   }
   return failures;
-}
+});
