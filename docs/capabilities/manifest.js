@@ -14,6 +14,7 @@ import { registry } from '../lang/interpreter.js';
 export const entries = [
   { name: 'manifest', specifier: './manifest.js' },
   { name: 'print', specifier: './print.js' },
+  { name: 'arithmetic', specifier: './arithmetic.js' },
 ];
 
 export const specifiers = entries.map(e => e.specifier);
@@ -22,7 +23,7 @@ export const meta = {
   name: 'manifest',
   summary: 'Lists the capabilities available for dynamic loading',
   examples: [
-    { source: 'manifest()', result: 'manifest,print' },
+    { source: 'manifest()', result: 'manifest,print,arithmetic' },
   ],
 };
 
@@ -54,6 +55,9 @@ export function checkProperties(run) {
   }
   if (!result.includes('manifest')) {
     failures.push('manifest() must list manifest capability');
+  }
+  if (!result.includes('arithmetic')) {
+    failures.push('manifest() must list arithmetic capability');
   }
   return failures;
 }

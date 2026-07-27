@@ -99,7 +99,7 @@ function tokenize(source, keywords) {
     const twoCharOps = ['==', '!=', '<=', '>=', '=>'];
     if (twoCharOps.includes(twoChar)) { tokens.push({ type: TT.OPERATOR, value: twoChar, start: pos }); pos += 2; continue; }
 
-    // Single-character operators
+    // Single-character operators (arithmetic ops are registered by capabilities, not hardcoded)
     if ('+-*/<>='.includes(ch)) { tokens.push({ type: TT.OPERATOR, value: ch, start: pos }); pos++; continue; }
 
     // Punctuation
@@ -134,8 +134,8 @@ export function getLocation(source, offset) {
 }
 
 class Parser {
-  constructor(tokens, source, keywords) {
-    this.tokens = tokens; this.source = source; this.pos = 0; this.keywords = keywords;
+  constructor(tokens, source, keywords, operators) {
+    this.tokens = tokens; this.source = source; this.pos = 0; this.keywords = keywords; this.operators = operators;
   }
   peek() { return this.tokens[this.pos]; }
   advance() { return this.tokens[this.pos++]; }
@@ -259,12 +259,18 @@ class Parser {
   }
   parseAdd() {
     let left = this.parseMul();
-    while (this.matchOperator('+') || this.matchOperator('-')) { const op = this.tokens[this.pos - 1].value; left = { type: 'BinOp', op, left, right: this.parseMul() }; }
+    while (this.peek().type === TT.OPERATOR && this.peek().value in this.operators && this.operators[this.peek().value].precedence === 10) {
+      const op = this.advance().value;
+      left = { type: 'BinOp', op, left, right: this.parseMul() };
+    }
     return left;
   }
   parseMul() {
     let left = this.parseUnary();
-    while (this.matchOperator('*') || this.matchOperator('/')) { const op = this.tokens[this.pos - 1].value; left = { type: 'BinOp', op, left, right: this.parseUnary() }; }
+    while (this.peek().type === TT.OPERATOR && this.peek().value in this.operators && this.operators[this.peek().value].precedence === 20) {
+      const op = this.advance().value;
+      left = { type: 'BinOp', op, left, right: this.parseUnary() };
+    }
     return left;
   }
   parseUnary() {
@@ -302,8 +308,8 @@ class Parser {
   expectOperator(value) { return this.expect(TT.OPERATOR, value); }
 }
 
-function parse(source, keywords) {
-  return new Parser(tokenize(source, keywords), source, keywords).parseProgram();
+function parse(source, keywords, operators) {
+  return new Parser(tokenize(source, keywords), source, keywords, operators).parseProgram();
 }
 
 // ============================================================
@@ -338,7 +344,7 @@ function describeValue(value) {
   return typeof value;
 }
 
-function evaluate(ast, env, steps, builtins) {
+function evaluate(ast, env, steps, builtins, operators) {
   steps.count++;
   if (steps.count > MAX_STEPS) {
     throw new TimeoutError('Program did not finish — the evaluation exceeded the maximum step count, which usually means an infinite loop.', 'program completion', 'step limit exceeded', null);
@@ -347,11 +353,11 @@ function evaluate(ast, env, steps, builtins) {
   switch (ast.type) {
     case 'Program': {
       let lastValue = undefined;
-      for (const stmt of ast.body) lastValue = evaluate(stmt, env, steps, builtins);
+      for (const stmt of ast.body) lastValue = evaluate(stmt, env, steps, builtins, operators);
       return lastValue;
     }
-    case 'ExprStmt': return evaluate(ast.expr, env, steps, builtins);
-    case 'Block': { let last = undefined; for (const stmt of ast.body) last = evaluate(stmt, env, steps, builtins); return last; }
+    case 'ExprStmt': return evaluate(ast.expr, env, steps, builtins, operators);
+    case 'Block': { let last = undefined; for (const stmt of ast.body) last = evaluate(stmt, env, steps, builtins, operators); return last; }
     case 'Number': return ast.value;
     case 'String': return ast.value;
     case 'Boolean': return ast.value;
@@ -360,8 +366,8 @@ function evaluate(ast, env, steps, builtins) {
       throw new RuntimeError(`Unknown identifier: ${ast.name}`, 'a defined identifier', `undefined identifier '${ast.name}'`, null);
     }
     case 'Let': {
-      const value = ast.value ? evaluate(ast.value, env, steps, builtins) : undefined;
-      return evaluate(ast.body, { ...env, [ast.name]: value }, steps, builtins);
+      const value = ast.value ? evaluate(ast.value, env, steps, builtins, operators) : undefined;
+      return evaluate(ast.body, { ...env, [ast.name]: value }, steps, builtins, operators);
     }
     case 'FnDef': {
       const closure = { __closure: true, params: ast.params, body: ast.body, env: { ...env } };
@@ -372,8 +378,8 @@ function evaluate(ast, env, steps, builtins) {
       return { __closure: true, params: ast.params, body: ast.body, env: { ...env } };
     }
     case 'Call': {
-      const callee = evaluate(ast.callee, env, steps, builtins);
-      const args = ast.args.map(arg => evaluate(arg, env, steps, builtins));
+      const callee = evaluate(ast.callee, env, steps, builtins, operators);
+      const args = ast.args.map(arg => evaluate(arg, env, steps, builtins, operators));
       let printed = '';
       if (callee && callee.__printed !== undefined) printed = callee.__printed;
       if (callee && callee.__builtin) {
@@ -385,20 +391,20 @@ function evaluate(ast, env, steps, builtins) {
         }
         const closureEnv = { ...callee.env };
         callee.params.forEach((param, i) => { closureEnv[param] = args[i]; });
-        const result = evaluate(callee.body, closureEnv, steps, builtins);
+        const result = evaluate(callee.body, closureEnv, steps, builtins, operators);
         if (result && result.__printed) printed += result.__printed;
         return result && result.__value !== undefined ? result.__value : result;
       }
       throw new TypeError(`${describeCallee(ast.callee)} is not a function`, 'a function', describeValue(callee), null);
     }
     case 'BinOp': {
-      const left = evaluate(ast.left, env, steps, builtins);
-      const right = evaluate(ast.right, env, steps, builtins);
+      const left = evaluate(ast.left, env, steps, builtins, operators);
+      const right = evaluate(ast.right, env, steps, builtins, operators);
+      if (ast.op in operators) {
+        if (ast.op === '/' && right === 0) throw new RuntimeError('division by zero', 'a non-zero divisor', '0', null);
+        return operators[ast.op].fn(left, right);
+      }
       switch (ast.op) {
-        case '+': return left + right;
-        case '-': return left - right;
-        case '*': return left * right;
-        case '/': if (right === 0) throw new RuntimeError('Division by zero', 'a non-zero divisor', '0', null); return left / right;
         case '==': return left === right;
         case '!=': return left !== right;
         case '<': return left < right;
@@ -411,7 +417,7 @@ function evaluate(ast, env, steps, builtins) {
       }
     }
     case 'UnaryOp': {
-      const operand = evaluate(ast.operand, env, steps, builtins);
+      const operand = evaluate(ast.operand, env, steps, builtins, operators);
       switch (ast.op) {
         case '-': return -operand;
         case 'not': return !operand;
@@ -419,14 +425,14 @@ function evaluate(ast, env, steps, builtins) {
       }
     }
     case 'If': {
-      const condition = evaluate(ast.condition, env, steps, builtins);
-      if (condition) return evaluate(ast.then, env, steps, builtins);
-      else if (ast.else) return evaluate(ast.else, env, steps, builtins);
+      const condition = evaluate(ast.condition, env, steps, builtins, operators);
+      if (condition) return evaluate(ast.then, env, steps, builtins, operators);
+      else if (ast.else) return evaluate(ast.else, env, steps, builtins, operators);
       return undefined;
     }
     case 'While': {
       let result = undefined;
-      while (evaluate(ast.condition, env, steps, builtins)) { if (ast.body) result = evaluate(ast.body, env, steps, builtins); }
+      while (evaluate(ast.condition, env, steps, builtins, operators)) { if (ast.body) result = evaluate(ast.body, env, steps, builtins, operators); }
       return result;
     }
     default:
@@ -441,15 +447,15 @@ function prettyPrint(value) {
 }
 
 // ============================================================
-// Program runner (parameterized by keywords set and builtins map)
+// Program runner (parameterized by keywords set, builtins map, and operators map)
 // ============================================================
 
-function runProgram(source, keywords, builtins) {
+function runProgram(source, keywords, builtins, operators) {
   try {
-    const ast = parse(source, keywords);
+    const ast = parse(source, keywords, operators);
     const steps = { count: 0 };
     const env = makeInitialEnv(builtins);
-    const result = evaluate(ast, env, steps, builtins);
+    const result = evaluate(ast, env, steps, builtins, operators);
     return prettyPrint(result);
   } catch (err) {
     if (err instanceof SelfgrowError) throw err;
@@ -484,8 +490,8 @@ export function createInterpreter() {
 
     /**
      * Run a selfgrow program and return its printed result.
-     * Creates a fresh interpreter state (keywords set + builtins map) and loads
-     * all registered capabilities via their registerFn before evaluation.
+     * Creates a fresh interpreter state (keywords set, builtins map, operators map)
+     * and loads all registered capabilities via their registerFn before evaluation.
      * @param {string} source
      * @returns {string} The printed output of the program
      */
@@ -500,10 +506,14 @@ export function createInterpreter() {
       // Builtins start empty — populated by capabilities
       const builtins = {};
 
+      // Operators start empty — populated by capabilities via addOperator
+      const operators = {};
+
       // Extension API passed to each capability's registerFn
       const extensions = {
         addKeyword(kw) { keywords.add(kw); },
         addBuiltin(name, fn) { builtins[name] = { __builtin: true, fn, arity: fn.arity ?? -1 }; },
+        addOperator(symbol, operatorDef) { operators[symbol] = operatorDef; },
       };
 
       // Load all registered capabilities (in insertion order)
@@ -513,7 +523,7 @@ export function createInterpreter() {
         }
       }
 
-      return runProgram(source, keywords, builtins);
+      return runProgram(source, keywords, builtins, operators);
     }
   };
 }
