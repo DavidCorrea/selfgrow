@@ -7,7 +7,7 @@
  * interpreter at module load time.
  *
  * Each capability module imports { registry } from interpreter.js and
- * calls registry.set(name, { name, registerFn }) at module load time.
+ * calls registry.set(meta.name, { meta, registerFn }) at module load time.
  *
  * To add a new capability, add its entry to manifest.js.
  */
@@ -36,7 +36,7 @@ export const meta = {
   ],
 };
 
-registry.set(meta.name, { name: meta.name, registerFn: register });
+registry.set(meta.name, { meta, registerFn: register });
 
 /**
  * Register the index capability — no-op since capabilities are

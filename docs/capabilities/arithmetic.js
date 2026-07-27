@@ -28,7 +28,7 @@ function registerArithmetic(interpreter) {
   interpreter.addOperator('/', { precedence: 20, associativity: 'left', fn: (a, b) => a / b });
 }
 
-registry.set(meta.name, { name: meta.name, registerFn: registerArithmetic });
+registry.set(meta.name, { meta, registerFn: registerArithmetic });
 
 export function checkProperties(run) {
   const failures = [];

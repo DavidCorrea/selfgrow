@@ -33,7 +33,7 @@ function registerManifest(interpreter) {
   });
 }
 
-registry.set(meta.name, { name: meta.name, registerFn: registerManifest });
+registry.set(meta.name, { meta, registerFn: registerManifest });
 
 /**
  * Register the manifest capability with the interpreter,
