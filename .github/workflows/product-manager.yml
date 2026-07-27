@@ -40,35 +40,24 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/setup-node@v4
+      - uses: ./.github/actions/setup
         with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      # Chromium is needed to screenshot the app for the visual check.
-      - name: Cache Playwright browser
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-
-      - name: Install Playwright browser (app review — measures the live app)
-        run: npx playwright install --with-deps chromium
+          # Chromium is needed to screenshot the app for the visual check.
+          playwright: 'true'
 
       - name: Run Product Manager agent
         run: node agents/product-manager.mjs
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          # Grooming is 2 model calls, so most of this is slack for chain
-          # fallbacks and retries. Part of a ~1000/day account limit shared with
-          # the Builder (250 x 3 slots) and the weekly agents (50 each) — the
-          # day's requests still belong to the Builder, the only agent shipping code.
-          # REAL requests (one per agent turn), not sessions. The PM runs three sessions
-          # — app review, the main grooming pass, the dedup check — so ~100 covers it
-          # with room for a slow pass, and leaves the day's remainder to the Builder.
+          # This run's own allowance, in REAL requests (one per agent turn), not
+          # sessions. The PM runs three sessions — app review, the main grooming
+          # pass, the dedup check — so ~100 covers it with room for a slow pass, and
+          # leaves the day's remainder to the Builder, the only agent shipping code.
+          #
+          # The PM spends FIRST each day (00:30) and then dispatches the Builder, so
+          # its spend is already in the shared ledger when plan-build.mjs decides how
+          # many slots the day can still fund. That ledger — not this number — is
+          # what holds the account to 1000/day.
           MODEL_REQUEST_BUDGET: '100'
           # PAT carries `project` scope (board) and covers issue creation.
           GH_TOKEN: ${{ secrets.AGENT_PAT }}

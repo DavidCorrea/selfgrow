@@ -20,23 +20,23 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
+      - uses: ./.github/actions/setup
 
       - name: Run Product Owner agent
         run: node agents/product-owner.mjs
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          # One vision judgement per week. Part of a ~1000/day account limit
-          # shared with the Builder (250 x 3 slots) and the PM (100).
-          # REAL requests (one per agent turn), not sessions — see isRequestBudgetSpent.
-          # This agent makes exactly one session, so the budget is a ceiling on how
-          # long that session may run before runAgent refuses to continue.
+          # One vision judgement per week. This run's own allowance, in REAL
+          # requests (one per agent turn), not sessions — see isRequestBudgetSpent.
+          #
+          # It is NOT what protects the account. The 1000/day cap is enforced by the
+          # shared ledger in shared.mjs, which this run reads before its first call
+          # and writes after every session, so it can see what the Builder (600) and
+          # the PM (100) already spent today. This number only bounds this process.
+          #
+          # The agent makes one session, and a session is bounded by MAX_SESSION_TURNS
+          # — this budget alone could not stop a long one, because it is only checked
+          # before a session starts.
           MODEL_REQUEST_BUDGET: '150'
           # PAT carries `project` scope (for board cards) and covers issue creation.
           GH_TOKEN: ${{ secrets.AGENT_PAT }}
