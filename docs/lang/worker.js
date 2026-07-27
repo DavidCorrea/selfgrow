@@ -6,10 +6,10 @@
 import { run } from './run.js';
 import { SelfgrowError } from './errors.js';
 
-self.addEventListener('message', (event) => {
+self.addEventListener('message', async (event) => {
   const { source, id } = event.data;
   try {
-    const result = run(source);
+    const result = await run(source);
     self.postMessage({ id, result });
   } catch (err) {
     if (err instanceof SelfgrowError) {
