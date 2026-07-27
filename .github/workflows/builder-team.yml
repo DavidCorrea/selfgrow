@@ -1,22 +1,29 @@
 name: builder-team
 
 on:
-  # Once a day, just after 00:00 UTC — when OpenRouter's free-model cap resets, so
-  # the tick runs on a full allowance.
-  #
-  # One tick is enough because a tick now QUEUES four tickets and builds them one
-  # after another (see max-parallel below), and a merged ticket measured 33-50 real
-  # requests — so a single run's realistic draw is ~160 against a 1000/day cap.
-  # Requests stopped being the binding constraint once the head model was fixed;
-  # runner wall-clock is, which is why the queue lives inside one run rather than
-  # across more ticks. A tick with nothing buildable is still free: the plan job is
-  # pure gh API and build-ticket is skipped when count is 0.
   schedule:
-    - cron: '5 0 * * *'
+    # The MOP-UP run, and the only scheduled one. It exists because the morning
+    # chain systematically left requests unspent: the day's other agents draw at
+    # most 100 (PM) + 150 (one weekly agent), so a Builder that stops at its
+    # morning share retires the day with 150-300 requests that simply expire at
+    # 00:00 UTC. Requests do not roll over; an unspent one is a ticket not built.
+    #
+    # 14:00 is after every other agent has run (PM 00:30, PO/Scribe/Curator
+    # 08:00-09:00), so what the ledger says is left really is left, and this run
+    # can claim it without starving anyone.
+    #
+    # This is NOT the 00:05 cron that was removed. That one raced the PM's own
+    # dispatch and double-spent a day the code could not see, because per-run
+    # budgets cannot observe a sibling. The shared ledger in shared.mjs is what
+    # changed: plan-build.mjs now reads the day's real remainder before it queues
+    # anything, and queues nothing at all when the day cannot fund a ticket. A
+    # second tick is now bounded by the account, not by hand-set arithmetic.
+    - cron: '0 14 * * *'
 
-  # The Product Manager also dispatches this explicitly at the end of a run that
+  # The Product Manager dispatches this explicitly at the end of a run that
   # actually left buildable work (see kickBuilder in product-manager.mjs), so newly
   # groomed tickets start building immediately instead of waiting for the next tick.
+  # That is the day's FIRST run; the cron above is its mop-up.
   #
   # It used to trigger on `workflow_run` from product-manager, which fires when a
   # PM run COMPLETES — including runs whose job was skipped by a guard, and
@@ -37,66 +44,84 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # One reader decides who builds what. Nothing claims a ticket, so nothing can
-  # race for one — see agents/plan-build.mjs.
+  # A cheap reader (no Chromium, no full history) that answers the two questions
+  # the heavy job below cannot cheaply answer for itself: is anything buildable,
+  # and does the day's ledger still hold enough requests to build it. When either
+  # answer is no, no build runner ever starts.
   plan:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
-      matrix: ${{ steps.assign.outputs.matrix }}
-      count: ${{ steps.assign.outputs.count }}
+      count: ${{ steps.plan.outputs.count }}
+      budget: ${{ steps.plan.outputs.budget }}
     steps:
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
+      - uses: ./.github/actions/setup
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Assign tickets to slots
-        id: assign
+      - name: Size the run
+        id: plan
         run: node agents/plan-build.mjs
         env:
           GH_TOKEN: ${{ secrets.AGENT_PAT }}
-          # How many tickets this run QUEUES, not how many run at once — the matrix
-          # is capped at max-parallel 1 below, so these execute one after another.
-          # Four is affordable because a measured ticket is ~40 requests: 4 x 150
-          # (the per-slot ceiling) is 600 worst case, and realistically ~160.
-          # Same-file collisions are no longer a reason to keep this small, since
-          # sequential slots build on each other's merges rather than racing them.
-          PARALLEL_BUILDERS: '4'
+          # The longest queue one run will attempt. It does not change what the day
+          # COSTS — the budget below is a pool the run spends as tickets actually
+          # cost, so this only decides when to stop asking for more work.
+          #
+          # 6 fits: a measured ticket is ~40 requests and well under an hour of
+          # wall clock, so 6 sits inside both the 700-request pool and the run's
+          # 5-hour time budget, and plan-build.mjs shortens the queue itself when
+          # the day's remainder cannot carry it.
+          MAX_TICKETS_PER_RUN: '6'
+          # The Builder's whole share of the day. The account's cap is 1000/day and
+          # is enforced for real by the shared ledger in shared.mjs; this is the
+          # Builder's part of it.
+          #
+          # Two figures, because the two runs face different remainders. The
+          # morning run (dispatched by the PM, ~00:35) must still leave room for
+          # agents that have not run yet: 1000 - 100 (PM) - 150 (at most one weekly
+          # agent) = 750, taken as 700 so a mis-flushed ledger has slack.
+          #
+          # The 14:00 mop-up runs LAST, so nothing is owed to anyone: it asks for
+          # more than the day can hold on purpose and lets the ledger decide. What
+          # it actually gets is the true remainder — 200 on a quiet day, nothing at
+          # all on a day the morning already spent, in which case plan-build.mjs
+          # queues zero jobs and no runner starts.
+          BUILDER_DAY_BUDGET: ${{ github.event.schedule && '900' || '700' }}
 
-  build-ticket:
+  # ONE job builds the whole queue, one ticket after another.
+  #
+  # This used to be a matrix of one job per ticket, pinned to max-parallel: 1 —
+  # because tickets are logically independent but not independent ON DISK, and
+  # running them concurrently lost the race outright: #158 ("add a timeout guard to
+  # the runtime") created docs/lang/run.js, and #149 ("implement the runtime core
+  # in docs/lang/run.js") then died on unresolved merge conflicts after building
+  # cleanly — its whole session discarded, and a strike against the ticket.
+  #
+  # So the jobs never ran beside each other, and each still paid its own VM,
+  # checkout, npm ci and Chromium install: ~3 minutes per ticket, ~15 a day, spent
+  # isolating jobs from siblings that were not running. builder-team.mjs already
+  # loops over tickets within a run, re-reading the board each pass, so the queue
+  # simply moved inside. Sequencing is unchanged — each ticket still starts from
+  # the previous one's merge, now because it is the same working tree rather than
+  # a fresh checkout of it.
+  #
+  # The cost of collapsing: a crash in ticket 3 takes tickets 4-6 with it, where
+  # fail-fast: false used to lose only its own. Per-ticket failures are already
+  # caught and recorded inside the loop, so this is the uncaught case only, and the
+  # next run re-picks whatever did not ship.
+  build:
     needs: plan
-    # Nothing buildable means no jobs at all, rather than a slot that spins up a
-    # runner, installs Chromium and finds nothing to do.
+    # Nothing buildable, or a day with nothing left to spend, means no job at all
+    # rather than a runner that installs Chromium and finds nothing to do.
     if: ${{ needs.plan.outputs.count != '0' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 120
-    strategy:
-      # One slot failing must not cancel its siblings: their work is unrelated by
-      # construction, and a cancelled builder can leave a branch and an open PR.
-      fail-fast: false
-      # SEQUENTIAL, not parallel — the matrix is a queue here, not a fan-out.
-      #
-      # Tickets are logically independent but not independent ON DISK, and running
-      # them concurrently loses the race outright: #158 ("add a timeout guard to the
-      # runtime") created docs/lang/run.js, and #149 ("implement the runtime core in
-      # docs/lang/run.js") then died on unresolved merge conflicts after building
-      # cleanly — its whole session discarded, and a strike against the ticket.
-      #
-      # At 1 each slot checks out AFTER the previous one merged, so it builds on
-      # what shipped instead of racing it. Throughput barely suffers: a measured
-      # ticket costs ~40 requests and ~2 minutes of model time, so the day's cap
-      # affords far more sequential tickets than the runner has hours to burst.
-      max-parallel: 1
-      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
-    name: build #${{ matrix.ticket }}
+    # Six tickets end to end, plus setup. The run's own BUILD_RUN_BUDGET_MINUTES
+    # should stop it first; this is the backstop for a job that hangs rather than
+    # spends.
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
         with:
@@ -104,30 +129,18 @@ jobs:
           # Full history is required for fetch/merge/rebase against origin/main.
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: ./.github/actions/setup
         with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Cache Playwright browser
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-
-      - name: Install Playwright browser (runtime verify)
-        run: npx playwright install --with-deps chromium
+          # The Builder drives the built app to verify a ticket really runs.
+          playwright: 'true'
 
       - name: Run Builder Team agents
         run: node agents/builder-team.mjs
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          # REAL OpenRouter requests (one per agent turn), per slot, per run. This
+          # REAL OpenRouter requests (one per agent turn) for this whole run. This
           # number used to count agent SESSIONS, which understated the charge by
-          # ~16x: a "250" slot authorised several thousand requests and the whole
+          # ~16x: a "250" budget authorised several thousand requests and the whole
           # 1000/day account fell over while the counter read 62.
           #
           # Sized from tickets that actually MERGED, which is the only measurement
@@ -137,26 +150,30 @@ jobs:
           # model, which spent ~85% of every ticket on sessions it then discarded —
           # measuring the waste, not the work.
           #
-          # 150 is ~3x a real ticket, which absorbs a retry and a merge-conflict
-          # pass without letting one pathological session eat the queue behind it.
-          # The day: 4 queued tickets x 150 = 600 worst case, ~160 expected, plus
-          # the Product Manager (100), against 1000.
+          # A POOL for every ticket in the queue, not a per-ticket allowance, and
+          # the day's real remainder rather than a constant (see the plan job).
+          # Pooling is what makes the queue worth having: the run checks the budget
+          # BETWEEN tickets, so a ticket that comes in at 33 requests leaves the
+          # difference to the next one. Dividing it per ticket up front, as the
+          # matrix did, retired that remainder unspent.
           #
-          # Enforced in three places: runAgent refuses to start a session once the
-          # budget is spent, the build->review loop refuses to START a Builder it
-          # cannot afford to review (BUILD_TAIL_RESERVE), and a retry is skipped
-          # when the remainder is thin. The middle one is the important one — it is
-          # what stops a run from spending everything on a build and then throwing
-          # it away for want of a Reviewer.
-          MODEL_REQUEST_BUDGET: '150'
-          # Wall-clock backstop for a slot that stalls rather than spends. Only
-          # gates BETWEEN tickets, so in slot mode (one ticket) it never fires —
-          # the request budget above is the real limit and the job's timeout is
-          # the last resort.
-          BUILD_RUN_BUDGET_MINUTES: '60'
-          # This slot's ticket, assigned by the plan job. The Builder narrows to
-          # exactly this ticket so it cannot wander onto a sibling slot's work.
-          TICKET_NUMBER: ${{ matrix.ticket }}
+          # Enforced in four places: runAgent refuses to START a session once the
+          # budget is spent, MAX_SESSION_TURNS aborts a session that runs away
+          # INSIDE one (the hole that let a 101-turn Scout overrun any ceiling), the
+          # build->review loop refuses to start a Builder it cannot afford to review
+          # (BUILD_TAIL_RESERVE), and a retry is skipped when the remainder is thin.
+          # Above all of them sits the account's real limit — the shared daily
+          # ledger in shared.mjs, which every job reads before it spends.
+          MODEL_REQUEST_BUDGET: ${{ needs.plan.outputs.budget }}
+          # How many tickets to attempt, sized by the plan job against the day's
+          # remaining requests. Not a target — the run stops on whichever of the
+          # board, the pool, or the clock empties first.
+          MAX_TICKETS_PER_RUN: ${{ needs.plan.outputs.count }}
+          # Wall-clock budget, checked between tickets, so the run stops cleanly
+          # after a merge instead of being killed mid-ticket by the job timeout
+          # (360) and leaving a branch and an open PR behind. It has to cover the
+          # whole queue now, not one ticket.
+          BUILD_RUN_BUDGET_MINUTES: '300'
           # AGENT_PAT (= the user) is the default token: Projects, issues, and
           # approving/merging the PR. BOT_TOKEN (= github-actions[bot]) opens the
           # PR as a DIFFERENT identity, so the PAT can legitimately approve it.

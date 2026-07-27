@@ -1,0 +1,50 @@
+name: Agent runner setup
+description: Node, the project's dependencies, and — only where an agent looks at the live app — Chromium.
+
+# Every workflow in this repo needs the same three or four steps before it can run
+# an agent, and they used to be copy-pasted into all six. The Playwright cache key
+# in particular existed in two places: editing one and missing the other costs a
+# silent cache miss on every run of the workflow that was missed, which shows up
+# as a slower job and nothing else.
+#
+# This reuses the DEFINITION, not the work. Each job is still its own VM and still
+# pays for its own npm ci — nothing crosses a job boundary but caches. The way to
+# stop paying twice is to have one job, which is why builder-team.yml builds its
+# whole queue in a single job rather than one job per ticket.
+
+inputs:
+  playwright:
+    description: >
+      Install Chromium. Only the agents that drive the live app need it (the
+      Builder's runtime verify, the PM's visual review); for the rest it is ~90
+      seconds of apt and download spent on a browser nothing opens.
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+        cache: npm
+
+    - name: Install dependencies
+      shell: bash
+      run: npm ci
+
+    - name: Cache Playwright browser
+      if: inputs.playwright == 'true'
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+    # NOTE: --with-deps is an apt install and is NOT covered by the cache above,
+    # so it costs full price even on a cache hit. Guarding this whole step on
+    # cache-hit would skip the apt half too, and Chromium then fails to launch on
+    # a runner image that happens to be missing a library — a silent verify
+    # failure is worse than a slow job, so it re-runs.
+    - name: Install Playwright browser
+      if: inputs.playwright == 'true'
+      shell: bash
+      run: npx playwright install --with-deps chromium

@@ -43,6 +43,7 @@ import {
   verifyBuild,
   runAgent,
   isRequestBudgetSpent,
+  initDailyLedger,
   MODEL_REQUEST_BUDGET,
 } from "./shared.mjs";
 
@@ -63,12 +64,16 @@ const MAX_TICKET_ATTEMPTS = Number(process.env.MAX_TICKET_ATTEMPTS || 2);
 // ran 7-9 turns, so 40 covers the tail several times over against a 150 budget.
 const BUILD_TAIL_RESERVE = Number(process.env.BUILD_TAIL_RESERVE || 40);
 
-// Drain several tickets per run (better runner utilization — one npm ci +
-// Playwright install amortized over multiple builds) up to a wall-clock budget,
-// kept under the job's 60-minute timeout.
-// When TICKET_NUMBER is set, this run is one slot of a parallel build and owns
-// exactly that ticket — the assignment was made once, up front, by plan-build.mjs.
-// Draining more than its own ticket would collide with a sibling slot's work.
+// Drain several tickets per run, one after another, up to a wall-clock budget kept
+// under the job's timeout. This is the normal shape: the workflow runs ONE build
+// job and sizes the queue with MAX_TICKETS_PER_RUN, so a single checkout, npm ci
+// and Chromium install is amortized over every ticket the day builds rather than
+// re-paid per ticket. Each ticket still checks out the previous one's merge,
+// because they run in sequence in the same working tree.
+//
+// TICKET_NUMBER narrows the run to exactly one ticket. Nothing in CI sets it any
+// more — it is for re-running a single ticket by hand without the run wandering
+// onto whatever else the board happens to be offering.
 const ASSIGNED_TICKET = Number(process.env.TICKET_NUMBER || 0) || null;
 
 const MAX_TICKETS_PER_RUN = ASSIGNED_TICKET
@@ -744,6 +749,12 @@ function maybeReplenishBacklog(mergedCount) {
 
 async function main() {
   configureGitIdentity();
+
+  // Open the shared ledger before the first budget check rather than lazily on the
+  // first model call: the loop below asks whether the day can afford another
+  // ticket, and on ticket 1 that question would otherwise be answered from an
+  // empty count — reading as "the whole day is free" on a day already spent.
+  initDailyLedger();
 
   // Product vision (from the wiki) grounds the Scout's plan and the Validator's
   // alignment check — they no longer read it from a repo file.

@@ -131,10 +131,21 @@ export function isDailyQuotaExhausted(err) {
 //
 // This is a per-run allowance, checked between units of work (never mid-ticket,
 // which would strand a half-built PR). It exists so one run can't drain the
-// whole day and starve every later run.
+// whole day and starve every later run. The account-wide ceiling it sits under is
+// the daily ledger further down — this one only bounds a single process.
 // ---------------------------------------------------------------------------
 
 export const MODEL_REQUEST_BUDGET = Number(process.env.MODEL_REQUEST_BUDGET || 20);
+
+// Hard ceiling on TURNS INSIDE one session. The budget above is only consulted
+// before a session starts, and turns were only added up after one ended, so a
+// single runaway session could overrun any ceiling by an unbounded amount — a
+// Scout once ran 101 turns and burned 63% of a run's allowance before any work
+// started. Enforced live from the event stream in runAgentOnce.
+//
+// 40 is ~4x the 8-10 turns a healthy session takes on a merged ticket, so it
+// never fires on real work; it only stops a loop.
+export const MAX_SESSION_TURNS = Number(process.env.MAX_SESSION_TURNS || 40);
 
 let modelRequestCount = 0;
 
@@ -163,9 +174,12 @@ export function getModelTurnCount() {
  * roughly 16x smaller than the spend it authorised — a "250-request" slot was
  * thousands of real requests, and the account's 1000/day fell over while the
  * counter still read 62.
+ *
+ * Two ceilings, either of which stops the run: this process's own allowance, and
+ * the account's day (which siblings share — see the ledger below).
  */
 export function isRequestBudgetSpent() {
-  return modelTurnCount >= MODEL_REQUEST_BUDGET;
+  return modelTurnCount >= MODEL_REQUEST_BUDGET || getDailySpend() >= DAILY_REQUEST_CAP;
 }
 
 /**
@@ -175,7 +189,183 @@ export function isRequestBudgetSpent() {
  * how the day still ships something.
  */
 export function isRequestBudgetLow(reserve = 60) {
-  return modelTurnCount >= MODEL_REQUEST_BUDGET - reserve;
+  return (
+    modelTurnCount >= MODEL_REQUEST_BUDGET - reserve ||
+    getDailySpend() >= DAILY_REQUEST_CAP - reserve
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Daily request ledger — the account's real limit, shared across jobs.
+//
+// MODEL_REQUEST_BUDGET is per PROCESS, so it cannot see what a sibling job has
+// already spent. That made the day's true ceiling the SUM of numbers set by hand
+// in five workflow files: a normal Monday authorised 1450 requests against a
+// 1000/day account, and nothing in the code could tell.
+//
+// So the spend goes somewhere every job can read: a `Budget.md` page in the wiki,
+// one line per UTC day. The wiki is a separate git repo, which is what makes it
+// usable here — writing to it triggers no workflow and touches no branch the
+// Builder is merging.
+//
+// It gets its OWN clone, never the shared one from getWikiDir(). A ledger flush
+// out of the cached clone would carry along whatever half-finished Vision or
+// Changelog edit happened to be sitting in the working tree.
+//
+// Best-effort by design: an unreachable wiki degrades to per-run budgets only
+// (what the pipeline had before), with a warning. It never blocks a run.
+// ---------------------------------------------------------------------------
+
+export const DAILY_REQUEST_CAP = Number(process.env.DAILY_REQUEST_CAP || 1000);
+
+const LEDGER_DIR = process.env.LEDGER_DIR || "/tmp/selfgrow-ledger";
+const LEDGER_PAGE = "Budget.md";
+// A push races a sibling job's push, and losing means re-reading their number and
+// adding ours on top — so retry, don't drop.
+const LEDGER_PUSH_ATTEMPTS = 5;
+// Enough history to see a week's shape without the page growing without bound.
+const LEDGER_DAYS_KEPT = 30;
+
+let ledgerDir = null;
+let ledgerBranch = "master"; // GitHub wikis are still master; read it, don't assume
+let ledgerInit = false;
+// Today's spend by OTHER runs — this day's ledger total minus our own turns. Kept
+// separate so getDailySpend() stays correct as our own count grows between flushes.
+let dayOtherSpend = 0;
+let flushedTurns = 0;
+
+function utcDay() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function gitLedger(args) {
+  return execSync(`git -C "${ledgerDir}" ${args}`, { maxBuffer: 10 * 1024 * 1024, stdio: "pipe" });
+}
+
+/**
+ * Read `- YYYY-MM-DD: N` lines into a Map. Anything else in the page is ignored,
+ * so a human note or a hand edit cannot corrupt the count. Exported for tests.
+ */
+export function parseLedger(text) {
+  const days = new Map();
+  // Real months and days only. A loose \d{2}-\d{2} accepts "2026-13-99", which
+  // then sorts ABOVE any real date and so occupies a slot in the kept window for
+  // good — it can never age out of a list trimmed newest-first.
+  const line = /^- (\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])): (\d+)$/gm;
+  for (const m of String(text).matchAll(line)) {
+    days.set(m[1], Number(m[2]));
+  }
+  return days;
+}
+
+/** Render the ledger page, newest day first, trimmed to the kept window. Exported for tests. */
+export function renderLedger(days) {
+  const recent = [...days.keys()].sort().reverse().slice(0, LEDGER_DAYS_KEPT);
+  return (
+    "# Request Budget\n\n" +
+    "Real OpenRouter requests (one per agent turn) spent per UTC day, by every " +
+    `agent in the pipeline. The account's cap is ${DAILY_REQUEST_CAP}/day and resets ` +
+    "at 00:00 UTC.\n\n" +
+    "Written by the agents as they run — edit it only to correct a bad number.\n\n" +
+    recent.map((d) => `- ${d}: ${days.get(d)}`).join("\n") +
+    "\n"
+  );
+}
+
+/**
+ * Requests this account has spent today: what other runs recorded, plus what this
+ * run has spent since. Falls back to this run's own count when the ledger is
+ * unreachable.
+ */
+export function getDailySpend() {
+  return dayOtherSpend + modelTurnCount;
+}
+
+/** Whether the shared ledger is in use (false = per-run budgets only). */
+export function isLedgerActive() {
+  return Boolean(ledgerDir);
+}
+
+/**
+ * Read today's spend before the first model call. Idempotent, and safe to call
+ * from any agent — the ledger is opened once per process.
+ */
+export function initDailyLedger() {
+  if (ledgerInit) return;
+  ledgerInit = true;
+  ledgerDir = cloneWiki(LEDGER_DIR);
+  if (!ledgerDir) {
+    log("warn", "Budget: no shared ledger (wiki unreachable) — enforcing the per-run budget only.");
+    return;
+  }
+  try {
+    ledgerBranch = gitLedger("rev-parse --abbrev-ref HEAD").toString().trim() || ledgerBranch;
+  } catch {
+    log("warn", `Budget: could not read the wiki's branch — assuming ${ledgerBranch}.`);
+  }
+  let text = "";
+  try {
+    text = fs.readFileSync(join(ledgerDir, LEDGER_PAGE), "utf-8");
+  } catch {
+    log("info", "Budget: no ledger page yet — starting one.");
+  }
+  dayOtherSpend = parseLedger(text).get(utcDay()) || 0;
+  log(
+    "info",
+    `Budget: ${dayOtherSpend}/${DAILY_REQUEST_CAP} requests already spent today (${utcDay()}) by other runs.`
+  );
+}
+
+/**
+ * Add this run's unrecorded turns to the shared ledger. Called after every
+ * session, so a job that is killed mid-run has still reported everything it spent
+ * up to its last session — the ledger must never under-report, or a later job
+ * spends against requests that are already gone.
+ */
+export function flushDailySpend() {
+  if (!ledgerDir) return;
+  const delta = modelTurnCount - flushedTurns;
+  if (delta <= 0) return;
+
+  const day = utcDay();
+  let lastErr;
+  for (let attempt = 1; attempt <= LEDGER_PUSH_ATTEMPTS; attempt++) {
+    try {
+      // Re-read under every attempt: a sibling may have written since we cloned,
+      // and its number has to survive ours. Reset rather than rebase — it also
+      // discards the local commit a previous failed push left behind, and the
+      // number is rebuilt from whatever is now on the remote.
+      gitLedger("fetch --quiet origin");
+      gitLedger(`reset --hard --quiet origin/${ledgerBranch}`);
+      const page = join(ledgerDir, LEDGER_PAGE);
+      let text = "";
+      try {
+        text = fs.readFileSync(page, "utf-8");
+      } catch {}
+      const days = parseLedger(text);
+      const total = (days.get(day) || 0) + delta;
+      days.set(day, total);
+      fs.writeFileSync(page, renderLedger(days), "utf-8");
+      gitLedger(`add "${LEDGER_PAGE}"`);
+      gitLedger(`commit -q -m "budget: +${delta} request(s) on ${day} (${total} total)"`);
+      gitLedger("push --quiet");
+      flushedTurns = modelTurnCount;
+      // Everything in the page that isn't ours is somebody else's spend.
+      dayOtherSpend = total - modelTurnCount;
+      log("info", `Budget: recorded +${delta} — ${total}/${DAILY_REQUEST_CAP} spent today.`);
+      return;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  // Unrecorded spend is the dangerous direction, so say so loudly. flushedTurns
+  // is deliberately NOT advanced: the next flush retries the whole delta.
+  log(
+    "error",
+    `Budget: could not record ${delta} request(s) after ${LEDGER_PUSH_ATTEMPTS} attempts — ` +
+      "the day's ledger now UNDER-reports, and later runs may overspend the cap.",
+    errorData(lastErr)
+  );
 }
 
 /** Every model pi knows, or null when the runtime can't be read. */
@@ -317,6 +507,9 @@ async function runAgentOnce({
   // Clamp rather than trust the caller — "off" costs a request and returns 400
   // on reasoning-mandatory endpoints (see MIN_THINKING_LEVEL).
   if (thinkingLevel === "off") thinkingLevel = MIN_THINKING_LEVEL;
+  // Opened before the first gate below, so the budget check sees what sibling jobs
+  // already spent today rather than only this process's count.
+  initDailyLedger();
   const modelRuntime = await getModelRuntime();
   const model = modelRuntime.getModels().find((m) => modelIdOf(m) === modelId);
   if (!model) {
@@ -342,13 +535,14 @@ async function runAgentOnce({
     noContextFiles: true,
   });
   // Hard floor. The soft checks at safe checkpoints should stop a run long before
-  // this fires, but turns are only known once a session ENDS, so without a gate
-  // here a single long session can overrun the whole allowance unobserved. Typed
-  // so callers can tell "out of budget" from "the model failed".
+  // this fires; this refuses to START one more session. What a started session
+  // then spends is bounded by MAX_SESSION_TURNS below. Typed so callers can tell
+  // "out of budget" from "the model failed".
   if (isRequestBudgetSpent()) {
     const err = new Error(
-      `Request budget spent (${modelTurnCount}/${MODEL_REQUEST_BUDGET} requests) — ` +
-        `refusing to start ${label}. Raise MODEL_REQUEST_BUDGET or wait for the 00:00 UTC reset.`
+      `Request budget spent (run ${modelTurnCount}/${MODEL_REQUEST_BUDGET}, ` +
+        `today ${getDailySpend()}/${DAILY_REQUEST_CAP}) — refusing to start ${label}. ` +
+        "Raise the budget or wait for the 00:00 UTC reset."
     );
     err.budgetExhausted = true;
     throw err;
@@ -370,6 +564,12 @@ async function runAgentOnce({
       tools,
     }).then(({ session }) => {
       let output = "";
+      // Turns spent so far, read live. The session's own message list is the only
+      // honest source — an assistant message IS a charged completion, whatever the
+      // event that revealed it — so count from state on every event rather than
+      // trusting one event type to mean "a turn happened".
+      let turnsSeen = 0;
+      let capHit = false;
       session.subscribe((event) => {
         if (
           event.type === "message_update" &&
@@ -377,7 +577,45 @@ async function runAgentOnce({
         ) {
           output += event.assistantMessageEvent.delta;
         }
+        // Streaming deltas arrive thousands of times per turn and never change the
+        // message COUNT, so don't walk the list for them — only for the events that
+        // can mean a message was appended.
+        if (event.type === "message_update" || event.type === "bash_execution_update") return;
+        turnsSeen = (session.state?.messages || []).filter(
+          (m) => m.role === "assistant"
+        ).length;
+        if (!capHit && turnsSeen >= MAX_SESSION_TURNS) {
+          // Abort once, then let the normal completion path record the spend. A
+          // session this long is looping, not thinking: every further turn is a
+          // charged request the run will not get a merge out of.
+          capHit = true;
+          log(
+            "warn",
+            `${label}: hit the ${MAX_SESSION_TURNS}-turn session cap — aborting it. ` +
+              "The session is looping; stopping it here protects the day's remaining requests."
+          );
+          session.abort().catch(() => {});
+        }
       });
+
+      // Charge the session exactly once, whichever way it ends. Both paths below
+      // used to add turns independently, so a session that threw INSIDE the
+      // success path (a model error, say) was billed twice in our own accounting —
+      // over-reporting, which starves later runs as surely as under-reporting
+      // overspends. Returns the turn count so the caller can log it.
+      let counted = false;
+      const recordSpend = () => {
+        const turns = (session.state?.messages || []).filter(
+          (m) => m.role === "assistant"
+        ).length;
+        if (counted) return turns;
+        counted = true;
+        modelTurnCount += turns;
+        // Report before anything else can throw: a job killed after this point has
+        // still told the ledger what it spent.
+        flushDailySpend();
+        return turns;
+      };
 
       return session
         .prompt(task)
@@ -391,6 +629,7 @@ async function runAgentOnce({
           // assistant message as stopReason "error". Surface it loudly instead
           // of returning empty output (which looks like an unparseable response).
           if (lastAssistant && lastAssistant.stopReason === "error") {
+            recordSpend();
             session.dispose();
             throw new Error(
               `${label} model call failed: ${lastAssistant.errorMessage || "unknown error"}`
@@ -408,26 +647,42 @@ async function runAgentOnce({
           // A session is ONE budget unit but many OpenRouter requests: the
           // agentic loop issues a completion per turn, so every tool call is
           // another charge against the daily cap. Count assistant messages —
-          // that's one per turn — to expose the multiplier the budget ignores.
-          // Measurement only for now; nothing spends against this yet.
-          const turns = messages.filter((m) => m.role === "assistant").length;
-          modelTurnCount += turns;
+          // that's one per turn — because that is what the account is billed for.
+          const turns = recordSpend();
           log(
             "info",
             `${label} agent completed in ${elapsed}s — ${turns} turn(s), ` +
-              `${modelTurnCount} real request(s) this run vs ${modelRequestCount} counted`
+              `${modelTurnCount}/${MODEL_REQUEST_BUDGET} this run, ` +
+              `${getDailySpend()}/${DAILY_REQUEST_CAP} today`
           );
           session.dispose();
+          // An aborted session that produced nothing is a failure, and a loud one.
+          // Reported like a budget stop rather than a model fault so runAgent does
+          // NOT walk the rest of the chain — a runaway usually repeats, and proving
+          // it costs another 40 requests per model.
+          if (capHit && !output.trim()) {
+            const err = new Error(
+              `${label} hit the ${MAX_SESSION_TURNS}-turn cap without answering ` +
+                `(${turns} turn(s) spent).`
+            );
+            err.budgetExhausted = true;
+            throw err;
+          }
           return output;
         })
         .catch((err) => {
           // A session that throws still spent every turn it took to get there —
           // and retry loops are exactly where the cap goes — so count before
           // rethrowing rather than under-reporting the expensive case.
-          modelTurnCount += (session.state?.messages || []).filter(
-            (m) => m.role === "assistant"
-          ).length;
+          recordSpend();
           session.dispose();
+          // An abort can surface here instead of above, depending on where the
+          // session was when it was stopped. Mark it either way, so runAgent stops
+          // rather than paying another MAX_SESSION_TURNS per remaining model to
+          // watch the same runaway repeat.
+          // Guarded: modules run in strict mode, where setting a property on a
+          // thrown primitive is a TypeError that would mask the real failure.
+          if (capHit && err && typeof err === "object") err.budgetExhausted = true;
           throw err;
         });
     })
@@ -528,6 +783,10 @@ export function errorData(e) {
 }
 
 export function printRunSummary(title = "Run Summary") {
+  // Last chance to report spend: every agent ends here, including the failure
+  // paths. A no-op unless an earlier flush failed, and the number it would
+  // otherwise leave unrecorded is spend a later run would then overspend.
+  flushDailySpend();
   const errors = runLog.filter((e) => e.level === "error").length;
   const warns = runLog.filter((e) => e.level === "warn").length;
   const result = errors ? "errors" : warns ? "completed with warnings" : "clean";
@@ -541,8 +800,14 @@ export function printRunSummary(title = "Run Summary") {
   // The full per-line story already streamed live, so don't replay it.
   // Both units, because they differ by an order of magnitude and only the second
   // one is what the daily cap counts.
+  // The day's figure is the one that matters — it is the account's actual limit,
+  // and it includes every sibling job. Say when it is missing rather than printing
+  // a per-run number that looks account-wide.
+  const day = isLedgerActive()
+    ? `${getDailySpend()}/${DAILY_REQUEST_CAP} today`
+    : "day unknown (no ledger)";
   const spend =
-    `${modelRequestCount} agent session(s), ${modelTurnCount} model request(s)`;
+    `${modelRequestCount} agent session(s), ${modelTurnCount} model request(s) this run · ${day}`;
   console.log(`\n=== ${title}: ${result} · ${errors} error(s), ${warns} warning(s) · ${spend} ===`);
   ticketOutcomes.forEach((t) => console.log(`  ${ticketLine(t)}`));
   for (const entry of runLog) {
