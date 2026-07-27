@@ -380,6 +380,125 @@
         --fg-muted: #c9d1d9;
       }
     }
+
+    /* === Test Runner Styles === */
+    .test-runner {
+      margin-bottom: calc(var(--spacing) * 2);
+    }
+
+    .test-runner-header {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing);
+      flex-wrap: wrap;
+      margin-bottom: var(--spacing);
+    }
+
+    .test-runner-title {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--fg-muted);
+    }
+
+    .summary-badges {
+      display: flex;
+      gap: calc(var(--spacing) * 0.5);
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .test-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.125rem 0.5rem;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+
+    .test-badge--pass {
+      background: rgba(63, 185, 80, 0.15);
+      color: var(--success);
+    }
+
+    .test-badge--fail {
+      background: rgba(248, 81, 73, 0.15);
+      color: var(--error);
+    }
+
+    .test-badge--neutral {
+      background: rgba(139, 148, 158, 0.15);
+      color: var(--fg-muted);
+    }
+
+    .test-summary-text {
+      font-size: 0.8rem;
+      color: var(--fg-muted);
+    }
+
+    .test-results {
+      margin-top: var(--spacing);
+    }
+
+    .property-check {
+      margin-top: var(--spacing);
+      padding: var(--spacing);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+
+    .property-check-heading {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--fg-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    .property-check--pass {
+      color: var(--success);
+      font-size: 0.8rem;
+    }
+
+    .property-check--fail {
+      color: var(--error);
+      font-size: 0.8rem;
+    }
+
+    .property-failure {
+      padding: 0.25rem 0.5rem;
+      margin: 0.25rem 0;
+      background: rgba(248, 81, 73, 0.1);
+      border: 1px solid rgba(248, 81, 73, 0.3);
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--error);
+    }
+
+    .example--pass .example-result {
+      color: var(--success);
+    }
+
+    .example--fail .example-result {
+      color: var(--error);
+    }
+
+    .example-test-icon {
+      margin-left: 0.5rem;
+      font-size: 0.75rem;
+      flex-shrink: 0;
+    }
+
+    .example--pass .example-test-icon {
+      color: var(--success);
+    }
+
+    .example--fail .example-test-icon {
+      color: var(--error);
+    }
   </style>
 </head>
 <body>
@@ -428,7 +547,17 @@
     <section id="reference" class="reference" aria-labelledby="reference-heading">
       <h2 id="reference-heading" class="reference-header">Language Reference</h2>
       <div class="reference-content">
-        <p style="color: var(--fg-muted); margin-bottom: var(--spacing);">
+        <!-- Test Runner UI -->
+        <div class="test-runner" id="testRunner">
+          <div class="test-runner-header">
+            <button id="runAllTestsBtn" type="button" class="primary">Run all tests</button>
+            <div class="summary-badges" id="summaryBadges" aria-live="polite"></div>
+          </div>
+          <div class="test-results" id="testResults" aria-live="polite"></div>
+          <div class="property-check" id="propertyCheck" style="display: none;"></div>
+        </div>
+
+        <p style="color: var(--fg-muted); margin-bottom: var(--spacing); margin-top: var(--spacing);">
           Capabilities are loaded dynamically. The reference will populate once the language runtime initializes.
         </p>
         <div class="capability-list" id="capabilityList" role="list" aria-label="Language capabilities">
@@ -443,21 +572,25 @@
   </footer>
 
   <script type="module">
+    // Test runner implemented for issue #153
 
     import { run } from './lang/run.js';
     import { registry } from './lang/interpreter.js';
+    import { checkAllProperties } from './lang/capabilities/registry.js';
 
     const editor = document.getElementById('editor');
     const output = document.getElementById('output');
     const runBtn = document.getElementById('runBtn');
     const clearBtn = document.getElementById('clearBtn');
     const runStatus = document.getElementById('runStatus');
+    const runAllTestsBtn = document.getElementById('runAllTestsBtn');
+    const summaryBadges = document.getElementById('summaryBadges');
+    const testResultsEl = document.getElementById('testResults');
+    const propertyCheckEl = document.getElementById('propertyCheck');
 
     function announce(message) {
       runStatus.textContent = message;
-      // Also ensure output region announces by updating its textContent
       if (message && !message.startsWith('Error') && !message.startsWith('Cleared')) {
-        // Output content itself is the announcement for results
         output.textContent = message;
       }
     }
@@ -465,7 +598,6 @@
     function setOutput(text, isError = false) {
       output.textContent = text;
       output.className = isError ? 'output-error' : 'output-value';
-      // aria-live on #output will announce the new textContent
     }
 
     function clear() {
@@ -578,7 +710,6 @@
 
     // Keyboard shortcuts
     editor.addEventListener('keydown', (e) => {
-      // Tab for indentation
       if (e.key === 'Tab') {
         e.preventDefault();
         const start = editor.selectionStart;
@@ -587,13 +718,11 @@
         editor.selectionStart = editor.selectionEnd = start + 2;
         return;
       }
-      // Enter to run, Shift+Enter for newline
       if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
         handleRun();
         return;
       }
-      // Escape to clear output
       if (e.key === 'Escape') {
         e.preventDefault();
         clear();
@@ -601,9 +730,112 @@
       }
     });
 
-    // --- Reference section rendering ---
+    // --- Test runner ---
 
-    function renderReference() {
+    /**
+     * Run every example from every capability through run(source)
+     * and assert result === expected. Also runs checkProperties(run)
+     * and reports all failures.
+     */
+    function runAllTests() {
+      runAllTestsBtn.disabled = true;
+      summaryBadges.innerHTML = '';
+      testResultsEl.innerHTML = '';
+      propertyCheckEl.style.display = 'none';
+      propertyCheckEl.innerHTML = '';
+
+      let totalTests = 0;
+      let passedTests = 0;
+      let failedTests = 0;
+
+      const capabilityResults = [];
+
+      for (const [, cap] of registry.entries()) {
+        if (!cap.meta) continue;
+        const capName = cap.meta.name;
+        const examples = cap.meta.examples || [];
+        const exampleResults = [];
+
+        for (const example of examples) {
+          const testResult = { source: example.source, expected: example.result, passed: false, actual: '', error: null };
+          totalTests++;
+          try {
+            const actual = run(example.source);
+            testResult.actual = actual === undefined ? '' : String(actual);
+            testResult.passed = testResult.actual === example.result;
+            if (testResult.passed) {
+              passedTests++;
+            } else {
+              failedTests++;
+            }
+          } catch (err) {
+            testResult.error = err.message || String(err);
+            failedTests++;
+          }
+          exampleResults.push(testResult);
+        }
+
+        capabilityResults.push({ name: capName, examples: exampleResults });
+      }
+
+      // Show summary badges
+      const totalBadge = document.createElement('span');
+      totalBadge.className = 'test-badge test-badge--neutral';
+      totalBadge.textContent = `Total: ${totalTests}`;
+      summaryBadges.appendChild(totalBadge);
+
+      const passedBadge = document.createElement('span');
+      passedBadge.className = 'test-badge test-badge--pass';
+      passedBadge.textContent = `Passed: ${passedTests}`;
+      summaryBadges.appendChild(passedBadge);
+
+      const failedBadge = document.createElement('span');
+      failedBadge.className = 'test-badge test-badge--fail';
+      failedBadge.textContent = `Failed: ${failedTests}`;
+      summaryBadges.appendChild(failedBadge);
+
+      // Show per-example results in the reference
+      renderReference(capabilityResults);
+
+      // Run property checks
+      const propertyFailures = checkAllProperties(run);
+      if (propertyFailures.length > 0) {
+        propertyCheckEl.style.display = 'block';
+        propertyCheckEl.innerHTML = '';
+        const heading = document.createElement('div');
+        heading.className = 'property-check-heading';
+        heading.textContent = `Property checks (${propertyFailures.length} failure${propertyFailures.length !== 1 ? 's' : ''})`;
+        propertyCheckEl.appendChild(heading);
+
+        for (const failure of propertyFailures) {
+          const failureEl = document.createElement('div');
+          failureEl.className = 'property-failure';
+          failureEl.textContent = failure;
+          propertyCheckEl.appendChild(failureEl);
+        }
+      } else {
+        propertyCheckEl.style.display = 'block';
+        propertyCheckEl.innerHTML = '';
+        const heading = document.createElement('div');
+        heading.className = 'property-check-heading';
+        heading.textContent = 'Property checks';
+        propertyCheckEl.appendChild(heading);
+
+        const passMsg = document.createElement('span');
+        passMsg.className = 'property-check--pass';
+        passMsg.textContent = 'All property checks passed';
+        propertyCheckEl.appendChild(passMsg);
+      }
+
+      runAllTestsBtn.disabled = false;
+      announce(`Tests complete: ${passedTests} passed, ${failedTests} failed`);
+    }
+
+    /**
+     * Render the reference section. When testResults are provided,
+     * each example shows inline pass/fail instead of just expected output.
+     */
+    function renderReference(capabilityResults = null) {
       const list = document.getElementById('capabilityList');
       if (!list) return;
       const placeholder = list.parentElement.querySelector('p');
@@ -638,6 +870,15 @@
             exampleEl.className = 'example';
             exampleEl.setAttribute('role', 'listitem');
 
+            // Find test result for this example if running tests
+            let testResult = null;
+            if (capabilityResults) {
+              const capResult = capabilityResults.find(r => r.name === cap.meta.name);
+              if (capResult) {
+                testResult = capResult.examples.find(r => r.source === example.source);
+              }
+            }
+
             const sourceEl = document.createElement('code');
             sourceEl.className = 'example-source';
             sourceEl.textContent = example.source;
@@ -654,6 +895,38 @@
             expectedEl.textContent = example.result;
             exampleEl.appendChild(expectedEl);
 
+            // Inline test result icon when test results are available
+            if (testResult) {
+              const iconEl = document.createElement('span');
+              iconEl.className = 'example-test-icon';
+              iconEl.setAttribute('aria-hidden', 'true');
+              if (testResult.passed) {
+                exampleEl.classList.add('example--pass');
+                iconEl.textContent = '\u2713';
+              } else {
+                exampleEl.classList.add('example--fail');
+                iconEl.textContent = '\u2717';
+              }
+              exampleEl.appendChild(iconEl);
+
+              // Show error detail for failed tests
+              if (!testResult.passed) {
+                const detailEl = document.createElement('span');
+                detailEl.className = 'example-result';
+                detailEl.style.marginLeft = '0.5rem';
+                detailEl.style.fontSize = '0.75rem';
+                if (testResult.error) {
+                  detailEl.textContent = `Error: ${testResult.error}`;
+                  detailEl.style.color = 'var(--error)';
+                } else {
+                  detailEl.textContent = `got "${testResult.actual}"`;
+                  detailEl.style.color = 'var(--error)';
+                }
+                exampleEl.appendChild(detailEl);
+              }
+            }
+
+            // Per-example run button (stays regardless of test results)
             const runBtn = document.createElement('button');
             runBtn.type = 'button';
             runBtn.textContent = 'Run';
@@ -694,6 +967,8 @@
         list.appendChild(item);
       }
     }
+
+    runAllTestsBtn.addEventListener('click', runAllTests);
 
     renderReference();
   </script>
