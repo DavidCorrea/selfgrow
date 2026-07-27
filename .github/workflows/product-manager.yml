@@ -34,7 +34,11 @@ concurrency:
 jobs:
   groom-backlog:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Sized so the agent stops ITSELF first. MAX_SESSION_MINUTES (12) bounds a
+    # session, this run makes 3 sessions, and setup is a few minutes on top — so the
+    # runner's axe is the last resort, not the usual stop. The Product Owner was
+    # killed at 20 minutes on 2026-07-27, losing the session and its whole spend.
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
         with:

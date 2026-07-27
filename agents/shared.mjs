@@ -147,6 +147,19 @@ export const MODEL_REQUEST_BUDGET = Number(process.env.MODEL_REQUEST_BUDGET || 2
 // never fires on real work; it only stops a loop.
 export const MAX_SESSION_TURNS = Number(process.env.MAX_SESSION_TURNS || 40);
 
+// The same guard in the other unit the runner can kill us over. A turn cap does
+// nothing about a session that is slow rather than looping, and the runner's job
+// timeout does not negotiate: the Product Owner was killed at 20 minutes, losing
+// the whole session AND (before the signal handler above) every request it had
+// spent.
+//
+// Which limit bites first matters more than either number. An agent that stops
+// itself writes its spend down, closes its PR cleanly and lets the next run
+// continue; an agent stopped by the runner does none of that. So this must stay
+// comfortably under every job's timeout-minutes — see the workflows, where the
+// budget is 2-3x this.
+export const MAX_SESSION_MINUTES = Number(process.env.MAX_SESSION_MINUTES || 12);
+
 let modelRequestCount = 0;
 
 // Agent TURNS, which is what OpenRouter actually charges: one completion request
@@ -318,9 +331,8 @@ export function initDailyLedger() {
 
 /**
  * Add this run's unrecorded turns to the shared ledger. Called after every
- * session, so a job that is killed mid-run has still reported everything it spent
- * up to its last session — the ledger must never under-report, or a later job
- * spends against requests that are already gone.
+ * session, and again when the runner asks the job to stop — the ledger must never
+ * under-report, or a later job spends against requests that are already gone.
  */
 export function flushDailySpend() {
   if (!ledgerDir) return;
@@ -366,6 +378,31 @@ export function flushDailySpend() {
       "the day's ledger now UNDER-reports, and later runs may overspend the cap.",
     errorData(lastErr)
   );
+}
+
+// A job that is STOPPED rather than finished — the runner's timeout, a manual
+// cancel, a re-run superseding this one — used to take its whole current session's
+// spend to the grave, because spend was only recorded once a session settled. The
+// Product Owner hit exactly this on 2026-07-27: killed at its 20-minute job
+// timeout, mid-session, having spent real requests the day would never hear about.
+//
+// Under-reporting is the dangerous direction: the next job reads a day that looks
+// cheaper than it was and overspends the account's cap. So catch the polite
+// signals and write down what we owe. Actions sends SIGINT, then SIGTERM after a
+// grace period, before it resorts to SIGKILL — one git push fits comfortably.
+//
+// A SIGKILL (or an OOM) still loses the current session's turns. That is the
+// residual, and the defence against it is not to be killed in the first place:
+// MAX_SESSION_MINUTES below stops a session before the runner's axe can.
+let stopSignalled = false;
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.on(signal, () => {
+    if (stopSignalled) process.exit(130); // second signal: stop asking nicely
+    stopSignalled = true;
+    log("warn", `Received ${signal} — recording spend before exiting.`);
+    flushDailySpend();
+    process.exit(130);
+  });
 }
 
 /** Every model pi knows, or null when the runtime can't be read. */
@@ -570,6 +607,35 @@ async function runAgentOnce({
       // trusting one event type to mean "a turn happened".
       let turnsSeen = 0;
       let capHit = false;
+      // Turns already added to modelTurnCount. Spend is charged AS IT HAPPENS
+      // rather than in one lump when the session settles, because a session that
+      // never settles — the runner's timeout, a cancel — would otherwise be spent
+      // but uncounted, and the signal handler would have nothing to write down.
+      // It also makes the budget checks honest mid-session instead of only
+      // between them.
+      let chargedTurns = 0;
+      const chargeTurns = (turns) => {
+        if (turns <= chargedTurns) return;
+        modelTurnCount += turns - chargedTurns;
+        chargedTurns = turns;
+      };
+
+      // Stop a session that is slow rather than looping, before the runner does.
+      // Aborting here is worth real money: the caller gets its partial output, the
+      // spend is recorded, and the run ends on its own terms.
+      const sessionDeadline = setTimeout(() => {
+        if (capHit) return;
+        capHit = true;
+        log(
+          "warn",
+          `${label}: hit the ${MAX_SESSION_MINUTES}-minute session cap — aborting it. ` +
+            "Stopping here keeps the job's own timeout from killing the run mid-session."
+        );
+        session.abort().catch(() => {});
+      }, MAX_SESSION_MINUTES * 60 * 1000);
+      // Never hold the process open on this timer alone.
+      sessionDeadline.unref?.();
+
       session.subscribe((event) => {
         if (
           event.type === "message_update" &&
@@ -584,6 +650,7 @@ async function runAgentOnce({
         turnsSeen = (session.state?.messages || []).filter(
           (m) => m.role === "assistant"
         ).length;
+        chargeTurns(turnsSeen);
         if (!capHit && turnsSeen >= MAX_SESSION_TURNS) {
           // Abort once, then let the normal completion path record the spend. A
           // session this long is looping, not thinking: every further turn is a
@@ -598,19 +665,21 @@ async function runAgentOnce({
         }
       });
 
-      // Charge the session exactly once, whichever way it ends. Both paths below
-      // used to add turns independently, so a session that threw INSIDE the
-      // success path (a model error, say) was billed twice in our own accounting —
-      // over-reporting, which starves later runs as surely as under-reporting
-      // overspends. Returns the turn count so the caller can log it.
-      let counted = false;
+      // Settle up, whichever way the session ends. The turns were charged as they
+      // arrived, so this only catches whatever the last event missed — a final
+      // assistant message can land with no further event to observe it.
+      //
+      // Reconciling rather than adding is what keeps this idempotent. Both paths
+      // below used to add the whole count independently, so a session that threw
+      // INSIDE the success path (a model error, say) was billed twice in our own
+      // accounting — over-reporting, which starves later runs as surely as
+      // under-reporting overspends. Returns the turn count so the caller can log it.
       const recordSpend = () => {
+        clearTimeout(sessionDeadline);
         const turns = (session.state?.messages || []).filter(
           (m) => m.role === "assistant"
         ).length;
-        if (counted) return turns;
-        counted = true;
-        modelTurnCount += turns;
+        chargeTurns(turns);
         // Report before anything else can throw: a job killed after this point has
         // still told the ledger what it spent.
         flushDailySpend();
@@ -662,8 +731,9 @@ async function runAgentOnce({
           // it costs another 40 requests per model.
           if (capHit && !output.trim()) {
             const err = new Error(
-              `${label} hit the ${MAX_SESSION_TURNS}-turn cap without answering ` +
-                `(${turns} turn(s) spent).`
+              `${label} was capped without answering (${turns} turn(s) spent) — ` +
+                `it hit either the ${MAX_SESSION_TURNS}-turn or the ` +
+                `${MAX_SESSION_MINUTES}-minute session cap; the warning above says which.`
             );
             err.budgetExhausted = true;
             throw err;
