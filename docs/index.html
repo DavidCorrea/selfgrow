@@ -443,7 +443,62 @@
   </footer>
 
   <script type="module">
+      import { getAllMeta, checkAllProperties, run } from './lang/run.js';
 
+      /**
+       * Dynamically render the language reference panel from
+       * capability registry metadata so it stays in sync
+       * with whatever capabilities are registered.
+       */
+      function renderCapabilities() {
+        const list = document.getElementById('capabilityList');
+        const placeholder = list.parentElement.querySelector('p');
+        if (placeholder) placeholder.remove();
+
+        const metas = getAllMeta();
+        if (metas.length === 0) {
+          list.innerHTML = '<p style="color: var(--fg-muted)">No capabilities registered.</p>';
+          return;
+        }
+
+        let html = '';
+        for (const meta of metas) {
+          html += '<div class="capability-item" role="listitem">';
+          html += `<div class="capability-name">${escapeHtml(meta.name)}</div>`;
+          html += `<div class="capability-summary">${escapeHtml(meta.summary)}</div>`;
+          if (meta.examples && meta.examples.length > 0) {
+            html += '<div class="capability-examples">';
+            for (const ex of meta.examples) {
+              html += '<div class="example">';
+              html += `<span class="example-source">${escapeHtml(ex.source)}</span>`;
+              html += '<span class="example-arrow" aria-hidden="true">→</span>';
+              html += `<span class="example-result">${escapeHtml(String(ex.result))}</span>`;
+              html += '</div>';
+            }
+            html += '</div>';
+          }
+          html += '</div>';
+        }
+        list.innerHTML = html;
+      }
+
+      function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.appendChild(document.createTextNode(str));
+        return div.innerHTML;
+      }
+
+      // Validate all property constraints once the runtime is ready
+      try {
+        const failures = checkAllProperties(run);
+        if (failures.length > 0) {
+          console.warn('Capability property check failures:', failures);
+        }
+      } catch (err) {
+        console.error('Capability property check error:', err);
+      }
+
+      renderCapabilities();
 
     const editor = document.getElementById('editor');
     const output = document.getElementById('output');

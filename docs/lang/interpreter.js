@@ -15,6 +15,7 @@
  * keywords, and evaluation rules come from registered capabilities.
  */
 import { SelfgrowError, ParseError, TypeError, RuntimeError, TimeoutError } from './errors.js';
+import { formatValue as coreFormatValue } from './capabilities/core.js';
 
 const MAX_STEPS = 100000;
 
@@ -316,9 +317,12 @@ function parse(source, keywords, operators) {
 // Evaluator
 // ============================================================
 
-function makeInitialEnv(builtins) {
+function makeInitialEnv(builtins, functions) {
   const env = {};
   for (const [name, builtin] of Object.entries(builtins)) env[name] = builtin;
+  if (functions) {
+    for (const [name, fn] of functions) env[name] = fn;
+  }
   return env;
 }
 
@@ -443,7 +447,7 @@ function evaluate(ast, env, steps, builtins, operators) {
 function prettyPrint(value) {
   if (value === null || value === undefined) return '';
   if (value && value.__printed !== undefined) return value.__printed;
-  return formatValue(value);
+  return coreFormatValue(value);
 }
 
 // ============================================================
@@ -472,8 +476,23 @@ function runProgram(source, keywords, builtins, operators) {
  * All instances share the same global capability registry.
  * The returned interpreter has register(cap) and run(source) methods.
  */
+/**
+ * Create a new interpreter instance.
+ * All instances share the same global capability registry.
+ * The returned interpreter has register(cap), coreRegister(coreModule), and run(source) methods.
+ * Capabilities register by calling interpreter.register({ name, registerFn }) at
+ * module load time, or via coreRegister which seeds interpreter.functions with core builtins.
+ * When run() is called, it creates a fresh evaluation state, loads all registered
+ * capabilities, merges interpreter.functions into builtins, then evaluates source.
+ */
 export function createInterpreter() {
-  return {
+  /** Map of core functions (name -> { __builtin, fn, arity }) populated by coreRegister */
+  const functions = new Map();
+
+  const interpreter = {
+    /** Map of core functions registered via coreRegister */
+    functions,
+
     /**
      * Register a capability with the global registry.
      * @param {{ name: string, registerFn: Function }} cap
@@ -486,6 +505,15 @@ export function createInterpreter() {
         throw new Error(`Capability "${cap.name}" must have a registerFn function`);
       }
       registry.set(cap.name, cap);
+    },
+
+    /**
+     * Register a core capability module by calling its register function,
+     * which populates interpreter.functions with core builtins.
+     * @param {{ register: Function }} coreModule
+     */
+    coreRegister(coreModule) {
+      coreModule.register(interpreter);
     },
 
     /**
@@ -523,7 +551,14 @@ export function createInterpreter() {
         }
       }
 
+      // Merge core functions registered via coreRegister into builtins
+      for (const [name, fn] of functions) {
+        builtins[name] = fn;
+      }
+
       return runProgram(source, keywords, builtins, operators);
     }
   };
+
+  return interpreter;
 }
