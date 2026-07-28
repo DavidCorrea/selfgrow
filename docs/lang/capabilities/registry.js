@@ -9,6 +9,28 @@
 
 const capabilities = new Map();
 
+export const meta = {
+  name: 'registry',
+  summary: 'Capability registry — manages registration and discovery of language capabilities',
+  examples: [
+    { source: '2 + 3', result: '5' },
+  ],
+};
+
+export function register(interpreter) {
+  // Registry is infrastructure, not a language runtime feature.
+}
+
+export function checkProperties(run) {
+  const failures = [];
+  if (typeof run !== 'function') {
+    failures.push('checkProperties requires a run function');
+  }
+  return failures;
+}
+
+registerCapability(meta, register, checkProperties);
+
 /**
  * Register a capability with the in-memory registry.
  * @param {{ name: string, summary: string, examples: Array<{source: string, result: string}> }} meta
@@ -55,3 +77,4 @@ export function checkAllProperties(run) {
   }
   return failures;
 }
+

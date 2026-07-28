@@ -380,6 +380,140 @@
         --fg-muted: #c9d1d9;
       }
     }
+
+    /* Test runner */
+    .test-runner {
+      margin-bottom: calc(var(--spacing) * 2);
+    }
+
+    #runAllTestsBtn {
+      margin-bottom: var(--spacing);
+    }
+
+    .test-summary {
+      padding: var(--spacing);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: var(--spacing);
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: border-color var(--transition), color var(--transition);
+    }
+
+    .test-summary.all-pass {
+      border-color: var(--success);
+      color: var(--success);
+    }
+
+    .test-summary.has-failures {
+      border-color: var(--error);
+      color: var(--error);
+    }
+
+    .test-results {
+      display: grid;
+      gap: var(--spacing);
+    }
+
+    .test-capability {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: var(--spacing);
+    }
+
+    .test-capability-name {
+      font-family: var(--font-mono);
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 0.5rem;
+    }
+
+    .test-capability-section {
+      margin-bottom: 0.75rem;
+    }
+
+    .test-capability-section:last-child {
+      margin-bottom: 0;
+    }
+
+    .test-section-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--fg-muted);
+      margin-bottom: 0.25rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .test-example {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 0.25rem;
+    }
+
+    .test-example.pass {
+      background: rgba(63, 185, 80, 0.1);
+      color: var(--success);
+    }
+
+    .test-example.fail {
+      background: rgba(248, 81, 73, 0.1);
+      color: var(--error);
+    }
+
+    .test-example .test-icon {
+      font-weight: bold;
+      flex-shrink: 0;
+    }
+
+    .test-example .test-source {
+      color: var(--fg);
+    }
+
+    .test-example .test-detail {
+      color: var(--fg-muted);
+      font-size: 0.75rem;
+    }
+
+    .test-properties {
+      margin-top: 0.25rem;
+    }
+
+    .test-property {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      margin-bottom: 0.25rem;
+    }
+
+    .test-property.pass {
+      background: rgba(63, 185, 80, 0.1);
+      color: var(--success);
+    }
+
+    .test-property.fail {
+      background: rgba(248, 81, 73, 0.1);
+      color: var(--error);
+    }
+
+    .test-property .test-icon {
+      font-weight: bold;
+      flex-shrink: 0;
+    }
+
+    .test-property .test-message {
+      color: var(--fg);
+    }
   </style>
 </head>
 <body>
@@ -431,6 +565,12 @@
         <p style="color: var(--fg-muted); margin-bottom: var(--spacing);">
           Capabilities are loaded dynamically. The reference will populate once the language runtime initializes.
         </p>
+        <div class="test-runner">
+          <button id="runAllTestsBtn" type="button">Run all tests</button>
+          <div id="testSummary" class="test-summary" aria-live="polite"></div>
+          <div id="testResults" class="test-results"></div>
+        </div>
+
         <div class="capability-list" id="capabilityList" role="list" aria-label="Language capabilities">
           <!-- Capabilities injected here by JS -->
         </div>
@@ -446,6 +586,7 @@
 
     import { run } from './lang/run.js';
     import { registry } from './lang/interpreter.js';
+    import { getAllCapabilities } from './lang/capabilities/registry.js';
 
     const editor = document.getElementById('editor');
     const output = document.getElementById('output');
@@ -694,6 +835,187 @@
         list.appendChild(item);
       }
     }
+
+    // --- Test runner ---
+
+    function runAllTests() {
+      const summaryEl = document.getElementById('testSummary');
+      const resultsEl = document.getElementById('testResults');
+      const btn = document.getElementById('runAllTestsBtn');
+
+      btn.disabled = true;
+      summaryEl.textContent = 'Running tests…';
+      summaryEl.className = 'test-summary';
+      resultsEl.innerHTML = '';
+
+      let totalExamples = 0;
+      let passedExamples = 0;
+      let failedExamples = 0;
+      let totalPropertyFailures = 0;
+
+      const capabilities = getAllCapabilities();
+      const results = [];
+
+      for (const cap of capabilities) {
+        const capResult = {
+          name: cap.meta.name,
+          examples: [],
+          propertyFailures: [],
+        };
+
+        // Run each example
+        if (cap.meta.examples) {
+          for (const example of cap.meta.examples) {
+            totalExamples++;
+            const exampleResult = {
+              source: example.source,
+              expected: example.result,
+              actual: null,
+              passed: false,
+              error: null,
+            };
+
+            try {
+              const actual = run(example.source);
+              exampleResult.actual = actual;
+              exampleResult.passed = actual === example.result;
+              if (exampleResult.passed) {
+                passedExamples++;
+              } else {
+                failedExamples++;
+              }
+            } catch (err) {
+              exampleResult.error = err.message || String(err);
+              failedExamples++;
+            }
+
+            capResult.examples.push(exampleResult);
+          }
+        }
+
+        // Check properties
+        try {
+          const failures = cap.checkFn(run);
+          capResult.propertyFailures = Array.isArray(failures) ? failures : [];
+          totalPropertyFailures += capResult.propertyFailures.length;
+        } catch (err) {
+          capResult.propertyFailures = [`checkProperties threw: ${err.message || String(err)}`];
+          totalPropertyFailures += capResult.propertyFailures.length;
+        }
+
+        results.push(capResult);
+      }
+
+      // Render summary
+      const allPassed = failedExamples === 0 && totalPropertyFailures === 0;
+      summaryEl.textContent = `${passedExamples}/${totalExamples} examples passed, ${totalPropertyFailures} property failure${totalPropertyFailures !== 1 ? 's' : ''}`;
+      summaryEl.className = 'test-summary ' + (allPassed ? 'all-pass' : 'has-failures');
+
+      // Render per-capability results
+      for (const capResult of results) {
+        const capEl = document.createElement('div');
+        capEl.className = 'test-capability';
+
+        const nameEl = document.createElement('h3');
+        nameEl.className = 'test-capability-name';
+        nameEl.textContent = capResult.name;
+        capEl.appendChild(nameEl);
+
+        // Examples section
+        if (capResult.examples.length > 0) {
+          const examplesSection = document.createElement('div');
+          examplesSection.className = 'test-capability-section';
+
+          const examplesTitle = document.createElement('div');
+          examplesTitle.className = 'test-section-title';
+          examplesTitle.textContent = 'Examples';
+          examplesSection.appendChild(examplesTitle);
+
+          for (const ex of capResult.examples) {
+            const exEl = document.createElement('div');
+            exEl.className = 'test-example ' + (ex.passed ? 'pass' : 'fail');
+
+            const icon = document.createElement('span');
+            icon.className = 'test-icon';
+            icon.textContent = ex.passed ? '\u2713' : '\u2717';
+            icon.setAttribute('aria-hidden', 'true');
+            exEl.appendChild(icon);
+
+            const source = document.createElement('span');
+            source.className = 'test-source';
+            source.textContent = ex.source;
+            exEl.appendChild(source);
+
+            if (!ex.passed) {
+              const detail = document.createElement('span');
+              detail.className = 'test-detail';
+              if (ex.error) {
+                detail.textContent = `Error: ${ex.error}`;
+              } else {
+                detail.textContent = `expected "${ex.expected}", got "${ex.actual}"`;
+              }
+              exEl.appendChild(detail);
+            }
+
+            examplesSection.appendChild(exEl);
+          }
+
+          capEl.appendChild(examplesSection);
+        }
+
+        // Properties section
+        const propsSection = document.createElement('div');
+        propsSection.className = 'test-capability-section';
+
+        const propsTitle = document.createElement('div');
+        propsTitle.className = 'test-section-title';
+        propsTitle.textContent = 'Property checks';
+        propsSection.appendChild(propsTitle);
+
+        if (capResult.propertyFailures.length > 0) {
+          for (const failure of capResult.propertyFailures) {
+            const propEl = document.createElement('div');
+            propEl.className = 'test-property fail';
+
+            const icon = document.createElement('span');
+            icon.className = 'test-icon';
+            icon.textContent = '\u2717';
+            icon.setAttribute('aria-hidden', 'true');
+            propEl.appendChild(icon);
+
+            const msg = document.createElement('span');
+            msg.className = 'test-message';
+            msg.textContent = failure;
+            propEl.appendChild(msg);
+
+            propsSection.appendChild(propEl);
+          }
+        } else {
+          const propEl = document.createElement('div');
+          propEl.className = 'test-property pass';
+
+          const icon = document.createElement('span');
+          icon.className = 'test-icon';
+          icon.textContent = '\u2713';
+          icon.setAttribute('aria-hidden', 'true');
+          propEl.appendChild(icon);
+
+          const msg = document.createElement('span');
+          msg.className = 'test-message';
+          msg.textContent = 'All properties hold';
+          propEl.appendChild(msg);
+
+          propsSection.appendChild(propEl);
+        }
+
+        capEl.appendChild(propsSection);
+        resultsEl.appendChild(capEl);
+      }
+
+      btn.disabled = false;
+    }
+
+    document.getElementById('runAllTestsBtn').addEventListener('click', runAllTests);
 
     renderReference();
   </script>
