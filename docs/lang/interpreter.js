@@ -470,10 +470,16 @@ function runProgram(source, keywords, builtins, operators) {
 /**
  * Create a new interpreter instance.
  * All instances share the same global capability registry.
- * The returned interpreter has register(cap) and run(source) methods.
+ * The returned interpreter has register(cap), run(source),
+ * registerFunction(name, fn), registerType(name, def),
+ * lookupFunction(name), and lookupType(name) methods.
  */
 export function createInterpreter() {
-  return {
+  const interp = {
+    // Persistent interpreter state — populated by capabilities via registration API.
+    builtins: {},
+    types: {},
+
     /**
      * Register a capability with the global registry.
      * @param {{ name: string, registerFn: Function }} cap
@@ -489,9 +495,46 @@ export function createInterpreter() {
     },
 
     /**
+     * Register a builtin function so it can be called from selfgrow programs.
+     * @param {string} name
+     * @param {Function} fn
+     */
+    registerFunction(name, fn) {
+      interp.builtins[name] = { __builtin: true, fn, arity: fn.arity ?? -1 };
+    },
+
+    /**
+     * Register a type definition so it can be referenced during evaluation.
+     * @param {string} name
+     * @param {object} def
+     */
+    registerType(name, def) {
+      interp.types[name] = def;
+    },
+
+    /**
+     * Look up a registered builtin function by name.
+     * @param {string} name
+     * @returns {Function|null}
+     */
+    lookupFunction(name) {
+      return interp.builtins[name]?.fn ?? null;
+    },
+
+    /**
+     * Look up a registered type definition by name.
+     * @param {string} name
+     * @returns {object|null}
+     */
+    lookupType(name) {
+      return interp.types[name] ?? null;
+    },
+
+    /**
      * Run a selfgrow program and return its printed result.
-     * Creates a fresh interpreter state (keywords set, builtins map, operators map)
+     * Creates a fresh interpreter state (keywords set, operators map)
      * and loads all registered capabilities via their registerFn before evaluation.
+     * Builtins and types are accumulated on the interpreter instance.
      * @param {string} source
      * @returns {string} The printed output of the program
      */
@@ -503,16 +546,16 @@ export function createInterpreter() {
         'true', 'false',
       ]);
 
-      // Builtins start empty — populated by capabilities
-      const builtins = {};
-
       // Operators start empty — populated by capabilities via addOperator
       const operators = {};
 
       // Extension API passed to each capability's registerFn
       const extensions = {
         addKeyword(kw) { keywords.add(kw); },
-        addBuiltin(name, fn) { builtins[name] = { __builtin: true, fn, arity: fn.arity ?? -1 }; },
+        registerFunction(name, fn) { interp.registerFunction(name, fn); },
+        registerType(name, def) { interp.registerType(name, def); },
+        lookupFunction(name) { return interp.lookupFunction(name); },
+        lookupType(name) { return interp.lookupType(name); },
         addOperator(symbol, operatorDef) { operators[symbol] = operatorDef; },
       };
 
@@ -523,7 +566,9 @@ export function createInterpreter() {
         }
       }
 
-      return runProgram(source, keywords, builtins, operators);
+      return runProgram(source, keywords, interp.builtins, operators);
     }
   };
+
+  return interp;
 }

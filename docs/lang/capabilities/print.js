@@ -15,7 +15,7 @@ export const meta = {
 };
 
 function registerPrint(interpreter) {
-  interpreter.addBuiltin('print', function (args, steps) {
+  interpreter.registerFunction('print', function (args, steps) {
     let output = '';
     for (const arg of args) {
       if (typeof arg === 'string') { output += arg; }

@@ -5,9 +5,14 @@
  * wire all capabilities into a fresh interpreter instance. run()
  * is synchronous — it creates an interpreter, initializes it, and
  * evaluates source.
+ *
+ * The interpreter factory is also exported so capabilities and
+ * playground code can register directly on interpreter instances.
  */
 import { createInterpreter } from './interpreter.js';
 import { initialize } from './capabilities/index.js';
+
+export { createInterpreter };
 
 /**
  * Run a selfgrow program and return its printed result.
