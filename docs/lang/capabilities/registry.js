@@ -11,9 +11,9 @@ const capabilities = new Map();
 
 export const meta = {
   name: 'registry',
-  summary: 'Capability registry — manages registration and discovery of language capabilities',
+  summary: 'Infrastructure — manages registration and discovery of language capabilities',
   examples: [
-    { source: '2 + 3', result: '5' },
+    { source: 'print("ok")', result: 'ok' },
   ],
 };
 
