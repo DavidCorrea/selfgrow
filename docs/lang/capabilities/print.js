@@ -2,11 +2,11 @@
  * Print capability — adds the `print` builtin function to the language.
  * This capability registers itself with the interpreter at module load time.
  */
-import { registry } from '../lang/interpreter.js';
+import { registerCapability } from './registry.js';
 
 export const meta = {
   name: 'print',
-  summary: 'Output a value to the console',
+  summary: 'Output a value to the playground',
   examples: [
     { source: 'print("hello")', result: 'hello' },
     { source: 'print(1 + 2)', result: '3' },
@@ -15,11 +15,11 @@ export const meta = {
 };
 
 function registerPrint(interpreter) {
-  interpreter.addBuiltin('print', function(args, steps) {
+  interpreter.addBuiltin('print', function (args, steps) {
     let output = '';
     for (const arg of args) {
       if (typeof arg === 'string') { output += arg; }
-      else if (typeof arg === 'number') { output += Number.isInteger(arg) ? String(arg) : String(arg); }
+      else if (typeof arg === 'number') { output += String(arg); }
       else if (typeof arg === 'boolean') { output += arg ? 'true' : 'false'; }
       else if (arg === null || arg === undefined) { /* nothing */ }
       else { output += String(arg); }
@@ -28,21 +28,25 @@ function registerPrint(interpreter) {
   });
 }
 
-registry.set(meta.name, { meta, registerFn: registerPrint });
+export function register(interpreter) {
+  registerPrint(interpreter);
+}
 
 export function checkProperties(run) {
   const failures = [];
-  const result = run('print("hello")');
-  if (result !== 'hello') {
+
+  if (run('print("hello")') !== 'hello') {
     failures.push('print("hello") should return "hello"');
   }
-  const numResult = run('print(1 + 2)');
-  if (numResult !== '3') {
+  if (run('print(1 + 2)') !== '3') {
     failures.push('print(1 + 2) should return "3"');
   }
-  const boolResult = run('print(true)');
-  if (boolResult !== 'true') {
+  if (run('print(true)') !== 'true') {
     failures.push('print(true) should return "true"');
   }
+
   return failures;
 }
+
+// Self-register at module load time.
+registerCapability(meta, register, checkProperties);

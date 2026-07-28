@@ -7,7 +7,7 @@
  * documentation and the test suite (each example is executed via run() and
  * compared to the expected result).
  */
-import { registry } from '../lang/interpreter.js';
+import { registerCapability } from './registry.js';
 
 export const meta = {
   name: 'arithmetic',
@@ -28,7 +28,9 @@ function registerArithmetic(interpreter) {
   interpreter.addOperator('/', { precedence: 20, associativity: 'left', fn: (a, b) => a / b });
 }
 
-registry.set(meta.name, { meta, registerFn: registerArithmetic });
+export function register(interpreter) {
+  registerArithmetic(interpreter);
+}
 
 export function checkProperties(run) {
   const failures = [];
@@ -65,3 +67,6 @@ export function checkProperties(run) {
 
   return failures;
 }
+
+// Self-register at module load time.
+registerCapability(meta, register, checkProperties);

@@ -1,28 +1,16 @@
 /**
  * Runtime bootstrap for the selfgrow language.
  *
- * Uses top-level await to eagerly import all capability modules listed
- * in the manifest at module load time, so they self-register with the
- * interpreter registry before run() is ever called. This makes run()
- * synchronous — it just creates an interpreter and evaluates source.
+ * Uses top-level await to eagerly import all capability modules so
+ * they self-register with the interpreter registry before run() is
+ * ever called. This makes run() synchronous — it just creates an
+ * interpreter and evaluates source.
  *
- * Also loads new-format capabilities from docs/lang/capabilities/ so the
- * capability module format is exercised from day one.
- *
- * To add a new capability, add its entry to docs/capabilities/manifest.js
- * (old format) or docs/lang/capabilities/ (new format).
+ * New-format capabilities live in docs/lang/capabilities/. To add a
+ * new capability, add its module there.
  */
 import { createInterpreter, registry } from './interpreter.js';
-import { entries } from '../capabilities/manifest.js';
 import { getAllCapabilities } from './capabilities/registry.js';
-
-const capabilitiesBase = new URL('../capabilities/', import.meta.url);
-
-// Eagerly import all old-format capability modules so their top-level
-// registration runs before this module's exports are available.
-await Promise.all(
-  entries.map(({ specifier }) => import(new URL(specifier, capabilitiesBase).href))
-);
 
 // Import new-format capability modules so they self-register with the
 // in-memory registry in registry.js. Then bridge them into the interpreter's
