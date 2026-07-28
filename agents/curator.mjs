@@ -37,7 +37,7 @@ const MAX_PROPOSALS = 2;
 // load-bearing, so removing anything makes it worse whatever its quality.
 const MIN_CAPABILITIES_TO_CURATE = 4;
 
-const CAPABILITY_DIR = join(repoRoot, "docs", "capabilities");
+const CAPABILITY_DIR = join(repoRoot, "docs", "lang", "capabilities");
 
 /**
  * Read the shipped capabilities. The Curator is judging craft, so it gets the
@@ -63,7 +63,7 @@ function readCapabilities() {
 
 function formatCapabilities(capabilities) {
   return capabilities
-    .map((s) => `### docs/capabilities/${s.name}\n\`\`\`js\n${s.source.slice(0, 4000)}\n\`\`\``)
+    .map((s) => `### docs/lang/capabilities/${s.name}\n\`\`\`js\n${s.source.slice(0, 4000)}\n\`\`\``)
     .join("\n\n");
 }
 

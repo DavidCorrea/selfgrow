@@ -23,7 +23,7 @@ export function run(source) { /* ... */ }
 This is the only thing the build knows how to call. How `run` gets from text to a
 result — the stages, the data structures, the names for them — is unconstrained.
 
-### 2. One file per capability: `docs/capabilities/<name>.js`
+### 2. One file per capability: `docs/lang/capabilities/<name>.js`
 
 ```js
 export const meta = {
