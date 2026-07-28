@@ -2188,7 +2188,7 @@ async function checkLanguage(browser, url, dir) {
     log("info", "Verify: no docs/lang/run.js yet — skipping the language checks.");
     return [];
   }
-  const capabilityDir = join(dir, "capabilities");
+  const capabilityDir = join(dir, "lang", "capabilities");
   let files = [];
   try {
     files = fs
@@ -2196,7 +2196,7 @@ async function checkLanguage(browser, url, dir) {
       .filter((e) => e.isFile() && /\.m?js$/.test(e.name))
       .map((e) => e.name);
   } catch {
-    log("info", "Verify: no docs/capabilities/ yet — skipping the language checks.");
+    log("info", "Verify: no docs/lang/capabilities/ yet — skipping the language checks.");
     return [];
   }
   if (!files.length) return [];
@@ -2232,7 +2232,7 @@ async function checkLanguage(browser, url, dir) {
         for (const file of files) {
           let mod;
           try {
-            mod = await import(`./capabilities/${file}`);
+            mod = await import(`./lang/capabilities/${file}`);
           } catch (e) {
             problems.push(`${file}: could not be imported — ${e.message}`);
             continue;
