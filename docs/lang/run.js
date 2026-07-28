@@ -15,7 +15,8 @@ import { getAllCapabilities } from './capabilities/registry.js';
 // Import new-format capability modules so they self-register with the
 // in-memory registry in registry.js. Then bridge them into the interpreter's
 // global registry so run() picks them up.
-await import('./capabilities/core.js');
+await import('./capabilities/print.js');
+await import('./capabilities/arithmetic.js');
 for (const cap of getAllCapabilities()) {
   registry.set(cap.meta.name, { meta: cap.meta, registerFn: cap.registerFn });
 }
