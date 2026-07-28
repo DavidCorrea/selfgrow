@@ -563,7 +563,7 @@
       <h2 id="reference-heading" class="reference-header">Language Reference</h2>
       <div class="reference-content">
         <p style="color: var(--fg-muted); margin-bottom: var(--spacing);">
-          Capabilities are loaded dynamically. The reference will populate once the language runtime initializes.
+          Capabilities are listed below. Use the Run button on each example to test it live.
         </p>
         <div class="test-runner">
           <button id="runAllTestsBtn" type="button">Run all tests</button>
@@ -585,7 +585,7 @@
   <script type="module">
 
     import { run } from './lang/run.js';
-    import { registry } from './lang/interpreter.js';
+    import { getAllMeta } from './lang/capabilities/index.js';
     import { getAllCapabilities } from './lang/capabilities/registry.js';
 
     const editor = document.getElementById('editor');
@@ -751,8 +751,8 @@
       if (placeholder) placeholder.style.display = 'none';
       list.innerHTML = '';
 
-      for (const [, cap] of registry.entries()) {
-        if (!cap.meta) continue;
+      for (const meta of getAllMeta()) {
+        if (!meta) continue;
 
         const item = document.createElement('div');
         item.className = 'capability-item';
@@ -760,21 +760,21 @@
 
         const nameEl = document.createElement('h3');
         nameEl.className = 'capability-name';
-        nameEl.textContent = cap.meta.name;
+        nameEl.textContent = meta.name;
         item.appendChild(nameEl);
 
         const summaryEl = document.createElement('p');
         summaryEl.className = 'capability-summary';
-        summaryEl.textContent = cap.meta.summary;
+        summaryEl.textContent = meta.summary;
         item.appendChild(summaryEl);
 
-        if (cap.meta.examples && cap.meta.examples.length > 0) {
+        if (meta.examples && meta.examples.length > 0) {
           const examplesEl = document.createElement('div');
           examplesEl.className = 'capability-examples';
           examplesEl.setAttribute('role', 'list');
-          examplesEl.setAttribute('aria-label', `Examples for ${cap.meta.name}`);
+          examplesEl.setAttribute('aria-label', `Examples for ${meta.name}`);
 
-          cap.meta.examples.forEach((example) => {
+          meta.examples.forEach((example) => {
             const exampleEl = document.createElement('div');
             exampleEl.className = 'example';
             exampleEl.setAttribute('role', 'listitem');
