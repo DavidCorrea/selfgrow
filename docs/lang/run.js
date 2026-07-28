@@ -1,35 +1,24 @@
 /**
  * Runtime bootstrap for the selfgrow language.
  *
- * Uses top-level await to eagerly import all capability modules so
- * they self-register with the interpreter registry before run() is
- * ever called. This makes run() synchronous — it just creates an
- * interpreter and evaluates source.
- *
- * New-format capabilities live in docs/lang/capabilities/. To add a
- * new capability, add its module there.
+ * Uses the centralized capability loader (capabilities/index.js) to
+ * wire all capabilities into a fresh interpreter instance. run()
+ * is synchronous — it creates an interpreter, initializes it, and
+ * evaluates source.
  */
-import { createInterpreter, registry } from './interpreter.js';
-import { getAllCapabilities } from './capabilities/registry.js';
-
-// Import new-format capability modules so they self-register with the
-// in-memory registry in registry.js. Then bridge them into the interpreter's
-// global registry so run() picks them up.
-await import('./capabilities/print.js');
-await import('./capabilities/arithmetic.js');
-for (const cap of getAllCapabilities()) {
-  registry.set(cap.meta.name, { meta: cap.meta, registerFn: cap.registerFn });
-}
+import { createInterpreter } from './interpreter.js';
+import { initialize } from './capabilities/index.js';
 
 /**
  * Run a selfgrow program and return its printed result.
  *
- * All capabilities are pre-loaded (and self-registered) during module
- * import. Creates a fresh interpreter instance for each call.
+ * Creates a fresh interpreter instance for each call and
+ * initializes it with all registered capabilities.
  * @param {string} source
  * @returns {string} The printed output of the program
  */
 export function run(source) {
   const interpreter = createInterpreter();
+  initialize(interpreter);
   return interpreter.run(source);
 }
