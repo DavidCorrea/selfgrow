@@ -134,8 +134,10 @@ export function getLocation(source, offset) {
 }
 
 class Parser {
-  constructor(tokens, source, keywords, operators) {
+  constructor(tokens, source, keywords, operators, statementParsers, primaryParsers) {
     this.tokens = tokens; this.source = source; this.pos = 0; this.keywords = keywords; this.operators = operators;
+    this.statementParsers = statementParsers || {};
+    this.primaryParsers = primaryParsers || {};
   }
   peek() { return this.tokens[this.pos]; }
   advance() { return this.tokens[this.pos++]; }
@@ -189,62 +191,10 @@ class Parser {
 
   parseStatement() {
     const token = this.peek();
-    if (token.value === 'let') return this.parseLet();
-    if (token.value === 'fn') return this.parseFn();
-    if (token.value === 'if') return this.parseIf();
-    if (token.value === 'while') return this.parseWhile();
-    if (token.value === 'do') return this.parseBlock();
+    if (token.value in this.statementParsers) {
+      return this.statementParsers[token.value](this);
+    }
     return { type: 'ExprStmt', expr: this.parseExpression() };
-  }
-
-  parseLet() {
-    this.expectKeyword('let');
-    const nameToken = this.expect(TT.IDENTIFIER);
-    let value = null;
-    if (this.matchOperator('=')) value = this.parseExpression();
-    this.expectKeyword('in');
-    const body = this.parseExpression();
-    return { type: 'Let', name: nameToken.value, value, body };
-  }
-
-  parseFn() {
-    this.expectKeyword('fn');
-    const nameToken = this.expect(TT.IDENTIFIER);
-    this.expectPunctuation('(');
-    const params = this.parseParamList();
-    this.expectPunctuation(')');
-    this.expectOperator('=');
-    const body = this.parseExpression();
-    return { type: 'FnDef', name: nameToken.value, params, body };
-  }
-
-  parseIf() {
-    this.expectKeyword('if');
-    const condition = this.parseExpression();
-    this.expectKeyword('then');
-    const thenBranch = this.parseExpression();
-    let elseBranch = null;
-    if (this.matchKeyword('else')) elseBranch = this.parseExpression();
-    this.expectKeyword('end');
-    return { type: 'If', condition, then: thenBranch, else: elseBranch };
-  }
-
-  parseWhile() {
-    this.expectKeyword('while');
-    const condition = this.parseExpression();
-    this.expectKeyword('do');
-    let body = null;
-    if (!(this.peek().type === TT.KEYWORD && this.peek().value === 'end')) body = this.parseExpression();
-    this.expectKeyword('end');
-    return { type: 'While', condition, body };
-  }
-
-  parseBlock() {
-    this.expectKeyword('do');
-    const stmts = [];
-    while (this.peek().type !== TT.EOF && this.peek().value !== 'end') stmts.push(this.parseExpression());
-    this.expectKeyword('end');
-    return { type: 'Block', body: stmts };
   }
 
   parseParamList() {
@@ -305,8 +255,8 @@ class Parser {
     if (token.type === TT.STRING) { this.advance(); return { type: 'String', value: token.value }; }
     if (token.type === TT.KEYWORD && (token.value === 'true' || token.value === 'false')) { this.advance(); return { type: 'Boolean', value: token.value === 'true' }; }
     if (this.matchPunctuation('(')) { const expr = this.parseExpression(); this.expectPunctuation(')'); if (this.peek().type === TT.PUNCTUATION && this.peek().value === '(') return { type: 'Call', callee: expr, args: this.parseArgList() }; return expr; }
-    if (token.type === TT.KEYWORD && token.value === 'fn') {
-      this.advance(); this.expectPunctuation('('); const params = this.parseParamList(); this.expectPunctuation(')'); this.expectOperator('='); const body = this.parseExpression(); return { type: 'FnExpr', params, body };
+    if (token.value in this.primaryParsers) {
+      return this.primaryParsers[token.value](this);
     }
     if (token.type === TT.IDENTIFIER) {
       this.advance();
@@ -330,8 +280,8 @@ class Parser {
   expectOperator(value) { return this.expect(TT.OPERATOR, value); }
 }
 
-function parse(source, keywords, operators) {
-  return new Parser(tokenize(source, keywords), source, keywords, operators).parseProgram();
+function parse(source, keywords, operators, statementParsers, primaryParsers) {
+  return new Parser(tokenize(source, keywords), source, keywords, operators, statementParsers, primaryParsers).parseProgram();
 }
 
 // ============================================================
@@ -366,92 +316,77 @@ function describeValue(value) {
   return typeof value;
 }
 
-function evaluate(ast, env, steps, builtins, operators) {
-  steps.count++;
-  if (steps.count > MAX_STEPS) {
-    throw new TimeoutError('Program did not finish — the evaluation exceeded the maximum step count, which usually means an infinite loop.', 'program completion', 'step limit exceeded', null);
-  }
+function createEvaluator(nodeHandlers) {
+  function evaluate(ast, env, steps, builtins, operators) {
+    steps.count++;
+    if (steps.count > MAX_STEPS) {
+      throw new TimeoutError('Program did not finish — the evaluation exceeded the maximum step count, which usually means an infinite loop.', 'program completion', 'step limit exceeded', null);
+    }
 
-  switch (ast.type) {
-    case 'Program': {
-      let lastValue = undefined;
-      for (const stmt of ast.body) lastValue = evaluate(stmt, env, steps, builtins, operators);
-      return lastValue;
+    // Dispatch through nodeHandlers first (capability-managed nodes)
+    if (ast.type in nodeHandlers) {
+      return nodeHandlers[ast.type](ast, env, steps, builtins, operators, evaluate);
     }
-    case 'ExprStmt': return evaluate(ast.expr, env, steps, builtins, operators);
-    case 'Block': { let last = undefined; for (const stmt of ast.body) last = evaluate(stmt, env, steps, builtins, operators); return last; }
-    case 'Number': return ast.value;
-    case 'String': return ast.value;
-    case 'Boolean': return ast.value;
-    case 'Identifier': {
-      if (ast.name in env) return env[ast.name];
-      throw new RuntimeError(`Unknown identifier: ${ast.name}`, 'a defined identifier', `undefined identifier '${ast.name}'`, null);
-    }
-    case 'Let': {
-      const value = ast.value ? evaluate(ast.value, env, steps, builtins, operators) : undefined;
-      return evaluate(ast.body, { ...env, [ast.name]: value }, steps, builtins, operators);
-    }
-    case 'FnDef': {
-      const closure = { __closure: true, params: ast.params, body: ast.body, env: { ...env } };
-      env[ast.name] = closure;
-      return closure;
-    }
-    case 'FnExpr': {
-      return { __closure: true, params: ast.params, body: ast.body, env: { ...env } };
-    }
-    case 'Call': {
-      const callee = evaluate(ast.callee, env, steps, builtins, operators);
-      const args = ast.args.map(arg => evaluate(arg, env, steps, builtins, operators));
-      let printed = '';
-      if (callee && callee.__printed !== undefined) printed = callee.__printed;
-      if (callee && callee.__builtin) {
-        return callee.fn(args, steps);
+
+    // Core evaluation (nodes not managed by capabilities)
+    switch (ast.type) {
+      case 'Program': {
+        let lastValue = undefined;
+        for (const stmt of ast.body) lastValue = evaluate(stmt, env, steps, builtins, operators);
+        return lastValue;
       }
-      if (callee && callee.__closure) {
-        if (callee.params.length !== args.length) {
-          throw new TypeError(`Function ${describeCallee(ast.callee)} expects ${callee.params.length} arguments but got ${args.length}`, `${callee.params.length} arguments`, `${args.length} arguments`, null);
+      case 'ExprStmt': return evaluate(ast.expr, env, steps, builtins, operators);
+      case 'Number': return ast.value;
+      case 'String': return ast.value;
+      case 'Boolean': return ast.value;
+      case 'Identifier': {
+        if (ast.name in env) return env[ast.name];
+        throw new RuntimeError(`Unknown identifier: ${ast.name}`, 'a defined identifier', `undefined identifier '${ast.name}'`, null);
+      }
+      case 'Call': {
+        const callee = evaluate(ast.callee, env, steps, builtins, operators);
+        const args = ast.args.map(arg => evaluate(arg, env, steps, builtins, operators));
+        let printed = '';
+        if (callee && callee.__printed !== undefined) printed = callee.__printed;
+        if (callee && callee.__builtin) {
+          return callee.fn(args, steps);
         }
-        const closureEnv = { ...callee.env };
-        callee.params.forEach((param, i) => { closureEnv[param] = args[i]; });
-        const result = evaluate(callee.body, closureEnv, steps, builtins, operators);
-        if (result && result.__printed) printed += result.__printed;
-        return result && result.__value !== undefined ? result.__value : result;
+        if (callee && callee.__closure) {
+          if (callee.params.length !== args.length) {
+            throw new TypeError(`Function ${describeCallee(ast.callee)} expects ${callee.params.length} arguments but got ${args.length}`, `${callee.params.length} arguments`, `${args.length} arguments`, null);
+          }
+          const closureEnv = { ...callee.env };
+          callee.params.forEach((param, i) => { closureEnv[param] = args[i]; });
+          const result = evaluate(callee.body, closureEnv, steps, builtins, operators);
+          if (result && result.__printed) printed += result.__printed;
+          return result && result.__value !== undefined ? result.__value : result;
+        }
+        throw new TypeError(`${describeCallee(ast.callee)} is not a function`, 'a function', describeValue(callee), null);
       }
-      throw new TypeError(`${describeCallee(ast.callee)} is not a function`, 'a function', describeValue(callee), null);
-    }
-    case 'BinOp': {
-      const left = evaluate(ast.left, env, steps, builtins, operators);
-      const right = evaluate(ast.right, env, steps, builtins, operators);
-      if (ast.op in operators) {
-        if (ast.op === '/' && right === 0) throw new RuntimeError('division by zero', 'a non-zero divisor', '0', null);
-        return operators[ast.op].fn(left, right);
+      case 'BinOp': {
+        const left = evaluate(ast.left, env, steps, builtins, operators);
+        const right = evaluate(ast.right, env, steps, builtins, operators);
+        if (ast.op in operators) {
+          if (ast.op === '/' && right === 0) throw new RuntimeError('division by zero', 'a non-zero divisor', '0', null);
+          return operators[ast.op].fn(left, right);
+        }
+        throw new TypeError(`Unknown operator: ${ast.op}`, 'a valid operator', `'${ast.op}'`, null);
       }
-      throw new TypeError(`Unknown operator: ${ast.op}`, 'a valid operator', `'${ast.op}'`, null);
-    }
-    case 'UnaryOp': {
-      const operand = evaluate(ast.operand, env, steps, builtins, operators);
-      if (ast.op in operators && operators[ast.op].prefix) {
-        return operators[ast.op].fn(operand);
+      case 'UnaryOp': {
+        const operand = evaluate(ast.operand, env, steps, builtins, operators);
+        if (ast.op in operators && operators[ast.op].prefix) {
+          return operators[ast.op].fn(operand);
+        }
+        switch (ast.op) {
+          case '-': return -operand;
+          default: throw new TypeError(`Unknown unary operator: ${ast.op}`, 'a valid unary operator', `'${ast.op}'`, null);
+        }
       }
-      switch (ast.op) {
-        case '-': return -operand;
-        default: throw new TypeError(`Unknown unary operator: ${ast.op}`, 'a valid unary operator', `'${ast.op}'`, null);
-      }
+      default:
+        throw new RuntimeError(`Unknown AST node type: ${ast.type}`, 'a valid AST node type', `'${ast.type}'`, null);
     }
-    case 'If': {
-      const condition = evaluate(ast.condition, env, steps, builtins, operators);
-      if (condition) return evaluate(ast.then, env, steps, builtins, operators);
-      else if (ast.else) return evaluate(ast.else, env, steps, builtins, operators);
-      return undefined;
-    }
-    case 'While': {
-      let result = undefined;
-      while (evaluate(ast.condition, env, steps, builtins, operators)) { if (ast.body) result = evaluate(ast.body, env, steps, builtins, operators); }
-      return result;
-    }
-    default:
-      throw new RuntimeError(`Unknown AST node type: ${ast.type}`, 'a valid AST node type', `'${ast.type}'`, null);
   }
+  return evaluate;
 }
 
 function prettyPrint(value) {
@@ -464,11 +399,12 @@ function prettyPrint(value) {
 // Program runner (parameterized by keywords set, builtins map, and operators map)
 // ============================================================
 
-function runProgram(source, keywords, builtins, operators) {
+function runProgram(source, keywords, builtins, operators, statementParsers, primaryParsers, nodeHandlers) {
   try {
-    const ast = parse(source, keywords, operators);
+    const ast = parse(source, keywords, operators, statementParsers, primaryParsers);
     const steps = { count: 0 };
     const env = makeInitialEnv(builtins);
+    const evaluate = createEvaluator(nodeHandlers);
     const result = evaluate(ast, env, steps, builtins, operators);
     return prettyPrint(result);
   } catch (err) {
@@ -553,14 +489,18 @@ export function createInterpreter() {
      * @returns {string} The printed output of the program
      */
     run(source) {
-      // Core language keywords (part of the interpreter's default state)
-      const keywords = new Set([
-        'let', 'in', 'if', 'then', 'else', 'end',
-        'while', 'do', 'fn',
-      ]);
+      // Keywords start empty — populated by capabilities via addKeyword
+      const keywords = new Set();
 
       // Operators start empty — populated by capabilities via addOperator
       const operators = {};
+
+      // Parsing dispatch tables — populated by capabilities
+      const statementParsers = {};
+      const primaryParsers = {};
+
+      // Node handlers for evaluation — populated by capabilities
+      const nodeHandlers = {};
 
       // Extension API passed to each capability's registerFn
       const extensions = {
@@ -570,6 +510,9 @@ export function createInterpreter() {
         lookupFunction(name) { return interp.lookupFunction(name); },
         lookupType(name) { return interp.lookupType(name); },
         addOperator(symbol, operatorDef) { operators[symbol] = operatorDef; },
+        addStatementParser(keyword, fn) { statementParsers[keyword] = fn; },
+        addPrimaryParser(keyword, fn) { primaryParsers[keyword] = fn; },
+        addNodeHandler(nodeType, fn) { nodeHandlers[nodeType] = fn; },
       };
 
       // Load all registered capabilities (in insertion order)
@@ -579,7 +522,7 @@ export function createInterpreter() {
         }
       }
 
-      return runProgram(source, keywords, interp.builtins, operators);
+      return runProgram(source, keywords, interp.builtins, operators, statementParsers, primaryParsers, nodeHandlers);
     }
   };
 
