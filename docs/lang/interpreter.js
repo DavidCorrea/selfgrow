@@ -163,6 +163,30 @@ class Parser {
     return { type: 'Program', body: stmts };
   }
 
+  // Match a binary operator with the given precedence from the operators map.
+  // Returns the operator symbol or null if the current token is not a matching binary operator.
+  _matchBinOp(precedence) {
+    const token = this.peek();
+    if (token.type === TT.EOF) return null;
+    if (token.value in this.operators && !this.operators[token.value].prefix && this.operators[token.value].precedence === precedence) {
+      this.advance();
+      return token.value;
+    }
+    return null;
+  }
+
+  // Match a prefix operator from the operators map.
+  // Returns the operator symbol or null if the current token is not a matching prefix operator.
+  _matchPrefixOp() {
+    const token = this.peek();
+    if (token.type === TT.EOF) return null;
+    if (token.value in this.operators && this.operators[token.value].prefix) {
+      this.advance();
+      return token.value;
+    }
+    return null;
+  }
+
   parseStatement() {
     const token = this.peek();
     if (token.value === 'let') return this.parseLet();
@@ -235,45 +259,43 @@ class Parser {
   parseExpression() { return this.parseOr(); }
   parseOr() {
     let left = this.parseAnd();
-    while (this.matchKeyword('or')) left = { type: 'BinOp', op: 'or', left, right: this.parseAnd() };
+    let op = this._matchBinOp(2);
+    while (op) { left = { type: 'BinOp', op, left, right: this.parseAnd() }; op = this._matchBinOp(2); }
     return left;
   }
   parseAnd() {
     let left = this.parseNot();
-    while (this.matchKeyword('and')) left = { type: 'BinOp', op: 'and', left, right: this.parseNot() };
+    let op = this._matchBinOp(3);
+    while (op) { left = { type: 'BinOp', op, left, right: this.parseNot() }; op = this._matchBinOp(3); }
     return left;
   }
   parseNot() {
-    if (this.matchKeyword('not')) return { type: 'UnaryOp', op: 'not', operand: this.parseNot() };
+    let op = this._matchPrefixOp();
+    if (op) return { type: 'UnaryOp', op, operand: this.parseNot() };
     return this.parseComparison();
   }
   parseComparison() {
     let left = this.parseAdd();
-    const compOps = ['==', '!=', '<', '>', '<=', '>='];
-    while (true) {
-      const op = this.peek();
-      if (op.type === TT.OPERATOR && compOps.includes(op.value)) { this.advance(); left = { type: 'BinOp', op: op.value, left, right: this.parseAdd() }; }
-      else break;
-    }
+    let op = this._matchBinOp(5);
+    while (op) { left = { type: 'BinOp', op, left, right: this.parseAdd() }; op = this._matchBinOp(5); }
     return left;
   }
   parseAdd() {
     let left = this.parseMul();
-    while (this.peek().type === TT.OPERATOR && this.peek().value in this.operators && this.operators[this.peek().value].precedence === 10) {
-      const op = this.advance().value;
-      left = { type: 'BinOp', op, left, right: this.parseMul() };
-    }
+    let op = this._matchBinOp(10);
+    while (op) { left = { type: 'BinOp', op, left, right: this.parseMul() }; op = this._matchBinOp(10); }
     return left;
   }
   parseMul() {
     let left = this.parseUnary();
-    while (this.peek().type === TT.OPERATOR && this.peek().value in this.operators && this.operators[this.peek().value].precedence === 20) {
-      const op = this.advance().value;
-      left = { type: 'BinOp', op, left, right: this.parseUnary() };
-    }
+    let op = this._matchBinOp(20);
+    while (op) { left = { type: 'BinOp', op, left, right: this.parseUnary() }; op = this._matchBinOp(20); }
     return left;
   }
   parseUnary() {
+    let op = this._matchPrefixOp();
+    if (op) return { type: 'UnaryOp', op, operand: this.parseUnary() };
+    // Match '-' as a prefix arithmetic operator (not in the operators map by default)
     if (this.matchOperator('-')) return { type: 'UnaryOp', op: '-', operand: this.parseUnary() };
     return this.parsePrimary();
   }
@@ -404,23 +426,15 @@ function evaluate(ast, env, steps, builtins, operators) {
         if (ast.op === '/' && right === 0) throw new RuntimeError('division by zero', 'a non-zero divisor', '0', null);
         return operators[ast.op].fn(left, right);
       }
-      switch (ast.op) {
-        case '==': return left === right;
-        case '!=': return left !== right;
-        case '<': return left < right;
-        case '>': return left > right;
-        case '<=': return left <= right;
-        case '>=': return left >= right;
-        case 'and': return left && right;
-        case 'or': return left || right;
-        default: throw new TypeError(`Unknown operator: ${ast.op}`, 'a valid operator', `'${ast.op}'`, null);
-      }
+      throw new TypeError(`Unknown operator: ${ast.op}`, 'a valid operator', `'${ast.op}'`, null);
     }
     case 'UnaryOp': {
       const operand = evaluate(ast.operand, env, steps, builtins, operators);
+      if (ast.op in operators && operators[ast.op].prefix) {
+        return operators[ast.op].fn(operand);
+      }
       switch (ast.op) {
         case '-': return -operand;
-        case 'not': return !operand;
         default: throw new TypeError(`Unknown unary operator: ${ast.op}`, 'a valid unary operator', `'${ast.op}'`, null);
       }
     }
@@ -542,8 +556,7 @@ export function createInterpreter() {
       // Core language keywords (part of the interpreter's default state)
       const keywords = new Set([
         'let', 'in', 'if', 'then', 'else', 'end',
-        'while', 'do', 'fn', 'and', 'or', 'not',
-        'true', 'false',
+        'while', 'do', 'fn',
       ]);
 
       // Operators start empty — populated by capabilities via addOperator
