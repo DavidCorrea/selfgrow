@@ -23,6 +23,7 @@
       --spacing: 1rem;
       --radius: 6px;
       --transition: 150ms ease;
+      --header-height: 4rem;
     }
 
     * {
@@ -255,6 +256,7 @@
 
     .reference-content {
       padding: var(--spacing);
+      padding-top: calc(var(--header-height) + var(--spacing));
     }
 
     .capability-list {
@@ -388,6 +390,10 @@
 
     #runAllTestsBtn {
       margin-bottom: var(--spacing);
+    }
+
+    #testSummary {
+      scroll-margin-top: var(--header-height);
     }
 
     .test-summary {
