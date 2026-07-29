@@ -16,6 +16,7 @@ export const meta = {
     { source: 'let x = if true then 1 else 2 end in x', result: '1' },
     { source: 'fn add(a, b) = a + b\nadd(if true then 1 else 2 end, 3)', result: '4' },
     { source: 'if true then if false then 1 else 2 end else 3 end', result: '2' },
+    { source: 'print(if true then 1 else 2 end)', result: '1' },
     { source: 'while false do print(1) end', result: '' },
     { source: 'while false do let x = 1 in print(x) end', result: '' },
   ],
@@ -194,6 +195,11 @@ export function checkProperties(run) {
   // if as an expression passed as a function argument
   if (run('fn add(a, b) = a + b\nadd(if true then 1 else 2 end, 3)') !== '4') {
     failures.push('add(if true then 1 else 2 end, 3) should return "4"');
+  }
+
+  // if as an expression passed to print
+  if (run('print(if true then 1 else 2 end)') !== '1') {
+    failures.push('print(if true then 1 else 2 end) should return "1"');
   }
 
   // nested if as an expression
