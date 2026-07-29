@@ -13,6 +13,7 @@ import { registerCapability, getAllCapabilities, getAllMeta, checkAllProperties 
 import './print.js';
 import './arithmetic.js';
 import './comparison.js';
+import './control.js';
 
 export { registerCapability, getAllCapabilities, getAllMeta, checkAllProperties };
 
