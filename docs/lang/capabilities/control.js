@@ -13,6 +13,9 @@ export const meta = {
     { source: 'fn add(a, b) = a + b\nadd(2, 3)', result: '5' },
     { source: 'if true then 1 else 2 end', result: '1' },
     { source: 'if false then 1 else 2 end', result: '2' },
+    { source: 'let x = if true then 1 else 2 end in x', result: '1' },
+    { source: 'fn add(a, b) = a + b\nadd(if true then 1 else 2 end, 3)', result: '4' },
+    { source: 'if true then if false then 1 else 2 end else 3 end', result: '2' },
   ],
 };
 
@@ -76,6 +79,18 @@ function registerControl(interpreter) {
     while (parser.peek().type !== 'eof' && parser.peek().value !== 'end') stmts.push(parser.parseExpression());
     parser.expectKeyword('end');
     return { type: 'Block', body: stmts };
+  });
+
+  // Primary parser for if expressions (if/then/else/end usable in expression contexts)
+  interpreter.addPrimaryParser('if', (parser) => {
+    parser.expectKeyword('if');
+    const condition = parser.parseExpression();
+    parser.expectKeyword('then');
+    const thenBranch = parser.parseExpression();
+    let elseBranch = null;
+    if (parser.matchKeyword('else')) elseBranch = parser.parseExpression();
+    parser.expectKeyword('end');
+    return { type: 'If', condition, then: thenBranch, else: elseBranch };
   });
 
   // Primary parser for anonymous function expressions
@@ -165,6 +180,21 @@ export function checkProperties(run) {
   // if without else branch
   if (run('if true then 1 end') !== '1') {
     failures.push('if true then 1 end should return "1"');
+  }
+
+  // if as an expression in a let binding
+  if (run('let x = if true then 1 else 2 end in x') !== '1') {
+    failures.push('let x = if true then 1 else 2 end in x should return "1"');
+  }
+
+  // if as an expression passed as a function argument
+  if (run('fn add(a, b) = a + b\nadd(if true then 1 else 2 end, 3)') !== '4') {
+    failures.push('add(if true then 1 else 2 end, 3) should return "4"');
+  }
+
+  // nested if as an expression
+  if (run('if true then if false then 1 else 2 end else 3 end') !== '2') {
+    failures.push('nested if expression should return "2"');
   }
 
   // while loop (top-level statement)
