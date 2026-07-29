@@ -16,6 +16,8 @@ export const meta = {
     { source: 'let x = if true then 1 else 2 end in x', result: '1' },
     { source: 'fn add(a, b) = a + b\nadd(if true then 1 else 2 end, 3)', result: '4' },
     { source: 'if true then if false then 1 else 2 end else 3 end', result: '2' },
+    { source: 'while false do print(1) end', result: '' },
+    { source: 'while false do let x = 1 in print(x) end', result: '' },
   ],
 };
 
@@ -67,10 +69,12 @@ function registerControl(interpreter) {
     parser.expectKeyword('while');
     const condition = parser.parseExpression();
     parser.expectKeyword('do');
-    let body = null;
-    if (!(parser.peek().type === 'keyword' && parser.peek().value === 'end')) body = parser.parseExpression();
+    const stmts = [];
+    while (parser.peek().type !== 'eof' && !(parser.peek().type === 'keyword' && parser.peek().value === 'end')) {
+      stmts.push(parser.parseStatement());
+    }
     parser.expectKeyword('end');
-    return { type: 'While', condition, body };
+    return { type: 'While', condition, body: { type: 'Block', body: stmts } };
   });
 
   interpreter.addStatementParser('do', (parser) => {
@@ -197,9 +201,19 @@ export function checkProperties(run) {
     failures.push('nested if expression should return "2"');
   }
 
-  // while loop (top-level statement)
+  // while loop (single expression body)
   if (run('while false do 1 end') !== '') {
     failures.push('while false do 1 end should return ""');
+  }
+
+  // while loop with block body (let binding inside loop)
+  if (run('while false do let x = 1 in print(x) end') !== '') {
+    failures.push('while false do let x = 1 in print(x) end should return ""');
+  }
+
+  // while loop with block body and multiple statements
+  if (run('while false do print(1) print(2) end') !== '') {
+    failures.push('while false do print(1) print(2) end should return ""');
   }
 
   // block (do...end)
