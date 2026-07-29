@@ -14,6 +14,7 @@ import './print.js';
 import './arithmetic.js';
 import './comparison.js';
 import './control.js';
+import './list.js';
 
 export { registerCapability, getAllCapabilities, getAllMeta, checkAllProperties };
 

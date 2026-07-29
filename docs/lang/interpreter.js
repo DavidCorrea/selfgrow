@@ -254,6 +254,7 @@ class Parser {
     if (token.type === TT.NUMBER) { this.advance(); return { type: 'Number', value: token.value }; }
     if (token.type === TT.STRING) { this.advance(); return { type: 'String', value: token.value }; }
     if (token.type === TT.KEYWORD && (token.value === 'true' || token.value === 'false')) { this.advance(); return { type: 'Boolean', value: token.value === 'true' }; }
+    if (token.type === TT.KEYWORD && token.value === 'nil') { this.advance(); return { type: 'Nil' }; }
     if (this.matchPunctuation('(')) { const expr = this.parseExpression(); this.expectPunctuation(')'); if (this.peek().type === TT.PUNCTUATION && this.peek().value === '(') return { type: 'Call', callee: expr, args: this.parseArgList() }; return expr; }
     if (token.value in this.primaryParsers) {
       return this.primaryParsers[token.value](this);
