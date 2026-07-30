@@ -16,6 +16,7 @@ import './comparison.js';
 import './control.js';
 import './list.js';
 import './record.js';
+import './list_ops.js';
 
 export { registerCapability, getAllCapabilities, getAllMeta, checkAllProperties };
 
