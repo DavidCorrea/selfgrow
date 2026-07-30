@@ -472,9 +472,10 @@ function prettyPrint(value) {
 function runProgram(source, keywords, builtins, operators, statementParsers, primaryParsers, nodeHandlers) {
   try {
     const ast = parse(source, keywords, operators, statementParsers, primaryParsers);
-    const steps = { count: 0 };
+    const steps = { count: 0, builtins, operators };
     const env = makeInitialEnv(builtins);
     const evaluate = createEvaluator(nodeHandlers);
+    steps.evaluate = evaluate;
     const result = evaluate(ast, env, steps, builtins, operators);
     return prettyPrint(result);
   } catch (err) {
