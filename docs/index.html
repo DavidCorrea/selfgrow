@@ -637,6 +637,17 @@
                 <div class="example"><code class="example-source">head(tail(cons(1, cons(2, nil))))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">2</span></div>
               </div>
             </div>
+            <div class="capability-item" role="listitem">
+              <h3 class="capability-name">record</h3>
+              <p class="capability-summary">Record data structure — construction, field get, set, and has</p>
+              <div class="capability-examples">
+                <div class="example"><code class="example-source">get(#{name: "x", value: 42}, "name")</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">x</span></div>
+                <div class="example"><code class="example-source">get(#{name: "x", value: 42}, "value")</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">42</span></div>
+                <div class="example"><code class="example-source">has(#{name: "x"}, "name")</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
+                <div class="example"><code class="example-source">has(#{name: "x"}, "missing")</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">false</span></div>
+                <div class="example"><code class="example-source">has(#{}, "anything")</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">false</span></div>
+              </div>
+            </div>
           </div>
         </noscript>
         <div class="capability-list" id="capabilityList" role="list" aria-label="Language capabilities">
