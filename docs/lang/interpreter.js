@@ -15,6 +15,7 @@
  * keywords, and evaluation rules come from registered capabilities.
  */
 import { SelfgrowError, ParseError, TypeError, RuntimeError, TimeoutError } from './errors.js';
+import { getAllCapabilities } from './capabilities/registry.js';
 
 const MAX_STEPS = 100000;
 
@@ -516,8 +517,9 @@ export function createInterpreter() {
         addNodeHandler(nodeType, fn) { nodeHandlers[nodeType] = fn; },
       };
 
-      // Load all registered capabilities (in insertion order)
-      for (const cap of registry.values()) {
+      // Load all capabilities from the registry so that built‑ins (print,
+      // arithmetic, control, comparison, list) are available for evaluation.
+      for (const cap of getAllCapabilities()) {
         if (typeof cap.registerFn === 'function') {
           cap.registerFn(extensions);
         }
