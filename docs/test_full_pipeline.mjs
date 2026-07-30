@@ -1,8 +1,10 @@
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
-const ROOT = '/home/runner/work/selfgrow/selfgrow/docs';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = __dirname;
 const MIME = {
   '.html': 'text/html', '.js': 'application/javascript',
   '.mjs': 'application/javascript', '.css': 'text/css',
