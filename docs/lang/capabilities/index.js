@@ -15,6 +15,7 @@ import './arithmetic.js';
 import './comparison.js';
 import './control.js';
 import './list.js';
+import './string.js';
 
 export { registerCapability, getAllCapabilities, getAllMeta, checkAllProperties };
 

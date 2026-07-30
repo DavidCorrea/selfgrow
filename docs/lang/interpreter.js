@@ -97,7 +97,7 @@ function tokenize(source, keywords) {
 
     // Multi-character operators
     const twoChar = source.slice(pos, pos + 2);
-    const twoCharOps = ['==', '!=', '<=', '>=', '=>'];
+    const twoCharOps = ['==', '!=', '<=', '>=', '=>', '++'];
     if (twoCharOps.includes(twoChar)) { tokens.push({ type: TT.OPERATOR, value: twoChar, start: pos }); pos += 2; continue; }
 
     // Single-character operators (arithmetic ops are registered by capabilities, not hardcoded)
