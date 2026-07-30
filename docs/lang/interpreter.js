@@ -58,7 +58,7 @@ function tokenize(source, keywords) {
     if (/[0-9]/.test(ch) || (ch === '.' && /[0-9]/.test(source[pos + 1]))) {
       let numStr = '';
       let hasDot = false;
-      while (pos < source.length && (/[0-9]/.test(source[pos]) || (source[pos] === '.' && !hasDot))) {
+      while (pos < source.length && (/[0-9]/.test(source[pos]) || (source[pos] === '.' && !hasDot && pos + 1 < source.length && /[0-9]/.test(source[pos + 1])))) {
         if (source[pos] === '.') hasDot = true;
         numStr += source[pos];
         pos++;
@@ -104,7 +104,7 @@ function tokenize(source, keywords) {
     if ('+-*/<>='.includes(ch)) { tokens.push({ type: TT.OPERATOR, value: ch, start: pos }); pos++; continue; }
 
     // Punctuation
-    if ('(){},;[]'.includes(ch)) { tokens.push({ type: TT.PUNCTUATION, value: ch, start: pos }); pos++; continue; }
+    if ('(){},;[]:#.'.includes(ch)) { tokens.push({ type: TT.PUNCTUATION, value: ch, start: pos }); pos++; continue; }
 
     // Identifiers and keywords
     if (/[a-zA-Z_]/.test(ch)) {
@@ -251,12 +251,18 @@ class Parser {
     return this.parsePrimary();
   }
   parsePrimary() {
+    const expr = this._parsePrimaryBase();
+    return this._parseAccessors(expr);
+  }
+
+  _parsePrimaryBase() {
     const token = this.peek();
     if (token.type === TT.NUMBER) { this.advance(); return { type: 'Number', value: token.value }; }
     if (token.type === TT.STRING) { this.advance(); return { type: 'String', value: token.value }; }
     if (token.type === TT.KEYWORD && (token.value === 'true' || token.value === 'false')) { this.advance(); return { type: 'Boolean', value: token.value === 'true' }; }
     if (token.type === TT.KEYWORD && token.value === 'nil') { this.advance(); return { type: 'Nil' }; }
-    if (this.matchPunctuation('(')) { const expr = this.parseExpression(); this.expectPunctuation(')'); if (this.peek().type === TT.PUNCTUATION && this.peek().value === '(') return { type: 'Call', callee: expr, args: this.parseArgList() }; return expr; }
+    if (this.matchPunctuation('(')) { const expr = this.parseExpression(); this.expectPunctuation(')'); return expr; }
+    if (token.type === TT.PUNCTUATION && token.value === '#') { this.advance(); return this._parseRecordLiteral(); }
     if (token.value in this.primaryParsers) {
       return this.primaryParsers[token.value](this);
     }
@@ -266,6 +272,47 @@ class Parser {
       return { type: 'Identifier', name: token.value };
     }
     throw new ParseError(`Unexpected token '${token.value}'`, 'an operand', token.type === TT.EOF ? 'end of input' : `'${token.value}'`, getLocation(this.source, token.start));
+  }
+
+  _parseAccessors(expr) {
+    while (true) {
+      if (this.peek().type === TT.PUNCTUATION && this.peek().value === '.') {
+        this.advance();
+        const field = this.expect(TT.IDENTIFIER).value;
+        expr = { type: 'FieldAccess', target: expr, field };
+      } else if (this.peek().type === TT.PUNCTUATION && this.peek().value === '(') {
+        expr = { type: 'Call', callee: expr, args: this.parseArgList() };
+      } else {
+        break;
+      }
+    }
+    return expr;
+  }
+
+  _parseRecordLiteral() {
+    this.expectPunctuation('{');
+    const fields = {};
+    if (this.peek().type === TT.PUNCTUATION && this.peek().value === '}') {
+      this.advance();
+      return { type: 'Record', fields };
+    }
+    while (true) {
+      const keyToken = this.expect(TT.IDENTIFIER);
+      this.expectPunctuation(':');
+      const value = this.parseExpression();
+      fields[keyToken.value] = value;
+      if (this.peek().type === TT.PUNCTUATION && this.peek().value === ',') {
+        this.advance();
+        continue;
+      }
+      if (this.peek().type === TT.PUNCTUATION && this.peek().value === '}') {
+        this.advance();
+        break;
+      }
+      const loc = getLocation(this.source, this.peek().start);
+      throw new ParseError('Expected , or } in record literal', "',' or '}'", this.peek().type === TT.EOF ? 'end of input' : `'${this.peek().value}'`, loc);
+    }
+    return { type: 'Record', fields };
   }
 
   parseArgList() {
@@ -301,6 +348,7 @@ function formatValue(value) {
   if (typeof value === 'string') return value;
   if (typeof value === 'boolean') return value ? 'true' : 'false';
   if (typeof value === 'number') { if (Number.isInteger(value)) return String(value); return String(value); }
+  if (value && value.__record) return 'a record';
   return String(value);
 }
 
@@ -315,6 +363,8 @@ function describeValue(value) {
   if (typeof value === 'boolean') return value ? 'true' : 'false';
   if (typeof value === 'number') return String(value);
   if (value && value.__closure) return 'a closure';
+  if (value && value.__cons) return 'a list cell';
+  if (value && value.__record) return 'a record';
   return typeof value;
 }
 
@@ -364,6 +414,24 @@ function createEvaluator(nodeHandlers) {
           return result && result.__value !== undefined ? result.__value : result;
         }
         throw new TypeError(`${describeCallee(ast.callee)} is not a function`, 'a function', describeValue(callee), null);
+      }
+      case 'Record': {
+        const record = {};
+        for (const [key, valueExpr] of Object.entries(ast.fields)) {
+          record[key] = evaluate(valueExpr, env, steps, builtins, operators);
+        }
+        record.__record = true;
+        return record;
+      }
+      case 'FieldAccess': {
+        const target = evaluate(ast.target, env, steps, builtins, operators);
+        if (target === null || target === undefined || typeof target !== 'object') {
+          throw new RuntimeError(`Cannot access field '${ast.field}' on ${describeValue(target)}`, 'a record', describeValue(target), null);
+        }
+        if (!(ast.field in target)) {
+          throw new RuntimeError(`Field '${ast.field}' does not exist on record`, `a field named '${ast.field}'`, 'no such field', null);
+        }
+        return target[ast.field];
       }
       case 'BinOp': {
         const left = evaluate(ast.left, env, steps, builtins, operators);
