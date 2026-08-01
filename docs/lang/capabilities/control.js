@@ -1,20 +1,17 @@
 /**
- * Control flow capability - provides let bindings, function definitions,
- * conditionals, and loops. Each capability lives in its own file and
- * self-registers with the interpreter.
+ * Control flow capability - provides let bindings, conditionals, and loops.
+ * Each capability lives in its own file and self-registers with the interpreter.
  */
 import { registerCapability } from './registry.js';
 
 export const meta = {
   name: 'control',
-  summary: 'Control flow constructs - let bindings, function definitions, conditionals, and loops',
+  summary: 'Control flow constructs - let bindings, conditionals, and loops',
   examples: [
     { source: 'let x = 1 in x', result: '1' },
-    { source: 'fn add(a, b) = a + b\nadd(2, 3)', result: '5' },
     { source: 'if true then 1 else 2 end', result: '1' },
     { source: 'if false then 1 else 2 end', result: '2' },
     { source: 'let x = if true then 1 else 2 end in x', result: '1' },
-    { source: 'fn add(a, b) = a + b\nadd(if true then 1 else 2 end, 3)', result: '4' },
     { source: 'if true then if false then 1 else 2 end else 3 end', result: '2' },
     { source: 'print(if true then 1 else 2 end)', result: '1' },
     { source: 'while false do print(1) end', result: '' },
@@ -31,7 +28,6 @@ function registerControl(interpreter) {
   interpreter.addKeyword('end');
   interpreter.addKeyword('while');
   interpreter.addKeyword('do');
-  interpreter.addKeyword('fn');
 
   // Statement parsers
   interpreter.addStatementParser('let', (parser) => {
@@ -42,17 +38,6 @@ function registerControl(interpreter) {
     parser.expectKeyword('in');
     const body = parser.parseExpression();
     return { type: 'Let', name: nameToken.value, value, body };
-  });
-
-  interpreter.addStatementParser('fn', (parser) => {
-    parser.expectKeyword('fn');
-    const nameToken = parser.expect('identifier');
-    parser.expectPunctuation('(');
-    const params = parser.parseParamList();
-    parser.expectPunctuation(')');
-    parser.expectOperator('=');
-    const body = parser.parseExpression();
-    return { type: 'FnDef', name: nameToken.value, params, body };
   });
 
   interpreter.addStatementParser('if', (parser) => {
@@ -98,31 +83,10 @@ function registerControl(interpreter) {
     return { type: 'If', condition, then: thenBranch, else: elseBranch };
   });
 
-  // Primary parser for anonymous function expressions
-  interpreter.addPrimaryParser('fn', (parser) => {
-    parser.expectKeyword('fn');
-    parser.expectPunctuation('(');
-    const params = parser.parseParamList();
-    parser.expectPunctuation(')');
-    parser.expectOperator('=');
-    const body = parser.parseExpression();
-    return { type: 'FnExpr', params, body };
-  });
-
   // Node handlers for evaluation
   interpreter.addNodeHandler('Let', (ast, env, steps, builtins, operators, evaluateFn) => {
     const value = ast.value ? evaluateFn(ast.value, env, steps, builtins, operators) : undefined;
     return evaluateFn(ast.body, { ...env, [ast.name]: value }, steps, builtins, operators);
-  });
-
-  interpreter.addNodeHandler('FnDef', (ast, env, steps, builtins, operators, evaluateFn) => {
-    const closure = { __closure: true, params: ast.params, body: ast.body, env: { ...env } };
-    env[ast.name] = closure;
-    return closure;
-  });
-
-  interpreter.addNodeHandler('FnExpr', (ast, env, steps, builtins, operators, evaluateFn) => {
-    return { __closure: true, params: ast.params, body: ast.body, env: { ...env } };
   });
 
   interpreter.addNodeHandler('If', (ast, env, steps, builtins, operators, evaluateFn) => {
@@ -164,16 +128,6 @@ export function checkProperties(run) {
     failures.push('let x in x should return ""');
   }
 
-  // named function definition and call
-  if (run('fn add(a, b) = a + b\nadd(2, 3)') !== '5') {
-    failures.push('named function add(2, 3) should return "5"');
-  }
-
-  // anonymous function expression (primary parser)
-  if (run('(fn(a, b) = a + b)(2, 3)') !== '5') {
-    failures.push('anonymous function (fn(a, b) = a + b)(2, 3) should return "5"');
-  }
-
   // if/then/else/end
   if (run('if true then 1 else 2 end') !== '1') {
     failures.push('if true then 1 else 2 end should return "1"');
@@ -190,11 +144,6 @@ export function checkProperties(run) {
   // if as an expression in a let binding
   if (run('let x = if true then 1 else 2 end in x') !== '1') {
     failures.push('let x = if true then 1 else 2 end in x should return "1"');
-  }
-
-  // if as an expression passed as a function argument
-  if (run('fn add(a, b) = a + b\nadd(if true then 1 else 2 end, 3)') !== '4') {
-    failures.push('add(if true then 1 else 2 end, 3) should return "4"');
   }
 
   // if as an expression passed to print
@@ -225,16 +174,6 @@ export function checkProperties(run) {
   // block (do...end)
   if (run('do 1 + 2 end') !== '3') {
     failures.push('do 1 + 2 end should return "3"');
-  }
-
-  // error: unknown identifier still works after control is loaded
-  try {
-    run('unknownVar');
-    failures.push('unknownVar should throw an error');
-  } catch (err) {
-    if (!err.message.includes('Unknown identifier')) {
-      failures.push('unknownVar should throw "Unknown identifier" error');
-    }
   }
 
   return failures;

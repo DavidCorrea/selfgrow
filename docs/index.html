@@ -547,7 +547,7 @@
             tabindex="0"
             spellcheck="false"
             aria-label="Code editor — write selfgrow programs here"
-            placeholder="// Try: 1 + 2&#10;// Or define a function:&#10;// let add = (a, b) => a + b&#10;// add(3, 4)"
+            placeholder="// Try: 1 + 2&#10;// Or define a function:&#10;// fn add(a, b) = a + b&#10;// add(3, 4)"
           >1 + 2</textarea>
         </div>
         <div class="controls">
@@ -617,13 +617,22 @@
             </div>
             <div class="capability-item" role="listitem">
               <h3 class="capability-name">control</h3>
-              <p class="capability-summary">Control flow constructs — let bindings, function definitions, conditionals, and loops</p>
+              <p class="capability-summary">Control flow constructs — let bindings, conditionals, and loops</p>
               <div class="capability-examples">
                 <div class="example"><code class="example-source">let x = 1 in x</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">1</span></div>
-                <div class="example"><code class="example-source">fn add(a, b) = a + b\nadd(2, 3)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">5</span></div>
                 <div class="example"><code class="example-source">if true then 1 else 2 end</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">1</span></div>
                 <div class="example"><code class="example-source">if false then 1 else 2 end</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">2</span></div>
                 <div class="example"><code class="example-source">let x = if true then 1 else 2 end in x</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">1</span></div>
+              </div>
+            </div>
+            <div class="capability-item" role="listitem">
+              <h3 class="capability-name">function</h3>
+              <p class="capability-summary">Function definitions — named functions with fn and anonymous function expressions</p>
+              <div class="capability-examples">
+                <div class="example"><code class="example-source">fn add(a, b) = a + b\nadd(2, 3)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">5</span></div>
+                <div class="example"><code class="example-source">(fn(a, b) = a + b)(2, 3)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">5</span></div>
+                <div class="example"><code class="example-source">fn double(x) = x * 2\nhead(listMap(double, cons(1, cons(2, nil))))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">2</span></div>
+                <div class="example"><code class="example-source">(fn() = 42)()</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">42</span></div>
               </div>
             </div>
             <div class="capability-item" role="listitem">
