@@ -14,6 +14,7 @@ import './print.js';
 import './arithmetic.js';
 import './comparison.js';
 import './control.js';
+import './function.js';
 import './list.js';
 import './record.js';
 import './list_ops.js';

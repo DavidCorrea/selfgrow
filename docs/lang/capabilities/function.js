@@ -12,6 +12,11 @@ export const meta = {
     { source: 'fn add(a, b) = a + b\nadd(2, 3)', result: '5' },
     { source: 'fn add(a, b) = a + b\nadd(if true then 1 else 2 end, 3)', result: '4' },
     { source: '(fn(a, b) = a + b)(2, 3)', result: '5' },
+    { source: 'fn double(x) = x * 2\nhead(listMap(double, cons(1, cons(2, nil))))', result: '2' },
+    { source: 'let double = fn(x) = x * 2 in head(listMap(double, cons(1, cons(2, nil))))', result: '2' },
+    { source: 'head(listFilter(fn(x) = x > 1, cons(1, cons(2, cons(3, nil)))))', result: '2' },
+    { source: 'listFold(fn(acc, x) = acc + x, 0, cons(1, cons(2, cons(3, nil))))', result: '6' },
+    { source: '(fn() = 42)()', result: '42' },
   ],
 };
 
@@ -75,6 +80,46 @@ export function checkProperties(run) {
     failures.push('add(if true then 1 else 2 end, 3) should return "4"');
   }
 
+  // closure capture: function captures variable from outer environment
+  if (run('let x = 10 in (fn() = x)()') !== '10') {
+    failures.push('closure should capture x from outer environment, returning "10"');
+  }
+
+  // no-arg function
+  if (run('(fn() = 42)()') !== '42') {
+    failures.push('no-arg function (fn() = 42)() should return "42"');
+  }
+
+  // named function passed as argument to higher-order function
+  if (run('fn double(x) = x * 2\nhead(listMap(double, cons(1, cons(2, nil))))') !== '2') {
+    failures.push('named function double passed to listMap should return "2"');
+  }
+
+  // let-bound function passed as argument
+  if (run('let double = fn(x) = x * 2 in head(listMap(double, cons(1, cons(2, nil))))') !== '2') {
+    failures.push('let-bound function double passed to listMap should return "2"');
+  }
+
+  // anonymous function passed to listFilter
+  if (run('head(listFilter(fn(x) = x > 1, cons(1, cons(2, cons(3, nil)))))') !== '2') {
+    failures.push('anonymous function passed to listFilter should return "2"');
+  }
+
+  // anonymous function passed to listFold
+  if (run('listFold(fn(acc, x) = acc + x, 0, cons(1, cons(2, cons(3, nil))))') !== '6') {
+    failures.push('anonymous function passed to listFold should return "6"');
+  }
+
+  // error: calling a non-function value
+  try {
+    run('5()');
+    failures.push('calling a non-function (5) should throw an error');
+  } catch (err) {
+    if (!err.message.includes('not a function')) {
+      failures.push(`calling a non-function should throw "not a function" error, got: ${err.message}`);
+    }
+  }
+
   // error: unknown identifier in a function call argument
   try {
     run('fn add(a, b) = a + b\nadd(1, unknownVar)');
@@ -85,6 +130,16 @@ export function checkProperties(run) {
     }
     if (err.location === null) {
       failures.push('unknownVar in function call error should include a non-null location');
+    }
+  }
+
+  // error: unknown identifier used as a function
+  try {
+    run('unknownFn()');
+    failures.push('unknownFn() should throw an error');
+  } catch (err) {
+    if (!err.message.includes('Unknown identifier') && !err.message.includes('not a function')) {
+      failures.push(`unknownFn() should throw "Unknown identifier" or "not a function" error, got: ${err.message}`);
     }
   }
 
