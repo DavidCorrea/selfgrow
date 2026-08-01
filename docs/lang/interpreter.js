@@ -268,8 +268,8 @@ class Parser {
     }
     if (token.type === TT.IDENTIFIER) {
       this.advance();
-      if (this.peek().type === TT.PUNCTUATION && this.peek().value === '(') return { type: 'Call', callee: { type: 'Identifier', name: token.value }, args: this.parseArgList() };
-      return { type: 'Identifier', name: token.value };
+      if (this.peek().type === TT.PUNCTUATION && this.peek().value === '(') return { type: 'Call', callee: { type: 'Identifier', name: token.value, start: token.start }, args: this.parseArgList() };
+      return { type: 'Identifier', name: token.value, start: token.start };
     }
     throw new ParseError(`Unexpected token '${token.value}'`, 'an operand', token.type === TT.EOF ? 'end of input' : `'${token.value}'`, getLocation(this.source, token.start));
   }
@@ -393,7 +393,8 @@ function createEvaluator(nodeHandlers) {
       case 'Boolean': return ast.value;
       case 'Identifier': {
         if (ast.name in env) return env[ast.name];
-        throw new RuntimeError(`Unknown identifier: ${ast.name}`, 'a defined identifier', `undefined identifier '${ast.name}'`, null);
+        const loc = steps.source ? getLocation(steps.source, ast.start) : null;
+        throw new RuntimeError(`Unknown identifier: ${ast.name}`, 'a defined identifier', `undefined identifier '${ast.name}'`, loc);
       }
       case 'Call': {
         const callee = evaluate(ast.callee, env, steps, builtins, operators);
@@ -472,7 +473,7 @@ function prettyPrint(value) {
 function runProgram(source, keywords, builtins, operators, statementParsers, primaryParsers, nodeHandlers) {
   try {
     const ast = parse(source, keywords, operators, statementParsers, primaryParsers);
-    const steps = { count: 0, builtins, operators };
+    const steps = { count: 0, builtins, operators, source };
     const env = makeInitialEnv(builtins);
     const evaluate = createEvaluator(nodeHandlers);
     steps.evaluate = evaluate;
