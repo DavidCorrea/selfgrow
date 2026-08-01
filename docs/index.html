@@ -523,7 +523,7 @@
   </style>
 </head>
 <body>
-  <a href="#editor" class="skip-link">Skip to editor</a>
+  <a href="#editor" class="skip-link" id="skipLink">Skip to editor</a>
 
   <header>
     <div class="header-content">
@@ -675,11 +675,6 @@
 
     function announce(message) {
       runStatus.textContent = message;
-      // Also ensure output region announces by updating its textContent
-      if (message && !message.startsWith('Error') && !message.startsWith('Cleared')) {
-        // Output content itself is the announcement for results
-        output.textContent = message;
-      }
     }
 
     function setOutput(text, isError = false) {
@@ -792,6 +787,13 @@
         // setSelectionRange can throw in some edge cases; gracefully ignore
       }
     }
+
+    // Skip link: move focus to the editor, not just scroll
+    document.getElementById('skipLink').addEventListener('click', (e) => {
+      e.preventDefault();
+      editor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      editor.focus();
+    });
 
     clearBtn.addEventListener('click', clear);
     runBtn.addEventListener('click', handleRun);
