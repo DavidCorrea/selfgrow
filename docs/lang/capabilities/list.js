@@ -1,5 +1,5 @@
 /**
- * List data structure capability — provides cons, head, tail, nil, and length.
+ * List data structure capability — provides cons, head, tail, and nil.
  * Each capability lives in its own file and self-registers with the interpreter.
  */
 import { registerCapability } from './registry.js';
@@ -8,12 +8,10 @@ import { getLocation } from '../interpreter.js';
 
 export const meta = {
   name: 'list',
-  summary: 'List data structure — cons, head, tail, nil, and length',
+  summary: 'List data structure — cons, head, tail, and nil',
   examples: [
     { source: 'head(cons(1, nil))', result: '1' },
     { source: 'tail(cons(1, nil))', result: '' },
-    { source: 'length(nil)', result: '0' },
-    { source: 'length(cons(1, cons(2, nil)))', result: '2' },
     { source: 'head(tail(cons(1, cons(2, nil))))', result: '2' },
   ],
 };
@@ -75,27 +73,6 @@ function registerList(interpreter) {
     return lst.tail;
   });
 
-  interpreter.registerFunction('length', function (args, steps) {
-    if (args.length !== 1) {
-      throw new RuntimeError(
-        `length expects 1 argument but got ${args.length}`,
-        '1 argument',
-        `${args.length} arguments`,
-        getLocation(steps.source, steps.position)
-      );
-    }
-    let count = 0;
-    let current = args[0];
-    while (current !== null) {
-      if (!current.__cons) {
-        throw new RuntimeError('length: not a proper list', 'a proper list', 'improper list', getLocation(steps.source, steps.position));
-      }
-      count++;
-      current = current.tail;
-    }
-    return count;
-  });
-
   // Node handler for Nil AST nodes
   interpreter.addNodeHandler('Nil', () => null);
 }
@@ -128,16 +105,6 @@ export function checkProperties(run) {
     failures.push('tail(cons(1, nil)) should return "" (empty list)');
   }
 
-  // length of empty list is 0
-  if (run('length(nil)') !== '0') {
-    failures.push('length(nil) should return "0"');
-  }
-
-  // length of two-element list is 2
-  if (run('length(cons(1, cons(2, nil)))') !== '2') {
-    failures.push('length(cons(1, cons(2, nil))) should return "2"');
-  }
-
   // nested head/tail navigation
   if (run('head(tail(cons(1, cons(2, nil))))') !== '2') {
     failures.push('head(tail(cons(1, cons(2, nil)))) should return "2"');
@@ -161,12 +128,6 @@ export function checkProperties(run) {
     if (!err.message.includes('empty list')) {
       failures.push(`tail(nil) should throw "empty list" error, got: ${err.message}`);
     }
-  }
-
-  // Property: length of a list is always >= 0
-  const lenResult = run('length(cons(1, cons(2, cons(3, nil))))');
-  if (parseInt(lenResult) < 0) {
-    failures.push('length of a list should be >= 0');
   }
 
   // Property: head of non-empty list is not nil (not empty string)
