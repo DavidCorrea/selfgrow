@@ -4,6 +4,7 @@
  */
 import { registerCapability } from './registry.js';
 import { RuntimeError, TypeError } from '../errors.js';
+import { getLocation } from '../interpreter.js';
 
 export const meta = {
   name: 'list_ops',
@@ -39,14 +40,14 @@ function applyClosure(steps, closure, args) {
   const builtins = steps.builtins || {};
   const operators = steps.operators || {};
   if (!closure || !closure.__closure) {
-    throw new TypeError('a closure', 'closure', describeValue(closure), null);
+    throw new TypeError('a closure', 'closure', describeValue(closure), getLocation(steps.source, steps.position));
   }
   if (closure.params.length !== args.length) {
     throw new TypeError(
       `Function expects ${closure.params.length} arguments but got ${args.length}`,
       `${closure.params.length} arguments`,
       `${args.length} arguments`,
-      null
+      getLocation(steps.source, steps.position)
     );
   }
   const closureEnv = { ...closure.env };
@@ -61,15 +62,15 @@ function registerListOps(interpreter) {
         `listMap expects 2 arguments but got ${args.length}`,
         '2 arguments',
         `${args.length} arguments`,
-        null
+        getLocation(steps.source, steps.position)
       );
     }
     const [fn, list] = args;
     if (!fn || !fn.__closure) {
-      throw new TypeError('listMap: first argument', 'a closure', describeValue(fn), null);
+      throw new TypeError('listMap: first argument', 'a closure', describeValue(fn), getLocation(steps.source, steps.position));
     }
     if (list !== null && !list.__cons) {
-      throw new RuntimeError('listMap: second argument', 'a list', describeValue(list), null);
+      throw new RuntimeError('listMap: second argument', 'a list', describeValue(list), getLocation(steps.source, steps.position));
     }
     // Walk the list, apply fn to each element, collect results.
     const results = [];
@@ -92,15 +93,15 @@ function registerListOps(interpreter) {
         `listFilter expects 2 arguments but got ${args.length}`,
         '2 arguments',
         `${args.length} arguments`,
-        null
+        getLocation(steps.source, steps.position)
       );
     }
     const [fn, list] = args;
     if (!fn || !fn.__closure) {
-      throw new TypeError('listFilter: first argument', 'a closure', describeValue(fn), null);
+      throw new TypeError('listFilter: first argument', 'a closure', describeValue(fn), getLocation(steps.source, steps.position));
     }
     if (list !== null && !list.__cons) {
-      throw new RuntimeError('listFilter: second argument', 'a list', describeValue(list), null);
+      throw new RuntimeError('listFilter: second argument', 'a list', describeValue(list), getLocation(steps.source, steps.position));
     }
     // Walk the list, keep elements where predicate returns true.
     const kept = [];
@@ -126,15 +127,15 @@ function registerListOps(interpreter) {
         `listFold expects 3 arguments but got ${args.length}`,
         '3 arguments',
         `${args.length} arguments`,
-        null
+        getLocation(steps.source, steps.position)
       );
     }
     const [fn, initial, list] = args;
     if (!fn || !fn.__closure) {
-      throw new TypeError('listFold: first argument', 'a closure', describeValue(fn), null);
+      throw new TypeError('listFold: first argument', 'a closure', describeValue(fn), getLocation(steps.source, steps.position));
     }
     if (list !== null && !list.__cons) {
-      throw new RuntimeError('listFold: third argument', 'a list', describeValue(list), null);
+      throw new RuntimeError('listFold: third argument', 'a list', describeValue(list), getLocation(steps.source, steps.position));
     }
     // Walk the list left-to-right, folding the accumulator with each element.
     let acc = initial;

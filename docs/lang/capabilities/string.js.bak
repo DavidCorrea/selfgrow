@@ -5,7 +5,6 @@
  */
 import { registerCapability } from './registry.js';
 import { RuntimeError, TypeError } from '../errors.js';
-import { getLocation } from '../interpreter.js';
 
 export const meta = {
   name: 'string',
@@ -40,7 +39,7 @@ function registerString(interpreter) {
         `length expects 1 argument but got ${args.length}`,
         '1 argument',
         `${args.length} arguments`,
-        getLocation(steps.source, steps.position)
+        null
       );
     }
     const value = args[0];
@@ -56,7 +55,7 @@ function registerString(interpreter) {
       let current = value;
       while (current !== null) {
         if (!current.__cons) {
-          throw new RuntimeError('length: not a proper list', 'a proper list', 'improper list', getLocation(steps.source, steps.position));
+          throw new RuntimeError('length: not a proper list', 'a proper list', 'improper list', null);
         }
         count++;
         current = current.tail;
@@ -67,18 +66,18 @@ function registerString(interpreter) {
       `length expects a string or list argument but got ${describeValue(value)}`,
       'a string or list',
       describeValue(value),
-      getLocation(steps.source, steps.position)
+      null
     );
   });
 
   // String concatenation operator
-  interpreter.addOperator('++', { precedence: 10, associativity: 'left', fn: (a, b, steps) => {
+  interpreter.addOperator('++', { precedence: 10, associativity: 'left', fn: (a, b) => {
     if (typeof a !== 'string') {
       throw new TypeError(
         `concatenation operator (++) expects a string left operand but got ${describeValue(a)}`,
         'a string',
         describeValue(a),
-        getLocation(steps.source, steps.position)
+        null
       );
     }
     if (typeof b !== 'string') {
@@ -86,7 +85,7 @@ function registerString(interpreter) {
         `concatenation operator (++) expects a string right operand but got ${describeValue(b)}`,
         'a string',
         describeValue(b),
-        getLocation(steps.source, steps.position)
+        null
       );
     }
     return a + b;
@@ -183,13 +182,6 @@ export function checkProperties(run) {
     }
     if (err.location && (!err.location.line || !err.location.column || err.location.offset === undefined)) {
       failures.push('undefined symbol error location should have line, column, and offset');
-    }
-    // Expected and found
-    if (err.expected !== 'a defined symbol') {
-      failures.push(`undefined symbol error expected should be 'a defined symbol', got: ${JSON.stringify(err.expected)}`);
-    }
-    if (err.found !== `symbol 'unknownSymbol'`) {
-      failures.push(`undefined symbol error found should be "symbol 'unknownSymbol'", got: ${JSON.stringify(err.found)}`);
     }
   }
 

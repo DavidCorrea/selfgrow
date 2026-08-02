@@ -74,7 +74,7 @@ server.listen(8091, async () => {
   const out6 = await page.$eval('#output', el => el.textContent);
   console.log('Test 6 (unknownVar in output not page error):');
   console.log('  Page errors:', pageErrors.length === 0 ? 'none (good)' : pageErrors.join(', '));
-  console.log('  Output contains error:', out6.includes('Unknown identifier') ? 'PASS' : 'FAIL (' + out6 + ')');
+  console.log('  Output contains error:', out6.includes('Undefined symbol') ? 'PASS' : 'FAIL (' + out6 + ')');
 
   await browser.close();
   server.close();
