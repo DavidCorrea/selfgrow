@@ -1,7 +1,7 @@
 /**
  * Runtime bootstrap for the selfgrow language.
  *
- * Uses the centralized capability loader (capabilities/index.js) to
+ * Uses the centralized capability loader (initialize.js) to
  * wire all capabilities into a fresh interpreter instance. run()
  * is synchronous — it creates an interpreter, initializes it, and
  * evaluates source.
@@ -10,7 +10,7 @@
  * playground code can register directly on interpreter instances.
  */
 import { createInterpreter } from './interpreter.js';
-import { initialize } from './capabilities/index.js';
+import { initialize } from './initialize.js';
 
 export { createInterpreter };
 
