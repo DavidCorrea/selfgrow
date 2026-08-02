@@ -372,7 +372,7 @@ function createEvaluator(nodeHandlers) {
   function evaluate(ast, env, steps, builtins, operators) {
     steps.count++;
     if (steps.count > MAX_STEPS) {
-      throw new TimeoutError('Program did not finish — the evaluation exceeded the maximum step count, which usually means an infinite loop.', 'program completion', 'step limit exceeded', getLocation(steps.source, 0));
+      throw new TimeoutError('Program did not finish — the evaluation exceeded the maximum step count, which usually means an infinite loop.', 'program completion', 'step limit exceeded', null);
     }
 
     // Dispatch through nodeHandlers first (capability-managed nodes)
@@ -393,7 +393,7 @@ function createEvaluator(nodeHandlers) {
       case 'Boolean': return ast.value;
       case 'Identifier': {
         if (ast.name in env) return env[ast.name];
-        const loc = getLocation(steps.source, ast.start);
+        const loc = steps.source ? getLocation(steps.source, ast.start) : null;
         throw new RuntimeError(`Undefined symbol '${ast.name}'`, `a defined symbol`, `symbol '${ast.name}'`, loc);
       }
       case 'Call': {
@@ -402,12 +402,11 @@ function createEvaluator(nodeHandlers) {
         let printed = '';
         if (callee && callee.__printed !== undefined) printed = callee.__printed;
         if (callee && callee.__builtin) {
-          steps.position = ast.start;
           return callee.fn(args, steps);
         }
         if (callee && callee.__closure) {
           if (callee.params.length !== args.length) {
-            throw new TypeError(`Function ${describeCallee(ast.callee)} expects ${callee.params.length} arguments but got ${args.length}`, `${callee.params.length} arguments`, `${args.length} arguments`, getLocation(steps.source, ast.start));
+            throw new TypeError(`Function ${describeCallee(ast.callee)} expects ${callee.params.length} arguments but got ${args.length}`, `${callee.params.length} arguments`, `${args.length} arguments`, steps.source ? getLocation(steps.source, ast.start) : null);
           }
           const closureEnv = { ...callee.env };
           callee.params.forEach((param, i) => { closureEnv[param] = args[i]; });
@@ -415,7 +414,7 @@ function createEvaluator(nodeHandlers) {
           if (result && result.__printed) printed += result.__printed;
           return result && result.__value !== undefined ? result.__value : result;
         }
-        throw new TypeError(`${describeCallee(ast.callee)} is not a function`, 'a function', describeValue(callee), getLocation(steps.source, ast.start));
+        throw new TypeError(`${describeCallee(ast.callee)} is not a function`, 'a function', describeValue(callee), steps.source ? getLocation(steps.source, ast.start) : null);
       }
       case 'Record': {
         const record = {};
@@ -428,10 +427,10 @@ function createEvaluator(nodeHandlers) {
       case 'FieldAccess': {
         const target = evaluate(ast.target, env, steps, builtins, operators);
         if (target === null || target === undefined || typeof target !== 'object') {
-          throw new RuntimeError(`Cannot access field '${ast.field}' on ${describeValue(target)}`, 'a record', describeValue(target), getLocation(steps.source, ast.start));
+          throw new RuntimeError(`Cannot access field '${ast.field}' on ${describeValue(target)}`, 'a record', describeValue(target), steps.source ? getLocation(steps.source, ast.start) : null);
         }
         if (!(ast.field in target)) {
-          throw new RuntimeError(`Field '${ast.field}' does not exist on record`, `a field named '${ast.field}'`, 'no such field', getLocation(steps.source, ast.start));
+          throw new RuntimeError(`Field '${ast.field}' does not exist on record`, `a field named '${ast.field}'`, 'no such field', steps.source ? getLocation(steps.source, ast.start) : null);
         }
         return target[ast.field];
       }
@@ -439,10 +438,10 @@ function createEvaluator(nodeHandlers) {
         const left = evaluate(ast.left, env, steps, builtins, operators);
         const right = evaluate(ast.right, env, steps, builtins, operators);
         if (ast.op in operators) {
-          if (ast.op === '/' && right === 0) throw new RuntimeError('division by zero', 'a non-zero divisor', '0', getLocation(steps.source, ast.start));
-          return operators[ast.op].fn(left, right, steps);
+          if (ast.op === '/' && right === 0) throw new RuntimeError('division by zero', 'a non-zero divisor', '0', steps.source ? getLocation(steps.source, ast.start) : null);
+          return operators[ast.op].fn(left, right);
         }
-        throw new TypeError(`Unknown operator: ${ast.op}`, 'a valid operator', `'${ast.op}'`, getLocation(steps.source, ast.start));
+        throw new TypeError(`Unknown operator: ${ast.op}`, 'a valid operator', `'${ast.op}'`, steps.source ? getLocation(steps.source, ast.start) : null);
       }
       case 'UnaryOp': {
         const operand = evaluate(ast.operand, env, steps, builtins, operators);
@@ -451,11 +450,11 @@ function createEvaluator(nodeHandlers) {
         }
         switch (ast.op) {
           case '-': return -operand;
-          default: throw new TypeError(`Unknown unary operator: ${ast.op}`, 'a valid unary operator', `'${ast.op}'`, getLocation(steps.source, ast.start));
+          default: throw new TypeError(`Unknown unary operator: ${ast.op}`, 'a valid unary operator', `'${ast.op}'`, steps.source ? getLocation(steps.source, ast.start) : null);
         }
       }
       default:
-        throw new RuntimeError(`Unknown AST node type: ${ast.type}`, 'a valid AST node type', `'${ast.type}'`, getLocation(steps.source, ast.start));
+        throw new RuntimeError(`Unknown AST node type: ${ast.type}`, 'a valid AST node type', `'${ast.type}'`, steps.source ? getLocation(steps.source, ast.start) : null);
     }
   }
   return evaluate;
@@ -482,7 +481,7 @@ function runProgram(source, keywords, builtins, operators, statementParsers, pri
     return prettyPrint(result);
   } catch (err) {
     if (err instanceof SelfgrowError) throw err;
-    const location = err.location ?? null; throw new RuntimeError(err.message || String(err), null, null, location);
+    throw new RuntimeError(err.message || String(err), null, null, null);
   }
 }
 

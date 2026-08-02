@@ -5,6 +5,7 @@
  */
 import { registerCapability } from './registry.js';
 import { RuntimeError } from '../errors.js';
+import { getLocation } from '../interpreter.js';
 
 export const meta = {
   name: 'record',
@@ -31,19 +32,19 @@ function registerRecord(interpreter) {
         `get expects 2 arguments but got ${args.length}`,
         '2 arguments',
         `${args.length} arguments`,
-        null
+        getLocation(steps.source, steps.position)
       );
     }
     const rec = args[0];
     const field = args[1];
     if (!rec || !rec.__record) {
-      throw new RuntimeError('get: not a record', 'a record', describeValue(rec), null);
+      throw new RuntimeError('get: not a record', 'a record', describeValue(rec), getLocation(steps.source, steps.position));
     }
     if (typeof field !== 'string') {
-      throw new RuntimeError('get: field name must be a string', 'a string', describeValue(field), null);
+      throw new RuntimeError('get: field name must be a string', 'a string', describeValue(field), getLocation(steps.source, steps.position));
     }
     if (!(field in rec)) {
-      throw new RuntimeError(`Field '${field}' does not exist on record`, `a field named '${field}'`, 'no such field', null);
+      throw new RuntimeError(`Field '${field}' does not exist on record`, `a field named '${field}'`, 'no such field', getLocation(steps.source, steps.position));
     }
     return rec[field];
   });
@@ -54,17 +55,17 @@ function registerRecord(interpreter) {
         `set expects 3 arguments but got ${args.length}`,
         '3 arguments',
         `${args.length} arguments`,
-        null
+        getLocation(steps.source, steps.position)
       );
     }
     const rec = args[0];
     const field = args[1];
     const value = args[2];
     if (!rec || !rec.__record) {
-      throw new RuntimeError('set: not a record', 'a record', describeValue(rec), null);
+      throw new RuntimeError('set: not a record', 'a record', describeValue(rec), getLocation(steps.source, steps.position));
     }
     if (typeof field !== 'string') {
-      throw new RuntimeError('set: field name must be a string', 'a string', describeValue(field), null);
+      throw new RuntimeError('set: field name must be a string', 'a string', describeValue(field), getLocation(steps.source, steps.position));
     }
     const newRec = {};
     newRec.__record = true;
@@ -83,16 +84,16 @@ function registerRecord(interpreter) {
         `has expects 2 arguments but got ${args.length}`,
         '2 arguments',
         `${args.length} arguments`,
-        null
+        getLocation(steps.source, steps.position)
       );
     }
     const rec = args[0];
     const field = args[1];
     if (!rec || !rec.__record) {
-      throw new RuntimeError('has: not a record', 'a record', describeValue(rec), null);
+      throw new RuntimeError('has: not a record', 'a record', describeValue(rec), getLocation(steps.source, steps.position));
     }
     if (typeof field !== 'string') {
-      throw new RuntimeError('has: field name must be a string', 'a string', describeValue(field), null);
+      throw new RuntimeError('has: field name must be a string', 'a string', describeValue(field), getLocation(steps.source, steps.position));
     }
     return field in rec;
   });

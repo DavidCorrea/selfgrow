@@ -4,6 +4,7 @@
  */
 import { registerCapability } from './registry.js';
 import { RuntimeError } from '../errors.js';
+import { getLocation } from '../interpreter.js';
 
 export const meta = {
   name: 'list',
@@ -30,7 +31,7 @@ function registerList(interpreter) {
         `cons expects 2 arguments but got ${args.length}`,
         '2 arguments',
         `${args.length} arguments`,
-        null
+        getLocation(steps.source, steps.position)
       );
     }
     return createConsCell(args[0], args[1]);
@@ -42,15 +43,15 @@ function registerList(interpreter) {
         `head expects 1 argument but got ${args.length}`,
         '1 argument',
         `${args.length} arguments`,
-        null
+        getLocation(steps.source, steps.position)
       );
     }
     const lst = args[0];
     if (lst === null) {
-      throw new RuntimeError('head of empty list', 'a non-empty list', 'empty list (nil)', null);
+      throw new RuntimeError('head of empty list', 'a non-empty list', 'empty list (nil)', getLocation(steps.source, steps.position));
     }
     if (!lst.__cons) {
-      throw new RuntimeError('head: not a list', 'a list', describeValue(lst), null);
+      throw new RuntimeError('head: not a list', 'a list', describeValue(lst), getLocation(steps.source, steps.position));
     }
     return lst.head;
   });
@@ -61,15 +62,15 @@ function registerList(interpreter) {
         `tail expects 1 argument but got ${args.length}`,
         '1 argument',
         `${args.length} arguments`,
-        null
+        getLocation(steps.source, steps.position)
       );
     }
     const lst = args[0];
     if (lst === null) {
-      throw new RuntimeError('tail of empty list', 'a non-empty list', 'empty list (nil)', null);
+      throw new RuntimeError('tail of empty list', 'a non-empty list', 'empty list (nil)', getLocation(steps.source, steps.position));
     }
     if (!lst.__cons) {
-      throw new RuntimeError('tail: not a list', 'a list', describeValue(lst), null);
+      throw new RuntimeError('tail: not a list', 'a list', describeValue(lst), getLocation(steps.source, steps.position));
     }
     return lst.tail;
   });
@@ -80,14 +81,14 @@ function registerList(interpreter) {
         `length expects 1 argument but got ${args.length}`,
         '1 argument',
         `${args.length} arguments`,
-        null
+        getLocation(steps.source, steps.position)
       );
     }
     let count = 0;
     let current = args[0];
     while (current !== null) {
       if (!current.__cons) {
-        throw new RuntimeError('length: not a proper list', 'a proper list', 'improper list', null);
+        throw new RuntimeError('length: not a proper list', 'a proper list', 'improper list', getLocation(steps.source, steps.position));
       }
       count++;
       current = current.tail;

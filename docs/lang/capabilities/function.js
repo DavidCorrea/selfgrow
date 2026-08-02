@@ -125,8 +125,8 @@ export function checkProperties(run) {
     run('fn add(a, b) = a + b\nadd(1, unknownVar)');
     failures.push('unknownVar in function call should throw an error');
   } catch (err) {
-    if (!err.message.includes('Unknown identifier')) {
-      failures.push('unknownVar in function call should throw "Unknown identifier" error');
+    if (!err.message.includes('Undefined symbol')) {
+      failures.push('unknownVar in function call should throw "Undefined symbol" error');
     }
     if (err.location === null) {
       failures.push('unknownVar in function call error should include a non-null location');
@@ -138,8 +138,8 @@ export function checkProperties(run) {
     run('unknownFn()');
     failures.push('unknownFn() should throw an error');
   } catch (err) {
-    if (!err.message.includes('Unknown identifier') && !err.message.includes('not a function')) {
-      failures.push(`unknownFn() should throw "Unknown identifier" or "not a function" error, got: ${err.message}`);
+    if (!err.message.includes('Undefined symbol') && !err.message.includes('not a function')) {
+      failures.push(`unknownFn() should throw "Undefined symbol" or "not a function" error, got: ${err.message}`);
     }
   }
 
