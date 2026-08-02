@@ -14,6 +14,8 @@ export const meta = {
     { source: '"hello" ++ " world"', result: 'hello world' },
     { source: 'length("abc")', result: '3' },
     { source: 'length("")', result: '0' },
+    { source: 'length(nil)', result: '0' },
+    { source: 'length(cons(1, cons(2, nil)))', result: '2' },
     { source: '"abc" == "abc"', result: 'true' },
     { source: '"abc" != "def"', result: 'true' },
     { source: '"abc" == "def"', result: 'false' },
@@ -153,6 +155,26 @@ export function checkProperties(run) {
   } catch (err) {
     if (!err.message.includes('string or list')) {
       failures.push(`length(true) should throw a type error, got: ${err.message}`);
+    }
+  }
+
+  // Length on empty list
+  if (run('length(nil)') !== '0') {
+    failures.push('length(nil) should return "0"');
+  }
+
+  // Length on multi-element list
+  if (run('length(cons(1, cons(2, nil)))') !== '2') {
+    failures.push('length(cons(1, cons(2, nil))) should return "2"');
+  }
+
+  // Length on non-list throws type error
+  try {
+    run('length(1)');
+    failures.push('length(1) should throw an error');
+  } catch (err) {
+    if (!err.message.includes('string or list')) {
+      failures.push(`length(1) should throw a type error, got: ${err.message}`);
     }
   }
 
