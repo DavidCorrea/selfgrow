@@ -12,6 +12,7 @@
 import { registerCapability, getAllCapabilities, getAllMeta, checkAllProperties } from './registry.js';
 import './print.js';
 import './arithmetic.js';
+import './boolean.js';
 import './comparison.js';
 import './control.js';
 import './function.js';
