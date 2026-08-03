@@ -3,7 +3,7 @@
  * Receives source via postMessage, evaluates it through the interpreter,
  * and posts back structured result or error data with location info.
  */
-import './capabilities/index.js';
+import './loader.js';
 import { run } from './run.js';
 import { SelfgrowError } from './errors.js';
 
