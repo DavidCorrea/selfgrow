@@ -227,6 +227,27 @@
       cursor: not-allowed;
     }
 
+    select {
+      font-family: var(--font-ui);
+      font-size: 0.875rem;
+      padding: 0.5rem 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--bg);
+      color: var(--fg);
+      cursor: pointer;
+      transition: background var(--transition), border-color var(--transition);
+    }
+
+    select:hover {
+      border-color: var(--accent);
+    }
+
+    select:focus-visible {
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
+
     button.primary {
       background: var(--accent);
       color: var(--bg);
@@ -553,6 +574,10 @@
         <div class="controls">
           <button id="runBtn" class="primary" type="button" aria-keyshortcuts="Enter">Run (Enter)</button>
           <button id="clearBtn" type="button" aria-keyshortcuts="Escape">Clear (Escape)</button>
+          <label for="sampleSelect" class="sr-only">Load sample program</label>
+          <select id="sampleSelect" aria-label="Sample programs">
+            <option value="">— Load Sample —</option>
+          </select>
           <span class="sr-only" aria-live="polite" id="runStatus"></span>
         </div>
       </div>
@@ -729,6 +754,7 @@ head(listMap(double, cons(1, cons(2, nil))))</code> <span class="example-arrow" 
     import { run } from './lang/run.js';
     import { getAllMeta } from './lang/loader.js';
     import { getAllCapabilities } from './lang/capabilities/registry.js';
+    import { samples } from './samples.js';
 
     const editor = document.getElementById('editor');
     const output = document.getElementById('output');
@@ -860,6 +886,26 @@ head(listMap(double, cons(1, cons(2, nil))))</code> <span class="example-arrow" 
 
     clearBtn.addEventListener('click', clear);
     runBtn.addEventListener('click', handleRun);
+
+    // --- Sample loader ---
+
+    const sampleSelect = document.getElementById('sampleSelect');
+
+    for (const sample of samples) {
+      const option = document.createElement('option');
+      option.value = sample.source;
+      option.textContent = sample.name;
+      sampleSelect.appendChild(option);
+    }
+
+    sampleSelect.addEventListener('change', () => {
+      const source = sampleSelect.value;
+      if (source) {
+        editor.value = source;
+        sampleSelect.value = '';
+        editor.focus();
+      }
+    });
 
     // Keyboard shortcuts
     editor.addEventListener('keydown', (e) => {
