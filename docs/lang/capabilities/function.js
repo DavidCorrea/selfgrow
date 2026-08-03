@@ -48,13 +48,13 @@ function registerFunction(interpreter) {
 
   // Node handlers for evaluation
   interpreter.addNodeHandler('FnDef', (ast, env, steps, builtins, operators, evaluateFn) => {
-    const closure = { __closure: true, params: ast.params, body: ast.body, env: { ...env } };
+    const closure = { __closure: true, params: ast.params, body: ast.body, env };
     env[ast.name] = closure;
     return closure;
   });
 
   interpreter.addNodeHandler('FnExpr', (ast, env, steps, builtins, operators, evaluateFn) => {
-    return { __closure: true, params: ast.params, body: ast.body, env: { ...env } };
+    return { __closure: true, params: ast.params, body: ast.body, env };
   });
 }
 
