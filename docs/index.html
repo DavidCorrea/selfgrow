@@ -577,98 +577,144 @@
           <div id="testResults" class="test-results"></div>
         </div>
 
-        <noscript>
-          <div class="capability-list" role="list" aria-label="Language capabilities">
-            <div class="capability-item" role="listitem">
-              <h3 class="capability-name">print</h3>
-              <p class="capability-summary">Print builtin — outputs values to the result pane</p>
-              <div class="capability-examples">
-                <div class="example"><code class="example-source">print("hello")</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">hello</span></div>
-                <div class="example"><code class="example-source">print(1 + 2)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">3</span></div>
-                <div class="example"><code class="example-source">print(true)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
-              </div>
-            </div>
-            <div class="capability-item" role="listitem">
-              <h3 class="capability-name">arithmetic</h3>
-              <p class="capability-summary">Arithmetic operators — addition, subtraction, multiplication, and division</p>
-              <div class="capability-examples">
-                <div class="example"><code class="example-source">2 + 3</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">5</span></div>
-                <div class="example"><code class="example-source">3 * 4</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">12</span></div>
-                <div class="example"><code class="example-source">10 - 3</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">7</span></div>
-                <div class="example"><code class="example-source">8 / 2</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">4</span></div>
-                <div class="example"><code class="example-source">2 + 3 * 4</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">14</span></div>
-              </div>
-            </div>
-            <div class="capability-item" role="listitem">
-              <h3 class="capability-name">comparison</h3>
-              <p class="capability-summary">Comparison operators</p>
-              <div class="capability-examples">
-                <div class="example"><code class="example-source">1 == 1</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
-                <div class="example"><code class="example-source">1 != 2</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
-                <div class="example"><code class="example-source">1 &lt; 2</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
-                <div class="example"><code class="example-source">2 &gt; 1</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
-                <div class="example"><code class="example-source">1 &lt;= 1</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
-                <div class="example"><code class="example-source">1 &gt;= 2</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">false</span></div>
-              </div>
-            </div>
-            <div class="capability-item" role="listitem">
-              <h3 class="capability-name">boolean</h3>
-              <p class="capability-summary">Boolean literals and logical operators</p>
-              <div class="capability-examples">
-                <div class="example"><code class="example-source">true</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
-                <div class="example"><code class="example-source">false</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">false</span></div>
-                <div class="example"><code class="example-source">true and false</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">false</span></div>
-                <div class="example"><code class="example-source">true or false</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
-                <div class="example"><code class="example-source">not true</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">false</span></div>
-                <div class="example"><code class="example-source">not false</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
-              </div>
-            </div>
-            <div class="capability-item" role="listitem">
-              <h3 class="capability-name">control</h3>
-              <p class="capability-summary">Control flow constructs — let bindings, conditionals, and loops</p>
-              <div class="capability-examples">
-                <div class="example"><code class="example-source">let x = 1 in x</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">1</span></div>
-                <div class="example"><code class="example-source">if true then 1 else 2 end</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">1</span></div>
-                <div class="example"><code class="example-source">if false then 1 else 2 end</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">2</span></div>
-                <div class="example"><code class="example-source">let x = if true then 1 else 2 end in x</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">1</span></div>
-              </div>
-            </div>
-            <div class="capability-item" role="listitem">
-              <h3 class="capability-name">function</h3>
-              <p class="capability-summary">Function definitions — named functions with fn and anonymous function expressions</p>
-              <div class="capability-examples">
-                <div class="example"><code class="example-source">fn add(a, b) = a + b\nadd(2, 3)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">5</span></div>
-                <div class="example"><code class="example-source">(fn(a, b) = a + b)(2, 3)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">5</span></div>
-                <div class="example"><code class="example-source">fn double(x) = x * 2\nhead(listMap(double, cons(1, cons(2, nil))))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">2</span></div>
-                <div class="example"><code class="example-source">(fn() = 42)()</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">42</span></div>
-              </div>
-            </div>
-            <div class="capability-item" role="listitem">
-              <h3 class="capability-name">list</h3>
-              <p class="capability-summary">List data structure — cons, head, tail, nil, and length</p>
-              <div class="capability-examples">
-                <div class="example"><code class="example-source">head(cons(1, nil))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">1</span></div>
-                <div class="example"><code class="example-source">tail(cons(1, nil))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result"></span></div>
-                <div class="example"><code class="example-source">length(nil)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">0</span></div>
-                <div class="example"><code class="example-source">length(cons(1, cons(2, nil)))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">2</span></div>
-                <div class="example"><code class="example-source">head(tail(cons(1, cons(2, nil))))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">2</span></div>
-              </div>
-            </div>
-            <div class="capability-item" role="listitem">
-              <h3 class="capability-name">record</h3>
-              <p class="capability-summary">Record data structure — construction, field get, set, and has</p>
-              <div class="capability-examples">
-                <div class="example"><code class="example-source">get(#{name: "x", value: 42}, "name")</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">x</span></div>
-                <div class="example"><code class="example-source">get(#{name: "x", value: 42}, "value")</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">42</span></div>
-                <div class="example"><code class="example-source">has(#{name: "x"}, "name")</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
-                <div class="example"><code class="example-source">has(#{name: "x"}, "missing")</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">false</span></div>
-                <div class="example"><code class="example-source">has(#{}, "anything")</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">false</span></div>
-              </div>
+        <div class="capability-list" id="capabilityList" role="list" aria-label="Language capabilities">
+          <div class="capability-item" role="listitem">
+            <h3 class="capability-name">print</h3>
+            <p class="capability-summary">Print builtin — outputs values to the result pane</p>
+            <div class="capability-examples">
+              <div class="example"><code class="example-source">print("hello")</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">hello</span></div>
+              <div class="example"><code class="example-source">print(1 + 2)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">3</span></div>
+              <div class="example"><code class="example-source">print(true)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
             </div>
           </div>
-        </noscript>
-        <div class="capability-list" id="capabilityList" role="list" aria-label="Language capabilities">
-          <!-- Capabilities injected here by JS -->
+          <div class="capability-item" role="listitem">
+            <h3 class="capability-name">arithmetic</h3>
+            <p class="capability-summary">Arithmetic operators — addition, subtraction, multiplication, and division</p>
+            <div class="capability-examples">
+              <div class="example"><code class="example-source">2 + 3</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">5</span></div>
+              <div class="example"><code class="example-source">3 * 4</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">12</span></div>
+              <div class="example"><code class="example-source">10 - 3</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">7</span></div>
+              <div class="example"><code class="example-source">8 / 2</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">4</span></div>
+              <div class="example"><code class="example-source">2 + 3 * 4</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">14</span></div>
+            </div>
+          </div>
+          <div class="capability-item" role="listitem">
+            <h3 class="capability-name">boolean</h3>
+            <p class="capability-summary">Boolean literals and logical operators</p>
+            <div class="capability-examples">
+              <div class="example"><code class="example-source">true</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
+              <div class="example"><code class="example-source">false</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">false</span></div>
+              <div class="example"><code class="example-source">true and false</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">false</span></div>
+              <div class="example"><code class="example-source">true or false</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
+              <div class="example"><code class="example-source">not true</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">false</span></div>
+              <div class="example"><code class="example-source">not false</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
+              <div class="example"><code class="example-source">print(true and false)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">false</span></div>
+              <div class="example"><code class="example-source">print(true or false)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
+            </div>
+          </div>
+          <div class="capability-item" role="listitem">
+            <h3 class="capability-name">comparison</h3>
+            <p class="capability-summary">Comparison operators</p>
+            <div class="capability-examples">
+              <div class="example"><code class="example-source">1 == 1</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
+              <div class="example"><code class="example-source">1 != 2</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
+              <div class="example"><code class="example-source">1 &lt; 2</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
+              <div class="example"><code class="example-source">2 &gt; 1</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
+              <div class="example"><code class="example-source">1 &lt;= 1</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
+              <div class="example"><code class="example-source">1 &gt;= 2</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">false</span></div>
+            </div>
+          </div>
+          <div class="capability-item" role="listitem">
+            <h3 class="capability-name">control</h3>
+            <p class="capability-summary">Control flow constructs — let bindings, conditionals, and loops</p>
+            <div class="capability-examples">
+              <div class="example"><code class="example-source">let x = 1 in x</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">1</span></div>
+              <div class="example"><code class="example-source">if true then 1 else 2 end</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">1</span></div>
+              <div class="example"><code class="example-source">if false then 1 else 2 end</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">2</span></div>
+              <div class="example"><code class="example-source">let x = if true then 1 else 2 end in x</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">1</span></div>
+              <div class="example"><code class="example-source">if true then if false then 1 else 2 end else 3 end</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">2</span></div>
+              <div class="example"><code class="example-source">print(if true then 1 else 2 end)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">1</span></div>
+              <div class="example"><code class="example-source">while false do print(1) end</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result"></span></div>
+              <div class="example"><code class="example-source">while false do let x = 1 in print(x) end</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result"></span></div>
+            </div>
+          </div>
+          <div class="capability-item" role="listitem">
+            <h3 class="capability-name">function</h3>
+            <p class="capability-summary">Function definitions — named functions with fn and anonymous function expressions</p>
+            <div class="capability-examples">
+              <div class="example"><code class="example-source">fn add(a, b) = a + b
+add(2, 3)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">5</span></div>
+              <div class="example"><code class="example-source">fn add(a, b) = a + b
+add(if true then 1 else 2 end, 3)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">4</span></div>
+              <div class="example"><code class="example-source">(fn(a, b) = a + b)(2, 3)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">5</span></div>
+              <div class="example"><code class="example-source">fn double(x) = x * 2
+head(listMap(double, cons(1, cons(2, nil))))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">2</span></div>
+              <div class="example"><code class="example-source">let double = fn(x) = x * 2 in head(listMap(double, cons(1, cons(2, nil))))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">2</span></div>
+              <div class="example"><code class="example-source">head(listFilter(fn(x) = x &gt; 1, cons(1, cons(2, cons(3, nil)))))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">2</span></div>
+              <div class="example"><code class="example-source">listFold(fn(acc, x) = acc + x, 0, cons(1, cons(2, cons(3, nil))))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">6</span></div>
+              <div class="example"><code class="example-source">(fn() = 42)()</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">42</span></div>
+            </div>
+          </div>
+          <div class="capability-item" role="listitem">
+            <h3 class="capability-name">list</h3>
+            <p class="capability-summary">List data structure — cons, head, tail, nil, and length</p>
+            <div class="capability-examples">
+              <div class="example"><code class="example-source">head(cons(1, nil))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">1</span></div>
+              <div class="example"><code class="example-source">tail(cons(1, nil))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result"></span></div>
+              <div class="example"><code class="example-source">head(tail(cons(1, cons(2, nil))))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">2</span></div>
+            </div>
+          </div>
+          <div class="capability-item" role="listitem">
+            <h3 class="capability-name">record</h3>
+            <p class="capability-summary">Record data structure — construction, field get, set, and has</p>
+            <div class="capability-examples">
+              <div class="example"><code class="example-source">get(#{name: "x", value: 42}, "name")</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">x</span></div>
+              <div class="example"><code class="example-source">get(#{name: "x", value: 42}, "value")</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">42</span></div>
+              <div class="example"><code class="example-source">has(#{name: "x"}, "name")</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
+              <div class="example"><code class="example-source">has(#{name: "x"}, "missing")</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">false</span></div>
+              <div class="example"><code class="example-source">has(#{}, "anything")</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">false</span></div>
+            </div>
+          </div>
+          <div class="capability-item" role="listitem">
+            <h3 class="capability-name">list_ops</h3>
+            <p class="capability-summary">Higher-order list operations — map, filter, and fold</p>
+            <div class="capability-examples">
+              <div class="example"><code class="example-source">head(listMap(fn(x) = x + 1, cons(1, cons(2, nil))))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">2</span></div>
+              <div class="example"><code class="example-source">head(tail(listMap(fn(x) = x + 1, cons(1, cons(2, nil)))))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">3</span></div>
+              <div class="example"><code class="example-source">length(listMap(fn(x) = x + 1, nil))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">0</span></div>
+              <div class="example"><code class="example-source">listFold(fn(acc, x) = acc + x, 0, cons(1, cons(2, cons(3, nil))))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">6</span></div>
+              <div class="example"><code class="example-source">listFold(fn(acc, x) = acc + x, 10, nil)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">10</span></div>
+              <div class="example"><code class="example-source">head(listFilter(fn(x) = x &gt; 1, cons(1, cons(2, cons(3, nil)))))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">2</span></div>
+              <div class="example"><code class="example-source">length(listFilter(fn(x) = x &gt; 1, cons(1, cons(2, cons(3, nil)))))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">2</span></div>
+              <div class="example"><code class="example-source">length(listFilter(fn(x) = x &gt; 10, cons(1, cons(2, nil))))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">0</span></div>
+            </div>
+          </div>
+          <div class="capability-item" role="listitem">
+            <h3 class="capability-name">string</h3>
+            <p class="capability-summary">String operations — concatenation, length, and comparison</p>
+            <div class="capability-examples">
+              <div class="example"><code class="example-source">"hello" ++ " world"</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">hello world</span></div>
+              <div class="example"><code class="example-source">length("abc")</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">3</span></div>
+              <div class="example"><code class="example-source">length("")</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">0</span></div>
+              <div class="example"><code class="example-source">length(nil)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">0</span></div>
+              <div class="example"><code class="example-source">length(cons(1, cons(2, nil)))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">2</span></div>
+              <div class="example"><code class="example-source">"abc" == "abc"</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
+              <div class="example"><code class="example-source">"abc" != "def"</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
+              <div class="example"><code class="example-source">"abc" == "def"</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">false</span></div>
+              <div class="example"><code class="example-source">print("hello" ++ " " ++ "world")</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">hello world</span></div>
+            </div>
+          </div>
+          <div class="capability-item" role="listitem">
+            <h3 class="capability-name">letrec</h3>
+            <p class="capability-summary">Recursive local function bindings — letrec makes the binding visible in its own value expression</p>
+            <div class="capability-examples">
+              <div class="example"><code class="example-source">letrec factorial = fn(n) = if n &lt;= 1 then 1 else n * factorial(n - 1) end in factorial(5)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">120</span></div>
+              <div class="example"><code class="example-source">letrec fib = fn(n) = if n &lt;= 1 then n else fib(n - 1) + fib(n - 2) end in fib(10)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">55</span></div>
+              <div class="example"><code class="example-source">letrec count = fn(n) = if n &lt;= 0 then 0 else 1 + count(n - 1) end in count(5)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">5</span></div>
+              <div class="example"><code class="example-source">letrec double = fn(x) = x * 2 in double(3)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">6</span></div>
+              <div class="example"><code class="example-source">letrec outer = fn(x) = letrec inner = fn(y) = x + y in inner(10) in outer(5)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">15</span></div>
+            </div>
+          </div>
         </div>
       </div>
     </section>
