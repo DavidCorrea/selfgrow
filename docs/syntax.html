@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Syntax — selfgrow</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --bg-elevated: #161b22;
+      --fg: #e6edf3;
+      --fg-muted: #8b949e;
+      --accent: #58a6ff;
+      --accent-hover: #79c0ff;
+      --border: #30363d;
+      --editor-bg: #0d1117;
+      --output-bg: #0d1117;
+      --error: #f85149;
+      --success: #3fb950;
+      --focus: #58a6ff;
+      --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+      --font-ui: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --spacing: 1rem;
+      --radius: 6px;
+      --transition: 150ms ease;
+      --header-height: 4rem;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      font-family: var(--font-ui);
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.6;
+      font-size: 16px;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    a:focus-visible, button:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
+
+    header {
+      padding: var(--spacing) calc(var(--spacing) * 2);
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-elevated);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .header-content {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--spacing);
+    }
+    .logo {
+      font-family: var(--font-mono);
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: var(--fg);
+      letter-spacing: -0.02em;
+    }
+    .logo span { color: var(--accent); }
+
+    main {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: var(--spacing) calc(var(--spacing) * 2);
+      min-height: calc(100vh - 200px);
+    }
+
+    /* Syntax content styles */
+    .syntax-section {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: var(--spacing);
+      margin-bottom: calc(var(--spacing) * 2);
+    }
+    .syntax-section h2 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: var(--spacing);
+      padding-bottom: calc(var(--spacing) * 0.5);
+      border-bottom: 1px solid var(--border);
+    }
+    .syntax-section h3 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin: var(--spacing) 0 calc(var(--spacing) * 0.5);
+    }
+    .syntax-section h4 {
+      font-size: 0.875rem;
+      font-weight: 600;
+      margin: calc(var(--spacing) * 0.75) 0 calc(var(--spacing) * 0.25);
+      color: var(--fg-muted);
+    }
+
+    .grammar-block {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: var(--spacing);
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      line-height: 1.8;
+      overflow-x: auto;
+      white-space: pre;
+      color: var(--fg);
+    }
+    .grammar-block .kw { color: var(--accent); }
+    .grammar-block .nt { color: #7ee787; }
+    .grammar-block .op { color: #ffa657; }
+    .grammar-block .lt { color: var(--fg-muted); }
+
+    .token-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+    .token-table th, .token-table td {
+      padding: 0.5rem 0.75rem;
+      border: 1px solid var(--border);
+      text-align: left;
+    }
+    .token-table th {
+      background: rgba(255,255,255,0.03);
+      font-weight: 600;
+      color: var(--fg-muted);
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .token-table code {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      background: var(--bg);
+      padding: 0.15rem 0.4rem;
+      border-radius: 3px;
+    }
+
+    .keyword-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      list-style: none;
+    }
+    .keyword-list li {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.25rem 0.5rem;
+      color: var(--accent);
+    }
+
+    .operator-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      list-style: none;
+    }
+    .operator-list li {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.25rem 0.5rem;
+    }
+    .operator-list li .desc {
+      color: var(--fg-muted);
+      font-size: 0.75rem;
+      margin-left: 0.5rem;
+    }
+
+    .example-grid {
+      display: grid;
+      gap: calc(var(--spacing) * 0.5);
+    }
+    .example-item {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+      padding: 0.5rem 0.75rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      flex-wrap: wrap;
+    }
+    .example-item .src {
+      color: var(--fg);
+      flex: 1;
+      min-width: 200px;
+    }
+    .example-item .arrow {
+      color: var(--fg-muted);
+    }
+    .example-item .res {
+      color: var(--success);
+      white-space: nowrap;
+    }
+    .example-item a {
+      font-size: 0.75rem;
+      white-space: nowrap;
+    }
+
+    .punctuation-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      list-style: none;
+    }
+    .punctuation-list li {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.25rem 0.5rem;
+    }
+
+    .note {
+      color: var(--fg-muted);
+      font-size: 0.875rem;
+      margin-top: calc(var(--spacing) * 0.5);
+    }
+
+    .toc {
+      list-style: none;
+      display: flex;
+      flex-wrap: wrap;
+      gap: calc(var(--spacing) * 0.75);
+      margin-bottom: var(--spacing);
+    }
+    .toc li { font-size: 0.875rem; }
+
+    footer {
+      padding: calc(var(--spacing) * 2);
+      text-align: center;
+      color: var(--fg-muted);
+      font-size: 0.875rem;
+      border-top: 1px solid var(--border);
+      margin-top: calc(var(--spacing) * 3);
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    .skip-link {
+      position: absolute;
+      top: -100%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--accent);
+      color: var(--bg);
+      padding: 0.75rem 1.5rem;
+      border-radius: var(--radius);
+      font-weight: 600;
+      z-index: 100;
+      transition: top var(--transition);
+    }
+    .skip-link:focus {
+      top: var(--spacing);
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
+
+    @media (max-width: 900px) {
+      main { padding: var(--spacing); }
+      .syntax-section { padding: calc(var(--spacing) * 0.75); }
+      .grammar-block { font-size: 0.75rem; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      * { transition: none !important; animation: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <a href="#main-content" class="skip-link" id="skipLink">Skip to main content</a>
+
+  <header>
+    <div class="header-content">
+      <h1 class="logo">self<span>grow</span></h1>
+      <nav aria-label="Primary">
+        <a href="index.html#playground" style="margin-right: var(--spacing);">Playground</a>
+        <a href="index.html#reference" style="margin-right: var(--spacing);">Reference</a>
+        <a href="#syntax">Syntax</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main-content">
+    <h2 id="syntax" style="margin-bottom: var(--spacing);">Syntax Reference</h2>
+    <p style="color: var(--fg-muted); margin-bottom: calc(var(--spacing) * 2);">
+      Formal grammar for the selfgrow language, described in EBNF notation.
+      The grammar is derived from the interpreter's parser and reflects all
+      registered keywords, operators, and syntactic forms.
+    </p>
+
+    <nav aria-label="Table of contents">
+      <ul class="toc">
+        <li><a href="#tokens">Tokens</a></li>
+        <li><a href="#keywords">Keywords</a></li>
+        <li><a href="#operators">Operators</a></li>
+        <li><a href="#punctuation">Punctuation</a></li>
+        <li><a href="#grammar">Grammar</a></li>
+        <li><a href="#examples">Examples</a></li>
+      </ul>
+    </nav>
+
+    <!-- Tokens -->
+    <section id="tokens" class="syntax-section">
+      <h2>Tokens</h2>
+      <p>The tokenizer produces the following token types from source text.</p>
+      <table class="token-table">
+        <thead>
+          <tr><th>Type</th><th>Pattern</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>number</code></td>
+            <td><code>[0-9]+ ('.' [0-9]+)? ([eE][+-]?[0-9]+)?</code></td>
+            <td>Integer, decimal, or scientific notation</td>
+          </tr>
+          <tr>
+            <td><code>string</code></td>
+            <td><code>"..."</code></td>
+            <td>Double-quoted string with escape sequences: <code>\"</code> <code>\\</code> <code>\n</code> <code>\t</code> <code>\r</code></td>
+          </tr>
+          <tr>
+            <td><code>boolean</code></td>
+            <td><code>true</code> <code>false</code></td>
+            <td>Boolean literal keywords</td>
+          </tr>
+          <tr>
+            <td><code>identifier</code></td>
+            <td><code>[a-zA-Z_][a-zA-Z0-9_]*</code></td>
+            <td>Variable names, function names, field names</td>
+          </tr>
+          <tr>
+            <td><code>keyword</code></td>
+            <td>see keywords below</td>
+            <td>Reserved words that are not identifiers</td>
+          </tr>
+          <tr>
+            <td><code>operator</code></td>
+            <td>see operators below</td>
+            <td>Arithmetic, comparison, logical, and concatenation operators</td>
+          </tr>
+          <tr>
+            <td><code>punctuation</code></td>
+            <td>see punctuation below</td>
+            <td>Grouping, sequencing, and record syntax characters</td>
+          </tr>
+          <tr>
+            <td><code>eof</code></td>
+            <td>—</td>
+            <td>End of input</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Keywords -->
+    <section id="keywords" class="syntax-section">
+      <h2>Keywords</h2>
+      <p>The following identifiers are reserved as keywords and cannot be used as variable or function names.</p>
+      <ul class="keyword-list">
+        <li>let</li>
+        <li>in</li>
+        <li>if</li>
+        <li>then</li>
+        <li>else</li>
+        <li>end</li>
+        <li>while</li>
+        <li>do</li>
+        <li>fn</li>
+        <li>letrec</li>
+        <li>true</li>
+        <li>false</li>
+        <li>nil</li>
+        <li>and</li>
+        <li>or</li>
+        <li>not</li>
+      </ul>
+      <p class="note">Keywords <code>true</code>, <code>false</code>, <code>nil</code>, <code>and</code>, <code>or</code>, and <code>not</code> are registered by the boolean capability and also function as operators in their respective contexts.</p>
+    </section>
+
+    <!-- Operators -->
+    <section id="operators" class="syntax-section">
+      <h2>Operators</h2>
+      <p>Operators are registered by capabilities and have associated precedence and associativity rules.</p>
+
+      <h4>Arithmetic</h4>
+      <ul class="operator-list">
+        <li><code>+</code> <span class="desc">addition (precedence 10, left)</span></li>
+        <li><code>-</code> <span class="desc">subtraction / unary minus (precedence 10, left / prefix)</span></li>
+        <li><code>*</code> <span class="desc">multiplication (precedence 20, left)</span></li>
+        <li><code>/</code> <span class="desc">division (precedence 20, left)</span></li>
+      </ul>
+
+      <h4>Comparison</h4>
+      <ul class="operator-list">
+        <li><code>==</code> <span class="desc">equality (precedence 5, left)</span></li>
+        <li><code>!=</code> <span class="desc">inequality (precedence 5, left)</span></li>
+        <li><code>&lt;</code> <span class="desc">less than (precedence 5, left)</span></li>
+        <li><code>&gt;</code> <span class="desc">greater than (precedence 5, left)</span></li>
+        <li><code>&lt;=</code> <span class="desc">less than or equal (precedence 5, left)</span></li>
+        <li><code>&gt;=</code> <span class="desc">greater than or equal (precedence 5, left)</span></li>
+      </ul>
+
+      <h4>Logical</h4>
+      <ul class="operator-list">
+        <li><code>or</code> <span class="desc">logical or (precedence 2, left)</span></li>
+        <li><code>and</code> <span class="desc">logical and (precedence 3, left)</span></li>
+        <li><code>not</code> <span class="desc">logical not (prefix, unary)</span></li>
+      </ul>
+
+      <h4>String</h4>
+      <ul class="operator-list">
+        <li><code>++</code> <span class="desc">string concatenation (precedence 10, left)</span></li>
+      </ul>
+
+      <h4>Other</h4>
+      <ul class="operator-list">
+        <li><code>=</code> <span class="desc">binding / assignment in let/letrec</span></li>
+        <li><code>=</code> <span class="desc">function definition arrow (after params)</span></li>
+        <li><code>=></code> <span class="desc">reserved two-character operator token</span></li>
+      </ul>
+
+      <p class="note">Operator precedence (highest to lowest): <code>*</code> / <code>/</code> (20) &gt; <code>+</code> - (10) &gt; <code>==</code> != &lt; &gt; &lt;= &gt;= (5) &gt; <code>and</code> (3) &gt; <code>or</code> (2). Prefix unary minus has higher precedence than binary operators.</p>
+    </section>
+
+    <!-- Punctuation -->
+    <section id="punctuation" class="syntax-section">
+      <h2>Punctuation</h2>
+      <ul class="punctuation-list">
+        <li><code>(</code></li>
+        <li><code>)</code></li>
+        <li><code>{</code></li>
+        <li><code>}</code></li>
+        <li><code>,</code></li>
+        <li><code>;</code></li>
+        <li><code>[</code></li>
+        <li><code>]</code></li>
+        <li><code>:</code></li>
+        <li><code>#</code></li>
+        <li><code>.</code></li>
+      </ul>
+      <p class="note"><code>#</code> introduces a record literal. <code>.</code> is used for field access (dot notation). <code>(</code> and <code>)</code> are used for grouping expressions and function call argument lists.</p>
+    </section>
+
+    <!-- Grammar -->
+    <section id="grammar" class="syntax-section">
+      <h2>Grammar (EBNF)</h2>
+      <p>The following grammar rules describe the full syntax of the selfgrow language. Non-terminals are shown in <span style="color:#7ee787">italic</span> (monospace). Terminals are quoted.</p>
+
+      <h3>Program Structure</h3>
+      <div class="grammar-block"><span class="nt">program</span>       <span class="lt">::=</span> <span class="nt">statement</span>*
+<span class="nt">statement</span>     <span class="lt">::=</span> <span class="nt">letStmt</span>
+                <span class="lt">|</span> <span class="nt">ifStmt</span>
+                <span class="lt">|</span> <span class="nt">whileStmt</span>
+                <span class="lt">|</span> <span class="nt">fnDef</span>
+                <span class="lt">|</span> <span class="nt">doBlock</span>
+                <span class="lt">|</span> <span class="nt">letrecStmt</span>
+                <span class="lt">|</span> <span class="nt">exprStmt</span>
+
+<span class="nt">exprStmt</span>       <span class="lt">::=</span> <span class="nt">expr</span>
+<span class="nt">block</span>          <span class="lt">::=</span> <span class="nt">statement</span>*</div>
+
+      <h3>Statements</h3>
+      <div class="grammar-block"><span class="nt">letStmt</span>       <span class="lt">::=</span> <span class="kw">let</span> <span class="nt">IDENTIFIER</span> [<span class="op">=</span> <span class="nt">expr</span>] <span class="kw">in</span> <span class="nt">expr</span>
+
+<span class="nt">ifStmt</span>         <span class="lt">::=</span> <span class="kw">if</span> <span class="nt">expr</span> <span class="kw">then</span> <span class="nt">expr</span> [<span class="kw">else</span> <span class="nt">expr</span>] <span class="kw">end</span>
+
+<span class="nt">whileStmt</span>      <span class="lt">::=</span> <span class="kw">while</span> <span class="nt">expr</span> <span class="kw">do</span> <span class="nt">block</span> <span class="kw">end</span>
+
+<span class="nt">fnDef</span>          <span class="lt">::=</span> <span class="kw">fn</span> <span class="nt">IDENTIFIER</span> <span class="op">(</span> [<span class="nt">paramList</span>] <span class="op">)</span> <span class="op">=</span> <span class="nt">expr</span>
+
+<span class="nt">doBlock</span>        <span class="lt">::=</span> <span class="kw">do</span> <span class="nt">expr</span>* <span class="kw">end</span>
+
+<span class="nt">letrecStmt</span>     <span class="lt">::=</span> <span class="kw">letrec</span> <span class="nt">IDENTIFIER</span> <span class="op">=</span> <span class="nt">expr</span> <span class="kw">in</span> <span class="nt">expr</span></div>
+
+      <h3>Expressions</h3>
+      <div class="grammar-block"><span class="nt">expr</span>           <span class="lt">::=</span> <span class="nt">orExpr</span>
+
+<span class="nt">orExpr</span>         <span class="lt">::=</span> <span class="nt">andExpr</span> { <span class="kw">or</span> <span class="nt">andExpr</span> }
+
+<span class="nt">andExpr</span>        <span class="lt">::=</span> <span class="nt">notExpr</span> { <span class="kw">and</span> <span class="nt">notExpr</span> }
+
+<span class="nt">notExpr</span>        <span class="lt">::=</span> <span class="kw">not</span> <span class="nt">notExpr</span>
+                <span class="lt">|</span> <span class="nt">comparisonExpr</span>
+
+<span class="nt">comparisonExpr</span> <span class="lt">::=</span> <span class="nt">addExpr</span> { (<span class="op">==</span> <span class="op">!=</span> &lt; &gt; &lt;= &gt;=) <span class="nt">addExpr</span> }
+
+<span class="nt">addExpr</span>        <span class="lt">::=</span> <span class="nt">mulExpr</span> { (<span class="op">+</span> <span class="op">-</span>) <span class="nt">mulExpr</span> }
+
+<span class="nt">mulExpr</span>        <span class="lt">::=</span> <span class="nt">unaryExpr</span> { (<span class="op">*</span> <span class="op">/</span>) <span class="nt">unaryExpr</span> }
+
+<span class="nt">unaryExpr</span>      <span class="lt">::=</span> <span class="op">-</span> <span class="nt">unaryExpr</span>
+                <span class="lt">|</span> <span class="nt">prefixOp</span> <span class="nt">unaryExpr</span>
+                <span class="lt">|</span> <span class="nt">primary</span>
+
+<span class="nt">primary</span>        <span class="lt">::=</span> <span class="nt">number</span>
+                <span class="lt">|</span> <span class="nt">string</span>
+                <span class="lt">|</span> <span class="kw">true</span> <span class="lt">|</span> <span class="kw">false</span>
+                <span class="lt">|</span> <span class="kw">nil</span>
+                <span class="lt">|</span> <span class="op">(</span> <span class="nt">expr</span> <span class="op">)</span>
+                <span class="lt">|</span> <span class="op">#</span> <span class="op">{</span> [<span class="nt">fieldList</span>] <span class="op">}</span>
+                <span class="lt">|</span> <span class="nt">IDENTIFIER</span> { <span class="nt">callSuffix</span> <span class="lt">|</span> <span class="nt">fieldSuffix</span> }
+                <span class="lt">|</span> <span class="kw">fn</span> <span class="op">(</span> [<span class="nt">paramList</span>] <span class="op">)</span> <span class="op">=</span> <span class="nt">expr</span>
+                <span class="lt">|</span> <span class="nt">ifExpr</span>
+                <span class="lt">|</span> <span class="nt">letrecExpr</span>
+
+<span class="nt">ifExpr</span>         <span class="lt">::=</span> <span class="kw">if</span> <span class="nt">expr</span> <span class="kw">then</span> <span class="nt">expr</span> [<span class="kw">else</span> <span class="nt">expr</span>] <span class="kw">end</span>
+
+<span class="nt">letrecExpr</span>     <span class="lt">::=</span> <span class="kw">letrec</span> <span class="nt">IDENTIFIER</span> <span class="op">=</span> <span class="nt">expr</span> <span class="kw">in</span> <span class="nt">expr</span>
+
+<span class="nt">callSuffix</span>     <span class="lt">::=</span> <span class="op">(</span> [<span class="nt">argList</span>] <span class="op">)</span>
+
+<span class="nt">fieldSuffix</span>    <span class="lt">::=</span> <span class="op">.</span> <span class="nt">IDENTIFIER</span>
+
+<span class="nt">argList</span>        <span class="lt">::=</span> <span class="nt">expr</span> { <span class="op">,</span> <span class="nt">expr</span> }
+
+<span class="nt">fieldList</span>      <span class="lt">::=</span> <span class="nt">IDENTIFIER</span> <span class="op">:</span> <span class="nt">expr</span> { <span class="op">,</span> <span class="nt">IDENTIFIER</span> <span class="op">:</span> <span class="nt">expr</span> }
+
+<span class="nt">paramList</span>      <span class="lt">::=</span> <span class="nt">IDENTIFIER</span> { <span class="op">,</span> <span class="nt">IDENTIFIER</span> }</div>
+
+      <h3>Comments</h3>
+      <div class="grammar-block"><span class="nt">comment</span>       <span class="lt">::=</span> <span class="op">//</span> { <span class="lt">any character except newline</span> }</div>
+    </section>
+
+    <!-- Examples -->
+    <section id="examples" class="syntax-section">
+      <h2>Executable Examples</h2>
+      <p>Each example below is a valid selfgrow program. Click "Run" to execute it in the playground, or edit the source and run your own variant.</p>
+
+      <h3>Literals</h3>
+      <div class="example-grid">
+        <div class="example-item"><code class="src">42</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">42</span></div>
+        <div class="example-item"><code class="src">3.14</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">3.14</span></div>
+        <div class="example-item"><code class="src">"hello"</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">hello</span></div>
+        <div class="example-item"><code class="src">true</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">true</span></div>
+        <div class="example-item"><code class="src">false</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">false</span></div>
+        <div class="example-item"><code class="src">nil</code> <span class="arrow" aria-hidden="true">→</span> <span class="res"></span></div>
+      </div>
+
+      <h3>Arithmetic</h3>
+      <div class="example-grid">
+        <div class="example-item"><code class="src">2 + 3</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">5</span></div>
+        <div class="example-item"><code class="src">10 - 3</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">7</span></div>
+        <div class="example-item"><code class="src">3 * 4</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">12</span></div>
+        <div class="example-item"><code class="src">8 / 2</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">4</span></div>
+        <div class="example-item"><code class="src">2 + 3 * 4</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">14</span></div>
+        <div class="example-item"><code class="src">-5</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">-5</span></div>
+      </div>
+
+      <h3>Boolean Logic</h3>
+      <div class="example-grid">
+        <div class="example-item"><code class="src">true and false</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">false</span></div>
+        <div class="example-item"><code class="src">true or false</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">true</span></div>
+        <div class="example-item"><code class="src">not true</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">false</span></div>
+        <div class="example-item"><code class="src">not false</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">true</span></div>
+        <div class="example-item"><code class="src">true and false or true</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">true</span></div>
+      </div>
+
+      <h3>Comparison</h3>
+      <div class="example-grid">
+        <div class="example-item"><code class="src">1 == 1</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">true</span></div>
+        <div class="example-item"><code class="src">1 != 2</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">true</span></div>
+        <div class="example-item"><code class="src">1 &lt; 2</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">true</span></div>
+        <div class="example-item"><code class="src">2 &gt; 1</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">true</span></div>
+        <div class="example-item"><code class="src">1 &lt;= 1</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">true</span></div>
+        <div class="example-item"><code class="src">1 &gt;= 2</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">false</span></div>
+      </div>
+
+      <h3>String Operations</h3>
+      <div class="example-grid">
+        <div class="example-item"><code class="src">"hello" ++ " world"</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">hello world</span></div>
+        <div class="example-item"><code class="src">length("abc")</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">3</span></div>
+        <div class="example-item"><code class="src">"abc" == "abc"</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">true</span></div>
+      </div>
+
+      <h3>Let Bindings</h3>
+      <div class="example-grid">
+        <div class="example-item"><code class="src">let x = 1 in x</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">1</span></div>
+        <div class="example-item"><code class="src">let x = 1 + 2 in x * 3</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">9</span></div>
+        <div class="example-item"><code class="src">let x = if true then 1 else 2 end in x</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">1</span></div>
+      </div>
+
+      <h3>Conditionals</h3>
+      <div class="example-grid">
+        <div class="example-item"><code class="src">if true then 1 else 2 end</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">1</span></div>
+        <div class="example-item"><code class="src">if false then 1 else 2 end</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">2</span></div>
+        <div class="example-item"><code class="src">if true then 1 end</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">1</span></div>
+        <div class="example-item"><code class="src">if true then if false then 1 else 2 end else 3 end</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">2</span></div>
+      </div>
+
+      <h3>While Loops</h3>
+      <div class="example-grid">
+        <div class="example-item"><code class="src">while false do 1 end</code> <span class="arrow" aria-hidden="true">→</span> <span class="res"></span></div>
+        <div class="example-item"><code class="src">let x = 0 in while x &lt; 3 do let x = x + 1 in x end end</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">3</span></div>
+      </div>
+
+      <h3>Functions</h3>
+      <div class="example-grid">
+        <div class="example-item"><code class="src">fn add(a, b) = a + b
+add(2, 3)</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">5</span></div>
+        <div class="example-item"><code class="src">(fn(a, b) = a + b)(2, 3)</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">5</span></div>
+        <div class="example-item"><code class="src">(fn() = 42)()</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">42</span></div>
+        <div class="example-item"><code class="src">fn double(x) = x * 2
+head(listMap(double, cons(1, cons(2, nil))))</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">2</span></div>
+      </div>
+
+      <h3>Records</h3>
+      <div class="example-grid">
+        <div class="example-item"><code class="src">#{name: "x", value: 42}.name</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">x</span></div>
+        <div class="example-item"><code class="src">get(#{name: "x", value: 42}, "name")</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">x</span></div>
+        <div class="example-item"><code class="src">has(#{name: "x"}, "name")</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">true</span></div>
+        <div class="example-item"><code class="src">has(#{name: "x"}, "missing")</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">false</span></div>
+      </div>
+
+      <h3>Lists</h3>
+      <div class="example-grid">
+        <div class="example-item"><code class="src">head(cons(1, nil))</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">1</span></div>
+        <div class="example-item"><code class="src">tail(cons(1, nil))</code> <span class="arrow" aria-hidden="true">→</span> <span class="res"></span></div>
+        <div class="example-item"><code class="src">head(tail(cons(1, cons(2, nil))))</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">2</span></div>
+        <div class="example-item"><code class="src">length(cons(1, cons(2, cons(3, nil))))</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">3</span></div>
+      </div>
+
+      <h3>Higher-Order List Operations</h3>
+      <div class="example-grid">
+        <div class="example-item"><code class="src">head(listMap(fn(x) = x + 1, cons(1, cons(2, nil))))</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">2</span></div>
+        <div class="example-item"><code class="src">head(listFilter(fn(x) = x &gt; 1, cons(1, cons(2, cons(3, nil)))))</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">2</span></div>
+        <div class="example-item"><code class="src">listFold(fn(acc, x) = acc + x, 0, cons(1, cons(2, cons(3, nil))))</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">6</span></div>
+      </div>
+
+      <h3>Recursive Functions (letrec)</h3>
+      <div class="example-grid">
+        <div class="example-item"><code class="src">letrec factorial = fn(n) = if n &lt;= 1 then 1 else n * factorial(n - 1) end in factorial(5)</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">120</span></div>
+        <div class="example-item"><code class="src">letrec fib = fn(n) = if n &lt;= 1 then n else fib(n - 1) + fib(n - 2) end in fib(10)</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">55</span></div>
+      </div>
+
+      <h3>Print</h3>
+      <div class="example-grid">
+        <div class="example-item"><code class="src">print("hello")</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">hello</span></div>
+        <div class="example-item"><code class="src">print(1 + 2)</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">3</span></div>
+        <div class="example-item"><code class="src">print("hello" ++ " " ++ "world")</code> <span class="arrow" aria-hidden="true">→</span> <span class="res">hello world</span></div>
+      </div>
+
+      <p class="note">All examples are executable in the <a href="index.html#playground">Playground</a>. Edit the source and click Run to verify.</p>
+    </section>
+  </main>
+
+  <footer>
+    <p>selfgrow — a self-growing functional language. Syntax documented in EBNF. Examples are tests.</p>
+  </footer>
+
+  <script type="module">
+    // Make examples in the syntax page executable via the playground.
+    // Each example's source code is copied into the editor when the user
+    // clicks "Run" on the syntax page (if the playground is on index.html).
+    document.addEventListener('DOMContentLoaded', () => {
+      const exampleItems = document.querySelectorAll('.example-item .src');
+      for (const el of exampleItems) {
+        el.style.cursor = 'pointer';
+        el.title = 'Click to copy to playground';
+        el.addEventListener('click', () => {
+          const source = el.textContent;
+          // Try to communicate with the playground iframe or window
+          if (window.opener && window.opener.setEditorValue) {
+            window.opener.setEditorValue(source);
+            window.opener.focus();
+          }
+          // Also copy to clipboard as a fallback
+          if (navigator.clipboard) {
+            navigator.clipboard.writeText(source).then(() => {
+              el.textContent = 'Copied!';
+              setTimeout(() => { el.textContent = source; }, 1500);
+            }).catch(() => {});
+          }
+        });
+      }
+
+      // Skip link
+      const skipLink = document.getElementById('skipLink');
+      if (skipLink) {
+        skipLink.addEventListener('click', (e) => {
+          e.preventDefault();
+          const main = document.getElementById('main-content');
+          if (main) {
+            main.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            main.setAttribute('tabindex', '-1');
+            main.focus();
+          }
+        });
+      }
+    });
+  </script>
+</body>
+</html>
