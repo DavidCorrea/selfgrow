@@ -141,11 +141,18 @@
     }
 
     /* Editor */
+    .editor-wrapper {
+      position: relative;
+      flex: 1;
+      min-height: 360px;
+      background: var(--editor-bg);
+    }
+
     #editor {
       width: 100%;
       height: 100%;
       min-height: 360px;
-      background: var(--editor-bg);
+      background: transparent;
       color: var(--fg);
       border: none;
       resize: none;
@@ -153,7 +160,9 @@
       font-size: 0.9rem;
       line-height: 1.7;
       tab-size: 2;
-      padding: 0;
+      padding: var(--spacing);
+      position: relative;
+      z-index: 1;
     }
 
     #editor::placeholder {
@@ -164,6 +173,34 @@
     #editor:focus {
       outline: none;
     }
+
+    #highlightOverlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 0;
+      font-family: var(--font-mono);
+      font-size: 0.9rem;
+      line-height: 1.7;
+      tab-size: 2;
+      padding: var(--spacing);
+      overflow: hidden;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: var(--fg);
+    }
+
+    /* Syntax token colours — dark theme */
+    .tok-keyword { color: #ff7b72; }
+    .tok-string { color: #a5d6ff; }
+    .tok-number { color: #79c0ff; }
+    .tok-boolean { color: #ff7b72; }
+    .tok-identifier { color: #e6edf3; }
+    .tok-operator { color: #d2a8ff; }
+    .tok-punctuation { color: #8b949e; }
 
     /* Output */
     #output {
@@ -564,13 +601,16 @@
       <div class="pane">
         <div class="pane-header">Editor</div>
         <div class="pane-content">
-          <textarea
-            id="editor"
-            tabindex="0"
-            spellcheck="false"
-            aria-label="Code editor — write selfgrow programs here"
-            placeholder="// Try: 1 + 2&#10;// Or define a function:&#10;// fn add(a, b) = a + b&#10;// add(3, 4)"
-          >1 + 2</textarea>
+          <div class="editor-wrapper">
+            <div id="highlightOverlay" aria-hidden="true"></div>
+            <textarea
+              id="editor"
+              tabindex="0"
+              spellcheck="false"
+              aria-label="Code editor — write selfgrow programs here"
+              placeholder="// Try: 1 + 2&#10;// Or define a function:&#10;// fn add(a, b) = a + b&#10;// add(3, 4)"
+            >1 + 2</textarea>
+          </div>
         </div>
         <div class="controls">
           <button id="runBtn" class="primary" type="button" aria-keyshortcuts="Enter">Run (Enter)</button>
@@ -755,6 +795,7 @@ head(listMap(double, cons(1, cons(2, nil))))</code> <span class="example-arrow" 
     import { run } from './lang/run.js';
     import { getAllMeta } from './lang/loader.js';
     import { getAllCapabilities } from './lang/capabilities/registry.js';
+    import { highlight } from './lang/syntax.js';
     import { samples } from './samples.js';
 
     const editor = document.getElementById('editor');
@@ -932,6 +973,26 @@ head(listMap(double, cons(1, cons(2, nil))))</code> <span class="example-arrow" 
         return;
       }
     });
+
+    // --- Syntax highlighting ---
+
+    const highlightOverlay = document.getElementById('highlightOverlay');
+
+    function updateHighlight() {
+      highlightOverlay.innerHTML = highlight(editor.value) + '\n';
+    }
+
+    editor.addEventListener('input', updateHighlight);
+    editor.addEventListener('keydown', (e) => {
+      // Update highlight after Tab key too (it modifies the value)
+      if (e.key === 'Tab') {
+        // Defer so the value has been updated by the browser
+        requestAnimationFrame(updateHighlight);
+      }
+    });
+
+    // Initial highlight
+    updateHighlight();
 
     // --- Reference section rendering ---
 
