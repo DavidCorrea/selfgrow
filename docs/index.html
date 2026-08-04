@@ -163,6 +163,8 @@
       padding: var(--spacing);
       position: relative;
       z-index: 1;
+      overflow: auto;
+      scrollbar-gutter: stable;
     }
 
     #editor::placeholder {
@@ -187,9 +189,10 @@
       line-height: 1.7;
       tab-size: 2;
       padding: var(--spacing);
-      overflow: hidden;
+      overflow: auto;
+      scrollbar-gutter: stable;
       white-space: pre-wrap;
-      word-break: break-word;
+      overflow-wrap: break-word;
       color: var(--fg);
     }
 
@@ -979,7 +982,7 @@ head(listMap(double, cons(1, cons(2, nil))))</code> <span class="example-arrow" 
     const highlightOverlay = document.getElementById('highlightOverlay');
 
     function updateHighlight() {
-      highlightOverlay.innerHTML = highlight(editor.value) + '\n';
+      highlightOverlay.innerHTML = highlight(editor.value);
     }
 
     editor.addEventListener('input', updateHighlight);
@@ -993,6 +996,15 @@ head(listMap(double, cons(1, cons(2, nil))))</code> <span class="example-arrow" 
 
     // Initial highlight
     updateHighlight();
+
+    // --- Scroll synchronization between textarea and highlight overlay ---
+
+    function syncScroll() {
+      highlightOverlay.scrollTop = editor.scrollTop;
+      highlightOverlay.scrollLeft = editor.scrollLeft;
+    }
+
+    editor.addEventListener('scroll', syncScroll);
 
     // --- Reference section rendering ---
 
