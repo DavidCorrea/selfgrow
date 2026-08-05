@@ -687,12 +687,7 @@ head(listMap(double, cons(1, cons(2, nil))))</code> <span class="arrow" aria-hid
         el.title = 'Click to copy to playground';
         el.addEventListener('click', () => {
           const source = el.textContent;
-          // Try to communicate with the playground iframe or window
-          if (window.opener && window.opener.setEditorValue) {
-            window.opener.setEditorValue(source);
-            window.opener.focus();
-          }
-          // Also copy to clipboard as a fallback
+          // Copy to clipboard as a fallback
           if (navigator.clipboard) {
             navigator.clipboard.writeText(source).then(() => {
               el.textContent = 'Copied!';
