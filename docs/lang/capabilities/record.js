@@ -16,6 +16,9 @@ export const meta = {
     { source: 'has(#{name: "x"}, "name")', result: 'true' },
     { source: 'has(#{name: "x"}, "missing")', result: 'false' },
     { source: 'has(#{}, "anything")', result: 'false' },
+    { source: 'set(#{name: "x"}, "name", "y")', result: 'a record' },
+    { source: 'get(set(#{name: "x"}, "name", "y"), "name")', result: 'y' },
+    { source: 'get(set(#{name: "x", value: 42}, "value", 99), "value")', result: '99' },
   ],
 };
 
