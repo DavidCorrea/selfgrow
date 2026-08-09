@@ -21,6 +21,7 @@ import './capabilities/record.js';
 import './capabilities/list_ops.js';
 import './capabilities/string.js';
 import './capabilities/letrec.js';
+import './capabilities/negation.js';
 
 export { registerCapability, getAllCapabilities, getAllMeta, checkAllProperties };
 
