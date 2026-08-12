@@ -1,0 +1,30 @@
+version: 2
+
+# Dependabot handles the dependencies whose upgrades are ordinary — eslint,
+# playwright, and the Actions themselves. It deliberately does NOT handle
+# @earendil-works/pi-coding-agent: a pi bump also has to re-resolve the model chain
+# against pi's newly bundled snapshot, and Dependabot has no idea what a model id
+# is. That one belongs to .github/workflows/pi-update.yml, which bumps it and
+# repairs the chain in the same change.
+#
+# Both paths run the same gate: pi-update.yml's `check` job asserts the chain on
+# any PR touching package-lock.json, so a Dependabot PR that happens to move pi
+# transitively still fails rather than merging a broken chain.
+updates:
+  - package-ecosystem: npm
+    directory: '/'
+    schedule:
+      interval: weekly
+      day: tuesday
+    open-pull-requests-limit: 3
+    ignore:
+      - dependency-name: '@earendil-works/pi-coding-agent'
+    groups:
+      dev-dependencies:
+        dependency-type: development
+
+  - package-ecosystem: github-actions
+    directory: '/'
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3

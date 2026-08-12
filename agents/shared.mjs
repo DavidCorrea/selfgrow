@@ -41,40 +41,57 @@ export const promptsDir = join(__dirname, "prompts");
 // These are pi registry ids (provider/id); override via env TEXT_MODEL
 // (comma-separated). Unknown ids degrade cleanly — resolveTextModels() drops any
 // the registry doesn't know and auto-discovers free models when none remain.
+// The chain itself lives in agents/models.json, as DATA rather than a literal
+// here, so `pi-update.mjs` can repair it without editing prose it might mangle.
+export const MODELS_FILE = join(__dirname, "models.json");
+
+/** The configured chain as [{ id, why }] — the file's order, which is meaningful. */
+export function readModelChain() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(MODELS_FILE, "utf-8"));
+    return (Array.isArray(parsed.text) ? parsed.text : []).filter((m) => m && m.id);
+  } catch (e) {
+    // Never fatal, and deliberately NOT log(): this runs while the module is still
+    // initializing (TEXT_MODELS below), before the logger's own state exists.
+    // An unreadable file degrades to auto-discovery in resolveTextModels(), the
+    // same path a fully rotated-out chain takes.
+    console.log(`WARN: model chain: could not read ${MODELS_FILE} (${e.message}) — falling back to auto-discovery.`);
+    return [];
+  }
+}
+
+/** Write the chain back, preserving the file's `_comment`. Used by pi-update.mjs. */
+export function writeModelChain(entries) {
+  let existing = {};
+  try {
+    existing = JSON.parse(fs.readFileSync(MODELS_FILE, "utf-8"));
+  } catch { /* writing a fresh file is fine */ }
+  const payload = { ...existing, text: entries.map(({ id, why }) => ({ id, why })) };
+  fs.writeFileSync(MODELS_FILE, JSON.stringify(payload, null, 2) + "\n", "utf-8");
+}
+
+// These ids must exist in pi's bundled model snapshot (pi-ai's
+// models.generated.js) — the registry is NOT fetched live from OpenRouter, so
+// an id pi doesn't know is skipped, not requested. `node agents/model-check.mjs`
+// asserts the whole chain against the installed pi, and the weekly pi-update
+// workflow runs it on every bump, because pi's free lineup rotates.
+//
+// Ordered by ENVELOPE RELIABILITY, not by size. "Biggest first" was the old
+// rule and it was actively expensive: measured over one day, the 550B head
+// answered without usable JSON in 18 of 42 sessions and returned empty in 6 more
+// — a 57% failure rate — and each failure is a COMPLETED session that gets
+// discarded. One such Scout session ran 101 turns before failing, burning 63% of
+// that run's whole allowance before any work started.
+//
+// Size also buys nothing here: docs/ is a single 16K file, so a 1M context
+// window is dead weight next to actually returning the JSON the agents parse.
+//
+// Deliberately SHORT. Each fallback is a real request charged against the daily
+// cap, so a long tail of weak models mostly buys wasted requests: by the time
+// the 7th model is answering, the output is rarely worth building on. One
+// model per provider family keeps the fallbacks genuinely independent.
 export const TEXT_MODELS = (
-  process.env.TEXT_MODEL ||
-  // These ids must exist in pi's bundled model snapshot (pi-ai's
-  // models.generated.js) — the registry is NOT fetched live from OpenRouter, so
-  // an id pi doesn't know is skipped, not requested. Verified against the
-  // installed pi version; re-check after bumping pi, as its free lineup rotates.
-  // Ordered by ENVELOPE RELIABILITY, not by size. "Biggest first" was the old
-  // rule and it was actively expensive: measured over one day, the 550B head
-  // answered without usable JSON in 18 of 42 sessions and returned empty in 6 more
-  // — a 57% failure rate — and each failure is a COMPLETED session that gets
-  // discarded. One such Scout session ran 101 turns before failing, burning 63% of
-  // that run's whole allowance before any work started.
-  //
-  // Size also buys nothing here: docs/ is a single 16K file, so a 1M context
-  // window is dead weight next to actually returning the JSON the agents parse.
-  //
-  // ling-3.0-flash led on the evidence available (3 of 3 usable), followed by the
-  // models OpenRouter reports as supporting structured_outputs — an imperfect but
-  // real proxy for envelope discipline. nemotron-ultra stays last: capable, and
-  // worth having when everything above it has failed, but not worth paying for
-  // first. Confirm with `node agents/model-probe.mjs` before trusting this order.
-  //
-  // Deliberately SHORT. Each fallback is a real request charged against the daily
-  // cap, so a long tail of weak models mostly buys wasted requests: by the time
-  // the 7th model is answering, the output is rarely worth building on. One
-  // model per provider family keeps the fallbacks genuinely independent.
-  [
-    "openrouter/inclusionai/ling-3.0-flash:free",
-    "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
-    "openrouter/google/gemma-4-26b-a4b-it:free",
-    "openrouter/openai/gpt-oss-20b:free",
-    "openrouter/cohere/north-mini-code:free",
-    "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
-  ].join(",")
+  process.env.TEXT_MODEL || readModelChain().map((m) => m.id).join(",")
 )
   .split(",")
   .map((s) => s.trim())
@@ -96,7 +113,7 @@ const DEFAULT_TASK =
 
 // Meta-routers dispatch to an arbitrary underlying model, so a run using one is
 // not reproducible — never auto-discover them.
-const META_ROUTER_IDS = new Set(["auto", "openrouter/free", "openrouter/fusion"]);
+export const META_ROUTER_IDS = new Set(["auto", "openrouter/free", "openrouter/fusion"]);
 
 // pi's model/auth runtime. Creation is async and reads ~/.pi auth + the bundled
 // model snapshot, so it's built once and shared by every model call in the run.
@@ -404,6 +421,20 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
     process.exit(130);
   });
 }
+
+/**
+ * Every model pi knows, as [{ provider, id, cost, ... }]. Throws if the registry
+ * can't be read — callers that must not fail use getAllModels() instead.
+ *
+ * Reads pi's BUNDLED snapshot with no network and no credentials, which is what
+ * makes model-check.mjs free to run on every PR.
+ */
+export async function listRegistryModels() {
+  return (await getModelRuntime()).getModels();
+}
+
+/** A registry model's chain id (`provider/id`). */
+export const registryModelId = modelIdOf;
 
 /** Every model pi knows, or null when the runtime can't be read. */
 async function getAllModels() {

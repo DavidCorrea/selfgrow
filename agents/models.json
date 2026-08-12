@@ -1,0 +1,29 @@
+{
+  "_comment": "The text-model chain, as DATA so automation can rewrite it safely. Order matters and encodes a judgment about envelope reliability — see the comment above TEXT_MODELS in shared.mjs. agents/pi-update.mjs replaces entries here only when an id has broken (rotated out of pi's registry, or no longer free); it never reorders a working chain. Edit by hand freely.",
+  "text": [
+    {
+      "id": "openrouter/inclusionai/ling-3.0-flash:free",
+      "why": "Led on the evidence available — 3 of 3 sessions returned a usable envelope."
+    },
+    {
+      "id": "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
+      "why": "OpenRouter reports structured_outputs support — an imperfect but real proxy for envelope discipline."
+    },
+    {
+      "id": "openrouter/google/gemma-4-26b-a4b-it:free",
+      "why": "Structured-output support, different provider family than the entries above."
+    },
+    {
+      "id": "openrouter/openai/gpt-oss-20b:free",
+      "why": "Small and fast; independent provider family, so its failures don't correlate with the rest."
+    },
+    {
+      "id": "openrouter/cohere/north-mini-code:free",
+      "why": "Coding-tuned, and the fourth distinct provider family in the chain."
+    },
+    {
+      "id": "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+      "why": "Capable but envelope-unreliable (18 of 42 sessions unusable) — worth having only once everything above it has failed."
+    }
+  ]
+}

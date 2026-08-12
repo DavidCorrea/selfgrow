@@ -1,0 +1,78 @@
+name: pi-update
+
+on:
+  schedule:
+    # Tuesday. Deliberately a day no other agent runs — the Product Owner is
+    # Monday, the Scribe Thursday, the Curator Saturday — so the probes below
+    # never compete with a grooming or building run for the day's requests.
+    - cron: '0 7 * * 2'
+  workflow_dispatch:
+
+  # The free gate below, on any PR that could invalidate the chain — a pi bump
+  # (including one Dependabot opened), an edit to the chain, or a change to the
+  # code that resolves it.
+  pull_request:
+    paths:
+      - 'package.json'
+      - 'package-lock.json'
+      - 'agents/models.json'
+      - 'agents/shared.mjs'
+      - 'agents/model-check.mjs'
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+# It pushes a branch and merges to main, so it takes the same lock as every other
+# writer. A Builder mid-merge and a dependency bump racing on main is exactly the
+# non-fast-forward this group exists to prevent.
+concurrency:
+  group: agent-main-writer
+  cancel-in-progress: false
+
+jobs:
+  update:
+    # Never on a PR — that event only wants the free `check` job below.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    # npm install + up to 20 probe requests against free models, which are slow.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # Needs real history: it branches from origin/main and merges back.
+          fetch-depth: 0
+
+      # No Chromium: nothing here opens a browser.
+      - uses: ./.github/actions/setup
+
+      - name: Bump pi and re-check the model chain
+        run: node agents/pi-update.mjs
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # Bounded by construction: 2 requests per probed model, at most
+          # MAX_MODEL_CANDIDATES (4) candidates plus a 6-model chain = 20. The
+          # ceiling is double that so a retry inside pi's runtime can't strand the
+          # run halfway through a repair with the chain half-written.
+          MODEL_REQUEST_BUDGET: '40'
+          # A week with no pi release spends ZERO of this — the run exits before it
+          # probes anything when the version hasn't moved.
+          GH_TOKEN: ${{ secrets.AGENT_PAT }}
+          BOT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_PROJECT_OWNER: '@me'
+          GH_PROJECT_NUMBER: '3'
+
+  # The free half, as a gate: assert the chain on every PR that touches the
+  # dependency or the chain itself, including Dependabot's own bumps. Costs no
+  # requests and needs no API key, so it can run unconditionally.
+  check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Assert the model chain against the installed pi
+        run: node agents/model-check.mjs
