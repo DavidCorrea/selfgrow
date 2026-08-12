@@ -11,6 +11,12 @@
 //
 //   node agents/model-probe.mjs              # the configured chain
 //   node agents/model-probe.mjs a/b:free,c/d # specific models
+//   node agents/model-probe.mjs --json       # machine-readable, for pi-update.mjs
+//
+// COSTS REAL REQUESTS: two per model, charged against the daily cap whatever the
+// answer looks like. runAgent records them in the shared ledger, so a probe run
+// is visible to every other agent that day.
+import { pathToFileURL } from "url";
 import {
   log,
   runAgent,
@@ -112,26 +118,73 @@ async function probe(modelId, tools) {
   }
 }
 
-async function main() {
-  const models = (process.argv[2] || TEXT_MODELS.join(",")).split(",").map((s) => s.trim()).filter(Boolean);
-  log("info", `=== Model probe — ${models.length} model(s), 2 configurations each ===`);
+// Both configurations, because one production failure ("</tool_call>" as the whole
+// response) suggested the answer depends on whether tools are offered at all.
+const CONFIGS = [["no tools", []], ['tools:["read"]', ["read"]]];
 
+/**
+ * Probe each model twice and report the shape of what comes back.
+ *
+ * A model counts as usable only when BOTH configurations produce a parseable
+ * envelope: the agents call it with tools and without, so passing one and failing
+ * the other means the chain still breaks, just less often. Stops early and marks
+ * the remainder "QUOTA" when the account's daily free cap is hit.
+ *
+ * @param {string[]} models - chain ids to probe
+ * @returns {Promise<{rows: object[], usableIds: string[], quotaHit: boolean}>}
+ */
+export async function probeModels(models) {
   const rows = [];
+  let quotaHit = false;
+
   for (const modelId of models) {
-    for (const [config, tools] of [["no tools", []], ['tools:["read"]', ["read"]]]) {
+    if (quotaHit) {
+      for (const [config] of CONFIGS) {
+        rows.push({ modelId, config, usable: false, flags: ["QUOTA"], chars: 0, preview: "", seconds: "-" });
+      }
+      continue;
+    }
+    for (const [config, tools] of CONFIGS) {
       try {
         const r = await probe(modelId, tools);
         rows.push({ modelId, config, ...r });
         log("info", `${modelId} [${config}] → ${r.usable ? "usable" : "UNUSABLE"} (${r.seconds}s) ${r.flags.join(", ")}`);
       } catch (e) {
         log("error", `Stopping: ${e.message}`);
+        quotaHit = true;
         rows.push({ modelId, config, usable: false, flags: ["QUOTA"], chars: 0, preview: "", seconds: "-" });
-        printReport(rows);
-        return;
       }
     }
   }
-  printReport(rows);
+
+  const usableIds = models.filter((id) => {
+    const mine = rows.filter((r) => r.modelId === id);
+    return mine.length === CONFIGS.length && mine.every((r) => r.usable);
+  });
+  return { rows, usableIds, quotaHit };
+}
+
+/** A Markdown table of probe results, for a PR body or a job summary. */
+export function renderProbeTable(rows) {
+  const short = (id) => id.replace(/^openrouter\//, "").replace(/:free$/, "");
+  return [
+    "| model | config | usable | secs | notes |",
+    "| --- | --- | --- | --- | --- |",
+    ...rows.map(
+      (r) => `| \`${short(r.modelId)}\` | ${r.config} | ${r.usable ? "yes" : "**no**"} | ${r.seconds} | ${r.flags.join(", ") || "—"} |`
+    ),
+  ].join("\n");
+}
+
+async function main() {
+  const args = process.argv.slice(2).filter((a) => a !== "--json");
+  const asJson = process.argv.includes("--json");
+  const models = (args[0] || TEXT_MODELS.join(",")).split(",").map((s) => s.trim()).filter(Boolean);
+  log("info", `=== Model probe — ${models.length} model(s), ${CONFIGS.length} configurations each (${models.length * CONFIGS.length} requests) ===`);
+
+  const { rows, usableIds, quotaHit } = await probeModels(models);
+  if (asJson) console.log(JSON.stringify({ rows, usableIds, quotaHit }, null, 2));
+  else printReport(rows);
 }
 
 function printReport(rows) {
@@ -154,7 +207,12 @@ function printReport(rows) {
   console.log(`\nrequests spent: ${getModelRequestCount()}`);
 }
 
-main().catch((e) => {
-  log("error", `Probe failed: ${e.message}`);
-  process.exit(1);
-});
+// Only probe when RUN, never when imported. pi-update.mjs imports probeModels and
+// renderProbeTable from here, and a bare main() call would make that import spend
+// requests as a side effect of loading the module.
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  main().catch((e) => {
+    log("error", `Probe failed: ${e.message}`);
+    process.exit(1);
+  });
+}
