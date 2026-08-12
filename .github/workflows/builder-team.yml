@@ -56,7 +56,7 @@ jobs:
       queue: ${{ steps.plan.outputs.queue }}
       budget: ${{ steps.plan.outputs.budget }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -124,7 +124,7 @@ jobs:
     # spends.
     timeout-minutes: 360
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           # Full history is required for fetch/merge/rebase against origin/main.

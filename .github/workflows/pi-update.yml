@@ -39,7 +39,7 @@ jobs:
     # npm install + up to 20 probe requests against free models, which are slow.
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           # Needs real history: it branches from origin/main and merges back.
@@ -72,7 +72,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
       - name: Assert the model chain against the installed pi
         run: node agents/model-check.mjs
