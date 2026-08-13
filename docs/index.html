@@ -1011,7 +1011,8 @@ head(listMap(double, cons(1, cons(2, nil))))</code> <span class="example-arrow" 
     const highlightOverlay = document.getElementById('highlightOverlay');
 
     function updateHighlight() {
-      highlightOverlay.innerHTML = highlight(editor.value);
+      highlightOverlay.innerHTML = ''; // clear
+      highlightOverlay.appendChild(highlight(editor.value));
     }
 
     editor.addEventListener('input', updateHighlight);

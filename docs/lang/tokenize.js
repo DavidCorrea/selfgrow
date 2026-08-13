@@ -16,6 +16,8 @@ export const TT = {
   KEYWORD: 'keyword',
   OPERATOR: 'operator',
   PUNCTUATION: 'punctuation',
+  WHITESPACE: 'whitespace',
+  COMMENT: 'comment',
   EOF: 'eof',
 };
 

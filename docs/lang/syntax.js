@@ -1,7 +1,7 @@
 /**
  * Syntax highlighting for the selfgrow language.
  *
- * Uses the tokenizer to produce HTML with CSS classes for each
+ * Uses the tokenizer to produce a DOM fragment with CSS classes for each
  * token type. The highlighted output is rendered behind the
  * editor textarea so the user sees colourised code while typing.
  */
@@ -17,44 +17,53 @@ const KEYWORDS = new Set([
 ]);
 
 /**
- * Highlight selfgrow source code and return an HTML string
- * with span elements carrying CSS classes for each token type.
+ * Highlight selfgrow source code and return a DOM fragment
+ * with spans for tokens and text nodes for whitespace/comments.
  * @param {string} source
- * @returns {string} HTML with token spans
+ * @returns {DocumentFragment} fragment to insert into the overlay
  */
 export function highlight(source) {
   try {
     const tokens = tokenize(source, KEYWORDS);
-    return tokens
-      .map((token) => {
-        const text = escapeHtml(String(token.value));
+    const frag = document.createDocumentFragment();
+    for (const token of tokens) {
+      const node = token.type === TT.WHITESPACE || token.type === TT.COMMENT
+        ? document.createTextNode(token.lexeme)
+        : document.createElement('span');
+      if (token.type !== TT.WHITESPACE && token.type !== TT.COMMENT) {
         switch (token.type) {
           case TT.KEYWORD:
-            return `<span class="tok-keyword">${text}</span>`;
+            node.className = 'tok-keyword'; break;
           case TT.STRING:
-            return `<span class="tok-string">${text}</span>`;
+            node.className = 'tok-string'; break;
           case TT.NUMBER:
-            return `<span class="tok-number">${text}</span>`;
+            node.className = 'tok-number'; break;
           case TT.BOOLEAN:
-            return `<span class="tok-boolean">${text}</span>`;
+            node.className = 'tok-boolean'; break;
           case TT.IDENTIFIER:
-            return `<span class="tok-identifier">${text}</span>`;
+            node.className = 'tok-identifier'; break;
           case TT.OPERATOR:
-            return `<span class="tok-operator">${text}</span>`;
+            node.className = 'tok-operator'; break;
           case TT.PUNCTUATION:
-            return `<span class="tok-punctuation">${text}</span>`;
+            node.className = 'tok-punctuation'; break;
           default:
-            return text;
+            // Should not happen
+            node.className = '';
         }
-      })
-      .join('');
+        node.textContent = token.lexeme;
+      }
+      frag.appendChild(node);
+    }
+    return frag;
   } catch {
-    // If tokenisation fails (e.g. unterminated string), return
-    // the raw source escaped so the user still sees their code.
-    return escapeHtml(source);
+    // If tokenisation fails, show the source as plain text
+    const frag = document.createDocumentFragment();
+    frag.appendChild(document.createTextNode(source));
+    return frag;
   }
 }
 
+// Escape HTML — kept for potential other uses, but not used in highlight.
 function escapeHtml(text) {
   return text
     .replace(/&/g, '&amp;')
