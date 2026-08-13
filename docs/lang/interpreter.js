@@ -59,7 +59,10 @@ class Parser {
 
   parseProgram() {
     const stmts = [];
-    while (this.peek().type !== TT.EOF) stmts.push(this.parseStatement());
+    while (this.peek().type !== TT.EOF) {
+      stmts.push(this.parseStatement());
+      this.matchPunctuation(';');
+    }
     return { type: 'Program', body: stmts };
   }
 
