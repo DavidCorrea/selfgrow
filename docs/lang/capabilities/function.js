@@ -1,31 +1,31 @@
 /**
  * Function definition capability — provides named function definitions
- * (fn keyword) and anonymous function expressions (primary parser).
+ * (function keyword) and anonymous function expressions (primary parser).
  * Each capability lives in its own file and self-registers with the interpreter.
  */
 import { registerCapability } from './registry.js';
 
 export const meta = {
   name: 'function',
-  summary: 'Function definitions — named functions with fn and anonymous function expressions',
+  summary: 'Function definitions — named functions with function and anonymous function expressions',
   examples: [
-    { source: 'fn add(a, b) = a + b\nadd(2, 3)', result: '5' },
-    { source: 'fn add(a, b) = a + b\nadd(if true then 1 else 2 end, 3)', result: '4' },
-    { source: '(fn(a, b) = a + b)(2, 3)', result: '5' },
-    { source: 'fn double(x) = x * 2\nhead(listMap(double, cons(1, cons(2, nil))))', result: '2' },
-    { source: 'let double = fn(x) = x * 2 in head(listMap(double, cons(1, cons(2, nil))))', result: '2' },
-    { source: 'head(listFilter(fn(x) = x > 1, cons(1, cons(2, cons(3, nil)))))', result: '2' },
-    { source: 'listFold(fn(acc, x) = acc + x, 0, cons(1, cons(2, cons(3, nil))))', result: '6' },
-    { source: '(fn() = 42)()', result: '42' },
+    { source: 'function add(a, b) = a + b\nadd(2, 3)', result: '5' },
+    { source: 'function add(a, b) = a + b\nadd(if true then 1 else 2 end, 3)', result: '4' },
+    { source: '(function(a, b) = a + b)(2, 3)', result: '5' },
+    { source: 'function double(x) = x * 2\nhead(listMap(double, cons(1, cons(2, nil))))', result: '2' },
+    { source: 'let double = function(x) = x * 2 in head(listMap(double, cons(1, cons(2, nil))))', result: '2' },
+    { source: 'head(listFilter(function(x) = x > 1, cons(1, cons(2, cons(3, nil)))))', result: '2' },
+    { source: 'listFold(function(acc, x) = acc + x, 0, cons(1, cons(2, cons(3, nil))))', result: '6' },
+    { source: '(function() = 42)()', result: '42' },
   ],
 };
 
 function registerFunction(interpreter) {
-  interpreter.addKeyword('fn');
+  interpreter.addKeyword('function');
 
   // Statement parser for named function definitions
-  interpreter.addStatementParser('fn', (parser) => {
-    parser.expectKeyword('fn');
+  interpreter.addStatementParser('function', (parser) => {
+    parser.expectKeyword('function');
     const nameToken = parser.expect('identifier');
     parser.expectPunctuation('(');
     const params = parser.parseParamList();
@@ -36,14 +36,14 @@ function registerFunction(interpreter) {
   });
 
   // Primary parser for anonymous function expressions
-  interpreter.addPrimaryParser('fn', (parser) => {
-    const fnToken = parser.expectKeyword('fn');
+  interpreter.addPrimaryParser('function', (parser) => {
+    const keywordToken = parser.expectKeyword('function');
     parser.expectPunctuation('(');
     const params = parser.parseParamList();
     parser.expectPunctuation(')');
     parser.expectOperator('=');
     const body = parser.parseExpression();
-    return { type: 'FnExpr', params, body, start: fnToken.start };
+    return { type: 'FnExpr', params, body, start: keywordToken.start };
   });
 
   // Node handlers for evaluation
@@ -66,47 +66,47 @@ export function checkProperties(run) {
   const failures = [];
 
   // named function definition and call
-  if (run('fn add(a, b) = a + b\nadd(2, 3)') !== '5') {
+  if (run('function add(a, b) = a + b\nadd(2, 3)') !== '5') {
     failures.push('named function add(2, 3) should return "5"');
   }
 
   // anonymous function expression (primary parser)
-  if (run('(fn(a, b) = a + b)(2, 3)') !== '5') {
-    failures.push('anonymous function (fn(a, b) = a + b)(2, 3) should return "5"');
+  if (run('(function(a, b) = a + b)(2, 3)') !== '5') {
+    failures.push('anonymous function (function(a, b) = a + b)(2, 3) should return "5"');
   }
 
   // function call with if expression as argument
-  if (run('fn add(a, b) = a + b\nadd(if true then 1 else 2 end, 3)') !== '4') {
+  if (run('function add(a, b) = a + b\nadd(if true then 1 else 2 end, 3)') !== '4') {
     failures.push('add(if true then 1 else 2 end, 3) should return "4"');
   }
 
   // closure capture: function captures variable from outer environment
-  if (run('let x = 10 in (fn() = x)()') !== '10') {
+  if (run('let x = 10 in (function() = x)()') !== '10') {
     failures.push('closure should capture x from outer environment, returning "10"');
   }
 
   // no-arg function
-  if (run('(fn() = 42)()') !== '42') {
-    failures.push('no-arg function (fn() = 42)() should return "42"');
+  if (run('(function() = 42)()') !== '42') {
+    failures.push('no-arg function (function() = 42)() should return "42"');
   }
 
   // named function passed as argument to higher-order function
-  if (run('fn double(x) = x * 2\nhead(listMap(double, cons(1, cons(2, nil))))') !== '2') {
+  if (run('function double(x) = x * 2\nhead(listMap(double, cons(1, cons(2, nil))))') !== '2') {
     failures.push('named function double passed to listMap should return "2"');
   }
 
   // let-bound function passed as argument
-  if (run('let double = fn(x) = x * 2 in head(listMap(double, cons(1, cons(2, nil))))') !== '2') {
+  if (run('let double = function(x) = x * 2 in head(listMap(double, cons(1, cons(2, nil))))') !== '2') {
     failures.push('let-bound function double passed to listMap should return "2"');
   }
 
   // anonymous function passed to listFilter
-  if (run('head(listFilter(fn(x) = x > 1, cons(1, cons(2, cons(3, nil)))))') !== '2') {
+  if (run('head(listFilter(function(x) = x > 1, cons(1, cons(2, cons(3, nil)))))') !== '2') {
     failures.push('anonymous function passed to listFilter should return "2"');
   }
 
   // anonymous function passed to listFold
-  if (run('listFold(fn(acc, x) = acc + x, 0, cons(1, cons(2, cons(3, nil))))') !== '6') {
+  if (run('listFold(function(acc, x) = acc + x, 0, cons(1, cons(2, cons(3, nil))))') !== '6') {
     failures.push('anonymous function passed to listFold should return "6"');
   }
 
@@ -122,7 +122,7 @@ export function checkProperties(run) {
 
   // error: unknown identifier in a function call argument
   try {
-    run('fn add(a, b) = a + b\nadd(1, unknownVar)');
+    run('function add(a, b) = a + b\nadd(1, unknownVar)');
     failures.push('unknownVar in function call should throw an error');
   } catch (err) {
     if (!err.message.includes('Undefined symbol')) {

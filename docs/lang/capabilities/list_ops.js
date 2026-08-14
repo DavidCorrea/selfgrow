@@ -10,14 +10,14 @@ export const meta = {
   name: 'list_ops',
   summary: 'Higher-order list operations — map, filter, and fold',
   examples: [
-    { source: 'head(listMap(fn(x) = x + 1, cons(1, cons(2, nil))))', result: '2' },
-    { source: 'head(tail(listMap(fn(x) = x + 1, cons(1, cons(2, nil)))))', result: '3' },
-    { source: 'length(listMap(fn(x) = x + 1, nil))', result: '0' },
-    { source: 'listFold(fn(acc, x) = acc + x, 0, cons(1, cons(2, cons(3, nil))))', result: '6' },
-    { source: 'listFold(fn(acc, x) = acc + x, 10, nil)', result: '10' },
-    { source: 'head(listFilter(fn(x) = x > 1, cons(1, cons(2, cons(3, nil)))))', result: '2' },
-    { source: 'length(listFilter(fn(x) = x > 1, cons(1, cons(2, cons(3, nil)))))', result: '2' },
-    { source: 'length(listFilter(fn(x) = x > 10, cons(1, cons(2, nil))))', result: '0' },
+    { source: 'head(listMap(function(x) = x + 1, cons(1, cons(2, nil))))', result: '2' },
+    { source: 'head(tail(listMap(function(x) = x + 1, cons(1, cons(2, nil)))))', result: '3' },
+    { source: 'length(listMap(function(x) = x + 1, nil))', result: '0' },
+    { source: 'listFold(function(acc, x) = acc + x, 0, cons(1, cons(2, cons(3, nil))))', result: '6' },
+    { source: 'listFold(function(acc, x) = acc + x, 10, nil)', result: '10' },
+    { source: 'head(listFilter(function(x) = x > 1, cons(1, cons(2, cons(3, nil)))))', result: '2' },
+    { source: 'length(listFilter(function(x) = x > 1, cons(1, cons(2, cons(3, nil)))))', result: '2' },
+    { source: 'length(listFilter(function(x) = x > 10, cons(1, cons(2, nil))))', result: '0' },
   ],
 };
 
@@ -157,57 +157,57 @@ export function checkProperties(run) {
   const failures = [];
 
   // map: applies function to each element
-  if (run('head(listMap(fn(x) = x + 1, cons(1, cons(2, nil))))') !== '2') {
+  if (run('head(listMap(function(x) = x + 1, cons(1, cons(2, nil))))') !== '2') {
     failures.push('listMap head should return "2"');
   }
 
   // map: empty list returns empty list
-  if (run('length(listMap(fn(x) = x + 1, nil))') !== '0') {
+  if (run('length(listMap(function(x) = x + 1, nil))') !== '0') {
     failures.push('listMap on empty list should return length "0"');
   }
 
   // map: single element
-  if (run('head(listMap(fn(x) = x * 3, cons(4, nil)))') !== '12') {
+  if (run('head(listMap(function(x) = x * 3, cons(4, nil)))') !== '12') {
     failures.push('listMap single element should return "12"');
   }
 
   // map: preserves length
-  if (run('length(listMap(fn(x) = x, cons(1, cons(2, cons(3, nil)))))') !== '3') {
+  if (run('length(listMap(function(x) = x, cons(1, cons(2, cons(3, nil)))))') !== '3') {
     failures.push('listMap should preserve list length');
   }
 
   // filter: keeps elements where predicate is true
-  if (run('head(listFilter(fn(x) = x > 1, cons(1, cons(2, cons(3, nil)))))') !== '2') {
+  if (run('head(listFilter(function(x) = x > 1, cons(1, cons(2, cons(3, nil)))))') !== '2') {
     failures.push('listFilter first kept element should be "2"');
   }
 
   // filter: empty list returns empty list
-  if (run('length(listFilter(fn(x) = true, nil))') !== '0') {
+  if (run('length(listFilter(function(x) = true, nil))') !== '0') {
     failures.push('listFilter on empty list should return length "0"');
   }
 
   // filter: remove all elements
-  if (run('length(listFilter(fn(x) = x > 10, cons(1, cons(2, nil))))') !== '0') {
+  if (run('length(listFilter(function(x) = x > 10, cons(1, cons(2, nil))))') !== '0') {
     failures.push('listFilter removing all elements should return length "0"');
   }
 
   // fold: empty list returns initial value
-  if (run('listFold(fn(acc, x) = acc + x, 0, nil)') !== '0') {
+  if (run('listFold(function(acc, x) = acc + x, 0, nil)') !== '0') {
     failures.push('listFold on empty list should return initial value "0"');
   }
 
   // fold: single element list
-  if (run('listFold(fn(acc, x) = acc + x, 0, cons(5, nil))') !== '5') {
+  if (run('listFold(function(acc, x) = acc + x, 0, cons(5, nil))') !== '5') {
     failures.push('listFold on single element should return "5"');
   }
 
   // fold: multi-element list, left-to-right accumulation
-  if (run('listFold(fn(acc, x) = acc + x, 0, cons(1, cons(2, cons(3, nil))))') !== '6') {
+  if (run('listFold(function(acc, x) = acc + x, 0, cons(1, cons(2, cons(3, nil))))') !== '6') {
     failures.push('listFold should sum to "6"');
   }
 
   // fold: non-zero initial value
-  if (run('listFold(fn(acc, x) = acc + x, 10, cons(1, cons(2, nil)))') !== '13') {
+  if (run('listFold(function(acc, x) = acc + x, 10, cons(1, cons(2, nil)))') !== '13') {
     failures.push('listFold with initial 10 should return "13"');
   }
 
@@ -223,7 +223,7 @@ export function checkProperties(run) {
 
   // error: wrong arity for listMap is rejected
   try {
-    run('listMap(fn(x) = x, nil, nil)');
+    run('listMap(function(x) = x, nil, nil)');
     failures.push('listMap with extra argument should throw');
   } catch (err) {
     if (!err.message.includes('expects 2 arguments')) {
