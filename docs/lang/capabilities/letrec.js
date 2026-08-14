@@ -21,11 +21,11 @@ export const meta = {
   name: 'letrec',
   summary: 'Recursive local function bindings — letrec makes the binding visible in its own value expression',
   examples: [
-    { source: 'letrec factorial = fn(n) = if n <= 1 then 1 else n * factorial(n - 1) end in factorial(5)', result: '120' },
-    { source: 'letrec fib = fn(n) = if n <= 1 then n else fib(n - 1) + fib(n - 2) end in fib(10)', result: '55' },
-    { source: 'letrec count = fn(n) = if n <= 0 then 0 else 1 + count(n - 1) end in count(5)', result: '5' },
-    { source: 'letrec double = fn(x) = x * 2 in double(3)', result: '6' },
-    { source: 'letrec outer = fn(x) = letrec inner = fn(y) = x + y in inner(10) in outer(5)', result: '15' },
+    { source: 'letrec factorial = function(n) = if n <= 1 then 1 else n * factorial(n - 1) end in factorial(5)', result: '120' },
+    { source: 'letrec fib = function(n) = if n <= 1 then n else fib(n - 1) + fib(n - 2) end in fib(10)', result: '55' },
+    { source: 'letrec count = function(n) = if n <= 0 then 0 else 1 + count(n - 1) end in count(5)', result: '5' },
+    { source: 'letrec double = function(x) = x * 2 in double(3)', result: '6' },
+    { source: 'letrec outer = function(x) = letrec inner = function(y) = x + y in inner(10) in outer(5)', result: '15' },
   ],
 };
 
@@ -75,27 +75,27 @@ export function checkProperties(run) {
   const failures = [];
 
   // recursive factorial
-  if (run('letrec factorial = fn(n) = if n <= 1 then 1 else n * factorial(n - 1) end in factorial(5)') !== '120') {
+  if (run('letrec factorial = function(n) = if n <= 1 then 1 else n * factorial(n - 1) end in factorial(5)') !== '120') {
     failures.push('letrec factorial(5) should return "120"');
   }
 
   // recursive fibonacci
-  if (run('letrec fib = fn(n) = if n <= 1 then n else fib(n - 1) + fib(n - 2) end in fib(10)') !== '55') {
+  if (run('letrec fib = function(n) = if n <= 1 then n else fib(n - 1) + fib(n - 2) end in fib(10)') !== '55') {
     failures.push('letrec fib(10) should return "55"');
   }
 
   // letrec binding visible in value expression (the core property)
-  if (run('letrec f = fn(x) = if x <= 0 then 0 else f(x - 1) end in f(1)') !== '0') {
+  if (run('letrec f = function(x) = if x <= 0 then 0 else f(x - 1) end in f(1)') !== '0') {
     failures.push('letrec binding must be visible in value expression for recursion');
   }
 
   // letrec works inside let bindings
-  if (run('let x = letrec f = fn(n) = if n <= 1 then 1 else n * f(n - 1) end in f(5) in x + 1') !== '121') {
+  if (run('let x = letrec f = function(n) = if n <= 1 then 1 else n * f(n - 1) end in f(5) in x + 1') !== '121') {
     failures.push('letrec inside let binding should return "121"');
   }
 
   // letrec works inside if expressions
-  if (run('if true then letrec f = fn(n) = if n <= 1 then 1 else n * f(n - 1) end in f(5) else 0 end') !== '120') {
+  if (run('if true then letrec f = function(n) = if n <= 1 then 1 else n * f(n - 1) end in f(5) else 0 end') !== '120') {
     failures.push('letrec inside if expression should return "120"');
   }
 

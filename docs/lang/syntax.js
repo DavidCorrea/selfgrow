@@ -11,7 +11,7 @@ import { tokenize, TT } from './tokenize.js';
 // These are the same keywords that capabilities register via addKeyword.
 const KEYWORDS = new Set([
   'let', 'in', 'if', 'then', 'else', 'end',
-  'while', 'do', 'fn', 'letrec',
+  'while', 'do', 'function', 'letrec',
   'true', 'false', 'nil',
   'and', 'or', 'not',
 ]);
