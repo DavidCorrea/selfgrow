@@ -20,7 +20,7 @@ jobs:
     steps:
       # The PO edits the Vision in the wiki (a separate repo), not main — so no
       # main write and no shared writer lock are needed.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
