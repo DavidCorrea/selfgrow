@@ -300,91 +300,6 @@
       border-color: var(--accent-hover);
     }
 
-    /* Reference section */
-    .reference {
-      background: var(--bg-elevated);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      overflow: hidden;
-    }
-
-    .reference-header {
-      padding: var(--spacing);
-      border-bottom: 1px solid var(--border);
-      font-size: 1rem;
-      font-weight: 600;
-      background: rgba(255,255,255,0.02);
-    }
-
-    .reference-content {
-      padding: var(--spacing);
-      padding-top: calc(var(--header-height) + var(--spacing));
-    }
-
-    .capability-list {
-      display: grid;
-      gap: calc(var(--spacing) * 0.75);
-    }
-
-    .capability-item {
-      padding: var(--spacing);
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      transition: border-color var(--transition);
-    }
-
-    .capability-item:hover {
-      border-color: var(--accent);
-    }
-
-    .capability-name {
-      font-family: var(--font-mono);
-      font-size: 0.875rem;
-      font-weight: 600;
-      color: var(--accent);
-      margin-bottom: 0.25rem;
-    }
-
-    .capability-summary {
-      font-size: 0.875rem;
-      color: var(--fg-muted);
-      margin-bottom: 0.5rem;
-    }
-
-    .capability-examples {
-      display: grid;
-      gap: 0.25rem;
-    }
-
-    .example {
-      font-family: var(--font-mono);
-      font-size: 0.8rem;
-      background: var(--bg-elevated);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 0.5rem 0.75rem;
-      display: flex;
-      gap: 0.75rem;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-
-    .example-source {
-      color: var(--fg);
-      flex: 1;
-      min-width: 200px;
-    }
-
-    .example-result {
-      color: var(--success);
-      white-space: nowrap;
-    }
-
-    .example-arrow {
-      color: var(--fg-muted);
-    }
-
     /* Footer */
     footer {
       padding: calc(var(--spacing) * 2);
@@ -396,8 +311,7 @@
     }
 
     /* Anchor scroll offset to account for sticky header */
-    #playground,
-    #reference {
+    #playground {
       scroll-margin-top: calc(var(--header-height) + var(--spacing));
     }
 
@@ -451,144 +365,6 @@
       }
     }
 
-    /* Test runner */
-    .test-runner {
-      margin-bottom: calc(var(--spacing) * 2);
-    }
-
-    #runAllTestsBtn {
-      margin-bottom: var(--spacing);
-    }
-
-    #testSummary {
-      scroll-margin-top: var(--header-height);
-    }
-
-    .test-summary {
-      padding: var(--spacing);
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      margin-bottom: var(--spacing);
-      font-size: 0.875rem;
-      font-weight: 500;
-      transition: border-color var(--transition), color var(--transition);
-    }
-
-    .test-summary.all-pass {
-      border-color: var(--success);
-      color: var(--success);
-    }
-
-    .test-summary.has-failures {
-      border-color: var(--error);
-      color: var(--error);
-    }
-
-    .test-results {
-      display: grid;
-      gap: var(--spacing);
-    }
-
-    .test-capability {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: var(--spacing);
-    }
-
-    .test-capability-name {
-      font-family: var(--font-mono);
-      font-size: 0.875rem;
-      font-weight: 600;
-      color: var(--accent);
-      margin-bottom: 0.5rem;
-    }
-
-    .test-capability-section {
-      margin-bottom: 0.75rem;
-    }
-
-    .test-capability-section:last-child {
-      margin-bottom: 0;
-    }
-
-    .test-section-title {
-      font-size: 0.8rem;
-      font-weight: 600;
-      color: var(--fg-muted);
-      margin-bottom: 0.25rem;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    .test-example {
-      font-family: var(--font-mono);
-      font-size: 0.8rem;
-      padding: 0.25rem 0.5rem;
-      border-radius: 4px;
-      display: flex;
-      gap: 0.5rem;
-      align-items: center;
-      flex-wrap: wrap;
-      margin-bottom: 0.25rem;
-    }
-
-    .test-example.pass {
-      background: rgba(63, 185, 80, 0.1);
-      color: var(--success);
-    }
-
-    .test-example.fail {
-      background: rgba(248, 81, 73, 0.1);
-      color: var(--error);
-    }
-
-    .test-example .test-icon {
-      font-weight: bold;
-      flex-shrink: 0;
-    }
-
-    .test-example .test-source {
-      color: var(--fg);
-    }
-
-    .test-example .test-detail {
-      color: var(--fg-muted);
-      font-size: 0.75rem;
-    }
-
-    .test-properties {
-      margin-top: 0.25rem;
-    }
-
-    .test-property {
-      font-family: var(--font-mono);
-      font-size: 0.8rem;
-      padding: 0.25rem 0.5rem;
-      border-radius: 4px;
-      margin-bottom: 0.25rem;
-    }
-
-    .test-property.pass {
-      background: rgba(63, 185, 80, 0.1);
-      color: var(--success);
-    }
-
-    .test-property.fail {
-      background: rgba(248, 81, 73, 0.1);
-      color: var(--error);
-    }
-
-    .test-property .test-icon {
-      font-weight: bold;
-      flex-shrink: 0;
-    }
-
-    .test-property .test-message {
-      color: var(--fg);
-    }
-
     @media (max-width: 390px) {
       :root {
         --spacing: 0.5rem;
@@ -620,7 +396,7 @@
       <h1 class="logo">self<span>grow</span></h1>
       <nav aria-label="Primary">
         <a href="#playground" style="margin-right: var(--spacing);">Playground</a>
-        <a href="#reference" style="margin-right: var(--spacing);">Reference</a>
+        <a href="reference.html" style="margin-right: var(--spacing);">Reference</a>
         <a href="syntax.html">Syntax</a>
       </nav>
     </div>
@@ -663,159 +439,6 @@
       </div>
     </section>
 
-    <section id="reference" class="reference" aria-labelledby="reference-heading">
-      <h2 id="reference-heading" class="reference-header">Language Reference</h2>
-      <div class="reference-content">
-        <p style="color: var(--fg-muted); margin-bottom: var(--spacing);">
-          Capabilities are listed below. Use the Run button on each example to test it live.
-        </p>
-        <div class="test-runner">
-          <button id="runAllTestsBtn" type="button">Run all tests</button>
-          <div id="testSummary" class="test-summary" aria-live="polite"></div>
-          <div id="testResults" class="test-results"></div>
-        </div>
-
-        <div class="capability-list" id="capabilityList" role="list" aria-label="Language capabilities">
-          <div class="capability-item" role="listitem">
-            <h3 class="capability-name">print</h3>
-            <p class="capability-summary">Print builtin — outputs values to the result pane</p>
-            <div class="capability-examples">
-              <div class="example"><code class="example-source">print("hello")</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">hello</span></div>
-              <div class="example"><code class="example-source">print(1 + 2)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">3</span></div>
-              <div class="example"><code class="example-source">print(true)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
-            </div>
-          </div>
-          <div class="capability-item" role="listitem">
-            <h3 class="capability-name">arithmetic</h3>
-            <p class="capability-summary">Arithmetic operators — addition, subtraction, multiplication, and division</p>
-            <div class="capability-examples">
-              <div class="example"><code class="example-source">2 + 3</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">5</span></div>
-              <div class="example"><code class="example-source">3 * 4</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">12</span></div>
-              <div class="example"><code class="example-source">10 - 3</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">7</span></div>
-              <div class="example"><code class="example-source">8 / 2</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">4</span></div>
-              <div class="example"><code class="example-source">2 + 3 * 4</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">14</span></div>
-            </div>
-          </div>
-          <div class="capability-item" role="listitem">
-            <h3 class="capability-name">boolean</h3>
-            <p class="capability-summary">Boolean literals and logical operators</p>
-            <div class="capability-examples">
-              <div class="example"><code class="example-source">true</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
-              <div class="example"><code class="example-source">false</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">false</span></div>
-              <div class="example"><code class="example-source">true and false</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">false</span></div>
-              <div class="example"><code class="example-source">true or false</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
-              <div class="example"><code class="example-source">not true</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">false</span></div>
-              <div class="example"><code class="example-source">not false</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
-              <div class="example"><code class="example-source">print(true and false)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">false</span></div>
-              <div class="example"><code class="example-source">print(true or false)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
-            </div>
-          </div>
-          <div class="capability-item" role="listitem">
-            <h3 class="capability-name">comparison</h3>
-            <p class="capability-summary">Comparison operators</p>
-            <div class="capability-examples">
-              <div class="example"><code class="example-source">1 == 1</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
-              <div class="example"><code class="example-source">1 != 2</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
-              <div class="example"><code class="example-source">1 &lt; 2</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
-              <div class="example"><code class="example-source">2 &gt; 1</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
-              <div class="example"><code class="example-source">1 &lt;= 1</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
-              <div class="example"><code class="example-source">1 &gt;= 2</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">false</span></div>
-            </div>
-          </div>
-          <div class="capability-item" role="listitem">
-            <h3 class="capability-name">control</h3>
-            <p class="capability-summary">Control flow constructs - let bindings, conditionals, and loops</p>
-            <div class="capability-examples">
-              <div class="example"><code class="example-source">let x = 1 in x</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">1</span></div>
-              <div class="example"><code class="example-source">if true then 1 else 2 end</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">1</span></div>
-              <div class="example"><code class="example-source">if false then 1 else 2 end</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">2</span></div>
-              <div class="example"><code class="example-source">let x = if true then 1 else 2 end in x</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">1</span></div>
-              <div class="example"><code class="example-source">if true then if false then 1 else 2 end else 3 end</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">2</span></div>
-              <div class="example"><code class="example-source">print(if true then 1 else 2 end)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">1</span></div>
-              <div class="example"><code class="example-source">while false do print(1) end</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result"></span></div>
-              <div class="example"><code class="example-source">while false do let x = 1 in print(x) end</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result"></span></div>
-            </div>
-          </div>
-          <div class="capability-item" role="listitem">
-            <h3 class="capability-name">function</h3>
-            <p class="capability-summary">Function definitions — named functions with fn and anonymous function expressions</p>
-            <div class="capability-examples">
-              <div class="example"><code class="example-source">fn add(a, b) = a + b
-add(2, 3)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">5</span></div>
-              <div class="example"><code class="example-source">fn add(a, b) = a + b
-add(if true then 1 else 2 end, 3)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">4</span></div>
-              <div class="example"><code class="example-source">(fn(a, b) = a + b)(2, 3)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">5</span></div>
-              <div class="example"><code class="example-source">fn double(x) = x * 2
-head(listMap(double, cons(1, cons(2, nil))))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">2</span></div>
-              <div class="example"><code class="example-source">let double = fn(x) = x * 2 in head(listMap(double, cons(1, cons(2, nil))))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">2</span></div>
-              <div class="example"><code class="example-source">head(listFilter(fn(x) = x &gt; 1, cons(1, cons(2, cons(3, nil)))))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">2</span></div>
-              <div class="example"><code class="example-source">listFold(fn(acc, x) = acc + x, 0, cons(1, cons(2, cons(3, nil))))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">6</span></div>
-              <div class="example"><code class="example-source">(fn() = 42)()</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">42</span></div>
-            </div>
-          </div>
-          <div class="capability-item" role="listitem">
-            <h3 class="capability-name">list</h3>
-            <p class="capability-summary">List data structure — cons, head, tail, and nil</p>
-            <div class="capability-examples">
-              <div class="example"><code class="example-source">head(cons(1, nil))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">1</span></div>
-              <div class="example"><code class="example-source">tail(cons(1, nil))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result"></span></div>
-              <div class="example"><code class="example-source">head(tail(cons(1, cons(2, nil))))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">2</span></div>
-            </div>
-          </div>
-          <div class="capability-item" role="listitem">
-            <h3 class="capability-name">record</h3>
-            <p class="capability-summary">Record data structure — construction, field access, update, and presence checking</p>
-            <div class="capability-examples">
-              <div class="example"><code class="example-source">get(#{name: "x", value: 42}, "name")</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">x</span></div>
-              <div class="example"><code class="example-source">get(#{name: "x", value: 42}, "value")</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">42</span></div>
-              <div class="example"><code class="example-source">has(#{name: "x"}, "name")</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
-              <div class="example"><code class="example-source">has(#{name: "x"}, "missing")</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">false</span></div>
-              <div class="example"><code class="example-source">has(#{}, "anything")</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">false</span></div>
-            </div>
-          </div>
-          <div class="capability-item" role="listitem">
-            <h3 class="capability-name">list_ops</h3>
-            <p class="capability-summary">Higher-order list operations — map, filter, and fold</p>
-            <div class="capability-examples">
-              <div class="example"><code class="example-source">head(listMap(fn(x) = x + 1, cons(1, cons(2, nil))))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">2</span></div>
-              <div class="example"><code class="example-source">head(tail(listMap(fn(x) = x + 1, cons(1, cons(2, nil)))))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">3</span></div>
-              <div class="example"><code class="example-source">length(listMap(fn(x) = x + 1, nil))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">0</span></div>
-              <div class="example"><code class="example-source">listFold(fn(acc, x) = acc + x, 0, cons(1, cons(2, cons(3, nil))))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">6</span></div>
-              <div class="example"><code class="example-source">listFold(fn(acc, x) = acc + x, 10, nil)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">10</span></div>
-              <div class="example"><code class="example-source">head(listFilter(fn(x) = x &gt; 1, cons(1, cons(2, cons(3, nil)))))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">2</span></div>
-              <div class="example"><code class="example-source">length(listFilter(fn(x) = x &gt; 1, cons(1, cons(2, cons(3, nil)))))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">2</span></div>
-              <div class="example"><code class="example-source">length(listFilter(fn(x) = x &gt; 10, cons(1, cons(2, nil))))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">0</span></div>
-            </div>
-          </div>
-          <div class="capability-item" role="listitem">
-            <h3 class="capability-name">string</h3>
-            <p class="capability-summary">String operations — concatenation, length, and comparison</p>
-            <div class="capability-examples">
-              <div class="example"><code class="example-source">"hello" ++ " world"</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">hello world</span></div>
-              <div class="example"><code class="example-source">length("abc")</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">3</span></div>
-              <div class="example"><code class="example-source">length("")</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">0</span></div>
-              <div class="example"><code class="example-source">length(nil)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">0</span></div>
-              <div class="example"><code class="example-source">length(cons(1, cons(2, nil)))</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">2</span></div>
-              <div class="example"><code class="example-source">"abc" == "abc"</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
-              <div class="example"><code class="example-source">"abc" != "def"</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">true</span></div>
-              <div class="example"><code class="example-source">"abc" == "def"</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">false</span></div>
-              <div class="example"><code class="example-source">print("hello" ++ " " ++ "world")</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">hello world</span></div>
-            </div>
-          </div>
-          <div class="capability-item" role="listitem">
-            <h3 class="capability-name">letrec</h3>
-            <p class="capability-summary">Recursive local function bindings — letrec makes the binding visible in its own value expression</p>
-            <div class="capability-examples">
-              <div class="example"><code class="example-source">letrec factorial = fn(n) = if n &lt;= 1 then 1 else n * factorial(n - 1) end in factorial(5)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">120</span></div>
-              <div class="example"><code class="example-source">letrec fib = fn(n) = if n &lt;= 1 then n else fib(n - 1) + fib(n - 2) end in fib(10)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">55</span></div>
-              <div class="example"><code class="example-source">letrec count = fn(n) = if n &lt;= 0 then 0 else 1 + count(n - 1) end in count(5)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">5</span></div>
-              <div class="example"><code class="example-source">letrec double = fn(x) = x * 2 in double(3)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">6</span></div>
-              <div class="example"><code class="example-source">letrec outer = fn(x) = letrec inner = fn(y) = x + y in inner(10) in outer(5)</code> <span class="example-arrow" aria-hidden="true">→</span> <span class="example-result">15</span></div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
   </main>
 
   <footer>
@@ -823,494 +446,213 @@ head(listMap(double, cons(1, cons(2, nil))))</code> <span class="example-arrow" 
   </footer>
 
   <script type="module">
-
-    import { run } from './lang/run.js';
-    import { getAllMeta } from './lang/loader.js';
-    import { getAllCapabilities } from './lang/capabilities/registry.js';
-    import { highlight } from './lang/syntax.js';
-    import { samples } from './samples.js';
-
-    const editor = document.getElementById('editor');
-    const output = document.getElementById('output');
-    const runBtn = document.getElementById('runBtn');
-    const clearBtn = document.getElementById('clearBtn');
-    const runStatus = document.getElementById('runStatus');
-
-    function announce(message) {
-      runStatus.textContent = message;
-    }
-
-    function setOutput(text, isError = false) {
-      output.textContent = text;
-      output.className = isError ? 'output-error' : 'output-value';
-      // aria-live on #output will announce the new textContent
-    }
-
-    function clear() {
-      editor.value = '';
-      output.textContent = '';
-      output.className = '';
-      editor.focus();
-      announce('Cleared');
-    }
-
-    // --- Worker-based execution ---
-
-    let worker = null;
-    const pendingRequests = new Map();
-    let requestId = 0;
-
-    function getWorker() {
-      if (!worker) {
-        worker = new Worker(new URL('./lang/worker.js', import.meta.url), { type: 'module' });
-        worker.addEventListener('message', (event) => {
-          const { id, result, error } = event.data;
-          const { resolve, reject } = pendingRequests.get(id) || {};
-          pendingRequests.delete(id);
-          if (error) {
-            reject(error);
-          } else {
-            resolve(result);
-          }
-        });
-        worker.addEventListener('error', (event) => {
-          const errData = {
-            type: 'RuntimeError',
-            message: event.message || 'Worker error',
-            expected: null,
-            found: null,
-            location: null,
-          };
-          for (const [, { reject }] of pendingRequests) {
-            reject(errData);
-          }
-          pendingRequests.clear();
-          worker.terminate();
-          worker = null;
-        });
-      }
-      return worker;
-    }
-
-    function handleRun() {
-      const source = editor.value.trim();
-      if (!source) {
-        announce('Empty program');
-        setOutput('', false);
-        return;
-      }
-      runBtn.disabled = true;
-      const id = requestId++;
-      const promise = new Promise((resolve, reject) => {
-        pendingRequests.set(id, { resolve, reject });
-      });
-      getWorker().postMessage({ source, id });
-      promise
-        .then((result) => {
-          const resultText = result === undefined ? '' : String(result);
-          setOutput(resultText, false);
-          announce(resultText || '(no output)');
-        })
-        .catch((errData) => {
-          const formatted = formatError(errData);
-          setOutput(formatted, true);
-          announce(`Error: ${errData.message || String(errData)}`);
-          highlightErrorLocation(errData);
-        })
-        .finally(() => {
-          runBtn.disabled = false;
-        });
-    }
-
-    function formatError(errData) {
-      const type = errData.type || 'Error';
-      const message = errData.message || 'Unknown error';
-      let formatted = `${type}: ${message}`;
-      if (errData.expected && errData.found) {
-        formatted += `\n  Expected: ${errData.expected}\n  Found: ${errData.found}`;
-      }
-      if (errData.location) {
-        const { line, column, offset } = errData.location;
-        formatted += `\n  at line ${line}, column ${column} (offset ${offset})`;
-      }
-      return formatted;
-    }
-
-    function highlightErrorLocation(errData) {
-      if (!errData.location || typeof errData.location.offset !== 'number') {
-        return;
-      }
-      const offset = errData.location.offset;
-      const totalLength = editor.value.length;
-      if (offset < 0 || offset > totalLength) return;
-      editor.focus();
-      try {
-        editor.setSelectionRange(offset, offset);
-      } catch (_) {
-        // setSelectionRange can throw in some edge cases; gracefully ignore
-      }
-    }
-
-    // Skip link: move focus to the editor, not just scroll
-    document.getElementById('skipLink').addEventListener('click', (e) => {
-      e.preventDefault();
-      editor.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      editor.focus();
-    });
-
-    clearBtn.addEventListener('click', clear);
-    runBtn.addEventListener('click', handleRun);
-
-    // --- Sample loader ---
-
-    const sampleSelect = document.getElementById('sampleSelect');
-
-    for (const sample of samples) {
-      const option = document.createElement('option');
-      option.value = sample.source;
-      option.textContent = sample.name;
-      sampleSelect.appendChild(option);
-    }
-
-    sampleSelect.addEventListener('change', () => {
-      const source = sampleSelect.value;
-      if (source) {
-        editor.value = source;
-        sampleSelect.value = '';
-        editor.focus();
-      }
-    });
-
-    // Keyboard shortcuts
-    editor.addEventListener('keydown', (e) => {
-      // Tab for indentation
-      if (e.key === 'Tab') {
-        e.preventDefault();
-        const start = editor.selectionStart;
-        const end = editor.selectionEnd;
-        editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(end);
-        editor.selectionStart = editor.selectionEnd = start + 2;
-        return;
-      }
-      // Enter to run, Shift+Enter for newline
-      if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        e.preventDefault();
-        handleRun();
-        return;
-      }
-      // Escape to clear output
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        clear();
-        return;
-      }
-    });
-
-    // --- Syntax highlighting ---
-
-    const highlightOverlay = document.getElementById('highlightOverlay');
-
-    function updateHighlight() {
-      highlightOverlay.innerHTML = highlight(editor.value);
-    }
-
-    editor.addEventListener('input', updateHighlight);
-    editor.addEventListener('keydown', (e) => {
-      // Update highlight after Tab key too (it modifies the value)
-      if (e.key === 'Tab') {
-        // Defer so the value has been updated by the browser
-        requestAnimationFrame(updateHighlight);
-      }
-    });
-
-    // Initial highlight
-    updateHighlight();
-
-    // --- Scroll synchronization between textarea and highlight overlay ---
-
-    function syncScroll() {
-      highlightOverlay.scrollTop = editor.scrollTop;
-      highlightOverlay.scrollLeft = editor.scrollLeft;
-    }
-
-    editor.addEventListener('scroll', syncScroll);
-
-    // --- Reference section rendering ---
-
-    function renderReference() {
-      const list = document.getElementById('capabilityList');
-      if (!list) return;
-      const placeholder = list.parentElement.querySelector('p');
-      if (placeholder) placeholder.style.display = 'none';
-      list.innerHTML = '';
-
-      for (const meta of getAllMeta()) {
-        if (!meta) continue;
-
-        const item = document.createElement('div');
-        item.className = 'capability-item';
-        item.setAttribute('role', 'listitem');
-
-        const nameEl = document.createElement('h3');
-        nameEl.className = 'capability-name';
-        nameEl.textContent = meta.name;
-        item.appendChild(nameEl);
-
-        const summaryEl = document.createElement('p');
-        summaryEl.className = 'capability-summary';
-        summaryEl.textContent = meta.summary;
-        item.appendChild(summaryEl);
-
-        if (meta.examples && meta.examples.length > 0) {
-          const examplesEl = document.createElement('div');
-          examplesEl.className = 'capability-examples';
-          examplesEl.setAttribute('role', 'list');
-          examplesEl.setAttribute('aria-label', `Examples for ${meta.name}`);
-
-          meta.examples.forEach((example) => {
-            const exampleEl = document.createElement('div');
-            exampleEl.className = 'example';
-            exampleEl.setAttribute('role', 'listitem');
-
-            const sourceEl = document.createElement('code');
-            sourceEl.className = 'example-source';
-            sourceEl.textContent = example.source;
-            exampleEl.appendChild(sourceEl);
-
-            const arrowEl = document.createElement('span');
-            arrowEl.className = 'example-arrow';
-            arrowEl.textContent = '\u2192';
-            arrowEl.setAttribute('aria-hidden', 'true');
-            exampleEl.appendChild(arrowEl);
-
-            const expectedEl = document.createElement('span');
-            expectedEl.className = 'example-result';
-            expectedEl.textContent = example.result;
-            exampleEl.appendChild(expectedEl);
-
-            const runBtn = document.createElement('button');
-            runBtn.type = 'button';
-            runBtn.textContent = 'Run';
-            runBtn.setAttribute('aria-label', `Run example: ${example.source}`);
-
-            const runResult = document.createElement('span');
-            runResult.className = 'example-result';
-            runResult.style.marginLeft = '0.5rem';
-            runResult.setAttribute('aria-live', 'polite');
-
-            runBtn.addEventListener('click', () => {
-              runBtn.disabled = true;
-              try {
-                const actual = run(example.source);
-                if (actual === example.result) {
-                  runResult.textContent = `\u2713 ${actual}`;
-                  runResult.style.color = '';
-                } else {
-                  runResult.textContent = `\u2717 expected "${example.result}", got "${actual}"`;
-                  runResult.style.color = 'var(--error)';
-                }
-              } catch (err) {
-                runResult.textContent = `\u2717 Error: ${err.message || String(err)}`;
-                runResult.style.color = 'var(--error)';
-              } finally {
-                runBtn.disabled = false;
-              }
-            });
-
-            exampleEl.appendChild(runBtn);
-            exampleEl.appendChild(runResult);
-            examplesEl.appendChild(exampleEl);
-          });
-
-          item.appendChild(examplesEl);
-        }
-
-        list.appendChild(item);
-      }
-    }
-
-    // --- Test runner ---
-
-    function runAllTests() {
-      const summaryEl = document.getElementById('testSummary');
-      const resultsEl = document.getElementById('testResults');
-      const btn = document.getElementById('runAllTestsBtn');
-
-      btn.disabled = true;
-      summaryEl.textContent = 'Running tests…';
-      summaryEl.className = 'test-summary';
-      resultsEl.innerHTML = '';
-
-      let totalExamples = 0;
-      let passedExamples = 0;
-      let failedExamples = 0;
-      let totalPropertyFailures = 0;
-
-      const capabilities = getAllCapabilities();
-      const results = [];
-
-      for (const cap of capabilities) {
-        const capResult = {
-          name: cap.meta.name,
-          examples: [],
-          propertyFailures: [],
-        };
-
-        // Run each example
-        if (cap.meta.examples) {
-          for (const example of cap.meta.examples) {
-            totalExamples++;
-            const exampleResult = {
-              source: example.source,
-              expected: example.result,
-              actual: null,
-              passed: false,
-              error: null,
-            };
-
-            try {
-              const actual = run(example.source);
-              exampleResult.actual = actual;
-              exampleResult.passed = actual === example.result;
-              if (exampleResult.passed) {
-                passedExamples++;
-              } else {
-                failedExamples++;
-              }
-            } catch (err) {
-              exampleResult.error = err.message || String(err);
-              failedExamples++;
-            }
-
-            capResult.examples.push(exampleResult);
-          }
-        }
-
-        // Check properties
-        try {
-          const failures = cap.checkFn(run);
-          capResult.propertyFailures = Array.isArray(failures) ? failures : [];
-          totalPropertyFailures += capResult.propertyFailures.length;
-        } catch (err) {
-          capResult.propertyFailures = [`checkProperties threw: ${err.message || String(err)}`];
-          totalPropertyFailures += capResult.propertyFailures.length;
-        }
-
-        results.push(capResult);
-      }
-
-      // Render summary
-      const allPassed = failedExamples === 0 && totalPropertyFailures === 0;
-      summaryEl.textContent = `${passedExamples}/${totalExamples} examples passed, ${totalPropertyFailures} property failure${totalPropertyFailures !== 1 ? 's' : ''}`;
-      summaryEl.className = 'test-summary ' + (allPassed ? 'all-pass' : 'has-failures');
-
-      // Render per-capability results
-      for (const capResult of results) {
-        const capEl = document.createElement('div');
-        capEl.className = 'test-capability';
-
-        const nameEl = document.createElement('h3');
-        nameEl.className = 'test-capability-name';
-        nameEl.textContent = capResult.name;
-        capEl.appendChild(nameEl);
-
-        // Examples section
-        if (capResult.examples.length > 0) {
-          const examplesSection = document.createElement('div');
-          examplesSection.className = 'test-capability-section';
-
-          const examplesTitle = document.createElement('div');
-          examplesTitle.className = 'test-section-title';
-          examplesTitle.textContent = 'Examples';
-          examplesSection.appendChild(examplesTitle);
-
-          for (const ex of capResult.examples) {
-            const exEl = document.createElement('div');
-            exEl.className = 'test-example ' + (ex.passed ? 'pass' : 'fail');
-
-            const icon = document.createElement('span');
-            icon.className = 'test-icon';
-            icon.textContent = ex.passed ? '\u2713' : '\u2717';
-            icon.setAttribute('aria-hidden', 'true');
-            exEl.appendChild(icon);
-
-            const source = document.createElement('span');
-            source.className = 'test-source';
-            source.textContent = ex.source;
-            exEl.appendChild(source);
-
-            if (!ex.passed) {
-              const detail = document.createElement('span');
-              detail.className = 'test-detail';
-              if (ex.error) {
-                detail.textContent = `Error: ${ex.error}`;
-              } else {
-                detail.textContent = `expected "${ex.expected}", got "${ex.actual}"`;
-              }
-              exEl.appendChild(detail);
-            }
-
-            examplesSection.appendChild(exEl);
-          }
-
-          capEl.appendChild(examplesSection);
-        }
-
-        // Properties section
-        const propsSection = document.createElement('div');
-        propsSection.className = 'test-capability-section';
-
-        const propsTitle = document.createElement('div');
-        propsTitle.className = 'test-section-title';
-        propsTitle.textContent = 'Property checks';
-        propsSection.appendChild(propsTitle);
-
-        if (capResult.propertyFailures.length > 0) {
-          for (const failure of capResult.propertyFailures) {
-            const propEl = document.createElement('div');
-            propEl.className = 'test-property fail';
-
-            const icon = document.createElement('span');
-            icon.className = 'test-icon';
-            icon.textContent = '\u2717';
-            icon.setAttribute('aria-hidden', 'true');
-            propEl.appendChild(icon);
-
-            const msg = document.createElement('span');
-            msg.className = 'test-message';
-            msg.textContent = failure;
-            propEl.appendChild(msg);
-
-            propsSection.appendChild(propEl);
-          }
+  import { run } from './lang/run.js';
+  import { highlight } from './lang/syntax.js';
+  import { samples } from './samples.js';
+
+  const editor = document.getElementById('editor');
+  const output = document.getElementById('output');
+  const runBtn = document.getElementById('runBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const runStatus = document.getElementById('runStatus');
+
+  function announce(message) {
+    runStatus.textContent = message;
+  }
+
+  function setOutput(text, isError = false) {
+    output.textContent = text;
+    output.className = isError ? 'output-error' : 'output-value';
+  }
+
+  function clear() {
+    editor.value = '';
+    output.textContent = '';
+    output.className = '';
+    editor.focus();
+    announce('Cleared');
+  }
+
+  // --- Worker-based execution ---
+
+  let worker = null;
+  const pendingRequests = new Map();
+  let requestId = 0;
+
+  function getWorker() {
+    if (!worker) {
+      worker = new Worker(new URL('./lang/worker.js', import.meta.url), { type: 'module' });
+      worker.addEventListener('message', (event) => {
+        const { id, result, error } = event.data;
+        const { resolve, reject } = pendingRequests.get(id) || {};
+        pendingRequests.delete(id);
+        if (error) {
+          reject(error);
         } else {
-          const propEl = document.createElement('div');
-          propEl.className = 'test-property pass';
-
-          const icon = document.createElement('span');
-          icon.className = 'test-icon';
-          icon.textContent = '\u2713';
-          icon.setAttribute('aria-hidden', 'true');
-          propEl.appendChild(icon);
-
-          const msg = document.createElement('span');
-          msg.className = 'test-message';
-          msg.textContent = 'All properties hold';
-          propEl.appendChild(msg);
-
-          propsSection.appendChild(propEl);
+          resolve(result);
         }
-
-        capEl.appendChild(propsSection);
-        resultsEl.appendChild(capEl);
-      }
-
-      btn.disabled = false;
+      });
+      worker.addEventListener('error', (event) => {
+        const errData = {
+          type: 'RuntimeError',
+          message: event.message || 'Worker error',
+          expected: null,
+          found: null,
+          location: null,
+        };
+        for (const [, { reject }] of pendingRequests) {
+          reject(errData);
+        }
+        pendingRequests.clear();
+        worker.terminate();
+        worker = null;
+      });
     }
+    return worker;
+  }
 
-    document.getElementById('runAllTestsBtn').addEventListener('click', runAllTests);
+  function handleRun() {
+    const source = editor.value.trim();
+    if (!source) {
+      announce('Empty program');
+      setOutput('', false);
+      return;
+    }
+    runBtn.disabled = true;
+    const id = requestId++;
+    const promise = new Promise((resolve, reject) => {
+      pendingRequests.set(id, { resolve, reject });
+    });
+    getWorker().postMessage({ source, id });
+    promise
+      .then((result) => {
+        const resultText = result === undefined ? '' : String(result);
+        setOutput(resultText, false);
+        announce(resultText || '(no output)');
+      })
+      .catch((errData) => {
+        const formatted = formatError(errData);
+        setOutput(formatted, true);
+        announce(`Error: ${errData.message || String(errData)}`);
+        highlightErrorLocation(errData);
+      })
+      .finally(() => {
+        runBtn.disabled = false;
+      });
+  }
 
-    renderReference();
+  function formatError(errData) {
+    const type = errData.type || 'Error';
+    const message = errData.message || 'Unknown error';
+    let formatted = `${type}: ${message}`;
+    if (errData.expected && errData.found) {
+      formatted += `\n  Expected: ${errData.expected}\n  Found: ${errData.found}`;
+    }
+    if (errData.location) {
+      const { line, column, offset } = errData.location;
+      formatted += `\n  at line ${line}, column ${column} (offset ${offset})`;
+    }
+    return formatted;
+  }
+
+  function highlightErrorLocation(errData) {
+    if (!errData.location || typeof errData.location.offset !== 'number') {
+      return;
+    }
+    const offset = errData.location.offset;
+    const totalLength = editor.value.length;
+    if (offset < 0 || offset > totalLength) return;
+    editor.focus();
+    try {
+      editor.setSelectionRange(offset, offset);
+    } catch (_) {
+      // setSelectionRange can throw in some edge cases; gracefully ignore
+    }
+  }
+
+  // Skip link: move focus to the editor, not just scroll
+  document.getElementById('skipLink').addEventListener('click', (e) => {
+    e.preventDefault();
+    editor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    editor.focus();
+  });
+
+  clearBtn.addEventListener('click', clear);
+  runBtn.addEventListener('click', handleRun);
+
+  // --- Sample loader ---
+
+  const sampleSelect = document.getElementById('sampleSelect');
+
+  for (const sample of samples) {
+    const option = document.createElement('option');
+    option.value = sample.source;
+    option.textContent = sample.name;
+    sampleSelect.appendChild(option);
+  }
+
+  sampleSelect.addEventListener('change', () => {
+    const source = sampleSelect.value;
+    if (source) {
+      editor.value = source;
+      sampleSelect.value = '';
+      editor.focus();
+    }
+  });
+
+  // Keyboard shortcuts
+  editor.addEventListener('keydown', (e) => {
+    // Tab for indentation
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const start = editor.selectionStart;
+      const end = editor.selectionEnd;
+      editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(end);
+      editor.selectionStart = editor.selectionEnd = start + 2;
+      return;
+    }
+    // Enter to run, Shift+Enter for newline
+    if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      handleRun();
+      return;
+    }
+    // Escape to clear output
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      clear();
+      return;
+    }
+  });
+
+  // --- Syntax highlighting ---
+
+  const highlightOverlay = document.getElementById('highlightOverlay');
+
+  function updateHighlight() {
+    highlightOverlay.innerHTML = highlight(editor.value);
+  }
+
+  editor.addEventListener('input', updateHighlight);
+  editor.addEventListener('keydown', (e) => {
+    // Update highlight after Tab key too (it modifies the value)
+    if (e.key === 'Tab') {
+      // Defer so the value has been updated by the browser
+      requestAnimationFrame(updateHighlight);
+    }
+  });
+
+  // Initial highlight
+  updateHighlight();
+
+  // --- Scroll synchronization between textarea and highlight overlay ---
+
+  function syncScroll() {
+    highlightOverlay.scrollTop = editor.scrollTop;
+    highlightOverlay.scrollLeft = editor.scrollLeft;
+  }
+
+  editor.addEventListener('scroll', syncScroll);
   </script>
 </body>
 </html>
