@@ -427,7 +427,7 @@
           <select id="sampleSelect" aria-label="Sample programs">
             <option value="">— Load Sample —</option>
           </select>
-          <span class="sr-only" aria-live="polite" id="runStatus"></span>
+          <span class="sr-only" role="alert" id="runStatus"></span>
         </div>
       </div>
 
@@ -456,7 +456,7 @@
   const clearBtn = document.getElementById('clearBtn');
   const runStatus = document.getElementById('runStatus');
 
-  function announce(message) {
+  function setStatus(message) {
     runStatus.textContent = message;
   }
 
@@ -470,7 +470,7 @@
     output.textContent = '';
     output.className = '';
     editor.focus();
-    announce('Cleared');
+    setStatus('');
   }
 
   // --- Worker-based execution ---
@@ -514,7 +514,7 @@
   function handleRun() {
     const source = editor.value.trim();
     if (!source) {
-      announce('Empty program');
+      setStatus('Empty program');
       setOutput('', false);
       return;
     }
@@ -528,12 +528,12 @@
       .then((result) => {
         const resultText = result === undefined ? '' : String(result);
         setOutput(resultText, false);
-        announce(resultText || '(no output)');
+        setStatus('');
       })
       .catch((errData) => {
         const formatted = formatError(errData);
         setOutput(formatted, true);
-        announce(`Error: ${errData.message || String(errData)}`);
+        setStatus(`Error: ${errData.message || String(errData)}`);
         highlightErrorLocation(errData);
       })
       .finally(() => {
