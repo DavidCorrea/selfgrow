@@ -27,7 +27,7 @@ export const TT = {
  * Tokenize a selfgrow source string.
  * @param {string} source
  * @param {Set<string>} keywords - set of keyword strings recognised by the language
- * @returns {Array<{type: string, value: any, start: number}>}
+ * @returns {Array<{type: string, value: any, start: number, end: number}>}
  */
 export function tokenize(source, keywords) {
   const tokens = [];
@@ -59,7 +59,7 @@ export function tokenize(source, keywords) {
         if (pos < source.length && /[+\-]/.test(source[pos])) { numStr += source[pos]; pos++; }
         while (pos < source.length && /[0-9]/.test(source[pos])) { numStr += source[pos]; pos++; }
       }
-      tokens.push({ type: TT.NUMBER, value: parseFloat(numStr), start: pos - numStr.length });
+      tokens.push({ type: TT.NUMBER, value: parseFloat(numStr), start: pos - numStr.length, end: pos });
       continue;
     }
 
@@ -80,37 +80,37 @@ export function tokenize(source, keywords) {
       }
       if (pos >= source.length) {
         const loc = getLocation(source, pos);
-        throw new ParseError('Unterminated string', 'a closing quote', 'end of input', loc);
+        throw new ParseError('Unterminated string', 'a closing quote', 'end of input', loc, 0); // length unknown
       }
-      pos++; tokens.push({ type: TT.STRING, value: str, start: pos - str.length - 2 });
+      pos++; tokens.push({ type: TT.STRING, value: str, start: pos - str.length - 2, end: pos });
       continue;
     }
 
     // Multi-character operators
     const twoChar = source.slice(pos, pos + 2);
     const twoCharOps = ['==', '!=', '<=', '>=', '=>', '++', '&&', '||'];
-    if (twoCharOps.includes(twoChar)) { tokens.push({ type: TT.OPERATOR, value: twoChar, start: pos }); pos += 2; continue; }
+    if (twoCharOps.includes(twoChar)) { tokens.push({ type: TT.OPERATOR, value: twoChar, start: pos, end: pos + 2 }); pos += 2; continue; }
 
     // Single-character operators
-    if ('+-*/<>=!'.includes(ch)) { tokens.push({ type: TT.OPERATOR, value: ch, start: pos }); pos++; continue; }
+    if ('+-*/<>=!'.includes(ch)) { tokens.push({ type: TT.OPERATOR, value: ch, start: pos, end: pos + 1 }); pos++; continue; }
 
     // Punctuation
-    if ('(){},;[]:#.'.includes(ch)) { tokens.push({ type: TT.PUNCTUATION, value: ch, start: pos }); pos++; continue; }
+    if ('(){},;[]:#.'.includes(ch)) { tokens.push({ type: TT.PUNCTUATION, value: ch, start: pos, end: pos + 1 }); pos++; continue; }
 
     // Identifiers and keywords
     if (/[a-zA-Z_]/.test(ch)) {
       let ident = '';
       while (pos < source.length && /[a-zA-Z0-9_]/.test(source[pos])) { ident += source[pos]; pos++; }
       const type = keywords.has(ident) ? TT.KEYWORD : TT.IDENTIFIER;
-      tokens.push({ type, value: ident, start: pos - ident.length });
+      tokens.push({ type, value: ident, start: pos - ident.length, end: pos });
       continue;
     }
 
     const loc = getLocation(source, pos);
-    throw new ParseError(`Unexpected character '${ch}'`, 'a valid character', `'${ch}'`, loc);
+    throw new ParseError(`Unexpected character '${ch}'`, 'a valid character', `'${ch}'`, loc, 1);
   }
 
-  tokens.push({ type: TT.EOF, value: '', start: pos });
+  tokens.push({ type: TT.EOF, value: '', start: pos, end: pos });
   return tokens;
 }
 
