@@ -1,18 +1,21 @@
 /**
- * Arithmetic capability — provides the four arithmetic operators (+, -, *, /).
+ * Arithmetic capability — provides the four arithmetic operators (+, -, *, /) and unary negation.
  * Each capability lives in its own file and self-registers with the interpreter.
  */
 import { registerCapability } from './registry.js';
 
 export const meta = {
   name: 'arithmetic',
-  summary: 'Arithmetic operators — addition, subtraction, multiplication, and division',
+  summary: 'Arithmetic operators — addition, subtraction, multiplication, division, and unary negation',
   examples: [
     { source: '2 + 3', result: '5' },
     { source: '3 * 4', result: '12' },
     { source: '10 - 3', result: '7' },
     { source: '8 / 2', result: '4' },
     { source: '2 + 3 * 4', result: '14' },
+    { source: '-5', result: '-5' },
+    { source: '--5', result: '5' },
+    { source: '2 + -3 * 4', result: '-10' },
   ],
 };
 
@@ -72,6 +75,24 @@ export function checkProperties(run) {
     if (!err.message.includes('division by zero')) {
       failures.push('division by zero should throw "division by zero" error');
     }
+  }
+
+  // Properties from negation capability:
+  // -a = -(a)
+  if (run('-5') !== '-5') {
+    failures.push('unary minus of 5 should be -5');
+  }
+  // --a = a
+  if (run('--5') !== '5') {
+    failures.push('double unary minus should cancel out');
+  }
+  // distributive over addition: -(a + b) = (-a) + (-b)
+  if (run('-(2 + 3)') !== run('-2 + -3')) {
+    failures.push('negation should distribute over addition');
+  }
+  // -(-a) = a
+  if (run('-(-5)') !== '5') {
+    failures.push('double negation should cancel');
   }
 
   return failures;
