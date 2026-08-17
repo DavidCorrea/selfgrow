@@ -23,6 +23,7 @@ function clear() {
   output.className = '';
   editor.focus();
   setStatus('');
+  clearSelection();
 }
 
 // --- Worker-based execution ---
@@ -81,6 +82,7 @@ function handleRun() {
       const resultText = result === undefined ? '' : String(result);
       setOutput(resultText, false);
       setStatus('');
+      clearSelection();
     })
     .catch((errData) => {
       const formatted = formatError(errData);
@@ -107,16 +109,25 @@ function formatError(errData) {
   return formatted;
 }
 
+function clearSelection() {
+  try {
+    editor.setSelectionRange(0, 0);
+  } catch (_) {
+    // setSelectionRange can throw in some edge cases; gracefully ignore
+  }
+}
+
 function highlightErrorLocation(errData) {
   if (!errData.location || typeof errData.location.offset !== 'number') {
     return;
   }
   const offset = errData.location.offset;
+  const length = errData.location.length || 0;
   const totalLength = editor.value.length;
   if (offset < 0 || offset > totalLength) return;
   editor.focus();
   try {
-    editor.setSelectionRange(offset, offset);
+    editor.setSelectionRange(offset, offset + length);
   } catch (_) {
     // setSelectionRange can throw in some edge cases; gracefully ignore
   }

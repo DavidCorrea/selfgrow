@@ -204,6 +204,10 @@
     .tok-operator { color: #d2a8ff; }
     .tok-punctuation { color: #8b949e; }
 
+    /* Error token highlight — use error colour for selection */
+    #editor::selection { background: var(--error); color: var(--fg); }
+    #highlightOverlay::selection { background: var(--error); color: var(--fg); }
+
     /* Output */
     #output {
       background: var(--output-bg);
