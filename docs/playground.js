@@ -211,20 +211,20 @@ editor.addEventListener('keydown', (e) => {
     editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(end);
     editor.selectionStart = editor.selectionEnd = start + 2;
     return;
-    }
-    // Enter to run, Shift+Enter for newline
-    if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      e.preventDefault();
-      handleRun();
-      return;
-    }
-    // Escape to clear output
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      clear();
-      return;
-    }
-  });
+  }
+  // Enter to run, Shift+Enter for newline
+  if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    e.preventDefault();
+    handleRun();
+    return;
+  }
+  // Escape to clear output
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    clear();
+    return;
+  }
+});
 
   // --- Syntax highlighting ---
 

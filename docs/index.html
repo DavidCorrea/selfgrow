@@ -467,10 +467,10 @@
           <button id="runBtn" class="primary" type="button" aria-keyshortcuts="Enter">Run (Enter)</button>
           <button id="clearBtn" type="button" aria-keyshortcuts="Escape">Clear (Escape)</button>
           <div class="sample-dropdown">
-            <button id="sampleBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Load sample program">
+            <button id="sampleBtn" type="button" aria-haspopup="true" aria-controls="sampleMenu" aria-expanded="false" aria-label="Load sample program">
               — Load Sample —
             </button>
-            <div id="sampleMenu" class="sample-menu" role="menu" aria-hidden="true">
+            <div id="sampleMenu" class="sample-menu" role="menu" aria-hidden="true" aria-labelledby="sampleBtn">
               <!-- Sample buttons will be inserted here by JavaScript -->
             </div>
           </div>
