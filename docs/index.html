@@ -385,7 +385,50 @@
         font-size: 0.8rem;
       }
     }
-  </style>
+  .sample-dropdown {
+      position: relative;
+    }
+
+    .sample-menu {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      margin-top: 0.5rem;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.5rem 0;
+      list-style: none;
+      min-width: 200px;
+      z-index: 10;
+      display: none;
+    }
+
+    .sample-menu[aria-hidden="false"] {
+      display: block;
+    }
+
+    .sample-menu button {
+      display: block;
+      width: 100%;
+      padding: 0.5rem 1rem;
+      text-align: left;
+      border: none;
+      background: none;
+      color: var(--fg);
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .sample-menu button:hover {
+      background: var(--bg);
+    }
+
+    .sample-menu button:focus-visible {
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
+</style>
   <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http://www.w3.org/2000/svg%22%20width%3D%2232%22%20height%3D%2232%22%3E%3Crect%20width%3D%2232%22%20height%3D%2232%22%20fill%3D%22%2358a6ff%22/%3E%3Ctext%20x%3D%2250%25%22%20y%3D%2250%25%22%20dominant-baseline%3D%22middle%22%20text-anchor%3D%22middle%22%20fill%3D%22white%22%20font-size%3D%2220%22%20font-weight%3D%22bold%22%3Esg%3C/text%3E%3C/svg%3E">
 </head>
 <body>
@@ -423,10 +466,14 @@
         <div class="controls">
           <button id="runBtn" class="primary" type="button" aria-keyshortcuts="Enter">Run (Enter)</button>
           <button id="clearBtn" type="button" aria-keyshortcuts="Escape">Clear (Escape)</button>
-          <label for="sampleSelect" class="sr-only">Load sample program</label>
-          <select id="sampleSelect" aria-label="Sample programs">
-            <option value="">— Load Sample —</option>
-          </select>
+          <div class="sample-dropdown">
+            <button id="sampleBtn" type="button" aria-haspopup="true" aria-controls="sampleMenu" aria-expanded="false" aria-label="Load sample program">
+              — Load Sample —
+            </button>
+            <div id="sampleMenu" class="sample-menu" role="menu" aria-hidden="true" aria-labelledby="sampleBtn">
+              <!-- Sample buttons will be inserted here by JavaScript -->
+            </div>
+          </div>
           <span class="sr-only" role="alert" id="runStatus"></span>
         </div>
       </div>
@@ -445,214 +492,6 @@
     <p>selfgrow — a self-growing functional language. Examples are tests. No build step.</p>
   </footer>
 
-  <script type="module">
-  import { run } from './lang/run.js';
-  import { highlight } from './lang/syntax.js';
-  import { samples } from './samples.js';
-
-  const editor = document.getElementById('editor');
-  const output = document.getElementById('output');
-  const runBtn = document.getElementById('runBtn');
-  const clearBtn = document.getElementById('clearBtn');
-  const runStatus = document.getElementById('runStatus');
-
-  function setStatus(message) {
-    runStatus.textContent = message;
-  }
-
-  function setOutput(text, isError = false) {
-    output.textContent = text;
-    output.className = isError ? 'output-error' : 'output-value';
-  }
-
-  function clear() {
-    editor.value = '';
-    output.textContent = '';
-    output.className = '';
-    editor.focus();
-    setStatus('');
-  }
-
-  // --- Worker-based execution ---
-
-  let worker = null;
-  const pendingRequests = new Map();
-  let requestId = 0;
-
-  function getWorker() {
-    if (!worker) {
-      worker = new Worker(new URL('./lang/worker.js', import.meta.url), { type: 'module' });
-      worker.addEventListener('message', (event) => {
-        const { id, result, error } = event.data;
-        const { resolve, reject } = pendingRequests.get(id) || {};
-        pendingRequests.delete(id);
-        if (error) {
-          reject(error);
-        } else {
-          resolve(result);
-        }
-      });
-      worker.addEventListener('error', (event) => {
-        const errData = {
-          type: 'RuntimeError',
-          message: event.message || 'Worker error',
-          expected: null,
-          found: null,
-          location: null,
-        };
-        for (const [, { reject }] of pendingRequests) {
-          reject(errData);
-        }
-        pendingRequests.clear();
-        worker.terminate();
-        worker = null;
-      });
-    }
-    return worker;
-  }
-
-  function handleRun() {
-    const source = editor.value.trim();
-    if (!source) {
-      setStatus('Empty program');
-      setOutput('', false);
-      return;
-    }
-    runBtn.disabled = true;
-    const id = requestId++;
-    const promise = new Promise((resolve, reject) => {
-      pendingRequests.set(id, { resolve, reject });
-    });
-    getWorker().postMessage({ source, id });
-    promise
-      .then((result) => {
-        const resultText = result === undefined ? '' : String(result);
-        setOutput(resultText, false);
-        setStatus('');
-      })
-      .catch((errData) => {
-        const formatted = formatError(errData);
-        setOutput(formatted, true);
-        setStatus(`Error: ${errData.message || String(errData)}`);
-        highlightErrorLocation(errData);
-      })
-      .finally(() => {
-        runBtn.disabled = false;
-      });
-  }
-
-  function formatError(errData) {
-    const type = errData.type || 'Error';
-    const message = errData.message || 'Unknown error';
-    let formatted = `${type}: ${message}`;
-    if (errData.expected && errData.found) {
-      formatted += `\n  Expected: ${errData.expected}\n  Found: ${errData.found}`;
-    }
-    if (errData.location) {
-      const { line, column, offset } = errData.location;
-      formatted += `\n  at line ${line}, column ${column} (offset ${offset})`;
-    }
-    return formatted;
-  }
-
-  function highlightErrorLocation(errData) {
-    if (!errData.location || typeof errData.location.offset !== 'number') {
-      return;
-    }
-    const offset = errData.location.offset;
-    const totalLength = editor.value.length;
-    if (offset < 0 || offset > totalLength) return;
-    editor.focus();
-    try {
-      editor.setSelectionRange(offset, offset);
-    } catch (_) {
-      // setSelectionRange can throw in some edge cases; gracefully ignore
-    }
-  }
-
-  // Skip link: move focus to the editor, not just scroll
-  document.getElementById('skipLink').addEventListener('click', (e) => {
-    e.preventDefault();
-    editor.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    editor.focus();
-  });
-
-  clearBtn.addEventListener('click', clear);
-  runBtn.addEventListener('click', handleRun);
-
-  // --- Sample loader ---
-
-  const sampleSelect = document.getElementById('sampleSelect');
-
-  for (const sample of samples) {
-    const option = document.createElement('option');
-    option.value = sample.source;
-    option.textContent = sample.name;
-    sampleSelect.appendChild(option);
-  }
-
-  sampleSelect.addEventListener('change', () => {
-    const source = sampleSelect.value;
-    if (source) {
-      editor.value = source;
-      sampleSelect.value = '';
-      editor.focus();
-    }
-  });
-
-  // Keyboard shortcuts
-  editor.addEventListener('keydown', (e) => {
-    // Tab for indentation
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      const start = editor.selectionStart;
-      const end = editor.selectionEnd;
-      editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(end);
-      editor.selectionStart = editor.selectionEnd = start + 2;
-      return;
-    }
-    // Enter to run, Shift+Enter for newline
-    if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      e.preventDefault();
-      handleRun();
-      return;
-    }
-    // Escape to clear output
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      clear();
-      return;
-    }
-  });
-
-  // --- Syntax highlighting ---
-
-  const highlightOverlay = document.getElementById('highlightOverlay');
-
-  function updateHighlight() {
-    highlightOverlay.innerHTML = highlight(editor.value);
-  }
-
-  editor.addEventListener('input', updateHighlight);
-  editor.addEventListener('keydown', (e) => {
-    // Update highlight after Tab key too (it modifies the value)
-    if (e.key === 'Tab') {
-      // Defer so the value has been updated by the browser
-      requestAnimationFrame(updateHighlight);
-    }
-  });
-
-  // Initial highlight
-  updateHighlight();
-
-  // --- Scroll synchronization between textarea and highlight overlay ---
-
-  function syncScroll() {
-    highlightOverlay.scrollTop = editor.scrollTop;
-    highlightOverlay.scrollLeft = editor.scrollLeft;
-  }
-
-  editor.addEventListener('scroll', syncScroll);
-  </script>
+  <script type="module" src="./playground.js"></script>
 </body>
 </html>
