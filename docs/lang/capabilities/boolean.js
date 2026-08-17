@@ -4,6 +4,7 @@
  * Each capability lives in its own file and self-registers with the interpreter.
  */
 import { registerCapability } from './registry.js';
+import { TypeError } from '../errors.js';
 
 export const meta = {
   name: 'boolean',
@@ -25,12 +26,38 @@ function registerBoolean(interpreter) {
   interpreter.addKeyword('true');
   interpreter.addKeyword('false');
 
-  // Boolean logic operators
-  interpreter.addOperator('or', { precedence: 2, associativity: 'left', fn: (a, b) => a || b });
-  interpreter.addOperator('and', { precedence: 3, associativity: 'left', fn: (a, b) => a && b });
+  // Boolean logic operators with type checking
+  interpreter.addOperator('or', { 
+    precedence: 2, 
+    associativity: 'left', 
+    fn: (left, right, steps) => {
+      if (typeof left !== 'boolean' || typeof right !== 'boolean') {
+        throw new TypeError('Operands of \'or\' must be booleans');
+      }
+      return left || right;
+    } 
+  });
+  interpreter.addOperator('and', { 
+    precedence: 3, 
+    associativity: 'left', 
+    fn: (left, right, steps) => {
+      if (typeof left !== 'boolean' || typeof right !== 'boolean') {
+        throw new TypeError('Operands of \'and\' must be booleans');
+      }
+      return left && right;
+    } 
+  });
 
   // Prefix unary operator
-  interpreter.addOperator('not', { prefix: true, fn: (a) => !a });
+  interpreter.addOperator('not', { 
+    prefix: true, 
+    fn: (operand) => {
+      if (typeof operand !== 'boolean') {
+        throw new TypeError('Operand of \'not\' must be boolean');
+      }
+      return !operand;
+    } 
+  });
 
   // Boolean logic keywords (needed for matchKeyword in parseOr/parseAnd/parseNot)
   interpreter.addKeyword('and');
@@ -98,6 +125,76 @@ export function checkProperties(run) {
   }
   if (run('false or true and false') !== 'false') {
     failures.push('false or true and false should return "false" (and binds tighter than or)');
+  }
+
+  // Type safety: and operator
+  try {
+    run('true and 1');
+    failures.push('true and 1 should throw TypeError');
+  } catch (e) {
+    if (!(e instanceof TypeError)) {
+      failures.push('true and 1 should throw TypeError, got ' + e);
+    }
+  }
+  try {
+    run('0 and true');
+    failures.push('0 and true should throw TypeError');
+  } catch (e) {
+    if (!(e instanceof TypeError)) {
+      failures.push('0 and true should throw TypeError, got ' + e);
+    }
+  }
+  try {
+    run('\"true\" and false');
+    failures.push('\"true\" and false should throw TypeError');
+  } catch (e) {
+    if (!(e instanceof TypeError)) {
+      failures.push('\"true\" and false should throw TypeError, got ' + e);
+    }
+  }
+
+  // Type safety: or operator
+  try {
+    run('true or 1');
+    failures.push('true or 1 should throw TypeError');
+  } catch (e) {
+    if (!(e instanceof TypeError)) {
+      failures.push('true or 1 should throw TypeError, got ' + e);
+    }
+  }
+  try {
+    run('0 or true');
+    failures.push('0 or true should throw TypeError');
+  } catch (e) {
+    if (!(e instanceof TypeError)) {
+      failures.push('0 or true should throw TypeError, got ' + e);
+    }
+  }
+  try {
+    run('\"false\" or true');
+    failures.push('\"false\" or true should throw TypeError');
+  } catch (e) {
+    if (!(e instanceof TypeError)) {
+      failures.push('\"false\" or true should throw TypeError, got ' + e);
+    }
+  }
+
+  // Type safety: not operator
+  try {
+    run('not 1');
+    failures.push('not 1 should throw TypeError');
+  } catch (e) {
+    if (!(e instanceof TypeError)) {
+      failures.push('not 1 should throw TypeError, got ' + e);
+    }
+  }
+  try {
+    run('not \"true\"');
+    failures.push('not \"true\" should throw TypeError');
+  } catch (e) {
+    if (!(e instanceof TypeError)) {
+      failures.push('not \"true\" should throw TypeError, got ' + e);
+    }
   }
 
   return failures;
