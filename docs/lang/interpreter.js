@@ -16,7 +16,7 @@
  */
 import { SelfgrowError, ParseError, TypeError, RuntimeError, TimeoutError } from './errors.js';
 import { getAllCapabilities } from './capabilities/registry.js';
-import { tokenize, TT, getLocation } from './tokenize.js';
+import { tokenize, TT, getLocation, getLocationWithLength } from './tokenize.js';
 
 // Re-export getLocation so capabilities that import it from this
 // module continue to work without changes.
@@ -44,7 +44,7 @@ class Parser {
     if (token.type !== type || (value !== undefined && token.value !== value)) {
       const got = token.type === TT.EOF ? 'end of input' : `'${token.value}'`;
       const expected = value !== undefined ? `'${value}'` : type;
-      throw new ParseError(`Expected ${expected}, found ${got}`, expected, got, getLocation(this.source, token.start));
+      throw new ParseError(`Expected ${expected}, found ${got}`, expected, got, getLocationWithLength(this.source, token.start, token.length));
     }
     return token;
   }
@@ -171,7 +171,7 @@ class Parser {
       if (this.peek().type === TT.PUNCTUATION && this.peek().value === '(') return { type: 'Call', callee: { type: 'Identifier', name: token.value, start: token.start }, args: this.parseArgList() };
       return { type: 'Identifier', name: token.value, start: token.start };
     }
-    throw new ParseError(`Unexpected token '${token.value}'`, 'an operand', token.type === TT.EOF ? 'end of input' : `'${token.value}'`, getLocation(this.source, token.start));
+    throw new ParseError(`Unexpected token '${token.value}'`, 'an operand', token.type === TT.EOF ? 'end of input' : `'${token.value}'`, getLocationWithLength(this.source, token.start, token.length));
   }
 
   _parseAccessors(expr) {
@@ -209,8 +209,9 @@ class Parser {
         this.advance();
         break;
       }
-      const loc = getLocation(this.source, this.peek().start);
-      throw new ParseError('Expected , or } in record literal', "',' or '}'", this.peek().type === TT.EOF ? 'end of input' : `'${this.peek().value}'`, loc);
+      const token = this.peek();
+      const loc = getLocationWithLength(this.source, token.start, token.length);
+      throw new ParseError('Expected , or } in record literal', "',' or '}'", token.type === TT.EOF ? 'end of input' : `'${token.value}'`, loc);
     }
     return { type: 'Record', fields, start: hashStart };
   }
