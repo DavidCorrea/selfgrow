@@ -2,8 +2,8 @@
   "_comment": "The text-model chain, as DATA so automation can rewrite it safely. Order matters and encodes a judgment about envelope reliability — see the comment above TEXT_MODELS in shared.mjs. agents/pi-update.mjs replaces entries here only when an id has broken (rotated out of pi's registry, or no longer free); it never reorders a working chain. Edit by hand freely.",
   "text": [
     {
-      "id": "openrouter/inclusionai/ling-3.0-flash:free",
-      "why": "Led on the evidence available — 3 of 3 sessions returned a usable envelope."
+      "id": "openrouter/nvidia/nemotron-3-nano-30b-a3b:free",
+      "why": "Replaced `openrouter/inclusionai/ling-3.0-flash:free` (missing) automatically; verified by model-probe against pi at the time of the swap."
     },
     {
       "id": "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
