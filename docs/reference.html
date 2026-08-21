@@ -898,7 +898,22 @@
       btn.disabled = false;
     }
 
-    document.getElementById('runAllTestsBtn').addEventListener('click', runAllTests);
+    const runAllTestsBtn = document.getElementById('runAllTestsBtn');
+    runAllTestsBtn.addEventListener('click', () => {
+      try {
+        runAllTestsBtn.disabled = true;
+        runAllTests();
+      } catch (err) {
+        const summaryEl = document.getElementById('testSummary');
+        if (summaryEl) {
+          summaryEl.textContent = `Error running tests: ${err.message || String(err)}`;
+          summaryEl.className = 'test-summary has-failures';
+        }
+        console.error(err);
+      } finally {
+        runAllTestsBtn.disabled = false;
+      }
+    });
 
     renderReference();
   
