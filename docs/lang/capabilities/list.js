@@ -73,6 +73,34 @@ function registerList(interpreter) {
     return lst.tail;
   });
 
+  interpreter.registerFunction('length', function (args, steps) {
+    if (args.length !== 1) {
+      throw new RuntimeError(
+        `length expects 1 argument but got ${args.length}`,
+        '1 argument',
+        `${args.length} arguments`,
+        getLocation(steps.source, steps.position)
+      );
+    }
+    const lst = args[0];
+    if (lst === null) {
+      return 0;
+    }
+    if (!lst.__cons) {
+      throw new RuntimeError('length: not a list', 'a list', describeValue(lst), getLocation(steps.source, steps.position));
+    }
+    let len = 0;
+    let cell = lst;
+    while (cell !== null) {
+      if (!cell.__cons) {
+        throw new RuntimeError('length: improper list', 'a proper list', 'improper list', getLocation(steps.source, steps.position));
+      }
+      len++;
+      cell = cell.tail;
+    }
+    return len;
+  });
+
   // Node handler for Nil AST nodes
   interpreter.addNodeHandler('Nil', () => null);
 }
@@ -142,6 +170,27 @@ export function checkProperties(run) {
   // tail of single-element list returns nil (empty), which is ""
   if (tailResult !== "") {
     failures.push("tail of single-element list should return empty list (nil)");
+  }
+
+  // length of nil is 0
+  if (run('length(nil)') !== '0') {
+    failures.push('length(nil) should return "0"');
+  }
+
+  // length of single-element list
+  if (run('length(cons(1, nil))') !== '1') {
+    failures.push('length(cons(1, nil)) should return "1"');
+  }
+
+  // length of two-element list
+  if (run('length(cons(1, cons(2, nil)))') !== '2') {
+    failures.push('length(cons(1, cons(2, nil))) should return "2"');
+  }
+
+  // property: length always returns a non-negative integer string
+  const lenResult = run('length(cons(1, cons(2, cons(3, nil))))');
+  if (!/^\d+$/.test(lenResult)) {
+    failures.push('length should return a non-negative integer string');
   }
   return failures;
 }
