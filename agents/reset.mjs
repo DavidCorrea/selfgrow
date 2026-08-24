@@ -1,48 +1,154 @@
-// One-time RESET for a fresh project. Run via workflow_dispatch with workflows
-// paused. Does the mechanical GitHub-state cleanup:
-//   1. Close every open issue.
-//   2. Remove every item from the board (keeps the columns).
-//   3. Reset the wiki Changelog to an empty `# Changelog`.
-// It does NOT touch the Vision (you paste the new one) or delete docs/ (you
-// `git rm` that), since both are deliberate human decisions. Safe to delete
-// this file (and reset.yml) after the reset.
+// One-time RESET for a fresh project. Run via workflow_dispatch with the cron
+// workflows paused. Clears everything the agents treat as MEMORY, so a new
+// Vision starts from nothing instead of inheriting the old product's history.
+//
+// Order matters, and it is the reason this is a script rather than a checklist:
+//   1. Cancel queued/running workflow runs — the Product Manager dispatches the
+//      Builder and vice versa, so a queued signal fired mid-reset would happily
+//      repopulate the board we are about to empty.
+//   2. Close every open issue.
+//   3. Close agent PRs and delete their branches.
+//   4. Remove every item from the board (after closing, so closed-→-Done items
+//      go too). Keeps the columns — the new project needs the same five.
+//   5. Reset the wiki's memory pages.
+//   6. Delete the accumulated `attempts:N` labels.
+//   7. Delete the old product from main.
+//
+// What it deliberately does NOT touch:
+//   - `Vision.md` — the new one is yours to write, and it is the single input
+//     every agent derives from. Nothing here can guess it.
+//   - `Budget.md` — the daily OpenRouter request ledger tracks the ACCOUNT, not
+//     the product. A reset is not a reason to let the day spend its allowance
+//     twice, so the running total stays.
+//   - Closed issues — GitHub keeps them as history and they cannot be deleted
+//     via the API. The Product Manager only ever reads OPEN issues, so they are
+//     inert; they just remain visible to humans.
+//
+// Safe to delete this file (and reset.yml) after the reset.
 import fs from "fs";
-import { join } from "path";
 import { execSync } from "child_process";
 import {
   log,
   printRunSummary,
   errorData,
   repoRoot,
+  gitExec,
+  configureGitIdentity,
   getWikiDir,
+  wikiPath,
   publishWiki,
+  closePR,
+  deleteRemoteBranch,
   fetchOpenIssues,
   PROJECT_OWNER,
   PROJECT_NUMBER,
 } from "./shared.mjs";
 
+// The old product, as repo paths. `docs/` is the product itself; the root files
+// are residue from earlier iterations of it — `test_ref.mjs` is a one-off
+// Playwright script for the language playground, `response.json` a stray dump.
+const PRODUCT_PATHS = ["docs", "index.html", "response.json", "test_ref.mjs"];
+
+// Only branches the agents create are touched. A human's work-in-progress branch
+// is not this script's business.
+const AGENT_BRANCH_PREFIX = "agent/";
+
 function sh(cmd) {
   return execSync(cmd, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }).toString();
+}
+
+function shJson(cmd) {
+  return JSON.parse(sh(cmd));
+}
+
+/**
+ * Cancel every queued or in-progress run except this one. Without this, the
+ * reset races the pipeline it is trying to stop.
+ */
+function cancelPendingRuns() {
+  const selfRunId = String(process.env.GITHUB_RUN_ID || "");
+  let runs = [];
+  try {
+    runs = [
+      ...shJson('gh run list --status queued --json databaseId,workflowName --limit 100'),
+      ...shJson('gh run list --status in_progress --json databaseId,workflowName --limit 100'),
+    ];
+  } catch (e) {
+    log("warn", "Could not list workflow runs — skipping cancellation.", errorData(e));
+    return;
+  }
+
+  const pending = runs.filter((r) => String(r.databaseId) !== selfRunId);
+  if (!pending.length) {
+    log("info", "No queued or running workflows to cancel.");
+    return;
+  }
+  log("info", `Cancelling ${pending.length} pending workflow run(s)...`);
+  for (const run of pending) {
+    try {
+      sh(`gh run cancel ${run.databaseId}`);
+      log("info", `Cancelled ${run.workflowName} (${run.databaseId}).`);
+    } catch (e) {
+      log("warn", `Could not cancel run ${run.databaseId}`, errorData(e));
+    }
+  }
 }
 
 function closeAllIssues() {
   const issues = fetchOpenIssues(500);
   log("info", `Closing ${issues.length} open issue(s)...`);
-  for (const i of issues) {
+  for (const issue of issues) {
     try {
-      sh(`gh issue close ${i.number} --reason "not planned"`);
-      log("info", `Closed #${i.number}: ${i.title}`);
+      sh(`gh issue close ${issue.number} --reason "not planned"`);
+      log("info", `Closed #${issue.number}: ${issue.title}`);
     } catch (e) {
-      log("warn", `Could not close #${i.number}`, errorData(e));
+      log("warn", `Could not close #${issue.number}`, errorData(e));
     }
+  }
+}
+
+/**
+ * Close open PRs from agent branches and delete the branches, including any
+ * orphaned by a crashed run (a branch with no PR still shadows the new project).
+ */
+function clearAgentBranches() {
+  let openPRs = [];
+  try {
+    openPRs = shJson('gh pr list --state open --json number,headRefName --limit 200');
+  } catch (e) {
+    log("warn", "Could not list pull requests — skipping PR cleanup.", errorData(e));
+  }
+
+  // closePR deletes the head branch too, so the sweep below only has to catch
+  // branches orphaned by a crashed run — ones that never got a PR.
+  const agentPRs = openPRs.filter((pr) => pr.headRefName.startsWith(AGENT_BRANCH_PREFIX));
+  log("info", `Closing ${agentPRs.length} open agent PR(s)...`);
+  for (const pr of agentPRs) {
+    closePR(pr.number, "Closing as part of a project reset — this work belongs to the previous product.");
+  }
+
+  let branches = [];
+  try {
+    branches = sh(`git ls-remote --heads origin "refs/heads/${AGENT_BRANCH_PREFIX}*"`)
+      .split("\n")
+      .map((line) => line.split("refs/heads/")[1])
+      .filter(Boolean);
+  } catch (e) {
+    log("warn", "Could not list remote branches — skipping branch cleanup.", errorData(e));
+    return;
+  }
+
+  if (branches.length) {
+    log("info", `Deleting ${branches.length} orphaned agent branch(es)...`);
+    for (const branch of branches) deleteRemoteBranch(branch);
   }
 }
 
 function clearBoard() {
   let items = [];
   try {
-    const res = JSON.parse(
-      sh(`gh project item-list ${PROJECT_NUMBER} --owner ${PROJECT_OWNER} --format json --limit 500`)
+    const res = shJson(
+      `gh project item-list ${PROJECT_NUMBER} --owner ${PROJECT_OWNER} --format json --limit 500`
     );
     items = res.items || [];
   } catch (e) {
@@ -50,32 +156,138 @@ function clearBoard() {
     return;
   }
   log("info", `Removing ${items.length} board item(s)...`);
-  for (const it of items) {
+  for (const item of items) {
     try {
-      sh(`gh project item-delete ${PROJECT_NUMBER} --owner ${PROJECT_OWNER} --id ${it.id}`);
+      sh(`gh project item-delete ${PROJECT_NUMBER} --owner ${PROJECT_OWNER} --id ${item.id}`);
     } catch (e) {
-      log("warn", `Could not remove board item ${it.id}`, errorData(e));
+      log("warn", `Could not remove board item ${item.id}`, errorData(e));
     }
   }
 }
 
-function resetChangelog() {
-  const dir = getWikiDir();
-  if (!dir) {
-    log("warn", "Wiki unreachable — changelog not reset.");
+// Lessons is restored to its canonical empty form — the exact heading and intro
+// appendLesson() writes when it creates the page — so the first post-mortem of
+// the new project appends cleanly instead of rebuilding a half-formed page.
+const EMPTY_WIKI_PAGES = {
+  "Changelog.md": "# Changelog\n",
+  "Lessons.md":
+    "# Lessons\n\n" +
+    "What the agents have tried and abandoned, and why. Read this before planning " +
+    "work that resembles anything below — the point of writing it down is not to " +
+    "learn it twice.\n",
+  "Story.md": "# The Story So Far\n\nThis project is just beginning. The Scribe will write its story as it grows.\n",
+  "Home.md":
+    "# Wiki\n\nThe living record of this project, maintained by its autonomous agents.\n\n" +
+    "- **[Vision](Vision)** — the north star (curated by the Product Owner).\n" +
+    "- **[Changelog](Changelog)** — the dated record of what changed (written by the Builder).\n" +
+    "- **[The Story So Far](Story)** — how the project has grown over time.\n" +
+    "- **[Lessons](Lessons)** — work the agents abandoned, and why (written when a ticket is parked).\n",
+};
+
+/**
+ * Blank the wiki pages that carry product memory. Lessons is the one that most
+ * needs it: the Scout reads it before planning every build, so left in place it
+ * teaches a brand-new project the dead ends of the old one.
+ */
+function resetWikiMemory() {
+  if (!getWikiDir()) {
+    log("warn", "Wiki unreachable — memory pages NOT reset. Do this by hand before starting.");
     return;
   }
-  fs.writeFileSync(join(dir, "Changelog.md"), "# Changelog\n", "utf-8");
-  publishWiki("Reset changelog for a fresh project");
+  for (const [page, content] of Object.entries(EMPTY_WIKI_PAGES)) {
+    const path = wikiPath(page);
+    if (!path) continue;
+    fs.writeFileSync(path, content, "utf-8");
+    log("info", `Reset wiki page ${page}.`);
+  }
+  publishWiki("Reset project memory for a fresh start");
+  log("info", "Left Vision.md and Budget.md untouched, by design.");
+}
+
+/**
+ * Delete the `attempts:N` labels. Unlike the other labels these accumulate one
+ * definition per attempt count ever reached, and they mean nothing to a project
+ * whose tickets no longer exist. The rest are recreated on demand with --force.
+ */
+function deleteAttemptLabels() {
+  let labels = [];
+  try {
+    labels = shJson("gh label list --json name --limit 200");
+  } catch (e) {
+    log("warn", "Could not list labels — skipping label cleanup.", errorData(e));
+    return;
+  }
+  const stale = labels.map((l) => l.name).filter((name) => /^attempts:/.test(name));
+  if (!stale.length) {
+    log("info", "No attempts:N labels to delete.");
+    return;
+  }
+  log("info", `Deleting ${stale.length} attempts:N label(s)...`);
+  for (const name of stale) {
+    try {
+      sh(`gh label delete "${name}" --yes`);
+    } catch (e) {
+      log("warn", `Could not delete label ${name}`, errorData(e));
+    }
+  }
+}
+
+/**
+ * Delete the old product from main and push. Runs LAST: everything above is
+ * GitHub-side and reversible-ish, while this rewrites the repo.
+ */
+function clearProduct() {
+  gitExec("fetch origin");
+  gitExec("checkout main");
+  gitExec("reset --hard origin/main");
+
+  // Tracked-ness, not existence: `git rm` fails on a path git doesn't know, and
+  // this is the last and least reversible step — it must not die on a file
+  // somebody already deleted by hand.
+  const tracked = PRODUCT_PATHS.filter((path) => {
+    try {
+      gitExec(`ls-files --error-unmatch -- ${path}`, { stdio: ["pipe", "pipe", "pipe"] });
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  if (!tracked.length) {
+    log("info", "No tracked product files left to delete.");
+    return;
+  }
+
+  configureGitIdentity();
+  gitExec(`rm -r --quiet -- ${tracked.join(" ")}`);
+  gitExec('commit -m "Clear the previous product for a fresh start"');
+  try {
+    gitExec("push origin main");
+    log("info", `Deleted ${tracked.join(", ")} from main.`);
+  } catch (e) {
+    log("error", "Could not push the product deletion to main — do it by hand.", errorData(e));
+  }
 }
 
 function main() {
   log("info", "=== RESET — fresh-project cleanup ===");
+  cancelPendingRuns();
   closeAllIssues();
-  clearBoard(); // after closing, so any closed-→-Done items are removed too
-  resetChangelog();
-  log("info", "Reset complete. Remaining manual steps: set the new Vision in the wiki, delete docs/, re-enable workflows, then dispatch the Product Manager.");
+  clearAgentBranches();
+  clearBoard();
+  resetWikiMemory();
+  deleteAttemptLabels();
+  clearProduct();
+  log(
+    "info",
+    "Reset complete. Remaining manual steps: write the new Vision in the wiki, " +
+      "re-enable the paused workflows, then dispatch the Product Manager."
+  );
   printRunSummary("Reset");
 }
 
-main();
+try {
+  main();
+} catch (err) {
+  log("error", "Reset failed.", errorData(err));
+  process.exit(1);
+}
