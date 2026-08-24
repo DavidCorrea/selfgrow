@@ -166,6 +166,13 @@ export function isDailyQuotaExhausted(err) {
 
 export const MODEL_REQUEST_BUDGET = Number(process.env.MODEL_REQUEST_BUDGET || 20);
 
+// What a single run may spend while the shared ledger is unreachable. Roughly
+// DAILY_REQUEST_CAP divided by the number of workflows that could be running
+// blind at the same time — deliberately conservative, because the alternative
+// (every workflow spending its full private budget, unable to see the others)
+// authorises several times the account's daily cap. See blindBudget().
+export const LEDGER_BLIND_BUDGET = Number(process.env.LEDGER_BLIND_BUDGET || 150);
+
 // Hard ceiling on TURNS INSIDE one session. The budget above is only consulted
 // before a session starts, and turns were only added up after one ended, so a
 // single runaway session could overrun any ceiling by an unbounded amount — a
@@ -221,7 +228,28 @@ export function getModelTurnCount() {
  * the account's day (which siblings share — see the ledger below).
  */
 export function isRequestBudgetSpent() {
-  return modelTurnCount >= MODEL_REQUEST_BUDGET || getDailySpend() >= DAILY_REQUEST_CAP;
+  return (
+    modelTurnCount >= MODEL_REQUEST_BUDGET ||
+    getDailySpend() >= DAILY_REQUEST_CAP ||
+    modelTurnCount >= blindBudget()
+  );
+}
+
+/**
+ * The ceiling a run may spend while it CANNOT see the shared ledger.
+ *
+ * Without the ledger, dayOtherSpend stays 0 and getDailySpend() reports only
+ * this run — so the account-wide cap silently stops existing, and the day's real
+ * ceiling becomes the SUM of every workflow's private budget (well over 1000).
+ * That was tolerable when the models were free. It is not now that the head of
+ * the chain bills a card.
+ *
+ * So a blind run gets a conservative slice instead: assume it may be one of
+ * several running blind at once, and let none of them spend more than its share.
+ * Returns Infinity when the ledger is readable, which is the normal case.
+ */
+function blindBudget() {
+  return isLedgerActive() ? Infinity : LEDGER_BLIND_BUDGET;
 }
 
 /**
@@ -233,7 +261,8 @@ export function isRequestBudgetSpent() {
 export function isRequestBudgetLow(reserve = 60) {
   return (
     modelTurnCount >= MODEL_REQUEST_BUDGET - reserve ||
-    getDailySpend() >= DAILY_REQUEST_CAP - reserve
+    getDailySpend() >= DAILY_REQUEST_CAP - reserve ||
+    modelTurnCount >= blindBudget() - reserve
   );
 }
 
@@ -337,7 +366,15 @@ export function initDailyLedger() {
   ledgerInit = true;
   ledgerDir = cloneWiki(LEDGER_DIR);
   if (!ledgerDir) {
-    log("warn", "Budget: no shared ledger (wiki unreachable) — enforcing the per-run budget only.");
+    // Loud, because this run is now spending money nothing else can see. The
+    // cap it is nominally held to does not apply; blindBudget() is what will
+    // actually stop it.
+    log(
+      "error",
+      `Budget: NO SHARED LEDGER (wiki unreachable) — this run cannot see what siblings have spent today, ` +
+        `so the ${DAILY_REQUEST_CAP}/day account cap is NOT being enforced. Falling back to a hard ceiling of ` +
+        `${LEDGER_BLIND_BUDGET} request(s) for this run. Spend today will under-report until the wiki is reachable.`
+    );
     return;
   }
   try {
@@ -2066,7 +2103,20 @@ export function cloneWiki(dir = "/tmp/selfgrow-wiki") {
     log("info", `Wiki: cloned ${repo}.wiki.`);
     return dir;
   } catch (e) {
-    log("warn", "Wiki: clone failed — is the wiki enabled and initialized (create one page in the UI first)?", errorData(e));
+    // Report what actually broke. This used to blame an uninitialized wiki
+    // whatever the cause, which sent a reader to enable a wiki that was already
+    // enabled while the real fault — usually a spent API rate limit — sat
+    // unread in the stack dump underneath.
+    const detail = String(e?.message || e);
+    let cause = "is the wiki enabled and initialized (create one page in the UI first)?";
+    if (/rate limit/i.test(detail)) {
+      cause = "the GitHub API rate limit is spent — this is temporary, and the wiki is fine. Check `gh api rate_limit`.";
+    } else if (/Authentication failed|Invalid username or token|could not read Username/i.test(detail)) {
+      cause = "the token cannot push to the wiki — check GH_TOKEN, and note the wiki is a SEPARATE repo from the code.";
+    } else if (/not found|Could not resolve/i.test(detail)) {
+      cause = "the wiki repo could not be found — is the wiki enabled and initialized (create one page in the UI first)?";
+    }
+    log("warn", `Wiki: clone failed — ${cause}`, errorData(e));
     return null;
   }
 }
