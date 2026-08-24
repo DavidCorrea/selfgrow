@@ -334,13 +334,22 @@ footer .rivet {
 .pressure-gauge-fill {
   height: 100%;
   background: linear-gradient(90deg, #2a6a2a, #c8a45c, #8a2a2a);
+  background-size: 200% 100%;
   transition: width 0.3s ease;
   border-radius: 1px;
+  animation: pressure-shimmer 4s ease-in-out infinite;
+}
+
+@keyframes pressure-shimmer {
+  0%   { background-position: 0% 0%; }
+  50%  { background-position: 100% 0%; }
+  100% { background-position: 0% 0%; }
 }
 
 .pressure-gauge-fill.danger {
   background: linear-gradient(90deg, #c8a45c, #8a2a2a, #5a1010);
-  animation: gauge-pulse 0.8s ease-in-out infinite alternate;
+  background-size: 200% 100%;
+  animation: gauge-pulse 0.8s ease-in-out infinite alternate, pressure-shimmer 2s ease-in-out infinite;
 }
 
 @keyframes gauge-pulse {
@@ -354,6 +363,14 @@ footer .rivet {
   font-weight: 700;
   letter-spacing: 0.05em;
   text-align: right;
+}
+
+.pressure-rate {
+  font-size: 0.65rem;
+  color: #8a7a5a;
+  letter-spacing: 0.1em;
+  text-align: right;
+  font-style: italic;
 }
 
 /* --- Automaton status --- */
