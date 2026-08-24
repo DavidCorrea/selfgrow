@@ -107,6 +107,18 @@ function advanceTurn(state, action) {
   }
   // 'wait' does nothing — player chooses to let the turn pass
 
+  // Escape action — only available in the final gallery when pressure ≤ 20.
+  // Processed before pressure accumulation so the player can escape at the brink.
+  if (action === 'escape') {
+    if (state.galleryIndex === state.gallerySequence.length - 1 && state.pressure <= 20) {
+      state.ended = true;
+      state.active = false;
+      state.endReason = 'You escaped through an exhaust vent, the machine\'s breath hot on your heels.';
+      saveMemory('escaped', state.seed);
+    }
+    return;
+  }
+
   // --- Pressure accumulation (applied before automaton acts) ---
   state.pressure += state.pressureAccumulationRate;
   state.maxPressure = Math.max(state.maxPressure, state.pressure);
@@ -148,6 +160,7 @@ function categorizeOutcome(endReason) {
   if (!endReason) return 'none';
   if (endReason.includes('rupture')) return 'rupture';
   if (endReason.includes('cornered')) return 'cornered';
+  if (endReason.includes('escaped')) return 'escaped';
   return 'none';
 }
 
@@ -171,6 +184,14 @@ function checkDeathConditions(state) {
   }
 
   return false;
+}
+
+/**
+ * Check whether the player can escape in the current state.
+ * Escape is only available in the final gallery when pressure ≤ 20.
+ */
+function canEscape(state) {
+  return state.galleryIndex === state.gallerySequence.length - 1 && state.pressure <= 20;
 }
 
 /* ───── Generate a random seed ───── */
@@ -340,6 +361,21 @@ function render(state) {
     actionSection.appendChild(descendBtn);
   }
 
+  // Escape button — only in the final gallery
+  if (state.galleryIndex === state.gallerySequence.length - 1) {
+    const escapeBtn = document.createElement('button');
+    escapeBtn.className = 'action-btn escape-btn';
+    escapeBtn.dataset.action = 'escape';
+    escapeBtn.textContent = 'Escape through the exhaust vent';
+    if (state.pressure <= 20) {
+      escapeBtn.disabled = false;
+    } else {
+      escapeBtn.disabled = true;
+      escapeBtn.title = 'Pressure too high — the vent is sealed. Reduce pressure to 20 or below to escape.';
+    }
+    actionSection.appendChild(escapeBtn);
+  }
+
   panelInner.appendChild(actionSection);
 
   // Turn counter
@@ -358,6 +394,9 @@ function render(state) {
   hintText += 'W: wait  |  R: restart';
   if (state.galleryIndex < state.gallerySequence.length - 1) {
     hintText += '  |  D: descend';
+  }
+  if (state.galleryIndex === state.gallerySequence.length - 1) {
+    hintText += '  |  E: escape';
   }
   hint.textContent = hintText;
   panelInner.appendChild(hint);
@@ -477,6 +516,12 @@ function handleKeydown(e) {
     e.preventDefault();
     if (state.galleryIndex < state.gallerySequence.length - 1) {
       advanceTurn(state, 'descend');
+      render(state);
+    }
+  } else if (key === 'e') {
+    e.preventDefault();
+    if (state.galleryIndex === state.gallerySequence.length - 1) {
+      advanceTurn(state, 'escape');
       render(state);
     }
   }

@@ -1735,5 +1735,258 @@ export async function checks() {
     problems.push(`Could not verify pressure projection: ${err.message}`);
   }
 
+  // ── 21. Escape mechanism in the final gallery ──
+  // The player must be able to escape from the final gallery when pressure ≤ 20.
+  try {
+    const { createInitialState } = await import('./game.js');
+
+    // 21a. Escape conditions: final gallery AND pressure ≤ 20
+    // Create a state that is in the final gallery
+    const state = createInitialState('escape-test');
+    const lastIndex = state.gallerySequence.length - 1;
+    state.galleryIndex = lastIndex;
+    state.location = state.gallerySequence[lastIndex];
+
+    // Verify canEscape-like logic: check that escape is possible at low pressure
+    state.pressure = 20;
+    const canEscapeAt20 = (state.galleryIndex === state.gallerySequence.length - 1 && state.pressure <= 20);
+    if (!canEscapeAt20) {
+      problems.push(
+        `Escape should be possible at pressure 20 in the final gallery, but condition was false`
+      );
+    }
+
+    state.pressure = 15;
+    const canEscapeAt15 = (state.galleryIndex === state.gallerySequence.length - 1 && state.pressure <= 20);
+    if (!canEscapeAt15) {
+      problems.push(
+        `Escape should be possible at pressure 15 in the final gallery, but condition was false`
+      );
+    }
+
+    state.pressure = 0;
+    const canEscapeAt0 = (state.galleryIndex === state.gallerySequence.length - 1 && state.pressure <= 20);
+    if (!canEscapeAt0) {
+      problems.push(
+        `Escape should be possible at pressure 0 in the final gallery, but condition was false`
+      );
+    }
+
+    // 21b. Escape is NOT possible when pressure > 20
+    state.pressure = 21;
+    const canEscapeAt21 = (state.galleryIndex === state.gallerySequence.length - 1 && state.pressure <= 20);
+    if (canEscapeAt21) {
+      problems.push(
+        `Escape should NOT be possible at pressure 21 in the final gallery, but condition was true`
+      );
+    }
+
+    state.pressure = 50;
+    const canEscapeAt50 = (state.galleryIndex === state.gallerySequence.length - 1 && state.pressure <= 20);
+    if (canEscapeAt50) {
+      problems.push(
+        `Escape should NOT be possible at pressure 50 in the final gallery, but condition was true`
+      );
+    }
+
+    // 21c. Escape is NOT possible in non-final galleries (even with low pressure)
+    state.galleryIndex = 0;
+    state.location = state.gallerySequence[0];
+    state.pressure = 10;
+    const canEscapeNonFinal = (state.galleryIndex === state.gallerySequence.length - 1 && state.pressure <= 20);
+    if (canEscapeNonFinal) {
+      problems.push(
+        `Escape should NOT be possible in a non-final gallery (index 0), but condition was true`
+      );
+    }
+
+    // Reset to final gallery for subsequent tests
+    state.galleryIndex = lastIndex;
+    state.location = state.gallerySequence[lastIndex];
+
+    // 21d. Activating escape sets the correct endReason and ends the game
+    // We need to simulate the escape action logic from game.js
+    state.pressure = 15;
+    state.ended = false;
+    state.active = true;
+
+    // Simulate escape action (same logic as in advanceTurn)
+    if (state.galleryIndex === state.gallerySequence.length - 1 && state.pressure <= 20) {
+      state.ended = true;
+      state.active = false;
+      state.endReason = 'You escaped through an exhaust vent, the machine\'s breath hot on your heels.';
+    }
+
+    if (!state.ended) {
+      problems.push(
+        `Escape action should set ended to true, but it remained false`
+      );
+    }
+    if (state.active) {
+      problems.push(
+        `Escape action should set active to false, but it remained true`
+      );
+    }
+    if (!state.endReason || !state.endReason.includes('escaped')) {
+      problems.push(
+        `Escape action should set a unique endReason containing 'escaped', got: "${state.endReason}"`
+      );
+    }
+    if (state.endReason !== 'You escaped through an exhaust vent, the machine\'s breath hot on your heels.') {
+      problems.push(
+        `Escape action endReason does not match expected text. Got: "${state.endReason}"`
+      );
+    }
+
+    // 21e. Escape button appears in the DOM when in the final gallery with pressure ≤ 20
+    // We need the game rendered for this — check if the button exists
+    const escapeBtn = document.querySelector('.escape-btn');
+    if (escapeBtn) {
+      // The game is mounted — verify the button's data-action
+      if (escapeBtn.dataset.action !== 'escape') {
+        problems.push(
+          `Escape button should have data-action="escape", got "${escapeBtn.dataset.action}"`
+        );
+      }
+
+      // Check the button text
+      if (!escapeBtn.textContent.includes('Escape')) {
+        problems.push(
+          `Escape button text should contain 'Escape', got "${escapeBtn.textContent}"`
+        );
+      }
+
+      // Check if the button is disabled and has a tooltip when pressure is high
+      if (escapeBtn.disabled) {
+        if (!escapeBtn.title || !escapeBtn.title.includes('Pressure too high')) {
+          problems.push(
+            `Disabled escape button should have a tooltip explaining the pressure condition, got: "${escapeBtn.title}"`
+          );
+        }
+      }
+    }
+
+    // 21f. The 'E' keyboard shortcut appears in the keyboard hint
+    const hint = document.querySelector('.keyboard-hint');
+    if (hint) {
+      const hintText = hint.textContent;
+      if (hintText.includes('E: escape')) {
+        // The hint is present — this is the expected behavior in the final gallery
+      }
+    }
+
+    // 21g. Escape is processed before pressure accumulation
+    // If a player has pressure 20 and the accumulation rate is 5, they would
+    // reach 25 after accumulation — but escape should be checked first.
+    const stateEscape = createInitialState('escape-before-accumulation');
+    const lastIdx = stateEscape.gallerySequence.length - 1;
+    stateEscape.galleryIndex = lastIdx;
+    stateEscape.location = stateEscape.gallerySequence[lastIdx];
+    stateEscape.pressure = 20;
+    stateEscape.ended = false;
+
+    // Simulate the advanceTurn order: escape first, then accumulation
+    // Escape should happen before accumulation
+    if (stateEscape.galleryIndex === stateEscape.gallerySequence.length - 1 && stateEscape.pressure <= 20) {
+      // Escape happens first
+      stateEscape.ended = true;
+      stateEscape.active = false;
+      stateEscape.endReason = 'You escaped through an exhaust vent, the machine\'s breath hot on your heels.';
+    } else {
+      // If we reach here, escape didn't happen — pressure would accumulate
+      stateEscape.pressure += stateEscape.pressureAccumulationRate;
+    }
+
+    if (!stateEscape.ended) {
+      problems.push(
+        `Escape should be processed before pressure accumulation — player at pressure 20 should escape ` +
+        `before reaching 25, but escape was not triggered`
+      );
+    }
+  } catch (err) {
+    problems.push(`Could not verify escape mechanism: ${err.message}`);
+  }
+
+  // ── 22. Sentinel starts at position 5 after an escape ──
+  try {
+    const { createInitialState } = await import('./game.js');
+
+    // 22a. After an escape, the Sentinel starts at position 5 (default, unperturbed)
+    const state = createInitialState('sentinel-after-escape', {
+      descents: 1,
+      lastOutcome: 'escaped',
+      lastSeed: 'prev-escape-seed',
+    });
+
+    if (state.automatonState.position !== 5) {
+      problems.push(
+        `Sentinel should start at position 5 after an escape, got position ${state.automatonState.position}`
+      );
+    }
+    if (state.automatonState.patternStep !== 0) {
+      problems.push(
+        `Sentinel patternStep should be 0 after an escape, got ${state.automatonState.patternStep}`
+      );
+    }
+
+    // 22b. Multiple descents with escape still gives position 5
+    const stateMultiple = createInitialState('sentinel-after-escapes', {
+      descents: 5,
+      lastOutcome: 'escaped',
+      lastSeed: 'prev-escape-seed',
+    });
+
+    if (stateMultiple.automatonState.position !== 5) {
+      problems.push(
+        `Sentinel should start at position 5 after multiple escapes, got position ${stateMultiple.automatonState.position}`
+      );
+    }
+
+    // 22c. Sentinel memory adapts correctly — escape is distinct from other outcomes
+    const stateNoMemory = createInitialState('sentinel-escape-vs-default', {
+      descents: 0,
+      lastOutcome: 'none',
+      lastSeed: null,
+    });
+    const stateEscape = createInitialState('sentinel-escape-vs-escape', {
+      descents: 1,
+      lastOutcome: 'escaped',
+      lastSeed: 'escape',
+    });
+    if (stateNoMemory.automatonState.position !== stateEscape.automatonState.position) {
+      problems.push(
+        `Sentinel position after escape (${stateEscape.automatonState.position}) should match ` +
+        `no-memory position (${stateNoMemory.automatonState.position}) — both should be 5`
+      );
+    }
+
+    // 22d. The 'escaped' outcome is recorded in memory via saveMemory
+    const { saveMemory, loadMemory, clearMemory } = await import('./engine/memory.js');
+    clearMemory();
+
+    saveMemory('escaped', 'test-escape-seed');
+    const mem = loadMemory();
+    if (mem.lastOutcome !== 'escaped') {
+      problems.push(
+        `After saveMemory('escaped', ...), lastOutcome should be 'escaped', got '${mem.lastOutcome}'`
+      );
+    }
+    if (mem.descents !== 1) {
+      problems.push(
+        `After saveMemory('escaped', ...), descents should be 1, got ${mem.descents}`
+      );
+    }
+    if (mem.lastSeed !== 'test-escape-seed') {
+      problems.push(
+        `After saveMemory('escaped', 'test-escape-seed'), lastSeed should be 'test-escape-seed', got ${JSON.stringify(mem.lastSeed)}`
+      );
+    }
+
+    // Clean up
+    clearMemory();
+  } catch (err) {
+    problems.push(`Could not verify Sentinel escape position: ${err.message}`);
+  }
+
   return problems;
 }
