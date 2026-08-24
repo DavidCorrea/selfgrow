@@ -13,37 +13,8 @@
   </header>
 
   <main>
-    <div id="game" class="riveted-panel" aria-label="Game engine mount point">
+    <div id="game" class="riveted-panel" aria-label="Descent game area">
       <div class="panel-inner">
-        <div class="gauge-row">
-          <div class="gauge" aria-hidden="true">
-            <svg viewBox="0 0 60 60" class="gauge-svg">
-              <circle cx="30" cy="30" r="24" fill="none" stroke="#3a3a3a" stroke-width="4"/>
-              <circle cx="30" cy="30" r="24" fill="none" stroke="#c8a45c" stroke-width="4" stroke-dasharray="75 76" stroke-dashoffset="0"/>
-              <line x1="30" y1="30" x2="30" y2="10" stroke="#c8a45c" stroke-width="2"/>
-              <circle cx="30" cy="30" r="3" fill="#c8a45c"/>
-            </svg>
-            <span class="gauge-label">PRESSURE</span>
-          </div>
-          <div class="gauge" aria-hidden="true">
-            <svg viewBox="0 0 60 60" class="gauge-svg">
-              <circle cx="30" cy="30" r="24" fill="none" stroke="#3a3a3a" stroke-width="4"/>
-              <circle cx="30" cy="30" r="24" fill="none" stroke="#c8a45c" stroke-width="4" stroke-dasharray="100 51" stroke-dashoffset="-25"/>
-              <line x1="30" y1="30" x2="46" y2="20" stroke="#c8a45c" stroke-width="2"/>
-              <circle cx="30" cy="30" r="3" fill="#c8a45c"/>
-            </svg>
-            <span class="gauge-label">DEPTH</span>
-          </div>
-          <div class="gauge" aria-hidden="true">
-            <svg viewBox="0 0 60 60" class="gauge-svg">
-              <circle cx="30" cy="30" r="24" fill="none" stroke="#3a3a3a" stroke-width="4"/>
-              <circle cx="30" cy="30" r="24" fill="none" stroke="#c8a45c" stroke-width="4" stroke-dasharray="50 101" stroke-dashoffset="-12"/>
-              <line x1="30" y1="30" x2="18" y2="14" stroke="#c8a45c" stroke-width="2"/>
-              <circle cx="30" cy="30" r="3" fill="#c8a45c"/>
-            </svg>
-            <span class="gauge-label">CORE</span>
-          </div>
-        </div>
         <p class="engine-placeholder">Awaiting ignition&hellip;</p>
       </div>
     </div>
@@ -61,6 +32,7 @@
     <p><span class="rivet" aria-hidden="true">&#9679;</span> selfgrow &middot; a machine that grew itself <span class="rivet" aria-hidden="true">&#9679;</span></p>
   </footer>
 
+  <script type="module" src="game.js"></script>
   <script type="module" src="selftest.js"></script>
 </body>
 </html>

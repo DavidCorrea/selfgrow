@@ -270,3 +270,191 @@ footer .rivet {
     height: 50px;
   }
 }
+
+/* ===== Game Engine Styles ===== */
+
+/* --- Panel inner layout --- */
+#game .panel-inner {
+  align-items: stretch;
+  text-align: left;
+  gap: 1rem;
+}
+
+/* --- Gallery description --- */
+.gallery-description {
+  background: #0a0a0a;
+  border: 1px solid #2a2a2a;
+  border-radius: 2px;
+  padding: 1rem;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: #a8a07a;
+  white-space: pre-line;
+}
+
+.gallery-description:focus {
+  outline: 1px solid #c8a45c;
+  outline-offset: 1px;
+}
+
+/* --- Pressure gauge --- */
+.pressure-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.pressure-label {
+  font-size: 0.65rem;
+  letter-spacing: 0.2em;
+  color: #6a6a5a;
+  text-transform: uppercase;
+}
+
+.pressure-gauge-outer {
+  width: 100%;
+  height: 24px;
+  background: #1a1a1a;
+  border: 1px solid #3a3a3a;
+  border-radius: 2px;
+  overflow: hidden;
+  position: relative;
+}
+
+.pressure-gauge-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #2a6a2a, #c8a45c, #8a2a2a);
+  transition: width 0.3s ease;
+  border-radius: 1px;
+}
+
+.pressure-gauge-fill.danger {
+  background: linear-gradient(90deg, #c8a45c, #8a2a2a, #5a1010);
+  animation: gauge-pulse 0.8s ease-in-out infinite alternate;
+}
+
+@keyframes gauge-pulse {
+  from { opacity: 0.8; }
+  to   { opacity: 1; }
+}
+
+.pressure-numbers {
+  font-size: 0.8rem;
+  color: #c8a45c;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-align: right;
+}
+
+/* --- Automaton status --- */
+.automaton-section {
+  background: #0a0a0a;
+  border: 1px solid #2a2a2a;
+  border-radius: 2px;
+  padding: 0.75rem 1rem;
+  font-size: 0.85rem;
+  color: #b8a87a;
+}
+
+.automaton-section p {
+  margin: 0;
+}
+
+/* --- Device section --- */
+.device-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.device-btn,
+.action-btn {
+  background: #1a1a1a;
+  border: 1px solid #3a3a3a;
+  border-radius: 2px;
+  color: #b8a87a;
+  font-family: inherit;
+  font-size: 0.8rem;
+  padding: 0.6rem 1rem;
+  cursor: pointer;
+  text-align: left;
+  letter-spacing: 0.05em;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.device-btn:hover:not(:disabled),
+.action-btn:hover:not(:disabled) {
+  background: #2a2a2a;
+  border-color: #c8a45c;
+}
+
+.device-btn:focus-visible,
+.action-btn:focus-visible {
+  outline: 1px solid #c8a45c;
+  outline-offset: 2px;
+}
+
+.device-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.action-btn {
+  text-align: center;
+}
+
+/* --- Turn display --- */
+.turn-display {
+  font-size: 0.7rem;
+  color: #6a6a5a;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+/* --- Keyboard hint --- */
+.keyboard-hint {
+  font-size: 0.6rem;
+  color: #4a4a3a;
+  letter-spacing: 0.1em;
+  text-align: center;
+  margin-top: 0.25rem;
+}
+
+/* --- Death screen --- */
+.death-screen {
+  align-items: center !important;
+  text-align: center !important;
+  gap: 1.5rem !important;
+}
+
+.death-heading {
+  font-size: 1.4rem;
+  letter-spacing: 0.2em;
+  color: #8a2a2a;
+  text-shadow: 0 0 12px rgba(138, 42, 42, 0.4);
+  text-transform: uppercase;
+}
+
+.death-reason {
+  font-size: 0.9rem;
+  color: #b8a87a;
+  line-height: 1.5;
+  max-width: 400px;
+}
+
+.death-seed {
+  font-size: 0.8rem;
+  color: #c8a45c;
+  letter-spacing: 0.1em;
+}
+
+.death-restart {
+  font-size: 0.8rem;
+  color: #6a6a5a;
+  letter-spacing: 0.1em;
+}
+
+.death-screen:focus {
+  outline: none;
+}
