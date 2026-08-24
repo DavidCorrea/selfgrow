@@ -39,8 +39,24 @@ registerAutomaton('sentinel', {
 
   /** Initialise the Sentinel's state for a new descent. */
   initialize(state) {
+    // The machine's memory of the last descent influences the starting position.
+    // If the Sentinel cornered the player, it starts further away (position 6),
+    // as if it is being patient. If the player ruptured, it starts closer
+    // (position 4), as if agitated by the machine's strain.
+    const lastOutcome = state.memory ? state.memory.lastOutcome : 'none';
+    const descents = state.memory ? state.memory.descents : 0;
+
+    let position = 5; // default
+    if (descents > 0) {
+      if (lastOutcome === 'cornered') {
+        position = 6;
+      } else if (lastOutcome === 'rupture') {
+        position = 4;
+      }
+    }
+
     state.automatonState = {
-      position: 5,
+      position,
       patternStep: 0,  // 0 = burst (advance 2), 1 = pause (advance 0)
     };
   },

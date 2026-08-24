@@ -1386,5 +1386,95 @@ export async function checks() {
     problems.push(`Could not verify found-devices mechanism: ${err.message}`);
   }
 
+  // ── 17. Sentinel adapts based on machine memory ──
+  // The Sentinel's starting position should reflect how the last descent ended.
+  try {
+    const { createInitialState } = await import('./game.js');
+
+    // 17a. No prior descent → position 5
+    const stateFresh = createInitialState('memory-position-test', { descents: 0, lastOutcome: 'none', lastSeed: null });
+    if (stateFresh.automatonState.position !== 5) {
+      problems.push(
+        `Sentinel should start at position 5 with no prior descents, got position ${stateFresh.automatonState.position}`
+      );
+    }
+    if (stateFresh.automatonState.patternStep !== 0) {
+      problems.push(
+        `Sentinel patternStep should always be 0 on initialize, got ${stateFresh.automatonState.patternStep}`
+      );
+    }
+
+    // 17b. Last outcome 'none' → position 5
+    const stateNone = createInitialState('memory-position-none', { descents: 1, lastOutcome: 'none', lastSeed: 'prev' });
+    if (stateNone.automatonState.position !== 5) {
+      problems.push(
+        `Sentinel should start at position 5 when last outcome is 'none', got position ${stateNone.automatonState.position}`
+      );
+    }
+    if (stateNone.automatonState.patternStep !== 0) {
+      problems.push(
+        `Sentinel patternStep should be 0 after 'none' outcome, got ${stateNone.automatonState.patternStep}`
+      );
+    }
+
+    // 17c. Last outcome 'cornered' → position 6
+    const stateCornered = createInitialState('memory-position-cornered', { descents: 1, lastOutcome: 'cornered', lastSeed: 'prev' });
+    if (stateCornered.automatonState.position !== 6) {
+      problems.push(
+        `Sentinel should start at position 6 when last outcome was 'cornered', got position ${stateCornered.automatonState.position}`
+      );
+    }
+    if (stateCornered.automatonState.patternStep !== 0) {
+      problems.push(
+        `Sentinel patternStep should be 0 after 'cornered' outcome, got ${stateCornered.automatonState.patternStep}`
+      );
+    }
+
+    // 17d. Last outcome 'rupture' → position 4
+    const stateRupture = createInitialState('memory-position-rupture', { descents: 1, lastOutcome: 'rupture', lastSeed: 'prev' });
+    if (stateRupture.automatonState.position !== 4) {
+      problems.push(
+        `Sentinel should start at position 4 when last outcome was 'rupture', got position ${stateRupture.automatonState.position}`
+      );
+    }
+    if (stateRupture.automatonState.patternStep !== 0) {
+      problems.push(
+        `Sentinel patternStep should be 0 after 'rupture' outcome, got ${stateRupture.automatonState.patternStep}`
+      );
+    }
+
+    // 17e. Multiple descents with cornered → still position 6
+    const stateCornered3 = createInitialState('memory-position-cornered-3', { descents: 3, lastOutcome: 'cornered', lastSeed: 'prev' });
+    if (stateCornered3.automatonState.position !== 6) {
+      problems.push(
+        `Sentinel should start at position 6 after 3 descents ending in 'cornered', got position ${stateCornered3.automatonState.position}`
+      );
+    }
+
+    // 17f. Multiple descents with rupture → still position 4
+    const stateRupture5 = createInitialState('memory-position-rupture-5', { descents: 5, lastOutcome: 'rupture', lastSeed: 'prev' });
+    if (stateRupture5.automatonState.position !== 4) {
+      problems.push(
+        `Sentinel should start at position 4 after 5 descents ending in 'rupture', got position ${stateRupture5.automatonState.position}`
+      );
+    }
+
+    // 17g. patternStep always starts at 0 regardless of memory
+    const stateDefault = createInitialState('memory-pattern-default', { descents: 0, lastOutcome: 'none', lastSeed: null });
+    const stateCorneredP = createInitialState('memory-pattern-cornered', { descents: 2, lastOutcome: 'cornered', lastSeed: 'prev' });
+    const stateRuptureP = createInitialState('memory-pattern-rupture', { descents: 2, lastOutcome: 'rupture', lastSeed: 'prev' });
+    if (stateDefault.automatonState.patternStep !== 0) {
+      problems.push(`patternStep should be 0 for default memory, got ${stateDefault.automatonState.patternStep}`);
+    }
+    if (stateCorneredP.automatonState.patternStep !== 0) {
+      problems.push(`patternStep should be 0 for cornered memory, got ${stateCorneredP.automatonState.patternStep}`);
+    }
+    if (stateRuptureP.automatonState.patternStep !== 0) {
+      problems.push(`patternStep should be 0 for rupture memory, got ${stateRuptureP.automatonState.patternStep}`);
+    }
+  } catch (err) {
+    problems.push(`Could not verify Sentinel memory adaptation: ${err.message}`);
+  }
+
   return problems;
 }
