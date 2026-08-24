@@ -43,6 +43,7 @@ export function createInitialState(seed) {
     rng,
     pressure: 50,
     ruptureThreshold: 100,
+    pressureAccumulationRate: 5,
     location: gallerySequence[0] || 'engine-room',
     gallerySequence,
     galleryIndex: 0,
@@ -88,6 +89,15 @@ function advanceTurn(state, action) {
     }
   }
   // 'wait' does nothing — player chooses to let the turn pass
+
+  // --- Pressure accumulation (applied before automaton acts) ---
+  state.pressure += state.pressureAccumulationRate;
+
+  // --- Check death (rupture from accumulation) ---
+  checkDeathConditions(state);
+  if (state.ended) {
+    return;
+  }
 
   // --- Automaton action ---
   // Check if the Steam Cloak caused the Sentinel to skip its next advance
@@ -229,6 +239,12 @@ function render(state) {
   gaugeNumbers.className = 'pressure-numbers';
   gaugeNumbers.textContent = `${state.pressure} / ${state.ruptureThreshold}`;
   pressureSection.appendChild(gaugeNumbers);
+
+  // Pressure accumulation rate display
+  const rateDisplay = document.createElement('div');
+  rateDisplay.className = 'pressure-rate';
+  rateDisplay.textContent = `+${state.pressureAccumulationRate} per turn`;
+  pressureSection.appendChild(rateDisplay);
 
   panelInner.appendChild(pressureSection);
 

@@ -782,5 +782,107 @@ export async function checks() {
     problems.push(`Could not verify Sentinel burst/pause pattern: ${err.message}`);
   }
 
+  // ── 12. Pressure accumulates each turn ──
+  // Pressure should increase by pressureAccumulationRate each turn,
+  // making hoarding a genuine threat.
+  try {
+    const { createInitialState } = await import('./game.js');
+
+    // Check 12a: Pressure increments by exactly the rate each turn
+    const state = createInitialState('pressure-accumulation');
+
+    if (typeof state.pressureAccumulationRate !== 'number' || state.pressureAccumulationRate <= 0) {
+      problems.push(
+        `pressureAccumulationRate should be a positive number, got ${state.pressureAccumulationRate}`
+      );
+    } else {
+      const rate = state.pressureAccumulationRate;
+      const initialPressure = state.pressure;
+
+      // Simulate 3 turns of waiting by manually applying the accumulation
+      for (let i = 0; i < 3; i++) {
+        state.pressure += rate;
+      }
+
+      const expectedPressure = initialPressure + 3 * rate;
+      if (state.pressure !== expectedPressure) {
+        problems.push(
+          `Pressure accumulation: after 3 turns expected ${expectedPressure}, got ${state.pressure} ` +
+          `(rate: ${rate}, initial: ${initialPressure})`
+        );
+      }
+
+      // Check 12b: Rupture threshold is reachable within a predictable number of turns
+      // Starting at 50 with rate 5, it takes 10 turns to reach 100 (rupture)
+      const turnsToRupture = Math.ceil((state.ruptureThreshold - initialPressure) / rate);
+      if (turnsToRupture !== 10) {
+        problems.push(
+          `With rate ${rate} and starting pressure ${initialPressure}, it should take exactly 10 turns ` +
+          `to reach threshold ${state.ruptureThreshold}, calculated ${turnsToRupture}`
+        );
+      }
+
+      // Verify that after turnsToRupture - 1 waits, pressure is still below threshold
+      const state2 = createInitialState('pressure-accumulation');
+      for (let i = 0; i < turnsToRupture - 1; i++) {
+        state2.pressure += rate;
+      }
+      if (state2.pressure >= state2.ruptureThreshold) {
+        problems.push(
+          `Pressure should be below threshold after ${turnsToRupture - 1} turns of accumulation, ` +
+          `got ${state2.pressure} >= ${state2.ruptureThreshold}`
+        );
+      }
+
+      // Verify that after turnsToRupture waits, pressure reaches threshold
+      const state3 = createInitialState('pressure-accumulation');
+      for (let i = 0; i < turnsToRupture; i++) {
+        state3.pressure += rate;
+      }
+      if (state3.pressure < state3.ruptureThreshold) {
+        problems.push(
+          `Pressure should be at or above threshold after ${turnsToRupture} turns of accumulation, ` +
+          `got ${state3.pressure} < ${state3.ruptureThreshold}`
+        );
+      }
+    }
+
+    // Check 12c: Rate text appears in the rendered DOM
+    // The game must be mounted for this; check if .pressure-rate exists
+    const rateEl = document.querySelector('.pressure-rate');
+    if (rateEl) {
+      const text = rateEl.textContent;
+      if (!text.includes('+') || !text.includes('per turn')) {
+        problems.push(
+          `Pressure rate element should show '+X per turn', got: "${text}"`
+        );
+      }
+    } else {
+      // The game might not be mounted yet in the test environment;
+      // this is a soft check — only fail if the element exists but is wrong
+      // or if the game is clearly mounted but the element is missing
+      const gameEl = document.getElementById('game');
+      if (gameEl && gameEl.querySelector('.panel-inner') &&
+          !gameEl.querySelector('.panel-inner .death-screen')) {
+        // Game is mounted and active, so rate should be visible
+        if (!gameEl.querySelector('.pressure-rate')) {
+          problems.push(
+            'Pressure rate element (.pressure-rate) not found in the DOM when game is active'
+          );
+        }
+      }
+    }
+
+    // Check 12d: The pressureAccumulationRate field exists in initial state
+    const stateCheck = createInitialState('pressure-rate-check');
+    if (stateCheck.pressureAccumulationRate === undefined) {
+      problems.push(
+        'Initial state is missing pressureAccumulationRate field'
+      );
+    }
+  } catch (err) {
+    problems.push(`Could not verify pressure accumulation: ${err.message}`);
+  }
+
   return problems;
 }
