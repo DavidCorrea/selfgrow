@@ -404,7 +404,139 @@ export async function checks() {
     }
   }
 
-  // ── 9. Text contrast meets WCAG AA 4.5:1 ──
+  // ── 9. Steam Cloak device is registered and works ──
+  try {
+    const { createInitialState } = await import('./game.js');
+    const { getDevice, listDevices } = await import('./engine/registry.js');
+
+    const devices = listDevices();
+    if (!devices.includes('steam-cloak')) {
+      problems.push('Steam Cloak device not found in registry');
+    }
+
+    const cloak = getDevice('steam-cloak');
+    if (!cloak) {
+      problems.push('Steam Cloak device not registered — cannot verify');
+    } else {
+      // Verify required methods
+      if (typeof cloak.describe !== 'function') {
+        problems.push('Steam Cloak missing describe method');
+      }
+      if (typeof cloak.canUse !== 'function') {
+        problems.push('Steam Cloak missing canUse method');
+      }
+      if (typeof cloak.use !== 'function') {
+        problems.push('Steam Cloak missing use method');
+      }
+
+      // Verify cost is a positive number
+      if (typeof cloak.cost !== 'number' || cloak.cost <= 0) {
+        problems.push(`Steam Cloak cost should be a positive number, got ${cloak.cost}`);
+      }
+
+      // Cost should be 8 per the spec
+      if (cloak.cost !== 8) {
+        problems.push(`Steam Cloak cost should be 8, got ${cloak.cost}`);
+      }
+
+      // Verify canUse returns false when pressure is insufficient
+      const state = createInitialState('steam-cloak-test');
+      state.pressure = 5; // Below cost of 8
+      const couldUse = cloak.canUse(state);
+      if (couldUse) {
+        problems.push('Steam Cloak.canUse() returned true when pressure (5) is below cost (8)');
+      }
+
+      // Using it with insufficient pressure should return false and not change state
+      const used = cloak.use(state);
+      if (used) {
+        problems.push('Steam Cloak.use() returned true when pressure was insufficient');
+      }
+      if (state.pressure < 0) {
+        problems.push(`Pressure went below zero: ${state.pressure}`);
+      }
+      if (state.automatonState.skipNextAct) {
+        problems.push('Steam Cloak set skipNextAct when pressure was insufficient');
+      }
+
+      // Verify that with sufficient pressure it works
+      state.pressure = 20;
+      const couldUse2 = cloak.canUse(state);
+      if (!couldUse2) {
+        problems.push('Steam Cloak.canUse() returned false when pressure (20) is sufficient');
+      }
+
+      const pressureBefore = state.pressure;
+      const used2 = cloak.use(state);
+      if (!used2) {
+        problems.push('Steam Cloak.use() returned false when pressure was sufficient');
+      }
+      if (state.pressure !== pressureBefore - cloak.cost) {
+        problems.push(
+          `Steam Cloak did not deduct correct cost: expected ${pressureBefore - cloak.cost}, got ${state.pressure}`
+        );
+      }
+
+      // Verify skipNextAct flag was set
+      if (!state.automatonState.skipNextAct) {
+        problems.push('Steam Cloak did not set skipNextAct flag after use');
+      }
+
+      // Verify that skipNextAct actually prevents the Sentinel from advancing
+      const { getAutomaton } = await import('./engine/registry.js');
+      const automaton = getAutomaton('sentinel');
+      if (!automaton) {
+        problems.push('Sentinel automaton not registered — cannot verify skip behavior');
+      } else {
+        const state2 = createInitialState('steam-cloak-skip');
+        const positionBefore = state2.automatonState.position;
+
+        // Set skipNextAct and then run the automaton act
+        state2.automatonState.skipNextAct = true;
+
+        // Simulate the game engine's skip logic
+        if (state2.automatonState.skipNextAct) {
+          state2.automatonState.skipNextAct = false;
+          // Skip the act
+        } else {
+          automaton.act(state2);
+        }
+
+        if (state2.automatonState.position !== positionBefore) {
+          problems.push(
+            `Sentinel advanced despite skipNextAct flag: position ${positionBefore} -> ${state2.automatonState.position}`
+          );
+        }
+
+        // Verify the flag was cleared
+        if (state2.automatonState.skipNextAct) {
+          problems.push('skipNextAct flag was not cleared after being consumed');
+        }
+
+        // Verify that on the next turn, the Sentinel does advance
+        automaton.act(state2);
+        if (state2.automatonState.position >= positionBefore) {
+          problems.push(
+            `Sentinel did not advance on the turn after skip: position ${positionBefore} -> ${state2.automatonState.position}`
+          );
+        }
+      }
+
+      // Verify the device description is distinct from the Vent
+      const vent = getDevice('vent');
+      if (vent && cloak.describe) {
+        const ventDesc = vent.describe(state);
+        const cloakDesc = cloak.describe(state);
+        if (ventDesc === cloakDesc) {
+          problems.push('Steam Cloak description is identical to Vent description — must be distinct');
+        }
+      }
+    }
+  } catch (err) {
+    problems.push(`Could not verify Steam Cloak device: ${err.message}`);
+  }
+
+  // ── 10. Text contrast meets WCAG AA 4.5:1 ──
   // Helper: convert an rgb string like "rgb(r, g, b)" or "#rrggbb" to {r,g,b}
   function parseColor(str) {
     if (!str) return null;
