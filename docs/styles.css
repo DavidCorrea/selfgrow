@@ -242,6 +242,39 @@ main {
   cursor: pointer;
 }
 
+.seed-btn {
+  background: none;
+  border: 1px solid #3a3a3a;
+  border-radius: 2px;
+  font-family: inherit;
+  font-size: 0.7rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: #c8a45c;
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  line-height: 1;
+}
+
+.seed-btn:hover:not(:disabled) {
+  background: #2a2a1a;
+  border-color: #c8a45c;
+  color: #d4b06a;
+}
+
+.seed-btn:focus-visible {
+  outline: 1px solid #c8a45c;
+  outline-offset: 2px;
+}
+
+.seed-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  color: #8a8a7a;
+  border-color: #2a2a2a;
+}
+
 .seed-input {
   background: #0d0d0d;
   border: 1px solid #c8a45c;
