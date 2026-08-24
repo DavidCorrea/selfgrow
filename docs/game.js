@@ -55,6 +55,8 @@ export function createInitialState(seed, memory) {
     active: true,
     ended: false,
     endReason: null,
+    maxPressure: 50,
+    devicesUsed: 0,
     memory: memory || { descents: 0, lastOutcome: 'none', lastSeed: null },
     automatonState: {},
     deviceStates: {},
@@ -85,6 +87,7 @@ function advanceTurn(state, action) {
     const device = getDevice(deviceId);
     if (device && device.canUse(state)) {
       device.use(state);
+      state.devicesUsed += 1;
     }
   }
   // 'descend' moves to the next gallery in the sequence
@@ -106,6 +109,7 @@ function advanceTurn(state, action) {
 
   // --- Pressure accumulation (applied before automaton acts) ---
   state.pressure += state.pressureAccumulationRate;
+  state.maxPressure = Math.max(state.maxPressure, state.pressure);
 
   // --- Check death (rupture from accumulation) ---
   checkDeathConditions(state);
@@ -375,6 +379,32 @@ function renderDeathScreen(container, state) {
   reason.className = 'death-reason';
   reason.textContent = state.endReason || 'The descent has ended.';
   container.appendChild(reason);
+
+  // Descent statistics
+  const stats = document.createElement('div');
+  stats.className = 'death-stats';
+
+  const turnsEl = document.createElement('p');
+  turnsEl.className = 'death-stat';
+  turnsEl.textContent = `Turns survived: ${state.turn}`;
+  stats.appendChild(turnsEl);
+
+  const galleriesEl = document.createElement('p');
+  galleriesEl.className = 'death-stat';
+  galleriesEl.textContent = `Galleries visited: ${state.galleryIndex + 1} of ${state.gallerySequence.length}`;
+  stats.appendChild(galleriesEl);
+
+  const pressureEl = document.createElement('p');
+  pressureEl.className = 'death-stat';
+  pressureEl.textContent = `Maximum pressure: ${state.maxPressure}`;
+  stats.appendChild(pressureEl);
+
+  const devicesEl = document.createElement('p');
+  devicesEl.className = 'death-stat';
+  devicesEl.textContent = `Devices used: ${state.devicesUsed}`;
+  stats.appendChild(devicesEl);
+
+  container.appendChild(stats);
 
   const seedInfo = document.createElement('p');
   seedInfo.className = 'death-seed';
