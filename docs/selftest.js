@@ -457,9 +457,31 @@ export async function checks() {
     // Check that Enter on the input triggers a new descent
     // We can verify the input exists and has the right event wiring by checking
     // that startNewDescent is reachable and the input is properly placed
-    const label = document.querySelector('label[for="seed-input"]');
-    if (!label) {
-      problems.push('Seed input missing a label with for="seed-input"');
+    const replayBtn = document.getElementById('replay-btn');
+    if (!replayBtn) {
+      problems.push('Missing #replay-btn button — Replay button not present');
+    } else {
+      if (replayBtn.tagName !== 'BUTTON') {
+        problems.push('#replay-btn should be a <button> element, got <' + replayBtn.tagName.toLowerCase() + '>');
+      }
+      if (replayBtn.textContent.trim() !== 'Replay') {
+        problems.push('Replay button should have label text "Replay", got "' + replayBtn.textContent.trim() + '"');
+      }
+      // Verify the button is disabled when the input is empty
+      seedInput.value = '';
+      seedInput.dispatchEvent(new Event('input'));
+      if (!replayBtn.disabled) {
+        problems.push('Replay button should be disabled when seed input is empty');
+      }
+      // Re-enable by putting a value in
+      seedInput.value = 'test-seed';
+      seedInput.dispatchEvent(new Event('input'));
+      if (replayBtn.disabled) {
+        problems.push('Replay button should be enabled when seed input has content');
+      }
+      // Clean up
+      seedInput.value = '';
+      seedInput.dispatchEvent(new Event('input'));
     }
     // Verify the seed-row layout wrapper exists
     const seedRow = seedInput.closest('.seed-row');
@@ -796,6 +818,11 @@ export async function checks() {
       bgSelector: '.seed-display',
     },
     {
+      name: 'button.seed-btn (Replay)',
+      selector: '.seed-btn',
+      bgSelector: '.seed-display',
+    },
+    {
       name: 'footer p (tagline)',
       selector: 'footer p',
       bgSelector: 'body',
@@ -825,6 +852,8 @@ export async function checks() {
       // The gallery-progress has its own background from the gallery-description context
       // Use the element itself (it may inherit from parent)
       bgEl = el;
+    } else if (check.bgSelector === '.seed-display') {
+      bgEl = el.closest('.seed-display') || document.querySelector('.seed-display');
     }
 
     // For the background color, we need the actual painted background.
@@ -859,9 +888,10 @@ export async function checks() {
     const ratio = contrastRatio(fgLum, bgLum);
 
     if (ratio < MIN_CONTRAST) {
+      const bgColorStr = bgColor ? `rgb(${bgColor.r}, ${bgColor.g}, ${bgColor.b})` : (elStyle.backgroundColor || 'inherited');
       problems.push(
         `${check.name} contrast ratio is ${ratio.toFixed(2)}:1, below WCAG AA minimum of ${MIN_CONTRAST}:1 ` +
-        `(text: ${elStyle.color}, background: ${elStyle.backgroundColor || 'inherited'})`
+        `(text: ${elStyle.color}, background: ${bgColorStr})`
       );
     }
   }

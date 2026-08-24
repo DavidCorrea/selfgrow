@@ -563,6 +563,28 @@ function mount() {
         }
       }
     });
+
+    // Enable/disable the Replay button based on input content
+    const replayBtn = document.getElementById('replay-btn');
+    if (replayBtn) {
+      const updateReplayBtn = () => {
+        replayBtn.disabled = !seedInputEl.value.trim();
+      };
+      seedInputEl.addEventListener('input', updateReplayBtn);
+      updateReplayBtn();
+    }
+  }
+
+  // Replay button: start a new descent with the entered seed
+  const replayBtn = document.getElementById('replay-btn');
+  if (replayBtn) {
+    replayBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const val = seedInputEl.value.trim();
+      if (val) {
+        startNewDescent(val);
+      }
+    });
   }
 
   document.addEventListener('keydown', handleKeydown);
