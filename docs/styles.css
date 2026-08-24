@@ -1,0 +1,272 @@
+/* ===== BELLOWSDEEP — Steampunk Aesthetic ===== */
+
+/* --- Reset & Base --- */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: "Courier New", "Lucida Console", "Menlo", "Monaco", "Consolas", "Liberation Mono", monospace;
+  background-color: #0d0d0d;
+  color: #b8a87a;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.5rem 1rem;
+  line-height: 1.5;
+}
+
+/* --- Layout --- */
+header,
+main,
+footer {
+  width: 100%;
+  max-width: 720px;
+}
+
+/* --- Header --- */
+header {
+  text-align: center;
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 2px solid #2a2a2a;
+  position: relative;
+}
+
+header::after {
+  content: "";
+  display: block;
+  width: 60%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #c8a45c, transparent);
+  position: absolute;
+  bottom: -1px;
+  left: 20%;
+}
+
+h1 {
+  font-size: clamp(1.8rem, 6vw, 3.2rem);
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  line-height: 1.1;
+}
+
+h1 .brass {
+  color: #c8a45c;
+  text-shadow: 0 0 8px rgba(200, 164, 92, 0.3);
+}
+
+h1 .deep {
+  color: #8a7a5a;
+}
+
+.subtitle {
+  margin-top: 0.5rem;
+  font-size: clamp(0.75rem, 2vw, 0.9rem);
+  color: #6a6a5a;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* --- Main --- */
+main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* --- Riveted Panel --- */
+.riveted-panel {
+  background: #141414;
+  border: 3px solid #3a3a3a;
+  border-radius: 4px;
+  padding: 3px;
+  position: relative;
+  box-shadow:
+    inset 0 0 20px rgba(0, 0, 0, 0.6),
+    0 0 0 1px #2a2a2a;
+}
+
+.riveted-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px solid #c8a45c;
+  border-radius: 2px;
+  opacity: 0.15;
+  pointer-events: none;
+}
+
+/* Rivet dots in corners */
+.riveted-panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Rivet at each corner via box-shadow */
+.riveted-panel {
+  /* top-left */ box-shadow:
+    inset 0 0 20px rgba(0, 0, 0, 0.6),
+    0 0 0 1px #2a2a2a;
+}
+
+/* We'll use a pseudo-element for the rivet dots */
+.riveted-panel .panel-inner {
+  border: 1px solid #2a2a2a;
+  background: #111111;
+  padding: 2rem 1.5rem;
+  border-radius: 2px;
+  position: relative;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+}
+
+/* Rivets via background pattern on the outer panel */
+.riveted-panel {
+  background-image:
+    radial-gradient(circle at 12px 12px, #c8a45c 2px, transparent 2px),
+    radial-gradient(circle at calc(100% - 12px) 12px, #c8a45c 2px, transparent 2px),
+    radial-gradient(circle at 12px calc(100% - 12px), #c8a45c 2px, transparent 2px),
+    radial-gradient(circle at calc(100% - 12px) calc(100% - 12px), #c8a45c 2px, transparent 2px);
+  background-repeat: no-repeat;
+  background-color: #141414;
+}
+
+/* --- Gauges --- */
+.gauge-row {
+  display: flex;
+  gap: 1.5rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.gauge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.gauge-svg {
+  width: 60px;
+  height: 60px;
+  filter: drop-shadow(0 0 4px rgba(200, 164, 92, 0.15));
+}
+
+.gauge-label {
+  font-size: 0.6rem;
+  letter-spacing: 0.15em;
+  color: #6a6a5a;
+  text-transform: uppercase;
+}
+
+/* --- Engine Placeholder --- */
+.engine-placeholder {
+  font-size: 1rem;
+  color: #4a4a3a;
+  letter-spacing: 0.1em;
+  animation: pulse 2.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.9; }
+}
+
+/* --- Seed Display --- */
+.seed-display {
+  background: #141414;
+  border: 1px solid #2a2a2a;
+  border-radius: 3px;
+  padding: 0.75rem 1rem;
+  text-align: center;
+}
+
+.seed-display dl {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  align-items: baseline;
+}
+
+.seed-display dt {
+  font-size: 0.7rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: #6a6a5a;
+}
+
+.seed-display dd {
+  font-size: 0.85rem;
+  color: #c8a45c;
+  letter-spacing: 0.1em;
+  font-weight: 700;
+}
+
+/* --- Footer --- */
+footer {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid #2a2a2a;
+  text-align: center;
+  font-size: 0.7rem;
+  color: #4a4a3a;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+footer .rivet {
+  color: #c8a45c;
+  font-size: 0.4rem;
+  vertical-align: middle;
+  margin: 0 0.3rem;
+}
+
+/* --- Utility --- */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- Responsive --- */
+@media (max-width: 480px) {
+  body {
+    padding: 1rem 0.75rem;
+  }
+
+  .riveted-panel .panel-inner {
+    padding: 1.5rem 1rem;
+  }
+
+  .gauge-row {
+    gap: 1rem;
+  }
+
+  .gauge-svg {
+    width: 50px;
+    height: 50px;
+  }
+}

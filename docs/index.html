@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BELLOWSDEEP — beneath the city, the machine grows itself</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <h1><span class="brass">BELLOWS</span><span class="deep">DEEP</span></h1>
+    <p class="subtitle">Beneath the city, the machine grows itself.</p>
+  </header>
+
+  <main>
+    <div id="game" class="riveted-panel" aria-label="Game engine mount point">
+      <div class="panel-inner">
+        <div class="gauge-row">
+          <div class="gauge" aria-hidden="true">
+            <svg viewBox="0 0 60 60" class="gauge-svg">
+              <circle cx="30" cy="30" r="24" fill="none" stroke="#3a3a3a" stroke-width="4"/>
+              <circle cx="30" cy="30" r="24" fill="none" stroke="#c8a45c" stroke-width="4" stroke-dasharray="75 76" stroke-dashoffset="0"/>
+              <line x1="30" y1="30" x2="30" y2="10" stroke="#c8a45c" stroke-width="2"/>
+              <circle cx="30" cy="30" r="3" fill="#c8a45c"/>
+            </svg>
+            <span class="gauge-label">PRESSURE</span>
+          </div>
+          <div class="gauge" aria-hidden="true">
+            <svg viewBox="0 0 60 60" class="gauge-svg">
+              <circle cx="30" cy="30" r="24" fill="none" stroke="#3a3a3a" stroke-width="4"/>
+              <circle cx="30" cy="30" r="24" fill="none" stroke="#c8a45c" stroke-width="4" stroke-dasharray="100 51" stroke-dashoffset="-25"/>
+              <line x1="30" y1="30" x2="46" y2="20" stroke="#c8a45c" stroke-width="2"/>
+              <circle cx="30" cy="30" r="3" fill="#c8a45c"/>
+            </svg>
+            <span class="gauge-label">DEPTH</span>
+          </div>
+          <div class="gauge" aria-hidden="true">
+            <svg viewBox="0 0 60 60" class="gauge-svg">
+              <circle cx="30" cy="30" r="24" fill="none" stroke="#3a3a3a" stroke-width="4"/>
+              <circle cx="30" cy="30" r="24" fill="none" stroke="#c8a45c" stroke-width="4" stroke-dasharray="50 101" stroke-dashoffset="-12"/>
+              <line x1="30" y1="30" x2="18" y2="14" stroke="#c8a45c" stroke-width="2"/>
+              <circle cx="30" cy="30" r="3" fill="#c8a45c"/>
+            </svg>
+            <span class="gauge-label">CORE</span>
+          </div>
+        </div>
+        <p class="engine-placeholder">Awaiting ignition&hellip;</p>
+      </div>
+    </div>
+
+    <section class="seed-display">
+      <h2 class="sr-only">Seed</h2>
+      <dl>
+        <dt>Seed</dt>
+        <dd id="seed-value" aria-live="polite">—</dd>
+      </dl>
+    </section>
+  </main>
+
+  <footer>
+    <p><span class="rivet" aria-hidden="true">&#9679;</span> selfgrow &middot; a machine that grew itself <span class="rivet" aria-hidden="true">&#9679;</span></p>
+  </footer>
+
+  <script type="module" src="selftest.js"></script>
+</body>
+</html>
