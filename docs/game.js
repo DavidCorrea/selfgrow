@@ -14,6 +14,7 @@ import {
   getGallery,
   listDevices,
 } from './engine/registry.js';
+import { loadMemory, saveMemory } from './engine/memory.js';
 
 // Import modules for registration side-effects
 import './galleries/engine-room.js';
@@ -34,7 +35,7 @@ let announceEl = null;
  * Create a new initial game state from a seed string.
  * Pure — no side-effects, no DOM.
  */
-export function createInitialState(seed) {
+export function createInitialState(seed, memory) {
   const rng = createPRNG(seed);
 
   // Generate the gallery sequence from the seed — deterministic
@@ -53,6 +54,7 @@ export function createInitialState(seed) {
     active: true,
     ended: false,
     endReason: null,
+    memory: memory || { descents: 0, lastOutcome: 'none', lastSeed: null },
     automatonState: {},
     deviceStates: {},
   };
@@ -125,12 +127,23 @@ function advanceTurn(state, action) {
 /**
  * Check and set death conditions. Returns true if the descent has ended.
  */
+/**
+ * Map an endReason string to a short outcome token for memory.
+ */
+function categorizeOutcome(endReason) {
+  if (!endReason) return 'none';
+  if (endReason.includes('rupture')) return 'rupture';
+  if (endReason.includes('cornered')) return 'cornered';
+  return 'none';
+}
+
 function checkDeathConditions(state) {
   // Rupture: pressure at or above threshold
   if (state.pressure >= state.ruptureThreshold) {
     state.ended = true;
     state.active = false;
     state.endReason = 'Your pressure gauge burst. The machine\'s own breath tore you apart.';
+    saveMemory(categorizeOutcome(state.endReason), state.seed);
     return true;
   }
 
@@ -139,6 +152,7 @@ function checkDeathConditions(state) {
     state.ended = true;
     state.active = false;
     state.endReason = 'The Sentinel cornered you. There was nowhere left to run.';
+    saveMemory(categorizeOutcome(state.endReason), state.seed);
     return true;
   }
 
@@ -412,7 +426,8 @@ function handleKeydown(e) {
 
 export function startNewDescent(seed) {
   const actualSeed = seed || generateSeed();
-  currentGame = createInitialState(actualSeed);
+  const memory = loadMemory();
+  currentGame = createInitialState(actualSeed, memory);
   render(currentGame);
 }
 

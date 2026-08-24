@@ -1051,5 +1051,166 @@ export async function checks() {
     problems.push(`Could not verify pressure accumulation: ${err.message}`);
   }
 
+  // ── 15. Machine memory round-trips correctly ──
+  // The memory module must persist and load values reliably.
+  try {
+    const { loadMemory, saveMemory, clearMemory } = await import('./engine/memory.js');
+
+    // Clear any existing state
+    clearMemory();
+
+    // Verify fresh profile returns sensible defaults
+    const fresh = loadMemory();
+    if (fresh.descents !== 0) {
+      problems.push(
+        `Fresh memory profile should have 0 descents, got ${fresh.descents}`
+      );
+    }
+    if (fresh.lastOutcome !== 'none') {
+      problems.push(
+        `Fresh memory profile should have lastOutcome 'none', got '${fresh.lastOutcome}'`
+      );
+    }
+    if (fresh.lastSeed !== null) {
+      problems.push(
+        `Fresh memory profile should have null lastSeed, got ${JSON.stringify(fresh.lastSeed)}`
+      );
+    }
+
+    // Save a known outcome and verify round-trip
+    saveMemory('rupture', 'test-seed-abc');
+    const afterRupture = loadMemory();
+    if (afterRupture.descents !== 1) {
+      problems.push(
+        `After first save, descents should be 1, got ${afterRupture.descents}`
+      );
+    }
+    if (afterRupture.lastOutcome !== 'rupture') {
+      problems.push(
+        `After rupture save, lastOutcome should be 'rupture', got '${afterRupture.lastOutcome}'`
+      );
+    }
+    if (afterRupture.lastSeed !== 'test-seed-abc') {
+      problems.push(
+        `After save, lastSeed should be 'test-seed-abc', got ${JSON.stringify(afterRupture.lastSeed)}`
+      );
+    }
+
+    // Save a second outcome — descents should increment
+    saveMemory('cornered', 'test-seed-xyz');
+    const afterCornered = loadMemory();
+    if (afterCornered.descents !== 2) {
+      problems.push(
+        `After second save, descents should be 2, got ${afterCornered.descents}`
+      );
+    }
+    if (afterCornered.lastOutcome !== 'cornered') {
+      problems.push(
+        `After cornered save, lastOutcome should be 'cornered', got '${afterCornered.lastOutcome}'`
+      );
+    }
+    if (afterCornered.lastSeed !== 'test-seed-xyz') {
+      problems.push(
+        `After second save, lastSeed should be 'test-seed-xyz', got ${JSON.stringify(afterCornered.lastSeed)}`
+      );
+    }
+
+    // Verify save with no seed sets lastSeed to null
+    saveMemory('none');
+    const afterNone = loadMemory();
+    if (afterNone.descents !== 3) {
+      problems.push(
+        `After third save, descents should be 3, got ${afterNone.descents}`
+      );
+    }
+    if (afterNone.lastOutcome !== 'none') {
+      problems.push(
+        `After none save, lastOutcome should be 'none', got '${afterNone.lastOutcome}'`
+      );
+    }
+    if (afterNone.lastSeed !== null) {
+      problems.push(
+        `After save with no seed, lastSeed should be null, got ${JSON.stringify(afterNone.lastSeed)}`
+      );
+    }
+
+    // Verify that localStorage key actually exists
+    const raw = localStorage.getItem('bellowdeep_memory');
+    if (!raw) {
+      problems.push(
+        'localStorage key "bellowdeep_memory" was not written after saveMemory call'
+      );
+    } else {
+      // Verify the stored JSON is valid
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed.descents !== 3) {
+          problems.push(
+            `localStorage JSON has descents=${parsed.descents}, expected 3`
+          );
+        }
+      } catch (e) {
+        problems.push(
+          `localStorage contains invalid JSON: "${raw}"`
+        );
+      }
+    }
+
+    // Clean up after ourselves
+    clearMemory();
+
+    // Verify clear works
+    const afterClear = loadMemory();
+    if (afterClear.descents !== 0) {
+      problems.push(
+        `After clearMemory, descents should be 0, got ${afterClear.descents}`
+      );
+    }
+
+    // Verify that createInitialState passes memory into state
+    // and that engine-room's describe() acknowledges prior descents
+    const { createInitialState } = await import('./game.js');
+    const { getGallery } = await import('./engine/registry.js');
+
+    const memoryWithDescents = { descents: 3, lastOutcome: 'rupture', lastSeed: 'prev-seed' };
+    const stateWithMemory = createInitialState('memory-test', memoryWithDescents);
+
+    if (!stateWithMemory.memory) {
+      problems.push(
+        'createInitialState did not attach memory to the game state'
+      );
+    } else {
+      if (stateWithMemory.memory.descents !== 3) {
+        problems.push(
+          `state.memory.descents should be 3, got ${stateWithMemory.memory.descents}`
+        );
+      }
+
+      // Verify engine-room describe() includes the acknowledgment
+      const engineRoom = getGallery('engine-room');
+      if (engineRoom) {
+        const desc = engineRoom.describe(stateWithMemory);
+        if (!desc.includes('3rd descent')) {
+          problems.push(
+            `Engine room description should acknowledge 3rd descent, got: "${desc}"`
+          );
+        }
+      }
+
+      // Verify that with 0 descents (fresh memory), no acknowledgment is added
+      const stateNoMemory = createInitialState('memory-test', { descents: 0, lastOutcome: 'none', lastSeed: null });
+      if (engineRoom) {
+        const descNoAck = engineRoom.describe(stateNoMemory);
+        if (descNoAck.includes('registers your return')) {
+          problems.push(
+            'Engine room description should not acknowledge return with 0 prior descents'
+          );
+        }
+      }
+    }
+  } catch (err) {
+    problems.push(`Could not verify machine memory: ${err.message}`);
+  }
+
   return problems;
 }
