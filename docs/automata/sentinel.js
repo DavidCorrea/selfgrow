@@ -52,6 +52,8 @@ registerAutomaton('sentinel', {
         position = 6;
       } else if (lastOutcome === 'rupture') {
         position = 4;
+      } else if (lastOutcome === 'escaped') {
+        position = 5; // Unperturbed by a successful exit
       }
     }
 
