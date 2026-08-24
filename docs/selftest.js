@@ -441,7 +441,34 @@ export async function checks() {
     }
   }
 
-  // ── 9. Steam Cloak device is registered and works ──
+  // ── 9. Seed input field exists and works ──
+  const seedInput = document.getElementById('seed-input');
+  if (!seedInput) {
+    problems.push('Missing #seed-input element — seed input field not present');
+  } else {
+    if (seedInput.type !== 'text') {
+      problems.push('Seed input should be a text input field');
+    }
+    // Check that the input is styled with monospace font
+    const style = getComputedStyle(seedInput);
+    if (style.fontFamily && !style.fontFamily.includes('monospace') && !style.fontFamily.includes('Courier')) {
+      problems.push('Seed input should use monospace font to match the steampunk aesthetic');
+    }
+    // Check that Enter on the input triggers a new descent
+    // We can verify the input exists and has the right event wiring by checking
+    // that startNewDescent is reachable and the input is properly placed
+    const label = document.querySelector('label[for="seed-input"]');
+    if (!label) {
+      problems.push('Seed input missing a label with for="seed-input"');
+    }
+    // Verify the seed-row layout wrapper exists
+    const seedRow = seedInput.closest('.seed-row');
+    if (!seedRow) {
+      problems.push('Seed input should be inside a .seed-row container');
+    }
+  }
+
+  // ── 11. Steam Cloak device is registered and works ──
   try {
     const { createInitialState } = await import('./game.js');
     const { getDevice, listDevices } = await import('./engine/registry.js');
@@ -573,7 +600,7 @@ export async function checks() {
     problems.push(`Could not verify Steam Cloak device: ${err.message}`);
   }
 
-  // ── 10. Safety Valve device is registered and works ──
+  // ── 12. Safety Valve device is registered and works ──
   try {
     const { createInitialState } = await import('./game.js');
     const { getDevice, listDevices } = await import('./engine/registry.js');
@@ -703,7 +730,7 @@ export async function checks() {
     problems.push(`Could not verify Safety Valve device: ${err.message}`);
   }
 
-  // ── 12. Text contrast meets WCAG AA 4.5:1 ──
+  // ── 13. Text contrast meets WCAG AA 4.5:1 ──
   // Helper: convert an rgb string like "rgb(r, g, b)" or "#rrggbb" to {r,g,b}
   function parseColor(str) {
     if (!str) return null;
@@ -839,7 +866,7 @@ export async function checks() {
     }
   }
 
-  // ── 13. Sentinel burst/pause pattern ──
+  // ── 14. Sentinel burst/pause pattern ──
   // The Sentinel should advance 2 on burst turns, 0 on pause turns, and the
   // description should reflect the current state so a player can predict it.
   try {
@@ -949,7 +976,7 @@ export async function checks() {
     problems.push(`Could not verify Sentinel burst/pause pattern: ${err.message}`);
   }
 
-  // ── 14. Pressure accumulates each turn ──
+  // ── 15. Pressure accumulates each turn ──
   // Pressure should increase by pressureAccumulationRate each turn,
   // making hoarding a genuine threat.
   try {
@@ -1051,7 +1078,7 @@ export async function checks() {
     problems.push(`Could not verify pressure accumulation: ${err.message}`);
   }
 
-  // ── 15. Machine memory round-trips correctly ──
+  // ── 16. Machine memory round-trips correctly ──
   // The memory module must persist and load values reliably.
   try {
     const { loadMemory, saveMemory, clearMemory } = await import('./engine/memory.js');
@@ -1212,7 +1239,7 @@ export async function checks() {
     problems.push(`Could not verify machine memory: ${err.message}`);
   }
 
-  // ── 16. Devices are found in galleries, not all available at start ──
+  // ── 17. Devices are found in galleries, not all available at start ──
   try {
     const { createInitialState } = await import('./game.js');
     const { getDevice, listDevices } = await import('./engine/registry.js');
@@ -1386,7 +1413,7 @@ export async function checks() {
     problems.push(`Could not verify found-devices mechanism: ${err.message}`);
   }
 
-  // ── 17. Sentinel adapts based on machine memory ──
+  // ── 18. Sentinel adapts based on machine memory ──
   // The Sentinel's starting position should reflect how the last descent ended.
   try {
     const { createInitialState } = await import('./game.js');

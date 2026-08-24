@@ -21,10 +21,16 @@
 
     <section class="seed-display">
       <h2 class="sr-only">Seed</h2>
-      <dl>
-        <dt>Seed</dt>
-        <dd id="seed-value" aria-live="polite">—</dd>
-      </dl>
+      <div class="seed-row">
+        <dl>
+          <dt>Seed</dt>
+          <dd id="seed-value" aria-live="polite">—</dd>
+        </dl>
+        <div class="seed-input-group">
+          <label for="seed-input" class="seed-label">Replay</label>
+          <input type="text" id="seed-input" class="seed-input" placeholder="Enter seed to replay" autocomplete="off" spellcheck="false">
+        </div>
+      </div>
     </section>
   </main>
 

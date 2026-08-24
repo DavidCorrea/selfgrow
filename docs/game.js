@@ -29,6 +29,7 @@ import './devices/safety-valve.js';
 
 let currentGame = null;
 let seedDisplayEl = null;
+let seedInputEl = null;
 let announceEl = null;
 
 /**
@@ -191,6 +192,9 @@ function render(state) {
   // Update seed display
   if (seedDisplayEl) {
     seedDisplayEl.textContent = state.seed;
+  }
+  if (seedInputEl) {
+    seedInputEl.value = state.seed;
   }
 
   if (state.ended) {
@@ -408,7 +412,8 @@ function handleKeydown(e) {
   // Restart (works both during game and on death screen)
   if (key === 'r') {
     e.preventDefault();
-    startNewDescent();
+    const val = seedInputEl ? seedInputEl.value.trim() : '';
+    startNewDescent(val || undefined);
     return;
   }
 
@@ -463,6 +468,19 @@ function mount() {
       dl.appendChild(dd);
     }
     seedDisplayEl = document.getElementById('seed-value') || dd;
+  }
+
+  seedInputEl = document.getElementById('seed-input');
+  if (seedInputEl) {
+    seedInputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const val = seedInputEl.value.trim();
+        if (val) {
+          startNewDescent(val);
+        }
+      }
+    });
   }
 
   document.addEventListener('keydown', handleKeydown);
