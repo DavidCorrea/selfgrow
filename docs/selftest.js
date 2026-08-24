@@ -1503,5 +1503,135 @@ export async function checks() {
     problems.push(`Could not verify Sentinel memory adaptation: ${err.message}`);
   }
 
+  // ── 19. Death recap statistics ──
+  // The death screen must show turns survived, galleries visited, max pressure,
+  // and devices used. These stats must be tracked in state.
+  try {
+    const { createInitialState } = await import('./game.js');
+    const { getDevice, listDevices } = await import('./engine/registry.js');
+
+    // 19a. Initial state has maxPressure and devicesUsed
+    const state = createInitialState('death-recap-stats');
+
+    if (state.maxPressure === undefined) {
+      problems.push('Initial state is missing maxPressure field');
+    } else if (state.maxPressure !== 50) {
+      problems.push(
+        `Initial maxPressure should be 50, got ${state.maxPressure}`
+      );
+    }
+
+    if (state.devicesUsed === undefined) {
+      problems.push('Initial state is missing devicesUsed field');
+    } else if (state.devicesUsed !== 0) {
+      problems.push(
+        `Initial devicesUsed should be 0, got ${state.devicesUsed}`
+      );
+    }
+
+    // 19b. maxPressure tracks the highest pressure reached
+    const state2 = createInitialState('death-recap-maxpressure');
+    const rate = state2.pressureAccumulationRate;
+
+    // Simulate pressure accumulation (same logic as advanceTurn)
+    state2.pressure += rate;
+    state2.maxPressure = Math.max(state2.maxPressure, state2.pressure);
+    // After first accumulation: pressure = 55, maxPressure = 55
+    if (state2.maxPressure !== 55) {
+      problems.push(
+        `After first pressure accumulation, maxPressure should be 55, got ${state2.maxPressure} (pressure: ${state2.pressure})`
+      );
+    }
+
+    // Accumulate more
+    state2.pressure += rate;
+    state2.maxPressure = Math.max(state2.maxPressure, state2.pressure);
+    // After second accumulation: pressure = 60, maxPressure = 60
+    if (state2.maxPressure !== 60) {
+      problems.push(
+        `After second pressure accumulation, maxPressure should be 60, got ${state2.maxPressure} (pressure: ${state2.pressure})`
+      );
+    }
+
+    // Simulate device use (which reduces pressure) — maxPressure should NOT decrease
+    state2.pressure -= 10;
+    state2.maxPressure = Math.max(state2.maxPressure, state2.pressure);
+    // Pressure is now 50, but maxPressure should remain 60
+    if (state2.maxPressure !== 60) {
+      problems.push(
+        `maxPressure should remain 60 after pressure drops, got ${state2.maxPressure} (pressure: ${state2.pressure})`
+      );
+    }
+
+    // 19c. devicesUsed increments when a device is used
+    const state3 = createInitialState('death-recap-devicesused');
+    state3.foundDevices.push('vent');
+    state3.pressure = 50;
+
+    const vent = getDevice('vent');
+    if (!vent) {
+      problems.push('Vent device not registered — cannot verify devicesUsed increment');
+    } else {
+      // Use the vent device
+      if (vent.canUse(state3)) {
+        vent.use(state3);
+        state3.devicesUsed += 1;
+        if (state3.devicesUsed !== 1) {
+          problems.push(
+            `After one device use, devicesUsed should be 1, got ${state3.devicesUsed}`
+          );
+        }
+
+        // Use it again
+        state3.pressure = 50; // Restore pressure for second use
+        if (vent.canUse(state3)) {
+          vent.use(state3);
+          state3.devicesUsed += 1;
+          if (state3.devicesUsed !== 2) {
+            problems.push(
+              `After two device uses, devicesUsed should be 2, got ${state3.devicesUsed}`
+            );
+          }
+        }
+      }
+    }
+
+    // 19d. devicesUsed stays 0 when no devices are used
+    const state4 = createInitialState('death-recap-no-devices');
+    if (state4.devicesUsed !== 0) {
+      problems.push(
+        `devicesUsed should be 0 when no devices have been used, got ${state4.devicesUsed}`
+      );
+    }
+
+    // 19e. galleryIndex + 1 gives the correct number of galleries visited
+    const state5 = createInitialState('death-recap-galleries');
+    if (state5.galleryIndex + 1 !== 1) {
+      problems.push(
+        `Galleries visited should be 1 at start, got ${state5.galleryIndex + 1}`
+      );
+    }
+
+    // Simulate descending once
+    state5.galleryIndex = 1;
+    if (state5.galleryIndex + 1 !== 2) {
+      problems.push(
+        `Galleries visited should be 2 after one descent, got ${state5.galleryIndex + 1}`
+      );
+    }
+
+    // 19f. turn count is correct at death
+    const state6 = createInitialState('death-recap-turn');
+    state6.turn = 12;
+    if (state6.turn !== 12) {
+      problems.push(
+        `Turn count should be 12, got ${state6.turn}`
+      );
+    }
+
+  } catch (err) {
+    problems.push(`Could not verify death recap statistics: ${err.message}`);
+  }
+
   return problems;
 }

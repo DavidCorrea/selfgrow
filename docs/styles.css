@@ -549,3 +549,33 @@ footer .rivet {
 .death-screen:focus {
   outline: none;
 }
+
+/* --- Death stats --- */
+.death-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: 100%;
+  max-width: 360px;
+  border-top: 1px solid #2a2a2a;
+  border-bottom: 1px solid #2a2a2a;
+  padding: 1rem 0;
+}
+
+.death-stat {
+  font-size: 0.8rem;
+  color: #a8a07a;
+  letter-spacing: 0.08em;
+  display: flex;
+  justify-content: space-between;
+  line-height: 1.6;
+}
+
+.death-stat::before {
+  content: "\25C8";
+  color: #c8a45c;
+  font-size: 0.5rem;
+  margin-right: 0.5rem;
+  vertical-align: middle;
+  opacity: 0.6;
+}
