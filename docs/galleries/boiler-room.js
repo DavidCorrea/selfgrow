@@ -10,6 +10,9 @@ registerGallery('boiler-room', {
       'then again — a slow, mechanical heartbeat. The Sentinel\'s footsteps',
       'echo differently here, sharper, as if the walls are closer than they',
       'look. A single doorway leads north into darkness.',
+      '',
+      'Amid the clutter, a tarnished steam cloak hangs from a pipe, still',
+      'warm to the touch.',
     ].join('\n');
   },
 });

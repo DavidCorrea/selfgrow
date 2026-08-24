@@ -2,6 +2,7 @@ import { registerDevice } from '../engine/registry.js';
 
 registerDevice('safety-valve', {
   name: 'Safety Valve',
+  foundIn: 'pipe-gallery',
   cost: 15,
   reduction: 20,
 

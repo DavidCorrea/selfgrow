@@ -57,6 +57,7 @@ export function createInitialState(seed, memory) {
     memory: memory || { descents: 0, lastOutcome: 'none', lastSeed: null },
     automatonState: {},
     deviceStates: {},
+    foundDevices: ['vent'],
   };
 
   // Initialise automaton
@@ -90,6 +91,14 @@ function advanceTurn(state, action) {
     if (state.galleryIndex < state.gallerySequence.length - 1) {
       state.galleryIndex += 1;
       state.location = state.gallerySequence[state.galleryIndex];
+      // Grant any device found in this gallery
+      const deviceIds = listDevices();
+      for (const id of deviceIds) {
+        const device = getDevice(id);
+        if (device && device.foundIn && device.foundIn === state.location && !state.foundDevices.includes(id)) {
+          state.foundDevices.push(id);
+        }
+      }
     }
   }
   // 'wait' does nothing — player chooses to let the turn pass
@@ -281,6 +290,8 @@ function render(state) {
   for (const id of deviceIds) {
     const device = getDevice(id);
     if (!device) continue;
+    // Only show devices the player has found
+    if (!state.foundDevices.includes(id)) continue;
 
     const btn = document.createElement('button');
     btn.className = 'device-btn';
@@ -325,8 +336,15 @@ function render(state) {
   // Keyboard hint
   const hint = document.createElement('p');
   hint.className = 'keyboard-hint';
-  const descendHint = state.galleryIndex < state.gallerySequence.length - 1 ? '  |  D: descend' : '';
-  hint.textContent = `V: use Vent  |  S: use Steam Cloak  |  A: use Safety Valve  |  W: wait  |  R: restart${descendHint}`;
+  let hintText = '';
+  if (state.foundDevices.includes('vent')) hintText += 'V: use Vent  |  ';
+  if (state.foundDevices.includes('steam-cloak')) hintText += 'S: use Steam Cloak  |  ';
+  if (state.foundDevices.includes('safety-valve')) hintText += 'A: use Safety Valve  |  ';
+  hintText += 'W: wait  |  R: restart';
+  if (state.galleryIndex < state.gallerySequence.length - 1) {
+    hintText += '  |  D: descend';
+  }
+  hint.textContent = hintText;
   panelInner.appendChild(hint);
 
   // Focus the first button
@@ -397,15 +415,15 @@ function handleKeydown(e) {
   // If game is ended, only restart works
   if (state.ended) return;
 
-  if (key === 'v') {
+  if (key === 'v' && state.foundDevices.includes('vent')) {
     e.preventDefault();
     advanceTurn(state, 'use:vent');
     render(state);
-  } else if (key === 's') {
+  } else if (key === 's' && state.foundDevices.includes('steam-cloak')) {
     e.preventDefault();
     advanceTurn(state, 'use:steam-cloak');
     render(state);
-  } else if (key === 'a') {
+  } else if (key === 'a' && state.foundDevices.includes('safety-valve')) {
     e.preventDefault();
     advanceTurn(state, 'use:safety-valve');
     render(state);
