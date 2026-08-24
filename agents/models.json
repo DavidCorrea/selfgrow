@@ -4,7 +4,7 @@
     {
       "id": "openrouter/deepseek/deepseek-v4-flash",
       "paid": true,
-      "why": "Paid head, $0.098/$0.196 per M tokens. The most capable model in its price band — everything cheaper in pi's registry is an 8B-class model. Falls through to the free entries below on any error, including an exhausted balance."
+      "why": "Paid head, $0.14/$0.28 per M tokens as of pi 0.84.2 — 47th cheapest of the 327 paid OpenRouter models pi knows, and the cheapest that is both coding-tuned and a current frontier-family model. Cheaper entries exist; they trade away the reasoning the Builder leans on. Falls through to the free entries below on any error, including an exhausted balance."
     },
     {
       "id": "openrouter/nvidia/nemotron-3-nano-30b-a3b:free",
