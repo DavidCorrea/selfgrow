@@ -7,6 +7,7 @@
  */
 
 import { createPRNG } from './engine/prng.js';
+import { generateGallerySequence } from './engine/gallery-generator.js';
 import {
   getAutomaton,
   getDevice,
@@ -31,12 +32,18 @@ let announceEl = null;
  */
 export function createInitialState(seed) {
   const rng = createPRNG(seed);
+
+  // Generate the gallery sequence from the seed — deterministic
+  const gallerySequence = generateGallerySequence(rng);
+
   const state = {
     seed,
     rng,
     pressure: 50,
     ruptureThreshold: 100,
-    location: 'engine-room',
+    location: gallerySequence[0] || 'engine-room',
+    gallerySequence,
+    galleryIndex: 0,
     turn: 0,
     active: true,
     ended: false,
@@ -69,6 +76,13 @@ function advanceTurn(state, action) {
     const device = getDevice(deviceId);
     if (device && device.canUse(state)) {
       device.use(state);
+    }
+  }
+  // 'descend' moves to the next gallery in the sequence
+  if (action === 'descend') {
+    if (state.galleryIndex < state.gallerySequence.length - 1) {
+      state.galleryIndex += 1;
+      state.location = state.gallerySequence[state.galleryIndex];
     }
   }
   // 'wait' does nothing — player chooses to let the turn pass
@@ -164,6 +178,13 @@ function render(state) {
   const descPara = document.createElement('p');
   descPara.textContent = gallery ? gallery.describe(state) : 'You are somewhere unknown.';
   gallerySection.appendChild(descPara);
+
+  // Gallery progress indicator
+  const progress = document.createElement('div');
+  progress.className = 'gallery-progress';
+  progress.textContent = `Gallery ${state.galleryIndex + 1} of ${state.gallerySequence.length}`;
+  gallerySection.appendChild(progress);
+
   panelInner.appendChild(gallerySection);
 
   // Pressure gauge
@@ -244,6 +265,15 @@ function render(state) {
   waitBtn.textContent = 'Wait (advance turn)';
   actionSection.appendChild(waitBtn);
 
+  // Descend button — only if there are more galleries to visit
+  if (state.galleryIndex < state.gallerySequence.length - 1) {
+    const descendBtn = document.createElement('button');
+    descendBtn.className = 'action-btn descend-btn';
+    descendBtn.dataset.action = 'descend';
+    descendBtn.textContent = 'Descend deeper (next gallery)';
+    actionSection.appendChild(descendBtn);
+  }
+
   panelInner.appendChild(actionSection);
 
   // Turn counter
@@ -255,7 +285,8 @@ function render(state) {
   // Keyboard hint
   const hint = document.createElement('p');
   hint.className = 'keyboard-hint';
-  hint.textContent = 'V: use Vent  |  W: wait  |  R: restart';
+  const descendHint = state.galleryIndex < state.gallerySequence.length - 1 ? '  |  D: descend' : '';
+  hint.textContent = `V: use Vent  |  W: wait  |  R: restart${descendHint}`;
   panelInner.appendChild(hint);
 
   // Focus the first button
@@ -334,6 +365,12 @@ function handleKeydown(e) {
     e.preventDefault();
     advanceTurn(state, 'wait');
     render(state);
+  } else if (key === 'd') {
+    e.preventDefault();
+    if (state.galleryIndex < state.gallerySequence.length - 1) {
+      advanceTurn(state, 'descend');
+      render(state);
+    }
   }
 }
 
