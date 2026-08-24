@@ -22,6 +22,7 @@ import './galleries/pipe-gallery.js';
 import './automata/sentinel.js';
 import './devices/vent.js';
 import './devices/steam-cloak.js';
+import './devices/safety-valve.js';
 
 /* ───── Game state ───── */
 
@@ -311,7 +312,7 @@ function render(state) {
   const hint = document.createElement('p');
   hint.className = 'keyboard-hint';
   const descendHint = state.galleryIndex < state.gallerySequence.length - 1 ? '  |  D: descend' : '';
-  hint.textContent = `V: use Vent  |  S: use Steam Cloak  |  W: wait  |  R: restart${descendHint}`;
+  hint.textContent = `V: use Vent  |  S: use Steam Cloak  |  A: use Safety Valve  |  W: wait  |  R: restart${descendHint}`;
   panelInner.appendChild(hint);
 
   // Focus the first button
@@ -389,6 +390,10 @@ function handleKeydown(e) {
   } else if (key === 's') {
     e.preventDefault();
     advanceTurn(state, 'use:steam-cloak');
+    render(state);
+  } else if (key === 'a') {
+    e.preventDefault();
+    advanceTurn(state, 'use:safety-valve');
     render(state);
   } else if (key === 'w') {
     e.preventDefault();

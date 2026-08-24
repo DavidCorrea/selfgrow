@@ -573,7 +573,137 @@ export async function checks() {
     problems.push(`Could not verify Steam Cloak device: ${err.message}`);
   }
 
-  // ── 10. Text contrast meets WCAG AA 4.5:1 ──
+  // ── 10. Safety Valve device is registered and works ──
+  try {
+    const { createInitialState } = await import('./game.js');
+    const { getDevice, listDevices } = await import('./engine/registry.js');
+
+    const devices = listDevices();
+    if (!devices.includes('safety-valve')) {
+      problems.push('Safety Valve device not found in registry');
+    }
+
+    const valve = getDevice('safety-valve');
+    if (!valve) {
+      problems.push('Safety Valve device not registered — cannot verify');
+    } else {
+      // Verify required methods
+      if (typeof valve.describe !== 'function') {
+        problems.push('Safety Valve missing describe method');
+      }
+      if (typeof valve.canUse !== 'function') {
+        problems.push('Safety Valve missing canUse method');
+      }
+      if (typeof valve.use !== 'function') {
+        problems.push('Safety Valve missing use method');
+      }
+
+      // Verify cost is a positive integer
+      if (typeof valve.cost !== 'number' || valve.cost <= 0 || !Number.isInteger(valve.cost)) {
+        problems.push(`Safety Valve cost should be a positive integer, got ${valve.cost}`);
+      }
+
+      // Cost should be 15 per the spec
+      if (valve.cost !== 15) {
+        problems.push(`Safety Valve cost should be 15, got ${valve.cost}`);
+      }
+
+      // Verify reduction is a positive number
+      if (typeof valve.reduction !== 'number' || valve.reduction <= 0) {
+        problems.push(`Safety Valve reduction should be a positive number, got ${valve.reduction}`);
+      }
+
+      // Verify canUse returns false when pressure is below cost
+      const state = createInitialState('safety-valve-test');
+      state.pressure = 5; // Below cost of 15
+      const couldUse = valve.canUse(state);
+      if (couldUse) {
+        problems.push('Safety Valve.canUse() returned true when pressure (5) is below cost (15)');
+      }
+
+      // Using it with insufficient pressure should return false and not change state
+      const used = valve.use(state);
+      if (used) {
+        problems.push('Safety Valve.use() returned true when pressure was insufficient');
+      }
+      if (state.pressure < 0) {
+        problems.push(`Pressure went below zero: ${state.pressure}`);
+      }
+
+      // Verify that with sufficient pressure it works
+      state.pressure = 50;
+      const couldUse2 = valve.canUse(state);
+      if (!couldUse2) {
+        problems.push('Safety Valve.canUse() returned false when pressure (50) is sufficient');
+      }
+
+      const pressureBefore = state.pressure;
+      const used2 = valve.use(state);
+      if (!used2) {
+        problems.push('Safety Valve.use() returned false when pressure was sufficient');
+      }
+
+      // Expected: pressure = 50 - 15 (cost) - 20 (reduction) = 15
+      const expectedPressure = pressureBefore - valve.cost - valve.reduction;
+      if (state.pressure !== expectedPressure) {
+        problems.push(
+          `Safety Valve did not apply correct effect: expected ${expectedPressure}, got ${state.pressure} ` +
+          `(cost: ${valve.cost}, reduction: ${valve.reduction})`
+        );
+      }
+
+      // Verify pressure never goes below zero
+      state.pressure = 10; // Enough for cost (15) but not enough for cost + reduction (35)
+      if (valve.canUse(state)) {
+        // It should be usable since 10 >= 15 is false
+        problems.push('Safety Valve.canUse() returned true when pressure (10) is below cost (15)');
+      }
+
+      // Verify the device description is distinct from Vent and Steam Cloak
+      const vent = getDevice('vent');
+      const cloak = getDevice('steam-cloak');
+      if (valve.describe) {
+        const valveState = createInitialState('safety-valve-desc');
+        valveState.pressure = 50;
+        const valveDesc = valve.describe(valveState);
+
+        if (vent && vent.describe) {
+          const ventDesc = vent.describe(valveState);
+          if (valveDesc === ventDesc) {
+            problems.push('Safety Valve description is identical to Vent description — must be distinct');
+          }
+        }
+
+        if (cloak && cloak.describe) {
+          const cloakDesc = cloak.describe(valveState);
+          if (valveDesc === cloakDesc) {
+            problems.push('Safety Valve description is identical to Steam Cloak description — must be distinct');
+          }
+        }
+
+        // Verify the description shows cost, current pressure, and usability
+        if (!valveDesc.includes(String(valve.cost))) {
+          problems.push(`Safety Valve description should show cost (${valve.cost}), got: "${valveDesc}"`);
+        }
+        if (!valveDesc.includes(String(valveState.pressure))) {
+          problems.push(`Safety Valve description should show current pressure (${valveState.pressure}), got: "${valveDesc}"`);
+        }
+        if (!valveDesc.includes('ready') && !valveDesc.includes('insufficient')) {
+          problems.push(`Safety Valve description should show usability, got: "${valveDesc}"`);
+        }
+      }
+
+      // Verify the device is listed in the registry
+      const allDevices = listDevices();
+      if (!allDevices.includes('safety-valve')) {
+        problems.push('Safety Valve not found in listDevices()');
+      }
+    }
+  } catch (err) {
+    problems.push(`Could not verify Safety Valve device: ${err.message}`);
+  }
+
+  // ── 12. Text contrast meets WCAG AA 4.5:1 ──
   // Helper: convert an rgb string like "rgb(r, g, b)" or "#rrggbb" to {r,g,b}
   function parseColor(str) {
     if (!str) return null;
@@ -709,7 +839,7 @@ export async function checks() {
     }
   }
 
-  // ── 11. Sentinel burst/pause pattern ──
+  // ── 13. Sentinel burst/pause pattern ──
   // The Sentinel should advance 2 on burst turns, 0 on pause turns, and the
   // description should reflect the current state so a player can predict it.
   try {
@@ -819,7 +949,7 @@ export async function checks() {
     problems.push(`Could not verify Sentinel burst/pause pattern: ${err.message}`);
   }
 
-  // ── 12. Pressure accumulates each turn ──
+  // ── 14. Pressure accumulates each turn ──
   // Pressure should increase by pressureAccumulationRate each turn,
   // making hoarding a genuine threat.
   try {
