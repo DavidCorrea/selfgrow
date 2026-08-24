@@ -231,6 +231,9 @@ export async function checks() {
     if (!galleries.includes('engine-room')) {
       problems.push('Engine room gallery not found in registry');
     }
+    if (!galleries.includes('boiler-room')) {
+      problems.push('Boiler room gallery not found in registry — second gallery is missing');
+    }
 
     const sentinel = getAutomaton('sentinel');
     if (!sentinel || typeof sentinel.describe !== 'function' || typeof sentinel.act !== 'function') {
@@ -245,6 +248,25 @@ export async function checks() {
     const engineRoom = getGallery('engine-room');
     if (!engineRoom || typeof engineRoom.describe !== 'function') {
       problems.push('Engine room gallery missing required method (describe)');
+    }
+
+    const boilerRoom = getGallery('boiler-room');
+    if (!boilerRoom || typeof boilerRoom.describe !== 'function') {
+      problems.push('Boiler room gallery missing required method (describe)');
+    }
+
+    // Verify descriptions are distinct
+    if (engineRoom && boilerRoom &&
+        typeof engineRoom.describe === 'function' &&
+        typeof boilerRoom.describe === 'function') {
+      const engineDesc = engineRoom.describe({});
+      const boilerDesc = boilerRoom.describe({});
+      if (engineDesc === boilerDesc) {
+        problems.push('Boiler room description is identical to engine room description — must be distinct');
+      }
+      if (!boilerDesc || boilerDesc.trim().length < 20) {
+        problems.push('Boiler room description is too short or empty');
+      }
     }
   } catch (err) {
     problems.push(`Could not verify module registry: ${err.message}`);
@@ -279,10 +301,25 @@ export async function checks() {
         }
       }
 
+      // The sequence must contain at least 2 galleries so the arrangement system is meaningful
+      if (state1.gallerySequence.length < 2) {
+        problems.push(
+          `Gallery generator produced sequence with only ${state1.gallerySequence.length} gallery — ` +
+          'needs at least 2 for meaningful shuffling'
+        );
+      }
+
       // The first gallery must always be engine-room (the starting gallery)
       if (state1.gallerySequence[0] !== 'engine-room') {
         problems.push(
           `First gallery in sequence should be 'engine-room', got '${state1.gallerySequence[0]}'`
+        );
+      }
+
+      // The boiler-room must appear somewhere in the sequence
+      if (!state1.gallerySequence.includes('boiler-room')) {
+        problems.push(
+          `Boiler-room gallery not found in gallery sequence: [${state1.gallerySequence.join(', ')}]`
         );
       }
 

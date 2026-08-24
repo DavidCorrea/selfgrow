@@ -17,6 +17,7 @@ import {
 
 // Import modules for registration side-effects
 import './galleries/engine-room.js';
+import './galleries/boiler-room.js';
 import './automata/sentinel.js';
 import './devices/vent.js';
 
