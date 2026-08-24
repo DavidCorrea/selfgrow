@@ -662,5 +662,115 @@ export async function checks() {
     }
   }
 
+  // ── 11. Sentinel burst/pause pattern ──
+  // The Sentinel should advance 2 on burst turns, 0 on pause turns, and the
+  // description should reflect the current state so a player can predict it.
+  try {
+    const { createInitialState } = await import('./game.js');
+    const { getAutomaton } = await import('./engine/registry.js');
+
+    const automaton = getAutomaton('sentinel');
+    if (!automaton) {
+      problems.push('Sentinel automaton not registered — cannot verify burst/pause pattern');
+    } else {
+      // Start from a known position
+      const state = createInitialState('sentinel-pattern-test');
+      const initialPos = state.automatonState.position; // should be 5
+
+      // patternStep should be 0 (burst) initially
+      if (state.automatonState.patternStep !== 0) {
+        problems.push(
+          `Sentinel initial patternStep should be 0, got ${state.automatonState.patternStep}`
+        );
+      }
+
+      // ── Burst turn (patternStep 0): advance 2 ──
+      automaton.act(state);
+      if (state.automatonState.position !== initialPos - 2) {
+        problems.push(
+          `Sentinel burst turn: expected position ${initialPos - 2}, got ${state.automatonState.position}`
+        );
+      }
+      if (state.automatonState.patternStep !== 1) {
+        problems.push(
+          `Sentinel after burst: patternStep should be 1, got ${state.automatonState.patternStep}`
+        );
+      }
+
+      // ── Pause turn (patternStep 1): advance 0 ──
+      const posAfterBurst = state.automatonState.position;
+      automaton.act(state);
+      if (state.automatonState.position !== posAfterBurst) {
+        problems.push(
+          `Sentinel pause turn: expected position ${posAfterBurst} (no change), got ${state.automatonState.position}`
+        );
+      }
+      if (state.automatonState.patternStep !== 0) {
+        problems.push(
+          `Sentinel after pause: patternStep should be 0, got ${state.automatonState.patternStep}`
+        );
+      }
+
+      // ── Second burst turn: advance 2 again ──
+      const posAfterPause = state.automatonState.position;
+      automaton.act(state);
+      if (state.automatonState.position !== posAfterPause - 2) {
+        problems.push(
+          `Sentinel second burst turn: expected position ${posAfterPause - 2}, got ${state.automatonState.position}`
+        );
+      }
+      if (state.automatonState.patternStep !== 1) {
+        problems.push(
+          `Sentinel after second burst: patternStep should be 1, got ${state.automatonState.patternStep}`
+        );
+      }
+
+      // ── describe() shows pattern state ──
+      // Reset to a known state for the describe check
+      state.automatonState.position = 5;
+
+      state.automatonState.patternStep = 0; // burst
+      const descBurst = automaton.describe(state);
+      if (!descBurst.includes('advancing rapidly') && !descBurst.includes('2 steps')) {
+        problems.push(
+          `Sentinel describe() on burst turn should mention advancing rapidly, got: "${descBurst}"`
+        );
+      }
+
+      state.automatonState.patternStep = 1; // pause
+      const descPause = automaton.describe(state);
+      if (!descPause.includes('winding its gears') && !descPause.includes('pausing')) {
+        problems.push(
+          `Sentinel describe() on pause turn should mention winding its gears, got: "${descPause}"`
+        );
+      }
+
+      // Verify descriptions are different from each other
+      if (descBurst === descPause) {
+        problems.push(
+          'Sentinel describe() returns identical text for burst and pause turns — must differ'
+        );
+      }
+
+      // Verify that a player can predict the pattern after 2 turns
+      // If they see "advancing rapidly" (burst), they know next turn is pause (0 steps)
+      // If they see "winding its gears" (pause), they know next turn is burst (2 steps)
+      // After observing 2 turns, the pattern reveals itself
+      state.automatonState.patternStep = 0;
+      const firstDesc = automaton.describe(state);
+      automaton.act(state); // now patternStep = 1
+      const secondDesc = automaton.describe(state);
+
+      // The descriptions should alternate
+      if (firstDesc === secondDesc) {
+        problems.push(
+          'Sentinel descriptions should alternate between burst and pause — consecutive turns gave same description'
+        );
+      }
+    }
+  } catch (err) {
+    problems.push(`Could not verify Sentinel burst/pause pattern: ${err.message}`);
+  }
+
   return problems;
 }
