@@ -596,6 +596,16 @@ export async function checks() {
       selector: '.keyboard-hint',
       bgSelector: '.panel-inner',
     },
+    {
+      name: 'dt (Seed label)',
+      selector: '.seed-display dt',
+      bgSelector: '.seed-display',
+    },
+    {
+      name: 'footer p (tagline)',
+      selector: 'footer p',
+      bgSelector: 'body',
+    },
   ];
 
   const MIN_CONTRAST = 4.5;
