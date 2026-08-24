@@ -279,6 +279,13 @@ function render(state) {
   rateDisplay.textContent = `+${state.pressureAccumulationRate} per turn`;
   pressureSection.appendChild(rateDisplay);
 
+  // Next-turn pressure projection
+  const projectedPressure = state.pressure + state.pressureAccumulationRate;
+  const projectionDisplay = document.createElement('div');
+  projectionDisplay.className = 'pressure-projection';
+  projectionDisplay.textContent = `Next turn (wait): ${projectedPressure} / ${state.ruptureThreshold}`;
+  pressureSection.appendChild(projectionDisplay);
+
   panelInner.appendChild(pressureSection);
 
   // Automaton status

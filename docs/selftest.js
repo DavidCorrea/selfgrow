@@ -1633,5 +1633,107 @@ export async function checks() {
     problems.push(`Could not verify death recap statistics: ${err.message}`);
   }
 
+  // ── 20. Next-turn pressure projection ──
+  // The pressure gauge area must show the projected pressure after waiting one turn.
+  try {
+    const { createInitialState } = await import('./game.js');
+
+    // Check that the projection element exists in the DOM when the game is active
+    const projectionEl = document.querySelector('.pressure-projection');
+    if (!projectionEl) {
+      problems.push(
+        'Pressure projection element (.pressure-projection) not found in the DOM — ' +
+        'should appear below the pressure gauge when the game is active'
+      );
+    } else {
+      const text = projectionEl.textContent;
+      if (!text.includes('Next turn') || !text.includes('wait') || !text.includes('/')) {
+        problems.push(
+          `Pressure projection should show 'Next turn (wait): X / Y', got: "${text}"`
+        );
+      }
+
+      // Verify the projection matches the expected value for the current game state
+      const { startNewDescent } = await import('./game.js');
+      // We can't easily read the current game state from outside, but we can
+      // verify the formatting by checking the DOM content more precisely
+      const match = text.match(/Next turn \(wait\): (\d+) \/ (\d+)/);
+      if (!match) {
+        problems.push(
+          `Pressure projection format incorrect: expected "Next turn (wait): X / Y", got: "${text}"`
+        );
+      } else {
+        const projected = parseInt(match[1], 10);
+        const threshold = parseInt(match[2], 10);
+
+        if (threshold !== 100) {
+          problems.push(
+            `Pressure projection threshold should be 100, got ${threshold}`
+          );
+        }
+
+        // The projected value should be current pressure (50) + rate (5) = 55
+        // for a fresh game state
+        if (projected !== 55) {
+          problems.push(
+            `Pressure projection should show 55 for a fresh game (50 + 5 rate), got ${projected}`
+          );
+        }
+
+        // Verify the projected value is greater than the current pressure
+        // (projected = current + rate, so it should be higher)
+        const numbersEl = document.querySelector('.pressure-numbers');
+        if (numbersEl) {
+          const numbersText = numbersEl.textContent;
+          const currentMatch = numbersText.match(/(\d+) \/ \d+/);
+          if (currentMatch) {
+            const currentPressure = parseInt(currentMatch[1], 10);
+            if (projected <= currentPressure) {
+              problems.push(
+                `Projected pressure (${projected}) should be greater than current pressure (${currentPressure})`
+              );
+            }
+          }
+        }
+      }
+    }
+
+    // Verify the projection does NOT appear on the death screen
+    // We can check by looking for it while the death screen is shown
+    const deathScreen = document.querySelector('.death-screen');
+    if (deathScreen) {
+      const deathProjection = deathScreen.querySelector('.pressure-projection');
+      if (deathProjection) {
+        problems.push(
+          'Pressure projection should not appear on the death screen'
+        );
+      }
+    }
+
+    // Verify the projection element is a sibling of the pressure-rate element
+    // (i.e., it appears below the rate display)
+    const rateEl = document.querySelector('.pressure-rate');
+    if (rateEl && projectionEl) {
+      const rateNext = rateEl.nextElementSibling;
+      if (rateNext !== projectionEl) {
+        // This is a soft check — the element might be reordered by other changes
+        // Only flag if the projection is not in the pressure section at all
+        const pressureSection = rateEl.closest('.pressure-section') || projectionEl.closest('.pressure-section');
+        if (!pressureSection) {
+          problems.push(
+            'Pressure projection element should be inside the .pressure-section container'
+          );
+        }
+      }
+    }
+
+    // Verify the projection updates correctly when state changes
+    // We'll simulate by checking that the element is re-rendered (it gets replaced
+    // on each render since panelInner.innerHTML = '' is cleared)
+    // This is implicit — the test only needs to verify the element exists and is correct
+  } catch (err) {
+    problems.push(`Could not verify pressure projection: ${err.message}`);
+  }
+
   return problems;
 }

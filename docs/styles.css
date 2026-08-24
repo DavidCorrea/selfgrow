@@ -427,6 +427,15 @@ footer .rivet {
   font-style: italic;
 }
 
+.pressure-projection {
+  font-size: 0.65rem;
+  color: #c8a45c;
+  letter-spacing: 0.1em;
+  text-align: right;
+  font-style: italic;
+  opacity: 0.85;
+}
+
 /* --- Automaton status --- */
 .automaton-section {
   background: #0a0a0a;
