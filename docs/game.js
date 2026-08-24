@@ -20,6 +20,7 @@ import './galleries/engine-room.js';
 import './galleries/boiler-room.js';
 import './automata/sentinel.js';
 import './devices/vent.js';
+import './devices/steam-cloak.js';
 
 /* ───── Game state ───── */
 
@@ -89,9 +90,15 @@ function advanceTurn(state, action) {
   // 'wait' does nothing — player chooses to let the turn pass
 
   // --- Automaton action ---
-  const automaton = getAutomaton('sentinel');
-  if (automaton && automaton.act) {
-    automaton.act(state);
+  // Check if the Steam Cloak caused the Sentinel to skip its next advance
+  const shouldSkip = state.automatonState && state.automatonState.skipNextAct;
+  if (shouldSkip) {
+    state.automatonState.skipNextAct = false;
+  } else {
+    const automaton = getAutomaton('sentinel');
+    if (automaton && automaton.act) {
+      automaton.act(state);
+    }
   }
 
   // --- Check death conditions ---
@@ -287,7 +294,7 @@ function render(state) {
   const hint = document.createElement('p');
   hint.className = 'keyboard-hint';
   const descendHint = state.galleryIndex < state.gallerySequence.length - 1 ? '  |  D: descend' : '';
-  hint.textContent = `V: use Vent  |  W: wait  |  R: restart${descendHint}`;
+  hint.textContent = `V: use Vent  |  S: use Steam Cloak  |  W: wait  |  R: restart${descendHint}`;
   panelInner.appendChild(hint);
 
   // Focus the first button
@@ -361,6 +368,10 @@ function handleKeydown(e) {
   if (key === 'v') {
     e.preventDefault();
     advanceTurn(state, 'use:vent');
+    render(state);
+  } else if (key === 's') {
+    e.preventDefault();
+    advanceTurn(state, 'use:steam-cloak');
     render(state);
   } else if (key === 'w') {
     e.preventDefault();
