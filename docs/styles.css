@@ -72,7 +72,7 @@ h1 .deep {
 .subtitle {
   margin-top: 0.5rem;
   font-size: clamp(0.75rem, 2vw, 0.9rem);
-  color: #6a6a5a;
+  color: #808070;
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
@@ -300,7 +300,7 @@ footer .rivet {
 /* --- Gallery progress --- */
 .gallery-progress {
   font-size: 0.65rem;
-  color: #6a6a5a;
+  color: #808070;
   letter-spacing: 0.15em;
   text-transform: uppercase;
   margin-top: 0.5rem;
@@ -317,7 +317,7 @@ footer .rivet {
 .pressure-label {
   font-size: 0.65rem;
   letter-spacing: 0.2em;
-  color: #6a6a5a;
+  color: #808070;
   text-transform: uppercase;
 }
 
@@ -426,7 +426,7 @@ footer .rivet {
 /* --- Turn display --- */
 .turn-display {
   font-size: 0.7rem;
-  color: #6a6a5a;
+  color: #808070;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   text-align: center;
@@ -435,7 +435,7 @@ footer .rivet {
 /* --- Keyboard hint --- */
 .keyboard-hint {
   font-size: 0.6rem;
-  color: #4a4a3a;
+  color: #808070;
   letter-spacing: 0.1em;
   text-align: center;
   margin-top: 0.25rem;

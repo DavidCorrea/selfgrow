@@ -367,5 +367,131 @@ export async function checks() {
     }
   }
 
+  // ── 9. Text contrast meets WCAG AA 4.5:1 ──
+  // Helper: convert an rgb string like "rgb(r, g, b)" or "#rrggbb" to {r,g,b}
+  function parseColor(str) {
+    if (!str) return null;
+    const trimmed = str.trim();
+    // Handle rgb/rgba format
+    const rgbMatch = trimmed.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+    if (rgbMatch) {
+      return { r: parseInt(rgbMatch[1], 10), g: parseInt(rgbMatch[2], 10), b: parseInt(rgbMatch[3], 10) };
+    }
+    // Handle hex format
+    const hexMatch = trimmed.match(/^#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})/);
+    if (hexMatch) {
+      return { r: parseInt(hexMatch[1], 16), g: parseInt(hexMatch[2], 16), b: parseInt(hexMatch[3], 16) };
+    }
+    return null;
+  }
+
+  function srgbToLinear(channel) {
+    const v = channel / 255;
+    return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  }
+
+  function relativeLuminance({ r, g, b }) {
+    return 0.2126 * srgbToLinear(r) + 0.7152 * srgbToLinear(g) + 0.0722 * srgbToLinear(b);
+  }
+
+  function contrastRatio(l1, l2) {
+    const lighter = Math.max(l1, l2);
+    const darker = Math.min(l1, l2);
+    return (lighter + 0.05) / (darker + 0.05);
+  }
+
+  // Check each element: get its computed color and its parent's background
+  const contrastChecks = [
+    {
+      name: 'p.subtitle',
+      selector: 'p.subtitle',
+      bgSelector: 'body',
+    },
+    {
+      name: 'div.gallery-progress',
+      selector: '.gallery-progress',
+      bgSelector: '.gallery-progress',
+    },
+    {
+      name: 'div.pressure-label',
+      selector: '.pressure-label',
+      bgSelector: '.panel-inner',
+    },
+    {
+      name: 'div.turn-display',
+      selector: '.turn-display',
+      bgSelector: '.panel-inner',
+    },
+    {
+      name: 'p.keyboard-hint',
+      selector: '.keyboard-hint',
+      bgSelector: '.panel-inner',
+    },
+  ];
+
+  const MIN_CONTRAST = 4.5;
+
+  for (const check of contrastChecks) {
+    const el = document.querySelector(check.selector);
+    if (!el) {
+      problems.push(`${check.name} not found in the DOM — cannot verify contrast ratio`);
+      continue;
+    }
+
+    const elStyle = getComputedStyle(el);
+    const fgColor = parseColor(elStyle.color);
+
+    // Determine background: if the element has its own background set, use that;
+    // otherwise walk up to the bgSelector
+    let bgEl = el;
+    if (check.bgSelector === 'body') {
+      bgEl = document.body;
+    } else if (check.bgSelector === '.panel-inner') {
+      bgEl = el.closest('.panel-inner') || document.querySelector('.panel-inner');
+    } else if (check.bgSelector === '.gallery-progress') {
+      // The gallery-progress has its own background from the gallery-description context
+      // Use the element itself (it may inherit from parent)
+      bgEl = el;
+    }
+
+    // For the background color, we need the actual painted background.
+    // If the element itself has a non-transparent background, use it;
+    // otherwise walk up to find one.
+    let bgColor = null;
+    let current = bgEl;
+    while (current) {
+      const style = getComputedStyle(current);
+      const parsed = parseColor(style.backgroundColor);
+      if (parsed && (parsed.r !== 0 || parsed.g !== 0 || parsed.b !== 0 || style.backgroundColor !== 'rgba(0, 0, 0, 0)')) {
+        // Check if it's actually transparent (rgba with alpha 0)
+        if (style.backgroundColor && style.backgroundColor !== 'transparent' && !style.backgroundColor.includes('rgba(0, 0, 0, 0)')) {
+          bgColor = parsed;
+          break;
+        }
+      }
+      current = current.parentElement;
+    }
+
+    if (!fgColor) {
+      problems.push(`${check.name}: could not parse foreground color (${elStyle.color})`);
+      continue;
+    }
+    if (!bgColor) {
+      problems.push(`${check.name}: could not determine background color`);
+      continue;
+    }
+
+    const fgLum = relativeLuminance(fgColor);
+    const bgLum = relativeLuminance(bgColor);
+    const ratio = contrastRatio(fgLum, bgLum);
+
+    if (ratio < MIN_CONTRAST) {
+      problems.push(
+        `${check.name} contrast ratio is ${ratio.toFixed(2)}:1, below WCAG AA minimum of ${MIN_CONTRAST}:1 ` +
+        `(text: ${elStyle.color}, background: ${elStyle.backgroundColor || 'inherited'})`
+      );
+    }
+  }
+
   return problems;
 }
