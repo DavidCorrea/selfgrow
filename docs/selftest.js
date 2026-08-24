@@ -234,6 +234,9 @@ export async function checks() {
     if (!galleries.includes('boiler-room')) {
       problems.push('Boiler room gallery not found in registry — second gallery is missing');
     }
+    if (!galleries.includes('pipe-gallery')) {
+      problems.push('Pipe gallery not found in registry — third gallery is missing');
+    }
 
     const sentinel = getAutomaton('sentinel');
     if (!sentinel || typeof sentinel.describe !== 'function' || typeof sentinel.act !== 'function') {
@@ -255,17 +258,44 @@ export async function checks() {
       problems.push('Boiler room gallery missing required method (describe)');
     }
 
+    const pipeGallery = getGallery('pipe-gallery');
+    if (!pipeGallery || typeof pipeGallery.describe !== 'function') {
+      problems.push('Pipe gallery missing required method (describe)');
+    }
+
     // Verify descriptions are distinct
-    if (engineRoom && boilerRoom &&
+    if (engineRoom && boilerRoom && pipeGallery &&
         typeof engineRoom.describe === 'function' &&
-        typeof boilerRoom.describe === 'function') {
+        typeof boilerRoom.describe === 'function' &&
+        typeof pipeGallery.describe === 'function') {
       const engineDesc = engineRoom.describe({});
       const boilerDesc = boilerRoom.describe({});
+      const pipeDesc = pipeGallery.describe({});
+
       if (engineDesc === boilerDesc) {
         problems.push('Boiler room description is identical to engine room description — must be distinct');
       }
+      if (engineDesc === pipeDesc) {
+        problems.push('Pipe gallery description is identical to engine room description — must be distinct');
+      }
+      if (boilerDesc === pipeDesc) {
+        problems.push('Pipe gallery description is identical to boiler room description — must be distinct');
+      }
+
       if (!boilerDesc || boilerDesc.trim().length < 20) {
         problems.push('Boiler room description is too short or empty');
+      }
+      if (!pipeDesc || pipeDesc.trim().length < 20) {
+        problems.push('Pipe gallery description is too short or empty');
+      }
+
+      // Verify pipe gallery description is at least 3 sentences and mentions the Sentinel
+      const sentenceCount = pipeDesc.split(/[.!?]+/).filter(s => s.trim().length > 0).length;
+      if (sentenceCount < 3) {
+        problems.push(`Pipe gallery description has only ${sentenceCount} sentence(s) — must be at least 3`);
+      }
+      if (!pipeDesc.toLowerCase().includes('sentinel')) {
+        problems.push('Pipe gallery description must mention the Sentinel');
       }
     }
   } catch (err) {
@@ -301,11 +331,11 @@ export async function checks() {
         }
       }
 
-      // The sequence must contain at least 2 galleries so the arrangement system is meaningful
-      if (state1.gallerySequence.length < 2) {
+      // The sequence must contain at least 3 galleries so the arrangement system is meaningful
+      if (state1.gallerySequence.length < 3) {
         problems.push(
-          `Gallery generator produced sequence with only ${state1.gallerySequence.length} gallery — ` +
-          'needs at least 2 for meaningful shuffling'
+          `Gallery generator produced sequence with only ${state1.gallerySequence.length} galleries — ` +
+          'needs at least 3 for meaningful shuffling'
         );
       }
 
@@ -320,6 +350,13 @@ export async function checks() {
       if (!state1.gallerySequence.includes('boiler-room')) {
         problems.push(
           `Boiler-room gallery not found in gallery sequence: [${state1.gallerySequence.join(', ')}]`
+        );
+      }
+
+      // The pipe-gallery must appear somewhere in the sequence
+      if (!state1.gallerySequence.includes('pipe-gallery')) {
+        problems.push(
+          `Pipe-gallery not found in gallery sequence: [${state1.gallerySequence.join(', ')}]`
         );
       }
 
