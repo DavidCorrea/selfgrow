@@ -11,7 +11,11 @@
 //
 // What it will and will not do to the chain:
 //   - It replaces ONLY entries that model-check.mjs calls broken (gone from the
-//     registry, or no longer free). A working id is never touched.
+//     registry, or — for entries not marked `paid` — no longer free). A working
+//     id is never touched, and a deliberately paid one is never evicted for its
+//     price. If a paid entry does rotate out, its substitute comes from the
+//     free-only suggestion list, which degrades the chain to free rather than
+//     silently picking a replacement with an unreviewed price.
 //   - Every substitute is probed against the new pi BEFORE it is committed, and a
 //     candidate that fails to return the JSON envelope is not used. Existing in
 //     the registry is not evidence that a model works here.
@@ -152,7 +156,7 @@ function repairChain(report) {
   const entries = [];
   for (const entry of report.entries) {
     if (!brokenIds.has(entry.id)) {
-      entries.push({ id: entry.id, why: entry.why });
+      entries.push({ id: entry.id, why: entry.why, paid: entry.paid });
       continue;
     }
     const substitute = available.shift();

@@ -1,6 +1,11 @@
 {
-  "_comment": "The text-model chain, as DATA so automation can rewrite it safely. Order matters and encodes a judgment about envelope reliability — see the comment above TEXT_MODELS in shared.mjs. agents/pi-update.mjs replaces entries here only when an id has broken (rotated out of pi's registry, or no longer free); it never reorders a working chain. Edit by hand freely.",
+  "_comment": "The text-model chain, as DATA so automation can rewrite it safely. Order matters and encodes a judgment about envelope reliability — see the comment above TEXT_MODELS in shared.mjs. agents/pi-update.mjs replaces entries here only when an id has broken (rotated out of pi's registry, or — for free entries — no longer free); it never reorders a working chain. Edit by hand freely. An entry with \"paid\": true is one whose cost is DELIBERATE: model-check.mjs won't call it broken for billing money, and the free entries beneath it are its fallback if the key runs dry.",
   "text": [
+    {
+      "id": "openrouter/deepseek/deepseek-v4-flash",
+      "paid": true,
+      "why": "Paid head, $0.098/$0.196 per M tokens. The most capable model in its price band — everything cheaper in pi's registry is an 8B-class model. Falls through to the free entries below on any error, including an exhausted balance."
+    },
     {
       "id": "openrouter/nvidia/nemotron-3-nano-30b-a3b:free",
       "why": "Replaced `openrouter/inclusionai/ling-3.0-flash:free` (missing) automatically; verified by model-probe against pi at the time of the swap."

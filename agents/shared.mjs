@@ -38,6 +38,12 @@ export const promptsDir = join(__dirname, "prompts");
 // Text models tried in order — on a rate-limit / error / empty response, fall
 // through to the next. Free models share tight, shared limits, so a fallback
 // chain matters far more than retrying one model.
+//
+// The chain is PAID-FIRST: a cheap paid head answers when the free tier is
+// rate-limited or capped, and costs nothing extra when it isn't, because a model
+// is only billed when it's actually reached. The free entries beneath it are the
+// safety net — an exhausted balance surfaces as an ordinary request error, which
+// is exactly what the fall-through below already handles.
 // These are pi registry ids (provider/id); override via env TEXT_MODEL
 // (comma-separated). Unknown ids degrade cleanly — resolveTextModels() drops any
 // the registry doesn't know and auto-discovers free models when none remain.
@@ -66,7 +72,13 @@ export function writeModelChain(entries) {
   try {
     existing = JSON.parse(fs.readFileSync(MODELS_FILE, "utf-8"));
   } catch { /* writing a fresh file is fine */ }
-  const payload = { ...existing, text: entries.map(({ id, why }) => ({ id, why })) };
+  // `paid` rides along because dropping it would silently re-arm the free-only
+  // assertion in model-check.mjs, and the next repair would evict a head that is
+  // billing money on purpose.
+  const payload = {
+    ...existing,
+    text: entries.map(({ id, why, paid }) => (paid ? { id, paid, why } : { id, why })),
+  };
   fs.writeFileSync(MODELS_FILE, JSON.stringify(payload, null, 2) + "\n", "utf-8");
 }
 

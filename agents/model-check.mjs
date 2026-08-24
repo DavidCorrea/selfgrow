@@ -53,8 +53,10 @@ export async function checkModelChain() {
     let status = "ok";
     if (!model) status = "missing";
     else if (META_ROUTER_IDS.has(model.id) || META_ROUTER_IDS.has(entry.id)) status = "router";
-    else if (!isFree(model)) status = "paid";
-    return { ...entry, status };
+    // `paid: true` marks a cost the chain accepts on purpose, so billing money is
+    // only a breakage for entries that were meant to be free.
+    else if (!isFree(model) && !entry.paid) status = "paid";
+    return { ...entry, status, cost: model?.cost };
   });
 
   const broken = entries.filter((e) => e.status !== "ok");
@@ -106,7 +108,9 @@ async function main() {
   log("info", `=== Model check — ${result.entries.length} configured model(s) against ${result.registrySize} pi knows ===`);
   for (const entry of result.entries) {
     const note = {
-      ok: "ok",
+      ok: entry.paid
+        ? `ok — PAID ON PURPOSE, $${entry.cost?.input}/$${entry.cost?.output} per M tokens`
+        : "ok",
       missing: "MISSING from pi's registry (rotated out?)",
       paid: "NO LONGER FREE — it would bill real money",
       router: "META-ROUTER — dispatches to an arbitrary model, so runs aren't reproducible",
