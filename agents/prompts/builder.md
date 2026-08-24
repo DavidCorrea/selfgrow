@@ -6,7 +6,7 @@ Read the proposal, explore the files you need to modify, and implement the chang
 
 {{include:_coding-standards}}
 
-{{include:_language-contract}}
+{{include:_product-contract}}
 
 Follow the coding standards above in everything you write — the Reviewer checks against them.
 

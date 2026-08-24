@@ -4,7 +4,7 @@ You are the REVIEWER. Your job is to decide whether this change is safe to ship.
 
 {{include:_coding-standards}}
 
-{{include:_language-contract}}
+{{include:_product-contract}}
 
 The code is in `docs/` (already checked out). The repo root holds only the agent harness (`agents/`, `.github/`), not the app.
 

@@ -37,7 +37,7 @@ jobs:
         run: node agents/curator.mjs
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          # One judgement per week over the whole language. This run's own
+          # One judgement per week over the whole product. This run's own
           # allowance, in REAL requests (one per agent turn), not sessions.
           #
           # The account's 1000/day cap is enforced elsewhere: the shared ledger in

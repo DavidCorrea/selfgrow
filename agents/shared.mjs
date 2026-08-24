@@ -2208,123 +2208,72 @@ function startStaticServer(rootDir) {
     server.listen(0, "127.0.0.1", () => resolve({ server, port: server.address().port }));
   });
 }
-// How long any single program may run before the language is expected to stop
-// it. A capability that can hang the playground is a broken capability.
-const PROGRAM_TIMEOUT_MS = 2000;
+// How long the product's whole self-check suite may run. A suite that can hang
+// the page is itself a defect, and a Builder waiting on it is burning its clock.
+const SELF_TEST_TIMEOUT_MS = 2000;
 
 /**
- * Run the language's own documentation against the language.
+ * Run the product's own self-checks, in the real browser, against the real page.
  *
- * The Vision's central claim is that the reference cannot drift, because every
- * example in it is executed. This is where that claim is enforced: each
- * capability's examples are run through the interpreter and compared to the
- * documented result, and each capability's declared properties are checked.
+ * Layers 1-3 prove the code parses, lints, and loads without throwing. None of
+ * them prove the product actually DOES what it claims — which is exactly the
+ * failure a Builder is most likely to ship, because it looks green everywhere
+ * else. This is where that claim is enforced.
  *
- * No model is involved, so it costs nothing and cannot be argued with — the
- * language either does what its reference says or it does not.
+ * The contract is deliberately tiny (see agents/prompts/_product-contract.md):
+ * `docs/selftest.js` exports `checks()`, which returns an array of
+ * human-readable failure strings — empty when everything holds. What counts as
+ * a check is the product's business; that it can be executed is ours.
  *
- * Returns an array of failure strings (empty when everything holds). A project
- * with no interpreter yet passes.
+ * No model is involved, so it costs nothing and cannot be argued with. A project
+ * that ships no selftest.js yet passes, so a brand-new repo isn't blocked before
+ * it has anything to check.
  */
-async function checkLanguage(browser, url, dir) {
-  if (!fs.existsSync(join(dir, "lang", "run.js"))) {
-    log("info", "Verify: no docs/lang/run.js yet — skipping the language checks.");
+async function checkSelfTests(browser, url, dir) {
+  if (!fs.existsSync(join(dir, "selftest.js"))) {
+    log("info", "Verify: no docs/selftest.js yet — skipping the self-check layer.");
     return [];
   }
-  const capabilityDir = join(dir, "lang", "capabilities");
-  let files = [];
-  try {
-    files = fs
-      .readdirSync(capabilityDir, { withFileTypes: true })
-      .filter((e) => e.isFile() && /\.m?js$/.test(e.name))
-      .map((e) => e.name);
-  } catch {
-    log("info", "Verify: no docs/lang/capabilities/ yet — skipping the language checks.");
-    return [];
-  }
-  if (!files.length) return [];
 
   const page = await browser.newPage();
   const failures = [];
   try {
     await page.goto(url, { waitUntil: "networkidle", timeout: 20000 });
     const result = await page.evaluate(
-      async ({ files, timeoutMs }) => {
-        const problems = [];
-        let lang;
+      async ({ timeoutMs }) => {
+        let mod;
         try {
-          lang = await import("./lang/run.js");
+          mod = await import("./selftest.js");
         } catch (e) {
-          return [`docs/lang/run.js could not be imported — ${e.message}`];
+          return [`docs/selftest.js could not be imported — ${e.message}`];
         }
-        if (typeof lang.run !== "function") {
-          return ["docs/lang/run.js does not export run()"];
+        if (typeof mod.checks !== "function") {
+          return ["docs/selftest.js does not export checks()"];
         }
 
-        // A program that never finishes must be stopped by the language, not by
-        // the browser giving up — so time it here and report the language's
-        // failure to bound it.
-        const runBounded = (source) => {
-          const started = performance.now();
-          const value = lang.run(source);
-          const elapsed = performance.now() - started;
-          if (elapsed > timeoutMs) throw new Error(`took ${Math.round(elapsed)}ms — the language did not stop it`);
-          return value;
-        };
-
-        for (const file of files) {
-          let mod;
-          try {
-            mod = await import(`./lang/capabilities/${file}`);
-          } catch (e) {
-            problems.push(`${file}: could not be imported — ${e.message}`);
-            continue;
-          }
-
-          const examples = mod.meta && Array.isArray(mod.meta.examples) ? mod.meta.examples : null;
-          if (!mod.meta || !mod.meta.name) problems.push(`${file}: meta.name is missing`);
-          if (!examples || examples.length === 0) {
-            problems.push(`${file}: declares no examples — a capability with none is undocumented and untested at once`);
-            continue;
-          }
-
-          for (const example of examples) {
-            if (typeof example?.source !== "string" || example.result === undefined) {
-              problems.push(`${file}: an example is missing source or result`);
-              continue;
-            }
-            let actual;
-            try {
-              actual = runBounded(example.source);
-            } catch (e) {
-              problems.push(`${file}: the documented example \`${example.source}\` failed to run — ${e.message}`);
-              continue;
-            }
-            if (String(actual) !== String(example.result)) {
-              problems.push(
-                `${file}: the reference says \`${example.source}\` gives \`${example.result}\`, but it gives \`${actual}\` — the documentation has drifted`
-              );
-            }
-          }
-
-          if (typeof mod.checkProperties === "function") {
-            try {
-              for (const msg of mod.checkProperties(runBounded) || []) {
-                problems.push(`${file}: property broken — ${msg}`);
-              }
-            } catch (e) {
-              problems.push(`${file}: checkProperties threw — ${e.message}`);
-            }
-          }
-          if (problems.length > 12) return problems; // enough to act on
+        // Time the suite here rather than letting the browser give up, so a
+        // runaway check is reported as the product's failure to bound itself.
+        const started = performance.now();
+        let problems;
+        try {
+          problems = await mod.checks();
+        } catch (e) {
+          return [`docs/selftest.js checks() threw — ${e.message}`];
         }
-        return problems;
+        const elapsed = performance.now() - started;
+        if (elapsed > timeoutMs) {
+          return [`docs/selftest.js checks() took ${Math.round(elapsed)}ms — it must finish within ${timeoutMs}ms`];
+        }
+        if (!Array.isArray(problems)) {
+          return ["docs/selftest.js checks() did not return an array of failure strings"];
+        }
+        return problems.map(String).slice(0, 12); // enough to act on
       },
-      { files, timeoutMs: PROGRAM_TIMEOUT_MS }
+      { timeoutMs: SELF_TEST_TIMEOUT_MS }
     );
     failures.push(...result);
   } catch (e) {
-    log("warn", "Verify: language checks could not run.", errorData(e));
+    log("warn", "Verify: self-checks could not run.", errorData(e));
   } finally {
     await page.close().catch(() => {});
   }
@@ -2336,8 +2285,7 @@ async function checkLanguage(browser, url, dir) {
  *   - layer "syntax"   — a JS file fails `node --check`
  *   - layer "lint"     — ESLint reports an error (e.g. no-undef: undefined function)
  *   - layer "runtime"  — the page throws a console error / uncaught exception / failed load
- *   - layer "language" — the language broke its own reference: a documented
- *                        example stopped being true, or a declared property broke
+ *   - layer "selftest" — the product's own checks() reported a broken claim
  * ok:true (layer null) means all available layers passed (or were skipped).
  */
 export async function verifyBuild(relDir = "docs") {
@@ -2404,15 +2352,15 @@ export async function verifyBuild(relDir = "docs") {
     errors.push(`navigation: ${e.message}`);
   }
 
-  // Layer 4 — the language against its own reference. Only worth running when the
-  // page itself is sound; example failures on a page that is already throwing
+  // Layer 4 — the product against its own claims. Only worth running when the
+  // page itself is sound; check failures on a page that is already throwing
   // would just be noise from the same root cause.
-  let languageFailures = [];
+  let selfTestFailures = [];
   if (!errors.length) {
     try {
-      languageFailures = await checkLanguage(browser, `http://127.0.0.1:${port}/`, dir);
+      selfTestFailures = await checkSelfTests(browser, `http://127.0.0.1:${port}/`, dir);
     } catch (e) {
-      log("warn", "Verify: language layer failed to run.", errorData(e));
+      log("warn", "Verify: self-check layer failed to run.", errorData(e));
     }
   }
 
@@ -2420,8 +2368,8 @@ export async function verifyBuild(relDir = "docs") {
   server.close();
 
   if (errors.length) return { ok: false, layer: "runtime", errors: [...new Set(errors)] };
-  if (languageFailures.length) {
-    return { ok: false, layer: "language", errors: [...new Set(languageFailures)] };
+  if (selfTestFailures.length) {
+    return { ok: false, layer: "selftest", errors: [...new Set(selfTestFailures)] };
   }
   return { ok: true, layer: null, errors: [] };
 }
