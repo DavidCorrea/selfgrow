@@ -297,6 +297,16 @@ footer .rivet {
   outline-offset: 1px;
 }
 
+/* --- Gallery progress --- */
+.gallery-progress {
+  font-size: 0.65rem;
+  color: #6a6a5a;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-top: 0.5rem;
+  text-align: right;
+}
+
 /* --- Pressure gauge --- */
 .pressure-section {
   display: flex;
@@ -401,6 +411,16 @@ footer .rivet {
 
 .action-btn {
   text-align: center;
+}
+
+.descend-btn {
+  border-color: #5a4a2a;
+  color: #c8a45c;
+}
+
+.descend-btn:hover:not(:disabled) {
+  border-color: #c8a45c;
+  background: #2a2a1a;
 }
 
 /* --- Turn display --- */

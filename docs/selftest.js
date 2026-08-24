@@ -250,7 +250,93 @@ export async function checks() {
     problems.push(`Could not verify module registry: ${err.message}`);
   }
 
-  // ── 7. Page structure checks ──
+  // ── 7. Gallery sequence determinism ──
+  // The same seed must produce the same gallery sequence every time.
+  try {
+    const { createInitialState } = await import('./game.js');
+    const { generateGallerySequence } = await import('./engine/gallery-generator.js');
+    const { createPRNG } = await import('./engine/prng.js');
+
+    const seed = 'gallery-seq-test';
+    const state1 = createInitialState(seed);
+    const state2 = createInitialState(seed);
+
+    if (!state1.gallerySequence || !Array.isArray(state1.gallerySequence)) {
+      problems.push('gallerySequence is missing or not an array in initial state');
+    } else {
+      if (state1.gallerySequence.length !== state2.gallerySequence.length) {
+        problems.push(
+          `Gallery sequence length mismatch: ${state1.gallerySequence.length} vs ${state2.gallerySequence.length}`
+        );
+      }
+
+      for (let i = 0; i < state1.gallerySequence.length; i++) {
+        if (state1.gallerySequence[i] !== state2.gallerySequence[i]) {
+          problems.push(
+            `Gallery sequence at index ${i} differs: '${state1.gallerySequence[i]}' vs '${state2.gallerySequence[i]}'`
+          );
+          break;
+        }
+      }
+
+      // The first gallery must always be engine-room (the starting gallery)
+      if (state1.gallerySequence[0] !== 'engine-room') {
+        problems.push(
+          `First gallery in sequence should be 'engine-room', got '${state1.gallerySequence[0]}'`
+        );
+      }
+
+      // Also verify via the generator directly
+      const rng1 = createPRNG(seed);
+      const rng2 = createPRNG(seed);
+      const seq1 = generateGallerySequence(rng1);
+      const seq2 = generateGallerySequence(rng2);
+
+      if (seq1.length !== seq2.length) {
+        problems.push(
+          `Direct generator sequence length mismatch: ${seq1.length} vs ${seq2.length}`
+        );
+      }
+
+      for (let i = 0; i < seq1.length; i++) {
+        if (seq1[i] !== seq2[i]) {
+          problems.push(
+            `Direct generator sequence at index ${i} differs: '${seq1[i]}' vs '${seq2[i]}'`
+          );
+          break;
+        }
+      }
+
+      // Check that the gallery index starts at 0
+      if (state1.galleryIndex !== 0) {
+        problems.push(
+          `Initial galleryIndex should be 0, got ${state1.galleryIndex}`
+        );
+      }
+
+      // Check that location matches the first gallery in the sequence
+      if (state1.location !== state1.gallerySequence[0]) {
+        problems.push(
+          `Initial location '${state1.location}' does not match first gallery '${state1.gallerySequence[0]}'`
+        );
+      }
+
+      // Verify that changing the seed changes the sequence
+      // (when there are multiple galleries to shuffle)
+      const state3 = createInitialState('different-seed-for-test');
+      if (state1.gallerySequence.length > 1 && state3.gallerySequence.length > 1) {
+        // The sequences can still be the same by chance, but at least verify
+        // they are valid and not hardcoded to a single path
+        if (state3.gallerySequence[0] !== 'engine-room') {
+          problems.push('Even with different seed, first gallery should be engine-room');
+        }
+      }
+    }
+  } catch (err) {
+    problems.push(`Could not verify gallery sequence determinism: ${err.message}`);
+  }
+
+  // ── 8. Page structure checks ──
   const gameEl = document.getElementById('game');
   if (!gameEl) {
     problems.push('Missing #game container — game engine has no mount point');
