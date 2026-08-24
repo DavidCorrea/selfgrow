@@ -209,7 +209,7 @@ main {
   font-size: 0.7rem;
   letter-spacing: 0.15em;
   text-transform: uppercase;
-  color: #6a6a5a;
+  color: #808060;
 }
 
 .seed-display dd {
@@ -226,7 +226,7 @@ footer {
   border-top: 1px solid #2a2a2a;
   text-align: center;
   font-size: 0.7rem;
-  color: #4a4a3a;
+  color: #7c7c5c;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
