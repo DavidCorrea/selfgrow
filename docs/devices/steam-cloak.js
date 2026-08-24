@@ -2,6 +2,7 @@ import { registerDevice } from '../engine/registry.js';
 
 registerDevice('steam-cloak', {
   name: 'Steam Cloak',
+  foundIn: 'boiler-room',
   cost: 8,
 
   /** Describe the device and its current state. */

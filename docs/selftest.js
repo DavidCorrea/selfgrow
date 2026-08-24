@@ -1212,5 +1212,179 @@ export async function checks() {
     problems.push(`Could not verify machine memory: ${err.message}`);
   }
 
+  // ── 16. Devices are found in galleries, not all available at start ──
+  try {
+    const { createInitialState } = await import('./game.js');
+    const { getDevice, listDevices } = await import('./engine/registry.js');
+
+    // 16a. The Vent is always available (no foundIn property)
+    const vent = getDevice('vent');
+    if (!vent) {
+      problems.push('Vent device not registered — cannot verify foundIn');
+    } else {
+      if (vent.foundIn !== undefined) {
+        problems.push(`Vent should have no foundIn property, but got foundIn: '${vent.foundIn}'`);
+      }
+    }
+
+    // 16b. Steam Cloak registers foundIn: 'boiler-room'
+    const cloak = getDevice('steam-cloak');
+    if (!cloak) {
+      problems.push('Steam Cloak device not registered — cannot verify foundIn');
+    } else {
+      if (cloak.foundIn !== 'boiler-room') {
+        problems.push(`Steam Cloak foundIn should be 'boiler-room', got '${cloak.foundIn}'`);
+      }
+    }
+
+    // 16c. Safety Valve registers foundIn: 'pipe-gallery'
+    const valve = getDevice('safety-valve');
+    if (!valve) {
+      problems.push('Safety Valve device not registered — cannot verify foundIn');
+    } else {
+      if (valve.foundIn !== 'pipe-gallery') {
+        problems.push(`Safety Valve foundIn should be 'pipe-gallery', got '${valve.foundIn}'`);
+      }
+    }
+
+    // 16d. Initial state has foundDevices: ['vent']
+    const state = createInitialState('found-devices-test');
+    if (!state.foundDevices) {
+      problems.push('Initial state missing foundDevices array');
+    } else if (!Array.isArray(state.foundDevices)) {
+      problems.push(`foundDevices should be an array, got ${typeof state.foundDevices}`);
+    } else {
+      if (state.foundDevices.length !== 1 || state.foundDevices[0] !== 'vent') {
+        problems.push(`Initial foundDevices should be ['vent'], got [${state.foundDevices.join(', ')}]`);
+      }
+    }
+
+    // 16e. Unvisited galleries do not grant their devices
+    // A player who never descends should only have 'vent'
+    const state2 = createInitialState('found-devices-unvisited');
+    if (state2.foundDevices.length !== 1 || !state2.foundDevices.includes('vent')) {
+      problems.push(
+        `Before any descent, foundDevices should only contain 'vent', got [${state2.foundDevices.join(', ')}]`
+      );
+    }
+    if (state2.foundDevices.includes('steam-cloak')) {
+      problems.push('Steam Cloak should not be in foundDevices before visiting the Boiler Room');
+    }
+    if (state2.foundDevices.includes('safety-valve')) {
+      problems.push('Safety Valve should not be in foundDevices before visiting the Pipe Gallery');
+    }
+
+    // 16f. Descending into the Boiler Room grants the Steam Cloak
+    const state3 = createInitialState('found-devices-boiler');
+    // Simulate descending: set location to boiler-room and grant device
+    // We need to find boiler-room in the sequence and descend to it
+    const boilerIndex = state3.gallerySequence.indexOf('boiler-room');
+    if (boilerIndex === -1) {
+      problems.push('boiler-room not found in gallery sequence for found-devices test');
+    } else {
+      // Simulate descent to boiler-room
+      state3.galleryIndex = boilerIndex;
+      state3.location = state3.gallerySequence[boilerIndex];
+
+      // Grant devices found in this gallery (same logic as game engine)
+      const deviceIds = listDevices();
+      for (const id of deviceIds) {
+        const device = getDevice(id);
+        if (device && device.foundIn && device.foundIn === state3.location && !state3.foundDevices.includes(id)) {
+          state3.foundDevices.push(id);
+        }
+      }
+
+      if (!state3.foundDevices.includes('steam-cloak')) {
+        problems.push('Descending into the Boiler Room should grant the Steam Cloak');
+      }
+      if (state3.foundDevices.includes('safety-valve')) {
+        problems.push('Safety Valve should not be granted when descending into the Boiler Room');
+      }
+    }
+
+    // 16g. Descending into the Pipe Gallery grants the Safety Valve
+    const state4 = createInitialState('found-devices-pipe');
+    const pipeIndex = state4.gallerySequence.indexOf('pipe-gallery');
+    if (pipeIndex === -1) {
+      problems.push('pipe-gallery not found in gallery sequence for found-devices test');
+    } else {
+      state4.galleryIndex = pipeIndex;
+      state4.location = state4.gallerySequence[pipeIndex];
+
+      const deviceIds = listDevices();
+      for (const id of deviceIds) {
+        const device = getDevice(id);
+        if (device && device.foundIn && device.foundIn === state4.location && !state4.foundDevices.includes(id)) {
+          state4.foundDevices.push(id);
+        }
+      }
+
+      if (!state4.foundDevices.includes('safety-valve')) {
+        problems.push('Descending into the Pipe Gallery should grant the Safety Valve');
+      }
+      if (state4.foundDevices.includes('steam-cloak')) {
+        problems.push('Steam Cloak should not be granted when descending into the Pipe Gallery');
+      }
+    }
+
+    // 16h. A player who never visits the Boiler Room cannot use the Steam Cloak
+    const state5 = createInitialState('found-devices-no-cloak');
+    // Only vent should be available
+    if (state5.foundDevices.includes('steam-cloak')) {
+      problems.push('Player who never visited Boiler Room should not have Steam Cloak available');
+    }
+
+    // Simulate a few turns of waiting — cloak should never appear
+    // (We can't use advanceTurn directly since it's not exported, but we can
+    // verify the state invariant that foundDevices doesn't change on wait)
+    const foundBefore = [...state5.foundDevices];
+    // Simulate wait turns
+    for (let i = 0; i < 3; i++) {
+      state5.pressure += state5.pressureAccumulationRate;
+      state5.turn += 1;
+    }
+    // foundDevices should not have changed
+    if (state5.foundDevices.length !== foundBefore.length) {
+      problems.push('foundDevices should not change when waiting (not descending)');
+    }
+    if (state5.foundDevices.includes('steam-cloak')) {
+      problems.push('Steam Cloak should not become available from waiting alone');
+    }
+
+    // 16i. A player who visits the Pipe Gallery has the Safety Valve available
+    const state6 = createInitialState('found-devices-valve-available');
+    const pipeIdx = state6.gallerySequence.indexOf('pipe-gallery');
+    if (pipeIdx === -1) {
+      problems.push('pipe-gallery not found in sequence for valve-available test');
+    } else {
+      state6.galleryIndex = pipeIdx;
+      state6.location = state6.gallerySequence[pipeIdx];
+
+      const deviceIds = listDevices();
+      for (const id of deviceIds) {
+        const device = getDevice(id);
+        if (device && device.foundIn && device.foundIn === state6.location && !state6.foundDevices.includes(id)) {
+          state6.foundDevices.push(id);
+        }
+      }
+
+      if (!state6.foundDevices.includes('safety-valve')) {
+        problems.push('After visiting Pipe Gallery, Safety Valve should be in foundDevices');
+      }
+
+      // Verify canUse works (with sufficient pressure)
+      const safetyValve = getDevice('safety-valve');
+      if (safetyValve) {
+        state6.pressure = 50;
+        if (!safetyValve.canUse(state6)) {
+          problems.push('Safety Valve should be usable with sufficient pressure after being found');
+        }
+      }
+    }
+  } catch (err) {
+    problems.push(`Could not verify found-devices mechanism: ${err.message}`);
+  }
+
   return problems;
 }

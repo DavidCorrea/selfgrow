@@ -11,6 +11,8 @@ registerGallery('pipe-gallery', {
       'brass pressure gauges tick nervously along the walls. The Sentinel\'s',
       'footsteps ring against the pipes, each one amplified into a',
       'metallic echo that makes it sound like many things are approaching.',
+      '',
+      'A safety valve glints on a nearby pipe, still intact and waiting.',
     ].join('\n');
   },
 });
