@@ -222,6 +222,26 @@ function render(state) {
     seedInputEl.value = state.seed;
   }
 
+  // Update descent info from machine memory
+  const descentCountEl = document.getElementById('descent-count');
+  const descentOutcomeEl = document.getElementById('descent-outcome');
+  if (descentCountEl && descentOutcomeEl) {
+    const currentDescent = state.memory.descents + 1;
+    descentCountEl.textContent = `Descent #${currentDescent}`;
+    if (state.memory.descents === 0) {
+      descentOutcomeEl.textContent = 'first descent';
+    } else {
+      const outcomeLabels = {
+        'rupture': 'ruptured',
+        'cornered': 'cornered',
+        'escaped': 'escaped',
+        'none': 'unknown'
+      };
+      const label = outcomeLabels[state.memory.lastOutcome] || state.memory.lastOutcome;
+      descentOutcomeEl.textContent = `last: ${label}`;
+    }
+  }
+
   if (state.ended) {
     renderDeathScreen(panelInner, state);
     return;
@@ -600,6 +620,27 @@ function mount() {
     advanceTurn(currentGame, action);
     render(currentGame);
   });
+
+  // Ensure descent info is shown immediately on mount
+  const descentCountEl = document.getElementById('descent-count');
+  const descentOutcomeEl = document.getElementById('descent-outcome');
+  if (descentCountEl && descentOutcomeEl) {
+    const memory = loadMemory();
+    const currentDescent = memory.descents + 1;
+    descentCountEl.textContent = `Descent #${currentDescent}`;
+    if (memory.descents === 0) {
+      descentOutcomeEl.textContent = 'first descent';
+    } else {
+      const outcomeLabels = {
+        'rupture': 'ruptured',
+        'cornered': 'cornered',
+        'escaped': 'escaped',
+        'none': 'unknown'
+      };
+      const label = outcomeLabels[memory.lastOutcome] || memory.lastOutcome;
+      descentOutcomeEl.textContent = `last: ${label}`;
+    }
+  }
 
   startNewDescent();
 }
