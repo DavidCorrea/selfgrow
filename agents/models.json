@@ -19,8 +19,8 @@
       "why": "Structured-output support, different provider family than the entries above."
     },
     {
-      "id": "openrouter/openai/gpt-oss-20b:free",
-      "why": "Small and fast; independent provider family, so its failures don't correlate with the rest."
+      "id": "openrouter/liquid/lfm-2.5-2.6b:free",
+      "why": "Replaced `openrouter/openai/gpt-oss-20b:free` (missing) automatically; verified by model-probe against pi at the time of the swap."
     },
     {
       "id": "openrouter/cohere/north-mini-code:free",
