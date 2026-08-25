@@ -538,6 +538,49 @@ export async function checks() {
     }
   }
 
+  // ── 10. Replay button is enabled after initial auto-started descent ──
+  // Regression check for issue #361: after mount() calls startNewDescent()
+  // which populates the seed input programmatically via render(), the Replay
+  // button must become enabled (not stay disabled from the mount-time empty check).
+  try {
+    const { startNewDescent } = await import('./game.js');
+    const seedInput = document.getElementById('seed-input');
+    const replayBtn = document.getElementById('replay-btn');
+
+    if (seedInput && replayBtn) {
+      // Clear the input and dispatch input to trigger the listener
+      seedInput.value = '';
+      seedInput.dispatchEvent(new Event('input'));
+
+      // Verify the button is now disabled
+      if (!replayBtn.disabled) {
+        problems.push('Before starting a new descent, Replay button should be disabled when seed input is empty');
+      }
+
+      // Start a new descent with a known seed — this calls render() which
+      // sets seedInput.value and should now dispatch an 'input' event
+      startNewDescent('replay-regression-test');
+
+      // Wait a tick for the DOM to settle
+      await new Promise(r => requestAnimationFrame(r));
+
+      // The seed input should be populated
+      if (!seedInput.value.trim()) {
+        problems.push('After startNewDescent(), seed input should be populated, got empty');
+      }
+
+      // The Replay button should be enabled because the seed input has content
+      if (replayBtn.disabled) {
+        problems.push(
+          'Replay button should be enabled after startNewDescent() populates the seed input ' +
+          '(regression check for #361: render() must dispatch an input event after setting seedInput.value)'
+        );
+      }
+    }
+  } catch (err) {
+    problems.push(`Could not verify Replay button after auto-start: ${err.message}`);
+  }
+
   // ── 11. Steam Cloak device is registered and works ──
   try {
     const { createInitialState } = await import('./game.js');
