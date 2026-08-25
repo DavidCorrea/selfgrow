@@ -22,6 +22,7 @@ import './galleries/boiler-room.js';
 import './galleries/pipe-gallery.js';
 import './galleries/condenser-room.js';
 import './automata/sentinel.js';
+import './automata/winder.js';
 import './devices/vent.js';
 import './devices/steam-cloak.js';
 import './devices/safety-valve.js';
@@ -64,10 +65,15 @@ export function createInitialState(seed, memory) {
     foundDevices: ['vent'],
   };
 
-  // Initialise automaton
+  // Initialise automata
   const automaton = getAutomaton('sentinel');
   if (automaton && automaton.initialize) {
     automaton.initialize(state);
+  }
+
+  const winder = getAutomaton('winder');
+  if (winder && winder.initialize) {
+    winder.initialize(state);
   }
 
   return state;
@@ -120,7 +126,18 @@ function advanceTurn(state, action) {
     return;
   }
 
-  // --- Pressure accumulation (applied before automaton acts) ---
+  // --- Winder acts before pressure accumulation ---
+  // Reset to base rate, then let the Winder modify it if active
+  state.pressureAccumulationRate = 5;
+  const winder = getAutomaton('winder');
+  if (winder && state.winderState) {
+    state.winderState.active = (state.location === 'boiler-room');
+    if (state.winderState.active) {
+      winder.act(state);
+    }
+  }
+
+  // --- Pressure accumulation (applied after the Winder adjusts the rate) ---
   state.pressure += state.pressureAccumulationRate;
   state.maxPressure = Math.max(state.maxPressure, state.pressure);
 
@@ -338,6 +355,16 @@ function render(state) {
   const automaton = getAutomaton('sentinel');
   autoDesc.textContent = automaton ? automaton.describe(state) : '';
   autoSection.appendChild(autoDesc);
+
+  // Winder status (only shown when active in the Boiler Room)
+  const winderAutomaton = getAutomaton('winder');
+  if (winderAutomaton && state.winderState && state.winderState.active) {
+    const winderDesc = document.createElement('p');
+    winderDesc.className = 'winder-description';
+    winderDesc.textContent = winderAutomaton.describe(state);
+    autoSection.appendChild(winderDesc);
+  }
+
   panelInner.appendChild(autoSection);
 
   // Device area
