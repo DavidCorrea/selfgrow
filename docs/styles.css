@@ -300,6 +300,30 @@ main {
   font-weight: 400;
 }
 
+.descent-row {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  align-items: center;
+  font-size: 0.7rem;
+  color: #808070;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-top: 0.4rem;
+}
+
+.descent-separator {
+  color: #3a3a3a;
+}
+
+#descent-count {
+  color: #c8a45c;
+}
+
+#descent-outcome {
+  color: #8a7a5a;
+}
+
 @media (max-width: 480px) {
   .seed-input {
     width: 8rem;

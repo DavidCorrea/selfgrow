@@ -2378,5 +2378,122 @@ export async function checks() {
     problems.push(`Could not verify Sentinel pressure-dependent behaviour: ${err.message}`);
   }
 
+  // ── 24. Descent info readout in the seed display area ──
+  // The seed display area must show the current descent number and last outcome
+  // persistently throughout the entire run, using the existing memory module.
+  try {
+    const { loadMemory, clearMemory, saveMemory } = await import('./engine/memory.js');
+    const { createInitialState } = await import('./game.js');
+
+    // 24a. DOM elements exist
+    const descentCountEl = document.getElementById('descent-count');
+    const descentOutcomeEl = document.getElementById('descent-outcome');
+    const descentRow = document.querySelector('.descent-row');
+
+    if (!descentCountEl) {
+      problems.push('Missing #descent-count element — descent count readout not present in the seed display area');
+    }
+    if (!descentOutcomeEl) {
+      problems.push('Missing #descent-outcome element — descent outcome readout not present in the seed display area');
+    }
+    if (!descentRow) {
+      problems.push('Missing .descent-row element — descent info container not present in the seed display area');
+    }
+
+    // 24b. The descent row is inside the seed-display section
+    if (descentRow) {
+      const seedDisplay = descentRow.closest('.seed-display');
+      if (!seedDisplay) {
+        problems.push('The .descent-row should be inside the .seed-display section');
+      }
+    }
+
+    // 24c. With no prior descents, shows 'Descent #1' and 'first descent'
+    clearMemory();
+    const freshMemory = loadMemory();
+    if (freshMemory.descents !== 0) {
+      problems.push(`Fresh memory should have 0 descents for descent info test, got ${freshMemory.descents}`);
+    }
+
+    // Simulate what the render function does
+    const currentDescent = freshMemory.descents + 1;
+    if (currentDescent !== 1) {
+      problems.push(`Current descent number should be 1 with 0 prior descents, got ${currentDescent}`);
+    }
+
+    // 24d. After one descent ending in rupture, shows 'Descent #2' and 'last: ruptured'
+    saveMemory('rupture', 'test-seed-abc');
+    const memAfterRupture = loadMemory();
+    if (memAfterRupture.descents !== 1) {
+      problems.push(`After one save, descents should be 1, got ${memAfterRupture.descents}`);
+    }
+
+    const currentDescent2 = memAfterRupture.descents + 1;
+    if (currentDescent2 !== 2) {
+      problems.push(`Current descent number should be 2 after 1 prior descent, got ${currentDescent2}`);
+    }
+
+    const outcomeLabels = {
+      'rupture': 'ruptured',
+      'cornered': 'cornered',
+      'escaped': 'escaped',
+      'none': 'unknown'
+    };
+    const label = outcomeLabels[memAfterRupture.lastOutcome] || memAfterRupture.lastOutcome;
+    if (label !== 'ruptured') {
+      problems.push(`Outcome label for 'rupture' should be 'ruptured', got '${label}'`);
+    }
+
+    // 24e. After a cornered descent, shows 'last: cornered'
+    saveMemory('cornered', 'test-seed-xyz');
+    const memAfterCornered = loadMemory();
+    const label2 = outcomeLabels[memAfterCornered.lastOutcome] || memAfterCornered.lastOutcome;
+    if (label2 !== 'cornered') {
+      problems.push(`Outcome label for 'cornered' should be 'cornered', got '${label2}'`);
+    }
+
+    // 24f. After an escape, shows 'last: escaped'
+    saveMemory('escaped', 'test-escape-seed');
+    const memAfterEscape = loadMemory();
+    const label3 = outcomeLabels[memAfterEscape.lastOutcome] || memAfterEscape.lastOutcome;
+    if (label3 !== 'escaped') {
+      problems.push(`Outcome label for 'escaped' should be 'escaped', got '${label3}'`);
+    }
+
+    // 24g. The DOM content matches the expected values when the game is rendered
+    // Check what's currently displayed in the DOM
+    if (descentCountEl) {
+      const displayedText = descentCountEl.textContent;
+      if (!displayedText || !displayedText.startsWith('Descent #')) {
+        problems.push(`Descent count should display 'Descent #N', got '${displayedText}'`);
+      }
+    }
+
+    if (descentOutcomeEl) {
+      const displayedText = descentOutcomeEl.textContent;
+      if (displayedText && displayedText !== 'first descent') {
+        if (!displayedText.startsWith('last: ')) {
+          problems.push(`Descent outcome should show 'first descent' or 'last: X', got '${displayedText}'`);
+        }
+      }
+    }
+
+    // 24h. The readout uses memory module, not a new persistence mechanism
+    // Verify that the state passed to createInitialState carries the memory
+    const state = createInitialState('descent-info-test', { descents: 3, lastOutcome: 'cornered', lastSeed: 'prev' });
+    if (!state.memory) {
+      problems.push('createInitialState must attach memory to the game state for descent info to work');
+    } else {
+      if (state.memory.descents !== 3) {
+        problems.push(`state.memory.descents should be 3 for descent info test, got ${state.memory.descents}`);
+      }
+    }
+
+    // Clean up
+    clearMemory();
+  } catch (err) {
+    problems.push(`Could not verify descent info readout: ${err.message}`);
+  }
+
   return problems;
 }
