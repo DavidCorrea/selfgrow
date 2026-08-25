@@ -875,6 +875,11 @@ export async function checks() {
       selector: 'footer p',
       bgSelector: 'body',
     },
+    {
+      name: 'span.descent-separator (· separator)',
+      selector: '.descent-separator',
+      bgSelector: '.seed-display',
+    },
   ];
 
   const MIN_CONTRAST = 4.5;
