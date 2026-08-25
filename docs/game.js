@@ -20,6 +20,7 @@ import { loadMemory, saveMemory } from './engine/memory.js';
 import './galleries/engine-room.js';
 import './galleries/boiler-room.js';
 import './galleries/pipe-gallery.js';
+import './galleries/condenser-room.js';
 import './automata/sentinel.js';
 import './devices/vent.js';
 import './devices/steam-cloak.js';
