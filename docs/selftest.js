@@ -2982,5 +2982,236 @@ export async function checks() {
     problems.push(`Could not verify escape screen flourish: ${err.message}`);
   }
 
+  // ── 27. The Winder automaton is registered and follows the 3-wind, 1-rest pattern ──
+  // The Winder is a non-pursuit automaton that increases pressure accumulation rate
+  // in the Boiler Room on a predictable cycle.
+  try {
+    const { createInitialState } = await import('./game.js');
+    const { getAutomaton, listAutomata } = await import('./engine/registry.js');
+
+    const automata = listAutomata();
+    if (!automata.includes('winder')) {
+      problems.push('Winder automaton not found in registry');
+    }
+
+    const winder = getAutomaton('winder');
+    if (!winder) {
+      problems.push('Winder automaton not registered — cannot verify');
+    } else {
+      // 27a. Required methods exist
+      if (typeof winder.describe !== 'function') {
+        problems.push('Winder missing describe method');
+      }
+      if (typeof winder.act !== 'function') {
+        problems.push('Winder missing act method');
+      }
+      if (typeof winder.initialize !== 'function') {
+        problems.push('Winder missing initialize method');
+      }
+
+      // 27b. Winder state is initialized in createInitialState
+      const state = createInitialState('winder-init-test');
+      if (!state.winderState) {
+        problems.push('Initial state is missing winderState field');
+      } else {
+        if (state.winderState.active !== false) {
+          problems.push(
+            `Winder should start inactive, got active=${state.winderState.active}`
+          );
+        }
+        if (state.winderState.tick !== 0) {
+          problems.push(
+            `Winder initial tick should be 0, got ${state.winderState.tick}`
+          );
+        }
+      }
+
+      // 27c. Winder follows the 3-wind, 1-rest pattern
+      const patternState = createInitialState('winder-pattern-test');
+      patternState.winderState.active = true;
+      patternState.winderState.tick = 0;
+
+      // Turn 1: tick 0 (winding) → rate should be 5 + 3 = 8, tick advances to 1
+      patternState.pressureAccumulationRate = 5;
+      winder.act(patternState);
+      if (patternState.pressureAccumulationRate !== 8) {
+        problems.push(
+          `Winder winding turn 1: expected rate 8, got ${patternState.pressureAccumulationRate}`
+        );
+      }
+      if (patternState.winderState.tick !== 1) {
+        problems.push(
+          `Winder after turn 1: expected tick 1, got ${patternState.winderState.tick}`
+        );
+      }
+
+      // Turn 2: tick 1 (winding) → rate should be 8
+      patternState.pressureAccumulationRate = 5;
+      winder.act(patternState);
+      if (patternState.pressureAccumulationRate !== 8) {
+        problems.push(
+          `Winder winding turn 2: expected rate 8, got ${patternState.pressureAccumulationRate}`
+        );
+      }
+      if (patternState.winderState.tick !== 2) {
+        problems.push(
+          `Winder after turn 2: expected tick 2, got ${patternState.winderState.tick}`
+        );
+      }
+
+      // Turn 3: tick 2 (winding) → rate should be 8
+      patternState.pressureAccumulationRate = 5;
+      winder.act(patternState);
+      if (patternState.pressureAccumulationRate !== 8) {
+        problems.push(
+          `Winder winding turn 3: expected rate 8, got ${patternState.pressureAccumulationRate}`
+        );
+      }
+      if (patternState.winderState.tick !== 3) {
+        problems.push(
+          `Winder after turn 3: expected tick 3, got ${patternState.winderState.tick}`
+        );
+      }
+
+      // Turn 4: tick 3 (rest) → rate should be 5 (base, no bonus)
+      patternState.pressureAccumulationRate = 5;
+      winder.act(patternState);
+      if (patternState.pressureAccumulationRate !== 5) {
+        problems.push(
+          `Winder rest turn: expected rate 5, got ${patternState.pressureAccumulationRate}`
+        );
+      }
+      if (patternState.winderState.tick !== 0) {
+        problems.push(
+          `Winder after rest turn: expected tick 0 (back to winding), got ${patternState.winderState.tick}`
+        );
+      }
+
+      // 27d. Winder does not affect rate when inactive
+      const inactiveState = createInitialState('winder-inactive-test');
+      inactiveState.winderState.active = false;
+      inactiveState.winderState.tick = 0;
+      inactiveState.pressureAccumulationRate = 5;
+      winder.act(inactiveState);
+      if (inactiveState.pressureAccumulationRate !== 5) {
+        problems.push(
+          `Winder when inactive should not change rate, got ${inactiveState.pressureAccumulationRate}`
+        );
+      }
+      if (inactiveState.winderState.tick !== 0) {
+        problems.push(
+          `Winder when inactive should not advance tick, got ${inactiveState.winderState.tick}`
+        );
+      }
+
+      // 27e. Winder's describe() communicates the pattern clearly
+      const descState = createInitialState('winder-desc-test');
+      descState.winderState.active = true;
+
+      // At tick 0 (winding): should mention winding and remaining turns
+      descState.winderState.tick = 0;
+      const descWinding = winder.describe(descState);
+      if (!descWinding.toLowerCase().includes('wind')) {
+        problems.push(
+          `Winder describe() at tick 0 should mention winding, got: "${descWinding}"`
+        );
+      }
+      if (!descWinding.includes('3 winding turns remain')) {
+        problems.push(
+          `Winder describe() at tick 0 should say '3 winding turns remain', got: "${descWinding}"`
+        );
+      }
+
+      // At tick 2 (last winding turn): should mention 1 winding turn remains
+      descState.winderState.tick = 2;
+      const descLastWinding = winder.describe(descState);
+      if (!descLastWinding.includes('1 winding turn remains')) {
+        problems.push(
+          `Winder describe() at tick 2 should say '1 winding turn remains', got: "${descLastWinding}"`
+        );
+      }
+
+      // At tick 3 (rest): should mention resting
+      descState.winderState.tick = 3;
+      const descRest = winder.describe(descState);
+      if (!descRest.toLowerCase().includes('rest')) {
+        problems.push(
+          `Winder describe() at tick 3 should mention resting, got: "${descRest}"`
+        );
+      }
+      if (!descRest.toLowerCase().includes('resume winding')) {
+        problems.push(
+          `Winder describe() at tick 3 should mention resuming winding, got: "${descRest}"`
+        );
+      }
+
+      // Winding and rest descriptions must differ
+      if (descWinding === descRest) {
+        problems.push(
+          'Winder describe() returns identical text for winding and rest phases — must differ'
+        );
+      }
+
+      // When inactive, describe() returns empty string
+      descState.winderState.active = false;
+      const descInactive = winder.describe(descState);
+      if (descInactive !== '') {
+        problems.push(
+          `Winder describe() when inactive should return empty string, got: "${descInactive}"`
+        );
+      }
+
+      // 27f. Winder's pattern cycles correctly over multiple cycles
+      const cycleState = createInitialState('winder-cycle-test');
+      cycleState.winderState.active = true;
+      cycleState.winderState.tick = 0;
+
+      // Run through 8 turns (2 full cycles of 4)
+      for (let i = 0; i < 8; i++) {
+        cycleState.pressureAccumulationRate = 5;
+        winder.act(cycleState);
+      }
+
+      // After 8 turns, should be back at tick 0 (start of cycle)
+      if (cycleState.winderState.tick !== 0) {
+        problems.push(
+          `Winder after 8 turns (2 cycles): expected tick 0, got ${cycleState.winderState.tick}`
+        );
+      }
+
+      // 27g. The Winder's name is accessible
+      if (winder.name !== 'The Winder') {
+        problems.push(
+          `Winder name should be 'The Winder', got '${winder.name}'`
+        );
+      }
+    }
+
+    // 27h. The Winder appears in listAutomata alongside the Sentinel
+    const allAutomata = listAutomata();
+    if (!allAutomata.includes('sentinel')) {
+      problems.push('Sentinel automaton should still be in registry after Winder registration');
+    }
+    if (allAutomata.length < 2) {
+      problems.push(
+        `Expected at least 2 automata (sentinel, winder), got ${allAutomata.length}: [${allAutomata.join(', ')}]`
+      );
+    }
+
+    // 27i. The Winder's initialize() sets up the correct default state
+    const initState = createInitialState('winder-init-props');
+    if (initState.winderState) {
+      const expectedKeys = ['active', 'tick'];
+      const actualKeys = Object.keys(initState.winderState).sort();
+      if (JSON.stringify(actualKeys) !== JSON.stringify(expectedKeys.sort())) {
+        problems.push(
+          `Winder state should have keys [${expectedKeys.join(', ')}], got [${actualKeys.join(', ')}]`
+        );
+      }
+    }
+  } catch (err) {
+    problems.push(`Could not verify Winder automaton: ${err.message}`);
+  }
+
   return problems;
 }
