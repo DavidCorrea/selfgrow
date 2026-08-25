@@ -2,8 +2,8 @@ import { registerGallery } from '../engine/registry.js';
 
 registerGallery('pipe-gallery', {
   name: 'Pipe Gallery',
-  describe(/* state */) {
-    return [
+  describe(state) {
+    const lines = [
       'The Pipe Gallery. Great iron pipes converge from all directions,',
       'their riveted flanges weeping condensation onto slick catwalks that',
       'cross a narrow condenser chamber. Steam vents hiss underfoot,',
@@ -13,6 +13,15 @@ registerGallery('pipe-gallery', {
       'metallic echo that makes it sound like many things are approaching.',
       '',
       'A safety valve glints on a nearby pipe, still intact and waiting.',
-    ].join('\n');
+    ];
+
+    // Pressure-level reactivity — the environment strains with the pressure dial
+    if (state && state.pressure > 60) {
+      lines.push('The catwalks rattle underfoot as the pipes shudder with strain.');
+    } else if (state && state.pressure < 20) {
+      lines.push('The pipes are cold and still, the steam vents barely breathing.');
+    }
+
+    return lines.join('\n');
   },
 });
