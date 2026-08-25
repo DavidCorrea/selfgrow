@@ -221,6 +221,7 @@ function render(state) {
   }
   if (seedInputEl) {
     seedInputEl.value = state.seed;
+    seedInputEl.dispatchEvent(new Event('input'));
   }
 
   // Update descent info from machine memory
