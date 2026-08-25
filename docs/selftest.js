@@ -2018,5 +2018,365 @@ export async function checks() {
     problems.push(`Could not verify Sentinel escape position: ${err.message}`);
   }
 
+  // ── 23. Sentinel responds to player pressure level ──
+  // Pressure is the whole game. The Sentinel's behaviour changes based on the
+  // player's pressure: agitated (≥ 70) advances relentlessly; calm (≤ 30)
+  // takes an extra pause turn; normal (31-69) follows the classic burst/pause.
+  try {
+    const { createInitialState } = await import('./game.js');
+    const { getAutomaton } = await import('./engine/registry.js');
+
+    const automaton = getAutomaton('sentinel');
+    if (!automaton) {
+      problems.push('Sentinel automaton not registered — cannot verify pressure-dependent behaviour');
+    } else {
+      // ── 23a. Agitated mode (pressure ≥ 70): advances 2 every turn, no pause ──
+      const agitated = createInitialState('sentinel-pressure-agitated');
+      agitated.pressure = 80;
+      agitated.automatonState.patternStep = 0;
+
+      const agitatedStart = agitated.automatonState.position;
+
+      // First turn: advance 2
+      automaton.act(agitated);
+      if (agitated.automatonState.position !== agitatedStart - 2) {
+        problems.push(
+          `Agitated Sentinel: 1st turn should advance 2, got position ${agitated.automatonState.position} ` +
+          `(expected ${agitatedStart - 2})`
+        );
+      }
+      if (agitated.automatonState.patternStep !== 0) {
+        problems.push(
+          `Agitated Sentinel: patternStep should be 0 after a turn, got ${agitated.automatonState.patternStep}`
+        );
+      }
+
+      // Second turn: advance 2 again (no pause)
+      const posAfter1 = agitated.automatonState.position;
+      automaton.act(agitated);
+      if (agitated.automatonState.position !== posAfter1 - 2) {
+        problems.push(
+          `Agitated Sentinel: 2nd consecutive turn should advance 2, got position ` +
+          `${agitated.automatonState.position} (expected ${posAfter1 - 2})`
+        );
+      }
+
+      // Third turn: advance 2 again (still no pause)
+      const posAfter2 = agitated.automatonState.position;
+      automaton.act(agitated);
+      if (agitated.automatonState.position !== posAfter2 - 2) {
+        problems.push(
+          `Agitated Sentinel: 3rd consecutive turn should advance 2, got position ` +
+          `${agitated.automatonState.position} (expected ${posAfter2 - 2})`
+        );
+      }
+
+      // Total moved: 6 over 3 turns
+      if (agitatedStart - agitated.automatonState.position !== 6) {
+        problems.push(
+          `Agitated Sentinel: total advance over 3 turns should be 6, got ` +
+          `${agitatedStart - agitated.automatonState.position}`
+        );
+      }
+
+      // ── 23b. Calm mode (pressure ≤ 30): burst then two pauses ──
+      const calm = createInitialState('sentinel-pressure-calm');
+      calm.pressure = 20;
+      calm.automatonState.patternStep = 0;
+      const calmStart = calm.automatonState.position;
+
+      // Burst turn: advance 2
+      automaton.act(calm);
+      if (calm.automatonState.position !== calmStart - 2) {
+        problems.push(
+          `Calm Sentinel: burst turn should advance 2, got position ${calm.automatonState.position} ` +
+          `(expected ${calmStart - 2})`
+        );
+      }
+      if (calm.automatonState.patternStep !== 2) {
+        problems.push(
+          `Calm Sentinel: after burst, patternStep should be 2, got ${calm.automatonState.patternStep}`
+        );
+      }
+
+      const posAfterBurst = calm.automatonState.position;
+
+      // First pause turn: advance 0
+      automaton.act(calm);
+      if (calm.automatonState.position !== posAfterBurst) {
+        problems.push(
+          `Calm Sentinel: 1st pause turn should advance 0, got position ${calm.automatonState.position} ` +
+          `(expected ${posAfterBurst})`
+        );
+      }
+      if (calm.automatonState.patternStep !== 1) {
+        problems.push(
+          `Calm Sentinel: after 1st pause, patternStep should be 1, got ${calm.automatonState.patternStep}`
+        );
+      }
+
+      // Second pause turn: advance 0 again
+      automaton.act(calm);
+      if (calm.automatonState.position !== posAfterBurst) {
+        problems.push(
+          `Calm Sentinel: 2nd pause turn should also advance 0, got position ${calm.automatonState.position} ` +
+          `(expected ${posAfterBurst})`
+        );
+      }
+      if (calm.automatonState.patternStep !== 0) {
+        problems.push(
+          `Calm Sentinel: after 2nd pause, patternStep should be 0 (ready to burst), ` +
+          `got ${calm.automatonState.patternStep}`
+        );
+      }
+
+      // Next turn is a burst again
+      const posBeforeNextBurst = calm.automatonState.position;
+      automaton.act(calm);
+      if (calm.automatonState.position !== posBeforeNextBurst - 2) {
+        problems.push(
+          `Calm Sentinel: after two pauses, next turn should be a burst of 2, got position ` +
+          `${calm.automatonState.position} (expected ${posBeforeNextBurst - 2})`
+        );
+      }
+
+      // ── 23c. Normal mode (31-69): standard burst/pause pattern still works ──
+      const normal = createInitialState('sentinel-pressure-normal');
+      normal.pressure = 50;
+      normal.automatonState.patternStep = 0;
+      const normalStart = normal.automatonState.position;
+
+      // Burst: advance 2
+      automaton.act(normal);
+      if (normal.automatonState.position !== normalStart - 2) {
+        problems.push(
+          `Normal Sentinel: burst turn should advance 2, got position ${normal.automatonState.position} ` +
+          `(expected ${normalStart - 2})`
+        );
+      }
+      if (normal.automatonState.patternStep !== 1) {
+        problems.push(
+          `Normal Sentinel: after burst, patternStep should be 1, got ${normal.automatonState.patternStep}`
+        );
+      }
+
+      // Pause: advance 0
+      const normalAfterBurst = normal.automatonState.position;
+      automaton.act(normal);
+      if (normal.automatonState.position !== normalAfterBurst) {
+        problems.push(
+          `Normal Sentinel: pause turn should advance 0, got position ${normal.automatonState.position} ` +
+          `(expected ${normalAfterBurst})`
+        );
+      }
+      if (normal.automatonState.patternStep !== 0) {
+        problems.push(
+          `Normal Sentinel: after pause, patternStep should be 0, got ${normal.automatonState.patternStep}`
+        );
+      }
+
+      // ── 23d. Boundary: pressure 70 is agitated, 69 is normal ──
+      const at70 = createInitialState('sentinel-pressure-at70');
+      at70.pressure = 70;
+      at70.automatonState.patternStep = 0;
+      const at70Start = at70.automatonState.position;
+      automaton.act(at70);
+      if (at70.automatonState.position !== at70Start - 2) {
+        problems.push(
+          `Sentinel at pressure 70 should be agitated (advance 2), got position ` +
+          `${at70.automatonState.position} (expected ${at70Start - 2})`
+        );
+      }
+
+      const at69 = createInitialState('sentinel-pressure-at69');
+      at69.pressure = 69;
+      at69.automatonState.patternStep = 0;
+      const at69Start = at69.automatonState.position;
+      automaton.act(at69);
+      if (at69.automatonState.position !== at69Start - 2) {
+        problems.push(
+          `Sentinel at pressure 69: burst should advance 2, got position ` +
+          `${at69.automatonState.position} (expected ${at69Start - 2})`
+        );
+      }
+      // In normal mode, after burst patternStep is 1 (single pause)
+      if (at69.automatonState.patternStep !== 1) {
+        problems.push(
+          `Sentinel at pressure 69: after burst patternStep should be 1, got ${at69.automatonState.patternStep}`
+        );
+      }
+
+      // ── 23e. Boundary: pressure 30 is calm, 31 is normal ──
+      const at30 = createInitialState('sentinel-pressure-at30');
+      at30.pressure = 30;
+      at30.automatonState.patternStep = 0;
+      const at30Start = at30.automatonState.position;
+      automaton.act(at30);
+      if (at30.automatonState.position !== at30Start - 2) {
+        problems.push(
+          `Sentinel at pressure 30: burst should advance 2, got position ` +
+          `${at30.automatonState.position} (expected ${at30Start - 2})`
+        );
+      }
+      // In calm mode, after burst patternStep is 2 (two pauses)
+      if (at30.automatonState.patternStep !== 2) {
+        problems.push(
+          `Sentinel at pressure 30 (calm): after burst patternStep should be 2, ` +
+          `got ${at30.automatonState.patternStep}`
+        );
+      }
+
+      const at31 = createInitialState('sentinel-pressure-at31');
+      at31.pressure = 31;
+      at31.automatonState.patternStep = 0;
+      const at31Start = at31.automatonState.position;
+      automaton.act(at31);
+      if (at31.automatonState.position !== at31Start - 2) {
+        problems.push(
+          `Sentinel at pressure 31: burst should advance 2, got position ` +
+          `${at31.automatonState.position} (expected ${at31Start - 2})`
+        );
+      }
+      // In normal mode, after burst patternStep is 1 (single pause)
+      if (at31.automatonState.patternStep !== 1) {
+        problems.push(
+          `Sentinel at pressure 31 (normal): after burst patternStep should be 1, ` +
+          `got ${at31.automatonState.patternStep}`
+        );
+      }
+
+      // ── 23f. describe() communicates the mode clearly ──
+      // Agitated mode: description must mention agitation or relentless advance
+      const describeAgitated = createInitialState('sentinel-desc-agitated');
+      describeAgitated.pressure = 85;
+      describeAgitated.automatonState.position = 5;
+      describeAgitated.automatonState.patternStep = 0;
+      const agitatedDesc = automaton.describe(describeAgitated);
+      if (!agitatedDesc.toLowerCase().includes('agitated') && !agitatedDesc.toLowerCase().includes('relentless')) {
+        problems.push(
+          `Sentinel describe() in agitated mode should mention 'agitated' or 'relentless', ` +
+          `got: "${agitatedDesc}"`
+        );
+      }
+
+      // Calm mode: description must mention 'calm'
+      const describeCalm = createInitialState('sentinel-desc-calm');
+      describeCalm.pressure = 15;
+      describeCalm.automatonState.position = 5;
+      describeCalm.automatonState.patternStep = 0;
+      const calmDesc = automaton.describe(describeCalm);
+      if (!calmDesc.toLowerCase().includes('calm')) {
+        problems.push(
+          `Sentinel describe() in calm mode should mention 'calm', got: "${calmDesc}"`
+        );
+      }
+
+      // Calm mode on a pause turn: mention 'extra turn' or 'lingers'
+      describeCalm.automatonState.patternStep = 1; // pause turn
+      const calmPauseDesc = automaton.describe(describeCalm);
+      if (!calmPauseDesc.toLowerCase().includes('extra') && !calmPauseDesc.toLowerCase().includes('lingers')) {
+        problems.push(
+          `Sentinel describe() on calm pause turn should mention 'extra' or 'lingers', ` +
+          `got: "${calmPauseDesc}"`
+        );
+      }
+
+      // Normal mode: describe() still works as before — no mode prefix
+      const describeNormal = createInitialState('sentinel-desc-normal');
+      describeNormal.pressure = 50;
+      describeNormal.automatonState.position = 5;
+      describeNormal.automatonState.patternStep = 0;
+      const normalDesc = automaton.describe(describeNormal);
+      if (!normalDesc.includes('advancing rapidly') && !normalDesc.includes('2 steps')) {
+        problems.push(
+          `Sentinel describe() in normal mode should mention advancing rapidly, ` +
+          `got: "${normalDesc}"`
+        );
+      }
+
+      // Calm and agitated descriptions differ from each other
+      if (agitatedDesc === calmDesc) {
+        problems.push(
+          'Sentinel describe() returns identical text for agitated and calm modes — must differ'
+        );
+      }
+
+      // All three modes produce distinct descriptions
+      if (agitatedDesc === normalDesc) {
+        problems.push(
+          'Sentinel describe() returns identical text for agitated and normal modes — must differ'
+        );
+      }
+      if (normalDesc === calmDesc) {
+        problems.push(
+          'Sentinel describe() returns identical text for normal and calm modes — must differ'
+        );
+      }
+
+      // ── 23g. Sentinel mode changes dynamically with pressure ──
+      // The same Sentinel state should behave differently when pressure changes.
+      const dynamic = createInitialState('sentinel-pressure-dynamic');
+      dynamic.automatonState.patternStep = 0;
+
+      // Start at normal pressure (50)
+      dynamic.pressure = 50;
+      const dynamicStart = dynamic.automatonState.position;
+      automaton.act(dynamic); // burst 2, patternStep -> 1
+      const afterBurst50 = dynamic.automatonState.position;
+
+      // Now change pressure to agitated (75) mid-act — the next act should be relentless
+      dynamic.pressure = 75;
+      // In normal mode this would be a pause (patternStep 1), but in agitated mode
+      // patternStep is ignored — it always advances 2
+      automaton.act(dynamic);
+      if (dynamic.automatonState.position !== afterBurst50 - 2) {
+        problems.push(
+          `Sentinel with patternStep=1 should advance 2 when pressure is 75 (agitated), ` +
+          `got position ${dynamic.automatonState.position} (expected ${afterBurst50 - 2})`
+        );
+      }
+
+      // Now change pressure to calm (10) — should advance 2 and then pause twice
+      // (patternStep is 0 after agitated act, so next is burst)
+      dynamic.pressure = 10;
+      const afterAgitated = dynamic.automatonState.position;
+      automaton.act(dynamic); // calm burst: advance 2, patternStep -> 2
+      if (dynamic.automatonState.position !== afterAgitated - 2) {
+        problems.push(
+          `Sentinel transitioning to calm: burst should advance 2, got position ` +
+          `${dynamic.automatonState.position} (expected ${afterAgitated - 2})`
+        );
+      }
+      if (dynamic.automatonState.patternStep !== 2) {
+        problems.push(
+          `Sentinel transitioning to calm: patternStep should be 2 after burst, ` +
+          `got ${dynamic.automatonState.patternStep}`
+        );
+      }
+
+      // Two pauses follow
+      const afterBurstCalm = dynamic.automatonState.position;
+      automaton.act(dynamic); // pause 1
+      if (dynamic.automatonState.position !== afterBurstCalm) {
+        problems.push(
+          `Sentinel calm: 1st pause should not advance, got movement ` +
+          `${afterBurstCalm - dynamic.automatonState.position}`
+        );
+      }
+      automaton.act(dynamic); // pause 2
+      if (dynamic.automatonState.position !== afterBurstCalm) {
+        problems.push(
+          `Sentinel calm: 2nd pause should not advance, got movement ` +
+          `${afterBurstCalm - dynamic.automatonState.position}`
+        );
+      }
+
+      // ── 23h. The existing burst/pause selftest (#14) still passes with pressure 50 ──
+      // (This is verified by the explicit normal-mode test above.)
+    }
+  } catch (err) {
+    problems.push(`Could not verify Sentinel pressure-dependent behaviour: ${err.message}`);
+  }
+
   return problems;
 }
