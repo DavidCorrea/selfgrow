@@ -2636,5 +2636,175 @@ export async function checks() {
     problems.push(`Could not verify pressure-level reactivity in gallery descriptions: ${err.message}`);
   }
 
+  // ── 26. Escape screen has a distinct victory flourish ──
+  // The escape ending should show 'ESCAPED' in gold/brass, not the red 'DESCENT ENDED'.
+  try {
+    const { endScreenContent, categorizeOutcome } = await import('./game.js');
+
+    // 26a. Escape endReason yields 'ESCAPED' heading with 'escape-heading' class
+    const escapeResult = endScreenContent('You escaped through an exhaust vent, the machine\'s breath hot on your heels.');
+    if (escapeResult.heading !== 'ESCAPED') {
+      problems.push(
+        `Escape screen heading should be 'ESCAPED', got '${escapeResult.heading}'`
+      );
+    }
+    if (escapeResult.className !== 'escape-heading') {
+      problems.push(
+        `Escape screen heading class should be 'escape-heading', got '${escapeResult.className}'`
+      );
+    }
+    if (escapeResult.isEscape !== true) {
+      problems.push(
+        `Escape screen isEscape should be true, got ${escapeResult.isEscape}`
+      );
+    }
+
+    // 26b. Rupture endReason yields 'DESCENT ENDED' with 'death-heading' class
+    const ruptureResult = endScreenContent('Your pressure gauge burst. The machine\'s own breath tore you apart.');
+    if (ruptureResult.heading !== 'DESCENT ENDED') {
+      problems.push(
+        `Rupture screen heading should be 'DESCENT ENDED', got '${ruptureResult.heading}'`
+      );
+    }
+    if (ruptureResult.className !== 'death-heading') {
+      problems.push(
+        `Rupture screen heading class should be 'death-heading', got '${ruptureResult.className}'`
+      );
+    }
+    if (ruptureResult.isEscape !== false) {
+      problems.push(
+        `Rupture screen isEscape should be false, got ${ruptureResult.isEscape}`
+      );
+    }
+
+    // 26c. Cornered endReason yields 'DESCENT ENDED' with 'death-heading' class
+    const corneredResult = endScreenContent('The Sentinel cornered you. There was nowhere left to run.');
+    if (corneredResult.heading !== 'DESCENT ENDED') {
+      problems.push(
+        `Cornered screen heading should be 'DESCENT ENDED', got '${corneredResult.heading}'`
+      );
+    }
+    if (corneredResult.className !== 'death-heading') {
+      problems.push(
+        `Cornered screen heading class should be 'death-heading', got '${corneredResult.className}'`
+      );
+    }
+    if (corneredResult.isEscape !== false) {
+      problems.push(
+        `Cornered screen isEscape should be false, got ${corneredResult.isEscape}`
+      );
+    }
+
+    // 26d. Null/undefined endReason yields 'DESCENT ENDED'
+    const nullResult = endScreenContent(null);
+    if (nullResult.heading !== 'DESCENT ENDED') {
+      problems.push(
+        `Null endReason screen heading should be 'DESCENT ENDED', got '${nullResult.heading}'`
+      );
+    }
+    if (nullResult.className !== 'death-heading') {
+      problems.push(
+        `Null endReason screen heading class should be 'death-heading', got '${nullResult.className}'`
+      );
+    }
+    if (nullResult.isEscape !== false) {
+      problems.push(
+        `Null endReason screen isEscape should be false, got ${nullResult.isEscape}`
+      );
+    }
+
+    // 26e. categorizeOutcome still works correctly
+    const escapeCat = categorizeOutcome('You escaped through an exhaust vent, the machine\'s breath hot on your heels.');
+    if (escapeCat !== 'escaped') {
+      problems.push(
+        `categorizeOutcome for escape should return 'escaped', got '${escapeCat}'`
+      );
+    }
+
+    const ruptureCat = categorizeOutcome('Your pressure gauge burst. The machine\'s own breath tore you apart.');
+    if (ruptureCat !== 'rupture') {
+      problems.push(
+        `categorizeOutcome for rupture should return 'rupture', got '${ruptureCat}'`
+      );
+    }
+
+    const corneredCat = categorizeOutcome('The Sentinel cornered you. There was nowhere left to run.');
+    if (corneredCat !== 'cornered') {
+      problems.push(
+        `categorizeOutcome for cornered should return 'cornered', got '${corneredCat}'`
+      );
+    }
+
+    // 26f. DOM: when the death screen is shown with an escape, the heading element
+    // should have the escape-heading class and display 'ESCAPED' in gold/brass
+    const deathScreen = document.querySelector('.death-screen');
+    if (deathScreen) {
+      const headingEl = deathScreen.querySelector('h2');
+      if (headingEl) {
+        // Check if the current heading is escape or death
+        const isEscapeHeading = headingEl.classList.contains('escape-heading');
+        const isDeathHeading = headingEl.classList.contains('death-heading');
+
+        if (isEscapeHeading) {
+          // Verify the heading text is 'ESCAPED'
+          if (headingEl.textContent !== 'ESCAPED') {
+            problems.push(
+              `Escape screen heading element text should be 'ESCAPED', got '${headingEl.textContent}'`
+            );
+          }
+
+          // Verify the colour is gold/brass (#c8a45c), not red
+          const style = getComputedStyle(headingEl);
+          const color = style.color;
+          // Parse the rgb value to check it's gold-ish, not red-ish
+          const rgbMatch = color.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+          if (rgbMatch) {
+            const r = parseInt(rgbMatch[1], 10);
+            const g = parseInt(rgbMatch[2], 10);
+            const b = parseInt(rgbMatch[3], 10);
+            // Gold/brass (#c8a45c = rgb(200, 164, 92)) has green > 100 and red/green similar
+            // Red (#8a2a2a) has green < 60 and blue < 60
+            if (g < 100) {
+              problems.push(
+                `Escape heading colour should be gold/brass with green > 100, got rgb(${r}, ${g}, ${b})`
+              );
+            }
+            if (b < 50) {
+              problems.push(
+                `Escape heading colour should be gold/brass with blue > 50, got rgb(${r}, ${g}, ${b})`
+              );
+            }
+          }
+        } else if (isDeathHeading) {
+          // Verify the heading text is 'DESCENT ENDED'
+          if (headingEl.textContent !== 'DESCENT ENDED') {
+            problems.push(
+              `Death screen heading element text should be 'DESCENT ENDED', got '${headingEl.textContent}'`
+            );
+          }
+
+          // Verify the colour is red (#8a2a2a), not gold
+          const style = getComputedStyle(headingEl);
+          const color = style.color;
+          const rgbMatch = color.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+          if (rgbMatch) {
+            const r = parseInt(rgbMatch[1], 10);
+            const g = parseInt(rgbMatch[2], 10);
+            const b = parseInt(rgbMatch[3], 10);
+            // Red (#8a2a2a = rgb(138, 42, 42)) has green and blue close to each other and low
+            // Gold has green notably higher than blue
+            if (g > 100) {
+              problems.push(
+                `Death heading colour should be red with green < 100, got rgb(${r}, ${g}, ${b})`
+              );
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    problems.push(`Could not verify escape screen flourish: ${err.message}`);
+  }
+
   return problems;
 }

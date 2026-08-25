@@ -593,6 +593,14 @@ footer .rivet {
   text-transform: uppercase;
 }
 
+.escape-heading {
+  font-size: 1.4rem;
+  letter-spacing: 0.2em;
+  color: #c8a45c;
+  text-shadow: 0 0 12px rgba(200, 164, 92, 0.4);
+  text-transform: uppercase;
+}
+
 .death-reason {
   font-size: 0.9rem;
   color: #b8a87a;
