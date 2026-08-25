@@ -237,6 +237,9 @@ export async function checks() {
     if (!galleries.includes('pipe-gallery')) {
       problems.push('Pipe gallery not found in registry — third gallery is missing');
     }
+    if (!galleries.includes('condenser-room')) {
+      problems.push('Condenser room gallery not found in registry — fourth gallery is missing');
+    }
 
     const sentinel = getAutomaton('sentinel');
     if (!sentinel || typeof sentinel.describe !== 'function' || typeof sentinel.act !== 'function') {
@@ -263,6 +266,11 @@ export async function checks() {
       problems.push('Pipe gallery missing required method (describe)');
     }
 
+    const condenserRoom = getGallery('condenser-room');
+    if (!condenserRoom || typeof condenserRoom.describe !== 'function') {
+      problems.push('Condenser room gallery missing required method (describe)');
+    }
+
     // Verify descriptions are distinct
     if (engineRoom && boilerRoom && pipeGallery &&
         typeof engineRoom.describe === 'function' &&
@@ -280,6 +288,31 @@ export async function checks() {
       }
       if (boilerDesc === pipeDesc) {
         problems.push('Pipe gallery description is identical to boiler room description — must be distinct');
+      }
+
+      // Verify condenser room description is distinct from all others
+      if (condenserRoom && typeof condenserRoom.describe === 'function') {
+        const condenserDesc = condenserRoom.describe({});
+        if (condenserDesc === engineDesc) {
+          problems.push('Condenser room description is identical to engine room description — must be distinct');
+        }
+        if (condenserDesc === boilerDesc) {
+          problems.push('Condenser room description is identical to boiler room description — must be distinct');
+        }
+        if (condenserDesc === pipeDesc) {
+          problems.push('Condenser room description is identical to pipe gallery description — must be distinct');
+        }
+        if (!condenserDesc || condenserDesc.trim().length < 20) {
+          problems.push('Condenser room description is too short or empty');
+        }
+        // Must mention the Sentinel
+        if (!condenserDesc.toLowerCase().includes('sentinel')) {
+          problems.push('Condenser room description must mention the Sentinel');
+        }
+        // Must hint at a future device
+        if (!condenserDesc.toLowerCase().includes('valve') && !condenserDesc.toLowerCase().includes('device') && !condenserDesc.toLowerCase().includes('intact')) {
+          problems.push('Condenser room description must hint at a possible future device or interaction');
+        }
       }
 
       if (!boilerDesc || boilerDesc.trim().length < 20) {
@@ -331,11 +364,11 @@ export async function checks() {
         }
       }
 
-      // The sequence must contain at least 3 galleries so the arrangement system is meaningful
-      if (state1.gallerySequence.length < 3) {
+      // The sequence must contain at least 4 galleries (engine-room + 3 shuffled)
+      if (state1.gallerySequence.length < 4) {
         problems.push(
           `Gallery generator produced sequence with only ${state1.gallerySequence.length} galleries — ` +
-          'needs at least 3 for meaningful shuffling'
+          'needs at least 4 (starting gallery + 3 shuffled) for a meaningful descent'
         );
       }
 
@@ -357,6 +390,21 @@ export async function checks() {
       if (!state1.gallerySequence.includes('pipe-gallery')) {
         problems.push(
           `Pipe-gallery not found in gallery sequence: [${state1.gallerySequence.join(', ')}]`
+        );
+      }
+
+      // The condenser-room must appear somewhere in the sequence
+      if (!state1.gallerySequence.includes('condenser-room')) {
+        problems.push(
+          `Condenser-room not found in gallery sequence: [${state1.gallerySequence.join(', ')}]`
+        );
+      }
+
+      // The condenser-room must never be the starting gallery (engine-room always leads)
+      if (state1.gallerySequence[0] === 'condenser-room') {
+        problems.push(
+          `Condenser-room should not be the first gallery — engine-room must lead the descent, ` +
+          `got [${state1.gallerySequence.join(', ')}]`
         );
       }
 
@@ -2630,6 +2678,86 @@ export async function checks() {
       const lowDesc = pipeGallery.describe({ pressure: 10 });
       if (!lowDesc.includes('Pipe Gallery')) {
         problems.push('Pipe gallery description at low pressure should still start with "The Pipe Gallery"');
+      }
+    }
+
+    // 25l. Condenser room description reacts to pressure level
+    const condenserRoom = getGallery('condenser-room');
+    if (condenserRoom && typeof condenserRoom.describe === 'function') {
+
+      // 25l(i). High pressure (>60) includes strain line
+      const condenserHigh = condenserRoom.describe({ pressure: 70 });
+      if (!condenserHigh.includes('groan') && !condenserHigh.includes('strain') && !condenserHigh.includes('steady pour')) {
+        problems.push(
+          `Condenser room description at pressure 70 should mention the strain, got: "${condenserHigh}"`
+        );
+      }
+
+      // 25l(ii). Low pressure (<20) includes quiet line
+      const condenserLow = condenserRoom.describe({ pressure: 10 });
+      if (!condenserLow.includes('deathly still') && !condenserLow.includes('slowing') && !condenserLow.includes('ice')) {
+        problems.push(
+          `Condenser room description at pressure 10 should mention stillness or ice, got: "${condenserLow}"`
+        );
+      }
+
+      // 25l(iii). Normal pressure (50) has no extra line
+      const condenserNormal = condenserRoom.describe({ pressure: 50 });
+      if (condenserNormal.includes('groan') || condenserNormal.includes('deathly still')) {
+        problems.push(
+          `Condenser room description at pressure 50 should not include pressure-dependent text, got: "${condenserNormal}"`
+        );
+      }
+
+      // 25l(iv). High and low descriptions differ from each other and from normal
+      if (condenserHigh === condenserLow) {
+        problems.push(
+          'Condenser room description at high pressure is identical to low pressure — must differ'
+        );
+      }
+      if (condenserHigh === condenserNormal) {
+        problems.push(
+          'Condenser room description at high pressure is identical to normal pressure — must differ'
+        );
+      }
+      if (condenserLow === condenserNormal) {
+        problems.push(
+          'Condenser room description at low pressure is identical to normal pressure — must differ'
+        );
+      }
+
+      // 25l(v). Pressure exactly at boundary 60 is not high
+      const boundary60 = condenserRoom.describe({ pressure: 60 });
+      if (boundary60.includes('groan') || boundary60.includes('steady pour')) {
+        problems.push(
+          `Condenser room description at pressure 60 should not include high-pressure text (only >60 triggers it), got: "${boundary60}"`
+        );
+      }
+
+      // 25l(vi). Pressure exactly at boundary 20 is not low
+      const boundary20 = condenserRoom.describe({ pressure: 20 });
+      if (boundary20.includes('deathly still') || boundary20.includes('ice creeps')) {
+        problems.push(
+          `Condenser room description at pressure 20 should not include low-pressure text (only <20 triggers it), got: "${boundary20}"`
+        );
+      }
+
+      // 25l(vii). Base description text is preserved (not replaced) at all pressure levels
+      if (!condenserHigh.includes('Condenser Gallery')) {
+        problems.push('Condenser room description at high pressure should still start with "The Condenser Gallery"');
+      }
+      if (!condenserHigh.includes('condensate valve')) {
+        problems.push('Condenser room description at high pressure should still mention the frozen condensate valve');
+      }
+      if (!condenserLow.includes('Condenser Gallery')) {
+        problems.push('Condenser room description at low pressure should still start with "The Condenser Gallery"');
+      }
+
+      // 25l(viii). The description must hint at a possible future device
+      if (!condenserHigh.toLowerCase().includes('valve') && !condenserHigh.toLowerCase().includes('intact')) {
+        problems.push(
+          `Condenser room description should hint at a possible future device, got: "${condenserHigh}"`
+        );
       }
     }
   } catch (err) {
