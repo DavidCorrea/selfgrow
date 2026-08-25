@@ -2495,5 +2495,146 @@ export async function checks() {
     problems.push(`Could not verify descent info readout: ${err.message}`);
   }
 
+  // ── 25. Pressure-level reactivity in gallery descriptions ──
+  // Boiler-room and pipe-gallery descriptions must react to the pressure level
+  // by appending environmental strain lines when pressure is high or low.
+  try {
+    const { getGallery } = await import('./engine/registry.js');
+
+    const boilerRoom = getGallery('boiler-room');
+    const pipeGallery = getGallery('pipe-gallery');
+
+    if (!boilerRoom) {
+      problems.push('Boiler room gallery not registered — cannot verify pressure reactivity');
+    } else if (typeof boilerRoom.describe !== 'function') {
+      problems.push('Boiler room missing describe method');
+    } else {
+      // 25a. Boiler room: high pressure (>60) includes strain line
+      const highPressureState = { pressure: 70 };
+      const boilerHigh = boilerRoom.describe(highPressureState);
+      if (!boilerHigh.includes('groan')) {
+        problems.push(
+          `Boiler room description at pressure 70 should mention groaning pipes, got: "${boilerHigh}"`
+        );
+      }
+
+      // 25b. Boiler room: low pressure (<20) includes quiet line
+      const lowPressureState = { pressure: 10 };
+      const boilerLow = boilerRoom.describe(lowPressureState);
+      if (!boilerLow.includes('eerie') && !boilerLow.includes('quiet')) {
+        problems.push(
+          `Boiler room description at pressure 10 should mention eerie quiet, got: "${boilerLow}"`
+        );
+      }
+
+      // 25c. Boiler room: normal pressure (50) has no extra line
+      const normalState = { pressure: 50 };
+      const boilerNormal = boilerRoom.describe(normalState);
+      if (boilerNormal.includes('groan') || boilerNormal.includes('eerie')) {
+        problems.push(
+          `Boiler room description at pressure 50 should not include pressure-dependent text, got: "${boilerNormal}"`
+        );
+      }
+
+      // 25d. Boiler room: pressure exactly at boundary 60 is not high
+      const boundary60 = boilerRoom.describe({ pressure: 60 });
+      if (boundary60.includes('groan')) {
+        problems.push(
+          `Boiler room description at pressure 60 should not include strain text (only >60 triggers it), got: "${boundary60}"`
+        );
+      }
+
+      // 25e. Boiler room: pressure exactly at boundary 20 is not low
+      const boundary20 = boilerRoom.describe({ pressure: 20 });
+      if (boundary20.includes('eerie')) {
+        problems.push(
+          `Boiler room description at pressure 20 should not include quiet text (only <20 triggers it), got: "${boundary20}"`
+        );
+      }
+    }
+
+    if (!pipeGallery) {
+      problems.push('Pipe gallery not registered — cannot verify pressure reactivity');
+    } else if (typeof pipeGallery.describe !== 'function') {
+      problems.push('Pipe gallery missing describe method');
+    } else {
+      // 25f. Pipe gallery: high pressure (>60) includes strain line
+      const highPressureState = { pressure: 70 };
+      const pipeHigh = pipeGallery.describe(highPressureState);
+      if (!pipeHigh.includes('rattle') && !pipeHigh.includes('shudder')) {
+        problems.push(
+          `Pipe gallery description at pressure 70 should mention rattling catwalks or shuddering pipes, got: "${pipeHigh}"`
+        );
+      }
+
+      // 25g. Pipe gallery: low pressure (<20) includes quiet line
+      const lowPressureState = { pressure: 10 };
+      const pipeLow = pipeGallery.describe(lowPressureState);
+      if (!pipeLow.includes('cold and still') && !pipeLow.includes('barely breathing')) {
+        problems.push(
+          `Pipe gallery description at pressure 10 should mention cold stillness, got: "${pipeLow}"`
+        );
+      }
+
+      // 25h. Pipe gallery: normal pressure (50) has no extra line
+      const normalState = { pressure: 50 };
+      const pipeNormal = pipeGallery.describe(normalState);
+      if (pipeNormal.includes('rattle') || pipeNormal.includes('cold') || pipeNormal.includes('shudder')) {
+        problems.push(
+          `Pipe gallery description at pressure 50 should not include pressure-dependent text, got: "${pipeNormal}"`
+        );
+      }
+
+      // 25i. Pipe gallery: pressure exactly at boundary 60 is not high
+      const boundary60 = pipeGallery.describe({ pressure: 60 });
+      if (boundary60.includes('rattle') || boundary60.includes('shudder')) {
+        problems.push(
+          `Pipe gallery description at pressure 60 should not include strain text (only >60 triggers it), got: "${boundary60}"`
+        );
+      }
+
+      // 25j. Pipe gallery: pressure exactly at boundary 20 is not low
+      const boundary20 = pipeGallery.describe({ pressure: 20 });
+      if (boundary20.includes('cold and still') || boundary20.includes('barely breathing')) {
+        problems.push(
+          `Pipe gallery description at pressure 20 should not include quiet text (only <20 triggers it), got: "${boundary20}"`
+        );
+      }
+    }
+
+    // 25k. The base description text is preserved (not replaced) in both galleries
+    if (boilerRoom) {
+      const highDesc = boilerRoom.describe({ pressure: 70 });
+      if (!highDesc.includes('Boiler Room')) {
+        problems.push('Boiler room description at high pressure should still start with "The Boiler Room"');
+      }
+      if (!highDesc.includes('steam cloak')) {
+        problems.push('Boiler room description at high pressure should still mention the steam cloak');
+      }
+
+      const lowDesc = boilerRoom.describe({ pressure: 10 });
+      if (!lowDesc.includes('Boiler Room')) {
+        problems.push('Boiler room description at low pressure should still start with "The Boiler Room"');
+      }
+    }
+
+    if (pipeGallery) {
+      const highDesc = pipeGallery.describe({ pressure: 70 });
+      if (!highDesc.includes('Pipe Gallery')) {
+        problems.push('Pipe gallery description at high pressure should still start with "The Pipe Gallery"');
+      }
+      if (!highDesc.includes('safety valve')) {
+        problems.push('Pipe gallery description at high pressure should still mention the safety valve');
+      }
+
+      const lowDesc = pipeGallery.describe({ pressure: 10 });
+      if (!lowDesc.includes('Pipe Gallery')) {
+        problems.push('Pipe gallery description at low pressure should still start with "The Pipe Gallery"');
+      }
+    }
+  } catch (err) {
+    problems.push(`Could not verify pressure-level reactivity in gallery descriptions: ${err.message}`);
+  }
+
   return problems;
 }
