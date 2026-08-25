@@ -1,5 +1,16 @@
 import { registerAutomaton } from '../engine/registry.js';
 
+/**
+ * Read the machine's current mood from the player's pressure.
+ * Pressure is the whole game: when it runs high the Sentinel is agitated and
+ * relentless; when it runs low the Sentinel is calm and lingers.
+ */
+function pressureMode(pressure) {
+  if (pressure >= 70) return 'agitated';
+  if (pressure <= 30) return 'calm';
+  return 'normal';
+}
+
 registerAutomaton('sentinel', {
   name: 'The Sentinel',
 
@@ -8,33 +19,65 @@ registerAutomaton('sentinel', {
     const dist = state.automatonState.position;
     const patternStep = state.automatonState.patternStep;
     const isBurst = patternStep === 0;
+    const mode = pressureMode(state.pressure);
 
-    const advancement = isBurst
-      ? 'It is advancing rapidly — 2 steps this turn.'
-      : 'It is winding its gears, pausing for a turn.';
+    // The behaviour text tells the player what the Sentinel will do next so
+    // the machine's mind can be read and reasoned about.
+    let behavior;
+    if (mode === 'agitated') {
+      behavior = 'The machine is agitated — the Sentinel advances relentlessly, ' +
+        'taking 2 steps every turn with no pause.';
+    } else if (mode === 'calm') {
+      behavior = isBurst
+        ? 'The machine is calm — the Sentinel takes 2 steps, then winds its ' +
+          'gears and pauses for two full turns.'
+        : 'The machine is calm — the Sentinel winds its gears and lingers, ' +
+          'pausing for an extra turn.';
+    } else {
+      behavior = isBurst
+        ? 'It is advancing rapidly — 2 steps this turn.'
+        : 'It is winding its gears, pausing for a turn.';
+    }
 
-    if (dist <= 0) return 'The Sentinel is upon you.';
-    if (dist === 1) return `The Sentinel is right next to you — one more step and it will reach you. ${advancement}`;
-    if (dist <= 3) return `The Sentinel is ${dist} turn${dist === 1 ? '' : 's'} away, advancing steadily. ${advancement}`;
-    return `The Sentinel is ${dist} turns away, approaching from the darkness ahead. ${advancement}`;
+    if (dist <= 0) return `The Sentinel is upon you. ${behavior}`;
+    if (dist === 1) return `The Sentinel is right next to you — one more step and it will reach you. ${behavior}`;
+    if (dist <= 3) return `The Sentinel is ${dist} turn${dist === 1 ? '' : 's'} away, advancing steadily. ${behavior}`;
+    return `The Sentinel is ${dist} turns away, approaching from the darkness ahead. ${behavior}`;
   },
 
   /**
-   * The Sentinel acts on its turn. It follows a repeating pattern:
-   * burst turn (2 steps forward) then pause turn (0 steps, winding its gears).
-   * This is deterministic — given the same state it always does the same thing.
+   * The Sentinel acts on its turn. Its pattern follows the machine's mood,
+   * which derives from the player's current pressure:
+   *
+   *  - agitated  (pressure ≥ 70): advances 2 on EVERY turn, no pause;
+   *  - calm      (pressure ≤ 30): advances 2 on a burst, then pauses for two
+   *              consecutive turns instead of one;
+   *  - normal    (pressure 31–69): the classic burst (2) then pause (0) loop.
+   *
+   * patternStep counts how many winding turns remain: 0 means the next act is
+   * a burst, 1 means a single pause, 2 means two pauses. This keeps the whole
+   * machine deterministic — given the same state it always does the same thing.
    */
   act(state) {
     const patternStep = state.automatonState.patternStep;
+    const mode = pressureMode(state.pressure);
+
+    if (mode === 'agitated') {
+      // Relentless: advance 2 on every turn, never winding its gears.
+      state.automatonState.position -= 2;
+      state.automatonState.patternStep = 0;
+      return;
+    }
 
     if (patternStep === 0) {
-      // Burst turn: advance 2 positions
+      // Burst turn: advance 2 positions, then wind for 1 (normal) or 2 (calm) turns.
       state.automatonState.position -= 2;
+      state.automatonState.patternStep = mode === 'calm' ? 2 : 1;
+      return;
     }
-    // patternStep === 1: Pause turn — advance 0 positions
 
-    // Advance the pattern: 0 -> 1 -> 0 -> 1 -> ...
-    state.automatonState.patternStep = patternStep === 0 ? 1 : 0;
+    // Winding/pause turn: advance 0 positions.
+    state.automatonState.patternStep -= 1;
   },
 
   /** Initialise the Sentinel's state for a new descent. */
@@ -59,7 +102,7 @@ registerAutomaton('sentinel', {
 
     state.automatonState = {
       position,
-      patternStep: 0,  // 0 = burst (advance 2), 1 = pause (advance 0)
+      patternStep: 0,  // 0 = next turn is a burst; >0 = remaining winding turns
     };
   },
 });
