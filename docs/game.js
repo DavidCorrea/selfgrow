@@ -156,11 +156,11 @@ function advanceTurn(state, action) {
 /**
  * Map an endReason string to a short outcome token for memory.
  */
-function categorizeOutcome(endReason) {
+export function categorizeOutcome(endReason) {
   if (!endReason) return 'none';
-  if (endReason.includes('rupture')) return 'rupture';
   if (endReason.includes('cornered')) return 'cornered';
   if (endReason.includes('escaped')) return 'escaped';
+  if (endReason.includes('rupture') || endReason.includes('burst')) return 'rupture';
   return 'none';
 }
 
@@ -430,15 +430,31 @@ function render(state) {
   announce(galleryForAnnounce ? galleryForAnnounce.describe(state) : '');
 }
 
+/**
+ * Determine the end screen content based on the end reason.
+ * Returns { heading, className, isEscape } where:
+ * - heading: the heading text ('ESCAPED' for escape, 'DESCENT ENDED' otherwise)
+ * - className: the CSS class for the heading ('escape-heading' or 'death-heading')
+ * - isEscape: boolean indicating if this is an escape outcome
+ */
+export function endScreenContent(endReason) {
+  if (endReason && endReason.includes('escaped')) {
+    return { heading: 'ESCAPED', className: 'escape-heading', isEscape: true };
+  }
+  return { heading: 'DESCENT ENDED', className: 'death-heading', isEscape: false };
+}
+
 function renderDeathScreen(container, state) {
   container.innerHTML = '';
   container.className = 'panel-inner death-screen';
   container.setAttribute('role', 'alertdialog');
   container.setAttribute('aria-label', 'Descent ended');
 
+  const content = endScreenContent(state.endReason);
+
   const heading = document.createElement('h2');
-  heading.className = 'death-heading';
-  heading.textContent = 'DESCENT ENDED';
+  heading.className = content.className;
+  heading.textContent = content.heading;
   container.appendChild(heading);
 
   const reason = document.createElement('p');
