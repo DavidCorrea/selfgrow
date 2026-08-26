@@ -79,6 +79,7 @@ export function createInitialState(seed, memory) {
     foundDevices: ['vent'],
     justFoundDevices: [],
     announcement: null,
+    deviceUsageCounts: {},
   };
 
   // Initialise automata
@@ -131,6 +132,7 @@ export function advanceTurn(state, action) {
     if (device && device.canUse(state)) {
       device.use(state);
       state.devicesUsed += 1;
+      state.deviceUsageCounts[deviceId] = (state.deviceUsageCounts[deviceId] || 0) + 1;
       usedDeviceId = deviceId;
       // Device effect announcement
       if (device.announceEffect) {
@@ -177,7 +179,7 @@ export function advanceTurn(state, action) {
       state.ended = true;
       state.active = false;
       state.endReason = 'You escaped through an exhaust vent, the machine\'s breath hot on your heels.';
-      saveMemory('escaped', state.seed);
+      saveMemory('escaped', state.seed, state.deviceUsageCounts);
     }
     return;
   }
@@ -292,7 +294,7 @@ function checkDeathConditions(state) {
     state.ended = true;
     state.active = false;
     state.endReason = 'Your pressure gauge burst. The machine\'s own breath tore you apart.';
-    saveMemory(categorizeOutcome(state.endReason), state.seed);
+    saveMemory(categorizeOutcome(state.endReason), state.seed, state.deviceUsageCounts);
     return true;
   }
 
@@ -301,7 +303,7 @@ function checkDeathConditions(state) {
     state.ended = true;
     state.active = false;
     state.endReason = 'The Sentinel cornered you. There was nowhere left to run.';
-    saveMemory(categorizeOutcome(state.endReason), state.seed);
+    saveMemory(categorizeOutcome(state.endReason), state.seed, state.deviceUsageCounts);
     return true;
   }
 
@@ -674,6 +676,18 @@ function renderDeathScreen(container, state) {
   devicesEl.className = 'death-stat';
   devicesEl.textContent = `Devices used: ${state.devicesUsed}`;
   stats.appendChild(devicesEl);
+
+  // Per-device usage breakdown
+  const usageCounts = state.deviceUsageCounts || {};
+  for (const [deviceId, count] of Object.entries(usageCounts)) {
+    if (count <= 0) continue;
+    const device = getDevice(deviceId);
+    const deviceName = device ? device.name : deviceId;
+    const usageEl = document.createElement('p');
+    usageEl.className = 'death-stat';
+    usageEl.textContent = `${deviceName}: ${count} use${count === 1 ? '' : 's'}`;
+    stats.appendChild(usageEl);
+  }
 
   container.appendChild(stats);
 
