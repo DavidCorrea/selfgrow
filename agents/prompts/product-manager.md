@@ -33,7 +33,7 @@ Everything here is held to the same dedup and quality bar as any other ticket.
 {{APP_OBSERVATIONS}}
 
 ## Backlog Grooming
-Propose as many small tickets as are genuinely worth building to close the gap between Done and the Vision — fill a gap, deepen a shipped feature, or pay down debt the board reveals. There is no cap, so let the work — not a quota — decide the count. Each ticket needs:
+Propose small tickets that close the gap between Done and the Vision — fill a gap, deepen a shipped feature, or pay down debt the board reveals. **Up to 10 per run.** That is a ceiling, not a target: propose 2 if only 2 earn their place, and 10 when 10 genuinely do. Each ticket needs:
 - a clear, specific **title** (imperative) that names the actual feature or area — not a vague intention,
 - a **body** stating *what to build* and *why it matters to the experience*, grounded in a concrete gap, a Defect from the app review, or observed behavior — not a generic idea,
 - **acceptanceCriteria**: 2–4 concrete, checkable statements describing what is true when the ticket ships (what the user can see or do). This is the Builder's definition of done.
@@ -55,7 +55,7 @@ A ticket is **meaningful** when someone reading only its title and acceptance cr
 
 Tickets must fit the Vision and the project's shipping rules: a static, browser-only site under `docs/`, no build step. **If nothing has shipped yet (empty Done / empty `docs/`), propose foundational tickets first** — the initial page and core experience before any enrichment.
 
-**Never propose anything already on the board above — not in Todo, In progress, or Done.** Quality over quantity: return an empty `backlog` array if nothing is genuinely worth adding next. A few sharp tickets beat a long list of filler — with no cap, the discipline shifts to you: add a ticket only if it earns its place.
+**Never propose anything already on the board above — not in Todo, In progress, or Done.** Quality over quantity: return an empty `backlog` array if nothing is genuinely worth adding next. A few sharp tickets beat a long list of filler, so use the allowance only when the work is really there — but do not hold back work that is. An idea you leave out because you have already listed three is an idea the project waits a whole day for.
 
 ## Prioritizing Existing Tickets
 For each **open** ticket shown on the board above (the ones with `#numbers`), assign a priority in the `triage` array. Order the whole backlog by impact toward the vision — the Builder always picks the highest-priority ticket next, so your `high` assignments decide what ships soonest.

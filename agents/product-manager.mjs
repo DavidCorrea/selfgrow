@@ -1,3 +1,4 @@
+import { pathToFileURL } from "url";
 import {
   log,
   withLogGroup,
@@ -25,8 +26,27 @@ import {
   syncWaitingLabels,
 } from "./shared.mjs";
 
-// How much title-token overlap (intersection / smaller set) counts as a near-dup.
-const NEAR_DUP_THRESHOLD = 0.6;
+// How much title-token similarity counts as a near-duplicate.
+//
+// This pass now catches only NEAR-IDENTICAL titles. Anything more subtle is the
+// model's job (filterSemanticDuplicates), because tokens fundamentally cannot
+// tell "a device found in the Condenser Gallery" from "the Condenser Gallery"
+// itself — and getting that wrong here deletes good work with no recovery.
+//
+// The measure is Jaccard (shared / union), NOT the overlap coefficient
+// (shared / smaller set) this used to use. Overlap rewards size mismatch: a
+// short existing title that is a subset of a longer proposal scores a perfect
+// 1.00. One real title — "Fix contrast on  to meet WCAG AA", which lost its
+// element name to a formatting bug and kept just three content words — therefore
+// matched EVERY future contrast ticket, permanently. Jaccard is symmetric and
+// penalises the size gap instead.
+export const NEAR_DUP_THRESHOLD = Number(process.env.NEAR_DUP_THRESHOLD || 0.9);
+
+// Most tickets one grooming pass may create. A ceiling rather than a target —
+// the prompt still asks for only what earns its place — but it bounds how much
+// work a single run can queue for the Builder, and therefore how much a day can
+// spend building it.
+const MAX_NEW_TICKETS_PER_RUN = Number(process.env.MAX_NEW_TICKETS_PER_RUN || 10);
 
 // Generic ticket-phrasing words carry no topic — drop them so "Add a journal"
 // and "Introduce the journal" both reduce to {journal} and match.
@@ -57,19 +77,35 @@ function titleTokens(title) {
   );
 }
 
-// True when `title`'s content words overlap an existing title's heavily enough
-// to be the same idea reworded. Overlap coefficient is lenient on length, so a
-// short title contained in a longer one still matches.
-function isNearDuplicate(title, existingTokenSets) {
+/**
+ * The existing title `title` is a near-duplicate of, or null when it is new.
+ *
+ * Returns the match and its score rather than a bare boolean, so a rejection can
+ * say what it collided with and how hard. A dedup that deletes work without
+ * naming its reason is not auditable, and this one silently discarded three
+ * good tickets before anyone noticed.
+ *
+ * @param {string} title
+ * @param {{title: string, tokens: Set<string>}[]} existing
+ * @returns {{title: string, score: number}|null}
+ */
+export function nearDuplicateOf(title, existing) {
   const a = titleTokens(title);
-  if (a.size === 0) return false;
-  for (const b of existingTokenSets) {
-    if (b.size === 0) continue;
+  if (a.size === 0) return null;
+  let best = null;
+  let bestScore = 0;
+  for (const entry of existing) {
+    const b = entry.tokens;
+    if (!b || b.size === 0) continue;
     let shared = 0;
-    for (const w of a) if (b.has(w)) shared++;
-    if (shared / Math.min(a.size, b.size) >= NEAR_DUP_THRESHOLD) return true;
+    for (const word of a) if (b.has(word)) shared++;
+    const score = shared / new Set([...a, ...b]).size; // Jaccard
+    if (score > bestScore) {
+      bestScore = score;
+      best = entry.title;
+    }
   }
-  return false;
+  return bestScore >= NEAR_DUP_THRESHOLD ? { title: best, score: bestScore } : null;
 }
 
 /**
@@ -189,37 +225,82 @@ function orderByDependencies(items) {
   return ordered;
 }
 
-async function groomBacklog(proposed, openIssues, boardTitles) {
+async function groomBacklog(proposed, openIssues, boardItems) {
   if (!Array.isArray(proposed) || proposed.length === 0) {
     log("info", "Backlog: no tickets proposed.");
     return;
   }
 
-  // Dedup against everything on the board (incl. shipped/Done) and all open issues.
-  const existingTitles = [...openIssues.map((i) => i.title), ...boardTitles].filter(Boolean);
+  // Two pools, because the two passes are good at different questions.
+  //
+  // The token pass only compares against work that is still OPEN or in flight —
+  // "is this already queued?" is a question tokens can answer. It deliberately
+  // ignores the Done column: that pool only ever grows (108 shipped titles and
+  // counting), so including it made every run harder to pass than the last, and
+  // the pipeline eventually proposed nothing at all.
+  //
+  // The model pass sees everything including shipped work, because "have we
+  // already built this?" needs judgment about content, not title vocabulary.
+  const liveTitles = [
+    ...openIssues.map((i) => i.title),
+    ...boardItems.filter((i) => i.status !== "Done").map((i) => i.title),
+  ].filter(Boolean);
+  const allTitles = [
+    ...openIssues.map((i) => i.title),
+    ...boardItems.map((i) => i.title),
+  ].filter(Boolean);
 
-  // Pass 1 — deterministic: drop exact and reworded near-duplicate titles, and
-  // dedup later proposals against ones we've already accepted this run.
-  const tokenSets = existingTitles.map(titleTokens);
+  // Pass 1 — deterministic: drop near-identical titles only, and dedup later
+  // proposals against ones already accepted this run.
+  const seen = liveTitles.map((title) => ({ title, tokens: titleTokens(title) }));
   const heuristicSurvivors = [];
   for (const item of proposed) {
     if (!item || !item.title || !item.body) continue;
-    if (isNearDuplicate(item.title, tokenSets)) {
-      log("info", `Backlog: skipping near-duplicate "${item.title}".`);
+    const match = nearDuplicateOf(item.title, seen);
+    if (match) {
+      log(
+        "info",
+        `Backlog: skipping near-duplicate "${item.title}" — ${match.score.toFixed(2)} similar to "${match.title}".`
+      );
       continue;
     }
     heuristicSurvivors.push(item);
-    tokenSets.push(titleTokens(item.title));
+    seen.push({ title: item.title, tokens: titleTokens(item.title) });
   }
 
-  // Pass 2 — semantic: a model call catches reworded dupes the tokens missed.
-  const survivors = await filterSemanticDuplicates(heuristicSurvivors, existingTitles);
+  // Pass 2 — semantic: a model call decides everything ambiguous, including
+  // whether a proposal repeats something already shipped.
+  const survivors = await filterSemanticDuplicates(heuristicSurvivors, allTitles);
+
+  // Dropping EVERY proposal is a filter symptom, not a finished project — the
+  // run just spent a full session generating work and kept none of it. Loud, so
+  // the next occurrence is one glance at the summary rather than a forensic dig
+  // through the logs.
+  if (survivors.length === 0) {
+    log(
+      "warn",
+      `Backlog: all ${proposed.length} proposed ticket(s) were rejected as duplicates and NOTHING was created. ` +
+        `That usually means the dedup is miscalibrated rather than that the project is complete — check the ` +
+        `skip lines above for what each one matched.`
+    );
+  }
 
   // Create dependencies before the tickets that wait on them, so each body can
   // name real issue numbers.
   const numberByTitle = new Map();
   let created = 0;
-  for (const item of orderByDependencies(survivors)) {
+  // Order first, then truncate: orderByDependencies emits dependencies before
+  // the tickets that wait on them, so cutting from the end drops leaves and
+  // keeps foundations. Anything cut simply gets reproposed next run.
+  const ordered = orderByDependencies(survivors);
+  if (ordered.length > MAX_NEW_TICKETS_PER_RUN) {
+    log(
+      "info",
+      `Backlog: ${ordered.length} ticket(s) survived grooming — creating the first ${MAX_NEW_TICKETS_PER_RUN}, ` +
+        `the rest can be reproposed next run.`
+    );
+  }
+  for (const item of ordered.slice(0, MAX_NEW_TICKETS_PER_RUN)) {
     // Resolve each declared dependency to an issue number: "#134" points at an
     // existing ticket, anything else at another ticket in this batch. A reference
     // that resolves to nothing is dropped rather than guessed at — a dependency
@@ -332,14 +413,23 @@ async function main() {
   // 2. Triage + prioritize existing open tickets (pull inbound onto the board).
   triageExisting(remainingOpen, boardItems, data.triage);
   // 3. Create new prioritized tickets toward the vision.
-  await groomBacklog(data.backlog, remainingOpen, boardItems.map((i) => i.title));
+  // Full board items, not just titles: grooming needs each item's column to tell
+  // shipped work from work still in flight.
+  await groomBacklog(data.backlog, remainingOpen, boardItems);
 
   kickBuilder();
   printRunSummary("Product Manager");
 }
 
-main().catch((err) => {
-  log("error", `Product Manager failed: ${err.message || err}`);
-  printRunSummary("Product Manager");
-  process.exit(1);
-});
+// Only groom when RUN, never when imported — the same guard model-probe.mjs and
+// curator.mjs use, so agents/dedup-check.mjs can exercise the dedup heuristic
+// without spending a model session as a side effect of loading this file.
+export { titleTokens };
+
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  main().catch((err) => {
+    log("error", `Product Manager failed: ${err.message || err}`);
+    printRunSummary("Product Manager");
+    process.exit(1);
+  });
+}
