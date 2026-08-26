@@ -77,7 +77,201 @@ export async function checks() {
     problems.push(`Could not import game modules for pressure check: ${err.message}`);
   }
 
-  // ── 3. The automaton always eventually acts (no infinite loop) ──
+  // ── 3. Starting pressure shifts based on last descent outcome ──
+  // The machine remembers how the last descent ended and adjusts starting pressure.
+  // Rupture → 55, escaped → 45, cornered/none/first → 50.
+  try {
+    const { createInitialState } = await import('./game.js');
+    const { getGallery } = await import('./engine/registry.js');
+
+    // 3a. Rupture memory → pressure 55, maxPressure 55
+    const ruptureState = createInitialState('pressure-rupture', {
+      descents: 1, lastOutcome: 'rupture', lastSeed: 'prev',
+    });
+    if (ruptureState.pressure !== 55) {
+      problems.push(
+        `Starting pressure after rupture should be 55, got ${ruptureState.pressure}`
+      );
+    }
+    if (ruptureState.maxPressure !== 55) {
+      problems.push(
+        `Starting maxPressure after rupture should be 55, got ${ruptureState.maxPressure}`
+      );
+    }
+
+    // 3b. Escaped memory → pressure 45, maxPressure 45
+    const escapedState = createInitialState('pressure-escaped', {
+      descents: 1, lastOutcome: 'escaped', lastSeed: 'prev',
+    });
+    if (escapedState.pressure !== 45) {
+      problems.push(
+        `Starting pressure after escaped should be 45, got ${escapedState.pressure}`
+      );
+    }
+    if (escapedState.maxPressure !== 45) {
+      problems.push(
+        `Starting maxPressure after escaped should be 45, got ${escapedState.maxPressure}`
+      );
+    }
+
+    // 3c. Cornered memory → pressure 50, maxPressure 50
+    const corneredState = createInitialState('pressure-cornered', {
+      descents: 1, lastOutcome: 'cornered', lastSeed: 'prev',
+    });
+    if (corneredState.pressure !== 50) {
+      problems.push(
+        `Starting pressure after cornered should be 50, got ${corneredState.pressure}`
+      );
+    }
+    if (corneredState.maxPressure !== 50) {
+      problems.push(
+        `Starting maxPressure after cornered should be 50, got ${corneredState.maxPressure}`
+      );
+    }
+
+    // 3d. 'none' memory → pressure 50, maxPressure 50
+    const noneState = createInitialState('pressure-none', {
+      descents: 0, lastOutcome: 'none', lastSeed: null,
+    });
+    if (noneState.pressure !== 50) {
+      problems.push(
+        `Starting pressure after none should be 50, got ${noneState.pressure}`
+      );
+    }
+    if (noneState.maxPressure !== 50) {
+      problems.push(
+        `Starting maxPressure after none should be 50, got ${noneState.maxPressure}`
+      );
+    }
+
+    // 3e. Fresh memory (no memory argument) → pressure 50, maxPressure 50
+    const freshState = createInitialState('pressure-fresh');
+    if (freshState.pressure !== 50) {
+      problems.push(
+        `Starting pressure with fresh memory should be 50, got ${freshState.pressure}`
+      );
+    }
+    if (freshState.maxPressure !== 50) {
+      problems.push(
+        `Starting maxPressure with fresh memory should be 50, got ${freshState.maxPressure}`
+      );
+    }
+
+    // 3f. Engine room describe() acknowledges the pressure shift
+    const engineRoom = getGallery('engine-room');
+    if (engineRoom) {
+      // Rupture memory: mentions trembling
+      const rDesc = engineRoom.describe(ruptureState);
+      if (!rDesc.includes('trembling')) {
+        problems.push(
+          `Engine room description after rupture should mention trembling, got: "${rDesc}"`
+        );
+      }
+      if (!rDesc.includes('pressure running high')) {
+        problems.push(
+          `Engine room description after rupture should mention pressure running high, got: "${rDesc}"`
+        );
+      }
+
+      // Escaped memory: mentions settled
+      const eDesc = engineRoom.describe(escapedState);
+      if (!eDesc.includes('settled')) {
+        problems.push(
+          `Engine room description after escape should mention settled, got: "${eDesc}"`
+        );
+      }
+      if (!eDesc.includes('pressure running low')) {
+        problems.push(
+          `Engine room description after escape should mention pressure running low, got: "${eDesc}"`
+        );
+      }
+
+      // Cornered memory: no shift mentioned (no trembling, no settled)
+      const cDesc = engineRoom.describe(corneredState);
+      if (cDesc.includes('trembling') || cDesc.includes('settled')) {
+        problems.push(
+          `Engine room description after cornered should not mention pressure shift, got: "${cDesc}"`
+        );
+      }
+
+      // Fresh (no prior descent): no shift mentioned
+      const fDesc = engineRoom.describe(freshState);
+      if (fDesc.includes('trembling') || fDesc.includes('settled')) {
+        problems.push(
+          `Engine room description on first descent should not mention pressure shift, got: "${fDesc}"`
+        );
+      }
+    }
+
+    // 3g. DOM check: save 'rupture' to memory, start new descent, verify gauge
+    const { saveMemory, clearMemory, loadMemory } = await import('./engine/memory.js');
+    const { startNewDescent } = await import('./game.js');
+
+    clearMemory();
+    saveMemory('rupture', 'pressure-dom-test');
+
+    startNewDescent('pressure-dom-test');
+    await new Promise(r => requestAnimationFrame(r));
+    await new Promise(r => requestAnimationFrame(r));
+
+    // Verify pressure-numbers text shows '55 / 100'
+    const pressureNumbers = document.querySelector('.pressure-numbers');
+    if (pressureNumbers) {
+      const text = pressureNumbers.textContent.trim();
+      if (text !== '55 / 100') {
+        problems.push(
+          `After rupture memory, pressure-numbers should show '55 / 100', got: "${text}"`
+        );
+      }
+    } else {
+      problems.push('Pressure numbers element (.pressure-numbers) not found in DOM for rupture memory check');
+    }
+
+    // Verify the meter's aria-valuenow is '55'
+    const gaugeOuter = document.querySelector('.pressure-gauge-outer');
+    if (gaugeOuter) {
+      const ariaNow = gaugeOuter.getAttribute('aria-valuenow');
+      if (ariaNow !== '55') {
+        problems.push(
+          `Pressure gauge aria-valuenow should be '55' after rupture memory, got: "${ariaNow}"`
+        );
+      }
+    } else {
+      problems.push('Pressure gauge outer element (.pressure-gauge-outer) not found in DOM for rupture memory check');
+    }
+
+    // 3h. Clear memory and start a fresh descent so later DOM checks see a fresh game
+    clearMemory();
+    startNewDescent();
+    await new Promise(r => requestAnimationFrame(r));
+    await new Promise(r => requestAnimationFrame(r));
+
+    // Verify fresh state shows 50 / 100
+    const freshNumbers = document.querySelector('.pressure-numbers');
+    if (freshNumbers) {
+      const freshText = freshNumbers.textContent.trim();
+      if (freshText !== '50 / 100') {
+        problems.push(
+          `After clearing memory, pressure-numbers should show '50 / 100', got: "${freshText}"`
+        );
+      }
+    }
+
+    // Verify the meter's aria-valuenow is '50' for fresh state
+    const freshGauge = document.querySelector('.pressure-gauge-outer');
+    if (freshGauge) {
+      const freshAriaNow = freshGauge.getAttribute('aria-valuenow');
+      if (freshAriaNow !== '50') {
+        problems.push(
+          `Pressure gauge aria-valuenow should be '50' after fresh start, got: "${freshAriaNow}"`
+        );
+      }
+    }
+  } catch (err) {
+    problems.push(`Could not verify starting pressure memory shift: ${err.message}`);
+  }
+
+  // ── 4. The automaton always eventually acts (no infinite loop) ──
   // Verify that calling advanceTurn advances the turn counter and the
   // automaton's position decreases (it moves toward the player).
   try {
@@ -107,7 +301,7 @@ export async function checks() {
     problems.push(`Could not verify automaton liveness: ${err.message}`);
   }
 
-  // ── 4. A device cannot take pressure below zero ──
+  // ── 5. A device cannot take pressure below zero ──
   try {
     const { createInitialState } = await import('./game.js');
     const state = createInitialState('device-cost-limit');
@@ -171,7 +365,7 @@ export async function checks() {
     problems.push(`Could not verify device cost limits: ${err.message}`);
   }
 
-  // ── 5. Death condition is reachable ──
+  // ── 6. Death condition is reachable ──
   try {
     const { createInitialState } = await import('./game.js');
     const { getAutomaton } = await import('./engine/registry.js');
@@ -213,7 +407,7 @@ export async function checks() {
     problems.push(`Could not verify death reachability: ${err.message}`);
   }
 
-  // ── 6. Module registry works ──
+  // ── 7. Module registry works ──
   try {
     const { listAutomata, listDevices, listGalleries, getAutomaton, getDevice, getGallery } = await import('./engine/registry.js');
 
@@ -335,7 +529,7 @@ export async function checks() {
     problems.push(`Could not verify module registry: ${err.message}`);
   }
 
-  // ── 7. Gallery sequence determinism ──
+  // ── 8. Gallery sequence determinism ──
   // The same seed must produce the same gallery sequence every time.
   try {
     const { createInitialState } = await import('./game.js');
@@ -458,7 +652,7 @@ export async function checks() {
     problems.push(`Could not verify gallery sequence determinism: ${err.message}`);
   }
 
-  // ── 8. Page structure checks ──
+  // ── 9. Page structure checks ──
   const gameEl = document.getElementById('game');
   if (!gameEl) {
     problems.push('Missing #game container — game engine has no mount point');
@@ -489,7 +683,7 @@ export async function checks() {
     }
   }
 
-  // ── 9. Seed input field exists and works ──
+  // ── 10. Seed input field exists and works ──
   const seedInput = document.getElementById('seed-input');
   if (!seedInput) {
     problems.push('Missing #seed-input element — seed input field not present');
@@ -538,7 +732,7 @@ export async function checks() {
     }
   }
 
-  // ── 10. Replay button is enabled after initial auto-started descent ──
+  // ── 11. Replay button is enabled after initial auto-started descent ──
   // Regression check for issue #361: after mount() calls startNewDescent()
   // which populates the seed input programmatically via render(), the Replay
   // button must become enabled (not stay disabled from the mount-time empty check).
@@ -581,7 +775,7 @@ export async function checks() {
     problems.push(`Could not verify Replay button after auto-start: ${err.message}`);
   }
 
-  // ── 11. Steam Cloak device is registered and works ──
+  // ── 12. Steam Cloak device is registered and works ──
   try {
     const { createInitialState } = await import('./game.js');
     const { getDevice, listDevices } = await import('./engine/registry.js');
@@ -713,7 +907,7 @@ export async function checks() {
     problems.push(`Could not verify Steam Cloak device: ${err.message}`);
   }
 
-  // ── 12. Safety Valve device is registered and works ──
+  // ── 13. Safety Valve device is registered and works ──
   try {
     const { createInitialState } = await import('./game.js');
     const { getDevice, listDevices } = await import('./engine/registry.js');
@@ -843,7 +1037,7 @@ export async function checks() {
     problems.push(`Could not verify Safety Valve device: ${err.message}`);
   }
 
-  // ── 13. Text contrast meets WCAG AA 4.5:1 ──
+  // ── 14. Text contrast meets WCAG AA 4.5:1 ──
   // Helper: convert an rgb string like "rgb(r, g, b)" or "#rrggbb" to {r,g,b}
   function parseColor(str) {
     if (!str) return null;
@@ -997,7 +1191,7 @@ export async function checks() {
     }
   }
 
-  // ── 14. Sentinel burst/pause pattern ──
+  // ── 15. Sentinel burst/pause pattern ──
   // The Sentinel should advance 2 on burst turns, 0 on pause turns, and the
   // description should reflect the current state so a player can predict it.
   try {
@@ -1107,7 +1301,7 @@ export async function checks() {
     problems.push(`Could not verify Sentinel burst/pause pattern: ${err.message}`);
   }
 
-  // ── 15. Pressure accumulates each turn ──
+  // ── 16. Pressure accumulates each turn ──
   // Pressure should increase by pressureAccumulationRate each turn,
   // making hoarding a genuine threat.
   try {
@@ -1209,7 +1403,7 @@ export async function checks() {
     problems.push(`Could not verify pressure accumulation: ${err.message}`);
   }
 
-  // ── 16. Machine memory round-trips correctly ──
+  // ── 17. Machine memory round-trips correctly ──
   // The memory module must persist and load values reliably.
   try {
     const { loadMemory, saveMemory, clearMemory } = await import('./engine/memory.js');
@@ -1370,7 +1564,7 @@ export async function checks() {
     problems.push(`Could not verify machine memory: ${err.message}`);
   }
 
-  // ── 17. Devices are found in galleries, not all available at start ──
+  // ── 18. Devices are found in galleries, not all available at start ──
   try {
     const { createInitialState } = await import('./game.js');
     const { getDevice, listDevices } = await import('./engine/registry.js');
@@ -1544,7 +1738,7 @@ export async function checks() {
     problems.push(`Could not verify found-devices mechanism: ${err.message}`);
   }
 
-  // ── 18. Sentinel adapts based on machine memory ──
+  // ── 19. Sentinel adapts based on machine memory ──
   // The Sentinel's starting position should reflect how the last descent ended.
   try {
     const { createInitialState } = await import('./game.js');
@@ -1634,7 +1828,7 @@ export async function checks() {
     problems.push(`Could not verify Sentinel memory adaptation: ${err.message}`);
   }
 
-  // ── 19. Death recap statistics ──
+  // ── 20. Death recap statistics ──
   // The death screen must show turns survived, galleries visited, max pressure,
   // and devices used. These stats must be tracked in state.
   try {
@@ -1764,7 +1958,7 @@ export async function checks() {
     problems.push(`Could not verify death recap statistics: ${err.message}`);
   }
 
-  // ── 20. Next-turn pressure projection ──
+  // ── 21. Next-turn pressure projection ──
   // The pressure gauge area must show the projected pressure after waiting one turn.
   try {
     const { createInitialState } = await import('./game.js');
@@ -1866,7 +2060,7 @@ export async function checks() {
     problems.push(`Could not verify pressure projection: ${err.message}`);
   }
 
-  // ── 21. Escape mechanism in the final gallery ──
+  // ── 22. Escape mechanism in the final gallery ──
   // The player must be able to escape from the final gallery when pressure ≤ 20.
   try {
     const { createInitialState } = await import('./game.js');
@@ -2038,7 +2232,7 @@ export async function checks() {
     problems.push(`Could not verify escape mechanism: ${err.message}`);
   }
 
-  // ── 22. Sentinel starts at position 5 after an escape ──
+  // ── 23. Sentinel starts at position 5 after an escape ──
   try {
     const { createInitialState } = await import('./game.js');
 
@@ -2119,7 +2313,7 @@ export async function checks() {
     problems.push(`Could not verify Sentinel escape position: ${err.message}`);
   }
 
-  // ── 23. Sentinel responds to player pressure level ──
+  // ── 24. Sentinel responds to player pressure level ──
   // Pressure is the whole game. The Sentinel's behaviour changes based on the
   // player's pressure: agitated (≥ 70) advances relentlessly; calm (≤ 30)
   // takes an extra pause turn; normal (31-69) follows the classic burst/pause.
@@ -2131,7 +2325,7 @@ export async function checks() {
     if (!automaton) {
       problems.push('Sentinel automaton not registered — cannot verify pressure-dependent behaviour');
     } else {
-      // ── 23a. Agitated mode (pressure ≥ 70): advances 2 every turn, no pause ──
+      // ── 24a. Agitated mode (pressure ≥ 70): advances 2 every turn, no pause ──
       const agitated = createInitialState('sentinel-pressure-agitated');
       agitated.pressure = 80;
       agitated.automatonState.patternStep = 0;
@@ -2180,7 +2374,7 @@ export async function checks() {
         );
       }
 
-      // ── 23b. Calm mode (pressure ≤ 30): burst then two pauses ──
+      // ── 24b. Calm mode (pressure ≤ 30): burst then two pauses ──
       const calm = createInitialState('sentinel-pressure-calm');
       calm.pressure = 20;
       calm.automatonState.patternStep = 0;
@@ -2241,7 +2435,7 @@ export async function checks() {
         );
       }
 
-      // ── 23c. Normal mode (31-69): standard burst/pause pattern still works ──
+      // ── 24c. Normal mode (31-69): standard burst/pause pattern still works ──
       const normal = createInitialState('sentinel-pressure-normal');
       normal.pressure = 50;
       normal.automatonState.patternStep = 0;
@@ -2276,7 +2470,7 @@ export async function checks() {
         );
       }
 
-      // ── 23d. Boundary: pressure 70 is agitated, 69 is normal ──
+      // ── 24d. Boundary: pressure 70 is agitated, 69 is normal ──
       const at70 = createInitialState('sentinel-pressure-at70');
       at70.pressure = 70;
       at70.automatonState.patternStep = 0;
@@ -2307,7 +2501,7 @@ export async function checks() {
         );
       }
 
-      // ── 23e. Boundary: pressure 30 is calm, 31 is normal ──
+      // ── 24e. Boundary: pressure 30 is calm, 31 is normal ──
       const at30 = createInitialState('sentinel-pressure-at30');
       at30.pressure = 30;
       at30.automatonState.patternStep = 0;
@@ -2346,7 +2540,7 @@ export async function checks() {
         );
       }
 
-      // ── 23f. describe() communicates the mode clearly ──
+      // ── 24f. describe() communicates the mode clearly ──
       // Agitated mode: description must mention agitation or relentless advance
       const describeAgitated = createInitialState('sentinel-desc-agitated');
       describeAgitated.pressure = 85;
@@ -2414,7 +2608,7 @@ export async function checks() {
         );
       }
 
-      // ── 23g. Sentinel mode changes dynamically with pressure ──
+      // ── 24g. Sentinel mode changes dynamically with pressure ──
       // The same Sentinel state should behave differently when pressure changes.
       const dynamic = createInitialState('sentinel-pressure-dynamic');
       dynamic.automatonState.patternStep = 0;
@@ -2472,14 +2666,14 @@ export async function checks() {
         );
       }
 
-      // ── 23h. The existing burst/pause selftest (#14) still passes with pressure 50 ──
+      // ── 24h. The existing burst/pause selftest (#16) still passes with pressure 50 ──
       // (This is verified by the explicit normal-mode test above.)
     }
   } catch (err) {
     problems.push(`Could not verify Sentinel pressure-dependent behaviour: ${err.message}`);
   }
 
-  // ── 24. Descent info readout in the seed display area ──
+  // ── 25. Descent info readout in the seed display area ──
   // The seed display area must show the current descent number and last outcome
   // persistently throughout the entire run, using the existing memory module.
   try {
@@ -2596,7 +2790,7 @@ export async function checks() {
     problems.push(`Could not verify descent info readout: ${err.message}`);
   }
 
-  // ── 25. Pressure-level reactivity in gallery descriptions ──
+  // ── 26. Pressure-level reactivity in gallery descriptions ──
   // Boiler-room and pipe-gallery descriptions must react to the pressure level
   // by appending environmental strain lines when pressure is high or low.
   try {
@@ -2892,7 +3086,7 @@ export async function checks() {
     problems.push(`Could not verify pressure-level reactivity in gallery descriptions: ${err.message}`);
   }
 
-  // ── 26. Escape screen has a distinct victory flourish ──
+  // ── 27. Escape screen has a distinct victory flourish ──
   // The escape ending should show 'ESCAPED' in gold/brass, not the red 'DESCENT ENDED'.
   try {
     const { endScreenContent, categorizeOutcome } = await import('./game.js');
@@ -3062,7 +3256,7 @@ export async function checks() {
     problems.push(`Could not verify escape screen flourish: ${err.message}`);
   }
 
-  // ── 27. The Winder automaton is registered and follows the 3-wind, 1-rest pattern ──
+  // ── 28. The Winder automaton is registered and follows the 3-wind, 1-rest pattern ──
   // The Winder is a non-pursuit automaton that increases pressure accumulation rate
   // in the Boiler Room on a predictable cycle.
   try {
@@ -3293,7 +3487,7 @@ export async function checks() {
     problems.push(`Could not verify Winder automaton: ${err.message}`);
   }
 
-  // ── 28. Condenser Valve device is registered and works ──
+  // ── 29. Condenser Valve device is registered and works ──
   try {
     const { createInitialState } = await import('./game.js');
     const { getDevice, listDevices } = await import('./engine/registry.js');
@@ -3555,7 +3749,7 @@ export async function checks() {
     problems.push(`Could not verify Condenser Valve device: ${err.message}`);
   }
 
-  // ── 29. Winder adapts starting tick based on machine memory ──
+  // ── 30. Winder adapts starting tick based on machine memory ──
   // When the last outcome was 'rupture' (death by pressure), the Winder
   // starts mid-cycle (tick 2) so pressure builds faster from the start.
   try {
@@ -3710,7 +3904,7 @@ export async function checks() {
     problems.push(`Could not verify Winder memory adaptation: ${err.message}`);
   }
 
-  // ── 30. ARIA live region announcements each turn ──
+  // ── 31. ARIA live region announcements each turn ──
   // Every change in state must be announced to screen readers through the
   // existing #game-announce assertive live region.
   try {
@@ -3851,7 +4045,7 @@ export async function checks() {
     problems.push(`Could not verify ARIA announcements: ${err.message}`);
   }
 
-  // ── 31. Turn-event narration (turn log) ──
+  // ── 32. Turn-event narration (turn log) ──
   // The game must render a .turn-log panel showing one line per completed turn:
   // player action + Sentinel action + ending pressure. No new game-state fields.
   try {
@@ -3984,7 +4178,7 @@ export async function checks() {
     problems.push(`Could not verify turn log narration: ${err.message}`);
   }
 
-  // ── 32. Device discovery announcement on descent ──
+  // ── 33. Device discovery announcement on descent ──
   // When descending to a gallery that grants a new device (via foundIn),
   // a visual banner and ARIA announcement must appear on that turn only.
   try {

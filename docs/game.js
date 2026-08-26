@@ -49,10 +49,19 @@ export function createInitialState(seed, memory) {
   // Generate the gallery sequence from the seed — deterministic
   const gallerySequence = generateGallerySequence(rng);
 
+  // Compute starting pressure from machine memory of the last descent
+  const normalizedMemory = memory || { descents: 0, lastOutcome: 'none', lastSeed: null };
+  const startingPressure = (() => {
+    if (!normalizedMemory.lastOutcome || normalizedMemory.lastOutcome === 'none') return 50;
+    if (normalizedMemory.lastOutcome === 'rupture') return 55;
+    if (normalizedMemory.lastOutcome === 'escaped') return 45;
+    return 50; // cornered or anything else
+  })();
+
   const state = {
     seed,
     rng,
-    pressure: 50,
+    pressure: startingPressure,
     ruptureThreshold: 100,
     pressureAccumulationRate: 5,
     location: gallerySequence[0] || 'engine-room',
@@ -62,9 +71,9 @@ export function createInitialState(seed, memory) {
     active: true,
     ended: false,
     endReason: null,
-    maxPressure: 50,
+    maxPressure: startingPressure,
     devicesUsed: 0,
-    memory: memory || { descents: 0, lastOutcome: 'none', lastSeed: null },
+    memory: normalizedMemory,
     automatonState: {},
     deviceStates: {},
     foundDevices: ['vent'],

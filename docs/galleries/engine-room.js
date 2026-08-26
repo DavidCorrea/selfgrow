@@ -18,6 +18,18 @@ registerGallery('engine-room', {
       lines.push(
         `The machine registers your return. This is your ${ordinal} descent.`
       );
+
+      // Acknowledge the pressure shift from the last outcome
+      const outcome = state.memory.lastOutcome;
+      if (outcome === 'rupture') {
+        lines.push(
+          'The machine is still trembling from your last visit, its pressure running high.'
+        );
+      } else if (outcome === 'escaped') {
+        lines.push(
+          'The machine has settled since you escaped, its pressure running low.'
+        );
+      }
     }
 
     // Pressure-level reactivity — the chamber strains with the pressure dial
