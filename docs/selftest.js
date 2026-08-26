@@ -3851,5 +3851,138 @@ export async function checks() {
     problems.push(`Could not verify ARIA announcements: ${err.message}`);
   }
 
+  // ── 31. Turn-event narration (turn log) ──
+  // The game must render a .turn-log panel showing one line per completed turn:
+  // player action + Sentinel action + ending pressure. No new game-state fields.
+  try {
+    const { createInitialState, appendTurnLogLine, formatTurnLogLine, startNewDescent } = await import('./game.js');
+    const { clearMemory } = await import('./engine/memory.js');
+
+    // 31a. No new game-state fields — createInitialState must not have a 'log' field
+    const state = createInitialState('turn-log-no-state-fields');
+    const stateKeys = Object.keys(state);
+    const logKey = stateKeys.find(k => k.toLowerCase().includes('log'));
+    if (logKey) {
+      problems.push(
+        `createInitialState has a key matching /log/i: '${logKey}' — ` +
+        'the turn log must be module-level, not on the state object'
+      );
+    }
+
+    // 31b. appendTurnLogLine pure-function behaviour
+    const log1 = appendTurnLogLine([], 'Turn 1: first line');
+    if (log1.length !== 1 || log1[0] !== 'Turn 1: first line') {
+      problems.push(
+        `appendTurnLogLine from empty: expected ["Turn 1: first line"], got [${log1.join(', ')}]`
+      );
+    }
+
+    // 6th line should cap at 5, newest last
+    const log2 = appendTurnLogLine(['a', 'b', 'c', 'd', 'e'], 'f');
+    if (log2.length !== 5) {
+      problems.push(
+        `appendTurnLogLine with 5+1 lines: expected 5, got ${log2.length}`
+      );
+    } else {
+      const expected = ['b', 'c', 'd', 'e', 'f'];
+      for (let i = 0; i < 5; i++) {
+        if (log2[i] !== expected[i]) {
+          problems.push(
+            `appendTurnLogLine cap: index ${i} expected '${expected[i]}', got '${log2[i]}'`
+          );
+        }
+      }
+    }
+
+    // formatTurnLogLine formatting
+    const lineState = { turn: 1, pressure: 55, ruptureThreshold: 100 };
+    const formatted = formatTurnLogLine(lineState, 'You waited. The Sentinel pauses.');
+    if (!formatted.startsWith('Turn 1:')) {
+      problems.push(
+        `formatTurnLogLine should start with 'Turn 1:', got: "${formatted}"`
+      );
+    }
+    if (!formatted.includes('Pressure now 55/100')) {
+      problems.push(
+        `formatTurnLogLine should include 'Pressure now 55/100', got: "${formatted}"`
+      );
+    }
+
+    // 31c. DOM checks — real page interaction
+    clearMemory();
+    startNewDescent('turn-log-dom-check');
+    await new Promise(r => requestAnimationFrame(r));
+    await new Promise(r => requestAnimationFrame(r));
+
+    const turnLogEl = document.querySelector('.turn-log');
+    if (!turnLogEl) {
+      problems.push('.turn-log element not found in the DOM after starting a new descent');
+    } else {
+      // Fresh descent — 0 log lines
+      const lines = turnLogEl.querySelectorAll('.turn-log-line');
+      if (lines.length !== 0) {
+        problems.push(
+          `.turn-log should have 0 lines on a fresh descent, got ${lines.length}`
+        );
+      }
+
+      // Click the Wait button to advance a turn
+      const waitBtn = document.querySelector('[data-action="wait"]');
+      if (!waitBtn) {
+        problems.push('Wait button ([data-action="wait"]) not found in the DOM for turn-log test');
+      } else {
+        waitBtn.click();
+        await new Promise(r => requestAnimationFrame(r));
+        await new Promise(r => requestAnimationFrame(r));
+
+        const linesAfter = document.querySelectorAll('.turn-log .turn-log-line');
+        if (linesAfter.length !== 1) {
+          problems.push(
+            `After one wait turn, .turn-log should have exactly 1 line, got ${linesAfter.length}`
+          );
+        } else {
+          const text = linesAfter[0].textContent;
+          if (!text.startsWith('Turn 1:')) {
+            problems.push(
+              `Turn log line should start with 'Turn 1:', got: "${text}"`
+            );
+          }
+          if (!text.includes('wait')) {
+            problems.push(
+              `Turn log line should mention 'wait', got: "${text}"`
+            );
+          }
+          if (!text.includes('Sentinel')) {
+            problems.push(
+              `Turn log line should mention 'Sentinel', got: "${text}"`
+            );
+          }
+          if (!text.includes('Pressure')) {
+            problems.push(
+              `Turn log line should mention 'Pressure', got: "${text}"`
+            );
+          }
+        }
+
+        // Start a new descent — log should be cleared
+        startNewDescent('turn-log-reset-seed');
+        await new Promise(r => requestAnimationFrame(r));
+        await new Promise(r => requestAnimationFrame(r));
+
+        const linesAfterReset = document.querySelectorAll('.turn-log .turn-log-line');
+        if (linesAfterReset.length !== 0) {
+          problems.push(
+            `After startNewDescent(), .turn-log should have 0 lines, got ${linesAfterReset.length} — log was not cleared`
+          );
+        }
+      }
+    }
+
+    // Clean up memory
+    clearMemory();
+  } catch (err) {
+    problems.push(`Could not verify turn log narration: ${err.message}`);
+  }
+
   return problems;
 }

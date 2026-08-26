@@ -36,6 +36,9 @@ let seedDisplayEl = null;
 let seedInputEl = null;
 let announceEl = null;
 
+/* ───── Turn log (module-level, not on state) ───── */
+let turnLog = [];
+
 /**
  * Create a new initial game state from a seed string.
  * Pure — no side-effects, no DOM.
@@ -141,7 +144,10 @@ export function advanceTurn(state, action) {
       parts.push(`You descended into the ${gallery ? gallery.name || state.location : state.location}.`);
     }
   }
-  // 'wait' does nothing — player chooses to let the turn pass
+  if (action === 'wait') {
+    parts.push('You waited.');
+  }
+  // 'wait' does nothing else — player chooses to let the turn pass
 
   // Escape action — only available in the final gallery when pressure ≤ 20.
   // Processed before pressure accumulation so the player can escape at the brink.
@@ -444,6 +450,30 @@ function render(state) {
 
   panelInner.appendChild(autoSection);
 
+  // Capture the current announcement into the turn log
+  // (must happen before the turn-log is built and before state.announcement is cleared)
+  if (state.announcement) {
+    appendTurnLogLine(turnLog, formatTurnLogLine(state, state.announcement));
+  }
+
+  // Turn log — rendered from the module-level array (no new game-state fields)
+  const turnLogSection = document.createElement('div');
+  turnLogSection.className = 'turn-log';
+
+  const turnLogHeading = document.createElement('div');
+  turnLogHeading.className = 'turn-log-heading';
+  turnLogHeading.textContent = 'TURN LOG';
+  turnLogSection.appendChild(turnLogHeading);
+
+  for (const line of turnLog) {
+    const lineEl = document.createElement('p');
+    lineEl.className = 'turn-log-line';
+    lineEl.textContent = line;
+    turnLogSection.appendChild(lineEl);
+  }
+
+  panelInner.appendChild(turnLogSection);
+
   // Device area
   const deviceSection = document.createElement('div');
   deviceSection.className = 'device-section';
@@ -677,10 +707,35 @@ function handleKeydown(e) {
 
 /* ───── Start a new descent ───── */
 
+/* ───── Turn log helpers ───── */
+
+/**
+ * Append a line to a turn log array, capping at maxLines (newest last).
+ * Pure helper — does not touch the module-level log.
+ */
+export function appendTurnLogLine(log, line, maxLines = 5) {
+  log.push(line);
+  if (log.length > maxLines) {
+    log.shift();
+  }
+  return log;
+}
+
+/**
+ * Format a turn announcement into a log line.
+ * Uses the already-incremented state.turn (completed-turn count).
+ */
+export function formatTurnLogLine(state, announcement) {
+  return `Turn ${state.turn}: ${announcement} Pressure now ${state.pressure}/${state.ruptureThreshold}.`;
+}
+
+/* ───── Start a new descent ───── */
+
 export function startNewDescent(seed) {
   const actualSeed = seed || generateSeed();
   const memory = loadMemory();
   currentGame = createInitialState(actualSeed, memory);
+  turnLog = [];
   render(currentGame);
 }
 
