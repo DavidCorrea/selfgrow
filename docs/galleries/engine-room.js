@@ -20,6 +20,13 @@ registerGallery('engine-room', {
       );
     }
 
+    // Pressure-level reactivity — the chamber strains with the pressure dial
+    if (state && state.pressure > 60) {
+      lines.push('The brass heart strains, its rhythm quickening as the pipes groan overhead.');
+    } else if (state && state.pressure < 20) {
+      lines.push('The chamber falls deathly quiet, the great thrum slowing to a crawl.');
+    }
+
     return lines.join('\n');
   },
 });
