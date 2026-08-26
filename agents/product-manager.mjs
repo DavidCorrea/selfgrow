@@ -239,15 +239,18 @@ async function groomBacklog(proposed, openIssues, boardItems) {
   // counting), so including it made every run harder to pass than the last, and
   // the pipeline eventually proposed nothing at all.
   //
-  // The model pass sees everything including shipped work, because "have we
-  // already built this?" needs judgment about content, not title vocabulary.
+  // The model pass sees the same live pool, deliberately NOT the whole history.
+  // It briefly saw every shipped title too, and that reintroduced the very
+  // ratchet this was meant to remove: ~150 titles plus every proposal's body
+  // blew past the 12-minute session cap, the pass aborted, and tickets were
+  // created with no semantic check at all.
+  //
+  // "Has this already been BUILT?" is now answered where the evidence actually
+  // is — the Validator, which reads docs/ and can close a ticket as a duplicate.
+  // Here we only answer the cheap question: "is this already queued?"
   const liveTitles = [
     ...openIssues.map((i) => i.title),
     ...boardItems.filter((i) => i.status !== "Done").map((i) => i.title),
-  ].filter(Boolean);
-  const allTitles = [
-    ...openIssues.map((i) => i.title),
-    ...boardItems.map((i) => i.title),
   ].filter(Boolean);
 
   // Pass 1 — deterministic: drop near-identical titles only, and dedup later
@@ -270,7 +273,7 @@ async function groomBacklog(proposed, openIssues, boardItems) {
 
   // Pass 2 — semantic: a model call decides everything ambiguous, including
   // whether a proposal repeats something already shipped.
-  const survivors = await filterSemanticDuplicates(heuristicSurvivors, allTitles);
+  const survivors = await filterSemanticDuplicates(heuristicSurvivors, liveTitles);
 
   // Dropping EVERY proposal is a filter symptom, not a finished project — the
   // run just spent a full session generating work and kept none of it. Loud, so

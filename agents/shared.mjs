@@ -1340,6 +1340,42 @@ export async function commentIssue(issueNumber, body) {
   }
 }
 
+/**
+ * Close a ticket because the work it asks for is ALREADY BUILT.
+ *
+ * Deliberately distinct from closeIssueAsInvalid and from the abandoned path.
+ * A duplicate is a RESOLVED ticket, not a failed one: it earns no strike, and it
+ * must never reach writePostMortem, because a post-mortem lands in the wiki's
+ * Lessons page — which the Scout reads before planning every future build. A
+ * duplicate recorded there teaches the pipeline, permanently, that work it had
+ * actually completed was "tried and abandoned".
+ */
+export async function closeIssueAsDuplicate(issueNumber, reason) {
+  await labelIssue(issueNumber, "duplicate");
+  const lines = [
+    "## Closed as already built",
+    "",
+    "The Validator inspected the code and found this work already present:",
+    "",
+    reason || "(no reason recorded)",
+    "",
+    "_No strike was recorded against this ticket — it was resolved, not failed. " +
+      "If the existing implementation does not in fact cover this, reopen with the gap spelled out._",
+  ];
+  await commentIssue(issueNumber, lines.join("\n"));
+  try {
+    execSync(`gh issue close ${issueNumber} --reason "not planned"`, {
+      cwd: repoRoot,
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    log("info", `Closed issue #${issueNumber} as a duplicate of existing work.`);
+    return true;
+  } catch (e) {
+    log("warn", `Could not close duplicate issue #${issueNumber}`, errorData(e));
+    return false;
+  }
+}
+
 /** Label, comment, and close an issue the Scout judged invalid / out of scope. */
 export async function closeIssueAsInvalid(issueNumber, reason) {
   await labelIssue(issueNumber, "invalid");

@@ -33,6 +33,7 @@ import {
   dependencyLine,
   PRIORITY_LABELS,
   closeIssueAsInvalid,
+  closeIssueAsDuplicate,
   createIssue,
   TECH_DEBT_LABEL,
   moveCard,
@@ -397,6 +398,28 @@ async function buildTicket(openIssues, vision) {
     const { outcome, data: validatorData } = validatorResult;
 
     log("info", `Validator: ${outcome} — ${validatorData.reason || validatorResult.summary}`);
+
+    // The work is already in the codebase. This is the one rejection that
+    // retrying cannot fix, so it must not go round the Scout loop: the plan is
+    // not the problem, the ticket is. Left as an ordinary rejection it burns
+    // every Scout retry, then every ticket attempt, and finally parks a ticket
+    // whose only fault was being asked for twice — writing a post-mortem into
+    // Lessons that tells the Scout, forever, that finished work was abandoned.
+    if (outcome === "duplicate") {
+      const why = validatorData.reason || validatorResult.summary;
+      log("info", `Validator: #${addressedIssue} is already built — closing it as a duplicate. ${why}`);
+      if (addressedIssue) {
+        await closeIssueAsDuplicate(addressedIssue, why);
+        moveCard(addressedIssue, "Done"); // best-effort
+      }
+      return {
+        addressedIssue,
+        addressedIssueObj,
+        outcome: "duplicate",
+        reason: why,
+        ticketFault: false, // resolved, not failed — no strike, no post-mortem
+      };
+    }
 
     if (outcome !== "approve") {
       feedback = validatorData.reason || validatorResult.summary;
@@ -765,6 +788,7 @@ async function main() {
   const attempted = new Set(); // tickets engaged this run — never re-pick them
   const deadline = Date.now() + RUN_BUDGET_MS;
   let mergedCount = 0;
+  let duplicateCount = 0;
   // Both mutable because a split replaces this slot's ticket with children: the
   // slot adopts the first one and gets one extra pass to build it, so splitting
   // still ships something today instead of idling until the next tick. Safe
@@ -878,13 +902,24 @@ async function main() {
         await writePostMortem(result.addressedIssueObj, result.reason);
       }
     }
+    if (result.outcome === "duplicate") {
+      // Not a failure and not a merge: the board simply got one ticket smaller
+      // without any code changing. Worth its own line so a run that closes
+      // several duplicates reads as exactly that, rather than as a quiet pass.
+      duplicateCount++;
+    }
     if (result.outcome === "none") {
       log("info", "No ticket could be planned this pass — stopping.");
       break;
     }
   }
 
-  log("info", `Run complete — ${mergedCount} ticket(s) merged.`);
+  log(
+    "info",
+    `Run complete — ${mergedCount} ticket(s) merged` +
+      (duplicateCount ? `, ${duplicateCount} closed as already built` : "") +
+      "."
+  );
   maybeReplenishBacklog(mergedCount);
   printRunSummary("Builder Team");
 }
