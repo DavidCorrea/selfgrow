@@ -923,6 +923,11 @@ export async function checks() {
       selector: '.descent-separator',
       bgSelector: '.seed-display',
     },
+    {
+      name: '#descent-outcome (first descent / last: X)',
+      selector: '#descent-outcome',
+      bgSelector: '.seed-display',
+    },
   ];
 
   const MIN_CONTRAST = 4.5;
