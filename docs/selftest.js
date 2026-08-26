@@ -3984,5 +3984,284 @@ export async function checks() {
     problems.push(`Could not verify turn log narration: ${err.message}`);
   }
 
+  // ── 32. Device discovery announcement on descent ──
+  // When descending to a gallery that grants a new device (via foundIn),
+  // a visual banner and ARIA announcement must appear on that turn only.
+  try {
+    const { createInitialState, advanceTurn } = await import('./game.js');
+    const { getDevice, listDevices } = await import('./engine/registry.js');
+
+    // 32a. Descending to a gallery that grants a device populates justFoundDevices
+    const state = createInitialState('device-discovery-test');
+    const boilerIndex = state.gallerySequence.indexOf('boiler-room');
+    if (boilerIndex === -1) {
+      problems.push('boiler-room not found in sequence for device-discovery test');
+    } else {
+      // Move to gallery just before boiler-room so we can descend into it
+      state.galleryIndex = boilerIndex - 1;
+      state.location = state.gallerySequence[boilerIndex - 1];
+
+      // Ensure we don't already have the steam-cloak
+      state.foundDevices = ['vent'];
+
+      // Simulate descend action via advanceTurn
+      advanceTurn(state, 'descend');
+
+      // Verify justFoundDevices is populated
+      if (!state.justFoundDevices || state.justFoundDevices.length === 0) {
+        problems.push(
+          'Descending into boiler-room should set justFoundDevices, but it was empty'
+        );
+      } else if (!state.justFoundDevices.includes('Steam Cloak')) {
+        problems.push(
+          `Descending into boiler-room should include 'Steam Cloak' in justFoundDevices, ` +
+          `got [${state.justFoundDevices.join(', ')}]`
+        );
+      }
+
+      // Verify the device was actually added to foundDevices
+      if (!state.foundDevices.includes('steam-cloak')) {
+        problems.push(
+          'steam-cloak should be in foundDevices after descending to boiler-room'
+        );
+      }
+
+      // 32b. After the next turn action (not descend), justFoundDevices is cleared
+      // Restore pressure so wait doesn't kill us
+      state.pressure = 50;
+      advanceTurn(state, 'wait');
+
+      if (state.justFoundDevices && state.justFoundDevices.length > 0) {
+        problems.push(
+          'justFoundDevices should be cleared after the next action (wait), ' +
+          `but got [${state.justFoundDevices.join(', ')}]`
+        );
+      }
+    }
+
+    // 32c. Descending to a gallery with no foundIn device produces no announcement
+    // engine-room has no devices (vent is already found), so descending into it
+    // is not possible (it's the first gallery), but descending into a gallery
+    // where all possible devices are already found should produce no announcement.
+    // Use a state where we've already found all devices
+    const stateAllFound = createInitialState('device-discovery-already-found');
+    const pipeIdx = stateAllFound.gallerySequence.indexOf('pipe-gallery');
+    if (pipeIdx === -1) {
+      problems.push('pipe-gallery not found in sequence for device-discovery-already-found test');
+    } else {
+      // Pre-find all devices so descending grants nothing new
+      stateAllFound.foundDevices = ['vent', 'steam-cloak', 'safety-valve', 'condenser-valve'];
+      stateAllFound.galleryIndex = pipeIdx - 1;
+      stateAllFound.location = stateAllFound.gallerySequence[pipeIdx - 1];
+
+      // Ensure justFoundDevices is empty before descend
+      stateAllFound.justFoundDevices = [];
+
+      advanceTurn(stateAllFound, 'descend');
+
+      if (stateAllFound.justFoundDevices && stateAllFound.justFoundDevices.length > 0) {
+        problems.push(
+          'Descending to a gallery where all devices are already found should produce ' +
+          `no announcement, but got [${stateAllFound.justFoundDevices.join(', ')}]`
+        );
+      }
+    }
+
+    // 32d. Descending into the Condenser Room grants the Condenser Valve
+    const stateCondenser = createInitialState('device-discovery-condenser');
+    const condIdx = stateCondenser.gallerySequence.indexOf('condenser-room');
+    if (condIdx === -1) {
+      problems.push('condenser-room not found in sequence for device-discovery-condenser test');
+    } else {
+      stateCondenser.foundDevices = ['vent', 'steam-cloak', 'safety-valve'];
+      stateCondenser.galleryIndex = condIdx - 1;
+      stateCondenser.location = stateCondenser.gallerySequence[condIdx - 1];
+
+      advanceTurn(stateCondenser, 'descend');
+
+      if (!stateCondenser.justFoundDevices || stateCondenser.justFoundDevices.length === 0) {
+        problems.push(
+          'Descending into condenser-room should set justFoundDevices, but it was empty'
+        );
+      } else if (!stateCondenser.justFoundDevices.includes('Condenser Valve')) {
+        problems.push(
+          `Descending into condenser-room should include 'Condenser Valve' in justFoundDevices, ` +
+          `got [${stateCondenser.justFoundDevices.join(', ')}]`
+        );
+      }
+
+      if (!stateCondenser.foundDevices.includes('condenser-valve')) {
+        problems.push(
+          'condenser-valve should be in foundDevices after descending to condenser-room'
+        );
+      }
+    }
+
+    // 32e. The device discovery banner appears in the DOM when justFoundDevices is set
+    // We need the game mounted — check via the render function indirectly by
+    // verifying the CSS class exists in the stylesheet
+    const styleSheet = document.querySelector('link[rel="stylesheet"]');
+    if (styleSheet) {
+      // Check that the CSS file was loaded (styles are linked)
+    } else {
+      // Could be embedded; this is a soft check so only flag if the DOM has the banner
+    }
+
+    // 32f. Verify that the announcement text includes the device name in parts
+    // (this is tested implicitly by the above checks)
+
+    // 32g. Verify justFoundDevices is empty in fresh initial state
+    const stateFresh = createInitialState('device-discovery-fresh');
+    if (!stateFresh.justFoundDevices) {
+      problems.push(
+        'Initial state should have justFoundDevices field (even if empty)'
+      );
+    } else if (stateFresh.justFoundDevices.length !== 0) {
+      problems.push(
+        `Initial justFoundDevices should be empty, got [${stateFresh.justFoundDevices.join(', ')}]`
+      );
+    }
+
+    // 32h. The turn announcement includes the device discovery text
+    // When we descended into boiler-room above, the state.announcement should
+    // include "You found the Steam Cloak!" 
+    const stateAnnounce = createInitialState('device-discovery-announce');
+    const boilerIdx2 = stateAnnounce.gallerySequence.indexOf('boiler-room');
+    if (boilerIdx2 !== -1) {
+      stateAnnounce.foundDevices = ['vent'];
+      stateAnnounce.galleryIndex = boilerIdx2 - 1;
+      stateAnnounce.location = stateAnnounce.gallerySequence[boilerIdx2 - 1];
+      stateAnnounce.announcement = null;
+
+      advanceTurn(stateAnnounce, 'descend');
+
+      if (stateAnnounce.announcement) {
+        if (!stateAnnounce.announcement.includes('Steam Cloak')) {
+          problems.push(
+            `Turn announcement after descending to boiler-room should mention 'Steam Cloak', ` +
+            `got: "${stateAnnounce.announcement}"`
+          );
+        }
+        if (!stateAnnounce.announcement.includes('found')) {
+          problems.push(
+            `Turn announcement after descending to boiler-room should mention 'found', ` +
+            `got: "${stateAnnounce.announcement}"`
+          );
+        }
+      } else {
+        problems.push(
+          'No announcement generated when descending to boiler-room with a new device'
+        );
+      }
+    }
+
+    // 32i. Descending into the Pipe Gallery grants the Safety Valve
+    const statePipe = createInitialState('device-discovery-pipe');
+    const pIdx = statePipe.gallerySequence.indexOf('pipe-gallery');
+    if (pIdx !== -1) {
+      statePipe.foundDevices = ['vent'];
+      statePipe.galleryIndex = pIdx - 1;
+      statePipe.location = statePipe.gallerySequence[pIdx - 1];
+
+      advanceTurn(statePipe, 'descend');
+
+      if (!statePipe.justFoundDevices || statePipe.justFoundDevices.length === 0) {
+        problems.push(
+          'Descending into pipe-gallery should set justFoundDevices, but it was empty'
+        );
+      } else if (!statePipe.justFoundDevices.includes('Safety Valve')) {
+        problems.push(
+          `Descending into pipe-gallery should include 'Safety Valve' in justFoundDevices, ` +
+          `got [${statePipe.justFoundDevices.join(', ')}]`
+        );
+      }
+
+      if (!statePipe.foundDevices.includes('safety-valve')) {
+        problems.push(
+          'safety-valve should be in foundDevices after descending to pipe-gallery'
+        );
+      }
+
+      // Verify the announcement includes the Safety Valve
+      if (statePipe.announcement) {
+        if (!statePipe.announcement.includes('Safety Valve')) {
+          problems.push(
+            `Turn announcement after pipe-gallery should mention 'Safety Valve', ` +
+            `got: "${statePipe.announcement}"`
+          );
+        }
+      }
+    }
+
+    // 32j. End-to-end DOM check: the banner appears on the descent turn and
+    // disappears after the next action. The first descent from engine-room
+    // always grants exactly one device (all three shuffled galleries have one),
+    // so this is deterministic.
+    const { startNewDescent } = await import('./game.js');
+    const { clearMemory } = await import('./engine/memory.js');
+    clearMemory();
+    startNewDescent('device-discovery-dom-test');
+    await new Promise(r => requestAnimationFrame(r));
+    await new Promise(r => requestAnimationFrame(r));
+
+    const descendBtn = document.querySelector('[data-action="descend"]');
+    if (!descendBtn) {
+      problems.push('Descend button not found for device discovery DOM test');
+    } else {
+      descendBtn.click();
+      await new Promise(r => requestAnimationFrame(r));
+      await new Promise(r => requestAnimationFrame(r));
+
+      const banner = document.querySelector('.device-discovery-banner');
+      if (!banner) {
+        problems.push(
+          'Device discovery banner (.device-discovery-banner) not found in the DOM ' +
+          'after descending — the first descent from engine-room always grants a device'
+        );
+      } else {
+        const bannerText = banner.textContent;
+        if (!bannerText || !bannerText.includes('acquired')) {
+          problems.push(`Discovery banner text should include 'acquired', got: "${bannerText}"`);
+        }
+      }
+
+      // The ARIA live region must announce the find on the same turn
+      const announceEl = document.getElementById('game-announce');
+      if (announceEl) {
+        const announceText = announceEl.textContent;
+        if (!announceText || !announceText.includes('found')) {
+          problems.push(
+            `ARIA live region should announce the device find after descending, got: "${announceText}"`
+          );
+        }
+      } else {
+        problems.push('#game-announce not found in DOM for device discovery announcement test');
+      }
+
+      // After the next action (wait), the banner must disappear
+      const waitBtn = document.querySelector('[data-action="wait"]');
+      if (!waitBtn) {
+        problems.push('Wait button not found for device discovery DOM test');
+      } else {
+        waitBtn.click();
+        await new Promise(r => requestAnimationFrame(r));
+        await new Promise(r => requestAnimationFrame(r));
+
+        const bannerAfter = document.querySelector('.device-discovery-banner');
+        if (bannerAfter) {
+          problems.push(
+            'Device discovery banner should disappear after the next action (wait), ' +
+            'but it is still present in the DOM'
+          );
+        }
+      }
+    }
+
+    // Clean up memory after DOM test
+    clearMemory();
+  } catch (err) {
+    problems.push(`Could not verify device discovery announcement: ${err.message}`);
+  }
+
   return problems;
 }
