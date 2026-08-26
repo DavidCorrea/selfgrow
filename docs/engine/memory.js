@@ -20,6 +20,7 @@ const DEFAULT_MEMORY = {
   descents: 0,
   lastOutcome: 'none',
   lastSeed: null,
+  deviceUsage: {},
 };
 
 /**
@@ -39,6 +40,9 @@ export function loadMemory() {
         descents: typeof data.descents === 'number' ? data.descents : 0,
         lastOutcome: typeof data.lastOutcome === 'string' ? data.lastOutcome : 'none',
         lastSeed: typeof data.lastSeed === 'string' ? data.lastSeed : null,
+        deviceUsage: (data.deviceUsage && typeof data.deviceUsage === 'object' && !Array.isArray(data.deviceUsage))
+          ? { ...data.deviceUsage }
+          : {},
       };
     }
   } catch (e) {
@@ -55,13 +59,16 @@ export function loadMemory() {
  *
  * @param {string} outcome - How the descent ended: 'rupture', 'cornered', or 'none'
  * @param {string} [seed] - The seed of the descent that just ended
- * @returns {{ descents: number, lastOutcome: string, lastSeed: string|null }}
+ * @returns {{ descents: number, lastOutcome: string, lastSeed: string|null, deviceUsage: object }}
  */
-export function saveMemory(outcome, seed) {
+export function saveMemory(outcome, seed, deviceUsage) {
   const memory = loadMemory();
   memory.descents += 1;
   memory.lastOutcome = outcome || 'none';
   memory.lastSeed = seed || null;
+  memory.deviceUsage = (deviceUsage && typeof deviceUsage === 'object' && !Array.isArray(deviceUsage))
+    ? { ...deviceUsage }
+    : {};
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(memory));
   } catch (e) {

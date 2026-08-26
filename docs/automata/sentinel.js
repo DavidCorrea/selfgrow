@@ -83,14 +83,25 @@ registerAutomaton('sentinel', {
   /** Initialise the Sentinel's state for a new descent. */
   initialize(state) {
     // The machine's memory of the last descent influences the starting position.
-    // If the Sentinel cornered the player, it starts further away (position 6),
-    // as if it is being patient. If the player ruptured, it starts closer
-    // (position 4), as if agitated by the machine's strain.
+    // Device usage counts refine this: if the vent was used 3+ times, the
+    // Sentinel starts farther (position 6), cautious of that device. If the
+    // steam-cloak was used at all, it starts closer (position 4), as it was
+    // evaded last time. These take precedence over outcome-based defaults.
     const lastOutcome = state.memory ? state.memory.lastOutcome : 'none';
     const descents = state.memory ? state.memory.descents : 0;
+    const deviceUsage = state.memory ? (state.memory.deviceUsage || {}) : {};
 
     let position = 5; // default
-    if (descents > 0) {
+
+    // Device usage adaptation takes precedence over outcome-based defaults
+    if ((deviceUsage.vent || 0) >= 3) {
+      // Vent used 3+ times last descent — Sentinel is cautious, starts farther
+      position = 6;
+    } else if ((deviceUsage['steam-cloak'] || 0) > 0) {
+      // Steam Cloak was used — Sentinel starts closer, as it was evaded
+      position = 4;
+    } else if (descents > 0) {
+      // Fall back to outcome-based defaults when no usage data applies
       if (lastOutcome === 'cornered') {
         position = 6;
       } else if (lastOutcome === 'rupture') {
