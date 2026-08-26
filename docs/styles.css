@@ -521,7 +521,8 @@ footer .rivet {
   font-style: italic;
 }
 
-.pressure-projection {
+.pressure-projection,
+.rupture-projection {
   font-size: 0.65rem;
   color: #c8a45c;
   letter-spacing: 0.1em;
