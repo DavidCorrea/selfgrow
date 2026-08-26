@@ -4972,5 +4972,91 @@ export async function checks() {
     problems.push(`Could not verify end-to-end device usage: ${err.message}`);
   }
 
+  // ── 39. Gallery descriptions adapt after device discovery ──
+  // Each gallery's describe() must show the original device hint when the device
+  // has NOT been found, and a recovery variant when it HAS been found.
+  // Regression check for issue #388.
+  try {
+    const { getGallery, getDevice } = await import('./engine/registry.js');
+
+    // Galleries and their hosted devices
+    const galleryDeviceMap = [
+      { galleryId: 'boiler-room', deviceId: 'steam-cloak', hintPhrase: 'steam cloak hangs', recoveryPhrase: 'empty hook' },
+      { galleryId: 'pipe-gallery', deviceId: 'safety-valve', hintPhrase: 'safety valve glints', recoveryPhrase: 'hisses freely' },
+      { galleryId: 'condenser-room', deviceId: 'condenser-valve', hintPhrase: 'Frost has begun', recoveryPhrase: 'frosted bracket' },
+    ];
+
+    const baseState = { pressure: 50, foundDevices: ['vent'] };
+
+    for (const { galleryId, deviceId, hintPhrase, recoveryPhrase } of galleryDeviceMap) {
+      const gallery = getGallery(galleryId);
+      if (!gallery) {
+        problems.push(`Gallery '${galleryId}' not found in registry for device discovery selftest`);
+        continue;
+      }
+      if (typeof gallery.describe !== 'function') {
+        problems.push(`Gallery '${galleryId}' is missing describe() method`);
+        continue;
+      }
+
+      // Registry cross-check: verify the device's foundIn property still matches this gallery
+      const device = getDevice(deviceId);
+      if (!device) {
+        problems.push(`Device '${deviceId}' not found in registry for device discovery selftest`);
+        continue;
+      }
+      if (device.foundIn !== galleryId) {
+        problems.push(
+          `Device '${deviceId}'.foundIn ('${device.foundIn}') no longer matches gallery '${galleryId}' — ` +
+          `the describe() adaption relies on this mapping`
+        );
+      }
+
+      // ── Before: device NOT found ──
+      const beforeState = { ...baseState, foundDevices: ['vent'] };
+      const beforeText = gallery.describe(beforeState);
+
+      if (!beforeText.includes(hintPhrase)) {
+        problems.push(
+          `Gallery '${galleryId}' describe() before device discovery should contain hint phrase ` +
+          `'${hintPhrase}', but got: "${beforeText.slice(0, 200)}..."`
+        );
+      }
+      if (beforeText.includes(recoveryPhrase)) {
+        problems.push(
+          `Gallery '${galleryId}' describe() before device discovery should NOT contain recovery phrase ` +
+          `'${recoveryPhrase}', but it did`
+        );
+      }
+
+      // ── After: device IS found ──
+      const afterState = { ...baseState, foundDevices: ['vent', deviceId] };
+      const afterText = gallery.describe(afterState);
+
+      if (!afterText.includes(recoveryPhrase)) {
+        problems.push(
+          `Gallery '${galleryId}' describe() after device discovery should contain recovery phrase ` +
+          `'${recoveryPhrase}', but got: "${afterText.slice(0, 200)}..."`
+        );
+      }
+      if (afterText.includes(hintPhrase)) {
+        problems.push(
+          `Gallery '${galleryId}' describe() after device discovery should NOT contain hint phrase ` +
+          `'${hintPhrase}', but it did`
+        );
+      }
+
+      // The two descriptions must differ
+      if (beforeText === afterText) {
+        problems.push(
+          `Gallery '${galleryId}' describe() returns identical text before and after device discovery — ` +
+          `must produce different descriptions`
+        );
+      }
+    }
+  } catch (err) {
+    problems.push(`Could not verify gallery device discovery descriptions: ${err.message}`);
+  }
+
   return problems;
 }

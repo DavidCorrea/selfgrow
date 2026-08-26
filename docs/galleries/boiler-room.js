@@ -1,8 +1,17 @@
 import { registerGallery } from '../engine/registry.js';
 
+// The device hosted in this gallery — used to dynamically adapt the description
+// when the player has recovered it.
+const HOSTED_DEVICE = 'steam-cloak';
+const RECOVERY_LINE = 'The tarnished steam cloak you recovered left an empty hook; the pipe it hung from is still warm.';
+const HINT_LINE = 'Amid the clutter, a tarnished steam cloak hangs from a pipe, still\nwarm to the touch.';
+
 registerGallery('boiler-room', {
   name: 'Boiler Room',
   describe(state) {
+    const deviceFound = state && Array.isArray(state.foundDevices) && state.foundDevices.includes(HOSTED_DEVICE);
+    const hintLine = deviceFound ? RECOVERY_LINE : HINT_LINE;
+
     const lines = [
       'The Boiler Room. The air is thick and hot, pressing against the lungs',
       'with every breath. Pressure pipes crowd the walls, their iron skin',
@@ -11,8 +20,7 @@ registerGallery('boiler-room', {
       'echo differently here, sharper, as if the walls are closer than they',
       'look. A single doorway leads north into darkness.',
       '',
-      'Amid the clutter, a tarnished steam cloak hangs from a pipe, still',
-      'warm to the touch.',
+      hintLine,
     ];
 
     // Pressure-level reactivity — the environment strains with the pressure dial
