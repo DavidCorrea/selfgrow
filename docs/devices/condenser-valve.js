@@ -28,6 +28,14 @@ registerDevice('condenser-valve', {
    * accumulation rate. The effect lasts for 2 turns.
    * Returns true if the device was used, false otherwise.
    */
+  /**
+   * Return a single-sentence description of what the device did.
+   * Called after use() to build the turn announcement.
+   */
+  announceEffect(state) {
+    return `You release frozen condensate through the valve, cooling the machine for ${this.duration} turns.`;
+  },
+
   use(state) {
     if (!this.canUse(state)) return false;
     state.pressure -= this.cost;

@@ -20,6 +20,14 @@ registerDevice('vent', {
    * Use the device: spend pressure to push the Sentinel back.
    * Returns true if the device was used, false otherwise.
    */
+  /**
+   * Return a single-sentence description of what the device did.
+   * Called after use() to build the turn announcement.
+   */
+  announceEffect(state) {
+    return `You vent ${this.cost} pressure, pushing the Sentinel back 2 steps.`;
+  },
+
   use(state) {
     if (!this.canUse(state)) return false;
     state.pressure -= this.cost;
