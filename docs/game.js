@@ -3,7 +3,8 @@
  *
  * Mounts into the #game container on page load. Manages game state, the turn
  * loop (player acts → automaton acts → turn advances), rendering, and
- * keyboard input. Exports `createInitialState` and `newDescent` for selftest.
+ * keyboard input. Exports `createInitialState`, `advanceTurn`, and
+ * `newDescent` for selftest.
  */
 
 import { createPRNG } from './engine/prng.js';
@@ -64,6 +65,7 @@ export function createInitialState(seed, memory) {
     automatonState: {},
     deviceStates: {},
     foundDevices: ['vent'],
+    announcement: null,
   };
 
   // Initialise automata
@@ -83,11 +85,28 @@ export function createInitialState(seed, memory) {
 /* ───── Turn loop ───── */
 
 /**
+ * Determine the machine's mood band from a pressure value.
+ * Returns 'calm', 'normal', or 'agitated'.
+ */
+function pressureBand(p) {
+  if (p <= 30) return 'calm';
+  if (p >= 70) return 'agitated';
+  return 'normal';
+}
+
+/**
  * Advance one full turn: player action → automaton acts → check death → render.
  * `action` is either 'wait' or 'use:<deviceId>'.
  */
-function advanceTurn(state, action) {
+export function advanceTurn(state, action) {
   if (state.ended) return;
+
+  // Capture pre-turn state for announcement building
+  const pressureAtTurnStart = state.pressure;
+  const posBefore = state.automatonState.position;
+  const bandBefore = pressureBand(pressureAtTurnStart);
+  const parts = [];
+  let usedDeviceId = null;
 
   // --- Player action ---
   if (action && action.startsWith('use:')) {
@@ -96,6 +115,13 @@ function advanceTurn(state, action) {
     if (device && device.canUse(state)) {
       device.use(state);
       state.devicesUsed += 1;
+      usedDeviceId = deviceId;
+      // Device effect announcement
+      if (device.announceEffect) {
+        parts.push(device.announceEffect(state));
+      } else {
+        parts.push(`You used the ${device.name || deviceId}.`);
+      }
     }
   }
   // 'descend' moves to the next gallery in the sequence
@@ -111,6 +137,8 @@ function advanceTurn(state, action) {
           state.foundDevices.push(id);
         }
       }
+      const gallery = getGallery(state.location);
+      parts.push(`You descended into the ${gallery ? gallery.name || state.location : state.location}.`);
     }
   }
   // 'wait' does nothing — player chooses to let the turn pass
@@ -137,6 +165,9 @@ function advanceTurn(state, action) {
       winder.act(state);
     }
   }
+
+  // Capture accumulated rate after Winder/condenser for Winder announcement
+  const accumulatedRate = state.pressureAccumulationRate;
 
   // --- Condenser Valve cooling effect (reduces rate if active) ---
   if (state.deviceStates && state.deviceStates.condenserValveCooling > 0) {
@@ -166,13 +197,52 @@ function advanceTurn(state, action) {
     }
   }
 
+  // --- Sentinel movement announcement ---
+  const posAfter = state.automatonState.position;
+  const steps = Math.max(0, posBefore - posAfter);
+  const distance = posAfter;
+  if (distance > 0) {
+    if (steps > 0) {
+      parts.push(`The Sentinel advances ${steps} step${steps === 1 ? '' : 's'} — it is ${distance} turn${distance === 1 ? '' : 's'} away.`);
+    } else {
+      parts.push(`The Sentinel pauses — it is ${distance} turn${distance === 1 ? '' : 's'} away.`);
+    }
+  } else {
+    parts.push('The Sentinel is upon you.');
+  }
+
   // --- Check death conditions ---
   checkDeathConditions(state);
+  if (state.ended) {
+    return;
+  }
+
+  // --- Winder announcement ---
+  if (state.winderState && state.winderState.active && accumulatedRate > 5) {
+    parts.push('The Winder winds the pressure valves — pressure is building faster.');
+  }
+
+  // --- Pressure band crossing announcement ---
+  const bandAfter = pressureBand(state.pressure);
+  if (bandBefore !== bandAfter) {
+    if (bandAfter === 'agitated') {
+      parts.push(`Pressure rose to ${state.pressure} — past 70, the machine is agitated.`);
+    } else if (bandAfter === 'calm') {
+      parts.push(`Pressure fell to ${state.pressure} — below 30, the machine is calm.`);
+    } else if (bandAfter === 'normal' && bandBefore === 'calm') {
+      parts.push(`Pressure rose to ${state.pressure} — above 30 again, the machine is steady.`);
+    } else if (bandAfter === 'normal' && bandBefore === 'agitated') {
+      parts.push(`Pressure fell to ${state.pressure} — below 70 again, the machine is steady.`);
+    }
+  }
 
   // --- Advance turn ---
   if (!state.ended) {
     state.turn += 1;
   }
+
+  // Build the combined announcement
+  state.announcement = parts.join(' ');
 }
 
 /**
@@ -462,9 +532,10 @@ function render(state) {
   const firstBtn = panelInner.querySelector('button');
   if (firstBtn) firstBtn.focus();
 
-  // Announce the gallery description
-  const galleryForAnnounce = getGallery(state.location);
-  announce(galleryForAnnounce ? galleryForAnnounce.describe(state) : '');
+  // Announce the turn summary or the initial gallery description
+  const message = state.announcement || (getGallery(state.location) ? getGallery(state.location).describe(state) : '');
+  announce(message);
+  state.announcement = null;
 }
 
 /**

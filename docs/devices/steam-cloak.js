@@ -21,6 +21,14 @@ registerDevice('steam-cloak', {
    * Use the device: spend pressure to cloak in steam, causing the Sentinel
    * to skip its next advance. Returns true if the device was used, false otherwise.
    */
+  /**
+   * Return a single-sentence description of what the device did.
+   * Called after use() to build the turn announcement.
+   */
+  announceEffect(state) {
+    return 'You cloak yourself in steam — the Sentinel will skip its next advance.';
+  },
+
   use(state) {
     if (!this.canUse(state)) return false;
     state.pressure -= this.cost;

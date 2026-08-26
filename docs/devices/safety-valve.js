@@ -24,6 +24,14 @@ registerDevice('safety-valve', {
    * giving the player breathing room from the rupture threat.
    * Returns true if the device was used, false otherwise.
    */
+  /**
+   * Return a single-sentence description of what the device did.
+   * Called after use() to build the turn announcement.
+   */
+  announceEffect(state) {
+    return `You open the safety valve, venting ${this.reduction} pressure.`;
+  },
+
   use(state) {
     if (!this.canUse(state)) return false;
     state.pressure -= this.cost;

@@ -3710,5 +3710,146 @@ export async function checks() {
     problems.push(`Could not verify Winder memory adaptation: ${err.message}`);
   }
 
+  // ── 30. ARIA live region announcements each turn ──
+  // Every change in state must be announced to screen readers through the
+  // existing #game-announce assertive live region.
+  try {
+    const { createInitialState, advanceTurn, startNewDescent } = await import('./game.js');
+    const { clearMemory } = await import('./engine/memory.js');
+
+    // 30a. The #game-announce live region exists with correct ARIA attributes
+    const announceEl = document.getElementById('game-announce');
+    if (!announceEl) {
+      problems.push('#game-announce element not found in the DOM — ARIA live region for announcements is missing');
+    } else {
+      const live = announceEl.getAttribute('aria-live');
+      const atomic = announceEl.getAttribute('aria-atomic');
+      if (live !== 'assertive') {
+        problems.push(`#game-announce aria-live should be 'assertive', got '${live}'`);
+      }
+      if (atomic !== 'true') {
+        problems.push(`#game-announce aria-atomic should be 'true', got '${atomic}'`);
+      }
+    }
+
+    // 30b. Using a device triggers an announcement describing the device effect
+    clearMemory();
+    const stateB = createInitialState('announce-dom-seed');
+    stateB.pressure = 50;
+    stateB.foundDevices = ['vent'];
+    stateB.automatonState.position = 5;
+
+    // Simulate a button click on the Vent — we need the DOM mounted for this.
+    // First, start a real descent so the DOM is populated
+    startNewDescent('announce-dom-seed');
+    await new Promise(r => requestAnimationFrame(r));
+    await new Promise(r => requestAnimationFrame(r));
+
+    const ventBtn = document.querySelector('.device-btn[data-action="use:vent"]');
+    if (ventBtn) {
+      // Click the vent button — this triggers advanceTurn and render
+      ventBtn.click();
+      await new Promise(r => requestAnimationFrame(r));
+      await new Promise(r => requestAnimationFrame(r));
+
+      const announceElAfter = document.getElementById('game-announce');
+      if (announceElAfter) {
+        const announceText = announceElAfter.textContent;
+        if (!announceText || !announceText.includes('vent')) {
+          problems.push(
+            `Vent announcement should mention 'vent', got: "${announceText}"`
+          );
+        }
+        if (!announceText || !announceText.includes('Sentinel')) {
+          problems.push(
+            `Vent announcement should mention the Sentinel with distance, got: "${announceText}"`
+          );
+        }
+        if (!announceText || !announceText.includes('turn') && !announceText.includes('turn')) {
+          problems.push(
+            `Vent announcement should mention turns/distance for the Sentinel, got: "${announceText}"`
+          );
+        }
+      } else {
+        problems.push('#game-announce not found in DOM after vent button click');
+      }
+    } else {
+      problems.push('Vent button (.device-btn[data-action="use:vent"]) not found in DOM');
+    }
+
+    // 30c. Pressure crossing the 70 (agitated) threshold is announced
+    const stateC = createInitialState('announce-agitated');
+    stateC.pressure = 66;
+    stateC.foundDevices = ['vent'];
+    stateC.automatonState.position = 5;
+    stateC.announcement = null;
+    advanceTurn(stateC, 'wait');
+
+    // Pressure goes 66 + 5 = 71, crossing 70 — agitated announcement expected
+    if (stateC.announcement) {
+      if (!stateC.announcement.includes('70')) {
+        problems.push(
+          `Agitated crossing announcement should mention '70', got: "${stateC.announcement}"`
+        );
+      }
+      if (!stateC.announcement.includes('agitated')) {
+        problems.push(
+          `Agitated crossing announcement should mention 'agitated', got: "${stateC.announcement}"`
+        );
+      }
+    } else {
+      problems.push('No announcement generated when pressure crossed the agitated threshold (66→71)');
+    }
+
+    // 30d. Pressure crossing the 30 (calm) threshold is announced
+    const stateD = createInitialState('announce-calm');
+    stateD.pressure = 32;
+    stateD.foundDevices = ['vent'];
+    stateD.automatonState.position = 6;
+    stateD.announcement = null;
+    advanceTurn(stateD, 'use:vent');
+
+    // Vent costs 10 pressure: 32 - 10 = 22, then accumulation +5 = 27, below 30 — calm crossing expected
+    if (stateD.announcement) {
+      if (!stateD.announcement.includes('30')) {
+        problems.push(
+          `Calm crossing announcement should mention '30', got: "${stateD.announcement}"`
+        );
+      }
+      if (!stateD.announcement.includes('calm')) {
+        problems.push(
+          `Calm crossing announcement should mention 'calm', got: "${stateD.announcement}"`
+        );
+      }
+    } else {
+      problems.push('No announcement generated when pressure crossed the calm threshold (32→27 via vent)');
+    }
+
+    // 30e. The Winder's winding is announced when active in the Boiler Room
+    const stateE = createInitialState('announce-winder');
+    stateE.location = 'boiler-room';
+    stateE.foundDevices = ['vent'];
+    stateE.automatonState.position = 5;
+    stateE.winderState = { active: true, tick: 0 };
+    stateE.announcement = null;
+    stateE.pressure = 50;
+    advanceTurn(stateE, 'wait');
+
+    if (stateE.announcement) {
+      if (!stateE.announcement.includes('Winder')) {
+        problems.push(
+          `Winder announcement should mention 'Winder', got: "${stateE.announcement}"`
+        );
+      }
+    } else {
+      problems.push('No announcement generated when the Winder is active in the Boiler Room');
+    }
+
+    // Clean up memory after test
+    clearMemory();
+  } catch (err) {
+    problems.push(`Could not verify ARIA announcements: ${err.message}`);
+  }
+
   return problems;
 }
