@@ -507,6 +507,39 @@ footer .rivet {
   margin: 0;
 }
 
+/* --- Turn log --- */
+.turn-log {
+  background: #0a0a0a;
+  border: 1px solid #2a2a2a;
+  border-radius: 2px;
+  padding: 0.5rem 1rem;
+  font-size: 0.78rem;
+  color: #8a7a5a;
+}
+
+.turn-log-heading {
+  font-size: 0.6rem;
+  letter-spacing: 0.2em;
+  color: #808070;
+  text-transform: uppercase;
+  margin-bottom: 0.3rem;
+  padding-bottom: 0.2rem;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.turn-log-line {
+  margin: 0;
+  padding: 0.15rem 0;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: #b8a87a;
+  font-family: "Courier New", "Lucida Console", "Menlo", "Monaco", "Consolas", "Liberation Mono", monospace;
+}
+
+.turn-log-line + .turn-log-line {
+  border-top: 1px solid #1a1a1a;
+}
+
 /* --- Device section --- */
 .device-section {
   display: flex;
