@@ -3293,5 +3293,267 @@ export async function checks() {
     problems.push(`Could not verify Winder automaton: ${err.message}`);
   }
 
+  // ── 28. Condenser Valve device is registered and works ──
+  try {
+    const { createInitialState } = await import('./game.js');
+    const { getDevice, listDevices } = await import('./engine/registry.js');
+
+    // 28a. The device is registered
+    const devices = listDevices();
+    if (!devices.includes('condenser-valve')) {
+      problems.push('Condenser Valve device not found in registry');
+    }
+
+    const valve = getDevice('condenser-valve');
+    if (!valve) {
+      problems.push('Condenser Valve device not registered — cannot verify');
+    } else {
+      // 28b. Required methods exist
+      if (typeof valve.describe !== 'function') {
+        problems.push('Condenser Valve missing describe method');
+      }
+      if (typeof valve.canUse !== 'function') {
+        problems.push('Condenser Valve missing canUse method');
+      }
+      if (typeof valve.use !== 'function') {
+        problems.push('Condenser Valve missing use method');
+      }
+
+      // 28c. Cost is a positive number
+      if (typeof valve.cost !== 'number' || valve.cost <= 0) {
+        problems.push(`Condenser Valve cost should be a positive number, got ${valve.cost}`);
+      }
+
+      // Cost should be 14 per the spec
+      if (valve.cost !== 14) {
+        problems.push(`Condenser Valve cost should be 14, got ${valve.cost}`);
+      }
+
+      // 28d. foundIn is 'condenser-room'
+      if (valve.foundIn !== 'condenser-room') {
+        problems.push(`Condenser Valve foundIn should be 'condenser-room', got '${valve.foundIn}'`);
+      }
+
+      // 28e. canUse returns false when pressure is below cost
+      const state = createInitialState('condenser-valve-test');
+      state.pressure = 5; // Below cost of 14
+      const couldUse = valve.canUse(state);
+      if (couldUse) {
+        problems.push('Condenser Valve.canUse() returned true when pressure (5) is below cost (14)');
+      }
+
+      // Using it with insufficient pressure should return false and not change state
+      const used = valve.use(state);
+      if (used) {
+        problems.push('Condenser Valve.use() returned true when pressure was insufficient');
+      }
+      if (state.pressure < 0) {
+        problems.push(`Pressure went below zero: ${state.pressure}`);
+      }
+      if (state.deviceStates && state.deviceStates.condenserValveCooling) {
+        problems.push('Condenser Valve set cooling effect when pressure was insufficient');
+      }
+
+      // 28f. With sufficient pressure, using the device deducts cost and sets cooling
+      state.pressure = 50;
+      const couldUse2 = valve.canUse(state);
+      if (!couldUse2) {
+        problems.push('Condenser Valve.canUse() returned false when pressure (50) is sufficient');
+      }
+
+      const pressureBefore = state.pressure;
+      const used2 = valve.use(state);
+      if (!used2) {
+        problems.push('Condenser Valve.use() returned false when pressure was sufficient');
+      }
+      if (state.pressure !== pressureBefore - valve.cost) {
+        problems.push(
+          `Condenser Valve did not deduct correct cost: expected ${pressureBefore - valve.cost}, got ${state.pressure}`
+        );
+      }
+
+      // Verify the cooling counter was set
+      if (!state.deviceStates || !state.deviceStates.condenserValveCooling) {
+        problems.push('Condenser Valve did not set condenserValveCooling counter after use');
+      } else if (state.deviceStates.condenserValveCooling !== 2) {
+        problems.push(
+          `Condenser Valve cooling counter should be 2 after use, got ${state.deviceStates.condenserValveCooling}`
+        );
+      }
+
+      // 28g. The cooling effect reduces the pressure accumulation rate
+      const coolState = createInitialState('condenser-valve-cooling');
+      coolState.deviceStates = { condenserValveCooling: 2 };
+      coolState.pressureAccumulationRate = 5;
+
+      // Apply the cooling effect (same logic as in advanceTurn)
+      if (coolState.deviceStates.condenserValveCooling > 0) {
+        coolState.pressureAccumulationRate = Math.max(1, coolState.pressureAccumulationRate - 3);
+        coolState.deviceStates.condenserValveCooling -= 1;
+      }
+
+      // Rate should be 5 - 3 = 2
+      if (coolState.pressureAccumulationRate !== 2) {
+        problems.push(
+          `Condenser Valve cooling: expected rate 2, got ${coolState.pressureAccumulationRate}`
+        );
+      }
+
+      // Counter should decrement to 1
+      if (coolState.deviceStates.condenserValveCooling !== 1) {
+        problems.push(
+          `Condenser Valve cooling counter: expected 1 after one turn of effect, got ${coolState.deviceStates.condenserValveCooling}`
+        );
+      }
+
+      // Apply again — second turn of cooling
+      if (coolState.deviceStates.condenserValveCooling > 0) {
+        coolState.pressureAccumulationRate = Math.max(1, coolState.pressureAccumulationRate - 3);
+        coolState.deviceStates.condenserValveCooling -= 1;
+      }
+
+      // Rate should be 2 - 3 = -1, clamped to 1
+      if (coolState.pressureAccumulationRate !== 1) {
+        problems.push(
+          `Condenser Valve cooling: expected rate clamped to 1 on second turn, got ${coolState.pressureAccumulationRate}`
+        );
+      }
+
+      // Counter should be 0
+      if (coolState.deviceStates.condenserValveCooling !== 0) {
+        problems.push(
+          `Condenser Valve cooling counter: expected 0 after two turns, got ${coolState.deviceStates.condenserValveCooling}`
+        );
+      }
+
+      // Apply again — counter is 0, no effect
+      const rateBeforeThird = coolState.pressureAccumulationRate;
+      if (coolState.deviceStates.condenserValveCooling > 0) {
+        coolState.pressureAccumulationRate = Math.max(1, coolState.pressureAccumulationRate - 3);
+        coolState.deviceStates.condenserValveCooling -= 1;
+      }
+
+      // Rate should be unchanged since counter was 0
+      if (coolState.pressureAccumulationRate !== rateBeforeThird) {
+        problems.push(
+          `Condenser Valve cooling effect should not apply when counter is 0, but rate changed from ${rateBeforeThird} to ${coolState.pressureAccumulationRate}`
+        );
+      }
+
+      // 28h. The device description references the frozen condensate valve
+      if (valve.describe) {
+        const descState = createInitialState('condenser-valve-desc');
+        descState.pressure = 50;
+        descState.deviceStates = {};
+        const desc = valve.describe(descState);
+
+        // Must mention 'condensate' or 'valve'
+        if (!desc.toLowerCase().includes('condenser')) {
+          problems.push(
+            `Condenser Valve description should mention condenser, got: "${desc}"`
+          );
+        }
+
+        // Must show cost
+        if (!desc.includes(String(valve.cost))) {
+          problems.push(
+            `Condenser Valve description should show cost (${valve.cost}), got: "${desc}"`
+          );
+        }
+
+        // Must show current pressure
+        if (!desc.includes(String(descState.pressure))) {
+          problems.push(
+            `Condenser Valve description should show current pressure (${descState.pressure}), got: "${desc}"`
+          );
+        }
+
+        // Must show usability
+        if (!desc.includes('ready') && !desc.includes('insufficient')) {
+          problems.push(
+            `Condenser Valve description should show usability, got: "${desc}"`
+          );
+        }
+
+        // The description should mention the cooling effect
+        if (!desc.includes('reduces pressure rate') && !desc.includes('cooling')) {
+          problems.push(
+            `Condenser Valve description should mention the cooling effect, got: "${desc}"`
+          );
+        }
+      }
+
+      // 28i. The device description is distinct from Vent, Steam Cloak, and Safety Valve
+      const vent = getDevice('vent');
+      const cloak = getDevice('steam-cloak');
+      const safetyValve = getDevice('safety-valve');
+
+      if (valve.describe) {
+        const descState = createInitialState('condenser-valve-distinct-desc');
+        descState.pressure = 50;
+        descState.deviceStates = {};
+        const valveDesc = valve.describe(descState);
+
+        if (vent && vent.describe) {
+          const ventDesc = vent.describe(descState);
+          if (valveDesc === ventDesc) {
+            problems.push('Condenser Valve description is identical to Vent description — must be distinct');
+          }
+        }
+
+        if (cloak && cloak.describe) {
+          const cloakDesc = cloak.describe(descState);
+          if (valveDesc === cloakDesc) {
+            problems.push('Condenser Valve description is identical to Steam Cloak description — must be distinct');
+          }
+        }
+
+        if (safetyValve && safetyValve.describe) {
+          const safetyDesc = safetyValve.describe(descState);
+          if (valveDesc === safetyDesc) {
+            problems.push('Condenser Valve description is identical to Safety Valve description — must be distinct');
+          }
+        }
+      }
+
+      // 28j. Descending into the Condenser Room grants the Condenser Valve
+      const stateGrant = createInitialState('condenser-valve-grant');
+      const condenserIndex = stateGrant.gallerySequence.indexOf('condenser-room');
+      if (condenserIndex === -1) {
+        problems.push('condenser-room not found in gallery sequence for condenser-valve grant test');
+      } else {
+        // Simulate descent to condenser-room
+        stateGrant.galleryIndex = condenserIndex;
+        stateGrant.location = stateGrant.gallerySequence[condenserIndex];
+
+        // Grant devices found in this gallery (same logic as game engine)
+        const deviceIds = listDevices();
+        for (const id of deviceIds) {
+          const device = getDevice(id);
+          if (device && device.foundIn && device.foundIn === stateGrant.location && !stateGrant.foundDevices.includes(id)) {
+            stateGrant.foundDevices.push(id);
+          }
+        }
+
+        if (!stateGrant.foundDevices.includes('condenser-valve')) {
+          problems.push('Descending into the Condenser Room should grant the Condenser Valve');
+        }
+      }
+
+      // 28k. The Vent is always available (no foundIn) and not affected
+      if (!stateGrant.foundDevices.includes('vent')) {
+        problems.push('Vent should still be available after descending into the Condenser Room');
+      }
+
+      // 28l. The Condenser Valve is not available until the Condenser Room is visited
+      const statePreVisit = createInitialState('condenser-valve-pre-visit');
+      if (statePreVisit.foundDevices.includes('condenser-valve')) {
+        problems.push('Condenser Valve should not be available before visiting the Condenser Room');
+      }
+    }
+  } catch (err) {
+    problems.push(`Could not verify Condenser Valve device: ${err.message}`);
+  }
+
   return problems;
 }

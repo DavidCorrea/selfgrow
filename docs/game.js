@@ -26,6 +26,7 @@ import './automata/winder.js';
 import './devices/vent.js';
 import './devices/steam-cloak.js';
 import './devices/safety-valve.js';
+import './devices/condenser-valve.js';
 
 /* ───── Game state ───── */
 
@@ -135,6 +136,12 @@ function advanceTurn(state, action) {
     if (state.winderState.active) {
       winder.act(state);
     }
+  }
+
+  // --- Condenser Valve cooling effect (reduces rate if active) ---
+  if (state.deviceStates && state.deviceStates.condenserValveCooling > 0) {
+    state.pressureAccumulationRate = Math.max(1, state.pressureAccumulationRate - 3);
+    state.deviceStates.condenserValveCooling -= 1;
   }
 
   // --- Pressure accumulation (applied after the Winder adjusts the rate) ---
@@ -440,6 +447,7 @@ function render(state) {
   if (state.foundDevices.includes('vent')) hintText += 'V: use Vent  |  ';
   if (state.foundDevices.includes('steam-cloak')) hintText += 'S: use Steam Cloak  |  ';
   if (state.foundDevices.includes('safety-valve')) hintText += 'A: use Safety Valve  |  ';
+  if (state.foundDevices.includes('condenser-valve')) hintText += 'C: use Condenser Valve  |  ';
   hintText += 'W: wait  |  R: restart';
   if (state.galleryIndex < state.gallerySequence.length - 1) {
     hintText += '  |  D: descend';
@@ -572,6 +580,10 @@ function handleKeydown(e) {
   } else if (key === 'a' && state.foundDevices.includes('safety-valve')) {
     e.preventDefault();
     advanceTurn(state, 'use:safety-valve');
+    render(state);
+  } else if (key === 'c' && state.foundDevices.includes('condenser-valve')) {
+    e.preventDefault();
+    advanceTurn(state, 'use:condenser-valve');
     render(state);
   } else if (key === 'w') {
     e.preventDefault();
