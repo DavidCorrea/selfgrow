@@ -2808,6 +2808,81 @@ export async function checks() {
         );
       }
     }
+
+    // 25m. Engine Room description reacts to pressure level — the starting gallery
+    // the player always sees must respond to the same dial the other galleries do.
+    const engineRoom = getGallery('engine-room');
+    if (engineRoom && typeof engineRoom.describe === 'function') {
+
+      // 25m(i). High pressure (>60) includes strain line
+      const engineHigh = engineRoom.describe({ pressure: 70 });
+      if (!engineHigh.includes('strains') && !engineHigh.includes('groan')) {
+        problems.push(
+          `Engine room description at pressure 70 should mention the brass heart straining or pipes groaning, got: "${engineHigh}"`
+        );
+      }
+
+      // 25m(ii). Low pressure (<20) includes quiet line
+      const engineLow = engineRoom.describe({ pressure: 10 });
+      if (!engineLow.includes('deathly quiet') && !engineLow.includes('slowing')) {
+        problems.push(
+          `Engine room description at pressure 10 should mention the chamber falling quiet or the thrum slowing, got: "${engineLow}"`
+        );
+      }
+
+      // 25m(iii). Normal pressure (50) has no extra line
+      const engineNormal = engineRoom.describe({ pressure: 50 });
+      if (engineNormal.includes('strains') || engineNormal.includes('groan') ||
+          engineNormal.includes('deathly quiet') || engineNormal.includes('slowing')) {
+        problems.push(
+          `Engine room description at pressure 50 should not include pressure-dependent text, got: "${engineNormal}"`
+        );
+      }
+
+      // 25m(iv). High and low descriptions differ from each other and from normal
+      if (engineHigh === engineLow) {
+        problems.push(
+          'Engine room description at high pressure is identical to low pressure — must differ'
+        );
+      }
+      if (engineHigh === engineNormal) {
+        problems.push(
+          'Engine room description at high pressure is identical to normal pressure — must differ'
+        );
+      }
+      if (engineLow === engineNormal) {
+        problems.push(
+          'Engine room description at low pressure is identical to normal pressure — must differ'
+        );
+      }
+
+      // 25m(v). Pressure exactly at boundary 60 is not high
+      const engineBoundary60 = engineRoom.describe({ pressure: 60 });
+      if (engineBoundary60.includes('strains') || engineBoundary60.includes('groan')) {
+        problems.push(
+          `Engine room description at pressure 60 should not include high-pressure text (only >60 triggers it), got: "${engineBoundary60}"`
+        );
+      }
+
+      // 25m(vi). Pressure exactly at boundary 20 is not low
+      const engineBoundary20 = engineRoom.describe({ pressure: 20 });
+      if (engineBoundary20.includes('deathly quiet') || engineBoundary20.includes('slowing')) {
+        problems.push(
+          `Engine room description at pressure 20 should not include low-pressure text (only <20 triggers it), got: "${engineBoundary20}"`
+        );
+      }
+
+      // 25m(vii). Base description text is preserved (not replaced) at all pressure levels
+      if (!engineHigh.includes('catwalks')) {
+        problems.push('Engine room description at high pressure should still mention the iron catwalks');
+      }
+      if (!engineHigh.includes('brass heart')) {
+        problems.push('Engine room description at high pressure should still mention the brass heart');
+      }
+      if (!engineLow.includes('doorway')) {
+        problems.push('Engine room description at low pressure should still mention the doorway');
+      }
+    }
   } catch (err) {
     problems.push(`Could not verify pressure-level reactivity in gallery descriptions: ${err.message}`);
   }
