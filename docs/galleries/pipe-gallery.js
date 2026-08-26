@@ -1,8 +1,17 @@
 import { registerGallery } from '../engine/registry.js';
 
+// The device hosted in this gallery — used to dynamically adapt the description
+// when the player has recovered it.
+const HOSTED_DEVICE = 'safety-valve';
+const RECOVERY_LINE = 'The pipe where the safety valve once sat now hisses freely, its bracket empty.';
+const HINT_LINE = 'A safety valve glints on a nearby pipe, still intact and waiting.';
+
 registerGallery('pipe-gallery', {
   name: 'Pipe Gallery',
   describe(state) {
+    const deviceFound = state && Array.isArray(state.foundDevices) && state.foundDevices.includes(HOSTED_DEVICE);
+    const hintLine = deviceFound ? RECOVERY_LINE : HINT_LINE;
+
     const lines = [
       'The Pipe Gallery. Great iron pipes converge from all directions,',
       'their riveted flanges weeping condensation onto slick catwalks that',
@@ -12,7 +21,7 @@ registerGallery('pipe-gallery', {
       'footsteps ring against the pipes, each one amplified into a',
       'metallic echo that makes it sound like many things are approaching.',
       '',
-      'A safety valve glints on a nearby pipe, still intact and waiting.',
+      hintLine,
     ];
 
     // Pressure-level reactivity — the environment strains with the pressure dial
