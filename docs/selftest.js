@@ -4457,5 +4457,182 @@ export async function checks() {
     problems.push(`Could not verify device discovery announcement: ${err.message}`);
   }
 
+  // ── 34. Rupture countdown projection ──
+  // The pressure projection area must show turns until rupture below the
+  // next-turn projection, calculated from the current accumulation rate.
+  try {
+    const { ruptureCountdownText, startNewDescent } = await import('./game.js');
+
+    // 34a. Unit checks on the pure helper
+    // (threshold - pressure) / rate, then ceil
+    if (ruptureCountdownText(50, 5, 100) !== 'Rupture in 10 turns') {
+      problems.push(
+        `ruptureCountdownText(50, 5, 100) should be 'Rupture in 10 turns', ` +
+        `got '${ruptureCountdownText(50, 5, 100)}'`
+      );
+    }
+    if (ruptureCountdownText(99, 5, 100) !== 'Rupture in 1 turn') {
+      problems.push(
+        `ruptureCountdownText(99, 5, 100) should be 'Rupture in 1 turn', ` +
+        `got '${ruptureCountdownText(99, 5, 100)}'`
+      );
+    }
+    if (ruptureCountdownText(100, 5, 100) !== 'Rupture imminent') {
+      problems.push(
+        `ruptureCountdownText(100, 5, 100) should be 'Rupture imminent', ` +
+        `got '${ruptureCountdownText(100, 5, 100)}'`
+      );
+    }
+    if (ruptureCountdownText(50, 0, 100) !== 'Rupture in 50 turns') {
+      problems.push(
+        `ruptureCountdownText(50, 0, 100) should be 'Rupture in 50 turns' (rate clamped to 1), ` +
+        `got '${ruptureCountdownText(50, 0, 100)}'`
+      );
+    }
+    if (ruptureCountdownText(110, 5, 100) !== 'Rupture imminent') {
+      problems.push(
+        `ruptureCountdownText(110, 5, 100) should be 'Rupture imminent' (above threshold), ` +
+        `got '${ruptureCountdownText(110, 5, 100)}'`
+      );
+    }
+
+    // 34b. Base DOM check: fresh descent, no Winder
+    const { clearMemory } = await import('./engine/memory.js');
+    clearMemory();
+    startNewDescent('aab');
+    await new Promise(r => requestAnimationFrame(r));
+    await new Promise(r => requestAnimationFrame(r));
+
+    const projectionEl = document.querySelector('.pressure-projection');
+    const ruptureEl = document.querySelector('.rupture-projection');
+
+    if (!ruptureEl) {
+      problems.push(
+        'Rupture projection element (.rupture-projection) not found in the DOM — ' +
+        'should appear below the next-turn projection when the game is active'
+      );
+    } else {
+      // Verify it is the next sibling of .pressure-projection inside .pressure-section
+      const pressureSection = document.querySelector('.pressure-section');
+      if (pressureSection && projectionEl) {
+        if (projectionEl.nextElementSibling !== ruptureEl) {
+          problems.push(
+            '.rupture-projection should be the nextElementSibling of .pressure-projection ' +
+            'inside .pressure-section'
+          );
+        }
+      }
+
+      // Fresh game: pressure=50, rate=5, threshold=100
+      const ruptureText = ruptureEl.textContent;
+      const expectedText = ruptureCountdownText(50, 5, 100);
+      if (ruptureText !== expectedText) {
+        problems.push(
+          `Rupture projection text for fresh game should be '${expectedText}', ` +
+          `got '${ruptureText}'`
+        );
+      }
+
+      // Verify the text matches a calculation from parsed DOM values
+      const pressureNumbersEl = document.querySelector('.pressure-numbers');
+      const pressureRateEl = document.querySelector('.pressure-rate');
+      if (pressureNumbersEl && pressureRateEl) {
+        const numbersMatch = pressureNumbersEl.textContent.trim().match(/(\d+) \/ \d+/);
+        const rateMatch = pressureRateEl.textContent.match(/\+(\d+) per turn/);
+        if (numbersMatch && rateMatch) {
+          const parsedPressure = parseInt(numbersMatch[1], 10);
+          const parsedRate = parseInt(rateMatch[1], 10);
+          const parsedExpected = ruptureCountdownText(parsedPressure, parsedRate, 100);
+          if (ruptureEl.textContent !== parsedExpected) {
+            problems.push(
+              `Rupture projection text '${ruptureEl.textContent}' does not match ` +
+              `expected '${parsedExpected}' from parsed pressure ${parsedPressure} and rate ${parsedRate}`
+            );
+          }
+        }
+      }
+    }
+
+    // 34c. Winder/Boiler Room DOM check: the elevated rate must be reflected
+    // Seed 'aab' places boiler-room at index 1 (second gallery).
+    const { createInitialState } = await import('./game.js');
+    const initialCheck = createInitialState('aab');
+    if (initialCheck.gallerySequence[1] !== 'boiler-room') {
+      problems.push(
+        `Seed 'aab' gallery[1] should be 'boiler-room' for the Winder test, ` +
+        `got '${initialCheck.gallerySequence[1]}'`
+      );
+    } else {
+      // We started a fresh game above with 'aab' — descend once
+      const descendBtn = document.querySelector('[data-action="descend"]');
+      if (!descendBtn) {
+        problems.push('Descend button not found for Winder rupture-projection test');
+      } else {
+        descendBtn.click();
+        await new Promise(r => requestAnimationFrame(r));
+        await new Promise(r => requestAnimationFrame(r));
+
+        // After descending to boiler-room, the Winder should be active
+        const winderDesc = document.querySelector('.winder-description');
+        if (!winderDesc) {
+          problems.push(
+            '.winder-description not found after descending to boiler-room with seed \'aab\''
+          );
+        }
+
+        const pressureRateEl2 = document.querySelector('.pressure-rate');
+        const ruptureEl2 = document.querySelector('.rupture-projection');
+
+        if (pressureRateEl2 && ruptureEl2) {
+          const rateMatch2 = pressureRateEl2.textContent.match(/\+(\d+) per turn/);
+          const numbersEl2 = document.querySelector('.pressure-numbers');
+          const numbersMatch2 = numbersEl2 ? numbersEl2.textContent.trim().match(/(\d+) \/ \d+/) : null;
+
+          if (rateMatch2 && numbersMatch2) {
+            const parsedRate2 = parseInt(rateMatch2[1], 10);
+            const parsedPressure2 = parseInt(numbersMatch2[1], 10);
+
+            // After one descend and one render, pressure has been accumulated once:
+            // start 50, descend (no wait, no accumulation for descend), so pressure is still ~50
+            // But when we startNewDescent and then click descend, the render happens
+            // after the descend action completes. Let's verify the actual values
+            // and calculate expected from them.
+            const expectedText2 = ruptureCountdownText(parsedPressure2, parsedRate2, 100);
+            if (ruptureEl2.textContent !== expectedText2) {
+              problems.push(
+                `After descending to boiler-room: rupture projection should be '${expectedText2}', ` +
+                `got '${ruptureEl2.textContent}' (pressure=${parsedPressure2}, rate=${parsedRate2})`
+              );
+            }
+
+            // The rate should be 8 (base 5 + Winder +3), not 5
+            if (parsedRate2 <= 5) {
+              problems.push(
+                `After descending to boiler-room, pressure rate should be elevated (>5), ` +
+                `got ${parsedRate2} — Winder effect not reflected`
+              );
+            }
+          }
+        }
+      }
+    }
+
+    // 34d. Death-screen absence check
+    const deathScreen = document.querySelector('.death-screen');
+    if (deathScreen) {
+      const deathRupture = deathScreen.querySelector('.rupture-projection');
+      if (deathRupture) {
+        problems.push(
+          'Rupture projection should not appear on the death screen'
+        );
+      }
+    }
+
+    // Clean up memory after all DOM checks
+    clearMemory();
+  } catch (err) {
+    problems.push(`Could not verify rupture countdown projection: ${err.message}`);
+  }
+
   return problems;
 }

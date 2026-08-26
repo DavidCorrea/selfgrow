@@ -316,6 +316,18 @@ function canEscape(state) {
   return state.galleryIndex === state.gallerySequence.length - 1 && state.pressure <= 20;
 }
 
+/* ───── Rupture countdown helper ───── */
+
+/**
+ * Compute the 'Rupture in N turns' text from the current pressure, rate, and threshold.
+ * Returns 'Rupture imminent' when pressure is at or above threshold.
+ */
+export function ruptureCountdownText(pressure, rate, threshold) {
+  if (pressure >= threshold) return 'Rupture imminent';
+  const turns = Math.ceil((threshold - pressure) / Math.max(1, rate));
+  return `Rupture in ${turns} turn${turns === 1 ? '' : 's'}`;
+}
+
 /* ───── Generate a random seed ───── */
 
 function generateSeed() {
@@ -461,6 +473,12 @@ function render(state) {
   projectionDisplay.className = 'pressure-projection';
   projectionDisplay.textContent = `Next turn (wait): ${projectedPressure} / ${state.ruptureThreshold}`;
   pressureSection.appendChild(projectionDisplay);
+
+  // Rupture countdown projection
+  const ruptureDisplay = document.createElement('div');
+  ruptureDisplay.className = 'rupture-projection';
+  ruptureDisplay.textContent = ruptureCountdownText(state.pressure, state.pressureAccumulationRate, state.ruptureThreshold);
+  pressureSection.appendChild(ruptureDisplay);
 
   panelInner.appendChild(pressureSection);
 
