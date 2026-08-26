@@ -3555,5 +3555,160 @@ export async function checks() {
     problems.push(`Could not verify Condenser Valve device: ${err.message}`);
   }
 
+  // ── 29. Winder adapts starting tick based on machine memory ──
+  // When the last outcome was 'rupture' (death by pressure), the Winder
+  // starts mid-cycle (tick 2) so pressure builds faster from the start.
+  try {
+    const { createInitialState } = await import('./game.js');
+    const { getAutomaton } = await import('./engine/registry.js');
+
+    const winder = getAutomaton('winder');
+    if (!winder) {
+      problems.push('Winder automaton not registered — cannot verify memory adaptation');
+    } else {
+      // 29a. 'rupture' memory → starting tick is 2 (mid-winding)
+      const ruptureState = createInitialState('winder-memory-rupture', {
+        descents: 1,
+        lastOutcome: 'rupture',
+        lastSeed: 'prev-seed',
+      });
+      if (!ruptureState.winderState) {
+        problems.push('Winder state missing in createInitialState with rupture memory');
+      } else if (ruptureState.winderState.tick !== 2) {
+        problems.push(
+          `Winder with rupture memory: expected tick 2 (mid-winding), got ${ruptureState.winderState.tick}`
+        );
+      }
+      if (ruptureState.winderState && ruptureState.winderState.active !== false) {
+        problems.push(
+          `Winder with rupture memory should still start inactive, got active=${ruptureState.winderState.active}`
+        );
+      }
+
+      // 29b. 'escaped' memory → starting tick is 0 (normal)
+      const escapedState = createInitialState('winder-memory-escaped', {
+        descents: 1,
+        lastOutcome: 'escaped',
+        lastSeed: 'prev-seed',
+      });
+      if (escapedState.winderState && escapedState.winderState.tick !== 0) {
+        problems.push(
+          `Winder with escaped memory: expected tick 0, got ${escapedState.winderState.tick}`
+        );
+      }
+
+      // 29c. 'cornered' memory → starting tick is 0 (normal)
+      const corneredState = createInitialState('winder-memory-cornered', {
+        descents: 1,
+        lastOutcome: 'cornered',
+        lastSeed: 'prev-seed',
+      });
+      if (corneredState.winderState && corneredState.winderState.tick !== 0) {
+        problems.push(
+          `Winder with cornered memory: expected tick 0, got ${corneredState.winderState.tick}`
+        );
+      }
+
+      // 29d. 'none' memory (fresh profile) → starting tick is 0 (normal)
+      const noneState = createInitialState('winder-memory-none', {
+        descents: 0,
+        lastOutcome: 'none',
+        lastSeed: null,
+      });
+      if (noneState.winderState && noneState.winderState.tick !== 0) {
+        problems.push(
+          `Winder with none memory: expected tick 0, got ${noneState.winderState.tick}`
+        );
+      }
+
+      // 29e. No memory object (undefined) → starting tick is 0 (default)
+      const noMemoryState = createInitialState('winder-memory-undefined');
+      if (noMemoryState.winderState && noMemoryState.winderState.tick !== 0) {
+        problems.push(
+          `Winder with no memory argument: expected tick 0, got ${noMemoryState.winderState.tick}`
+        );
+      }
+
+      // 29f. The Winder still follows the 3-wind, 1-rest cycle when starting at tick 2
+      const cycleState = createInitialState('winder-memory-cycle', {
+        descents: 1,
+        lastOutcome: 'rupture',
+        lastSeed: 'prev-seed',
+      });
+      cycleState.winderState.active = true;
+
+      // Starting at tick 2 (rupture-adapted): should wind (+3) on this turn
+      cycleState.pressureAccumulationRate = 5;
+      winder.act(cycleState);
+      if (cycleState.pressureAccumulationRate !== 8) {
+        problems.push(
+          `Winder from tick 2 (rupture): first act should wind (rate 8), got ${cycleState.pressureAccumulationRate}`
+        );
+      }
+      if (cycleState.winderState.tick !== 3) {
+        problems.push(
+          `Winder from tick 2: after first act tick should be 3, got ${cycleState.winderState.tick}`
+        );
+      }
+
+      // Tick 3: rest (rate stays 5)
+      cycleState.pressureAccumulationRate = 5;
+      winder.act(cycleState);
+      if (cycleState.pressureAccumulationRate !== 5) {
+        problems.push(
+          `Winder rest from tick 3: expected rate 5, got ${cycleState.pressureAccumulationRate}`
+        );
+      }
+      if (cycleState.winderState.tick !== 0) {
+        problems.push(
+          `Winder after rest from tick 3: expected tick 0, got ${cycleState.winderState.tick}`
+        );
+      }
+
+      // Now back to normal winding cycle
+      cycleState.pressureAccumulationRate = 5;
+      winder.act(cycleState);
+      if (cycleState.pressureAccumulationRate !== 8) {
+        problems.push(
+          `Winder winding at tick 0: expected rate 8, got ${cycleState.pressureAccumulationRate}`
+        );
+      }
+      if (cycleState.winderState.tick !== 1) {
+        problems.push(
+          `Winder after winding at tick 0: expected tick 1, got ${cycleState.winderState.tick}`
+        );
+      }
+
+      // 29g. describe() at tick 2 reports exactly '1 winding turn remains'
+      const descState = createInitialState('winder-memory-describe', {
+        descents: 1,
+        lastOutcome: 'rupture',
+        lastSeed: 'prev-seed',
+      });
+      descState.winderState.active = true;
+      // With rupture memory, tick is 2 so describe should say 1 winding turn remains
+      const descTick2 = winder.describe(descState);
+      if (!descTick2.includes('1 winding turn remains')) {
+        problems.push(
+          `Winder describe() at tick 2 (rupture start) should say '1 winding turn remains', got: "${descTick2}"`
+        );
+      }
+
+      // 29h. Multiple descents ending in rupture still produce tick 2
+      const multiRuptureState = createInitialState('winder-memory-multi-rupture', {
+        descents: 5,
+        lastOutcome: 'rupture',
+        lastSeed: 'seed-5',
+      });
+      if (multiRuptureState.winderState && multiRuptureState.winderState.tick !== 2) {
+        problems.push(
+          `Winder after 5 descents all ending in rupture: expected tick 2, got ${multiRuptureState.winderState.tick}`
+        );
+      }
+    }
+  } catch (err) {
+    problems.push(`Could not verify Winder memory adaptation: ${err.message}`);
+  }
+
   return problems;
 }

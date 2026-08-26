@@ -67,9 +67,15 @@ registerAutomaton('winder', {
    * the Boiler Room.
    */
   initialize(state) {
+    // Machine memory affects starting tick: if the last descent ended in
+    // rupture (player died to pressure), the machine was overworked and the
+    // Winder starts mid-cycle (tick 2) so pressure builds faster from the start.
+    const lastOutcome = state.memory && state.memory.lastOutcome;
+    const startTick = lastOutcome === 'rupture' ? 2 : 0;
+
     state.winderState = {
       active: false,
-      tick: 0, // 0-2 = winding, 3 = resting
+      tick: startTick, // 0-2 = winding, 3 = resting
     };
   },
 });
