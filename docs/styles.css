@@ -418,6 +418,43 @@ footer .rivet {
   text-align: right;
 }
 
+/* --- Device discovery banner --- */
+.device-discovery-banner {
+  background: linear-gradient(180deg, #1a1812, #14120c);
+  border: 1px solid #c8a45c;
+  border-radius: 2px;
+  padding: 0.6rem 1rem;
+  position: relative;
+  animation: discovery-flash 1.2s ease-out;
+}
+
+.device-discovery-banner::before {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  border: 1px solid #c8a45c;
+  border-radius: 1px;
+  opacity: 0.25;
+  pointer-events: none;
+}
+
+.device-discovery-banner p {
+  margin: 0;
+  color: #d4b06a;
+  font-size: 0.8rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 700;
+  text-align: center;
+  text-shadow: 0 0 8px rgba(200, 164, 92, 0.5);
+}
+
+@keyframes discovery-flash {
+  0%   { opacity: 0; background: #2a2416; box-shadow: 0 0 16px rgba(200, 164, 92, 0.6); }
+  20%  { opacity: 1; }
+  100% { opacity: 1; background: #14120c; box-shadow: 0 0 0 rgba(200, 164, 92, 0); }
+}
+
 /* --- Pressure gauge --- */
 .pressure-section {
   display: flex;

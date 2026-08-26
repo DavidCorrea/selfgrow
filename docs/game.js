@@ -68,6 +68,7 @@ export function createInitialState(seed, memory) {
     automatonState: {},
     deviceStates: {},
     foundDevices: ['vent'],
+    justFoundDevices: [],
     announcement: null,
   };
 
@@ -104,6 +105,9 @@ function pressureBand(p) {
 export function advanceTurn(state, action) {
   if (state.ended) return;
 
+  // Clear device discovery banner from the previous turn
+  state.justFoundDevices = [];
+
   // Capture pre-turn state for announcement building
   const pressureAtTurnStart = state.pressure;
   const posBefore = state.automatonState.position;
@@ -134,10 +138,18 @@ export function advanceTurn(state, action) {
       state.location = state.gallerySequence[state.galleryIndex];
       // Grant any device found in this gallery
       const deviceIds = listDevices();
+      const newlyFound = [];
       for (const id of deviceIds) {
         const device = getDevice(id);
         if (device && device.foundIn && device.foundIn === state.location && !state.foundDevices.includes(id)) {
           state.foundDevices.push(id);
+          newlyFound.push(device.name || id);
+        }
+      }
+      if (newlyFound.length > 0) {
+        state.justFoundDevices = newlyFound;
+        for (const name of newlyFound) {
+          parts.push(`You found the ${name}!`);
         }
       }
       const gallery = getGallery(state.location);
@@ -380,6 +392,18 @@ function render(state) {
   gallerySection.appendChild(progress);
 
   panelInner.appendChild(gallerySection);
+
+  // Device discovery banner (shown only on the turn a device is acquired)
+  if (state.justFoundDevices && state.justFoundDevices.length > 0) {
+    const discoveryBanner = document.createElement('div');
+    discoveryBanner.className = 'device-discovery-banner';
+    discoveryBanner.setAttribute('role', 'status');
+    discoveryBanner.setAttribute('aria-live', 'polite');
+    const bannerText = document.createElement('p');
+    bannerText.textContent = `\u2699 ${state.justFoundDevices.join(', ')} acquired`;
+    discoveryBanner.appendChild(bannerText);
+    panelInner.appendChild(discoveryBanner);
+  }
 
   // Pressure gauge
   const pressureSection = document.createElement('div');
