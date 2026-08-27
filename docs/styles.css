@@ -545,6 +545,37 @@ footer .rivet {
   margin: 0;
 }
 
+/* --- Affliction status --- */
+.affliction-section {
+  background: #0a0a0a;
+  border: 1px solid #5a3a2a;
+  border-radius: 2px;
+  padding: 0.75rem 1rem;
+  font-size: 0.85rem;
+  color: #b8a87a;
+}
+
+.affliction-section .affliction-heading {
+  font-size: 0.6rem;
+  letter-spacing: 0.2em;
+  color: #8a5a3a;
+  text-transform: uppercase;
+  margin-bottom: 0.3rem;
+  padding-bottom: 0.2rem;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.affliction-section .affliction-entry {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #c8a45c;
+  font-style: italic;
+}
+
+.affliction-section .affliction-entry + .affliction-entry {
+  margin-top: 0.3rem;
+}
+
 /* --- Turn log --- */
 .turn-log {
   background: #0a0a0a;

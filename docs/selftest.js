@@ -5696,5 +5696,228 @@ export async function checks() {
     problems.push(`Could not verify end-to-end device wear: ${err.message}`);
   }
 
+  // ── 45. Affliction system: Strain registers, applies, and resets on descend ──
+  // Issue #390: the registry exposes registerAffliction/getAffliction but nothing
+  // registered one. Strain is the first real affliction — spending more than 20
+  // pressure on devices in a single gallery strains the machine's pipes and
+  // raises the pressure accumulation rate by +2 until the player descends.
+  try {
+    const { createInitialState, advanceTurn, startNewDescent } = await import('./game.js');
+    const { getAffliction, listAfflictions } = await import('./engine/registry.js');
+    const { clearMemory } = await import('./engine/memory.js');
+
+    // 45a. Strain registers with id 'strain'
+    const afflictionIds = listAfflictions();
+    if (!afflictionIds.includes('strain')) {
+      problems.push('Strain affliction not found in listAfflictions()');
+    }
+
+    const strain = getAffliction('strain');
+    if (!strain) {
+      problems.push('Affliction "strain" not registered — cannot verify the affliction system');
+    } else {
+      // 45b. Required fields and methods
+      if (strain.id !== 'strain') {
+        problems.push(`Strain affliction id should be 'strain', got '${strain.id}'`);
+      }
+      if (typeof strain.name !== 'string' || strain.name.trim().length === 0) {
+        problems.push(`Strain affliction should have a name, got ${JSON.stringify(strain.name)}`);
+      }
+      if (typeof strain.describe !== 'function') {
+        problems.push('Strain affliction missing describe(state) method');
+      }
+      if (typeof strain.apply !== 'function') {
+        problems.push('Strain affliction missing apply(state) method');
+      }
+
+      // 45c. apply() raises the pressure accumulation rate by exactly +2
+      const applyState = { pressureAccumulationRate: 5 };
+      strain.apply(applyState);
+      if (applyState.pressureAccumulationRate !== 7) {
+        problems.push(
+          `Strain.apply() should add +2 to pressureAccumulationRate: expected 7, got ${applyState.pressureAccumulationRate}`
+        );
+      }
+
+      // 45d. describe() explains the affliction in plain language
+      const desc = strain.describe({ pressureAccumulationRate: 7 });
+      if (typeof desc !== 'string' || desc.trim().length < 15) {
+        problems.push(`Strain describe() should return a meaningful description, got: "${desc}"`);
+      }
+    }
+
+    // 45e. Initial state tracks afflictions and per-gallery device spend
+    const state = createInitialState('affliction-state-test');
+    if (!Array.isArray(state.afflictions)) {
+      problems.push(`Initial state should have an afflictions array, got ${typeof state.afflictions}`);
+    } else if (state.afflictions.length !== 0) {
+      problems.push(`Initial afflictions should be empty, got [${state.afflictions.join(', ')}]`);
+    }
+    if (state.galleryPressureSpend !== 0) {
+      problems.push(`Initial galleryPressureSpend should be 0, got ${state.galleryPressureSpend}`);
+    }
+
+    // 45f. Spending exactly 20 pressure does NOT trigger Strain; exceeding 20 does
+    const spendState = createInitialState('affliction-spend-test');
+    spendState.foundDevices = ['vent'];
+    spendState.automatonState.position = 8;
+    spendState.pressure = 80;
+
+    advanceTurn(spendState, 'use:vent'); // 10 spent
+    spendState.pressure = 80;
+    advanceTurn(spendState, 'use:vent'); // 20 spent — at the threshold, not above
+
+    if (spendState.afflictions.length !== 0) {
+      problems.push(
+        `At exactly 20 pressure spent, Strain should not apply (must exceed 20), ` +
+        `got active afflictions [${spendState.afflictions.join(', ')}]`
+      );
+    }
+    if (spendState.galleryPressureSpend !== 20) {
+      problems.push(
+        `galleryPressureSpend should be 20 after two vent uses, got ${spendState.galleryPressureSpend}`
+      );
+    }
+
+    spendState.pressure = 80;
+    advanceTurn(spendState, 'use:vent'); // 30 spent — exceeds 20, Strain applies
+
+    if (!spendState.afflictions.includes('strain')) {
+      problems.push(
+        `After spending 30 pressure in one gallery, Strain should be active, ` +
+        `got [${spendState.afflictions.join(', ')}]`
+      );
+    }
+    if (spendState.galleryPressureSpend !== 30) {
+      problems.push(
+        `galleryPressureSpend should be 30 after three vent uses, got ${spendState.galleryPressureSpend}`
+      );
+    }
+
+    // 45g. While active, the rate includes the +2 from Strain
+    if (spendState.pressureAccumulationRate !== 7) {
+      problems.push(
+        `With Strain active, pressureAccumulationRate should be 7 (base 5 + 2), ` +
+        `got ${spendState.pressureAccumulationRate}`
+      );
+    }
+
+    // 45h. A wait turn in the same gallery sustains the elevated rate
+    spendState.pressure = 50;
+    spendState.pressureAccumulationRate = 5;
+    advanceTurn(spendState, 'wait');
+    if (spendState.pressureAccumulationRate !== 7) {
+      problems.push(
+        `With Strain active, a wait turn should keep the rate at 7, got ${spendState.pressureAccumulationRate}`
+      );
+    }
+
+    // 45i. Descending clears the affliction and the per-gallery spend counter
+    if (spendState.galleryIndex >= spendState.gallerySequence.length - 1) {
+      problems.push('Affliction test state unexpectedly at final gallery — cannot verify descend reset');
+    } else {
+      spendState.pressure = 50;
+      advanceTurn(spendState, 'descend');
+
+      if (spendState.afflictions.length !== 0) {
+        problems.push(
+          `After descending, afflictions should be cleared (per-gallery), ` +
+          `got [${spendState.afflictions.join(', ')}]`
+        );
+      }
+      if (spendState.galleryPressureSpend !== 0) {
+        problems.push(
+          `After descending, galleryPressureSpend should reset to 0, got ${spendState.galleryPressureSpend}`
+        );
+      }
+
+      // The +2 must be gone from the new gallery's rate (base 5, plus Winder if active)
+      const expectedDescendRate = 5 + (spendState.winderState.active ? 3 : 0);
+      if (spendState.pressureAccumulationRate !== expectedDescendRate) {
+        problems.push(
+          `After descending, rate should be ${expectedDescendRate} (Strain removed), ` +
+          `got ${spendState.pressureAccumulationRate}`
+        );
+      }
+
+      // A wait turn in the new gallery still has no Strain bonus
+      spendState.pressure = 50;
+      advanceTurn(spendState, 'wait');
+      const expectedWaitRate = 5 + (spendState.winderState.active ? 3 : 0);
+      if (spendState.pressureAccumulationRate !== expectedWaitRate) {
+        problems.push(
+          `Rate after a post-descend wait turn should be ${expectedWaitRate} (Strain removed), ` +
+          `got ${spendState.pressureAccumulationRate}`
+        );
+      }
+    }
+
+    // 45j. DOM: affliction-section appears below the automaton status while
+    // Strain is active, and disappears after descending
+    clearMemory();
+    startNewDescent('affliction-dom-test');
+    await new Promise(r => requestAnimationFrame(r));
+    await new Promise(r => requestAnimationFrame(r));
+
+    if (document.querySelector('.affliction-section')) {
+      problems.push('Affliction section should not be present on a fresh descent');
+    }
+
+    let ventBtn = document.querySelector('.device-btn[data-action="use:vent"]');
+    if (!ventBtn) {
+      problems.push('Vent button not found for affliction DOM test');
+    } else {
+      // Use the vent three times to spend 30 pressure in the first gallery
+      for (let i = 0; i < 3; i++) {
+        ventBtn.click();
+        await new Promise(r => requestAnimationFrame(r));
+        await new Promise(r => requestAnimationFrame(r));
+        ventBtn = document.querySelector('.device-btn[data-action="use:vent"]');
+        if (!ventBtn) {
+          problems.push(`Vent button missing after click ${i + 1} during affliction DOM test — game may have ended`);
+          break;
+        }
+      }
+
+      if (ventBtn) {
+        const afflictionSection = document.querySelector('.affliction-section');
+        if (!afflictionSection) {
+          problems.push('Affliction section (.affliction-section) not found after spending 30 pressure in one gallery');
+        } else {
+          const sectionText = afflictionSection.textContent;
+          if (!sectionText.includes('Strain')) {
+            problems.push(`Affliction section should show the affliction name 'Strain', got: "${sectionText}"`);
+          }
+          if (!sectionText.includes('+2')) {
+            problems.push(`Affliction section should describe Strain's +2 rate effect, got: "${sectionText}"`);
+          }
+
+          // The section must sit directly below the automaton status
+          const autoSection = document.querySelector('.automaton-section');
+          if (autoSection && autoSection.nextElementSibling !== afflictionSection) {
+            problems.push('Affliction section should be the next sibling below the automaton status');
+          }
+        }
+
+        // Descending to the next gallery removes the affliction section
+        const descendBtn = document.querySelector('[data-action="descend"]');
+        if (!descendBtn) {
+          problems.push('Descend button not found for affliction DOM removal test');
+        } else {
+          descendBtn.click();
+          await new Promise(r => requestAnimationFrame(r));
+          await new Promise(r => requestAnimationFrame(r));
+          if (document.querySelector('.affliction-section')) {
+            problems.push('Affliction section should be removed after descending to the next gallery');
+          }
+        }
+      }
+    }
+
+    clearMemory();
+  } catch (err) {
+    problems.push(`Could not verify affliction system: ${err.message}`);
+  }
+
   return problems;
 }
