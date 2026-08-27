@@ -662,6 +662,16 @@ footer .rivet {
   background: #2a2a1a;
 }
 
+.breathe-btn {
+  border-color: #2a5a5a;
+  color: #8ac8c8;
+}
+
+.breathe-btn:hover:not(:disabled) {
+  border-color: #8ac8c8;
+  background: #122a2a;
+}
+
 /* --- Turn display --- */
 .turn-display {
   font-size: 0.7rem;

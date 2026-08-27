@@ -5919,5 +5919,163 @@ export async function checks() {
     problems.push(`Could not verify affliction system: ${err.message}`);
   }
 
+  // ── 46. Breathe action ──
+  // The player can always vent 10 pressure (floor 0) at the cost of their
+  // turn: the Sentinel advances, pressure accumulates, and the Winder acts —
+  // only the player's action is replaced.
+  try {
+    const { createInitialState, advanceTurn, startNewDescent } = await import('./game.js');
+    const { clearMemory } = await import('./engine/memory.js');
+
+    // 46a. Breathe reduces pressure by 10 (before accumulation) and consumes the turn
+    const state = createInitialState('breathe-mechanics-test');
+    state.pressure = 50;
+    state.foundDevices = ['vent'];
+    state.automatonState.position = 5;
+
+    const posBefore = state.automatonState.position;
+    const turnBefore = state.turn;
+    const rate = state.pressureAccumulationRate; // 5 in the first gallery (no Winder)
+
+    advanceTurn(state, 'breathe');
+
+    // 50 - 10 + accumulation (5) = 45
+    const expectedPressure = 50 - 10 + rate;
+    if (state.pressure !== expectedPressure) {
+      problems.push(
+        `Breathe should reduce pressure by 10 before accumulation: expected ${expectedPressure} (50 - 10 + ${rate}), got ${state.pressure}`
+      );
+    }
+    if (state.turn !== turnBefore + 1) {
+      problems.push(
+        `Breathe should consume the turn: expected turn ${turnBefore + 1}, got ${state.turn}`
+      );
+    }
+    if (state.automatonState.position >= posBefore) {
+      problems.push(
+        `Breathe should not stop the Sentinel: position should decrease from ${posBefore}, got ${state.automatonState.position}`
+      );
+    }
+
+    // 46b. Announcement leads with the release text, then automaton reports
+    if (!state.announcement) {
+      problems.push('Breathe should produce a turn announcement, got none');
+    } else {
+      const breatheText = 'You released 10 pressure, breathing easier.';
+      const sentinelIdx = state.announcement.indexOf('Sentinel');
+      if (!state.announcement.includes(breatheText)) {
+        problems.push(
+          `Breathe announcement should include "${breatheText}", got: "${state.announcement}"`
+        );
+      }
+      if (sentinelIdx === -1) {
+        problems.push(
+          `Breathe announcement should report the Sentinel's advance, got: "${state.announcement}"`
+        );
+      } else if (state.announcement.indexOf(breatheText) > sentinelIdx) {
+        problems.push(
+          `Breathe announcement should lead with the release text before the automaton report, got: "${state.announcement}"`
+        );
+      }
+    }
+
+    // 46c. Floor at 0: breathing below 10 pressure never goes negative
+    const stateLow = createInitialState('breathe-floor-test');
+    stateLow.pressure = 4;
+    stateLow.automatonState.position = 5;
+
+    advanceTurn(stateLow, 'breathe');
+    // Without the floor: 4 - 10 + 5 = -1; with the floor: 0 + 5 = 5
+    if (stateLow.pressure !== 5) {
+      problems.push(
+        `Breathe should floor pressure at 0 before accumulation: expected 5 (floor(4-10)=0, then +5), got ${stateLow.pressure}`
+      );
+    }
+
+    // 46d. DOM: Breathe button appears in the action section, never disabled
+    clearMemory();
+    startNewDescent('breathe-dom-test');
+    await new Promise(r => requestAnimationFrame(r));
+    await new Promise(r => requestAnimationFrame(r));
+
+    const breatheBtn = document.querySelector('.breathe-btn[data-action="breathe"]');
+    if (!breatheBtn) {
+      problems.push('Breathe button (.breathe-btn[data-action="breathe"]) not found in the action section');
+    } else {
+      if (!breatheBtn.textContent.includes('Breathe') || !breatheBtn.textContent.includes('10')) {
+        problems.push(
+          `Breathe button should read "Breathe (release 10 pressure)", got: "${breatheBtn.textContent}"`
+        );
+      }
+      if (breatheBtn.disabled) {
+        problems.push('Breathe button must never be disabled — it is always available');
+      }
+
+      // Clicking it vents 10 pressure and advances the turn
+      const pressureBefore = parseInt(
+        (document.querySelector('.pressure-numbers') || {}).textContent || '0',
+        10
+      );
+
+      breatheBtn.click();
+      await new Promise(r => requestAnimationFrame(r));
+      await new Promise(r => requestAnimationFrame(r));
+
+      const pressureAfter = parseInt(
+        (document.querySelector('.pressure-numbers') || {}).textContent || '0',
+        10
+      );
+
+      if (pressureAfter !== pressureBefore - 10 + 5) {
+        problems.push(
+          `Clicking Breathe should reduce pressure by 10 then accumulate: expected ${pressureBefore - 10 + 5}, got ${pressureAfter}`
+        );
+      }
+
+      // After the click the button is still present and enabled
+      const breatheBtnAfter = document.querySelector('.breathe-btn[data-action="breathe"]');
+      if (!breatheBtnAfter) {
+        problems.push('Breathe button should remain in the action section after being used');
+      } else if (breatheBtnAfter.disabled) {
+        problems.push('Breathe button must never be disabled, even after use');
+      }
+    }
+
+    // 46e. Keyboard hint advertises B
+    const hint = document.querySelector('.keyboard-hint');
+    if (!hint) {
+      problems.push('Keyboard hint element missing — cannot verify Breathe shortcut hint');
+    } else if (!hint.textContent.includes('B: breathe')) {
+      problems.push(
+        `Keyboard hint should advertise "B: breathe", got: "${hint.textContent}"`
+      );
+    }
+
+    // 46f. The 'B' key triggers breathe on the real mounted game
+    const pressureBeforeKey = parseInt(
+      (document.querySelector('.pressure-numbers') || {}).textContent || '0',
+      10
+    );
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'b' }));
+    await new Promise(r => requestAnimationFrame(r));
+    await new Promise(r => requestAnimationFrame(r));
+
+    const pressureAfterKey = parseInt(
+      (document.querySelector('.pressure-numbers') || {}).textContent || '0',
+      10
+    );
+
+    if (pressureAfterKey !== pressureBeforeKey - 10 + 5) {
+      problems.push(
+        `Pressing 'B' should vent 10 pressure then accumulate: expected ${pressureBeforeKey - 10 + 5}, got ${pressureAfterKey}`
+      );
+    }
+
+    clearMemory();
+  } catch (err) {
+    problems.push(`Could not verify Breathe action: ${err.message}`);
+  }
+
   return problems;
 }
