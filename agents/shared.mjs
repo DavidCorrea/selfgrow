@@ -780,9 +780,21 @@ async function runAgentOnce({
           if (lastAssistant && lastAssistant.stopReason === "error") {
             recordSpend();
             session.dispose();
-            throw new Error(
-              `${label} model call failed: ${lastAssistant.errorMessage || "unknown error"}`
-            );
+            const detail = lastAssistant.errorMessage || "unknown error";
+            // A free slug that OpenRouter has since moved behind payment. Called
+            // out by name because model-check.mjs structurally CANNOT catch it:
+            // that check reads pi's BUNDLED snapshot, which still reports the id
+            // as costing 0/0 long after the live provider stopped serving it
+            // free. Without this the failure reads as a generic model error and
+            // the dead entry sits in the chain wasting a request per fallthrough.
+            if (/unavailable for free|available for free/i.test(detail)) {
+              log(
+                "error",
+                `${label}: "${modelId}" is NO LONGER FREE at OpenRouter, though pi's snapshot still lists it as free. ` +
+                  `model-check.mjs cannot see this — remove or repoint the entry in agents/models.json by hand.`
+              );
+            }
+            throw new Error(`${label} model call failed: ${detail}`);
           }
           if (lastAssistant && lastAssistant.content) {
             const fullText = Array.isArray(lastAssistant.content)

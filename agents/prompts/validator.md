@@ -10,7 +10,7 @@ The current code is in `docs/` (already checked out — `ls docs/`). If `docs/` 
 {{VISION}}
 
 ## Decision Criteria
-- **DUPLICATE if the work is already built.** Check the code before deciding this — `ls docs/` and read the files the proposal would touch. If what the ticket asks for is already present and working, say `"duplicate"`, not `"reject"`. This is the one verdict that closes the ticket instead of sending it back, because no replan can fix a ticket that is asking for finished work.
+- **DUPLICATE if the work is already built.** Check the code before deciding this, but check it *narrowly*: `ls docs/`, then read only the specific files the Scout's plan names, plus `docs/selftest.js` if you need to confirm behaviour. A handful of targeted reads — not a survey of the codebase. If you cannot settle it that way, `approve` and let the build find out; an unnecessary build costs one ticket, and this verdict costs the ticket outright. If what the ticket asks for is already present and working, say `"duplicate"`, not `"reject"` — no replan can fix a ticket that is asking for finished work.
 - REJECT if the proposal contradicts the Vision.
 - REJECT if it can't ship as a static, browser-only site under `docs/` (e.g. it needs a server or a build step).
 - REJECT if the issueAction is "close-invalid" — invalid issues should just be labeled, not built.

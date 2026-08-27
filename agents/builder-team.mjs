@@ -292,6 +292,44 @@ async function splitTicket(parent, parentNumber, children, why) {
 //   outcome "none"      — no ticket could even be planned (Scout produced nothing).
 // ---------------------------------------------------------------------------
 
+/**
+ * Run one planning-phase agent (Scout or Validator), turning a thrown model
+ * failure into null instead of an exception.
+ *
+ * Planning happens BEFORE buildTicket's live-state guard, so anything thrown
+ * here escaped the function entirely and killed the whole run: on 2026-08-26 a
+ * capped Validator ended a four-ticket job as `failure`, losing every ticket
+ * queued behind it. The build phase has always degraded gracefully; the two
+ * cheapest agents in the loop were the only ones that could take the run down.
+ *
+ * Planning touches no branch, no PR and no card, so a failure here costs exactly
+ * one ticket and nothing needs cleaning up.
+ *
+ * The account-wide daily quota is the one thing still rethrown: when it is spent
+ * nothing else can run either, so the run should stop rather than march through
+ * the remaining tickets failing each the same way.
+ */
+async function runPlanningAgent(label, opts) {
+  try {
+    return await withLogGroup(label, () => runAgent(opts));
+  } catch (e) {
+    if (isDailyQuotaExhausted(e)) throw e;
+    log("error", `${label} failed — abandoning this ticket, not the run: ${e.message || e}`, errorData(e));
+    return null;
+  }
+}
+
+/**
+ * Give a ticket back after the planning phase failed. Nothing live has been
+ * touched yet, so this only records the attempt — and records NO fault, because
+ * a capped or unreachable model says nothing about whether the ticket is good.
+ */
+function planningFailure(addressedIssue, addressedIssueObj, addressedIssueTitle, stage) {
+  const reason = `${stage} could not produce a usable answer (model capped or unavailable) — no work was started.`;
+  if (addressedIssue) recordTicket("failed", addressedIssue, addressedIssueTitle, reason);
+  return { addressedIssue, addressedIssueObj, outcome: "abandoned", reason, ticketFault: false };
+}
+
 async function buildTicket(openIssues, vision) {
   let feedback = null;
   let addressedIssue = null;
@@ -302,13 +340,16 @@ async function buildTicket(openIssues, vision) {
     log("info", `=== Scout Attempt ${attempt}/${MAX_SCOUT_RETRIES} ===`);
 
     // 1. Scout
-    const scoutOutput = await withLogGroup(`Scout (attempt ${attempt})`, () =>
-      runAgent({
-        label: "Scout",
-        systemPrompt: buildScoutPrompt(feedback, openIssues, vision),
-        tools: ["read", "bash"],
-      })
-    );
+    const scoutOutput = await runPlanningAgent(`Scout (attempt ${attempt})`, {
+      label: "Scout",
+      systemPrompt: buildScoutPrompt(feedback, openIssues, vision),
+      tools: ["read", "bash"],
+    });
+    if (!scoutOutput) {
+      // The whole model chain failed or was capped. Retrying just spends the
+      // same chain again, so give this ticket back and let the run continue.
+      return planningFailure(addressedIssue, addressedIssueObj, addressedIssueTitle, "Scout");
+    }
     const scoutResult = extractAgentResponse("Scout", scoutOutput, {
       requiredDataFields: ["appConcept", "suggestion", "details", "files"],
     });
@@ -384,13 +425,14 @@ async function buildTicket(openIssues, vision) {
     }
 
     // 2. Validator
-    const validatorOutput = await withLogGroup("Validator", () =>
-      runAgent({
-        label: "Validator",
-        systemPrompt: buildValidatorPrompt(scoutOutput, vision),
-        tools: ["read", "bash"],
-      })
-    );
+    const validatorOutput = await runPlanningAgent("Validator", {
+      label: "Validator",
+      systemPrompt: buildValidatorPrompt(scoutOutput, vision),
+      tools: ["read", "bash"],
+    });
+    if (!validatorOutput) {
+      return planningFailure(addressedIssue, addressedIssueObj, addressedIssueTitle, "Validator");
+    }
     const validatorResult = extractAgentResponse("Validator", validatorOutput, {
       requiredDataFields: ["reason"],
     });
