@@ -15,7 +15,7 @@ import {
   getGallery,
   listDevices,
 } from './engine/registry.js';
-import { loadMemory, saveMemory } from './engine/memory.js';
+import { loadMemory, saveMemory, computeDeviceWear } from './engine/memory.js';
 
 // Import modules for registration side-effects
 import './galleries/engine-room.js';
@@ -50,7 +50,7 @@ export function createInitialState(seed, memory) {
   const gallerySequence = generateGallerySequence(rng);
 
   // Compute starting pressure from machine memory of the last descent
-  const normalizedMemory = memory || { descents: 0, lastOutcome: 'none', lastSeed: null };
+  const normalizedMemory = memory || { descents: 0, lastOutcome: 'none', lastSeed: null, deviceWear: {} };
   const startingPressure = (() => {
     if (!normalizedMemory.lastOutcome || normalizedMemory.lastOutcome === 'none') return 50;
     if (normalizedMemory.lastOutcome === 'rupture') return 55;
@@ -80,6 +80,7 @@ export function createInitialState(seed, memory) {
     justFoundDevices: [],
     announcement: null,
     deviceUsageCounts: {},
+    deviceWear: { ...(normalizedMemory.deviceWear || {}) },
   };
 
   // Initialise automata
@@ -179,7 +180,8 @@ export function advanceTurn(state, action) {
       state.ended = true;
       state.active = false;
       state.endReason = 'You escaped through an exhaust vent, the machine\'s breath hot on your heels.';
-      saveMemory('escaped', state.seed, state.deviceUsageCounts);
+      const newWear = computeDeviceWear(state.deviceUsageCounts, state.memory.deviceWear || {});
+    saveMemory('escaped', state.seed, state.deviceUsageCounts, newWear);
     }
     return;
   }
@@ -294,7 +296,8 @@ function checkDeathConditions(state) {
     state.ended = true;
     state.active = false;
     state.endReason = 'Your pressure gauge burst. The machine\'s own breath tore you apart.';
-    saveMemory(categorizeOutcome(state.endReason), state.seed, state.deviceUsageCounts);
+    const newWear = computeDeviceWear(state.deviceUsageCounts, state.memory.deviceWear || {});
+    saveMemory(categorizeOutcome(state.endReason), state.seed, state.deviceUsageCounts, newWear);
     return true;
   }
 
@@ -303,7 +306,8 @@ function checkDeathConditions(state) {
     state.ended = true;
     state.active = false;
     state.endReason = 'The Sentinel cornered you. There was nowhere left to run.';
-    saveMemory(categorizeOutcome(state.endReason), state.seed, state.deviceUsageCounts);
+    const newWear = computeDeviceWear(state.deviceUsageCounts, state.memory.deviceWear || {});
+    saveMemory(categorizeOutcome(state.endReason), state.seed, state.deviceUsageCounts, newWear);
     return true;
   }
 
