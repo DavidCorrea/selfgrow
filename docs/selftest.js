@@ -434,6 +434,9 @@ export async function checks() {
     if (!galleries.includes('condenser-room')) {
       problems.push('Condenser room gallery not found in registry — fourth gallery is missing');
     }
+    if (!galleries.includes('gear-room')) {
+      problems.push('Gear Gallery not found in registry — fifth gallery is missing');
+    }
 
     const sentinel = getAutomaton('sentinel');
     if (!sentinel || typeof sentinel.describe !== 'function' || typeof sentinel.act !== 'function') {
@@ -463,6 +466,11 @@ export async function checks() {
     const condenserRoom = getGallery('condenser-room');
     if (!condenserRoom || typeof condenserRoom.describe !== 'function') {
       problems.push('Condenser room gallery missing required method (describe)');
+    }
+
+    const gearRoom = getGallery('gear-room');
+    if (!gearRoom || typeof gearRoom.describe !== 'function') {
+      problems.push('Gear Gallery missing required method (describe)');
     }
 
     // Verify descriptions are distinct
@@ -506,6 +514,34 @@ export async function checks() {
         // Must hint at a future device
         if (!condenserDesc.toLowerCase().includes('valve') && !condenserDesc.toLowerCase().includes('device') && !condenserDesc.toLowerCase().includes('intact')) {
           problems.push('Condenser room description must hint at a possible future device or interaction');
+        }
+
+        // Verify gear-room description is distinct from all other galleries
+        if (gearRoom && typeof gearRoom.describe === 'function') {
+          const gearDesc = gearRoom.describe({});
+          if (gearDesc === engineDesc) {
+            problems.push('Gear Gallery description is identical to engine room description — must be distinct');
+          }
+          if (gearDesc === boilerDesc) {
+            problems.push('Gear Gallery description is identical to boiler room description — must be distinct');
+          }
+          if (gearDesc === pipeDesc) {
+            problems.push('Gear Gallery description is identical to pipe gallery description — must be distinct');
+          }
+          if (gearDesc === condenserDesc) {
+            problems.push('Gear Gallery description is identical to condenser room description — must be distinct');
+          }
+          if (!gearDesc || gearDesc.trim().length < 20) {
+            problems.push('Gear Gallery description is too short or empty');
+          }
+          // Must mention the Sentinel
+          if (!gearDesc.toLowerCase().includes('sentinel')) {
+            problems.push('Gear Gallery description must mention the Sentinel');
+          }
+          // Must hint at a future device
+          if (!gearDesc.toLowerCase().includes('tension wheel') && !gearDesc.toLowerCase().includes('regulator') && !gearDesc.toLowerCase().includes('bracket')) {
+            problems.push('Gear Gallery description must hint at a possible future device or interaction');
+          }
         }
       }
 
@@ -558,11 +594,11 @@ export async function checks() {
         }
       }
 
-      // The sequence must contain at least 4 galleries (engine-room + 3 shuffled)
-      if (state1.gallerySequence.length < 4) {
+      // The sequence must contain at least 5 galleries (engine-room + 4 shuffled)
+      if (state1.gallerySequence.length < 5) {
         problems.push(
           `Gallery generator produced sequence with only ${state1.gallerySequence.length} galleries — ` +
-          'needs at least 4 (starting gallery + 3 shuffled) for a meaningful descent'
+          'needs at least 5 (starting gallery + 4 shuffled) for a meaningful descent'
         );
       }
 
@@ -591,6 +627,13 @@ export async function checks() {
       if (!state1.gallerySequence.includes('condenser-room')) {
         problems.push(
           `Condenser-room not found in gallery sequence: [${state1.gallerySequence.join(', ')}]`
+        );
+      }
+
+      // The gear-room must appear somewhere in the sequence
+      if (!state1.gallerySequence.includes('gear-room')) {
+        problems.push(
+          `gear-room not found in gallery sequence: [${state1.gallerySequence.join(', ')}]`
         );
       }
 
@@ -4389,12 +4432,12 @@ export async function checks() {
 
     // 32j. End-to-end DOM check: the banner appears on the descent turn and
     // disappears after the next action. The first descent from engine-room
-    // always grants exactly one device (all three shuffled galleries have one),
-    // so this is deterministic.
+    // grants a device when the next gallery has one (3 of 4 shuffled galleries do),
+    // so use seed 'aaa' which puts boiler-room (steam-cloak) at index 1.
     const { startNewDescent } = await import('./game.js');
     const { clearMemory } = await import('./engine/memory.js');
     clearMemory();
-    startNewDescent('device-discovery-dom-test');
+    startNewDescent('aaa');
     await new Promise(r => requestAnimationFrame(r));
     await new Promise(r => requestAnimationFrame(r));
 
@@ -4499,7 +4542,7 @@ export async function checks() {
     // 34b. Base DOM check: fresh descent, no Winder
     const { clearMemory } = await import('./engine/memory.js');
     clearMemory();
-    startNewDescent('aab');
+    startNewDescent('aaa');
     await new Promise(r => requestAnimationFrame(r));
     await new Promise(r => requestAnimationFrame(r));
 
@@ -4554,16 +4597,16 @@ export async function checks() {
     }
 
     // 34c. Winder/Boiler Room DOM check: the elevated rate must be reflected
-    // Seed 'aab' places boiler-room at index 1 (second gallery).
+    // Seed 'aaa' places boiler-room at index 1 (second gallery).
     const { createInitialState } = await import('./game.js');
-    const initialCheck = createInitialState('aab');
+    const initialCheck = createInitialState('aaa');
     if (initialCheck.gallerySequence[1] !== 'boiler-room') {
       problems.push(
-        `Seed 'aab' gallery[1] should be 'boiler-room' for the Winder test, ` +
+        `Seed 'aaa' gallery[1] should be 'boiler-room' for the Winder test, ` +
         `got '${initialCheck.gallerySequence[1]}'`
       );
     } else {
-      // We started a fresh game above with 'aab' — descend once
+      // We started a fresh game above with 'aaa' — descend once
       const descendBtn = document.querySelector('[data-action="descend"]');
       if (!descendBtn) {
         problems.push('Descend button not found for Winder rupture-projection test');
@@ -4576,7 +4619,7 @@ export async function checks() {
         const winderDesc = document.querySelector('.winder-description');
         if (!winderDesc) {
           problems.push(
-            '.winder-description not found after descending to boiler-room with seed \'aab\''
+            '.winder-description not found after descending to boiler-room with seed \'aaa\''
           );
         }
 
@@ -6075,6 +6118,198 @@ export async function checks() {
     clearMemory();
   } catch (err) {
     problems.push(`Could not verify Breathe action: ${err.message}`);
+  }
+
+  // ── 47. Gear Gallery module is registered and works ──
+  // The fifth gallery (Gear Gallery) must be registered, appear in every
+  // descent sequence, have a distinct description with pressure-level
+  // reactivity, mention the Sentinel, and hint at a future device.
+  try {
+    const { getGallery, listGalleries } = await import('./engine/registry.js');
+    const { createInitialState } = await import('./game.js');
+
+    // 47a. The gallery is registered
+    const galleries = listGalleries();
+    if (!galleries.includes('gear-room')) {
+      problems.push('Gear Gallery (gear-room) not found in registry — fifth gallery is missing');
+    }
+
+    const gearGallery = getGallery('gear-room');
+    if (!gearGallery) {
+      problems.push('Gear Gallery not registered — cannot verify');
+    } else {
+      // 47b. Has a unique name
+      if (gearGallery.name !== 'Gear Gallery') {
+        problems.push(
+          `Gear Gallery name should be 'Gear Gallery', got '${gearGallery.name}'`
+        );
+      }
+
+      // 47c. Has describe method
+      if (typeof gearGallery.describe !== 'function') {
+        problems.push('Gear Gallery missing describe method');
+      } else {
+        // 47d. Description is at least 3 sentences
+        const desc = gearGallery.describe({ pressure: 50 });
+        const sentenceCount = desc.split(/[.!?]+/).filter(s => s.trim().length > 0).length;
+        if (sentenceCount < 3) {
+          problems.push(
+            `Gear Gallery description has only ${sentenceCount} sentence(s) — must be at least 3`
+          );
+        }
+
+        // 47e. Mentions the Sentinel
+        if (!desc.toLowerCase().includes('sentinel')) {
+          problems.push(
+            `Gear Gallery description must mention the Sentinel, got: "${desc}"`
+          );
+        }
+
+        // 47f. Hints at a future device (regulator or tension wheel)
+        if (!desc.toLowerCase().includes('tension wheel') && !desc.toLowerCase().includes('regulator') && !desc.toLowerCase().includes('bracket')) {
+          problems.push(
+            `Gear Gallery description should hint at a future device (tension wheel or regulator), got: "${desc}"`
+          );
+        }
+
+        // 47g. Pressure-level reactivity: high pressure (>60) adds strain text
+        const descHigh = gearGallery.describe({ pressure: 70 });
+        if (!descHigh.includes('shudder') && !descHigh.includes('scream') && !descHigh.includes('frantic')) {
+          problems.push(
+            `Gear Gallery description at pressure 70 should mention the gears shuddering or screaming, got: "${descHigh}"`
+          );
+        }
+
+        // 47h. Pressure-level reactivity: low pressure (<20) adds quiet text
+        const descLow = gearGallery.describe({ pressure: 10 });
+        if (!descLow.includes('slowed') && !descLow.includes('silence') && !descLow.includes('drifting') && !descLow.includes('barely kissing')) {
+          problems.push(
+            `Gear Gallery description at pressure 10 should mention the gears slowing or silence, got: "${descLow}"`
+          );
+        }
+
+        // 47i. Normal pressure (50) has no pressure-dependent line
+        if (desc.includes('shudder') || desc.includes('slowed') || desc.includes('scream')) {
+          problems.push(
+            `Gear Gallery description at pressure 50 should not include pressure-dependent text, got: "${desc}"`
+          );
+        }
+
+        // 47j. High and low pressure descriptions differ from each other and from normal
+        if (descHigh === descLow) {
+          problems.push('Gear Gallery description at high pressure is identical to low pressure — must differ');
+        }
+        if (descHigh === desc) {
+          problems.push('Gear Gallery description at high pressure is identical to normal pressure — must differ');
+        }
+        if (descLow === desc) {
+          problems.push('Gear Gallery description at low pressure is identical to normal pressure — must differ');
+        }
+
+        // 47k. Pressure exactly at boundary 60 is not high
+        const descBoundary60 = gearGallery.describe({ pressure: 60 });
+        if (descBoundary60.includes('shudder') || descBoundary60.includes('scream')) {
+          problems.push(
+            `Gear Gallery description at pressure 60 should not include high-pressure text (only >60 triggers it), got: "${descBoundary60}"`
+          );
+        }
+
+        // 47l. Pressure exactly at boundary 20 is not low
+        const descBoundary20 = gearGallery.describe({ pressure: 20 });
+        if (descBoundary20.includes('slowed') || descBoundary20.includes('silence')) {
+          problems.push(
+            `Gear Gallery description at pressure 20 should not include low-pressure text (only <20 triggers it), got: "${descBoundary20}"`
+          );
+        }
+
+        // 47m. Base description text is preserved at all pressure levels
+        if (!descHigh.includes('Gear Gallery')) {
+          problems.push('Gear Gallery description at high pressure should still start with "The Gear Gallery"');
+        }
+        if (!descLow.includes('Gear Gallery')) {
+          problems.push('Gear Gallery description at low pressure should still start with "The Gear Gallery"');
+        }
+        if (!desc.includes('Gear Gallery')) {
+          problems.push('Gear Gallery description should still start with "The Gear Gallery"');
+        }
+      }
+    }
+
+    // 47n. The gallery appears in every generated gallery sequence
+    const state = createInitialState('gear-room-sequence-test');
+    if (!state.gallerySequence.includes('gear-room')) {
+      problems.push(
+        `gear-room not found in gallery sequence: [${state.gallerySequence.join(', ')}]`
+      );
+    }
+
+    // Verify with a different seed too
+    const state2 = createInitialState('gear-room-sequence-test-2');
+    if (!state2.gallerySequence.includes('gear-room')) {
+      problems.push(
+        `gear-room not found in gallery sequence with seed 2: [${state2.gallerySequence.join(', ')}]`
+      );
+    }
+
+    // 47o. The gear-room is never the first gallery (engine-room always leads)
+    if (state.gallerySequence[0] === 'gear-room') {
+      problems.push(
+        `gear-room should not be the first gallery — engine-room must lead, got [${state.gallerySequence.join(', ')}]`
+      );
+    }
+
+    // 47p. The sequence now contains 5 galleries (engine-room + 4 shuffled)
+    if (state.gallerySequence.length < 5) {
+      problems.push(
+        `Gallery sequence length should be at least 5 with the Gear Gallery, got ${state.gallerySequence.length}`
+      );
+    }
+
+    // 47q. Description is distinct from all other galleries
+    const engineRoom = getGallery('engine-room');
+    const boilerRoom = getGallery('boiler-room');
+    const pipeGallery = getGallery('pipe-gallery');
+    const condenserRoom = getGallery('condenser-room');
+
+    if (gearGallery && engineRoom && boilerRoom && pipeGallery && condenserRoom) {
+      const gearDesc = gearGallery.describe({ pressure: 50 });
+      const engineDesc = engineRoom.describe({ pressure: 50 });
+      const boilerDesc = boilerRoom.describe({ pressure: 50 });
+      const pipeDesc = pipeGallery.describe({ pressure: 50 });
+      const condenserDesc = condenserRoom.describe({ pressure: 50 });
+
+      if (gearDesc === engineDesc) {
+        problems.push('Gear Gallery description is identical to Engine Room description — must be distinct');
+      }
+      if (gearDesc === boilerDesc) {
+        problems.push('Gear Gallery description is identical to Boiler Room description — must be distinct');
+      }
+      if (gearDesc === pipeDesc) {
+        problems.push('Gear Gallery description is identical to Pipe Gallery description — must be distinct');
+      }
+      if (gearDesc === condenserDesc) {
+        problems.push('Gear Gallery description is identical to Condenser Room description — must be distinct');
+      }
+    }
+
+    // 47r. Verify the description contains at least 3 sentences at all pressure levels
+    if (gearGallery && typeof gearGallery.describe === 'function') {
+      const highSentences = gearGallery.describe({ pressure: 80 }).split(/[.!?]+/).filter(s => s.trim().length > 0).length;
+      if (highSentences < 3) {
+        problems.push(
+          `Gear Gallery description at high pressure should have at least 3 sentences, got ${highSentences}`
+        );
+      }
+
+      const lowSentences = gearGallery.describe({ pressure: 5 }).split(/[.!?]+/).filter(s => s.trim().length > 0).length;
+      if (lowSentences < 3) {
+        problems.push(
+          `Gear Gallery description at low pressure should have at least 3 sentences, got ${lowSentences}`
+        );
+      }
+    }
+  } catch (err) {
+    problems.push(`Could not verify Gear Gallery module: ${err.message}`);
   }
 
   return problems;
