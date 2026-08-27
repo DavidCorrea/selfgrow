@@ -13,6 +13,7 @@ import {
   getAutomaton,
   getDevice,
   getGallery,
+  getAffliction,
   listDevices,
 } from './engine/registry.js';
 import { loadMemory, saveMemory, computeDeviceWear } from './engine/memory.js';
@@ -28,6 +29,7 @@ import './devices/vent.js';
 import './devices/steam-cloak.js';
 import './devices/safety-valve.js';
 import './devices/condenser-valve.js';
+import './afflictions/strain.js';
 
 /* ───── Game state ───── */
 
@@ -81,6 +83,8 @@ export function createInitialState(seed, memory) {
     announcement: null,
     deviceUsageCounts: {},
     deviceWear: { ...(normalizedMemory.deviceWear || {}) },
+    afflictions: [],
+    galleryPressureSpend: 0,
   };
 
   // Initialise automata
@@ -134,6 +138,13 @@ export function advanceTurn(state, action) {
       device.use(state);
       state.devicesUsed += 1;
       state.deviceUsageCounts[deviceId] = (state.deviceUsageCounts[deviceId] || 0) + 1;
+      // Track total pressure spent on devices in this gallery — the Strain
+      // affliction triggers when the spend exceeds 20 without descending.
+      state.galleryPressureSpend += device.effectiveCost ? device.effectiveCost(state) : device.cost;
+      if (state.galleryPressureSpend > 20 && !state.afflictions.includes('strain')) {
+        state.afflictions.push('strain');
+        parts.push('The machine\'s pipes strain from your heavy device use — pressure is building faster.');
+      }
       usedDeviceId = deviceId;
       // Device effect announcement
       if (device.announceEffect) {
@@ -148,6 +159,12 @@ export function advanceTurn(state, action) {
     if (state.galleryIndex < state.gallerySequence.length - 1) {
       state.galleryIndex += 1;
       state.location = state.gallerySequence[state.galleryIndex];
+      // Per-gallery afflictions and device-spend tracking reset on descend
+      for (const id of [...(state.afflictions || [])]) {
+        const affliction = getAffliction(id);
+        if (affliction && affliction.reset) affliction.reset(state);
+      }
+      state.galleryPressureSpend = 0;
       // Grant any device found in this gallery
       const deviceIds = listDevices();
       const newlyFound = [];
@@ -204,6 +221,16 @@ export function advanceTurn(state, action) {
   if (state.deviceStates && state.deviceStates.condenserValveCooling > 0) {
     state.pressureAccumulationRate = Math.max(1, state.pressureAccumulationRate - 3);
     state.deviceStates.condenserValveCooling -= 1;
+  }
+
+  // --- Affliction effects on the accumulation rate ---
+  // Each active affliction adjusts the rate (Strain adds +2 while it remains
+  // active in the current gallery).
+  if (Array.isArray(state.afflictions)) {
+    for (const id of state.afflictions) {
+      const affliction = getAffliction(id);
+      if (affliction && affliction.apply) affliction.apply(state);
+    }
   }
 
   // --- Pressure accumulation (applied after the Winder adjusts the rate) ---
@@ -506,6 +533,25 @@ function render(state) {
   }
 
   panelInner.appendChild(autoSection);
+
+  // Active afflictions — rendered below the automaton status
+  if (state.afflictions && state.afflictions.length > 0) {
+    const afflictionSection = document.createElement('div');
+    afflictionSection.className = 'affliction-section';
+    const afflictionHeading = document.createElement('div');
+    afflictionHeading.className = 'affliction-heading';
+    afflictionHeading.textContent = 'AFFLICTIONS';
+    afflictionSection.appendChild(afflictionHeading);
+    for (const id of state.afflictions) {
+      const affliction = getAffliction(id);
+      if (!affliction) continue;
+      const entry = document.createElement('p');
+      entry.className = 'affliction-entry';
+      entry.textContent = `${affliction.name} — ${affliction.describe(state)}`;
+      afflictionSection.appendChild(entry);
+    }
+    panelInner.appendChild(afflictionSection);
+  }
 
   // Capture the current announcement into the turn log
   // (must happen before the turn-log is built and before state.announcement is cleared)
