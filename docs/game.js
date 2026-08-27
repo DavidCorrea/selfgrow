@@ -13,6 +13,7 @@ import {
   getAutomaton,
   getDevice,
   getGallery,
+  getAffliction,
   listDevices,
 } from './engine/registry.js';
 import { loadMemory, saveMemory } from './engine/memory.js';
@@ -28,6 +29,7 @@ import './devices/vent.js';
 import './devices/steam-cloak.js';
 import './devices/safety-valve.js';
 import './devices/condenser-valve.js';
+import './afflictions/strain.js';
 
 /* ───── Game state ───── */
 
@@ -80,6 +82,8 @@ export function createInitialState(seed, memory) {
     justFoundDevices: [],
     announcement: null,
     deviceUsageCounts: {},
+    activeAfflictions: [],
+    pressureSpentThisGallery: 0,
   };
 
   // Initialise automata
@@ -134,6 +138,15 @@ export function advanceTurn(state, action) {
       state.devicesUsed += 1;
       state.deviceUsageCounts[deviceId] = (state.deviceUsageCounts[deviceId] || 0) + 1;
       usedDeviceId = deviceId;
+
+      // Track pressure spent this gallery for affliction system
+      state.pressureSpentThisGallery += device.cost;
+
+      // Check if Strain affliction should trigger (spent >20 in this gallery)
+      if (state.pressureSpentThisGallery > 20 && !state.activeAfflictions.includes('strain')) {
+        state.activeAfflictions.push('strain');
+      }
+
       // Device effect announcement
       if (device.announceEffect) {
         parts.push(device.announceEffect(state));
@@ -145,6 +158,10 @@ export function advanceTurn(state, action) {
   // 'descend' moves to the next gallery in the sequence
   if (action === 'descend') {
     if (state.galleryIndex < state.gallerySequence.length - 1) {
+      // Reset afflictions and per-gallery spend counter on gallery transition
+      state.activeAfflictions = [];
+      state.pressureSpentThisGallery = 0;
+
       state.galleryIndex += 1;
       state.location = state.gallerySequence[state.galleryIndex];
       // Grant any device found in this gallery
@@ -202,6 +219,14 @@ export function advanceTurn(state, action) {
   if (state.deviceStates && state.deviceStates.condenserValveCooling > 0) {
     state.pressureAccumulationRate = Math.max(1, state.pressureAccumulationRate - 3);
     state.deviceStates.condenserValveCooling -= 1;
+  }
+
+  // --- Apply active afflictions (modify rate after other rate adjustments) ---
+  for (const afflictionId of state.activeAfflictions) {
+    const affliction = getAffliction(afflictionId);
+    if (affliction && affliction.apply) {
+      affliction.apply(state);
+    }
   }
 
   // --- Pressure accumulation (applied after the Winder adjusts the rate) ---
@@ -502,6 +527,26 @@ function render(state) {
   }
 
   panelInner.appendChild(autoSection);
+
+  // Affliction section — renders active afflictions below automaton status
+  if (state.activeAfflictions && state.activeAfflictions.length > 0) {
+    const afflictionSection = document.createElement('div');
+    afflictionSection.className = 'affliction-section';
+    afflictionSection.setAttribute('role', 'status');
+    afflictionSection.setAttribute('aria-live', 'polite');
+
+    for (const afflictionId of state.activeAfflictions) {
+      const affliction = getAffliction(afflictionId);
+      if (affliction) {
+        const p = document.createElement('p');
+        p.className = 'affliction-description';
+        p.textContent = affliction.describe(state);
+        afflictionSection.appendChild(p);
+      }
+    }
+
+    panelInner.appendChild(afflictionSection);
+  }
 
   // Capture the current announcement into the turn log
   // (must happen before the turn-log is built and before state.announcement is cleared)

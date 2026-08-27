@@ -640,6 +640,33 @@ footer .rivet {
   text-align: center;
 }
 
+/* --- Affliction section --- */
+.affliction-section {
+  background: #0f0d0a;
+  border: 1px solid #5a3a1a;
+  border-radius: 2px;
+  padding: 0.6rem 1rem;
+  font-size: 0.8rem;
+  color: #d4a050;
+  position: relative;
+}
+
+.affliction-section::before {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  border: 1px solid #5a3a1a;
+  border-radius: 1px;
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+.affliction-description {
+  margin: 0;
+  font-style: italic;
+  letter-spacing: 0.05em;
+}
+
 /* --- Keyboard hint --- */
 .keyboard-hint {
   font-size: 0.6rem;

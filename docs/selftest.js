@@ -5058,5 +5058,215 @@ export async function checks() {
     problems.push(`Could not verify gallery device discovery descriptions: ${err.message}`);
   }
 
+  // ── 40. Affliction system: Strain registers, applies, and resets on gallery transition ──
+  // The registry already has registerAffliction / getAffliction / listAfflictions but nothing
+  // uses them. This test proves the system works by verifying Strain registration, correct rate
+  // mutation, reset on descend, and DOM rendering.
+  try {
+    const { listAfflictions, getAffliction } = await import('./engine/registry.js');
+    const { createInitialState } = await import('./game.js');
+
+    // 40a. Strain registers in listAfflictions
+    const afflictionIds = listAfflictions();
+    if (!afflictionIds.includes('strain')) {
+      problems.push('Strain affliction not found in listAfflictions — registerAffliction may have failed');
+    }
+
+    const strain = getAffliction('strain');
+    if (!strain) {
+      problems.push('getAffliction("strain") returned null — affliction not registered');
+    } else {
+      // 40b. Required affliction structure
+      if (typeof strain.name !== 'string' || !strain.name) {
+        problems.push('Strain affliction missing name property');
+      }
+      if (typeof strain.describe !== 'function') {
+        problems.push('Strain affliction missing describe method');
+      }
+      if (typeof strain.apply !== 'function') {
+        problems.push('Strain affliction missing apply method');
+      }
+
+      // 40c. apply() mutates state.pressureAccumulationRate correctly (+2)
+      const state = createInitialState('strain-apply-test');
+      const rateBefore = state.pressureAccumulationRate;
+      strain.apply(state);
+      if (state.pressureAccumulationRate !== rateBefore + 2) {
+        problems.push(
+          `Strain.apply() should increase pressureAccumulationRate by 2: ` +
+          `before ${rateBefore}, after ${state.pressureAccumulationRate}`
+        );
+      }
+
+      // 40d. describe() returns a non-empty string
+      const desc = strain.describe(state);
+      if (typeof desc !== 'string' || desc.length < 10) {
+        problems.push(
+          `Strain.describe() should return a meaningful description, got: "${desc}"`
+        );
+      }
+
+      // 40e. Strain has the expected name
+      if (strain.name !== 'Strain') {
+        problems.push(
+          `Strain affliction name should be 'Strain', got '${strain.name}'`
+        );
+      }
+    }
+
+    // 40f. Rate resets on gallery transition (via the descend action in advanceTurn)
+    // Simulate: spend enough pressure to trigger Strain, then descend, verify reset.
+    const { advanceTurn } = await import('./game.js');
+    const { getDevice } = await import('./engine/registry.js');
+
+    // Create a state where we can safely use devices
+    const state2 = createInitialState('strain-descend-test');
+    state2.pressure = 80; // Enough for multiple device uses
+    state2.foundDevices = ['vent', 'steam-cloak', 'safety-valve', 'condenser-valve'];
+    state2.automatonState.position = 8; // Far enough to not die
+
+    // Get the initial rate (5)
+    const initRate = state2.pressureAccumulationRate;
+
+    // Use the vent (cost 10) — should not trigger Strain yet (total spent: 10)
+    advanceTurn(state2, 'use:vent');
+    if (state2.activeAfflictions.includes('strain')) {
+      problems.push(
+        'Strain should not be applied after spending 10 pressure (threshold is >20)'
+      );
+    }
+    if (state2.pressureSpentThisGallery !== 10) {
+      problems.push(
+        `After vent use, pressureSpentThisGallery should be 10, got ${state2.pressureSpentThisGallery}`
+      );
+    }
+
+    // Restore pressure and use vent again (total spent: 20) — still not over threshold
+    state2.pressure = 50;
+    advanceTurn(state2, 'use:vent');
+    if (state2.activeAfflictions.includes('strain')) {
+      problems.push(
+        'Strain should not be applied after spending exactly 20 pressure (threshold is >20)'
+      );
+    }
+    if (state2.pressureSpentThisGallery !== 20) {
+      problems.push(
+        `After two vent uses, pressureSpentThisGallery should be 20, got ${state2.pressureSpentThisGallery}`
+      );
+    }
+
+    // Use vent a third time (total spent: 30) — should trigger Strain
+    state2.pressure = 50;
+    advanceTurn(state2, 'use:vent');
+    if (!state2.activeAfflictions.includes('strain')) {
+      problems.push(
+        'Strain should be applied after spending 30 pressure (>20 threshold)'
+      );
+    }
+    if (state2.pressureSpentThisGallery !== 30) {
+      problems.push(
+        `After three vent uses, pressureSpentThisGallery should be 30, got ${state2.pressureSpentThisGallery}`
+      );
+    }
+
+    // Now descend — Strain should be removed and counter reset
+    const galleryIdx = state2.galleryIndex;
+    if (galleryIdx < state2.gallerySequence.length - 1) {
+      advanceTurn(state2, 'descend');
+
+      if (state2.activeAfflictions.includes('strain')) {
+        problems.push('Strain should be removed after descending to the next gallery');
+      }
+      if (state2.pressureSpentThisGallery !== 0) {
+        problems.push(
+          `pressureSpentThisGallery should be 0 after descend, got ${state2.pressureSpentThisGallery}`
+        );
+      }
+    }
+
+    // 40g. Strain can be re-applied in the next gallery
+    const state3 = createInitialState('strain-reapply-test');
+    state3.pressure = 80;
+    state3.foundDevices = ['vent', 'steam-cloak', 'safety-valve', 'condenser-valve'];
+    state3.automatonState.position = 8;
+
+    // Descend to next gallery first
+    if (state3.galleryIndex < state3.gallerySequence.length - 1) {
+      advanceTurn(state3, 'descend');
+    }
+
+    // Spend >20 in the new gallery
+    state3.pressure = 50;
+    advanceTurn(state3, 'use:vent'); // 10
+    state3.pressure = 50;
+    advanceTurn(state3, 'use:vent'); // 20
+    state3.pressure = 50;
+    advanceTurn(state3, 'use:vent'); // 30 — should trigger
+
+    if (!state3.activeAfflictions.includes('strain')) {
+      problems.push(
+        'Strain should be re-applicable in the new gallery after spending >20 pressure'
+      );
+    }
+
+    // 40h. The affliction section appears in the DOM when Strain is active
+    // We need to render the game with Strain active and verify the DOM
+    const { clearMemory } = await import('./engine/memory.js');
+    const { startNewDescent } = await import('./game.js');
+
+    clearMemory();
+
+    // Start a fresh game, use devices to trigger Strain
+    startNewDescent('strain-dom-test');
+    await new Promise(r => requestAnimationFrame(r));
+    await new Promise(r => requestAnimationFrame(r));
+
+    // Click the vent button to spend >20 pressure
+    // Re-query the button each iteration because render() replaces innerHTML
+    let strainTriggered = false;
+    for (let i = 0; i < 4 && !strainTriggered; i++) {
+      const btn = document.querySelector('.device-btn[data-action="use:vent"]');
+      if (!btn) break;
+
+      // Check if button is disabled (insufficient pressure or game ended)
+      const isGameEnded = document.querySelector('.death-screen');
+      if (isGameEnded) break;
+
+      btn.click();
+      await new Promise(r => requestAnimationFrame(r));
+      await new Promise(r => requestAnimationFrame(r));
+
+      // Check if the affliction section appeared
+      const afflictionSection = document.querySelector('.affliction-section');
+      if (afflictionSection) {
+        strainTriggered = true;
+
+        const afflictionDesc = afflictionSection.querySelector('.affliction-description');
+        if (!afflictionDesc) {
+          problems.push(
+            'Affliction section exists but has no .affliction-description element'
+          );
+        } else {
+          const descText = afflictionDesc.textContent;
+          if (!descText || !descText.includes('Strain') && !descText.includes('strained')) {
+            problems.push(
+              `Affliction description should reference Strain, got: "${descText}"`
+            );
+          }
+        }
+      }
+    }
+
+    if (!strainTriggered) {
+      problems.push(
+        'Affliction section (.affliction-section) not found in the DOM after spending >20 pressure with vent'
+      );
+    }
+
+    clearMemory();
+  } catch (err) {
+    problems.push(`Could not verify affliction system: ${err.message}`);
+  }
+
   return problems;
 }
