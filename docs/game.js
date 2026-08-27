@@ -115,7 +115,7 @@ function pressureBand(p) {
 
 /**
  * Advance one full turn: player action → automaton acts → check death → render.
- * `action` is either 'wait' or 'use:<deviceId>'.
+ * `action` is either 'wait', 'breathe', 'descend', 'escape', or 'use:<deviceId>'.
  */
 export function advanceTurn(state, action) {
   if (state.ended) return;
@@ -189,6 +189,14 @@ export function advanceTurn(state, action) {
     parts.push('You waited.');
   }
   // 'wait' does nothing else — player chooses to let the turn pass
+
+  // 'breathe' deliberately vents 10 pressure (floor 0) in exchange for the
+  // player's action — the Sentinel advances, the Winder acts, and pressure
+  // accumulates normally. Only the player's action is replaced.
+  if (action === 'breathe') {
+    state.pressure = Math.max(0, state.pressure - 10);
+    parts.push('You released 10 pressure, breathing easier.');
+  }
 
   // Escape action — only available in the final gallery when pressure ≤ 20.
   // Processed before pressure accumulation so the player can escape at the brink.
@@ -611,6 +619,13 @@ function render(state) {
   waitBtn.textContent = 'Wait (advance turn)';
   actionSection.appendChild(waitBtn);
 
+  // Breathe — always available, vents 10 pressure at the cost of the turn.
+  const breatheBtn = document.createElement('button');
+  breatheBtn.className = 'action-btn breathe-btn';
+  breatheBtn.dataset.action = 'breathe';
+  breatheBtn.textContent = 'Breathe (release 10 pressure)';
+  actionSection.appendChild(breatheBtn);
+
   // Descend button — only if there are more galleries to visit
   if (state.galleryIndex < state.gallerySequence.length - 1) {
     const descendBtn = document.createElement('button');
@@ -651,7 +666,7 @@ function render(state) {
   if (state.foundDevices.includes('steam-cloak')) hintText += 'S: use Steam Cloak  |  ';
   if (state.foundDevices.includes('safety-valve')) hintText += 'A: use Safety Valve  |  ';
   if (state.foundDevices.includes('condenser-valve')) hintText += 'C: use Condenser Valve  |  ';
-  hintText += 'W: wait  |  R: restart';
+  hintText += 'B: breathe  |  W: wait  |  R: restart';
   if (state.galleryIndex < state.gallerySequence.length - 1) {
     hintText += '  |  D: descend';
   }
@@ -804,6 +819,10 @@ function handleKeydown(e) {
   } else if (key === 'w') {
     e.preventDefault();
     advanceTurn(state, 'wait');
+    render(state);
+  } else if (key === 'b') {
+    e.preventDefault();
+    advanceTurn(state, 'breathe');
     render(state);
   } else if (key === 'd') {
     e.preventDefault();
