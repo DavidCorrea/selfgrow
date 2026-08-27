@@ -23,6 +23,7 @@ import './galleries/engine-room.js';
 import './galleries/boiler-room.js';
 import './galleries/pipe-gallery.js';
 import './galleries/condenser-room.js';
+import './galleries/gear-room.js';
 import './automata/sentinel.js';
 import './automata/winder.js';
 import './devices/vent.js';
