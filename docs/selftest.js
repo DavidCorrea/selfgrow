@@ -5058,5 +5058,643 @@ export async function checks() {
     problems.push(`Could not verify gallery device discovery descriptions: ${err.message}`);
   }
 
+  // ── 40. Device wear accumulates from overuse and decays when unused ──
+  // The machine remembers device overuse: 3+ uses in a descent adds +1 wear
+  // (capped at 5), and a device unused for an entire descent loses 1 wear (floor 0).
+  // Wear increases the effective cost of the device in the next descent.
+  try {
+    const { computeDeviceWear } = await import('./engine/memory.js');
+
+    // 40a. Devices used 3+ times gain +1 wear
+    const wear1 = computeDeviceWear({ vent: 3 }, {});
+    if (wear1.vent !== 1) {
+      problems.push(
+        `computeDeviceWear({ vent: 3 }, {}): expected vent wear 1, got ${wear1.vent}`
+      );
+    }
+
+    // 40b. Devices used 0 times (not in usage counts) with no previous wear stay at 0
+    const wear2 = computeDeviceWear({}, {});
+    if (Object.keys(wear2).length !== 0) {
+      problems.push(
+        `computeDeviceWear({}, {}): expected empty wear, got ${JSON.stringify(wear2)}`
+      );
+    }
+
+    // 40c. Devices used 0 times with previous wear decay by 1
+    const wear3 = computeDeviceWear({ vent: 0 }, { vent: 2 });
+    if (wear3.vent !== 1) {
+      problems.push(
+        `computeDeviceWear({ vent: 0 }, { vent: 2 }): expected vent wear 1, got ${wear3.vent}`
+      );
+    }
+
+    // 40d. Device not in usage counts at all with previous wear decays by 1
+    const wear4 = computeDeviceWear({}, { vent: 3 });
+    if (wear4.vent !== 2) {
+      problems.push(
+        `computeDeviceWear({}, { vent: 3 }): expected vent wear 2, got ${wear4.vent}`
+      );
+    }
+
+    // 40e. Wear floor is 0 — decay from 1 should remove the entry
+    const wear5 = computeDeviceWear({}, { vent: 1 });
+    if (wear5.vent !== undefined) {
+      problems.push(
+        `computeDeviceWear({}, { vent: 1 }): expected vent wear undefined (removed), got ${wear5.vent}`
+      );
+    }
+
+    // 40f. Wear cap is 5 — stacking from 4 should cap at 5
+    const wear6 = computeDeviceWear({ vent: 3 }, { vent: 4 });
+    if (wear6.vent !== 5) {
+      problems.push(
+        `computeDeviceWear({ vent: 3 }, { vent: 4 }): expected vent wear 5 (capped), got ${wear6.vent}`
+      );
+    }
+
+    // 40g. Stacking from 5 should stay at 5
+    const wear7 = computeDeviceWear({ vent: 3 }, { vent: 5 });
+    if (wear7.vent !== 5) {
+      problems.push(
+        `computeDeviceWear({ vent: 3 }, { vent: 5 }): expected vent wear 5 (capped), got ${wear7.vent}`
+      );
+    }
+
+    // 40h. Devices used 1-2 times keep their current wear unchanged
+    const wear8 = computeDeviceWear({ vent: 1, 'steam-cloak': 2 }, { vent: 3, 'steam-cloak': 1 });
+    if (wear8.vent !== 3) {
+      problems.push(
+        `computeDeviceWear({ vent: 1 }, { vent: 3 }): expected vent wear 3 (unchanged), got ${wear8.vent}`
+      );
+    }
+    if (wear8['steam-cloak'] !== 1) {
+      problems.push(
+        `computeDeviceWear({ 'steam-cloak': 2 }, { 'steam-cloak': 1 }): expected steam-cloak wear 1 (unchanged), got ${wear8['steam-cloak']}`
+      );
+    }
+
+    // 40i. Multiple devices accumulate independently
+    const wear9 = computeDeviceWear({ vent: 3, 'steam-cloak': 4, 'safety-valve': 0 }, { vent: 0, 'steam-cloak': 0, 'safety-valve': 2 });
+    if (wear9.vent !== 1) {
+      problems.push(
+        `Multiple devices: vent with 3 uses from 0 should be 1, got ${wear9.vent}`
+      );
+    }
+    if (wear9['steam-cloak'] !== 1) {
+      problems.push(
+        `Multiple devices: steam-cloak with 4 uses from 0 should be 1, got ${wear9['steam-cloak']}`
+      );
+    }
+    if (wear9['safety-valve'] !== 1) {
+      problems.push(
+        `Multiple devices: safety-valve with 0 uses from 2 should decay to 1, got ${wear9['safety-valve']}`
+      );
+    }
+
+    // 40j. ComputeDeviceWear is pure — does not mutate inputs
+    const usageIn = { vent: 3 };
+    const prevWearIn = { vent: 1 };
+    const usageInCopy = { ...usageIn };
+    const prevWearInCopy = { ...prevWearIn };
+    computeDeviceWear(usageIn, prevWearIn);
+    if (JSON.stringify(usageIn) !== JSON.stringify(usageInCopy)) {
+      problems.push('computeDeviceWear mutated its deviceUsageCounts argument');
+    }
+    if (JSON.stringify(prevWearIn) !== JSON.stringify(prevWearInCopy)) {
+      problems.push('computeDeviceWear mutated its previousWear argument');
+    }
+  } catch (err) {
+    problems.push(`Could not verify device wear computation: ${err.message}`);
+  }
+
+  // ── 41. Device wear is loaded into state from memory and affects cost ──
+  // createInitialState must load deviceWear from memory into state.deviceWear,
+  // and devices must use it to adjust their effective cost.
+  try {
+    const { createInitialState } = await import('./game.js');
+    const { getDevice } = await import('./engine/registry.js');
+
+    // 41a. deviceWear is loaded from memory into state
+    const state = createInitialState('wear-state-test', {
+      descents: 2,
+      lastOutcome: 'none',
+      lastSeed: 'prev',
+      deviceWear: { vent: 2, 'steam-cloak': 1 },
+    });
+
+    if (typeof state.deviceWear !== 'object') {
+      problems.push(
+        `state.deviceWear should be an object, got ${typeof state.deviceWear}`
+      );
+    } else {
+      if (state.deviceWear.vent !== 2) {
+        problems.push(
+          `state.deviceWear.vent should be 2, got ${state.deviceWear.vent}`
+        );
+      }
+      if (state.deviceWear['steam-cloak'] !== 1) {
+        problems.push(
+          `state.deviceWear['steam-cloak'] should be 1, got ${state.deviceWear['steam-cloak']}`
+        );
+      }
+    }
+
+    // 41b. No deviceWear in memory defaults to empty object
+    const stateNoWear = createInitialState('wear-no-wear-test', {
+      descents: 0,
+      lastOutcome: 'none',
+      lastSeed: null,
+    });
+    if (stateNoWear.deviceWear && Object.keys(stateNoWear.deviceWear).length > 0) {
+      problems.push(
+        `state.deviceWear should be empty when no wear in memory, got ${JSON.stringify(stateNoWear.deviceWear)}`
+      );
+    }
+
+    // 41c. No memory argument defaults to empty deviceWear
+    const stateFresh = createInitialState('wear-fresh-test');
+    if (stateFresh.deviceWear && Object.keys(stateFresh.deviceWear).length > 0) {
+      problems.push(
+        `state.deviceWear should be empty for fresh state, got ${JSON.stringify(stateFresh.deviceWear)}`
+      );
+    }
+
+    // 41d. Vent's effectiveCost reflects wear
+    const vent = getDevice('vent');
+    if (!vent) {
+      problems.push('Vent device not registered — cannot verify wear effect on cost');
+    } else {
+      if (typeof vent.effectiveCost !== 'function') {
+        problems.push('Vent missing effectiveCost method');
+      } else {
+        const stateWithWear = createInitialState('wear-cost-test', {
+          descents: 1,
+          lastOutcome: 'none',
+          lastSeed: 'prev',
+          deviceWear: { vent: 3 },
+        });
+        const effectiveCost = vent.effectiveCost(stateWithWear);
+        if (effectiveCost !== 13) {
+          problems.push(
+            `Vent effectiveCost with wear=3 should be 13 (10 + 3), got ${effectiveCost}`
+          );
+        }
+
+        // Without wear, effectiveCost equals base cost
+        const effectiveCostNoWear = vent.effectiveCost(stateFresh);
+        if (effectiveCostNoWear !== 10) {
+          problems.push(
+            `Vent effectiveCost without wear should be 10, got ${effectiveCostNoWear}`
+          );
+        }
+      }
+
+      // 41e. Vent's canUse checks against effective cost
+      const stateCanUse = createInitialState('wear-canuse-test', {
+        descents: 1,
+        lastOutcome: 'none',
+        lastSeed: 'prev',
+        deviceWear: { vent: 3 },
+      });
+      stateCanUse.pressure = 12; // 10+3=13 effective cost, so 12 < 13
+      stateCanUse.foundDevices = ['vent'];
+
+      if (vent.canUse(stateCanUse)) {
+        problems.push(
+          'Vent.canUse() should return false when pressure (12) is below effective cost (13) with wear=3'
+        );
+      }
+
+      stateCanUse.pressure = 13;
+      if (!vent.canUse(stateCanUse)) {
+        problems.push(
+          'Vent.canUse() should return true when pressure (13) equals effective cost (13) with wear=3'
+        );
+      }
+
+      // 41f. Vent's use() deducts effective cost
+      const stateUse = createInitialState('wear-use-test', {
+        descents: 1,
+        lastOutcome: 'none',
+        lastSeed: 'prev',
+        deviceWear: { vent: 2 },
+      });
+      stateUse.pressure = 20;
+      stateUse.foundDevices = ['vent'];
+      stateUse.automatonState.position = 7;
+
+      const pressureBefore = stateUse.pressure;
+      vent.use(stateUse);
+      const expectedPressure = pressureBefore - 12; // 10 + 2
+      if (stateUse.pressure !== expectedPressure) {
+        problems.push(
+          `Vent.use() should deduct effective cost 12 (10 + 2 wear), expected ${expectedPressure}, got ${stateUse.pressure}`
+        );
+      }
+
+      // 41g. Vent's describe() shows wear-adjusted cost
+      const stateDesc = createInitialState('wear-desc-test', {
+        descents: 1,
+        lastOutcome: 'none',
+        lastSeed: 'prev',
+        deviceWear: { vent: 1 },
+      });
+      stateDesc.pressure = 20;
+      stateDesc.foundDevices = ['vent'];
+
+      const desc = vent.describe(stateDesc);
+      if (!desc.includes('[+1 from wear]')) {
+        problems.push(
+          `Vent describe() with wear=1 should show '[+1 from wear]', got: "${desc}"`
+        );
+      }
+      if (!desc.includes('cost: 11')) {
+        problems.push(
+          `Vent describe() with wear=1 should show 'cost: 11', got: "${desc}"`
+        );
+      }
+
+      // 41h. Vent's describe() without wear does not show wear text
+      const descNoWear = vent.describe(stateFresh);
+      if (descNoWear.includes('[+') || descNoWear.includes('from wear]')) {
+        problems.push(
+          `Vent describe() without wear should not show wear text, got: "${descNoWear}"`
+        );
+      }
+
+      // 41i. Steam Cloak's effectiveCost also reflects wear
+      const cloak = getDevice('steam-cloak');
+      if (cloak && cloak.effectiveCost) {
+        const stateCloak = createInitialState('wear-cloak-test', {
+          descents: 1,
+          lastOutcome: 'none',
+          lastSeed: 'prev',
+          deviceWear: { 'steam-cloak': 2 },
+        });
+        const cloakCost = cloak.effectiveCost(stateCloak);
+        if (cloakCost !== 10) {
+          problems.push(
+            `Steam Cloak effectiveCost with wear=2 should be 10 (8 + 2), got ${cloakCost}`
+          );
+        }
+
+        // describe() shows wear
+        const cloakDesc = cloak.describe(stateCloak);
+        if (!cloakDesc.includes('[+2 from wear]')) {
+          problems.push(
+            `Steam Cloak describe() with wear=2 should show '[+2 from wear]', got: "${cloakDesc}"`
+          );
+        }
+
+        // canUse respects wear
+        stateCloak.pressure = 9;
+        if (cloak.canUse(stateCloak)) {
+          problems.push(
+            'Steam Cloak.canUse() should return false when pressure (9) is below effective cost (10) with wear=2'
+          );
+        }
+
+        stateCloak.pressure = 10;
+        if (!cloak.canUse(stateCloak)) {
+          problems.push(
+            'Steam Cloak.canUse() should return true when pressure (10) equals effective cost (10) with wear=2'
+          );
+        }
+
+        // use() deducts effective cost
+        stateCloak.pressure = 20;
+        const cloakPressureBefore = stateCloak.pressure;
+        cloak.use(stateCloak);
+        if (stateCloak.pressure !== 10) {
+          problems.push(
+            `Steam Cloak.use() should deduct 10 (8 + 2 wear), expected 10, got ${stateCloak.pressure}`
+          );
+        }
+      }
+
+      // 41j. Safety Valve effectiveCost also reflects wear
+      const valve = getDevice('safety-valve');
+      if (valve && valve.effectiveCost) {
+        const stateValve = createInitialState('wear-valve-test', {
+          descents: 1,
+          lastOutcome: 'none',
+          lastSeed: 'prev',
+          deviceWear: { 'safety-valve': 3 },
+        });
+        const valveCost = valve.effectiveCost(stateValve);
+        if (valveCost !== 18) {
+          problems.push(
+            `Safety Valve effectiveCost with wear=3 should be 18 (15 + 3), got ${valveCost}`
+          );
+        }
+
+        const valveDesc = valve.describe(stateValve);
+        if (!valveDesc.includes('[+3 from wear]')) {
+          problems.push(
+            `Safety Valve describe() with wear=3 should show '[+3 from wear]', got: "${valveDesc}"`
+          );
+        }
+      }
+
+      // 41k. Condenser Valve effectiveCost also reflects wear
+      const condValve = getDevice('condenser-valve');
+      if (condValve && condValve.effectiveCost) {
+        const stateCond = createInitialState('wear-cond-test', {
+          descents: 1,
+          lastOutcome: 'none',
+          lastSeed: 'prev',
+          deviceWear: { 'condenser-valve': 4 },
+        });
+        const condCost = condValve.effectiveCost(stateCond);
+        if (condCost !== 18) {
+          problems.push(
+            `Condenser Valve effectiveCost with wear=4 should be 18 (14 + 4), got ${condCost}`
+          );
+        }
+
+        const condDesc = condValve.describe(stateCond);
+        if (!condDesc.includes('[+4 from wear]')) {
+          problems.push(
+            `Condenser Valve describe() with wear=4 should show '[+4 from wear]', got: "${condDesc}"`
+          );
+        }
+      }
+
+      // 41l. All four devices have an id field matching their registry key
+      const deviceIds = ['vent', 'steam-cloak', 'safety-valve', 'condenser-valve'];
+      for (const id of deviceIds) {
+        const device = getDevice(id);
+        if (!device) {
+          problems.push(`Device '${id}' not registered — cannot verify id field`);
+        } else if (device.id !== id) {
+          problems.push(
+            `Device '${id}' has id field '${device.id}' which does not match registry key`
+          );
+        }
+      }
+
+      // 41m. All four devices have an effectiveCost method
+      for (const id of deviceIds) {
+        const device = getDevice(id);
+        if (device && typeof device.effectiveCost !== 'function') {
+          problems.push(`Device '${id}' is missing effectiveCost method`);
+        }
+      }
+    }
+  } catch (err) {
+    problems.push(`Could not verify device wear in state: ${err.message}`);
+  }
+
+  // ── 42. Device wear is saved to memory at descent end and round-trips ──
+  // At the end of a descent (rupture, cornered, or escape), the wear
+  // computed from deviceUsageCounts must be persisted to memory.
+  try {
+    const { saveMemory, loadMemory, clearMemory, computeDeviceWear } = await import('./engine/memory.js');
+
+    clearMemory();
+
+    // 42a. Save with deviceWear round-trips correctly
+    saveMemory('rupture', 'wear-save-seed', { vent: 3 }, { vent: 1 });
+    const mem = loadMemory();
+    if (mem.deviceWear.vent !== 1) {
+      problems.push(
+        `saveMemory with deviceWear={ vent: 1 } should persist vent=1, got ${mem.deviceWear.vent}`
+      );
+    }
+    if (mem.lastOutcome !== 'rupture') {
+      problems.push(
+        `saveMemory with deviceWear should still store lastOutcome correctly, got '${mem.lastOutcome}'`
+      );
+    }
+
+    // 42b. Save without deviceWear clears it (sets to empty)
+    saveMemory('cornered', 'wear-clear-seed');
+    const mem2 = loadMemory();
+    if (Object.keys(mem2.deviceWear).length !== 0) {
+      problems.push(
+        `saveMemory without deviceWear should store empty deviceWear, got ${JSON.stringify(mem2.deviceWear)}`
+      );
+    }
+
+    // 42c. Save with empty deviceWear stores empty
+    saveMemory('escaped', 'wear-empty-seed', {}, {});
+    const mem3 = loadMemory();
+    if (Object.keys(mem3.deviceWear).length !== 0) {
+      problems.push(
+        `saveMemory with empty deviceWear should store empty, got ${JSON.stringify(mem3.deviceWear)}`
+      );
+    }
+
+    // 42d. Multiple saves accumulate deviceWear
+    saveMemory('rupture', 'wear-multi-1', { vent: 3 }, { vent: 1 });
+    saveMemory('rupture', 'wear-multi-2', { vent: 3, 'steam-cloak': 3 }, { vent: 2, 'steam-cloak': 1 });
+    const mem4 = loadMemory();
+    if (mem4.deviceWear.vent !== 2) {
+      problems.push(
+        `After two saves, vent wear should be 2, got ${mem4.deviceWear.vent}`
+      );
+    }
+    if (mem4.deviceWear['steam-cloak'] !== 1) {
+      problems.push(
+        `After second save, steam-cloak wear should be 1, got ${mem4.deviceWear['steam-cloak']}`
+      );
+    }
+
+    // 42e. Fresh memory has empty deviceWear
+    clearMemory();
+    const mem5 = loadMemory();
+    if (Object.keys(mem5.deviceWear).length !== 0) {
+      problems.push(
+        `Fresh memory should have empty deviceWear, got ${JSON.stringify(mem5.deviceWear)}`
+      );
+    }
+
+    // Clean up
+    clearMemory();
+  } catch (err) {
+    problems.push(`Could not verify device wear save/load: ${err.message}`);
+  }
+
+  // ── 43. Device wear is deterministic — same memory + same seed = same costs ──
+  // The wear system is purely data-driven: given the same memory (including
+  // deviceWear) and the same seed, the game state must produce identical
+  // device costs every time.
+  try {
+    const { createInitialState } = await import('./game.js');
+    const { getDevice } = await import('./engine/registry.js');
+
+    const wearMemory = {
+      descents: 3,
+      lastOutcome: 'rupture',
+      lastSeed: 'prev-seed',
+      deviceWear: { vent: 2, 'steam-cloak': 1 },
+    };
+
+    const state1 = createInitialState('wear-deterministic', wearMemory);
+    const state2 = createInitialState('wear-deterministic', wearMemory);
+
+    // deviceWear must match
+    if (JSON.stringify(state1.deviceWear) !== JSON.stringify(state2.deviceWear)) {
+      problems.push(
+        `Deterministic wear: deviceWear differs between runs: ${JSON.stringify(state1.deviceWear)} vs ${JSON.stringify(state2.deviceWear)}`
+      );
+    }
+
+    // Effective costs must match
+    const vent = getDevice('vent');
+    const cloak = getDevice('steam-cloak');
+    if (vent && vent.effectiveCost) {
+      const cost1 = vent.effectiveCost(state1);
+      const cost2 = vent.effectiveCost(state2);
+      if (cost1 !== cost2) {
+        problems.push(
+          `Deterministic wear: vent effective cost differs (${cost1} vs ${cost2})`
+        );
+      }
+    }
+    if (cloak && cloak.effectiveCost) {
+      const cost1 = cloak.effectiveCost(state1);
+      const cost2 = cloak.effectiveCost(state2);
+      if (cost1 !== cost2) {
+        problems.push(
+          `Deterministic wear: steam-cloak effective cost differs (${cost1} vs ${cost2})`
+        );
+      }
+    }
+
+    // Describe text must match
+    if (vent && vent.describe) {
+      const desc1 = vent.describe(state1);
+      const desc2 = vent.describe(state2);
+      if (desc1 !== desc2) {
+        problems.push(
+          `Deterministic wear: vent describe() differs: "${desc1}" vs "${desc2}"`
+        );
+      }
+    }
+
+    // Different memory → different costs
+    const wearMemory2 = {
+      descents: 3,
+      lastOutcome: 'rupture',
+      lastSeed: 'prev-seed',
+      deviceWear: { vent: 0, 'steam-cloak': 0 },
+    };
+    const state3 = createInitialState('wear-deterministic', wearMemory2);
+    if (vent && vent.effectiveCost) {
+      const costNoWear = vent.effectiveCost(state3);
+      const costWithWear = vent.effectiveCost(state1);
+      if (costNoWear === costWithWear) {
+        problems.push(
+          `Deterministic wear: vent effective cost should differ between wear=0 (${costNoWear}) and wear=2 (${costWithWear})`
+        );
+      }
+    }
+  } catch (err) {
+    problems.push(`Could not verify deterministic wear: ${err.message}`);
+  }
+
+  // ── 44. End-to-end: device usage counts feed into wear which feeds into save ──
+  // Drive the game, use a device 3+ times, die, verify the saved wear is correct.
+  try {
+    const { createInitialState, advanceTurn, categorizeOutcome } = await import('./game.js');
+    const { saveMemory, loadMemory, clearMemory, computeDeviceWear } = await import('./engine/memory.js');
+    const { getDevice } = await import('./engine/registry.js');
+
+    clearMemory();
+
+    // Simulate a full descent: use vent 3 times, then die by rupture
+    const state = createInitialState('wear-e2e-test', {
+      descents: 0,
+      lastOutcome: 'none',
+      lastSeed: null,
+    });
+    state.foundDevices = ['vent'];
+    state.deviceUsageCounts = {};
+    state.automatonState.position = 8;
+
+    // Use vent 3 times with sufficient pressure
+    for (let i = 0; i < 3; i++) {
+      state.pressure = 50;
+      advanceTurn(state, 'use:vent');
+    }
+
+    if (state.deviceUsageCounts.vent !== 3) {
+      problems.push(
+        `E2E wear test: after 3 vent uses, deviceUsageCounts.vent should be 3, got ${state.deviceUsageCounts.vent}`
+      );
+    }
+
+    // Simulate death and save
+    const newWear = computeDeviceWear(state.deviceUsageCounts, state.memory.deviceWear || {});
+    saveMemory('rupture', state.seed, state.deviceUsageCounts, newWear);
+
+    const mem = loadMemory();
+    if (mem.deviceWear.vent !== 1) {
+      problems.push(
+        `E2E wear test: after 3 vent uses, saved vent wear should be 1, got ${mem.deviceWear.vent}`
+      );
+    }
+
+    // Now simulate a second descent: load the saved memory and verify wear is applied
+    const state2 = createInitialState('wear-e2e-test-2', mem);
+    if (state2.deviceWear.vent !== 1) {
+      problems.push(
+        `E2E wear test: after loading memory with vent wear 1, state.deviceWear.vent should be 1, got ${state2.deviceWear.vent}`
+      );
+    }
+
+    const vent = getDevice('vent');
+    if (vent && vent.effectiveCost) {
+      const cost = vent.effectiveCost(state2);
+      if (cost !== 11) {
+        problems.push(
+          `E2E wear test: vent effective cost with wear 1 should be 11, got ${cost}`
+        );
+      }
+
+      // canUse should require the higher cost
+      state2.pressure = 10;
+      if (vent.canUse(state2)) {
+        problems.push(
+          'E2E wear test: vent.canUse() should return false at pressure 10 with effective cost 11'
+        );
+      }
+
+      state2.pressure = 11;
+      if (!vent.canUse(state2)) {
+        problems.push(
+          'E2E wear test: vent.canUse() should return true at pressure 11 with effective cost 11'
+        );
+      }
+
+      // Use it and verify the correct amount is deducted
+      state2.pressure = 20;
+      state2.foundDevices = ['vent'];
+      state2.automatonState.position = 7;
+      const before = state2.pressure;
+      vent.use(state2);
+      if (state2.pressure !== before - 11) {
+        problems.push(
+          `E2E wear test: vent.use() should deduct 11 (10 + 1 wear), expected ${before - 11}, got ${state2.pressure}`
+        );
+      }
+
+      // describe() should reflect the wear
+      const desc = vent.describe(state2);
+      if (!desc.includes('[+1 from wear]') || !desc.includes('cost: 11')) {
+        problems.push(
+          `E2E wear test: vent describe() should show wear and adjusted cost, got: "${desc}"`
+        );
+      }
+    }
+
+    // Clean up
+    clearMemory();
+  } catch (err) {
+    problems.push(`Could not verify end-to-end device wear: ${err.message}`);
+  }
+
   return problems;
 }

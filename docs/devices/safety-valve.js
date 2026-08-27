@@ -1,21 +1,31 @@
 import { registerDevice } from '../engine/registry.js';
 
 registerDevice('safety-valve', {
+  id: 'safety-valve',
   name: 'Safety Valve',
   foundIn: 'pipe-gallery',
   cost: 15,
   reduction: 20,
 
+  /** Get the effective cost accounting for wear. */
+  effectiveCost(state) {
+    const wear = (state.deviceWear && state.deviceWear[this.id]) || 0;
+    return this.cost + wear;
+  },
+
   /** Describe the device and its current state. */
   describe(state) {
+    const effectiveCost = this.effectiveCost(state);
+    const wear = (state.deviceWear && state.deviceWear[this.id]) || 0;
     const canUse = this.canUse(state);
     const usable = canUse ? 'ready' : 'insufficient pressure';
-    return `Safety Valve (cost: ${this.cost}, vents ${this.reduction} pressure, current: ${state.pressure}, ${usable})`;
+    const wearText = wear > 0 ? ` [+${wear} from wear]` : '';
+    return `Safety Valve (cost: ${effectiveCost}${wearText}, vents ${this.reduction} pressure, current: ${state.pressure}, ${usable})`;
   },
 
   /** Whether the device can be used given current state. */
   canUse(state) {
-    return state.pressure >= this.cost;
+    return state.pressure >= this.effectiveCost(state);
   },
 
   /**
@@ -34,7 +44,7 @@ registerDevice('safety-valve', {
 
   use(state) {
     if (!this.canUse(state)) return false;
-    state.pressure -= this.cost;
+    state.pressure -= this.effectiveCost(state);
     state.pressure = Math.max(0, state.pressure - this.reduction);
     return true;
   },

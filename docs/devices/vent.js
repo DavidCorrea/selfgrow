@@ -1,19 +1,29 @@
 import { registerDevice } from '../engine/registry.js';
 
 registerDevice('vent', {
+  id: 'vent',
   name: 'Pressure Vent',
   cost: 10,
 
+  /** Get the effective cost accounting for wear. */
+  effectiveCost(state) {
+    const wear = (state.deviceWear && state.deviceWear[this.id]) || 0;
+    return this.cost + wear;
+  },
+
   /** Describe the device and its current state. */
   describe(state) {
+    const effectiveCost = this.effectiveCost(state);
+    const wear = (state.deviceWear && state.deviceWear[this.id]) || 0;
     const canUse = this.canUse(state);
     const usable = canUse ? 'ready' : 'insufficient pressure';
-    return `Pressure Vent (cost: ${this.cost}, pushes Sentinel back 2, pressure: ${state.pressure}, ${usable})`;
+    const wearText = wear > 0 ? ` [+${wear} from wear]` : '';
+    return `Pressure Vent (cost: ${effectiveCost}${wearText}, pushes Sentinel back 2, pressure: ${state.pressure}, ${usable})`;
   },
 
   /** Whether the device can be used given current state. */
   canUse(state) {
-    return state.pressure >= this.cost;
+    return state.pressure >= this.effectiveCost(state);
   },
 
   /**
@@ -25,12 +35,13 @@ registerDevice('vent', {
    * Called after use() to build the turn announcement.
    */
   announceEffect(state) {
-    return `You vent ${this.cost} pressure, pushing the Sentinel back 2 steps.`;
+    const effectiveCost = this.effectiveCost(state);
+    return `You vent ${effectiveCost} pressure, pushing the Sentinel back 2 steps.`;
   },
 
   use(state) {
     if (!this.canUse(state)) return false;
-    state.pressure -= this.cost;
+    state.pressure -= this.effectiveCost(state);
     // Push the Sentinel back, but not beyond the maximum starting distance
     state.automatonState.position = Math.min(
       state.automatonState.position + 2,
