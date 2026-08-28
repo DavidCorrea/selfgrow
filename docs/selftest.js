@@ -157,5 +157,59 @@ export async function checks() {
     }
   }
 
+  /* ---------- WCAG contrast: .state-label on #23233a background ---------- */
+  const labelElements = document.querySelectorAll('.state-label');
+  if (labelElements.length === 0) {
+    problems.push('No .state-label elements found in the DOM.');
+  } else {
+    // Expected background: #23233a (RGB: 35, 35, 58)
+    const bgR = 35 / 255;
+    const bgG = 35 / 255;
+    const bgB = 58 / 255;
+
+    function srgbToLinear(c) {
+      return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    }
+
+    function relativeLuminance(r, g, b) {
+      const rLin = srgbToLinear(r);
+      const gLin = srgbToLinear(g);
+      const bLin = srgbToLinear(b);
+      return 0.2126 * rLin + 0.7152 * gLin + 0.0722 * bLin;
+    }
+
+    function contrastRatio(l1, l2) {
+      const lighter = Math.max(l1, l2);
+      const darker = Math.min(l1, l2);
+      return (lighter + 0.05) / (darker + 0.05);
+    }
+
+    const bgLuminance = relativeLuminance(bgR, bgG, bgB);
+    const minRatio = 4.5;
+
+    labelElements.forEach((el, i) => {
+      const computed = window.getComputedStyle(el);
+      const color = computed.color; // e.g. "rgb(144, 144, 176)"
+      const match = color.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
+      if (!match) {
+        problems.push('.state-label #' + (i + 1) + ' has unrecognised colour format: ' + color);
+        return;
+      }
+      const r = parseInt(match[1], 10) / 255;
+      const g = parseInt(match[2], 10) / 255;
+      const b = parseInt(match[3], 10) / 255;
+      const fgLuminance = relativeLuminance(r, g, b);
+      const ratio = contrastRatio(fgLuminance, bgLuminance);
+      if (ratio < minRatio) {
+        const labelText = el.textContent.trim() || '(no text)';
+        problems.push(
+          '.state-label "' + labelText + '" contrast ratio is ' +
+          ratio.toFixed(2) + ':1 — below WCAG AA minimum of ' + minRatio + ':1. ' +
+          'Computed colour: ' + color + ' on #23233a.'
+        );
+      }
+    });
+  }
+
   return problems;
 }
