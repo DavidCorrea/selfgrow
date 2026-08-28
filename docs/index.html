@@ -168,13 +168,15 @@
   <script type="importmap">
   {
     "imports": {
-      "three": "https://esm.sh/three@0.170.0"
+      "three": "https://esm.sh/three@0.170.0",
+      "three/addons/": "https://esm.sh/three@0.170.0/examples/jsm/"
     }
   }
   </script>
 
   <script type="module">
     import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
     import { initGarden } from "./garden.js";
 
     const wrapper = document.getElementById('garden-canvas-wrapper');
@@ -257,6 +259,16 @@
     gridHelper.material.opacity = 0.15;
     scene.add(gridHelper);
 
+    /* --- OrbitControls with smooth damping --- */
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.minPolarAngle = 0.1;          // never fully top-down
+    controls.maxPolarAngle = Math.PI / 2.3; // never below the ground plane
+    controls.target.set(0, 0.4, 0);        // aim at the seedling's height
+    controls.rotateSpeed = 0.5;            // unhurried, botanical pace
+    controls.update();
+
     /* Resize handler */
     function onResize() {
       const w = wrapper.clientWidth;
@@ -271,6 +283,7 @@
     /* Animation loop */
     function animate() {
       requestAnimationFrame(animate);
+      controls.update();
       renderer.render(scene, camera);
     }
 
@@ -281,6 +294,7 @@
       scene,
       camera,
       renderer,
+      controls,
       getSeason: () => document.getElementById('season-display')?.textContent || 'Spring',
       getTimeOfDay: () => document.getElementById('time-display')?.textContent || 'Morning',
       getWeather: () => document.getElementById('weather-display')?.textContent || 'Clear',
