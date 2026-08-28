@@ -92,7 +92,7 @@ export function createAmbientParticles(scene) {
 
   /* --- Drift update function --- */
   function update(time) {
-    if (reducedMotion) {
+    if (state.reducedMotion) {
       // On reduced motion, keep particles at their original positions
       // (or first frame: copy orig positions to main array to ensure stationary)
       return;
