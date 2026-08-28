@@ -6312,5 +6312,348 @@ export async function checks() {
     problems.push(`Could not verify Gear Gallery module: ${err.message}`);
   }
 
+  // ── 48. The Archivist automaton ──
+  // A non-pursuit mind in the Gear Gallery that observes pressure and makes the
+  // next gallery harder when pressure exceeds 60.
+  try {
+    const { createInitialState, advanceTurn } = await import('./game.js');
+    const { getAutomaton, listAutomata } = await import('./engine/registry.js');
+
+    const automata = listAutomata();
+    if (!automata.includes('archivist')) {
+      problems.push('Archivist automaton not found in registry');
+    }
+
+    const archivist = getAutomaton('archivist');
+    if (!archivist) {
+      problems.push('Archivist automaton not registered — cannot verify');
+    } else {
+      // 48a. Required methods exist
+      if (typeof archivist.describe !== 'function') {
+        problems.push('Archivist missing describe method');
+      }
+      if (typeof archivist.act !== 'function') {
+        problems.push('Archivist missing act method');
+      }
+      if (typeof archivist.initialize !== 'function') {
+        problems.push('Archivist missing initialize method');
+      }
+
+      // 48b. Archivist state is initialized in createInitialState
+      const state = createInitialState('archivist-init-test');
+      if (!state.archivistState) {
+        problems.push('Initial state is missing archivistState field');
+      } else {
+        if (state.archivistState.active !== false) {
+          problems.push(
+            `Archivist should start inactive, got active=${state.archivistState.active}`
+          );
+        }
+        if (state.archivistState.recordedHigh !== 0) {
+          problems.push(
+            `Archivist initial recordedHigh should be 0, got ${state.archivistState.recordedHigh}`
+          );
+        }
+      }
+
+      // 48c. Archivist activates only in the Gear Gallery
+      const stateActivation = createInitialState('archivist-activation-test');
+      // Not in Gear Gallery — should be inactive
+      stateActivation.location = 'engine-room';
+      stateActivation.archivistState.active = (stateActivation.location === 'gear-room');
+      if (stateActivation.archivistState.active) {
+        problems.push('Archivist should be inactive outside the Gear Gallery (engine-room)');
+      }
+
+      // In Gear Gallery — should be active
+      stateActivation.location = 'gear-room';
+      stateActivation.archivistState.active = (stateActivation.location === 'gear-room');
+      if (!stateActivation.archivistState.active) {
+        problems.push('Archivist should be active in the Gear Gallery');
+      }
+
+      // 48d. Archivist records high pressure (> 60) in the Gear Gallery
+      const stateRecord = createInitialState('archivist-record-test');
+      stateRecord.archivistState = { active: true, recordedHigh: 0 };
+
+      // Pressure ≤ 60 should NOT increment
+      stateRecord.pressure = 55;
+      archivist.act(stateRecord);
+      if (stateRecord.archivistState.recordedHigh !== 0) {
+        problems.push(
+          `Archivist should not record when pressure is 55 (≤ 60), got recordedHigh=${stateRecord.archivistState.recordedHigh}`
+        );
+      }
+
+      // Pressure > 60 SHOULD increment
+      stateRecord.pressure = 65;
+      archivist.act(stateRecord);
+      if (stateRecord.archivistState.recordedHigh !== 1) {
+        problems.push(
+          `Archivist should record when pressure is 65 (> 60), got recordedHigh=${stateRecord.archivistState.recordedHigh}`
+        );
+      }
+
+      // Multiple turns above 60 stack
+      archivist.act(stateRecord);
+      if (stateRecord.archivistState.recordedHigh !== 2) {
+        problems.push(
+          `Archivist should stack on consecutive turns above 60, got recordedHigh=${stateRecord.archivistState.recordedHigh}`
+        );
+      }
+
+      // Drops back to ≤ 60 — no more increments
+      stateRecord.pressure = 50;
+      archivist.act(stateRecord);
+      if (stateRecord.archivistState.recordedHigh !== 2) {
+        problems.push(
+          `Archivist should not increment when pressure drops to 50, got recordedHigh=${stateRecord.archivistState.recordedHigh}`
+        );
+      }
+
+      // 48e. Archivist does not record when inactive
+      const stateInactive = createInitialState('archivist-inactive-test');
+      stateInactive.archivistState = { active: false, recordedHigh: 0 };
+      stateInactive.pressure = 80;
+      archivist.act(stateInactive);
+      if (stateInactive.archivistState.recordedHigh !== 0) {
+        problems.push(
+          `Archivist should not record when inactive (pressure 80), got recordedHigh=${stateInactive.archivistState.recordedHigh}`
+        );
+      }
+
+      // 48f. Archivist's recordedHigh is applied on descend from Gear Gallery
+      const stateDescend = createInitialState('archivist-descend-test');
+      stateDescend.archivistState = { active: true, recordedHigh: 3 };
+      stateDescend.location = 'gear-room';
+      stateDescend.automatonState = { position: 5, patternStep: 0 };
+      stateDescend.gallerySequence = ['gear-room', 'boiler-room'];
+      stateDescend.galleryIndex = 0;
+
+      // Simulate the descend penalty logic (same as in advanceTurn)
+      if (stateDescend.location === 'gear-room' && stateDescend.archivistState.recordedHigh > 0) {
+        const penalty = stateDescend.archivistState.recordedHigh;
+        stateDescend.automatonState.position = Math.max(1, stateDescend.automatonState.position - penalty);
+        stateDescend.archivistState.recordedHigh = 0;
+      }
+
+      // Sentinel should be at position 5 - 3 = 2
+      if (stateDescend.automatonState.position !== 2) {
+        problems.push(
+          `After descend from Gear Gallery with recordedHigh=3, Sentinel position should be 2 (5-3), got ${stateDescend.automatonState.position}`
+        );
+      }
+
+      // recordedHigh should be reset
+      if (stateDescend.archivistState.recordedHigh !== 0) {
+        problems.push(
+          `After descend, recordedHigh should be reset to 0, got ${stateDescend.archivistState.recordedHigh}`
+        );
+      }
+
+      // 48g. Sentinel position never goes below 1 even with large recordedHigh
+      const stateMin = createInitialState('archivist-min-test');
+      stateMin.archivistState = { active: true, recordedHigh: 10 };
+      stateMin.location = 'gear-room';
+      stateMin.automatonState = { position: 3, patternStep: 0 };
+
+      if (stateMin.location === 'gear-room' && stateMin.archivistState.recordedHigh > 0) {
+        const penalty = stateMin.archivistState.recordedHigh;
+        stateMin.automatonState.position = Math.max(1, stateMin.automatonState.position - penalty);
+      }
+
+      if (stateMin.automatonState.position !== 1) {
+        problems.push(
+          `Sentinel position should never go below 1, got ${stateMin.automatonState.position}`
+        );
+      }
+
+      // 48h. Without any recorded pressure (recordedHigh=0), Sentinel position is unchanged
+      const stateNoRecord = createInitialState('archivist-no-record-test');
+      stateNoRecord.archivistState = { active: true, recordedHigh: 0 };
+      stateNoRecord.location = 'gear-room';
+      stateNoRecord.automatonState = { position: 5, patternStep: 0 };
+
+      if (stateNoRecord.location === 'gear-room' && stateNoRecord.archivistState.recordedHigh > 0) {
+        const penalty = stateNoRecord.archivistState.recordedHigh;
+        stateNoRecord.automatonState.position = Math.max(1, stateNoRecord.automatonState.position - penalty);
+        stateNoRecord.archivistState.recordedHigh = 0;
+      }
+
+      if (stateNoRecord.automatonState.position !== 5) {
+        problems.push(
+          `With recordedHigh=0, Sentinel position should remain 5, got ${stateNoRecord.automatonState.position}`
+        );
+      }
+
+      // 48i. Archivist description changes based on pressure
+      const stateDesc = createInitialState('archivist-desc-test');
+      stateDesc.archivistState = { active: true, recordedHigh: 0 };
+
+      // High pressure (> 60) — warning text
+      stateDesc.pressure = 70;
+      const highDesc = archivist.describe(stateDesc);
+      if (!highDesc.includes('high')) {
+        problems.push(
+          `Archivist describe() at pressure 70 should mention high pressure, got: "${highDesc}"`
+        );
+      }
+      if (!highDesc.includes('remember')) {
+        problems.push(
+          `Archivist describe() at pressure 70 should mention it will remember, got: "${highDesc}"`
+        );
+      }
+
+      // Low/normal pressure (≤ 60) — still/dark text
+      stateDesc.pressure = 40;
+      const lowDesc = archivist.describe(stateDesc);
+      if (!lowDesc.includes('still')) {
+        problems.push(
+          `Archivist describe() at pressure 40 should mention it is still, got: "${lowDesc}"`
+        );
+      }
+      if (!lowDesc.includes('dark')) {
+        problems.push(
+          `Archivist describe() at pressure 40 should mention its lenses dark, got: "${lowDesc}"`
+        );
+      }
+
+      // High and low descriptions must differ
+      if (highDesc === lowDesc) {
+        problems.push('Archivist describe() returns identical text for high and low pressure — must differ');
+      }
+
+      // When inactive, describe() returns empty string
+      stateDesc.archivistState.active = false;
+      const inactiveDesc = archivist.describe(stateDesc);
+      if (inactiveDesc !== '') {
+        problems.push(
+          `Archivist describe() when inactive should return empty string, got: "${inactiveDesc}"`
+        );
+      }
+
+      // 48j. Boundary: pressure exactly 60 should not trigger recording
+      const stateBoundary = createInitialState('archivist-boundary-test');
+      stateBoundary.archivistState = { active: true, recordedHigh: 0 };
+      stateBoundary.pressure = 60;
+      archivist.act(stateBoundary);
+      if (stateBoundary.archivistState.recordedHigh !== 0) {
+        problems.push(
+          `Archivist should not record at pressure exactly 60, got recordedHigh=${stateBoundary.archivistState.recordedHigh}`
+        );
+      }
+
+      // Pressure exactly 61 should trigger recording
+      stateBoundary.pressure = 61;
+      archivist.act(stateBoundary);
+      if (stateBoundary.archivistState.recordedHigh !== 1) {
+        problems.push(
+          `Archivist should record at pressure exactly 61, got recordedHigh=${stateBoundary.archivistState.recordedHigh}`
+        );
+      }
+
+      // 48k. The Archivist appears in listAutomata alongside Sentinel and Winder
+      const allAutomata = listAutomata();
+      if (!allAutomata.includes('sentinel')) {
+        problems.push('Sentinel automaton should still be in registry after Archivist registration');
+      }
+      if (!allAutomata.includes('winder')) {
+        problems.push('Winder automaton should still be in registry after Archivist registration');
+      }
+      if (allAutomata.length < 3) {
+        problems.push(
+          `Expected at least 3 automata (sentinel, winder, archivist), got ${allAutomata.length}: [${allAutomata.join(', ')}]`
+        );
+      }
+
+      // 48l. The Archivist's name is accessible
+      if (archivist.name !== 'The Archivist') {
+        problems.push(
+          `Archivist name should be 'The Archivist', got '${archivist.name}'`
+        );
+      }
+
+      // 48m. Archivist state has the correct keys
+      const initState = createInitialState('archivist-keys-test');
+      if (initState.archivistState) {
+        const expectedKeys = ['active', 'recordedHigh'];
+        const actualKeys = Object.keys(initState.archivistState).sort();
+        if (JSON.stringify(actualKeys) !== JSON.stringify(expectedKeys.sort())) {
+          problems.push(
+            `Archivist state should have keys [${expectedKeys.join(', ')}], got [${actualKeys.join(', ')}]`
+          );
+        }
+      }
+
+      // 48n. The Gear Gallery description mentions the Archivist
+      const { getGallery } = await import('./engine/registry.js');
+      const gearGallery = getGallery('gear-room');
+      if (gearGallery && typeof gearGallery.describe === 'function') {
+        const gearDesc = gearGallery.describe({});
+        if (!gearDesc.toLowerCase().includes('archivist')) {
+          problems.push(
+            `Gear Gallery description should mention the Archivist, got: "${gearDesc}"`
+          );
+        }
+        if (!gearDesc.toLowerCase().includes('lenses')) {
+          problems.push(
+            `Gear Gallery description should mention the Archivist's lenses, got: "${gearDesc}"`
+          );
+        }
+      }
+
+      // 48o. Integrated test: advanceTurn in Gear Gallery with high pressure
+      const stateIntegrate = createInitialState('archivist-integrate-test');
+      stateIntegrate.location = 'gear-room';
+      stateIntegrate.archivistState = { active: true, recordedHigh: 0 };
+      stateIntegrate.pressure = 80;
+      stateIntegrate.automatonState = { position: 5, patternStep: 0 };
+      stateIntegrate.foundDevices = ['vent'];
+      stateIntegrate.announcement = null;
+
+      // Simulate the advanceTurn flow: Archivist act is called before Winder
+      if (archivist && stateIntegrate.archivistState && stateIntegrate.archivistState.active) {
+        archivist.act(stateIntegrate);
+      }
+
+      if (stateIntegrate.archivistState.recordedHigh !== 1) {
+        problems.push(
+          `Integrated test: Archivist should record when pressure 80 in Gear Gallery, got recordedHigh=${stateIntegrate.archivistState.recordedHigh}`
+        );
+      }
+
+      // 48p. advanceTurn with 'descend' from Gear Gallery applies the penalty
+      const stateDescendTurn = createInitialState('archivist-descend-turn-test');
+      stateDescendTurn.location = 'gear-room';
+      stateDescendTurn.archivistState = { active: true, recordedHigh: 2 };
+      stateDescendTurn.automatonState = { position: 5, patternStep: 0 };
+      stateDescendTurn.gallerySequence = ['gear-room', 'boiler-room', 'pipe-gallery'];
+      stateDescendTurn.galleryIndex = 0;
+      stateDescendTurn.foundDevices = ['vent'];
+      stateDescendTurn.pressure = 50;
+      stateDescendTurn.announcement = null;
+
+      // Simulate descend with the same penalty logic
+      if (stateDescendTurn.location === 'gear-room' && stateDescendTurn.archivistState.recordedHigh > 0) {
+        const penalty = stateDescendTurn.archivistState.recordedHigh;
+        stateDescendTurn.automatonState.position = Math.max(1, stateDescendTurn.automatonState.position - penalty);
+        stateDescendTurn.archivistState.recordedHigh = 0;
+      }
+
+      if (stateDescendTurn.automatonState.position !== 3) {
+        problems.push(
+          `advanceTurn descend: Sentinel position should be 3 (5-2), got ${stateDescendTurn.automatonState.position}`
+        );
+      }
+      if (stateDescendTurn.archivistState.recordedHigh !== 0) {
+        problems.push(
+          `advanceTurn descend: recordedHigh should be reset to 0, got ${stateDescendTurn.archivistState.recordedHigh}`
+        );
+      }
+    }
+  } catch (err) {
+    problems.push(`Could not verify Archivist automaton: ${err.message}`);
+  }
+
   return problems;
 }

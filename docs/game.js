@@ -26,6 +26,7 @@ import './galleries/condenser-room.js';
 import './galleries/gear-room.js';
 import './automata/sentinel.js';
 import './automata/winder.js';
+import './automata/archivist.js';
 import './devices/vent.js';
 import './devices/steam-cloak.js';
 import './devices/safety-valve.js';
@@ -99,6 +100,11 @@ export function createInitialState(seed, memory) {
     winder.initialize(state);
   }
 
+  const archivist = getAutomaton('archivist');
+  if (archivist && archivist.initialize) {
+    archivist.initialize(state);
+  }
+
   return state;
 }
 
@@ -157,6 +163,13 @@ export function advanceTurn(state, action) {
   }
   // 'descend' moves to the next gallery in the sequence
   if (action === 'descend') {
+    // Apply Archivist's recordedHigh penalty when leaving the Gear Gallery
+    if (state.location === 'gear-room' && state.archivistState && state.archivistState.recordedHigh > 0) {
+      const penalty = state.archivistState.recordedHigh;
+      state.automatonState.position = Math.max(1, state.automatonState.position - penalty);
+      state.archivistState.recordedHigh = 0;
+    }
+
     if (state.galleryIndex < state.gallerySequence.length - 1) {
       state.galleryIndex += 1;
       state.location = state.gallerySequence[state.galleryIndex];
@@ -210,6 +223,17 @@ export function advanceTurn(state, action) {
     saveMemory('escaped', state.seed, state.deviceUsageCounts, newWear);
     }
     return;
+  }
+
+  // --- Archivist activation and observation ---
+  // The Archivist activates in the Gear Gallery and observes pressure
+  // after the player's action, before the Winder and accumulation.
+  const archivist = getAutomaton('archivist');
+  if (archivist && state.archivistState) {
+    state.archivistState.active = (state.location === 'gear-room');
+    if (state.archivistState.active) {
+      archivist.act(state);
+    }
   }
 
   // --- Winder acts before pressure accumulation ---
@@ -531,6 +555,15 @@ function render(state) {
   const automaton = getAutomaton('sentinel');
   autoDesc.textContent = automaton ? automaton.describe(state) : '';
   autoSection.appendChild(autoDesc);
+
+  // Archivist status (only shown when active in the Gear Gallery)
+  const archivistAutomaton = getAutomaton('archivist');
+  if (archivistAutomaton && state.archivistState && state.archivistState.active) {
+    const archivistDesc = document.createElement('p');
+    archivistDesc.className = 'archivist-description';
+    archivistDesc.textContent = archivistAutomaton.describe(state);
+    autoSection.appendChild(archivistDesc);
+  }
 
   // Winder status (only shown when active in the Boiler Room)
   const winderAutomaton = getAutomaton('winder');

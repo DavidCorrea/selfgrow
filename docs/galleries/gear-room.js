@@ -14,6 +14,9 @@ registerGallery('gear-room', {
       'Among the forest of rotating wheels, a tension wheel hangs motionless from',
       'a disengaged bracket. If it could be freed and adjusted, it might regulate',
       'the machine\'s temperament.',
+      '',
+      'A brass figure stands among the gears — the Archivist, its lenses tracking',
+      'your every movement, recording what the machine cannot see for itself.',
     ];
 
     // Pressure-level reactivity — the gears respond to the machine's pressure
