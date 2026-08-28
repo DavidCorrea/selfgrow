@@ -61,6 +61,12 @@ const HARNESS_PATHS = [
   "eslint.config.mjs",
   "package.json",
   "package-lock.json",
+  // Keeps the empty docs/ directory itself across a reset. Git tracks files and
+  // not directories, so without this placeholder docs/ stops existing the moment
+  // its last file is deleted — and the agents are told the code lives there and
+  // to `ls docs/` before planning. An empty docs/ is the expected state of a
+  // brand-new project; a missing one is a puzzle.
+  "docs/.gitkeep",
 ];
 
 // Only branches the agents create are touched. A human's work-in-progress branch
