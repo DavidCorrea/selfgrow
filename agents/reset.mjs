@@ -12,7 +12,7 @@
 //      go too). Keeps the columns — the new project needs the same five.
 //   5. Reset the wiki's memory pages.
 //   6. Delete the accumulated `attempts:N` labels.
-//   7. Delete the old product from main.
+//   7. Delete the old product from main (everything outside HARNESS_PATHS).
 //
 // What it deliberately does NOT touch:
 //   - `Vision.md` — the new one is yours to write, and it is the single input
@@ -44,10 +44,24 @@ import {
   PROJECT_NUMBER,
 } from "./shared.mjs";
 
-// The old product, as repo paths. `docs/` is the product itself; the root files
-// are residue from earlier iterations of it — `test_ref.mjs` is a one-off
-// Playwright script for the language playground, `response.json` a stray dump.
-const PRODUCT_PATHS = ["docs", "index.html", "response.json", "test_ref.mjs"];
+// Everything the agent harness needs in order to keep running. The product is
+// defined as EVERYTHING ELSE.
+//
+// This is a keep-list on purpose. It used to be a delete-list, and it missed
+// something on both resets it ever ran: `test_ref.mjs` the first time, then
+// `check-seeds.mjs`, `run-selftest.mjs` and `search-seeds.mjs` the second — all
+// root-level Playwright helpers an agent wrote for the product it was building,
+// and none of which a hardcoded delete-list could have anticipated. The harness
+// is short and changes rarely; the product is unbounded and invents new files
+// every week. Only one of those is safe to enumerate.
+const HARNESS_PATHS = [
+  ".github",
+  ".gitignore",
+  "agents",
+  "eslint.config.mjs",
+  "package.json",
+  "package-lock.json",
+];
 
 // Only branches the agents create are touched. A human's work-in-progress branch
 // is not this script's business.
@@ -241,28 +255,31 @@ function clearProduct() {
   gitExec("checkout main");
   gitExec("reset --hard origin/main");
 
-  // Tracked-ness, not existence: `git rm` fails on a path git doesn't know, and
-  // this is the last and least reversible step — it must not die on a file
-  // somebody already deleted by hand.
-  const tracked = PRODUCT_PATHS.filter((path) => {
-    try {
-      gitExec(`ls-files --error-unmatch -- ${path}`, { stdio: ["pipe", "pipe", "pipe"] });
-      return true;
-    } catch {
-      return false;
-    }
-  });
-  if (!tracked.length) {
-    log("info", "No tracked product files left to delete.");
+  // Ask git what is tracked rather than guessing: a path git does not know makes
+  // `git rm` fail, and this is the last and least reversible step.
+  const tracked = gitExec("ls-files").split("\n").map((p) => p.trim()).filter(Boolean);
+  const isHarness = (path) =>
+    HARNESS_PATHS.some((keep) => path === keep || path.startsWith(`${keep}/`));
+  const doomed = tracked.filter((path) => !isHarness(path));
+
+  if (!doomed.length) {
+    log("info", "No product files left to delete.");
     return;
   }
+  log("info", `Deleting ${doomed.length} product file(s); keeping the agent harness.`);
 
   configureGitIdentity();
-  gitExec(`rm -r --quiet -- ${tracked.join(" ")}`);
+  // Batched: a mature product can be hundreds of files, which is more than one
+  // command line should carry.
+  const BATCH = 100;
+  for (let i = 0; i < doomed.length; i += BATCH) {
+    const batch = doomed.slice(i, i + BATCH).map((path) => `"${path}"`).join(" ");
+    gitExec(`rm -r --quiet -- ${batch}`);
+  }
   gitExec('commit -m "Clear the previous product for a fresh start"');
   try {
     gitExec("push origin main");
-    log("info", `Deleted ${tracked.join(", ")} from main.`);
+    log("info", `Deleted ${doomed.length} product file(s) from main.`);
   } catch (e) {
     log("error", "Could not push the product deletion to main — do it by hand.", errorData(e));
   }
