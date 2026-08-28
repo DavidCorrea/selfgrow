@@ -177,7 +177,7 @@
   <script type="module">
     import * as THREE from "three";
     import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-    import { initGarden } from "./garden.js";
+    import { initGarden, startSeasonalCycle } from "./garden.js";
 
     const wrapper = document.getElementById('garden-canvas-wrapper');
     const scene = new THREE.Scene();
@@ -295,6 +295,7 @@
       camera,
       renderer,
       controls,
+      groundMat,
       getSeason: () => document.getElementById('season-display')?.textContent || 'Spring',
       getTimeOfDay: () => document.getElementById('time-display')?.textContent || 'Morning',
       getWeather: () => document.getElementById('weather-display')?.textContent || 'Clear',
@@ -303,6 +304,7 @@
     };
 
     initGarden(scene);
+    startSeasonalCycle();
   </script>
 </body>
 </html>
