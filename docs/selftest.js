@@ -310,5 +310,58 @@ export async function checks() {
     }
   }
 
+  /* ---------- Day/night cycle checks ---------- */
+  if (!gardenState) {
+    problems.push('window.__gardenState missing — cannot check day/night cycle.');
+  } else {
+    const dayNight = gardenState.dayNight;
+    if (!dayNight) {
+      problems.push('gardenState.dayNight is missing — the day/night cycle was not initialised.');
+    } else {
+      const VALID_PHASES = ['Morning', 'Midday', 'Evening', 'Night'];
+
+      // Check getCurrentPhase returns a valid name
+      const phase = dayNight.getCurrentPhase();
+      if (!phase) {
+        problems.push('dayNight.getCurrentPhase() returned nothing — expected one of: ' + VALID_PHASES.join(', '));
+      } else if (!VALID_PHASES.includes(phase)) {
+        problems.push('dayNight.getCurrentPhase() returned "' + phase + '", expected one of: ' + VALID_PHASES.join(', '));
+      }
+
+      // Check the DOM #time-display matches the cycle phase
+      const timeDisplay = document.getElementById('time-display');
+      if (!timeDisplay) {
+        problems.push('#time-display element missing — needed for day/night phase display.');
+      } else {
+        const displayText = timeDisplay.textContent.trim();
+        if (!VALID_PHASES.includes(displayText)) {
+          problems.push('#time-display shows "' + displayText + '" but should be one of: ' + VALID_PHASES.join(', '));
+        }
+        // The DOM and getCurrentPhase should agree (not necessarily at exact same instant, but close)
+        if (phase && phase !== displayText) {
+          // Allow a small tolerance: they may differ briefly during phase transitions
+          // Only flag if they are different phase names (not transitional)
+          if (VALID_PHASES.includes(displayText) && VALID_PHASES.includes(phase) && phase !== displayText) {
+            problems.push('dayNight.getCurrentPhase() reports "' + phase + '" but #time-display shows "' + displayText + '". They should agree.');
+          }
+        }
+      }
+
+      // Check the scene background colour has changed from the initial hardcoded value (0x87ceeb)
+      // since the cycle should have shifted it slightly even from t=0
+      if (gardenState.scene) {
+        const bg = gardenState.scene.background;
+        if (bg && bg.isColor) {
+          const hex = bg.getHex();
+          if (hex === 0x87ceeb) {
+            problems.push('Scene background is still the initial sky blue (0x87ceeb) — the day/night cycle did not update it.');
+          }
+        } else {
+          problems.push('Scene background is not a Color — day/night cycle may not have set it.');
+        }
+      }
+    }
+  }
+
   return problems;
 }
