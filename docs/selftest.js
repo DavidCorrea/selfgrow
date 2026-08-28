@@ -6655,5 +6655,367 @@ export async function checks() {
     problems.push(`Could not verify Archivist automaton: ${err.message}`);
   }
 
+  // ── 49. Tension Wheel device is registered and works ──
+  try {
+    const { createInitialState, advanceTurn } = await import('./game.js');
+    const { getDevice, listDevices, getGallery } = await import('./engine/registry.js');
+
+    // 49a. Device is registered
+    const devices = listDevices();
+    if (!devices.includes('tension-wheel')) {
+      problems.push('Tension Wheel device not found in registry');
+    }
+
+    const wheel = getDevice('tension-wheel');
+    if (!wheel) {
+      problems.push('Tension Wheel device not registered — cannot verify');
+    } else {
+      // 49b. Required methods exist
+      if (typeof wheel.describe !== 'function') { problems.push('Tension Wheel missing describe method'); }
+      if (typeof wheel.canUse !== 'function') { problems.push('Tension Wheel missing canUse method'); }
+      if (typeof wheel.use !== 'function') { problems.push('Tension Wheel missing use method'); }
+      if (typeof wheel.announceEffect !== 'function') { problems.push('Tension Wheel missing announceEffect method'); }
+      if (typeof wheel.effectiveCost !== 'function') { problems.push('Tension Wheel missing effectiveCost method'); }
+
+      // 49c. Cost is a positive number
+      if (typeof wheel.cost !== 'number' || wheel.cost <= 0) {
+        problems.push(`Tension Wheel cost should be a positive number, got ${wheel.cost}`);
+      }
+      // Cost should be 12 per the spec
+      if (wheel.cost !== 12) {
+        problems.push(`Tension Wheel cost should be 12, got ${wheel.cost}`);
+      }
+
+      // 49d. ruptureBoost is a positive number
+      if (typeof wheel.ruptureBoost !== 'number' || wheel.ruptureBoost <= 0) {
+        problems.push(`Tension Wheel ruptureBoost should be a positive number, got ${wheel.ruptureBoost}`);
+      }
+      if (wheel.ruptureBoost !== 15) {
+        problems.push(`Tension Wheel ruptureBoost should be 15, got ${wheel.ruptureBoost}`);
+      }
+
+      // 49e. foundIn is 'gear-room'
+      if (wheel.foundIn !== 'gear-room') {
+        problems.push(`Tension Wheel foundIn should be 'gear-room', got '${wheel.foundIn}'`);
+      }
+
+      // 49f. canUse returns false when pressure is below cost
+      const state = createInitialState('tension-wheel-test');
+      state.pressure = 5; // Below cost of 12
+      const couldUse = wheel.canUse(state);
+      if (couldUse) {
+        problems.push('Tension Wheel.canUse() returned true when pressure (5) is below cost (12)');
+      }
+
+      // Using it with insufficient pressure should return false and not change state
+      const used = wheel.use(state);
+      if (used) {
+        problems.push('Tension Wheel.use() returned true when pressure was insufficient');
+      }
+      if (state.pressure < 0) {
+        problems.push(`Pressure went below zero: ${state.pressure}`);
+      }
+      if (state.ruptureThreshold !== 100) {
+        problems.push('Tension Wheel changed rupture threshold when pressure was insufficient');
+      }
+
+      // 49g. With sufficient pressure, using the device deducts cost and boosts threshold
+      state.pressure = 50;
+      state.ruptureThreshold = 100;
+      state.deviceStates = {};
+
+      const couldUse2 = wheel.canUse(state);
+      if (!couldUse2) {
+        problems.push('Tension Wheel.canUse() returned false when pressure (50) is sufficient');
+      }
+
+      const pressureBefore = state.pressure;
+      const thresholdBefore = state.ruptureThreshold;
+      const used2 = wheel.use(state);
+      if (!used2) {
+        problems.push('Tension Wheel.use() returned false when pressure was sufficient');
+      }
+
+      // Verify correct cost deduction
+      if (state.pressure !== pressureBefore - wheel.cost) {
+        problems.push(
+          `Tension Wheel did not deduct correct cost: expected ${pressureBefore - wheel.cost}, got ${state.pressure}`
+        );
+      }
+
+      // Verify threshold was boosted
+      const expectedThreshold = thresholdBefore + wheel.ruptureBoost;
+      if (state.ruptureThreshold !== expectedThreshold) {
+        problems.push(
+          `Tension Wheel should raise rupture threshold by ${wheel.ruptureBoost}: expected ${expectedThreshold}, got ${state.ruptureThreshold}`
+        );
+      }
+
+      // Verify deviceStates tracks the boost
+      if (!state.deviceStates || !state.deviceStates.tensionWheelBoost) {
+        problems.push('Tension Wheel should set deviceStates.tensionWheelBoost after use');
+      } else if (state.deviceStates.tensionWheelBoost !== wheel.ruptureBoost) {
+        problems.push(
+          `Tension Wheel deviceStates.tensionWheelBoost should be ${wheel.ruptureBoost}, got ${state.deviceStates.tensionWheelBoost}`
+        );
+      }
+
+      // 49h. Using the device again stacks the boost
+      state.pressure = 50;
+      const thresholdBefore2 = state.ruptureThreshold;
+      wheel.use(state);
+      if (state.ruptureThreshold !== thresholdBefore2 + wheel.ruptureBoost) {
+        problems.push(
+          `Second Tension Wheel use should stack boost: expected ${thresholdBefore2 + wheel.ruptureBoost}, got ${state.ruptureThreshold}`
+        );
+      }
+      if (state.deviceStates.tensionWheelBoost !== wheel.ruptureBoost * 2) {
+        problems.push(
+          `Tension Wheel deviceStates.tensionWheelBoost should be ${wheel.ruptureBoost * 2} after two uses, got ${state.deviceStates.tensionWheelBoost}`
+        );
+      }
+
+      // 49i. The boost resets on descend (simulated)
+      if (state.galleryIndex < state.gallerySequence.length - 1) {
+        state.galleryIndex += 1;
+        state.location = state.gallerySequence[state.galleryIndex];
+        // Reset logic from game.js
+        if (state.deviceStates && state.deviceStates.tensionWheelBoost) {
+          state.ruptureThreshold -= state.deviceStates.tensionWheelBoost;
+          state.deviceStates.tensionWheelBoost = 0;
+        }
+      }
+      if (state.ruptureThreshold !== 100) {
+        problems.push(
+          `Tension Wheel boost should reset on descend: expected ruptureThreshold 100, got ${state.ruptureThreshold}`
+        );
+      }
+      if (state.deviceStates && state.deviceStates.tensionWheelBoost) {
+        problems.push(
+          `Tension Wheel deviceStates.tensionWheelBoost should be 0 after descend, got ${state.deviceStates.tensionWheelBoost}`
+        );
+      }
+
+      // 49j. Device description is distinct from other devices
+      const vent = getDevice('vent');
+      const cloak = getDevice('steam-cloak');
+      const safetyValve = getDevice('safety-valve');
+      const condValve = getDevice('condenser-valve');
+
+      if (wheel.describe) {
+        const descState = createInitialState('tension-wheel-desc');
+        descState.pressure = 50;
+        descState.deviceStates = {};
+        const wheelDesc = wheel.describe(descState);
+
+        for (const [otherId, otherDevice] of Object.entries({ vent, cloak, safetyValve, 'condenser-valve': condValve })) {
+          if (otherDevice && otherDevice.describe) {
+            const otherDesc = otherDevice.describe(descState);
+            if (wheelDesc === otherDesc) {
+              problems.push(`Tension Wheel description is identical to ${otherId} description — must be distinct`);
+            }
+          }
+        }
+
+        // Must show cost, current pressure, and usability
+        if (!wheelDesc.includes(String(wheel.cost))) {
+          problems.push(`Tension Wheel description should show cost (${wheel.cost}), got: "${wheelDesc}"`);
+        }
+        if (!wheelDesc.includes(String(descState.pressure))) {
+          problems.push(`Tension Wheel description should show current pressure (${descState.pressure}), got: "${wheelDesc}"`);
+        }
+        if (!wheelDesc.includes('ready') && !wheelDesc.includes('insufficient')) {
+          problems.push(`Tension Wheel description should show usability, got: "${wheelDesc}"`);
+        }
+        // Must mention the rupture threshold boost
+        if (!wheelDesc.includes('rupture threshold')) {
+          problems.push(`Tension Wheel description should mention the rupture threshold boost, got: "${wheelDesc}"`);
+        }
+      }
+
+      // 49k. AnnounceEffect explains the boost
+      if (wheel.announceEffect) {
+        const annState = createInitialState('tension-wheel-announce');
+        const ann = wheel.announceEffect(annState);
+        if (!ann.includes(String(wheel.ruptureBoost))) {
+          problems.push(`Tension Wheel announceEffect should mention the boost amount (${wheel.ruptureBoost}), got: "${ann}"`);
+        }
+      }
+
+      // 49l. Descending into the Gear Gallery grants the Tension Wheel
+      const stateGrant = createInitialState('tension-wheel-grant');
+      const gearIndex = stateGrant.gallerySequence.indexOf('gear-room');
+      if (gearIndex === -1) {
+        problems.push('gear-room not found in gallery sequence for tension-wheel grant test');
+      } else {
+        stateGrant.galleryIndex = gearIndex;
+        stateGrant.location = stateGrant.gallerySequence[gearIndex];
+
+        const deviceIds = listDevices();
+        for (const id of deviceIds) {
+          const device = getDevice(id);
+          if (device && device.foundIn && device.foundIn === stateGrant.location && !stateGrant.foundDevices.includes(id)) {
+            stateGrant.foundDevices.push(id);
+          }
+        }
+
+        if (!stateGrant.foundDevices.includes('tension-wheel')) {
+          problems.push('Descending into the Gear Gallery should grant the Tension Wheel');
+        }
+      }
+
+      // 49m. Tension Wheel is not available before visiting the Gear Gallery
+      const statePreVisit = createInitialState('tension-wheel-pre-visit');
+      if (statePreVisit.foundDevices.includes('tension-wheel')) {
+        problems.push('Tension Wheel should not be available before visiting the Gear Gallery');
+      }
+    }
+
+    // 49n. Gear Gallery description adapts after discovering the Tension Wheel
+    const gearGallery = getGallery('gear-room');
+    if (gearGallery) {
+      // Before discovery
+      const beforeState = { pressure: 50, foundDevices: ['vent'] };
+      const beforeText = gearGallery.describe(beforeState);
+      if (!beforeText.includes('tension wheel hangs') && !beforeText.includes('tension wheel')) {
+        problems.push(
+          `Gear Gallery description before discovery should mention the tension wheel, got: "${beforeText.slice(0, 200)}..."`
+        );
+      }
+      if (beforeText.includes('empty')) {
+        problems.push(
+          'Gear Gallery description before discovery should not mention empty bracket'
+        );
+      }
+
+      // After discovery
+      const afterState = { pressure: 50, foundDevices: ['vent', 'tension-wheel'] };
+      const afterText = gearGallery.describe(afterState);
+      if (!afterText.includes('empty') && !afterText.includes('freed wheel')) {
+        problems.push(
+          `Gear Gallery description after discovery should mention the empty bracket or freed wheel, got: "${afterText.slice(0, 200)}..."`
+        );
+      }
+      if (afterText.includes('hangs motionless')) {
+        problems.push(
+          'Gear Gallery description after discovery should not say the wheel hangs motionless'
+        );
+      }
+
+      // The two descriptions must differ
+      if (beforeText === afterText) {
+        problems.push(
+          'Gear Gallery describe() returns identical text before and after Tension Wheel discovery — must differ'
+        );
+      }
+    }
+
+    // 49o. advanceTurn with 'descend' resets the tension wheel boost
+    const stateDescendReset = createInitialState('tension-wheel-descend-reset');
+    stateDescendReset.foundDevices = ['vent', 'tension-wheel'];
+    stateDescendReset.pressure = 50;
+    stateDescendReset.ruptureThreshold = 100;
+    stateDescendReset.deviceStates = {};
+    stateDescendReset.automatonState = { position: 5, patternStep: 0 };
+
+    // Use the tension wheel once
+    advanceTurn(stateDescendReset, 'use:tension-wheel');
+    const boostedThreshold = stateDescendReset.ruptureThreshold;
+    if (boostedThreshold !== 115) {
+      problems.push(
+        `After using Tension Wheel, rupture threshold should be 115, got ${boostedThreshold}`
+      );
+    }
+
+    // Descend to the next gallery (if available)
+    if (stateDescendReset.galleryIndex < stateDescendReset.gallerySequence.length - 1) {
+      advanceTurn(stateDescendReset, 'descend');
+    }
+
+    // Verify the threshold was restored
+    if (stateDescendReset.ruptureThreshold !== 100) {
+      problems.push(
+        `After descending, rupture threshold should be restored to 100, got ${stateDescendReset.ruptureThreshold}`
+      );
+    }
+    if (stateDescendReset.deviceStates && stateDescendReset.deviceStates.tensionWheelBoost) {
+      problems.push(
+        `After descending, tensionWheelBoost should be 0, got ${stateDescendReset.deviceStates.tensionWheelBoost}`
+      );
+    }
+
+    // 49p. Wear integration: effectiveCost includes wear
+    const wearState = createInitialState('tension-wheel-wear', {
+      descents: 2,
+      lastOutcome: 'none',
+      lastSeed: 'prev',
+      deviceWear: { 'tension-wheel': 2 },
+    });
+    if (wheel && wheel.effectiveCost) {
+      const effective = wheel.effectiveCost(wearState);
+      if (effective !== 14) {
+        problems.push(
+          `Tension Wheel effectiveCost with wear=2 should be 14 (12 + 2), got ${effective}`
+        );
+      }
+
+      // canUse with wear
+      const wearCanUseState = createInitialState('tension-wheel-wear-canuse', {
+        descents: 1,
+        lastOutcome: 'none',
+        lastSeed: 'prev',
+        deviceWear: { 'tension-wheel': 3 },
+      });
+      wearCanUseState.pressure = 14;
+      if (wheel.canUse(wearCanUseState)) {
+        problems.push('Tension Wheel.canUse() should return false at pressure 14 with wear=3 (effective cost 15)');
+      }
+      wearCanUseState.pressure = 15;
+      if (!wheel.canUse(wearCanUseState)) {
+        problems.push('Tension Wheel.canUse() should return true at pressure 15 with wear=3 (effective cost 15)');
+      }
+
+      // use() with wear deducts effective cost
+      const wearUseState = createInitialState('tension-wheel-wear-use', {
+        descents: 1,
+        lastOutcome: 'none',
+        lastSeed: 'prev',
+        deviceWear: { 'tension-wheel': 1 },
+      });
+      wearUseState.pressure = 30;
+      wearUseState.ruptureThreshold = 100;
+      wearUseState.deviceStates = {};
+      const pressureBeforeWear = wearUseState.pressure;
+      wheel.use(wearUseState);
+      if (wearUseState.pressure !== pressureBeforeWear - 13) {
+        problems.push(
+          `Tension Wheel.use() with wear=1 should deduct 13 (12 + 1), expected ${pressureBeforeWear - 13}, got ${wearUseState.pressure}`
+        );
+      }
+
+      // describe() with wear shows wear text
+      const wearDescState = createInitialState('tension-wheel-wear-desc', {
+        descents: 1,
+        lastOutcome: 'none',
+        lastSeed: 'prev',
+        deviceWear: { 'tension-wheel': 2 },
+      });
+      wearDescState.pressure = 20;
+      const desc = wheel.describe(wearDescState);
+      if (!desc.includes('[+2 from wear]')) {
+        problems.push(
+          `Tension Wheel describe() with wear=2 should show '[+2 from wear]', got: "${desc}"`
+        );
+      }
+      if (!desc.includes('cost: 14')) {
+        problems.push(
+          `Tension Wheel describe() with wear=2 should show 'cost: 14', got: "${desc}"`
+        );
+      }
+    }
+  } catch (err) {
+    problems.push(`Could not verify Tension Wheel device: ${err.message}`);
+  }
+
   return problems;
 }

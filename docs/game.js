@@ -31,6 +31,7 @@ import './devices/vent.js';
 import './devices/steam-cloak.js';
 import './devices/safety-valve.js';
 import './devices/condenser-valve.js';
+import './devices/tension-wheel.js';
 import './afflictions/strain.js';
 
 /* ───── Game state ───── */
@@ -173,6 +174,11 @@ export function advanceTurn(state, action) {
     if (state.galleryIndex < state.gallerySequence.length - 1) {
       state.galleryIndex += 1;
       state.location = state.gallerySequence[state.galleryIndex];
+      // Reset per-gallery tension wheel boost on descend
+      if (state.deviceStates && state.deviceStates.tensionWheelBoost) {
+        state.ruptureThreshold -= state.deviceStates.tensionWheelBoost;
+        state.deviceStates.tensionWheelBoost = 0;
+      }
       // Per-gallery afflictions and device-spend tracking reset on descend
       for (const id of [...(state.afflictions || [])]) {
         const affliction = getAffliction(id);
@@ -700,6 +706,7 @@ function render(state) {
   if (state.foundDevices.includes('steam-cloak')) hintText += 'S: use Steam Cloak  |  ';
   if (state.foundDevices.includes('safety-valve')) hintText += 'A: use Safety Valve  |  ';
   if (state.foundDevices.includes('condenser-valve')) hintText += 'C: use Condenser Valve  |  ';
+  if (state.foundDevices.includes('tension-wheel')) hintText += 'T: use Tension Wheel  |  ';
   hintText += 'B: breathe  |  W: wait  |  R: restart';
   if (state.galleryIndex < state.gallerySequence.length - 1) {
     hintText += '  |  D: descend';
@@ -849,6 +856,10 @@ function handleKeydown(e) {
   } else if (key === 'c' && state.foundDevices.includes('condenser-valve')) {
     e.preventDefault();
     advanceTurn(state, 'use:condenser-valve');
+    render(state);
+  } else if (key === 't' && state.foundDevices.includes('tension-wheel')) {
+    e.preventDefault();
+    advanceTurn(state, 'use:tension-wheel');
     render(state);
   } else if (key === 'w') {
     e.preventDefault();
