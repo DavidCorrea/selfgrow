@@ -7017,5 +7017,156 @@ export async function checks() {
     problems.push(`Could not verify Tension Wheel device: ${err.message}`);
   }
 
+  // ── 50. Boiler Room gallery description acknowledges the Winder reactively ──
+  // The description must mention the Winder when the player is in the Boiler Room,
+  // and change based on whether the Winder is currently winding (tick 0-2) or
+  // resting (tick 3).
+  try {
+    const { getGallery } = await import('./engine/registry.js');
+
+    const boilerRoom = getGallery('boiler-room');
+    if (!boilerRoom) {
+      problems.push('Boiler Room gallery not registered — cannot verify Winder acknowledgment');
+    } else {
+      // 50a. Winder-active & winding state (tick 0) → mentions winding activity
+      const windingState = {
+        location: 'boiler-room',
+        winderState: { active: true, tick: 0 },
+      };
+      const windingDesc = boilerRoom.describe(windingState);
+      if (!windingDesc.includes('Winder') && !windingDesc.includes('winding') && !windingDesc.includes('tightening') && !windingDesc.includes('hiss')) {
+        problems.push(
+          `Boiler Room description should mention the Winder winding when tick=0, got: "${windingDesc}"`
+        );
+      }
+
+      // 50b. Winder-active & winding state (tick 2) → also mentions winding
+      const windingState2 = {
+        location: 'boiler-room',
+        winderState: { active: true, tick: 2 },
+      };
+      const windingDesc2 = boilerRoom.describe(windingState2);
+      if (!windingDesc2.includes('Winder') && !windingDesc2.includes('winding') && !windingDesc2.includes('tightening') && !windingDesc2.includes('hiss')) {
+        problems.push(
+          `Boiler Room description should mention the Winder winding when tick=2, got: "${windingDesc2}"`
+        );
+      }
+
+      // 50c. Winder-active & resting state (tick 3) → mentions resting/stillness
+      const restingState = {
+        location: 'boiler-room',
+        winderState: { active: true, tick: 3 },
+      };
+      const restingDesc = boilerRoom.describe(restingState);
+      if (!restingDesc.includes('Winder') && !restingDesc.includes('resting') && !restingDesc.includes('motionless') && !restingDesc.includes('stillness') && !restingDesc.includes('slack')) {
+        problems.push(
+          `Boiler Room description should mention the Winder resting when tick=3, got: "${restingDesc}"`
+        );
+      }
+
+      // 50d. Winding and resting descriptions must differ
+      if (windingDesc === restingDesc) {
+        problems.push(
+          'Boiler Room description is identical for winding and resting Winder states — must differ to be reactive'
+        );
+      }
+
+      // 50e. Winder-inactive state (not in Boiler Room) — no Winder mention
+      const inactiveState = {
+        location: 'engine-room',
+        winderState: { active: false, tick: 0 },
+      };
+      const inactiveDesc = boilerRoom.describe(inactiveState);
+      // The description should still be the boiler room, but the Winder text
+      // should only appear when the Winder is active
+      // Since the player is in the boiler room but the winder is not active,
+      // we should not see the Winder-mentioned lines
+      // Actually, location doesn't matter for describe() — it's just describing
+      // the gallery. But the Winder being inactive means the player isn't in
+      // the boiler room, so the text shouldn't reference it.
+      // Hmm, but the gallery's describe() is called regardless of location.
+      // The important thing is that when winderState.active is false, no Winder
+      // text appears.
+      if (inactiveDesc.includes('Winder')) {
+        problems.push(
+          'Boiler Room description should not mention the Winder when winderState.active is false'
+        );
+      }
+
+      // 50f. Same check for tick 0 but inactive — no Winder mention
+      const inactiveWindingState = {
+        location: 'boiler-room',
+        winderState: { active: false, tick: 0 },
+      };
+      const inactiveWindingDesc = boilerRoom.describe(inactiveWindingState);
+      if (inactiveWindingDesc.includes('Winder')) {
+        problems.push(
+          'Boiler Room description should not mention the Winder when winderState.active is false even if tick implies winding'
+        );
+      }
+
+      // 50g. No winderState at all — no crash, no Winder mention
+      const noWinderState = {
+        location: 'boiler-room',
+      };
+      const noWinderDesc = boilerRoom.describe(noWinderState);
+      if (noWinderDesc.includes('Winder')) {
+        problems.push(
+          'Boiler Room description should not mention the Winder when winderState is undefined'
+        );
+      }
+
+      // 50h. Existing content is preserved — check that the core description
+      // still appears regardless of Winder state
+      if (!windingDesc.includes('Boiler Room')) {
+        problems.push('Boiler Room description should still contain the gallery name');
+      }
+      if (!windingDesc.includes('valve')) {
+        problems.push('Boiler Room description should still mention valves (core content)');
+      }
+
+      // 50i. No regression: the existing hint/recovery line still appears
+      if (!windingDesc.includes('steam cloak')) {
+        problems.push('Boiler Room description should still mention the steam cloak hint');
+      }
+
+      // 50j. Pressure reactivity still works alongside Winder text
+      const highPressureState = {
+        location: 'boiler-room',
+        pressure: 80,
+        winderState: { active: true, tick: 0 },
+      };
+      const highPressureDesc = boilerRoom.describe(highPressureState);
+      if (!highPressureDesc.includes('groan')) {
+        problems.push(
+          'Boiler Room description should still show pressure reactivity (groaning pipes) when pressure > 60, ' +
+          'even with the Winder active'
+        );
+      }
+
+      const lowPressureState = {
+        location: 'boiler-room',
+        pressure: 10,
+        winderState: { active: true, tick: 3 },
+      };
+      const lowPressureDesc = boilerRoom.describe(lowPressureState);
+      if (!lowPressureDesc.includes('quiet')) {
+        problems.push(
+          'Boiler Room description should still show pressure reactivity (quiet) when pressure < 20, ' +
+          'even with the Winder active'
+        );
+      }
+
+      // 50k. Both pressure reactivity and Winder mention coexist
+      if (!highPressureDesc.includes('Winder')) {
+        problems.push(
+          'Boiler Room description should mention the Winder even when pressure is high'
+        );
+      }
+    }
+  } catch (err) {
+    problems.push(`Could not verify Boiler Room Winder acknowledgment: ${err.message}`);
+  }
+
   return problems;
 }
