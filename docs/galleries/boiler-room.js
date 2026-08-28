@@ -30,6 +30,16 @@ registerGallery('boiler-room', {
       lines.push('The chamber is eerily quiet, the steam dying to a whisper.');
     }
 
+    // Winder reactivity — the description changes based on whether the Winder
+    // is currently winding (tick 0-2) or resting (tick 3)
+    if (state && state.winderState && state.winderState.active) {
+      if (state.winderState.tick < 3) {
+        lines.push('The Winder looms over the valves, its brass arms tightening each fitting with a deliberate, rhythmic hiss of steam.');
+      } else {
+        lines.push('The Winder sits motionless, its arms slack against the valves — a brief stillness before the next cycle of winding.');
+      }
+    }
+
     return lines.join('\n');
   },
 });
