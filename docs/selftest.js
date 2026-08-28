@@ -99,5 +99,63 @@ export async function checks() {
     }
   }
 
+  /* ---------- Plant (botanical form) checks ---------- */
+  const plant = gardenState && gardenState.plant;
+  if (!plant) {
+    problems.push('window.__gardenState.plant is not set — the botanical form was not created.');
+  } else {
+    if (!plant.group) {
+      problems.push('plant.group is missing — the plant group was not added to the scene.');
+    } else {
+      // Verify the plant group is actually in the scene
+      if (gardenState && gardenState.scene) {
+        const found = gardenState.scene.children.includes(plant.group);
+        if (!found) {
+          problems.push('Plant group is not a child of the scene — it was not added to the garden.');
+        }
+      }
+      // Verify the plant has a stem mesh
+      if (!plant.stem) {
+        problems.push('plant.stem is missing — the stem geometry was not created.');
+      }
+      // Verify the plant has leaves
+      if (!plant.leaves || plant.leaves.length === 0) {
+        problems.push('plant.leaves is missing or empty — no leaf geometry was created.');
+      } else if (plant.leaves.length < 2) {
+        problems.push('plant has only ' + plant.leaves.length + ' leaf/leaves — expected at least 2.');
+      }
+      // Verify isFullyGrown is a function
+      if (typeof plant.isFullyGrown !== 'function') {
+        problems.push('plant.isFullyGrown should be a function, got ' + typeof plant.isFullyGrown);
+      }
+
+      // Check the plant's scale is reasonable (should be > 0 or growing)
+      const s = plant.group.scale.x;
+      if (s < 0) {
+        problems.push('Plant scale is negative (' + s + ') — growth animation broke.');
+      }
+    }
+
+    // Check DOM state reflects something growing
+    const growingDesc = document.getElementById('growing-description');
+    if (growingDesc) {
+      const text = growingDesc.textContent.trim().toLowerCase();
+      if (text === 'nothing yet — the soil is waiting.') {
+        problems.push('growing-description has not been updated from its initial state — the plant growth did not update the DOM.');
+      } else if (!text.includes('sprout') && !text.includes('seedling') && !text.includes('grow') && !text.includes('leaf')) {
+        problems.push('growing-description text ("' + growingDesc.textContent + '") should describe a growing plant (sprout, seedling, growing, or leaf).');
+      }
+    }
+
+    // Check plot description mentions the plant
+    const plotDesc = document.getElementById('plot-description');
+    if (plotDesc) {
+      const text = plotDesc.textContent.trim().toLowerCase();
+      if (text.includes('empty') && text.includes('waiting')) {
+        problems.push('plot-description still says empty/waiting — the plant growth did not update the plot description.');
+      }
+    }
+  }
+
   return problems;
 }
