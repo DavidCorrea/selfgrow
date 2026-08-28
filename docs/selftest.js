@@ -367,5 +367,49 @@ export async function checks() {
     }
   }
 
+  /* ---------- Ambient floating particles checks ---------- */
+  const particles = gardenState && gardenState.particles;
+  if (!particles) {
+    problems.push('window.__gardenState.particles is not set — ambient particle system not created.');
+  } else {
+    if (particles.type !== 'ambient-particles') {
+      problems.push('particles.type is "' + particles.type + '", expected "ambient-particles".');
+    }
+    if (typeof particles.count !== 'number' || particles.count < 40) {
+      problems.push('particles.count is ' + particles.count + ', expected at least 40 particles for a sparse cloud.');
+    }
+    if (typeof particles.reducedMotion !== 'boolean') {
+      problems.push('particles.reducedMotion should be a boolean, got ' + typeof particles.reducedMotion);
+    }
+    if (!particles.material) {
+      problems.push('particles.material is missing — PointsMaterial not assigned.');
+    } else {
+      // Verify material properties: transparent, low opacity, sizeAttenuation
+      if (particles.material.transparent !== true) {
+        problems.push('particles.material.transparent is ' + particles.material.transparent + ', expected true.');
+      }
+      if (typeof particles.material.opacity !== 'number' || particles.material.opacity > 0.5) {
+        problems.push('particles.material.opacity is ' + particles.material.opacity + ', expected <= 0.5 for subtle effect.');
+      }
+      if (particles.material.sizeAttenuation !== true) {
+        problems.push('particles.material.sizeAttenuation is ' + particles.material.sizeAttenuation + ', expected true for realistic depth falloff.');
+      }
+    }
+
+    // Verify the plot description references the drifting air
+    const plotDesc = document.getElementById('plot-description');
+    if (plotDesc) {
+      const text = plotDesc.textContent.trim().toLowerCase();
+      if (!text.includes('haze') && !text.includes('drift') && !text.includes('air') && !text.includes('float') && !text.includes('dust') && !text.includes('pollen')) {
+        problems.push('plot-description text should reference the ambient particles (haze, drift, air, floating, dust, or pollen). Got: "' + plotDesc.textContent + '"');
+      }
+    }
+
+    // Verify the update function is exposed
+    if (typeof gardenState.particlesUpdate !== 'function') {
+      problems.push('gardenState.particlesUpdate is not a function — the particle update loop is not exposed.');
+    }
+  }
+
   return problems;
 }

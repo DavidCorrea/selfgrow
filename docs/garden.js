@@ -145,10 +145,10 @@ function createPlant(scene) {
       // Update DOM descriptions by growth phase
       if (progress < 0.3) {
         growingDesc.textContent = 'A tiny sprout breaks the soil, reaching upward.';
-        plotDesc.textContent = 'A small sprout has emerged at the center of the plot.';
+        plotDesc.textContent = 'A small sprout has emerged at the center of the plot. A faint haze drifts in the air.';
       } else {
         growingDesc.textContent = 'The seedling grows taller, unfurling its leaves toward the light.';
-        plotDesc.textContent = 'A young seedling rises from the rich soil, stretching toward the sun.';
+        plotDesc.textContent = 'A young seedling rises from the rich soil, stretching toward the sun. Dust motes float lazily in the warm air.';
       }
 
       requestAnimationFrame(updateGrowth);
@@ -158,7 +158,7 @@ function createPlant(scene) {
       group.scale.set(1, 1, 1);
 
       growingDesc.textContent = 'A young seedling rises from the soil, its leaves reaching toward the light.';
-      plotDesc.textContent = 'A healthy seedling stands at the center of the plot, its leaves open to the sky.';
+      plotDesc.textContent = 'A healthy seedling stands at the center of the plot, its leaves open to the sky. Pollen drifts gently on the breeze.';
 
       let swayTime = 0;
       function sway() {
