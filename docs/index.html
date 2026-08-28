@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>selfgrow — a living garden</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; background: #1a1a2e; color: #d4d4dc; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
+
+    #app {
+      display: flex;
+      width: 100%;
+      height: 100%;
+    }
+
+    #garden-canvas-wrapper {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+
+    #garden-canvas-wrapper canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Sidebar: garden state panel */
+    #state-panel {
+      width: 280px;
+      background: #23233a;
+      border-left: 1px solid #3a3a5a;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      overflow-y: auto;
+      flex-shrink: 0;
+    }
+
+    #state-panel h1 {
+      font-size: 1.25rem;
+      font-weight: 400;
+      letter-spacing: 0.04em;
+      color: #b8b8d0;
+      border-bottom: 1px solid #3a3a5a;
+      padding-bottom: 0.75rem;
+    }
+
+    #state-panel h2 {
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #7a7a9a;
+      margin-top: 0.25rem;
+    }
+
+    #state-panel p {
+      font-size: 0.9rem;
+      line-height: 1.5;
+      color: #c0c0d8;
+    }
+
+    .state-section {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .state-value {
+      font-size: 0.95rem;
+      color: #e0e0f0;
+    }
+
+    .state-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #7a7a9a;
+    }
+
+    /* Focus indicator for keyboard users */
+    #state-panel:focus {
+      outline: 2px solid #6a6aee;
+      outline-offset: -2px;
+    }
+
+    /* Skip link */
+    .skip-link {
+      position: absolute;
+      top: -100%;
+      left: 0;
+      background: #6a6aee;
+      color: #fff;
+      padding: 0.5rem 1rem;
+      z-index: 1000;
+      font-size: 0.9rem;
+      border-radius: 0 0 4px 0;
+      text-decoration: none;
+    }
+    .skip-link:focus {
+      top: 0;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
+    @media (max-width: 640px) {
+      #app {
+        flex-direction: column;
+      }
+      #state-panel {
+        width: 100%;
+        height: 40%;
+        border-left: none;
+        border-top: 1px solid #3a3a5a;
+      }
+      #garden-canvas-wrapper {
+        height: 60%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#state-panel">Skip to garden state</a>
+
+  <div id="app" role="application" aria-label="selfgrow garden">
+    <div id="garden-canvas-wrapper" role="presentation">
+      <!-- Three.js canvas renders here -->
+    </div>
+
+    <aside id="state-panel" tabindex="0" role="region" aria-label="Garden state">
+      <h1>selfgrow</h1>
+
+      <div class="state-section">
+        <span class="state-label">Season</span>
+        <span class="state-value" id="season-display">Spring</span>
+      </div>
+
+      <div class="state-section">
+        <span class="state-label">Time of day</span>
+        <span class="state-value" id="time-display">Morning</span>
+      </div>
+
+      <div class="state-section">
+        <span class="state-label">Weather</span>
+        <span class="state-value" id="weather-display">Clear</span>
+      </div>
+
+      <div class="state-section">
+        <span class="state-label">Plot</span>
+        <p id="plot-description" tabindex="0">An empty plot of rich soil, ready for something to grow.</p>
+      </div>
+
+      <div class="state-section">
+        <span class="state-label">Growing</span>
+        <p id="growing-description">Nothing yet — the soil is waiting.</p>
+      </div>
+    </aside>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://esm.sh/three@0.170.0"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { initGarden } from "./garden.js";
+
+    const wrapper = document.getElementById('garden-canvas-wrapper');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87ceeb); /* soft sky blue */
+
+    const camera = new THREE.PerspectiveCamera(45, wrapper.clientWidth / wrapper.clientHeight, 0.1, 100);
+    camera.position.set(4, 3, 6);
+    camera.lookAt(0, 0, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(wrapper.clientWidth, wrapper.clientHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+    wrapper.prepend(renderer.domElement);
+
+    /* Ambient light — soft fill */
+    const ambientLight = new THREE.AmbientLight(0x404060, 0.4);
+    scene.add(ambientLight);
+
+    /* Directional light — sun source, casts shadows */
+    const sunLight = new THREE.DirectionalLight(0xffeedd, 1.2);
+    sunLight.position.set(5, 10, 4);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.width = 1024;
+    sunLight.shadow.mapSize.height = 1024;
+    sunLight.shadow.camera.near = 0.1;
+    sunLight.shadow.camera.far = 20;
+    sunLight.shadow.camera.left = -5;
+    sunLight.shadow.camera.right = 5;
+    sunLight.shadow.camera.top = 5;
+    sunLight.shadow.camera.bottom = -5;
+    scene.add(sunLight);
+
+    /* Secondary fill light from opposite side */
+    const fillLight = new THREE.DirectionalLight(0x8888ff, 0.3);
+    fillLight.position.set(-3, 2, -2);
+    scene.add(fillLight);
+
+    /* Ground plane — rich soil */
+    const groundGeo = new THREE.CircleGeometry(4, 32);
+    const groundMat = new THREE.MeshStandardMaterial({
+      color: 0x4a3728,
+      roughness: 0.9,
+      metalness: 0.0,
+      side: THREE.DoubleSide
+    });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = -0.01;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    /* A subtle ring around the plot */
+    const ringGeo = new THREE.RingGeometry(3.8, 4.2, 48);
+    const ringMat = new THREE.MeshStandardMaterial({
+      color: 0x5a4a38,
+      roughness: 0.8,
+      metalness: 0.0,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.3
+    });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.0;
+    scene.add(ring);
+
+    /* Hemisphere light for sky/ground colour separation */
+    const hemiLight = new THREE.HemisphereLight(0x87ceeb, 0x4a3728, 0.5);
+    scene.add(hemiLight);
+
+    /* Simple grid helper for depth perception (faint) */
+    const gridHelper = new THREE.GridHelper(8, 12, 0x6a6a7a, 0x4a4a5a);
+    gridHelper.position.y = 0.0;
+    gridHelper.material.transparent = true;
+    gridHelper.material.opacity = 0.15;
+    scene.add(gridHelper);
+
+    /* Resize handler */
+    function onResize() {
+      const w = wrapper.clientWidth;
+      const h = wrapper.clientHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    }
+
+    window.addEventListener('resize', onResize);
+
+    /* Animation loop */
+    function animate() {
+      requestAnimationFrame(animate);
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    /* Expose state getters for selftest and future updates */
+    window.__gardenState = {
+      scene,
+      camera,
+      renderer,
+      getSeason: () => document.getElementById('season-display')?.textContent || 'Spring',
+      getTimeOfDay: () => document.getElementById('time-display')?.textContent || 'Morning',
+      getWeather: () => document.getElementById('weather-display')?.textContent || 'Clear',
+      getPlotDescription: () => document.getElementById('plot-description')?.textContent || '',
+      getGrowingDescription: () => document.getElementById('growing-description')?.textContent || ''
+    };
+
+    initGarden(scene);
+  </script>
+</body>
+</html>
