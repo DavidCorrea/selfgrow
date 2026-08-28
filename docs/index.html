@@ -178,6 +178,7 @@
     import * as THREE from "three";
     import { OrbitControls } from "three/addons/controls/OrbitControls.js";
     import { initGarden, startSeasonalCycle } from "./garden.js";
+    import { createAmbientParticles } from "./particles.js";
 
     const wrapper = document.getElementById('garden-canvas-wrapper');
     const scene = new THREE.Scene();
@@ -280,14 +281,26 @@
 
     window.addEventListener('resize', onResize);
 
+    /* --- Ambient floating particles (dust motes / pollen) --- */
+    const particles = createAmbientParticles(scene);
+
     /* Animation loop */
+    let animTime = 0;
     function animate() {
       requestAnimationFrame(animate);
+      animTime += 0.016; // approximate frame time
       controls.update();
+      particles.update(animTime);
       renderer.render(scene, camera);
     }
 
     animate();
+
+    /* Update plot description to reflect the drifting haze */
+    const plotDesc = document.getElementById('plot-description');
+    if (plotDesc && plotDesc.textContent === 'An empty plot of rich soil, ready for something to grow.') {
+      plotDesc.textContent = 'An empty plot of rich soil, ready for something to grow. A faint haze drifts in the air.';
+    }
 
     /* Expose state getters for selftest and future updates */
     window.__gardenState = {
@@ -296,6 +309,8 @@
       renderer,
       controls,
       groundMat,
+      particles: particles.state,
+      particlesUpdate: particles.update,
       getSeason: () => document.getElementById('season-display')?.textContent || 'Spring',
       getTimeOfDay: () => document.getElementById('time-display')?.textContent || 'Morning',
       getWeather: () => document.getElementById('weather-display')?.textContent || 'Clear',
