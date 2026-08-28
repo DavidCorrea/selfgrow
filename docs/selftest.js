@@ -83,6 +83,51 @@ export async function checks() {
     }
   }
 
+  /* ---------- OrbitControls checks ---------- */
+  if (gardenState) {
+    const ctrl = gardenState.controls;
+    if (!ctrl) {
+      problems.push('gardenState.controls is missing — OrbitControls were not instantiated.');
+    } else {
+      if (ctrl.enableDamping !== true) {
+        problems.push('controls.enableDamping is ' + ctrl.enableDamping + ', expected true — damping must be on for smooth easing.');
+      }
+      if (typeof ctrl.dampingFactor !== 'number' || ctrl.dampingFactor <= 0) {
+        problems.push('controls.dampingFactor is not a positive number (got ' + ctrl.dampingFactor + ') — needed for gentle easing.');
+      }
+      if (typeof ctrl.maxPolarAngle !== 'number' || ctrl.maxPolarAngle >= Math.PI / 2) {
+        problems.push('controls.maxPolarAngle is ' + ctrl.maxPolarAngle + ', expected less than PI/2 to prevent going below ground.');
+      }
+      if (typeof ctrl.minPolarAngle !== 'number' || ctrl.minPolarAngle <= 0) {
+        problems.push('controls.minPolarAngle is ' + ctrl.minPolarAngle + ', expected > 0 to prevent fully top-down view.');
+      }
+      // Verify target is a Vector3 pointing near the plant (y ~0.4)
+      if (!ctrl.target || typeof ctrl.target.y !== 'number') {
+        problems.push('controls.target is not a Vector3 (y is not a number).');
+      } else {
+        const targetY = ctrl.target.y;
+        if (targetY < 0.2 || targetY > 0.6) {
+          problems.push('controls.target.y is ' + targetY + ', expected ~0.4 to aim at the seedling.');
+        }
+        const targetX = ctrl.target.x;
+        const targetZ = ctrl.target.z;
+        if (Math.abs(targetX) > 0.01 || Math.abs(targetZ) > 0.01) {
+          problems.push('controls.target is not centered (x=' + targetX + ', z=' + targetZ + ') — expected (0, ~0.4, 0) to aim at the plant.');
+        }
+      }
+      // Verify the controls' domElement matches the renderer canvas
+      if (!ctrl.domElement) {
+        problems.push('controls.domElement is not set — controls not wired to a dom element.');
+      } else if (gardenState.renderer && ctrl.domElement !== gardenState.renderer.domElement) {
+        problems.push('controls.domElement does not match the renderer canvas — controls wired to wrong element.');
+      }
+      // Verify rotateSpeed is set (botanical, unhurried)
+      if (typeof ctrl.rotateSpeed !== 'number' || ctrl.rotateSpeed > 1) {
+        problems.push('controls.rotateSpeed is ' + ctrl.rotateSpeed + ', expected <= 1 for an unhurried botanical feel.');
+      }
+    }
+  }
+
   /* ---------- Console error detection ---------- */
   // Capture errors that happened during load by checking the scene
   // and renderer state are consistent.
