@@ -802,10 +802,26 @@ function renderDeathScreen(container, state) {
   seedInfo.textContent = `Seed: ${state.seed}`;
   container.appendChild(seedInfo);
 
+  const restartContainer = document.createElement('div');
+  restartContainer.className = 'death-restart-container';
+
+  const newDescentBtn = document.createElement('button');
+  newDescentBtn.className = 'new-descent-btn';
+  newDescentBtn.textContent = 'New Descent';
+  newDescentBtn.setAttribute('aria-label', 'Start a new descent');
+  newDescentBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    const val = seedInputEl ? seedInputEl.value.trim() : '';
+    startNewDescent(val || undefined);
+  });
+
   const restartHint = document.createElement('p');
   restartHint.className = 'death-restart';
   restartHint.textContent = 'Press R to begin a new descent.';
-  container.appendChild(restartHint);
+
+  restartContainer.appendChild(newDescentBtn);
+  restartContainer.appendChild(restartHint);
+  container.appendChild(restartContainer);
 
   // Focus the container for keyboard input
   container.setAttribute('tabindex', '-1');

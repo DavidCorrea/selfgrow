@@ -736,6 +736,49 @@ footer .rivet {
   outline: none;
 }
 
+/* --- Death screen restart container --- */
+.death-restart-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* --- New Descent button --- */
+.new-descent-btn {
+  background: #1a1a1a;
+  border: 2px solid #c8a45c;
+  border-radius: 3px;
+  color: #c8a45c;
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  padding: 0.75rem 2rem;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+  line-height: 1;
+}
+
+.new-descent-btn:hover,
+.new-descent-btn:focus-visible {
+  background: #2a2a1a;
+  border-color: #d4b06a;
+  box-shadow: 0 0 10px rgba(200, 164, 92, 0.3);
+  outline: none;
+}
+
+.new-descent-btn:focus-visible {
+  outline: 1px solid #c8a45c;
+  outline-offset: 2px;
+}
+
+.new-descent-btn:active {
+  background: #3a3a2a;
+  border-color: #e0c080;
+}
+
 /* --- Death stats --- */
 .death-stats {
   display: flex;

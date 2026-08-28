@@ -7168,5 +7168,188 @@ export async function checks() {
     problems.push(`Could not verify Boiler Room Winder acknowledgment: ${err.message}`);
   }
 
+  // ── 51. Death screen shows a clickable 'New Descent' button ──
+  // The death screen must render a visible, focusable button alongside the
+  // keyboard hint that calls startNewDescent() on click.
+  try {
+    const { startNewDescent, createInitialState } = await import('./game.js');
+    const { clearMemory } = await import('./engine/memory.js');
+
+    // 51a. Start a game and induce death to render the death screen
+    clearMemory();
+    startNewDescent('new-descent-btn-test');
+    await new Promise(r => requestAnimationFrame(r));
+    await new Promise(r => requestAnimationFrame(r));
+
+    // Drive pressure to 100% to trigger rupture death
+    // We need to get the current game state and advance turns until rupture
+    // Use the wait action repeatedly
+    let deathScreen = document.querySelector('.death-screen');
+    let safetyCount = 0;
+    while (!deathScreen && safetyCount < 20) {
+      const waitBtn = document.querySelector('[data-action="wait"]');
+      if (!waitBtn) break;
+      waitBtn.click();
+      await new Promise(r => requestAnimationFrame(r));
+      await new Promise(r => requestAnimationFrame(r));
+      deathScreen = document.querySelector('.death-screen');
+      safetyCount++;
+    }
+
+    if (!deathScreen) {
+      problems.push(
+        'Could not induce death screen for New Descent button test — ' +
+        'game did not reach death after 20 wait turns'
+      );
+    } else {
+      // 51b. The New Descent button exists on the death screen
+      const newDescentBtn = deathScreen.querySelector('.new-descent-btn');
+      if (!newDescentBtn) {
+        problems.push(
+          'New Descent button (.new-descent-btn) not found on the death screen'
+        );
+      } else {
+        // 51c. Button has correct text
+        if (newDescentBtn.textContent.trim() !== 'New Descent') {
+          problems.push(
+            `New Descent button should have text 'New Descent', got '${newDescentBtn.textContent.trim()}'`
+          );
+        }
+
+        // 51d. Button has correct aria-label
+        const ariaLabel = newDescentBtn.getAttribute('aria-label');
+        if (ariaLabel !== 'Start a new descent') {
+          problems.push(
+            `New Descent button aria-label should be 'Start a new descent', got '${ariaLabel}'`
+          );
+        }
+
+        // 51e. Button is keyboard-navigable (can be Tab-focused)
+        // A <button> is inherently focusable via Tab
+        if (newDescentBtn.getAttribute('tabindex') === '-1') {
+          problems.push(
+            'New Descent button should not have tabindex="-1" — it must be keyboard-navigable'
+          );
+        }
+
+        // 51f. Button is a <button> element
+        if (newDescentBtn.tagName !== 'BUTTON') {
+          problems.push(
+            `New Descent button should be a <button> element, got <${newDescentBtn.tagName.toLowerCase()}>`
+          );
+        }
+
+        // 51g. The restart hint text is still present
+        const restartHint = deathScreen.querySelector('.death-restart');
+        if (!restartHint) {
+          problems.push(
+            'Keyboard hint (.death-restart) should still be present alongside the New Descent button'
+          );
+        } else if (!restartHint.textContent.includes('Press R')) {
+          problems.push(
+            `Keyboard hint should include 'Press R', got '${restartHint.textContent}'`
+          );
+        }
+
+        // 51h. Clicking the button starts a new descent (pressure resets to 50)
+        // Record the current seed before clicking
+        const seedBefore = document.getElementById('seed-value');
+        const seedBeforeText = seedBefore ? seedBefore.textContent : '';
+
+        // Set a known seed via the input so the new descent uses it
+        const seedInput = document.getElementById('seed-input');
+        if (seedInput) {
+          seedInput.value = 'new-descent-click-test';
+          seedInput.dispatchEvent(new Event('input'));
+        }
+
+        newDescentBtn.click();
+        await new Promise(r => requestAnimationFrame(r));
+        await new Promise(r => requestAnimationFrame(r));
+
+        // After clicking, the death screen should be gone
+        const deathScreenAfter = document.querySelector('.death-screen');
+        if (deathScreenAfter) {
+          problems.push(
+            'Death screen should be removed after clicking the New Descent button'
+          );
+        }
+
+        // The pressure gauge should show 50 (fresh game)
+        const pressureNumbers = document.querySelector('.pressure-numbers');
+        if (pressureNumbers) {
+          const text = pressureNumbers.textContent.trim();
+          if (text !== '50 / 100') {
+            problems.push(
+              `After clicking New Descent button, pressure should be '50 / 100', got '${text}'`
+            );
+          }
+        } else {
+          problems.push(
+            'Pressure numbers element not found after clicking New Descent button — game did not restart'
+          );
+        }
+
+        // 51i. The keyboard hint text is present in the new game
+        const hint = document.querySelector('.keyboard-hint');
+        if (hint) {
+          if (!hint.textContent.includes('R: restart')) {
+            problems.push(
+              `Keyboard hint should include 'R: restart' in the new game, got '${hint.textContent}'`
+            );
+          }
+        }
+      }
+    }
+
+    // 51j. Verify the button works when pressed via keyboard (R key still works)
+    // Start a new game, induce death, press R, verify game restarts
+    clearMemory();
+    startNewDescent('new-descent-key-test');
+    await new Promise(r => requestAnimationFrame(r));
+    await new Promise(r => requestAnimationFrame(r));
+
+    // Drive to death again
+    deathScreen = document.querySelector('.death-screen');
+    safetyCount = 0;
+    while (!deathScreen && safetyCount < 20) {
+      const waitBtn = document.querySelector('[data-action="wait"]');
+      if (!waitBtn) break;
+      waitBtn.click();
+      await new Promise(r => requestAnimationFrame(r));
+      await new Promise(r => requestAnimationFrame(r));
+      deathScreen = document.querySelector('.death-screen');
+      safetyCount++;
+    }
+
+    if (deathScreen) {
+      // Press R key to restart
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'r' }));
+      await new Promise(r => requestAnimationFrame(r));
+      await new Promise(r => requestAnimationFrame(r));
+
+      const deathScreenAfterR = document.querySelector('.death-screen');
+      if (deathScreenAfterR) {
+        problems.push(
+          'Pressing R key should restart the game and remove the death screen'
+        );
+      }
+
+      const pressureAfterR = document.querySelector('.pressure-numbers');
+      if (pressureAfterR) {
+        const textAfterR = pressureAfterR.textContent.trim();
+        if (textAfterR !== '50 / 100') {
+          problems.push(
+            `After pressing R key, pressure should be '50 / 100', got '${textAfterR}'`
+          );
+        }
+      }
+    }
+
+    clearMemory();
+  } catch (err) {
+    problems.push(`Could not verify New Descent button: ${err.message}`);
+  }
+
   return problems;
 }
