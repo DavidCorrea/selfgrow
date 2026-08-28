@@ -211,5 +211,59 @@ export async function checks() {
     });
   }
 
+  /* ---------- WCAG contrast: .skip-link (#5a5add bg + #fff fg) ---------- */
+  const skipLink = document.querySelector('.skip-link');
+  if (!skipLink) {
+    problems.push('No .skip-link element found in the DOM.');
+  } else {
+    const computed = window.getComputedStyle(skipLink);
+    const bgColor = computed.backgroundColor; // e.g. "rgb(90, 90, 221)"
+    const textColor = computed.color;          // e.g. "rgb(255, 255, 255)"
+
+    function srgbToLinear(c) {
+      return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    }
+
+    function relativeLuminance(r, g, b) {
+      const rLin = srgbToLinear(r);
+      const gLin = srgbToLinear(g);
+      const bLin = srgbToLinear(b);
+      return 0.2126 * rLin + 0.7152 * gLin + 0.0722 * bLin;
+    }
+
+    function contrastRatio(l1, l2) {
+      const lighter = Math.max(l1, l2);
+      const darker = Math.min(l1, l2);
+      return (lighter + 0.05) / (darker + 0.05);
+    }
+
+    const bgMatch = bgColor.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
+    const fgMatch = textColor.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
+
+    if (!bgMatch) {
+      problems.push('.skip-link computed background colour format unrecognised: ' + bgColor);
+    } else if (!fgMatch) {
+      problems.push('.skip-link computed text colour format unrecognised: ' + textColor);
+    } else {
+      const bgR = parseInt(bgMatch[1], 10) / 255;
+      const bgG = parseInt(bgMatch[2], 10) / 255;
+      const bgB = parseInt(bgMatch[3], 10) / 255;
+      const fgR = parseInt(fgMatch[1], 10) / 255;
+      const fgG = parseInt(fgMatch[2], 10) / 255;
+      const fgB = parseInt(fgMatch[3], 10) / 255;
+
+      const bgLum = relativeLuminance(bgR, bgG, bgB);
+      const fgLum = relativeLuminance(fgR, fgG, fgB);
+      const ratio = contrastRatio(fgLum, bgLum);
+
+      if (ratio < 4.5) {
+        problems.push(
+          '.skip-link contrast ratio is ' + ratio.toFixed(2) + ':1 — below WCAG AA minimum of 4.5:1. ' +
+          'Background: ' + bgColor + ', text: ' + textColor + '.'
+        );
+      }
+    }
+  }
+
   return problems;
 }
