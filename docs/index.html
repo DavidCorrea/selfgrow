@@ -100,6 +100,7 @@
       border-radius: 0 0 4px 0;
       text-decoration: none;
     }
+    .skip-link:hover,
     .skip-link:focus {
       top: 0;
     }
@@ -261,6 +262,17 @@
     gridHelper.material.transparent = true;
     gridHelper.material.opacity = 0.15;
     scene.add(gridHelper);
+
+    /* Click handler so pointer clicks (not just keyboard tab) work
+       - Prevent default hash jump
+       - Focus the state panel so screen readers announce it */
+    document.querySelector('.skip-link').addEventListener('click', function(e) {
+      e.preventDefault();
+      const panel = document.getElementById('state-panel');
+      if (panel) {
+        panel.focus();
+      }
+    });
 
     /* --- OrbitControls with smooth damping --- */
     const controls = new OrbitControls(camera, renderer.domElement);

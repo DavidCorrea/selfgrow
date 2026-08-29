@@ -377,6 +377,59 @@ export async function checks() {
     }
   }
 
+  /* ---------- Skip link clickability and focus transfer (issue #430) ---------- */
+  const skipLinkEl = document.querySelector('.skip-link');
+  if (!skipLinkEl) {
+    problems.push('No .skip-link element found — cannot test skip link behavior.');
+  } else {
+    const panel = document.getElementById('state-panel');
+    if (!panel) {
+      problems.push('#state-panel is missing — cannot verify skip link focus transfer.');
+    } else {
+      // Test 1: dispatch a click on the skip link and detect whether panel.focus() was called
+      let focusCalled = false;
+      const origFocus = panel.focus.bind(panel);
+      panel.focus = function() { focusCalled = true; return origFocus(); };
+      try {
+        const clickEvent = new MouseEvent('click', {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          clientX: 0,
+          clientY: 0
+        });
+        skipLinkEl.dispatchEvent(clickEvent);
+      } finally {
+        panel.focus = origFocus;
+      }
+      if (!focusCalled) {
+        problems.push('Clicking .skip-link did not call panel.focus() — the click handler is not wired or did not fire.');
+      }
+
+      // Test 2: check the :hover CSS rule exists so the link is visible on pointer hover
+      let hasHoverRule = false;
+      try {
+        for (let i = 0; i < document.styleSheets.length; i++) {
+          const sheet = document.styleSheets[i];
+          if (!sheet || !sheet.cssRules) continue;
+          for (let j = 0; j < sheet.cssRules.length; j++) {
+            const rule = sheet.cssRules[j];
+            if (rule.selectorText && rule.selectorText.includes('.skip-link') && rule.selectorText.includes(':hover')) {
+              hasHoverRule = true;
+              break;
+            }
+          }
+          if (hasHoverRule) break;
+        }
+      } catch (_e) {
+        // cross-origin stylesheet access may be restricted — skip
+      }
+      if (!hasHoverRule) {
+        problems.push('.skip-link does not have a :hover CSS rule — the link will not be visible when the mouse pointer passes over it, making it unclickable by mouse.');
+      }
+    }
+  }
+
   /* ---------- Seasonal colour system checks ---------- */
   // Verify ground material is exposed for seasonal updates
   const groundMat = gardenState && gardenState.groundMat;
