@@ -146,6 +146,63 @@ export async function checks() {
     }
   }
 
+  /* ---------- Second plant checks (issue #419) ---------- */
+  // The second plant (plant2) should exist at some point after the first
+  // plant is fully grown. It may not exist immediately (it's spawned after
+  // ~30s of growth), so we check that if it does exist, it's valid.
+  // We also verify that __gardenState exposes it correctly.
+  const plant2Obj = gardenState && gardenState.plant2;
+  if (plant2Obj) {
+    if (!plant2Obj.group) {
+      problems.push('plant2.group is missing — the second plant\'s group was not added to the scene.');
+    } else {
+      if (gardenState && gardenState.scene) {
+        const found = gardenState.scene.children.includes(plant2Obj.group);
+        if (!found) {
+          problems.push('plant2 group is not a child of the scene — it was not added to the garden.');
+        }
+      }
+      // Verify stem is present
+      if (!plant2Obj.stem) {
+        problems.push('plant2.stem is missing — stem geometry was not created for the second plant.');
+      }
+      if (!plant2Obj.stemMat) {
+        problems.push('plant2.stemMat is missing — stem material not exposed for seasonal colour updates.');
+      }
+      if (!plant2Obj.leafMat) {
+        problems.push('plant2.leafMat is missing — leaf material not exposed for seasonal colour updates.');
+      }
+      if (!plant2Obj.leaves || plant2Obj.leaves.length === 0) {
+        problems.push('plant2.leaves is missing or empty — no leaf geometry was created for the second plant.');
+      } else if (plant2Obj.leaves.length < 2) {
+        problems.push('plant2 has only ' + plant2Obj.leaves.length + ' leaf/leaves — expected at least 2.');
+      }
+      if (typeof plant2Obj.isFullyGrown !== 'function') {
+        problems.push('plant2.isFullyGrown should be a function, got ' + typeof plant2Obj.isFullyGrown);
+      }
+
+      // Verify the second plant is at a different position from the first
+      const firstPlant = gardenState && gardenState.plant;
+      if (firstPlant && firstPlant.group) {
+        const p1 = firstPlant.group.position;
+        const p2 = plant2Obj.group.position;
+        const distance = Math.sqrt((p1.x - p2.x) ** 2 + (p1.z - p2.z) ** 2);
+        if (distance < 0.1) {
+          problems.push('plant2 is too close to plant1 (distance=' + distance.toFixed(3) + ') — expected an offset of at least 0.3 units.');
+        }
+      }
+    }
+  } else {
+    // It's acceptable if plant2 hasn't spawned yet — the scene may have loaded
+    // recently and the first plant takes ~30s to mature. We only report this
+    // as a problem if the first plant is already fully grown but plant2 is missing.
+    const firstPlant = gardenState && gardenState.plant;
+    if (firstPlant && typeof firstPlant.isFullyGrown === 'function' && firstPlant.isFullyGrown()) {
+      problems.push('window.__gardenState.plant2 is not set, but the first plant is fully grown — the second plant should have been spawned.');
+    }
+    // If firstPlant doesn't exist either, that's handled in the plant checks section
+  }
+
   /* ---------- Plant (botanical form) checks ---------- */
   const plant = gardenState && gardenState.plant;
   if (!plant) {
