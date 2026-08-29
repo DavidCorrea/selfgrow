@@ -42,23 +42,55 @@ const CYCLE_DURATION_MS = SEASON_DURATION_MS * 4; // ~12 minute full cycle
 
 export function initGarden(scene) {
   console.log('selfgrow garden initialised. The soil awaits…');
-  createPlant(scene);
+  window.__gardenState.firstPlantGrown = false;
+  /* Create the first (central) plant */
+  createPlant({
+    scene,
+    position: { x: 0, z: 0 },
+    stemHeight: 0.7,
+    stemColor: 0x5d8a3c,
+    leafColor: 0x4a8c2a,
+    swayPhaseOffset: 0,
+    growDuration: 30000,
+    label: 'plant',
+    leafShape: 'narrow' // pointy, narrow leaves
+  });
 }
 
 /**
- * Create a growing seedling at the center of the plot.
- * The plant starts tiny and grows to full height over ~30 seconds
- * with eased motion, then sways gently.
+ * Create a growing seedling with configurable parameters.
+ *
+ * @param {object} opts
+ * @param {THREE.Scene} opts.scene - The Three.js scene.
+ * @param {object} opts.position - { x, z } position, y is always 0.
+ * @param {number} opts.stemHeight - Height of the stem.
+ * @param {number} opts.stemColor - Hex colour for the stem.
+ * @param {number} opts.leafColor - Hex colour for the leaves.
+ * @param {number} opts.swayPhaseOffset - Phase offset for sway animation.
+ * @param {number} opts.growDuration - Growth duration in ms.
+ * @param {string} opts.label - "plant" or "plant2" for window.__gardenState key.
+ * @param {string} opts.leafShape - "narrow" (pointy) or "broad" (wider, rounder).
  */
-function createPlant(scene) {
+function createPlant(opts) {
+  const {
+    scene,
+    position,
+    stemHeight,
+    stemColor,
+    leafColor,
+    swayPhaseOffset,
+    growDuration,
+    label,
+    leafShape
+  } = opts;
+
   const group = new THREE.Group();
-  group.position.set(0, 0, 0);
+  group.position.set(position.x, 0, position.z);
 
   /* --- Stem --- */
-  const stemHeight = 0.7;
   const stemGeo = new THREE.CylinderGeometry(0.012, 0.028, stemHeight, 6);
   const stemMat = new THREE.MeshStandardMaterial({
-    color: 0x5d8a3c,
+    color: stemColor,
     roughness: 0.7,
     metalness: 0.0
   });
@@ -69,48 +101,87 @@ function createPlant(scene) {
 
   /* --- Leaves --- */
   const leafMat = new THREE.MeshStandardMaterial({
-    color: 0x4a8c2a,
+    color: leafColor,
     roughness: 0.6,
     metalness: 0.0,
     side: THREE.DoubleSide
   });
 
-  function makeLeaf(w, h) {
+  /**
+   * Make a leaf shape. Two varieties:
+   * - narrow: pointy, teardrop-like (original)
+   * - broad: wider, rounder, more substantial
+   */
+  function makeLeaf(w, h, shapeType) {
     const shape = new THREE.Shape();
-    shape.moveTo(0, 0);
-    shape.quadraticCurveTo(w * 0.5, h * 0.4, 0, h);
-    shape.quadraticCurveTo(-w * 0.5, h * 0.4, 0, 0);
+    if (shapeType === 'broad') {
+      // Broader, rounder leaf — more of a rounded ellipse
+      shape.moveTo(0, 0);
+      shape.bezierCurveTo(w * 0.6, h * 0.2, w * 0.7, h * 0.5, 0, h);
+      shape.bezierCurveTo(-w * 0.7, h * 0.5, -w * 0.6, h * 0.2, 0, 0);
+    } else {
+      // Narrow, pointy leaf (original)
+      shape.moveTo(0, 0);
+      shape.quadraticCurveTo(w * 0.5, h * 0.4, 0, h);
+      shape.quadraticCurveTo(-w * 0.5, h * 0.4, 0, 0);
+    }
     const geo = new THREE.ShapeGeometry(shape);
     return new THREE.Mesh(geo, leafMat);
   }
 
-  // Leaf 1 — lower, pointing slightly forward and to the right
-  const leaf1 = makeLeaf(0.06, 0.12);
-  leaf1.position.set(0, 0.28, 0);
-  leaf1.rotation.x = -0.5;
-  leaf1.rotation.y = 0.3;
-  leaf1.castShadow = true;
-  group.add(leaf1);
+  let leaves;
+  if (leafShape === 'broad') {
+    // Broad leaves: wider, slightly shorter, spreading out
+    const leaf1 = makeLeaf(0.09, 0.10, 'broad');
+    leaf1.position.set(0, stemHeight * 0.35, 0);
+    leaf1.rotation.x = -0.6;
+    leaf1.rotation.y = 0.5;
+    leaf1.castShadow = true;
+    group.add(leaf1);
 
-  // Leaf 2 — middle, pointing slightly backward and to the left
-  const leaf2 = makeLeaf(0.05, 0.10);
-  leaf2.position.set(0, 0.42, 0);
-  leaf2.rotation.x = 0.4;
-  leaf2.rotation.y = 2.8;
-  leaf2.castShadow = true;
-  group.add(leaf2);
+    const leaf2 = makeLeaf(0.08, 0.09, 'broad');
+    leaf2.position.set(0, stemHeight * 0.55, 0);
+    leaf2.rotation.x = 0.5;
+    leaf2.rotation.y = 2.5;
+    leaf2.castShadow = true;
+    group.add(leaf2);
 
-  // Leaf 3 — top, pointing to the right
-  const leaf3 = makeLeaf(0.04, 0.08);
-  leaf3.position.set(0, 0.55, 0);
-  leaf3.rotation.x = -0.4;
-  leaf3.rotation.y = 1.8;
-  leaf3.castShadow = true;
-  group.add(leaf3);
+    const leaf3 = makeLeaf(0.07, 0.08, 'broad');
+    leaf3.position.set(0, stemHeight * 0.75, 0);
+    leaf3.rotation.x = -0.5;
+    leaf3.rotation.y = 4.0;
+    leaf3.castShadow = true;
+    group.add(leaf3);
+
+    leaves = [leaf1, leaf2, leaf3];
+  } else {
+    // Narrow leaves (original)
+    const leaf1 = makeLeaf(0.06, 0.12, 'narrow');
+    leaf1.position.set(0, 0.28, 0);
+    leaf1.rotation.x = -0.5;
+    leaf1.rotation.y = 0.3;
+    leaf1.castShadow = true;
+    group.add(leaf1);
+
+    const leaf2 = makeLeaf(0.05, 0.10, 'narrow');
+    leaf2.position.set(0, 0.42, 0);
+    leaf2.rotation.x = 0.4;
+    leaf2.rotation.y = 2.8;
+    leaf2.castShadow = true;
+    group.add(leaf2);
+
+    const leaf3 = makeLeaf(0.04, 0.08, 'narrow');
+    leaf3.position.set(0, 0.55, 0);
+    leaf3.rotation.x = -0.4;
+    leaf3.rotation.y = 1.8;
+    leaf3.castShadow = true;
+    group.add(leaf3);
+
+    leaves = [leaf1, leaf2, leaf3];
+  }
 
   /* --- Growth state --- */
   const startTime = performance.now();
-  const GROW_DURATION = 30000; // 30 seconds
   let fullyGrown = false;
 
   // Start at barely visible
@@ -118,14 +189,15 @@ function createPlant(scene) {
   scene.add(group);
 
   /* Expose plant for selftest and seasonal colour updates */
-  window.__gardenState.plant = {
+  const plantState = {
     group,
     stem,
     stemMat,
     leafMat,
-    leaves: [leaf1, leaf2, leaf3],
+    leaves,
     isFullyGrown: () => fullyGrown
   };
+  window.__gardenState[label] = plantState;
 
   /* DOM elements to update */
   const growingDesc = document.getElementById('growing-description');
@@ -134,7 +206,7 @@ function createPlant(scene) {
   /* --- Growth animation --- */
   function updateGrowth() {
     const elapsed = performance.now() - startTime;
-    const progress = Math.min(1, elapsed / GROW_DURATION);
+    const progress = Math.min(1, elapsed / growDuration);
 
     if (progress < 1) {
       // Ease-out cubic: starts fast, slows toward the end
@@ -143,12 +215,23 @@ function createPlant(scene) {
       group.scale.set(s, s, s);
 
       // Update DOM descriptions by growth phase
-      if (progress < 0.3) {
-        growingDesc.textContent = 'A tiny sprout breaks the soil, reaching upward.';
-        plotDesc.textContent = 'A small sprout has emerged at the center of the plot. A faint haze drifts in the air.';
+      if (label === 'plant') {
+        if (progress < 0.3) {
+          growingDesc.textContent = 'A tiny sprout breaks the soil, reaching upward.';
+          plotDesc.textContent = 'A small sprout has emerged at the center of the plot. A faint haze drifts in the air.';
+        } else {
+          growingDesc.textContent = 'The seedling grows taller, unfurling its leaves toward the light.';
+          plotDesc.textContent = 'A young seedling rises from the rich soil, stretching toward the sun. Dust motes float lazily in the warm air.';
+        }
       } else {
-        growingDesc.textContent = 'The seedling grows taller, unfurling its leaves toward the light.';
-        plotDesc.textContent = 'A young seedling rises from the rich soil, stretching toward the sun. Dust motes float lazily in the warm air.';
+        // plant2: update description to mention the new arrival
+        if (progress < 0.3) {
+          growingDesc.textContent = 'A second sprout emerges nearby, its broad leaves catching the light.';
+          plotDesc.textContent = 'A young seedling rises at the center, while a second sprout pushes up from the soil nearby.';
+        } else {
+          growingDesc.textContent = 'Two seedlings now grow side by side — the first standing tall, the second spreading its wider leaves.';
+          plotDesc.textContent = 'A pair of seedlings grace the garden. The central plant stretches upward while its companion unfurls broader, rounded leaves.';
+        }
       }
 
       requestAnimationFrame(updateGrowth);
@@ -157,15 +240,46 @@ function createPlant(scene) {
       fullyGrown = true;
       group.scale.set(1, 1, 1);
 
-      growingDesc.textContent = 'A young seedling rises from the soil, its leaves reaching toward the light.';
-      plotDesc.textContent = 'A healthy seedling stands at the center of the plot, its leaves open to the sky. Pollen drifts gently on the breeze.';
+      // Track whether first plant just matured (to trigger second)
+      if (label === 'plant' && !window.__gardenState.firstPlantGrown) {
+        window.__gardenState.firstPlantGrown = true;
+
+        growingDesc.textContent = 'The first seedling stands tall. A second sprout begins to rise from the soil nearby.';
+        plotDesc.textContent = 'A healthy seedling stands at the center of the plot. Nearby, the soil stirs as another plant emerges.';
+
+        // Spawn second plant at random offset from center
+        const angle = Math.random() * 2 * Math.PI;
+        const distance = 0.3 + Math.random() * 0.3; // 0.3–0.6 units
+        const x = Math.cos(angle) * distance;
+        const z = Math.sin(angle) * distance;
+
+        createPlant({
+          scene,
+          position: { x, z },
+          stemHeight: 0.5,                       // shorter stem
+          stemColor: 0x6a9a4a,                    // slightly yellower green
+          leafColor: 0x5a9a32,                    // yellower-green leaf tint
+          swayPhaseOffset: 3.7,                    // independent sway phase
+          growDuration: 25000,                     // ~25 seconds
+          label: 'plant2',
+          leafShape: 'broad'                       // wider, rounder leaves
+        });
+      } else if (label === 'plant') {
+        growingDesc.textContent = 'A young seedling rises from the soil, its leaves reaching toward the light. A second plant grows nearby.';
+        plotDesc.textContent = 'A healthy seedling stands at the center of the plot, its leaves open to the sky. A companion plant with broader leaves grows beside it.';
+      } else {
+        // plant2 finished growing
+        growingDesc.textContent = 'Two seedlings now stand together — the central plant tall and slender, its companion shorter with broad, rounded leaves.';
+        plotDesc.textContent = 'Two plants share the garden plot. The first stands tall at center; the second, with wider leaves and a softer green hue, grows beside it as if the garden chose to spread.';
+      }
 
       let swayTime = 0;
       function sway() {
         swayTime += 0.016;
         // Two overlapping slow sine waves for organic motion
-        group.rotation.x = Math.sin(swayTime * 0.4) * 0.025;
-        group.rotation.z = Math.sin(swayTime * 0.3 + 1.2) * 0.018;
+        // Each plant sways with its own phase offset
+        group.rotation.x = Math.sin(swayTime * 0.4 + swayPhaseOffset) * 0.025;
+        group.rotation.z = Math.sin(swayTime * 0.3 + 1.2 + swayPhaseOffset) * 0.018;
         requestAnimationFrame(sway);
       }
       sway();
@@ -229,6 +343,17 @@ export function startSeasonalCycle() {
       }
       if (plant.leafMat) {
         plant.leafMat.color.copy(current.leaf).lerp(next.leaf, t);
+      }
+    }
+
+    /* Also update plant2 if it exists */
+    const plant2 = gs.plant2;
+    if (plant2) {
+      if (plant2.stemMat) {
+        plant2.stemMat.color.copy(current.stem).lerp(next.stem, t);
+      }
+      if (plant2.leafMat) {
+        plant2.leafMat.color.copy(current.leaf).lerp(next.leaf, t);
       }
     }
 
