@@ -179,6 +179,7 @@
     import { OrbitControls } from "three/addons/controls/OrbitControls.js";
     import { initGarden, startSeasonalCycle } from "./garden.js";
     import { createAmbientParticles } from "./particles.js";
+    import { startDayNightCycle } from "./daynight.js";
 
     const wrapper = document.getElementById('garden-canvas-wrapper');
     const scene = new THREE.Scene();
@@ -320,6 +321,7 @@
 
     initGarden(scene);
     startSeasonalCycle();
+    startDayNightCycle(sunLight, scene, ambientLight, hemiLight, fillLight);
   </script>
 </body>
 </html>

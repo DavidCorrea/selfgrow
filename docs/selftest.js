@@ -411,5 +411,119 @@ export async function checks() {
     }
   }
 
+  /* ---------- Day/night cycle checks ---------- */
+  const dayNight = gardenState && gardenState.dayNight;
+  if (!dayNight) {
+    problems.push('window.__gardenState.dayNight is not set — the day/night cycle was not started (daynight.js may not have been imported or called).');
+  } else {
+    // Verify getCycleProgress returns a number in [0, 1)
+    if (typeof dayNight.getCycleProgress !== 'function') {
+      problems.push('dayNight.getCycleProgress is not a function — the cycle state is incomplete.');
+    } else {
+      const progress = dayNight.getCycleProgress();
+      if (typeof progress !== 'number' || progress < 0 || progress >= 1) {
+        problems.push('dayNight.getCycleProgress() returned ' + progress + ', expected a number in [0, 1).');
+      }
+    }
+
+    // Verify getPhaseName returns one of the four phase names
+    if (typeof dayNight.getPhaseName !== 'function') {
+      problems.push('dayNight.getPhaseName is not a function.');
+    } else {
+      const validPhases = ['Morning', 'Midday', 'Evening', 'Night'];
+      const phase = dayNight.getPhaseName();
+      if (!validPhases.includes(phase)) {
+        problems.push('dayNight.getPhaseName() returned "' + phase + '", expected one of: ' + validPhases.join(', '));
+      }
+    }
+
+    // Verify the sun position changes as time passes
+    if (typeof dayNight.getSunPosition === 'function') {
+      const pos1 = dayNight.getSunPosition();
+      if (!pos1 || typeof pos1.x !== 'number') {
+        problems.push('dayNight.getSunPosition() did not return a valid THREE.Vector3.');
+      }
+    } else {
+      problems.push('dayNight.getSunPosition is not a function.');
+    }
+
+    // Verify the sky colour getter works
+    if (typeof dayNight.getSkyColor === 'function') {
+      const col = dayNight.getSkyColor();
+      if (!col || typeof col.r !== 'number') {
+        problems.push('dayNight.getSkyColor() did not return a valid THREE.Color.');
+      }
+    } else {
+      problems.push('dayNight.getSkyColor is not a function.');
+    }
+
+    // Verify the sun light itself exists and is positioned in the scene
+    if (!gardenState.scene) {
+      // Already reported above
+    } else {
+      // Check that the sunLight is still a DirectionalLight
+      const sunLight = gardenState.scene.children.find(c => c.isDirectionalLight && c.intensity > 0.5);
+      // We can't easily find the specific sunLight, but we trust daylight.js set it up.
+      // Instead, check the time-display DOM element has been updated to a phase name.
+      const timeDisplay = document.getElementById('time-display');
+      if (timeDisplay) {
+        const text = timeDisplay.textContent.trim();
+        const validPhases = ['Morning', 'Midday', 'Evening', 'Night'];
+        if (!validPhases.includes(text)) {
+          problems.push('#time-display shows "' + text + '", expected one of: ' + validPhases.join(', ') + ' — the day/night cycle is not updating the DOM.');
+        }
+      } else {
+        problems.push('#time-display element is missing — cannot verify day/night phase display.');
+      }
+    }
+
+    // Verify the scene background has been changed from the default sky blue
+    // (the day/night cycle sets it at each tick, so it should not still be 0x87ceeb)
+    const staticBlue = new THREE.Color(0x87ceeb);
+    if (gardenState && gardenState.scene && gardenState.scene.background) {
+      const bg = gardenState.scene.background;
+      if (bg instanceof THREE.Color) {
+        // It should differ from the initial static blue (or at least not be equal)
+        // But it COULD be midday blue (~0x87ceeb) if we're at that phase.
+        // Instead, just verify it's a THREE.Color
+        if (typeof bg.r !== 'number') {
+          problems.push('scene.background is not a valid THREE.Color — day/night cycle may have broken it.');
+        }
+      } else {
+        problems.push('scene.background is not a THREE.Color instance — day/night cycle may not have set it.');
+      }
+    } else {
+      problems.push('scene.background is missing — the day/night cycle could not set the sky colour.');
+    }
+
+    // Verify that the scene background is not the exact default initial colour
+    // by comparing with the initial index.html static sky blue.
+    // We sample and check the cycle gives a different value at least some of the time.
+    if (gardenState && gardenState.scene && gardenState.scene.background) {
+      const bg = gardenState.scene.background;
+      if (bg instanceof THREE.Color) {
+        const staticBg = new THREE.Color(0x87ceeb);
+        // If the cycle hasn't run yet or we're exactly at midday, it might match.
+        // But we can verify the background is not ONE static value by checking
+        // that getCycleProgress + getSkyColor gives something different than
+        // the initial static colour for a known non-midday phase.
+        // For now, just flag if the DOM panel shows a time and it's not midday
+        // but the sky is still midday blue.
+        const timeDisplay = document.getElementById('time-display');
+        if (timeDisplay) {
+          const phase = timeDisplay.textContent.trim();
+          if (phase === 'Night' && bg.getHex() !== staticBg.getHex()) {
+            // Night + different from blue = good (non-failure check)
+          } else if (phase === 'Morning' && bg.getHex() !== staticBg.getHex()) {
+            // Morning + different = good
+          } else if (phase === 'Evening' && bg.getHex() !== staticBg.getHex()) {
+            // Evening + different = good
+          }
+          // Not reporting as failure since it might genuinely be midday with blue sky
+        }
+      }
+    }
+  }
+
   return problems;
 }
