@@ -204,6 +204,78 @@ export async function checks() {
     // If firstPlant doesn't exist either, that's handled in the plant checks section
   }
 
+  /* ---------- Flower lifecycle checks (issue #438) ---------- */
+  // A fully-grown plant should have a flower lifecycle with valid phases
+  const validFlowerPhases = ['dormant', 'budding', 'opening', 'bloom', 'fading'];
+
+  // Check plant1 for flower
+  const firstPlant = gardenState && gardenState.plant;
+  if (firstPlant && typeof firstPlant.isFullyGrown === 'function' && firstPlant.isFullyGrown()) {
+    if (!firstPlant.flower) {
+      problems.push('plant.flower is not set — a fully-grown plant should have a flower lifecycle running.');
+    } else {
+      if (!firstPlant.flower.getPhase || typeof firstPlant.flower.getPhase !== 'function') {
+        problems.push('plant.flower.getPhase is not a function — flower phase getter is missing.');
+      } else {
+        const phase = firstPlant.flower.getPhase();
+        if (!validFlowerPhases.includes(phase)) {
+          problems.push('plant.flower.getPhase() returned "' + phase + '", expected one of: ' + validFlowerPhases.join(', '));
+        }
+      }
+      if (!firstPlant.flower.getProgress || typeof firstPlant.flower.getProgress !== 'function') {
+        problems.push('plant.flower.getProgress is not a function — flower progress getter is missing.');
+      } else {
+        const progress = firstPlant.flower.getProgress();
+        if (typeof progress !== 'number' || progress < 0 || progress > 1) {
+          problems.push('plant.flower.getProgress() returned ' + progress + ', expected a number in [0, 1].');
+        }
+      }
+      if (!firstPlant.flower.group) {
+        problems.push('plant.flower.group is missing — the flower group was not created in the scene.');
+      } else if (gardenState && gardenState.scene) {
+        // Check the flower group exists in the scene hierarchy
+        let found = false;
+        gardenState.scene.traverse(function(child) {
+          if (child === firstPlant.flower.group) found = true;
+        });
+        if (!found) {
+          problems.push('plant.flower.group is not a descendant of the scene — the flower meshes are not rendered.');
+        }
+      }
+      if (!firstPlant.flower.petals || !Array.isArray(firstPlant.flower.petals) || firstPlant.flower.petals.length < 3) {
+        problems.push('plant.flower.petals is missing or has fewer than 3 petals.');
+      }
+    }
+  }
+
+  // Check plant2 for flower if fully grown
+  const secondPlant = gardenState && gardenState.plant2;
+  if (secondPlant && typeof secondPlant.isFullyGrown === 'function' && secondPlant.isFullyGrown()) {
+    if (!secondPlant.flower) {
+      problems.push('plant2.flower is not set — a fully-grown companion plant should have a flower lifecycle running.');
+    } else {
+      if (!secondPlant.flower.getPhase || typeof secondPlant.flower.getPhase !== 'function') {
+        problems.push('plant2.flower.getPhase is not a function — flower phase getter is missing.');
+      } else {
+        const phase = secondPlant.flower.getPhase();
+        if (!validFlowerPhases.includes(phase)) {
+          problems.push('plant2.flower.getPhase() returned "' + phase + '", expected one of: ' + validFlowerPhases.join(', '));
+        }
+      }
+      if (!secondPlant.flower.getProgress || typeof secondPlant.flower.getProgress !== 'function') {
+        problems.push('plant2.flower.getProgress is not a function — flower progress getter is missing.');
+      } else {
+        const progress = secondPlant.flower.getProgress();
+        if (typeof progress !== 'number' || progress < 0 || progress > 1) {
+          problems.push('plant2.flower.getProgress() returned ' + progress + ', expected a number in [0, 1].');
+        }
+      }
+      if (secondPlant.flower.petals && Array.isArray(secondPlant.flower.petals) && secondPlant.flower.petals.length < 3) {
+        problems.push('plant2.flower.petals has fewer than 3 petals.');
+      }
+    }
+  }
+
   /* ---------- Plant (botanical form) checks ---------- */
   const plant = gardenState && gardenState.plant;
   if (!plant) {
