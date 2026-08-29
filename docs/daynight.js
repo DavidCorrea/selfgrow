@@ -94,8 +94,6 @@ export function startDayNightCycle(sunLight, scene, ambientLight, hemiLight, fil
   /* Store initial light colours for reference */
   const sunBaseColor = sunLight.color.clone();
   const fillBaseColor = fillLight.color.clone();
-  const hemiSkyColor = hemiLight.color.clone();
-  const hemiGroundColor = hemiLight.groundColor.clone();
 
   /** Compute sun intensity based on elevation */
   function sunIntensityFromElevation(y) {
@@ -142,9 +140,6 @@ export function startDayNightCycle(sunLight, scene, ambientLight, hemiLight, fil
     sunLight.intensity = intensity;
 
     /* --- Sun colour shifts cool at midday, warm at sunrise/sunset --- */
-    // Mix base warm colour with a cooler tint at midday
-    const middayT = THREE.MathUtils.clamp((t >= 0.15 && t <= 0.35) ? (t - 0.15) / 0.2 : 0, 0, 1);
-    const eveningT = THREE.MathUtils.clamp((t >= 0.4 && t <= 0.6) ? (t - 0.4) / 0.2 : 0, 0, 1);
     // At midday, sun colour is slightly whiter; at sunset, warmer
     const coolShift = new THREE.Color(0xfff4e0);
     const warmShift = new THREE.Color(0xffbb77);
@@ -173,10 +168,7 @@ export function startDayNightCycle(sunLight, scene, ambientLight, hemiLight, fil
     ambientLight.intensity = ambientIntensity;
 
     /* --- Hemisphere light: sky/ground blend follows sky colour --- */
-    const nightHemiSky = new THREE.Color(0x1a1a3a);
-    const dayHemiSky = new THREE.Color(0x87ceeb);
-    const hemiBlend = t >= 0.7 || t < 0.1 ? t < 0.1 ? (t / 0.1) : 1 - (t - 0.7) / 0.3 : 1;
-    // Simpler: just use the sky colour for the hemisphere sky
+    // Use the sky colour for the hemisphere sky
     hemiLight.color.copy(skyColor).multiplyScalar(0.6);
     hemiLight.groundColor.set(0x3a2a1a).lerp(new THREE.Color(0x1a1a0a), THREE.MathUtils.clamp(1 - (y + 1) / 9, 0, 1));
     const hemiIntensity = 0.05 + THREE.MathUtils.clamp((y + 1) / 9, 0, 1) * 0.45;
