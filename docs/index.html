@@ -181,6 +181,7 @@
     import { initGarden, startSeasonalCycle } from "./garden.js";
     import { createAmbientParticles } from "./particles.js";
     import { createGroundNoiseTexture } from "./groundNoise.js";
+    import { createHorizon } from "./horizon.js";
     import { startDayNightCycle } from "./daynight.js";
     import { startWeatherCycle } from "./weather.js";
     import { loadGardenState, saveGardenState, fastForwardState, clearGardenState } from "./persistence.js";
@@ -288,6 +289,9 @@
     controls.rotateSpeed = 0.5;            // unhurried, botanical pace
     controls.update();
 
+    /* --- Distant horizon tree-line silhouette --- */
+    const horizon = createHorizon(scene);
+
     /* Resize handler */
     function onResize() {
       const w = wrapper.clientWidth;
@@ -309,6 +313,12 @@
       animTime += 0.016; // approximate frame time
       controls.update();
       particles.update(animTime);
+
+      /* Update distant horizon silhouette to blend with current sky colour */
+      if (scene.background instanceof THREE.Color) {
+        horizon.update(scene.background);
+      }
+
       renderer.render(scene, camera);
     }
 
@@ -319,6 +329,9 @@
     if (plotDesc && plotDesc.textContent === 'An empty plot of rich soil, ready for something to grow.') {
       plotDesc.textContent = 'An empty plot of rich soil, ready for something to grow. A faint haze drifts in the air.';
     }
+
+    /* Expose horizon on garden state */
+    horizon.group.name = 'horizon';
 
     /* Expose state getters for selftest and future updates */
     window.__gardenState = {
@@ -334,7 +347,8 @@
       getTimeOfDay: () => document.getElementById('time-display')?.textContent || 'Morning',
       getWeather: () => document.getElementById('weather-display')?.textContent || 'Clear',
       getPlotDescription: () => document.getElementById('plot-description')?.textContent || '',
-      getGrowingDescription: () => document.getElementById('growing-description')?.textContent || ''
+      getGrowingDescription: () => document.getElementById('growing-description')?.textContent || '',
+      horizon
     };
 
     /* --- Persistence: restore previous state if available --- */
