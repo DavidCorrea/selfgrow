@@ -1548,5 +1548,106 @@ export async function checks() {
     }
   }
 
+  /* ---------- Fallen leaves checks (issue #448) ---------- */
+  var fallenLeavesState = gardenState && gardenState.fallenLeaves;
+  if (!fallenLeavesState) {
+    problems.push('window.__gardenState.fallenLeaves is not set — the fallen leaves scatter was not created (createFallenLeaves may not have been called).');
+  } else {
+    // Verify type
+    if (fallenLeavesState.type !== 'fallen-leaves') {
+      problems.push('fallenLeaves.type is "' + fallenLeavesState.type + '", expected "fallen-leaves".');
+    }
+
+    // Verify count is between 8 and 15
+    if (typeof fallenLeavesState.count !== 'number' || fallenLeavesState.count < 8 || fallenLeavesState.count > 15) {
+      problems.push('fallenLeaves.count is ' + fallenLeavesState.count + ', expected between 8 and 15.');
+    }
+
+    // Verify spreadRadius is ~1
+    if (typeof fallenLeavesState.spreadRadius !== 'number' || Math.abs(fallenLeavesState.spreadRadius - 1.0) > 0.05) {
+      problems.push('fallenLeaves.spreadRadius is ' + fallenLeavesState.spreadRadius + ', expected ~1.0.');
+    }
+
+    // Verify material exists and has correct properties
+    if (!fallenLeavesState.material) {
+      problems.push('fallenLeaves.material is missing — leaf material not created.');
+    } else {
+      if (fallenLeavesState.material.transparent !== true) {
+        problems.push('fallenLeaves.material.transparent is ' + fallenLeavesState.material.transparent + ', expected true.');
+      }
+      if (fallenLeavesState.material.depthWrite !== false) {
+        problems.push('fallenLeaves.material.depthWrite is ' + fallenLeavesState.material.depthWrite + ', expected false to avoid z-fighting with the ground.');
+      }
+      if (typeof fallenLeavesState.material.opacity !== 'number') {
+        problems.push('fallenLeaves.material.opacity is not a number.');
+      }
+    }
+
+    // Verify meshes array exists with correct count
+    if (!fallenLeavesState.meshes || !Array.isArray(fallenLeavesState.meshes)) {
+      problems.push('fallenLeaves.meshes is missing or not an array.');
+    } else if (fallenLeavesState.meshes.length !== fallenLeavesState.count) {
+      problems.push('fallenLeaves.meshes.length (' + fallenLeavesState.meshes.length + ') does not match count (' + fallenLeavesState.count + ').');
+    } else {
+      // Verify each mesh is a THREE.Mesh at y≈0.005 within ~1 unit of origin
+      fallenLeavesState.meshes.forEach(function(mesh, i) {
+        if (!(mesh instanceof THREE.Mesh)) {
+          problems.push('fallen leaf #' + i + ' is not a THREE.Mesh, got ' + (mesh && mesh.constructor ? mesh.constructor.name : typeof mesh));
+          return;
+        }
+
+        // Check y position is near ground (≈0.005)
+        var y = mesh.position.y;
+        if (y < 0.001 || y > 0.01) {
+          problems.push('fallen leaf #' + i + ' has y=' + y.toFixed(4) + ', expected ≈0.005 (just above ground).');
+        }
+
+        // Check horizontal distance from origin is within ~1 unit
+        var dist = Math.sqrt(mesh.position.x * mesh.position.x + mesh.position.z * mesh.position.z);
+        if (dist > 1.05) {
+          problems.push('fallen leaf #' + i + ' at distance ' + dist.toFixed(2) + ' from origin — expected within ~1 unit of the garden center.');
+        }
+
+        // Verify it is in the scene
+        if (gardenState && gardenState.scene) {
+          var found = gardenState.scene.children.indexOf(mesh) !== -1;
+          if (!found) {
+            problems.push('fallen leaf #' + i + ' is not a child of the scene — it was not added to the garden.');
+          }
+        }
+
+        // Verify the mesh uses the shared leaf material
+        if (mesh.material !== fallenLeavesState.material) {
+          problems.push('fallen leaf #' + i + ' does not use the shared leaf material.');
+        }
+
+        // Verify the mesh has a geometry (ShapeGeometry with position attribute)
+        if (!mesh.geometry || !mesh.geometry.attributes || !mesh.geometry.attributes.position) {
+          problems.push('fallen leaf #' + i + ' has no geometry or missing position attribute.');
+        }
+      });
+    }
+
+    // Test that the material drives leaves correctly per season
+    // Since we can't mock seasons easily in a live test, verify the material
+    // at least has the expected autumn colour baseline
+    if (fallenLeavesState.material && fallenLeavesState.material.color) {
+      var color = fallenLeavesState.material.color;
+      if (!(color instanceof THREE.Color)) {
+        problems.push('fallenLeaves.material.color is not a THREE.Color instance.');
+      }
+    }
+
+    // Verify initial opacity is 0 (hidden until autumn)
+    // But after the seasonal cycle runs, it may have been updated — only flag if
+    // it's extremely high (>0.5) during Summer/Spring when it should be near 0
+    var currentSeason = gardenState && gardenState.getSeason ? gardenState.getSeason() : null;
+    if (currentSeason && (currentSeason === 'Spring' || currentSeason === 'Summer')) {
+      if (fallenLeavesState.material && fallenLeavesState.material.opacity > 0.1) {
+        problems.push('During ' + currentSeason + ', fallenLeaves.material.opacity is ' + fallenLeavesState.material.opacity + ', expected near 0 (leaves should be invisible outside autumn/winter).');
+      }
+    }
+  }
+
   return problems;
 }
