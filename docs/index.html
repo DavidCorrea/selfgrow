@@ -195,6 +195,7 @@
     import { loadGardenState, saveGardenState, fastForwardState, clearGardenState } from "./persistence.js";
     import { createRain } from "./rain.js";
     import { createGroundRipple } from "./groundRipple.js";
+    import { createCreature } from "./creature.js";
 
     const wrapper = document.getElementById('garden-canvas-wrapper');
     const scene = new THREE.Scene();
@@ -326,6 +327,9 @@
     /* --- Subtle ground ripple suggesting moving air --- */
     const groundRipple = createGroundRipple(ground);
 
+    /* --- Drifting creature at the scene periphery --- */
+    const creature = createCreature(scene);
+
     /* Animation loop */
     let animTime = 0;
     let lastFrameTime = performance.now();
@@ -346,6 +350,9 @@
       /* Update ground ripple animation */
       groundRipple.update(animTime);
 
+      /* Update creature position */
+      creature.update(animTime);
+
       /* Update distant horizon silhouette to blend with current sky colour */
       if (scene.background instanceof THREE.Color) {
         horizon.update(scene.background);
@@ -362,6 +369,14 @@
     if (plotDesc && plotDesc.textContent === 'An empty plot of rich soil, ready for something to grow.') {
       plotDesc.textContent = 'An empty plot of rich soil, ready for something to grow. A faint haze drifts in the air.';
     }
+
+    /* After garden.js has had time to set its initial description, append creature note */
+    setTimeout(function() {
+      const growingDesc = document.getElementById('growing-description');
+      if (growingDesc && !growingDesc.textContent.includes('butterfly')) {
+        growingDesc.textContent += ' A small butterfly drifts at the edge of the garden.';
+      }
+    }, 1000);
 
     /* Expose horizon and scrub on garden state */
     horizon.group.name = 'horizon';
@@ -386,7 +401,9 @@
       getGrowingDescription: () => document.getElementById('growing-description')?.textContent || '',
       horizon,
       scrub,
-      groundRipple: groundRipple.state
+      groundRipple: groundRipple.state,
+      creature: creature.state,
+      creatureUpdate: creature.update
     };
 
     /* --- Persistence: restore previous state if available --- */
