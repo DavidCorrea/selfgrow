@@ -180,6 +180,7 @@
     import { OrbitControls } from "three/addons/controls/OrbitControls.js";
     import { initGarden, startSeasonalCycle } from "./garden.js";
     import { createAmbientParticles } from "./particles.js";
+    import { createGroundNoiseTexture } from "./groundNoise.js";
     import { startDayNightCycle } from "./daynight.js";
     import { startWeatherCycle } from "./weather.js";
     import { loadGardenState, saveGardenState, fastForwardState, clearGardenState } from "./persistence.js";
@@ -224,10 +225,12 @@
     fillLight.position.set(-3, 2, -2);
     scene.add(fillLight);
 
-    /* Ground plane — rich soil */
+    /* Ground plane — rich soil with subtle procedural noise texture */
     const groundGeo = new THREE.CircleGeometry(4, 32);
+    const groundNoiseTexture = createGroundNoiseTexture();
     const groundMat = new THREE.MeshStandardMaterial({
       color: 0x4a3728,
+      map: groundNoiseTexture,
       roughness: 0.9,
       metalness: 0.0,
       side: THREE.DoubleSide
@@ -324,6 +327,7 @@
       renderer,
       controls,
       groundMat,
+      groundNoiseTexture,
       particles: particles.state,
       particlesUpdate: particles.update,
       getSeason: () => document.getElementById('season-display')?.textContent || 'Spring',
