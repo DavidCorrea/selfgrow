@@ -814,5 +814,68 @@ export async function checks() {
   // Clean up test state
   clearGardenState();
 
+  /* ---------- Procedural ground noise texture checks (issue #431) ---------- */
+  const noiseTex = gardenState && gardenState.groundNoiseTexture;
+  if (!noiseTex) {
+    problems.push('window.__gardenState.groundNoiseTexture is not set — procedural noise texture was not created.');
+  } else {
+    // Check it is a valid Three.js texture
+    if (!(noiseTex instanceof THREE.Texture)) {
+      problems.push('groundNoiseTexture is not a THREE.Texture instance — got ' + typeof noiseTex);
+    } else {
+      // Check it's a CanvasTexture (or at minimum has image data)
+      if (!noiseTex.image || !(noiseTex.image instanceof HTMLCanvasElement)) {
+        problems.push('groundNoiseTexture.image is not an HTMLCanvasElement — the texture does not have a backing canvas.');
+      } else {
+        const canvas = noiseTex.image;
+        // Verify dimensions are 256×256
+        if (canvas.width !== 256 || canvas.height !== 256) {
+          problems.push('groundNoiseTexture canvas size is ' + canvas.width + 'x' + canvas.height + ', expected 256x256.');
+        }
+        // Verify pixel values are grayscale (R===G===B for each pixel)
+        // and within the [0.85, 1.0] brightness range (values 217-255).
+        // Sample a few positions to keep the check fast.
+        const ctx = canvas.getContext('2d');
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+        const sampleCount = canvas.width * canvas.height;
+        let allGrayscale = true;
+        let minVal = 255;
+        let maxVal = 0;
+        for (let i = 0; i < sampleCount; i++) {
+          const idx = i * 4;
+          const r = data[idx];
+          const g = data[idx + 1];
+          const b = data[idx + 2];
+          if (r !== g || g !== b) {
+            allGrayscale = false;
+            break;
+          }
+          if (r < minVal) minVal = r;
+          if (r > maxVal) maxVal = r;
+        }
+        if (!allGrayscale) {
+          problems.push('groundNoiseTexture pixels are not grayscale — R, G, B channels differ for at least one pixel.');
+        }
+        // Expected brightness range: 0.85–1.0 maps to pixel values 217–255
+        const expectedMin = Math.round(0.85 * 255);  // 217
+        const expectedMax = 255;
+        if (minVal < expectedMin || maxVal > expectedMax) {
+          problems.push('groundNoiseTexture brightness range is [' + minVal + ', ' + maxVal + '] (expected [' + expectedMin + ', ' + expectedMax + ']) — values exceed ±15% of base tone (0.85–1.0).');
+        }
+        if (maxVal - minVal < 5) {
+          problems.push('groundNoiseTexture has too little variation (range ' + (maxVal - minVal) + ') — noise is almost invisible, expected at least 5 units of variation for organic soil texture.');
+        }
+      }
+
+      // Check the texture is set as map on the ground material
+      if (!groundMat) {
+        // Already reported above
+      } else if (groundMat.map !== noiseTex) {
+        problems.push('groundMat.map is not the groundNoiseTexture — the noise texture is not applied to the ground material.');
+      }
+    }
+  }
+
   return problems;
 }
