@@ -173,6 +173,9 @@ export function startWeatherCycle(sunLight, scene, ambientLight, hemiLight, fill
 
   let lastPhaseName = '';
   const baseParticleOpacity = particleMaterial ? particleMaterial.opacity : 0.2;
+  /* Capture base ambient colour — day/night never resets it, so weather
+   * must reset from base each frame to avoid compounding the multiply. */
+  const baseAmbientColor = ambientLight.color.clone();
 
   /* Reusable interpolation output */
   const current = {
@@ -232,7 +235,9 @@ export function startWeatherCycle(sunLight, scene, ambientLight, hemiLight, fill
 
     // Ambient light: increase (overcast softens shadows), shift colour
     ambientLight.intensity *= current.ambientIntensityMul;
-    ambientLight.color.multiply(current.ambientColorMul);
+    // Reset from base — day/night never touches ambientLight.color, so
+    // a bare .multiply() would compound frame-over-frame
+    ambientLight.color.copy(baseAmbientColor).multiply(current.ambientColorMul);
 
     // Hemisphere light: dim, shift colours
     hemiLight.intensity *= current.hemiIntensityMul;
