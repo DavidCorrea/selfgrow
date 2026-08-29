@@ -976,5 +976,137 @@ export async function checks() {
     }
   }
 
+  /* ---------- Rain particle system checks (issue #437) ---------- */
+  const rainState = gardenState && gardenState.rain;
+  if (!rainState) {
+    problems.push('window.__gardenState.rain is not set — the rain particle system was not created (rain.js may not have been imported or called).');
+  } else {
+    // Verify type
+    if (rainState.type !== 'rain') {
+      problems.push('rainState.type is "' + rainState.type + '", expected "rain".');
+    }
+
+    // Verify count
+    if (typeof rainState.count !== 'number' || rainState.count < 200) {
+      problems.push('rainState.count is ' + rainState.count + ', expected at least 200 particles for a visible drizzle effect.');
+    }
+
+    // Verify reducedMotion is a boolean
+    if (typeof rainState.reducedMotion !== 'boolean') {
+      problems.push('rainState.reducedMotion should be a boolean, got ' + typeof rainState.reducedMotion);
+    }
+
+    // Verify material exists and has correct properties
+    if (!rainState.material) {
+      problems.push('rainState.material is missing — PointsMaterial not assigned.');
+    } else {
+      if (rainState.material.transparent !== true) {
+        problems.push('rainState.material.transparent is ' + rainState.material.transparent + ', expected true.');
+      }
+      if (typeof rainState.material.opacity !== 'number') {
+        problems.push('rainState.material.opacity is not a number — got ' + typeof rainState.material.opacity);
+      }
+      if (rainState.material.sizeAttenuation !== true) {
+        problems.push('rainState.material.sizeAttenuation is ' + rainState.material.sizeAttenuation + ', expected true for realistic depth falloff.');
+      }
+      // Texture map should be present for the streak effect
+      if (!rainState.material.map) {
+        problems.push('rainState.material.map is missing — rain streaks need a custom canvas texture.');
+      } else {
+        // Verify the texture is a Texture
+        if (!(rainState.material.map instanceof THREE.Texture)) {
+          problems.push('rainState.material.map is not a THREE.Texture — got ' + typeof rainState.material.map);
+        } else if (rainState.material.map.image) {
+          const img = rainState.material.map.image;
+          if (!(img instanceof HTMLCanvasElement)) {
+            problems.push('rainState.material.map.image is not an HTMLCanvasElement — expected a canvas texture.');
+          } else {
+            // Verify the texture has a reasonable aspect ratio (at least 4:1 tall)
+            if (img.width * 2 > img.height) {
+              problems.push('rain streak texture aspect ratio is ' + img.width + 'x' + img.height + ' — expected a tall, thin texture (at least 1:4 width-to-height ratio) for elongated streaks.');
+            }
+          }
+        }
+      }
+    }
+
+    // Verify points object exists and is in the scene
+    if (!rainState.points) {
+      problems.push('rainState.points is missing — the THREE.Points object was not created.');
+    } else if (gardenState && gardenState.scene) {
+      const found = gardenState.scene.children.includes(rainState.points);
+      if (!found) {
+        problems.push('rain points object is not a child of the scene — it was not added to the garden.');
+      }
+    }
+
+    // Verify the update function is exposed on __gardenState
+    if (typeof gardenState.rainUpdate !== 'function') {
+      problems.push('gardenState.rainUpdate is not a function — the rain update loop is not exposed.');
+    }
+
+    // Verify reduced-motion behaviour: when reducedMotion is true, material opacity should be 0
+    if (rainState.reducedMotion) {
+      if (rainState.material && rainState.material.opacity > 0) {
+        problems.push('rain material.opacity is ' + rainState.material.opacity + ' but reducedMotion is true — should be 0.');
+      }
+      if (rainState.points && rainState.points.visible) {
+        problems.push('rain points.visible is true but reducedMotion is true — should be false.');
+      }
+    }
+
+    // Test opacity behaviour: simulate different weather phases
+    // We temporarily override the weather getter to verify rain responds correctly
+    const weather = gardenState && gardenState.weather;
+    if (weather && typeof weather.getPhase === 'function') {
+      // Save original getPhase
+      const origGetPhase = weather.getPhase;
+      try {
+        // Test 1: During Clear phase, rain opacity should be near 0
+        weather.getPhase = function() { return 'Clear'; };
+        // Call rainUpdate to trigger the opacity logic
+        if (typeof gardenState.rainUpdate === 'function') {
+          gardenState.rainUpdate(0, 0.016);
+          const clearOpacity = rainState.material.opacity;
+          if (clearOpacity > 0.05) {
+            problems.push('During Clear weather phase, rain material.opacity is ' + clearOpacity + ' — expected near 0 (no rain during clear weather).');
+          }
+
+          // Test 2: During Overcast phase, rain opacity should also be near 0
+          weather.getPhase = function() { return 'Overcast'; };
+          gardenState.rainUpdate(0, 0.016);
+          const overcastOpacity = rainState.material.opacity;
+          if (overcastOpacity > 0.05) {
+            problems.push('During Overcast weather phase, rain material.opacity is ' + overcastOpacity + ' — expected near 0 (rain only during Light Drizzle).');
+          }
+
+          // Test 3: During Light Drizzle phase, rain opacity should be > 0
+          weather.getPhase = function() { return 'Light Drizzle'; };
+          // Call update multiple times to let the lerp settle
+          for (let i = 0; i < 300; i++) {
+            gardenState.rainUpdate(0, 0.016);
+          }
+          const drizzleOpacity = rainState.material.opacity;
+          if (drizzleOpacity < 0.05) {
+            problems.push('During Light Drizzle weather phase, rain material.opacity is ' + drizzleOpacity + ' — expected > 0.05 (rain should be visible during drizzle).');
+          }
+
+          // Test 4: When switching back to Clear, opacity should fade back to near 0
+          weather.getPhase = function() { return 'Clear'; };
+          for (let i = 0; i < 300; i++) {
+            gardenState.rainUpdate(0, 0.016);
+          }
+          const backToClearOpacity = rainState.material.opacity;
+          if (backToClearOpacity > 0.05) {
+            problems.push('After switching from Light Drizzle back to Clear, rain material.opacity is ' + backToClearOpacity + ' — expected near 0 after fade-out.');
+          }
+        }
+      } finally {
+        // Restore original getPhase
+        weather.getPhase = origGetPhase;
+      }
+    }
+  }
+
   return problems;
 }

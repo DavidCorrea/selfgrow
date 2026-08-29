@@ -185,6 +185,7 @@
     import { startDayNightCycle } from "./daynight.js";
     import { startWeatherCycle } from "./weather.js";
     import { loadGardenState, saveGardenState, fastForwardState, clearGardenState } from "./persistence.js";
+    import { createRain } from "./rain.js";
 
     const wrapper = document.getElementById('garden-canvas-wrapper');
     const scene = new THREE.Scene();
@@ -306,13 +307,26 @@
     /* --- Ambient floating particles (dust motes / pollen) --- */
     const particles = createAmbientParticles(scene);
 
+    /* --- Rain particle system (visible during Light Drizzle) --- */
+    const rain = createRain(scene);
+    rain.update(0, 0.016); // initialise to safe state
+
     /* Animation loop */
     let animTime = 0;
+    let lastFrameTime = performance.now();
     function animate() {
       requestAnimationFrame(animate);
-      animTime += 0.016; // approximate frame time
+
+      const now = performance.now();
+      const dt = Math.min((now - lastFrameTime) / 1000, 0.05); // cap dt to avoid spiral
+      lastFrameTime = now;
+
+      animTime += dt;
       controls.update();
       particles.update(animTime);
+
+      /* Update rain: pass absolute time and delta time */
+      rain.update(animTime, dt);
 
       /* Update distant horizon silhouette to blend with current sky colour */
       if (scene.background instanceof THREE.Color) {
@@ -343,6 +357,8 @@
       groundNoiseTexture,
       particles: particles.state,
       particlesUpdate: particles.update,
+      rain: rain.state,
+      rainUpdate: rain.update,
       getSeason: () => document.getElementById('season-display')?.textContent || 'Spring',
       getTimeOfDay: () => document.getElementById('time-display')?.textContent || 'Morning',
       getWeather: () => document.getElementById('weather-display')?.textContent || 'Clear',
