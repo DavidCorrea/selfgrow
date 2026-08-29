@@ -291,6 +291,308 @@ function createPlant(opts) {
     sway();
   }
 
+  /* --- Flower lifecycle ---
+   *
+   * After a plant reaches full maturity, a slow, continuous flower cycle
+   * begins. Phases:
+   *   dormant (30-60s)  →  budding (15s)  →  opening (~60s)
+   *   →  bloom (90-120s)  →  fading/dropping (~30s)  →  back to dormant
+   *
+   * The flower is small and soft-coloured — not a centrepiece, but a
+   * detail that rewards patient watching.
+   */
+  function createFlowerMeshes(stemH, color) {
+    const flowerGroup = new THREE.Group();
+
+    const petalMat = new THREE.MeshStandardMaterial({
+      color: color || 0xdda0dd,
+      roughness: 0.4,
+      metalness: 0.0,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 1
+    });
+
+    // Teardrop petal shape
+    const shape = new THREE.Shape();
+    shape.moveTo(0, 0);
+    shape.bezierCurveTo(0.025, 0.01, 0.04, 0.03, 0.005, 0.055);
+    shape.bezierCurveTo(-0.04, 0.03, -0.025, 0.01, 0, 0);
+
+    const geo = new THREE.ShapeGeometry(shape);
+
+    const petalCount = 5;
+    const petals = [];
+    for (let i = 0; i < petalCount; i++) {
+      const angle = (i / petalCount) * Math.PI * 2;
+      const m = new THREE.Mesh(geo, petalMat.clone());
+      m.position.set(0, stemH, 0);
+      m.rotation.y = angle;
+      m.rotation.x = 0.3; // slight outward tilt (bud state)
+      m.scale.set(0.01, 0.01, 0.01); // hidden initially
+      m.castShadow = false;
+      flowerGroup.add(m);
+      petals.push(m);
+    }
+
+    // Tiny centre bud
+    const budGeo = new THREE.SphereGeometry(0.004, 6, 6);
+    const budMat = new THREE.MeshStandardMaterial({
+      color: 0x8a7a4a,
+      roughness: 0.8,
+      metalness: 0.0,
+      transparent: true,
+      opacity: 1
+    });
+    const bud = new THREE.Mesh(budGeo, budMat);
+    bud.position.set(0, stemH + 0.008, 0);
+    flowerGroup.add(bud);
+
+    return { group: flowerGroup, petals, bud, petalMat };
+  }
+
+  /* Flower lifecycle — called once the plant is fully grown */
+  function startFlowerCycle() {
+    const isPlant2 = label === 'plant2';
+
+    // Soft pale colours: lavender for central plant, pale pink for companion
+    const flowerColor = isPlant2 ? 0xddb0b0 : 0xdda0dd;
+    const fm = createFlowerMeshes(stemHeight, flowerColor);
+    group.add(fm.group);
+
+    // Expose flower on plant state for selftest and persistence
+    plantState.flower = {
+      group: fm.group,
+      petals: fm.petals,
+      bud: fm.bud,
+      petalMat: fm.petalMat,
+      getPhase: () => phase,
+      getProgress: () => progress
+    };
+
+    let phase = 'dormant';
+    let phaseStart = performance.now();
+    let phaseDuration = 30000 + Math.random() * 30000; // first dormant: 30-60s
+    let progress = 0;
+
+    // Phase durations (re-rolled each cycle except fixed ones)
+    function rollDurations() {
+      return {
+        dormant: 30000 + Math.random() * 30000,
+        budding: 15000,
+        opening: 60000,
+        bloom: 90000 + Math.random() * 30000,
+        fading: 30000
+      };
+    }
+
+    let durations = rollDurations();
+
+    /* Update DOM when the flower enters a new visible phase */
+    function updateDOMDescriptions() {
+      const growingDesc = document.getElementById('growing-description');
+      const plotDesc = document.getElementById('plot-description');
+
+      if (!growingDesc || !plotDesc) return;
+
+      if (isPlant2) {
+        // plant2 companion descriptions
+        switch (phase) {
+          case 'budding':
+            growingDesc.textContent = 'A tiny bud appears at the tip of the second plant. Something delicate is forming.';
+            plotDesc.textContent = 'Two plants share the garden. The central plant stands tall while its companion shows a small bud forming near its crown.';
+            break;
+          case 'opening':
+            growingDesc.textContent = 'A soft blossom slowly unfurls on the companion plant, its petals catching the light.';
+            plotDesc.textContent = 'Two plants grow side by side. A delicate, pale blossom opens on the shorter plant, adding a gentle note to the scene.';
+            break;
+          case 'bloom':
+            growingDesc.textContent = 'A small flower blooms softly near the top of the companion plant.';
+            plotDesc.textContent = 'Two plants share the plot, one crowned with a small, soft-hued blossom. The garden feels complete.';
+            break;
+          case 'fading':
+            growingDesc.textContent = 'The blossom on the companion plant fades gently, its petals beginning to fall.';
+            plotDesc.textContent = 'The companion plant\'s flower gently fades, its moment passing as quietly as it came.';
+            break;
+          default:
+            // dormant — keep existing descriptions from becomeFullyGrown
+            growingDesc.textContent = 'Two seedlings now stand together — the central plant tall and slender, its companion shorter with broad, rounded leaves.';
+            plotDesc.textContent = 'Two plants share the garden plot. The first stands tall at center; the second, with wider leaves and a softer green hue, grows beside it as if the garden chose to spread.';
+            break;
+        }
+      } else {
+        // plant1 (central) descriptions
+        const plant2Exists = window.__gardenState && window.__gardenState.plant2;
+
+        switch (phase) {
+          case 'budding':
+            if (plant2Exists) {
+              growingDesc.textContent = 'A tiny bud forms at the tip of the central stem. The companion plant sways beside it.';
+              plotDesc.textContent = 'The garden stirs quietly — a bud appears at the tip of the central plant, a delicate promise forming above the leaves.';
+            } else {
+              growingDesc.textContent = 'A tiny bud forms at the tip of the stem, a delicate point of emergence.';
+              plotDesc.textContent = 'A single seedling stands in the plot, crowned by a tiny bud that grows at its tip. The air is still and patient.';
+            }
+            break;
+          case 'opening':
+            if (plant2Exists) {
+              growingDesc.textContent = 'A gentle blossom slowly opens near the top of the central plant, unfurling its petals.';
+              plotDesc.textContent = 'The central plant\'s bud opens gradually, revealing a small, soft-coloured blossom. The companion looks on, its leaves catching the fading light.';
+            } else {
+              growingDesc.textContent = 'A gentle blossom slowly opens near the top of the stem, its petals unfurling one by one.';
+              plotDesc.textContent = 'The seedling\'s bud opens into a small, soft-coloured blossom. The garden feels a little more alive.';
+            }
+            break;
+          case 'bloom':
+            if (plant2Exists) {
+              growingDesc.textContent = 'A small flower blooms softly near the crown of the central plant, a quiet spectacle.';
+              plotDesc.textContent = 'The central plant wears a small, delicate flower at its crown. Beside it, the companion watches in silence.';
+            } else {
+              growingDesc.textContent = 'A small flower blooms softly near the top of the stem.';
+              plotDesc.textContent = 'A small, soft-coloured flower blooms at the tip of the seedling, a quiet reward for patient watching.';
+            }
+            break;
+          case 'fading':
+            if (plant2Exists) {
+              growingDesc.textContent = 'The flower on the central plant fades gently, its petals beginning to drop.';
+              plotDesc.textContent = 'The central plant\'s blossom fades, its petals falling slowly toward the soil. The cycle turns.';
+            } else {
+              growingDesc.textContent = 'The flower fades gently, its petals beginning to fall.';
+              plotDesc.textContent = 'The blossom fades and drops, its petals returning to the soil. The garden waits.';
+            }
+            break;
+          default:
+            // dormant — existing descriptions maintained by becomeFullyGrown
+            break;
+        }
+      }
+        }
+
+    function tick() {
+      const elapsed = performance.now() - phaseStart;
+      progress = Math.min(1, elapsed / phaseDuration);
+
+      switch (phase) {
+        case 'dormant':
+          if (elapsed >= phaseDuration) {
+            phase = 'budding';
+            phaseStart = performance.now();
+            phaseDuration = durations.budding;
+            progress = 0;
+            updateDOMDescriptions();
+          }
+          break;
+
+        case 'budding': {
+          // Petals grow from tiny to small bud size
+          const t = Math.min(1, elapsed / phaseDuration);
+          const eased = 1 - Math.pow(1 - t, 3);
+          const s = eased * 0.35;
+          fm.petals.forEach(p => {
+            p.scale.set(s, s, s);
+          });
+          if (elapsed >= phaseDuration) {
+            phase = 'opening';
+            phaseStart = performance.now();
+            phaseDuration = durations.opening;
+            progress = 0;
+            updateDOMDescriptions();
+          }
+          break;
+        }
+
+        case 'opening': {
+          // Petals spread outward and scale up to full size
+          const t = Math.min(1, elapsed / phaseDuration);
+          const eased = 1 - Math.pow(1 - t, 2);
+          fm.petals.forEach((p, i) => {
+            const tilt = 0.3 + eased * 1.2; // from slight tilt to nearly flat
+            p.scale.set(eased, eased, eased);
+            p.rotation.x = tilt;
+          });
+          if (elapsed >= phaseDuration) {
+            phase = 'bloom';
+            phaseStart = performance.now();
+            phaseDuration = durations.bloom;
+            progress = 0;
+            updateDOMDescriptions();
+          }
+          break;
+        }
+
+        case 'bloom':
+          // Gentle sway: a barely-perceptible animation
+          if (fm.petals.length > 0) {
+            const sway = Math.sin(elapsed * 0.001 * 0.5) * 0.05;
+            fm.petals.forEach((p, i) => {
+              p.rotation.z = sway + (i % 2 === 0 ? 0.02 : -0.02);
+            });
+          }
+          if (elapsed >= phaseDuration) {
+            phase = 'fading';
+            phaseStart = performance.now();
+            phaseDuration = durations.fading;
+            progress = 0;
+            updateDOMDescriptions();
+          }
+          break;
+
+        case 'fading': {
+          // Fade opacity and shrink petals
+          const t = Math.min(1, elapsed / phaseDuration);
+          const opacity = 1 - t;
+          const shrink = 1 - t * 0.6;
+          fm.petals.forEach(p => {
+            p.material.opacity = opacity;
+            p.scale.set(shrink, shrink, shrink);
+          });
+          fm.bud.material.opacity = opacity;
+          // Also tilt petals down as they drop
+          fm.petals.forEach((p, i) => {
+            p.rotation.x += 0.0003; // slow droop
+          });
+          if (elapsed >= phaseDuration) {
+            // Reset for next cycle
+            phase = 'dormant';
+            phaseStart = performance.now();
+            durations = rollDurations();
+            phaseDuration = durations.dormant;
+            progress = 0;
+            // Reset visual state
+            fm.petals.forEach(p => {
+              p.material.opacity = 1;
+              p.scale.set(0.01, 0.01, 0.01);
+              p.rotation.x = 0.3;
+              p.rotation.z = 0;
+            });
+            fm.bud.material.opacity = 1;
+            updateDOMDescriptions();
+            // Restore normal dormant descriptions
+            const growingDesc = document.getElementById('growing-description');
+            const plotDesc = document.getElementById('plot-description');
+            if (isPlant2) {
+              growingDesc.textContent = 'Two seedlings now stand together — the central plant tall and slender, its companion shorter with broad, rounded leaves.';
+              plotDesc.textContent = 'Two plants share the garden plot. The first stands tall at center; the second, with wider leaves and a softer green hue, grows beside it as if the garden chose to spread.';
+            } else {
+              const plant2Exists = window.__gardenState && window.__gardenState.plant2;
+              if (plant2Exists) {
+                growingDesc.textContent = 'A young seedling rises from the soil, its leaves reaching toward the light. A second plant grows nearby.';
+                plotDesc.textContent = 'A healthy seedling stands at the center of the plot, its leaves open to the sky. A companion plant with broader leaves grows beside it.';
+              } else {
+                growingDesc.textContent = 'The first seedling stands tall.';
+                plotDesc.textContent = 'A healthy seedling stands at the center of the plot.';
+              }
+            }
+          }
+          break;
+        }
+      }
+
+      requestAnimationFrame(tick);
+    }
+
+    tick();
+  }
   /* --- Helper: trigger fully-grown behaviour --- */
   function becomeFullyGrown() {
     fullyGrown = true;
@@ -329,6 +631,7 @@ function createPlant(opts) {
     }
 
     startSway();
+    startFlowerCycle();
   }
 
   /* If already fully grown from the start, go straight to end state */

@@ -11,6 +11,10 @@
  *  - plant1Maturity (0–1)
  *  - plant2Maturity (0–1, only if spawned)
  *  - firstPlantGrown (boolean)
+ *  - plant1FlowerPhase (string, one of dormant/budding/opening/bloom/fading)
+ *  - plant1FlowerProgress (0–1)
+ *  - plant2FlowerPhase (string, only if plant2 has a flower)
+ *  - plant2FlowerProgress (0–1)
  *  - timestamp (wall-clock ms of save)
  *
  * On restore, elapsed real time is computed and all cycles
@@ -49,6 +53,18 @@ export function saveGardenState() {
       state.plant2Maturity = gs.plant2Maturity;
     }
 
+    // Capture flower state for each plant
+    const plant1 = gs.plant;
+    if (plant1 && plant1.flower && typeof plant1.flower.getPhase === 'function') {
+      state.plant1FlowerPhase = plant1.flower.getPhase();
+      state.plant1FlowerProgress = plant1.flower.getProgress();
+    }
+    const plant2 = gs.plant2;
+    if (plant2 && plant2.flower && typeof plant2.flower.getPhase === 'function') {
+      state.plant2FlowerPhase = plant2.flower.getPhase();
+      state.plant2FlowerProgress = plant2.flower.getProgress();
+    }
+
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (e) {
     // Silently fail — localStorage may be full or unavailable
@@ -83,6 +99,20 @@ export function loadGardenState() {
       state.plant2Maturity = Math.min(1, Math.max(0, state.plant2Maturity));
     }
 
+    // Coerce flower state if present
+    if (state.plant1FlowerPhase !== undefined) {
+      state.plant1FlowerPhase = String(state.plant1FlowerPhase);
+    }
+    if (state.plant1FlowerProgress !== undefined) {
+      state.plant1FlowerProgress = Math.min(1, Math.max(0, state.plant1FlowerProgress));
+    }
+    if (state.plant2FlowerPhase !== undefined) {
+      state.plant2FlowerPhase = String(state.plant2FlowerPhase);
+    }
+    if (state.plant2FlowerProgress !== undefined) {
+      state.plant2FlowerProgress = Math.min(1, Math.max(0, state.plant2FlowerProgress));
+    }
+
     return state;
   } catch (e) {
     return null;
@@ -99,7 +129,9 @@ export function loadGardenState() {
  * @param {object} savedState - The state returned by loadGardenState().
  * @returns {object} Fast-forwarded progress values:
  *   { seasonProgress, dayNightProgress, weatherProgress,
- *     plant1Maturity, firstPlantGrown, plant2Maturity }
+ *     plant1Maturity, firstPlantGrown, plant2Maturity,
+ *     plant1FlowerPhase, plant1FlowerProgress,
+ *     plant2FlowerPhase, plant2FlowerProgress }
  */
 export function fastForwardState(savedState) {
   const elapsed = Date.now() - savedState.timestamp;
@@ -135,7 +167,11 @@ export function fastForwardState(savedState) {
     weatherProgress,
     plant1Maturity,
     firstPlantGrown,
-    plant2Maturity
+    plant2Maturity,
+    plant1FlowerPhase: savedState.plant1FlowerPhase,
+    plant1FlowerProgress: savedState.plant1FlowerProgress,
+    plant2FlowerPhase: savedState.plant2FlowerPhase,
+    plant2FlowerProgress: savedState.plant2FlowerProgress
   };
 }
 
