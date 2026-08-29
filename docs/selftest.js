@@ -1048,6 +1048,110 @@ export async function checks() {
     }
   }
 
+  /* ---------- Scrub ring checks (issue #446) ---------- */
+  const scrub = gardenState && gardenState.scrub;
+  if (!scrub) {
+    problems.push('window.__gardenState.scrub is not set — the mid-ground scrub ring was not created.');
+  } else {
+    // Verify the group exists and is in the scene
+    if (!scrub.group) {
+      problems.push('scrub.group is missing — the scrub group was not created.');
+    } else {
+      if (gardenState && gardenState.scene) {
+        const found = gardenState.scene.children.includes(scrub.group);
+        if (!found) {
+          problems.push('scrub.group is not a child of the scene — it was not added to the garden.');
+        }
+      }
+      if (scrub.group.name !== 'scrub') {
+        problems.push('scrub.group.name is "' + scrub.group.name + '", expected "scrub".');
+      }
+    }
+
+    // Verify update is a function
+    if (typeof scrub.update !== 'function') {
+      problems.push('scrub.update is not a function — the sky colour blend update is missing.');
+    }
+
+    // Verify getMeshes is a function
+    if (typeof scrub.getMeshes !== 'function') {
+      problems.push('scrub.getMeshes is not a function — mesh accessor is missing.');
+    } else {
+      const meshes = scrub.getMeshes();
+      if (!Array.isArray(meshes)) {
+        problems.push('scrub.getMeshes() did not return an array — got ' + typeof meshes);
+      } else if (meshes.length === 0) {
+        problems.push('scrub.getMeshes() returned an empty array — no bush silhouettes were created.');
+      } else {
+        // Verify there are 40–60 bush meshes (we configured 50)
+        if (meshes.length < 40 || meshes.length > 60) {
+          problems.push('scrub has ' + meshes.length + ' bush meshes, expected between 40 and 60.');
+        }
+
+        // Verify each mesh is a THREE.Mesh with correct material configuration
+        meshes.forEach(function(mesh, i) {
+          if (!(mesh instanceof THREE.Mesh)) {
+            problems.push('scrub mesh #' + i + ' is not a THREE.Mesh, got ' + (mesh && mesh.constructor ? mesh.constructor.name : typeof mesh));
+            return;
+          }
+          var mat = mesh.material;
+          if (!mat) {
+            problems.push('scrub mesh #' + i + ' has no material.');
+            return;
+          }
+          if (mat.transparent !== true) {
+            problems.push('scrub mesh #' + i + ' material.transparent is ' + mat.transparent + ', expected true — silhouette must be transparent for fading.');
+          }
+          if (typeof mat.opacity !== 'number' || mat.opacity <= 0) {
+            problems.push('scrub mesh #' + i + ' material.opacity is ' + mat.opacity + ', expected a positive number for fade blending.');
+          }
+
+          // Verify position radius is between ~5 and 6 units from origin
+          var dist = Math.sqrt(mesh.position.x * mesh.position.x + mesh.position.z * mesh.position.z);
+          if (dist < 4.5 || dist > 6.5) {
+            problems.push('scrub mesh #' + i + ' at distance ' + dist.toFixed(2) + ' from origin — expected between ~5 and 6 (mid-ground between plot and horizon).');
+          }
+        });
+      }
+    }
+
+    // Verify the material is MeshBasicMaterial (unlit, no shadows from silhouette)
+    var scrubMat = scrub.getMaterial ? scrub.getMaterial() : null;
+    if (!scrubMat) {
+      problems.push('scrub.getMaterial() is missing or returned undefined — material accessor not exposed.');
+    } else if (!(scrubMat instanceof THREE.MeshBasicMaterial)) {
+      problems.push('scrub material is ' + (scrubMat && scrubMat.constructor ? scrubMat.constructor.name : typeof scrubMat) + ', expected MeshBasicMaterial (unlit).');
+    } else {
+      if (scrubMat.depthWrite !== false) {
+        problems.push('scrub material depthWrite is ' + scrubMat.depthWrite + ', expected false — silhouettes should not write depth to avoid occluding the garden.');
+      }
+    }
+
+    // Test the update function: call it with a bright sky and verify opacity increases
+    if (typeof scrub.update === 'function') {
+      var brightSky = new THREE.Color(0x87ceeb); // midday blue
+      scrub.update(brightSky);
+      var meshes = scrub.getMeshes();
+      if (meshes && meshes.length > 0) {
+        var middayOpacity = meshes[0].material.opacity;
+        if (typeof middayOpacity !== 'number' || middayOpacity < 0.05) {
+          problems.push('After scrub.update() with bright sky (midday), mesh opacity is ' + middayOpacity + ', expected > 0.05 — bushes should be visible during the day.');
+        }
+
+        // Now test with dark sky
+        var darkSky = new THREE.Color(0x0a1628); // deep night
+        scrub.update(darkSky);
+        var nightOpacity = meshes[0].material.opacity;
+        if (typeof nightOpacity !== 'number' || nightOpacity > middayOpacity) {
+          problems.push('After scrub.update() with dark sky (night), mesh opacity is ' + nightOpacity + ', expected less than the midday opacity of ' + middayOpacity + ' — bushes should fade at night.');
+        }
+        if (nightOpacity > 0.5) {
+          problems.push('After scrub.update() with dark sky (night), mesh opacity is ' + nightOpacity + ', expected <= 0.5 — bushes should be very faint or invisible at night.');
+        }
+      }
+    }
+  }
+
   /* ---------- Rain particle system checks (issue #437) ---------- */
   const rainState = gardenState && gardenState.rain;
   if (!rainState) {
