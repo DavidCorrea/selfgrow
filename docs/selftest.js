@@ -1366,5 +1366,90 @@ export async function checks() {
     }
   }
 
+  /* ---------- Drifting creature checks (issue #440) ---------- */
+  const creatureState = gardenState && gardenState.creature;
+  if (!creatureState) {
+    problems.push('window.__gardenState.creature is not set — the drifting creature was not created (creature.js may not have been imported or called).');
+  } else {
+    // Verify type
+    if (creatureState.type !== 'creature') {
+      problems.push('creature.state.type is "' + creatureState.type + '", expected "creature".');
+    }
+
+    // Verify reducedMotion is a boolean
+    if (typeof creatureState.reducedMotion !== 'boolean') {
+      problems.push('creature.state.reducedMotion should be a boolean, got ' + typeof creatureState.reducedMotion);
+    }
+
+    // Verify group exists and is in the scene
+    if (!creatureState.group) {
+      problems.push('creature.state.group is missing — the creature group was not created.');
+    } else {
+      if (gardenState && gardenState.scene) {
+        var found = gardenState.scene.children.indexOf(creatureState.group) !== -1;
+        if (!found) {
+          problems.push('creature group is not a child of the scene — it was not added to the garden.');
+        }
+      }
+    }
+
+    // Verify wing meshes exist
+    if (!creatureState.leftWing) {
+      problems.push('creature.state.leftWing is missing — left wing mesh was not created.');
+    }
+    if (!creatureState.rightWing) {
+      problems.push('creature.state.rightWing is missing — right wing mesh was not created.');
+    }
+
+    // Verify wing material exists and has correct properties
+    if (!creatureState.wingMat) {
+      problems.push('creature.state.wingMat is missing — wing material was not created.');
+    } else {
+      if (creatureState.wingMat.transparent !== true) {
+        problems.push('creature.wingMat.transparent is ' + creatureState.wingMat.transparent + ', expected true for silhouette blending.');
+      }
+      if (typeof creatureState.wingMat.opacity !== 'number' || creatureState.wingMat.opacity <= 0) {
+        problems.push('creature.wingMat.opacity is ' + creatureState.wingMat.opacity + ', expected a positive number for visible silhouette.');
+      }
+      if (!(creatureState.wingMat instanceof THREE.MeshBasicMaterial)) {
+        problems.push('creature.wingMat is not a THREE.MeshBasicMaterial — expected unlit silhouette material.');
+      }
+    }
+
+    // Verify orbit speed is slow (unhurried, < 0.2 rad/s)
+    if (typeof creatureState.orbitSpeed !== 'number' || creatureState.orbitSpeed > 0.2) {
+      problems.push('creature.orbitSpeed is ' + creatureState.orbitSpeed + ', expected <= 0.2 for an unhurried drift.');
+    }
+
+    // Verify radius bounds keep creature at periphery, not centre
+    if (typeof creatureState.radiusMin !== 'number' || creatureState.radiusMin < 1.0) {
+      problems.push('creature.radiusMin is ' + creatureState.radiusMin + ', expected >= 1.0 to keep the creature at the periphery.');
+    }
+    if (typeof creatureState.radiusMax !== 'number' || creatureState.radiusMax > 3.5) {
+      problems.push('creature.radiusMax is ' + creatureState.radiusMax + ', expected <= 3.5 to keep the creature within the garden bounds.');
+    }
+    if (creatureState.radiusMax - creatureState.radiusMin < 0.3) {
+      problems.push('creature radius range is too narrow (' + creatureState.radiusMin + ' to ' + creatureState.radiusMax + ') — should span at least 0.5 units for an organic path variation.');
+    }
+
+    // Verify reduced-motion behaviour
+    if (creatureState.reducedMotion) {
+      // When reduced motion is active, the group should be invisible
+      if (creatureState.group && creatureState.group.visible !== false) {
+        problems.push('creature.group.visible is ' + creatureState.group.visible + ' but reducedMotion is true — should be false.');
+      }
+    }
+
+    // Verify the update function is exposed
+    if (typeof gardenState.creatureUpdate !== 'function') {
+      problems.push('gardenState.creatureUpdate is not a function — the creature update loop is not exposed.');
+    }
+
+    // Verify the group has an appropriate name
+    if (creatureState.group && creatureState.group.name !== 'creature') {
+      problems.push('creature.group.name is "' + creatureState.group.name + '", expected "creature".');
+    }
+  }
+
   return problems;
 }
