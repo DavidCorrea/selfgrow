@@ -877,5 +877,104 @@ export async function checks() {
     }
   }
 
+  /* ---------- Horizon tree-line silhouette checks (issue #436) ---------- */
+  const horizon = gardenState && gardenState.horizon;
+  if (!horizon) {
+    problems.push('window.__gardenState.horizon is not set — the distant horizon tree-line silhouette was not created.');
+  } else {
+    // Verify the group exists and is in the scene
+    if (!horizon.group) {
+      problems.push('horizon.group is missing — the horizon group was not created.');
+    } else {
+      if (gardenState && gardenState.scene) {
+        const found = gardenState.scene.children.includes(horizon.group);
+        if (!found) {
+          problems.push('horizon.group is not a child of the scene — it was not added to the garden.');
+        }
+      }
+      // Verify the group has the expected name
+      if (horizon.group.name !== 'horizon') {
+        problems.push('horizon.group.name is "' + horizon.group.name + '", expected "horizon".');
+      }
+    }
+
+    // Verify update is a function
+    if (typeof horizon.update !== 'function') {
+      problems.push('horizon.update is not a function — the sky colour blend update is missing.');
+    }
+
+    // Verify getMeshes is a function
+    if (typeof horizon.getMeshes !== 'function') {
+      problems.push('horizon.getMeshes is not a function — mesh accessor is missing.');
+    } else {
+      const meshes = horizon.getMeshes();
+      if (!Array.isArray(meshes)) {
+        problems.push('horizon.getMeshes() did not return an array — got ' + typeof meshes);
+      } else if (meshes.length === 0) {
+        problems.push('horizon.getMeshes() returned an empty array — no tree silhouettes were created.');
+      } else {
+        // Verify each mesh is a THREE.Mesh with correct material configuration
+        meshes.forEach((mesh, i) => {
+          if (!(mesh instanceof THREE.Mesh)) {
+            problems.push('horizon mesh #' + i + ' is not a THREE.Mesh, got ' + (mesh && mesh.constructor ? mesh.constructor.name : typeof mesh));
+            return;
+          }
+          const mat = mesh.material;
+          if (!mat) {
+            problems.push('horizon mesh #' + i + ' has no material.');
+            return;
+          }
+          if (mat.transparent !== true) {
+            problems.push('horizon mesh #' + i + ' material.transparent is ' + mat.transparent + ', expected true — silhouette must be transparent for fading.');
+          }
+          if (typeof mat.opacity !== 'number' || mat.opacity <= 0) {
+            problems.push('horizon mesh #' + i + ' material.opacity is ' + mat.opacity + ', expected a positive number for fade blending.');
+          }
+        });
+
+        // Verify there are at least 40 tree silhouettes (we configured 60)
+        if (meshes.length < 40) {
+          problems.push('horizon has only ' + meshes.length + ' tree meshes, expected at least 40 for a visible tree line.');
+        }
+      }
+    }
+
+    // Verify the material is MeshBasicMaterial (unlit, no shadows from silhouette)
+    const horizonMat = horizon.getMaterial ? horizon.getMaterial() : null;
+    if (!horizonMat) {
+      problems.push('horizon.getMaterial() is missing or returned undefined — material accessor not exposed.');
+    } else if (!(horizonMat instanceof THREE.MeshBasicMaterial)) {
+      problems.push('horizon material is ' + (horizonMat && horizonMat.constructor ? horizonMat.constructor.name : typeof horizonMat) + ', expected MeshBasicMaterial (unlit).');
+    } else {
+      if (horizonMat.depthWrite !== false) {
+        problems.push('horizon material depthWrite is ' + horizonMat.depthWrite + ', expected false — silhouettes should not write depth to avoid occluding the garden.');
+      }
+    }
+
+    // Test the update function: call it with a bright sky and verify opacity increases
+    if (typeof horizon.update === 'function') {
+      const brightSky = new THREE.Color(0x87ceeb); // midday blue
+      horizon.update(brightSky);
+      const meshes = horizon.getMeshes();
+      if (meshes && meshes.length > 0) {
+        const middayOpacity = meshes[0].material.opacity;
+        if (typeof middayOpacity !== 'number' || middayOpacity < 0.05) {
+          problems.push('After horizon.update() with bright sky (midday), mesh opacity is ' + middayOpacity + ', expected > 0.05 — silhouettes should be visible during the day.');
+        }
+
+        // Now test with dark sky
+        const darkSky = new THREE.Color(0x0a1628); // deep night
+        horizon.update(darkSky);
+        const nightOpacity = meshes[0].material.opacity;
+        if (typeof nightOpacity !== 'number' || nightOpacity > middayOpacity) {
+          problems.push('After horizon.update() with dark sky (night), mesh opacity is ' + nightOpacity + ', expected less than the midday opacity of ' + middayOpacity + ' — trees should fade at night.');
+        }
+        if (nightOpacity > 0.5) {
+          problems.push('After horizon.update() with dark sky (night), mesh opacity is ' + nightOpacity + ', expected <= 0.5 — trees should be very faint or invisible at night.');
+        }
+      }
+    }
+  }
+
   return problems;
 }
