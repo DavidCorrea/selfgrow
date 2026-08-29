@@ -189,6 +189,7 @@
     import { createAmbientParticles } from "./particles.js";
     import { createGroundNoiseTexture } from "./groundNoise.js";
     import { createHorizon } from "./horizon.js";
+    import { createScrub } from "./scrub.js";
     import { startDayNightCycle } from "./daynight.js";
     import { startWeatherCycle } from "./weather.js";
     import { loadGardenState, saveGardenState, fastForwardState, clearGardenState } from "./persistence.js";
@@ -301,6 +302,9 @@
     /* --- Distant horizon tree-line silhouette --- */
     const horizon = createHorizon(scene);
 
+    /* --- Mid-ground scrub/bush silhouettes --- */
+    const scrub = createScrub(scene);
+
     /* Resize handler */
     function onResize() {
       const w = wrapper.clientWidth;
@@ -345,6 +349,7 @@
       /* Update distant horizon silhouette to blend with current sky colour */
       if (scene.background instanceof THREE.Color) {
         horizon.update(scene.background);
+        scrub.update(scene.background);
       }
 
       renderer.render(scene, camera);
@@ -358,8 +363,9 @@
       plotDesc.textContent = 'An empty plot of rich soil, ready for something to grow. A faint haze drifts in the air.';
     }
 
-    /* Expose horizon on garden state */
+    /* Expose horizon and scrub on garden state */
     horizon.group.name = 'horizon';
+    scrub.group.name = 'scrub';
 
     /* Expose state getters for selftest and future updates */
     window.__gardenState = {
@@ -379,6 +385,7 @@
       getPlotDescription: () => document.getElementById('plot-description')?.textContent || '',
       getGrowingDescription: () => document.getElementById('growing-description')?.textContent || '',
       horizon,
+      scrub,
       groundRipple: groundRipple.state
     };
 
