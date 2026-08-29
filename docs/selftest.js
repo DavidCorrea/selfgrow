@@ -6,6 +6,7 @@
  */
 
 import * as THREE from "three";
+import { saveGardenState, loadGardenState, fastForwardState, clearGardenState, STORAGE_KEY } from "./persistence.js";
 
 export async function checks() {
   const problems = [];
@@ -670,6 +671,148 @@ export async function checks() {
       }
     }
   }
+
+  /* ---------- Persistence checks (issue #429) ---------- */
+  // Clear any pre-existing saved state to get a clean baseline
+  clearGardenState();
+
+  // Check 1: empty localStorage returns null
+  const noState = loadGardenState();
+  if (noState !== null) {
+    problems.push('loadGardenState() should return null when no saved state exists, got ' + JSON.stringify(noState));
+  }
+
+  // Check 2: corrupt JSON returns null
+  try {
+    localStorage.setItem(STORAGE_KEY, 'not-valid-json{{{');
+  } catch (_e) {
+    // localStorage may not be available — skip
+  }
+  const corruptState = loadGardenState();
+  if (corruptState !== null) {
+    problems.push('loadGardenState() should return null when localStorage contains corrupt JSON, got ' + JSON.stringify(corruptState));
+  }
+  clearGardenState();
+
+  // Check 3: corrupt missing timestamp returns null
+  try {
+    const bad = { seasonProgress: 0.5, dayNightProgress: 0.3, weatherProgress: 0.1, plant1Maturity: 0.2 };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(bad));
+  } catch (_e) {
+    // skip
+  }
+  const noTimestamp = loadGardenState();
+  if (noTimestamp !== null) {
+    problems.push('loadGardenState() should return null when saved state has no timestamp, got ' + JSON.stringify(noTimestamp));
+  }
+  clearGardenState();
+
+  // Check 4: save and load round-trip preserves values
+  // Set up a realistic state on __gardenState
+  if (window.__gardenState) {
+    window.__gardenState.seasonProgress = 0.25;
+    window.__gardenState.dayNightProgress = 0.5;
+    window.__gardenState.weatherProgress = 0.75;
+    window.__gardenState.plant1Maturity = 0.8;
+    window.__gardenState.firstPlantGrown = true;
+    window.__gardenState.plant2Maturity = 0.4;
+
+    saveGardenState();
+    const loaded = loadGardenState();
+    if (!loaded) {
+      problems.push('saveGardenState() + loadGardenState() round-trip returned null — expected a valid state object.');
+    } else {
+      // Season progress within tolerance (storage has limited precision)
+      const eps = 0.01;
+      if (Math.abs(loaded.seasonProgress - 0.25) > eps) {
+        problems.push('seasonProgress round-trip: saved 0.25, loaded ' + loaded.seasonProgress);
+      }
+      if (Math.abs(loaded.dayNightProgress - 0.5) > eps) {
+        problems.push('dayNightProgress round-trip: saved 0.5, loaded ' + loaded.dayNightProgress);
+      }
+      if (Math.abs(loaded.weatherProgress - 0.75) > eps) {
+        problems.push('weatherProgress round-trip: saved 0.75, loaded ' + loaded.weatherProgress);
+      }
+      if (Math.abs(loaded.plant1Maturity - 0.8) > eps) {
+        problems.push('plant1Maturity round-trip: saved 0.8, loaded ' + loaded.plant1Maturity);
+      }
+      if (loaded.firstPlantGrown !== true) {
+        problems.push('firstPlantGrown round-trip: saved true, loaded ' + loaded.firstPlantGrown);
+      }
+      if (loaded.plant2Maturity === undefined || Math.abs(loaded.plant2Maturity - 0.4) > eps) {
+        problems.push('plant2Maturity round-trip: saved 0.4, loaded ' + loaded.plant2Maturity);
+      }
+    }
+  } else {
+    problems.push('Cannot run persistence checks: window.__gardenState is not set.');
+  }
+
+  // Check 5: fastForwardState advances values correctly
+  const testState = {
+    seasonProgress: 0,
+    dayNightProgress: 0,
+    weatherProgress: 0,
+    plant1Maturity: 0,
+    firstPlantGrown: false,
+    timestamp: Date.now() - 360_000 // 6 minutes ago in ms
+  };
+  const ff = fastForwardState(testState);
+  if (!ff) {
+    problems.push('fastForwardState returned null/undefined — expected a progress object.');
+  } else {
+    // After 6 min (360s) with a 12 min (720s) season cycle: progress should be ~0.5
+    const expectedSeason = 360_000 / 720_000; // 0.5
+    if (Math.abs(ff.seasonProgress - expectedSeason) > 0.01) {
+      problems.push('fastForwardState seasonProgress: expected ~' + expectedSeason + ', got ' + ff.seasonProgress);
+    }
+    // Day/night 3 min cycle: 6 min elapsed → should be 360/180 = 2 full cycles → progress modulo 1 = 0
+    const expectedDayNight = 0; // 360000 % 180000 = 0
+    if (Math.abs(ff.dayNightProgress - expectedDayNight) > 0.01) {
+      problems.push('fastForwardState dayNightProgress: expected ' + expectedDayNight + ', got ' + ff.dayNightProgress);
+    }
+    // Weather 5 min cycle: 6 min → 300s elapsed, modulo 300s = 60s → 60/300 = 0.2
+    const expectedWeather = (360_000 % 300_000) / 300_000; // 0.2
+    if (Math.abs(ff.weatherProgress - expectedWeather) > 0.01) {
+      problems.push('fastForwardState weatherProgress: expected ~' + expectedWeather + ', got ' + ff.weatherProgress);
+    }
+    // Plant1: 30s grow, 6 min elapsed → fully grown
+    if (ff.plant1Maturity < 1) {
+      problems.push('fastForwardState plant1Maturity: expected 1 (fully grown after 6 min), got ' + ff.plant1Maturity);
+    }
+    // firstPlantGrown should be true since plant1 is mature
+    if (!ff.firstPlantGrown) {
+      problems.push('fastForwardState firstPlantGrown: expected true (plant1 is mature), got false');
+    }
+    // Plant2: started after plant1 matured at ~30s, so has been growing for ~570s (360-30=330s wait - no, 360s elapsed - 30s until plant1 mature = 330s growing)
+    const expectedPlant2 = Math.min(1, (360_000 - 30_000) / 25_000); // 330/25 = 13.2, capped at 1
+    if (ff.plant2Maturity === undefined || ff.plant2Maturity < 1) {
+      problems.push('fastForwardState plant2Maturity: expected 1 (fully grown after 330s of growing time), got ' + ff.plant2Maturity);
+    }
+  }
+
+  // Check 6: plant2Maturity is preserved through fast-forward when it existed already
+  const testStateWithPlant2 = {
+    seasonProgress: 0,
+    dayNightProgress: 0,
+    weatherProgress: 0,
+    plant1Maturity: 1,
+    firstPlantGrown: true,
+    plant2Maturity: 0.5,
+    timestamp: Date.now() - 10_000 // 10 seconds ago
+  };
+  const ff2 = fastForwardState(testStateWithPlant2);
+  if (ff2 && ff2.plant2Maturity !== undefined) {
+    // Plant2 had 0.5, and 10 more seconds of its 25s growth = 0.5 + 10/25 = 0.9
+    const expectedP2 = Math.min(1, 0.5 + 10_000 / 25_000); // 0.9
+    if (Math.abs(ff2.plant2Maturity - expectedP2) > 0.01) {
+      problems.push('fastForwardState with existing plant2: expected maturity ~' + expectedP2 + ', got ' + ff2.plant2Maturity);
+    }
+  } else if (!ff2) {
+    problems.push('fastForwardState with plant2 returned null — should have returned a valid state object.');
+  }
+
+  // Clean up test state
+  clearGardenState();
 
   return problems;
 }

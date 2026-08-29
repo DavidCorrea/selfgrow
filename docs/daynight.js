@@ -81,7 +81,7 @@ function getPhaseName(t) {
  * @param {THREE.HemisphereLight} hemiLight
  * @param {THREE.DirectionalLight} fillLight
  */
-export function startDayNightCycle(sunLight, scene, ambientLight, hemiLight, fillLight) {
+export function startDayNightCycle(sunLight, scene, ambientLight, hemiLight, fillLight, initialProgress) {
   const startTime = performance.now();
   const timeDisplay = document.getElementById('time-display');
   if (!timeDisplay) {
@@ -187,7 +187,24 @@ export function startDayNightCycle(sunLight, scene, ambientLight, hemiLight, fil
       timeDisplay.textContent = phaseName;
     }
 
+    /* Expose progress for persistence */
+    if (window.__gardenState) {
+      window.__gardenState.dayNightProgress = t;
+    }
+
     requestAnimationFrame(tick);
+  }
+
+  // If initialProgress provided, update initial display and progress
+  if (initialProgress !== undefined) {
+    const initialPhaseName = getPhaseName(initialProgress);
+    if (timeDisplay) {
+      timeDisplay.textContent = initialPhaseName;
+    }
+    lastPhaseName = initialPhaseName;
+    if (window.__gardenState) {
+      window.__gardenState.dayNightProgress = initialProgress;
+    }
   }
 
   tick();
