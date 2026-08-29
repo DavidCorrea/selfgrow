@@ -160,9 +160,10 @@ function getPhaseName(t) {
  * @param {THREE.HemisphereLight} hemiLight
  * @param {THREE.DirectionalLight} fillLight
  * @param {object} particles - The return value of createAmbientParticles (must have .state.material)
+ * @param {number} [initialProgress] - Offset in [0,1) to start the cycle at a specific progress point.
  */
-export function startWeatherCycle(sunLight, scene, ambientLight, hemiLight, fillLight, particles) {
-  const startTime = performance.now();
+export function startWeatherCycle(sunLight, scene, ambientLight, hemiLight, fillLight, particles, initialProgress) {
+  const startTime = performance.now() - (initialProgress || 0) * CYCLE_DURATION_MS;
   const weatherDisplay = document.getElementById('weather-display');
   if (!weatherDisplay) {
     console.warn('startWeatherCycle: #weather-display not found');
@@ -203,6 +204,18 @@ export function startWeatherCycle(sunLight, scene, ambientLight, hemiLight, fill
   };
 
   window.__gardenState.weather = weatherState;
+
+  // Set initial weather display if progress was provided
+  if (initialProgress !== undefined) {
+    const initialPhaseName = getPhaseName(initialProgress);
+    if (weatherDisplay) {
+      weatherDisplay.textContent = initialPhaseName;
+    }
+    lastPhaseName = initialPhaseName;
+    if (window.__gardenState) {
+      window.__gardenState.weatherProgress = initialProgress;
+    }
+  }
 
   function tick() {
     const elapsed = performance.now() - startTime;
@@ -253,6 +266,11 @@ export function startWeatherCycle(sunLight, scene, ambientLight, hemiLight, fill
       particleMaterial.opacity = baseParticleOpacity * current.particleOpacityMul;
       // Clamp to keep it subtle
       particleMaterial.opacity = Math.min(particleMaterial.opacity, 0.6);
+    }
+
+    // Expose progress for persistence
+    if (window.__gardenState) {
+      window.__gardenState.weatherProgress = t;
     }
 
     requestAnimationFrame(tick);

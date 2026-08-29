@@ -182,6 +182,7 @@
     import { createAmbientParticles } from "./particles.js";
     import { startDayNightCycle } from "./daynight.js";
     import { startWeatherCycle } from "./weather.js";
+    import { loadGardenState, saveGardenState, fastForwardState, clearGardenState } from "./persistence.js";
 
     const wrapper = document.getElementById('garden-canvas-wrapper');
     const scene = new THREE.Scene();
@@ -332,10 +333,26 @@
       getGrowingDescription: () => document.getElementById('growing-description')?.textContent || ''
     };
 
-    initGarden(scene);
-    startSeasonalCycle();
-    startDayNightCycle(sunLight, scene, ambientLight, hemiLight, fillLight);
-    startWeatherCycle(sunLight, scene, ambientLight, hemiLight, fillLight, particles);
+    /* --- Persistence: restore previous state if available --- */
+    const savedState = loadGardenState();
+    let initial = null;
+
+    if (savedState) {
+      // Fast-forward the saved state by elapsed real time
+      initial = fastForwardState(savedState);
+    }
+
+    /* Initialise garden with optional restored progress */
+    initGarden(scene, initial);
+    startSeasonalCycle(initial ? initial.seasonProgress : undefined);
+    startDayNightCycle(sunLight, scene, ambientLight, hemiLight, fillLight, initial ? initial.dayNightProgress : undefined);
+    startWeatherCycle(sunLight, scene, ambientLight, hemiLight, fillLight, particles, initial ? initial.weatherProgress : undefined);
+
+    /* --- Periodic save: every 2 seconds capture current state --- */
+    setInterval(saveGardenState, 2000);
+
+    /* Also save when the page is about to unload */
+    window.addEventListener('beforeunload', saveGardenState);
   </script>
 </body>
 </html>

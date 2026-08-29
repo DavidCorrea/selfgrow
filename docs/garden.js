@@ -40,9 +40,21 @@ const SEASON_NAMES = ['Spring', 'Summer', 'Autumn', 'Winter'];
 const SEASON_DURATION_MS = 180_000; // 3 minutes per season
 const CYCLE_DURATION_MS = SEASON_DURATION_MS * 4; // ~12 minute full cycle
 
-export function initGarden(scene) {
+export function initGarden(scene, initialProgress) {
   console.log('selfgrow garden initialised. The soil awaits…');
-  window.__gardenState.firstPlantGrown = false;
+
+  const p1Progress = (initialProgress && initialProgress.plant1Maturity) || 0;
+  const firstPlantGrown = (initialProgress && initialProgress.firstPlantGrown) || false;
+
+  // Set flags and progress BEFORE creating plant1 so becomeFullyGrown
+  // won't duplicate plant2 spawning
+  window.__gardenState.firstPlantGrown = firstPlantGrown;
+  window.__gardenState.seasonProgress = 0;
+  window.__gardenState.dayNightProgress = 0;
+  window.__gardenState.weatherProgress = 0;
+  window.__gardenState.plant1Maturity = 0;
+  delete window.__gardenState.plant2Maturity;
+
   /* Create the first (central) plant */
   createPlant({
     scene,
@@ -53,8 +65,55 @@ export function initGarden(scene) {
     swayPhaseOffset: 0,
     growDuration: 30000,
     label: 'plant',
-    leafShape: 'narrow' // pointy, narrow leaves
+    leafShape: 'narrow', // pointy, narrow leaves
+    initialProgress: p1Progress
   });
+
+  /* If plant2 was already growing, create it too */
+  if (firstPlantGrown && initialProgress && initialProgress.plant2Maturity !== undefined) {
+    const p2Progress = initialProgress.plant2Maturity;
+    const angle = Math.random() * 2 * Math.PI;
+    const distance = 0.3 + Math.random() * 0.3;
+    const x = Math.cos(angle) * distance;
+    const z = Math.sin(angle) * distance;
+
+    createPlant({
+      scene,
+      position: { x, z },
+      stemHeight: 0.5,
+      stemColor: 0x6a9a4a,
+      leafColor: 0x5a9a32,
+      swayPhaseOffset: 3.7,
+      growDuration: 25000,
+      label: 'plant2',
+      leafShape: 'broad',
+      initialProgress: p2Progress
+    });
+
+    // Update descriptions to reflect restored two-plant state
+    const growingDesc = document.getElementById('growing-description');
+    const plotDesc = document.getElementById('plot-description');
+    if (growingDesc) {
+      if (p2Progress >= 1) {
+        growingDesc.textContent = 'Two seedlings now stand together — the central plant tall and slender, its companion shorter with broad, rounded leaves.';
+      } else if (p2Progress > 0.3) {
+        growingDesc.textContent = 'Two seedlings now grow side by side — the first standing tall, the second spreading its wider leaves.';
+      } else {
+        growingDesc.textContent = 'A second sprout emerges nearby, its broad leaves catching the light.';
+      }
+    }
+    if (plotDesc) {
+      if (p2Progress >= 1) {
+        plotDesc.textContent = 'Two plants share the garden plot. The first stands tall at center; the second, with wider leaves and a softer green hue, grows beside it as if the garden chose to spread.';
+      } else {
+        plotDesc.textContent = 'A pair of seedlings grace the garden. The central plant stretches upward while its companion unfurls broader, rounded leaves.';
+      }
+    }
+  } else if (firstPlantGrown && p1Progress >= 1) {
+    // Plant1 is fully grown but plant2 data was not in saved state
+    // becomeFullyGrown will not trigger because firstPlantGrown is already true,
+    // so plant2 will not be auto-spawned. This is fine — plant2 didn't exist yet.
+  }
 }
 
 /**
@@ -81,7 +140,8 @@ function createPlant(opts) {
     swayPhaseOffset,
     growDuration,
     label,
-    leafShape
+    leafShape,
+    initialProgress = 0
   } = opts;
 
   const group = new THREE.Group();
@@ -181,11 +241,18 @@ function createPlant(opts) {
   }
 
   /* --- Growth state --- */
-  const startTime = performance.now();
+  // Adjust start time by initialProgress so the plant appears at the correct stage
+  const startTime = performance.now() - initialProgress * growDuration;
   let fullyGrown = false;
 
-  // Start at barely visible
-  group.scale.set(0.001, 0.001, 0.001);
+  // Start at appropriate scale based on initial progress
+  if (initialProgress < 1) {
+    const startScale = 0.001 + initialProgress * 0.999;
+    group.scale.set(startScale, startScale, startScale);
+  } else {
+    group.scale.set(1, 1, 1);
+    fullyGrown = true;
+  }
   scene.add(group);
 
   /* Expose plant for selftest and seasonal colour updates */
@@ -203,10 +270,79 @@ function createPlant(opts) {
   const growingDesc = document.getElementById('growing-description');
   const plotDesc = document.getElementById('plot-description');
 
+  /* Store current maturity for persistence */
+  function updateMaturity(progress) {
+    if (label === 'plant') {
+      window.__gardenState.plant1Maturity = progress;
+    } else if (label === 'plant2') {
+      window.__gardenState.plant2Maturity = progress;
+    }
+  }
+
+  /* --- Helper: start sway animation --- */
+  function startSway() {
+    let swayTime = 0;
+    function sway() {
+      swayTime += 0.016;
+      group.rotation.x = Math.sin(swayTime * 0.4 + swayPhaseOffset) * 0.025;
+      group.rotation.z = Math.sin(swayTime * 0.3 + 1.2 + swayPhaseOffset) * 0.018;
+      requestAnimationFrame(sway);
+    }
+    sway();
+  }
+
+  /* --- Helper: trigger fully-grown behaviour --- */
+  function becomeFullyGrown() {
+    fullyGrown = true;
+    group.scale.set(1, 1, 1);
+    updateMaturity(1);
+
+    if (label === 'plant' && !window.__gardenState.firstPlantGrown) {
+      window.__gardenState.firstPlantGrown = true;
+
+      growingDesc.textContent = 'The first seedling stands tall. A second sprout begins to rise from the soil nearby.';
+      plotDesc.textContent = 'A healthy seedling stands at the center of the plot. Nearby, the soil stirs as another plant emerges.';
+
+      // Spawn second plant at random offset from center
+      const angle = Math.random() * 2 * Math.PI;
+      const distance = 0.3 + Math.random() * 0.3;
+      const x = Math.cos(angle) * distance;
+      const z = Math.sin(angle) * distance;
+
+      createPlant({
+        scene,
+        position: { x, z },
+        stemHeight: 0.5,
+        stemColor: 0x6a9a4a,
+        leafColor: 0x5a9a32,
+        swayPhaseOffset: 3.7,
+        growDuration: 25000,
+        label: 'plant2',
+        leafShape: 'broad'
+      });
+    } else if (label === 'plant') {
+      growingDesc.textContent = 'A young seedling rises from the soil, its leaves reaching toward the light. A second plant grows nearby.';
+      plotDesc.textContent = 'A healthy seedling stands at the center of the plot, its leaves open to the sky. A companion plant with broader leaves grows beside it.';
+    } else {
+      growingDesc.textContent = 'Two seedlings now stand together — the central plant tall and slender, its companion shorter with broad, rounded leaves.';
+      plotDesc.textContent = 'Two plants share the garden plot. The first stands tall at center; the second, with wider leaves and a softer green hue, grows beside it as if the garden chose to spread.';
+    }
+
+    startSway();
+  }
+
+  /* If already fully grown from the start, go straight to end state */
+  if (initialProgress >= 1) {
+    becomeFullyGrown();
+    return;
+  }
+
   /* --- Growth animation --- */
   function updateGrowth() {
     const elapsed = performance.now() - startTime;
     const progress = Math.min(1, elapsed / growDuration);
+
+    updateMaturity(progress);
 
     if (progress < 1) {
       // Ease-out cubic: starts fast, slows toward the end
@@ -224,7 +360,7 @@ function createPlant(opts) {
           plotDesc.textContent = 'A young seedling rises from the rich soil, stretching toward the sun. Dust motes float lazily in the warm air.';
         }
       } else {
-        // plant2: update description to mention the new arrival
+        // plant2
         if (progress < 0.3) {
           growingDesc.textContent = 'A second sprout emerges nearby, its broad leaves catching the light.';
           plotDesc.textContent = 'A young seedling rises at the center, while a second sprout pushes up from the soil nearby.';
@@ -236,53 +372,7 @@ function createPlant(opts) {
 
       requestAnimationFrame(updateGrowth);
     } else {
-      /* Full height reached — begin gentle swaying */
-      fullyGrown = true;
-      group.scale.set(1, 1, 1);
-
-      // Track whether first plant just matured (to trigger second)
-      if (label === 'plant' && !window.__gardenState.firstPlantGrown) {
-        window.__gardenState.firstPlantGrown = true;
-
-        growingDesc.textContent = 'The first seedling stands tall. A second sprout begins to rise from the soil nearby.';
-        plotDesc.textContent = 'A healthy seedling stands at the center of the plot. Nearby, the soil stirs as another plant emerges.';
-
-        // Spawn second plant at random offset from center
-        const angle = Math.random() * 2 * Math.PI;
-        const distance = 0.3 + Math.random() * 0.3; // 0.3–0.6 units
-        const x = Math.cos(angle) * distance;
-        const z = Math.sin(angle) * distance;
-
-        createPlant({
-          scene,
-          position: { x, z },
-          stemHeight: 0.5,                       // shorter stem
-          stemColor: 0x6a9a4a,                    // slightly yellower green
-          leafColor: 0x5a9a32,                    // yellower-green leaf tint
-          swayPhaseOffset: 3.7,                    // independent sway phase
-          growDuration: 25000,                     // ~25 seconds
-          label: 'plant2',
-          leafShape: 'broad'                       // wider, rounder leaves
-        });
-      } else if (label === 'plant') {
-        growingDesc.textContent = 'A young seedling rises from the soil, its leaves reaching toward the light. A second plant grows nearby.';
-        plotDesc.textContent = 'A healthy seedling stands at the center of the plot, its leaves open to the sky. A companion plant with broader leaves grows beside it.';
-      } else {
-        // plant2 finished growing
-        growingDesc.textContent = 'Two seedlings now stand together — the central plant tall and slender, its companion shorter with broad, rounded leaves.';
-        plotDesc.textContent = 'Two plants share the garden plot. The first stands tall at center; the second, with wider leaves and a softer green hue, grows beside it as if the garden chose to spread.';
-      }
-
-      let swayTime = 0;
-      function sway() {
-        swayTime += 0.016;
-        // Two overlapping slow sine waves for organic motion
-        // Each plant sways with its own phase offset
-        group.rotation.x = Math.sin(swayTime * 0.4 + swayPhaseOffset) * 0.025;
-        group.rotation.z = Math.sin(swayTime * 0.3 + 1.2 + swayPhaseOffset) * 0.018;
-        requestAnimationFrame(sway);
-      }
-      sway();
+      becomeFullyGrown();
     }
   }
 
@@ -300,8 +390,8 @@ function createPlant(opts) {
  * Must be called after initGarden and after window.__gardenState.groundMat
  * is set (both happen in index.html's module script).
  */
-export function startSeasonalCycle() {
-  const startTime = performance.now();
+export function startSeasonalCycle(initialProgress) {
+  const startTime = performance.now() - (initialProgress || 0) * CYCLE_DURATION_MS;
   const seasonDisplay = document.getElementById('season-display');
   if (!seasonDisplay) {
     console.warn('startSeasonalCycle: #season-display not found');
@@ -330,9 +420,10 @@ export function startSeasonalCycle() {
     /* Lerp factor: 0 at start of season, 1 at end — smooth continuous drift */
     const t = seasonProgress;
 
-    /* Retrieve materials to update */
+    /* Store cycle progress for persistence */
     const gs = window.__gardenState;
     if (!gs) { requestAnimationFrame(tick); return; }
+    gs.seasonProgress = (elapsed / CYCLE_DURATION_MS) % 1.0;
 
     const plant = gs.plant;
     const groundMat = gs.groundMat;
@@ -362,6 +453,17 @@ export function startSeasonalCycle() {
     }
 
     requestAnimationFrame(tick);
+  }
+
+  // If initialProgress was provided, also set the display to the correct season name
+  if (initialProgress !== undefined) {
+    const offsetCycleTime = (initialProgress * CYCLE_DURATION_MS) % CYCLE_DURATION_MS;
+    const initialSeasonIndex = Math.floor(offsetCycleTime / SEASON_DURATION_MS) % 4;
+    lastSeasonIndex = initialSeasonIndex;
+    const name = SEASON_NAMES[initialSeasonIndex];
+    if (seasonDisplay) {
+      seasonDisplay.textContent = name;
+    }
   }
 
   tick();
