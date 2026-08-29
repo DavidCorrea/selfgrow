@@ -186,6 +186,7 @@
     import { startWeatherCycle } from "./weather.js";
     import { loadGardenState, saveGardenState, fastForwardState, clearGardenState } from "./persistence.js";
     import { createRain } from "./rain.js";
+    import { createGroundRipple } from "./groundRipple.js";
 
     const wrapper = document.getElementById('garden-canvas-wrapper');
     const scene = new THREE.Scene();
@@ -311,6 +312,9 @@
     const rain = createRain(scene);
     rain.update(0, 0.016); // initialise to safe state
 
+    /* --- Subtle ground ripple suggesting moving air --- */
+    const groundRipple = createGroundRipple(ground);
+
     /* Animation loop */
     let animTime = 0;
     let lastFrameTime = performance.now();
@@ -327,6 +331,9 @@
 
       /* Update rain: pass absolute time and delta time */
       rain.update(animTime, dt);
+
+      /* Update ground ripple animation */
+      groundRipple.update(animTime);
 
       /* Update distant horizon silhouette to blend with current sky colour */
       if (scene.background instanceof THREE.Color) {
@@ -364,7 +371,8 @@
       getWeather: () => document.getElementById('weather-display')?.textContent || 'Clear',
       getPlotDescription: () => document.getElementById('plot-description')?.textContent || '',
       getGrowingDescription: () => document.getElementById('growing-description')?.textContent || '',
-      horizon
+      horizon,
+      groundRipple: groundRipple.state
     };
 
     /* --- Persistence: restore previous state if available --- */

@@ -1180,5 +1180,87 @@ export async function checks() {
     }
   }
 
+  /* ---------- Ground ripple checks (issue #441) ---------- */
+  const rippleState = gardenState && gardenState.groundRipple;
+  if (!rippleState) {
+    problems.push('window.__gardenState.groundRipple is not set — the ground ripple animation was not created (groundRipple.js may not have been imported or called).');
+  } else {
+    // Verify type
+    if (rippleState.type !== 'ground-ripple') {
+      problems.push('groundRipple.state.type is "' + rippleState.type + '", expected "ground-ripple".');
+    }
+
+    // Verify vertexCount is reasonable (CircleGeometry 4,32 has vertices > 0)
+    if (typeof rippleState.vertexCount !== 'number' || rippleState.vertexCount < 10) {
+      problems.push('groundRipple.vertexCount is ' + rippleState.vertexCount + ', expected at least 10 (CircleGeometry 4,32).');
+    }
+
+    // Verify reducedMotion is boolean
+    if (typeof rippleState.reducedMotion !== 'boolean') {
+      problems.push('groundRipple.state.reducedMotion should be a boolean, got ' + typeof rippleState.reducedMotion);
+    }
+
+    // Verify waveCount is at least 3 (we configured 4 overlapping waves)
+    if (typeof rippleState.waveCount !== 'number' || rippleState.waveCount < 3) {
+      problems.push('groundRipple has only ' + rippleState.waveCount + ' waves, expected at least 3 for organic non-repeating ripple.');
+    }
+
+    // Verify amplitude is positive and very small (<= 0.01)
+    if (typeof rippleState.amplitude !== 'number' || rippleState.amplitude <= 0) {
+      problems.push('groundRipple.amplitude is ' + rippleState.amplitude + ', expected a positive number.');
+    }
+    if (rippleState.amplitude > 0.01) {
+      problems.push('groundRipple.amplitude is ' + rippleState.amplitude + ', expected <= 0.01 for a barely perceptible effect.');
+    }
+
+    // Verify active is a boolean
+    if (typeof rippleState.active !== 'boolean') {
+      problems.push('groundRipple.state.active should be a boolean, got ' + typeof rippleState.active);
+    }
+
+    // Verify reduced-motion behaviour: when reducedMotion is true, active must be false
+    if (rippleState.reducedMotion) {
+      if (rippleState.active !== false) {
+        problems.push('groundRipple.state.active is ' + rippleState.active + ' but reducedMotion is true — should be false.');
+      }
+      // Also verify the vertices are at their original positions (no displacement)
+      const groundMesh = gardenState && gardenState.scene && gardenState.scene.children.find(function(c) {
+        return c.isMesh && c.geometry && c.geometry.attributes && c.geometry.attributes.position;
+      });
+      if (groundMesh) {
+        const pos = groundMesh.geometry.attributes.position.array;
+        // Check that the local Z values (index 2 for every vertex) are visually close to 0
+        // CircleGeometry has all vertices at z=0 originally
+        let maxZ = 0;
+        for (let i = 2; i < pos.length; i += 3) {
+          const absZ = Math.abs(pos[i]);
+          if (absZ > maxZ) maxZ = absZ;
+        }
+        if (maxZ > 0.001) {
+          problems.push('With reducedMotion active, ground vertices have Z displacement up to ' + maxZ.toFixed(5) + ' — expected near 0 (no ripple displacement).');
+        }
+      }
+    }
+
+    // When motion is not reduced, verify that the ground vertices are being displaced
+    if (!rippleState.reducedMotion && rippleState.active) {
+      const groundMesh = gardenState && gardenState.scene && gardenState.scene.children.find(function(c) {
+        return c.isMesh && c.geometry && c.geometry.attributes && c.geometry.attributes.position;
+      });
+      if (groundMesh) {
+        const pos = groundMesh.geometry.attributes.position.array;
+        let maxAbsZ = 0;
+        for (let i = 2; i < pos.length; i += 3) {
+          const absZ = Math.abs(pos[i]);
+          if (absZ > maxAbsZ) maxAbsZ = absZ;
+        }
+        // After any animation frame, at least some vertices should be displaced from 0
+        if (maxAbsZ < 0.0001) {
+          problems.push('Ground ripple is active but no vertex displacement detected (max |Z| = ' + maxAbsZ.toFixed(5) + ') — the update function may not be applying displacement.');
+        }
+      }
+    }
+  }
+
   return problems;
 }
