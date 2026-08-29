@@ -468,6 +468,75 @@ export async function checks() {
     }
   }
 
+  /* ---------- Weather cycle checks ---------- */
+  const weather = gardenState && gardenState.weather;
+  if (!weather) {
+    problems.push('window.__gardenState.weather is not set — the weather cycle was not started (weather.js may not have been imported or called).');
+  } else {
+    // Verify getPhase returns one of the three phase names
+    if (typeof weather.getPhase !== 'function') {
+      problems.push('weather.getPhase is not a function — weather state is incomplete.');
+    } else {
+      const validPhases = ['Clear', 'Overcast', 'Light Drizzle'];
+      const phase = weather.getPhase();
+      if (!validPhases.includes(phase)) {
+        problems.push('weather.getPhase() returned "' + phase + '", expected one of: ' + validPhases.join(', '));
+      }
+    }
+
+    // Verify getProgress returns a number in [0, 1)
+    if (typeof weather.getProgress !== 'function') {
+      problems.push('weather.getProgress is not a function — weather state is incomplete.');
+    } else {
+      const progress = weather.getProgress();
+      if (typeof progress !== 'number' || progress < 0 || progress >= 1) {
+        problems.push('weather.getProgress() returned ' + progress + ', expected a number in [0, 1).');
+      }
+    }
+
+    // Verify the #weather-display DOM element has been updated to a valid phase name
+    const weatherDisplay = document.getElementById('weather-display');
+    if (weatherDisplay) {
+      const text = weatherDisplay.textContent.trim();
+      const validPhases = ['Clear', 'Overcast', 'Light Drizzle'];
+      if (!validPhases.includes(text)) {
+        problems.push('#weather-display shows "' + text + '", expected one of: ' + validPhases.join(', ') + ' — the weather cycle is not updating the DOM.');
+      }
+    } else {
+      problems.push('#weather-display element is missing — cannot verify weather phase display.');
+    }
+
+    // Verify the scene background has been modified (weather applies a tint modifier)
+    if (gardenState && gardenState.scene && gardenState.scene.background) {
+      const bg = gardenState.scene.background;
+      if (bg instanceof THREE.Color) {
+        if (typeof bg.r !== 'number') {
+          problems.push('scene.background is not a valid THREE.Color — weather cycle may have broken it.');
+        }
+        // Check that background is not purely white or unmodified (weather composes on day/night)
+        // With day/night + weather, the background should never be pure white (1,1,1)
+        if (bg.r > 0.99 && bg.g > 0.99 && bg.b > 0.99) {
+          problems.push('scene.background appears to be pure white — weather tint may not be applying.');
+        }
+      } else {
+        problems.push('scene.background is not a THREE.Color instance — weather cycle may not have initialised.');
+      }
+    }
+
+    // Verify particle material opacity is being modulated by weather
+    const particles = gardenState && gardenState.particles;
+    if (particles && particles.material) {
+      const opacity = particles.material.opacity;
+      // Particle opacity should be <= the max clamp of 0.6
+      if (typeof opacity !== 'number' || opacity < 0.05) {
+        problems.push('particles.material.opacity is ' + opacity + ', expected at least 0.05 — weather may not be modulating particles.');
+      }
+      if (opacity > 0.65) {
+        problems.push('particles.material.opacity is ' + opacity + ', expected <= 0.6 — weather particle opacity clamp may be too high.');
+      }
+    }
+  }
+
   /* ---------- Day/night cycle checks ---------- */
   const dayNight = gardenState && gardenState.dayNight;
   if (!dayNight) {
@@ -534,50 +603,17 @@ export async function checks() {
       }
     }
 
-    // Verify the scene background has been changed from the default sky blue
-    // (the day/night cycle sets it at each tick, so it should not still be 0x87ceeb)
-    const staticBlue = new THREE.Color(0x87ceeb);
-    if (gardenState && gardenState.scene && gardenState.scene.background) {
+    // Verify the scene background exists and is a color (day/night cycle sets it)
+    if (gardenState && gardenState.scene) {
       const bg = gardenState.scene.background;
-      if (bg instanceof THREE.Color) {
-        // It should differ from the initial static blue (or at least not be equal)
-        // But it COULD be midday blue (~0x87ceeb) if we're at that phase.
-        // Instead, just verify it's a THREE.Color
+      if (!bg) {
+        problems.push('scene.background is missing — the day/night cycle could not set the sky colour.');
+      } else if (bg instanceof THREE.Color) {
         if (typeof bg.r !== 'number') {
           problems.push('scene.background is not a valid THREE.Color — day/night cycle may have broken it.');
         }
       } else {
         problems.push('scene.background is not a THREE.Color instance — day/night cycle may not have set it.');
-      }
-    } else {
-      problems.push('scene.background is missing — the day/night cycle could not set the sky colour.');
-    }
-
-    // Verify that the scene background is not the exact default initial colour
-    // by comparing with the initial index.html static sky blue.
-    // We sample and check the cycle gives a different value at least some of the time.
-    if (gardenState && gardenState.scene && gardenState.scene.background) {
-      const bg = gardenState.scene.background;
-      if (bg instanceof THREE.Color) {
-        const staticBg = new THREE.Color(0x87ceeb);
-        // If the cycle hasn't run yet or we're exactly at midday, it might match.
-        // But we can verify the background is not ONE static value by checking
-        // that getCycleProgress + getSkyColor gives something different than
-        // the initial static colour for a known non-midday phase.
-        // For now, just flag if the DOM panel shows a time and it's not midday
-        // but the sky is still midday blue.
-        const timeDisplay = document.getElementById('time-display');
-        if (timeDisplay) {
-          const phase = timeDisplay.textContent.trim();
-          if (phase === 'Night' && bg.getHex() !== staticBg.getHex()) {
-            // Night + different from blue = good (non-failure check)
-          } else if (phase === 'Morning' && bg.getHex() !== staticBg.getHex()) {
-            // Morning + different = good
-          } else if (phase === 'Evening' && bg.getHex() !== staticBg.getHex()) {
-            // Evening + different = good
-          }
-          // Not reporting as failure since it might genuinely be midday with blue sky
-        }
       }
     }
   }

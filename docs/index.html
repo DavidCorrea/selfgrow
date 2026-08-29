@@ -180,6 +180,7 @@
     import { initGarden, startSeasonalCycle } from "./garden.js";
     import { createAmbientParticles } from "./particles.js";
     import { startDayNightCycle } from "./daynight.js";
+    import { startWeatherCycle } from "./weather.js";
 
     const wrapper = document.getElementById('garden-canvas-wrapper');
     const scene = new THREE.Scene();
@@ -322,6 +323,7 @@
     initGarden(scene);
     startSeasonalCycle();
     startDayNightCycle(sunLight, scene, ambientLight, hemiLight, fillLight);
+    startWeatherCycle(sunLight, scene, ambientLight, hemiLight, fillLight, particles);
   </script>
 </body>
 </html>
