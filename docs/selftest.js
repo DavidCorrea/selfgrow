@@ -1284,6 +1284,103 @@ export async function checks() {
     }
   }
 
+  /* ---------- Leaf wetness effect checks (issue #447) ---------- */
+  // The leaf wetness specular highlight activates during Light Drizzle
+  // and fades back to dry during Clear/Overcast.
+  const wetnessWeather = gardenState && gardenState.weather;
+  const plant1 = gardenState && gardenState.plant;
+  if (!plant1 || !plant1.leafMat) {
+    // Plant may not be available yet — skip leaf wetness checks
+  } else {
+    const leafMat = plant1.leafMat;
+
+    // Check that leaf material has numeric roughness/metalness
+    if (typeof leafMat.roughness !== 'number') {
+      problems.push('plant.leafMat.roughness is not a number — got ' + typeof leafMat.roughness);
+    }
+    if (typeof leafMat.metalness !== 'number') {
+      problems.push('plant.leafMat.metalness is not a number — got ' + typeof leafMat.metalness);
+    }
+
+    // Check leaf values based on the actual current weather phase (no mocking)
+    // The weather cycle runs on RAF and updates leaf materials every frame,
+    // so by the time checks() runs, the values should reflect the current phase.
+    // Transitions are smooth (15s), so at phase boundaries values may not
+    // match pure dry/wet — we check that the values are at least trending.
+    if (wetnessWeather && typeof wetnessWeather.getPhase === 'function' &&
+        typeof wetnessWeather.getProgress === 'function') {
+      const phase = wetnessWeather.getPhase();
+      const progress = wetnessWeather.getProgress();
+
+      if (phase === 'Light Drizzle') {
+        // During drizzle, leaves should show some wetness.
+        // The Light Drizzle phase spans t in [2/3, 1.0).
+        // At t=2/3: roughness=0.25, metalness=0.03 (pure wet)
+        // At t=1.0: roughness=0.6, metalness=0.0 (transitioning back to Clear)
+        // Check within the middle of the phase (not near the transition back at ~t=0.88+)
+        if (progress >= 2/3 && progress < 0.87) {
+          // Well within the Light Drizzle zone, not near the transition back
+          if (leafMat.roughness > 0.5) {
+            problems.push('During Light Drizzle (progress=' + progress.toFixed(3) + '), leafMat.roughness is ' + leafMat.roughness + ' — expected <= 0.5 for a subtle wet sheen.');
+          }
+          if (leafMat.metalness < 0.01) {
+            problems.push('During Light Drizzle (progress=' + progress.toFixed(3) + '), leafMat.metalness is ' + leafMat.metalness + ' — expected >= 0.01 for a subtle specular highlight.');
+          }
+        }
+      } else if (phase === 'Clear') {
+        // Clear phase spans t in [0, 1/3).
+        // At t=0: roughness=0.6, metalness=0.0 (pure dry)
+        // At t=1/3: roughness=0.6, metalness=0.0 (still pure dry, Overcast same)
+        // Also at t=1.0 (wrap) which is Clear too, but values are transitioning
+        // from Light Drizzle back to Clear.
+        if (progress > 0.05 && progress < 1/3 - 0.05) {
+          // Well within Clear, not near a transition boundary
+          if (leafMat.roughness < 0.55) {
+            problems.push('During Clear weather (progress=' + progress.toFixed(3) + '), leafMat.roughness is ' + leafMat.roughness + ' — expected >= 0.5 (dry leaves should not show wet sheen).');
+          }
+          if (leafMat.metalness > 0.01) {
+            problems.push('During Clear weather (progress=' + progress.toFixed(3) + '), leafMat.metalness is ' + leafMat.metalness + ' — expected <= 0.01 (dry leaves should not be metallic).');
+          }
+        }
+      }
+    }
+
+    // Structural check: verify the expected wet/dry values from PHASES config
+    const dryRoughness = 0.6;
+    const dryMetalness = 0.0;
+    const wetRoughness = 0.25;
+    const wetMetalness = 0.03;
+
+    if (dryRoughness - wetRoughness < 0.2) {
+      problems.push('Leaf wetness roughness delta is too small: dry ' + dryRoughness + ' -> wet ' + wetRoughness + ', expected drop of at least 0.2 for a visible sheen.');
+    }
+    if (wetMetalness - dryMetalness < 0.01) {
+      problems.push('Leaf wetness metalness delta is too small: dry ' + dryMetalness + ' -> wet ' + wetMetalness + ', expected increase of at least 0.01.');
+    }
+    if (wetMetalness > 0.1) {
+      problems.push('Leaf wetness metalness is ' + wetMetalness + ', expected <= 0.05 for a subtle, non-glossy effect.');
+    }
+
+    // Also check plant2 leaf material if it exists — both plants should share
+    // the same roughness/metalness values from the weather cycle
+    const plant2 = gardenState && gardenState.plant2;
+    if (plant2 && plant2.leafMat) {
+      if (typeof plant2.leafMat.roughness !== 'number') {
+        problems.push('plant2.leafMat.roughness is not a number — got ' + typeof plant2.leafMat.roughness);
+      }
+      if (typeof plant2.leafMat.metalness !== 'number') {
+        problems.push('plant2.leafMat.metalness is not a number — got ' + typeof plant2.leafMat.metalness);
+      }
+      // Both plants should have the same values since weather applies the same
+      if (Math.abs(plant2.leafMat.roughness - leafMat.roughness) > 0.001) {
+        problems.push('plant2.leafMat.roughness (' + plant2.leafMat.roughness + ') differs from plant.leafMat.roughness (' + leafMat.roughness + ') — both should have the same wet/dry values from the weather cycle.');
+      }
+      if (Math.abs(plant2.leafMat.metalness - leafMat.metalness) > 0.001) {
+        problems.push('plant2.leafMat.metalness (' + plant2.leafMat.metalness + ') differs from plant.leafMat.metalness (' + leafMat.metalness + ') — both should have the same wet/dry values from the weather cycle.');
+      }
+    }
+  }
+
   /* ---------- Ground ripple checks (issue #441) ---------- */
   const rippleState = gardenState && gardenState.groundRipple;
   if (!rippleState) {

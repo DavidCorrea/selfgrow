@@ -34,7 +34,9 @@ const PHASES = [
     hemiGroundMul: new THREE.Color(1.0, 1.0, 1.0),
     fillIntensityMul: 1.0,
     fillColorMul: new THREE.Color(1.0, 1.0, 1.0),
-    particleOpacityMul: 1.0
+    particleOpacityMul: 1.0,
+    leafRoughness: 0.6,
+    leafMetalness: 0.0
   },
   {
     name: 'Overcast',
@@ -49,7 +51,9 @@ const PHASES = [
     hemiGroundMul: new THREE.Color(0.80, 0.80, 0.85),
     fillIntensityMul: 0.85,
     fillColorMul: new THREE.Color(0.90, 0.90, 1.0),
-    particleOpacityMul: 1.6
+    particleOpacityMul: 1.6,
+    leafRoughness: 0.6,
+    leafMetalness: 0.0
   },
   {
     name: 'Light Drizzle',
@@ -64,7 +68,9 @@ const PHASES = [
     hemiGroundMul: new THREE.Color(0.65, 0.70, 0.80),
     fillIntensityMul: 0.80,
     fillColorMul: new THREE.Color(0.65, 0.85, 1.0),
-    particleOpacityMul: 2.2
+    particleOpacityMul: 2.2,
+    leafRoughness: 0.25,
+    leafMetalness: 0.03
   },
   {
     name: 'Clear',  // wrap-around — back to start
@@ -79,7 +85,9 @@ const PHASES = [
     hemiGroundMul: new THREE.Color(1.0, 1.0, 1.0),
     fillIntensityMul: 1.0,
     fillColorMul: new THREE.Color(1.0, 1.0, 1.0),
-    particleOpacityMul: 1.0
+    particleOpacityMul: 1.0,
+    leafRoughness: 0.6,
+    leafMetalness: 0.0
   }
 ];
 
@@ -115,6 +123,8 @@ function interpolatePhase(t, out) {
       out.fillIntensityMul = a.fillIntensityMul + (b.fillIntensityMul - a.fillIntensityMul) * eased;
       out.fillColorMul.copy(a.fillColorMul).lerp(b.fillColorMul, eased);
       out.particleOpacityMul = a.particleOpacityMul + (b.particleOpacityMul - a.particleOpacityMul) * eased;
+      out.leafRoughness = a.leafRoughness + (b.leafRoughness - a.leafRoughness) * eased;
+      out.leafMetalness = a.leafMetalness + (b.leafMetalness - a.leafMetalness) * eased;
       return;
     }
   }
@@ -132,6 +142,8 @@ function interpolatePhase(t, out) {
   out.fillIntensityMul = last.fillIntensityMul;
   out.fillColorMul.copy(last.fillColorMul);
   out.particleOpacityMul = last.particleOpacityMul;
+  out.leafRoughness = last.leafRoughness;
+  out.leafMetalness = last.leafMetalness;
 }
 
 /** Get the human-readable phase name for a given cycle progress t in [0, 1) */
@@ -191,7 +203,9 @@ export function startWeatherCycle(sunLight, scene, ambientLight, hemiLight, fill
     hemiGroundMul: new THREE.Color(1, 1, 1),
     fillIntensityMul: 1,
     fillColorMul: new THREE.Color(1, 1, 1),
-    particleOpacityMul: 1
+    particleOpacityMul: 1,
+    leafRoughness: 0.6,
+    leafMetalness: 0.0
   };
 
   /* Expose state for selftest and external querying */
@@ -268,9 +282,26 @@ export function startWeatherCycle(sunLight, scene, ambientLight, hemiLight, fill
       particleMaterial.opacity = Math.min(particleMaterial.opacity, 0.6);
     }
 
+    // --- Apply leaf wetness effect on plant leaf materials ---
+    const gs = window.__gardenState;
+    if (gs) {
+      // Plant 1 leaf material
+      const plant = gs.plant;
+      if (plant && plant.leafMat) {
+        plant.leafMat.roughness = current.leafRoughness;
+        plant.leafMat.metalness = current.leafMetalness;
+      }
+      // Plant 2 leaf material (if it exists)
+      const plant2 = gs.plant2;
+      if (plant2 && plant2.leafMat) {
+        plant2.leafMat.roughness = current.leafRoughness;
+        plant2.leafMat.metalness = current.leafMetalness;
+      }
+    }
+
     // Expose progress for persistence
-    if (window.__gardenState) {
-      window.__gardenState.weatherProgress = t;
+    if (gs) {
+      gs.weatherProgress = t;
     }
 
     requestAnimationFrame(tick);
