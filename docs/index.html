@@ -185,7 +185,7 @@
   <script type="module">
     import * as THREE from "three";
     import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-    import { initGarden, startSeasonalCycle } from "./garden.js";
+    import { initGarden, startSeasonalCycle, createFallenLeaves } from "./garden.js";
     import { createAmbientParticles } from "./particles.js";
     import { createGroundNoiseTexture } from "./groundNoise.js";
     import { createHorizon } from "./horizon.js";
@@ -417,6 +417,10 @@
 
     /* Initialise garden with optional restored progress */
     initGarden(scene, initial);
+
+    /* Create fallen leaves that respond to the seasonal cycle */
+    createFallenLeaves(scene);
+
     startSeasonalCycle(initial ? initial.seasonProgress : undefined);
     startDayNightCycle(sunLight, scene, ambientLight, hemiLight, fillLight, initial ? initial.dayNightProgress : undefined);
     startWeatherCycle(sunLight, scene, ambientLight, hemiLight, fillLight, particles, initial ? initial.weatherProgress : undefined);

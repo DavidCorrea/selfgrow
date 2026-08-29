@@ -683,12 +683,97 @@ function createPlant(opts) {
 }
 
 /**
+ * createFallenLeaves — scatters 8–15 small flat leaf-shaped meshes on the
+ * ground within ~1 unit radius of the garden center, at y ≈ 0.005.
+ *
+ * Leaves start fully transparent and are driven by the seasonal cycle:
+ *   autumn quarter — appear with warm brown/orange tones
+ *   winter quarter  — desaturate toward pale winter brown
+ *   spring quarter  — fade out (opacity → 0)
+ *
+ * The leaves are stationary (already fallen), sparse, and subtle.
+ *
+ * Exposes state on window.__gardenState.fallenLeaves for DOM updates
+ * and self-testing.
+ */
+export function createFallenLeaves(scene) {
+  const LEAF_COUNT = 10 + Math.floor(Math.random() * 6); // 10–15
+  const SPREAD_RADIUS = 1.0;
+
+  /* Build a leaf shape — small, broad, slightly rounded teardrop */
+  const leafShape = new THREE.Shape();
+  leafShape.moveTo(0, 0);
+  leafShape.bezierCurveTo(0.025, 0.015, 0.03, 0.03, 0, 0.05);
+  leafShape.bezierCurveTo(-0.03, 0.03, -0.025, 0.015, 0, 0);
+
+  const leafGeo = new THREE.ShapeGeometry(leafShape);
+
+  /* Shared material — starts fully transparent, opacity/colour driven by seasons */
+  const leafMat = new THREE.MeshStandardMaterial({
+    color: 0xaa6a2a,       // autumn brown/orange baseline
+    roughness: 0.8,
+    metalness: 0.0,
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 0,            // hidden until autumn
+    depthWrite: false       // avoid z-fighting with ground
+  });
+
+  const meshes = [];
+
+  for (let i = 0; i < LEAF_COUNT; i++) {
+    const leaf = new THREE.Mesh(leafGeo, leafMat);
+
+    /* Random position within SPREAD_RADIUS of origin */
+    const angle = Math.random() * Math.PI * 2;
+    const radius = Math.random() * SPREAD_RADIUS * 0.9 + 0.1; // 0.1–0.9
+    const x = Math.cos(angle) * radius;
+    const z = Math.sin(angle) * radius;
+
+    leaf.position.set(x, 0.005, z);
+
+    /* Random rotation so leaves lie at different angles on the ground */
+    leaf.rotation.x = -Math.PI / 2 + (Math.random() - 0.5) * 0.3; // slight tilt
+    leaf.rotation.z = Math.random() * Math.PI * 2;
+
+    /* Slight random scale variation (0.6–1.5) */
+    const s = 0.6 + Math.random() * 0.9;
+    leaf.scale.set(s, s, s);
+
+    leaf.castShadow = false;
+    leaf.receiveShadow = true;
+
+    scene.add(leaf);
+    meshes.push(leaf);
+  }
+
+  /* Exposed state for seasonal cycle updates and self-test */
+  const state = {
+    type: 'fallen-leaves',
+    meshes,
+    material: leafMat,
+    count: LEAF_COUNT,
+    spreadRadius: SPREAD_RADIUS
+  };
+
+  window.__gardenState.fallenLeaves = state;
+
+  return state;
+}
+
+/**
  * startSeasonalCycle — drives the slow seasonal colour evolution.
  *
  * Reads materials from window.__gardenState (plant.stemMat, plant.leafMat,
  * and .groundMat) and lerps them through the four seasonal palettes
  * in a continuous ~12-minute cycle. Updates #season-display on each
  * season boundary.
+ *
+ * Also drives fallen-leaves lifecycle:
+ *   spring → summer: leaves remain transparent (vanished)
+ *   autumn quarter:  leaves gradually appear with warm brown/orange tones
+ *   winter quarter:  leaves desaturate toward pale winter brown
+ *   spring quarter:  leaves fade out (opacity → 0)
  *
  * Must be called after initGarden and after window.__gardenState.groundMat
  * is set (both happen in index.html's module script).
@@ -702,6 +787,10 @@ export function startSeasonalCycle(initialProgress) {
   }
 
   let lastSeasonIndex = -1;
+
+  /* Fallen leaf colours: autumn warm → winter desaturated */
+  const autumnLeafColour = new THREE.Color(0xcc7730); // warm brown/orange
+  const winterLeafColour = new THREE.Color(0x6a5a3a); // desaturated brown
 
   function tick() {
     const elapsed = performance.now() - startTime;
@@ -753,6 +842,83 @@ export function startSeasonalCycle(initialProgress) {
 
     if (groundMat) {
       groundMat.color.copy(current.ground).lerp(next.ground, t);
+    }
+
+    /* --- Fallen leaves lifecycle (issue #448) --- */
+    const fallenLeaves = gs.fallenLeaves;
+    if (fallenLeaves && fallenLeaves.meshes && fallenLeaves.meshes.length > 0) {
+      const leafMat = fallenLeaves.material;
+      const seasonName = SEASON_NAMES[seasonIndex];
+
+      if (seasonName === 'Autumn') {
+        /* Autumn: leaves gradually appear, colour from transparent → warm brown/orange */
+        // t goes 0→1 through autumn
+        // opacity: 0 at start of autumn, 1 at end
+        const opacity = t;
+        leafMat.opacity = opacity;
+
+        // Colour: lerp from a pale hint to full autumn orange
+        const startColour = new THREE.Color(0x4a3a2a); // faint brown (barely visible)
+        leafMat.color.copy(startColour).lerp(autumnLeafColour, t);
+
+        /* Update DOM when leaves first appear */
+        if (t > 0.1 && !fallenLeaves._domUpdated) {
+          fallenLeaves._domUpdated = true;
+          const plotDesc = document.getElementById('plot-description');
+          if (plotDesc && !plotDesc.textContent.includes('fallen leaves')) {
+            plotDesc.textContent += ' A few fallen leaves rest on the soil nearby.';
+          }
+        }
+      } else if (seasonName === 'Winter') {
+        /* Winter: leaves desaturate from autumn warm → desaturated brown,
+         * and fade out during the latter part of winter (transition to spring) */
+        // t goes 0→1 through winter
+
+        // Colour lerps across the whole winter
+        leafMat.color.copy(autumnLeafColour).lerp(winterLeafColour, t);
+
+        // Opacity: stays 1 for the first ~60% of winter, then fades to 0
+        // by the end of winter — so by spring the leaves are already invisible.
+        if (t < 0.6) {
+          leafMat.opacity = 1;
+        } else {
+          // Remap t from [0.6, 1] to [0, 1] for the fade-out
+          const fadeT = (t - 0.6) / 0.4;
+          leafMat.opacity = Math.max(0, 1 - fadeT);
+        }
+
+        /* Update DOM as winter progresses */
+        if (t > 0.3 && !fallenLeaves._winterDomUpdated) {
+          fallenLeaves._winterDomUpdated = true;
+          const plotDesc = document.getElementById('plot-description');
+          if (plotDesc && !plotDesc.textContent.includes('faded')) {
+            plotDesc.textContent += ' The fallen leaves have faded in the cold.';
+          }
+        }
+      } else if (seasonName === 'Spring') {
+        /* Spring: leaves should already be invisible (fade-out finished in late winter) */
+        leafMat.opacity = 0;
+
+        // Colour stays at winter desaturated brown
+        leafMat.color.copy(winterLeafColour);
+
+        /* Once fully into spring, reset DOM flags for next cycle */
+        if (t > 0.2) {
+          fallenLeaves._domUpdated = false;
+          fallenLeaves._winterDomUpdated = false;
+          const plotDesc = document.getElementById('plot-description');
+          // Remove leaf references from plot description
+          if (plotDesc) {
+            let text = plotDesc.textContent;
+            text = text.replace(' A few fallen leaves rest on the soil nearby.', '');
+            text = text.replace(' The fallen leaves have faded in the cold.', '');
+            plotDesc.textContent = text;
+          }
+        }
+      } else {
+        /* Summer: leaves fully transparent */
+        leafMat.opacity = 0;
+      }
     }
 
     requestAnimationFrame(tick);
