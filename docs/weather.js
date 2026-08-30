@@ -36,7 +36,8 @@ const PHASES = [
     fillColorMul: new THREE.Color(1.0, 1.0, 1.0),
     particleOpacityMul: 1.0,
     leafRoughness: 0.6,
-    leafMetalness: 0.0
+    leafMetalness: 0.0,
+    swayAmplitudeMul: 1.0
   },
   {
     name: 'Overcast',
@@ -53,7 +54,8 @@ const PHASES = [
     fillColorMul: new THREE.Color(0.90, 0.90, 1.0),
     particleOpacityMul: 1.6,
     leafRoughness: 0.6,
-    leafMetalness: 0.0
+    leafMetalness: 0.0,
+    swayAmplitudeMul: 1.75
   },
   {
     name: 'Light Drizzle',
@@ -70,7 +72,8 @@ const PHASES = [
     fillColorMul: new THREE.Color(0.65, 0.85, 1.0),
     particleOpacityMul: 2.2,
     leafRoughness: 0.25,
-    leafMetalness: 0.03
+    leafMetalness: 0.03,
+    swayAmplitudeMul: 1.75
   },
   {
     name: 'Clear',  // wrap-around — back to start
@@ -87,7 +90,8 @@ const PHASES = [
     fillColorMul: new THREE.Color(1.0, 1.0, 1.0),
     particleOpacityMul: 1.0,
     leafRoughness: 0.6,
-    leafMetalness: 0.0
+    leafMetalness: 0.0,
+    swayAmplitudeMul: 1.0
   }
 ];
 
@@ -125,6 +129,7 @@ function interpolatePhase(t, out) {
       out.particleOpacityMul = a.particleOpacityMul + (b.particleOpacityMul - a.particleOpacityMul) * eased;
       out.leafRoughness = a.leafRoughness + (b.leafRoughness - a.leafRoughness) * eased;
       out.leafMetalness = a.leafMetalness + (b.leafMetalness - a.leafMetalness) * eased;
+      out.swayAmplitudeMul = a.swayAmplitudeMul + (b.swayAmplitudeMul - a.swayAmplitudeMul) * eased;
       return;
     }
   }
@@ -144,6 +149,7 @@ function interpolatePhase(t, out) {
   out.particleOpacityMul = last.particleOpacityMul;
   out.leafRoughness = last.leafRoughness;
   out.leafMetalness = last.leafMetalness;
+  out.swayAmplitudeMul = last.swayAmplitudeMul;
 }
 
 /** Get the human-readable phase name for a given cycle progress t in [0, 1) */
@@ -205,7 +211,8 @@ export function startWeatherCycle(sunLight, scene, ambientLight, hemiLight, fill
     fillColorMul: new THREE.Color(1, 1, 1),
     particleOpacityMul: 1,
     leafRoughness: 0.6,
-    leafMetalness: 0.0
+    leafMetalness: 0.0,
+    swayAmplitudeMul: 1.0
   };
 
   /* Expose state for selftest and external querying */
@@ -214,7 +221,8 @@ export function startWeatherCycle(sunLight, scene, ambientLight, hemiLight, fill
     getProgress: () => {
       const elapsed = performance.now() - startTime;
       return (elapsed % CYCLE_DURATION_MS) / CYCLE_DURATION_MS;
-    }
+    },
+    getSwayAmplitudeMul: () => current.swayAmplitudeMul
   };
 
   window.__gardenState.weather = weatherState;

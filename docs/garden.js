@@ -282,10 +282,17 @@ function createPlant(opts) {
   /* --- Helper: start sway animation --- */
   function startSway() {
     let swayTime = 0;
+    const BASE_AMP_X = 0.025;
+    const BASE_AMP_Z = 0.018;
     function sway() {
       swayTime += 0.016;
-      group.rotation.x = Math.sin(swayTime * 0.4 + swayPhaseOffset) * 0.025;
-      group.rotation.z = Math.sin(swayTime * 0.3 + 1.2 + swayPhaseOffset) * 0.018;
+      let mul = 1.0;
+      const ws = window.__gardenState && window.__gardenState.weather;
+      if (ws && typeof ws.getSwayAmplitudeMul === 'function') {
+        mul = ws.getSwayAmplitudeMul();
+      }
+      group.rotation.x = Math.sin(swayTime * 0.4 + swayPhaseOffset) * BASE_AMP_X * mul;
+      group.rotation.z = Math.sin(swayTime * 0.3 + 1.2 + swayPhaseOffset) * BASE_AMP_Z * mul;
       requestAnimationFrame(sway);
     }
     sway();
