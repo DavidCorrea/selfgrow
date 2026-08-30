@@ -17,11 +17,20 @@ const WING_ASPECT = 0.6;          // width / height ratio of each wing half
 const WING_COLOR = 0x3a3a5a;      // dark silhouette tone
 
 /* Orbit path parameters */
-const ORBIT_RADIUS_MIN = 1.5;     // never too close to centre
+const ORBIT_RADIUS_MIN = 0.5;     // can dip close to centre for flower visits
 const ORBIT_RADIUS_MAX = 2.5;     // stays at periphery
 const ORBIT_HEIGHT_MIN = 0.5;     // low above ground
 const ORBIT_HEIGHT_MAX = 2.0;     // up to eye level
 const ORBIT_SPEED = 0.08;         // unhurried (rad/s) — completes cycle in ~78s
+
+/* Pause (butterfly visits blooming flower) parameters */
+const PAUSE_PROXIMITY = 0.4;      // units — trigger distance to a blooming flower
+const PAUSE_SPEED_MUL = 0.5;      // slow to ~50% during pause
+const PAUSE_ENTER_DURATION = 1.0; // seconds to ease into the pause
+const PAUSE_HOLD_MIN = 3.0;       // minimum hold seconds
+const PAUSE_HOLD_MAX = 5.0;       // maximum hold seconds
+const PAUSE_EXIT_DURATION = 1.0;  // seconds to ease back to normal flight
+const PAUSE_DIP_AMOUNT = 0.15;    // how much closer the butterfly dips to the flower
 
 /* Wing flap animation */
 const FLAP_SPEED = 0.4;           // <0.5 Hz slow flap
@@ -113,6 +122,18 @@ export function createCreature(scene) {
   /* Base wing opacity stored for weather fade */
   const WING_BASE_OPACITY = 0.45;
 
+  /* --- Pause state machine --- */
+  // States: 'idle' | 'entering' | 'holding' | 'exiting'
+  let pauseState = 'idle';
+  let pauseTimer = 0;
+  let pauseHoldDuration = 0;
+  let pauseTargetPos = null;      // { x, y, z } — the flower position we're pausing at
+  let pauseEaseT = 0;             // 0→1 for entering/exiting ease
+  let pauseSpeedMul = 1.0;        // 1.0 normally, 0.5 during pause
+  let pauseOriginPos = null;      // { x, y, z } — where we were when pause triggered
+  let pauseDipTarget = null;      // { x, y, z } — the dipped position near the flower
+  let pauseCooldown = 0;          // seconds after exiting before next pause can trigger
+
   /* --- State exposed for selftest --- */
   const state = {
     type: 'creature',
@@ -125,7 +146,12 @@ export function createCreature(scene) {
     orbitSpeed: ORBIT_SPEED,
     radiusMin: ORBIT_RADIUS_MIN,
     radiusMax: ORBIT_RADIUS_MAX,
-    weatherOpacity: 1.0
+    weatherOpacity: 1.0,
+    /* Pause state exposed for testing */
+    pauseState: () => pauseState,
+    pauseTargetPos: () => pauseTargetPos ? { ...pauseTargetPos } : null,
+    pauseSpeedMul: () => pauseSpeedMul,
+    pauseEaseT: () => pauseEaseT
   };
 
   /* Start invisible if reduced motion is active */
@@ -138,7 +164,7 @@ export function createCreature(scene) {
     /* --- Frame-rate-independent dt for smooth opacity lerp --- */
     let dt = 0.016; // default ~60fps
     if (_prevUpdateTime >= 0) {
-      dt = Math.min(time - _prevUpdateTime, 0.05); // cap to avoid spiral
+      dt = Math.max(0, Math.min(time - _prevUpdateTime, 0.05)); // clamp to [0, 0.05] so time going backwards never rewinds animations
     }
     _prevUpdateTime = time;
 
@@ -173,11 +199,8 @@ export function createCreature(scene) {
       group.visible = true;
     }
 
-    /* --- Organic looping path using Lissajous-like parameters --- */
-    // The butterfly drifts along a path that never goes through centre
-    // by using modulating radius + angular position.
-
-    const t = time * ORBIT_SPEED;
+    /* --- Compute orbit position with pause speed modulation --- */
+    const t = time * ORBIT_SPEED * pauseSpeedMul;
 
     // Angular position: slowly rotates around the garden
     const angle = t + Math.sin(t * 0.23) * 0.4;
@@ -194,35 +217,160 @@ export function createCreature(scene) {
     const xOffset = Math.sin(t * FREQ_X * 1.7 + PHASE_X + 1.2) * 0.3;
     const zOffset = Math.cos(t * FREQ_Z * 1.7 + PHASE_Z + 0.8) * 0.3;
 
-    const x = Math.cos(angle) * radius + xOffset;
-    const z = Math.sin(angle) * radius + zOffset;
+    const orbitX = Math.cos(angle) * radius + xOffset;
+    const orbitZ = Math.sin(angle) * radius + zOffset;
+    const orbitY = y;
 
-    group.position.set(x, y, z);
+    /* --- Pause state machine: butterfly visits blooming flowers --- */
+    // Determine final position based on pause state
+    let finalX = orbitX;
+    let finalY = orbitY;
+    let finalZ = orbitZ;
+
+    if (pauseState === 'idle') {
+      // Decrement cooldown if active
+      if (pauseCooldown > 0) {
+        pauseCooldown -= dt;
+      } else {
+        // Check proximity to plants with blooming flowers
+        const gs = window.__gardenState;
+        if (gs) {
+          const plantRefs = ['plant', 'plant2'];
+          for (let i = 0; i < plantRefs.length; i++) {
+            const plant = gs[plantRefs[i]];
+            if (plant && plant.flower && typeof plant.flower.getPhase === 'function') {
+              const phase = plant.flower.getPhase();
+              if (phase === 'bloom') {
+                // Get flower position: plant group position + flower height
+                const plantPos = plant.group.position;
+                // Flower is at stem height (central: 0.7, plant2: 0.5) above the plant
+                const flowerHeight = plantRefs[i] === 'plant' ? 0.7 : 0.5;
+                const fx = plantPos.x;
+                const fy = plantPos.y + flowerHeight + 0.02;
+                const fz = plantPos.z;
+
+                // Calculate 3D distance from butterfly to flower
+                const dx = orbitX - fx;
+                const dy = orbitY - fy;
+                const dz = orbitZ - fz;
+                const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+                if (dist <= PAUSE_PROXIMITY) {
+                  // Trigger pause!
+                  pauseState = 'entering';
+                  pauseTimer = 0;
+                  pauseHoldDuration = PAUSE_HOLD_MIN + Math.random() * (PAUSE_HOLD_MAX - PAUSE_HOLD_MIN);
+                  pauseTargetPos = { x: fx, y: fy, z: fz };
+                  pauseEaseT = 0;
+                  pauseOriginPos = { x: orbitX, y: orbitY, z: orbitZ };
+                  // Dip target: hover at PAUSE_DIP_AMOUNT units from the flower,
+                  // in the direction the butterfly came from
+                  const dirX = orbitX - fx;
+                  const dirY = orbitY - fy;
+                  const dirZ = orbitZ - fz;
+                  const dirLen = Math.sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ) || 1;
+                  pauseDipTarget = {
+                    x: fx + (dirX / dirLen) * PAUSE_DIP_AMOUNT,
+                    y: fy + (dirY / dirLen) * PAUSE_DIP_AMOUNT,
+                    z: fz + (dirZ / dirLen) * PAUSE_DIP_AMOUNT
+                  };
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (pauseState === 'entering') {
+      pauseTimer += dt;
+      pauseEaseT = Math.min(1, pauseTimer / PAUSE_ENTER_DURATION);
+      // Smooth ease-in-out for the dip
+      const eased = pauseEaseT * pauseEaseT * (3 - 2 * pauseEaseT);
+      // Lerp speed multiplier from 1.0 to PAUSE_SPEED_MUL
+      pauseSpeedMul = 1.0 + (PAUSE_SPEED_MUL - 1.0) * eased;
+      // Lerp position from origin to dip target
+      finalX = pauseOriginPos.x + (pauseDipTarget.x - pauseOriginPos.x) * eased;
+      finalY = pauseOriginPos.y + (pauseDipTarget.y - pauseOriginPos.y) * eased;
+      finalZ = pauseOriginPos.z + (pauseDipTarget.z - pauseOriginPos.z) * eased;
+
+      if (pauseEaseT >= 1) {
+        pauseState = 'holding';
+        pauseTimer = 0;
+      }
+    }
+
+    if (pauseState === 'holding') {
+      pauseTimer += dt;
+      // Stay at the dip target
+      finalX = pauseDipTarget.x;
+      finalY = pauseDipTarget.y;
+      finalZ = pauseDipTarget.z;
+      pauseSpeedMul = PAUSE_SPEED_MUL;
+
+      if (pauseTimer >= pauseHoldDuration) {
+        pauseState = 'exiting';
+        pauseTimer = 0;
+        pauseEaseT = 0;
+        // Recompute the normal orbit position at the current time for exit target
+        // (we'll use the computed orbitX/Y/Z as the target to resume to)
+      }
+    }
+
+    if (pauseState === 'exiting') {
+      pauseTimer += dt;
+      pauseEaseT = Math.min(1, pauseTimer / PAUSE_EXIT_DURATION);
+      // Smooth ease-in-out back to normal
+      const eased = pauseEaseT * pauseEaseT * (3 - 2 * pauseEaseT);
+      // Lerp speed multiplier back to 1.0
+      pauseSpeedMul = PAUSE_SPEED_MUL + (1.0 - PAUSE_SPEED_MUL) * eased;
+      // Lerp position from dip target back to the normal orbit
+      finalX = pauseDipTarget.x + (orbitX - pauseDipTarget.x) * eased;
+      finalY = pauseDipTarget.y + (orbitY - pauseDipTarget.y) * eased;
+      finalZ = pauseDipTarget.z + (orbitZ - pauseDipTarget.z) * eased;
+
+      if (pauseEaseT >= 1) {
+        // Resume normal flight
+        pauseState = 'idle';
+        pauseSpeedMul = 1.0;
+        pauseEaseT = 0;
+        pauseTargetPos = null;
+        pauseOriginPos = null;
+        pauseDipTarget = null;
+        // Cooldown to prevent immediate re-trigger
+        pauseCooldown = 8.0;
+      }
+    }
+
+    group.position.set(finalX, finalY, finalZ);
 
     /* --- Orient the butterfly along its flight direction --- */
     // Use a small look-at offset to face the direction of travel
     const lookAhead = 0.5;
-    const nextT = (time + lookAhead) * ORBIT_SPEED;
+    const nextT = (time + lookAhead) * ORBIT_SPEED * pauseSpeedMul;
     const nextAngle = nextT + Math.sin(nextT * 0.23) * 0.4;
     const nextRadiusFactor = 0.5 + 0.5 * Math.sin(nextT * FREQ_X + PHASE_X);
     const nextRadius = ORBIT_RADIUS_MIN + nextRadiusFactor * (ORBIT_RADIUS_MAX - ORBIT_RADIUS_MIN);
     const nx = Math.cos(nextAngle) * nextRadius + Math.sin(nextT * FREQ_X * 1.7 + PHASE_X + 1.2) * 0.3;
     const nz = Math.sin(nextAngle) * nextRadius + Math.cos(nextT * FREQ_Z * 1.7 + PHASE_Z + 0.8) * 0.3;
+    const ny = ORBIT_HEIGHT_MIN + (0.5 + 0.5 * Math.sin(nextT * FREQ_Y + PHASE_Y)) * (ORBIT_HEIGHT_MAX - ORBIT_HEIGHT_MIN);
 
-    const dir = new THREE.Vector3(nx - x, 0, nz - z).normalize();
+    const dir = new THREE.Vector3(nx - finalX, 0, nz - finalZ).normalize();
     if (dir.length() > 0.001) {
       const lookTarget = new THREE.Vector3(
-        group.position.x + dir.x,
-        group.position.y,
-        group.position.z + dir.z
+        finalX + dir.x,
+        finalY,
+        finalZ + dir.z
       );
       group.lookAt(lookTarget);
       // Tilt slightly upward for a more natural flight posture
       group.rotateX(0.15);
     }
 
-    /* --- Wing flap animation --- */
-    const flapAngle = Math.sin(time * FLAP_SPEED * Math.PI * 2) * FLAP_ANGLE_MAX;
+    /* --- Slow wing flap during pause --- */
+    const flapSpeedMul = pauseState === 'idle' ? 1.0 : 0.6;
+    const flapAngle = Math.sin(time * FLAP_SPEED * Math.PI * 2 * flapSpeedMul) * FLAP_ANGLE_MAX;
     leftWing.rotation.z = flapAngle;
     rightWing.rotation.z = -flapAngle;
   }
@@ -232,6 +380,12 @@ export function createCreature(scene) {
     state.reducedMotion = e.matches;
     if (e.matches) {
       group.visible = false;
+      // Reset any active pause immediately
+      pauseState = 'idle';
+      pauseSpeedMul = 1.0;
+      pauseTargetPos = null;
+      pauseOriginPos = null;
+      pauseDipTarget = null;
     } else {
       group.visible = true;
     }
