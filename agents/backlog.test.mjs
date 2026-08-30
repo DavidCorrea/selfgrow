@@ -10,6 +10,7 @@ import {
   unmetDependencies,
   isBuildable,
   isPlaytestFeedback,
+  isNonWorkIssue,
   priorityRank,
   effectivePriorityRank,
   dependentsOf,
@@ -77,16 +78,29 @@ test("deciding whether a ticket can be built now", async (t) => {
     assert.equal(isBuildable(issue(5), new Set([5])), true);
   });
 
+  await t.test("refuses a health alert, which is a diagnostic about the pipeline", () => {
+    // Nothing in docs/ can fix "the changelog stopped growing", so the Devs would
+    // engage it, fail, and park it after spending two builds finding that out.
+    assert.equal(isBuildable(issue(5, { labels: ["health"] }), new Set([5])), false);
+  });
+
+  await t.test("refuses a weekly digest, in case its immediate close ever fails", () => {
+    assert.equal(isBuildable(issue(5, { labels: ["digest"] }), new Set([5])), false);
+  });
+
   await t.test("refuses raw playtest feedback, which is an observation rather than work", () => {
     // "The first minute felt static" has no acceptance criteria and no ask. The
     // Builder must never pick one up; the PM turns it into a real ticket first.
     const finding = issue(5, { labels: ["playtest"] });
     assert.equal(isPlaytestFeedback(finding), true);
+    assert.equal(isNonWorkIssue(finding), true);
     assert.equal(isBuildable(finding, new Set([5])), false);
   });
 
-  await t.test("builds the ticket the PM wrote from a finding, which carries no playtest label", () => {
-    assert.equal(isBuildable(issue(6, { labels: ["priority:high"] }), new Set([6])), true);
+  await t.test("builds the ticket the PM wrote from a finding, which carries no report label", () => {
+    const ticket = issue(6, { labels: ["priority:high"] });
+    assert.equal(isNonWorkIssue(ticket), false);
+    assert.equal(isBuildable(ticket, new Set([6])), true);
   });
 });
 

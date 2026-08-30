@@ -26,11 +26,10 @@ import {
   fillTemplate,
   runAgent,
   createIssue,
+  DIGEST_LABEL,
   isBlocked,
   isPlaytestFeedback,
 } from "./shared.mjs";
-
-const DIGEST_LABEL = "digest";
 
 // Who the digest @-mentions. Without it the issue is still filed, just silently.
 const NOTIFY_USER = process.env.GH_NOTIFY_USER || "";
