@@ -104,6 +104,14 @@ export async function checks() {
       if (typeof ctrl.minPolarAngle !== 'number' || ctrl.minPolarAngle <= 0) {
         problems.push('controls.minPolarAngle is ' + ctrl.minPolarAngle + ', expected > 0 to prevent fully top-down view.');
       }
+
+      // Verify zoom limits (issue #459)
+      if (typeof ctrl.minDistance !== 'number' || ctrl.minDistance !== 1.5) {
+        problems.push('controls.minDistance is ' + ctrl.minDistance + ', expected 1.5 to prevent zooming too close.');
+      }
+      if (typeof ctrl.maxDistance !== 'number' || ctrl.maxDistance !== 12) {
+        problems.push('controls.maxDistance is ' + ctrl.maxDistance + ', expected 12 to prevent zooming too far.');
+      }
       // Verify target is a Vector3 pointing near the plant (y ~0.4)
       if (!ctrl.target || typeof ctrl.target.y !== 'number') {
         problems.push('controls.target is not a Vector3 (y is not a number).');
