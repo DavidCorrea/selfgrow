@@ -9,6 +9,7 @@ import {
   dependencyNumbers,
   unmetDependencies,
   isBuildable,
+  isPlaytestFeedback,
   priorityRank,
   effectivePriorityRank,
   dependentsOf,
@@ -73,6 +74,18 @@ test("deciding whether a ticket can be built now", async (t) => {
 
   await t.test("builds an unblocked ticket with no dependencies", () => {
     assert.equal(isBuildable(issue(5), new Set([5])), true);
+  });
+
+  await t.test("refuses raw playtest feedback, which is an observation rather than work", () => {
+    // "The first minute felt static" has no acceptance criteria and no ask. The
+    // Builder must never pick one up; the PM turns it into a real ticket first.
+    const finding = issue(5, { labels: ["playtest"] });
+    assert.equal(isPlaytestFeedback(finding), true);
+    assert.equal(isBuildable(finding, new Set([5])), false);
+  });
+
+  await t.test("builds the ticket the PM wrote from a finding, which carries no playtest label", () => {
+    assert.equal(isBuildable(issue(6, { labels: ["priority:high"] }), new Set([6])), true);
   });
 });
 

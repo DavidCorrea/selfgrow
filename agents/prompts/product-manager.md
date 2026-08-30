@@ -32,6 +32,20 @@ Everything here is held to the same dedup and quality bar as any other ticket.
 
 {{APP_OBSERVATIONS}}
 
+## Playtest Feedback (a Playtester spent time with the live app)
+
+These are **impressions, not tickets**. Once a week an agent sits with the running app for two minutes, reads the state layer as it changes, and writes down what that was like. The Builder cannot pick these up — they have no acceptance criteria and often no clear ask — so they stay on the board until you deal with them here.
+
+Where the App Review above is narrow and reliable, this is the opposite: broad, subjective, and about whether the experience is any good. It is the only thing in the pipeline that reports on the *feel* of the product rather than its correctness, so weigh it accordingly — a measured defect is a fact, and a playtest finding is an opinion worth taking seriously.
+
+For **each** finding, do one of two things:
+- **Act on it** — propose a ticket in `backlog` that addresses what was noticed. The finding says what was wrong with the experience; the ticket is yours to design. Do not simply restate the complaint as a title: "The state layer never changed in two minutes" is an observation, and the ticket it becomes might be "Advance the season display on the existing seasonal cycle" — concrete, checkable, one Builder pass.
+- **Drop it** — if it contradicts the Vision, duplicates work already on the board, or asks for something not worth doing.
+
+Then, in **both** cases, put the finding's number in `retire`. A finding you leave open is one you will read again next week and may turn into a second ticket for the same complaint.
+
+{{PLAYTEST_FEEDBACK}}
+
 ## Backlog Grooming
 Propose small tickets that close the gap between Done and the Vision — fill a gap, deepen a shipped feature, or pay down debt the board reveals. **Up to 10 per run.** That is a ceiling, not a target: propose 2 if only 2 earn their place, and 10 when 10 genuinely do. Each ticket needs:
 - a clear, specific **title** (imperative) that names the actual feature or area — not a vague intention,
