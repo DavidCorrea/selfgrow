@@ -23,6 +23,7 @@ import {
   triggerWorkflow,
   dependencyLine,
   syncWaitingLabels,
+  isPlaytestFeedback,
 } from "./shared.mjs";
 
 // How much title-token similarity counts as a near-duplicate.
@@ -357,21 +358,44 @@ function triageExisting(openIssues, boardItems, triage) {
 }
 
 /**
+ * Untriaged Playtester findings, for the grooming prompt.
+ *
+ * These are impressions of the live app, not tickets — isBuildable excludes
+ * them, so they sit on the board until this run turns each into real work or
+ * drops it. Either way the original is closed via `retire`, so a finding cannot
+ * be re-triaged next week and become a second ticket for the same complaint.
+ */
+function renderPlaytestFeedback(openIssues) {
+  const feedback = openIssues.filter(isPlaytestFeedback);
+  if (!feedback.length) return "(no untriaged playtest feedback this run)";
+  return feedback
+    .map((issue) => `### #${issue.number} — ${issue.title}\n${(issue.body || "").trim()}`)
+    .join("\n\n");
+}
+
+/**
  * Close the tickets the PM chose to retire (blocked tickets it split or dropped).
  * Returns the set of retired issue numbers. Best-effort.
  */
-async function retireBlocked(retire) {
+async function retireBlocked(retire, openIssues = []) {
   const numbers = (Array.isArray(retire) ? retire : [])
     .map((n) => Number(typeof n === "object" && n ? n.number : n))
     .filter((n) => Number.isInteger(n) && n > 0);
+  const byNumber = new Map(openIssues.map((issue) => [issue.number, issue]));
   const retired = new Set();
   for (const number of numbers) {
-    await retireIssue(number, "Retired by the Product Manager — repeatedly failed to ship; split into a smaller ticket or dropped.");
+    // Two different things arrive here and they closed with the same note, which
+    // told anyone reading a triaged playtest finding that it had "repeatedly
+    // failed to ship" — the opposite of what happened to it.
+    const reason = isPlaytestFeedback(byNumber.get(number) || {})
+      ? "Triaged by the Product Manager — this playtest finding has been read, and either became a ticket of its own or was judged not worth acting on."
+      : "Retired by the Product Manager — repeatedly failed to ship; split into a smaller ticket or dropped.";
+    await retireIssue(number, reason);
     moveCard(number, "Done"); // reflect the closure on the board (best-effort)
     recordTicket("retired", number, `#${number}`);
     retired.add(number);
   }
-  if (retired.size) log("info", `Retired ${retired.size} blocked ticket(s).`);
+  if (retired.size) log("info", `Retired ${retired.size} ticket(s).`);
   return retired;
 }
 
@@ -394,6 +418,7 @@ async function main() {
         VISION: vision,
         BOARD_STATE: boardState,
         APP_OBSERVATIONS: appObservations,
+        PLAYTEST_FEEDBACK: renderPlaytestFeedback(openIssues),
       }),
       tools: ["read", "bash"],
     })
@@ -410,7 +435,7 @@ async function main() {
   // 1. Retire blocked tickets the PM gave up on (split into fresh tickets via
   //    `backlog`, or dropped outright). Done first so retired tickets drop out of
   //    `remainingOpen` and don't skew the grooming pass's dedup below.
-  const retired = await retireBlocked(data.retire);
+  const retired = await retireBlocked(data.retire, openIssues);
   const remainingOpen = openIssues.filter((i) => !retired.has(i.number));
   // 2. Triage + prioritize existing open tickets (pull inbound onto the board).
   triageExisting(remainingOpen, boardItems, data.triage);

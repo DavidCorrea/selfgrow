@@ -21,10 +21,23 @@ Each role is a workflow in `.github/workflows/` and a script in `agents/`.
 | Product Owner | Mon 08:00 | What the product should become | the Vision (wiki) |
 | Product Manager | daily 00:30 | Which work is worth a ticket | issues, the board |
 | Builder Team | dispatched by the PM, then a 14:00 mop-up | How a ticket gets built | `main` |
+| Playtester | Wed 10:00 | Whether the experience is any good | `playtest` issues |
 | Scribe | Thu 09:00 | How the product reads to an outsider | the wiki narrative |
 | Curator | Sat 09:00 | What should be *removed* | issues |
 | pi-update | Tue 07:00, and on PRs | Which models still work | `agents/models.json` |
 | reset | manual only | — | tears the product down |
+
+The Playtester is the odd one out: it doesn't measure the app, it *experiences*
+it. Once a week it sits with the running garden for two minutes, reads the state
+layer as it changes, and writes down what that was like. Its findings are filed
+as `playtest`-labelled issues that the Builder deliberately cannot pick up —
+they are impressions, not work. The Product Manager reads each one and either
+designs a real ticket from it or drops it, closing the original either way.
+
+That gap is the reason it exists. The automated app review is narrow and
+reliable, so an empty defect list reads as "nothing is wrong" when it only means
+"nothing measurable is wrong" — and a calm, correct, boring product would ship
+unchallenged.
 
 The cadences are deliberate. The PM runs just after OpenRouter's free-tier cap
 resets at 00:00 UTC, so the day's chain starts against a full allowance. It

@@ -1646,12 +1646,29 @@ export function unmetDependencies(issue, openNumbers) {
   return dependencyNumbers(issue).filter((n) => openNumbers.has(n));
 }
 
+// Raw feedback from the Playtester, before the Product Manager has shaped it into
+// a ticket. It is a report of an experience — "the garden felt static for the
+// first minute" — not a description of work, so it deliberately does NOT satisfy
+// the Builder's definition of buildable. The PM converts each one into a real
+// ticket with acceptance criteria, or drops it, and closes the original either
+// way.
+export const PLAYTEST_LABEL = "playtest";
+
+/** Untriaged playtest feedback, which is an observation rather than a ticket. */
+export function isPlaytestFeedback(issue) {
+  return labelNames(issue).includes(PLAYTEST_LABEL);
+}
+
 /**
- * True when the Builder may pick this ticket up now: not parked, and everything
- * it declared it depends on has shipped.
+ * True when the Builder may pick this ticket up now: not parked, not raw
+ * feedback awaiting triage, and everything it declared it depends on has shipped.
  */
 export function isBuildable(issue, openNumbers) {
-  return !isBlocked(issue) && unmetDependencies(issue, openNumbers).length === 0;
+  return (
+    !isBlocked(issue) &&
+    !isPlaytestFeedback(issue) &&
+    unmetDependencies(issue, openNumbers).length === 0
+  );
 }
 
 const PRIORITY_RANK = {
@@ -2304,7 +2321,12 @@ const STATIC_MIME = {
   ".woff": "font/woff", ".woff2": "font/woff2", ".ttf": "font/ttf",
 };
 
-function startStaticServer(rootDir) {
+/**
+ * Serve a directory on a random loopback port. Exported so an agent that drives
+ * the live app can host it the same way the build's own verify does, rather than
+ * standing up a second, subtly different server.
+ */
+export function startStaticServer(rootDir) {
   return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
       let p = decodeURIComponent((req.url || "/").split("?")[0]);
