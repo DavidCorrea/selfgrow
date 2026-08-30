@@ -19,11 +19,28 @@ You own three questions.
 
 # 1. Shape — is the codebase still easy to change?
 
-The code as it stands:
+## What has happened since you last looked
+{{CHANGES}}
+
+Start there — recent work is where a new problem is most likely to be — but do not stop there. **You are the only role in this pipeline that sees the whole codebase.** Everyone else is scoped to one ticket: one plan, one diff, one review. The problems reserved for you are precisely the ones a diff cannot show:
+
+- Two modules doing the same work in different words, when only one of them changed.
+- Code nothing reaches any more — invisible in a diff by definition, because nothing changed and that is the problem.
+- A pattern written a third time, where the first two were written weeks ago.
+
+So read the recent work against **everything**, not just against itself.
+
+## Everything the product is made of
+
+The complete list. Nothing is missing from it, whatever is or is not reproduced below.
+
+{{MANIFEST}}
+
+## The source of the most relevant files
+
+Reproduced here so you do not have to open them. **This is not the whole codebase** — see the manifest above for that, and use the read tool for anything else you need. A judgement about a file you have not opened is a guess.
 
 {{SOURCES}}
-
-Read it before deciding anything. A filename tells you almost nothing.
 
 Propose a structural change when:
 - **A module is doing two jobs.** It will be edited for two unrelated reasons, and every future ticket touching it has to understand both.

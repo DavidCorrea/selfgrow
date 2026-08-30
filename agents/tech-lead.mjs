@@ -23,6 +23,7 @@
 // that goes through the same planning, review and verification as any other
 // change — including the removals, which are the ones that most deserve it.
 import fs from "fs";
+import { execSync } from "child_process";
 import { join, relative } from "path";
 import { pathToFileURL } from "url";
 import {
@@ -44,6 +45,7 @@ import {
   retireIssue,
   isBlocked,
   dependencyLine,
+  errorData,
 } from "./shared.mjs";
 
 // Never propose more than this in one run. A structural change is disruptive and
@@ -64,16 +66,95 @@ const SOURCE_EXTENSIONS = /\.(m?js|css)$/;
 
 const SELFTEST_FILE = "selftest.js";
 
-// Per-file and total caps on how much source goes into the prompt. Without the
-// total, a product with fifty small files would blow the context and the model
-// would judge whichever half survived truncation.
-const MAX_CHARS_PER_FILE = 4000;
-const MAX_CHARS_TOTAL = 24000;
+// How much source is INLINED in the prompt. Deliberately modest, because it is
+// no longer how the review sees the codebase.
+//
+// It used to be everything, capped at 24,000 characters — and the product is
+// 136,000. Eight of fourteen files were dropped without being named, the largest
+// was cut to its first tenth, and the review would conclude the codebase was
+// sound having read under a fifth of it. Raising the cap only moves the number at
+// which that happens again.
+//
+// So the prompt carries a complete MANIFEST of what exists — every file, its
+// size, its exports — and inlines only the recently changed ones. Everything else
+// the review opens for itself with the `read` tool, which it has always had. That
+// is how a person would do it: read the map, then open what matters.
+const MAX_CHARS_PER_FILE = 6000;
+const MAX_INLINED_CHARS = 30000;
 
-// The self-check suite gets its own, larger allowance. It is read as a whole or
-// not at all — judging whether a suite's checks could fail is impossible from a
-// truncated third of it, and it is the one file this agent is here to own.
+// The self-check suite gets its own allowance and is read as a whole. Judging
+// whether a suite's checks could fail is impossible from a truncated third of it,
+// and it is the one file this agent is here to own.
 const MAX_SELFTEST_CHARS = 20000;
+
+/**
+ * When this agent last completed a review, so the report below can say what has
+ * happened since.
+ *
+ * Taken from the workflow's own run history rather than a marker file: the run
+ * history is already the truth, and a marker is one more thing to write, lose,
+ * and disagree with reality. Null on the first ever run, which is correct — the
+ * first review has no "since".
+ */
+function lastReviewedAt() {
+  try {
+    const runs = JSON.parse(
+      execSync(`gh run list --workflow tech-lead.yml --status success --limit 2 --json createdAt`, {
+        cwd: repoRoot,
+        maxBuffer: 10 * 1024 * 1024,
+      }).toString()
+    );
+    // [0] is very likely THIS run if it is already recorded, so prefer the one before.
+    return runs[1]?.createdAt || runs[0]?.createdAt || null;
+  } catch (e) {
+    log("warn", "Could not read when the last review ran — treating this as a first look.", errorData(e));
+    return null;
+  }
+}
+
+/**
+ * What has landed in the product since the last review: the commits, and the set
+ * of files they touched.
+ *
+ * This does NOT narrow what gets reviewed. Shape is a property of the whole — two
+ * modules doing the same job in different words is invisible in a diff, and so is
+ * code nothing reaches. It only says where the week's activity was, so a full
+ * review can start somewhere useful instead of cold.
+ */
+function readChanges(since) {
+  if (!since) return { summary: null, changedFiles: new Set() };
+  try {
+    const range = `--since="${since}"`;
+    const commits = execSync(`git log ${range} --no-merges --format="%h %s" -- docs/`, {
+      cwd: repoRoot,
+      maxBuffer: 10 * 1024 * 1024,
+    }).toString().trim();
+    const files = execSync(`git log ${range} --no-merges --name-only --format="" -- docs/`, {
+      cwd: repoRoot,
+      maxBuffer: 10 * 1024 * 1024,
+    }).toString().trim().split("\n").map((f) => f.trim()).filter(Boolean);
+    return { summary: commits || null, changedFiles: new Set(files) };
+  } catch (e) {
+    log("warn", "Could not read what changed since the last review.", errorData(e));
+    return { summary: null, changedFiles: new Set() };
+  }
+}
+
+function renderChanges(since, { summary, changedFiles }) {
+  if (!since) {
+    return "This is your first review — everything is new to you. Read the codebase as a whole and judge the shape it has arrived at, rather than looking for what moved.";
+  }
+  if (!summary) {
+    return `Nothing has changed under \`docs/\` since your last review on ${since.slice(0, 10)}. Anything you propose is something an earlier review missed or chose to leave, so hold a higher bar than usual.`;
+  }
+  return [
+    `Since your last review on ${since.slice(0, 10)}:`,
+    "",
+    summary,
+    "",
+    `Files touched: ${[...changedFiles].join(", ") || "none"}`,
+  ].join("\n");
+}
 
 /** Every source file under docs/, deepest paths included, as repo-relative names. */
 export function listSourceFiles(dir) {
@@ -108,17 +189,85 @@ function readSources() {
   });
 }
 
-export function formatSources(sources) {
+/**
+ * Order the source so the most relevant files come first.
+ *
+ * Recently changed files, then the rest largest-first. Changed files earn the
+ * front because they are where a new problem is most likely to be; large files
+ * come next because cruft accumulates by volume — a 4,000-line module is a better
+ * place to look for two jobs in one file than a 40-line one.
+ */
+export function prioritizeSources(sources, changedFiles = new Set()) {
+  const changed = (file) => changedFiles.has(file.name);
+  return [...sources].sort((a, b) => {
+    if (changed(a) !== changed(b)) return changed(a) ? -1 : 1;
+    return b.source.length - a.source.length;
+  });
+}
+
+// `export function foo`, `export const bar`, `export class Baz` — enough to say
+// what a module offers without reading it. Not a parser, and it does not need to
+// be: a missed export costs a line of the map, not a wrong judgement.
+const EXPORT_RE = /^export\s+(?:async\s+)?(?:function|const|let|class)\s+([A-Za-z0-9_$]+)/gm;
+
+function exportsOf(source) {
+  return [...source.matchAll(EXPORT_RE)].map((m) => m[1]);
+}
+
+/**
+ * Every file in the product, with its size and what it offers.
+ *
+ * Always complete, whatever the budget. This is what makes "I have not read that
+ * file" something the review can know rather than a silent gap: it can see that
+ * groundNoise.js exists and exports createGroundNoiseTexture even on a week when
+ * nothing inlined it.
+ */
+export function renderManifest(sources, changedFiles = new Set()) {
+  const rows = prioritizeSources(sources, changedFiles).map((file) => {
+    const names = exportsOf(file.source);
+    const marker = changedFiles.has(file.name) ? " *" : "";
+    return `- \`${file.name}\`${marker} — ${file.source.length} chars, exports: ${names.length ? names.join(", ") : "(none)"}`;
+  });
+  return [
+    rows.join("\n"),
+    changedFiles.size ? "\n`*` marks a file touched since your last review." : "",
+  ].filter(Boolean).join("\n");
+}
+
+/**
+ * Inline the most relevant source, and say plainly what was left for the review
+ * to open itself.
+ *
+ * The distinction matters more than the budget: a file that is merely NOT INLINED
+ * is one the review can still read, while a file it does not know exists is a
+ * silent hole it will conclude around. The manifest above covers the second case;
+ * this only decides what is convenient to have already.
+ */
+export function formatSources(sources, changedFiles = new Set()) {
+  const ordered = prioritizeSources(sources, changedFiles);
   const blocks = [];
-  let budget = MAX_CHARS_TOTAL;
-  for (const file of sources) {
+  const notInlined = [];
+  let budget = MAX_INLINED_CHARS;
+
+  for (const file of ordered) {
     if (budget <= 0) {
-      blocks.push(`_(${sources.length - blocks.length} further file(s) omitted — too much source to read in one pass.)_`);
-      break;
+      notInlined.push(file.name);
+      continue;
     }
     const body = file.source.slice(0, Math.min(MAX_CHARS_PER_FILE, budget));
     budget -= body.length;
-    blocks.push(`### ${file.name}\n\`\`\`\n${body}\n\`\`\``);
+    const truncated = body.length < file.source.length
+      ? `\n_(showing the first ${body.length} of ${file.source.length} characters — open the file to see the rest)_`
+      : "";
+    blocks.push(`### ${file.name}\n\`\`\`\n${body}\n\`\`\`${truncated}`);
+  }
+
+  if (notInlined.length) {
+    blocks.push(
+      `### Not inlined\nThese are in the manifest above but not reproduced here, to keep this readable. ` +
+        `Open any of them with the read tool — do NOT judge them unread:\n` +
+        notInlined.map((name) => `- ${name}`).join("\n")
+    );
   }
   return blocks.join("\n\n");
 }
@@ -217,6 +366,12 @@ async function main() {
   const { openIssues, boardState } = getBoardSnapshot();
   const blocked = readBlockedTickets(openIssues);
 
+  const since = lastReviewedAt();
+  const changes = readChanges(since);
+  log("info", since
+    ? `Reviewing everything, starting from the ${changes.changedFiles.size} file(s) touched since ${since.slice(0, 10)}.`
+    : "First review — reading the whole codebase cold.");
+
   // Nothing to say about the shape of four files, but a parked ticket still needs
   // a verdict — so a thin product skips the review and keeps the triage.
   if (sources.length < MIN_FILES_TO_REVIEW && !blocked.length) {
@@ -230,7 +385,9 @@ async function main() {
       label: "Tech Lead",
       systemPrompt: fillTemplate(loadPrompt("tech-lead"), {
         VISION: readVision(),
-        SOURCES: formatSources(sources),
+        MANIFEST: renderManifest(sources, changes.changedFiles),
+        SOURCES: formatSources(sources, changes.changedFiles),
+        CHANGES: renderChanges(since, changes),
         SELFTEST: readSelfTest() || "(the product ships no self-check suite yet)",
         BLOCKED: renderBlocked(blocked),
         BOARD_STATE: boardState,
