@@ -10,6 +10,9 @@ on:
 permissions:
   contents: read
   issues: write
+  # The reports it publishes are Discussions, not issues: a post rather than a
+  # task, which is what both of them always were.
+  discussions: write
 
 concurrency:
   group: health

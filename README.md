@@ -249,12 +249,19 @@ shipped — often solved the same way.
 The pipeline decides everything itself, and reports on two channels that never
 ask you for anything:
 
-- **The weekly digest**, filed by the PM each Sunday — what the garden grew,
-  grouped by what the work adds up to rather than by ticket; what QA noticed;
-  what's stuck; the current milestone. It @-mentions the owner so it arrives as a
-  notification, then closes itself immediately: an open issue addressed to a
-  human is a human on the critical path.
-- **Health alerts**, only when something breaks. Silence means fine.
+Both are **Discussions**, in Announcements. That is the primitive they always
+wanted: a post rather than a task, carrying no board card and nothing the Devs
+will ever pick up. The digest used to be an issue created and closed in the same
+breath — a broadcast wearing a task's clothes — and a health alert used to be an
+issue the Devs actually tried to build.
+
+- **The weekly digest**, published by the PM each Sunday — what the garden grew,
+  grouped by what the work adds up to rather than by ticket; what you asked for
+  and what became of it; what QA noticed; what's stuck; the current milestone.
+  It @-mentions the owner, so it arrives as a notification.
+- **Health alerts**, only when something breaks. One open post at a time naming
+  everything currently wrong, and it **closes itself** once none of it is true
+  any more. Silence means fine.
 
 ## Running it
 

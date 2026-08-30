@@ -17,16 +17,15 @@
 // arrives as a notification, and closes itself immediately — an open issue
 // addressed to a human is a human on the critical path, and this pipeline is
 // meant to run without one.
-import { execSync } from "child_process";
-import { log, withLogGroup, errorData, recordTicket } from "./log.mjs";
+import { log, withLogGroup } from "./log.mjs";
+import { postDiscussion } from "./discussions.mjs";
+// readPage reaches the Story, which now carries the project's long arc so the
+// changelog can be trimmed without amputating its early chapters.
 import { readChangelog, readPage, writeStory } from "./wiki.mjs";
 import {
-  repoRoot,
   loadPrompt,
   fillTemplate,
   runAgent,
-  createIssue,
-  DIGEST_LABEL,
   isBlocked,
   isPlaytestFeedback,
   isManualIssue,
@@ -112,23 +111,9 @@ export function renderDigest(week, narrative, milestone) {
   return lines.filter((line) => line !== "").join("\n");
 }
 
-/**
- * Close the digest as soon as it is filed.
- *
- * The @-mention is what delivers the notification; the open issue is what would
- * make it look like a task waiting on someone. Only the first is wanted.
- */
-function fileDigest(title, body) {
-  const number = createIssue(title, body, [DIGEST_LABEL]);
-  if (!number) return null;
-  try {
-    execSync(`gh issue close ${number}`, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 });
-  } catch (e) {
-    log("warn", `Digest: filed #${number} but could not close it.`, errorData(e));
-  }
-  recordTicket("created", number, title);
-  return number;
-}
+// Where the digest is published. Announcements is the category for a maintainer
+// telling everyone what happened, which is exactly what this is.
+const DIGEST_CATEGORY = process.env.DIGEST_CATEGORY || "Announcements";
 
 /**
  * Write the Story page and file the week's digest.
@@ -174,9 +159,13 @@ export async function publishWeeklyReport({ closed, open, ledger, milestone }) {
   }
 
   const title = `Week of ${daysAgo(7)} — ${week.shipped.length} shipped`;
-  const number = fileDigest(title, renderDigest(week, weekProse, milestone));
-  if (number) log("info", `Weekly report: digest filed as #${number}.`);
-  return number;
+  const url = postDiscussion({
+    category: DIGEST_CATEGORY,
+    title,
+    body: renderDigest(week, weekProse, milestone),
+  });
+  if (url) log("info", `Weekly report: published at ${url}`);
+  return url;
 }
 
 /**

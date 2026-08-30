@@ -23,6 +23,9 @@ permissions:
   contents: read
   # Issues and milestones; the Sunday run also writes the Story page to the wiki.
   issues: write
+  # The reports it publishes are Discussions, not issues: a post rather than a
+  # task, which is what both of them always were.
+  discussions: write
 
 # Never groom twice at once: two concurrent runs would dedup their proposals
 # against a board neither has finished writing to, and create the same tickets

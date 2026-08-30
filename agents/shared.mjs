@@ -1655,8 +1655,13 @@ export function unmetDependencies(issue, openNumbers) {
 //              with acceptance criteria, or drops it, and closes the original.
 //   health   — a diagnostic about the PIPELINE, addressed to whoever maintains
 //              it. Nothing in docs/ can fix "the changelog stopped growing".
-//   digest   — the weekly report. Filed and closed in the same breath, but a
-//              failed close would otherwise leave the Devs a newsletter to build.
+//   digest   — the weekly report.
+//
+// The last two are now published as Discussions rather than issues, which is a
+// better fit and removes the problem at the source. These stay because issues
+// filed under the old behaviour are still open, and because a label can always be
+// added by hand — a guard that costs a set lookup is cheaper than the build it
+// would otherwise waste.
 //
 // Left buildable, each is a ticket the Devs engage, fail to satisfy, and
 // eventually park — spending two builds to discover the issue was never a
