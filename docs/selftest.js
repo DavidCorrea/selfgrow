@@ -7,6 +7,7 @@
 
 import * as THREE from "three";
 import { saveGardenState, loadGardenState, fastForwardState, clearGardenState, STORAGE_KEY } from "./persistence.js";
+import { createCreature } from "./creature.js";
 
 export async function checks() {
   const problems = [];
@@ -1599,8 +1600,8 @@ export async function checks() {
     }
 
     // Verify radius bounds keep creature at periphery, not centre
-    if (typeof creatureState.radiusMin !== 'number' || creatureState.radiusMin < 1.0) {
-      problems.push('creature.radiusMin is ' + creatureState.radiusMin + ', expected >= 1.0 to keep the creature at the periphery.');
+    if (typeof creatureState.radiusMin !== 'number' || creatureState.radiusMin < 0.3 || creatureState.radiusMin > 1.0) {
+      problems.push('creature.radiusMin is ' + creatureState.radiusMin + ', expected in [0.3, 1.0] to allow flower visits while keeping the butterfly from the very centre.');
     }
     if (typeof creatureState.radiusMax !== 'number' || creatureState.radiusMax > 3.5) {
       problems.push('creature.radiusMax is ' + creatureState.radiusMax + ', expected <= 3.5 to keep the creature within the garden bounds.');
@@ -1685,6 +1686,256 @@ export async function checks() {
         // Restore original getCycleProgress
         creatureDayNight.getCycleProgress = origGetCycleProgress;
       }
+    }
+  }
+
+  /* ---------- Butterfly pause near blooming flowers checks (issue #467) ---------- */
+  // When the butterfly's orbit path brings it within 0.4 units of a plant whose
+  // flower is in the 'bloom' phase, it should slow its orbit speed by ~50% and
+  // dip slightly closer to the flower, holding for 3-5 seconds before resuming
+  // normal flight via smooth eased transitions. Behaviour is disabled when
+  // prefers-reduced-motion: reduce is active.
+  if (!creatureState) {
+    problems.push('window.__gardenState.creature is not set — cannot verify butterfly pause behaviour.');
+  } else {
+    // --- Structural checks: pause state accessors must exist and return valid shapes ---
+    if (typeof creatureState.pauseState !== 'function') {
+      problems.push('creature.state.pauseState is not a function — pause state getter missing (butterfly flower visits).');
+    } else {
+      var ps = creatureState.pauseState();
+      var validStates = ['idle', 'entering', 'holding', 'exiting'];
+      if (validStates.indexOf(ps) === -1) {
+        problems.push('creature pauseState() returned "' + ps + '", expected one of: ' + validStates.join(', '));
+      }
+    }
+
+    if (typeof creatureState.pauseSpeedMul !== 'function') {
+      problems.push('creature.state.pauseSpeedMul is not a function — pause speed multiplier getter missing.');
+    } else {
+      var mul = creatureState.pauseSpeedMul();
+      if (typeof mul !== 'number' || mul < 0.45 || mul > 1.0) {
+        problems.push('creature pauseSpeedMul() is ' + mul + ', expected in [0.45, 1.0].');
+      }
+    }
+
+    if (typeof creatureState.pauseTargetPos !== 'function') {
+      problems.push('creature.state.pauseTargetPos is not a function — pause target getter missing.');
+    } else {
+      var tp = creatureState.pauseTargetPos();
+      if (tp !== null) {
+        if (typeof tp.x !== 'number' || typeof tp.y !== 'number' || typeof tp.z !== 'number') {
+          problems.push('creature pauseTargetPos() returned an object with invalid coordinates: ' + JSON.stringify(tp));
+        }
+      }
+    }
+
+    if (typeof creatureState.pauseEaseT !== 'function') {
+      problems.push('creature.state.pauseEaseT is not a function — pause ease progress getter missing.');
+    } else {
+      var et = creatureState.pauseEaseT();
+      if (typeof et !== 'number' || et < 0 || et > 1) {
+        problems.push('creature pauseEaseT() is ' + et + ', expected in [0, 1].');
+      }
+    }
+
+    // --- Behavioural tests: only meaningful when motion is not reduced ---
+    if (!creatureState.reducedMotion && gardenState && typeof gardenState.creatureUpdate === 'function') {
+      var origPlant = gardenState.plant;
+      var origPlant2 = gardenState.plant2;
+      var origDayNight = null;
+
+      // Mock day/night as daytime so the butterfly is visible and active
+      if (gardenState.dayNight && typeof gardenState.dayNight.getCycleProgress === 'function') {
+        origDayNight = gardenState.dayNight.getCycleProgress;
+        gardenState.dayNight.getCycleProgress = function() { return 0.1; }; // Morning — butterfly active
+      }
+
+      try {
+        // Helper: run a single update at the given time
+        function runUpdate(t) {
+          gardenState.creatureUpdate(t, 0.016);
+        }
+
+        // Helper: create a fake plant with a flower in the given phase
+        function makeFakePlant(phase) {
+          return {
+            group: { position: new THREE.Vector3(0, 0, 0) },
+            flower: {
+              getPhase: function() { return phase; },
+              getProgress: function() { return 0.5; }
+            }
+          };
+        }
+
+        // Set both plants to non-bloom fakes far away so no real pause can trigger
+        var farFake = makeFakePlant('dormant');
+        farFake.group.position.set(100, 0, 100);
+        gardenState.plant = farFake;
+        gardenState.plant2 = farFake;
+
+        // Drain any in-flight pause from the live animation loop:
+        // run enough updates with positive dt to complete entering(1s)+holding(5s)+exiting(1s)+cooldown(8s)
+        var drainStart = 1000;
+        for (var di = 0; di < 1100; di++) {
+          runUpdate(drainStart + di * 0.016);
+        }
+
+        var idleAfterDrain = creatureState.pauseState() === 'idle';
+
+        if (!idleAfterDrain) {
+          problems.push('Butterfly pause state is "' + creatureState.pauseState() + '" after draining ' + (1100 * 0.016).toFixed(1) + 's of simulated time — expected "idle". An in-flight pause may have been stuck.');
+        } else {
+          // --- Test 1: non-bloom phases must not trigger a pause ---
+          var nonBloomPhases = ['dormant', 'budding', 'opening', 'fading'];
+          var phaseOk = true;
+          for (var ph = 0; ph < nonBloomPhases.length; ph++) {
+            var fake = makeFakePlant(nonBloomPhases[ph]);
+            gardenState.plant = fake;
+
+            // Run one update to find the butterfly's current orbit position
+            runUpdate(2000 + ph);
+            var bp = creatureState.group.position;
+
+            // Place the flower exactly at the butterfly's position — closest possible
+            fake.group.position.set(bp.x, bp.y - 0.72, bp.z);
+
+            // Run another update — even with distance ~0, non-bloom must not trigger
+            runUpdate(2000 + ph + 0.016);
+
+            if (creatureState.pauseState() !== 'idle') {
+              problems.push('Butterfly paused near a flower in "' + nonBloomPhases[ph] + '" phase (pauseState="' + creatureState.pauseState() + '") — pause must only trigger for "bloom".');
+              phaseOk = false;
+              break;
+            }
+          }
+
+          if (phaseOk && creatureState.pauseState() === 'idle') {
+            // --- Test 2: bloom phase triggers the pause ---
+            // First, find the butterfly's position with a neutral (non-bloom) plant
+            var findFake = makeFakePlant('dormant');
+            gardenState.plant = findFake;
+            runUpdate(3000);
+            var bp2 = creatureState.group.position;
+
+            // Place the bloom flower exactly at the butterfly's position
+            var bloomFake = makeFakePlant('bloom');
+            bloomFake.group.position.set(bp2.x, bp2.y - 0.72, bp2.z);
+            gardenState.plant = bloomFake;
+
+            // Run next update — orbit position has barely moved, distance ~0, should trigger
+            runUpdate(3000.016);
+
+            var triggered = creatureState.pauseState() === 'entering' || creatureState.pauseState() === 'holding';
+
+            if (!triggered) {
+              problems.push('Butterfly did not pause near a blooming flower: pauseState() is "' + creatureState.pauseState() + '", expected "entering" or "holding".');
+            } else {
+              // --- Test 3: full cycle — speed slows to ~50%, butterfly dips closer, then returns to normal ---
+              var sawPausedSpeed = false;
+              var backToIdle = false;
+              var sawDip = false;
+              var minMul = 1.0;
+
+              for (var ci = 0; ci < 800; ci++) {
+                runUpdate(3000.032 + ci * 0.016);
+
+                var mul = creatureState.pauseSpeedMul();
+                if (mul < minMul) minMul = mul;
+
+                if (creatureState.pauseState() === 'holding') {
+                  // Check that the butterfly is hovering at the dip distance (~PAUSE_DIP_AMOUNT=0.15)
+                  var tp = creatureState.pauseTargetPos();
+                  if (tp) {
+                    var pos = creatureState.group.position;
+                    var dx = pos.x - tp.x;
+                    var dy = pos.y - tp.y;
+                    var dz = pos.z - tp.z;
+                    var dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                    if (dist >= 0.08 && dist <= 0.25) {
+                      sawDip = true;
+                    }
+                  }
+                }
+
+                if (creatureState.pauseState() === 'idle') {
+                  backToIdle = true;
+                  break;
+                }
+              }
+
+              if (minMul > 0.55) {
+                problems.push('Butterfly pause never reduced orbit speed to ~50% (minimum speed multiplier seen: ' + minMul.toFixed(3) + ') — expected at most 0.55.');
+              }
+
+              if (!sawDip) {
+                problems.push('Butterfly pause did not dip close to the flower during the hold phase — hover distance should be ~0.15 units from the flower.');
+              }
+
+              if (!backToIdle) {
+                problems.push('Butterfly pause did not return to idle within 800 frames (~12.8s) — expected entering(1s)+holding(3-5s)+exiting(1s) to complete.');
+              }
+            }
+          }
+        }
+      } finally {
+        // Restore original plant state and day/night getter
+        gardenState.plant = origPlant;
+        gardenState.plant2 = origPlant2;
+        if (origDayNight) {
+          gardenState.dayNight.getCycleProgress = origDayNight;
+        }
+      }
+    }
+
+    // --- Test 4: reduced-motion disables the pause entirely ---
+    // Create a fresh creature with matchMedia overridden to report "reduce"
+    var origMatchMedia = window.matchMedia;
+    var reducedCreature = null;
+
+    try {
+      window.matchMedia = function() {
+        return {
+          matches: true,
+          media: '(prefers-reduced-motion: reduce)',
+          addEventListener: function() {},
+          removeEventListener: function() {}
+        };
+      };
+
+      var testScene = new THREE.Scene();
+      reducedCreature = createCreature(testScene);
+
+      if (!reducedCreature.state.reducedMotion) {
+        problems.push('createCreature with mocked prefers-reduced-motion did not set reducedMotion=true — the pause disable path cannot be verified.');
+      } else {
+        // Place a blooming flower right at the butterfly's position
+        var gsSnapshot = window.__gardenState;
+        window.__gardenState = {
+          plant: {
+            group: { position: new THREE.Vector3(0, 0, 0) },
+            flower: {
+              getPhase: function() { return 'bloom'; },
+              getProgress: function() { return 0.5; }
+            }
+          }
+        };
+        reducedCreature.update(0.5);
+
+        if (reducedCreature.state.pauseState() !== 'idle') {
+          problems.push('With prefers-reduced-motion active, the butterfly paused anyway (pauseState="' + reducedCreature.state.pauseState() + '") — pause must be disabled under reduced motion.');
+        }
+
+        if (reducedCreature.group.visible !== false) {
+          problems.push('With prefers-reduced-motion active, the creature group should be invisible.');
+        }
+
+        window.__gardenState = gsSnapshot;
+      }
+    } finally {
+      if (reducedCreature && typeof reducedCreature.destroy === 'function') {
+        reducedCreature.destroy();
+      }
+      window.matchMedia = origMatchMedia;
     }
   }
 
