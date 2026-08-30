@@ -1,0 +1,42 @@
+name: Report something broken
+description: Something in the garden is wrong, missing, or unreachable.
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The garden is live at https://davidcorrea.github.io/selfgrow/ — that is the
+        page to describe, since it is what everyone else sees too.
+
+        Automated checks already measure contrast, layout overflow and console
+        errors on every build, so those are usually already known. What they cannot
+        see is anything about how it *feels* to use, or a fault that only appears
+        after watching for a while. Those are the reports worth writing.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you saw, and what you expected instead.
+      placeholder: |
+        After about a minute the season changed to Autumn, but the plot description
+        still said "a young seedling in spring soil". The two disagreed until I reloaded.
+    validations:
+      required: true
+
+  - type: input
+    id: repro
+    attributes:
+      label: How can it be seen again?
+      description: What to do, or how long to wait. A fault nobody can reproduce cannot be verified as fixed, so this is what decides whether it becomes a ticket.
+      placeholder: Load the page and leave it for two minutes without interacting.
+    validations:
+      required: true
+
+  - type: input
+    id: where
+    attributes:
+      label: Browser and screen size (optional)
+      placeholder: Firefox, phone, portrait
+    validations:
+      required: false

@@ -270,7 +270,15 @@ The PAT needs `project` scope. Set `GH_PROJECT_OWNER` and `GH_PROJECT_NUMBER` in
 the workflows to point at your board.
 
 Development: `npm test` runs the harness's own suite, `npm run lint` covers both
-`agents/` and `docs/`, and CI gates both on every PR that touches the pipeline.
+`agents/` and `docs/`, and CI runs those plus the product's own verification on
+every pull request.
+
+Those CI jobs are **required checks** on `main`, which is what makes them a gate
+rather than a habit. The agents run the same verification in-process and used to
+merge on their own assessment of it — so every guarantee here was self-imposed,
+and a swallowed error or a reordered step would have skipped it silently. Merges
+now ask for auto-merge and wait: GitHub lands the change when the checks pass,
+and refuses when they do not.
 
 To start over: pause the workflows and dispatch `reset`, typing the repository
 name to confirm. It cancels pending runs, closes open issues and agent PRs,

@@ -1,0 +1,11 @@
+# No blank issues: the fields on the forms are the difference between a request
+# the agents can build and one the Product Manager has to guess at. A blank issue
+# skips them, which is exactly the shape that used to get closed for being vague.
+blank_issues_enabled: false
+contact_links:
+  - name: See the garden
+    url: https://davidcorrea.github.io/selfgrow/
+    about: The live product, which is what these issues are about.
+  - name: How the pipeline works
+    url: https://github.com/DavidCorrea/selfgrow#readme
+    about: Who builds this, and what happens to an issue after you file it.

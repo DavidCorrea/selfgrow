@@ -1,0 +1,45 @@
+name: Ask for something
+description: Something you want the garden to do, or do differently.
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This project is built by autonomous agents. Nobody is waiting to read this —
+        the Product Manager grooms the backlog every morning and will pick it up then.
+
+        The two fields below are the ones that decide whether this becomes a ticket
+        the agents can build. A request they cannot picture concretely gets rewritten
+        by the Product Manager into something they can, and its guess may not be
+        yours — so the more specific you are here, the more likely you get what you
+        actually wanted.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What should change?
+      description: The garden as it is now, and how it should be different. Describe what you want to see or be able to do, not how to build it.
+      placeholder: |
+        Right now the weather changes but the garden never sounds different.
+        Rain should be audible — quiet, and only while it is actually raining.
+    validations:
+      required: true
+
+  - type: textarea
+    id: done
+    attributes:
+      label: How would you know it worked?
+      description: One or two things that would be true afterwards. This is what the agents build toward and what their self-checks assert, so it is the most useful thing on this form.
+      placeholder: |
+        - During Light Drizzle I can hear rain, and it fades out when the weather clears.
+        - It never plays when the page loads on a clear day.
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why does it matter? (optional)
+      description: What it adds to the experience. Helps the Product Manager weigh it against everything else queued.
+    validations:
+      required: false

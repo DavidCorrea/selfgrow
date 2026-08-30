@@ -541,7 +541,7 @@ async function buildTicket(openIssues, vision) {
         // non-fatal — comment just omits the SHA
       }
       approvePR(prNumber, "Approved by the Reviewer agent — all blocking issues resolved.");
-      if (!mergePR(prNumber)) {
+      if (!(await mergePR(prNumber))) {
         log("error", "PR merge failed — leaving PR open and card In review for inspection.");
         return { addressedIssue, addressedIssueObj, outcome: "abandoned", reason: "PR merge failed.", ticketFault: false };
       }
