@@ -127,6 +127,16 @@ export function createCreature(scene) {
       return;
     }
 
+    /* --- Night phase: butterfly rests --- */
+    if (window.__gardenState && window.__gardenState.dayNight) {
+      const t = window.__gardenState.dayNight.getCycleProgress();
+      // Night is t in [0.75, 1.0)
+      if (t >= 0.75) {
+        group.visible = false;
+        return;
+      }
+    }
+
     if (!group.visible) {
       group.visible = true;
     }
