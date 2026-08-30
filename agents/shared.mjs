@@ -1655,8 +1655,13 @@ export function unmetDependencies(issue, openNumbers) {
 //              with acceptance criteria, or drops it, and closes the original.
 //   health   — a diagnostic about the PIPELINE, addressed to whoever maintains
 //              it. Nothing in docs/ can fix "the changelog stopped growing".
-//   digest   — the weekly report. Filed and closed in the same breath, but a
-//              failed close would otherwise leave the Devs a newsletter to build.
+//   digest   — the weekly report.
+//
+// The last two are now published as Discussions rather than issues, which is a
+// better fit and removes the problem at the source. These stay because issues
+// filed under the old behaviour are still open, and because a label can always be
+// added by hand — a guard that costs a set lookup is cheaper than the build it
+// would otherwise waste.
 //
 // Left buildable, each is a ticket the Devs engage, fail to satisfy, and
 // eventually park — spending two builds to discover the issue was never a
@@ -2120,15 +2125,84 @@ export function approvePR(prNumber, body) {
 }
 
 /** Merge a PR with a merge commit and delete its branch. Best-effort. */
-export function mergePR(prNumber) {
+// How long to wait for a PR to actually land after asking for it.
+//
+// The agents open a PR and try to merge it seconds later, long before any
+// required check has finished. Before, that worked because nothing was required
+// and the merge went straight through — the agent's own in-process verify was the
+// only gate, and it was self-imposed. Now the merge waits for the checks, which
+// means waiting for a runner to start, install and run them.
+//
+// Sized against the two jobs it waits on: lint and tests are seconds, the product
+// verify pays for a Chromium install. Ten minutes covers both with room for a
+// queued runner, and a ticket that exceeds it is left as an open PR for the next
+// run rather than merged blind.
+const MERGE_WAIT_MS = Number(process.env.MERGE_WAIT_MS || 10 * 60 * 1000);
+const MERGE_POLL_MS = Number(process.env.MERGE_POLL_MS || 15 * 1000);
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function prState(prNumber) {
   try {
-    ghAs(patToken(), `pr merge ${prNumber} --merge --delete-branch`);
-    log("info", `PR: merged #${prNumber}.`);
-    return true;
-  } catch (e) {
-    log("warn", `PR: could not merge #${prNumber}.`, errorData(e));
-    return false;
+    return JSON.parse(
+      ghAs(patToken(), `pr view ${prNumber} --json state,mergedAt,mergeStateStatus`, { stdio: "pipe" })
+    );
+  } catch {
+    return null;
   }
+}
+
+/**
+ * Merge a pull request, letting the repository's required checks decide.
+ *
+ * Asks for auto-merge rather than merging outright: GitHub then merges the
+ * moment the checks pass, and refuses if they do not. That inverts where the
+ * trust sits. It used to be the agent asserting its own verify had passed and
+ * then merging on that assertion; now it asks, and something outside the agent
+ * answers.
+ *
+ * Falls back to a direct merge when auto-merge is unavailable — a repository
+ * without it configured must still be able to ship.
+ */
+export async function mergePR(prNumber) {
+  let waiting = false;
+  try {
+    ghAs(patToken(), `pr merge ${prNumber} --auto --merge --delete-branch`);
+    waiting = true;
+    log("info", `PR: #${prNumber} will merge when its checks pass.`);
+  } catch (e) {
+    log("info", `PR: auto-merge unavailable for #${prNumber} — merging directly.`, errorData(e));
+    try {
+      ghAs(patToken(), `pr merge ${prNumber} --merge --delete-branch`);
+      log("info", `PR: merged #${prNumber}.`);
+      return true;
+    } catch (direct) {
+      log("warn", `PR: could not merge #${prNumber}.`, errorData(direct));
+      return false;
+    }
+  }
+
+  // Wait for it to actually land. The next ticket branches from this merge, so
+  // continuing before it exists would build on a main that does not have it yet.
+  const deadline = Date.now() + MERGE_WAIT_MS;
+  while (waiting && Date.now() < deadline) {
+    await sleep(MERGE_POLL_MS);
+    const state = prState(prNumber);
+    if (state?.mergedAt) {
+      log("info", `PR: merged #${prNumber}.`);
+      return true;
+    }
+    if (state?.state === "CLOSED") {
+      log("warn", `PR: #${prNumber} was closed without merging.`);
+      return false;
+    }
+  }
+  log(
+    "warn",
+    `PR: #${prNumber} did not merge within ${Math.round(MERGE_WAIT_MS / 60000)} minutes — ` +
+      "its checks are still running or have failed. Leaving it open; auto-merge will land it if they pass."
+  );
+  return false;
 }
 
 /** Close (revoke) a PR without merging, optionally leaving a comment. Deletes the branch. */

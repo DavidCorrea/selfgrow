@@ -403,7 +403,7 @@ async function main() {
     process.exit(1);
   }
   approvePR(prNumber, "Approved automatically: the chain is asserted by model-check.mjs and every substitute was probed before it was committed.");
-  if (!mergePR(prNumber)) {
+  if (!(await mergePR(prNumber))) {
     log("error", `PR #${prNumber} could not be merged — leaving it open for inspection.`);
     printRunSummary("pi update");
     process.exit(1);

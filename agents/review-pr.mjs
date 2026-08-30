@@ -211,7 +211,7 @@ async function main() {
         // 3. Approve as the BOT: the PAT is the author here, and GitHub does not
         //    let an author approve their own PR.
         approvePR(PR_NUMBER, `Reviewed by the Devs — checks pass and no blocking issues. ${review.summary || ""}`);
-        if (mergePR(PR_NUMBER)) {
+        if (await mergePR(PR_NUMBER)) {
           log("info", `Merged #${PR_NUMBER}.`);
         } else {
           say("This is approved and passing, but the merge failed — it may need a branch update or a protected-branch rule satisfied.");

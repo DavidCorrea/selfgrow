@@ -18,6 +18,7 @@ import { execSync } from "child_process";
 import { pathToFileURL } from "url";
 import { log, withLogGroup, appendJobSummary, errorData } from "./log.mjs";
 import { readPage } from "./wiki.mjs";
+import { postDiscussion, findOpenDiscussion, resolveDiscussion } from "./discussions.mjs";
 import {
   repoRoot,
   printRunSummary,
@@ -25,8 +26,6 @@ import {
   isBuildable,
   isBlocked,
   attemptCount,
-  createIssue,
-  HEALTH_LABEL,
   parseLedger,
   DAILY_REQUEST_CAP,
 } from "./shared.mjs";
@@ -34,6 +33,15 @@ import {
 // Who gets the @-mention. The point of an alert is that it reaches a person, so
 // it falls back to the repo's owner rather than going quietly nowhere.
 const NOTIFY_USER = process.env.GH_NOTIFY_USER || "";
+
+// Where alerts are published, and how one is recognised on a later run.
+//
+// A discussion rather than an issue, because nothing in docs/ can fix "the
+// changelog stopped growing" — the Devs picked one of these up and tried to build
+// it. A post carries no board card and no priority, and it still has an
+// open/closed state, which is what lets an alert clear itself.
+const HEALTH_CATEGORY = process.env.HEALTH_CATEGORY || "Announcements";
+const HEALTH_TITLE_PREFIX = "Pipeline health:";
 
 // A day with merges but no changelog entry means the write path is broken, not
 // that the day was quiet. Two days of it is not a coincidence.
@@ -241,31 +249,53 @@ export function renderVitals({ open, closedRecently, ledger, site }) {
 }
 
 /**
- * Raise one issue naming everything that is wrong, rather than one per fault.
- * Five separate alerts for a single broken wiki push is how an alert channel
- * gets muted.
+ * Publish, update, or clear the standing health alert.
+ *
+ * One open post at a time, naming everything currently wrong — five separate
+ * alerts for one broken wiki push is how a channel gets muted.
+ *
+ * And it CLOSES itself when the findings clear. The old version filed an issue
+ * and never closed it, which was worse than it sounds: the same check that stops
+ * it filing duplicates meant one stale alert suppressed every later one. An alert
+ * that cannot clear is an alert that only works once.
  */
-function raise(findings, vitals) {
-  const title = `Pipeline health: ${findings.length} problem(s)`;
-  const open = fetchOpenIssues(200);
-  const existing = open.find((i) => (i.title || "").startsWith("Pipeline health:"));
-  if (existing) {
-    log("info", `Health: #${existing.number} is already open for this — not filing another.`);
+function publishAlert(findings, vitals) {
+  const standing = findOpenDiscussion(HEALTH_CATEGORY, HEALTH_TITLE_PREFIX);
+
+  if (!findings.length) {
+    if (standing) {
+      log("info", "Health: everything it reported is fixed — closing the standing alert.");
+      resolveDiscussion(
+        standing.id,
+        `Clear as of ${new Date().toISOString().slice(0, 10)}. Nothing that was reported here is still true.\n\n${vitals}`
+      );
+    }
     return;
   }
-  const mention = NOTIFY_USER ? `${NOTIFY_USER.startsWith("@") ? NOTIFY_USER : `@${NOTIFY_USER}`} — the pipeline needs a look.\n` : "";
-  const body = [
-    mention,
-    "## What is wrong",
-    ...findings.map((f) => `- ${f}`),
-    "",
-    "## Where things stand",
-    vitals,
-    "",
-    "_Filed by the health check, which runs daily and stays quiet unless something breaks._",
-  ].join("\n");
-  const number = createIssue(title, body, [HEALTH_LABEL]);
-  if (number) log("warn", `Health: filed #${number} — ${findings.length} problem(s).`);
+
+  if (standing) {
+    log("info", `Health: ${standing.url} is already open for this — not posting another.`);
+    return;
+  }
+
+  const mention = NOTIFY_USER
+    ? `${NOTIFY_USER.startsWith("@") ? NOTIFY_USER : `@${NOTIFY_USER}`} — the pipeline needs a look.\n`
+    : "";
+  const url = postDiscussion({
+    category: HEALTH_CATEGORY,
+    title: `${HEALTH_TITLE_PREFIX} ${findings.length} problem(s)`,
+    body: [
+      mention,
+      "## What is wrong",
+      ...findings.map((f) => `- ${f}`),
+      "",
+      "## Where things stand",
+      vitals,
+      "",
+      "_Posted by the health check, which runs daily, stays quiet unless something breaks, and closes this by itself once nothing here is true any more._",
+    ].join("\n"),
+  });
+  if (url) log("warn", `Health: ${findings.length} problem(s) — ${url}`);
 }
 
 async function main() {
@@ -300,13 +330,11 @@ async function main() {
 
   appendJobSummary(`## Health\n\n${vitals}\n\n${findings.length ? findings.map((f) => `- ${f}`).join("\n") : "No problems found."}`);
 
-  if (!findings.length) {
-    log("info", "Health: nothing to report.");
-    printRunSummary("Health");
-    return;
-  }
   findings.forEach((f) => log("warn", `Health: ${f}`));
-  raise(findings, vitals);
+  if (!findings.length) log("info", "Health: nothing to report.");
+  // Called either way: with findings it raises or holds the alert, and with none
+  // it closes a standing one that has been fixed.
+  publishAlert(findings, vitals);
   printRunSummary("Health");
 }
 
