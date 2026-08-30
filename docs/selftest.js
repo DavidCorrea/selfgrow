@@ -98,6 +98,12 @@ export async function checks() {
       if (typeof ctrl.dampingFactor !== 'number' || ctrl.dampingFactor <= 0) {
         problems.push('controls.dampingFactor is not a positive number (got ' + ctrl.dampingFactor + ') — needed for gentle easing.');
       }
+      if (ctrl.minDistance !== 1.5) {
+        problems.push('controls.minDistance is ' + ctrl.minDistance + ', expected 1.5 to protect the close garden framing.');
+      }
+      if (ctrl.maxDistance !== 12) {
+        problems.push('controls.maxDistance is ' + ctrl.maxDistance + ', expected 12 to protect the distant garden framing.');
+      }
       if (typeof ctrl.maxPolarAngle !== 'number' || ctrl.maxPolarAngle >= Math.PI / 2) {
         problems.push('controls.maxPolarAngle is ' + ctrl.maxPolarAngle + ', expected less than PI/2 to prevent going below ground.');
       }

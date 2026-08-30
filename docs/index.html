@@ -295,6 +295,8 @@
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
+    controls.minDistance = 1.5;             // keep plants in context when zooming in
+    controls.maxDistance = 12;              // keep the garden legible when zooming out
     controls.minPolarAngle = 0.1;          // never fully top-down
     controls.maxPolarAngle = Math.PI / 2.3; // never below the ground plane
     controls.target.set(0, 0.4, 0);        // aim at the seedling's height
