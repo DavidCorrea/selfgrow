@@ -194,7 +194,7 @@ const EMPTY_WIKI_PAGES = {
     "What the agents have tried and abandoned, and why. Read this before planning " +
     "work that resembles anything below — the point of writing it down is not to " +
     "learn it twice.\n",
-  "Story.md": "# The Story So Far\n\nThis project is just beginning. The Scribe will write its story as it grows.\n",
+  "Story.md": "# The Story So Far\n\nThis project is just beginning. The Product Manager writes its story each week.\n",
   "Home.md":
     "# Wiki\n\nThe living record of this project, maintained by its autonomous agents.\n\n" +
     "- **[Vision](Vision)** — the north star (curated by the Product Owner).\n" +

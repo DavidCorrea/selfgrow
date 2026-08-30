@@ -2,9 +2,9 @@ name: pi-update
 
 on:
   schedule:
-    # Tuesday. Deliberately a day no other agent runs — the Product Owner is
-    # Monday, the Scribe Thursday, the Curator Saturday — so the probes below
-    # never compete with a grooming or building run for the day's requests.
+    # Tuesday. Deliberately a day no other weekly agent runs — the Product Owner
+    # is Monday, the Playtester Wednesday, the Tech Lead Thursday — so the probes
+    # below never compete with a grooming or building run for the day's requests.
     - cron: '0 7 * * 2'
   workflow_dispatch:
 

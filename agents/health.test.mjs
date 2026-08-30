@@ -99,16 +99,16 @@ test("noticing a weekly agent that has stopped working", async (t) => {
   });
 
   await t.test("says nothing when the last run succeeded", () => {
-    assert.equal(checkWeeklyAgents({ runs: [run("scribe", "success", daysAgo(1))] }), null);
+    assert.equal(checkWeeklyAgents({ runs: [run("tech-lead", "success", daysAgo(1))] }), null);
   });
 
   await t.test("names the agent whose last run failed", () => {
-    const finding = checkWeeklyAgents({ runs: [run("scribe", "failure", daysAgo(1))] });
-    assert.match(finding, /scribe last run failure/);
+    const finding = checkWeeklyAgents({ runs: [run("tech-lead", "failure", daysAgo(1))] });
+    assert.match(finding, /tech-lead last run failure/);
   });
 
   await t.test("judges only the most recent run, so an old failure since fixed is not reported", () => {
-    const runs = [run("scribe", "success", daysAgo(1)), run("scribe", "failure", daysAgo(8))];
+    const runs = [run("tech-lead", "success", daysAgo(1)), run("tech-lead", "failure", daysAgo(8))];
     assert.equal(checkWeeklyAgents({ runs }), null);
   });
 

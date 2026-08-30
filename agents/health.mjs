@@ -148,7 +148,7 @@ export function checkBudgetHeadroom({ ledger }) {
  * one.
  */
 export function checkWeeklyAgents({ runs }) {
-  const weekly = ["product-owner", "playtester", "tech-lead", "scribe", "curator"];
+  const weekly = ["product-owner", "playtester", "tech-lead"];
   const problems = [];
   for (const name of weekly) {
     const mine = runs.filter((r) => r.workflowName === name && r.status === "completed");
