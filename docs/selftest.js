@@ -2993,5 +2993,88 @@ export async function checks() {
     }
   }
 
+  /* ---------- Butterfly description matches scene state (issue #469) ---------- */
+  // The growing-description text must reflect the butterfly's actual state:
+  // sheltering during Light Drizzle (which takes precedence over night),
+  // resting during Night, and drifting during Clear/Overcast daytime.
+  const growingDescEl = document.getElementById('growing-description');
+  const weatherDisplayEl = document.getElementById('weather-display');
+  const timeDisplayEl = document.getElementById('time-display');
+
+  if (!gardenState || typeof gardenState.updateButterflyDescription !== 'function') {
+    problems.push('window.__gardenState.updateButterflyDescription is not a function — the butterfly description updater is not exposed.');
+  } else if (!growingDescEl || !weatherDisplayEl || !timeDisplayEl) {
+    problems.push('Cannot verify butterfly description: #growing-description, #weather-display, or #time-display is missing.');
+  } else {
+    const origWeather = weatherDisplayEl.textContent;
+    const origTime = timeDisplayEl.textContent;
+    const origDesc = growingDescEl.textContent;
+
+    try {
+      const DRIZZLE_SUFFIX = ' The butterfly has taken shelter from the drizzle.';
+      const REST_SUFFIX = ' The butterfly rests quietly through the night.';
+      const DRIFT_SUFFIX = ' A small butterfly drifts at the edge of the garden.';
+
+      // Helper: set display states, optionally seed the description, and run the updater
+      function runWith(weather, time, seedText) {
+        weatherDisplayEl.textContent = weather;
+        timeDisplayEl.textContent = time;
+        if (seedText !== undefined) {
+          growingDescEl.textContent = seedText;
+        }
+        gardenState.updateButterflyDescription();
+        return growingDescEl.textContent;
+      }
+
+      // Test 1: Light Drizzle + Night -> shelter text (drizzle takes precedence over night)
+      const BASE = 'A green sprout unfurls.';
+      const sheltered = runWith('Light Drizzle', 'Night', BASE + DRIZZLE_SUFFIX);
+      if (!sheltered.endsWith(DRIZZLE_SUFFIX)) {
+        problems.push('During Light Drizzle + Night, growing-description is "' + sheltered + '" — expected it to end with "' + DRIZZLE_SUFFIX.trim() + '" (drizzle takes precedence over night).');
+      }
+      if (sheltered.includes(DRIFT_SUFFIX) || sheltered.includes(REST_SUFFIX)) {
+        problems.push('During Light Drizzle + Night, growing-description contains the wrong butterfly suffix: "' + sheltered + '" — expected only the shelter text.');
+      }
+
+      // Test 2: Clear + Midday -> drift text (stale shelter suffix must be stripped)
+      const drifting = runWith('Clear', 'Midday', BASE + DRIZZLE_SUFFIX);
+      if (!drifting.endsWith(DRIFT_SUFFIX)) {
+        problems.push('During Clear + Midday, growing-description is "' + drifting + '" — expected it to end with "' + DRIFT_SUFFIX.trim() + '".');
+      }
+      if (drifting.includes(DRIZZLE_SUFFIX) || drifting.includes(REST_SUFFIX)) {
+        problems.push('During Clear + Midday, growing-description still contains shelter/rest text: "' + drifting + '" — the old suffix should be stripped.');
+      }
+
+      // Test 3: Overcast + Night -> rest text (butterfly rests during the night)
+      const resting = runWith('Overcast', 'Night', BASE + DRIFT_SUFFIX);
+      if (!resting.endsWith(REST_SUFFIX)) {
+        problems.push('During Overcast + Night, growing-description is "' + resting + '" — expected it to end with "' + REST_SUFFIX.trim() + '".');
+      }
+
+      // Test 4: Clear + Morning after Night -> returns to drift text, base text preserved
+      const morningDrift = runWith('Clear', 'Morning', resting);
+      if (!morningDrift.endsWith(DRIFT_SUFFIX)) {
+        problems.push('During Clear + Morning after Night, growing-description is "' + morningDrift + '" — expected it to return to the drifting text.');
+      }
+      if (!morningDrift.startsWith(BASE)) {
+        problems.push('Butterfly description updater did not preserve the garden.js base text: got "' + morningDrift + '", expected it to start with "' + BASE + '".');
+      }
+
+      // Test 5: idempotency — repeated calls with unchanged state must not rewrite the text
+      const beforeRepeat = growingDescEl.textContent;
+      gardenState.updateButterflyDescription();
+      gardenState.updateButterflyDescription();
+      if (growingDescEl.textContent !== beforeRepeat) {
+        problems.push('updateButterflyDescription() is not idempotent: text changed from "' + beforeRepeat + '" on repeated calls with unchanged state — would cause flicker.');
+      }
+    } finally {
+      // Restore real display state and re-run so the panel matches the scene
+      weatherDisplayEl.textContent = origWeather;
+      timeDisplayEl.textContent = origTime;
+      growingDescEl.textContent = origDesc;
+      gardenState.updateButterflyDescription();
+    }
+  }
+
   return problems;
 }
