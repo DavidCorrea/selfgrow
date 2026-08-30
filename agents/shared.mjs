@@ -1613,13 +1613,32 @@ export function unmetDependencies(issue, openNumbers) {
   return dependencyNumbers(issue).filter((n) => openNumbers.has(n));
 }
 
-// Raw feedback from the Playtester, before the Product Manager has shaped it into
-// a ticket. It is a report of an experience — "the garden felt static for the
-// first minute" — not a description of work, so it deliberately does NOT satisfy
-// the Builder's definition of buildable. The PM converts each one into a real
-// ticket with acceptance criteria, or drops it, and closes the original either
-// way.
+// Not every issue is work.
+//
+// The pipeline files three kinds of issue that describe something rather than
+// ask for it, and the Devs must never pick one up and try to build it:
+//
+//   playtest — an experience the Playtester had ("the garden felt static for the
+//              first minute"). The Product Manager turns each into a real ticket
+//              with acceptance criteria, or drops it, and closes the original.
+//   health   — a diagnostic about the PIPELINE, addressed to whoever maintains
+//              it. Nothing in docs/ can fix "the changelog stopped growing".
+//   digest   — the weekly report. Filed and closed in the same breath, but a
+//              failed close would otherwise leave the Devs a newsletter to build.
+//
+// Left buildable, each is a ticket the Devs engage, fail to satisfy, and
+// eventually park — spending two builds to discover the issue was never a
+// request.
 export const PLAYTEST_LABEL = "playtest";
+export const HEALTH_LABEL = "health";
+export const DIGEST_LABEL = "digest";
+
+const NON_WORK_LABELS = new Set([PLAYTEST_LABEL, HEALTH_LABEL, DIGEST_LABEL]);
+
+/** An issue that reports something rather than asking for work. */
+export function isNonWorkIssue(issue) {
+  return labelNames(issue).some((name) => NON_WORK_LABELS.has(name));
+}
 
 /** Untriaged playtest feedback, which is an observation rather than a ticket. */
 export function isPlaytestFeedback(issue) {
@@ -1627,13 +1646,13 @@ export function isPlaytestFeedback(issue) {
 }
 
 /**
- * True when the Builder may pick this ticket up now: not parked, not raw
- * feedback awaiting triage, and everything it declared it depends on has shipped.
+ * True when the Builder may pick this ticket up now: not parked, not a report of
+ * something, and everything it declared it depends on has shipped.
  */
 export function isBuildable(issue, openNumbers) {
   return (
     !isBlocked(issue) &&
-    !isPlaytestFeedback(issue) &&
+    !isNonWorkIssue(issue) &&
     unmetDependencies(issue, openNumbers).length === 0
   );
 }

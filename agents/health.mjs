@@ -26,6 +26,7 @@ import {
   isBlocked,
   attemptCount,
   createIssue,
+  HEALTH_LABEL,
   parseLedger,
   DAILY_REQUEST_CAP,
 } from "./shared.mjs";
@@ -33,8 +34,6 @@ import {
 // Who gets the @-mention. The point of an alert is that it reaches a person, so
 // it falls back to the repo's owner rather than going quietly nowhere.
 const NOTIFY_USER = process.env.GH_NOTIFY_USER || "";
-
-const HEALTH_LABEL = "health";
 
 // A day with merges but no changelog entry means the write path is broken, not
 // that the day was quiet. Two days of it is not a coincidence.

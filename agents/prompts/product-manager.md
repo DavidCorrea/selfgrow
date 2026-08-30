@@ -124,6 +124,15 @@ For each **open** ticket shown on the board above (the ones with `#numbers`), as
 
 Tickets tagged `_(tech-debt)_` were filed by the Builder from inside the code — weigh them like a real PM: usually `medium`/`low` behind user-facing work, but bump to `high` when the debt is actively slowing progress or risking breakage. Don't let debt starve forever.
 
+## Reports on the Board
+
+Some issues on the board are not work and never become work. Leave them entirely alone — do not prioritize them, retire them, or propose anything from them:
+
+- `_(health)_` — a diagnostic about the **pipeline**, not the product. Nothing in `docs/` can fix "the changelog stopped growing"; it is addressed to whoever maintains the agents.
+- `_(digest)_` — the weekly report, filed and closed in the same breath.
+
+`_(playtest)_` issues are different: those ARE yours, and the section above says what to do with them.
+
 ## Blocked Tickets
 
 Tickets tagged `_(blocked)_` have repeatedly failed the Devs. **They are not yours** — the Tech Lead reads the code and the failure reason every Thursday and decides whether each is replaced by something smaller or dropped. Leave them alone: do not re-prioritize them, do not retire them, and do not propose replacements for them.
