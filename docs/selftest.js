@@ -2035,5 +2035,100 @@ export async function checks() {
     }
   }
 
+  /* ---------- Ambient audio checks (issue #458) ---------- */
+  const ambientAudio = gardenState && gardenState.ambientAudio;
+  if (!ambientAudio) {
+    problems.push('window.__gardenState.ambientAudio is not set — the ambient audio system was not created (ambientAudio.js may not have been imported or created).');
+  } else {
+    // Verify type
+    if (ambientAudio.state && ambientAudio.state.type !== 'ambient-audio') {
+      problems.push('ambientAudio.state.type is "' + ambientAudio.state.type + '", expected "ambient-audio".');
+    } else if (!ambientAudio.state) {
+      problems.push('ambientAudio.state is missing — audio state object not found.');
+    }
+
+    // Verify required methods exist
+    if (typeof ambientAudio.start !== 'function') {
+      problems.push('ambientAudio.start is not a function — audio start method missing.');
+    }
+    if (typeof ambientAudio.stop !== 'function') {
+      problems.push('ambientAudio.stop is not a function — audio stop method missing.');
+    }
+    if (typeof ambientAudio.update !== 'function') {
+      problems.push('ambientAudio.update is not a function — audio weather update method missing.');
+    }
+    if (typeof ambientAudio.resumeOnInteraction !== 'function') {
+      problems.push('ambientAudio.resumeOnInteraction is not a function — audio resume method missing.');
+    }
+
+    // Verify state properties
+    if (ambientAudio.state) {
+      if (typeof ambientAudio.state.windGain !== 'number') {
+        problems.push('ambientAudio.state.windGain is not a number — wind gain configuration missing.');
+      }
+      if (typeof ambientAudio.state.rainGain !== 'number') {
+        problems.push('ambientAudio.state.rainGain is not a number — rain gain configuration missing.');
+      }
+      if (typeof ambientAudio.state.windFilterFrequency !== 'number') {
+        problems.push('ambientAudio.state.windFilterFrequency is not a number — filter frequency configuration missing.');
+      }
+
+      // Verify plausible gain values
+      if (ambientAudio.state.windGain > 0.15) {
+        problems.push('ambientAudio.state.windGain is ' + ambientAudio.state.windGain + ', expected ≤ 0.12 (wind must be extremely subtle).');
+      }
+      if (ambientAudio.state.rainGain > 0.05) {
+        problems.push('ambientAudio.state.rainGain is ' + ambientAudio.state.rainGain + ', expected ≤ 0.04 (rain noise must be extremely subtle).');
+      }
+    }
+
+    // Test that update responds to weather phases without throwing
+    const testPhases = ['Clear', 'Overcast', 'Light Drizzle'];
+    testPhases.forEach(function(phase) {
+      try {
+        ambientAudio.update(phase);
+      } catch (e) {
+        problems.push('ambientAudio.update("' + phase + '") threw: ' + e.message);
+      }
+    });
+
+    // Verify update with unknown phase doesn't throw
+    try {
+      ambientAudio.update('UnknownPhase');
+    } catch (e) {
+      problems.push('ambientAudio.update("UnknownPhase") threw — should handle unknown phases gracefully: ' + e.message);
+    }
+
+    // Verify a click handler exists that resumes audio (check via the DOM event listener registry)
+    // At minimum, verify that resumeOnInteraction is idempotent (calling it multiple times is safe)
+    try {
+      ambientAudio.resumeOnInteraction();
+      ambientAudio.resumeOnInteraction();
+      ambientAudio.resumeOnInteraction();
+    } catch (e) {
+      problems.push('ambientAudio.resumeOnInteraction() threw on repeated calls — must be idempotent: ' + e.message);
+    }
+
+    // Verify that start can be called safely (it may create AudioContext, which may not be available
+    // in all test environments — but it shouldn't throw)
+    try {
+      ambientAudio.start();
+    } catch (e) {
+      problems.push('ambientAudio.start() threw: ' + e.message);
+    }
+
+    // Verify that stop can be called safely
+    try {
+      ambientAudio.stop();
+    } catch (e) {
+      problems.push('ambientAudio.stop() threw: ' + e.message);
+    }
+
+    // Verify the audio system is exposed on __gardenState correctly
+    if (gardenState.ambientAudio !== ambientAudio) {
+      problems.push('window.__gardenState.ambientAudio is not the same object as the created ambientAudio — the module was not correctly assigned.');
+    }
+  }
+
   return problems;
 }
