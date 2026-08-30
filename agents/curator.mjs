@@ -19,7 +19,6 @@ import {
   fillTemplate,
   runAgent,
   extractAgentResponse,
-  errorData,
   repoRoot,
   readVision,
   getBoardSnapshot,

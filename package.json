@@ -2,6 +2,10 @@
   "name": "selfgrow",
   "private": true,
   "type": "module",
+  "scripts": {
+    "test": "node --test agents/*.test.mjs",
+    "lint": "eslint ."
+  },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "^0.84.3"
   },
