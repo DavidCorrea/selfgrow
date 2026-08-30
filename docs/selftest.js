@@ -1548,6 +1548,193 @@ export async function checks() {
     }
   }
 
+  /* ---------- Star field checks (issue #449) ---------- */
+  const starState = gardenState && gardenState.stars;
+  if (!starState) {
+    problems.push('window.__gardenState.stars is not set — the star field particle system was not created (stars.js may not have been imported or called).');
+  } else {
+    // Verify type
+    if (starState.type !== 'stars') {
+      problems.push('starState.type is "' + starState.type + '", expected "stars".');
+    }
+
+    // Verify count is between 60 and 100
+    if (typeof starState.count !== 'number' || starState.count < 60 || starState.count > 100) {
+      problems.push('starState.count is ' + starState.count + ', expected between 60 and 100.');
+    }
+
+    // Verify reducedMotion is a boolean
+    if (typeof starState.reducedMotion !== 'boolean') {
+      problems.push('starState.reducedMotion should be a boolean, got ' + typeof starState.reducedMotion);
+    }
+
+    // Verify hemisphereRadius is ~8.5
+    if (typeof starState.hemisphereRadius !== 'number' || Math.abs(starState.hemisphereRadius - 8.5) > 0.5) {
+      problems.push('starState.hemisphereRadius is ' + starState.hemisphereRadius + ', expected ~8.5.');
+    }
+
+    // Verify rotation speed is imperceptible (< 0.01 rad/s)
+    if (typeof starState.rotationSpeed !== 'number' || starState.rotationSpeed >= 0.01) {
+      problems.push('starState.rotationSpeed is ' + starState.rotationSpeed + ', expected < 0.01 rad/s for imperceptible celestial motion.');
+    }
+
+    // Verify maxOpacity is ~0.4
+    if (typeof starState.maxOpacity !== 'number' || Math.abs(starState.maxOpacity - 0.4) > 0.1) {
+      problems.push('starState.maxOpacity is ' + starState.maxOpacity + ', expected ~0.4.');
+    }
+
+    // Verify material exists and has correct properties
+    if (!starState.material) {
+      problems.push('starState.material is missing — PointsMaterial not assigned.');
+    } else {
+      if (starState.material.transparent !== true) {
+        problems.push('starState.material.transparent is ' + starState.material.transparent + ', expected true.');
+      }
+      if (typeof starState.material.opacity !== 'number') {
+        problems.push('starState.material.opacity is not a number — got ' + typeof starState.material.opacity);
+      }
+      if (starState.material.sizeAttenuation !== true) {
+        problems.push('starState.material.sizeAttenuation is ' + starState.material.sizeAttenuation + ', expected true for realistic depth falloff.');
+      }
+      if (starState.material.blending !== THREE.AdditiveBlending) {
+        problems.push('starState.material.blending is not AdditiveBlending — stars should glow softly.');
+      }
+    }
+
+    // Verify points object exists and is in the scene
+    if (!starState.points) {
+      problems.push('starState.points is missing — the THREE.Points object was not created.');
+    } else if (gardenState && gardenState.scene) {
+      const found = gardenState.scene.children.includes(starState.points);
+      if (!found) {
+        problems.push('star points object is not a child of the scene — it was not added to the garden.');
+      }
+    }
+
+    // Verify the update function is exposed
+    if (typeof gardenState.starsUpdate !== 'function') {
+      problems.push('gardenState.starsUpdate is not a function — the star field update loop is not exposed.');
+    }
+
+    // Verify reduced-motion behaviour: when reducedMotion is true, rotation should be off
+    if (starState.reducedMotion) {
+      // The rotation is only applied in update(), so we check the state reflects this
+      if (starState.points) {
+        // With reduced motion, the update loop does not rotate, so rotation should be 0
+        if (Math.abs(starState.points.rotation.y) > 0.001) {
+          problems.push('With reducedMotion active, star points rotation.y is ' + starState.points.rotation.y + ' — expected 0 (no rotation when reduced motion is preferred).');
+        }
+      }
+    }
+
+    // Test opacity behaviour: simulate different day/night phases
+    const dayNight = gardenState && gardenState.dayNight;
+    if (dayNight && typeof dayNight.getCycleProgress === 'function' && typeof dayNight.getPhaseName === 'function') {
+      // Save original getCycleProgress
+      const origGetCycleProgress = dayNight.getCycleProgress;
+      try {
+        // Test 1: During Morning (t ~0.1), star opacity should be near 0
+        dayNight.getCycleProgress = function() { return 0.1; };
+        if (typeof gardenState.starsUpdate === 'function') {
+          gardenState.starsUpdate(0, 0.016);
+          const morningOpacity = starState.material.opacity;
+          if (morningOpacity > 0.02) {
+            problems.push('During Morning phase (t=0.1), star material.opacity is ' + morningOpacity + ' — expected near 0 (stars invisible during morning).');
+          }
+
+          // Test 2: During Midday (t ~0.35), star opacity should be near 0
+          dayNight.getCycleProgress = function() { return 0.35; };
+          gardenState.starsUpdate(0, 0.016);
+          const middayOpacity = starState.material.opacity;
+          if (middayOpacity > 0.02) {
+            problems.push('During Midday phase (t=0.35), star material.opacity is ' + middayOpacity + ' — expected near 0 (stars invisible during midday).');
+          }
+
+          // Test 3: During Evening start (t ~0.55), star opacity should still be near 0 (just started fading)
+          dayNight.getCycleProgress = function() { return 0.55; };
+          gardenState.starsUpdate(0, 0.016);
+          const eveningStartOpacity = starState.material.opacity;
+          // At t=0.55, fadeIn = (0.55-0.5)/0.25 = 0.2, target = 0.2*0.4 = 0.08, so just starting
+
+          // Test 4: During Night (t ~0.85), star opacity should be > 0.1
+          dayNight.getCycleProgress = function() { return 0.85; };
+          for (let i = 0; i < 300; i++) {
+            gardenState.starsUpdate(0, 0.016);
+          }
+          const nightOpacity = starState.material.opacity;
+          if (nightOpacity < 0.1) {
+            problems.push('During Night phase (t=0.85), star material.opacity is ' + nightOpacity + ' — expected > 0.1 (stars should be visible during night).');
+          }
+
+          // Test 5: When switching back to Morning after Night, opacity should fade back to near 0
+          dayNight.getCycleProgress = function() { return 0.98; }; // Late Night, fading out
+          for (let i = 0; i < 200; i++) {
+            gardenState.starsUpdate(0, 0.016);
+          }
+          // At t=0.98, fadeOut = (1.0-0.98)/0.05 = 0.4, target = 0.4*0.4 = 0.16, so fading
+          dayNight.getCycleProgress = function() { return 0.02; }; // Morning
+          for (let i = 0; i < 300; i++) {
+            gardenState.starsUpdate(0, 0.016);
+          }
+          const morningAfterNightOpacity = starState.material.opacity;
+          if (morningAfterNightOpacity > 0.05) {
+            problems.push('After switching from Night back to Morning (t=0.02), star material.opacity is ' + morningAfterNightOpacity + ' — expected near 0 (stars should fade out after night).');
+          }
+        }
+      } finally {
+        // Restore original getCycleProgress
+        dayNight.getCycleProgress = origGetCycleProgress;
+      }
+    }
+
+    // Verify the star size is small (tiny dots)
+    if (starState.material && typeof starState.material.size !== 'number') {
+      problems.push('starState.material.size is not a number — got ' + typeof starState.material.size);
+    } else if (starState.material && starState.material.size > 0.1) {
+      problems.push('starState.material.size is ' + starState.material.size + ', expected <= 0.1 for tiny star dots.');
+    }
+
+    // Verify the points object has a geometry with position attribute
+    if (starState.points && starState.points.geometry) {
+      const geom = starState.points.geometry;
+      if (!geom.attributes || !geom.attributes.position) {
+        problems.push('Star geometry has no position attribute.');
+      } else {
+        const pos = geom.attributes.position;
+        if (pos.count !== starState.count) {
+          problems.push('Star geometry position count (' + pos.count + ') does not match starState.count (' + starState.count + ').');
+        }
+        // Verify stars are on a hemisphere (y >= 0 for all stars)
+        const array = pos.array;
+        let anyBelowHorizon = false;
+        for (let i = 0; i < pos.count; i++) {
+          const y = array[i * 3 + 1];
+          if (y < 0) {
+            anyBelowHorizon = true;
+            break;
+          }
+        }
+        if (anyBelowHorizon) {
+          problems.push('At least one star is below y=0 (below the horizon) — stars should be on the hemisphere above the garden.');
+        }
+        // Verify most stars are at a reasonable distance from centre (within HEMISPHERE_RADIUS ± 1)
+        let tooClose = 0;
+        for (let i = 0; i < pos.count; i++) {
+          const x = array[i * 3];
+          const y = array[i * 3 + 1];
+          const z = array[i * 3 + 2];
+          const dist = Math.sqrt(x*x + y*y + z*z);
+          if (dist < 7 || dist > 9.5) {
+            tooClose++;
+          }
+        }
+        if (tooClose > starState.count * 0.5) {
+          problems.push(tooClose + ' of ' + starState.count + ' stars are outside the expected radius range (7.0–9.5) — most should be on the hemisphere dome near ~8.5 units.');
+        }
+      }
+    }
+  }
+
   /* ---------- Fallen leaves checks (issue #448) ---------- */
   var fallenLeavesState = gardenState && gardenState.fallenLeaves;
   if (!fallenLeavesState) {

@@ -194,6 +194,7 @@
     import { startWeatherCycle } from "./weather.js";
     import { loadGardenState, saveGardenState, fastForwardState, clearGardenState } from "./persistence.js";
     import { createRain } from "./rain.js";
+    import { createStars } from "./stars.js";
     import { createGroundRipple } from "./groundRipple.js";
     import { createCreature } from "./creature.js";
 
@@ -324,6 +325,10 @@
     const rain = createRain(scene);
     rain.update(0, 0.016); // initialise to safe state
 
+    /* --- Star field (visible only during Night phase) --- */
+    const stars = createStars(scene);
+    stars.update(0, 0.016); // initialise to safe state
+
     /* --- Subtle ground ripple suggesting moving air --- */
     const groundRipple = createGroundRipple(ground);
 
@@ -352,6 +357,9 @@
 
       /* Update creature position */
       creature.update(animTime);
+
+      /* Update star field */
+      stars.update(animTime, dt);
 
       /* Update distant horizon silhouette to blend with current sky colour */
       if (scene.background instanceof THREE.Color) {
@@ -394,6 +402,8 @@
       particlesUpdate: particles.update,
       rain: rain.state,
       rainUpdate: rain.update,
+      stars: stars.state,
+      starsUpdate: stars.update,
       getSeason: () => document.getElementById('season-display')?.textContent || 'Spring',
       getTimeOfDay: () => document.getElementById('time-display')?.textContent || 'Morning',
       getWeather: () => document.getElementById('weather-display')?.textContent || 'Clear',
