@@ -50,7 +50,7 @@ expire at midnight and do not roll over.
 
 ## How one ticket ships
 
-`agents/builder-team.mjs` drains a queue of tickets in a single job, re-reading
+`agents/devs.mjs` drains a queue of tickets in a single job, re-reading
 the board before each one — so a merge that unblocks a dependent ticket makes it
 available immediately.
 

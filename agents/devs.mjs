@@ -29,11 +29,6 @@ import {
   readLessons,
   appendLesson,
   closeIssue,
-  closeIssueAsSplit,
-  dependencyLine,
-  PRIORITY_LABELS,
-  closeIssueAsInvalid,
-  closeIssueAsDuplicate,
   createIssue,
   TECH_DEBT_LABEL,
   moveCard,
@@ -101,28 +96,15 @@ Tickets the Builder previously gave up on, newest first, and why. If your ticket
 ${lessons}`;
 }
 
-function buildScoutPrompt(feedback, openIssues, vision) {
+function buildScoutPrompt(openIssues, vision) {
   const issuesSection = `Pick exactly ONE of the open tickets below to work on, and plan its implementation. The list is already in the order we want them built — prefer the first unless it is genuinely unworkable. Choose by priority: a \`priority:high\` label beats \`priority:medium\` beats \`priority:low\` beats unlabeled, EXCEPT that a ticket with an \`unblocks\` field counts as the highest priority among the tickets it unblocks — a blocker is worth what waits on it. Break ties by what most moves the project forward. Do NOT invent work outside these tickets.
 
 ## Open Tickets (each includes its labels — priority is one of them)
 ${JSON.stringify(openIssues, null, 2)}`;
 
-  const feedbackSection = feedback
-    ? `## Feedback From Validator (Previous Attempt Was Rejected)
-${feedback}`
-    : "";
-
   return fillTemplate(loadPrompt("scout"), {
     ISSUES_SECTION: issuesSection,
-    FEEDBACK_SECTION: feedbackSection,
     LESSONS_SECTION: buildLessonsSection(),
-    VISION: vision,
-  });
-}
-
-function buildValidatorPrompt(scoutOutput, vision) {
-  return fillTemplate(loadPrompt("validator"), {
-    SCOUT_OUTPUT: scoutOutput,
     VISION: vision,
   });
 }
@@ -221,84 +203,25 @@ function cleanupBranch(branchName) {
   deleteRemoteBranch(branchName);
 }
 
-// A ticket the Builder itself carved out of a bigger one. Recorded in the body
-// rather than as a label because the Scout reads bodies, and it needs to know not
-// to split the same work twice — see the guard in buildTicket.
-const SPLIT_CHILD_RE = /^[ \t]*part of[ \t]*:?[ \t]*#(\d+)/im;
-
-function isSplitChild(issue) {
-  return SPLIT_CHILD_RE.test(issue?.body || "");
-}
-
-/**
- * Replace an oversized ticket with an ordered chain of shippable pieces.
- *
- * Each child waits for the one before it via the existing `Blocked by:` line, so
- * the Builder ships them in order across runs and only the first is buildable now.
- * The parent is closed, not parked: its work isn't cancelled, it lives on in the
- * children, and leaving it open would let the Scout re-pick and re-split it.
- *
- * Returns the numbers actually created, which may be fewer than requested — a
- * failed `gh issue create` is logged and skipped rather than aborting the chain.
- */
-async function splitTicket(parent, parentNumber, children, why) {
-  // Children inherit the parent's priority, or the work silently drops down the
-  // Scout's ordering the moment it's split.
-  const priority = (parent?.labels || [])
-    .map((l) => l.name || l)
-    .find((n) => Object.values(PRIORITY_LABELS).includes(n));
-
-  const created = [];
-  for (const child of children) {
-    // Depend on the previous child, so the chain builds foundation-first. The
-    // first child depends on nothing and is buildable immediately — the rest of
-    // this run, or the next one, can pick it up.
-    const deps = created.length ? [created[created.length - 1]] : [];
-    const body = [
-      child.body,
-      "",
-      `Part of #${parentNumber}.`,
-      dependencyLine(deps),
-    ]
-      .filter(Boolean)
-      .join("\n");
-    const number = createIssue(child.title, body, priority ? [priority] : []);
-    if (number) created.push(number);
-  }
-
-  if (!created.length) {
-    // Nothing was created, so closing the parent would delete the work outright.
-    log("error", `Split of #${parentNumber} created no tickets — leaving it open.`);
-    return created;
-  }
-
-  await closeIssueAsSplit(parentNumber, created, why);
-  log("info", `Split #${parentNumber} into ${created.map((n) => `#${n}`).join(", ")}.`);
-  return created;
-}
-
 // ---------------------------------------------------------------------------
-// Build a single ticket: Scout → Validator → Builder → review → merge.
+// Build a single ticket: Scout → Builder → review → merge.
 //
 // Returns { addressedIssue, addressedIssueObj, outcome, reason, ticketFault }:
 //   outcome "merged"    — PR approved and merged.
-//   outcome "split"     — Scout judged the ticket too big; it was replaced by an
-//                         ordered chain of children and closed.
-//   outcome "invalid"   — Scout judged the ticket out of scope; it was closed.
 //   outcome "abandoned" — a ticket was engaged but couldn't ship (ticketFault
 //                         tells the caller whether to count it as a failure).
 //   outcome "none"      — no ticket could even be planned (Scout produced nothing).
 // ---------------------------------------------------------------------------
 
 /**
- * Run one planning-phase agent (Scout or Validator), turning a thrown model
- * failure into null instead of an exception.
+ * Run the planning agent, turning a thrown model failure into null instead of
+ * an exception.
  *
  * Planning happens BEFORE buildTicket's live-state guard, so anything thrown
  * here escaped the function entirely and killed the whole run: on 2026-08-26 a
- * capped Validator ended a four-ticket job as `failure`, losing every ticket
- * queued behind it. The build phase has always degraded gracefully; the two
- * cheapest agents in the loop were the only ones that could take the run down.
+ * capped planning agent ended a four-ticket job as `failure`, losing every
+ * ticket queued behind it. The build phase has always degraded gracefully; the
+ * cheapest agent in the loop was the only one that could take the run down.
  *
  * Planning touches no branch, no PR and no card, so a failure here costs exactly
  * one ticket and nothing needs cleaning up.
@@ -329,7 +252,6 @@ function planningFailure(addressedIssue, addressedIssueObj, addressedIssueTitle,
 }
 
 async function buildTicket(openIssues, vision) {
-  let feedback = null;
   let addressedIssue = null;
   let addressedIssueTitle = null;
   let addressedIssueObj = null;
@@ -340,7 +262,7 @@ async function buildTicket(openIssues, vision) {
     // 1. Scout
     const scoutOutput = await runPlanningAgent(`Scout (attempt ${attempt})`, {
       label: "Scout",
-      systemPrompt: buildScoutPrompt(feedback, openIssues, vision),
+      systemPrompt: buildScoutPrompt(openIssues, vision),
       tools: ["read", "bash"],
     });
     if (!scoutOutput) {
@@ -354,65 +276,6 @@ async function buildTicket(openIssues, vision) {
     if (!scoutResult) continue;
     const { data: scoutData } = scoutResult;
 
-    // If the Scout identified an invalid issue, label, close, and report it.
-    if (scoutData.issueAction === "close-invalid" && scoutData.issueNumber) {
-      log("info", `Scout: issue #${scoutData.issueNumber} is invalid/out of scope.`);
-      await closeIssueAsInvalid(scoutData.issueNumber, scoutData.issueReason);
-      const obj = openIssues.find((i) => i.number === scoutData.issueNumber);
-      return { addressedIssue: scoutData.issueNumber, addressedIssueObj: obj, outcome: "invalid" };
-    }
-
-    // The ticket is too big for one pass. Replace it with an ordered chain of
-    // shippable pieces and return without building — one Scout session instead of
-    // the two full failed builds it would otherwise take to learn this, which at
-    // ~160 requests each is a third of the day's cap.
-    if (scoutData.issueAction === "split" && scoutData.issueNumber) {
-      const parent = openIssues.find((i) => i.number === scoutData.issueNumber);
-
-      // A child of an earlier split may not be split again. Without this the
-      // Scout can subdivide forever and never build anything, and every pass
-      // still costs a session.
-      if (parent && isSplitChild(parent)) {
-        feedback =
-          "This ticket is already a piece of an earlier split, so it cannot be split again. " +
-          "Plan the smallest useful version of it that ships in one pass.";
-        log("warn", `Scout wanted to split #${parent.number}, which is already a split child — replanning.`);
-        continue;
-      }
-
-      const children = Array.isArray(scoutData.children) ? scoutData.children : [];
-      const usable = children.filter((c) => c && c.title && c.body);
-      // One child is a rename, not a split, and zero means the Scout dodged the
-      // work. Either way there's nothing to chain — send it back to plan.
-      if (usable.length < 2) {
-        feedback =
-          `A split needs at least 2 independently shippable children; you returned ${usable.length}. ` +
-          "Either describe the pieces concretely or plan the ticket as it stands.";
-        log("warn", `Scout returned ${usable.length} usable child ticket(s) — replanning.`);
-        continue;
-      }
-
-      const created = await splitTicket(parent, scoutData.issueNumber, usable, scoutData.issueReason);
-      // The summary reports tickets, not steps — without this a split run looks
-      // like it did nothing, when it in fact reshaped the backlog.
-      recordTicket(
-        "split",
-        scoutData.issueNumber,
-        parent?.title || scoutData.issueTitle || `#${scoutData.issueNumber}`,
-        `replaced by ${created.map((n) => `#${n}`).join(", ")}`
-      );
-      created.forEach((n, i) => recordTicket("created", n, usable[i]?.title || `#${n}`));
-      // Children declare dependencies, so the board should show which are waiting.
-      syncWaitingLabels(fetchOpenIssues(100));
-      return {
-        addressedIssue: scoutData.issueNumber,
-        addressedIssueObj: parent,
-        outcome: "split",
-        children: created,
-        reason: `Split into ${created.length} ticket(s): ${created.map((n) => `#${n}`).join(", ")}`,
-      };
-    }
-
     // Track which issue we're addressing
     if (scoutData.issueNumber) {
       addressedIssue = scoutData.issueNumber;
@@ -420,51 +283,6 @@ async function buildTicket(openIssues, vision) {
       addressedIssueTitle = issue ? issue.title : scoutData.issueTitle || "Unknown issue";
       addressedIssueObj = issue || { number: addressedIssue, title: addressedIssueTitle, body: "" };
       log("info", `Scout: addressing issue #${addressedIssue} — ${addressedIssueTitle}`);
-    }
-
-    // 2. Validator
-    const validatorOutput = await runPlanningAgent("Validator", {
-      label: "Validator",
-      systemPrompt: buildValidatorPrompt(scoutOutput, vision),
-      tools: ["read", "bash"],
-    });
-    if (!validatorOutput) {
-      return planningFailure(addressedIssue, addressedIssueObj, addressedIssueTitle, "Validator");
-    }
-    const validatorResult = extractAgentResponse("Validator", validatorOutput, {
-      requiredDataFields: ["reason"],
-    });
-    if (!validatorResult) continue;
-    const { outcome, data: validatorData } = validatorResult;
-
-    log("info", `Validator: ${outcome} — ${validatorData.reason || validatorResult.summary}`);
-
-    // The work is already in the codebase. This is the one rejection that
-    // retrying cannot fix, so it must not go round the Scout loop: the plan is
-    // not the problem, the ticket is. Left as an ordinary rejection it burns
-    // every Scout retry, then every ticket attempt, and finally parks a ticket
-    // whose only fault was being asked for twice — writing a post-mortem into
-    // Lessons that tells the Scout, forever, that finished work was abandoned.
-    if (outcome === "duplicate") {
-      const why = validatorData.reason || validatorResult.summary;
-      log("info", `Validator: #${addressedIssue} is already built — closing it as a duplicate. ${why}`);
-      if (addressedIssue) {
-        await closeIssueAsDuplicate(addressedIssue, why);
-        moveCard(addressedIssue, "Done"); // best-effort
-      }
-      return {
-        addressedIssue,
-        addressedIssueObj,
-        outcome: "duplicate",
-        reason: why,
-        ticketFault: false, // resolved, not failed — no strike, no post-mortem
-      };
-    }
-
-    if (outcome !== "approve") {
-      feedback = validatorData.reason || validatorResult.summary;
-      log("warn", `Validator rejected: ${feedback}`);
-      continue;
     }
 
     // 3. Create a feature branch
@@ -772,7 +590,7 @@ async function buildTicket(openIssues, vision) {
       addressedIssue,
       addressedIssueObj,
       outcome: "abandoned",
-      reason: feedback ? `No workable plan after ${MAX_SCOUT_RETRIES} attempts: ${feedback}` : "No workable plan produced.",
+      reason: `The Scout could not produce a usable plan in ${MAX_SCOUT_RETRIES} attempts.`,
       ticketFault: true,
     };
   }
@@ -821,22 +639,16 @@ async function main() {
   // empty count — reading as "the whole day is free" on a day already spent.
   initDailyLedger();
 
-  // Product vision (from the wiki) grounds the Scout's plan and the Validator's
+  // Product vision (from the wiki) grounds the Scout's plan and the Reviewer's
   // alignment check — they no longer read it from a repo file.
   const vision = readVision();
 
   const attempted = new Set(); // tickets engaged this run — never re-pick them
   const deadline = Date.now() + RUN_BUDGET_MS;
   let mergedCount = 0;
-  let duplicateCount = 0;
-  // Both mutable because a split replaces the ticket with children: the run
-  // adopts the first one and gets one extra pass to build it, so splitting still
-  // ships something today instead of idling until the next tick.
-  let pinnedTicket = PINNED_TICKET;
-  let maxTickets = MAX_TICKETS_PER_RUN;
-  let adoptedSplit = false;
+  const pinnedTicket = PINNED_TICKET;
 
-  for (let n = 1; n <= maxTickets; n++) {
+  for (let n = 1; n <= MAX_TICKETS_PER_RUN; n++) {
     if (Date.now() > deadline) {
       log("info", `Time budget (${Math.round(RUN_BUDGET_MS / 60000)}m) reached — stopping after ${mergedCount} merge(s).`);
       break;
@@ -914,15 +726,6 @@ async function main() {
     const result = await buildTicket(candidates, vision);
 
     if (result.addressedIssue) attempted.add(result.addressedIssue);
-    // Adopt the first child so the split converts into shipped work in the same
-    // run. Once only: a child that itself wants splitting is refused upstream, and
-    // capping the adoption keeps a pathological Scout from looping here.
-    if (result.outcome === "split" && result.children?.length && !adoptedSplit) {
-      adoptedSplit = true;
-      maxTickets = n + 1;
-      if (pinnedTicket) pinnedTicket = result.children[0];
-      log("info", `Adopting #${result.children[0]} — the first piece of the split — for this run.`);
-    }
     if (result.outcome === "merged") {
       mergedCount++;
       // Shipping a ticket is the only thing that releases work waiting on it, so
@@ -940,12 +743,6 @@ async function main() {
         await writePostMortem(result.addressedIssueObj, result.reason);
       }
     }
-    if (result.outcome === "duplicate") {
-      // Not a failure and not a merge: the board simply got one ticket smaller
-      // without any code changing. Worth its own line so a run that closes
-      // several duplicates reads as exactly that, rather than as a quiet pass.
-      duplicateCount++;
-    }
     if (result.outcome === "none") {
       log("info", "No ticket could be planned this pass — stopping.");
       break;
@@ -954,16 +751,14 @@ async function main() {
 
   log(
     "info",
-    `Run complete — ${mergedCount} ticket(s) merged` +
-      (duplicateCount ? `, ${duplicateCount} closed as already built` : "") +
-      "."
+    `Run complete — ${mergedCount} ticket(s) merged.`
   );
   maybeReplenishBacklog(mergedCount);
-  printRunSummary("Builder Team");
+  printRunSummary("Devs");
 }
 
 main().catch((err) => {
   log("error", `Pipeline failed: ${err.message || err}`);
-  printRunSummary("Builder Team");
+  printRunSummary("Devs");
   process.exit(1);
 });

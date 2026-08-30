@@ -166,7 +166,7 @@ function kickBuilder() {
     return;
   }
   log("info", `${buildable.length} buildable ticket(s) — starting the Builder.`);
-  triggerWorkflow("builder-team.yml");
+  triggerWorkflow("devs.yml");
 }
 
 // ---------------------------------------------------------------------------
@@ -245,9 +245,11 @@ async function groomBacklog(proposed, openIssues, boardItems) {
   // blew past the 12-minute session cap, the pass aborted, and tickets were
   // created with no semantic check at all.
   //
-  // "Has this already been BUILT?" is now answered where the evidence actually
-  // is — the Validator, which reads docs/ and can close a ticket as a duplicate.
-  // Here we only answer the cheap question: "is this already queued?"
+  // "Has this already been BUILT?" is answered in the grooming session itself,
+  // which reads docs/ and retires a ticket asking for finished work. It used to
+  // be a separate agent running per ticket at build time, which cost a whole
+  // ticket to learn what one narrow read answers here. This pass only answers the
+  // cheap question: "is this already queued?"
   const liveTitles = [
     ...openIssues.map((i) => i.title),
     ...boardItems.filter((i) => i.status !== "Done").map((i) => i.title),
@@ -378,25 +380,37 @@ function renderPlaytestFeedback(openIssues) {
  * Returns the set of retired issue numbers. Best-effort.
  */
 async function retireBlocked(retire, openIssues = []) {
-  const numbers = (Array.isArray(retire) ? retire : [])
-    .map((n) => Number(typeof n === "object" && n ? n.number : n))
-    .filter((n) => Number.isInteger(n) && n > 0);
+  const entries = (Array.isArray(retire) ? retire : [])
+    .map((item) => ({
+      number: Number(typeof item === "object" && item ? item.number : item),
+      reason: typeof item === "object" && item ? item.reason : null,
+    }))
+    .filter((entry) => Number.isInteger(entry.number) && entry.number > 0);
   const byNumber = new Map(openIssues.map((issue) => [issue.number, issue]));
   const retired = new Set();
-  for (const number of numbers) {
-    // Two different things arrive here and they closed with the same note, which
-    // told anyone reading a triaged playtest finding that it had "repeatedly
-    // failed to ship" — the opposite of what happened to it.
-    const reason = isPlaytestFeedback(byNumber.get(number) || {})
-      ? "Triaged by the Product Manager — this playtest finding has been read, and either became a ticket of its own or was judged not worth acting on."
-      : "Retired by the Product Manager — repeatedly failed to ship; split into a smaller ticket or dropped.";
-    await retireIssue(number, reason);
+
+  for (const { number, reason } of entries) {
+    // Everything the PM closes arrives here — a ticket split into pieces, one
+    // asking for finished work, one out of scope, a parked ticket it gave up on,
+    // and a triaged playtest finding. They used to close with the same note,
+    // which told anyone reading a triaged finding that it had "repeatedly failed
+    // to ship" — the opposite of what happened to it. The PM now says why, and
+    // the fallbacks below only cover a PM that didn't.
+    await retireIssue(number, reason || defaultRetireReason(byNumber.get(number)));
     moveCard(number, "Done"); // reflect the closure on the board (best-effort)
     recordTicket("retired", number, `#${number}`);
     retired.add(number);
   }
   if (retired.size) log("info", `Retired ${retired.size} ticket(s).`);
   return retired;
+}
+
+/** Used only when the Product Manager closes a ticket without saying why. */
+function defaultRetireReason(issue) {
+  if (isPlaytestFeedback(issue || {})) {
+    return "Triaged by the Product Manager — this playtest finding has been read, and either became a ticket of its own or was judged not worth acting on.";
+  }
+  return "Retired by the Product Manager — superseded, out of scope, or already built.";
 }
 
 async function main() {

@@ -5,7 +5,7 @@
 // max-parallel: 1 — so they were a queue wearing a fan-out's clothes, and each one
 // paid a fresh VM, checkout, npm ci and Chromium install (~3 minutes) for
 // isolation it only needed against siblings that no longer ran beside it. The
-// queue now lives inside ONE job, which builder-team.mjs already knew how to
+// queue now lives inside ONE job, which devs.mjs already knew how to
 // drain, and the setup is paid once.
 //
 // Two things fall out of that, both of which mean more shipped work per request:
