@@ -29,6 +29,7 @@ import {
   DIGEST_LABEL,
   isBlocked,
   isPlaytestFeedback,
+  isManualIssue,
 } from "./shared.mjs";
 
 // Who the digest @-mentions. Without it the issue is still filed, just silently.
@@ -58,6 +59,14 @@ export function gatherWeek({ closed, open, ledger }) {
     shipped,
     parked: open.filter(isBlocked),
     playtest: open.filter(isPlaytestFeedback),
+    // What the reader themselves asked for, and what became of it. Everything
+    // else in this report is the pipeline talking about its own work; this is the
+    // only part that answers "what happened to the thing I filed?".
+    yours: {
+      shipped: shipped.filter(isManualIssue),
+      open: open.filter((i) => isManualIssue(i) && !isBlocked(i)),
+      parked: open.filter((i) => isManualIssue(i) && isBlocked(i)),
+    },
     openCount: open.length,
     spend,
   };
@@ -69,6 +78,15 @@ export function renderDigest(week, narrative, milestone) {
     ? `${NOTIFY_USER.startsWith("@") ? NOTIFY_USER : `@${NOTIFY_USER}`} — this week in the garden.\n`
     : "";
   const lines = [mention, "## What the garden grew", narrative || "_(nothing shipped this week)_", ""];
+
+  const yours = week.yours || { shipped: [], open: [], parked: [] };
+  if (yours.shipped.length || yours.open.length || yours.parked.length) {
+    lines.push("## What you asked for");
+    yours.shipped.forEach((i) => lines.push(`- **Shipped** — ${i.title} (#${i.number})`));
+    yours.parked.forEach((i) => lines.push(`- **Stuck** — ${i.title} (#${i.number}), parked after repeated failures`));
+    yours.open.forEach((i) => lines.push(`- Still queued — ${i.title} (#${i.number})`));
+    lines.push("");
+  }
 
   if (week.playtest.length) {
     lines.push(

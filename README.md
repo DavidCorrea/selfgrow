@@ -191,6 +191,48 @@ continuity is deliberately outside the repo:
   `Changelog.md` (what shipped), `Story.md` (the narrative), `Lessons.md` (what
   failed and why, and what each week amounted to), and `Budget.md` (the ledger).
 
+## Filing something yourself
+
+An issue you open by hand is picked up like any other — but the pipeline knows it
+came from you, and treats it differently in two places.
+
+Provenance needs no tagging on your part: `createIssue` stamps every ticket the
+agents write with an `agent` label, so a ticket **without** one came from outside.
+Absence is the reliable test precisely because no human action maintains it —
+there is nothing to forget.
+
+- **The PM may sharpen your ticket, but not retire it for being vague.** Grooming
+  is told to close anything it cannot describe concretely, and a request typed
+  quickly is often that shape — so the one channel for getting work into this
+  system used to end in a silent drop. Now, if your ticket is too thin to build,
+  the PM rewrites it with acceptance criteria and keeps its number. Closing it
+  requires declaring it out of scope, which is a judgement about the *request*
+  rather than about the wording.
+- **The weekly digest tells you what became of it** — shipped, still queued, or
+  stuck — in a section of its own.
+
+What it does *not* get: a milestone. Only tickets the PM originates are assigned
+to one, so yours sits outside the current horizon.
+
+A PR you open by hand is picked up by the Devs and taken the rest of the way:
+verified, reviewed, fixed if it needs it, and merged. Opening it is the
+contribution — you are not also the maintainer of it. It goes through exactly the
+gates the pipeline's own work does, in the same order, and gets no easier a path
+and no harder one.
+
+Two things that path will not do. **It never closes your PR** — every other
+failure route here can abandon work, because that work is the pipeline's own;
+yours is not, and closing it would delete the branch. When it cannot get a PR to
+green it says what is outstanding and stops, leaving the change where you left
+it. And **it never merges anything that has not passed verify**, with no override
+for a reviewer that liked it.
+
+The identities flip on your PRs. On the pipeline's own, the bot opens and the PAT
+approves, because GitHub will not let an author approve their own PR. Here you
+are the author, so the bot approves instead.
+
+Avoid naming a branch `agent/*`: the reset sweeps that prefix.
+
 ## Being told what happened
 
 The pipeline decides everything itself, and reports on two channels that never
