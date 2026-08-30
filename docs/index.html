@@ -197,6 +197,7 @@
     import { createStars } from "./stars.js";
     import { createGroundRipple } from "./groundRipple.js";
     import { createCreature } from "./creature.js";
+    import { createAmbientAudio } from "./ambientAudio.js";
 
     const wrapper = document.getElementById('garden-canvas-wrapper');
     const scene = new THREE.Scene();
@@ -434,6 +435,34 @@
     startSeasonalCycle(initial ? initial.seasonProgress : undefined);
     startDayNightCycle(sunLight, scene, ambientLight, hemiLight, fillLight, initial ? initial.dayNightProgress : undefined);
     startWeatherCycle(sunLight, scene, ambientLight, hemiLight, fillLight, particles, initial ? initial.weatherProgress : undefined);
+
+    /* --- Ambient audio: wind and rain soundscape --- */
+    const ambientAudio = createAmbientAudio();
+
+    /* Expose audio state for selftest */
+    window.__gardenState.ambientAudio = ambientAudio;
+
+    /* Resume AudioContext on first user interaction (click/tap) */
+    const resumeAudio = () => {
+      ambientAudio.resumeOnInteraction();
+      document.removeEventListener('click', resumeAudio);
+      document.removeEventListener('touchstart', resumeAudio);
+    };
+    document.addEventListener('click', resumeAudio);
+    document.addEventListener('touchstart', resumeAudio);
+
+    /* Poll the weather phase every ~1s and update audio character */
+    let lastWeatherPhase = '';
+    function updateAudioWeather() {
+      const phase = document.getElementById('weather-display')?.textContent?.trim() || '';
+      if (phase !== lastWeatherPhase && phase) {
+        lastWeatherPhase = phase;
+        ambientAudio.update(phase);
+      }
+    }
+
+    /* Check weather on a regular interval (smooth transitions are handled by setTargetAtTime) */
+    setInterval(updateAudioWeather, 1000);
 
     /* --- Periodic save: every 2 seconds capture current state --- */
     setInterval(saveGardenState, 2000);
