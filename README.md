@@ -1,294 +1,172 @@
 # selfgrow
 
-A software team that runs itself.
+[![ci](https://github.com/DavidCorrea/selfgrow/actions/workflows/ci.yml/badge.svg)](https://github.com/DavidCorrea/selfgrow/actions/workflows/ci.yml)
 
-Four agent roles, on GitHub Actions cron schedules, decide what to build, build
-it, review each other, verify the result in a real browser, and merge to `main` —
-with no human in the loop. Nothing here is dispatched by a person; the only
-manual entry point is the reset.
+**A software team that runs itself.** Four agent roles decide what to build, build it, review each other, verify the result in a real browser, and merge to `main` — with no human in the loop.
 
-**The product is a variable.** What currently lives in `docs/` is whatever the
-pipeline has been growing lately. The `reset` workflow exists to throw that away
-and keep the machine, so this README is about the machine. The one thing the
-machine demands of any product is [a self-check contract](#the-product-contract).
+The product is a variable: what lives in `docs/` is whatever the pipeline has been growing lately, and `reset` exists to throw it away and keep the machine. So this is about the machine. The one thing it demands of any product is [a self-check contract](#the-product-contract).
+
+🌱 **[See the garden](https://davidcorrea.github.io/selfgrow/)**
+
+---
+
+## The loop
+
+```mermaid
+flowchart LR
+    PO["🧭 Product Owner<br/><i>Mon</i>"] -->|milestone| PM["📋 Product Manager<br/><i>daily</i>"]
+    PM -->|tickets| DEV["⚒️ Devs<br/><i>daily</i>"]
+    DEV -->|merges| MAIN[("main → live site")]
+    MAIN -->|changelog| PM
+
+    TL["🔧 Tech Lead<br/><i>Thu</i>"] -->|structure, coverage| PM
+    QA["👀 QA<br/><i>Wed</i>"] -->|findings| PM
+    MAIN -.->|plays it| QA
+    MAIN -.->|reads it| TL
+
+    DEV -->|what failed| LESSONS[["Lessons"]]
+    LESSONS --> PO
+    MAIN -->|what shipped| PO
+
+    PM -->|weekly digest| YOU(["🔔 you"])
+    HEALTH["📊 Health<br/><i>daily</i>"] -.->|only when broken| YOU
+```
+
+Everything points forward *and* back. The return paths took the longest to build — a pipeline that only pushes work downstream cannot tell it is drifting.
 
 ## The team
 
-Four roles, split by *whose judgement a decision needs* rather than by concern —
-which is why there are four and not eleven.
+Four roles, split by **whose judgement a decision needs** — which is why there are four and not eleven.
 
-| Role | Runs | Judgement it owns | Writes to |
+| Role | Runs | Owns | Writes to |
 | --- | --- | --- | --- |
-| **Product Owner** | Mon 08:00 | Where the project is going | the Vision, the milestone, Lessons |
-| **Product Manager** | daily 00:30 | What the product should and shouldn't be made of | issues, the board, the Story |
-| **Tech Lead** | Thu 09:00 | Whether the codebase can absorb the next ticket | structural + coverage tickets |
-| **Devs** | dispatched by the PM, then a 14:00 mop-up | How a ticket gets built | `main` |
+| 🧭 **Product Owner** | Mon 08:00 | Where the project is going | Vision, milestone, Lessons |
+| 📋 **Product Manager** | daily 00:30 | What the product should and shouldn't be | issues, board, Story, digest |
+| 🔧 **Tech Lead** | Thu 09:00 | Whether the code can absorb the next ticket | structure + coverage tickets |
+| ⚒️ **Devs** | after the PM, + 14:00 mop-up | How a ticket gets built | `main` |
 
-Plus one tester and two pieces of infrastructure, which are jobs rather than
-roles:
+Plus one tester and three pieces of infrastructure — jobs, not roles:
 
-| | Runs | What it does |
+| | Runs | Does |
 | --- | --- | --- |
-| **QA (Playtester)** | Wed 10:00 | Plays the live app and files what the experience was like |
-| **Health** | daily 16:00 | Measures the pipeline itself; silent unless something is broken |
-| **pi-update** | Tue 07:00, and on PRs | Dependabot for the model chain |
-| **reset** | manual only | Tears the product down, keeps the machine |
+| 👀 **QA** | Wed 10:00 | Plays the **live site** for two minutes, files what it was like |
+| 📊 **Health** | daily 16:00 | Measures the pipeline; silent unless something breaks |
+| 🤝 **review-pr** / **triage-fork-pr** | on any PR | Finishes yours; reviews a stranger's |
+| 📦 **pi-update** | Tue 07:00 | Dependabot for the model chain |
 
-### Why these four
+<details>
+<summary><b>Why these four</b></summary>
 
-**The Product Owner looks back in order to point forward.** Its retro reads what
-shipped, what got parked, and what QA keeps saying, then writes the conclusion to
-Lessons — the only record of a *trend* rather than one ticket's failure. What
-that judgement changes is the milestone: what the project is trying to do next.
-Priority alone can only say which ticket comes first; without a milestone the
-backlog fills by adjacency, every ticket found next to whatever shipped last,
-each individually sound and the whole adding up to nothing in particular.
+**The PO looks back to point forward.** Its retro reads what shipped, what got parked and what QA keeps saying, then sets the milestone. Priority alone says which ticket is next; without a milestone the backlog fills by adjacency — every ticket found beside whatever shipped last, each sound, the whole adding up to nothing.
 
-**The Product Manager adds and subtracts in the same breath.** Deciding what the
-product should stop doing is the same judgement as deciding what it should start
-doing, so one role weighs both in a single pass. Splitting them meant the
-subtractive half proposed removals blind to what the additive half was adding
-that same week.
+**The PM adds and subtracts in one breath.** What the product should stop doing is the same judgement as what it should start doing. Split across two roles, the subtractive half proposed removals blind to what the additive half was adding that week.
 
-**The Tech Lead is the only role that reads the whole codebase.** Everything else
-in engineering is scoped to one ticket — one plan, one diff, one review. It owns
-structure, it owns `docs/selftest.js` (the only independent judge in the
-pipeline, and until recently never read whole by anyone), and it decides what
-happens to tickets the Devs gave up on, because "why did this fail" is a
-technical question.
+**The Tech Lead is the only role that sees the whole codebase.** Everything else in engineering is scoped to one ticket. It owns structure, owns `docs/selftest.js` — the only independent judge in the pipeline — and rules on tickets the Devs gave up on, because *"why did this fail"* is a technical question.
 
-**QA is deliberately not the PM.** It plays the app and reports; the PM decides
-what to do about it. The observer shouldn't be the person who acts on the
-observation — the same reason the Devs don't review their own work. Its findings
-are `playtest`-labelled issues that the Devs *cannot* pick up: they are
-impressions, not work.
+**QA is deliberately not the PM.** It plays and reports; the PM decides. The observer should not be the one who acts on the observation — the same reason the Devs do not review their own work.
 
-### Why the cadences
+**Sunday and Monday are the hinge.** The PM's Sunday run curates and writes the week's report; the PO reads that week on Monday and sets the milestone the PM grooms against for the next six days.
 
-The PM runs just after OpenRouter's free-tier cap resets at 00:00 UTC, so the
-day's chain starts against a full allowance. It dispatches the Devs explicitly
-when grooming actually left buildable work — that used to trigger on workflow
-completion, and one grooming pass creating 8 tickets produced 9 Devs runs. The
-weekly roles sit on separate days so they never compete for the same day's
-requests. The 14:00 Devs run is a mop-up: it claims whatever the ledger says is
-genuinely left, because unspent requests expire at midnight.
-
-Sunday and Monday are the hinge. The PM's Sunday run also curates and writes the
-week's report; the PO reads that week on Monday and sets the milestone the PM
-grooms against for the next six days.
+</details>
 
 ## How one ticket ships
 
-`agents/devs.mjs` drains a queue in a single job, re-reading the board before
-each ticket — so a merge that unblocks a dependent one makes it available
-immediately.
-
+```mermaid
+flowchart LR
+    S["Scout<br/><i>plans</i>"] --> B["Builder<br/><i>writes</i>"]
+    B --> V{"verify<br/>4 layers"}
+    V -->|fails| B
+    V -->|passes| R{"Reviewer<br/><i>other model</i>"}
+    R -->|revise ≤3| B
+    R -->|approve| M["merge main in<br/>verify again"]
+    M --> PR(["auto-merge<br/><i>required checks decide</i>"])
 ```
-Scout ──► Builder ──► verify ──► Reviewer ──► verify ──► merge
-             ▲                       │
-             └───── revise, ≤3 ──────┘
-```
 
-- **Scout** picks the highest-priority buildable ticket and plans it. It does not
-  judge whether the ticket should exist — the PM settled that at 00:30, and
-  asking twice meant the later answer silently overrode the earlier one.
-- **Builder** writes the code on a branch.
-- **Verify** runs in four layers, cheapest first: `node --check`, ESLint, a real
-  Chromium page load watching for console errors and uncaught exceptions, and
-  finally the product's own `checks()`. The last layer only runs when the page is
-  already sound — check failures on a throwing page are noise from one root
-  cause. It runs again after merging `main`, so the branch is still good against
-  what shipped meanwhile.
-- **Reviewer** critiques the diff, drawn from a *different model* than wrote it
-  where the chain allows. Review is only worth its request if it can disagree.
-- **PR** is opened by `github-actions[bot]` and approved by the account's PAT.
-  Two identities, on purpose: GitHub won't let an author approve their own PR.
+- **Scout** plans the highest-priority buildable ticket. It does not judge whether the ticket should exist — the PM settled that at 00:30.
+- **verify** runs cheapest-first: `node --check` → ESLint → a real Chromium page load → the product's own `checks()`.
+- **Reviewer** is drawn from a *different model* than wrote the code. Review is only worth its request if it can disagree.
+- **auto-merge** means the agent asks and the required checks answer — it no longer merges on its own say-so.
 
-Failure is a first-class path. A ticket that fails accrues strikes and is parked
-once it has spent them, so the Scout stops re-picking it; the Tech Lead then
-decides whether it comes back smaller or not at all. Merge conflicts get their
-own agent. Every dead end is written up as a post-mortem on the wiki's Lessons
-page, which the *next* Scout reads before planning — framed as advice, not law: a
-lesson describes one failed attempt, not a verdict that the work is impossible.
+Failure is first-class: a ticket accrues strikes, gets parked, and the Tech Lead decides whether it returns smaller or not at all. Every dead end becomes a post-mortem the *next* Scout reads.
 
 ## What holds it together
 
-Most of the interesting code is not the agents. It is the constraints that let
-them run unattended without setting money on fire or corrupting `main`.
-
-**Budget.** A shared daily ledger (stored on the wiki) counts *real model
-requests* against a hard cap of 1000/day, and every job reads it before it
-spends. Per-run allowances sit under that ceiling, not beside it. Enforcement
-happens at four points, because three of them have each been the hole: `runAgent`
-refuses to start a session once the budget is spent; `MAX_SESSION_TURNS` aborts a
-session that runs away *inside* one; the build→review loop refuses to start a
-Builder it cannot afford to review; and retries are skipped when the remainder is
-thin. The budget once counted agent *sessions* rather than requests,
-understating the charge by roughly 16x — a "250" budget authorised several
-thousand calls, and the account fell over while the counter read 62.
-
-**Time.** Every limit is nested so the agent stops itself before anything else
-stops it: a session has a turn and minute cap, a run has a wall-clock budget
-checked *between* tickets so it finishes cleanly after a merge, and the job
-timeout above both is a backstop for a hang. A run killed mid-ticket leaves a
-branch and an open PR behind; a run that stops itself does not.
-
-**Concurrency.** Everything that writes to `main` shares one `agent-main-writer`
-lock. Each role has its own lock besides — two PMs would dedup against a board
-neither had finished writing. And every wiki write is a retried
-read-modify-write against the live remote, because the ledger pushes to that same
-repo after every session: the naive version lost that race on ~100 consecutive
-merges, logged a warning, and let each run report success.
-
-**Models.** `agents/models.json` is an ordered fallback chain, held as data so
-automation can rewrite it safely: a cheap paid head, then five free models from
-four provider families, ordered by how reliably they hold a structured response
-envelope. Any error falls through to the next entry, including an exhausted
-balance. `pi-update` re-probes it weekly against the installed `pi-coding-agent`,
-replacing only entries that have actually broken.
-
-**Someone watching.** Health reads what the pipeline writes down and asks whether
-the week looks like a working one: is anything shipping, is the changelog keeping
-up, are tickets failing faster than they merge, is the day's allowance always
-spent, did a weekly agent stop working. No model, no browser, no API key — it
-has to keep working on a day the budget is spent, which is exactly a day worth
-measuring. It files an issue only when something is wrong.
+| | |
+| --- | --- |
+| 💰 **Budget** | A shared daily ledger on the wiki counts real requests against 1000/day. Enforced at four points, because three of them have each been the hole. |
+| ⏱️ **Time** | Every limit nested so the agent stops itself first. A run killed mid-ticket leaves an orphaned branch; one that stops itself does not. |
+| 🔒 **Concurrency** | One `agent-main-writer` lock. Every wiki write is a retried read-modify-write — the naive version lost a race on ~100 consecutive merges and reported success each time. |
+| 🎲 **Models** | An ordered fallback chain: a cheap paid head, then five free models from four provider families, ordered by envelope reliability. Re-probed weekly. |
+| ✅ **Enforcement** | `check` and `verify-product` are **required** on `main`. Before, every guarantee was self-imposed — the agents graded their own work and merged on the result. |
+| 📊 **Watching** | Health asks whether the week looks like a working one, including whether the deployed site is up. No model, no key — it must keep working on a day the budget is spent. |
 
 ## The product contract
 
-The only thing the machine requires of what it is building. Everything else —
-structure, features, naming, how any of it works — is the agents' to decide.
-
-`docs/` is a static site with an `index.html`, and it exports one function:
+The only thing the machine requires of what it builds. `docs/` is a static site with an `index.html`, and it exports one function:
 
 ```js
 // docs/selftest.js
 export async function checks() {
-  // Return plain-language failure messages; empty when everything holds.
+  // Plain-language failure messages; empty when everything holds.
   return [];
 }
 ```
 
-Every message it returns fails the build and blocks the merge. Syntax, lint and a
-clean page load prove the code *runs*; only this proves it still does what it
-claims — which is exactly the failure most likely to ship, because everything
-else looks green. It is the one judge in the loop that can disagree with the
-Builder for reasons the Builder doesn't share, which is why the Tech Lead owns
-it.
+Every message it returns blocks the merge. Syntax, lint and a clean page load prove the code *runs*; only this proves it still does what it claims — the failure most likely to ship, because everything else looks green.
 
-## Where the memory lives
+## Where memory lives
 
-The agents are stateless. Every run starts from a fresh checkout, so all
-continuity is deliberately outside the repo:
+Agents are stateless; every run starts from a fresh checkout.
 
-- **The Project board** is the queue — priority, blocking dependencies, and each
-  card's Todo → In progress → In review → Done position.
-- **Milestones** are the horizon: one open at a time, set by the PO, and every
-  ticket the PM proposes is assigned to it.
-- **Issues** are the tickets, with strikes recorded in the body where the next
-  Scout will read them.
-- **The wiki** holds the durable prose: `Vision.md` (what the product is for),
-  `Changelog.md` (what shipped), `Story.md` (the narrative), `Lessons.md` (what
-  failed and why, and what each week amounted to), and `Budget.md` (the ledger).
+```mermaid
+flowchart TD
+    subgraph gh ["GitHub"]
+        BOARD["📌 Project board — the queue"]
+        MS["🎯 Milestone — the horizon"]
+        ISSUES["🎫 Issues — tickets and strikes"]
+        DISC["📢 Discussions — digest, health"]
+    end
+    subgraph wiki ["Wiki"]
+        VISION["Vision — what it is for"]
+        STORY["Story — the arc"]
+        CHANGE["Changelog — what shipped"]
+        LESSONS["Lessons — what failed, and why"]
+        BUDGET["Budget — the request ledger"]
+    end
+```
 
-## Filing something yourself
+Changelog and Lessons are trimmed: both are read whole into prompts, and an untrimmed page is a context window quietly filling up.
 
-An issue you open by hand is picked up like any other — but the pipeline knows it
-came from you, and treats it differently in two places.
+## Contributing
 
-Provenance needs no tagging on your part: `createIssue` stamps every ticket the
-agents write with an `agent` label, so a ticket **without** one came from outside.
-Absence is the reliable test precisely because no human action maintains it —
-there is nothing to forget.
+**File an issue** and the PM picks it up next morning. The [forms](.github/ISSUE_TEMPLATE) ask two things — what should change, and how you would know it worked — because that is what the agents build toward.
 
-- **The PM may sharpen your ticket, but not retire it for being vague.** Grooming
-  is told to close anything it cannot describe concretely, and a request typed
-  quickly is often that shape — so the one channel for getting work into this
-  system used to end in a silent drop. Now, if your ticket is too thin to build,
-  the PM rewrites it with acceptance criteria and keeps its number. Closing it
-  requires declaring it out of scope, which is a judgement about the *request*
-  rather than about the wording.
-- **The weekly digest tells you what became of it** — shipped, still queued, or
-  stuck — in a section of its own.
+Your ticket can be **sharpened but never closed for being unclear.** Grooming closes what it cannot describe concretely, and a request typed quickly is exactly that shape; the one channel into this system used to end in a silent drop. Closing it now requires declaring it out of scope, which is a judgement about the *request* rather than the wording.
 
-What it does *not* get: a milestone. Only tickets the PM originates are assigned
-to one, so yours sits outside the current horizon.
+**Open a PR** and the Devs take it the rest of the way — verified, reviewed, fixed if it needs it, merged. Opening it is the contribution; you are not also the maintainer of it. Two lines they will not cross: **never close your PR** (your branch stays intact, and fixes are separate commits you can drop), and **never merge what has not passed verify**.
 
-A PR you open by hand is picked up by the Devs and taken the rest of the way:
-verified, reviewed, fixed if it needs it, and merged. Opening it is the
-contribution — you are not also the maintainer of it. It goes through exactly the
-gates the pipeline's own work does, in the same order, and gets no easier a path
-and no harder one.
-
-Two things that path will not do. **It never closes your PR** — every other
-failure route here can abandon work, because that work is the pipeline's own;
-yours is not, and closing it would delete the branch. When it cannot get a PR to
-green it says what is outstanding and stops, leaving the change where you left
-it. And **it never merges anything that has not passed verify**, with no override
-for a reviewer that liked it.
-
-The identities flip on your PRs. On the pipeline's own, the bot opens and the PAT
-approves, because GitHub will not let an author approve their own PR. Here you
-are the author, so the bot approves instead.
-
-Avoid naming a branch `agent/*`: the reset sweeps that prefix.
-
-**A PR from a fork is different, and deliberately gets less.** That path checks
-out the PR's head and runs an agent with write access and the account's API key
-over it — doing that to a branch a stranger controls hands them the key. So an
-outside contribution is reviewed but never run: the diff is fetched through the
-API as text, judged against the project's own code, and answered with a comment.
-Nothing merges, approves, pushes or closes it. A maintainer decides.
-
-It is worth knowing what that review usually finds. Agents work the same tickets
-outside contributors do, so the most common outcome is that the work already
-shipped — often solved the same way.
+**From a fork?** You get a review, but nothing runs your code — that path would hand a stranger the account's API key. The diff is read as text, judged against the project's own source, and answered in a comment. Expect *"this already shipped"* more often than not: agents work the same tickets you do.
 
 ## Being told what happened
 
-The pipeline decides everything itself, and reports on two channels that never
-ask you for anything:
+Two channels, both **Discussions**, neither asking anything of you.
 
-Both are **Discussions**, in Announcements. That is the primitive they always
-wanted: a post rather than a task, carrying no board card and nothing the Devs
-will ever pick up. The digest used to be an issue created and closed in the same
-breath — a broadcast wearing a task's clothes — and a health alert used to be an
-issue the Devs actually tried to build.
-
-- **The weekly digest**, published by the PM each Sunday — what the garden grew,
-  grouped by what the work adds up to rather than by ticket; what you asked for
-  and what became of it; what QA noticed; what's stuck; the current milestone.
-  It @-mentions the owner, so it arrives as a notification.
-- **Health alerts**, only when something breaks. One open post at a time naming
-  everything currently wrong, and it **closes itself** once none of it is true
-  any more. Silence means fine.
+- 📢 **Weekly digest**, Sundays — what the garden grew, grouped by what the work adds up to rather than by ticket; what you asked for and what became of it; what is stuck. It `@`-mentions you.
+- 🚨 **Health alerts**, only when something breaks — one open post naming everything wrong, which **closes itself** once none of it is true. Silence means fine.
 
 ## Running it
 
-Secrets:
-
-| Name | Used for |
+| Secret | For |
 | --- | --- |
 | `OPENROUTER_API_KEY` | every model call |
-| `AGENT_PAT` | issues, the board, milestones, the wiki, and approving PRs |
-| `GITHUB_TOKEN` | opening PRs as a second identity (built in) |
+| `AGENT_PAT` | issues, board, milestones, wiki, approving PRs |
+| `GITHUB_TOKEN` | opening PRs as a second identity *(built in)* |
 
-The PAT needs `project` scope. Set `GH_PROJECT_OWNER` and `GH_PROJECT_NUMBER` in
-the workflows to point at your board.
+The PAT needs `project` scope. Set `GH_PROJECT_OWNER` / `GH_PROJECT_NUMBER` to point at your board.
 
-Development: `npm test` runs the harness's own suite, `npm run lint` covers both
-`agents/` and `docs/`, and CI runs those plus the product's own verification on
-every pull request.
+```bash
+npm test        # the harness's own suite
+npm run lint    # agents/ and docs/
+```
 
-Those CI jobs are **required checks** on `main`, which is what makes them a gate
-rather than a habit. The agents run the same verification in-process and used to
-merge on their own assessment of it — so every guarantee here was self-imposed,
-and a swallowed error or a reordered step would have skipped it silently. Merges
-now ask for auto-merge and wait: GitHub lands the change when the checks pass,
-and refuses when they do not.
-
-To start over: pause the workflows and dispatch `reset`, typing the repository
-name to confirm. It cancels pending runs, closes open issues and agent PRs,
-clears the board, resets the wiki's memory pages, and deletes the product from
-`main` — leaving the machine, an empty `docs/`, and a full night's request
-budget.
+**To start over:** pause the workflows and dispatch `reset`, typing the repository name to confirm. It cancels runs, closes issues and agent PRs, clears the board, resets the wiki's memory, and deletes the product from `main` — leaving the machine, an empty `docs/`, and a full night's budget.
