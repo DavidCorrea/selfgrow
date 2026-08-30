@@ -26,6 +26,8 @@ import {
   dependencyLine,
   syncWaitingLabels,
   isPlaytestFeedback,
+  isManualIssue,
+  rewriteIssueBody,
   repoRoot,
   getCurrentMilestone,
   setIssueMilestone,
@@ -392,11 +394,17 @@ function readFileSafely(path) {
   }
 }
 
-/** Tickets closed recently, for the week's report. */
+/**
+ * Tickets closed recently, for the week's report.
+ *
+ * Labels included deliberately: the report distinguishes what a person asked for
+ * from what the pipeline proposed, and it does that by the ABSENCE of the `agent`
+ * label. Fetch without labels and every shipped ticket looks human-filed.
+ */
 function fetchClosedIssues(limit = 200) {
   try {
     return JSON.parse(
-      execSync(`gh issue list --state closed --limit ${limit} --json number,title,closedAt`, {
+      execSync(`gh issue list --state closed --limit ${limit} --json number,title,closedAt,labels`, {
         cwd: repoRoot,
         maxBuffer: 10 * 1024 * 1024,
       }).toString()
@@ -450,12 +458,29 @@ async function retireBlocked(retire, openIssues = []) {
     .map((item) => ({
       number: Number(typeof item === "object" && item ? item.number : item),
       reason: typeof item === "object" && item ? item.reason : null,
+      outOfScope: Boolean(typeof item === "object" && item && item.outOfScope),
     }))
     .filter((entry) => Number.isInteger(entry.number) && entry.number > 0);
   const byNumber = new Map(openIssues.map((issue) => [issue.number, issue]));
   const retired = new Set();
 
-  for (const { number, reason } of entries) {
+  for (const { number, reason, outOfScope } of entries) {
+    // A person's request is not the pipeline's to quietly discard.
+    //
+    // Grooming is told to retire anything it cannot describe concretely, and a
+    // terse issue filed by a human at midnight is exactly that shape — so the one
+    // channel for getting work into this system had a silent drop at the end of
+    // it. Closing a human ticket now requires saying it is out of scope, which is
+    // a judgement about the REQUEST; "I could not tell what you meant" is a
+    // judgement about the wording, and the answer to that is to sharpen it.
+    if (isManualIssue(byNumber.get(number) || {}) && !outOfScope) {
+      log(
+        "error",
+        `Refusing to retire #${number}: it was filed by a person, and the Product Manager ` +
+          "did not mark it out of scope. A human ticket that is merely unclear must be sharpened, not closed."
+      );
+      continue;
+    }
     // Everything the PM closes arrives here — a ticket split into pieces, one
     // asking for finished work, one out of scope, a parked ticket it gave up on,
     // and a triaged playtest finding. They used to close with the same note,
@@ -469,6 +494,40 @@ async function retireBlocked(retire, openIssues = []) {
   }
   if (retired.size) log("info", `Retired ${retired.size} ticket(s).`);
   return retired;
+}
+
+/**
+ * Rewrite the human-filed tickets the Product Manager found too vague to build,
+ * instead of closing them.
+ *
+ * The body it returns replaces the original, so the ticket keeps its number, its
+ * author and its place on the board — the person who filed it sees their request
+ * become buildable rather than see it closed.
+ */
+function sharpenTickets(sharpen, openIssues = []) {
+  const byNumber = new Map(openIssues.map((issue) => [issue.number, issue]));
+  let count = 0;
+  for (const item of Array.isArray(sharpen) ? sharpen : []) {
+    const number = Number(item?.number);
+    const issue = byNumber.get(number);
+    if (!issue || !item?.body) continue;
+    // Only ever applied to human tickets. The pipeline's own are the PM's to
+    // write correctly in the first place, and rewriting one would silently
+    // discard whatever the agent that filed it recorded there.
+    if (!isManualIssue(issue)) {
+      log("warn", `Not sharpening #${number}: the pipeline wrote it, so rewriting it would lose what it recorded.`);
+      continue;
+    }
+    const body = [
+      String(item.body).trim(),
+      Array.isArray(item.acceptanceCriteria) && item.acceptanceCriteria.length
+        ? `## Acceptance criteria\n${item.acceptanceCriteria.map((c) => `- [ ] ${String(c).trim()}`).join("\n")}`
+        : "",
+      "_Filed by a person and sharpened by the Product Manager into something the Devs can build. The original request is in the history._",
+    ].filter(Boolean).join("\n\n");
+    if (rewriteIssueBody(number, body)) count++;
+  }
+  if (count) log("info", `Sharpened ${count} human-filed ticket(s).`);
 }
 
 /** Used only when the Product Manager closes a ticket without saying why. */
@@ -536,6 +595,9 @@ async function main() {
   //    `backlog`, or dropped outright). Done first so retired tickets drop out of
   //    `remainingOpen` and don't skew the grooming pass's dedup below.
   const retired = await retireBlocked(data.retire, openIssues);
+  // Sharpen before triage, so a rewritten ticket is prioritized as what it has
+  // become rather than as the one-liner it arrived as.
+  sharpenTickets(data.sharpen, openIssues);
   const remainingOpen = openIssues.filter((i) => !retired.has(i.number));
   // 2. Triage + prioritize existing open tickets (pull inbound onto the board).
   triageExisting(remainingOpen, boardItems, data.triage);

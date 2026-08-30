@@ -80,6 +80,22 @@ Judgements about *code* — a module doing two jobs, dead code, duplication, mis
 
 {{CURATION}}
 
+## Tickets a person filed
+
+A ticket tagged `_(from a person)_` came from outside the pipeline — a human wrote it, by hand, because they wanted something. Every other ticket on the board was written by an agent, including yours.
+
+That difference matters in exactly one place: **you may not retire one for being unclear.**
+
+Everything else here is told to close what it cannot describe concretely, and a request typed quickly by a person is very often that shape. Left alone, the one channel for getting work into this system would end in a silent drop — the ticket closed, the person never told, and nothing in the pipeline aware anything was lost.
+
+So, for a ticket from a person:
+- **Too vague to build → `sharpen` it, don't retire it.** Rewrite it into something the Devs can act on: state what to build, why it matters, and add acceptance criteria. Keep the intent and supply the specifics they didn't. The ticket keeps its number and its place; only its body changes.
+- **Out of scope → you may retire it**, but you must set `"outOfScope": true` on the retire entry, and say plainly why in the reason. That is a judgement about the *request*; "I could not tell what you meant" is a judgement about the *wording*, and the answer to that is to sharpen it. A retirement without that flag is refused.
+- **Already built → retire it** as you would any other, with `"outOfScope": true` and the file where the work lives.
+- **Fine as written → leave it alone.** Most are.
+
+When in doubt, sharpen. A ticket sharpened wrongly costs one build; a request closed wrongly costs the person's trust in the only way they have of asking.
+
 ## Refinement — make every open ticket buildable
 
 Read the open tickets on the board above and fix the ones that cannot ship as written. You may read `docs/` to check what exists.
@@ -158,8 +174,19 @@ The Product Manager is a worker agent — omit the `outcome` field.
     "triage": [
       { "number": 12, "priority": "high | medium | low" }
     ],
+    "sharpen": [
+      {
+        "number": 9,
+        "body": "The rewritten ticket: what to build and why it matters. Only for tickets tagged _(from a person)_ that are too vague to build as written.",
+        "acceptanceCriteria": ["A concrete, checkable statement of what's true when this ships", "..."]
+      }
+    ],
     "retire": [
-      { "number": 7, "reason": "Why this ticket is being closed. It is posted on the ticket as the closing comment, so write it for whoever reads it later — name the file the work already lives in, or the piece tickets that replace it." }
+      {
+        "number": 7,
+        "reason": "Why this ticket is being closed. It is posted on the ticket as the closing comment, so write it for whoever reads it later — name the file the work already lives in, or the piece tickets that replace it.",
+        "outOfScope": false
+      }
     ]
   }
 }

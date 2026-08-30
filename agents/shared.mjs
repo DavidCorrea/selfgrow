@@ -1454,7 +1454,39 @@ export function setIssueMilestone(issueNumber, title) {
   }
 }
 
+// Stamped on every issue the pipeline creates (see createIssue), which makes its
+// ABSENCE the reliable marker of a human-filed one. Absence is the better test
+// precisely because no human action maintains it: there is no label to forget.
 export const AGENT_LABEL = "agent";
+
+/**
+ * An issue a person filed, rather than the pipeline.
+ *
+ * Note the direction: this is not a label anyone adds, it is one the agents add
+ * to their own. A ticket nobody stamped came from outside.
+ */
+export function isManualIssue(issue) {
+  return !labelNames(issue).includes(AGENT_LABEL);
+}
+
+/**
+ * Rewrite a ticket's body — how the Product Manager sharpens a human request
+ * into something buildable instead of closing it for being unclear.
+ */
+export function rewriteIssueBody(issueNumber, body) {
+  try {
+    execSync(`gh issue edit ${issueNumber} --body-file -`, {
+      cwd: repoRoot,
+      input: body,
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    log("info", `Sharpened #${issueNumber} into a buildable ticket.`);
+    return true;
+  } catch (e) {
+    log("warn", `Could not rewrite the body of #${issueNumber}.`, errorData(e));
+    return false;
+  }
+}
 // Marks Builder-filed code-health tickets so the PM (and humans) can spot them.
 export const TECH_DEBT_LABEL = "tech-debt";
 
@@ -2000,13 +2032,18 @@ export function getBoardSnapshot() {
   const openIssues = fetchOpenIssues();
   const boardItems = listProjectItems();
 
-  // Labels per open ticket (so the board shows priority / tech-debt tags). The
-  // `agent` marker is internal plumbing — hide it.
+  // Labels per open ticket (so the board shows priority / tech-debt tags).
+  //
+  // The `agent` marker itself is plumbing and stays hidden — but its ABSENCE is
+  // the only signal that a person filed the ticket, and hiding the label hid that
+  // too. So it is inverted into something the reader can act on: an agent ticket
+  // gets no marker, a human one says so.
   const labelsByNumber = new Map(
-    openIssues.map((i) => [
-      i.number,
-      (i.labels || []).map((l) => l.name || l).filter((n) => n !== "agent"),
-    ])
+    openIssues.map((i) => {
+      const names = (i.labels || []).map((l) => l.name || l);
+      const visible = names.filter((n) => n !== AGENT_LABEL);
+      return [i.number, names.includes(AGENT_LABEL) ? visible : [...visible, "from a person"]];
+    })
   );
   const tag = (num) => {
     const labs = num != null ? labelsByNumber.get(num) || [] : [];
