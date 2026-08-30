@@ -154,7 +154,8 @@ Secrets:
 The PAT needs `project` scope. Set `GH_PROJECT_OWNER` and `GH_PROJECT_NUMBER` in
 the workflows to point at your board.
 
-To start over: pause the workflows and dispatch `reset`. It cancels pending
+To start over: pause the workflows and dispatch `reset`, typing the repository
+name to confirm. It cancels pending
 runs, closes open issues and agent PRs, clears the board, resets the wiki's
 memory pages, and deletes the product from `main` — leaving the machine, an
 empty `docs/`, and a full night's request budget.

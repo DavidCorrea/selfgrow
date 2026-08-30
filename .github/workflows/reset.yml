@@ -1,11 +1,21 @@
 name: reset
 
-# One-time, run manually with the other workflows paused: cancels pending runs,
-# closes all open issues and agent PRs, clears the board, resets the wiki's
-# memory pages, and deletes the previous product from main.
-# Safe to delete after running.
+# Run manually, with the other workflows paused: cancels pending runs, closes all
+# open issues and agent PRs, clears the board, resets the wiki's memory pages, and
+# deletes the previous product from main.
+#
+# Every other workflow here is additive — this is the one that dismantles. It used
+# to fire on a bare dispatch, so two clicks in the Actions UI closed every issue
+# and deleted the product, with the button sitting in the same list as the six
+# harmless ones. The confirmation below is the whole difference between choosing
+# that and reaching for it.
 on:
   workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type the repository name (selfgrow) to confirm. Everything below is destructive.'
+        required: true
+        type: string
 
 # Wider than the rest of the pipeline because this job is the one that dismantles
 # it: contents to delete the old product from main, actions to cancel the runs
@@ -33,6 +43,9 @@ jobs:
       - name: Reset GitHub state
         run: node agents/reset.mjs
         env:
+          # Checked in reset.mjs before anything destructive runs, rather than
+          # here, so running the script by hand is guarded too.
+          RESET_CONFIRM: ${{ inputs.confirm }}
           GH_TOKEN: ${{ secrets.AGENT_PAT }}
           GH_PROJECT_OWNER: '@me'
           GH_PROJECT_NUMBER: '3'
