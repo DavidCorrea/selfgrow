@@ -1,0 +1,304 @@
+/**
+ * fireflies.js — selfgrow subtle firefly glow near plants during Night phase
+ *
+ * Creates 4–6 tiny glowing dots near each plant, pulsing with a slow,
+ * irregular rhythm (0.2–0.5 Hz) and drifting very slightly within a small
+ * radius (~0.15 units) of each plant. They fade in smoothly as the sky
+ * darkens (t ≥ 0.75) and fade out as Morning approaches (t ∈ [0.95, 1.0)).
+ *
+ * Each glow is a small additive-blended point sprite, barely perceptible —
+ * peak opacity ≤ 0.15. This gives the garden a sense of continued life at
+ * night, fulfilling the Vision's 'something small is usually happening at
+ * the edge of attention.'
+ *
+ * Respects prefers-reduced-motion: dots are stationary (no pulsing/drift)
+ * but still fade in/out with the day/night cycle.
+ *
+ * Exports: createFireflies(scene) -> { update, state, destroy }
+ */
+
+import * as THREE from "three";
+
+/* --- Configuration --- */
+const DOTS_MIN = 4;
+const DOTS_MAX = 6;               // 4–6 per plant
+const DRIFT_RADIUS = 0.15;         // maximum drift offset from plant
+const PEAK_OPACITY = 0.15;         // peak opacity during Night (≤ 0.15)
+const GLOW_SIZE = 0.04;            // base sprite size in world units
+const FADE_LERP_SPEED = 0.04;      // ~1.2 seconds to fade in/out
+const PULSE_FREQ_MIN = 0.2;        // Hz — slow, irregular
+const PULSE_FREQ_MAX = 0.5;        // Hz
+const DRIFT_FREQ = 0.12;           // frequency of drift oscillation
+
+/**
+ * Create a soft circular glow texture on a canvas.
+ * Warm pale yellow-white, fading to transparent at the edges.
+ */
+function createGlowTexture() {
+  const size = 32;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+
+  const cx = size / 2;
+  const cy = size / 2;
+  const radius = size / 2;
+
+  const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+  gradient.addColorStop(0, 'rgba(255, 255, 230, 1.0)');
+  gradient.addColorStop(0.15, 'rgba(255, 240, 180, 0.8)');
+  gradient.addColorStop(0.4, 'rgba(220, 210, 120, 0.4)');
+  gradient.addColorStop(0.65, 'rgba(180, 180, 80, 0.1)');
+  gradient.addColorStop(1, 'rgba(180, 180, 80, 0.0)');
+
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, size, size);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  return texture;
+}
+
+/**
+ * Create the firefly glow system.
+ *
+ * @param {THREE.Scene} scene
+ * @returns {{ update: Function, state: object, destroy: Function }}
+ */
+export function createFireflies(scene) {
+  /* --- Detect reduced motion --- */
+  const reducedMotionMedia = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const reducedMotion = reducedMotionMedia.matches;
+
+  /* --- Shared glow texture --- */
+  const glowTexture = createGlowTexture();
+
+  /* --- Each plant gets a group of dots --- */
+  // plantGroups: array of { plantRef, points, geometry, material, dotData, count }
+  const plantGroups = [];
+
+  /**
+   * Create a dot group anchored near a plant.
+   *
+   * @param {THREE.Vector3} plantPos - World position of the plant
+   * @param {string} plantRef - 'plant' or 'plant2' or 'plantN'
+   */
+  function createDotGroup(plantPos, plantRef) {
+    const count = DOTS_MIN + Math.floor(Math.random() * (DOTS_MAX - DOTS_MIN + 1)); // 4–6
+    const positions = new Float32Array(count * 3);
+    const sizes = new Float32Array(count);
+    const dotData = [];
+
+    for (let i = 0; i < count; i++) {
+      // Random offset within DRIFT_RADIUS from plant position
+      const angle = Math.random() * Math.PI * 2;
+      const radius = 0.02 + Math.random() * DRIFT_RADIUS * 0.8; // not all at boundary
+      const baseX = plantPos.x + Math.cos(angle) * radius;
+      const baseZ = plantPos.z + Math.sin(angle) * radius;
+      const baseY = plantPos.y + 0.05 + Math.random() * 0.25; // varied height above ground
+
+      positions[i * 3] = baseX;
+      positions[i * 3 + 1] = baseY;
+      positions[i * 3 + 2] = baseZ;
+
+      // Slight size variation
+      sizes[i] = GLOW_SIZE * (0.6 + Math.random() * 0.8);
+
+      // Per-dot animation parameters
+      dotData.push({
+        phaseOffset: Math.random() * Math.PI * 2,
+        freq: PULSE_FREQ_MIN + Math.random() * (PULSE_FREQ_MAX - PULSE_FREQ_MIN),
+        driftPhase: Math.random() * Math.PI * 2,
+        driftAngle: Math.random() * Math.PI * 2,
+        baseX: baseX,
+        baseY: baseY,
+        baseZ: baseZ,
+        sizeBase: sizes[i]
+      });
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+    const material = new THREE.PointsMaterial({
+      map: glowTexture,
+      color: 0xfff8e0,           // warm pale yellow-white
+      transparent: true,
+      opacity: 0,
+      size: GLOW_SIZE,
+      sizeAttenuation: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      depthTest: true,
+      fog: false
+    });
+
+    const points = new THREE.Points(geometry, material);
+    scene.add(points);
+
+    const group = {
+      plantRef: plantRef,
+      points: points,
+      geometry: geometry,
+      material: material,
+      dotData: dotData,
+      count: count
+    };
+
+    plantGroups.push(group);
+    return group;
+  }
+
+  /**
+   * Find any plants that exist in the scene but don't have dot groups yet.
+   * Plants may appear over time (e.g. plant2 spawns ~30s after plant1 matures).
+   */
+  function scanForPlants() {
+    const gs = window.__gardenState;
+    if (!gs) return;
+
+    const plantRefs = ['plant', 'plant2'];
+
+    for (const ref of plantRefs) {
+      const plantObj = gs[ref];
+      if (!plantObj || !plantObj.group) continue;
+
+      // Check if we already have a dot group for this plant
+      const exists = plantGroups.some(g => g.plantRef === ref);
+      if (exists) continue;
+
+      const pos = plantObj.group.position;
+      createDotGroup(pos, ref);
+    }
+  }
+
+  /* --- Initial scan for existing plants --- */
+  scanForPlants();
+
+  /* --- State exposed for selftest --- */
+  const state = {
+    type: 'fireflies',
+    reducedMotion: reducedMotion,
+    plantGroups: plantGroups,
+    glowTexture: glowTexture,
+    dotsPerPlantMin: DOTS_MIN,
+    dotsPerPlantMax: DOTS_MAX,
+    driftRadius: DRIFT_RADIUS,
+    peakOpacity: PEAK_OPACITY,
+    fadeLerpSpeed: FADE_LERP_SPEED,
+    /** Total number of active dot sprites across all plants */
+    totalDotCount: function() {
+      return plantGroups.reduce(function(sum, g) { return sum + g.count; }, 0);
+    }
+  };
+
+  /* --- Runtime opacity tracking for smooth fades --- */
+  let currentOpacity = 0;
+
+  /**
+   * Update the firefly system each frame.
+   *
+   * @param {number} time - Absolute animation time (seconds)
+   * @param {number} dt - Delta time since last frame (seconds)
+   */
+  function update(time, dt) {
+    /* Check for newly appeared plants (e.g. plant2 spawned later) */
+    scanForPlants();
+
+    /* Day/night cycle may not be ready on first frames */
+    const dayNight = window.__gardenState && window.__gardenState.dayNight;
+    if (!dayNight || typeof dayNight.getCycleProgress !== 'function') {
+      plantGroups.forEach(function(g) { g.material.opacity = 0; });
+      currentOpacity = 0;
+      return;
+    }
+
+    const t = dayNight.getCycleProgress();
+
+    /* --- Compute target opacity from day/night cycle --- */
+    let targetOpacity = 0;
+
+    if (t >= 0.75) {
+      if (t < 0.95) {
+        // Full Night — target peak opacity
+        targetOpacity = PEAK_OPACITY;
+      } else {
+        // Fading out toward Morning — t ∈ [0.95, 1.0)
+        const fadeT = (1.0 - t) / 0.05; // 1 → 0
+        targetOpacity = Math.max(0, fadeT) * PEAK_OPACITY;
+      }
+    }
+    // t < 0.75: target stays 0 — invisible during Morning, Midday, Evening
+
+    /* --- Smoothly lerp toward target opacity --- */
+    currentOpacity += (targetOpacity - currentOpacity) * FADE_LERP_SPEED;
+    if (Math.abs(currentOpacity - targetOpacity) < 0.0005) {
+      currentOpacity = targetOpacity;
+    }
+
+    /* --- Update each dot group --- */
+    for (let gi = 0; gi < plantGroups.length; gi++) {
+      const group = plantGroups[gi];
+      group.material.opacity = currentOpacity;
+
+      const pos = group.geometry.attributes.position.array;
+      const sizes = group.geometry.attributes.size.array;
+
+      for (let i = 0; i < group.count; i++) {
+        const dd = group.dotData[i];
+        const i3 = i * 3;
+
+        if (!reducedMotion) {
+          /* --- Pulsing: vary dot size with slow, irregular sine --- */
+          const pulse = Math.sin(time * dd.freq * Math.PI * 2 + dd.phaseOffset) * 0.5 + 0.5;
+          // pulse ranges 0–1. Map to size multiplier: 0.5–1.0
+          const sizeMul = 0.5 + pulse * 0.5;
+          sizes[i] = dd.sizeBase * sizeMul;
+
+          /* --- Drifting: slow sine-based movement within DRIFT_RADIUS --- */
+          const driftX = Math.sin(time * DRIFT_FREQ + dd.driftPhase) * DRIFT_RADIUS * 0.6;
+          const driftZ = Math.cos(time * DRIFT_FREQ * 0.9 + dd.driftAngle) * DRIFT_RADIUS * 0.6;
+          const driftY = Math.sin(time * DRIFT_FREQ * 0.7 + dd.driftPhase * 1.3) * DRIFT_RADIUS * 0.3;
+
+          pos[i3] = dd.baseX + driftX;
+          pos[i3 + 1] = dd.baseY + driftY;
+          pos[i3 + 2] = dd.baseZ + driftZ;
+        } else {
+          // Reduced motion: no pulsing/drift, but keep size at base
+          sizes[i] = dd.sizeBase;
+          pos[i3] = dd.baseX;
+          pos[i3 + 1] = dd.baseY;
+          pos[i3 + 2] = dd.baseZ;
+        }
+      }
+
+      group.geometry.attributes.position.needsUpdate = true;
+      group.geometry.attributes.size.needsUpdate = true;
+    }
+  }
+
+  /* --- Handle runtime changes to reduced-motion preference --- */
+  function onMotionPreferenceChange(e) {
+    state.reducedMotion = e.matches;
+    // Update is called every frame and handles the motion state
+  }
+
+  reducedMotionMedia.addEventListener('change', onMotionPreferenceChange);
+
+  /* --- Destroy: clean up and remove from scene --- */
+  function destroy() {
+    reducedMotionMedia.removeEventListener('change', onMotionPreferenceChange);
+    for (let gi = 0; gi < plantGroups.length; gi++) {
+      const group = plantGroups[gi];
+      scene.remove(group.points);
+      group.geometry.dispose();
+      group.material.dispose();
+    }
+    plantGroups.length = 0;
+    glowTexture.dispose();
+  }
+
+  return { update: update, state: state, destroy: destroy };
+}
