@@ -27,6 +27,9 @@ const ORBIT_SPEED = 0.08;         // unhurried (rad/s) — completes cycle in ~7
 const FLAP_SPEED = 0.4;           // <0.5 Hz slow flap
 const FLAP_ANGLE_MAX = 0.6;       // radians, how far wings open/close
 
+/* Weather shelter fade time constant (~5s for near-complete fade) */
+const WEATHER_FADE_TIME_CONSTANT = 2.5; // seconds — ~86% complete after 5s
+
 /* Per-axis phase offsets for organic Lissajous-like looping */
 const PHASE_X = 0.0;
 const PHASE_Z = Math.PI * 0.37;   // offsets so path doesn't repeat quickly
@@ -45,6 +48,9 @@ export function createCreature(scene) {
   /* --- Detect reduced motion --- */
   const reducedMotionMedia = window.matchMedia('(prefers-reduced-motion: reduce)');
   let reducedMotion = reducedMotionMedia.matches;
+
+  /* Track last update time for dt calculation (frame-rate-independent lerp) */
+  let _prevUpdateTime = -1;
 
   /* --- Build the butterfly group --- */
   const group = new THREE.Group();
@@ -89,6 +95,8 @@ export function createCreature(scene) {
   const bodyMat = new THREE.MeshBasicMaterial({
     color: 0x2a2a3a,
     side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 1.0,
     depthWrite: false
   });
   const body = new THREE.Mesh(bodyGeo, bodyMat);
@@ -102,6 +110,9 @@ export function createCreature(scene) {
 
   scene.add(group);
 
+  /* Base wing opacity stored for weather fade */
+  const WING_BASE_OPACITY = 0.45;
+
   /* --- State exposed for selftest --- */
   const state = {
     type: 'creature',
@@ -109,10 +120,12 @@ export function createCreature(scene) {
     wingMat,
     leftWing,
     rightWing,
+    bodyMat,
     group,
     orbitSpeed: ORBIT_SPEED,
     radiusMin: ORBIT_RADIUS_MIN,
-    radiusMax: ORBIT_RADIUS_MAX
+    radiusMax: ORBIT_RADIUS_MAX,
+    weatherOpacity: 1.0
   };
 
   /* Start invisible if reduced motion is active */
@@ -122,6 +135,25 @@ export function createCreature(scene) {
 
   /* --- Update function (called every frame from the animation loop) --- */
   function update(time) {
+    /* --- Frame-rate-independent dt for smooth opacity lerp --- */
+    let dt = 0.016; // default ~60fps
+    if (_prevUpdateTime >= 0) {
+      dt = Math.min(time - _prevUpdateTime, 0.05); // cap to avoid spiral
+    }
+    _prevUpdateTime = time;
+
+    /* --- Weather shelter: fade butterfly when Light Drizzle --- */
+    if (window.__gardenState && window.__gardenState.weather) {
+      const phase = window.__gardenState.weather.getPhase();
+      const target = (phase === 'Light Drizzle') ? 0.0 : 1.0;
+      // Exponential lerp toward target (~5s to near-complete fade)
+      state.weatherOpacity = state.weatherOpacity + (target - state.weatherOpacity) * (1 - Math.exp(-dt / WEATHER_FADE_TIME_CONSTANT));
+    }
+
+    /* Apply weather opacity to materials */
+    wingMat.opacity = WING_BASE_OPACITY * state.weatherOpacity;
+    bodyMat.opacity = state.weatherOpacity;
+
     if (state.reducedMotion) {
       group.visible = false;
       return;

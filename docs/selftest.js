@@ -1968,5 +1968,72 @@ export async function checks() {
     }
   }
 
+  /* ---------- Butterfly weather shelter checks (issue #457) ---------- */
+  // creatureState is already declared above in the drifting creature checks block
+  if (!creatureState) {
+    problems.push('window.__gardenState.creature is not set — the butterfly creature was not created or exposed.');
+  } else {
+    if (typeof creatureState.weatherOpacity !== 'number') {
+      problems.push('creature.state.weatherOpacity is not a number — weather shelter opacity lerp not exposed.');
+    } else {
+      if (creatureState.weatherOpacity < 0 || creatureState.weatherOpacity > 1) {
+        problems.push('creature.state.weatherOpacity is ' + creatureState.weatherOpacity + ', expected in [0, 1].');
+      }
+
+      // Check opacity tracks weather phase: after sufficient time in a phase,
+      // weatherOpacity should reflect the target state.
+      const weatherPhase = document.getElementById('weather-display').textContent.trim();
+      if (weatherPhase === 'Light Drizzle') {
+        // During rain, butterfly should be sheltering (faded out)
+        if (creatureState.weatherOpacity > 0.1) {
+          problems.push('During Light Drizzle weather, creature.weatherOpacity is ' + creatureState.weatherOpacity.toFixed(3) + ', expected <= 0.1 (butterfly should be sheltering/faded out).');
+        }
+      } else if (weatherPhase === 'Clear' || weatherPhase === 'Overcast') {
+        // During clear/overcast, butterfly should be visible
+        if (creatureState.weatherOpacity < 0.9) {
+          problems.push('During ' + weatherPhase + ' weather, creature.weatherOpacity is ' + creatureState.weatherOpacity.toFixed(3) + ', expected >= 0.9 (butterfly should be visible).');
+        }
+      }
+    }
+
+    // Verify wing material opacity reflects the weather fade
+    if (creatureState.wingMat) {
+      const expectedWingOpacity = 0.45 * creatureState.weatherOpacity;
+      const actualWingOpacity = creatureState.wingMat.opacity;
+      if (Math.abs(actualWingOpacity - expectedWingOpacity) > 0.001) {
+        problems.push('creature wingMat.opacity is ' + actualWingOpacity.toFixed(4) + ', expected ' + expectedWingOpacity.toFixed(4) + ' (= 0.45 * weatherOpacity).');
+      }
+    }
+
+    // Verify body material opacity tracks weather fade
+    if (creatureState.bodyMat) {
+      const actualBodyOpacity = creatureState.bodyMat.opacity;
+      if (Math.abs(actualBodyOpacity - creatureState.weatherOpacity) > 0.001) {
+        problems.push('creature bodyMat.opacity is ' + actualBodyOpacity.toFixed(4) + ', expected ' + creatureState.weatherOpacity.toFixed(4) + ' (= weatherOpacity).');
+      }
+    }
+
+    // Verify the wing material is still transparent
+    if (creatureState.wingMat && creatureState.wingMat.transparent !== true) {
+      problems.push('creature wingMat.transparent is ' + creatureState.wingMat.transparent + ', expected true — opacity fade requires transparency.');
+    }
+
+    // Verify the body material is now transparent (for opacity fade)
+    if (creatureState.bodyMat && creatureState.bodyMat.transparent !== true) {
+      problems.push('creature bodyMat.transparent is ' + creatureState.bodyMat.transparent + ', expected true — opacity fade requires transparency.');
+    }
+  }
+
+  /* ---------- prefers-reduced-motion preserves creature invisibility during rain (issue #457) ---------- */
+  // This is a design-level check: if reduced motion is active, the creature
+  // should be invisible via group.visible regardless of weather.
+  const reducedMotionMedia = window.matchMedia('(prefers-reduced-motion: reduce)');
+  if (reducedMotionMedia.matches && creatureState) {
+    // If reduced motion is active, the group should be invisible
+    if (creatureState.group && creatureState.group.visible !== false) {
+      problems.push('With prefers-reduced-motion active, the creature group should be invisible (visible= ' + creatureState.group.visible + ').');
+    }
+  }
+
   return problems;
 }
