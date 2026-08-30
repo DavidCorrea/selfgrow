@@ -298,6 +298,8 @@
     controls.dampingFactor = 0.08;
     controls.minPolarAngle = 0.1;          // never fully top-down
     controls.maxPolarAngle = Math.PI / 2.3; // never below the ground plane
+    controls.minDistance = 1.5;            // prevent zooming too close — keep plants in context
+    controls.maxDistance = 12;             // prevent zooming too far — horizon and scrub remain visible
     controls.target.set(0, 0.4, 0);        // aim at the seedling's height
     controls.rotateSpeed = 0.5;            // unhurried, botanical pace
     controls.update();
