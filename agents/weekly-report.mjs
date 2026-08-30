@@ -19,7 +19,7 @@
 // meant to run without one.
 import { execSync } from "child_process";
 import { log, withLogGroup, errorData, recordTicket } from "./log.mjs";
-import { readChangelog, writeStory } from "./wiki.mjs";
+import { readChangelog, readPage, writeStory } from "./wiki.mjs";
 import {
   repoRoot,
   loadPrompt,
@@ -145,6 +145,11 @@ export async function publishWeeklyReport({ closed, open, ledger, milestone }) {
       runAgent({
         label: "Weekly report",
         systemPrompt: fillTemplate(loadPrompt("weekly-report"), {
+          // The Story carries the arc; the changelog only has to carry what is
+          // recent. That split is what lets the changelog be trimmed at all —
+          // regenerating the whole history from a trimmed record would quietly
+          // amputate the project's early chapters every time the window moved.
+          STORY_SO_FAR: readPage("Story.md").trim() || "(nothing written yet — this is the first)",
           CHANGELOG: readChangelog(),
           SHIPPED: week.shipped.length
             ? week.shipped.map((i) => `- ${i.title} (#${i.number})`).join("\n")

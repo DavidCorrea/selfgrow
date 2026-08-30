@@ -37,3 +37,7 @@ jobs:
           # Who the alert @-mentions. Empty means the issue is still filed, just
           # without a ping.
           GH_NOTIFY_USER: ${{ github.repository_owner }}
+          # The deployed page. Everything else in the pipeline verifies a local
+          # copy before a merge; this is the only check that asks whether anyone
+          # can actually see the result.
+          SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/

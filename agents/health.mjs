@@ -51,6 +51,18 @@ const ABANDON_RATE_LIMIT = 0.4;
 // is sized past its allowance and something is being starved.
 const LEDGER_HOT_FRACTION = 0.95;
 
+// Where the product actually lives, as far as anyone visiting it is concerned.
+// Everything else in this pipeline verifies a local static server before a merge;
+// nothing has ever opened the deployed page. A Pages build that fails, serves
+// stale content, or 404s is invisible to every other check here — the whole
+// system would report a healthy pipeline shipping into a broken site.
+const SITE_URL = process.env.SITE_URL || "";
+
+// A marker the served HTML must contain. Deliberately something the product
+// cannot lose by accident without being broken anyway: it is the element the
+// state layer lives in, which the product contract requires.
+const SITE_MARKER = process.env.SITE_MARKER || "state-panel";
+
 const gh = (args) =>
   execSync(`gh ${args}`, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }).toString();
 
@@ -63,7 +75,7 @@ const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice
  * the API calls are not, and a check that quietly costs a request is a check
  * nobody will want to add.
  */
-function gatherFacts() {
+async function gatherFacts() {
   const closedRecently = JSON.parse(
     gh(`issue list --state closed --limit 200 --json number,title,closedAt,labels`)
   );
@@ -77,7 +89,27 @@ function gatherFacts() {
     runs,
     ledger: parseLedger(readPage("Budget.md")),
     changelog: readPage("Changelog.md"),
+    site: await fetchSite(),
   };
+}
+
+/**
+ * Fetch the deployed page. Never throws — an unreachable site is a finding, not
+ * a crash, and the rest of the health report still has to run.
+ */
+async function fetchSite() {
+  if (!SITE_URL) return null;
+  try {
+    const response = await fetch(SITE_URL, { redirect: "follow" });
+    const body = response.ok ? await response.text() : "";
+    return {
+      url: SITE_URL,
+      status: response.status,
+      hasMarker: body.includes(SITE_MARKER),
+    };
+  } catch (e) {
+    return { url: SITE_URL, error: String(e?.message || e) };
+  }
 }
 
 // --- The checks. Each returns a finding string, or null when all is well. ------
@@ -160,7 +192,29 @@ export function checkWeeklyAgents({ runs }) {
   return problems.length ? `Weekly agents failing: ${problems.join("; ")}.` : null;
 }
 
+/**
+ * Is the thing we built actually up?
+ *
+ * The one check here that leaves the repository. It asks the least it can — does
+ * the page load, and does it still contain the state layer — because anything
+ * cleverer belongs to the Playtester, which opens the same URL in a real browser
+ * once a week. This only has to catch "nobody can see it".
+ */
+export async function checkDeployedSite({ site }) {
+  if (!site) return null; // no URL configured — nothing to say
+  if (site.error) return `The live site at ${site.url} could not be reached: ${site.error}.`;
+  if (site.status !== 200) return `The live site at ${site.url} returned HTTP ${site.status}.`;
+  if (!site.hasMarker) {
+    return (
+      `The live site at ${site.url} loads, but its HTML no longer contains "${SITE_MARKER}" — ` +
+      `the page being served is not the product this repository builds. A stale or failed Pages deploy looks exactly like this.`
+    );
+  }
+  return null;
+}
+
 const CHECKS = [
+  checkDeployedSite,
   checkShipping,
   checkChangelogKeepingUp,
   checkAbandonRate,
@@ -172,13 +226,14 @@ const CHECKS = [
  * The numbers, whether or not anything is wrong. Always logged and written to the
  * job summary; never filed as an issue on its own.
  */
-export function renderVitals({ open, closedRecently, ledger }) {
+export function renderVitals({ open, closedRecently, ledger, site }) {
   const openNumbers = new Set(open.map((i) => i.number));
   const shipped7 = closedRecently.filter((i) => (i.closedAt || "") >= daysAgo(7)).length;
   const spend7 = [...ledger.entries()]
     .filter(([day]) => day >= daysAgo(7))
     .reduce((total, [, spent]) => total + spent, 0);
   return [
+    site ? `Site: ${site.error ? "unreachable" : `HTTP ${site.status}`}` : "Site: not checked",
     `Shipped (7d): ${shipped7}`,
     `Open: ${open.length} (${open.filter((i) => isBuildable(i, openNumbers)).length} buildable, ${open.filter(isBlocked).length} parked)`,
     `Spend (7d): ${spend7}/${DAILY_REQUEST_CAP * 7} requests`,
@@ -218,7 +273,7 @@ async function main() {
 
   let facts;
   try {
-    facts = await withLogGroup("Gathering", async () => gatherFacts());
+    facts = await withLogGroup("Gathering", () => gatherFacts());
   } catch (e) {
     log("error", "Health: could not read the pipeline's own records.", errorData(e));
     printRunSummary("Health");
@@ -228,16 +283,20 @@ async function main() {
   const vitals = renderVitals(facts);
   log("info", vitals);
 
-  const findings = CHECKS.map((check) => {
-    try {
-      return check(facts);
-    } catch (e) {
-      // A broken check must not take the others down with it — the whole point
-      // is to still be reporting when something else is wrong.
-      log("warn", `Health: the ${check.name} check threw.`, errorData(e));
-      return null;
-    }
-  }).filter(Boolean);
+  const findings = (
+    await Promise.all(
+      CHECKS.map(async (check) => {
+        try {
+          return await check(facts);
+        } catch (e) {
+          // A broken check must not take the others down with it — the whole
+          // point is to still be reporting when something else is wrong.
+          log("warn", `Health: the ${check.name} check threw.`, errorData(e));
+          return null;
+        }
+      })
+    )
+  ).filter(Boolean);
 
   appendJobSummary(`## Health\n\n${vitals}\n\n${findings.length ? findings.map((f) => `- ${f}`).join("\n") : "No problems found."}`);
 

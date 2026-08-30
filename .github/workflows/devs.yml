@@ -3,9 +3,9 @@ name: devs
 on:
   schedule:
     # The MOP-UP run, and the only scheduled one. It exists because the morning
-    # chain systematically left requests unspent: the day's other agents draw at
-    # most 100 (PM) + 150 (one weekly agent), so a Builder that stops at its
-    # morning share retires the day with 150-300 requests that simply expire at
+    # chain systematically leaves requests unspent: the morning share is
+    # deliberately conservative (see BUILDER_DAY_BUDGET), so a run that stops
+    # there retires the day with hundreds of requests that simply expire at
     # 00:00 UTC. Requests do not roll over; an unspent one is a ticket not built.
     #
     # 14:00 is after every other agent has run (PM 00:30, PO/Playtester/Tech Lead
@@ -76,21 +76,35 @@ jobs:
           # 5-hour time budget, and plan-build.mjs shortens the queue itself when
           # the day's remainder cannot carry it.
           MAX_TICKETS_PER_RUN: '6'
-          # The Builder's whole share of the day. The account's cap is 1000/day and
-          # is enforced for real by the shared ledger in shared.mjs; this is the
-          # Builder's part of it.
+          # The Devs' share of the day. The account's cap is 1000/day and is
+          # enforced for real by the shared ledger in shared.mjs; this is their
+          # part of it.
           #
-          # Two figures, because the two runs face different remainders. The
-          # morning run (dispatched by the PM, ~00:35) must still leave room for
-          # agents that have not run yet: 1000 - 100 (PM) - 150 (at most one weekly
-          # agent) = 750, taken as 700 so a mis-flushed ledger has slack.
+          # Two figures, because the two runs face different remainders.
           #
-          # The 14:00 mop-up runs LAST, so nothing is owed to anyone: it asks for
+          # The MORNING run (dispatched by the PM, ~00:35) must leave room for
+          # everything that has not run yet, and that list has grown:
+          #
+          #     1000  the day's cap
+          #    - 150  the Product Manager, already spent by the time this starts
+          #    - 150  the day's weekly agent, at most one (PO Mon, pi-update Tue,
+          #           Playtester Wed, Tech Lead Thu) — sized for the largest
+          #    - 180  pull requests, which arrive on no schedule: review-pr (120)
+          #           for a branch here, triage-fork-pr (60) for one from a fork
+          #    -----
+          #      520  taken as 500, so a mis-flushed ledger has slack
+          #
+          # It was 700 when the claimants were the PM at 100 and one weekly agent.
+          # The ledger would have caught the difference — plan-build reads the real
+          # remainder and shortens the queue — but it would have caught it by
+          # starving whichever agent ran last, which is the wrong way to find out.
+          #
+          # The 14:00 MOP-UP runs LAST, so nothing is owed to anyone: it asks for
           # more than the day can hold on purpose and lets the ledger decide. What
-          # it actually gets is the true remainder — 200 on a quiet day, nothing at
-          # all on a day the morning already spent, in which case plan-build.mjs
-          # queues zero jobs and no runner starts.
-          BUILDER_DAY_BUDGET: ${{ github.event.schedule && '900' || '700' }}
+          # it actually gets is the true remainder — several hundred on a quiet
+          # day, nothing at all on a day the morning already spent, in which case
+          # plan-build.mjs queues zero jobs and no runner starts.
+          BUILDER_DAY_BUDGET: ${{ github.event.schedule && '900' || '500' }}
 
   # ONE job builds the whole queue, one ticket after another.
   #

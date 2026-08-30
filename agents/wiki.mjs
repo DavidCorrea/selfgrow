@@ -199,6 +199,42 @@ export function readLessons() {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+// How much of each page survives.
+//
+// Both of these are read WHOLE into prompts — the Scout gets every lesson before
+// planning each of the ~7 tickets a day, and the weekly report gets the whole
+// changelog. Neither was ever trimmed, so both grew without bound into a fixed
+// context, degrading silently exactly the way an untrimmed source dump does.
+//
+// The ledger has always solved this for its own page (LEDGER_DAYS_KEPT). These
+// are the same problem and get the same answer: keep what is still useful, drop
+// what has aged out of relevance.
+//
+// Lessons is counted in ENTRIES rather than days, because its value is "the
+// dead ends worth knowing about", not "the last month". Twenty is roughly a
+// month of a bad week and several months of a good one.
+const LESSONS_KEPT = Number(process.env.LESSONS_KEPT || 20);
+
+// The changelog is a dated record, so days are the natural unit. The long arc it
+// used to be the only source for now lives in Story.md, which the weekly report
+// evolves rather than regenerating from raw history.
+const CHANGELOG_DAYS_KEPT = Number(process.env.CHANGELOG_DAYS_KEPT || 45);
+
+/**
+ * Drop all but the newest `keep` dated sections of a page.
+ *
+ * Sections are `## ...` headings; everything above the first one is the page's
+ * title and intro and is always preserved. Exported for tests.
+ */
+export function trimSections(content, keep) {
+  const first = content.indexOf("\n## ");
+  if (first === -1) return content;
+  const head = content.slice(0, first + 1);
+  const sections = content.slice(first + 1).split(/(?=^## )/m).filter((s) => s.trim());
+  if (sections.length <= keep) return content;
+  return head + sections.slice(0, keep).join("");
+}
+
 /** Add one entry under today's date, newest day first. Exported for tests. */
 export function withChangelogEntry(content, entry, date = today()) {
   const header = `## ${date}`;
@@ -207,11 +243,16 @@ export function withChangelogEntry(content, entry, date = today()) {
   // Already recorded — a retry that lost its race and came back, or two agents
   // reporting the same merge. Writing it twice is worse than not writing it.
   if (content.includes(bullet)) return content;
-  if (content.includes(header)) return content.replace(header, `${header}\n${bullet}`);
-  const title = content.match(/^# .*$/m);
-  return title
-    ? content.replace(title[0], `${title[0]}\n\n${header}\n\n${bullet}`)
-    : `# Changelog\n\n${header}\n\n${bullet}\n\n${content}`;
+  const withEntry = content.includes(header)
+    ? content.replace(header, `${header}\n${bullet}`)
+    : (() => {
+        const title = content.match(/^# .*$/m);
+        return title
+          ? content.replace(title[0], `${title[0]}\n\n${header}\n\n${bullet}`)
+          : `# Changelog\n\n${header}\n\n${bullet}\n\n${content}`;
+      })();
+  // One section per day, so the kept window is a number of days.
+  return trimSections(withEntry, CHANGELOG_DAYS_KEPT);
 }
 
 /** Record what shipped. Returns whether it reached the remote. */
@@ -232,9 +273,10 @@ export function withLesson(content, entry, date = today()) {
   // Newest first, so a Scout reading top-down meets the most recent dead ends
   // first: insert above the newest existing entry, or append when there is none.
   const firstEntry = content.indexOf("\n## ");
-  return firstEntry === -1
+  const withLesson = firstEntry === -1
     ? `${content.trimEnd()}\n\n${block}`
     : `${content.slice(0, firstEntry + 1)}${block}\n${content.slice(firstEntry + 1)}`;
+  return trimSections(withLesson, LESSONS_KEPT);
 }
 
 /** Record why something was abandoned. Returns whether it reached the remote. */
