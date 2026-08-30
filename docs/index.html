@@ -195,7 +195,7 @@
     import { loadGardenState, saveGardenState, fastForwardState, clearGardenState } from "./persistence.js";
     import { createRain } from "./rain.js";
     import { createStars } from "./stars.js";
-    import { createGroundRipple } from "./groundRipple.js";
+    import { createGroundRipple, computeDisplacement } from "./groundRipple.js";
     import { createCreature } from "./creature.js";
     import { createAmbientAudio } from "./ambientAudio.js";
     import { createFireflies } from "./fireflies.js";
@@ -361,6 +361,12 @@
 
       /* Update ground ripple animation */
       groundRipple.update(animTime);
+
+      /* Update fallen leaves to respond to ground ripple */
+      const fallenLeaves = window.__gardenState && window.__gardenState.fallenLeaves;
+      if (fallenLeaves && typeof fallenLeaves.update === 'function') {
+        fallenLeaves.update(animTime, computeDisplacement);
+      }
 
       /* Update creature position */
       creature.update(animTime);

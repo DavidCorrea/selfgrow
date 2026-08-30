@@ -10,9 +10,47 @@
  * Respects prefers-reduced-motion: when active, no displacement is applied
  * and vertices stay at their original heights.
  *
- * Exports: createGroundRipple(groundMesh)
- *   Returns { update, destroy, state }
+ * Exports: createGroundRipple(groundMesh), computeDisplacement(x, z, time)
+ *   createGroundRipple returns { update, destroy, state }
+ *   computeDisplacement is a pure function usable by other modules
  */
+
+/* --- Wave configuration (shared between ground ripple and fallen leaves) ---
+ *
+ * Since the mesh is rotated -PI/2 around X, the CircleGeometry's local
+ * XY plane becomes world XZ, and local Z becomes world Y (up). We displace
+ * the local Z coordinate (index 2 in the buffer) to create a world-space
+ * vertical ripple.
+ *
+ * Each wave: { angle (radians from X axis), speed (rad/s), frequency
+ *   (rad/unit), amplitude (units), phase offset (rad) }
+ */
+const waves = [
+  { angle: 0.0,       speed: 0.20, freq: 0.8,  amp: 0.003, phase: 0.0 },
+  { angle: 1.2,       speed: 0.35, freq: 1.2,  amp: 0.002, phase: 2.1 },
+  { angle: 2.8,       speed: 0.15, freq: 0.6,  amp: 0.002, phase: 4.3 },
+  { angle: 4.0,       speed: 0.25, freq: 1.0,  amp: 0.001, phase: 0.9 },
+];
+
+/**
+ * Compute the wave displacement at a given (x, z) position at a given time.
+ * Uses the same multi-frequency sine wave parameters as the ground ripple
+ * animation, so fallen leaves move in sync with the ground.
+ *
+ * @param {number} x — world X coordinate
+ * @param {number} z — world Z coordinate
+ * @param {number} time — current animation time in seconds
+ * @returns {number} — displacement value (same units as ground vertex displacement)
+ */
+export function computeDisplacement(x, z, time) {
+  let displacement = 0;
+  for (let w = 0; w < waves.length; w++) {
+    const wave = waves[w];
+    const dist = x * Math.cos(wave.angle) + z * Math.sin(wave.angle);
+    displacement += wave.amp * Math.sin(dist * wave.freq + time * wave.speed + wave.phase);
+  }
+  return displacement;
+}
 
 /**
  * Create a ground ripple controller for the given ground mesh.
@@ -35,23 +73,6 @@ export function createGroundRipple(groundMesh) {
   for (let i = 0; i < vertexCount * 3; i++) {
     origPos[i] = posAttr.array[i];
   }
-
-  /* --- Wave configuration (3 overlapping waves at different angles/speeds) ---
-   *
-   * Since the mesh is rotated -PI/2 around X, the CircleGeometry's local
-   * XY plane becomes world XZ, and local Z becomes world Y (up). We displace
-   * the local Z coordinate (index 2 in the buffer) to create a world-space
-   * vertical ripple.
-   *
-   * Each wave: { angle (radians from X axis), speed (rad/s), frequency
-   *   (rad/unit), amplitude (units), phase offset (rad) }
-   */
-  const waves = [
-    { angle: 0.0,       speed: 0.20, freq: 0.8,  amp: 0.003, phase: 0.0 },
-    { angle: 1.2,       speed: 0.35, freq: 1.2,  amp: 0.002, phase: 2.1 },
-    { angle: 2.8,       speed: 0.15, freq: 0.6,  amp: 0.002, phase: 4.3 },
-    { angle: 4.0,       speed: 0.25, freq: 1.0,  amp: 0.001, phase: 0.9 },
-  ];
 
   /* --- State exposed for selftest --- */
   const state = {
