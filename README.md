@@ -233,6 +233,17 @@ are the author, so the bot approves instead.
 
 Avoid naming a branch `agent/*`: the reset sweeps that prefix.
 
+**A PR from a fork is different, and deliberately gets less.** That path checks
+out the PR's head and runs an agent with write access and the account's API key
+over it — doing that to a branch a stranger controls hands them the key. So an
+outside contribution is reviewed but never run: the diff is fetched through the
+API as text, judged against the project's own code, and answered with a comment.
+Nothing merges, approves, pushes or closes it. A maintainer decides.
+
+It is worth knowing what that review usually finds. Agents work the same tickets
+outside contributors do, so the most common outcome is that the work already
+shipped — often solved the same way.
+
 ## Being told what happened
 
 The pipeline decides everything itself, and reports on two channels that never
