@@ -1,0 +1,65 @@
+name: triage-fork-pr
+
+# An answer for a pull request from outside the project.
+#
+# ─── READ THIS BEFORE CHANGING ANYTHING HERE ───────────────────────────────────
+#
+# `pull_request_target` runs with the base repository's secrets, and that is the
+# whole reason it is dangerous: it is the standard way repositories get their
+# tokens stolen. It is safe here, and stays safe, only under these rules:
+#
+#   1. NEVER check out the pull request's head. The checkout below deliberately
+#      takes no `ref`, which gives the BASE — this project's own trusted code.
+#   2. NEVER run anything the contributor wrote. No build, no tests, no
+#      verifyBuild, no npm script from their tree. `npm ci` below installs from
+#      the BASE's lockfile, which is ours.
+#   3. The diff is fetched through the API as TEXT and passed to a model as
+#      evidence. It is never applied, executed, or written to disk as code.
+#
+# If a future change wants to verify a fork's code, it cannot happen in this job.
+# It needs a separate one with no secrets at all.
+# ───────────────────────────────────────────────────────────────────────────────
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  # Per PR, so a contributor pushing three times in a minute gets one review of
+  # where they ended up rather than three of where they passed through.
+  group: fork-triage-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  triage:
+    # Forks only. A branch in this repository is handled by review-pr.yml, which
+    # can safely do the whole job because it owns the code it is checking out.
+    if: github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # NO `ref:` — this is the base, on purpose. See rule 1 above.
+      - uses: actions/checkout@v7
+
+      # No Chromium: nothing here opens a browser, because nothing here runs the
+      # contributor's code.
+      - uses: ./.github/actions/setup
+
+      - name: Review the contribution
+        run: node agents/triage-fork-pr.mjs
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # One session over a diff that is already written. No planning, no
+          # building, no iteration.
+          MODEL_REQUEST_BUDGET: '60'
+          # The bot, not the PAT. This only reads a diff and posts a comment, and
+          # it should hold nothing it does not need — least privilege matters more
+          # than usual in a job that a stranger can trigger.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
