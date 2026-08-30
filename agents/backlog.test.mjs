@@ -16,6 +16,7 @@ import {
   dependencyLine,
   slugify,
   createBranchName,
+  preferDifferentModel,
 } from "./shared.mjs";
 
 const issue = (number, { body = "", labels = [], title = `Ticket ${number}` } = {}) =>
@@ -197,5 +198,31 @@ test("naming a branch for a ticket", async (t) => {
 
   await t.test("stays valid when the title slugifies to nothing", () => {
     assert.match(createBranchName(42, "!!!", "x"), /^agent\/issue-42-fix/);
+  });
+});
+
+test("choosing a model for the second opinion", async (t) => {
+  const chain = ["a", "b", "c"];
+
+  await t.test("puts the model that wrote the code last", () => {
+    assert.deepEqual(preferDifferentModel(chain, "a"), ["b", "c", "a"]);
+  });
+
+  await t.test("leaves the order alone when the writer is already last", () => {
+    assert.deepEqual(preferDifferentModel(chain, "c"), ["a", "b", "c"]);
+  });
+
+  await t.test("keeps every model available, so a review always happens", () => {
+    // A correlated reviewer beats no reviewer; the alternative is shipping
+    // unreviewed on a day when everything else in the chain is failing.
+    assert.deepEqual(preferDifferentModel(["a"], "a"), ["a"]);
+  });
+
+  await t.test("is unchanged when there is nothing to avoid", () => {
+    assert.deepEqual(preferDifferentModel(chain, null), chain);
+  });
+
+  await t.test("ignores a model that is not in the chain", () => {
+    assert.deepEqual(preferDifferentModel(chain, "zzz"), chain);
   });
 });

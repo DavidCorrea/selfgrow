@@ -229,6 +229,15 @@ export const MAX_SESSION_MINUTES = Number(process.env.MAX_SESSION_MINUTES || 12)
 
 let modelRequestCount = 0;
 
+// The model that produced this run's last usable answer. Read by callers that
+// want the NEXT agent to be a different one — see preferDifferentModel.
+let lastModelUsed = null;
+
+/** The model behind the most recent usable answer, or null. */
+export function getLastModelUsed() {
+  return lastModelUsed;
+}
+
 // Agent TURNS, which is what OpenRouter actually charges: one completion request
 // per turn of the agentic loop, so a session that makes 20 tool calls costs ~20
 // requests while modelRequestCount above records 1.
@@ -540,6 +549,25 @@ async function getAllModels() {
  *      knows (excluding meta-routers) so agents keep running.
  * Returns an ordered list of model ids (possibly empty).
  */
+/**
+ * The chain, reordered so `avoid` is tried LAST.
+ *
+ * Review is only worth its request if it can disagree, and a Reviewer drawn from
+ * the same model that just wrote the code is largely re-rolling one opinion — the
+ * build/review loop then buys three correlated passes. Rotating the chain costs
+ * nothing and makes the second read independent whenever the chain has more than
+ * one working entry.
+ *
+ * It never REMOVES the avoided model: a chain of one, or a day when everything
+ * above it is failing, still has to produce a review. A correlated reviewer beats
+ * no reviewer, and the alternative is shipping unreviewed.
+ */
+export function preferDifferentModel(chain, avoid) {
+  if (!avoid) return chain;
+  const others = chain.filter((id) => id !== avoid);
+  return others.length ? [...others, ...chain.filter((id) => id === avoid)] : chain;
+}
+
 async function resolveTextModels() {
   const all = await getAllModels();
   if (!all) {
@@ -586,13 +614,13 @@ async function resolveTextModels() {
  * @param {string} [opts.modelId]        - Pin a single model; omit to use the chain.
  */
 export async function runAgent(opts) {
-  const { modelId, label = "Agent", expectJson = true } = opts;
+  const { modelId, label = "Agent", expectJson = true, avoidModel = null } = opts;
 
   // Explicit model: run exactly that one (caller owns any fallback, e.g. vision).
   if (modelId) return runAgentOnce(opts);
 
   // No explicit model: try each model in the chain until one returns content.
-  const chain = await resolveTextModels();
+  const chain = preferDifferentModel(await resolveTextModels(), avoidModel);
   if (!chain.length) {
     throw new Error(
       "No usable text model in pi's registry. " +
@@ -609,7 +637,13 @@ export async function runAgent(opts) {
         // leaked tool-call tag or a paragraph of prose where the envelope should
         // be — which used to end the run on the first model, because the chain
         // only fell through on errors and empty strings. Unusable is a failure.
-        if (!expectJson || containsParseableJSON(out)) return out;
+        if (!expectJson || containsParseableJSON(out)) {
+          // Only a model whose answer is actually USED counts as the one to avoid
+          // next; one that answered unusably and fell through did not write
+          // anything the next agent could be biased by.
+          lastModelUsed = id;
+          return out;
+        }
         log("warn", `${label}: ${id} answered without usable JSON — trying next model.`, {
           raw: out.length > 120 ? out.slice(0, 120) + "…" : out,
         });

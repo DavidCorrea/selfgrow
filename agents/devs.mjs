@@ -40,6 +40,7 @@ import {
   verifyBuild,
   runAgent,
   isRequestBudgetSpent,
+  getLastModelUsed,
   initDailyLedger,
   MODEL_REQUEST_BUDGET,
 } from "./shared.mjs";
@@ -384,6 +385,7 @@ async function buildTicket(openIssues, vision) {
           continue;
         }
         builderEverSucceeded = true;
+        const builderModel = getLastModelUsed();
         if (builderResult.data.commitMessage) commitMessage = builderResult.data.commitMessage;
         if (builderResult.data.changelogEntry) builderChangelogEntry = builderResult.data.changelogEntry;
         if (builderResult.data.techDebt) builderTechDebt = builderResult.data.techDebt;
@@ -438,11 +440,17 @@ async function buildTicket(openIssues, vision) {
           addressedIssueObj ? `This change should fix issue #${addressedIssueObj.number}: "${addressedIssueObj.title}".` : null,
           `This is PR #${prNumber} on branch ${branchName}.`,
         ].filter(Boolean).join("\n");
+        // Review the work with a DIFFERENT model than wrote it, where the chain
+        // allows. Builder and Reviewer used to come off the same chain, usually
+        // landing on the same model, so the three review cycles below bought three
+        // re-rolls of one opinion. Falls back to the same model rather than
+        // skipping the review.
         const reviewerOutput = await withLogGroup(`Reviewer (attempt ${buildAttempt})`, () =>
           runAgent({
             label: "Reviewer",
             systemPrompt: buildReviewerPrompt(reviewContext),
             tools: ["read", "bash"],
+            avoidModel: builderModel,
           })
         );
         const reviewerResult = extractAgentResponse("Reviewer", reviewerOutput, {
