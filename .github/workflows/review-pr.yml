@@ -1,0 +1,79 @@
+name: review-pr
+
+# The Devs, applied to a pull request a person opened.
+#
+# Opening a PR is a contribution, not a request for permission: the team verifies
+# it, reviews it, pushes fixes if it needs them, and merges it. The same gates as
+# any agent-built change, in the same order.
+#
+# It never closes a PR and never merges one that has not passed verify.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+# Merging to main takes the same lock as every other writer, so this cannot race
+# a Devs run mid-merge.
+concurrency:
+  group: agent-main-writer
+  cancel-in-progress: false
+
+jobs:
+  review:
+    # Two guards, both necessary.
+    #
+    # The bot's own PRs are already reviewed inside the Devs run that opened them;
+    # picking them up here would review the same change twice with two different
+    # budgets.
+    #
+    # And FORKS are excluded. A pull_request run from a fork gets no secrets, so
+    # the model call would fail anyway — but the important half is that this job
+    # checks out the PR's head and runs an agent with write access over it, which
+    # must never happen for a branch an outsider controls.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    # Up to two verify → review → fix cycles, each bounded by MAX_SESSION_MINUTES.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The PR's own branch, with history — the Reviewer reads
+          # `git diff main...HEAD` and a fix is pushed back here.
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+          token: ${{ secrets.AGENT_PAT }}
+
+      - uses: ./.github/actions/setup
+        with:
+          # verifyBuild loads the real page in a real browser.
+          playwright: 'true'
+
+      - name: Review the pull request
+        run: node agents/review-pr.mjs
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # One review, and at most two fixes. Smaller than a ticket's allowance
+          # because the change is already written — there is no planning here, and
+          # no building from nothing.
+          MODEL_REQUEST_BUDGET: '120'
+          # The bot is BOTH tokens here, on purpose. shared.mjs approves and merges
+          # with GH_TOKEN, and on these PRs the PAT is the author — GitHub does not
+          # let an author approve their own PR. So GH_TOKEN is deliberately the bot,
+          # which is the mirror image of the pipeline's own PRs, where the bot
+          # opens and the PAT approves.
+          #
+          # The checkout above still uses the PAT, because that is what pushes a
+          # fix back to the contributor's branch.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BOT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}

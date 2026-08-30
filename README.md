@@ -214,11 +214,24 @@ there is nothing to forget.
 What it does *not* get: a milestone. Only tickets the PM originates are assigned
 to one, so yours sits outside the current horizon.
 
-A PR you open by hand is almost entirely ignored: nothing reads pull requests it
-did not open, and nothing will approve or merge one for you. CI runs if it
-touches `agents/`. Note that a manual PR touching `docs/` reaches production
-without `verifyBuild` — the pipeline holds itself to a standard it cannot hold
-you to. Avoid naming a branch `agent/*`: the reset sweeps that prefix.
+A PR you open by hand is picked up by the Devs and taken the rest of the way:
+verified, reviewed, fixed if it needs it, and merged. Opening it is the
+contribution — you are not also the maintainer of it. It goes through exactly the
+gates the pipeline's own work does, in the same order, and gets no easier a path
+and no harder one.
+
+Two things that path will not do. **It never closes your PR** — every other
+failure route here can abandon work, because that work is the pipeline's own;
+yours is not, and closing it would delete the branch. When it cannot get a PR to
+green it says what is outstanding and stops, leaving the change where you left
+it. And **it never merges anything that has not passed verify**, with no override
+for a reviewer that liked it.
+
+The identities flip on your PRs. On the pipeline's own, the bot opens and the PAT
+approves, because GitHub will not let an author approve their own PR. Here you
+are the author, so the bot approves instead.
+
+Avoid naming a branch `agent/*`: the reset sweeps that prefix.
 
 ## Being told what happened
 
