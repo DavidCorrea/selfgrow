@@ -42,7 +42,6 @@ import {
   mergePR,
   closePR,
   appendChangelogEntry,
-  publishWiki,
   verifyBuild,
   runAgent,
   isRequestBudgetSpent,
@@ -198,7 +197,6 @@ async function writePostMortem(issue, reason) {
       title: `#${issue.number} ${issue.title || ""}`.trim(),
       body: `${lesson}\n\n_Parked after ${MAX_TICKET_ATTEMPTS} attempts._`,
     });
-    publishWiki(`Record why #${issue.number} was abandoned`);
   } catch (e) {
     log("warn", `Post-mortem: could not record a lesson for #${issue.number}.`, errorData(e));
   }
@@ -723,12 +721,12 @@ async function buildTicket(openIssues, vision) {
       }
       try { gitExec("checkout main"); } catch {}
 
-      // 9. Record the change in the canonical changelog (wiki). Best-effort — the
-      //    code has already merged, so a wiki hiccup can't undo the feature.
+      // 9. Record the change in the canonical changelog (wiki). The code has
+      //    already merged, so a failure here cannot undo the feature — but it is
+      //    reported as an error, not swallowed: an unrecorded merge is a merge
+      //    the Scribe and the digest will never mention.
       const entry = builderChangelogEntry || `${commitMessage}${addressedIssue ? ` (closes #${addressedIssue})` : ""}`;
-      if (appendChangelogEntry(entry)) {
-        publishWiki(`Changelog: ${commitMessage}`);
-      }
+      appendChangelogEntry(entry, `Changelog: ${commitMessage}`);
 
       // 10. File any tech debt the Builder flagged → a new ticket the PM prioritizes
       //     (one per run, deduped against current open tickets, left unprioritized).

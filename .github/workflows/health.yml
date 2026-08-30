@@ -1,0 +1,39 @@
+name: health
+
+on:
+  schedule:
+    # After the day's last Builder run (14:00) has finished, so the numbers it
+    # reads are the day's real ones rather than a day still in progress.
+    - cron: '0 16 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: health
+  cancel-in-progress: false
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    # No model, no browser, no session — it reads what the pipeline already wrote
+    # down. Anything approaching this timeout is the GitHub API being slow.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: ./.github/actions/setup
+
+      - name: Measure the pipeline
+        run: node agents/health.mjs
+        env:
+          # No OPENROUTER_API_KEY on purpose: this must keep working on a day the
+          # model budget is spent, which is exactly a day worth measuring.
+          GH_TOKEN: ${{ secrets.AGENT_PAT }}
+          # Who the alert @-mentions. Empty means the issue is still filed, just
+          # without a ping.
+          GH_NOTIFY_USER: ${{ github.repository_owner }}

@@ -26,7 +26,6 @@
 //
 // Guarded by a typed confirmation (see requireConfirmation), because every other
 // agent here only adds and this one is irreversible in the directions that matter.
-import fs from "fs";
 import { execSync } from "child_process";
 import {
   log,
@@ -36,8 +35,7 @@ import {
   gitExec,
   configureGitIdentity,
   getWikiDir,
-  wikiPath,
-  publishWiki,
+  writePage,
   closePR,
   deleteRemoteBranch,
   fetchOpenIssues,
@@ -216,12 +214,8 @@ function resetWikiMemory() {
     return;
   }
   for (const [page, content] of Object.entries(EMPTY_WIKI_PAGES)) {
-    const path = wikiPath(page);
-    if (!path) continue;
-    fs.writeFileSync(path, content, "utf-8");
-    log("info", `Reset wiki page ${page}.`);
+    writePage(page, content, `Reset ${page} for a fresh start`);
   }
-  publishWiki("Reset project memory for a fresh start");
   log("info", "Left Vision.md and Budget.md untouched, by design.");
 }
 
