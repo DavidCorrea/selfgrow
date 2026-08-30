@@ -3,10 +3,10 @@ name: playtester
 on:
   schedule:
     # Wednesday — a day nothing else runs. The Product Owner is Monday,
-    # pi-update Tuesday, the Scribe Thursday, the Curator Saturday, so this never
-    # competes with another weekly agent for the day's requests. It runs after
-    # the PM's 00:30 grooming so its findings sit on the board waiting for the
-    # NEXT morning's run to triage, rather than arriving just too late for today's.
+    # pi-update Tuesday, the Tech Lead Thursday, so this never competes with
+    # another weekly agent for the day's requests. It runs after the PM's 00:30
+    # grooming so its findings sit on the board waiting for the NEXT morning's
+    # run to triage, rather than arriving just too late for today's.
     - cron: '0 10 * * 3'
   workflow_dispatch:
 

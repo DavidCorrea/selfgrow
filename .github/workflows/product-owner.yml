@@ -2,12 +2,17 @@ name: product-owner
 
 on:
   schedule:
-    # Weekly — the vision is a slow-moving north star, not a daily edit.
+    # Monday, and deliberately the morning after the Product Manager's Sunday
+    # report: the retro reads a week the PM has just finished grooming and
+    # narrating, and the milestone it sets is what the PM grooms against for the
+    # rest of the week.
     - cron: '0 8 * * 1'
   workflow_dispatch:
 
 permissions:
   contents: read
+  # It opens and closes milestones, and the retro is written to the wiki.
+  issues: write
 
 jobs:
   refine-vision:
@@ -30,7 +35,7 @@ jobs:
         run: node agents/product-owner.mjs
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          # One vision judgement per week. This run's own allowance, in REAL
+          # One session covering the retro, the milestone and the vision. This run's own allowance, in REAL
           # requests (one per agent turn), not sessions — see isRequestBudgetSpent.
           #
           # It is NOT what protects the account. The 1000/day cap is enforced by the

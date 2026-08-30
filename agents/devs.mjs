@@ -91,7 +91,7 @@ function buildLessonsSection() {
   const lessons = readLessons().trim();
   if (!lessons) return "";
   return `## Lessons From Abandoned Work
-Tickets the Builder previously gave up on, newest first, and why. If your ticket resembles one of these, plan around what went wrong — a smaller slice, a different approach, or a prerequisite first. These are warnings from experience, not rules: a lesson describes one failed attempt, not a verdict that the work cannot be done.
+Tickets the Devs previously gave up on, newest first, and why. If your ticket resembles one of these, plan around what went wrong — a smaller slice, a different approach, or a prerequisite first. These are warnings from experience, not rules: a lesson describes one failed attempt, not a verdict that the work cannot be done.
 
 ${lessons}`;
 }

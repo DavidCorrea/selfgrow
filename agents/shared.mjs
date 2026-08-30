@@ -1335,6 +1335,91 @@ export function fetchOpenIssues(limit = 100) {
 
 // Marks issues the agents create, so issue-triggered workflows can skip their
 // own creations and avoid self-trigger loops.
+/**
+ * Single-quote a value for the shell. Every string here can come from a model,
+ * so none of them may be interpolated raw.
+ */
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+// ---------------------------------------------------------------------------
+// Milestones — the planning horizon
+//
+// Priority says which ticket comes first. It cannot say what the project is
+// TRYING to do this month, and without that the backlog is filled by adjacency:
+// every ticket is found next to whatever shipped last, each individually sound,
+// and the aggregate has no shape. Three separate tickets about one butterfly's
+// behaviour, discovered on three separate days, is what that looks like.
+//
+// GitHub's own milestones, rather than a wiki page, because the board and the
+// issues already understand them — progress is visible without anything here
+// counting it.
+// ---------------------------------------------------------------------------
+
+/** The milestone the project is currently working toward, or null. */
+export function getCurrentMilestone() {
+  try {
+    const list = JSON.parse(
+      execSync(`gh api "repos/{owner}/{repo}/milestones?state=open&sort=due_on&direction=asc"`, {
+        cwd: repoRoot,
+        maxBuffer: 10 * 1024 * 1024,
+      }).toString()
+    );
+    if (!list.length) return null;
+    const { title, description, number, open_issues: open, closed_issues: closed } = list[0];
+    return { title, description, number, open, closed };
+  } catch (e) {
+    log("warn", "Milestones: could not read the current one.", errorData(e));
+    return null;
+  }
+}
+
+/**
+ * Start a new milestone, closing whatever it replaces.
+ *
+ * One open milestone at a time, on purpose: two is not a horizon, it is a
+ * backlog with headings. Returns the new one, or null when nothing changed.
+ */
+export function startMilestone(title, description) {
+  if (!title) return null;
+  const current = getCurrentMilestone();
+  if (current && current.title === title) return current;
+  try {
+    const created = JSON.parse(
+      execSync(
+        `gh api "repos/{owner}/{repo}/milestones" -f title=${shellQuote(title)} -f description=${shellQuote(description || "")}`,
+        { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }
+      ).toString()
+    );
+    if (current) {
+      execSync(
+        `gh api --method PATCH "repos/{owner}/{repo}/milestones/${current.number}" -f state=closed`,
+        { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }
+      );
+      log("info", `Milestones: closed "${current.title}" (${current.closed} of ${current.open + current.closed} shipped).`);
+    }
+    log("info", `Milestones: now working toward "${title}".`);
+    return { title, description, number: created.number, open: 0, closed: 0 };
+  } catch (e) {
+    log("warn", `Milestones: could not start "${title}".`, errorData(e));
+    return null;
+  }
+}
+
+/** Put a ticket on the current milestone. Best-effort — never blocks grooming. */
+export function setIssueMilestone(issueNumber, title) {
+  if (!title) return;
+  try {
+    execSync(`gh issue edit ${issueNumber} --milestone ${shellQuote(title)}`, {
+      cwd: repoRoot,
+      maxBuffer: 10 * 1024 * 1024,
+    });
+  } catch (e) {
+    log("warn", `Milestones: could not assign #${issueNumber}.`, errorData(e));
+  }
+}
+
 export const AGENT_LABEL = "agent";
 // Marks Builder-filed code-health tickets so the PM (and humans) can spot them.
 export const TECH_DEBT_LABEL = "tech-debt";

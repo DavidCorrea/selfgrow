@@ -8,8 +8,8 @@ on:
     # morning share retires the day with 150-300 requests that simply expire at
     # 00:00 UTC. Requests do not roll over; an unspent one is a ticket not built.
     #
-    # 14:00 is after every other agent has run (PM 00:30, PO/Scribe/Curator
-    # 08:00-09:00), so what the ledger says is left really is left, and this run
+    # 14:00 is after every other agent has run (PM 00:30, PO/Playtester/Tech Lead
+    # 08:00-10:00), so what the ledger says is left really is left, and this run
     # can claim it without starving anyone.
     #
     # This is NOT the 00:05 cron that was removed. That one raced the PM's own

@@ -21,6 +21,7 @@ on:
 
 permissions:
   contents: read
+  # Issues and milestones; the Sunday run also writes the Story page to the wiki.
   issues: write
 
 # Never groom twice at once: two concurrent runs would dedup their proposals
@@ -54,16 +55,21 @@ jobs:
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           # This run's own allowance, in REAL requests (one per agent turn), not
-          # sessions. The PM runs three sessions — app review, the main grooming
-          # pass, the dedup check — so ~100 covers it with room for a slow pass, and
-          # leaves the day's remainder to the Builder, the only agent shipping code.
+          # sessions. Three sessions on an ordinary day — app review, the main
+          # grooming pass, the dedup check — and a fourth on Sundays, when it also
+          # writes the week's report. 150 covers the long day; the short ones cost
+          # what they cost and leave the remainder to the Devs, the only agents
+          # shipping code.
           #
           # The PM spends FIRST each day (00:30) and then dispatches the Builder, so
           # its spend is already in the shared ledger when plan-build.mjs decides how
           # many slots the day can still fund. That ledger — not this number — is
           # what holds the account to 1000/day.
-          MODEL_REQUEST_BUDGET: '100'
+          MODEL_REQUEST_BUDGET: '150'
           # PAT carries `project` scope (board) and covers issue creation.
           GH_TOKEN: ${{ secrets.AGENT_PAT }}
           GH_PROJECT_OWNER: '@me'
           GH_PROJECT_NUMBER: '3'
+          # Who the Sunday digest @-mentions, so it arrives as a notification
+          # rather than sitting on a page nobody opens.
+          GH_NOTIFY_USER: ${{ github.repository_owner }}

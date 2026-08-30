@@ -1,4 +1,6 @@
 import { pathToFileURL } from "url";
+import { execSync } from "child_process";
+import fs from "fs";
 import {
   log,
   withLogGroup,
@@ -24,7 +26,26 @@ import {
   dependencyLine,
   syncWaitingLabels,
   isPlaytestFeedback,
+  repoRoot,
+  getCurrentMilestone,
+  setIssueMilestone,
+  parseLedger,
 } from "./shared.mjs";
+import { readPage } from "./wiki.mjs";
+import { publishWeeklyReport } from "./weekly-report.mjs";
+import { listSourceFiles, formatSources, SOURCE_DIR } from "./tech-lead.mjs";
+
+// The day the Product Manager does more than groom: it also reviews the shipped
+// code for what should be REMOVED, and writes the week's report.
+//
+// Both are weekly rather than daily for the same reason — reading the product's
+// whole source costs real prompt weight, and a narrative refresh has nothing new
+// to say between merges. 0 is Sunday, which puts the report at the end of the
+// week it describes and the curation pass right before the Product Owner reads
+// the board on Monday.
+const WEEKLY_DAY = Number(process.env.PM_WEEKLY_DAY ?? 0);
+
+const isWeeklyRun = () => new Date().getUTCDay() === WEEKLY_DAY;
 
 // How much title-token similarity counts as a near-duplicate.
 //
@@ -225,7 +246,7 @@ function orderByDependencies(items) {
   return ordered;
 }
 
-async function groomBacklog(proposed, openIssues, boardItems) {
+async function groomBacklog(proposed, openIssues, boardItems, milestone) {
   if (!Array.isArray(proposed) || proposed.length === 0) {
     log("info", "Backlog: no tickets proposed.");
     return;
@@ -325,6 +346,10 @@ async function groomBacklog(proposed, openIssues, boardItems) {
       numberByTitle.set(normalizeTitle(item.title), number);
       moveCard(number, "Backlog"); // best-effort; also adds it to the board
       setIssuePriority(number, item.priority || "medium", []);
+      // Everything proposed now serves the current milestone — that is the point
+      // of having one, and it is what makes progress toward it visible without
+      // anything here counting tickets.
+      setIssueMilestone(number, milestone?.title);
       recordTicket("created", number, item.title);
       created++;
       if (deps.length) {
@@ -357,6 +382,47 @@ function triageExisting(openIssues, boardItems, triage) {
       setIssuePriority(iss.number, priority, current);
     }
   }
+}
+
+function readFileSafely(path) {
+  try {
+    return fs.readFileSync(path, "utf-8");
+  } catch {
+    return "";
+  }
+}
+
+/** Tickets closed recently, for the week's report. */
+function fetchClosedIssues(limit = 200) {
+  try {
+    return JSON.parse(
+      execSync(`gh issue list --state closed --limit ${limit} --json number,title,closedAt`, {
+        cwd: repoRoot,
+        maxBuffer: 10 * 1024 * 1024,
+      }).toString()
+    );
+  } catch (e) {
+    log("warn", "Could not read recently closed tickets.", errorData(e));
+    return [];
+  }
+}
+
+function renderMilestone(milestone) {
+  if (!milestone) {
+    return "No milestone is set. Propose whatever best serves the Vision, and keep the batch coherent — several tickets pulling in one direction beat the same number pulling in five.";
+  }
+  return [
+    `**${milestone.title}**`,
+    milestone.description || "",
+    `Progress: ${milestone.closed} shipped, ${milestone.open} still open.`,
+  ].filter(Boolean).join("\n\n");
+}
+
+function renderCuration(weekly, shippedCode) {
+  if (!weekly) {
+    return "_Not today — the removal pass runs once a week, and this is not that day. Propose additions only._";
+  }
+  return shippedCode || "_(the product has shipped no source yet — nothing to curate)_";
 }
 
 /**
@@ -425,14 +491,34 @@ async function main() {
   const review = await withLogGroup("App review", () => reviewApp());
   const appObservations = review || "(no defects measured and nothing broke when exercised)";
 
+  const milestone = getCurrentMilestone();
+  log("info", milestone
+    ? `Working toward "${milestone.title}" (${milestone.closed} shipped, ${milestone.open} open).`
+    : "No milestone set — the Product Owner sets one each Monday.");
+
+  // Curation is weekly, because it is the one part of grooming that needs the
+  // product's whole source in the prompt. On other days the section says so, and
+  // the run stays cheap.
+  const weekly = isWeeklyRun();
+  const shippedCode = weekly
+    ? formatSources(
+        listSourceFiles(SOURCE_DIR).map((path) => ({
+          name: path.replace(`${SOURCE_DIR}/`, "docs/"),
+          source: readFileSafely(path),
+        }))
+      )
+    : "";
+
   const rawOutput = await withLogGroup("Product Manager", () =>
     runAgent({
       label: "Product Manager",
       systemPrompt: fillTemplate(loadPrompt("product-manager"), {
         VISION: vision,
+        MILESTONE: renderMilestone(milestone),
         BOARD_STATE: boardState,
         APP_OBSERVATIONS: appObservations,
         PLAYTEST_FEEDBACK: renderPlaytestFeedback(openIssues),
+        CURATION: renderCuration(weekly, shippedCode),
       }),
       tools: ["read", "bash"],
     })
@@ -456,14 +542,31 @@ async function main() {
   // 3. Create new prioritized tickets toward the vision.
   // Full board items, not just titles: grooming needs each item's column to tell
   // shipped work from work still in flight.
-  await groomBacklog(data.backlog, remainingOpen, boardItems);
+  await groomBacklog(data.backlog, remainingOpen, boardItems, milestone);
 
   kickBuilder();
+
+  // The week's report goes out last, so it describes a board this run has already
+  // finished grooming. Best-effort: a failed report must never cost the day's
+  // building.
+  if (weekly) {
+    try {
+      await publishWeeklyReport({
+        closed: fetchClosedIssues(),
+        open: fetchOpenIssues(200),
+        ledger: parseLedger(readPage("Budget.md")),
+        milestone,
+      });
+    } catch (e) {
+      log("warn", "Weekly report: could not publish.", errorData(e));
+    }
+  }
+
   printRunSummary("Product Manager");
 }
 
 // Only groom when RUN, never when imported — the same guard model-probe.mjs and
-// curator.mjs use, so agents/dedup-check.mjs can exercise the dedup heuristic
+// tech-lead.mjs use, so agents/dedup-check.mjs can exercise the dedup heuristic
 // without spending a model session as a side effect of loading this file.
 export { titleTokens };
 

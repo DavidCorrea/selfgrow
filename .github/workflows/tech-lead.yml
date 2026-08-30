@@ -1,0 +1,50 @@
+name: tech-lead
+
+on:
+  schedule:
+    # Thursday. A day of its own: the Product Owner is Monday, pi-update Tuesday,
+    # the Playtester Wednesday, so nothing here competes with another weekly agent
+    # for the day's requests. A week of shipping is the smallest amount of change
+    # worth re-reading the whole codebase over.
+    - cron: '0 9 * * 4'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+# One at a time: two concurrent runs would read the same codebase, reach the same
+# conclusions, and file every ticket twice.
+concurrency:
+  group: tech-lead
+  cancel-in-progress: false
+
+jobs:
+  review-codebase:
+    runs-on: ubuntu-latest
+    # Sized so the agent stops ITSELF first. MAX_SESSION_MINUTES (12) bounds a
+    # session, this run makes one, and setup is a few minutes on top — the
+    # runner's axe is the last resort, not the usual stop.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # No Chromium: it reads source, it doesn't drive the app.
+      - uses: ./.github/actions/setup
+
+      - name: Run Tech Lead agent
+        run: node agents/tech-lead.mjs
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # One session over the whole codebase, the self-check suite, and any
+          # parked tickets — a large prompt but a single pass, with no tool
+          # iteration to run away with.
+          #
+          # The account's 1000/day cap is enforced elsewhere: the shared ledger in
+          # shared.mjs, read before the first call and written after the session.
+          MODEL_REQUEST_BUDGET: '150'
+          GH_TOKEN: ${{ secrets.AGENT_PAT }}
+          GH_PROJECT_OWNER: '@me'
+          GH_PROJECT_NUMBER: '3'

@@ -290,7 +290,7 @@ async function main() {
 }
 
 // Guarded so the observation half can be imported and exercised without spending
-// a model request — same convention as the Product Manager and the Curator.
+// a model request — same convention as the Product Manager and the Tech Lead.
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
   main().catch((err) => {
     log("error", `Playtester failed: ${err.message || err}`);
