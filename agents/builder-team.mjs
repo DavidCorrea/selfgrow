@@ -74,12 +74,12 @@ const BUILD_TAIL_RESERVE = Number(process.env.BUILD_TAIL_RESERVE || 40);
 // re-paid per ticket. Each ticket still checks out the previous one's merge,
 // because they run in sequence in the same working tree.
 //
-// TICKET_NUMBER narrows the run to exactly one ticket. Nothing in CI sets it any
-// more — it is for re-running a single ticket by hand without the run wandering
-// onto whatever else the board happens to be offering.
-const ASSIGNED_TICKET = Number(process.env.TICKET_NUMBER || 0) || null;
+// TICKET_NUMBER pins the run to exactly one ticket. Nothing in CI sets it — it is
+// for re-running a single ticket by hand without the run wandering onto whatever
+// else the board happens to be offering.
+const PINNED_TICKET = Number(process.env.TICKET_NUMBER || 0) || null;
 
-const MAX_TICKETS_PER_RUN = ASSIGNED_TICKET
+const MAX_TICKETS_PER_RUN = PINNED_TICKET
   ? 1
   : Number(process.env.MAX_TICKETS_PER_RUN || 3);
 const RUN_BUDGET_MS = Number(process.env.BUILD_RUN_BUDGET_MINUTES || 45) * 60 * 1000;
@@ -253,8 +253,8 @@ async function splitTicket(parent, parentNumber, children, why) {
   const created = [];
   for (const child of children) {
     // Depend on the previous child, so the chain builds foundation-first. The
-    // first child depends on nothing and is buildable immediately — this run's
-    // sibling slot, or the next run, can pick it up.
+    // first child depends on nothing and is buildable immediately — the rest of
+    // this run, or the next one, can pick it up.
     const deps = created.length ? [created[created.length - 1]] : [];
     const body = [
       child.body,
@@ -367,7 +367,7 @@ async function buildTicket(openIssues, vision) {
     // The ticket is too big for one pass. Replace it with an ordered chain of
     // shippable pieces and return without building — one Scout session instead of
     // the two full failed builds it would otherwise take to learn this, which at
-    // 160 requests a slot is a third of the day's cap.
+    // ~160 requests each is a third of the day's cap.
     if (scoutData.issueAction === "split" && scoutData.issueNumber) {
       const parent = openIssues.find((i) => i.number === scoutData.issueNumber);
 
@@ -831,12 +831,10 @@ async function main() {
   const deadline = Date.now() + RUN_BUDGET_MS;
   let mergedCount = 0;
   let duplicateCount = 0;
-  // Both mutable because a split replaces this slot's ticket with children: the
-  // slot adopts the first one and gets one extra pass to build it, so splitting
-  // still ships something today instead of idling until the next tick. Safe
-  // against sibling slots by construction — the children are numbers that did
-  // not exist when plan-build.mjs handed out assignments, so nobody else has one.
-  let slotTicket = ASSIGNED_TICKET;
+  // Both mutable because a split replaces the ticket with children: the run
+  // adopts the first one and gets one extra pass to build it, so splitting still
+  // ships something today instead of idling until the next tick.
+  let pinnedTicket = PINNED_TICKET;
   let maxTickets = MAX_TICKETS_PER_RUN;
   let adoptedSplit = false;
 
@@ -887,12 +885,12 @@ async function main() {
           a.number - b.number
       );
 
-    // A parallel slot sees only its own ticket, so the Scout cannot wander onto
-    // work a sibling slot is already building.
-    if (slotTicket) {
-      candidates = candidates.filter((i) => i.number === slotTicket);
+    // A pinned run sees only its own ticket, so a hand-started rebuild of one
+    // ticket cannot drift onto whatever else the board is offering.
+    if (pinnedTicket) {
+      candidates = candidates.filter((i) => i.number === pinnedTicket);
       if (!candidates.length) {
-        log("info", `Assigned ticket #${slotTicket} is no longer available (closed, parked, or newly blocked) — nothing to do.`);
+        log("info", `Pinned ticket #${pinnedTicket} is no longer available (closed, parked, or newly blocked) — nothing to do.`);
         break;
       }
     }
@@ -924,7 +922,7 @@ async function main() {
     if (result.outcome === "split" && result.children?.length && !adoptedSplit) {
       adoptedSplit = true;
       maxTickets = n + 1;
-      if (slotTicket) slotTicket = result.children[0];
+      if (pinnedTicket) pinnedTicket = result.children[0];
       log("info", `Adopting #${result.children[0]} — the first piece of the split — for this run.`);
     }
     if (result.outcome === "merged") {
