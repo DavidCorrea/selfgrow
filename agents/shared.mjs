@@ -2076,8 +2076,22 @@ export function getBoardSnapshot() {
 }
 
 // ---------------------------------------------------------------------------
-// Pull Requests (two identities: the bot opens, the PAT approves — so a real
-// approval is possible without a human, since you can't approve your own PR)
+// Pull Requests — two identities, because GitHub will not let an author approve
+// their own PR.
+//
+// The PAT OPENS and the bot APPROVES. It used to be the other way round, and the
+// reason it changed is a rule that is easy to miss: GitHub does not trigger
+// workflows for events created by GITHUB_TOKEN. That is a deliberate recursion
+// guard, and it means a PR the bot opens gets its checks CREATED but parked,
+// waiting for a human to press a button.
+//
+// That cost nothing while CI had path filters and agent PRs never matched them.
+// The moment the checks became universal and required, every agent PR stalled:
+// #502 sat for 42 minutes, its Devs run gave up waiting, reported zero merges,
+// and skipped recording the change it had actually made.
+//
+// A PAT-created PR triggers workflows normally. So the PAT opens, and the bot —
+// a genuinely different identity — approves.
 // ---------------------------------------------------------------------------
 
 const patToken = () => process.env.GH_TOKEN || process.env.AGENT_PAT || "";
@@ -2096,7 +2110,8 @@ function ghAs(token, args, opts = {}) {
 export function createPR(branchName, title, body) {
   try {
     const out = ghAs(
-      botToken(),
+      // The PAT, so the PR's checks actually start. See the note above.
+      patToken(),
       `pr create --base main --head ${branchName} --title "${String(title).replace(/"/g, '\\"')}" --body-file -`,
       { input: body || "" }
     ).toString().trim();
@@ -2113,7 +2128,8 @@ export function createPR(branchName, title, body) {
 /** Submit an approving review as the PAT user (a different identity than the bot author). */
 export function approvePR(prNumber, body) {
   try {
-    ghAs(patToken(), `pr review ${prNumber} --approve --body-file -`, {
+    // The bot, because the PAT is now the author and nobody may approve their own.
+    ghAs(botToken(), `pr review ${prNumber} --approve --body-file -`, {
       input: body || "Approved by the Reviewer agent.",
     });
     log("info", `PR: approved #${prNumber}.`);
