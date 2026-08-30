@@ -2138,5 +2138,336 @@ export async function checks() {
     }
   }
 
+  /* ---------- Firefly glow checks (issue #468) ---------- */
+  const fireflyState = gardenState && gardenState.fireflies;
+  if (!fireflyState) {
+    problems.push('window.__gardenState.fireflies is not set — the firefly glow system was not created (fireflies.js may not have been imported or called).');
+  } else {
+    // Verify type
+    if (fireflyState.type !== 'fireflies') {
+      problems.push('fireflyState.type is "' + fireflyState.type + '", expected "fireflies".');
+    }
+
+    // Verify reducedMotion is a boolean
+    if (typeof fireflyState.reducedMotion !== 'boolean') {
+      problems.push('fireflyState.reducedMotion should be a boolean, got ' + typeof fireflyState.reducedMotion);
+    }
+
+    // Verify peakOpacity is ≤ 0.15
+    if (typeof fireflyState.peakOpacity !== 'number' || fireflyState.peakOpacity > 0.15) {
+      problems.push('fireflyState.peakOpacity is ' + fireflyState.peakOpacity + ', expected ≤ 0.15 for a barely perceptible glow.');
+    }
+
+    // Verify driftRadius is ~0.15
+    if (typeof fireflyState.driftRadius !== 'number' || Math.abs(fireflyState.driftRadius - 0.15) > 0.01) {
+      problems.push('fireflyState.driftRadius is ' + fireflyState.driftRadius + ', expected ~0.15.');
+    }
+
+    // Verify dotsPerPlantMin/Max are 4–6
+    if (fireflyState.dotsPerPlantMin !== 4 || fireflyState.dotsPerPlantMax !== 6) {
+      problems.push('firefly dotsPerPlantMin/Max are ' + fireflyState.dotsPerPlantMin + '/' + fireflyState.dotsPerPlantMax + ', expected 4/6.');
+    }
+
+    // Verify glowTexture exists and is a valid CanvasTexture
+    if (!fireflyState.glowTexture) {
+      problems.push('fireflyState.glowTexture is missing — the glow sprite texture was not created.');
+    } else if (!(fireflyState.glowTexture instanceof THREE.Texture)) {
+      problems.push('fireflyState.glowTexture is not a THREE.Texture — got ' + typeof fireflyState.glowTexture);
+    } else if (fireflyState.glowTexture.image && !(fireflyState.glowTexture.image instanceof HTMLCanvasElement)) {
+      problems.push('fireflyState.glowTexture.image is not an HTMLCanvasElement — expected a canvas texture.');
+    }
+
+    // Verify plantGroups exist and are populated
+    if (!fireflyState.plantGroups || !Array.isArray(fireflyState.plantGroups)) {
+      problems.push('fireflyState.plantGroups is missing or not an array.');
+    } else if (fireflyState.plantGroups.length === 0) {
+      // It's possible no plants exist yet (early in the page load) — that's okay.
+      // But if plants exist, there should be firefly groups.
+      const plant = gardenState && gardenState.plant;
+      if (plant && plant.group) {
+        problems.push('fireflyState.plantGroups is empty but a plant exists in the scene — firefly groups should have been created for each plant.');
+      }
+    } else {
+      // Verify each plant group has valid structure
+      var validPlantRefs = ['plant', 'plant2'];
+      fireflyState.plantGroups.forEach(function(group, gi) {
+        if (!group.plantRef) {
+          problems.push('firefly group #' + gi + ' has no plantRef — each group must reference a plant.');
+        }
+        if (validPlantRefs.indexOf(group.plantRef) === -1) {
+          problems.push('firefly group #' + gi + ' has unknown plantRef "' + group.plantRef + '" — expected "plant" or "plant2".');
+        }
+
+        if (!group.points) {
+          problems.push('firefly group #' + gi + ' has no points object — THREE.Points not created.');
+        } else if (gardenState && gardenState.scene) {
+          var found = gardenState.scene.children.indexOf(group.points) !== -1;
+          if (!found) {
+            problems.push('firefly group #' + gi + ' points object is not a child of the scene — it was not added to the garden.');
+          }
+        }
+
+        if (!group.geometry) {
+          problems.push('firefly group #' + gi + ' has no geometry — BufferGeometry not created.');
+        } else {
+          // Verify position attribute exists with correct count
+          var posAttr = group.geometry.attributes.position;
+          if (!posAttr) {
+            problems.push('firefly group #' + gi + ' geometry has no position attribute.');
+          } else if (posAttr.count !== group.count) {
+            problems.push('firefly group #' + gi + ' position count (' + posAttr.count + ') does not match group.count (' + group.count + ').');
+          }
+
+          // Verify size attribute exists
+          var sizeAttr = group.geometry.attributes.size;
+          if (!sizeAttr) {
+            problems.push('firefly group #' + gi + ' geometry has no size attribute.');
+          } else if (sizeAttr.count !== group.count) {
+            problems.push('firefly group #' + gi + ' size count (' + sizeAttr.count + ') does not match group.count (' + group.count + ').');
+          }
+        }
+
+        if (!group.material) {
+          problems.push('firefly group #' + gi + ' has no material — PointsMaterial not created.');
+        } else {
+          // Verify material properties
+          if (group.material.transparent !== true) {
+            problems.push('firefly group #' + gi + ' material.transparent is ' + group.material.transparent + ', expected true for fade blending.');
+          }
+          if (group.material.blending !== THREE.AdditiveBlending) {
+            problems.push('firefly group #' + gi + ' material.blending is not AdditiveBlending — expected additive blending for soft glow.');
+          }
+          if (group.material.depthWrite !== false) {
+            problems.push('firefly group #' + gi + ' material.depthWrite is ' + group.material.depthWrite + ', expected false to avoid z-fighting.');
+          }
+          if (group.material.sizeAttenuation !== true) {
+            problems.push('firefly group #' + gi + ' material.sizeAttenuation is ' + group.material.sizeAttenuation + ', expected true for realistic depth falloff.');
+          }
+          // Verify the glow texture is set as map
+          if (group.material.map !== fireflyState.glowTexture) {
+            problems.push('firefly group #' + gi + ' material.map is not the shared glow texture.');
+          }
+          // Verify current opacity is within valid range
+          if (typeof group.material.opacity !== 'number' || group.material.opacity < 0 || group.material.opacity > 0.15) {
+            problems.push('firefly group #' + gi + ' material.opacity is ' + group.material.opacity + ', expected in [0, 0.15].');
+          }
+        }
+
+        if (!group.dotData || !Array.isArray(group.dotData) || group.dotData.length !== group.count) {
+          problems.push('firefly group #' + gi + ' dotData is missing, not an array, or has wrong length (expected ' + group.count + ').');
+        } else {
+          // Verify each dot has required animation parameters
+          group.dotData.forEach(function(dot, di) {
+            if (typeof dot.phaseOffset !== 'number') {
+              problems.push('firefly group #' + gi + ' dot #' + di + ' missing phaseOffset.');
+            }
+            if (typeof dot.freq !== 'number' || dot.freq < 0.1 || dot.freq > 0.6) {
+              problems.push('firefly group #' + gi + ' dot #' + di + ' freq is ' + dot.freq + ', expected in [0.1, 0.6] Hz.');
+            }
+            if (typeof dot.driftPhase !== 'number') {
+              problems.push('firefly group #' + gi + ' dot #' + di + ' missing driftPhase.');
+            }
+            if (typeof dot.baseX !== 'number' || typeof dot.baseY !== 'number' || typeof dot.baseZ !== 'number') {
+              problems.push('firefly group #' + gi + ' dot #' + di + ' missing base position (baseX/Y/Z).');
+            }
+            if (typeof dot.sizeBase !== 'number' || dot.sizeBase <= 0) {
+              problems.push('firefly group #' + gi + ' dot #' + di + ' sizeBase is ' + dot.sizeBase + ', expected a positive number.');
+            }
+          });
+        }
+
+        // Verify dot count is 4–6
+        if (group.count < 4 || group.count > 6) {
+          problems.push('firefly group #' + gi + ' has ' + group.count + ' dots, expected 4–6.');
+        }
+
+        // Verify each dot is within ~0.15 units of its plant's position
+        // We can check by looking at the base positions relative to the plant
+        var plantObj = gardenState && gardenState[group.plantRef];
+        if (plantObj && plantObj.group) {
+          var plantPos = plantObj.group.position;
+          group.dotData.forEach(function(dot, di) {
+            var dx = dot.baseX - plantPos.x;
+            var dz = dot.baseZ - plantPos.z;
+            var dist = Math.sqrt(dx * dx + dz * dz);
+            if (dist > 0.2) {
+              problems.push('firefly group #' + gi + ' dot #' + di + ' is ' + dist.toFixed(3) + ' units from its plant — expected ~0.15 or less.');
+            }
+          });
+        }
+      });
+    }
+
+    // Verify totalDotCount function exists
+    if (typeof fireflyState.totalDotCount !== 'function') {
+      problems.push('fireflyState.totalDotCount is not a function — dot count accessor is missing.');
+    } else {
+      var total = fireflyState.totalDotCount();
+      if (typeof total !== 'number' || total < 0) {
+        problems.push('fireflyState.totalDotCount() returned ' + total + ', expected a non-negative number.');
+      }
+    }
+
+    // Verify the update function is exposed
+    if (typeof gardenState.firefliesUpdate !== 'function') {
+      problems.push('gardenState.firefliesUpdate is not a function — the firefly update loop is not exposed.');
+    }
+
+    // Test opacity behaviour during different day/night phases
+    var dayNightForFireflies = gardenState && gardenState.dayNight;
+    if (dayNightForFireflies && typeof dayNightForFireflies.getCycleProgress === 'function') {
+      var origGetCycleProgress = dayNightForFireflies.getCycleProgress;
+      try {
+        // Test 1: During Morning (t ~0.1), firefly opacity should be near 0
+        dayNightForFireflies.getCycleProgress = function() { return 0.1; };
+        if (typeof gardenState.firefliesUpdate === 'function') {
+          gardenState.firefliesUpdate(0, 0.016);
+          var morningOpacity = 0;
+          if (fireflyState.plantGroups && fireflyState.plantGroups.length > 0) {
+            morningOpacity = fireflyState.plantGroups[0].material.opacity;
+          }
+          if (morningOpacity > 0.02) {
+            problems.push('During Morning (t=0.1), firefly opacity is ' + morningOpacity + ' — expected near 0 (fireflies invisible during morning).');
+          }
+
+          // Test 2: During Midday (t ~0.35), firefly opacity should be near 0
+          dayNightForFireflies.getCycleProgress = function() { return 0.35; };
+          gardenState.firefliesUpdate(0, 0.016);
+          var middayOpacity = 0;
+          if (fireflyState.plantGroups && fireflyState.plantGroups.length > 0) {
+            middayOpacity = fireflyState.plantGroups[0].material.opacity;
+          }
+          if (middayOpacity > 0.02) {
+            problems.push('During Midday (t=0.35), firefly opacity is ' + middayOpacity + ' — expected near 0 (fireflies invisible during midday).');
+          }
+
+          // Test 3: During Evening (t ~0.55), firefly opacity should be near 0
+          dayNightForFireflies.getCycleProgress = function() { return 0.55; };
+          gardenState.firefliesUpdate(0, 0.016);
+          var eveningOpacity = 0;
+          if (fireflyState.plantGroups && fireflyState.plantGroups.length > 0) {
+            eveningOpacity = fireflyState.plantGroups[0].material.opacity;
+          }
+          if (eveningOpacity > 0.02) {
+            problems.push('During Evening (t=0.55), firefly opacity is ' + eveningOpacity + ' — expected near 0 (fireflies not yet visible during evening).');
+          }
+
+          // Test 4: During Night (t ~0.85), firefly opacity should be > 0
+          dayNightForFireflies.getCycleProgress = function() { return 0.85; };
+          for (var fi = 0; fi < 300; fi++) {
+            gardenState.firefliesUpdate(0, 0.016);
+          }
+          var nightOpacity = 0;
+          if (fireflyState.plantGroups && fireflyState.plantGroups.length > 0) {
+            nightOpacity = fireflyState.plantGroups[0].material.opacity;
+          }
+          if (nightOpacity < 0.05) {
+            problems.push('During Night (t=0.85), firefly opacity is ' + nightOpacity + ' — expected > 0.05 (fireflies should be visible during night).');
+          }
+          if (nightOpacity > 0.17) {
+            problems.push('During Night (t=0.85), firefly opacity is ' + nightOpacity + ' — expected ≤ 0.15 (fireflies must be barely perceptible).');
+          }
+
+          // Test 5: Late Night fading to Morning (t ~0.97), opacity should be fading
+          dayNightForFireflies.getCycleProgress = function() { return 0.97; };
+          for (var fj = 0; fj < 300; fj++) {
+            gardenState.firefliesUpdate(0, 0.016);
+          }
+          var lateNightOpacity = 0;
+          if (fireflyState.plantGroups && fireflyState.plantGroups.length > 0) {
+            lateNightOpacity = fireflyState.plantGroups[0].material.opacity;
+          }
+          // At t=0.97, fadeOut = (1.0-0.97)/0.05 = 0.6, target = 0.6*0.15 = 0.09
+          if (lateNightOpacity > 0.12) {
+            problems.push('During late Night (t=0.97), firefly opacity is ' + lateNightOpacity + ' — expected < 0.12 (fading out toward Morning).');
+          }
+
+          // Test 6: After switching back to Morning (t ~0.02), opacity should be near 0
+          dayNightForFireflies.getCycleProgress = function() { return 0.02; };
+          for (var fk = 0; fk < 300; fk++) {
+            gardenState.firefliesUpdate(0, 0.016);
+          }
+          var morningAfterNightOpacity = 0;
+          if (fireflyState.plantGroups && fireflyState.plantGroups.length > 0) {
+            morningAfterNightOpacity = fireflyState.plantGroups[0].material.opacity;
+          }
+          if (morningAfterNightOpacity > 0.02) {
+            problems.push('After switching from Night to Morning (t=0.02), firefly opacity is ' + morningAfterNightOpacity + ' — expected near 0 (fireflies should fade out after night).');
+          }
+        }
+      } finally {
+        // Restore original getCycleProgress
+        dayNightForFireflies.getCycleProgress = origGetCycleProgress;
+      }
+    }
+
+    // Verify reduced-motion behaviour: when reducedMotion is true, dots should be stationary
+    // (no pulsing/drift) but still fade in/out
+    if (fireflyState.reducedMotion) {
+      // Check that the update function resets positions to base positions
+      // We can verify by checking that after an update, positions match bases
+      if (fireflyState.plantGroups && fireflyState.plantGroups.length > 0) {
+        var group = fireflyState.plantGroups[0];
+        if (group.geometry && group.geometry.attributes.position) {
+          var pos = group.geometry.attributes.position.array;
+          var allAtBase = true;
+          for (var pi = 0; pi < group.count; pi++) {
+            var dd = group.dotData[pi];
+            if (Math.abs(pos[pi * 3] - dd.baseX) > 0.001 ||
+                Math.abs(pos[pi * 3 + 1] - dd.baseY) > 0.001 ||
+                Math.abs(pos[pi * 3 + 2] - dd.baseZ) > 0.001) {
+              allAtBase = false;
+              break;
+            }
+          }
+          if (!allAtBase) {
+            problems.push('With reducedMotion active, firefly dot positions should match their base positions (no drift).');
+          }
+
+          // Verify sizes are at base (no pulsing)
+          if (group.geometry.attributes.size) {
+            var sizes = group.geometry.attributes.size.array;
+            var allAtBaseSize = true;
+            for (var si = 0; si < group.count; si++) {
+              if (Math.abs(sizes[si] - group.dotData[si].sizeBase) > 0.001) {
+                allAtBaseSize = false;
+                break;
+              }
+            }
+            if (!allAtBaseSize) {
+              problems.push('With reducedMotion active, firefly dot sizes should match their base sizes (no pulsing).');
+            }
+          }
+        }
+      }
+    }
+
+    // Verify the firefly systems use the same glow texture across all groups
+    if (fireflyState.plantGroups && fireflyState.plantGroups.length > 1) {
+      var firstMap = fireflyState.plantGroups[0].material && fireflyState.plantGroups[0].material.map;
+      for (var gi = 1; gi < fireflyState.plantGroups.length; gi++) {
+        if (fireflyState.plantGroups[gi].material && fireflyState.plantGroups[gi].material.map !== firstMap) {
+          problems.push('firefly group #' + gi + ' uses a different glow texture than group #0 — all groups should share the same texture.');
+        }
+      }
+    }
+
+    // Verify that when plants exist, firefly groups also exist
+    var ffPlant = gardenState && gardenState.plant;
+    var ffPlant2 = gardenState && gardenState.plant2;
+    if (ffPlant && ffPlant.group && fireflyState.plantGroups) {
+      var hasPlantGroup = fireflyState.plantGroups.some(function(g) { return g.plantRef === 'plant'; });
+      if (!hasPlantGroup) {
+        problems.push('plant exists in the scene but no firefly group with plantRef="plant" was created.');
+      }
+    }
+    if (ffPlant2 && ffPlant2.group && fireflyState.plantGroups) {
+      var hasPlant2Group = fireflyState.plantGroups.some(function(g) { return g.plantRef === 'plant2'; });
+      if (!hasPlant2Group) {
+        problems.push('plant2 exists in the scene but no firefly group with plantRef="plant2" was created.');
+      }
+    }
+  }
+
   return problems;
 }

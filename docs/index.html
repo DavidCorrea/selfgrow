@@ -198,6 +198,7 @@
     import { createGroundRipple } from "./groundRipple.js";
     import { createCreature } from "./creature.js";
     import { createAmbientAudio } from "./ambientAudio.js";
+    import { createFireflies } from "./fireflies.js";
 
     const wrapper = document.getElementById('garden-canvas-wrapper');
     const scene = new THREE.Scene();
@@ -338,6 +339,9 @@
     /* --- Drifting creature at the scene periphery --- */
     const creature = createCreature(scene);
 
+    /* --- Firefly glow dots near plants during Night phase --- */
+    const fireflies = createFireflies(scene);
+
     /* Animation loop */
     let animTime = 0;
     let lastFrameTime = performance.now();
@@ -363,6 +367,9 @@
 
       /* Update star field */
       stars.update(animTime, dt);
+
+      /* Update firefly glow dots */
+      fireflies.update(animTime, dt);
 
       /* Update distant horizon silhouette to blend with current sky colour */
       if (scene.background instanceof THREE.Color) {
@@ -416,7 +423,9 @@
       scrub,
       groundRipple: groundRipple.state,
       creature: creature.state,
-      creatureUpdate: creature.update
+      creatureUpdate: creature.update,
+      fireflies: fireflies.state,
+      firefliesUpdate: fireflies.update
     };
 
     /* --- Persistence: restore previous state if available --- */
