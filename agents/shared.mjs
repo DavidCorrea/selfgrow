@@ -23,6 +23,37 @@ import {
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
 
+// Two layers below this one. shared.mjs re-exports both so the existing
+// `from "./shared.mjs"` imports keep working, but new code should import from
+// the specific module — that is the point of having split them.
+import { log, appendJobSummary, errorData, getRunLog, getTicketOutcomes } from "./log.mjs";
+import { cloneWiki } from "./wiki.mjs";
+
+export {
+  log,
+  logGroup,
+  withLogGroup,
+  appendJobSummary,
+  truncate,
+  errorData,
+  getRunLog,
+  recordTicket,
+} from "./log.mjs";
+export {
+  cloneWiki,
+  getWikiDir,
+  wikiPath,
+  readPage,
+  commitToWiki,
+  readVision,
+  readChangelog,
+  readLessons,
+  appendChangelogEntry,
+  appendLesson,
+  writePage,
+  writeStory,
+} from "./wiki.mjs";
+
 // ---------------------------------------------------------------------------
 // Paths
 // ---------------------------------------------------------------------------
@@ -370,7 +401,7 @@ export function isLedgerActive() {
 export function initDailyLedger() {
   if (ledgerInit) return;
   ledgerInit = true;
-  ledgerDir = cloneWiki(LEDGER_DIR);
+  ledgerDir = cloneWiki(LEDGER_DIR, { cwd: repoRoot });
   if (!ledgerDir) {
     // Loud, because this run is now spending money nothing else can see. The
     // cap it is nominally held to does not apply; blindBudget() is what will
@@ -865,104 +896,13 @@ async function runAgentOnce({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Structured logger
-// ---------------------------------------------------------------------------
-
-const runLog = [];
-const isGitHubActions = Boolean(process.env.GITHUB_ACTIONS);
-
-export function getRunLog() {
-  return runLog;
-}
-
-// Tickets the run affected — this, not the step log, is what the summary reports.
-const ticketOutcomes = [];
-
-/**
- * Record a ticket this run acted on, for the end-of-run summary.
- * @param {string} status - what happened: "done" | "failed" | "created"
- * @param {number} number - issue number
- * @param {string} title  - issue title
- * @param {string} [detail] - optional context (e.g. the reason a build failed)
- */
-export function recordTicket(status, number, title, detail) {
-  ticketOutcomes.push({ status, number, title, detail });
-}
-
-export function log(level, message, data) {
-  runLog.push({ level, message, data });
-  if (level === "debug") return; // debug entries collected but not printed
-
-  // In CI, warnings/errors become native annotations — they render inline once
-  // AND surface at the top of the run. Don't also print a plain line (that's the
-  // doubling). Elsewhere, a minimal level tag keeps info lines clean.
-  if (isGitHubActions && (level === "warn" || level === "error")) {
-    const ghLevel = level === "warn" ? "warning" : "error";
-    console.log(`::${ghLevel}::${escapeWorkflowData(message)}`);
-  } else {
-    console.log(level === "info" ? message : `${level.toUpperCase()}: ${message}`);
-  }
-  if (data !== undefined) console.log(JSON.stringify(data, null, 2));
-}
-
-// Escape per GitHub's workflow-command rules so annotations render literally.
-function escapeWorkflowData(str) {
-  return String(str).replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
-}
-
-/**
- * Group subsequent log output under a collapsible section in the Actions log.
- * Returns a function that closes the group. No-op outside GitHub Actions.
- */
-export function logGroup(title) {
-  if (isGitHubActions) console.log(`::group::${escapeWorkflowData(title)}`);
-  else console.log(`\n--- ${title} ---`);
-  return () => {
-    if (isGitHubActions) console.log("::endgroup::");
-  };
-}
-
-/** Run an async block wrapped in a collapsible Actions log group. */
-export async function withLogGroup(title, fn) {
-  const end = logGroup(title);
-  try {
-    return await fn();
-  } finally {
-    end();
-  }
-}
-
-/** Append a Markdown line to the GitHub Actions job summary, if available. */
-export function appendJobSummary(markdown) {
-  const file = process.env.GITHUB_STEP_SUMMARY;
-  if (!file) return;
-  try {
-    fs.appendFileSync(file, markdown + "\n");
-  } catch {
-    // best-effort — never fail a run over a summary write
-  }
-}
-
-const RAW_OUTPUT_MAX_CHARS = 2000;
-
-export function truncate(str, max = RAW_OUTPUT_MAX_CHARS) {
-  if (str.length <= max) return str;
-  return str.slice(0, max) + `\n... [truncated, ${str.length} total chars]`;
-}
-
-export function errorData(e) {
-  return {
-    message: e.message || String(e),
-    stack: e.stack || null,
-  };
-}
-
 export function printRunSummary(title = "Run Summary") {
   // Last chance to report spend: every agent ends here, including the failure
   // paths. A no-op unless an earlier flush failed, and the number it would
   // otherwise leave unrecorded is spend a later run would then overspend.
   flushDailySpend();
+  const runLog = getRunLog();
+  const ticketOutcomes = getTicketOutcomes();
   const errors = runLog.filter((e) => e.level === "error").length;
   const warns = runLog.filter((e) => e.level === "warn").length;
   const result = errors ? "errors" : warns ? "completed with warnings" : "clean";
@@ -2047,159 +1987,6 @@ export function getBoardSnapshot() {
   return { openIssues, boardItems, boardState };
 }
 
-// The wiki is the canonical home for Vision + Changelog. Clone it once per run
-// and cache the directory; agents read/write the pages there.
-let _wikiDir;
-export function getWikiDir() {
-  if (_wikiDir !== undefined) return _wikiDir;
-  _wikiDir = cloneWiki() || null;
-  return _wikiDir;
-}
-
-/** Absolute path to a page inside the cloned wiki, or null if the wiki is unreachable. */
-export function wikiPath(pageFile) {
-  const dir = getWikiDir();
-  return dir ? join(dir, pageFile) : null;
-}
-
-/** Read the canonical Vision page from the wiki. */
-export function readVision() {
-  const p = wikiPath("Vision.md");
-  if (p) { try { return fs.readFileSync(p, "utf-8"); } catch {} }
-  return "(Vision unavailable — wiki not reachable or not yet seeded)";
-}
-
-/** Read the canonical Changelog page from the wiki. */
-export function readChangelog() {
-  const p = wikiPath("Changelog.md");
-  if (p) { try { return fs.readFileSync(p, "utf-8"); } catch {} }
-  return "(Changelog unavailable — wiki not reachable or not yet seeded)";
-}
-
-/** Commit and push the cached wiki clone. Best-effort. */
-export function publishWiki(message) {
-  const dir = getWikiDir();
-  if (dir) pushWiki(dir, message);
-}
-
-/**
- * Append a dated bullet to the wiki Changelog page (grouped under today's date
- * header, matching the existing format). Writes to the clone; call publishWiki()
- * after to push. Returns false if the wiki is unreachable.
- */
-export function appendChangelogEntry(entry) {
-  const p = wikiPath("Changelog.md");
-  if (!p) {
-    log("warn", "Changelog: wiki unavailable; entry not recorded.");
-    return false;
-  }
-  let content = "";
-  try { content = fs.readFileSync(p, "utf-8"); } catch {}
-  const date = new Date().toISOString().slice(0, 10);
-  const header = `## ${date}`;
-  const bullet = `- ${String(entry).trim()}`;
-  if (!content.trim()) {
-    content = `# Changelog\n\n${header}\n\n${bullet}\n`;
-  } else if (content.includes(header)) {
-    content = content.replace(header, `${header}\n${bullet}`);
-  } else {
-    const title = content.match(/^# .*$/m);
-    content = title
-      ? content.replace(title[0], `${title[0]}\n\n${header}\n\n${bullet}`)
-      : `# Changelog\n\n${header}\n\n${bullet}\n\n${content}`;
-  }
-  fs.writeFileSync(p, content, "utf-8");
-  log("info", `Changelog: recorded entry under ${date}.`);
-  return true;
-}
-
-/**
- * Record why a ticket was given up on, newest first, on the wiki's Lessons page.
- *
- * Without this the pipeline has no memory: a ticket parks, its Builder run's logs
- * age out, and the next Scout re-derives the same dead end from scratch — paying
- * again to learn what the project already knew. The page is fed back into the
- * Scout's context, so a failure becomes information instead of just a stopped
- * ticket. Best-effort.
- */
-export function appendLesson(entry) {
-  const p = wikiPath("Lessons.md");
-  if (!p) {
-    log("warn", "Lessons: wiki unavailable; post-mortem not recorded.");
-    return false;
-  }
-  let content = "";
-  try { content = fs.readFileSync(p, "utf-8"); } catch {}
-  const date = new Date().toISOString().slice(0, 10);
-  const block = `## ${date} — ${String(entry.title || "").trim()}\n\n${String(entry.body || "").trim()}\n`;
-  const heading = "# Lessons";
-  const intro =
-    "What the agents have tried and abandoned, and why. Read this before planning " +
-    "work that resembles anything below — the point of writing it down is not to " +
-    "learn it twice.";
-
-  if (!content.trim()) {
-    content = `${heading}\n\n${intro}\n\n${block}`;
-  } else {
-    // Newest first, so a Scout reading top-down meets the most recent dead ends
-    // first: insert above the newest existing entry, or append when there is none.
-    const firstEntry = content.indexOf("\n## ");
-    content = firstEntry === -1
-      ? `${content.trimEnd()}\n\n${block}`
-      : `${content.slice(0, firstEntry + 1)}${block}\n${content.slice(firstEntry + 1)}`;
-  }
-  fs.writeFileSync(p, content, "utf-8");
-  log("info", `Lessons: recorded a post-mortem for "${entry.title}".`);
-  return true;
-}
-
-/** Read the wiki's Lessons page (past dead ends), or "" when there are none. */
-export function readLessons() {
-  const p = wikiPath("Lessons.md");
-  if (p) { try { return fs.readFileSync(p, "utf-8"); } catch {} }
-  return "";
-}
-
-// ---------------------------------------------------------------------------
-// GitHub Wiki (a separate .wiki.git repo — no content API, so we use git)
-// ---------------------------------------------------------------------------
-
-/**
- * Clone the repo's wiki into `dir` using the token in the environment. Returns
- * the dir, or null if it fails (e.g. the wiki isn't enabled/initialized yet).
- * Best-effort — never throws.
- */
-export function cloneWiki(dir = "/tmp/selfgrow-wiki") {
-  try {
-    const repo = JSON.parse(
-      execSync("gh repo view --json nameWithOwner", { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }).toString()
-    ).nameWithOwner;
-    const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN || "";
-    const url = `https://x-access-token:${token}@github.com/${repo}.wiki.git`;
-    execSync(`rm -rf "${dir}" && git clone "${url}" "${dir}"`, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 });
-    execSync(`git -C "${dir}" config user.name "github-actions[bot]"`, { maxBuffer: 10 * 1024 * 1024 });
-    execSync(`git -C "${dir}" config user.email "github-actions[bot]@users.noreply.github.com"`, { maxBuffer: 10 * 1024 * 1024 });
-    log("info", `Wiki: cloned ${repo}.wiki.`);
-    return dir;
-  } catch (e) {
-    // Report what actually broke. This used to blame an uninitialized wiki
-    // whatever the cause, which sent a reader to enable a wiki that was already
-    // enabled while the real fault — usually a spent API rate limit — sat
-    // unread in the stack dump underneath.
-    const detail = String(e?.message || e);
-    let cause = "is the wiki enabled and initialized (create one page in the UI first)?";
-    if (/rate limit/i.test(detail)) {
-      cause = "the GitHub API rate limit is spent — this is temporary, and the wiki is fine. Check `gh api rate_limit`.";
-    } else if (/Authentication failed|Invalid username or token|could not read Username/i.test(detail)) {
-      cause = "the token cannot push to the wiki — check GH_TOKEN, and note the wiki is a SEPARATE repo from the code.";
-    } else if (/not found|Could not resolve/i.test(detail)) {
-      cause = "the wiki repo could not be found — is the wiki enabled and initialized (create one page in the UI first)?";
-    }
-    log("warn", `Wiki: clone failed — ${cause}`, errorData(e));
-    return null;
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Pull Requests (two identities: the bot opens, the PAT approves — so a real
 // approval is possible without a human, since you can't approve your own PR)
@@ -2271,23 +2058,6 @@ export function closePR(prNumber, comment) {
   } catch (e) {
     log("warn", `PR: could not close #${prNumber}.`, errorData(e));
     return false;
-  }
-}
-
-/** Commit and push staged wiki changes in `dir`. No-op if nothing changed. Best-effort. */
-export function pushWiki(dir, message) {
-  try {
-    const status = execSync(`git -C "${dir}" status --porcelain`, { maxBuffer: 10 * 1024 * 1024 }).toString().trim();
-    if (!status) {
-      log("info", "Wiki: no changes to publish.");
-      return;
-    }
-    execSync(`git -C "${dir}" add -A`, { maxBuffer: 10 * 1024 * 1024 });
-    execSync(`git -C "${dir}" commit -m "${message.replace(/"/g, '\\"')}"`, { maxBuffer: 10 * 1024 * 1024 });
-    execSync(`git -C "${dir}" push`, { maxBuffer: 10 * 1024 * 1024 });
-    log("info", "Wiki: published.");
-  } catch (e) {
-    log("warn", "Wiki: push failed.", errorData(e));
   }
 }
 

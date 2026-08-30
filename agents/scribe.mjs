@@ -1,5 +1,3 @@
-import fs from "fs";
-import { join } from "path";
 import {
   log,
   withLogGroup,
@@ -10,7 +8,8 @@ import {
   getWikiDir,
   readVision,
   readChangelog,
-  publishWiki,
+  writeStory,
+  writePage,
 } from "./shared.mjs";
 
 // The Scribe is the one agent that returns prose rather than the JSON envelope,
@@ -76,7 +75,7 @@ async function main() {
   );
   const storyMd = cleanMarkdown(story);
   if (storyMd) {
-    fs.writeFileSync(join(dir, "Story.md"), storyMd + "\n", "utf-8");
+    writeStory(storyMd + "\n");
   } else {
     log("warn", "Scribe: empty story output — leaving Story unchanged.");
   }
@@ -91,9 +90,7 @@ The living record of this project, maintained by its autonomous agents.
 - **[The Story So Far](Story)** — how the project has grown over time.
 - **[Lessons](Lessons)** — work the agents abandoned, and why (written when a ticket is parked).
 `;
-  fs.writeFileSync(join(dir, "Home.md"), home, "utf-8");
-
-  publishWiki("Update wiki: story + home");
+  writePage("Home.md", home, "Home: refresh the wiki index");
   printRunSummary("Scribe");
 }
 

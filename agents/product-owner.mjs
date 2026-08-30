@@ -1,4 +1,3 @@
-import fs from "fs";
 import {
   log,
   withLogGroup,
@@ -9,8 +8,7 @@ import {
   extractAgentResponse,
   getBoardSnapshot,
   readVision,
-  wikiPath,
-  publishWiki,
+  commitToWiki,
 } from "./shared.mjs";
 
 // ---------------------------------------------------------------------------
@@ -31,49 +29,42 @@ function applyRefinement(parsed) {
 
   if (!section || !action || !content || !summary) {
     log("warn", "Missing required fields in Product Owner output.", { parsed: parsed.data });
-    return { changed: false };
+    return null;
   }
 
-  const visionPath = wikiPath("Vision.md");
-  if (!visionPath) {
-    log("warn", "Wiki unavailable — cannot edit the vision.");
-    return { changed: false };
-  }
-  let current;
-  try {
-    current = fs.readFileSync(visionPath, "utf-8");
-  } catch {
-    log("warn", "Vision.md not found in the wiki (seed it first).");
-    return { changed: false };
-  }
-
-  if (action === "append") {
-    const sectionRegex = new RegExp(`(${escapeRegex(section)}[\\s\\S]*?)(?=\\n## |$)`, "i");
-    const match = current.match(sectionRegex);
-    if (!match) {
-      log("warn", `Section "${section}" not found in Vision.`);
-      return { changed: false };
-    }
-    const updated = current.replace(sectionRegex, (fullMatch) => fullMatch.trimEnd() + "\n\n" + content + "\n");
-    fs.writeFileSync(visionPath, updated, "utf-8");
-    log("info", `Appended to section "${section}".`);
-  } else if (action === "refine") {
-    if (!oldText) {
-      log("warn", "Refine action requires oldText.");
-      return { changed: false };
-    }
-    if (!current.includes(oldText)) {
-      log("warn", "oldText not found in Vision.");
-      return { changed: false };
-    }
-    fs.writeFileSync(visionPath, current.replace(oldText, content), "utf-8");
-    log("info", `Refined text in section "${section}".`);
-  } else {
-    log("warn", `Unknown action: ${action}`);
-    return { changed: false };
-  }
-
-  return { changed: true, summary };
+  return {
+    summary,
+    // Pure: takes the Vision as it is on the remote right now and returns what it
+    // should become, or null when the edit no longer applies. commitToWiki may
+    // call this several times, once per push attempt.
+    refine(current) {
+      if (!current.trim()) {
+        log("warn", "Vision.md is empty in the wiki (seed it first).");
+        return null;
+      }
+      if (action === "append") {
+        const sectionRegex = new RegExp(`(${escapeRegex(section)}[\\s\\S]*?)(?=\\n## |$)`, "i");
+        if (!sectionRegex.test(current)) {
+          log("warn", `Section "${section}" not found in Vision.`);
+          return null;
+        }
+        return current.replace(sectionRegex, (fullMatch) => fullMatch.trimEnd() + "\n\n" + content + "\n");
+      }
+      if (action === "refine") {
+        if (!oldText) {
+          log("warn", "Refine action requires oldText.");
+          return null;
+        }
+        if (!current.includes(oldText)) {
+          log("warn", "oldText not found in Vision.");
+          return null;
+        }
+        return current.replace(oldText, content);
+      }
+      log("warn", `Unknown action: ${action}`);
+      return null;
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -113,14 +104,15 @@ async function main() {
     return;
   }
 
-  const result = applyRefinement(parsed);
-  if (!result.changed) {
-    log("info", `Product Owner: no vision change applied. ${result.reason || ""}`);
+  const refinement = applyRefinement(parsed);
+  if (!refinement) {
     printRunSummary("Product Owner");
     return;
   }
 
-  publishWiki(result.summary);
+  if (commitToWiki("Vision.md", refinement.refine, refinement.summary)) {
+    log("info", `Product Owner: ${refinement.summary}`);
+  }
   printRunSummary("Product Owner");
 }
 
