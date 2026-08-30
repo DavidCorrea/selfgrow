@@ -8,6 +8,7 @@
 import * as THREE from "three";
 import { saveGardenState, loadGardenState, fastForwardState, clearGardenState, STORAGE_KEY } from "./persistence.js";
 import { createCreature } from "./creature.js";
+import { computeDisplacement } from "./groundRipple.js";
 
 export async function checks() {
   const problems = [];
@@ -2716,6 +2717,182 @@ export async function checks() {
       var hasPlant2Group = fireflyState.plantGroups.some(function(g) { return g.plantRef === 'plant2'; });
       if (!hasPlant2Group) {
         problems.push('plant2 exists in the scene but no firefly group with plantRef="plant2" was created.');
+      }
+    }
+  }
+
+  /* ---------- Fallen leaves respond to ground ripple (issue #470) ---------- */
+  var fallenLeavesState = gardenState && gardenState.fallenLeaves;
+  if (!fallenLeavesState) {
+    problems.push('window.__gardenState.fallenLeaves is not set — cannot verify leaf ripple response.');
+  } else {
+    // Verify update function exists
+    if (typeof fallenLeavesState.update !== 'function') {
+      problems.push('fallenLeavesState.update is not a function — the leaf ripple update is missing.');
+    } else {
+      // Verify basePositions and baseRotations are exposed
+      if (!fallenLeavesState.basePositions || !Array.isArray(fallenLeavesState.basePositions)) {
+        problems.push('fallenLeavesState.basePositions is missing or not an array — needed for testing leaf ripple.');
+      }
+      if (!fallenLeavesState.baseRotations || !Array.isArray(fallenLeavesState.baseRotations)) {
+        problems.push('fallenLeavesState.baseRotations is missing or not an array — needed for testing leaf ripple.');
+      }
+
+      if (fallenLeavesState.basePositions && fallenLeavesState.basePositions.length > 0) {
+        // --- Test 1: Leaves with opacity > 0 should move in response to the ripple ---
+        var leafMesh = fallenLeavesState.meshes[0];
+        var basePos = fallenLeavesState.basePositions[0];
+        var baseRot = fallenLeavesState.baseRotations[0];
+
+        // Save original opacity and set to 1 (visible)
+        var origOpacity = leafMesh.material.opacity;
+        leafMesh.material.opacity = 1;
+
+        // Test multiple times to find a time where the leaf actually moves
+        var foundMovement = false;
+        var maxRotDelta = 0;
+        var maxPosDelta = 0;
+        var maxYDisp = 0;
+
+        for (var testTime = 0; testTime < 20; testTime += 0.5) {
+          // Reset to base first
+          leafMesh.position.set(basePos.x, basePos.y, basePos.z);
+          leafMesh.rotation.x = baseRot.x;
+          leafMesh.rotation.z = baseRot.z;
+
+          // Run update
+          fallenLeavesState.update(testTime, computeDisplacement);
+
+          var rotDelta = Math.abs(leafMesh.rotation.x - baseRot.x);
+          var posDelta = Math.sqrt(
+            (leafMesh.position.x - basePos.x) * (leafMesh.position.x - basePos.x) +
+            (leafMesh.position.z - basePos.z) * (leafMesh.position.z - basePos.z)
+          );
+          var yDisp = Math.abs(leafMesh.position.y - basePos.y);
+
+          if (rotDelta > maxRotDelta) maxRotDelta = rotDelta;
+          if (posDelta > maxPosDelta) maxPosDelta = posDelta;
+          if (yDisp > maxYDisp) maxYDisp = yDisp;
+
+          if (rotDelta > 0.001 || posDelta > 0.0001 || yDisp > 0.0001) {
+            foundMovement = true;
+          }
+        }
+
+        if (!foundMovement) {
+          problems.push('Fallen leaves did not respond to ground ripple: max rotation delta=' + maxRotDelta.toFixed(5) + ' rad, max position delta=' + maxPosDelta.toFixed(5) + ', max y displacement=' + maxYDisp.toFixed(5) + ' — expected at least some movement in response to the wave.');
+        }
+
+        // Verify rotation is within ±0.05 rad limit
+        if (maxRotDelta > 0.051) {
+          problems.push('Fallen leaf rotation delta exceeds ±0.05 rad limit: measured ' + maxRotDelta.toFixed(4) + ' rad.');
+        }
+
+        // Verify position drift is within ±0.01 units limit
+        if (maxPosDelta > 0.011) {
+          problems.push('Fallen leaf position drift exceeds ±0.01 units limit: measured ' + maxPosDelta.toFixed(4) + ' units.');
+        }
+
+        // Restore original opacity
+        leafMesh.material.opacity = origOpacity;
+
+        // --- Test 2: Transparent leaves (opacity 0) should not move ---
+        // Reset to base
+        leafMesh.position.set(basePos.x, basePos.y, basePos.z);
+        leafMesh.rotation.x = baseRot.x;
+        leafMesh.rotation.z = baseRot.z;
+
+        // Set opacity to 0
+        leafMesh.material.opacity = 0;
+        fallenLeavesState.update(5.0, computeDisplacement);
+
+        var rotAfterTransparent = Math.abs(leafMesh.rotation.x - baseRot.x);
+        var posAfterTransparent = Math.sqrt(
+          (leafMesh.position.x - basePos.x) * (leafMesh.position.x - basePos.x) +
+          (leafMesh.position.z - basePos.z) * (leafMesh.position.z - basePos.z) +
+          (leafMesh.position.y - basePos.y) * (leafMesh.position.y - basePos.y)
+        );
+
+        if (rotAfterTransparent > 0.0001 || posAfterTransparent > 0.0001) {
+          problems.push('Transparent leaf (opacity 0) moved after update: rotation delta=' + rotAfterTransparent.toFixed(5) + ' rad, position delta=' + posAfterTransparent.toFixed(5) + ' — transparent leaves should not visibly move.');
+        }
+
+        // Restore original opacity
+        leafMesh.material.opacity = origOpacity;
+
+        // --- Test 3: prefers-reduced-motion keeps leaves static ---
+        var origMatchMedia = window.matchMedia;
+        try {
+          window.matchMedia = function() {
+            return {
+              matches: true,
+              media: '(prefers-reduced-motion: reduce)',
+              addEventListener: function() {},
+              removeEventListener: function() {}
+            };
+          };
+
+          // Reset to base
+          leafMesh.position.set(basePos.x, basePos.y, basePos.z);
+          leafMesh.rotation.x = baseRot.x;
+          leafMesh.rotation.z = baseRot.z;
+
+          leafMesh.material.opacity = 1;
+          fallenLeavesState.update(5.0, computeDisplacement);
+
+          var rotAfterReduced = Math.abs(leafMesh.rotation.x - baseRot.x);
+          var posAfterReduced = Math.sqrt(
+            (leafMesh.position.x - basePos.x) * (leafMesh.position.x - basePos.x) +
+            (leafMesh.position.z - basePos.z) * (leafMesh.position.z - basePos.z) +
+            (leafMesh.position.y - basePos.y) * (leafMesh.position.y - basePos.y)
+          );
+
+          if (rotAfterReduced > 0.0001 || posAfterReduced > 0.0001) {
+            problems.push('With prefers-reduced-motion active, fallen leaf still moved: rotation delta=' + rotAfterReduced.toFixed(5) + ' rad, position delta=' + posAfterReduced.toFixed(5) + ' — leaves should remain static.');
+          }
+
+          // Restore opacity
+          leafMesh.material.opacity = origOpacity;
+        } finally {
+          window.matchMedia = origMatchMedia;
+        }
+      }
+    }
+
+    // Verify computeDisplacement is exported and returns consistent values
+    if (typeof computeDisplacement !== 'function') {
+      problems.push('computeDisplacement is not exported from groundRipple.js — expected a function.');
+    } else {
+      // Test the function returns a number
+      var testVal = computeDisplacement(0, 0, 0);
+      if (typeof testVal !== 'number' || isNaN(testVal)) {
+        problems.push('computeDisplacement(0, 0, 0) returned ' + testVal + ' — expected a number.');
+      }
+
+      // Test that it produces different values at different positions (asymmetric wave field)
+      var valA = computeDisplacement(0.3, 0.2, 1.0);
+      var valB = computeDisplacement(-0.4, 0.5, 1.0);
+      if (Math.abs(valA - valB) < 0.0001) {
+        problems.push('computeDisplacement produces the same value at different positions (' + valA + ') — expected position-dependent variation.');
+      }
+
+      // Test that it produces different values at different times
+      var valC = computeDisplacement(0.3, 0.2, 2.0);
+      if (Math.abs(valA - valC) < 0.0001) {
+        problems.push('computeDisplacement produces the same value at different times (' + valA + ' at t=1.0 and ' + valC + ' at t=2.0) — expected time-dependent variation.');
+      }
+
+      // Test that the amplitude is within reasonable bounds
+      var maxVal = 0;
+      for (var q = 0; q < 100; q++) {
+        var v = computeDisplacement(Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 10);
+        if (Math.abs(v) > maxVal) maxVal = Math.abs(v);
+      }
+      if (maxVal > 0.02) {
+        problems.push('computeDisplacement maximum amplitude is ' + maxVal.toFixed(5) + ', expected <= 0.02 (the wave should be very subtle).');
+      }
+      if (maxVal < 0.001) {
+        problems.push('computeDisplacement maximum amplitude is ' + maxVal.toFixed(5) + ', expected > 0.001 (the wave should produce some displacement).');
       }
     }
   }

@@ -727,6 +727,8 @@ export function createFallenLeaves(scene) {
   });
 
   const meshes = [];
+  const basePositions = [];
+  const baseRotations = [];
 
   for (let i = 0; i < LEAF_COUNT; i++) {
     const leaf = new THREE.Mesh(leafGeo, leafMat);
@@ -752,6 +754,92 @@ export function createFallenLeaves(scene) {
 
     scene.add(leaf);
     meshes.push(leaf);
+
+    /* Store base positions and rotations for ripple response */
+    basePositions.push({ x, y: 0.005, z });
+    baseRotations.push({ x: leaf.rotation.x, z: leaf.rotation.z });
+  }
+
+  /* --- Update function: called each frame to make leaves respond to ground ripple ---
+   *
+   * Each leaf subtly rotates (±0.05 rad) and shifts position (±0.01 units)
+   * in sync with the ground ripple wave animation, suggesting wind moving
+   * across the soil surface. The effect is barely perceptible.
+   *
+   * Respects prefers-reduced-motion: when active, leaves remain at their
+   * base positions with no rotation offset.
+   *
+   * Leaves that are transparent (opacity 0, e.g. spring/summer) do not
+   * visibly move.
+   *
+   * @param {number} time — current animation time in seconds
+   * @param {function} computeDisplacement — (x, z, time) => number, from groundRipple.js
+   */
+  function update(time, computeDisplacement) {
+    if (!computeDisplacement) return;
+
+    const reducedMotionMedia = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const reducedMotion = reducedMotionMedia.matches;
+
+    if (reducedMotion) {
+      // Reset leaves to base positions
+      for (let i = 0; i < LEAF_COUNT; i++) {
+        const leaf = meshes[i];
+        const base = basePositions[i];
+        const baseRot = baseRotations[i];
+        leaf.position.set(base.x, base.y, base.z);
+        leaf.rotation.x = baseRot.x;
+        leaf.rotation.z = baseRot.z;
+      }
+      return;
+    }
+
+    for (let i = 0; i < LEAF_COUNT; i++) {
+      const leaf = meshes[i];
+      const base = basePositions[i];
+      const baseRot = baseRotations[i];
+
+      // Skip transparent leaves (opacity 0, e.g. spring/summer)
+      if (leaf.material.opacity === 0) {
+        leaf.position.set(base.x, base.y, base.z);
+        leaf.rotation.x = baseRot.x;
+        leaf.rotation.z = baseRot.z;
+        continue;
+      }
+
+      // Compute displacement at base position
+      const d = computeDisplacement(base.x, base.z, time);
+
+      // Compute slope at base position for position drift
+      const eps = 0.01;
+      const dx = computeDisplacement(base.x + eps, base.z, time);
+      const dz = computeDisplacement(base.x, base.z + eps, time);
+      const slopeX = (dx - d) / eps;
+      const slopeZ = (dz - d) / eps;
+
+      // Apply y displacement (follow ground displacement)
+      leaf.position.y = base.y + d;
+
+      // Apply position drift (±0.01 units) — proportional to wave slope
+      // Clamp the vector magnitude so the Euclidean distance never exceeds 0.01
+      const driftScale = 5.0;
+      let driftX = slopeX * driftScale;
+      let driftZ = slopeZ * driftScale;
+      const driftMag = Math.sqrt(driftX * driftX + driftZ * driftZ);
+      if (driftMag > 0.01) {
+        const clamp = 0.01 / driftMag;
+        driftX *= clamp;
+        driftZ *= clamp;
+      }
+      leaf.position.x = base.x + driftX;
+      leaf.position.z = base.z + driftZ;
+
+      // Apply rotation (±0.05 rad) — proportional to displacement
+      // The rotation tilts the leaf around the X axis (like a wave passing under it)
+      const rotScale = 6.0;
+      const rotAmount = Math.max(-0.05, Math.min(0.05, d * rotScale));
+      leaf.rotation.x = baseRot.x + rotAmount;
+    }
   }
 
   /* Exposed state for seasonal cycle updates and self-test */
@@ -760,7 +848,10 @@ export function createFallenLeaves(scene) {
     meshes,
     material: leafMat,
     count: LEAF_COUNT,
-    spreadRadius: SPREAD_RADIUS
+    spreadRadius: SPREAD_RADIUS,
+    basePositions,
+    baseRotations,
+    update
   };
 
   window.__gardenState.fallenLeaves = state;
