@@ -24,18 +24,22 @@ concurrency:
 
 jobs:
   review:
-    # Two guards, both necessary.
+    # Three guards, all necessary.
     #
-    # The bot's own PRs are already reviewed inside the Devs run that opened them;
-    # picking them up here would review the same change twice with two different
-    # budgets.
+    # FORKS are excluded. A pull_request run from a fork gets no secrets, so the
+    # model call would fail anyway — but the important half is that this job checks
+    # out the PR's head and runs an agent with write access over it, which must
+    # never happen for a branch an outsider controls.
     #
-    # And FORKS are excluded. A pull_request run from a fork gets no secrets, so
-    # the model call would fail anyway — but the important half is that this job
-    # checks out the PR's head and runs an agent with write access over it, which
-    # must never happen for a branch an outsider controls.
+    # The pipeline's own PRs are excluded twice over, by BRANCH and by author. The
+    # branch check is the one that matters: agent PRs are opened by the PAT — they
+    # have to be, or GitHub never starts their checks — so their author is a real
+    # person and the author check alone would stop excluding them. Every one would
+    # then be reviewed a second time here, by a second model, on a second budget,
+    # after the Devs had already reviewed and merged it.
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository &&
+      !startsWith(github.event.pull_request.head.ref, 'agent/') &&
       github.event.pull_request.user.login != 'github-actions[bot]'
     runs-on: ubuntu-latest
     # Up to two verify → review → fix cycles, each bounded by MAX_SESSION_MINUTES.

@@ -85,7 +85,7 @@ flowchart LR
 - **Scout** plans the highest-priority buildable ticket. It does not judge whether the ticket should exist — the PM settled that at 00:30.
 - **verify** runs cheapest-first: `node --check` → ESLint → a real Chromium page load → the product's own `checks()`.
 - **Reviewer** is drawn from a *different model* than wrote the code. Review is only worth its request if it can disagree.
-- **auto-merge** means the agent asks and the required checks answer — it no longer merges on its own say-so.
+- **auto-merge** means the agent asks and the required checks answer — it no longer merges on its own say-so. The PAT opens the PR and the bot approves it: GitHub does not start workflows for events created by `GITHUB_TOKEN`, so a bot-opened PR would sit forever waiting on checks that never run.
 
 Failure is first-class: a ticket accrues strikes, gets parked, and the Tech Lead decides whether it returns smaller or not at all. Every dead end becomes a post-mortem the *next* Scout reads.
 
@@ -159,8 +159,8 @@ Two channels, both **Discussions**, neither asking anything of you.
 | Secret | For |
 | --- | --- |
 | `OPENROUTER_API_KEY` | every model call |
-| `AGENT_PAT` | issues, board, milestones, wiki, approving PRs |
-| `GITHUB_TOKEN` | opening PRs as a second identity *(built in)* |
+| `AGENT_PAT` | issues, board, milestones, wiki, **opening** PRs |
+| `GITHUB_TOKEN` | **approving** PRs as a second identity *(built in)* |
 
 The PAT needs `project` scope. Set `GH_PROJECT_OWNER` / `GH_PROJECT_NUMBER` to point at your board.
 

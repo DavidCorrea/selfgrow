@@ -542,8 +542,19 @@ async function buildTicket(openIssues, vision) {
       }
       approvePR(prNumber, "Approved by the Reviewer agent — all blocking issues resolved.");
       if (!(await mergePR(prNumber))) {
-        log("error", "PR merge failed — leaving PR open and card In review for inspection.");
-        return { addressedIssue, addressedIssueObj, outcome: "abandoned", reason: "PR merge failed.", ticketFault: false };
+        // Auto-merge stays armed, so this usually lands on its own once the
+        // checks finish — but not before this run would have branched the NEXT
+        // ticket from a main that does not have it. So the run stops here rather
+        // than building on a tree it cannot see. No strike: nothing about the
+        // ticket failed.
+        log("error", "PR did not land in time — stopping the run so the next ticket does not branch from a main without it.");
+        return {
+          addressedIssue,
+          addressedIssueObj,
+          outcome: "unlanded",
+          reason: "Approved and armed for auto-merge, but it had not landed when the run had to stop.",
+          ticketFault: false,
+        };
       }
       try { gitExec("checkout main"); } catch {}
 
@@ -750,6 +761,10 @@ async function main() {
       if (attempts >= MAX_TICKET_ATTEMPTS) {
         await writePostMortem(result.addressedIssueObj, result.reason);
       }
+    }
+    if (result.outcome === "unlanded") {
+      log("info", `#${result.addressedIssue} is waiting on its checks — stopping so nothing branches from a main without it.`);
+      break;
     }
     if (result.outcome === "none") {
       log("info", "No ticket could be planned this pass — stopping.");
