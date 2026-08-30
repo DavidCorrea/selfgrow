@@ -431,7 +431,9 @@
       creature: creature.state,
       creatureUpdate: creature.update,
       fireflies: fireflies.state,
-      firefliesUpdate: fireflies.update
+      firefliesUpdate: fireflies.update,
+      /* Winter legacy effect (issue #471): set by startSeasonalCycle each tick */
+      winterLegacyBlend: 0
     };
 
     /* --- Persistence: restore previous state if available --- */

@@ -560,6 +560,102 @@ export async function checks() {
     }
   }
 
+  /* ---------- Winter legacy effect checks (issue #471) ---------- */
+  // Verify winterLegacyBlend is exposed, has the correct structure,
+  // and matches the expected value derived from the current per-season progress.
+  if (gardenState && typeof gardenState.winterLegacyBlend !== 'number') {
+    problems.push('window.__gardenState.winterLegacyBlend is not a number — winter legacy blend not exposed.');
+  } else if (gardenState && typeof gardenState.seasonProgress === 'number') {
+    // Mirror the seasonal colour system from garden.js
+    const SEASON_DURATION_MS = 180_000;
+    const CYCLE_DURATION_MS = SEASON_DURATION_MS * 4;
+    const SEASON_NAMES = ['Spring', 'Summer', 'Autumn', 'Winter'];
+    const PALETTES = {
+      spring: { stem: 0x5d8a3c, leaf: 0x4a8c2a, ground: 0x4a3728 },
+      summer: { stem: 0x7a9a4a, leaf: 0x6a9a3a, ground: 0x5a4a30 },
+      autumn: { stem: 0x9a7a3a, leaf: 0xaa6a2a, ground: 0x6a5a3a },
+      winter: { stem: 0x6a5a3a, leaf: 0x5a4a2a, ground: 0x3a2a1a }
+    };
+
+    // Derive season index and per-season progress from the stored cycle progress
+    const cycleTime = (gardenState.seasonProgress * CYCLE_DURATION_MS) % CYCLE_DURATION_MS;
+    const seasonIndex = Math.floor(cycleTime / SEASON_DURATION_MS) % 4;
+    const seasonProgress = (cycleTime % SEASON_DURATION_MS) / SEASON_DURATION_MS;
+
+    const expectedBlend = (seasonIndex === 0 && seasonProgress < 0.30)
+      ? 0.10 * (1 - seasonProgress / 0.30)
+      : 0;
+
+    const actualBlend = gardenState.winterLegacyBlend;
+    const eps = 0.0001;
+    if (Math.abs(actualBlend - expectedBlend) > eps) {
+      problems.push(
+        'winterLegacyBlend mismatch: expected ' + expectedBlend.toFixed(5) +
+        ' (seasonIndex=' + seasonIndex + ', seasonProgress=' + seasonProgress.toFixed(3) + ')' +
+        ', got ' + actualBlend.toFixed(5) +
+        ' — the winter legacy blend must be: when spring (seasonIndex=0) and seasonProgress<0.30, weight=0.10*(1-seasonProgress/0.30), else 0.'
+      );
+    }
+
+    // Verify the blend weight is always in [0, 0.10]
+    if (actualBlend < 0 || actualBlend > 0.10) {
+      problems.push('winterLegacyBlend is ' + actualBlend.toFixed(5) + ', expected in [0, 0.10].');
+    }
+
+    // Verify blend is non-zero ONLY during spring's first 30%
+    if (seasonIndex === 0 && seasonProgress < 0.30) {
+      if (actualBlend <= 0) {
+        problems.push('winterLegacyBlend is ' + actualBlend.toFixed(5) + ' during spring\'s first 30% (seasonProgress=' + seasonProgress.toFixed(3) + '), expected > 0.');
+      }
+    } else {
+      if (actualBlend !== 0) {
+        problems.push('winterLegacyBlend is ' + actualBlend.toFixed(5) + ' outside spring\'s first 30% (seasonIndex=' + seasonIndex + ', seasonProgress=' + seasonProgress.toFixed(3) + '), expected 0.');
+      }
+    }
+
+    // Verify the ground colour matches the expected seasonal computation
+    // (normal palette lerp, plus the winter legacy blend for early spring),
+    // and that stem/leaf colours match the plain palette lerp (unaffected by the blend).
+    //
+    // Note: THREE.Color in the loaded version does not have a distanceTo method,
+    // so we compute Euclidean distance manually.
+    function colorDist(a, b) {
+      const dr = a.r - b.r;
+      const dg = a.g - b.g;
+      const db = a.b - b.b;
+      return Math.sqrt(dr * dr + dg * dg + db * db);
+    }
+
+    const groundMat = gardenState.groundMat;
+    const plant = gardenState.plant;
+    if (groundMat && plant && plant.stemMat && plant.leafMat) {
+      const current = PALETTES[SEASON_NAMES[seasonIndex].toLowerCase()];
+      const next = PALETTES[SEASON_NAMES[(seasonIndex + 1) % 4].toLowerCase()];
+      const t = seasonProgress;
+
+      const expectedGround = new THREE.Color(current.ground).lerp(new THREE.Color(next.ground), t);
+      if (expectedBlend > 0) {
+        expectedGround.lerp(new THREE.Color(0x3a2a1a), expectedBlend);
+      }
+      const groundDist = colorDist(groundMat.color, expectedGround);
+      if (groundDist > 0.02) {
+        problems.push('Ground colour ' + groundMat.color.getHexString() + ' does not match expected seasonal colour ' + expectedGround.getHexString() + ' (distance ' + groundDist.toFixed(4) + ') — the base lerp or winter legacy blend may be wrong.');
+      }
+
+      const expectedStem = new THREE.Color(current.stem).lerp(new THREE.Color(next.stem), t);
+      const stemDist = colorDist(plant.stemMat.color, expectedStem);
+      if (stemDist > 0.02) {
+        problems.push('Stem colour ' + plant.stemMat.color.getHexString() + ' does not match expected seasonal colour ' + expectedStem.getHexString() + ' (distance ' + stemDist.toFixed(4) + ') — stem should follow the plain palette lerp, unaffected by the winter legacy blend.');
+      }
+
+      const expectedLeaf = new THREE.Color(current.leaf).lerp(new THREE.Color(next.leaf), t);
+      const leafDist = colorDist(plant.leafMat.color, expectedLeaf);
+      if (leafDist > 0.02) {
+        problems.push('Leaf colour ' + plant.leafMat.color.getHexString() + ' does not match expected seasonal colour ' + expectedLeaf.getHexString() + ' (distance ' + leafDist.toFixed(4) + ') — leaf should follow the plain palette lerp, unaffected by the winter legacy blend.');
+      }
+    }
+  }
+
   /* ---------- Ambient floating particles checks ---------- */
   const particles = gardenState && gardenState.particles;
   if (!particles) {

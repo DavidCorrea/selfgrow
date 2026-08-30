@@ -940,6 +940,22 @@ export function startSeasonalCycle(initialProgress) {
 
     if (groundMat) {
       groundMat.color.copy(current.ground).lerp(next.ground, t);
+
+      /* --- Winter legacy effect (issue #471) ---
+       * In early spring, the ground colour retains a slight desaturation
+       * from winter, gradually warming to full spring colour over the
+       * first ~30% of the spring quarter. The winter ground colour
+       * (0x3a2a1a) is blended in at 10% weight at the start of spring,
+       * linearly tapering to 0% by the time spring is 30% complete.
+       * Only the ground colour is affected — stem/leaf colours are unchanged. */
+      if (seasonIndex === 0 && seasonProgress < 0.30) {
+        const winterLegacyBlend = 0.10 * (1 - seasonProgress / 0.30);
+        const winterGround = new THREE.Color(0x3a2a1a);
+        groundMat.color.lerp(winterGround, winterLegacyBlend);
+        gs.winterLegacyBlend = winterLegacyBlend;
+      } else {
+        gs.winterLegacyBlend = 0;
+      }
     }
 
     /* --- Fallen leaves lifecycle (issue #448) --- */
