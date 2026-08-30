@@ -9,6 +9,7 @@ import {
   checkAbandonRate,
   checkBudgetHeadroom,
   checkWeeklyAgents,
+  checkDeployedSite,
 } from "./health.mjs";
 
 const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
@@ -114,5 +115,35 @@ test("noticing a weekly agent that has stopped working", async (t) => {
 
   await t.test("ignores an agent that has never run", () => {
     assert.equal(checkWeeklyAgents({ runs: [] }), null);
+  });
+});
+
+test("noticing that nobody can see the product", async (t) => {
+  // Every other check in this pipeline verifies a local copy before a merge.
+  // This is the only one that asks whether the deployed page actually works.
+  await t.test("says nothing when the site serves the product", async () => {
+    const site = { url: "https://x.github.io/y/", status: 200, hasMarker: true };
+    assert.equal(await checkDeployedSite({ site }), null);
+  });
+
+  await t.test("reports an unreachable site", async () => {
+    const finding = await checkDeployedSite({ site: { url: "https://x/", error: "getaddrinfo ENOTFOUND" } });
+    assert.match(finding, /could not be reached/);
+  });
+
+  await t.test("reports a non-200, which is what a failed deploy looks like", async () => {
+    const finding = await checkDeployedSite({ site: { url: "https://x/", status: 404 } });
+    assert.match(finding, /returned HTTP 404/);
+  });
+
+  await t.test("catches a page that loads but is not our product", async () => {
+    // A stale or half-finished Pages deploy returns 200 and looks fine.
+    const finding = await checkDeployedSite({ site: { url: "https://x/", status: 200, hasMarker: false } });
+    assert.match(finding, /no longer contains/);
+    assert.match(finding, /stale or failed Pages deploy/);
+  });
+
+  await t.test("stays quiet when no site is configured", async () => {
+    assert.equal(await checkDeployedSite({ site: null }), null);
   });
 });

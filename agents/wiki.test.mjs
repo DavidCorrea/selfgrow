@@ -4,7 +4,7 @@
 // a retry that duplicates the entry it just wrote is how a changelog rots.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { withChangelogEntry, withLesson } from "./wiki.mjs";
+import { withChangelogEntry, withLesson, trimSections } from "./wiki.mjs";
 
 test("recording what shipped", async (t) => {
   await t.test("starts a page that does not exist yet", () => {
@@ -65,5 +65,54 @@ test("recording why something was abandoned", async (t) => {
   await t.test("is safe to replay", () => {
     const once = withLesson("", lesson, "2026-08-30");
     assert.equal(withLesson(once, lesson, "2026-08-30"), once);
+  });
+});
+
+
+test("keeping the memory pages from growing without bound", async (t) => {
+  // Both pages are read WHOLE into prompts — the Scout gets every lesson before
+  // planning each of the day's tickets. Untrimmed, they inflate a fixed context
+  // until something silently falls out of it.
+  await t.test("keeps the newest sections and drops the oldest", () => {
+    const page = "# Lessons\n\nIntro.\n" +
+      [3, 2, 1].map((n) => `\n## 2026-08-0${n} — Entry ${n}\n\nBody ${n}.\n`).join("");
+    const trimmed = trimSections(page, 2);
+    assert.ok(trimmed.includes("Entry 3") && trimmed.includes("Entry 2"));
+    assert.ok(!trimmed.includes("Entry 1"), "the oldest entry should have aged out");
+  });
+
+  await t.test("always keeps the title and intro above the entries", () => {
+    const page = "# Lessons\n\nRead this before planning.\n\n## 2026-08-01 — One\n\nBody.\n";
+    const trimmed = trimSections(page, 0);
+    assert.match(trimmed, /^# Lessons/);
+    assert.match(trimmed, /Read this before planning/);
+  });
+
+  await t.test("leaves a page that already fits completely alone", () => {
+    const page = "# Lessons\n\nIntro.\n\n## 2026-08-01 — One\n\nBody.\n";
+    assert.equal(trimSections(page, 20), page);
+  });
+
+  await t.test("leaves a page with no entries alone", () => {
+    assert.equal(trimSections("# Lessons\n\nIntro only.\n", 5), "# Lessons\n\nIntro only.\n");
+  });
+
+  await t.test("bounds the lessons page as entries accumulate", () => {
+    let page = "";
+    for (let day = 1; day <= 40; day++) {
+      page = withLesson(page, { title: `Lesson ${day}`, body: "x" }, `2026-09-${String(day % 30 + 1).padStart(2, "0")}`);
+    }
+    const entries = (page.match(/^## /gm) || []).length;
+    assert.ok(entries <= 20, `expected at most 20 entries, got ${entries}`);
+    assert.ok(page.includes("Lesson 40"), "the newest lesson must survive");
+  });
+
+  await t.test("bounds the changelog as days accumulate", () => {
+    let page = "";
+    for (let day = 1; day <= 60; day++) {
+      page = withChangelogEntry(page, `Shipped ${day}`, `2026-07-${String((day % 28) + 1).padStart(2, "0")}`);
+    }
+    const days = (page.match(/^## \d{4}-\d{2}-\d{2}$/gm) || []).length;
+    assert.ok(days <= 45, `expected at most 45 days, got ${days}`);
   });
 });

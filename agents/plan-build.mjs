@@ -49,7 +49,7 @@ const MAX_TICKETS = Number(process.env.MAX_TICKETS_PER_RUN || 6);
 // Builder ceiling was a product written in no single place: raising the slot count
 // from 4 to 8 silently doubled the day. It is now simply the pool the one job
 // spends, and the number below decides how many tickets that pool can carry.
-const BUILDER_DAY_BUDGET = Number(process.env.BUILDER_DAY_BUDGET || 600);
+const BUILDER_DAY_BUDGET = Number(process.env.BUILDER_DAY_BUDGET || 500);
 
 // What one ticket needs to have a real chance of shipping (a merged ticket
 // measured 33-50 requests, and a ticket that needs a review round or two costs

@@ -60,6 +60,13 @@ const MAX_FINDINGS = Number(process.env.MAX_PLAYTEST_FINDINGS || 3);
 
 const APP_DIR = join(repoRoot, "docs");
 
+// The deployed site, when there is one. Playing the LIVE page rather than a local
+// copy of the repository is the difference between "the code we merged works" and
+// "what a visitor gets works" — and only the second is what this agent is for.
+// Everything else in the pipeline verifies the first, before a merge, against a
+// local server. Falls back to serving docs/ when no URL is configured.
+const SITE_URL = process.env.SITE_URL || "";
+
 /**
  * Everything the state layer is currently saying, plus how the page is built.
  * Read from the DOM the product is required to maintain, which is also what a
@@ -89,7 +96,7 @@ function readPage() {
  * verifyBuild and reviewApp already degrade.
  */
 export async function observeApp() {
-  if (!fs.existsSync(join(APP_DIR, "index.html"))) {
+  if (!SITE_URL && !fs.existsSync(join(APP_DIR, "index.html"))) {
     log("info", "Playtest: no app yet — nothing to play.");
     return null;
   }
@@ -101,15 +108,17 @@ export async function observeApp() {
     return null;
   }
 
-  const { server, port } = await startStaticServer(APP_DIR);
-  const url = `http://127.0.0.1:${port}/`;
+  // The live site when we have one; a local copy of the repository otherwise.
+  const local = SITE_URL ? null : await startStaticServer(APP_DIR);
+  const url = SITE_URL || `http://127.0.0.1:${local.port}/`;
+  log("info", SITE_URL ? `Playing the live site at ${url}` : "Playing a local copy of docs/");
   const consoleErrors = [];
   let browser;
   try {
     browser = await chromium.launch();
   } catch (e) {
     log("warn", "Playtest: could not launch a browser — skipping.", errorData(e));
-    server.close();
+    local?.server.close();
     return null;
   }
 
@@ -155,13 +164,13 @@ export async function observeApp() {
     await page.waitForTimeout(2000);
     const afterReload = (await page.evaluate(readPage)).state;
 
-    return { opening, tabOrder, timeline, afterReload, consoleErrors };
+    return { opening, tabOrder, timeline, afterReload, consoleErrors, url };
   } catch (e) {
     log("warn", "Playtest: the session broke off early — reporting what was seen.", errorData(e));
     return null;
   } finally {
     await browser.close().catch(() => {});
-    server.close();
+    local?.server.close();
   }
 }
 
@@ -174,12 +183,13 @@ export async function observeApp() {
  * invites it to audit structure instead.
  */
 export function renderSession(session) {
-  const { opening, tabOrder, timeline, afterReload, consoleErrors } = session;
+  const { opening, tabOrder, timeline, afterReload, consoleErrors, url } = session;
 
   const unchanged = timeline.length > 1 && timeline.every((s) => s.state === timeline[0].state);
   const sameAfterReload = afterReload === timeline[timeline.length - 1]?.state;
 
   return [
+    url ? `_Played at ${url}._\n` : "",
     `## The page when it loaded`,
     `Title: ${opening.title || "(none)"}`,
     `Headings: ${opening.headings.join(" / ") || "(none)"}`,

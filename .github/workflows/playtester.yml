@@ -54,3 +54,7 @@ jobs:
           GH_TOKEN: ${{ secrets.AGENT_PAT }}
           GH_PROJECT_OWNER: '@me'
           GH_PROJECT_NUMBER: '3'
+          # Play the LIVE site, not a local copy of the repository. The difference
+          # is "the code we merged works" versus "what a visitor gets works", and
+          # only the second is what this agent is for.
+          SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
