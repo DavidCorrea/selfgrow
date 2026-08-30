@@ -1618,6 +1618,66 @@ export async function checks() {
     if (creatureState.group && creatureState.group.name !== 'creature') {
       problems.push('creature.group.name is "' + creatureState.group.name + '", expected "creature".');
     }
+
+    // Test creature visibility during different day/night phases (issue #456)
+    var creatureDayNight = gardenState && gardenState.dayNight;
+    if (creatureDayNight && typeof creatureDayNight.getCycleProgress === 'function' && typeof creatureDayNight.getPhaseName === 'function') {
+      // Save original getCycleProgress
+      var origGetCycleProgress = creatureDayNight.getCycleProgress;
+      try {
+        // Test 1: During Night (t ~0.85), creature should be invisible
+        creatureDayNight.getCycleProgress = function() { return 0.85; };
+        if (typeof gardenState.creatureUpdate === 'function') {
+          gardenState.creatureUpdate(0, 0.016);
+          if (creatureState.group && creatureState.group.visible !== false) {
+            problems.push('During Night phase (t=0.85), creature.group.visible is ' + creatureState.group.visible + ' — expected false (butterfly should rest during Night).');
+          }
+
+          // Test 2: During Morning (t ~0.1), creature should be visible
+          creatureDayNight.getCycleProgress = function() { return 0.1; };
+          gardenState.creatureUpdate(0, 0.016);
+          if (creatureState.group && creatureState.group.visible !== true) {
+            problems.push('During Morning phase (t=0.1), creature.group.visible is ' + creatureState.group.visible + ' — expected true (butterfly should return at Morning).');
+          }
+
+          // Test 3: Transition from Night to Morning — creature should appear (immediate, no fade)
+          creatureDayNight.getCycleProgress = function() { return 0.85; };
+          gardenState.creatureUpdate(0, 0.016);
+          if (creatureState.group && creatureState.group.visible !== false) {
+            problems.push('Setting Night phase (t=0.85), creature.group.visible should become false immediately — got ' + creatureState.group.visible);
+          }
+          creatureDayNight.getCycleProgress = function() { return 0.1; };
+          gardenState.creatureUpdate(0, 0.016);
+          if (creatureState.group && creatureState.group.visible !== true) {
+            problems.push('Setting Morning phase (t=0.1) after Night, creature.group.visible should become true immediately — got ' + creatureState.group.visible + ' (expected immediate transition, no fade).');
+          }
+
+          // Test 4: Midday (t ~0.35) — creature should also be visible
+          creatureDayNight.getCycleProgress = function() { return 0.35; };
+          gardenState.creatureUpdate(0, 0.016);
+          if (creatureState.group && creatureState.group.visible !== true) {
+            problems.push('During Midday phase (t=0.35), creature.group.visible is ' + creatureState.group.visible + ' — expected true (butterfly flies during the day).');
+          }
+
+          // Test 5: Evening (t ~0.55) — creature should still be visible
+          creatureDayNight.getCycleProgress = function() { return 0.55; };
+          gardenState.creatureUpdate(0, 0.016);
+          if (creatureState.group && creatureState.group.visible !== true) {
+            problems.push('During Evening phase (t=0.55), creature.group.visible is ' + creatureState.group.visible + ' — expected true (butterfly flies during evening).');
+          }
+
+          // Test 6: Late Night (t ~0.95) — creature should remain invisible
+          creatureDayNight.getCycleProgress = function() { return 0.95; };
+          gardenState.creatureUpdate(0, 0.016);
+          if (creatureState.group && creatureState.group.visible !== false) {
+            problems.push('During late Night phase (t=0.95), creature.group.visible is ' + creatureState.group.visible + ' — expected false (butterfly should rest during all of Night).');
+          }
+        }
+      } finally {
+        // Restore original getCycleProgress
+        creatureDayNight.getCycleProgress = origGetCycleProgress;
+      }
+    }
   }
 
   /* ---------- Star field checks (issue #449) ---------- */
