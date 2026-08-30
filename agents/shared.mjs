@@ -200,12 +200,18 @@ let modelRequestCount = 0;
 
 // Agent TURNS, which is what OpenRouter actually charges: one completion request
 // per turn of the agentic loop, so a session that makes 20 tool calls costs ~20
-// requests while modelRequestCount above records 1. The budget still counts
-// sessions; this only measures the gap, so the budget can be re-expressed in the
-// real unit once we know the multiplier. See runAgent.
+// requests while modelRequestCount above records 1.
+//
+// THIS is what every budget is measured in — isRequestBudgetSpent, the reserve
+// checks, and the daily ledger all read this counter. modelRequestCount above is
+// SESSIONS, kept only so the logs can say how many were started; comparing that
+// one to a budget is the ~16x error this counter exists to have fixed.
 let modelTurnCount = 0;
 
-/** How many model requests this run has spent (successes and failures alike). */
+/**
+ * How many agent SESSIONS this run has started (successes and failures alike).
+ * Not the billed unit — see getModelTurnCount for what the budgets measure.
+ */
 export function getModelRequestCount() {
   return modelRequestCount;
 }
@@ -668,7 +674,15 @@ async function runAgentOnce({
   const startTime = Date.now();
   // Count the attempt, not the success — the daily cap is charged either way.
   modelRequestCount++;
-  log("info", `${label} agent started (request ${modelRequestCount}/${MODEL_REQUEST_BUDGET} this run)`);
+  // Sessions and turns are different units and must never share a fraction: this
+  // used to read `request N/BUDGET` with a session count over a turn budget, which
+  // is the exact confusion that let a run authorise ~16x what its ceiling said.
+  log(
+    "info",
+    `${label} agent started (session ${modelRequestCount} this run; ` +
+      `${modelTurnCount}/${MODEL_REQUEST_BUDGET} requests spent, ` +
+      `${getDailySpend()}/${DAILY_REQUEST_CAP} today)`
+  );
 
   return loader.reload().then(() =>
     createAgentSession({
