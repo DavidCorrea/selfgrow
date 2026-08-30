@@ -394,13 +394,54 @@
       plotDesc.textContent = 'An empty plot of rich soil, ready for something to grow. A faint haze drifts in the air.';
     }
 
-    /* After garden.js has had time to set its initial description, append creature note */
-    setTimeout(function() {
-      const growingDesc = document.getElementById('growing-description');
-      if (growingDesc && !growingDesc.textContent.includes('butterfly')) {
-        growingDesc.textContent += ' A small butterfly drifts at the edge of the garden.';
+    /* Update the butterfly description to match what the scene shows.
+     * Called on an interval and exposed on __gardenState for testing.
+     * Strips any known butterfly suffix from the base growing-description
+     * text (set by garden.js) and appends the correct suffix based on
+     * current weather and time-of-day.
+     */
+    const BUTTERFLY_SUFFIXES = [
+      ' A small butterfly drifts at the edge of the garden.',
+      ' The butterfly has taken shelter from the drizzle.',
+      ' The butterfly rests quietly through the night.'
+    ];
+
+    function stripButterflySuffix(text) {
+      for (const suffix of BUTTERFLY_SUFFIXES) {
+        if (text.endsWith(suffix)) {
+          return text.slice(0, -suffix.length);
+        }
       }
-    }, 1000);
+      return text;
+    }
+
+    function chooseButterflySuffix() {
+      const weather = (document.getElementById('weather-display')?.textContent || '').trim();
+      const time = (document.getElementById('time-display')?.textContent || '').trim();
+
+      if (weather === 'Light Drizzle') {
+        return ' The butterfly has taken shelter from the drizzle.';
+      }
+      if (time === 'Night') {
+        return ' The butterfly rests quietly through the night.';
+      }
+      return ' A small butterfly drifts at the edge of the garden.';
+    }
+
+    let lastButterflyText = '';
+    function updateButterflyDescription() {
+      const el = document.getElementById('growing-description');
+      if (!el) return;
+
+      const suffix = chooseButterflySuffix();
+      const base = stripButterflySuffix(el.textContent);
+      const composed = base + suffix;
+
+      if (composed !== lastButterflyText) {
+        lastButterflyText = composed;
+        el.textContent = composed;
+      }
+    }
 
     /* Expose horizon and scrub on garden state */
     horizon.group.name = 'horizon';
@@ -433,7 +474,8 @@
       fireflies: fireflies.state,
       firefliesUpdate: fireflies.update,
       /* Winter legacy effect (issue #471): set by startSeasonalCycle each tick */
-      winterLegacyBlend: 0
+      winterLegacyBlend: 0,
+      updateButterflyDescription
     };
 
     /* --- Persistence: restore previous state if available --- */
@@ -482,6 +524,9 @@
 
     /* Check weather on a regular interval (smooth transitions are handled by setTargetAtTime) */
     setInterval(updateAudioWeather, 1000);
+
+    /* Poll the weather and time displays every ~1s and update butterfly description */
+    setInterval(updateButterflyDescription, 1000);
 
     /* --- Periodic save: every 2 seconds capture current state --- */
     setInterval(saveGardenState, 2000);
