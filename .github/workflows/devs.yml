@@ -1,4 +1,4 @@
-name: builder-team
+name: devs
 
 on:
   schedule:
@@ -37,7 +37,7 @@ permissions:
   issues: write
   pull-requests: write
 
-# Serialize every workflow that writes to main (builder-team + product-owner)
+# Serialize every workflow that writes to main (devs + product-owner)
 # so concurrent runs never race on branches or the push to main.
 concurrency:
   group: agent-main-writer
@@ -103,7 +103,7 @@ jobs:
   #
   # So the jobs never ran beside each other, and each still paid its own VM,
   # checkout, npm ci and Chromium install: ~3 minutes per ticket, ~15 a day, spent
-  # isolating jobs from siblings that were not running. builder-team.mjs already
+  # isolating jobs from siblings that were not running. devs.mjs already
   # loops over tickets within a run, re-reading the board each pass, so the queue
   # simply moved inside. Sequencing is unchanged — each ticket still starts from
   # the previous one's merge, now because it is the same working tree rather than
@@ -135,8 +135,8 @@ jobs:
           # The Builder drives the built app to verify a ticket really runs.
           playwright: 'true'
 
-      - name: Run Builder Team agents
-        run: node agents/builder-team.mjs
+      - name: Run the Devs
+        run: node agents/devs.mjs
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           # REAL OpenRouter requests (one per agent turn) for this whole run. This

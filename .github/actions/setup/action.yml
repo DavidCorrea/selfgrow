@@ -9,7 +9,7 @@ description: Node, the project's dependencies, and — only where an agent looks
 #
 # This reuses the DEFINITION, not the work. Each job is still its own VM and still
 # pays for its own npm ci — nothing crosses a job boundary but caches. The way to
-# stop paying twice is to have one job, which is why builder-team.yml builds its
+# stop paying twice is to have one job, which is why devs.yml builds its
 # whole queue in a single job rather than one job per ticket.
 
 inputs:

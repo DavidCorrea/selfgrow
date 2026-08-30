@@ -1280,14 +1280,14 @@ export async function closeIssue(issueNumber, info = {}) {
   if (typeof info === "string") info = { commitMessage: info };
   const { summary, commitMessage, commitSha } = info;
 
-  const lines = ["## ✅ Resolved by the Builder Team", ""];
+  const lines = ["## ✅ Resolved by the Devs", ""];
   if (summary) lines.push(summary, "");
   if (commitMessage) {
     const shortSha = commitSha ? `\`${commitSha.slice(0, 7)}\` — ` : "";
     lines.push(`**Commit:** ${shortSha}${commitMessage}`);
   }
   const body =
-    lines.join("\n").trim() || "This issue has been addressed by the Builder Team.";
+    lines.join("\n").trim() || "This issue has been addressed by the Devs.";
 
   try {
     ghComment(issueNumber, body);
@@ -1303,98 +1303,6 @@ export async function commentIssue(issueNumber, body) {
     ghComment(issueNumber, body);
   } catch (e) {
     log("warn", `Could not comment on issue #${issueNumber}`, errorData(e));
-  }
-}
-
-/**
- * Close a ticket because the work it asks for is ALREADY BUILT.
- *
- * Deliberately distinct from closeIssueAsInvalid and from the abandoned path.
- * A duplicate is a RESOLVED ticket, not a failed one: it earns no strike, and it
- * must never reach writePostMortem, because a post-mortem lands in the wiki's
- * Lessons page — which the Scout reads before planning every future build. A
- * duplicate recorded there teaches the pipeline, permanently, that work it had
- * actually completed was "tried and abandoned".
- */
-export async function closeIssueAsDuplicate(issueNumber, reason) {
-  await labelIssue(issueNumber, "duplicate");
-  const lines = [
-    "## Closed as already built",
-    "",
-    "The Validator inspected the code and found this work already present:",
-    "",
-    reason || "(no reason recorded)",
-    "",
-    "_No strike was recorded against this ticket — it was resolved, not failed. " +
-      "If the existing implementation does not in fact cover this, reopen with the gap spelled out._",
-  ];
-  await commentIssue(issueNumber, lines.join("\n"));
-  try {
-    execSync(`gh issue close ${issueNumber} --reason "not planned"`, {
-      cwd: repoRoot,
-      maxBuffer: 10 * 1024 * 1024,
-    });
-    log("info", `Closed issue #${issueNumber} as a duplicate of existing work.`);
-    return true;
-  } catch (e) {
-    log("warn", `Could not close duplicate issue #${issueNumber}`, errorData(e));
-    return false;
-  }
-}
-
-/** Label, comment, and close an issue the Scout judged invalid / out of scope. */
-export async function closeIssueAsInvalid(issueNumber, reason) {
-  await labelIssue(issueNumber, "invalid");
-  const lines = ["## Closed by the Builder Team", ""];
-  if (reason) {
-    lines.push("After review, this isn't something the team will act on right now:", "", reason);
-  } else {
-    lines.push(
-      "After review, this issue isn't actionable or is out of scope for the current vision of the project."
-    );
-  }
-  lines.push("", "_If you think this was closed in error, reopen the issue with more detail._");
-  await commentIssue(issueNumber, lines.join("\n"));
-  try {
-    execSync(`gh issue close ${issueNumber}`, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 });
-    log("info", `Closed issue #${issueNumber} as invalid.`);
-  } catch (e) {
-    log("warn", `Could not close issue #${issueNumber}`, errorData(e));
-  }
-}
-
-/**
- * Comment and close a ticket that was replaced by smaller pieces.
- *
- * Deliberately not closeIssue(), which announces "✅ Resolved by the Builder Team"
- * — nothing was built here, and a reader following the trail needs to land on the
- * children rather than believe the work shipped.
- *
- * @param {number} issueNumber
- * @param {number[]} childNumbers - the replacements, in build order
- * @param {string} [why]          - the Scout's one-line reason it was too big
- */
-export async function closeIssueAsSplit(issueNumber, childNumbers, why) {
-  const lines = ["## Split by the Builder Team", ""];
-  lines.push(
-    why
-      ? `This ticket was too big to ship in one Builder pass: ${why}`
-      : "This ticket was too big to ship in one Builder pass."
-  );
-  lines.push(
-    "",
-    "It has been replaced by these tickets, which build in this order:",
-    "",
-    ...childNumbers.map((n, i) => `${i + 1}. #${n}`),
-    "",
-    "_No work was lost — closing this one only means it is tracked in the pieces above._"
-  );
-  await commentIssue(issueNumber, lines.join("\n"));
-  try {
-    execSync(`gh issue close ${issueNumber}`, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 });
-    log("info", `Closed issue #${issueNumber} as split.`);
-  } catch (e) {
-    log("warn", `Could not close issue #${issueNumber}`, errorData(e));
   }
 }
 
@@ -1762,7 +1670,7 @@ function parkBlockedTicket(number, attempts, reason, currentLabels) {
   setIssuePriority(number, "low", currentLabels);
 
   const body = [
-    "## ⛔ Parked by the Builder Team",
+    "## ⛔ Parked by the Devs",
     "",
     `The Builder failed to ship this ticket ${attempts} time(s); most recent reason:`,
     "",
