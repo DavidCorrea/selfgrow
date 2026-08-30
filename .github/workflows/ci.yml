@@ -1,0 +1,40 @@
+name: ci
+
+# The pipeline's own gate. Everything else in .github/workflows/ is an agent that
+# runs on a schedule and spends requests; this one runs on changes to the harness
+# and spends nothing.
+#
+# It exists because agents/ was unlinted and untested while the code inside it
+# refused to merge a product that didn't carry its own checks. A typo in
+# shared.mjs was caught by a 3am cron run failing, which is both the slowest and
+# the most expensive place to find one.
+on:
+  pull_request:
+    paths:
+      - 'agents/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'eslint.config.mjs'
+      - '.github/workflows/ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'agents/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'eslint.config.mjs'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    # No model, no browser, no secrets — just node. Should finish in well under a
+    # minute; the timeout is only here so a hung install can't sit for six hours.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - run: npm run lint
+      - run: npm test

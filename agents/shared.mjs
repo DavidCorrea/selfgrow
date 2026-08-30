@@ -1222,7 +1222,7 @@ export function mergeMainIntoBranch() {
     gitExec("merge origin/main --no-edit");
     log("info", "Merged origin/main into branch — clean.");
     return { clean: true };
-  } catch (e) {
+  } catch {
     const status = gitExec("status --porcelain");
     const conflicted = status
       .split("\n")

@@ -19,7 +19,6 @@ import {
   retireIssue,
   reviewApp,
   fetchOpenIssues,
-  isBlocked,
   isBuildable,
   triggerWorkflow,
   dependencyLine,
