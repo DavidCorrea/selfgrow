@@ -1,5 +1,5 @@
-// One-time RESET for a fresh project. Run via workflow_dispatch with the cron
-// workflows paused. Clears everything the agents treat as MEMORY, so a new
+// RESET for a fresh project. Run via workflow_dispatch with the cron workflows
+// paused. Clears everything the agents treat as MEMORY, so a new
 // Vision starts from nothing instead of inheriting the old product's history.
 //
 // Order matters, and it is the reason this is a script rather than a checklist:
@@ -24,7 +24,8 @@
 //     via the API. The Product Manager only ever reads OPEN issues, so they are
 //     inert; they just remain visible to humans.
 //
-// Safe to delete this file (and reset.yml) after the reset.
+// Guarded by a typed confirmation (see requireConfirmation), because every other
+// agent here only adds and this one is irreversible in the directions that matter.
 import fs from "fs";
 import { execSync } from "child_process";
 import {
@@ -291,7 +292,37 @@ function clearProduct() {
   }
 }
 
+// What the operator must type to arm the reset. The repository name, following
+// the convention GitHub itself uses for deleting one: it cannot be typed by
+// reflex, and it names the thing being emptied.
+const CONFIRM_PHRASE = "selfgrow";
+
+/**
+ * Refuse to run unless the operator confirmed in words.
+ *
+ * The reset sits in the same Actions list as six harmless agents and used to
+ * fire on a bare dispatch. Everything it does is recoverable in principle — the
+ * product from git history, issues by reopening — and recovering all of it at
+ * once, in order, is a bad afternoon nobody chose to have.
+ *
+ * Checked here rather than in the workflow so a hand-run `node agents/reset.mjs`
+ * is guarded on the same terms.
+ */
+function requireConfirmation() {
+  const given = (process.env.RESET_CONFIRM || "").trim();
+  if (given === CONFIRM_PHRASE) return;
+  log(
+    "error",
+    given
+      ? `Refusing to reset: confirmation "${given}" does not match "${CONFIRM_PHRASE}".`
+      : `Refusing to reset: no confirmation given. Set RESET_CONFIRM="${CONFIRM_PHRASE}" ` +
+          "(the workflow asks for it as an input) to arm this."
+  );
+  process.exit(1);
+}
+
 function main() {
+  requireConfirmation();
   log("info", "=== RESET — fresh-project cleanup ===");
   cancelPendingRuns();
   closeAllIssues();
