@@ -2194,6 +2194,216 @@ export async function checks() {
     }
   }
 
+  /* ---------- Butterfly seasonal activity checks (issue #505) ---------- */
+  // The butterfly's orbit speed, radius range, and wing flap speed should vary
+  // with the seasonal cycle. Verify the creature state exposes the multipliers
+  // and that they respond correctly to mocked seasonProgress values.
+  if (!creatureState) {
+    problems.push('window.__gardenState.creature is not set — cannot verify seasonal activity behaviour.');
+  } else {
+    // --- Structural checks: seasonal multiplier getters must exist ---
+    if (typeof creatureState.seasonOrbitMul !== 'function') {
+      problems.push('creature.state.seasonOrbitMul is not a function — seasonal orbit speed multiplier getter missing.');
+    } else {
+      var som = creatureState.seasonOrbitMul();
+      if (typeof som !== 'number' || som < 0 || som > 2) {
+        problems.push('creature seasonOrbitMul() returned ' + som + ', expected a number in [0, 2].');
+      }
+    }
+
+    if (typeof creatureState.seasonRadiusMul !== 'function') {
+      problems.push('creature.state.seasonRadiusMul is not a function — seasonal radius multiplier getter missing.');
+    } else {
+      var srm = creatureState.seasonRadiusMul();
+      if (typeof srm !== 'number' || srm < 0 || srm > 2) {
+        problems.push('creature seasonRadiusMul() returned ' + srm + ', expected a number in [0, 2].');
+      }
+    }
+
+    if (typeof creatureState.seasonFlapMul !== 'function') {
+      problems.push('creature.state.seasonFlapMul is not a function — seasonal flap speed multiplier getter missing.');
+    } else {
+      var sfm = creatureState.seasonFlapMul();
+      if (typeof sfm !== 'number' || sfm < 0 || sfm > 2) {
+        problems.push('creature seasonFlapMul() returned ' + sfm + ', expected a number in [0, 2].');
+      }
+    }
+
+    // --- Behavioural tests: mock seasonProgress to verify multipliers converge ---
+    // Save original seasonProgress and day/night getter to restore after tests
+    var origSeasonProgress = window.__gardenState && window.__gardenState.seasonProgress;
+    var creatureDayNightOrig = window.__gardenState && window.__gardenState.dayNight && window.__gardenState.dayNight.getCycleProgress;
+    var creatureUpdateFn = gardenState && gardenState.creatureUpdate;
+
+    if (typeof creatureUpdateFn !== 'function') {
+      problems.push('gardenState.creatureUpdate is not a function — cannot test seasonal activity update.');
+    } else if (window.__gardenState) {
+      // Helper: converge the exponential lerp by running many frames
+      // Use a small dt (0.03s) so it stays below the creature's internal dt
+      // clamp of 0.05s — the exponential lerp advances correctly this way.
+      var convergeTimeCounter = 0;
+      function convergeTo(progress, convergenceDuration) {
+        window.__gardenState.seasonProgress = progress;
+        // Set day/night to daytime so butterfly is visible
+        if (window.__gardenState.dayNight && typeof window.__gardenState.dayNight.getCycleProgress === 'function') {
+          window.__gardenState.dayNight.getCycleProgress = function() { return 0.1; }; // Morning
+        }
+        var convergeDt = 0.03;
+        var steps = Math.ceil(convergenceDuration / convergeDt);
+        for (var si = 0; si < steps; si++) {
+          creatureUpdateFn(convergeTimeCounter);
+          convergeTimeCounter += convergeDt;
+        }
+        // Then a few small-dt steps to let the internal dt logic settle
+        for (var sj = 0; sj < 10; sj++) {
+          creatureUpdateFn(convergeTimeCounter);
+          convergeTimeCounter += 0.016;
+        }
+      }
+
+      // Expected multiplier targets per season at midpoint (t=0.5 within season)
+      var SEASON_TARGETS_MID = {
+        spring:  { orbit: 1.2, radius: 1.0, flap: 1.3 },
+        summer:  { orbit: 1.2, radius: 1.0, flap: 1.3 },
+        autumn:  { orbit: 0.7, radius: 0.85, flap: 1.0 },
+        winter:  { orbit: 0.2, radius: 0.5, flap: 0.3 }
+      };
+
+      // The seasonProgress value at the midpoint of each season
+      var SEASON_MID_PROGRESS = {
+        spring: 0.125,  // (0 + 0.25) / 2
+        summer: 0.375,  // (0.25 + 0.5) / 2
+        autumn: 0.625,  // (0.5 + 0.75) / 2
+        winter: 0.875   // (0.75 + 1.0) / 2
+      };
+
+      var seasonNames = ['spring', 'summer', 'autumn', 'winter'];
+      var seasonDisplayNames = ['Spring', 'Summer', 'Autumn', 'Winter'];
+      var eps = 0.001;
+
+      // Converge to a neutral position before testing
+      convergeTo(0.125, 20); // 20s simulated time should converge >98% with 5s time constant
+
+      // --- Test 1: Spring midpoint -> orbit ~1.2, radius ~1.0, flap ~1.3 ---
+      convergeTo(SEASON_MID_PROGRESS.spring, 20);
+      var springOrbit = creatureState.seasonOrbitMul();
+      var springRadius = creatureState.seasonRadiusMul();
+      var springFlap = creatureState.seasonFlapMul();
+
+      if (Math.abs(springOrbit - 1.2) > 0.02) {
+        problems.push('Spring butterfly: seasonOrbitMul is ' + springOrbit.toFixed(4) + ', expected ~1.2 (wider, more dynamic flight).');
+      }
+      if (Math.abs(springRadius - 1.0) > 0.02) {
+        problems.push('Spring butterfly: seasonRadiusMul is ' + springRadius.toFixed(4) + ', expected ~1.0.');
+      }
+      if (Math.abs(springFlap - 1.3) > 0.02) {
+        problems.push('Spring butterfly: seasonFlapMul is ' + springFlap.toFixed(4) + ', expected ~1.3 (faster wing flap).');
+      }
+
+      // --- Test 2: Summer midpoint -> orbit ~1.2, radius ~1.0, flap ~1.3 ---
+      convergeTo(SEASON_MID_PROGRESS.summer, 20);
+      var summerOrbit = creatureState.seasonOrbitMul();
+      if (Math.abs(summerOrbit - 1.2) > 0.02) {
+        problems.push('Summer butterfly: seasonOrbitMul is ' + summerOrbit.toFixed(4) + ', expected ~1.2 (wider, more dynamic flight).');
+      }
+
+      // --- Test 3: Autumn midpoint -> orbit ~0.7, radius ~0.85, flap ~1.0 ---
+      convergeTo(SEASON_MID_PROGRESS.autumn, 20);
+      var autumnOrbit = creatureState.seasonOrbitMul();
+      var autumnRadius = creatureState.seasonRadiusMul();
+      var autumnFlap = creatureState.seasonFlapMul();
+
+      if (Math.abs(autumnOrbit - 0.7) > 0.02) {
+        problems.push('Autumn butterfly: seasonOrbitMul is ' + autumnOrbit.toFixed(4) + ', expected ~0.7 (slower orbit speed).');
+      }
+      if (Math.abs(autumnRadius - 0.85) > 0.02) {
+        problems.push('Autumn butterfly: seasonRadiusMul is ' + autumnRadius.toFixed(4) + ', expected ~0.85 (radius range tightens slightly).');
+      }
+      if (Math.abs(autumnFlap - 1.0) > 0.02) {
+        problems.push('Autumn butterfly: seasonFlapMul is ' + autumnFlap.toFixed(4) + ', expected ~1.0.');
+      }
+
+      // --- Test 4: Winter midpoint -> orbit ~0.2, radius ~0.5, flap ~0.3 ---
+      convergeTo(SEASON_MID_PROGRESS.winter, 20);
+      var winterOrbit = creatureState.seasonOrbitMul();
+      var winterRadius = creatureState.seasonRadiusMul();
+      var winterFlap = creatureState.seasonFlapMul();
+
+      if (Math.abs(winterOrbit - 0.2) > 0.02) {
+        problems.push('Winter butterfly: seasonOrbitMul is ' + winterOrbit.toFixed(4) + ', expected ~0.2 (semi-dormant, barely drifts).');
+      }
+      if (Math.abs(winterRadius - 0.5) > 0.02) {
+        problems.push('Winter butterfly: seasonRadiusMul is ' + winterRadius.toFixed(4) + ', expected ~0.5 (tighter orbit radius).');
+      }
+      if (Math.abs(winterFlap - 0.3) > 0.02) {
+        problems.push('Winter butterfly: seasonFlapMul is ' + winterFlap.toFixed(4) + ', expected ~0.3 (near-still wing flap).');
+      }
+
+      // --- Test 5: Transitions are smooth (not snapping) ---
+      // Set to winter and let it converge
+      convergeTo(SEASON_MID_PROGRESS.winter, 20);
+      var beforeOrbit = creatureState.seasonOrbitMul();
+
+      // Now abruptly set to spring midpoint
+      window.__gardenState.seasonProgress = SEASON_MID_PROGRESS.spring;
+      // Run just ONE frame with a small dt
+      creatureUpdateFn(0, 0.016);
+      var afterOneFrame = creatureState.seasonOrbitMul();
+
+      // After one frame, the multiplier should NOT have reached the new target of 1.2
+      // Exponential lerp: val = val + (target - val) * (1 - exp(-0.016/5.0))
+      // smoothFactor ≈ 1 - exp(-0.0032) ≈ 0.0032
+      // So afterOneFrame should be much closer to beforeOrbit than to 1.2
+      var expectedAfterOneFrame = beforeOrbit + (1.2 - beforeOrbit) * (1 - Math.exp(-0.016 / 5.0));
+      var diffFromBefore = Math.abs(afterOneFrame - beforeOrbit);
+      var diffFromTarget = Math.abs(afterOneFrame - 1.2);
+      var expectedDiffFromTarget = Math.abs(expectedAfterOneFrame - 1.2);
+
+      if (diffFromTarget < diffFromBefore * 0.5) {
+        problems.push('Seasonal transition snap: after one frame of transition from winter (orbit=' + beforeOrbit.toFixed(4) + ') to spring (target=1.2), orbit jumped to ' + afterOneFrame.toFixed(4) + ' (expected gradual lerp, ~' + expectedAfterOneFrame.toFixed(4) + ').');
+      }
+
+      // --- Test 6: Verify orbit speed and radius range are being applied ---
+      // After converging to winter with orbit=0.2, the effective speed should be ~0.08*0.2=0.016
+      // After converging to spring with orbit=1.2, the effective speed should be ~0.08*1.2=0.096
+      convergeTo(SEASON_MID_PROGRESS.winter, 20);
+
+      // Store position after winter convergence
+      creatureUpdateFn(convergeTimeCounter, 0.016);
+      convergeTimeCounter += 0.016;
+      var winterPos = { x: creatureState.group.position.x, y: creatureState.group.position.y, z: creatureState.group.position.z };
+
+      convergeTo(SEASON_MID_PROGRESS.spring, 20);
+      var springPos = creatureState.group.position;
+
+      // Compute distance from winter position
+      var dx = springPos.x - winterPos.x;
+      var dy = springPos.y - winterPos.y;
+      var dz = springPos.z - winterPos.z;
+      var dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+
+      // In winter, the creature barely moves; in spring it's more active.
+      // After ~20s simulated time at each season, the positions should differ
+      // by at least some minimal amount due to different orbit speeds.
+      if (dist < 0.001) {
+        problems.push('Butterfly did not change position between winter and spring seasonal states (distance=' + dist.toFixed(5) + ') — seasonal speed multipliers may not be applied to orbit motion.');
+      }
+
+      // Restore original seasonProgress
+      if (origSeasonProgress !== undefined) {
+        window.__gardenState.seasonProgress = origSeasonProgress;
+      }
+      if (origSeasonProgress === undefined && window.__gardenState) {
+        delete window.__gardenState.seasonProgress;
+      }
+
+      // Restore original day/night getter
+      if (creatureDayNightOrig && window.__gardenState && window.__gardenState.dayNight) {
+        window.__gardenState.dayNight.getCycleProgress = creatureDayNightOrig;
+      }
+    }
+  }
+
   /* ---------- Star field checks (issue #449) ---------- */
   const starState = gardenState && gardenState.stars;
   if (!starState) {

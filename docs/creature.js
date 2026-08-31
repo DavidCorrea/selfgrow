@@ -39,6 +39,22 @@ const FLAP_ANGLE_MAX = 0.6;       // radians, how far wings open/close
 /* Weather shelter fade time constant (~5s for near-complete fade) */
 const WEATHER_FADE_TIME_CONSTANT = 2.5; // seconds — ~86% complete after 5s
 
+/* --- Seasonal activity multipliers ---
+ * The butterfly becomes more active in Spring/Summer and nearly still in Winter.
+ * Smooth exponential lerp (~5s time constant) prevents sudden jumps even when
+ * seasonProgress is restored from persistence at an unfamiliar point.
+ */
+const SEASON_LERP_CONSTANT = 5.0;  // seconds — ~86% complete after 5s
+
+const SEASON_MULTIPLIERS = {
+  spring:  { orbit: 1.2, radius: 1.0, flap: 1.3 },
+  summer:  { orbit: 1.2, radius: 1.0, flap: 1.3 },
+  autumn:  { orbit: 0.7, radius: 0.85, flap: 1.0 },
+  winter:  { orbit: 0.2, radius: 0.5, flap: 0.3 }
+};
+
+const SEASON_NAMES = ['spring', 'summer', 'autumn', 'winter'];
+
 /* Per-axis phase offsets for organic Lissajous-like looping */
 const PHASE_X = 0.0;
 const PHASE_Z = Math.PI * 0.37;   // offsets so path doesn't repeat quickly
@@ -134,6 +150,11 @@ export function createCreature(scene) {
   let pauseDipTarget = null;      // { x, y, z } — the dipped position near the flower
   let pauseCooldown = 0;          // seconds after exiting before next pause can trigger
 
+  /* --- Seasonal activity state (exposed for selftest) --- */
+  let seasonOrbitMul = 1.0;   // starts neutral, lerps to target
+  let seasonRadiusMul = 1.0;
+  let seasonFlapMul = 1.0;
+
   /* --- State exposed for selftest --- */
   const state = {
     type: 'creature',
@@ -147,6 +168,10 @@ export function createCreature(scene) {
     radiusMin: ORBIT_RADIUS_MIN,
     radiusMax: ORBIT_RADIUS_MAX,
     weatherOpacity: 1.0,
+    /* Seasonal activity multipliers exposed for testing */
+    seasonOrbitMul: () => seasonOrbitMul,
+    seasonRadiusMul: () => seasonRadiusMul,
+    seasonFlapMul: () => seasonFlapMul,
     /* Pause state exposed for testing */
     pauseState: () => pauseState,
     pauseTargetPos: () => pauseTargetPos ? { ...pauseTargetPos } : null,
@@ -199,15 +224,44 @@ export function createCreature(scene) {
       group.visible = true;
     }
 
+    /* --- Compute seasonal activity multipliers --- */
+    if (window.__gardenState && typeof window.__gardenState.seasonProgress === 'number') {
+      const sp = window.__gardenState.seasonProgress;
+      const seasonIndex = Math.floor(sp * 4) % 4;
+
+      // Each season has a fixed target (no lerp between seasons).
+      // The exponential lerp below provides smooth transitions across
+      // season boundaries as seasonProgress changes each frame.
+      const target = SEASON_MULTIPLIERS[SEASON_NAMES[seasonIndex]];
+
+      const targetOrbitMul = target.orbit;
+      const targetRadiusMul = target.radius;
+      const targetFlapMul = target.flap;
+
+      // Exponential lerp toward target for smooth (non-snapping) transitions
+      const smoothFactor = 1 - Math.exp(-dt / SEASON_LERP_CONSTANT);
+      seasonOrbitMul = seasonOrbitMul + (targetOrbitMul - seasonOrbitMul) * smoothFactor;
+      seasonRadiusMul = seasonRadiusMul + (targetRadiusMul - seasonRadiusMul) * smoothFactor;
+      seasonFlapMul = seasonFlapMul + (targetFlapMul - seasonFlapMul) * smoothFactor;
+    } else {
+      // No season state available — fall back to neutral multipliers
+      seasonOrbitMul = 1.0;
+      seasonRadiusMul = 1.0;
+      seasonFlapMul = 1.0;
+    }
+
     /* --- Compute orbit position with pause speed modulation --- */
-    const t = time * ORBIT_SPEED * pauseSpeedMul;
+    const effectiveOrbitSpeed = ORBIT_SPEED * seasonOrbitMul;
+    const t = time * effectiveOrbitSpeed * pauseSpeedMul;
 
     // Angular position: slowly rotates around the garden
     const angle = t + Math.sin(t * 0.23) * 0.4;
 
     // Radial distance: varies between min and max using a slow sine
     const radiusFactor = 0.5 + 0.5 * Math.sin(t * FREQ_X + PHASE_X);
-    const radius = ORBIT_RADIUS_MIN + radiusFactor * (ORBIT_RADIUS_MAX - ORBIT_RADIUS_MIN);
+    const effectiveRadiusMin = ORBIT_RADIUS_MIN * seasonRadiusMul;
+    const effectiveRadiusMax = ORBIT_RADIUS_MAX * seasonRadiusMul;
+    const radius = effectiveRadiusMin + radiusFactor * (effectiveRadiusMax - effectiveRadiusMin);
 
     // Vertical position: gentle bobbing
     const heightFactor = 0.5 + 0.5 * Math.sin(t * FREQ_Y + PHASE_Y);
@@ -348,13 +402,16 @@ export function createCreature(scene) {
     /* --- Orient the butterfly along its flight direction --- */
     // Use a small look-at offset to face the direction of travel
     const lookAhead = 0.5;
-    const nextT = (time + lookAhead) * ORBIT_SPEED * pauseSpeedMul;
+    const nextT = (time + lookAhead) * effectiveOrbitSpeed * pauseSpeedMul;
     const nextAngle = nextT + Math.sin(nextT * 0.23) * 0.4;
     const nextRadiusFactor = 0.5 + 0.5 * Math.sin(nextT * FREQ_X + PHASE_X);
-    const nextRadius = ORBIT_RADIUS_MIN + nextRadiusFactor * (ORBIT_RADIUS_MAX - ORBIT_RADIUS_MIN);
+    const nextRadius = effectiveRadiusMin + nextRadiusFactor * (effectiveRadiusMax - effectiveRadiusMin);
     const nx = Math.cos(nextAngle) * nextRadius + Math.sin(nextT * FREQ_X * 1.7 + PHASE_X + 1.2) * 0.3;
     const nz = Math.sin(nextAngle) * nextRadius + Math.cos(nextT * FREQ_Z * 1.7 + PHASE_Z + 0.8) * 0.3;
     const ny = ORBIT_HEIGHT_MIN + (0.5 + 0.5 * Math.sin(nextT * FREQ_Y + PHASE_Y)) * (ORBIT_HEIGHT_MAX - ORBIT_HEIGHT_MIN);
+
+    /* --- Wing flap animation with seasonal speed multiplier --- */
+    const effectiveFlapSpeed = FLAP_SPEED * seasonFlapMul;
 
     const dir = new THREE.Vector3(nx - finalX, 0, nz - finalZ).normalize();
     if (dir.length() > 0.001) {
@@ -368,9 +425,9 @@ export function createCreature(scene) {
       group.rotateX(0.15);
     }
 
-    /* --- Slow wing flap during pause --- */
+    /* --- Slow wing flap during pause, modulated by seasonal speed --- */
     const flapSpeedMul = pauseState === 'idle' ? 1.0 : 0.6;
-    const flapAngle = Math.sin(time * FLAP_SPEED * Math.PI * 2 * flapSpeedMul) * FLAP_ANGLE_MAX;
+    const flapAngle = Math.sin(time * effectiveFlapSpeed * Math.PI * 2 * flapSpeedMul) * FLAP_ANGLE_MAX;
     leftWing.rotation.z = flapAngle;
     rightWing.rotation.z = -flapAngle;
   }
