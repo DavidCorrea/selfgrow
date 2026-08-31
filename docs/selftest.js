@@ -3261,5 +3261,241 @@ export async function checks() {
     }
   }
 
+  /* ---------- Time-of-day-aware descriptions (issue #493) ---------- */
+  // Verify that updateTimeOfDayDescription weaves time-appropriate context into
+  // plot and growing descriptions, composing with weather and butterfly layers.
+  const timeDescPlotEl = document.getElementById('plot-description');
+  const timeDescGrowingEl = document.getElementById('growing-description');
+  // timeDisplayEl and weatherDisplayEl are already declared in the butterfly description checks block above
+
+  if (typeof gardenState.updateTimeOfDayDescription !== 'function') {
+    problems.push('window.__gardenState.updateTimeOfDayDescription is not a function — the time-of-day description updater is not exposed.');
+  } else if (typeof gardenState.timeContexts !== 'object') {
+    problems.push('window.__gardenState.timeContexts is not an object — time-of-day context map not exposed.');
+  } else if (typeof gardenState.timeContextFor !== 'function') {
+    problems.push('window.__gardenState.timeContextFor is not a function — time-of-day context getter not exposed.');
+  } else if (!timeDescPlotEl || !timeDescGrowingEl || !timeDisplayEl) {
+    problems.push('Cannot verify time-of-day descriptions: #plot-description, #growing-description, or #time-display is missing.');
+  } else {
+    const origTime = timeDisplayEl.textContent;
+    const origWeather = weatherDisplayEl.textContent;
+    const origPlotDesc = timeDescPlotEl.textContent;
+    const origGrowingDesc = timeDescGrowingEl.textContent;
+
+    try {
+      // --- Structural checks: each phase context contains acceptance keywords ---
+      const timeContexts = gardenState.timeContexts;
+      const expectedTimeKeywords = {
+        'Morning': ['soft', 'awakening', 'light'],
+        'Midday': ['bright', 'sun', 'warm'],
+        'Evening': ['golden', 'settling', 'dusk'],
+        'Night': ['darkness', 'stars', 'firefly', 'quiet']
+      };
+
+      Object.keys(expectedTimeKeywords).forEach(function(phase) {
+        const ctx = timeContexts[phase];
+        if (!ctx || typeof ctx !== 'string') {
+          problems.push('timeContexts["' + phase + '"] is missing or not a string — context not defined.');
+          return;
+        }
+        const keywords = expectedTimeKeywords[phase];
+        var missingKeywords = [];
+        keywords.forEach(function(kw) {
+          if (ctx.toLowerCase().indexOf(kw) === -1) {
+            missingKeywords.push(kw);
+          }
+        });
+        if (missingKeywords.length > 0) {
+          problems.push('timeContexts["' + phase + '"] = "' + ctx + '" — missing acceptance keywords: ' + missingKeywords.join(', ') + '.');
+        }
+      });
+
+      // Helper: set time-display and weather-display, run the updater, capturing the result
+      function runTimeWith(timePhase, weatherPhase, seedPlot, seedGrowing) {
+        timeDisplayEl.textContent = timePhase;
+        weatherDisplayEl.textContent = weatherPhase;
+        if (seedPlot !== undefined) {
+          timeDescPlotEl.textContent = seedPlot;
+        }
+        if (seedGrowing !== undefined) {
+          timeDescGrowingEl.textContent = seedGrowing;
+        }
+        gardenState.updateTimeOfDayDescription();
+        return {
+          plot: timeDescPlotEl.textContent,
+          growing: timeDescGrowingEl.textContent
+        };
+      }
+
+      // Base texts that garden.js might set
+      const BASE_PLOT_TIME = 'A young seedling rises from the rich soil, stretching toward the sun.';
+      const BASE_GROWING_TIME = 'A green sprout unfurls two small leaves.';
+
+      // Stale suffixes for testing stripping
+      const DRIFT_SUFFIX_TIME = ' A small butterfly drifts at the edge of the garden.';
+      const REST_SUFFIX_TIME = ' The butterfly rests quietly through the night.';
+      const DRIZZLE_SUFFIX_TIME = ' The butterfly has taken shelter from the drizzle.';
+
+      const timePhaseOrder = ['Morning', 'Midday', 'Evening', 'Night'];
+
+      // --- Test 1: Morning -> descriptions get time context ---
+      var r1 = runTimeWith('Morning', 'Clear', BASE_PLOT_TIME, BASE_GROWING_TIME);
+      if (r1.plot.indexOf(timeContexts['Morning']) === -1) {
+        problems.push('After updateTimeOfDayDescription with Morning, plot-description does not contain the Morning context. Got: "' + r1.plot + '"');
+      }
+      if (r1.plot.indexOf(BASE_PLOT_TIME) === -1) {
+        problems.push('After updateTimeOfDayDescription with Morning, plot-description lost base text. Got: "' + r1.plot + '"');
+      }
+      if (r1.growing.indexOf(timeContexts['Morning']) === -1) {
+        problems.push('After updateTimeOfDayDescription with Morning, growing-description does not contain the Morning context. Got: "' + r1.growing + '"');
+      }
+      if (r1.growing.indexOf(BASE_GROWING_TIME) === -1) {
+        problems.push('After updateTimeOfDayDescription with Morning, growing-description lost base text. Got: "' + r1.growing + '"');
+      }
+
+      // --- Test 2: Switch from Morning to Night — stale Morning stripped, Night added ---
+      var r2 = runTimeWith('Night', 'Clear', r1.plot, r1.growing);
+      if (r2.plot.indexOf(timeContexts['Night']) === -1) {
+        problems.push('After switching to Night, plot-description does not contain the Night context. Got: "' + r2.plot + '"');
+      }
+      if (r2.plot.indexOf(timeContexts['Morning']) !== -1) {
+        problems.push('After switching to Night, plot-description still contains stale Morning context. Got: "' + r2.plot + '"');
+      }
+      if (r2.growing.indexOf(timeContexts['Night']) === -1) {
+        problems.push('After switching to Night, growing-description does not contain the Night context. Got: "' + r2.growing + '"');
+      }
+      if (r2.growing.indexOf(timeContexts['Morning']) !== -1) {
+        problems.push('After switching to Night, growing-description still contains stale Morning context. Got: "' + r2.growing + '"');
+      }
+
+      // --- Test 3: Growing has butterfly suffix + weather context — time context still weaves in ---
+      var withButterflyTime = BASE_GROWING_TIME + ' ' + timeContexts['Night'] + ' ' + gardenState.weatherContextFor('Clear') + DRIFT_SUFFIX_TIME;
+      var r3 = runTimeWith('Morning', 'Clear', BASE_PLOT_TIME, withButterflyTime);
+      if (r3.growing.indexOf(timeContexts['Morning']) === -1) {
+        problems.push('With butterfly suffix and weather context present, switching to Morning did not add its time context. Got: "' + r3.growing + '"');
+      }
+      if (r3.growing.indexOf(timeContexts['Night']) !== -1) {
+        problems.push('With butterfly suffix and weather context present, switching to Morning did not strip stale Night context. Got: "' + r3.growing + '"');
+      }
+      if (r3.growing.indexOf(DRIFT_SUFFIX_TIME) === -1) {
+        problems.push('With butterfly suffix and weather context present, switching to Morning lost the butterfly suffix. Got: "' + r3.growing + '"');
+      }
+      if (r3.growing.indexOf(BASE_GROWING_TIME) === -1) {
+        problems.push('With butterfly suffix and weather context present, switching to Morning lost base text. Got: "' + r3.growing + '"');
+      }
+
+      // --- Test 4: Weather context and time context compose together ---
+      // After time update with Morning + Clear, check weather context is also present
+      var r4 = runTimeWith('Midday', 'Overcast', BASE_PLOT_TIME, BASE_GROWING_TIME);
+      if (r4.plot.indexOf(timeContexts['Midday']) === -1) {
+        problems.push('Time+weather composition: plot-description missing Midday context. Got: "' + r4.plot + '"');
+      }
+      if (r4.plot.indexOf(gardenState.weatherContextFor('Overcast')) === -1) {
+        problems.push('Time+weather composition: plot-description missing Overcast weather context. Got: "' + r4.plot + '"');
+      }
+      if (r4.growing.indexOf(timeContexts['Midday']) === -1) {
+        problems.push('Time+weather composition: growing-description missing Midday context. Got: "' + r4.growing + '"');
+      }
+      if (r4.growing.indexOf(gardenState.weatherContextFor('Overcast')) === -1) {
+        problems.push('Time+weather composition: growing-description missing Overcast weather context. Got: "' + r4.growing + '"');
+      }
+
+      // --- Test 5: updateWeatherDescription preserves time layer ---
+      var r5a = runTimeWith('Evening', 'Light Drizzle', BASE_PLOT_TIME, BASE_GROWING_TIME);
+      // Now run updateWeatherDescription — the time context should be preserved
+      weatherDisplayEl.textContent = 'Light Drizzle';
+      gardenState.updateWeatherDescription();
+      var afterWeatherUpdate = timeDescGrowingEl.textContent;
+      if (afterWeatherUpdate.indexOf(timeContexts['Evening']) === -1) {
+        problems.push('After updateWeatherDescription, growing-description lost the Evening time context. Got: "' + afterWeatherUpdate + '"');
+      }
+      if (afterWeatherUpdate.indexOf(gardenState.weatherContextFor('Light Drizzle')) === -1) {
+        problems.push('After updateWeatherDescription, growing-description missing Light Drizzle weather context. Got: "' + afterWeatherUpdate + '"');
+      }
+      if (afterWeatherUpdate.indexOf(BASE_GROWING_TIME) === -1) {
+        problems.push('After updateWeatherDescription, growing-description lost base text. Got: "' + afterWeatherUpdate + '"');
+      }
+
+      // --- Test 6: Idempotency — repeated calls with unchanged state must not rewrite ---
+      var beforeRepeatPlotTime = timeDescPlotEl.textContent;
+      var beforeRepeatGrowingTime = timeDescGrowingEl.textContent;
+      gardenState.updateTimeOfDayDescription();
+      gardenState.updateTimeOfDayDescription();
+      if (timeDescPlotEl.textContent !== beforeRepeatPlotTime) {
+        problems.push('updateTimeOfDayDescription() is not idempotent for plot: changed from "' + beforeRepeatPlotTime + '" to "' + timeDescPlotEl.textContent + '" on repeated calls with unchanged state.');
+      }
+      if (timeDescGrowingEl.textContent !== beforeRepeatGrowingTime) {
+        problems.push('updateTimeOfDayDescription() is not idempotent for growing: changed from "' + beforeRepeatGrowingTime + '" to "' + timeDescGrowingEl.textContent + '" on repeated calls with unchanged state.');
+      }
+
+      // --- Test 7: timeContextFor returns correct strings ---
+      Object.keys(expectedTimeKeywords).forEach(function(phase) {
+        var ctx = gardenState.timeContextFor(phase);
+        if (ctx !== timeContexts[phase]) {
+          problems.push('timeContextFor("' + phase + '") returned "' + ctx + '", expected "' + timeContexts[phase] + '".');
+        }
+      });
+      var unknownTimeCtx = gardenState.timeContextFor('Unknown');
+      if (unknownTimeCtx !== '') {
+        problems.push('timeContextFor("Unknown") returned "' + unknownTimeCtx + '", expected empty string for unknown phase.');
+      }
+
+      // --- Test 8: Every phase gets a unique non-empty context ---
+      var seenTimeContexts = {};
+      timePhaseOrder.forEach(function(phase) {
+        var ctx = timeContexts[phase];
+        if (!ctx || ctx.trim().length === 0) {
+          problems.push('timeContexts["' + phase + '"] is empty or missing.');
+          return;
+        }
+        if (seenTimeContexts[ctx]) {
+          problems.push('timeContexts["' + phase + '"] shares the same context string as "' + seenTimeContexts[ctx] + '" — each phase must have a unique context.');
+        }
+        seenTimeContexts[ctx] = phase;
+      });
+
+      // --- Test 9: Phase transition — Morning -> Night swaps contexts ---
+      var r9a = runTimeWith('Morning', 'Clear', BASE_PLOT_TIME, BASE_GROWING_TIME);
+      var r9b = runTimeWith('Night', 'Clear', r9a.plot, r9a.growing);
+      if (r9b.plot.indexOf(timeContexts['Night']) === -1) {
+        problems.push('Phase transition Morning->Night: plot missing Night context. Got: "' + r9b.plot + '"');
+      }
+      if (r9b.plot.indexOf(timeContexts['Morning']) !== -1) {
+        problems.push('Phase transition Morning->Night: plot still has stale Morning context. Got: "' + r9b.plot + '"');
+      }
+      if (r9b.growing.indexOf(timeContexts['Night']) === -1) {
+        problems.push('Phase transition Morning->Night: growing missing Night context. Got: "' + r9b.growing + '"');
+      }
+      if (r9b.growing.indexOf(timeContexts['Morning']) !== -1) {
+        problems.push('Phase transition Morning->Night: growing still has stale Morning context. Got: "' + r9b.growing + '"');
+      }
+
+      // --- Test 10: Update on #time-display change (simulated by calling updateTimeOfDayDescription) ---
+      // Set Midday time, run updater, then set Morning and verify it changes
+      runTimeWith('Midday', 'Clear', BASE_PLOT_TIME, BASE_GROWING_TIME);
+      var middayPlot = timeDescPlotEl.textContent;
+      var middayGrowing = timeDescGrowingEl.textContent;
+      runTimeWith('Morning', 'Clear', timeDescPlotEl.textContent, timeDescGrowingEl.textContent);
+      var morningPlot = timeDescPlotEl.textContent;
+      var morningGrowing = timeDescGrowingEl.textContent;
+      if (middayPlot === morningPlot) {
+        problems.push('Time-of-day description did not update when phase transitioned from Midday to Morning — plot-description unchanged: "' + middayPlot + '"');
+      }
+      if (middayGrowing === morningGrowing) {
+        problems.push('Time-of-day description did not update when phase transitioned from Midday to Morning — growing-description unchanged: "' + middayGrowing + '"');
+      }
+
+    } finally {
+      // Restore real display/state and re-run all updaters
+      timeDisplayEl.textContent = origTime;
+      weatherDisplayEl.textContent = origWeather;
+      timeDescPlotEl.textContent = origPlotDesc;
+      timeDescGrowingEl.textContent = origGrowingDesc;
+      gardenState.updateTimeOfDayDescription();
+      gardenState.updateWeatherDescription();
+      gardenState.updateButterflyDescription();
+    }
+  }
+
   return problems;
 }
