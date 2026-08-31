@@ -394,26 +394,105 @@
       plotDesc.textContent = 'An empty plot of rich soil, ready for something to grow. A faint haze drifts in the air.';
     }
 
-    /* Update the butterfly description to match what the scene shows.
-     * Called on an interval and exposed on __gardenState for testing.
-     * Strips any known butterfly suffix from the base growing-description
-     * text (set by garden.js) and appends the correct suffix based on
-     * current weather and time-of-day.
+    /* Weather-aware description contexts (issue #492).
+     * Each phase provides a sentence that weaves atmospheric context into
+     * the plot and growing descriptions without replacing the base text.
      */
-    const BUTTERFLY_SUFFIXES = [
-      ' A small butterfly drifts at the edge of the garden.',
-      ' The butterfly has taken shelter from the drizzle.',
-      ' The butterfly rests quietly through the night.'
-    ];
+    const WEATHER_CONTEXTS = {
+      'Clear': 'Clear skies and warm air hold the garden in bright, untroubled light.',
+      'Overcast': 'Soft grey light settles over the garden, its colours muted and calm.',
+      'Light Drizzle': 'Gentle rain falls over the garden, leaving the air fresh and clean.'
+    };
 
-    function stripButterflySuffix(text) {
-      for (const suffix of BUTTERFLY_SUFFIXES) {
+    const WEATHER_CONTEXT_STRINGS = Object.values(WEATHER_CONTEXTS);
+
+    function weatherContextFor(phase) {
+      return WEATHER_CONTEXTS[phase] || '';
+    }
+
+    function chooseWeatherContext() {
+      const phase = (document.getElementById('weather-display')?.textContent || '').trim();
+      return weatherContextFor(phase);
+    }
+
+    /* Shared suffix-stripping helper: removes any suffix found in the list
+     * from the end of the given text. Used by both weather and butterfly
+     * updaters so they compose cleanly without cross-talk.
+     */
+    function stripSuffixes(text, suffixes) {
+      for (const suffix of suffixes) {
         if (text.endsWith(suffix)) {
           return text.slice(0, -suffix.length);
         }
       }
       return text;
     }
+
+    /* Update #plot-description and #growing-description with weather-appropriate
+     * atmospheric context. Strips any previous weather context from the end of
+     * each description, preserving the base plant/flower text set by garden.js
+     * and (for growing) any butterfly suffix set by updateButterflyDescription.
+     *
+     * The composition order for growing is always: base + weatherContext + butterflySuffix.
+     * Butterfly suffixes are outermost, so we strip them first to reach the
+     * weather context, strip that to reach the base, then re-compose.
+     */
+    let lastWeatherDescPlot = '';
+    let lastWeatherDescGrowing = '';
+    function updateWeatherDescription() {
+      const ctx = chooseWeatherContext();
+      if (!ctx) return;
+
+      /* Plot description */
+      const plotEl = document.getElementById('plot-description');
+      if (plotEl) {
+        const plotBase = stripSuffixes(plotEl.textContent, WEATHER_CONTEXT_STRINGS).trimEnd();
+        const plotComposed = plotBase + ' ' + ctx;
+        if (plotComposed !== lastWeatherDescPlot) {
+          lastWeatherDescPlot = plotComposed;
+          plotEl.textContent = plotComposed;
+        }
+      }
+
+      /* Growing description — preserve butterfly suffix (outermost), then
+       * strip weather context, compose as base + newContext + butterflySuffix.
+       * The butterfly updater will replace the suffix on its own interval. */
+      const growingEl = document.getElementById('growing-description');
+      if (growingEl) {
+        /* Find and save any existing butterfly suffix (it is the outermost layer) */
+        let butterflySuffix = '';
+        for (const suffix of BUTTERFLY_SUFFIXES) {
+          if (growingEl.textContent.endsWith(suffix)) {
+            butterflySuffix = suffix;
+            break;
+          }
+        }
+        /* Strip butterfly suffix to expose the weather-context layer */
+        const withoutButterfly = butterflySuffix
+          ? growingEl.textContent.slice(0, -butterflySuffix.length)
+          : growingEl.textContent;
+        /* Strip weather context to reach the base text from garden.js */
+        const growingBase = stripSuffixes(withoutButterfly, WEATHER_CONTEXT_STRINGS).trimEnd();
+        const growingComposed = growingBase + ' ' + ctx + butterflySuffix;
+        if (growingComposed !== lastWeatherDescGrowing) {
+          lastWeatherDescGrowing = growingComposed;
+          growingEl.textContent = growingComposed;
+        }
+      }
+    }
+
+    /* Butterfly description suffixes.
+     * Called on an interval and exposed on __gardenState for testing.
+     * Strips any known butterfly suffix from the base growing-description
+     * text (set by garden.js) and appends the correct suffix based on
+     * current weather and time-of-day. Weather context woven in by
+     * updateWeatherDescription is preserved (it sits between base and suffix).
+     */
+    const BUTTERFLY_SUFFIXES = [
+      ' A small butterfly drifts at the edge of the garden.',
+      ' The butterfly has taken shelter from the drizzle.',
+      ' The butterfly rests quietly through the night.'
+    ];
 
     function chooseButterflySuffix() {
       const weather = (document.getElementById('weather-display')?.textContent || '').trim();
@@ -434,7 +513,8 @@
       if (!el) return;
 
       const suffix = chooseButterflySuffix();
-      const base = stripButterflySuffix(el.textContent);
+      /* Strip any butterfly suffix, leaving weather context intact */
+      const base = stripSuffixes(el.textContent, BUTTERFLY_SUFFIXES);
       const composed = base + suffix;
 
       if (composed !== lastButterflyText) {
@@ -475,7 +555,10 @@
       firefliesUpdate: fireflies.update,
       /* Winter legacy effect (issue #471): set by startSeasonalCycle each tick */
       winterLegacyBlend: 0,
-      updateButterflyDescription
+      updateButterflyDescription,
+      updateWeatherDescription,
+      weatherContexts: WEATHER_CONTEXTS,
+      weatherContextFor
     };
 
     /* --- Persistence: restore previous state if available --- */
@@ -527,6 +610,9 @@
 
     /* Poll the weather and time displays every ~1s and update butterfly description */
     setInterval(updateButterflyDescription, 1000);
+
+    /* Poll the weather display every ~1s and update weather-aware descriptions */
+    setInterval(updateWeatherDescription, 1000);
 
     /* --- Periodic save: every 2 seconds capture current state --- */
     setInterval(saveGardenState, 2000);
