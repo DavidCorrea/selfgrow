@@ -3497,5 +3497,237 @@ export async function checks() {
     }
   }
 
+  /* ---------- Season-aware descriptions (issue #494) ---------- */
+  // Verify that updateSeasonDescription weaves seasonal character into
+  // plot and growing descriptions, composing with time, weather and butterfly layers.
+  const seasonDescPlotEl = document.getElementById('plot-description');
+  const seasonDescGrowingEl = document.getElementById('growing-description');
+  const seasonDisplayEl = document.getElementById('season-display');
+  // timeDisplayEl, weatherDisplayEl, weatherDescPlotEl, weatherDescGrowingEl,
+  // timeDescPlotEl, timeDescGrowingEl are already declared in previous blocks
+
+  if (typeof gardenState.updateSeasonDescription !== 'function') {
+    problems.push('window.__gardenState.updateSeasonDescription is not a function — the season description updater is not exposed.');
+  } else if (typeof gardenState.seasonContexts !== 'object') {
+    problems.push('window.__gardenState.seasonContexts is not an object — season context map not exposed.');
+  } else if (typeof gardenState.seasonContextFor !== 'function') {
+    problems.push('window.__gardenState.seasonContextFor is not a function — season context getter not exposed.');
+  } else if (!seasonDescPlotEl || !seasonDescGrowingEl || !seasonDisplayEl) {
+    problems.push('Cannot verify season descriptions: #plot-description, #growing-description, or #season-display is missing.');
+  } else {
+    const origSeason = seasonDisplayEl.textContent;
+    const origTime = timeDisplayEl.textContent;
+    const origWeather = weatherDisplayEl.textContent;
+    const origPlotDesc = seasonDescPlotEl.textContent;
+    const origGrowingDesc = seasonDescGrowingEl.textContent;
+
+    try {
+      // --- Structural checks: each season context contains acceptance keywords ---
+      const seasonContexts = gardenState.seasonContexts;
+      const expectedSeasonKeywords = {
+        'Spring': ['new growth', 'emerging', 'fresh green'],
+        'Summer': ['lush', 'full', 'warmth'],
+        'Autumn': ['golden', 'brown', 'quiet decline', 'leaves fall'],
+        'Winter': ['bare', 'dormant', 'stillness', 'frost']
+      };
+
+      Object.keys(expectedSeasonKeywords).forEach(function(phase) {
+        var ctx = seasonContexts[phase];
+        if (!ctx || typeof ctx !== 'string') {
+          problems.push('seasonContexts["' + phase + '"] is missing or not a string — context not defined.');
+          return;
+        }
+        var keywords = expectedSeasonKeywords[phase];
+        var missingKeywords = [];
+        keywords.forEach(function(kw) {
+          if (ctx.toLowerCase().indexOf(kw) === -1) {
+            missingKeywords.push(kw);
+          }
+        });
+        if (missingKeywords.length > 0) {
+          problems.push('seasonContexts["' + phase + '"] = "' + ctx + '" — missing acceptance keywords: ' + missingKeywords.join(', ') + '.');
+        }
+      });
+
+      // Helper: set season-display, time-display and weather-display, run the updater, capture result
+      function runSeasonWith(seasonPhase, timePhase, weatherPhase, seedPlot, seedGrowing) {
+        seasonDisplayEl.textContent = seasonPhase;
+        timeDisplayEl.textContent = timePhase;
+        weatherDisplayEl.textContent = weatherPhase;
+        if (seedPlot !== undefined) {
+          seasonDescPlotEl.textContent = seedPlot;
+        }
+        if (seedGrowing !== undefined) {
+          seasonDescGrowingEl.textContent = seedGrowing;
+        }
+        gardenState.updateSeasonDescription();
+        return {
+          plot: seasonDescPlotEl.textContent,
+          growing: seasonDescGrowingEl.textContent
+        };
+      }
+
+      // Base texts that garden.js might set
+      var BASE_PLOT_SEASON = 'A young seedling rises from the rich soil, stretching toward the sun.';
+      var BASE_GROWING_SEASON = 'A green sprout unfurls two small leaves.';
+
+      // Stale suffixes for testing stripping
+      var DRIFT_SUFFIX_SEASON = ' A small butterfly drifts at the edge of the garden.';
+      var REST_SUFFIX_SEASON = ' The butterfly rests quietly through the night.';
+      var DRIZZLE_SUFFIX_SEASON = ' The butterfly has taken shelter from the drizzle.';
+
+      var phaseOrder = ['Spring', 'Summer', 'Autumn', 'Winter'];
+
+      // --- Test 1: Spring -> descriptions get season context ---
+      var r1 = runSeasonWith('Spring', 'Morning', 'Clear', BASE_PLOT_SEASON, BASE_GROWING_SEASON);
+      if (r1.plot.indexOf(seasonContexts['Spring']) === -1) {
+        problems.push('After updateSeasonDescription with Spring, plot-description does not contain the Spring context. Got: "' + r1.plot + '"');
+      }
+      if (r1.plot.indexOf(BASE_PLOT_SEASON) === -1) {
+        problems.push('After updateSeasonDescription with Spring, plot-description lost base text. Got: "' + r1.plot + '"');
+      }
+      if (r1.growing.indexOf(seasonContexts['Spring']) === -1) {
+        problems.push('After updateSeasonDescription with Spring, growing-description does not contain the Spring context. Got: "' + r1.growing + '"');
+      }
+      if (r1.growing.indexOf(BASE_GROWING_SEASON) === -1) {
+        problems.push('After updateSeasonDescription with Spring, growing-description lost base text. Got: "' + r1.growing + '"');
+      }
+
+      // --- Test 2: Switch from Spring to Winter — stale Spring stripped, Winter added ---
+      var r2 = runSeasonWith('Winter', 'Morning', 'Clear', r1.plot, r1.growing);
+      if (r2.plot.indexOf(seasonContexts['Winter']) === -1) {
+        problems.push('After switching to Winter, plot-description does not contain the Winter context. Got: "' + r2.plot + '"');
+      }
+      if (r2.plot.indexOf(seasonContexts['Spring']) !== -1) {
+        problems.push('After switching to Winter, plot-description still contains stale Spring context. Got: "' + r2.plot + '"');
+      }
+      if (r2.growing.indexOf(seasonContexts['Winter']) === -1) {
+        problems.push('After switching to Winter, growing-description does not contain the Winter context. Got: "' + r2.growing + '"');
+      }
+      if (r2.growing.indexOf(seasonContexts['Spring']) !== -1) {
+        problems.push('After switching to Winter, growing-description still contains stale Spring context. Got: "' + r2.growing + '"');
+      }
+
+      // --- Test 3: Growing has butterfly suffix + time + weather — season context still weaves in ---
+      var withButterflySeason = BASE_GROWING_SEASON + ' ' + seasonContexts['Winter'] + ' ' + gardenState.timeContextFor('Morning') + ' ' + gardenState.weatherContextFor('Clear') + DRIFT_SUFFIX_SEASON;
+      var r3 = runSeasonWith('Summer', 'Night', 'Overcast', BASE_PLOT_SEASON, withButterflySeason);
+      if (r3.growing.indexOf(seasonContexts['Summer']) === -1) {
+        problems.push('With butterfly suffix, time and weather contexts present, switching to Summer did not add its season context. Got: "' + r3.growing + '"');
+      }
+      if (r3.growing.indexOf(seasonContexts['Winter']) !== -1) {
+        problems.push('With butterfly suffix, time and weather contexts present, switching to Summer did not strip stale Winter context. Got: "' + r3.growing + '"');
+      }
+      if (r3.growing.indexOf(DRIFT_SUFFIX_SEASON) === -1) {
+        problems.push('With butterfly suffix, time and weather contexts present, switching to Summer lost the butterfly suffix. Got: "' + r3.growing + '"');
+      }
+      if (r3.growing.indexOf(BASE_GROWING_SEASON) === -1) {
+        problems.push('With butterfly suffix, time and weather contexts present, switching to Summer lost base text. Got: "' + r3.growing + '"');
+      }
+
+      // --- Test 4: Season context, time context and weather context compose together ---
+      var r4 = runSeasonWith('Autumn', 'Evening', 'Light Drizzle', BASE_PLOT_SEASON, BASE_GROWING_SEASON);
+      if (r4.plot.indexOf(seasonContexts['Autumn']) === -1) {
+        problems.push('Season+time+weather composition: plot-description missing Autumn context. Got: "' + r4.plot + '"');
+      }
+      if (r4.plot.indexOf(gardenState.timeContextFor('Evening')) === -1) {
+        problems.push('Season+time+weather composition: plot-description missing Evening time context. Got: "' + r4.plot + '"');
+      }
+      if (r4.plot.indexOf(gardenState.weatherContextFor('Light Drizzle')) === -1) {
+        problems.push('Season+time+weather composition: plot-description missing Light Drizzle weather context. Got: "' + r4.plot + '"');
+      }
+      if (r4.growing.indexOf(seasonContexts['Autumn']) === -1) {
+        problems.push('Season+time+weather composition: growing-description missing Autumn context. Got: "' + r4.growing + '"');
+      }
+
+      // --- Test 5: updateWeatherDescription and updateTimeOfDayDescription preserve season layer ---
+      var r5a = runSeasonWith('Spring', 'Midday', 'Clear', BASE_PLOT_SEASON, BASE_GROWING_SEASON);
+      // Now run updateWeatherDescription — the season context should be preserved
+      weatherDisplayEl.textContent = 'Overcast';
+      gardenState.updateWeatherDescription();
+      var afterWeather = seasonDescGrowingEl.textContent;
+      if (afterWeather.indexOf(seasonContexts['Spring']) === -1) {
+        problems.push('After updateWeatherDescription, growing-description lost the Spring season context. Got: "' + afterWeather + '"');
+      }
+      if (afterWeather.indexOf(gardenState.weatherContextFor('Overcast')) === -1) {
+        problems.push('After updateWeatherDescription, growing-description missing Overcast weather context. Got: "' + afterWeather + '"');
+      }
+
+      // Now run updateTimeOfDayDescription — the season context should still be preserved
+      timeDisplayEl.textContent = 'Night';
+      gardenState.updateTimeOfDayDescription();
+      var afterTime = seasonDescGrowingEl.textContent;
+      if (afterTime.indexOf(seasonContexts['Spring']) === -1) {
+        problems.push('After updateTimeOfDayDescription, growing-description lost the Spring season context. Got: "' + afterTime + '"');
+      }
+      if (afterTime.indexOf(gardenState.timeContextFor('Night')) === -1) {
+        problems.push('After updateTimeOfDayDescription, growing-description missing Night time context. Got: "' + afterTime + '"');
+      }
+
+      // --- Test 6: Idempotency — repeated calls with unchanged state must not rewrite ---
+      seasonDisplayEl.textContent = 'Spring';
+      timeDisplayEl.textContent = 'Midday';
+      weatherDisplayEl.textContent = 'Clear';
+      gardenState.updateSeasonDescription();
+      var beforeRepeatPlotSeason = seasonDescPlotEl.textContent;
+      var beforeRepeatGrowingSeason = seasonDescGrowingEl.textContent;
+      gardenState.updateSeasonDescription();
+      gardenState.updateSeasonDescription();
+      if (seasonDescPlotEl.textContent !== beforeRepeatPlotSeason) {
+        problems.push('updateSeasonDescription() is not idempotent for plot: changed from "' + beforeRepeatPlotSeason + '" to "' + seasonDescPlotEl.textContent + '" on repeated calls with unchanged state.');
+      }
+      if (seasonDescGrowingEl.textContent !== beforeRepeatGrowingSeason) {
+        problems.push('updateSeasonDescription() is not idempotent for growing: changed from "' + beforeRepeatGrowingSeason + '" to "' + seasonDescGrowingEl.textContent + '" on repeated calls with unchanged state.');
+      }
+
+      // --- Test 7: seasonContextFor returns correct strings ---
+      Object.keys(expectedSeasonKeywords).forEach(function(phase) {
+        var ctx = gardenState.seasonContextFor(phase);
+        if (ctx !== seasonContexts[phase]) {
+          problems.push('seasonContextFor("' + phase + '") returned "' + ctx + '", expected "' + seasonContexts[phase] + '".');
+        }
+      });
+      var unknownSeasonCtx = gardenState.seasonContextFor('Unknown');
+      if (unknownSeasonCtx !== '') {
+        problems.push('seasonContextFor("Unknown") returned "' + unknownSeasonCtx + '", expected empty string for unknown phase.');
+      }
+
+      // --- Test 8: Every phase gets a unique non-empty context ---
+      var seenSeasonContexts = {};
+      phaseOrder.forEach(function(phase) {
+        var ctx = seasonContexts[phase];
+        if (!ctx || ctx.trim().length === 0) {
+          problems.push('seasonContexts["' + phase + '"] is empty or missing.');
+          return;
+        }
+        if (seenSeasonContexts[ctx]) {
+          problems.push('seasonContexts["' + phase + '"] shares the same context string as "' + seenSeasonContexts[ctx] + '" — each phase must have a unique context.');
+        }
+        seenSeasonContexts[ctx] = phase;
+      });
+
+      // --- Test 9: Phase transition — Spring -> Autumn swaps contexts ---
+      var r9a = runSeasonWith('Spring', 'Morning', 'Clear', BASE_PLOT_SEASON, BASE_GROWING_SEASON);
+      var r9b = runSeasonWith('Autumn', 'Morning', 'Clear', r9a.plot, r9a.growing);
+      if (r9b.plot.indexOf(seasonContexts['Autumn']) === -1) {
+        problems.push('Phase transition Spring->Autumn: plot missing Autumn context. Got: "' + r9b.plot + '"');
+      }
+      if (r9b.plot.indexOf(seasonContexts['Spring']) !== -1) {
+        problems.push('Phase transition Spring->Autumn: plot still has stale Spring context. Got: "' + r9b.plot + '"');
+      }
+
+    } finally {
+      // Restore real display/state and re-run all updaters
+      seasonDisplayEl.textContent = origSeason;
+      timeDisplayEl.textContent = origTime;
+      weatherDisplayEl.textContent = origWeather;
+      seasonDescPlotEl.textContent = origPlotDesc;
+      seasonDescGrowingEl.textContent = origGrowingDesc;
+      gardenState.updateSeasonDescription();
+      gardenState.updateTimeOfDayDescription();
+      gardenState.updateWeatherDescription();
+      gardenState.updateButterflyDescription();
+    }
+  }
+
   return problems;
 }
