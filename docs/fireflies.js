@@ -30,6 +30,14 @@ const PULSE_FREQ_MIN = 0.2;        // Hz — slow, irregular
 const PULSE_FREQ_MAX = 0.5;        // Hz
 const DRIFT_FREQ = 0.12;           // frequency of drift oscillation
 
+/* --- Weather modulation --- */
+const WEATHER_MULTIPLIERS = {
+  'Clear': 1.0,
+  'Overcast': 0.6,
+  'Light Drizzle': 0.4
+};
+const WEATHER_MUL_LERP_SPEED = 0.04; // same as FADE_LERP_SPEED for smooth transitions
+
 /**
  * Create a soft circular glow texture on a canvas.
  * Warm pale yellow-white, fading to transparent at the edges.
@@ -188,6 +196,9 @@ export function createFireflies(scene) {
     driftRadius: DRIFT_RADIUS,
     peakOpacity: PEAK_OPACITY,
     fadeLerpSpeed: FADE_LERP_SPEED,
+    weatherMultipliers: WEATHER_MULTIPLIERS,
+    /** Current weather opacity multiplier (lerping toward target) */
+    currentWeatherMul: function() { return currentWeatherMul; },
     /** Total number of active dot sprites across all plants */
     totalDotCount: function() {
       return plantGroups.reduce(function(sum, g) { return sum + g.count; }, 0);
@@ -196,6 +207,7 @@ export function createFireflies(scene) {
 
   /* --- Runtime opacity tracking for smooth fades --- */
   let currentOpacity = 0;
+  let currentWeatherMul = 1.0;
 
   /**
    * Update the firefly system each frame.
@@ -217,17 +229,34 @@ export function createFireflies(scene) {
 
     const t = dayNight.getCycleProgress();
 
+    /* --- Determine weather multiplier for glow intensity --- */
+    let targetWeatherMul = 1.0;
+    const weather = window.__gardenState && window.__gardenState.weather;
+    if (weather && typeof weather.getPhase === 'function') {
+      const phase = weather.getPhase();
+      const mul = WEATHER_MULTIPLIERS[phase];
+      if (mul !== undefined) {
+        targetWeatherMul = mul;
+      }
+    }
+
+    /* Smoothly lerp weather multiplier to avoid snapping */
+    currentWeatherMul += (targetWeatherMul - currentWeatherMul) * WEATHER_MUL_LERP_SPEED;
+    if (Math.abs(currentWeatherMul - targetWeatherMul) < 0.0005) {
+      currentWeatherMul = targetWeatherMul;
+    }
+
     /* --- Compute target opacity from day/night cycle --- */
     let targetOpacity = 0;
 
     if (t >= 0.75) {
       if (t < 0.95) {
-        // Full Night — target peak opacity
-        targetOpacity = PEAK_OPACITY;
+        // Full Night — target peak opacity, modulated by weather
+        targetOpacity = PEAK_OPACITY * currentWeatherMul;
       } else {
         // Fading out toward Morning — t ∈ [0.95, 1.0)
         const fadeT = (1.0 - t) / 0.05; // 1 → 0
-        targetOpacity = Math.max(0, fadeT) * PEAK_OPACITY;
+        targetOpacity = Math.max(0, fadeT) * PEAK_OPACITY * currentWeatherMul;
       }
     }
     // t < 0.75: target stays 0 — invisible during Morning, Midday, Evening
