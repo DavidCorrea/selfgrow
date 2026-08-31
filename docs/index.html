@@ -394,6 +394,29 @@
       plotDesc.textContent = 'An empty plot of rich soil, ready for something to grow. A faint haze drifts in the air.';
     }
 
+    /* Time-of-day-aware description contexts (issue #493).
+     * Each phase provides a sentence that weaves atmospheric context into
+     * the plot and growing descriptions without replacing the base text,
+     * composing with weather and butterfly layers.
+     */
+    const TIME_OF_DAY_CONTEXTS = {
+      'Morning': 'Soft awakening light spreads across the garden, the air gentle and warm.',
+      'Midday': 'Bright clear light fills the garden, the sun warm and steady overhead.',
+      'Evening': 'Golden tones settling across the garden as the light mellows toward dusk.',
+      'Night': 'Darkness and deep quiet hold the garden, lit by stars and firefly glow.'
+    };
+
+    const TIME_OF_DAY_CONTEXT_STRINGS = Object.values(TIME_OF_DAY_CONTEXTS);
+
+    function timeContextFor(phase) {
+      return TIME_OF_DAY_CONTEXTS[phase] || '';
+    }
+
+    function chooseTimeOfDayContext() {
+      const phase = (document.getElementById('time-display')?.textContent || '').trim();
+      return timeContextFor(phase);
+    }
+
     /* Weather-aware description contexts (issue #492).
      * Each phase provides a sentence that weaves atmospheric context into
      * the plot and growing descriptions without replacing the base text.
@@ -428,26 +451,100 @@
       return text;
     }
 
-    /* Update #plot-description and #growing-description with weather-appropriate
-     * atmospheric context. Strips any previous weather context from the end of
-     * each description, preserving the base plant/flower text set by garden.js
-     * and (for growing) any butterfly suffix set by updateButterflyDescription.
+    /* Strips all occurrences of any context string from anywhere in the text.
+     * Unlike stripSuffixes, this targets contexts that may be in the middle
+     * of the text (e.g. time context before weather context). Used by both
+     * time-of-day and weather updaters so stale contexts are always removed
+     * regardless of composition position.
+     */
+        function stripAllContexts(text, contextStrings) {
+      let result = text;
+      for (const ctx of contextStrings) {
+        // Escape special regex characters in the context string
+        const escaped = ctx.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // Remove the context and any surrounding whitespace
+        result = result.replace(new RegExp('\\s*' + escaped + '\\s*', 'g'), '');
+      }
+      // Clean up duplicate whitespace and trim
+      return result.replace(/\s+/g, ' ').trim();
+    }
+    /* Time-of-day-aware description updater (issue #493).
+     * Reads the current time-of-day phase from #time-display and weaves a
+     * time-appropriate context sentence into the plot and growing descriptions,
+     * composing with existing weather and butterfly layers.
      *
-     * The composition order for growing is always: base + weatherContext + butterflySuffix.
-     * Butterfly suffixes are outermost, so we strip them first to reach the
-     * weather context, strip that to reach the base, then re-compose.
+     * Composition order: base + timeContext + weatherContext (+ butterflySuffix).
+     */
+    let lastTimeDescPlot = '';
+    let lastTimeDescGrowing = '';
+    function updateTimeOfDayDescription() {
+      const timeCtx = chooseTimeOfDayContext();
+      const weatherCtx = chooseWeatherContext();
+      if (!timeCtx) return;
+
+      const allContextStrings = TIME_OF_DAY_CONTEXT_STRINGS.concat(WEATHER_CONTEXT_STRINGS);
+
+      /* Plot description — strip all time and weather contexts, compose fresh */
+      const plotEl = document.getElementById('plot-description');
+      if (plotEl) {
+        const base = stripAllContexts(plotEl.textContent, allContextStrings);
+        const plotComposed = base + ' ' + timeCtx + (weatherCtx ? ' ' + weatherCtx : '');
+        if (plotComposed !== lastTimeDescPlot) {
+          lastTimeDescPlot = plotComposed;
+          plotEl.textContent = plotComposed;
+        }
+      }
+
+      /* Growing description — preserve butterfly suffix (outermost), then
+       * strip all time and weather contexts, compose as
+       * base + timeCtx + weatherCtx + butterflySuffix. */
+      const growingEl = document.getElementById('growing-description');
+      if (growingEl) {
+        /* Find and save any existing butterfly suffix (outermost layer) */
+        let butterflySuffix = '';
+        for (const suffix of BUTTERFLY_SUFFIXES) {
+          if (growingEl.textContent.endsWith(suffix)) {
+            butterflySuffix = suffix;
+            break;
+          }
+        }
+        /* Strip butterfly suffix to expose weather + time layers */
+        const withoutButterfly = butterflySuffix
+          ? growingEl.textContent.slice(0, -butterflySuffix.length)
+          : growingEl.textContent;
+        /* Strip all time and weather contexts to reach base text from garden.js */
+        const growingBase = stripAllContexts(withoutButterfly, allContextStrings);
+        const growingComposed = growingBase + ' ' + timeCtx + (weatherCtx ? ' ' + weatherCtx : '') + butterflySuffix;
+        if (growingComposed !== lastTimeDescGrowing) {
+          lastTimeDescGrowing = growingComposed;
+          growingEl.textContent = growingComposed;
+        }
+      }
+    }
+
+    /* Update #plot-description and #growing-description with weather-appropriate
+     * atmospheric context. Strips any previous weather and time context from the
+     * end of each description, preserving the base plant/flower text set by
+     * garden.js and (for growing) any butterfly suffix.
+     *
+     * Composition order: base + timeContext + weatherContext + butterflySuffix.
+     * This function strips both time and weather context strings so it composes
+     * cleanly with updateTimeOfDayDescription's layer.
      */
     let lastWeatherDescPlot = '';
     let lastWeatherDescGrowing = '';
     function updateWeatherDescription() {
-      const ctx = chooseWeatherContext();
-      if (!ctx) return;
+      const weatherCtx = chooseWeatherContext();
+      const timeCtx = chooseTimeOfDayContext();
+      if (!weatherCtx) return;
 
-      /* Plot description */
+      const allContextStrings = TIME_OF_DAY_CONTEXT_STRINGS.concat(WEATHER_CONTEXT_STRINGS);
+
+      /* Plot description — strip all time and weather contexts, compose fresh */
       const plotEl = document.getElementById('plot-description');
       if (plotEl) {
-        const plotBase = stripSuffixes(plotEl.textContent, WEATHER_CONTEXT_STRINGS).trimEnd();
-        const plotComposed = plotBase + ' ' + ctx;
+        const plotBase = stripAllContexts(plotEl.textContent, allContextStrings);
+        const plotComposed = plotBase + ' ' + timeCtx + ' ' + weatherCtx;
         if (plotComposed !== lastWeatherDescPlot) {
           lastWeatherDescPlot = plotComposed;
           plotEl.textContent = plotComposed;
@@ -455,8 +552,7 @@
       }
 
       /* Growing description — preserve butterfly suffix (outermost), then
-       * strip weather context, compose as base + newContext + butterflySuffix.
-       * The butterfly updater will replace the suffix on its own interval. */
+       * strip all time and weather contexts, compose as base + timeCtx + weatherCtx + butterflySuffix. */
       const growingEl = document.getElementById('growing-description');
       if (growingEl) {
         /* Find and save any existing butterfly suffix (it is the outermost layer) */
@@ -471,9 +567,9 @@
         const withoutButterfly = butterflySuffix
           ? growingEl.textContent.slice(0, -butterflySuffix.length)
           : growingEl.textContent;
-        /* Strip weather context to reach the base text from garden.js */
-        const growingBase = stripSuffixes(withoutButterfly, WEATHER_CONTEXT_STRINGS).trimEnd();
-        const growingComposed = growingBase + ' ' + ctx + butterflySuffix;
+        /* Strip all time and weather contexts to reach the base text from garden.js */
+        const growingBase = stripAllContexts(withoutButterfly, allContextStrings);
+        const growingComposed = growingBase + ' ' + timeCtx + ' ' + weatherCtx + butterflySuffix;
         if (growingComposed !== lastWeatherDescGrowing) {
           lastWeatherDescGrowing = growingComposed;
           growingEl.textContent = growingComposed;
@@ -558,7 +654,10 @@
       updateButterflyDescription,
       updateWeatherDescription,
       weatherContexts: WEATHER_CONTEXTS,
-      weatherContextFor
+      weatherContextFor,
+      timeContexts: TIME_OF_DAY_CONTEXTS,
+      timeContextFor,
+      updateTimeOfDayDescription
     };
 
     /* --- Persistence: restore previous state if available --- */
@@ -613,6 +712,9 @@
 
     /* Poll the weather display every ~1s and update weather-aware descriptions */
     setInterval(updateWeatherDescription, 1000);
+
+    /* Poll the time display every ~1s and update time-of-day-aware descriptions */
+    setInterval(updateTimeOfDayDescription, 1000);
 
     /* --- Periodic save: every 2 seconds capture current state --- */
     setInterval(saveGardenState, 2000);
