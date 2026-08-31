@@ -2598,12 +2598,60 @@ export async function checks() {
       problems.push('Night+Light Drizzle rain gain (' + nightDrizzle.rainGain.toFixed(4) + ') should be less than Midday+Light Drizzle rain gain (' + middayDrizzle.rainGain.toFixed(4) + ')');
     }
 
-    // Test that update() with timeOfDay modifies state correctly when audio nodes exist
-    // We attempt to call update() — even if AudioContext is missing (windGain is null),
-    // it returns early without changing state. But we can verify it didn't throw.
+    // --- Test that update() with timeOfDay updates state even without AudioContext ---
+    // After fixing ambientAudio.js to always record composed targets into state,
+    // calling update() must update state.windGain, state.windFilterFrequency and
+    // state.rainGain regardless of whether AudioContext nodes exist.
+    var eps = 0.001;
+
     try {
       ambientAudio.update('Clear', 'Midday');
+      if (Math.abs(ambientAudio.state.windGain - 0.08) > eps) {
+        problems.push('ambientAudio.update("Clear", "Midday") set state.windGain to ' + ambientAudio.state.windGain + ', expected ~0.08');
+      }
+      if (Math.abs(ambientAudio.state.windFilterFrequency - 400) > eps) {
+        problems.push('ambientAudio.update("Clear", "Midday") set state.windFilterFrequency to ' + ambientAudio.state.windFilterFrequency + ', expected ~400');
+      }
+
       ambientAudio.update('Clear', 'Night');
+      if (ambientAudio.state.windGain > 0.031) {
+        problems.push('ambientAudio.update("Clear", "Night") set state.windGain to ' + ambientAudio.state.windGain + ', expected ≤ 0.03');
+      }
+      if (Math.abs(ambientAudio.state.windFilterFrequency - 80) > 5) {
+        problems.push('ambientAudio.update("Clear", "Night") set state.windFilterFrequency to ' + ambientAudio.state.windFilterFrequency + ', expected ~80Hz');
+      }
+
+      ambientAudio.update('Clear', 'Morning');
+      if (Math.abs(ambientAudio.state.windGain - 0.05) > eps) {
+        problems.push('ambientAudio.update("Clear", "Morning") set state.windGain to ' + ambientAudio.state.windGain + ', expected ~0.05');
+      }
+      if (Math.abs(ambientAudio.state.windFilterFrequency - 250) > 5) {
+        problems.push('ambientAudio.update("Clear", "Morning") set state.windFilterFrequency to ' + ambientAudio.state.windFilterFrequency + ', expected ~250Hz');
+      }
+
+      ambientAudio.update('Clear', 'Evening');
+      if (Math.abs(ambientAudio.state.windGain - 0.05) > eps) {
+        problems.push('ambientAudio.update("Clear", "Evening") set state.windGain to ' + ambientAudio.state.windGain + ', expected ~0.05');
+      }
+      if (Math.abs(ambientAudio.state.windFilterFrequency - 200) > 5) {
+        problems.push('ambientAudio.update("Clear", "Evening") set state.windFilterFrequency to ' + ambientAudio.state.windFilterFrequency + ', expected ~200Hz');
+      }
+
+      // Test composition: Night+Light Drizzle is quieter than Midday+Light Drizzle
+      ambientAudio.update('Light Drizzle', 'Night');
+      var nightDrizzleWind = ambientAudio.state.windGain;
+      var nightDrizzleRain = ambientAudio.state.rainGain;
+
+      ambientAudio.update('Light Drizzle', 'Midday');
+      var middayDrizzleWind = ambientAudio.state.windGain;
+      var middayDrizzleRain = ambientAudio.state.rainGain;
+
+      if (nightDrizzleWind >= middayDrizzleWind) {
+        problems.push('Night+Light Drizzle wind gain (' + nightDrizzleWind.toFixed(4) + ') should be less than Midday+Light Drizzle wind gain (' + middayDrizzleWind.toFixed(4) + ')');
+      }
+      if (nightDrizzleRain >= middayDrizzleRain) {
+        problems.push('Night+Light Drizzle rain gain (' + nightDrizzleRain.toFixed(4) + ') should be less than Midday+Light Drizzle rain gain (' + middayDrizzleRain.toFixed(4) + ')');
+      }
     } catch (e) {
       problems.push('ambientAudio.update() with timeOfDay parameter threw: ' + e.message);
     }
@@ -2612,6 +2660,9 @@ export async function checks() {
     // It should default to Midday
     try {
       ambientAudio.update('Light Drizzle');
+      if (Math.abs(ambientAudio.state.windGain - 0.08) > eps) {
+        problems.push('ambientAudio.update("Light Drizzle") without timeOfDay set state.windGain to ' + ambientAudio.state.windGain + ', expected ~0.08 (Midday default)');
+      }
     } catch (e) {
       problems.push('ambientAudio.update() without timeOfDay (backwards compat) threw: ' + e.message);
     }
@@ -2619,31 +2670,39 @@ export async function checks() {
     // Test that update() with unknown timeOfDay defaults to Midday
     try {
       ambientAudio.update('Clear', 'UnknownPhase');
+      if (Math.abs(ambientAudio.state.windGain - 0.08) > eps) {
+        problems.push('ambientAudio.update("Clear", "UnknownPhase") set state.windGain to ' + ambientAudio.state.windGain + ', expected ~0.08 (Midday default for unknown phase)');
+      }
     } catch (e) {
       problems.push('ambientAudio.update() with unknown timeOfDay threw: ' + e.message);
     }
 
     // --- Caller wiring check: updateAudioWeather on __gardenState ---
-    // Verify the polling function is exposed and can be called
+    // Verify the polling function is exposed, reads #time-display & #weather-display,
+    // and passes them through to ambientAudio.update() which (now) updates state.
     if (typeof gardenState.updateAudioWeather !== 'function') {
       problems.push('window.__gardenState.updateAudioWeather is not a function — the audio polling function should be exposed on garden state.');
     } else {
-      // Set DOM to a known state and call updateAudioWeather
-      setAudioTestDOM('Midday', 'Night');
-      try {
-        gardenState.updateAudioWeather();
-      } catch (e) {
-        problems.push('gardenState.updateAudioWeather() threw: ' + e.message);
-      }
+      // Force a prior Midday/Overcast call first so the change guard cannot skip
+      // the subsequent update.
+      setAudioTestDOM('Overcast', 'Midday');
+      gardenState.updateAudioWeather();
 
-      // Now set DOM to a different state and verify it triggers an update
-      // Without AudioContext, we can't verify state changed — but we verify the
-      // function does not throw and the DOM values are read.
-      setAudioTestDOM('Clear', 'Morning');
+      // Now set DOM to a new state and verify it triggers an update that
+      // modifies the ambientAudio state.
+      setAudioTestDOM('Clear', 'Night');
+      var beforeWind = ambientAudio.state.windGain;
       try {
         gardenState.updateAudioWeather();
       } catch (e) {
         problems.push('gardenState.updateAudioWeather() after DOM change threw: ' + e.message);
+      }
+
+      // With the prior call to Overcast+Midday, the guard would have recorded
+      // those values. Switching to Clear+Night should trigger a new update.
+      // Verify the state was updated to reflect Night+Clear values.
+      if (ambientAudio.state.windGain > 0.031) {
+        problems.push('After updateAudioWeather set DOM to Clear+Night, state.windGain is ' + ambientAudio.state.windGain + ', expected ≤ 0.03 (Night+Clear)');
       }
     }
 

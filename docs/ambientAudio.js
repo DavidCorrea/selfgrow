@@ -239,25 +239,33 @@ export function createAmbientAudio() {
   /**
    * Update the audio character to match the current weather and time-of-day.
    *
+   * Always records composed targets into state (so selftest can verify without
+   * an AudioContext), then ramps the Web Audio nodes with setTargetAtTime when
+   * they exist.
+   *
    * @param {string} weatherPhase — 'Clear', 'Overcast', or 'Light Drizzle'
    * @param {string} [timeOfDay] — 'Morning'|'Midday'|'Evening'|'Night' (default 'Midday')
    */
   function update(weatherPhase, timeOfDay) {
+    // Always compute and record composed targets into state first, so the
+    // selftest can verify time+weather composition without an AudioContext.
+    const settings = computeAudioSettings(weatherPhase, timeOfDay);
+    state.windGain = settings.windGain;
+    state.windFilterFrequency = settings.filterFreq;
+    state.rainGain = settings.rainGain;
+
+    // Then ramp the Web Audio nodes when they exist (AudioContext available).
     if (!windGain || !windFilter) return;
     const ctx = ensureContext();
     if (!ctx) return;
 
     const now = ctx.currentTime;
     const fadeTime = 1.5; // seconds for smooth transition
-    const settings = computeAudioSettings(weatherPhase, timeOfDay);
 
     windGain.gain.setTargetAtTime(settings.windGain, now, fadeTime);
     windFilter.frequency.setTargetAtTime(settings.filterFreq, now, fadeTime);
-    state.windGain = settings.windGain;
-    state.windFilterFrequency = settings.filterFreq;
     if (rainGain) {
       rainGain.gain.setTargetAtTime(settings.rainGain, now, fadeTime);
-      state.rainGain = settings.rainGain;
     }
   }
 
