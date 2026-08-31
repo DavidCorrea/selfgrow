@@ -3179,6 +3179,157 @@ export async function checks() {
       }
     }
 
+    /* --- Firefly weather modulation checks (issue #506) --- */
+    // Firefly glow intensity should be modulated by the current weather phase
+    // during Night: Clear=1.0, Overcast=0.6, Light Drizzle=0.4 of peak opacity.
+    // During non-Night phases, fireflies must remain invisible regardless of weather.
+    var ffWeather = gardenState && gardenState.weather;
+    if (!ffWeather || typeof ffWeather.getPhase !== 'function') {
+      problems.push('window.__gardenState.weather.getPhase is not available — cannot verify firefly weather modulation.');
+    } else {
+      var origDayNightFn = dayNightForFireflies.getCycleProgress;
+      var origWeatherFn = ffWeather.getPhase;
+      // Save current firefly update accessor
+      var origFirefliesUpdate = gardenState.firefliesUpdate;
+      try {
+        // Test 1: During Night+Clear, opacity should be at normal peak (~0.15)
+        dayNightForFireflies.getCycleProgress = function() { return 0.85; };
+        ffWeather.getPhase = function() { return 'Clear'; };
+        if (typeof gardenState.firefliesUpdate === 'function') {
+          for (var fk = 0; fk < 300; fk++) {
+            gardenState.firefliesUpdate(0, 0.016);
+          }
+          if (fireflyState.plantGroups && fireflyState.plantGroups.length > 0) {
+            var clearNightOpacity = fireflyState.plantGroups[0].material.opacity;
+            if (clearNightOpacity < 0.10) {
+              problems.push('During Night+Clear, firefly opacity is ' + clearNightOpacity + ' — expected ~0.15 (full glow during clear night).');
+            }
+            if (clearNightOpacity > 0.16) {
+              problems.push('During Night+Clear, firefly opacity is ' + clearNightOpacity + ' — expected ≤0.15 (peak opacity cap).');
+            }
+          }
+        }
+
+        // Test 2: During Night+Overcast, opacity should be ~60% of peak (~0.09)
+        dayNightForFireflies.getCycleProgress = function() { return 0.85; };
+        ffWeather.getPhase = function() { return 'Overcast'; };
+        if (typeof gardenState.firefliesUpdate === 'function') {
+          for (var fk = 0; fk < 300; fk++) {
+            gardenState.firefliesUpdate(0, 0.016);
+          }
+          if (fireflyState.plantGroups && fireflyState.plantGroups.length > 0) {
+            var overcastNightOpacity = fireflyState.plantGroups[0].material.opacity;
+            var expectedOvercastOpacity = 0.15 * 0.6; // 0.09
+            if (overcastNightOpacity < expectedOvercastOpacity * 0.5 || overcastNightOpacity > expectedOvercastOpacity * 1.5) {
+              problems.push('During Night+Overcast, firefly opacity is ' + overcastNightOpacity + ' — expected ~' + expectedOvercastOpacity + ' (60% of peak during overcast).');
+            }
+            if (overcastNightOpacity >= clearNightOpacity - 0.01) {
+              problems.push('During Night+Overcast, firefly opacity (' + overcastNightOpacity + ') should be less than Night+Clear opacity (' + clearNightOpacity + ').');
+            }
+          }
+        }
+
+        // Test 3: During Night+Light Drizzle, opacity should be ~40% of peak (~0.06)
+        dayNightForFireflies.getCycleProgress = function() { return 0.85; };
+        ffWeather.getPhase = function() { return 'Light Drizzle'; };
+        if (typeof gardenState.firefliesUpdate === 'function') {
+          for (var fk = 0; fk < 300; fk++) {
+            gardenState.firefliesUpdate(0, 0.016);
+          }
+          if (fireflyState.plantGroups && fireflyState.plantGroups.length > 0) {
+            var drizzleNightOpacity = fireflyState.plantGroups[0].material.opacity;
+            var expectedDrizzleOpacity = 0.15 * 0.4; // 0.06
+            if (drizzleNightOpacity < expectedDrizzleOpacity * 0.5 || drizzleNightOpacity > expectedDrizzleOpacity * 1.5) {
+              problems.push('During Night+Light Drizzle, firefly opacity is ' + drizzleNightOpacity + ' — expected ~' + expectedDrizzleOpacity + ' (40% of peak during drizzle).');
+            }
+            if (drizzleNightOpacity >= overcastNightOpacity - 0.005) {
+              problems.push('During Night+Light Drizzle, firefly opacity (' + drizzleNightOpacity + ') should be less than Night+Overcast opacity (' + overcastNightOpacity + ').');
+            }
+          }
+        }
+
+        // Test 4: During Morning (t=0.1), fireflies should be invisible regardless of weather
+        dayNightForFireflies.getCycleProgress = function() { return 0.1; };
+        ffWeather.getPhase = function() { return 'Clear'; };
+        if (typeof gardenState.firefliesUpdate === 'function') {
+          for (var fk = 0; fk < 300; fk++) {
+            gardenState.firefliesUpdate(0, 0.016);
+          }
+          if (fireflyState.plantGroups && fireflyState.plantGroups.length > 0) {
+            var morningClearOpacity = fireflyState.plantGroups[0].material.opacity;
+            if (morningClearOpacity > 0.02) {
+              problems.push('During Morning+Clear, firefly opacity is ' + morningClearOpacity + ' — expected near 0 (fireflies invisible during non-Night phases regardless of weather).');
+            }
+          }
+        }
+
+        // Test 5: During Morning with Overcast, also invisible
+        dayNightForFireflies.getCycleProgress = function() { return 0.1; };
+        ffWeather.getPhase = function() { return 'Overcast'; };
+        if (typeof gardenState.firefliesUpdate === 'function') {
+          for (var fk = 0; fk < 300; fk++) {
+            gardenState.firefliesUpdate(0, 0.016);
+          }
+          if (fireflyState.plantGroups && fireflyState.plantGroups.length > 0) {
+            var morningOvercastOpacity = fireflyState.plantGroups[0].material.opacity;
+            if (morningOvercastOpacity > 0.02) {
+              problems.push('During Morning+Overcast, firefly opacity is ' + morningOvercastOpacity + ' — expected near 0 (fireflies invisible during non-Night phases).');
+            }
+          }
+        }
+
+        // Test 6: Night+Clear again should return to full glow (tests smooth transition back)
+        dayNightForFireflies.getCycleProgress = function() { return 0.85; };
+        ffWeather.getPhase = function() { return 'Clear'; };
+        if (typeof gardenState.firefliesUpdate === 'function') {
+          for (var fk = 0; fk < 300; fk++) {
+            gardenState.firefliesUpdate(0, 0.016);
+          }
+          if (fireflyState.plantGroups && fireflyState.plantGroups.length > 0) {
+            var clearAgainOpacity = fireflyState.plantGroups[0].material.opacity;
+            if (clearAgainOpacity < 0.10) {
+              problems.push('After transitioning back to Night+Clear, firefly opacity is ' + clearAgainOpacity + ' — expected ~0.15 (should return to full glow).');
+            }
+          }
+        }
+
+        // Test 7: Verify weatherMultipliers config is exposed
+        if (typeof fireflyState.weatherMultipliers !== 'object' || fireflyState.weatherMultipliers === null) {
+          problems.push('fireflyState.weatherMultipliers is not exposed — weather modulation config map is missing.');
+        } else {
+          if (fireflyState.weatherMultipliers['Clear'] !== 1.0) {
+            problems.push('fireflyState.weatherMultipliers["Clear"] is ' + fireflyState.weatherMultipliers['Clear'] + ', expected 1.0.');
+          }
+          if (fireflyState.weatherMultipliers['Overcast'] !== 0.6) {
+            problems.push('fireflyState.weatherMultipliers["Overcast"] is ' + fireflyState.weatherMultipliers['Overcast'] + ', expected 0.6.');
+          }
+          if (fireflyState.weatherMultipliers['Light Drizzle'] !== 0.4) {
+            problems.push('fireflyState.weatherMultipliers["Light Drizzle"] is ' + fireflyState.weatherMultipliers['Light Drizzle'] + ', expected 0.4.');
+          }
+        }
+
+        // Test 8: Verify currentWeatherMul accessor returns a reasonable value
+        if (typeof fireflyState.currentWeatherMul !== 'function') {
+          problems.push('fireflyState.currentWeatherMul is not a function — current weather multiplier getter is missing.');
+        } else {
+          var cwm = fireflyState.currentWeatherMul();
+          if (typeof cwm !== 'number' || cwm < 0.3 || cwm > 1.1) {
+            problems.push('fireflyState.currentWeatherMul() returned ' + cwm + ', expected a number in [0.3, 1.1].');
+          }
+        }
+      } finally {
+        // Restore original getters
+        dayNightForFireflies.getCycleProgress = origDayNightFn;
+        ffWeather.getPhase = origWeatherFn;
+        // Re-run a few updates to settle back to real values
+        if (typeof gardenState.firefliesUpdate === 'function') {
+          for (var fk = 0; fk < 300; fk++) {
+            gardenState.firefliesUpdate(0, 0.016);
+          }
+        }
+      }
+    }
+
     // Verify the firefly systems use the same glow texture across all groups
     if (fireflyState.plantGroups && fireflyState.plantGroups.length > 1) {
       var firstMap = fireflyState.plantGroups[0].material && fireflyState.plantGroups[0].material.map;
