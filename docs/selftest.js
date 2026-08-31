@@ -3076,5 +3076,190 @@ export async function checks() {
     }
   }
 
+  /* ---------- Weather-aware descriptions (issue #492) ---------- */
+  // Verify that updateWeatherDescription weaves atmospheric context into
+  // plot and growing descriptions, preserving base text from garden.js.
+  const weatherDescPlotEl = document.getElementById('plot-description');
+  const weatherDescGrowingEl = document.getElementById('growing-description');
+  // weatherDisplayEl is already declared in the butterfly description checks block above
+
+  if (typeof gardenState.updateWeatherDescription !== 'function') {
+    problems.push('window.__gardenState.updateWeatherDescription is not a function — the weather description updater is not exposed.');
+  } else if (typeof gardenState.weatherContexts !== 'object') {
+    problems.push('window.__gardenState.weatherContexts is not an object — weather context map not exposed.');
+  } else if (typeof gardenState.weatherContextFor !== 'function') {
+    problems.push('window.__gardenState.weatherContextFor is not a function — weather context getter not exposed.');
+  } else if (!weatherDescPlotEl || !weatherDescGrowingEl || !weatherDisplayEl) {
+    problems.push('Cannot verify weather descriptions: #plot-description, #growing-description, or #weather-display is missing.');
+  } else {
+    const origWeather = weatherDisplayEl.textContent;
+    const origPlotDesc = weatherDescPlotEl.textContent;
+    const origGrowingDesc = weatherDescGrowingEl.textContent;
+
+    try {
+      // --- Structural checks: each phase context contains acceptance keywords ---
+      const contexts = gardenState.weatherContexts;
+      const expectedKeywords = {
+        'Clear': ['clear', 'bright', 'warm air'],
+        'Overcast': ['grey', 'muted'],
+        'Light Drizzle': ['rain', 'fresh']
+      };
+
+      Object.keys(expectedKeywords).forEach(function(phase) {
+        const ctx = contexts[phase];
+        if (!ctx || typeof ctx !== 'string') {
+          problems.push('weatherContexts["' + phase + '"] is missing or not a string — context not defined.');
+          return;
+        }
+        const keywords = expectedKeywords[phase];
+        var missingKeywords = [];
+        keywords.forEach(function(kw) {
+          if (ctx.toLowerCase().indexOf(kw) === -1) {
+            missingKeywords.push(kw);
+          }
+        });
+        if (missingKeywords.length > 0) {
+          problems.push('weatherContexts["' + phase + '"] = "' + ctx + '" — missing acceptance keywords: ' + missingKeywords.join(', ') + '.');
+        }
+      });
+
+      // Helper: set weather-display and run the updater, capturing the result
+      function runWeatherWith(weather, seedPlot, seedGrowing) {
+        weatherDisplayEl.textContent = weather;
+        if (seedPlot !== undefined) {
+          weatherDescPlotEl.textContent = seedPlot;
+        }
+        if (seedGrowing !== undefined) {
+          weatherDescGrowingEl.textContent = seedGrowing;
+        }
+        gardenState.updateWeatherDescription();
+        return {
+          plot: weatherDescPlotEl.textContent,
+          growing: weatherDescGrowingEl.textContent
+        };
+      }
+
+      // Base texts that garden.js might set
+      const BASE_PLOT = 'A young seedling rises from the rich soil, stretching toward the sun.';
+      const BASE_GROWING = 'A green sprout unfurls two small leaves.';
+
+      // Stale weather contexts to test stripping
+      const DRIZZLE_SUFFIX = ' The butterfly has taken shelter from the drizzle.';
+      const DRIFT_SUFFIX = ' A small butterfly drifts at the edge of the garden.';
+
+      const phaseOrder = ['Clear', 'Overcast', 'Light Drizzle'];
+
+      // --- Test 1: Clear -> descriptions get context ---
+      var r1 = runWeatherWith('Clear', BASE_PLOT, BASE_GROWING);
+      if (r1.plot.indexOf(contexts['Clear']) === -1) {
+        problems.push('After updateWeatherDescription with Clear, plot-description does not contain the Clear context. Got: "' + r1.plot + '"');
+      }
+      if (r1.plot.indexOf(BASE_PLOT) === -1) {
+        problems.push('After updateWeatherDescription with Clear, plot-description lost base text. Got: "' + r1.plot + '"');
+      }
+      if (r1.growing.indexOf(contexts['Clear']) === -1) {
+        problems.push('After updateWeatherDescription with Clear, growing-description does not contain the Clear context. Got: "' + r1.growing + '"');
+      }
+      if (r1.growing.indexOf(BASE_GROWING) === -1) {
+        problems.push('After updateWeatherDescription with Clear, growing-description lost base text. Got: "' + r1.growing + '"');
+      }
+
+      // --- Test 2: Switch to Overcast — stale Clear context stripped, Overcast added ---
+      var r2 = runWeatherWith('Overcast', r1.plot, r1.growing);
+      if (r2.plot.indexOf(contexts['Overcast']) === -1) {
+        problems.push('After switching to Overcast, plot-description does not contain the Overcast context. Got: "' + r2.plot + '"');
+      }
+      if (r2.plot.indexOf(contexts['Clear']) !== -1) {
+        problems.push('After switching to Overcast, plot-description still contains stale Clear context. Got: "' + r2.plot + '"');
+      }
+      if (r2.growing.indexOf(contexts['Overcast']) === -1) {
+        problems.push('After switching to Overcast, growing-description does not contain the Overcast context. Got: "' + r2.growing + '"');
+      }
+      if (r2.growing.indexOf(contexts['Clear']) !== -1) {
+        problems.push('After switching to Overcast, growing-description still contains stale Clear context. Got: "' + r2.growing + '"');
+      }
+
+      // --- Test 3: Growing has a butterfly suffix — weather context still weaves in ---
+      var withButterfly = BASE_GROWING + ' ' + contexts['Overcast'] + DRIFT_SUFFIX;
+      var r3 = runWeatherWith('Light Drizzle', BASE_PLOT, withButterfly);
+      if (r3.growing.indexOf(contexts['Light Drizzle']) === -1) {
+        problems.push('With butterfly suffix present, switching to Light Drizzle did not add its context. Got: "' + r3.growing + '"');
+      }
+      if (r3.growing.indexOf(contexts['Overcast']) !== -1) {
+        problems.push('With butterfly suffix present, switching to Light Drizzle did not strip stale Overcast context. Got: "' + r3.growing + '"');
+      }
+      if (r3.growing.indexOf(DRIFT_SUFFIX) === -1) {
+        problems.push('With butterfly suffix present, switching to Light Drizzle lost the butterfly suffix. Got: "' + r3.growing + '"');
+      }
+      if (r3.growing.indexOf(BASE_GROWING) === -1) {
+        problems.push('With butterfly suffix present, switching to Light Drizzle lost base text. Got: "' + r3.growing + '"');
+      }
+
+      // --- Test 4: Butterfly update (strips its own suffix) should leave weather context ---
+      weatherDisplayEl.textContent = 'Light Drizzle';
+      var r4a = runWeatherWith('Light Drizzle', BASE_PLOT, BASE_GROWING + ' ' + contexts['Light Drizzle'] + DRIZZLE_SUFFIX);
+      if (!r4a.growing.endsWith(DRIZZLE_SUFFIX)) {
+        problems.push('Setup for Test 4 failed: growing should end with drizzle butterfly suffix. Got: "' + r4a.growing + '"');
+      }
+      gardenState.updateButterflyDescription();
+      var afterButterfly = weatherDescGrowingEl.textContent;
+      if (afterButterfly.indexOf(contexts['Light Drizzle']) === -1) {
+        problems.push('After butterfly update, growing-description lost weather context. Got: "' + afterButterfly + '"');
+      }
+      if (!afterButterfly.endsWith(DRIZZLE_SUFFIX)) {
+        problems.push('After butterfly update, growing-description does not end with drizzle butterfly suffix. Got: "' + afterButterfly + '"');
+      }
+      if (afterButterfly.indexOf(BASE_GROWING) === -1) {
+        problems.push('After butterfly update, growing-description lost base text. Got: "' + afterButterfly + '"');
+      }
+
+      // --- Test 5: Idempotency — repeated calls with unchanged state must not rewrite ---
+      var beforeRepeatPlot = weatherDescPlotEl.textContent;
+      var beforeRepeatGrowing = weatherDescGrowingEl.textContent;
+      gardenState.updateWeatherDescription();
+      gardenState.updateWeatherDescription();
+      if (weatherDescPlotEl.textContent !== beforeRepeatPlot) {
+        problems.push('updateWeatherDescription() is not idempotent for plot: changed from "' + beforeRepeatPlot + '" to "' + weatherDescPlotEl.textContent + '" on repeated calls with unchanged state.');
+      }
+      if (weatherDescGrowingEl.textContent !== beforeRepeatGrowing) {
+        problems.push('updateWeatherDescription() is not idempotent for growing: changed from "' + beforeRepeatGrowing + '" to "' + weatherDescGrowingEl.textContent + '" on repeated calls with unchanged state.');
+      }
+
+      // --- Test 6: weatherContextFor returns correct strings ---
+      Object.keys(expectedKeywords).forEach(function(phase) {
+        var ctx = gardenState.weatherContextFor(phase);
+        if (ctx !== contexts[phase]) {
+          problems.push('weatherContextFor("' + phase + '") returned "' + ctx + '", expected "' + contexts[phase] + '".');
+        }
+      });
+      var unknownCtx = gardenState.weatherContextFor('Unknown');
+      if (unknownCtx !== '') {
+        problems.push('weatherContextFor("Unknown") returned "' + unknownCtx + '", expected empty string for unknown phase.');
+      }
+
+      // --- Test 7: Every phase gets a unique non-empty context ---
+      var seenContexts = {};
+      phaseOrder.forEach(function(phase) {
+        var ctx = contexts[phase];
+        if (!ctx || ctx.trim().length === 0) {
+          problems.push('weatherContexts["' + phase + '"] is empty or missing.');
+          return;
+        }
+        if (seenContexts[ctx]) {
+          problems.push('weatherContexts["' + phase + '"] shares the same context string as "' + seenContexts[ctx] + '" — each phase must have a unique context.');
+        }
+        seenContexts[ctx] = phase;
+      });
+
+    } finally {
+      // Restore real display/weather state and re-run both updaters
+      weatherDisplayEl.textContent = origWeather;
+      weatherDescPlotEl.textContent = origPlotDesc;
+      weatherDescGrowingEl.textContent = origGrowingDesc;
+      gardenState.updateWeatherDescription();
+      gardenState.updateButterflyDescription();
+    }
+  }
+
   return problems;
 }
