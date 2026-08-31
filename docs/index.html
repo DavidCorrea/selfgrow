@@ -192,7 +192,7 @@
     import { createScrub } from "./scrub.js";
     import { startDayNightCycle } from "./daynight.js";
     import { startWeatherCycle } from "./weather.js";
-    import { loadGardenState, saveGardenState, fastForwardState, clearGardenState } from "./persistence.js";
+    import { loadGardenState, saveGardenState, fastForwardState, clearGardenState, SEASON_CYCLE_DURATION_MS } from "./persistence.js";
     import { createRain } from "./rain.js";
     import { createStars } from "./stars.js";
     import { createGroundRipple, computeDisplacement } from "./groundRipple.js";
@@ -753,6 +753,23 @@
     if (savedState) {
       // Fast-forward the saved state by elapsed real time
       initial = fastForwardState(savedState);
+    }
+
+    /* Returning visitor greeting — compute elapsed real time from saved timestamp
+     * and acknowledge the passage of time before any other description updates.
+     * First-time visitors (no savedState) are unaffected and keep the default text.
+     */
+    if (savedState) {
+      const elapsed = Date.now() - savedState.timestamp;
+      const plotDesc = document.getElementById('plot-description');
+      if (plotDesc) {
+        if (elapsed < SEASON_CYCLE_DURATION_MS) {
+          plotDesc.textContent = 'You return to the garden. It has quietly continued growing while you were away.';
+        } else {
+          const seasonsPassed = Math.floor(elapsed / SEASON_CYCLE_DURATION_MS);
+          plotDesc.textContent = 'You return after ' + seasonsPassed + ' seasons. The garden continued through the cycles while you were away.';
+        }
+      }
     }
 
     /* Initialise garden with optional restored progress */
