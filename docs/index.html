@@ -129,6 +129,10 @@
         border-left: none;
         border-top: 1px solid #3a3a5a;
       }
+      #state-panel:focus {
+        outline: 3px solid #6a6aee;
+        outline-offset: -3px;
+      }
       #garden-canvas-wrapper {
         height: 60%;
       }
@@ -284,12 +288,15 @@
 
     /* Click handler so pointer clicks (not just keyboard tab) work
        - Prevent default hash jump
-       - Focus the state panel so screen readers announce it */
+       - Focus the state panel so screen readers announce it
+       - Scroll the panel into view on mobile where it sits below the canvas */
     document.querySelector('.skip-link').addEventListener('click', function(e) {
       e.preventDefault();
       const panel = document.getElementById('state-panel');
       if (panel) {
         panel.focus();
+        const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        panel.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'nearest' });
       }
     });
 

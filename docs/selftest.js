@@ -460,7 +460,7 @@ export async function checks() {
     }
   }
 
-  /* ---------- Skip link clickability and focus transfer (issue #430) ---------- */
+  /* ---------- Skip link clickability, focus transfer, and scroll-into-view (issue #430, #496) ---------- */
   const skipLinkEl = document.querySelector('.skip-link');
   if (!skipLinkEl) {
     problems.push('No .skip-link element found — cannot test skip link behavior.');
@@ -469,10 +469,18 @@ export async function checks() {
     if (!panel) {
       problems.push('#state-panel is missing — cannot verify skip link focus transfer.');
     } else {
-      // Test 1: dispatch a click on the skip link and detect whether panel.focus() was called
+      // Test 1: dispatch a click on the skip link and verify panel.focus() AND panel.scrollIntoView() were called
       let focusCalled = false;
+      let scrollIntoViewCalled = false;
+      let scrollBehavior = null;
       const origFocus = panel.focus.bind(panel);
+      const origScrollIntoView = panel.scrollIntoView.bind(panel);
       panel.focus = function() { focusCalled = true; return origFocus(); };
+      panel.scrollIntoView = function(opts) {
+        scrollIntoViewCalled = true;
+        scrollBehavior = opts && opts.behavior;
+        return origScrollIntoView(opts);
+      };
       try {
         const clickEvent = new MouseEvent('click', {
           bubbles: true,
@@ -484,9 +492,37 @@ export async function checks() {
         skipLinkEl.dispatchEvent(clickEvent);
       } finally {
         panel.focus = origFocus;
+        panel.scrollIntoView = origScrollIntoView;
       }
       if (!focusCalled) {
         problems.push('Clicking .skip-link did not call panel.focus() — the click handler is not wired or did not fire.');
+      }
+      if (!scrollIntoViewCalled) {
+        problems.push('Clicking .skip-link did not call panel.scrollIntoView() — the panel may stay out of view on mobile after activation (issue #496).');
+      }
+      if (scrollIntoViewCalled) {
+        // Verify scrollBehavior is either 'smooth' or 'auto' (respecting reduced motion)
+        if (scrollBehavior !== 'smooth' && scrollBehavior !== 'auto') {
+          problems.push('Clicking .skip-link called scrollIntoView with behavior="' + scrollBehavior + '", expected "smooth" or "auto" (respecting prefers-reduced-motion).');
+        }
+        // Re-dispatch a click to capture the full options object including block
+        let lastOpts = null;
+        const origScrollIntoView2 = panel.scrollIntoView.bind(panel);
+        panel.scrollIntoView = function(opts) {
+          lastOpts = opts;
+          return origScrollIntoView2(opts);
+        };
+        try {
+          skipLinkEl.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        } finally {
+          panel.scrollIntoView = origScrollIntoView;
+        }
+        if (lastOpts && lastOpts.block !== 'nearest') {
+          problems.push('Clicking .skip-link called scrollIntoView with block="' + lastOpts.block + '", expected "nearest" (issue #496).');
+        }
+        if (!lastOpts) {
+          problems.push('Clicking .skip-link did not call scrollIntoView on second dispatch — the click handler may have a conditional path that skips the call.');
+        }
       }
 
       // Test 2: check the :hover CSS rule exists so the link is visible on pointer hover
@@ -509,6 +545,57 @@ export async function checks() {
       }
       if (!hasHoverRule) {
         problems.push('.skip-link does not have a :hover CSS rule — the link will not be visible when the mouse pointer passes over it, making it unclickable by mouse.');
+      }
+
+      // Test 3: check #state-panel:focus CSS rule exists with visible outline width (issue #496)
+      let hasFocusRule = false;
+      let focusOutlineWidth = 0;
+      try {
+        for (let i = 0; i < document.styleSheets.length; i++) {
+          const sheet = document.styleSheets[i];
+          if (!sheet || !sheet.cssRules) continue;
+          for (let j = 0; j < sheet.cssRules.length; j++) {
+            const rule = sheet.cssRules[j];
+            if (rule.selectorText && rule.selectorText.includes('#state-panel') && rule.selectorText.includes(':focus')) {
+              hasFocusRule = true;
+              if (rule.style && rule.style.outlineWidth) {
+                const w = parseFloat(rule.style.outlineWidth);
+                if (!isNaN(w) && w > focusOutlineWidth) focusOutlineWidth = w;
+              }
+              break;
+            }
+          }
+          if (hasFocusRule) break;
+        }
+      } catch (_e) {
+        // cross-origin stylesheet access may be restricted — skip
+      }
+      if (!hasFocusRule) {
+        problems.push('#state-panel:focus CSS rule not found — the panel should have a visible focus outline (issue #496).');
+      } else if (focusOutlineWidth < 2) {
+        problems.push('#state-panel:focus outline width is ' + focusOutlineWidth + 'px, expected at least 2px for a visible focus indicator.');
+      }
+
+      // Test 4: verify the computed focus outline of the panel is visible when focused
+      if (panel) {
+        const origTabIndex = panel.getAttribute('tabindex');
+        panel.setAttribute('tabindex', '0');
+        const prevFocus = document.activeElement;
+        panel.focus();
+        const computedFocus = window.getComputedStyle(panel);
+        const outlineColor = computedFocus.outlineColor;
+        const outlineWidth = computedFocus.outlineWidth;
+        // Check that outline is not 'transparent' or 'rgba(0,0,0,0)'
+        if (!outlineColor || outlineColor === 'transparent' || outlineColor.includes('rgba(0, 0, 0, 0)')) {
+          problems.push('#state-panel focus outline colour is "' + outlineColor + '" — should be a visible colour (issue #496).');
+        }
+        const outlineWidthNum = parseFloat(outlineWidth);
+        if (isNaN(outlineWidthNum) || outlineWidthNum < 2) {
+          problems.push('#state-panel computed focus outline width is "' + outlineWidth + '", expected at least 2px for a visible focus indicator (issue #496).');
+        }
+        // Restore focus
+        if (prevFocus) prevFocus.focus();
+        panel.setAttribute('tabindex', origTabIndex || '0');
       }
     }
   }
