@@ -755,25 +755,42 @@
       initial = fastForwardState(savedState);
     }
 
+    /* Initialise garden with optional restored progress */
+    initGarden(scene, initial);
+
     /* Returning visitor greeting — compute elapsed real time from saved timestamp
-     * and acknowledge the passage of time before any other description updates.
+     * and acknowledge the passage of time. Runs AFTER initGarden so the greeting
+     * is the last description update before the interval updaters start,
+     * ensuring it is shown immediately on page load before context layers.
      * First-time visitors (no savedState) are unaffected and keep the default text.
+     * The greeting text is preserved through description updaters because it does
+     * not match any context string — updaters treat it as the base text and compose
+     * context around it.
      */
-    if (savedState) {
-      const elapsed = Date.now() - savedState.timestamp;
-      const plotDesc = document.getElementById('plot-description');
-      if (plotDesc) {
-        if (elapsed < SEASON_CYCLE_DURATION_MS) {
-          plotDesc.textContent = 'You return to the garden. It has quietly continued growing while you were away.';
-        } else {
-          const seasonsPassed = Math.floor(elapsed / SEASON_CYCLE_DURATION_MS);
-          plotDesc.textContent = 'You return after ' + seasonsPassed + ' seasons. The garden continued through the cycles while you were away.';
-        }
+    function computeReturningVisitorGreeting(elapsedMs) {
+      if (elapsedMs < SEASON_CYCLE_DURATION_MS) {
+        return 'You return to the garden. It has quietly continued growing while you were away.';
+      } else {
+        const seasonsPassed = Math.floor(elapsedMs / SEASON_CYCLE_DURATION_MS);
+        const seasonWord = seasonsPassed === 1 ? 'season' : 'seasons';
+        return 'You return after ' + seasonsPassed + ' ' + seasonWord + '. The garden continued through the cycles while you were away.';
       }
     }
 
-    /* Initialise garden with optional restored progress */
-    initGarden(scene, initial);
+    if (savedState) {
+      const elapsed = Date.now() - savedState.timestamp;
+      const greeting = computeReturningVisitorGreeting(elapsed);
+      const plotDesc = document.getElementById('plot-description');
+      if (plotDesc) {
+        plotDesc.textContent = greeting;
+      }
+      // Store for self-test verification
+      window.__gardenState.returningVisitorGreeting = greeting;
+      window.__gardenState._returningVisitorElapsedMs = elapsed;
+    }
+
+    // Expose the helper for self-test
+    window.__gardenState.computeReturningVisitorGreeting = computeReturningVisitorGreeting;
 
     /* Create fallen leaves that respond to the seasonal cycle */
     createFallenLeaves(scene);
