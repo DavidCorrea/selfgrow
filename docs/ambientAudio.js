@@ -4,17 +4,65 @@
  * Generates a barely-there continuous wind sound using the Web Audio API.
  * No external audio assets needed — all sound is synthesized from noise buffers.
  *
- * The sound shifts character with the garden's weather:
- *  - Clear:    gentle whoosh, wind gain ≤ 0.08, filter ~400 Hz
- *  - Overcast: stronger gusts, wind gain ~0.12, filter ~180 Hz (darker tone)
- *  - Light Drizzle: faint wind + added rain-like noise layer at gain ≤ 0.04
+ * The sound shifts character with the garden's weather AND time of day.
+ * Time-of-day sets the base character (wind gain and filter frequency),
+ * and weather modifiers compose on top.
+ *
+ * Time-of-day base audio settings:
+ *  - Morning:  wind gain ~0.05, filter ~250Hz, rainMul 0.75
+ *  - Midday:   wind gain ~0.08, filter ~400Hz, rainMul 1.0
+ *  - Evening:  wind gain ~0.05, filter ~200Hz, rainMul 0.75
+ *  - Night:    wind gain ≤0.03, filter ~80Hz,  rainMul 0.5
+ *
+ * Weather modifiers (multipliers applied to base):
+ *  - Clear:         windMul 1.0, filterMul 1.0, rainBase 0
+ *  - Overcast:      windMul 1.5, filterMul 0.45, rainBase 0
+ *  - Light Drizzle: windMul 1.0, filterMul 0.625, rainBase 0.04
+ *
+ * When timeOfDay is omitted (e.g. existing weather-only update calls),
+ * the default is 'Midday' so that the audio matches today's exact values.
  *
  * AudioContext is created on module load but only resumed and started
  * on first user interaction (click/tap) to comply with autoplay policies.
  *
  * Exports:
- *   createAmbientAudio() → { start, stop, update(weatherPhase), resumeOnInteraction, state }
+ *   createAmbientAudio() → { start, stop, update(weatherPhase, timeOfDay), resumeOnInteraction, state }
  */
+
+/** Time-of-day base audio character */
+const TIME_OF_DAY_AUDIO = {
+  'Morning':  { windGain: 0.05, filterFreq: 250, rainMul: 0.75 },
+  'Midday':   { windGain: 0.08, filterFreq: 400, rainMul: 1.0  },
+  'Evening':  { windGain: 0.05, filterFreq: 200, rainMul: 0.75 },
+  'Night':    { windGain: 0.03, filterFreq: 80,  rainMul: 0.5  }
+};
+
+/** Weather modifier multipliers applied to the time-of-day base */
+const WEATHER_AUDIO_MODIFIERS = {
+  'Clear':         { windMul: 1.0, filterMul: 1.0,    rainBase: 0    },
+  'Overcast':      { windMul: 1.5, filterMul: 0.45,   rainBase: 0    },
+  'Light Drizzle': { windMul: 1.0, filterMul: 0.625,  rainBase: 0.04 }
+};
+
+/** Default fallback for unknown weather — uses Clear values */
+const DEFAULT_WEATHER_MODIFIER = { windMul: 1.0, filterMul: 1.0, rainBase: 0 };
+
+/**
+ * Compute composed audio settings from weather and time-of-day.
+ *
+ * @param {string} weatherPhase — 'Clear', 'Overcast', or 'Light Drizzle'
+ * @param {string} [timeOfDay] — 'Morning'|'Midday'|'Evening'|'Night' (default 'Midday')
+ * @returns {{ windGain: number, filterFreq: number, rainGain: number }}
+ */
+function computeAudioSettings(weatherPhase, timeOfDay) {
+  const base = TIME_OF_DAY_AUDIO[timeOfDay] || TIME_OF_DAY_AUDIO['Midday'];
+  const mod = WEATHER_AUDIO_MODIFIERS[weatherPhase] || DEFAULT_WEATHER_MODIFIER;
+  return {
+    windGain: base.windGain * mod.windMul,
+    filterFreq: base.filterFreq * mod.filterMul,
+    rainGain: mod.rainBase * base.rainMul
+  };
+}
 
 export function createAmbientAudio() {
   let audioContext = null;
@@ -140,46 +188,22 @@ export function createAmbientAudio() {
     startWind();
     startRain();
 
-    // Immediately read the current weather phase from the DOM and apply it
-    // so audio is correct from the moment it starts, not just after the next poll.
+    // Immediately read the current weather phase and time-of-day from the DOM
+    // and apply them, so audio is correct from the moment it starts.
     const weatherEl = document.getElementById('weather-display');
-    if (weatherEl && weatherEl.textContent) {
-      const phase = weatherEl.textContent.trim();
-      // Apply instantly (no ramp) for the initial set
-      if (windGain && windFilter) {
-        switch (phase) {
-          case 'Clear':
-            windGain.gain.setValueAtTime(0.08, ctx.currentTime);
-            windFilter.frequency.setValueAtTime(400, ctx.currentTime);
-            state.windGain = 0.08;
-            state.windFilterFrequency = 400;
-            if (rainGain) rainGain.gain.setValueAtTime(0, ctx.currentTime);
-            state.rainGain = 0;
-            break;
-          case 'Overcast':
-            windGain.gain.setValueAtTime(0.12, ctx.currentTime);
-            windFilter.frequency.setValueAtTime(180, ctx.currentTime);
-            state.windGain = 0.12;
-            state.windFilterFrequency = 180;
-            if (rainGain) rainGain.gain.setValueAtTime(0, ctx.currentTime);
-            state.rainGain = 0;
-            break;
-          case 'Light Drizzle':
-            windGain.gain.setValueAtTime(0.08, ctx.currentTime);
-            windFilter.frequency.setValueAtTime(250, ctx.currentTime);
-            state.windGain = 0.08;
-            state.windFilterFrequency = 250;
-            if (rainGain) rainGain.gain.setValueAtTime(0.04, ctx.currentTime);
-            state.rainGain = 0.04;
-            break;
-          default:
-            windGain.gain.setValueAtTime(0.08, ctx.currentTime);
-            windFilter.frequency.setValueAtTime(400, ctx.currentTime);
-            state.windGain = 0.08;
-            state.windFilterFrequency = 400;
-            if (rainGain) rainGain.gain.setValueAtTime(0, ctx.currentTime);
-            state.rainGain = 0;
-        }
+    const timeEl = document.getElementById('time-display');
+    const weatherPhase = weatherEl && weatherEl.textContent ? weatherEl.textContent.trim() : 'Clear';
+    const timeOfDay = timeEl && timeEl.textContent ? timeEl.textContent.trim() : 'Midday';
+
+    if (windGain && windFilter) {
+      const settings = computeAudioSettings(weatherPhase, timeOfDay);
+      windGain.gain.setValueAtTime(settings.windGain, ctx.currentTime);
+      windFilter.frequency.setValueAtTime(settings.filterFreq, ctx.currentTime);
+      state.windGain = settings.windGain;
+      state.windFilterFrequency = settings.filterFreq;
+      if (rainGain) {
+        rainGain.gain.setValueAtTime(settings.rainGain, ctx.currentTime);
+        state.rainGain = settings.rainGain;
       }
     }
 
@@ -213,11 +237,24 @@ export function createAmbientAudio() {
   }
 
   /**
-   * Update the audio character to match the current weather phase.
+   * Update the audio character to match the current weather and time-of-day.
+   *
+   * Always records composed targets into state (so selftest can verify without
+   * an AudioContext), then ramps the Web Audio nodes with setTargetAtTime when
+   * they exist.
    *
    * @param {string} weatherPhase — 'Clear', 'Overcast', or 'Light Drizzle'
+   * @param {string} [timeOfDay] — 'Morning'|'Midday'|'Evening'|'Night' (default 'Midday')
    */
-  function update(weatherPhase) {
+  function update(weatherPhase, timeOfDay) {
+    // Always compute and record composed targets into state first, so the
+    // selftest can verify time+weather composition without an AudioContext.
+    const settings = computeAudioSettings(weatherPhase, timeOfDay);
+    state.windGain = settings.windGain;
+    state.windFilterFrequency = settings.filterFreq;
+    state.rainGain = settings.rainGain;
+
+    // Then ramp the Web Audio nodes when they exist (AudioContext available).
     if (!windGain || !windFilter) return;
     const ctx = ensureContext();
     if (!ctx) return;
@@ -225,50 +262,10 @@ export function createAmbientAudio() {
     const now = ctx.currentTime;
     const fadeTime = 1.5; // seconds for smooth transition
 
-    switch (weatherPhase) {
-      case 'Clear':
-        windGain.gain.setTargetAtTime(0.08, now, fadeTime);
-        windFilter.frequency.setTargetAtTime(400, now, fadeTime);
-        state.windGain = 0.08;
-        state.windFilterFrequency = 400;
-        if (rainGain) {
-          rainGain.gain.setTargetAtTime(0, now, fadeTime);
-          state.rainGain = 0;
-        }
-        break;
-
-      case 'Overcast':
-        windGain.gain.setTargetAtTime(0.12, now, fadeTime);
-        windFilter.frequency.setTargetAtTime(180, now, fadeTime);
-        state.windGain = 0.12;
-        state.windFilterFrequency = 180;
-        if (rainGain) {
-          rainGain.gain.setTargetAtTime(0, now, fadeTime);
-          state.rainGain = 0;
-        }
-        break;
-
-      case 'Light Drizzle':
-        windGain.gain.setTargetAtTime(0.08, now, fadeTime);
-        windFilter.frequency.setTargetAtTime(250, now, fadeTime);
-        state.windGain = 0.08;
-        state.windFilterFrequency = 250;
-        if (rainGain) {
-          rainGain.gain.setTargetAtTime(0.04, now, fadeTime);
-          state.rainGain = 0.04;
-        }
-        break;
-
-      default:
-        // Unknown phase — default to Clear
-        windGain.gain.setTargetAtTime(0.08, now, fadeTime);
-        windFilter.frequency.setTargetAtTime(400, now, fadeTime);
-        state.windGain = 0.08;
-        state.windFilterFrequency = 400;
-        if (rainGain) {
-          rainGain.gain.setTargetAtTime(0, now, fadeTime);
-          state.rainGain = 0;
-        }
+    windGain.gain.setTargetAtTime(settings.windGain, now, fadeTime);
+    windFilter.frequency.setTargetAtTime(settings.filterFreq, now, fadeTime);
+    if (rainGain) {
+      rainGain.gain.setTargetAtTime(settings.rainGain, now, fadeTime);
     }
   }
 

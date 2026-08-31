@@ -734,6 +734,7 @@
       /* Winter legacy effect (issue #471): set by startSeasonalCycle each tick */
       winterLegacyBlend: 0,
       updateButterflyDescription,
+      updateAudioWeather,
       updateWeatherDescription,
       weatherContexts: WEATHER_CONTEXTS,
       weatherContextFor,
@@ -779,13 +780,18 @@
     document.addEventListener('click', resumeAudio);
     document.addEventListener('touchstart', resumeAudio);
 
-    /* Poll the weather phase every ~1s and update audio character */
-    let lastWeatherPhase = '';
+    /* Poll the weather phase and time-of-day every ~1s and update audio character.
+     * Triggers when EITHER weather or time changes.
+     */
+    let lastAudioWeather = '';
+    let lastAudioTime = '';
     function updateAudioWeather() {
-      const phase = document.getElementById('weather-display')?.textContent?.trim() || '';
-      if (phase !== lastWeatherPhase && phase) {
-        lastWeatherPhase = phase;
-        ambientAudio.update(phase);
+      const weatherPhase = document.getElementById('weather-display')?.textContent?.trim() || '';
+      const timeOfDay = document.getElementById('time-display')?.textContent?.trim() || '';
+      if ((weatherPhase !== lastAudioWeather || timeOfDay !== lastAudioTime) && weatherPhase) {
+        lastAudioWeather = weatherPhase;
+        lastAudioTime = timeOfDay;
+        ambientAudio.update(weatherPhase, timeOfDay);
       }
     }
 
