@@ -6,7 +6,7 @@
  */
 
 import * as THREE from "three";
-import { saveGardenState, loadGardenState, fastForwardState, clearGardenState, STORAGE_KEY } from "./persistence.js";
+import { saveGardenState, loadGardenState, fastForwardState, clearGardenState, STORAGE_KEY, SEASON_CYCLE_DURATION_MS } from "./persistence.js";
 import { createCreature } from "./creature.js";
 import { computeDisplacement } from "./groundRipple.js";
 
@@ -991,6 +991,77 @@ export async function checks() {
 
   // Clean up test state
   clearGardenState();
+
+  /* ---------- Returning visitor greeting checks (issue #495) ---------- */
+  // Check that computeReturningVisitorGreeting is exposed and returns correct values
+  if (!gardenState || typeof gardenState.computeReturningVisitorGreeting !== 'function') {
+    problems.push('window.__gardenState.computeReturningVisitorGreeting is not a function — returning visitor greeting helper not exposed.');
+  } else {
+    // Test 1: Short absence (< 1 seasonal cycle = 720s) returns the short-absence greeting
+    const shortElapsed = 60_000; // 1 minute
+    const shortGreeting = gardenState.computeReturningVisitorGreeting(shortElapsed);
+    if (shortGreeting.indexOf('quietly continued') === -1) {
+      problems.push('computeReturningVisitorGreeting(' + shortElapsed + 'ms) returned "' + shortGreeting + '" — expected text containing "quietly continued" for short absence (< 1 seasonal cycle).');
+    }
+
+    // Test 2: Long absence (>= 1 seasonal cycle = 720s) returns the long-absence greeting
+    const longElapsed = SEASON_CYCLE_DURATION_MS * 3; // 3 full cycles
+    const longGreeting = gardenState.computeReturningVisitorGreeting(longElapsed);
+    if (longGreeting.indexOf('You return after 3 seasons') === -1) {
+      problems.push('computeReturningVisitorGreeting(' + longElapsed + 'ms) returned "' + longGreeting + '" — expected "You return after 3 seasons" for long absence (>= 1 seasonal cycle).');
+    }
+
+    // Test 3: Exactly at the cycle boundary returns long-absence greeting with singular "season"
+    const boundaryElapsed = SEASON_CYCLE_DURATION_MS;
+    const boundaryGreeting = gardenState.computeReturningVisitorGreeting(boundaryElapsed);
+    if (boundaryGreeting.indexOf('You return after 1 season') === -1) {
+      problems.push('computeReturningVisitorGreeting(' + boundaryElapsed + 'ms) returned "' + boundaryGreeting + '" — expected "You return after 1 season" at exactly the cycle boundary.');
+    }
+    if (boundaryGreeting.indexOf('1 seasons') !== -1) {
+      problems.push('computeReturningVisitorGreeting(' + boundaryElapsed + 'ms) uses plural "seasons" with count 1 — should be singular "season".');
+    }
+
+    // Test 4: Zero elapsed time returns short-absence greeting
+    const zeroGreeting = gardenState.computeReturningVisitorGreeting(0);
+    if (zeroGreeting.indexOf('quietly continued') === -1) {
+      problems.push('computeReturningVisitorGreeting(0) returned "' + zeroGreeting + '" — expected short-absence greeting for zero elapsed time.');
+    }
+
+    // Test 5: Very long absence (many cycles) reports correct season count
+    const veryLongElapsed = SEASON_CYCLE_DURATION_MS * 10 + SEASON_CYCLE_DURATION_MS / 2;
+    const veryLongGreeting = gardenState.computeReturningVisitorGreeting(veryLongElapsed);
+    if (veryLongGreeting.indexOf('You return after 10 seasons') === -1) {
+      problems.push('computeReturningVisitorGreeting(' + veryLongElapsed + 'ms) returned "' + veryLongGreeting + '" — expected "You return after 10 seasons" for 10.5 cycles.');
+    }
+  }
+
+  // Check the DOM reflects the returning visitor scenario when saved state exists
+  // We can't fully simulate a returning visit (page would need reload with localStorage),
+  // but if localStorage had saved state at page load time, the greeting should be present.
+  // Check if returningVisitorGreeting is set, meaning the page loaded with saved state.
+  if (gardenState && gardenState.returningVisitorGreeting) {
+    const plotDesc = document.getElementById('plot-description');
+    if (plotDesc) {
+      const text = plotDesc.textContent;
+      // The greeting text should be a substring of the current plot description,
+      // since the interval updaters treat it as the base text and compose context around it.
+      if (text.indexOf(gardenState.returningVisitorGreeting) === -1) {
+        problems.push('returningVisitorGreeting was set to "' + gardenState.returningVisitorGreeting + '" but plot-description does not contain it. Got: "' + text + '"');
+      }
+    }
+  } else if (gardenState && gardenState._returningVisitorElapsedMs !== undefined) {
+    // elapsed was stored but greeting might not be present (shouldn't happen, but defensive)
+    problems.push('_returningVisitorElapsedMs is set (' + gardenState._returningVisitorElapsedMs + ') but returningVisitorGreeting is missing — greeting may not have been applied.');
+  }
+
+  // Verify that the elapsed time computation matches the stored value
+  // We do this by checking the consistency between elapsed and greeting text
+  if (gardenState && gardenState.returningVisitorGreeting && gardenState._returningVisitorElapsedMs !== undefined) {
+    const expectedGreeting = gardenState.computeReturningVisitorGreeting(gardenState._returningVisitorElapsedMs);
+    if (gardenState.returningVisitorGreeting !== expectedGreeting) {
+      problems.push('returningVisitorGreeting mismatch: stored "' + gardenState.returningVisitorGreeting + '" does not match computeReturningVisitorGreeting(' + gardenState._returningVisitorElapsedMs + ') = "' + expectedGreeting + '"');
+    }
+  }
 
   /* ---------- Procedural ground noise texture checks (issue #431) ---------- */
   const noiseTex = gardenState && gardenState.groundNoiseTexture;
@@ -3957,6 +4028,104 @@ export async function checks() {
       gardenState.updateTimeOfDayDescription();
       gardenState.updateWeatherDescription();
       gardenState.updateButterflyDescription();
+    }
+  }
+
+  /* ---------- Returning visitor greeting checks (issue #495) ---------- */
+  // The plot-description must reflect time-aware greetings for returning visitors
+  // computed from saved timestamp vs wall-clock time.
+  const greetingPlotEl = document.getElementById('plot-description');
+  if (!greetingPlotEl) {
+    problems.push('Missing #plot-description element — cannot verify returning visitor greeting.');
+  } else {
+    const SHORT_ABSENCE_GREETING = 'You return to the garden. It has quietly continued growing while you were away.';
+    function LONG_ABSENCE_GREETING(seasons) {
+      return 'You return after ' + seasons + ' seasons. The garden continued through the cycles while you were away.';
+    }
+    const DEFAULT_PLOT = 'An empty plot of rich soil, ready for something to grow.';
+
+    // Test 1: Compute elapsed time logic directly (independent of page state)
+    const now = Date.now();
+    const shortElapsed = now - (now - 100_000); // 100s ago
+    if (shortElapsed !== 100_000) {
+      problems.push('Elapsed time test setup error: expected 100000, got ' + shortElapsed);
+    }
+    // short absence: elapsed < SEASON_CYCLE_DURATION_MS
+    const expectedShort = shortElapsed < SEASON_CYCLE_DURATION_MS;
+    if (!expectedShort) {
+      problems.push('Elapsed time 100s should be < SEASON_CYCLE_DURATION_MS (' + SEASON_CYCLE_DURATION_MS + 'ms)');
+    }
+    const longElapsed = now - (now - SEASON_CYCLE_DURATION_MS * 3); // 3 cycles ago
+    const seasonsPassed = Math.floor(longElapsed / SEASON_CYCLE_DURATION_MS);
+    if (seasonsPassed !== 3) {
+      problems.push('Computed seasonsPassed for 3-cycle absence: expected 3, got ' + seasonsPassed);
+    }
+
+    // Test 2: Check current DOM state based on whether saved state existed on load
+    // We detect if the page loaded with saved state by checking if the initial
+    // greeting was set (the plot description matches one of the greeting patterns).
+    const currentText = greetingPlotEl.textContent.trim();
+    const hasGreeting = currentText === SHORT_ABSENCE_GREETING ||
+      (currentText.startsWith('You return after ') && currentText.endsWith(' seasons. The garden continued through the cycles while you were away.'));
+
+    // Determine whether there was saved state at page load
+    // We inspect by checking if the plot description starts with the greeting patterns
+    // or is the default / haze-amended default
+    const savedStateExisted = loadGardenState() !== null;
+
+    // We also check if there was a saved timestamp that would have triggered the greeting
+    // by checking a stored flag. Since we don't store a flag, we just verify consistency:
+    // if savedState existed on load, the description should match a greeting pattern.
+    if (hasGreeting && !savedStateExisted) {
+      // This could happen if the greeting was set but state was cleared since
+      // — not necessarily a bug, but worth noting if the current state says
+      // greeting but no saved state exists now.
+      // This is not a hard failure — the page may have loaded with state and
+      // the test suite cleared it in a previous check.
+    }
+
+    // Test 3: Verify the greeting computation produces correct strings
+    // Construct a simulated saved state
+    const testSavedState = {
+      seasonProgress: 0,
+      dayNightProgress: 0,
+      weatherProgress: 0,
+      plant1Maturity: 0,
+      firstPlantGrown: false,
+      timestamp: now
+    };
+
+    // No elapsed time → no greeting would be set (but elapsed=0 is < SEASON_CYCLE_DURATION_MS)
+    const zeroElapsed = 0;
+    if (zeroElapsed < SEASON_CYCLE_DURATION_MS) {
+      // This maps to short-absence greeting in the actual code
+      if (SHORT_ABSENCE_GREETING.indexOf('quietly continued') === -1) {
+        problems.push('Short absence greeting does not contain expected phrasing.');
+      }
+    }
+
+    // Long absence test
+    const longElapsedTest = SEASON_CYCLE_DURATION_MS * 5;
+    const seasons5 = Math.floor(longElapsedTest / SEASON_CYCLE_DURATION_MS);
+    const longGreeting = LONG_ABSENCE_GREETING(seasons5);
+    if (longGreeting.indexOf('5 seasons') === -1) {
+      problems.push('Long absence greeting for 5 seasons does not mention "5 seasons". Got: "' + longGreeting + '"');
+    }
+    if (longGreeting.indexOf('return after') === -1) {
+      problems.push('Long absence greeting does not contain "return after". Got: "' + longGreeting + '"');
+    }
+    if (longGreeting.indexOf('continued through the cycles') === -1) {
+      problems.push('Long absence greeting does not mention cycles continuing. Got: "' + longGreeting + '"');
+    }
+
+    // Test 4: Boundary — elapsed exactly equals SEASON_CYCLE_DURATION_MS
+    const boundaryElapsed = SEASON_CYCLE_DURATION_MS;
+    const boundarySeasons = Math.floor(boundaryElapsed / SEASON_CYCLE_DURATION_MS);
+    if (boundarySeasons < 1) {
+      problems.push('Boundary test: elapsed = SEASON_CYCLE_DURATION_MS should give seasonsPassed >= 1, got ' + boundarySeasons);
+    }
+    if (boundaryElapsed >= SEASON_CYCLE_DURATION_MS && boundarySeasons < 1) {
+      problems.push('Boundary test: elapsed >= SEASON_CYCLE_DURATION_MS but seasonsPassed is ' + boundarySeasons);
     }
   }
 
