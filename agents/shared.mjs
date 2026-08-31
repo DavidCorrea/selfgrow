@@ -2092,6 +2092,13 @@ export function getBoardSnapshot() {
 //
 // A PAT-created PR triggers workflows normally. So the PAT opens, and the bot —
 // a genuinely different identity — approves.
+//
+// The same rule governs every PUSH, not just the opening, and that half cost a
+// second incident: #510's first event ran CI and passed, then the Builder pushed
+// a revision for the Reviewer and that event came back `action_required`. Only
+// tickets needing a second Builder attempt were affected, which is what made it
+// look intermittent. The workflows that push branches now check out with the PAT
+// — see the note on the checkout step in devs.yml.
 // ---------------------------------------------------------------------------
 
 const patToken = () => process.env.GH_TOKEN || process.env.AGENT_PAT || "";

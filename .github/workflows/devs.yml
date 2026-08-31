@@ -140,7 +140,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # The PAT, not GITHUB_TOKEN, because this job PUSHES to the PR's branch.
+          #
+          # GitHub does not trigger workflows for events created by GITHUB_TOKEN —
+          # a deliberate recursion guard — and that applies to a `git push` just as
+          # much as to opening a PR. #503 fixed the opening; #510 showed the other
+          # half. Its first event ran CI and passed; the Builder then pushed a
+          # revision for the Reviewer, and THAT event came back `action_required`,
+          # so the PR sat with no conclusive check and could not merge.
+          #
+          # Any ticket needing a second Builder attempt hit this. The ones that
+          # passed review first time never pushed twice and merged fine, which is
+          # what made it look intermittent.
+          token: ${{ secrets.AGENT_PAT }}
           # Full history is required for fetch/merge/rebase against origin/main.
           fetch-depth: 0
 
@@ -192,9 +204,15 @@ jobs:
           # (360) and leaving a branch and an open PR behind. It has to cover the
           # whole queue now, not one ticket.
           BUILD_RUN_BUDGET_MINUTES: '300'
-          # AGENT_PAT (= the user) is the default token: Projects, issues, and
-          # approving/merging the PR. BOT_TOKEN (= github-actions[bot]) opens the
-          # PR as a DIFFERENT identity, so the PAT can legitimately approve it.
+          # AGENT_PAT (= the user) is the default token: Projects, issues, pushing
+          # the branch, OPENING the PR, and merging it. BOT_TOKEN
+          # (= github-actions[bot]) approves it as a DIFFERENT identity, since
+          # GitHub will not let an author approve their own PR.
+          #
+          # These were the other way round until #503. The PAT has to be the one
+          # that pushes and opens, because GitHub starts no workflows for events
+          # created by GITHUB_TOKEN — so a bot-authored PR's required checks never
+          # ran and it could never merge.
           GH_TOKEN: ${{ secrets.AGENT_PAT }}
           BOT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_PROJECT_OWNER: '@me'
