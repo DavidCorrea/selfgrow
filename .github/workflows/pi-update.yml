@@ -41,7 +41,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # The PAT, because this job pushes a branch and opens a PR on it. A push
+          # made with GITHUB_TOKEN triggers no workflows, so the PR's required
+          # checks would never start and it could never merge. See devs.yml.
+          token: ${{ secrets.AGENT_PAT }}
           # Needs real history: it branches from origin/main and merges back.
           fetch-depth: 0
 
