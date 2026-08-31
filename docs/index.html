@@ -438,6 +438,29 @@
       return weatherContextFor(phase);
     }
 
+    /* Season-aware description contexts (issue #494).
+     * Each season provides a sentence that weaves seasonal character into
+     * the plot and growing descriptions without replacing the base text,
+     * composing with time, weather and butterfly layers.
+     */
+    const SEASON_CONTEXTS = {
+      'Spring': 'New growth pushes up through the soil, fresh green stems emerging in the soft air.',
+      'Summer': 'The garden stands lush and full, leaves rich with deep summer warmth.',
+      'Autumn': 'Golden and brown tones spread through the garden as leaves fall and quiet decline settles in.',
+      'Winter': 'Bare stems stand dormant in the stillness, the garden hushed beneath a light frost.'
+    };
+
+    const SEASON_CONTEXT_STRINGS = Object.values(SEASON_CONTEXTS);
+
+    function seasonContextFor(phase) {
+      return SEASON_CONTEXTS[phase] || '';
+    }
+
+    function chooseSeasonContext() {
+      const phase = (document.getElementById('season-display')?.textContent || '').trim();
+      return seasonContextFor(phase);
+    }
+
     /* Shared suffix-stripping helper: removes any suffix found in the list
      * from the end of the given text. Used by both weather and butterfly
      * updaters so they compose cleanly without cross-talk.
@@ -577,6 +600,65 @@
       }
     }
 
+    /* Season-aware description updater (issue #494).
+     * Reads the current season from #season-display and weaves a
+     * season-appropriate context sentence into the plot and growing
+     * descriptions, composing with existing time, weather and butterfly
+     * layers.
+     *
+     * Composition order: base + seasonCtx + timeCtx + weatherCtx (+ butterflySuffix).
+     * This is the sole owner of the season layer — time and weather updaters
+     * do NOT include season context strings in their strip lists, so the
+     * season context survives their rewrites unchanged.
+     */
+    let lastSeasonDescPlot = '';
+    let lastSeasonDescGrowing = '';
+    function updateSeasonDescription() {
+      const seasonCtx = chooseSeasonContext();
+      const timeCtx = chooseTimeOfDayContext();
+      const weatherCtx = chooseWeatherContext();
+      if (!seasonCtx) return;
+
+      const allContextStrings = SEASON_CONTEXT_STRINGS.concat(TIME_OF_DAY_CONTEXT_STRINGS).concat(WEATHER_CONTEXT_STRINGS);
+
+      /* Plot description — strip all season, time and weather contexts, compose fresh */
+      const plotEl = document.getElementById('plot-description');
+      if (plotEl) {
+        const base = stripAllContexts(plotEl.textContent, allContextStrings);
+        const plotComposed = base + ' ' + seasonCtx + ' ' + timeCtx + (weatherCtx ? ' ' + weatherCtx : '');
+        if (plotComposed !== lastSeasonDescPlot) {
+          lastSeasonDescPlot = plotComposed;
+          plotEl.textContent = plotComposed;
+        }
+      }
+
+      /* Growing description — preserve butterfly suffix (outermost), then
+       * strip all season, time and weather contexts, compose as
+       * base + seasonCtx + timeCtx + weatherCtx + butterflySuffix. */
+      const growingEl = document.getElementById('growing-description');
+      if (growingEl) {
+        /* Find and save any existing butterfly suffix (outermost layer) */
+        let butterflySuffix = '';
+        for (const suffix of BUTTERFLY_SUFFIXES) {
+          if (growingEl.textContent.endsWith(suffix)) {
+            butterflySuffix = suffix;
+            break;
+          }
+        }
+        /* Strip butterfly suffix to expose weather + time + season layers */
+        const withoutButterfly = butterflySuffix
+          ? growingEl.textContent.slice(0, -butterflySuffix.length)
+          : growingEl.textContent;
+        /* Strip all season, time and weather contexts to reach base text from garden.js */
+        const growingBase = stripAllContexts(withoutButterfly, allContextStrings);
+        const growingComposed = growingBase + ' ' + seasonCtx + ' ' + timeCtx + (weatherCtx ? ' ' + weatherCtx : '') + butterflySuffix;
+        if (growingComposed !== lastSeasonDescGrowing) {
+          lastSeasonDescGrowing = growingComposed;
+          growingEl.textContent = growingComposed;
+        }
+      }
+    }
+
     /* Butterfly description suffixes.
      * Called on an interval and exposed on __gardenState for testing.
      * Strips any known butterfly suffix from the base growing-description
@@ -657,7 +739,10 @@
       weatherContextFor,
       timeContexts: TIME_OF_DAY_CONTEXTS,
       timeContextFor,
-      updateTimeOfDayDescription
+      updateTimeOfDayDescription,
+      seasonContexts: SEASON_CONTEXTS,
+      seasonContextFor,
+      updateSeasonDescription
     };
 
     /* --- Persistence: restore previous state if available --- */
@@ -715,6 +800,9 @@
 
     /* Poll the time display every ~1s and update time-of-day-aware descriptions */
     setInterval(updateTimeOfDayDescription, 1000);
+
+    /* Poll the season display every ~1s and update season-aware descriptions */
+    setInterval(updateSeasonDescription, 1000);
 
     /* --- Periodic save: every 2 seconds capture current state --- */
     setInterval(saveGardenState, 2000);
