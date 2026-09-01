@@ -4080,6 +4080,267 @@ export async function checks() {
         }
       }
     }
+
+    /* --- Firefly vertical lift checks (issue #527) --- */
+    // Fireflies should rise from leaf height at dusk (t ∈ [0.75, 0.80)),
+    // stay at full height through night (t ∈ [0.80, 0.95)),
+    // and descend back at dawn (t ∈ [0.95, 1.0]).
+    // The lift is eased via smoothstep and should be disabled when
+    // prefers-reduced-motion is active.
+
+    // Verify computeVerticalLift is exposed on state
+    if (typeof fireflyState.computeVerticalLift !== 'function') {
+      problems.push('fireflyState.computeVerticalLift is not a function — vertical lift helper missing.');
+    } else {
+      // Test 1: Before dusk (t=0.7), lift should be 0
+      var liftBeforeDusk = fireflyState.computeVerticalLift(0.7);
+      if (liftBeforeDusk !== 0) {
+        problems.push('computeVerticalLift(0.7) returned ' + liftBeforeDusk + ', expected 0 (no lift before dusk).');
+      }
+
+      // Test 2: At dusk midpoint (t=0.775), lift should be between 0.1 and 0.9 (rising, eased)
+      var liftMidDusk = fireflyState.computeVerticalLift(0.775);
+      if (liftMidDusk < 0.1 || liftMidDusk > 0.9) {
+        problems.push('computeVerticalLift(0.775) returned ' + liftMidDusk + ', expected in [0.1, 0.9] (rising at dusk midpoint).');
+      }
+
+      // Test 3: At dusk end (t=0.799), lift should be close to 1.0
+      var liftDuskEnd = fireflyState.computeVerticalLift(0.799);
+      if (liftDuskEnd < 0.85) {
+        problems.push('computeVerticalLift(0.799) returned ' + liftDuskEnd + ', expected >= 0.85 (near full lift at end of dusk).');
+      }
+
+      // Test 4: At full night (t=0.875), lift should be exactly 1.0
+      var liftFullNight = fireflyState.computeVerticalLift(0.875);
+      if (liftFullNight !== 1.0) {
+        problems.push('computeVerticalLift(0.875) returned ' + liftFullNight + ', expected 1.0 (full lift during night).');
+      }
+
+      // Test 5: At dawn midpoint (t=0.975), lift should be between 0.1 and 0.9 (descending, eased)
+      var liftMidDawn = fireflyState.computeVerticalLift(0.975);
+      if (liftMidDawn < 0.1 || liftMidDawn > 0.9) {
+        problems.push('computeVerticalLift(0.975) returned ' + liftMidDawn + ', expected in [0.1, 0.9] (descending at dawn midpoint).');
+      }
+
+      // Test 6: At dawn end (t=1.0), lift should be exactly 0
+      var liftDawnEnd = fireflyState.computeVerticalLift(1.0);
+      if (liftDawnEnd !== 0) {
+        problems.push('computeVerticalLift(1.0) returned ' + liftDawnEnd + ', expected 0 (no lift at end of dawn).');
+      }
+
+      // Test 7: At t=0.8 (start of full night), lift should be exactly 1.0
+      var liftNightStart = fireflyState.computeVerticalLift(0.8);
+      if (liftNightStart !== 1.0) {
+        problems.push('computeVerticalLift(0.8) returned ' + liftNightStart + ', expected 1.0 (full lift at start of night).');
+      }
+
+      // Test 8: At t=0.95 (start of dawn), lift should be exactly 1.0
+      var liftDawnStart = fireflyState.computeVerticalLift(0.95);
+      if (liftDawnStart !== 1.0) {
+        problems.push('computeVerticalLift(0.95) returned ' + liftDawnStart + ', expected 1.0 (full lift at start of dawn).');
+      }
+
+      // Test 9: Smoothstep should produce symmetrical values (dusk rise mirrors dawn descent)
+      var liftDusk079 = fireflyState.computeVerticalLift(0.79); // 80% through dusk
+      var liftDawn096 = fireflyState.computeVerticalLift(0.96); // 20% through dawn
+      // At dusk 0.79 (t=0.04 into dusk, 96% from start), ~0.96
+      // At dawn 0.96 (t=0.01 into dawn, 20% from start), ~0.488
+      // These are NOT symmetrical — symmetrical would be dusk 0.79 (80% through) vs dawn 0.96 (20% through)
+      // at 80%: smoothstep(0.8) = 0.896
+      // at 20%: 1 - smoothstep(0.2) = 1 - 0.104 = 0.896
+      // So they should be equal
+      var liftDusk079Expected = 0.896; // smoothstep(0.8)
+      var liftDawn096Expected = 1.0 - 0.104; // 1 - smoothstep(0.2) = 0.896
+      var eps = 0.001;
+      if (Math.abs(liftDusk079 - liftDusk079Expected) > eps) {
+        problems.push('computeVerticalLift(0.79) returned ' + liftDusk079 + ', expected ~' + liftDusk079Expected + ' (smoothstep(0.8) = 0.896).');
+      }
+      if (Math.abs(liftDawn096 - liftDawn096Expected) > eps) {
+        problems.push('computeVerticalLift(0.96) returned ' + liftDawn096 + ', expected ~' + liftDawn096Expected + ' (1 - smoothstep(0.2) = 0.896).');
+      }
+    }
+
+    // Verify DRIFT_HEIGHT constant is exposed
+    if (typeof fireflyState.driftHeight !== 'number' || fireflyState.driftHeight <= 0) {
+      problems.push('fireflyState.driftHeight is ' + fireflyState.driftHeight + ', expected a positive number (max vertical lift).');
+    }
+
+    // Verify each dotData has leafHeight and liftFactor
+    if (fireflyState.plantGroups && fireflyState.plantGroups.length > 0) {
+      fireflyState.plantGroups.forEach(function(group, gi) {
+        group.dotData.forEach(function(dot, di) {
+          if (typeof dot.leafHeight !== 'number') {
+            problems.push('firefly group #' + gi + ' dot #' + di + ' missing leafHeight — needed for vertical lift base.');
+          }
+          if (typeof dot.liftFactor !== 'number' || dot.liftFactor < 0.5 || dot.liftFactor > 1.5) {
+            problems.push('firefly group #' + gi + ' dot #' + di + ' liftFactor is ' + dot.liftFactor + ', expected in [0.5, 1.5].');
+          }
+        });
+      });
+    }
+
+    // Test actual Y position during different day/night phases
+    var ffLiftDayNight = gardenState && gardenState.dayNight;
+    if (ffLiftDayNight && typeof ffLiftDayNight.getCycleProgress === 'function') {
+      var origLiftCycle = ffLiftDayNight.getCycleProgress;
+      var ffLiftSeasonEl = document.getElementById('season-display');
+      var origLiftSeason = ffLiftSeasonEl ? ffLiftSeasonEl.textContent : '';
+      if (ffLiftSeasonEl) {
+        ffLiftSeasonEl.textContent = 'Summer';
+      }
+      try {
+        // Helper to get the first dot's Y position from the first plant group
+        function getFirstDotY() {
+          if (fireflyState.plantGroups && fireflyState.plantGroups.length > 0) {
+            var g = fireflyState.plantGroups[0];
+            if (g.geometry && g.geometry.attributes.position) {
+              return g.geometry.attributes.position.array[1]; // Y of first dot
+            }
+          }
+          return null;
+        }
+
+        // Helper to get the first dot's leafHeight
+        function getFirstDotLeafHeight() {
+          if (fireflyState.plantGroups && fireflyState.plantGroups.length > 0) {
+            var g = fireflyState.plantGroups[0];
+            if (g.dotData && g.dotData.length > 0) {
+              return g.dotData[0].leafHeight;
+            }
+          }
+          return null;
+        }
+
+        // Test 1: During Morning (t=0.1), Y position should be near leafHeight (no lift)
+        ffLiftDayNight.getCycleProgress = function() { return 0.1; };
+        if (typeof gardenState.firefliesUpdate === 'function') {
+          for (var fl = 0; fl < 300; fl++) {
+            gardenState.firefliesUpdate(0, 0.016);
+          }
+          var morningY = getFirstDotY();
+          var morningLeaf = getFirstDotLeafHeight();
+          if (morningY !== null && morningLeaf !== null) {
+            if (Math.abs(morningY - morningLeaf) > 0.02) {
+              problems.push('During Morning (t=0.1), firefly dot Y is ' + morningY.toFixed(4) + ' but leafHeight is ' + morningLeaf.toFixed(4) + ' — expected near leaf height (no lift during day).');
+            }
+          }
+        }
+
+        // Test 2: During Night (t=0.85), Y position should be above leafHeight (lifted)
+        ffLiftDayNight.getCycleProgress = function() { return 0.85; };
+        if (typeof gardenState.firefliesUpdate === 'function') {
+          for (var fl2 = 0; fl2 < 300; fl2++) {
+            gardenState.firefliesUpdate(0, 0.016);
+          }
+          var nightY = getFirstDotY();
+          var nightLeaf = getFirstDotLeafHeight();
+          if (nightY !== null && nightLeaf !== null) {
+            var liftAmount = nightY - nightLeaf;
+            // With drift, the Y varies slightly. The lift should be clearly positive.
+            if (liftAmount < 0.05) {
+              problems.push('During Night (t=0.85), firefly dot Y is ' + nightY.toFixed(4) + ' above leafHeight ' + nightLeaf.toFixed(4) + ' by ' + liftAmount.toFixed(4) + ' — expected at least 0.05 units of lift.');
+            }
+            // The lift should not exceed max possible (driftHeight * maxLiftFactor ~ 0.4 * 1.3 = 0.52)
+            if (liftAmount > 0.6) {
+              problems.push('During Night (t=0.85), firefly dot lift is ' + liftAmount.toFixed(4) + ' — expected <= 0.52 (max possible lift). Got excessive lift.');
+            }
+          }
+        }
+
+        // Test 3: During late Night/dawn (t=0.97), Y should be descending (less than full night lift)
+        ffLiftDayNight.getCycleProgress = function() { return 0.97; };
+        if (typeof gardenState.firefliesUpdate === 'function') {
+          for (var fl3 = 0; fl3 < 300; fl3++) {
+            gardenState.firefliesUpdate(0, 0.016);
+          }
+          var dawnY = getFirstDotY();
+          var dawnLeaf = getFirstDotLeafHeight();
+          if (dawnY !== null && dawnLeaf !== null) {
+            var dawnLift = dawnY - dawnLeaf;
+            // At t=0.97, lift should be descending (between 0 and full)
+            // At t=0.85 we know it was fully lifted, so at t=0.97 it should be less
+            if (dawnLift > 0.5) {
+              problems.push('During late Night/dawn (t=0.97), firefly dot lift is ' + dawnLift.toFixed(4) + ' — expected < 0.5 (descending toward leaf height).');
+            }
+          }
+        }
+
+        // Test 4: After dawn (t=1.0), Y should be back at leafHeight
+        ffLiftDayNight.getCycleProgress = function() { return 1.0; };
+        if (typeof gardenState.firefliesUpdate === 'function') {
+          for (var fl4 = 0; fl4 < 300; fl4++) {
+            gardenState.firefliesUpdate(0, 0.016);
+          }
+          var dawnEndY = getFirstDotY();
+          var dawnEndLeaf = getFirstDotLeafHeight();
+          if (dawnEndY !== null && dawnEndLeaf !== null) {
+            if (Math.abs(dawnEndY - dawnEndLeaf) > 0.02) {
+              problems.push('After dawn (t=1.0), firefly dot Y is ' + dawnEndY.toFixed(4) + ' but leafHeight is ' + dawnEndLeaf.toFixed(4) + ' — expected near leaf height (no lift after dawn).');
+            }
+          }
+        }
+      } finally {
+        ffLiftDayNight.getCycleProgress = origLiftCycle;
+        if (ffLiftSeasonEl) {
+          ffLiftSeasonEl.textContent = origLiftSeason;
+        }
+        // Re-run a few updates to settle back to real values
+        if (typeof gardenState.firefliesUpdate === 'function') {
+          for (var fl5 = 0; fl5 < 300; fl5++) {
+            gardenState.firefliesUpdate(0, 0.016);
+          }
+        }
+      }
+    }
+
+    // Test reduced-motion: when reducedMotion is true, dots should stay at leaf height
+    // even during Night (no vertical lift)
+    if (fireflyState.reducedMotion) {
+      var rmDayNight = gardenState && gardenState.dayNight;
+      if (rmDayNight && typeof rmDayNight.getCycleProgress === 'function') {
+        var origRmCycle = rmDayNight.getCycleProgress;
+        var rmSeasonEl = document.getElementById('season-display');
+        var origRmSeason = rmSeasonEl ? rmSeasonEl.textContent : '';
+        if (rmSeasonEl) {
+          rmSeasonEl.textContent = 'Summer';
+        }
+        try {
+          rmDayNight.getCycleProgress = function() { return 0.85; };
+          if (typeof gardenState.firefliesUpdate === 'function') {
+            for (var rm = 0; rm < 300; rm++) {
+              gardenState.firefliesUpdate(0, 0.016);
+            }
+            if (fireflyState.plantGroups && fireflyState.plantGroups.length > 0) {
+              var group = fireflyState.plantGroups[0];
+              if (group.geometry && group.geometry.attributes.position && group.dotData) {
+                var pos = group.geometry.attributes.position.array;
+                var allAtLeaf = true;
+                for (var ri = 0; ri < group.count; ri++) {
+                  var dd = group.dotData[ri];
+                  if (Math.abs(pos[ri * 3 + 1] - dd.leafHeight) > 0.001) {
+                    allAtLeaf = false;
+                    break;
+                  }
+                }
+                if (!allAtLeaf) {
+                  problems.push('With reducedMotion active during Night, firefly dot Y positions should match leafHeight (no vertical lift).');
+                }
+              }
+            }
+          }
+        } finally {
+          rmDayNight.getCycleProgress = origRmCycle;
+          if (rmSeasonEl) {
+            rmSeasonEl.textContent = origRmSeason;
+          }
+          if (typeof gardenState.firefliesUpdate === 'function') {
+            for (var rm2 = 0; rm2 < 300; rm2++) {
+              gardenState.firefliesUpdate(0, 0.016);
+            }
+          }
+        }
+      }
+    }
   }
 
   /* ---------- Fallen leaves respond to ground ripple (issue #470) ---------- */

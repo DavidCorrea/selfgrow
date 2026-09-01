@@ -29,6 +29,7 @@ const FADE_LERP_SPEED = 0.04;      // ~1.2 seconds to fade in/out
 const PULSE_FREQ_MIN = 0.2;        // Hz — slow, irregular
 const PULSE_FREQ_MAX = 0.5;        // Hz
 const DRIFT_FREQ = 0.12;           // frequency of drift oscillation
+const DRIFT_HEIGHT = 0.4;          // max vertical lift above leaf height at night
 
 /* --- Weather modulation --- */
 const WEATHER_MULTIPLIERS = {
@@ -52,6 +53,45 @@ const DOTS_PER_SEASON = {
   'Autumn': 3,
   'Winter': 0
 };
+
+/* --- Easing / vertical lift helpers --- */
+
+/**
+ * Smoothstep ease-in-out (cubic Hermite).
+ * @param {number} t - Input in [0, 1]
+ * @returns {number} Eased output in [0, 1]
+ */
+function smoothstep(t) {
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * Compute the vertical lift progress for a firefly dot based on the
+ * day/night cycle progress t.
+ *
+ * - t < 0.75: 0 (day, no lift)
+ * - t \u2208 [0.75, 0.80): 0\u21921 (dusk rise, eased)
+ * - t \u2208 [0.80, 0.95): 1 (full night)
+ * - t \u2208 [0.95, 1.0]: 1\u21920 (dawn descent, eased)
+ *
+ * @param {number} t - Day/night cycle progress in [0, 1]
+ * @returns {number} Lift progress in [0, 1]
+ */
+function computeVerticalLift(t) {
+  if (t >= 0.75 && t < 0.80) {
+    // Dusk: rise from leaf height to full drift height
+    const duskT = (t - 0.75) / 0.05;
+    return smoothstep(duskT);
+  } else if (t >= 0.80 && t < 0.95) {
+    // Full night: stay at full lift
+    return 1.0;
+  } else if (t >= 0.95 && t <= 1.0) {
+    // Dawn: descend from full lift back to leaf height
+    const dawnT = (t - 0.95) / 0.05;
+    return 1.0 - smoothstep(dawnT);
+  }
+  return 0;
+}
 
 /**
  * Create a soft circular glow texture on a canvas.
@@ -137,7 +177,9 @@ export function createFireflies(scene) {
         baseX: baseX,
         baseY: baseY,
         baseZ: baseZ,
-        sizeBase: sizes[i]
+        sizeBase: sizes[i],
+        leafHeight: baseY,
+        liftFactor: 0.7 + Math.random() * 0.6
       });
     }
 
@@ -207,8 +249,10 @@ export function createFireflies(scene) {
     plantGroups: plantGroups,
     glowTexture: glowTexture,
     driftRadius: DRIFT_RADIUS,
+    driftHeight: DRIFT_HEIGHT,
     peakOpacity: PEAK_OPACITY,
     fadeLerpSpeed: FADE_LERP_SPEED,
+    computeVerticalLift: computeVerticalLift,
     weatherMultipliers: WEATHER_MULTIPLIERS,
     seasonMultipliers: SEASON_MULTIPLIERS,
     dotsPerSeason: DOTS_PER_SEASON,
@@ -310,6 +354,12 @@ export function createFireflies(scene) {
       currentOpacity = targetOpacity;
     }
 
+    /* --- Compute vertical lift from day/night cycle --- */
+    let verticalLift = 0;
+    if (!reducedMotion) {
+      verticalLift = computeVerticalLift(t);
+    }
+
     /* --- Update each dot group --- */
     for (let gi = 0; gi < plantGroups.length; gi++) {
       const group = plantGroups[gi];
@@ -344,14 +394,17 @@ export function createFireflies(scene) {
           const driftZ = Math.cos(time * DRIFT_FREQ * 0.9 + dd.driftAngle) * DRIFT_RADIUS * 0.6;
           const driftY = Math.sin(time * DRIFT_FREQ * 0.7 + dd.driftPhase * 1.3) * DRIFT_RADIUS * 0.3;
 
+          const liftOffset = verticalLift * DRIFT_HEIGHT * dd.liftFactor;
+          // Gate vertical drift by the lift progress so that firefly dots sit
+          // exactly at leafHeight during the day (no drift when invisible).
           pos[i3] = dd.baseX + driftX;
-          pos[i3 + 1] = dd.baseY + driftY;
+          pos[i3 + 1] = dd.leafHeight + driftY * verticalLift + liftOffset;
           pos[i3 + 2] = dd.baseZ + driftZ;
         } else {
           // Reduced motion: no pulsing/drift, but keep size at base
           sizes[i] = dd.sizeBase;
           pos[i3] = dd.baseX;
-          pos[i3 + 1] = dd.baseY;
+          pos[i3 + 1] = dd.leafHeight;
           pos[i3 + 2] = dd.baseZ;
         }
       }
