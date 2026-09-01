@@ -100,7 +100,7 @@ When in doubt, sharpen. A ticket sharpened wrongly costs one build; a request cl
 
 Read the open tickets on the board above and fix the ones that cannot ship as written. You may read `docs/` to check what exists.
 
-**Too big for one pass.** The Devs get a fixed request budget per ticket; anything larger fails and gets parked rather than shipping partly. Judge by the work, not the wording — more than a handful of files, several unrelated behaviours, or "and" joining two deliverables in the title. Replace it: propose the pieces in `backlog`, chained with `dependsOn` so the foundation goes first, and list the original in `retire`.
+**Too big for one pass.** The Devs get one bounded session per build attempt; anything larger fails and gets parked rather than shipping partly. Judge by the work, not the wording — more than a handful of files, several unrelated behaviours, or "and" joining two deliverables in the title. Replace it: propose the pieces in `backlog`, chained with `dependsOn` so the foundation goes first, and list the original in `retire`.
 
 Each piece must be **independently shippable** — it stands alone, leaves the site working, and can be verified without the others. "Write the HTML" then "write the CSS for it" is a bad split (neither ships alone). "Store and list saved items" then "add search over them" is a good one. Two to four pieces. If you cannot describe them concretely, the ticket is vague rather than big — retire it and write a sharper one.
 

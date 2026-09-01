@@ -49,7 +49,7 @@ Plus one tester and three pieces of infrastructure — jobs, not roles:
 
 | | Runs | Does |
 | --- | --- | --- |
-| 👀 **QA** | Wed 10:00 | Plays the **live site** for two minutes, files what it was like |
+| 👀 **QA** | Wed 10:00 | Plays the **live site** for two minutes, looks at two frames of it, files what it was like |
 | 📊 **Health** | daily 16:00 | Measures the pipeline; silent unless something breaks |
 | 🤝 **review-pr** / **triage-fork-pr** | on any PR | Finishes yours; reviews a stranger's |
 | 📦 **pi-update** | Tue 07:00 | Dependabot for the model chain |
@@ -64,6 +64,8 @@ Plus one tester and three pieces of infrastructure — jobs, not roles:
 **The Tech Lead is the only role that sees the whole codebase.** Everything else in engineering is scoped to one ticket. It owns structure, owns `docs/selftest.js` — the only independent judge in the pipeline — and rules on tickets the Devs gave up on, because *"why did this fail"* is a technical question.
 
 **QA is deliberately not the PM.** It plays and reports; the PM decides. The observer should not be the one who acts on the observation — the same reason the Devs do not review their own work.
+
+It is also the only role with **eyes**, for the same reason. Everything measurable about a rendered page — overflow, contrast, collapsed boxes — is measured deterministically and fed to the PM; a vision model adds only taste, and can report a defect that isn't there. QA's output is explicitly not a ticket, so a mistaken impression costs one line of triage instead of a build.
 
 **Sunday and Monday are the hinge.** The PM's Sunday run curates and writes the week's report; the PO reads that week on Monday and sets the milestone the PM grooms against for the next six days.
 
@@ -93,12 +95,12 @@ Failure is first-class: a ticket accrues strikes, gets parked, and the Tech Lead
 
 | | |
 | --- | --- |
-| 💰 **Budget** | A shared daily ledger on the wiki counts real requests against 1000/day. Enforced at four points, because three of them have each been the hole. |
+| 💰 **Budget** | A spend cap on the OpenRouter key. Enforced at one point — the provider's — because it is the only one that cannot be wrong about the balance. A refusal comes back as an error and stops the chain. |
 | ⏱️ **Time** | Every limit nested so the agent stops itself first. A run killed mid-ticket leaves an orphaned branch; one that stops itself does not. |
 | 🔒 **Concurrency** | One `agent-main-writer` lock. Every wiki write is a retried read-modify-write — the naive version lost a race on ~100 consecutive merges and reported success each time. |
-| 🎲 **Models** | An ordered fallback chain: a cheap paid head, then five free models from four provider families, ordered by envelope reliability. Re-probed weekly. |
+| 🎲 **Models** | Two paid models from different provider families. The second exists so the Reviewer can be drawn from a model that did not write the code — review is only worth its request if it can disagree. |
 | ✅ **Enforcement** | `check` and `verify-product` are **required** on `main`. Before, every guarantee was self-imposed — the agents graded their own work and merged on the result. |
-| 📊 **Watching** | Health asks whether the week looks like a working one, including whether the deployed site is up. No model, no key — it must keep working on a day the budget is spent. |
+| 📊 **Watching** | Health asks whether the week looks like a working one, including whether the deployed site is up. No model, no key — it must keep working on a day the account is spent. |
 
 ## The product contract
 
@@ -131,7 +133,6 @@ flowchart TD
         STORY["Story — the arc"]
         CHANGE["Changelog — what shipped"]
         LESSONS["Lessons — what failed, and why"]
-        BUDGET["Budget — the request ledger"]
     end
 ```
 
@@ -158,7 +159,7 @@ Two channels, both **Discussions**, neither asking anything of you.
 
 | Secret | For |
 | --- | --- |
-| `OPENROUTER_API_KEY` | every model call |
+| `OPENROUTER_API_KEY` | every model call — **set a spend cap on it**, because that cap is the pipeline's only spending limit |
 | `AGENT_PAT` | issues, board, milestones, wiki, **opening** PRs |
 | `GITHUB_TOKEN` | **approving** PRs as a second identity *(built in)* |
 
@@ -169,4 +170,4 @@ npm test        # the harness's own suite
 npm run lint    # agents/ and docs/
 ```
 
-**To start over:** pause the workflows and dispatch `reset`, typing the repository name to confirm. It cancels runs, closes issues and agent PRs, clears the board, resets the wiki's memory, and deletes the product from `main` — leaving the machine, an empty `docs/`, and a full night's budget.
+**To start over:** pause the workflows and dispatch `reset`, typing the repository name to confirm. It cancels runs, closes issues and agent PRs, clears the board, resets the wiki's memory, and deletes the product from `main` — leaving the machine and an empty `docs/`.

@@ -50,7 +50,6 @@ test("counting what the week contained", async (t) => {
       { number: 2, title: "Old", closedAt: `${daysAgo(30)}T10:00:00Z` },
     ],
     open: [issue(3, "Parked", ["blocked"]), issue(4, "Feedback", ["playtest"]), issue(5, "Normal")],
-    ledger: new Map([[daysAgo(1), 400], [daysAgo(2), 300], [daysAgo(40), 999]]),
   };
 
   await t.test("counts only what closed inside the week", () => {
@@ -63,13 +62,10 @@ test("counting what the week contained", async (t) => {
     assert.deepEqual(week.playtest.map((i) => i.number), [4]);
   });
 
-  await t.test("sums only the week's spend", () => {
-    assert.equal(gatherWeek(facts).spend, 700);
-  });
 });
 
 test("writing the digest", async (t) => {
-  const week = { shipped: [{ number: 1, title: "x" }], parked: [], playtest: [], openCount: 3, spend: 700 };
+  const week = { shipped: [{ number: 1, title: "x" }], parked: [], playtest: [], openCount: 3 };
 
   await t.test("leads with the narrative, not the ticket list", () => {
     const body = renderDigest(week, "Nights got deeper.", null);

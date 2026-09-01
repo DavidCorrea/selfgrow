@@ -1,28 +1,23 @@
-// Decide whether the day can afford a Builder run at all, and how big a one.
+// Decide whether there is anything for a Builder run to do at all.
 //
 // This used to assign tickets to parallel slots and hand a matrix to the workflow.
 // The slots were never actually parallel — same-file collisions forced
 // max-parallel: 1 — so they were a queue wearing a fan-out's clothes, and each one
 // paid a fresh VM, checkout, npm ci and Chromium install (~3 minutes) for
 // isolation it only needed against siblings that no longer ran beside it. The
-// queue now lives inside ONE job, which devs.mjs already knew how to
-// drain, and the setup is paid once.
+// queue now lives inside ONE job, which devs.mjs already knew how to drain, and
+// the setup is paid once.
 //
-// Two things fall out of that, both of which mean more shipped work per request:
+// It also used to size that queue against the day's remaining request budget.
+// There is no request budget any more — spend is capped on the OpenRouter key
+// itself — so the arithmetic that decided how many tickets a run could afford,
+// and the four ways it could refuse to queue any, are gone with it.
 //
-//   - No per-ticket division. The run gets the day's whole Builder share as a
-//     POOL and checks it between tickets, so a ticket that comes in cheap leaves
-//     the remainder to the next one instead of retiring an unspent slot budget.
-//   - No assignment. The Builder re-reads the board before every ticket and picks
-//     by the same priority order used here, so a merge that unblocks a dependent
-//     ticket mid-run makes it available immediately — where a matrix fixed the
-//     line-up before the first build started.
+// What is left is the one question a runner cannot cheaply answer for itself:
+// is there buildable work? Answering it here keeps a heavy job — VM, checkout,
+// Chromium — from booting only to find an empty board.
 //
-// What's left is the question a runner can't cheaply answer for itself: is there
-// buildable work, and does the ledger still have the requests to do it? Answering
-// that here keeps a heavy job from booting only to find neither is true.
-//
-// Prints `count` and `budget` to GITHUB_OUTPUT for the workflow to consume.
+// Prints `count` and `queue` to GITHUB_OUTPUT for the workflow to consume.
 import fs from "fs";
 import {
   log,
@@ -30,45 +25,24 @@ import {
   fetchOpenIssues,
   isBuildable,
   unmetDependencies,
-  initDailyLedger,
-  getDailySpend,
-  isLedgerActive,
-  DAILY_REQUEST_CAP,
   priorityRank,
   effectivePriorityRank,
 } from "./shared.mjs";
 
 // Most tickets one run will attempt, one after another. A ceiling on the queue,
-// not a target: the run stops earlier whenever the board empties, the pooled
-// budget runs out, or the wall clock does.
+// not a target: the run stops earlier whenever the board empties or the wall
+// clock does.
 const MAX_TICKETS = Number(process.env.MAX_TICKETS_PER_RUN || 6);
 
-// The Builder's share of the day's requests, for the whole run.
-//
-// This used to be multiplied by the slot count somewhere else, so the day's real
-// Builder ceiling was a product written in no single place: raising the slot count
-// from 4 to 8 silently doubled the day. It is now simply the pool the one job
-// spends, and the number below decides how many tickets that pool can carry.
-const BUILDER_DAY_BUDGET = Number(process.env.BUILDER_DAY_BUDGET || 500);
-
-// What one ticket needs to have a real chance of shipping (a merged ticket
-// measured 33-50 requests, and a ticket that needs a review round or two costs
-// more). Used to size the queue, not to ration it: a run given fewer requests than
-// this would spend everything it has and throw the half-built work away.
-const MIN_TICKET_BUDGET = Number(process.env.MIN_TICKET_BUDGET || 100);
-
-function writeOutput({ count = 0, queue = 0, budget = 0 } = {}) {
+function writeOutput({ count = 0, queue = 0 } = {}) {
   const out = process.env.GITHUB_OUTPUT;
-  const payload = `count=${count}\nqueue=${queue}\nbudget=${budget}\n`;
+  const payload = `count=${count}\nqueue=${queue}\n`;
   if (out) fs.appendFileSync(out, payload);
   else console.log(payload.trim()); // local runs just print it
 }
 
 function main() {
   log("info", `=== Plan build — sizing a run of up to ${MAX_TICKETS} ticket(s) ===`);
-
-  // Opened up front: the ledger decides how much work this run may queue at all.
-  initDailyLedger();
 
   const open = fetchOpenIssues(100);
   const openNumbers = new Set(open.map((i) => i.number));
@@ -89,7 +63,7 @@ function main() {
   }
 
   // Highest priority first, then oldest, so ordering is stable and a re-run
-  // assigns the same tickets to the same slots.
+  // reaches for the same tickets in the same order.
   //
   // Attempt count is deliberately NOT a tiebreak. It used to be, on the reasoning
   // that a ticket which has burned attempts shouldn't crowd out fresh work — but
@@ -107,34 +81,6 @@ function main() {
       a.number - b.number
   );
 
-  // What the day has actually got left, not what the Builder is nominally allowed.
-  // Read here — before any runner spins up — so a day already spent by the PM, a
-  // weekly agent, or an earlier Builder run declines to queue work instead of
-  // starting a job that installs Chromium and then refuses to make a single call.
-  const dayLeft = isLedgerActive() ? DAILY_REQUEST_CAP - getDailySpend() : BUILDER_DAY_BUDGET;
-  const dayBudget = Math.max(0, Math.min(BUILDER_DAY_BUDGET, dayLeft));
-  if (dayBudget < MIN_TICKET_BUDGET) {
-    // Say WHICH ceiling bound it. "The day is spent" and "the Builder's share is
-    // set too low" call for opposite responses, and the number alone can't tell
-    // them apart.
-    const why =
-      dayLeft < BUILDER_DAY_BUDGET
-        ? `only ${dayLeft} of the day's ${DAILY_REQUEST_CAP} request(s) are left (the cap resets at 00:00 UTC)`
-        : `BUILDER_DAY_BUDGET is ${BUILDER_DAY_BUDGET}`;
-    log(
-      "info",
-      `Queueing nothing: ${why}, under the ${MIN_TICKET_BUDGET} one ticket needs to ship.`
-    );
-    writeOutput();
-    printRunSummary("Plan build");
-    return;
-  }
-
-  // How long a queue the pool can carry, at what one ticket needs to finish. This
-  // does NOT ration the run — the Builder spends the pool as the tickets in front
-  // of it actually cost, and a cheap first ticket leaves more for the second. It
-  // only decides where to stop asking for more work.
-  //
   // Deliberately NOT capped at the number buildable RIGHT NOW. Shipping a ticket
   // is what releases the tickets waiting on it, so the board grows during the run:
   // #152 is the only buildable ticket as this is written, and merging it frees
@@ -142,13 +88,9 @@ function main() {
   // build would stop the run at one and leave two tickets it had just unblocked
   // for tomorrow — which is precisely the frozen line-up the matrix imposed and
   // this job exists to avoid.
-  const queue = Math.min(MAX_TICKETS, Math.floor(dayBudget / MIN_TICKET_BUDGET));
+  const queue = MAX_TICKETS;
 
-  log(
-    "info",
-    `${ordered.length} buildable ticket(s) now, ${dayBudget} request(s) in the pool — ` +
-      `queue capped at ${queue}. Highest priority first:`
-  );
+  log("info", `${ordered.length} buildable ticket(s) now, queue capped at ${queue}. Highest priority first:`);
   // The Builder re-picks by this same ordering, so these are what it should reach
   // for first — but it re-reads the board between tickets, so both what comes
   // second and how many there are can legitimately change mid-run.
@@ -168,7 +110,7 @@ function main() {
   // `count` only answers "is there anything to do at all", which is what gates the
   // build job. `queue` is how far the run may go, and is deliberately the larger
   // of the two whenever the board is expected to grow.
-  writeOutput({ count: ordered.length, queue, budget: dayBudget });
+  writeOutput({ count: ordered.length, queue });
   printRunSummary("Plan build");
 }
 

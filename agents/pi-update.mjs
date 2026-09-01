@@ -9,21 +9,17 @@
 // The run is a no-op unless the version actually moves, so a week with no pi
 // release costs nothing at all — no requests, no PR, no commit.
 //
-// What it will and will not do to the chain:
-//   - It replaces ONLY entries that model-check.mjs calls broken (gone from the
-//     registry, or — for entries not marked `paid` — no longer free). A working
-//     id is never touched, and a deliberately paid one is never evicted for its
-//     price. If a paid entry does rotate out, its substitute comes from the
-//     free-only suggestion list, which degrades the chain to free rather than
-//     silently picking a replacement with an unreviewed price.
-//   - Every substitute is probed against the new pi BEFORE it is committed, and a
-//     candidate that fails to return the JSON envelope is not used. Existing in
-//     the registry is not evidence that a model works here.
-//   - It never reorders surviving entries. The order encodes measured envelope
-//     reliability, and one 2-request sample is not grounds to overwrite that.
-//   - If the chain cannot be repaired with models that actually work, the whole
-//     bump is REVERTED and an issue is filed. Staying on a pi whose chain works
-//     beats advancing to one whose chain doesn't.
+// What it does about the chain: it ASSERTS it, and nothing more. If an id is gone
+// from the new pi's registry, the whole bump is REVERTED and an issue is filed.
+// Staying on a pi whose chain works beats advancing to one whose chain doesn't.
+//
+// It used to repair the chain itself — probe free candidates, swap in whichever
+// returned the JSON envelope, drop the rest. That machinery existed because free
+// ids rotate out of pi's registry every few weeks and its substitute pool was
+// "any free model". The chain is two deliberately chosen paid models now: the
+// pool is gone, the rotation is far slower, and choosing a replacement is a
+// judgement about cost, coding ability and provider independence that a 2-request
+// probe cannot make. So a broken chain is now a ticket, not a self-repair.
 //
 // The change lands as a PR opened by the bot, approved by the PAT and merged
 // automatically — no human in the loop, but CI runs and the trail is auditable.
@@ -45,23 +41,11 @@ import {
   mergePR,
   createIssue,
   readModelChain,
-  writeModelChain,
-  initDailyLedger,
   appendJobSummary,
   TECH_DEBT_LABEL,
 } from "./shared.mjs";
-import { renderProbeTable } from "./model-probe.mjs";
 
 const PI_PACKAGE = "@earendil-works/pi-coding-agent";
-
-// Most substitutes to try when the chain breaks. Each costs 2 requests to probe,
-// so this bounds the repair's price; the chain only needs enough working models to
-// make its fallbacks independent, not every free model in existence.
-const MAX_CANDIDATES = Number(process.env.MAX_MODEL_CANDIDATES || 4);
-
-// Below this the chain has no meaningful fallback left and the pipeline is one
-// rate-limit away from doing nothing all day.
-const MIN_CHAIN_LENGTH = Number(process.env.MIN_CHAIN_LENGTH || 3);
 
 // ---------------------------------------------------------------------------
 // Subprocess helpers
@@ -123,56 +107,6 @@ function checkChain() {
   return report;
 }
 
-/** Probe ids against the installed pi. Returns { rows, usableIds, quotaHit }. */
-function probe(ids) {
-  if (!ids.length) return { rows: [], usableIds: [], quotaHit: false };
-  const { stdout, stderr } = runNode(["agents/model-probe.mjs", "--json", ids.join(",")]);
-  const report = parseJsonOutput(stdout);
-  if (!report) {
-    log("warn", `Probe produced no usable report: ${stderr.trim().split("\n")[0] || "no output"}`);
-    return { rows: [], usableIds: [], quotaHit: false };
-  }
-  return report;
-}
-
-/**
- * Replace broken chain entries with probed-usable substitutes, in place, so the
- * surviving order is preserved. Returns { entries, replaced, dropped, rows }.
- */
-function repairChain(report) {
-  const brokenIds = new Set(report.broken.map((b) => b.id));
-  const candidates = report.suggestions.slice(0, MAX_CANDIDATES);
-
-  log("info", `Chain repair: ${brokenIds.size} broken entry(ies), probing ${candidates.length} candidate(s) — ${candidates.length * 2} request(s).`);
-  const { rows, usableIds } = probe(candidates);
-  const unusable = candidates.filter((id) => !usableIds.includes(id));
-  if (unusable.length) {
-    log("warn", `Chain repair: rejecting ${unusable.length} candidate(s) that did not return the envelope: ${unusable.join(", ")}.`);
-  }
-
-  const available = [...usableIds];
-  const replaced = [];
-  const dropped = [];
-  const entries = [];
-  for (const entry of report.entries) {
-    if (!brokenIds.has(entry.id)) {
-      entries.push({ id: entry.id, why: entry.why, paid: entry.paid });
-      continue;
-    }
-    const substitute = available.shift();
-    if (substitute) {
-      entries.push({
-        id: substitute,
-        why: `Replaced \`${entry.id}\` (${entry.status}) automatically; verified by model-probe against pi at the time of the swap.`,
-      });
-      replaced.push({ from: entry.id, to: substitute, status: entry.status });
-    } else {
-      dropped.push({ id: entry.id, status: entry.status });
-    }
-  }
-  return { entries, replaced, dropped, rows };
-}
-
 /** Undo the dependency bump so the repo stays on the pi it was working with. */
 function revertBump() {
   try {
@@ -184,55 +118,20 @@ function revertBump() {
   }
 }
 
-function buildPrBody({ from, to, report, repair, chainRows }) {
+function buildPrBody({ from, to, report }) {
   const lines = [
     `Bumps \`${PI_PACKAGE}\` from **${from}** to **${to}**.`,
     "",
     "## Model chain",
     "",
-  ];
-
-  if (report.ok) {
-    lines.push(`All ${report.entries.length} configured model(s) are still present and free in pi ${to}'s registry — \`agents/models.json\` is unchanged.`);
-  } else {
-    lines.push(`\`model-check.mjs\` found ${report.broken.length} broken entry(ies) against pi ${to}:`, "");
-    for (const b of report.broken) lines.push(`- \`${b.id}\` — ${b.status}`);
-    lines.push("");
-    if (repair.replaced.length) {
-      lines.push("Replaced automatically, each verified by a live probe before being committed:", "");
-      for (const r of repair.replaced) lines.push(`- \`${r.from}\` (${r.status}) → \`${r.to}\``);
-      lines.push("");
-    }
-    if (repair.dropped.length) {
-      lines.push(
-        "Removed with no substitute available (pi knows no other free model that returned the envelope):",
-        "",
-        ...repair.dropped.map((d) => `- \`${d.id}\` (${d.status})`),
-        ""
-      );
-    }
-    lines.push(
-      "Surviving entries keep their position: the chain's order encodes measured envelope reliability, and this automation does not reorder it.",
-      ""
-    );
-  }
-
-  if (chainRows.length) {
-    lines.push(
-      "## Probe results",
-      "",
-      "Each model asked for the JSON envelope twice — once with tools offered, once without. A model counts as usable only if both answers parse.",
-      "",
-      renderProbeTable(chainRows),
-      ""
-    );
-  }
-
-  lines.push(
+    `All ${report.entries.length} configured model(s) are still present in pi ${to}'s registry — \`agents/models.json\` is unchanged.`,
+    "",
+    ...report.entries.map((e) => `- \`${e.id}\` — $${e.cost?.input}/$${e.cost?.output} per M tokens`),
+    "",
     "---",
     "",
-    "_Opened by `agents/pi-update.mjs`. Approved and merged automatically — the chain is asserted by `model-check.mjs` in CI, so a bad chain fails the build rather than reaching a run._"
-  );
+    "_Opened by `agents/pi-update.mjs`. Approved and merged automatically — the chain is asserted by `model-check.mjs` in CI, so a bad chain fails the build rather than reaching a run._",
+  ];
   return lines.join("\n");
 }
 
@@ -241,9 +140,6 @@ function buildPrBody({ from, to, report, repair, chainRows }) {
 async function main() {
   log("info", "=== pi update — bump the agent runtime and re-check the model chain ===");
   configureGitIdentity();
-  // The probes below spend real requests, so the day's ledger has to be open
-  // before the first one rather than on the first call inside a subprocess.
-  initDailyLedger();
 
   const from = installedVersion();
   const to = latestVersion();
@@ -260,7 +156,7 @@ async function main() {
   if (process.argv.includes("--dry-run")) {
     log("info", from === to
       ? "Dry run: already on the latest pi — a real run would exit here having spent nothing."
-      : `Dry run: a real run would branch, install pi ${to}, re-check the chain (${readModelChain().length} model(s)), probe it, and open a self-merging PR.`);
+      : `Dry run: a real run would branch, install pi ${to}, re-check the chain (${readModelChain().length} model(s)), and open a self-merging PR.`);
     printRunSummary("pi update (dry run)");
     return;
   }
@@ -318,60 +214,28 @@ async function main() {
     process.exit(1);
   }
 
-  let repair = { entries: readModelChain(), replaced: [], dropped: [], rows: [] };
   if (!report.ok) {
-    repair = repairChain(report);
-
-    if (repair.entries.length < MIN_CHAIN_LENGTH) {
-      log(
-        "error",
-        `Chain repair left only ${repair.entries.length} working model(s), under the ${MIN_CHAIN_LENGTH} minimum — reverting the bump.`
-      );
-      revertBump();
-      gitExec("checkout main");
-      deleteRemoteBranch(branchName);
-      createIssue(
-        `pi ${to} leaves the model chain unrepairable`,
-        [
-          `Bumping \`${PI_PACKAGE}\` from ${from} to ${to} breaks ${report.broken.length} of ${report.entries.length} configured model(s), and pi ${to} knows no free substitutes that return the JSON envelope. The bump was **reverted** — the repo stays on ${from}.`,
-          "",
-          "Broken entries:",
-          ...report.broken.map((b) => `- \`${b.id}\` — ${b.status}`),
-          "",
-          repair.rows.length
-            ? `Candidates probed and rejected:\n\n${renderProbeTable(repair.rows)}`
-            : "No candidates were available to probe.",
-          "",
-          "A human needs to choose a chain here: either a different free lineup, or a paid model with a budget to match.",
-        ].join("\n"),
-        [TECH_DEBT_LABEL]
-      );
-      printRunSummary("pi update");
-      process.exit(1);
-    }
-
-    writeModelChain(repair.entries);
-    log("info", `Wrote agents/models.json — ${repair.replaced.length} replaced, ${repair.dropped.length} dropped, ${repair.entries.length} model(s) in the chain.`);
-  }
-
-  // Probe the chain as it now stands, skipping anything the repair already probed,
-  // so the PR reports real evidence for every model the pipeline will rely on.
-  const alreadyProbed = new Set(repair.rows.map((r) => r.modelId));
-  const toProbe = repair.entries.map((e) => e.id).filter((id) => !alreadyProbed.has(id));
-  log("info", `Probing the resulting chain — ${toProbe.length} model(s), ${toProbe.length * 2} request(s).`);
-  const chainProbe = probe(toProbe);
-  const chainRows = [...repair.rows, ...chainProbe.rows];
-
-  const unusable = repair.entries.map((e) => e.id).filter((id) => {
-    const mine = chainRows.filter((r) => r.modelId === id);
-    return mine.length > 0 && !mine.every((r) => r.usable);
-  });
-  if (unusable.length) {
-    // Not fatal, and deliberately so: a free endpoint rate-limiting during a probe
-    // is indistinguishable here from one that has genuinely broken, and the chain
-    // exists precisely to tolerate a model that answers badly today. Say it loudly
-    // in the PR instead of blocking a pi bump on a flaky sample.
-    log("warn", `${unusable.length} chain model(s) did not return the envelope in this probe: ${unusable.join(", ")}. Kept — the chain tolerates a bad model, and one sample is not proof.`);
+    log(
+      "error",
+      `pi ${to} no longer knows ${report.broken.length} of ${report.entries.length} configured model(s) — reverting the bump.`
+    );
+    revertBump();
+    gitExec("checkout main");
+    deleteRemoteBranch(branchName);
+    createIssue(
+      `pi ${to} leaves the model chain broken`,
+      [
+        `Bumping \`${PI_PACKAGE}\` from ${from} to ${to} breaks ${report.broken.length} of ${report.entries.length} configured model(s). The bump was **reverted** — the repo stays on ${from}.`,
+        "",
+        "Broken entries:",
+        ...report.broken.map((b) => `- \`${b.id}\` — ${b.status}`),
+        "",
+        "Pick the replacement by hand in `agents/models.json`: a paid model from a different provider family than the surviving entry, coding-tuned, with reasoning support. Two entries is the target — the second exists so the Reviewer can be drawn from a different model than wrote the code.",
+      ].join("\n"),
+      [TECH_DEBT_LABEL]
+    );
+    printRunSummary("pi update");
+    process.exit(1);
   }
 
   // Commit whatever actually changed.
@@ -393,7 +257,7 @@ async function main() {
   });
   gitExec(`push origin ${branchName}`);
 
-  const body = buildPrBody({ from, to, report, repair, chainRows });
+  const body = buildPrBody({ from, to, report });
   appendJobSummary(`## pi update\n\n${body}`);
 
   const prNumber = createPR(branchName, `Bump pi to ${to} and re-check the model chain`, body);
@@ -402,7 +266,7 @@ async function main() {
     printRunSummary("pi update");
     process.exit(1);
   }
-  approvePR(prNumber, "Approved automatically: the chain is asserted by model-check.mjs and every substitute was probed before it was committed.");
+  approvePR(prNumber, "Approved automatically: the chain is asserted by model-check.mjs against the pi being installed.");
   if (!(await mergePR(prNumber))) {
     log("error", `PR #${prNumber} could not be merged — leaving it open for inspection.`);
     printRunSummary("pi update");

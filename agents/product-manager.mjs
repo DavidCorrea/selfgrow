@@ -31,9 +31,7 @@ import {
   repoRoot,
   getCurrentMilestone,
   setIssueMilestone,
-  parseLedger,
 } from "./shared.mjs";
-import { readPage } from "./wiki.mjs";
 import { publishWeeklyReport } from "./weekly-report.mjs";
 import { listSourceFiles, formatSources, SOURCE_DIR } from "./tech-lead.mjs";
 
@@ -616,7 +614,6 @@ async function main() {
       await publishWeeklyReport({
         closed: fetchClosedIssues(),
         open: fetchOpenIssues(200),
-        ledger: parseLedger(readPage("Budget.md")),
         milestone,
       });
     } catch (e) {
@@ -627,8 +624,8 @@ async function main() {
   printRunSummary("Product Manager");
 }
 
-// Only groom when RUN, never when imported — the same guard model-probe.mjs and
-// tech-lead.mjs use, so agents/dedup-check.mjs can exercise the dedup heuristic
+// Only groom when RUN, never when imported — the same guard tech-lead.mjs uses,
+// so agents/dedup-check.mjs can exercise the dedup heuristic
 // without spending a model session as a side effect of loading this file.
 export { titleTokens };
 

@@ -5,16 +5,18 @@
 // It exists because the failure it catches is silent. resolveTextModels() drops
 // ids pi doesn't know and auto-discovers substitutes, so a pi bump that rotates
 // the whole chain out doesn't crash — it quietly demotes the pipeline to
-// "whatever four free models pi happens to list first", and the only trace is a
-// warning inside a run nobody reads. A day's 1000 requests is too much to spend
-// discovering that.
+// "whatever pi happens to list first", and the only trace is a warning inside a
+// run nobody reads.
 //
-// Three ways a chain entry breaks, all of them checked here:
-//   missing   — the id is no longer in pi's snapshot (its free lineup rotates)
-//   paid      — the id still exists but no longer costs 0/0, so every fallback
-//               now bills real money against a key provisioned for free models
+// Two ways a chain entry breaks, both checked here:
+//   missing   — the id is no longer in pi's snapshot
 //   router    — a meta-router, which dispatches to an arbitrary model and makes
 //               the run unreproducible
+//
+// It used to check a third: an entry that had stopped being free. The chain is
+// two deliberately paid models now, so "it costs money" is the configuration
+// rather than the breakage, and the `paid` flag that used to exempt the head from
+// a free-only rule went with the rule.
 //
 //   node agents/model-check.mjs           # human-readable, exit 1 on any breakage
 //   node agents/model-check.mjs --json    # machine-readable, for the update workflow
@@ -27,16 +29,10 @@ import {
   TEXT_MODELS,
 } from "./shared.mjs";
 
-// How many replacement candidates to name. Enough to choose from, few enough that
-// probing them all stays affordable (each costs 2 requests in pi-update.mjs).
-const MAX_SUGGESTIONS = 6;
-
-const isFree = (m) => m.cost && Number(m.cost.input) === 0 && Number(m.cost.output) === 0;
-
 /**
  * Classify every configured id against the registry. Returns
- * { ok, entries: [{ id, why, status }], broken, suggestions } where status is
- * "ok" | "missing" | "paid" | "router".
+ * { ok, entries: [{ id, why, status, cost }], broken } where status is
+ * "ok" | "missing" | "router".
  */
 export async function checkModelChain() {
   const all = await listRegistryModels();
@@ -53,32 +49,11 @@ export async function checkModelChain() {
     let status = "ok";
     if (!model) status = "missing";
     else if (META_ROUTER_IDS.has(model.id) || META_ROUTER_IDS.has(entry.id)) status = "router";
-    // `paid: true` marks a cost the chain accepts on purpose, so billing money is
-    // only a breakage for entries that were meant to be free.
-    else if (!isFree(model) && !entry.paid) status = "paid";
     return { ...entry, status, cost: model?.cost };
   });
 
   const broken = entries.filter((e) => e.status !== "ok");
-
-  // Candidates for anything broken: free, non-router, and not already in the chain.
-  // Deliberately NOT ranked by size — the chain is ordered by envelope reliability,
-  // which only a live probe can measure, so these are unordered candidates rather
-  // than a recommendation.
-  const inChain = new Set(entries.map((e) => e.id));
-  const suggestions = all
-    .filter(
-      (m) =>
-        m.provider === "openrouter" &&
-        isFree(m) &&
-        !META_ROUTER_IDS.has(m.id) &&
-        !inChain.has(registryModelId(m))
-    )
-    .map(registryModelId)
-    .sort()
-    .slice(0, MAX_SUGGESTIONS);
-
-  return { ok: broken.length === 0, entries, broken, suggestions, registrySize: all.length };
+  return { ok: broken.length === 0, entries, broken, registrySize: all.length };
 }
 
 async function main() {
@@ -108,11 +83,8 @@ async function main() {
   log("info", `=== Model check — ${result.entries.length} configured model(s) against ${result.registrySize} pi knows ===`);
   for (const entry of result.entries) {
     const note = {
-      ok: entry.paid
-        ? `ok — PAID ON PURPOSE, $${entry.cost?.input}/$${entry.cost?.output} per M tokens`
-        : "ok",
+      ok: `ok — $${entry.cost?.input}/$${entry.cost?.output} per M tokens`,
       missing: "MISSING from pi's registry (rotated out?)",
-      paid: "NO LONGER FREE — it would bill real money",
       router: "META-ROUTER — dispatches to an arbitrary model, so runs aren't reproducible",
     }[entry.status];
     log(entry.status === "ok" ? "info" : "error", `  ${entry.status === "ok" ? "ok     " : "BROKEN "} ${entry.id} — ${note}`);
@@ -124,12 +96,11 @@ async function main() {
   }
 
   log("error", `${result.broken.length} of ${result.entries.length} configured model(s) are unusable.`);
-  if (result.suggestions.length) {
-    log("info", `Free models pi currently knows that aren't in the chain:\n  ${result.suggestions.join("\n  ")}`);
-    log("info", "Verify any replacement with `node agents/model-probe.mjs <id>` before trusting it — existing in the registry says nothing about whether it returns the JSON envelope the agents parse.");
-  } else {
-    log("error", "pi knows no other free OpenRouter models — the chain cannot be repaired automatically.");
-  }
+  // Deliberately no suggestion list. Picking the models this pipeline runs on is a
+  // judgement about cost, coding ability and provider independence — the previous
+  // version could offer candidates because "any free model" was an answer, and it
+  // is not one any more.
+  log("info", "Choose a replacement by hand in agents/models.json: a paid model from a different provider family than the surviving entry, coding-tuned, with reasoning support.");
   process.exit(1);
 }
 

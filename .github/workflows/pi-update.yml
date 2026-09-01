@@ -36,8 +36,8 @@ jobs:
     # Never on a PR — that event only wants the free `check` job below.
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    # npm install + up to 20 probe requests against free models, which are slow.
-    timeout-minutes: 45
+    # npm install, a registry assertion, and a PR. No model calls at all.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
         with:
@@ -54,14 +54,9 @@ jobs:
       - name: Bump pi and re-check the model chain
         run: node agents/pi-update.mjs
         env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          # Bounded by construction: 2 requests per probed model, at most
-          # MAX_MODEL_CANDIDATES (4) candidates plus a 6-model chain = 20. The
-          # ceiling is double that so a retry inside pi's runtime can't strand the
-          # run halfway through a repair with the chain half-written.
-          MODEL_REQUEST_BUDGET: '40'
-          # A week with no pi release spends ZERO of this — the run exits before it
-          # probes anything when the version hasn't moved.
+          # No model calls: the chain is asserted against pi's BUNDLED registry, so
+          # this job needs no OpenRouter key at all. It used to probe candidate
+          # models live, which is what the key was for.
           GH_TOKEN: ${{ secrets.AGENT_PAT }}
           BOT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_PROJECT_OWNER: '@me'

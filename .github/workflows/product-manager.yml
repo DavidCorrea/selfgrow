@@ -57,18 +57,10 @@ jobs:
         run: node agents/product-manager.mjs
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          # This run's own allowance, in REAL requests (one per agent turn), not
-          # sessions. Three sessions on an ordinary day — app review, the main
-          # grooming pass, the dedup check — and a fourth on Sundays, when it also
-          # writes the week's report. 150 covers the long day; the short ones cost
-          # what they cost and leave the remainder to the Devs, the only agents
-          # shipping code.
+          # Three sessions on an ordinary day — app review, the main grooming pass,
+          # the dedup check — and a fourth on Sundays, when it also writes the week's
+          # report. The PM runs FIRST each day (00:30) and then dispatches the Devs.
           #
-          # The PM spends FIRST each day (00:30) and then dispatches the Builder, so
-          # its spend is already in the shared ledger when plan-build.mjs decides how
-          # many slots the day can still fund. That ledger — not this number — is
-          # what holds the account to 1000/day.
-          MODEL_REQUEST_BUDGET: '150'
           # PAT carries `project` scope (board) and covers issue creation.
           GH_TOKEN: ${{ secrets.AGENT_PAT }}
           GH_PROJECT_OWNER: '@me'

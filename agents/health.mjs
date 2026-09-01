@@ -8,7 +8,7 @@
 //
 // So this measures the machine rather than the garden, and it is deliberately
 // cheap: no model, no browser, no session. It reads what the pipeline has already
-// written down — issues, runs, the ledger, the wiki — and compares it to what a
+// written down — issues, runs, the wiki — and compares it to what a
 // working week looks like.
 //
 // It speaks only on exception. Silence means fine; an issue means something is
@@ -26,8 +26,6 @@ import {
   isBuildable,
   isBlocked,
   attemptCount,
-  parseLedger,
-  DAILY_REQUEST_CAP,
 } from "./shared.mjs";
 
 // Who gets the @-mention. The point of an alert is that it reaches a person, so
@@ -54,10 +52,6 @@ const QUIET_DAYS_BEFORE_ALARM = 2;
 // Of the tickets the Devs actually engaged with this week, the share that may be
 // abandoned before it reads as a systemic problem rather than a few hard tickets.
 const ABANDON_RATE_LIMIT = 0.4;
-
-// Spending this much of the daily cap is fine once; every day means the pipeline
-// is sized past its allowance and something is being starved.
-const LEDGER_HOT_FRACTION = 0.95;
 
 // Where the product actually lives, as far as anyone visiting it is concerned.
 // Everything else in this pipeline verifies a local static server before a merge;
@@ -95,7 +89,6 @@ async function gatherFacts() {
     open,
     closedRecently,
     runs,
-    ledger: parseLedger(readPage("Budget.md")),
     changelog: readPage("Changelog.md"),
     site: await fetchSite(),
   };
@@ -168,19 +161,6 @@ export function checkAbandonRate({ open, closedRecently }) {
   );
 }
 
-/** The account's allowance, which nothing else reports until it runs out. */
-export function checkBudgetHeadroom({ ledger }) {
-  const week = [...ledger.entries()].filter(([day]) => day >= daysAgo(7));
-  if (week.length < 3) return null;
-  const hot = week.filter(([, spent]) => spent >= DAILY_REQUEST_CAP * LEDGER_HOT_FRACTION);
-  if (hot.length < 3) return null;
-  return (
-    `${hot.length} of the last ${week.length} days spent ≥${Math.round(LEDGER_HOT_FRACTION * 100)}% of the ` +
-    `${DAILY_REQUEST_CAP}/day cap (${hot.map(([d, n]) => `${d}: ${n}`).join(", ")}). ` +
-    `Some agent is being starved at the end of every day.`
-  );
-}
-
 /**
  * The weekly agents, which fail differently from the daily ones: a broken weekly
  * run is invisible for seven days, and a skipped one looks exactly like a quiet
@@ -226,7 +206,6 @@ const CHECKS = [
   checkShipping,
   checkChangelogKeepingUp,
   checkAbandonRate,
-  checkBudgetHeadroom,
   checkWeeklyAgents,
 ];
 
@@ -234,17 +213,13 @@ const CHECKS = [
  * The numbers, whether or not anything is wrong. Always logged and written to the
  * job summary; never filed as an issue on its own.
  */
-export function renderVitals({ open, closedRecently, ledger, site }) {
+export function renderVitals({ open, closedRecently, site }) {
   const openNumbers = new Set(open.map((i) => i.number));
   const shipped7 = closedRecently.filter((i) => (i.closedAt || "") >= daysAgo(7)).length;
-  const spend7 = [...ledger.entries()]
-    .filter(([day]) => day >= daysAgo(7))
-    .reduce((total, [, spent]) => total + spent, 0);
   return [
     site ? `Site: ${site.error ? "unreachable" : `HTTP ${site.status}`}` : "Site: not checked",
     `Shipped (7d): ${shipped7}`,
     `Open: ${open.length} (${open.filter((i) => isBuildable(i, openNumbers)).length} buildable, ${open.filter(isBlocked).length} parked)`,
-    `Spend (7d): ${spend7}/${DAILY_REQUEST_CAP * 7} requests`,
   ].join(" · ");
 }
 

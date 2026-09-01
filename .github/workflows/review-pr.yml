@@ -62,10 +62,6 @@ jobs:
         run: node agents/review-pr.mjs
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          # One review, and at most two fixes. Smaller than a ticket's allowance
-          # because the change is already written — there is no planning here, and
-          # no building from nothing.
-          MODEL_REQUEST_BUDGET: '120'
           # The bot is BOTH tokens here, on purpose. shared.mjs approves and merges
           # with GH_TOKEN, and on these PRs the PAT is the author — GitHub does not
           # let an author approve their own PR. So GH_TOKEN is deliberately the bot,

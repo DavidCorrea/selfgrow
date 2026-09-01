@@ -2,22 +2,12 @@ name: devs
 
 on:
   schedule:
-    # The MOP-UP run, and the only scheduled one. It exists because the morning
-    # chain systematically leaves requests unspent: the morning share is
-    # deliberately conservative (see BUILDER_DAY_BUDGET), so a run that stops
-    # there retires the day with hundreds of requests that simply expire at
-    # 00:00 UTC. Requests do not roll over; an unspent one is a ticket not built.
+    # The MOP-UP run, and the only scheduled one. The morning chain stops on the
+    # board or the clock, so a day that groomed more work than one run could drain
+    # would otherwise retire with buildable tickets untouched.
     #
     # 14:00 is after every other agent has run (PM 00:30, PO/Playtester/Tech Lead
-    # 08:00-10:00), so what the ledger says is left really is left, and this run
-    # can claim it without starving anyone.
-    #
-    # This is NOT the 00:05 cron that was removed. That one raced the PM's own
-    # dispatch and double-spent a day the code could not see, because per-run
-    # budgets cannot observe a sibling. The shared ledger in shared.mjs is what
-    # changed: plan-build.mjs now reads the day's real remainder before it queues
-    # anything, and queues nothing at all when the day cannot fund a ticket. A
-    # second tick is now bounded by the account, not by hand-set arithmetic.
+    # 08:00-10:00), so it never races one of them for the working tree.
     - cron: '0 14 * * *'
 
   # The Product Manager dispatches this explicitly at the end of a run that
@@ -44,17 +34,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # A cheap reader (no Chromium, no full history) that answers the two questions
-  # the heavy job below cannot cheaply answer for itself: is anything buildable,
-  # and does the day's ledger still hold enough requests to build it. When either
-  # answer is no, no build runner ever starts.
+  # A cheap reader (no Chromium, no full history) that answers the one question the
+  # heavy job below cannot cheaply answer for itself: is anything buildable? When
+  # the answer is no, no build runner ever starts.
   plan:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
       count: ${{ steps.plan.outputs.count }}
       queue: ${{ steps.plan.outputs.queue }}
-      budget: ${{ steps.plan.outputs.budget }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -67,44 +55,12 @@ jobs:
         run: node agents/plan-build.mjs
         env:
           GH_TOKEN: ${{ secrets.AGENT_PAT }}
-          # The longest queue one run will attempt. It does not change what the day
-          # COSTS — the budget below is a pool the run spends as tickets actually
-          # cost, so this only decides when to stop asking for more work.
+          # The longest queue one run will attempt. A ceiling, not a target: the run
+          # stops on whichever of the board or the clock empties first.
           #
-          # 6 fits: a measured ticket is ~40 requests and well under an hour of
-          # wall clock, so 6 sits inside both the 700-request pool and the run's
-          # 5-hour time budget, and plan-build.mjs shortens the queue itself when
-          # the day's remainder cannot carry it.
+          # 6 fits: a measured ticket is well under an hour of wall clock, so six sit
+          # inside the run's 5-hour time budget.
           MAX_TICKETS_PER_RUN: '6'
-          # The Devs' share of the day. The account's cap is 1000/day and is
-          # enforced for real by the shared ledger in shared.mjs; this is their
-          # part of it.
-          #
-          # Two figures, because the two runs face different remainders.
-          #
-          # The MORNING run (dispatched by the PM, ~00:35) must leave room for
-          # everything that has not run yet, and that list has grown:
-          #
-          #     1000  the day's cap
-          #    - 150  the Product Manager, already spent by the time this starts
-          #    - 150  the day's weekly agent, at most one (PO Mon, pi-update Tue,
-          #           Playtester Wed, Tech Lead Thu) — sized for the largest
-          #    - 180  pull requests, which arrive on no schedule: review-pr (120)
-          #           for a branch here, triage-fork-pr (60) for one from a fork
-          #    -----
-          #      520  taken as 500, so a mis-flushed ledger has slack
-          #
-          # It was 700 when the claimants were the PM at 100 and one weekly agent.
-          # The ledger would have caught the difference — plan-build reads the real
-          # remainder and shortens the queue — but it would have caught it by
-          # starving whichever agent ran last, which is the wrong way to find out.
-          #
-          # The 14:00 MOP-UP runs LAST, so nothing is owed to anyone: it asks for
-          # more than the day can hold on purpose and lets the ledger decide. What
-          # it actually gets is the true remainder — several hundred on a quiet
-          # day, nothing at all on a day the morning already spent, in which case
-          # plan-build.mjs queues zero jobs and no runner starts.
-          BUILDER_DAY_BUDGET: ${{ github.event.schedule && '900' || '500' }}
 
   # ONE job builds the whole queue, one ticket after another.
   #
@@ -129,8 +85,8 @@ jobs:
   # next run re-picks whatever did not ship.
   build:
     needs: plan
-    # Nothing buildable, or a day with nothing left to spend, means no job at all
-    # rather than a runner that installs Chromium and finds nothing to do.
+    # Nothing buildable means no job at all, rather than a runner that installs
+    # Chromium and finds nothing to do.
     if: ${{ needs.plan.outputs.count != '0' }}
     runs-on: ubuntu-latest
     # Six tickets end to end, plus setup. The run's own BUILD_RUN_BUDGET_MINUTES
@@ -165,39 +121,11 @@ jobs:
         run: node agents/devs.mjs
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          # REAL OpenRouter requests (one per agent turn) for this whole run. This
-          # number used to count agent SESSIONS, which understated the charge by
-          # ~16x: a "250" budget authorised several thousand requests and the whole
-          # 1000/day account fell over while the counter read 62.
-          #
-          # Sized from tickets that actually MERGED, which is the only measurement
-          # worth trusting here. Two of them, both on ling-3.0-flash: #158 shipped
-          # in 33 requests across 4 sessions, #149 built and reviewed in 50 across
-          # 5. Earlier figures (150, then 400) were taken from runs on the old head
-          # model, which spent ~85% of every ticket on sessions it then discarded —
-          # measuring the waste, not the work.
-          #
-          # A POOL for every ticket in the queue, not a per-ticket allowance, and
-          # the day's real remainder rather than a constant (see the plan job).
-          # Pooling is what makes the queue worth having: the run checks the budget
-          # BETWEEN tickets, so a ticket that comes in at 33 requests leaves the
-          # difference to the next one. Dividing it per ticket up front, as the
-          # matrix did, retired that remainder unspent.
-          #
-          # Enforced in four places: runAgent refuses to START a session once the
-          # budget is spent, MAX_SESSION_TURNS aborts a session that runs away
-          # INSIDE one (the hole that let a 101-turn Scout overrun any ceiling), the
-          # build->review loop refuses to start a Builder it cannot afford to review
-          # (BUILD_TAIL_RESERVE), and a retry is skipped when the remainder is thin.
-          # Above all of them sits the account's real limit — the shared daily
-          # ledger in shared.mjs, which every job reads before it spends.
-          MODEL_REQUEST_BUDGET: ${{ needs.plan.outputs.budget }}
-          # How far the run may go, sized by the plan job against the day's
-          # remaining requests — NOT the number buildable when it looked. Merging a
-          # ticket releases the ones waiting on it, so the board grows mid-run, and
-          # a ceiling taken before the first build would leave freshly-unblocked
-          # work for tomorrow. Not a target either: the run stops on whichever of
-          # the board, the pool, or the clock empties first.
+          # How far the run may go — NOT the number buildable when the plan job
+          # looked. Merging a ticket releases the ones waiting on it, so the board
+          # grows mid-run, and a ceiling taken before the first build would leave
+          # freshly-unblocked work for tomorrow. Not a target either: the run stops
+          # on whichever of the board or the clock empties first.
           MAX_TICKETS_PER_RUN: ${{ needs.plan.outputs.queue }}
           # Wall-clock budget, checked between tickets, so the run stops cleanly
           # after a merge instead of being killed mid-ticket by the job timeout

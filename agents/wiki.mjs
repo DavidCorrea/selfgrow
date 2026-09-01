@@ -1,14 +1,15 @@
 // The wiki — the pipeline's long-term memory.
 //
 // Four pages, each owned by a different agent: Vision (the Product Owner),
-// Changelog and Story (the Product Manager), Lessons (the retro), Budget (the
-// request ledger, which keeps its own clone and its own writer in shared.mjs).
-// It is a separate git repo, which is what makes it usable here: writing to it
-// triggers no workflow and touches no branch the Devs are merging.
+// Changelog and Story (the Product Manager), Lessons (the retro). It is a separate
+// git repo, which is what makes it usable here: writing to it triggers no workflow
+// and touches no branch the Devs are merging.
 //
 // EVERY WRITE IS A RETRIED READ-MODIFY-WRITE against the live remote, because
-// the ledger pushes to this same repo after every single agent session. The old
-// write path — edit the working tree, then `add; commit; push` with no fetch and
+// sibling jobs write these pages concurrently — the request ledger used to push to
+// this same repo after every single agent session, which is how the race was found
+// in the first place. It is gone; the discipline stays, because two agents still
+// finish inside the same second often enough. The old write path — edit the working tree, then `add; commit; push` with no fetch and
 // no retry — lost that race on every merge for three days and dropped ~100
 // changelog entries on the floor. It caught the rejection, logged a *warning*,
 // and the run reported success; the Scribe then had nothing to write from and
@@ -206,9 +207,8 @@ const today = () => new Date().toISOString().slice(0, 10);
 // changelog. Neither was ever trimmed, so both grew without bound into a fixed
 // context, degrading silently exactly the way an untrimmed source dump does.
 //
-// The ledger has always solved this for its own page (LEDGER_DAYS_KEPT). These
-// are the same problem and get the same answer: keep what is still useful, drop
-// what has aged out of relevance.
+// So both are trimmed: keep what is still useful, drop what has aged out of
+// relevance.
 //
 // Lessons is counted in ENTRIES rather than days, because its value is "the
 // dead ends worth knowing about", not "the last month". Twenty is roughly a
