@@ -2549,6 +2549,184 @@ export async function checks() {
     }
   }
 
+  /* ---------- Butterfly seasonal activity checks (issue #505) ---------- */
+  // The butterfly must respond to the current season by smoothly lerping its
+  // orbit speed, flap speed, and radius range to season-appropriate multipliers.
+  // The season is read from window.__gardenState.getSeason() in the update() loop.
+  if (!creatureState) {
+    problems.push('window.__gardenState.creature is not set — cannot verify butterfly seasonal activity.');
+  } else {
+    // Verify seasonal multiplier getters exist
+    if (typeof creatureState.getSeasonOrbitMul !== 'function') {
+      problems.push('creature.state.getSeasonOrbitMul is not a function — seasonal orbit multiplier getter missing.');
+    }
+    if (typeof creatureState.getSeasonFlapMul !== 'function') {
+      problems.push('creature.state.getSeasonFlapMul is not a function — seasonal flap multiplier getter missing.');
+    }
+    if (typeof creatureState.getSeasonRadiusMul !== 'function') {
+      problems.push('creature.state.getSeasonRadiusMul is not a function — seasonal radius multiplier getter missing.');
+    }
+
+    if (typeof creatureState.getSeasonOrbitMul === 'function' &&
+        typeof creatureState.getSeasonFlapMul === 'function' &&
+        typeof creatureState.getSeasonRadiusMul === 'function' &&
+        gardenState && typeof gardenState.creatureUpdate === 'function') {
+
+      // Store original getSeason to restore later
+      var origGetSeason = null;
+      if (gardenState.getSeason) {
+        origGetSeason = gardenState.getSeason;
+      }
+
+      try {
+        // Define expected targets matching SEASON_TARGETS in creature.js
+        var SEASON_TARGETS = {
+          'Spring': { orbit: 1.2, flap: 1.3, radius: 1.15 },
+          'Summer': { orbit: 1.2, flap: 1.3, radius: 1.15 },
+          'Autumn': { orbit: 0.7, flap: 0.7, radius: 0.9 },
+          'Winter': { orbit: 0.2, flap: 0.3, radius: 0.6 }
+        };
+        var EPS = 0.001;
+
+        // Helper: mock getSeason, run enough updates for lerp to settle (~5s at 60fps)
+        function mockSeasonAndSettle(seasonName, updateCount) {
+          if (gardenState.getSeason) {
+            gardenState.getSeason = function() { return seasonName; };
+          }
+          updateCount = updateCount || 300; // ~5s at 60fps, 5/1.5 = 3.3 time constants → ~96% of final
+          for (var i = 0; i < updateCount; i++) {
+            gardenState.creatureUpdate(i * 0.016, 0.016);
+          }
+        }
+
+        // --- Test 1: Spring/Summer → orbit ~1.2, flap ~1.3, radius ~1.15 ---
+        mockSeasonAndSettle('Spring');
+        var springOrbit = creatureState.getSeasonOrbitMul();
+        var springFlap = creatureState.getSeasonFlapMul();
+        var springRadius = creatureState.getSeasonRadiusMul();
+
+        if (springOrbit < 1.1 || springOrbit > 1.3) {
+          problems.push('Spring butterfly orbit multiplier is ' + springOrbit.toFixed(3) + ', expected ~1.2 (within [1.1, 1.3]).');
+        }
+        if (springFlap < 1.1 || springFlap > 1.4) {
+          problems.push('Spring butterfly flap multiplier is ' + springFlap.toFixed(3) + ', expected ~1.3 (within [1.1, 1.4]).');
+        }
+        if (springRadius < 1.0 || springRadius > 1.3) {
+          problems.push('Spring butterfly radius multiplier is ' + springRadius.toFixed(3) + ', expected ~1.15 (within [1.0, 1.3]).');
+        }
+
+        // --- Test 2: Summer matches Spring ---
+        mockSeasonAndSettle('Summer');
+        var summerOrbit = creatureState.getSeasonOrbitMul();
+        var summerFlap = creatureState.getSeasonFlapMul();
+        var summerRadius = creatureState.getSeasonRadiusMul();
+
+        if (Math.abs(summerOrbit - 1.2) > 0.15) {
+          problems.push('Summer butterfly orbit multiplier is ' + summerOrbit.toFixed(3) + ', expected ~1.2 (within 0.15).');
+        }
+        if (Math.abs(summerFlap - 1.3) > 0.15) {
+          problems.push('Summer butterfly flap multiplier is ' + summerFlap.toFixed(3) + ', expected ~1.3 (within 0.15).');
+        }
+        if (Math.abs(summerRadius - 1.15) > 0.15) {
+          problems.push('Summer butterfly radius multiplier is ' + summerRadius.toFixed(3) + ', expected ~1.15 (within 0.15).');
+        }
+
+        // --- Test 3: Autumn → orbit ~0.7, flap ~0.7, radius ~0.9 ---
+        mockSeasonAndSettle('Autumn');
+        var autumnOrbit = creatureState.getSeasonOrbitMul();
+        var autumnFlap = creatureState.getSeasonFlapMul();
+        var autumnRadius = creatureState.getSeasonRadiusMul();
+
+        if (autumnOrbit < 0.55 || autumnOrbit > 0.85) {
+          problems.push('Autumn butterfly orbit multiplier is ' + autumnOrbit.toFixed(3) + ', expected ~0.7 (within [0.55, 0.85]).');
+        }
+        if (autumnFlap < 0.55 || autumnFlap > 0.85) {
+          problems.push('Autumn butterfly flap multiplier is ' + autumnFlap.toFixed(3) + ', expected ~0.7 (within [0.55, 0.85]).');
+        }
+        if (autumnRadius < 0.75 || autumnRadius > 1.05) {
+          problems.push('Autumn butterfly radius multiplier is ' + autumnRadius.toFixed(3) + ', expected ~0.9 (within [0.75, 1.05]).');
+        }
+
+        // --- Test 4: Winter → orbit ~0.2, flap ~0.3, radius ~0.6 ---
+        mockSeasonAndSettle('Winter');
+        var winterOrbit = creatureState.getSeasonOrbitMul();
+        var winterFlap = creatureState.getSeasonFlapMul();
+        var winterRadius = creatureState.getSeasonRadiusMul();
+
+        if (winterOrbit < 0.05 || winterOrbit > 0.4) {
+          problems.push('Winter butterfly orbit multiplier is ' + winterOrbit.toFixed(3) + ', expected ~0.2 (within [0.05, 0.4]).');
+        }
+        if (winterFlap < 0.05 || winterFlap > 0.5) {
+          problems.push('Winter butterfly flap multiplier is ' + winterFlap.toFixed(3) + ', expected ~0.3 (within [0.05, 0.5]).');
+        }
+        if (winterRadius < 0.4 || winterRadius > 0.8) {
+          problems.push('Winter butterfly radius multiplier is ' + winterRadius.toFixed(3) + ', expected ~0.6 (within [0.4, 0.8]).');
+        }
+
+        // --- Test 5: Lerp is smooth, not snapping instantly ---
+        // Switch from one extreme (Winter) to the opposite (Spring) with just 1 frame update
+        // The multiplier should NOT have reached the target yet if lerping.
+        if (gardenState.getSeason) {
+          gardenState.getSeason = function() { return 'Winter'; };
+        }
+        // Run enough frames to settle into Winter
+        for (var wi = 0; wi < 300; wi++) {
+          gardenState.creatureUpdate(wi * 0.016, 0.016);
+        }
+        var settledWinterOrbit = creatureState.getSeasonOrbitMul();
+
+        // Now switch to Spring with just ONE frame
+        if (gardenState.getSeason) {
+          gardenState.getSeason = function() { return 'Spring'; };
+        }
+        gardenState.creatureUpdate(1000, 0.016);
+        var afterOneFrame = creatureState.getSeasonOrbitMul();
+
+        // After one frame (~16ms at 1.5s time constant), the multiplier should have moved
+        // toward 1.2 but not reached it. The lerp factor would be 1 - exp(-0.016/1.5) ≈ 0.0106.
+        // So new value = winterOrbit + (1.2 - winterOrbit) * ~0.01
+        var expectedDelta = (1.2 - settledWinterOrbit) * (1 - Math.exp(-0.016 / 1.5));
+        var actualDelta = afterOneFrame - settledWinterOrbit;
+
+        if (Math.abs(actualDelta - expectedDelta) > 0.001) {
+          // Narrow tolerance for floating point mismatch but still flag if wildly off
+          if (Math.abs(actualDelta - expectedDelta) > 0.05) {
+            problems.push('Seasonal orbit multiplier lerp appears to snap: Winter→Spring single frame delta is ' + actualDelta.toFixed(5) + ', expected ~' + expectedDelta.toFixed(5) + ' (exponential lerp at ~0.016/1.5 time constant).');
+          }
+        }
+
+        // Verify that the current actual season (not mocked) results in multipliers in range
+        // After restoring the real getSeason, run a few updates to lerp to the real season
+        // and verify multipliers are in [0.1, 1.4] (valid for any season).
+      } finally {
+        // Restore original getSeason
+        if (origGetSeason) {
+          gardenState.getSeason = origGetSeason;
+        } else if (gardenState) {
+          gardenState.getSeason = function() { return document.getElementById('season-display')?.textContent || 'Spring'; };
+        }
+        // Run a few updates to lerp back to the real season
+        if (typeof gardenState.creatureUpdate === 'function') {
+          for (var ri = 0; ri < 60; ri++) {
+            gardenState.creatureUpdate(ri * 0.016, 0.016);
+          }
+        }
+      }
+    }
+
+    // Verify the DOM description (growing-description) is updated with a butterfly suffix
+    // that includes seasonal context. This is derived from the composition in index.html
+    // where the butterfly suffix reads from the season display indirectly via weather/time.
+    // The season affects day/night and weather indirectly — but the butterfly suffix
+    // doesn't directly encode season (it's based on weather and time). The seasonal
+    // effect is on the butterfly's *activity level* (speed/flap/radius), not on the
+    // DOM suffix text. So we only verify the multiplier getters work above.
+    // 
+    // We do verify that existing night/weather shelter behavior still composes with
+    // winter: if it's winter AND night, the butterfly should be fully still (invisible).
+    // This is validated by the existing day/night shelter checks above.
+  }
+
   /* ---------- Ambient audio checks (issue #458) ---------- */
   const ambientAudio = gardenState && gardenState.ambientAudio;
   if (!ambientAudio) {

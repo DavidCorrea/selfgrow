@@ -23,6 +23,19 @@ const ORBIT_HEIGHT_MIN = 0.5;     // low above ground
 const ORBIT_HEIGHT_MAX = 2.0;     // up to eye level
 const ORBIT_SPEED = 0.08;         // unhurried (rad/s) — completes cycle in ~78s
 
+/* --- Seasonal activity multipliers (lerped smoothly) --- */
+let _currentSeasonOrbitMul = 1.0;   // lerps toward target
+let _currentSeasonFlapMul = 1.0;
+let _currentSeasonRadiusMul = 1.0;
+
+/* Season target multipliers: Spring/Summer → active, Autumn → slow, Winter → dormant */
+const SEASON_TARGETS = {
+  'Spring': { orbit: 1.2, flap: 1.3, radius: 1.15 },
+  'Summer': { orbit: 1.2, flap: 1.3, radius: 1.15 },
+  'Autumn': { orbit: 0.7, flap: 0.7, radius: 0.9 },
+  'Winter': { orbit: 0.2, flap: 0.3, radius: 0.6 }
+};
+
 /* Pause (butterfly visits blooming flower) parameters */
 const PAUSE_PROXIMITY = 0.4;      // units — trigger distance to a blooming flower
 const PAUSE_SPEED_MUL = 0.5;      // slow to ~50% during pause
@@ -147,6 +160,10 @@ export function createCreature(scene) {
     radiusMin: ORBIT_RADIUS_MIN,
     radiusMax: ORBIT_RADIUS_MAX,
     weatherOpacity: 1.0,
+    /* Seasonal multiplier access for selftest */
+    getSeasonOrbitMul: () => _currentSeasonOrbitMul,
+    getSeasonFlapMul: () => _currentSeasonFlapMul,
+    getSeasonRadiusMul: () => _currentSeasonRadiusMul,
     /* Pause state exposed for testing */
     pauseState: () => pauseState,
     pauseTargetPos: () => pauseTargetPos ? { ...pauseTargetPos } : null,
@@ -199,15 +216,33 @@ export function createCreature(scene) {
       group.visible = true;
     }
 
+    /* --- Seasonal activity level: smooth lerp toward season targets --- */
+    let seasonName = 'Spring';
+    if (window.__gardenState && typeof window.__gardenState.getSeason === 'function') {
+      seasonName = window.__gardenState.getSeason();
+    }
+    const seasonTarget = SEASON_TARGETS[seasonName] || SEASON_TARGETS['Spring'];
+    /* Exponential lerp — ~3s to near-complete (5 * 0.6 = 3.0 time constant gives ~86% after 5s) */
+    const SEASON_LERP_TIME_CONSTANT = 1.5;
+    const lerpFactor = 1 - Math.exp(-dt / SEASON_LERP_TIME_CONSTANT);
+    _currentSeasonOrbitMul = _currentSeasonOrbitMul + (seasonTarget.orbit - _currentSeasonOrbitMul) * lerpFactor;
+    _currentSeasonFlapMul = _currentSeasonFlapMul + (seasonTarget.flap - _currentSeasonFlapMul) * lerpFactor;
+    _currentSeasonRadiusMul = _currentSeasonRadiusMul + (seasonTarget.radius - _currentSeasonRadiusMul) * lerpFactor;
+
+    /* Apply season multiplier to ORBIT_SPEED for angular position computation */
+    const effectiveOrbitSpeed = ORBIT_SPEED * _currentSeasonOrbitMul;
+    /* Apply season multiplier to ORBIT_RADIUS_MAX for radius range */
+    const effectiveOrbitRadiusMax = ORBIT_RADIUS_MAX * _currentSeasonRadiusMul;
+
     /* --- Compute orbit position with pause speed modulation --- */
-    const t = time * ORBIT_SPEED * pauseSpeedMul;
+    const t = time * effectiveOrbitSpeed * pauseSpeedMul;
 
     // Angular position: slowly rotates around the garden
     const angle = t + Math.sin(t * 0.23) * 0.4;
 
     // Radial distance: varies between min and max using a slow sine
     const radiusFactor = 0.5 + 0.5 * Math.sin(t * FREQ_X + PHASE_X);
-    const radius = ORBIT_RADIUS_MIN + radiusFactor * (ORBIT_RADIUS_MAX - ORBIT_RADIUS_MIN);
+    const radius = ORBIT_RADIUS_MIN + radiusFactor * (effectiveOrbitRadiusMax - ORBIT_RADIUS_MIN);
 
     // Vertical position: gentle bobbing
     const heightFactor = 0.5 + 0.5 * Math.sin(t * FREQ_Y + PHASE_Y);
@@ -348,10 +383,10 @@ export function createCreature(scene) {
     /* --- Orient the butterfly along its flight direction --- */
     // Use a small look-at offset to face the direction of travel
     const lookAhead = 0.5;
-    const nextT = (time + lookAhead) * ORBIT_SPEED * pauseSpeedMul;
+    const nextT = (time + lookAhead) * effectiveOrbitSpeed * pauseSpeedMul;
     const nextAngle = nextT + Math.sin(nextT * 0.23) * 0.4;
     const nextRadiusFactor = 0.5 + 0.5 * Math.sin(nextT * FREQ_X + PHASE_X);
-    const nextRadius = ORBIT_RADIUS_MIN + nextRadiusFactor * (ORBIT_RADIUS_MAX - ORBIT_RADIUS_MIN);
+    const nextRadius = ORBIT_RADIUS_MIN + nextRadiusFactor * (effectiveOrbitRadiusMax - ORBIT_RADIUS_MIN);
     const nx = Math.cos(nextAngle) * nextRadius + Math.sin(nextT * FREQ_X * 1.7 + PHASE_X + 1.2) * 0.3;
     const nz = Math.sin(nextAngle) * nextRadius + Math.cos(nextT * FREQ_Z * 1.7 + PHASE_Z + 0.8) * 0.3;
     const ny = ORBIT_HEIGHT_MIN + (0.5 + 0.5 * Math.sin(nextT * FREQ_Y + PHASE_Y)) * (ORBIT_HEIGHT_MAX - ORBIT_HEIGHT_MIN);
@@ -368,9 +403,9 @@ export function createCreature(scene) {
       group.rotateX(0.15);
     }
 
-    /* --- Slow wing flap during pause --- */
+    /* --- Slow wing flap during pause, with seasonal speed modulation --- */
     const flapSpeedMul = pauseState === 'idle' ? 1.0 : 0.6;
-    const flapAngle = Math.sin(time * FLAP_SPEED * Math.PI * 2 * flapSpeedMul) * FLAP_ANGLE_MAX;
+    const flapAngle = Math.sin(time * FLAP_SPEED * _currentSeasonFlapMul * Math.PI * 2 * flapSpeedMul) * FLAP_ANGLE_MAX;
     leftWing.rotation.z = flapAngle;
     rightWing.rotation.z = -flapAngle;
   }
