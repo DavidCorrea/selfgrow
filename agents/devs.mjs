@@ -460,9 +460,29 @@ async function runBuildReviewLoop(ctx, plan) {
     ctx.reviewerFeedback = review.feedback;
   }
 
-  // The Builder never produced usable work, or never got as far as a PR.
-  if (!ctx.builderEverSucceeded || !ctx.prNumber) {
-    return abandonTicket(ctx, "Builder failed on every attempt.");
+  // The Builder never returned a single usable response. That is an INFRASTRUCTURE
+  // failure, not a bad ticket — no fault, no strike.
+  //
+  // The distinction matters most on the day the account runs out of money. Spend is
+  // capped by the balance on the OpenRouter key, and if that refusal does not match
+  // isDailyQuotaExhausted (pi does not attach an HTTP status to model-call errors,
+  // so recognition rests on the provider's message text) then every attempt fails
+  // as an ordinary transient error. Charged as a fault, two such runs park the
+  // ticket at MAX_TICKET_ATTEMPTS and the Tech Lead writes a post-mortem blaming
+  // work that was never attempted. Topping the balance back up would then leave the
+  // best tickets on the board marked unbuildable.
+  //
+  // A ticket the Builder genuinely cannot build fails AFTER producing something —
+  // a change that does not verify, or a review it cannot satisfy. Producing nothing
+  // at all says something about the pipeline, never about the ticket.
+  if (!ctx.builderEverSucceeded) {
+    return abandonTicket(ctx, "Builder returned no usable response on any attempt.", { fault: false });
+  }
+  // It built something but never got as far as a PR — most often the run's clock
+  // ran out between a failed verify and the next attempt. Also not the ticket's
+  // fault: nothing about it was ever judged.
+  if (!ctx.prNumber) {
+    return abandonTicket(ctx, "Builder produced work but the run ended before it could be opened for review.", { fault: false });
   }
   // Not approved within the cap → revoke the PR, return the ticket to the backlog.
   if (!ctx.reviewerApproved) {
