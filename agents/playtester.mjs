@@ -16,6 +16,19 @@
 // same one a blind visitor gets, and a garden whose state layer is dull or wrong
 // is failing them first.
 //
+// It also SEES two frames of it. The state layer answers "what is happening"; a
+// screenshot answers "what does this look like", which is the one question the
+// pipeline could not ask before — reviewApp measures everything about a rendered
+// page that is true or false (overflow, contrast, collapsed boxes) and
+// deliberately nothing about whether it is any good.
+//
+// Eyes went HERE rather than to the Product Manager on purpose. A vision model
+// can report a defect that isn't there; reviewApp's own header records what that
+// cost when a hallucinated defect became a ticket and the Builder spent real
+// requests fixing nothing. What this agent files is explicitly NOT a ticket, so a
+// mistaken impression costs the PM one line of triage. The containment already
+// existed; this is the one role it fits.
+//
 // What it files is FEEDBACK, not work. Findings land as `playtest`-labelled
 // issues, which isBuildable excludes, so the Builder never picks up "the first
 // minute felt static" as though it were a ticket. The Product Manager converts
@@ -28,6 +41,7 @@ import {
   loadPrompt,
   fillTemplate,
   runAgent,
+  firstVisionModel,
   extractAgentResponse,
   errorData,
   repoRoot,
@@ -56,6 +70,49 @@ const SAMPLE_EVERY_MS = Number(process.env.PLAYTEST_SAMPLE_MS || 8_000);
 // produce and expensive to triage — twenty impressions a week would bury the
 // Product Manager and turn a signal into a chore it learns to skip.
 const MAX_FINDINGS = Number(process.env.MAX_PLAYTEST_FINDINGS || 3);
+
+// The two viewports the pipeline already judges layout at (see REVIEW_VIEWPORTS in
+// shared.mjs). Kept identical so a finding here and a defect there describe the
+// same page rather than two different ones.
+const SHOT_VIEWPORTS = [
+  { label: "desktop", width: 1280, height: 800 },
+  { label: "mobile", width: 390, height: 844 },
+];
+
+// JPEG, not PNG. The garden is a canvas scene — photo-shaped content, where JPEG
+// is several times smaller for no loss that matters to a judgement about mood and
+// hierarchy. Size is not about the bill (two frames cost a fraction of a cent); an
+// oversized attachment makes the provider reject the whole conversation rather
+// than the offending turn.
+const SHOT_QUALITY = Number(process.env.PLAYTEST_SHOT_QUALITY || 70);
+
+/**
+ * Two frames of the garden as a visitor would see it, as pi image parts.
+ *
+ * Best-effort by construction: a screenshot that cannot be taken returns an empty
+ * list, and the session is reported from the state layer exactly as it was before
+ * this existed. Never throws — a broken capture must not cost the week's feedback.
+ */
+async function captureFrames(page) {
+  const frames = [];
+  for (const viewport of SHOT_VIEWPORTS) {
+    try {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      // One animation frame plus a beat: the scene resizes on a rAF, so shooting
+      // immediately catches the previous layout at the new size.
+      await page.waitForTimeout(1200);
+      const buffer = await page.screenshot({ type: "jpeg", quality: SHOT_QUALITY });
+      frames.push({
+        label: viewport.label,
+        width: viewport.width,
+        image: { type: "image", data: buffer.toString("base64"), mimeType: "image/jpeg" },
+      });
+    } catch (e) {
+      log("warn", `Playtest: could not capture the ${viewport.label} frame — reporting without it.`, errorData(e));
+    }
+  }
+  return frames;
+}
 
 const APP_DIR = join(repoRoot, "docs");
 
@@ -163,7 +220,13 @@ export async function observeApp() {
     await page.waitForTimeout(2000);
     const afterReload = (await page.evaluate(readPage)).state;
 
-    return { opening, tabOrder, timeline, afterReload, consoleErrors, url };
+    // Shot last, and after the reload, so the frames show the same garden the
+    // final timeline sample describes rather than a fresh one. Resizing for the
+    // mobile frame is destructive to the desktop layout, which is why nothing is
+    // measured after this point.
+    const frames = await captureFrames(page);
+
+    return { opening, tabOrder, timeline, afterReload, consoleErrors, url, frames };
   } catch (e) {
     log("warn", "Playtest: the session broke off early — reporting what was seen.", errorData(e));
     return null;
@@ -181,8 +244,13 @@ export async function observeApp() {
  * being asked for an impression of an experience, and a wall of serialized DOM
  * invites it to audit structure instead.
  */
-export function renderSession(session) {
+export function renderSession(session, { showingFrames = true } = {}) {
   const { opening, tabOrder, timeline, afterReload, consoleErrors, url } = session;
+  // The transcript must describe the turn it is actually part of. The text-only
+  // fallback in report() sends this same session with no images attached, and a
+  // transcript that still announced two screenshots would have the agent describe
+  // frames it was never shown.
+  const frames = showingFrames ? session.frames || [] : [];
 
   const unchanged = timeline.length > 1 && timeline.every((s) => s.state === timeline[0].state);
   const sameAfterReload = afterReload === timeline[timeline.length - 1]?.state;
@@ -212,6 +280,18 @@ export function renderSession(session) {
     "",
     `## Errors in the console during the session`,
     consoleErrors.length ? consoleErrors.map((e) => `- ${e}`).join("\n") : "(none)",
+    "",
+    // Named in the transcript because the images are attached to the turn rather
+    // than embedded here, and an agent told "look at the screenshots" with no idea
+    // how many there are or what they show will invent the missing one.
+    frames.length
+      ? `## Screenshots attached to this message\n${frames
+          .map((f, i) => `${i + 1}. ${f.label} — ${f.width}px wide, taken after the reload above`)
+          .join("\n")}`
+      // Reached both when the capture failed and when this is the text-only
+      // fallback in report(). The instruction is the same either way, and naming a
+      // cause we cannot distinguish would just be a guess in the prompt.
+      : `## Screenshots\n(none attached — judge from the state layer alone, and say nothing about how the app looks)`,
   ].join("\n");
 }
 
@@ -256,6 +336,61 @@ function fileFindings(findings) {
   return filed;
 }
 
+/**
+ * Ask for the impression. Runs the seeing version first and falls back to the
+ * text-only one, because the frames are an upgrade to the report and not a
+ * precondition for it — a week with no feedback is worse than a week of feedback
+ * that only read the state layer.
+ *
+ * Returns the agent's raw output, or null when neither attempt produced any.
+ */
+async function report(session) {
+  const promptFor = (showingFrames) => {
+    const transcript = renderSession(session, { showingFrames });
+    log("info", `Playtest session:\n${transcript}`);
+    return fillTemplate(loadPrompt("playtester"), {
+      VISION: readVision(),
+      SESSION: transcript,
+      MAX_FINDINGS: String(MAX_FINDINGS),
+    });
+  };
+  const frames = session.frames || [];
+  // Pinned, not chained: the chain head is text-only, and a pinned model gets no
+  // fallback of its own — which is what the second attempt below is for.
+  const visionModel = frames.length ? await firstVisionModel() : null;
+
+  if (visionModel) {
+    try {
+      return await withLogGroup(`Playtester (seeing, ${visionModel})`, () =>
+        runAgent({
+          label: "Playtester",
+          systemPrompt: promptFor(true),
+          // Deliberately still no tools. The frames arrive attached to the turn, so
+          // seeing the garden costs the agent no ability to go reading the source —
+          // which is a different job, and one that would pull an impression into an
+          // audit (see renderSession).
+          tools: [],
+          modelId: visionModel,
+          images: frames.map((f) => f.image),
+        })
+      );
+    } catch (e) {
+      log("warn", `Playtest: ${visionModel} could not report on the frames — retrying from the state layer alone.`, errorData(e));
+    }
+  } else if (frames.length) {
+    log("warn", "Playtest: no configured model accepts images — reporting from the state layer alone.");
+  }
+
+  try {
+    return await withLogGroup("Playtester", () =>
+      runAgent({ label: "Playtester", systemPrompt: promptFor(false), tools: [] })
+    );
+  } catch (e) {
+    log("error", "Playtest: the reporting agent failed.", errorData(e));
+    return null;
+  }
+}
+
 async function main() {
   const session = await withLogGroup("Playing the app", () => observeApp());
   if (!session) {
@@ -264,20 +399,12 @@ async function main() {
     return;
   }
 
-  const transcript = renderSession(session);
-  log("info", `Playtest session:\n${transcript}`);
-
-  const output = await withLogGroup("Playtester", () =>
-    runAgent({
-      label: "Playtester",
-      systemPrompt: fillTemplate(loadPrompt("playtester"), {
-        VISION: readVision(),
-        SESSION: transcript,
-        MAX_FINDINGS: String(MAX_FINDINGS),
-      }),
-      tools: [],
-    })
-  );
+  const output = await report(session);
+  if (output === null) {
+    log("warn", "Playtest: the reporting agent failed both with and without the screenshots — nothing filed.");
+    printRunSummary("Playtester");
+    return;
+  }
 
   const result = extractAgentResponse("Playtester", output, {
     requireOutcome: false,

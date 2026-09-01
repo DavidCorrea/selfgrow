@@ -49,7 +49,7 @@ Plus one tester and three pieces of infrastructure — jobs, not roles:
 
 | | Runs | Does |
 | --- | --- | --- |
-| 👀 **QA** | Wed 10:00 | Plays the **live site** for two minutes, files what it was like |
+| 👀 **QA** | Wed 10:00 | Plays the **live site** for two minutes, looks at two frames of it, files what it was like |
 | 📊 **Health** | daily 16:00 | Measures the pipeline; silent unless something breaks |
 | 🤝 **review-pr** / **triage-fork-pr** | on any PR | Finishes yours; reviews a stranger's |
 | 📦 **pi-update** | Tue 07:00 | Dependabot for the model chain |
@@ -64,6 +64,8 @@ Plus one tester and three pieces of infrastructure — jobs, not roles:
 **The Tech Lead is the only role that sees the whole codebase.** Everything else in engineering is scoped to one ticket. It owns structure, owns `docs/selftest.js` — the only independent judge in the pipeline — and rules on tickets the Devs gave up on, because *"why did this fail"* is a technical question.
 
 **QA is deliberately not the PM.** It plays and reports; the PM decides. The observer should not be the one who acts on the observation — the same reason the Devs do not review their own work.
+
+It is also the only role with **eyes**, for the same reason. Everything measurable about a rendered page — overflow, contrast, collapsed boxes — is measured deterministically and fed to the PM; a vision model adds only taste, and can report a defect that isn't there. QA's output is explicitly not a ticket, so a mistaken impression costs one line of triage instead of a build.
 
 **Sunday and Monday are the hinge.** The PM's Sunday run curates and writes the week's report; the PO reads that week on Monday and sets the milestone the PM grooms against for the next six days.
 

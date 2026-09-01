@@ -329,10 +329,32 @@ async function resolveTextModels() {
 }
 
 /**
+ * The first configured model that accepts image input, or null when none does.
+ *
+ * Vision is a property of the model, not of the chain: `deepseek-v4-flash` at the
+ * head is text-only, and pi drops image content for a model whose registry entry
+ * does not declare `input: image` — silently, which is the failure mode worth
+ * avoiding. So a caller that wants to send a picture pins the model this returns
+ * rather than trusting whichever entry the chain reaches first.
+ *
+ * Returns null rather than throwing: an agent that can see is an upgrade to a
+ * report, never a precondition for one, so every caller degrades to text.
+ */
+export async function firstVisionModel() {
+  const all = await getAllModels();
+  if (!all) return null;
+  for (const id of await resolveTextModels()) {
+    const model = all.find((m) => modelIdOf(m) === id);
+    if (model && (model.input || []).includes("image")) return id;
+  }
+  return null;
+}
+
+/**
  * Run a one-shot agent. With no explicit `modelId`, tries the TEXT_MODELS chain
  * in order until one answers, so a provider having a bad afternoon costs a retry
- * rather than the run. Pass an explicit `modelId` to pin a single model (the
- * vision path does this, driving its own chain).
+ * rather than the run. Pass an explicit `modelId` to pin a single model — which is
+ * what sending `images` requires, since only some models can see (firstVisionModel).
  *
  * @param {object} opts
  * @param {string} [opts.label]          - Name for logging.
@@ -342,6 +364,9 @@ async function resolveTextModels() {
  * @param {string[]} [opts.tools]        - Allowed tool names.
  * @param {string} [opts.thinkingLevel]  - "off" | "low" | "medium" | "high".
  * @param {string} [opts.modelId]        - Pin a single model; omit to use the chain.
+ * @param {object[]} [opts.images]       - Image parts ({ type, data, mimeType }) to
+ *                                          attach to the kickoff turn. Requires a
+ *                                          model that accepts image input.
  */
 export async function runAgent(opts) {
   const { modelId, label = "Agent", expectJson = true, avoidModel = null } = opts;
@@ -420,6 +445,7 @@ async function runAgentOnce({
   tools = ["read"],
   thinkingLevel = MIN_THINKING_LEVEL,
   modelId = MODEL_ID,
+  images = [],
 }) {
   // Clamp rather than trust the caller — "off" costs a request and returns 400
   // on reasoning-mandatory endpoints (see MIN_THINKING_LEVEL).
@@ -431,6 +457,19 @@ async function runAgentOnce({
       `Model "${modelId}" not found in the registry. ` +
         `Check OPENROUTER_API_KEY and that the model id is still valid.`
     );
+  }
+
+  // Say so rather than sending pictures to a model that cannot see them. pi drops
+  // image parts for a text-only model without complaint, which would leave an
+  // agent describing a screenshot it was never shown — the most expensive kind of
+  // confident answer. The caller picks its model with firstVisionModel(); this is
+  // the assertion that it did.
+  if (images.length && !(model.input || []).includes("image")) {
+    log(
+      "warn",
+      `${label}: "${modelId}" does not accept image input — dropping ${images.length} image(s) and running text-only.`
+    );
+    images = [];
   }
 
   // Set our role as the real system prompt and run with a clean, deterministic
@@ -553,8 +592,13 @@ async function runAgentOnce({
         return turns;
       };
 
-      return session
-        .prompt(task)
+      // With images, the kickoff turn has to be a content ARRAY, which prompt()
+      // does not take — sendUserMessage does, and triggers a turn the same way.
+      const kickoff = images.length
+        ? session.sendUserMessage([{ type: "text", text: task }, ...images])
+        : session.prompt(task);
+
+      return kickoff
         .then(() => {
           const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
           const messages = session.state.messages;
