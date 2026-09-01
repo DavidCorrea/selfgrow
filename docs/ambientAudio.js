@@ -48,19 +48,45 @@ const WEATHER_AUDIO_MODIFIERS = {
 const DEFAULT_WEATHER_MODIFIER = { windMul: 1.0, filterMul: 1.0, rainBase: 0 };
 
 /**
- * Compute composed audio settings from weather and time-of-day.
+ * Seasonal audio modifiers composed on top of time-of-day and weather.
+ * Applied as multipliers to the time-of-day base before weather modifiers.
+ *
+ * Spring:  lighter, brighter breeze  — filter ~300Hz (Midday 400×0.75), wind 0.8×
+ * Summer:  fuller, warmer wind        — filter ~450Hz (Midday 400×1.125), wind 1.0×
+ * Autumn:  stronger, rustling wind    — filter ~280Hz (Midday 400×0.7), wind 1.3×, rain 1.1×
+ * Winter:  hushed, near-stillness     — filter ~60Hz (Midday 400×0.15), wind 0.4×, rain 0.5×
+ */
+const SEASON_AUDIO_MODIFIERS = {
+  'Spring': { filterMul: 0.75, windMul: 0.8,  rainMul: 1.0 },
+  'Summer': { filterMul: 1.125, windMul: 1.0, rainMul: 1.0 },
+  'Autumn': { filterMul: 0.7,   windMul: 1.3,  rainMul: 1.1 },
+  'Winter': { filterMul: 0.15,  windMul: 0.4,  rainMul: 0.5 }
+};
+
+/** Default season modifier (no change) when season is omitted */
+const DEFAULT_SEASON_MODIFIER = { filterMul: 1.0, windMul: 1.0, rainMul: 1.0 };
+
+/**
+ * Compute composed audio settings from weather, time-of-day and season.
+ *
+ * Composition: base (time-of-day) × season modifier × weather modifier.
+ *   windGain = base.windGain × season.windMul × weather.windMul
+ *   filterFreq = base.filterFreq × season.filterMul × weather.filterMul
+ *   rainGain = weather.rainBase × base.rainMul × season.rainMul
  *
  * @param {string} weatherPhase — 'Clear', 'Overcast', or 'Light Drizzle'
  * @param {string} [timeOfDay] — 'Morning'|'Midday'|'Evening'|'Night' (default 'Midday')
+ * @param {string} [season] — 'Spring'|'Summer'|'Autumn'|'Winter' (default undefined → no seasonal modifier)
  * @returns {{ windGain: number, filterFreq: number, rainGain: number }}
  */
-function computeAudioSettings(weatherPhase, timeOfDay) {
+function computeAudioSettings(weatherPhase, timeOfDay, season) {
   const base = TIME_OF_DAY_AUDIO[timeOfDay] || TIME_OF_DAY_AUDIO['Midday'];
-  const mod = WEATHER_AUDIO_MODIFIERS[weatherPhase] || DEFAULT_WEATHER_MODIFIER;
+  const weatherMod = WEATHER_AUDIO_MODIFIERS[weatherPhase] || DEFAULT_WEATHER_MODIFIER;
+  const seasonMod = SEASON_AUDIO_MODIFIERS[season] || DEFAULT_SEASON_MODIFIER;
   return {
-    windGain: base.windGain * mod.windMul,
-    filterFreq: base.filterFreq * mod.filterMul,
-    rainGain: mod.rainBase * base.rainMul
+    windGain: base.windGain * seasonMod.windMul * weatherMod.windMul,
+    filterFreq: base.filterFreq * seasonMod.filterMul * weatherMod.filterMul,
+    rainGain: weatherMod.rainBase * base.rainMul * seasonMod.rainMul
   };
 }
 
@@ -188,15 +214,17 @@ export function createAmbientAudio() {
     startWind();
     startRain();
 
-    // Immediately read the current weather phase and time-of-day from the DOM
+    // Immediately read the current weather phase, time-of-day and season from the DOM
     // and apply them, so audio is correct from the moment it starts.
     const weatherEl = document.getElementById('weather-display');
     const timeEl = document.getElementById('time-display');
+    const seasonEl = document.getElementById('season-display');
     const weatherPhase = weatherEl && weatherEl.textContent ? weatherEl.textContent.trim() : 'Clear';
     const timeOfDay = timeEl && timeEl.textContent ? timeEl.textContent.trim() : 'Midday';
+    const season = seasonEl && seasonEl.textContent ? seasonEl.textContent.trim() : undefined;
 
     if (windGain && windFilter) {
-      const settings = computeAudioSettings(weatherPhase, timeOfDay);
+      const settings = computeAudioSettings(weatherPhase, timeOfDay, season);
       windGain.gain.setValueAtTime(settings.windGain, ctx.currentTime);
       windFilter.frequency.setValueAtTime(settings.filterFreq, ctx.currentTime);
       state.windGain = settings.windGain;
@@ -237,7 +265,8 @@ export function createAmbientAudio() {
   }
 
   /**
-   * Update the audio character to match the current weather and time-of-day.
+   * Update the audio character to match the current weather, time-of-day
+   * and season.
    *
    * Always records composed targets into state (so selftest can verify without
    * an AudioContext), then ramps the Web Audio nodes with setTargetAtTime when
@@ -245,11 +274,12 @@ export function createAmbientAudio() {
    *
    * @param {string} weatherPhase — 'Clear', 'Overcast', or 'Light Drizzle'
    * @param {string} [timeOfDay] — 'Morning'|'Midday'|'Evening'|'Night' (default 'Midday')
+   * @param {string} [season] — 'Spring'|'Summer'|'Autumn'|'Winter' (default undefined → no seasonal modifier)
    */
-  function update(weatherPhase, timeOfDay) {
+  function update(weatherPhase, timeOfDay, season) {
     // Always compute and record composed targets into state first, so the
-    // selftest can verify time+weather composition without an AudioContext.
-    const settings = computeAudioSettings(weatherPhase, timeOfDay);
+    // selftest can verify time+weather+season composition without an AudioContext.
+    const settings = computeAudioSettings(weatherPhase, timeOfDay, season);
     state.windGain = settings.windGain;
     state.windFilterFrequency = settings.filterFreq;
     state.rainGain = settings.rainGain;

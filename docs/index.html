@@ -821,18 +821,22 @@
     document.addEventListener('click', resumeAudio);
     document.addEventListener('touchstart', resumeAudio);
 
-    /* Poll the weather phase and time-of-day every ~1s and update audio character.
-     * Triggers when EITHER weather or time changes.
+    /* Poll the weather phase, time-of-day and season every ~1s and update audio character.
+     * Triggers when ANY of weather, time or season changes.
+     * Season composes on top of time-of-day and weather (mirroring description composition).
      */
     let lastAudioWeather = '';
     let lastAudioTime = '';
+    let lastAudioSeason = '';
     function updateAudioWeather() {
       const weatherPhase = document.getElementById('weather-display')?.textContent?.trim() || '';
       const timeOfDay = document.getElementById('time-display')?.textContent?.trim() || '';
-      if ((weatherPhase !== lastAudioWeather || timeOfDay !== lastAudioTime) && weatherPhase) {
+      const season = document.getElementById('season-display')?.textContent?.trim() || '';
+      if ((weatherPhase !== lastAudioWeather || timeOfDay !== lastAudioTime || season !== lastAudioSeason) && weatherPhase) {
         lastAudioWeather = weatherPhase;
         lastAudioTime = timeOfDay;
-        ambientAudio.update(weatherPhase, timeOfDay);
+        lastAudioSeason = season;
+        ambientAudio.update(weatherPhase, timeOfDay, season);
       }
     }
 
