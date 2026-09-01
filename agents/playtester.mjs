@@ -302,7 +302,7 @@ export function renderSession(session, { showingFrames = true } = {}) {
  * every week — and a garden that is genuinely static will produce the same one —
  * doesn't accumulate as a new issue each time.
  */
-function fileFindings(findings) {
+function fileFindings(findings, verdict) {
   // Exact titles only. The Playtester repeats itself in the obvious way — the
   // same complaint, worded the same — and anything subtler is caught downstream
   // by the PM's own dedup, which already runs over everything it grooms.
@@ -325,6 +325,14 @@ function fileFindings(findings) {
       "",
       "## Why it matters",
       finding.whyItMatters || "(not stated)",
+      // The verdict on the whole session, repeated on each finding. One finding
+      // read alone says nothing about whether the visit was good overall, and the
+      // Product Manager triages these one at a time — a complaint about a static
+      // scene means something different in a session that was otherwise worth
+      // staying for than in one that was not.
+      ...(verdict
+        ? ["", "## The session overall", verdict]
+        : []),
     ].join("\n");
     const number = createIssue(finding.title, body, [PLAYTEST_LABEL]);
     if (number) {
@@ -408,6 +416,10 @@ async function main() {
 
   const result = extractAgentResponse("Playtester", output, {
     requireOutcome: false,
+    // `verdict` is asked for in the prompt but deliberately NOT required here. A
+    // missing field would discard the whole report, and this agent runs once a
+    // week — losing a session's findings over an absent sentence costs more than
+    // the sentence is worth. It is logged, and its absence is warned about.
     requiredDataFields: ["findings"],
   });
   if (!result) {
@@ -417,8 +429,16 @@ async function main() {
   }
 
   log("info", `Playtester: ${result.summary}`);
+  // Logged whether or not anything is filed. A week the Playtester files nothing
+  // still owes an answer to "was this worth being here", and the prompt requires
+  // it to name the weakest thing even then — that sentence is the only record of
+  // a good week, so it must not be conditional on there being a complaint.
+  const verdict = typeof result.data.verdict === "string" ? result.data.verdict.trim() : "";
+  if (verdict) log("info", `Playtester verdict: ${verdict}`);
+  else log("warn", "Playtester: no verdict — the prompt asks for one in every session, filed or not.");
+
   const findings = Array.isArray(result.data.findings) ? result.data.findings : [];
-  const filed = fileFindings(findings);
+  const filed = fileFindings(findings, verdict);
   log("info", `Playtest complete — ${filed} finding(s) filed for the Product Manager to triage.`);
   printRunSummary("Playtester");
 }
