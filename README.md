@@ -93,12 +93,12 @@ Failure is first-class: a ticket accrues strikes, gets parked, and the Tech Lead
 
 | | |
 | --- | --- |
-| 💰 **Budget** | A shared daily ledger on the wiki counts real requests against 1000/day. Enforced at four points, because three of them have each been the hole. |
+| 💰 **Budget** | A spend cap on the OpenRouter key. Enforced at one point — the provider's — because it is the only one that cannot be wrong about the balance. A refusal comes back as an error and stops the chain. |
 | ⏱️ **Time** | Every limit nested so the agent stops itself first. A run killed mid-ticket leaves an orphaned branch; one that stops itself does not. |
 | 🔒 **Concurrency** | One `agent-main-writer` lock. Every wiki write is a retried read-modify-write — the naive version lost a race on ~100 consecutive merges and reported success each time. |
-| 🎲 **Models** | An ordered fallback chain: a cheap paid head, then five free models from four provider families, ordered by envelope reliability. Re-probed weekly. |
+| 🎲 **Models** | Two paid models from different provider families. The second exists so the Reviewer can be drawn from a model that did not write the code — review is only worth its request if it can disagree. |
 | ✅ **Enforcement** | `check` and `verify-product` are **required** on `main`. Before, every guarantee was self-imposed — the agents graded their own work and merged on the result. |
-| 📊 **Watching** | Health asks whether the week looks like a working one, including whether the deployed site is up. No model, no key — it must keep working on a day the budget is spent. |
+| 📊 **Watching** | Health asks whether the week looks like a working one, including whether the deployed site is up. No model, no key — it must keep working on a day the account is spent. |
 
 ## The product contract
 
@@ -131,7 +131,6 @@ flowchart TD
         STORY["Story — the arc"]
         CHANGE["Changelog — what shipped"]
         LESSONS["Lessons — what failed, and why"]
-        BUDGET["Budget — the request ledger"]
     end
 ```
 
@@ -158,7 +157,7 @@ Two channels, both **Discussions**, neither asking anything of you.
 
 | Secret | For |
 | --- | --- |
-| `OPENROUTER_API_KEY` | every model call |
+| `OPENROUTER_API_KEY` | every model call — **set a spend cap on it**, because that cap is the pipeline's only spending limit |
 | `AGENT_PAT` | issues, board, milestones, wiki, **opening** PRs |
 | `GITHUB_TOKEN` | **approving** PRs as a second identity *(built in)* |
 
@@ -169,4 +168,4 @@ npm test        # the harness's own suite
 npm run lint    # agents/ and docs/
 ```
 
-**To start over:** pause the workflows and dispatch `reset`, typing the repository name to confirm. It cancels runs, closes issues and agent PRs, clears the board, resets the wiki's memory, and deletes the product from `main` — leaving the machine, an empty `docs/`, and a full night's budget.
+**To start over:** pause the workflows and dispatch `reset`, typing the repository name to confirm. It cancels runs, closes issues and agent PRs, clears the board, resets the wiki's memory, and deletes the product from `main` — leaving the machine and an empty `docs/`.
