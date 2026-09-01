@@ -38,6 +38,21 @@ const WEATHER_MULTIPLIERS = {
 };
 const WEATHER_MUL_LERP_SPEED = 0.04; // same as FADE_LERP_SPEED for smooth transitions
 
+/* --- Seasonal modulation --- */
+const SEASON_MULTIPLIERS = {
+  'Spring': 0.53,
+  'Summer': 1.0,
+  'Autumn': 0.53,
+  'Winter': 0.0
+};
+
+const DOTS_PER_SEASON = {
+  'Spring': 3,
+  'Summer': 6,
+  'Autumn': 3,
+  'Winter': 0
+};
+
 /**
  * Create a soft circular glow texture on a canvas.
  * Warm pale yellow-white, fading to transparent at the edges.
@@ -191,23 +206,29 @@ export function createFireflies(scene) {
     reducedMotion: reducedMotion,
     plantGroups: plantGroups,
     glowTexture: glowTexture,
-    dotsPerPlantMin: DOTS_MIN,
-    dotsPerPlantMax: DOTS_MAX,
     driftRadius: DRIFT_RADIUS,
     peakOpacity: PEAK_OPACITY,
     fadeLerpSpeed: FADE_LERP_SPEED,
     weatherMultipliers: WEATHER_MULTIPLIERS,
+    seasonMultipliers: SEASON_MULTIPLIERS,
+    dotsPerSeason: DOTS_PER_SEASON,
     /** Current weather opacity multiplier (lerping toward target) */
     currentWeatherMul: function() { return currentWeatherMul; },
+    /** Current seasonal opacity multiplier (lerping toward target) */
+    currentSeasonMul: function() { return currentSeasonMul; },
     /** Total number of active dot sprites across all plants */
     totalDotCount: function() {
       return plantGroups.reduce(function(sum, g) { return sum + g.count; }, 0);
-    }
+    },
+    /** Number of visible dots per plant for the current season */
+    dotsPerPlantMin: DOTS_MIN,
+    dotsPerPlantMax: DOTS_MAX
   };
 
   /* --- Runtime opacity tracking for smooth fades --- */
   let currentOpacity = 0;
   let currentWeatherMul = 1.0;
+  let currentSeasonMul = 1.0;
 
   /**
    * Update the firefly system each frame.
@@ -246,17 +267,39 @@ export function createFireflies(scene) {
       currentWeatherMul = targetWeatherMul;
     }
 
+    /* --- Determine seasonal opacity multiplier --- */
+    let targetSeasonMul = 1.0;
+    let maxVisibleDots = DOTS_MAX;
+    const seasonEl = document.getElementById('season-display');
+    if (seasonEl) {
+      const season = seasonEl.textContent.trim();
+      const mul = SEASON_MULTIPLIERS[season];
+      if (mul !== undefined) {
+        targetSeasonMul = mul;
+      }
+      const maxDots = DOTS_PER_SEASON[season];
+      if (maxDots !== undefined) {
+        maxVisibleDots = maxDots;
+      }
+    }
+
+    /* Smoothly lerp seasonal multiplier to avoid snapping on transitions */
+    currentSeasonMul += (targetSeasonMul - currentSeasonMul) * FADE_LERP_SPEED;
+    if (Math.abs(currentSeasonMul - targetSeasonMul) < 0.0005) {
+      currentSeasonMul = targetSeasonMul;
+    }
+
     /* --- Compute target opacity from day/night cycle --- */
     let targetOpacity = 0;
 
     if (t >= 0.75) {
       if (t < 0.95) {
-        // Full Night — target peak opacity, modulated by weather
-        targetOpacity = PEAK_OPACITY * currentWeatherMul;
+        // Full Night — target peak opacity, modulated by weather and season
+        targetOpacity = PEAK_OPACITY * currentWeatherMul * currentSeasonMul;
       } else {
         // Fading out toward Morning — t ∈ [0.95, 1.0)
         const fadeT = (1.0 - t) / 0.05; // 1 → 0
-        targetOpacity = Math.max(0, fadeT) * PEAK_OPACITY * currentWeatherMul;
+        targetOpacity = Math.max(0, fadeT) * PEAK_OPACITY * currentWeatherMul * currentSeasonMul;
       }
     }
     // t < 0.75: target stays 0 — invisible during Morning, Midday, Evening
@@ -278,6 +321,16 @@ export function createFireflies(scene) {
       for (let i = 0; i < group.count; i++) {
         const dd = group.dotData[i];
         const i3 = i * 3;
+
+        /* Limit visible dots per season: dots beyond maxVisibleDots get zero size */
+        if (i >= maxVisibleDots) {
+          sizes[i] = 0;
+          // Reset to base position (no drift for hidden dots)
+          pos[i3] = dd.baseX;
+          pos[i3 + 1] = dd.baseY;
+          pos[i3 + 2] = dd.baseZ;
+          continue;
+        }
 
         if (!reducedMotion) {
           /* --- Pulsing: vary dot size with slow, irregular sine --- */
