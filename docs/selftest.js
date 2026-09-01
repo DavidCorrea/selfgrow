@@ -2573,37 +2573,25 @@ export async function checks() {
         gardenState && typeof gardenState.creatureUpdate === 'function') {
 
       // Store original getSeason to restore later
-      var origGetSeason = null;
-      if (gardenState.getSeason) {
-        origGetSeason = gardenState.getSeason;
-      }
+      const origGetSeason = gardenState && gardenState.getSeason ? gardenState.getSeason : null;
 
       try {
-        // Define expected targets matching SEASON_TARGETS in creature.js
-        var SEASON_TARGETS = {
-          'Spring': { orbit: 1.2, flap: 1.3, radius: 1.15 },
-          'Summer': { orbit: 1.2, flap: 1.3, radius: 1.15 },
-          'Autumn': { orbit: 0.7, flap: 0.7, radius: 0.9 },
-          'Winter': { orbit: 0.2, flap: 0.3, radius: 0.6 }
-        };
-        var EPS = 0.001;
-
         // Helper: mock getSeason, run enough updates for lerp to settle (~5s at 60fps)
         function mockSeasonAndSettle(seasonName, updateCount) {
           if (gardenState.getSeason) {
             gardenState.getSeason = function() { return seasonName; };
           }
-          updateCount = updateCount || 300; // ~5s at 60fps, 5/1.5 = 3.3 time constants → ~96% of final
-          for (var i = 0; i < updateCount; i++) {
+          const count = updateCount || 300; // ~5s at 60fps, 5/1.5 = 3.3 time constants → ~96% of final
+          for (let i = 0; i < count; i++) {
             gardenState.creatureUpdate(i * 0.016, 0.016);
           }
         }
 
         // --- Test 1: Spring/Summer → orbit ~1.2, flap ~1.3, radius ~1.15 ---
         mockSeasonAndSettle('Spring');
-        var springOrbit = creatureState.getSeasonOrbitMul();
-        var springFlap = creatureState.getSeasonFlapMul();
-        var springRadius = creatureState.getSeasonRadiusMul();
+        const springOrbit = creatureState.getSeasonOrbitMul();
+        const springFlap = creatureState.getSeasonFlapMul();
+        const springRadius = creatureState.getSeasonRadiusMul();
 
         if (springOrbit < 1.1 || springOrbit > 1.3) {
           problems.push('Spring butterfly orbit multiplier is ' + springOrbit.toFixed(3) + ', expected ~1.2 (within [1.1, 1.3]).');
@@ -2617,9 +2605,9 @@ export async function checks() {
 
         // --- Test 2: Summer matches Spring ---
         mockSeasonAndSettle('Summer');
-        var summerOrbit = creatureState.getSeasonOrbitMul();
-        var summerFlap = creatureState.getSeasonFlapMul();
-        var summerRadius = creatureState.getSeasonRadiusMul();
+        const summerOrbit = creatureState.getSeasonOrbitMul();
+        const summerFlap = creatureState.getSeasonFlapMul();
+        const summerRadius = creatureState.getSeasonRadiusMul();
 
         if (Math.abs(summerOrbit - 1.2) > 0.15) {
           problems.push('Summer butterfly orbit multiplier is ' + summerOrbit.toFixed(3) + ', expected ~1.2 (within 0.15).');
@@ -2633,9 +2621,9 @@ export async function checks() {
 
         // --- Test 3: Autumn → orbit ~0.7, flap ~0.7, radius ~0.9 ---
         mockSeasonAndSettle('Autumn');
-        var autumnOrbit = creatureState.getSeasonOrbitMul();
-        var autumnFlap = creatureState.getSeasonFlapMul();
-        var autumnRadius = creatureState.getSeasonRadiusMul();
+        const autumnOrbit = creatureState.getSeasonOrbitMul();
+        const autumnFlap = creatureState.getSeasonFlapMul();
+        const autumnRadius = creatureState.getSeasonRadiusMul();
 
         if (autumnOrbit < 0.55 || autumnOrbit > 0.85) {
           problems.push('Autumn butterfly orbit multiplier is ' + autumnOrbit.toFixed(3) + ', expected ~0.7 (within [0.55, 0.85]).');
@@ -2649,9 +2637,9 @@ export async function checks() {
 
         // --- Test 4: Winter → orbit ~0.2, flap ~0.3, radius ~0.6 ---
         mockSeasonAndSettle('Winter');
-        var winterOrbit = creatureState.getSeasonOrbitMul();
-        var winterFlap = creatureState.getSeasonFlapMul();
-        var winterRadius = creatureState.getSeasonRadiusMul();
+        const winterOrbit = creatureState.getSeasonOrbitMul();
+        const winterFlap = creatureState.getSeasonFlapMul();
+        const winterRadius = creatureState.getSeasonRadiusMul();
 
         if (winterOrbit < 0.05 || winterOrbit > 0.4) {
           problems.push('Winter butterfly orbit multiplier is ' + winterOrbit.toFixed(3) + ', expected ~0.2 (within [0.05, 0.4]).');
@@ -2670,23 +2658,23 @@ export async function checks() {
           gardenState.getSeason = function() { return 'Winter'; };
         }
         // Run enough frames to settle into Winter
-        for (var wi = 0; wi < 300; wi++) {
+        for (let wi = 0; wi < 300; wi++) {
           gardenState.creatureUpdate(wi * 0.016, 0.016);
         }
-        var settledWinterOrbit = creatureState.getSeasonOrbitMul();
+        const settledWinterOrbit = creatureState.getSeasonOrbitMul();
 
         // Now switch to Spring with just ONE frame
         if (gardenState.getSeason) {
           gardenState.getSeason = function() { return 'Spring'; };
         }
         gardenState.creatureUpdate(1000, 0.016);
-        var afterOneFrame = creatureState.getSeasonOrbitMul();
+        const afterOneFrame = creatureState.getSeasonOrbitMul();
 
         // After one frame (~16ms at 1.5s time constant), the multiplier should have moved
         // toward 1.2 but not reached it. The lerp factor would be 1 - exp(-0.016/1.5) ≈ 0.0106.
         // So new value = winterOrbit + (1.2 - winterOrbit) * ~0.01
-        var expectedDelta = (1.2 - settledWinterOrbit) * (1 - Math.exp(-0.016 / 1.5));
-        var actualDelta = afterOneFrame - settledWinterOrbit;
+        const expectedDelta = (1.2 - settledWinterOrbit) * (1 - Math.exp(-0.016 / 1.5));
+        const actualDelta = afterOneFrame - settledWinterOrbit;
 
         if (Math.abs(actualDelta - expectedDelta) > 0.001) {
           // Narrow tolerance for floating point mismatch but still flag if wildly off
@@ -2707,7 +2695,7 @@ export async function checks() {
         }
         // Run a few updates to lerp back to the real season
         if (typeof gardenState.creatureUpdate === 'function') {
-          for (var ri = 0; ri < 60; ri++) {
+          for (let ri = 0; ri < 60; ri++) {
             gardenState.creatureUpdate(ri * 0.016, 0.016);
           }
         }
