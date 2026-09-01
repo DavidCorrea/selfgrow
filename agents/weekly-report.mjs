@@ -48,12 +48,9 @@ export function cleanMarkdown(text) {
  * What the week actually contained, from what the pipeline already wrote down.
  * No model involved — the numbers are counted, not estimated.
  */
-export function gatherWeek({ closed, open, ledger }) {
+export function gatherWeek({ closed, open }) {
   const since = daysAgo(7);
   const shipped = closed.filter((i) => (i.closedAt || "") >= since);
-  const spend = [...ledger.entries()]
-    .filter(([day]) => day >= since)
-    .reduce((total, [, n]) => total + n, 0);
   return {
     shipped,
     parked: open.filter(isBlocked),
@@ -67,7 +64,6 @@ export function gatherWeek({ closed, open, ledger }) {
       parked: open.filter((i) => isManualIssue(i) && isBlocked(i)),
     },
     openCount: open.length,
-    spend,
   };
 }
 
@@ -103,7 +99,7 @@ export function renderDigest(week, narrative, milestone) {
   }
   lines.push(
     "## Where things stand",
-    `Shipped this week: ${week.shipped.length} · Open tickets: ${week.openCount} · Requests spent: ${week.spend}`,
+    `Shipped this week: ${week.shipped.length} · Open tickets: ${week.openCount}`,
     milestone ? `Current milestone: **${milestone.title}**` : "",
     "",
     "_Filed by the Product Manager. Nothing here needs a reply — the pipeline runs itself._"
@@ -122,8 +118,8 @@ const DIGEST_CATEGORY = process.env.DIGEST_CATEGORY || "Announcements";
  * digest's "what the garden grew" section as well as the Story page, and asking
  * twice would pay twice for the same paragraphs.
  */
-export async function publishWeeklyReport({ closed, open, ledger, milestone }) {
-  const week = gatherWeek({ closed, open, ledger });
+export async function publishWeeklyReport({ closed, open, milestone }) {
+  const week = gatherWeek({ closed, open });
 
   const narrative = cleanMarkdown(
     await withLogGroup("Weekly report", () =>

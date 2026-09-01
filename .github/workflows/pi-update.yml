@@ -55,11 +55,6 @@ jobs:
         run: node agents/pi-update.mjs
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          # Bounded by construction: 2 requests per probed model, at most
-          # MAX_MODEL_CANDIDATES (4) candidates plus a 6-model chain = 20. The
-          # ceiling is double that so a retry inside pi's runtime can't strand the
-          # run halfway through a repair with the chain half-written.
-          MODEL_REQUEST_BUDGET: '40'
           # A week with no pi release spends ZERO of this — the run exits before it
           # probes anything when the version hasn't moved.
           GH_TOKEN: ${{ secrets.AGENT_PAT }}

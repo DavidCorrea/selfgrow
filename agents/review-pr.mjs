@@ -46,7 +46,6 @@ import {
   mergePR,
   readVision,
   getLastModelUsed,
-  isRequestBudgetLow,
 } from "./shared.mjs";
 
 const PR_NUMBER = Number(process.env.PR_NUMBER || 0);
@@ -63,9 +62,17 @@ const PR_AUTHOR = process.env.PR_AUTHOR || "someone";
 // is wrong and leaves it alone.
 const MAX_CYCLES = Number(process.env.MAX_PR_REVIEW_CYCLES || 2);
 
-// Requests held back for the review that has to follow a fix. Starting a fix we
-// cannot afford to re-review leaves the PR in a worse state than not starting.
-const TAIL_RESERVE = Number(process.env.PR_TAIL_RESERVE || 30);
+// Wall-clock for the whole review, kept under the job's own timeout-minutes so
+// this loop stops itself rather than being killed mid-cycle with a branch pushed
+// and no verify run. Was a request budget; the requests are capped on the key now,
+// and time is what actually runs out.
+const RUN_BUDGET_MS =
+  Number(process.env.PR_REVIEW_BUDGET_MINUTES || 35) * 60 * 1000;
+
+// Time held back for the review that has to follow a fix. Starting a fix we cannot
+// afford to re-review leaves the PR in a worse state than not starting.
+const TAIL_RESERVE_MS =
+  Number(process.env.PR_TAIL_RESERVE_MINUTES || 12) * 60 * 1000;
 
 /** Say it on the PR. Nothing here is silent — the author is watching this page. */
 function say(body) {
@@ -179,6 +186,7 @@ async function main() {
   log("info", `=== Reviewing PR #${PR_NUMBER} by ${PR_AUTHOR} ===`);
   configureGitIdentity();
 
+  const deadline = Date.now() + RUN_BUDGET_MS;
   let problems = null;
 
   for (let cycle = 1; cycle <= MAX_CYCLES; cycle++) {
@@ -226,7 +234,7 @@ async function main() {
     // 4. Fix it, rather than handing it back. The last cycle reports instead:
     //    a fix nobody will re-review is a change pushed to someone's branch on
     //    nobody's authority.
-    if (cycle === MAX_CYCLES || isRequestBudgetLow(TAIL_RESERVE)) break;
+    if (cycle === MAX_CYCLES || Date.now() + TAIL_RESERVE_MS > deadline) break;
 
     const fix = await withLogGroup(`Builder (cycle ${cycle})`, () =>
       runAgent({

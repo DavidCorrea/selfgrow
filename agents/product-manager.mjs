@@ -31,9 +31,7 @@ import {
   repoRoot,
   getCurrentMilestone,
   setIssueMilestone,
-  parseLedger,
 } from "./shared.mjs";
-import { readPage } from "./wiki.mjs";
 import { publishWeeklyReport } from "./weekly-report.mjs";
 import { listSourceFiles, formatSources, SOURCE_DIR } from "./tech-lead.mjs";
 
@@ -616,7 +614,6 @@ async function main() {
       await publishWeeklyReport({
         closed: fetchClosedIssues(),
         open: fetchOpenIssues(200),
-        ledger: parseLedger(readPage("Budget.md")),
         milestone,
       });
     } catch (e) {

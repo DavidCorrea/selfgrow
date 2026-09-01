@@ -17,9 +17,6 @@
 // What it deliberately does NOT touch:
 //   - `Vision.md` — the new one is yours to write, and it is the single input
 //     every agent derives from. Nothing here can guess it.
-//   - `Budget.md` — the daily OpenRouter request ledger tracks the ACCOUNT, not
-//     the product. A reset is not a reason to let the day spend its allowance
-//     twice, so the running total stays.
 //   - Closed issues — GitHub keeps them as history and they cannot be deleted
 //     via the API. The Product Manager only ever reads OPEN issues, so they are
 //     inert; they just remain visible to humans.
@@ -216,7 +213,7 @@ function resetWikiMemory() {
   for (const [page, content] of Object.entries(EMPTY_WIKI_PAGES)) {
     writePage(page, content, `Reset ${page} for a fresh start`);
   }
-  log("info", "Left Vision.md and Budget.md untouched, by design.");
+  log("info", "Left Vision.md untouched, by design.");
 }
 
 /**

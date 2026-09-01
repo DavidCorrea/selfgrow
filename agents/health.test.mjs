@@ -7,7 +7,6 @@ import {
   checkShipping,
   checkChangelogKeepingUp,
   checkAbandonRate,
-  checkBudgetHeadroom,
   checkWeeklyAgents,
   checkDeployedSite,
 } from "./health.mjs";
@@ -74,23 +73,6 @@ test("noticing that tickets are being written the Devs cannot build", async (t) 
     const open = [issue(1, ["blocked"]), issue(2, ["blocked"]), issue(3, ["attempts:1"])];
     const finding = checkAbandonRate({ open, closedRecently: closed(3, daysAgo(1)) });
     assert.match(finding, /50% of engaged tickets are failing/);
-  });
-});
-
-test("noticing that the day's allowance is always spent", async (t) => {
-  const ledger = (...spends) => new Map(spends.map((spent, i) => [daysAgo(i), spent]));
-
-  await t.test("ignores a single hot day", () => {
-    assert.equal(checkBudgetHeadroom({ ledger: ledger(990, 400, 300, 200) }), null);
-  });
-
-  await t.test("reports a week spent at the ceiling", () => {
-    const finding = checkBudgetHeadroom({ ledger: ledger(990, 980, 960, 200) });
-    assert.match(finding, /3 of the last 4 days/);
-  });
-
-  await t.test("stays quiet without enough history to judge", () => {
-    assert.equal(checkBudgetHeadroom({ ledger: ledger(990, 990) }), null);
   });
 });
 

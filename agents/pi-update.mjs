@@ -46,7 +46,6 @@ import {
   createIssue,
   readModelChain,
   writeModelChain,
-  initDailyLedger,
   appendJobSummary,
   TECH_DEBT_LABEL,
 } from "./shared.mjs";
@@ -241,9 +240,6 @@ function buildPrBody({ from, to, report, repair, chainRows }) {
 async function main() {
   log("info", "=== pi update — bump the agent runtime and re-check the model chain ===");
   configureGitIdentity();
-  // The probes below spend real requests, so the day's ledger has to be open
-  // before the first one rather than on the first call inside a subprocess.
-  initDailyLedger();
 
   const from = installedVersion();
   const to = latestVersion();

@@ -44,14 +44,9 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           # One session over the manifest, the recently changed source, the
           # self-check suite and any parked tickets — plus however many files the
-          # review opens for itself. That last part is new and is the reason this
-          # is not sized like the other weeklies: it reads rather than being fed,
-          # so it spends turns. MAX_SESSION_TURNS (40) is the real ceiling on a
-          # review that keeps opening files.
-          #
-          # The account's 1000/day cap is enforced elsewhere: the shared ledger in
-          # shared.mjs, read before the first call and written after the session.
-          MODEL_REQUEST_BUDGET: '150'
+          # review opens for itself. It reads rather than being fed, so it spends
+          # turns: MAX_SESSION_TURNS (40) is the ceiling on a review that keeps
+          # opening files.
           GH_TOKEN: ${{ secrets.AGENT_PAT }}
           GH_PROJECT_OWNER: '@me'
           GH_PROJECT_NUMBER: '3'

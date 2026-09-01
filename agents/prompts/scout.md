@@ -18,7 +18,7 @@ The current code is in `docs/` (already checked out). Run `ls docs/` and read th
 ## Planning Rules
 - Your plan must follow the Vision and the shipping rules above. Beyond those, design and library choices are yours.
 - Always set `issueNumber` to the ticket you picked.
-- Plan the **smallest thing that satisfies the ticket**. The Builder has a fixed request budget: a plan that cannot ship inside it never ships at all — it fails and the ticket gets parked. When a ticket could be read narrowly or broadly, read it narrowly.
+- Plan the **smallest thing that satisfies the ticket**. The Builder gets one session with a hard turn and time limit: a plan that cannot ship inside it never ships at all — it fails and the ticket gets parked. When a ticket could be read narrowly or broadly, read it narrowly.
 - Name the files you will touch. A plan that names more than a handful is a plan that will not finish.
 
 For the Scout agent, `outcome` is always `"approve"` — you are planning the chosen ticket.

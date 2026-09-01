@@ -20,7 +20,6 @@ import {
   isBuildable,
   dependentsOf,
   effectivePriorityRank,
-  isRequestBudgetLow,
   isDailyQuotaExhausted,
   unmetDependencies,
   syncWaitingLabels,
@@ -39,10 +38,7 @@ import {
   appendChangelogEntry,
   verifyBuild,
   runAgent,
-  isRequestBudgetSpent,
   getLastModelUsed,
-  initDailyLedger,
-  MODEL_REQUEST_BUDGET,
 } from "./shared.mjs";
 
 const MAX_SCOUT_RETRIES = 2;
@@ -55,12 +51,18 @@ const MAX_BUILDER_RETRIES = 3;
 // the Scout stops re-picking it every run. See recordTicketFailure in shared.
 const MAX_TICKET_ATTEMPTS = Number(process.env.MAX_TICKET_ATTEMPTS || 2);
 
-// Requests held back for the steps AFTER the Builder — Reviewer, and a possible
+// Wall-clock held back for the steps AFTER the Builder — Reviewer, and a possible
 // address-feedback pass — so a completed build always gets the chance to become a
 // merge. Too small and the run throws away finished work, as it did on #149; too
-// large and it never starts anything. Sized from merged tickets, where a Reviewer
-// ran 7-9 turns, so 40 covers the tail several times over against a 150 budget.
-const BUILD_TAIL_RESERVE = Number(process.env.BUILD_TAIL_RESERVE || 40);
+// large and it never starts anything.
+//
+// This used to be measured in requests, against a per-run request budget. The
+// budget is gone (spend is capped on the key), but the lesson it encoded is not:
+// the scarce resource is now the run's wall clock, so the reserve is denominated
+// in that. Sized from merged tickets, where the Reviewer and a fix pass together
+// ran 10-20 minutes; 25 covers the tail with room to spare.
+const BUILD_TAIL_RESERVE_MS =
+  Number(process.env.BUILD_TAIL_RESERVE_MINUTES || 25) * 60 * 1000;
 
 // Drain several tickets per run, one after another, up to a wall-clock budget kept
 // under the job's timeout. This is the normal shape: the workflow runs ONE build
@@ -252,7 +254,7 @@ function planningFailure(addressedIssue, addressedIssueObj, addressedIssueTitle,
   return { addressedIssue, addressedIssueObj, outcome: "abandoned", reason, ticketFault: false };
 }
 
-async function buildTicket(openIssues, vision) {
+async function buildTicket(openIssues, vision, deadline) {
   let addressedIssue = null;
   let addressedIssueTitle = null;
   let addressedIssueObj = null;
@@ -334,21 +336,21 @@ async function buildTicket(openIssues, vision) {
         //
         // A Builder session is the most expensive thing here (measured: 66 turns,
         // 36 minutes) and it is worthless without the Reviewer that follows it. On
-        // #149 the Builder ran to completion, the Reviewer was then refused on
-        // budget, and the whole thing was thrown away — the run spent its entire
-        // allowance and shipped nothing. Reserve enough for the finishing steps
-        // BEFORE the expensive one, so the cheap tail can always run.
+        // #149 the Builder ran to completion, the Reviewer was then refused, and the
+        // whole thing was thrown away — the run spent everything it had and shipped
+        // nothing. Reserve enough for the finishing steps BEFORE the expensive one,
+        // so the cheap tail can always run.
         //
         // A retry is additionally optional: stop and leave the previous attempt's
         // PR intact and reviewable rather than starting work that strands it.
-        if (isRequestBudgetLow(BUILD_TAIL_RESERVE)) {
+        if (Date.now() + BUILD_TAIL_RESERVE_MS > deadline) {
           log(
             "warn",
             buildAttempt > 1
-              ? `Request budget nearly spent — not starting build attempt ${buildAttempt}. ` +
+              ? `Under ${Math.round(BUILD_TAIL_RESERVE_MS / 60000)}m of the run's time left — not starting build attempt ${buildAttempt}. ` +
                   `The PR stands as-is and the next run picks up the review.`
-              : `Request budget nearly spent — not starting the Builder, which could not be ` +
-                  `reviewed or merged on what remains. Leaving #${addressedIssue} for the next run.`
+              : `Under ${Math.round(BUILD_TAIL_RESERVE_MS / 60000)}m of the run's time left — not starting the Builder, which could not be ` +
+                  `reviewed or merged in what remains. Leaving #${addressedIssue} for the next run.`
           );
           break;
         }
@@ -365,10 +367,10 @@ async function buildTicket(openIssues, vision) {
             })
           );
         } catch (e) {
-          // Running out of budget, or out of daily quota, is not transient: every
+          // A capped session, or an exhausted account, is not transient: every
           // remaining attempt is guaranteed to fail the same way, and retrying
-          // just spends the reserve confirming it. Propagate instead.
-          if (e.budgetExhausted || isDailyQuotaExhausted(e)) throw e;
+          // just spends the tail confirming it. Propagate instead.
+          if (e.sessionCapped || isDailyQuotaExhausted(e)) throw e;
           // Transient model/provider errors (rate limit, upstream harmony-parse
           // glitch) — retry the next attempt rather than abandoning. Only a
           // persistent failure (all attempts) falls through to abandon below.
@@ -652,12 +654,6 @@ function maybeReplenishBacklog(mergedCount) {
 async function main() {
   configureGitIdentity();
 
-  // Open the shared ledger before the first budget check rather than lazily on the
-  // first model call: the loop below asks whether the day can afford another
-  // ticket, and on ticket 1 that question would otherwise be answered from an
-  // empty count — reading as "the whole day is free" on a day already spent.
-  initDailyLedger();
-
   // Product vision (from the wiki) grounds the Scout's plan and the Reviewer's
   // alignment check — they no longer read it from a repo file.
   const vision = readVision();
@@ -672,13 +668,6 @@ async function main() {
       log("info", `Time budget (${Math.round(RUN_BUDGET_MS / 60000)}m) reached — stopping after ${mergedCount} merge(s).`);
       break;
     }
-    // Checked between tickets, never mid-ticket — stopping inside buildTicket
-    // would strand a half-reviewed PR.
-    if (isRequestBudgetSpent()) {
-      log("info", `Model-request budget (${MODEL_REQUEST_BUDGET}) spent — stopping after ${mergedCount} merge(s) to leave requests for later runs.`);
-      break;
-    }
-
     // The Builder works only on existing tickets it hasn't already tried this
     // run — never invents work. A ticket is available when it isn't parked AND
     // everything it declared "Blocked by:" has shipped, so foundations get built
@@ -742,7 +731,7 @@ async function main() {
     }
 
     log("info", `=== Ticket ${n}/${MAX_TICKETS_PER_RUN} — ${candidates.length} buildable ticket(s) on the board ===`);
-    const result = await buildTicket(candidates, vision);
+    const result = await buildTicket(candidates, vision, deadline);
 
     if (result.addressedIssue) attempted.add(result.addressedIssue);
     if (result.outcome === "merged") {

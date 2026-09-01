@@ -41,15 +41,6 @@ jobs:
         run: node agents/playtester.mjs
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          # One impression per week, and a cheap one: the session is a single
-          # model call over a transcript that is already written by the time it
-          # starts. There is no tool use and nothing to iterate on, so this is
-          # generous rather than tight.
-          #
-          # The account's 1000/day cap is enforced elsewhere — the shared ledger
-          # in shared.mjs, read before the first call and written after the
-          # session, so this run sees what the day already spent.
-          MODEL_REQUEST_BUDGET: '60'
           # PAT covers issue creation; the findings are filed as ordinary issues.
           GH_TOKEN: ${{ secrets.AGENT_PAT }}
           GH_PROJECT_OWNER: '@me'

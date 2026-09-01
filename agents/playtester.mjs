@@ -36,7 +36,6 @@ import {
   fetchOpenIssues,
   createIssue,
   recordTicket,
-  initDailyLedger,
   PLAYTEST_LABEL,
 } from "./shared.mjs";
 import { pathToFileURL } from "url";
@@ -258,8 +257,6 @@ function fileFindings(findings) {
 }
 
 async function main() {
-  initDailyLedger();
-
   const session = await withLogGroup("Playing the app", () => observeApp());
   if (!session) {
     log("info", "Playtest: no session to report on.");
