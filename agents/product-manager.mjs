@@ -624,8 +624,8 @@ async function main() {
   printRunSummary("Product Manager");
 }
 
-// Only groom when RUN, never when imported — the same guard model-probe.mjs and
-// tech-lead.mjs use, so agents/dedup-check.mjs can exercise the dedup heuristic
+// Only groom when RUN, never when imported — the same guard tech-lead.mjs uses,
+// so agents/dedup-check.mjs can exercise the dedup heuristic
 // without spending a model session as a side effect of loading this file.
 export { titleTokens };
 

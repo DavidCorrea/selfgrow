@@ -69,16 +69,13 @@ export const promptsDir = join(__dirname, "prompts");
 // through to the next. Free models share tight, shared limits, so a fallback
 // chain matters far more than retrying one model.
 //
-// The chain is PAID-FIRST: a cheap paid head answers when the free tier is
-// rate-limited or capped, and costs nothing extra when it isn't, because a model
-// is only billed when it's actually reached. The free entries beneath it are the
-// safety net — an exhausted balance surfaces as an ordinary request error, which
-// is exactly what the fall-through below already handles.
+// Both entries are PAID. An exhausted balance or a hit spend cap surfaces as an
+// ordinary request error, which isDailyQuotaExhausted recognises and the
+// fall-through below already handles — and since that refusal is account-wide, it
+// stops the chain rather than walking it.
 // These are pi registry ids (provider/id); override via env TEXT_MODEL
-// (comma-separated). Unknown ids degrade cleanly — resolveTextModels() drops any
-// the registry doesn't know and auto-discovers free models when none remain.
-// The chain itself lives in agents/models.json, as DATA rather than a literal
-// here, so `pi-update.mjs` can repair it without editing prose it might mangle.
+// (comma-separated). The chain itself lives in agents/models.json, as DATA rather
+// than a literal here, so tooling can read and assert it without parsing prose.
 export const MODELS_FILE = join(__dirname, "models.json");
 
 /** The configured chain as [{ id, why }] — the file's order, which is meaningful. */
@@ -118,20 +115,14 @@ export function writeModelChain(entries) {
 // asserts the whole chain against the installed pi, and the weekly pi-update
 // workflow runs it on every bump, because pi's free lineup rotates.
 //
-// Ordered by ENVELOPE RELIABILITY, not by size. "Biggest first" was the old
-// rule and it was actively expensive: measured over one day, the 550B head
-// answered without usable JSON in 18 of 42 sessions and returned empty in 6 more
-// — a 57% failure rate — and each failure is a COMPLETED session that gets
-// discarded. One such Scout session ran 101 turns before failing, burning 63% of
-// that run's whole allowance before any work started.
+// TWO entries, and the second one is the point. A Reviewer drawn from the same
+// model that wrote the code is re-rolling one opinion, so preferDifferentModel
+// rotates the chain to put a different family first — which it can only do if
+// there is a different family in it. See models.json for why these two.
 //
-// Size also buys nothing here: docs/ is a single 16K file, so a 1M context
-// window is dead weight next to actually returning the JSON the agents parse.
-//
-// Deliberately SHORT. Each fallback is a real request charged against the daily
-// cap, so a long tail of weak models mostly buys wasted requests: by the time
-// the 7th model is answering, the output is rarely worth building on. One
-// model per provider family keeps the fallbacks genuinely independent.
+// It is NOT a cost ladder. The five free models that used to sit below the head
+// were fallbacks for an exhausted free tier that no longer bounds anything, and
+// each one cost a wasted request on the way down.
 export const TEXT_MODELS = (
   process.env.TEXT_MODEL || readModelChain().map((m) => m.id).join(",")
 )
@@ -142,8 +133,8 @@ export const TEXT_MODELS = (
 // Back-compat: the historical single-model default is just the head of the chain.
 export const MODEL_ID = TEXT_MODELS[0];
 
-// Never send thinkingLevel "off": every free model in pi's snapshot is a
-// reasoning model, and some endpoints reject a disabled-reasoning request
+// Never send thinkingLevel "off": both configured models are reasoning models,
+// and some endpoints reject a disabled-reasoning request
 // outright ("Reasoning is mandatory for this endpoint and cannot be disabled",
 // HTTP 400) — a wasted request against the daily cap. "low" is the real floor.
 export const MIN_THINKING_LEVEL = "low";
@@ -171,15 +162,28 @@ function getModelRuntime() {
 const modelIdOf = (m) => `${m.provider}/${m.id}`;
 
 /**
- * True when an error is OpenRouter's ACCOUNT-WIDE free-request cap, not a
- * per-model limit. This distinction is the difference between one wasted request
- * and a whole chain of them: the cap is shared by every free model, so falling
- * through to the next model cannot possibly succeed. Callers must stop the chain
- * immediately instead of burning the rest of it on a guaranteed failure.
+ * True when an error means the ACCOUNT is out of budget, rather than one model
+ * failing. This is THE stop signal: the pipeline no longer predicts its own spend
+ * from a ledger, so the provider refusing a request is how it learns the cap has
+ * been reached — see the session-limits block below.
+ *
+ * The distinction from a model fault is the difference between one wasted request
+ * and a whole chain of them: an account-wide refusal applies to every model, so
+ * falling through to the next one cannot possibly succeed. Callers must stop the
+ * chain immediately instead of burning the rest of it on a guaranteed failure.
+ *
+ * Three forms, because the account can run out in three ways: a spend cap or an
+ * empty balance on a paid key (402 / "insufficient credits" / "negative
+ * balance"), and the free tier's per-day request cap, which still applies if a
+ * `:free` id is ever configured again.
  */
 export function isDailyQuotaExhausted(err) {
   if (err?.quotaExhausted) return true; // already recognised and re-labelled once
-  return /free-models-per-day|free_models_per_day/i.test(err?.message || "");
+  const message = err?.message || "";
+  if (err?.status === 402 || /\b402\b/.test(message)) return true;
+  return /free-models-per-day|free_models_per_day|insufficient credits|insufficient_quota|negative balance|exceeded your .*(credit|spend|budget)/i.test(
+    message
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -278,12 +282,15 @@ async function getAllModels() {
 }
 
 /**
- * Resolve the text-model chain against pi's ACTUAL registry, so a pi upgrade or
- * a rotated-out free model degrades cleanly instead of throwing on the first id:
- *   1. keep configured TEXT_MODELS that exist; warn (distinctly) about any that don't,
- *   2. if none remain, auto-discover free OpenRouter text models pi currently
- *      knows (excluding meta-routers) so agents keep running.
- * Returns an ordered list of model ids (possibly empty).
+ * Resolve the text-model chain against pi's ACTUAL registry, so a pi upgrade that
+ * rotates an id out degrades to the surviving entries instead of throwing on the
+ * first one. Returns an ordered list of ids, possibly empty.
+ *
+ * An empty result is deliberately fatal upstream (runAgent throws). This used to
+ * auto-discover free OpenRouter models so the agents "kept running" — which is
+ * the quiet demotion model-check.mjs exists to catch, and it is worse now that the
+ * configured models are chosen for cost, coding ability and provider family. A
+ * loud failure is better than a day's work done by an arbitrary model.
  */
 /**
  * The chain, reordered so `avoid` is tried LAST.
@@ -315,30 +322,17 @@ async function resolveTextModels() {
     if (all.some((m) => modelIdOf(m) === id)) present.push(id);
     else log("warn", `Model chain: "${id}" is not in pi's registry (rotated out / version drift?) — skipping it.`);
   }
-  if (present.length) return present;
-
-  const discovered = all
-    .filter(
-      (m) =>
-        m.provider === "openrouter" &&
-        m.cost && Number(m.cost.input) === 0 && Number(m.cost.output) === 0 &&
-        !META_ROUTER_IDS.has(m.id)
-    )
-    .map(modelIdOf)
-    .slice(0, 4);
-  if (discovered.length) {
-    log("warn", `Model chain: no configured text model is in pi's registry — auto-discovered ${discovered.length} free model(s): ${discovered.join(", ")}.`);
-  } else {
-    log("warn", "Model chain: no configured or discoverable free text models.");
+  if (!present.length) {
+    log("error", "Model chain: NO configured text model is in pi's registry — fix agents/models.json (`node agents/model-check.mjs` says which entries are gone).");
   }
-  return discovered;
+  return present;
 }
 
 /**
  * Run a one-shot agent. With no explicit `modelId`, tries the TEXT_MODELS chain
- * in order until one answers — free models rate-limit constantly, so the next in
- * line usually picks up the slack. Pass an explicit `modelId` to pin a single
- * model (the vision path does this, driving its own chain).
+ * in order until one answers, so a provider having a bad afternoon costs a retry
+ * rather than the run. Pass an explicit `modelId` to pin a single model (the
+ * vision path does this, driving its own chain).
  *
  * @param {object} opts
  * @param {string} [opts.label]          - Name for logging.

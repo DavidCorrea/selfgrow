@@ -1,30 +1,13 @@
 {
-  "_comment": "The text-model chain, as DATA so automation can rewrite it safely. Order matters and encodes a judgment about envelope reliability — see the comment above TEXT_MODELS in shared.mjs. agents/pi-update.mjs replaces entries here only when an id has broken (rotated out of pi's registry, or — for free entries — no longer free); it never reorders a working chain. Edit by hand freely. An entry with \"paid\": true is one whose cost is DELIBERATE: model-check.mjs won't call it broken for billing money, and the free entries beneath it are its fallback if the key runs dry.",
+  "_comment": "The text-model chain, as DATA so automation can rewrite it safely. TWO paid models from different provider families, and the count is deliberate: the chain is not a cost-saving device (spend is capped on the OpenRouter key) but the mechanism behind preferDifferentModel — the Reviewer must be able to be drawn from a different model than wrote the code, or review cannot disagree for independent reasons. A second entry is also a real fallback when the first provider is down. The five free models that used to sit below the head are gone: they were fallbacks for an exhausted free tier that no longer bounds anything, they cost a wasted request each on the way down, and one of them was documented as returning an unusable envelope in 18 of 42 sessions. Order still matters — the head writes the code. agents/pi-update.mjs no longer rewrites this file; it asserts it against the installed pi and reverts the bump if an id is gone. Edit by hand.",
   "text": [
     {
       "id": "openrouter/deepseek/deepseek-v4-flash",
-      "paid": true,
-      "why": "Paid head, $0.14/$0.28 per M tokens as of pi 0.84.2 — 47th cheapest of the 327 paid OpenRouter models pi knows, and the cheapest that is both coding-tuned and a current frontier-family model. Cheaper entries exist; they trade away the reasoning the Builder leans on. Falls through to the free entries below on any error, including an exhausted balance."
+      "why": "Paid head, $0.14/$0.28 per M tokens as of pi 0.84.2 — 47th cheapest of the 327 paid OpenRouter models pi knows, and the cheapest that is both coding-tuned and a current frontier-family model. Cheaper entries exist; they trade away the reasoning the Builder leans on."
     },
     {
-      "id": "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
-      "why": "OpenRouter reports structured_outputs support — an imperfect but real proxy for envelope discipline."
-    },
-    {
-      "id": "openrouter/google/gemma-4-26b-a4b-it:free",
-      "why": "Structured-output support, different provider family than the entries above."
-    },
-    {
-      "id": "openrouter/liquid/lfm-2.5-2.6b:free",
-      "why": "Replaced `openrouter/openai/gpt-oss-20b:free` (missing) automatically; verified by model-probe against pi at the time of the swap."
-    },
-    {
-      "id": "openrouter/cohere/north-mini-code:free",
-      "why": "Coding-tuned, and the fourth distinct provider family in the chain."
-    },
-    {
-      "id": "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
-      "why": "Capable but envelope-unreliable (18 of 42 sessions unusable) — worth having only once everything above it has failed."
+      "id": "openrouter/qwen/qwen3.7-flash",
+      "why": "The independent second opinion, and a different provider family from the head — which is the whole point of it. $0.03/$0.13 per M tokens (cheaper than the head), a reasoning model, and a 1M context window. Reviewer sessions are drawn from here whenever the Builder used the head."
     }
   ]
 }
