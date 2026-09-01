@@ -3041,6 +3041,149 @@ export async function checks() {
     }
   }
 
+  /* ---------- Seasonal audio composition checks (issue #516) ---------- */
+  // The ambient audio system composes season modifiers on top of time-of-day
+  // and weather. We verify the composition logic by computing expected values
+  // for each season × time-of-day × weather combination and comparing against
+  // the state set by ambientAudio.update().
+  const ambientAudioSeason = gardenState && gardenState.ambientAudio;
+  if (!ambientAudioSeason) {
+    problems.push('window.__gardenState.ambientAudio is not set — cannot verify seasonal audio composition.');
+  } else {
+    // Inline the seasonal modifiers table for independent verification
+    const SEASON_AUDIO_MODIFIERS_CHECK = {
+      'Spring': { filterMul: 0.75, windMul: 0.8,  rainMul: 1.0 },
+      'Summer': { filterMul: 1.125, windMul: 1.0, rainMul: 1.0 },
+      'Autumn': { filterMul: 0.7,   windMul: 1.3,  rainMul: 1.1 },
+      'Winter': { filterMul: 0.15,  windMul: 0.4,  rainMul: 0.5 }
+    };
+
+    // Inline the time-of-day and weather tables from ambientAudio.js
+    const TIME_OF_DAY_AUDIO_CHECK = {
+      'Morning':  { windGain: 0.05, filterFreq: 250, rainMul: 0.75 },
+      'Midday':   { windGain: 0.08, filterFreq: 400, rainMul: 1.0  },
+      'Evening':  { windGain: 0.05, filterFreq: 200, rainMul: 0.75 },
+      'Night':    { windGain: 0.03, filterFreq: 80,  rainMul: 0.5  }
+    };
+
+    const WEATHER_AUDIO_MODIFIERS_CHECK = {
+      'Clear':         { windMul: 1.0, filterMul: 1.0,    rainBase: 0    },
+      'Overcast':      { windMul: 1.5, filterMul: 0.45,   rainBase: 0    },
+      'Light Drizzle': { windMul: 1.0, filterMul: 0.625,  rainBase: 0.04 }
+    };
+
+    const DEFAULT_WEATHER_MODIFIER_CHECK = { windMul: 1.0, filterMul: 1.0, rainBase: 0 };
+    const DEFAULT_SEASON_MODIFIER_CHECK = { filterMul: 1.0, windMul: 1.0, rainMul: 1.0 };
+
+    function computeExpectedAudio(weatherPhase, timeOfDay, season) {
+      var base = TIME_OF_DAY_AUDIO_CHECK[timeOfDay] || TIME_OF_DAY_AUDIO_CHECK['Midday'];
+      var weatherMod = WEATHER_AUDIO_MODIFIERS_CHECK[weatherPhase] || DEFAULT_WEATHER_MODIFIER_CHECK;
+      var seasonMod = SEASON_AUDIO_MODIFIERS_CHECK[season] || DEFAULT_SEASON_MODIFIER_CHECK;
+      return {
+        windGain: base.windGain * seasonMod.windMul * weatherMod.windMul,
+        filterFreq: base.filterFreq * seasonMod.filterMul * weatherMod.filterMul,
+        rainGain: weatherMod.rainBase * base.rainMul * seasonMod.rainMul
+      };
+    }
+
+    var S_NAMES = ['Spring', 'Summer', 'Autumn', 'Winter'];
+    var T_NAMES = ['Morning', 'Midday', 'Evening', 'Night'];
+    var W_NAMES = ['Clear', 'Overcast', 'Light Drizzle'];
+
+    var epsAudio = 0.001;
+    var seasonChecked = false;
+
+    S_NAMES.forEach(function(season) {
+      T_NAMES.forEach(function(timeOfDay) {
+        W_NAMES.forEach(function(weatherPhase) {
+          var expected = computeExpectedAudio(weatherPhase, timeOfDay, season);
+
+          // Call ambientAudio.update() to set the state
+          try {
+            ambientAudioSeason.update(weatherPhase, timeOfDay, season);
+          } catch (e) {
+            problems.push('ambientAudio.update("' + weatherPhase + '", "' + timeOfDay + '", "' + season + '") threw: ' + e.message);
+            return;
+          }
+
+          var state = ambientAudioSeason.state;
+          if (Math.abs(state.windGain - expected.windGain) > epsAudio) {
+            problems.push('Season audio [' + season + '+' + timeOfDay + '+' + weatherPhase + '] windGain: expected ' + expected.windGain.toFixed(4) + ', got ' + state.windGain.toFixed(4));
+          }
+          if (Math.abs(state.windFilterFrequency - expected.filterFreq) > epsAudio) {
+            problems.push('Season audio [' + season + '+' + timeOfDay + '+' + weatherPhase + '] windFilterFrequency: expected ' + expected.filterFreq.toFixed(1) + 'Hz, got ' + state.windFilterFrequency.toFixed(1) + 'Hz');
+          }
+          if (Math.abs(state.rainGain - expected.rainGain) > epsAudio) {
+            problems.push('Season audio [' + season + '+' + timeOfDay + '+' + weatherPhase + '] rainGain: expected ' + expected.rainGain.toFixed(4) + ', got ' + state.rainGain.toFixed(4));
+          }
+
+          seasonChecked = true;
+        });
+      });
+    });
+
+    if (!seasonChecked) {
+      problems.push('Seasonal audio composition checks did not run any test — the nested loops may have been skipped.');
+    }
+
+    // Verify specific edge cases from the acceptance criteria:
+    // Spring Midday Clear: windGain = 0.08 × 0.8 × 1.0 = 0.064, filterFreq = 400 × 0.75 × 1.0 = 300
+    var springMiddayClear = computeExpectedAudio('Clear', 'Midday', 'Spring');
+    if (Math.abs(springMiddayClear.filterFreq - 300) > 5) {
+      problems.push('Spring+Midday+Clear filter frequency expected ~300Hz, got ' + springMiddayClear.filterFreq.toFixed(1) + 'Hz — spring should produce a lighter breeze (filter ~300Hz).');
+    }
+    if (Math.abs(springMiddayClear.windGain - 0.064) > 0.001) {
+      problems.push('Spring+Midday+Clear windGain expected 0.064, got ' + springMiddayClear.windGain.toFixed(4));
+    }
+
+    // Summer Midday Clear: filterFreq = 400 × 1.125 × 1.0 = 450
+    var summerMiddayClear = computeExpectedAudio('Clear', 'Midday', 'Summer');
+    if (Math.abs(summerMiddayClear.filterFreq - 450) > 5) {
+      problems.push('Summer+Midday+Clear filter frequency expected ~450Hz, got ' + summerMiddayClear.filterFreq.toFixed(1) + 'Hz — summer should produce warmer wind (filter ~450Hz).');
+    }
+
+    // Autumn Midday Clear: filterFreq = 400 × 0.7 × 1.0 = 280
+    var autumnMiddayClear = computeExpectedAudio('Clear', 'Midday', 'Autumn');
+    if (Math.abs(autumnMiddayClear.filterFreq - 280) > 5) {
+      problems.push('Autumn+Midday+Clear filter frequency expected ~280Hz, got ' + autumnMiddayClear.filterFreq.toFixed(1) + 'Hz — autumn should produce rustling wind (filter ~280Hz).');
+    }
+    if (Math.abs(autumnMiddayClear.windGain - 0.104) > 0.002) {
+      problems.push('Autumn+Midday+Clear windGain expected ~0.104 (0.08×1.3), got ' + autumnMiddayClear.windGain.toFixed(4));
+    }
+
+    // Winter Midday Clear: filterFreq = 400 × 0.15 × 1.0 = 60
+    var winterMiddayClear = computeExpectedAudio('Clear', 'Midday', 'Winter');
+    if (Math.abs(winterMiddayClear.filterFreq - 60) > 5) {
+      problems.push('Winter+Midday+Clear filter frequency expected ~60Hz, got ' + winterMiddayClear.filterFreq.toFixed(1) + 'Hz — winter should produce deep hush (filter ~60Hz).');
+    }
+    if (winterMiddayClear.windGain > 0.033) {
+      problems.push('Winter+Midday+Clear windGain expected ≤ 0.032 (0.08×0.4), got ' + winterMiddayClear.windGain.toFixed(4) + ' — winter wind should be hushed.');
+    }
+
+    // Winter Midday Light Drizzle: rain gain should be halved (0.04×1.0×0.5 = 0.02)
+    var winterDrizzle = computeExpectedAudio('Light Drizzle', 'Midday', 'Winter');
+    if (Math.abs(winterDrizzle.rainGain - 0.02) > 0.001) {
+      problems.push('Winter+Midday+Light Drizzle rainGain expected 0.02 (0.04×1.0×0.5), got ' + winterDrizzle.rainGain.toFixed(4) + ' — winter should reduce rain gain.');
+    }
+
+    // Autumn Midday Light Drizzle: rain gain = 0.04 × 1.0 × 1.1 = 0.044
+    var autumnDrizzle = computeExpectedAudio('Light Drizzle', 'Midday', 'Autumn');
+    if (Math.abs(autumnDrizzle.rainGain - 0.044) > 0.001) {
+      problems.push('Autumn+Midday+Light Drizzle rainGain expected 0.044 (0.04×1.0×1.1), got ' + autumnDrizzle.rainGain.toFixed(4) + ' — autumn should boost rain gain.');
+    }
+
+    // Verify that update() without season still works (backward compat, default to no modifier)
+    try {
+      ambientAudioSeason.update('Clear', 'Midday');
+      var noSeasonWind = ambientAudioSeason.state.windGain;
+      if (Math.abs(noSeasonWind - 0.08) > 0.001) {
+        problems.push('ambientAudio.update("Clear", "Midday") without season set windGain to ' + noSeasonWind + ', expected ~0.08 (no seasonal modifier should apply when season is omitted).');
+      }
+    } catch (e) {
+      problems.push('ambientAudio.update() without season (backward compat) threw: ' + e.message);
+    }
+  }
+
   /* ---------- Firefly glow checks (issue #468) ---------- */
   const fireflyState = gardenState && gardenState.fireflies;
   if (!fireflyState) {
