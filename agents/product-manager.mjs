@@ -358,6 +358,9 @@ async function groomBacklog(proposed, openIssues, boardItems, milestone) {
     }
   }
   log("info", `Backlog: created ${created} ticket(s) (${openIssues.length} already open).`);
+  // Returned because retirement now depends on it: a run that promised
+  // replacements and created none does not get to close the originals.
+  return { proposed: proposed.length, created };
 }
 
 /**
@@ -451,7 +454,20 @@ function renderPlaytestFeedback(openIssues) {
  * Close the tickets the PM chose to retire (blocked tickets it split or dropped).
  * Returns the set of retired issue numbers. Best-effort.
  */
-async function retireBlocked(retire, openIssues = []) {
+/**
+ * Validate what the PM asked to retire, WITHOUT closing anything yet.
+ *
+ * Split from the closing half because closing used to run first, before the
+ * grooming pass that creates the replacements. On 2026-09-01 that cost the
+ * Playtester's first three findings: each was closed with "Replaced by new ticket
+ * '...'", the dedup pass then dropped all three proposals, and the run reported
+ * success with an empty board. The originals were the only copy of the
+ * observation, and the tickets they pointed at never existed.
+ *
+ * Returns { entries, numbers } — the retirements to execute later, and the set of
+ * numbers grooming should treat as already gone so they don't skew its dedup pool.
+ */
+function planRetirements(retire, openIssues = []) {
   const entries = (Array.isArray(retire) ? retire : [])
     .map((item) => ({
       number: Number(typeof item === "object" && item ? item.number : item),
@@ -460,7 +476,7 @@ async function retireBlocked(retire, openIssues = []) {
     }))
     .filter((entry) => Number.isInteger(entry.number) && entry.number > 0);
   const byNumber = new Map(openIssues.map((issue) => [issue.number, issue]));
-  const retired = new Set();
+  const allowed = [];
 
   for (const { number, reason, outOfScope } of entries) {
     // A person's request is not the pipeline's to quietly discard.
@@ -479,15 +495,54 @@ async function retireBlocked(retire, openIssues = []) {
       );
       continue;
     }
+    allowed.push({ number, reason, issue: byNumber.get(number) });
+  }
+  return { entries: allowed, numbers: new Set(allowed.map((e) => e.number)) };
+}
+
+/**
+ * Close what planRetirements approved — unless this run's grooming produced
+ * nothing.
+ *
+ * A grooming pass that proposed work and created NONE of it has had only its
+ * destructive half survive: the reorganisation it planned (retire these, create
+ * those) is now half a plan, and the half that remains deletes information. So it
+ * closes nothing, and everything it wanted to retire comes back next run at the
+ * cost of one grooming pass.
+ *
+ * Deliberately coarse. It also holds back retirements that had nothing to do with
+ * a replacement — an out-of-scope closure, say — because telling them apart means
+ * parsing the PM's prose for which ticket it meant, and a retirement deferred by a
+ * day costs nothing while a destroyed observation is unrecoverable. The asymmetry
+ * decides it.
+ */
+async function executeRetirements({ entries }, { proposed = 0, created = 0 } = {}) {
+  if (!entries.length) return new Set();
+
+  if (proposed > 0 && created === 0) {
+    log(
+      "error",
+      `Refusing to retire ${entries.length} ticket(s) (${entries.map((e) => `#${e.number}`).join(", ")}): ` +
+        `this run proposed ${proposed} replacement ticket(s) and created none of them, so closing these would ` +
+        `delete the only copy of what they say and point at work that does not exist. They stay open for the ` +
+        `next run.`
+    );
+    return new Set();
+  }
+
+  const retired = new Set();
+  for (const { number, reason, issue } of entries) {
     // Everything the PM closes arrives here — a ticket split into pieces, one
     // asking for finished work, one out of scope, a parked ticket it gave up on,
     // and a triaged playtest finding. They used to close with the same note,
     // which told anyone reading a triaged finding that it had "repeatedly failed
     // to ship" — the opposite of what happened to it. The PM now says why, and
     // the fallbacks below only cover a PM that didn't.
-    await retireIssue(number, reason || defaultRetireReason(byNumber.get(number)));
+    await retireIssue(number, reason || defaultRetireReason(issue));
     moveCard(number, "Done"); // reflect the closure on the board (best-effort)
-    recordTicket("retired", number, `#${number}`);
+    // The issue's TITLE, not its number again. This printed "Retired — #522 #522"
+    // in every run summary, which reads as a bug in the numbering.
+    recordTicket("retired", number, issue?.title || `#${number}`);
     retired.add(number);
   }
   if (retired.size) log("info", `Retired ${retired.size} ticket(s).`);
@@ -589,20 +644,25 @@ async function main() {
   }
 
   const data = parsed.data || {};
-  // 1. Retire blocked tickets the PM gave up on (split into fresh tickets via
-  //    `backlog`, or dropped outright). Done first so retired tickets drop out of
-  //    `remainingOpen` and don't skew the grooming pass's dedup below.
-  const retired = await retireBlocked(data.retire, openIssues);
+  // 1. Decide what to retire, but do not close it yet. Closing runs LAST, because
+  //    a retirement is usually justified by a replacement the grooming pass has
+  //    not created yet — see executeRetirements.
+  const planned = planRetirements(data.retire, openIssues);
   // Sharpen before triage, so a rewritten ticket is prioritized as what it has
   // become rather than as the one-liner it arrived as.
   sharpenTickets(data.sharpen, openIssues);
-  const remainingOpen = openIssues.filter((i) => !retired.has(i.number));
+  // Tickets on their way out are excluded from the pool grooming dedups against,
+  // exactly as they were when this ran before grooming — a proposal that replaces
+  // a ticket must not be rejected as a duplicate of the ticket it replaces.
+  const remainingOpen = openIssues.filter((i) => !planned.numbers.has(i.number));
   // 2. Triage + prioritize existing open tickets (pull inbound onto the board).
   triageExisting(remainingOpen, boardItems, data.triage);
   // 3. Create new prioritized tickets toward the vision.
   // Full board items, not just titles: grooming needs each item's column to tell
   // shipped work from work still in flight.
-  await groomBacklog(data.backlog, remainingOpen, boardItems, milestone);
+  const groomed = await groomBacklog(data.backlog, remainingOpen, boardItems, milestone);
+  // 4. Now close the originals — only if the replacements actually landed.
+  await executeRetirements(planned, groomed);
 
   kickBuilder();
 
@@ -627,7 +687,10 @@ async function main() {
 // Only groom when RUN, never when imported — the same guard tech-lead.mjs uses,
 // so agents/dedup-check.mjs can exercise the dedup heuristic
 // without spending a model session as a side effect of loading this file.
-export { titleTokens };
+// planRetirements and executeRetirements are exported for the test suite: the
+// invariant they hold — nothing is closed by a run that created no replacement —
+// is worth asserting directly, and the incident it came from was silent.
+export { titleTokens, planRetirements, executeRetirements };
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
   main().catch((err) => {
