@@ -738,6 +738,9 @@
       creatureUpdate: creature.update,
       fireflies: fireflies.state,
       firefliesUpdate: fireflies.update,
+      /* Base seasonal ground colour (before winter legacy or rain darkening).
+       * Set by startSeasonalCycle each tick, read by weather.js for rain darkening (issue #528). */
+      baseGroundColor: new THREE.Color(0x4a3728),
       /* Winter legacy effect (issue #471): set by startSeasonalCycle each tick */
       winterLegacyBlend: 0,
       updateButterflyDescription,

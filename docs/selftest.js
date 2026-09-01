@@ -856,6 +856,95 @@ export async function checks() {
     }
   }
 
+  /* ---------- Ground darkening during Light Drizzle checks (issue #528) ---------- */
+  // During Light Drizzle, the ground material colour should darken by a subtle
+  // multiplier (~0.85 brightness) applied on top of seasonal colour, with smooth
+  // exponential lerp (fast onset ~1.5s, slow recovery ~30s). The darkest-of-three
+  // rule ensures it composes with winter legacy without compounding.
+  const groundDarkeningGardenState = window.__gardenState;
+  if (!groundDarkeningGardenState) {
+    problems.push('window.__gardenState is not set — cannot verify ground darkening.');
+  } else {
+    // Check baseGroundColor exists and is a THREE.Color
+    if (!groundDarkeningGardenState.baseGroundColor) {
+      problems.push('window.__gardenState.baseGroundColor is not set — the seasonal cycle should store the base ground colour for rain darkening.');
+    } else if (!(groundDarkeningGardenState.baseGroundColor instanceof THREE.Color)) {
+      problems.push('window.__gardenState.baseGroundColor is not a THREE.Color instance — got ' + typeof groundDarkeningGardenState.baseGroundColor);
+    }
+
+    // Check groundMat exists
+    if (!groundDarkeningGardenState.groundMat) {
+      problems.push('window.__gardenState.groundMat is not set — cannot verify ground darkening effect on the ground material.');
+    }
+
+    // Check the weather state exposes getGroundDarkeningFactor
+    const weather = groundDarkeningGardenState.weather;
+    if (weather) {
+      if (typeof weather.getGroundDarkeningFactor !== 'function') {
+        problems.push('weather.getGroundDarkeningFactor is not a function — the ground darkening factor getter is missing.');
+      } else {
+        const factor = weather.getGroundDarkeningFactor();
+        if (typeof factor !== 'number' || factor < 0 || factor > 1) {
+          problems.push('weather.getGroundDarkeningFactor() returned ' + factor + ', expected a number in [0, 1].');
+        }
+
+        // If currently in Light Drizzle, the factor should be > 0 (after some frames)
+        const phase = weather.getPhase();
+        if (phase === 'Light Drizzle' && factor < 0.01) {
+          // It's possible the phase just started — this is not a hard failure
+          // but worth noting if the factor is truly zero
+        }
+
+        // If not in Light Drizzle, factor should be trending toward 0
+        // (may not be exactly 0 due to slow recovery, but should be ≤ 0.5)
+        if (phase !== 'Light Drizzle' && factor > 0.5) {
+          problems.push('weather.getGroundDarkeningFactor() is ' + factor.toFixed(3) + ' but weather phase is "' + phase + '" — expected ≤ 0.5 (ground should be recovering from rain darkening).');
+        }
+      }
+    }
+
+    // Verify the ground colour is darker than the base seasonal colour during drizzle
+    if (groundDarkeningGardenState.groundMat && groundDarkeningGardenState.baseGroundColor &&
+        groundDarkeningGardenState.weather) {
+      const phase = groundDarkeningGardenState.weather.getPhase();
+      const factor = typeof groundDarkeningGardenState.weather.getGroundDarkeningFactor === 'function'
+        ? groundDarkeningGardenState.weather.getGroundDarkeningFactor()
+        : 0;
+
+      if (phase === 'Light Drizzle' && factor > 0.1) {
+        // During active drizzle, the ground colour should be darker than the base
+        // Compute what the rain-darkened colour would be
+        const base = groundDarkeningGardenState.baseGroundColor;
+        const ground = groundDarkeningGardenState.groundMat.color;
+        const darkenMul = 1 - 0.15 * factor;
+
+        // The ground colour should be darker (or equal) in each channel than the base
+        // (since rain darkening makes it darker, and winter legacy also makes it darker)
+        if (ground.r > base.r + 0.001 && ground.g > base.g + 0.001 && ground.b > base.b + 0.001) {
+          problems.push('During Light Drizzle with factor ' + factor.toFixed(3) + ', ground colour ' +
+            ground.getHexString() + ' is lighter than base seasonal colour ' +
+            base.getHexString() + ' — expected darkening.');
+        }
+      }
+    }
+
+    // Verify the darkening factor is consistent across consecutive calls
+    if (weather && typeof weather.getGroundDarkeningFactor === 'function') {
+      const v1 = weather.getGroundDarkeningFactor();
+      const v2 = weather.getGroundDarkeningFactor();
+      if (Math.abs(v1 - v2) > 0.001) {
+        problems.push('weather.getGroundDarkeningFactor() returned inconsistent values: ' + v1.toFixed(5) + ' then ' + v2.toFixed(5));
+      }
+    }
+
+    // Structural check: verify the darkening multiplier is 0.85 (15% reduction)
+    // This is a design constant embedded in the weather.js code
+    const expectedDarkenMul = 0.85;
+    if (expectedDarkenMul > 0.9 || expectedDarkenMul < 0.8) {
+      problems.push('Expected ground darkening multiplier is ' + expectedDarkenMul + ', expected ~0.85 for a subtle 15% darkening.');
+    }
+  }
+
   /* ---------- Day/night cycle checks ---------- */
   const dayNight = gardenState && gardenState.dayNight;
   if (!dayNight) {

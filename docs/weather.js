@@ -103,6 +103,10 @@ const PHASE_NAMES = [
 
 /* Colour cache objects to avoid creating new THREE.Color on every frame */
 const _tempColor = new THREE.Color();
+const _winterGroundColor = new THREE.Color(0x3a2a1a);
+const _rainColor = new THREE.Color();
+const _winterLegacyColor = new THREE.Color();
+const _finalColor = new THREE.Color();
 
 /** Interpolate between two adjacent weather phase parameter sets */
 function interpolatePhase(t, out) {
@@ -215,6 +219,13 @@ export function startWeatherCycle(sunLight, scene, ambientLight, hemiLight, fill
     swayAmplitudeMul: 1.0
   };
 
+  /* --- Ground darkening during Light Drizzle (issue #528) ---
+   * Exponential lerp factor: 0 = no darkening, 1 = fully dark (~0.85 brightness).
+   * Onset rate: reaches ~95% in 1.5s (rate ≈ 2.0).
+   * Recovery rate: reaches ~5% in 30s (rate ≈ 0.1). */
+  let rainDarkeningFactor = 0;
+  let _lastWeatherTick = performance.now();
+
   /* Expose state for selftest and external querying */
   const weatherState = {
     getPhase: () => getPhaseName((performance.now() - startTime) % CYCLE_DURATION_MS / CYCLE_DURATION_MS),
@@ -222,7 +233,8 @@ export function startWeatherCycle(sunLight, scene, ambientLight, hemiLight, fill
       const elapsed = performance.now() - startTime;
       return (elapsed % CYCLE_DURATION_MS) / CYCLE_DURATION_MS;
     },
-    getSwayAmplitudeMul: () => current.swayAmplitudeMul
+    getSwayAmplitudeMul: () => current.swayAmplitudeMul,
+    getGroundDarkeningFactor: () => rainDarkeningFactor
   };
 
   window.__gardenState.weather = weatherState;
@@ -305,6 +317,43 @@ export function startWeatherCycle(sunLight, scene, ambientLight, hemiLight, fill
         plant2.leafMat.roughness = current.leafRoughness;
         plant2.leafMat.metalness = current.leafMetalness;
       }
+    }
+
+    // --- Ground darkening during Light Drizzle (issue #528) ---
+    // Darkest-of-three rule: the darkest of (seasonal base, winter-legacy-blended,
+    // rain-darkened) dominates per channel, so it never compounds with winter legacy.
+    if (gs && gs.groundMat && gs.baseGroundColor) {
+      const now = performance.now();
+      const dt = Math.min((now - _lastWeatherTick) / 1000, 0.05);
+      _lastWeatherTick = now;
+
+      const isDrizzle = current.name === 'Light Drizzle';
+
+      if (isDrizzle) {
+        // Fast onset toward 1.0 — reaches ~95% in 1.5s
+        const onsetRate = 2.0;
+        rainDarkeningFactor += (1 - rainDarkeningFactor) * (1 - Math.exp(-onsetRate * dt));
+      } else {
+        // Slow recovery toward 0.0 — reaches ~5% in 30s
+        const recoveryRate = 0.1;
+        rainDarkeningFactor *= Math.exp(-recoveryRate * dt);
+      }
+
+      // Compute rain-darkened colour: base seasonal colour multiplied by (1 - 0.15 * factor)
+      const darkenMul = 1 - 0.15 * rainDarkeningFactor;
+      _rainColor.copy(gs.baseGroundColor).multiplyScalar(darkenMul);
+
+      // Compute winter-legacy colour from base seasonal colour
+      const winterLegacyBlend = gs.winterLegacyBlend || 0;
+      _winterLegacyColor.copy(gs.baseGroundColor).lerp(_winterGroundColor, winterLegacyBlend);
+
+      // Darkest of the three dominates (per-channel minimum)
+      // Manual per-channel min — THREE.Color.min() may not exist in all versions (r170)
+      _finalColor.copy(_winterLegacyColor);
+      _finalColor.r = Math.min(_finalColor.r, _rainColor.r);
+      _finalColor.g = Math.min(_finalColor.g, _rainColor.g);
+      _finalColor.b = Math.min(_finalColor.b, _rainColor.b);
+      gs.groundMat.color.copy(_finalColor);
     }
 
     // Expose progress for persistence
