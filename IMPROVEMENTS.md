@@ -80,3 +80,29 @@ regression in how efficiently the pipeline works, and it now exists only as
 scattered per-run lines in job logs nobody reads. This is the same gap as the
 entry above about throughput, in a different unit — and both would be answered by
 one structured line per run appended somewhere durable.
+
+## Nothing catches a semantically duplicated ticket
+
+**Where:** `agents/product-manager.mjs` — `groomBacklog`.
+
+The dedup is now a single deterministic pass over title tokens at a 0.9
+similarity threshold, which catches only near-identical titles. The model pass
+that caught reworded duplicates is gone: it deleted all three of the Playtester's
+first findings-turned-tickets in one 5.9-second call on 2026-09-01, and three
+sound proposals on 2026-08-26.
+
+So a proposal that asks for work already queued in different words will now reach
+the board. That is the intended trade — a duplicate costs one grooming pass to
+retire, and the PM reads the whole board every morning — but it is a real gap
+rather than a solved problem.
+
+**Why it matters:** if duplicates start accumulating faster than grooming retires
+them, the board stops being a queue and the Builder spends real sessions on work
+already done. The signal to watch for is retirements citing "already queued"
+climbing run over run.
+
+Worth noting what would close it properly: the same thing that would fix the
+Reviewer's independence. A ticket whose acceptance criteria are executable checks
+is a duplicate exactly when its checks already pass — which is a question the
+pipeline can answer by running them, rather than by asking a model to compare
+prose.

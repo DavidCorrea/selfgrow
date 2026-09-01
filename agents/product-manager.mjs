@@ -9,7 +9,6 @@ import {
   fillTemplate,
   runAgent,
   extractAgentResponse,
-  extractJSON,
   errorData,
   getBoardSnapshot,
   readVision,
@@ -49,10 +48,12 @@ const isWeeklyRun = () => new Date().getUTCDay() === WEEKLY_DAY;
 
 // How much title-token similarity counts as a near-duplicate.
 //
-// This pass now catches only NEAR-IDENTICAL titles. Anything more subtle is the
-// model's job (filterSemanticDuplicates), because tokens fundamentally cannot
-// tell "a device found in the Condenser Gallery" from "the Condenser Gallery"
-// itself — and getting that wrong here deletes good work with no recovery.
+// This pass catches only NEAR-IDENTICAL titles, and nothing catches anything
+// subtler. A model pass used to; it deleted three good tickets in one call and is
+// gone (see groomBacklog). Tokens fundamentally cannot tell "a device found in the
+// Condenser Gallery" from "the Condenser Gallery" itself, so the threshold is set
+// where tokens are actually reliable and everything below it reaches the board —
+// where a duplicate costs one grooming pass rather than the work.
 //
 // The measure is Jaccard (shared / union), NOT the overlap coefficient
 // (shared / smaller set) this used to use. Overlap rewards size mismatch: a
@@ -129,42 +130,6 @@ export function nearDuplicateOf(title, existing) {
   return bestScore >= NEAR_DUP_THRESHOLD ? { title: best, score: bestScore } : null;
 }
 
-/**
- * Second-line dedup: a model call that catches reworded duplicates the token
- * overlap missed (same goal, different vocabulary). Best-effort — on any failure
- * it keeps every proposal rather than risk dropping good tickets.
- */
-async function filterSemanticDuplicates(proposals, existingTitles) {
-  if (proposals.length === 0 || existingTitles.length === 0) return proposals;
-
-  const systemPrompt = `You are deduplicating a product backlog.
-
-Existing tickets:
-${existingTitles.map((t) => `- ${t}`).join("\n")}
-
-Proposed new tickets:
-${proposals.map((p, i) => `${i}. ${p.title} — ${p.body}`).join("\n")}
-
-Return ONLY JSON: {"duplicates": [<index>, ...]} listing the indexes of proposed tickets that are substantially the same as an EXISTING ticket above — the same feature or goal, even if worded differently. Use an empty array if none are duplicates.`;
-
-  try {
-    const out = await withLogGroup("Dedup check", () =>
-      runAgent({ label: "PM dedup", systemPrompt, tools: [] })
-    );
-    const parsed = extractJSON("PM dedup", out);
-    const dupes = new Set(
-      (parsed && Array.isArray(parsed.duplicates) ? parsed.duplicates : []).map(Number)
-    );
-    const kept = proposals.filter((_, i) => !dupes.has(i));
-    if (kept.length < proposals.length) {
-      log("info", `Dedup: semantic pass dropped ${proposals.length - kept.length} proposal(s).`);
-    }
-    return kept;
-  } catch (e) {
-    log("warn", "Dedup: semantic pass failed — keeping the heuristic survivors.", errorData(e));
-    return proposals;
-  }
-}
 
 /**
  * Hand off to the Builder — but only when grooming actually left something
@@ -252,34 +217,39 @@ async function groomBacklog(proposed, openIssues, boardItems, milestone) {
     return;
   }
 
-  // Two pools, because the two passes are good at different questions.
+  // ONE pass, deterministic, answering only "is this already queued?".
   //
-  // The token pass only compares against work that is still OPEN or in flight —
-  // "is this already queued?" is a question tokens can answer. It deliberately
-  // ignores the Done column: that pool only ever grows (108 shipped titles and
-  // counting), so including it made every run harder to pass than the last, and
-  // the pipeline eventually proposed nothing at all.
+  // There used to be a second, semantic pass: a model call handed the existing
+  // titles and every proposal, returning the indexes to delete. It is gone. On
+  // 2026-09-01 it dropped all three of the Playtester's first findings-turned-
+  // tickets in 5.9 seconds against a board holding one unrelated audio ticket,
+  // and because the PM had already closed the originals citing them, the day's
+  // feedback was destroyed. On 2026-08-26 the same shape of failure cost three
+  // proposals. A judgement that deletes work, cannot be reproduced, and is
+  // confidently wrong as cheaply as it is right does not belong in front of the
+  // board.
   //
-  // The model pass sees the same live pool, deliberately NOT the whole history.
-  // It briefly saw every shipped title too, and that reintroduced the very
-  // ratchet this was meant to remove: ~150 titles plus every proposal's body
-  // blew past the 12-minute session cap, the pass aborted, and tickets were
-  // created with no semantic check at all.
+  // What replaces it is nothing, on purpose. A duplicate ticket that reaches the
+  // board costs one grooming pass to notice and retire — the PM reads the whole
+  // board every morning. A proposal deleted here costs the work itself, and there
+  // is no record it existed. Those are not comparable prices.
+  //
+  // The pool is work still OPEN or in flight, deliberately NOT the Done column:
+  // that pool only ever grows (108 shipped titles and counting), so including it
+  // made every run harder to pass than the last, and the pipeline eventually
+  // proposed nothing at all.
   //
   // "Has this already been BUILT?" is answered in the grooming session itself,
-  // which reads docs/ and retires a ticket asking for finished work. It used to
-  // be a separate agent running per ticket at build time, which cost a whole
-  // ticket to learn what one narrow read answers here. This pass only answers the
-  // cheap question: "is this already queued?"
+  // which reads docs/ and retires a ticket asking for finished work.
   const liveTitles = [
     ...openIssues.map((i) => i.title),
     ...boardItems.filter((i) => i.status !== "Done").map((i) => i.title),
   ].filter(Boolean);
 
-  // Pass 1 — deterministic: drop near-identical titles only, and dedup later
-  // proposals against ones already accepted this run.
+  // Near-identical titles only (NEAR_DUP_THRESHOLD is 0.9), and later proposals
+  // are deduped against ones already accepted this run.
   const seen = liveTitles.map((title) => ({ title, tokens: titleTokens(title) }));
-  const heuristicSurvivors = [];
+  const survivors = [];
   for (const item of proposed) {
     if (!item || !item.title || !item.body) continue;
     const match = nearDuplicateOf(item.title, seen);
@@ -290,25 +260,24 @@ async function groomBacklog(proposed, openIssues, boardItems, milestone) {
       );
       continue;
     }
-    heuristicSurvivors.push(item);
+    survivors.push(item);
     seen.push({ title: item.title, tokens: titleTokens(item.title) });
   }
 
-  // Pass 2 — semantic: a model call decides everything ambiguous, including
-  // whether a proposal repeats something already shipped.
-  const survivors = await filterSemanticDuplicates(heuristicSurvivors, liveTitles);
-
-  // Dropping EVERY proposal is a filter symptom, not a finished project — the
-  // run just spent a full session generating work and kept none of it. Loud, so
-  // the next occurrence is one glance at the summary rather than a forensic dig
-  // through the logs.
-  if (survivors.length === 0) {
+  // A filter that rejects EVERYTHING is reporting on itself, not on the backlog.
+  // The run just spent a session generating work and would keep none of it, and
+  // "the project is complete" is a far less likely explanation than "the
+  // comparison is wrong". So the proposals are kept and the filter is what gets
+  // doubted. Warned loudly either way: a duplicate reaching the board is cheap to
+  // retire, and this line is how the miscalibration gets noticed.
+  if (survivors.length === 0 && proposed.length > 0) {
     log(
       "warn",
-      `Backlog: all ${proposed.length} proposed ticket(s) were rejected as duplicates and NOTHING was created. ` +
-        `That usually means the dedup is miscalibrated rather than that the project is complete — check the ` +
-        `skip lines above for what each one matched.`
+      `Backlog: the dedup rejected ALL ${proposed.length} proposed ticket(s) — keeping them anyway. ` +
+        `A filter that drops everything is miscalibrated rather than a sign the project is finished; ` +
+        `check the skip lines above for what each one matched, and retire any real duplicate next run.`
     );
+    survivors.push(...proposed.filter((item) => item && item.title && item.body));
   }
 
   // Create dependencies before the tickets that wait on them, so each body can

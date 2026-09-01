@@ -57,9 +57,10 @@ jobs:
         run: node agents/product-manager.mjs
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          # Three sessions on an ordinary day — app review, the main grooming pass,
-          # the dedup check — and a fourth on Sundays, when it also writes the week's
-          # report. The PM runs FIRST each day (00:30) and then dispatches the Devs.
+          # Two sessions on an ordinary day — app review and the main grooming pass —
+          # and a third on Sundays, when it also writes the week's report. The dedup
+          # check used to be a third session; it deleted good tickets and is gone.
+          # The PM runs FIRST each day (00:30) and then dispatches the Devs.
           #
           # PAT carries `project` scope (board) and covers issue creation.
           GH_TOKEN: ${{ secrets.AGENT_PAT }}
