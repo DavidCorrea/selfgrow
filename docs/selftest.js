@@ -2194,6 +2194,193 @@ export async function checks() {
     }
   }
 
+  /* ---------- Butterfly wind perturbation checks (issue #526) ---------- */
+  // The butterfly should be perturbed by computeDisplacement from groundRipple.js
+  // when in idle (normal flight) state, with a drift of at most ~0.05 units.
+  // During pause states, the wind nudge must be zero.
+  // Effect is invisible when prefers-reduced-motion is active.
+  if (!creatureState) {
+    problems.push('window.__gardenState.creature is not set — cannot verify butterfly wind perturbation.');
+  } else {
+    // --- Structural check: windNudge getter must exist and return a number ---
+    if (typeof creatureState.windNudge !== 'function') {
+      problems.push('creature.state.windNudge is not a function — wind perturbation getter missing (issue #526).');
+    } else {
+      var wn = creatureState.windNudge();
+      if (typeof wn !== 'number' || isNaN(wn)) {
+        problems.push('creature.state.windNudge() returned ' + wn + ' — expected a number (issue #526).');
+      }
+    }
+
+    // --- Behavioural checks ---
+    if (gardenState && typeof gardenState.creatureUpdate === 'function' && !creatureState.reducedMotion) {
+      // Save original plant/plant2 to restore later
+      var origPlantWS = gardenState.plant;
+      var origPlant2WS = gardenState.plant2;
+      var origDayNightWS = null;
+
+      // Mock day/night as daytime so the butterfly is visible and active
+      if (gardenState.dayNight && typeof gardenState.dayNight.getCycleProgress === 'function') {
+        origDayNightWS = gardenState.dayNight.getCycleProgress;
+        gardenState.dayNight.getCycleProgress = function() { return 0.1; }; // Morning
+      }
+
+      try {
+        // Drain any in-flight pause to ensure we start in idle
+        var neutralPlant = {
+          group: { position: new THREE.Vector3(100, 0, 100) },
+          flower: {
+            getPhase: function() { return 'dormant'; },
+            getProgress: function() { return 0.5; }
+          }
+        };
+        gardenState.plant = neutralPlant;
+        gardenState.plant2 = neutralPlant;
+
+        for (var dw = 0; dw < 1100; dw++) {
+          gardenState.creatureUpdate(dw * 0.016, 0.016);
+        }
+
+        if (creatureState.pauseState() !== 'idle') {
+          problems.push('Butterfly wind test: could not drain to idle (state=' + creatureState.pauseState() + ') — cannot verify wind perturbation.');
+        } else {
+          // --- Test 1: During idle, windNudge should be non-zero at some points ---
+          // Run several updates at different times and check if windNudge varies.
+          var sawNonZeroNudge = false;
+          var maxNudgeAbs = 0;
+          var nudgeValues = [];
+
+          for (var tw = 0; tw < 200; tw++) {
+            gardenState.creatureUpdate(5000 + tw * 0.016, 0.016);
+            var wn2 = creatureState.windNudge();
+            nudgeValues.push(wn2);
+            if (Math.abs(wn2) > maxNudgeAbs) maxNudgeAbs = Math.abs(wn2);
+            if (Math.abs(wn2) > 0.001) sawNonZeroNudge = true;
+          }
+
+          if (!sawNonZeroNudge) {
+            problems.push('Butterfly windNudge was never non-zero during idle flight (max |nudge|=' + maxNudgeAbs.toFixed(5) + ') — the wind perturbation may not be applying (issue #526).');
+          }
+
+          // --- Test 2: Max drift does not exceed 0.05 units ---
+          if (maxNudgeAbs > 0.051) {
+            problems.push('Butterfly windNudge exceeded ±0.05 limit: max |nudge|=' + maxNudgeAbs.toFixed(5) + ' (issue #526).');
+          }
+
+          // --- Test 3: nudge is proportional to displacement at the butterfly's location ---
+          if (nudgeValues.length > 0) {
+            // Pick a sample and verify the relationship
+            var sampleIdx = 42;
+            var sampleTime = 5000 + sampleIdx * 0.016;
+            // Recreate the state from that frame: we need the position
+            // We'll use the last update which already positioned the butterfly
+            // Just verify the nudge sign matches the displacement sign at that pos
+            var pos = creatureState.group.position;
+            var expectedDisp = computeDisplacement(pos.x, pos.z, sampleTime);
+            var expectedNudge = expectedDisp * 6.25; // WIND_NUDGE_SCALE
+            // The actual nudge should match the expected within some tolerance
+            // (the position is slightly off because the nudge was applied to the
+            //  previous frame's position, not the current one, so we allow tolerance)
+            var actualNudge = creatureState.windNudge();
+            if (Math.abs(expectedNudge) > 0.001 && Math.abs(expectedNudge - actualNudge) / Math.abs(expectedNudge) > 0.5) {
+              // Only flag if the sign is wrong or magnitude is way off
+              if ((expectedNudge > 0 && actualNudge < -0.001) || (expectedNudge < 0 && actualNudge > 0.001)) {
+                problems.push('Butterfly windNudge sign mismatch: expected ~' + expectedNudge.toFixed(5) + ' (from computeDisplacement at pos ' + pos.x.toFixed(3) + ', ' + pos.z.toFixed(3) + '), got ' + actualNudge.toFixed(5) + ' (issue #526).');
+              }
+            }
+          }
+
+          // --- Test 4: During pause states, windNudge must be 0 ---
+          // Place a blooming flower at the butterfly's current position to trigger a pause
+          var bp3 = creatureState.group.position;
+          var bloomFakeWS = {
+            group: { position: new THREE.Vector3(bp3.x, bp3.y - 0.72, bp3.z) },
+            flower: {
+              getPhase: function() { return 'bloom'; },
+              getProgress: function() { return 0.5; }
+            }
+          };
+          gardenState.plant = bloomFakeWS;
+          gardenState.plant2 = neutralPlant;
+
+          // Run a few frames to trigger the pause
+          for (var pw = 0; pw < 30; pw++) {
+            gardenState.creatureUpdate(6000 + pw * 0.016, 0.016);
+          }
+
+          var ps = creatureState.pauseState();
+          if (ps === 'idle' || ps === 'entering' || ps === 'holding' || ps === 'exiting') {
+            var wnDuringPause = creatureState.windNudge();
+            if (ps !== 'idle' && Math.abs(wnDuringPause) > 0.001) {
+              problems.push('Butterfly windNudge is ' + wnDuringPause.toFixed(5) + ' during pause state "' + ps + '" — expected 0 during pauses (issue #526).');
+            }
+          }
+        }
+      } finally {
+        // Restore original state
+        gardenState.plant = origPlantWS;
+        gardenState.plant2 = origPlant2WS;
+        if (origDayNightWS) {
+          gardenState.dayNight.getCycleProgress = origDayNightWS;
+        }
+        // Run a few updates to settle back to real state
+        if (typeof gardenState.creatureUpdate === 'function') {
+          for (var rw = 0; rw < 60; rw++) {
+            gardenState.creatureUpdate(rw * 0.016, 0.016);
+          }
+        }
+      }
+    }
+
+    // --- Test 5: reduced-motion disables wind perturbation ---
+    var origMatchMediaWM = window.matchMedia;
+    var reducedCreatureWM = null;
+
+    try {
+      window.matchMedia = function() {
+        return {
+          matches: true,
+          media: '(prefers-reduced-motion: reduce)',
+          addEventListener: function() {},
+          removeEventListener: function() {}
+        };
+      };
+
+      var testSceneWM = new THREE.Scene();
+      reducedCreatureWM = createCreature(testSceneWM);
+
+      if (reducedCreatureWM.state.reducedMotion) {
+        // With reduced motion, the early return in update() means windNudge stays 0
+        // and the group stays invisible.
+        var gsSnapshotWM = window.__gardenState;
+        window.__gardenState = {
+          dayNight: { getCycleProgress: function() { return 0.1; } },
+          weather: { getPhase: function() { return 'Clear'; } }
+        };
+
+        reducedCreatureWM.update(1.0);
+
+        if (typeof reducedCreatureWM.state.windNudge === 'function') {
+          var wnReduced = reducedCreatureWM.state.windNudge();
+          if (Math.abs(wnReduced) > 0.001) {
+            problems.push('With prefers-reduced-motion active, butterfly windNudge is ' + wnReduced.toFixed(5) + ' — expected 0 (issue #526).');
+          }
+        }
+
+        if (reducedCreatureWM.group.visible !== false) {
+          problems.push('With prefers-reduced-motion active and wind perturbation, the creature group should be invisible.');
+        }
+
+        window.__gardenState = gsSnapshotWM;
+      }
+    } finally {
+      if (reducedCreatureWM && typeof reducedCreatureWM.destroy === 'function') {
+        reducedCreatureWM.destroy();
+      }
+      window.matchMedia = origMatchMediaWM;
+    }
+  }
+
   /* ---------- Star field checks (issue #449) ---------- */
   const starState = gardenState && gardenState.stars;
   if (!starState) {

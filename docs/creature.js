@@ -10,6 +10,7 @@
  */
 
 import * as THREE from "three";
+import { computeDisplacement } from "./groundRipple.js";
 
 /* --- Configuration --- */
 const WING_SPAN = 0.07;           // tiny — a few pixels on screen
@@ -51,6 +52,9 @@ const FLAP_ANGLE_MAX = 0.6;       // radians, how far wings open/close
 
 /* Weather shelter fade time constant (~5s for near-complete fade) */
 const WEATHER_FADE_TIME_CONSTANT = 2.5; // seconds — ~86% complete after 5s
+
+/* Wind perturbation — subtle drift from ground ripple wind */
+const WIND_NUDGE_SCALE = 6.25;  // maps ~±0.008 max ripple amplitude to ±0.05 max drift
 
 /* Per-axis phase offsets for organic Lissajous-like looping */
 const PHASE_X = 0.0;
@@ -147,6 +151,9 @@ export function createCreature(scene) {
   let pauseDipTarget = null;      // { x, y, z } — the dipped position near the flower
   let pauseCooldown = 0;          // seconds after exiting before next pause can trigger
 
+  /* --- Tracks the current wind nudge for selftest --- */
+  let _windNudge = 0;
+
   /* --- State exposed for selftest --- */
   const state = {
     type: 'creature',
@@ -168,7 +175,9 @@ export function createCreature(scene) {
     pauseState: () => pauseState,
     pauseTargetPos: () => pauseTargetPos ? { ...pauseTargetPos } : null,
     pauseSpeedMul: () => pauseSpeedMul,
-    pauseEaseT: () => pauseEaseT
+    pauseEaseT: () => pauseEaseT,
+    /* Wind perturbation exposed for selftest */
+    windNudge: () => _windNudge
   };
 
   /* Start invisible if reduced motion is active */
@@ -378,7 +387,15 @@ export function createCreature(scene) {
       }
     }
 
-    group.position.set(finalX, finalY, finalZ);
+    /* --- Wind perturbation: nudge the butterfly by ground ripple displacement --- */
+    let windNudge = 0;
+    if (pauseState === 'idle') {
+      // Only apply wind nudge during normal flight, not during pauses
+      const disp = computeDisplacement(finalX, finalZ, time);
+      windNudge = disp * WIND_NUDGE_SCALE;
+    }
+    _windNudge = windNudge;
+    group.position.set(finalX, finalY + windNudge, finalZ);
 
     /* --- Orient the butterfly along its flight direction --- */
     // Use a small look-at offset to face the direction of travel
