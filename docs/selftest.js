@@ -3357,6 +3357,12 @@ export async function checks() {
       var origWeatherFn = ffWeather.getPhase;
       // Save current firefly update accessor
       var origFirefliesUpdate = gardenState.firefliesUpdate;
+      // Save and set season to Summer for weather modulation tests (issue #517)
+      var weatherSeasonEl = document.getElementById('season-display');
+      var origSeasonTextForWeather = weatherSeasonEl ? weatherSeasonEl.textContent : '';
+      if (weatherSeasonEl) {
+        weatherSeasonEl.textContent = 'Summer';
+      }
       try {
         // Test 1: During Night+Clear, opacity should be at normal peak (~0.15)
         dayNightForFireflies.getCycleProgress = function() { return 0.85; };
@@ -3484,6 +3490,10 @@ export async function checks() {
           }
         }
       } finally {
+        // Restore original season display
+        if (weatherSeasonEl) {
+          weatherSeasonEl.textContent = origSeasonTextForWeather;
+        }
         // Restore original getters
         dayNightForFireflies.getCycleProgress = origDayNightFn;
         ffWeather.getPhase = origWeatherFn;
@@ -3519,6 +3529,225 @@ export async function checks() {
       var hasPlant2Group = fireflyState.plantGroups.some(function(g) { return g.plantRef === 'plant2'; });
       if (!hasPlant2Group) {
         problems.push('plant2 exists in the scene but no firefly group with plantRef="plant2" was created.');
+      }
+    }
+
+    /* --- Firefly seasonal presence checks (issue #517) --- */
+    // Firefly count and opacity must vary with the season:
+    //   Winter: no fireflies at night (opacity stays 0)
+    //   Summer: full count (4-6 dots) and full peak opacity (~0.15)
+    //   Spring/Autumn: reduced density (2-3 visible dots) and lower peak opacity (~0.08)
+    // Changes are smooth via the existing FADE_LERP_SPEED mechanism.
+    var ffSeasonDayNight = gardenState && gardenState.dayNight;
+    var ffWeatherPhase = gardenState && gardenState.weather;
+    var ffSeasonEl = document.getElementById('season-display');
+
+    if (!ffSeasonEl) {
+      problems.push('#season-display is missing — cannot verify firefly seasonal variation.');
+    } else if (!ffSeasonDayNight || typeof ffSeasonDayNight.getCycleProgress !== 'function') {
+      problems.push('dayNight.getCycleProgress is not available — cannot verify firefly seasonal variation.');
+    } else if (!ffWeatherPhase || typeof ffWeatherPhase.getPhase !== 'function') {
+      problems.push('weather.getPhase is not available — cannot verify firefly seasonal variation.');
+    } else if (typeof fireflyState.currentSeasonMul !== 'function') {
+      problems.push('fireflyState.currentSeasonMul is not a function — seasonal multiplier getter is missing (issue #517).');
+    } else if (typeof fireflyState.seasonMultipliers !== 'object' || fireflyState.seasonMultipliers === null) {
+      problems.push('fireflyState.seasonMultipliers is not exposed — seasonal modulation config map is missing (issue #517).');
+    } else if (typeof fireflyState.dotsPerSeason !== 'object' || fireflyState.dotsPerSeason === null) {
+      problems.push('fireflyState.dotsPerSeason is not exposed — dots per season config map is missing (issue #517).');
+    } else {
+      var origSeasonText = ffSeasonEl.textContent;
+      var origDayNightFn = ffSeasonDayNight.getCycleProgress;
+      var origWeatherFn = ffWeatherPhase.getPhase;
+      var origFirefliesUpdate = gardenState.firefliesUpdate;
+
+      try {
+        // Helper: set season and weather to known values, run enough updates for lerp to settle
+        function settleFireflies(season, weather, t, steps) {
+          ffSeasonEl.textContent = season;
+          ffWeatherPhase.getPhase = function() { return weather; };
+          ffSeasonDayNight.getCycleProgress = function() { return t; };
+          var count = steps || 400;
+          if (typeof gardenState.firefliesUpdate === 'function') {
+            for (var fi = 0; fi < count; fi++) {
+              gardenState.firefliesUpdate(0, 0.016);
+            }
+          }
+        }
+
+        // --- Test 1: Winter at Night — no fireflies (opacity stays 0) ---
+        settleFireflies('Winter', 'Clear', 0.85);
+        if (fireflyState.plantGroups && fireflyState.plantGroups.length > 0) {
+          var winterNightOpacity = fireflyState.plantGroups[0].material.opacity;
+          if (winterNightOpacity > 0.02) {
+            problems.push('During Winter+Night+Clear, firefly opacity is ' + winterNightOpacity + ' — expected near 0 (no fireflies in winter).');
+          }
+        }
+
+        // Verify dot sizes are zero for all dots in winter
+        if (fireflyState.plantGroups && fireflyState.plantGroups.length > 0) {
+          var sizesArray = fireflyState.plantGroups[0].geometry.attributes.size.array;
+          var anyNonZero = false;
+          for (var si = 0; si < sizesArray.length; si++) {
+            if (sizesArray[si] > 0.001) {
+              anyNonZero = true;
+              break;
+            }
+          }
+          if (anyNonZero) {
+            problems.push('During Winter, some firefly dot sizes are non-zero — all dots should be invisible (size=0) in winter.');
+          }
+        }
+
+        // --- Test 2: Summer at Night — full opacity ---
+        settleFireflies('Summer', 'Clear', 0.85);
+        if (fireflyState.plantGroups && fireflyState.plantGroups.length > 0) {
+          var summerNightOpacity = fireflyState.plantGroups[0].material.opacity;
+          if (summerNightOpacity < 0.10) {
+            problems.push('During Summer+Night+Clear, firefly opacity is ' + summerNightOpacity + ' — expected ~0.15 (full glow during summer).');
+          }
+          if (summerNightOpacity > 0.17) {
+            problems.push('During Summer+Night+Clear, firefly opacity is ' + summerNightOpacity + ' — expected ≤0.15 (peak opacity cap).');
+          }
+        }
+
+        // --- Test 3: Spring at Night — reduced opacity (~0.08 = 0.15 * 0.53) ---
+        settleFireflies('Spring', 'Clear', 0.85);
+        if (fireflyState.plantGroups && fireflyState.plantGroups.length > 0) {
+          var springNightOpacity = fireflyState.plantGroups[0].material.opacity;
+          var expectedSpringOpacity = 0.15 * 0.53; // ~0.0795
+          if (springNightOpacity < expectedSpringOpacity * 0.5 || springNightOpacity > expectedSpringOpacity * 1.5) {
+            problems.push('During Spring+Night+Clear, firefly opacity is ' + springNightOpacity + ' — expected ~' + expectedSpringOpacity.toFixed(3) + ' (reduced glow of ~53% in spring).');
+          }
+          if (springNightOpacity >= summerNightOpacity - 0.02) {
+            problems.push('During Spring+Night+Clear, firefly opacity (' + springNightOpacity + ') should be less than Summer+Night+Clear opacity (' + summerNightOpacity + ') — spring should have reduced glow.');
+          }
+        }
+
+        // --- Test 4: Autumn at Night — reduced opacity (~0.08 = 0.15 * 0.53) ---
+        settleFireflies('Autumn', 'Clear', 0.85);
+        if (fireflyState.plantGroups && fireflyState.plantGroups.length > 0) {
+          var autumnNightOpacity = fireflyState.plantGroups[0].material.opacity;
+          var expectedAutumnOpacity = 0.15 * 0.53; // ~0.0795
+          if (autumnNightOpacity < expectedAutumnOpacity * 0.5 || autumnNightOpacity > expectedAutumnOpacity * 1.5) {
+            problems.push('During Autumn+Night+Clear, firefly opacity is ' + autumnNightOpacity + ' — expected ~' + expectedAutumnOpacity.toFixed(3) + ' (reduced glow of ~53% in autumn).');
+          }
+          if (autumnNightOpacity >= summerNightOpacity - 0.02) {
+            problems.push('During Autumn+Night+Clear, firefly opacity (' + autumnNightOpacity + ') should be less than Summer+Night+Clear opacity (' + summerNightOpacity + ') — autumn should have reduced glow.');
+          }
+        }
+
+        // --- Test 5: Spring visible dot count is limited to 3 ---
+        if (fireflyState.plantGroups && fireflyState.plantGroups.length > 0) {
+          var springSizes = fireflyState.plantGroups[0].geometry.attributes.size.array;
+          var springVisibleCount = 0;
+          for (var si2 = 0; si2 < springSizes.length; si2++) {
+            if (springSizes[si2] > 0.001) {
+              springVisibleCount++;
+            }
+          }
+          var expectedSpringDots = Math.min(fireflyState.plantGroups[0].count, 3);
+          if (springVisibleCount !== expectedSpringDots) {
+            problems.push('During Spring, firefly visible dot count is ' + springVisibleCount + ' (out of ' + springSizes.length + ' total), expected ' + expectedSpringDots + ' (limited to 3 in spring).');
+          }
+        }
+
+        // --- Test 6: Summer visible dot count is full (4-6) ---
+        settleFireflies('Summer', 'Clear', 0.85);
+        if (fireflyState.plantGroups && fireflyState.plantGroups.length > 0) {
+          var summerSizes = fireflyState.plantGroups[0].geometry.attributes.size.array;
+          var summerVisibleCount = 0;
+          for (var si3 = 0; si3 < summerSizes.length; si3++) {
+            if (summerSizes[si3] > 0.001) {
+              summerVisibleCount++;
+            }
+          }
+          if (summerVisibleCount < 4 || summerVisibleCount > 6) {
+            problems.push('During Summer, firefly visible dot count is ' + summerVisibleCount + ', expected 4–6 (full count in summer).');
+          }
+        }
+
+        // --- Test 7: Winter visible dot count is 0 ---
+        settleFireflies('Winter', 'Clear', 0.85);
+        if (fireflyState.plantGroups && fireflyState.plantGroups.length > 0) {
+          var winterSizes = fireflyState.plantGroups[0].geometry.attributes.size.array;
+          var winterVisibleCount = 0;
+          for (var si4 = 0; si4 < winterSizes.length; si4++) {
+            if (winterSizes[si4] > 0.001) {
+              winterVisibleCount++;
+            }
+          }
+          if (winterVisibleCount !== 0) {
+            problems.push('During Winter, firefly visible dot count is ' + winterVisibleCount + ', expected 0 (no fireflies in winter).');
+          }
+        }
+
+        // --- Test 8: Seasonal multiplier config map is correct ---
+        if (fireflyState.seasonMultipliers['Spring'] !== 0.53) {
+          problems.push('fireflyState.seasonMultipliers["Spring"] is ' + fireflyState.seasonMultipliers['Spring'] + ', expected 0.53.');
+        }
+        if (fireflyState.seasonMultipliers['Summer'] !== 1.0) {
+          problems.push('fireflyState.seasonMultipliers["Summer"] is ' + fireflyState.seasonMultipliers['Summer'] + ', expected 1.0.');
+        }
+        if (fireflyState.seasonMultipliers['Autumn'] !== 0.53) {
+          problems.push('fireflyState.seasonMultipliers["Autumn"] is ' + fireflyState.seasonMultipliers['Autumn'] + ', expected 0.53.');
+        }
+        if (fireflyState.seasonMultipliers['Winter'] !== 0.0) {
+          problems.push('fireflyState.seasonMultipliers["Winter"] is ' + fireflyState.seasonMultipliers['Winter'] + ', expected 0.0.');
+        }
+
+        // --- Test 9: Dots per season config map is correct ---
+        if (fireflyState.dotsPerSeason['Spring'] !== 3) {
+          problems.push('fireflyState.dotsPerSeason["Spring"] is ' + fireflyState.dotsPerSeason['Spring'] + ', expected 3.');
+        }
+        if (fireflyState.dotsPerSeason['Summer'] !== 6) {
+          problems.push('fireflyState.dotsPerSeason["Summer"] is ' + fireflyState.dotsPerSeason['Summer'] + ', expected 6.');
+        }
+        if (fireflyState.dotsPerSeason['Autumn'] !== 3) {
+          problems.push('fireflyState.dotsPerSeason["Autumn"] is ' + fireflyState.dotsPerSeason['Autumn'] + ', expected 3.');
+        }
+        if (fireflyState.dotsPerSeason['Winter'] !== 0) {
+          problems.push('fireflyState.dotsPerSeason["Winter"] is ' + fireflyState.dotsPerSeason['Winter'] + ', expected 0.');
+        }
+
+        // --- Test 10: currentSeasonMul accessor returns a reasonable value ---
+        var csm = fireflyState.currentSeasonMul();
+        if (typeof csm !== 'number' || csm < 0 || csm > 1.1) {
+          problems.push('fireflyState.currentSeasonMul() returned ' + csm + ', expected a number in [0, 1.1].');
+        }
+
+        // --- Test 11: Winter opacity stays 0 regardless of weather at Night ---
+        settleFireflies('Winter', 'Light Drizzle', 0.85);
+        if (fireflyState.plantGroups && fireflyState.plantGroups.length > 0) {
+          var winterDrizzleOpacity = fireflyState.plantGroups[0].material.opacity;
+          if (winterDrizzleOpacity > 0.02) {
+            problems.push('During Winter+Night+Light Drizzle, firefly opacity is ' + winterDrizzleOpacity + ' — expected near 0 (no fireflies in winter regardless of weather).');
+          }
+        }
+
+        // --- Test 12: Non-Night phases keep fireflies invisible regardless of season ---
+        settleFireflies('Summer', 'Clear', 0.1); // Morning
+        if (fireflyState.plantGroups && fireflyState.plantGroups.length > 0) {
+          var morningSummerOpacity = fireflyState.plantGroups[0].material.opacity;
+          if (morningSummerOpacity > 0.02) {
+            problems.push('During Summer+Morning+Clear, firefly opacity is ' + morningSummerOpacity + ' — expected near 0 (fireflies invisible during non-Night even in summer).');
+          }
+        }
+
+        // --- Test 13: currentSeasonMul is exposed on state ---
+        if (typeof fireflyState.currentSeasonMul !== 'function') {
+          problems.push('fireflyState.currentSeasonMul is not a function — seasonal multiplier getter missing.');
+        }
+      } finally {
+        // Restore original display and getters
+        ffSeasonEl.textContent = origSeasonText;
+        ffSeasonDayNight.getCycleProgress = origDayNightFn;
+        ffWeatherPhase.getPhase = origWeatherFn;
+        // Re-run a few updates to settle back to real values
+        if (typeof gardenState.firefliesUpdate === 'function') {
+          for (var fk = 0; fk < 300; fk++) {
+            gardenState.firefliesUpdate(0, 0.016);
+          }
+        }
       }
     }
   }
