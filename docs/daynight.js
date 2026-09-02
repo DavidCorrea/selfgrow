@@ -163,19 +163,19 @@ export function startDayNightCycle(sunLight, scene, ambientLight, hemiLight, fil
       sunLight.color.copy(sunBaseColor);
     }
 
-    /* --- Ambient light: dim at night --- */
-    const ambientIntensity = 0.05 + THREE.MathUtils.clamp((y + 1) / 9, 0, 1) * 0.35;
+    /* --- Ambient light: dim at night but floor raised so garden stays visible --- */
+    const ambientIntensity = 0.10 + THREE.MathUtils.clamp((y + 1) / 9, 0, 1) * 0.35;
     ambientLight.intensity = ambientIntensity;
 
     /* --- Hemisphere light: sky/ground blend follows sky colour --- */
     // Use the sky colour for the hemisphere sky
     hemiLight.color.copy(skyColor).multiplyScalar(0.6);
     hemiLight.groundColor.set(0x3a2a1a).lerp(new THREE.Color(0x1a1a0a), THREE.MathUtils.clamp(1 - (y + 1) / 9, 0, 1));
-    const hemiIntensity = 0.05 + THREE.MathUtils.clamp((y + 1) / 9, 0, 1) * 0.45;
+    const hemiIntensity = 0.10 + THREE.MathUtils.clamp((y + 1) / 9, 0, 1) * 0.45;
     hemiLight.intensity = hemiIntensity;
 
-    /* --- Fill light: subtle, even dimmer at night --- */
-    const fillIntensity = 0.02 + THREE.MathUtils.clamp((y + 1) / 9, 0, 1) * 0.28;
+    /* --- Fill light: subtle, even dimmer at night but floor raised for legibility --- */
+    const fillIntensity = 0.05 + THREE.MathUtils.clamp((y + 1) / 9, 0, 1) * 0.28;
     fillLight.intensity = fillIntensity;
     // Shift fill colour toward cool blue at night
     fillLight.color.copy(fillBaseColor).lerp(new THREE.Color(0x445588), THREE.MathUtils.clamp(1 - (y + 1) / 9, 0, 0.6));

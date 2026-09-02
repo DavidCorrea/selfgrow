@@ -5347,5 +5347,100 @@ export async function checks() {
     }
   }
 
+  /* ---------- Minimum scene brightness checks (issue #534) ---------- */
+  // Verify lights are exposed on __gardenState and their intensities meet
+  // minimum floors so the garden remains visibly alive at all phase combinations.
+  const gs = window.__gardenState;
+  if (!gs) {
+    problems.push('window.__gardenState is not set — cannot verify scene brightness.');
+  } else {
+    if (!gs.ambientLight) {
+      problems.push('window.__gardenState.ambientLight is not set — ambient light not exposed for brightness checks.');
+    } else {
+      const aI = gs.ambientLight.intensity;
+      if (typeof aI !== 'number' || aI <= 0) {
+        problems.push('ambientLight.intensity is ' + aI + ', expected a positive number — light may not have been configured.');
+      }
+      // At Night (sun below horizon), the floor is 0.10, then Overcast multiplies by 1.8 → 0.18 minimum.
+      // Even with Clear weather (multiplier 1.0), the floor is 0.10. Verify the current value
+      // is at least 0.08 to prove the floor is raised above the original 0.05.
+      if (aI < 0.08) {
+        problems.push('ambientLight.intensity is ' + aI + ', expected >= 0.08 — the minimum floor may not have been raised (was 0.05, should be 0.10).');
+      }
+    }
+
+    if (!gs.hemiLight) {
+      problems.push('window.__gardenState.hemiLight is not set — hemisphere light not exposed for brightness checks.');
+    } else {
+      const hI = gs.hemiLight.intensity;
+      if (typeof hI !== 'number' || hI <= 0) {
+        problems.push('hemiLight.intensity is ' + hI + ', expected a positive number — light may not have been configured.');
+      }
+      if (hI < 0.08) {
+        problems.push('hemiLight.intensity is ' + hI + ', expected >= 0.08 — the minimum floor may not have been raised (was 0.05, should be 0.10).');
+      }
+    }
+
+    if (!gs.fillLight) {
+      problems.push('window.__gardenState.fillLight is not set — fill light not exposed for brightness checks.');
+    } else {
+      const fI = gs.fillLight.intensity;
+      if (typeof fI !== 'number' || fI <= 0) {
+        problems.push('fillLight.intensity is ' + fI + ', expected a positive number — light may not have been configured.');
+      }
+      if (fI < 0.04) {
+        problems.push('fillLight.intensity is ' + fI + ', expected >= 0.04 — the minimum floor may not have been raised (was 0.02, should be 0.05).');
+      }
+    }
+
+    if (!gs.sunLight) {
+      problems.push('window.__gardenState.sunLight is not set — sun light not exposed for brightness checks.');
+    } else {
+      const sI = gs.sunLight.intensity;
+      if (typeof sI !== 'number' || sI <= 0) {
+        problems.push('sunLight.intensity is ' + sI + ', expected a positive number — light may not have been configured.');
+      }
+    }
+
+    // Additional check: if currently in Night phase (from dayNight state),
+    // verify the ambient/hemi/fill intensities are near their new floor values
+    // (within tolerance after weather multiplier).
+    const dayNight = gs.dayNight;
+    if (dayNight && typeof dayNight.getPhaseName === 'function') {
+      const phase = dayNight.getPhaseName();
+      if (phase === 'Night') {
+        if (gs.ambientLight) {
+          // At Night, sun y = -7.5, clamp((y+1)/9, 0, 1) = 0
+          // ambient = floor(0.10) + 0 * 0.35 = 0.10
+          // After weather multipliers, minimum is 0.10 * 0.85 ≈ 0.085
+          // (weather can't drive ambient below ~0.085 since Clear=1.0, Overcast=1.8, Drizzle=1.5)
+          if (gs.ambientLight.intensity < 0.085) {
+            problems.push('During Night phase, ambientLight.intensity is ' + gs.ambientLight.intensity + ', expected >= 0.085 (floor 0.10 × lowest weather multiplier ~0.85).');
+          }
+        }
+        if (gs.hemiLight) {
+          // hemi = floor(0.10) + 0 * 0.45 = 0.10
+          if (gs.hemiLight.intensity < 0.05) {
+            problems.push('During Night phase, hemiLight.intensity is ' + gs.hemiLight.intensity + ', expected >= 0.05 (floor 0.10 × lowest weather multiplier ~0.55).');
+          }
+        }
+        if (gs.fillLight) {
+          // fill = floor(0.05) + 0 * 0.28 = 0.05
+          if (gs.fillLight.intensity < 0.035) {
+            problems.push('During Night phase, fillLight.intensity is ' + gs.fillLight.intensity + ', expected >= 0.035 (floor 0.05 × lowest weather multiplier ~0.80).');
+          }
+        }
+      }
+    }
+
+    // Verify the tone mapping exposure is not being crushed (should be set to a reasonable value)
+    if (gs.renderer) {
+      const exposure = gs.renderer.toneMappingExposure;
+      if (typeof exposure !== 'number' || exposure < 0.5) {
+        problems.push('renderer.toneMappingExposure is ' + exposure + ', expected >= 0.5 for visible scene brightness.');
+      }
+    }
+  }
+
   return problems;
 }
