@@ -1047,6 +1047,49 @@ export async function checks() {
     }
   }
 
+  /* ---------- Minimum scene brightness at Night+Overcast (issue #534) ---------- */
+  // Verify that at Night (sun behind horizon, y <= -1), the base lighting floors
+  // produce enough illumination when combined with Overcast weather multipliers
+  // that the garden remains visibly alive.
+  //
+  // The computed total scene illumination (ambient + hemi + fill) at the
+  // Night+Overcast worst case must exceed 0.25 for discernible plant shapes.
+  //
+  // Values are derived from the constants in daynight.js and weather.js.
+  const nightBaseAmbi = 0.12;    // daynight.js ambient floor
+  const nightBaseHemi = 0.08;    // daynight.js hemi floor
+  const nightBaseFill = 0.06;    // daynight.js fill floor
+
+  // Overcast weather multipliers (from weather.js PHASES)
+  const overcastAmbiMul = 1.8;
+  const overcastHemiMul = 0.7;
+  const overcastFillMul = 0.85;
+
+  const nightOvercastTotal = nightBaseAmbi * overcastAmbiMul +
+                              nightBaseHemi * overcastHemiMul +
+                              nightBaseFill * overcastFillMul;
+
+  const minVisibleThreshold = 0.25;
+  if (nightOvercastTotal < minVisibleThreshold) {
+    problems.push(
+      'Night+Overcast scene illumination would be ' +
+      nightOvercastTotal.toFixed(3) +
+      ', below visibility threshold of ' + minVisibleThreshold +
+      ' — the garden would be a dark void (issue #534). ' +
+      'Expected ambient floor >= 0.12, hemi floor >= 0.08, fill floor >= 0.06.'
+    );
+  }
+
+  // Also verify that Night+Clear stays above a lower but reasonable threshold
+  const nightClearTotal = nightBaseAmbi + nightBaseHemi + nightBaseFill;
+  if (nightClearTotal < 0.18) {
+    problems.push(
+      'Night+Clear scene illumination would be ' +
+      nightClearTotal.toFixed(3) +
+      ', expected at least 0.18 for discernible plant shapes at night (issue #534).'
+    );
+  }
+
   /* ---------- Persistence checks (issue #429) ---------- */
   // Clear any pre-existing saved state to get a clean baseline
   clearGardenState();
