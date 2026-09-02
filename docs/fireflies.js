@@ -25,6 +25,7 @@ const DOTS_MAX = 6;               // 4–6 per plant
 const DRIFT_RADIUS = 0.15;         // maximum drift offset from plant
 const PEAK_OPACITY = 0.15;         // peak opacity during Night (≤ 0.15)
 const GLOW_SIZE = 0.04;            // base sprite size in world units
+const LIFT_HEIGHT = 0.35;           // how far fireflies rise above leaf height at night
 const FADE_LERP_SPEED = 0.04;      // ~1.2 seconds to fade in/out
 const PULSE_FREQ_MIN = 0.2;        // Hz — slow, irregular
 const PULSE_FREQ_MAX = 0.5;        // Hz
@@ -212,6 +213,8 @@ export function createFireflies(scene) {
     weatherMultipliers: WEATHER_MULTIPLIERS,
     seasonMultipliers: SEASON_MULTIPLIERS,
     dotsPerSeason: DOTS_PER_SEASON,
+    /** How far fireflies rise above leaf height during full night */
+    liftHeight: LIFT_HEIGHT,
     /** Current weather opacity multiplier (lerping toward target) */
     currentWeatherMul: function() { return currentWeatherMul; },
     /** Current seasonal opacity multiplier (lerping toward target) */
@@ -310,6 +313,27 @@ export function createFireflies(scene) {
       currentOpacity = targetOpacity;
     }
 
+    /* --- Compute vertical lift offset for dusk emergence / dawn settling --- */
+    let liftOffset = 0;
+    if (!reducedMotion) {
+      if (t >= 0.75 && t < 0.80) {
+        // Dusk emergence: smoothstep from 0 to LIFT_HEIGHT
+        const progress = (t - 0.75) / 0.05;
+        // Smoothstep: 3t^2 - 2t^3
+        const eased = progress * progress * (3 - 2 * progress);
+        liftOffset = eased * LIFT_HEIGHT;
+      } else if (t >= 0.80 && t <= 0.95) {
+        // Full night: hold at LIFT_HEIGHT
+        liftOffset = LIFT_HEIGHT;
+      } else if (t > 0.95 && t < 1.0) {
+        // Dawn settling: smoothstep from LIFT_HEIGHT back to 0
+        const progress = (t - 0.95) / 0.05;
+        // Smoothstep inverted: 1 - (3t^2 - 2t^3)
+        const eased = 1 - (progress * progress * (3 - 2 * progress));
+        liftOffset = eased * LIFT_HEIGHT;
+      }
+    }
+
     /* --- Update each dot group --- */
     for (let gi = 0; gi < plantGroups.length; gi++) {
       const group = plantGroups[gi];
@@ -345,10 +369,11 @@ export function createFireflies(scene) {
           const driftY = Math.sin(time * DRIFT_FREQ * 0.7 + dd.driftPhase * 1.3) * DRIFT_RADIUS * 0.3;
 
           pos[i3] = dd.baseX + driftX;
-          pos[i3 + 1] = dd.baseY + driftY;
+          // Apply vertical lift offset for dusk emergence / dawn settling
+          pos[i3 + 1] = dd.baseY + driftY + liftOffset;
           pos[i3 + 2] = dd.baseZ + driftZ;
         } else {
-          // Reduced motion: no pulsing/drift, but keep size at base
+          // Reduced motion: no pulsing/drift/lift, but keep size at base
           sizes[i] = dd.sizeBase;
           pos[i3] = dd.baseX;
           pos[i3 + 1] = dd.baseY;
