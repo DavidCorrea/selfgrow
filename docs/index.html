@@ -174,6 +174,11 @@
         <span class="state-label">Growing</span>
         <p id="growing-description">Nothing yet — the soil is waiting.</p>
       </div>
+
+      <div class="state-section">
+        <span class="state-label">Acknowledgment</span>
+        <span class="state-value" id="garden-state-acknowledgment" aria-live="polite"></span>
+      </div>
     </aside>
   </div>
 
@@ -311,6 +316,44 @@
     controls.target.set(0, 0.4, 0);        // aim at the seedling's height
     controls.rotateSpeed = 0.5;            // unhurried, botanical pace
     controls.update();
+
+    /* --- Camera stillness tracking for user-acknowledgment (issue #544) --- */
+    const ACKNOWLEDGMENT_SENTENCES = [
+      'You pause to look, and the garden feels still around you.',
+      'Your presence settles into the quiet of the garden.',
+      'The garden acknowledges your patient gaze.',
+      'Stillness passes between you and the garden.',
+      'You breathe, and the garden seems to breathe with you.'
+    ];
+
+    const ACKNOWLEDGMENT_COOLDOWN_MS = 60_000;
+    const STILLNESS_THRESHOLD_MS = 15_000;
+
+    let lastInteractionTime = performance.now();
+    let lastAcknowledgmentTime = 0;
+
+    function getReducedMotionPref() {
+      return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    }
+
+    controls.addEventListener('change', function onControlsChange() {
+      if (getReducedMotionPref()) return;
+
+      const now = performance.now();
+      const idleDuration = now - lastInteractionTime;
+      const timeSinceLastAck = now - lastAcknowledgmentTime;
+
+      if (idleDuration >= STILLNESS_THRESHOLD_MS && timeSinceLastAck >= ACKNOWLEDGMENT_COOLDOWN_MS) {
+        lastAcknowledgmentTime = now;
+        const sentence = ACKNOWLEDGMENT_SENTENCES[Math.floor(Math.random() * ACKNOWLEDGMENT_SENTENCES.length)];
+        const ackEl = document.getElementById('garden-state-acknowledgment');
+        if (ackEl) {
+          ackEl.textContent = sentence;
+        }
+      }
+
+      lastInteractionTime = now;
+    });
 
     /* --- Distant horizon tree-line silhouette --- */
     const horizon = createHorizon(scene);
@@ -753,7 +796,11 @@
       updateTimeOfDayDescription,
       seasonContexts: SEASON_CONTEXTS,
       seasonContextFor,
-      updateSeasonDescription
+      updateSeasonDescription,
+      /* Camera stillness acknowledgment (issue #544) */
+      _acknowledgmentSentences: ACKNOWLEDGMENT_SENTENCES,
+      _acknowledgmentCooldown: ACKNOWLEDGMENT_COOLDOWN_MS,
+      _stillnessThreshold: STILLNESS_THRESHOLD_MS
     };
 
     /* --- Persistence: restore previous state if available --- */
