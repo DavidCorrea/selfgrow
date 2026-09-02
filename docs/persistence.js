@@ -27,7 +27,7 @@ const STORAGE_KEY = 'selfgrow_garden_state';
 const SEASON_CYCLE_DURATION_MS = 720_000;   // 12 min
 const DAYNIGHT_CYCLE_DURATION_MS = 180_000; // 3 min
 const WEATHER_CYCLE_DURATION_MS = 300_000;  // 5 min
-const PLANT1_GROW_DURATION_MS = 30_000;     // 30s
+const PLANT1_GROW_DURATION_MS = 18_000;     // 18s (issue #542)
 const PLANT2_GROW_DURATION_MS = 25_000;     // 25s
 
 /**
