@@ -1024,6 +1024,27 @@ export async function checks() {
         problems.push('scene.background is not a THREE.Color instance — day/night cycle may not have set it.');
       }
     }
+
+    /* ---------- Daytime shadow drift checks (issue #535) ---------- */
+    if (typeof dayNight.getShadowDrift !== 'function') {
+      problems.push('dayNight.getShadowDrift is not a function — the shadow drift getter is missing (issue #535).');
+    } else {
+      const drift = dayNight.getShadowDrift();
+      if (typeof drift !== 'object' || drift === null) {
+        problems.push('dayNight.getShadowDrift() did not return an object — got ' + typeof drift);
+      } else {
+        if (typeof drift.x !== 'number' || typeof drift.z !== 'number') {
+          problems.push('dayNight.getShadowDrift() returned {x: ' + drift.x + ', z: ' + drift.z + '} — expected numeric x and z values.');
+        } else {
+          // Verify drift amplitude does not exceed 0.3 units
+          const ampX = Math.abs(drift.x);
+          const ampZ = Math.abs(drift.z);
+          if (ampX > 0.301 || ampZ > 0.301) {
+            problems.push('Shadow drift amplitude exceeds ±0.3 limit: drift.x=' + drift.x.toFixed(4) + ', drift.z=' + drift.z.toFixed(4) + ' (issue #535).');
+          }
+        }
+      }
+    }
   }
 
   /* ---------- Persistence checks (issue #429) ---------- */

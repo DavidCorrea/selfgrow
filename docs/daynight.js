@@ -103,6 +103,10 @@ export function startDayNightCycle(sunLight, scene, ambientLight, hemiLight, fil
     return 0.05 + clamped * 1.15;
   }
 
+  /* Track shadow drift offset for self-test visibility */
+  let _shadowDriftX = 0;
+  let _shadowDriftZ = 0;
+
   const dayNightState = {
     getCycleProgress: () => {
       const elapsed = performance.now() - startTime;
@@ -110,7 +114,8 @@ export function startDayNightCycle(sunLight, scene, ambientLight, hemiLight, fil
     },
     getPhaseName: () => getPhaseName((performance.now() - startTime) % CYCLE_DURATION_MS / CYCLE_DURATION_MS),
     getSunPosition: () => sunLight.position.clone(),
-    getSkyColor: () => scene.background.clone()
+    getSkyColor: () => scene.background.clone(),
+    getShadowDrift: () => ({ x: _shadowDriftX, z: _shadowDriftZ })
   };
 
   /* Expose state for selftest */
@@ -130,6 +135,23 @@ export function startDayNightCycle(sunLight, scene, ambientLight, hemiLight, fil
     const y = SUN_MAX_Y * Math.sin(theta) + SUN_OFFSET_Y;
 
     sunLight.position.set(x, y, z);
+
+    /* --- Subtle daytime shadow drift (issue #535) ---
+     * A very slow sinusoidal oscillation of the light's X/Z position during
+     * daytime (sun above horizon), giving shadows a barely-perceptible creep.
+     * Disabled at night and when prefers-reduced-motion is active.
+     */
+    const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (y > 0 && !prefersReduced) {
+      const driftPhase = (elapsed % 60000) / 60000 * 2 * Math.PI;
+      _shadowDriftX = 0.3 * Math.sin(driftPhase);
+      _shadowDriftZ = 0.3 * Math.cos(driftPhase * 0.87);
+      sunLight.position.x += _shadowDriftX;
+      sunLight.position.z += _shadowDriftZ;
+    } else {
+      _shadowDriftX = 0;
+      _shadowDriftZ = 0;
+    }
 
     /* --- Sky colour --- */
     const skyColor = getSkyColor(t);
