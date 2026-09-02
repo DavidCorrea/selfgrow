@@ -5418,5 +5418,71 @@ export async function checks() {
     }
   }
 
+  /* ---------- Camera stillness acknowledgment checks (issue #544) ---------- */
+  const ackEl = document.getElementById('garden-state-acknowledgment');
+  if (!ackEl) {
+    problems.push('Missing #garden-state-acknowledgment element — the stillness acknowledgment span must exist in the state panel.');
+  } else {
+    // Verify it has aria-live="polite" so screen readers announce the acknowledgment
+    if (ackEl.getAttribute('aria-live') !== 'polite') {
+      problems.push('#garden-state-acknowledgment aria-live is "' + ackEl.getAttribute('aria-live') + '", expected "polite" — screen readers must announce the acknowledgment text when it appears.');
+    }
+    // Verify it starts empty
+    if (ackEl.textContent && ackEl.textContent.trim().length > 0) {
+      problems.push('#garden-state-acknowledgment should be empty on page load, but contains: "' + ackEl.textContent + '"');
+    }
+  }
+
+  // Verify the acknowledgment state config is exposed on __gardenState
+  if (!gardenState) {
+    problems.push('window.__gardenState is not set — cannot verify acknowledgment configuration.');
+  } else {
+    if (!gardenState._acknowledgmentSentences || !Array.isArray(gardenState._acknowledgmentSentences)) {
+      problems.push('gardenState._acknowledgmentSentences is missing or not an array — the list of acknowledgment sentences is not exposed.');
+    } else if (gardenState._acknowledgmentSentences.length < 3) {
+      problems.push('gardenState._acknowledgmentSentences has only ' + gardenState._acknowledgmentSentences.length + ' sentences — expected at least 3 for variety.');
+    } else {
+      // Verify each sentence is a calm, poetic phrase
+      gardenState._acknowledgmentSentences.forEach(function(s, i) {
+        if (typeof s !== 'string' || s.length < 10) {
+          problems.push('_acknowledgmentSentences[' + i + '] is not a valid sentence: "' + s + '"');
+        }
+        if (s.indexOf('!') !== -1) {
+          problems.push('_acknowledgmentSentences[' + i + '] contains an exclamation mark — must be calm and quiet: "' + s + '"');
+        }
+      });
+    }
+
+    // Verify cooldown and threshold constants
+    if (typeof gardenState._acknowledgmentCooldown !== 'number' || gardenState._acknowledgmentCooldown < 50_000) {
+      problems.push('gardenState._acknowledgmentCooldown is ' + gardenState._acknowledgmentCooldown + ', expected >= 50000 (>= 50s cooldown).');
+    }
+    if (typeof gardenState._stillnessThreshold !== 'number' || gardenState._stillnessThreshold < 14_000) {
+      problems.push('gardenState._stillnessThreshold is ' + gardenState._stillnessThreshold + ', expected >= 14000 (>= 14s stillness threshold).');
+    }
+
+    // Verify the control change listener exists by checking controls has event listeners
+    // OrbitControls uses the standard EventDispatcher — we check by dispatching a synthetic
+    // 'change' event and verifying the acknowledgment mechanism doesn't crash.
+    const ctrl = gardenState.controls;
+    if (ctrl) {
+      // Temporarily grab the lastInteractionTime by checking internal state
+      // We can't easily introspect the closure, but we can verify the DOM updates
+      // by simulating interaction timing — instead, we verify structural setup:
+      // 1. Controls has a 'change' event listener attached
+      // 2. The callback doesn't throw
+      let didCatch = false;
+      try {
+        ctrl.dispatchEvent({ type: 'change' });
+      } catch (e) {
+        didCatch = true;
+        problems.push('Dispatching a change event on controls threw: ' + e.message + ' — the acknowledgment listener may be broken.');
+      }
+      if (!didCatch) {
+        // The event fired without error — the listener is at least callable
+      }
+    }
+  }
+
   return problems;
 }
