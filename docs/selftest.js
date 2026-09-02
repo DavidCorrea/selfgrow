@@ -329,6 +329,13 @@ export async function checks() {
       if (s < 0) {
         problems.push('Plant scale is negative (' + s + ') — growth animation broke.');
       }
+
+      // Minimum visible scale check (issue #542): non-fully-grown plants must be >= 0.15
+      if (typeof plant.isFullyGrown === 'function' && !plant.isFullyGrown()) {
+        if (s < 0.149) {
+          problems.push('Plant scale is ' + s.toFixed(4) + ' — below minimum visible scale of 0.15 for a growing plant (issue #542).');
+        }
+      }
     }
 
     // Check DOM state reflects something growing
@@ -1193,7 +1200,7 @@ export async function checks() {
     if (Math.abs(ff.weatherProgress - expectedWeather) > 0.01) {
       problems.push('fastForwardState weatherProgress: expected ~' + expectedWeather + ', got ' + ff.weatherProgress);
     }
-    // Plant1: 30s grow, 6 min elapsed → fully grown
+    // Plant1: 18s grow (issue #542), 6 min elapsed → fully grown
     if (ff.plant1Maturity < 1) {
       problems.push('fastForwardState plant1Maturity: expected 1 (fully grown after 6 min), got ' + ff.plant1Maturity);
     }
@@ -1201,10 +1208,10 @@ export async function checks() {
     if (!ff.firstPlantGrown) {
       problems.push('fastForwardState firstPlantGrown: expected true (plant1 is mature), got false');
     }
-    // Plant2: started after plant1 matured at ~30s, so has been growing for ~570s (360-30=330s wait - no, 360s elapsed - 30s until plant1 mature = 330s growing)
-    const expectedPlant2 = Math.min(1, (360_000 - 30_000) / 25_000); // 330/25 = 13.2, capped at 1
+    // Plant2: started after plant1 matured at ~18s, so has been growing for ~342s (360-18=342s growing)
+    const expectedPlant2 = Math.min(1, (360_000 - 18_000) / 25_000); // 342/25 = 13.68, capped at 1
     if (ff.plant2Maturity === undefined || ff.plant2Maturity < 1) {
-      problems.push('fastForwardState plant2Maturity: expected 1 (fully grown after 330s of growing time), got ' + ff.plant2Maturity);
+      problems.push('fastForwardState plant2Maturity: expected 1 (fully grown after 342s of growing time), got ' + ff.plant2Maturity);
     }
   }
 

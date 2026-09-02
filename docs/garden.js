@@ -63,7 +63,7 @@ export function initGarden(scene, initialProgress) {
     stemColor: 0x5d8a3c,
     leafColor: 0x4a8c2a,
     swayPhaseOffset: 0,
-    growDuration: 30000,
+    growDuration: 18000,
     label: 'plant',
     leafShape: 'narrow', // pointy, narrow leaves
     initialProgress: p1Progress
@@ -247,7 +247,7 @@ function createPlant(opts) {
 
   // Start at appropriate scale based on initial progress
   if (initialProgress < 1) {
-    const startScale = 0.001 + initialProgress * 0.999;
+    const startScale = 0.15 + initialProgress * 0.85;
     group.scale.set(startScale, startScale, startScale);
   } else {
     group.scale.set(1, 1, 1);
@@ -657,7 +657,7 @@ function createPlant(opts) {
     if (progress < 1) {
       // Ease-out cubic: starts fast, slows toward the end
       const eased = 1 - Math.pow(1 - progress, 3);
-      const s = 0.001 + eased * 0.999;
+      const s = 0.15 + eased * 0.85;
       group.scale.set(s, s, s);
 
       // Update DOM descriptions by growth phase
