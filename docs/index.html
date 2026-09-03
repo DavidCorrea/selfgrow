@@ -449,22 +449,75 @@
      * the plot and growing descriptions without replacing the base text,
      * composing with weather and butterfly layers.
      */
-    const TIME_OF_DAY_CONTEXTS = {
-      'Morning': 'Soft awakening light spreads across the garden, the air gentle and warm.',
-      'Midday': 'Bright clear light fills the garden, the sun warm and steady overhead.',
-      'Evening': 'Golden tones settling across the garden as the light mellows toward dusk.',
-      'Night': 'Darkness and deep quiet hold the garden, lit by stars and firefly glow.'
+    /* Variant cycling stability tracker (issue #543).
+     * Records when each state category last changed so the chooseXContext
+     * functions can rotate through variant phrasings after 30s of stability.
+     */
+    const STATE_STABILITY = {
+      time: { phase: null, lastChanged: 0, index: 0 },
+      weather: { phase: null, lastChanged: 0, index: 0 },
+      season: { phase: null, lastChanged: 0, index: 0 }
     };
 
-    const TIME_OF_DAY_CONTEXT_STRINGS = Object.values(TIME_OF_DAY_CONTEXTS);
+    /* Shared helper: select a variant from an array of context strings,
+     * cycling when the same phase has persisted for >= 30s.
+     * contexts: phase→array-of-strings map
+     * currentPhase: the active phase name
+     * tracker: an object with { phase, lastChanged, index }
+     * Returns the chosen variant string (first variant is the default).
+     */
+    function selectVariant(contexts, currentPhase, tracker) {
+      if (!currentPhase || !contexts[currentPhase]) return '';
+      const variants = contexts[currentPhase];
+      if (!Array.isArray(variants)) return variants;
+      const now = performance.now();
+      if (currentPhase !== tracker.phase) {
+        /* Phase changed — reset to default (first variant) */
+        tracker.phase = currentPhase;
+        tracker.lastChanged = now;
+        tracker.index = 0;
+      } else if (now - tracker.lastChanged >= 30_000 && variants.length > 1) {
+        /* Same phase for 30+ seconds — advance to next variant */
+        tracker.index = (tracker.index + 1) % variants.length;
+        tracker.lastChanged = now; // reset timer so next cycle takes another 30s
+      }
+      return variants[tracker.index];
+    }
 
+    const TIME_OF_DAY_CONTEXTS = {
+      'Morning': [
+        'Soft awakening light spreads across the garden, the air gentle and warm.',
+        'Soft morning light filters gently through the awakening air, casting a warm glow across the garden.',
+        'A tender awakening light settles over the garden, the air soft and welcoming.'
+      ],
+      'Midday': [
+        'Bright clear light fills the garden, the sun warm and steady overhead.',
+        'The bright midday sun stands high, casting crisp shadows across the warm garden.',
+        'Bright daylight rests on the garden, warm and still in the sun.'
+      ],
+      'Evening': [
+        'Golden tones settling across the garden as the light mellows toward dusk.',
+        'The golden evening light slants low, settling across the garden as dusk approaches.',
+        'Long golden shadows stretch as the settling dusk softens the garden.'
+      ],
+      'Night': [
+        'Darkness and deep quiet hold the garden, lit by stars and firefly glow.',
+        'Darkness settles over the quiet garden, stars and firefly glow through the night.',
+        'The garden rests in quiet darkness, lit only by stars and distant firefly glow.'
+      ]
+    };
+
+    const TIME_OF_DAY_CONTEXT_STRINGS = Object.values(TIME_OF_DAY_CONTEXTS).flat();
+
+    /* timeContextFor returns the FIRST (default) variant for backward compatibility */
     function timeContextFor(phase) {
-      return TIME_OF_DAY_CONTEXTS[phase] || '';
+      const variants = TIME_OF_DAY_CONTEXTS[phase];
+      return variants ? variants[0] : '';
     }
 
     function chooseTimeOfDayContext() {
       const phase = (document.getElementById('time-display')?.textContent || '').trim();
-      return timeContextFor(phase);
+      return selectVariant(TIME_OF_DAY_CONTEXTS, phase, STATE_STABILITY.time);
     }
 
     /* Weather-aware description contexts (issue #492).
@@ -472,20 +525,34 @@
      * the plot and growing descriptions without replacing the base text.
      */
     const WEATHER_CONTEXTS = {
-      'Clear': 'Clear skies and warm air hold the garden in bright, untroubled light.',
-      'Overcast': 'Soft grey light settles over the garden, its colours muted and calm.',
-      'Light Drizzle': 'Gentle rain falls over the garden, leaving the air fresh and clean.'
+      'Clear': [
+        'Clear skies and warm air hold the garden in bright, untroubled light.',
+        'Bright, warm air fills the garden, calm and open under clear sunlight.',
+        'Bright and open skies stretch above the garden, the warm air clear and still.'
+      ],
+      'Overcast': [
+        'Soft grey light settles over the garden, its colours muted and calm.',
+        'A gentle blanket of grey cloud softens the light, the garden muted and still.',
+        'The garden rests under an overcast sky, the light grey and muted.'
+      ],
+      'Light Drizzle': [
+        'Gentle rain falls over the garden, leaving the air fresh and clean.',
+        'Soft rain descends, beading on the leaves and freshening the soil.',
+        'Fine rain drifts down, washing the air and leaving the garden refreshed.'
+      ]
     };
 
-    const WEATHER_CONTEXT_STRINGS = Object.values(WEATHER_CONTEXTS);
+    const WEATHER_CONTEXT_STRINGS = Object.values(WEATHER_CONTEXTS).flat();
 
+    /* weatherContextFor returns the FIRST (default) variant for backward compatibility */
     function weatherContextFor(phase) {
-      return WEATHER_CONTEXTS[phase] || '';
+      const variants = WEATHER_CONTEXTS[phase];
+      return variants ? variants[0] : '';
     }
 
     function chooseWeatherContext() {
       const phase = (document.getElementById('weather-display')?.textContent || '').trim();
-      return weatherContextFor(phase);
+      return selectVariant(WEATHER_CONTEXTS, phase, STATE_STABILITY.weather);
     }
 
     /* Season-aware description contexts (issue #494).
@@ -494,21 +561,39 @@
      * composing with time, weather and butterfly layers.
      */
     const SEASON_CONTEXTS = {
-      'Spring': 'New growth pushes up through the soil, fresh green stems emerging in the soft air.',
-      'Summer': 'The garden stands lush and full, leaves rich with deep summer warmth.',
-      'Autumn': 'Golden and brown tones spread through the garden as leaves fall and quiet decline settles in.',
-      'Winter': 'Bare stems stand dormant in the stillness, the garden hushed beneath a light frost.'
+      'Spring': [
+        'New growth pushes up through the soil, fresh green stems emerging in the soft air.',
+        'Tender new growth emerging from the soil, the garden stirring with fresh green life.',
+        'Fresh green stems emerging with new growth, spring unfurling across the garden.'
+      ],
+      'Summer': [
+        'The garden stands lush and full, leaves rich with deep summer warmth.',
+        'Summer holds the garden in lush fullness, leaves thick with deep warmth.',
+        'Lush foliage fills the garden, full of the deep warmth of summer.'
+      ],
+      'Autumn': [
+        'Golden and brown tones spread through the garden as leaves fall and quiet decline settles in.',
+        'The garden turns to golden and brown, leaves falling in a quiet decline through the crisp air.',
+        'Leaves fall in a quiet decline, as golden and brown hues settle across the garden.'
+      ],
+      'Winter': [
+        'Bare stems stand dormant in the stillness, the garden hushed beneath a light frost.',
+        'Bare and dormant, the garden rests in winter stillness, frost tracing the stems.',
+        'Bare dormant branches rest in stillness, frost tracing the air as winter holds the garden in quiet repose.'
+      ]
     };
 
-    const SEASON_CONTEXT_STRINGS = Object.values(SEASON_CONTEXTS);
+    const SEASON_CONTEXT_STRINGS = Object.values(SEASON_CONTEXTS).flat();
 
+    /* seasonContextFor returns the FIRST (default) variant for backward compatibility */
     function seasonContextFor(phase) {
-      return SEASON_CONTEXTS[phase] || '';
+      const variants = SEASON_CONTEXTS[phase];
+      return variants ? variants[0] : '';
     }
 
     function chooseSeasonContext() {
       const phase = (document.getElementById('season-display')?.textContent || '').trim();
-      return seasonContextFor(phase);
+      return selectVariant(SEASON_CONTEXTS, phase, STATE_STABILITY.season);
     }
 
     /* Shared suffix-stripping helper: removes any suffix found in the list
@@ -797,6 +882,9 @@
       seasonContexts: SEASON_CONTEXTS,
       seasonContextFor,
       updateSeasonDescription,
+      /* Context variant stability tracker (issue #543) */
+      stateStability: STATE_STABILITY,
+      selectVariant,
       /* Camera stillness acknowledgment (issue #544) */
       _acknowledgmentSentences: ACKNOWLEDGMENT_SENTENCES,
       _acknowledgmentCooldown: ACKNOWLEDGMENT_COOLDOWN_MS,
