@@ -6,6 +6,7 @@
  */
 
 import * as THREE from "three";
+import { isReducedMotion } from './motion.js';
 
 /* --- Seasonal colour palettes ---
  * Each season defines stem, leaf, and ground colours.
@@ -321,8 +322,7 @@ function createPlant(opts) {
 
       /* --- Phototropism: compute target lean from sun position --- */
       const gs = window.__gardenState;
-      const mm = window.matchMedia('(prefers-reduced-motion: reduce)');
-      const reducedMotion = mm.matches;
+      const reducedMotion = isReducedMotion();
 
       if (reducedMotion) {
         tropismTargetX = 0;
@@ -855,8 +855,7 @@ export function createFallenLeaves(scene) {
   function update(time, computeDisplacement) {
     if (!computeDisplacement) return;
 
-    const reducedMotionMedia = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const reducedMotion = reducedMotionMedia.matches;
+    const reducedMotion = isReducedMotion();
 
     if (reducedMotion) {
       // Reset leaves to base positions

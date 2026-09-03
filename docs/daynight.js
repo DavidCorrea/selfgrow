@@ -12,6 +12,7 @@
  */
 
 import * as THREE from "three";
+import { isReducedMotion } from './motion.js';
 
 /* --- Configuration --- */
 const CYCLE_DURATION_MS = 180_000; // ~3 minutes for a full day/night loop
@@ -141,8 +142,7 @@ export function startDayNightCycle(sunLight, scene, ambientLight, hemiLight, fil
      * daytime (sun above horizon), giving shadows a barely-perceptible creep.
      * Disabled at night and when prefers-reduced-motion is active.
      */
-    const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (y > 0 && !prefersReduced) {
+    if (y > 0 && !isReducedMotion()) {
       const driftPhase = (elapsed % 60000) / 60000 * 2 * Math.PI;
       _shadowDriftX = 0.3 * Math.sin(driftPhase);
       _shadowDriftZ = 0.3 * Math.cos(driftPhase * 0.87);

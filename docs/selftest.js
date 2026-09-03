@@ -9,6 +9,7 @@ import * as THREE from "three";
 import { saveGardenState, loadGardenState, fastForwardState, clearGardenState, STORAGE_KEY, SEASON_CYCLE_DURATION_MS } from "./persistence.js";
 import { createCreature } from "./creature.js";
 import { computeDisplacement } from "./groundRipple.js";
+import { isReducedMotion, onMotionChange } from './motion.js';
 
 export async function checks() {
   const problems = [];
@@ -5593,6 +5594,104 @@ export async function checks() {
       window.matchMedia = origMatchMediaRM;
     }
   });
+
+  /* ---------- Shared prefers-reduced-motion detection (motion.js) checks (issue #552) ---------- */
+  // Verify isReducedMotion returns a boolean matching the real preference
+  if (typeof isReducedMotion !== 'function') {
+    problems.push('motion.js isReducedMotion is not exported as a function.');
+  } else {
+    const result = isReducedMotion();
+    if (typeof result !== 'boolean') {
+      problems.push('motion.js isReducedMotion() returned ' + typeof result + ', expected a boolean.');
+    } else {
+      // Verify it matches the real matchMedia value
+      const realMatches = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (result !== realMatches) {
+        problems.push('motion.js isReducedMotion() returned ' + result + ', but window.matchMedia returns ' + realMatches + ' — should match the real preference.');
+      }
+    }
+  }
+
+  // Verify onMotionChange is a function
+  if (typeof onMotionChange !== 'function') {
+    problems.push('motion.js onMotionChange is not exported as a function.');
+  } else {
+    // Verify onMotionChange registers a callback and returns an unsubscribe function
+    var called = false;
+    var unsub = onMotionChange(function(matches) {
+      called = true;
+    });
+
+    if (typeof unsub !== 'function') {
+      problems.push('motion.js onMotionChange() did not return a function (unsubscribe), got ' + typeof unsub);
+    }
+
+    // Verify the callback was NOT called immediately (it should only fire on change)
+    if (called) {
+      problems.push('motion.js onMotionChange called the callback immediately — should only fire when the preference changes (read initial value from isReducedMotion()).');
+    }
+
+    // Verify unsubscribing removes the callback
+    var calledAfterUnsub = false;
+    var unsub2 = onMotionChange(function(matches) {
+      calledAfterUnsub = true;
+    });
+    unsub2();
+
+    // Manually trigger the change handler (we can't dispatch a real change event)
+    // by calling the internal _onChange via the mock. We can't access it directly,
+    // but we can dispatch a 'change' event on the MQL via the mock.
+    // Instead, verify that the unsubscribe function is callable and doesn't throw.
+    try {
+      unsub2(); // calling unsubscribe again should be a no-op
+    } catch (e) {
+      problems.push('motion.js unsubscribe threw on second call: ' + e.message + ' — should be safe to call multiple times.');
+    }
+
+    // Clean up: unsubscribe the first callback
+    unsub();
+  }
+
+  // Verify that only one MQL 'change' listener is added by counting listener additions
+  // via mocking matchMedia on a fresh import (we can't easily introspect the internal
+  // _hasListener, but we can verify behaviorally that registering multiple callbacks
+  // doesn't add multiple native listeners).
+  // We do this by checking that after the real page's modules registered their callbacks,
+  // the motion module is still in a consistent state (callbacks registered, one listener).
+  // Since we can't introspect the closure, we verify via the exported API:
+  // - Register one more callback, ensure it returns an unsubscribe
+  // - Unsubscribe it, ensure no error
+  // This confirms the unsubscribe mechanism works correctly even after multiple callbacks.
+  var sanityCheckCalled = false;
+  var sanityUnsub = onMotionChange(function(matches) {
+    sanityCheckCalled = true;
+  });
+  if (typeof sanityUnsub !== 'function') {
+    problems.push('motion.js onMotionChange returned a non-function on second call: ' + typeof sanityUnsub);
+  }
+  sanityUnsub();
+  if (sanityCheckCalled) {
+    problems.push('motion.js onMotionChange called callback immediately on second registration — should only fire on preference change.');
+  }
+
+  // Verify the shared MQL is reused: registering a callback after the garden modules
+  // have already set up the singular listener must NOT create another MediaQueryList
+  // or 'change' listener. We count window.matchMedia calls during registration.
+  var mmCallCount = 0;
+  var origMM = window.matchMedia;
+  try {
+    window.matchMedia = function(q) {
+      mmCallCount++;
+      return origMM(q);
+    };
+    var unsubCount = onMotionChange(function() {});
+    if (mmCallCount !== 0) {
+      problems.push('onMotionChange queried matchMedia ' + mmCallCount + ' time(s) despite the shared listener already existing — motion.js should reuse the single MediaQueryList (issue #552).');
+    }
+    unsubCount();
+  } finally {
+    window.matchMedia = origMM;
+  }
 
   return problems;
 }
