@@ -279,11 +279,38 @@ function createPlant(opts) {
     }
   }
 
-  /* --- Helper: start sway animation --- */
+  /* --- Helper: start sway animation ---
+   *
+   * The sway loop now also applies phototropism — a very slow, subtle lean
+   * toward the sun's horizontal direction during daytime (issue #548).
+   * At night (sun Y <= 0), the lean relaxes back toward upright.
+   *
+   * The lean is limited to ±8° max tilt on both X and Z axes. It uses
+   * exponential smoothing with an ~8s time constant so the plant takes
+   * ~30s to reach full tilt or return to neutral.
+   *
+   * Respects prefers-reduced-motion by disabling completely.
+   */
   function startSway() {
     let swayTime = 0;
     const BASE_AMP_X = 0.025;
     const BASE_AMP_Z = 0.018;
+    const MAX_TROPISM = 0.139626; // 8° in radians
+    const TROPISM_LERP_ALPHA = 0.002; // ~8s time constant (1 - exp(-0.016/8))
+
+    // Current smooth tropism offsets (accumulated each frame)
+    let tropismX = 0;
+    let tropismZ = 0;
+    let tropismTargetX = 0;
+    let tropismTargetZ = 0;
+
+    // Expose tropism state on the plant object for selftesting
+    plantState.tropismGetX = function() { return tropismX; };
+    plantState.tropismGetZ = function() { return tropismZ; };
+    plantState.tropismGetTargetX = function() { return tropismTargetX; };
+    plantState.tropismGetTargetZ = function() { return tropismTargetZ; };
+    plantState.getMaxTropism = function() { return MAX_TROPISM; };
+
     function sway() {
       swayTime += 0.016;
       let mul = 1.0;
@@ -291,8 +318,58 @@ function createPlant(opts) {
       if (ws && typeof ws.getSwayAmplitudeMul === 'function') {
         mul = ws.getSwayAmplitudeMul();
       }
-      group.rotation.x = Math.sin(swayTime * 0.4 + swayPhaseOffset) * BASE_AMP_X * mul;
-      group.rotation.z = Math.sin(swayTime * 0.3 + 1.2 + swayPhaseOffset) * BASE_AMP_Z * mul;
+
+      /* --- Phototropism: compute target lean from sun position --- */
+      const gs = window.__gardenState;
+      const mm = window.matchMedia('(prefers-reduced-motion: reduce)');
+      const reducedMotion = mm.matches;
+
+      if (reducedMotion) {
+        tropismTargetX = 0;
+        tropismTargetZ = 0;
+      } else if (gs && gs.dayNight && typeof gs.dayNight.getSunPosition === 'function') {
+        const sunPos = gs.dayNight.getSunPosition();
+        const sunY = sunPos.y;
+        const sx = sunPos.x;
+        const sz = sunPos.z;
+
+        if (sunY <= 0) {
+          // Night — target neutral, relax back to upright
+          tropismTargetX = 0;
+          tropismTargetZ = 0;
+        } else {
+          // Daytime — compute lean toward sun's horizontal direction
+          const horizMag = Math.sqrt(sx * sx + sz * sz);
+          if (horizMag > 0.001) {
+            const nx = sx / horizMag;
+            const nz = sz / horizMag;
+            // rotation.x tilts toward +Z; rotation.z tilts toward -X
+            tropismTargetX = nz * MAX_TROPISM;
+            tropismTargetZ = -nx * MAX_TROPISM;
+          } else {
+            tropismTargetX = 0;
+            tropismTargetZ = 0;
+          }
+        }
+      } else {
+        tropismTargetX = 0;
+        tropismTargetZ = 0;
+      }
+
+      /* Lerp current tropism toward target (exponential smoothing) */
+      tropismX += (tropismTargetX - tropismX) * TROPISM_LERP_ALPHA;
+      tropismZ += (tropismTargetZ - tropismZ) * TROPISM_LERP_ALPHA;
+
+      // If reduced motion, force offsets to zero
+      if (reducedMotion) {
+        tropismX = 0;
+        tropismZ = 0;
+      }
+
+      /* Apply sway + tropism offset */
+      group.rotation.x = Math.sin(swayTime * 0.4 + swayPhaseOffset) * BASE_AMP_X * mul + tropismX;
+      group.rotation.z = Math.sin(swayTime * 0.3 + 1.2 + swayPhaseOffset) * BASE_AMP_Z * mul + tropismZ;
+
       requestAnimationFrame(sway);
     }
     sway();
