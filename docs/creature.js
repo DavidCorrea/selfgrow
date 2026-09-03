@@ -46,6 +46,16 @@ const PAUSE_HOLD_MAX = 5.0;       // maximum hold seconds
 const PAUSE_EXIT_DURATION = 1.0;  // seconds to ease back to normal flight
 const PAUSE_DIP_AMOUNT = 0.15;    // how much closer the butterfly dips to the flower
 
+/* Landing (butterfly rests on a leaf) parameters */
+const LANDING_PROBABILITY = 0.40; // ≈40% chance to land after holding
+const LANDING_DESCEND_DURATION = 2.0; // seconds to spiral down to the leaf
+const LANDING_REST_MIN = 5.0;     // minimum rest seconds on the leaf
+const LANDING_REST_MAX = 10.0;    // maximum rest seconds on the leaf
+const LANDING_ASCEND_DURATION = 2.0; // seconds to spiral back up
+const LANDING_WING_FOLD_ANGLE = Math.PI / 2; // wings folded upright when resting
+const LANDING_SWAY_AMPLITUDE = 0.002; // barely-perceptible sway while resting
+const LANDING_SWAY_FREQ = 0.5;    // frequency of the rest sway (Hz)
+
 /* Wing flap animation */
 const FLAP_SPEED = 0.4;           // <0.5 Hz slow flap
 const FLAP_ANGLE_MAX = 0.6;       // radians, how far wings open/close
@@ -140,7 +150,7 @@ export function createCreature(scene) {
   const WING_BASE_OPACITY = 0.45;
 
   /* --- Pause state machine --- */
-  // States: 'idle' | 'entering' | 'holding' | 'exiting'
+  // States: 'idle' | 'entering' | 'holding' | 'exiting' | 'descending' | 'resting' | 'ascending'
   let pauseState = 'idle';
   let pauseTimer = 0;
   let pauseHoldDuration = 0;
@@ -150,6 +160,11 @@ export function createCreature(scene) {
   let pauseOriginPos = null;      // { x, y, z } — where we were when pause triggered
   let pauseDipTarget = null;      // { x, y, z } — the dipped position near the flower
   let pauseCooldown = 0;          // seconds after exiting before next pause can trigger
+
+  /* --- Landing state (descending/resting/ascending) --- */
+  let leafTargetPos = null;       // { x, y, z } — the leaf world position to land on
+  let landingRestDuration = 0;    // seconds to rest on the leaf
+  let landingPlantRef = null;     // 'plant' or 'plant2' — which plant we're landing on
 
   /* --- Tracks the current wind nudge for selftest --- */
   let _windNudge = 0;
@@ -176,6 +191,10 @@ export function createCreature(scene) {
     pauseTargetPos: () => pauseTargetPos ? { ...pauseTargetPos } : null,
     pauseSpeedMul: () => pauseSpeedMul,
     pauseEaseT: () => pauseEaseT,
+    /* Landing state exposed for testing */
+    leafTargetPos: () => leafTargetPos ? { ...leafTargetPos } : null,
+    landingRestDuration: () => landingRestDuration,
+    landingPlantRef: () => landingPlantRef,
     /* Wind perturbation exposed for selftest */
     windNudge: () => _windNudge
   };
@@ -183,6 +202,69 @@ export function createCreature(scene) {
   /* Start invisible if reduced motion is active */
   if (reducedMotion) {
     group.visible = false;
+  }
+
+  /* --- Try to start a landing sequence: find a leaf on the plant and descend to rest --- */
+  function tryStartLanding() {
+    // Only land with ≈40% probability
+    if (Math.random() >= LANDING_PROBABILITY) {
+      return false;
+    }
+
+    // Find the plant that triggered the pause
+    if (!pauseTargetPos || !pauseDipTarget) {
+      return false;
+    }
+
+    const gs = window.__gardenState;
+    if (!gs) return false;
+
+    // Determine which plant the pause target belongs to
+    const plantRefs = ['plant', 'plant2'];
+    let chosenPlant = null;
+    let chosenRef = null;
+    let closestDist = Infinity;
+
+    for (let i = 0; i < plantRefs.length; i++) {
+      const plant = gs[plantRefs[i]];
+      if (plant && plant.group && plant.leaves && plant.leaves.length > 0) {
+        const pp = plant.group.position;
+        const dx = pauseTargetPos.x - pp.x;
+        const dz = pauseTargetPos.z - pp.z;
+        const dist = dx * dx + dz * dz;
+        if (dist < closestDist) {
+          closestDist = dist;
+          chosenPlant = plant;
+          chosenRef = plantRefs[i];
+        }
+      }
+    }
+
+    if (!chosenPlant || !chosenRef) {
+      return false;
+    }
+
+    // Pick a random leaf from the plant
+    const leafIndex = Math.floor(Math.random() * chosenPlant.leaves.length);
+    const leaf = chosenPlant.leaves[leafIndex];
+    const plantPos = chosenPlant.group.position;
+
+    // Compute leaf world position: plant group position + leaf local position
+    leafTargetPos = {
+      x: plantPos.x + leaf.position.x,
+      y: plantPos.y + leaf.position.y + 0.01, // slightly above the leaf surface
+      z: plantPos.z + leaf.position.z
+    };
+
+    landingRestDuration = LANDING_REST_MIN + Math.random() * (LANDING_REST_MAX - LANDING_REST_MIN);
+    landingPlantRef = chosenRef;
+
+    // Start descending
+    pauseState = 'descending';
+    pauseTimer = 0;
+    pauseEaseT = 0;
+
+    return true;
   }
 
   /* --- Update function (called every frame from the animation loop) --- */
@@ -354,11 +436,81 @@ export function createCreature(scene) {
       pauseSpeedMul = PAUSE_SPEED_MUL;
 
       if (pauseTimer >= pauseHoldDuration) {
-        pauseState = 'exiting';
-        pauseTimer = 0;
-        pauseEaseT = 0;
+        // After holding, sometimes descend to a leaf to rest (~40% chance).
+        // Otherwise resume normal flight via the exit ease.
+        const landing = tryStartLanding();
+        if (!landing) {
+          pauseState = 'exiting';
+          pauseTimer = 0;
+          pauseEaseT = 0;
+        }
         // Recompute the normal orbit position at the current time for exit target
         // (we'll use the computed orbitX/Y/Z as the target to resume to)
+      }
+    }
+
+    if (pauseState === 'descending') {
+      pauseTimer += dt;
+      pauseEaseT = Math.min(1, pauseTimer / LANDING_DESCEND_DURATION);
+      // Smooth ease-out for a gentle settle onto the leaf
+      const eased = 1 - Math.pow(1 - pauseEaseT, 1.8);
+      pauseSpeedMul = PAUSE_SPEED_MUL + (1.0 - PAUSE_SPEED_MUL) * eased;
+      // Spiral around the leaf target as we descend
+      const spiralAngle = pauseTimer * 3.0;
+      const spiralRadius = 0.12 * (1 - pauseEaseT);
+      finalX = leafTargetPos.x + Math.cos(spiralAngle) * spiralRadius;
+      finalY = pauseDipTarget.y + (leafTargetPos.y - pauseDipTarget.y) * eased;
+      finalZ = leafTargetPos.z + Math.sin(spiralAngle) * spiralRadius;
+
+      if (pauseEaseT >= 1) {
+        pauseState = 'resting';
+        pauseTimer = 0;
+        finalX = leafTargetPos.x;
+        finalY = leafTargetPos.y;
+        finalZ = leafTargetPos.z;
+      }
+    }
+
+    if (pauseState === 'resting') {
+      pauseTimer += dt;
+      // Nearly still on the leaf — only a barely-perceptible sway
+      finalX = leafTargetPos.x + Math.sin(time * LANDING_SWAY_FREQ * Math.PI * 2 + 1.3) * LANDING_SWAY_AMPLITUDE;
+      finalY = leafTargetPos.y + Math.cos(time * LANDING_SWAY_FREQ * Math.PI * 2 * 0.7 + 0.6) * LANDING_SWAY_AMPLITUDE;
+      finalZ = leafTargetPos.z + Math.sin(time * LANDING_SWAY_FREQ * Math.PI * 2 * 1.3 + 2.1) * LANDING_SWAY_AMPLITUDE;
+      pauseSpeedMul = PAUSE_SPEED_MUL;
+
+      if (pauseTimer >= landingRestDuration) {
+        pauseState = 'ascending';
+        pauseTimer = 0;
+        pauseEaseT = 0;
+      }
+    }
+
+    if (pauseState === 'ascending') {
+      pauseTimer += dt;
+      pauseEaseT = Math.min(1, pauseTimer / LANDING_ASCEND_DURATION);
+      // Smooth ease-in-out back to flight
+      const eased = pauseEaseT * pauseEaseT * (3 - 2 * pauseEaseT);
+      pauseSpeedMul = PAUSE_SPEED_MUL + (1.0 - PAUSE_SPEED_MUL) * eased;
+      // Spiral back up toward the normal drift path
+      const spiralAngle = -pauseTimer * 3.0;
+      const spiralRadius = 0.12 * pauseEaseT;
+      finalX = leafTargetPos.x + (orbitX - leafTargetPos.x) * eased + Math.cos(spiralAngle) * spiralRadius;
+      finalY = leafTargetPos.y + (orbitY - leafTargetPos.y) * eased;
+      finalZ = leafTargetPos.z + (orbitZ - leafTargetPos.z) * eased + Math.sin(spiralAngle) * spiralRadius;
+
+      if (pauseEaseT >= 1) {
+        // Resume normal flight
+        pauseState = 'idle';
+        pauseSpeedMul = 1.0;
+        pauseEaseT = 0;
+        pauseTargetPos = null;
+        pauseOriginPos = null;
+        pauseDipTarget = null;
+        leafTargetPos = null;
+        landingPlantRef = null;
+        // Cooldown to prevent immediate re-trigger
+        pauseCooldown = 8.0;
       }
     }
 
@@ -382,6 +534,8 @@ export function createCreature(scene) {
         pauseTargetPos = null;
         pauseOriginPos = null;
         pauseDipTarget = null;
+        leafTargetPos = null;
+        landingPlantRef = null;
         // Cooldown to prevent immediate re-trigger
         pauseCooldown = 8.0;
       }
@@ -389,6 +543,8 @@ export function createCreature(scene) {
 
     /* --- Wind perturbation: nudge the butterfly by ground ripple displacement --- */
     let windNudge = 0;
+    // Only apply wind nudge during normal flight, not during pauses or landing
+    const isLandingState = pauseState === 'descending' || pauseState === 'resting' || pauseState === 'ascending';
     if (pauseState === 'idle') {
       // Only apply wind nudge during normal flight, not during pauses
       const disp = computeDisplacement(finalX, finalZ, time);
@@ -398,33 +554,51 @@ export function createCreature(scene) {
     group.position.set(finalX, finalY + windNudge, finalZ);
 
     /* --- Orient the butterfly along its flight direction --- */
-    // Use a small look-at offset to face the direction of travel
-    const lookAhead = 0.5;
-    const nextT = (time + lookAhead) * effectiveOrbitSpeed * pauseSpeedMul;
-    const nextAngle = nextT + Math.sin(nextT * 0.23) * 0.4;
-    const nextRadiusFactor = 0.5 + 0.5 * Math.sin(nextT * FREQ_X + PHASE_X);
-    const nextRadius = ORBIT_RADIUS_MIN + nextRadiusFactor * (effectiveOrbitRadiusMax - ORBIT_RADIUS_MIN);
-    const nx = Math.cos(nextAngle) * nextRadius + Math.sin(nextT * FREQ_X * 1.7 + PHASE_X + 1.2) * 0.3;
-    const nz = Math.sin(nextAngle) * nextRadius + Math.cos(nextT * FREQ_Z * 1.7 + PHASE_Z + 0.8) * 0.3;
-    const ny = ORBIT_HEIGHT_MIN + (0.5 + 0.5 * Math.sin(nextT * FREQ_Y + PHASE_Y)) * (ORBIT_HEIGHT_MAX - ORBIT_HEIGHT_MIN);
+    if (pauseState !== 'resting') {
+      // Use a small look-at offset to face the direction of travel
+      const lookAhead = 0.5;
+      const nextT = (time + lookAhead) * effectiveOrbitSpeed * pauseSpeedMul;
+      const nextAngle = nextT + Math.sin(nextT * 0.23) * 0.4;
+      const nextRadiusFactor = 0.5 + 0.5 * Math.sin(nextT * FREQ_X + PHASE_X);
+      const nextRadius = ORBIT_RADIUS_MIN + nextRadiusFactor * (effectiveOrbitRadiusMax - ORBIT_RADIUS_MIN);
+      const nx = Math.cos(nextAngle) * nextRadius + Math.sin(nextT * FREQ_X * 1.7 + PHASE_X + 1.2) * 0.3;
+      const nz = Math.sin(nextAngle) * nextRadius + Math.cos(nextT * FREQ_Z * 1.7 + PHASE_Z + 0.8) * 0.3;
+      const ny = ORBIT_HEIGHT_MIN + (0.5 + 0.5 * Math.sin(nextT * FREQ_Y + PHASE_Y)) * (ORBIT_HEIGHT_MAX - ORBIT_HEIGHT_MIN);
 
-    const dir = new THREE.Vector3(nx - finalX, 0, nz - finalZ).normalize();
-    if (dir.length() > 0.001) {
-      const lookTarget = new THREE.Vector3(
-        finalX + dir.x,
-        finalY,
-        finalZ + dir.z
-      );
-      group.lookAt(lookTarget);
-      // Tilt slightly upward for a more natural flight posture
-      group.rotateX(0.15);
+      const dir = new THREE.Vector3(nx - finalX, 0, nz - finalZ).normalize();
+      if (dir.length() > 0.001) {
+        const lookTarget = new THREE.Vector3(
+          finalX + dir.x,
+          finalY,
+          finalZ + dir.z
+        );
+        group.lookAt(lookTarget);
+        // Tilt slightly upward for a more natural flight posture
+        group.rotateX(0.15);
+      }
     }
 
-    /* --- Slow wing flap during pause, with seasonal speed modulation --- */
-    const flapSpeedMul = pauseState === 'idle' ? 1.0 : 0.6;
-    const flapAngle = Math.sin(time * FLAP_SPEED * _currentSeasonFlapMul * Math.PI * 2 * flapSpeedMul) * FLAP_ANGLE_MAX;
-    leftWing.rotation.z = flapAngle;
-    rightWing.rotation.z = -flapAngle;
+    /* --- Wing animation --- */
+    let flapAngle;
+    if (pauseState === 'resting') {
+      // Wings folded upright while resting on the leaf
+      leftWing.rotation.z = LANDING_WING_FOLD_ANGLE;
+      rightWing.rotation.z = -LANDING_WING_FOLD_ANGLE;
+    } else if (pauseState === 'descending' || pauseState === 'ascending') {
+      // Wings angled upward during descent/ascent glide — a gentle, partially
+      // closed V that folds more toward the transition into resting
+      const foldAmount = pauseState === 'descending' ? 0.4 + 0.35 * pauseEaseT : 0.75 - 0.35 * pauseEaseT;
+      const foldAngle = LANDING_WING_FOLD_ANGLE * foldAmount;
+      const glideFlap = Math.sin(time * FLAP_SPEED * Math.PI * 2 * 0.5) * 0.12;
+      leftWing.rotation.z = foldAngle + glideFlap;
+      rightWing.rotation.z = -foldAngle - glideFlap;
+    } else {
+      /* Slow wing flap during pause, with seasonal speed modulation */
+      const flapSpeedMul = pauseState === 'idle' ? 1.0 : 0.6;
+      flapAngle = Math.sin(time * FLAP_SPEED * _currentSeasonFlapMul * Math.PI * 2 * flapSpeedMul) * FLAP_ANGLE_MAX;
+      leftWing.rotation.z = flapAngle;
+      rightWing.rotation.z = -flapAngle;
+    }
   }
 
   /* --- Handle runtime changes to reduced-motion preference --- */
@@ -438,6 +612,8 @@ export function createCreature(scene) {
       pauseTargetPos = null;
       pauseOriginPos = null;
       pauseDipTarget = null;
+      leafTargetPos = null;
+      landingPlantRef = null;
     } else {
       group.visible = true;
     }

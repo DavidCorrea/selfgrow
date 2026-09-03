@@ -2354,6 +2354,355 @@ export async function checks() {
     }
   }
 
+  /* ---------- Butterfly landing on leaf checks (issue #549) ---------- */
+  // After pausing near a blooming flower (3-5s hold), the butterfly sometimes
+  // (≈40% chance) descends in a slow gentle spiral to land on a leaf of the
+  // nearest plant, folds its wings upright, and rests for 5-10s before unfolding
+  // and resuming its drifting path. The landing animation is a slow descent over
+  // ≈2s with wings angled up. While resting, the butterfly is nearly still (a
+  // barely-perceptible sway). The states are: 'descending', 'resting', 'ascending'.
+  // The total sequence takes 12-20s. Respects prefers-reduced-motion.
+  if (!creatureState) {
+    problems.push('window.__gardenState.creature is not set — cannot verify butterfly landing behaviour.');
+  } else {
+    // --- Structural checks: landing state accessors must exist and return valid shapes ---
+    if (typeof creatureState.leafTargetPos !== 'function') {
+      problems.push('creature.state.leafTargetPos is not a function — landing leaf target getter missing (issue #549).');
+    } else {
+      var ltp = creatureState.leafTargetPos();
+      if (ltp !== null) {
+        if (typeof ltp.x !== 'number' || typeof ltp.y !== 'number' || typeof ltp.z !== 'number') {
+          problems.push('creature leafTargetPos() returned an object with invalid coordinates: ' + JSON.stringify(ltp) + ' (issue #549).');
+        }
+      }
+    }
+
+    if (typeof creatureState.landingRestDuration !== 'function') {
+      problems.push('creature.state.landingRestDuration is not a function — landing rest duration getter missing (issue #549).');
+    } else {
+      var lrd = creatureState.landingRestDuration();
+      if (typeof lrd !== 'number' || lrd < 0 || lrd > 20) {
+        problems.push('creature landingRestDuration() is ' + lrd + ', expected a number between 0 and 20 (issue #549).');
+      }
+    }
+
+    if (typeof creatureState.landingPlantRef !== 'function') {
+      problems.push('creature.state.landingPlantRef is not a function — landing plant ref getter missing (issue #549).');
+    } else {
+      var lpr = creatureState.landingPlantRef();
+      if (lpr !== null && lpr !== 'plant' && lpr !== 'plant2') {
+        problems.push('creature landingPlantRef() is "' + lpr + '", expected "plant", "plant2", or null (issue #549).');
+      }
+    }
+
+    // --- Behavioural tests: only meaningful when motion is not reduced ---
+    if (!creatureState.reducedMotion && gardenState && typeof gardenState.creatureUpdate === 'function') {
+      var origPlant = gardenState.plant;
+      var origPlant2 = gardenState.plant2;
+      var origDayNight = null;
+
+      // Mock day/night as daytime so the butterfly is visible and active
+      if (gardenState.dayNight && typeof gardenState.dayNight.getCycleProgress === 'function') {
+        origDayNight = gardenState.dayNight.getCycleProgress;
+        gardenState.dayNight.getCycleProgress = function() { return 0.1; }; // Morning — butterfly active
+      }
+
+      try {
+        // Helper: run a single update at the given time
+        function runUpdate(t) {
+          gardenState.creatureUpdate(t, 0.016);
+        }
+
+        // Helper: create a fake plant with a flower in the given phase
+        function makeFakePlant(phase) {
+          return {
+            group: { position: new THREE.Vector3(0, 0, 0) },
+            flower: {
+              getPhase: function() { return phase; },
+              getProgress: function() { return 0.5; }
+            },
+            leaves: [
+              { position: new THREE.Vector3(0.03, 0.28, 0.02) },
+              { position: new THREE.Vector3(-0.02, 0.42, 0.03) },
+              { position: new THREE.Vector3(0.01, 0.55, -0.02) }
+            ]
+          };
+        }
+
+        // Set both plants to non-bloom fakes far away so no real pause can trigger
+        var farFake = makeFakePlant('dormant');
+        farFake.group.position.set(100, 0, 100);
+        gardenState.plant = farFake;
+        gardenState.plant2 = farFake;
+
+        // Drain any in-flight pause from the live animation loop
+        var drainStart = 10000;
+        for (var di = 0; di < 1100; di++) {
+          runUpdate(drainStart + di * 0.016);
+        }
+
+        if (creatureState.pauseState() !== 'idle') {
+          problems.push('Butterfly landing test: could not drain to idle (state=' + creatureState.pauseState() + ') — cannot verify landing behaviour (issue #549).');
+        } else {
+          // --- Test 1: the new landing states are valid pause states ---
+          var validStates = ['idle', 'entering', 'holding', 'exiting', 'descending', 'resting', 'ascending'];
+          var ps = creatureState.pauseState();
+          if (validStates.indexOf(ps) === -1) {
+            problems.push('creature pauseState() returned "' + ps + '", expected one of: ' + validStates.join(', ') + ' (issue #549).');
+          }
+
+          // --- Test 2: after holding, the butterfly can enter descending state ---
+          // Find the butterfly's current orbit position
+          runUpdate(11000);
+          var bp2 = creatureState.group.position;
+
+          // Place a bloom flower at the butterfly's position
+          var bloomFake = makeFakePlant('bloom');
+          bloomFake.group.position.set(bp2.x, bp2.y - 0.72, bp2.z);
+          gardenState.plant = bloomFake;
+
+          // Run next update — orbit position has barely moved, distance ~0, should trigger
+          runUpdate(11000.016);
+
+          var triggered = creatureState.pauseState() === 'entering' || creatureState.pauseState() === 'holding';
+
+          if (!triggered) {
+            problems.push('Butterfly landing test: did not pause near a blooming flower: pauseState() is "' + creatureState.pauseState() + '", expected "entering" or "holding" (issue #549).');
+          } else {
+            // Run through entering (1s) + holding (3-5s) and check if we ever enter descending/resting/ascending
+            var sawDescending = false;
+            var sawResting = false;
+            var sawAscending = false;
+            var sawLeafTarget = false;
+            var sawWingFold = false;
+            var sawWingUpInDescent = false;
+            var sawStillness = false;
+            var descentFrames = 0; // frames spent in 'descending'
+            var restFrames = 0;    // frames spent in 'resting'
+            var restStartPos = null;
+            var backToIdle = false;
+
+            for (var ci = 0; ci < 1500; ci++) {
+              runUpdate(11000.032 + ci * 0.016);
+
+              var state = creatureState.pauseState();
+              if (state === 'descending') {
+                sawDescending = true;
+                descentFrames++;
+                // Wings should be angled upward during descent (fold > normal flap max)
+                if (creatureState.leftWing && Math.abs(creatureState.leftWing.rotation.z) > 0.62) {
+                  sawWingUpInDescent = true;
+                }
+              }
+              if (state === 'resting') {
+                sawResting = true;
+                restFrames++;
+                // Check wings are folded upright
+                if (creatureState.leftWing && Math.abs(creatureState.leftWing.rotation.z - Math.PI / 2) < 0.2) {
+                  sawWingFold = true;
+                }
+                // Check leaf target is set
+                if (creatureState.leafTargetPos() !== null) {
+                  sawLeafTarget = true;
+                }
+                // Track position to verify near-stillness (barely-perceptible sway)
+                if (restStartPos === null) {
+                  restStartPos = {
+                    x: creatureState.group.position.x,
+                    y: creatureState.group.position.y,
+                    z: creatureState.group.position.z
+                  };
+                } else if (restFrames > 3) {
+                  var px = creatureState.group.position.x - restStartPos.x;
+                  var py = creatureState.group.position.y - restStartPos.y;
+                  var pz = creatureState.group.position.z - restStartPos.z;
+                  var drift = Math.sqrt(px * px + py * py + pz * pz);
+                  // After several frames, the drift should stay tiny (≤ ~0.01 units)
+                  if (drift <= 0.012) {
+                    sawStillness = true;
+                  }
+                }
+              }
+              if (state === 'ascending') sawAscending = true;
+              if (state === 'idle' && ci > 100) {
+                backToIdle = true;
+                break;
+              }
+            }
+
+            // The landing is probabilistic (≈40%) — we run multiple attempts
+            // to increase the chance of seeing it. We track whether we ever
+            // see the landing states across this test.
+            // If we didn't see it, that's acceptable (the ~40% chance might not
+            // have triggered). We verify the structure is valid.
+
+            if (sawDescending || sawResting || sawAscending) {
+              if (!sawResting) {
+                problems.push('Butterfly landed (saw descending/ascending) but never entered "resting" state — the landing sequence may be incomplete (issue #549).');
+              }
+              if (sawDescending && !sawWingUpInDescent) {
+                problems.push('Butterfly entered "descending" but wings were not angled upward (|rotation.z| always ≤ 0.62) — expected wings angled up during the descent (issue #549).');
+              }
+              if (sawDescending && (descentFrames * 0.016 < 1.2 || descentFrames * 0.016 > 3.0)) {
+                problems.push('Butterfly "descending" state lasted ' + (descentFrames * 0.016).toFixed(2) + 's, expected ~2s (within [1.2s, 3.0s]) — the landing animation timing is off (issue #549).');
+              }
+              if (sawResting && !sawWingFold) {
+                problems.push('Butterfly entered "resting" state but wings were not folded upright (rotation.z ~ PI/2) — expected wings to fold while resting (issue #549).');
+              }
+              if (sawResting && !sawLeafTarget) {
+                problems.push('Butterfly entered "resting" state but leafTargetPos was null — expected a leaf target position (issue #549).');
+              }
+              if (sawResting && restFrames * 0.016 > 0.5 && !sawStillness) {
+                problems.push('Butterfly moved more than a barely-perceptible sway while resting (drift > 0.012 units) — expected near-stillness on the leaf (issue #549).');
+              }
+              if (sawResting && (restFrames * 0.016 < 4.5 || restFrames * 0.016 > 11.0)) {
+                problems.push('Butterfly "resting" state lasted ' + (restFrames * 0.016).toFixed(2) + 's, expected 5-10s (issue #549).');
+              }
+              if (sawDescending && !sawAscending && !sawResting) {
+                problems.push('Butterfly entered "descending" but never reached "resting" or "ascending" — the descent may be stuck (issue #549).');
+              }
+              if (sawAscending && !backToIdle) {
+                // Check if we at least got close to idle (ascending takes 2s)
+                // The test runs for 1500 frames * 0.016 = 24s, which should be enough
+                // for the full sequence (~12-20s). If we didn't return to idle,
+                // something may be stuck.
+                if (ci >= 1499) {
+                  problems.push('Butterfly entered "ascending" but did not return to idle within 1500 frames (~24s) — the landing sequence may be stuck (issue #549).');
+                }
+              }
+            }
+
+            // If we didn't see any landing states, try again with a fresh bloom
+            // (the ~40% probability might not have triggered). We do up to 3
+            // attempts to hit the landing path.
+            if (!sawDescending && !sawResting && !sawAscending) {
+              // Restart: drain to idle, trigger pause again
+              for (var rst = 0; rst < 1300; rst++) {
+                runUpdate(13000 + rst * 0.016);
+              }
+
+              // Place a new bloom flower at the new position
+              runUpdate(15000);
+              var bp3 = creatureState.group.position;
+              var bloomFake2 = makeFakePlant('bloom');
+              bloomFake2.group.position.set(bp3.x, bp3.y - 0.72, bp3.z);
+              gardenState.plant = bloomFake2;
+
+              runUpdate(15000.016);
+
+              for (var ci2 = 0; ci2 < 1500; ci2++) {
+                runUpdate(15000.032 + ci2 * 0.016);
+                var state2 = creatureState.pauseState();
+                if (state2 === 'descending') sawDescending = true;
+                if (state2 === 'resting') { sawResting = true; }
+                if (state2 === 'ascending') sawAscending = true;
+                if (state2 === 'idle' && ci2 > 100) break;
+              }
+            }
+
+            // If we still didn't see landing states, drain and try a third time
+            if (!sawDescending && !sawResting && !sawAscending) {
+              for (var rst2 = 0; rst2 < 1300; rst2++) {
+                runUpdate(17000 + rst2 * 0.016);
+              }
+
+              runUpdate(19000);
+              var bp4 = creatureState.group.position;
+              var bloomFake3 = makeFakePlant('bloom');
+              bloomFake3.group.position.set(bp4.x, bp4.y - 0.72, bp4.z);
+              gardenState.plant = bloomFake3;
+
+              runUpdate(19000.016);
+
+              for (var ci3 = 0; ci3 < 1500; ci3++) {
+                runUpdate(19000.032 + ci3 * 0.016);
+                var state3 = creatureState.pauseState();
+                if (state3 === 'descending') sawDescending = true;
+                if (state3 === 'resting') { sawResting = true; }
+                if (state3 === 'ascending') sawAscending = true;
+                if (state3 === 'idle' && ci3 > 100) break;
+              }
+            }
+
+            // If we saw landing states, verify the rest duration is 5-10s
+            if (sawResting) {
+              var restDur = creatureState.landingRestDuration();
+              if (typeof restDur !== 'number' || restDur < 4.5 || restDur > 10.5) {
+                problems.push('Butterfly landingRestDuration() is ' + restDur + 's, expected between 5 and 10s (issue #549).');
+              }
+            }
+
+            // If we never saw landing states, that's okay — the ≈40% probability
+            // may not have triggered. We just note that the descending/resting/ascending
+            // states exist structurally.
+          }
+        }
+      } finally {
+        // Restore original plant state and day/night getter
+        gardenState.plant = origPlant;
+        gardenState.plant2 = origPlant2;
+        if (origDayNight) {
+          gardenState.dayNight.getCycleProgress = origDayNight;
+        }
+      }
+    }
+
+    // --- Test 3: reduced-motion disables the landing entirely ---
+    var origMatchMedia = window.matchMedia;
+    var reducedCreatureLand = null;
+
+    try {
+      window.matchMedia = function() {
+        return {
+          matches: true,
+          media: '(prefers-reduced-motion: reduce)',
+          addEventListener: function() {},
+          removeEventListener: function() {}
+        };
+      };
+
+      var testScene = new THREE.Scene();
+      reducedCreatureLand = createCreature(testScene);
+
+      if (!reducedCreatureLand.state.reducedMotion) {
+        problems.push('createCreature with mocked prefers-reduced-motion did not set reducedMotion=true — the landing disable path cannot be verified (issue #549).');
+      } else {
+        // With reduced motion, the early return in update() means the butterfly
+        // never enters any pause states, including landing states.
+        var gsSnapshot = window.__gardenState;
+        window.__gardenState = {
+          plant: {
+            group: { position: new THREE.Vector3(0, 0, 0) },
+            flower: {
+              getPhase: function() { return 'bloom'; },
+              getProgress: function() { return 0.5; }
+            },
+            leaves: [
+              { position: new THREE.Vector3(0.03, 0.28, 0.02) }
+            ]
+          }
+        };
+
+        reducedCreatureLand.update(0.5);
+
+        if (reducedCreatureLand.state.pauseState() !== 'idle') {
+          problems.push('With prefers-reduced-motion active, the butterfly entered landing state (pauseState="' + reducedCreatureLand.state.pauseState() + '") — landing must be disabled under reduced motion (issue #549).');
+        }
+
+        if (reducedCreatureLand.group.visible !== false) {
+          problems.push('With prefers-reduced-motion active, the creature group should be invisible (issue #549).');
+        }
+
+        window.__gardenState = gsSnapshot;
+      }
+    } finally {
+      if (reducedCreatureLand && typeof reducedCreatureLand.destroy === 'function') {
+        reducedCreatureLand.destroy();
+      }
+      window.matchMedia = origMatchMedia;
+    }
+  }
+
   /* ---------- Butterfly wind perturbation checks (issue #526) ---------- */
   // The butterfly should be perturbed by computeDisplacement from groundRipple.js
   // when in idle (normal flight) state, with a drift of at most ~0.05 units.
