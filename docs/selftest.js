@@ -286,6 +286,102 @@ export async function checks() {
     }
   }
 
+  /* ---------- Flower weather shelter checks (issue #557) ---------- */
+  // During Light Drizzle, a flower in bloom should have shelter factor > 0.5
+  // (petals partially closed). During Clear/Overcast, shelter factor should be < 0.5
+  // (petals open). Applies to both plant1 and plant2.
+  {
+    const weatherState = gardenState && gardenState.weather;
+    const firstPlant = gardenState && gardenState.plant;
+    const secondPlant = gardenState && gardenState.plant2;
+
+    // Helper to check shelter on a plant
+    function checkPlantShelter(plantObj, label) {
+      if (!plantObj || !plantObj.flower) return;
+
+      const flower = plantObj.flower;
+      // Verify getShelterFactor exists
+      if (typeof flower.getShelterFactor !== 'function') {
+        problems.push(label + '.flower.getShelterFactor is not a function — weather shelter factor getter missing (issue #557).');
+        return;
+      }
+
+      const shelter = flower.getShelterFactor();
+      if (typeof shelter !== 'number' || shelter < 0 || shelter > 1) {
+        problems.push(label + '.flower.getShelterFactor() returned ' + shelter + ', expected a number in [0, 1].');
+        return;
+      }
+
+      // Only verify logic during a visible phase (bloom or opening or fading)
+      const phase = typeof flower.getPhase === 'function' ? flower.getPhase() : '';
+      const visiblePhases = ['bloom', 'opening', 'fading'];
+
+      if (!visiblePhases.includes(phase)) return;
+
+      // Get current weather phase
+      let weatherPhase = '';
+      if (weatherState && typeof weatherState.getPhase === 'function') {
+        weatherPhase = weatherState.getPhase();
+      } else {
+        weatherPhase = document.getElementById('weather-display')?.textContent?.trim() || '';
+      }
+
+      if (weatherPhase === 'Light Drizzle') {
+        // During drizzle, shelter should be trending toward 1.0
+        if (shelter < 0.01) {
+          problems.push(label + ' flower shelter factor is ' + shelter.toFixed(3) + ' during ' + weatherPhase + ' (phase=' + phase + ') — expected > 0 (petals should be closing against rain).');
+        }
+      } else if (weatherPhase === 'Clear' || weatherPhase === 'Overcast') {
+        // During clear/overcast, shelter should be trending toward 0.0
+        if (shelter > 0.5) {
+          problems.push(label + ' flower shelter factor is ' + shelter.toFixed(3) + ' during ' + weatherPhase + ' (phase=' + phase + ') — expected < 0.5 (petals should be opening).');
+        }
+      }
+    }
+
+    checkPlantShelter(firstPlant, 'plant');
+    checkPlantShelter(secondPlant, 'plant2');
+
+    // Verify that when a bloom flower exists, its petal scale reflects the shelter
+    function checkPetalShelter(plantObj, label) {
+      if (!plantObj || !plantObj.flower) return;
+      const flower = plantObj.flower;
+      if (!flower.petals || !Array.isArray(flower.petals) || flower.petals.length < 3) return;
+
+      const phase = typeof flower.getPhase === 'function' ? flower.getPhase() : '';
+      if (phase !== 'bloom' && phase !== 'opening') return;
+
+      const shelter = typeof flower.getShelterFactor === 'function' ? flower.getShelterFactor() : 0;
+      const firstPetal = flower.petals[0];
+      const scaleX = firstPetal.scale.x;
+
+      // In bloom phase, expected scale = 1 - 0.4 * shelter (or for opening, the eased value)
+      if (phase === 'bloom') {
+        const expectedScale = 1 - 0.4 * shelter;
+        const tolerance = 0.02;
+        if (Math.abs(scaleX - expectedScale) > tolerance && shelter > 0.01) {
+          problems.push(label + ' flower petal scale.x is ' + scaleX.toFixed(4) + ', expected ~' + expectedScale.toFixed(4) + ' (1 - 0.4 * shelter=' + shelter.toFixed(3) + '). Difference exceeds tolerance of ' + tolerance + '.');
+        }
+
+        // When fully sheltered (shelter >= 0.9), scale must be ≤ 0.64 (60% of full)
+        if (shelter >= 0.9 && scaleX > 0.65) {
+          problems.push(label + ' flower petal scale.x is ' + scaleX.toFixed(4) + ' with shelter factor ' + shelter.toFixed(3) + ' — expected ≤ 0.64 (≤60% of full bloom scale during heavy shelter).');
+        }
+      }
+
+      // Check rotation.x reflects tilt: when sheltered, rotation.x increases
+      if (shelter > 0.5 && phase === 'bloom') {
+        const rotX = firstPetal.rotation.x;
+        if (rotX < 1.5) {
+          problems.push(label + ' flower petal rotation.x is ' + rotX.toFixed(3) + ' with shelter factor ' + shelter.toFixed(3) + ' — expected > 1.5 (petals should tilt down when sheltered).');
+        }
+      }
+    }
+
+    checkPetalShelter(firstPlant, 'plant');
+    checkPetalShelter(secondPlant, 'plant2');
+  }
+
   /* ---------- Plant (botanical form) checks ---------- */
   const plant = gardenState && gardenState.plant;
   if (!plant) {
