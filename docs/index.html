@@ -824,7 +824,74 @@
      * not match any context string — updaters treat it as the base text and compose
      * context around it.
      */
-    function computeReturningVisitorGreeting(elapsedMs) {
+    /* Season name helper: maps seasonal cycle progress [0, 1) to a season name */
+    function getSeasonName(progress) {
+      if (progress < 0.25) return 'Spring';
+      if (progress < 0.5) return 'Summer';
+      if (progress < 0.75) return 'Autumn';
+      return 'Winter';
+    }
+
+    function computeReturningVisitorGreeting(elapsedMs, savedState, currentState) {
+      // If we have saved and current state, detect specific changes since last visit
+      if (savedState && currentState) {
+        const changes = [];
+
+        // Detect season change
+        const savedSeason = getSeasonName(savedState.seasonProgress);
+        const currentSeason = getSeasonName(currentState.seasonProgress);
+        if (savedSeason !== currentSeason) {
+          changes.push('the season has turned to ' + currentSeason);
+        }
+
+        // Detect plant2 emergence (was not present before, now exists)
+        const plant2New = savedState.plant2Maturity === undefined &&
+                          currentState.plant2Maturity !== undefined &&
+                          currentState.plant2Maturity > 0;
+        if (plant2New) {
+          changes.push('a second plant has emerged beside the first');
+        }
+
+        // Detect flower bloom/fade on plant1
+        const savedP1Phase = savedState.plant1FlowerPhase || 'dormant';
+        const currentP1Phase = currentState.plant1FlowerPhase || 'dormant';
+        const flowerBloomed = (savedP1Phase === 'dormant' || savedP1Phase === 'budding') &&
+                              (currentP1Phase === 'bloom' || currentP1Phase === 'opening');
+        const flowerFaded = savedP1Phase === 'bloom' && currentP1Phase === 'fading';
+
+        if (flowerBloomed) {
+          changes.push('the first plant\'s flower has bloomed softly');
+        } else if (flowerFaded) {
+          changes.push('the first plant\'s flower has gently faded');
+        }
+
+        // Detect flower bloom/fade on plant2
+        const savedP2Phase = savedState.plant2FlowerPhase || 'dormant';
+        const currentP2Phase = currentState.plant2FlowerPhase || 'dormant';
+        const plant2FlowerBloomed = (savedP2Phase === 'dormant' || savedP2Phase === 'budding') &&
+                                    (currentP2Phase === 'bloom' || currentP2Phase === 'opening');
+        const plant2FlowerFaded = savedP2Phase === 'bloom' && currentP2Phase === 'fading';
+
+        if (plant2FlowerBloomed) {
+          changes.push('the companion plant\'s flower has bloomed softly');
+        } else if (plant2FlowerFaded) {
+          changes.push('the companion plant\'s flower has gently faded');
+        }
+
+        if (changes.length > 0) {
+          // Compose natural prose from detected changes
+          if (changes.length === 1) {
+            return 'You return to find ' + changes[0] + '.';
+          } else if (changes.length === 2) {
+            return 'You return to find ' + changes[0] + ', and ' + changes[1] + '.';
+          } else {
+            const last = changes.pop();
+            return 'You return to find ' + changes.join(', ') + ', and ' + last + '.';
+          }
+        }
+      }
+
+      // Fall back to time-based greeting (backward compatible with existing tests)
       if (elapsedMs < SEASON_CYCLE_DURATION_MS) {
         return 'You return to the garden. It has quietly continued growing while you were away.';
       } else {
@@ -836,7 +903,7 @@
 
     if (savedState) {
       const elapsed = Date.now() - savedState.timestamp;
-      const greeting = computeReturningVisitorGreeting(elapsed);
+      const greeting = computeReturningVisitorGreeting(elapsed, savedState, initial);
       const plotDesc = document.getElementById('plot-description');
       if (plotDesc) {
         plotDesc.textContent = greeting;
@@ -844,10 +911,13 @@
       // Store for self-test verification
       window.__gardenState.returningVisitorGreeting = greeting;
       window.__gardenState._returningVisitorElapsedMs = elapsed;
+      window.__gardenState._returningVisitorSavedState = savedState;
+      window.__gardenState._returningVisitorCurrentState = initial;
     }
 
-    // Expose the helper for self-test
+    // Expose helpers for self-test
     window.__gardenState.computeReturningVisitorGreeting = computeReturningVisitorGreeting;
+    window.__gardenState.getSeasonName = getSeasonName;
 
     /* Create fallen leaves that respond to the seasonal cycle */
     createFallenLeaves(scene);

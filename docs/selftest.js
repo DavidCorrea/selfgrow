@@ -1397,12 +1397,184 @@ export async function checks() {
     problems.push('_returningVisitorElapsedMs is set (' + gardenState._returningVisitorElapsedMs + ') but returningVisitorGreeting is missing — greeting may not have been applied.');
   }
 
-  // Verify that the elapsed time computation matches the stored value
-  // We do this by checking the consistency between elapsed and greeting text
+  // Verify that the greeting matches the stored state (saved + current)
+  // Uses the same savedState and currentState that were used at page load time
   if (gardenState && gardenState.returningVisitorGreeting && gardenState._returningVisitorElapsedMs !== undefined) {
-    const expectedGreeting = gardenState.computeReturningVisitorGreeting(gardenState._returningVisitorElapsedMs);
+    const savedState = gardenState._returningVisitorSavedState;
+    const currentState = gardenState._returningVisitorCurrentState;
+    const expectedGreeting = gardenState.computeReturningVisitorGreeting(
+      gardenState._returningVisitorElapsedMs,
+      savedState || undefined,
+      currentState || undefined
+    );
     if (gardenState.returningVisitorGreeting !== expectedGreeting) {
-      problems.push('returningVisitorGreeting mismatch: stored "' + gardenState.returningVisitorGreeting + '" does not match computeReturningVisitorGreeting(' + gardenState._returningVisitorElapsedMs + ') = "' + expectedGreeting + '"');
+      problems.push('returningVisitorGreeting mismatch: stored "' + gardenState.returningVisitorGreeting + '" does not match computeReturningVisitorGreeting(' + gardenState._returningVisitorElapsedMs + ', savedState, currentState) = "' + expectedGreeting + '"');
+    }
+  }
+
+  /* ---------- Returning visitor contextual greeting checks (issue #560) ---------- */
+  // Test that computeReturningVisitorGreeting with savedState+currentState produces
+  // contextual prose about specific garden changes, not just generic time-passed messages.
+  if (!gardenState || typeof gardenState.computeReturningVisitorGreeting !== 'function') {
+    problems.push('window.__gardenState.computeReturningVisitorGreeting is not a function — cannot test contextual greeting (issue #560).');
+  } else {
+    const fn = gardenState.computeReturningVisitorGreeting;
+
+    // Test 1: plant2 emerged since last visit
+    {
+      const saved = {
+        seasonProgress: 0.1,
+        plant2Maturity: undefined,
+        plant1FlowerPhase: 'dormant',
+        plant1FlowerProgress: 0,
+        plant2FlowerPhase: undefined,
+        plant2FlowerProgress: undefined
+      };
+      const current = {
+        seasonProgress: 0.1,
+        plant2Maturity: 0.5,
+        plant1FlowerPhase: 'dormant',
+        plant1FlowerProgress: 0,
+        plant2FlowerPhase: undefined,
+        plant2FlowerProgress: undefined
+      };
+      const greeting = fn(720000, saved, current);
+      if (greeting.indexOf('a second plant has emerged') === -1) {
+        problems.push('contextual greeting for plant2 emergence: expected text containing "a second plant has emerged", got "' + greeting + '" (issue #560).');
+      }
+    }
+
+    // Test 2: season changed
+    {
+      const saved = {
+        seasonProgress: 0.1,
+        plant2Maturity: undefined,
+        plant1FlowerPhase: 'dormant',
+        plant1FlowerProgress: 0,
+        plant2FlowerPhase: undefined,
+        plant2FlowerProgress: undefined
+      };
+      const current = {
+        seasonProgress: 0.4,
+        plant2Maturity: undefined,
+        plant1FlowerPhase: 'dormant',
+        plant1FlowerProgress: 0,
+        plant2FlowerPhase: undefined,
+        plant2FlowerProgress: undefined
+      };
+      const greeting = fn(720000, saved, current);
+      if (greeting.indexOf('the season has turned to Summer') === -1) {
+        problems.push('contextual greeting for season change: expected text containing "the season has turned to Summer", got "' + greeting + '" (issue #560).');
+      }
+    }
+
+    // Test 3: flower bloomed on plant1
+    {
+      const saved = {
+        seasonProgress: 0.1,
+        plant2Maturity: undefined,
+        plant1FlowerPhase: 'dormant',
+        plant1FlowerProgress: 0,
+        plant2FlowerPhase: undefined,
+        plant2FlowerProgress: undefined
+      };
+      const current = {
+        seasonProgress: 0.1,
+        plant2Maturity: undefined,
+        plant1FlowerPhase: 'bloom',
+        plant1FlowerProgress: 0.5,
+        plant2FlowerPhase: undefined,
+        plant2FlowerProgress: undefined
+      };
+      const greeting = fn(720000, saved, current);
+      if (greeting.indexOf('flower has bloomed') === -1) {
+        problems.push('contextual greeting for flower bloom: expected text containing "flower has bloomed", got "' + greeting + '" (issue #560).');
+      }
+    }
+
+    // Test 4: flower faded on plant1
+    {
+      const saved = {
+        seasonProgress: 0.1,
+        plant2Maturity: undefined,
+        plant1FlowerPhase: 'bloom',
+        plant1FlowerProgress: 0.9,
+        plant2FlowerPhase: undefined,
+        plant2FlowerProgress: undefined
+      };
+      const current = {
+        seasonProgress: 0.1,
+        plant2Maturity: undefined,
+        plant1FlowerPhase: 'fading',
+        plant1FlowerProgress: 0.3,
+        plant2FlowerPhase: undefined,
+        plant2FlowerProgress: undefined
+      };
+      const greeting = fn(720000, saved, current);
+      if (greeting.indexOf('flower has gently faded') === -1) {
+        problems.push('contextual greeting for flower fade: expected text containing "flower has gently faded", got "' + greeting + '" (issue #560).');
+      }
+    }
+
+    // Test 5: multiple changes compose into a single sentence
+    {
+      const saved = {
+        seasonProgress: 0.1,
+        plant2Maturity: undefined,
+        plant1FlowerPhase: 'dormant',
+        plant1FlowerProgress: 0,
+        plant2FlowerPhase: undefined,
+        plant2FlowerProgress: undefined
+      };
+      const current = {
+        seasonProgress: 0.4,
+        plant2Maturity: 0.5,
+        plant1FlowerPhase: 'bloom',
+        plant1FlowerProgress: 0.5,
+        plant2FlowerPhase: undefined,
+        plant2FlowerProgress: undefined
+      };
+      const greeting = fn(720000, saved, current);
+      if (greeting.indexOf('season has turned to Summer') === -1) {
+        problems.push('multi-change greeting does not mention season change: "' + greeting + '" (issue #560).');
+      }
+      if (greeting.indexOf('a second plant has emerged') === -1) {
+        problems.push('multi-change greeting does not mention plant2 emergence: "' + greeting + '" (issue #560).');
+      }
+      if (greeting.indexOf('flower has bloomed') === -1) {
+        problems.push('multi-change greeting does not mention flower bloom: "' + greeting + '" (issue #560).');
+      }
+    }
+
+    // Test 6: no changes detected falls back to time-based greeting
+    {
+      const saved = {
+        seasonProgress: 0.1,
+        plant2Maturity: undefined,
+        plant1FlowerPhase: 'dormant',
+        plant1FlowerProgress: 0,
+        plant2FlowerPhase: undefined,
+        plant2FlowerProgress: undefined
+      };
+      const current = {
+        seasonProgress: 0.1,
+        plant2Maturity: undefined,
+        plant1FlowerPhase: 'dormant',
+        plant1FlowerProgress: 0,
+        plant2FlowerPhase: undefined,
+        plant2FlowerProgress: undefined
+      };
+      const greeting = fn(720000, saved, current);
+      if (greeting.indexOf('You return after 1 season') === -1) {
+        problems.push('no-change greeting should fall back to time-based message: expected "You return after 1 season", got "' + greeting + '" (issue #560).');
+      }
+    }
+
+    // Test 7: first-time visitor (no saved state) sees no contextual greeting
+    // This is the backward-compatible path — calling with only elapsedMs
+    const firstTimeGreeting = fn(0);
+    if (firstTimeGreeting.indexOf('quietly continued') === -1) {
+      problems.push('first-time visitor greeting: expected "quietly continued" text, got "' + firstTimeGreeting + '" (issue #560, backward compat).');
     }
   }
 

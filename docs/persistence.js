@@ -120,11 +120,69 @@ export function loadGardenState() {
 }
 
 /**
+ * Clear saved state (useful for tests or resetting).
+ */
+export function clearGardenState() {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch (e) {
+    // Silently fail
+  }
+}
+
+/**
+ * Advance a flower's phase through its lifecycle by a given elapsed time.
+ *
+ * The flower cycles through: dormant → budding → opening → bloom → fading → dormant.
+ * Phase durations (in ms) match the averages from garden.js:
+ *   dormant: 45s, budding: 15s, opening: 60s, bloom: 105s, fading: 30s
+ *
+ * @param {string} savedPhase - The phase when the state was saved.
+ * @param {number} savedProgress - Progress [0, 1) within the saved phase.
+ * @param {number} elapsedMs - Wall-clock time elapsed since the state was saved.
+ * @returns {{ phase: string, progress: number }} The advanced phase and progress.
+ */
+function advanceFlowerPhase(savedPhase, savedProgress, elapsedMs) {
+  const PHASE_DURATIONS = {
+    dormant: 45000,
+    budding: 15000,
+    opening: 60000,
+    bloom: 105000,
+    fading: 30000
+  };
+  const PHASE_ORDER = ['dormant', 'budding', 'opening', 'bloom', 'fading'];
+
+  let phase = savedPhase || 'dormant';
+  let progress = typeof savedProgress === 'number' ? Math.min(1, Math.max(0, savedProgress)) : 0;
+  let remaining = elapsedMs;
+  let safety = 200; // prevent infinite loop from malformed data
+
+  while (remaining > 0 && safety-- > 0) {
+    const duration = PHASE_DURATIONS[phase] || 45000;
+    const timeLeft = duration * (1 - Math.min(1, progress));
+
+    if (remaining >= timeLeft) {
+      remaining -= timeLeft;
+      // Move to the next phase (wrap around)
+      const idx = PHASE_ORDER.indexOf(phase);
+      phase = PHASE_ORDER[(idx + 1) % PHASE_ORDER.length];
+      progress = 0;
+    } else {
+      progress = Math.min(1, progress + remaining / duration);
+      remaining = 0;
+    }
+  }
+
+  return { phase, progress: Math.min(1, progress) };
+}
+
+/**
  * Given a saved state and the elapsed wall-clock time since it was saved,
  * compute new progress values for all garden cycles and plant growth.
  *
  * The garden "lives on" during absence: cycles wrap around modulo their
- * durations, and plants continue growing toward full maturity.
+ * durations, plants continue growing toward full maturity, and flower
+ * lifecycles advance through their phases.
  *
  * @param {object} savedState - The state returned by loadGardenState().
  * @returns {object} Fast-forwarded progress values:
@@ -161,6 +219,24 @@ export function fastForwardState(savedState) {
     }
   }
 
+  /* ---- Flower lifecycles advance through phases ---- */
+  // Flower only starts cycling after the plant has reached full maturity
+  let plant1FlowerPhase = savedState.plant1FlowerPhase;
+  let plant1FlowerProgress = savedState.plant1FlowerProgress;
+  if (firstPlantGrown && savedState.plant1FlowerPhase !== undefined) {
+    const advanced = advanceFlowerPhase(savedState.plant1FlowerPhase, savedState.plant1FlowerProgress, elapsedSec);
+    plant1FlowerPhase = advanced.phase;
+    plant1FlowerProgress = advanced.progress;
+  }
+
+  let plant2FlowerPhase = savedState.plant2FlowerPhase;
+  let plant2FlowerProgress = savedState.plant2FlowerProgress;
+  if (firstPlantGrown && plant2Maturity !== undefined && plant2Maturity >= 1 && savedState.plant2FlowerPhase !== undefined) {
+    const advanced = advanceFlowerPhase(savedState.plant2FlowerPhase, savedState.plant2FlowerProgress, elapsedSec);
+    plant2FlowerPhase = advanced.phase;
+    plant2FlowerProgress = advanced.progress;
+  }
+
   return {
     seasonProgress,
     dayNightProgress,
@@ -168,22 +244,11 @@ export function fastForwardState(savedState) {
     plant1Maturity,
     firstPlantGrown,
     plant2Maturity,
-    plant1FlowerPhase: savedState.plant1FlowerPhase,
-    plant1FlowerProgress: savedState.plant1FlowerProgress,
-    plant2FlowerPhase: savedState.plant2FlowerPhase,
-    plant2FlowerProgress: savedState.plant2FlowerProgress
+    plant1FlowerPhase,
+    plant1FlowerProgress,
+    plant2FlowerPhase,
+    plant2FlowerProgress
   };
-}
-
-/**
- * Clear saved state (useful for tests or resetting).
- */
-export function clearGardenState() {
-  try {
-    localStorage.removeItem(STORAGE_KEY);
-  } catch (e) {
-    // Silently fail
-  }
 }
 
 /* Expose constants for selftest */
