@@ -3174,6 +3174,42 @@ export async function checks() {
     }
   }
 
+  /* ---------- Butterfly camera reaction checks (issue #559) ---------- */
+  // notifyCameraMoved should exist on the creature, and calling it should
+  // produce a brief speed boost (1.2x) when gating conditions are satisfied.
+  var notifyCameraFn = gardenState && gardenState.creatureNotifyCameraMoved;
+  if (typeof notifyCameraFn !== 'function') {
+    problems.push('gardenState.creatureNotifyCameraMoved is not a function — the camera reaction mechanism is not exposed (issue #559).');
+  } else if (creatureState && typeof creatureState.getCameraBoost === 'function') {
+    // Test 1: Before any camera move, boost should be 1.0
+    var initialBoost = creatureState.getCameraBoost();
+    if (initialBoost !== 1.0) {
+      problems.push('Before any camera move, getCameraBoost() returned ' + initialBoost + ', expected 1.0 (issue #559).');
+    }
+
+    // Test 2: After notifyCameraMoved + update, boost should be 1.2 for ~2s
+    if (typeof gardenState.creatureUpdate === 'function') {
+      notifyCameraFn();
+      gardenState.creatureUpdate(0, 0.016);
+    }
+    var boosted = creatureState.getCameraBoost();
+    if (boosted !== 1.2) {
+      problems.push('After creatureNotifyCameraMoved() + creatureUpdate(), getCameraBoost() returned ' + boosted + ', expected 1.2 (the 1.2x camera speed boost should be active).');
+    }
+
+    // Test 3: Cooldown should be in effect. Calling notifyCameraMoved again
+    // should not change the boost state (still 1.2) — it won't restart until
+    // at least 10s have passed from the initial reaction.
+    if (typeof gardenState.creatureUpdate === 'function') {
+      notifyCameraFn();
+      gardenState.creatureUpdate(0.016, 0.016);
+    }
+    var afterSecondMove = creatureState.getCameraBoost();
+    if (afterSecondMove !== 1.2) {
+      problems.push('After second creatureNotifyCameraMoved() within cooldown window, getCameraBoost() returned ' + afterSecondMove + ', expected 1.2 (cooldown should prevent re-trigger, but boost should remain 1.2 until it expires).');
+    }
+  }
+
   /* ---------- Star field checks (issue #449) ---------- */
   const starState = gardenState && gardenState.stars;
   if (!starState) {

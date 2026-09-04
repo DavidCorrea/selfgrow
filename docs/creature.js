@@ -72,6 +72,13 @@ const FREQ_X = 1.0;               // base frequency multiplier
 const FREQ_Z = 0.83;              // slightly different for non-repeating loop
 const FREQ_Y = 0.64;
 
+/* Camera reaction timers (issue #559) */
+let _lastCameraMoveTime = 0;
+let _lastReactionTime = 0;
+const CAMERA_BOOST = 1.2;
+const CAMERA_BOOST_DURATION = 2.0; // seconds boost lasts
+const CAMERA_COOLDOWN = 10.0;       // seconds before next reaction
+
 /**
  * Create a small butterfly creature and add it to the scene.
  *
@@ -197,7 +204,15 @@ export function createCreature(scene) {
     /* Landing state exposed for testing */
     landingLeafPos: () => landingLeafPos ? { ...landingLeafPos } : null,
     landingRestTimer: () => landingRestTimer,
-    landingRestDuration: () => landingRestDuration
+    landingRestDuration: () => landingRestDuration,
+    /* Camera boost getter for selftest (issue #559) */
+    getCameraBoost: () => {
+      if (!state.reducedMotion && _lastReactionTime > 0) {
+        const elapsed = performance.now() - _lastReactionTime;
+        if (elapsed < CAMERA_BOOST_DURATION * 1000) return CAMERA_BOOST;
+      }
+      return 1.0;
+    }
   };
 
   /* Start invisible if reduced motion is active */
@@ -258,8 +273,28 @@ export function createCreature(scene) {
     _currentSeasonFlapMul = _currentSeasonFlapMul + (seasonTarget.flap - _currentSeasonFlapMul) * lerpFactor;
     _currentSeasonRadiusMul = _currentSeasonRadiusMul + (seasonTarget.radius - _currentSeasonRadiusMul) * lerpFactor;
 
+    /* Camera reaction boost (issue #559) */
+    let cameraBoost = 1.0;
+    if (!state.reducedMotion && _lastCameraMoveTime > 0) {
+      const now = performance.now();
+      const elapsedSinceReaction = now - _lastReactionTime;
+      const elapsedSinceMove = now - _lastCameraMoveTime;
+
+      // Start a new reaction if camera moved recently and cooldown has passed
+      // (or no previous reaction has been recorded — _lastReactionTime === 0)
+      if ((_lastReactionTime === 0 || elapsedSinceReaction >= CAMERA_COOLDOWN * 1000) && elapsedSinceMove < CAMERA_BOOST_DURATION * 1000) {
+        _lastReactionTime = now;
+      }
+
+      // Apply boost during the reaction window
+      const reactionElapsed = now - _lastReactionTime;
+      if (reactionElapsed < CAMERA_BOOST_DURATION * 1000) {
+        cameraBoost = CAMERA_BOOST;
+      }
+    }
+
     /* Apply season multiplier to ORBIT_SPEED for angular position computation */
-    const effectiveOrbitSpeed = ORBIT_SPEED * _currentSeasonOrbitMul;
+    const effectiveOrbitSpeed = ORBIT_SPEED * _currentSeasonOrbitMul * cameraBoost;
     /* Apply season multiplier to ORBIT_RADIUS_MAX for radius range */
     const effectiveOrbitRadiusMax = ORBIT_RADIUS_MAX * _currentSeasonRadiusMul;
 
@@ -628,5 +663,13 @@ export function createCreature(scene) {
     bodyMat.dispose();
   }
 
-  return { group, update, destroy, state };
+  return { group, update, destroy, state, notifyCameraMoved };
+}
+
+/**
+ * Notifies the butterfly that the camera has moved.
+ * Triggers a brief speed boost on the next update cycle, gated by cooldown.
+ */
+export function notifyCameraMoved() {
+  _lastCameraMoveTime = performance.now();
 }
