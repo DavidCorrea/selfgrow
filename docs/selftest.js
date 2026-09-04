@@ -1048,6 +1048,146 @@ export async function checks() {
     }
   }
 
+  /* ---------- Season-to-weather influence checks (issue #558) ---------- */
+  // The weather cycle remaps phase durations by season. Verify the boundary
+  // constants exposed on weatherState satisfy the acceptance criteria.
+  const weatherForSeasonCheck = gardenState && gardenState.weather;
+  if (!weatherForSeasonCheck) {
+    problems.push('window.__gardenState.weather is not set — cannot verify season-to-weather influence.');
+  } else {
+    // Check that season boundary constants are exposed
+    if (!weatherForSeasonCheck.seasonClearEnd) {
+      problems.push('weather.seasonClearEnd is not exposed — season boundary constants missing (issue #558).');
+    } else if (!weatherForSeasonCheck.seasonOvercastEnd) {
+      problems.push('weather.seasonOvercastEnd is not exposed — season boundary constants missing (issue #558).');
+    } else if (typeof weatherForSeasonCheck.remapTBySeason !== 'function') {
+      problems.push('weather.remapTBySeason is not a function — season remapping function missing (issue #558).');
+    } else {
+      const clearEnd = weatherForSeasonCheck.seasonClearEnd;
+      const overcastEnd = weatherForSeasonCheck.seasonOvercastEnd;
+
+      // --- Acceptance Criterion 1: Winter Overcast ≥60% ---
+      const winterOvercastProp = overcastEnd.Winter - clearEnd.Winter;
+      if (winterOvercastProp < 0.60) {
+        problems.push('Winter Overcast proportion is ' + (winterOvercastProp * 100).toFixed(1) + '%, expected ≥60% (clearEnd=' + clearEnd.Winter + ', overcastEnd=' + overcastEnd.Winter + ') — issue #558.');
+      }
+
+      // --- Acceptance Criterion 2: Summer Clear ≥50% ---
+      const summerClearProp = clearEnd.Summer;
+      if (summerClearProp < 0.50) {
+        problems.push('Summer Clear proportion is ' + (summerClearProp * 100).toFixed(1) + '%, expected ≥50% (clearEnd=' + clearEnd.Summer + ') — issue #558.');
+      }
+
+      // --- Acceptance Criterion 3: Spring Drizzle ≥1.5× Summer Drizzle ---
+      const springDrizzleProp = 1 - overcastEnd.Spring;
+      const summerDrizzleProp = 1 - overcastEnd.Summer;
+      if (summerDrizzleProp <= 0) {
+        problems.push('Summer Drizzle proportion is ' + (summerDrizzleProp * 100).toFixed(1) + '%, cannot compute ratio — issue #558.');
+      } else {
+        const drizzleRatio = springDrizzleProp / summerDrizzleProp;
+        if (drizzleRatio < 1.5) {
+          problems.push('Spring Drizzle / Summer Drizzle ratio is ' + drizzleRatio.toFixed(2) + ' (Spring=' + (springDrizzleProp * 100).toFixed(1) + '%, Summer=' + (summerDrizzleProp * 100).toFixed(1) + '%), expected ≥1.5 — issue #558.');
+        }
+      }
+
+      // --- Verify sum of season phase proportions = 1.0 for each season ---
+      const seasons = ['Spring', 'Summer', 'Autumn', 'Winter'];
+      for (const s of seasons) {
+        const cEnd = clearEnd[s];
+        const oEnd = overcastEnd[s];
+        if (cEnd === undefined || oEnd === undefined) {
+          problems.push('Season "' + s + '" missing from season boundary constants — issue #558.');
+        } else {
+          const total = cEnd + (oEnd - cEnd) + (1 - oEnd);
+          if (Math.abs(total - 1) > 0.001) {
+            problems.push('Season "' + s + '" phase proportions sum to ' + total.toFixed(4) + ', expected 1.0 (clearEnd=' + cEnd + ', overcastEnd=' + oEnd + ') — issue #558.');
+          }
+        }
+      }
+
+      // --- Verify remapTBySeason produces correct phase names for each season ---
+      // Sample t values at the exact boundary points and verify phase name
+      const remap = weatherForSeasonCheck.remapTBySeason;
+      for (const s of seasons) {
+        const cEnd = clearEnd[s];
+        const oEnd = overcastEnd[s];
+        if (cEnd === undefined || oEnd === undefined) continue;
+
+        // At t just below clearEnd, should be Clear
+        // At t just above clearEnd but below overcastEnd, should be Overcast
+        // At t just above overcastEnd, should be Light Drizzle
+        // Use getPhaseName via the remapped t to verify
+        function localGetPhaseName(t) {
+          var name = 'Clear';
+          // Mirror the PHASE_NAMES logic from weather.js
+          var thresholds = [
+            { tStart: 0.0, name: 'Clear' },
+            { tStart: 1 / 3, name: 'Overcast' },
+            { tStart: 2 / 3, name: 'Light Drizzle' }
+          ];
+          for (var i = thresholds.length - 1; i >= 0; i--) {
+            if (t >= thresholds[i].tStart) {
+              name = thresholds[i].name;
+              break;
+            }
+          }
+          return name;
+        }
+
+        // Test at 10% into each segment
+        var midClearT = cEnd * 0.5;
+        var midOvercastT = cEnd + (oEnd - cEnd) * 0.5;
+        var midDrizzleT = oEnd + (1 - oEnd) * 0.5;
+
+        var remappedClear = remap(midClearT, s);
+        var remappedOvercast = remap(midOvercastT, s);
+        var remappedDrizzle = remap(midDrizzleT, s);
+
+        var phaseClear = localGetPhaseName(remappedClear);
+        var phaseOvercast = localGetPhaseName(remappedOvercast);
+        var phaseDrizzle = localGetPhaseName(remappedDrizzle);
+
+        if (phaseClear !== 'Clear') {
+          problems.push('remapTBySeason(t=' + midClearT.toFixed(3) + ', season=' + s + ') → remapped t\'=' + remappedClear.toFixed(3) + ', phase="' + phaseClear + '" — expected "Clear" (issue #558).');
+        }
+        if (phaseOvercast !== 'Overcast') {
+          problems.push('remapTBySeason(t=' + midOvercastT.toFixed(3) + ', season=' + s + ') → remapped t\'=' + remappedOvercast.toFixed(3) + ', phase="' + phaseOvercast + '" — expected "Overcast" (issue #558).');
+        }
+        if (phaseDrizzle !== 'Light Drizzle') {
+          problems.push('remapTBySeason(t=' + midDrizzleT.toFixed(3) + ', season=' + s + ') → remapped t\'=' + remappedDrizzle.toFixed(3) + ', phase="' + phaseDrizzle + '" — expected "Light Drizzle" (issue #558).');
+        }
+
+        // Verify that at the clearEnd boundary, the remapped t is exactly 1/3
+        var atClearBoundary = remap(cEnd, s);
+        if (Math.abs(atClearBoundary - 1/3) > 0.001) {
+          problems.push('remapTBySeason(t=' + cEnd + ', season=' + s + ') → ' + atClearBoundary.toFixed(5) + ', expected 1/3=' + (1/3).toFixed(5) + ' — piecewise-linear mapping misaligned at clear end boundary (issue #558).');
+        }
+
+        // Verify that at the overcastEnd boundary, the remapped t is exactly 2/3
+        var atOvercastBoundary = remap(oEnd, s);
+        if (Math.abs(atOvercastBoundary - 2/3) > 0.001) {
+          problems.push('remapTBySeason(t=' + oEnd + ', season=' + s + ') → ' + atOvercastBoundary.toFixed(5) + ', expected 2/3=' + (2/3).toFixed(5) + ' — piecewise-linear mapping misaligned at overcast end boundary (issue #558).');
+        }
+      }
+
+      // --- Verify transitions are smooth (monotonic mapping) ---
+      // The remap function must be strictly increasing (monotonic) so that
+      // time never goes backwards. Sample at many points.
+      for (const s of seasons) {
+        var prev = -1;
+        for (var i = 0; i <= 100; i++) {
+          var sampleT = i / 100;
+          var remapped = remap(sampleT, s);
+          if (remapped < prev - 0.001) {
+            problems.push('remapTBySeason is not monotonic at t=' + sampleT + ' (season=' + s + '): dropped from ' + prev.toFixed(5) + ' to ' + remapped.toFixed(5) + ' — transitions would not be smooth (issue #558).');
+            break;
+          }
+          prev = remapped;
+        }
+      }
+    }
+  }
+
   /* ---------- Day/night cycle checks ---------- */
   const dayNight = gardenState && gardenState.dayNight;
   if (!dayNight) {

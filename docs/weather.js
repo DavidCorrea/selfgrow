@@ -19,6 +19,23 @@ import * as THREE from "three";
 const CYCLE_DURATION_MS = 300_000; // ~5 minutes for a full weather loop
 const TRANSITION_DURATION_MS = 15_000; // minimum 15s for smooth lerp (effectively the whole phase)
 
+/* --- Season-specific phase boundary constants (issue #558) ---
+ * These define what proportion of the weather cycle each phase occupies
+ * per season. Used by remapTBySeason to stretch/compress phase durations
+ * so Winter spends more time Overcast, Summer more time Clear, and Spring
+ * extends Light Drizzle. All boundary values are in [0,1] and represent
+ * cumulative end-of-phase t positions.
+ *
+ * Verification (as static constants):
+ *   Winter Overcast: overcastEnd - clearEnd = 0.75 - 0.10 = 0.65 >= 0.60 ✓
+ *   Summer Clear:    clearEnd = 0.55 >= 0.50 ✓
+ *   Spring Drizzle:  1 - overcastEnd = 1 - 0.50 = 0.50;
+ *                     Summer Drizzle = 1 - 0.80 = 0.20;
+ *                     0.50 / 0.20 = 2.5 >= 1.5 ✓
+ */
+const SEASON_CLEAR_END = { Spring: 0.25, Summer: 0.55, Autumn: 1/3, Winter: 0.10 };
+const SEASON_OVERCAST_END = { Spring: 0.50, Summer: 0.80, Autumn: 2/3, Winter: 0.75 };
+
 /* Three weather phases + wrap-around to Clear */
 const PHASES = [
   {
@@ -156,6 +173,49 @@ function interpolatePhase(t, out) {
   out.swayAmplitudeMul = last.swayAmplitudeMul;
 }
 
+/**
+ * Remap linear cycle progress t (in [0,1)) to phase-semantic t' based on season.
+ * This stretches/compresses the three phase segments so the weather system
+ * spends proportionally more time in season-appropriate phases without
+ * changing the PHASES parameter definitions or transition smoothness.
+ *
+ * The mapping is piecewise-linear:
+ *   [0, clearEnd)         → [0, 1/3)         (Clear)
+ *   [clearEnd, overcastEnd) → [1/3, 2/3)     (Overcast)
+ *   [overcastEnd, 1)        → [2/3, 1)        (Light Drizzle)
+ *
+ * @param {number} t - Linear cycle progress in [0, 1)
+ * @param {string} season - Season name from #season-display (e.g. 'Spring')
+ * @returns {number} Remapped t' in [0, 1) for phase interpolation/lookup
+ */
+function remapTBySeason(t, season) {
+  const origClearEnd = 1 / 3;
+  const origOvercastEnd = 2 / 3;
+
+  const clearEnd = SEASON_CLEAR_END[season];
+  const overcastEnd = SEASON_OVERCAST_END[season];
+
+  // Unknown season or missing boundaries — return t unchanged
+  if (clearEnd === undefined || overcastEnd === undefined) {
+    return t;
+  }
+
+  if (t < clearEnd) {
+    // First segment: [0, clearEnd) → [0, origClearEnd)
+    return (t / clearEnd) * origClearEnd;
+  } else if (t < overcastEnd) {
+    // Second segment: [clearEnd, overcastEnd) → [origClearEnd, origOvercastEnd)
+    const segProgress = (t - clearEnd) / (overcastEnd - clearEnd);
+    return origClearEnd + segProgress * (origOvercastEnd - origClearEnd);
+  } else {
+    // Third segment: [overcastEnd, 1) → [origOvercastEnd, 1)
+    const segLen = 1 - overcastEnd;
+    if (segLen <= 0) return origOvercastEnd; // safety: avoid div-by-zero
+    const segProgress = (t - overcastEnd) / segLen;
+    return origOvercastEnd + segProgress * (1 - origOvercastEnd);
+  }
+}
+
 /** Get the human-readable phase name for a given cycle progress t in [0, 1) */
 function getPhaseName(t) {
   "use strict";
@@ -226,15 +286,30 @@ export function startWeatherCycle(sunLight, scene, ambientLight, hemiLight, fill
   let rainDarkeningFactor = 0;
   let _lastWeatherTick = performance.now();
 
-  /* Expose state for selftest and external querying */
+  /* Helper: read the current season from the DOM */
+  function readSeason() {
+    const el = document.getElementById('season-display');
+    return el ? el.textContent.trim() : 'Spring';
+  }
+
+/* Expose state for selftest and external querying */
   const weatherState = {
-    getPhase: () => getPhaseName((performance.now() - startTime) % CYCLE_DURATION_MS / CYCLE_DURATION_MS),
+    getPhase: () => {
+      const elapsed = performance.now() - startTime;
+      const t = (elapsed % CYCLE_DURATION_MS) / CYCLE_DURATION_MS;
+      const season = readSeason();
+      return getPhaseName(remapTBySeason(t, season));
+    },
     getProgress: () => {
       const elapsed = performance.now() - startTime;
       return (elapsed % CYCLE_DURATION_MS) / CYCLE_DURATION_MS;
     },
     getSwayAmplitudeMul: () => current.swayAmplitudeMul,
-    getGroundDarkeningFactor: () => rainDarkeningFactor
+    getGroundDarkeningFactor: () => rainDarkeningFactor,
+    /* Expose season boundary constants and remapping for selftest verification (issue #558) */
+    seasonClearEnd: SEASON_CLEAR_END,
+    seasonOvercastEnd: SEASON_OVERCAST_END,
+    remapTBySeason: remapTBySeason
   };
 
   window.__gardenState.weather = weatherState;
@@ -254,12 +329,14 @@ export function startWeatherCycle(sunLight, scene, ambientLight, hemiLight, fill
   function tick() {
     const elapsed = performance.now() - startTime;
     const t = (elapsed % CYCLE_DURATION_MS) / CYCLE_DURATION_MS; // 0 → 1 continuously
+    const season = readSeason();
+    const mappedT = remapTBySeason(t, season);
 
-    /* --- Interpolate weather parameters --- */
-    interpolatePhase(t, current);
+    /* --- Interpolate weather parameters (using remapped t) --- */
+    interpolatePhase(mappedT, current);
 
-    /* --- Update DOM --- */
-    const phaseName = getPhaseName(t);
+    /* --- Update DOM (using remapped t) --- */
+    const phaseName = getPhaseName(mappedT);
     if (phaseName !== lastPhaseName) {
       lastPhaseName = phaseName;
       weatherDisplay.textContent = phaseName;
