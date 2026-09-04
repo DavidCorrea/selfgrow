@@ -115,6 +115,28 @@ export function isTrustedAuthor(authorAssociation) {
 }
 
 /**
+ * Whether a discussion is the pipeline's own thread, and not one wearing its name.
+ *
+ * Both lookups in this module find a thread by CATEGORY + TITLE PREFIX, which is
+ * enough only for as long as nobody else can create a discussion in that
+ * category. That is true today — Journals, Lessons and Decisions are Announcement
+ * categories, where only maintainers may post — but it is a repo SETTING, not
+ * something this code can see: the API exposes no field for it, so a category
+ * quietly switched to open-ended would let a stranger publish `Playtester — log`
+ * and have the agents read it as their own memory, then append to it.
+ *
+ * So authorship is checked here too. A mis-set category degrades to "the journal
+ * cannot be found" — an agent with no memory, which is how it already behaves on
+ * a first run — rather than to an agent reading text a stranger wrote as its own
+ * prior reasoning.
+ */
+export function isOwnThread(node, category, prefix) {
+  if (!node || node.category?.name !== category) return false;
+  if (!String(node.title || "").startsWith(prefix)) return false;
+  return isTrustedAuthor(node.authorAssociation);
+}
+
+/**
  * Restrict new comments to accounts with write access, leaving the post publicly
  * readable. Best-effort: an unlocked memory post is worse than a locked one but
  * far better than no post, so a failure here never fails the write before it.
@@ -179,14 +201,17 @@ export function findOpenDiscussion(category, prefix) {
       `query($owner: String!, $name: String!) {
          repository(owner: $owner, name: $name) {
            discussions(first: 25, orderBy: {field: CREATED_AT, direction: DESC}) {
-             nodes { id number title url closed category { name } }
+             nodes { id number title url closed authorAssociation category { name } }
            }
          }
        }`,
       { owner, name }
     );
     const nodes = result?.data?.repository?.discussions?.nodes || [];
-    return nodes.find((d) => !d.closed && d.category?.name === category && d.title.startsWith(prefix)) || null;
+    // Authorship matters here too: this is how the standing health alert finds
+    // itself, and a thread it wrongly adopted would be one it then edits and
+    // closes on somebody else's behalf.
+    return nodes.find((d) => !d.closed && isOwnThread(d, category, prefix)) || null;
   } catch (e) {
     log("warn", "Discussions: could not read existing posts.", errorData(e));
     return null;
@@ -271,14 +296,30 @@ function findDiscussion(category, prefix) {
     `query($owner: String!, $name: String!) {
        repository(owner: $owner, name: $name) {
          discussions(first: 50, orderBy: {field: CREATED_AT, direction: DESC}) {
-           nodes { id number title url category { name } }
+           nodes { id number title url authorAssociation category { name } }
          }
        }
      }`,
     { owner, name }
   );
   const nodes = result?.data?.repository?.discussions?.nodes || [];
-  return nodes.find((d) => d.category?.name === category && d.title.startsWith(prefix)) || null;
+  const mine = nodes.find((d) => isOwnThread(d, category, prefix)) || null;
+  if (!mine) {
+    // Say so when something is WEARING the name — a thread that matches but was
+    // written by somebody else is either a mis-set category or an attempt to plant
+    // memory, and both deserve more than silence.
+    const impostor = nodes.find(
+      (d) => d.category?.name === category && String(d.title || "").startsWith(prefix)
+    );
+    if (impostor) {
+      log(
+        "error",
+        `Discussions: "${impostor.title}" in ${category} was not written by an account with write access ` +
+          `(${impostor.authorAssociation}) — ignoring it. Check that ${category} is an Announcement category.`
+      );
+    }
+  }
+  return mine;
 }
 
 /**

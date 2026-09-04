@@ -2,7 +2,7 @@
 // looks like. Both are safety-relevant and neither needs the network.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isTrustedAuthor, renderJournalEntry } from "./discussions.mjs";
+import { isTrustedAuthor, isOwnThread, renderJournalEntry } from "./discussions.mjs";
 
 test("deciding whose words count as guidance", async (t) => {
   await t.test("accepts accounts with write access", () => {
@@ -58,5 +58,42 @@ test("writing a journal entry", async (t) => {
 
   await t.test("trims what an agent wrote", () => {
     assert.equal(renderJournalEntry({ decided: "  spaced  " }), "**Decided:** spaced");
+  });
+});
+
+test("recognising the pipeline's own thread", async (t) => {
+  const thread = (over = {}) => ({
+    title: "Playtester — log",
+    authorAssociation: "OWNER",
+    category: { name: "Journals" },
+    ...over,
+  });
+
+  await t.test("accepts its own thread", () => {
+    assert.equal(isOwnThread(thread(), "Journals", "Playtester — log"), true);
+  });
+
+  await t.test("accepts a title that starts with the prefix", () => {
+    assert.equal(isOwnThread(thread({ title: "Playtester — log (2026)" }), "Journals", "Playtester — log"), true);
+  });
+
+  // The whole point: category + title is only safe while nobody else can post in
+  // the category, and that is a repo setting this code cannot read.
+  await t.test("refuses a thread wearing the name but written by someone else", () => {
+    assert.equal(isOwnThread(thread({ authorAssociation: "NONE" }), "Journals", "Playtester — log"), false);
+    assert.equal(isOwnThread(thread({ authorAssociation: "CONTRIBUTOR" }), "Journals", "Playtester — log"), false);
+  });
+
+  await t.test("refuses the right title in the wrong category", () => {
+    assert.equal(isOwnThread(thread({ category: { name: "General" } }), "Journals", "Playtester — log"), false);
+  });
+
+  await t.test("refuses a different thread in the right category", () => {
+    assert.equal(isOwnThread(thread({ title: "Tech Lead — log" }), "Journals", "Playtester — log"), false);
+  });
+
+  await t.test("refuses nothing at all", () => {
+    assert.equal(isOwnThread(null, "Journals", "Playtester — log"), false);
+    assert.equal(isOwnThread({}, "Journals", "Playtester — log"), false);
   });
 });
