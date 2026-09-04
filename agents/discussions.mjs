@@ -58,9 +58,17 @@ const OWNER = process.env.GITHUB_REPOSITORY_OWNER || "";
 function graphql(query, variables = {}) {
   const args = ["api", "graphql", "-f", `query=${query}`];
   for (const [key, value] of Object.entries(variables)) {
-    // -F types its values (true, 123, null); -f keeps them as strings, which is
-    // what every variable here is.
-    args.push("-f", `${key}=${value}`);
+    // -F types its value (123, true, null); -f keeps it a string. The choice is
+    // per-variable and not cosmetic: a GraphQL `Int!` passed with -f is rejected
+    // as "provided invalid value", and every wrapper here catches its own errors,
+    // so the query silently returns nothing instead of failing loudly. That is
+    // exactly how the first version of readJournal came out empty every time
+    // while the writes it was meant to read were landing perfectly.
+    //
+    // Strings keep -f deliberately. -F would coerce a body that happens to read
+    // like a number or `true` into the wrong type, and these bodies are written
+    // by models.
+    args.push(typeof value === "number" || typeof value === "boolean" ? "-F" : "-f", `${key}=${value}`);
   }
   return JSON.parse(
     execFileSync("gh", args, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }).toString()
@@ -295,8 +303,9 @@ export function readJournal(title, { last = JOURNAL_TAIL } = {}) {
       {
         owner: (process.env.GITHUB_REPOSITORY || "").split("/")[0] || OWNER,
         name: (process.env.GITHUB_REPOSITORY || "").split("/")[1] || "",
-        number: String(thread.number),
-        last: String(Math.max(1, last)),
+        // Numbers, so graphql() sends them typed — these are GraphQL Int!.
+        number: Number(thread.number),
+        last: Math.max(1, Number(last)),
       }
     );
     const nodes = result?.data?.repository?.discussion?.comments?.nodes || [];
