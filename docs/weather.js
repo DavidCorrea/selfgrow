@@ -101,6 +101,44 @@ const PHASE_NAMES = [
   { tStart: 2 / 3, name: 'Light Drizzle' }
 ];
 
+/* Season-dependent phase boundaries (issue #558)
+ * Each season maps to [clearEnd, overcastEnd] t-boundaries in [0,1).
+ *   clearEnd:    end of Clear phase (t=0 to clearEnd = Clear)
+ *   overcastEnd: end of Overcast phase (t=clearEnd to overcastEnd = Overcast)
+ *   overcastEnd to 1.0 = Light Drizzle
+ *
+ * Winter:  clearEnd=0.15, overcastEnd=0.75  → Overcast=60%,   Clear=15%,  Drizzle=25%
+ * Summer:  clearEnd=0.55, overcastEnd=0.80  → Clear=55%,      Overcast=25%, Drizzle=20%
+ * Spring:  clearEnd=0.30, overcastEnd=0.55  → Clear=30%,      Overcast=25%, Drizzle=45%
+ * Autumn:  clearEnd=0.30, overcastEnd=0.65  → Clear=30%,      Overcast=35%, Drizzle=35%
+ */
+const SEASON_BOUNDARIES = {
+  'Spring': { clearEnd: 0.30, overcastEnd: 0.55 },
+  'Summer': { clearEnd: 0.55, overcastEnd: 0.80 },
+  'Autumn': { clearEnd: 0.30, overcastEnd: 0.65 },
+  'Winter': { clearEnd: 0.15, overcastEnd: 0.75 }
+};
+
+/** Read the current season from the DOM and return the matching phase boundaries. */
+function getSeasonPhaseBoundaries(seasonName) {
+  if (seasonName) {
+    return SEASON_BOUNDARIES[seasonName] || SEASON_BOUNDARIES['Spring'];
+  }
+  const seasonEl = document.getElementById('season-display');
+  if (!seasonEl) return SEASON_BOUNDARIES['Spring'];
+  const season = seasonEl.textContent.trim();
+  return SEASON_BOUNDARIES[season] || SEASON_BOUNDARIES['Spring'];
+}
+
+/** Apply the current season's phase boundaries to the PHASES and PHASE_NAMES arrays. */
+function applySeasonBoundaries() {
+  const bounds = getSeasonPhaseBoundaries();
+  PHASES[1].t = bounds.clearEnd;
+  PHASES[2].t = bounds.overcastEnd;
+  PHASE_NAMES[1].tStart = bounds.clearEnd;
+  PHASE_NAMES[2].tStart = bounds.overcastEnd;
+}
+
 /* Colour cache objects to avoid creating new THREE.Color on every frame */
 const _tempColor = new THREE.Color();
 const _winterGroundColor = new THREE.Color(0x3a2a1a);
@@ -234,7 +272,9 @@ export function startWeatherCycle(sunLight, scene, ambientLight, hemiLight, fill
       return (elapsed % CYCLE_DURATION_MS) / CYCLE_DURATION_MS;
     },
     getSwayAmplitudeMul: () => current.swayAmplitudeMul,
-    getGroundDarkeningFactor: () => rainDarkeningFactor
+    getGroundDarkeningFactor: () => rainDarkeningFactor,
+    /** Return the season-dependent phase boundaries for the current (or given) season. */
+    getSeasonPhaseBoundaries: (seasonName) => getSeasonPhaseBoundaries(seasonName)
   };
 
   window.__gardenState.weather = weatherState;
@@ -254,6 +294,9 @@ export function startWeatherCycle(sunLight, scene, ambientLight, hemiLight, fill
   function tick() {
     const elapsed = performance.now() - startTime;
     const t = (elapsed % CYCLE_DURATION_MS) / CYCLE_DURATION_MS; // 0 → 1 continuously
+
+    /* --- Apply season-dependent phase boundaries (issue #558) --- */
+    applySeasonBoundaries();
 
     /* --- Interpolate weather parameters --- */
     interpolatePhase(t, current);
