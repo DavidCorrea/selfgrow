@@ -36,6 +36,8 @@ import {
   renderJournalEntry,
   readLessonThreads,
   renderLessonThreads,
+  readDecisions,
+  renderDecisions,
 } from "./discussions.mjs";
 
 const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
@@ -192,6 +194,12 @@ async function main() {
           return threads.length ? renderLessonThreads(threads) : "(nothing recorded yet)";
         })(),
         PAST: past.length ? past.join("\n\n") : "(nothing recorded yet — this is the first)",
+        // What the project has already settled. This role changes direction, so it
+        // is the one most able to undo a decision without realising there was one.
+        DECISIONS: (() => {
+          const decisions = readDecisions();
+          return decisions.length ? renderDecisions(decisions) : "(nothing settled yet)";
+        })(),
         MILESTONE: milestone
           ? `**${milestone.title}** — ${milestone.description || "no description"} (${milestone.closed} shipped, ${milestone.open} still open)`
           : "(none set — this is the first)",
