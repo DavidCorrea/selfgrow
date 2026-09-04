@@ -56,6 +56,11 @@ const WEATHER_FADE_TIME_CONSTANT = 2.5; // seconds — ~86% complete after 5s
 /* Wind perturbation — subtle drift from ground ripple wind */
 const WIND_NUDGE_SCALE = 6.25;  // maps ~±0.008 max ripple amplitude to ±0.05 max drift
 
+/* Camera reaction — brief speed boost when the user moves the camera */
+const CAMERA_REACTION_BOOST = 1.2;      // 1.2× multiplier
+const CAMERA_REACTION_DURATION = 2.0;   // seconds to decay back to 1.0
+const CAMERA_REACTION_COOLDOWN = 10.0;  // seconds before next trigger
+
 /* Per-axis phase offsets for organic Lissajous-like looping */
 const PHASE_X = 0.0;
 const PHASE_Z = Math.PI * 0.37;   // offsets so path doesn't repeat quickly
@@ -154,6 +159,10 @@ export function createCreature(scene) {
   /* --- Tracks the current wind nudge for selftest --- */
   let _windNudge = 0;
 
+  /* --- Camera reaction state --- */
+  let _cameraReactionMul = 1.0;
+  let _cameraReactionCooldownTimer = 0;
+
   /* --- State exposed for selftest --- */
   const state = {
     type: 'creature',
@@ -177,12 +186,51 @@ export function createCreature(scene) {
     pauseSpeedMul: () => pauseSpeedMul,
     pauseEaseT: () => pauseEaseT,
     /* Wind perturbation exposed for selftest */
-    windNudge: () => _windNudge
+    windNudge: () => _windNudge,
+    /* Camera reaction (issue #559) */
+    cameraMoved,
+    computePosition,
+    getCameraReactionMul: () => _cameraReactionMul,
+    getCameraReactionCooldown: () => _cameraReactionCooldownTimer
   };
 
   /* Start invisible if reduced motion is active */
   if (reducedMotion) {
     group.visible = false;
+  }
+
+  /**
+   * Compute the butterfly's orbit position at a given time with a given boost multiplier,
+   * without mutating any state. Used by selftest to verify the boost increases speed
+   * at the same time offset.
+   *
+   * @param {number} time - absolute simulation time
+   * @param {number} [boostMul=1.0] - camera reaction multiplier to apply (1.0 = no boost, 1.2 = boosted)
+   * @returns {THREE.Vector3} the position at the given time
+   */
+  function computePosition(time, boostMul) {
+    boostMul = boostMul || 1.0;
+    const effectiveOrbitSpeed = ORBIT_SPEED * _currentSeasonOrbitMul * boostMul;
+    const effectiveOrbitRadiusMax = ORBIT_RADIUS_MAX * _currentSeasonRadiusMul;
+    const t = time * effectiveOrbitSpeed * pauseSpeedMul;
+    const angle = t + Math.sin(t * 0.23) * 0.4;
+    const radiusFactor = 0.5 + 0.5 * Math.sin(t * FREQ_X + PHASE_X);
+    const radius = ORBIT_RADIUS_MIN + radiusFactor * (effectiveOrbitRadiusMax - ORBIT_RADIUS_MIN);
+    const heightFactor = 0.5 + 0.5 * Math.sin(t * FREQ_Y + PHASE_Y);
+    const y = ORBIT_HEIGHT_MIN + heightFactor * (ORBIT_HEIGHT_MAX - ORBIT_HEIGHT_MIN);
+    const xOffset = Math.sin(t * FREQ_X * 1.7 + PHASE_X + 1.2) * 0.3;
+    const zOffset = Math.cos(t * FREQ_Z * 1.7 + PHASE_Z + 0.8) * 0.3;
+    const x = Math.cos(angle) * radius + xOffset;
+    const z = Math.sin(angle) * radius + zOffset;
+    return new THREE.Vector3(x, y, z);
+  }
+
+  /* --- Camera reaction: call when the user moves the camera (issue #559) --- */
+  function cameraMoved() {
+    if (state.reducedMotion) return;
+    if (_cameraReactionCooldownTimer > 0) return;
+    _cameraReactionMul = CAMERA_REACTION_BOOST;
+    _cameraReactionCooldownTimer = CAMERA_REACTION_COOLDOWN;
   }
 
   /* --- Update function (called every frame from the animation loop) --- */
@@ -238,8 +286,17 @@ export function createCreature(scene) {
     _currentSeasonFlapMul = _currentSeasonFlapMul + (seasonTarget.flap - _currentSeasonFlapMul) * lerpFactor;
     _currentSeasonRadiusMul = _currentSeasonRadiusMul + (seasonTarget.radius - _currentSeasonRadiusMul) * lerpFactor;
 
+    /* --- Decay camera reaction multiplier back to 1.0 --- */
+    if (_cameraReactionMul > 1.0) {
+      _cameraReactionMul = Math.max(1.0, _cameraReactionMul - (CAMERA_REACTION_BOOST - 1.0) * dt / CAMERA_REACTION_DURATION);
+    }
+    /* Decrement camera reaction cooldown */
+    if (_cameraReactionCooldownTimer > 0) {
+      _cameraReactionCooldownTimer -= dt;
+    }
+
     /* Apply season multiplier to ORBIT_SPEED for angular position computation */
-    const effectiveOrbitSpeed = ORBIT_SPEED * _currentSeasonOrbitMul;
+    const effectiveOrbitSpeed = ORBIT_SPEED * _currentSeasonOrbitMul * _cameraReactionMul;
     /* Apply season multiplier to ORBIT_RADIUS_MAX for radius range */
     const effectiveOrbitRadiusMax = ORBIT_RADIUS_MAX * _currentSeasonRadiusMul;
 

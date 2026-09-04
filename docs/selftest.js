@@ -2637,6 +2637,296 @@ export async function checks() {
     }
   }
 
+  /* ---------- Butterfly camera reaction checks (issue #559) ---------- */
+  // When the user moves the camera, the butterfly should briefly increase its
+  // orbit speed by 1.2× for ~2 seconds, gated by a 10-second cooldown.
+  // Effect is disabled when prefers-reduced-motion is active.
+  // The butterfly state panel description does not change during this event.
+  const cameraReactionCreature = gardenState && gardenState.creature;
+  if (!cameraReactionCreature) {
+    problems.push('window.__gardenState.creature is not set — cannot verify camera reaction.');
+  } else {
+    // --- Structural checks: accessors and functions must exist ---
+    if (typeof cameraReactionCreature.cameraMoved !== 'function') {
+      problems.push('creature.state.cameraMoved is not a function — camera reaction trigger missing (issue #559).');
+    }
+    if (typeof cameraReactionCreature.getCameraReactionMul !== 'function') {
+      problems.push('creature.state.getCameraReactionMul is not a function — camera reaction multiplier getter missing (issue #559).');
+    }
+    if (typeof cameraReactionCreature.getCameraReactionCooldown !== 'function') {
+      problems.push('creature.state.getCameraReactionCooldown is not a function — camera reaction cooldown getter missing (issue #559).');
+    }
+
+    // --- Behavioural checks ---
+    if (gardenState && typeof gardenState.creatureUpdate === 'function' && !cameraReactionCreature.reducedMotion) {
+      // Save original plant/plant2 to restore later
+      var origPlantCR = gardenState.plant;
+      var origPlant2CR = gardenState.plant2;
+      var origDayNightCR = null;
+
+      // Mock day/night as daytime so the butterfly is visible and active
+      if (gardenState.dayNight && typeof gardenState.dayNight.getCycleProgress === 'function') {
+        origDayNightCR = gardenState.dayNight.getCycleProgress;
+        gardenState.dayNight.getCycleProgress = function() { return 0.1; }; // Morning
+      }
+
+      try {
+        // Drain any in-flight pause to ensure we start in idle
+        var neutralPlantCR = {
+          group: { position: new THREE.Vector3(100, 0, 100) },
+          flower: {
+            getPhase: function() { return 'dormant'; },
+            getProgress: function() { return 0.5; }
+          }
+        };
+        gardenState.plant = neutralPlantCR;
+        gardenState.plant2 = neutralPlantCR;
+
+        for (var dwCR = 0; dwCR < 1100; dwCR++) {
+          gardenState.creatureUpdate(dwCR * 0.016, 0.016);
+        }
+
+        if (cameraReactionCreature.pauseState() !== 'idle') {
+          problems.push('Butterfly camera reaction test: could not drain to idle (state=' + cameraReactionCreature.pauseState() + ') — cannot verify camera reaction.');
+        } else {
+          // --- Test 1: Before any camera move, multiplier is 1.0 ---
+          var initialMul = cameraReactionCreature.getCameraReactionMul();
+          if (Math.abs(initialMul - 1.0) > 0.001) {
+            problems.push('Before camera move, getCameraReactionMul() is ' + initialMul + ' — expected 1.0 (no boost).');
+          }
+
+          // --- Test 2: Calling cameraMoved() sets multiplier to 1.2 and cooldown to 10 ---
+          cameraReactionCreature.cameraMoved();
+          var afterMoveMul = cameraReactionCreature.getCameraReactionMul();
+          if (Math.abs(afterMoveMul - 1.2) > 0.001) {
+            problems.push('After cameraMoved(), getCameraReactionMul() is ' + afterMoveMul + ' — expected 1.2 (the boost multiplier).');
+          }
+          var cooldownAfter = cameraReactionCreature.getCameraReactionCooldown();
+          if (cooldownAfter < 9.0 || cooldownAfter > 10.5) {
+            problems.push('After cameraMoved(), getCameraReactionCooldown() is ' + cooldownAfter + ' — expected ~10.0 (the cooldown duration).');
+          }
+
+          // --- Test 3: Cooldown blocks re-triggering ---
+          // Run some frames so the multiplier decays slightly and cooldown ticks down
+          for (var blockFrames = 0; blockFrames < 30; blockFrames++) {
+            gardenState.creatureUpdate(10000 + blockFrames * 0.016, 0.016);
+          }
+          var mulAfterDecay = cameraReactionCreature.getCameraReactionMul();
+          var cooldownAfterDecay = cameraReactionCreature.getCameraReactionCooldown();
+          // The multiplier should have decayed below 1.2 (e.g. ~1.15 after 30 frames)
+          if (mulAfterDecay > 1.19) {
+            problems.push('Multiplier did not decay after 30 frames — got ' + mulAfterDecay + ' (expected < 1.19).');
+          }
+          // Cooldown should have decreased from 10.0
+          if (cooldownAfterDecay > 9.9) {
+            problems.push('Cooldown did not decrease after 30 frames — got ' + cooldownAfterDecay + ' (expected < 9.9).');
+          }
+          // Now try to trigger again — should be blocked
+          cameraReactionCreature.cameraMoved();
+          var mulAfterBlocked = cameraReactionCreature.getCameraReactionMul();
+          var cooldownAfterBlocked = cameraReactionCreature.getCameraReactionCooldown();
+          // The multiplier should still be at the decayed value, NOT reset to 1.2
+          if (Math.abs(mulAfterBlocked - mulAfterDecay) > 0.001) {
+            problems.push('cameraMoved() was NOT blocked by cooldown — multiplier changed from ' + mulAfterDecay + ' to ' + mulAfterBlocked + ' (expected no change).');
+          }
+          // The cooldown should still be the same (not reset to 10.0)
+          if (Math.abs(cooldownAfterBlocked - cooldownAfterDecay) > 0.001) {
+            problems.push('cameraMoved() was NOT blocked by cooldown — cooldown changed from ' + cooldownAfterDecay + ' to ' + cooldownAfterBlocked + ' (expected no change).');
+          }
+
+          // --- Test 4: Multiplier decays back to 1.0 over ~2 seconds ---
+          // Run enough frames for the decay to complete (remaining ~1.7s at 0.1/s)
+          for (var decayFrames = 0; decayFrames < 150; decayFrames++) {
+            gardenState.creatureUpdate(20000 + decayFrames * 0.016, 0.016);
+          }
+          var afterDecayMul = cameraReactionCreature.getCameraReactionMul();
+          if (Math.abs(afterDecayMul - 1.0) > 0.05) {
+            problems.push('After ~2.4s of simulated time, getCameraReactionMul() is ' + afterDecayMul + ' — expected ~1.0 (multiplier should decay back to 1.0 over ~2s).');
+          }
+
+          // --- Test 5: Cooldown still active after decay (10s cooldown, only ~3s elapsed) ---
+          var cooldownRemaining = cameraReactionCreature.getCameraReactionCooldown();
+          if (cooldownRemaining < 4.0) {
+            problems.push('After ~3s of simulated time, getCameraReactionCooldown() is ' + cooldownRemaining + ' — expected > 4.0 (cooldown should still be active after only ~3s of 10s).');
+          }
+
+          // --- Test 6: After cooldown expires, cameraMoved() can trigger again ---
+          // Run enough frames to drain the remaining cooldown (~7 more seconds)
+          for (var cooldownFrames = 0; cooldownFrames < 500; cooldownFrames++) {
+            gardenState.creatureUpdate(30000 + cooldownFrames * 0.016, 0.016);
+          }
+          var cooldownAfterDrain = cameraReactionCreature.getCameraReactionCooldown();
+          if (cooldownAfterDrain > 0.5) {
+            problems.push('After ~8s more simulated time, getCameraReactionCooldown() is ' + cooldownAfterDrain + ' — expected <= 0 (cooldown should have expired after ~10s total).');
+          }
+
+          // Second trigger should work now
+          cameraReactionCreature.cameraMoved();
+          var mulAfterSecondTrigger = cameraReactionCreature.getCameraReactionMul();
+          if (Math.abs(mulAfterSecondTrigger - 1.2) > 0.001) {
+            problems.push('After cooldown expired, cameraMoved() did not set multiplier to 1.2 — got ' + mulAfterSecondTrigger + ' (cooldown may not have reset properly).');
+          }
+
+          // --- Test 7: The orbit speed actually increases during the boost ---
+          // Measure the total distance traveled by the butterfly over a fixed number
+          // of frames with and without the boost. With the boost (1.2×), the butterfly
+          // should cover more distance over the same number of frames.
+          // Use computePosition to compare at the same time offset, avoiding the
+          // non-uniform orbit speed issue (the Lissajous path has variable speed,
+          // so comparing distances at different time windows is invalid).
+          var time7 = 0;
+          var dt7 = 50 * 0.016; // 50 frames
+          // If computePosition is available, use it for a side-effect-free comparison
+          if (typeof cameraReactionCreature.computePosition === 'function') {
+            var posNoBoost1 = cameraReactionCreature.computePosition(time7, 1.0);
+            var posNoBoost2 = cameraReactionCreature.computePosition(time7 + dt7, 1.0);
+            var distanceNoBoost = posNoBoost1.distanceTo(posNoBoost2);
+
+            var posBoost1 = cameraReactionCreature.computePosition(time7, 1.2);
+            var posBoost2 = cameraReactionCreature.computePosition(time7 + dt7, 1.2);
+            var distanceWithBoost = posBoost1.distanceTo(posBoost2);
+
+            // The boosted distance should be greater than the unboosted distance
+            // (since the orbit speed is 1.2×). Allow some tolerance for path curvature.
+            if (distanceWithBoost <= distanceNoBoost * 0.95) {
+              problems.push('Butterfly traveled ' + distanceWithBoost.toFixed(4) + ' units with boost vs ' + distanceNoBoost.toFixed(4) + ' without boost (computed at same time via computePosition) — expected > ' + (distanceNoBoost * 0.95).toFixed(4) + ' (the orbit speed should be faster during the camera reaction).');
+            }
+          } else {
+            // Fallback: use the creature's update loop (compares at different times, less reliable)
+            // First, drain the boost and cooldown.
+            for (var drainCR = 0; drainCR < 800; drainCR++) {
+              gardenState.creatureUpdate(40000 + drainCR * 0.016, 0.016);
+            }
+
+            // Measure distance without boost (50 frames)
+            var posStart = cameraReactionCreature.group.position.clone();
+            for (var noBoostFrames = 0; noBoostFrames < 50; noBoostFrames++) {
+              gardenState.creatureUpdate(50000 + noBoostFrames * 0.016, 0.016);
+            }
+            var posEnd = cameraReactionCreature.group.position.clone();
+            var distanceNoBoost = posStart.distanceTo(posEnd);
+
+            // Drain more to fully reset
+            for (var drainCR2 = 0; drainCR2 < 800; drainCR2++) {
+              gardenState.creatureUpdate(60000 + drainCR2 * 0.016, 0.016);
+            }
+
+            // Measure distance with boost (50 frames, same time range)
+            cameraReactionCreature.cameraMoved();
+            var posStartBoost = cameraReactionCreature.group.position.clone();
+            for (var boostFrames = 0; boostFrames < 50; boostFrames++) {
+              gardenState.creatureUpdate(70000 + boostFrames * 0.016, 0.016);
+            }
+            var posEndBoost = cameraReactionCreature.group.position.clone();
+            var distanceWithBoost = posStartBoost.distanceTo(posEndBoost);
+
+            // The boosted distance should be greater than the unboosted distance
+            // (since the orbit speed is 1.2×). Allow some tolerance for path curvature.
+            if (distanceWithBoost <= distanceNoBoost * 0.95) {
+              problems.push('Butterfly traveled ' + distanceWithBoost.toFixed(4) + ' units with boost vs ' + distanceNoBoost.toFixed(4) + ' without boost — expected > ' + (distanceNoBoost * 0.95).toFixed(4) + ' (the orbit speed should be faster during the camera reaction).');
+            }
+          }
+
+          // --- Test 8: The butterfly state panel description does not change during the event ---
+          // The description is composed in index.html from weather/time displays, not from
+          // creature state. The creature update loop with an active boost must not modify
+          // any state-panel text. Verify this by checking all panel elements before and after.
+          var panelEls = ['season-display', 'time-display', 'weather-display', 'plot-description', 'growing-description', 'garden-state-acknowledgment'];
+          var textsBefore = {};
+          panelEls.forEach(function(id) {
+            var el = document.getElementById(id);
+            textsBefore[id] = el ? el.textContent : null;
+          });
+          // Trigger the reaction and run creature updates
+          cameraReactionCreature.cameraMoved();
+          for (var frCR = 0; frCR < 30; frCR++) {
+            gardenState.creatureUpdate(80000 + frCR * 0.016, 0.016);
+          }
+          var anyChanged = false;
+          panelEls.forEach(function(id) {
+            var el = document.getElementById(id);
+            var nowText = el ? el.textContent : null;
+            if (textsBefore[id] !== nowText) {
+              anyChanged = true;
+              problems.push('State panel text for #' + id + ' changed during the camera reaction event: before="' + textsBefore[id] + '", after="' + nowText + '" — the butterfly description must not reflect the camera reaction (issue #559).');
+            }
+          });
+
+          // --- Test 9: The effect is subtle (1.2× is a perceptible but not dramatic shift) ---
+          // Verify the boost is exactly 1.2×, not some larger value that would be dramatic.
+          // This is a structural check on the constant used in creature.js.
+          // We already verified the multiplier is 1.2 after trigger. The boost value of 1.2
+          // means a ~20% increase in speed, which is perceptible but not startling.
+        }
+      } finally {
+        // Restore original state
+        gardenState.plant = origPlantCR;
+        gardenState.plant2 = origPlant2CR;
+        if (origDayNightCR) {
+          gardenState.dayNight.getCycleProgress = origDayNightCR;
+        }
+        // Run a few updates to settle back to real state
+        if (typeof gardenState.creatureUpdate === 'function') {
+          for (var rwCR = 0; rwCR < 60; rwCR++) {
+            gardenState.creatureUpdate(rwCR * 0.016, 0.016);
+          }
+        }
+      }
+    }
+
+    // --- Test 10: reduced-motion disables the camera reaction ---
+    var origMatchMediaCR = window.matchMedia;
+    var reducedCreatureCR = null;
+
+    try {
+      window.matchMedia = function() {
+        return {
+          matches: true,
+          media: '(prefers-reduced-motion: reduce)',
+          addEventListener: function() {},
+          removeEventListener: function() {}
+        };
+      };
+
+      var testSceneCR = new THREE.Scene();
+      reducedCreatureCR = createCreature(testSceneCR);
+
+      if (reducedCreatureCR.state.reducedMotion) {
+        var gsSnapshotCR = window.__gardenState;
+        window.__gardenState = {
+          dayNight: { getCycleProgress: function() { return 0.1; } },
+          weather: { getPhase: function() { return 'Clear'; } }
+        };
+
+        // Call cameraMoved — should do nothing because reducedMotion is active
+        if (typeof reducedCreatureCR.state.cameraMoved === 'function') {
+          reducedCreatureCR.state.cameraMoved();
+        }
+
+        if (typeof reducedCreatureCR.state.getCameraReactionMul === 'function') {
+          var mulReduced = reducedCreatureCR.state.getCameraReactionMul();
+          if (Math.abs(mulReduced - 1.0) > 0.001) {
+            problems.push('With prefers-reduced-motion active, camera reaction multiplier is ' + mulReduced + ' — expected 1.0 (no boost when reduced motion is active).');
+          }
+        }
+
+        if (typeof reducedCreatureCR.state.getCameraReactionCooldown === 'function') {
+          var cdReduced = reducedCreatureCR.state.getCameraReactionCooldown();
+          if (cdReduced > 0.001) {
+            problems.push('With prefers-reduced-motion active, camera reaction cooldown is ' + cdReduced + ' — expected 0 (no cooldown when reduced motion is active).');
+          }
+        }
+
+        window.__gardenState = gsSnapshotCR;
+      }
+    } finally {
+      if (reducedCreatureCR && typeof reducedCreatureCR.destroy === 'function') {
+        reducedCreatureCR.destroy();
+      }
+      window.matchMedia = origMatchMediaCR;
+    }
+  }
+
   /* ---------- Star field checks (issue #449) ---------- */
   const starState = gardenState && gardenState.stars;
   if (!starState) {

@@ -352,6 +352,11 @@
         }
       }
 
+      /* --- Notify the butterfly that the camera moved (issue #559) --- */
+      if (window.__gardenState && window.__gardenState.creature && typeof window.__gardenState.creature.cameraMoved === 'function') {
+        window.__gardenState.creature.cameraMoved();
+      }
+
       lastInteractionTime = now;
     });
 
