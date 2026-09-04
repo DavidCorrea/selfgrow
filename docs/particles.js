@@ -9,6 +9,7 @@
  */
 
 import * as THREE from "three";
+import { isReducedMotion, onMotionChange } from "./motion.js";
 
 /**
  * Create a particle cloud around the garden volume.
@@ -20,8 +21,7 @@ export function createAmbientParticles(scene) {
   const count = 80;
 
   /* --- Detect reduced motion preference --- */
-  const reducedMotionMedia = window.matchMedia('(prefers-reduced-motion: reduce)');
-  const reducedMotion = reducedMotionMedia.matches;
+  let reducedMotion = isReducedMotion();
 
   /* --- Geometry: positions for a sparse spherical volume --- */
   const positions = new Float32Array(count * 3);
@@ -116,23 +116,21 @@ export function createAmbientParticles(scene) {
   }
 
   /* --- Handle changes to reduced-motion preference at runtime --- */
-  function onMotionPreferenceChange(e) {
-    state.reducedMotion = e.matches;
+  const unsubMotion = onMotionChange(function(matches) {
+    state.reducedMotion = matches;
     // If switching to reduced motion, reset positions to original
-    if (e.matches) {
+    if (matches) {
       const pos = geometry.attributes.position.array;
       for (let i = 0; i < count * 3; i++) {
         pos[i] = origPositions[i];
       }
       geometry.attributes.position.needsUpdate = true;
     }
-  }
+  });
 
-  reducedMotionMedia.addEventListener('change', onMotionPreferenceChange);
-
-  /* --- Destroy: clean up event listener and remove from scene --- */
+  /* --- Destroy: clean up and remove from scene --- */
   function destroy() {
-    reducedMotionMedia.removeEventListener('change', onMotionPreferenceChange);
+    unsubMotion();
     scene.remove(points);
     geometry.dispose();
     material.dispose();

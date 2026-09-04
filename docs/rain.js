@@ -11,6 +11,7 @@
  */
 
 import * as THREE from "three";
+import { isReducedMotion, onMotionChange } from "./motion.js";
 
 /* --- Configuration --- */
 const RAIN_COUNT = 250;
@@ -38,8 +39,7 @@ const FADE_LERP_SPEED = 0.025;
  */
 export function createRain(scene) {
   /* --- Detect reduced motion --- */
-  const reducedMotionMedia = window.matchMedia('(prefers-reduced-motion: reduce)');
-  let reducedMotion = reducedMotionMedia.matches;
+  let reducedMotion = isReducedMotion();
 
   /* --- Create streak texture (thin translucent vertical line) --- */
   const canvas = document.createElement('canvas');
@@ -190,20 +190,18 @@ export function createRain(scene) {
   }
 
   /* --- Handle runtime changes to reduced-motion preference --- */
-  function onMotionPreferenceChange(e) {
-    state.reducedMotion = e.matches;
-    if (e.matches) {
+  const unsubMotion = onMotionChange(function(matches) {
+    state.reducedMotion = matches;
+    if (matches) {
       points.visible = false;
       material.opacity = 0;
       currentOpacity = 0;
     }
-  }
+  });
 
-  reducedMotionMedia.addEventListener('change', onMotionPreferenceChange);
-
-  /* --- Destroy: clean up event listener and remove from scene --- */
+  /* --- Destroy: clean up and remove from scene --- */
   function destroy() {
-    reducedMotionMedia.removeEventListener('change', onMotionPreferenceChange);
+    unsubMotion();
     scene.remove(points);
     geometry.dispose();
     material.dispose();
