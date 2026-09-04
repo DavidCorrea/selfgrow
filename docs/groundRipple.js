@@ -15,6 +15,8 @@
  *   computeDisplacement is a pure function usable by other modules
  */
 
+import { isReducedMotion, onMotionChange } from "./motion.js";
+
 /* --- Wave configuration (shared between ground ripple and fallen leaves) ---
  *
  * Since the mesh is rotated -PI/2 around X, the CircleGeometry's local
@@ -61,8 +63,7 @@ export function computeDisplacement(x, z, time) {
  */
 export function createGroundRipple(groundMesh) {
   /* --- Detect reduced motion preference --- */
-  const reducedMotionMedia = window.matchMedia('(prefers-reduced-motion: reduce)');
-  const reducedMotion = reducedMotionMedia.matches;
+  let reducedMotion = isReducedMotion();
 
   const geometry = groundMesh.geometry;
   const posAttr = geometry.attributes.position;
@@ -124,25 +125,23 @@ export function createGroundRipple(groundMesh) {
   }
 
   /* --- Handle changes to reduced-motion preference at runtime --- */
-  function onMotionPreferenceChange(e) {
-    state.reducedMotion = e.matches;
-    state.active = !e.matches;
+  const unsubMotion = onMotionChange(function(matches) {
+    state.reducedMotion = matches;
+    state.active = !matches;
 
     // If switching to reduced motion, reset positions to original
-    if (e.matches) {
+    if (matches) {
       const arr = posAttr.array;
       for (let i = 0; i < arr.length; i++) {
         arr[i] = origPos[i];
       }
       posAttr.needsUpdate = true;
     }
-  }
-
-  reducedMotionMedia.addEventListener('change', onMotionPreferenceChange);
+  });
 
   /* --- Destroy: clean up event listener --- */
   function destroy() {
-    reducedMotionMedia.removeEventListener('change', onMotionPreferenceChange);
+    unsubMotion();
     // Reset vertices to original
     const arr = posAttr.array;
     for (let i = 0; i < arr.length; i++) {

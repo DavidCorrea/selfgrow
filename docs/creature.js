@@ -11,6 +11,7 @@
 
 import * as THREE from "three";
 import { computeDisplacement } from "./groundRipple.js";
+import { isReducedMotion, onMotionChange } from "./motion.js";
 
 /* --- Configuration --- */
 const WING_SPAN = 0.07;           // tiny — a few pixels on screen
@@ -87,8 +88,7 @@ const CAMERA_COOLDOWN = 10.0;       // seconds before next reaction
  */
 export function createCreature(scene) {
   /* --- Detect reduced motion --- */
-  const reducedMotionMedia = window.matchMedia('(prefers-reduced-motion: reduce)');
-  let reducedMotion = reducedMotionMedia.matches;
+  let reducedMotion = isReducedMotion();
 
   /* Track last update time for dt calculation (frame-rate-independent lerp) */
   let _prevUpdateTime = -1;
@@ -630,9 +630,9 @@ export function createCreature(scene) {
   }
 
   /* --- Handle runtime changes to reduced-motion preference --- */
-  function onMotionPreferenceChange(e) {
-    state.reducedMotion = e.matches;
-    if (e.matches) {
+  const unsubMotion = onMotionChange(function(matches) {
+    state.reducedMotion = matches;
+    if (matches) {
       group.visible = false;
       // Reset any active pause or landing immediately
       pauseState = 'idle';
@@ -648,13 +648,11 @@ export function createCreature(scene) {
     } else {
       group.visible = true;
     }
-  }
+  });
 
-  reducedMotionMedia.addEventListener('change', onMotionPreferenceChange);
-
-  /* --- Destroy: clean up event listener and remove from scene --- */
+  /* --- Destroy: clean up and remove from scene --- */
   function destroy() {
-    reducedMotionMedia.removeEventListener('change', onMotionPreferenceChange);
+    unsubMotion();
     scene.remove(group);
     leftWingGeo.dispose();
     rightWingGeo.dispose();

@@ -13,6 +13,7 @@
  */
 
 import * as THREE from "three";
+import { isReducedMotion, onMotionChange } from "./motion.js";
 
 /* --- Configuration --- */
 const STAR_COUNT = 80;                // between 60–100
@@ -29,8 +30,7 @@ const STAR_SIZE = 0.04;               // tiny dots in world units
  */
 export function createStars(scene) {
   /* --- Detect reduced motion --- */
-  const reducedMotionMedia = window.matchMedia('(prefers-reduced-motion: reduce)');
-  const reducedMotion = reducedMotionMedia.matches;
+  let reducedMotion = isReducedMotion();
 
   /* --- Geometry: positions on a hemisphere above the garden --- */
   const positions = new Float32Array(STAR_COUNT * 3);
@@ -159,16 +159,14 @@ export function createStars(scene) {
   }
 
   /* --- Handle runtime changes to reduced-motion preference --- */
-  function onMotionPreferenceChange(e) {
-    state.reducedMotion = e.matches;
+  const unsubMotion = onMotionChange(function(matches) {
+    state.reducedMotion = matches;
     // Rotation is handled in the update loop
-  }
+  });
 
-  reducedMotionMedia.addEventListener('change', onMotionPreferenceChange);
-
-  /* --- Destroy: clean up event listener and remove from scene --- */
+  /* --- Destroy: clean up and remove from scene --- */
   function destroy() {
-    reducedMotionMedia.removeEventListener('change', onMotionPreferenceChange);
+    unsubMotion();
     scene.remove(points);
     geometry.dispose();
     material.dispose();

@@ -18,6 +18,7 @@
  */
 
 import * as THREE from "three";
+import { isReducedMotion, onMotionChange } from "./motion.js";
 
 /* --- Configuration --- */
 const DOTS_MIN = 4;
@@ -92,8 +93,7 @@ function createGlowTexture() {
  */
 export function createFireflies(scene) {
   /* --- Detect reduced motion --- */
-  const reducedMotionMedia = window.matchMedia('(prefers-reduced-motion: reduce)');
-  const reducedMotion = reducedMotionMedia.matches;
+  let reducedMotion = isReducedMotion();
 
   /* --- Shared glow texture --- */
   const glowTexture = createGlowTexture();
@@ -387,16 +387,14 @@ export function createFireflies(scene) {
   }
 
   /* --- Handle runtime changes to reduced-motion preference --- */
-  function onMotionPreferenceChange(e) {
-    state.reducedMotion = e.matches;
+  const unsubMotion = onMotionChange(function(matches) {
+    state.reducedMotion = matches;
     // Update is called every frame and handles the motion state
-  }
-
-  reducedMotionMedia.addEventListener('change', onMotionPreferenceChange);
+  });
 
   /* --- Destroy: clean up and remove from scene --- */
   function destroy() {
-    reducedMotionMedia.removeEventListener('change', onMotionPreferenceChange);
+    unsubMotion();
     for (let gi = 0; gi < plantGroups.length; gi++) {
       const group = plantGroups[gi];
       scene.remove(group.points);
