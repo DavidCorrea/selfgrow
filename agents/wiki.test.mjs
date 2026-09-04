@@ -4,7 +4,7 @@
 // a retry that duplicates the entry it just wrote is how a changelog rots.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { withChangelogEntry, withLesson, trimSections } from "./wiki.mjs";
+import { withChangelogEntry, trimSections } from "./wiki.mjs";
 
 test("recording what shipped", async (t) => {
   await t.test("starts a page that does not exist yet", () => {
@@ -40,36 +40,7 @@ test("recording what shipped", async (t) => {
   });
 });
 
-test("recording why something was abandoned", async (t) => {
-  const lesson = { title: "#12 Add a shop", body: "Needed a server." };
-
-  await t.test("starts a page that does not exist yet", () => {
-    const page = withLesson("", lesson, "2026-08-30");
-    assert.match(page, /^# Lessons/);
-    assert.ok(page.includes("## 2026-08-30 — #12 Add a shop"));
-    assert.ok(page.includes("Needed a server."));
-  });
-
-  await t.test("puts the newest lesson first, where the Scout reads", () => {
-    let page = withLesson("", { title: "Older", body: "x" }, "2026-08-29");
-    page = withLesson(page, { title: "Newer", body: "y" }, "2026-08-30");
-    assert.ok(page.indexOf("Newer") < page.indexOf("Older"));
-  });
-
-  await t.test("keeps the page's intro above the entries", () => {
-    let page = withLesson("", { title: "First", body: "x" }, "2026-08-29");
-    page = withLesson(page, { title: "Second", body: "y" }, "2026-08-30");
-    assert.ok(page.indexOf("not to\nlearn it twice") < page.indexOf("## 2026-08-30"));
-  });
-
-  await t.test("is safe to replay", () => {
-    const once = withLesson("", lesson, "2026-08-30");
-    assert.equal(withLesson(once, lesson, "2026-08-30"), once);
-  });
-});
-
-
-test("keeping the memory pages from growing without bound", async (t) => {
+test("keeping the changelog from growing without bound", async (t) => {
   // Both pages are read WHOLE into prompts — the Scout gets every lesson before
   // planning each of the day's tickets. Untrimmed, they inflate a fixed context
   // until something silently falls out of it.
@@ -94,17 +65,7 @@ test("keeping the memory pages from growing without bound", async (t) => {
   });
 
   await t.test("leaves a page with no entries alone", () => {
-    assert.equal(trimSections("# Lessons\n\nIntro only.\n", 5), "# Lessons\n\nIntro only.\n");
-  });
-
-  await t.test("bounds the lessons page as entries accumulate", () => {
-    let page = "";
-    for (let day = 1; day <= 40; day++) {
-      page = withLesson(page, { title: `Lesson ${day}`, body: "x" }, `2026-09-${String(day % 30 + 1).padStart(2, "0")}`);
-    }
-    const entries = (page.match(/^## /gm) || []).length;
-    assert.ok(entries <= 20, `expected at most 20 entries, got ${entries}`);
-    assert.ok(page.includes("Lesson 40"), "the newest lesson must survive");
+    assert.equal(trimSections("# Changelog\n\nIntro only.\n", 5), "# Changelog\n\nIntro only.\n");
   });
 
   await t.test("bounds the changelog as days accumulate", () => {

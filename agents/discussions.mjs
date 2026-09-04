@@ -459,8 +459,9 @@ export function renderJournalEntry({ decided, because, deferred, extra = {} }) {
  * empty account", not "#543 failed on Thursday". Same title next time means the
  * same thread, which is what makes recurrence visible.
  */
-export function appendLessonOccurrence(title, body) {
-  return appendThread(LESSON_CATEGORY, title, body, {
+export function appendLessonOccurrence(title, body, { scope = "product" } = {}) {
+  const created = !findDiscussionSafely(LESSON_CATEGORY, title);
+  const ok = appendThread(LESSON_CATEGORY, title, body, {
     intro:
       `A failure the pipeline has hit, and what it cost. **Each comment is one occurrence** — ` +
       `the count is how often this has happened.\n\n` +
@@ -468,6 +469,22 @@ export function appendLessonOccurrence(title, body) {
       `not a verdict that the work cannot be done.\n\n` +
       `Written by the pipeline and locked.`,
   });
+  // Labelled on creation only: a scope is a property of the failure class, not of
+  // each occurrence, and re-adding the same label every time is a wasted call.
+  if (ok && created) {
+    const thread = findDiscussionSafely(LESSON_CATEGORY, title);
+    if (thread) labelDiscussion(thread.id, SCOPE_LABELS[scope] || SCOPE_LABELS.product);
+  }
+  return ok;
+}
+
+/** findDiscussion, but never throwing — used where a lookup is incidental. */
+function findDiscussionSafely(category, title) {
+  try {
+    return findDiscussion(category, title);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -526,4 +543,142 @@ export function renderLessonThreads(lessons) {
         `### ${l.title}\n_Seen ${l.occurrences} time(s)._\n\n${l.latest || "(no detail recorded)"}`
     )
     .join("\n\n");
+}
+
+// ---------------------------------------------------------------------------
+// Scope, and what a reset may throw away.
+//
+// `reset` exists to delete the PRODUCT and keep the machine. That distinction did
+// not matter while memory lived on the wiki, because reset simply blanked those
+// pages. It matters now: a Lessons thread saying "a transient provider error was
+// read as an empty account" is knowledge about the HARNESS, and relearning it
+// costs another six closed PRs. A thread saying "tickets like this garden's
+// weather work cannot be built as scoped" is about a product that no longer
+// exists.
+//
+// So a lesson carries a scope. Only `product` is archived by a reset; `machine`
+// and anything unlabelled survive, because the asymmetry is not close — archiving
+// a machine lesson loses something expensive, while keeping a product lesson adds
+// a paragraph of noise to a fresh start.
+//
+// Journals are all product-scoped by nature: every one of them records reasoning
+// about what this product should be or how its code is shaped. They archive.
+//
+// Archiving RENAMES rather than deletes. History stays publicly readable, and the
+// title stops matching the prefix that find-or-create looks for, so the next run
+// starts a clean thread. Deleting would be simpler and would throw away the only
+// record that the previous project existed.
+// ---------------------------------------------------------------------------
+
+export const SCOPE_LABELS = { product: "product", machine: "machine" };
+
+/** The label id for a name, or null when the repository has no such label. */
+function findLabelId(name) {
+  const repo = process.env.GITHUB_REPOSITORY || "";
+  const [owner, repoName] = repo.includes("/") ? repo.split("/") : [OWNER, ""];
+  const result = graphql(
+    `query($owner: String!, $name: String!, $label: String!) {
+       repository(owner: $owner, name: $name) { label(name: $label) { id } }
+     }`,
+    { owner, name: repoName, label: name }
+  );
+  return result?.data?.repository?.label?.id || null;
+}
+
+/**
+ * Label a discussion, best-effort. A missing label is a warning rather than a
+ * failure: the thread it would have marked is worth more than the mark.
+ */
+export function labelDiscussion(discussionId, labelName) {
+  try {
+    const labelId = findLabelId(labelName);
+    if (!labelId) {
+      log("warn", `Discussions: no "${labelName}" label in this repository — leaving the thread unlabelled.`);
+      return false;
+    }
+    graphql(
+      `mutation($id: ID!, $labels: [ID!]!) {
+         addLabelsToLabelable(input: {labelableId: $id, labelIds: $labels}) { clientMutationId }
+       }`,
+      { id: discussionId, labels: labelId }
+    );
+    return true;
+  } catch (e) {
+    log("warn", `Discussions: could not label a thread "${labelName}".`, errorData(e));
+    return false;
+  }
+}
+
+/**
+ * The archived form of a title.
+ *
+ * The date prefix, not a suffix, and that is the whole point: find-or-create
+ * matches on `startsWith`, so a suffix would still match and the next run would
+ * append this project's entries to the previous project's thread.
+ */
+export function archivedTitle(title, on = new Date()) {
+  return `[archived ${on.toISOString().slice(0, 10)}] ${title}`;
+}
+
+/**
+ * Archive the memory a reset should not carry into a new product: every journal,
+ * and the lesson threads explicitly labelled `product`.
+ *
+ * Returns how many threads were archived. Best-effort per thread — a reset that
+ * half-succeeds is better than one that aborts, since the alternative is a new
+ * product inheriting the old one's reasoning.
+ */
+export function archiveProductMemory({ on = new Date() } = {}) {
+  try {
+    const repo = process.env.GITHUB_REPOSITORY || "";
+    const [owner, name] = repo.includes("/") ? repo.split("/") : [OWNER, ""];
+    const result = graphql(
+      `query($owner: String!, $name: String!) {
+         repository(owner: $owner, name: $name) {
+           discussions(first: 100, orderBy: {field: CREATED_AT, direction: DESC}) {
+             nodes {
+               id title authorAssociation
+               category { name }
+               labels(first: 10) { nodes { name } }
+             }
+           }
+         }
+       }`,
+      { owner, name }
+    );
+    const nodes = result?.data?.repository?.discussions?.nodes || [];
+    const doomed = nodes.filter((d) => {
+      if (!isTrustedAuthor(d.authorAssociation)) return false; // not ours to touch
+      if (String(d.title || "").startsWith("[archived ")) return false; // already done
+      const category = d.category?.name;
+      if (category === JOURNAL_CATEGORY) return true; // every journal is about the product
+      if (category !== LESSON_CATEGORY) return false; // Decisions and Announcements stay
+      return (d.labels?.nodes || []).some((l) => l.name === SCOPE_LABELS.product);
+    });
+
+    let archived = 0;
+    for (const thread of doomed) {
+      try {
+        graphql(
+          `mutation($id: ID!, $title: String!) {
+             updateDiscussion(input: {discussionId: $id, title: $title}) { discussion { number } }
+           }`,
+          { id: thread.id, title: archivedTitle(thread.title, on) }
+        );
+        archived++;
+      } catch (e) {
+        log("warn", `Discussions: could not archive "${thread.title}".`, errorData(e));
+      }
+    }
+    log(
+      "info",
+      archived
+        ? `Discussions: archived ${archived} product-scoped thread(s); machine lessons and decisions kept.`
+        : "Discussions: nothing product-scoped to archive."
+    );
+    return archived;
+  } catch (e) {
+    log("warn", "Discussions: could not archive product memory — do it by hand before starting.", errorData(e));
+    return 0;
+  }
 }

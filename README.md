@@ -40,7 +40,7 @@ Four roles, split by **whose judgement a decision needs** — which is why there
 
 | Role | Runs | Owns | Writes to |
 | --- | --- | --- | --- |
-| 🧭 **Product Owner** | Mon 08:00 | Where the project is going | Vision, milestone, Lessons |
+| 🧭 **Product Owner** | Mon 08:00 | Where the project is going | Vision, milestone, its journal |
 | 📋 **Product Manager** | daily 00:30 | What the product should and shouldn't be | issues, board, Story, digest |
 | 🔧 **Tech Lead** | Thu 09:00 | Whether the code can absorb the next ticket | structure + coverage tickets |
 | ⚒️ **Devs** | after the PM, + 14:00 mop-up | How a ticket gets built | `main` |
@@ -126,17 +126,25 @@ flowchart TD
         BOARD["📌 Project board — the queue"]
         MS["🎯 Milestone — the horizon"]
         ISSUES["🎫 Issues — tickets and strikes"]
-        DISC["📢 Discussions — digest, health"]
+    end
+    subgraph disc ["Discussions — locked, one thread per thing"]
+        LESSONS["Lessons — one thread per failure class"]
+        DECISIONS["Decisions — what was settled, and why"]
+        JOURNALS["Journals — one running log per role"]
+        ANN["Announcements — digest, health"]
     end
     subgraph wiki ["Wiki"]
         VISION["Vision — what it is for"]
         STORY["Story — the arc"]
         CHANGE["Changelog — what shipped"]
-        LESSONS["Lessons — what failed, and why"]
     end
 ```
 
-Changelog and Lessons are trimmed: both are read whole into prompts, and an untrimmed page is a context window quietly filling up.
+**Anything the agents read back lives in Discussions**, because a wiki page is a blob that has to be rewritten whole — so the only way to bound a prompt was to delete history, and history got dropped by age rather than by relevance. A thread's body is its summary and its comments are an append-only log, so a reader takes the last few and the thread grows forever. Lessons are read *most-recurrent first*: a failure seen four times is likelier to catch the next ticket than one seen once last night.
+
+Everything the pipeline posts there is **locked** — readable by anyone, appendable only by accounts with write access, because an agent that reads a thread as guidance and merges to `main` should not be arguable with by a stranger.
+
+The Changelog is still trimmed: it is read whole into the weekly report.
 
 ## Contributing
 

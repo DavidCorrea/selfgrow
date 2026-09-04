@@ -7,6 +7,7 @@ import {
   isOwnThread,
   renderJournalEntry,
   renderLessonThreads,
+  archivedTitle,
 } from "./discussions.mjs";
 
 test("deciding whose words count as guidance", async (t) => {
@@ -123,5 +124,30 @@ test("rendering lessons for a planner", async (t) => {
   await t.test("says so rather than printing an empty section", () => {
     assert.match(renderLessonThreads([lesson("No detail", 1, "")]), /\(no detail recorded\)/);
     assert.equal(renderLessonThreads([]), "");
+  });
+});
+
+test("archiving a thread a reset should not carry forward", async (t) => {
+  const on = new Date("2026-09-04T12:00:00Z");
+
+  // A PREFIX, not a suffix, and that is the whole point: find-or-create matches
+  // on startsWith, so a suffix would still match and the next product would append
+  // its entries to the previous product's thread.
+  await t.test("stops the title matching the prefix that finds it", () => {
+    const archived = archivedTitle("Playtester — log", on);
+    assert.equal(archived, "[archived 2026-09-04] Playtester — log");
+    assert.equal(archived.startsWith("Playtester — log"), false);
+  });
+
+  await t.test("keeps the original title readable", () => {
+    assert.match(archivedTitle("Tech Lead — log", on), /Tech Lead — log$/);
+  });
+
+  await t.test("is idempotent enough to be safe to re-run", () => {
+    // archiveProductMemory skips anything already archived; this asserts the
+    // marker it looks for survives a second pass unchanged in shape.
+    const once = archivedTitle("A failure class", on);
+    assert.equal(once.startsWith("[archived "), true);
+    assert.equal(archivedTitle(once, on).startsWith("[archived "), true);
   });
 });

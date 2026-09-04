@@ -46,9 +46,7 @@ export {
   commitToWiki,
   readVision,
   readChangelog,
-  readLessons,
   appendChangelogEntry,
-  appendLesson,
   writePage,
   writeStory,
 } from "./wiki.mjs";
