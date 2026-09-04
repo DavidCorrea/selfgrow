@@ -13,6 +13,8 @@ on:
 permissions:
   contents: read
   issues: write
+  # It appends one entry per run to its own journal thread (a Discussion).
+  discussions: write
 
 # One playtester at a time: two concurrent sessions would form the same
 # impression of the same app and file it twice.

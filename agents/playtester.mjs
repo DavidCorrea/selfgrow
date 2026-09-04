@@ -52,6 +52,7 @@ import {
   recordTicket,
   PLAYTEST_LABEL,
 } from "./shared.mjs";
+import { readJournal, appendJournal, renderJournalEntry } from "./discussions.mjs";
 import { pathToFileURL } from "url";
 import { join } from "path";
 import fs from "fs";
@@ -115,6 +116,12 @@ async function captureFrames(page) {
 }
 
 const APP_DIR = join(repoRoot, "docs");
+
+// The thread this role remembers itself in. Its own past verdicts are the only
+// way it can say "you fixed that", "this is worse than last week", or "I have
+// said this three weeks running" — none of which a stateless run can produce, and
+// all of which are most of what makes a reviewer worth listening to.
+const JOURNAL = "Playtester — log";
 
 // The deployed site, when there is one. Playing the LIVE page rather than a local
 // copy of the repository is the difference between "the code we merged works" and
@@ -353,6 +360,10 @@ function fileFindings(findings, verdict) {
  * Returns the agent's raw output, or null when neither attempt produced any.
  */
 async function report(session) {
+  // Read before playing back: what this role said last time bounds what is worth
+  // saying now. Empty on a first run, or when the Journals category does not
+  // exist yet, and the prompt handles both.
+  const past = readJournal(JOURNAL);
   const promptFor = (showingFrames) => {
     const transcript = renderSession(session, { showingFrames });
     log("info", `Playtest session:\n${transcript}`);
@@ -360,6 +371,9 @@ async function report(session) {
       VISION: readVision(),
       SESSION: transcript,
       MAX_FINDINGS: String(MAX_FINDINGS),
+      PAST: past.length
+        ? past.join("\n\n")
+        : "(nothing — this is the first session on record, so there is nothing to verify or compare against)",
     });
   };
   const frames = session.frames || [];
@@ -440,6 +454,24 @@ async function main() {
   const findings = Array.isArray(result.data.findings) ? result.data.findings : [];
   const filed = fileFindings(findings, verdict);
   log("info", `Playtest complete — ${filed} finding(s) filed for the Product Manager to triage.`);
+
+  // Write down what this session concluded, so next week can verify it rather
+  // than start over. The TITLES matter more than the prose here: fileFindings
+  // dedups on an exact title, so next week reusing one suppresses a repeat
+  // correctly instead of filing a near-duplicate the PM has to notice by hand.
+  appendJournal(
+    JOURNAL,
+    renderJournalEntry({
+      decided: verdict || "(no verdict given)",
+      extra: {
+        Filed: findings.length
+          ? findings.map((f) => `"${f.title}"`).join("; ")
+          : "nothing — the session held up",
+        Verified: result.data.verified || "",
+        Regressed: result.data.regressed || "",
+      },
+    })
+  );
   printRunSummary("Playtester");
 }
 

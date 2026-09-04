@@ -24,7 +24,6 @@ import {
   getBoardSnapshot,
   readVision,
   readLessons,
-  appendLesson,
   commitToWiki,
   getCurrentMilestone,
   startMilestone,
@@ -32,6 +31,13 @@ import {
   isPlaytestFeedback,
   fetchOpenIssues,
 } from "./shared.mjs";
+import {
+  readJournal,
+  appendJournal,
+  renderJournalEntry,
+  readLessonThreads,
+  renderLessonThreads,
+} from "./discussions.mjs";
 
 const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 
@@ -131,6 +137,30 @@ function applyRefinement(parsed) {
 // Main — steward the vision (canonical in the wiki); the PM owns the backlog
 // ---------------------------------------------------------------------------
 
+// The thread this role remembers itself in.
+const JOURNAL = "Product Owner — log";
+
+/**
+ * Write down the direction and the reason for it.
+ *
+ * Terse on purpose: three lines a future run can skim, not a narrative it will
+ * read its own voice back out of. `milestone` is the one that was RUNNING when
+ * this decided, so an entry says what changed rather than only what is true.
+ */
+function recordDecision(data, previousMilestone) {
+  const chosen = data.milestone?.title;
+  appendJournal(
+    JOURNAL,
+    renderJournalEntry({
+      decided: chosen
+        ? `Milestone: ${chosen}${previousMilestone && previousMilestone.title !== chosen ? ` (was "${previousMilestone.title}")` : ""}`
+        : `Milestone unchanged${previousMilestone ? `: ${previousMilestone.title}` : " — none set"}`,
+      because: data.milestone?.description || data.retro?.title || "",
+      deferred: data.deferred || "",
+    })
+  );
+}
+
 async function main() {
   log("info", "=== Product Owner — the week, the direction ===");
 
@@ -144,6 +174,10 @@ async function main() {
 
   const week = readWeek();
   const milestone = getCurrentMilestone();
+  // Its own past reasoning. The Vision and the milestone record what was decided;
+  // nothing recorded WHY, so each Monday used to re-argue the same direction from
+  // scratch and could contradict last week without noticing.
+  const past = readJournal(JOURNAL);
   log("info", `Reviewing a week of ${week.shipped.length} shipped, ${week.parked.length} parked.`);
 
   const rawOutput = await withLogGroup("Product Owner", () =>
@@ -153,7 +187,15 @@ async function main() {
         VISION: vision,
         BOARD_STATE: boardState,
         WEEK: renderWeek(week),
-        LESSONS: readLessons().trim() || "(nothing recorded yet)",
+        // Threads first, most-recurrent first; the wiki page only while it still
+        // holds something. Same fallback as the Scout's.
+        LESSONS: (() => {
+          const threads = readLessonThreads();
+          return threads.length
+            ? renderLessonThreads(threads)
+            : readLessons().trim() || "(nothing recorded yet)";
+        })(),
+        PAST: past.length ? past.join("\n\n") : "(nothing recorded yet — this is the first)",
         MILESTONE: milestone
           ? `**${milestone.title}** — ${milestone.description || "no description"} (${milestone.closed} shipped, ${milestone.open} still open)`
           : "(none set — this is the first)",
@@ -168,11 +210,26 @@ async function main() {
   }
   const data = parsed.data || {};
 
-  // 1. The retro. Recorded first and unconditionally: it is this run's most
-  //    durable output, and it is what next week's run reads before deciding
-  //    anything. A skipped Vision change is not a reason to skip the record.
+  // 1. The retro, into this role's OWN journal — not the Lessons page.
+  //
+  //    It used to go to Lessons, which is titled "what the agents have tried and
+  //    abandoned, and why" and is read by every Scout before planning. A retro is
+  //    not that: it is a weekly narrative of what shipped, and because retros are
+  //    weekly and parked tickets are rare, they crowded the actual failures out
+  //    entirely. The Scout was reading two cheerful summaries ending "Nothing
+  //    parked" as its dead-end context.
+  //
+  //    Recorded first and unconditionally either way: it is this run's most durable
+  //    output and what next week reads before deciding. A skipped Vision change is
+  //    not a reason to skip the record.
   if (data.retro?.title && data.retro?.body) {
-    appendLesson({ title: `Week of ${daysAgo(7)} — ${data.retro.title}`, body: data.retro.body });
+    appendJournal(
+      JOURNAL,
+      renderJournalEntry({
+        decided: `Retro — ${data.retro.title}`,
+        because: data.retro.body,
+      })
+    );
   } else {
     log("warn", "Product Owner: no retro produced this week.");
   }
@@ -185,7 +242,12 @@ async function main() {
     log("warn", "Product Owner: no milestone set, and none was running.");
   }
 
-  // 3. The Vision, which most weeks should not move at all.
+  // 3. The decision, in this role's own journal — before the Vision step, because
+  //    that step returns early most weeks and the record must not depend on it.
+  //    Same reasoning as the retro above: this is what next Monday reads first.
+  recordDecision(data, milestone);
+
+  // 4. The Vision, which most weeks should not move at all.
   if (parsed.outcome === "skip") {
     log("info", `Product Owner: vision unchanged. ${parsed.summary || ""}`);
     printRunSummary("Product Owner");

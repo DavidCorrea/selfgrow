@@ -47,6 +47,7 @@ import {
   dependencyLine,
   errorData,
 } from "./shared.mjs";
+import { readJournal, appendJournal, renderJournalEntry } from "./discussions.mjs";
 
 // Never propose more than this in one run. A structural change is disruptive and
 // a removal is hard to walk back; a run that rewrites everything at once is
@@ -336,6 +337,23 @@ function fileProposal(item, dependsOn = []) {
  * ticket that can actually ship, or dropped. Both close the original — leaving it
  * open just wastes board space, since the Devs will not touch it.
  */
+// The thread this role remembers itself in.
+const JOURNAL = "Tech Lead — log";
+
+/**
+ * The parked-ticket rulings, one line each, for the journal.
+ *
+ * Kept to number + shape of the ruling rather than the reasoning: the reasoning
+ * is already on the ticket, and what a future review needs is "have I ruled on
+ * this before, and which way".
+ */
+function renderRulings(verdicts) {
+  return (Array.isArray(verdicts) ? verdicts : [])
+    .filter((v) => Number(v?.number))
+    .map((v) => `#${Number(v.number)} ${v.replacement?.title ? "returned smaller" : "dropped"}`)
+    .join("; ");
+}
+
 async function resolveBlocked(verdicts, blocked) {
   const parked = new Set(blocked.map((t) => t.number));
   let handled = 0;
@@ -380,6 +398,15 @@ async function main() {
     return;
   }
 
+  // Its own past reviews. This role rules on whether a parked ticket comes back,
+
+  // and without a record it can rule the opposite way next week on the same
+
+  // ticket and never know it did.
+
+  const past = readJournal(JOURNAL);
+
+
   const rawOutput = await withLogGroup("Tech Lead", () =>
     runAgent({
       label: "Tech Lead",
@@ -391,6 +418,7 @@ async function main() {
         SELFTEST: readSelfTest() || "(the product ships no self-check suite yet)",
         BLOCKED: renderBlocked(blocked),
         BOARD_STATE: boardState,
+        PAST: past.length ? past.join("\n\n") : "(nothing recorded yet — this is the first review)",
       }),
       tools: ["read"],
     })
@@ -413,6 +441,23 @@ async function main() {
   }
   for (const item of proposals.slice(0, MAX_PROPOSALS)) fileProposal(item);
   if (!proposals.length) log("info", "Tech Lead: the codebase is sound as it stands — nothing proposed.");
+
+  // What this review concluded, for the next one to read. Rulings are the part
+  // worth remembering: this role decides whether a parked ticket comes back, and
+  // without a record it can rule the opposite way next week on the same ticket
+  // and never know it did.
+  appendJournal(
+    JOURNAL,
+    renderJournalEntry({
+      decided: proposals.length
+        ? proposals.slice(0, MAX_PROPOSALS).map((p) => `"${p.title}"`).join("; ")
+        : "Nothing proposed — the codebase is sound as it stands",
+      because: parsed.summary || "",
+      extra: {
+        Rulings: renderRulings(parsed.data?.blocked),
+      },
+    })
+  );
 
   printRunSummary("Tech Lead");
 }
