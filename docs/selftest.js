@@ -1046,6 +1046,93 @@ export async function checks() {
     if (expectedDarkenMul > 0.9 || expectedDarkenMul < 0.8) {
       problems.push('Expected ground darkening multiplier is ' + expectedDarkenMul + ', expected ~0.85 for a subtle 15% darkening.');
     }
+
+    /* ---------- Season-to-weather phase boundary checks (issue #558) ---------- */
+    // Verify the weather cycle adjusts its phase durations based on the current season.
+    // The season is read from #season-display, and the phase boundaries define the
+    // proportion of cycle time each phase occupies.
+    if (typeof weather.getSeasonPhaseBoundaries !== 'function') {
+      problems.push('weather.getSeasonPhaseBoundaries is not a function — season-dependent phase boundary getter is missing (issue #558).');
+    } else {
+      // Helper: compute span proportions from a boundaries object
+      function computePhaseSpans(bounds) {
+        return {
+          clearSpan: bounds.clearEnd - 0,
+          overcastSpan: bounds.overcastEnd - bounds.clearEnd,
+          drizzleSpan: 1 - bounds.overcastEnd
+        };
+      }
+
+      // Get boundaries for each season and verify the acceptance criteria
+      const springBounds = weather.getSeasonPhaseBoundaries('Spring');
+      const summerBounds = weather.getSeasonPhaseBoundaries('Summer');
+      const winterBounds = weather.getSeasonPhaseBoundaries('Winter');
+
+      if (!springBounds || !summerBounds || !winterBounds) {
+        problems.push('getSeasonPhaseBoundaries returned null/undefined for one or more seasons — expected valid boundary objects.');
+      } else {
+        const spring = computePhaseSpans(springBounds);
+        const summer = computePhaseSpans(summerBounds);
+        const winter = computePhaseSpans(winterBounds);
+
+        // Acceptance criterion 1: In Winter, Overcast occupies ≥60% of cycle time
+        if (winter.overcastSpan < 0.60) {
+          problems.push('Winter Overcast span is ' + winter.overcastSpan.toFixed(3) +
+            ' (' + (winter.overcastSpan * 100).toFixed(1) + '%) — expected ≥ 0.60 (≥60%) for season-appropriate overcast (issue #558).');
+        }
+
+        // Acceptance criterion 2: In Summer, Clear occupies ≥50% of cycle time
+        if (summer.clearSpan < 0.50) {
+          problems.push('Summer Clear span is ' + summer.clearSpan.toFixed(3) +
+            ' (' + (summer.clearSpan * 100).toFixed(1) + '%) — expected ≥ 0.50 (≥50%) for season-appropriate clear skies (issue #558).');
+        }
+
+        // Acceptance criterion 3: In Spring, Light Drizzle is at least 1.5× Summer's Light Drizzle
+        if (summer.drizzleSpan <= 0) {
+          problems.push('Summer Light Drizzle span is ' + summer.drizzleSpan.toFixed(3) + ' — expected a positive value for ratio computation (issue #558).');
+        } else {
+          const drizzleRatio = spring.drizzleSpan / summer.drizzleSpan;
+          if (drizzleRatio < 1.5) {
+            problems.push('Spring Light Drizzle span is ' + spring.drizzleSpan.toFixed(3) +
+              ' (' + (spring.drizzleSpan * 100).toFixed(1) + '%) vs Summer ' + summer.drizzleSpan.toFixed(3) +
+              ' (' + (summer.drizzleSpan * 100).toFixed(1) + '%) — ratio is ' + drizzleRatio.toFixed(2) +
+              'x, expected at least 1.5x for season-appropriate drizzle (issue #558).');
+          }
+        }
+
+        // Safety checks: all spans must be non-negative and sum to 1.0
+        [['Spring', spring], ['Summer', summer], ['Winter', winter], ['Autumn', weather.getSeasonPhaseBoundaries('Autumn')]].forEach(function(pair) {
+          const name = pair[0];
+          const b = pair[1];
+          if (!b) return;
+          const spans = computePhaseSpans(b);
+          const total = spans.clearSpan + spans.overcastSpan + spans.drizzleSpan;
+          if (Math.abs(total - 1.0) > 0.001) {
+            problems.push(name + ' phase spans sum to ' + total.toFixed(4) + ', expected 1.0 (issue #558).');
+          }
+          if (spans.clearSpan < 0 || spans.overcastSpan < 0 || spans.drizzleSpan < 0) {
+            problems.push(name + ' has a negative phase span: clear=' + spans.clearSpan.toFixed(3) +
+              ', overcast=' + spans.overcastSpan.toFixed(3) + ', drizzle=' + spans.drizzleSpan.toFixed(3) + ' (issue #558).');
+          }
+        });
+
+        // Verify the current season's boundaries are being applied by checking the
+        // DOM #season-display element and confirming the boundaries match.
+        const seasonEl = document.getElementById('season-display');
+        if (seasonEl) {
+          const currentSeason = seasonEl.textContent.trim();
+          const currentBounds = weather.getSeasonPhaseBoundaries(currentSeason);
+          if (currentBounds) {
+            // The current season's boundaries should be the same as what getSeasonPhaseBoundaries()
+            // returns without an argument (which reads from the DOM)
+            const domBounds = weather.getSeasonPhaseBoundaries();
+            if (domBounds && (domBounds.clearEnd !== currentBounds.clearEnd || domBounds.overcastEnd !== currentBounds.overcastEnd)) {
+              problems.push('getSeasonPhaseBoundaries() without argument returned different boundaries than getSeasonPhaseBoundaries("' + currentSeason + '") — the DOM-read path may not match the named path (issue #558).');
+            }
+          }
+        }
+      }
+    }
   }
 
   /* ---------- Day/night cycle checks ---------- */
