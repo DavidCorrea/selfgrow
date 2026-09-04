@@ -6,7 +6,7 @@
  */
 
 import * as THREE from "three";
-import { saveGardenState, loadGardenState, fastForwardState, clearGardenState, STORAGE_KEY, SEASON_CYCLE_DURATION_MS } from "./persistence.js";
+import { saveGardenState, loadGardenState, fastForwardState, clearGardenState, advanceFlowerPhase, STORAGE_KEY, SEASON_CYCLE_DURATION_MS } from "./persistence.js";
 import { createCreature } from "./creature.js";
 import { computeDisplacement } from "./groundRipple.js";
 
@@ -1461,49 +1461,276 @@ export async function checks() {
     problems.push('fastForwardState with plant2 returned null — should have returned a valid state object.');
   }
 
+  /* ---------- Flower phase fast-forward checks (issue #560) ---------- */
+  // advanceFlowerPhase should move a flower through its cycle based on elapsed time.
+
+  // Test 1: No elapsed time → phase and progress unchanged
+  const ffNoElapsed = advanceFlowerPhase('dormant', 0.5, 0);
+  if (ffNoElapsed.phase !== 'dormant' || Math.abs(ffNoElapsed.progress - 0.5) > 0.001) {
+    problems.push('advanceFlowerPhase(dormant, 0.5, 0) returned ' + JSON.stringify(ffNoElapsed) + ' — expected dormant at progress 0.5.');
+  }
+
+  // Test 2: Elapsed time shorter than remaining phase duration → same phase, progress advanced
+  const ffWithin = advanceFlowerPhase('bloom', 0.5, 10_000); // bloom avg 105s, half = 52.5s, 10s more
+  if (ffWithin.phase !== 'bloom') {
+    problems.push('advanceFlowerPhase(bloom, 0.5, 10000) should stay in bloom (10s < remaining 52.5s), got ' + ffWithin.phase + '.');
+  }
+  if (Math.abs(ffWithin.progress - (0.5 + 10000 / 105000)) > 0.02) {
+    problems.push('advanceFlowerPhase(bloom, 0.5, 10000) progress should be ~0.595, got ' + ffWithin.progress.toFixed(3) + '.');
+  }
+
+  // Test 3: Enough elapsed time to cross into the next phase
+  const ffCross = advanceFlowerPhase('bloom', 0.9, 30_000); // 10.5s left in bloom, then 19.5s into fading (30s)
+  if (ffCross.phase !== 'fading') {
+    problems.push('advanceFlowerPhase(bloom, 0.9, 30000) should enter fading, got ' + ffCross.phase + '.');
+  }
+  if (ffCross.progress < 0.5 || ffCross.progress > 0.8) {
+    problems.push('advanceFlowerPhase(bloom, 0.9, 30000) progress should be ~0.65 (19.5s into 30s fading), got ' + ffCross.progress.toFixed(3) + '.');
+  }
+
+  // Test 4: Full cycle wraps back to dormant
+  const cycleTotal = 45000 + 15000 + 60000 + 105000 + 30000; // 255s
+  const ffCycle = advanceFlowerPhase('dormant', 0, cycleTotal + 20_000);
+  if (ffCycle.phase !== 'dormant') {
+    problems.push('advanceFlowerPhase(dormant, 0, full-cycle + 20s) should wrap back to dormant, got ' + ffCycle.phase + '.');
+  }
+  if (ffCycle.progress < 0.4 || ffCycle.progress > 0.5) {
+    problems.push('advanceFlowerPhase(dormant, 0, full-cycle + 20s) progress should be ~0.44 (20s into 45s dormant), got ' + ffCycle.progress.toFixed(3) + '.');
+  }
+
+  // Test 5: Invalid/undefined starting phase defaults to dormant
+  const ffInvalid = advanceFlowerPhase(undefined, undefined, 10_000);
+  if (ffInvalid.phase !== 'dormant') {
+    problems.push('advanceFlowerPhase(undefined, undefined, 10000) should default to dormant, got ' + ffInvalid.phase + '.');
+  }
+
+  // Test 6: fastForwardState advances the flower phase from the saved state
+  const ffFlowerSaved = {
+    seasonProgress: 0.1,
+    dayNightProgress: 0.2,
+    weatherProgress: 0.3,
+    plant1Maturity: 1,
+    firstPlantGrown: true,
+    plant1FlowerPhase: 'budding',
+    plant1FlowerProgress: 0,
+    timestamp: Date.now() - 90_000 // 90s elapsed: 15s budding + 60s opening + 15s into bloom
+  };
+  const ffFlower = fastForwardState(ffFlowerSaved);
+  if (ffFlower.plant1FlowerPhase !== 'bloom') {
+    problems.push('fastForwardState with budding flower and 90s elapsed should land in bloom, got ' + ffFlower.plant1FlowerPhase + ' (issue #560).');
+  }
+
   // Clean up test state
   clearGardenState();
 
-  /* ---------- Returning visitor greeting checks (issue #495) ---------- */
+  /* ---------- Returning visitor greeting checks (issue #495, #560) ---------- */
   // Check that computeReturningVisitorGreeting is exposed and returns correct values
   if (!gardenState || typeof gardenState.computeReturningVisitorGreeting !== 'function') {
     problems.push('window.__gardenState.computeReturningVisitorGreeting is not a function — returning visitor greeting helper not exposed.');
   } else {
+    /* --- Generic fallback tests (no specific changes detected) --- */
+    const noChangeSaved = {
+      seasonProgress: 0.1,
+      plant2Maturity: 0.5,
+      plant1FlowerPhase: 'bloom',
+      plant1FlowerProgress: 0.3,
+      plant2FlowerPhase: 'dormant',
+      plant2FlowerProgress: 0
+    };
+    const noChangeCurrent = {
+      seasonProgress: 0.1,
+      plant2Maturity: 0.5,
+      plant1FlowerPhase: 'bloom',
+      plant1FlowerProgress: 0.3,
+      plant2FlowerPhase: 'dormant',
+      plant2FlowerProgress: 0
+    };
+
     // Test 1: Short absence (< 1 seasonal cycle = 720s) returns the short-absence greeting
     const shortElapsed = 60_000; // 1 minute
-    const shortGreeting = gardenState.computeReturningVisitorGreeting(shortElapsed);
+    const shortGreeting = gardenState.computeReturningVisitorGreeting(shortElapsed, noChangeSaved, noChangeCurrent);
     if (shortGreeting.indexOf('quietly continued') === -1) {
-      problems.push('computeReturningVisitorGreeting(' + shortElapsed + 'ms) returned "' + shortGreeting + '" — expected text containing "quietly continued" for short absence (< 1 seasonal cycle).');
+      problems.push('computeReturningVisitorGreeting(' + shortElapsed + 'ms, no-change-state) returned "' + shortGreeting + '" — expected text containing "quietly continued" for short absence (< 1 seasonal cycle).');
     }
 
     // Test 2: Long absence (>= 1 seasonal cycle = 720s) returns the long-absence greeting
     const longElapsed = SEASON_CYCLE_DURATION_MS * 3; // 3 full cycles
-    const longGreeting = gardenState.computeReturningVisitorGreeting(longElapsed);
+    const longGreeting = gardenState.computeReturningVisitorGreeting(longElapsed, noChangeSaved, noChangeCurrent);
     if (longGreeting.indexOf('You return after 3 seasons') === -1) {
-      problems.push('computeReturningVisitorGreeting(' + longElapsed + 'ms) returned "' + longGreeting + '" — expected "You return after 3 seasons" for long absence (>= 1 seasonal cycle).');
+      problems.push('computeReturningVisitorGreeting(' + longElapsed + 'ms, no-change-state) returned "' + longGreeting + '" — expected "You return after 3 seasons" for long absence (>= 1 seasonal cycle).');
     }
 
     // Test 3: Exactly at the cycle boundary returns long-absence greeting with singular "season"
     const boundaryElapsed = SEASON_CYCLE_DURATION_MS;
-    const boundaryGreeting = gardenState.computeReturningVisitorGreeting(boundaryElapsed);
+    const boundaryGreeting = gardenState.computeReturningVisitorGreeting(boundaryElapsed, noChangeSaved, noChangeCurrent);
     if (boundaryGreeting.indexOf('You return after 1 season') === -1) {
-      problems.push('computeReturningVisitorGreeting(' + boundaryElapsed + 'ms) returned "' + boundaryGreeting + '" — expected "You return after 1 season" at exactly the cycle boundary.');
+      problems.push('computeReturningVisitorGreeting(' + boundaryElapsed + 'ms, no-change-state) returned "' + boundaryGreeting + '" — expected "You return after 1 season" at exactly the cycle boundary.');
     }
     if (boundaryGreeting.indexOf('1 seasons') !== -1) {
-      problems.push('computeReturningVisitorGreeting(' + boundaryElapsed + 'ms) uses plural "seasons" with count 1 — should be singular "season".');
+      problems.push('computeReturningVisitorGreeting(' + boundaryElapsed + 'ms, no-change-state) uses plural "seasons" with count 1 — should be singular "season".');
     }
 
     // Test 4: Zero elapsed time returns short-absence greeting
-    const zeroGreeting = gardenState.computeReturningVisitorGreeting(0);
+    const zeroGreeting = gardenState.computeReturningVisitorGreeting(0, noChangeSaved, noChangeCurrent);
     if (zeroGreeting.indexOf('quietly continued') === -1) {
-      problems.push('computeReturningVisitorGreeting(0) returned "' + zeroGreeting + '" — expected short-absence greeting for zero elapsed time.');
+      problems.push('computeReturningVisitorGreeting(0, no-change-state) returned "' + zeroGreeting + '" — expected short-absence greeting for zero elapsed time.');
     }
 
     // Test 5: Very long absence (many cycles) reports correct season count
     const veryLongElapsed = SEASON_CYCLE_DURATION_MS * 10 + SEASON_CYCLE_DURATION_MS / 2;
-    const veryLongGreeting = gardenState.computeReturningVisitorGreeting(veryLongElapsed);
+    const veryLongGreeting = gardenState.computeReturningVisitorGreeting(veryLongElapsed, noChangeSaved, noChangeCurrent);
     if (veryLongGreeting.indexOf('You return after 10 seasons') === -1) {
-      problems.push('computeReturningVisitorGreeting(' + veryLongElapsed + 'ms) returned "' + veryLongGreeting + '" — expected "You return after 10 seasons" for 10.5 cycles.');
+      problems.push('computeReturningVisitorGreeting(' + veryLongElapsed + 'ms, no-change-state) returned "' + veryLongGreeting + '" — expected "You return after 10 seasons" for 10.5 cycles.');
+    }
+
+    /* --- First-time visitor: no savedState → empty greeting (issue #560) --- */
+    const firstTimeGreeting = gardenState.computeReturningVisitorGreeting(60000, null, null);
+    if (firstTimeGreeting !== '') {
+      problems.push('computeReturningVisitorGreeting with null savedState should return empty string, got "' + firstTimeGreeting + '" (issue #560).');
+    }
+
+    /* --- Specific change detection tests (issue #560) --- */
+
+    // Test: Plant2 appeared
+    const plant2AppearedSaved = {
+      seasonProgress: 0.1,
+      plant2Maturity: undefined,
+      plant1FlowerPhase: 'dormant',
+      plant1FlowerProgress: 0,
+      plant2FlowerPhase: undefined,
+      plant2FlowerProgress: undefined
+    };
+    const plant2AppearedCurrent = {
+      seasonProgress: 0.1,
+      plant2Maturity: 0.5,
+      plant1FlowerPhase: 'dormant',
+      plant1FlowerProgress: 0,
+      plant2FlowerPhase: 'dormant',
+      plant2FlowerProgress: 0
+    };
+    const p2Greeting = gardenState.computeReturningVisitorGreeting(60000, plant2AppearedSaved, plant2AppearedCurrent);
+    if (p2Greeting.indexOf('second plant has emerged') === -1) {
+      problems.push('computeReturningVisitorGreeting with plant2 appearing should mention "second plant has emerged", got: "' + p2Greeting + '" (issue #560).');
+    }
+
+    // Test: Season changed (Spring→Summer: seasonProgress 0.1→0.3)
+    const seasonChangedSaved = {
+      seasonProgress: 0.1,
+      plant2Maturity: 0.5,
+      plant1FlowerPhase: 'dormant',
+      plant1FlowerProgress: 0,
+      plant2FlowerPhase: 'dormant',
+      plant2FlowerProgress: 0
+    };
+    const seasonChangedCurrent = {
+      seasonProgress: 0.3,
+      plant2Maturity: 0.5,
+      plant1FlowerPhase: 'dormant',
+      plant1FlowerProgress: 0,
+      plant2FlowerPhase: 'dormant',
+      plant2FlowerProgress: 0
+    };
+    const seasonGreeting = gardenState.computeReturningVisitorGreeting(60000, seasonChangedSaved, seasonChangedCurrent);
+    if (seasonGreeting.indexOf('entered Summer') === -1) {
+      problems.push('computeReturningVisitorGreeting with season change (Spring→Summer) should mention "entered Summer", got: "' + seasonGreeting + '" (issue #560).');
+    }
+
+    // Test: Flower bloomed (dormant→bloom)
+    const flowerBloomedSaved = {
+      seasonProgress: 0.1,
+      plant2Maturity: 0.5,
+      plant1FlowerPhase: 'dormant',
+      plant1FlowerProgress: 0.5,
+      plant2FlowerPhase: 'dormant',
+      plant2FlowerProgress: 0
+    };
+    const flowerBloomedCurrent = {
+      seasonProgress: 0.1,
+      plant2Maturity: 0.5,
+      plant1FlowerPhase: 'bloom',
+      plant1FlowerProgress: 0.2,
+      plant2FlowerPhase: 'dormant',
+      plant2FlowerProgress: 0
+    };
+    const bloomedGreeting = gardenState.computeReturningVisitorGreeting(60000, flowerBloomedSaved, flowerBloomedCurrent);
+    if (bloomedGreeting.indexOf('flower has bloomed') === -1) {
+      problems.push('computeReturningVisitorGreeting with flower phase dormant→bloom should mention "flower has bloomed", got: "' + bloomedGreeting + '" (issue #560).');
+    }
+
+    // Test: Flower faded (bloom→fading)
+    const flowerFadedSaved = {
+      seasonProgress: 0.1,
+      plant2Maturity: 0.5,
+      plant1FlowerPhase: 'bloom',
+      plant1FlowerProgress: 0.8,
+      plant2FlowerPhase: 'dormant',
+      plant2FlowerProgress: 0
+    };
+    const flowerFadedCurrent = {
+      seasonProgress: 0.1,
+      plant2Maturity: 0.5,
+      plant1FlowerPhase: 'fading',
+      plant1FlowerProgress: 0.3,
+      plant2FlowerPhase: 'dormant',
+      plant2FlowerProgress: 0
+    };
+    const fadedGreeting = gardenState.computeReturningVisitorGreeting(60000, flowerFadedSaved, flowerFadedCurrent);
+    if (fadedGreeting.indexOf('flower has faded') === -1) {
+      problems.push('computeReturningVisitorGreeting with flower phase bloom→fading should mention "flower has faded", got: "' + fadedGreeting + '" (issue #560).');
+    }
+
+    // Test: Multiple changes combine (plant2 appeared + season changed + flower bloomed)
+    const multiSaved = {
+      seasonProgress: 0.1,
+      plant2Maturity: undefined,
+      plant1FlowerPhase: 'dormant',
+      plant1FlowerProgress: 0.5,
+      plant2FlowerPhase: undefined,
+      plant2FlowerProgress: undefined
+    };
+    const multiCurrent = {
+      seasonProgress: 0.3,
+      plant2Maturity: 0.5,
+      plant1FlowerPhase: 'bloom',
+      plant1FlowerProgress: 0.2,
+      plant2FlowerPhase: 'dormant',
+      plant2FlowerProgress: 0
+    };
+    const multiGreeting = gardenState.computeReturningVisitorGreeting(60000, multiSaved, multiCurrent);
+    if (multiGreeting.indexOf('second plant has emerged') === -1) {
+      problems.push('Multi-change greeting (plant2 appeared) should mention "second plant has emerged", got: "' + multiGreeting + '" (issue #560).');
+    }
+    if (multiGreeting.indexOf('entered Summer') === -1) {
+      problems.push('Multi-change greeting (season changed) should mention "entered Summer", got: "' + multiGreeting + '" (issue #560).');
+    }
+    if (multiGreeting.indexOf('flower has bloomed') === -1) {
+      problems.push('Multi-change greeting (flower bloomed) should mention "flower has bloomed", got: "' + multiGreeting + '" (issue #560).');
+    }
+    // Verify it uses natural prose composition (not a data dump)
+    if (multiGreeting.indexOf('and') === -1) {
+      problems.push('Multi-change greeting should compose naturally with conjunctions, got: "' + multiGreeting + '" (issue #560).');
+    }
+
+    // Test: Companion flower bloomed (plant2 flower)
+    const compFlowerSaved = {
+      seasonProgress: 0.1,
+      plant2Maturity: 0.8,
+      plant1FlowerPhase: 'dormant',
+      plant1FlowerProgress: 0,
+      plant2FlowerPhase: 'dormant',
+      plant2FlowerProgress: 0.5
+    };
+    const compFlowerCurrent = {
+      seasonProgress: 0.1,
+      plant2Maturity: 0.8,
+      plant1FlowerPhase: 'dormant',
+      plant1FlowerProgress: 0,
+      plant2FlowerPhase: 'bloom',
+      plant2FlowerProgress: 0.2
+    };
+    const compGreeting = gardenState.computeReturningVisitorGreeting(60000, compFlowerSaved, compFlowerCurrent);
+    if (compGreeting.indexOf('companion flower has bloomed') === -1) {
+      problems.push('computeReturningVisitorGreeting with companion flower dormant→bloom should mention "companion flower has bloomed", got: "' + compGreeting + '" (issue #560).');
     }
   }
 
@@ -1529,9 +1756,9 @@ export async function checks() {
   // Verify that the elapsed time computation matches the stored value
   // We do this by checking the consistency between elapsed and greeting text
   if (gardenState && gardenState.returningVisitorGreeting && gardenState._returningVisitorElapsedMs !== undefined) {
-    const expectedGreeting = gardenState.computeReturningVisitorGreeting(gardenState._returningVisitorElapsedMs);
+    const expectedGreeting = gardenState.computeReturningVisitorGreeting(gardenState._returningVisitorElapsedMs, gardenState._returningVisitorSavedState, gardenState._returningVisitorCurrentState);
     if (gardenState.returningVisitorGreeting !== expectedGreeting) {
-      problems.push('returningVisitorGreeting mismatch: stored "' + gardenState.returningVisitorGreeting + '" does not match computeReturningVisitorGreeting(' + gardenState._returningVisitorElapsedMs + ') = "' + expectedGreeting + '"');
+      problems.push('returningVisitorGreeting mismatch: stored "' + gardenState.returningVisitorGreeting + '" does not match computeReturningVisitorGreeting(' + gardenState._returningVisitorElapsedMs + ', savedState, currentState) = "' + expectedGreeting + '"');
     }
   }
 
@@ -5582,7 +5809,7 @@ export async function checks() {
     }
   }
 
-  /* ---------- Returning visitor greeting checks (issue #495) ---------- */
+  /* ---------- Returning visitor greeting checks (issue #495, #560) ---------- */
   // The plot-description must reflect time-aware greetings for returning visitors
   // computed from saved timestamp vs wall-clock time.
   const greetingPlotEl = document.getElementById('plot-description');
@@ -5617,7 +5844,8 @@ export async function checks() {
     // greeting was set (the plot description matches one of the greeting patterns).
     const currentText = greetingPlotEl.textContent.trim();
     const hasGreeting = currentText === SHORT_ABSENCE_GREETING ||
-      (currentText.startsWith('You return after ') && currentText.endsWith(' seasons. The garden continued through the cycles while you were away.'));
+      (currentText.startsWith('You return after ') && currentText.endsWith(' seasons. The garden continued through the cycles while you were away.')) ||
+      currentText.startsWith('You return to find ');
 
     // Determine whether there was saved state at page load
     // We inspect by checking if the plot description starts with the greeting patterns
@@ -5636,7 +5864,7 @@ export async function checks() {
     }
 
     // Test 3: Verify the greeting computation produces correct strings
-    // Construct a simulated saved state
+    // Construct a simulated saved state (matching no-change scenario)
     const testSavedState = {
       seasonProgress: 0,
       dayNightProgress: 0,
@@ -5644,6 +5872,14 @@ export async function checks() {
       plant1Maturity: 0,
       firstPlantGrown: false,
       timestamp: now
+    };
+    const testCurrentState = {
+      seasonProgress: 0,
+      dayNightProgress: 0,
+      weatherProgress: 0,
+      plant1Maturity: 0,
+      firstPlantGrown: false,
+      plant2Maturity: undefined
     };
 
     // No elapsed time → no greeting would be set (but elapsed=0 is < SEASON_CYCLE_DURATION_MS)
@@ -5677,6 +5913,35 @@ export async function checks() {
     }
     if (boundaryElapsed >= SEASON_CYCLE_DURATION_MS && boundarySeasons < 1) {
       problems.push('Boundary test: elapsed >= SEASON_CYCLE_DURATION_MS but seasonsPassed is ' + boundarySeasons);
+    }
+
+    // Test 5: Verify the greeting computes via the actual function with no-change state
+    if (gardenState && typeof gardenState.computeReturningVisitorGreeting === 'function') {
+      const noChangeSaved = {
+        seasonProgress: 0.1,
+        plant2Maturity: 0.5,
+        plant1FlowerPhase: 'dormant',
+        plant1FlowerProgress: 0,
+        plant2FlowerPhase: 'dormant',
+        plant2FlowerProgress: 0
+      };
+      const noChangeCurrent = {
+        seasonProgress: 0.1,
+        plant2Maturity: 0.5,
+        plant1FlowerPhase: 'dormant',
+        plant1FlowerProgress: 0,
+        plant2FlowerPhase: 'dormant',
+        plant2FlowerProgress: 0
+      };
+      const fnLongGreeting = gardenState.computeReturningVisitorGreeting(longElapsedTest, noChangeSaved, noChangeCurrent);
+      if (fnLongGreeting.indexOf('5 seasons') === -1) {
+        problems.push('computeReturningVisitorGreeting(long, no-change-state) should mention "5 seasons", got: "' + fnLongGreeting + '"');
+      }
+      // First-time visitor returns empty
+      const firstTime = gardenState.computeReturningVisitorGreeting(60000, null, null);
+      if (firstTime !== '') {
+        problems.push('computeReturningVisitorGreeting with null savedState should return empty string, got: "' + firstTime + '" (issue #560).');
+      }
     }
   }
 

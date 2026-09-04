@@ -816,27 +816,100 @@
     initGarden(scene, initial);
 
     /* Returning visitor greeting — compute elapsed real time from saved timestamp
-     * and acknowledge the passage of time. Runs AFTER initGarden so the greeting
-     * is the last description update before the interval updaters start,
-     * ensuring it is shown immediately on page load before context layers.
+     * and acknowledge specific changes since last visit (issue #560).
+     * Runs AFTER initGarden so the greeting is the last description update before
+     * the interval updaters start, ensuring it is shown immediately on page load
+     * before context layers.
      * First-time visitors (no savedState) are unaffected and keep the default text.
      * The greeting text is preserved through description updaters because it does
      * not match any context string — updaters treat it as the base text and compose
      * context around it.
+     *
+     * Detects three types of change by comparing savedState to currentState:
+     *   1. plant2 appeared (saved had no plant2, current does)
+     *   2. season changed (derived from seasonProgress)
+     *   3. flower bloomed or faded (derived from flower phase)
+     * Falls back to generic time-based greeting when nothing specific changed.
      */
-    function computeReturningVisitorGreeting(elapsedMs) {
-      if (elapsedMs < SEASON_CYCLE_DURATION_MS) {
-        return 'You return to the garden. It has quietly continued growing while you were away.';
-      } else {
-        const seasonsPassed = Math.floor(elapsedMs / SEASON_CYCLE_DURATION_MS);
-        const seasonWord = seasonsPassed === 1 ? 'season' : 'seasons';
-        return 'You return after ' + seasonsPassed + ' ' + seasonWord + '. The garden continued through the cycles while you were away.';
+    function computeReturningVisitorGreeting(elapsedMs, savedState, currentState) {
+      // First-time visitor — no saved state, no greeting
+      if (!savedState) return '';
+
+      const SEASON_NAMES = ['Spring', 'Summer', 'Autumn', 'Winter'];
+
+      const parts = [];
+
+      // 1. Detect plant2 appearance
+      const savedHadPlant2 = savedState.plant2Maturity !== undefined && savedState.plant2Maturity > 0;
+      const currentHasPlant2 = currentState && currentState.plant2Maturity !== undefined && currentState.plant2Maturity > 0;
+
+      if (!savedHadPlant2 && currentHasPlant2) {
+        parts.push('a second plant has emerged beside the first');
       }
+
+      // 2. Detect season change
+      const savedSeasonIndex = Math.floor((savedState.seasonProgress || 0) * 4) % 4;
+      const currentSeasonIndex = currentState ? Math.floor((currentState.seasonProgress || 0) * 4) % 4 : -1;
+
+      if (currentSeasonIndex !== savedSeasonIndex && currentSeasonIndex >= 0) {
+        parts.push('the garden has entered ' + SEASON_NAMES[currentSeasonIndex]);
+      }
+
+      // 3. Detect flower bloom or fade (plant1)
+      const savedP1Phase = savedState.plant1FlowerPhase;
+      const currentP1Phase = currentState ? currentState.plant1FlowerPhase : undefined;
+
+      if (savedP1Phase && currentP1Phase && savedP1Phase !== currentP1Phase) {
+        if (currentP1Phase === 'bloom' || currentP1Phase === 'opening') {
+          parts.push('the flower has bloomed');
+        } else if (currentP1Phase === 'fading' || currentP1Phase === 'dormant') {
+          if (savedP1Phase === 'bloom' || savedP1Phase === 'opening' || savedP1Phase === 'budding') {
+            parts.push('the flower has faded');
+          }
+        }
+      }
+
+      // Also check plant2 flower if it exists
+      const savedP2Phase = savedState.plant2FlowerPhase;
+      const currentP2Phase = currentState ? currentState.plant2FlowerPhase : undefined;
+
+      if (savedP2Phase && currentP2Phase && savedP2Phase !== currentP2Phase) {
+        if (currentP2Phase === 'bloom' || currentP2Phase === 'opening') {
+          parts.push('the companion flower has bloomed');
+        } else if (currentP2Phase === 'fading' || currentP2Phase === 'dormant') {
+          if (savedP2Phase === 'bloom' || savedP2Phase === 'opening' || savedP2Phase === 'budding') {
+            parts.push('the companion flower has faded');
+          }
+        }
+      }
+
+      // Build the greeting
+      if (parts.length === 0) {
+        // Fall back to generic time-based greeting
+        if (elapsedMs < SEASON_CYCLE_DURATION_MS) {
+          return 'You return to the garden. It has quietly continued growing while you were away.';
+        } else {
+          const seasonsPassed = Math.floor(elapsedMs / SEASON_CYCLE_DURATION_MS);
+          const seasonWord = seasonsPassed === 1 ? 'season' : 'seasons';
+          return 'You return after ' + seasonsPassed + ' ' + seasonWord + '. The garden continued through the cycles while you were away.';
+        }
+      }
+
+      let greeting = 'You return to find ';
+      if (parts.length === 1) {
+        greeting += parts[0] + '.';
+      } else if (parts.length === 2) {
+        greeting += parts[0] + ' and ' + parts[1] + '.';
+      } else {
+        greeting += parts.slice(0, -1).join(', ') + ', and ' + parts[parts.length - 1] + '.';
+      }
+
+      return greeting;
     }
 
     if (savedState) {
       const elapsed = Date.now() - savedState.timestamp;
-      const greeting = computeReturningVisitorGreeting(elapsed);
+      const greeting = computeReturningVisitorGreeting(elapsed, savedState, initial);
       const plotDesc = document.getElementById('plot-description');
       if (plotDesc) {
         plotDesc.textContent = greeting;
@@ -844,6 +917,8 @@
       // Store for self-test verification
       window.__gardenState.returningVisitorGreeting = greeting;
       window.__gardenState._returningVisitorElapsedMs = elapsed;
+      window.__gardenState._returningVisitorSavedState = savedState;
+      window.__gardenState._returningVisitorCurrentState = initial;
     }
 
     // Expose the helper for self-test
