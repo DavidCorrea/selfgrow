@@ -47,7 +47,13 @@ import {
   dependencyLine,
   errorData,
 } from "./shared.mjs";
-import { readJournal, appendJournal, renderJournalEntry } from "./discussions.mjs";
+import {
+  readJournal,
+  appendJournal,
+  renderJournalEntry,
+  readDecisions,
+  renderDecisions,
+} from "./discussions.mjs";
 
 // Never propose more than this in one run. A structural change is disruptive and
 // a removal is hard to walk back; a run that rewrites everything at once is
@@ -419,6 +425,12 @@ async function main() {
         BLOCKED: renderBlocked(blocked),
         BOARD_STATE: boardState,
         PAST: past.length ? past.join("\n\n") : "(nothing recorded yet — this is the first review)",
+        // Structural decisions it might otherwise propose undoing. Most of what is
+        // in Decisions is about the harness, which is exactly this role's subject.
+        DECISIONS: (() => {
+          const decisions = readDecisions();
+          return decisions.length ? renderDecisions(decisions) : "(nothing settled yet)";
+        })(),
       }),
       tools: ["read"],
     })

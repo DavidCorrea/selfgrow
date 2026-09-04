@@ -132,3 +132,27 @@ exist, would catch it.
 
 Nothing verifies the scope, either: the only real test of `archiveProductMemory`
 is a reset, and running one to check it destroys the thing it is testing.
+
+## Decisions are ranked by recency, which is the wrong axis
+
+**Where:** `agents/discussions.mjs` — `readDecisions`, `DECISION_BODIES`.
+
+Decisions have no natural ranking. A lesson recurs, so its comment count sorts it;
+a decision happens once. So the reader shows every title and the four
+most-recently-updated bodies — and on the first live read, the two truncated to
+title-only were *"The model chain is two paid models from different provider
+families"* and *"Spend is capped on the OpenRouter key"*: the two most foundational
+decisions in the project, hidden because they were recorded first.
+
+That is evidence the ranking is wrong rather than a hypothetical. Recency measures
+when something was written down, not how load-bearing it is.
+
+**Why it matters:** the whole category exists so a role does not re-decide a
+settled question, and the ones most expensive to re-decide are the oldest. The
+prompt tells a reader to say "there is a decision about this I cannot see" rather
+than reason from scratch, which contains the damage but does not fix it.
+
+Raising `DECISION_BODIES` works while there are six and stops working at sixty.
+What would actually fix it: a label per area (`models`, `spend`, `process`) so a
+reader gets the decisions touching what it is about to change, or a `foundational`
+label that always carries its body.

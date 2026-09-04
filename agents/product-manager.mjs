@@ -31,6 +31,11 @@ import {
   getCurrentMilestone,
   setIssueMilestone,
 } from "./shared.mjs";
+import {
+  readInboundIdeas,
+  renderInboundIdeas,
+  acknowledgeIdea,
+} from "./discussions.mjs";
 import { publishWeeklyReport } from "./weekly-report.mjs";
 import { listSourceFiles, formatSources, SOURCE_DIR } from "./tech-lead.mjs";
 
@@ -560,6 +565,30 @@ function defaultRetireReason(issue) {
   return "Retired by the Product Manager — superseded, out of scope, or already built.";
 }
 
+/**
+ * Reply to each idea the run considered, and close the ones that became work.
+ *
+ * Closing only on a real outcome: an idea nobody acted on stays open and is read
+ * again next run, which is what somebody who posts one should expect. Best-effort
+ * throughout — a person not getting a reply is bad, and a failed reply taking the
+ * day's grooming down with it is worse.
+ */
+function answerIdeas(ideas) {
+  const entries = (Array.isArray(ideas) ? ideas : []).filter((i) => Number(i?.number));
+  for (const { number, outcome, note } of entries) {
+    const ticketed = String(outcome || "").toLowerCase() === "ticketed";
+    const body = [
+      note ? String(note).trim() : ticketed ? "Picked up as a ticket." : "Read and considered.",
+      "",
+      ticketed
+        ? "_Answered by the Product Manager, which turned this into a ticket. Closing it here; the work is on the board._"
+        : "_Answered by the Product Manager. Left open — an idea nobody has acted on should not quietly disappear._",
+    ].join("\n");
+    acknowledgeIdea(number, body, { close: ticketed });
+  }
+  if (entries.length) log("info", `Answered ${entries.length} idea(s) from people.`);
+}
+
 async function main() {
   log("info", "=== Product Manager — Backlog Grooming ===");
 
@@ -595,6 +624,14 @@ async function main() {
       label: "Product Manager",
       systemPrompt: fillTemplate(loadPrompt("product-manager"), {
         VISION: vision,
+        // The one input that does not arrive as work. Read here rather than in the
+        // Devs on purpose: an idea is not a ticket until this role says it is, and
+        // an idea from someone without write access must never reach an agent that
+        // can act on text — see renderInboundIdeas for how the trust is marked.
+        IDEAS: (() => {
+          const ideas = readInboundIdeas();
+          return ideas.length ? renderInboundIdeas(ideas) : "(nothing posted)";
+        })(),
         MILESTONE: renderMilestone(milestone),
         BOARD_STATE: boardState,
         APP_OBSERVATIONS: appObservations,
@@ -632,6 +669,8 @@ async function main() {
   const groomed = await groomBacklog(data.backlog, remainingOpen, boardItems, milestone);
   // 4. Now close the originals — only if the replacements actually landed.
   await executeRetirements(planned, groomed);
+
+  answerIdeas(data.ideas);
 
   kickBuilder();
 

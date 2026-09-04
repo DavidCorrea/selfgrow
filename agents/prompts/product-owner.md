@@ -12,6 +12,16 @@ Two things to do with them, and both are more valuable than a fresh idea:
 
 Say what you are **deferring** and why, not only what you are choosing. A direction is defined by what it excludes, and next week's run needs the exclusions as much as the choice.
 
+
+## What has already been settled
+Decisions this project has made and the reasoning behind them. The recent ones carry their full argument; older ones are listed by title only.
+
+{{DECISIONS}}
+
+**Do not undo one of these by accident.** If your proposal would reverse a decision above, that is allowed — but say which one and what new evidence changes it. Silently re-deciding is how a project ends up relitigating the same question every few weeks with a different answer each time.
+
+If a title above looks relevant and its reasoning is not shown, say so rather than reasoning from scratch: "there is a decision about this I cannot see" is a useful thing to report.
+
 ## Your Role
 
 You own where the project is **going**. Three things each run, in this order:
