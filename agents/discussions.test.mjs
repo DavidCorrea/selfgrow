@@ -2,7 +2,12 @@
 // looks like. Both are safety-relevant and neither needs the network.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isTrustedAuthor, isOwnThread, renderJournalEntry } from "./discussions.mjs";
+import {
+  isTrustedAuthor,
+  isOwnThread,
+  renderJournalEntry,
+  renderLessonThreads,
+} from "./discussions.mjs";
 
 test("deciding whose words count as guidance", async (t) => {
   await t.test("accepts accounts with write access", () => {
@@ -95,5 +100,28 @@ test("recognising the pipeline's own thread", async (t) => {
   await t.test("refuses nothing at all", () => {
     assert.equal(isOwnThread(null, "Journals", "Playtester — log"), false);
     assert.equal(isOwnThread({}, "Journals", "Playtester — log"), false);
+  });
+});
+
+test("rendering lessons for a planner", async (t) => {
+  const lesson = (title, occurrences, latest) => ({ title, occurrences, latest });
+
+  await t.test("leads with how often each one has happened", () => {
+    const out = renderLessonThreads([lesson("Needs a system that does not exist yet", 4, "#152 died on it.")]);
+    assert.match(out, /### Needs a system that does not exist yet/);
+    assert.match(out, /_Seen 4 time\(s\)\._/);
+    assert.match(out, /#152 died on it\./);
+  });
+
+  // The count is the reason for threading at all: an unrecurring lesson and one
+  // seen four times must not read the same to whoever is planning.
+  await t.test("keeps the order it was given", () => {
+    const out = renderLessonThreads([lesson("Often", 4, "a"), lesson("Once", 1, "b")]);
+    assert.ok(out.indexOf("Often") < out.indexOf("Once"));
+  });
+
+  await t.test("says so rather than printing an empty section", () => {
+    assert.match(renderLessonThreads([lesson("No detail", 1, "")]), /\(no detail recorded\)/);
+    assert.equal(renderLessonThreads([]), "");
   });
 });

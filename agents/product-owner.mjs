@@ -24,7 +24,6 @@ import {
   getBoardSnapshot,
   readVision,
   readLessons,
-  appendLesson,
   commitToWiki,
   getCurrentMilestone,
   startMilestone,
@@ -32,7 +31,13 @@ import {
   isPlaytestFeedback,
   fetchOpenIssues,
 } from "./shared.mjs";
-import { readJournal, appendJournal, renderJournalEntry } from "./discussions.mjs";
+import {
+  readJournal,
+  appendJournal,
+  renderJournalEntry,
+  readLessonThreads,
+  renderLessonThreads,
+} from "./discussions.mjs";
 
 const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 
@@ -182,7 +187,14 @@ async function main() {
         VISION: vision,
         BOARD_STATE: boardState,
         WEEK: renderWeek(week),
-        LESSONS: readLessons().trim() || "(nothing recorded yet)",
+        // Threads first, most-recurrent first; the wiki page only while it still
+        // holds something. Same fallback as the Scout's.
+        LESSONS: (() => {
+          const threads = readLessonThreads();
+          return threads.length
+            ? renderLessonThreads(threads)
+            : readLessons().trim() || "(nothing recorded yet)";
+        })(),
         PAST: past.length ? past.join("\n\n") : "(nothing recorded yet — this is the first)",
         MILESTONE: milestone
           ? `**${milestone.title}** — ${milestone.description || "no description"} (${milestone.closed} shipped, ${milestone.open} still open)`
@@ -198,11 +210,26 @@ async function main() {
   }
   const data = parsed.data || {};
 
-  // 1. The retro. Recorded first and unconditionally: it is this run's most
-  //    durable output, and it is what next week's run reads before deciding
-  //    anything. A skipped Vision change is not a reason to skip the record.
+  // 1. The retro, into this role's OWN journal — not the Lessons page.
+  //
+  //    It used to go to Lessons, which is titled "what the agents have tried and
+  //    abandoned, and why" and is read by every Scout before planning. A retro is
+  //    not that: it is a weekly narrative of what shipped, and because retros are
+  //    weekly and parked tickets are rare, they crowded the actual failures out
+  //    entirely. The Scout was reading two cheerful summaries ending "Nothing
+  //    parked" as its dead-end context.
+  //
+  //    Recorded first and unconditionally either way: it is this run's most durable
+  //    output and what next week reads before deciding. A skipped Vision change is
+  //    not a reason to skip the record.
   if (data.retro?.title && data.retro?.body) {
-    appendLesson({ title: `Week of ${daysAgo(7)} — ${data.retro.title}`, body: data.retro.body });
+    appendJournal(
+      JOURNAL,
+      renderJournalEntry({
+        decided: `Retro — ${data.retro.title}`,
+        because: data.retro.body,
+      })
+    );
   } else {
     log("warn", "Product Owner: no retro produced this week.");
   }

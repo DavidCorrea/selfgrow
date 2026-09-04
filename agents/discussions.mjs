@@ -284,6 +284,11 @@ export function resolveDiscussion(discussionId, comment) {
 // same way a missing wiki degrades rather than failing a run.
 export const JOURNAL_CATEGORY = process.env.JOURNAL_CATEGORY || "Journals";
 
+// Where failures live, one thread per failure CLASS. Same shape as a journal and
+// the same helpers, because the pattern is identical: a thread names a recurring
+// thing, its comments are the times it happened.
+export const LESSON_CATEGORY = process.env.LESSON_CATEGORY || "Lessons";
+
 // How many past entries a reader gets. Three is enough to see a direction and a
 // contradiction, and short enough that it cannot crowd out the run's real input.
 const JOURNAL_TAIL = Number(process.env.JOURNAL_TAIL || 3);
@@ -329,9 +334,9 @@ function findDiscussion(category, prefix) {
  * with no thread, an unreachable API. A journal is context, never a precondition:
  * no agent may fail because it could not remember.
  */
-export function readJournal(title, { last = JOURNAL_TAIL } = {}) {
+export function readThread(category, title, { last = JOURNAL_TAIL } = {}) {
   try {
-    const thread = findDiscussion(JOURNAL_CATEGORY, title);
+    const thread = findDiscussion(category, title);
     if (!thread) return [];
     const result = graphql(
       `query($number: Int!, $owner: String!, $name: String!, $last: Int!) {
@@ -352,9 +357,14 @@ export function readJournal(title, { last = JOURNAL_TAIL } = {}) {
     const nodes = result?.data?.repository?.discussion?.comments?.nodes || [];
     return nodes.map((c) => `[${(c.createdAt || "").slice(0, 10)}] ${(c.body || "").trim()}`);
   } catch (e) {
-    log("warn", `Discussions: could not read the "${title}" journal — continuing without it.`, errorData(e));
+    log("warn", `Discussions: could not read "${title}" — continuing without it.`, errorData(e));
     return [];
   }
+}
+
+/** The last few entries of a role's journal. See readThread. */
+export function readJournal(title, options) {
+  return readThread(JOURNAL_CATEGORY, title, options);
 }
 
 /**
@@ -364,25 +374,26 @@ export function readJournal(title, { last = JOURNAL_TAIL } = {}) {
  * Best-effort throughout, for the same reason as readJournal: writing down what a
  * run decided must never be able to fail the run that decided it.
  */
-export function appendJournal(title, entry) {
+export function appendThread(category, title, entry, { intro = "" } = {}) {
   const body = String(entry || "").trim();
   if (!body) return false;
   try {
-    let thread = findDiscussion(JOURNAL_CATEGORY, title);
+    let thread = findDiscussion(category, title);
     if (!thread) {
       const url = postDiscussion({
-        category: JOURNAL_CATEGORY,
+        category,
         title,
         // The body is the thread's purpose, not its content: entries are comments,
         // so the body never needs rewriting and never races anything.
         body:
+          intro ||
           `Running log for **${title.replace(/ — log$/, "")}**. One entry per run: what was ` +
-          `decided, why, and what was deferred.\n\n` +
-          `Written by the pipeline and locked — readable by anyone, appendable only by ` +
-          `accounts with write access. Each run reads the last ${JOURNAL_TAIL} entries, not the thread.`,
+            `decided, why, and what was deferred.\n\n` +
+            `Written by the pipeline and locked — readable by anyone, appendable only by ` +
+            `accounts with write access. Each run reads the last ${JOURNAL_TAIL} entries, not the thread.`,
       });
       if (!url) return false; // postDiscussion already said why
-      thread = findDiscussion(JOURNAL_CATEGORY, title);
+      thread = findDiscussion(category, title);
       if (!thread) return false;
     }
     graphql(
@@ -394,9 +405,14 @@ export function appendJournal(title, entry) {
     log("info", `Discussions: appended an entry to "${title}".`);
     return true;
   } catch (e) {
-    log("warn", `Discussions: could not append to the "${title}" journal.`, errorData(e));
+    log("warn", `Discussions: could not append to "${title}".`, errorData(e));
     return false;
   }
+}
+
+/** Append one entry to a role's journal. See appendThread. */
+export function appendJournal(title, entry) {
+  return appendThread(JOURNAL_CATEGORY, title, entry);
 }
 
 /**
@@ -415,4 +431,99 @@ export function renderJournalEntry({ decided, because, deferred, extra = {} }) {
     if (value) lines.push(`**${label}:** ${String(value).trim()}`);
   }
   return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Lessons — one thread per failure CLASS, one comment per occurrence.
+//
+// The wiki page this replaces was titled "what the agents have tried and
+// abandoned, and why" and held two cheerful weekly retros ending "Nothing
+// parked". Two writers shared it: the Product Owner every Monday, and a Dev only
+// when a ticket was parked after repeated failures. Retros are weekly, parkings
+// are rare, so the retros crowded the failures out entirely — and the Scout, which
+// reads this before planning every ticket, got no dead ends at all.
+//
+// Splitting them fixes the content. Threading fixes something the page could not:
+// the page was one blob, trimmed to 20 entries, so the SAME failure recorded three
+// times read as three unrelated entries and the third pushed the first off the
+// end. As threads, a recurrence is a comment, which makes "how often has this
+// bitten us" a number — and lets a reader take the most RECURRENT lessons rather
+// than the most recent. Context bounded by relevance instead of by date, which is
+// the whole reason for moving.
+// ---------------------------------------------------------------------------
+
+/**
+ * Record one occurrence of a failure class, creating the thread on first sight.
+ *
+ * `title` is the CLASS, not the incident: "A transient provider error read as an
+ * empty account", not "#543 failed on Thursday". Same title next time means the
+ * same thread, which is what makes recurrence visible.
+ */
+export function appendLessonOccurrence(title, body) {
+  return appendThread(LESSON_CATEGORY, title, body, {
+    intro:
+      `A failure the pipeline has hit, and what it cost. **Each comment is one occurrence** — ` +
+      `the count is how often this has happened.\n\n` +
+      `Read before planning work that resembles it. A lesson describes attempts that failed, ` +
+      `not a verdict that the work cannot be done.\n\n` +
+      `Written by the pipeline and locked.`,
+  });
+}
+
+/**
+ * The lessons most worth reading, most-recurrent first.
+ *
+ * Recurrence rather than recency, deliberately: a failure seen four times is more
+ * likely to catch the next ticket than one seen once last night, and the old page
+ * could only sort by date. Ties break toward the recently updated, so a live
+ * problem outranks a settled one with the same count.
+ *
+ * Returns [] when the category is missing or empty, so a caller can fall back to
+ * whatever it read before.
+ */
+export function readLessonThreads({ limit = 5 } = {}) {
+  try {
+    const repo = process.env.GITHUB_REPOSITORY || "";
+    const [owner, name] = repo.includes("/") ? repo.split("/") : [OWNER, ""];
+    const result = graphql(
+      `query($owner: String!, $name: String!) {
+         repository(owner: $owner, name: $name) {
+           discussions(first: 50, orderBy: {field: UPDATED_AT, direction: DESC}) {
+             nodes {
+               title body updatedAt authorAssociation
+               category { name }
+               comments(last: 1) { totalCount nodes { body } }
+             }
+           }
+         }
+       }`,
+      { owner, name }
+    );
+    const nodes = result?.data?.repository?.discussions?.nodes || [];
+    return nodes
+      .filter((d) => d.category?.name === LESSON_CATEGORY && isTrustedAuthor(d.authorAssociation))
+      .map((d) => ({
+        title: d.title,
+        occurrences: d.comments?.totalCount || 0,
+        // The most recent occurrence only. The thread holds every one, and pulling
+        // them all in would rebuild the untrimmed page this exists to replace.
+        latest: (d.comments?.nodes?.[0]?.body || "").trim(),
+        updatedAt: d.updatedAt,
+      }))
+      .sort((a, b) => b.occurrences - a.occurrences || String(b.updatedAt).localeCompare(String(a.updatedAt)))
+      .slice(0, Math.max(1, limit));
+  } catch (e) {
+    log("warn", "Discussions: could not read the lessons — continuing without them.", errorData(e));
+    return [];
+  }
+}
+
+/** Render lessons for a prompt: the class, how often, and the last occurrence. */
+export function renderLessonThreads(lessons) {
+  return lessons
+    .map(
+      (l) =>
+        `### ${l.title}\n_Seen ${l.occurrences} time(s)._\n\n${l.latest || "(no detail recorded)"}`
+    )
+    .join("\n\n");
 }

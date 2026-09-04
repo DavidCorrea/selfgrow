@@ -26,7 +26,6 @@ import {
   triggerWorkflow,
   readVision,
   readLessons,
-  appendLesson,
   closeIssue,
   createIssue,
   TECH_DEBT_LABEL,
@@ -40,6 +39,11 @@ import {
   runAgent,
   getLastModelUsed,
 } from "./shared.mjs";
+import {
+  appendLessonOccurrence,
+  readLessonThreads,
+  renderLessonThreads,
+} from "./discussions.mjs";
 
 const MAX_SCOUT_RETRIES = 2;
 // Up to this many build → review cycles on a PR before we revoke (close) it.
@@ -90,11 +94,21 @@ const RUN_BUDGET_MS = Number(process.env.BUILD_RUN_BUDGET_MINUTES || 45) * 60 * 
  * than prohibition: a lesson explains why something failed once, which is a
  * reason to plan differently, not proof that the work is impossible.
  */
+/**
+ * The dead ends the Scout should plan around.
+ *
+ * Reads the Lessons threads first, MOST-RECURRENT first — a failure seen four
+ * times is likelier to catch this ticket than one seen once last night. Falls
+ * back to the old wiki page while it still holds anything, so the change cannot
+ * leave the Scout with less context than it had.
+ */
 function buildLessonsSection() {
-  const lessons = readLessons().trim();
+  const threads = readLessonThreads();
+  const lessons = threads.length ? renderLessonThreads(threads) : readLessons().trim();
   if (!lessons) return "";
+  const ordering = threads.length ? "most-recurrent first" : "newest first";
   return `## Lessons From Abandoned Work
-Tickets the Devs previously gave up on, newest first, and why. If your ticket resembles one of these, plan around what went wrong — a smaller slice, a different approach, or a prerequisite first. These are warnings from experience, not rules: a lesson describes one failed attempt, not a verdict that the work cannot be done.
+Failures the pipeline has hit before, ${ordering}, and what they cost. If your ticket resembles one of these, plan around what went wrong — a smaller slice, a different approach, or a prerequisite first. These are warnings from experience, not rules: a lesson describes attempts that failed, not a verdict that the work cannot be done.
 
 ${lessons}`;
 }
@@ -178,10 +192,14 @@ async function writePostMortem(issue, reason) {
       log("warn", `Post-mortem: no lesson produced for #${issue.number}.`);
       return;
     }
-    appendLesson({
-      title: `#${issue.number} ${issue.title || ""}`.trim(),
-      body: `${lesson}\n\n_Parked after ${MAX_TICKET_ATTEMPTS} attempts._`,
-    });
+    // The CLASS is the thread; the ticket is the occurrence. A post-mortem titled
+    // after its ticket could never recur, which is what made the old page a list of
+    // unrelated one-offs — the same failure three times read as three entries, and
+    // the third pushed the first off the end of the trim.
+    appendLessonOccurrence(
+      parsed?.data?.failureClass?.trim() || `Tickets like "${issue.title || `#${issue.number}`}" cannot be built as scoped`,
+      `**#${issue.number} ${issue.title || ""}** — parked after ${MAX_TICKET_ATTEMPTS} attempts.\n\n${lesson}`
+    );
   } catch (e) {
     log("warn", `Post-mortem: could not record a lesson for #${issue.number}.`, errorData(e));
   }
