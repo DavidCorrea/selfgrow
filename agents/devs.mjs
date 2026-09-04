@@ -25,7 +25,6 @@ import {
   syncWaitingLabels,
   triggerWorkflow,
   readVision,
-  readLessons,
   closeIssue,
   createIssue,
   TECH_DEBT_LABEL,
@@ -97,20 +96,18 @@ const RUN_BUDGET_MS = Number(process.env.BUILD_RUN_BUDGET_MINUTES || 45) * 60 * 
 /**
  * The dead ends the Scout should plan around.
  *
- * Reads the Lessons threads first, MOST-RECURRENT first — a failure seen four
- * times is likelier to catch this ticket than one seen once last night. Falls
- * back to the old wiki page while it still holds anything, so the change cannot
- * leave the Scout with less context than it had.
+ * MOST-RECURRENT first: a failure seen four times is likelier to catch this ticket
+ * than one seen once last night, which is the ordering the old wiki page could
+ * never express. Empty when there are none, or when Discussions is unreachable —
+ * the Scout plans without them rather than the run failing.
  */
 function buildLessonsSection() {
   const threads = readLessonThreads();
-  const lessons = threads.length ? renderLessonThreads(threads) : readLessons().trim();
-  if (!lessons) return "";
-  const ordering = threads.length ? "most-recurrent first" : "newest first";
+  if (!threads.length) return "";
   return `## Lessons From Abandoned Work
-Failures the pipeline has hit before, ${ordering}, and what they cost. If your ticket resembles one of these, plan around what went wrong — a smaller slice, a different approach, or a prerequisite first. These are warnings from experience, not rules: a lesson describes attempts that failed, not a verdict that the work cannot be done.
+Failures the pipeline has hit before, most-recurrent first, and what they cost. If your ticket resembles one of these, plan around what went wrong — a smaller slice, a different approach, or a prerequisite first. These are warnings from experience, not rules: a lesson describes attempts that failed, not a verdict that the work cannot be done.
 
-${lessons}`;
+${renderLessonThreads(threads)}`;
 }
 
 function buildScoutPrompt(openIssues, vision) {

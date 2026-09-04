@@ -1,7 +1,7 @@
 // The wiki — the pipeline's long-term memory.
 //
-// Four pages, each owned by a different agent: Vision (the Product Owner),
-// Changelog and Story (the Product Manager), Lessons (the retro). It is a separate
+// Three pages, each owned by a different agent: Vision (the Product Owner),
+// Changelog and Story (the Product Manager). It is a separate
 // git repo, which is what makes it usable here: writing to it triggers no workflow
 // and touches no branch the Devs are merging.
 //
@@ -182,7 +182,6 @@ export function commitToWiki(pageFile, mutate, message) {
 
 const VISION_PAGE = "Vision.md";
 const CHANGELOG_PAGE = "Changelog.md";
-const LESSONS_PAGE = "Lessons.md";
 const STORY_PAGE = "Story.md";
 
 /** The Vision, or a placeholder that reads as missing rather than as empty. */
@@ -194,28 +193,15 @@ export function readChangelog() {
   return readPage(CHANGELOG_PAGE) || "(no changelog yet)";
 }
 
-export function readLessons() {
-  return readPage(LESSONS_PAGE);
-}
-
 const today = () => new Date().toISOString().slice(0, 10);
 
-// How much of each page survives.
+// How much of the changelog survives.
 //
-// Both of these are read WHOLE into prompts — the Scout gets every lesson before
-// planning each of the ~7 tickets a day, and the weekly report gets the whole
-// changelog. Neither was ever trimmed, so both grew without bound into a fixed
-// context, degrading silently exactly the way an untrimmed source dump does.
+// It is read WHOLE into the weekly report, so untrimmed it grew without bound into
+// a fixed context, degrading silently the way an untrimmed source dump does. So it
+// is trimmed: keep what is still useful, drop what has aged out of relevance.
 //
-// So both are trimmed: keep what is still useful, drop what has aged out of
-// relevance.
-//
-// Lessons is counted in ENTRIES rather than days, because its value is "the
-// dead ends worth knowing about", not "the last month". Twenty is roughly a
-// month of a bad week and several months of a good one.
-const LESSONS_KEPT = Number(process.env.LESSONS_KEPT || 20);
-
-// The changelog is a dated record, so days are the natural unit. The long arc it
+// Days are the natural unit for a dated record. The long arc the changelog
 // used to be the only source for now lives in Story.md, which the weekly report
 // evolves rather than regenerating from raw history.
 const CHANGELOG_DAYS_KEPT = Number(process.env.CHANGELOG_DAYS_KEPT || 45);
@@ -258,34 +244,6 @@ export function withChangelogEntry(content, entry, date = today()) {
 /** Record what shipped. Returns whether it reached the remote. */
 export function appendChangelogEntry(entry, message = "Changelog") {
   return commitToWiki(CHANGELOG_PAGE, (current) => withChangelogEntry(current, entry), message);
-}
-
-const LESSONS_INTRO =
-  "What the agents have tried and abandoned, and why. Read this before planning " +
-  "work that resembles anything below — the point of writing it down is not to " +
-  "learn it twice.";
-
-/** Insert a post-mortem newest-first. Exported for tests. */
-export function withLesson(content, entry, date = today()) {
-  const block = `## ${date} — ${String(entry.title || "").trim()}\n\n${String(entry.body || "").trim()}\n`;
-  if (!content.trim()) return `# Lessons\n\n${LESSONS_INTRO}\n\n${block}`;
-  if (content.includes(block.trim())) return content; // replayed attempt
-  // Newest first, so a Scout reading top-down meets the most recent dead ends
-  // first: insert above the newest existing entry, or append when there is none.
-  const firstEntry = content.indexOf("\n## ");
-  const withLesson = firstEntry === -1
-    ? `${content.trimEnd()}\n\n${block}`
-    : `${content.slice(0, firstEntry + 1)}${block}\n${content.slice(firstEntry + 1)}`;
-  return trimSections(withLesson, LESSONS_KEPT);
-}
-
-/** Record why something was abandoned. Returns whether it reached the remote. */
-export function appendLesson(entry) {
-  return commitToWiki(
-    LESSONS_PAGE,
-    (current) => withLesson(current, entry),
-    `Lessons: ${entry.title || "post-mortem"}`
-  );
 }
 
 /** Replace a page wholesale — the Story and the Vision are authored, not appended. */

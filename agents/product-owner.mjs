@@ -23,7 +23,6 @@ import {
   repoRoot,
   getBoardSnapshot,
   readVision,
-  readLessons,
   commitToWiki,
   getCurrentMilestone,
   startMilestone,
@@ -187,13 +186,10 @@ async function main() {
         VISION: vision,
         BOARD_STATE: boardState,
         WEEK: renderWeek(week),
-        // Threads first, most-recurrent first; the wiki page only while it still
-        // holds something. Same fallback as the Scout's.
+        // Most-recurrent first, the same ordering the Scout reads.
         LESSONS: (() => {
           const threads = readLessonThreads();
-          return threads.length
-            ? renderLessonThreads(threads)
-            : readLessons().trim() || "(nothing recorded yet)";
+          return threads.length ? renderLessonThreads(threads) : "(nothing recorded yet)";
         })(),
         PAST: past.length ? past.join("\n\n") : "(nothing recorded yet — this is the first)",
         MILESTONE: milestone

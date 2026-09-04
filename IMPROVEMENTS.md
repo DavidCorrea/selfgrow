@@ -106,3 +106,29 @@ Reviewer's independence. A ticket whose acceptance criteria are executable check
 is a duplicate exactly when its checks already pass — which is a question the
 pipeline can answer by running them, rather than by asking a model to compare
 prose.
+
+## Memory is scoped by a label nobody is required to set
+
+**Where:** `agents/discussions.mjs` — `archiveProductMemory`, `SCOPE_LABELS`;
+`agents/reset.mjs` — `resetDiscussionMemory`.
+
+`reset` deletes the product and keeps the machine, and that distinction now has to
+reach the pipeline's memory: a Lessons thread about the harness ("a transient
+provider error read as an empty account") should outlive a reset, while one about
+this garden's weather work should not. The split is made by a `product` /
+`machine` label, and only `product` is archived.
+
+Two soft spots. The label is applied when a thread is CREATED and never revisited,
+so a class that turns out to be the other kind keeps the wrong scope forever. And
+an unlabelled thread survives a reset by default — deliberately, because
+archiving a machine lesson costs more than keeping a product one, but it means a
+labelling failure silently defaults to "keep" and a stale product lesson can reach
+a new product.
+
+**Why it matters:** the failure is quiet in both directions and only visible after
+a reset, which is the one moment nobody is watching closely. A `reset` that lists
+what it is about to archive, and refuses to archive nothing at all when journals
+exist, would catch it.
+
+Nothing verifies the scope, either: the only real test of `archiveProductMemory`
+is a reset, and running one to check it destroys the thing it is testing.

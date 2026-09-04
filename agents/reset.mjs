@@ -13,10 +13,15 @@
 //   5. Reset the wiki's memory pages.
 //   6. Delete the accumulated `attempts:N` labels.
 //   7. Delete the old product from main (everything outside HARNESS_PATHS).
+//   8. Archive the product-scoped discussion memory: every role journal, and the
+//      lesson threads labelled `product`. Renamed, not deleted.
 //
 // What it deliberately does NOT touch:
 //   - `Vision.md` — the new one is yours to write, and it is the single input
 //     every agent derives from. Nothing here can guess it.
+//   - Machine lessons and every Decision — a lesson about the HARNESS outlives the
+//     product it was learned on, and relearning one costs real runs. Only lessons
+//     labelled `product` are archived; see archiveProductMemory.
 //   - Closed issues — GitHub keeps them as history and they cannot be deleted
 //     via the API. The Product Manager only ever reads OPEN issues, so they are
 //     inert; they just remain visible to humans.
@@ -39,6 +44,7 @@ import {
   PROJECT_OWNER,
   PROJECT_NUMBER,
 } from "./shared.mjs";
+import { archiveProductMemory } from "./discussions.mjs";
 
 // Everything the agent harness needs in order to keep running. The product is
 // defined as EVERYTHING ELSE.
@@ -181,29 +187,22 @@ function clearBoard() {
   }
 }
 
-// Lessons is restored to its canonical empty form — the exact heading and intro
-// appendLesson() writes when it creates the page — so the first post-mortem of
-// the new project appends cleanly instead of rebuilding a half-formed page.
+// Each page is restored to its canonical empty form, so the first write of the new
+// project appends cleanly instead of rebuilding a half-formed page.
 const EMPTY_WIKI_PAGES = {
   "Changelog.md": "# Changelog\n",
-  "Lessons.md":
-    "# Lessons\n\n" +
-    "What the agents have tried and abandoned, and why. Read this before planning " +
-    "work that resembles anything below — the point of writing it down is not to " +
-    "learn it twice.\n",
   "Story.md": "# The Story So Far\n\nThis project is just beginning. The Product Manager writes its story each week.\n",
   "Home.md":
     "# Wiki\n\nThe living record of this project, maintained by its autonomous agents.\n\n" +
     "- **[Vision](Vision)** — the north star (curated by the Product Owner).\n" +
-    "- **[Changelog](Changelog)** — the dated record of what changed (written by the Builder).\n" +
-    "- **[The Story So Far](Story)** — how the project has grown over time.\n" +
-    "- **[Lessons](Lessons)** — work the agents abandoned, and why (written when a ticket is parked).\n",
+    "- **[Changelog](Changelog)** — the dated record of what changed (written by the Devs).\n" +
+    "- **[The Story So Far](Story)** — how the project has grown over time.\n\n" +
+    "Lessons, decisions and the roles' running logs live in [Discussions](../discussions).\n",
 };
 
 /**
- * Blank the wiki pages that carry product memory. Lessons is the one that most
- * needs it: the Scout reads it before planning every build, so left in place it
- * teaches a brand-new project the dead ends of the old one.
+ * Blank the wiki pages that carry product memory. The Vision is left alone — the
+ * new one is yours to write, and nothing here can guess it.
  */
 function resetWikiMemory() {
   if (!getWikiDir()) {
@@ -214,6 +213,31 @@ function resetWikiMemory() {
     writePage(page, content, `Reset ${page} for a fresh start`);
   }
   log("info", "Left Vision.md untouched, by design.");
+}
+
+/**
+ * Archive the memory that belongs to the product being deleted.
+ *
+ * The wiki was the whole of the pipeline's memory when this reset was written, so
+ * blanking those pages was enough. It is not any more: journals and lessons live
+ * in Discussions, and they would otherwise survive a reset and hand the next
+ * product the previous one's reasoning about a garden that no longer exists.
+ *
+ * The split is deliberate and it is not symmetric. Every journal goes — each one
+ * records what a role thought this product should be. Only lessons labelled
+ * `product` go; a lesson about the HARNESS is worth more than a fresh start is
+ * worth, and relearning "a transient provider error was read as an empty account"
+ * costs six closed pull requests. Decisions stay for the same reason: they are
+ * almost all about the machine.
+ *
+ * Renamed, not deleted, so the previous project stays readable.
+ */
+function resetDiscussionMemory() {
+  const archived = archiveProductMemory();
+  log(
+    "info",
+    `Archived ${archived} product-scoped discussion thread(s). Machine lessons and Decisions were kept, by design.`
+  );
 }
 
 /**
@@ -320,6 +344,7 @@ function main() {
   clearAgentBranches();
   clearBoard();
   resetWikiMemory();
+  resetDiscussionMemory();
   deleteAttemptLabels();
   clearProduct();
   log(
