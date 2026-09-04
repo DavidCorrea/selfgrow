@@ -26,7 +26,7 @@ import {
 // Two layers below this one. shared.mjs re-exports both so the existing
 // `from "./shared.mjs"` imports keep working, but new code should import from
 // the specific module — that is the point of having split them.
-import { log, appendJobSummary, errorData, getRunLog, getTicketOutcomes } from "./log.mjs";
+import { log, appendJobSummary, errorData, getRunLog, getTicketOutcomes, truncate } from "./log.mjs";
 
 export {
   log,
@@ -162,27 +162,37 @@ function getModelRuntime() {
 const modelIdOf = (m) => `${m.provider}/${m.id}`;
 
 /**
- * True when an error means the ACCOUNT is out of budget, rather than one model
- * failing. This is THE stop signal: the pipeline no longer predicts its own spend
- * from a ledger, so the provider refusing a request is how it learns the cap has
- * been reached — see the session-limits block below.
+ * True when an error means the ACCOUNT cannot pay, rather than one model failing.
  *
- * The distinction from a model fault is the difference between one wasted request
- * and a whole chain of them: an account-wide refusal applies to every model, so
- * falling through to the next one cannot possibly succeed. Callers must stop the
- * chain immediately instead of burning the rest of it on a guaranteed failure.
+ * This is THE stop signal: the pipeline no longer predicts its own spend from a
+ * ledger, so a provider refusing to bill is how it learns the money is gone. It
+ * stops the chain, because an account-wide refusal applies to every model and
+ * falling through would burn one request per model to fail identically.
  *
- * Three forms, because the account can run out in three ways: a spend cap or an
- * empty balance on a paid key (402 / "insufficient credits" / "negative
- * balance"), and the free tier's per-day request cap, which still applies if a
- * `:free` id is ever configured again.
+ * DELIBERATELY NARROW, because the cost of a false positive is high and was paid
+ * on 2026-09-04: a transient failure from the second model was read as "the
+ * account is out of credits", so instead of retrying, four tickets were abandoned
+ * and the run failed — with $30 of $40 still on the key. Two patterns caused it
+ * and are gone:
+ *
+ *   - `insufficient_quota` — upstream providers use it for THEIR capacity limits,
+ *     which is a transient condition and nothing to do with the buyer's balance.
+ *   - a bare `402` anywhere in the message — far too easy to hit by accident, and
+ *     `err.status` already covers the real thing.
+ *
+ * What remains has to be about money: a 402 status (Payment Required, which is
+ * unambiguous), wording naming credits or a balance, or the free tier's per-day
+ * request cap, which still applies if a `:free` id is ever configured again.
+ *
+ * Anything else is a model failure. Model failures get retried; this does not.
+ * When in doubt, return false — a wasted retry costs one request, and a wrong
+ * "we are out of money" costs the ticket.
  */
 export function isDailyQuotaExhausted(err) {
   if (err?.quotaExhausted) return true; // already recognised and re-labelled once
-  const message = err?.message || "";
-  if (err?.status === 402 || /\b402\b/.test(message)) return true;
-  return /free-models-per-day|free_models_per_day|insufficient credits|insufficient_quota|negative balance|exceeded your .*(credit|spend|budget)/i.test(
-    message
+  if (err?.status === 402) return true;
+  return /free-models-per-day|free_models_per_day|insufficient credits|requires more credits|negative balance|exceeded your .{0,40}(credit|spend|budget)/i.test(
+    err?.message || ""
   );
 }
 
@@ -412,13 +422,21 @@ export async function runAgent(opts) {
       // model to watch the same loop. Rethrow the original so the marker survives
       // for callers that branch on it.
       if (e.sessionCapped) throw e;
-      // The daily cap is account-wide — every remaining model shares it, so
-      // continuing would burn one request per model to fail identically.
+      // A billing refusal is account-wide — every remaining model shares the same
+      // balance, so continuing would burn one request per model to fail
+      // identically.
       if (isDailyQuotaExhausted(e)) {
+        // Log the provider's OWN words before replacing them. The rewrite used to
+        // discard them, and on 2026-09-04 that left 806 lines of run log in which
+        // the actual failure appeared nowhere: every line said "OpenRouter's daily
+        // free-request cap is exhausted ... resets at 00:00 UTC" on a paid key
+        // with $30 on it, and which pattern had matched was unknowable.
+        log("error", `${label}: ${id} refused the request as a billing failure — stopping the chain.`, errorData(e));
         const err = new Error(
-          `${label}: OpenRouter's daily free-request cap is exhausted — stopping ` +
-            `without trying the remaining ${chain.length - chain.indexOf(id) - 1} model(s). ` +
-            `The cap is per account, not per model, so it resets at 00:00 UTC.`
+          `${label}: ${id} refused the request as a billing failure, so the ` +
+            `remaining ${chain.length - chain.indexOf(id) - 1} model(s) were not tried — ` +
+            `they bill the same account. Check the balance on OPENROUTER_API_KEY. ` +
+            `The provider said: ${truncate(String(e?.message || e), 300)}`
         );
         // The rewritten message no longer matches the provider's wording, so
         // isDailyQuotaExhausted would stop recognising its own error. Mark it.
