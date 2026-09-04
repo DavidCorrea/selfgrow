@@ -161,6 +161,23 @@ export function fastForwardState(savedState) {
     }
   }
 
+  /* ---- Flower phases: advance through cycle based on elapsed time ---- */
+  let plant1FlowerPhase = savedState.plant1FlowerPhase;
+  let plant1FlowerProgress = savedState.plant1FlowerProgress;
+  if (plant1Maturity >= 1 && plant1FlowerPhase) {
+    const advanced = advanceFlowerPhase(plant1FlowerPhase, plant1FlowerProgress, elapsedSec);
+    plant1FlowerPhase = advanced.phase;
+    plant1FlowerProgress = advanced.progress;
+  }
+
+  let plant2FlowerPhase = savedState.plant2FlowerPhase;
+  let plant2FlowerProgress = savedState.plant2FlowerProgress;
+  if (plant2Maturity !== undefined && plant2Maturity >= 1 && plant2FlowerPhase) {
+    const advanced = advanceFlowerPhase(plant2FlowerPhase, plant2FlowerProgress, elapsedSec);
+    plant2FlowerPhase = advanced.phase;
+    plant2FlowerProgress = advanced.progress;
+  }
+
   return {
     seasonProgress,
     dayNightProgress,
@@ -168,10 +185,10 @@ export function fastForwardState(savedState) {
     plant1Maturity,
     firstPlantGrown,
     plant2Maturity,
-    plant1FlowerPhase: savedState.plant1FlowerPhase,
-    plant1FlowerProgress: savedState.plant1FlowerProgress,
-    plant2FlowerPhase: savedState.plant2FlowerPhase,
-    plant2FlowerProgress: savedState.plant2FlowerProgress
+    plant1FlowerPhase,
+    plant1FlowerProgress,
+    plant2FlowerPhase,
+    plant2FlowerProgress
   };
 }
 
@@ -188,3 +205,58 @@ export function clearGardenState() {
 
 /* Expose constants for selftest */
 export { STORAGE_KEY, SEASON_CYCLE_DURATION_MS, DAYNIGHT_CYCLE_DURATION_MS, WEATHER_CYCLE_DURATION_MS, PLANT1_GROW_DURATION_MS, PLANT2_GROW_DURATION_MS };
+
+/**
+ * Advance a flower phase through its cycle given elapsed time.
+ *
+ * Uses average durations matching garden.js:
+ *   dormant: 45s (avg 30-60s), budding: 15s, opening: 60s,
+ *   bloom: 105s (avg 90-120s), fading: 30s
+ *
+ * @param {string} startPhase - One of dormant/budding/opening/bloom/fading
+ * @param {number} startProgress - 0-1 progress within the starting phase
+ * @param {number} elapsedMs - Elapsed wall-clock time in ms
+ * @returns {{ phase: string, progress: number }}
+ */
+export function advanceFlowerPhase(startPhase, startProgress, elapsedMs) {
+  const PHASE_DURATIONS = {
+    dormant: 45000,
+    budding: 15000,
+    opening: 60000,
+    bloom: 105000,
+    fading: 30000
+  };
+  const PHASE_ORDER = ['dormant', 'budding', 'opening', 'bloom', 'fading'];
+
+  if (!startPhase || PHASE_ORDER.indexOf(startPhase) === -1) {
+    // No flower yet — stay in dormant
+    return { phase: 'dormant', progress: 0 };
+  }
+
+  let remaining = elapsedMs;
+  let phase = startPhase;
+  let progress = typeof startProgress === 'number' ? startProgress : 0;
+
+  // Skip remaining time in the current phase
+  const currentDuration = PHASE_DURATIONS[phase];
+  const timeLeft = currentDuration * (1 - Math.min(1, Math.max(0, progress)));
+
+  if (remaining < timeLeft) {
+    return { phase, progress: progress + remaining / currentDuration };
+  }
+
+  remaining -= timeLeft;
+  let phaseIdx = PHASE_ORDER.indexOf(phase);
+
+  while (remaining > 0) {
+    phaseIdx = (phaseIdx + 1) % PHASE_ORDER.length;
+    phase = PHASE_ORDER[phaseIdx];
+    const dur = PHASE_DURATIONS[phase];
+    if (remaining < dur) {
+      return { phase, progress: remaining / dur };
+    }
+    remaining -= dur;
+  }
+
+  return { phase, progress: 0 };
+}
