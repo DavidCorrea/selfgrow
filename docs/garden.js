@@ -451,7 +451,8 @@ function createPlant(opts) {
       bud: fm.bud,
       petalMat: fm.petalMat,
       getPhase: () => phase,
-      getProgress: () => progress
+      getProgress: () => progress,
+      getShelterFactor: () => weatherShelter
     };
 
     let phase = 'dormant';
@@ -471,6 +472,10 @@ function createPlant(opts) {
     }
 
     let durations = rollDurations();
+
+    // Weather shelter: petals close during Light Drizzle (issue #557)
+    let weatherShelter = 0;
+    let _lastFlowerTick = performance.now();
 
     /* Update DOM when the flower enters a new visible phase */
     function updateDOMDescriptions() {
@@ -553,7 +558,17 @@ function createPlant(opts) {
         }
 
     function tick() {
-      const elapsed = performance.now() - phaseStart;
+      const now = performance.now();
+      const dt = Math.min((now - _lastFlowerTick) / 1000, 0.05);
+      _lastFlowerTick = now;
+
+      // Weather shelter lerp toward target (Light Drizzle = 1, otherwise 0)
+      const weatherState = window.__gardenState && window.__gardenState.weather;
+      const shelterTarget = (weatherState && weatherState.getPhase() === 'Light Drizzle') ? 1.0 : 0.0;
+      const shelterRate = 0.6; // ~5s time constant
+      weatherShelter += (shelterTarget - weatherShelter) * (1 - Math.exp(-shelterRate * dt));
+
+      const elapsed = now - phaseStart;
       progress = Math.min(1, elapsed / phaseDuration);
 
       switch (phase) {
@@ -589,9 +604,12 @@ function createPlant(opts) {
           // Petals spread outward and scale up to full size
           const t = Math.min(1, elapsed / phaseDuration);
           const eased = 1 - Math.pow(1 - t, 2);
+          // Weather shelter: reduce scale and tilt down during rain (issue #557)
+          const shelterScale = eased * (1 - 0.4 * weatherShelter);
+          const shelterTilt = weatherShelter * 0.8;
           fm.petals.forEach((p, i) => {
-            const tilt = 0.3 + eased * 1.2; // from slight tilt to nearly flat
-            p.scale.set(eased, eased, eased);
+            const tilt = 0.3 + eased * 1.2 + shelterTilt;
+            p.scale.set(shelterScale, shelterScale, shelterScale);
             p.rotation.x = tilt;
           });
           if (elapsed >= phaseDuration) {
@@ -604,22 +622,57 @@ function createPlant(opts) {
           break;
         }
 
-        case 'bloom':
+        case 'bloom': {
           // Gentle sway: a barely-perceptible animation
           if (fm.petals.length > 0) {
             const sway = Math.sin(elapsed * 0.001 * 0.5) * 0.05;
+            // Weather shelter: reduce scale (≤60%) and tilt down during rain (issue #557)
+            const shelterScale = (1 - 0.4 * weatherShelter);
+            const shelterTilt = weatherShelter * 0.8;
             fm.petals.forEach((p, i) => {
+              p.scale.set(shelterScale, shelterScale, shelterScale);
+              p.rotation.x = 1.5 + shelterTilt;
               p.rotation.z = sway + (i % 2 === 0 ? 0.02 : -0.02);
             });
+          }
+          // Dynamically update descriptions when weatherShelter crosses 0.5 threshold
+          if (weatherShelter > 0.5 && !fm._describedSheltered) {
+            fm._describedSheltered = true;
+            fm._describedOpen = false;
+            const growingDesc = document.getElementById('growing-description');
+            const plotDesc = document.getElementById('plot-description');
+            if (isPlant2) {
+              if (growingDesc) growingDesc.textContent = 'The companion plant\'s small flower closes slightly against the rain.';
+              if (plotDesc) plotDesc.textContent = 'Two plants share the plot. The companion plant\'s blossom bends inward, sheltering from the rain.';
+            } else {
+              if (growingDesc) growingDesc.textContent = 'The flower closes slightly against the rain, its petals tilting inward.';
+              if (plotDesc) plotDesc.textContent = 'The central plant\'s blossom bows its petals inward, sheltering from the gentle rain.';
+            }
+          } else if (weatherShelter <= 0.5 && !fm._describedOpen && weatherShelter < 0.3) {
+            fm._describedOpen = true;
+            fm._describedSheltered = false;
+            const growingDesc = document.getElementById('growing-description');
+            const plotDesc = document.getElementById('plot-description');
+            if (isPlant2) {
+              if (growingDesc) growingDesc.textContent = 'A small flower blooms softly near the top of the companion plant.';
+              if (plotDesc) plotDesc.textContent = 'Two plants share the plot, one crowned with a small, soft-hued blossom. The garden feels complete.';
+            } else {
+              if (growingDesc) growingDesc.textContent = 'A small flower blooms softly near the top of the stem.';
+              if (plotDesc) plotDesc.textContent = 'A small, soft-coloured flower blooms at the tip of the seedling, a quiet reward for patient watching.';
+            }
           }
           if (elapsed >= phaseDuration) {
             phase = 'fading';
             phaseStart = performance.now();
             phaseDuration = durations.fading;
             progress = 0;
+            // Reset description flags for next cycle
+            fm._describedSheltered = false;
+            fm._describedOpen = false;
             updateDOMDescriptions();
           }
           break;
+        }
 
         case 'fading': {
           // Fade opacity and shrink petals
