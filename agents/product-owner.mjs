@@ -142,24 +142,41 @@ function applyRefinement(parsed) {
 const JOURNAL = "Product Owner — log";
 
 /**
- * Write down the direction and the reason for it.
+ * Write down the week: the direction, the reason for it, and the retro — as ONE
+ * entry.
  *
- * Terse on purpose: three lines a future run can skim, not a narrative it will
- * read its own voice back out of. `milestone` is the one that was RUNNING when
- * this decided, so an entry says what changed rather than only what is true.
+ * One comment per run, which is what makes "the last three entries" mean "the
+ * last three weeks". The first version wrote the retro and the decision
+ * separately, and the first real run therefore spent two thirds of the next
+ * reader's window on itself: JOURNAL_TAIL is 3, so a reader got one and a half
+ * runs of history instead of three.
+ *
+ * Terse on purpose: a few lines a future run can skim, not a narrative it will
+ * read its own voice back out of. `previousMilestone` is the one that was RUNNING
+ * when this decided, so the entry says what CHANGED rather than only what is true.
  */
-function recordDecision(data, previousMilestone) {
+function recordWeek(data, previousMilestone) {
   const chosen = data.milestone?.title;
-  appendJournal(
+  const written = appendJournal(
     JOURNAL,
     renderJournalEntry({
       decided: chosen
         ? `Milestone: ${chosen}${previousMilestone && previousMilestone.title !== chosen ? ` (was "${previousMilestone.title}")` : ""}`
         : `Milestone unchanged${previousMilestone ? `: ${previousMilestone.title}` : " — none set"}`,
-      because: data.milestone?.description || data.retro?.title || "",
+      because: data.milestone?.description || "",
       deferred: data.deferred || "",
+      // The retro rides along rather than getting its own comment. It is the same
+      // run's thinking about the same week, and splitting it made the tail shorter
+      // for no gain.
+      extra: data.retro?.title
+        ? { Retro: `${data.retro.title}${data.retro.body ? ` — ${data.retro.body}` : ""}` }
+        : {},
     })
   );
+  if (!data.retro?.title || !data.retro?.body) {
+    log("warn", "Product Owner: no retro produced this week.");
+  }
+  return written;
 }
 
 async function main() {
@@ -214,31 +231,7 @@ async function main() {
   }
   const data = parsed.data || {};
 
-  // 1. The retro, into this role's OWN journal — not the Lessons page.
-  //
-  //    It used to go to Lessons, which is titled "what the agents have tried and
-  //    abandoned, and why" and is read by every Scout before planning. A retro is
-  //    not that: it is a weekly narrative of what shipped, and because retros are
-  //    weekly and parked tickets are rare, they crowded the actual failures out
-  //    entirely. The Scout was reading two cheerful summaries ending "Nothing
-  //    parked" as its dead-end context.
-  //
-  //    Recorded first and unconditionally either way: it is this run's most durable
-  //    output and what next week reads before deciding. A skipped Vision change is
-  //    not a reason to skip the record.
-  if (data.retro?.title && data.retro?.body) {
-    appendJournal(
-      JOURNAL,
-      renderJournalEntry({
-        decided: `Retro — ${data.retro.title}`,
-        because: data.retro.body,
-      })
-    );
-  } else {
-    log("warn", "Product Owner: no retro produced this week.");
-  }
-
-  // 2. The milestone. What the project is trying to do next; the Product Manager
+  // 1. The milestone. What the project is trying to do next; the Product Manager
   //    grooms against it every morning.
   if (data.milestone?.title) {
     startMilestone(data.milestone.title, data.milestone.description);
@@ -246,10 +239,19 @@ async function main() {
     log("warn", "Product Owner: no milestone set, and none was running.");
   }
 
-  // 3. The decision, in this role's own journal — before the Vision step, because
-  //    that step returns early most weeks and the record must not depend on it.
-  //    Same reasoning as the retro above: this is what next Monday reads first.
-  recordDecision(data, milestone);
+  // 2. The week, as one journal entry — the direction, the reason, the deferral
+  //    and the retro together.
+  //
+  //    The retro used to go to the Lessons page, which is titled "what the agents
+  //    have tried and abandoned, and why" and is read by every Scout before
+  //    planning. A retro is not that: it is a weekly narrative of what shipped,
+  //    and because retros are weekly and parked tickets are rare, they crowded the
+  //    actual failures out entirely.
+  //
+  //    Written BEFORE the Vision step, because that step returns early most weeks
+  //    and the record must not depend on it. It is this run's most durable output
+  //    and the first thing next Monday reads.
+  recordWeek(data, milestone);
 
   // 4. The Vision, which most weeks should not move at all.
   if (parsed.outcome === "skip") {
