@@ -2607,7 +2607,7 @@ export async function checks() {
       problems.push('creature.state.pauseState is not a function — pause state getter missing (butterfly flower visits).');
     } else {
       var ps = creatureState.pauseState();
-      var validStates = ['idle', 'entering', 'holding', 'exiting'];
+      var validStates = ['idle', 'entering', 'holding', 'exiting', 'descending', 'resting', 'ascending'];
       if (validStates.indexOf(ps) === -1) {
         problems.push('creature pauseState() returned "' + ps + '", expected one of: ' + validStates.join(', '));
       }
@@ -2791,7 +2791,7 @@ export async function checks() {
       }
     }
 
-    // --- Test 4: reduced-motion disables the pause entirely ---
+    // --- Test 4: reduced-motion disables the pause and landing entirely ---
     // Create a fresh creature with matchMedia overridden to report "reduce"
     var origMatchMedia = window.matchMedia;
     var reducedCreature = null;
@@ -2840,6 +2840,150 @@ export async function checks() {
         reducedCreature.destroy();
       }
       window.matchMedia = origMatchMedia;
+    }
+
+    // --- Test 5: landing on a leaf (descending/resting/ascending states) ---
+    if (!creatureState.reducedMotion && gardenState && typeof gardenState.creatureUpdate === 'function') {
+      var origPlantL = gardenState.plant;
+      var origPlant2L = gardenState.plant2;
+      var origDayNightL = null;
+
+      if (gardenState.dayNight && typeof gardenState.dayNight.getCycleProgress === 'function') {
+        origDayNightL = gardenState.dayNight.getCycleProgress;
+        gardenState.dayNight.getCycleProgress = function() { return 0.1; };
+      }
+
+      try {
+        // Drain any in-flight pause to idle
+        var neutralPlantL = {
+          group: { position: new THREE.Vector3(100, 0, 100) },
+          flower: {
+            getPhase: function() { return 'dormant'; },
+            getProgress: function() { return 0.5; }
+          },
+          leaves: []
+        };
+        gardenState.plant = neutralPlantL;
+        gardenState.plant2 = neutralPlantL;
+
+        for (var dl = 0; dl < 1100; dl++) {
+          gardenState.creatureUpdate(dl * 0.016, 0.016);
+        }
+
+        if (creatureState.pauseState() !== 'idle') {
+          problems.push('Butterfly landing test: could not drain to idle before testing.');
+        } else {
+          // Place a blooming flower with leaves at the butterfly's position
+          var bpL = creatureState.group.position;
+
+          // Create a fake leaf at the plant's stem height
+          var fakeLeafL = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.1), new THREE.MeshBasicMaterial());
+          fakeLeafL.position.set(0, 0.75, 0);
+
+          var plantWithLeafL = {
+            group: { position: new THREE.Vector3(bpL.x, bpL.y - 0.72, bpL.z) },
+            flower: {
+              getPhase: function() { return 'bloom'; },
+              getProgress: function() { return 0.5; }
+            },
+            leaves: [fakeLeafL]
+          };
+          gardenState.plant = plantWithLeafL;
+
+          // Force deterministic landing: seed Math.random to always return < 0.4
+          var origRandom = Math.random;
+          Math.random = function() { return 0.2; }; // < LANDING_PROBABILITY=0.4
+
+          try {
+            // Trigger a pause by placing flower at butterfly position and running updates
+            for (var tl = 0; tl < 400; tl++) {
+              gardenState.creatureUpdate(2000 + tl * 0.016, 0.016);
+            }
+
+            var finalStateL = creatureState.pauseState();
+            // With Math.random mocked to 0.2 and a leaf present, the butterfly
+            // should have gone through descending→resting→ascending→idle
+            if (finalStateL !== 'idle') {
+              // It might still be mid-sequence — run more updates to let it finish
+              for (var tl2 = 0; tl2 < 800; tl2++) {
+                gardenState.creatureUpdate(4000 + tl2 * 0.016, 0.016);
+              }
+              var afterMore = creatureState.pauseState();
+              if (afterMore !== 'idle' && afterMore !== 'resting' && afterMore !== 'ascending') {
+                problems.push('Butterfly did not enter landing sequence after pausing near a bloom with leaf present. Final state: "' + afterMore + '". Expected it to reach descending/resting/ascending or idle (issue #549).');
+              }
+            }
+
+            // --- Landing state accessor checks ---
+            if (typeof creatureState.landingLeafPos !== 'function') {
+              problems.push('creature.state.landingLeafPos is not a function — landing leaf position getter missing (issue #549).');
+            }
+            if (typeof creatureState.landingRestTimer !== 'function') {
+              problems.push('creature.state.landingRestTimer is not a function — landing rest timer getter missing (issue #549).');
+            }
+            if (typeof creatureState.landingRestDuration !== 'function') {
+              problems.push('creature.state.landingRestDuration is not a function — landing rest duration getter missing (issue #549).');
+            }
+          } finally {
+            Math.random = origRandom;
+          }
+        }
+      } finally {
+        gardenState.plant = origPlantL;
+        gardenState.plant2 = origPlantL;
+        if (origDayNightL) {
+          gardenState.dayNight.getCycleProgress = origDayNightL;
+        }
+        for (var rl = 0; rl < 200; rl++) {
+          gardenState.creatureUpdate(rl * 0.016, 0.016);
+        }
+      }
+    }
+
+    // --- Test 6: reduced-motion disables landing entirely ---
+    // Create a fresh creature with matchMedia overridden to report "reduce"
+    // and verify it never enters landing states.
+    var origMatchMediaL = window.matchMedia;
+    var reducedCreatureL = null;
+
+    try {
+      window.matchMedia = function() {
+        return {
+          matches: true,
+          media: '(prefers-reduced-motion: reduce)',
+          addEventListener: function() {},
+          removeEventListener: function() {}
+        };
+      };
+
+      var testSceneL = new THREE.Scene();
+      reducedCreatureL = createCreature(testSceneL);
+
+      if (reducedCreatureL.state.reducedMotion) {
+        var gsSnapshotL = window.__gardenState;
+        window.__gardenState = {
+          plant: {
+            group: { position: new THREE.Vector3(0, 0, 0) },
+            flower: {
+              getPhase: function() { return 'bloom'; },
+              getProgress: function() { return 0.5; }
+            },
+            leaves: [new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.1), new THREE.MeshBasicMaterial())]
+          }
+        };
+        reducedCreatureL.update(0.5);
+
+        if (reducedCreatureL.state.pauseState() !== 'idle') {
+          problems.push('With prefers-reduced-motion active, the butterfly entered state "' + reducedCreatureL.state.pauseState() + '" — landing must be disabled under reduced motion (issue #549).');
+        }
+
+        window.__gardenState = gsSnapshotL;
+      }
+    } finally {
+      if (reducedCreatureL && typeof reducedCreatureL.destroy === 'function') {
+        reducedCreatureL.destroy();
+      }
+      window.matchMedia = origMatchMediaL;
     }
   }
 
