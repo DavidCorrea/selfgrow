@@ -13,6 +13,8 @@ permissions:
   contents: read
   # It opens and closes milestones, and the retro is written to the wiki.
   issues: write
+  # It appends one entry per run to its own journal thread (a Discussion).
+  discussions: write
 
 jobs:
   refine-vision:

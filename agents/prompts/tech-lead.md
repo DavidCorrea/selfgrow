@@ -36,6 +36,16 @@ The complete list. Nothing is missing from it, whatever is or is not reproduced 
 
 {{MANIFEST}}
 
+
+## What you ruled before
+Your own notes from previous reviews, oldest first.
+
+{{PAST}}
+
+Use them for one thing above all: **do not rule the opposite way on a ticket you have already ruled on** without saying what changed. You decide whether parked work returns, and a ticket dropped last month that you return smaller today — or the reverse — is either new evidence or a coin flip, and only you can tell the difference. Say which.
+
+Also worth checking: a structural concern you raised before that nothing has acted on is worth raising more sharply, not repeating in the same words.
+
 ## The source of the most relevant files
 
 Reproduced here so you do not have to open them. **This is not the whole codebase** — see the manifest above for that, and use the read tool for anything else you need. A judgement about a file you have not opened is a guess.

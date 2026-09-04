@@ -12,6 +12,8 @@ on:
 permissions:
   contents: read
   issues: write
+  # It appends one entry per run to its own journal thread (a Discussion).
+  discussions: write
 
 # One at a time: two concurrent runs would read the same codebase, reach the same
 # conclusions, and file every ticket twice.
