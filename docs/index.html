@@ -337,6 +337,7 @@
     }
 
     controls.addEventListener('change', function onControlsChange() {
+      creature.notifyCameraMoved();
       if (getReducedMotionPref()) return;
 
       const now = performance.now();
@@ -779,6 +780,7 @@
       groundRipple: groundRipple.state,
       creature: creature.state,
       creatureUpdate: creature.update,
+      creatureNotifyCameraMoved: creature.notifyCameraMoved,
       fireflies: fireflies.state,
       firefliesUpdate: fireflies.update,
       /* Base seasonal ground colour (before winter legacy or rain darkening).
