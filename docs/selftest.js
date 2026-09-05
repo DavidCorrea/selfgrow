@@ -6212,10 +6212,8 @@ export async function checks() {
     if (ackEl.getAttribute('aria-live') !== 'polite') {
       problems.push('#garden-state-acknowledgment aria-live is "' + ackEl.getAttribute('aria-live') + '", expected "polite" — screen readers must announce the acknowledgment text when it appears.');
     }
-    // Verify it starts empty
-    if (ackEl.textContent && ackEl.textContent.trim().length > 0) {
-      problems.push('#garden-state-acknowledgment should be empty on page load, but contains: "' + ackEl.textContent + '"');
-    }
+    // Note: acknowledgment is now populated on page load by the visitor greeting (issue #596),
+    // so we no longer verify emptiness here.
   }
 
   // Verify the acknowledgment state config is exposed on __gardenState
@@ -6445,6 +6443,48 @@ export async function checks() {
         problems.push('motion.onMotionChange did not return a function on re-subscription.');
       }
       unsub3();
+    }
+  }
+
+  /* ---------- Visitor acknowledgment checks (issue #596) ---------- */
+  // Check that the acknowledgment element exists and is populated on page load.
+  var ackEl596 = document.getElementById('garden-state-acknowledgment');
+  if (!ackEl596) {
+    problems.push('Missing #garden-state-acknowledgment element — the visitor acknowledgment area is required.');
+  } else {
+    // Verify aria-live is set to "polite" for screen-reader announcements
+    var live596 = ackEl596.getAttribute('aria-live');
+    if (live596 !== 'polite') {
+      problems.push('#garden-state-acknowledgment aria-live is "' + live596 + '", expected "polite" so screen readers announce updates.');
+    }
+
+    // Check the acknowledgment text is non-empty on page load
+    var text596 = ackEl596.textContent.trim();
+    if (text596.length === 0) {
+      problems.push('#garden-state-acknowledgment is empty on page load — expected a welcome/returning visitor greeting (issue #596).');
+    } else {
+      // Acknowledge a welcome phrase regardless of first-time or returning visitor
+      if (text596.toLowerCase().indexOf('welcome') === -1 && text596.toLowerCase().indexOf('garden') === -1) {
+        problems.push('#garden-state-acknowledgment text is "' + text596 + '" — expected a welcome greeting referencing the garden (issue #596).');
+      }
+    }
+  }
+
+  // Check that PRESENCE_PHRASES is configured and exposed on __gardenState
+  if (!gardenState || !gardenState._presencePhrases) {
+    problems.push('window.__gardenState._presencePhrases is not set — periodic visitor presence phrases not configured (issue #596).');
+  } else {
+    if (!Array.isArray(gardenState._presencePhrases)) {
+      problems.push('window.__gardenState._presencePhrases is not an array — expected an array of phrase strings (issue #596).');
+    } else if (gardenState._presencePhrases.length < 3) {
+      problems.push('window.__gardenState._presencePhrases has only ' + gardenState._presencePhrases.length + ' phrases — expected at least 3 for variety (issue #596).');
+    } else {
+      // Verify each phrase is a non-empty string
+      gardenState._presencePhrases.forEach(function(phrase, i) {
+        if (typeof phrase !== 'string' || phrase.trim().length === 0) {
+          problems.push('window.__gardenState._presencePhrases[' + i + '] is not a non-empty string — got ' + typeof phrase + ' "' + phrase + '" (issue #596).');
+        }
+      });
     }
   }
 
