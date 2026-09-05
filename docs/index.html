@@ -332,6 +332,48 @@
     let lastInteractionTime = performance.now();
     let lastAcknowledgmentTime = 0;
 
+    /* --- Periodic visitor presence acknowledgment (issue #596) --- */
+    const PRESENCE_PHRASES = [
+      'The garden is aware of your quiet presence.',
+      'You sit with the garden in shared stillness.',
+      'The garden holds space for your attention.',
+      'Watching the garden, time moves at its own pace.',
+      'The garden rests calmly in your awareness.'
+    ];
+
+    let lastPresencePhraseIndex = -1;
+
+    function setAcknowledgment(text) {
+      const ackEl = document.getElementById('garden-state-acknowledgment');
+      if (ackEl) {
+        ackEl.textContent = text;
+      }
+    }
+
+    function pickPresencePhrase() {
+      let idx;
+      do {
+        idx = Math.floor(Math.random() * PRESENCE_PHRASES.length);
+      } while (idx === lastPresencePhraseIndex && PRESENCE_PHRASES.length > 1);
+      lastPresencePhraseIndex = idx;
+      return PRESENCE_PHRASES[idx];
+    }
+
+    function scheduleNextPresenceCheck() {
+      const delay = 30000 + Math.random() * 30000; // 30-60 seconds
+      setTimeout(function checkPresence() {
+        const now = performance.now();
+        const timeSinceLastAck = now - lastAcknowledgmentTime;
+        // Only update if enough time has passed since last acknowledgment
+        // (whether from camera stillness or a previous presence check)
+        if (timeSinceLastAck >= 25000) {
+          lastAcknowledgmentTime = now;
+          setAcknowledgment(pickPresencePhrase());
+        }
+        scheduleNextPresenceCheck();
+      }, delay);
+    }
+
     function getReducedMotionPref() {
       return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     }
@@ -347,10 +389,7 @@
       if (idleDuration >= STILLNESS_THRESHOLD_MS && timeSinceLastAck >= ACKNOWLEDGMENT_COOLDOWN_MS) {
         lastAcknowledgmentTime = now;
         const sentence = ACKNOWLEDGMENT_SENTENCES[Math.floor(Math.random() * ACKNOWLEDGMENT_SENTENCES.length)];
-        const ackEl = document.getElementById('garden-state-acknowledgment');
-        if (ackEl) {
-          ackEl.textContent = sentence;
-        }
+        setAcknowledgment(sentence);
       }
 
       lastInteractionTime = now;
@@ -802,7 +841,9 @@
       /* Camera stillness acknowledgment (issue #544) */
       _acknowledgmentSentences: ACKNOWLEDGMENT_SENTENCES,
       _acknowledgmentCooldown: ACKNOWLEDGMENT_COOLDOWN_MS,
-      _stillnessThreshold: STILLNESS_THRESHOLD_MS
+      _stillnessThreshold: STILLNESS_THRESHOLD_MS,
+      /* Periodic visitor presence acknowledgment (issue #596) */
+      _presencePhrases: PRESENCE_PHRASES
     };
 
     /* --- Persistence: restore previous state if available --- */
@@ -926,6 +967,22 @@
     // Expose the helper for self-test
     window.__gardenState.computeReturningVisitorGreeting = computeReturningVisitorGreeting;
 
+    /* --- Page-load acknowledgment greeting (issue #596) ---
+     * First-time visitors get a welcome message; returning visitors
+     * get a warm welcome-back acknowledgement. Runs after initGarden
+     * so acknowledgment is populated immediately on page load. */
+    {
+      const ackEl = document.getElementById('garden-state-acknowledgment');
+      if (ackEl) {
+        if (savedState) {
+          ackEl.textContent = 'Welcome back. The garden remembers your presence.';
+        } else {
+          ackEl.textContent = 'Welcome to the garden. The soil is rich and the air is still \u2014 something is about to grow.';
+        }
+        lastAcknowledgmentTime = performance.now();
+      }
+    }
+
     /* Create fallen leaves that respond to the seasonal cycle */
     createFallenLeaves(scene);
 
@@ -981,6 +1038,13 @@
 
     /* Poll the season display every ~1s and update season-aware descriptions */
     setInterval(updateSeasonDescription, 1000);
+
+    /* --- Periodic visitor presence acknowledgment (issue #596):
+     * Runs a randomized timer (30-60s delay) that picks a phrase
+     * from PRESENCE_PHRASES, avoiding repetition of the last phrase.
+     * Shares lastAcknowledgmentTime with the camera-stillness mechanism
+     * so the two cannot fire too close together. --- */
+    scheduleNextPresenceCheck();
 
     /* --- Periodic save: every 2 seconds capture current state --- */
     setInterval(saveGardenState, 2000);
