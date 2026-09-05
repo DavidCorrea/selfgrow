@@ -5641,11 +5641,15 @@ export async function checks() {
       };
 
       Object.keys(expectedKeywords).forEach(function(phase) {
-        const ctx = contexts[phase];
-        if (!ctx || typeof ctx !== 'string') {
-          problems.push('weatherContexts["' + phase + '"] is missing or not a string — context not defined.');
+        const arr = contexts[phase];
+        if (!arr || !Array.isArray(arr)) {
+          problems.push('weatherContexts["' + phase + '"] is missing or not an array — context not defined as variant array.');
           return;
         }
+        if (arr.length < 2 || arr.length > 3) {
+          problems.push('weatherContexts["' + phase + '"] has ' + arr.length + ' variants, expected 2–3 (issue #543).');
+        }
+        const ctx = arr[0];
         const keywords = expectedKeywords[phase];
         var missingKeywords = [];
         keywords.forEach(function(kw) {
@@ -5654,7 +5658,18 @@ export async function checks() {
           }
         });
         if (missingKeywords.length > 0) {
-          problems.push('weatherContexts["' + phase + '"] = "' + ctx + '" — missing acceptance keywords: ' + missingKeywords.join(', ') + '.');
+          problems.push('weatherContexts["' + phase + '"] first variant = "' + ctx + '" — missing acceptance keywords: ' + missingKeywords.join(', ') + '.');
+        }
+        // Verify variants are unique within the phase
+        for (var vi2 = 1; vi2 < arr.length; vi2++) {
+          if (arr[vi2] === arr[0]) {
+            problems.push('weatherContexts["' + phase + '"] variant ' + vi2 + ' is identical to variant 0 — each variant must be unique (issue #543).');
+          }
+          for (var vj2 = vi2 + 1; vj2 < arr.length; vj2++) {
+            if (arr[vi2] === arr[vj2]) {
+              problems.push('weatherContexts["' + phase + '"] variant ' + vi2 + ' equals variant ' + vj2 + ' — each variant must be unique (issue #543).');
+            }
+          }
         }
       });
 
@@ -5686,13 +5701,13 @@ export async function checks() {
 
       // --- Test 1: Clear -> descriptions get context ---
       var r1 = runWeatherWith('Clear', BASE_PLOT, BASE_GROWING);
-      if (r1.plot.indexOf(contexts['Clear']) === -1) {
+      if (r1.plot.indexOf(contexts['Clear'][0]) === -1) {
         problems.push('After updateWeatherDescription with Clear, plot-description does not contain the Clear context. Got: "' + r1.plot + '"');
       }
       if (r1.plot.indexOf(BASE_PLOT) === -1) {
         problems.push('After updateWeatherDescription with Clear, plot-description lost base text. Got: "' + r1.plot + '"');
       }
-      if (r1.growing.indexOf(contexts['Clear']) === -1) {
+      if (r1.growing.indexOf(contexts['Clear'][0]) === -1) {
         problems.push('After updateWeatherDescription with Clear, growing-description does not contain the Clear context. Got: "' + r1.growing + '"');
       }
       if (r1.growing.indexOf(BASE_GROWING) === -1) {
@@ -5701,26 +5716,26 @@ export async function checks() {
 
       // --- Test 2: Switch to Overcast — stale Clear context stripped, Overcast added ---
       var r2 = runWeatherWith('Overcast', r1.plot, r1.growing);
-      if (r2.plot.indexOf(contexts['Overcast']) === -1) {
+      if (r2.plot.indexOf(contexts['Overcast'][0]) === -1) {
         problems.push('After switching to Overcast, plot-description does not contain the Overcast context. Got: "' + r2.plot + '"');
       }
-      if (r2.plot.indexOf(contexts['Clear']) !== -1) {
+      if (r2.plot.indexOf(contexts['Clear'][0]) !== -1) {
         problems.push('After switching to Overcast, plot-description still contains stale Clear context. Got: "' + r2.plot + '"');
       }
-      if (r2.growing.indexOf(contexts['Overcast']) === -1) {
+      if (r2.growing.indexOf(contexts['Overcast'][0]) === -1) {
         problems.push('After switching to Overcast, growing-description does not contain the Overcast context. Got: "' + r2.growing + '"');
       }
-      if (r2.growing.indexOf(contexts['Clear']) !== -1) {
+      if (r2.growing.indexOf(contexts['Clear'][0]) !== -1) {
         problems.push('After switching to Overcast, growing-description still contains stale Clear context. Got: "' + r2.growing + '"');
       }
 
       // --- Test 3: Growing has a butterfly suffix — weather context still weaves in ---
-      var withButterfly = BASE_GROWING + ' ' + contexts['Overcast'] + DRIFT_SUFFIX;
+      var withButterfly = BASE_GROWING + ' ' + contexts['Overcast'][0] + DRIFT_SUFFIX;
       var r3 = runWeatherWith('Light Drizzle', BASE_PLOT, withButterfly);
-      if (r3.growing.indexOf(contexts['Light Drizzle']) === -1) {
+      if (r3.growing.indexOf(contexts['Light Drizzle'][0]) === -1) {
         problems.push('With butterfly suffix present, switching to Light Drizzle did not add its context. Got: "' + r3.growing + '"');
       }
-      if (r3.growing.indexOf(contexts['Overcast']) !== -1) {
+      if (r3.growing.indexOf(contexts['Overcast'][0]) !== -1) {
         problems.push('With butterfly suffix present, switching to Light Drizzle did not strip stale Overcast context. Got: "' + r3.growing + '"');
       }
       if (r3.growing.indexOf(DRIFT_SUFFIX) === -1) {
@@ -5732,13 +5747,13 @@ export async function checks() {
 
       // --- Test 4: Butterfly update (strips its own suffix) should leave weather context ---
       weatherDisplayEl.textContent = 'Light Drizzle';
-      var r4a = runWeatherWith('Light Drizzle', BASE_PLOT, BASE_GROWING + ' ' + contexts['Light Drizzle'] + DRIZZLE_SUFFIX);
+      var r4a = runWeatherWith('Light Drizzle', BASE_PLOT, BASE_GROWING + ' ' + contexts['Light Drizzle'][0] + DRIZZLE_SUFFIX);
       if (!r4a.growing.endsWith(DRIZZLE_SUFFIX)) {
         problems.push('Setup for Test 4 failed: growing should end with drizzle butterfly suffix. Got: "' + r4a.growing + '"');
       }
       gardenState.updateButterflyDescription();
       var afterButterfly = weatherDescGrowingEl.textContent;
-      if (afterButterfly.indexOf(contexts['Light Drizzle']) === -1) {
+      if (afterButterfly.indexOf(contexts['Light Drizzle'][0]) === -1) {
         problems.push('After butterfly update, growing-description lost weather context. Got: "' + afterButterfly + '"');
       }
       if (!afterButterfly.endsWith(DRIZZLE_SUFFIX)) {
@@ -5760,11 +5775,11 @@ export async function checks() {
         problems.push('updateWeatherDescription() is not idempotent for growing: changed from "' + beforeRepeatGrowing + '" to "' + weatherDescGrowingEl.textContent + '" on repeated calls with unchanged state.');
       }
 
-      // --- Test 6: weatherContextFor returns correct strings ---
+      // --- Test 6: weatherContextFor returns correct strings (first variant) ---
       Object.keys(expectedKeywords).forEach(function(phase) {
         var ctx = gardenState.weatherContextFor(phase);
-        if (ctx !== contexts[phase]) {
-          problems.push('weatherContextFor("' + phase + '") returned "' + ctx + '", expected "' + contexts[phase] + '".');
+        if (ctx !== contexts[phase][0]) {
+          problems.push('weatherContextFor("' + phase + '") returned "' + ctx + '", expected "' + contexts[phase][0] + '" (first variant).');
         }
       });
       var unknownCtx = gardenState.weatherContextFor('Unknown');
@@ -5772,16 +5787,21 @@ export async function checks() {
         problems.push('weatherContextFor("Unknown") returned "' + unknownCtx + '", expected empty string for unknown phase.');
       }
 
-      // --- Test 7: Every phase gets a unique non-empty context ---
+      // --- Test 7: Every phase gets a unique first variant ---
       var seenContexts = {};
       phaseOrder.forEach(function(phase) {
-        var ctx = contexts[phase];
-        if (!ctx || ctx.trim().length === 0) {
+        var arr = contexts[phase];
+        if (!arr || arr.length === 0) {
           problems.push('weatherContexts["' + phase + '"] is empty or missing.');
           return;
         }
+        var ctx = arr[0];
+        if (!ctx || ctx.trim().length === 0) {
+          problems.push('weatherContexts["' + phase + '"] first variant is empty.');
+          return;
+        }
         if (seenContexts[ctx]) {
-          problems.push('weatherContexts["' + phase + '"] shares the same context string as "' + seenContexts[ctx] + '" — each phase must have a unique context.');
+          problems.push('weatherContexts["' + phase + '"] first variant shares the same string as "' + seenContexts[ctx] + '" — each phase must have a unique first variant.');
         }
         seenContexts[ctx] = phase;
       });
@@ -5828,11 +5848,15 @@ export async function checks() {
       };
 
       Object.keys(expectedTimeKeywords).forEach(function(phase) {
-        const ctx = timeContexts[phase];
-        if (!ctx || typeof ctx !== 'string') {
-          problems.push('timeContexts["' + phase + '"] is missing or not a string — context not defined.');
+        const arr = timeContexts[phase];
+        if (!arr || !Array.isArray(arr)) {
+          problems.push('timeContexts["' + phase + '"] is missing or not an array — context not defined as variant array (issue #543).');
           return;
         }
+        if (arr.length < 2 || arr.length > 3) {
+          problems.push('timeContexts["' + phase + '"] has ' + arr.length + ' variants, expected 2–3 (issue #543).');
+        }
+        const ctx = arr[0];
         const keywords = expectedTimeKeywords[phase];
         var missingKeywords = [];
         keywords.forEach(function(kw) {
@@ -5841,7 +5865,18 @@ export async function checks() {
           }
         });
         if (missingKeywords.length > 0) {
-          problems.push('timeContexts["' + phase + '"] = "' + ctx + '" — missing acceptance keywords: ' + missingKeywords.join(', ') + '.');
+          problems.push('timeContexts["' + phase + '"] first variant = "' + ctx + '" — missing acceptance keywords: ' + missingKeywords.join(', ') + '.');
+        }
+        // Verify variants are unique within the phase
+        for (var vi2 = 1; vi2 < arr.length; vi2++) {
+          if (arr[vi2] === arr[0]) {
+            problems.push('timeContexts["' + phase + '"] variant ' + vi2 + ' is identical to variant 0 — each variant must be unique (issue #543).');
+          }
+          for (var vj2 = vi2 + 1; vj2 < arr.length; vj2++) {
+            if (arr[vi2] === arr[vj2]) {
+              problems.push('timeContexts["' + phase + '"] variant ' + vi2 + ' equals variant ' + vj2 + ' — each variant must be unique (issue #543).');
+            }
+          }
         }
       });
 
@@ -5875,13 +5910,13 @@ export async function checks() {
 
       // --- Test 1: Morning -> descriptions get time context ---
       var r1 = runTimeWith('Morning', 'Clear', BASE_PLOT_TIME, BASE_GROWING_TIME);
-      if (r1.plot.indexOf(timeContexts['Morning']) === -1) {
+      if (r1.plot.indexOf(timeContexts['Morning'][0]) === -1) {
         problems.push('After updateTimeOfDayDescription with Morning, plot-description does not contain the Morning context. Got: "' + r1.plot + '"');
       }
       if (r1.plot.indexOf(BASE_PLOT_TIME) === -1) {
         problems.push('After updateTimeOfDayDescription with Morning, plot-description lost base text. Got: "' + r1.plot + '"');
       }
-      if (r1.growing.indexOf(timeContexts['Morning']) === -1) {
+      if (r1.growing.indexOf(timeContexts['Morning'][0]) === -1) {
         problems.push('After updateTimeOfDayDescription with Morning, growing-description does not contain the Morning context. Got: "' + r1.growing + '"');
       }
       if (r1.growing.indexOf(BASE_GROWING_TIME) === -1) {
@@ -5890,26 +5925,26 @@ export async function checks() {
 
       // --- Test 2: Switch from Morning to Night — stale Morning stripped, Night added ---
       var r2 = runTimeWith('Night', 'Clear', r1.plot, r1.growing);
-      if (r2.plot.indexOf(timeContexts['Night']) === -1) {
+      if (r2.plot.indexOf(timeContexts['Night'][0]) === -1) {
         problems.push('After switching to Night, plot-description does not contain the Night context. Got: "' + r2.plot + '"');
       }
-      if (r2.plot.indexOf(timeContexts['Morning']) !== -1) {
+      if (r2.plot.indexOf(timeContexts['Morning'][0]) !== -1) {
         problems.push('After switching to Night, plot-description still contains stale Morning context. Got: "' + r2.plot + '"');
       }
-      if (r2.growing.indexOf(timeContexts['Night']) === -1) {
+      if (r2.growing.indexOf(timeContexts['Night'][0]) === -1) {
         problems.push('After switching to Night, growing-description does not contain the Night context. Got: "' + r2.growing + '"');
       }
-      if (r2.growing.indexOf(timeContexts['Morning']) !== -1) {
+      if (r2.growing.indexOf(timeContexts['Morning'][0]) !== -1) {
         problems.push('After switching to Night, growing-description still contains stale Morning context. Got: "' + r2.growing + '"');
       }
 
       // --- Test 3: Growing has butterfly suffix + weather context — time context still weaves in ---
-      var withButterflyTime = BASE_GROWING_TIME + ' ' + timeContexts['Night'] + ' ' + gardenState.weatherContextFor('Clear') + DRIFT_SUFFIX_TIME;
+      var withButterflyTime = BASE_GROWING_TIME + ' ' + timeContexts['Night'][0] + ' ' + gardenState.weatherContextFor('Clear') + DRIFT_SUFFIX_TIME;
       var r3 = runTimeWith('Morning', 'Clear', BASE_PLOT_TIME, withButterflyTime);
-      if (r3.growing.indexOf(timeContexts['Morning']) === -1) {
+      if (r3.growing.indexOf(timeContexts['Morning'][0]) === -1) {
         problems.push('With butterfly suffix and weather context present, switching to Morning did not add its time context. Got: "' + r3.growing + '"');
       }
-      if (r3.growing.indexOf(timeContexts['Night']) !== -1) {
+      if (r3.growing.indexOf(timeContexts['Night'][0]) !== -1) {
         problems.push('With butterfly suffix and weather context present, switching to Morning did not strip stale Night context. Got: "' + r3.growing + '"');
       }
       if (r3.growing.indexOf(DRIFT_SUFFIX_TIME) === -1) {
@@ -5922,13 +5957,13 @@ export async function checks() {
       // --- Test 4: Weather context and time context compose together ---
       // After time update with Morning + Clear, check weather context is also present
       var r4 = runTimeWith('Midday', 'Overcast', BASE_PLOT_TIME, BASE_GROWING_TIME);
-      if (r4.plot.indexOf(timeContexts['Midday']) === -1) {
+      if (r4.plot.indexOf(timeContexts['Midday'][0]) === -1) {
         problems.push('Time+weather composition: plot-description missing Midday context. Got: "' + r4.plot + '"');
       }
       if (r4.plot.indexOf(gardenState.weatherContextFor('Overcast')) === -1) {
         problems.push('Time+weather composition: plot-description missing Overcast weather context. Got: "' + r4.plot + '"');
       }
-      if (r4.growing.indexOf(timeContexts['Midday']) === -1) {
+      if (r4.growing.indexOf(timeContexts['Midday'][0]) === -1) {
         problems.push('Time+weather composition: growing-description missing Midday context. Got: "' + r4.growing + '"');
       }
       if (r4.growing.indexOf(gardenState.weatherContextFor('Overcast')) === -1) {
@@ -5941,7 +5976,7 @@ export async function checks() {
       weatherDisplayEl.textContent = 'Light Drizzle';
       gardenState.updateWeatherDescription();
       var afterWeatherUpdate = timeDescGrowingEl.textContent;
-      if (afterWeatherUpdate.indexOf(timeContexts['Evening']) === -1) {
+      if (afterWeatherUpdate.indexOf(timeContexts['Evening'][0]) === -1) {
         problems.push('After updateWeatherDescription, growing-description lost the Evening time context. Got: "' + afterWeatherUpdate + '"');
       }
       if (afterWeatherUpdate.indexOf(gardenState.weatherContextFor('Light Drizzle')) === -1) {
@@ -5963,11 +5998,11 @@ export async function checks() {
         problems.push('updateTimeOfDayDescription() is not idempotent for growing: changed from "' + beforeRepeatGrowingTime + '" to "' + timeDescGrowingEl.textContent + '" on repeated calls with unchanged state.');
       }
 
-      // --- Test 7: timeContextFor returns correct strings ---
+      // --- Test 7: timeContextFor returns correct strings (first variant) ---
       Object.keys(expectedTimeKeywords).forEach(function(phase) {
         var ctx = gardenState.timeContextFor(phase);
-        if (ctx !== timeContexts[phase]) {
-          problems.push('timeContextFor("' + phase + '") returned "' + ctx + '", expected "' + timeContexts[phase] + '".');
+        if (ctx !== timeContexts[phase][0]) {
+          problems.push('timeContextFor("' + phase + '") returned "' + ctx + '", expected "' + timeContexts[phase][0] + '" (first variant).');
         }
       });
       var unknownTimeCtx = gardenState.timeContextFor('Unknown');
@@ -5975,16 +6010,21 @@ export async function checks() {
         problems.push('timeContextFor("Unknown") returned "' + unknownTimeCtx + '", expected empty string for unknown phase.');
       }
 
-      // --- Test 8: Every phase gets a unique non-empty context ---
+      // --- Test 8: Every phase gets a unique first variant ---
       var seenTimeContexts = {};
       timePhaseOrder.forEach(function(phase) {
-        var ctx = timeContexts[phase];
-        if (!ctx || ctx.trim().length === 0) {
+        var arr = timeContexts[phase];
+        if (!arr || arr.length === 0) {
           problems.push('timeContexts["' + phase + '"] is empty or missing.');
           return;
         }
+        var ctx = arr[0];
+        if (!ctx || ctx.trim().length === 0) {
+          problems.push('timeContexts["' + phase + '"] first variant is empty.');
+          return;
+        }
         if (seenTimeContexts[ctx]) {
-          problems.push('timeContexts["' + phase + '"] shares the same context string as "' + seenTimeContexts[ctx] + '" — each phase must have a unique context.');
+          problems.push('timeContexts["' + phase + '"] first variant shares the same string as "' + seenTimeContexts[ctx] + '" — each phase must have a unique first variant.');
         }
         seenTimeContexts[ctx] = phase;
       });
@@ -5992,16 +6032,16 @@ export async function checks() {
       // --- Test 9: Phase transition — Morning -> Night swaps contexts ---
       var r9a = runTimeWith('Morning', 'Clear', BASE_PLOT_TIME, BASE_GROWING_TIME);
       var r9b = runTimeWith('Night', 'Clear', r9a.plot, r9a.growing);
-      if (r9b.plot.indexOf(timeContexts['Night']) === -1) {
+      if (r9b.plot.indexOf(timeContexts['Night'][0]) === -1) {
         problems.push('Phase transition Morning->Night: plot missing Night context. Got: "' + r9b.plot + '"');
       }
-      if (r9b.plot.indexOf(timeContexts['Morning']) !== -1) {
+      if (r9b.plot.indexOf(timeContexts['Morning'][0]) !== -1) {
         problems.push('Phase transition Morning->Night: plot still has stale Morning context. Got: "' + r9b.plot + '"');
       }
-      if (r9b.growing.indexOf(timeContexts['Night']) === -1) {
+      if (r9b.growing.indexOf(timeContexts['Night'][0]) === -1) {
         problems.push('Phase transition Morning->Night: growing missing Night context. Got: "' + r9b.growing + '"');
       }
-      if (r9b.growing.indexOf(timeContexts['Morning']) !== -1) {
+      if (r9b.growing.indexOf(timeContexts['Morning'][0]) !== -1) {
         problems.push('Phase transition Morning->Night: growing still has stale Morning context. Got: "' + r9b.growing + '"');
       }
 
@@ -6067,11 +6107,15 @@ export async function checks() {
       };
 
       Object.keys(expectedSeasonKeywords).forEach(function(phase) {
-        var ctx = seasonContexts[phase];
-        if (!ctx || typeof ctx !== 'string') {
-          problems.push('seasonContexts["' + phase + '"] is missing or not a string — context not defined.');
+        var arr = seasonContexts[phase];
+        if (!arr || !Array.isArray(arr)) {
+          problems.push('seasonContexts["' + phase + '"] is missing or not an array — context not defined as variant array (issue #543).');
           return;
         }
+        if (arr.length < 2 || arr.length > 3) {
+          problems.push('seasonContexts["' + phase + '"] has ' + arr.length + ' variants, expected 2–3 (issue #543).');
+        }
+        var ctx = arr[0];
         var keywords = expectedSeasonKeywords[phase];
         var missingKeywords = [];
         keywords.forEach(function(kw) {
@@ -6080,7 +6124,18 @@ export async function checks() {
           }
         });
         if (missingKeywords.length > 0) {
-          problems.push('seasonContexts["' + phase + '"] = "' + ctx + '" — missing acceptance keywords: ' + missingKeywords.join(', ') + '.');
+          problems.push('seasonContexts["' + phase + '"] first variant = "' + ctx + '" — missing acceptance keywords: ' + missingKeywords.join(', ') + '.');
+        }
+        // Verify variants are unique within the phase
+        for (var vi2 = 1; vi2 < arr.length; vi2++) {
+          if (arr[vi2] === arr[0]) {
+            problems.push('seasonContexts["' + phase + '"] variant ' + vi2 + ' is identical to variant 0 — each variant must be unique (issue #543).');
+          }
+          for (var vj2 = vi2 + 1; vj2 < arr.length; vj2++) {
+            if (arr[vi2] === arr[vj2]) {
+              problems.push('seasonContexts["' + phase + '"] variant ' + vi2 + ' equals variant ' + vj2 + ' — each variant must be unique (issue #543).');
+            }
+          }
         }
       });
 
@@ -6115,13 +6170,13 @@ export async function checks() {
 
       // --- Test 1: Spring -> descriptions get season context ---
       var r1 = runSeasonWith('Spring', 'Morning', 'Clear', BASE_PLOT_SEASON, BASE_GROWING_SEASON);
-      if (r1.plot.indexOf(seasonContexts['Spring']) === -1) {
+      if (r1.plot.indexOf(seasonContexts['Spring'][0]) === -1) {
         problems.push('After updateSeasonDescription with Spring, plot-description does not contain the Spring context. Got: "' + r1.plot + '"');
       }
       if (r1.plot.indexOf(BASE_PLOT_SEASON) === -1) {
         problems.push('After updateSeasonDescription with Spring, plot-description lost base text. Got: "' + r1.plot + '"');
       }
-      if (r1.growing.indexOf(seasonContexts['Spring']) === -1) {
+      if (r1.growing.indexOf(seasonContexts['Spring'][0]) === -1) {
         problems.push('After updateSeasonDescription with Spring, growing-description does not contain the Spring context. Got: "' + r1.growing + '"');
       }
       if (r1.growing.indexOf(BASE_GROWING_SEASON) === -1) {
@@ -6130,26 +6185,26 @@ export async function checks() {
 
       // --- Test 2: Switch from Spring to Winter — stale Spring stripped, Winter added ---
       var r2 = runSeasonWith('Winter', 'Morning', 'Clear', r1.plot, r1.growing);
-      if (r2.plot.indexOf(seasonContexts['Winter']) === -1) {
+      if (r2.plot.indexOf(seasonContexts['Winter'][0]) === -1) {
         problems.push('After switching to Winter, plot-description does not contain the Winter context. Got: "' + r2.plot + '"');
       }
-      if (r2.plot.indexOf(seasonContexts['Spring']) !== -1) {
+      if (r2.plot.indexOf(seasonContexts['Spring'][0]) !== -1) {
         problems.push('After switching to Winter, plot-description still contains stale Spring context. Got: "' + r2.plot + '"');
       }
-      if (r2.growing.indexOf(seasonContexts['Winter']) === -1) {
+      if (r2.growing.indexOf(seasonContexts['Winter'][0]) === -1) {
         problems.push('After switching to Winter, growing-description does not contain the Winter context. Got: "' + r2.growing + '"');
       }
-      if (r2.growing.indexOf(seasonContexts['Spring']) !== -1) {
+      if (r2.growing.indexOf(seasonContexts['Spring'][0]) !== -1) {
         problems.push('After switching to Winter, growing-description still contains stale Spring context. Got: "' + r2.growing + '"');
       }
 
       // --- Test 3: Growing has butterfly suffix + time + weather — season context still weaves in ---
-      var withButterflySeason = BASE_GROWING_SEASON + ' ' + seasonContexts['Winter'] + ' ' + gardenState.timeContextFor('Morning') + ' ' + gardenState.weatherContextFor('Clear') + DRIFT_SUFFIX_SEASON;
+      var withButterflySeason = BASE_GROWING_SEASON + ' ' + seasonContexts['Winter'][0] + ' ' + gardenState.timeContextFor('Morning') + ' ' + gardenState.weatherContextFor('Clear') + DRIFT_SUFFIX_SEASON;
       var r3 = runSeasonWith('Summer', 'Night', 'Overcast', BASE_PLOT_SEASON, withButterflySeason);
-      if (r3.growing.indexOf(seasonContexts['Summer']) === -1) {
+      if (r3.growing.indexOf(seasonContexts['Summer'][0]) === -1) {
         problems.push('With butterfly suffix, time and weather contexts present, switching to Summer did not add its season context. Got: "' + r3.growing + '"');
       }
-      if (r3.growing.indexOf(seasonContexts['Winter']) !== -1) {
+      if (r3.growing.indexOf(seasonContexts['Winter'][0]) !== -1) {
         problems.push('With butterfly suffix, time and weather contexts present, switching to Summer did not strip stale Winter context. Got: "' + r3.growing + '"');
       }
       if (r3.growing.indexOf(DRIFT_SUFFIX_SEASON) === -1) {
@@ -6161,7 +6216,7 @@ export async function checks() {
 
       // --- Test 4: Season context, time context and weather context compose together ---
       var r4 = runSeasonWith('Autumn', 'Evening', 'Light Drizzle', BASE_PLOT_SEASON, BASE_GROWING_SEASON);
-      if (r4.plot.indexOf(seasonContexts['Autumn']) === -1) {
+      if (r4.plot.indexOf(seasonContexts['Autumn'][0]) === -1) {
         problems.push('Season+time+weather composition: plot-description missing Autumn context. Got: "' + r4.plot + '"');
       }
       if (r4.plot.indexOf(gardenState.timeContextFor('Evening')) === -1) {
@@ -6170,7 +6225,7 @@ export async function checks() {
       if (r4.plot.indexOf(gardenState.weatherContextFor('Light Drizzle')) === -1) {
         problems.push('Season+time+weather composition: plot-description missing Light Drizzle weather context. Got: "' + r4.plot + '"');
       }
-      if (r4.growing.indexOf(seasonContexts['Autumn']) === -1) {
+      if (r4.growing.indexOf(seasonContexts['Autumn'][0]) === -1) {
         problems.push('Season+time+weather composition: growing-description missing Autumn context. Got: "' + r4.growing + '"');
       }
 
@@ -6180,7 +6235,7 @@ export async function checks() {
       weatherDisplayEl.textContent = 'Overcast';
       gardenState.updateWeatherDescription();
       var afterWeather = seasonDescGrowingEl.textContent;
-      if (afterWeather.indexOf(seasonContexts['Spring']) === -1) {
+      if (afterWeather.indexOf(seasonContexts['Spring'][0]) === -1) {
         problems.push('After updateWeatherDescription, growing-description lost the Spring season context. Got: "' + afterWeather + '"');
       }
       if (afterWeather.indexOf(gardenState.weatherContextFor('Overcast')) === -1) {
@@ -6191,7 +6246,7 @@ export async function checks() {
       timeDisplayEl.textContent = 'Night';
       gardenState.updateTimeOfDayDescription();
       var afterTime = seasonDescGrowingEl.textContent;
-      if (afterTime.indexOf(seasonContexts['Spring']) === -1) {
+      if (afterTime.indexOf(seasonContexts['Spring'][0]) === -1) {
         problems.push('After updateTimeOfDayDescription, growing-description lost the Spring season context. Got: "' + afterTime + '"');
       }
       if (afterTime.indexOf(gardenState.timeContextFor('Night')) === -1) {
@@ -6214,11 +6269,11 @@ export async function checks() {
         problems.push('updateSeasonDescription() is not idempotent for growing: changed from "' + beforeRepeatGrowingSeason + '" to "' + seasonDescGrowingEl.textContent + '" on repeated calls with unchanged state.');
       }
 
-      // --- Test 7: seasonContextFor returns correct strings ---
+      // --- Test 7: seasonContextFor returns correct strings (first variant) ---
       Object.keys(expectedSeasonKeywords).forEach(function(phase) {
         var ctx = gardenState.seasonContextFor(phase);
-        if (ctx !== seasonContexts[phase]) {
-          problems.push('seasonContextFor("' + phase + '") returned "' + ctx + '", expected "' + seasonContexts[phase] + '".');
+        if (ctx !== seasonContexts[phase][0]) {
+          problems.push('seasonContextFor("' + phase + '") returned "' + ctx + '", expected "' + seasonContexts[phase][0] + '" (first variant).');
         }
       });
       var unknownSeasonCtx = gardenState.seasonContextFor('Unknown');
@@ -6226,16 +6281,21 @@ export async function checks() {
         problems.push('seasonContextFor("Unknown") returned "' + unknownSeasonCtx + '", expected empty string for unknown phase.');
       }
 
-      // --- Test 8: Every phase gets a unique non-empty context ---
+      // --- Test 8: Every phase gets a unique first variant ---
       var seenSeasonContexts = {};
       phaseOrder.forEach(function(phase) {
-        var ctx = seasonContexts[phase];
-        if (!ctx || ctx.trim().length === 0) {
+        var arr = seasonContexts[phase];
+        if (!arr || arr.length === 0) {
           problems.push('seasonContexts["' + phase + '"] is empty or missing.');
           return;
         }
+        var ctx = arr[0];
+        if (!ctx || ctx.trim().length === 0) {
+          problems.push('seasonContexts["' + phase + '"] first variant is empty.');
+          return;
+        }
         if (seenSeasonContexts[ctx]) {
-          problems.push('seasonContexts["' + phase + '"] shares the same context string as "' + seenSeasonContexts[ctx] + '" — each phase must have a unique context.');
+          problems.push('seasonContexts["' + phase + '"] first variant shares the same string as "' + seenSeasonContexts[ctx] + '" — each phase must have a unique first variant.');
         }
         seenSeasonContexts[ctx] = phase;
       });
@@ -6243,10 +6303,10 @@ export async function checks() {
       // --- Test 9: Phase transition — Spring -> Autumn swaps contexts ---
       var r9a = runSeasonWith('Spring', 'Morning', 'Clear', BASE_PLOT_SEASON, BASE_GROWING_SEASON);
       var r9b = runSeasonWith('Autumn', 'Morning', 'Clear', r9a.plot, r9a.growing);
-      if (r9b.plot.indexOf(seasonContexts['Autumn']) === -1) {
+      if (r9b.plot.indexOf(seasonContexts['Autumn'][0]) === -1) {
         problems.push('Phase transition Spring->Autumn: plot missing Autumn context. Got: "' + r9b.plot + '"');
       }
-      if (r9b.plot.indexOf(seasonContexts['Spring']) !== -1) {
+      if (r9b.plot.indexOf(seasonContexts['Spring'][0]) !== -1) {
         problems.push('Phase transition Spring->Autumn: plot still has stale Spring context. Got: "' + r9b.plot + '"');
       }
 
@@ -6682,6 +6742,164 @@ export async function checks() {
           problems.push('window.__gardenState._presencePhrases[' + i + '] is not a non-empty string — got ' + typeof phrase + ' "' + phrase + '" (issue #596).');
         }
       });
+    }
+  }
+
+  /* ---------- Variant cycling checks (issue #543) ---------- */
+  // Verify that _variantState is exposed, has the correct structure,
+  // and that timed variant rotation works correctly.
+  if (!gardenState || !gardenState._variantState) {
+    problems.push('window.__gardenState._variantState is not set — variant cycling state not exposed (issue #543).');
+  } else {
+    const vs = gardenState._variantState;
+    const requiredKeys = ['timeOfDay', 'weather', 'season'];
+    const stateKeys = ['lastPhase', 'lastChangeTime', 'variantIndex'];
+
+    requiredKeys.forEach(function(key) {
+      if (!vs[key] || typeof vs[key] !== 'object') {
+        problems.push('_variantState["' + key + '"] is missing or not an object.');
+        return;
+      }
+      stateKeys.forEach(function(sk) {
+        if (vs[key][sk] === undefined) {
+          problems.push('_variantState["' + key + '"].' + sk + ' is undefined — required variant tracking property missing.');
+        }
+      });
+    });
+
+    // Verify VARIANT_CYCLE_MS is 30000
+    if (gardenState.VARIANT_CYCLE_MS !== 30000) {
+      problems.push('gardenState.VARIANT_CYCLE_MS is ' + gardenState.VARIANT_CYCLE_MS + ', expected 30000 (30s).');
+    }
+
+    // Verify that contexts arrays have length 2-3 and variants are unique across all phases
+    var timeContexts = gardenState.timeContexts;
+    var weatherContexts = gardenState.weatherContexts;
+    var seasonContexts = gardenState.seasonContexts;
+
+    ['Morning', 'Midday', 'Evening', 'Night'].forEach(function(phase) {
+      var arr = timeContexts[phase];
+      if (arr && arr.length >= 2 && arr.length <= 3) {
+        for (var ti = 0; ti < arr.length; ti++) {
+          if (typeof arr[ti] !== 'string' || arr[ti].trim().length === 0) {
+            problems.push('timeContexts["' + phase + '"][' + ti + '] is not a non-empty string.');
+          }
+          for (var tj = ti + 1; tj < arr.length; tj++) {
+            if (arr[ti] === arr[tj]) {
+              problems.push('timeContexts["' + phase + '"] variant ' + ti + ' equals variant ' + tj + ' — each variant must be unique (issue #543).');
+            }
+          }
+        }
+      }
+    });
+
+    ['Clear', 'Overcast', 'Light Drizzle'].forEach(function(phase) {
+      var arr = weatherContexts[phase];
+      if (arr && arr.length >= 2 && arr.length <= 3) {
+        for (var ti = 0; ti < arr.length; ti++) {
+          if (typeof arr[ti] !== 'string' || arr[ti].trim().length === 0) {
+            problems.push('weatherContexts["' + phase + '"][' + ti + '] is not a non-empty string.');
+          }
+          for (var tj = ti + 1; tj < arr.length; tj++) {
+            if (arr[ti] === arr[tj]) {
+              problems.push('weatherContexts["' + phase + '"] variant ' + ti + ' equals variant ' + tj + ' — each variant must be unique (issue #543).');
+            }
+          }
+        }
+      }
+    });
+
+    ['Spring', 'Summer', 'Autumn', 'Winter'].forEach(function(phase) {
+      var arr = seasonContexts[phase];
+      if (arr && arr.length >= 2 && arr.length <= 3) {
+        for (var ti = 0; ti < arr.length; ti++) {
+          if (typeof arr[ti] !== 'string' || arr[ti].trim().length === 0) {
+            problems.push('seasonContexts["' + phase + '"][' + ti + '] is not a non-empty string.');
+          }
+          for (var tj = ti + 1; tj < arr.length; tj++) {
+            if (arr[ti] === arr[tj]) {
+              problems.push('seasonContexts["' + phase + '"] variant ' + ti + ' equals variant ' + tj + ' — each variant must be unique (issue #543).');
+            }
+          }
+        }
+      }
+    });
+
+    // Test timed cycling: set variant state timestamps to simulate 35s of stability,
+    // then call updateTimeOfDayDescription and verify variant 1 is used.
+    var origSeasonText = document.getElementById('season-display') ? document.getElementById('season-display').textContent : '';
+    var origTimeText = document.getElementById('time-display') ? document.getElementById('time-display').textContent : '';
+    var origWeatherText = document.getElementById('weather-display') ? document.getElementById('weather-display').textContent : '';
+
+    try {
+      document.getElementById('time-display').textContent = 'Morning';
+      document.getElementById('weather-display').textContent = 'Clear';
+      document.getElementById('season-display').textContent = 'Summer';
+
+      var vsTime = vs.timeOfDay;
+      vsTime.lastPhase = 'Morning';
+      vsTime.variantIndex = 0;
+      vsTime.lastChangeTime = performance.now() - 35000; // 35s ago, past the 30s threshold
+
+      var plotEl = document.getElementById('plot-description');
+      var growingEl = document.getElementById('growing-description');
+      var origPlotText = plotEl.textContent;
+      var origGrowingText = growingEl.textContent;
+
+      plotEl.textContent = 'A young seedling rises.';
+      growingEl.textContent = 'A young seedling rises.';
+
+      gardenState.updateTimeOfDayDescription();
+
+      var morningVariants = gardenState.timeContexts['Morning'];
+      var expectedVariant1 = morningVariants[1];
+      var plotText = plotEl.textContent;
+
+      if (plotText.indexOf(expectedVariant1) === -1) {
+        var expectedVariant0 = morningVariants[0];
+        if (plotText.indexOf(expectedVariant0) !== -1) {
+          problems.push('Variant cycling test: after 35s stable Morning, timeOfDay context used variant 0 instead of variant 1 — cycling did not advance (issue #543).');
+        } else if (plotText.indexOf(morningVariants[0]) === -1 && plotText.indexOf(morningVariants[1]) === -1) {
+          problems.push('Variant cycling test: plot text "' + plotText + '" does not contain any Morning variant (issue #543).');
+        }
+      }
+
+      // Restore original descriptions
+      plotEl.textContent = origPlotText;
+      growingEl.textContent = origGrowingText;
+
+      // Reset variant state to prevent real cycling from kicking in
+      vsTime.lastChangeTime = performance.now();
+      vsTime.lastPhase = 'Morning';
+      vsTime.variantIndex = 0;
+      vs.weather.lastChangeTime = performance.now();
+      vs.weather.lastPhase = 'Clear';
+      vs.weather.variantIndex = 0;
+      vs.season.lastChangeTime = performance.now();
+      vs.season.lastPhase = 'Summer';
+      vs.season.variantIndex = 0;
+
+    } finally {
+      // Restore original DOM displays
+      if (document.getElementById('time-display')) {
+        document.getElementById('time-display').textContent = origTimeText;
+      }
+      if (document.getElementById('weather-display')) {
+        document.getElementById('weather-display').textContent = origWeatherText;
+      }
+      if (document.getElementById('season-display')) {
+        document.getElementById('season-display').textContent = origSeasonText;
+      }
+      // Re-run updates with restored state
+      if (typeof gardenState.updateSeasonDescription === 'function') {
+        gardenState.updateSeasonDescription();
+      }
+      if (typeof gardenState.updateTimeOfDayDescription === 'function') {
+        gardenState.updateTimeOfDayDescription();
+      }
+      if (typeof gardenState.updateWeatherDescription === 'function') {
+        gardenState.updateWeatherDescription();
+      }
     }
   }
 

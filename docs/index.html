@@ -490,21 +490,64 @@
      * composing with weather and butterfly layers.
      */
     const TIME_OF_DAY_CONTEXTS = {
-      'Morning': 'Soft awakening light spreads across the garden, the air gentle and warm.',
-      'Midday': 'Bright clear light fills the garden, the sun warm and steady overhead.',
-      'Evening': 'Golden tones settling across the garden as the light mellows toward dusk.',
-      'Night': 'Darkness and deep quiet hold the garden, lit by stars and firefly glow.'
+      'Morning': [
+        'Soft awakening light spreads across the garden, the air gentle and warm.',
+        'A gentle morning light reaches across the garden, carrying the quiet warmth of dawn.',
+        'The first soft light of day settles into the garden, bringing a calm warmth.'
+      ],
+      'Midday': [
+        'Bright clear light fills the garden, the sun warm and steady overhead.',
+        'The midday sun rests high overhead, its steady warmth filling the garden with light.',
+        'Clear, bright light pours across the garden, the sun\'s warmth settled in the air.'
+      ],
+      'Evening': [
+        'Golden tones settling across the garden as the light mellows toward dusk.',
+        'Warm golden light softens across the garden, fading gently toward evening.',
+        'The light turns golden and low, casting long shadows across the quiet garden.'
+      ],
+      'Night': [
+        'Darkness and deep quiet hold the garden, lit by stars and firefly glow.',
+        'The garden rests in deep darkness, lit only by distant stars and small glimmers.',
+        'Quiet night holds the garden, the darkness lit by scattered starlight and tiny firefly sparks.'
+      ]
     };
 
-    const TIME_OF_DAY_CONTEXT_STRINGS = Object.values(TIME_OF_DAY_CONTEXTS);
+    const TIME_OF_DAY_CONTEXT_STRINGS = Object.values(TIME_OF_DAY_CONTEXTS).flat();
+
+    /* Variant cycling state for when context phases remain stable (issue #543) */
+    const VARIANT_CYCLE_MS = 30000;
+
+    const _variantState = {
+      timeOfDay: { lastPhase: '', lastChangeTime: performance.now(), variantIndex: 0 },
+      weather: { lastPhase: '', lastChangeTime: performance.now(), variantIndex: 0 },
+      season: { lastPhase: '', lastChangeTime: performance.now(), variantIndex: 0 }
+    };
 
     function timeContextFor(phase) {
-      return TIME_OF_DAY_CONTEXTS[phase] || '';
+      const contexts = TIME_OF_DAY_CONTEXTS[phase];
+      return contexts ? contexts[0] : '';
     }
 
     function chooseTimeOfDayContext() {
       const phase = (document.getElementById('time-display')?.textContent || '').trim();
-      return timeContextFor(phase);
+      const contexts = TIME_OF_DAY_CONTEXTS[phase];
+      if (!contexts || contexts.length === 0) return '';
+
+      const state = _variantState.timeOfDay;
+      const now = performance.now();
+
+      if (phase !== state.lastPhase) {
+        state.lastPhase = phase;
+        state.lastChangeTime = now;
+        state.variantIndex = 0;
+      } else {
+        if (now - state.lastChangeTime >= VARIANT_CYCLE_MS) {
+          state.variantIndex = (state.variantIndex + 1) % contexts.length;
+          state.lastChangeTime = now;
+        }
+      }
+
+      return contexts[state.variantIndex];
     }
 
     /* Weather-aware description contexts (issue #492).
@@ -512,20 +555,50 @@
      * the plot and growing descriptions without replacing the base text.
      */
     const WEATHER_CONTEXTS = {
-      'Clear': 'Clear skies and warm air hold the garden in bright, untroubled light.',
-      'Overcast': 'Soft grey light settles over the garden, its colours muted and calm.',
-      'Light Drizzle': 'Gentle rain falls over the garden, leaving the air fresh and clean.'
+      'Clear': [
+        'Clear skies and warm air hold the garden in bright, untroubled light.',
+        'The sky is open and clear, the garden bathed in still, unwavering light.',
+        'Bright, untroubled skies stretch above the garden, the air calm and clear.'
+      ],
+      'Overcast': [
+        'Soft grey light settles over the garden, its colours muted and calm.',
+        'A gentle veil of cloud softens the light, the garden\'s colours hushed and still.',
+        'The sky is a muted grey, its light diffused softly across the garden.'
+      ],
+      'Light Drizzle': [
+        'Gentle rain falls over the garden, leaving the air fresh and clean.',
+        'A fine, soft rain drifts across the garden, the air washed and cool.',
+        'Light rain settles gently over the garden, the scent of damp earth rising in the air.'
+      ]
     };
 
-    const WEATHER_CONTEXT_STRINGS = Object.values(WEATHER_CONTEXTS);
+    const WEATHER_CONTEXT_STRINGS = Object.values(WEATHER_CONTEXTS).flat();
 
     function weatherContextFor(phase) {
-      return WEATHER_CONTEXTS[phase] || '';
+      const contexts = WEATHER_CONTEXTS[phase];
+      return contexts ? contexts[0] : '';
     }
 
     function chooseWeatherContext() {
       const phase = (document.getElementById('weather-display')?.textContent || '').trim();
-      return weatherContextFor(phase);
+      const contexts = WEATHER_CONTEXTS[phase];
+      if (!contexts || contexts.length === 0) return '';
+
+      const state = _variantState.weather;
+      const now = performance.now();
+
+      if (phase !== state.lastPhase) {
+        state.lastPhase = phase;
+        state.lastChangeTime = now;
+        state.variantIndex = 0;
+      } else {
+        if (now - state.lastChangeTime >= VARIANT_CYCLE_MS) {
+          state.variantIndex = (state.variantIndex + 1) % contexts.length;
+          state.lastChangeTime = now;
+        }
+      }
+
+      return contexts[state.variantIndex];
     }
 
     /* Season-aware description contexts (issue #494).
@@ -534,21 +607,55 @@
      * composing with time, weather and butterfly layers.
      */
     const SEASON_CONTEXTS = {
-      'Spring': 'New growth pushes up through the soil, fresh green stems emerging in the soft air.',
-      'Summer': 'The garden stands lush and full, leaves rich with deep summer warmth.',
-      'Autumn': 'Golden and brown tones spread through the garden as leaves fall and quiet decline settles in.',
-      'Winter': 'Bare stems stand dormant in the stillness, the garden hushed beneath a light frost.'
+      'Spring': [
+        'New growth pushes up through the soil, fresh green stems emerging in the soft air.',
+        'The garden stirs with fresh growth, pale green shoots reaching up through the soil.',
+        'Tender green stems rise from the earth, the garden filling with the energy of spring.'
+      ],
+      'Summer': [
+        'The garden stands lush and full, leaves rich with deep summer warmth.',
+        'Deep summer warmth fills the garden, the leaves rich and full in the still air.',
+        'The garden is dense and green, heavy with the heat and abundance of summer.'
+      ],
+      'Autumn': [
+        'Golden and brown tones spread through the garden as leaves fall and quiet decline settles in.',
+        'The garden fades through shades of gold and brown, fallen leaves gathering on the soil.',
+        'Warm browns and golds mark the season\'s turning, leaves drifting down in the quiet air.'
+      ],
+      'Winter': [
+        'Bare stems stand dormant in the stillness, the garden hushed beneath a light frost.',
+        'The garden rests in winter\'s stillness, bare branches outlined against the pale frost.',
+        'A pale frost settles over the dormant garden, the air cold and completely still.'
+      ]
     };
 
-    const SEASON_CONTEXT_STRINGS = Object.values(SEASON_CONTEXTS);
+    const SEASON_CONTEXT_STRINGS = Object.values(SEASON_CONTEXTS).flat();
 
     function seasonContextFor(phase) {
-      return SEASON_CONTEXTS[phase] || '';
+      const contexts = SEASON_CONTEXTS[phase];
+      return contexts ? contexts[0] : '';
     }
 
     function chooseSeasonContext() {
       const phase = (document.getElementById('season-display')?.textContent || '').trim();
-      return seasonContextFor(phase);
+      const contexts = SEASON_CONTEXTS[phase];
+      if (!contexts || contexts.length === 0) return '';
+
+      const state = _variantState.season;
+      const now = performance.now();
+
+      if (phase !== state.lastPhase) {
+        state.lastPhase = phase;
+        state.lastChangeTime = now;
+        state.variantIndex = 0;
+      } else {
+        if (now - state.lastChangeTime >= VARIANT_CYCLE_MS) {
+          state.variantIndex = (state.variantIndex + 1) % contexts.length;
+          state.lastChangeTime = now;
+        }
+      }
+
+      return contexts[state.variantIndex];
     }
 
     /* Shared suffix-stripping helper: removes any suffix found in the list
@@ -843,7 +950,10 @@
       _acknowledgmentCooldown: ACKNOWLEDGMENT_COOLDOWN_MS,
       _stillnessThreshold: STILLNESS_THRESHOLD_MS,
       /* Periodic visitor presence acknowledgment (issue #596) */
-      _presencePhrases: PRESENCE_PHRASES
+      _presencePhrases: PRESENCE_PHRASES,
+      /* Variant cycling state (issue #543) */
+      _variantState: _variantState,
+      VARIANT_CYCLE_MS: VARIANT_CYCLE_MS
     };
 
     /* --- Persistence: restore previous state if available --- */
