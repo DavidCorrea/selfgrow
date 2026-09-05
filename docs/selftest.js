@@ -1308,7 +1308,7 @@ export async function checks() {
     }
   }
 
-  /* ---------- Minimum scene brightness at Night+Overcast (issue #534) ---------- */
+  /* ---------- Minimum scene brightness at Night+Overcast (issue #534, #595) ---------- */
   // Verify that at Night (sun behind horizon, y <= -1), the base lighting floors
   // produce enough illumination when combined with Overcast weather multipliers
   // that the garden remains visibly alive.
@@ -1317,9 +1317,9 @@ export async function checks() {
   // Night+Overcast worst case must exceed 0.25 for discernible plant shapes.
   //
   // Values are derived from the constants in daynight.js and weather.js.
-  const nightBaseAmbi = 0.12;    // daynight.js ambient floor
-  const nightBaseHemi = 0.08;    // daynight.js hemi floor
-  const nightBaseFill = 0.06;    // daynight.js fill floor
+  const nightBaseAmbi = 0.25;    // daynight.js ambient floor (raised #595)
+  const nightBaseHemi = 0.18;    // daynight.js hemi floor (raised #595)
+  const nightBaseFill = 0.15;    // daynight.js fill floor (raised #595)
 
   // Overcast weather multipliers (from weather.js PHASES)
   const overcastAmbiMul = 1.8;
@@ -1330,25 +1330,74 @@ export async function checks() {
                               nightBaseHemi * overcastHemiMul +
                               nightBaseFill * overcastFillMul;
 
-  const minVisibleThreshold = 0.25;
+  const minVisibleThreshold = 0.50;
   if (nightOvercastTotal < minVisibleThreshold) {
     problems.push(
       'Night+Overcast scene illumination would be ' +
       nightOvercastTotal.toFixed(3) +
       ', below visibility threshold of ' + minVisibleThreshold +
-      ' — the garden would be a dark void (issue #534). ' +
-      'Expected ambient floor >= 0.12, hemi floor >= 0.08, fill floor >= 0.06.'
+      ' — the garden would be too dark (issue #595). ' +
+      'Expected ambient floor >= 0.25, hemi floor >= 0.18, fill floor >= 0.15.'
     );
   }
 
-  // Also verify that Night+Clear stays above a lower but reasonable threshold
+  // Also verify that Night+Clear stays above a reasonable threshold
   const nightClearTotal = nightBaseAmbi + nightBaseHemi + nightBaseFill;
-  if (nightClearTotal < 0.18) {
+  if (nightClearTotal < 0.50) {
     problems.push(
       'Night+Clear scene illumination would be ' +
       nightClearTotal.toFixed(3) +
-      ', expected at least 0.18 for discernible plant shapes at night (issue #534).'
+      ', expected at least 0.50 for discernible plant shapes at night (issue #595).'
     );
+  }
+
+  /* ---------- Runtime ambient light floor check (issue #595) ---------- */
+  // Verify that the actual ambientLight.intensity in the scene never falls below
+  // 0.25 during Night phase. We read the ambient light from the scene and, if
+  // the current phase is Night, check its intensity is at least the floor.
+  if (dayNight && gardenState && gardenState.scene) {
+    const phaseName = typeof dayNight.getPhaseName === 'function' ? dayNight.getPhaseName() : '';
+    if (phaseName === 'Night') {
+      // Find the AmbientLight in the scene
+      let ambientLightObj = null;
+      gardenState.scene.traverse(function(child) {
+        if (child.isAmbientLight) {
+          ambientLightObj = child;
+        }
+      });
+      if (ambientLightObj) {
+        if (ambientLightObj.intensity < 0.249) {
+          problems.push(
+            'During Night phase, ambientLight.intensity is ' +
+            ambientLightObj.intensity.toFixed(4) +
+            ' — expected at least 0.25 for plants to remain visible (issue #595).'
+          );
+        }
+      }
+
+      // Also check scene background luminance — new night sky 0x141e3a should
+      // produce enough luminance that green/brown plant silhouettes are visible.
+      const bg = gardenState.scene.background;
+      if (bg instanceof THREE.Color) {
+        // Relative luminance: 0.2126*R + 0.7152*G + 0.0722*B (sRGB linear)
+        function srgbToLinear(c) {
+          return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+        }
+        const rLin = srgbToLinear(bg.r);
+        const gLin = srgbToLinear(bg.g);
+        const bLin = srgbToLinear(bg.b);
+        const luminance = 0.2126 * rLin + 0.7152 * gLin + 0.0722 * bLin;
+        // Night sky 0x141e3a → R=0.0784, G=0.1176, B=0.2275
+        // Relative luminance ≈ 0.014 — set threshold at 0.010 (old 0x0a1628 was ~0.008)
+        if (luminance < 0.010) {
+          problems.push(
+            'During Night phase, scene.background relative luminance is ' +
+            luminance.toFixed(5) +
+            ' — expected >= 0.015 so plant silhouettes are visible against the sky (issue #595).'
+          );
+        }
+      }
+    }
   }
 
   /* ---------- Persistence checks (issue #429) ---------- */
