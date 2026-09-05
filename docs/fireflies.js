@@ -138,7 +138,11 @@ export function createFireflies(scene) {
         baseX: baseX,
         baseY: baseY,
         baseZ: baseZ,
-        sizeBase: sizes[i]
+        sizeBase: sizes[i],
+        /* --- Butterfly proximity glow boost (issue #599) --- */
+        glowBoostTimer: 0,          // seconds remaining of boost
+        glowBoostAmount: 0,         // boost fraction (0.20-0.30, 0 = none)
+        glowBoostDuration: 0        // total duration of the boost (1.5-2.0s)
       });
     }
 
@@ -215,6 +219,33 @@ export function createFireflies(scene) {
     dotsPerSeason: DOTS_PER_SEASON,
     /** How far fireflies rise above leaf height during full night */
     liftHeight: LIFT_HEIGHT,
+    /** Butterfly proximity glow boost state: returns array of {boostTimer, boostAmount, boostDuration} per dot across all groups */
+    getBoostState: function() {
+      var boosts = [];
+      for (var gi = 0; gi < plantGroups.length; gi++) {
+        for (var di = 0; di < plantGroups[gi].dotData.length; di++) {
+          var dd = plantGroups[gi].dotData[di];
+          boosts.push({
+            boostTimer: dd.glowBoostTimer,
+            boostAmount: dd.glowBoostAmount,
+            boostDuration: dd.glowBoostDuration
+          });
+        }
+      }
+      return boosts;
+    },
+    /** Total number of dots currently with active glow boost (boostTimer > 0) */
+    activeBoostCount: function() {
+      var count = 0;
+      for (var gi = 0; gi < plantGroups.length; gi++) {
+        for (var di = 0; di < plantGroups[gi].dotData.length; di++) {
+          if (plantGroups[gi].dotData[di].glowBoostTimer > 0) {
+            count++;
+          }
+        }
+      }
+      return count;
+    },
     /** Current weather opacity multiplier (lerping toward target) */
     currentWeatherMul: function() { return currentWeatherMul; },
     /** Current seasonal opacity multiplier (lerping toward target) */
@@ -363,6 +394,43 @@ export function createFireflies(scene) {
           const sizeMul = 0.5 + pulse * 0.5;
           sizes[i] = dd.sizeBase * sizeMul;
 
+          /* --- Butterfly proximity glow boost (issue #599) --- */
+          // Detect butterfly proximity only during Night phase (t >= 0.75)
+          if (t >= 0.75 && t < 1.0) {
+            const creature = window.__gardenState && window.__gardenState.creature;
+            if (creature && creature.group) {
+              const bx = creature.group.position.x;
+              const by = creature.group.position.y;
+              const bz = creature.group.position.z;
+              const dx = pos[i3] - bx;
+              const dy = pos[i3 + 1] - by;
+              const dz = pos[i3 + 2] - bz;
+              const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+              if (dist <= 0.5) {
+                // Trigger boost when butterfly is within threshold
+                if (dd.glowBoostTimer <= 0) {
+                  // Start a new boost: random 20-30% for 1.5-2.0 seconds
+                  dd.glowBoostAmount = 0.20 + Math.random() * 0.10;
+                  dd.glowBoostDuration = 1.5 + Math.random() * 0.5;
+                  dd.glowBoostTimer = dd.glowBoostDuration;
+                }
+              }
+            }
+          }
+
+          /* --- Decay glow boost timer and apply boost to size --- */
+          if (dd.glowBoostTimer > 0) {
+            dd.glowBoostTimer -= dt;
+            if (dd.glowBoostTimer <= 0) {
+              dd.glowBoostTimer = 0;
+              dd.glowBoostAmount = 0;
+            } else {
+              // Linear decay: boost factor = 1 + amount * (remaining / duration)
+              const boostFactor = 1 + dd.glowBoostAmount * (dd.glowBoostTimer / dd.glowBoostDuration);
+              sizes[i] *= boostFactor;
+            }
+          }
+
           /* --- Drifting: slow sine-based movement within DRIFT_RADIUS --- */
           const driftX = Math.sin(time * DRIFT_FREQ + dd.driftPhase) * DRIFT_RADIUS * 0.6;
           const driftZ = Math.cos(time * DRIFT_FREQ * 0.9 + dd.driftAngle) * DRIFT_RADIUS * 0.6;
@@ -378,6 +446,38 @@ export function createFireflies(scene) {
           pos[i3] = dd.baseX;
           pos[i3 + 1] = dd.baseY;
           pos[i3 + 2] = dd.baseZ;
+
+          /* --- Butterfly proximity glow boost (issue #599) — also active in reduced motion --- */
+          if (t >= 0.75 && t < 1.0) {
+            const creature = window.__gardenState && window.__gardenState.creature;
+            if (creature && creature.group) {
+              const bx = creature.group.position.x;
+              const by = creature.group.position.y;
+              const bz = creature.group.position.z;
+              const dx = pos[i3] - bx;
+              const dy = pos[i3 + 1] - by;
+              const dz = pos[i3 + 2] - bz;
+              const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+              if (dist <= 0.5) {
+                if (dd.glowBoostTimer <= 0) {
+                  dd.glowBoostAmount = 0.20 + Math.random() * 0.10;
+                  dd.glowBoostDuration = 1.5 + Math.random() * 0.5;
+                  dd.glowBoostTimer = dd.glowBoostDuration;
+                }
+              }
+            }
+          }
+
+          if (dd.glowBoostTimer > 0) {
+            dd.glowBoostTimer -= dt;
+            if (dd.glowBoostTimer <= 0) {
+              dd.glowBoostTimer = 0;
+              dd.glowBoostAmount = 0;
+            } else {
+              const boostFactor = 1 + dd.glowBoostAmount * (dd.glowBoostTimer / dd.glowBoostDuration);
+              sizes[i] *= boostFactor;
+            }
+          }
         }
       }
 
