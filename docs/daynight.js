@@ -30,7 +30,7 @@ const SKY_STOPS = [
   { t: 0.00, color: new THREE.Color(0xf4a460) },  // sunrise warm
   { t: 0.25, color: new THREE.Color(0x87ceeb) },  // midday blue
   { t: 0.50, color: new THREE.Color(0xe8755a) },  // sunset orange
-  { t: 0.75, color: new THREE.Color(0x0a1628) },  // deep night indigo
+  { t: 0.75, color: new THREE.Color(0x141e3a) },  // deep night indigo
   { t: 1.00, color: new THREE.Color(0xf4a460) }   // back to sunrise
 ];
 
@@ -185,19 +185,19 @@ export function startDayNightCycle(sunLight, scene, ambientLight, hemiLight, fil
       sunLight.color.copy(sunBaseColor);
     }
 
-    /* --- Ambient light: dim at night --- */
-    const ambientIntensity = 0.12 + THREE.MathUtils.clamp((y + 1) / 9, 0, 1) * 0.28;
+    /* --- Ambient light: dim at night, with floor so plants stay visible --- */
+    const ambientIntensity = 0.25 + THREE.MathUtils.clamp((y + 1) / 9, 0, 1) * 0.28;
     ambientLight.intensity = ambientIntensity;
 
     /* --- Hemisphere light: sky/ground blend follows sky colour --- */
     // Use the sky colour for the hemisphere sky
     hemiLight.color.copy(skyColor).multiplyScalar(0.6);
     hemiLight.groundColor.set(0x3a2a1a).lerp(new THREE.Color(0x1a1a0a), THREE.MathUtils.clamp(1 - (y + 1) / 9, 0, 1));
-    const hemiIntensity = 0.08 + THREE.MathUtils.clamp((y + 1) / 9, 0, 1) * 0.42;
+    const hemiIntensity = 0.18 + THREE.MathUtils.clamp((y + 1) / 9, 0, 1) * 0.42;
     hemiLight.intensity = hemiIntensity;
 
     /* --- Fill light: subtle, even dimmer at night --- */
-    const fillIntensity = 0.06 + THREE.MathUtils.clamp((y + 1) / 9, 0, 1) * 0.24;
+    const fillIntensity = 0.15 + THREE.MathUtils.clamp((y + 1) / 9, 0, 1) * 0.24;
     fillLight.intensity = fillIntensity;
     // Shift fill colour toward cool blue at night
     fillLight.color.copy(fillBaseColor).lerp(new THREE.Color(0x445588), THREE.MathUtils.clamp(1 - (y + 1) / 9, 0, 0.6));
