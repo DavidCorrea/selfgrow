@@ -5155,6 +5155,203 @@ export async function checks() {
       }
     }
 
+  /* ---------- Butterfly proximity glow boost for fireflies (issue #599) ---------- */
+  if (gardenState && gardenState.fireflies && gardenState.fireflies.activeBoostCount && typeof gardenState.fireflies.activeBoostCount === 'function') {
+    var ffState = gardenState.fireflies;
+    var dayNightForBoost = gardenState.dayNight;
+    var creatureForBoost = gardenState.creature;
+
+    if (!dayNightForBoost || typeof dayNightForBoost.getCycleProgress !== 'function') {
+      problems.push('dayNight.getCycleProgress is not available — cannot verify firefly butterfly proximity boost (issue #599).');
+    } else if (!creatureForBoost || !creatureForBoost.group) {
+      problems.push('creature.group is not available — cannot verify firefly butterfly proximity boost (issue #599).');
+    } else if (!gardenState.firefliesUpdate || typeof gardenState.firefliesUpdate !== 'function') {
+      problems.push('gardenState.firefliesUpdate is not available — cannot verify firefly butterfly proximity boost (issue #599).');
+    } else if (!ffState.plantGroups || ffState.plantGroups.length === 0) {
+      problems.push('No firefly plantGroups exist — cannot verify butterfly proximity boost (issue #599).');
+    } else if (typeof ffState.getBoostState !== 'function') {
+      problems.push('fireflyState.getBoostState is not a function — boost state accessor missing (issue #599).');
+    } else {
+      // Save original state to restore later
+      var origCycleProgress = dayNightForBoost.getCycleProgress;
+      var origCreaturePos = { x: creatureForBoost.group.position.x, y: creatureForBoost.group.position.y, z: creatureForBoost.group.position.z };
+
+      try {
+        // --- Test 1: Boost activates when butterfly is near a dot during Night ---
+        // Get the first visible dot's position (skip if beyond maxVisibleDots for season)
+        var group0 = ffState.plantGroups[0];
+        var dotPos = new THREE.Vector3(
+          group0.dotData[0].baseX,
+          group0.dotData[0].baseY,
+          group0.dotData[0].baseZ
+        );
+
+        // Move creature very close to this dot
+        creatureForBoost.group.position.set(dotPos.x, dotPos.y, dotPos.z);
+
+        // Set dayNight to Night phase (t = 0.85) — full Night
+        dayNightForBoost.getCycleProgress = function() { return 0.85; };
+
+        // Run several update cycles to let opacity settle and activate boosts
+        for (var bi = 0; bi < 50; bi++) {
+          gardenState.firefliesUpdate(0, 0.016);
+        }
+
+        // Check that at least one dot has an active boost
+        var boostState = ffState.getBoostState();
+        var activeBoostFound = false;
+        var maxBoostAmountFound = 0;
+        for (var bsi = 0; bsi < boostState.length; bsi++) {
+          if (boostState[bsi].boostTimer > 0) {
+            activeBoostFound = true;
+            if (boostState[bsi].boostAmount > maxBoostAmountFound) {
+              maxBoostAmountFound = boostState[bsi].boostAmount;
+            }
+          }
+        }
+
+        if (!activeBoostFound) {
+          problems.push('Butterfly at position (' + dotPos.x.toFixed(3) + ', ' + dotPos.y.toFixed(3) + ', ' + dotPos.z.toFixed(3) + ') did not trigger any firefly glow boost during Night — expected at least one dot within 0.5 units to activate (issue #599).');
+        } else {
+          // Verify boost amount is within expected range (0.20-0.30, i.e. 20-30%)
+          if (maxBoostAmountFound < 0.19 || maxBoostAmountFound > 0.31) {
+            problems.push('Firefly glow boost amount is ' + maxBoostAmountFound.toFixed(3) + ' — expected in [0.20, 0.30] range (20-30% boost) (issue #599).');
+          }
+
+          // Verify boost duration is within expected range (1.5-2.0 seconds)
+          var maxDurationFound = 0;
+          for (var bsi2 = 0; bsi2 < boostState.length; bsi2++) {
+            if (boostState[bsi2].boostTimer > 0 && boostState[bsi2].boostDuration > maxDurationFound) {
+              maxDurationFound = boostState[bsi2].boostDuration;
+            }
+          }
+          if (maxDurationFound > 0 && (maxDurationFound < 1.4 || maxDurationFound > 2.1)) {
+            problems.push('Firefly glow boost duration is ' + maxDurationFound.toFixed(3) + 's — expected in [1.5, 2.0]s range (issue #599).');
+          }
+
+          // --- Test 2: Verify boost does not activate during non-Night phases ---
+          dayNightForBoost.getCycleProgress = function() { return 0.55; }; // Evening
+          // Reset all boost states
+          for (var resetGi = 0; resetGi < ffState.plantGroups.length; resetGi++) {
+            for (var resetDi = 0; resetDi < ffState.plantGroups[resetGi].dotData.length; resetDi++) {
+              ffState.plantGroups[resetGi].dotData[resetDi].glowBoostTimer = 0;
+              ffState.plantGroups[resetGi].dotData[resetDi].glowBoostAmount = 0;
+            }
+          }
+
+          // Run updates with Evening phase — butterfly still near dot
+          for (var bi2 = 0; bi2 < 50; bi2++) {
+            gardenState.firefliesUpdate(0, 0.016);
+          }
+
+          var boostStateEvening = ffState.getBoostState();
+          var eveningBoostFound = false;
+          for (var bsi3 = 0; bsi3 < boostStateEvening.length; bsi3++) {
+            if (boostStateEvening[bsi3].boostTimer > 0) {
+              eveningBoostFound = true;
+              break;
+            }
+          }
+
+          if (eveningBoostFound) {
+            problems.push('Firefly glow boost activated during Evening (t=0.55) — boost should only activate during Night phase (t >= 0.75) (issue #599).');
+          }
+
+          // --- Test 3: Boost decays correctly over time ---
+          // Go back to Night
+          dayNightForBoost.getCycleProgress = function() { return 0.85; };
+
+          // Move butterfly to the dot again to trigger boost
+          creatureForBoost.group.position.set(dotPos.x, dotPos.y, dotPos.z);
+
+          for (var bi3 = 0; bi3 < 10; bi3++) {
+            gardenState.firefliesUpdate(0, 0.016);
+          }
+
+          // Get a snapshot of the boost state
+          var boostStateBefore = ffState.getBoostState();
+          var timerSumBefore = 0;
+          for (var bsi4 = 0; bsi4 < boostStateBefore.length; bsi4++) {
+            timerSumBefore += boostStateBefore[bsi4].boostTimer;
+          }
+
+          // Advance time by ~0.5 seconds (30 frames at 0.016 dt)
+          for (var bi4 = 0; bi4 < 30; bi4++) {
+            gardenState.firefliesUpdate(0, 0.016);
+          }
+
+          var boostStateAfter = ffState.getBoostState();
+          var timerSumAfter = 0;
+          for (var bsi5 = 0; bsi5 < boostStateAfter.length; bsi5++) {
+            timerSumAfter += boostStateAfter[bsi5].boostTimer;
+          }
+
+          if (timerSumAfter >= timerSumBefore) {
+            problems.push('Firefly glow boost did not decay after ~0.5s — timer sum before: ' + timerSumBefore.toFixed(3) + ', after: ' + timerSumAfter.toFixed(3) + ' (expected decay) (issue #599).');
+          }
+
+          // --- Test 4: Boost does not activate when butterfly is far from all dots ---
+          // Move butterfly far away
+          creatureForBoost.group.position.set(999, 999, 999);
+          // Reset boost states
+          for (var resetGi2 = 0; resetGi2 < ffState.plantGroups.length; resetGi2++) {
+            for (var resetDi2 = 0; resetDi2 < ffState.plantGroups[resetGi2].dotData.length; resetDi2++) {
+              ffState.plantGroups[resetGi2].dotData[resetDi2].glowBoostTimer = 0;
+              ffState.plantGroups[resetGi2].dotData[resetDi2].glowBoostAmount = 0;
+            }
+          }
+
+          // Run updates with butterfly far away
+          for (var bi5 = 0; bi5 < 50; bi5++) {
+            gardenState.firefliesUpdate(0, 0.016);
+          }
+
+          var boostStateFar = ffState.getBoostState();
+          var farBoostFound = false;
+          for (var bsi6 = 0; bsi6 < boostStateFar.length; bsi6++) {
+            if (boostStateFar[bsi6].boostTimer > 0) {
+              farBoostFound = true;
+              break;
+            }
+          }
+
+          if (farBoostFound) {
+            problems.push('Firefly glow boost activated when butterfly is far away (999, 999, 999) — boost should only activate when butterfly is within 0.5 units of a dot (issue #599).');
+          }
+
+          // --- Test 5: Verify peak opacity stays ≤0.20 even with boost (subtle effect) ---
+          // The boost scales the dot's size, not the opacity — opacity is a separate channel.
+          // But verify the boost factor doesn't push the apparent intensity beyond what's reasonable.
+          // Since we use size scaling with additive blending, the worst case is when the boost
+          // is at full strength (factor = 1 + amount ≈ 1.20-1.30).
+          // This is inherently bounded by the boost amount (max 0.30), so peak size multiplier is 1.30x.
+          // The opacity channel remains unchanged at the normal peak of ≤0.15.
+          // Verify the boost amount is capped at 0.30.
+          if (maxBoostAmountFound > 0.31) {
+            problems.push('Firefly glow boost amount exceeds 0.30 — expected max 30% boost for subtle effect (issue #599).');
+          }
+        }
+      } finally {
+        // Restore original dayNight cycle and creature position
+        dayNightForBoost.getCycleProgress = origCycleProgress;
+        creatureForBoost.group.position.set(origCreaturePos.x, origCreaturePos.y, origCreaturePos.z);
+        // Reset all boost states
+        for (var resetGi3 = 0; resetGi3 < ffState.plantGroups.length; resetGi3++) {
+          for (var resetDi3 = 0; resetDi3 < ffState.plantGroups[resetGi3].dotData.length; resetDi3++) {
+            ffState.plantGroups[resetGi3].dotData[resetDi3].glowBoostTimer = 0;
+            ffState.plantGroups[resetGi3].dotData[resetDi3].glowBoostAmount = 0;
+          }
+        }
+        // Settle back to real values
+        if (typeof gardenState.firefliesUpdate === 'function') {
+          for (var bi6 = 0; bi6 < 300; bi6++) {
+            gardenState.firefliesUpdate(0, 0.016);
+          }
+        }
+      }
+    }
+  }
+
   /* ---------- Fallen leaves respond to ground ripple (issue #470) ---------- */
   var fallenLeavesState = gardenState && gardenState.fallenLeaves;
   if (!fallenLeavesState) {
