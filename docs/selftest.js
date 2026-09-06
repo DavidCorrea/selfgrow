@@ -5269,6 +5269,121 @@ export async function checks() {
     }
   }
 
+  /* ---------- Firefly seasonal ramp checks (issue #623) ---------- */
+  // Verify gradual firefly emergence in Spring and fade in Autumn
+  if (gardenState && gardenState.fireflies) {
+    var ffState = gardenState.fireflies;
+
+    // Check ramp constants are exposed
+    if (typeof ffState.rampFraction !== 'number' || ffState.rampFraction !== 0.20) {
+      problems.push('fireflyState.rampFraction is ' + ffState.rampFraction + ', expected 0.20 (first/last 20% of season for ramp, issue #623).');
+    }
+
+    if (typeof ffState.dotStaggerIntervalMs !== 'number' || ffState.dotStaggerIntervalMs < 3000 || ffState.dotStaggerIntervalMs > 5000) {
+      problems.push('fireflyState.dotStaggerIntervalMs is ' + ffState.dotStaggerIntervalMs + 'ms, expected ~4000ms (~3-5s stagger between individual dots, issue #623).');
+    }
+
+    // Check getRampVisibleCount is exposed
+    if (typeof ffState.getRampVisibleCount !== 'function') {
+      problems.push('fireflyState.getRampVisibleCount is not a function — ramp count accessor missing (issue #623).');
+    } else {
+      // --- Test 1: Early Spring (seasonProgress ~0.005, within first 20%) should give reduced count ---
+      var origSeasonEl = document.getElementById('season-display');
+      var origSeasonText = origSeasonEl ? origSeasonEl.textContent : '';
+      var origSeasonProgress = gardenState.seasonProgress;
+
+      try {
+        // Override season display to Spring
+        if (origSeasonEl) {
+          origSeasonEl.textContent = 'Spring';
+        }
+
+        // Spring occupies [0, 0.25); 2% into Spring = 0.005 in overall progress
+        gardenState.seasonProgress = 0.005;
+
+        var rampResult = ffState.getRampVisibleCount();
+        if (typeof rampResult !== 'object' || typeof rampResult.rampCount !== 'number') {
+          problems.push('fireflyState.getRampVisibleCount() returned invalid result: ' + JSON.stringify(rampResult) + ' — expected { rampCount: number, rampActive: boolean } (issue #623).');
+        } else {
+          // At 2% into Spring (10% through ramp), only dot 0 should be visible
+          if (rampResult.rampCount > 1) {
+            problems.push('At seasonProgress=0.005 (early Spring, ~10% through ramp), rampCount is ' +
+              rampResult.rampCount + ', expected at most 1 (dots should emerge one at a time, issue #623).');
+          }
+          if (rampResult.rampActive !== true) {
+            problems.push('At seasonProgress=0.005 (early Spring), rampActive should be true but got false (issue #623).');
+          }
+        }
+
+        // --- Test 2: Mid Spring (seasonProgress=0.15, past ramp window) should return full count ---
+        gardenState.seasonProgress = 0.15;
+        var rampResultMid = ffState.getRampVisibleCount();
+        if (typeof rampResultMid === 'object' && typeof rampResultMid.rampCount === 'number') {
+          if (rampResultMid.rampCount < 2) {
+            problems.push('At seasonProgress=0.15 (mid Spring, past ramp window), rampCount is ' +
+              rampResultMid.rampCount + ', expected at least 2 (full spring count of 3, issue #623).');
+          }
+          if (rampResultMid.rampActive !== false) {
+            problems.push('At seasonProgress=0.15 (mid Spring), rampActive should be false but got true (issue #623).');
+          }
+        }
+
+        // --- Test 3: Late Autumn (seasonProgress=0.72, within last 20% of Autumn) should give reduced count ---
+        if (origSeasonEl) {
+          origSeasonEl.textContent = 'Autumn';
+        }
+        gardenState.seasonProgress = 0.72;
+        var rampResultLate = ffState.getRampVisibleCount();
+        if (typeof rampResultLate === 'object' && typeof rampResultLate.rampCount === 'number') {
+          if (rampResultLate.rampCount > 2) {
+            problems.push('At seasonProgress=0.72 (late Autumn, within fade-out ramp), rampCount is ' +
+              rampResultLate.rampCount + ', expected at most 2 (dots should fade out one at a time, issue #623).');
+          }
+          if (rampResultLate.rampActive !== true) {
+            problems.push('At seasonProgress=0.72 (late Autumn), rampActive should be true but got false (issue #623).');
+          }
+        }
+
+        // --- Test 4: Winter (seasonProgress=0.85) should give 0 dots, ramp not active ---
+        if (origSeasonEl) {
+          origSeasonEl.textContent = 'Winter';
+        }
+        gardenState.seasonProgress = 0.85;
+        var rampResultWinter = ffState.getRampVisibleCount();
+        if (typeof rampResultWinter === 'object' && typeof rampResultWinter.rampCount === 'number') {
+          if (rampResultWinter.rampCount !== 0) {
+            problems.push('At seasonProgress=0.85 (Winter), rampCount is ' +
+              rampResultWinter.rampCount + ', expected 0 (no fireflies in winter, issue #623).');
+          }
+          if (rampResultWinter.rampActive !== false) {
+            problems.push('At seasonProgress=0.85 (Winter), rampActive should be false (0 dots, no ramp needed) but got true (issue #623).');
+          }
+        }
+
+        // --- Test 5: Reduced motion bypasses the ramp ---
+        if (ffState.reducedMotion) {
+          if (origSeasonEl) {
+            origSeasonEl.textContent = 'Spring';
+          }
+          gardenState.seasonProgress = 0.005;
+          var rmRampResult = ffState.getRampVisibleCount();
+          if (typeof rmRampResult === 'object' && typeof rmRampResult.rampCount === 'number') {
+            if (rmRampResult.rampActive !== false) {
+              problems.push('With reducedMotion active at early Spring, rampActive should be false (ramp bypassed) but got true (issue #623).');
+            }
+          }
+        }
+
+      } finally {
+        // Restore original state
+        if (origSeasonEl) {
+          origSeasonEl.textContent = origSeasonText;
+        }
+        gardenState.seasonProgress = origSeasonProgress;
+      }
+    }
+  }
+
     /* --- Firefly vertical lift checks (issue #527) --- */
     // Verify liftHeight is exposed and is a positive number ≤ 0.5
     if (typeof fireflyState.liftHeight !== 'number' || fireflyState.liftHeight <= 0 || fireflyState.liftHeight > 0.5) {
