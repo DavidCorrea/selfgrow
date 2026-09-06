@@ -7180,5 +7180,73 @@ export async function checks() {
     }
   }
 
+  /* ---------- Leaf displacement under butterfly weight (issue #604) ---------- */
+  // When the butterfly rests on a leaf, the leaf should visibly displace downward
+  // with smooth easing, and recover when the butterfly ascends.
+  const creatureLeaf = gardenState && gardenState.creature;
+  if (creatureLeaf) {
+    // Verify leaf displacement accessors exist
+    if (typeof creatureLeaf.leafDisplacementT !== 'function') {
+      problems.push('creature.leafDisplacementT is not a function — leaf displacement timer accessor missing (issue #604).');
+    }
+    if (typeof creatureLeaf.leafIsDisplaced !== 'function') {
+      problems.push('creature.leafIsDisplaced is not a function — leaf displacement flag accessor missing (issue #604).');
+    }
+    if (typeof creatureLeaf.leafOriginalRotX !== 'function') {
+      problems.push('creature.leafOriginalRotX is not a function — leaf original rotation.x accessor missing (issue #604).');
+    }
+    if (typeof creatureLeaf.leafOriginalPosY !== 'function') {
+      problems.push('creature.leafOriginalPosY is not a function — leaf original position.y accessor missing (issue #604).');
+    }
+
+    // If accessors exist, verify they return reasonable values
+    if (typeof creatureLeaf.leafDisplacementT === 'function') {
+      const dt = creatureLeaf.leafDisplacementT();
+      if (typeof dt !== 'number' || dt < 0 || dt > 1) {
+        problems.push('creature.leafDisplacementT() returned ' + dt + ' — expected a number in [0, 1] (issue #604).');
+      }
+    }
+
+    if (typeof creatureLeaf.leafIsDisplaced === 'function') {
+      const displaced = creatureLeaf.leafIsDisplaced();
+      if (typeof displaced !== 'boolean') {
+        problems.push('creature.leafIsDisplaced() returned ' + displaced + ' — expected boolean (issue #604).');
+      }
+    }
+
+    if (typeof creatureLeaf.leafOriginalRotX === 'function') {
+      const rotX = creatureLeaf.leafOriginalRotX();
+      if (typeof rotX !== 'number' || isNaN(rotX)) {
+        problems.push('creature.leafOriginalRotX() returned ' + rotX + ' — expected a number (issue #604).');
+      }
+    }
+
+    if (typeof creatureLeaf.leafOriginalPosY === 'function') {
+      const posY = creatureLeaf.leafOriginalPosY();
+      if (typeof posY !== 'number' || isNaN(posY)) {
+        problems.push('creature.leafOriginalPosY() returned ' + posY + ' — expected a number (issue #604).');
+      }
+    }
+
+    // When the creature is in idle state (not resting/ascending), displacement must be 0
+    const pauseStateFn = creatureLeaf.pauseState;
+    if (typeof pauseStateFn === 'function') {
+      const state = pauseStateFn();
+      if (state === 'idle' && typeof creatureLeaf.leafDisplacementT === 'function') {
+        const dt = creatureLeaf.leafDisplacementT();
+        if (dt !== 0) {
+          problems.push('creature.leafDisplacementT() is ' + dt + ' but pause state is "idle" — leaf displacement should be 0 when not resting (issue #604).');
+        }
+      }
+      // When reduced motion is active, displacement must always be 0 regardless of state
+      if (creatureLeaf.reducedMotion && typeof creatureLeaf.leafDisplacementT === 'function') {
+        const dt = creatureLeaf.leafDisplacementT();
+        if (dt !== 0) {
+          problems.push('creature.leafDisplacementT() is ' + dt + ' but reducedMotion is active — leaf displacement should be 0 when prefers-reduced-motion is set (issue #604).');
+        }
+      }
+    }
+  }
+
   return problems;
 }

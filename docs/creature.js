@@ -174,6 +174,16 @@ export function createCreature(scene) {
   let landingRestDuration = 0;    // total rest seconds (random 5-10)
   let landingSpiralAngle = 0;     // accumulated angle for spiral descent
 
+  /* Leaf displacement under butterfly weight (issue #604) */
+  let landingLeafMesh = null;       // reference to the leaf mesh being rested on
+  let leafOriginalRotX = 0;         // original rotation.x of the leaf
+  let leafOriginalPosY = 0;         // original position.y of the leaf
+  let leafDisplacementT = 0;        // 0→1 displacement ease timer
+  let leafIsDisplaced = false;      // whether leaf is currently displaced
+  const LEAF_DISPLACE_DURATION = 0.5; // seconds for ease-in/out
+  const LEAF_DISPLACE_ROT = 0.05;    // radians — additional rotation.x (downward tilt)
+  const LEAF_DISPLACE_POS_Y = -0.02; // units — downward y-displacement
+
   /* --- Tracks the current wind nudge for selftest --- */
   let _windNudge = 0;
 
@@ -211,6 +221,11 @@ export function createCreature(scene) {
     landingLeafPos: () => landingLeafPos ? { ...landingLeafPos } : null,
     landingRestTimer: () => landingRestTimer,
     landingRestDuration: () => landingRestDuration,
+    /* Leaf displacement accessors (issue #604) */
+    leafDisplacementT: () => leafDisplacementT,
+    leafIsDisplaced: () => leafIsDisplaced,
+    leafOriginalRotX: () => leafOriginalRotX,
+    leafOriginalPosY: () => leafOriginalPosY,
     /* Camera boost getter for selftest (issue #559) */
     getCameraBoost: () => {
       if (!state.reducedMotion && _lastReactionTime > 0) {
@@ -484,6 +499,12 @@ export function createCreature(scene) {
                       z: plantPos.z + highestLeaf.position.z
                     };
                     landingStartPos = { x: pauseDipTarget.x, y: pauseDipTarget.y, z: pauseDipTarget.z };
+                    // Store leaf mesh reference for displacement (issue #604)
+                    landingLeafMesh = highestLeaf;
+                    leafOriginalRotX = highestLeaf.rotation.x;
+                    leafOriginalPosY = highestLeaf.position.y;
+                    leafDisplacementT = 0;
+                    leafIsDisplaced = false;
                     pauseState = 'descending';
                     pauseTimer = 0;
                     pauseEaseT = 0;
@@ -576,8 +597,43 @@ export function createCreature(scene) {
         pauseDipTarget = null;
         landingLeafPos = null;
         landingStartPos = null;
+        // Clean up leaf displacement (issue #604)
+        if (landingLeafMesh) {
+          landingLeafMesh.rotation.x = leafOriginalRotX;
+          landingLeafMesh.position.y = leafOriginalPosY;
+        }
+        landingLeafMesh = null;
+        leafIsDisplaced = false;
+        leafDisplacementT = 0;
         // Cooldown to prevent immediate re-trigger
         pauseCooldown = 8.0;
+      }
+    }
+
+    /* --- Leaf displacement under butterfly weight (issue #604) --- */
+    // When the butterfly rests on the highest leaf, the leaf visibly bends downward
+    // with smooth ease-in/out over 0.5s. Recovers when the butterfly ascends.
+    if (landingLeafMesh && !state.reducedMotion) {
+      if (pauseState === 'resting') {
+        leafDisplacementT = Math.min(1, leafDisplacementT + dt / LEAF_DISPLACE_DURATION);
+        leafIsDisplaced = leafDisplacementT >= 1;
+      } else if (pauseState === 'ascending') {
+        leafDisplacementT = Math.max(0, leafDisplacementT - dt / LEAF_DISPLACE_DURATION);
+        leafIsDisplaced = false;
+      } else if (pauseState === 'idle') {
+        // If somehow still displaced during idle, snap back
+        leafDisplacementT = 0;
+        leafIsDisplaced = false;
+        landingLeafMesh.rotation.x = leafOriginalRotX;
+        landingLeafMesh.position.y = leafOriginalPosY;
+        landingLeafMesh = null;
+      }
+
+      if (landingLeafMesh) {
+        const t = leafDisplacementT;
+        const eased = t * t * (3 - 2 * t); // smoothstep ease-in-out
+        landingLeafMesh.rotation.x = leafOriginalRotX + LEAF_DISPLACE_ROT * eased;
+        landingLeafMesh.position.y = leafOriginalPosY + LEAF_DISPLACE_POS_Y * eased;
       }
     }
 
@@ -726,6 +782,14 @@ export function createCreature(scene) {
       landingRestTimer = 0;
       landingRestDuration = 0;
       landingSpiralAngle = 0;
+      // Reset leaf displacement (issue #604)
+      if (landingLeafMesh) {
+        landingLeafMesh.rotation.x = leafOriginalRotX;
+        landingLeafMesh.position.y = leafOriginalPosY;
+      }
+      landingLeafMesh = null;
+      leafIsDisplaced = false;
+      leafDisplacementT = 0;
     } else {
       group.visible = true;
     }
