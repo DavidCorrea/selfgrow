@@ -5764,10 +5764,10 @@ export async function checks() {
         problems.push('During Clear + Midday, growing-description still contains shelter/rest text: "' + drifting + '" — the old suffix should be stripped.');
       }
 
-      // Test 3: Overcast + Night -> firefly glow text (butterfly active near fireflies at night)
+      // Test 3: Overcast + Night -> drift text (butterfly not near fireflies, proximity not set up in this test)
       const resting = runWith('Overcast', 'Night', BASE + DRIFT_SUFFIX);
-      if (!resting.endsWith(REST_SUFFIX)) {
-        problems.push('During Overcast + Night, growing-description is "' + resting + '" — expected it to end with "' + REST_SUFFIX.trim() + '".');
+      if (!resting.endsWith(DRIFT_SUFFIX)) {
+        problems.push('During Overcast + Night (no proximity set up), growing-description is "' + resting + '" — expected it to end with "' + DRIFT_SUFFIX.trim() + '".');
       }
 
       // Test 4: Clear + Morning after Night -> returns to drift text, base text preserved
@@ -7244,6 +7244,100 @@ export async function checks() {
         if (dt !== 0) {
           problems.push('creature.leafDisplacementT() is ' + dt + ' but reducedMotion is active — leaf displacement should be 0 when prefers-reduced-motion is set (issue #604).');
         }
+      }
+    }
+  }
+
+  /* ---------- Butterfly-firefly proximity checks (issue #605) ---------- */
+  const gardenState605 = window.__gardenState;
+  if (gardenState605) {
+    const growEl = document.getElementById('growing-description');
+    const dayNight = gardenState605.dayNight;
+    const creature = gardenState605.creature;
+    const fireflies = gardenState605.fireflies;
+
+    if (dayNight && creature && creature.group && fireflies && typeof fireflies.getAllPositions === 'function') {
+      var origProgress = dayNight.getCycleProgress();
+      var origPos = creature.group.position.clone();
+
+      try {
+        /* --- Test 1: Night phase (t=0.9), butterfly near a firefly dot --- */
+        // Force the cycle progress to Night by overriding the getter temporarily
+        var origGetCycleProgress = dayNight.getCycleProgress;
+        dayNight.getCycleProgress = function() { return 0.9; };
+
+        // Set butterfly position to one of the firefly positions
+        var positions = fireflies.getAllPositions();
+        if (positions && positions.length > 0) {
+          var fp = positions[0];
+          creature.group.position.set(fp.x, fp.y, fp.z);
+
+          // Also ensure the time-display says 'Night'
+          var timeDisplay = document.getElementById('time-display');
+          var origTimeText = timeDisplay ? timeDisplay.textContent : '';
+          if (timeDisplay) timeDisplay.textContent = 'Night';
+
+          // Call updateButterflyDescription to compose the proximity text
+          if (typeof gardenState605.updateButterflyDescription === 'function') {
+            gardenState605.updateButterflyDescription();
+          }
+
+          var descText = growEl ? growEl.textContent : '';
+          var foundProximity = false;
+          for (var pi = 0; pi < gardenState605.FIREFLY_PROXIMITY_SUFFIXES.length; pi++) {
+            if (descText.indexOf(gardenState605.FIREFLY_PROXIMITY_SUFFIXES[pi]) !== -1) {
+              foundProximity = true;
+              break;
+            }
+          }
+          if (!foundProximity) {
+            problems.push('Butterfly-firefly proximity: during Night (t=0.9) with butterfly near a firefly dot, growing-description should contain a proximity suffix. Got: "' + descText + '"');
+          }
+
+          /* --- Test 2: Night phase, butterfly far from fireflies --- */
+          // Move butterfly far away
+          creature.group.position.set(100, 100, 100);
+          if (typeof gardenState605.updateButterflyDescription === 'function') {
+            gardenState605.updateButterflyDescription();
+          }
+
+          descText = growEl ? growEl.textContent : '';
+          for (var pi2 = 0; pi2 < gardenState605.FIREFLY_PROXIMITY_SUFFIXES.length; pi2++) {
+            if (descText.indexOf(gardenState605.FIREFLY_PROXIMITY_SUFFIXES[pi2]) !== -1) {
+              problems.push('Butterfly-firefly proximity: during Night but butterfly far from fireflies, growing-description should NOT contain a proximity suffix. Got: "' + descText + '" (contains variant ' + pi2 + ')');
+              break;
+            }
+          }
+
+          /* --- Test 3: Daytime (t=0.5), butterfly near fireflies --- */
+          // Set progress to daytime
+          dayNight.getCycleProgress = function() { return 0.5; };
+          // Move butterfly back near a firefly
+          if (positions.length > 0) {
+            var fp2 = positions[0];
+            creature.group.position.set(fp2.x, fp2.y, fp2.z);
+          }
+          // Reset variant state to ensure fresh check
+          gardenState605._variantState.fireflyProximity.lastPhase = '';
+          if (typeof gardenState605.updateButterflyDescription === 'function') {
+            gardenState605.updateButterflyDescription();
+          }
+
+          descText = growEl ? growEl.textContent : '';
+          for (var pi3 = 0; pi3 < gardenState605.FIREFLY_PROXIMITY_SUFFIXES.length; pi3++) {
+            if (descText.indexOf(gardenState605.FIREFLY_PROXIMITY_SUFFIXES[pi3]) !== -1) {
+              problems.push('Butterfly-firefly proximity: during daytime (t=0.5) with butterfly near a firefly dot, growing-description should NOT contain a proximity suffix. Got: "' + descText + '" (contains variant ' + pi3 + ')');
+              break;
+            }
+          }
+
+          // Restore time display
+          if (timeDisplay && origTimeText) timeDisplay.textContent = origTimeText;
+        }
+      } finally {
+        // Restore original state
+        if (origGetCycleProgress) dayNight.getCycleProgress = origGetCycleProgress;
+        if (origPos) creature.group.position.copy(origPos);
       }
     }
   }
