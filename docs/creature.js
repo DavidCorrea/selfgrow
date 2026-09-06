@@ -184,6 +184,9 @@ export function createCreature(scene) {
   const LEAF_DISPLACE_ROT = 0.05;    // radians — additional rotation.x (downward tilt)
   const LEAF_DISPLACE_POS_Y = -0.02; // units — downward y-displacement
 
+  /* Pollination tracking (issue #614): which plant the butterfly landed on */
+  let landingPlantLabel = null;      // 'plant' or 'plant2' — set when landing decision is made
+
   /* --- Tracks the current wind nudge for selftest --- */
   let _windNudge = 0;
 
@@ -505,6 +508,8 @@ export function createCreature(scene) {
                     leafOriginalPosY = highestLeaf.position.y;
                     leafDisplacementT = 0;
                     leafIsDisplaced = false;
+                    /* Track which plant we landed on for pollination (issue #614) */
+                    landingPlantLabel = plantRefs[li];
                     pauseState = 'descending';
                     pauseTimer = 0;
                     pauseEaseT = 0;
@@ -588,6 +593,15 @@ export function createCreature(scene) {
       finalZ = landingStartPos.z + (orbitZ - landingStartPos.z) * eased;
 
       if (pauseEaseT >= 1) {
+        // Signal pollination to the flower we just visited (issue #614)
+        if (landingPlantLabel && window.__gardenState && window.__gardenState[landingPlantLabel]) {
+          const visitedPlant = window.__gardenState[landingPlantLabel];
+          if (visitedPlant.flower) {
+            visitedPlant.flower._needsPollination = true;
+          }
+        }
+        landingPlantLabel = null;
+
         // Resume normal flight
         pauseState = 'idle';
         pauseSpeedMul = 1.0;
@@ -782,6 +796,7 @@ export function createCreature(scene) {
       landingRestTimer = 0;
       landingRestDuration = 0;
       landingSpiralAngle = 0;
+      landingPlantLabel = null;
       // Reset leaf displacement (issue #604)
       if (landingLeafMesh) {
         landingLeafMesh.rotation.x = leafOriginalRotX;

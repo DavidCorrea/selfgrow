@@ -444,6 +444,60 @@ function createPlant(opts) {
     const fm = createFlowerMeshes(stemHeight, flowerColor);
     group.add(fm.group);
 
+    /* Pollination state (issue #614) */
+    let _pollinated = false;
+    let _hasSeedHead = false;
+    let _seedHeadMeshes = [];
+
+    /* Darken the central bud colour by ~15% toward brown */
+    function applyPollinationDarkening() {
+      const col = fm.bud.material.color;
+      col.r *= 0.85;
+      col.g *= 0.85;
+      col.b *= 0.85;
+    }
+
+    /* Restore the bud's original colour */
+    function resetBudColor() {
+      fm.bud.material.color.setHex(0x8a7a4a);
+    }
+
+    /* Create seed head cluster: 2-3 tiny brown spheres near the flower centre */
+    function createSeedHead() {
+      if (_seedHeadMeshes.length > 0) return; // already created
+      const seedMat = new THREE.MeshStandardMaterial({
+        color: 0x6a4a2a,
+        roughness: 0.9,
+        metalness: 0.0
+      });
+      const count = 2 + Math.floor(Math.random() * 2); // 2 or 3
+      for (let i = 0; i < count; i++) {
+        const radius = 0.002 + Math.random() * 0.001; // 0.002-0.003
+        const geo = new THREE.SphereGeometry(radius, 4, 4);
+        const mesh = new THREE.Mesh(geo, seedMat);
+        // Position near the flower centre bud with slight random offset
+        const angle = (i / count) * Math.PI * 2;
+        const spread = 0.003 + Math.random() * 0.003;
+        mesh.position.set(
+          Math.cos(angle) * spread,
+          fm.bud.position.y + 0.002 + Math.random() * 0.003,
+          Math.sin(angle) * spread
+        );
+        fm.group.add(mesh);
+        _seedHeadMeshes.push(mesh);
+      }
+    }
+
+    /* Remove seed head meshes from the scene */
+    function removeSeedHead() {
+      for (let i = 0; i < _seedHeadMeshes.length; i++) {
+        fm.group.remove(_seedHeadMeshes[i]);
+        _seedHeadMeshes[i].geometry.dispose();
+        _seedHeadMeshes[i].material.dispose();
+      }
+      _seedHeadMeshes = [];
+    }
+
     // Expose flower on plant state for selftest and persistence
     plantState.flower = {
       group: fm.group,
@@ -452,7 +506,12 @@ function createPlant(opts) {
       petalMat: fm.petalMat,
       getPhase: () => phase,
       getProgress: () => progress,
-      getShelterFactor: () => weatherShelter
+      getShelterFactor: () => weatherShelter,
+      /* Pollination accessors (issue #614) */
+      isPollinated: () => _pollinated,
+      hasSeedHead: () => _hasSeedHead,
+      /* Internal flag set by creature.js on landing/ascend completion */
+      _needsPollination: false
     };
 
     let phase = 'dormant';
@@ -496,8 +555,16 @@ function createPlant(opts) {
             plotDesc.textContent = 'Two plants grow side by side. A delicate, pale blossom opens on the shorter plant, adding a gentle note to the scene.';
             break;
           case 'bloom':
-            growingDesc.textContent = 'A small flower blooms softly near the top of the companion plant.';
-            plotDesc.textContent = 'Two plants share the plot, one crowned with a small, soft-hued blossom. The garden feels complete.';
+            if (_hasSeedHead) {
+              growingDesc.textContent = 'A small flower blooms softly near the top of the companion plant. Tiny brown seed heads dot the centre \u2014 signs of pollination.';
+              plotDesc.textContent = 'Two plants share the plot, one crowned with a small, soft-hued blossom. Tiny seeds have formed at the centre of the flower \u2014 a lasting trace of a visitor.';
+            } else if (_pollinated) {
+              growingDesc.textContent = 'A small flower blooms softly near the top of the companion plant. The flower centre shows signs of pollination.';
+              plotDesc.textContent = 'Two plants share the plot, one crowned with a small, soft-hued blossom. The flower centre has darkened, touched by a passing butterfly.';
+            } else {
+              growingDesc.textContent = 'A small flower blooms softly near the top of the companion plant.';
+              plotDesc.textContent = 'Two plants share the plot, one crowned with a small, soft-hued blossom. The garden feels complete.';
+            }
             break;
           case 'fading':
             growingDesc.textContent = 'The blossom on the companion plant fades gently, its petals beginning to fall.';
@@ -533,14 +600,34 @@ function createPlant(opts) {
             }
             break;
           case 'bloom':
-            if (plant2Exists) {
-              growingDesc.textContent = 'A small flower blooms softly near the crown of the central plant, a quiet spectacle.';
-              plotDesc.textContent = 'The central plant wears a small, delicate flower at its crown. Beside it, the companion watches in silence.';
+            // Check pollination state (issue #614)
+            if (_hasSeedHead) {
+              if (plant2Exists) {
+                growingDesc.textContent = 'A small flower blooms softly near the crown of the central plant. Tiny brown seed heads have formed at the centre \u2014 evidence of pollination.';
+                plotDesc.textContent = 'The central plant wears a small, delicate flower at its crown. Tiny seed clusters rest at the centre, a quiet legacy from a butterfly\'s visit.';
+              } else {
+                growingDesc.textContent = 'A small flower blooms softly near the top of the stem. Tiny brown seed heads have formed at the centre \u2014 evidence of pollination.';
+                plotDesc.textContent = 'A small, soft-coloured flower blooms at the tip of the seedling. Tiny seed clusters rest at its centre, a quiet legacy from a butterfly\'s visit.';
+              }
+            } else if (_pollinated) {
+              if (plant2Exists) {
+                growingDesc.textContent = 'A small flower blooms softly near the crown of the central plant. The flower centre shows signs of pollination.';
+                plotDesc.textContent = 'The central plant wears a small, delicate flower at its crown. The centre is darkened \u2014 the butterfly left its trace.';
+              } else {
+                growingDesc.textContent = 'A small flower blooms softly near the top of the stem. The flower centre shows signs of pollination.';
+                plotDesc.textContent = 'A small, soft-coloured flower blooms at the tip of the seedling. The centre is darkened \u2014 the butterfly left its trace.';
+              }
             } else {
-              growingDesc.textContent = 'A small flower blooms softly near the top of the stem.';
-              plotDesc.textContent = 'A small, soft-coloured flower blooms at the tip of the seedling, a quiet reward for patient watching.';
+              if (plant2Exists) {
+                growingDesc.textContent = 'A small flower blooms softly near the crown of the central plant, a quiet spectacle.';
+                plotDesc.textContent = 'The central plant wears a small, delicate flower at its crown. Beside it, the companion watches in silence.';
+              } else {
+                growingDesc.textContent = 'A small flower blooms softly near the top of the stem.';
+                plotDesc.textContent = 'A small, soft-coloured flower blooms at the tip of the seedling, a quiet reward for patient watching.';
+              }
             }
             break;
+
           case 'fading':
             if (plant2Exists) {
               growingDesc.textContent = 'The flower on the central plant fades gently, its petals beginning to drop.';
@@ -623,6 +710,18 @@ function createPlant(opts) {
         }
 
         case 'bloom': {
+          /* --- Pollination: check if butterfly just landed and ascended (issue #614) --- */
+          if (plantState.flower._needsPollination) {
+            plantState.flower._needsPollination = false;
+            _pollinated = true;
+            applyPollinationDarkening();
+          }
+
+          /* --- Seed head: if previously pollinated, show tiny brown spheres --- */
+          if (_hasSeedHead && _seedHeadMeshes.length === 0) {
+            createSeedHead();
+          }
+
           // Gentle sway: a barely-perceptible animation
           if (fm.petals.length > 0) {
             const sway = Math.sin(elapsed * 0.001 * 0.5) * 0.05;
@@ -651,14 +750,46 @@ function createPlant(opts) {
           } else if (weatherShelter <= 0.5 && !fm._describedOpen && weatherShelter < 0.3) {
             fm._describedOpen = true;
             fm._describedSheltered = false;
-            const growingDesc = document.getElementById('growing-description');
-            const plotDesc = document.getElementById('plot-description');
+            var growingDesc = document.getElementById('growing-description');
+            var plotDesc = document.getElementById('plot-description');
             if (isPlant2) {
-              if (growingDesc) growingDesc.textContent = 'A small flower blooms softly near the top of the companion plant.';
-              if (plotDesc) plotDesc.textContent = 'Two plants share the plot, one crowned with a small, soft-hued blossom. The garden feels complete.';
+              if (growingDesc) {
+                if (_hasSeedHead) {
+                  growingDesc.textContent = 'A small flower blooms softly near the top of the companion plant. Tiny brown seed heads dot the centre \u2014 signs of pollination.';
+                } else if (_pollinated) {
+                  growingDesc.textContent = 'A small flower blooms softly near the top of the companion plant. The flower centre shows signs of pollination.';
+                } else {
+                  growingDesc.textContent = 'A small flower blooms softly near the top of the companion plant.';
+                }
+              }
+              if (plotDesc) {
+                if (_hasSeedHead) {
+                  plotDesc.textContent = 'Two plants share the plot, one crowned with a small, soft-hued blossom. Tiny seeds have formed at the centre of the flower \u2014 a lasting trace of a visitor.';
+                } else if (_pollinated) {
+                  plotDesc.textContent = 'Two plants share the plot, one crowned with a small, soft-hued blossom. The flower centre has darkened, touched by a passing butterfly.';
+                } else {
+                  plotDesc.textContent = 'Two plants share the plot, one crowned with a small, soft-hued blossom. The garden feels complete.';
+                }
+              }
             } else {
-              if (growingDesc) growingDesc.textContent = 'A small flower blooms softly near the top of the stem.';
-              if (plotDesc) plotDesc.textContent = 'A small, soft-coloured flower blooms at the tip of the seedling, a quiet reward for patient watching.';
+              if (growingDesc) {
+                if (_hasSeedHead) {
+                  growingDesc.textContent = 'A small flower blooms softly near the top of the stem. Tiny brown seed heads have formed at the centre \u2014 evidence of pollination.';
+                } else if (_pollinated) {
+                  growingDesc.textContent = 'A small flower blooms softly near the top of the stem. The flower centre shows signs of pollination.';
+                } else {
+                  growingDesc.textContent = 'A small flower blooms softly near the top of the stem.';
+                }
+              }
+              if (plotDesc) {
+                if (_hasSeedHead) {
+                  plotDesc.textContent = 'A small, soft-coloured flower blooms at the tip of the seedling. Tiny seed clusters rest at its centre, a quiet legacy from a butterfly\'s visit.';
+                } else if (_pollinated) {
+                  plotDesc.textContent = 'A small, soft-coloured flower blooms at the tip of the seedling. The centre is darkened \u2014 the butterfly left its trace.';
+                } else {
+                  plotDesc.textContent = 'A small, soft-coloured flower blooms at the tip of the seedling, a quiet reward for patient watching.';
+                }
+              }
             }
           }
           if (elapsed >= phaseDuration) {
@@ -703,6 +834,17 @@ function createPlant(opts) {
               p.rotation.z = 0;
             });
             fm.bud.material.opacity = 1;
+
+            /* --- Pollination: carry forward to next cycle (issue #614) --- */
+            // Darkened centre resets when dormant begins
+            if (_pollinated) {
+              _hasSeedHead = true;
+              resetBudColor();
+            }
+            // Remove seed head meshes during dormant (they reappear next bloom)
+            removeSeedHead();
+            _pollinated = false;
+
             updateDOMDescriptions();
             // Restore normal dormant descriptions
             const growingDesc = document.getElementById('growing-description');
