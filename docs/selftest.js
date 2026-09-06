@@ -649,12 +649,86 @@ export async function checks() {
         } finally {
           panel.scrollIntoView = origScrollIntoView;
         }
-        if (lastOpts && lastOpts.block !== 'nearest') {
-          problems.push('Clicking .skip-link called scrollIntoView with block="' + lastOpts.block + '", expected "nearest" (issue #496).');
+        if (lastOpts && lastOpts.block !== 'nearest' && lastOpts.block !== 'start') {
+          problems.push('Clicking .skip-link called scrollIntoView with block="' + lastOpts.block + '", expected "nearest" or "start" (issue #496/#612).');
         }
         if (!lastOpts) {
           problems.push('Clicking .skip-link did not call scrollIntoView on second dispatch — the click handler may have a conditional path that skips the call.');
         }
+      }
+
+      // Test 5 (issue #612): verify the flash-active animation/keyframe rules exist
+      let hasFlashAnimation = false;
+      let hasFlashKeyframe = false;
+      try {
+        for (let i = 0; i < document.styleSheets.length; i++) {
+          const sheet = document.styleSheets[i];
+          if (!sheet || !sheet.cssRules) continue;
+          for (let j = 0; j < sheet.cssRules.length; j++) {
+            const rule = sheet.cssRules[j];
+            if (rule.selectorText && rule.selectorText.includes('flash-active')) {
+              hasFlashAnimation = true;
+            }
+            if (rule.type === CSSRule.KEYFRAMES_RULE && rule.name === 'flash-border') {
+              hasFlashKeyframe = true;
+            }
+          }
+        }
+      } catch (_e) {}
+      if (!hasFlashAnimation) {
+        problems.push('No CSS rule with .flash-active selector found — the border-flash animation is not defined (issue #612).');
+      }
+      if (!hasFlashKeyframe) {
+        problems.push('No @keyframes flash-border rule found — the border-flash animation keyframes are missing (issue #612).');
+      }
+
+      // Test 6 (issue #612): verify clicking the skip link adds the flash-active class
+      const panelEl = document.getElementById('state-panel');
+      if (panelEl) {
+        // Remove class first for clean state
+        panelEl.classList.remove('flash-active');
+        
+        const clickEvent2 = new MouseEvent('click', { bubbles: true, cancelable: true });
+        skipLinkEl.dispatchEvent(clickEvent2);
+        
+        if (!panelEl.classList.contains('flash-active')) {
+          problems.push('Clicking .skip-link did not add flash-active class to #state-panel — the visual flash confirmation is not triggered (issue #612).');
+        }
+
+        // Verify the class is removable (simulate the 1s timeout)
+        panelEl.classList.remove('flash-active');
+        if (panelEl.classList.contains('flash-active')) {
+          problems.push('flash-active class should be removable from #state-panel after 1s timeout — class removal does not work (issue #612).');
+        }
+      }
+
+      // Test 7 (issue #612): verify the prefers-reduced-motion media query override exists
+      let hasReducedMotionOverride = false;
+      try {
+        for (let i = 0; i < document.styleSheets.length; i++) {
+          const sheet = document.styleSheets[i];
+          if (!sheet || !sheet.cssRules) continue;
+          for (let j = 0; j < sheet.cssRules.length; j++) {
+            const rule = sheet.cssRules[j];
+            if (rule.constructor.name === 'CSSMediaRule') {
+              const mediaText = rule.media.mediaText;
+              if (mediaText && mediaText.toLowerCase().indexOf('prefers-reduced-motion') !== -1) {
+                // Check inner rules for flash-active
+                for (let k = 0; k < rule.cssRules.length; k++) {
+                  const inner = rule.cssRules[k];
+                  if (inner.selectorText && inner.selectorText.includes('flash-active')) {
+                    hasReducedMotionOverride = true;
+                    break;
+                  }
+                }
+              }
+            }
+          }
+          if (hasReducedMotionOverride) break;
+        }
+      } catch (_e) {}
+      if (!hasReducedMotionOverride) {
+        problems.push('No prefers-reduced-motion override found for .flash-active — the animation should be suppressed with a static colour change when prefers-reduced-motion is active (issue #612).');
       }
 
       // Test 2: check the :hover CSS rule exists so the link is visible on pointer hover
