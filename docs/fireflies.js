@@ -38,6 +38,78 @@ const FADE_LERP_SPEED = 0.04;      // ~1.2 seconds to fade in/out
 const PULSE_FREQ_MIN = 0.2;        // Hz — slow, irregular
 const PULSE_FREQ_MAX = 0.5;        // Hz
 const DRIFT_FREQ = 0.12;           // frequency of drift oscillation
+
+/* --- Seasonal ramp configuration (issue #623) --- */
+const SEASON_DURATION_MS = 180_000;        // 3 minutes per season
+const RAMP_FRACTION = 0.20;                // first/last 20% of season for ramp
+const RAMP_DURATION_MS = SEASON_DURATION_MS * RAMP_FRACTION;  // 36s ramp window
+const DOT_STAGGER_INTERVAL_MS = 4000;      // ~4s between individual dots appearing
+
+/**
+ * Determine the ramp-limited visible dot count for the current season phase.
+ *
+ * During the first RAMP_FRACTION of Spring, dots emerge one at a time
+ * from 0 up to the full season count. During the last RAMP_FRACTION of
+ * Autumn, dots fade out in reverse. Outside these windows the full
+ * seasonal count is returned (unless prefers-reduced-motion is active,
+ * which bypasses the ramp entirely).
+ *
+ * @param {number} maxFullCount - Full seasonal dot count from DOTS_PER_SEASON
+ * @param {number} seasonProgress - window.__gardenState.seasonProgress (0–1)
+ * @param {number} time - Absolute animation time in seconds
+ * @param {boolean} reducedMotion - Whether prefers-reduced-motion is active
+ * @returns {{ rampCount: number, rampActive: boolean }} - Visible count and whether ramp is active
+ */
+function getRampVisibleCount(maxFullCount, seasonProgress, time, reducedMotion) {
+  if (reducedMotion || maxFullCount === 0) {
+    return { rampCount: maxFullCount, rampActive: false };
+  }
+
+  // Derive season index and within-season progress from the 0–1 cycle progress
+  var seasonIndex = Math.floor(seasonProgress * 4) % 4;
+  var withinSeasonProgress = (seasonProgress * 4) % 1;
+
+  // 0=Spring, 1=Summer, 2=Autumn, 3=Winter
+  if (seasonIndex === 0 && withinSeasonProgress < RAMP_FRACTION) {
+    // Spring ramp-up: progress through ramp window
+    var rampProgress = withinSeasonProgress / RAMP_FRACTION;  // 0→1
+
+    // Stagger: compute the activation threshold for each dot index i
+    // Dot i becomes visible when rampProgress >= (i+1) * DOT_STAGGER_INTERVAL_MS / RAMP_DURATION_MS
+    // This gives a responsive feel: if rampProgress is small, only dot 0 may be visible
+    var staggerStep = DOT_STAGGER_INTERVAL_MS / RAMP_DURATION_MS;  // ~0.111 per dot
+    var dotsVisible = 0;
+    for (var i = 0; i < maxFullCount; i++) {
+      if (rampProgress >= i * staggerStep) {
+        dotsVisible++;
+      }
+    }
+    // Clamp: never exceed maxFullCount nor go below 0
+    dotsVisible = Math.min(Math.max(dotsVisible, 0), maxFullCount);
+
+    return { rampCount: dotsVisible, rampActive: true };
+
+  } else if (seasonIndex === 2 && withinSeasonProgress > (1 - RAMP_FRACTION)) {
+    // Autumn ramp-down: progress through ramp window from end
+    var autumnRampProgress = (withinSeasonProgress - (1 - RAMP_FRACTION)) / RAMP_FRACTION;  // 0→1
+
+    // Reverse stagger: dots disappear in reverse order (last index first)
+    var revStaggerStep = DOT_STAGGER_INTERVAL_MS / RAMP_DURATION_MS;
+    var dotsActive = maxFullCount;
+    for (var j = 0; j < maxFullCount; j++) {
+      // Dot (maxFullCount - 1 - j) disappears when autumnRampProgress >= j * revStaggerStep
+      if (autumnRampProgress >= j * revStaggerStep) {
+        dotsActive--;
+      }
+    }
+    dotsActive = Math.min(Math.max(dotsActive, 0), maxFullCount);
+
+    return { rampCount: dotsActive, rampActive: true };
+  }
+
+  // Outside ramp windows: full count
+  return { rampCount: maxFullCount, rampActive: false };
+}
 const WIND_DRIFT_SCALE = 0.02;      // scale of ground ripple wind perturbation on drift
 
 /* --- Firefly-to-plant surface glow (issue #613) --- */
@@ -262,6 +334,19 @@ export function createFireflies(scene) {
     currentWeatherMul: function() { return currentWeatherMul; },
     /** Current seasonal opacity multiplier (lerping toward target) */
     currentSeasonMul: function() { return currentSeasonMul; },
+    /** Ramp fraction constant exposed for testing */
+    rampFraction: RAMP_FRACTION,
+    /** Dot stagger interval in ms exposed for testing */
+    dotStaggerIntervalMs: DOT_STAGGER_INTERVAL_MS,
+    /** Returns the ramped visible count for the current season/time */
+    getRampVisibleCount: function() {
+      var gs = window.__gardenState;
+      var sp = gs && typeof gs.seasonProgress === 'number' ? gs.seasonProgress : 0;
+      var seasonEl = document.getElementById('season-display');
+      var season = seasonEl ? seasonEl.textContent.trim() : '';
+      var maxFullCount = DOTS_PER_SEASON[season] !== undefined ? DOTS_PER_SEASON[season] : DOTS_MAX;
+      return getRampVisibleCount(maxFullCount, sp, 0, state.reducedMotion);
+    },
     /** Total number of active dot sprites across all plants */
     totalDotCount: function() {
       return plantGroups.reduce(function(sum, g) { return sum + g.count; }, 0);
@@ -378,6 +463,13 @@ export function createFireflies(scene) {
       }
     }
 
+    /* --- Apply seasonal ramp (issue #623) --- */
+    var gs = window.__gardenState;
+    var seasonProgress = gs && typeof gs.seasonProgress === 'number' ? gs.seasonProgress : 0;
+    var rampResult = getRampVisibleCount(maxVisibleDots, seasonProgress, time, state.reducedMotion);
+    var rampedDots = rampResult.rampCount;
+    var rampActive = rampResult.rampActive;
+
     /* Smoothly lerp seasonal multiplier to avoid snapping on transitions */
     currentSeasonMul += (targetSeasonMul - currentSeasonMul) * FADE_LERP_SPEED;
     if (Math.abs(currentSeasonMul - targetSeasonMul) < 0.0005) {
@@ -439,8 +531,9 @@ export function createFireflies(scene) {
         const dd = group.dotData[i];
         const i3 = i * 3;
 
-        /* Limit visible dots per season: dots beyond maxVisibleDots get zero size */
-        if (i >= maxVisibleDots) {
+        /* Limit visible dots per season: dots beyond the ramp count get zero size */
+        var effectiveMax = rampActive ? rampedDots : maxVisibleDots;
+        if (i >= effectiveMax) {
           sizes[i] = 0;
           // Reset to base position (no drift for hidden dots)
           pos[i3] = dd.baseX;
@@ -569,7 +662,7 @@ export function createFireflies(scene) {
 
         // Find max pulse across visible dots in this group
         let maxPulse = 0;
-        const visibleCount = Math.min(group.count, maxVisibleDots);
+        const visibleCount = Math.min(group.count, rampActive ? rampedDots : maxVisibleDots);
         for (let i = 0; i < visibleCount; i++) {
           const dd = group.dotData[i];
           let pulse;
