@@ -177,6 +177,12 @@ export function createCreature(scene) {
   /* --- Tracks the current wind nudge for selftest --- */
   let _windNudge = 0;
 
+  /* --- Firefly attraction tracking for selftest (issue #598) --- */
+  let _fireflySlowMul = 1.0;
+  let _fireflyBiasX = 0;
+  let _fireflyBiasZ = 0;
+  let _isNightPhase = false;
+
   /* --- State exposed for selftest --- */
   const state = {
     type: 'creature',
@@ -212,7 +218,11 @@ export function createCreature(scene) {
         if (elapsed < CAMERA_BOOST_DURATION * 1000) return CAMERA_BOOST;
       }
       return 1.0;
-    }
+    },
+    /* Firefly attraction accessors for selftest (issue #598) */
+    getFireflySlowMul: () => _fireflySlowMul,
+    getFireflyBias: () => ({ x: _fireflyBiasX, z: _fireflyBiasZ }),
+    isNightPhase: () => _isNightPhase
   };
 
   /* Start invisible if reduced motion is active */
@@ -246,13 +256,41 @@ export function createCreature(scene) {
       return;
     }
 
-    /* --- Night phase: butterfly rests --- */
+    /* --- Night phase: firefly-attracted flight (issue #598) --- */
+    _isNightPhase = false;
+    _fireflySlowMul = 1.0;
+    _fireflyBiasX = 0;
+    _fireflyBiasZ = 0;
     if (window.__gardenState && window.__gardenState.dayNight) {
       const t = window.__gardenState.dayNight.getCycleProgress();
-      // Night is t in [0.75, 1.0)
-      if (t >= 0.75) {
-        group.visible = false;
-        return;
+      if (t >= 0.75 && t < 1.0) {
+        _isNightPhase = true;
+        // Butterfly stays active at night, orbit biased toward firefly glow
+      }
+    }
+
+    /* --- Firefly speed reduction: compute before orbit to affect same frame --- */
+    if (_isNightPhase && !state.reducedMotion) {
+      const fireflies = window.__gardenState && window.__gardenState.fireflies;
+      if (fireflies && typeof fireflies.getAllPositions === 'function') {
+        const positions = fireflies.getAllPositions();
+        if (positions.length > 0) {
+          // Use the creature's current position as reference for proximity
+          let cx = group.position.x;
+          let cz = group.position.z;
+          let minDist = Infinity;
+          for (let fi = 0; fi < positions.length; fi++) {
+            let dx = positions[fi].x - cx;
+            let dz = positions[fi].z - cz;
+            let dist = Math.sqrt(dx * dx + dz * dz);
+            if (dist < minDist) { minDist = dist; }
+          }
+          // Speed reduction ~20% when within glow zone (≤0.5 units)
+          if (minDist <= 0.5) {
+            let proximityFactor = Math.min(1, minDist / 0.5);
+            _fireflySlowMul = 0.8 + (1.0 - 0.8) * proximityFactor;
+          }
+        }
       }
     }
 
@@ -294,7 +332,8 @@ export function createCreature(scene) {
     }
 
     /* Apply season multiplier to ORBIT_SPEED for angular position computation */
-    const effectiveOrbitSpeed = ORBIT_SPEED * _currentSeasonOrbitMul * cameraBoost;
+    // Apply firefly slow multiplier during Night (issue #598)
+    const effectiveOrbitSpeed = ORBIT_SPEED * _currentSeasonOrbitMul * cameraBoost * _fireflySlowMul;
     /* Apply season multiplier to ORBIT_RADIUS_MAX for radius range */
     const effectiveOrbitRadiusMax = ORBIT_RADIUS_MAX * _currentSeasonRadiusMul;
 
@@ -565,6 +604,48 @@ export function createCreature(scene) {
         // Cooldown to prevent immediate re-trigger
         pauseCooldown = 8.0;
       }
+    }
+
+    /* --- Firefly attractor bias: subtle drift toward firefly glow (Night, issue #598) --- */
+    // Position bias computed after final position is known from the pause state machine
+    if (_isNightPhase && !state.reducedMotion) {
+      const fireflies = window.__gardenState && window.__gardenState.fireflies;
+      if (fireflies && typeof fireflies.getAllPositions === 'function') {
+        const positions = fireflies.getAllPositions();
+        if (positions.length > 0) {
+          // Find nearest firefly
+          let minDist = Infinity;
+          let nearestX = 0, nearestZ = 0;
+          for (let fi = 0; fi < positions.length; fi++) {
+            let dx = positions[fi].x - finalX;
+            let dz = positions[fi].z - finalZ;
+            let dist = Math.sqrt(dx * dx + dz * dz);
+            if (dist < minDist) {
+              minDist = dist;
+              nearestX = positions[fi].x;
+              nearestZ = positions[fi].z;
+            }
+          }
+
+          // Compute attractor bias with slow sine modulation (0.3-0.5 units)
+          let sineMod = 0.5 + 0.5 * Math.sin(time * 0.15 + 1.7);
+          let biasAmount = 0.3 + sineMod * 0.2; // oscillates 0.3-0.5
+
+          let toFireflyX = nearestX - finalX;
+          let toFireflyZ = nearestZ - finalZ;
+          let toFireflyLen = Math.sqrt(toFireflyX * toFireflyX + toFireflyZ * toFireflyZ) || 1;
+
+          // Only 30% of full bias toward firefly — subtle drift, not direct attraction
+          _fireflyBiasX = (toFireflyX / toFireflyLen) * biasAmount * 0.3;
+          _fireflyBiasZ = (toFireflyZ / toFireflyLen) * biasAmount * 0.3;
+        }
+      }
+    }
+
+    // Apply firefly bias to position
+    if (_isNightPhase) {
+      finalX += _fireflyBiasX;
+      finalZ += _fireflyBiasZ;
     }
 
     /* --- Wind perturbation: nudge the butterfly by ground ripple displacement --- */
