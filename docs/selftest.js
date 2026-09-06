@@ -2616,52 +2616,52 @@ export async function checks() {
       // Save original getCycleProgress
       var origGetCycleProgress = creatureDayNight.getCycleProgress;
       try {
-        // Test 1: During Night (t ~0.85), creature should be invisible
+        // Test 1: During Night (t ~0.85), creature should be visible (issue #598: butterfly active at night, attracted to fireflies)
         creatureDayNight.getCycleProgress = function() { return 0.85; };
         if (typeof gardenState.creatureUpdate === 'function') {
           gardenState.creatureUpdate(0, 0.016);
-          if (creatureState.group && creatureState.group.visible !== false) {
-            problems.push('During Night phase (t=0.85), creature.group.visible is ' + creatureState.group.visible + ' — expected false (butterfly should rest during Night).');
+          if (creatureState.group && creatureState.group.visible !== true) {
+            problems.push('During Night phase (t=0.85), creature.group.visible is ' + creatureState.group.visible + ' — expected true (butterfly is active at Night with firefly attraction, issue #598).');
           }
 
           // Test 2: During Morning (t ~0.1), creature should be visible
           creatureDayNight.getCycleProgress = function() { return 0.1; };
           gardenState.creatureUpdate(0, 0.016);
           if (creatureState.group && creatureState.group.visible !== true) {
-            problems.push('During Morning phase (t=0.1), creature.group.visible is ' + creatureState.group.visible + ' — expected true (butterfly should return at Morning).');
+            problems.push('During Morning phase (t=0.1), creature.group.visible is ' + creatureState.group.visible + ' — expected true (butterfly flies during the day).');
           }
 
-          // Test 3: Transition from Night to Morning — creature should appear (immediate, no fade)
+          // Test 3: Transition from Night to Morning — creature should remain visible (both phases active)
           creatureDayNight.getCycleProgress = function() { return 0.85; };
           gardenState.creatureUpdate(0, 0.016);
-          if (creatureState.group && creatureState.group.visible !== false) {
-            problems.push('Setting Night phase (t=0.85), creature.group.visible should become false immediately — got ' + creatureState.group.visible);
+          if (creatureState.group && creatureState.group.visible !== true) {
+            problems.push('Setting Night phase (t=0.85), creature.group.visible should stay true — got ' + creatureState.group.visible + ' (butterfly is active at Night, issue #598).');
           }
           creatureDayNight.getCycleProgress = function() { return 0.1; };
           gardenState.creatureUpdate(0, 0.016);
           if (creatureState.group && creatureState.group.visible !== true) {
-            problems.push('Setting Morning phase (t=0.1) after Night, creature.group.visible should become true immediately — got ' + creatureState.group.visible + ' (expected immediate transition, no fade).');
+            problems.push('Setting Morning phase (t=0.1) after Night, creature.group.visible should remain true — got ' + creatureState.group.visible + ' (butterfly is active all day and night, issue #598).');
           }
 
-          // Test 4: Midday (t ~0.35) — creature should also be visible
+          // Test 4: Midday (t ~0.35) — creature should be visible
           creatureDayNight.getCycleProgress = function() { return 0.35; };
           gardenState.creatureUpdate(0, 0.016);
           if (creatureState.group && creatureState.group.visible !== true) {
             problems.push('During Midday phase (t=0.35), creature.group.visible is ' + creatureState.group.visible + ' — expected true (butterfly flies during the day).');
           }
 
-          // Test 5: Evening (t ~0.55) — creature should still be visible
+          // Test 5: Evening (t ~0.55) — creature should be visible
           creatureDayNight.getCycleProgress = function() { return 0.55; };
           gardenState.creatureUpdate(0, 0.016);
           if (creatureState.group && creatureState.group.visible !== true) {
             problems.push('During Evening phase (t=0.55), creature.group.visible is ' + creatureState.group.visible + ' — expected true (butterfly flies during evening).');
           }
 
-          // Test 6: Late Night (t ~0.95) — creature should remain invisible
+          // Test 6: Late Night (t ~0.95) — creature should be visible (butterfly active all night, issue #598)
           creatureDayNight.getCycleProgress = function() { return 0.95; };
           gardenState.creatureUpdate(0, 0.016);
-          if (creatureState.group && creatureState.group.visible !== false) {
-            problems.push('During late Night phase (t=0.95), creature.group.visible is ' + creatureState.group.visible + ' — expected false (butterfly should rest during all of Night).');
+          if (creatureState.group && creatureState.group.visible !== true) {
+            problems.push('During late Night phase (t=0.95), creature.group.visible is ' + creatureState.group.visible + ' — expected true (butterfly is active all of Night with firefly attraction, issue #598).');
           }
         }
       } finally {
@@ -5547,7 +5547,7 @@ export async function checks() {
 
     try {
       const DRIZZLE_SUFFIX = ' The butterfly has taken shelter from the drizzle.';
-      const REST_SUFFIX = ' The butterfly rests quietly through the night.';
+      const REST_SUFFIX = ' The butterfly drifts near the glow of fireflies at night.';
       const DRIFT_SUFFIX = ' A small butterfly drifts at the edge of the garden.';
 
       // Helper: set display states, optionally seed the description, and run the updater
@@ -5580,7 +5580,7 @@ export async function checks() {
         problems.push('During Clear + Midday, growing-description still contains shelter/rest text: "' + drifting + '" — the old suffix should be stripped.');
       }
 
-      // Test 3: Overcast + Night -> rest text (butterfly rests during the night)
+      // Test 3: Overcast + Night -> firefly glow text (butterfly active near fireflies at night)
       const resting = runWith('Overcast', 'Night', BASE + DRIFT_SUFFIX);
       if (!resting.endsWith(REST_SUFFIX)) {
         problems.push('During Overcast + Night, growing-description is "' + resting + '" — expected it to end with "' + REST_SUFFIX.trim() + '".');
@@ -5903,7 +5903,7 @@ export async function checks() {
 
       // Stale suffixes for testing stripping
       const DRIFT_SUFFIX_TIME = ' A small butterfly drifts at the edge of the garden.';
-      const REST_SUFFIX_TIME = ' The butterfly rests quietly through the night.';
+      const REST_SUFFIX_TIME = ' The butterfly drifts near the glow of fireflies at night.';
       const DRIZZLE_SUFFIX_TIME = ' The butterfly has taken shelter from the drizzle.';
 
       const timePhaseOrder = ['Morning', 'Midday', 'Evening', 'Night'];
@@ -6163,7 +6163,7 @@ export async function checks() {
 
       // Stale suffixes for testing stripping
       var DRIFT_SUFFIX_SEASON = ' A small butterfly drifts at the edge of the garden.';
-      var REST_SUFFIX_SEASON = ' The butterfly rests quietly through the night.';
+      var REST_SUFFIX_SEASON = ' The butterfly drifts near the glow of fireflies at night.';
       var DRIZZLE_SUFFIX_SEASON = ' The butterfly has taken shelter from the drizzle.';
 
       var phaseOrder = ['Spring', 'Summer', 'Autumn', 'Winter'];
@@ -6899,6 +6899,99 @@ export async function checks() {
       }
       if (typeof gardenState.updateWeatherDescription === 'function') {
         gardenState.updateWeatherDescription();
+      }
+    }
+  }
+
+  /* ---------- Butterfly firefly attraction checks (issue #598) ---------- */
+  const creature = gardenState && gardenState.creature;
+  if (!creature) {
+    problems.push('window.__gardenState.creature is not set — butterfly state not available (issue #598).');
+  } else {
+    const dayNight = gardenState && gardenState.dayNight;
+    if (!dayNight) {
+      problems.push('window.__gardenState.dayNight is not set — cannot test firefly attraction timing (issue #598).');
+    } else if (typeof dayNight.getCycleProgress !== 'function') {
+      problems.push('dayNight.getCycleProgress is not a function (issue #598).');
+    } else {
+      const prog = dayNight.getCycleProgress();
+      const isNight = prog >= 0.75 && prog < 1.0;
+      const fireflies = gardenState && gardenState.fireflies;
+
+      // State accessors must exist
+      if (typeof creature.getFireflySlowMul !== 'function') {
+        problems.push('creature.getFireflySlowMul is not a function — firefly slow mul accessor missing (issue #598).');
+      }
+      if (typeof creature.getFireflyBias !== 'function') {
+        problems.push('creature.getFireflyBias is not a function — firefly bias accessor missing (issue #598).');
+      }
+      if (typeof creature.isNightPhase !== 'function') {
+        problems.push('creature.isNightPhase is not a function — night phase indicator missing (issue #598).');
+      }
+
+      // During night, the butterfly must not be hidden
+      if (isNight) {
+        if (!creature.group.visible) {
+          problems.push('During Night phase, creature.group.visible is false — the butterfly must be visible to show firefly attraction (issue #598).');
+        }
+        // Night phase indicator must match
+        if (!creature.isNightPhase()) {
+          problems.push('creature.isNightPhase() returned false during Night — internal flag mismatch (issue #598).');
+        }
+
+        // If fireflies exist with positions, verify bias is computed
+        if (fireflies && typeof fireflies.getAllPositions === 'function') {
+          const positions = fireflies.getAllPositions();
+          if (positions && positions.length > 0) {
+            // Verify that getAllPositions returns valid data
+            var posInvalid = false;
+            for (var fi = 0; fi < positions.length; fi++) {
+              if (typeof positions[fi].x !== 'number' || isNaN(positions[fi].x) ||
+                  typeof positions[fi].y !== 'number' || isNaN(positions[fi].y) ||
+                  typeof positions[fi].z !== 'number' || isNaN(positions[fi].z)) {
+                posInvalid = true;
+                break;
+              }
+            }
+            if (posInvalid) {
+              problems.push('fireflies.getAllPositions() returned one or more invalid position objects — expected {x, y, z} with numeric values (issue #598).');
+            }
+
+            // The firefly bias should be non-zero during Night when fireflies are present
+            // (assuming the butterfly orbit passes near enough for attraction to activate)
+            if (!creature.reducedMotion) {
+              // Bias may be zero if butterfly is far from all fireflies, but it should be
+              // detectable if any firefly is within reasonable range. We just verify the
+              // getter returns a valid object.
+              var bias = creature.getFireflyBias();
+              if (typeof bias.x !== 'number' || typeof bias.z !== 'number' || isNaN(bias.x) || isNaN(bias.z)) {
+                problems.push('creature.getFireflyBias() returned invalid bias: {x: ' + bias.x + ', z: ' + bias.z + '} — expected numeric values (issue #598).');
+              }
+
+              // fireflySlowMul should be in [0.8, 1.0] (20% reduction possible)
+              var slowMul = creature.getFireflySlowMul();
+              if (typeof slowMul !== 'number' || slowMul < 0.75 || slowMul > 1.0) {
+                problems.push('creature.getFireflySlowMul() returned ' + slowMul + ' — expected in [0.8, 1.0] (issue #598).');
+              }
+            }
+          }
+        }
+      } else {
+        // Daytime (not Night): butterfly should be visible (not hidden) and no firefly attraction
+        if (creature.group.visible === false) {
+          // If butterfly is invisible during daytime, that's okay if reduced motion is active
+          if (!creature.reducedMotion) {
+            problems.push('During daytime, creature.group.visible is false without reduced motion — butterfly should be visible (issue #598).');
+          }
+        }
+        if (creature.isNightPhase && creature.isNightPhase()) {
+          problems.push('creature.isNightPhase() returned true during daytime — night phase flag should be false (issue #598).');
+        }
+        // fireflySlowMul must be 1.0 during daytime (no speed reduction)
+        var daySlowMul = creature.getFireflySlowMul ? creature.getFireflySlowMul() : 1.0;
+        if (daySlowMul < 0.99) {
+          problems.push('creature.getFireflySlowMul() returned ' + daySlowMul + ' during daytime — expected 1.0 (no firefly speed reduction during day, issue #598).');
+        }
       }
     }
   }

@@ -256,7 +256,24 @@ export function createFireflies(scene) {
     },
     /** Number of visible dots per plant for the current season */
     dotsPerPlantMin: DOTS_MIN,
-    dotsPerPlantMax: DOTS_MAX
+    dotsPerPlantMax: DOTS_MAX,
+    /** Returns array of {x, y, z} for all active dot positions (drift-inclusive) */
+    getAllPositions: function() {
+      var positions = [];
+      for (var gi = 0; gi < plantGroups.length; gi++) {
+        var group = plantGroups[gi];
+        var posArr = group.geometry.attributes.position.array;
+        for (var di = 0; di < group.count; di++) {
+          var i3 = di * 3;
+          positions.push({
+            x: posArr[i3],
+            y: posArr[i3 + 1],
+            z: posArr[i3 + 2]
+          });
+        }
+      }
+      return positions;
+    }
   };
 
   /* --- Runtime opacity tracking for smooth fades --- */
