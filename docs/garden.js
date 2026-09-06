@@ -1137,6 +1137,47 @@ export function createFallenLeaves(scene) {
 }
 
 /**
+ * createSoilPatches — creates small dark flat CircleGeometry meshes at each
+ * fallen leaf's base position, to simulate soil darkening from decomposition.
+ *
+ * Patches are created with opacity 0 (invisible) and stored on the fallenLeaves
+ * state. They are made visible during Winter and fade out during Spring.
+ *
+ * @param {THREE.Scene} scene
+ * @param {Array<{x: number, y: number, z: number}>} basePositions — positions from fallen leaves
+ * @param {object} fallenLeavesState — the state object to attach patches to
+ */
+function createSoilPatches(scene, basePositions, fallenLeavesState) {
+  // Shared material — dark brown, starts fully transparent
+  const patchMat = new THREE.MeshStandardMaterial({
+    color: 0x2a1a0a,
+    roughness: 0.9,
+    metalness: 0.0,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false
+  });
+
+  const patches = [];
+
+  for (let i = 0; i < basePositions.length; i++) {
+    const pos = basePositions[i];
+    // Slightly larger than a fallen leaf
+    const radius = 0.04 + Math.random() * 0.02;
+    const geo = new THREE.CircleGeometry(radius, 8);
+    const mesh = new THREE.Mesh(geo, patchMat);
+    mesh.position.set(pos.x, 0.003, pos.z); // just below leaf (leaf at y=0.005)
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+    patches.push(mesh);
+  }
+
+  fallenLeavesState.patches = patches;
+  fallenLeavesState.patchMaterial = patchMat;
+}
+
+/**
  * startSeasonalCycle — drives the slow seasonal colour evolution.
  *
  * Reads materials from window.__gardenState (plant.stemMat, plant.leafMat,
@@ -1284,6 +1325,25 @@ export function startSeasonalCycle(initialProgress) {
           leafMat.opacity = Math.max(0, 1 - fadeT);
         }
 
+        /* --- Soil patches (issue #622): create if absent, show during winter --- */
+        // Create patches on first winter tick if they don't exist yet
+        if (!fallenLeaves.patches) {
+          createSoilPatches(gs.scene, fallenLeaves.basePositions, fallenLeaves);
+        }
+
+        if (fallenLeaves.patches && fallenLeaves.patchMaterial) {
+          // Opacity: stays ~0.4 for the first ~60% of winter, then fades with the leaves
+          if (t < 0.6) {
+            fallenLeaves.patchMaterial.opacity = 0.4;
+            // Colour stays dark brown (0x2a1a0a)
+            fallenLeaves.patchMaterial.color.setHex(0x2a1a0a);
+          } else {
+            // Fade out along with the leaves in late winter
+            const fadeT = (t - 0.6) / 0.4;
+            fallenLeaves.patchMaterial.opacity = Math.max(0, 0.4 * (1 - fadeT));
+          }
+        }
+
         /* Update DOM as winter progresses */
         if (t > 0.3 && !fallenLeaves._winterDomUpdated) {
           fallenLeaves._winterDomUpdated = true;
@@ -1298,6 +1358,56 @@ export function startSeasonalCycle(initialProgress) {
 
         // Colour stays at winter desaturated brown
         leafMat.color.copy(winterLeafColour);
+
+        /* --- Soil patches (issue #622): fade out during first 30% of spring --- */
+        if (fallenLeaves.patches && fallenLeaves.patchMaterial) {
+          if (t < 0.30) {
+            // Opacity fades from 0.4 to 0 over first 30% of spring
+            const fadeProgress = t / 0.30; // 0→1 within the first 30%
+            fallenLeaves.patchMaterial.opacity = 0.4 * (1 - fadeProgress);
+            // Colour shifts from dark brown to a slightly richer brown
+            const darkBrown = new THREE.Color(0x2a1a0a);
+            const richBrown = new THREE.Color(0x3a2a15);
+            fallenLeaves.patchMaterial.color.copy(darkBrown).lerp(richBrown, fadeProgress);
+          } else {
+            fallenLeaves.patchMaterial.opacity = 0;
+          }
+        }
+
+        /* --- Spring colour enrichment (issue #622): enrich nearest plant during first 30% --- */
+        if (t < 0.30) {
+          const enrichBlend = 0.15 * (1 - t / 0.30); // 0.15 at start, 0 at 30%
+          gs.springEnrichBlend = enrichBlend;
+
+          // Find the nearest plant to the leaf cluster centre (origin)
+          // plant1 is at (0,0,0) and leaves are scattered around origin, so
+          // plant1 is always nearest. We implement general logic anyway.
+          const leafCentre = { x: 0, z: 0 };
+          let nearestPlant = null;
+          let nearestDist = Infinity;
+          const plantLabels = ['plant', 'plant2'];
+          for (const label of plantLabels) {
+            const p = gs[label];
+            if (p && p.group && p.stemMat && p.leafMat) {
+              const dx = p.group.position.x - leafCentre.x;
+              const dz = p.group.position.z - leafCentre.z;
+              const dist = Math.sqrt(dx * dx + dz * dz);
+              if (dist < nearestDist) {
+                nearestDist = dist;
+                nearestPlant = p;
+              }
+            }
+          }
+
+          if (nearestPlant) {
+            // Enrich stem colour: lerp 15% toward deeper green (0x4d7a2c)
+            nearestPlant.stemMat.color.lerp(new THREE.Color(0x4d7a2c), enrichBlend);
+            // Enrich leaf colour: lerp 15% toward deeper green (0x3a7c1a)
+            nearestPlant.leafMat.color.lerp(new THREE.Color(0x3a7c1a), enrichBlend);
+          }
+        } else {
+          gs.springEnrichBlend = 0;
+        }
 
         /* Once fully into spring, reset DOM flags for next cycle */
         if (t > 0.2) {

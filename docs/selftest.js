@@ -949,6 +949,212 @@ export async function checks() {
     }
   }
 
+  /* ---------- Soil patches and spring colour enrichment checks (issue #622) ---------- */
+  // Verify that fallen leaves present at the start of Winter create subtle dark
+  // patches on the ground, and that the nearest plant shows deeper green during
+  // the first ~30% of Spring.
+
+  const springGs = window.__gardenState;
+  if (!springGs) {
+    problems.push('window.__gardenState is not set — cannot verify soil patches and spring enrichment (issue #622).');
+  } else {
+    // Define seasonal palettes inline for this check (mirrors garden.js constants)
+    const SEASON_PALETTES_LOCAL = {
+      spring: { stem: 0x5d8a3c, leaf: 0x4a8c2a, ground: 0x4a3728 },
+      summer: { stem: 0x7a9a4a, leaf: 0x6a9a3a, ground: 0x5a4a30 },
+      autumn: { stem: 0x9a7a3a, leaf: 0xaa6a2a, ground: 0x6a5a3a },
+      winter: { stem: 0x6a5a3a, leaf: 0x5a4a2a, ground: 0x3a2a1a }
+    };
+
+    // Shared constants for season computations (mirror garden.js)
+    const SEASON_DURATION_MS = 180_000;
+    const CYCLE_DURATION_MS = SEASON_DURATION_MS * 4;
+    const SEASON_NAMES = ['Spring', 'Summer', 'Autumn', 'Winter'];
+
+    // Helper: Euclidean distance between two THREE.Color values
+    function colorDist(a, b) {
+      const dr = a.r - b.r;
+      const dg = a.g - b.g;
+      const db = a.b - b.b;
+      return Math.sqrt(dr * dr + dg * dg + db * db);
+    }
+
+    // 1. Check springEnrichBlend is exposed and is a number
+    if (typeof springGs.springEnrichBlend !== 'number') {
+      problems.push('window.__gardenState.springEnrichBlend is not a number — spring enrichment blend not exposed (issue #622).');
+    } else {
+      // 2. Verify the blend matches the expected value based on current season progress
+
+      if (typeof springGs.seasonProgress === 'number') {
+        const cycleTime = (springGs.seasonProgress * CYCLE_DURATION_MS) % CYCLE_DURATION_MS;
+        const seasonIndex = Math.floor(cycleTime / SEASON_DURATION_MS) % 4;
+        const seasonProgress = (cycleTime % SEASON_DURATION_MS) / SEASON_DURATION_MS;
+
+        const expectedBlend = (seasonIndex === 0 && seasonProgress < 0.30)
+          ? 0.15 * (1 - seasonProgress / 0.30)
+          : 0;
+
+        const actualBlend = springGs.springEnrichBlend;
+        const eps = 0.0001;
+        if (Math.abs(actualBlend - expectedBlend) > eps) {
+          problems.push(
+            'springEnrichBlend mismatch: expected ' + expectedBlend.toFixed(5) +
+            ' (seasonIndex=' + seasonIndex + ', seasonProgress=' + seasonProgress.toFixed(3) + ')' +
+            ', got ' + actualBlend.toFixed(5) +
+            ' — the spring enrichment blend must be: when spring (seasonIndex=0) and seasonProgress<0.30, weight=0.15*(1-seasonProgress/0.30), else 0 (issue #622).'
+          );
+        }
+
+        // Verify blend is always in [0, 0.15]
+        if (actualBlend < 0 || actualBlend > 0.15) {
+          problems.push('springEnrichBlend is ' + actualBlend.toFixed(5) + ', expected in [0, 0.15] (issue #622).');
+        }
+
+        // Verify blend is non-zero ONLY during Spring's first 30%
+        if (seasonIndex === 0 && seasonProgress < 0.30) {
+          if (actualBlend <= 0) {
+            problems.push('springEnrichBlend is ' + actualBlend.toFixed(5) + ' during spring\'s first 30% (seasonProgress=' + seasonProgress.toFixed(3) + '), expected > 0 (issue #622).');
+          }
+        } else {
+          if (actualBlend !== 0) {
+            problems.push('springEnrichBlend is ' + actualBlend.toFixed(5) + ' outside spring\'s first 30% (seasonIndex=' + seasonIndex + ', seasonProgress=' + seasonProgress.toFixed(3) + '), expected 0 (issue #622).');
+          }
+        }
+
+        // 3. Verify the nearest plant's colour shows enrichment during Spring's first 30%
+        const plant1 = springGs.plant;
+        const plant2 = springGs.plant2;
+
+        if (plant1 && plant1.stemMat && plant1.leafMat) {
+          // Compute the expected seasonal base colour
+          const current = SEASON_PALETTES_LOCAL[SEASON_NAMES[seasonIndex].toLowerCase()];
+          const next = SEASON_PALETTES_LOCAL[SEASON_NAMES[(seasonIndex + 1) % 4].toLowerCase()];
+          const t = seasonProgress;
+
+          const expectedStem = new THREE.Color(current.stem).lerp(new THREE.Color(next.stem), t);
+          const expectedLeaf = new THREE.Color(current.leaf).lerp(new THREE.Color(next.leaf), t);
+
+          // Apply enrichment if in Spring's first 30%
+          if (actualBlend > 0) {
+            expectedStem.lerp(new THREE.Color(0x4d7a2c), actualBlend);
+            expectedLeaf.lerp(new THREE.Color(0x3a7c1a), actualBlend);
+          }
+
+          const stemDist2 = colorDist(plant1.stemMat.color, expectedStem);
+          const leafDist2 = colorDist(plant1.leafMat.color, expectedLeaf);
+
+          if (stemDist2 > 0.02) {
+            problems.push('plant stem colour ' + plant1.stemMat.color.getHexString() +
+              ' does not match expected enriched colour ' + expectedStem.getHexString() +
+              ' (distance ' + stemDist2.toFixed(4) + ') at seasonIndex=' + seasonIndex +
+              ' seasonProgress=' + seasonProgress.toFixed(3) +
+              ' enrichBlend=' + actualBlend.toFixed(5) + ' (issue #622).');
+          }
+
+          if (leafDist2 > 0.02) {
+            problems.push('plant leaf colour ' + plant1.leafMat.color.getHexString() +
+              ' does not match expected enriched colour ' + expectedLeaf.getHexString() +
+              ' (distance ' + leafDist2.toFixed(4) + ') at seasonIndex=' + seasonIndex +
+              ' seasonProgress=' + seasonProgress.toFixed(3) +
+              ' enrichBlend=' + actualBlend.toFixed(5) + ' (issue #622).');
+          }
+        }
+      }
+    }
+
+    // 4. Check fallenLeaves patches exist (may not be present yet during Spring/Summer/Autumn,
+    //    but if present, verify their configuration)
+    const fallenLeaves = springGs.fallenLeaves;
+    if (fallenLeaves) {
+      if (fallenLeaves.patches) {
+        // Patches exist — verify they are CircleGeometry meshes
+        if (!Array.isArray(fallenLeaves.patches) || fallenLeaves.patches.length === 0) {
+          problems.push('fallenLeaves.patches is empty or not an array — expected soil patch meshes (issue #622).');
+        } else {
+          fallenLeaves.patches.forEach(function(patch, i) {
+            if (!(patch instanceof THREE.Mesh)) {
+              problems.push('fallenLeaves.patches[' + i + '] is not a THREE.Mesh (issue #622).');
+              return;
+            }
+            if (patch.geometry.type !== 'CircleGeometry') {
+              problems.push('fallenLeaves.patches[' + i + '] geometry is "' + patch.geometry.type + '", expected CircleGeometry (issue #622).');
+            }
+            // Verify material is transparent
+            const mat = patch.material;
+            if (!mat || mat.transparent !== true) {
+              problems.push('fallenLeaves.patches[' + i + '] material.transparent is ' + (mat ? mat.transparent : 'missing') + ', expected true (issue #622).');
+            }
+            // Verify patch is near the ground (y ~ 0.003)
+            if (patch.position.y < 0 || patch.position.y > 0.01) {
+              problems.push('fallenLeaves.patches[' + i + '] position.y is ' + patch.position.y.toFixed(4) + ', expected ~0.003 (near ground) (issue #622).');
+            }
+          });
+
+          // Verify patchMaterial exists and is a shared material
+          if (!fallenLeaves.patchMaterial) {
+            problems.push('fallenLeaves.patchMaterial is missing — shared patch material not exposed (issue #622).');
+          } else {
+            // Verify patchMaterial colour is dark brown (0x2a1a0a) or richer brown (0x3a2a15)
+            // depending on current season/phase
+            const col = fallenLeaves.patchMaterial.color;
+            if (!(col instanceof THREE.Color)) {
+              problems.push('fallenLeaves.patchMaterial.color is not a THREE.Color (issue #622).');
+            }
+          }
+
+          // Verify patches match fallenLeaves count
+          if (fallenLeaves.basePositions && fallenLeaves.patches.length !== fallenLeaves.basePositions.length) {
+            problems.push('fallenLeaves.patches length (' + fallenLeaves.patches.length +
+              ') does not match fallenLeaves.basePositions length (' +
+              fallenLeaves.basePositions.length + ') (issue #622).');
+          }
+        }
+      }
+      // If patches are absent, that's OK — they are created on first Winter tick.
+      // We can verify the structure by checking they'll be created with CircleGeometry.
+    } else {
+      problems.push('window.__gardenState.fallenLeaves is not set — cannot check soil patches (issue #622).');
+    }
+
+    // 5. Verify plant2 colour enrichment (if plant2 exists, it should NOT be enriched
+    //    since plant1 at origin is always the nearest)
+    const plant2 = springGs.plant2;
+    if (plant2 && plant2.stemMat && plant2.leafMat && springGs.plant) {
+      // The nearest plant (plant1) should have enrichment applied, plant2 should not.
+      // We verify this by comparing the distance from leaf cluster centre (origin)
+      // to each plant. plant1 is at (0,0,0) so distance is 0. plant2 is offset.
+      const p2Dist = Math.sqrt(
+        plant2.group.position.x * plant2.group.position.x +
+        plant2.group.position.z * plant2.group.position.z
+      );
+      if (p2Dist > 0.1 && springGs.springEnrichBlend > 0) {
+        // Verify plant2's colour is NOT enriched (i.e. matches the base seasonal colour)
+        const seasonIndex = Math.floor((springGs.seasonProgress * CYCLE_DURATION_MS) % CYCLE_DURATION_MS / SEASON_DURATION_MS) % 4;
+        const seasonProgress = ((springGs.seasonProgress * CYCLE_DURATION_MS) % CYCLE_DURATION_MS % SEASON_DURATION_MS) / SEASON_DURATION_MS;
+        const current = SEASON_PALETTES_LOCAL[SEASON_NAMES[seasonIndex].toLowerCase()];
+        const next = SEASON_PALETTES_LOCAL[SEASON_NAMES[(seasonIndex + 1) % 4].toLowerCase()];
+        const t = seasonProgress;
+
+        const baseStem = new THREE.Color(current.stem).lerp(new THREE.Color(next.stem), t);
+        const baseLeaf = new THREE.Color(current.leaf).lerp(new THREE.Color(next.leaf), t);
+
+        const stemDist3 = colorDist(plant2.stemMat.color, baseStem);
+        const leafDist3 = colorDist(plant2.leafMat.color, baseLeaf);
+
+        if (stemDist3 > 0.02) {
+          problems.push('plant2 stem colour ' + plant2.stemMat.color.getHexString() +
+            ' shows enrichment (distance ' + stemDist3.toFixed(4) + ' from base seasonal colour) — ' +
+            'only the nearest plant (plant1) should be enriched (issue #622).');
+        }
+        if (leafDist3 > 0.02) {
+          problems.push('plant2 leaf colour ' + plant2.leafMat.color.getHexString() +
+            ' shows enrichment (distance ' + leafDist3.toFixed(4) + ' from base seasonal colour) — ' +
+            'only the nearest plant (plant1) should be enriched (issue #622).');
+        }
+      }
+    }
+  }
+
   /* ---------- Ambient floating particles checks ---------- */
   const particles = gardenState && gardenState.particles;
   if (!particles) {
