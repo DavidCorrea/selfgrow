@@ -5229,6 +5229,181 @@ export async function checks() {
       }
     }
 
+  /* ---------- Firefly-to-plant surface glow checks (issue #613) ---------- */
+  // Verify the warm emissive colour shift on plant stem/leaf materials
+  // during Night phase, pulsing with the firefly glow.
+  {
+    var glowFFState = gardenState && gardenState.fireflies;
+    var glowPlant = gardenState && gardenState.plant;
+    var glowDayNight = gardenState && gardenState.dayNight;
+    var glowWeather = gardenState && gardenState.weather;
+    var glowSeasonEl = document.getElementById('season-display');
+
+    // Helper to settle fireflies (hoisted to outer block scope for access by all tests)
+    function settleGlow(season, weather, progress) {
+      if (glowSeasonEl) glowSeasonEl.textContent = season;
+      if (glowWeather && typeof glowWeather.getPhase === 'function') {
+        glowWeather.getPhase = function() { return weather; };
+      }
+      glowDayNight.getCycleProgress = function() { return progress; };
+      if (typeof gardenState.firefliesUpdate === 'function') {
+        for (var gk = 0; gk < 300; gk++) {
+          gardenState.firefliesUpdate(0, 0.016);
+        }
+      }
+    }
+
+    if (!glowFFState) {
+      problems.push('Cannot verify firefly plant glow: gardenState.fireflies is not set.');
+    } else if (!glowPlant || !glowPlant.stemMat || !glowPlant.leafMat) {
+      problems.push('Cannot verify firefly plant glow: plant.stemMat or plant.leafMat is missing.');
+    } else if (!glowDayNight || typeof glowDayNight.getCycleProgress !== 'function') {
+      problems.push('Cannot verify firefly plant glow: dayNight.getCycleProgress not available.');
+    } else {
+      // Verify getPlantGlowInfo and isGlowActive are exposed on state
+      if (typeof glowFFState.getPlantGlowInfo !== 'function') {
+        problems.push('fireflyState.getPlantGlowInfo is not a function — plant glow state accessor is missing (issue #613).');
+      }
+      if (typeof glowFFState.isGlowActive !== 'function') {
+        problems.push('fireflyState.isGlowActive is not a function — glow active check is missing (issue #613).');
+      }
+      if (typeof glowFFState.maxGlowShift !== 'number' || glowFFState.maxGlowShift !== 0.10) {
+        problems.push('fireflyState.maxGlowShift is ' + glowFFState.maxGlowShift + ', expected 0.10 (≤10% saturation shift cap).');
+      }
+
+      // Save originals
+      var glowOrigCycle = glowDayNight.getCycleProgress;
+      var glowOrigSeason = glowSeasonEl ? glowSeasonEl.textContent : '';
+      var glowOrigWeather = glowWeather && typeof glowWeather.getPhase === 'function' ? glowWeather.getPhase : null;
+
+      try {
+        // Test 1: During Summer + Night + Clear, plant materials should have emissive glow
+        settleGlow('Summer', 'Clear', 0.85);
+        var stemEmissive = glowPlant.stemMat.emissiveIntensity || 0;
+        var leafEmissive = glowPlant.leafMat.emissiveIntensity || 0;
+
+        if (stemEmissive <= 0.001 && leafEmissive <= 0.001) {
+          problems.push('During Summer+Night+Clear, plant stem/leaf emissiveIntensity is ~0 (stem=' + stemEmissive.toFixed(4) + ', leaf=' + leafEmissive.toFixed(4) + ') — expected > 0.001 (firefly glow should tint plant surfaces).');
+        }
+
+        // Test 2: Emissive intensity must not exceed 10% saturation shift cap
+        if (stemEmissive > 0.101 || leafEmissive > 0.101) {
+          problems.push('Plant stem/leaf emissiveIntensity exceeds 0.10 cap (stem=' + stemEmissive.toFixed(4) + ', leaf=' + leafEmissive.toFixed(4) + ') — glow must be ≤10% saturation shift.');
+        }
+
+        // Test 3: Verify emissive colour is warm yellow-green (0xccdd88)
+        var stemEmissiveColor = glowPlant.stemMat.emissive;
+        var leafEmissiveColor = glowPlant.leafMat.emissive;
+        if (stemEmissive > 0.001 && stemEmissiveColor) {
+          var hex = stemEmissiveColor.getHex();
+          if (hex !== 0xccdd88) {
+            problems.push('Plant stem emissive colour is 0x' + hex.toString(16) + ', expected 0xccdd88 (warm yellow-green).');
+          }
+        }
+        if (leafEmissive > 0.001 && leafEmissiveColor) {
+          var hex = leafEmissiveColor.getHex();
+          if (hex !== 0xccdd88) {
+            problems.push('Plant leaf emissive colour is 0x' + hex.toString(16) + ', expected 0xccdd88 (warm yellow-green).');
+          }
+        }
+
+        // Test 4: Outside Night phase (t < 0.75), emissiveIntensity should be 0
+        settleGlow('Summer', 'Clear', 0.55);
+        stemEmissive = glowPlant.stemMat.emissiveIntensity || 0;
+        leafEmissive = glowPlant.leafMat.emissiveIntensity || 0;
+        if (stemEmissive > 0.001 || leafEmissive > 0.001) {
+          problems.push('During Evening (t=0.55), plant emissiveIntensity is > 0 (stem=' + stemEmissive.toFixed(4) + ', leaf=' + leafEmissive.toFixed(4) + ') — expected 0 (glow only active during Night phase).');
+        }
+
+        // Test 5: During Winter + Night + Clear, emissiveIntensity should be 0 (fireflies invisible)
+        settleGlow('Winter', 'Clear', 0.85);
+        stemEmissive = glowPlant.stemMat.emissiveIntensity || 0;
+        leafEmissive = glowPlant.leafMat.emissiveIntensity || 0;
+        if (stemEmissive > 0.001 || leafEmissive > 0.001) {
+          problems.push('During Winter+Night+Clear, plant emissiveIntensity is > 0 (stem=' + stemEmissive.toFixed(4) + ', leaf=' + leafEmissive.toFixed(4) + ') — expected 0 (no fireflies in winter, so no glow).');
+        }
+
+        // Test 6: Verify isGlowActive returns correct state
+        settleGlow('Summer', 'Clear', 0.85);
+        var active = glowFFState.isGlowActive();
+        if (!active) {
+          problems.push('fireflyState.isGlowActive() returned false during Summer+Night+Clear — expected true (glow should be active).');
+        }
+
+        settleGlow('Summer', 'Clear', 0.55);
+        active = glowFFState.isGlowActive();
+        if (active) {
+          problems.push('fireflyState.isGlowActive() returned true during Evening (t=0.55) — expected false (glow only active during Night).');
+        }
+
+        // Test 7: During Night with overcast weather, glow should still be present
+        // (currentOpacity with Overcast = 0.15*0.6 = 0.09 > 0.001 threshold)
+        settleGlow('Summer', 'Overcast', 0.85);
+        stemEmissive = glowPlant.stemMat.emissiveIntensity || 0;
+        leafEmissive = glowPlant.leafMat.emissiveIntensity || 0;
+        if (stemEmissive <= 0.001 && leafEmissive <= 0.001) {
+          problems.push('During Summer+Night+Overcast, plant emissiveIntensity is ~0 (stem=' + stemEmissive.toFixed(4) + ', leaf=' + leafEmissive.toFixed(4) + ') — expected > 0.001 (glow should be present when fireflies dimly visible).');
+        }
+      } finally {
+        // Restore
+        glowDayNight.getCycleProgress = glowOrigCycle;
+        if (glowSeasonEl) glowSeasonEl.textContent = glowOrigSeason;
+        if (glowOrigWeather && glowWeather && typeof glowWeather.getPhase === 'function') {
+          glowWeather.getPhase = glowOrigWeather;
+        }
+        if (typeof gardenState.firefliesUpdate === 'function') {
+          for (var gk = 0; gk < 300; gk++) {
+            gardenState.firefliesUpdate(0, 0.016);
+          }
+        }
+      }
+    }
+
+    // Test 8: Reduced-motion glow stability: when reducedMotion is active, the
+    // glow should be present but not pulse (steady emissiveIntensity across frames).
+    // We verify this by running multiple update frames with the same time input
+    // and checking that the emissiveIntensity stays constant.
+    if (glowFFState && glowPlant && glowPlant.stemMat && glowFFState.reducedMotion) {
+      var glowOrigCycle2 = glowDayNight.getCycleProgress;
+      var glowOrigSeason2 = glowSeasonEl ? glowSeasonEl.textContent : '';
+
+      try {
+        settleGlow('Summer', 'Clear', 0.85);
+
+        // Capture initial emissive intensity
+        var rmStem1 = glowPlant.stemMat.emissiveIntensity || 0;
+        var rmLeaf1 = glowPlant.leafMat.emissiveIntensity || 0;
+
+        // Run additional updates with varied time values (should not pulse)
+        for (var rmk = 0; rmk < 60; rmk++) {
+          if (typeof gardenState.firefliesUpdate === 'function') {
+            gardenState.firefliesUpdate(rmk * 0.5, 0.016);
+          }
+        }
+
+        var rmStem2 = glowPlant.stemMat.emissiveIntensity || 0;
+        var rmLeaf2 = glowPlant.leafMat.emissiveIntensity || 0;
+
+        if (Math.abs(rmStem2 - rmStem1) > 0.005 || Math.abs(rmLeaf2 - rmLeaf1) > 0.005) {
+          problems.push('With reducedMotion active, plant emissiveIntensity changed over time (stem: ' +
+            rmStem1.toFixed(4) + ' -> ' + rmStem2.toFixed(4) + ', leaf: ' +
+            rmLeaf1.toFixed(4) + ' -> ' + rmLeaf2.toFixed(4) +
+            ') — expected steady tint (no pulsing) when prefers-reduced-motion is active (issue #613).');
+        }
+
+        // Also verify glow is non-zero (present but steady)
+        if (rmStem2 <= 0.001 && rmLeaf2 <= 0.001) {
+          problems.push('With reducedMotion active during Summer+Night+Clear, plant emissiveIntensity is ~0 ' +
+            '(stem=' + rmStem2.toFixed(4) + ', leaf=' + rmLeaf2.toFixed(4) +
+            ') — expected > 0.001 (steady tint should be present even without pulsing, issue #613).');
+        }
+      } finally {
+        glowDayNight.getCycleProgress = glowOrigCycle2;
+        if (glowSeasonEl) glowSeasonEl.textContent = glowOrigSeason2;
+      }
+    }
+  }
+
   /* ---------- Ground ripple wind perturbation for firefly drift (issue #606) ---------- */
   if (gardenState && gardenState.fireflies && gardenState.fireflies.plantGroups && gardenState.fireflies.plantGroups.length > 0) {
     var ffState = gardenState.fireflies;
