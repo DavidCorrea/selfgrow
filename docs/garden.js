@@ -626,6 +626,7 @@ function createPlant(opts) {
                 plotDesc.textContent = 'A small, soft-coloured flower blooms at the tip of the seedling, a quiet reward for patient watching.';
               }
             }
+            break;
 
           case 'fading':
             if (plant2Exists) {
