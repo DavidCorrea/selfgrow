@@ -11,8 +11,14 @@
  * night, fulfilling the Vision's 'something small is usually happening at
  * the edge of attention.'
  *
+ * Also casts a subtle warm yellow-green emissive tint on nearby plant
+ * surfaces (stem and leaf materials) that pulses in sync with the
+ * firefly glow (issue #613). Effect ≤10% saturation shift, active only
+ * during Night phase (t ≥ 0.75) when fireflies are visible.
+ *
  * Respects prefers-reduced-motion: dots are stationary (no pulsing/drift)
- * but still fade in/out with the day/night cycle.
+ * but still fade in/out with the day/night cycle. The plant surface glow
+ * is still present but does not pulse (steady tint at 50% pulse).
  *
  * Exports: createFireflies(scene) -> { update, state, destroy }
  */
@@ -33,6 +39,10 @@ const PULSE_FREQ_MIN = 0.2;        // Hz — slow, irregular
 const PULSE_FREQ_MAX = 0.5;        // Hz
 const DRIFT_FREQ = 0.12;           // frequency of drift oscillation
 const WIND_DRIFT_SCALE = 0.02;      // scale of ground ripple wind perturbation on drift
+
+/* --- Firefly-to-plant surface glow (issue #613) --- */
+const WARM_GLOW_COLOR = 0xccdd88;     // warm yellow-green tint for plant surface glow
+const MAX_GLOW_SHIFT = 0.10;           // ≤10% saturation shift from base colour (barely perceptible)
 
 /* --- Weather modulation --- */
 const WEATHER_MULTIPLIERS = {
@@ -275,7 +285,39 @@ export function createFireflies(scene) {
         }
       }
       return positions;
-    }
+    },
+    /** Plant surface glow state for each plant ref (issue #613) */
+    getPlantGlowInfo: function() {
+      var info = {};
+      var gs = window.__gardenState;
+      for (var gi = 0; gi < plantGroups.length; gi++) {
+        var group = plantGroups[gi];
+        var plantObj = gs && gs[group.plantRef];
+        if (!plantObj) {
+          info[group.plantRef] = { stemEmissiveIntensity: 0, leafEmissiveIntensity: 0 };
+          continue;
+        }
+        info[group.plantRef] = {
+          stemEmissiveIntensity: plantObj.stemMat ? plantObj.stemMat.emissiveIntensity || 0 : 0,
+          leafEmissiveIntensity: plantObj.leafMat ? plantObj.leafMat.emissiveIntensity || 0 : 0
+        };
+      }
+      return info;
+    },
+    /** Whether the glow is currently active (any plant has emissiveIntensity > 0) */
+    isGlowActive: function() {
+      var info = this.getPlantGlowInfo();
+      for (var ref in info) {
+        if (info[ref].stemEmissiveIntensity > 0.001 || info[ref].leafEmissiveIntensity > 0.001) {
+          return true;
+        }
+      }
+      return false;
+    },
+    /** Maximum glow shift constant exposed for testing */
+    maxGlowShift: MAX_GLOW_SHIFT,
+    /** Warm glow colour constant exposed for testing */
+    warmGlowColor: WARM_GLOW_COLOR
   };
 
   /* --- Runtime opacity tracking for smooth fades --- */
@@ -511,6 +553,60 @@ export function createFireflies(scene) {
 
       group.geometry.attributes.position.needsUpdate = true;
       group.geometry.attributes.size.needsUpdate = true;
+    }
+
+    /* --- Firefly-to-plant surface glow (issue #613) --- */
+    // Apply a subtle warm emissive colour shift to stem/leaf materials,
+    // pulsing in sync with the nearest firefly's glow. Only during Night.
+    const isNightPhase = t >= 0.75 && t < 1.0;
+    const firefliesVisible = currentOpacity > 0.001;
+
+    if (isNightPhase && firefliesVisible) {
+      for (let gi = 0; gi < plantGroups.length; gi++) {
+        const group = plantGroups[gi];
+        const plantObj = window.__gardenState && window.__gardenState[group.plantRef];
+        if (!plantObj || (!plantObj.stemMat && !plantObj.leafMat)) continue;
+
+        // Find max pulse across visible dots in this group
+        let maxPulse = 0;
+        const visibleCount = Math.min(group.count, maxVisibleDots);
+        for (let i = 0; i < visibleCount; i++) {
+          const dd = group.dotData[i];
+          let pulse;
+          if (!state.reducedMotion) {
+            pulse = Math.sin(time * dd.freq * Math.PI * 2 + dd.phaseOffset) * 0.5 + 0.5;
+          } else {
+            // Reduced motion: steady tint at 50% pulse (no pulsing)
+            pulse = 0.5;
+          }
+          if (pulse > maxPulse) maxPulse = pulse;
+        }
+
+        const glowIntensity = maxPulse * MAX_GLOW_SHIFT; // capped at 0.10
+        if (plantObj.stemMat) {
+          plantObj.stemMat.emissive.setHex(WARM_GLOW_COLOR);
+          plantObj.stemMat.emissiveIntensity = glowIntensity;
+        }
+        if (plantObj.leafMat) {
+          plantObj.leafMat.emissive.setHex(WARM_GLOW_COLOR);
+          plantObj.leafMat.emissiveIntensity = glowIntensity;
+        }
+      }
+    } else {
+      // Reset glow — outside Night phase or fireflies invisible/zero opacity (winter, overcast)
+      for (let gi = 0; gi < plantGroups.length; gi++) {
+        const group = plantGroups[gi];
+        const plantObj = window.__gardenState && window.__gardenState[group.plantRef];
+        if (!plantObj) continue;
+        if (plantObj.stemMat) {
+          plantObj.stemMat.emissiveIntensity = 0;
+          plantObj.stemMat.emissive.setHex(0x000000);
+        }
+        if (plantObj.leafMat) {
+          plantObj.leafMat.emissiveIntensity = 0;
+          plantObj.leafMat.emissive.setHex(0x000000);
+        }
+      }
     }
   }
 
