@@ -7685,6 +7685,163 @@ export async function checks() {
     }
   }
 
+  /* ---------- Residual water droplet checks (issue #615) ---------- */
+  const dropletPlant = gardenState && gardenState.plant;
+  const dropletPlant2 = gardenState && gardenState.plant2;
+
+  function checkDroplets(plantObj, label) {
+    if (!plantObj) return;
+
+    if (!plantObj.droplets) {
+      problems.push(label + '.droplets is not set — residual water droplet state is missing (issue #615).');
+      return;
+    }
+
+    const d = plantObj.droplets;
+
+    // Verify droplets array exists and has the correct count (leafCount + stem)
+    if (!d.droplets || !Array.isArray(d.droplets)) {
+      problems.push(label + '.droplets.droplets is not an array — droplet meshes missing (issue #615).');
+      return;
+    }
+
+    const leafCount = plantObj.leaves ? plantObj.leaves.length : 0;
+    const expectedCount = leafCount + 1; // one per leaf + one on stem
+    if (d.droplets.length !== expectedCount) {
+      problems.push(label + ' has ' + d.droplets.length + ' droplets, expected ' + expectedCount +
+        ' (' + leafCount + ' leaves + 1 stem top) (issue #615).');
+    }
+
+    // Verify each droplet is a child of the correct parent
+    d.droplets.forEach(function(droplet, i) {
+      if (!(droplet instanceof THREE.Mesh)) {
+        problems.push(label + ' droplet #' + i + ' is not a THREE.Mesh (issue #615).');
+        return;
+      }
+
+      // Verify geometry is SphereGeometry
+      if (!droplet.geometry || droplet.geometry.type !== 'SphereGeometry') {
+        problems.push(label + ' droplet #' + i + ' geometry is "' +
+          (droplet.geometry ? droplet.geometry.type : 'null') + '", expected SphereGeometry (issue #615).');
+      }
+
+      // Verify material properties
+      const mat = droplet.material;
+      if (!mat) {
+        problems.push(label + ' droplet #' + i + ' has no material (issue #615).');
+        return;
+      }
+      if (mat.transparent !== true) {
+        problems.push(label + ' droplet #' + i + ' material.transparent is ' + mat.transparent + ', expected true (issue #615).');
+      }
+      if (typeof mat.metalness !== 'number' || mat.metalness < 0.8) {
+        problems.push(label + ' droplet #' + i + ' material.metalness is ' + mat.metalness + ', expected >= 0.8 for specular highlight (issue #615).');
+      }
+      if (typeof mat.roughness !== 'number' || mat.roughness > 0.2) {
+        problems.push(label + ' droplet #' + i + ' material.roughness is ' + mat.roughness + ', expected <= 0.2 for specular highlight (issue #615).');
+      }
+
+      // Verify droplet is a child of the expected parent
+      // Leaf droplets (first leafCount) should be children of the corresponding leaf meshes
+      // Stem droplet (last one) should be a child of stem mesh
+      if (i < leafCount) {
+        const leaf = plantObj.leaves[i];
+        if (leaf && leaf !== droplet.parent) {
+          problems.push(label + ' leaf droplet #' + i + ' parent is not the leaf mesh — expected leaf #' + i + ' to be the parent (issue #615).');
+        }
+      } else {
+        // Stem droplet
+        if (plantObj.stem && plantObj.stem !== droplet.parent) {
+          problems.push(label + ' stem droplet parent is not the stem mesh (issue #615).');
+        }
+      }
+    });
+
+    // Verify droplet position is at (0, h, 0) for leaf droplets
+    // We only check that position.y is not negative (tip should be above origin)
+    d.droplets.forEach(function(droplet, i) {
+      if (i < leafCount) {
+        // Leaf droplet should be at positive Y (leaf tip position)
+        if (droplet.position.y <= 0) {
+          problems.push(label + ' leaf droplet #' + i + ' has y=' + droplet.position.y.toFixed(4) +
+            ', expected > 0 (should be at leaf tip) (issue #615).');
+        }
+      } else {
+        // Stem droplet should be at stemHeight
+        if (droplet.position.y <= 0) {
+          problems.push(label + ' stem droplet has y=' + droplet.position.y.toFixed(4) +
+            ', expected > 0 (should be at stem top) (issue #615).');
+        }
+      }
+    });
+
+    // Verify updateDroplets, setOpacity, getOpacity are functions
+    if (typeof d.updateDroplets !== 'function') {
+      problems.push(label + '.droplets.updateDroplets is not a function — droplet update method missing (issue #615).');
+    }
+    if (typeof d.setOpacity !== 'function') {
+      problems.push(label + '.droplets.setOpacity is not a function — opacity setter missing (issue #615).');
+    }
+    if (typeof d.getOpacity !== 'function') {
+      problems.push(label + '.droplets.getOpacity is not a function — opacity getter missing (issue #615).');
+    }
+
+    // Verify initial state: opacity should be 0 when no recent drizzle
+    // (at page load, no drizzle just happened, so droplets should be invisible)
+    if (typeof d.getOpacity === 'function') {
+      const initialOpacity = d.getOpacity();
+      if (typeof initialOpacity !== 'number' || initialOpacity < 0 || initialOpacity > 1) {
+        problems.push(label + '.droplets.getOpacity() returned ' + initialOpacity + ', expected a number in [0, 1] (issue #615).');
+      }
+      // On initial page load without recent drizzle, opacity should be 0
+      // But if we happen to be in Light Drizzle or just exited it, opacity may be > 0.
+      // We check by verifying the weather phase — only flag if no drizzle and opacity > 0.
+      const weather = gardenState && gardenState.weather;
+      if (weather && typeof weather.getPhase === 'function') {
+        const phase = weather.getPhase();
+        if (phase !== 'Light Drizzle' && initialOpacity > 0.01) {
+          // If the weather just exited drizzle, some opacity is expected.
+          // Only flag if there's no plausible reason for droplets to be visible.
+          // Since we can't access the drying start time here, we only flag
+          // if opacity is significantly high (> 0.3).
+          if (initialOpacity > 0.3) {
+            problems.push(label + ' droplet opacity is ' + initialOpacity.toFixed(4) +
+              ' during "' + phase + '" weather — expected near 0 unless recently exited Light Drizzle (issue #615).');
+          }
+        }
+      }
+    }
+
+    // Verify setOpacity works correctly
+    if (typeof d.setOpacity === 'function') {
+      // Test round-trip: set to 0.5, read back
+      d.setOpacity(0.5);
+      if (typeof d.getOpacity === 'function') {
+        const readback = d.getOpacity();
+        if (Math.abs(readback - 0.5) > 0.01) {
+          problems.push(label + '.droplets setOpacity(0.5) then getOpacity() returned ' +
+            readback.toFixed(4) + ' — expected ~0.5 (issue #615).');
+        }
+      }
+      // Verify meshes were updated
+      if (plantObj.leaves && plantObj.leaves.length > 0) {
+        const firstLeaf = plantObj.leaves[0];
+        const firstDroplet = firstLeaf.children.find(function(c) {
+          return c.isMesh && c.material && c.material.transparent;
+        });
+        if (firstDroplet && Math.abs(firstDroplet.material.opacity - 0.5) > 0.01) {
+          problems.push(label + ' droplet mesh opacity is ' +
+            firstDroplet.material.opacity.toFixed(4) + ' after setOpacity(0.5) — expected ~0.5 (issue #615).');
+        }
+      }
+      // Reset to 0
+      d.setOpacity(0);
+    }
+  }
+
+  checkDroplets(dropletPlant, 'plant');
+  checkDroplets(dropletPlant2, 'plant2');
+
   /* ---------- prefers-reduced-motion: pollination is a static visual change (issue #614) ---------- */
   // Verify that the pollination darkening and seed head creation are purely static
   // visual changes — they should not trigger any animation or movement that would

@@ -6,6 +6,7 @@
  */
 
 import * as THREE from "three";
+import { createPlantDroplets } from "./droplets.js";
 
 /* --- Seasonal colour palettes ---
  * Each season defines stem, leaf, and ground colours.
@@ -265,6 +266,10 @@ function createPlant(opts) {
     isFullyGrown: () => fullyGrown
   };
   window.__gardenState[label] = plantState;
+
+  /* --- Residual water droplets on leaf tips and stem top --- */
+  const leafHeights = leafShape === 'broad' ? [0.10, 0.09, 0.08] : [0.12, 0.10, 0.08];
+  plantState.droplets = createPlantDroplets(plantState, leafHeights, stemHeight);
 
   /* DOM elements to update */
   const growingDesc = document.getElementById('growing-description');

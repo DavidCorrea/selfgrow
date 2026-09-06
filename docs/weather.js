@@ -303,6 +303,10 @@ export function startWeatherCycle(sunLight, scene, ambientLight, hemiLight, fill
 
     /* --- Update DOM --- */
     const phaseName = getPhaseName(t);
+
+    // Detect weather phase transition for residual droplet drying (issue #615)
+    const drizzleJustExited = (lastPhaseName === 'Light Drizzle' && phaseName !== 'Light Drizzle');
+
     if (phaseName !== lastPhaseName) {
       lastPhaseName = phaseName;
       weatherDisplay.textContent = phaseName;
@@ -359,6 +363,14 @@ export function startWeatherCycle(sunLight, scene, ambientLight, hemiLight, fill
       if (plant2 && plant2.leafMat) {
         plant2.leafMat.roughness = current.leafRoughness;
         plant2.leafMat.metalness = current.leafMetalness;
+      }
+
+      // --- Residual water droplets on leaf tips (issue #615) ---
+      if (plant && plant.droplets && typeof plant.droplets.updateDroplets === 'function') {
+        plant.droplets.updateDroplets(drizzleJustExited);
+      }
+      if (plant2 && plant2.droplets && typeof plant2.droplets.updateDroplets === 'function') {
+        plant2.droplets.updateDroplets(drizzleJustExited);
       }
     }
 
