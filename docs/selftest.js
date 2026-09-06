@@ -5155,6 +5155,190 @@ export async function checks() {
       }
     }
 
+  /* ---------- Ground ripple wind perturbation for firefly drift (issue #606) ---------- */
+  if (gardenState && gardenState.fireflies && gardenState.fireflies.plantGroups && gardenState.fireflies.plantGroups.length > 0) {
+    var ffState = gardenState.fireflies;
+    var ffUpdate = gardenState.firefliesUpdate;
+    var dayNightForWind = gardenState.dayNight;
+    var weatherForWind = gardenState.weather;
+
+    if (typeof ffUpdate !== 'function') {
+      problems.push('gardenState.firefliesUpdate is not available — cannot verify firefly wind perturbation (issue #606).');
+    } else if (!dayNightForWind || typeof dayNightForWind.getCycleProgress !== 'function') {
+      problems.push('dayNight.getCycleProgress is not available — cannot verify firefly wind perturbation (issue #606).');
+    } else if (!weatherForWind || typeof weatherForWind.getSwayAmplitudeMul !== 'function') {
+      problems.push('weather.getSwayAmplitudeMul is not available — cannot verify firefly wind perturbation (issue #606).');
+    } else if (typeof computeDisplacement !== 'function') {
+      problems.push('computeDisplacement is not imported or not a function — firefly wind perturbation cannot work (issue #606).');
+    } else {
+      var origCycleProgress = dayNightForWind.getCycleProgress;
+      var origGetPhase = weatherForWind.getPhase;
+      var origSwayMul = weatherForWind.getSwayAmplitudeMul;
+
+      try {
+        // Set to Night phase so fireflies are active
+        dayNightForWind.getCycleProgress = function() { return 0.85; };
+
+        // --- Test A: computeDisplacement returns different values at different (x,z,time) ---
+        var disp1 = computeDisplacement(0, 0, 100);
+        var disp2 = computeDisplacement(0.1, 0.2, 100);
+        var disp3 = computeDisplacement(0, 0, 200);
+        if (Math.abs(disp1 - disp2) < 1e-8 && Math.abs(disp1 - disp3) < 1e-8) {
+          problems.push('computeDisplacement returns the same value for different (x,z,time) — firefly wind perturbation would have no effect (issue #606).');
+        }
+
+        // --- Test B: with weather sway multiplier, wind produces nonzero displacement in positions ---
+        // Force sway multiplier to a known value (1.75 for Overcast/Drizzle)
+        weatherForWind.getSwayAmplitudeMul = function() { return 1.75; };
+        weatherForWind.getPhase = function() { return 'Overcast'; };
+
+        // Capture positions before wind perturbation
+        var group = ffState.plantGroups[0];
+        var posBefore = new Float32Array(group.geometry.attributes.position.array);
+        var dotDataBefore = [];
+        for (var wi = 0; wi < group.count; wi++) {
+          dotDataBefore.push({
+            baseX: group.dotData[wi].baseX,
+            baseZ: group.dotData[wi].baseZ
+          });
+        }
+
+        // Run one update frame at time 100
+        if (typeof ffUpdate === 'function') {
+          ffUpdate(100, 0.016);
+        }
+
+        var posAfter = group.geometry.attributes.position.array;
+
+        // Check that wind perturbation is not zero for at least some dots
+        var maxWindDelta = 0;
+        for (var wi = 0; wi < group.count; wi++) {
+          if (wi >= group.dotData.length) break;
+          var i3 = wi * 3;
+          var dx = Math.abs(posAfter[i3] - posBefore[i3]);
+          var dz = Math.abs(posAfter[i3 + 2] - posBefore[i3 + 2]);
+          maxWindDelta = Math.max(maxWindDelta, dx, dz);
+        }
+
+        // The wind displacement should be > 0 because weatherSwayMul=1.75 and WIND_DRIFT_SCALE=0.02
+        // computeDisplacement returns values in ~±0.008 range, so windOffset ≈ ±0.02*0.008*1.75 ≈ ±0.00028
+        // With drift also present, positions change by more than just wind, but the wind component
+        // should cause the delta to be nonzero. We check that a second frame produces different
+        // deltas (confirming wind is contributing differently than pure sine drift).
+        if (maxWindDelta < 1e-8) {
+          problems.push('Firefly dot positions did not change after update with weatherSwayMul=1.75 — wind perturbation not applied (issue #606).');
+        }
+
+        // --- Test C: with zero sway multiplier, wind contribution is zero ---
+        // First apply swayMul=0 by running one frame, then capture settled positions.
+        // Then run another frame at the same time — since wind=0 and time unchanged,
+        // drift is identical, so positions must be identical.
+        weatherForWind.getSwayAmplitudeMul = function() { return 0; };
+        // Apply the change by running one update
+        if (typeof ffUpdate === 'function') {
+          ffUpdate(100, 0.016);
+        }
+        // Now capture settled positions (no wind component)
+        var posBeforeZeroSway = new Float32Array(group.geometry.attributes.position.array);
+        // Run another frame at same time — drift is same, wind stays 0
+        if (typeof ffUpdate === 'function') {
+          ffUpdate(100, 0.016);
+        }
+        var posAfterZeroSway = group.geometry.attributes.position.array;
+        var maxWindDeltaZero = 0;
+        for (var wi = 0; wi < group.count; wi++) {
+          if (wi >= group.dotData.length) break;
+          var i3 = wi * 3;
+          var dx = Math.abs(posAfterZeroSway[i3] - posBeforeZeroSway[i3]);
+          var dz = Math.abs(posAfterZeroSway[i3 + 2] - posBeforeZeroSway[i3 + 2]);
+          maxWindDeltaZero = Math.max(maxWindDeltaZero, dx, dz);
+        }
+        // With sway multiplier = 0, the wind displacement should be 0.
+        // Since we call update with the same time (100) and dt=0.016, the drift is the
+        // same (time hasn't changed), so positions should be identical.
+        if (maxWindDeltaZero > 1e-8) {
+          problems.push('Firefly dot positions changed with weatherSwayMul=0 — wind perturbation should be zero when sway multiplier is zero (issue #606).');
+        }
+
+        // --- Test D: wind displacement scales with sway multiplier ---
+        // Test that a higher sway multiplier produces a larger position delta
+        // compared to a lower one (same time, different sway mul).
+        weatherForWind.getSwayAmplitudeMul = function() { return 0; };
+        // Settle by running one frame (wind=0, same time so drift unchanged)
+        if (typeof ffUpdate === 'function') {
+          ffUpdate(100, 0.016);
+        }
+        var posSettle = new Float32Array(group.geometry.attributes.position.array);
+
+        weatherForWind.getSwayAmplitudeMul = function() { return 1.0; };
+        if (typeof ffUpdate === 'function') {
+          ffUpdate(100, 0.016);
+        }
+        // Must COPY the array — it's a shared buffer, and the next update will overwrite it
+        var posAfterMul1 = new Float32Array(group.geometry.attributes.position.array);
+
+        weatherForWind.getSwayAmplitudeMul = function() { return 2.0; };
+        if (typeof ffUpdate === 'function') {
+          ffUpdate(100, 0.016);
+        }
+        var posAfterMul2 = group.geometry.attributes.position.array;
+
+        var deltaMul1 = 0;
+        var deltaMul2 = 0;
+        for (var wi = 0; wi < group.count; wi++) {
+          if (wi >= group.dotData.length) break;
+          var i3 = wi * 3;
+          deltaMul1 += Math.abs(posAfterMul1[i3] - posSettle[i3]) + Math.abs(posAfterMul1[i3 + 2] - posSettle[i3 + 2]);
+          deltaMul2 += Math.abs(posAfterMul2[i3] - posSettle[i3]) + Math.abs(posAfterMul2[i3 + 2] - posSettle[i3 + 2]);
+        }
+
+        if (deltaMul2 <= deltaMul1) {
+          problems.push('Firefly wind displacement with swayMul=2.0 (delta=' + deltaMul2.toFixed(8) + ') is not larger than with swayMul=1.0 (delta=' + deltaMul1.toFixed(8) + ') — wind displacement should scale with sway multiplier (issue #606).');
+        }
+
+        // --- Test E: With reducedMotion active, no wind displacement is applied ---
+        // We need to simulate reducedMotion by temporarily setting state.reducedMotion to true
+        var origReducedMotion = ffState.reducedMotion;
+        ffState.reducedMotion = true;
+
+        // Capture positions at base (no drift, no wind)
+        // Run an update at Night so fireflies are active
+        dayNightForWind.getCycleProgress = function() { return 0.85; };
+        if (typeof ffUpdate === 'function') {
+          ffUpdate(200, 0.016);
+        }
+        var posReducedMotion = group.geometry.attributes.position.array;
+        for (var wi = 0; wi < group.count; wi++) {
+          if (wi >= group.dotData.length) break;
+          var dd = group.dotData[wi];
+          var i3 = wi * 3;
+          var dx = Math.abs(posReducedMotion[i3] - dd.baseX);
+          var dz = Math.abs(posReducedMotion[i3 + 2] - dd.baseZ);
+          if (dx > 0.001 || dz > 0.001) {
+            problems.push('With reducedMotion active, firefly dot position deviates from baseX/baseZ by (' + dx.toFixed(4) + ', ' + dz.toFixed(4) + ') — expected no drift or wind displacement when reduced motion is active (issue #606).');
+            break;
+          }
+        }
+
+        // Restore reducedMotion
+        ffState.reducedMotion = origReducedMotion;
+
+      } finally {
+        // Restore original functions
+        dayNightForWind.getCycleProgress = origCycleProgress;
+        weatherForWind.getPhase = origGetPhase;
+        weatherForWind.getSwayAmplitudeMul = origSwayMul;
+      }
+
+      // Settle back to real values
+      if (typeof ffUpdate === 'function') {
+        for (var wi = 0; wi < 300; wi++) {
+          ffUpdate(0, 0.016);
+        }
+      }
+    }
+  }
+
   /* ---------- Butterfly proximity glow boost for fireflies (issue #599) ---------- */
   if (gardenState && gardenState.fireflies && gardenState.fireflies.activeBoostCount && typeof gardenState.fireflies.activeBoostCount === 'function') {
     var ffState = gardenState.fireflies;

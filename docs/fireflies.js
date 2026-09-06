@@ -19,6 +19,7 @@
 
 import * as THREE from "three";
 import { isReducedMotion, onMotionChange } from "./motion.js";
+import { computeDisplacement } from "./groundRipple.js";
 
 /* --- Configuration --- */
 const DOTS_MIN = 4;
@@ -31,6 +32,7 @@ const FADE_LERP_SPEED = 0.04;      // ~1.2 seconds to fade in/out
 const PULSE_FREQ_MIN = 0.2;        // Hz — slow, irregular
 const PULSE_FREQ_MAX = 0.5;        // Hz
 const DRIFT_FREQ = 0.12;           // frequency of drift oscillation
+const WIND_DRIFT_SCALE = 0.02;      // scale of ground ripple wind perturbation on drift
 
 /* --- Weather modulation --- */
 const WEATHER_MULTIPLIERS = {
@@ -364,6 +366,7 @@ export function createFireflies(scene) {
     /* --- Compute vertical lift offset for dusk emergence / dawn settling --- */
     let liftOffset = 0;
     if (!reducedMotion) {
+      // local reducedMotion is synced from state.reducedMotion via onMotionChange
       if (t >= 0.75 && t < 0.80) {
         // Dusk emergence: smoothstep from 0 to LIFT_HEIGHT
         const progress = (t - 0.75) / 0.05;
@@ -404,7 +407,7 @@ export function createFireflies(scene) {
           continue;
         }
 
-        if (!reducedMotion) {
+        if (!state.reducedMotion) {
           /* --- Pulsing: vary dot size with slow, irregular sine --- */
           const pulse = Math.sin(time * dd.freq * Math.PI * 2 + dd.phaseOffset) * 0.5 + 0.5;
           // pulse ranges 0–1. Map to size multiplier: 0.5–1.0
@@ -453,10 +456,18 @@ export function createFireflies(scene) {
           const driftZ = Math.cos(time * DRIFT_FREQ * 0.9 + dd.driftAngle) * DRIFT_RADIUS * 0.6;
           const driftY = Math.sin(time * DRIFT_FREQ * 0.7 + dd.driftPhase * 1.3) * DRIFT_RADIUS * 0.3;
 
-          pos[i3] = dd.baseX + driftX;
+          /* --- Ground ripple wind perturbation (issue #606) --- */
+          const weatherSwayMul = (window.__gardenState && window.__gardenState.weather && typeof window.__gardenState.weather.getSwayAmplitudeMul === 'function')
+            ? window.__gardenState.weather.getSwayAmplitudeMul()
+            : 1.0;
+          const windDisp = computeDisplacement(dd.baseX, dd.baseZ, time);
+          const windOffsetX = windDisp * WIND_DRIFT_SCALE * weatherSwayMul;
+          const windOffsetZ = -windDisp * WIND_DRIFT_SCALE * weatherSwayMul;
+
+          pos[i3] = dd.baseX + driftX + windOffsetX;
           // Apply vertical lift offset for dusk emergence / dawn settling
           pos[i3 + 1] = dd.baseY + driftY + liftOffset;
-          pos[i3 + 2] = dd.baseZ + driftZ;
+          pos[i3 + 2] = dd.baseZ + driftZ + windOffsetZ;
         } else {
           // Reduced motion: no pulsing/drift/lift, but keep size at base
           sizes[i] = dd.sizeBase;
@@ -505,8 +516,8 @@ export function createFireflies(scene) {
 
   /* --- Handle runtime changes to reduced-motion preference --- */
   const unsubMotion = onMotionChange(function(matches) {
+    reducedMotion = matches;
     state.reducedMotion = matches;
-    // Update is called every frame and handles the motion state
   });
 
   /* --- Destroy: clean up and remove from scene --- */
