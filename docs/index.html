@@ -520,7 +520,8 @@
     const _variantState = {
       timeOfDay: { lastPhase: '', lastChangeTime: performance.now(), variantIndex: 0 },
       weather: { lastPhase: '', lastChangeTime: performance.now(), variantIndex: 0 },
-      season: { lastPhase: '', lastChangeTime: performance.now(), variantIndex: 0 }
+      season: { lastPhase: '', lastChangeTime: performance.now(), variantIndex: 0 },
+      fireflyProximity: { lastPhase: '', lastChangeTime: performance.now(), variantIndex: 0 }
     };
 
     function timeContextFor(phase) {
@@ -863,21 +864,80 @@
      * current weather and time-of-day. Weather context woven in by
      * updateWeatherDescription is preserved (it sits between base and suffix).
      */
+    const FIREFLY_PROXIMITY_SUFFIXES = [
+      ' The butterfly passes near the glowing fireflies, their light pulsing in response.',
+      ' The butterfly drifts close to the fireflies, each pulse a tiny greeting.',
+      ' The butterfly hovers near the fireflies, their soft glow flickering in the dark.',
+      ' The butterfly sways near the fireflies, their tiny lights pulsing warmly.'
+    ];
+
     const BUTTERFLY_SUFFIXES = [
       ' A small butterfly drifts at the edge of the garden.',
-      ' The butterfly has taken shelter from the drizzle.',
-      ' The butterfly drifts near the glow of fireflies at night.'
-    ];
+      ' The butterfly has taken shelter from the drizzle.'
+    ].concat(FIREFLY_PROXIMITY_SUFFIXES);
+
+    function checkButterflyFireflyProximity() {
+      const dayNight = window.__gardenState && window.__gardenState.dayNight;
+      if (!dayNight || typeof dayNight.getCycleProgress !== 'function') return false;
+
+      const t = dayNight.getCycleProgress();
+      /* Only during Night phase (t >= 0.75) */
+      if (t < 0.75) return false;
+
+      const creature = window.__gardenState && window.__gardenState.creature;
+      if (!creature || !creature.group) return false;
+      const butterflyPos = creature.group.position;
+
+      const fireflies = window.__gardenState && window.__gardenState.fireflies;
+      if (!fireflies || typeof fireflies.getAllPositions !== 'function') return false;
+
+      const positions = fireflies.getAllPositions();
+      if (!positions || positions.length === 0) return false;
+
+      /* Check distance to any firefly dot (threshold 0.5 units) */
+      for (var i = 0; i < positions.length; i++) {
+        var pos = positions[i];
+        var dx = butterflyPos.x - pos.x;
+        var dy = butterflyPos.y - pos.y;
+        var dz = butterflyPos.z - pos.z;
+        var dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (dist <= 0.5) return true;
+      }
+      return false;
+    }
+
+    function chooseFireflyProximitySuffix() {
+      var state = _variantState.fireflyProximity;
+      var now = performance.now();
+
+      if (now - state.lastChangeTime >= VARIANT_CYCLE_MS) {
+        state.variantIndex = (state.variantIndex + 1) % FIREFLY_PROXIMITY_SUFFIXES.length;
+        state.lastChangeTime = now;
+      }
+
+      return FIREFLY_PROXIMITY_SUFFIXES[state.variantIndex];
+    }
 
     function chooseButterflySuffix() {
       const weather = (document.getElementById('weather-display')?.textContent || '').trim();
       const time = (document.getElementById('time-display')?.textContent || '').trim();
 
+      const isNear = (time === 'Night') && checkButterflyFireflyProximity();
+
+      /* Reset variant state when proximity status changes */
+      var proxState = _variantState.fireflyProximity;
+      var newPhase = isNear ? 'near' : 'away';
+      if (newPhase !== proxState.lastPhase) {
+        proxState.lastPhase = newPhase;
+        proxState.lastChangeTime = performance.now();
+        proxState.variantIndex = 0;
+      }
+
       if (weather === 'Light Drizzle') {
         return ' The butterfly has taken shelter from the drizzle.';
       }
-      if (time === 'Night') {
-        return ' The butterfly drifts near the glow of fireflies at night.';
+      if (isNear) {
+        return chooseFireflyProximitySuffix();
       }
       return ' A small butterfly drifts at the edge of the garden.';
     }
@@ -935,6 +995,9 @@
       /* Winter legacy effect (issue #471): set by startSeasonalCycle each tick */
       winterLegacyBlend: 0,
       updateButterflyDescription,
+      checkButterflyFireflyProximity,
+      FIREFLY_PROXIMITY_SUFFIXES,
+      chooseFireflyProximitySuffix,
       updateAudioWeather,
       updateWeatherDescription,
       weatherContexts: WEATHER_CONTEXTS,
