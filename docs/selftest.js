@@ -3859,6 +3859,106 @@ export async function checks() {
     }
   }
 
+  /* ---------- Ground seed sprouts checks (issue #628) ---------- */
+  // Tiny green sprouts should emerge from germinated seed positions during
+  // the first 30% of spring, be visible through summer, and fade in autumn.
+  if (groundSeedState) {
+    // Check that sprouts property exists when seeds should have germinated
+    if (groundSeedState.sprouts && Array.isArray(groundSeedState.sprouts)) {
+      if (groundSeedState.sprouts.length > 0) {
+        // Verify each sprout has the expected structure
+        groundSeedState.sprouts.forEach(function(sprout, i) {
+          if (!sprout.stem || !(sprout.stem instanceof THREE.Mesh)) {
+            problems.push('groundSeeds.sprouts[' + i + '].stem is missing or not a THREE.Mesh (issue #628).');
+            return;
+          }
+          // Verify stem geometry type
+          if (sprout.stem.geometry && sprout.stem.geometry.type !== 'CylinderGeometry') {
+            problems.push('groundSeeds.sprouts[' + i + '] stem geometry is "' + sprout.stem.geometry.type + '", expected CylinderGeometry (issue #628).');
+          }
+          // Verify stem is small (~0.03 height, ~0.003 radius)
+          if (sprout.stem.geometry && sprout.stem.geometry.parameters) {
+            var params = sprout.stem.geometry.parameters;
+            if (params.height && Math.abs(params.height - 0.03) > 0.005) {
+              problems.push('groundSeeds.sprouts[' + i + '] stem height is ' + params.height + ', expected ~0.03 (issue #628).');
+            }
+            if (params.radiusTop && Math.abs(params.radiusTop - 0.003) > 0.002) {
+              problems.push('groundSeeds.sprouts[' + i + '] stem radius is ' + params.radiusTop + ', expected ~0.003 (issue #628).');
+            }
+          }
+          // Verify leaves exist
+          if (!sprout.leaves || !Array.isArray(sprout.leaves) || sprout.leaves.length === 0) {
+            problems.push('groundSeeds.sprouts[' + i + '] has no leaves — expected 1-2 tiny triangular leaves (issue #628).');
+          } else {
+            // Verify leaves are meshes with ShapeGeometry
+            sprout.leaves.forEach(function(leaf, j) {
+              if (!(leaf instanceof THREE.Mesh)) {
+                problems.push('groundSeeds.sprouts[' + i + '].leaves[' + j + '] is not a THREE.Mesh (issue #628).');
+              } else if (leaf.geometry && leaf.geometry.type !== 'ShapeGeometry') {
+                problems.push('groundSeeds.sprouts[' + i + '].leaves[' + j + '] geometry is "' + leaf.geometry.type + '", expected ShapeGeometry (issue #628).');
+              }
+            });
+          }
+          // Verify basePos exists
+          if (!sprout.basePos || typeof sprout.basePos.x !== 'number') {
+            problems.push('groundSeeds.sprouts[' + i + '].basePos is missing or invalid (issue #628).');
+          }
+          // Verify the sprout group is in the scene
+          if (sprout.group && gardenState && gardenState.scene) {
+            var inScene = gardenState.scene.children.indexOf(sprout.group) !== -1;
+            if (!inScene) {
+              problems.push('groundSeeds.sprouts[' + i + '] group is not a child of the scene (issue #628).');
+            }
+          }
+        });
+
+        // Verify sprout material is green and transparent
+        var firstSprout = groundSeedState.sprouts[0];
+        if (firstSprout.stem && firstSprout.stem.material) {
+          var mat = firstSprout.stem.material;
+          if (mat.transparent !== true) {
+            problems.push('groundSeeds sprout stem material.transparent is ' + mat.transparent + ', expected true (issue #628).');
+          }
+          // Colour should be green (G > R and G > B roughly)
+          if (mat.color && typeof mat.color.g === 'number') {
+            if (mat.color.g < mat.color.r && mat.color.g < mat.color.b) {
+              problems.push('groundSeeds sprout stem colour ' + mat.color.getHexString() + ' is not green-toned — expected a shade of green (issue #628).');
+            }
+          }
+        }
+
+        // Check DOM contains sprout description when sprouts are visible (opacity > 0)
+        if (firstSprout.stem && firstSprout.stem.material.opacity > 0.05) {
+          let growingDesc = document.getElementById('growing-description');
+          let plotDesc = document.getElementById('plot-description');
+          if (growingDesc && growingDesc.textContent.indexOf('Tiny green shoots') === -1) {
+            problems.push('growing-description should contain "Tiny green shoots rise from the soil" when sprouts are visible (issue #628).');
+          }
+          if (plotDesc && plotDesc.textContent.indexOf('Tiny green shoots') === -1) {
+            problems.push('plot-description should contain "Tiny green shoots" when sprouts are visible (issue #628).');
+          }
+        }
+
+        // Check reduced-motion: sprouts should not sway
+        var mm = window.matchMedia('(prefers-reduced-motion: reduce)');
+        if (mm.matches) {
+          // Sprouts should exist but have zero rotation
+          var swayOk = true;
+          for (var si = 0; si < groundSeedState.sprouts.length; si++) {
+            var sp = groundSeedState.sprouts[si];
+            if (sp.stem && Math.abs(sp.stem.rotation.z) > 0.001) {
+              swayOk = false;
+              break;
+            }
+          }
+          if (!swayOk) {
+            problems.push('With prefers-reduced-motion active, sprouts should not sway (rotation.z should be 0) (issue #628).');
+          }
+        }
+      }
+    }
+  }
+
   /* ---------- Fallen leaves checks (issue #448) ---------- */
   var fallenLeavesState = gardenState && gardenState.fallenLeaves;
   if (!fallenLeavesState) {

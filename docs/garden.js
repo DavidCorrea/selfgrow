@@ -141,6 +141,37 @@ export function initGarden(scene, initialProgress) {
             seed.position.x = base.x + driftX;
             seed.position.z = base.z + driftZ;
           }
+
+          /* --- Sprout sway (issue #628) --- */
+          const sprouts2 = seedState2.sprouts;
+          if (sprouts2 && sprouts2.length > 0) {
+            const rm2 = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            if (!rm2) {
+              for (let si = 0; si < sprouts2.length; si++) {
+                const sp = sprouts2[si];
+                if (sp.stem && sp.stem.material.opacity > 0) {
+                  const sway = Math.sin(time * 2 + si * 1.5) * 0.005;
+                  sp.stem.rotation.z = sway;
+                  if (sp.leaves) {
+                    for (let lj = 0; lj < sp.leaves.length; lj++) {
+                      sp.leaves[lj].rotation.z = sway;
+                    }
+                  }
+                }
+              }
+            } else {
+              // Reset rotation for reduced motion
+              for (let si = 0; si < sprouts2.length; si++) {
+                const sp = sprouts2[si];
+                if (sp.stem) sp.stem.rotation.z = 0;
+                if (sp.leaves) {
+                  for (let lj = 0; lj < sp.leaves.length; lj++) {
+                    sp.leaves[lj].rotation.z = 0;
+                  }
+                }
+              }
+            }
+          }
         }
       };
 
@@ -672,6 +703,37 @@ function createPlant(opts) {
               }
               seed.position.x = base.x + driftX;
               seed.position.z = base.z + driftZ;
+            }
+
+            /* --- Sprout sway (issue #628) --- */
+            const sproutsGS = seedState.sprouts;
+            if (sproutsGS && sproutsGS.length > 0) {
+              const rmGS = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+              if (!rmGS) {
+                for (let si = 0; si < sproutsGS.length; si++) {
+                  const sp = sproutsGS[si];
+                  if (sp.stem && sp.stem.material.opacity > 0) {
+                    const sway = Math.sin(time * 2 + si * 1.5) * 0.005;
+                    sp.stem.rotation.z = sway;
+                    if (sp.leaves) {
+                      for (let lj = 0; lj < sp.leaves.length; lj++) {
+                        sp.leaves[lj].rotation.z = sway;
+                      }
+                    }
+                  }
+                }
+              } else {
+                // Reset rotation for reduced motion
+                for (let si = 0; si < sproutsGS.length; si++) {
+                  const sp = sproutsGS[si];
+                  if (sp.stem) sp.stem.rotation.z = 0;
+                  if (sp.leaves) {
+                    for (let lj = 0; lj < sp.leaves.length; lj++) {
+                      sp.leaves[lj].rotation.z = 0;
+                    }
+                  }
+                }
+              }
             }
           }
         };
@@ -1660,56 +1722,198 @@ export function startSeasonalCycle(initialProgress) {
 
     /* --- Ground seeds lifecycle (issue #627) --- */
     const groundSeeds = gs.groundSeeds;
-    if (groundSeeds && groundSeeds.meshes && groundSeeds.meshes.length > 0) {
+    if (groundSeeds && ((groundSeeds.meshes && groundSeeds.meshes.length > 0) || (groundSeeds.sprouts && groundSeeds.sprouts.length > 0))) {
       const seedMat = groundSeeds.material;
       const seasonName = SEASON_NAMES[seasonIndex];
 
       if (seasonName === 'Autumn') {
         /* Autumn: seeds remain fully visible, warm brown */
-        seedMat.opacity = 1;
-        seedMat.color.setHex(0x6a4a2a);
+        if (groundSeeds.meshes && groundSeeds.meshes.length > 0) {
+          seedMat.opacity = 1;
+          seedMat.color.setHex(0x6a4a2a);
 
-        /* Update DOM when seeds first appear in autumn (if not already done) */
-        if (!groundSeeds._domUpdated) {
-          groundSeeds._domUpdated = true;
-          const growingDesc = document.getElementById('growing-description');
-          const plotDesc = document.getElementById('plot-description');
-          const otherLabel = groundSeeds.parentLabel === 'plant2' ? 'companion' : 'central';
-          const seedText = 'Tiny seeds rest on the dark soil near the ' + otherLabel + ' plant, a promise of next season.';
-          if (growingDesc && growingDesc.textContent.indexOf('Tiny seeds rest') === -1) {
-            growingDesc.textContent += ' ' + seedText;
+          /* Update DOM when seeds first appear in autumn (if not already done) */
+          if (!groundSeeds._domUpdated) {
+            groundSeeds._domUpdated = true;
+            const growingDesc = document.getElementById('growing-description');
+            const plotDesc = document.getElementById('plot-description');
+            const otherLabel = groundSeeds.parentLabel === 'plant2' ? 'companion' : 'central';
+            const seedText = 'Tiny seeds rest on the dark soil near the ' + otherLabel + ' plant, a promise of next season.';
+            if (growingDesc && growingDesc.textContent.indexOf('Tiny seeds rest') === -1) {
+              growingDesc.textContent += ' ' + seedText;
+            }
+            if (plotDesc && plotDesc.textContent.indexOf('Tiny seeds rest') === -1) {
+              plotDesc.textContent += ' ' + seedText;
+            }
           }
-          if (plotDesc && plotDesc.textContent.indexOf('Tiny seeds rest') === -1) {
-            plotDesc.textContent += ' ' + seedText;
+        }
+
+        /* Autumn: sprouts from the previous cycle fade and are removed */
+        if (groundSeeds.sprouts && groundSeeds.sprouts.length > 0) {
+          // Fade sprouts out over the autumn season
+          const fadeT = Math.min(1, t * 1.5); // reach 0 opacity earlier in autumn
+          const sproutOpacity = Math.max(0, 1 - fadeT);
+          for (let si = 0; si < groundSeeds.sprouts.length; si++) {
+            const sp = groundSeeds.sprouts[si];
+            if (sp.stem) sp.stem.material.opacity = sproutOpacity;
+            if (sp.leaves) {
+              for (let lj = 0; lj < sp.leaves.length; lj++) {
+                sp.leaves[lj].material.opacity = sproutOpacity;
+              }
+            }
+          }
+
+          // Remove sprouts when fully faded (near the end of autumn)
+          if (t > 0.85 && groundSeeds.sprouts.length > 0) {
+            for (let si = 0; si < groundSeeds.sprouts.length; si++) {
+              const sp = groundSeeds.sprouts[si];
+              if (gs.scene && sp.group) {
+                gs.scene.remove(sp.group);
+              }
+              if (sp.stem) {
+                sp.stem.geometry.dispose();
+                sp.stem.material.dispose();
+              }
+              if (sp.leaves) {
+                for (let lj = 0; lj < sp.leaves.length; lj++) {
+                  sp.leaves[lj].geometry.dispose();
+                  sp.leaves[lj].material.dispose();
+                }
+              }
+            }
+            groundSeeds.sprouts = [];
+
+            // Remove sprout descriptions from DOM
+            const growingDesc = document.getElementById('growing-description');
+            const plotDesc = document.getElementById('plot-description');
+            if (growingDesc) {
+              growingDesc.textContent = growingDesc.textContent.replace(/ Tiny green shoots[^.]*\./g, '');
+            }
+            if (plotDesc) {
+              plotDesc.textContent = plotDesc.textContent.replace(/ Tiny green shoots[^.]*\./g, '');
+            }
+            groundSeeds._sproutDomUpdated = false;
           }
         }
       } else if (seasonName === 'Winter') {
         /* Winter: seeds visible but slightly darker/subdued */
-        seedMat.opacity = 1;
-        // Lerp toward a darker, more subdued brown
-        const winterSeedColor = new THREE.Color(0x4a3a2a);
-        seedMat.color.copy(new THREE.Color(0x6a4a2a)).lerp(winterSeedColor, t);
+        if (groundSeeds.meshes && groundSeeds.meshes.length > 0) {
+          seedMat.opacity = 1;
+          // Lerp toward a darker, more subdued brown
+          const winterSeedColor = new THREE.Color(0x4a3a2a);
+          seedMat.color.copy(new THREE.Color(0x6a4a2a)).lerp(winterSeedColor, t);
 
-        /* Update DOM as winter progresses */
-        if (t > 0.3 && !groundSeeds._winterDomUpdated) {
-          groundSeeds._winterDomUpdated = true;
-          const plotDesc = document.getElementById('plot-description');
-          if (plotDesc && plotDesc.textContent.indexOf('seeds rest') !== -1) {
-            // Seeds are still there, just darker — description remains valid
+          /* Update DOM as winter progresses */
+          if (t > 0.3 && !groundSeeds._winterDomUpdated) {
+            groundSeeds._winterDomUpdated = true;
+            const plotDesc = document.getElementById('plot-description');
+            if (plotDesc && plotDesc.textContent.indexOf('seeds rest') !== -1) {
+              // Seeds are still there, just darker — description remains valid
+            }
           }
         }
       } else if (seasonName === 'Spring') {
         /* Spring: seeds vanish after first 30% of the season has passed */
         if (t < 0.30) {
           // Seeds still visible, fading to transparent
-          seedMat.opacity = 1 - t / 0.30;
-          seedMat.color.setHex(0x6a4a2a);
+          if (groundSeeds.meshes && groundSeeds.meshes.length > 0) {
+            seedMat.opacity = 1 - t / 0.30;
+            seedMat.color.setHex(0x6a4a2a);
+          }
+
+          /* --- Sprouts: create from germinating seeds during first 30% of spring --- */
+          if (groundSeeds.meshes && groundSeeds.meshes.length > 0 && (!groundSeeds.sprouts || groundSeeds.sprouts.length === 0)) {
+            // Capture a copy of seed base positions before they are cleared
+            const seedBases = groundSeeds.basePositions.slice();
+            groundSeeds.sprouts = [];
+
+            for (let si = 0; si < seedBases.length; si++) {
+              const base = seedBases[si];
+
+              // Group for this sprout
+              const sproutGroup = new THREE.Group();
+              sproutGroup.position.set(base.x, base.y, base.z);
+
+              // Stem: thin cylinder (height 0.03, radius 0.003)
+              const stemGeo = new THREE.CylinderGeometry(0.003, 0.003, 0.03, 4);
+              const sproutMat = new THREE.MeshStandardMaterial({
+                color: 0x3a7a2a,
+                roughness: 0.6,
+                metalness: 0.0,
+                transparent: true,
+                opacity: 0
+              });
+              const stem = new THREE.Mesh(stemGeo, sproutMat);
+              stem.position.y = 0.015;
+              stem.castShadow = false;
+              sproutGroup.add(stem);
+
+              // Leaves: 1-2 tiny triangular leaves
+              const leaves = [];
+              const leafCount = 1 + Math.floor(Math.random() * 2);
+              for (let lj = 0; lj < leafCount; lj++) {
+                const leafShape = new THREE.Shape();
+                leafShape.moveTo(0, 0);
+                leafShape.lineTo(0.008, 0.012);
+                leafShape.lineTo(-0.004, 0.008);
+                leafShape.closePath();
+                const leafGeo = new THREE.ShapeGeometry(leafShape);
+                const leaf = new THREE.Mesh(leafGeo, sproutMat.clone());
+                leaf.position.y = 0.02 + lj * 0.005;
+                leaf.rotation.x = -0.3;
+                leaf.rotation.y = lj * 2.0;
+                leaf.castShadow = false;
+                sproutGroup.add(leaf);
+                leaves.push(leaf);
+              }
+
+              if (gs.scene) {
+                gs.scene.add(sproutGroup);
+              }
+
+              groundSeeds.sprouts.push({
+                group: sproutGroup,
+                stem: stem,
+                leaves: leaves,
+                basePos: { x: base.x, y: base.y, z: base.z }
+              });
+            }
+
+            // Reset sprout DOM flag for a new cycle
+            groundSeeds._sproutDomUpdated = false;
+          }
+
+          // Ramps opacity from 0 to 1 during first 30% of spring
+          const sproutOpacity = t / 0.30;
+          if (groundSeeds.sprouts && groundSeeds.sprouts.length > 0) {
+            for (let si = 0; si < groundSeeds.sprouts.length; si++) {
+              const sp = groundSeeds.sprouts[si];
+              sp.stem.material.opacity = sproutOpacity;
+              for (let lj = 0; lj < sp.leaves.length; lj++) {
+                sp.leaves[lj].material.opacity = sproutOpacity;
+              }
+            }
+
+            // Update DOM when sprouts first appear (at the midpoint of the ramp)
+            if (t > 0.10 && !groundSeeds._sproutDomUpdated) {
+              groundSeeds._sproutDomUpdated = true;
+              const growingDesc = document.getElementById('growing-description');
+              const plotDesc = document.getElementById('plot-description');
+              const sproutText = ' Tiny green shoots rise from the soil where seeds fell last season.';
+              if (growingDesc && growingDesc.textContent.indexOf('Tiny green shoots') === -1) {
+                growingDesc.textContent += sproutText;
+              }
+              if (plotDesc && plotDesc.textContent.indexOf('Tiny green shoots') === -1) {
+                plotDesc.textContent += sproutText;
+              }
+            }
+          }
         } else {
           // After 30% of spring, seeds have germinated — remove them
-          seedMat.opacity = 0;
+          if (groundSeeds.meshes && groundSeeds.meshes.length > 0) {
+            seedMat.opacity = 0;
 
-          // Remove seed meshes from scene and clean up
-          if (groundSeeds.meshes.length > 0) {
+            // Remove seed meshes from scene and clean up
             for (let i = 0; i < groundSeeds.meshes.length; i++) {
               const mesh = groundSeeds.meshes[i];
               if (gs.scene) {
@@ -1720,6 +1924,17 @@ export function startSeasonalCycle(initialProgress) {
             groundSeeds.meshes = [];
             groundSeeds.basePositions = [];
             groundSeeds.count = 0;
+          }
+
+          // Sprouts are now fully visible
+          if (groundSeeds.sprouts && groundSeeds.sprouts.length > 0) {
+            for (let si = 0; si < groundSeeds.sprouts.length; si++) {
+              const sp = groundSeeds.sprouts[si];
+              sp.stem.material.opacity = 1;
+              for (let lj = 0; lj < sp.leaves.length; lj++) {
+                sp.leaves[lj].material.opacity = 1;
+              }
+            }
           }
 
           // Update DOM to remove seed references
@@ -1738,7 +1953,20 @@ export function startSeasonalCycle(initialProgress) {
         }
       } else {
         /* Summer: seeds should not be present (removed in spring) */
-        seedMat.opacity = 0;
+        if (groundSeeds.meshes && groundSeeds.meshes.length > 0) {
+          seedMat.opacity = 0;
+        }
+
+        /* Summer: sprouts remain fully visible */
+        if (groundSeeds.sprouts && groundSeeds.sprouts.length > 0) {
+          for (let si = 0; si < groundSeeds.sprouts.length; si++) {
+            const sp = groundSeeds.sprouts[si];
+            sp.stem.material.opacity = 1;
+            for (let lj = 0; lj < sp.leaves.length; lj++) {
+              sp.leaves[lj].material.opacity = 1;
+            }
+          }
+        }
       }
     }
 
