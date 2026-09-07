@@ -45,6 +45,7 @@ export function saveGardenState() {
       weatherProgress: typeof gs.weatherProgress === 'number' ? gs.weatherProgress : 0,
       plant1Maturity: typeof gs.plant1Maturity === 'number' ? gs.plant1Maturity : 0,
       firstPlantGrown: !!gs.firstPlantGrown,
+      hasGroundSeeds: !!(gs.groundSeeds && gs.groundSeeds.meshes && gs.groundSeeds.meshes.length > 0),
       timestamp: Date.now()
     };
 
@@ -63,6 +64,16 @@ export function saveGardenState() {
     if (plant2 && plant2.flower && typeof plant2.flower.getPhase === 'function') {
       state.plant2FlowerPhase = plant2.flower.getPhase();
       state.plant2FlowerProgress = plant2.flower.getProgress();
+    }
+
+    // Save ground seeds data for recreation on restore
+    if (gs.groundSeeds && gs.groundSeeds.meshes && gs.groundSeeds.meshes.length > 0) {
+      state.groundSeeds = {
+        parentLabel: gs.groundSeeds.parentLabel,
+        parentPos: gs.groundSeeds.parentPos,
+        basePositions: gs.groundSeeds.basePositions,
+        count: gs.groundSeeds.count
+      };
     }
 
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -131,7 +142,8 @@ export function loadGardenState() {
  *   { seasonProgress, dayNightProgress, weatherProgress,
  *     plant1Maturity, firstPlantGrown, plant2Maturity,
  *     plant1FlowerPhase, plant1FlowerProgress,
- *     plant2FlowerPhase, plant2FlowerProgress }
+ *     plant2FlowerPhase, plant2FlowerProgress,
+ *     groundSeeds }
  */
 export function fastForwardState(savedState) {
   const elapsed = Date.now() - savedState.timestamp;
@@ -178,6 +190,31 @@ export function fastForwardState(savedState) {
     plant2FlowerProgress = advanced.progress;
   }
 
+  /* ---- Ground seeds: determine if they should still be present ---- */
+  let groundSeeds = null;
+  if (savedState.groundSeeds && savedState.groundSeeds.count > 0) {
+    // Check if the seeds have been removed by spring (after 30% of spring has passed)
+    const SEASON_NAMES = ['Spring', 'Summer', 'Autumn', 'Winter'];
+    const SEASON_DURATION_MS = 180_000; // must match garden.js
+    const CYCLE_DURATION_MS = SEASON_DURATION_MS * 4;
+    const cycleTime = (seasonProgress * CYCLE_DURATION_MS) % CYCLE_DURATION_MS;
+    const seasonIndex = Math.floor(cycleTime / SEASON_DURATION_MS) % 4;
+    const seasonProgress = (cycleTime % SEASON_DURATION_MS) / SEASON_DURATION_MS;
+
+    const isSpringAfter30 = (seasonIndex === 0 && seasonProgress >= 0.30);
+    const isSummer = (seasonIndex === 1);
+
+    if (!isSpringAfter30 && !isSummer) {
+      // Seeds should still be present
+      groundSeeds = {
+        parentLabel: savedState.groundSeeds.parentLabel,
+        parentPos: savedState.groundSeeds.parentPos,
+        basePositions: savedState.groundSeeds.basePositions,
+        count: savedState.groundSeeds.count
+      };
+    }
+  }
+
   return {
     seasonProgress,
     dayNightProgress,
@@ -188,7 +225,8 @@ export function fastForwardState(savedState) {
     plant1FlowerPhase,
     plant1FlowerProgress,
     plant2FlowerPhase,
-    plant2FlowerProgress
+    plant2FlowerProgress,
+    groundSeeds
   };
 }
 

@@ -70,6 +70,98 @@ export function initGarden(scene, initialProgress) {
     initialProgress: p1Progress
   });
 
+  /* If ground seeds were present in saved state, recreate them (issue #627) */
+  if (initialProgress && initialProgress.groundSeeds) {
+    const seedData = initialProgress.groundSeeds;
+    if (seedData.count > 0 && seedData.parentPos && seedData.basePositions) {
+      const seedMat = new THREE.MeshStandardMaterial({
+        color: 0x6a4a2a,
+        roughness: 0.9,
+        metalness: 0.0,
+        transparent: true,
+        opacity: 1
+      });
+
+      const groundSeedsState = {
+        meshes: [],
+        basePositions: seedData.basePositions.slice(),
+        material: seedMat,
+        count: seedData.count,
+        parentLabel: seedData.parentLabel || 'plant',
+        parentPos: seedData.parentPos,
+        _domUpdated: false,
+        _winterDomUpdated: false,
+        update: function(time, computeDisplacement) {
+          const gs2 = window.__gardenState;
+          if (!gs2 || !gs2.groundSeeds) return;
+          const seedState2 = gs2.groundSeeds;
+          if (!seedState2.meshes || seedState2.meshes.length === 0) return;
+
+          const reducedMotionMedia = window.matchMedia('(prefers-reduced-motion: reduce)');
+          const reducedMotion2 = reducedMotionMedia.matches;
+
+          if (reducedMotion2) {
+            for (let i = 0; i < seedState2.meshes.length; i++) {
+              const seed = seedState2.meshes[i];
+              const base = seedState2.basePositions[i];
+              seed.position.set(base.x, base.y, base.z);
+            }
+            return;
+          }
+
+          if (!computeDisplacement) return;
+
+          for (let i = 0; i < seedState2.meshes.length; i++) {
+            const seed = seedState2.meshes[i];
+            const base = seedState2.basePositions[i];
+
+            if (seed.material.opacity === 0) {
+              seed.position.set(base.x, base.y, base.z);
+              continue;
+            }
+
+            const d = computeDisplacement(base.x, base.z, time);
+            const eps = 0.01;
+            const dx = computeDisplacement(base.x + eps, base.z, time);
+            const dz = computeDisplacement(base.x, base.z + eps, time);
+            const slopeX = (dx - d) / eps;
+            const slopeZ = (dz - d) / eps;
+
+            seed.position.y = base.y + d;
+
+            const driftScale = 5.0;
+            let driftX = slopeX * driftScale;
+            let driftZ = slopeZ * driftScale;
+            const driftMag = Math.sqrt(driftX * driftX + driftZ * driftZ);
+            if (driftMag > 0.01) {
+              const clamp = 0.01 / driftMag;
+              driftX *= clamp;
+              driftZ *= clamp;
+            }
+            seed.position.x = base.x + driftX;
+            seed.position.z = base.z + driftZ;
+          }
+        }
+      };
+
+      // Create seed meshes from saved positions
+      for (let i = 0; i < seedData.basePositions.length; i++) {
+        const radius = 0.002 + Math.random() * 0.001;
+        const geo = new THREE.SphereGeometry(radius, 4, 4);
+        const mesh = new THREE.Mesh(geo, seedMat);
+        const basePos = seedData.basePositions[i];
+        mesh.position.set(basePos.x, basePos.y, basePos.z);
+        mesh.castShadow = false;
+        mesh.receiveShadow = true;
+        scene.add(mesh);
+        groundSeedsState.meshes.push(mesh);
+      }
+
+      // Assign the state
+      window.__gardenState.groundSeeds = groundSeedsState;
+    }
+  }
+
   /* If plant2 was already growing, create it too */
   if (firstPlantGrown && initialProgress && initialProgress.plant2Maturity !== undefined) {
     const p2Progress = initialProgress.plant2Maturity;
@@ -503,6 +595,139 @@ function createPlant(opts) {
       _seedHeadMeshes = [];
     }
 
+    /* Drop seed heads to the ground near the parent plant stem.
+     * Creates tiny brown spheres on the soil surface that persist
+     * through autumn and winter, then vanish after spring's first 30%. */
+    function dropSeedHeadsToGround() {
+      if (_seedHeadMeshes.length === 0) return;
+
+      const gs = window.__gardenState;
+      if (!gs.groundSeeds) {
+        gs.groundSeeds = {
+          meshes: [],
+          basePositions: [],
+          material: new THREE.MeshStandardMaterial({
+            color: 0x6a4a2a,
+            roughness: 0.9,
+            metalness: 0.0,
+            transparent: true,
+            opacity: 1
+          }),
+          count: 0,
+          parentLabel: label,
+          parentPos: { x: position.x, z: position.z },
+          _domUpdated: false,
+          _winterDomUpdated: false,
+          update: function(time, computeDisplacement) {
+            const seedState = gs.groundSeeds;
+            if (!seedState || seedState.meshes.length === 0) return;
+
+            const reducedMotionMedia = window.matchMedia('(prefers-reduced-motion: reduce)');
+            const reducedMotion = reducedMotionMedia.matches;
+
+            if (reducedMotion) {
+              // Reset seeds to base positions
+              for (let i = 0; i < seedState.meshes.length; i++) {
+                const seed = seedState.meshes[i];
+                const base = seedState.basePositions[i];
+                seed.position.set(base.x, base.y, base.z);
+              }
+              return;
+            }
+
+            if (!computeDisplacement) return;
+
+            for (let i = 0; i < seedState.meshes.length; i++) {
+              const seed = seedState.meshes[i];
+              const base = seedState.basePositions[i];
+
+              // Skip transparent seeds (opacity 0)
+              if (seed.material.opacity === 0) {
+                seed.position.set(base.x, base.y, base.z);
+                continue;
+              }
+
+              // Compute displacement at base position
+              const d = computeDisplacement(base.x, base.z, time);
+
+              // Compute slope at base position for position drift
+              const eps = 0.01;
+              const dx = computeDisplacement(base.x + eps, base.z, time);
+              const dz = computeDisplacement(base.x, base.z + eps, time);
+              const slopeX = (dx - d) / eps;
+              const slopeZ = (dz - d) / eps;
+
+              // Apply y displacement (follow ground displacement)
+              seed.position.y = base.y + d;
+
+              // Apply position drift (±0.01 units) — proportional to wave slope
+              const driftScale = 5.0;
+              let driftX = slopeX * driftScale;
+              let driftZ = slopeZ * driftScale;
+              const driftMag = Math.sqrt(driftX * driftX + driftZ * driftZ);
+              if (driftMag > 0.01) {
+                const clamp = 0.01 / driftMag;
+                driftX *= clamp;
+                driftZ *= clamp;
+              }
+              seed.position.x = base.x + driftX;
+              seed.position.z = base.z + driftZ;
+            }
+          }
+        };
+      }
+
+      const seedState = gs.groundSeeds;
+
+      for (let i = 0; i < _seedHeadMeshes.length; i++) {
+        const oldMesh = _seedHeadMeshes[i];
+        // Use the same radius as the original seed head mesh
+        const radius = 0.002 + Math.random() * 0.001;
+        const geo = new THREE.SphereGeometry(radius, 4, 4);
+        const mesh = new THREE.Mesh(geo, seedState.material);
+
+        // Position near parent plant stem, on the ground
+        const angle = Math.random() * Math.PI * 2;
+        const distance = 0.02 + Math.random() * 0.08; // 0.02-0.10 units from stem
+        const x = position.x + Math.cos(angle) * distance;
+        const z = position.z + Math.sin(angle) * distance;
+
+        mesh.position.set(x, 0.005, z);
+        mesh.castShadow = false;
+        mesh.receiveShadow = true;
+
+        scene.add(mesh);
+        seedState.meshes.push(mesh);
+        seedState.basePositions.push({ x, y: 0.005, z });
+        seedState.count++;
+      }
+
+      // Remove original seed head meshes from flower group
+      removeSeedHead();
+
+      // Update DOM descriptions to mention fallen seeds
+      updateGroundSeedsDescription();
+    }
+
+    /* Update descriptions when seeds are on the ground */
+    function updateGroundSeedsDescription() {
+      const gs = window.__gardenState;
+      if (!gs || !gs.groundSeeds || gs.groundSeeds.meshes.length === 0) return;
+
+      const growingDesc = document.getElementById('growing-description');
+      const plotDesc = document.getElementById('plot-description');
+
+      const otherPlant = isPlant2 ? 'central' : 'companion';
+      const seedText = 'Tiny seeds rest on the dark soil near the ' + otherPlant + ' plant, a promise of next season.';
+
+      if (growingDesc && growingDesc.textContent.indexOf('Tiny seeds rest') === -1) {
+        growingDesc.textContent += ' ' + seedText;
+      }
+      if (plotDesc && plotDesc.textContent.indexOf('Tiny seeds rest') === -1) {
+        plotDesc.textContent += ' ' + seedText;
+      }
+    }
+
     // Expose flower on plant state for selftest and persistence
     plantState.flower = {
       group: fm.group,
@@ -846,8 +1071,13 @@ function createPlant(opts) {
               _hasSeedHead = true;
               resetBudColor();
             }
-            // Remove seed head meshes during dormant (they reappear next bloom)
-            removeSeedHead();
+            // Drop seed heads to the ground near the parent plant stem
+            // instead of removing them (issue #627)
+            if (_hasSeedHead && _seedHeadMeshes.length > 0) {
+              dropSeedHeadsToGround();
+            } else {
+              removeSeedHead();
+            }
             _pollinated = false;
 
             updateDOMDescriptions();
@@ -1425,6 +1655,90 @@ export function startSeasonalCycle(initialProgress) {
       } else {
         /* Summer: leaves fully transparent */
         leafMat.opacity = 0;
+      }
+    }
+
+    /* --- Ground seeds lifecycle (issue #627) --- */
+    const groundSeeds = gs.groundSeeds;
+    if (groundSeeds && groundSeeds.meshes && groundSeeds.meshes.length > 0) {
+      const seedMat = groundSeeds.material;
+      const seasonName = SEASON_NAMES[seasonIndex];
+
+      if (seasonName === 'Autumn') {
+        /* Autumn: seeds remain fully visible, warm brown */
+        seedMat.opacity = 1;
+        seedMat.color.setHex(0x6a4a2a);
+
+        /* Update DOM when seeds first appear in autumn (if not already done) */
+        if (!groundSeeds._domUpdated) {
+          groundSeeds._domUpdated = true;
+          const growingDesc = document.getElementById('growing-description');
+          const plotDesc = document.getElementById('plot-description');
+          const otherLabel = groundSeeds.parentLabel === 'plant2' ? 'companion' : 'central';
+          const seedText = 'Tiny seeds rest on the dark soil near the ' + otherLabel + ' plant, a promise of next season.';
+          if (growingDesc && growingDesc.textContent.indexOf('Tiny seeds rest') === -1) {
+            growingDesc.textContent += ' ' + seedText;
+          }
+          if (plotDesc && plotDesc.textContent.indexOf('Tiny seeds rest') === -1) {
+            plotDesc.textContent += ' ' + seedText;
+          }
+        }
+      } else if (seasonName === 'Winter') {
+        /* Winter: seeds visible but slightly darker/subdued */
+        seedMat.opacity = 1;
+        // Lerp toward a darker, more subdued brown
+        const winterSeedColor = new THREE.Color(0x4a3a2a);
+        seedMat.color.copy(new THREE.Color(0x6a4a2a)).lerp(winterSeedColor, t);
+
+        /* Update DOM as winter progresses */
+        if (t > 0.3 && !groundSeeds._winterDomUpdated) {
+          groundSeeds._winterDomUpdated = true;
+          const plotDesc = document.getElementById('plot-description');
+          if (plotDesc && plotDesc.textContent.indexOf('seeds rest') !== -1) {
+            // Seeds are still there, just darker — description remains valid
+          }
+        }
+      } else if (seasonName === 'Spring') {
+        /* Spring: seeds vanish after first 30% of the season has passed */
+        if (t < 0.30) {
+          // Seeds still visible, fading to transparent
+          seedMat.opacity = 1 - t / 0.30;
+          seedMat.color.setHex(0x6a4a2a);
+        } else {
+          // After 30% of spring, seeds have germinated — remove them
+          seedMat.opacity = 0;
+
+          // Remove seed meshes from scene and clean up
+          if (groundSeeds.meshes.length > 0) {
+            for (let i = 0; i < groundSeeds.meshes.length; i++) {
+              const mesh = groundSeeds.meshes[i];
+              if (gs.scene) {
+                gs.scene.remove(mesh);
+              }
+              mesh.geometry.dispose();
+            }
+            groundSeeds.meshes = [];
+            groundSeeds.basePositions = [];
+            groundSeeds.count = 0;
+          }
+
+          // Update DOM to remove seed references
+          const growingDesc = document.getElementById('growing-description');
+          const plotDesc = document.getElementById('plot-description');
+          if (growingDesc) {
+            growingDesc.textContent = growingDesc.textContent.replace(/ Tiny seeds rest[^.]*\./g, '');
+          }
+          if (plotDesc) {
+            plotDesc.textContent = plotDesc.textContent.replace(/ Tiny seeds rest[^.]*\./g, '');
+          }
+
+          // Reset DOM flags for next cycle
+          groundSeeds._domUpdated = false;
+          groundSeeds._winterDomUpdated = false;
+        }
+      } else {
+        /* Summer: seeds should not be present (removed in spring) */
+        seedMat.opacity = 0;
       }
     }
 
