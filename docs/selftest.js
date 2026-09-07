@@ -3755,6 +3755,110 @@ export async function checks() {
     }
   }
 
+  /* ---------- Ground seeds checks (issue #627) ---------- */
+  const groundSeedState = gardenState && gardenState.groundSeeds;
+  if (groundSeedState) {
+    // Verify type structure exists
+    if (typeof groundSeedState.update !== 'function') {
+      problems.push('groundSeeds.update is not a function — ground seeds ripple response not exposed (issue #627).');
+    }
+
+    if (groundSeedState.meshes && groundSeedState.meshes.length > 0) {
+      // Verify each seed mesh is a tiny brown sphere near the parent stem
+      groundSeedState.meshes.forEach(function(mesh, i) {
+        if (!(mesh instanceof THREE.Mesh)) {
+          problems.push('ground seed #' + i + ' is not a THREE.Mesh, got ' + (mesh && mesh.constructor ? mesh.constructor.name : typeof mesh) + ' (issue #627).');
+          return;
+        }
+
+        // Check y position is near ground (≈0.005)
+        var y = mesh.position.y;
+        if (y < 0.001 || y > 0.01) {
+          problems.push('ground seed #' + i + ' has y=' + y.toFixed(4) + ', expected ~0.005 (just above ground) (issue #627).');
+        }
+
+        // Check distance from parent stem is within ~0.1 units
+        var parentPos = groundSeedState.parentPos || { x: 0, z: 0 };
+        var dx = mesh.position.x - parentPos.x;
+        var dz = mesh.position.z - parentPos.z;
+        var dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist > 0.11) {
+          problems.push('ground seed #' + i + ' at distance ' + dist.toFixed(3) + ' from parent stem — expected within ~0.1 units (issue #627).');
+        }
+
+        // Verify it is in the scene
+        if (gardenState && gardenState.scene) {
+          var found = gardenState.scene.children.indexOf(mesh) !== -1;
+          if (!found) {
+            problems.push('ground seed #' + i + ' is not a child of the scene — it was not added to the garden (issue #627).');
+          }
+        }
+
+        // Verify the mesh uses a shared material
+        if (mesh.material !== groundSeedState.material) {
+          problems.push('ground seed #' + i + ' does not use the shared seed material (issue #627).');
+        }
+
+        // Verify geometry is a sphere with tiny radius (0.002-0.003)
+        if (mesh.geometry.type !== 'SphereGeometry') {
+          problems.push('ground seed #' + i + ' geometry is "' + mesh.geometry.type + '", expected SphereGeometry (issue #627).');
+        }
+      });
+
+      // Verify seed colour is brown-ish
+      if (groundSeedState.material && groundSeedState.material.color) {
+        var col = groundSeedState.material.color;
+        // Brown has R > B and G > B roughly
+        if (col.r < col.b && col.g < col.b) {
+          problems.push('ground seed colour ' + col.getHexString() + ' is not brown-toned — expected a warm brown (issue #627).');
+        }
+      }
+
+      // Verify material is transparent (for seasonal fade)
+      if (groundSeedState.material && groundSeedState.material.transparent !== true) {
+        problems.push('groundSeeds.material.transparent is ' + groundSeedState.material.transparent + ', expected true for seasonal fade (issue #627).');
+      }
+
+      // Verify basePositions match meshes
+      if (groundSeedState.basePositions && groundSeedState.basePositions.length !== groundSeedState.meshes.length) {
+        problems.push('groundSeeds.basePositions length (' + groundSeedState.basePositions.length + ') does not match meshes length (' + groundSeedState.meshes.length + ') (issue #627).');
+      }
+
+      // Check reduced-motion: seeds should be stationary at base positions
+      var mm = window.matchMedia('(prefers-reduced-motion: reduce)');
+      if (mm.matches) {
+        // Verify positions match base positions
+        var posOk = true;
+        for (var si = 0; si < groundSeedState.meshes.length; si++) {
+          var seed = groundSeedState.meshes[si];
+          var base = groundSeedState.basePositions[si];
+          if (Math.abs(seed.position.x - base.x) > 0.001 ||
+              Math.abs(seed.position.y - base.y) > 0.001 ||
+              Math.abs(seed.position.z - base.z) > 0.001) {
+            posOk = false;
+            break;
+          }
+        }
+        if (!posOk) {
+          problems.push('With prefers-reduced-motion active, ground seeds should be stationary at their base positions (issue #627).');
+        }
+        // But seeds should still be visible (not hidden)
+        if (groundSeedState.material && groundSeedState.material.opacity === 0) {
+          problems.push('With prefers-reduced-motion active, ground seeds should remain visible (opacity > 0) — reduced motion only disables drift, not visibility (issue #627).');
+        }
+      }
+    }
+  } else {
+    // Ground seeds may not exist yet (no pollinated flower has entered dormant yet)
+    // That's OK — we only flag if there's a flower with seed heads that should have dropped
+    var plant1ForSeedCheck = gardenState && gardenState.plant;
+    if (plant1ForSeedCheck && plant1ForSeedCheck.flower && typeof plant1ForSeedCheck.flower.isPollinated === 'function') {
+      if (plant1ForSeedCheck.flower.isPollinated() && typeof plant1ForSeedCheck.flower.getPhase === 'function' && plant1ForSeedCheck.flower.getPhase() === 'dormant') {
+        problems.push('A pollinated flower is dormant but no ground seeds exist — seed heads should have dropped to the ground (issue #627).');
+      }
+    }
+  }
+
   /* ---------- Fallen leaves checks (issue #448) ---------- */
   var fallenLeavesState = gardenState && gardenState.fallenLeaves;
   if (!fallenLeavesState) {

@@ -485,6 +485,12 @@
         fallenLeaves.update(animTime, computeDisplacement);
       }
 
+      /* Update ground seeds to respond to ground ripple */
+      const groundSeeds = window.__gardenState && window.__gardenState.groundSeeds;
+      if (groundSeeds && typeof groundSeeds.update === 'function') {
+        groundSeeds.update(animTime, computeDisplacement);
+      }
+
       /* Update creature position */
       creature.update(animTime);
 
