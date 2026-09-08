@@ -6189,6 +6189,317 @@ export async function checks() {
       }
     }
 
+  /* ---------- Firefly pulse synchronization checks (issue #639) ---------- */
+  // Verify that nearby firefly dots (within 0.15 units) gradually converge
+  // their pulse phase offsets toward a shared group average, with ±0.15 rad
+  // residual variance, while dots beyond 0.25 units diverge back to independence.
+  // Only active during Night (t ≥ 0.75), disabled under prefers-reduced-motion.
+  {
+    var syncFFState = gardenState && gardenState.fireflies;
+    if (!syncFFState) {
+      problems.push('window.__gardenState.fireflies is not set — cannot verify firefly sync (issue #639).');
+    } else {
+      // --- Test 1: syncConstants are exposed and correct ---
+      if (!syncFFState.syncConstants) {
+        problems.push('fireflyState.syncConstants is not exposed — sync configuration constants missing (issue #639).');
+      } else {
+        var sc = syncFFState.syncConstants;
+        if (typeof sc.convergeRadius !== 'number' || Math.abs(sc.convergeRadius - 0.15) > 0.001) {
+          problems.push('fireflyState.syncConstants.convergeRadius is ' + sc.convergeRadius + ', expected 0.15 (issue #639).');
+        }
+        if (typeof sc.divergeRadius !== 'number' || Math.abs(sc.divergeRadius - 0.25) > 0.001) {
+          problems.push('fireflyState.syncConstants.divergeRadius is ' + sc.divergeRadius + ', expected 0.25 (issue #639).');
+        }
+        if (typeof sc.convergeAlpha !== 'number' || Math.abs(sc.convergeAlpha - 0.002) > 0.0001) {
+          problems.push('fireflyState.syncConstants.convergeAlpha is ' + sc.convergeAlpha + ', expected 0.002 (issue #639).');
+        }
+        if (typeof sc.divergeAlpha !== 'number' || Math.abs(sc.divergeAlpha - 0.002) > 0.0001) {
+          problems.push('fireflyState.syncConstants.divergeAlpha is ' + sc.divergeAlpha + ', expected 0.002 (issue #639).');
+        }
+        if (typeof sc.residualVariance !== 'number' || Math.abs(sc.residualVariance - 0.15) > 0.001) {
+          problems.push('fireflyState.syncConstants.residualVariance is ' + sc.residualVariance + ', expected 0.15 (issue #639).');
+        }
+      }
+
+      // --- Test 2: getSyncState is a function and returns correct shape ---
+      if (typeof syncFFState.getSyncState !== 'function') {
+        problems.push('fireflyState.getSyncState is not a function — sync state accessor missing (issue #639).');
+      } else {
+        var syncState = syncFFState.getSyncState();
+        if (!Array.isArray(syncState)) {
+          problems.push('fireflyState.getSyncState() did not return an array — got ' + typeof syncState + ' (issue #639).');
+        } else {
+          // Each entry must have required fields
+          syncState.forEach(function(s, i) {
+            if (typeof s.phaseOffset !== 'number') {
+              problems.push('getSyncState()[' + i + '] phaseOffset is ' + typeof s.phaseOffset + ', expected number (issue #639).');
+            }
+            if (typeof s.originalPhaseOffset !== 'number') {
+              problems.push('getSyncState()[' + i + '] originalPhaseOffset is ' + typeof s.originalPhaseOffset + ', expected number (issue #639).');
+            }
+            if (typeof s.syncActive !== 'boolean') {
+              problems.push('getSyncState()[' + i + '] syncActive is ' + typeof s.syncActive + ', expected boolean (issue #639).');
+            }
+            if (typeof s.syncPhaseResidual !== 'number') {
+              problems.push('getSyncState()[' + i + '] syncPhaseResidual is ' + typeof s.syncPhaseResidual + ', expected number (issue #639).');
+            }
+          });
+
+          // Verify dotData has originalPhaseOffset, syncPhaseResidual, syncActive fields
+          if (syncFFState.plantGroups && syncFFState.plantGroups.length > 0) {
+            syncFFState.plantGroups.forEach(function(group, gi) {
+              if (!group.dotData) return;
+              group.dotData.forEach(function(dd, di) {
+                if (typeof dd.originalPhaseOffset !== 'number') {
+                  problems.push('firefly group #' + gi + ' dot #' + di + ' missing originalPhaseOffset (issue #639).');
+                }
+                if (typeof dd.syncPhaseResidual !== 'number') {
+                  problems.push('firefly group #' + gi + ' dot #' + di + ' missing syncPhaseResidual (issue #639).');
+                }
+                if (typeof dd.syncActive !== 'boolean') {
+                  problems.push('firefly group #' + gi + ' dot #' + di + ' missing syncActive (issue #639).');
+                }
+              });
+            });
+          }
+        }
+      }
+
+      // --- Behavioural tests: Night-only activation, convergence, residual, divergence, reduced-motion ---
+      // These need dayNight, weather and the season display (to force Summer so all dots are visible).
+      var syncDayNight = gardenState && gardenState.dayNight;
+      var syncWeather = gardenState && gardenState.weather;
+      var syncSeasonEl = document.getElementById('season-display');
+      if (!syncDayNight || typeof syncDayNight.getCycleProgress !== 'function') {
+        problems.push('dayNight.getCycleProgress is not available — cannot verify firefly sync behaviour (issue #639).');
+      } else if (!syncWeather || typeof syncWeather.getPhase !== 'function') {
+        problems.push('weather.getPhase is not available — cannot verify firefly sync behaviour (issue #639).');
+      } else if (!syncSeasonEl) {
+        problems.push('#season-display is missing — cannot verify firefly sync behaviour (issue #639).');
+      } else if (!syncFFState.plantGroups || syncFFState.plantGroups.length === 0 || syncFFState.plantGroups[0].dotData.length < 2) {
+        problems.push('No firefly group with at least 2 dots — cannot verify sync behaviour (issue #639).');
+      } else if (typeof gardenState.firefliesUpdate !== 'function') {
+        problems.push('gardenState.firefliesUpdate is not a function — cannot verify sync behaviour (issue #639).');
+      } else {
+        var origDayNightFn = syncDayNight.getCycleProgress;
+        var origWeatherFn = syncWeather.getPhase;
+        var origSeasonText = syncSeasonEl.textContent;
+
+        // Snapshot the full dotData of every dot so the test can restore the
+        // garden to its pre-test state after manipulating positions/phases.
+        function snapshotAllDotData() {
+          var snap = [];
+          syncFFState.plantGroups.forEach(function(group) {
+            group.dotData.forEach(function(dd) {
+              snap.push({
+                dot: dd,
+                phaseOffset: dd.phaseOffset,
+                syncPhaseResidual: dd.syncPhaseResidual,
+                syncActive: dd.syncActive,
+                baseX: dd.baseX,
+                baseZ: dd.baseZ,
+                driftPhase: dd.driftPhase,
+                driftAngle: dd.driftAngle
+              });
+            });
+          });
+          return snap;
+        }
+
+        function restoreAllDotData(snap) {
+          snap.forEach(function(entry) {
+            entry.dot.phaseOffset = entry.phaseOffset;
+            entry.dot.syncPhaseResidual = entry.syncPhaseResidual;
+            entry.dot.syncActive = entry.syncActive;
+            entry.dot.baseX = entry.baseX;
+            entry.dot.baseZ = entry.baseZ;
+            entry.dot.driftPhase = entry.driftPhase;
+            entry.dot.driftAngle = entry.driftAngle;
+          });
+        }
+
+        var dotSnap = snapshotAllDotData();
+
+        try {
+          // Force Summer + Clear so all dots are visible (full count, no ramp)
+          syncSeasonEl.textContent = 'Summer';
+          syncWeather.getPhase = function() { return 'Clear'; };
+
+          var groups = syncFFState.plantGroups;
+          var group = groups[0];
+          var dd0 = group.dotData[0];
+          var dd1 = group.dotData[1];
+
+          // --- Test 3a: non-Night — synchronization is inactive, phases unchanged ---
+          syncDayNight.getCycleProgress = function() { return 0.55; };
+          gardenState.firefliesUpdate(0, 0.016); // clears any stale syncActive via the else branch
+          var beforeEvening = syncFFState.getSyncState();
+          if (beforeEvening.some(function(s) { return s.syncActive; })) {
+            problems.push('Outside Night (t=0.55), some dots still have syncActive=true — sync should be inactive outside Night (issue #639).');
+          }
+          for (var ek = 0; ek < 300; ek++) {
+            gardenState.firefliesUpdate(0, 0.016);
+          }
+          var afterEvening = syncFFState.getSyncState();
+          var phasesUnchanged = true;
+          for (var ei = 0; ei < beforeEvening.length; ei++) {
+            if (Math.abs(afterEvening[ei].phaseOffset - beforeEvening[ei].phaseOffset) > 0.0000001) {
+              phasesUnchanged = false;
+              break;
+            }
+          }
+          if (!phasesUnchanged) {
+            problems.push('During Evening (t=0.55), firefly phaseOffsets changed after 300 updates — synchronization must be inactive outside Night (issue #639).');
+          }
+
+          // --- Test 3b: reduced motion — synchronization never activates ---
+          if (syncFFState.reducedMotion) {
+            syncDayNight.getCycleProgress = function() { return 0.85; };
+            for (var rk = 0; rk < 300; rk++) {
+              gardenState.firefliesUpdate(0, 0.016);
+            }
+            var syncRM = syncFFState.getSyncState();
+            if (syncRM.some(function(s) { return s.syncActive; })) {
+              problems.push('With prefers-reduced-motion active, some dots have syncActive=true — synchronization must be disabled (issue #639).');
+            }
+            var phasesRM = syncRM.map(function(s) { return s.phaseOffset; });
+            var phasesRMBefore = dotSnap.map(function(s) { return s.phaseOffset; });
+            var rmUnchanged = true;
+            for (var ri = 0; ri < phasesRM.length; ri++) {
+              if (Math.abs(phasesRM[ri] - phasesRMBefore[ri]) > 0.0000001) {
+                rmUnchanged = false;
+                break;
+              }
+            }
+            if (!rmUnchanged) {
+              problems.push('With prefers-reduced-motion active, phaseOffsets changed during Night — synchronization must be fully disabled (issue #639).');
+            }
+          }
+
+          if (!syncFFState.reducedMotion) {
+            // --- Test 3c: convergence — two co-located dots with far-apart phases converge ---
+            // Co-locate dots 0 and 1 by giving them identical base + drift parameters,
+            // so their distance stays 0 (well within the 0.15 converge radius) at every frame.
+            var commonX = dd0.baseX;
+            var commonZ = dd0.baseZ;
+            var commonDriftPhase = dd0.driftPhase;
+            var commonDriftAngle = dd0.driftAngle;
+            dd1.baseX = commonX;
+            dd1.baseZ = commonZ;
+            dd1.driftPhase = commonDriftPhase;
+            dd1.driftAngle = commonDriftAngle;
+
+            // Push the two phases far apart
+            var phaseA = 0.3;
+            var phaseB = 4.3;
+            dd0.phaseOffset = phaseA;
+            dd1.phaseOffset = phaseB;
+            dd0.syncActive = dd1.syncActive = false;
+
+            syncDayNight.getCycleProgress = function() { return 0.85; };
+            for (var ck = 0; ck < 3000; ck++) { // ~50s at 60fps — well past the 15s convergence window
+              gardenState.firefliesUpdate(0, 0.016);
+            }
+
+            // Map back from getSyncState() array to the specific dots
+            var afterSync = syncFFState.getSyncState();
+            var pair0 = null, pair1 = null;
+            var syncIdx = 0;
+            for (var gi2 = 0; gi2 < groups.length; gi2++) {
+              for (var di2 = 0; di2 < groups[gi2].dotData.length; di2++) {
+                if (groups[gi2].dotData[di2] === dd0) pair0 = afterSync[syncIdx];
+                if (groups[gi2].dotData[di2] === dd1) pair1 = afterSync[syncIdx];
+                syncIdx++;
+              }
+            }
+
+            // Guard: read residual variance from config (or fallback for safety)
+            var syncResidual = (syncFFState.syncConstants && syncFFState.syncConstants.residualVariance) || 0.15;
+
+            var initialDelta = Math.abs(phaseA - phaseB);        // 4.0
+            var convergedDelta = Math.abs(pair0.phaseOffset - pair1.phaseOffset);
+            if (convergedDelta > initialDelta * 0.5) {
+              problems.push('Firefly convergence failed: two co-located dots started ' + initialDelta.toFixed(3) +
+                ' rad apart but are still ' + convergedDelta.toFixed(3) + ' rad apart after 3000 Night updates — ' +
+                'expected them to converge substantially below ' + (initialDelta * 0.5).toFixed(3) + ' rad (issue #639).');
+            }
+            if (!pair0.syncActive || !pair1.syncActive) {
+              problems.push('Co-located firefly dots did not have syncActive=true after Night updates — convergence should mark dots as syncing (issue #639).');
+            }
+
+            // --- Test 3d: residual bias — converged dots never perfectly match the local average ---
+            // Each dot converges toward avg + bias where |bias| ≤ 0.15. The deviation from the
+            // pair's own average converges to |b0-b1|/2 ≤ 0.15. Verify this boundedness and that
+            // dots with distinct biases never perfectly synchronise.
+            var b0 = (dd0.originalPhaseOffset / (Math.PI * 2) - 0.5) * 2 * syncResidual;
+            var b1 = (dd1.originalPhaseOffset / (Math.PI * 2) - 0.5) * 2 * syncResidual;
+            var pairAvg = (pair0.phaseOffset + pair1.phaseOffset) / 2;
+            var dev0 = Math.abs(pair0.phaseOffset - pairAvg);
+            var dev1 = Math.abs(pair1.phaseOffset - pairAvg);
+            if (dev0 > syncResidual + 0.01 || dev1 > syncResidual + 0.01) {
+              problems.push('Converged firefly dot deviates ' + Math.max(dev0, dev1).toFixed(4) +
+                ' rad from the pair average — expected within residualVariance + 0.01 = ' +
+                (syncResidual + 0.01).toFixed(3) + ' rad (issue #639).');
+            }
+            if (Math.abs(b0 - b1) > 0.05) {
+              // The two dots have distinct residual biases, so they must not be perfectly synchronised
+              if (convergedDelta < 0.001) {
+                problems.push('Co-located firefly dots synchronised perfectly (delta=' + convergedDelta +
+                  ') despite distinct residual biases — ±' + syncResidual +
+                  ' rad residual variance should keep them slightly organic (issue #639).');
+              }
+            }
+
+            // --- Test 3e: divergence — an isolated dot drifts back toward its original phase ---
+            // Isolate dot 0 by moving its base far from every other dot (> 0.25 units), then
+            // push its phase far from its original, and verify it drifts back over ~10s.
+            var origBaseX0 = dd0.baseX;
+            var origBaseZ0 = dd0.baseZ;
+            dd0.baseX = origBaseX0 + 2.0;
+            dd0.baseZ = origBaseZ0 + 2.0;
+            dd0.phaseOffset = dd0.originalPhaseOffset + 3.0;
+
+            for (var dk = 0; dk < 600; dk++) { // ~10s at 60fps
+              gardenState.firefliesUpdate(0, 0.016);
+            }
+
+            var afterDiverge = syncFFState.getSyncState();
+            var divPhase0 = null;
+            syncIdx = 0;
+            for (var gi3 = 0; gi3 < groups.length; gi3++) {
+              for (var di3 = 0; di3 < groups[gi3].dotData.length; di3++) {
+                if (groups[gi3].dotData[di3] === dd0) divPhase0 = afterDiverge[syncIdx];
+                syncIdx++;
+              }
+            }
+            var divInit = 3.0;
+            var divRemain = Math.abs(divPhase0.phaseOffset - dd0.originalPhaseOffset);
+            if (divRemain > divInit * 0.5) {
+              problems.push('Firefly divergence failed: isolated dot started ' + divInit.toFixed(3) +
+                ' rad from its original phase but is still ' + divRemain.toFixed(3) +
+                ' rad away after 600 Night updates (~10s) — expected substantial return toward independence (issue #639).');
+            }
+            // Restore base so subsequent divergence checks / garden state are clean
+            dd0.baseX = origBaseX0;
+            dd0.baseZ = origBaseZ0;
+          }
+        } finally {
+          // Restore all manipulated dot state and the environment
+          restoreAllDotData(dotSnap);
+          syncDayNight.getCycleProgress = origDayNightFn;
+          syncWeather.getPhase = origWeatherFn;
+          syncSeasonEl.textContent = origSeasonText;
+          // Re-settle to real values
+          if (typeof gardenState.firefliesUpdate === 'function') {
+            for (var fk = 0; fk < 300; fk++) {
+              gardenState.firefliesUpdate(0, 0.016);
+            }
+          }
+        }
+      }
+    }
+  }
+
   /* ---------- Firefly-to-plant surface glow checks (issue #613) ---------- */
   // Verify the warm emissive colour shift on plant stem/leaf materials
   // during Night phase, pulsing with the firefly glow.
