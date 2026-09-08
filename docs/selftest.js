@@ -8659,5 +8659,98 @@ export async function checks() {
     }
   }
 
+  /* ---------- Butterfly leaf brush tremble checks (issue #640) ---------- */
+  // Verify that leaf meshes on plant1 and plant2 have userData properties for
+  // tremble tracking, and that the creature exposes getLeafTrembles.
+  var creatureState640 = gardenState && gardenState.creature;
+  if (!creatureState640) {
+    problems.push('window.__gardenState.creature is not set — cannot verify leaf brush tremble feature (issue #640).');
+  } else if (typeof creatureState640.getLeafTrembles !== 'function') {
+    problems.push('creature.state.getLeafTrembles is not a function — leaf tremble state accessor missing (issue #640).');
+  } else {
+    // Verify getLeafTrembles returns an array
+    var trembles = creatureState640.getLeafTrembles();
+    if (!Array.isArray(trembles)) {
+      problems.push('creature.state.getLeafTrembles() did not return an array — got ' + typeof trembles + ' (issue #640).');
+    } else {
+      // Verify each tremble entry has required fields
+      trembles.forEach(function(t, i) {
+        if (!t.leaf || typeof t.leaf !== 'object') {
+          problems.push('getLeafTrembles()[' + i + '] leaf is missing or not an object (issue #640).');
+        }
+        if (typeof t.originalRotX !== 'number') {
+          problems.push('getLeafTrembles()[' + i + '] originalRotX is not a number (issue #640).');
+        }
+        if (typeof t.startTime !== 'number') {
+          problems.push('getLeafTrembles()[' + i + '] startTime is not a number (issue #640).');
+        }
+        if (typeof t.elapsed !== 'number') {
+          problems.push('getLeafTrembles()[' + i + '] elapsed is not a number (issue #640).');
+        }
+      });
+    }
+  }
+
+  // Verify leaf meshes on plant1 and plant2 have tremble userData properties
+  var plantList = [gardenState && gardenState.plant, gardenState && gardenState.plant2];
+  for (var pi640 = 0; pi640 < plantList.length; pi640++) {
+    var plantObj640 = plantList[pi640];
+    if (!plantObj640) continue;
+    var label640 = pi640 === 0 ? 'plant' : 'plant2';
+    if (!plantObj640.leaves || plantObj640.leaves.length === 0) continue;
+
+    for (var li640 = 0; li640 < plantObj640.leaves.length; li640++) {
+      var leaf640 = plantObj640.leaves[li640];
+      if (!leaf640.userData) {
+        problems.push(label640 + '.leaves[' + li640 + '] has no userData — tremble tracking properties not initialised (issue #640).');
+        continue;
+      }
+      if (typeof leaf640.userData.trembleActive !== 'boolean') {
+        problems.push(label640 + '.leaves[' + li640 + '].userData.trembleActive is ' + typeof leaf640.userData.trembleActive + ' — expected boolean (issue #640).');
+      }
+      if (typeof leaf640.userData.trembleStartTime !== 'number') {
+        problems.push(label640 + '.leaves[' + li640 + '].userData.trembleStartTime is ' + typeof leaf640.userData.trembleStartTime + ' — expected number (issue #640).');
+      }
+      if (typeof leaf640.userData.trembleOriginalRotX !== 'number') {
+        problems.push(label640 + '.leaves[' + li640 + '].userData.trembleOriginalRotX is ' + typeof leaf640.userData.trembleOriginalRotX + ' — expected number (issue #640).');
+      }
+      if (typeof leaf640.userData.lastBrushTime !== 'number') {
+        problems.push(label640 + '.leaves[' + li640 + '].userData.lastBrushTime is ' + typeof leaf640.userData.lastBrushTime + ' — expected number (issue #640).');
+      }
+
+      // Verify initial values: trembleActive should be false, trembleStartTime 0, lastBrushTime 0
+      if (leaf640.userData.trembleActive !== false) {
+        problems.push(label640 + '.leaves[' + li640 + '].userData.trembleActive is ' + leaf640.userData.trembleActive + ' — expected false at initial state (issue #640).');
+      }
+    }
+  }
+
+  // Verify that prefers-reduced-motion disables the tremble by checking
+  // that when reduced motion is active, the tremble tracking array is empty
+  if (creatureState640 && creatureState640.reducedMotion) {
+    var trembles2 = creatureState640.getLeafTrembles();
+    if (trembles2.length > 0) {
+      problems.push('prefers-reduced-motion is active but getLeafTrembles() returned ' +
+        trembles2.length + ' trembles — leaf trembles should be disabled (issue #640).');
+    }
+
+    // Also verify that leaf rotations match their original values (not displaced by tremble)
+    for (var pci640 = 0; pci640 < plantList.length; pci640++) {
+      var p640 = plantList[pci640];
+      if (!p640 || !p640.leaves) continue;
+      for (var li2 = 0; li2 < p640.leaves.length; li2++) {
+        var lf640 = p640.leaves[li2];
+        if (lf640.userData && lf640.userData.trembleOriginalRotX !== undefined) {
+          var expectedRot640 = lf640.userData.trembleOriginalRotX;
+          if (Math.abs(lf640.rotation.x - expectedRot640) > 0.0001) {
+            problems.push('With prefers-reduced-motion active, leaf rotation.x is ' +
+              lf640.rotation.x.toFixed(6) + ', expected original ' + expectedRot640.toFixed(6) +
+              ' — tremble should be disabled (issue #640).');
+          }
+        }
+      }
+    }
+  }
+
   return problems;
 }

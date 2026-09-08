@@ -212,6 +212,10 @@ export function createCreature(scene) {
   let _sproutOffsetX = 0;
   let _sproutOffsetZ = 0;
 
+  /* --- Leaf brush tremble tracking (issue #640) --- */
+  // Each entry: { leaf, originalRotX, startTime }
+  let _leafTrembles = [];
+
   /* --- State exposed for selftest --- */
   const state = {
     type: 'creature',
@@ -259,6 +263,13 @@ export function createCreature(scene) {
     isNightPhase: () => _isNightPhase,
     /* Sprout attraction accessors for selftest (issue #629) */
     getSproutOffset: () => ({ x: _sproutOffsetX, z: _sproutOffsetZ }),
+    /* Leaf brush tremble accessors for selftest (issue #640) */
+    getLeafTrembles: () => _leafTrembles.map(t => ({
+      leaf: t.leaf,
+      originalRotX: t.originalRotX,
+      startTime: t.startTime,
+      elapsed: performance.now() - t.startTime
+    })),
     /* Overcast shelter accessors for selftest (issue #633) */
     getShelterLevel: () => _shelterLevel,
     ORBIT_HEIGHT_MIN,
@@ -800,10 +811,82 @@ export function createCreature(scene) {
       }
     }
 
+    /* --- Leaf brush proximity detection during idle flight (issue #640) --- */
+    if (pauseState === 'idle' && !state.reducedMotion) {
+      const gs = window.__gardenState;
+      if (gs) {
+        const plantRefs = ['plant', 'plant2'];
+        const nowMS = performance.now();
+        for (let pi = 0; pi < plantRefs.length; pi++) {
+          const plant = gs[plantRefs[pi]];
+          if (!plant || !plant.leaves || !plant.group) continue;
+          const plantPos = plant.group.position;
+          for (let li = 0; li < plant.leaves.length; li++) {
+            const leaf = plant.leaves[li];
+            if (!leaf.userData) continue;
+
+            // Leaf world position = plant group position + leaf local position
+            const lx = plantPos.x + leaf.position.x;
+            const ly = plantPos.y + leaf.position.y;
+            const lz = plantPos.z + leaf.position.z;
+
+            const dx = finalX - lx;
+            const dy = finalY - ly;
+            const dz = finalZ - lz;
+            const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+            if (dist < 0.08) {
+              const lastBrush = leaf.userData.lastBrushTime || 0;
+              if (nowMS - lastBrush >= 1000) {
+                leaf.userData.lastBrushTime = nowMS;
+                leaf.userData.trembleActive = true;
+                leaf.userData.trembleStartTime = nowMS;
+                leaf.userData.trembleOriginalRotX = leaf.rotation.x;
+
+                _leafTrembles.push({
+                  leaf: leaf,
+                  originalRotX: leaf.rotation.x,
+                  startTime: nowMS
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+
+    /* --- Apply leaf trembles each frame (damped oscillation) --- */
+    if (!state.reducedMotion) {
+      const nowMS = performance.now();
+      for (let ti = _leafTrembles.length - 1; ti >= 0; ti--) {
+        const t = _leafTrembles[ti];
+        const elapsed = (nowMS - t.startTime) / 1000;
+
+        if (elapsed >= 1.0) {
+          t.leaf.rotation.x = t.originalRotX;
+          t.leaf.userData.trembleActive = false;
+          t.leaf.userData.trembleStartTime = 0;
+          _leafTrembles.splice(ti, 1);
+        } else {
+          // Damped oscillation: ±0.02 rad, frequency ~20 rad/s, exp decay
+          const offset = 0.02 * Math.sin(elapsed * 20) * Math.exp(-4 * elapsed);
+          t.leaf.rotation.x = t.originalRotX + offset;
+        }
+      }
+    } else {
+      // Reduced motion: restore all leaf rotations
+      for (let ti = 0; ti < _leafTrembles.length; ti++) {
+        const t = _leafTrembles[ti];
+        t.leaf.rotation.x = t.originalRotX;
+        t.leaf.userData.trembleActive = false;
+        t.leaf.userData.trembleStartTime = 0;
+      }
+      _leafTrembles = [];
+    }
+
     /* --- Wind perturbation: nudge the butterfly by ground ripple displacement --- */
     let windNudge = 0;
     if (pauseState === 'idle') {
-      // Only apply wind nudge during normal flight, not during pause/rest states
       const disp = computeDisplacement(finalX, finalZ, time);
       windNudge = disp * WIND_NUDGE_SCALE;
     }
@@ -887,6 +970,14 @@ export function createCreature(scene) {
       landingLeafMesh = null;
       leafIsDisplaced = false;
       leafDisplacementT = 0;
+      // Clear leaf trembles on reduced-motion toggle (issue #640)
+      for (let ti = 0; ti < _leafTrembles.length; ti++) {
+        const t = _leafTrembles[ti];
+        t.leaf.rotation.x = t.originalRotX;
+        t.leaf.userData.trembleActive = false;
+        t.leaf.userData.trembleStartTime = 0;
+      }
+      _leafTrembles = [];
     } else {
       group.visible = true;
     }
