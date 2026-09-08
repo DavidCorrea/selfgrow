@@ -11,6 +11,10 @@
 
 import * as THREE from "three";
 import { computeDisplacement } from "./groundRipple.js";
+
+/* --- Sprout attraction (issue #629) --- */
+const SPROUT_ATTRACT_CYCLE_DURATION = 60; // seconds for a full approach+return cycle
+const SPROUT_ATTRACT_MAX_OFFSET = 0.25;    // max offset units toward sprout cluster
 import { isReducedMotion, onMotionChange } from "./motion.js";
 
 /* --- Configuration --- */
@@ -196,6 +200,10 @@ export function createCreature(scene) {
   let _fireflyBiasZ = 0;
   let _isNightPhase = false;
 
+  /* --- Sprout attraction offset for selftest (issue #629) --- */
+  let _sproutOffsetX = 0;
+  let _sproutOffsetZ = 0;
+
   /* --- State exposed for selftest --- */
   const state = {
     type: 'creature',
@@ -240,7 +248,9 @@ export function createCreature(scene) {
     /* Firefly attraction accessors for selftest (issue #598) */
     getFireflySlowMul: () => _fireflySlowMul,
     getFireflyBias: () => ({ x: _fireflyBiasX, z: _fireflyBiasZ }),
-    isNightPhase: () => _isNightPhase
+    isNightPhase: () => _isNightPhase,
+    /* Sprout attraction accessors for selftest (issue #629) */
+    getSproutOffset: () => ({ x: _sproutOffsetX, z: _sproutOffsetZ })
   };
 
   /* Start invisible if reduced motion is active */
@@ -716,6 +726,53 @@ export function createCreature(scene) {
     if (_isNightPhase) {
       finalX += _fireflyBiasX;
       finalZ += _fireflyBiasZ;
+    }
+
+    /* --- Sprout attraction: butterfly drifts toward germinated sprouts in spring (issue #629) --- */
+    _sproutOffsetX = 0;
+    _sproutOffsetZ = 0;
+    if (seasonName === 'Spring' && pauseState === 'idle') {
+      const gs = window.__gardenState;
+      if (gs && gs.groundSeeds && gs.groundSeeds.sprouts && gs.groundSeeds.sprouts.length > 0) {
+        const sprouts = gs.groundSeeds.sprouts;
+        // Compute centroid of sprout positions
+        let cx = 0, cz = 0;
+        for (let si = 0; si < sprouts.length; si++) {
+          const sp = sprouts[si];
+          if (sp.group) {
+            cx += sp.group.position.x;
+            cz += sp.group.position.z;
+          }
+        }
+        cx /= sprouts.length;
+        cz /= sprouts.length;
+
+        // Slow 60s cycle: 30s approach, 30s return
+        const cyclePhase = (time % SPROUT_ATTRACT_CYCLE_DURATION) / SPROUT_ATTRACT_CYCLE_DURATION;
+        // cyclePhase: 0→0.5 = approach (sine from 0 to peak at 0.25), 0.5→1.0 = return (sine back to 0)
+        const sinePhase = Math.sin(cyclePhase * Math.PI * 2); // 0→1→0→-1→0 over duration
+        // Map to 0→1 approach: use positive lobe (0→1→0) by taking abs + shaping
+        // Simpler: just use a smooth triangle: 0→0.5 peak→0
+        const t = cyclePhase;
+        const approachFactor = t < 0.5
+          ? 2 * t          // 0→1 during first half
+          : 2 * (1 - t);   // 1→0 during second half
+        // Smooth the triangle with ease-in-out
+        const eased = approachFactor * approachFactor * (3 - 2 * approachFactor);
+
+        // Direction from origin toward centroid
+        const distToCentroid = Math.sqrt(cx * cx + cz * cz) || 1;
+        const dirX = cx / distToCentroid;
+        const dirZ = cz / distToCentroid;
+
+        const offset = eased * SPROUT_ATTRACT_MAX_OFFSET;
+        _sproutOffsetX = dirX * offset;
+        _sproutOffsetZ = dirZ * offset;
+
+        // Apply the offset to final position (only during idle flight, not during pause/landing)
+        finalX += _sproutOffsetX;
+        finalZ += _sproutOffsetZ;
+      }
     }
 
     /* --- Wind perturbation: nudge the butterfly by ground ripple displacement --- */

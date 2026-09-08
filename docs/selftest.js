@@ -8187,6 +8187,73 @@ export async function checks() {
     }
   }
 
+  /* ---------- Butterfly sprout attraction checks (issue #629) ---------- */
+  // During spring, when germinated sprouts exist on the ground, the butterfly's
+  // flight path drifts subtly closer to the sprout cluster over ~30 seconds.
+  // The butterfly passes within ~0.2–0.3 units of the sprout positions before
+  // resuming its normal orbit path. The effect is only active during Spring
+  // and only when sprouts are present.
+  {
+    const creatureState = gardenState && gardenState.creature;
+    if (!creatureState) {
+      problems.push('window.__gardenState.creature is not set — cannot verify butterfly sprout attraction (issue #629).');
+    } else {
+      // Verify the sprout offset accessor exists
+      if (typeof creatureState.getSproutOffset !== 'function') {
+        problems.push('creature.getSproutOffset is not a function — sprout offset accessor missing (issue #629).');
+      } else {
+        const offset = creatureState.getSproutOffset();
+        if (typeof offset.x !== 'number' || typeof offset.z !== 'number' || isNaN(offset.x) || isNaN(offset.z)) {
+          problems.push('creature.getSproutOffset() returned invalid offset: {x: ' + offset.x + ', z: ' + offset.z + '} — expected numeric values (issue #629).');
+        }
+        // When no sprouts are present, offset must be zero
+        const seasonName = document.getElementById('season-display')?.textContent?.trim() || '';
+        const groundSeeds = gardenState && gardenState.groundSeeds;
+        const hasSprouts = groundSeeds && groundSeeds.sprouts && Array.isArray(groundSeeds.sprouts) && groundSeeds.sprouts.length > 0;
+
+        if (!hasSprouts && (offset.x !== 0 || offset.z !== 0)) {
+          problems.push('creature.getSproutOffset() returned non-zero ({x: ' + offset.x + ', z: ' + offset.z + '}) when no sprouts exist — expected zero offset (issue #629).');
+        }
+
+        // Outside spring, offset must be zero even if sprouts exist
+        if (seasonName !== 'Spring' && (offset.x !== 0 || offset.z !== 0)) {
+          problems.push('creature.getSproutOffset() returned non-zero ({x: ' + offset.x + ', z: ' + offset.z + '}) outside Spring (season=' + seasonName + ') — expected zero offset (issue #629).');
+        }
+
+        // Offset magnitude must not exceed SPROUT_ATTRACT_MAX_OFFSET (0.25)
+        const magnitude = Math.sqrt(offset.x * offset.x + offset.z * offset.z);
+        if (magnitude > 0.251) {
+          problems.push('creature.getSproutOffset() magnitude is ' + magnitude.toFixed(4) + ', expected <= 0.25 (max offset limit) (issue #629).');
+        }
+      }
+
+      // Verify the description includes the sprout proximity suffix during Spring with sprouts
+      if (!creatureState.reducedMotion) {
+        const season = document.getElementById('season-display')?.textContent?.trim() || '';
+        const groundSeeds = gardenState && gardenState.groundSeeds;
+        const hasSprouts = groundSeeds && groundSeeds.sprouts && Array.isArray(groundSeeds.sprouts) && groundSeeds.sprouts.length > 0;
+        const timeDisplay = document.getElementById('time-display')?.textContent?.trim() || '';
+        const weatherDisplay = document.getElementById('weather-display')?.textContent?.trim() || '';
+
+        // Only check description during Spring with sprouts, when butterfly is not distracted by fireflies or rain
+        if (season === 'Spring' && hasSprouts && timeDisplay !== 'Night' && weatherDisplay !== 'Light Drizzle') {
+          const growEl = document.getElementById('growing-description');
+          if (growEl && typeof gardenState.updateButterflyDescription === 'function') {
+            // Force an update to ensure the description is current
+            gardenState.updateButterflyDescription();
+            const text = growEl.textContent;
+            const foundSproutSuffix = gardenState.SPROUT_PROXIMITY_SUFFIXES.some(function(suffix) {
+              return text.indexOf(suffix) !== -1;
+            });
+            if (!foundSproutSuffix) {
+              problems.push('growing-description does not contain a sprout proximity suffix during Spring with sprouts — butterfly curiosity not described (issue #629).');
+            }
+          }
+        }
+      }
+    }
+  }
+
   /* ---------- Pollination trace checks (issue #614) ---------- */
   // Verify that the flower exposes isPollinated() and hasSeedHead() accessors,
   // and that the pollination mechanism works correctly.
