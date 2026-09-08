@@ -110,6 +110,13 @@ function getRampVisibleCount(maxFullCount, seasonProgress, time, reducedMotion) 
   // Outside ramp windows: full count
   return { rampCount: maxFullCount, rampActive: false };
 }
+/* --- Firefly pulse synchronization (issue #639) --- */
+const SYNC_CONVERGE_RADIUS = 0.15;    // units — within this, phases converge
+const SYNC_DIVERGE_RADIUS = 0.25;    // units — beyond this, phases diverge back
+const SYNC_CONVERGE_ALPHA = 0.002;   // exponential smoothing factor per frame (~15s to converge at 60fps)
+const SYNC_DIVERGE_ALPHA = 0.002;    // exponential smoothing factor per frame (~10s to diverge at 60fps)
+const SYNC_RESIDUAL_VARIANCE = 0.15; // ±0.15 rad residual variance to avoid perfect sync
+
 const WIND_DRIFT_SCALE = 0.02;      // scale of ground ripple wind perturbation on drift
 
 /* --- Firefly-to-plant surface glow (issue #613) --- */
@@ -214,8 +221,9 @@ export function createFireflies(scene) {
       sizes[i] = GLOW_SIZE * (0.6 + Math.random() * 0.8);
 
       // Per-dot animation parameters
+      var phaseInit = Math.random() * Math.PI * 2;
       dotData.push({
-        phaseOffset: Math.random() * Math.PI * 2,
+        phaseOffset: phaseInit,
         freq: PULSE_FREQ_MIN + Math.random() * (PULSE_FREQ_MAX - PULSE_FREQ_MIN),
         driftPhase: Math.random() * Math.PI * 2,
         driftAngle: Math.random() * Math.PI * 2,
@@ -226,7 +234,11 @@ export function createFireflies(scene) {
         /* --- Butterfly proximity glow boost (issue #599) --- */
         glowBoostTimer: 0,          // seconds remaining of boost
         glowBoostAmount: 0,         // boost fraction (0.20-0.30, 0 = none)
-        glowBoostDuration: 0        // total duration of the boost (1.5-2.0s)
+        glowBoostDuration: 0,        // total duration of the boost (1.5-2.0s)
+        /* --- Pulse synchronization (issue #639) --- */
+        originalPhaseOffset: phaseInit,  // the original independent phase for divergence
+        syncPhaseResidual: 0,            // accumulated residual for organic feel (±0.15 rad)
+        syncActive: false                // whether currently in sync mode
       });
     }
 
@@ -402,7 +414,31 @@ export function createFireflies(scene) {
     /** Maximum glow shift constant exposed for testing */
     maxGlowShift: MAX_GLOW_SHIFT,
     /** Warm glow colour constant exposed for testing */
-    warmGlowColor: WARM_GLOW_COLOR
+    warmGlowColor: WARM_GLOW_COLOR,
+    /** Pulse synchronization configuration constants (issue #639) */
+    syncConstants: {
+      convergeRadius: SYNC_CONVERGE_RADIUS,
+      divergeRadius: SYNC_DIVERGE_RADIUS,
+      convergeAlpha: SYNC_CONVERGE_ALPHA,
+      divergeAlpha: SYNC_DIVERGE_ALPHA,
+      residualVariance: SYNC_RESIDUAL_VARIANCE
+    },
+    /** Returns pulse synchronization state for every dot: phase offsets, sync flags, residuals (issue #639) */
+    getSyncState: function() {
+      var syncs = [];
+      for (var gi = 0; gi < plantGroups.length; gi++) {
+        for (var di = 0; di < plantGroups[gi].dotData.length; di++) {
+          var dd = plantGroups[gi].dotData[di];
+          syncs.push({
+            phaseOffset: dd.phaseOffset,
+            originalPhaseOffset: dd.originalPhaseOffset,
+            syncActive: dd.syncActive,
+            syncPhaseResidual: dd.syncPhaseResidual
+          });
+        }
+      }
+      return syncs;
+    }
   };
 
   /* --- Runtime opacity tracking for smooth fades --- */
@@ -646,6 +682,85 @@ export function createFireflies(scene) {
 
       group.geometry.attributes.position.needsUpdate = true;
       group.geometry.attributes.size.needsUpdate = true;
+    }
+
+    /* --- Firefly pulse synchronization (issue #639) --- */
+    // Nearby firefly dots (within 0.15 units) gradually converge their pulse
+    // phase offsets toward a shared group average (exponential smoothing,
+    // α=0.002/frame ≈ 15s at 60fps), with a ±0.15 rad per-dot residual bias so
+    // they never sync perfectly — always slightly organic. Dots with no
+    // neighbour within 0.25 units drift back toward their original independent
+    // phase over ~10s. Only active during Night (t ≥ 0.75); disabled entirely
+    // under prefers-reduced-motion.
+    const syncNight = t >= 0.75 && t < 1.0;
+    if (syncNight && !state.reducedMotion) {
+      // Gather all currently visible dots (season/ramp limited) with world positions
+      var syncDots = [];
+      for (var sgi = 0; sgi < plantGroups.length; sgi++) {
+        var sgroup = plantGroups[sgi];
+        var spos = sgroup.geometry.attributes.position.array;
+        var sVisibleMax = rampActive ? rampedDots : maxVisibleDots;
+        for (var sdi = 0; sdi < sgroup.count; sdi++) {
+          if (sdi >= sVisibleMax) continue;
+          syncDots.push({
+            dd: sgroup.dotData[sdi],
+            x: spos[sdi * 3],
+            y: spos[sdi * 3 + 1],
+            z: spos[sdi * 3 + 2]
+          });
+        }
+      }
+
+      for (var si = 0; si < syncDots.length; si++) {
+        var dotA = syncDots[si];
+        var ddA = dotA.dd;
+
+        // Average phase of dots within CONVERGE_RADIUS (self included)
+        var groupPhase = ddA.phaseOffset;
+        var groupSize = 1;
+        var hasNearby = false;
+        var hasAdjacent = false; // in the [CONVERGE, DIVERGE) hysteresis band
+
+        for (var sj = 0; sj < syncDots.length; sj++) {
+          if (sj === si) continue;
+          var dotB = syncDots[sj];
+          var ddx = dotA.x - dotB.x;
+          var ddy = dotA.y - dotB.y;
+          var ddz = dotA.z - dotB.z;
+          var dist = Math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz);
+
+          if (dist <= SYNC_CONVERGE_RADIUS) {
+            hasNearby = true;
+            groupPhase += dotB.dd.phaseOffset;
+            groupSize++;
+          } else if (dist <= SYNC_DIVERGE_RADIUS) {
+            hasAdjacent = true;
+          }
+        }
+
+        if (hasNearby) {
+          // Deterministic per-dot residual bias in [-RESIDUAL_VARIANCE, +RESIDUAL_VARIANCE]
+          // so a converged dot sits slightly off the group average — organic, never perfect.
+          var residualBias = (ddA.originalPhaseOffset / (Math.PI * 2) - 0.5) * 2 * SYNC_RESIDUAL_VARIANCE;
+          ddA.syncPhaseResidual = residualBias;
+          var avgPhase = groupPhase / groupSize;
+          ddA.phaseOffset += (avgPhase + residualBias - ddA.phaseOffset) * SYNC_CONVERGE_ALPHA;
+          ddA.syncActive = true;
+        } else if (!hasAdjacent) {
+          // No neighbour within DIVERGE_RADIUS: drift back toward independence
+          ddA.phaseOffset += (ddA.originalPhaseOffset - ddA.phaseOffset) * SYNC_DIVERGE_ALPHA;
+          ddA.syncPhaseResidual = 0;
+          ddA.syncActive = false;
+        }
+      }
+    } else {
+      // Sync inactive (daytime or reduced motion): clear the flag so state
+      // reflects that no synchronization is currently happening
+      for (var sgi2 = 0; sgi2 < plantGroups.length; sgi2++) {
+        for (var sdi2 = 0; sdi2 < plantGroups[sgi2].dotData.length; sdi2++) {
+          plantGroups[sgi2].dotData[sdi2].syncActive = false;
+        }
+      }
     }
 
     /* --- Firefly-to-plant surface glow (issue #613) --- */
