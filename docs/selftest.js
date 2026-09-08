@@ -76,6 +76,77 @@ export async function checks() {
     }
   });
 
+  /* Check state panel section order: Growing must come before Plot (issue #632) */
+  const statePanel = document.getElementById('state-panel');
+  if (statePanel) {
+    const sections = statePanel.querySelectorAll('.state-section');
+    const sectionLabels = [];
+    sections.forEach(function(sec) {
+      var label = sec.querySelector('.state-label');
+      if (label) sectionLabels.push(label.textContent.trim());
+    });
+    var growingIdx = sectionLabels.indexOf('Growing');
+    var plotIdx = sectionLabels.indexOf('Plot');
+    if (growingIdx === -1) {
+      problems.push('No "Growing" section found in state panel — expected a .state-section with state-label "Growing".');
+    }
+    if (plotIdx === -1) {
+      problems.push('No "Plot" section found in state panel — expected a .state-section with state-label "Plot".');
+    }
+    if (growingIdx !== -1 && plotIdx !== -1 && growingIdx >= plotIdx) {
+      problems.push('State panel section order is wrong: "Growing" (index ' + growingIdx + ') must come before "Plot" (index ' + plotIdx + '). Expected order: Season, Time, Weather, Growing, Plot, Acknowledgment (issue #632).');
+    }
+  }
+
+  /* Check that the full expected order is: Season, Time, Weather, Growing, Plot, Acknowledgment */
+  if (statePanel) {
+    var sections = statePanel.querySelectorAll('.state-section');
+    var sectionLabels = [];
+    sections.forEach(function(sec) {
+      var label = sec.querySelector('.state-label');
+      if (label) sectionLabels.push(label.textContent.trim());
+    });
+    var expectedOrder = ['Season', 'Time of day', 'Weather', 'Growing', 'Plot', 'Acknowledgment'];
+    for (var i = 0; i < expectedOrder.length; i++) {
+      if (i >= sectionLabels.length) {
+        problems.push('State panel section order check: expected "' + expectedOrder[i] + '" at position ' + (i + 1) + ' but panel only has ' + sectionLabels.length + ' sections.');
+      } else if (sectionLabels[i] !== expectedOrder[i]) {
+        problems.push('State panel section order mismatch at position ' + (i + 1) + ': expected "' + expectedOrder[i] + '", got "' + sectionLabels[i] + '" (issue #632).');
+      }
+    }
+  }
+
+  /* Check mobile panel height is 48% of viewport height in media query (issue #632) */
+  var mobilePanelHeight = null;
+  try {
+    for (var si = 0; si < document.styleSheets.length; si++) {
+      var sheet = document.styleSheets[si];
+      if (!sheet || !sheet.cssRules) continue;
+      for (var rj = 0; rj < sheet.cssRules.length; rj++) {
+        var rule = sheet.cssRules[rj];
+        if (rule.constructor.name === 'CSSMediaRule') {
+          var mediaText = rule.media.mediaText;
+          if (mediaText && mediaText.toLowerCase().indexOf('max-width: 640px') !== -1) {
+            for (var ki = 0; ki < rule.cssRules.length; ki++) {
+              var inner = rule.cssRules[ki];
+              if (inner.selectorText && inner.selectorText.indexOf('#state-panel') !== -1) {
+                var h = inner.style.height;
+                if (h) {
+                  mobilePanelHeight = h;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  } catch (_e) {}
+  if (mobilePanelHeight === null) {
+    problems.push('Could not find a #state-panel height rule inside @media (max-width: 640px) — the mobile panel height is not defined (issue #632).');
+  } else if (mobilePanelHeight !== '48%') {
+    problems.push('Mobile state-panel height is "' + mobilePanelHeight + '", expected "48%" (issue #632).');
+  }
+
   /* ---------- Three.js canvas ---------- */
   const gardenState = window.__gardenState;
   if (!gardenState) {
