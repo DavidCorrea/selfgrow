@@ -56,6 +56,12 @@ export function initGarden(scene, initialProgress) {
   window.__gardenState.plant1Maturity = 0;
   delete window.__gardenState.plant2Maturity;
 
+  /* Expose sprout leaf-generation helpers for self-testing and the seasonal
+   * cycle (issue #638) */
+  window.__gardenState.addSproutSecondLeafPair = addSproutSecondLeafPair;
+  window.__gardenState.buildGerminatedSprouts = buildGerminatedSprouts;
+  window.__gardenState.updateSproutEstablishedDescription = updateSproutEstablishedDescription;
+
   /* Create the first (central) plant */
   createPlant({
     scene,
@@ -89,6 +95,8 @@ export function initGarden(scene, initialProgress) {
         count: seedData.count,
         parentLabel: seedData.parentLabel || 'plant',
         parentPos: seedData.parentPos,
+        /* Sprout leaf-generation count carried from the previous cycle (issue #638) */
+        leafGenCount: typeof seedData.leafGenCount === 'number' ? seedData.leafGenCount : 0,
         _domUpdated: false,
         _winterDomUpdated: false,
         update: function(time, computeDisplacement) {
@@ -656,6 +664,7 @@ function createPlant(opts) {
           count: 0,
           parentLabel: label,
           parentPos: { x: position.x, z: position.z },
+          leafGenCount: 0,
           _domUpdated: false,
           _winterDomUpdated: false,
           update: function(time, computeDisplacement) {
@@ -1478,6 +1487,168 @@ function createSoilPatches(scene, basePositions, fallenLeavesState) {
   fallenLeavesState.patchMaterial = patchMat;
 }
 
+/* --- Sprout leaf generations (issue #638) ---
+ * A sprout that survives through summer grows a second, larger leaf pair when
+ * autumn begins: +30% scale, lighter green, rotated ~30° from the first pair.
+ * The generation count (0 or 1) persists across seasonal cycles so next
+ * spring's sprouts re-germinate with the previous cycle's leaf count.
+ */
+const SECOND_LEAF_GROWTH_SCALE = 1.3;                // ×1.3 vs first pair
+const SECOND_LEAF_GROWTH_COLOR = 0x6aaa4a;           // lighter green
+const SECOND_LEAF_GROWTH_ROTATION = Math.PI / 6;     // ~30°
+const SECOND_LEAF_APPEAR_FRACTION = 0.10;            // fade-in over first 10% of autumn
+
+/**
+ * addSproutSecondLeafPair — grows a second, larger, lighter-green leaf pair
+ * on a sprout (issue #638).
+ *
+ * The new leaves are positioned just above the first pair, rotated ~30° from
+ * it, scaled ×1.3, and coloured lighter green to signal the sprout was on its
+ * way to becoming a plant. Under prefers-reduced-motion the leaves appear at
+ * full opacity immediately; otherwise they start transparent and fade in over
+ * the first 10% of autumn (driven by the seasonal tick).
+ *
+ * @param {object} sprout — a groundSeeds.sprouts entry {group, leaves, leafGenCount}
+ * @param {object} [opts]
+ * @param {boolean} [opts.fadeIn=false] — pass false to appear at full opacity
+ *   immediately (used for spring re-germination where the whole sprout fades in)
+ * @returns {Array<THREE.Mesh>} the two newly created leaves
+ */
+function addSproutSecondLeafPair(sprout, opts) {
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const fadeIn = (opts && opts.fadeIn === false) ? false : !reducedMotion;
+  const newLeaves = [];
+
+  for (let li = 0; li < 2; li++) {
+    const leafShape = new THREE.Shape();
+    leafShape.moveTo(0, 0);
+    leafShape.lineTo(0.008, 0.012);
+    leafShape.lineTo(-0.004, 0.008);
+    leafShape.closePath();
+    const leafGeo = new THREE.ShapeGeometry(leafShape);
+    const leafMat = new THREE.MeshStandardMaterial({
+      color: SECOND_LEAF_GROWTH_COLOR,
+      roughness: 0.6,
+      metalness: 0.0,
+      transparent: true,
+      opacity: fadeIn ? 0 : 1
+    });
+    const leaf = new THREE.Mesh(leafGeo, leafMat);
+    leaf.position.y = 0.02 + (sprout.leaves.length + li) * 0.005;
+    leaf.rotation.x = -0.3;
+    // ~30° off the first pair's angle (li * 2.0)
+    leaf.rotation.y = li * 2.0 + SECOND_LEAF_GROWTH_ROTATION;
+    leaf.scale.set(SECOND_LEAF_GROWTH_SCALE, SECOND_LEAF_GROWTH_SCALE, SECOND_LEAF_GROWTH_SCALE);
+    leaf.castShadow = false;
+    leaf.userData.secondPair = true;
+    sprout.group.add(leaf);
+    sprout.leaves.push(leaf);
+    newLeaves.push(leaf);
+  }
+
+  sprout.leafGenCount = (typeof sprout.leafGenCount === 'number' ? sprout.leafGenCount : 0) + 1;
+  sprout._secondPairFadeIn = fadeIn;
+  return newLeaves;
+}
+
+/**
+ * createGerminatedSprout — builds the meshes for a single sprout emerging from
+ * a germinating ground seed during spring (issue #628).
+ *
+ * @param {{x:number, y:number, z:number}} base — the seed's base position
+ * @returns {object} { group, stem, leaves, basePos, leafGenCount }
+ */
+function createGerminatedSprout(base) {
+  const sproutGroup = new THREE.Group();
+  sproutGroup.position.set(base.x, base.y, base.z);
+
+  // Stem: thin cylinder (height 0.03, radius 0.003)
+  const stemGeo = new THREE.CylinderGeometry(0.003, 0.003, 0.03, 4);
+  const sproutMat = new THREE.MeshStandardMaterial({
+    color: 0x3a7a2a,
+    roughness: 0.6,
+    metalness: 0.0,
+    transparent: true,
+    opacity: 0
+  });
+  const stem = new THREE.Mesh(stemGeo, sproutMat);
+  stem.position.y = 0.015;
+  stem.castShadow = false;
+  sproutGroup.add(stem);
+
+  // Leaves: 1-2 tiny triangular leaves (first pair)
+  const leaves = [];
+  const leafCount = 1 + Math.floor(Math.random() * 2);
+  for (let lj = 0; lj < leafCount; lj++) {
+    const leafShape = new THREE.Shape();
+    leafShape.moveTo(0, 0);
+    leafShape.lineTo(0.008, 0.012);
+    leafShape.lineTo(-0.004, 0.008);
+    leafShape.closePath();
+    const leafGeo = new THREE.ShapeGeometry(leafShape);
+    const leaf = new THREE.Mesh(leafGeo, sproutMat.clone());
+    leaf.position.y = 0.02 + lj * 0.005;
+    leaf.rotation.x = -0.3;
+    leaf.rotation.y = lj * 2.0;
+    leaf.castShadow = false;
+    sproutGroup.add(leaf);
+    leaves.push(leaf);
+  }
+
+  return {
+    group: sproutGroup,
+    stem: stem,
+    leaves: leaves,
+    basePos: { x: base.x, y: base.y, z: base.z },
+    leafGenCount: 0
+  };
+}
+
+/**
+ * buildGerminatedSprouts — creates sprout groups for all germinating seeds
+ * during the first 30% of spring (issue #628).
+ *
+ * When persistedLeafGens >= 1 (the previous cycle's sprouts survived a summer
+ * and earned a second leaf pair), the new sprouts re-germinate immediately
+ * with two leaf pairs rather than starting over with one (issue #638).
+ *
+ * @param {Array<{x:number, y:number, z:number}>} seedBases
+ * @param {number} persistedLeafGens — leaf-generation count from the previous cycle
+ * @param {THREE.Scene|null} [scene] — scene to add the sprout groups to
+ * @returns {Array} sprout objects {group, stem, leaves, basePos, leafGenCount}
+ */
+function buildGerminatedSprouts(seedBases, persistedLeafGens, scene) {
+  const sprouts = [];
+  for (let si = 0; si < seedBases.length; si++) {
+    const sprout = createGerminatedSprout(seedBases[si]);
+    if (persistedLeafGens >= 1) {
+      addSproutSecondLeafPair(sprout, { fadeIn: false });
+    }
+    if (scene) {
+      scene.add(sprout.group);
+    }
+    sprouts.push(sprout);
+  }
+  return sprouts;
+}
+
+/**
+ * updateSproutEstablishedDescription — appends a mention of established
+ * shoots to the state-panel descriptions when sprouts carry a second leaf
+ * pair (issue #638).
+ */
+function updateSproutEstablishedDescription() {
+  const growingDesc = document.getElementById('growing-description');
+  const plotDesc = document.getElementById('plot-description');
+  const establishedText = ' Established shoots with several leaves rise from the soil, having carried through the seasons.';
+  if (growingDesc && growingDesc.textContent.toLowerCase().indexOf('established shoots') === -1) {
+    growingDesc.textContent += establishedText;
+  }
+  if (plotDesc && plotDesc.textContent.toLowerCase().indexOf('established shoots') === -1) {
+    plotDesc.textContent += establishedText;
+  }
+}
+
 /**
  * startSeasonalCycle — drives the slow seasonal colour evolution.
  *
@@ -1757,6 +1928,21 @@ export function startSeasonalCycle(initialProgress) {
           }
         }
 
+        /* Autumn: sprouts that survived through summer grow a second, larger leaf
+         * pair as the season turns (issue #638). Runs on the first autumn tick for
+         * any sprout still at generation 0 — including gardens fast-forwarded into
+         * mid-autumn — and records the generation count for persistence. */
+        if (groundSeeds.sprouts && groundSeeds.sprouts.length > 0) {
+          for (let si = 0; si < groundSeeds.sprouts.length; si++) {
+            const sp = groundSeeds.sprouts[si];
+            if (sp.leafGenCount < 1) {
+              addSproutSecondLeafPair(sp);
+              groundSeeds.leafGenCount = Math.max(groundSeeds.leafGenCount || 0, sp.leafGenCount);
+              updateSproutEstablishedDescription();
+            }
+          }
+        }
+
         /* Autumn: sprouts from the previous cycle fade and are removed */
         if (groundSeeds.sprouts && groundSeeds.sprouts.length > 0) {
           // Fade sprouts out over the autumn season
@@ -1767,7 +1953,14 @@ export function startSeasonalCycle(initialProgress) {
             if (sp.stem) sp.stem.material.opacity = sproutOpacity;
             if (sp.leaves) {
               for (let lj = 0; lj < sp.leaves.length; lj++) {
-                sp.leaves[lj].material.opacity = sproutOpacity;
+                const leaf = sp.leaves[lj];
+                if (leaf.userData && leaf.userData.secondPair && sp._secondPairFadeIn) {
+                  // Second pair fades in over the first part of autumn, then fades out with the sprout
+                  const appearT = Math.min(1, t / SECOND_LEAF_APPEAR_FRACTION);
+                  leaf.material.opacity = sproutOpacity * appearT;
+                } else {
+                  leaf.material.opacity = sproutOpacity;
+                }
               }
             }
           }
@@ -1796,10 +1989,14 @@ export function startSeasonalCycle(initialProgress) {
             const growingDesc = document.getElementById('growing-description');
             const plotDesc = document.getElementById('plot-description');
             if (growingDesc) {
-              growingDesc.textContent = growingDesc.textContent.replace(/ Tiny green shoots[^.]*\./g, '');
+              growingDesc.textContent = growingDesc.textContent
+                .replace(/ Tiny green shoots[^.]*\./g, '')
+                .replace(/ Established shoots[^.]*\./g, '');
             }
             if (plotDesc) {
-              plotDesc.textContent = plotDesc.textContent.replace(/ Tiny green shoots[^.]*\./g, '');
+              plotDesc.textContent = plotDesc.textContent
+                .replace(/ Tiny green shoots[^.]*\./g, '')
+                .replace(/ Established shoots[^.]*\./g, '');
             }
             groundSeeds._sproutDomUpdated = false;
           }
@@ -1834,59 +2031,10 @@ export function startSeasonalCycle(initialProgress) {
           if (groundSeeds.meshes && groundSeeds.meshes.length > 0 && (!groundSeeds.sprouts || groundSeeds.sprouts.length === 0)) {
             // Capture a copy of seed base positions before they are cleared
             const seedBases = groundSeeds.basePositions.slice();
-            groundSeeds.sprouts = [];
-
-            for (let si = 0; si < seedBases.length; si++) {
-              const base = seedBases[si];
-
-              // Group for this sprout
-              const sproutGroup = new THREE.Group();
-              sproutGroup.position.set(base.x, base.y, base.z);
-
-              // Stem: thin cylinder (height 0.03, radius 0.003)
-              const stemGeo = new THREE.CylinderGeometry(0.003, 0.003, 0.03, 4);
-              const sproutMat = new THREE.MeshStandardMaterial({
-                color: 0x3a7a2a,
-                roughness: 0.6,
-                metalness: 0.0,
-                transparent: true,
-                opacity: 0
-              });
-              const stem = new THREE.Mesh(stemGeo, sproutMat);
-              stem.position.y = 0.015;
-              stem.castShadow = false;
-              sproutGroup.add(stem);
-
-              // Leaves: 1-2 tiny triangular leaves
-              const leaves = [];
-              const leafCount = 1 + Math.floor(Math.random() * 2);
-              for (let lj = 0; lj < leafCount; lj++) {
-                const leafShape = new THREE.Shape();
-                leafShape.moveTo(0, 0);
-                leafShape.lineTo(0.008, 0.012);
-                leafShape.lineTo(-0.004, 0.008);
-                leafShape.closePath();
-                const leafGeo = new THREE.ShapeGeometry(leafShape);
-                const leaf = new THREE.Mesh(leafGeo, sproutMat.clone());
-                leaf.position.y = 0.02 + lj * 0.005;
-                leaf.rotation.x = -0.3;
-                leaf.rotation.y = lj * 2.0;
-                leaf.castShadow = false;
-                sproutGroup.add(leaf);
-                leaves.push(leaf);
-              }
-
-              if (gs.scene) {
-                gs.scene.add(sproutGroup);
-              }
-
-              groundSeeds.sprouts.push({
-                group: sproutGroup,
-                stem: stem,
-                leaves: leaves,
-                basePos: { x: base.x, y: base.y, z: base.z }
-              });
-            }
+            // Leaf generations carried from the previous cycle (issue #638): sprouts
+            // that survived through summer re-germinate with two leaf pairs.
+            const persistedLeafGens = typeof groundSeeds.leafGenCount === 'number' ? groundSeeds.leafGenCount : 0;
+            groundSeeds.sprouts = buildGerminatedSprouts(seedBases, persistedLeafGens, gs.scene);
 
             // Reset sprout DOM flag for a new cycle
             groundSeeds._sproutDomUpdated = false;
@@ -1914,6 +2062,12 @@ export function startSeasonalCycle(initialProgress) {
               }
               if (plotDesc && plotDesc.textContent.indexOf('Tiny green shoots') === -1) {
                 plotDesc.textContent += sproutText;
+              }
+
+              // Sprouts that survived a previous summer return as established
+              // shoots with several leaves (issue #638)
+              if (groundSeeds.sprouts.some(function(sp) { return sp.leafGenCount >= 1; })) {
+                updateSproutEstablishedDescription();
               }
             }
           }
