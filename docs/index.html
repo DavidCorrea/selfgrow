@@ -904,10 +904,17 @@
       ' The butterfly sways near the fireflies, their tiny lights pulsing warmly.'
     ];
 
+    /* Sprout proximity suffix (issue #629): butterfly drifts toward germinated sprouts in spring */
+    const SPROUT_PROXIMITY_SUFFIXES = [
+      ' The butterfly drifts curiously near the tiny new shoots.',
+      ' The butterfly flutters close to the fresh green sprouts.',
+      ' The butterfly hovers briefly above the tiny shoots pushing through the soil.'
+    ];
+
     const BUTTERFLY_SUFFIXES = [
       ' A small butterfly drifts at the edge of the garden.',
       ' The butterfly has taken shelter from the drizzle.'
-    ].concat(FIREFLY_PROXIMITY_SUFFIXES);
+    ].concat(FIREFLY_PROXIMITY_SUFFIXES).concat(SPROUT_PROXIMITY_SUFFIXES);
 
     function checkButterflyFireflyProximity() {
       const dayNight = window.__gardenState && window.__gardenState.dayNight;
@@ -939,6 +946,14 @@
       return false;
     }
 
+    function checkButterflySproutProximity() {
+      const season = (document.getElementById('season-display')?.textContent || '').trim();
+      if (season !== 'Spring') return false;
+      const gs = window.__gardenState;
+      if (!gs || !gs.groundSeeds || !gs.groundSeeds.sprouts) return false;
+      return gs.groundSeeds.sprouts.length > 0;
+    }
+
     function chooseFireflyProximitySuffix() {
       var state = _variantState.fireflyProximity;
       var now = performance.now();
@@ -966,11 +981,24 @@
         proxState.variantIndex = 0;
       }
 
+      /* Sprout proximity check: during Spring when sprouts exist, the butterfly drifts near them */
+      const season = (document.getElementById('season-display')?.textContent || '').trim();
+      const hasSprouts = window.__gardenState && window.__gardenState.groundSeeds &&
+        window.__gardenState.groundSeeds.sprouts &&
+        window.__gardenState.groundSeeds.sprouts.length > 0;
+      var isNearSprouts = (season === 'Spring') && hasSprouts;
+
+      /* Reset sprout variant state when sprout proximity status changes */
+      /* Use firefly-proximity variant slot for the seed variant to avoid adding another tracking slot */
+
       if (weather === 'Light Drizzle') {
         return ' The butterfly has taken shelter from the drizzle.';
       }
       if (isNear) {
         return chooseFireflyProximitySuffix();
+      }
+      if (isNearSprouts) {
+        return ' The butterfly drifts curiously near the tiny new shoots.';
       }
       return ' A small butterfly drifts at the edge of the garden.';
     }
@@ -1031,7 +1059,9 @@
       springEnrichBlend: 0,
       updateButterflyDescription,
       checkButterflyFireflyProximity,
+      checkButterflySproutProximity,
       FIREFLY_PROXIMITY_SUFFIXES,
+      SPROUT_PROXIMITY_SUFFIXES,
       chooseFireflyProximitySuffix,
       updateAudioWeather,
       updateWeatherDescription,
