@@ -1826,6 +1826,53 @@ export async function checks() {
     problems.push('Cannot run persistence checks: window.__gardenState is not set.');
   }
 
+  /* ---------- Sprout leaf-generation persistence (issue #638) ---------- */
+  // The leaf-generation count must survive save + load + fast-forward so next
+  // spring's sprouts re-germinate with the previous cycle's leaf count.
+  if (window.__gardenState) {
+    const realGroundSeeds638 = window.__gardenState.groundSeeds;
+    try {
+      window.__gardenState.groundSeeds = {
+        meshes: [new THREE.Mesh(new THREE.BoxGeometry(0.001, 0.001, 0.001))],
+        basePositions: [{ x: 0, y: 0.005, z: 0 }],
+        count: 1,
+        parentLabel: 'plant',
+        parentPos: { x: 0, z: 0 },
+        leafGenCount: 1
+      };
+      saveGardenState();
+      const loaded638 = loadGardenState();
+      if (!loaded638 || !loaded638.groundSeeds) {
+        problems.push('save/load with groundSeeds returned no groundSeeds (issue #638).');
+      } else if (loaded638.groundSeeds.leafGenCount !== 1) {
+        problems.push('groundSeeds.leafGenCount round-trip: saved 1, loaded ' + loaded638.groundSeeds.leafGenCount + ' (issue #638).');
+      }
+
+      const ff638 = fastForwardState({
+        seasonProgress: 0.5,
+        dayNightProgress: 0.5,
+        weatherProgress: 0.5,
+        plant1Maturity: 1,
+        firstPlantGrown: true,
+        groundSeeds: {
+          count: 1,
+          parentLabel: 'plant',
+          parentPos: { x: 0, z: 0 },
+          basePositions: [{ x: 0, y: 0.005, z: 0 }],
+          leafGenCount: 1
+        },
+        timestamp: Date.now() - 1000
+      });
+      if (!ff638 || !ff638.groundSeeds) {
+        problems.push('fastForwardState returned no groundSeeds when the saved state had them (issue #638).');
+      } else if (ff638.groundSeeds.leafGenCount !== 1) {
+        problems.push('fastForwardState groundSeeds.leafGenCount: expected 1, got ' + ff638.groundSeeds.leafGenCount + ' (issue #638).');
+      }
+    } finally {
+      window.__gardenState.groundSeeds = realGroundSeeds638;
+    }
+  }
+
   // Check 5: fastForwardState advances values correctly
   const testState = {
     seasonProgress: 0,
@@ -4109,6 +4156,10 @@ export async function checks() {
               problems.push('groundSeeds.sprouts[' + i + '] group is not a child of the scene (issue #628).');
             }
           }
+          // Verify leaf-generation count is tracked (issue #638)
+          if (typeof sprout.leafGenCount !== 'number' || sprout.leafGenCount < 0) {
+            problems.push('groundSeeds.sprouts[' + i + '].leafGenCount is ' + sprout.leafGenCount + ', expected a non-negative number (issue #638).');
+          }
         });
 
         // Verify sprout material is green and transparent
@@ -4154,8 +4205,193 @@ export async function checks() {
             problems.push('With prefers-reduced-motion active, sprouts should not sway (rotation.z should be 0) (issue #628).');
           }
         }
+
+        // (issue #638) Sprouts with a second leaf pair should be described as established shoots
+        var hasEstablished = groundSeedState.sprouts.some(function(sp) { return sp.leafGenCount >= 1; });
+        if (hasEstablished && firstSprout.stem && firstSprout.stem.material.opacity > 0.05) {
+          var gDesc638 = document.getElementById('growing-description');
+          if (gDesc638 && gDesc638.textContent.indexOf('Tiny green shoots') !== -1 &&
+              gDesc638.textContent.toLowerCase().indexOf('established shoots') === -1) {
+            problems.push('growing-description should mention "established shoots" when sprouts have a second leaf pair and the sprout description is active (issue #638).');
+          }
+        }
       }
     }
+  }
+
+  /* ---------- Sprout second leaf pair checks (issue #638) ---------- */
+  // The second-pair helper must create leaves with +30% scale, lighter green,
+  // ~30° rotation offset, and incremented leafGenCount. DOM helper updates the
+  // description. The spring germination helper re-germinates with the previous
+  // cycle's leaf count.
+  if (gardenState) {
+    if (typeof gardenState.addSproutSecondLeafPair !== 'function') {
+      problems.push('window.__gardenState.addSproutSecondLeafPair is not a function — sprout second-pair growth helper not exposed (issue #638).');
+    }
+    if (typeof gardenState.buildGerminatedSprouts !== 'function') {
+      problems.push('window.__gardenState.buildGerminatedSprouts is not a function — spring germination helper not exposed (issue #638).');
+    }
+    if (typeof gardenState.updateSproutEstablishedDescription !== 'function') {
+      problems.push('window.__gardenState.updateSproutEstablishedDescription is not a function — established-sprout DOM helper not exposed (issue #638).');
+    }
+  }
+
+  if (gardenState && typeof gardenState.addSproutSecondLeafPair === 'function') {
+    // Mock a sprout matching the real structure (2 first-pair leaves)
+    var mockGroup = new THREE.Group();
+    var mockMat = new THREE.MeshStandardMaterial({ color: 0x3a7a2a, roughness: 0.6, metalness: 0, transparent: true, opacity: 1 });
+
+    function mockLeafAt(rotY) {
+      var shape = new THREE.Shape();
+      shape.moveTo(0, 0); shape.lineTo(0.008, 0.012); shape.lineTo(-0.004, 0.008); shape.closePath();
+      var m = new THREE.Mesh(new THREE.ShapeGeometry(shape), mockMat.clone());
+      m.rotation.x = -0.3;
+      m.rotation.y = rotY;
+      mockGroup.add(m);
+      return m;
+    }
+
+    var mockSprout = {
+      group: mockGroup,
+      stem: new THREE.Mesh(new THREE.CylinderGeometry(0.003, 0.003, 0.03, 4), mockMat.clone()),
+      leaves: [mockLeafAt(0), mockLeafAt(2.0)],
+      basePos: { x: 0, y: 0.005, z: 0 },
+      leafGenCount: 0
+    };
+
+    var beforeCount = mockSprout.leaves.length; // 2
+    var newLeaves = gardenState.addSproutSecondLeafPair(mockSprout, { fadeIn: false });
+
+    if (!Array.isArray(newLeaves) || newLeaves.length !== 2) {
+      problems.push('addSproutSecondLeafPair returned ' + (newLeaves ? newLeaves.length : newLeaves) + ' leaves, expected 2 (second leaf pair, issue #638).');
+    }
+    if (mockSprout.leafGenCount !== 1) {
+      problems.push('Sprout leafGenCount after second pair is ' + mockSprout.leafGenCount + ', expected 1 (issue #638).');
+    }
+    if (mockSprout.leaves.length !== beforeCount + 2) {
+      problems.push('Sprout leaves went from ' + beforeCount + ' to ' + mockSprout.leaves.length + ', expected +2 (issue #638).');
+    }
+
+    // Verify second-pair properties: +30% scale, lighter green, rotated ~30°
+    newLeaves.forEach(function(leaf, li) {
+      if (!leaf.userData || leaf.userData.secondPair !== true) {
+        problems.push('Second-pair leaf #' + li + ' lacks userData.secondPair flag (issue #638).');
+      }
+      if (Math.abs(leaf.scale.x - 1.3) > 0.02 || Math.abs(leaf.scale.y - 1.3) > 0.02) {
+        problems.push('Second-pair leaf #' + li + ' scale is (' + leaf.scale.x.toFixed(3) + ',' + leaf.scale.y.toFixed(3) + '), expected ~1.3 (30% larger than first pair, issue #638).');
+      }
+      if (!leaf.material || !leaf.material.color) {
+        problems.push('Second-pair leaf #' + li + ' has no material color (issue #638).');
+      } else {
+        var hex = '0x' + leaf.material.color.getHexString();
+        if (hex !== '0x6aaa4a') {
+          problems.push('Second-pair leaf #' + li + ' colour is ' + hex + ', expected 0x6aaa4a (lighter green, issue #638).');
+        }
+      }
+      // Rotation offset ~30° (π/6 ≈ 0.524 rad) from the matching first-pair leaf
+      var oldLeaf = mockSprout.leaves[li];
+      var diff = Math.abs(leaf.rotation.y - oldLeaf.rotation.y) % (Math.PI * 2);
+      if (diff > Math.PI) diff = Math.PI * 2 - diff;
+      if (diff < 0.4 || diff > 0.65) {
+        problems.push('Second-pair leaf #' + li + ' rotation offset from first pair is ' + diff.toFixed(3) + ' rad, expected ~0.524 (30°, issue #638).');
+      }
+
+      // prefers-reduced-motion: second pair must appear at full opacity immediately
+      var reducedMedia638 = window.matchMedia('(prefers-reduced-motion: reduce)');
+      if (reducedMedia638.matches && leaf.material.opacity < 0.95) {
+        problems.push('With prefers-reduced-motion active, second-pair leaf #' + li + ' opacity is ' + leaf.material.opacity + ', expected 1 (present immediately at full size, issue #638).');
+      }
+    });
+
+    // Test that default opts (no fadeIn param) respects reduced-motion
+    var mockGroup2 = new THREE.Group();
+    function mockLeafAt2(rotY) {
+      var shape = new THREE.Shape();
+      shape.moveTo(0, 0); shape.lineTo(0.008, 0.012); shape.lineTo(-0.004, 0.008); shape.closePath();
+      var m = new THREE.Mesh(new THREE.ShapeGeometry(shape), mockMat.clone());
+      m.rotation.x = -0.3;
+      m.rotation.y = rotY;
+      mockGroup2.add(m);
+      return m;
+    }
+    var mockSprout2 = {
+      group: mockGroup2,
+      stem: new THREE.Mesh(new THREE.CylinderGeometry(0.003, 0.003, 0.03, 4), mockMat.clone()),
+      leaves: [mockLeafAt2(0), mockLeafAt2(2.0)],
+      basePos: { x: 0, y: 0.005, z: 0 },
+      leafGenCount: 0
+    };
+    var defaultNewLeaves = gardenState.addSproutSecondLeafPair(mockSprout2);
+    var reducedMedia638b = window.matchMedia('(prefers-reduced-motion: reduce)');
+    defaultNewLeaves.forEach(function(leaf, li) {
+      if (reducedMedia638b.matches) {
+        if (leaf.material.opacity < 0.95) {
+          problems.push('With prefers-reduced-motion, default addSproutSecondLeafPair should set opacity 1 (got ' + leaf.material.opacity + ') (issue #638).');
+        }
+      } else {
+        if (leaf.material.opacity !== 0) {
+          problems.push('Without reduced motion, default addSproutSecondLeafPair should set opacity 0 (fade-in), got ' + leaf.material.opacity + ' (issue #638).');
+        }
+      }
+    });
+  }
+
+  /* ---------- Spring re-germination with persisted leaf count (issue #638) ---------- */
+  if (gardenState && typeof gardenState.buildGerminatedSprouts === 'function') {
+    var basePos = { x: 0, y: 0.005, z: 0 };
+
+    // New sprouts (no previous summer) → 1 leaf pair, leafGenCount 0
+    var fresh = gardenState.buildGerminatedSprouts([basePos], 0, null);
+    if (fresh.length !== 1) {
+      problems.push('buildGerminatedSprouts with 1 seed returned ' + fresh.length + ' sprouts, expected 1 (issue #638).');
+    } else {
+      var f = fresh[0];
+      if (f.leafGenCount !== 0) {
+        problems.push('Fresh sprout leafGenCount is ' + f.leafGenCount + ', expected 0 (no survived summer, issue #638).');
+      }
+      if (f.leaves.length < 1 || f.leaves.length > 2) {
+        problems.push('Fresh sprout has ' + f.leaves.length + ' leaves, expected 1-2 first-pair leaves (issue #638).');
+      }
+    }
+
+    // Veteran sprouts (survived a previous summer) → 2 leaf pairs, leafGenCount 1
+    var veteran = gardenState.buildGerminatedSprouts([basePos, basePos], 1, null);
+    veteran.forEach(function(sprout, i) {
+      if (sprout.leafGenCount !== 1) {
+        problems.push('Re-germinated sprout #' + i + ' leafGenCount is ' + sprout.leafGenCount + ', expected 1 (previous cycle had a second leaf pair, issue #638).');
+      }
+      // 1-2 first-pair + 2 second-pair = 3-4 leaves total
+      if (sprout.leaves.length < 3 || sprout.leaves.length > 4) {
+        problems.push('Re-germinated sprout #' + i + ' has ' + sprout.leaves.length + ' leaves, expected 3-4 (previous cycle\'s leaf count, issue #638).');
+      }
+      var secondPairLeaves = sprout.leaves.filter(function(l) { return l.userData && l.userData.secondPair; });
+      if (secondPairLeaves.length !== 2) {
+        problems.push('Re-germinated sprout #' + i + ' has ' + secondPairLeaves.length + ' second-pair leaves, expected 2 (issue #638).');
+      }
+    });
+  }
+
+  /* ---------- DOM established-sprout description helper (issue #638) ---------- */
+  if (gardenState && typeof gardenState.updateSproutEstablishedDescription === 'function') {
+    var growingDesc638 = document.getElementById('growing-description');
+    var plotDesc638 = document.getElementById('plot-description');
+    var origG638 = growingDesc638 ? growingDesc638.textContent : '';
+    var origP638 = plotDesc638 ? plotDesc638.textContent : '';
+
+    gardenState.updateSproutEstablishedDescription();
+
+    var gText638 = growingDesc638 ? growingDesc638.textContent : '';
+    var pText638 = plotDesc638 ? plotDesc638.textContent : '';
+    if (gText638.toLowerCase().indexOf('established shoots') === -1) {
+      problems.push('updateSproutEstablishedDescription() should add "established shoots" to #growing-description (issue #638).');
+    }
+    if (pText638.toLowerCase().indexOf('established shoots') === -1) {
+      problems.push('updateSproutEstablishedDescription() should add "established shoots" to #plot-description (issue #638).');
+    }
+
+    // Restore original descriptions
+    if (growingDesc638) growingDesc638.textContent = origG638;
+    if (plotDesc638) plotDesc638.textContent = origP638;
   }
 
   /* ---------- Fallen leaves checks (issue #448) ---------- */

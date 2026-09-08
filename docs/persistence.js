@@ -72,7 +72,10 @@ export function saveGardenState() {
         parentLabel: gs.groundSeeds.parentLabel,
         parentPos: gs.groundSeeds.parentPos,
         basePositions: gs.groundSeeds.basePositions,
-        count: gs.groundSeeds.count
+        count: gs.groundSeeds.count,
+        /* Sprout leaf-generation count (0/1), carried across cycles so next
+         * spring's sprouts re-germinate with the previous cycle's leaf count (issue #638) */
+        leafGenCount: typeof gs.groundSeeds.leafGenCount === 'number' ? gs.groundSeeds.leafGenCount : 0
       };
     }
 
@@ -199,9 +202,11 @@ export function fastForwardState(savedState) {
     const CYCLE_DURATION_MS = SEASON_DURATION_MS * 4;
     const cycleTime = (seasonProgress * CYCLE_DURATION_MS) % CYCLE_DURATION_MS;
     const seasonIndex = Math.floor(cycleTime / SEASON_DURATION_MS) % 4;
-    const seasonProgress = (cycleTime % SEASON_DURATION_MS) / SEASON_DURATION_MS;
+    // Local progress within the current season (0-1). Named distinctly from the
+    // function-scoped seasonProgress (cycle progress 0-1) to avoid shadowing it.
+    const seasonPhaseProgress = (cycleTime % SEASON_DURATION_MS) / SEASON_DURATION_MS;
 
-    const isSpringAfter30 = (seasonIndex === 0 && seasonProgress >= 0.30);
+    const isSpringAfter30 = (seasonIndex === 0 && seasonPhaseProgress >= 0.30);
     const isSummer = (seasonIndex === 1);
 
     if (!isSpringAfter30 && !isSummer) {
@@ -210,7 +215,8 @@ export function fastForwardState(savedState) {
         parentLabel: savedState.groundSeeds.parentLabel,
         parentPos: savedState.groundSeeds.parentPos,
         basePositions: savedState.groundSeeds.basePositions,
-        count: savedState.groundSeeds.count
+        count: savedState.groundSeeds.count,
+        leafGenCount: typeof savedState.groundSeeds.leafGenCount === 'number' ? savedState.groundSeeds.leafGenCount : 0
       };
     }
   }
