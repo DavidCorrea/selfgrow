@@ -364,6 +364,15 @@ function createPlant(opts) {
     leaves = [leaf1, leaf2, leaf3];
   }
 
+  /* Initialise leaf userData for butterfly brush tremble tracking (issue #640) */
+  for (let li = 0; li < leaves.length; li++) {
+    const leaf = leaves[li];
+    leaf.userData.trembleActive = false;
+    leaf.userData.trembleStartTime = 0;
+    leaf.userData.trembleOriginalRotX = leaf.rotation.x;
+    leaf.userData.lastBrushTime = 0;
+  }
+
   /* --- Growth state --- */
   // Adjust start time by initialProgress so the plant appears at the correct stage
   const startTime = performance.now() - initialProgress * growDuration;
