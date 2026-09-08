@@ -27,6 +27,11 @@ const ORBIT_RADIUS_MIN = 0.5;     // can dip close to centre for flower visits
 const ORBIT_RADIUS_MAX = 2.5;     // stays at periphery
 const ORBIT_HEIGHT_MIN = 0.5;     // low above ground
 const ORBIT_HEIGHT_MAX = 2.0;     // up to eye level
+
+/* Overcast shelter: butterfly flies lower during Overcast weather (issue #633) */
+const OVERCAST_HEIGHT_MIN = 0.3;     // lower flight during overcast
+const OVERCAST_HEIGHT_MAX = 1.2;     // reduced max height during overcast
+const SHELTER_LERP_TIME_CONSTANT = 1.0; // seconds — ~95% complete in 3s
 const ORBIT_SPEED = 0.08;         // unhurried (rad/s) — completes cycle in ~78s
 
 /* --- Seasonal activity multipliers (lerped smoothly) --- */
@@ -200,6 +205,9 @@ export function createCreature(scene) {
   let _fireflyBiasZ = 0;
   let _isNightPhase = false;
 
+  /* --- Overcast shelter level for selftest (issue #633) --- */
+  let _shelterLevel = 0;          // 0 = no shelter (Clear), 1 = full shelter (Overcast)
+
   /* --- Sprout attraction offset for selftest (issue #629) --- */
   let _sproutOffsetX = 0;
   let _sproutOffsetZ = 0;
@@ -250,7 +258,13 @@ export function createCreature(scene) {
     getFireflyBias: () => ({ x: _fireflyBiasX, z: _fireflyBiasZ }),
     isNightPhase: () => _isNightPhase,
     /* Sprout attraction accessors for selftest (issue #629) */
-    getSproutOffset: () => ({ x: _sproutOffsetX, z: _sproutOffsetZ })
+    getSproutOffset: () => ({ x: _sproutOffsetX, z: _sproutOffsetZ }),
+    /* Overcast shelter accessors for selftest (issue #633) */
+    getShelterLevel: () => _shelterLevel,
+    ORBIT_HEIGHT_MIN,
+    ORBIT_HEIGHT_MAX,
+    OVERCAST_HEIGHT_MIN,
+    OVERCAST_HEIGHT_MAX
   };
 
   /* Start invisible if reduced motion is active */
@@ -282,6 +296,14 @@ export function createCreature(scene) {
     if (state.reducedMotion) {
       group.visible = false;
       return;
+    }
+
+    /* --- Overcast shelter: butterfly flies lower in stronger wind (issue #633) --- */
+    if (window.__gardenState && window.__gardenState.weather) {
+      const phase = window.__gardenState.weather.getPhase();
+      const target = (phase === 'Overcast') ? 1.0 : 0.0;
+      // Exponential lerp toward target — ~95% complete in 3s
+      _shelterLevel = _shelterLevel + (target - _shelterLevel) * (1 - Math.exp(-dt / SHELTER_LERP_TIME_CONSTANT));
     }
 
     /* --- Night phase: firefly-attracted flight (issue #598) --- */
@@ -375,9 +397,12 @@ export function createCreature(scene) {
     const radiusFactor = 0.5 + 0.5 * Math.sin(t * FREQ_X + PHASE_X);
     const radius = ORBIT_RADIUS_MIN + radiusFactor * (effectiveOrbitRadiusMax - ORBIT_RADIUS_MIN);
 
-    // Vertical position: gentle bobbing
+    // Vertical position: gentle bobbing (with Overcast shelter adjustment, issue #633)
     const heightFactor = 0.5 + 0.5 * Math.sin(t * FREQ_Y + PHASE_Y);
-    const y = ORBIT_HEIGHT_MIN + heightFactor * (ORBIT_HEIGHT_MAX - ORBIT_HEIGHT_MIN);
+    // Shelter level eases the height min/max toward overcast values during active flight only
+    const effectiveHeightMin = ORBIT_HEIGHT_MIN + (OVERCAST_HEIGHT_MIN - ORBIT_HEIGHT_MIN) * _shelterLevel;
+    const effectiveHeightMax = ORBIT_HEIGHT_MAX + (OVERCAST_HEIGHT_MAX - ORBIT_HEIGHT_MAX) * _shelterLevel;
+    const y = effectiveHeightMin + heightFactor * (effectiveHeightMax - effectiveHeightMin);
 
     // Additional x/z perturbation for organic feel
     const xOffset = Math.sin(t * FREQ_X * 1.7 + PHASE_X + 1.2) * 0.3;

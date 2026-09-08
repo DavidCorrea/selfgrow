@@ -913,7 +913,8 @@
 
     const BUTTERFLY_SUFFIXES = [
       ' A small butterfly drifts at the edge of the garden.',
-      ' The butterfly has taken shelter from the drizzle.'
+      ' The butterfly has taken shelter from the drizzle.',
+      ' The butterfly drifts lower in the stronger wind, staying close to the ground.'
     ].concat(FIREFLY_PROXIMITY_SUFFIXES).concat(SPROUT_PROXIMITY_SUFFIXES);
 
     function checkButterflyFireflyProximity() {
@@ -993,6 +994,9 @@
 
       if (weather === 'Light Drizzle') {
         return ' The butterfly has taken shelter from the drizzle.';
+      }
+      if (weather === 'Overcast') {
+        return ' The butterfly drifts lower in the stronger wind, staying close to the ground.';
       }
       if (isNear) {
         return chooseFireflyProximitySuffix();
