@@ -3639,6 +3639,134 @@ export async function checks() {
     }
   }
 
+  /* ---------- Butterfly Overcast shelter altitude checks (issue #633) ---------- */
+  // During Overcast weather, the butterfly's orbit height min/max shift downward
+  // by ~40% (from [0.5, 2.0] to [0.3, 1.2]), with eased transition over ~3s.
+  if (!gardenState || !gardenState.creature) {
+    problems.push('Cannot verify butterfly Overcast shelter: creature state not available (issue #633).');
+  } else {
+    const creatureState = gardenState.creature;
+    const weatherState = gardenState && gardenState.weather;
+
+    // Verify the height constants are exposed on the creature state
+    if (typeof creatureState.getShelterLevel !== 'function') {
+      problems.push('creature.state.getShelterLevel is not a function — Overcast shelter level getter missing (issue #633).');
+    }
+    if (typeof creatureState.ORBIT_HEIGHT_MIN !== 'number' || creatureState.ORBIT_HEIGHT_MIN !== 0.5) {
+      problems.push('creature.state.ORBIT_HEIGHT_MIN is ' + creatureState.ORBIT_HEIGHT_MIN + ', expected 0.5 (issue #633).');
+    }
+    if (typeof creatureState.OVERCAST_HEIGHT_MIN !== 'number' || creatureState.OVERCAST_HEIGHT_MIN !== 0.3) {
+      problems.push('creature.state.OVERCAST_HEIGHT_MIN is ' + creatureState.OVERCAST_HEIGHT_MIN + ', expected 0.3 (issue #633).');
+    }
+    if (typeof creatureState.OVERCAST_HEIGHT_MAX !== 'number' || creatureState.OVERCAST_HEIGHT_MAX !== 1.2) {
+      problems.push('creature.state.OVERCAST_HEIGHT_MAX is ' + creatureState.OVERCAST_HEIGHT_MAX + ', expected 1.2 (issue #633).');
+    }
+
+    if (weatherState && typeof weatherState.getPhase === 'function') {
+      const origGetPhase = weatherState.getPhase;
+
+      try {
+        // --- Test 1: During Clear weather, shelter level is near 0 ---
+        weatherState.getPhase = function() { return 'Clear'; };
+        // Run enough updates for the shelter level to settle (~10s with time constant 1.0)
+        if (typeof gardenState.creatureUpdate === 'function') {
+          for (let ci = 0; ci < 300; ci++) {
+            gardenState.creatureUpdate(50000 + ci * 0.016, 0.016);
+          }
+        }
+        const clearShelter = creatureState.getShelterLevel();
+        if (clearShelter > 0.05) {
+          problems.push('During Clear weather, overcast shelter level is ' + clearShelter.toFixed(4) + ' — expected near 0 (issue #633).');
+        }
+
+        // --- Test 2: During Overcast weather, shelter level trends toward 1.0 ---
+        weatherState.getPhase = function() { return 'Overcast'; };
+        if (typeof gardenState.creatureUpdate === 'function') {
+          for (let ci = 0; ci < 300; ci++) {
+            gardenState.creatureUpdate(55000 + ci * 0.016, 0.016);
+          }
+        }
+        const overcastShelter = creatureState.getShelterLevel();
+        if (overcastShelter < 0.95) {
+          problems.push('During Overcast weather (after ~5s of easing), overcast shelter level is ' + overcastShelter.toFixed(4) + ' — expected near 1.0 (should reach ~95% in ~3s with time constant 1.0, issue #633).');
+        }
+
+        // --- Test 3: Altitude range shifts downward by ~40% during Overcast ---
+        // Compute the effective height min and max based on the shelter level
+        const expectedMin = creatureState.ORBIT_HEIGHT_MIN + (creatureState.OVERCAST_HEIGHT_MIN - creatureState.ORBIT_HEIGHT_MIN) * overcastShelter;
+        const expectedMax = creatureState.ORBIT_HEIGHT_MAX + (creatureState.OVERCAST_HEIGHT_MAX - creatureState.ORBIT_HEIGHT_MAX) * overcastShelter;
+        // With shelter ≈ 1.0, expectedMin ≈ 0.3, expectedMax ≈ 1.2
+        // The mid-range expectation: ~40% reduction from Clear to Overcast
+        const clearMidHeight = (creatureState.ORBIT_HEIGHT_MIN + creatureState.ORBIT_HEIGHT_MAX) / 2;  // 1.25
+        const overcastMidHeight = (expectedMin + expectedMax) / 2;  // 0.75
+        const reductionRatio = 1 - overcastMidHeight / clearMidHeight; // should be ~0.40
+        if (reductionRatio < 0.30 || reductionRatio > 0.55) {
+          problems.push('Butterfly Overcast shelter altitude reduction ratio is ' + reductionRatio.toFixed(3) +
+            ' — expected ~0.40 (mid-height shifts from ' + clearMidHeight.toFixed(2) + ' to ' + overcastMidHeight.toFixed(2) + ', issue #633).');
+        }
+
+        // --- Test 4: Transition eases in ~3s: after 1s, shelter should be ~0.63 (1 - exp(-1/1))
+        // --- and after 3s, shelter should be ~0.95 (1 - exp(-3/1))---
+        // We'll verify by measuring the rate of change during the transition
+        weatherState.getPhase = function() { return 'Clear'; };
+        // Run enough updates to settle back to Clear
+        if (typeof gardenState.creatureUpdate === 'function') {
+          for (let ci = 0; ci < 600; ci++) {
+            gardenState.creatureUpdate(60000 + ci * 0.016, 0.016);
+          }
+        }
+
+        // Now switch to Overcast and measure after ~1s and ~3s
+        weatherState.getPhase = function() { return 'Overcast'; };
+        // Run exactly 62.5 frames at 0.016s = 1s
+        if (typeof gardenState.creatureUpdate === 'function') {
+          for (let ci = 0; ci < 62; ci++) {
+            gardenState.creatureUpdate(70000 + ci * 0.016, 0.016);
+          }
+        }
+        const after1s = creatureState.getShelterLevel();
+        const expectedAfter1s = 1 - Math.exp(-1 / 1.0); // ~0.632
+        if (after1s < 0.55 || after1s > 0.75) {
+          problems.push('After ~1s of Overcast transition, shelter level is ' + after1s.toFixed(4) + ' — expected ~0.63 (1 - exp(-1/1.0), issue #633).');
+        }
+
+        // Run additional ~125 frames (2s more = ~3s total)
+        if (typeof gardenState.creatureUpdate === 'function') {
+          for (let ci = 0; ci < 125; ci++) {
+            gardenState.creatureUpdate(71000 + ci * 0.016, 0.016);
+          }
+        }
+        const after3s = creatureState.getShelterLevel();
+        const expectedAfter3s = 1 - Math.exp(-3 / 1.0); // ~0.95
+        if (after3s < 0.88 || after3s > 1.0) {
+          problems.push('After ~3s of Overcast transition, shelter level is ' + after3s.toFixed(4) + ' — expected ~0.95 (1 - exp(-3/1.0), issue #633).');
+        }
+
+        // --- Test 5: Shelter level recovers to 0 when Overcast ends ---
+        weatherState.getPhase = function() { return 'Clear'; };
+        if (typeof gardenState.creatureUpdate === 'function') {
+          for (let ci = 0; ci < 600; ci++) {
+            gardenState.creatureUpdate(72000 + ci * 0.016, 0.016);
+          }
+        }
+        const recoveredShelter = creatureState.getShelterLevel();
+        if (recoveredShelter > 0.05) {
+          problems.push('After returning to Clear weather, overcast shelter level is ' + recoveredShelter.toFixed(4) + ' — expected near 0 (should recover within ~3s, issue #633).');
+        }
+      } finally {
+        weatherState.getPhase = origGetPhase;
+        // Re-sync the update loop with real state
+        if (typeof gardenState.creatureUpdate === 'function') {
+          for (let ci = 0; ci < 60; ci++) {
+            gardenState.creatureUpdate(ci * 0.016, 0.016);
+          }
+        }
+      }
+    } else {
+      problems.push('Cannot verify butterfly Overcast shelter: weather state not available (issue #633).');
+    }
+  }
+
   /* ---------- Star field checks (issue #449) ---------- */
   const starState = gardenState && gardenState.stars;
   if (!starState) {
@@ -6576,6 +6704,7 @@ export async function checks() {
 
     try {
       const DRIZZLE_SUFFIX = ' The butterfly has taken shelter from the drizzle.';
+      const OVERCAST_SUFFIX = ' The butterfly drifts lower in the stronger wind, staying close to the ground.';
       const REST_SUFFIX = ' The butterfly drifts near the glow of fireflies at night.';
       const DRIFT_SUFFIX = ' A small butterfly drifts at the edge of the garden.';
 
@@ -6609,10 +6738,13 @@ export async function checks() {
         problems.push('During Clear + Midday, growing-description still contains shelter/rest text: "' + drifting + '" — the old suffix should be stripped.');
       }
 
-      // Test 3: Overcast + Night -> drift text (butterfly not near fireflies, proximity not set up in this test)
+      // Test 3: Overcast + Night -> overcast shelter text (issue #633: butterfly flies lower during overcast)
       const resting = runWith('Overcast', 'Night', BASE + DRIFT_SUFFIX);
-      if (!resting.endsWith(DRIFT_SUFFIX)) {
-        problems.push('During Overcast + Night (no proximity set up), growing-description is "' + resting + '" — expected it to end with "' + DRIFT_SUFFIX.trim() + '".');
+      if (!resting.endsWith(OVERCAST_SUFFIX)) {
+        problems.push('During Overcast + Night (no proximity set up), growing-description is "' + resting + '" — expected it to end with "' + OVERCAST_SUFFIX.trim() + '" (butterfly flies lower during Overcast, issue #633).');
+      }
+      if (resting.includes(DRIFT_SUFFIX)) {
+        problems.push('During Overcast + Night, growing-description still contains the generic drift text: "' + resting + '" — the overcast shelter suffix should replace it (issue #633).');
       }
 
       // Test 4: Clear + Morning after Night -> returns to drift text, base text preserved
