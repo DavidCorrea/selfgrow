@@ -8999,6 +8999,77 @@ export async function checks() {
     }
   }
 
+  /* ---------- Butterfly sync-zone slowdown checks (issue #647) ---------- */
+  // During Night phase, the butterfly's orbit speed should reduce by ~15%
+  // (syncSlowMul ≈ 0.85) for 2–3 seconds when passing within 0.4 units of a
+  // synchronized firefly cluster. The reduction must be disabled outside Night,
+  // and disabled when prefers-reduced-motion is active.
+  {
+    var syncSlowState = window.__gardenState;
+    if (!syncSlowState) {
+      problems.push('window.__gardenState is not set — cannot verify butterfly sync-zone slowdown (issue #647).');
+    } else {
+      var syncSlowCreature = syncSlowState.creature;
+      var syncSlowDayNight = syncSlowState.dayNight;
+      var syncSlowFireflies = syncSlowState.fireflies;
+
+      if (!syncSlowCreature) {
+        problems.push('window.__gardenState.creature is not set — cannot verify butterfly sync-zone slowdown (issue #647).');
+      } else if (typeof syncSlowCreature.getSyncSlowMul !== 'function') {
+        problems.push('creature.state.getSyncSlowMul is not a function — sync slowdown accessor missing (issue #647).');
+      } else {
+        // Test 1: getSyncSlowMul returns a number in [0.85, 1.0]
+        var mul = syncSlowCreature.getSyncSlowMul();
+        if (typeof mul !== 'number' || mul < 0.85 || mul > 1.0 || isNaN(mul)) {
+          problems.push('creature.state.getSyncSlowMul() returned ' + mul + ' — expected a number in [0.85, 1.0] (issue #647).');
+        }
+
+        // Test 2: Outside Night phase, getSyncSlowMul should always be 1.0
+        // (no sync-zone slowdown during daytime)
+        if (syncSlowDayNight && typeof syncSlowDayNight.getCycleProgress === 'function'
+            && syncSlowFireflies && typeof syncSlowFireflies.getSyncState === 'function'
+            && typeof syncSlowFireflies.getAllPositions === 'function'
+            && syncSlowFireflies.plantGroups && syncSlowFireflies.plantGroups.length > 0) {
+
+          var origProgressFn655 = syncSlowDayNight.getCycleProgress;
+          var origPos655 = syncSlowCreature.group.position.clone();
+
+          try {
+            // Force daytime (t=0.5)
+            syncSlowDayNight.getCycleProgress = function() { return 0.5; };
+
+            // Place butterfly right on a firefly position
+            var positions655 = syncSlowFireflies.getAllPositions();
+            if (positions655.length > 0) {
+              syncSlowCreature.group.position.set(positions655[0].x, positions655[0].y, positions655[0].z);
+            }
+
+            // Trigger the update (needs dt to tick the lerp)
+            if (typeof syncSlowState.creatureUpdate === 'function') {
+              syncSlowState.creatureUpdate(0, 0.016);
+            }
+
+            var mulDay = syncSlowCreature.getSyncSlowMul();
+            if (mulDay !== 1.0) {
+              problems.push('creature.state.getSyncSlowMul() returned ' + mulDay + ' during daytime (t=0.5) — expected 1.0 (sync-zone slowdown must be disabled outside Night) (issue #647).');
+            }
+          } finally {
+            syncSlowDayNight.getCycleProgress = origProgressFn655;
+            syncSlowCreature.group.position.copy(origPos655);
+          }
+
+          // Test 3: With prefers-reduced-motion, getSyncSlowMul must be 1.0
+          if (syncSlowCreature.reducedMotion) {
+            var mulRM = syncSlowCreature.getSyncSlowMul();
+            if (mulRM !== 1.0) {
+              problems.push('creature.state.getSyncSlowMul() returned ' + mulRM + ' with prefers-reduced-motion active — expected 1.0 (sync slowdown disabled under reduced motion) (issue #647).');
+            }
+          }
+        }
+      }
+    }
+  }
+
   /* ---------- Butterfly sprout attraction checks (issue #629) ---------- */
   // During spring, when germinated sprouts exist on the ground, the butterfly's
   // flight path drifts subtly closer to the sprout cluster over ~30 seconds.

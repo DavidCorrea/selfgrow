@@ -205,6 +205,14 @@ export function createCreature(scene) {
   let _fireflyBiasZ = 0;
   let _isNightPhase = false;
 
+  /* --- Firefly sync-zone slowdown tracking (issue #647) --- */
+  let _syncSlowMul = 1.0;          // multiplier: 1.0 normal, ~0.85 when slowed
+  let _syncSlowTimer = 0;           // seconds remaining in the slowdown
+  const SYNC_SLOW_MUL_TARGET = 0.85;  // ~15% reduction
+  const SYNC_SLOW_DURATION = 3.0;     // seconds — 2-3s, use 3s as the max hold
+  const SYNC_SLOW_LERP_TIME_CONSTANT = 0.3; // seconds for exponential fade in/out (~95% complete in ~0.9s)
+  const SYNC_ZONE_RADIUS = 0.4;       // units — proximity to sync clus
+
   /* --- Overcast shelter level for selftest (issue #633) --- */
   let _shelterLevel = 0;          // 0 = no shelter (Clear), 1 = full shelter (Overcast)
 
@@ -261,6 +269,8 @@ export function createCreature(scene) {
     getFireflySlowMul: () => _fireflySlowMul,
     getFireflyBias: () => ({ x: _fireflyBiasX, z: _fireflyBiasZ }),
     isNightPhase: () => _isNightPhase,
+    /* Firefly sync-zone slowdown accessor for selftest (issue #647) */
+    getSyncSlowMul: () => _syncSlowMul,
     /* Sprout attraction accessors for selftest (issue #629) */
     getSproutOffset: () => ({ x: _sproutOffsetX, z: _sproutOffsetZ }),
     /* Leaf brush tremble accessors for selftest (issue #640) */
@@ -355,6 +365,52 @@ export function createCreature(scene) {
       }
     }
 
+    /* --- Firefly sync-zone slowdown: butterfly briefly slows when passing near
+     * synchronized firefly clusters during Night (issue #647) --- */
+    // Only active during Night phase and when prefers-reduced-motion is NOT active
+    _syncSlowMul = 1.0;
+    if (_isNightPhase && !state.reducedMotion) {
+      const fireflies = window.__gardenState && window.__gardenState.fireflies;
+      if (fireflies && typeof fireflies.getAllPositions === 'function' && typeof fireflies.getSyncState === 'function') {
+        const positions = fireflies.getAllPositions();
+        const syncStates = fireflies.getSyncState();
+        if (positions.length > 0 && syncStates.length === positions.length) {
+          // Use the creature's current position to check proximity to sync-active dots
+          let cx = group.position.x;
+          let cz = group.position.z;
+          let inSyncZone = false;
+          for (let fi = 0; fi < positions.length; fi++) {
+            if (!syncStates[fi].syncActive) continue; // only synchronized dots matter
+            let dx = positions[fi].x - cx;
+            let dz = positions[fi].z - cz;
+            let dist = Math.sqrt(dx * dx + dz * dz);
+            if (dist <= SYNC_ZONE_RADIUS) {
+              inSyncZone = true;
+              break;
+            }
+          }
+
+          if (inSyncZone) {
+            // Refreshes the slowdown timer while the butterfly remains in the sync zone
+            _syncSlowTimer = SYNC_SLOW_DURATION;
+          }
+        }
+      }
+
+      // Tick down the timer and compute the multiplier via exponential lerp
+      if (_syncSlowTimer > 0) {
+        _syncSlowTimer -= dt;
+        if (_syncSlowTimer <= 0) {
+          _syncSlowTimer = 0;
+        }
+        // Exponential lerp toward target (~0.3s time constant for smooth fade-in)
+        _syncSlowMul = _syncSlowMul + (SYNC_SLOW_MUL_TARGET - _syncSlowMul) * (1 - Math.exp(-dt / SYNC_SLOW_LERP_TIME_CONSTANT));
+      } else {
+        // Exponential lerp back to 1.0 (smooth fade-out)
+        _syncSlowMul = _syncSlowMul + (1.0 - _syncSlowMul) * (1 - Math.exp(-dt / SYNC_SLOW_LERP_TIME_CONSTANT));
+      }
+    }
+
     if (!group.visible) {
       group.visible = true;
     }
@@ -394,7 +450,7 @@ export function createCreature(scene) {
 
     /* Apply season multiplier to ORBIT_SPEED for angular position computation */
     // Apply firefly slow multiplier during Night (issue #598)
-    const effectiveOrbitSpeed = ORBIT_SPEED * _currentSeasonOrbitMul * cameraBoost * _fireflySlowMul;
+    const effectiveOrbitSpeed = ORBIT_SPEED * _currentSeasonOrbitMul * cameraBoost * _fireflySlowMul * _syncSlowMul;
     /* Apply season multiplier to ORBIT_RADIUS_MAX for radius range */
     const effectiveOrbitRadiusMax = ORBIT_RADIUS_MAX * _currentSeasonRadiusMul;
 
