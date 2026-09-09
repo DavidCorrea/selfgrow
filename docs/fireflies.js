@@ -119,6 +119,10 @@ const SYNC_RESIDUAL_VARIANCE = 0.15; // ±0.15 rad residual variance to avoid pe
 
 const WIND_DRIFT_SCALE = 0.02;      // scale of ground ripple wind perturbation on drift
 
+/* --- Sprout proximity glow boost (issue #646) --- */
+const SPROUT_GLOW_BOOST_RADIUS = 0.3;    // units — max distance for sprout proximity boost
+const SPROUT_GLOW_BOOST_MAX = 0.15;       // max 15% brightness boost at zero distance
+
 /* --- Firefly-to-plant surface glow (issue #613) --- */
 const WARM_GLOW_COLOR = 0xccdd88;     // warm yellow-green tint for plant surface glow
 const MAX_GLOW_SHIFT = 0.10;           // ≤10% saturation shift from base colour (barely perceptible)
@@ -415,6 +419,9 @@ export function createFireflies(scene) {
     maxGlowShift: MAX_GLOW_SHIFT,
     /** Warm glow colour constant exposed for testing */
     warmGlowColor: WARM_GLOW_COLOR,
+    /** Sprout proximity glow boost constants (issue #646) */
+    sproutGlowBoostRadius: SPROUT_GLOW_BOOST_RADIUS,
+    sproutGlowBoostMax: SPROUT_GLOW_BOOST_MAX,
     /** Pulse synchronization configuration constants (issue #639) */
     syncConstants: {
       convergeRadius: SYNC_CONVERGE_RADIUS,
@@ -639,6 +646,42 @@ export function createFireflies(scene) {
           // Apply vertical lift offset for dusk emergence / dawn settling
           pos[i3 + 1] = dd.baseY + driftY + liftOffset;
           pos[i3 + 2] = dd.baseZ + driftZ + windOffsetZ;
+
+          /* --- Sprout proximity glow boost (issue #646) --- */
+          // During Night phase in Spring, fireflies within 0.3 units of a
+          // sprout cluster get a 10-15% boost in glow intensity, decaying
+          // smoothly with distance. Disabled under prefers-reduced-motion.
+          if (t >= 0.75 && t < 1.0) {
+            const seasonEl = document.getElementById('season-display');
+            const currentSeason = seasonEl ? seasonEl.textContent.trim() : '';
+            if (currentSeason === 'Spring') {
+              const gs = window.__gardenState;
+              const sprouts = gs && gs.groundSeeds && gs.groundSeeds.sprouts;
+              if (sprouts && sprouts.length > 0) {
+                const fx = pos[i3];
+                const fy = pos[i3 + 1];
+                const fz = pos[i3 + 2];
+                let minDist = Infinity;
+                for (let si = 0; si < sprouts.length; si++) {
+                  const sp = sprouts[si];
+                  if (sp.group) {
+                    const sx = sp.group.position.x;
+                    const sy = sp.group.position.y;
+                    const sz = sp.group.position.z;
+                    const dx = fx - sx;
+                    const dy = fy - sy;
+                    const dz = fz - sz;
+                    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                    if (dist < minDist) minDist = dist;
+                  }
+                }
+                if (minDist <= SPROUT_GLOW_BOOST_RADIUS) {
+                  const boostFactor = 1 + (SPROUT_GLOW_BOOST_MAX * (1 - minDist / SPROUT_GLOW_BOOST_RADIUS));
+                  sizes[i] *= boostFactor;
+                }
+              }
+            }
+          }
         } else {
           // Reduced motion: no pulsing/drift/lift, but keep size at base
           sizes[i] = dd.sizeBase;
