@@ -19,7 +19,13 @@ import * as THREE from "three";
 const CYCLE_DURATION_MS = 300_000; // ~5 minutes for a full weather loop
 const TRANSITION_DURATION_MS = 15_000; // minimum 15s for smooth lerp (effectively the whole phase)
 
-/* Three weather phases + wrap-around to Clear */
+/* Three weather phases + wrap-around to Clear
+ *
+ * fogNear / fogFar (issue #654): scene fog distances per phase. The camera
+ * sits ~8 units from the plot centre (scrub ring at radius 5–6, horizon
+ * tree line at radius ~10.5), so Clear keeps fog beyond the tree line
+ * (imperceptible), Overcast starts behind the scrub and fully veils the
+ * tree line, and Light Drizzle reaches into the mid-ground scrub. */
 const PHASES = [
   {
     name: 'Clear',
@@ -37,7 +43,9 @@ const PHASES = [
     particleOpacityMul: 1.0,
     leafRoughness: 0.6,
     leafMetalness: 0.0,
-    swayAmplitudeMul: 1.0
+    swayAmplitudeMul: 1.0,
+    fogNear: 24.0,
+    fogFar: 45.0
   },
   {
     name: 'Overcast',
@@ -55,7 +63,9 @@ const PHASES = [
     particleOpacityMul: 1.6,
     leafRoughness: 0.6,
     leafMetalness: 0.0,
-    swayAmplitudeMul: 1.75
+    swayAmplitudeMul: 1.75,
+    fogNear: 5.0,
+    fogFar: 18.0
   },
   {
     name: 'Light Drizzle',
@@ -73,7 +83,9 @@ const PHASES = [
     particleOpacityMul: 2.2,
     leafRoughness: 0.25,
     leafMetalness: 0.03,
-    swayAmplitudeMul: 1.75
+    swayAmplitudeMul: 1.75,
+    fogNear: 3.0,
+    fogFar: 14.0
   },
   {
     name: 'Clear',  // wrap-around — back to start
@@ -91,7 +103,9 @@ const PHASES = [
     particleOpacityMul: 1.0,
     leafRoughness: 0.6,
     leafMetalness: 0.0,
-    swayAmplitudeMul: 1.0
+    swayAmplitudeMul: 1.0,
+    fogNear: 24.0,
+    fogFar: 45.0
   }
 ];
 
@@ -172,6 +186,8 @@ function interpolatePhase(t, out) {
       out.leafRoughness = a.leafRoughness + (b.leafRoughness - a.leafRoughness) * eased;
       out.leafMetalness = a.leafMetalness + (b.leafMetalness - a.leafMetalness) * eased;
       out.swayAmplitudeMul = a.swayAmplitudeMul + (b.swayAmplitudeMul - a.swayAmplitudeMul) * eased;
+      out.fogNear = a.fogNear + (b.fogNear - a.fogNear) * eased;
+      out.fogFar = a.fogFar + (b.fogFar - a.fogFar) * eased;
       return;
     }
   }
@@ -192,6 +208,8 @@ function interpolatePhase(t, out) {
   out.leafRoughness = last.leafRoughness;
   out.leafMetalness = last.leafMetalness;
   out.swayAmplitudeMul = last.swayAmplitudeMul;
+  out.fogNear = last.fogNear;
+  out.fogFar = last.fogFar;
 }
 
 /** Get the human-readable phase name for a given cycle progress t in [0, 1) */
@@ -230,6 +248,12 @@ export function startWeatherCycle(sunLight, scene, ambientLight, hemiLight, fill
     return;
   }
 
+  /* Scene fog (issue #654) — owned by the weather cycle, which animates it
+   * each tick. Reuse an existing fog if another module already set one. */
+  if (!(scene.fog instanceof THREE.Fog)) {
+    scene.fog = new THREE.Fog(0x87ceeb, 24.0, 45.0);
+  }
+
   const particleMaterial = particles && particles.state && particles.state.material;
 
   let lastPhaseName = '';
@@ -254,7 +278,9 @@ export function startWeatherCycle(sunLight, scene, ambientLight, hemiLight, fill
     particleOpacityMul: 1,
     leafRoughness: 0.6,
     leafMetalness: 0.0,
-    swayAmplitudeMul: 1.0
+    swayAmplitudeMul: 1.0,
+    fogNear: 24.0,
+    fogFar: 45.0
   };
 
   /* --- Ground darkening during Light Drizzle (issue #528) ---
@@ -273,6 +299,15 @@ export function startWeatherCycle(sunLight, scene, ambientLight, hemiLight, fill
     },
     getSwayAmplitudeMul: () => current.swayAmplitudeMul,
     getGroundDarkeningFactor: () => rainDarkeningFactor,
+    /** Current fog near/far targets after this frame's phase interpolation (issue #654) */
+    getFogNear: () => current.fogNear,
+    getFogFar: () => current.fogFar,
+    /** Per-phase fog distances the cycle uses (issue #654) */
+    getPhaseFogDistances: () => ({
+      'Clear': { near: PHASES[0].fogNear, far: PHASES[0].fogFar },
+      'Overcast': { near: PHASES[1].fogNear, far: PHASES[1].fogFar },
+      'Light Drizzle': { near: PHASES[2].fogNear, far: PHASES[2].fogFar }
+    }),
     /** Return the season-dependent phase boundaries for the current (or given) season. */
     getSeasonPhaseBoundaries: (seasonName) => getSeasonPhaseBoundaries(seasonName)
   };
@@ -321,6 +356,16 @@ export function startWeatherCycle(sunLight, scene, ambientLight, hemiLight, fill
       _tempColor.copy(scene.background);
       _tempColor.multiply(current.skyTint);
       scene.background.copy(_tempColor);
+    }
+
+    // Fog (issue #654): colour tracks the weather-tinted sky and density
+    // eases with the phase over the same transition window, so distance
+    // and weather become visible together. Light enough that the near plot
+    // and minimum scene brightness are never lost.
+    if (scene.fog instanceof THREE.Fog) {
+      scene.fog.color.copy(_tempColor);
+      scene.fog.near = current.fogNear;
+      scene.fog.far = current.fogFar;
     }
 
     // Sun light: reduce intensity, shift colour

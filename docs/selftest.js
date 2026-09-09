@@ -1339,6 +1339,107 @@ export async function checks() {
     }
   }
 
+  /* ---------- Weather-veiled distance fog checks (issue #654) ---------- */
+  // The weather cycle should attach a THREE.Fog to the scene whose colour
+  // tracks the weather-tinted sky and whose density eases with the phase:
+  // imperceptible on Clear, horizon-veiling on Overcast, mid-ground-veiling
+  // on Light Drizzle. The near plot must stay crisp in every phase.
+  if (gardenState && gardenState.scene) {
+    const fog = gardenState.scene.fog;
+    if (!fog) {
+      problems.push('scene.fog is not set — the weather cycle should attach a THREE.Fog (issue #654).');
+    } else if (!(fog instanceof THREE.Fog)) {
+      problems.push('scene.fog is ' + (fog && fog.constructor ? fog.constructor.name : typeof fog) + ' — expected THREE.Fog (issue #654).');
+    } else {
+      // Sane distance envelope: near stays well behind the near plot, far
+      // stays within the camera far plane, and far always exceeds near.
+      if (typeof fog.near !== 'number' || fog.near < 2) {
+        problems.push('scene.fog.near is ' + fog.near + ' — expected >= 2 so the near plot stays clearly visible (issue #654).');
+      }
+      if (typeof fog.far !== 'number' || fog.far < 8) {
+        problems.push('scene.fog.far is ' + fog.far + ' — expected >= 8 so the horizon can be veiled (issue #654).');
+      }
+      if (typeof fog.far !== 'number' || fog.far > 50) {
+        problems.push('scene.fog.far is ' + fog.far + ' — expected <= 50 to stay within the camera far plane (issue #654).');
+      }
+      if (typeof fog.near === 'number' && typeof fog.far === 'number' && fog.far <= fog.near) {
+        problems.push('scene.fog.far (' + fog.far + ') must exceed scene.fog.near (' + fog.near + ') (issue #654).');
+      }
+
+      // Fog colour must track the weather-tinted sky exactly (same tick).
+      const bg = gardenState.scene.background;
+      if (bg instanceof THREE.Color && typeof fog.color.r === 'number') {
+        const dr = Math.abs(fog.color.r - bg.r);
+        const dg = Math.abs(fog.color.g - bg.g);
+        const db = Math.abs(fog.color.b - bg.b);
+        if (dr > 1e-2 || dg > 1e-2 || db > 1e-2) {
+          problems.push('scene.fog.color (' + fog.color.r.toFixed(3) + ',' + fog.color.g.toFixed(3) + ',' + fog.color.b.toFixed(3) + ') does not track the sky tint (' + bg.r.toFixed(3) + ',' + bg.g.toFixed(3) + ',' + bg.b.toFixed(3) + '), delta (' + dr.toFixed(4) + ',' + dg.toFixed(4) + ',' + db.toFixed(4) + ') (issue #654).');
+        }
+      }
+
+      // Live fog must match the cycle's interpolated target at the current
+      // progress — density eases over the same transition window, no snap.
+      if (weather) {
+        if (typeof weather.getFogNear !== 'function' || typeof weather.getFogFar !== 'function') {
+          problems.push('weather.getFogNear/getFogFar not exposed — fog state is incomplete (issue #654).');
+        } else {
+          if (Math.abs(fog.near - weather.getFogNear()) > 0.05) {
+            problems.push('scene.fog.near is ' + fog.near.toFixed(3) + ' but the weather cycle target is ' + weather.getFogNear().toFixed(3) + ' — fog density is not tracking the phase easing (issue #654).');
+          }
+          if (Math.abs(fog.far - weather.getFogFar()) > 0.05) {
+            problems.push('scene.fog.far is ' + fog.far.toFixed(3) + ' but the weather cycle target is ' + weather.getFogFar().toFixed(3) + ' — fog density is not tracking the phase easing (issue #654).');
+          }
+        }
+
+        // Per-phase character of the fog, probed from the cycle's own config.
+        if (typeof weather.getPhaseFogDistances === 'function') {
+          const dists = weather.getPhaseFogDistances();
+          if (dists && dists['Clear'] && dists['Overcast'] && dists['Light Drizzle']) {
+            if (dists['Clear'].near < 20) {
+              problems.push('Clear fog near is ' + dists['Clear'].near + ' — expected >= 20 so Clear weather stays free of perceptible fog (issue #654).');
+            }
+            if (dists['Overcast'].near >= 9 || dists['Overcast'].far < 13) {
+              problems.push('Overcast fog range (' + dists['Overcast'].near + '–' + dists['Overcast'].far + ') should softly veil the horizon tree line: near < 9 and far >= 13 (issue #654).');
+            }
+            if (dists['Light Drizzle'].near >= 6 || dists['Light Drizzle'].far <= 10) {
+              problems.push('Light Drizzle fog range (' + dists['Light Drizzle'].near + '–' + dists['Light Drizzle'].far + ') should partially veil the mid-ground: near < 6 and far > 10 (issue #654).');
+            }
+            if (!(dists['Clear'].far > dists['Overcast'].far && dists['Overcast'].far > dists['Light Drizzle'].far)) {
+              problems.push('Fog far distances are not monotonic across phases: Clear=' + dists['Clear'].far + ', Overcast=' + dists['Overcast'].far + ', Drizzle=' + dists['Light Drizzle'].far + ' — expected Clear > Overcast > Drizzle (issue #654).');
+            }
+          } else {
+            problems.push('weather.getPhaseFogDistances() returned an incomplete set — expected {Clear, Overcast, Light Drizzle} entries (issue #654).');
+          }
+        } else {
+          problems.push('weather.getPhaseFogDistances is not a function — cannot verify per-phase fog character (issue #654).');
+        }
+      }
+    }
+  }
+
+  /* Light-effect materials (particles, rain, fireflies, stars) must keep fog
+     disabled so glows stay crisp through the weather veil (issue #654). */
+  const fogEffectMats = [];
+  if (gardenState && gardenState.particles && gardenState.particles.material) {
+    fogEffectMats.push(['particles', gardenState.particles.material]);
+  }
+  if (gardenState && gardenState.rain && gardenState.rain.material) {
+    fogEffectMats.push(['rain', gardenState.rain.material]);
+  }
+  if (gardenState && gardenState.stars && gardenState.stars.material) {
+    fogEffectMats.push(['stars', gardenState.stars.material]);
+  }
+  if (gardenState && gardenState.fireflies && Array.isArray(gardenState.fireflies.plantGroups)) {
+    gardenState.fireflies.plantGroups.forEach(function(grp, gi) {
+      if (grp && grp.material) fogEffectMats.push(['fireflies group ' + gi, grp.material]);
+    });
+  }
+  fogEffectMats.forEach(function(pair) {
+    if (pair[1].fog !== false) {
+      problems.push(pair[0] + ' material has fog=' + pair[1].fog + ' — light effects should keep fog disabled so they stay crisp (issue #654).');
+    }
+  });
+
   /* ---------- Ground darkening during Light Drizzle checks (issue #528) ---------- */
   // During Light Drizzle, the ground material colour should darken by a subtle
   // multiplier (~0.85 brightness) applied on top of seasonal colour, with smooth
