@@ -29,6 +29,8 @@
  *   createAmbientAudio() → { start, stop, update(weatherPhase, timeOfDay), resumeOnInteraction, state }
  */
 
+import { isReducedMotion } from "./motion.js";
+
 /** Time-of-day base audio character */
 const TIME_OF_DAY_AUDIO = {
   'Morning':  { windGain: 0.05, filterFreq: 250, rainMul: 0.75 },
@@ -66,6 +68,139 @@ const SEASON_AUDIO_MODIFIERS = {
 /** Default season modifier (no change) when season is omitted */
 const DEFAULT_SEASON_MODIFIER = { filterMul: 1.0, windMul: 1.0, rainMul: 1.0 };
 
+/* --- Cricket / nocturnal insect audio constants --- */
+
+/**
+ * Firefly density constants mirrored from fireflies.js.
+ * Cricket density follows the same seasonal/weather modulation as firefly visibility
+ * so the audio layer stays decoupled from firefly internals.
+ */
+const FIREFLY_SEASON_MULTIPLIERS = {
+  'Spring': 0.53,
+  'Summer': 1.0,
+  'Autumn': 0.53,
+  'Winter': 0.0
+};
+
+const FIREFLY_WEATHER_MULTIPLIERS = {
+  'Clear': 1.0,
+  'Overcast': 0.6,
+  'Light Drizzle': 0.4
+};
+
+/** Default firefly weather multiplier for unknown weather */
+const DEFAULT_FIREFLY_WEATHER_MUL = 1.0;
+
+/** Default firefly season multiplier for unknown season */
+const DEFAULT_FIREFLY_SEASON_MUL = 0.0;
+
+/**
+ * Pitch range for cricket chirps: 2000–4000 Hz.
+ * Randomised per chirp within this band.
+ */
+const CRICKET_FREQ_MIN = 2000;
+const CRICKET_FREQ_MAX = 4000;
+
+/**
+ * Chirp envelope timing (seconds).
+ * Attack: very short ramp up, release: slightly longer decay.
+ */
+const CHIRP_ATTACK = 0.02;
+const CHIRP_RELEASE = 0.10;
+const CHIRP_TOTAL_DURATION = CHIRP_ATTACK + CHIRP_RELEASE; // 0.12s
+
+/**
+ * Maximum cricket chirp volume relative to current windGain.
+ * ≤10% means barely perceptible atop the wind layer.
+ */
+const CRICKET_WIND_GAIN_RATIO = 0.10;
+
+/**
+ * Chirp scheduling: interval range in seconds.
+ * At max density (densityFactor=1.0): meanInterval = MIN = 1s
+ * At min density near-threshold: meanInterval = MAX = 4s
+ * Above threshold density (densityFactor > 0.01): interval in [1s, 4s]
+ */
+const CHIRP_INTERVAL_MIN_S = 1.0;
+const CHIRP_INTERVAL_MAX_S = 4.0;
+
+/** Minimal density threshold below which crickets are silent */
+const CRICKET_DENSITY_THRESHOLD = 0.01;
+
+/**
+ * Compute cricket density factor (0–1) from the same public parameters
+ * that determine firefly visibility. Mirrors firefly density logic:
+ *   density = seasonMultiplier × weatherMultiplier
+ * Active only during Night phase. Winter always returns 0.
+ *
+ * @param {string} season — 'Spring'|'Summer'|'Autumn'|'Winter'
+ * @param {string} weatherPhase — 'Clear'|'Overcast'|'Light Drizzle'
+ * @param {string} timeOfDay — 'Morning'|'Midday'|'Evening'|'Night'
+ * @returns {number} density factor in [0, 1]
+ */
+function computeCricketDensity(season, weatherPhase, timeOfDay) {
+  // Only active during Night
+  if (timeOfDay !== 'Night') return 0;
+
+  // Derive density from firefly-visible parameters
+  const seasonMul = FIREFLY_SEASON_MULTIPLIERS[season];
+  if (seasonMul === undefined || seasonMul <= 0) return 0; // Winter or unknown season
+
+  const weatherMul = FIREFLY_WEATHER_MULTIPLIERS[weatherPhase] !== undefined
+    ? FIREFLY_WEATHER_MULTIPLIERS[weatherPhase]
+    : DEFAULT_FIREFLY_WEATHER_MUL;
+
+  // Summer Clear = 1.0 (max density)
+  return seasonMul * weatherMul;
+}
+
+/**
+ * Create and play a single cricket chirp burst on the given AudioContext.
+ * Uses an oscillator (sine wave) with exponential envelope shaping.
+ *
+ * The chirp is scheduled precisely via `ctx.currentTime` offsets so that
+ * multiple chirps can overlap naturally (rare at typical intervals).
+ *
+ * @param {AudioContext} ctx
+ * @param {number} chirpGain — absolute gain value for this chirp (≤10% of windGain)
+ * @returns {void}
+ */
+function playCricketChirp(ctx, chirpGain) {
+  if (!ctx || chirpGain <= 0) return;
+
+  const now = ctx.currentTime;
+
+  // Randomised frequency within the cricket band
+  const freq = CRICKET_FREQ_MIN + Math.random() * (CRICKET_FREQ_MAX - CRICKET_FREQ_MIN);
+
+  // Create oscillator (sine wave for soft, insect-like tone)
+  const osc = ctx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(freq, now);
+
+  // Create gain envelope
+  const envGain = ctx.createGain();
+  envGain.gain.setValueAtTime(0, now);
+  // Attack: ramp up
+  envGain.gain.linearRampToValueAtTime(chirpGain, now + CHIRP_ATTACK);
+  // Release: ramp down
+  envGain.gain.linearRampToValueAtTime(0, now + CHIRP_TOTAL_DURATION);
+
+  // Connect: oscillator → envelope → destination
+  osc.connect(envGain);
+  envGain.connect(ctx.destination);
+
+  // Schedule start and stop
+  osc.start(now);
+  osc.stop(now + CHIRP_TOTAL_DURATION + 0.01); // slight extra to avoid click
+
+  // Clean up nodes after playback completes
+  osc.onended = function() {
+    osc.disconnect();
+    envGain.disconnect();
+  };
+}
+
 /**
  * Compute composed audio settings from weather, time-of-day and season.
  *
@@ -100,11 +235,23 @@ export function createAmbientAudio() {
   let rainGain = null;
   let isStarted = false;
 
+  /* --- Cricket scheduling state --- */
+  let cricketEnabled = false;
+  let cricketDensity = 0;           // 0–1, recomputed each update
+  let cricketNextChirpTime = 0;     // performance.now() threshold for next chirp
+  let cricketChirpInterval = 0;     // current interval in ms
+  let cricketChirpCount = 0;        // total chirps played
+  let _cricketReducedMotion = false; // cached reduced-motion check
+
   const state = {
     type: 'ambient-audio',
     windGain: 0,
     rainGain: 0,
     windFilterFrequency: 400,
+    cricketDensity: 0,
+    cricketEnabled: false,
+    cricketChirpCount: 0,
+    cricketChirpIntervalSec: 0,
     isPlaying: false,
     isStarted: false
   };
@@ -266,7 +413,7 @@ export function createAmbientAudio() {
 
   /**
    * Update the audio character to match the current weather, time-of-day
-   * and season.
+   * and season. Also ticks the cricket chirp scheduler.
    *
    * Always records composed targets into state (so selftest can verify without
    * an AudioContext), then ramps the Web Audio nodes with setTargetAtTime when
@@ -284,18 +431,61 @@ export function createAmbientAudio() {
     state.windFilterFrequency = settings.filterFreq;
     state.rainGain = settings.rainGain;
 
+    // --- Cricket scheduling ---
+    _cricketReducedMotion = isReducedMotion();
+
+    cricketDensity = computeCricketDensity(season, weatherPhase, timeOfDay);
+    state.cricketDensity = cricketDensity;
+
+    const shouldBeEnabled = !_cricketReducedMotion && cricketDensity > CRICKET_DENSITY_THRESHOLD;
+
+    if (shouldBeEnabled !== cricketEnabled) {
+      cricketEnabled = shouldBeEnabled;
+      state.cricketEnabled = shouldBeEnabled;
+      if (!shouldBeEnabled) {
+        cricketNextChirpTime = 0;
+      } else {
+        cricketNextChirpTime = performance.now();
+      }
+    }
+
+    if (cricketEnabled) {
+      const intervalSec = CHIRP_INTERVAL_MAX_S -
+        (cricketDensity - CRICKET_DENSITY_THRESHOLD) / (1.0 - CRICKET_DENSITY_THRESHOLD) *
+        (CHIRP_INTERVAL_MAX_S - CHIRP_INTERVAL_MIN_S);
+      cricketChirpInterval = Math.max(CHIRP_INTERVAL_MIN_S, Math.min(CHIRP_INTERVAL_MAX_S, intervalSec)) * 1000;
+      state.cricketChirpIntervalSec = cricketChirpInterval / 1000;
+
+      const now = performance.now();
+      if (cricketNextChirpTime > 0 && now >= cricketNextChirpTime) {
+        if (windGain) {
+          const ctx = ensureContext();
+          if (ctx) {
+            const chirpGain = state.windGain * CRICKET_WIND_GAIN_RATIO * cricketDensity;
+            playCricketChirp(ctx, chirpGain);
+            cricketChirpCount++;
+            state.cricketChirpCount = cricketChirpCount;
+          }
+        }
+        const jitter = cricketChirpInterval * (0.8 + Math.random() * 0.4);
+        cricketNextChirpTime = now + jitter;
+      }
+    } else {
+      state.cricketChirpIntervalSec = 0;
+    }
+
     // Then ramp the Web Audio nodes when they exist (AudioContext available).
     if (!windGain || !windFilter) return;
     const ctx = ensureContext();
     if (!ctx) return;
 
-    const now = ctx.currentTime;
-    const fadeTime = 1.5; // seconds for smooth transition
+    const now2 = ctx.currentTime;
+    const fadeTime = 1.5;
 
-    windGain.gain.setTargetAtTime(settings.windGain, now, fadeTime);
-    windFilter.frequency.setTargetAtTime(settings.filterFreq, now, fadeTime);
+    windGain.gain.setTargetAtTime(settings.windGain, now2, fadeTime);
+    windFilter.frequency.setTargetAtTime(settings.filterFreq, now2, fadeTime);
     if (rainGain) {
-      rainGain.gain.setTargetAtTime(settings.rainGain, now, fadeTime);
+      rainGain.gain.setTargetAtTime(settings.rainGain, now2, fadeTime);
     }
   }
 
