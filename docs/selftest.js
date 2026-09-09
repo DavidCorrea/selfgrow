@@ -6788,6 +6788,26 @@ export async function checks() {
     }
   }
 
+  /* ---------- Sprout proximity glow boost constants (issue #646) ---------- */
+  // Verify that the firefly state exposes the sprout glow boost configuration
+  // constants so the feature is observable and testable.
+  var ffState646 = gardenState && gardenState.fireflies;
+  if (!ffState646) {
+    problems.push('Cannot verify sprout glow boost: fireflies not set up (issue #646).');
+  } else {
+    if (typeof ffState646.sproutGlowBoostRadius !== 'number') {
+      problems.push('fireflyState.sproutGlowBoostRadius is not exposed — sprout proximity boost radius constant missing (issue #646).');
+    } else if (ffState646.sproutGlowBoostRadius <= 0 || ffState646.sproutGlowBoostRadius > 1) {
+      problems.push('fireflyState.sproutGlowBoostRadius is ' + ffState646.sproutGlowBoostRadius + ', expected a positive number ≤ 1.');
+    }
+
+    if (typeof ffState646.sproutGlowBoostMax !== 'number') {
+      problems.push('fireflyState.sproutGlowBoostMax is not exposed — sprout proximity boost max constant missing (issue #646).');
+    } else if (ffState646.sproutGlowBoostMax <= 0 || ffState646.sproutGlowBoostMax > 0.30) {
+      problems.push('fireflyState.sproutGlowBoostMax is ' + ffState646.sproutGlowBoostMax + ', expected a positive number ≤ 0.30 (max boost fraction).');
+    }
+  }
+
   /* ---------- Ground ripple wind perturbation for firefly drift (issue #606) ---------- */
   if (gardenState && gardenState.fireflies && gardenState.fireflies.plantGroups && gardenState.fireflies.plantGroups.length > 0) {
     var ffState = gardenState.fireflies;
