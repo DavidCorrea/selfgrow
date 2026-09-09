@@ -5197,6 +5197,119 @@ export async function checks() {
     }
   }
 
+  /* ---------- Cricket ambient audio checks (issue #637) ---------- */
+  const ambientCricket = gardenState && gardenState.ambientAudio;
+  if (!ambientCricket) {
+    problems.push('window.__gardenState.ambientAudio is not set — cannot verify cricket layer.');
+  } else {
+    const state = ambientCricket.state;
+    if (!state) {
+      problems.push('ambientAudio.state is missing — cricket state not available.');
+    } else {
+      // Verify cricket state fields exist
+      if (typeof state.cricketDensity !== 'number') {
+        problems.push('ambientAudio.state.cricketDensity is not a number — cricket density state missing.');
+      }
+      if (typeof state.cricketEnabled !== 'boolean') {
+        problems.push('ambientAudio.state.cricketEnabled is not a boolean — cricket enabled flag missing.');
+      }
+
+      // Test 1: cricketDensity is 0 during non-Night phases
+      ambientCricket.update('Clear', 'Morning', 'Summer');
+      if (state.cricketDensity !== 0) {
+        problems.push('ambientAudio.update("Clear", "Morning", "Summer") set cricketDensity to ' + state.cricketDensity + ', expected 0 (no crickets during Morning).');
+      }
+
+      ambientCricket.update('Clear', 'Midday', 'Summer');
+      if (state.cricketDensity !== 0) {
+        problems.push('ambientAudio.update("Clear", "Midday", "Summer") set cricketDensity to ' + state.cricketDensity + ', expected 0 (no crickets during Midday).');
+      }
+
+      ambientCricket.update('Clear', 'Evening', 'Summer');
+      if (state.cricketDensity !== 0) {
+        problems.push('ambientAudio.update("Clear", "Evening", "Summer") set cricketDensity to ' + state.cricketDensity + ', expected 0 (no crickets during Evening).');
+      }
+
+      // Test 2: cricketDensity scaling matches expected values per season/weather during Night
+      // Summer + Clear = max density (seasonMul 1.0 × weatherMul 1.0 = 1.0)
+      ambientCricket.update('Clear', 'Night', 'Summer');
+      var summerClearDensity = state.cricketDensity;
+      if (Math.abs(summerClearDensity - 1.0) > 0.001) {
+        problems.push('ambientAudio.update("Clear", "Night", "Summer") set cricketDensity to ' + summerClearDensity + ', expected ~1.0 (max density).');
+      }
+
+      // Spring + Clear = density 0.53
+      ambientCricket.update('Clear', 'Night', 'Spring');
+      var springClearDensity = state.cricketDensity;
+      if (Math.abs(springClearDensity - 0.53) > 0.001) {
+        problems.push('ambientAudio.update("Clear", "Night", "Spring") set cricketDensity to ' + springClearDensity + ', expected ~0.53.');
+      }
+
+      // Autumn + Clear = density 0.53
+      ambientCricket.update('Clear', 'Night', 'Autumn');
+      var autumnClearDensity = state.cricketDensity;
+      if (Math.abs(autumnClearDensity - 0.53) > 0.001) {
+        problems.push('ambientAudio.update("Clear", "Night", "Autumn") set cricketDensity to ' + autumnClearDensity + ', expected ~0.53.');
+      }
+
+      // Winter = always 0 regardless of time of day
+      ambientCricket.update('Clear', 'Night', 'Winter');
+      if (state.cricketDensity !== 0) {
+        problems.push('ambientAudio.update("Clear", "Night", "Winter") set cricketDensity to ' + state.cricketDensity + ', expected 0 (no crickets in Winter).');
+      }
+
+      // Overcast reduces density: Summer + Overcast = 1.0 × 0.6 = 0.6
+      ambientCricket.update('Overcast', 'Night', 'Summer');
+      var overcastDensity = state.cricketDensity;
+      if (Math.abs(overcastDensity - 0.6) > 0.001) {
+        problems.push('ambientAudio.update("Overcast", "Night", "Summer") set cricketDensity to ' + overcastDensity + ', expected ~0.6 (weather multiplier 0.6).');
+      }
+
+      // Light Drizzle reduces density further: Summer + Light Drizzle = 1.0 × 0.4 = 0.4
+      ambientCricket.update('Light Drizzle', 'Night', 'Summer');
+      var drizzleDensity = state.cricketDensity;
+      if (Math.abs(drizzleDensity - 0.4) > 0.001) {
+        problems.push('ambientAudio.update("Light Drizzle", "Night", "Summer") set cricketDensity to ' + drizzleDensity + ', expected ~0.4 (weather multiplier 0.4).');
+      }
+
+      // Test 3: Verify cricketEnabled is false when density ≤ threshold
+      // Winter Night should give density 0 → enabled false
+      ambientCricket.update('Clear', 'Night', 'Winter');
+      if (state.cricketEnabled !== false) {
+        problems.push('ambientAudio.state.cricketEnabled should be false during Winter Night, got ' + state.cricketEnabled + '.');
+      }
+
+      // Non-Night should give density 0 → enabled false
+      ambientCricket.update('Clear', 'Midday', 'Summer');
+      if (state.cricketEnabled !== false) {
+        problems.push('ambientAudio.state.cricketEnabled should be false during Midday, got ' + state.cricketEnabled + '.');
+      }
+
+      // Summer Clear Night should have density > threshold → enabled true
+      ambientCricket.update('Clear', 'Night', 'Summer');
+      if (state.cricketEnabled !== true) {
+        problems.push('ambientAudio.state.cricketEnabled should be true during Summer Clear Night, got ' + state.cricketEnabled + '.');
+      }
+
+      // Test 4: cricketChirpIntervalSec scales inversely with density
+      // Higher density = shorter interval (more chirps)
+      // At max density (1.0), interval should be near CHIRP_INTERVAL_MIN_S (1.0s)
+      if (state.cricketChirpIntervalSec <= 0) {
+        problems.push('ambientAudio.state.cricketChirpIntervalSec is ' + state.cricketChirpIntervalSec + ', expected > 0 when cricket is enabled.');
+      }
+      // Lower density should give longer interval
+      ambientCricket.update('Light Drizzle', 'Night', 'Spring');
+      // Spring + Light Drizzle = 0.53 * 0.4 = 0.212
+      var lowerDensityInterval = state.cricketChirpIntervalSec;
+      // At density 0.212, interval should be larger than at density 1.0
+      ambientCricket.update('Clear', 'Night', 'Summer');
+      var higherDensityInterval = state.cricketChirpIntervalSec;
+      if (higherDensityInterval >= lowerDensityInterval) {
+        problems.push('Cricket interval scaling failed: higher density (Summer Clear Night) gave interval ' + higherDensityInterval.toFixed(3) + 's, lower density (Spring Drizzle Night) gave ' + lowerDensityInterval.toFixed(3) + 's — expected higher density to produce shorter interval.');
+      }
+    }
+  }
+
   /* ---------- Firefly glow checks (issue #468) ---------- */
   const fireflyState = gardenState && gardenState.fireflies;
   if (!fireflyState) {
