@@ -500,6 +500,14 @@ export async function checks() {
       // Verify the plant has a stem mesh
       if (!plant.stem) {
         problems.push('plant.stem is missing — the stem geometry was not created.');
+      } else {
+        // Verify the stem base radius is visibly botanical (issue #661)
+        const radiusBottom = plant.stem.geometry && plant.stem.geometry.parameters && plant.stem.geometry.parameters.radiusBottom;
+        if (typeof radiusBottom !== 'number') {
+          problems.push('plant.stem.geometry.parameters.radiusBottom is not a number — cannot verify stem thickness (issue #661).');
+        } else if (Math.abs(radiusBottom - 0.036) > 0.0001) {
+          problems.push('Stem base radius is ' + radiusBottom + ', expected 0.036 so stems are visibly botanical from the first frame (issue #661).');
+        }
       }
       // Verify the plant has a stemMat material
       if (!plant.stemMat) {
@@ -526,10 +534,10 @@ export async function checks() {
         problems.push('Plant scale is negative (' + s + ') — growth animation broke.');
       }
 
-      // Minimum visible scale check (issue #542): non-fully-grown plants must be >= 0.15
+      // Minimum visible scale check (issue #661): non-fully-grown plants must be >= 0.35
       if (typeof plant.isFullyGrown === 'function' && !plant.isFullyGrown()) {
-        if (s < 0.149) {
-          problems.push('Plant scale is ' + s.toFixed(4) + ' — below minimum visible scale of 0.15 for a growing plant (issue #542).');
+        if (s < 0.349) {
+          problems.push('Plant scale is ' + s.toFixed(4) + ' — below minimum visible scale of 0.35 for a growing plant (issue #661).');
         }
       }
     }

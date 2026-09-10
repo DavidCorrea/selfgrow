@@ -280,7 +280,7 @@ function createPlant(opts) {
   group.position.set(position.x, 0, position.z);
 
   /* --- Stem --- */
-  const stemGeo = new THREE.CylinderGeometry(0.012, 0.028, stemHeight, 6);
+  const stemGeo = new THREE.CylinderGeometry(0.012, 0.036, stemHeight, 6);
   const stemMat = new THREE.MeshStandardMaterial({
     color: stemColor,
     roughness: 0.7,
@@ -388,7 +388,7 @@ function createPlant(opts) {
 
   // Start at appropriate scale based on initial progress
   if (initialProgress < 1) {
-    const startScale = 0.15 + initialProgress * 0.85;
+    const startScale = 0.35 + initialProgress * 0.65;
     group.scale.set(startScale, startScale, startScale);
   } else {
     group.scale.set(1, 1, 1);
@@ -1330,7 +1330,7 @@ function createPlant(opts) {
     if (progress < 1) {
       // Ease-out cubic: starts fast, slows toward the end
       const eased = 1 - Math.pow(1 - progress, 3);
-      const s = 0.15 + eased * 0.85;
+      const s = 0.35 + eased * 0.65;
       group.scale.set(s, s, s);
 
       // Update DOM descriptions by growth phase
