@@ -94,6 +94,8 @@ const DEFAULT_FIREFLY_WEATHER_MUL = 1.0;
 /** Default firefly season multiplier for unknown season */
 const DEFAULT_FIREFLY_SEASON_MUL = 0.0;
 
+export { TIME_OF_DAY_AUDIO, WEATHER_AUDIO_MODIFIERS, SEASON_AUDIO_MODIFIERS, DEFAULT_WEATHER_MODIFIER, DEFAULT_SEASON_MODIFIER, FIREFLY_SEASON_MULTIPLIERS, FIREFLY_WEATHER_MULTIPLIERS };
+
 /**
  * Pitch range for cricket chirps: 2000–4000 Hz.
  * Randomised per chirp within this band.
