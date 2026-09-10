@@ -79,6 +79,22 @@ export function saveGardenState() {
       };
     }
 
+    // Save wintered stems data for recreation on restore (issue #652)
+    if (gs.groundSeeds && gs.groundSeeds._winteredStems && gs.groundSeeds._winteredStems.length > 0) {
+      const winteredData = [];
+      for (let i = 0; i < gs.groundSeeds._winteredStems.length; i++) {
+        const ws = gs.groundSeeds._winteredStems[i];
+        winteredData.push({
+          basePos: ws.basePos,
+          leafGenCount: typeof ws.leafGenCount === 'number' ? ws.leafGenCount : 1
+        });
+      }
+      if (!state.groundSeeds) {
+        state.groundSeeds = {};
+      }
+      state.groundSeeds.winteredStems = winteredData;
+    }
+
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (e) {
     // Silently fail — localStorage may be full or unavailable
@@ -195,7 +211,8 @@ export function fastForwardState(savedState) {
 
   /* ---- Ground seeds: determine if they should still be present ---- */
   let groundSeeds = null;
-  if (savedState.groundSeeds && savedState.groundSeeds.count > 0) {
+  if (savedState.groundSeeds && (savedState.groundSeeds.count > 0 ||
+      (savedState.groundSeeds.winteredStems && savedState.groundSeeds.winteredStems.length > 0))) {
     // Check if the seeds have been removed by spring (after 30% of spring has passed)
     const SEASON_NAMES = ['Spring', 'Summer', 'Autumn', 'Winter'];
     const SEASON_DURATION_MS = 180_000; // must match garden.js
@@ -214,10 +231,23 @@ export function fastForwardState(savedState) {
       groundSeeds = {
         parentLabel: savedState.groundSeeds.parentLabel,
         parentPos: savedState.groundSeeds.parentPos,
-        basePositions: savedState.groundSeeds.basePositions,
+        basePositions: (savedState.groundSeeds.basePositions || []).slice(),
         count: savedState.groundSeeds.count,
         leafGenCount: typeof savedState.groundSeeds.leafGenCount === 'number' ? savedState.groundSeeds.leafGenCount : 0
       };
+
+      // Wintered stems (established sprouts kept as bare stems over winter,
+      // issue #652) persist through late autumn (t>=0.85), all of winter, and
+      // early spring before seed germination. Outside that window the stems
+      // have either not shed their leaves yet or have already regrown them,
+      // so the bare-stem data is dropped.
+      const inBareStemWindow = (seasonIndex === 2 && seasonPhaseProgress >= 0.85) ||
+                               (seasonIndex === 3) ||
+                               (seasonIndex === 0 && seasonPhaseProgress < 0.30);
+      if (inBareStemWindow && savedState.groundSeeds.winteredStems &&
+          savedState.groundSeeds.winteredStems.length > 0) {
+        groundSeeds.winteredStems = savedState.groundSeeds.winteredStems.slice();
+      }
     }
   }
 
