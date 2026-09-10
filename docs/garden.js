@@ -817,6 +817,8 @@ function createPlant(opts) {
       getPhase: () => phase,
       getProgress: () => progress,
       getShelterFactor: () => weatherShelter,
+      /* Visitation bloom accessor (issue #651) */
+      getVisitationBloom: () => _visitationBloom,
       /* Pollination accessors (issue #614) */
       isPollinated: () => _pollinated,
       hasSeedHead: () => _hasSeedHead,
@@ -845,6 +847,85 @@ function createPlant(opts) {
     // Weather shelter: petals close during Light Drizzle (issue #557)
     let weatherShelter = 0;
     let _lastFlowerTick = performance.now();
+
+    /* --- Gaze-driven visitation bloom (issue #651) ---
+     * Each frame, raycast the camera's centre ray to the ground plane;
+     * when the hit point stays within ~0.12 units of this plant's base
+     * for a sustained dwell (~15s), track a visitationBloom factor
+     * (0 -> ~0.25). During bloom phase only, apply as a multiplier on
+     * petal scale/rotation behind the weather shelter factor.
+     *
+     * When the gaze leaves for ~10s, ease the factor back to 0 over ~60s.
+     * Respect prefers-reduced-motion: apply as an instant step with no
+     * eased ramping and no pulsing.
+     */
+    const _rcDir = new THREE.Vector3();
+    const _hitPoint = new THREE.Vector3();
+    let _gazeDwellMs = 0;
+    let _gazeLeaveMs = 0;
+    let _visitationBloom = 0;
+    const GAZE_RADIUS = 0.12;
+    const DWELL_REQUIRED_MS = 15000;
+    const LEAVE_GRACE_MS = 10000;
+    const DECAY_DURATION_MS = 60000;
+    const MAX_BLOOM_FACTOR = 0.25;
+
+    function updateGazeTracking(dtSec) {
+      const gs = window.__gardenState;
+      const camera = gs && gs.camera;
+      if (!camera) return;
+
+      /* Ray from camera position in camera's forward direction */
+      _rcDir.set(0, 0, -1).applyQuaternion(camera.quaternion);
+
+      /* Intersect with y=0 plane */
+      if (_rcDir.y >= 0) {
+        /* Looking up or level — no ground intersection, gaze has left */
+        _gazeLeaveMs += dtSec * 1000;
+        _gazeDwellMs = 0;
+        return;
+      }
+
+      const tPlane = -camera.position.y / _rcDir.y;
+      _hitPoint.copy(camera.position).addScaledVector(_rcDir, tPlane);
+
+      /* Distance from hit point to this plant's base (position.x, 0, position.z) */
+      const dx = _hitPoint.x - position.x;
+      const dz = _hitPoint.z - position.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+
+      const isGazed = dist <= GAZE_RADIUS;
+
+      if (isGazed) {
+        _gazeDwellMs += dtSec * 1000;
+        _gazeLeaveMs = 0;
+      } else {
+        _gazeLeaveMs += dtSec * 1000;
+        if (_gazeLeaveMs >= LEAVE_GRACE_MS) {
+          /* Sustained dwell broken — reset dwell counter */
+          _gazeDwellMs = 0;
+        }
+      }
+
+      /* Update visitationBloom factor */
+      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      if (reducedMotion) {
+        /* Instant step: full factor when dwell satisfied, else 0 */
+        _visitationBloom = (_gazeDwellMs >= DWELL_REQUIRED_MS) ? MAX_BLOOM_FACTOR : 0;
+        return;
+      }
+
+      if (_gazeDwellMs >= DWELL_REQUIRED_MS) {
+        /* Ramp up toward max — quick ease-in over ~2s */
+        const rampSec = Math.min(1, (_gazeDwellMs - DWELL_REQUIRED_MS) / 2000);
+        _visitationBloom = MAX_BLOOM_FACTOR * (1 - Math.pow(1 - rampSec, 2));
+      } else if (_gazeLeaveMs >= LEAVE_GRACE_MS) {
+        /* Decay to 0 over ~60s */
+        const decaySec = Math.min(1, (_gazeLeaveMs - LEAVE_GRACE_MS) / DECAY_DURATION_MS);
+        _visitationBloom = MAX_BLOOM_FACTOR * Math.max(0, 1 - decaySec);
+      }
+    }
 
     /* Update DOM when the flower enters a new visible phase */
     function updateDOMDescriptions() {
@@ -965,6 +1046,9 @@ function createPlant(opts) {
       const shelterRate = 0.6; // ~5s time constant
       weatherShelter += (shelterTarget - weatherShelter) * (1 - Math.exp(-shelterRate * dt));
 
+      /* Gaze-driven visitation bloom (issue #651): track camera dwell on this plant */
+      updateGazeTracking(dt);
+
       const elapsed = now - phaseStart;
       progress = Math.min(1, elapsed / phaseDuration);
 
@@ -1036,7 +1120,9 @@ function createPlant(opts) {
           if (fm.petals.length > 0) {
             const sway = Math.sin(elapsed * 0.001 * 0.5) * 0.05;
             // Weather shelter: reduce scale (≤60%) and tilt down during rain (issue #557)
-            const shelterScale = (1 - 0.4 * weatherShelter);
+            // Visitation bloom: extra openness from sustained gaze, capped at ~30% over baseline (issue #651)
+            const bloomMul = Math.min(1 + _visitationBloom, 1.3);
+            const shelterScale = (1 - 0.4 * weatherShelter) * bloomMul;
             const shelterTilt = weatherShelter * 0.8;
             fm.petals.forEach((p, i) => {
               p.scale.set(shelterScale, shelterScale, shelterScale);

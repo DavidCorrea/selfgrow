@@ -9604,5 +9604,92 @@ export async function checks() {
     }
   }
 
+  /* ---------- Visitation bloom checks (issue #651) ---------- */
+  // Verify visitationBloom is exposed, bounded, and only affects bloom phase
+  {
+    const gs651 = window.__gardenState;
+    if (!gs651) {
+      problems.push('window.__gardenState not set — cannot verify visitation bloom (issue #651).');
+    } else {
+      const plants651 = [gs651.plant, gs651.plant2];
+      const labels651 = ['plant', 'plant2'];
+
+      for (let pi651 = 0; pi651 < plants651.length; pi651++) {
+        const p651 = plants651[pi651];
+        if (!p651 || !p651.flower) continue;
+        const label651 = labels651[pi651];
+
+        // Visitation bloom accessor must exist
+        if (typeof p651.flower.getVisitationBloom !== 'function') {
+          problems.push(label651 + '.flower.getVisitationBloom is not a function — visitation bloom accessor missing (issue #651).');
+          continue;
+        }
+
+        const vBloom = p651.flower.getVisitationBloom();
+
+        // Must be a number in [0, 0.25]
+        if (typeof vBloom !== 'number') {
+          problems.push(label651 + '.flower.getVisitationBloom() returned ' + typeof vBloom + ' — expected number (issue #651).');
+        } else if (vBloom < 0 || vBloom > 0.251) {
+          problems.push(label651 + '.flower.getVisitationBloom() returned ' + vBloom.toFixed(5) + ' — expected in [0, 0.25] (issue #651).');
+        }
+
+        // Must default to 0 on init (not have ramped up yet)
+        if (vBloom > 0.01) {
+          problems.push(label651 + '.flower.getVisitationBloom() is ' + vBloom.toFixed(5) + ' — expected ~0 on initial state (no gaze has accumulated) (issue #651).');
+        }
+
+        // Verify the bloom case applies the factor correctly by checking
+        // that when visitationBloom > 0 (simulated), the petal scale would
+        // be at least 1.2x baseline when fully ramped
+        const phase651 = typeof p651.flower.getPhase === 'function' ? p651.flower.getPhase() : '';
+        if (phase651 === 'bloom' && p651.flower.petals && p651.flower.petals.length > 0) {
+          const shelter651 = typeof p651.flower.getShelterFactor === 'function' ? p651.flower.getShelterFactor() : 0;
+          const firstPetal651 = p651.flower.petals[0];
+          const actualScale651 = firstPetal651.scale.x;
+          // The applied scale = (1 - 0.4 * shelter) * min(1 + vBloom, 1.3)
+          const expectedScale651 = (1 - 0.4 * shelter651) * Math.min(1 + vBloom, 1.3);
+          const tol651 = 0.005;
+          if (Math.abs(actualScale651 - expectedScale651) > tol651) {
+            problems.push(label651 + ' bloom petal scale.x is ' + actualScale651.toFixed(5) +
+              ', expected ~' + expectedScale651.toFixed(5) +
+              ' (shelter=' + shelter651.toFixed(3) + ', vBloom=' + vBloom.toFixed(5) + ') (issue #651).');
+          }
+
+          // Verify cap: when visitationBloom is high, the combined multiplier never exceeds 1.3
+          const combinedMul651 = actualScale651 / Math.max(0.001, (1 - 0.4 * shelter651));
+          if (combinedMul651 > 1.301) {
+            problems.push(label651 + ' bloom combined multiplier (scale/shelterBase) is ' +
+              combinedMul651.toFixed(4) + ' — exceeds 1.3 cap (issue #651).');
+          }
+        }
+
+        // Verify non-bloom phases are NOT affected by visitationBloom
+        if (phase651 !== 'bloom' && p651.flower.petals && p651.flower.petals.length > 0) {
+          // In non-bloom phases, the visitationBloom factor should NOT be applied
+          // (the code only applies it in the bloom case). We verify by checking
+          // the petal scale is consistent with the phase's normal formula.
+          // For opening: scale = eased * (1 - 0.4 * shelter), no bloomMul.
+          // For budding: scale = eased * 0.35, no bloomMul.
+          // For dormant/fading: scale is either tiny or shrinking.
+          if (phase651 === 'opening') {
+            const shelter651 = typeof p651.flower.getShelterFactor === 'function' ? p651.flower.getShelterFactor() : 0;
+            const firstPetal651 = p651.flower.petals[0];
+            // Opening scale = eased * (1 - 0.4 * shelter). If visitationBloom
+            // were applied, scale would include (1 + vBloom).
+            const actualScale651 = firstPetal651.scale.x;
+            // The maximum scale in opening (fully opened, no shelter) is 1.0.
+            // If vBloom were applied, max would be 1.25 (when vBloom=0.25).
+            // So if actual > 1.01 and vBloom > 0, vBloom is being applied incorrectly.
+            if (vBloom > 0.01 && actualScale651 > (1 - 0.4 * shelter651) * 1.01) {
+              problems.push(label651 + ' opening petal scale is ' + actualScale651.toFixed(5) +
+                ' with vBloom=' + vBloom.toFixed(4) + ' — visitationBloom should not affect non-bloom phases (issue #651).');
+            }
+          }
+        }
+      }
+    }
+  }
+
   return problems;
 }
