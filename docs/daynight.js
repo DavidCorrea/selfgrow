@@ -25,12 +25,16 @@ const SUN_OFFSET_Y = 0.5;
  * t=0.50 → Evening (sunset orange)
  * t=0.75 → Night (deep indigo)
  * t=1.00 → back to Morning
+ *
+ * Night sky is set to a rich midnight indigo (0x1a2030), not a black void,
+ * so plant silhouettes remain visible against the sky (issue #663).
  */
+const MIN_AMBIENT_INTENSITY = 0.2;      // floor — plants stay visible at night (issue #663)
 const SKY_STOPS = [
   { t: 0.00, color: new THREE.Color(0xf4a460) },  // sunrise warm
   { t: 0.25, color: new THREE.Color(0x87ceeb) },  // midday blue
   { t: 0.50, color: new THREE.Color(0xe8755a) },  // sunset orange
-  { t: 0.75, color: new THREE.Color(0x141e3a) },  // deep night indigo
+  { t: 0.75, color: new THREE.Color(0x1a2030) },  // deep night indigo (luminance floor #663)
   { t: 1.00, color: new THREE.Color(0xf4a460) }   // back to sunrise
 ];
 
@@ -115,7 +119,9 @@ export function startDayNightCycle(sunLight, scene, ambientLight, hemiLight, fil
     getPhaseName: () => getPhaseName((performance.now() - startTime) % CYCLE_DURATION_MS / CYCLE_DURATION_MS),
     getSunPosition: () => sunLight.position.clone(),
     getSkyColor: () => scene.background.clone(),
-    getShadowDrift: () => ({ x: _shadowDriftX, z: _shadowDriftZ })
+    getShadowDrift: () => ({ x: _shadowDriftX, z: _shadowDriftZ }),
+    getAmbientFloor: () => MIN_AMBIENT_INTENSITY,
+    getDeepestNightSkyColor: () => SKY_STOPS[3].color.clone()
   };
 
   /* Expose state for selftest */
@@ -185,8 +191,8 @@ export function startDayNightCycle(sunLight, scene, ambientLight, hemiLight, fil
       sunLight.color.copy(sunBaseColor);
     }
 
-    /* --- Ambient light: dim at night, with floor so plants stay visible --- */
-    const ambientIntensity = 0.25 + THREE.MathUtils.clamp((y + 1) / 9, 0, 1) * 0.28;
+    /* --- Ambient light: dim at night, with explicit floor so plants stay visible (issue #663) --- */
+    const ambientIntensity = Math.max(MIN_AMBIENT_INTENSITY, 0.25 + THREE.MathUtils.clamp((y + 1) / 9, 0, 1) * 0.28);
     ambientLight.intensity = ambientIntensity;
 
     /* --- Hemisphere light: sky/ground blend follows sky colour --- */

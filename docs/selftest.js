@@ -1760,6 +1760,48 @@ export async function checks() {
     }
   }
 
+  /* ---------- Night brightness floors (issue #663) ---------- */
+  // The Night phase must keep the garden visibly botanical:
+  //  - ambientLight.intensity never falls below 0.2 (explicit ambient floor)
+  //  - the sky never goes darker than ~0x1a2030 (rich midnight indigo, not black)
+  // These are static properties of the day/night configuration, so they are
+  // verifiable now regardless of the current phase.
+  if (dayNight) {
+    if (typeof dayNight.getAmbientFloor !== 'function') {
+      problems.push('dayNight.getAmbientFloor is not a function — the ambient brightness floor is not exposed (issue #663).');
+    } else {
+      const ambientFloor = dayNight.getAmbientFloor();
+      if (typeof ambientFloor !== 'number' || ambientFloor < 0.2) {
+        problems.push('dayNight.getAmbientFloor() returned ' + ambientFloor + ', expected >= 0.2 so plants remain visible as botanical silhouettes during Night (issue #663).');
+      }
+    }
+
+    if (typeof dayNight.getDeepestNightSkyColor !== 'function') {
+      problems.push('dayNight.getDeepestNightSkyColor is not a function — the deepest night sky colour is not exposed (issue #663).');
+    } else {
+      const nightSky = dayNight.getDeepestNightSkyColor();
+      if (!(nightSky instanceof THREE.Color)) {
+        problems.push('dayNight.getDeepestNightSkyColor() did not return a THREE.Color, got ' + (nightSky && nightSky.constructor ? nightSky.constructor.name : typeof nightSky) + ' (issue #663).');
+      } else {
+        const floorSky = new THREE.Color(0x1a2030);
+        function skyLum(c) {
+          function s2l(v) { return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }
+          return 0.2126 * s2l(c.r) + 0.7152 * s2l(c.g) + 0.0722 * s2l(c.b);
+        }
+        const nightLum = skyLum(nightSky);
+        const floorLum = skyLum(floorSky);
+        if (nightLum < floorLum - 1e-6) {
+          problems.push(
+            'Deepest night sky colour #' + nightSky.getHexString() +
+            ' has relative luminance ' + nightLum.toFixed(5) +
+            ', darker than the ~0x1a2030 luminance floor (' + floorLum.toFixed(5) +
+            ') — Night would be a black void instead of a rich midnight (issue #663).'
+          );
+        }
+      }
+    }
+  }
+
   /* ---------- Minimum scene brightness at Night+Overcast (issue #534, #595) ---------- */
   // Verify that at Night (sun behind horizon, y <= -1), the base lighting floors
   // produce enough illumination when combined with Overcast weather multipliers
@@ -1803,10 +1845,11 @@ export async function checks() {
     );
   }
 
-  /* ---------- Runtime ambient light floor check (issue #595) ---------- */
+  /* ---------- Runtime ambient light floor check (issue #595, #663) ---------- */
   // Verify that the actual ambientLight.intensity in the scene never falls below
-  // 0.25 during Night phase. We read the ambient light from the scene and, if
-  // the current phase is Night, check its intensity is at least the floor.
+  // 0.25 during Night phase (issue #595), and that the live sky luminance stays
+  // at or above the ~0x1a2030 floor (issue #663). We read the ambient light from
+  // the scene and, if the current phase is Night, check both live values.
   if (dayNight && gardenState && gardenState.scene) {
     const phaseName = typeof dayNight.getPhaseName === 'function' ? dayNight.getPhaseName() : '';
     if (phaseName === 'Night') {
@@ -1825,10 +1868,20 @@ export async function checks() {
             ' — expected at least 0.25 for plants to remain visible (issue #595).'
           );
         }
+        // Issue #663: the explicit ambient floor must also hold live.
+        if (typeof dayNight.getAmbientFloor === 'function' && ambientLightObj.intensity < dayNight.getAmbientFloor() - 0.001) {
+          problems.push(
+            'During Night phase, ambientLight.intensity is ' +
+            ambientLightObj.intensity.toFixed(4) +
+            ', below the configured floor of ' + dayNight.getAmbientFloor() +
+            ' — plants would lose their botanical silhouette (issue #663).'
+          );
+        }
       }
 
-      // Also check scene background luminance — new night sky 0x141e3a should
-      // produce enough luminance that green/brown plant silhouettes are visible.
+      // Also check scene background luminance — the night sky must stay at or
+      // above the ~0x1a2030 floor so green/brown plant silhouettes remain
+      // visible against it.
       const bg = gardenState.scene.background;
       if (bg instanceof THREE.Color) {
         // Relative luminance: 0.2126*R + 0.7152*G + 0.0722*B (sRGB linear)
@@ -1839,13 +1892,16 @@ export async function checks() {
         const gLin = srgbToLinear(bg.g);
         const bLin = srgbToLinear(bg.b);
         const luminance = 0.2126 * rLin + 0.7152 * gLin + 0.0722 * bLin;
-        // Night sky 0x141e3a → R=0.0784, G=0.1176, B=0.2275
-        // Relative luminance ≈ 0.014 — set threshold at 0.010 (old 0x0a1628 was ~0.008)
-        if (luminance < 0.010) {
+        // Floor sky 0x1a2030 → dark indigo with relative luminance ≈ 0.0147
+        // (rich midnight, not a black void).
+        const floorCol = new THREE.Color(0x1a2030);
+        const floorLum = 0.2126 * srgbToLinear(floorCol.r) + 0.7152 * srgbToLinear(floorCol.g) + 0.0722 * srgbToLinear(floorCol.b);
+        if (luminance < floorLum - 0.001) {
           problems.push(
             'During Night phase, scene.background relative luminance is ' +
             luminance.toFixed(5) +
-            ' — expected >= 0.015 so plant silhouettes are visible against the sky (issue #595).'
+            ', darker than the ~0x1a2030 floor (' + floorLum.toFixed(5) +
+            ') — plant silhouettes would vanish into a black sky (issue #663).'
           );
         }
       }
