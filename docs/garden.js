@@ -1573,6 +1573,142 @@ function createSoilPatches(scene, basePositions, fallenLeavesState) {
   fallenLeavesState.patchMaterial = patchMat;
 }
 
+/**
+ * createGroundDetails — scatters 20-30 small stones and 10-15 subtle moss
+ * patches across the ground circle (r=0 to 3.5) to make the soil surface
+ * feel like a real garden bed rather than a flat disc.
+ *
+ * Stones: small IcosahedronGeometry (radius 0.01-0.025, grey-brown).
+ * Moss: low flat CircleGeometry in muted green, opacity 0.3-0.5.
+ *
+ * All meshes are static (no animation loop), so prefers-reduced-motion
+ * is naturally satisfied.
+ *
+ * Exposes state on window.__gardenState.groundDetails for self-testing.
+ *
+ * @param {THREE.Scene} scene
+ * @returns {{ stones: THREE.Mesh[], mossPatches: THREE.Mesh[], stoneCount: number, mossCount: number }}
+ */
+export function createGroundDetails(scene) {
+  const STONE_COUNT = 20 + Math.floor(Math.random() * 11); // 20-30
+  const MOSS_COUNT = 10 + Math.floor(Math.random() * 6);   // 10-15
+  const SPREAD_RADIUS = 3.5;
+
+  /* --- Stones --- */
+  const stoneMat = new THREE.MeshStandardMaterial({
+    color: 0x6a5a4a,
+    roughness: 0.9,
+    metalness: 0.0
+  });
+
+  const stones = [];
+
+  for (let i = 0; i < STONE_COUNT; i++) {
+    const radius = 0.01 + Math.random() * 0.015; // 0.01-0.025
+    const geo = new THREE.IcosahedronGeometry(radius, 0);
+    const mesh = new THREE.Mesh(geo, stoneMat);
+
+    /* Random position within SPREAD_RADIUS of origin */
+    const angle = Math.random() * Math.PI * 2;
+    const r = Math.random() * SPREAD_RADIUS;
+    const x = Math.cos(angle) * r;
+    const z = Math.sin(angle) * r;
+
+    mesh.position.set(x, 0.005, z);
+
+    /* Random rotation for natural variety */
+    mesh.rotation.set(
+      Math.random() * Math.PI,
+      Math.random() * Math.PI,
+      Math.random() * Math.PI
+    );
+
+    /* Slight random scale variation (0.8-1.3) */
+    const s = 0.8 + Math.random() * 0.5;
+    mesh.scale.set(s, s, s);
+
+    /* Minor colour variation */
+    const colorVariation = (Math.random() - 0.5) * 0.15;
+    mesh.material = stoneMat.clone();
+    const baseColor = new THREE.Color(0x6a5a4a);
+    const rVal = Math.max(0, Math.min(1, baseColor.r + colorVariation));
+    const gVal = Math.max(0, Math.min(1, baseColor.g + colorVariation * 0.8));
+    const bVal = Math.max(0, Math.min(1, baseColor.b + colorVariation * 0.6));
+    mesh.material.color.setRGB(rVal, gVal, bVal);
+
+    mesh.castShadow = false;
+    mesh.receiveShadow = true;
+
+    scene.add(mesh);
+    stones.push(mesh);
+  }
+
+  /* --- Moss Patches --- */
+  const mossMat = new THREE.MeshStandardMaterial({
+    color: 0x4a6a3a,
+    roughness: 0.8,
+    metalness: 0.0,
+    transparent: true,
+    opacity: 0.4,
+    depthWrite: false,
+    side: THREE.DoubleSide
+  });
+
+  const mossPatches = [];
+
+  for (let i = 0; i < MOSS_COUNT; i++) {
+    const patchRadius = 0.06 + Math.random() * 0.08; // 0.06-0.14
+    const geo = new THREE.CircleGeometry(patchRadius, 6);
+    const mesh = new THREE.Mesh(geo, mossMat);
+
+    /* Random position within SPREAD_RADIUS of origin */
+    const angle = Math.random() * Math.PI * 2;
+    const r = Math.random() * SPREAD_RADIUS;
+    const x = Math.cos(angle) * r;
+    const z = Math.sin(angle) * r;
+
+    mesh.position.set(x, 0.003, z); // slightly lower than stones
+    mesh.rotation.x = -Math.PI / 2;
+
+    /* Slight random rotation around Y */
+    mesh.rotation.z = Math.random() * Math.PI * 2;
+
+    /* Slight scale and colour variation */
+    const s = 0.7 + Math.random() * 0.6;
+    mesh.scale.set(s, s, s);
+
+    /* Each patch gets its own material with varied opacity (0.3-0.5) and hue */
+    mesh.material = mossMat.clone();
+    mesh.material.opacity = 0.3 + Math.random() * 0.2;
+    const greenVariation = (Math.random() - 0.5) * 0.1;
+    const baseGreen = new THREE.Color(0x4a6a3a);
+    const rv = Math.max(0, Math.min(1, baseGreen.r + greenVariation * 0.5));
+    const gv = Math.max(0, Math.min(1, baseGreen.g + greenVariation));
+    const bv = Math.max(0, Math.min(1, baseGreen.b + greenVariation * 0.5));
+    mesh.material.color.setRGB(rv, gv, bv);
+
+    mesh.castShadow = false;
+    mesh.receiveShadow = true;
+
+    scene.add(mesh);
+    mossPatches.push(mesh);
+  }
+
+  /* Exposed state for self-test */
+  const state = {
+    type: 'ground-details',
+    stones,
+    mossPatches,
+    stoneCount: STONE_COUNT,
+    mossCount: MOSS_COUNT,
+    spreadRadius: SPREAD_RADIUS
+  };
+
+  window.__gardenState.groundDetails = state;
+
+  return state;
+}
+
 /* --- Sprout leaf generations (issue #638) ---
  * A sprout that survives through summer grows a second, larger leaf pair when
  * autumn begins: +30% scale, lighter green, rotated ~30° from the first pair.
