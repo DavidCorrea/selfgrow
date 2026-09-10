@@ -241,6 +241,113 @@ export async function checks() {
     }
   }
 
+  /* ---------- Ground details checks (issue #664) ---------- */
+  // Scattered stones and moss patches on the ground circle
+  if (gardenState) {
+    const gd = gardenState.groundDetails;
+    if (!gd) {
+      problems.push('window.__gardenState.groundDetails is not set — the ground details (stones + moss) were not created (issue #664).');
+    } else {
+      if (gd.type !== 'ground-details') {
+        problems.push('groundDetails.type is "' + gd.type + '", expected "ground-details" (issue #664).');
+      }
+
+      // Check stone count (20-30)
+      if (typeof gd.stoneCount !== 'number' || gd.stoneCount < 20 || gd.stoneCount > 30) {
+        problems.push('groundDetails.stoneCount is ' + gd.stoneCount + ', expected between 20 and 30 (issue #664).');
+      }
+
+      // Check moss count (10-15)
+      if (typeof gd.mossCount !== 'number' || gd.mossCount < 10 || gd.mossCount > 15) {
+        problems.push('groundDetails.mossCount is ' + gd.mossCount + ', expected between 10 and 15 (issue #664).');
+      }
+
+      // Check stones array
+      if (!gd.stones || !Array.isArray(gd.stones)) {
+        problems.push('groundDetails.stones is missing or not an array (issue #664).');
+      } else if (gd.stones.length !== gd.stoneCount) {
+        problems.push('groundDetails.stones.length (' + gd.stones.length + ') does not match stoneCount (' + gd.stoneCount + ') (issue #664).');
+      } else {
+        // Verify each stone has correct geometry
+        gd.stones.forEach(function(stone, i) {
+          if (!stone.isMesh) {
+            problems.push('groundDetails.stones[' + i + '] is not a THREE.Mesh (issue #664).');
+            return;
+          }
+          if (stone.geometry.type !== 'IcosahedronGeometry') {
+            problems.push('groundDetails.stones[' + i + '] geometry is "' + stone.geometry.type + '", expected IcosahedronGeometry (issue #664).');
+          }
+          // Check position is within spread radius
+          var dist = Math.sqrt(stone.position.x * stone.position.x + stone.position.z * stone.position.z);
+          if (dist > gd.spreadRadius + 0.01) {
+            problems.push('groundDetails.stones[' + i + '] distance from origin is ' + dist.toFixed(3) + ', expected <= ' + gd.spreadRadius + ' (issue #664).');
+          }
+          // Check y is near ground
+          if (Math.abs(stone.position.y - 0.005) > 0.001) {
+            problems.push('groundDetails.stones[' + i + '] position.y is ' + stone.position.y.toFixed(4) + ', expected ~0.005 (issue #664).');
+          }
+          // Check material has a color
+          if (!stone.material.color) {
+            problems.push('groundDetails.stones[' + i + '] material.color is missing (issue #664).');
+          }
+        });
+      }
+
+      // Check mossPatches array
+      if (!gd.mossPatches || !Array.isArray(gd.mossPatches)) {
+        problems.push('groundDetails.mossPatches is missing or not an array (issue #664).');
+      } else if (gd.mossPatches.length !== gd.mossCount) {
+        problems.push('groundDetails.mossPatches.length (' + gd.mossPatches.length + ') does not match mossCount (' + gd.mossCount + ') (issue #664).');
+      } else {
+        // Verify each moss patch has correct geometry and material properties
+        gd.mossPatches.forEach(function(patch, i) {
+          if (!patch.isMesh) {
+            problems.push('groundDetails.mossPatches[' + i + '] is not a THREE.Mesh (issue #664).');
+            return;
+          }
+          if (patch.geometry.type !== 'CircleGeometry') {
+            problems.push('groundDetails.mossPatches[' + i + '] geometry is "' + patch.geometry.type + '", expected CircleGeometry (issue #664).');
+          }
+          // Check position is within spread radius
+          var dist = Math.sqrt(patch.position.x * patch.position.x + patch.position.z * patch.position.z);
+          if (dist > gd.spreadRadius + 0.01) {
+            problems.push('groundDetails.mossPatches[' + i + '] distance from origin is ' + dist.toFixed(3) + ', expected <= ' + gd.spreadRadius + ' (issue #664).');
+          }
+          // Check y is near ground
+          if (Math.abs(patch.position.y - 0.003) > 0.001) {
+            problems.push('groundDetails.mossPatches[' + i + '] position.y is ' + patch.position.y.toFixed(4) + ', expected ~0.003 (issue #664).');
+          }
+          // Check material properties (transparent, opacity 0.3-0.5)
+          var mat = patch.material;
+          if (!mat) {
+            problems.push('groundDetails.mossPatches[' + i + '] material is missing (issue #664).');
+            return;
+          }
+          if (mat.transparent !== true) {
+            problems.push('groundDetails.mossPatches[' + i + '] material.transparent is ' + mat.transparent + ', expected true (issue #664).');
+          }
+          if (typeof mat.opacity !== 'number' || mat.opacity < 0.3 || mat.opacity > 0.5) {
+            problems.push('groundDetails.mossPatches[' + i + '] material.opacity is ' + mat.opacity + ', expected between 0.3 and 0.5 (issue #664).');
+          }
+          if (!mat.color) {
+            problems.push('groundDetails.mossPatches[' + i + '] material.color is missing (issue #664).');
+          }
+          // Rotation should have x = -PI/2 (flat on ground)
+          if (Math.abs(patch.rotation.x - (-Math.PI / 2)) > 0.01) {
+            problems.push('groundDetails.mossPatches[' + i + '] rotation.x is ' + patch.rotation.x.toFixed(4) + ', expected ~' + (-Math.PI / 2).toFixed(4) + ' (flat on ground) (issue #664).');
+          }
+        });
+      }
+
+      // Verify spreadRadius is 3.5
+      if (typeof gd.spreadRadius !== 'number' || Math.abs(gd.spreadRadius - 3.5) > 0.01) {
+        problems.push('groundDetails.spreadRadius is ' + gd.spreadRadius + ', expected 3.5 (issue #664).');
+      }
+    }
+  } else if (!gardenState) {
+    problems.push('window.__gardenState is not set — cannot verify ground details (issue #664).');
+  }
+
   /* ---------- Console error detection ---------- */
   // Capture errors that happened during load by checking the scene
   // and renderer state are consistent.

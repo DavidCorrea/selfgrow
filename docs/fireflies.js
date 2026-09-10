@@ -754,13 +754,17 @@ export function createFireflies(scene) {
         }
       }
 
+      // Two-pass update: compute all deltas using current phase offsets first,
+      // then apply them simultaneously. This avoids sequential update asymmetry
+      // where the i-th dot sees a partially updated phase offset from dot i-1.
+      var syncUpdates = [];
       for (var si = 0; si < syncDots.length; si++) {
         var dotA = syncDots[si];
         var ddA = dotA.dd;
 
-        // Average phase of dots within CONVERGE_RADIUS (self included)
-        var groupPhase = ddA.phaseOffset;
-        var groupSize = 1;
+        // Average phase of dots within CONVERGE_RADIUS (self excluded)
+        var groupPhase = 0;
+        var groupSize = 0;
         var hasNearby = false;
         var hasAdjacent = false; // in the [CONVERGE, DIVERGE) hysteresis band
 
@@ -785,16 +789,32 @@ export function createFireflies(scene) {
           // Deterministic per-dot residual bias in [-RESIDUAL_VARIANCE, +RESIDUAL_VARIANCE]
           // so a converged dot sits slightly off the group average — organic, never perfect.
           var residualBias = (ddA.originalPhaseOffset / (Math.PI * 2) - 0.5) * 2 * SYNC_RESIDUAL_VARIANCE;
-          ddA.syncPhaseResidual = residualBias;
           var avgPhase = groupPhase / groupSize;
-          ddA.phaseOffset += (avgPhase + residualBias - ddA.phaseOffset) * SYNC_CONVERGE_ALPHA;
-          ddA.syncActive = true;
+          var delta = (avgPhase + residualBias - ddA.phaseOffset) * SYNC_CONVERGE_ALPHA;
+          syncUpdates.push({
+            dd: ddA,
+            delta: delta,
+            syncPhaseResidual: residualBias,
+            syncActive: true
+          });
         } else if (!hasAdjacent) {
           // No neighbour within DIVERGE_RADIUS: drift back toward independence
-          ddA.phaseOffset += (ddA.originalPhaseOffset - ddA.phaseOffset) * SYNC_DIVERGE_ALPHA;
-          ddA.syncPhaseResidual = 0;
-          ddA.syncActive = false;
+          var delta = (ddA.originalPhaseOffset - ddA.phaseOffset) * SYNC_DIVERGE_ALPHA;
+          syncUpdates.push({
+            dd: ddA,
+            delta: delta,
+            syncPhaseResidual: 0,
+            syncActive: false
+          });
         }
+      }
+
+      // Apply all updates simultaneously
+      for (var ui = 0; ui < syncUpdates.length; ui++) {
+        var upd = syncUpdates[ui];
+        upd.dd.phaseOffset += upd.delta;
+        upd.dd.syncPhaseResidual = upd.syncPhaseResidual;
+        upd.dd.syncActive = upd.syncActive;
       }
     } else {
       // Sync inactive (daytime or reduced motion): clear the flag so state
