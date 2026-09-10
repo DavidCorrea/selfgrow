@@ -257,6 +257,37 @@ export async function checks() {
     }
   }
 
+  /* ---------- Perimeter detail ring checks (issue #660) ---------- */
+  // The GridHelper was removed; replaced by an organic perimeter detail ring
+  // of grass tufts and moss hummocks around the ground circle (r=3.8-3.95).
+  // Verify the group exists and has the expected number of child meshes.
+  if (gardenState && gardenState.scene) {
+    let perimeterGroup = null;
+    gardenState.scene.traverse(function(child) {
+      if (child.isGroup && child.name === 'perimeter-detail') {
+        perimeterGroup = child;
+      }
+    });
+    if (!perimeterGroup) {
+      problems.push('No "perimeter-detail" group found in the scene — the organic perimeter detail ring was not created (issue #660).');
+    } else {
+      const childCount = perimeterGroup.children.length;
+      if (childCount < 30) {
+        problems.push('perimeter-detail group has only ' + childCount + ' children — expected at least 30 (grass tufts + moss hummocks) (issue #660).');
+      }
+      // Verify at least some children are Mesh instances
+      let meshCount = 0;
+      perimeterGroup.children.forEach(function(child) {
+        if (child.isMesh) meshCount++;
+      });
+      if (meshCount < 30) {
+        problems.push('perimeter-detail group has only ' + meshCount + ' meshes — expected at least 30 (issue #660).');
+      }
+    }
+  } else if (!gardenState) {
+    problems.push('window.__gardenState is not set — cannot verify perimeter detail ring (issue #660).');
+  }
+
   /* ---------- Second plant checks (issue #419) ---------- */
   // The second plant (plant2) should exist at some point after the first
   // plant is fully grown. It may not exist immediately (it's spawned after
