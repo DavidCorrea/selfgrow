@@ -41,6 +41,8 @@ const SEASON_NAMES = ['Spring', 'Summer', 'Autumn', 'Winter'];
 const SEASON_DURATION_MS = 180_000; // 3 minutes per season
 const CYCLE_DURATION_MS = SEASON_DURATION_MS * 4; // ~12 minute full cycle
 
+export { SEASON_PALETTES, SEASON_NAMES, SEASON_DURATION_MS, CYCLE_DURATION_MS };
+
 export function initGarden(scene, initialProgress) {
   console.log('selfgrow garden initialised. The soil awaits…');
 
