@@ -7675,8 +7675,8 @@ export async function checks() {
           problems.push('weatherContexts["' + phase + '"] is missing or not an array — context not defined as variant array.');
           return;
         }
-        if (arr.length < 2 || arr.length > 3) {
-          problems.push('weatherContexts["' + phase + '"] has ' + arr.length + ' variants, expected 2–3 (issue #543).');
+        if (arr.length < 5) {
+          problems.push('weatherContexts["' + phase + '"] has ' + arr.length + ' variants, expected at least 5 (issue #662).');
         }
         const ctx = arr[0];
         const keywords = expectedKeywords[phase];
@@ -7882,8 +7882,8 @@ export async function checks() {
           problems.push('timeContexts["' + phase + '"] is missing or not an array — context not defined as variant array (issue #543).');
           return;
         }
-        if (arr.length < 2 || arr.length > 3) {
-          problems.push('timeContexts["' + phase + '"] has ' + arr.length + ' variants, expected 2–3 (issue #543).');
+        if (arr.length < 5) {
+          problems.push('timeContexts["' + phase + '"] has ' + arr.length + ' variants, expected at least 5 (issue #662).');
         }
         const ctx = arr[0];
         const keywords = expectedTimeKeywords[phase];
@@ -8141,8 +8141,8 @@ export async function checks() {
           problems.push('seasonContexts["' + phase + '"] is missing or not an array — context not defined as variant array (issue #543).');
           return;
         }
-        if (arr.length < 2 || arr.length > 3) {
-          problems.push('seasonContexts["' + phase + '"] has ' + arr.length + ' variants, expected 2–3 (issue #543).');
+        if (arr.length < 5) {
+          problems.push('seasonContexts["' + phase + '"] has ' + arr.length + ' variants, expected at least 5 (issue #662).');
         }
         var ctx = arr[0];
         var keywords = expectedSeasonKeywords[phase];
@@ -8801,14 +8801,14 @@ export async function checks() {
       problems.push('gardenState.VARIANT_CYCLE_MS is ' + gardenState.VARIANT_CYCLE_MS + ', expected 30000 (30s).');
     }
 
-    // Verify that contexts arrays have length 2-3 and variants are unique across all phases
+    // Verify that contexts arrays have at least 5 variants and variants are unique across all phases
     var timeContexts = gardenState.timeContexts;
     var weatherContexts = gardenState.weatherContexts;
     var seasonContexts = gardenState.seasonContexts;
 
     ['Morning', 'Midday', 'Evening', 'Night'].forEach(function(phase) {
       var arr = timeContexts[phase];
-      if (arr && arr.length >= 2 && arr.length <= 3) {
+      if (arr && arr.length >= 5) {
         for (var ti = 0; ti < arr.length; ti++) {
           if (typeof arr[ti] !== 'string' || arr[ti].trim().length === 0) {
             problems.push('timeContexts["' + phase + '"][' + ti + '] is not a non-empty string.');
@@ -8824,7 +8824,7 @@ export async function checks() {
 
     ['Clear', 'Overcast', 'Light Drizzle'].forEach(function(phase) {
       var arr = weatherContexts[phase];
-      if (arr && arr.length >= 2 && arr.length <= 3) {
+      if (arr && arr.length >= 5) {
         for (var ti = 0; ti < arr.length; ti++) {
           if (typeof arr[ti] !== 'string' || arr[ti].trim().length === 0) {
             problems.push('weatherContexts["' + phase + '"][' + ti + '] is not a non-empty string.');
@@ -8840,7 +8840,7 @@ export async function checks() {
 
     ['Spring', 'Summer', 'Autumn', 'Winter'].forEach(function(phase) {
       var arr = seasonContexts[phase];
-      if (arr && arr.length >= 2 && arr.length <= 3) {
+      if (arr && arr.length >= 5) {
         for (var ti = 0; ti < arr.length; ti++) {
           if (typeof arr[ti] !== 'string' || arr[ti].trim().length === 0) {
             problems.push('seasonContexts["' + phase + '"][' + ti + '] is not a non-empty string.');
