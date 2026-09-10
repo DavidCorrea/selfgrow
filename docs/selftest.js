@@ -559,8 +559,8 @@ export async function checks() {
 
       // Minimum visible scale check (issue #542): non-fully-grown plants must be >= 0.15
       if (typeof plant.isFullyGrown === 'function' && !plant.isFullyGrown()) {
-        if (s < 0.149) {
-          problems.push('Plant scale is ' + s.toFixed(4) + ' — below minimum visible scale of 0.15 for a growing plant (issue #542).');
+        if (s < 0.349) {
+          problems.push('Plant scale is ' + s.toFixed(4) + ' — below minimum visible scale of 0.35 for a growing plant (issue #661).');
         }
       }
     }
