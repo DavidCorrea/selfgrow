@@ -9885,5 +9885,92 @@ export async function checks() {
     }
   }
 
+  /* ---------- Firefly pulse synchronization description checks (issue #676) ---------- */
+  // Verify the description updater function, suffixes, and composition logic
+  // for the firefly sync sentence that appears during Night.
+  {
+    const gs676 = window.__gardenState;
+    if (!gs676) {
+      problems.push('window.__gardenState not set — cannot verify firefly sync description (issue #676).');
+    } else {
+      // Test 1: FIREFLY_SYNC_SUFFIXES must exist with at least 2 phrasings
+      if (!gs676.FIREFLY_SYNC_SUFFIXES || !Array.isArray(gs676.FIREFLY_SYNC_SUFFIXES)) {
+        problems.push('FIREFLY_SYNC_SUFFIXES is missing or not an array (issue #676).');
+      } else if (gs676.FIREFLY_SYNC_SUFFIXES.length < 2) {
+        problems.push('FIREFLY_SYNC_SUFFIXES has ' + gs676.FIREFLY_SYNC_SUFFIXES.length + ' entries, expected at least 2 (issue #676).');
+      } else {
+        // Verify each suffix is a non-empty string
+        gs676.FIREFLY_SYNC_SUFFIXES.forEach(function(suffix, i) {
+          if (typeof suffix !== 'string' || suffix.trim().length === 0) {
+            problems.push('FIREFLY_SYNC_SUFFIXES[' + i + '] is not a non-empty string (issue #676).');
+          }
+        });
+      }
+
+      // Test 2: updateFireflySyncDescription must be a function
+      if (typeof gs676.updateFireflySyncDescription !== 'function') {
+        problems.push('updateFireflySyncDescription is not a function — firefly sync description updater missing (issue #676).');
+      } else {
+        // Test 3: The updater source must guard against prefers-reduced-motion
+        // We verify by checking the function string contains the guard
+        var fnStr = gs676.updateFireflySyncDescription.toString();
+        if (fnStr.indexOf('prefers-reduced-motion') === -1) {
+          problems.push('updateFireflySyncDescription does not guard against prefers-reduced-motion — expected a check for the reduced motion preference (issue #676).');
+        }
+
+        // Test 4: The updater must include a dayNight phase check for Night
+        if (fnStr.indexOf('0.75') === -1 && fnStr.indexOf('Night') === -1) {
+          problems.push('updateFireflySyncDescription does not check for Night phase — expected a guard for t >= 0.75 (issue #676).');
+        }
+      }
+
+      // Test 5: Verify the growing-description is being composed correctly
+      // by checking that the updater uses the same strip/compose pattern as other layers.
+      // We check for the presence of stripSuffixes or similar suffix manipulation.
+      if (typeof gs676.updateFireflySyncDescription === 'function') {
+        var fnStr2 = gs676.updateFireflySyncDescription.toString();
+        if (fnStr2.indexOf('stripSuffixes') === -1 && fnStr2.indexOf('BUTTERFLY_SUFFIXES') === -1) {
+          problems.push('updateFireflySyncDescription does not interact with butterfly suffix composition — expected the sync sentence to sit before the butterfly suffix (issue #676).');
+        }
+        if (fnStr2.indexOf('growing-description') === -1 && fnStr2.indexOf('growingDescription') === -1) {
+          problems.push('updateFireflySyncDescription does not reference the growing-description element (issue #676).');
+        }
+      }
+
+      // Test 6: Verify the fall-below debounce mechanism exists
+      // Look for a threshold of 3 seconds or similar removal debounce
+      if (typeof gs676.updateFireflySyncDescription === 'function') {
+        var fnStr3 = gs676.updateFireflySyncDescription.toString();
+        // Check for some form of debounce / timestamp tracking
+        if (fnStr3.indexOf('3000') === -1 && fnStr3.indexOf('debounce') === -1 && fnStr3.indexOf('FallBelow') === -1 && fnStr3.indexOf('fallBelow') === -1) {
+          // The 3000 may appear differently; check for the concept
+          if (fnStr3.indexOf('Date.now') === -1 && fnStr3.indexOf('performance.now') === -1) {
+            problems.push('updateFireflySyncDescription appears to lack a debounce mechanism for removing the sync sentence — expected a 3-second debounce before removal (issue #676).');
+          }
+        }
+      }
+
+      // Test 7: Verify getSyncState includes groupIndex (needed for per-group counting)
+      const fireflies676 = gs676.fireflies;
+      if (fireflies676 && typeof fireflies676.getSyncState === 'function') {
+        var syncState676 = fireflies676.getSyncState();
+        if (syncState676 && syncState676.length > 0) {
+          var hasGroupIndex = syncState676.some(function(s) { return typeof s.groupIndex === 'number'; });
+          if (!hasGroupIndex) {
+            problems.push('getSyncState() entries do not include groupIndex — needed for per-group sync counting (issue #676).');
+          }
+          // Verify groupIndex values are valid (within expected range)
+          syncState676.forEach(function(s, i) {
+            if (typeof s.groupIndex === 'number') {
+              if (s.groupIndex < 0 || s.groupIndex > 10) {
+                problems.push('getSyncState()[' + i + '] groupIndex is ' + s.groupIndex + ', expected a valid group index (issue #676).');
+              }
+            }
+          });
+        }
+      }
+    }
+  }
+
   return problems;
 }
