@@ -440,7 +440,8 @@ export function createFireflies(scene) {
             phaseOffset: dd.phaseOffset,
             originalPhaseOffset: dd.originalPhaseOffset,
             syncActive: dd.syncActive,
-            syncPhaseResidual: dd.syncPhaseResidual
+            syncPhaseResidual: dd.syncPhaseResidual,
+            groupIndex: gi
           });
         }
       }

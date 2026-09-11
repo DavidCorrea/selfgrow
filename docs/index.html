@@ -621,7 +621,8 @@
       timeOfDay: { lastPhase: '', lastChangeTime: performance.now(), variantIndex: 0 },
       weather: { lastPhase: '', lastChangeTime: performance.now(), variantIndex: 0 },
       season: { lastPhase: '', lastChangeTime: performance.now(), variantIndex: 0 },
-      fireflyProximity: { lastPhase: '', lastChangeTime: performance.now(), variantIndex: 0 }
+      fireflyProximity: { lastPhase: '', lastChangeTime: performance.now(), variantIndex: 0 },
+      fireflySync: { lastPhase: '', lastChangeTime: performance.now(), variantIndex: 0 }
     };
 
     function timeContextFor(phase) {
@@ -985,6 +986,18 @@
       ' The butterfly sways near the fireflies, their tiny lights pulsing warmly.'
     ];
 
+    /* Firefly pulse synchronization description suffixes (issue #676).
+     * During Night when nearby fireflies synchronise their pulse phases,
+     * a brief sentence is appended to the growing description before the
+     * butterfly suffix. Stripped when sync dissipates for 3+ seconds.
+     * Disabled under prefers-reduced-motion.
+     */
+    const FIREFLY_SYNC_SUFFIXES = [
+      ' The fireflies\' pulses drift into sync, their light moving as one.',
+      ' The fireflies\' lights pulse together, their rhythm settling into a shared beat.',
+      ' The fireflies blink in quiet unison, their tiny lights breathing together.'
+    ];
+
     /* Sprout proximity suffix (issue #629): butterfly drifts toward germinated sprouts in spring */
     const SPROUT_PROXIMITY_SUFFIXES = [
       ' The butterfly drifts curiously near the tiny new shoots.',
@@ -1088,6 +1101,141 @@
       return ' A small butterfly drifts at the edge of the garden.';
     }
 
+    /* Firefly pulse synchronization description updater (issue #676).
+     * During Night when at least 3 firefly dots from the same plant group
+     * have syncActive=true, appends a varied sentence to the growing
+     * description before the butterfly suffix. Removes the sentence when
+     * fewer than 2 synced dots persist for 3+ consecutive seconds.
+     * Disabled entirely under prefers-reduced-motion.
+     */
+    let lastFireflySyncText = '';
+    let fireflySyncFallBelowTimestamp = 0;
+    const FIREFLY_SYNC_DEBOUNCE_MS = 3000;
+
+    function updateFireflySyncDescription() {
+      /* Early return under prefers-reduced-motion */
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+      /* Only active during Night phase (t >= 0.75) */
+      const dayNight = window.__gardenState && window.__gardenState.dayNight;
+      if (!dayNight || typeof dayNight.getCycleProgress !== 'function') return;
+      const t = dayNight.getCycleProgress();
+      if (t < 0.75 || t >= 1.0) return;
+
+      /* Read firefly sync state */
+      const fireflies = window.__gardenState && window.__gardenState.fireflies;
+      if (!fireflies || typeof fireflies.getSyncState !== 'function') return;
+      const syncState = fireflies.getSyncState();
+
+      /* Count synced dots per group */
+      const syncCounts = {};
+      for (let i = 0; i < syncState.length; i++) {
+        const s = syncState[i];
+        if (typeof s.groupIndex === 'number') {
+          if (!syncCounts[s.groupIndex]) {
+            syncCounts[s.groupIndex] = { total: 0, synced: 0 };
+          }
+          syncCounts[s.groupIndex].total++;
+          if (s.syncActive) syncCounts[s.groupIndex].synced++;
+        }
+      }
+
+      /* Check if any group has >= 3 synced dots */
+      let hasSync = false;
+      for (const gi in syncCounts) {
+        if (syncCounts[gi].synced >= 3) {
+          hasSync = true;
+          break;
+        }
+      }
+
+      /* Count total synced dots across all groups for removal threshold */
+      let totalSynced = 0;
+      for (let i = 0; i < syncState.length; i++) {
+        if (syncState[i].syncActive) totalSynced++;
+      }
+
+      const el = document.getElementById('growing-description');
+      if (!el) return;
+
+      const now = Date.now();
+
+      if (hasSync) {
+        /* Reset fall-below timestamp — we have sync */
+        fireflySyncFallBelowTimestamp = 0;
+
+        /* Find and save butterfly suffix (outermost layer) */
+        let butterflySuffix = '';
+        const allButterflySuffixes = BUTTERFLY_SUFFIXES;
+        for (const suffix of allButterflySuffixes) {
+          if (el.textContent.endsWith(suffix)) {
+            butterflySuffix = suffix;
+            break;
+          }
+        }
+
+        /* Strip butterfly suffix to expose firefly sync layer */
+        const withoutButterfly = butterflySuffix
+          ? el.textContent.slice(0, -butterflySuffix.length)
+          : el.textContent;
+
+        /* Strip any existing firefly sync suffix */
+        const withoutSync = stripSuffixes(withoutButterfly, FIREFLY_SYNC_SUFFIXES);
+
+        /* Cycle variant (firefly sync variant) */
+        const syncVariantState = _variantState.fireflySync;
+        if (syncVariantState.lastPhase !== 'active' || now - syncVariantState.lastChangeTime >= VARIANT_CYCLE_MS) {
+          syncVariantState.lastPhase = 'active';
+          syncVariantState.lastChangeTime = now;
+          syncVariantState.variantIndex = (syncVariantState.variantIndex + 1) % FIREFLY_SYNC_SUFFIXES.length;
+        }
+
+        const syncSuffix = FIREFLY_SYNC_SUFFIXES[syncVariantState.variantIndex];
+        const composed = withoutSync + syncSuffix + butterflySuffix;
+
+        if (composed !== lastFireflySyncText) {
+          lastFireflySyncText = composed;
+          el.textContent = composed;
+        }
+      } else {
+        /* Sync fell below threshold — check debounce timer */
+        if (totalSynced < 2) {
+          if (fireflySyncFallBelowTimestamp === 0) {
+            fireflySyncFallBelowTimestamp = now;
+          } else if (now - fireflySyncFallBelowTimestamp >= FIREFLY_SYNC_DEBOUNCE_MS) {
+            /* Remove the sync sentence */
+            let butterflySuffix = '';
+            const allButterflySuffixes = BUTTERFLY_SUFFIXES;
+            for (const suffix of allButterflySuffixes) {
+              if (el.textContent.endsWith(suffix)) {
+                butterflySuffix = suffix;
+                break;
+              }
+            }
+
+            const withoutButterfly = butterflySuffix
+              ? el.textContent.slice(0, -butterflySuffix.length)
+              : el.textContent;
+
+            const withoutSync = stripSuffixes(withoutButterfly, FIREFLY_SYNC_SUFFIXES);
+            const composed = withoutSync + butterflySuffix;
+
+            if (composed !== lastFireflySyncText) {
+              lastFireflySyncText = composed;
+              el.textContent = composed;
+            }
+
+            /* Reset variant state */
+            _variantState.fireflySync.lastPhase = 'inactive';
+            fireflySyncFallBelowTimestamp = 0;
+          }
+        } else {
+          /* Went back above 2 synced dots — reset timer */
+          fireflySyncFallBelowTimestamp = 0;
+        }
+      }
+    }
+
     let lastButterflyText = '';
     function updateButterflyDescription() {
       const el = document.getElementById('growing-description');
@@ -1146,8 +1294,10 @@
       checkButterflyFireflyProximity,
       checkButterflySproutProximity,
       FIREFLY_PROXIMITY_SUFFIXES,
+      FIREFLY_SYNC_SUFFIXES,
       SPROUT_PROXIMITY_SUFFIXES,
       chooseFireflyProximitySuffix,
+      updateFireflySyncDescription,
       updateAudioWeather,
       updateWeatherDescription,
       weatherContexts: WEATHER_CONTEXTS,
@@ -1364,6 +1514,9 @@
 
     /* Poll the season display every ~1s and update season-aware descriptions */
     setInterval(updateSeasonDescription, 1000);
+
+    /* Poll the firefly sync state every ~1s and update sync description during Night */
+    setInterval(updateFireflySyncDescription, 1000);
 
     /* --- Periodic visitor presence acknowledgment (issue #596):
      * Runs a randomized timer (30-60s delay) that picks a phrase
