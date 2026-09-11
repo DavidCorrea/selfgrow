@@ -1005,6 +1005,11 @@
       ' The butterfly hovers briefly above the tiny shoots pushing through the soil.'
     ];
 
+    /* Leaf tremble suffix (issue #675): butterfly brushes past a leaf during idle flight. */
+    const LEAF_TREMBLE_SUFFIXES = [
+      ' A passing butterfly brushes a leaf, setting it trembling.'
+    ];
+
     const BUTTERFLY_SUFFIXES = [
       ' A small butterfly drifts at the edge of the garden.',
       ' The butterfly has taken shelter from the drizzle.',
@@ -1236,6 +1241,92 @@
       }
     }
 
+    /* Leaf tremble description updater (issue #675).
+     * When the butterfly brushes past a leaf during idle flight (creature state shows
+     * active leaf trembles), appends a brief sentence to the growing-description
+     * before the butterfly suffix. Strips the sentence within 1.5s of the tremble
+     * ending. Disabled under prefers-reduced-motion.
+     *
+     * Composition order: base + seasonCtx + timeCtx + weatherCtx + trembleSuffix + butterflySuffix.
+     */
+    let lastLeafTrembleText = '';
+    let leafTrembleDebounceStart = 0;
+    const LEAF_TREMBLE_DEBOUNCE_MS = 1500;
+
+    function updateLeafTrembleDescription() {
+      /* Early return under prefers-reduced-motion — no leaf tremble occurs */
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+      const creature = window.__gardenState && window.__gardenState.creature;
+      if (!creature || typeof creature.getLeafTrembles !== 'function') return;
+
+      const trembles = creature.getLeafTrembles();
+      const el = document.getElementById('growing-description');
+      if (!el) return;
+
+      const now = Date.now();
+
+      if (trembles.length > 0) {
+        /* Reset debounce — tremble is active */
+        leafTrembleDebounceStart = 0;
+
+        /* Find and save butterfly suffix (outermost layer) */
+        let butterflySuffix = '';
+        const allButterflySuffixes = BUTTERFLY_SUFFIXES;
+        for (const suffix of allButterflySuffixes) {
+          if (el.textContent.endsWith(suffix)) {
+            butterflySuffix = suffix;
+            break;
+          }
+        }
+
+        /* Strip butterfly suffix to expose inner layers */
+        const withoutButterfly = butterflySuffix
+          ? el.textContent.slice(0, -butterflySuffix.length)
+          : el.textContent;
+
+        /* Strip any existing tremble suffix */
+        const withoutTremble = stripSuffixes(withoutButterfly, LEAF_TREMBLE_SUFFIXES);
+
+        const trembleSuffix = LEAF_TREMBLE_SUFFIXES[0];
+        const composed = withoutTremble + trembleSuffix + butterflySuffix;
+
+        if (composed !== lastLeafTrembleText) {
+          lastLeafTrembleText = composed;
+          el.textContent = composed;
+        }
+      } else {
+        /* No trembles active — check debounce before removing sentence */
+        if (leafTrembleDebounceStart === 0) {
+          leafTrembleDebounceStart = now;
+        } else if (now - leafTrembleDebounceStart >= LEAF_TREMBLE_DEBOUNCE_MS) {
+          /* Remove tremble suffix */
+          let butterflySuffix = '';
+          const allButterflySuffixes = BUTTERFLY_SUFFIXES;
+          for (const suffix of allButterflySuffixes) {
+            if (el.textContent.endsWith(suffix)) {
+              butterflySuffix = suffix;
+              break;
+            }
+          }
+
+          const withoutButterfly = butterflySuffix
+            ? el.textContent.slice(0, -butterflySuffix.length)
+            : el.textContent;
+
+          const withoutTremble = stripSuffixes(withoutButterfly, LEAF_TREMBLE_SUFFIXES);
+          const composed = withoutTremble + butterflySuffix;
+
+          if (composed !== lastLeafTrembleText) {
+            lastLeafTrembleText = composed;
+            el.textContent = composed;
+          }
+
+          leafTrembleDebounceStart = 0;
+        }
+      }
+    }
+
     let lastButterflyText = '';
     function updateButterflyDescription() {
       const el = document.getElementById('growing-description');
@@ -1298,6 +1389,8 @@
       SPROUT_PROXIMITY_SUFFIXES,
       chooseFireflyProximitySuffix,
       updateFireflySyncDescription,
+      updateLeafTrembleDescription,
+      LEAF_TREMBLE_SUFFIXES,
       updateAudioWeather,
       updateWeatherDescription,
       weatherContexts: WEATHER_CONTEXTS,
@@ -1517,6 +1610,9 @@
 
     /* Poll the firefly sync state every ~1s and update sync description during Night */
     setInterval(updateFireflySyncDescription, 1000);
+
+    /* Poll the leaf tremble state every ~500ms and update leaf-tremble description (issue #675) */
+    setInterval(updateLeafTrembleDescription, 500);
 
     /* --- Periodic visitor presence acknowledgment (issue #596):
      * Runs a randomized timer (30-60s delay) that picks a phrase

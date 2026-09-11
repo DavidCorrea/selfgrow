@@ -9972,5 +9972,89 @@ export async function checks() {
     }
   }
 
+  /* ---------- Leaf tremble description checks (issue #675) ---------- */
+  // Verify the description updater function, suffixes, and composition logic
+  // for the leaf tremble sentence that appears during butterfly brush events.
+  {
+    const gs675 = window.__gardenState;
+    if (!gs675) {
+      problems.push('window.__gardenState not set — cannot verify leaf tremble description (issue #675).');
+    } else {
+      // Test 1: LEAF_TREMBLE_SUFFIXES must exist with at least 1 phrasing
+      if (!gs675.LEAF_TREMBLE_SUFFIXES || !Array.isArray(gs675.LEAF_TREMBLE_SUFFIXES)) {
+        problems.push('LEAF_TREMBLE_SUFFIXES is missing or not an array (issue #675).');
+      } else if (gs675.LEAF_TREMBLE_SUFFIXES.length < 1) {
+        problems.push('LEAF_TREMBLE_SUFFIXES has ' + gs675.LEAF_TREMBLE_SUFFIXES.length + ' entries, expected at least 1 (issue #675).');
+      } else {
+        // Verify each suffix is a non-empty string
+        gs675.LEAF_TREMBLE_SUFFIXES.forEach(function(suffix, i) {
+          if (typeof suffix !== 'string' || suffix.trim().length === 0) {
+            problems.push('LEAF_TREMBLE_SUFFIXES[' + i + '] is not a non-empty string (issue #675).');
+          }
+        });
+      }
+
+      // Test 2: updateLeafTrembleDescription must be a function
+      if (typeof gs675.updateLeafTrembleDescription !== 'function') {
+        problems.push('updateLeafTrembleDescription is not a function — leaf tremble description updater missing (issue #675).');
+      } else {
+        // Test 3: The updater source must guard against prefers-reduced-motion
+        var fnStr675 = gs675.updateLeafTrembleDescription.toString();
+        if (fnStr675.indexOf('prefers-reduced-motion') === -1) {
+          problems.push('updateLeafTrembleDescription does not guard against prefers-reduced-motion — expected a check for the reduced motion preference (issue #675).');
+        }
+
+        // Test 4: The updater must reference getLeafTrembles
+        if (fnStr675.indexOf('getLeafTrembles') === -1) {
+          problems.push('updateLeafTrembleDescription does not reference getLeafTrembles — expected to read leaf tremble state from creature (issue #675).');
+        }
+
+        // Test 5: Verify the updater uses the same strip/compose pattern as other layers
+        if (fnStr675.indexOf('stripSuffixes') === -1 && fnStr675.indexOf('BUTTERFLY_SUFFIXES') === -1) {
+          problems.push('updateLeafTrembleDescription does not interact with butterfly suffix composition — expected the tremble sentence to sit before the butterfly suffix (issue #675).');
+        }
+        if (fnStr675.indexOf('growing-description') === -1 && fnStr675.indexOf('growingDescription') === -1) {
+          problems.push('updateLeafTrembleDescription does not reference the growing-description element (issue #675).');
+        }
+
+        // Test 6: Verify the debounce mechanism exists for removal
+        if (fnStr675.indexOf('1500') === -1 && fnStr675.indexOf('LEAF_TREMBLE_DEBOUNCE') === -1) {
+          if (fnStr675.indexOf('debounce') === -1 && fnStr675.indexOf('Date.now') === -1 && fnStr675.indexOf('performance.now') === -1) {
+            problems.push('updateLeafTrembleDescription appears to lack a debounce mechanism for removing the tremble sentence — expected a 1.5s debounce before removal (issue #675).');
+          }
+        }
+      }
+
+      // Test 7: Verify creature.getLeafTrembles exists (needed for detection)
+      const creature675 = gs675.creature;
+      if (!creature675) {
+        problems.push('window.__gardenState.creature is not set — cannot verify leaf tremble detection source (issue #675).');
+      } else if (typeof creature675.getLeafTrembles !== 'function') {
+        problems.push('creature.getLeafTrembles is not a function — leaf tremble state accessor missing (issue #675).');
+      }
+
+      // Test 8: Verify the tremble sentence composes before the butterfly suffix
+      // by checking that getLeafTrembles returns an array with expected shape
+      if (creature675 && typeof creature675.getLeafTrembles === 'function') {
+        var leafTrembles675 = creature675.getLeafTrembles();
+        if (!Array.isArray(leafTrembles675)) {
+          problems.push('creature.getLeafTrembles() did not return an array — got ' + typeof leafTrembles675 + ' (issue #675).');
+        } else {
+          leafTrembles675.forEach(function(t, i) {
+            if (typeof t.elapsed !== 'number') {
+              problems.push('creature.getLeafTrembles()[' + i + '] missing elapsed (issue #675).');
+            }
+            if (typeof t.startTime !== 'number') {
+              problems.push('creature.getLeafTrembles()[' + i + '] missing startTime (issue #675).');
+            }
+            if (!t.leaf) {
+              problems.push('creature.getLeafTrembles()[' + i + '] missing leaf reference (issue #675).');
+            }
+          });
+        }
+      }
+    }
+  }
+
   return problems;
 }
