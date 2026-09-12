@@ -10194,5 +10194,37 @@ export async function checks() {
     }
   }
 
+  /* ---------- Bloom attraction drift checks (issue #680) ---------- */
+  // Verify firefly state exposes bloom attraction constants with correct values.
+  // The attraction perturbs firefly drift toward blooming flowers during Night
+  // phase, up to 10% of DRIFT_RADIUS (0.015 units) within 0.4 units range.
+  if (gardenState) {
+    var ffState680 = gardenState.fireflies;
+
+    if (!ffState680) {
+      problems.push('Firefly state not found via __gardenState.fireflies — bloom attraction constants cannot be verified directly (issue #680).');
+    } else {
+      // Verify bloom attraction constants are exposed
+      if (typeof ffState680.bloomAttractRadius !== 'number') {
+        problems.push('ffState.bloomAttractRadius is missing or not a number — expected ' + 0.4 + ' (issue #680).');
+      } else if (ffState680.bloomAttractRadius !== 0.4) {
+        problems.push('ffState.bloomAttractRadius is ' + ffState680.bloomAttractRadius + ', expected 0.4 (issue #680).');
+      }
+
+      if (typeof ffState680.bloomAttractMax !== 'number') {
+        problems.push('ffState.bloomAttractMax is missing or not a number — expected 0.015 (10% of DRIFT_RADIUS=0.15) (issue #680).');
+      } else if (Math.abs(ffState680.bloomAttractMax - 0.015) > 0.0001) {
+        problems.push('ffState.bloomAttractMax is ' + ffState680.bloomAttractMax + ', expected 0.015 (10% of DRIFT_RADIUS=0.15) (issue #680).');
+      }
+
+      // Verify driftRadius is 0.15 (the base for the 10% computation)
+      if (typeof ffState680.driftRadius !== 'number') {
+        problems.push('ffState.driftRadius is missing or not a number — expected 0.15 (issue #680).');
+      } else if (Math.abs(ffState680.driftRadius - 0.15) > 0.0001) {
+        problems.push('ffState.driftRadius is ' + ffState680.driftRadius + ', expected 0.15 (issue #680).');
+      }
+    }
+  }
+
   return problems;
 }

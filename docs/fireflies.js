@@ -123,6 +123,10 @@ const WIND_DRIFT_SCALE = 0.02;      // scale of ground ripple wind perturbation 
 const SPROUT_GLOW_BOOST_RADIUS = 0.3;    // units — max distance for sprout proximity boost
 const SPROUT_GLOW_BOOST_MAX = 0.15;       // max 15% brightness boost at zero distance
 
+/* --- Bloom attraction drift (issue #680) --- */
+const BLOOM_ATTRACT_RADIUS = 0.4;         // units — max distance for blooming flower attraction
+const BLOOM_ATTRACT_MAX = DRIFT_RADIUS * 0.1;  // 0.015 — max perturbation toward bloom (10% of DRIFT_RADIUS)
+
 /* --- Firefly-to-plant surface glow (issue #613) --- */
 const WARM_GLOW_COLOR = 0xccdd88;     // warm yellow-green tint for plant surface glow
 const MAX_GLOW_SHIFT = 0.10;           // ≤10% saturation shift from base colour (barely perceptible)
@@ -422,6 +426,9 @@ export function createFireflies(scene) {
     /** Sprout proximity glow boost constants (issue #646) */
     sproutGlowBoostRadius: SPROUT_GLOW_BOOST_RADIUS,
     sproutGlowBoostMax: SPROUT_GLOW_BOOST_MAX,
+    /** Bloom attraction drift constants (issue #680) */
+    bloomAttractRadius: BLOOM_ATTRACT_RADIUS,
+    bloomAttractMax: BLOOM_ATTRACT_MAX,
     /** Pulse synchronization configuration constants (issue #639) */
     syncConstants: {
       convergeRadius: SYNC_CONVERGE_RADIUS,
@@ -647,6 +654,48 @@ export function createFireflies(scene) {
           // Apply vertical lift offset for dusk emergence / dawn settling
           pos[i3 + 1] = dd.baseY + driftY + liftOffset;
           pos[i3 + 2] = dd.baseZ + driftZ + windOffsetZ;
+
+          /* --- Bloom attraction drift perturbation (issue #680) --- */
+          // During Night phase, firefly dots within BLOOM_ATTRACT_RADIUS of a
+          // blooming flower experience a subtle position perturbation toward the
+          // flower center — up to BLOOM_ATTRACT_MAX (10% of DRIFT_RADIUS) with
+          // smooth distance falloff. Barely perceptible in isolation; adds to the
+          // ecosystem feel. Disabled under prefers-reduced-motion.
+          if (t >= 0.75 && t < 1.0) {
+            const gs = window.__gardenState;
+            if (gs) {
+              var plantRefs = ['plant', 'plant2'];
+              for (var pri = 0; pri < plantRefs.length; pri++) {
+                var plantObj = gs[plantRefs[pri]];
+                if (!plantObj || !plantObj.flower || typeof plantObj.flower.getPhase !== 'function') continue;
+                if (plantObj.flower.getPhase() !== 'bloom') continue;
+                var flowerPos = plantObj.flower.group.position;
+                if (!flowerPos) continue;
+
+                var fx = flowerPos.x;
+                var fy = flowerPos.y;
+                var fz = flowerPos.z;
+                var dx = pos[i3] - fx;
+                var dy = pos[i3 + 1] - fy;
+                var dz = pos[i3 + 2] - fz;
+                var dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+                if (dist <= BLOOM_ATTRACT_RADIUS && dist > 0.0001) {
+                  // Smooth distance falloff: 1 at center, 0 at edge
+                  var falloff = 1 - (dist / BLOOM_ATTRACT_RADIUS);
+                  // Smoothstep: 3t^2 - 2t^3 for even gentler falloff near edge
+                  var smoothFalloff = falloff * falloff * (3 - 2 * falloff);
+                  var amount = BLOOM_ATTRACT_MAX * smoothFalloff;
+
+                  // Direction from dot toward flower center (normalized)
+                  var invDist = 1 / dist;
+                  pos[i3] += (fx - pos[i3]) * invDist * amount;
+                  pos[i3 + 1] += (fy - pos[i3 + 1]) * invDist * amount;
+                  pos[i3 + 2] += (fz - pos[i3 + 2]) * invDist * amount;
+                }
+              }
+            }
+          }
 
           /* --- Sprout proximity glow boost (issue #646) --- */
           // During Night phase in Spring, fireflies within 0.3 units of a
