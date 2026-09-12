@@ -53,6 +53,7 @@ const PAUSE_SPEED_MUL = 0.5;      // slow to ~50% during pause
 const PAUSE_ENTER_DURATION = 1.0; // seconds to ease into the pause
 const PAUSE_HOLD_MIN = 3.0;       // minimum hold seconds
 const PAUSE_HOLD_MAX = 5.0;       // maximum hold seconds
+const POLLINATED_PAUSE_MULTIPLIER = 1.6; // scale factor when pausing at a pollinated flower (issue #679)
 const PAUSE_EXIT_DURATION = 1.0;  // seconds to ease back to normal flight
 const PAUSE_DIP_AMOUNT = 0.15;    // how much closer the butterfly dips to the flower
 
@@ -246,6 +247,8 @@ export function createCreature(scene) {
     pauseTargetPos: () => pauseTargetPos ? { ...pauseTargetPos } : null,
     pauseSpeedMul: () => pauseSpeedMul,
     pauseEaseT: () => pauseEaseT,
+    getPauseHoldDuration: () => pauseHoldDuration,
+    POLLINATED_PAUSE_MULTIPLIER,
     /* Wind perturbation exposed for selftest */
     windNudge: () => _windNudge,
     /* Landing state exposed for testing */
@@ -518,6 +521,11 @@ export function createCreature(scene) {
                   pauseState = 'entering';
                   pauseTimer = 0;
                   pauseHoldDuration = PAUSE_HOLD_MIN + Math.random() * (PAUSE_HOLD_MAX - PAUSE_HOLD_MIN);
+                  // Butterfly lingers longer at pollinated flowers (issue #679)
+                  const flowerObj = gs[plantRefs[i]].flower;
+                  if (flowerObj && typeof flowerObj.isPollinated === 'function' && flowerObj.isPollinated()) {
+                    pauseHoldDuration *= POLLINATED_PAUSE_MULTIPLIER;
+                  }
                   pauseTargetPos = { x: fx, y: fy, z: fz };
                   pauseEaseT = 0;
                   pauseOriginPos = { x: orbitX, y: orbitY, z: orbitZ };

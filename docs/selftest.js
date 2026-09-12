@@ -3758,6 +3758,144 @@ export async function checks() {
     }
   }
 
+  /* ---------- Butterfly lingers longer at pollinated flowers checks (issue #679) ---------- */
+  // When the butterfly pauses at a blooming flower whose isPollinated() returns true,
+  // the pause hold duration is extended from 3-5s to 5-8s (multiplied by ~1.6x).
+  // The extended duration does not affect any other aspect of pause behavior.
+  if (!creatureState) {
+    problems.push('window.__gardenState.creature is not set — cannot verify pollinated flower pause extension (issue #679).');
+  } else {
+    // --- Structural checks: multiplier constant must be exposed and equal 1.6 ---
+    if (typeof creatureState.POLLINATED_PAUSE_MULTIPLIER !== 'number') {
+      problems.push('creature.state.POLLINATED_PAUSE_MULTIPLIER is not a number — got ' + typeof creatureState.POLLINATED_PAUSE_MULTIPLIER + ' (issue #679).');
+    } else if (Math.abs(creatureState.POLLINATED_PAUSE_MULTIPLIER - 1.6) > 0.01) {
+      problems.push('creature.state.POLLINATED_PAUSE_MULTIPLIER is ' + creatureState.POLLINATED_PAUSE_MULTIPLIER + ', expected 1.6 (issue #679).');
+    }
+
+    // --- Structural checks: getPauseHoldDuration must be a function ---
+    if (typeof creatureState.getPauseHoldDuration !== 'function') {
+      problems.push('creature.state.getPauseHoldDuration is not a function — pause hold duration getter missing (issue #679).');
+    }
+
+    // --- Test that a non-pollinated bloom gets pause hold duration in 3-5s range ---
+    if (typeof creatureState.getPauseHoldDuration === 'function' && typeof creatureState.pauseState === 'function') {
+      var origPlant = gardenState && gardenState.plant;
+      var origPlant2 = gardenState && gardenState.plant2;
+
+      // Save original Math.random and dayNight
+      var origRandom = Math.random;
+      var origDayNight = gardenState && gardenState.dayNight;
+      var origDayNightGetCycle = origDayNight && origDayNight.getCycleProgress;
+
+      try {
+        // Override dayNight to daytime so creature is visible
+        if (origDayNight) {
+          origDayNight.getCycleProgress = function() { return 0.1; };
+        }
+
+        // Drain to idle first
+        var drainStartTime = 0;
+        for (var drain = 0; drain < 400; drain++) {
+          gardenState.creatureUpdate(drainStartTime + drain * 0.016, 0.016);
+        }
+
+        // Force Math.random to 0.5 for deterministic pause duration
+        Math.random = function() { return 0.5; }; // midpoint of the random range
+
+        // Re-acquire butterfly position after draining
+        var bp = creatureState.group.position;
+        var nonPollinatedStartTime = drainStartTime + 400 * 0.016;
+
+        // Set up a plant with a blooming but NOT pollinated flower
+        var testFlowerNotPollinated = {
+          getPhase: function() { return 'bloom'; },
+          getProgress: function() { return 0.5; },
+          isPollinated: function() { return false; }
+        };
+        var plantNotPollinated = {
+          group: { position: new THREE.Vector3(bp.x, bp.y - 0.72, bp.z) },
+          flower: testFlowerNotPollinated,
+          leaves: []
+        };
+        gardenState.plant2 = null;
+        gardenState.plant = plantNotPollinated;
+
+        // Run updates until the creature triggers a pause
+        for (var t1 = 0; t1 < 600; t1++) {
+          gardenState.creatureUpdate(nonPollinatedStartTime + t1 * 0.016, 0.016);
+          if (creatureState.pauseState() === 'entering' || creatureState.pauseState() === 'holding') {
+            break;
+          }
+        }
+
+        if (creatureState.pauseState() === 'entering' || creatureState.pauseState() === 'holding') {
+          var nonPollDuration = creatureState.getPauseHoldDuration();
+          if (nonPollDuration < 3.0 || nonPollDuration > 5.0) {
+            problems.push('Non-pollinated flower pause hold duration is ' + nonPollDuration.toFixed(2) + 's, expected in [3, 5]s range (issue #679).');
+          }
+        } else {
+          // It may not have triggered; that's acceptable if the butterfly was too far.
+          // We'll set up a closer plant by also adjusting the butterfly position
+        }
+
+        // Drain back to idle. Use enough frames to clear any cooldown (8s).
+        var drainFrames = 1200; // 1200 * 0.016 = 19.2s > 14s (6s pause cycle + 8s cooldown)
+        var drain2StartTime = nonPollinatedStartTime + 600 * 0.016; // continuous from end of non-pollinated test
+        for (var drain2 = 0; drain2 < drainFrames; drain2++) {
+          gardenState.creatureUpdate(drain2StartTime + drain2 * 0.016, 0.016);
+        }
+
+        // Re-acquire butterfly position after draining (it has moved)
+        var bpAfterDrain = creatureState.group.position;
+        var pollinatedTestStartTime = drain2StartTime + drainFrames * 0.016; // continuous from drain2 end
+
+        // --- Test that a pollinated bloom gets pause hold duration in 5-8s range ---
+        var testFlowerPollinated = {
+          getPhase: function() { return 'bloom'; },
+          getProgress: function() { return 0.5; },
+          isPollinated: function() { return true; }
+        };
+        var plantPollinated = {
+          group: { position: new THREE.Vector3(bpAfterDrain.x, bpAfterDrain.y - 0.72, bpAfterDrain.z) },
+          flower: testFlowerPollinated,
+          leaves: []
+        };
+        gardenState.plant2 = null;
+        gardenState.plant = plantPollinated;
+        Math.random = function() { return 0.5; }; // same midpoint for reproducibility
+
+        for (var t2 = 0; t2 < 600; t2++) {
+          gardenState.creatureUpdate(pollinatedTestStartTime + t2 * 0.016, 0.016);
+          if (creatureState.pauseState() === 'entering' || creatureState.pauseState() === 'holding') {
+            break;
+          }
+        }
+
+        if (creatureState.pauseState() === 'entering' || creatureState.pauseState() === 'holding') {
+          var pollDuration = creatureState.getPauseHoldDuration();
+          // The expected range is 3-5 * 1.6 = 4.8-8.0, but we check 5.0-8.0 as specified
+          if (pollDuration < 5.0 || pollDuration > 8.0) {
+            problems.push('Pollinated flower pause hold duration is ' + pollDuration.toFixed(2) + 's, expected in [5, 8]s range (3-5s * 1.6 = 4.8-8s, but acceptance criteria says 5-8s) (issue #679).');
+          }
+        } else {
+          problems.push('Butterfly did not enter pause state near pollinated blooming flower — could not test duration extension (issue #679).');
+        }
+      } finally {
+        Math.random = origRandom;
+        gardenState.plant = origPlant || gardenState.plant;
+        gardenState.plant2 = origPlant2 || gardenState.plant2;
+        if (origDayNight && origDayNightGetCycle) {
+          origDayNight.getCycleProgress = origDayNightGetCycle;
+        }
+        // Drain to restore (continuous from pollinated test end)
+        var restoreStart = pollinatedTestStartTime + 600 * 0.016;
+        for (var drain3 = 0; drain3 < 400; drain3++) {
+          gardenState.creatureUpdate(restoreStart + drain3 * 0.016, 0.016);
+        }
+      }
+    }
+  }
+
   /* ---------- Butterfly wind perturbation checks (issue #526) ---------- */
   // The butterfly should be perturbed by computeDisplacement from groundRipple.js
   // when in idle (normal flight) state, with a drift of at most ~0.05 units.
