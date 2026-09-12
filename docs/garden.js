@@ -76,6 +76,86 @@ export function initGarden(scene, initialProgress) {
     initialProgress: p1Progress
   });
 
+  /* If wintered stems were present in saved state, restore them (issue #652) */
+  if (initialProgress && initialProgress.winteredStems &&
+      initialProgress.winteredStems.positions && initialProgress.winteredStems.positions.length > 0) {
+    const wsData = initialProgress.winteredStems;
+    const winteredStemsState = [];
+
+    const winterStemMat = new THREE.MeshStandardMaterial({
+      color: 0x6a5a3a,
+      roughness: 0.8,
+      metalness: 0.0,
+      transparent: true,
+      opacity: 0.5
+    });
+
+    for (let wi = 0; wi < wsData.positions.length; wi++) {
+      const pos = wsData.positions[wi];
+      const leafGen = wsData.leafGenCounts[wi] || 1;
+
+      // Create a bare stem mesh
+      const stemGeo = new THREE.CylinderGeometry(0.003, 0.003, 0.03, 4);
+      const stemMat = winterStemMat.clone();
+      const stem = new THREE.Mesh(stemGeo, stemMat);
+      stem.position.set(pos.x, pos.y + 0.015, pos.z);
+      stem.castShadow = false;
+      scene.add(stem);
+
+      // Create a group for the wintered stem
+      const group = new THREE.Group();
+      group.position.set(pos.x, pos.y, pos.z);
+
+      winteredStemsState.push({
+        group: group,
+        stem: stem,
+        basePos: { x: pos.x, y: pos.y, z: pos.z },
+        leafGenCount: leafGen
+      });
+    }
+
+    // Attach winteredStems to groundSeeds state (create if needed)
+    if (!window.__gardenState.groundSeeds) {
+      window.__gardenState.groundSeeds = {
+        meshes: [],
+        basePositions: [],
+        count: 0,
+        leafGenCount: 0
+      };
+    }
+    window.__gardenState.groundSeeds.winteredStems = winteredStemsState;
+
+    // Also create corresponding sprout entries so spring regrowth can find them
+    const gs2 = window.__gardenState;
+    if (!gs2.groundSeeds.sprouts) {
+      gs2.groundSeeds.sprouts = [];
+    }
+    for (let wi = 0; wi < winteredStemsState.length; wi++) {
+      const ws = winteredStemsState[wi];
+      gs2.groundSeeds.sprouts.push({
+        group: ws.group,
+        stem: ws.stem,
+        leaves: [],
+        basePos: ws.basePos,
+        leafGenCount: ws.leafGenCount
+      });
+    }
+
+    // Mark DOM flags so the seasonal cycle won't re-append text
+    gs2.groundSeeds._winterStemDomUpdated = true;
+    gs2.groundSeeds._sproutDomUpdated = true;
+
+    // Update DOM to mention dormant stems
+    const growingDesc = document.getElementById('growing-description');
+    const plotDesc = document.getElementById('plot-description');
+    if (growingDesc && growingDesc.textContent.indexOf('Dormant bare stems') === -1) {
+      growingDesc.textContent += ' Dormant bare stems stand where established shoots grew last season.';
+    }
+    if (plotDesc && plotDesc.textContent.indexOf('Dormant bare stems') === -1) {
+      plotDesc.textContent += ' Dormant bare stems stand where established shoots grew last season.';
+    }
+  }
+
   /* If ground seeds were present in saved state, recreate them (issue #627) */
   if (initialProgress && initialProgress.groundSeeds) {
     const seedData = initialProgress.groundSeeds;
@@ -2165,9 +2245,11 @@ export function startSeasonalCycle(initialProgress) {
           }
         }
 
-        /* Autumn: sprouts from the previous cycle fade and are removed */
+        /* Autumn: first-generation sprouts (leafGen < 1) fade and are removed.
+         * Established sprouts (leafGen >= 1) shed their leaves and persist
+         * through winter as small bare stems (issue #652). */
         if (groundSeeds.sprouts && groundSeeds.sprouts.length > 0) {
-          // Fade sprouts out over the autumn season
+          // Fade all sprouts out over the autumn season
           const fadeT = Math.min(1, t * 1.5); // reach 0 opacity earlier in autumn
           const sproutOpacity = Math.max(0, 1 - fadeT);
           for (let si = 0; si < groundSeeds.sprouts.length; si++) {
@@ -2187,10 +2269,72 @@ export function startSeasonalCycle(initialProgress) {
             }
           }
 
-          // Remove sprouts when fully faded (near the end of autumn)
+          // Near the end of autumn, branch on leafGenCount
           if (t > 0.85 && groundSeeds.sprouts.length > 0) {
+            // For wintered stems storage
+            if (!groundSeeds.winteredStems) {
+              groundSeeds.winteredStems = [];
+            }
+
+            // Prepare a shared winter stem material (desaturated brown, reduced opacity)
+            const winterStemMat = new THREE.MeshStandardMaterial({
+              color: 0x6a5a3a,
+              roughness: 0.8,
+              metalness: 0.0,
+              transparent: true,
+              opacity: 0.5
+            });
+
+            const survivingSprouts = [];
+            const removedSprouts = [];
+
             for (let si = 0; si < groundSeeds.sprouts.length; si++) {
               const sp = groundSeeds.sprouts[si];
+              if (sp.leafGenCount >= 1) {
+                // Established sprout — shed leaves, keep stem as bare wintered stem
+                // Remove leaf meshes from the scene
+                if (sp.leaves) {
+                  for (let lj = 0; lj < sp.leaves.length; lj++) {
+                    const leaf = sp.leaves[lj];
+                    if (sp.group) sp.group.remove(leaf);
+                    leaf.geometry.dispose();
+                    leaf.material.dispose();
+                  }
+                }
+                sp.leaves = [];
+
+                // Recolour stem to desaturated brown, reduce opacity, scale down a bit
+                if (sp.stem) {
+                  const oldMat = sp.stem.material;
+                  sp.stem.material = winterStemMat.clone();
+                  sp.stem.material.color.setHex(0x6a5a3a);
+                  sp.stem.material.opacity = 0.5;
+                  oldMat.dispose();
+
+                  // Scale stem slightly shorter for winter look
+                  const stemScale = 0.5 + sp.leafGenCount * 0.1; // 0.6 for gen 1, 0.7 for gen 2
+                  sp.stem.scale.set(1, stemScale, 1);
+                  sp.stem.position.y = 0.015 * stemScale;
+                }
+
+                // Store reference in winteredStems array
+                groundSeeds.winteredStems.push({
+                  group: sp.group,
+                  stem: sp.stem,
+                  basePos: sp.basePos,
+                  leafGenCount: sp.leafGenCount
+                });
+
+                survivingSprouts.push(sp);
+              } else {
+                // First-generation sprout — remove as before
+                removedSprouts.push(sp);
+              }
+            }
+
+            // Remove first-generation sprouts from scene
+            for (let si = 0; si < removedSprouts.length; si++) {
+              const sp = removedSprouts[si];
               if (gs.scene && sp.group) {
                 gs.scene.remove(sp.group);
               }
@@ -2205,7 +2349,10 @@ export function startSeasonalCycle(initialProgress) {
                 }
               }
             }
-            groundSeeds.sprouts = [];
+
+            // Update groundSeeds.sprouts to only contain surviving established sprouts
+            // (they stay in the sprouts array but are leafless now, until spring regrows them)
+            groundSeeds.sprouts = survivingSprouts;
 
             // Remove sprout descriptions from DOM
             const growingDesc = document.getElementById('growing-description');
@@ -2240,9 +2387,122 @@ export function startSeasonalCycle(initialProgress) {
             }
           }
         }
+
+        /* Winter: show wintered stems (bare, desaturated, low opacity) */
+        if (groundSeeds.winteredStems && groundSeeds.winteredStems.length > 0) {
+          for (let wi = 0; wi < groundSeeds.winteredStems.length; wi++) {
+            const ws = groundSeeds.winteredStems[wi];
+            if (ws.stem) {
+              // Opacity stays ~0.4-0.6 over winter
+              ws.stem.material.opacity = 0.4 + t * 0.2;
+              // Desaturated colour
+              const baseBrown = new THREE.Color(0x6a5a3a);
+              const paleBrown = new THREE.Color(0x5a4a30);
+              ws.stem.material.color.copy(baseBrown).lerp(paleBrown, t);
+            }
+          }
+
+          // Update DOM during winter to mention dormant stems
+          if (t > 0.1 && !groundSeeds._winterStemDomUpdated) {
+            groundSeeds._winterStemDomUpdated = true;
+            const growingDesc = document.getElementById('growing-description');
+            const plotDesc = document.getElementById('plot-description');
+            const dormantText = ' Dormant bare stems stand where established shoots grew last season.';
+            if (growingDesc && growingDesc.textContent.indexOf('Dormant bare stems') === -1) {
+              growingDesc.textContent += dormantText;
+            }
+            if (plotDesc && plotDesc.textContent.indexOf('Dormant bare stems') === -1) {
+              plotDesc.textContent += dormantText;
+            }
+          }
+        }
       } else if (seasonName === 'Spring') {
-        /* Spring: seeds vanish after first 30% of the season has passed */
+        /* Spring: wintered stems regrow leaves before seeds germinate */
+        if (t < 0.15 && groundSeeds.winteredStems && groundSeeds.winteredStems.length > 0) {
+          // Wintered stems regrow leaves early in spring
+          for (let wi = 0; wi < groundSeeds.winteredStems.length; wi++) {
+            const ws = groundSeeds.winteredStems[wi];
+            // Find the corresponding sprout in groundSeeds.sprouts
+            const sprout = groundSeeds.sprouts.find(function(sp) {
+              return sp.group === ws.group;
+            });
+            if (sprout && sprout.leaves.length === 0) {
+              // Regrow leaf pairs — use the existing leaf-generation count
+              // to determine how many leaf pairs to regrow
+              // Start by creating the first leaf pair (as in createGerminatedSprout)
+              for (let lj = 0; lj < 2; lj++) {
+                const leafShape = new THREE.Shape();
+                leafShape.moveTo(0, 0);
+                leafShape.lineTo(0.008, 0.012);
+                leafShape.lineTo(-0.004, 0.008);
+                leafShape.closePath();
+                const leafGeo = new THREE.ShapeGeometry(leafShape);
+                const leafMat = new THREE.MeshStandardMaterial({
+                  color: 0x3a7a2a,
+                  roughness: 0.6,
+                  metalness: 0.0,
+                  transparent: true,
+                  opacity: 0
+                });
+                const leaf = new THREE.Mesh(leafGeo, leafMat);
+                leaf.position.y = 0.02 + (sprout.leaves.length + lj) * 0.005;
+                leaf.rotation.x = -0.3;
+                leaf.rotation.y = lj * 2.0;
+                leaf.castShadow = false;
+                sprout.group.add(leaf);
+                sprout.leaves.push(leaf);
+              }
+
+              // If the sprout had a second leaf pair before winter, regrow those too
+              if (sprout.leafGenCount >= 1) {
+                addSproutSecondLeafPair(sprout, { fadeIn: false });
+              }
+
+              // Restore stem scale and colour to normal
+              if (ws.stem) {
+                ws.stem.scale.set(1, 1, 1);
+                ws.stem.position.y = 0.015;
+                ws.stem.material.color.setHex(0x3a7a2a);
+                // Fade stem opacity in along with leaves
+                ws.stem.material.opacity = 0;
+              }
+            }
+          }
+
+          // Update DOM to mention returning shoots
+          if (t > 0.05 && !groundSeeds._returningShootsDomUpdated) {
+            groundSeeds._returningShootsDomUpdated = true;
+            const growingDesc = document.getElementById('growing-description');
+            const plotDesc = document.getElementById('plot-description');
+            const returningText = ' Returning shoots emerge from last season\'s dormant stems.';
+            if (growingDesc && growingDesc.textContent.indexOf('Returning shoots') === -1) {
+              growingDesc.textContent += returningText;
+            }
+            if (plotDesc && plotDesc.textContent.indexOf('Returning shoots') === -1) {
+              plotDesc.textContent += returningText;
+            }
+          }
+        }
+
+        /* Spring: then seeds vanish after first 30% of the season has passed */
         if (t < 0.30) {
+          // Fade in regrown leaves on wintered stems (ramp from 0 to 1)
+          if (groundSeeds.winteredStems && groundSeeds.winteredStems.length > 0) {
+            const regrownOpacity = Math.min(1, t / 0.10); // fully opaque by t=0.10
+            for (let wi = 0; wi < groundSeeds.winteredStems.length; wi++) {
+              const ws = groundSeeds.winteredStems[wi];
+              const sprout = groundSeeds.sprouts.find(function(sp) {
+                return sp.group === ws.group;
+              });
+              if (sprout) {
+                if (sprout.stem) sprout.stem.material.opacity = regrownOpacity;
+                for (let lj = 0; lj < sprout.leaves.length; lj++) {
+                  sprout.leaves[lj].material.opacity = regrownOpacity;
+                }
+              }
+            }
+          }
+
           // Seeds still visible, fading to transparent
           if (groundSeeds.meshes && groundSeeds.meshes.length > 0) {
             seedMat.opacity = 1 - t / 0.30;
@@ -2332,9 +2592,17 @@ export function startSeasonalCycle(initialProgress) {
             plotDesc.textContent = plotDesc.textContent.replace(/ Tiny seeds rest[^.]*\./g, '');
           }
 
+          // Clean up wintered stems — they've rejoined the normal sprout lifecycle
+          if (groundSeeds.winteredStems && groundSeeds.winteredStems.length > 0) {
+            // The wintered stems are now fully part of the sprouts array with regrown leaves
+            groundSeeds.winteredStems = [];
+          }
+
           // Reset DOM flags for next cycle
           groundSeeds._domUpdated = false;
           groundSeeds._winterDomUpdated = false;
+          groundSeeds._winterStemDomUpdated = false;
+          groundSeeds._returningShootsDomUpdated = false;
         }
       } else {
         /* Summer: seeds should not be present (removed in spring) */
@@ -2352,6 +2620,15 @@ export function startSeasonalCycle(initialProgress) {
             }
           }
         }
+
+        /* Summer: ensure winteredStems DOM flag is reset for next cycle */
+        if (groundSeeds._winterStemDomUpdated) {
+          groundSeeds._winterStemDomUpdated = false;
+        }
+        if (groundSeeds._returningShootsDomUpdated) {
+          groundSeeds._returningShootsDomUpdated = false;
+        }
+
       }
     }
 

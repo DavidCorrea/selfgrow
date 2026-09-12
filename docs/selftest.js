@@ -10218,5 +10218,236 @@ export async function checks() {
     }
   }
 
+  /* ---------- Wintered stems checks (issue #652) ---------- */
+  // Established sprouts (leafGen >= 1) should survive autumn as bare stems
+  // First-generation sprouts (leafGen < 1) should be removed in autumn
+  // Wintered stems should be persisted and restored
+  // DOM should mention dormant stems during winter
+  {
+    const gs = window.__gardenState;
+    if (!gs) {
+      problems.push('window.__gardenState is not set — cannot check wintered stems (issue #652).');
+    } else {
+      const groundSeeds = gs.groundSeeds;
+      if (groundSeeds) {
+        // Check winteredStems structure if present
+        if (groundSeeds.winteredStems && groundSeeds.winteredStems.length > 0) {
+          groundSeeds.winteredStems.forEach(function(ws, i) {
+            if (!ws.group) {
+              problems.push('groundSeeds.winteredStems[' + i + '].group is missing (issue #652).');
+            }
+            if (!ws.stem) {
+              problems.push('groundSeeds.winteredStems[' + i + '].stem is missing (issue #652).');
+            }
+            if (!ws.basePos || typeof ws.basePos.x !== 'number') {
+              problems.push('groundSeeds.winteredStems[' + i + '].basePos is missing or invalid (issue #652).');
+            }
+            if (typeof ws.leafGenCount !== 'number' || ws.leafGenCount < 1) {
+              problems.push('groundSeeds.winteredStems[' + i + '].leafGenCount is ' + ws.leafGenCount + ', expected >= 1 (issue #652).');
+            }
+            // Verify wintered stem has no leaves (bare stem)
+            if (ws.group && ws.group.children) {
+              // The group may have leaves being re-grown in early spring, but in winter it should be bare
+              // Check children - in winter the stem should be the only child
+            }
+          });
+        }
+
+        // Check that the sprouts array only contains established sprouts during/after autumn
+        if (groundSeeds.sprouts && groundSeeds.sprouts.length > 0) {
+          const allEstablished = groundSeeds.sprouts.every(function(sp) {
+            return sp.leafGenCount >= 1;
+          });
+          // During autumn late phase, non-established sprouts should be removed.
+          // We can check if winteredStems also exists, which would confirm the split happened.
+          if (groundSeeds.winteredStems && groundSeeds.winteredStems.length > 0) {
+            // Only established sprouts should remain
+            const nonEstablished = groundSeeds.sprouts.filter(function(sp) {
+              return sp.leafGenCount < 1;
+            });
+            if (nonEstablished.length > 0) {
+              problems.push('Autumn removal incomplete: ' + nonEstablished.length + ' first-generation sprouts remain in groundSeeds.sprouts when winteredStems exist — only leafGen >= 1 should persist (issue #652).');
+            }
+          }
+        }
+
+        // Check DOM for winter stem references during winter
+        const seasonDisplay = document.getElementById('season-display');
+        if (seasonDisplay && seasonDisplay.textContent.trim() === 'Winter') {
+          // During winter, the growing/plot description should mention dormant stems
+          // if winteredStems exist
+          if (groundSeeds.winteredStems && groundSeeds.winteredStems.length > 0) {
+            const growingDesc = document.getElementById('growing-description');
+            const plotDesc = document.getElementById('plot-description');
+            if (growingDesc && growingDesc.textContent.indexOf('bare stems') === -1 &&
+                growingDesc.textContent.indexOf('Dormant') === -1) {
+              problems.push('During winter, growing-description should mention dormant/bare stems when winteredStems exist, got: "' + growingDesc.textContent + '" (issue #652).');
+            }
+            if (plotDesc && plotDesc.textContent.indexOf('bare stems') === -1 &&
+                plotDesc.textContent.indexOf('Dormant') === -1) {
+              problems.push('During winter, plot-description should mention dormant/bare stems when winteredStems exist, got: "' + plotDesc.textContent + '" (issue #652).');
+            }
+          }
+        }
+
+        // Check DOM for returning shoots mention during spring
+        if (seasonDisplay && seasonDisplay.textContent.trim() === 'Spring') {
+          if (groundSeeds.sprouts && groundSeeds.sprouts.length > 0) {
+            const anyRegrown = groundSeeds.sprouts.some(function(sp) {
+              return sp.leafGenCount >= 1 && sp.leaves && sp.leaves.length > 0;
+            });
+            // This check is soft — only flag if there's evidence of regrowth without DOM update
+          }
+        }
+      }
+    }
+
+    // Persistence round-trip for wintered stems
+    if (window.__gardenState) {
+      const realWs = (window.__gardenState.groundSeeds && window.__gardenState.groundSeeds.winteredStems) ?
+        window.__gardenState.groundSeeds.winteredStems.slice() : null;
+      try {
+        // Inject a winteredStems state into groundSeeds for save/load testing
+        if (!window.__gardenState.groundSeeds) {
+          window.__gardenState.groundSeeds = {};
+        }
+        window.__gardenState.groundSeeds.winteredStems = [
+          {
+            group: new THREE.Group(),
+            stem: new THREE.Mesh(new THREE.BoxGeometry(0.001, 0.001, 0.001)),
+            basePos: { x: 0.1, y: 0.005, z: 0.2 },
+            leafGenCount: 1
+          }
+        ];
+        // Save the state
+        saveGardenState();
+        const loaded652 = loadGardenState();
+        if (!loaded652) {
+          problems.push('saveGardenState + loadGardenState round-trip returned null — cannot verify winteredStems persistence (issue #652).');
+        } else if (!loaded652.winteredStems) {
+          problems.push('winteredStems was saved but not present in loaded state — persistence missing (issue #652).');
+        } else {
+          if (!loaded652.winteredStems.positions || loaded652.winteredStems.positions.length !== 1) {
+            problems.push('winteredStems.positions should have 1 entry after round-trip, got ' +
+              (loaded652.winteredStems.positions ? loaded652.winteredStems.positions.length : 0) + ' (issue #652).');
+          } else {
+            const pos = loaded652.winteredStems.positions[0];
+            if (Math.abs(pos.x - 0.1) > 0.001 || Math.abs(pos.z - 0.2) > 0.001) {
+              problems.push('winteredStems position round-trip: expected (0.1, 0.2), got (' + pos.x + ', ' + pos.z + ') (issue #652).');
+            }
+          }
+          if (!loaded652.winteredStems.leafGenCounts || loaded652.winteredStems.leafGenCounts.length !== 1) {
+            problems.push('winteredStems.leafGenCounts should have 1 entry after round-trip, got ' +
+              (loaded652.winteredStems.leafGenCounts ? loaded652.winteredStems.leafGenCounts.length : 0) + ' (issue #652).');
+          } else if (loaded652.winteredStems.leafGenCounts[0] !== 1) {
+            problems.push('winteredStems leafGenCount round-trip: expected 1, got ' + loaded652.winteredStems.leafGenCounts[0] + ' (issue #652).');
+          }
+        }
+
+        // Test fast-forward preserves winteredStems when appropriate
+        const ff652 = fastForwardState({
+          seasonProgress: 0.75, // ~Autumn
+          dayNightProgress: 0.5,
+          weatherProgress: 0.5,
+          plant1Maturity: 1,
+          firstPlantGrown: true,
+          winteredStems: {
+            positions: [{ x: 0.1, y: 0.005, z: 0.2 }],
+            leafGenCounts: [1]
+          },
+          timestamp: Date.now() - 1000 // 1 second ago
+        });
+        if (!ff652) {
+          problems.push('fastForwardState returned null when testing winteredStems preservation (issue #652).');
+        } else if (!ff652.winteredStems) {
+          // After only 1s, the season has barely moved from Autumn (0.75).
+          // We should still be in autumn or early winter, so winteredStems should persist.
+          problems.push('fastForwardState lost winteredStems after 1s: seasonProgress=' +
+            (ff652.seasonProgress ? ff652.seasonProgress.toFixed(3) : 'null') + ' (issue #652).');
+        }
+
+        // Clear test state
+        clearGardenState();
+      } finally {
+        if (window.__gardenState && window.__gardenState.groundSeeds) {
+          window.__gardenState.groundSeeds.winteredStems = realWs;
+        }
+      }
+    }
+  }
+
+  /* ---------- Wintered stems DOM and lifecycle checks (issue #652) ---------- */
+  // Verify that when wintered stems exist in groundSeeds, the DOM description
+  // text includes a reference to dormant stems or bare stems (during winter).
+  const gs652 = window.__gardenState;
+  if (gs652 && gs652.groundSeeds && gs652.groundSeeds.winteredStems && gs652.groundSeeds.winteredStems.length > 0) {
+    const seasonEl = document.getElementById('season-display');
+    const currentSeason = seasonEl ? seasonEl.textContent.trim() : '';
+
+    // If currently in Winter, check the plot/growing description mentions dormant stems
+    if (currentSeason === 'Winter') {
+      const growingDesc = document.getElementById('growing-description');
+      const plotDesc = document.getElementById('plot-description');
+      if (growingDesc && growingDesc.textContent.indexOf('Dormant') === -1 &&
+          growingDesc.textContent.indexOf('dormant') === -1 &&
+          growingDesc.textContent.indexOf('bare stems') === -1) {
+        problems.push('Wintered stems exist but growing-description does not mention "dormant" or "bare stems" (issue #652). Got: "' + growingDesc.textContent + '"');
+      }
+      if (plotDesc && plotDesc.textContent.indexOf('Dormant') === -1 &&
+          plotDesc.textContent.indexOf('dormant') === -1 &&
+          plotDesc.textContent.indexOf('bare stems') === -1) {
+        problems.push('Wintered stems exist but plot-description does not mention "dormant" or "bare stems" (issue #652). Got: "' + plotDesc.textContent + '"');
+      }
+    }
+
+    // Verify each wintered stem has a leafGenCount >= 1
+    for (let wi = 0; wi < gs652.groundSeeds.winteredStems.length; wi++) {
+      const ws = gs652.groundSeeds.winteredStems[wi];
+      if (typeof ws.leafGenCount !== 'number' || ws.leafGenCount < 1) {
+        problems.push('Wintered stem #' + wi + ' has leafGenCount=' + ws.leafGenCount + ', expected >= 1 (issue #652).');
+      }
+      if (ws.stem && ws.stem.material) {
+        // During Winter, stems should be desaturated (brown) with reduced opacity
+        const col = ws.stem.material.color;
+        if (col) {
+          // Should be a brownish hue (R > G and R > B roughly)
+          const isBrownish = (col.r > col.g * 0.9 && col.r > col.b * 0.9 && col.g > col.b * 0.7);
+          if (!isBrownish) {
+            problems.push('Wintered stem #' + wi + ' color (' + col.getHexString() + ') is not desaturated brown (issue #652).');
+          }
+        }
+      }
+    }
+
+    // Check that wintered stems have no leaves attached (they were shed)
+    for (let wi = 0; wi < gs652.groundSeeds.winteredStems.length; wi++) {
+      const ws = gs652.groundSeeds.winteredStems[wi];
+      // Find the matching sprout
+      const sprout = gs652.groundSeeds.sprouts ? gs652.groundSeeds.sprouts.find(function(sp) {
+        return sp.group === ws.group;
+      }) : null;
+      if (sprout && sprout.leaves && sprout.leaves.length > 0) {
+        // During autumn/winter, leaves should have been shed
+        if (currentSeason === 'Winter' || currentSeason === 'Autumn') {
+          problems.push('Wintered stem #' + wi + ' still has ' + sprout.leaves.length + ' leaves attached during ' + currentSeason + ' — leaves should have been shed (issue #652).');
+        }
+      }
+    }
+  } else if (gs652 && gs652.groundSeeds && gs652.seasonProgress !== undefined) {
+    // No winteredStems — check if the season is one where they SHOULD be present
+    // This is a soft check: only report if we're clearly in winter
+    const seasonEl = document.getElementById('season-display');
+    const currentSeason = seasonEl ? seasonEl.textContent.trim() : '';
+
+    if (currentSeason === 'Winter' && gs652.groundSeeds.sprouts && gs652.groundSeeds.sprouts.length > 0) {
+      // During winter, ANY sprout in the sprouts array with leafGenCount >= 1
+      // should have been converted to a wintered stem. Check if any qualify.
+      const qualifiedSprouts = gs652.groundSeeds.sprouts.filter(function(sp) { return sp.leafGenCount >= 1; });
+      if (qualifiedSprouts.length > 0) {
+        problems.push('During Winter, ' + qualifiedSprouts.length + ' sprouts have leafGenCount >= 1 but no winteredStems array exists — they should have been converted to bare stems (issue #652).');
+      }
+    }
+  }
+
   return problems;
 }

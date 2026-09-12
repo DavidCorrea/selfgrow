@@ -79,6 +79,22 @@ export function saveGardenState() {
       };
     }
 
+    // Save wintered stems data for recreation on restore (issue #652)
+    if (gs.groundSeeds && gs.groundSeeds.winteredStems && gs.groundSeeds.winteredStems.length > 0) {
+      state.winteredStems = {
+        positions: gs.groundSeeds.winteredStems.map(function(ws) {
+          return {
+            x: ws.basePos.x,
+            y: ws.basePos.y,
+            z: ws.basePos.z
+          };
+        }),
+        leafGenCounts: gs.groundSeeds.winteredStems.map(function(ws) {
+          return ws.leafGenCount;
+        })
+      };
+    }
+
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (e) {
     // Silently fail — localStorage may be full or unavailable
@@ -152,6 +168,9 @@ export function fastForwardState(savedState) {
   const elapsed = Date.now() - savedState.timestamp;
   const elapsedSec = elapsed; // ms
 
+  /* Season duration constants (must match garden.js) */
+  const SEASON_DURATION_MS = 180_000; // 3 min per season
+
   /* ---- Cycles advance modulo duration ---- */
   const seasonProgress = (savedState.seasonProgress + elapsedSec / SEASON_CYCLE_DURATION_MS) % 1.0;
   const dayNightProgress = (savedState.dayNightProgress + elapsedSec / DAYNIGHT_CYCLE_DURATION_MS) % 1.0;
@@ -197,8 +216,6 @@ export function fastForwardState(savedState) {
   let groundSeeds = null;
   if (savedState.groundSeeds && savedState.groundSeeds.count > 0) {
     // Check if the seeds have been removed by spring (after 30% of spring has passed)
-    const SEASON_NAMES = ['Spring', 'Summer', 'Autumn', 'Winter'];
-    const SEASON_DURATION_MS = 180_000; // must match garden.js
     const CYCLE_DURATION_MS = SEASON_DURATION_MS * 4;
     const cycleTime = (seasonProgress * CYCLE_DURATION_MS) % CYCLE_DURATION_MS;
     const seasonIndex = Math.floor(cycleTime / SEASON_DURATION_MS) % 4;
@@ -221,6 +238,25 @@ export function fastForwardState(savedState) {
     }
   }
 
+  /* ---- Wintered stems: persist through winter, cleared in spring (issue #652) ---- */
+  let winteredStems = null;
+  if (savedState.winteredStems && savedState.winteredStems.positions && savedState.winteredStems.positions.length > 0) {
+    const cycleTime = (seasonProgress * SEASON_DURATION_MS * 4) % (SEASON_DURATION_MS * 4);
+    const seasonIndex = Math.floor(cycleTime / SEASON_DURATION_MS) % 4;
+    const seasonPhaseProgress = (cycleTime % SEASON_DURATION_MS) / SEASON_DURATION_MS;
+
+    const isAutumnLate = (seasonIndex === 2 && seasonPhaseProgress > 0.85);
+    const isWinter = (seasonIndex === 3);
+    const isSpringEarly = (seasonIndex === 0 && seasonPhaseProgress < 0.30);
+
+    if (isWinter || isAutumnLate || isSpringEarly) {
+      winteredStems = {
+        positions: savedState.winteredStems.positions,
+        leafGenCounts: savedState.winteredStems.leafGenCounts
+      };
+    }
+  }
+
   return {
     seasonProgress,
     dayNightProgress,
@@ -232,7 +268,8 @@ export function fastForwardState(savedState) {
     plant1FlowerProgress,
     plant2FlowerPhase,
     plant2FlowerProgress,
-    groundSeeds
+    groundSeeds,
+    winteredStems
   };
 }
 
