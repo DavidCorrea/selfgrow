@@ -10,6 +10,8 @@ import { saveGardenState, loadGardenState, fastForwardState, clearGardenState, a
 import { createCreature } from "./creature.js";
 import { computeDisplacement } from "./groundRipple.js";
 import { isReducedMotion, onMotionChange } from "./motion.js";
+import { SEASON_PALETTES, SEASON_NAMES, SEASON_DURATION_MS, CYCLE_DURATION_MS } from "./garden.js";
+import { TIME_OF_DAY_AUDIO, WEATHER_AUDIO_MODIFIERS, SEASON_AUDIO_MODIFIERS, DEFAULT_WEATHER_MODIFIER, DEFAULT_SEASON_MODIFIER } from "./ambientAudio.js";
 
 export async function checks() {
   const problems = [];
@@ -1068,17 +1070,6 @@ export async function checks() {
   if (gardenState && typeof gardenState.winterLegacyBlend !== 'number') {
     problems.push('window.__gardenState.winterLegacyBlend is not a number — winter legacy blend not exposed.');
   } else if (gardenState && typeof gardenState.seasonProgress === 'number') {
-    // Mirror the seasonal colour system from garden.js
-    const SEASON_DURATION_MS = 180_000;
-    const CYCLE_DURATION_MS = SEASON_DURATION_MS * 4;
-    const SEASON_NAMES = ['Spring', 'Summer', 'Autumn', 'Winter'];
-    const PALETTES = {
-      spring: { stem: 0x5d8a3c, leaf: 0x4a8c2a, ground: 0x4a3728 },
-      summer: { stem: 0x7a9a4a, leaf: 0x6a9a3a, ground: 0x5a4a30 },
-      autumn: { stem: 0x9a7a3a, leaf: 0xaa6a2a, ground: 0x6a5a3a },
-      winter: { stem: 0x6a5a3a, leaf: 0x5a4a2a, ground: 0x3a2a1a }
-    };
-
     // Derive season index and per-season progress from the stored cycle progress
     const cycleTime = (gardenState.seasonProgress * CYCLE_DURATION_MS) % CYCLE_DURATION_MS;
     const seasonIndex = Math.floor(cycleTime / SEASON_DURATION_MS) % 4;
@@ -1131,8 +1122,8 @@ export async function checks() {
     const groundMat = gardenState.groundMat;
     const plant = gardenState.plant;
     if (groundMat && plant && plant.stemMat && plant.leafMat) {
-      const current = PALETTES[SEASON_NAMES[seasonIndex].toLowerCase()];
-      const next = PALETTES[SEASON_NAMES[(seasonIndex + 1) % 4].toLowerCase()];
+      const current = SEASON_PALETTES[SEASON_NAMES[seasonIndex].toLowerCase()];
+      const next = SEASON_PALETTES[SEASON_NAMES[(seasonIndex + 1) % 4].toLowerCase()];
       const t = seasonProgress;
 
       const expectedGround = new THREE.Color(current.ground).lerp(new THREE.Color(next.ground), t);
@@ -1167,19 +1158,6 @@ export async function checks() {
   if (!springGs) {
     problems.push('window.__gardenState is not set — cannot verify soil patches and spring enrichment (issue #622).');
   } else {
-    // Define seasonal palettes inline for this check (mirrors garden.js constants)
-    const SEASON_PALETTES_LOCAL = {
-      spring: { stem: 0x5d8a3c, leaf: 0x4a8c2a, ground: 0x4a3728 },
-      summer: { stem: 0x7a9a4a, leaf: 0x6a9a3a, ground: 0x5a4a30 },
-      autumn: { stem: 0x9a7a3a, leaf: 0xaa6a2a, ground: 0x6a5a3a },
-      winter: { stem: 0x6a5a3a, leaf: 0x5a4a2a, ground: 0x3a2a1a }
-    };
-
-    // Shared constants for season computations (mirror garden.js)
-    const SEASON_DURATION_MS = 180_000;
-    const CYCLE_DURATION_MS = SEASON_DURATION_MS * 4;
-    const SEASON_NAMES = ['Spring', 'Summer', 'Autumn', 'Winter'];
-
     // Helper: Euclidean distance between two THREE.Color values
     function colorDist(a, b) {
       const dr = a.r - b.r;
@@ -1236,8 +1214,8 @@ export async function checks() {
 
         if (plant1 && plant1.stemMat && plant1.leafMat) {
           // Compute the expected seasonal base colour
-          const current = SEASON_PALETTES_LOCAL[SEASON_NAMES[seasonIndex].toLowerCase()];
-          const next = SEASON_PALETTES_LOCAL[SEASON_NAMES[(seasonIndex + 1) % 4].toLowerCase()];
+          const current = SEASON_PALETTES[SEASON_NAMES[seasonIndex].toLowerCase()];
+          const next = SEASON_PALETTES[SEASON_NAMES[(seasonIndex + 1) % 4].toLowerCase()];
           const t = seasonProgress;
 
           const expectedStem = new THREE.Color(current.stem).lerp(new THREE.Color(next.stem), t);
@@ -1340,8 +1318,8 @@ export async function checks() {
         // Verify plant2's colour is NOT enriched (i.e. matches the base seasonal colour)
         const seasonIndex = Math.floor((springGs.seasonProgress * CYCLE_DURATION_MS) % CYCLE_DURATION_MS / SEASON_DURATION_MS) % 4;
         const seasonProgress = ((springGs.seasonProgress * CYCLE_DURATION_MS) % CYCLE_DURATION_MS % SEASON_DURATION_MS) / SEASON_DURATION_MS;
-        const current = SEASON_PALETTES_LOCAL[SEASON_NAMES[seasonIndex].toLowerCase()];
-        const next = SEASON_PALETTES_LOCAL[SEASON_NAMES[(seasonIndex + 1) % 4].toLowerCase()];
+        const current = SEASON_PALETTES[SEASON_NAMES[seasonIndex].toLowerCase()];
+        const next = SEASON_PALETTES[SEASON_NAMES[(seasonIndex + 1) % 4].toLowerCase()];
         const t = seasonProgress;
 
         const baseStem = new THREE.Color(current.stem).lerp(new THREE.Color(next.stem), t);
@@ -5279,24 +5257,7 @@ export async function checks() {
 
     // We can verify the state reflects correct values by calling ambientAudio.update()
     // AFTER ensuring the audio nodes exist — but since AudioContext may not be available,
-    // we verify the composition logic through the module's exported computeAudioSettings.
-    // Since it's not exported, we recreate the logic inline for verification.
-
-    // Define expected base values matching ambientAudio.js
-    var TIME_OF_DAY_AUDIO = {
-      'Morning':  { windGain: 0.05, filterFreq: 250, rainMul: 0.75 },
-      'Midday':   { windGain: 0.08, filterFreq: 400, rainMul: 1.0  },
-      'Evening':  { windGain: 0.05, filterFreq: 200, rainMul: 0.75 },
-      'Night':    { windGain: 0.03, filterFreq: 80,  rainMul: 0.5  }
-    };
-
-    var WEATHER_AUDIO_MODIFIERS = {
-      'Clear':         { windMul: 1.0, filterMul: 1.0,    rainBase: 0    },
-      'Overcast':      { windMul: 1.5, filterMul: 0.45,   rainBase: 0    },
-      'Light Drizzle': { windMul: 1.0, filterMul: 0.625,  rainBase: 0.04 }
-    };
-
-    var DEFAULT_WEATHER_MODIFIER = { windMul: 1.0, filterMul: 1.0, rainBase: 0 };
+    // we verify the composition logic through the module's imported computeAudioSettings.
 
     function computeExpected(weatherPhase, timeOfDay) {
       var base = TIME_OF_DAY_AUDIO[timeOfDay] || TIME_OF_DAY_AUDIO['Midday'];
@@ -5496,35 +5457,12 @@ export async function checks() {
   if (!ambientAudioSeason) {
     problems.push('window.__gardenState.ambientAudio is not set — cannot verify seasonal audio composition.');
   } else {
-    // Inline the seasonal modifiers table for independent verification
-    const SEASON_AUDIO_MODIFIERS_CHECK = {
-      'Spring': { filterMul: 0.75, windMul: 0.8,  rainMul: 1.0 },
-      'Summer': { filterMul: 1.125, windMul: 1.0, rainMul: 1.0 },
-      'Autumn': { filterMul: 0.7,   windMul: 1.3,  rainMul: 1.1 },
-      'Winter': { filterMul: 0.15,  windMul: 0.4,  rainMul: 0.5 }
-    };
-
-    // Inline the time-of-day and weather tables from ambientAudio.js
-    const TIME_OF_DAY_AUDIO_CHECK = {
-      'Morning':  { windGain: 0.05, filterFreq: 250, rainMul: 0.75 },
-      'Midday':   { windGain: 0.08, filterFreq: 400, rainMul: 1.0  },
-      'Evening':  { windGain: 0.05, filterFreq: 200, rainMul: 0.75 },
-      'Night':    { windGain: 0.03, filterFreq: 80,  rainMul: 0.5  }
-    };
-
-    const WEATHER_AUDIO_MODIFIERS_CHECK = {
-      'Clear':         { windMul: 1.0, filterMul: 1.0,    rainBase: 0    },
-      'Overcast':      { windMul: 1.5, filterMul: 0.45,   rainBase: 0    },
-      'Light Drizzle': { windMul: 1.0, filterMul: 0.625,  rainBase: 0.04 }
-    };
-
-    const DEFAULT_WEATHER_MODIFIER_CHECK = { windMul: 1.0, filterMul: 1.0, rainBase: 0 };
-    const DEFAULT_SEASON_MODIFIER_CHECK = { filterMul: 1.0, windMul: 1.0, rainMul: 1.0 };
+    // Use the imported seasonal, time-of-day and weather tables from ambientAudio.js
 
     function computeExpectedAudio(weatherPhase, timeOfDay, season) {
-      var base = TIME_OF_DAY_AUDIO_CHECK[timeOfDay] || TIME_OF_DAY_AUDIO_CHECK['Midday'];
-      var weatherMod = WEATHER_AUDIO_MODIFIERS_CHECK[weatherPhase] || DEFAULT_WEATHER_MODIFIER_CHECK;
-      var seasonMod = SEASON_AUDIO_MODIFIERS_CHECK[season] || DEFAULT_SEASON_MODIFIER_CHECK;
+      var base = TIME_OF_DAY_AUDIO[timeOfDay] || TIME_OF_DAY_AUDIO['Midday'];
+      var weatherMod = WEATHER_AUDIO_MODIFIERS[weatherPhase] || DEFAULT_WEATHER_MODIFIER;
+      var seasonMod = SEASON_AUDIO_MODIFIERS[season] || DEFAULT_SEASON_MODIFIER;
       return {
         windGain: base.windGain * seasonMod.windMul * weatherMod.windMul,
         filterFreq: base.filterFreq * seasonMod.filterMul * weatherMod.filterMul,
