@@ -10226,5 +10226,59 @@ export async function checks() {
     }
   }
 
+  /* ---------- Butterfly pollinated flower acknowledgment checks (issue #681) ---------- */
+  // When the butterfly pauses at a pollinated flower, the garden acknowledgment
+  // text should reference the return visit with a phrase from a 4-variant pool,
+  // gated by a 30s cooldown. Exposed via window.__gardenState.setAcknowledgment.
+  {
+    const gs681 = window.__gardenState;
+    if (!gs681) {
+      problems.push('window.__gardenState is not set — cannot verify pollinated flower acknowledgment (issue #681).');
+    } else {
+      // Test 1: setAcknowledgment must be a function on __gardenState
+      if (typeof gs681.setAcknowledgment !== 'function') {
+        problems.push('window.__gardenState.setAcknowledgment is not a function — creature.js cannot call it to set acknowledgment text (issue #681).');
+      } else {
+        // Test 2: Calling setAcknowledgment must update the DOM element
+        const origText = document.getElementById('garden-state-acknowledgment').textContent;
+        gs681.setAcknowledgment('TEST_ACK');
+        const newText = document.getElementById('garden-state-acknowledgment').textContent;
+        if (newText !== 'TEST_ACK') {
+          problems.push('window.__gardenState.setAcknowledgment(\"TEST_ACK\") did not update #garden-state-acknowledgment — got \"' + newText + '\" instead (issue #681).');
+        }
+        // Restore the original text
+        gs681.setAcknowledgment(origText);
+      }
+
+      // Test 3: POLLINATED_PAUSE_PHRASES must be accessible via creature state
+      const creatureState681 = gs681.creature;
+      if (!creatureState681) {
+        problems.push('creature state not found via __gardenState.creature (issue #681).');
+      } else {
+        if (!creatureState681.POLLINATED_PAUSE_PHRASES || !Array.isArray(creatureState681.POLLINATED_PAUSE_PHRASES)) {
+          problems.push('creatureState.POLLINATED_PAUSE_PHRASES is missing or not an array (issue #681).');
+        } else if (creatureState681.POLLINATED_PAUSE_PHRASES.length < 3) {
+          problems.push('creatureState.POLLINATED_PAUSE_PHRASES has ' + creatureState681.POLLINATED_PAUSE_PHRASES.length + ' entries, expected at least 3 (issue #681).');
+        } else {
+          // Verify each phrase is a calm non-empty sentence (no exclamation, no empty)
+          creatureState681.POLLINATED_PAUSE_PHRASES.forEach(function(phrase, i) {
+            if (typeof phrase !== 'string' || phrase.trim().length === 0) {
+              problems.push('creatureState.POLLINATED_PAUSE_PHRASES[' + i + '] is not a non-empty string (issue #681).');
+            }
+            if (phrase.indexOf('!') !== -1) {
+              problems.push('creatureState.POLLINATED_PAUSE_PHRASES[' + i + '] contains an exclamation mark — expected calm phrasing (issue #681).');
+            }
+          });
+        }
+
+        if (typeof creatureState681.POLLINATED_ACK_COOLDOWN_MS !== 'number') {
+          problems.push('creatureState.POLLINATED_ACK_COOLDOWN_MS is missing or not a number (issue #681).');
+        } else if (creatureState681.POLLINATED_ACK_COOLDOWN_MS !== 30000) {
+          problems.push('creatureState.POLLINATED_ACK_COOLDOWN_MS is ' + creatureState681.POLLINATED_ACK_COOLDOWN_MS + ', expected 30000 (30s cooldown) (issue #681).');
+        }
+      }
+    }
+  }
+
   return problems;
 }

@@ -1409,7 +1409,9 @@
       _presencePhrases: PRESENCE_PHRASES,
       /* Variant cycling state (issue #543) */
       _variantState: _variantState,
-      VARIANT_CYCLE_MS: VARIANT_CYCLE_MS
+      VARIANT_CYCLE_MS: VARIANT_CYCLE_MS,
+      /* Acknowledgment setter exposed for creature.js (issue #681) */
+      setAcknowledgment: setAcknowledgment
     };
 
     /* --- Persistence: restore previous state if available --- */

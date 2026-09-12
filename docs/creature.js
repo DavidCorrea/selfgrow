@@ -54,6 +54,13 @@ const PAUSE_ENTER_DURATION = 1.0; // seconds to ease into the pause
 const PAUSE_HOLD_MIN = 3.0;       // minimum hold seconds
 const PAUSE_HOLD_MAX = 5.0;       // maximum hold seconds
 const POLLINATED_PAUSE_MULTIPLIER = 1.6; // scale factor when pausing at a pollinated flower (issue #679)
+const POLLINATED_PAUSE_PHRASES = [
+  'The butterfly returns to a flower it visited before.',
+  'The butterfly brushes past a bloom it already knows.',
+  'A familiar flower draws the butterfly back again.',
+  'The butterfly revisits a flower it has touched before.'
+];
+const POLLINATED_ACK_COOLDOWN_MS = 30000; // ms cooldown between repeated pollinated-flower acknowledgments
 const PAUSE_EXIT_DURATION = 1.0;  // seconds to ease back to normal flight
 const PAUSE_DIP_AMOUNT = 0.15;    // how much closer the butterfly dips to the flower
 
@@ -200,6 +207,9 @@ export function createCreature(scene) {
   /* --- Tracks the current wind nudge for selftest --- */
   let _windNudge = 0;
 
+  /* Pollinated-flower acknowledgment cooldown tracker (issue #681) */
+  let _lastPollinatedAckTime = 0;
+
   /* --- Firefly attraction tracking for selftest (issue #598) --- */
   let _fireflySlowMul = 1.0;
   let _fireflyBiasX = 0;
@@ -249,6 +259,8 @@ export function createCreature(scene) {
     pauseEaseT: () => pauseEaseT,
     getPauseHoldDuration: () => pauseHoldDuration,
     POLLINATED_PAUSE_MULTIPLIER,
+    POLLINATED_PAUSE_PHRASES,
+    POLLINATED_ACK_COOLDOWN_MS,
     /* Wind perturbation exposed for selftest */
     windNudge: () => _windNudge,
     /* Landing state exposed for testing */
@@ -525,6 +537,15 @@ export function createCreature(scene) {
                   const flowerObj = gs[plantRefs[i]].flower;
                   if (flowerObj && typeof flowerObj.isPollinated === 'function' && flowerObj.isPollinated()) {
                     pauseHoldDuration *= POLLINATED_PAUSE_MULTIPLIER;
+                    // Garden acknowledgment referencing the return visit (issue #681)
+                    const now = performance.now();
+                    if (now - _lastPollinatedAckTime >= POLLINATED_ACK_COOLDOWN_MS) {
+                      _lastPollinatedAckTime = now;
+                      const phrase = POLLINATED_PAUSE_PHRASES[Math.floor(Math.random() * POLLINATED_PAUSE_PHRASES.length)];
+                      if (window.__gardenState && typeof window.__gardenState.setAcknowledgment === 'function') {
+                        window.__gardenState.setAcknowledgment(phrase);
+                      }
+                    }
                   }
                   pauseTargetPos = { x: fx, y: fy, z: fz };
                   pauseEaseT = 0;
