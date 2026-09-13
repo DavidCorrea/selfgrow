@@ -10218,5 +10218,66 @@ export async function checks() {
     }
   }
 
+  /* ---------- Established sprout winter dormancy checks (issue #687) ---------- */
+  // Verify the groundSeeds structure supports leafGenCount tracking and dormant stems
+  const gs687 = window.__gardenState;
+  if (gs687 && gs687.groundSeeds) {
+    const groundSeeds = gs687.groundSeeds;
+
+    // leafGenCount must be a number for tracking generations across cycles
+    if (typeof groundSeeds.leafGenCount !== 'number') {
+      problems.push('groundSeeds.leafGenCount is missing or not a number (got ' + typeof groundSeeds.leafGenCount + ') — leaf generation tracking is broken (issue #687).');
+    }
+
+    // _dormantDomUpdated must be a boolean when initialized
+    if (typeof groundSeeds._dormantDomUpdated !== 'boolean') {
+      problems.push('groundSeeds._dormantDomUpdated is missing or not a boolean — dormant stem DOM update tracking is broken (issue #687).');
+    }
+
+    // dormantStems should be either undefined (not yet set) or an array
+    if (groundSeeds.dormantStems !== undefined && !Array.isArray(groundSeeds.dormantStems)) {
+      problems.push('groundSeeds.dormantStems should be undefined or an array, got ' + typeof groundSeeds.dormantStems + ' (issue #687).');
+    }
+
+    // If there are sprouts, verify each one has leafGenCount and can be classified
+    if (groundSeeds.sprouts && Array.isArray(groundSeeds.sprouts) && groundSeeds.sprouts.length > 0) {
+      for (var si687 = 0; si687 < groundSeeds.sprouts.length; si687++) {
+        var sp = groundSeeds.sprouts[si687];
+        if (typeof sp.leafGenCount !== 'number') {
+          problems.push('groundSeeds.sprouts[' + si687 + '].leafGenCount is missing or not a number — sprout generation tracking broken (issue #687).');
+        }
+        if (sp.leafGenCount < 0) {
+          problems.push('groundSeeds.sprouts[' + si687 + '].leafGenCount is ' + sp.leafGenCount + ', expected >= 0 (issue #687).');
+        }
+      }
+    }
+
+    // Verify that if dormantStems exists, each entry has the expected structure
+    if (groundSeeds.dormantStems && Array.isArray(groundSeeds.dormantStems) && groundSeeds.dormantStems.length > 0) {
+      for (var di687 = 0; di687 < groundSeeds.dormantStems.length; di687++) {
+        var ds = groundSeeds.dormantStems[di687];
+        if (!ds.stem) {
+          problems.push('groundSeeds.dormantStems[' + di687 + '] is missing stem — dormant stem visual broken (issue #687).');
+        }
+        if (!ds._dormant) {
+          problems.push('groundSeeds.dormantStems[' + di687 + ']._dormant is not truthy — dormant flag not set (issue #687).');
+        }
+        if (ds.leaves && ds.leaves.length > 0) {
+          problems.push('groundSeeds.dormantStems[' + di687 + '] still has ' + ds.leaves.length + ' leaves — dormant stems should have no leaves (issue #687).');
+        }
+      }
+    }
+
+    // Verify the DOM shows dormant stems description if dormantStems exist
+    if (groundSeeds.dormantStems && groundSeeds.dormantStems.length > 0) {
+      var growingDesc687 = document.getElementById('growing-description');
+      if (growingDesc687 && growingDesc687.textContent.indexOf('Dormant bare stems') === -1) {
+        problems.push('Dormant stems exist but growing-description does not mention "Dormant bare stems" — DOM description missing (issue #687).');
+      }
+    }
+  } else if (!gs687) {
+    problems.push('window.__gardenState is not set — cannot verify dormant stem structure (issue #687).');
+  }
+
   return problems;
 }

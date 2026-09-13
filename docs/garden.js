@@ -99,6 +99,7 @@ export function initGarden(scene, initialProgress) {
         leafGenCount: typeof seedData.leafGenCount === 'number' ? seedData.leafGenCount : 0,
         _domUpdated: false,
         _winterDomUpdated: false,
+        _dormantDomUpdated: false,
         update: function(time, computeDisplacement) {
           const gs2 = window.__gardenState;
           if (!gs2 || !gs2.groundSeeds) return;
@@ -667,6 +668,7 @@ function createPlant(opts) {
           leafGenCount: 0,
           _domUpdated: false,
           _winterDomUpdated: false,
+          _dormantDomUpdated: false,
           update: function(time, computeDisplacement) {
             const seedState = gs.groundSeeds;
             if (!seedState || seedState.meshes.length === 0) return;
@@ -2150,6 +2152,19 @@ export function startSeasonalCycle(initialProgress) {
           }
         }
 
+        /* Capture established sprouts (leafGenCount >= 1) BEFORE the leaf upgrade
+         * loop, so we can distinguish sprouts that carried through a previous summer
+         * from first-year sprouts that just got their second leaf pair this autumn
+         * (issue #687). */
+        const establishedBeforeUpgrade = [];
+        if (groundSeeds.sprouts && groundSeeds.sprouts.length > 0) {
+          for (let si = 0; si < groundSeeds.sprouts.length; si++) {
+            if (groundSeeds.sprouts[si].leafGenCount >= 1) {
+              establishedBeforeUpgrade.push(groundSeeds.sprouts[si]);
+            }
+          }
+        }
+
         /* Autumn: sprouts that survived through summer grow a second, larger leaf
          * pair as the season turns (issue #638). Runs on the first autumn tick for
          * any sprout still at generation 0 — including gardens fast-forwarded into
@@ -2188,9 +2203,26 @@ export function startSeasonalCycle(initialProgress) {
           }
 
           // Remove sprouts when fully faded (near the end of autumn)
+          // First-year sprouts (leafGenCount = 0 before the upgrade) are removed
+          // entirely; established sprouts (leafGenCount >= 1) persist as dormant
+          // bare stems through winter (issue #687).
           if (t > 0.85 && groundSeeds.sprouts.length > 0) {
+            const establishedSet = new Set(establishedBeforeUpgrade);
+            const survivingStems = [];
+            const dyingSprouts = [];
+
             for (let si = 0; si < groundSeeds.sprouts.length; si++) {
               const sp = groundSeeds.sprouts[si];
+              if (establishedSet.has(sp)) {
+                survivingStems.push(sp);
+              } else {
+                dyingSprouts.push(sp);
+              }
+            }
+
+            // Remove first-year sprouts entirely
+            for (let si = 0; si < dyingSprouts.length; si++) {
+              const sp = dyingSprouts[si];
               if (gs.scene && sp.group) {
                 gs.scene.remove(sp.group);
               }
@@ -2205,6 +2237,31 @@ export function startSeasonalCycle(initialProgress) {
                 }
               }
             }
+
+            // For established sprouts: strip leaves, darken stem, preserve as dormant
+            for (let si = 0; si < survivingStems.length; si++) {
+              const sp = survivingStems[si];
+              // Remove leaf meshes from group and dispose
+              if (sp.leaves) {
+                for (let lj = 0; lj < sp.leaves.length; lj++) {
+                  if (sp.group) sp.group.remove(sp.leaves[lj]);
+                  sp.leaves[lj].geometry.dispose();
+                  sp.leaves[lj].material.dispose();
+                }
+                sp.leaves = [];
+              }
+              // Darken stem to a dormant brown/grey
+              if (sp.stem) {
+                sp.stem.material.color.setHex(0x4a3a2a);
+                sp.stem.material.opacity = 1;
+              }
+              sp._dormant = true;
+            }
+
+            // Store dormant stems separately (not in sprouts) so spring germination works
+            groundSeeds.dormantStems = survivingStems;
+
+            // Clear the sprouts array for the next cycle's germination
             groundSeeds.sprouts = [];
 
             // Remove sprout descriptions from DOM
@@ -2237,6 +2294,31 @@ export function startSeasonalCycle(initialProgress) {
             const plotDesc = document.getElementById('plot-description');
             if (plotDesc && plotDesc.textContent.indexOf('seeds rest') !== -1) {
               // Seeds are still there, just darker — description remains valid
+            }
+          }
+        }
+
+        /* Winter: dormant bare stems from established sprouts persist visibly (issue #687) */
+        if (groundSeeds.dormantStems && groundSeeds.dormantStems.length > 0) {
+          for (let si = 0; si < groundSeeds.dormantStems.length; si++) {
+            const ds = groundSeeds.dormantStems[si];
+            if (ds.stem) {
+              ds.stem.material.color.setHex(0x4a3a2a);
+              ds.stem.material.opacity = 1;
+            }
+          }
+
+          /* Update DOM to describe dormant stems */
+          if (t > 0.2 && !groundSeeds._dormantDomUpdated) {
+            groundSeeds._dormantDomUpdated = true;
+            const growingDesc = document.getElementById('growing-description');
+            const plotDesc = document.getElementById('plot-description');
+            const dormantText = ' Dormant bare stems from last season stand on the soil, waiting for spring.';
+            if (growingDesc && growingDesc.textContent.indexOf('Dormant bare stems') === -1) {
+              growingDesc.textContent += dormantText;
+            }
+            if (plotDesc && plotDesc.textContent.indexOf('Dormant bare stems') === -1) {
+              plotDesc.textContent += dormantText;
             }
           }
         }
