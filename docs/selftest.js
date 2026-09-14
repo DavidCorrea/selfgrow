@@ -10161,6 +10161,31 @@ export async function checks() {
       } else if (Math.abs(ffState680.driftRadius - 0.15) > 0.0001) {
         problems.push('ffState.driftRadius is ' + ffState680.driftRadius + ', expected 0.15 (issue #680).');
       }
+
+      /* --- Butterfly landing firefly scatter constants (issue #690) --- */
+      if (typeof ffState680.scatterRadius !== 'number') {
+        problems.push('ffState.scatterRadius is missing or not a number — expected 0.4 (issue #690).');
+      } else if (ffState680.scatterRadius !== 0.4) {
+        problems.push('ffState.scatterRadius is ' + ffState680.scatterRadius + ', expected 0.4 (issue #690).');
+      }
+
+      if (typeof ffState680.scatterAmountMax !== 'number') {
+        problems.push('ffState.scatterAmountMax is missing or not a number — expected 0.1 (issue #690).');
+      } else if (ffState680.scatterAmountMax !== 0.1) {
+        problems.push('ffState.scatterAmountMax is ' + ffState680.scatterAmountMax + ', expected 0.1 (issue #690).');
+      }
+
+      if (typeof ffState680.scatterBuildUpTime !== 'number') {
+        problems.push('ffState.scatterBuildUpTime is missing or not a number — expected 2.0 (issue #690).');
+      } else if (Math.abs(ffState680.scatterBuildUpTime - 2.0) > 0.001) {
+        problems.push('ffState.scatterBuildUpTime is ' + ffState680.scatterBuildUpTime + ', expected 2.0 (issue #690).');
+      }
+
+      if (typeof ffState680.scatterTotalDuration !== 'number') {
+        problems.push('ffState.scatterTotalDuration is missing or not a number — expected 6.0 (issue #690).');
+      } else if (Math.abs(ffState680.scatterTotalDuration - 6.0) > 0.001) {
+        problems.push('ffState.scatterTotalDuration is ' + ffState680.scatterTotalDuration + ', expected 6.0 (issue #690).');
+      }
     }
   }
 
