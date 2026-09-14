@@ -10243,5 +10243,92 @@ export async function checks() {
     }
   }
 
+  /* ---------- Dormant bare stem checks (issue #687) ---------- */
+  // Established sprouts (leafGenCount >= 1) survive autumn as dormant bare stems,
+  // while first-year sprouts (leafGenCount = 0) are fully removed.
+  {
+    const gs = window.__gardenState;
+    if (!gs) {
+      problems.push('window.__gardenState is not set — cannot verify dormant stem behavior (issue #687).');
+    } else {
+      // Verify the groundSeeds object and its _dormantStems array structure
+      const gsSeeds = gs.groundSeeds;
+      if (gsSeeds) {
+        // Check that _dormantStems is an array when dormant stems exist
+        if (gsSeeds._dormantStems !== undefined && !Array.isArray(gsSeeds._dormantStems)) {
+          problems.push('groundSeeds._dormantStems is not an array — got ' + typeof gsSeeds._dormantStems + ' (issue #687).');
+        }
+
+        // Verify each dormant stem has the required structure
+        if (gsSeeds._dormantStems && gsSeeds._dormantStems.length > 0) {
+          for (let si = 0; si < gsSeeds._dormantStems.length; si++) {
+            const ds = gsSeeds._dormantStems[si];
+            // Must have _dormant flag
+            if (ds._dormant !== true) {
+              problems.push('dormantStems[' + si + ']._dormant is not true — got ' + ds._dormant + ' (issue #687).');
+            }
+            // Must have a stem with a material
+            if (!ds.stem) {
+              problems.push('dormantStems[' + si + '].stem is missing (issue #687).');
+            } else if (!ds.stem.material) {
+              problems.push('dormantStems[' + si + '].stem.material is missing (issue #687).');
+            } else {
+              // Stem colour should be darkened (brown/dark, not green)
+              const col = ds.stem.material.color;
+              if (col instanceof THREE.Color) {
+                if (col.g > 0.5) {
+                  problems.push('dormantStems[' + si + '] stem colour has green channel ' + col.g.toFixed(3) + ' — expected dark/desaturated brown (< 0.5) for a dormant state (issue #687).');
+                }
+              }
+            }
+            // Must have no leaves (they were shed in autumn)
+            if (ds.leaves && ds.leaves.length > 0) {
+              problems.push('dormantStems[' + si + '] still has ' + ds.leaves.length + ' leaves — expected 0 (leaves should be shed in autumn) (issue #687).');
+            }
+            // Must have leafGenCount >= 1 (only established sprouts become dormant)
+            if (typeof ds.leafGenCount !== 'number' || ds.leafGenCount < 1) {
+              problems.push('dormantStems[' + si + '].leafGenCount is ' + ds.leafGenCount + ', expected >= 1 (issue #687).');
+            }
+            // Group must still be in the scene
+            if (gs.scene && ds.group && !gs.scene.children.includes(ds.group)) {
+              problems.push('dormantStems[' + si + '].group is not in the scene — dormant stem was removed (issue #687).');
+            }
+          }
+
+          // Check winter DOM mentions dormant bare stems if the current season is Winter
+          const seasonEl = document.getElementById('season-display');
+          if (seasonEl && seasonEl.textContent.trim() === 'Winter') {
+            const growingDesc = document.getElementById('growing-description');
+            const plotDesc = document.getElementById('plot-description');
+            if (growingDesc && growingDesc.textContent.indexOf('dormant bare stems') === -1) {
+              problems.push('During Winter with dormant stems present (#dormantStems=' + gsSeeds._dormantStems.length + '), growing-description does not mention "dormant bare stems" (issue #687).');
+            }
+            if (plotDesc && plotDesc.textContent.indexOf('dormant bare stems') === -1) {
+              problems.push('During Winter with dormant stems present, plot-description does not mention "dormant bare stems" (issue #687).');
+            }
+          }
+        }
+
+        // Verify that any remaining sprouts have leafGenCount = 0
+        if (gsSeeds.sprouts && gsSeeds.sprouts.length > 0) {
+          for (let si = 0; si < gsSeeds.sprouts.length; si++) {
+            const sp = gsSeeds.sprouts[si];
+            if (sp.leafGenCount >= 1) {
+              problems.push('sprouts[' + si + '] has leafGenCount ' + sp.leafGenCount + ' but is not in _dormantStems — established sprout should have been moved to dormant stems (issue #687).');
+            }
+          }
+        }
+      }
+
+      // Verify the sprout helper functions are exposed
+      if (typeof gs.addSproutSecondLeafPair !== 'function') {
+        problems.push('window.__gardenState.addSproutSecondLeafPair is not a function — sprout leaf generation helper not exposed (issue #687).');
+      }
+      if (typeof gs.buildGerminatedSprouts !== 'function') {
+        problems.push('window.__gardenState.buildGerminatedSprouts is not a function — sprout germination helper not exposed (issue #687).');
+      }
+    }
+  }
+
   return problems;
 }

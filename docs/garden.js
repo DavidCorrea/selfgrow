@@ -180,6 +180,26 @@ export function initGarden(scene, initialProgress) {
               }
             }
           }
+
+          /* --- Dormant stem sway (issue #687) --- */
+          const dormant2 = seedState2._dormantStems;
+          if (dormant2 && dormant2.length > 0) {
+            const rm3 = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            if (!rm3) {
+              for (let si = 0; si < dormant2.length; si++) {
+                const ds = dormant2[si];
+                if (ds.stem && ds.stem.material.opacity > 0) {
+                  const sway = Math.sin(time * 2 + si * 1.5) * 0.005;
+                  ds.stem.rotation.z = sway;
+                }
+              }
+            } else {
+              for (let si = 0; si < dormant2.length; si++) {
+                const ds = dormant2[si];
+                if (ds.stem) ds.stem.rotation.z = 0;
+              }
+            }
+          }
         }
       };
 
@@ -750,6 +770,26 @@ function createPlant(opts) {
                       sp.leaves[lj].rotation.z = 0;
                     }
                   }
+                }
+              }
+            }
+
+            /* --- Dormant stem sway (issue #687) --- */
+            const dormantGS = seedState._dormantStems;
+            if (dormantGS && dormantGS.length > 0) {
+              const rmD = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+              if (!rmD) {
+                for (let si = 0; si < dormantGS.length; si++) {
+                  const ds = dormantGS[si];
+                  if (ds.stem && ds.stem.material.opacity > 0) {
+                    const sway = Math.sin(time * 2 + si * 1.5) * 0.005;
+                    ds.stem.rotation.z = sway;
+                  }
+                }
+              } else {
+                for (let si = 0; si < dormantGS.length; si++) {
+                  const ds = dormantGS[si];
+                  if (ds.stem) ds.stem.rotation.z = 0;
                 }
               }
             }
@@ -2187,25 +2227,58 @@ export function startSeasonalCycle(initialProgress) {
             }
           }
 
-          // Remove sprouts when fully faded (near the end of autumn)
+          // Remove or preserve sprouts when fully faded (near the end of autumn)
+          // Issue #687: established sprouts (leafGenCount >= 1) survive winter as
+          // dormant bare stems — their leaves drop, but the stem remains visible,
+          // darkened, and described as dormant. First-year sprouts (leafGenCount = 0)
+          // still fade and die as before.
           if (t > 0.85 && groundSeeds.sprouts.length > 0) {
-            for (let si = 0; si < groundSeeds.sprouts.length; si++) {
+            // Ensure dormantStems array exists
+            if (!groundSeeds._dormantStems) {
+              groundSeeds._dormantStems = [];
+            }
+
+            for (let si = groundSeeds.sprouts.length - 1; si >= 0; si--) {
               const sp = groundSeeds.sprouts[si];
-              if (gs.scene && sp.group) {
-                gs.scene.remove(sp.group);
-              }
-              if (sp.stem) {
-                sp.stem.geometry.dispose();
-                sp.stem.material.dispose();
-              }
-              if (sp.leaves) {
-                for (let lj = 0; lj < sp.leaves.length; lj++) {
-                  sp.leaves[lj].geometry.dispose();
-                  sp.leaves[lj].material.dispose();
+              if (sp.leafGenCount >= 1) {
+                // Established sprout: shed leaves, keep stem as dormant
+                if (sp.leaves && sp.leaves.length > 0) {
+                  for (let lj = 0; lj < sp.leaves.length; lj++) {
+                    if (sp.leaves[lj].parent) {
+                      sp.group.remove(sp.leaves[lj]);
+                    }
+                    sp.leaves[lj].geometry.dispose();
+                    sp.leaves[lj].material.dispose();
+                  }
+                  sp.leaves = [];
                 }
+                // Darken and desaturate stem for dormant state
+                sp.stem.material.color.setHex(0x4a3a2a); // dark, desaturated brown
+                sp.stem.material.opacity = 1;
+                sp.stem.material.transparent = false;
+                // Ensure stem is in the scene (already is since group is in scene)
+                sp._dormant = true;
+                // Move from sprouts to dormantStems
+                groundSeeds._dormantStems.push(sp);
+                groundSeeds.sprouts.splice(si, 1);
+              } else {
+                // First-year sprout (leafGenCount = 0): fully remove as before
+                if (gs.scene && sp.group) {
+                  gs.scene.remove(sp.group);
+                }
+                if (sp.stem) {
+                  sp.stem.geometry.dispose();
+                  sp.stem.material.dispose();
+                }
+                if (sp.leaves) {
+                  for (let lj = 0; lj < sp.leaves.length; lj++) {
+                    sp.leaves[lj].geometry.dispose();
+                    sp.leaves[lj].material.dispose();
+                  }
+                }
+                groundSeeds.sprouts.splice(si, 1);
               }
             }
-            groundSeeds.sprouts = [];
 
             // Remove sprout descriptions from DOM
             const growingDesc = document.getElementById('growing-description');
@@ -2221,6 +2294,8 @@ export function startSeasonalCycle(initialProgress) {
                 .replace(/ Established shoots[^.]*\./g, '');
             }
             groundSeeds._sproutDomUpdated = false;
+            // Reset dormant DOM flag so winter can update it
+            groundSeeds._dormantDomUpdated = false;
           }
         }
       } else if (seasonName === 'Winter') {
@@ -2237,6 +2312,36 @@ export function startSeasonalCycle(initialProgress) {
             const plotDesc = document.getElementById('plot-description');
             if (plotDesc && plotDesc.textContent.indexOf('seeds rest') !== -1) {
               // Seeds are still there, just darker — description remains valid
+            }
+          }
+        }
+
+        /* --- Winter dormant bare stems (issue #687) ---
+         * Established sprouts that survived autumn as dormant stems get their
+         * stem colour darkened further during winter, and are described in the
+         * DOM as 'dormant bare stems'. */
+        if (groundSeeds._dormantStems && groundSeeds._dormantStems.length > 0) {
+          // Darken stem colour further as winter progresses
+          const dormantBaseColour = new THREE.Color(0x4a3a2a);
+          const deepWinterColour = new THREE.Color(0x2a1a0a);
+          for (let si = 0; si < groundSeeds._dormantStems.length; si++) {
+            const ds = groundSeeds._dormantStems[si];
+            if (ds.stem && ds.stem.material) {
+              ds.stem.material.color.copy(dormantBaseColour).lerp(deepWinterColour, t);
+            }
+          }
+
+          // Update DOM to mention dormant bare stems
+          if (!groundSeeds._dormantDomUpdated) {
+            groundSeeds._dormantDomUpdated = true;
+            const growingDesc = document.getElementById('growing-description');
+            const plotDesc = document.getElementById('plot-description');
+            const dormantText = ' Dormant bare stems stand where shoots once grew, waiting for spring.';
+            if (growingDesc && growingDesc.textContent.indexOf('dormant bare stems') === -1) {
+              growingDesc.textContent += dormantText;
+            }
+            if (plotDesc && plotDesc.textContent.indexOf('dormant bare stems') === -1) {
+              plotDesc.textContent += dormantText;
             }
           }
         }
@@ -2336,6 +2441,20 @@ export function startSeasonalCycle(initialProgress) {
           groundSeeds._domUpdated = false;
           groundSeeds._winterDomUpdated = false;
         }
+
+        /* --- Spring: dormant bare stems persist (issue #687) ---
+         * The bare stems that overwintered remain visible. Their stem colour
+         * gradually warms back toward a vibrant brown, ready for #653 to
+         * transform them into the third plant. */
+        if (groundSeeds._dormantStems && groundSeeds._dormantStems.length > 0) {
+          for (let si = 0; si < groundSeeds._dormantStems.length; si++) {
+            const ds = groundSeeds._dormantStems[si];
+            if (ds.stem && ds.stem.material) {
+              ds.stem.material.color.setHex(0x5a4a3a); // warm back up
+              ds.stem.material.opacity = 1;
+            }
+          }
+        }
       } else {
         /* Summer: seeds should not be present (removed in spring) */
         if (groundSeeds.meshes && groundSeeds.meshes.length > 0) {
@@ -2349,6 +2468,17 @@ export function startSeasonalCycle(initialProgress) {
             sp.stem.material.opacity = 1;
             for (let lj = 0; lj < sp.leaves.length; lj++) {
               sp.leaves[lj].material.opacity = 1;
+            }
+          }
+        }
+
+        /* --- Summer: dormant bare stems persist (issue #687) --- */
+        if (groundSeeds._dormantStems && groundSeeds._dormantStems.length > 0) {
+          for (let si = 0; si < groundSeeds._dormantStems.length; si++) {
+            const ds = groundSeeds._dormantStems[si];
+            if (ds.stem && ds.stem.material) {
+              ds.stem.material.color.setHex(0x5a4a3a);
+              ds.stem.material.opacity = 1;
             }
           }
         }
