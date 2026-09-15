@@ -47,6 +47,7 @@ export function saveGardenState() {
       firstPlantGrown: !!gs.firstPlantGrown,
       hasGroundSeeds: !!(gs.groundSeeds && gs.groundSeeds.meshes && gs.groundSeeds.meshes.length > 0),
       visitCount: typeof gs.visitCount === 'number' ? gs.visitCount : 1,
+      cumulativeBloomBonus: typeof gs.cumulativeBloomBonus === 'number' ? gs.cumulativeBloomBonus : 0,
       timestamp: Date.now()
     };
 
@@ -234,7 +235,8 @@ export function fastForwardState(savedState) {
     plant2FlowerPhase,
     plant2FlowerProgress,
     groundSeeds,
-    visitCount: typeof savedState.visitCount === 'number' ? savedState.visitCount : 1
+    visitCount: typeof savedState.visitCount === 'number' ? savedState.visitCount : 1,
+    cumulativeBloomBonus: typeof savedState.cumulativeBloomBonus === 'number' ? savedState.cumulativeBloomBonus : 0
   };
 }
 
