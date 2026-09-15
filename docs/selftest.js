@@ -10360,5 +10360,91 @@ export async function checks() {
     }
   }
 
+  /* ---------- Visit milestone acknowledgment checks (issue #697) ---------- */
+  {
+    const gs697 = window.__gardenState;
+    if (!gs697) {
+      problems.push('window.__gardenState is not set — cannot verify visit milestone acknowledgment (issue #697).');
+    } else {
+      // Verify the helper function is exposed
+      if (typeof gs697.getMilestoneAcknowledgment !== 'function') {
+        problems.push('window.__gardenState.getMilestoneAcknowledgment is not a function — milestone mapping helper missing (issue #697).');
+      } else {
+        // Verify milestone mappings
+        const fn = gs697.getMilestoneAcknowledgment;
+
+        // visitCount = 1 (first visit, covered by first-visit branch, not by helper — helper only for returning)
+        // visitCount = 2 (first return, no milestone)
+        var text2 = fn(2);
+        if (text2 !== 'Welcome back. The garden remembers your presence.') {
+          problems.push('getMilestoneAcknowledgment(2) returned "' + text2 + '", expected the generic returning-visitor text (issue #697).');
+        }
+
+        // visitCount = 3 (first milestone)
+        var text3 = fn(3);
+        if (text3 !== 'Welcome back. The garden has known you through three visits now.') {
+          problems.push('getMilestoneAcknowledgment(3) returned "' + text3 + '", expected the 3-visit milestone text (issue #697).');
+        }
+
+        // visitCount = 4 (still in the >=3 milestone range)
+        var text4 = fn(4);
+        if (text4 !== 'Welcome back. The garden has known you through three visits now.') {
+          problems.push('getMilestoneAcknowledgment(4) returned "' + text4 + '", expected the 3-visit milestone text (issue #697).');
+        }
+
+        // visitCount = 5 (second milestone)
+        var text5 = fn(5);
+        if (text5 !== 'Welcome back again. The garden feels familiar in your presence.') {
+          problems.push('getMilestoneAcknowledgment(5) returned "' + text5 + '", expected the 5-visit milestone text (issue #697).');
+        }
+
+        // visitCount = 9 (still in the >=5 milestone range)
+        var text9 = fn(9);
+        if (text9 !== 'Welcome back again. The garden feels familiar in your presence.') {
+          problems.push('getMilestoneAcknowledgment(9) returned "' + text9 + '", expected the 5-visit milestone text (issue #697).');
+        }
+
+        // visitCount = 10 (third milestone)
+        var text10 = fn(10);
+        if (text10 !== 'Welcome back. This garden has grown with you through many visits.') {
+          problems.push('getMilestoneAcknowledgment(10) returned "' + text10 + '", expected the 10-visit milestone text (issue #697).');
+        }
+
+        // visitCount = 20 (still in the >=10 milestone range)
+        var text20 = fn(20);
+        if (text20 !== 'Welcome back. This garden has grown with you through many visits.') {
+          problems.push('getMilestoneAcknowledgment(20) returned "' + text20 + '", expected the 10-visit milestone text (issue #697).');
+        }
+      }
+
+      // Verify the DOM acknowledgment matches the expected milestone for the current visitCount
+      var ackEl697 = document.getElementById('garden-state-acknowledgment');
+      if (!ackEl697) {
+        problems.push('Missing #garden-state-acknowledgment element — the page-load acknowledgment greeting is not in the DOM (issue #697).');
+      } else {
+        var ackText697 = ackEl697.textContent || '';
+        if (ackText697.length === 0) {
+          problems.push('#garden-state-acknowledgment text is empty — the page-load acknowledgment was not set (issue #697).');
+        } else {
+          var vc697 = typeof gs697.visitCount === 'number' ? gs697.visitCount : 0;
+          if (vc697 >= 1) {
+            // First visit (vc=1): should be the first-visit welcome text
+            if (vc697 === 1) {
+              if (ackText697.indexOf('Welcome to the garden') !== 0) {
+                problems.push('First-visit acknowledgment text is "' + ackText697 + '", expected "Welcome to the garden..." (issue #697).');
+              }
+            } else {
+              // Returning visitor: use the helper to get expected text
+              var expected697 = gs697.getMilestoneAcknowledgment(vc697);
+              if (ackText697 !== expected697) {
+                problems.push('Returning-visitor acknowledgment text is "' + ackText697 + '" for visitCount=' + vc697 + ', expected "' + expected697 + '" (issue #697).');
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
   return problems;
 }
