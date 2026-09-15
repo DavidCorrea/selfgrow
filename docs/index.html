@@ -1473,6 +1473,16 @@
       window.__gardenState.visitCount = 1;
     }
 
+    /* --- Cumulative bloom bonus: each return visit adds a small permanent
+     * increment (0.025, capped at 0.5) that makes flowers open a little more
+     * readily each time you come back (issue #698).
+     * First-time visitors start at 0. */
+    if (savedState) {
+      window.__gardenState.cumulativeBloomBonus = Math.min(0.5, (savedState.cumulativeBloomBonus || 0) + 0.025);
+    } else {
+      window.__gardenState.cumulativeBloomBonus = 0;
+    }
+
     /* Initialise garden with optional restored progress */
     initGarden(scene, initial);
 

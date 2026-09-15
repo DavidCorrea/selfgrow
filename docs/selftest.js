@@ -10446,5 +10446,78 @@ export async function checks() {
     }
   }
 
+  /* ---------- Cumulative bloom bonus checks (issue #698) ---------- */
+  // The cumulativeBloomBonus should persist through save/load cycle,
+  // start at 0 for first visits, be capped at 0.5, and the bloomMul
+  // in garden.js must include it in its formula.
+  (function() {
+    // 1. Verify the value exists on __gardenState
+    const gs = window.__gardenState;
+    if (!gs) {
+      problems.push('window.__gardenState is not set — cannot verify cumulativeBloomBonus (issue #698).');
+      return;
+    }
+
+    if (typeof gs.cumulativeBloomBonus !== 'number') {
+      problems.push('cumulativeBloomBonus is ' + typeof gs.cumulativeBloomBonus + ', expected a number (issue #698).');
+      return;
+    }
+
+    const bonus = gs.cumulativeBloomBonus;
+
+    // 2. Must be >= 0 and <= 0.5
+    if (bonus < 0) {
+      problems.push('cumulativeBloomBonus is ' + bonus + ', expected >= 0 (issue #698).');
+    }
+    if (bonus > 0.5) {
+      problems.push('cumulativeBloomBonus is ' + bonus + ', expected <= 0.5 (capped at 0.5) (issue #698).');
+    }
+
+    // 3. Verify increment is 0.025 per visit by checking value vs visitCount
+    // visitCount starts at 1 for first visit. cumulativeBloomBonus starts at 0.
+    // For returning visitors: bonus = min(0.5, 0.025 * (visitCount - 1))
+    const vc = typeof gs.visitCount === 'number' ? gs.visitCount : 1;
+    if (vc === 1) {
+      // First visit: bonus should be 0 exactly
+      if (bonus !== 0) {
+        problems.push('First visit cumulativeBloomBonus is ' + bonus + ', expected 0 (issue #698).');
+      }
+    } else {
+      // Returning visitor: bonus should match min(0.5, 0.025 * (vc - 1))
+      const expectedBonus = Math.min(0.5, 0.025 * (vc - 1));
+      const eps = 0.0001;
+      if (Math.abs(bonus - expectedBonus) > eps) {
+        problems.push('Returning visitor cumulativeBloomBonus is ' + bonus + ' (visitCount=' + vc + '), expected ' + expectedBonus + ' (0.025 per return visit, capped at 0.5) (issue #698).');
+      }
+    }
+
+    // 4. Verify the value round-trips through save/load
+    // Save current, clear, save a new test value, load and verify
+    var savedBonus = gs.cumulativeBloomBonus;
+    gs.cumulativeBloomBonus = 0.3; // Set a test value
+    try {
+      saveGardenState();
+      var loaded = loadGardenState();
+      if (loaded && typeof loaded.cumulativeBloomBonus === 'number') {
+        if (Math.abs(loaded.cumulativeBloomBonus - 0.3) > 0.0001) {
+          problems.push('cumulativeBloomBonus round-trip failed: saved 0.3, loaded ' + loaded.cumulativeBloomBonus + ' (issue #698).');
+        }
+      } else {
+        problems.push('cumulativeBloomBonus not found in loaded state after save — persistence broken (issue #698).');
+      }
+      // Also verify fastForwardState preserves it
+      var ffState = fastForwardState(loaded);
+      if (typeof ffState.cumulativeBloomBonus !== 'number') {
+        problems.push('fastForwardState does not include cumulativeBloomBonus — persistence broken (issue #698).');
+      } else if (ffState.cumulativeBloomBonus !== loaded.cumulativeBloomBonus) {
+        problems.push('fastForwardState changed cumulativeBloomBonus from ' + loaded.cumulativeBloomBonus + ' to ' + ffState.cumulativeBloomBonus + ' — should preserve the stored value (issue #698).');
+      }
+    } finally {
+      // Restore original value
+      gs.cumulativeBloomBonus = savedBonus;
+      saveGardenState();
+    }
+  })();
+
   return problems;
 }
