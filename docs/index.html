@@ -1423,6 +1423,16 @@
       initial = fastForwardState(savedState);
     }
 
+    /* --- Visit count: track cumulative visits (issue #695) ---
+     * Returning visitors increment the count from saved state.
+     * First-time visitors (no saved state) start at 1.
+     * Exposed on __gardenState so saveGardenState() persists it. */
+    if (savedState) {
+      window.__gardenState.visitCount = (savedState.visitCount || 0) + 1;
+    } else {
+      window.__gardenState.visitCount = 1;
+    }
+
     /* Initialise garden with optional restored progress */
     initGarden(scene, initial);
 

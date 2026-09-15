@@ -2099,6 +2099,46 @@ export async function checks() {
     problems.push('Cannot run persistence checks: window.__gardenState is not set.');
   }
 
+  /* ---------- Visit count persistence (issue #695) ---------- */
+  // visitCount must be present on __gardenState and be a positive number
+  if (window.__gardenState) {
+    if (typeof window.__gardenState.visitCount !== 'number' || window.__gardenState.visitCount < 1) {
+      problems.push('window.__gardenState.visitCount is ' + JSON.stringify(window.__gardenState.visitCount) + ', expected a positive number (issue #695).');
+    }
+
+    // Round-trip test: set a known visitCount, save, load, verify it persists
+    const prevVisitCount = window.__gardenState.visitCount;
+    window.__gardenState.visitCount = 42;
+    saveGardenState();
+    const loadedVc = loadGardenState();
+    if (!loadedVc) {
+      problems.push('saveGardenState() + loadGardenState() round-trip for visitCount returned null (issue #695).');
+    } else if (typeof loadedVc.visitCount !== 'number') {
+      problems.push('visitCount round-trip: saved 42, loaded has no visitCount field (issue #695).');
+    } else if (loadedVc.visitCount !== 42) {
+      problems.push('visitCount round-trip: saved 42, loaded ' + loadedVc.visitCount + ' (issue #695).');
+    }
+
+    // Increment test: simulate a returning visit — load, increment, save, load again, verify
+    const loadedInc = loadGardenState();
+    if (loadedInc && typeof loadedInc.visitCount === 'number') {
+      const incremented = loadedInc.visitCount + 1;
+      window.__gardenState.visitCount = incremented;
+      saveGardenState();
+      const loadedInc2 = loadGardenState();
+      if (!loadedInc2) {
+        problems.push('Increment test: save then load returned null (issue #695).');
+      } else if (loadedInc2.visitCount !== incremented) {
+        problems.push('Increment test: expected ' + incremented + ', loaded ' + loadedInc2.visitCount + ' (issue #695).');
+      }
+    }
+
+    // Restore original visitCount
+    window.__gardenState.visitCount = prevVisitCount;
+  } else {
+    problems.push('Cannot run visitCount checks: window.__gardenState is not set (issue #695).');
+  }
+
   /* ---------- Sprout leaf-generation persistence (issue #638) ---------- */
   // The leaf-generation count must survive save + load + fast-forward so next
   // spring's sprouts re-germinate with the previous cycle's leaf count.
