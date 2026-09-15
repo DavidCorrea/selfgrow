@@ -10283,5 +10283,82 @@ export async function checks() {
     }
   }
 
+  /* ---------- Butterfly stillness settling checks (issue #696) ---------- */
+  // The butterfly should start with getSettleMul() at 1.0 (no settling).
+  // When _stillnessDuration is artificially set high, getSettleMul() should
+  // decrease below 1.0 after a settle cycle is triggered.
+  {
+    const gs696 = window.__gardenState;
+    if (!gs696) {
+      problems.push('window.__gardenState is not set — cannot verify stillness settling (issue #696).');
+    } else {
+      const creature696 = gs696.creature;
+      if (!creature696) {
+        problems.push('window.__gardenState.creature is not set — cannot verify getSettleMul (issue #696).');
+      } else {
+        // Test 1: getSettleMul must be a function
+        if (typeof creature696.getSettleMul !== 'function') {
+          problems.push('creature.getSettleMul is not a function — expected a getter for the stillness settle multiplier (issue #696).');
+        } else {
+          // Test 2: With no stillness, getSettleMul() should return 1.0 (or very close)
+          const mulNormal = creature696.getSettleMul();
+          if (typeof mulNormal !== 'number' || mulNormal < 0.6 || mulNormal > 1.0) {
+            problems.push('creature.getSettleMul() returned ' + mulNormal + ' with no induced stillness — expected between 0.6 and 1.0 (issue #696).');
+          }
+
+          // Test 3: Induce stillness by temporarily setting _stillnessDuration high,
+          // then call creature.update() with a simulated time to let the lerp progress
+          // Store original getter before overriding
+          var stillnessDesc = Object.getOwnPropertyDescriptor(gs696, '_stillnessDuration');
+
+          // Override with a high stillness duration (80s — beyond the 60s max)
+          Object.defineProperty(gs696, '_stillnessDuration', {
+            get: function() { return 80000; },
+            enumerable: true,
+            configurable: true
+          });
+
+          // Run a few update cycles to let the lerp progress (~2s of simulated time)
+          if (typeof gs696.creatureUpdate === 'function') {
+            for (var settleI = 0; settleI < 4; settleI++) {
+              gs696.creatureUpdate(settleI * 0.5);
+            }
+          }
+
+          // Check that getSettleMul has decreased from its initial value
+          var mulAfter = creature696.getSettleMul();
+          if (typeof mulAfter !== 'number' || mulAfter >= mulNormal) {
+            problems.push('creature.getSettleMul() did not decrease after inducing stillness — was ' + mulNormal + ', stayed at ' + mulAfter + ' (issue #696).');
+          }
+
+          // Restore the original _stillnessDuration descriptor
+          if (stillnessDesc) {
+            Object.defineProperty(gs696, '_stillnessDuration', stillnessDesc);
+          }
+        }
+      }
+
+      // Test 4: Verify BUTTERFLY_SETTLE_PHRASES is exposed and has valid content
+      if (!gs696.BUTTERFLY_SETTLE_PHRASES || !Array.isArray(gs696.BUTTERFLY_SETTLE_PHRASES)) {
+        problems.push('window.__gardenState.BUTTERFLY_SETTLE_PHRASES is missing or not an array (issue #696).');
+      } else if (gs696.BUTTERFLY_SETTLE_PHRASES.length < 3) {
+        problems.push('window.__gardenState.BUTTERFLY_SETTLE_PHRASES has ' + gs696.BUTTERFLY_SETTLE_PHRASES.length + ' entries, expected at least 3 (issue #696).');
+      } else {
+        gs696.BUTTERFLY_SETTLE_PHRASES.forEach(function(phrase, i) {
+          if (typeof phrase !== 'string' || phrase.trim().length === 0) {
+            problems.push('window.__gardenState.BUTTERFLY_SETTLE_PHRASES[' + i + '] is not a non-empty string (issue #696).');
+          }
+        });
+      }
+
+      // Test 5: Verify _stillnessDuration is a number (the getter works)
+      if (typeof gs696._stillnessDuration !== 'number') {
+        problems.push('window.__gardenState._stillnessDuration is not a number — the getter should return a timestamp (issue #696).');
+      } else if (gs696._stillnessDuration < 0) {
+        problems.push('window.__gardenState._stillnessDuration is negative (' + gs696._stillnessDuration + ') — should be >= 0 (issue #696).');
+      }
+    }
+  }
+
   return problems;
 }

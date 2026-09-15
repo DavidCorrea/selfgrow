@@ -97,6 +97,12 @@ const CAMERA_BOOST = 1.2;
 const CAMERA_BOOST_DURATION = 2.0; // seconds boost lasts
 const CAMERA_COOLDOWN = 10.0;       // seconds before next reaction
 
+/* Stillness settling (issue #696) */
+const SETTLE_TIME_CONSTANT = 2.5;     // seconds — exponential lerp, ~95% complete in ~7.5s
+const SETTLE_STILLNESS_MIN = 20;      // seconds — minimum camera stillness before settling begins
+const SETTLE_STILLNESS_MAX = 60;      // seconds — max stillness for full contraction
+const SETTLE_MIN_MUL = 0.6;           // minimum radius multiplier (40% contraction)
+
 /**
  * Create a small butterfly creature and add it to the scene.
  *
@@ -216,6 +222,9 @@ export function createCreature(scene) {
   let _fireflyBiasZ = 0;
   let _isNightPhase = false;
 
+  /* --- Stillness settle multiplier (issue #696) --- */
+  let _stillnessSettleMul = 1.0;
+
   /* --- Firefly sync-zone slowdown tracking (issue #647) --- */
   let _syncSlowMul = 1.0;          // multiplier: 1.0 normal, ~0.85 when slowed
   let _syncSlowTimer = 0;           // seconds remaining in the slowdown
@@ -286,6 +295,8 @@ export function createCreature(scene) {
     isNightPhase: () => _isNightPhase,
     /* Firefly sync-zone slowdown accessor for selftest (issue #647) */
     getSyncSlowMul: () => _syncSlowMul,
+    /* Stillness settle multiplier for selftest and DOM (issue #696) */
+    getSettleMul: () => _stillnessSettleMul,
     /* Sprout attraction accessors for selftest (issue #629) */
     getSproutOffset: () => ({ x: _sproutOffsetX, z: _sproutOffsetZ }),
     /* Leaf brush tremble accessors for selftest (issue #640) */
@@ -463,6 +474,18 @@ export function createCreature(scene) {
       }
     }
 
+    /* --- Stillness settling: butterfly settles closer when camera is still (issue #696) --- */
+    let settleTarget = 1.0;
+    if (window.__gardenState && typeof window.__gardenState._stillnessDuration === 'number') {
+      const stillnessSec = window.__gardenState._stillnessDuration / 1000;
+      if (stillnessSec > SETTLE_STILLNESS_MIN) {
+        const t = Math.min(1, (stillnessSec - SETTLE_STILLNESS_MIN) / (SETTLE_STILLNESS_MAX - SETTLE_STILLNESS_MIN));
+        settleTarget = 1.0 - (1.0 - SETTLE_MIN_MUL) * t; // lerp from 1.0 to SETTLE_MIN_MUL
+      }
+    }
+    // Exponential lerp toward target (~5s for full transition with time constant 2.5)
+    _stillnessSettleMul = _stillnessSettleMul + (settleTarget - _stillnessSettleMul) * (1 - Math.exp(-dt / SETTLE_TIME_CONSTANT));
+
     /* Apply season multiplier to ORBIT_SPEED for angular position computation */
     // Apply firefly slow multiplier during Night (issue #598)
     const effectiveOrbitSpeed = ORBIT_SPEED * _currentSeasonOrbitMul * cameraBoost * _fireflySlowMul * _syncSlowMul;
@@ -477,7 +500,7 @@ export function createCreature(scene) {
 
     // Radial distance: varies between min and max using a slow sine
     const radiusFactor = 0.5 + 0.5 * Math.sin(t * FREQ_X + PHASE_X);
-    const radius = ORBIT_RADIUS_MIN + radiusFactor * (effectiveOrbitRadiusMax - ORBIT_RADIUS_MIN);
+    const radius = (ORBIT_RADIUS_MIN + radiusFactor * (effectiveOrbitRadiusMax - ORBIT_RADIUS_MIN)) * _stillnessSettleMul;
 
     // Vertical position: gentle bobbing (with Overcast shelter adjustment, issue #633)
     const heightFactor = 0.5 + 0.5 * Math.sin(t * FREQ_Y + PHASE_Y);
