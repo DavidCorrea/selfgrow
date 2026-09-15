@@ -622,7 +622,8 @@
       weather: { lastPhase: '', lastChangeTime: performance.now(), variantIndex: 0 },
       season: { lastPhase: '', lastChangeTime: performance.now(), variantIndex: 0 },
       fireflyProximity: { lastPhase: '', lastChangeTime: performance.now(), variantIndex: 0 },
-      fireflySync: { lastPhase: '', lastChangeTime: performance.now(), variantIndex: 0 }
+      fireflySync: { lastPhase: '', lastChangeTime: performance.now(), variantIndex: 0 },
+      butterflySettle: { lastPhase: '', lastChangeTime: performance.now(), variantIndex: 0 }
     };
 
     function timeContextFor(phase) {
@@ -1010,11 +1011,19 @@
       ' A passing butterfly brushes a leaf, setting it trembling.'
     ];
 
+    /* Butterfly settle phrases (issue #696): when camera has been still >20s and butterfly radius shrinks */
+    const BUTTERFLY_SETTLE_PHRASES = [
+      ' The butterfly settles closer, drawn by your stillness.',
+      ' The butterfly drifts nearer, responsive to your quiet presence.',
+      ' Still and watchful, the butterfly approaches a little closer.',
+      ' The butterfly settles inward, acknowledging your patient attention.'
+    ];
+
     const BUTTERFLY_SUFFIXES = [
       ' A small butterfly drifts at the edge of the garden.',
       ' The butterfly has taken shelter from the drizzle.',
       ' The butterfly drifts lower in the stronger wind, staying close to the ground.'
-    ].concat(FIREFLY_PROXIMITY_SUFFIXES).concat(SPROUT_PROXIMITY_SUFFIXES);
+    ].concat(FIREFLY_PROXIMITY_SUFFIXES).concat(SPROUT_PROXIMITY_SUFFIXES).concat(BUTTERFLY_SETTLE_PHRASES);
 
     function checkButterflyFireflyProximity() {
       const dayNight = window.__gardenState && window.__gardenState.dayNight;
@@ -1090,6 +1099,28 @@
 
       /* Reset sprout variant state when sprout proximity status changes */
       /* Use firefly-proximity variant slot for the seed variant to avoid adding another tracking slot */
+
+      /* Butterfly settle check: when camera has been still long enough, radius shrinks (issue #696) */
+      var isSettling = false;
+      var creatureState = window.__gardenState && window.__gardenState.creature;
+      if (creatureState && typeof creatureState.getSettleMul === 'function') {
+        isSettling = creatureState.getSettleMul() < 0.8;
+      }
+
+      if (isSettling) {
+        /* Cycle settle phrase using butterflySettle variant state */
+        var settleState = _variantState.butterflySettle;
+        var now = performance.now();
+        if (settleState.lastPhase !== 'settling') {
+          settleState.lastPhase = 'settling';
+          settleState.lastChangeTime = now;
+          settleState.variantIndex = 0;
+        } else if (now - settleState.lastChangeTime >= VARIANT_CYCLE_MS) {
+          settleState.variantIndex = (settleState.variantIndex + 1) % BUTTERFLY_SETTLE_PHRASES.length;
+          settleState.lastChangeTime = now;
+        }
+        return BUTTERFLY_SETTLE_PHRASES[settleState.variantIndex];
+      }
 
       if (weather === 'Light Drizzle') {
         return ' The butterfly has taken shelter from the drizzle.';
@@ -1387,6 +1418,7 @@
       FIREFLY_PROXIMITY_SUFFIXES,
       FIREFLY_SYNC_SUFFIXES,
       SPROUT_PROXIMITY_SUFFIXES,
+      BUTTERFLY_SETTLE_PHRASES,
       chooseFireflyProximitySuffix,
       updateFireflySyncDescription,
       updateLeafTrembleDescription,
@@ -1413,6 +1445,13 @@
       /* Acknowledgment setter exposed for creature.js (issue #681) */
       setAcknowledgment: setAcknowledgment
     };
+
+    /* Stillness duration getter (issue #696): time in ms since last camera interaction */
+    Object.defineProperty(window.__gardenState, '_stillnessDuration', {
+      get: function() { return performance.now() - lastInteractionTime; },
+      enumerable: true,
+      configurable: true
+    });
 
     /* --- Persistence: restore previous state if available --- */
     const savedState = loadGardenState();
