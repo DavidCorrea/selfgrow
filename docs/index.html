@@ -1443,7 +1443,8 @@
       _variantState: _variantState,
       VARIANT_CYCLE_MS: VARIANT_CYCLE_MS,
       /* Acknowledgment setter exposed for creature.js (issue #681) */
-      setAcknowledgment: setAcknowledgment
+      setAcknowledgment: setAcknowledgment,
+      getMilestoneAcknowledgment: getMilestoneAcknowledgment
     };
 
     /* Stillness duration getter (issue #696): time in ms since last camera interaction */
@@ -1584,15 +1585,33 @@
     // Expose the helper for self-test
     window.__gardenState.computeReturningVisitorGreeting = computeReturningVisitorGreeting;
 
-    /* --- Page-load acknowledgment greeting (issue #596) ---
+    /* --- Page-load acknowledgment greeting (issue #596, #697) ---
      * First-time visitors get a welcome message; returning visitors
-     * get a warm welcome-back acknowledgement. Runs after initGarden
-     * so acknowledgment is populated immediately on page load. */
+     * get a warm welcome-back acknowledgement that celebrates
+     * cumulative visit milestones (3rd, 5th, 10th visit).
+     * Runs after initGarden so acknowledgment is populated immediately on page load. */
+
+    /* Exported helper: returns the milestone-appropriate acknowledgment text
+     * for a given visitCount, so selftest can verify the mapping without
+     * needing to reload the page. First-visit text is returned separately. */
+    function getMilestoneAcknowledgment(visitCount) {
+      if (visitCount >= 10) {
+        return 'Welcome back. This garden has grown with you through many visits.';
+      }
+      if (visitCount >= 5) {
+        return 'Welcome back again. The garden feels familiar in your presence.';
+      }
+      if (visitCount >= 3) {
+        return 'Welcome back. The garden has known you through three visits now.';
+      }
+      return 'Welcome back. The garden remembers your presence.';
+    }
+
     {
       const ackEl = document.getElementById('garden-state-acknowledgment');
       if (ackEl) {
         if (savedState) {
-          ackEl.textContent = 'Welcome back. The garden remembers your presence.';
+          ackEl.textContent = getMilestoneAcknowledgment(window.__gardenState.visitCount);
         } else {
           ackEl.textContent = 'Welcome to the garden. The soil is rich and the air is still \u2014 something is about to grow.';
         }
