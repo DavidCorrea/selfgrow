@@ -194,6 +194,11 @@
         <span class="state-label">Acknowledgment</span>
         <span class="state-value" id="garden-state-acknowledgment" aria-live="polite"></span>
       </div>
+
+      <div class="state-section">
+        <span class="state-label">Butterfly</span>
+        <span class="state-value" id="garden-state-butterfly" aria-live="polite"></span>
+      </div>
     </aside>
   </div>
 
@@ -1401,6 +1406,8 @@
       seasonContexts: SEASON_CONTEXTS,
       seasonContextFor,
       updateSeasonDescription,
+      /* Camera stillness duration — milliseconds since last interaction (issue #696) */
+      _stillnessDuration: () => performance.now() - lastInteractionTime,
       /* Camera stillness acknowledgment (issue #544) */
       _acknowledgmentSentences: ACKNOWLEDGMENT_SENTENCES,
       _acknowledgmentCooldown: ACKNOWLEDGMENT_COOLDOWN_MS,

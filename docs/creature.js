@@ -231,6 +231,18 @@ export function createCreature(scene) {
   let _sproutOffsetX = 0;
   let _sproutOffsetZ = 0;
 
+  /* --- Camera stillness settling factor (issue #696) --- */
+  let _stillnessSettle = 0;
+  const STILLNESS_LERP_TIME_CONSTANT = 1.5; // seconds — ~95% complete in ~4.5s
+  const STILLNESS_ONSET_DELAY = 20000;       // ms: no settling until 20s of stillness
+  const STILLNESS_RAMP_DURATION = 40000;     // ms: from 20s to 60s to reach full settle
+  const SETTLE_FACTOR = 0.4;                 // max 40% radius reduction
+
+  /* --- Butterfly settling notification element --- */
+  let _settleNotifEl = null;
+  let _lastSettleNotifText = '';
+  const SETTLE_PHRASE = 'The butterfly settles nearer to you, drawn by your stillness.';
+
   /* --- Leaf brush tremble tracking (issue #640) --- */
   // Each entry: { leaf, originalRotX, startTime }
   let _leafTrembles = [];
@@ -288,6 +300,12 @@ export function createCreature(scene) {
     getSyncSlowMul: () => _syncSlowMul,
     /* Sprout attraction accessors for selftest (issue #629) */
     getSproutOffset: () => ({ x: _sproutOffsetX, z: _sproutOffsetZ }),
+    /* Camera stillness settling accessor for selftest (issue #696) */
+    getStillnessSettle: () => _stillnessSettle,
+    SETTLE_FACTOR,
+    STILLNESS_LERP_TIME_CONSTANT,
+    STILLNESS_ONSET_DELAY,
+    STILLNESS_RAMP_DURATION,
     /* Leaf brush tremble accessors for selftest (issue #640) */
     getLeafTrembles: () => _leafTrembles.map(t => ({
       leaf: t.leaf,
@@ -472,12 +490,37 @@ export function createCreature(scene) {
     /* --- Compute orbit position with pause speed modulation --- */
     const t = time * effectiveOrbitSpeed * pauseSpeedMul;
 
+    /* --- Camera stillness settling: shrink orbit radius when camera is still (issue #696) --- */
+    let stillnessDuration = 0;
+    if (window.__gardenState && typeof window.__gardenState._stillnessDuration === 'function') {
+      stillnessDuration = window.__gardenState._stillnessDuration();
+    }
+    const stillnessDesired = Math.max(0, Math.min(1, (stillnessDuration - STILLNESS_ONSET_DELAY) / STILLNESS_RAMP_DURATION));
+    _stillnessSettle = _stillnessSettle + (stillnessDesired - _stillnessSettle) * (1 - Math.exp(-dt / STILLNESS_LERP_TIME_CONSTANT));
+
+    /* Update butterfly settling notification element */
+    if (!_settleNotifEl) {
+      _settleNotifEl = document.getElementById('garden-state-butterfly');
+    }
+    if (_settleNotifEl) {
+      if (_stillnessSettle > 0.5) {
+        if (_lastSettleNotifText !== SETTLE_PHRASE) {
+          _lastSettleNotifText = SETTLE_PHRASE;
+          _settleNotifEl.textContent = SETTLE_PHRASE;
+        }
+      } else if (_stillnessSettle <= 0.01 && _lastSettleNotifText !== '') {
+        _lastSettleNotifText = '';
+        _settleNotifEl.textContent = '';
+      }
+    }
+
     // Angular position: slowly rotates around the garden
     const angle = t + Math.sin(t * 0.23) * 0.4;
 
     // Radial distance: varies between min and max using a slow sine
     const radiusFactor = 0.5 + 0.5 * Math.sin(t * FREQ_X + PHASE_X);
-    const radius = ORBIT_RADIUS_MIN + radiusFactor * (effectiveOrbitRadiusMax - ORBIT_RADIUS_MIN);
+    const stillnessMul = (1 - SETTLE_FACTOR * _stillnessSettle);
+    const radius = (ORBIT_RADIUS_MIN + radiusFactor * (effectiveOrbitRadiusMax - ORBIT_RADIUS_MIN)) * stillnessMul;
 
     // Vertical position: gentle bobbing (with Overcast shelter adjustment, issue #633)
     const heightFactor = 0.5 + 0.5 * Math.sin(t * FREQ_Y + PHASE_Y);

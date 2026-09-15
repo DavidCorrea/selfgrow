@@ -3382,6 +3382,71 @@ export async function checks() {
     }
   }
 
+  /* ---------- Camera stillness settling checks (issue #696) ---------- */
+  // Verify getStillnessSettle is exposed on the creature state
+  if (typeof creatureState.getStillnessSettle !== 'function') {
+    problems.push('creature.state.getStillnessSettle is not a function — camera stillness settling factor not exposed (issue #696).');
+  } else {
+    // When no stillness is reported (fresh camera move), the factor should be ~0
+    // We simulate by temporarily overriding _stillnessDuration to report 0ms stillness
+    const origStillnessDuration = gardenState && gardenState._stillnessDuration;
+    if (typeof origStillnessDuration === 'function') {
+      var prevDur = origStillnessDuration;
+      gardenState._stillnessDuration = function() { return 0; };
+      if (typeof gardenState.creatureUpdate === 'function') {
+        gardenState.creatureUpdate(0, 0.016);
+      }
+      var settleValue = creatureState.getStillnessSettle();
+      if (typeof settleValue !== 'number' || settleValue > 0.001) {
+        problems.push('creature.state.getStillnessSettle() returned ' + settleValue + ' after 0ms stillness — expected ~0 (no settling with fresh camera move, issue #696).');
+      }
+      // Restore
+      gardenState._stillnessDuration = prevDur;
+    }
+  }
+
+  // Verify SETTLE_FACTOR is 0.4 (40% reduction)
+  if (typeof creatureState.SETTLE_FACTOR !== 'number' || creatureState.SETTLE_FACTOR !== 0.4) {
+    problems.push('creature.state.SETTLE_FACTOR is ' + creatureState.SETTLE_FACTOR + ', expected 0.4 for max 40% radius reduction (issue #696).');
+  }
+
+  // Verify STILLNESS_ONSET_DELAY is 20000ms
+  if (typeof creatureState.STILLNESS_ONSET_DELAY !== 'number' || creatureState.STILLNESS_ONSET_DELAY !== 20000) {
+    problems.push('creature.state.STILLNESS_ONSET_DELAY is ' + creatureState.STILLNESS_ONSET_DELAY + ', expected 20000ms (issue #696).');
+  }
+
+  // Verify STILLNESS_RAMP_DURATION is 40000ms
+  if (typeof creatureState.STILLNESS_RAMP_DURATION !== 'number' || creatureState.STILLNESS_RAMP_DURATION !== 40000) {
+    problems.push('creature.state.STILLNESS_RAMP_DURATION is ' + creatureState.STILLNESS_RAMP_DURATION + ', expected 40000ms (issue #696).');
+  }
+
+  /* ---------- Camera stillness duration on __gardenState (issue #696) ---------- */
+  if (!gardenState) {
+    problems.push('window.__gardenState is not set — cannot check _stillnessDuration (issue #696).');
+  } else if (typeof gardenState._stillnessDuration !== 'function') {
+    problems.push('window.__gardenState._stillnessDuration is not a function — camera stillness duration not exposed (issue #696).');
+  } else {
+    // Verify it returns a non-negative number
+    var dur = gardenState._stillnessDuration();
+    if (typeof dur !== 'number' || dur < 0) {
+      problems.push('window.__gardenState._stillnessDuration() returned ' + dur + ' — expected a non-negative number (issue #696).');
+    }
+  }
+
+  /* ---------- Butterfly notification element checks (issue #696) ---------- */
+  var butterflyNotif = document.getElementById('garden-state-butterfly');
+  if (!butterflyNotif) {
+    problems.push('Missing #garden-state-butterfly element — butterfly settling notification must exist in the state panel (issue #696).');
+  } else {
+    if (!butterflyNotif.hasAttribute('aria-live')) {
+      problems.push('#garden-state-butterfly should have aria-live="polite" for screen reader updates (issue #696).');
+    }
+    var parentSection = butterflyNotif.closest('.state-section');
+    if (!parentSection) {
+      problems.push('#garden-state-butterfly is not inside a .state-section — expected panel section structure (issue #696).');
+    }
+  }
+
   /* ---------- Butterfly pause near blooming flowers checks (issue #467) ---------- */
   // When the butterfly's orbit path brings it within 0.4 units of a plant whose
   // flower is in the 'bloom' phase, it should slow its orbit speed by ~50% and
