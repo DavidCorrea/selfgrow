@@ -1999,6 +1999,93 @@ export function closePR(prNumber, comment) {
   }
 }
 
+
+// ---------------------------------------------------------------------------
+// Open agent PRs — the work the pipeline has already started.
+//
+// A run that ends in `unlanded` leaves a real PR behind: approved, armed for
+// auto-merge, waiting on checks that had not finished. Nothing wrote that down,
+// so the next run saw an open ticket, branched again (branch names carry a
+// run-scoped suffix, so never the same branch twice) and opened a SECOND PR for
+// the same ticket. Issue #687 collected three that way, the oldest of which had
+// drifted into conflict by the time anyone looked.
+//
+// These functions are what makes an open PR visible to the next run. The
+// classification is deliberately deterministic — no model reads a diff here. A PR
+// is claimed by its branch, and what to do about it follows from its checks.
+// ---------------------------------------------------------------------------
+
+export const AGENT_BRANCH_PREFIX = "agent/issue-";
+
+// How long an agent PR may sit open before the next run takes it back.
+//
+// Not a patience setting — a handover. Below this the run that opened the PR may
+// still be watching it (mergePR waits ten minutes for the checks), and two runs
+// acting on one PR is how the duplicates started. Above it, nobody is: that run
+// ended hours ago, and whatever the PR is waiting for is not coming.
+//
+// Twelve hours is shorter than the gap between the daily runs, so every stalled
+// PR is reconciled by the next one and none survives a second night.
+export const PR_STALE_MS = Number(process.env.PR_STALE_HOURS || 12) * 60 * 60 * 1000;
+
+/** The ticket an agent branch was cut for, or null when it isn't one. */
+export function issueNumberFromAgentBranch(branchName) {
+  const m = /^agent\/issue-(\d+)-/.exec(branchName || "");
+  return m ? Number(m[1]) : null;
+}
+
+/**
+ * Every open PR the pipeline opened for a ticket, with enough state to judge it.
+ * Never throws — a listing that fails must not stop a run from building.
+ */
+export function fetchOpenAgentPullRequests() {
+  let prs;
+  try {
+    prs = JSON.parse(
+      ghAs(
+        patToken(),
+        "pr list --state open --limit 100 --json number,headRefName,createdAt,url,title,mergeable,statusCheckRollup",
+        { stdio: "pipe" }
+      ).toString()
+    );
+  } catch (e) {
+    log("warn", "PR: could not list open pull requests.", errorData(e));
+    return [];
+  }
+  return prs.filter((pr) => issueNumberFromAgentBranch(pr.headRefName));
+}
+
+/**
+ * What an open agent PR is waiting for, and whether waiting is still reasonable.
+ *
+ * Pure so the policy can be tested without the API. `stale` is the only
+ * time-dependent part: a PR younger than the threshold is left entirely alone,
+ * because the run that opened it may still be watching it.
+ */
+export function classifyAgentPullRequest(pr, { now = Date.now(), staleMs } = {}) {
+  const checks = pr.statusCheckRollup || [];
+  const verdict = (c) => c.conclusion || c.state || "";
+  const failed = checks.filter((c) => ["FAILURE", "TIMED_OUT", "CANCELLED", "ERROR"].includes(verdict(c)));
+  const pending = checks.filter((c) => ["PENDING", "IN_PROGRESS", "QUEUED", "EXPECTED", ""].includes(verdict(c)));
+
+  let state;
+  if (pr.mergeable === "CONFLICTING") state = "conflicting";
+  else if (failed.length) state = "failing";
+  else if (pending.length || !checks.length) state = "pending";
+  else state = "passing";
+
+  return {
+    number: pr.number,
+    url: pr.url,
+    issueNumber: issueNumberFromAgentBranch(pr.headRefName),
+    branch: pr.headRefName,
+    state,
+    failedChecks: failed.map((c) => c.name || c.context).filter(Boolean),
+    ageMs: now - new Date(pr.createdAt).getTime(),
+    stale: now - new Date(pr.createdAt).getTime() > staleMs,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Layered build verification: syntax → static analysis (lint) → runtime smoke.
 // Cheap checks first; stop at the first failing layer. ESLint and Playwright
