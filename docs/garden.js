@@ -2375,6 +2375,3 @@ export function startSeasonalCycle(initialProgress) {
 
   tick();
 }
-
-export { SEASON_PALETTES, SEASON_NAMES, SEASON_DURATION_MS, CYCLE_DURATION_MS };
-
