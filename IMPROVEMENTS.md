@@ -156,3 +156,21 @@ Raising `DECISION_BODIES` works while there are six and stops working at sixty.
 What would actually fix it: a label per area (`models`, `spend`, `process`) so a
 reader gets the decisions touching what it is about to change, or a `foundational`
 label that always carries its body.
+
+## A recovered merge writes a weaker changelog entry than a normal one
+
+**Where:** `agents/devs.mjs` — `reconcilePullRequest`, the `passing` branch.
+
+When a run re-arms the merge on a PR an earlier run left behind, the ticket ships
+without ever passing through `landAndRecord`. The issue still closes — the PR body
+says `closes #N` and GitHub does the rest — but `builderChangelogEntry` died with
+the run that produced it, so the changelog line is reconstructed from the branch
+name: de-slugified words and a run id stripped off the end.
+
+**Why it matters:** the Changelog is read whole into the weekly report, so a
+recovered ticket appears in the digest as a worse sentence than one that merged
+normally. It is not wrong, just visibly machine-made, and the digest is the one
+artefact a person actually reads.
+
+The fix is to persist the Builder's own summary where the next run can find it —
+the PR body is the obvious place, since it already survives the run that wrote it.

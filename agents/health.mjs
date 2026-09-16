@@ -26,6 +26,9 @@ import {
   isBuildable,
   isBlocked,
   attemptCount,
+  fetchOpenAgentPullRequests,
+  classifyAgentPullRequest,
+  PR_STALE_MS,
 } from "./shared.mjs";
 
 // Who gets the @-mention. The point of an alert is that it reaches a person, so
@@ -89,6 +92,9 @@ async function gatherFacts() {
     open,
     closedRecently,
     runs,
+    agentPrs: fetchOpenAgentPullRequests().map((pr) =>
+      classifyAgentPullRequest(pr, { staleMs: PR_STALE_MS })
+    ),
     changelog: readPage("Changelog.md"),
     site: await fetchSite(),
   };
@@ -201,11 +207,51 @@ export async function checkDeployedSite({ site }) {
   return null;
 }
 
+
+/**
+ * Work the pipeline started and never finished.
+ *
+ * The Devs reconcile these at the top of every run, so a stalled PR should not
+ * survive a day. This check is what notices when that is not happening — a Devs
+ * run that is failing before it reaches the reconcile, or two PRs open for the
+ * same ticket, which is the exact shape of the duplication bug this was written
+ * for and the one thing the reconcile cannot report on itself.
+ */
+export function checkStalledPullRequests({ agentPrs }) {
+  const findings = [];
+
+  const byIssue = new Map();
+  for (const pr of agentPrs) {
+    if (!byIssue.has(pr.issueNumber)) byIssue.set(pr.issueNumber, []);
+    byIssue.get(pr.issueNumber).push(pr);
+  }
+  const duplicated = [...byIssue.entries()].filter(([, prs]) => prs.length > 1);
+  if (duplicated.length) {
+    findings.push(
+      `${duplicated.length} ticket(s) have more than one open PR: ` +
+        duplicated.map(([issue, prs]) => `#${issue} (${prs.map((p) => `#${p.number}`).join(", ")})`).join("; ") +
+        ". A second PR means a run planned a ticket another run had already built."
+    );
+  }
+
+  const stuck = agentPrs.filter((pr) => pr.stale && pr.state !== "passing");
+  if (stuck.length) {
+    findings.push(
+      `${stuck.length} agent PR(s) stalled past ${Math.round(PR_STALE_MS / 3_600_000)}h: ` +
+        stuck.map((p) => `#${p.number} (${p.state}, ${Math.round(p.ageMs / 3_600_000)}h)`).join("; ") +
+        ". The Devs reconcile these at the start of every run, so they should not accumulate — the Devs are not reaching that step."
+    );
+  }
+
+  return findings.length ? findings.join(" ") : null;
+}
+
 const CHECKS = [
   checkDeployedSite,
   checkShipping,
   checkChangelogKeepingUp,
   checkAbandonRate,
+  checkStalledPullRequests,
   checkWeeklyAgents,
 ];
 
@@ -213,13 +259,14 @@ const CHECKS = [
  * The numbers, whether or not anything is wrong. Always logged and written to the
  * job summary; never filed as an issue on its own.
  */
-export function renderVitals({ open, closedRecently, site }) {
+export function renderVitals({ open, closedRecently, site, agentPrs = [] }) {
   const openNumbers = new Set(open.map((i) => i.number));
   const shipped7 = closedRecently.filter((i) => (i.closedAt || "") >= daysAgo(7)).length;
   return [
     site ? `Site: ${site.error ? "unreachable" : `HTTP ${site.status}`}` : "Site: not checked",
     `Shipped (7d): ${shipped7}`,
     `Open: ${open.length} (${open.filter((i) => isBuildable(i, openNumbers)).length} buildable, ${open.filter(isBlocked).length} parked)`,
+    `Agent PRs: ${agentPrs.length} open (${agentPrs.filter((p) => p.stale).length} stalled)`,
   ].join(" · ");
 }
 

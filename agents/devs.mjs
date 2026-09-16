@@ -30,6 +30,9 @@ import {
   TECH_DEBT_LABEL,
   moveCard,
   createPR,
+  fetchOpenAgentPullRequests,
+  classifyAgentPullRequest,
+  PR_STALE_MS,
   approvePR,
   mergePR,
   closePR,
@@ -793,6 +796,102 @@ function maybeReplenishBacklog(mergedCount) {
 }
 
 // ---------------------------------------------------------------------------
+// Open PRs from earlier runs — resumed or retired before anything new starts.
+// ---------------------------------------------------------------------------
+
+/**
+ * What to do about one stalled PR, done.
+ *
+ * Deterministic on purpose: no model reads the diff. The PR's own checks already
+ * said what is wrong, and they are the one judge in this pipeline that did not
+ * write the code.
+ */
+async function reconcilePullRequest(verdict, openIssues) {
+  const issue = openIssues.find((i) => i.number === verdict.issueNumber) || null;
+
+  if (verdict.state === "passing") {
+    // Nothing is wrong with it — its auto-merge simply never fired, or the run
+    // that armed it stopped before it landed. Ask again.
+    log("info", `PR #${verdict.number} (#${verdict.issueNumber}) passed its checks but never landed — re-arming the merge.`);
+    if (await mergePR(verdict.number)) {
+      // The PR body closes the issue on merge, but nothing else here ran: say what
+      // shipped, so the Story and the digest are not working from a gap.
+      appendChangelogEntry(
+        `${verdict.branch.replace(/^agent\/issue-\d+-/, "").replace(/-\d+$/, "").replace(/-/g, " ")} (closes #${verdict.issueNumber})`,
+        `Changelog: recovered PR #${verdict.number}`
+      );
+      moveCard(verdict.issueNumber, "Done");
+      recordTicket("done", verdict.issueNumber, issue?.title || `#${verdict.issueNumber}`);
+    }
+    return;
+  }
+
+  // Failing or conflicting, and old enough that no run is coming back for it.
+  // Closing it is not throwing the work away: the ticket takes a strike, so it
+  // returns to the board with the failure recorded, and parks itself if it keeps
+  // collecting them. A PR nobody reaps is a ticket nobody retries.
+  const reason =
+    verdict.state === "conflicting"
+      ? `Its branch conflicts with main after ${Math.round(verdict.ageMs / 3_600_000)}h open.`
+      : `Its required checks failed (${verdict.failedChecks.join(", ") || "unknown"}) and no run came back for it.`;
+
+  log("warn", `PR #${verdict.number} (#${verdict.issueNumber}) is ${verdict.state} — closing it and striking the ticket. ${reason}`);
+  closePR(
+    verdict.number,
+    `Closing this: ${reason}\n\nThe ticket goes back on the board with a strike, so the next Scout plans it again knowing this attempt failed. Nothing here is lost — the branch is deleted, not the ticket.`
+  );
+
+  if (!issue) return; // ticket already closed — the PR was the only thing left
+  const attempts = recordTicketFailure(issue, reason, MAX_TICKET_ATTEMPTS);
+  if (attempts >= MAX_TICKET_ATTEMPTS) await writePostMortem(issue, reason);
+}
+
+/**
+ * Settle every PR an earlier run left open, and report which tickets are still
+ * claimed by one.
+ *
+ * Runs before the first ticket of every run. A ticket whose PR is still in flight
+ * is NOT buildable — that is the whole fix for the duplicates: the guard is the
+ * open PR itself rather than a label somebody has to remember to set.
+ */
+async function reconcileOpenAgentPrs(openIssues) {
+  const claimed = new Set();
+  const prs = fetchOpenAgentPullRequests();
+  if (!prs.length) return claimed;
+
+  for (const pr of prs) {
+    const verdict = classifyAgentPullRequest(pr, { staleMs: PR_STALE_MS });
+    if (!verdict.issueNumber) continue;
+
+    if (!verdict.stale) {
+      // Young enough that the run which opened it may still be watching. Two runs
+      // acting on one PR is how the duplicates started.
+      log("info", `PR #${verdict.number} is ${verdict.state} and only ${Math.round(verdict.ageMs / 60_000)}m old — leaving it alone, #${verdict.issueNumber} stays claimed.`);
+      claimed.add(verdict.issueNumber);
+      continue;
+    }
+
+    if (verdict.state === "pending") {
+      // Stale AND still pending means its checks never ran or never finished —
+      // usually a run cancelled mid-flight. Nothing to judge yet, so it keeps its
+      // claim rather than being closed on a verdict that does not exist.
+      log("warn", `PR #${verdict.number} has been waiting on its checks for ${Math.round(verdict.ageMs / 3_600_000)}h — leaving it, but #${verdict.issueNumber} stays claimed.`);
+      claimed.add(verdict.issueNumber);
+      continue;
+    }
+
+    try {
+      await reconcilePullRequest(verdict, openIssues);
+    } catch (e) {
+      // One unreapable PR must not stop the run from building anything else.
+      log("warn", `Could not reconcile PR #${verdict.number}.`, errorData(e));
+      claimed.add(verdict.issueNumber);
+    }
+  }
+  return claimed;
+}
+
+// ---------------------------------------------------------------------------
 // Main — drain the highest-priority tickets within a wall-clock budget.
 // ---------------------------------------------------------------------------
 
@@ -820,7 +919,12 @@ async function main() {
     // may have just released the next ticket.
     const open = fetchOpenIssues(100);
     const openNumbers = new Set(open.map((i) => i.number));
-    const untried = open.filter((i) => !attempted.has(i.number));
+    // Settle what earlier runs left open BEFORE choosing, every pass: a ticket
+    // with a live PR is not buildable, and a stale one is retired here so the
+    // ticket comes back with its failure written down rather than silently
+    // re-planned onto a branch beside the one that already failed.
+    const claimed = await withLogGroup("Open pull requests", () => reconcileOpenAgentPrs(open));
+    const untried = open.filter((i) => !attempted.has(i.number) && !claimed.has(i.number));
     let candidates = untried.filter((i) => isBuildable(i, openNumbers));
 
     // Rank by what each ticket unblocks, not only by its own label, and say so in
@@ -863,7 +967,12 @@ async function main() {
         .filter((i) => !isBlocked(i))
         .map((i) => `#${i.number} waits on ${unmetDependencies(i, openNumbers).map((d) => `#${d}`).join(", ")}`)
         .filter((s) => !s.endsWith("waits on "));
-      if (waiting.length) {
+      if (claimed.size) {
+        // Not an empty board — the work is open as PRs. Naming them is the
+        // difference between "nothing to do" and "everything is waiting on a
+        // check", which look identical from the run's own logs.
+        log("info", `Nothing available: ${[...claimed].map((n) => `#${n}`).join(", ")} still claimed by an open PR.`);
+      } else if (waiting.length) {
         // Not idle — every remaining ticket is waiting on something. Say what, so
         // a stuck backlog is diagnosable instead of looking like an empty one.
         log("info", `Nothing available: ${waiting.join("; ")}.`);

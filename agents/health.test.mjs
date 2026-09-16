@@ -8,6 +8,7 @@ import {
   checkChangelogKeepingUp,
   checkAbandonRate,
   checkWeeklyAgents,
+  checkStalledPullRequests,
   checkDeployedSite,
 } from "./health.mjs";
 
@@ -127,5 +128,46 @@ test("noticing that nobody can see the product", async (t) => {
 
   await t.test("stays quiet when no site is configured", async () => {
     assert.equal(await checkDeployedSite({ site: null }), null);
+  });
+});
+
+test("noticing work the pipeline started and never finished", async (t) => {
+  const openPr = (over = {}) => ({
+    number: 713,
+    issueNumber: 687,
+    state: "failing",
+    stale: true,
+    ageMs: 30 * 3_600_000,
+    failedChecks: ["verify-product"],
+    ...over,
+  });
+
+  await t.test("says nothing when every open PR is still in flight", () => {
+    assert.equal(
+      checkStalledPullRequests({ agentPrs: [openPr({ state: "pending", stale: false })] }),
+      null
+    );
+  });
+
+  await t.test("says nothing when there are no agent PRs at all", () => {
+    assert.equal(checkStalledPullRequests({ agentPrs: [] }), null);
+  });
+
+  await t.test("reports a PR the Devs should have reaped and did not", () => {
+    const finding = checkStalledPullRequests({ agentPrs: [openPr()] });
+    assert.match(finding, /1 agent PR\(s\) stalled/);
+    assert.match(finding, /not reaching that step/);
+  });
+
+  await t.test("a stale PR that is merely waiting to merge is not a fault", () => {
+    assert.equal(checkStalledPullRequests({ agentPrs: [openPr({ state: "passing" })] }), null);
+  });
+
+  await t.test("two PRs for one ticket is reported as the duplication it is", () => {
+    const finding = checkStalledPullRequests({
+      agentPrs: [openPr({ number: 694, stale: false, state: "pending" }), openPr({ number: 713 })],
+    });
+    assert.match(finding, /#687 \(#694, #713\)/);
+    assert.match(finding, /already built/);
   });
 });

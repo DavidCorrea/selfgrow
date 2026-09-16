@@ -24,6 +24,9 @@ import {
   printRunSummary,
   fetchOpenIssues,
   isBuildable,
+  fetchOpenAgentPullRequests,
+  classifyAgentPullRequest,
+  PR_STALE_MS,
   unmetDependencies,
   priorityRank,
   effectivePriorityRank,
@@ -46,7 +49,18 @@ function main() {
 
   const open = fetchOpenIssues(100);
   const openNumbers = new Set(open.map((i) => i.number));
-  const buildable = open.filter((i) => isBuildable(i, openNumbers));
+  // A ticket whose PR is still in flight is not work — the build job would only
+  // open a second PR beside it. A STALE one still counts: the run has to start for
+  // anything to reap it, and sizing it out here is how a board full of dead PRs
+  // would look like an empty one forever.
+  const claimed = new Set(
+    fetchOpenAgentPullRequests()
+      .map((pr) => classifyAgentPullRequest(pr, { staleMs: PR_STALE_MS }))
+      .filter((v) => !v.stale && v.issueNumber)
+      .map((v) => v.issueNumber)
+  );
+  if (claimed.size) log("info", `Claimed by an open PR, not re-planned: ${[...claimed].map((n) => `#${n}`).join(", ")}.`);
+  const buildable = open.filter((i) => isBuildable(i, openNumbers) && !claimed.has(i.number));
 
   if (!buildable.length) {
     const waiting = open
