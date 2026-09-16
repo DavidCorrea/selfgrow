@@ -190,6 +190,29 @@ export async function checks() {
     }
   }
 
+  /* ---------- Tone mapping checks (issue #716) ---------- */
+  // ACESFilmic was crushing low luminance into darkness. The garden now uses
+  // Reinhard tone mapping with exposure 1.2 so shadow detail is visible in
+  // all environmental phase combinations (Night/Overcast, Night/Drizzle, etc.).
+  if (gardenState && gardenState.renderer) {
+    const renderer = gardenState.renderer;
+    if (renderer.toneMapping !== THREE.ReinhardToneMapping) {
+      problems.push(
+        'renderer.toneMapping is ' + renderer.toneMapping +
+        ' (expected THREE.ReinhardToneMapping=' + THREE.ReinhardToneMapping +
+        ') — ACESFilmic was crushing low luminance into darkness, making plants nearly ' +
+        'invisible at night and during overcast/drizzle (issue #716).'
+      );
+    }
+    if (renderer.toneMappingExposure !== 1.2) {
+      problems.push(
+        'renderer.toneMappingExposure is ' + renderer.toneMappingExposure +
+        ' (expected 1.2) — the exposure must be raised from 1.0 to 1.2 so shadow detail ' +
+        'is preserved while keeping the scene calm and natural (issue #716).'
+      );
+    }
+  }
+
   /* ---------- OrbitControls checks ---------- */
   if (gardenState) {
     const ctrl = gardenState.controls;
