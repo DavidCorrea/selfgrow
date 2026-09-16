@@ -7,7 +7,8 @@
  * darkens (t ≥ 0.75) and fade out as Morning approaches (t ∈ [0.95, 1.0)).
  *
  * Each glow is a small additive-blended point sprite, barely perceptible —
- * peak opacity ≤ 0.15. This gives the garden a sense of continued life at
+ * peak opacity 0.15, rising gently (up to a 0.25 cap) for returning
+ * visitors (issue #705). This gives the garden a sense of continued life at
  * night, fulfilling the Vision's 'something small is usually happening at
  * the edge of attention.'
  *
@@ -31,7 +32,39 @@ import { computeDisplacement } from "./groundRipple.js";
 const DOTS_MIN = 4;
 const DOTS_MAX = 6;               // 4–6 per plant
 const DRIFT_RADIUS = 0.15;         // maximum drift offset from plant
-const PEAK_OPACITY = 0.15;         // peak opacity during Night (≤ 0.15)
+const PEAK_OPACITY = 0.15;         // base peak opacity during Night (≤ 0.15); scaled by getCumulativePeakOpacity() for return visits (issue #705)
+
+/**
+ * Compute the effective peak opacity for the current cumulative visit count.
+ * Returns a value that increases with return visits, never exceeding 0.25,
+ * so the principle of calm is preserved.
+ *
+ * - visitCount < 3:    0.15 (default)
+ * - visitCount >= 3:   0.18 (+20%)
+ * - visitCount >= 10:  0.20 (+35%)
+ * - visitCount >= 25:  0.22
+ * - visitCount >= 50:  0.24
+ * - visitCount >= 100: 0.25 (hard cap)
+ *
+ * Reads window.__gardenState.visitCount live so it reflects the persisted value.
+ */
+function getCumulativePeakOpacity() {
+  var gs = window.__gardenState;
+  var vc = gs && typeof gs.visitCount === 'number' ? gs.visitCount : 1;
+  var peak = PEAK_OPACITY; // 0.15 baseline
+  if (vc >= 100) {
+    peak = 0.25;
+  } else if (vc >= 50) {
+    peak = 0.24;
+  } else if (vc >= 25) {
+    peak = 0.22;
+  } else if (vc >= 10) {
+    peak = 0.20;
+  } else if (vc >= 3) {
+    peak = 0.18;
+  }
+  return Math.min(peak, 0.25);
+}
 const GLOW_SIZE = 0.04;            // base sprite size in world units
 const LIFT_HEIGHT = 0.35;           // how far fireflies rise above leaf height at night
 const FADE_LERP_SPEED = 0.04;      // ~1.2 seconds to fade in/out
@@ -119,9 +152,19 @@ const SYNC_RESIDUAL_VARIANCE = 0.15; // ±0.15 rad residual variance to avoid pe
 
 const WIND_DRIFT_SCALE = 0.02;      // scale of ground ripple wind perturbation on drift
 
+/* --- Butterfly landing firefly scatter (issue #690) --- */
+const SCATTER_RADIUS = 0.4;         // units — max distance from butterfly landing to trigger scatter
+const SCATTER_AMOUNT_MAX = 0.1;     // max outward displacement units (scatter amount range: 0.05-0.1)
+const SCATTER_BUILD_UP_TIME = 2.0;  // seconds to drift outward
+const SCATTER_TOTAL_DURATION = 6.0; // total seconds: 2s outward + 4s return
+
 /* --- Sprout proximity glow boost (issue #646) --- */
 const SPROUT_GLOW_BOOST_RADIUS = 0.3;    // units — max distance for sprout proximity boost
 const SPROUT_GLOW_BOOST_MAX = 0.15;       // max 15% brightness boost at zero distance
+
+/* --- Bloom attraction drift (issue #680) --- */
+const BLOOM_ATTRACT_RADIUS = 0.4;         // units — max distance for blooming flower attraction
+const BLOOM_ATTRACT_MAX = DRIFT_RADIUS * 0.1;  // 0.015 — max perturbation toward bloom (10% of DRIFT_RADIUS)
 
 /* --- Firefly-to-plant surface glow (issue #613) --- */
 const WARM_GLOW_COLOR = 0xccdd88;     // warm yellow-green tint for plant surface glow
@@ -235,6 +278,16 @@ export function createFireflies(scene) {
         baseY: baseY,
         baseZ: baseZ,
         sizeBase: sizes[i],
+        /* --- Scatter state (issue #690) --- */
+        scatterOffsetX: 0,
+        scatterOffsetY: 0,
+        scatterOffsetZ: 0,
+        scatterTimer: 0,            // seconds remaining in active scatter cycle (0 = not scattering)
+        scatterDirX: 0,             // unit direction away from source (x)
+        scatterDirY: 0,             // unit direction away from source (y)
+        scatterDirZ: 0,             // unit direction away from source (z)
+        scatterAmount: 0,           // the max scatter amplitude for this dot (0.05-0.1)
+        scatterSourcePos: null,     // {x, y, z} — the triggering position
         /* --- Butterfly proximity glow boost (issue #599) --- */
         glowBoostTimer: 0,          // seconds remaining of boost
         glowBoostAmount: 0,         // boost fraction (0.20-0.30, 0 = none)
@@ -346,6 +399,8 @@ export function createFireflies(scene) {
       }
       return count;
     },
+    /** Returns the effective peak opacity scaled by cumulative return visit count (issue #705) */
+    getCumulativePeakOpacity: getCumulativePeakOpacity,
     /** Current weather opacity multiplier (lerping toward target) */
     currentWeatherMul: function() { return currentWeatherMul; },
     /** Current seasonal opacity multiplier (lerping toward target) */
@@ -422,6 +477,14 @@ export function createFireflies(scene) {
     /** Sprout proximity glow boost constants (issue #646) */
     sproutGlowBoostRadius: SPROUT_GLOW_BOOST_RADIUS,
     sproutGlowBoostMax: SPROUT_GLOW_BOOST_MAX,
+    /** Bloom attraction drift constants (issue #680) */
+    bloomAttractRadius: BLOOM_ATTRACT_RADIUS,
+    bloomAttractMax: BLOOM_ATTRACT_MAX,
+    /** Butterfly landing scatter constants (issue #690) */
+    scatterRadius: SCATTER_RADIUS,
+    scatterAmountMax: SCATTER_AMOUNT_MAX,
+    scatterBuildUpTime: SCATTER_BUILD_UP_TIME,
+    scatterTotalDuration: SCATTER_TOTAL_DURATION,
     /** Pulse synchronization configuration constants (issue #639) */
     syncConstants: {
       convergeRadius: SYNC_CONVERGE_RADIUS,
@@ -440,11 +503,34 @@ export function createFireflies(scene) {
             phaseOffset: dd.phaseOffset,
             originalPhaseOffset: dd.originalPhaseOffset,
             syncActive: dd.syncActive,
-            syncPhaseResidual: dd.syncPhaseResidual
+            syncPhaseResidual: dd.syncPhaseResidual,
+            groupIndex: gi
           });
         }
       }
       return syncs;
+    },
+    /** Returns scatter state for every dot: which are currently scattering (issue #690) */
+    getScatterCandidates: function() {
+      var scatters = [];
+      for (var gi = 0; gi < plantGroups.length; gi++) {
+        for (var di = 0; di < plantGroups[gi].dotData.length; di++) {
+          var dd = plantGroups[gi].dotData[di];
+          scatters.push({
+            dotIndex: di,
+            groupIndex: gi,
+            scatterTimer: dd.scatterTimer,
+            scatterAmount: dd.scatterAmount,
+            scatterDirX: dd.scatterDirX,
+            scatterDirY: dd.scatterDirY,
+            scatterDirZ: dd.scatterDirZ,
+            scatterOffsetX: dd.scatterOffsetX,
+            scatterOffsetY: dd.scatterOffsetY,
+            scatterOffsetZ: dd.scatterOffsetZ
+          });
+        }
+      }
+      return scatters;
     }
   };
 
@@ -525,11 +611,11 @@ export function createFireflies(scene) {
     if (t >= 0.75) {
       if (t < 0.95) {
         // Full Night — target peak opacity, modulated by weather and season
-        targetOpacity = PEAK_OPACITY * currentWeatherMul * currentSeasonMul;
+        targetOpacity = getCumulativePeakOpacity() * currentWeatherMul * currentSeasonMul;
       } else {
         // Fading out toward Morning — t ∈ [0.95, 1.0)
         const fadeT = (1.0 - t) / 0.05; // 1 → 0
-        targetOpacity = Math.max(0, fadeT) * PEAK_OPACITY * currentWeatherMul * currentSeasonMul;
+        targetOpacity = Math.max(0, fadeT) * getCumulativePeakOpacity() * currentWeatherMul * currentSeasonMul;
       }
     }
     // t < 0.75: target stays 0 — invisible during Morning, Midday, Evening
@@ -647,6 +733,188 @@ export function createFireflies(scene) {
           pos[i3 + 1] = dd.baseY + driftY + liftOffset;
           pos[i3 + 2] = dd.baseZ + driftZ + windOffsetZ;
 
+          /* --- Bloom attraction drift perturbation (issue #680) --- */
+          // During Night phase, firefly dots within BLOOM_ATTRACT_RADIUS of a
+          // blooming flower experience a subtle position perturbation toward the
+          // flower center — up to BLOOM_ATTRACT_MAX (10% of DRIFT_RADIUS) with
+          // smooth distance falloff. Barely perceptible in isolation; adds to the
+          // ecosystem feel. Disabled under prefers-reduced-motion.
+          if (t >= 0.75 && t < 1.0) {
+            const gs = window.__gardenState;
+            if (gs) {
+              var plantRefs = ['plant', 'plant2'];
+              for (var pri = 0; pri < plantRefs.length; pri++) {
+                var plantObj = gs[plantRefs[pri]];
+                if (!plantObj || !plantObj.flower || typeof plantObj.flower.getPhase !== 'function') continue;
+                if (plantObj.flower.getPhase() !== 'bloom') continue;
+                var flowerPos = plantObj.flower.group.position;
+                if (!flowerPos) continue;
+
+                var fx = flowerPos.x;
+                var fy = flowerPos.y;
+                var fz = flowerPos.z;
+                var dx = pos[i3] - fx;
+                var dy = pos[i3 + 1] - fy;
+                var dz = pos[i3 + 2] - fz;
+                var dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+                if (dist <= BLOOM_ATTRACT_RADIUS && dist > 0.0001) {
+                  // Smooth distance falloff: 1 at center, 0 at edge
+                  var falloff = 1 - (dist / BLOOM_ATTRACT_RADIUS);
+                  // Smoothstep: 3t^2 - 2t^3 for even gentler falloff near edge
+                  var smoothFalloff = falloff * falloff * (3 - 2 * falloff);
+                  var amount = BLOOM_ATTRACT_MAX * smoothFalloff;
+
+                  // Direction from dot toward flower center (normalized)
+                  var invDist = 1 / dist;
+                  pos[i3] += (fx - pos[i3]) * invDist * amount;
+                  pos[i3 + 1] += (fy - pos[i3 + 1]) * invDist * amount;
+                  pos[i3 + 2] += (fz - pos[i3 + 2]) * invDist * amount;
+                }
+              }
+            }
+          }
+
+          /* --- Butterfly landing firefly scatter (issue #690) --- */
+          // During Night phase, when the butterfly enters 'descending' or 'resting'
+          // state on a blooming flower, the nearest 2-3 firefly dots within
+          // SCATTER_RADIUS (0.4 units) drift outward by 0.05-0.1 units over 2s,
+          // then smoothly return over the next 4s. The scatter is subtle enough
+          // to be felt rather than noticed. Disabled under prefers-reduced-motion.
+          if (t >= 0.75 && t < 1.0 && !state.reducedMotion) {
+            const gs = window.__gardenState;
+            if (gs) {
+              var creature = gs.creature;
+              if (creature && typeof creature.pauseState === 'function' && typeof creature.pauseTargetPos === 'function') {
+                var pauseState = creature.pauseState();
+                var isLandingOrResting = (pauseState === 'descending' || pauseState === 'resting');
+                var targetPos = creature.pauseTargetPos();
+
+                if (isLandingOrResting && targetPos) {
+                  // Check if this landing is on a blooming flower
+                  var isOnBloomingFlower = false;
+                  var plantRefs = ['plant', 'plant2'];
+                  for (var pri = 0; pri < plantRefs.length; pri++) {
+                    var plantObj = gs[plantRefs[pri]];
+                    if (plantObj && plantObj.flower && typeof plantObj.flower.getPhase === 'function') {
+                      if (plantObj.flower.getPhase() === 'bloom') {
+                        var flowerPos = plantObj.flower.group.position;
+                        if (flowerPos) {
+                          var tdx = targetPos.x - flowerPos.x;
+                          var tdy = targetPos.y - flowerPos.y;
+                          var tdz = targetPos.z - flowerPos.z;
+                          var tdist = Math.sqrt(tdx * tdx + tdy * tdy + tdz * tdz);
+                          if (tdist < 0.2) {
+                            isOnBloomingFlower = true;
+                            break;
+                          }
+                        }
+                      }
+                    }
+                  }
+
+                  if (isOnBloomingFlower) {
+                    // Collect eligible dots within SCATTER_RADIUS of the landing target
+                    var eligible = [];
+                    for (var ei = 0; ei < group.count; ei++) {
+                      var ed = group.dotData[ei];
+                      if (ei >= effectiveMax) continue;
+                      var ep3 = ei * 3;
+                      var ex = pos[ep3] - targetPos.x;
+                      var ey = pos[ep3 + 1] - targetPos.y;
+                      var ez = pos[ep3 + 2] - targetPos.z;
+                      var edist = Math.sqrt(ex * ex + ey * ey + ez * ez);
+                      if (edist <= SCATTER_RADIUS) {
+                        eligible.push({ idx: ei, dist: edist });
+                      }
+                    }
+
+                    // Sort by distance, select nearest 2-3
+                    eligible.sort(function(a, b) { return a.dist - b.dist; });
+                    var scatterCount = Math.min(eligible.length, 2 + Math.floor(Math.random() * 2)); // 2-3
+
+                    for (var si = 0; si < scatterCount; si++) {
+                      var candidate = eligible[si];
+                      var tdd = group.dotData[candidate.idx];
+                      // Only trigger if not already scattering
+                      if (tdd.scatterTimer <= 0) {
+                        // Compute direction away from source
+                        var tx = pos[candidate.idx * 3] - targetPos.x;
+                        var ty = pos[candidate.idx * 3 + 1] - targetPos.y;
+                        var tz = pos[candidate.idx * 3 + 2] - targetPos.z;
+                        var tlen = Math.sqrt(tx * tx + ty * ty + tz * tz);
+                        if (tlen > 0.0001) {
+                          tdd.scatterDirX = tx / tlen;
+                          tdd.scatterDirY = ty / tlen;
+                          tdd.scatterDirZ = tz / tlen;
+                        } else {
+                          // Dot is exactly at target — pick a random outward direction
+                          var randAngle = Math.random() * Math.PI * 2;
+                          tdd.scatterDirX = Math.cos(randAngle);
+                          tdd.scatterDirY = 0.2;
+                          tdd.scatterDirZ = Math.sin(randAngle);
+                        }
+                        tdd.scatterAmount = 0.05 + Math.random() * 0.05; // 0.05-0.1
+                        tdd.scatterTimer = SCATTER_TOTAL_DURATION;
+                        tdd.scatterSourcePos = { x: targetPos.x, y: targetPos.y, z: targetPos.z };
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+          /* --- Apply scatter offset and decay --- */
+          if (dd.scatterTimer > 0) {
+            // scatterTimer counts down from SCATTER_TOTAL_DURATION
+            var elapsed = SCATTER_TOTAL_DURATION - dd.scatterTimer;
+            var progress = elapsed / SCATTER_TOTAL_DURATION; // 0→1 over 6s
+            var buildUpFraction = SCATTER_BUILD_UP_TIME / SCATTER_TOTAL_DURATION; // 2/6 = 0.333
+
+            var offsetAmount = 0;
+            if (progress < buildUpFraction) {
+              // Outward phase: 0→peak over build-up time, eased
+              var normT = progress / buildUpFraction;
+              // Quadratic ease-out: slow start then accelerate toward peak
+              var eased = 1 - ((1 - normT) * (1 - normT));
+              offsetAmount = dd.scatterAmount * eased;
+            } else {
+              // Return phase: peak→0 over remaining time, eased
+              var returnProgress = (progress - buildUpFraction) / (1 - buildUpFraction);
+              // Inverse smoothstep: starts fast, slows toward 0
+              var eased = 1 - (returnProgress * returnProgress * (3 - 2 * returnProgress));
+              offsetAmount = dd.scatterAmount * eased;
+            }
+
+            dd.scatterOffsetX = dd.scatterDirX * offsetAmount;
+            dd.scatterOffsetY = dd.scatterDirY * offsetAmount;
+            dd.scatterOffsetZ = dd.scatterDirZ * offsetAmount;
+
+            dd.scatterTimer -= dt;
+            if (dd.scatterTimer <= 0) {
+              dd.scatterTimer = 0;
+              dd.scatterOffsetX = 0;
+              dd.scatterOffsetY = 0;
+              dd.scatterOffsetZ = 0;
+            }
+          } else {
+            // No active scatter — lerp any residual offset smoothly to 0
+            if (Math.abs(dd.scatterOffsetX) > 0.0001 || Math.abs(dd.scatterOffsetY) > 0.0001 || Math.abs(dd.scatterOffsetZ) > 0.0001) {
+              dd.scatterOffsetX *= 0.95;
+              dd.scatterOffsetY *= 0.95;
+              dd.scatterOffsetZ *= 0.95;
+              if (Math.abs(dd.scatterOffsetX) < 0.0001) dd.scatterOffsetX = 0;
+              if (Math.abs(dd.scatterOffsetY) < 0.0001) dd.scatterOffsetY = 0;
+              if (Math.abs(dd.scatterOffsetZ) < 0.0001) dd.scatterOffsetZ = 0;
+            }
+          }
+
+          // Apply scatter offset to position
+          pos[i3] += dd.scatterOffsetX;
+          pos[i3 + 1] += dd.scatterOffsetY;
+          pos[i3 + 2] += dd.scatterOffsetZ;
+
           /* --- Sprout proximity glow boost (issue #646) --- */
           // During Night phase in Spring, fireflies within 0.3 units of a
           // sprout cluster get a 10-15% boost in glow intensity, decaying
@@ -683,11 +951,17 @@ export function createFireflies(scene) {
             }
           }
         } else {
-          // Reduced motion: no pulsing/drift/lift, but keep size at base
+          // Reduced motion: no pulsing/drift/lift/scatter, but keep size at base
           sizes[i] = dd.sizeBase;
           pos[i3] = dd.baseX;
           pos[i3 + 1] = dd.baseY;
           pos[i3 + 2] = dd.baseZ;
+
+          // Ensure scatter offsets are reset under reduced motion
+          dd.scatterOffsetX = 0;
+          dd.scatterOffsetY = 0;
+          dd.scatterOffsetZ = 0;
+          dd.scatterTimer = 0;
 
           /* --- Butterfly proximity glow boost (issue #599) — also active in reduced motion --- */
           if (t >= 0.75 && t < 1.0) {

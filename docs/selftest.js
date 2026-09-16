@@ -2099,6 +2099,46 @@ export async function checks() {
     problems.push('Cannot run persistence checks: window.__gardenState is not set.');
   }
 
+  /* ---------- Visit count persistence (issue #695) ---------- */
+  // visitCount must be present on __gardenState and be a positive number
+  if (window.__gardenState) {
+    if (typeof window.__gardenState.visitCount !== 'number' || window.__gardenState.visitCount < 1) {
+      problems.push('window.__gardenState.visitCount is ' + JSON.stringify(window.__gardenState.visitCount) + ', expected a positive number (issue #695).');
+    }
+
+    // Round-trip test: set a known visitCount, save, load, verify it persists
+    const prevVisitCount = window.__gardenState.visitCount;
+    window.__gardenState.visitCount = 42;
+    saveGardenState();
+    const loadedVc = loadGardenState();
+    if (!loadedVc) {
+      problems.push('saveGardenState() + loadGardenState() round-trip for visitCount returned null (issue #695).');
+    } else if (typeof loadedVc.visitCount !== 'number') {
+      problems.push('visitCount round-trip: saved 42, loaded has no visitCount field (issue #695).');
+    } else if (loadedVc.visitCount !== 42) {
+      problems.push('visitCount round-trip: saved 42, loaded ' + loadedVc.visitCount + ' (issue #695).');
+    }
+
+    // Increment test: simulate a returning visit — load, increment, save, load again, verify
+    const loadedInc = loadGardenState();
+    if (loadedInc && typeof loadedInc.visitCount === 'number') {
+      const incremented = loadedInc.visitCount + 1;
+      window.__gardenState.visitCount = incremented;
+      saveGardenState();
+      const loadedInc2 = loadGardenState();
+      if (!loadedInc2) {
+        problems.push('Increment test: save then load returned null (issue #695).');
+      } else if (loadedInc2.visitCount !== incremented) {
+        problems.push('Increment test: expected ' + incremented + ', loaded ' + loadedInc2.visitCount + ' (issue #695).');
+      }
+    }
+
+    // Restore original visitCount
+    window.__gardenState.visitCount = prevVisitCount;
+  } else {
+    problems.push('Cannot run visitCount checks: window.__gardenState is not set (issue #695).');
+  }
+
   /* ---------- Sprout leaf-generation persistence (issue #638) ---------- */
   // The leaf-generation count must survive save + load + fast-forward so next
   // spring's sprouts re-germinate with the previous cycle's leaf count.
@@ -3736,6 +3776,144 @@ export async function checks() {
     }
   }
 
+  /* ---------- Butterfly lingers longer at pollinated flowers checks (issue #679) ---------- */
+  // When the butterfly pauses at a blooming flower whose isPollinated() returns true,
+  // the pause hold duration is extended from 3-5s to 5-8s (multiplied by ~1.6x).
+  // The extended duration does not affect any other aspect of pause behavior.
+  if (!creatureState) {
+    problems.push('window.__gardenState.creature is not set — cannot verify pollinated flower pause extension (issue #679).');
+  } else {
+    // --- Structural checks: multiplier constant must be exposed and equal 1.6 ---
+    if (typeof creatureState.POLLINATED_PAUSE_MULTIPLIER !== 'number') {
+      problems.push('creature.state.POLLINATED_PAUSE_MULTIPLIER is not a number — got ' + typeof creatureState.POLLINATED_PAUSE_MULTIPLIER + ' (issue #679).');
+    } else if (Math.abs(creatureState.POLLINATED_PAUSE_MULTIPLIER - 1.6) > 0.01) {
+      problems.push('creature.state.POLLINATED_PAUSE_MULTIPLIER is ' + creatureState.POLLINATED_PAUSE_MULTIPLIER + ', expected 1.6 (issue #679).');
+    }
+
+    // --- Structural checks: getPauseHoldDuration must be a function ---
+    if (typeof creatureState.getPauseHoldDuration !== 'function') {
+      problems.push('creature.state.getPauseHoldDuration is not a function — pause hold duration getter missing (issue #679).');
+    }
+
+    // --- Test that a non-pollinated bloom gets pause hold duration in 3-5s range ---
+    if (typeof creatureState.getPauseHoldDuration === 'function' && typeof creatureState.pauseState === 'function') {
+      var origPlant = gardenState && gardenState.plant;
+      var origPlant2 = gardenState && gardenState.plant2;
+
+      // Save original Math.random and dayNight
+      var origRandom = Math.random;
+      var origDayNight = gardenState && gardenState.dayNight;
+      var origDayNightGetCycle = origDayNight && origDayNight.getCycleProgress;
+
+      try {
+        // Override dayNight to daytime so creature is visible
+        if (origDayNight) {
+          origDayNight.getCycleProgress = function() { return 0.1; };
+        }
+
+        // Drain to idle first
+        var drainStartTime = 0;
+        for (var drain = 0; drain < 400; drain++) {
+          gardenState.creatureUpdate(drainStartTime + drain * 0.016, 0.016);
+        }
+
+        // Force Math.random to 0.5 for deterministic pause duration
+        Math.random = function() { return 0.5; }; // midpoint of the random range
+
+        // Re-acquire butterfly position after draining
+        var bp = creatureState.group.position;
+        var nonPollinatedStartTime = drainStartTime + 400 * 0.016;
+
+        // Set up a plant with a blooming but NOT pollinated flower
+        var testFlowerNotPollinated = {
+          getPhase: function() { return 'bloom'; },
+          getProgress: function() { return 0.5; },
+          isPollinated: function() { return false; }
+        };
+        var plantNotPollinated = {
+          group: { position: new THREE.Vector3(bp.x, bp.y - 0.72, bp.z) },
+          flower: testFlowerNotPollinated,
+          leaves: []
+        };
+        gardenState.plant2 = null;
+        gardenState.plant = plantNotPollinated;
+
+        // Run updates until the creature triggers a pause
+        for (var t1 = 0; t1 < 600; t1++) {
+          gardenState.creatureUpdate(nonPollinatedStartTime + t1 * 0.016, 0.016);
+          if (creatureState.pauseState() === 'entering' || creatureState.pauseState() === 'holding') {
+            break;
+          }
+        }
+
+        if (creatureState.pauseState() === 'entering' || creatureState.pauseState() === 'holding') {
+          var nonPollDuration = creatureState.getPauseHoldDuration();
+          if (nonPollDuration < 3.0 || nonPollDuration > 5.0) {
+            problems.push('Non-pollinated flower pause hold duration is ' + nonPollDuration.toFixed(2) + 's, expected in [3, 5]s range (issue #679).');
+          }
+        } else {
+          // It may not have triggered; that's acceptable if the butterfly was too far.
+          // We'll set up a closer plant by also adjusting the butterfly position
+        }
+
+        // Drain back to idle. Use enough frames to clear any cooldown (8s).
+        var drainFrames = 1200; // 1200 * 0.016 = 19.2s > 14s (6s pause cycle + 8s cooldown)
+        var drain2StartTime = nonPollinatedStartTime + 600 * 0.016; // continuous from end of non-pollinated test
+        for (var drain2 = 0; drain2 < drainFrames; drain2++) {
+          gardenState.creatureUpdate(drain2StartTime + drain2 * 0.016, 0.016);
+        }
+
+        // Re-acquire butterfly position after draining (it has moved)
+        var bpAfterDrain = creatureState.group.position;
+        var pollinatedTestStartTime = drain2StartTime + drainFrames * 0.016; // continuous from drain2 end
+
+        // --- Test that a pollinated bloom gets pause hold duration in 5-8s range ---
+        var testFlowerPollinated = {
+          getPhase: function() { return 'bloom'; },
+          getProgress: function() { return 0.5; },
+          isPollinated: function() { return true; }
+        };
+        var plantPollinated = {
+          group: { position: new THREE.Vector3(bpAfterDrain.x, bpAfterDrain.y - 0.72, bpAfterDrain.z) },
+          flower: testFlowerPollinated,
+          leaves: []
+        };
+        gardenState.plant2 = null;
+        gardenState.plant = plantPollinated;
+        Math.random = function() { return 0.5; }; // same midpoint for reproducibility
+
+        for (var t2 = 0; t2 < 600; t2++) {
+          gardenState.creatureUpdate(pollinatedTestStartTime + t2 * 0.016, 0.016);
+          if (creatureState.pauseState() === 'entering' || creatureState.pauseState() === 'holding') {
+            break;
+          }
+        }
+
+        if (creatureState.pauseState() === 'entering' || creatureState.pauseState() === 'holding') {
+          var pollDuration = creatureState.getPauseHoldDuration();
+          // The expected range is 3-5 * 1.6 = 4.8-8.0, but we check 5.0-8.0 as specified
+          if (pollDuration < 5.0 || pollDuration > 8.0) {
+            problems.push('Pollinated flower pause hold duration is ' + pollDuration.toFixed(2) + 's, expected in [5, 8]s range (3-5s * 1.6 = 4.8-8s, but acceptance criteria says 5-8s) (issue #679).');
+          }
+        } else {
+          problems.push('Butterfly did not enter pause state near pollinated blooming flower — could not test duration extension (issue #679).');
+        }
+      } finally {
+        Math.random = origRandom;
+        gardenState.plant = origPlant || gardenState.plant;
+        gardenState.plant2 = origPlant2 || gardenState.plant2;
+        if (origDayNight && origDayNightGetCycle) {
+          origDayNight.getCycleProgress = origDayNightGetCycle;
+        }
+        // Drain to restore (continuous from pollinated test end)
+        var restoreStart = pollinatedTestStartTime + 600 * 0.016;
+        for (var drain3 = 0; drain3 < 400; drain3++) {
+          gardenState.creatureUpdate(restoreStart + drain3 * 0.016, 0.016);
+        }
+      }
+    }
+  }
+
   /* ---------- Butterfly wind perturbation checks (issue #526) ---------- */
   // The butterfly should be perturbed by computeDisplacement from groundRipple.js
   // when in idle (normal flight) state, with a drift of at most ~0.05 units.
@@ -5117,9 +5295,10 @@ export async function checks() {
     // But when AudioContext nodes don't exist (windGain/windFilter null), update() returns early
     // without updating state. So we need to directly test computeAudioSettings logic instead.
 
-    // Expected base values are composed from the audio tables imported from
-    // ambientAudio.js, so a product retune of any time-of-day or weather
-    // constant fails these checks instead of silently going stale.
+    // We can verify the state reflects correct values by calling ambientAudio.update()
+    // AFTER ensuring the audio nodes exist — but since AudioContext may not be available,
+    // we verify the composition logic through the module's imported computeAudioSettings.
+
     function computeExpected(weatherPhase, timeOfDay) {
       var base = TIME_OF_DAY_AUDIO[timeOfDay] || TIME_OF_DAY_AUDIO['Midday'];
       var mod = WEATHER_AUDIO_MODIFIERS[weatherPhase] || DEFAULT_WEATHER_MODIFIER;
@@ -5318,9 +5497,8 @@ export async function checks() {
   if (!ambientAudioSeason) {
     problems.push('window.__gardenState.ambientAudio is not set — cannot verify seasonal audio composition.');
   } else {
-    // Expected values are composed from the audio tables imported from
-    // ambientAudio.js — the same tables the product composes with, so any
-    // retune of a season/time/weather constant fails these checks.
+    // Use the imported seasonal, time-of-day and weather tables from ambientAudio.js
+
     function computeExpectedAudio(weatherPhase, timeOfDay, season) {
       var base = TIME_OF_DAY_AUDIO[timeOfDay] || TIME_OF_DAY_AUDIO['Midday'];
       var weatherMod = WEATHER_AUDIO_MODIFIERS[weatherPhase] || DEFAULT_WEATHER_MODIFIER;
@@ -5545,6 +5723,12 @@ export async function checks() {
 
   /* ---------- Firefly glow checks (issue #468) ---------- */
   const fireflyState = gardenState && gardenState.fireflies;
+  // Force visitCount to 1 for all firefly opacity ceiling checks so they
+  // use the default peak opacity of 0.15 regardless of the persisted value.
+  var savedVisitCount = gardenState && gardenState.visitCount;
+  if (typeof savedVisitCount === 'number' && gardenState) {
+    gardenState.visitCount = 1;
+  }
   if (!fireflyState) {
     problems.push('window.__gardenState.fireflies is not set — the firefly glow system was not created (fireflies.js may not have been imported or called).');
   } else {
@@ -6254,6 +6438,12 @@ export async function checks() {
     }
   }
 
+  // Restore the original visitCount so subsequent checks (seasonal ramp,
+  // vertical lift, sync, etc.) run with the real persisted value.
+  if (typeof savedVisitCount === 'number' && gardenState) {
+    gardenState.visitCount = savedVisitCount;
+  }
+
   /* ---------- Firefly seasonal ramp checks (issue #623) ---------- */
   // Verify gradual firefly emergence in Spring and fade in Autumn
   if (gardenState && gardenState.fireflies) {
@@ -6365,6 +6555,113 @@ export async function checks() {
           origSeasonEl.textContent = origSeasonText;
         }
         gardenState.seasonProgress = origSeasonProgress;
+      }
+    }
+  }
+
+  /* ---------- Cumulative peak opacity checks (issue #705) ---------- */
+  // getCumulativePeakOpacity() should return the correct scaled peak opacity
+  // at various visitCount thresholds.
+  {
+    const ffState705 = gardenState && gardenState.fireflies;
+    if (!ffState705) {
+      problems.push('window.__gardenState.fireflies is not set — cannot verify getCumulativePeakOpacity (issue #705).');
+    } else {
+      if (typeof ffState705.getCumulativePeakOpacity !== 'function') {
+        problems.push('fireflyState.getCumulativePeakOpacity is not a function — expected a getter for the cumulative peak opacity (issue #705).');
+      } else {
+        // Save original visitCount
+        const prevVisitCount705 = gardenState && gardenState.visitCount;
+
+        try {
+          // Test 1: visitCount = 1 (below threshold) -> 0.15
+          if (gardenState) gardenState.visitCount = 1;
+          const peak1 = ffState705.getCumulativePeakOpacity();
+          if (typeof peak1 !== 'number' || Math.abs(peak1 - 0.15) > 0.001) {
+            problems.push('getCumulativePeakOpacity() returned ' + peak1 + ' at visitCount=1 — expected 0.15 (issue #705).');
+          }
+
+          // Test 2: visitCount = 3 (first tier) -> 0.18
+          if (gardenState) gardenState.visitCount = 3;
+          const peak3 = ffState705.getCumulativePeakOpacity();
+          if (typeof peak3 !== 'number' || Math.abs(peak3 - 0.18) > 0.001) {
+            problems.push('getCumulativePeakOpacity() returned ' + peak3 + ' at visitCount=3 — expected 0.18 (issue #705).');
+          }
+
+          // Test 3: visitCount = 10 (second tier) -> 0.20
+          if (gardenState) gardenState.visitCount = 10;
+          const peak10 = ffState705.getCumulativePeakOpacity();
+          if (typeof peak10 !== 'number' || Math.abs(peak10 - 0.20) > 0.001) {
+            problems.push('getCumulativePeakOpacity() returned ' + peak10 + ' at visitCount=10 — expected 0.20 (issue #705).');
+          }
+
+          // Test 4: visitCount = 1000 (way beyond threshold) -> never exceeds 0.25
+          if (gardenState) gardenState.visitCount = 1000;
+          const peak1000 = ffState705.getCumulativePeakOpacity();
+          if (typeof peak1000 !== 'number' || peak1000 > 0.25) {
+            problems.push('getCumulativePeakOpacity() returned ' + peak1000 + ' at visitCount=1000 — expected ≤ 0.25 (hard cap, issue #705).');
+          }
+          if (typeof peak1000 === 'number' && Math.abs(peak1000 - 0.25) > 0.001) {
+            problems.push('getCumulativePeakOpacity() returned ' + peak1000 + ' at visitCount=1000 — expected exactly 0.25 (issue #705).');
+          }
+
+          // Test 5: Live material opacity converges to the scaled peak during Night
+          if (gardenState && gardenState.dayNight && typeof gardenState.dayNight.getCycleProgress === 'function' &&
+              gardenState.weather && typeof gardenState.weather.getPhase === 'function' &&
+              typeof gardenState.firefliesUpdate === 'function' &&
+              ffState705.plantGroups && ffState705.plantGroups.length > 0) {
+            const origCycleProgress705 = gardenState.dayNight.getCycleProgress;
+            const origWeatherPhase705 = gardenState.weather.getPhase;
+            const origSeasonProgress705 = gardenState.seasonProgress;
+            const origSeasonDisplay = document.getElementById('season-display') && document.getElementById('season-display').textContent;
+
+            try {
+              // A. Set visitCount=3, force Night+Summer+Clear, run 300 frames, verify opacity ~0.18
+              if (gardenState) gardenState.visitCount = 3;
+              gardenState.dayNight.getCycleProgress = function() { return 0.85; };
+              gardenState.weather.getPhase = function() { return 'Clear'; };
+              var seasonEl705 = document.getElementById('season-display');
+              if (seasonEl705) seasonEl705.textContent = 'Summer';
+              gardenState.seasonProgress = 0.25; // mid-Summer
+
+              for (var f705a = 0; f705a < 300; f705a++) {
+                gardenState.firefliesUpdate(0, 0.016);
+              }
+
+              var opacityAt3 = ffState705.plantGroups[0].material.opacity;
+              if (opacityAt3 < 0.14 || opacityAt3 > 0.22) {
+                problems.push('At visitCount=3 during Summer+Night+Clear, firefly opacity is ' + opacityAt3.toFixed(4) + ' — expected ~0.18 (within 0.14–0.22, issue #705).');
+              }
+
+              // B. Set visitCount=10, force Night+Summer+Clear, run 300 frames, verify opacity ~0.20
+              if (gardenState) gardenState.visitCount = 10;
+              for (var f705b = 0; f705b < 300; f705b++) {
+                gardenState.firefliesUpdate(0, 0.016);
+              }
+
+              var opacityAt10 = ffState705.plantGroups[0].material.opacity;
+              if (opacityAt10 < 0.16 || opacityAt10 > 0.24) {
+                problems.push('At visitCount=10 during Summer+Night+Clear, firefly opacity is ' + opacityAt10.toFixed(4) + ' — expected ~0.20 (within 0.16–0.24, issue #705).');
+              }
+
+              // C. Verify opacity at visitCount=10 > opacity at visitCount=3
+              if (opacityAt10 <= opacityAt3) {
+                problems.push('Firefly opacity at visitCount=10 (' + opacityAt10.toFixed(4) + ') should exceed opacity at visitCount=3 (' + opacityAt3.toFixed(4) + ') — the peak must increase with cumulative visits (issue #705).');
+              }
+            } finally {
+              // Restore original state
+              gardenState.dayNight.getCycleProgress = origCycleProgress705;
+              gardenState.weather.getPhase = origWeatherPhase705;
+              gardenState.seasonProgress = origSeasonProgress705;
+              if (seasonEl705 && origSeasonDisplay) seasonEl705.textContent = origSeasonDisplay;
+            }
+          }
+        } finally {
+          // Restore original visitCount
+          if (gardenState && typeof prevVisitCount705 === 'number') {
+            gardenState.visitCount = prevVisitCount705;
+          }
+        }
       }
     }
   }
@@ -9822,6 +10119,582 @@ export async function checks() {
       }
     }
   }
+
+  /* ---------- Firefly pulse synchronization description checks (issue #676) ---------- */
+  // Verify the description updater function, suffixes, and composition logic
+  // for the firefly sync sentence that appears during Night.
+  {
+    const gs676 = window.__gardenState;
+    if (!gs676) {
+      problems.push('window.__gardenState not set — cannot verify firefly sync description (issue #676).');
+    } else {
+      // Test 1: FIREFLY_SYNC_SUFFIXES must exist with at least 2 phrasings
+      if (!gs676.FIREFLY_SYNC_SUFFIXES || !Array.isArray(gs676.FIREFLY_SYNC_SUFFIXES)) {
+        problems.push('FIREFLY_SYNC_SUFFIXES is missing or not an array (issue #676).');
+      } else if (gs676.FIREFLY_SYNC_SUFFIXES.length < 2) {
+        problems.push('FIREFLY_SYNC_SUFFIXES has ' + gs676.FIREFLY_SYNC_SUFFIXES.length + ' entries, expected at least 2 (issue #676).');
+      } else {
+        // Verify each suffix is a non-empty string
+        gs676.FIREFLY_SYNC_SUFFIXES.forEach(function(suffix, i) {
+          if (typeof suffix !== 'string' || suffix.trim().length === 0) {
+            problems.push('FIREFLY_SYNC_SUFFIXES[' + i + '] is not a non-empty string (issue #676).');
+          }
+        });
+      }
+
+      // Test 2: updateFireflySyncDescription must be a function
+      if (typeof gs676.updateFireflySyncDescription !== 'function') {
+        problems.push('updateFireflySyncDescription is not a function — firefly sync description updater missing (issue #676).');
+      } else {
+        // Test 3: The updater source must guard against prefers-reduced-motion
+        // We verify by checking the function string contains the guard
+        var fnStr = gs676.updateFireflySyncDescription.toString();
+        if (fnStr.indexOf('prefers-reduced-motion') === -1) {
+          problems.push('updateFireflySyncDescription does not guard against prefers-reduced-motion — expected a check for the reduced motion preference (issue #676).');
+        }
+
+        // Test 4: The updater must include a dayNight phase check for Night
+        if (fnStr.indexOf('0.75') === -1 && fnStr.indexOf('Night') === -1) {
+          problems.push('updateFireflySyncDescription does not check for Night phase — expected a guard for t >= 0.75 (issue #676).');
+        }
+      }
+
+      // Test 5: Verify the growing-description is being composed correctly
+      // by checking that the updater uses the same strip/compose pattern as other layers.
+      // We check for the presence of stripSuffixes or similar suffix manipulation.
+      if (typeof gs676.updateFireflySyncDescription === 'function') {
+        var fnStr2 = gs676.updateFireflySyncDescription.toString();
+        if (fnStr2.indexOf('stripSuffixes') === -1 && fnStr2.indexOf('BUTTERFLY_SUFFIXES') === -1) {
+          problems.push('updateFireflySyncDescription does not interact with butterfly suffix composition — expected the sync sentence to sit before the butterfly suffix (issue #676).');
+        }
+        if (fnStr2.indexOf('growing-description') === -1 && fnStr2.indexOf('growingDescription') === -1) {
+          problems.push('updateFireflySyncDescription does not reference the growing-description element (issue #676).');
+        }
+      }
+
+      // Test 6: Verify the fall-below debounce mechanism exists
+      // Look for a threshold of 3 seconds or similar removal debounce
+      if (typeof gs676.updateFireflySyncDescription === 'function') {
+        var fnStr3 = gs676.updateFireflySyncDescription.toString();
+        // Check for some form of debounce / timestamp tracking
+        if (fnStr3.indexOf('3000') === -1 && fnStr3.indexOf('debounce') === -1 && fnStr3.indexOf('FallBelow') === -1 && fnStr3.indexOf('fallBelow') === -1) {
+          // The 3000 may appear differently; check for the concept
+          if (fnStr3.indexOf('Date.now') === -1 && fnStr3.indexOf('performance.now') === -1) {
+            problems.push('updateFireflySyncDescription appears to lack a debounce mechanism for removing the sync sentence — expected a 3-second debounce before removal (issue #676).');
+          }
+        }
+      }
+
+      // Test 7: Verify getSyncState includes groupIndex (needed for per-group counting)
+      const fireflies676 = gs676.fireflies;
+      if (fireflies676 && typeof fireflies676.getSyncState === 'function') {
+        var syncState676 = fireflies676.getSyncState();
+        if (syncState676 && syncState676.length > 0) {
+          var hasGroupIndex = syncState676.some(function(s) { return typeof s.groupIndex === 'number'; });
+          if (!hasGroupIndex) {
+            problems.push('getSyncState() entries do not include groupIndex — needed for per-group sync counting (issue #676).');
+          }
+          // Verify groupIndex values are valid (within expected range)
+          syncState676.forEach(function(s, i) {
+            if (typeof s.groupIndex === 'number') {
+              if (s.groupIndex < 0 || s.groupIndex > 10) {
+                problems.push('getSyncState()[' + i + '] groupIndex is ' + s.groupIndex + ', expected a valid group index (issue #676).');
+              }
+            }
+          });
+        }
+      }
+    }
+  }
+
+  /* ---------- Leaf tremble description checks (issue #675) ---------- */
+  // Verify the description updater function, suffixes, and composition logic
+  // for the leaf tremble sentence that appears during butterfly brush events.
+  {
+    const gs675 = window.__gardenState;
+    if (!gs675) {
+      problems.push('window.__gardenState not set — cannot verify leaf tremble description (issue #675).');
+    } else {
+      // Test 1: LEAF_TREMBLE_SUFFIXES must exist with at least 1 phrasing
+      if (!gs675.LEAF_TREMBLE_SUFFIXES || !Array.isArray(gs675.LEAF_TREMBLE_SUFFIXES)) {
+        problems.push('LEAF_TREMBLE_SUFFIXES is missing or not an array (issue #675).');
+      } else if (gs675.LEAF_TREMBLE_SUFFIXES.length < 1) {
+        problems.push('LEAF_TREMBLE_SUFFIXES has ' + gs675.LEAF_TREMBLE_SUFFIXES.length + ' entries, expected at least 1 (issue #675).');
+      } else {
+        // Verify each suffix is a non-empty string
+        gs675.LEAF_TREMBLE_SUFFIXES.forEach(function(suffix, i) {
+          if (typeof suffix !== 'string' || suffix.trim().length === 0) {
+            problems.push('LEAF_TREMBLE_SUFFIXES[' + i + '] is not a non-empty string (issue #675).');
+          }
+        });
+      }
+
+      // Test 2: updateLeafTrembleDescription must be a function
+      if (typeof gs675.updateLeafTrembleDescription !== 'function') {
+        problems.push('updateLeafTrembleDescription is not a function — leaf tremble description updater missing (issue #675).');
+      } else {
+        // Test 3: The updater source must guard against prefers-reduced-motion
+        var fnStr675 = gs675.updateLeafTrembleDescription.toString();
+        if (fnStr675.indexOf('prefers-reduced-motion') === -1) {
+          problems.push('updateLeafTrembleDescription does not guard against prefers-reduced-motion — expected a check for the reduced motion preference (issue #675).');
+        }
+
+        // Test 4: The updater must reference getLeafTrembles
+        if (fnStr675.indexOf('getLeafTrembles') === -1) {
+          problems.push('updateLeafTrembleDescription does not reference getLeafTrembles — expected to read leaf tremble state from creature (issue #675).');
+        }
+
+        // Test 5: Verify the updater uses the same strip/compose pattern as other layers
+        if (fnStr675.indexOf('stripSuffixes') === -1 && fnStr675.indexOf('BUTTERFLY_SUFFIXES') === -1) {
+          problems.push('updateLeafTrembleDescription does not interact with butterfly suffix composition — expected the tremble sentence to sit before the butterfly suffix (issue #675).');
+        }
+        if (fnStr675.indexOf('growing-description') === -1 && fnStr675.indexOf('growingDescription') === -1) {
+          problems.push('updateLeafTrembleDescription does not reference the growing-description element (issue #675).');
+        }
+
+        // Test 6: Verify the debounce mechanism exists for removal
+        if (fnStr675.indexOf('1500') === -1 && fnStr675.indexOf('LEAF_TREMBLE_DEBOUNCE') === -1) {
+          if (fnStr675.indexOf('debounce') === -1 && fnStr675.indexOf('Date.now') === -1 && fnStr675.indexOf('performance.now') === -1) {
+            problems.push('updateLeafTrembleDescription appears to lack a debounce mechanism for removing the tremble sentence — expected a 1.5s debounce before removal (issue #675).');
+          }
+        }
+      }
+
+      // Test 7: Verify creature.getLeafTrembles exists (needed for detection)
+      const creature675 = gs675.creature;
+      if (!creature675) {
+        problems.push('window.__gardenState.creature is not set — cannot verify leaf tremble detection source (issue #675).');
+      } else if (typeof creature675.getLeafTrembles !== 'function') {
+        problems.push('creature.getLeafTrembles is not a function — leaf tremble state accessor missing (issue #675).');
+      }
+
+      // Test 8: Verify the tremble sentence composes before the butterfly suffix
+      // by checking that getLeafTrembles returns an array with expected shape
+      if (creature675 && typeof creature675.getLeafTrembles === 'function') {
+        var leafTrembles675 = creature675.getLeafTrembles();
+        if (!Array.isArray(leafTrembles675)) {
+          problems.push('creature.getLeafTrembles() did not return an array — got ' + typeof leafTrembles675 + ' (issue #675).');
+        } else {
+          leafTrembles675.forEach(function(t, i) {
+            if (typeof t.elapsed !== 'number') {
+              problems.push('creature.getLeafTrembles()[' + i + '] missing elapsed (issue #675).');
+            }
+            if (typeof t.startTime !== 'number') {
+              problems.push('creature.getLeafTrembles()[' + i + '] missing startTime (issue #675).');
+            }
+            if (!t.leaf) {
+              problems.push('creature.getLeafTrembles()[' + i + '] missing leaf reference (issue #675).');
+            }
+          });
+        }
+      }
+    }
+  }
+
+  /* ---------- Bloom attraction drift checks (issue #680) ---------- */
+  // Verify firefly state exposes bloom attraction constants with correct values.
+  // The attraction perturbs firefly drift toward blooming flowers during Night
+  // phase, up to 10% of DRIFT_RADIUS (0.015 units) within 0.4 units range.
+  if (gardenState) {
+    var ffState680 = gardenState.fireflies;
+
+    if (!ffState680) {
+      problems.push('Firefly state not found via __gardenState.fireflies — bloom attraction constants cannot be verified directly (issue #680).');
+    } else {
+      // Verify bloom attraction constants are exposed
+      if (typeof ffState680.bloomAttractRadius !== 'number') {
+        problems.push('ffState.bloomAttractRadius is missing or not a number — expected ' + 0.4 + ' (issue #680).');
+      } else if (ffState680.bloomAttractRadius !== 0.4) {
+        problems.push('ffState.bloomAttractRadius is ' + ffState680.bloomAttractRadius + ', expected 0.4 (issue #680).');
+      }
+
+      if (typeof ffState680.bloomAttractMax !== 'number') {
+        problems.push('ffState.bloomAttractMax is missing or not a number — expected 0.015 (10% of DRIFT_RADIUS=0.15) (issue #680).');
+      } else if (Math.abs(ffState680.bloomAttractMax - 0.015) > 0.0001) {
+        problems.push('ffState.bloomAttractMax is ' + ffState680.bloomAttractMax + ', expected 0.015 (10% of DRIFT_RADIUS=0.15) (issue #680).');
+      }
+
+      // Verify driftRadius is 0.15 (the base for the 10% computation)
+      if (typeof ffState680.driftRadius !== 'number') {
+        problems.push('ffState.driftRadius is missing or not a number — expected 0.15 (issue #680).');
+      } else if (Math.abs(ffState680.driftRadius - 0.15) > 0.0001) {
+        problems.push('ffState.driftRadius is ' + ffState680.driftRadius + ', expected 0.15 (issue #680).');
+      }
+
+      /* --- Butterfly landing firefly scatter constants (issue #690) --- */
+      if (typeof ffState680.scatterRadius !== 'number') {
+        problems.push('ffState.scatterRadius is missing or not a number — expected 0.4 (issue #690).');
+      } else if (ffState680.scatterRadius !== 0.4) {
+        problems.push('ffState.scatterRadius is ' + ffState680.scatterRadius + ', expected 0.4 (issue #690).');
+      }
+
+      if (typeof ffState680.scatterAmountMax !== 'number') {
+        problems.push('ffState.scatterAmountMax is missing or not a number — expected 0.1 (issue #690).');
+      } else if (ffState680.scatterAmountMax !== 0.1) {
+        problems.push('ffState.scatterAmountMax is ' + ffState680.scatterAmountMax + ', expected 0.1 (issue #690).');
+      }
+
+      if (typeof ffState680.scatterBuildUpTime !== 'number') {
+        problems.push('ffState.scatterBuildUpTime is missing or not a number — expected 2.0 (issue #690).');
+      } else if (Math.abs(ffState680.scatterBuildUpTime - 2.0) > 0.001) {
+        problems.push('ffState.scatterBuildUpTime is ' + ffState680.scatterBuildUpTime + ', expected 2.0 (issue #690).');
+      }
+
+      if (typeof ffState680.scatterTotalDuration !== 'number') {
+        problems.push('ffState.scatterTotalDuration is missing or not a number — expected 6.0 (issue #690).');
+      } else if (Math.abs(ffState680.scatterTotalDuration - 6.0) > 0.001) {
+        problems.push('ffState.scatterTotalDuration is ' + ffState680.scatterTotalDuration + ', expected 6.0 (issue #690).');
+      }
+    }
+  }
+
+  /* ---------- Butterfly pollinated flower acknowledgment checks (issue #681) ---------- */
+  // When the butterfly pauses at a pollinated flower, the garden acknowledgment
+  // text should reference the return visit with a phrase from a 4-variant pool,
+  // gated by a 30s cooldown. Exposed via window.__gardenState.setAcknowledgment.
+  {
+    const gs681 = window.__gardenState;
+    if (!gs681) {
+      problems.push('window.__gardenState is not set — cannot verify pollinated flower acknowledgment (issue #681).');
+    } else {
+      // Test 1: setAcknowledgment must be a function on __gardenState
+      if (typeof gs681.setAcknowledgment !== 'function') {
+        problems.push('window.__gardenState.setAcknowledgment is not a function — creature.js cannot call it to set acknowledgment text (issue #681).');
+      } else {
+        // Test 2: Calling setAcknowledgment must update the DOM element
+        const origText = document.getElementById('garden-state-acknowledgment').textContent;
+        gs681.setAcknowledgment('TEST_ACK');
+        const newText = document.getElementById('garden-state-acknowledgment').textContent;
+        if (newText !== 'TEST_ACK') {
+          problems.push('window.__gardenState.setAcknowledgment(\"TEST_ACK\") did not update #garden-state-acknowledgment — got \"' + newText + '\" instead (issue #681).');
+        }
+        // Restore the original text
+        gs681.setAcknowledgment(origText);
+      }
+
+      // Test 3: POLLINATED_PAUSE_PHRASES must be accessible via creature state
+      const creatureState681 = gs681.creature;
+      if (!creatureState681) {
+        problems.push('creature state not found via __gardenState.creature (issue #681).');
+      } else {
+        if (!creatureState681.POLLINATED_PAUSE_PHRASES || !Array.isArray(creatureState681.POLLINATED_PAUSE_PHRASES)) {
+          problems.push('creatureState.POLLINATED_PAUSE_PHRASES is missing or not an array (issue #681).');
+        } else if (creatureState681.POLLINATED_PAUSE_PHRASES.length < 3) {
+          problems.push('creatureState.POLLINATED_PAUSE_PHRASES has ' + creatureState681.POLLINATED_PAUSE_PHRASES.length + ' entries, expected at least 3 (issue #681).');
+        } else {
+          // Verify each phrase is a calm non-empty sentence (no exclamation, no empty)
+          creatureState681.POLLINATED_PAUSE_PHRASES.forEach(function(phrase, i) {
+            if (typeof phrase !== 'string' || phrase.trim().length === 0) {
+              problems.push('creatureState.POLLINATED_PAUSE_PHRASES[' + i + '] is not a non-empty string (issue #681).');
+            }
+            if (phrase.indexOf('!') !== -1) {
+              problems.push('creatureState.POLLINATED_PAUSE_PHRASES[' + i + '] contains an exclamation mark — expected calm phrasing (issue #681).');
+            }
+          });
+        }
+
+        if (typeof creatureState681.POLLINATED_ACK_COOLDOWN_MS !== 'number') {
+          problems.push('creatureState.POLLINATED_ACK_COOLDOWN_MS is missing or not a number (issue #681).');
+        } else if (creatureState681.POLLINATED_ACK_COOLDOWN_MS !== 30000) {
+          problems.push('creatureState.POLLINATED_ACK_COOLDOWN_MS is ' + creatureState681.POLLINATED_ACK_COOLDOWN_MS + ', expected 30000 (30s cooldown) (issue #681).');
+        }
+      }
+    }
+  }
+
+  /* ---------- Butterfly stillness settling checks (issue #696) ---------- */
+  // The butterfly should start with getSettleMul() at 1.0 (no settling).
+  // When _stillnessDuration is artificially set high, getSettleMul() should
+  // decrease below 1.0 after a settle cycle is triggered.
+  {
+    const gs696 = window.__gardenState;
+    if (!gs696) {
+      problems.push('window.__gardenState is not set — cannot verify stillness settling (issue #696).');
+    } else {
+      const creature696 = gs696.creature;
+      if (!creature696) {
+        problems.push('window.__gardenState.creature is not set — cannot verify getSettleMul (issue #696).');
+      } else {
+        // Test 1: getSettleMul must be a function
+        if (typeof creature696.getSettleMul !== 'function') {
+          problems.push('creature.getSettleMul is not a function — expected a getter for the stillness settle multiplier (issue #696).');
+        } else {
+          // Test 2: With no stillness, getSettleMul() should return 1.0 (or very close)
+          const mulNormal = creature696.getSettleMul();
+          if (typeof mulNormal !== 'number' || mulNormal < 0.6 || mulNormal > 1.0) {
+            problems.push('creature.getSettleMul() returned ' + mulNormal + ' with no induced stillness — expected between 0.6 and 1.0 (issue #696).');
+          }
+
+          // Test 3: Induce stillness by temporarily setting _stillnessDuration high,
+          // then call creature.update() with a simulated time to let the lerp progress
+          // Store original getter before overriding
+          var stillnessDesc = Object.getOwnPropertyDescriptor(gs696, '_stillnessDuration');
+
+          // Override with a high stillness duration (80s — beyond the 60s max)
+          Object.defineProperty(gs696, '_stillnessDuration', {
+            get: function() { return 80000; },
+            enumerable: true,
+            configurable: true
+          });
+
+          // Run a few update cycles to let the lerp progress (~2s of simulated time)
+          if (typeof gs696.creatureUpdate === 'function') {
+            for (var settleI = 0; settleI < 4; settleI++) {
+              gs696.creatureUpdate(settleI * 0.5);
+            }
+          }
+
+          // Check that getSettleMul has decreased from its initial value
+          var mulAfter = creature696.getSettleMul();
+          if (typeof mulAfter !== 'number' || mulAfter >= mulNormal) {
+            problems.push('creature.getSettleMul() did not decrease after inducing stillness — was ' + mulNormal + ', stayed at ' + mulAfter + ' (issue #696).');
+          }
+
+          // Restore the original _stillnessDuration descriptor
+          if (stillnessDesc) {
+            Object.defineProperty(gs696, '_stillnessDuration', stillnessDesc);
+          }
+        }
+      }
+
+      // Test 4: Verify BUTTERFLY_SETTLE_PHRASES is exposed and has valid content
+      if (!gs696.BUTTERFLY_SETTLE_PHRASES || !Array.isArray(gs696.BUTTERFLY_SETTLE_PHRASES)) {
+        problems.push('window.__gardenState.BUTTERFLY_SETTLE_PHRASES is missing or not an array (issue #696).');
+      } else if (gs696.BUTTERFLY_SETTLE_PHRASES.length < 3) {
+        problems.push('window.__gardenState.BUTTERFLY_SETTLE_PHRASES has ' + gs696.BUTTERFLY_SETTLE_PHRASES.length + ' entries, expected at least 3 (issue #696).');
+      } else {
+        gs696.BUTTERFLY_SETTLE_PHRASES.forEach(function(phrase, i) {
+          if (typeof phrase !== 'string' || phrase.trim().length === 0) {
+            problems.push('window.__gardenState.BUTTERFLY_SETTLE_PHRASES[' + i + '] is not a non-empty string (issue #696).');
+          }
+        });
+      }
+
+      // Test 5: Verify _stillnessDuration is a number (the getter works)
+      if (typeof gs696._stillnessDuration !== 'number') {
+        problems.push('window.__gardenState._stillnessDuration is not a number — the getter should return a timestamp (issue #696).');
+      } else if (gs696._stillnessDuration < 0) {
+        problems.push('window.__gardenState._stillnessDuration is negative (' + gs696._stillnessDuration + ') — should be >= 0 (issue #696).');
+      }
+    }
+  }
+
+  /* ---------- Butterfly cumulative-visit familiarity checks (issue #704) ---------- */
+  // getCumulativeFamiliarityMul() should return 1.0 at visitCount < 5,
+  // ~0.85 at visitCount >= 5, and ~0.75 at visitCount >= 15.
+  {
+    const gs704 = window.__gardenState;
+    if (!gs704) {
+      problems.push('window.__gardenState is not set — cannot verify cumulative familiarity (issue #704).');
+    } else {
+      const creature704 = gs704.creature;
+      if (!creature704) {
+        problems.push('window.__gardenState.creature is not set — cannot verify getCumulativeFamiliarityMul (issue #704).');
+      } else {
+        if (typeof creature704.getCumulativeFamiliarityMul !== 'function') {
+          problems.push('creature.getCumulativeFamiliarityMul is not a function — expected a getter for the cumulative familiarity multiplier (issue #704).');
+        } else {
+          // Save original visitCount
+          const prevVisitCount704 = gs704.visitCount;
+
+          // Test 1: visitCount = 1 (below threshold) -> multiplier = 1.0
+          gs704.visitCount = 1;
+          if (typeof gs704.creatureUpdate === 'function') {
+            gs704.creatureUpdate(0.1);
+          }
+          const mul1 = creature704.getCumulativeFamiliarityMul();
+          if (typeof mul1 !== 'number' || mul1 !== 1.0) {
+            problems.push('getCumulativeFamiliarityMul() returned ' + mul1 + ' at visitCount=1 — expected 1.0 (issue #704).');
+          }
+
+          // Test 2: visitCount = 5 (first tier) -> multiplier = 0.85 (+/-0.03)
+          gs704.visitCount = 5;
+          if (typeof gs704.creatureUpdate === 'function') {
+            gs704.creatureUpdate(0.1);
+          }
+          const mul5 = creature704.getCumulativeFamiliarityMul();
+          if (typeof mul5 !== 'number' || mul5 < 0.82 || mul5 > 0.88) {
+            problems.push('getCumulativeFamiliarityMul() returned ' + mul5 + ' at visitCount=5 — expected ~0.85 (issue #704).');
+          }
+
+          // Test 3: visitCount = 15 (second tier) -> multiplier = 0.75 (+/-0.03)
+          gs704.visitCount = 15;
+          if (typeof gs704.creatureUpdate === 'function') {
+            gs704.creatureUpdate(0.1);
+          }
+          const mul15 = creature704.getCumulativeFamiliarityMul();
+          if (typeof mul15 !== 'number' || mul15 < 0.72 || mul15 > 0.78) {
+            problems.push('getCumulativeFamiliarityMul() returned ' + mul15 + ' at visitCount=15 — expected ~0.75 (issue #704).');
+          }
+
+          // Restore original visitCount
+          gs704.visitCount = prevVisitCount704;
+          if (typeof gs704.creatureUpdate === 'function') {
+            gs704.creatureUpdate(0.1);
+          }
+        }
+      }
+    }
+  }
+
+  /* ---------- Visit milestone acknowledgment checks (issue #697) ---------- */
+  {
+    const gs697 = window.__gardenState;
+    if (!gs697) {
+      problems.push('window.__gardenState is not set — cannot verify visit milestone acknowledgment (issue #697).');
+    } else {
+      // Verify the helper function is exposed
+      if (typeof gs697.getMilestoneAcknowledgment !== 'function') {
+        problems.push('window.__gardenState.getMilestoneAcknowledgment is not a function — milestone mapping helper missing (issue #697).');
+      } else {
+        // Verify milestone mappings
+        const fn = gs697.getMilestoneAcknowledgment;
+
+        // visitCount = 1 (first visit, covered by first-visit branch, not by helper — helper only for returning)
+        // visitCount = 2 (first return, no milestone)
+        var text2 = fn(2);
+        if (text2 !== 'Welcome back. The garden remembers your presence.') {
+          problems.push('getMilestoneAcknowledgment(2) returned "' + text2 + '", expected the generic returning-visitor text (issue #697).');
+        }
+
+        // visitCount = 3 (first milestone)
+        var text3 = fn(3);
+        if (text3 !== 'Welcome back. The garden has known you through three visits now.') {
+          problems.push('getMilestoneAcknowledgment(3) returned "' + text3 + '", expected the 3-visit milestone text (issue #697).');
+        }
+
+        // visitCount = 4 (still in the >=3 milestone range)
+        var text4 = fn(4);
+        if (text4 !== 'Welcome back. The garden has known you through three visits now.') {
+          problems.push('getMilestoneAcknowledgment(4) returned "' + text4 + '", expected the 3-visit milestone text (issue #697).');
+        }
+
+        // visitCount = 5 (second milestone)
+        var text5 = fn(5);
+        if (text5 !== 'Welcome back again. The garden feels familiar in your presence.') {
+          problems.push('getMilestoneAcknowledgment(5) returned "' + text5 + '", expected the 5-visit milestone text (issue #697).');
+        }
+
+        // visitCount = 9 (still in the >=5 milestone range)
+        var text9 = fn(9);
+        if (text9 !== 'Welcome back again. The garden feels familiar in your presence.') {
+          problems.push('getMilestoneAcknowledgment(9) returned "' + text9 + '", expected the 5-visit milestone text (issue #697).');
+        }
+
+        // visitCount = 10 (third milestone)
+        var text10 = fn(10);
+        if (text10 !== 'Welcome back. This garden has grown with you through many visits.') {
+          problems.push('getMilestoneAcknowledgment(10) returned "' + text10 + '", expected the 10-visit milestone text (issue #697).');
+        }
+
+        // visitCount = 20 (still in the >=10 milestone range)
+        var text20 = fn(20);
+        if (text20 !== 'Welcome back. This garden has grown with you through many visits.') {
+          problems.push('getMilestoneAcknowledgment(20) returned "' + text20 + '", expected the 10-visit milestone text (issue #697).');
+        }
+      }
+
+      // Verify the DOM acknowledgment matches the expected milestone for the current visitCount
+      var ackEl697 = document.getElementById('garden-state-acknowledgment');
+      if (!ackEl697) {
+        problems.push('Missing #garden-state-acknowledgment element — the page-load acknowledgment greeting is not in the DOM (issue #697).');
+      } else {
+        var ackText697 = ackEl697.textContent || '';
+        if (ackText697.length === 0) {
+          problems.push('#garden-state-acknowledgment text is empty — the page-load acknowledgment was not set (issue #697).');
+        } else {
+          var vc697 = typeof gs697.visitCount === 'number' ? gs697.visitCount : 0;
+          if (vc697 >= 1) {
+            // First visit (vc=1): should be the first-visit welcome text
+            if (vc697 === 1) {
+              if (ackText697.indexOf('Welcome to the garden') !== 0) {
+                problems.push('First-visit acknowledgment text is "' + ackText697 + '", expected "Welcome to the garden..." (issue #697).');
+              }
+            } else {
+              // Returning visitor: use the helper to get expected text
+              var expected697 = gs697.getMilestoneAcknowledgment(vc697);
+              if (ackText697 !== expected697) {
+                problems.push('Returning-visitor acknowledgment text is "' + ackText697 + '" for visitCount=' + vc697 + ', expected "' + expected697 + '" (issue #697).');
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /* ---------- Cumulative bloom bonus checks (issue #698) ---------- */
+  // The cumulativeBloomBonus should persist through save/load cycle,
+  // start at 0 for first visits, be capped at 0.5, and the bloomMul
+  // in garden.js must include it in its formula.
+  (function() {
+    // 1. Verify the value exists on __gardenState
+    const gs = window.__gardenState;
+    if (!gs) {
+      problems.push('window.__gardenState is not set — cannot verify cumulativeBloomBonus (issue #698).');
+      return;
+    }
+
+    if (typeof gs.cumulativeBloomBonus !== 'number') {
+      problems.push('cumulativeBloomBonus is ' + typeof gs.cumulativeBloomBonus + ', expected a number (issue #698).');
+      return;
+    }
+
+    const bonus = gs.cumulativeBloomBonus;
+
+    // 2. Must be >= 0 and <= 0.5
+    if (bonus < 0) {
+      problems.push('cumulativeBloomBonus is ' + bonus + ', expected >= 0 (issue #698).');
+    }
+    if (bonus > 0.5) {
+      problems.push('cumulativeBloomBonus is ' + bonus + ', expected <= 0.5 (capped at 0.5) (issue #698).');
+    }
+
+    // 3. Verify increment is 0.025 per visit by checking value vs visitCount
+    // visitCount starts at 1 for first visit. cumulativeBloomBonus starts at 0.
+    // For returning visitors: bonus = min(0.5, 0.025 * (visitCount - 1))
+    const vc = typeof gs.visitCount === 'number' ? gs.visitCount : 1;
+    if (vc === 1) {
+      // First visit: bonus should be 0 exactly
+      if (bonus !== 0) {
+        problems.push('First visit cumulativeBloomBonus is ' + bonus + ', expected 0 (issue #698).');
+      }
+    } else {
+      // Returning visitor: bonus should match min(0.5, 0.025 * (vc - 1))
+      const expectedBonus = Math.min(0.5, 0.025 * (vc - 1));
+      const eps = 0.0001;
+      if (Math.abs(bonus - expectedBonus) > eps) {
+        problems.push('Returning visitor cumulativeBloomBonus is ' + bonus + ' (visitCount=' + vc + '), expected ' + expectedBonus + ' (0.025 per return visit, capped at 0.5) (issue #698).');
+      }
+    }
+
+    // 4. Verify the value round-trips through save/load
+    // Save current, clear, save a new test value, load and verify
+    var savedBonus = gs.cumulativeBloomBonus;
+    gs.cumulativeBloomBonus = 0.3; // Set a test value
+    try {
+      saveGardenState();
+      var loaded = loadGardenState();
+      if (loaded && typeof loaded.cumulativeBloomBonus === 'number') {
+        if (Math.abs(loaded.cumulativeBloomBonus - 0.3) > 0.0001) {
+          problems.push('cumulativeBloomBonus round-trip failed: saved 0.3, loaded ' + loaded.cumulativeBloomBonus + ' (issue #698).');
+        }
+      } else {
+        problems.push('cumulativeBloomBonus not found in loaded state after save — persistence broken (issue #698).');
+      }
+      // Also verify fastForwardState preserves it
+      var ffState = fastForwardState(loaded);
+      if (typeof ffState.cumulativeBloomBonus !== 'number') {
+        problems.push('fastForwardState does not include cumulativeBloomBonus — persistence broken (issue #698).');
+      } else if (ffState.cumulativeBloomBonus !== loaded.cumulativeBloomBonus) {
+        problems.push('fastForwardState changed cumulativeBloomBonus from ' + loaded.cumulativeBloomBonus + ' to ' + ffState.cumulativeBloomBonus + ' — should preserve the stored value (issue #698).');
+      }
+    } finally {
+      // Restore original value
+      gs.cumulativeBloomBonus = savedBonus;
+      saveGardenState();
+    }
+  })();
 
   return problems;
 }

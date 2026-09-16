@@ -1123,7 +1123,9 @@ function createPlant(opts) {
             const sway = Math.sin(elapsed * 0.001 * 0.5) * 0.05;
             // Weather shelter: reduce scale (≤60%) and tilt down during rain (issue #557)
             // Visitation bloom: extra openness from sustained gaze, capped at ~30% over baseline (issue #651)
-            const bloomMul = Math.min(1 + _visitationBloom, 1.3);
+            // Cumulative bloom bonus: permanent increment from return visits (issue #698)
+            const cumulativeBonus = (window.__gardenState && window.__gardenState.cumulativeBloomBonus) || 0;
+            const bloomMul = Math.min(1 + _visitationBloom + cumulativeBonus, 1.3 + cumulativeBonus);
             const shelterScale = (1 - 0.4 * weatherShelter) * bloomMul;
             const shelterTilt = weatherShelter * 0.8;
             fm.petals.forEach((p, i) => {
@@ -2373,4 +2375,6 @@ export function startSeasonalCycle(initialProgress) {
 
   tick();
 }
+
+export { SEASON_PALETTES, SEASON_NAMES, SEASON_DURATION_MS, CYCLE_DURATION_MS };
 

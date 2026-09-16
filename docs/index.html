@@ -621,7 +621,9 @@
       timeOfDay: { lastPhase: '', lastChangeTime: performance.now(), variantIndex: 0 },
       weather: { lastPhase: '', lastChangeTime: performance.now(), variantIndex: 0 },
       season: { lastPhase: '', lastChangeTime: performance.now(), variantIndex: 0 },
-      fireflyProximity: { lastPhase: '', lastChangeTime: performance.now(), variantIndex: 0 }
+      fireflyProximity: { lastPhase: '', lastChangeTime: performance.now(), variantIndex: 0 },
+      fireflySync: { lastPhase: '', lastChangeTime: performance.now(), variantIndex: 0 },
+      butterflySettle: { lastPhase: '', lastChangeTime: performance.now(), variantIndex: 0 }
     };
 
     function timeContextFor(phase) {
@@ -985,6 +987,18 @@
       ' The butterfly sways near the fireflies, their tiny lights pulsing warmly.'
     ];
 
+    /* Firefly pulse synchronization description suffixes (issue #676).
+     * During Night when nearby fireflies synchronise their pulse phases,
+     * a brief sentence is appended to the growing description before the
+     * butterfly suffix. Stripped when sync dissipates for 3+ seconds.
+     * Disabled under prefers-reduced-motion.
+     */
+    const FIREFLY_SYNC_SUFFIXES = [
+      ' The fireflies\' pulses drift into sync, their light moving as one.',
+      ' The fireflies\' lights pulse together, their rhythm settling into a shared beat.',
+      ' The fireflies blink in quiet unison, their tiny lights breathing together.'
+    ];
+
     /* Sprout proximity suffix (issue #629): butterfly drifts toward germinated sprouts in spring */
     const SPROUT_PROXIMITY_SUFFIXES = [
       ' The butterfly drifts curiously near the tiny new shoots.',
@@ -992,11 +1006,24 @@
       ' The butterfly hovers briefly above the tiny shoots pushing through the soil.'
     ];
 
+    /* Leaf tremble suffix (issue #675): butterfly brushes past a leaf during idle flight. */
+    const LEAF_TREMBLE_SUFFIXES = [
+      ' A passing butterfly brushes a leaf, setting it trembling.'
+    ];
+
+    /* Butterfly settle phrases (issue #696): when camera has been still >20s and butterfly radius shrinks */
+    const BUTTERFLY_SETTLE_PHRASES = [
+      ' The butterfly settles closer, drawn by your stillness.',
+      ' The butterfly drifts nearer, responsive to your quiet presence.',
+      ' Still and watchful, the butterfly approaches a little closer.',
+      ' The butterfly settles inward, acknowledging your patient attention.'
+    ];
+
     const BUTTERFLY_SUFFIXES = [
       ' A small butterfly drifts at the edge of the garden.',
       ' The butterfly has taken shelter from the drizzle.',
       ' The butterfly drifts lower in the stronger wind, staying close to the ground.'
-    ].concat(FIREFLY_PROXIMITY_SUFFIXES).concat(SPROUT_PROXIMITY_SUFFIXES);
+    ].concat(FIREFLY_PROXIMITY_SUFFIXES).concat(SPROUT_PROXIMITY_SUFFIXES).concat(BUTTERFLY_SETTLE_PHRASES);
 
     function checkButterflyFireflyProximity() {
       const dayNight = window.__gardenState && window.__gardenState.dayNight;
@@ -1073,6 +1100,28 @@
       /* Reset sprout variant state when sprout proximity status changes */
       /* Use firefly-proximity variant slot for the seed variant to avoid adding another tracking slot */
 
+      /* Butterfly settle check: when camera has been still long enough, radius shrinks (issue #696) */
+      var isSettling = false;
+      var creatureState = window.__gardenState && window.__gardenState.creature;
+      if (creatureState && typeof creatureState.getSettleMul === 'function') {
+        isSettling = creatureState.getSettleMul() < 0.8;
+      }
+
+      if (isSettling) {
+        /* Cycle settle phrase using butterflySettle variant state */
+        var settleState = _variantState.butterflySettle;
+        var now = performance.now();
+        if (settleState.lastPhase !== 'settling') {
+          settleState.lastPhase = 'settling';
+          settleState.lastChangeTime = now;
+          settleState.variantIndex = 0;
+        } else if (now - settleState.lastChangeTime >= VARIANT_CYCLE_MS) {
+          settleState.variantIndex = (settleState.variantIndex + 1) % BUTTERFLY_SETTLE_PHRASES.length;
+          settleState.lastChangeTime = now;
+        }
+        return BUTTERFLY_SETTLE_PHRASES[settleState.variantIndex];
+      }
+
       if (weather === 'Light Drizzle') {
         return ' The butterfly has taken shelter from the drizzle.';
       }
@@ -1086,6 +1135,227 @@
         return ' The butterfly drifts curiously near the tiny new shoots.';
       }
       return ' A small butterfly drifts at the edge of the garden.';
+    }
+
+    /* Firefly pulse synchronization description updater (issue #676).
+     * During Night when at least 3 firefly dots from the same plant group
+     * have syncActive=true, appends a varied sentence to the growing
+     * description before the butterfly suffix. Removes the sentence when
+     * fewer than 2 synced dots persist for 3+ consecutive seconds.
+     * Disabled entirely under prefers-reduced-motion.
+     */
+    let lastFireflySyncText = '';
+    let fireflySyncFallBelowTimestamp = 0;
+    const FIREFLY_SYNC_DEBOUNCE_MS = 3000;
+
+    function updateFireflySyncDescription() {
+      /* Early return under prefers-reduced-motion */
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+      /* Only active during Night phase (t >= 0.75) */
+      const dayNight = window.__gardenState && window.__gardenState.dayNight;
+      if (!dayNight || typeof dayNight.getCycleProgress !== 'function') return;
+      const t = dayNight.getCycleProgress();
+      if (t < 0.75 || t >= 1.0) return;
+
+      /* Read firefly sync state */
+      const fireflies = window.__gardenState && window.__gardenState.fireflies;
+      if (!fireflies || typeof fireflies.getSyncState !== 'function') return;
+      const syncState = fireflies.getSyncState();
+
+      /* Count synced dots per group */
+      const syncCounts = {};
+      for (let i = 0; i < syncState.length; i++) {
+        const s = syncState[i];
+        if (typeof s.groupIndex === 'number') {
+          if (!syncCounts[s.groupIndex]) {
+            syncCounts[s.groupIndex] = { total: 0, synced: 0 };
+          }
+          syncCounts[s.groupIndex].total++;
+          if (s.syncActive) syncCounts[s.groupIndex].synced++;
+        }
+      }
+
+      /* Check if any group has >= 3 synced dots */
+      let hasSync = false;
+      for (const gi in syncCounts) {
+        if (syncCounts[gi].synced >= 3) {
+          hasSync = true;
+          break;
+        }
+      }
+
+      /* Count total synced dots across all groups for removal threshold */
+      let totalSynced = 0;
+      for (let i = 0; i < syncState.length; i++) {
+        if (syncState[i].syncActive) totalSynced++;
+      }
+
+      const el = document.getElementById('growing-description');
+      if (!el) return;
+
+      const now = Date.now();
+
+      if (hasSync) {
+        /* Reset fall-below timestamp — we have sync */
+        fireflySyncFallBelowTimestamp = 0;
+
+        /* Find and save butterfly suffix (outermost layer) */
+        let butterflySuffix = '';
+        const allButterflySuffixes = BUTTERFLY_SUFFIXES;
+        for (const suffix of allButterflySuffixes) {
+          if (el.textContent.endsWith(suffix)) {
+            butterflySuffix = suffix;
+            break;
+          }
+        }
+
+        /* Strip butterfly suffix to expose firefly sync layer */
+        const withoutButterfly = butterflySuffix
+          ? el.textContent.slice(0, -butterflySuffix.length)
+          : el.textContent;
+
+        /* Strip any existing firefly sync suffix */
+        const withoutSync = stripSuffixes(withoutButterfly, FIREFLY_SYNC_SUFFIXES);
+
+        /* Cycle variant (firefly sync variant) */
+        const syncVariantState = _variantState.fireflySync;
+        if (syncVariantState.lastPhase !== 'active' || now - syncVariantState.lastChangeTime >= VARIANT_CYCLE_MS) {
+          syncVariantState.lastPhase = 'active';
+          syncVariantState.lastChangeTime = now;
+          syncVariantState.variantIndex = (syncVariantState.variantIndex + 1) % FIREFLY_SYNC_SUFFIXES.length;
+        }
+
+        const syncSuffix = FIREFLY_SYNC_SUFFIXES[syncVariantState.variantIndex];
+        const composed = withoutSync + syncSuffix + butterflySuffix;
+
+        if (composed !== lastFireflySyncText) {
+          lastFireflySyncText = composed;
+          el.textContent = composed;
+        }
+      } else {
+        /* Sync fell below threshold — check debounce timer */
+        if (totalSynced < 2) {
+          if (fireflySyncFallBelowTimestamp === 0) {
+            fireflySyncFallBelowTimestamp = now;
+          } else if (now - fireflySyncFallBelowTimestamp >= FIREFLY_SYNC_DEBOUNCE_MS) {
+            /* Remove the sync sentence */
+            let butterflySuffix = '';
+            const allButterflySuffixes = BUTTERFLY_SUFFIXES;
+            for (const suffix of allButterflySuffixes) {
+              if (el.textContent.endsWith(suffix)) {
+                butterflySuffix = suffix;
+                break;
+              }
+            }
+
+            const withoutButterfly = butterflySuffix
+              ? el.textContent.slice(0, -butterflySuffix.length)
+              : el.textContent;
+
+            const withoutSync = stripSuffixes(withoutButterfly, FIREFLY_SYNC_SUFFIXES);
+            const composed = withoutSync + butterflySuffix;
+
+            if (composed !== lastFireflySyncText) {
+              lastFireflySyncText = composed;
+              el.textContent = composed;
+            }
+
+            /* Reset variant state */
+            _variantState.fireflySync.lastPhase = 'inactive';
+            fireflySyncFallBelowTimestamp = 0;
+          }
+        } else {
+          /* Went back above 2 synced dots — reset timer */
+          fireflySyncFallBelowTimestamp = 0;
+        }
+      }
+    }
+
+    /* Leaf tremble description updater (issue #675).
+     * When the butterfly brushes past a leaf during idle flight (creature state shows
+     * active leaf trembles), appends a brief sentence to the growing-description
+     * before the butterfly suffix. Strips the sentence within 1.5s of the tremble
+     * ending. Disabled under prefers-reduced-motion.
+     *
+     * Composition order: base + seasonCtx + timeCtx + weatherCtx + trembleSuffix + butterflySuffix.
+     */
+    let lastLeafTrembleText = '';
+    let leafTrembleDebounceStart = 0;
+    const LEAF_TREMBLE_DEBOUNCE_MS = 1500;
+
+    function updateLeafTrembleDescription() {
+      /* Early return under prefers-reduced-motion — no leaf tremble occurs */
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+      const creature = window.__gardenState && window.__gardenState.creature;
+      if (!creature || typeof creature.getLeafTrembles !== 'function') return;
+
+      const trembles = creature.getLeafTrembles();
+      const el = document.getElementById('growing-description');
+      if (!el) return;
+
+      const now = Date.now();
+
+      if (trembles.length > 0) {
+        /* Reset debounce — tremble is active */
+        leafTrembleDebounceStart = 0;
+
+        /* Find and save butterfly suffix (outermost layer) */
+        let butterflySuffix = '';
+        const allButterflySuffixes = BUTTERFLY_SUFFIXES;
+        for (const suffix of allButterflySuffixes) {
+          if (el.textContent.endsWith(suffix)) {
+            butterflySuffix = suffix;
+            break;
+          }
+        }
+
+        /* Strip butterfly suffix to expose inner layers */
+        const withoutButterfly = butterflySuffix
+          ? el.textContent.slice(0, -butterflySuffix.length)
+          : el.textContent;
+
+        /* Strip any existing tremble suffix */
+        const withoutTremble = stripSuffixes(withoutButterfly, LEAF_TREMBLE_SUFFIXES);
+
+        const trembleSuffix = LEAF_TREMBLE_SUFFIXES[0];
+        const composed = withoutTremble + trembleSuffix + butterflySuffix;
+
+        if (composed !== lastLeafTrembleText) {
+          lastLeafTrembleText = composed;
+          el.textContent = composed;
+        }
+      } else {
+        /* No trembles active — check debounce before removing sentence */
+        if (leafTrembleDebounceStart === 0) {
+          leafTrembleDebounceStart = now;
+        } else if (now - leafTrembleDebounceStart >= LEAF_TREMBLE_DEBOUNCE_MS) {
+          /* Remove tremble suffix */
+          let butterflySuffix = '';
+          const allButterflySuffixes = BUTTERFLY_SUFFIXES;
+          for (const suffix of allButterflySuffixes) {
+            if (el.textContent.endsWith(suffix)) {
+              butterflySuffix = suffix;
+              break;
+            }
+          }
+
+          const withoutButterfly = butterflySuffix
+            ? el.textContent.slice(0, -butterflySuffix.length)
+            : el.textContent;
+
+          const withoutTremble = stripSuffixes(withoutButterfly, LEAF_TREMBLE_SUFFIXES);
+          const composed = withoutTremble + butterflySuffix;
+
+          if (composed !== lastLeafTrembleText) {
+            lastLeafTrembleText = composed;
+            el.textContent = composed;
+          }
+
+          leafTrembleDebounceStart = 0;
+        }
+      }
     }
 
     let lastButterflyText = '';
@@ -1146,8 +1416,13 @@
       checkButterflyFireflyProximity,
       checkButterflySproutProximity,
       FIREFLY_PROXIMITY_SUFFIXES,
+      FIREFLY_SYNC_SUFFIXES,
       SPROUT_PROXIMITY_SUFFIXES,
+      BUTTERFLY_SETTLE_PHRASES,
       chooseFireflyProximitySuffix,
+      updateFireflySyncDescription,
+      updateLeafTrembleDescription,
+      LEAF_TREMBLE_SUFFIXES,
       updateAudioWeather,
       updateWeatherDescription,
       weatherContexts: WEATHER_CONTEXTS,
@@ -1166,8 +1441,18 @@
       _presencePhrases: PRESENCE_PHRASES,
       /* Variant cycling state (issue #543) */
       _variantState: _variantState,
-      VARIANT_CYCLE_MS: VARIANT_CYCLE_MS
+      VARIANT_CYCLE_MS: VARIANT_CYCLE_MS,
+      /* Acknowledgment setter exposed for creature.js (issue #681) */
+      setAcknowledgment: setAcknowledgment,
+      getMilestoneAcknowledgment: getMilestoneAcknowledgment
     };
+
+    /* Stillness duration getter (issue #696): time in ms since last camera interaction */
+    Object.defineProperty(window.__gardenState, '_stillnessDuration', {
+      get: function() { return performance.now() - lastInteractionTime; },
+      enumerable: true,
+      configurable: true
+    });
 
     /* --- Persistence: restore previous state if available --- */
     const savedState = loadGardenState();
@@ -1176,6 +1461,26 @@
     if (savedState) {
       // Fast-forward the saved state by elapsed real time
       initial = fastForwardState(savedState);
+    }
+
+    /* --- Visit count: track cumulative visits (issue #695) ---
+     * Returning visitors increment the count from saved state.
+     * First-time visitors (no saved state) start at 1.
+     * Exposed on __gardenState so saveGardenState() persists it. */
+    if (savedState) {
+      window.__gardenState.visitCount = (savedState.visitCount || 0) + 1;
+    } else {
+      window.__gardenState.visitCount = 1;
+    }
+
+    /* --- Cumulative bloom bonus: each return visit adds a small permanent
+     * increment (0.025, capped at 0.5) that makes flowers open a little more
+     * readily each time you come back (issue #698).
+     * First-time visitors start at 0. */
+    if (savedState) {
+      window.__gardenState.cumulativeBloomBonus = Math.min(0.5, (savedState.cumulativeBloomBonus || 0) + 0.025);
+    } else {
+      window.__gardenState.cumulativeBloomBonus = 0;
     }
 
     /* Initialise garden with optional restored progress */
@@ -1290,15 +1595,33 @@
     // Expose the helper for self-test
     window.__gardenState.computeReturningVisitorGreeting = computeReturningVisitorGreeting;
 
-    /* --- Page-load acknowledgment greeting (issue #596) ---
+    /* --- Page-load acknowledgment greeting (issue #596, #697) ---
      * First-time visitors get a welcome message; returning visitors
-     * get a warm welcome-back acknowledgement. Runs after initGarden
-     * so acknowledgment is populated immediately on page load. */
+     * get a warm welcome-back acknowledgement that celebrates
+     * cumulative visit milestones (3rd, 5th, 10th visit).
+     * Runs after initGarden so acknowledgment is populated immediately on page load. */
+
+    /* Exported helper: returns the milestone-appropriate acknowledgment text
+     * for a given visitCount, so selftest can verify the mapping without
+     * needing to reload the page. First-visit text is returned separately. */
+    function getMilestoneAcknowledgment(visitCount) {
+      if (visitCount >= 10) {
+        return 'Welcome back. This garden has grown with you through many visits.';
+      }
+      if (visitCount >= 5) {
+        return 'Welcome back again. The garden feels familiar in your presence.';
+      }
+      if (visitCount >= 3) {
+        return 'Welcome back. The garden has known you through three visits now.';
+      }
+      return 'Welcome back. The garden remembers your presence.';
+    }
+
     {
       const ackEl = document.getElementById('garden-state-acknowledgment');
       if (ackEl) {
         if (savedState) {
-          ackEl.textContent = 'Welcome back. The garden remembers your presence.';
+          ackEl.textContent = getMilestoneAcknowledgment(window.__gardenState.visitCount);
         } else {
           ackEl.textContent = 'Welcome to the garden. The soil is rich and the air is still \u2014 something is about to grow.';
         }
@@ -1364,6 +1687,12 @@
 
     /* Poll the season display every ~1s and update season-aware descriptions */
     setInterval(updateSeasonDescription, 1000);
+
+    /* Poll the firefly sync state every ~1s and update sync description during Night */
+    setInterval(updateFireflySyncDescription, 1000);
+
+    /* Poll the leaf tremble state every ~500ms and update leaf-tremble description (issue #675) */
+    setInterval(updateLeafTrembleDescription, 500);
 
     /* --- Periodic visitor presence acknowledgment (issue #596):
      * Runs a randomized timer (30-60s delay) that picks a phrase

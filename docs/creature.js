@@ -53,6 +53,14 @@ const PAUSE_SPEED_MUL = 0.5;      // slow to ~50% during pause
 const PAUSE_ENTER_DURATION = 1.0; // seconds to ease into the pause
 const PAUSE_HOLD_MIN = 3.0;       // minimum hold seconds
 const PAUSE_HOLD_MAX = 5.0;       // maximum hold seconds
+const POLLINATED_PAUSE_MULTIPLIER = 1.6; // scale factor when pausing at a pollinated flower (issue #679)
+const POLLINATED_PAUSE_PHRASES = [
+  'The butterfly returns to a flower it visited before.',
+  'The butterfly brushes past a bloom it already knows.',
+  'A familiar flower draws the butterfly back again.',
+  'The butterfly revisits a flower it has touched before.'
+];
+const POLLINATED_ACK_COOLDOWN_MS = 30000; // ms cooldown between repeated pollinated-flower acknowledgments
 const PAUSE_EXIT_DURATION = 1.0;  // seconds to ease back to normal flight
 const PAUSE_DIP_AMOUNT = 0.15;    // how much closer the butterfly dips to the flower
 
@@ -88,6 +96,18 @@ let _lastReactionTime = 0;
 const CAMERA_BOOST = 1.2;
 const CAMERA_BOOST_DURATION = 2.0; // seconds boost lasts
 const CAMERA_COOLDOWN = 10.0;       // seconds before next reaction
+
+/* Stillness settling (issue #696) */
+const SETTLE_TIME_CONSTANT = 2.5;     // seconds — exponential lerp, ~95% complete in ~7.5s
+const SETTLE_STILLNESS_MIN = 20;      // seconds — minimum camera stillness before settling begins
+const SETTLE_STILLNESS_MAX = 60;      // seconds — max stillness for full contraction
+const SETTLE_MIN_MUL = 0.6;           // minimum radius multiplier (40% contraction)
+
+/* Cumulative-visit familiarity (issue #704) */
+const FAMILIARITY_THRESHOLD_1 = 5;      // visits — first familiarity tier
+const FAMILIARITY_THRESHOLD_2 = 15;     // visits — second familiarity tier
+const FAMILIARITY_MUL_1 = 0.85;         // radius max multiplier at ≥5 visits (~15% smaller)
+const FAMILIARITY_MUL_2 = 0.75;         // radius max multiplier at ≥15 visits (~25% smaller)
 
 /**
  * Create a small butterfly creature and add it to the scene.
@@ -199,11 +219,20 @@ export function createCreature(scene) {
   /* --- Tracks the current wind nudge for selftest --- */
   let _windNudge = 0;
 
+  /* Pollinated-flower acknowledgment cooldown tracker (issue #681) */
+  let _lastPollinatedAckTime = 0;
+
   /* --- Firefly attraction tracking for selftest (issue #598) --- */
   let _fireflySlowMul = 1.0;
   let _fireflyBiasX = 0;
   let _fireflyBiasZ = 0;
   let _isNightPhase = false;
+
+  /* --- Stillness settle multiplier (issue #696) --- */
+  let _stillnessSettleMul = 1.0;
+
+  /* --- Cumulative-visit familiarity multiplier (issue #704) --- */
+  let _familiarityMul = 1.0;
 
   /* --- Firefly sync-zone slowdown tracking (issue #647) --- */
   let _syncSlowMul = 1.0;          // multiplier: 1.0 normal, ~0.85 when slowed
@@ -246,6 +275,10 @@ export function createCreature(scene) {
     pauseTargetPos: () => pauseTargetPos ? { ...pauseTargetPos } : null,
     pauseSpeedMul: () => pauseSpeedMul,
     pauseEaseT: () => pauseEaseT,
+    getPauseHoldDuration: () => pauseHoldDuration,
+    POLLINATED_PAUSE_MULTIPLIER,
+    POLLINATED_PAUSE_PHRASES,
+    POLLINATED_ACK_COOLDOWN_MS,
     /* Wind perturbation exposed for selftest */
     windNudge: () => _windNudge,
     /* Landing state exposed for testing */
@@ -271,6 +304,10 @@ export function createCreature(scene) {
     isNightPhase: () => _isNightPhase,
     /* Firefly sync-zone slowdown accessor for selftest (issue #647) */
     getSyncSlowMul: () => _syncSlowMul,
+    /* Stillness settle multiplier for selftest and DOM (issue #696) */
+    getSettleMul: () => _stillnessSettleMul,
+    /* Cumulative-visit familiarity multiplier for selftest (issue #704) */
+    getCumulativeFamiliarityMul: () => _familiarityMul,
     /* Sprout attraction accessors for selftest (issue #629) */
     getSproutOffset: () => ({ x: _sproutOffsetX, z: _sproutOffsetZ }),
     /* Leaf brush tremble accessors for selftest (issue #640) */
@@ -448,11 +485,37 @@ export function createCreature(scene) {
       }
     }
 
+    /* --- Stillness settling: butterfly settles closer when camera is still (issue #696) --- */
+    let settleTarget = 1.0;
+    if (window.__gardenState && typeof window.__gardenState._stillnessDuration === 'number') {
+      const stillnessSec = window.__gardenState._stillnessDuration / 1000;
+      if (stillnessSec > SETTLE_STILLNESS_MIN) {
+        const t = Math.min(1, (stillnessSec - SETTLE_STILLNESS_MIN) / (SETTLE_STILLNESS_MAX - SETTLE_STILLNESS_MIN));
+        settleTarget = 1.0 - (1.0 - SETTLE_MIN_MUL) * t; // lerp from 1.0 to SETTLE_MIN_MUL
+      }
+    }
+    // Exponential lerp toward target (~5s for full transition with time constant 2.5)
+    _stillnessSettleMul = _stillnessSettleMul + (settleTarget - _stillnessSettleMul) * (1 - Math.exp(-dt / SETTLE_TIME_CONSTANT));
+
     /* Apply season multiplier to ORBIT_SPEED for angular position computation */
     // Apply firefly slow multiplier during Night (issue #598)
     const effectiveOrbitSpeed = ORBIT_SPEED * _currentSeasonOrbitMul * cameraBoost * _fireflySlowMul * _syncSlowMul;
     /* Apply season multiplier to ORBIT_RADIUS_MAX for radius range */
     const effectiveOrbitRadiusMax = ORBIT_RADIUS_MAX * _currentSeasonRadiusMul;
+
+    /* --- Cumulative-visit familiarity: shrink ORBIT_RADIUS_MAX based on return visits (issue #704) --- */
+    {
+      const vc = window.__gardenState && typeof window.__gardenState.visitCount === 'number'
+        ? window.__gardenState.visitCount
+        : 0;
+      if (vc >= FAMILIARITY_THRESHOLD_2) {
+        _familiarityMul = FAMILIARITY_MUL_2;
+      } else if (vc >= FAMILIARITY_THRESHOLD_1) {
+        _familiarityMul = FAMILIARITY_MUL_1;
+      } else {
+        _familiarityMul = 1.0;
+      }
+    }
 
     /* --- Compute orbit position with pause speed modulation --- */
     const t = time * effectiveOrbitSpeed * pauseSpeedMul;
@@ -462,7 +525,11 @@ export function createCreature(scene) {
 
     // Radial distance: varies between min and max using a slow sine
     const radiusFactor = 0.5 + 0.5 * Math.sin(t * FREQ_X + PHASE_X);
-    const radius = ORBIT_RADIUS_MIN + radiusFactor * (effectiveOrbitRadiusMax - ORBIT_RADIUS_MIN);
+    // Two radii: one from stillness settling (#696), one from cumulative familiarity (#704).
+    // The tighter of the two applies — familiarity permanently shrinks the max radius.
+    const radiusStillness = (ORBIT_RADIUS_MIN + radiusFactor * (effectiveOrbitRadiusMax - ORBIT_RADIUS_MIN)) * _stillnessSettleMul;
+    const radiusFamiliarity = ORBIT_RADIUS_MIN + radiusFactor * (effectiveOrbitRadiusMax * _familiarityMul - ORBIT_RADIUS_MIN);
+    const radius = Math.min(radiusStillness, radiusFamiliarity);
 
     // Vertical position: gentle bobbing (with Overcast shelter adjustment, issue #633)
     const heightFactor = 0.5 + 0.5 * Math.sin(t * FREQ_Y + PHASE_Y);
@@ -518,6 +585,20 @@ export function createCreature(scene) {
                   pauseState = 'entering';
                   pauseTimer = 0;
                   pauseHoldDuration = PAUSE_HOLD_MIN + Math.random() * (PAUSE_HOLD_MAX - PAUSE_HOLD_MIN);
+                  // Butterfly lingers longer at pollinated flowers (issue #679)
+                  const flowerObj = gs[plantRefs[i]].flower;
+                  if (flowerObj && typeof flowerObj.isPollinated === 'function' && flowerObj.isPollinated()) {
+                    pauseHoldDuration *= POLLINATED_PAUSE_MULTIPLIER;
+                    // Garden acknowledgment referencing the return visit (issue #681)
+                    const now = performance.now();
+                    if (now - _lastPollinatedAckTime >= POLLINATED_ACK_COOLDOWN_MS) {
+                      _lastPollinatedAckTime = now;
+                      const phrase = POLLINATED_PAUSE_PHRASES[Math.floor(Math.random() * POLLINATED_PAUSE_PHRASES.length)];
+                      if (window.__gardenState && typeof window.__gardenState.setAcknowledgment === 'function') {
+                        window.__gardenState.setAcknowledgment(phrase);
+                      }
+                    }
+                  }
                   pauseTargetPos = { x: fx, y: fy, z: fz };
                   pauseEaseT = 0;
                   pauseOriginPos = { x: orbitX, y: orbitY, z: orbitZ };
