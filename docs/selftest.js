@@ -5723,6 +5723,12 @@ export async function checks() {
 
   /* ---------- Firefly glow checks (issue #468) ---------- */
   const fireflyState = gardenState && gardenState.fireflies;
+  // Force visitCount to 1 for all firefly opacity ceiling checks so they
+  // use the default peak opacity of 0.15 regardless of the persisted value.
+  var savedVisitCount = gardenState && gardenState.visitCount;
+  if (typeof savedVisitCount === 'number' && gardenState) {
+    gardenState.visitCount = 1;
+  }
   if (!fireflyState) {
     problems.push('window.__gardenState.fireflies is not set — the firefly glow system was not created (fireflies.js may not have been imported or called).');
   } else {
@@ -6432,6 +6438,12 @@ export async function checks() {
     }
   }
 
+  // Restore the original visitCount so subsequent checks (seasonal ramp,
+  // vertical lift, sync, etc.) run with the real persisted value.
+  if (typeof savedVisitCount === 'number' && gardenState) {
+    gardenState.visitCount = savedVisitCount;
+  }
+
   /* ---------- Firefly seasonal ramp checks (issue #623) ---------- */
   // Verify gradual firefly emergence in Spring and fade in Autumn
   if (gardenState && gardenState.fireflies) {
@@ -6543,6 +6555,113 @@ export async function checks() {
           origSeasonEl.textContent = origSeasonText;
         }
         gardenState.seasonProgress = origSeasonProgress;
+      }
+    }
+  }
+
+  /* ---------- Cumulative peak opacity checks (issue #705) ---------- */
+  // getCumulativePeakOpacity() should return the correct scaled peak opacity
+  // at various visitCount thresholds.
+  {
+    const ffState705 = gardenState && gardenState.fireflies;
+    if (!ffState705) {
+      problems.push('window.__gardenState.fireflies is not set — cannot verify getCumulativePeakOpacity (issue #705).');
+    } else {
+      if (typeof ffState705.getCumulativePeakOpacity !== 'function') {
+        problems.push('fireflyState.getCumulativePeakOpacity is not a function — expected a getter for the cumulative peak opacity (issue #705).');
+      } else {
+        // Save original visitCount
+        const prevVisitCount705 = gardenState && gardenState.visitCount;
+
+        try {
+          // Test 1: visitCount = 1 (below threshold) -> 0.15
+          if (gardenState) gardenState.visitCount = 1;
+          const peak1 = ffState705.getCumulativePeakOpacity();
+          if (typeof peak1 !== 'number' || Math.abs(peak1 - 0.15) > 0.001) {
+            problems.push('getCumulativePeakOpacity() returned ' + peak1 + ' at visitCount=1 — expected 0.15 (issue #705).');
+          }
+
+          // Test 2: visitCount = 3 (first tier) -> 0.18
+          if (gardenState) gardenState.visitCount = 3;
+          const peak3 = ffState705.getCumulativePeakOpacity();
+          if (typeof peak3 !== 'number' || Math.abs(peak3 - 0.18) > 0.001) {
+            problems.push('getCumulativePeakOpacity() returned ' + peak3 + ' at visitCount=3 — expected 0.18 (issue #705).');
+          }
+
+          // Test 3: visitCount = 10 (second tier) -> 0.20
+          if (gardenState) gardenState.visitCount = 10;
+          const peak10 = ffState705.getCumulativePeakOpacity();
+          if (typeof peak10 !== 'number' || Math.abs(peak10 - 0.20) > 0.001) {
+            problems.push('getCumulativePeakOpacity() returned ' + peak10 + ' at visitCount=10 — expected 0.20 (issue #705).');
+          }
+
+          // Test 4: visitCount = 1000 (way beyond threshold) -> never exceeds 0.25
+          if (gardenState) gardenState.visitCount = 1000;
+          const peak1000 = ffState705.getCumulativePeakOpacity();
+          if (typeof peak1000 !== 'number' || peak1000 > 0.25) {
+            problems.push('getCumulativePeakOpacity() returned ' + peak1000 + ' at visitCount=1000 — expected ≤ 0.25 (hard cap, issue #705).');
+          }
+          if (typeof peak1000 === 'number' && Math.abs(peak1000 - 0.25) > 0.001) {
+            problems.push('getCumulativePeakOpacity() returned ' + peak1000 + ' at visitCount=1000 — expected exactly 0.25 (issue #705).');
+          }
+
+          // Test 5: Live material opacity converges to the scaled peak during Night
+          if (gardenState && gardenState.dayNight && typeof gardenState.dayNight.getCycleProgress === 'function' &&
+              gardenState.weather && typeof gardenState.weather.getPhase === 'function' &&
+              typeof gardenState.firefliesUpdate === 'function' &&
+              ffState705.plantGroups && ffState705.plantGroups.length > 0) {
+            const origCycleProgress705 = gardenState.dayNight.getCycleProgress;
+            const origWeatherPhase705 = gardenState.weather.getPhase;
+            const origSeasonProgress705 = gardenState.seasonProgress;
+            const origSeasonDisplay = document.getElementById('season-display') && document.getElementById('season-display').textContent;
+
+            try {
+              // A. Set visitCount=3, force Night+Summer+Clear, run 300 frames, verify opacity ~0.18
+              if (gardenState) gardenState.visitCount = 3;
+              gardenState.dayNight.getCycleProgress = function() { return 0.85; };
+              gardenState.weather.getPhase = function() { return 'Clear'; };
+              var seasonEl705 = document.getElementById('season-display');
+              if (seasonEl705) seasonEl705.textContent = 'Summer';
+              gardenState.seasonProgress = 0.25; // mid-Summer
+
+              for (var f705a = 0; f705a < 300; f705a++) {
+                gardenState.firefliesUpdate(0, 0.016);
+              }
+
+              var opacityAt3 = ffState705.plantGroups[0].material.opacity;
+              if (opacityAt3 < 0.14 || opacityAt3 > 0.22) {
+                problems.push('At visitCount=3 during Summer+Night+Clear, firefly opacity is ' + opacityAt3.toFixed(4) + ' — expected ~0.18 (within 0.14–0.22, issue #705).');
+              }
+
+              // B. Set visitCount=10, force Night+Summer+Clear, run 300 frames, verify opacity ~0.20
+              if (gardenState) gardenState.visitCount = 10;
+              for (var f705b = 0; f705b < 300; f705b++) {
+                gardenState.firefliesUpdate(0, 0.016);
+              }
+
+              var opacityAt10 = ffState705.plantGroups[0].material.opacity;
+              if (opacityAt10 < 0.16 || opacityAt10 > 0.24) {
+                problems.push('At visitCount=10 during Summer+Night+Clear, firefly opacity is ' + opacityAt10.toFixed(4) + ' — expected ~0.20 (within 0.16–0.24, issue #705).');
+              }
+
+              // C. Verify opacity at visitCount=10 > opacity at visitCount=3
+              if (opacityAt10 <= opacityAt3) {
+                problems.push('Firefly opacity at visitCount=10 (' + opacityAt10.toFixed(4) + ') should exceed opacity at visitCount=3 (' + opacityAt3.toFixed(4) + ') — the peak must increase with cumulative visits (issue #705).');
+              }
+            } finally {
+              // Restore original state
+              gardenState.dayNight.getCycleProgress = origCycleProgress705;
+              gardenState.weather.getPhase = origWeatherPhase705;
+              gardenState.seasonProgress = origSeasonProgress705;
+              if (seasonEl705 && origSeasonDisplay) seasonEl705.textContent = origSeasonDisplay;
+            }
+          }
+        } finally {
+          // Restore original visitCount
+          if (gardenState && typeof prevVisitCount705 === 'number') {
+            gardenState.visitCount = prevVisitCount705;
+          }
+        }
       }
     }
   }

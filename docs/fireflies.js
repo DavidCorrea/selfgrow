@@ -7,7 +7,8 @@
  * darkens (t ≥ 0.75) and fade out as Morning approaches (t ∈ [0.95, 1.0)).
  *
  * Each glow is a small additive-blended point sprite, barely perceptible —
- * peak opacity ≤ 0.15. This gives the garden a sense of continued life at
+ * peak opacity 0.15, rising gently (up to a 0.25 cap) for returning
+ * visitors (issue #705). This gives the garden a sense of continued life at
  * night, fulfilling the Vision's 'something small is usually happening at
  * the edge of attention.'
  *
@@ -31,7 +32,39 @@ import { computeDisplacement } from "./groundRipple.js";
 const DOTS_MIN = 4;
 const DOTS_MAX = 6;               // 4–6 per plant
 const DRIFT_RADIUS = 0.15;         // maximum drift offset from plant
-const PEAK_OPACITY = 0.15;         // peak opacity during Night (≤ 0.15)
+const PEAK_OPACITY = 0.15;         // base peak opacity during Night (≤ 0.15); scaled by getCumulativePeakOpacity() for return visits (issue #705)
+
+/**
+ * Compute the effective peak opacity for the current cumulative visit count.
+ * Returns a value that increases with return visits, never exceeding 0.25,
+ * so the principle of calm is preserved.
+ *
+ * - visitCount < 3:    0.15 (default)
+ * - visitCount >= 3:   0.18 (+20%)
+ * - visitCount >= 10:  0.20 (+35%)
+ * - visitCount >= 25:  0.22
+ * - visitCount >= 50:  0.24
+ * - visitCount >= 100: 0.25 (hard cap)
+ *
+ * Reads window.__gardenState.visitCount live so it reflects the persisted value.
+ */
+function getCumulativePeakOpacity() {
+  var gs = window.__gardenState;
+  var vc = gs && typeof gs.visitCount === 'number' ? gs.visitCount : 1;
+  var peak = PEAK_OPACITY; // 0.15 baseline
+  if (vc >= 100) {
+    peak = 0.25;
+  } else if (vc >= 50) {
+    peak = 0.24;
+  } else if (vc >= 25) {
+    peak = 0.22;
+  } else if (vc >= 10) {
+    peak = 0.20;
+  } else if (vc >= 3) {
+    peak = 0.18;
+  }
+  return Math.min(peak, 0.25);
+}
 const GLOW_SIZE = 0.04;            // base sprite size in world units
 const LIFT_HEIGHT = 0.35;           // how far fireflies rise above leaf height at night
 const FADE_LERP_SPEED = 0.04;      // ~1.2 seconds to fade in/out
@@ -366,6 +399,8 @@ export function createFireflies(scene) {
       }
       return count;
     },
+    /** Returns the effective peak opacity scaled by cumulative return visit count (issue #705) */
+    getCumulativePeakOpacity: getCumulativePeakOpacity,
     /** Current weather opacity multiplier (lerping toward target) */
     currentWeatherMul: function() { return currentWeatherMul; },
     /** Current seasonal opacity multiplier (lerping toward target) */
@@ -576,11 +611,11 @@ export function createFireflies(scene) {
     if (t >= 0.75) {
       if (t < 0.95) {
         // Full Night — target peak opacity, modulated by weather and season
-        targetOpacity = PEAK_OPACITY * currentWeatherMul * currentSeasonMul;
+        targetOpacity = getCumulativePeakOpacity() * currentWeatherMul * currentSeasonMul;
       } else {
         // Fading out toward Morning — t ∈ [0.95, 1.0)
         const fadeT = (1.0 - t) / 0.05; // 1 → 0
-        targetOpacity = Math.max(0, fadeT) * PEAK_OPACITY * currentWeatherMul * currentSeasonMul;
+        targetOpacity = Math.max(0, fadeT) * getCumulativePeakOpacity() * currentWeatherMul * currentSeasonMul;
       }
     }
     // t < 0.75: target stays 0 — invisible during Morning, Midday, Evening
