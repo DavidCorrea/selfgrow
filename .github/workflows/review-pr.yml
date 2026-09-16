@@ -24,12 +24,21 @@ concurrency:
 
 jobs:
   review:
-    # Three guards, all necessary.
+    # Four guards, all necessary.
     #
     # FORKS are excluded. A pull_request run from a fork gets no secrets, so the
     # model call would fail anyway — but the important half is that this job checks
     # out the PR's head and runs an agent with write access over it, which must
     # never happen for a branch an outsider controls.
+    #
+    # DEPENDABOT is excluded because this job cannot run for it at all: a
+    # Dependabot-triggered event reads the Dependabot secret store, not the Actions
+    # one, so `secrets.AGENT_PAT` resolves EMPTY and the checkout dies on
+    # "Input required and not supplied: token" before a single line of review
+    # happens. Every dependency bump has been failing this way. Mirroring the PAT
+    # into Dependabot secrets would fix the symptom and hand a bot-opened PR an
+    # agent with write access; `check` and `verify-product` are required on main
+    # and already gate these, which is the review a version bump actually needs.
     #
     # The pipeline's own PRs are excluded twice over, by BRANCH and by author. The
     # branch check is the one that matters: agent PRs are opened by the PAT — they
@@ -40,7 +49,8 @@ jobs:
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository &&
       !startsWith(github.event.pull_request.head.ref, 'agent/') &&
-      github.event.pull_request.user.login != 'github-actions[bot]'
+      github.event.pull_request.user.login != 'github-actions[bot]' &&
+      github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     # Up to two verify → review → fix cycles, each bounded by MAX_SESSION_MINUTES.
     timeout-minutes: 45
