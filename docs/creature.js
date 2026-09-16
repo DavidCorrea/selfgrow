@@ -560,7 +560,7 @@ export function createCreature(scene) {
         // Check proximity to plants with blooming flowers
         const gs = window.__gardenState;
         if (gs) {
-          const plantRefs = ['plant', 'plant2'];
+          const plantRefs = ['plant', 'plant2', 'plant3'];
           for (let i = 0; i < plantRefs.length; i++) {
             const plant = gs[plantRefs[i]];
             if (plant && plant.flower && typeof plant.flower.getPhase === 'function') {
@@ -568,8 +568,8 @@ export function createCreature(scene) {
               if (phase === 'bloom') {
                 // Get flower position: plant group position + flower height
                 const plantPos = plant.group.position;
-                // Flower is at stem height (central: 0.7, plant2: 0.5) above the plant
-                const flowerHeight = plantRefs[i] === 'plant' ? 0.7 : 0.5;
+                // Flower is at stem height (central: 0.7, plant2: 0.5, plant3: 0.3) above the plant
+                const flowerHeight = plantRefs[i] === 'plant' ? 0.7 : (plantRefs[i] === 'plant3' ? 0.3 : 0.5);
                 const fx = plantPos.x;
                 const fy = plantPos.y + flowerHeight + 0.02;
                 const fz = plantPos.z;
@@ -656,7 +656,7 @@ export function createCreature(scene) {
           const gs = window.__gardenState;
           let leafFound = false;
           if (gs) {
-            const plantRefs = ['plant', 'plant2'];
+            const plantRefs = ['plant', 'plant2', 'plant3'];
             for (let li = 0; li < plantRefs.length; li++) {
               const plant = gs[plantRefs[li]];
               if (plant && plant.leaves && plant.leaves.length > 0 && pauseTargetPos) {
@@ -952,7 +952,7 @@ export function createCreature(scene) {
     if (pauseState === 'idle' && !state.reducedMotion) {
       const gs = window.__gardenState;
       if (gs) {
-        const plantRefs = ['plant', 'plant2'];
+        const plantRefs = ['plant', 'plant2', 'plant3'];
         const nowMS = performance.now();
         for (let pi = 0; pi < plantRefs.length; pi++) {
           const plant = gs[plantRefs[pi]];
