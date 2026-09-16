@@ -188,6 +188,34 @@ export async function checks() {
     if (info && info.programs && info.programs.length === 0) {
       problems.push('Renderer has no compiled shader programs — scene may not have rendered.');
     }
+
+    // Verify tone mapping is Reinhard with exposure 1.2 (issue #716)
+    var toneMapping = gardenState.renderer.toneMapping;
+    if (toneMapping !== THREE.ReinhardToneMapping) {
+      var actualName = 'unknown';
+      if (toneMapping === THREE.ACESFilmicToneMapping) actualName = 'ACESFilmic';
+      else if (toneMapping === THREE.LinearToneMapping) actualName = 'Linear';
+      else if (toneMapping === THREE.ReinhardToneMapping) actualName = 'Reinhard';
+      else if (toneMapping === THREE.CineonToneMapping) actualName = 'Cineon';
+      else if (toneMapping === THREE.CustomToneMapping) actualName = 'Custom';
+      else if (toneMapping === THREE.AgXToneMapping) actualName = 'AgX';
+      else if (toneMapping === THREE.NeutralToneMapping) actualName = 'Neutral';
+      problems.push(
+        'renderer.toneMapping is ' + actualName + ' (' + toneMapping + ')' +
+        ', expected ReinhardToneMapping (' + THREE.ReinhardToneMapping + ') — ' +
+        'ACESFilmic crushes low/mid luminance into darkness, making plants ' +
+        'nearly invisible at night and during overcast/drizzle (issue #716).'
+      );
+    }
+
+    var exposure = gardenState.renderer.toneMappingExposure;
+    if (typeof exposure !== 'number' || Math.abs(exposure - 1.2) > 0.001) {
+      problems.push(
+        'renderer.toneMappingExposure is ' + exposure +
+        ', expected 1.2 — the increased exposure preserves shadow detail ' +
+        'across all environmental phase combinations (issue #716).'
+      );
+    }
   }
 
   /* ---------- OrbitControls checks ---------- */

@@ -1340,8 +1340,9 @@ function createPlant(opts) {
 
     if (progress < 1) {
       // Ease-out cubic: starts fast, slows toward the end
+      // Start at 0.35 minimum visible scale matching initial startScale formula (issue #661)
       const eased = 1 - Math.pow(1 - progress, 3);
-      const s = 0.15 + eased * 0.85;
+      const s = 0.35 + eased * 0.65;
       group.scale.set(s, s, s);
 
       // Update DOM descriptions by growth phase
