@@ -103,6 +103,12 @@ const SETTLE_STILLNESS_MIN = 20;      // seconds — minimum camera stillness be
 const SETTLE_STILLNESS_MAX = 60;      // seconds — max stillness for full contraction
 const SETTLE_MIN_MUL = 0.6;           // minimum radius multiplier (40% contraction)
 
+/* Cumulative-visit familiarity (issue #704) */
+const FAMILIARITY_THRESHOLD_1 = 5;      // visits — first familiarity tier
+const FAMILIARITY_THRESHOLD_2 = 15;     // visits — second familiarity tier
+const FAMILIARITY_MUL_1 = 0.85;         // radius max multiplier at ≥5 visits (~15% smaller)
+const FAMILIARITY_MUL_2 = 0.75;         // radius max multiplier at ≥15 visits (~25% smaller)
+
 /**
  * Create a small butterfly creature and add it to the scene.
  *
@@ -225,6 +231,9 @@ export function createCreature(scene) {
   /* --- Stillness settle multiplier (issue #696) --- */
   let _stillnessSettleMul = 1.0;
 
+  /* --- Cumulative-visit familiarity multiplier (issue #704) --- */
+  let _familiarityMul = 1.0;
+
   /* --- Firefly sync-zone slowdown tracking (issue #647) --- */
   let _syncSlowMul = 1.0;          // multiplier: 1.0 normal, ~0.85 when slowed
   let _syncSlowTimer = 0;           // seconds remaining in the slowdown
@@ -297,6 +306,8 @@ export function createCreature(scene) {
     getSyncSlowMul: () => _syncSlowMul,
     /* Stillness settle multiplier for selftest and DOM (issue #696) */
     getSettleMul: () => _stillnessSettleMul,
+    /* Cumulative-visit familiarity multiplier for selftest (issue #704) */
+    getCumulativeFamiliarityMul: () => _familiarityMul,
     /* Sprout attraction accessors for selftest (issue #629) */
     getSproutOffset: () => ({ x: _sproutOffsetX, z: _sproutOffsetZ }),
     /* Leaf brush tremble accessors for selftest (issue #640) */
@@ -492,6 +503,20 @@ export function createCreature(scene) {
     /* Apply season multiplier to ORBIT_RADIUS_MAX for radius range */
     const effectiveOrbitRadiusMax = ORBIT_RADIUS_MAX * _currentSeasonRadiusMul;
 
+    /* --- Cumulative-visit familiarity: shrink ORBIT_RADIUS_MAX based on return visits (issue #704) --- */
+    {
+      const vc = window.__gardenState && typeof window.__gardenState.visitCount === 'number'
+        ? window.__gardenState.visitCount
+        : 0;
+      if (vc >= FAMILIARITY_THRESHOLD_2) {
+        _familiarityMul = FAMILIARITY_MUL_2;
+      } else if (vc >= FAMILIARITY_THRESHOLD_1) {
+        _familiarityMul = FAMILIARITY_MUL_1;
+      } else {
+        _familiarityMul = 1.0;
+      }
+    }
+
     /* --- Compute orbit position with pause speed modulation --- */
     const t = time * effectiveOrbitSpeed * pauseSpeedMul;
 
@@ -500,7 +525,11 @@ export function createCreature(scene) {
 
     // Radial distance: varies between min and max using a slow sine
     const radiusFactor = 0.5 + 0.5 * Math.sin(t * FREQ_X + PHASE_X);
-    const radius = (ORBIT_RADIUS_MIN + radiusFactor * (effectiveOrbitRadiusMax - ORBIT_RADIUS_MIN)) * _stillnessSettleMul;
+    // Two radii: one from stillness settling (#696), one from cumulative familiarity (#704).
+    // The tighter of the two applies — familiarity permanently shrinks the max radius.
+    const radiusStillness = (ORBIT_RADIUS_MIN + radiusFactor * (effectiveOrbitRadiusMax - ORBIT_RADIUS_MIN)) * _stillnessSettleMul;
+    const radiusFamiliarity = ORBIT_RADIUS_MIN + radiusFactor * (effectiveOrbitRadiusMax * _familiarityMul - ORBIT_RADIUS_MIN);
+    const radius = Math.min(radiusStillness, radiusFamiliarity);
 
     // Vertical position: gentle bobbing (with Overcast shelter adjustment, issue #633)
     const heightFactor = 0.5 + 0.5 * Math.sin(t * FREQ_Y + PHASE_Y);

@@ -10360,6 +10360,64 @@ export async function checks() {
     }
   }
 
+  /* ---------- Butterfly cumulative-visit familiarity checks (issue #704) ---------- */
+  // getCumulativeFamiliarityMul() should return 1.0 at visitCount < 5,
+  // ~0.85 at visitCount >= 5, and ~0.75 at visitCount >= 15.
+  {
+    const gs704 = window.__gardenState;
+    if (!gs704) {
+      problems.push('window.__gardenState is not set — cannot verify cumulative familiarity (issue #704).');
+    } else {
+      const creature704 = gs704.creature;
+      if (!creature704) {
+        problems.push('window.__gardenState.creature is not set — cannot verify getCumulativeFamiliarityMul (issue #704).');
+      } else {
+        if (typeof creature704.getCumulativeFamiliarityMul !== 'function') {
+          problems.push('creature.getCumulativeFamiliarityMul is not a function — expected a getter for the cumulative familiarity multiplier (issue #704).');
+        } else {
+          // Save original visitCount
+          const prevVisitCount704 = gs704.visitCount;
+
+          // Test 1: visitCount = 1 (below threshold) -> multiplier = 1.0
+          gs704.visitCount = 1;
+          if (typeof gs704.creatureUpdate === 'function') {
+            gs704.creatureUpdate(0.1);
+          }
+          const mul1 = creature704.getCumulativeFamiliarityMul();
+          if (typeof mul1 !== 'number' || mul1 !== 1.0) {
+            problems.push('getCumulativeFamiliarityMul() returned ' + mul1 + ' at visitCount=1 — expected 1.0 (issue #704).');
+          }
+
+          // Test 2: visitCount = 5 (first tier) -> multiplier = 0.85 (+/-0.03)
+          gs704.visitCount = 5;
+          if (typeof gs704.creatureUpdate === 'function') {
+            gs704.creatureUpdate(0.1);
+          }
+          const mul5 = creature704.getCumulativeFamiliarityMul();
+          if (typeof mul5 !== 'number' || mul5 < 0.82 || mul5 > 0.88) {
+            problems.push('getCumulativeFamiliarityMul() returned ' + mul5 + ' at visitCount=5 — expected ~0.85 (issue #704).');
+          }
+
+          // Test 3: visitCount = 15 (second tier) -> multiplier = 0.75 (+/-0.03)
+          gs704.visitCount = 15;
+          if (typeof gs704.creatureUpdate === 'function') {
+            gs704.creatureUpdate(0.1);
+          }
+          const mul15 = creature704.getCumulativeFamiliarityMul();
+          if (typeof mul15 !== 'number' || mul15 < 0.72 || mul15 > 0.78) {
+            problems.push('getCumulativeFamiliarityMul() returned ' + mul15 + ' at visitCount=15 — expected ~0.75 (issue #704).');
+          }
+
+          // Restore original visitCount
+          gs704.visitCount = prevVisitCount704;
+          if (typeof gs704.creatureUpdate === 'function') {
+            gs704.creatureUpdate(0.1);
+          }
+        }
+      }
+    }
+  }
+
   /* ---------- Visit milestone acknowledgment checks (issue #697) ---------- */
   {
     const gs697 = window.__gardenState;
