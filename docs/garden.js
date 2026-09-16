@@ -1951,7 +1951,7 @@ export function startSeasonalCycle(initialProgress) {
       }
     }
 
-    /* Also update plant2 if it exists */
+    /* Also update plant2 and plant3 if they exist */
     const plant2 = gs.plant2;
     if (plant2) {
       if (plant2.stemMat) {
@@ -1959,6 +1959,16 @@ export function startSeasonalCycle(initialProgress) {
       }
       if (plant2.leafMat) {
         plant2.leafMat.color.copy(current.leaf).lerp(next.leaf, t);
+      }
+    }
+
+    const plant3 = gs.plant3;
+    if (plant3) {
+      if (plant3.stemMat) {
+        plant3.stemMat.color.copy(current.stem).lerp(next.stem, t);
+      }
+      if (plant3.leafMat) {
+        plant3.leafMat.color.copy(current.leaf).lerp(next.leaf, t);
       }
     }
 
@@ -2091,7 +2101,7 @@ export function startSeasonalCycle(initialProgress) {
           const leafCentre = { x: 0, z: 0 };
           let nearestPlant = null;
           let nearestDist = Infinity;
-          const plantLabels = ['plant', 'plant2'];
+          const plantLabels = ['plant', 'plant2', 'plant3'];
           for (const label of plantLabels) {
             const p = gs[label];
             if (p && p.group && p.stemMat && p.leafMat) {
@@ -2439,6 +2449,64 @@ export function startSeasonalCycle(initialProgress) {
             groundSeeds.meshes = [];
             groundSeeds.basePositions = [];
             groundSeeds.count = 0;
+          }
+
+          /* --- Dormant stems mature into plant3 (issue #688) ---
+           * Dormant bare stems that survived winter transform into a low-growing
+           * third plant during the first part of spring (t >= 0.30). It emerges
+           * at the average position of the dormant stems, with shorter height
+           * and broad, spreading leaves in a distinct green hue. */
+          if (!gs.plant3 && groundSeeds.sprouts && groundSeeds.sprouts.length > 0) {
+            const dormantStems = groundSeeds.sprouts.filter(function(sp) { return sp._dormant; });
+            if (dormantStems.length > 0) {
+              // Compute average position of dormant stems
+              let avgX = 0, avgZ = 0;
+              for (let si = 0; si < dormantStems.length; si++) {
+                const pos = dormantStems[si].group.position;
+                avgX += pos.x;
+                avgZ += pos.z;
+              }
+              avgX /= dormantStems.length;
+              avgZ /= dormantStems.length;
+
+              // Create plant3 at the average position
+              createPlant({
+                scene: gs.scene,
+                position: { x: avgX, z: avgZ },
+                stemHeight: 0.3,
+                stemColor: 0x4a8a5a,
+                leafColor: 0x5a9a4a,
+                swayPhaseOffset: 1.2,
+                growDuration: 25000,
+                label: 'plant3',
+                leafShape: 'broad'
+              });
+
+              // Remove all dormant stems from the scene
+              for (let si = 0; si < dormantStems.length; si++) {
+                const sp = dormantStems[si];
+                if (gs.scene && sp.group) {
+                  gs.scene.remove(sp.group);
+                }
+                if (sp.stem) {
+                  sp.stem.geometry.dispose();
+                  sp.stem.material.dispose();
+                }
+              }
+
+              // Remove dormant stems from the sprouts array
+              groundSeeds.sprouts = groundSeeds.sprouts.filter(function(sp) { return !sp._dormant; });
+
+              // Update DOM descriptions to announce the third plant
+              const growingDesc = document.getElementById('growing-description');
+              const plotDesc = document.getElementById('plot-description');
+              if (growingDesc && growingDesc.textContent.indexOf('low, spreading plant') === -1) {
+                growingDesc.textContent = 'A low, spreading plant emerges where the dormant stems once stood. Its broad leaves unfold close to the ground.';
+              }
+              if (plotDesc && plotDesc.textContent.indexOf('third plant') === -1) {
+                plotDesc.textContent = 'A third plant has appeared in the garden \u2014 shorter than the others, with broad, spreading leaves in a distinct green hue.';
+              }
+            }
           }
 
           // Sprouts are now fully visible

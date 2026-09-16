@@ -554,6 +554,111 @@ export async function checks() {
     }
   }
 
+  /* ---------- Third plant (plant3) checks (issue #688) ---------- */
+  const plant3Obj = gardenState && gardenState.plant3;
+  if (plant3Obj) {
+    if (!plant3Obj.group) {
+      problems.push('plant3.group is missing — the third plant\'s group was not added to the scene.');
+    } else {
+      if (gardenState && gardenState.scene) {
+        const found = gardenState.scene.children.includes(plant3Obj.group);
+        if (!found) {
+          problems.push('plant3 group is not a child of the scene — it was not added to the garden.');
+        }
+      }
+      // Verify stem is present
+      if (!plant3Obj.stem) {
+        problems.push('plant3.stem is missing — stem geometry was not created for the third plant.');
+      }
+      if (!plant3Obj.stemMat) {
+        problems.push('plant3.stemMat is missing — stem material not exposed for seasonal colour updates.');
+      }
+      if (!plant3Obj.leafMat) {
+        problems.push('plant3.leafMat is missing — leaf material not exposed for seasonal colour updates.');
+      }
+      if (!plant3Obj.leaves || plant3Obj.leaves.length === 0) {
+        problems.push('plant3.leaves is missing or empty — no leaf geometry was created for the third plant.');
+      } else if (plant3Obj.leaves.length < 2) {
+        problems.push('plant3 has only ' + plant3Obj.leaves.length + ' leaf/leaves — expected at least 2.');
+      }
+      if (typeof plant3Obj.isFullyGrown !== 'function') {
+        problems.push('plant3.isFullyGrown should be a function, got ' + typeof plant3Obj.isFullyGrown);
+      }
+
+      // Verify plant3 is shorter than plant1
+      const firstPlant = gardenState && gardenState.plant;
+      if (firstPlant && firstPlant.stem) {
+        const p1Height = firstPlant.stem.geometry.parameters.height;
+        const p3Height = plant3Obj.stem.geometry.parameters.height;
+        if (p3Height >= p1Height) {
+          problems.push('plant3 stem height (' + p3Height + ') is not shorter than plant1 stem height (' + p1Height + ') — plant3 should be the shortest plant.');
+        }
+      }
+
+      // Verify plant3 stem height is approximately 0.3 (low-growing)
+      if (plant3Obj.stem) {
+        const height = plant3Obj.stem.geometry.parameters.height;
+        if (Math.abs(height - 0.3) > 0.01) {
+          problems.push('plant3 stem height is ' + height + ', expected 0.3 (low-growing plant).');
+        }
+      }
+
+      // Verify distinct stem colour (different green from plant1 and plant2)
+      if (plant3Obj.stemMat) {
+        const stemColor = plant3Obj.stemMat.color.getHex();
+        if (stemColor === 0x5d8a3c || stemColor === 0x6a9a4a) {
+          problems.push('plant3 stem colour (' + stemColor.toString(16) + ') is not distinct from plant1/plant2 — expected a different green hue.');
+        }
+      }
+    }
+
+    // Check DOM descriptions mention the third plant
+    const growingDesc = document.getElementById('growing-description');
+    const plotDesc = document.getElementById('plot-description');
+    if (growingDesc && plant3Obj.isFullyGrown && plant3Obj.isFullyGrown()) {
+      if (growingDesc.textContent.indexOf('low, spreading') === -1 &&
+          growingDesc.textContent.indexOf('third') === -1 &&
+          growingDesc.textContent.indexOf('spreading') === -1) {
+        problems.push('growing-description does not mention the low-growing third plant despite plant3 being fully grown.');
+      }
+    }
+    if (plotDesc && plant3Obj.isFullyGrown && plant3Obj.isFullyGrown()) {
+      if (plotDesc.textContent.indexOf('third plant') === -1 &&
+          plotDesc.textContent.indexOf('low') === -1 &&
+          plotDesc.textContent.indexOf('spreading') === -1) {
+        problems.push('plot-description does not mention the third plant despite plant3 being fully grown.');
+      }
+    }
+
+    // Check flower lifecycle if fully grown
+    if (plant3Obj && typeof plant3Obj.isFullyGrown === 'function' && plant3Obj.isFullyGrown()) {
+      if (!plant3Obj.flower) {
+        problems.push('plant3.flower is not set — a fully-grown plant3 should have a flower lifecycle running.');
+      } else {
+        const validFlowerPhases = ['dormant', 'budding', 'opening', 'bloom', 'fading'];
+        if (!plant3Obj.flower.getPhase || typeof plant3Obj.flower.getPhase !== 'function') {
+          problems.push('plant3.flower.getPhase is not a function — flower phase getter is missing.');
+        } else {
+          const phase = plant3Obj.flower.getPhase();
+          if (!validFlowerPhases.includes(phase)) {
+            problems.push('plant3.flower.getPhase() returned "' + phase + '", expected one of: ' + validFlowerPhases.join(', '));
+          }
+        }
+        if (!plant3Obj.flower.getProgress || typeof plant3Obj.flower.getProgress !== 'function') {
+          problems.push('plant3.flower.getProgress is not a function — flower progress getter is missing.');
+        } else {
+          const progress = plant3Obj.flower.getProgress();
+          if (typeof progress !== 'number' || progress < 0 || progress > 1) {
+            problems.push('plant3.flower.getProgress() returned ' + progress + ', expected a number in [0, 1].');
+          }
+        }
+        if (plant3Obj.flower.petals && Array.isArray(plant3Obj.flower.petals) && plant3Obj.flower.petals.length < 3) {
+          problems.push('plant3.flower.petals has fewer than 3 petals.');
+        }
+      }
+    }
+  }
+
   /* ---------- Flower weather shelter checks (issue #557) ---------- */
   // During Light Drizzle, a flower in bloom should have shelter factor > 0.5
   // (petals partially closed). During Clear/Overcast, shelter factor should be < 0.5
@@ -610,6 +715,9 @@ export async function checks() {
     checkPlantShelter(firstPlant, 'plant');
     checkPlantShelter(secondPlant, 'plant2');
 
+    const thirdPlantShelter = gardenState && gardenState.plant3;
+    checkPlantShelter(thirdPlantShelter, 'plant3');
+
     // Verify that when a bloom flower exists, its petal scale reflects the shelter
     function checkPetalShelter(plantObj, label) {
       if (!plantObj || !plantObj.flower) return;
@@ -648,6 +756,9 @@ export async function checks() {
 
     checkPetalShelter(firstPlant, 'plant');
     checkPetalShelter(secondPlant, 'plant2');
+
+    const thirdPlantPetalShelter = gardenState && gardenState.plant3;
+    checkPetalShelter(thirdPlantPetalShelter, 'plant3');
   }
 
   /* ---------- Plant (botanical form) checks ---------- */

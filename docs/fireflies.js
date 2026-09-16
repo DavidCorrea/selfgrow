@@ -340,7 +340,7 @@ export function createFireflies(scene) {
     const gs = window.__gardenState;
     if (!gs) return;
 
-    const plantRefs = ['plant', 'plant2'];
+    const plantRefs = ['plant', 'plant2', 'plant3'];
 
     for (const ref of plantRefs) {
       const plantObj = gs[ref];
@@ -742,7 +742,7 @@ export function createFireflies(scene) {
           if (t >= 0.75 && t < 1.0) {
             const gs = window.__gardenState;
             if (gs) {
-              var plantRefs = ['plant', 'plant2'];
+              var plantRefs = ['plant', 'plant2', 'plant3'];
               for (var pri = 0; pri < plantRefs.length; pri++) {
                 var plantObj = gs[plantRefs[pri]];
                 if (!plantObj || !plantObj.flower || typeof plantObj.flower.getPhase !== 'function') continue;
@@ -793,7 +793,7 @@ export function createFireflies(scene) {
                 if (isLandingOrResting && targetPos) {
                   // Check if this landing is on a blooming flower
                   var isOnBloomingFlower = false;
-                  var plantRefs = ['plant', 'plant2'];
+                  var plantRefs = ['plant', 'plant2', 'plant3'];
                   for (var pri = 0; pri < plantRefs.length; pri++) {
                     var plantObj = gs[plantRefs[pri]];
                     if (plantObj && plantObj.flower && typeof plantObj.flower.getPhase === 'function') {
