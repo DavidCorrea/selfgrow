@@ -174,3 +174,43 @@ artefact a person actually reads.
 
 The fix is to persist the Builder's own summary where the next run can find it —
 the PR body is the obvious place, since it already survives the run that wrote it.
+
+## The product contract has time-dependent checks, and they fail at random
+
+**Where:** `docs/selftest.js` — the plant growth-scale assertion (~line 671, "below
+minimum visible scale", issue #661) and the firefly convergence assertion
+(~line 7082, "deviates ... rad from the pair average", issue #639). Likely others:
+anything that reads a value off a running animation.
+
+The plant check reads `plant.group.scale.x` live and fails below 0.349. On a slow
+runner the growth animation has advanced less by the time the check runs, so the
+scale is lower — CI reported 0.3373 against a 0.349 threshold, a miss of 3%.
+
+**Observed on 2026-09-16:** PR #713 failed `verify-product` on that assertion. The
+same commit, re-run with no changes at all, passed. Locally it passed four times
+out of four. Nothing about the diff decided the outcome; the runner's speed did.
+
+**Why it matters:** `checks()` is the only independent judge in the pipeline —
+the one gate that is not a language model grading work a language model did.
+Every message it returns blocks a merge, and the Builder is told the failure is
+its fault. A flaky assertion there means the pipeline strikes tickets for
+failures that are not real, retries them against the same coin flip, and
+eventually parks perfectly good work with a post-mortem explaining a defect that
+never existed.
+
+Issue #687 is the worked example: three attempts, three separate PRs, each
+failing a DIFFERENT assertion of this kind. That read as a cursed ticket colliding
+repeatedly with the contract. It was not — the third attempt merged unchanged the
+moment its checks were re-run. Two sound implementations were thrown away for it.
+
+The fix is not a wider threshold, which only makes the flake rarer. It is to stop
+asserting on a live animation: drive the simulation a fixed number of steps and
+assert on the result, so the check measures the code rather than the runner. The
+checks that already do this — the firefly ones step explicitly — are the model to
+follow.
+
+**Why it matters more than it looks:** this is the same root as the entry above
+about the Reviewer's independence, seen from the other side. That entry argues for
+investing in `checks()` rather than more review cycles, because only `checks()`
+can disagree with the Builder for reasons that have nothing to do with how a model
+reads a diff. That argument holds only while `checks()` is right.
