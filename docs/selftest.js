@@ -10696,5 +10696,110 @@ export async function checks() {
     }
   })();
 
+  /* ---------- Dormant bare stem checks (issue #687) ---------- */
+  // Established sprouts (leafGenCount >= 1) survive winter as dormant bare
+  // stems: darkened stem, no leaves, flagged _dormant=true. First-year sprouts
+  // (leafGenCount = 0) are removed entirely.
+  (function() {
+    const gs = window.__gardenState;
+    if (!gs) {
+      problems.push('window.__gardenState is not set — cannot verify dormant bare stems (issue #687).');
+      return;
+    }
+
+    // 1. getDormantStemCount must be exposed
+    if (typeof gs.getDormantStemCount !== 'function') {
+      problems.push('window.__gardenState.getDormantStemCount is not a function — dormant stem count getter missing (issue #687).');
+      return;
+    }
+
+    const dormantCount = gs.getDormantStemCount();
+    if (typeof dormantCount !== 'number' || dormantCount < 0) {
+      problems.push('getDormantStemCount() returned ' + JSON.stringify(dormantCount) + ', expected a non-negative number (issue #687).');
+    }
+
+    // 2. If there are dormant stems, verify their structure
+    const groundSeeds = gs.groundSeeds;
+    if (groundSeeds && groundSeeds.sprouts && groundSeeds.sprouts.length > 0) {
+      groundSeeds.sprouts.forEach(function(sp, i) {
+        if (!sp._dormant) return; // skip non-dormant sprouts
+
+        // Dormant stem must have _dormant = true
+        if (sp._dormant !== true) {
+          problems.push('groundSeeds.sprouts[' + i + ']._dormant should be true for a dormant stem (issue #687).');
+        }
+
+        // Dormant stem must have no leaves
+        if (sp.leaves && sp.leaves.length > 0) {
+          problems.push('groundSeeds.sprouts[' + i + '] has ' + sp.leaves.length + ' leaves but is _dormant — dormant stems must have no leaves (issue #687).');
+        }
+
+        // Dormant stem must have a visible stem mesh
+        if (!sp.stem || !sp.stem.material) {
+          problems.push('groundSeeds.sprouts[' + i + '] stem or material missing on dormant stem (issue #687).');
+          return;
+        }
+
+        // Stem colour should be darkened/dormant brown (~0x5a4a3a)
+        if (sp.stem.material.color) {
+          const col = sp.stem.material.color;
+          const expectedHex = '5a4a3a';
+          const actualHex = col.getHexString();
+          // Allow some tolerance — the colour may lerp toward darker winter brown
+          // but it should NOT be a bright green (which is what active sprouts use)
+          if (col.g > col.r + 0.05) {
+            problems.push('groundSeeds.sprouts[' + i + '] dormant stem colour #' + actualHex +
+              ' is too green (g=' + col.g.toFixed(3) + ', r=' + col.r.toFixed(3) +
+              ') — expected a dark brown ~#' + expectedHex + ' (issue #687).');
+          }
+        }
+
+        // Stem must be at full opacity (visible during winter)
+        if (typeof sp.stem.material.opacity === 'number' && sp.stem.material.opacity < 0.9) {
+          problems.push('groundSeeds.sprouts[' + i + '] dormant stem opacity is ' +
+            sp.stem.material.opacity + ', expected >= 0.9 (should be fully visible during winter, issue #687).');
+        }
+
+        // Verify the group is still in the scene
+        if (sp.group && gs.scene) {
+          var found = gs.scene.children.indexOf(sp.group) !== -1;
+          if (!found) {
+            problems.push('groundSeeds.sprouts[' + i + '] dormant group is not in the scene (issue #687).');
+          }
+        }
+      });
+
+      // 3. Verify that the dormant stem count matches filtered count
+      var filterCount = groundSeeds.sprouts.filter(function(sp) { return sp._dormant; }).length;
+      if (dormantCount !== filterCount) {
+        problems.push('getDormantStemCount() returned ' + dormantCount +
+          ' but actual _dormant count is ' + filterCount + ' (issue #687).');
+      }
+
+      // 4. Verify first-year sprouts with leafGenCount=0 are NOT dormant (they should be removed)
+      var firstYearDormant = groundSeeds.sprouts.filter(function(sp) {
+        return sp._dormant && sp.leafGenCount < 1;
+      }).length;
+      if (firstYearDormant > 0) {
+        problems.push(firstYearDormant + ' dormant sprouts have leafGenCount < 1 — ' +
+          'only established sprouts (leafGenCount >= 1) should survive as dormant stems (issue #687).');
+      }
+
+      // 5. Verify DOM dormant description is present during winter
+      // Read the current season from #season-display
+      var seasonEl = document.getElementById('season-display');
+      if (seasonEl && seasonEl.textContent === 'Winter' && dormantCount > 0) {
+        var growingDesc = document.getElementById('growing-description');
+        var plotDesc = document.getElementById('plot-description');
+        if (growingDesc && growingDesc.textContent.indexOf('Dormant bare stems') === -1) {
+          problems.push('During Winter with dormant stems present, #growing-description should mention "Dormant bare stems" (issue #687).');
+        }
+        if (plotDesc && plotDesc.textContent.indexOf('Dormant bare stems') === -1) {
+          problems.push('During Winter with dormant stems present, #plot-description should mention "Dormant bare stems" (issue #687).');
+        }
+      }
+    }
+  })();
+
   return problems;
 }
