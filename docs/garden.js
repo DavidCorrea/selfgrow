@@ -64,6 +64,13 @@ export function initGarden(scene, initialProgress) {
   window.__gardenState.buildGerminatedSprouts = buildGerminatedSprouts;
   window.__gardenState.updateSproutEstablishedDescription = updateSproutEstablishedDescription;
 
+  /* Expose dormant-stem count for self-testing (issue #687) */
+  window.__gardenState.getDormantStemCount = function() {
+    const gs = window.__gardenState;
+    if (!gs || !gs.groundSeeds || !gs.groundSeeds.sprouts) return 0;
+    return gs.groundSeeds.sprouts.filter(function(sp) { return sp._dormant; }).length;
+  };
+
   /* Create the first (central) plant */
   createPlant({
     scene,
@@ -2169,13 +2176,33 @@ export function startSeasonalCycle(initialProgress) {
           }
         }
 
-        /* Autumn: sprouts from the previous cycle fade and are removed */
+        /* Autumn: sprouts from the previous cycle fade and are removed.
+         * First-year sprouts (leafGenCount=0) fade and die; established sprouts
+         * (leafGenCount>=1) do NOT fade — they are kept as dormant bare stems. */
         if (groundSeeds.sprouts && groundSeeds.sprouts.length > 0) {
-          // Fade sprouts out over the autumn season
+          // Fade first-year sprouts out over the autumn season
           const fadeT = Math.min(1, t * 1.5); // reach 0 opacity earlier in autumn
           const sproutOpacity = Math.max(0, 1 - fadeT);
           for (let si = 0; si < groundSeeds.sprouts.length; si++) {
             const sp = groundSeeds.sprouts[si];
+            if (sp._dormant || sp.leafGenCount >= 1) {
+              // Established sprout — stem stays visible (will become dormant bare stem)
+              if (sp.stem) sp.stem.material.opacity = 1;
+              // Handle leaf fade-in for second-pair leaves
+              if (sp.leaves) {
+                for (let lj = 0; lj < sp.leaves.length; lj++) {
+                  const leaf = sp.leaves[lj];
+                  if (leaf.userData && leaf.userData.secondPair && sp._secondPairFadeIn) {
+                    const appearT = Math.min(1, t / SECOND_LEAF_APPEAR_FRACTION);
+                    leaf.material.opacity = appearT;
+                  } else {
+                    // First-pair leaves are removed later in autumn; keep them visible for now
+                    leaf.material.opacity = 1;
+                  }
+                }
+              }
+              continue;
+            }
             if (sp.stem) sp.stem.material.opacity = sproutOpacity;
             if (sp.leaves) {
               for (let lj = 0; lj < sp.leaves.length; lj++) {
@@ -2192,9 +2219,25 @@ export function startSeasonalCycle(initialProgress) {
           }
 
           // Remove sprouts when fully faded (near the end of autumn)
+          // SPRINT #687: First-year sprouts (leafGenCount=0) are removed entirely;
+          // established sprouts (leafGenCount>=1) survive as dormant bare stems.
           if (t > 0.85 && groundSeeds.sprouts.length > 0) {
+            const surviving = [];
+            const dead = [];
             for (let si = 0; si < groundSeeds.sprouts.length; si++) {
               const sp = groundSeeds.sprouts[si];
+              if (sp.leafGenCount >= 1) {
+                // Established sprout — keep as dormant bare stem
+                surviving.push(sp);
+              } else {
+                // First-year sprout — remove entirely
+                dead.push(sp);
+              }
+            }
+
+            // Remove first-year sprouts
+            for (let si = 0; si < dead.length; si++) {
+              const sp = dead[si];
               if (gs.scene && sp.group) {
                 gs.scene.remove(sp.group);
               }
@@ -2209,7 +2252,35 @@ export function startSeasonalCycle(initialProgress) {
                 }
               }
             }
-            groundSeeds.sprouts = [];
+
+            // Transform established sprouts into dormant bare stems
+            for (let si = 0; si < surviving.length; si++) {
+              const sp = surviving[si];
+              // Remove all leaves from the group and dispose them
+              if (sp.leaves) {
+                for (let lj = 0; lj < sp.leaves.length; lj++) {
+                  const leaf = sp.leaves[lj];
+                  if (sp.group) {
+                    sp.group.remove(leaf);
+                  }
+                  leaf.geometry.dispose();
+                  leaf.material.dispose();
+                }
+                sp.leaves = [];
+              }
+              // Darken stem colour to dormant brown
+              if (sp.stem && sp.stem.material) {
+                sp.stem.material.color.setHex(0x5a4a3a);
+                sp.stem.material.roughness = 0.85;
+                // Ensure full opacity for winter visibility
+                sp.stem.material.opacity = 1;
+              }
+              // Flag as dormant
+              sp._dormant = true;
+            }
+
+            // Replace sprouts array with only surviving dormant stems
+            groundSeeds.sprouts = surviving;
 
             // Remove sprout descriptions from DOM
             const growingDesc = document.getElementById('growing-description');
@@ -2225,6 +2296,8 @@ export function startSeasonalCycle(initialProgress) {
                 .replace(/ Established shoots[^.]*\./g, '');
             }
             groundSeeds._sproutDomUpdated = false;
+            // Reset dormant DOM flag for the coming winter
+            groundSeeds._dormantDomUpdated = false;
           }
         }
       } else if (seasonName === 'Winter') {
@@ -2241,6 +2314,35 @@ export function startSeasonalCycle(initialProgress) {
             const plotDesc = document.getElementById('plot-description');
             if (plotDesc && plotDesc.textContent.indexOf('seeds rest') !== -1) {
               // Seeds are still there, just darker — description remains valid
+            }
+          }
+        }
+
+        /* --- Dormant bare stems (issue #687): established sprouts survive winter --- */
+        if (groundSeeds.sprouts && groundSeeds.sprouts.length > 0) {
+          for (let si = 0; si < groundSeeds.sprouts.length; si++) {
+            const sp = groundSeeds.sprouts[si];
+            if (sp._dormant && sp.stem && sp.stem.material) {
+              // Ensure dormant stems stay at full opacity with dark colour
+              sp.stem.material.opacity = 1;
+              sp.stem.material.color.setHex(0x5a4a3a);
+              // Darken slightly more as winter progresses
+              const winterDormantColor = new THREE.Color(0x4a3a2a);
+              sp.stem.material.color.lerp(winterDormantColor, t * 0.5);
+            }
+          }
+
+          // Update DOM to mention dormant bare stems
+          if (t > 0.3 && !groundSeeds._dormantDomUpdated) {
+            groundSeeds._dormantDomUpdated = true;
+            const growingDesc = document.getElementById('growing-description');
+            const plotDesc = document.getElementById('plot-description');
+            const dormantText = ' Dormant bare stems rise from the soil where green shoots once grew.';
+            if (growingDesc && growingDesc.textContent.indexOf('Dormant bare stems') === -1) {
+              growingDesc.textContent += dormantText;
+            }
+            if (plotDesc && plotDesc.textContent.indexOf('Dormant bare stems') === -1) {
+              plotDesc.textContent += dormantText;
             }
           }
         }
@@ -2271,6 +2373,12 @@ export function startSeasonalCycle(initialProgress) {
           if (groundSeeds.sprouts && groundSeeds.sprouts.length > 0) {
             for (let si = 0; si < groundSeeds.sprouts.length; si++) {
               const sp = groundSeeds.sprouts[si];
+              if (sp._dormant) {
+                // Dormant stems from winter stay at full opacity
+                sp.stem.material.opacity = 1;
+                // Skip leaves — they were removed in autumn
+                continue;
+              }
               sp.stem.material.opacity = sproutOpacity;
               for (let lj = 0; lj < sp.leaves.length; lj++) {
                 sp.leaves[lj].material.opacity = sproutOpacity;
@@ -2279,22 +2387,39 @@ export function startSeasonalCycle(initialProgress) {
 
             // Update DOM when sprouts first appear (at the midpoint of the ramp)
             if (t > 0.10 && !groundSeeds._sproutDomUpdated) {
-              groundSeeds._sproutDomUpdated = true;
-              const growingDesc = document.getElementById('growing-description');
-              const plotDesc = document.getElementById('plot-description');
-              const sproutText = ' Tiny green shoots rise from the soil where seeds fell last season.';
-              if (growingDesc && growingDesc.textContent.indexOf('Tiny green shoots') === -1) {
-                growingDesc.textContent += sproutText;
-              }
-              if (plotDesc && plotDesc.textContent.indexOf('Tiny green shoots') === -1) {
-                plotDesc.textContent += sproutText;
+              // Check if there are any non-dormant new sprouts to announce
+              const hasNewSprouts = groundSeeds.sprouts.some(function(sp) { return !sp._dormant; });
+              if (hasNewSprouts) {
+                const growingDesc = document.getElementById('growing-description');
+                const plotDesc = document.getElementById('plot-description');
+                const sproutText = ' Tiny green shoots rise from the soil where seeds fell last season.';
+                if (growingDesc && growingDesc.textContent.indexOf('Tiny green shoots') === -1) {
+                  growingDesc.textContent += sproutText;
+                }
+                if (plotDesc && plotDesc.textContent.indexOf('Tiny green shoots') === -1) {
+                  plotDesc.textContent += sproutText;
+                }
+
+                // Sprouts that survived a previous summer return as established
+                // shoots with several leaves (issue #638)
+                if (groundSeeds.sprouts.some(function(sp) { return sp.leafGenCount >= 1 && !sp._dormant; })) {
+                  updateSproutEstablishedDescription();
+                }
               }
 
-              // Sprouts that survived a previous summer return as established
-              // shoots with several leaves (issue #638)
-              if (groundSeeds.sprouts.some(function(sp) { return sp.leafGenCount >= 1; })) {
-                updateSproutEstablishedDescription();
+              // Remove dormant stem descriptions from DOM as new growth appears
+              const growingDesc = document.getElementById('growing-description');
+              const plotDesc = document.getElementById('plot-description');
+              if (growingDesc) {
+                growingDesc.textContent = growingDesc.textContent.replace(/ Dormant bare stems[^.]*\./g, '');
               }
+              if (plotDesc) {
+                plotDesc.textContent = plotDesc.textContent.replace(/ Dormant bare stems[^.]*\./g, '');
+              }
+              // Reset the dormant DOM flag so it can be re-triggered next winter
+              groundSeeds._dormantDomUpdated = false;
+              // Mark as done so this block runs only once
+              groundSeeds._sproutDomUpdated = true;
             }
           }
         } else {
@@ -2319,6 +2444,11 @@ export function startSeasonalCycle(initialProgress) {
           if (groundSeeds.sprouts && groundSeeds.sprouts.length > 0) {
             for (let si = 0; si < groundSeeds.sprouts.length; si++) {
               const sp = groundSeeds.sprouts[si];
+              if (sp._dormant) {
+                // Dormant stems remain at full opacity with dark colour
+                sp.stem.material.opacity = 1;
+                continue;
+              }
               sp.stem.material.opacity = 1;
               for (let lj = 0; lj < sp.leaves.length; lj++) {
                 sp.leaves[lj].material.opacity = 1;
@@ -2350,6 +2480,11 @@ export function startSeasonalCycle(initialProgress) {
         if (groundSeeds.sprouts && groundSeeds.sprouts.length > 0) {
           for (let si = 0; si < groundSeeds.sprouts.length; si++) {
             const sp = groundSeeds.sprouts[si];
+            if (sp._dormant) {
+              // Dormant stems stay at full opacity with dark colour
+              sp.stem.material.opacity = 1;
+              continue;
+            }
             sp.stem.material.opacity = 1;
             for (let lj = 0; lj < sp.leaves.length; lj++) {
               sp.leaves[lj].material.opacity = 1;
