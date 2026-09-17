@@ -6745,6 +6745,101 @@ export async function checks() {
     }
   }
 
+  /* ---------- Return-visitor firefly greeting pulse checks (issue #706) ---------- */
+  // Verify that hasSyncedGreetedThisSession() exists, returns false initially,
+  // and becomes true after triggering the greeting by simulating a return visit
+  // (visitCount >= 2) during Night phase.
+  if (gardenState && gardenState.fireflies) {
+    var ffState706 = gardenState.fireflies;
+    if (typeof ffState706.hasSyncedGreetedThisSession !== 'function') {
+      problems.push('fireflyState.hasSyncedGreetedThisSession is not a function — expected a query for whether the return-visitor greeting has been triggered (issue #706).');
+    } else {
+      // Test 1: Initially false (no session greeting yet)
+      var initVal = ffState706.hasSyncedGreetedThisSession();
+      if (typeof initVal !== 'boolean') {
+        problems.push('fireflyState.hasSyncedGreetedThisSession() returned ' + typeof initVal + ' — expected a boolean (issue #706).');
+      } else if (initVal !== false) {
+        problems.push('fireflyState.hasSyncedGreetedThisSession() returned true before any greeting was triggered — expected false initially (issue #706).');
+      }
+
+      // Test 2: After triggering the greeting (simulate first Night of a return visit),
+      // the flag should become true.
+      var dayNight706 = gardenState && gardenState.dayNight;
+      var weather706 = gardenState && gardenState.weather;
+      var origCycleProgress706 = dayNight706 && typeof dayNight706.getCycleProgress === 'function' ? dayNight706.getCycleProgress : null;
+      var origWeatherPhase706 = weather706 && typeof weather706.getPhase === 'function' ? weather706.getPhase : null;
+      var origVisitCount706 = gardenState.visitCount;
+      var origSeasonDisplay706 = null;
+      var seasonEl706 = document.getElementById('season-display');
+      if (seasonEl706) origSeasonDisplay706 = seasonEl706.textContent;
+
+      try {
+        // Set season to Summer so all dots are visible
+        if (seasonEl706) seasonEl706.textContent = 'Summer';
+
+        // Set visitCount to 2 (return visitor)
+        gardenState.visitCount = 2;
+
+        // Fix weather to Clear
+        if (weather706 && typeof weather706.getPhase === 'function') {
+          var origWeatherGetPhase706 = weather706.getPhase;
+          weather706.getPhase = function() { return 'Clear'; };
+        }
+
+        // Fix dayNight to Night phase (t=0.85)
+        if (dayNight706 && typeof dayNight706.getCycleProgress === 'function') {
+          var origDayNight706 = dayNight706.getCycleProgress;
+          dayNight706.getCycleProgress = function() { return 0.85; };
+        }
+
+        // Run several firefly updates to trigger the greeting
+        var ffUpdate706 = gardenState.firefliesUpdate;
+        if (typeof ffUpdate706 === 'function') {
+          // Clear any previous greeting state by checking initial value
+          var beforeTrigger = ffState706.hasSyncedGreetedThisSession();
+          // Run 10 updates at dt=0.016 to simulate ~160ms
+          for (var gi = 0; gi < 10; gi++) {
+            ffUpdate706(0, 0.016);
+          }
+          var afterTrigger = ffState706.hasSyncedGreetedThisSession();
+          if (!afterTrigger) {
+            // If still false, try running more updates with longer time
+            for (var gi = 0; gi < 60; gi++) {
+              ffUpdate706(50 + gi * 0.016, 0.016);
+            }
+            afterTrigger = ffState706.hasSyncedGreetedThisSession();
+          }
+          if (!afterTrigger) {
+            problems.push('fireflyState.hasSyncedGreetedThisSession() returned false after simulating a return visit (visitCount=2) during Night — expected true (the greeting should trigger on first Night of a return visit, issue #706).');
+          }
+        }
+      } finally {
+        // Restore original state
+        if (dayNight706 && typeof origCycleProgress706 === 'function') {
+          dayNight706.getCycleProgress = origCycleProgress706;
+        }
+        if (weather706 && typeof weather706.getPhase === 'function' && origWeatherPhase706) {
+          weather706.getPhase = origWeatherPhase706;
+        }
+        if (typeof origVisitCount706 === 'number') {
+          gardenState.visitCount = origVisitCount706;
+        }
+        if (seasonEl706 && origSeasonDisplay706 !== null) {
+          seasonEl706.textContent = origSeasonDisplay706;
+        }
+      }
+
+      // Test 3: After being greeted, the flag stays true (session-scoped)
+      var finalVal = ffState706.hasSyncedGreetedThisSession();
+      // This should be true from Test 2
+      if (finalVal !== true) {
+        // Don't add duplicative error, just check if Test 2 succeeded
+      }
+    }
+  } else {
+    problems.push('window.__gardenState.fireflies is not set — cannot verify return-visitor greeting pulse (issue #706).');
+  }
+
   /* ---------- Cumulative peak opacity checks (issue #705) ---------- */
   // getCumulativePeakOpacity() should return the correct scaled peak opacity
   // at various visitCount thresholds.

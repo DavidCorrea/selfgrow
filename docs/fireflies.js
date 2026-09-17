@@ -233,6 +233,14 @@ export function createFireflies(scene) {
   /* --- Detect reduced motion --- */
   let reducedMotion = isReducedMotion();
 
+  /* --- Return-visitor greeting pulse (issue #706) --- */
+  // Session-scoped flag: true once the greeting pulse has been triggered
+  // on the first Night of each session for a return visit (visitCount >= 2).
+  let _greetedThisSession = false;
+  // Timer counting down active greeting duration (~2 seconds). 0 = not active.
+  let _greetingTimer = 0;
+  const GREETING_DURATION = 2.0; // seconds
+
   /* --- Shared glow texture --- */
   const glowTexture = createGlowTexture();
 
@@ -531,6 +539,10 @@ export function createFireflies(scene) {
         }
       }
       return scatters;
+    },
+    /** Whether the return-visitor greeting pulse has been triggered this session (issue #706) */
+    hasSyncedGreetedThisSession: function() {
+      return _greetedThisSession;
     }
   };
 
@@ -648,6 +660,24 @@ export function createFireflies(scene) {
       }
     }
 
+    /* --- Return-visitor greeting pulse (issue #706) --- */
+    // On the first Night (t >= 0.75) of a return visit (visitCount >= 2),
+    // trigger a synchronous ~2s pulse where all firefly dots peak together.
+    // Only once per session — resets on page load.
+    {
+      var gsGreeting = window.__gardenState;
+      var vc = gsGreeting && typeof gsGreeting.visitCount === 'number' ? gsGreeting.visitCount : 1;
+      var isNight = t >= 0.75 && t < 1.0;
+      if (isNight && vc >= 2 && !_greetedThisSession && _greetingTimer === 0) {
+        _greetedThisSession = true;
+        _greetingTimer = GREETING_DURATION;
+      }
+      if (_greetingTimer > 0) {
+        _greetingTimer -= dt;
+        if (_greetingTimer < 0) _greetingTimer = 0;
+      }
+    }
+
     /* --- Update each dot group --- */
     for (let gi = 0; gi < plantGroups.length; gi++) {
       const group = plantGroups[gi];
@@ -673,7 +703,10 @@ export function createFireflies(scene) {
 
         if (!state.reducedMotion) {
           /* --- Pulsing: vary dot size with slow, irregular sine --- */
-          const pulse = Math.sin(time * dd.freq * Math.PI * 2 + dd.phaseOffset) * 0.5 + 0.5;
+          // During the return-visitor greeting pulse (issue #706), all dots
+          // peak synchronously with pulse=1.0 for the ~2s greeting duration.
+          var _greetingActive = _greetingTimer > 0;
+          var pulse = _greetingActive ? 1.0 : (Math.sin(time * dd.freq * Math.PI * 2 + dd.phaseOffset) * 0.5 + 0.5);
           // pulse ranges 0–1. Map to size multiplier: 0.5–1.0
           const sizeMul = 0.5 + pulse * 0.5;
           sizes[i] = dd.sizeBase * sizeMul;
@@ -952,7 +985,11 @@ export function createFireflies(scene) {
           }
         } else {
           // Reduced motion: no pulsing/drift/lift/scatter, but keep size at base
-          sizes[i] = dd.sizeBase;
+          // During the return-visitor greeting pulse (issue #706), boost dot size
+          // by 1.5x instantly (no eased transitions) so the greeting is visible
+          // even when animation is reduced.
+          var _greetingActiveRM = _greetingTimer > 0;
+          sizes[i] = _greetingActiveRM ? dd.sizeBase * 1.5 : dd.sizeBase;
           pos[i3] = dd.baseX;
           pos[i3 + 1] = dd.baseY;
           pos[i3 + 2] = dd.baseZ;
