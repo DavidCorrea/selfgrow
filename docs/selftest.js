@@ -1267,7 +1267,7 @@ export async function checks() {
 
       const expectedGround = new THREE.Color(current.ground).lerp(new THREE.Color(next.ground), t);
       if (expectedBlend > 0) {
-        expectedGround.lerp(new THREE.Color(0x5a3a2a), expectedBlend);
+        expectedGround.lerp(new THREE.Color(0x3a2a20), expectedBlend);
       }
       const groundDist = colorDist(groundMat.color, expectedGround);
       if (groundDist > 0.02) {
@@ -1856,7 +1856,7 @@ export async function checks() {
         // early Spring when the winter legacy blend is active.
         // Account for the winter legacy blend in the expected minimum.
         const winterBlend = groundDarkeningGardenState.winterLegacyBlend || 0;
-        const _winterGround = new THREE.Color(0x5a3a2a);
+        const _winterGround = new THREE.Color(0x3a2a20);
         const expectedMin = new THREE.Color(base.r, base.g, base.b).lerp(_winterGround, winterBlend);
         // Allow a tolerance of ~3/255 for rounding and precision
         const eps = 0.012;
