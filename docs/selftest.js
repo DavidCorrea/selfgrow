@@ -11109,5 +11109,69 @@ export async function checks() {
     }
   }
 
+  /* ---------- Cumulative visit warm tint on garden edge ring (issue #726) ---------- */
+  if (gardenState && gardenState.ringMat) {
+    const ringMat = gardenState.ringMat;
+    const visitCount = gardenState.visitCount || 1;
+
+    // Compute expected progress
+    const progress = Math.min(Math.max((visitCount - 1) / 99, 0), 1);
+
+    // Expected color: lerp from #5a4a38 toward #6a5a30
+    const defaultColor = new THREE.Color(0x5a4a38);
+    const warmColor = new THREE.Color(0x6a5a30);
+    const expectedColor = defaultColor.clone().lerp(warmColor, progress);
+
+    // Expected opacity: lerp from 0.3 toward 0.5
+    const expectedOpacity = 0.3 + progress * 0.2;
+
+    // Check color tolerance (0.01 in RGB components)
+    var colorDelta = Math.abs(ringMat.color.r - expectedColor.r) +
+                     Math.abs(ringMat.color.g - expectedColor.g) +
+                     Math.abs(ringMat.color.b - expectedColor.b);
+
+    if (colorDelta > 0.03) {
+      problems.push('Ring material colour mismatch: got r=' + ringMat.color.r.toFixed(3) +
+        ' g=' + ringMat.color.g.toFixed(3) + ' b=' + ringMat.color.b.toFixed(3) +
+        ', expected ~' + expectedColor.r.toFixed(3) + ' ' + expectedColor.g.toFixed(3) +
+        ' ' + expectedColor.b.toFixed(3) + ' for visitCount=' + visitCount +
+        ' (progress=' + progress.toFixed(3) + ') — the cumulative warm tint is not applied correctly (issue #726).');
+    }
+
+    // Check opacity tolerance (0.02)
+    if (Math.abs(ringMat.opacity - expectedOpacity) > 0.02) {
+      problems.push('Ring material opacity mismatch: got ' + ringMat.opacity.toFixed(3) +
+        ', expected ~' + expectedOpacity.toFixed(3) + ' for visitCount=' + visitCount +
+        ' (progress=' + progress.toFixed(3) + ') — the cumulative warm tint opacity is not applied correctly (issue #726).');
+    }
+
+    // Verify first-time visitors see the default colour
+    if (visitCount === 1) {
+      if (Math.abs(ringMat.color.getHex() - 0x5a4a38) > 0x0100) {
+        problems.push('First-time visitor (visitCount=1) ring colour is ' +
+          ringMat.color.getHex().toString(16) + ', expected 0x5a4a38 — the default ring colour should be unchanged (issue #726).');
+      }
+      if (Math.abs(ringMat.opacity - 0.3) > 0.001) {
+        problems.push('First-time visitor (visitCount=1) ring opacity is ' +
+          ringMat.opacity.toFixed(3) + ', expected 0.300 — the default opacity should be unchanged (issue #726).');
+      }
+    }
+
+    // Verify at 100 visits the colour approaches warm gold
+    if (visitCount >= 100) {
+      var rDiff = Math.abs(ringMat.color.getHex() - 0x6a5a30);
+      if (rDiff > 0x020000) {
+        problems.push('At visitCount=' + visitCount + ' the ring colour (' +
+          ringMat.color.getHex().toString(16) + ') should approach warm gold #6a5a30 — the cap may not be applied correctly (issue #726).');
+      }
+      if (Math.abs(ringMat.opacity - 0.5) > 0.02) {
+        problems.push('At visitCount=' + visitCount + ' the ring opacity (' +
+          ringMat.opacity.toFixed(3) + ') should approach 0.5 — the cap may not be applied correctly (issue #726).');
+      }
+    }
+  } else {
+    problems.push('window.__gardenState.ringMat is not set — the garden edge ring material is not exposed for verification (issue #726).');
+  }
+
   return problems;
 }
