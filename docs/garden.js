@@ -289,7 +289,7 @@ function createPlant(opts) {
   group.position.set(position.x, 0, position.z);
 
   /* --- Stem --- */
-  const stemGeo = new THREE.CylinderGeometry(0.012, 0.036, stemHeight, 6);
+  const stemGeo = new THREE.CylinderGeometry(0.020, 0.055, stemHeight, 6);
   const stemMat = new THREE.MeshStandardMaterial({
     color: stemColor,
     roughness: 0.7,
@@ -333,21 +333,21 @@ function createPlant(opts) {
   let leaves;
   if (leafShape === 'broad') {
     // Broad leaves: wider, slightly shorter, spreading out
-    const leaf1 = makeLeaf(0.09, 0.10, 'broad');
+    const leaf1 = makeLeaf(0.14, 0.16, 'broad');
     leaf1.position.set(0, stemHeight * 0.35, 0);
     leaf1.rotation.x = -0.6;
     leaf1.rotation.y = 0.5;
     leaf1.castShadow = true;
     group.add(leaf1);
 
-    const leaf2 = makeLeaf(0.08, 0.09, 'broad');
+    const leaf2 = makeLeaf(0.13, 0.14, 'broad');
     leaf2.position.set(0, stemHeight * 0.55, 0);
     leaf2.rotation.x = 0.5;
     leaf2.rotation.y = 2.5;
     leaf2.castShadow = true;
     group.add(leaf2);
 
-    const leaf3 = makeLeaf(0.07, 0.08, 'broad');
+    const leaf3 = makeLeaf(0.11, 0.13, 'broad');
     leaf3.position.set(0, stemHeight * 0.75, 0);
     leaf3.rotation.x = -0.5;
     leaf3.rotation.y = 4.0;
@@ -357,21 +357,21 @@ function createPlant(opts) {
     leaves = [leaf1, leaf2, leaf3];
   } else {
     // Narrow leaves (original)
-    const leaf1 = makeLeaf(0.06, 0.12, 'narrow');
+    const leaf1 = makeLeaf(0.10, 0.19, 'narrow');
     leaf1.position.set(0, 0.28, 0);
     leaf1.rotation.x = -0.5;
     leaf1.rotation.y = 0.3;
     leaf1.castShadow = true;
     group.add(leaf1);
 
-    const leaf2 = makeLeaf(0.05, 0.10, 'narrow');
+    const leaf2 = makeLeaf(0.08, 0.16, 'narrow');
     leaf2.position.set(0, 0.42, 0);
     leaf2.rotation.x = 0.4;
     leaf2.rotation.y = 2.8;
     leaf2.castShadow = true;
     group.add(leaf2);
 
-    const leaf3 = makeLeaf(0.04, 0.08, 'narrow');
+    const leaf3 = makeLeaf(0.06, 0.13, 'narrow');
     leaf3.position.set(0, 0.55, 0);
     leaf3.rotation.x = -0.4;
     leaf3.rotation.y = 1.8;
