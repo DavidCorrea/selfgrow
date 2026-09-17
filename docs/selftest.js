@@ -11181,5 +11181,67 @@ export async function checks() {
     problems.push('window.__gardenState.ringMat is not set — the garden edge ring material is not exposed for verification (issue #726).');
   }
 
+  /* ---------- Butterfly glow-trail particles checks (issue #691) ---------- */
+  // Verify the creature module exposes glow-trail-related constants, accessors,
+  // and that particle data structures exist with correct capacity.
+  if (gardenState && gardenState.creature) {
+    var cstate = gardenState.creature;
+
+    // State accessors must exist
+    if (typeof cstate.getGlowTrailParticleCount !== 'function') {
+      problems.push('creature.state.getGlowTrailParticleCount is not a function — glow trail particle accessor missing (issue #691).');
+    }
+    if (typeof cstate.getGlowTrailMaxParticles !== 'function') {
+      problems.push('creature.state.getGlowTrailMaxParticles is not a function — glow trail max-particle accessor missing (issue #691).');
+    }
+    if (typeof cstate.getIsReducedMotion !== 'function') {
+      problems.push('creature.state.getIsReducedMotion is not a function — reduced-motion accessor missing (issue #691).');
+    }
+
+    // Max particles must be 8 (pool capacity)
+    var maxP = cstate.getGlowTrailMaxParticles();
+    if (maxP !== 8) {
+      problems.push('getGlowTrailMaxParticles() returned ' + maxP + ', expected 8 — the pooled particle buffer size is wrong (issue #691).');
+    }
+
+    // Initial active count must be 0 (empty pool on init)
+    var activeCount = cstate.getGlowTrailParticleCount();
+    if (activeCount !== 0) {
+      problems.push('getGlowTrailParticleCount() returned ' + activeCount + ' on init, expected 0 — particles should start empty (issue #691).');
+    }
+
+    // Reduced motion flag must match reality
+    var reducedMotion = cstate.getIsReducedMotion();
+    if (typeof reducedMotion !== 'boolean') {
+      problems.push('getIsReducedMotion() returned ' + typeof reducedMotion + ', expected boolean (issue #691).');
+    }
+
+    // Access the fireflies state to verify proximity detection capability
+    if (gardenState.fireflies && typeof gardenState.fireflies.getAllPositions === 'function') {
+      // getAllPositions must return an array
+      var positions = gardenState.fireflies.getAllPositions();
+      if (!Array.isArray(positions)) {
+        problems.push('fireflies.getAllPositions() did not return an array — proximity detection cannot work (issue #691).');
+      }
+    }
+
+    // Verify Night phase flag exists on creature state
+    if (typeof cstate.isNightPhase !== 'function') {
+      problems.push('creature.state.isNightPhase is not a function — night phase detection missing (issue #691).');
+    }
+
+    // Verify non-night phase does not have active particles
+    var dn691 = gardenState && gardenState.dayNight;
+    if (dn691 && typeof dn691.getCycleProgress === 'function') {
+      var nightProgress691 = dn691.getCycleProgress();
+      var inNight691 = (nightProgress691 >= 0.75 && nightProgress691 < 1.0);
+      if (!inNight691 && activeCount !== 0) {
+        problems.push('Non-night phase but getGlowTrailParticleCount() = ' + activeCount + ' — particles should not exist outside Night (issue #691).');
+      }
+    }
+  } else if (gardenState) {
+    problems.push('window.__gardenState.creature is not set — cannot verify glow-trail particles.');
+  }
+
   return problems;
 }
