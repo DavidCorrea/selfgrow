@@ -109,6 +109,26 @@ const FAMILIARITY_THRESHOLD_2 = 15;     // visits — second familiarity tier
 const FAMILIARITY_MUL_1 = 0.85;         // radius max multiplier at ≥5 visits (~15% smaller)
 const FAMILIARITY_MUL_2 = 0.75;         // radius max multiplier at ≥15 visits (~25% smaller)
 
+/* --- Butterfly glow-trail particles (issue #691) ---
+ * When the butterfly leaves firefly proximity (> 0.6 units after being
+ * within 0.5 units) during Night, 2-3 tiny warm-glow particles trail
+ * behind it for ~1.5s before fading.
+ */
+const GLOW_TRAIL_PARTICLE_COUNT = 3;        // particles per burst (2-3)
+const GLOW_TRAIL_MAX_PARTICLES = 8;         // max pooled particles
+const GLOW_TRAIL_DURATION = 1.5;            // seconds each particle lives
+const GLOW_TRAIL_SIZE = 0.002;              // tiny — barely visible
+const GLOW_TRAIL_OPACITY_INIT = 0.12;       // initial opacity
+const GLOW_TRAIL_DRIFT_SPEED = 0.01;        // drift speed units/s
+const GLOW_TRAIL_PROXIMITY_INNER = 0.5;     // within this = 'near' firefly
+const GLOW_TRAIL_PROXIMITY_OUTER = 0.6;     // beyond this = 'left' firefly zone
+const GLOW_TRAIL_ACK_COOLDOWN_MS = 8000;    // minimum ms between trail acknowledgments
+const GLOW_TRAIL_PHRASES = [
+  'Tiny specks of light trail from the butterfly\'s wings as it drifts away from the fireflies.',
+  'Brief glowing motes scatter behind the butterfly, fading as it leaves the firefly glow.',
+  'Faint luminous dust clings to the butterfly\'s path, dissolving into the night air.'
+];
+
 /**
  * Create a small butterfly creature and add it to the scene.
  *
@@ -234,6 +254,73 @@ export function createCreature(scene) {
   /* --- Cumulative-visit familiarity multiplier (issue #704) --- */
   let _familiarityMul = 1.0;
 
+  /* --- Glow trail particle pool (issue #691) --- */
+  // Create a tiny warm-glow texture for trail particles
+  const _glowTrailTexture = (function() {
+    const size = 8;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const cx = size / 2;
+    const cy = size / 2;
+    const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, size / 2);
+    gradient.addColorStop(0, 'rgba(255, 248, 224, 1.0)');
+    gradient.addColorStop(0.3, 'rgba(255, 240, 200, 0.6)');
+    gradient.addColorStop(0.7, 'rgba(220, 210, 140, 0.2)');
+    gradient.addColorStop(1, 'rgba(180, 180, 80, 0.0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.needsUpdate = true;
+    return tex;
+  })();
+
+  // Particle data array
+  const _glowTrailParticles = [];
+  for (let gi = 0; gi < GLOW_TRAIL_MAX_PARTICLES; gi++) {
+    _glowTrailParticles.push({
+      active: false,
+      x: 0, y: 0, z: 0,
+      vx: 0, vy: 0, vz: 0,
+      age: 0,
+      maxAge: GLOW_TRAIL_DURATION,
+      size: GLOW_TRAIL_SIZE
+    });
+  }
+
+  // Buffer geometry for trail particles
+  const _glowTrailPositions = new Float32Array(GLOW_TRAIL_MAX_PARTICLES * 3);
+  const _glowTrailSizes = new Float32Array(GLOW_TRAIL_MAX_PARTICLES);
+  const _glowTrailGeometry = new THREE.BufferGeometry();
+  _glowTrailGeometry.setAttribute('position', new THREE.BufferAttribute(_glowTrailPositions, 3));
+  _glowTrailGeometry.setAttribute('size', new THREE.BufferAttribute(_glowTrailSizes, 1));
+
+  // Points material — additive blended, warm glow, no fog
+  const _glowTrailMaterial = new THREE.PointsMaterial({
+    map: _glowTrailTexture,
+    color: 0xfff8e0,
+    transparent: true,
+    opacity: 1,
+    size: GLOW_TRAIL_SIZE,
+    sizeAttenuation: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    depthTest: true,
+    fog: false
+  });
+
+  const _glowTrailPoints = new THREE.Points(_glowTrailGeometry, _glowTrailMaterial);
+  _glowTrailPoints.frustumCulled = false;
+  scene.add(_glowTrailPoints);
+
+  // Tracking: whether butterfly was near a firefly on the previous frame
+  let _lastNearFirefly = false;
+  // Acknowledgement cooldown timer (ms)
+  let _glowTrailLastAckTime = 0;
+  // Rotating phrase index
+  let _glowTrailPhraseIdx = 0;
+
   /* --- Firefly sync-zone slowdown tracking (issue #647) --- */
   let _syncSlowMul = 1.0;          // multiplier: 1.0 normal, ~0.85 when slowed
   let _syncSlowTimer = 0;           // seconds remaining in the slowdown
@@ -319,6 +406,16 @@ export function createCreature(scene) {
     })),
     /* Overcast shelter accessors for selftest (issue #633) */
     getShelterLevel: () => _shelterLevel,
+    /* Glow trail particle accessors for selftest (issue #691) */
+    getGlowTrailParticleCount: () => {
+      var count = 0;
+      for (var pi = 0; pi < _glowTrailParticles.length; pi++) {
+        if (_glowTrailParticles[pi].active) count++;
+      }
+      return count;
+    },
+    getGlowTrailMaxParticles: () => GLOW_TRAIL_MAX_PARTICLES,
+    getIsReducedMotion: () => state.reducedMotion,
     ORBIT_HEIGHT_MIN,
     ORBIT_HEIGHT_MAX,
     OVERCAST_HEIGHT_MIN,
@@ -328,6 +425,44 @@ export function createCreature(scene) {
   /* Start invisible if reduced motion is active */
   if (reducedMotion) {
     group.visible = false;
+  }
+
+  /* --- Glow trail particle helper (issue #691) --- */
+  function _spawnGlowTrail(bx, by, bz) {
+    if (window.__gardenState && typeof window.__gardenState.setAcknowledgment === 'function') {
+      var now = performance.now();
+      if (now - _glowTrailLastAckTime >= GLOW_TRAIL_ACK_COOLDOWN_MS) {
+        _glowTrailLastAckTime = now;
+        var phrase = GLOW_TRAIL_PHRASES[_glowTrailPhraseIdx % GLOW_TRAIL_PHRASES.length];
+        _glowTrailPhraseIdx = (_glowTrailPhraseIdx + 1) % GLOW_TRAIL_PHRASES.length;
+        window.__gardenState.setAcknowledgment(phrase);
+      }
+    }
+
+    var count = 2 + Math.floor(Math.random() * 2); // 2-3 particles
+    for (var si = 0; si < count; si++) {
+      // Find first inactive particle slot
+      var slot = -1;
+      for (var pi = 0; pi < _glowTrailParticles.length; pi++) {
+        if (!_glowTrailParticles[pi].active) {
+          slot = pi;
+          break;
+        }
+      }
+      if (slot === -1) break; // pool exhausted
+
+      var p = _glowTrailParticles[slot];
+      p.active = true;
+      p.x = bx + (Math.random() - 0.5) * 0.01;
+      p.y = by + (Math.random() - 0.5) * 0.008;
+      p.z = bz + (Math.random() - 0.5) * 0.01;
+      p.vx = (Math.random() - 0.5) * GLOW_TRAIL_DRIFT_SPEED * 0.5;
+      p.vy = (Math.random() - 0.5) * GLOW_TRAIL_DRIFT_SPEED * 0.3;
+      p.vz = (Math.random() - 0.5) * GLOW_TRAIL_DRIFT_SPEED * 0.5;
+      p.age = 0;
+      p.maxAge = GLOW_TRAIL_DURATION + (Math.random() - 0.5) * 0.3; // 1.35-1.65s
+      p.size = GLOW_TRAIL_SIZE * (0.7 + Math.random() * 0.6);
+    }
   }
 
   /* --- Update function (called every frame from the animation loop) --- */
@@ -398,8 +533,87 @@ export function createCreature(scene) {
             let proximityFactor = Math.min(1, minDist / 0.5);
             _fireflySlowMul = 0.8 + (1.0 - 0.8) * proximityFactor;
           }
+
+          /* --- Glow trail particles (issue #691): detect when butterfly leaves
+           * firefly proximity during Night and spawn trailing glow specks --- */
+          if (!state.reducedMotion) {
+            var isNear = minDist <= GLOW_TRAIL_PROXIMITY_INNER;
+            var isFar = minDist > GLOW_TRAIL_PROXIMITY_OUTER;
+
+            if (_lastNearFirefly && isFar) {
+              // Transition: was near firefly, now far away — spawn trail
+              _spawnGlowTrail(cx, group.position.y, cz);
+            }
+            _lastNearFirefly = isNear;
+          } else {
+            _lastNearFirefly = false;
+          }
         }
       }
+    }
+
+    /* --- Glow trail particle update (issue #691): age, drift, fade each frame --- */
+    // Runs outside the _isNightPhase guard so particles from a previous night
+    // continue aging out naturally even after daybreak.
+    var fadeSum = 0;
+    var activeCount = 0;
+    for (var pi2 = 0; pi2 < GLOW_TRAIL_MAX_PARTICLES; pi2++) {
+      var p2 = _glowTrailParticles[pi2];
+      if (!p2.active) {
+        // Inactive — zero out buffer slot
+        _glowTrailPositions[pi2 * 3] = 0;
+        _glowTrailPositions[pi2 * 3 + 1] = 0;
+        _glowTrailPositions[pi2 * 3 + 2] = 0;
+        _glowTrailSizes[pi2] = 0;
+        continue;
+      }
+
+      // Age the particle
+      p2.age += dt;
+      var remaining = p2.maxAge - p2.age;
+      if (remaining <= 0) {
+        // Expired — deactivate
+        p2.active = false;
+        _glowTrailPositions[pi2 * 3] = 0;
+        _glowTrailPositions[pi2 * 3 + 1] = 0;
+        _glowTrailPositions[pi2 * 3 + 2] = 0;
+        _glowTrailSizes[pi2] = 0;
+        continue;
+      }
+
+      // Sinusoidal wobble for organic drift
+      var wobbleX = Math.sin(time * 3.7 + p2.age * 5.1) * GLOW_TRAIL_DRIFT_SPEED * 0.1;
+      var wobbleZ = Math.cos(time * 4.1 + p2.age * 3.7) * GLOW_TRAIL_DRIFT_SPEED * 0.1;
+
+      // Apply velocity with wobble perturbation
+      p2.x += (p2.vx + wobbleX) * dt;
+      p2.y += (p2.vy + (Math.random() - 0.5) * GLOW_TRAIL_DRIFT_SPEED * 0.01 * dt) * dt;
+      p2.z += (p2.vz + wobbleZ) * dt;
+
+      // Write position to buffer
+      _glowTrailPositions[pi2 * 3] = p2.x;
+      _glowTrailPositions[pi2 * 3 + 1] = p2.y;
+      _glowTrailPositions[pi2 * 3 + 2] = p2.z;
+
+      // Size scales with age (full size at birth → 0 at death)
+      var sizeMul = 0.3 + 0.7 * (remaining / p2.maxAge);
+      _glowTrailSizes[pi2] = p2.size * sizeMul;
+
+      // Accumulate opacity for global fade
+      fadeSum += (remaining / p2.maxAge);
+      activeCount++;
+    }
+
+    // Mark buffers dirty
+    _glowTrailGeometry.attributes.position.needsUpdate = true;
+    _glowTrailGeometry.attributes.size.needsUpdate = true;
+
+    // Compute and apply average opacity based on youngest active particle's life fraction
+    if (activeCount > 0) {
+      _glowTrailMaterial.opacity = fadeSum / activeCount;
+    } else {
+      // All dead — fully transparent
+      _glowTrailMaterial.opacity = 0;
     }
 
     /* --- Firefly sync-zone slowdown: butterfly briefly slows when passing near
@@ -1124,6 +1338,10 @@ export function createCreature(scene) {
   function destroy() {
     unsubMotion();
     scene.remove(group);
+    scene.remove(_glowTrailPoints);
+    _glowTrailGeometry.dispose();
+    _glowTrailTexture.dispose();
+    _glowTrailMaterial.dispose();
     leftWingGeo.dispose();
     rightWingGeo.dispose();
     bodyGeo.dispose();
