@@ -18,22 +18,22 @@ const SEASON_PALETTES = {
   spring: {
     stem: new THREE.Color(0x5d8a3c),
     leaf: new THREE.Color(0x4a8c2a),
-    ground: new THREE.Color(0x6a4a38)
+    ground: new THREE.Color(0x6a4a28)
   },
   summer: {
     stem: new THREE.Color(0x7a9a4a),
     leaf: new THREE.Color(0x6a9a3a),
-    ground: new THREE.Color(0x7a5a40)
+    ground: new THREE.Color(0x8a6a30)
   },
   autumn: {
     stem: new THREE.Color(0x9a7a3a),
     leaf: new THREE.Color(0xaa6a2a),
-    ground: new THREE.Color(0x8a6a4a)
+    ground: new THREE.Color(0x7a4830)
   },
   winter: {
     stem: new THREE.Color(0x6a5a3a),
     leaf: new THREE.Color(0x5a4a2a),
-    ground: new THREE.Color(0x5a3a2a)
+    ground: new THREE.Color(0x3a2a20)
   }
 };
 
@@ -1982,7 +1982,7 @@ export function startSeasonalCycle(initialProgress) {
        * In early spring, the ground colour retains a slight desaturation
        * from winter, gradually warming to full spring colour over the
        * first ~30% of the spring quarter. The winter ground colour
-       * (0x5a3a2a) is blended in at 10% weight at the start of spring,
+       * (0x3a2a20) is blended in at 10% weight at the start of spring,
        * linearly tapering to 0% by the time spring is 30% complete.
        * Only the ground colour is affected — stem/leaf colours are unchanged.
        *
@@ -1990,7 +1990,7 @@ export function startSeasonalCycle(initialProgress) {
        * rain darkening via the darkest-of-three rule (issue #528). */
       if (seasonIndex === 0 && seasonProgress < 0.30) {
         const winterLegacyBlend = 0.10 * (1 - seasonProgress / 0.30);
-        const winterGround = new THREE.Color(0x5a3a2a);
+        const winterGround = new THREE.Color(0x3a2a20);
         groundMat.color.lerp(winterGround, winterLegacyBlend);
         gs.winterLegacyBlend = winterLegacyBlend;
       } else {
