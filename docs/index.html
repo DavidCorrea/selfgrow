@@ -1385,6 +1385,7 @@
       renderer,
       controls,
       groundMat,
+      ringMat,
       groundNoiseTexture,
       particles: particles.state,
       particlesUpdate: particles.update,
@@ -1471,6 +1472,19 @@
       window.__gardenState.visitCount = (savedState.visitCount || 0) + 1;
     } else {
       window.__gardenState.visitCount = 1;
+    }
+
+    /* --- Cumulative visit warm tint on garden edge ring (issue #726) ---
+     * The ring gradually warms its colour from #5a4a38 toward #6a5a30
+     * and increases opacity from 0.3 toward 0.5, scaled by cumulative
+     * visit milestones (5, 10, 25, 50, 100). Capped at visitCount=100.
+     * Static change — no animation, so prefers-reduced-motion is respected. */
+    {
+      const defaultColor = new THREE.Color(0x5a4a38);
+      const warmColor = new THREE.Color(0x6a5a30);
+      const progress = Math.min(Math.max((window.__gardenState.visitCount - 1) / 99, 0), 1);
+      ringMat.color.copy(defaultColor.clone().lerp(warmColor, progress));
+      ringMat.opacity = 0.3 + progress * 0.2;
     }
 
     /* --- Cumulative bloom bonus: each return visit adds a small permanent
