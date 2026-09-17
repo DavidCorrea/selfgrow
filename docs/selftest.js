@@ -44,6 +44,14 @@ export async function checks() {
   var unsub2 = onMotionChange(function() {});
   unsub2();
 
+  /* ---------- Cycle duration consistency (issue #731) ---------- */
+  // SEASON_CYCLE_DURATION_MS (re-exported from persistence.js via CYCLE_DURATION_MS)
+  // must always equal CYCLE_DURATION_MS (from garden.js) to prevent silent
+  // desynchronization between offline fast-forward and live scene cycles.
+  if (SEASON_CYCLE_DURATION_MS !== CYCLE_DURATION_MS) {
+    problems.push('SEASON_CYCLE_DURATION_MS (' + SEASON_CYCLE_DURATION_MS + ') !== CYCLE_DURATION_MS (' + CYCLE_DURATION_MS + ') — persistence and garden cycle durations are out of sync (issue #731).');
+  }
+
   /* ---------- DOM state panel ---------- */
   const panel = document.getElementById('state-panel');
   if (!panel) {
