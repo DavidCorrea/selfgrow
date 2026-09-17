@@ -7126,6 +7126,7 @@ export async function checks() {
                 syncPhaseResidual: dd.syncPhaseResidual,
                 syncActive: dd.syncActive,
                 baseX: dd.baseX,
+                baseY: dd.baseY,
                 baseZ: dd.baseZ,
                 driftPhase: dd.driftPhase,
                 driftAngle: dd.driftAngle
@@ -7141,6 +7142,7 @@ export async function checks() {
             entry.dot.syncPhaseResidual = entry.syncPhaseResidual;
             entry.dot.syncActive = entry.syncActive;
             entry.dot.baseX = entry.baseX;
+            entry.dot.baseY = entry.baseY;
             entry.dot.baseZ = entry.baseZ;
             entry.dot.driftPhase = entry.driftPhase;
             entry.dot.driftAngle = entry.driftAngle;
@@ -7210,10 +7212,12 @@ export async function checks() {
             // Co-locate dots 0 and 1 by giving them identical base + drift parameters,
             // so their distance stays 0 (well within the 0.15 converge radius) at every frame.
             var commonX = dd0.baseX;
+            var commonY = dd0.baseY;
             var commonZ = dd0.baseZ;
             var commonDriftPhase = dd0.driftPhase;
             var commonDriftAngle = dd0.driftAngle;
             dd1.baseX = commonX;
+            dd1.baseY = commonY;
             dd1.baseZ = commonZ;
             dd1.driftPhase = commonDriftPhase;
             dd1.driftAngle = commonDriftAngle;
@@ -10986,6 +10990,29 @@ export async function checks() {
       }
     }
   })();
+
+  /* ---------- Stem thickness checks (issue #719) ---------- */
+  // After the 60% thickness increase, any grown plant's stem should have
+  // radiusTop ~0.020 and radiusBottom ~0.055.
+  var stemCheckedPlants = ['plant', 'plant2', 'plant3'];
+  for (var si = 0; si < stemCheckedPlants.length; si++) {
+    var slabel = stemCheckedPlants[si];
+    var sPlant = gardenState && gardenState[slabel];
+    if (sPlant && sPlant.stem && sPlant.stem.geometry) {
+      var params = sPlant.stem.geometry.parameters;
+      if (params && typeof params.radiusTop === 'number' && typeof params.radiusBottom === 'number') {
+        var expectedTop = 0.020;
+        var expectedBottom = 0.055;
+        var tolerance = 0.002;
+        if (Math.abs(params.radiusTop - expectedTop) > tolerance) {
+          problems.push(slabel + ' stem radiusTop is ' + params.radiusTop.toFixed(4) + ', expected ~' + expectedTop.toFixed(3) + ' (tolerance ' + tolerance + ') — the 60% thickness increase (issue #719) may not have been applied.');
+        }
+        if (Math.abs(params.radiusBottom - expectedBottom) > tolerance) {
+          problems.push(slabel + ' stem radiusBottom is ' + params.radiusBottom.toFixed(4) + ', expected ~' + expectedBottom.toFixed(3) + ' (tolerance ' + tolerance + ') — the 60% thickness increase (issue #719) may not have been applied.');
+        }
+      }
+    }
+  }
 
   return problems;
 }
