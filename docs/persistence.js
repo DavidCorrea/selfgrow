@@ -21,10 +21,13 @@
  * fast-forward to where they would be if the garden had kept growing.
  */
 
+import { CYCLE_DURATION_MS } from "./garden.js";
+
 const STORAGE_KEY = 'selfgrow_garden_state';
 
 /* Cycle durations (ms) — must match values in garden.js, daynight.js, weather.js */
-const SEASON_CYCLE_DURATION_MS = 720_000;   // 12 min
+// SEASON_CYCLE_DURATION_MS is imported from garden.js as CYCLE_DURATION_MS and
+// re-exported under the original name so importers (selftest.js) keep working.
 const DAYNIGHT_CYCLE_DURATION_MS = 180_000; // 3 min
 const WEATHER_CYCLE_DURATION_MS = 300_000;  // 5 min
 const PLANT1_GROW_DURATION_MS = 18_000;     // 18s (issue #542)
@@ -155,7 +158,7 @@ export function fastForwardState(savedState) {
   const elapsedSec = elapsed; // ms
 
   /* ---- Cycles advance modulo duration ---- */
-  const seasonProgress = (savedState.seasonProgress + elapsedSec / SEASON_CYCLE_DURATION_MS) % 1.0;
+  const seasonProgress = (savedState.seasonProgress + elapsedSec / CYCLE_DURATION_MS) % 1.0;
   const dayNightProgress = (savedState.dayNightProgress + elapsedSec / DAYNIGHT_CYCLE_DURATION_MS) % 1.0;
   const weatherProgress = (savedState.weatherProgress + elapsedSec / WEATHER_CYCLE_DURATION_MS) % 1.0;
 
@@ -252,7 +255,7 @@ export function clearGardenState() {
 }
 
 /* Expose constants for selftest */
-export { STORAGE_KEY, SEASON_CYCLE_DURATION_MS, DAYNIGHT_CYCLE_DURATION_MS, WEATHER_CYCLE_DURATION_MS, PLANT1_GROW_DURATION_MS, PLANT2_GROW_DURATION_MS };
+export { STORAGE_KEY, CYCLE_DURATION_MS as SEASON_CYCLE_DURATION_MS, DAYNIGHT_CYCLE_DURATION_MS, WEATHER_CYCLE_DURATION_MS, PLANT1_GROW_DURATION_MS, PLANT2_GROW_DURATION_MS };
 
 /**
  * Advance a flower phase through its cycle given elapsed time.
