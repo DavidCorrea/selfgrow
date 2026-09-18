@@ -11243,5 +11243,58 @@ export async function checks() {
     problems.push('window.__gardenState.creature is not set — cannot verify glow-trail particles.');
   }
 
+  /* ---------- Bloom visual distinction checks (issue #712) ---------- */
+  // A flower in 'bloom' phase must have visibly larger petals (scale > 1.15,
+  // from bloomBaseScale of 1.3x) and more saturated colour (~40% boost).
+  // A flower in 'fading' phase must have colour restored to original.
+  if (gardenState) {
+    var bloomPlantsToCheck = [];
+    var bloomFirstPlant = gardenState.plant;
+    var bloomSecondPlant = gardenState.plant2;
+    var bloomThirdPlant = gardenState.plant3;
+
+    if (bloomFirstPlant && bloomFirstPlant.flower) bloomPlantsToCheck.push({ obj: bloomFirstPlant, label: 'plant' });
+    if (bloomSecondPlant && bloomSecondPlant.flower) bloomPlantsToCheck.push({ obj: bloomSecondPlant, label: 'plant2' });
+    if (bloomThirdPlant && bloomThirdPlant.flower) bloomPlantsToCheck.push({ obj: bloomThirdPlant, label: 'plant3' });
+
+    bloomPlantsToCheck.forEach(function(item) {
+      var obj = item.obj;
+      var label = item.label;
+      var flower = obj.flower;
+      if (!flower.petals || flower.petals.length < 3) return;
+
+      var phase = typeof flower.getPhase === 'function' ? flower.getPhase() : '';
+
+      if (phase === 'bloom') {
+        // Check petal scale > 1.15 (indicating the 1.3x base boost vs opening's 1.0x max)
+        var scaleX = flower.petals[0].scale.x;
+        if (scaleX < 1.15) {
+          problems.push(label + ' flower in bloom phase has petal scale.x=' + scaleX.toFixed(2) + ', expected > 1.15 (bloom should be visibly larger than opening phase max of 1.0x, issue #712).');
+        }
+
+        // Check petal colour saturation is boosted (~40%)
+        // 0xdda0dd (central) has s ~ 0.47; 0xddb0b0 (plant2) has s ~ 0.40
+        // 40% boost gives s >= 0.55 for both
+        var petalHSL = { h: 0, s: 0, l: 0 };
+        var petalColor = new THREE.Color(flower.petals[0].material.color);
+        petalColor.getHSL(petalHSL);
+        if (petalHSL.s < 0.55) {
+          problems.push(label + ' flower in bloom phase has saturation ' + petalHSL.s.toFixed(3) + ', expected >= 0.55 (40% boost from original ~0.40-0.47, issue #712).');
+        }
+      } else if (phase === 'fading') {
+        // During fading, colour should have been restored to original
+        var originalHex = label === 'plant2' ? 0xddb0b0 : 0xdda0dd;
+        if (label === 'plant3') originalHex = 0xdda0dd; // plant3 uses same colour as plant1
+        var origColor = new THREE.Color(originalHex);
+        var currentColor = new THREE.Color(flower.petals[0].material.color);
+        var colorDiff = Math.abs(currentColor.r - origColor.r) + Math.abs(currentColor.g - origColor.g) + Math.abs(currentColor.b - origColor.b);
+        // Allow some tolerance during the fade-out (opacity change also affects appearance)
+        if (colorDiff > 0.1) {
+          problems.push(label + ' flower in fading phase has colour difference ' + colorDiff.toFixed(3) + ' from original (r=' + currentColor.r.toFixed(3) + ',g=' + currentColor.g.toFixed(3) + ',b=' + currentColor.b.toFixed(3) + '), expected close to original (0x' + originalHex.toString(16) + ') — colour may not have been restored from bloom boost (issue #712).');
+        }
+      }
+    });
+  }
+
   return problems;
 }
