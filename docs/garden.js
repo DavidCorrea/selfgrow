@@ -596,6 +596,8 @@ function createPlant(opts) {
     // Soft pale colours: lavender for central plant, pale pink for companion
     const flowerColor = isPlant2 ? 0xddb0b0 : 0xdda0dd;
     const fm = createFlowerMeshes(stemHeight, flowerColor);
+    fm._originalPetalColor = new THREE.Color(flowerColor);
+    fm._bloomColorBoosted = false;
     group.add(fm.group);
 
     /* Pollination state (issue #614) */
@@ -1125,15 +1127,26 @@ function createPlant(opts) {
             createSeedHead();
           }
 
-          // Gentle sway: a barely-perceptible animation
+          /* --- Bloom colour saturation boost: ~40% more saturated (issue #712) --- */
+          if (!fm._bloomColorBoosted) {
+            fm._bloomColorBoosted = true;
+            const _hsl = { h: 0, s: 0, l: 0 };
+            fm.petals.forEach(function(p) {
+              p.material.color.getHSL(_hsl);
+              p.material.color.setHSL(_hsl.h, Math.min(1, _hsl.s * 1.4), _hsl.l);
+            });
+          }
+
+          // Bloom base scale 1.3x — visibly larger than opening phase max of 1.0x (issue #712)
           if (fm.petals.length > 0) {
+            const bloomBaseScale = 1.3;
             const sway = Math.sin(elapsed * 0.001 * 0.5) * 0.05;
             // Weather shelter: reduce scale (≤60%) and tilt down during rain (issue #557)
             // Visitation bloom: extra openness from sustained gaze, capped at ~30% over baseline (issue #651)
             // Cumulative bloom bonus: permanent increment from return visits (issue #698)
             const cumulativeBonus = (window.__gardenState && window.__gardenState.cumulativeBloomBonus) || 0;
             const bloomMul = Math.min(1 + _visitationBloom + cumulativeBonus, 1.3 + cumulativeBonus);
-            const shelterScale = (1 - 0.4 * weatherShelter) * bloomMul;
+            const shelterScale = bloomBaseScale * (1 - 0.4 * weatherShelter) * bloomMul;
             const shelterTilt = weatherShelter * 0.8;
             fm.petals.forEach((p, i) => {
               p.scale.set(shelterScale, shelterScale, shelterScale);
@@ -1213,6 +1226,14 @@ function createPlant(opts) {
         }
 
         case 'fading': {
+          /* --- Restore original colour when fading begins (undo bloom saturation boost) (issue #712) --- */
+          if (fm._bloomColorBoosted) {
+            fm._bloomColorBoosted = false;
+            fm.petals.forEach(function(p) {
+              p.material.color.copy(fm._originalPetalColor);
+            });
+          }
+
           // Fade opacity and shrink petals
           const t = Math.min(1, elapsed / phaseDuration);
           const opacity = 1 - t;
@@ -1234,6 +1255,13 @@ function createPlant(opts) {
             phaseDuration = durations.dormant;
             progress = 0;
             // Reset visual state
+            /* --- Also restore original colour on entering dormant (issue #712) --- */
+            if (fm._bloomColorBoosted) {
+              fm._bloomColorBoosted = false;
+              fm.petals.forEach(function(p) {
+                p.material.color.copy(fm._originalPetalColor);
+              });
+            }
             fm.petals.forEach(p => {
               p.material.opacity = 1;
               p.scale.set(0.01, 0.01, 0.01);
