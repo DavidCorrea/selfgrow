@@ -70,6 +70,11 @@ export function saveGardenState() {
       state.plant2FlowerPhase = plant2.flower.getPhase();
       state.plant2FlowerProgress = plant2.flower.getProgress();
     }
+    const plant3 = gs.plant3;
+    if (plant3 && plant3.flower && typeof plant3.flower.getPhase === 'function') {
+      state.plant3FlowerPhase = plant3.flower.getPhase();
+      state.plant3FlowerProgress = plant3.flower.getProgress();
+    }
 
     // Save ground seeds data for recreation on restore
     if (gs.groundSeeds && gs.groundSeeds.meshes && gs.groundSeeds.meshes.length > 0) {
@@ -130,6 +135,12 @@ export function loadGardenState() {
     }
     if (state.plant2FlowerProgress !== undefined) {
       state.plant2FlowerProgress = Math.min(1, Math.max(0, state.plant2FlowerProgress));
+    }
+    if (state.plant3FlowerPhase !== undefined) {
+      state.plant3FlowerPhase = String(state.plant3FlowerPhase);
+    }
+    if (state.plant3FlowerProgress !== undefined) {
+      state.plant3FlowerProgress = Math.min(1, Math.max(0, state.plant3FlowerProgress));
     }
 
     return state;
@@ -198,6 +209,15 @@ export function fastForwardState(savedState) {
     plant2FlowerProgress = advanced.progress;
   }
 
+  let plant3FlowerPhase = savedState.plant3FlowerPhase;
+  let plant3FlowerProgress = savedState.plant3FlowerProgress;
+  // Advance plant3 flower if it existed (no separate maturity tracked — presence of phase is enough)
+  if (plant3FlowerPhase) {
+    const advanced = advanceFlowerPhase(plant3FlowerPhase, plant3FlowerProgress, elapsedSec);
+    plant3FlowerPhase = advanced.phase;
+    plant3FlowerProgress = advanced.progress;
+  }
+
   /* ---- Ground seeds: determine if they should still be present ---- */
   let groundSeeds = null;
   if (savedState.groundSeeds && savedState.groundSeeds.count > 0) {
@@ -237,6 +257,8 @@ export function fastForwardState(savedState) {
     plant1FlowerProgress,
     plant2FlowerPhase,
     plant2FlowerProgress,
+    plant3FlowerPhase,
+    plant3FlowerProgress,
     groundSeeds,
     visitCount: typeof savedState.visitCount === 'number' ? savedState.visitCount : 1,
     cumulativeBloomBonus: typeof savedState.cumulativeBloomBonus === 'number' ? savedState.cumulativeBloomBonus : 0

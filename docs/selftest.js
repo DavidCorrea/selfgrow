@@ -2288,6 +2288,27 @@ export async function checks() {
       if (loaded.plant2Maturity === undefined || Math.abs(loaded.plant2Maturity - 0.4) > eps) {
         problems.push('plant2Maturity round-trip: saved 0.4, loaded ' + loaded.plant2Maturity);
       }
+      // Also set plant3 flower state for round-trip verification (issue #735)
+      window.__gardenState.plant3 = {
+        flower: {
+          getPhase: function() { return 'bloom'; },
+          getProgress: function() { return 0.7; }
+        }
+      };
+      saveGardenState();
+      const loaded2 = loadGardenState();
+      if (loaded2) {
+        if (loaded2.plant3FlowerPhase !== 'bloom') {
+          problems.push('plant3FlowerPhase round-trip: saved bloom, loaded ' + loaded2.plant3FlowerPhase + ' (issue #735).');
+        }
+        if (Math.abs((loaded2.plant3FlowerProgress || 0) - 0.7) > eps) {
+          problems.push('plant3FlowerProgress round-trip: saved 0.7, loaded ' + loaded2.plant3FlowerProgress + ' (issue #735).');
+        }
+      } else {
+        problems.push('save/load round-trip for plant3 flower state returned null (issue #735).');
+      }
+      // Clean up the fake plant3
+      delete window.__gardenState.plant3;
     }
   } else {
     problems.push('Cannot run persistence checks: window.__gardenState is not set.');
@@ -2503,6 +2524,41 @@ export async function checks() {
     problems.push('fastForwardState with budding flower and 90s elapsed should land in bloom, got ' + ffFlower.plant1FlowerPhase + ' (issue #560).');
   }
 
+  // Test 7: fastForwardState advances plant3 flower phase from saved state (issue #735)
+  const ffPlant3Saved = {
+    seasonProgress: 0.1,
+    dayNightProgress: 0.2,
+    weatherProgress: 0.3,
+    plant1Maturity: 1,
+    firstPlantGrown: true,
+    plant1FlowerPhase: 'dormant',
+    plant1FlowerProgress: 0,
+    plant3FlowerPhase: 'dormant',
+    plant3FlowerProgress: 0,
+    timestamp: Date.now() - 135_000 // 135s: 45s dormant + 15s budding + 60s opening + 15s into bloom
+  };
+  const ffPlant3 = fastForwardState(ffPlant3Saved);
+  if (ffPlant3.plant3FlowerPhase !== 'bloom') {
+    problems.push('fastForwardState with plant3 dormant flower and 135s elapsed should land in bloom, got ' + ffPlant3.plant3FlowerPhase + ' (issue #735).');
+  }
+  // Advance from bloom partway through
+  const ffPlant3MidSaved = {
+    seasonProgress: 0.1,
+    dayNightProgress: 0.2,
+    weatherProgress: 0.3,
+    plant1Maturity: 1,
+    firstPlantGrown: true,
+    plant1FlowerPhase: 'dormant',
+    plant1FlowerProgress: 0,
+    plant3FlowerPhase: 'bloom',
+    plant3FlowerProgress: 0.5,
+    timestamp: Date.now() - 60_000 // 60s into bloom (105s total) → progress 0.5+60/105=~1.07, should be fading
+  };
+  const ffPlant3Mid = fastForwardState(ffPlant3MidSaved);
+  if (ffPlant3Mid.plant3FlowerPhase !== 'fading') {
+    problems.push('fastForwardState with plant3 bloom flower at 0.5 and 60s elapsed should land in fading, got ' + ffPlant3Mid.plant3FlowerPhase + ' (issue #735).');
+  }
+
   // Clean up test state
   clearGardenState();
 
@@ -2714,6 +2770,58 @@ export async function checks() {
     const compGreeting = gardenState.computeReturningVisitorGreeting(60000, compFlowerSaved, compFlowerCurrent);
     if (compGreeting.indexOf('companion flower has bloomed') === -1) {
       problems.push('computeReturningVisitorGreeting with companion flower dormant→bloom should mention "companion flower has bloomed", got: "' + compGreeting + '" (issue #560).');
+    }
+
+    // Test: Plant3 flower bloomed (issue #735)
+    const p3BloomedSaved = {
+      seasonProgress: 0.1,
+      plant2Maturity: 0.8,
+      plant1FlowerPhase: 'dormant',
+      plant1FlowerProgress: 0,
+      plant2FlowerPhase: 'dormant',
+      plant2FlowerProgress: 0,
+      plant3FlowerPhase: 'dormant',
+      plant3FlowerProgress: 0.3
+    };
+    const p3BloomedCurrent = {
+      seasonProgress: 0.1,
+      plant2Maturity: 0.8,
+      plant1FlowerPhase: 'dormant',
+      plant1FlowerProgress: 0,
+      plant2FlowerPhase: 'dormant',
+      plant2FlowerProgress: 0,
+      plant3FlowerPhase: 'bloom',
+      plant3FlowerProgress: 0.2
+    };
+    const p3BloomedGreeting = gardenState.computeReturningVisitorGreeting(60000, p3BloomedSaved, p3BloomedCurrent);
+    if (p3BloomedGreeting.indexOf("low plant's flowers have bloomed") === -1) {
+      problems.push('computeReturningVisitorGreeting with plant3 flower dormant→bloom should mention "the low plant\'s flowers have bloomed", got: "' + p3BloomedGreeting + '" (issue #735).');
+    }
+
+    // Test: Plant3 flower faded (issue #735)
+    const p3FadedSaved = {
+      seasonProgress: 0.1,
+      plant2Maturity: 0.8,
+      plant1FlowerPhase: 'dormant',
+      plant1FlowerProgress: 0,
+      plant2FlowerPhase: 'dormant',
+      plant2FlowerProgress: 0,
+      plant3FlowerPhase: 'bloom',
+      plant3FlowerProgress: 0.7
+    };
+    const p3FadedCurrent = {
+      seasonProgress: 0.1,
+      plant2Maturity: 0.8,
+      plant1FlowerPhase: 'dormant',
+      plant1FlowerProgress: 0,
+      plant2FlowerPhase: 'dormant',
+      plant2FlowerProgress: 0,
+      plant3FlowerPhase: 'fading',
+      plant3FlowerProgress: 0.3
+    };
+    const p3FadedGreeting = gardenState.computeReturningVisitorGreeting(60000, p3FadedSaved, p3FadedCurrent);
+    if (p3FadedGreeting.indexOf("low plant's flowers have faded") === -1) {
+      problems.push('computeReturningVisitorGreeting with plant3 flower bloom→fading should mention "the low plant\'s flowers have faded", got: "' + p3FadedGreeting + '" (issue #735).');
     }
   }
 

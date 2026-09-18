@@ -1568,6 +1568,20 @@
         }
       }
 
+      // Also check plant3 flower if it exists
+      const savedP3Phase = savedState.plant3FlowerPhase;
+      const currentP3Phase = currentState ? currentState.plant3FlowerPhase : undefined;
+
+      if (savedP3Phase && currentP3Phase && savedP3Phase !== currentP3Phase) {
+        if (currentP3Phase === 'bloom' || currentP3Phase === 'opening') {
+          parts.push("the low plant's flowers have bloomed");
+        } else if (currentP3Phase === 'fading' || currentP3Phase === 'dormant') {
+          if (savedP3Phase === 'bloom' || savedP3Phase === 'opening' || savedP3Phase === 'budding') {
+            parts.push("the low plant's flowers have faded");
+          }
+        }
+      }
+
       // Build the greeting
       if (parts.length === 0) {
         // Fall back to generic time-based greeting
