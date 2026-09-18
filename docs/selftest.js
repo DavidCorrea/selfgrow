@@ -663,6 +663,52 @@ export async function checks() {
         if (plant3Obj.flower.petals && Array.isArray(plant3Obj.flower.petals) && plant3Obj.flower.petals.length < 3) {
           problems.push('plant3.flower.petals has fewer than 3 petals.');
         }
+
+        // Issue #734: Verify plant3 flower has exactly 6 petals (distinct from plant1/plant2's 5)
+        if (plant3Obj.flower.petals && Array.isArray(plant3Obj.flower.petals)) {
+          if (plant3Obj.flower.petals.length !== 6) {
+            problems.push('plant3.flower.petals has ' + plant3Obj.flower.petals.length + ' petals, expected exactly 6 — plant3 should have 6 petals to distinguish it from plant1/plant2 (issue #734).');
+          }
+        }
+
+        // Issue #734: Verify plant3 petal color is a warm hue, not lavender or pale pink
+        if (plant3Obj.flower.petals && Array.isArray(plant3Obj.flower.petals) && plant3Obj.flower.petals.length > 0) {
+          var p3PetalColor = plant3Obj.flower.petals[0].material.color.getHex();
+          // Expected warm yellow/amber: 0xddd090. Must not be lavender (0xdda0dd) or pale pink (0xddb0b0)
+          if (p3PetalColor === 0xdda0dd || p3PetalColor === 0xddb0b0) {
+            problems.push('plant3 petal color is ' + p3PetalColor.toString(16) + ' — expected a warm hue (e.g. ~0xddd090) distinct from plant1 lavender (0xdda0dd) and plant2 pale pink (0xddb0b0) (issue #734).');
+          }
+          // Verify it's actually a warm hue (not too close to lavender/pink)
+          var p3Col = new THREE.Color(p3PetalColor);
+          var p3HSL = { h: 0, s: 0, l: 0 };
+          p3Col.getHSL(p3HSL);
+          // Warm hues have hue in the yellow-orange range (~0.05-0.15)
+          // Lavender is ~0.75-0.85, pale pink is ~0.9-1.0
+          if (p3HSL.h < 0.02 || p3HSL.h > 0.20) {
+            // It might still be a valid warm hue if desaturated enough, but warn if clearly wrong
+            if (p3HSL.h > 0.70) {
+              problems.push('plant3 petal hue is ' + p3HSL.h.toFixed(3) + ' — expected a warm hue (yellow-amber, h~0.05-0.15) not a cool/purple hue (h>' + 0.70 + ') (issue #734).');
+            }
+          }
+        }
+
+        // Issue #734: Verify DOM mentions warm-hued blossoms when plant3 is in a visible flower phase
+        if (plant3Obj.flower.getPhase && typeof plant3Obj.flower.getPhase === 'function') {
+          var p3Phase = plant3Obj.flower.getPhase();
+          var visiblePhases = ['bloom', 'opening'];
+          if (visiblePhases.indexOf(p3Phase) !== -1) {
+            var p3GrowingDesc = document.getElementById('growing-description');
+            var p3PlotDesc = document.getElementById('plot-description');
+            if (p3GrowingDesc && p3GrowingDesc.textContent.indexOf('warm') === -1 &&
+                p3GrowingDesc.textContent.indexOf('amber') === -1) {
+              problems.push('growing-description does not mention warm-hued blossoms despite plant3 being in "' + p3Phase + '" phase (issue #734).');
+            }
+            if (p3PlotDesc && p3PlotDesc.textContent.indexOf('warm') === -1 &&
+                p3PlotDesc.textContent.indexOf('amber') === -1) {
+              problems.push('plot-description does not mention warm-hued blossoms despite plant3 being in "' + p3Phase + '" phase (issue #734).');
+            }
+          }
+        }
       }
     }
   }

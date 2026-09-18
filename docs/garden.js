@@ -539,7 +539,9 @@ function createPlant(opts) {
    * The flower is small and soft-coloured — not a centrepiece, but a
    * detail that rewards patient watching.
    */
-  function createFlowerMeshes(stemH, color) {
+  function createFlowerMeshes(stemH, color, opts) {
+    const petalCount = (opts && opts.petalCount) || 5;
+    const petalScale = (opts && opts.petalScale) || 1.0;
     const flowerGroup = new THREE.Group();
 
     const petalMat = new THREE.MeshStandardMaterial({
@@ -559,7 +561,6 @@ function createPlant(opts) {
 
     const geo = new THREE.ShapeGeometry(shape);
 
-    const petalCount = 5;
     const petals = [];
     for (let i = 0; i < petalCount; i++) {
       const angle = (i / petalCount) * Math.PI * 2;
@@ -567,7 +568,7 @@ function createPlant(opts) {
       m.position.set(0, stemH, 0);
       m.rotation.y = angle;
       m.rotation.x = 0.3; // slight outward tilt (bud state)
-      m.scale.set(0.01, 0.01, 0.01); // hidden initially
+      m.scale.set(0.01 * petalScale, 0.01 * petalScale, 0.01 * petalScale); // hidden initially, pre-scaled
       m.castShadow = false;
       flowerGroup.add(m);
       petals.push(m);
@@ -592,12 +593,20 @@ function createPlant(opts) {
   /* Flower lifecycle — called once the plant is fully grown */
   function startFlowerCycle() {
     const isPlant2 = label === 'plant2';
+    const isPlant3 = label === 'plant3';
 
-    // Soft pale colours: lavender for central plant, pale pink for companion
-    const flowerColor = isPlant2 ? 0xddb0b0 : 0xdda0dd;
-    const fm = createFlowerMeshes(stemHeight, flowerColor);
+    // Distinct flower characteristics per plant:
+    //   plant:  lavender (0xdda0dd), 5 petals, 1.0x scale
+    //   plant2: pale pink (0xddb0b0), 5 petals, 1.0x scale
+    //   plant3: warm yellow/amber (0xddd090), 6 petals, 0.85x scale
+    const flowerColor = isPlant2 ? 0xddb0b0 : (isPlant3 ? 0xddd090 : 0xdda0dd);
+    const fm = createFlowerMeshes(stemHeight, flowerColor, {
+      petalCount: isPlant3 ? 6 : 5,
+      petalScale: isPlant3 ? 0.85 : 1.0
+    });
     fm._originalPetalColor = new THREE.Color(flowerColor);
     fm._bloomColorBoosted = false;
+    fm._petalScale = isPlant3 ? 0.85 : 1.0;
     group.add(fm.group);
 
     /* Pollination state (issue #614) */
@@ -945,7 +954,40 @@ function createPlant(opts) {
 
       if (!growingDesc || !plotDesc) return;
 
-      if (isPlant2) {
+      if (isPlant3) {
+        // plant3 low-growing plant with warm-hued blossoms
+        switch (phase) {
+          case 'budding':
+            growingDesc.textContent = 'A tiny bud appears on the low, spreading plant, warm colours gathering at its tip.';
+            plotDesc.textContent = 'The low-growing third plant shows a small bud forming near its crown, promising warm-hued blossoms to come.';
+            break;
+          case 'opening':
+            growingDesc.textContent = 'Warm-hued petals slowly unfurl on the low-growing plant, catching the light.';
+            plotDesc.textContent = 'The third plant\'s blossom opens gradually, revealing warm amber tones among its rounded leaves.';
+            break;
+          case 'bloom':
+            if (_hasSeedHead) {
+              growingDesc.textContent = 'A warm-hued cluster of small petals blooms softly on the low-growing plant. Tiny brown seed heads dot the centre.';
+              plotDesc.textContent = 'Three plants grace the plot. The low third plant wears a cluster of warm amber blossoms, tiny seed heads forming at their centres.';
+            } else if (_pollinated) {
+              growingDesc.textContent = 'A warm-hued cluster of small petals blooms softly on the low-growing plant. The flower centre shows signs of pollination.';
+              plotDesc.textContent = 'Three plants grace the plot. The third plant\'s warm amber blossoms show darkened centres \u2014 touched by a passing butterfly.';
+            } else {
+              growingDesc.textContent = 'A warm-hued cluster of small petals blooms softly on the low-growing plant, adding a distinct warmth to the garden.';
+              plotDesc.textContent = 'Three plants grace the plot. The low third plant is crowned with clusters of warm amber blossoms, distinct from the others.';
+            }
+            break;
+          case 'fading':
+            growingDesc.textContent = 'The warm-hued blossoms on the low-growing plant fade gently, their petals beginning to drop.';
+            plotDesc.textContent = 'The third plant\'s warm blossoms fade, their petals returning to the earth as the cycle turns.';
+            break;
+          default:
+            // dormant — keep existing descriptions from becomeFullyGrown
+            growingDesc.textContent = 'A low, spreading plant rises where the dormant stems once stood, its broad leaves close to the ground.';
+            plotDesc.textContent = 'Three plants share the garden plot. A low, spreading plant with broad leaves nestles beside the taller ones, its warm-hued blossoms a quiet promise.';
+            break;
+        }
+      } else if (isPlant2) {
         // plant2 companion descriptions
         switch (phase) {
           case 'budding':
@@ -1078,7 +1120,7 @@ function createPlant(opts) {
           // Petals grow from tiny to small bud size
           const t = Math.min(1, elapsed / phaseDuration);
           const eased = 1 - Math.pow(1 - t, 3);
-          const s = eased * 0.35;
+          const s = eased * 0.35 * fm._petalScale;
           fm.petals.forEach(p => {
             p.scale.set(s, s, s);
           });
@@ -1097,7 +1139,7 @@ function createPlant(opts) {
           const t = Math.min(1, elapsed / phaseDuration);
           const eased = 1 - Math.pow(1 - t, 2);
           // Weather shelter: reduce scale and tilt down during rain (issue #557)
-          const shelterScale = eased * (1 - 0.4 * weatherShelter);
+          const shelterScale = eased * (1 - 0.4 * weatherShelter) * fm._petalScale;
           const shelterTilt = weatherShelter * 0.8;
           fm.petals.forEach((p, i) => {
             const tilt = 0.3 + eased * 1.2 + shelterTilt;
@@ -1146,7 +1188,7 @@ function createPlant(opts) {
             // Cumulative bloom bonus: permanent increment from return visits (issue #698)
             const cumulativeBonus = (window.__gardenState && window.__gardenState.cumulativeBloomBonus) || 0;
             const bloomMul = Math.min(1 + _visitationBloom + cumulativeBonus, 1.3 + cumulativeBonus);
-            const shelterScale = bloomBaseScale * (1 - 0.4 * weatherShelter) * bloomMul;
+            const shelterScale = bloomBaseScale * (1 - 0.4 * weatherShelter) * bloomMul * fm._petalScale;
             const shelterTilt = weatherShelter * 0.8;
             fm.petals.forEach((p, i) => {
               p.scale.set(shelterScale, shelterScale, shelterScale);
@@ -1160,7 +1202,10 @@ function createPlant(opts) {
             fm._describedOpen = false;
             const growingDesc = document.getElementById('growing-description');
             const plotDesc = document.getElementById('plot-description');
-            if (isPlant2) {
+            if (isPlant3) {
+              if (growingDesc) growingDesc.textContent = 'The low-growing plant\'s warm-hued blossoms close slightly against the rain.';
+              if (plotDesc) plotDesc.textContent = 'Three plants share the plot. The third plant\'s warm blossoms tilt inward, sheltering from the rain.';
+            } else if (isPlant2) {
               if (growingDesc) growingDesc.textContent = 'The companion plant\'s small flower closes slightly against the rain.';
               if (plotDesc) plotDesc.textContent = 'Two plants share the plot. The companion plant\'s blossom bends inward, sheltering from the rain.';
             } else {
@@ -1172,7 +1217,26 @@ function createPlant(opts) {
             fm._describedSheltered = false;
             var growingDesc = document.getElementById('growing-description');
             var plotDesc = document.getElementById('plot-description');
-            if (isPlant2) {
+            if (isPlant3) {
+              if (growingDesc) {
+                if (_hasSeedHead) {
+                  growingDesc.textContent = 'A warm-hued cluster of small petals blooms softly on the low-growing plant. Tiny brown seed heads dot the centre.';
+                } else if (_pollinated) {
+                  growingDesc.textContent = 'A warm-hued cluster of small petals blooms softly on the low-growing plant. The flower centre shows signs of pollination.';
+                } else {
+                  growingDesc.textContent = 'A warm-hued cluster of small petals blooms softly on the low-growing plant, adding a distinct warmth to the garden.';
+                }
+              }
+              if (plotDesc) {
+                if (_hasSeedHead) {
+                  plotDesc.textContent = 'Three plants grace the plot. The low third plant wears a cluster of warm amber blossoms, tiny seed heads forming at their centres.';
+                } else if (_pollinated) {
+                  plotDesc.textContent = 'Three plants grace the plot. The third plant\'s warm amber blossoms show darkened centres \u2014 touched by a passing butterfly.';
+                } else {
+                  plotDesc.textContent = 'Three plants grace the plot. The low third plant is crowned with clusters of warm amber blossoms, distinct from the others.';
+                }
+              }
+            } else if (isPlant2) {
               if (growingDesc) {
                 if (_hasSeedHead) {
                   growingDesc.textContent = 'A small flower blooms softly near the top of the companion plant. Tiny brown seed heads dot the centre \u2014 signs of pollination.';
@@ -1237,7 +1301,7 @@ function createPlant(opts) {
           // Fade opacity and shrink petals
           const t = Math.min(1, elapsed / phaseDuration);
           const opacity = 1 - t;
-          const shrink = 1 - t * 0.6;
+          const shrink = (1 - t * 0.6) * fm._petalScale;
           fm.petals.forEach(p => {
             p.material.opacity = opacity;
             p.scale.set(shrink, shrink, shrink);
@@ -1264,7 +1328,7 @@ function createPlant(opts) {
             }
             fm.petals.forEach(p => {
               p.material.opacity = 1;
-              p.scale.set(0.01, 0.01, 0.01);
+              p.scale.set(0.01 * fm._petalScale, 0.01 * fm._petalScale, 0.01 * fm._petalScale);
               p.rotation.x = 0.3;
               p.rotation.z = 0;
             });
@@ -1289,7 +1353,10 @@ function createPlant(opts) {
             // Restore normal dormant descriptions
             const growingDesc = document.getElementById('growing-description');
             const plotDesc = document.getElementById('plot-description');
-            if (isPlant2) {
+            if (isPlant3) {
+              growingDesc.textContent = 'A low, spreading plant rises where the dormant stems once stood, its broad leaves close to the ground.';
+              plotDesc.textContent = 'Three plants share the garden plot. A low, spreading plant with broad leaves nestles beside the taller ones, its warm-hued blossoms a quiet promise.';
+            } else if (isPlant2) {
               growingDesc.textContent = 'Two seedlings now stand together — the central plant tall and slender, its companion shorter with broad, rounded leaves.';
               plotDesc.textContent = 'Two plants share the garden plot. The first stands tall at center; the second, with wider leaves and a softer green hue, grows beside it as if the garden chose to spread.';
             } else {
@@ -1344,6 +1411,9 @@ function createPlant(opts) {
     } else if (label === 'plant') {
       growingDesc.textContent = 'A young seedling rises from the soil, its leaves reaching toward the light. A second plant grows nearby.';
       plotDesc.textContent = 'A healthy seedling stands at the center of the plot, its leaves open to the sky. A companion plant with broader leaves grows beside it.';
+    } else if (label === 'plant3') {
+      growingDesc.textContent = 'A low, spreading plant rises where the dormant stems once stood, its broad leaves close to the ground.';
+      plotDesc.textContent = 'Three plants share the garden plot. A low, spreading plant with broad leaves nestles beside the taller ones, its warm-hued blossoms a quiet promise.';
     } else {
       growingDesc.textContent = 'Two seedlings now stand together — the central plant tall and slender, its companion shorter with broad, rounded leaves.';
       plotDesc.textContent = 'Two plants share the garden plot. The first stands tall at center; the second, with wider leaves and a softer green hue, grows beside it as if the garden chose to spread.';
