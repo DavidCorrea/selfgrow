@@ -7,7 +7,7 @@
 
 import * as THREE from "three";
 import { saveGardenState, loadGardenState, fastForwardState, clearGardenState, advanceFlowerPhase, STORAGE_KEY, SEASON_CYCLE_DURATION_MS } from "./persistence.js";
-import { createCreature, computeCentreCrossBlend } from "./creature.js";
+import { createCreature, computeCentreCrossBlend, computeGreetingParams } from "./creature.js";
 import { computeDisplacement } from "./groundRipple.js";
 import { isReducedMotion, onMotionChange } from "./motion.js";
 import { SEASON_PALETTES, SEASON_NAMES, SEASON_DURATION_MS, CYCLE_DURATION_MS, getWeatheringAmount } from "./garden.js";
@@ -45,6 +45,80 @@ import { TIME_OF_DAY_AUDIO, WEATHER_AUDIO_MODIFIERS, SEASON_AUDIO_MODIFIERS, DEF
   if (getWeatheringAmount(undefined) !== 0) throw new Error('undefined should return 0');
   if (getWeatheringAmount(null) !== 0) throw new Error('null should return 0');
   if (getWeatheringAmount('foo') !== 0) throw new Error('string should return 0');
+})();
+
+/* ---------- computeGreetingParams pure-function tests (issue #762) ---------- */
+(function testComputeGreetingParams() {
+  // visitCount < 2: returns null (no greeting)
+  if (computeGreetingParams(0) !== null) throw new Error('visitCount=0 should return null, got ' + JSON.stringify(computeGreetingParams(0)));
+  if (computeGreetingParams(1) !== null) throw new Error('visitCount=1 should return null, got ' + JSON.stringify(computeGreetingParams(1)));
+  if (computeGreetingParams(-1) !== null) throw new Error('visitCount=-1 should return null, got ' + JSON.stringify(computeGreetingParams(-1)));
+
+  // non-numeric inputs return null
+  if (computeGreetingParams(undefined) !== null) throw new Error('undefined should return null');
+  if (computeGreetingParams(null) !== null) throw new Error('null should return null');
+  if (computeGreetingParams('foo') !== null) throw new Error('string should return null');
+
+  // visitCount >= 2 and < 5: tier 1 — unchanged (4.0s, 0.3 radius, no hover)
+  var p2 = computeGreetingParams(2);
+  if (!p2) throw new Error('visitCount=2 should return an object, got null');
+  if (p2.duration !== 4.0) throw new Error('visitCount=2 duration should be 4.0, got ' + p2.duration);
+  if (p2.startRadiusMax !== 0.3) throw new Error('visitCount=2 startRadiusMax should be 0.3, got ' + p2.startRadiusMax);
+  if (p2.hoverDuration !== 0) throw new Error('visitCount=2 hoverDuration should be 0, got ' + p2.hoverDuration);
+
+  var p3 = computeGreetingParams(3);
+  if (!p3) throw new Error('visitCount=3 should return an object, got null');
+  if (p3.duration !== 4.0) throw new Error('visitCount=3 duration should be 4.0, got ' + p3.duration);
+  if (p3.startRadiusMax !== 0.3) throw new Error('visitCount=3 startRadiusMax should be 0.3, got ' + p3.startRadiusMax);
+  if (p3.hoverDuration !== 0) throw new Error('visitCount=3 hoverDuration should be 0, got ' + p3.hoverDuration);
+
+  var p4 = computeGreetingParams(4);
+  if (!p4) throw new Error('visitCount=4 should return an object, got null');
+  if (p4.duration !== 4.0) throw new Error('visitCount=4 duration should be 4.0, got ' + p4.duration);
+  if (p4.startRadiusMax !== 0.3) throw new Error('visitCount=4 startRadiusMax should be 0.3, got ' + p4.startRadiusMax);
+  if (p4.hoverDuration !== 0) throw new Error('visitCount=4 hoverDuration should be 0, got ' + p4.hoverDuration);
+
+  // visitCount >= 5 and < 15: tier 2 — closer start, longer (5.0s, 0.15 radius, no hover)
+  var p5 = computeGreetingParams(5);
+  if (!p5) throw new Error('visitCount=5 should return an object, got null');
+  if (p5.duration !== 5.0) throw new Error('visitCount=5 duration should be 5.0, got ' + p5.duration);
+  if (Math.abs(p5.startRadiusMax - 0.15) > 0.001) throw new Error('visitCount=5 startRadiusMax should be 0.15, got ' + p5.startRadiusMax);
+  if (p5.hoverDuration !== 0) throw new Error('visitCount=5 hoverDuration should be 0, got ' + p5.hoverDuration);
+
+  var p10 = computeGreetingParams(10);
+  if (!p10) throw new Error('visitCount=10 should return an object, got null');
+  if (p10.duration !== 5.0) throw new Error('visitCount=10 duration should be 5.0, got ' + p10.duration);
+  if (Math.abs(p10.startRadiusMax - 0.15) > 0.001) throw new Error('visitCount=10 startRadiusMax should be 0.15, got ' + p10.startRadiusMax);
+  if (p10.hoverDuration !== 0) throw new Error('visitCount=10 hoverDuration should be 0, got ' + p10.hoverDuration);
+
+  var p14 = computeGreetingParams(14);
+  if (!p14) throw new Error('visitCount=14 should return an object, got null');
+  if (p14.duration !== 5.0) throw new Error('visitCount=14 duration should be 5.0, got ' + p14.duration);
+  if (Math.abs(p14.startRadiusMax - 0.15) > 0.001) throw new Error('visitCount=14 startRadiusMax should be 0.15, got ' + p14.startRadiusMax);
+  if (p14.hoverDuration !== 0) throw new Error('visitCount=14 hoverDuration should be 0, got ' + p14.hoverDuration);
+
+  // visitCount >= 15: tier 3 — closest, hover before moving (6.0s, 0.1 radius, 1.5s hover)
+  var p15 = computeGreetingParams(15);
+  if (!p15) throw new Error('visitCount=15 should return an object, got null');
+  if (p15.duration !== 6.0) throw new Error('visitCount=15 duration should be 6.0, got ' + p15.duration);
+  if (Math.abs(p15.startRadiusMax - 0.1) > 0.001) throw new Error('visitCount=15 startRadiusMax should be 0.1, got ' + p15.startRadiusMax);
+  if (p15.hoverDuration !== 1.5) throw new Error('visitCount=15 hoverDuration should be 1.5, got ' + p15.hoverDuration);
+
+  var p25 = computeGreetingParams(25);
+  if (!p25) throw new Error('visitCount=25 should return an object, got null');
+  if (p25.duration !== 6.0) throw new Error('visitCount=25 duration should be 6.0, got ' + p25.duration);
+  if (Math.abs(p25.startRadiusMax - 0.1) > 0.001) throw new Error('visitCount=25 startRadiusMax should be 0.1, got ' + p25.startRadiusMax);
+  if (p25.hoverDuration !== 1.5) throw new Error('visitCount=25 hoverDuration should be 1.5, got ' + p25.hoverDuration);
+
+  // Boundary: visitCount exactly at thresholds
+  var pBoundary = computeGreetingParams(5);
+  if (!pBoundary) throw new Error('visitCount=5 (boundary) should return an object, got null');
+  if (pBoundary.duration !== 5.0) throw new Error('visitCount=5 (boundary) duration should be 5.0, got ' + pBoundary.duration);
+
+  pBoundary = computeGreetingParams(15);
+  if (!pBoundary) throw new Error('visitCount=15 (boundary) should return an object, got null');
+  if (pBoundary.duration !== 6.0) throw new Error('visitCount=15 (boundary) duration should be 6.0, got ' + pBoundary.duration);
+  if (pBoundary.hoverDuration !== 1.5) throw new Error('visitCount=15 (boundary) hoverDuration should be 1.5, got ' + pBoundary.hoverDuration);
 })();
 
 /* ---------- computeCentreCrossBlend pure-function tests (issue #756) ---------- */
@@ -3897,6 +3971,28 @@ export async function checks() {
       } finally {
         // Restore original getCycleProgress
         creatureDayNight.getCycleProgress = origGetCycleProgress;
+      }
+    }
+
+    // Verify greeting flutter parameters match the expected tier for current visitCount (issue #762)
+    var greetingActive = creatureState.getGreetingActive && creatureState.getGreetingActive();
+    var currentVC = gardenState && typeof gardenState.visitCount === 'number' ? gardenState.visitCount : 0;
+    if (currentVC >= 2 && currentVC < 5) {
+      // Tier 1: no greeting after initial page load, but the flag should have been set
+      // Just verify the params function returns the right values
+      var params = computeGreetingParams(currentVC);
+      if (!params || params.duration !== 4.0 || Math.abs(params.startRadiusMax - 0.3) > 0.001 || params.hoverDuration !== 0) {
+        problems.push('computeGreetingParams(' + currentVC + ') returned unexpected params for tier 1 — expected {duration:4.0, startRadiusMax:0.3, hoverDuration:0}.');
+      }
+    } else if (currentVC >= 5 && currentVC < 15) {
+      var params = computeGreetingParams(currentVC);
+      if (!params || params.duration !== 5.0 || Math.abs(params.startRadiusMax - 0.15) > 0.001 || params.hoverDuration !== 0) {
+        problems.push('computeGreetingParams(' + currentVC + ') returned unexpected params for tier 2 — expected {duration:5.0, startRadiusMax:0.15, hoverDuration:0}.');
+      }
+    } else if (currentVC >= 15) {
+      var params = computeGreetingParams(currentVC);
+      if (!params || params.duration !== 6.0 || Math.abs(params.startRadiusMax - 0.1) > 0.001 || params.hoverDuration !== 1.5) {
+        problems.push('computeGreetingParams(' + currentVC + ') returned unexpected params for tier 3 — expected {duration:6.0, startRadiusMax:0.1, hoverDuration:1.5}.');
       }
     }
   }
