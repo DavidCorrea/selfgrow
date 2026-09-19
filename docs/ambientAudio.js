@@ -97,6 +97,31 @@ const DEFAULT_FIREFLY_SEASON_MUL = 0.0;
 export { TIME_OF_DAY_AUDIO, WEATHER_AUDIO_MODIFIERS, SEASON_AUDIO_MODIFIERS, DEFAULT_WEATHER_MODIFIER, DEFAULT_SEASON_MODIFIER, FIREFLY_SEASON_MULTIPLIERS, FIREFLY_WEATHER_MULTIPLIERS };
 
 /**
+ * Compute the warmth resonance gain for a returning visitor.
+ *
+ * The warmth layer is a barely-perceptible 110Hz sine tone blended into
+ * the wind soundscape through a lowpass filter (~300Hz) at very low gain.
+ * Gain tiers reflect growing familiarity:
+ *
+ *   visitCount 2–4:   0.003
+ *   visitCount 5–14:  0.007
+ *   visitCount 15–24: 0.010
+ *   visitCount 25+:   0.015 (hard cap)
+ *
+ * For visitCount < 2, returns 0 (no warmth). Non-numeric inputs return 0.
+ *
+ * @param {number} visitCount — the visitor's cumulative visit count
+ * @returns {number} gain value in [0, 0.015]
+ */
+export function getWarmthGain(visitCount) {
+  if (typeof visitCount !== 'number' || visitCount < 2) return 0;
+  if (visitCount >= 25) return 0.015;
+  if (visitCount >= 15) return 0.010;
+  if (visitCount >= 5)  return 0.007;
+  return 0.003;
+}
+
+/**
  * Pitch range for cricket chirps: 2000–4000 Hz.
  * Randomised per chirp within this band.
  */
@@ -237,6 +262,11 @@ export function createAmbientAudio() {
   let rainGain = null;
   let isStarted = false;
 
+  /* --- Warmth resonance state --- */
+  let warmthOscillator = null;
+  let warmthFilter = null;
+  let warmthGain = null;
+
   /* --- Cricket scheduling state --- */
   let cricketEnabled = false;
   let cricketDensity = 0;           // 0–1, recomputed each update
@@ -250,6 +280,8 @@ export function createAmbientAudio() {
     windGain: 0,
     rainGain: 0,
     windFilterFrequency: 400,
+    warmthGain: 0,
+    warmthVisitCount: 0,
     cricketDensity: 0,
     cricketEnabled: false,
     cricketChirpCount: 0,
@@ -344,6 +376,36 @@ export function createAmbientAudio() {
   }
 
   /**
+   * Create the warmth resonance: a sine oscillator at ~110Hz (A2) passed
+   * through a lowpass filter (~300Hz, Q~0.5) and a GainNode, connected to
+   * ctx.destination. The oscillator runs continuously; its gain is adjusted
+   * in update() based on visitCount.
+   */
+  function startWarmth() {
+    if (warmthOscillator) return;
+    const ctx = ensureContext();
+    if (!ctx) return;
+
+    warmthOscillator = ctx.createOscillator();
+    warmthOscillator.type = 'sine';
+    warmthOscillator.frequency.setValueAtTime(110, ctx.currentTime);
+
+    warmthFilter = ctx.createBiquadFilter();
+    warmthFilter.type = 'lowpass';
+    warmthFilter.frequency.setValueAtTime(300, ctx.currentTime);
+    warmthFilter.Q.value = 0.5;
+
+    warmthGain = ctx.createGain();
+    warmthGain.gain.setValueAtTime(0, ctx.currentTime);
+
+    warmthOscillator.connect(warmthFilter);
+    warmthFilter.connect(warmthGain);
+    warmthGain.connect(ctx.destination);
+
+    warmthOscillator.start();
+  }
+
+  /**
    * Start the audio system. Creates the AudioContext if needed,
    * builds the noise buffers, and begins playback.
    *
@@ -362,6 +424,7 @@ export function createAmbientAudio() {
 
     startWind();
     startRain();
+    startWarmth();
 
     // Immediately read the current weather phase, time-of-day and season from the DOM
     // and apply them, so audio is correct from the moment it starts.
@@ -393,6 +456,14 @@ export function createAmbientAudio() {
    * Stop all audio playback and disconnect nodes.
    */
   function stop() {
+    if (warmthOscillator) {
+      try { warmthOscillator.stop(); } catch { /* may already have stopped */ }
+      warmthOscillator.disconnect();
+      warmthOscillator = null;
+    }
+    if (warmthFilter) { warmthFilter.disconnect(); warmthFilter = null; }
+    if (warmthGain) { warmthGain.disconnect(); warmthGain = null; }
+
     if (windSource) {
       try { windSource.stop(); } catch { /* may already have stopped */ }
       windSource.disconnect();
@@ -432,6 +503,21 @@ export function createAmbientAudio() {
     state.windGain = settings.windGain;
     state.windFilterFrequency = settings.filterFreq;
     state.rainGain = settings.rainGain;
+
+    // --- Warmth resonance update ---
+    const visitCount = (window.__gardenState && typeof window.__gardenState.visitCount === 'number')
+      ? window.__gardenState.visitCount
+      : 0;
+    const warmthTargetGain = getWarmthGain(visitCount);
+    state.warmthGain = warmthTargetGain;
+    state.warmthVisitCount = visitCount;
+
+    if (warmthGain) {
+      const ctx = ensureContext();
+      if (ctx) {
+        warmthGain.gain.setTargetAtTime(warmthTargetGain, ctx.currentTime, 2.0);
+      }
+    }
 
     // --- Cricket scheduling ---
     _cricketReducedMotion = isReducedMotion();
