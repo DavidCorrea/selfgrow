@@ -62,6 +62,7 @@ export function initGarden(scene, initialProgress) {
    * cycle (issue #638) */
   window.__gardenState.addSproutSecondLeafPair = addSproutSecondLeafPair;
   window.__gardenState.buildGerminatedSprouts = buildGerminatedSprouts;
+  window.__gardenState.createGerminatedSprout = createGerminatedSprout;
   window.__gardenState.updateSproutEstablishedDescription = updateSproutEstablishedDescription;
 
   /* Expose dormant-stem count for self-testing (issue #687) */
@@ -1919,17 +1920,28 @@ function addSproutSecondLeafPair(sprout, opts) {
  * createGerminatedSprout — builds the meshes for a single sprout emerging from
  * a germinating ground seed during spring (issue #628).
  *
+ * When parentLabel is 'plant3', the sprout uses a subtly warmer green tint
+ * (stem ~0x6a8a3a, leaf ~0x6a8a2a) to reflect the third plant's warm-hue
+ * character across generations (issue #741). All other parentLabels use the
+ * standard green (0x3a7a2a).
+ *
  * @param {{x:number, y:number, z:number}} base — the seed's base position
+ * @param {string} [parentLabel] — the parent plant label ('plant', 'plant2', 'plant3', etc.)
  * @returns {object} { group, stem, leaves, basePos, leafGenCount }
  */
-function createGerminatedSprout(base) {
+function createGerminatedSprout(base, parentLabel) {
   const sproutGroup = new THREE.Group();
   sproutGroup.position.set(base.x, base.y, base.z);
+
+  // Choose colour based on parent lineage (issue #741)
+  const isWarm = parentLabel === 'plant3';
+  const stemColor = isWarm ? 0x6a8a3a : 0x3a7a2a;
+  const leafColor = isWarm ? 0x6a8a2a : 0x3a7a2a;
 
   // Stem: thin cylinder (height 0.03, radius 0.003)
   const stemGeo = new THREE.CylinderGeometry(0.003, 0.003, 0.03, 4);
   const sproutMat = new THREE.MeshStandardMaterial({
-    color: 0x3a7a2a,
+    color: stemColor,
     roughness: 0.6,
     metalness: 0.0,
     transparent: true,
@@ -1950,7 +1962,9 @@ function createGerminatedSprout(base) {
     leafShape.lineTo(-0.004, 0.008);
     leafShape.closePath();
     const leafGeo = new THREE.ShapeGeometry(leafShape);
-    const leaf = new THREE.Mesh(leafGeo, sproutMat.clone());
+    const leafMat = sproutMat.clone();
+    leafMat.color.setHex(leafColor);
+    const leaf = new THREE.Mesh(leafGeo, leafMat);
     leaf.position.y = 0.02 + lj * 0.005;
     leaf.rotation.x = -0.3;
     leaf.rotation.y = lj * 2.0;
@@ -1976,15 +1990,19 @@ function createGerminatedSprout(base) {
  * and earned a second leaf pair), the new sprouts re-germinate immediately
  * with two leaf pairs rather than starting over with one (issue #638).
  *
+ * The parentLabel is used to select lineage-specific sprout colours
+ * (e.g. warmer green for plant3 seeds, issue #741).
+ *
  * @param {Array<{x:number, y:number, z:number}>} seedBases
  * @param {number} persistedLeafGens — leaf-generation count from the previous cycle
  * @param {THREE.Scene|null} [scene] — scene to add the sprout groups to
+ * @param {string} [parentLabel] — parent plant label for colour selection
  * @returns {Array} sprout objects {group, stem, leaves, basePos, leafGenCount}
  */
-function buildGerminatedSprouts(seedBases, persistedLeafGens, scene) {
+function buildGerminatedSprouts(seedBases, persistedLeafGens, scene, parentLabel) {
   const sprouts = [];
   for (let si = 0; si < seedBases.length; si++) {
-    const sprout = createGerminatedSprout(seedBases[si]);
+    const sprout = createGerminatedSprout(seedBases[si], parentLabel);
     if (persistedLeafGens >= 1) {
       addSproutSecondLeafPair(sprout, { fadeIn: false });
     }
@@ -2533,7 +2551,7 @@ export function startSeasonalCycle(initialProgress) {
             // Leaf generations carried from the previous cycle (issue #638): sprouts
             // that survived through summer re-germinate with two leaf pairs.
             const persistedLeafGens = typeof groundSeeds.leafGenCount === 'number' ? groundSeeds.leafGenCount : 0;
-            groundSeeds.sprouts = buildGerminatedSprouts(seedBases, persistedLeafGens, gs.scene);
+            groundSeeds.sprouts = buildGerminatedSprouts(seedBases, persistedLeafGens, gs.scene, groundSeeds.parentLabel);
 
             // Reset sprout DOM flag for a new cycle
             groundSeeds._sproutDomUpdated = false;
