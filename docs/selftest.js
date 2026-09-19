@@ -5261,9 +5261,9 @@ export async function checks() {
           }
         }
 
-        // Verify the mesh uses the shared leaf material
-        if (mesh.material !== fallenLeavesState.material) {
-          problems.push('fallen leaf #' + i + ' does not use the shared leaf material.');
+        // Verify the mesh has its own material (per-mesh since issue #740)
+        if (!(mesh.material instanceof THREE.MeshStandardMaterial)) {
+          problems.push('fallen leaf #' + i + ' material is not a MeshStandardMaterial.');
         }
 
         // Verify the mesh has a geometry (ShapeGeometry with position attribute)
@@ -5290,6 +5290,47 @@ export async function checks() {
     if (currentSeason && (currentSeason === 'Spring' || currentSeason === 'Summer')) {
       if (fallenLeavesState.material && fallenLeavesState.material.opacity > 0.1) {
         problems.push('During ' + currentSeason + ', fallenLeaves.material.opacity is ' + fallenLeavesState.material.opacity + ', expected near 0 (leaves should be invisible outside autumn/winter).');
+      }
+    }
+
+    /* --- Warm tint check for plant3's fallen leaves (issue #740) --- */
+    // If plant3 exists and it's currently autumn, leaves near plant3 (<0.3 units)
+    // should have a measurably warmer tint (higher red component) than those far away.
+    var plant3Check = gardenState && gardenState.plant3;
+    var currentSeasonCheck = gardenState && gardenState.getSeason ? gardenState.getSeason() : null;
+    if (plant3Check && currentSeasonCheck === 'Autumn' && fallenLeavesState.meshes && fallenLeavesState.meshes.length > 0) {
+      var plant3Pos = plant3Check.group ? plant3Check.group.position : null;
+      if (plant3Pos) {
+        var nearLeaves = [];
+        var farLeaves = [];
+        fallenLeavesState.meshes.forEach(function(leaf) {
+          if (!(leaf && leaf.position && leaf.material && leaf.material.color)) return;
+          var dx = leaf.position.x - plant3Pos.x;
+          var dz = leaf.position.z - plant3Pos.z;
+          var dist = Math.sqrt(dx * dx + dz * dz);
+          if (dist < 0.3) {
+            nearLeaves.push(leaf);
+          } else {
+            farLeaves.push(leaf);
+          }
+        });
+        if (nearLeaves.length >= 2 && farLeaves.length >= 2) {
+          // Compute average red component for near and far leaves
+          var nearRed = 0;
+          nearLeaves.forEach(function(leaf) { nearRed += leaf.material.color.r; });
+          nearRed /= nearLeaves.length;
+
+          var farRed = 0;
+          farLeaves.forEach(function(leaf) { farRed += leaf.material.color.r; });
+          farRed /= farLeaves.length;
+
+          if (nearRed <= farRed) {
+            problems.push('During autumn with plant3 present, leaves near plant3 have average red component ' +
+              nearRed.toFixed(3) + ', not higher than far leaves (' + farRed.toFixed(3) + ') — ' +
+              'expected a warmer tint (higher red) for leaves within 0.3 units of plant3 (issue #740).');
+          }
+        }
+        // If not enough leaves in each group, skip the check (may be an edge case)
       }
     }
   }
