@@ -863,6 +863,36 @@ export async function checks() {
         }
       }
     }
+
+    /* ---------- Fallen petal checks for all blooming plants (issue #768) ---------- */
+    // Every fully-grown plant's flower must expose getFallenPetals() returning an array.
+    // Any non-empty array entries must have mesh and state properties.
+    var _bloomPlants768 = ['plant', 'plant2', 'plant3'];
+    for (var _idx768 = 0; _idx768 < _bloomPlants768.length; _idx768++) {
+      var _label768 = _bloomPlants768[_idx768];
+      var _plant768 = gardenState && gardenState[_label768];
+      if (_plant768 && typeof _plant768.isFullyGrown === 'function' && _plant768.isFullyGrown() && _plant768.flower) {
+        if (typeof _plant768.flower.getFallenPetals !== 'function') {
+          problems.push(_label768 + '.flower.getFallenPetals is not a function — fallen petal accessor missing (issue #768).');
+        } else {
+          var _petals768 = _plant768.flower.getFallenPetals();
+          if (!Array.isArray(_petals768)) {
+            problems.push(_label768 + '.flower.getFallenPetals() returned ' + typeof _petals768 + ', expected an array (issue #768).');
+          } else if (_petals768.length > 0) {
+            // Verify each entry has mesh and state
+            for (var _pj768 = 0; _pj768 < _petals768.length; _pj768++) {
+              var _entry768 = _petals768[_pj768];
+              if (!_entry768.mesh || typeof _entry768.mesh !== 'object') {
+                problems.push(_label768 + '.flower.getFallenPetals()[' + _pj768 + '].mesh is missing or invalid — expected a THREE.Mesh (issue #768).');
+              }
+              if (typeof _entry768.state !== 'string' || ['falling', 'resting', 'fading'].indexOf(_entry768.state) === -1) {
+                problems.push(_label768 + '.flower.getFallenPetals()[' + _pj768 + '].state is "' + _entry768.state + '", expected one of: falling, resting, fading (issue #768).');
+              }
+            }
+          }
+        }
+      }
+    }
   }
 
   /* ---------- Third plant (plant3) checks (issue #688) ---------- */

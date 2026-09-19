@@ -696,6 +696,12 @@ function recordPollinationEvent(flowerPos) {
     let _hasSeedHead = false;
     let _seedHeadMeshes = [];
 
+    /* Fallen petals from Light Drizzle (issue #768) */
+    let _fallenPetals = [];
+    let _petalDropTimer = 5000 + Math.random() * 10000; // 5-15s initial delay
+    let _wasDrizzle = false;
+    let _petalRainEndTimer = 0;
+
     /* Darken the central bud colour by ~15% toward brown */
     function applyPollinationDarkening() {
       const col = fm.bud.material.color;
@@ -743,6 +749,99 @@ function recordPollinationEvent(flowerPos) {
         _seedHeadMeshes[i].material.dispose();
       }
       _seedHeadMeshes = [];
+    }
+
+    /* --- Fallen petal helpers (issue #768) --- */
+
+    /**
+     * createFallenPetalMesh — builds a single flat teardrop-shaped mesh
+     * (~0.003 units) coloured to match the flower's original petal colour.
+     * Returns a new Mesh that can be added to the scene.
+     */
+    function createFallenPetalMesh() {
+      const shape = new THREE.Shape();
+      shape.moveTo(0, 0);
+      shape.bezierCurveTo(0.0015, 0.0006, 0.002, 0.0018, 0, 0.003);
+      shape.bezierCurveTo(-0.002, 0.0018, -0.0015, 0.0006, 0, 0);
+
+      const geo = new THREE.ShapeGeometry(shape);
+      const mat = new THREE.MeshStandardMaterial({
+        color: fm._originalPetalColor ? fm._originalPetalColor.clone() : new THREE.Color(flowerColor),
+        roughness: 0.4,
+        metalness: 0.0,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 1
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      // Scale so the overall size is ~0.003 units
+      const s = 0.0025;
+      mesh.scale.set(s, s, s);
+      mesh.castShadow = false;
+      mesh.receiveShadow = true;
+      return mesh;
+    }
+
+    /**
+     * releaseFallenPetal — creates a single fallen petal near the flower,
+     * adds it to the scene, and registers it in _fallenPetals.
+     * The petal will descend with a gentle flutter.
+     */
+    function releaseFallenPetal() {
+      const mesh = createFallenPetalMesh();
+
+      // Starting position: near the flower, at stem height
+      const startPos = {
+        x: (Math.random() - 0.5) * 0.01,
+        y: stemHeight + 0.02,
+        z: (Math.random() - 0.5) * 0.01
+      };
+
+      // Target position on the ground near the plant base
+      const angle = Math.random() * Math.PI * 2;
+      const distance = 0.02 + Math.random() * 0.06;
+      const endPos = {
+        x: position.x + Math.cos(angle) * distance,
+        y: 0.005,
+        z: position.z + Math.sin(angle) * distance
+      };
+
+      mesh.position.set(startPos.x, startPos.y, startPos.z);
+
+      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      if (reducedMotion) {
+        // With prefers-reduced-motion, appear at ground level and start fading immediately
+        mesh.position.set(endPos.x, endPos.y, endPos.z);
+        _fallenPetals.push({
+          mesh,
+          state: 'fading',
+          startPos,
+          endPos,
+          fallProgress: 1,
+          fallDuration: 1,
+          flutterPhase: 0,
+          flutterX: 0,
+          flutterZ: 0,
+          fadeStartTime: performance.now()
+        });
+      } else {
+        // Full animation — will descend with flutter
+        _fallenPetals.push({
+          mesh,
+          state: 'falling',
+          startPos,
+          endPos,
+          fallProgress: 0,
+          fallDuration: 3000 + Math.random() * 2000, // 3-5s to reach ground
+          flutterPhase: Math.random() * Math.PI * 2,
+          flutterX: 0.001 + Math.random() * 0.002,
+          flutterZ: 0.001 + Math.random() * 0.002,
+          fadeStartTime: 0
+        });
+      }
+
+      scene.add(mesh);
     }
 
     /* Drop seed heads to the ground near the parent plant stem.
@@ -926,6 +1025,8 @@ function recordPollinationEvent(flowerPos) {
       hasSeedHead: () => _hasSeedHead,
       /* Calyx remnant accessor (issue #746) */
       hasCalyx: () => _calyxMesh !== null,
+      /* Fallen petal accessor (issue #768) */
+      getFallenPetals: () => _fallenPetals,
       /* Internal flag set by creature.js on landing/ascend completion */
       _needsPollination: false
     };
@@ -1365,6 +1466,49 @@ function recordPollinationEvent(flowerPos) {
               }
             }
           }
+
+          /* --- Fallen petal drop during Light Drizzle (issue #768) --- */
+          // Track current weather
+          var _weatherState768 = window.__gardenState && window.__gardenState.weather;
+          var _isDrizzleNow = _weatherState768 && _weatherState768.getPhase() === 'Light Drizzle';
+
+          // Detect rain-end transition — mark resting petals as fading
+          if (_wasDrizzle && !_isDrizzleNow) {
+            _petalRainEndTimer = performance.now();
+            for (var pi = 0; pi < _fallenPetals.length; pi++) {
+              var _pet = _fallenPetals[pi];
+              if (_pet.state === 'resting') {
+                _pet.state = 'fading';
+                _pet.fadeStartTime = performance.now();
+              }
+            }
+          }
+          _wasDrizzle = _isDrizzleNow;
+
+          if (_isDrizzleNow) {
+            // Decrement drop timer
+            _petalDropTimer -= dt * 1000;
+            if (_petalDropTimer <= 0) {
+              // Release 1-2 petals (max 3-4 per plant per rain event)
+              var releaseCount = 1 + Math.floor(Math.random() * 2);
+              var activeRainPetals = 0;
+              for (var pi2 = 0; pi2 < _fallenPetals.length; pi2++) {
+                if (_fallenPetals[pi2].state !== 'fading' && _fallenPetals[pi2].state !== 'gone') {
+                  activeRainPetals++;
+                }
+              }
+              if (activeRainPetals < 4) {
+                for (var ri = 0; ri < releaseCount && activeRainPetals + ri < 4; ri++) {
+                  releaseFallenPetal();
+                }
+              }
+              _petalDropTimer = 10000 + Math.random() * 5000; // 10-15s between drops
+            }
+          } else {
+            // Reset timer when not raining
+            _petalDropTimer = 5000 + Math.random() * 10000;
+          }
+
           if (elapsed >= phaseDuration) {
             phase = 'fading';
             phaseStart = performance.now();
@@ -1463,6 +1607,53 @@ function recordPollinationEvent(flowerPos) {
             }
           }
           break;
+        }
+      }
+
+      /* --- Fallen petal update: animate falling, handle fading, remove gone (issue #768) --- */
+      for (var _i768 = _fallenPetals.length - 1; _i768 >= 0; _i768--) {
+        var _pe = _fallenPetals[_i768];
+        var _me = _pe.mesh;
+
+        if (_pe.state === 'falling') {
+          // Animate descent from flower to ground
+          _pe.fallProgress = Math.min(1, _pe.fallProgress + (dt * 1000) / _pe.fallDuration);
+          var _eased = 1 - Math.pow(1 - _pe.fallProgress, 2);
+          var _y = _pe.startPos.y + (_pe.endPos.y - _pe.startPos.y) * _eased;
+          var _flutterScale = 1 - _eased * 0.8;
+          var _xOff = Math.sin(performance.now() * 0.008 + _pe.flutterPhase) * _pe.flutterX * _flutterScale;
+          var _zOff = Math.cos(performance.now() * 0.01 + _pe.flutterPhase) * _pe.flutterZ * _flutterScale;
+
+          _me.position.set(
+            _pe.startPos.x + (_pe.endPos.x - _pe.startPos.x) * _eased + _xOff,
+            _y,
+            _pe.startPos.z + (_pe.endPos.z - _pe.startPos.z) * _eased + _zOff
+          );
+
+          // Gentle rotation flutter
+          _me.rotation.x = Math.sin(performance.now() * 0.006 + _pe.flutterPhase) * 0.1;
+          _me.rotation.z = Math.cos(performance.now() * 0.005 + _pe.flutterPhase) * 0.15;
+
+          if (_pe.fallProgress >= 1) {
+            // Rest on the ground
+            _me.position.set(_pe.endPos.x, _pe.endPos.y, _pe.endPos.z);
+            _me.rotation.x = -Math.PI / 2 + (Math.random() - 0.5) * 0.3;
+            _me.rotation.z = Math.random() * Math.PI * 2;
+            _pe.state = 'resting';
+          }
+        } else if (_pe.state === 'resting') {
+          // Stay on ground — no movement needed
+        } else if (_pe.state === 'fading') {
+          // Fade to transparent over ~30s
+          var _fadeElapsed = performance.now() - _pe.fadeStartTime;
+          var _fadeProg = Math.min(1, _fadeElapsed / 30000);
+          _me.material.opacity = 1 - _fadeProg;
+          if (_fadeProg >= 1) {
+            scene.remove(_me);
+            _me.geometry.dispose();
+            _me.material.dispose();
+            _fallenPetals.splice(_i768, 1);
+          }
         }
       }
 
