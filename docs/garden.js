@@ -847,7 +847,7 @@ function recordPollinationEvent(flowerPos) {
       const growingDesc = document.getElementById('growing-description');
       const plotDesc = document.getElementById('plot-description');
 
-      const otherPlant = isPlant2 ? 'central' : 'companion';
+      const otherPlant = isPlant2 ? 'central' : (isPlant3 ? 'low' : 'companion');
       const seedText = 'Tiny seeds rest on the dark soil near the ' + otherPlant + ' plant, a promise of next season.';
 
       if (growingDesc && growingDesc.textContent.indexOf('Tiny seeds rest') === -1) {
@@ -2291,7 +2291,7 @@ export function startSeasonalCycle(initialProgress) {
             groundSeeds._domUpdated = true;
             const growingDesc = document.getElementById('growing-description');
             const plotDesc = document.getElementById('plot-description');
-            const otherLabel = groundSeeds.parentLabel === 'plant2' ? 'companion' : 'central';
+            const otherLabel = groundSeeds.parentLabel === 'plant2' ? 'companion' : (groundSeeds.parentLabel === 'plant3' ? 'low' : 'central');
             const seedText = 'Tiny seeds rest on the dark soil near the ' + otherLabel + ' plant, a promise of next season.';
             if (growingDesc && growingDesc.textContent.indexOf('Tiny seeds rest') === -1) {
               growingDesc.textContent += ' ' + seedText;
