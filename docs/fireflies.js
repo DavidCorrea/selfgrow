@@ -35,6 +35,26 @@ const DRIFT_RADIUS = 0.15;         // maximum drift offset from plant
 const PEAK_OPACITY = 0.15;         // base peak opacity during Night (≤ 0.15); scaled by getCumulativePeakOpacity() for return visits (issue #705)
 
 /**
+ * Compute the number of extra firefly dots per plant based on cumulative visit count.
+ * Returns +1 dot every 5 visits, capped at +3 per plant (max 9 dots).
+ *
+ * - visitCount < 5:    0 (baseline 4–6)
+ * - visitCount >= 5:   1 (total 5–7)
+ * - visitCount >= 10:  2 (total 6–8)
+ * - visitCount >= 15:  3 (total 7–9, cap)
+ *
+ * Reads window.__gardenState.visitCount if no argument provided.
+ */
+function getExtraDotCount(visitCount) {
+  var gs = window.__gardenState;
+  var vc = typeof visitCount === 'number' ? visitCount : (gs && typeof gs.visitCount === 'number' ? gs.visitCount : 1);
+  if (vc >= 15) return 3;
+  if (vc >= 10) return 2;
+  if (vc >= 5) return 1;
+  return 0;
+}
+
+/**
  * Compute the effective peak opacity for the current cumulative visit count.
  * Returns a value that increases with return visits, never exceeding 0.25,
  * so the principle of calm is preserved.
@@ -262,11 +282,13 @@ export function createFireflies(scene) {
    */
   function createDotGroup(plantPos, plantRef) {
     const count = DOTS_MIN + Math.floor(Math.random() * (DOTS_MAX - DOTS_MIN + 1)); // 4–6
-    const positions = new Float32Array(count * 3);
-    const sizes = new Float32Array(count);
+    const extraCount = Math.min(getExtraDotCount(), 9 - count); // capped at 9 total
+    const totalCount = count + extraCount;
+    const positions = new Float32Array(totalCount * 3);
+    const sizes = new Float32Array(totalCount);
     const dotData = [];
 
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < totalCount; i++) {
       // Random offset within DRIFT_RADIUS from plant position
       const angle = Math.random() * Math.PI * 2;
       const radius = 0.02 + Math.random() * DRIFT_RADIUS * 0.8; // not all at boundary
@@ -292,6 +314,7 @@ export function createFireflies(scene) {
         baseY: baseY,
         baseZ: baseZ,
         sizeBase: sizes[i],
+        isBonusDot: i >= count,   // true for extra dots beyond baseline (issue #753)
         /* --- Scatter state (issue #690) --- */
         scatterOffsetX: 0,
         scatterOffsetY: 0,
@@ -339,7 +362,7 @@ export function createFireflies(scene) {
       geometry: geometry,
       material: material,
       dotData: dotData,
-      count: count
+      count: totalCount
     };
 
     plantGroups.push(group);
@@ -415,6 +438,10 @@ export function createFireflies(scene) {
     },
     /** Returns the effective peak opacity scaled by cumulative return visit count (issue #705) */
     getCumulativePeakOpacity: getCumulativePeakOpacity,
+    /** Returns the number of extra firefly dots per plant based on cumulative visit count (issue #753) */
+    getExtraDotCount: getExtraDotCount,
+    /** Returns the number of extra dots currently applied per plant (issue #753) */
+    extraDotsPerPlant: function() { return getExtraDotCount(); },
     /** Current weather opacity multiplier (lerping toward target) */
     currentWeatherMul: function() { return currentWeatherMul; },
     /** Current seasonal opacity multiplier (lerping toward target) */
@@ -436,9 +463,9 @@ export function createFireflies(scene) {
     totalDotCount: function() {
       return plantGroups.reduce(function(sum, g) { return sum + g.count; }, 0);
     },
-    /** Number of visible dots per plant for the current season */
-    dotsPerPlantMin: DOTS_MIN,
-    dotsPerPlantMax: DOTS_MAX,
+    /** Minimum and maximum number of dots per plant (including extra bonus dots from visit count) */
+    dotsPerPlantMin: function() { return DOTS_MIN + getExtraDotCount(); },
+    dotsPerPlantMax: function() { return Math.min(DOTS_MAX + getExtraDotCount(), 9); },
     /** Returns array of {x, y, z} for all active dot positions (drift-inclusive) */
     getAllPositions: function() {
       var positions = [];
@@ -540,7 +567,8 @@ export function createFireflies(scene) {
             originalPhaseOffset: dd.originalPhaseOffset,
             syncActive: dd.syncActive,
             syncPhaseResidual: dd.syncPhaseResidual,
-            groupIndex: gi
+            groupIndex: gi,
+            isBonusDot: dd.isBonusDot || false
           });
         }
       }

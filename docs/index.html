@@ -1186,6 +1186,8 @@
       for (let i = 0; i < syncState.length; i++) {
         const s = syncState[i];
         if (typeof s.groupIndex === 'number') {
+          // Skip bonus dots — they are not counted toward the sync threshold (issue #753)
+          if (s.isBonusDot) continue;
           if (!syncCounts[s.groupIndex]) {
             syncCounts[s.groupIndex] = { total: 0, synced: 0 };
           }

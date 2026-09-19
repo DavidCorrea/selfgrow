@@ -6188,9 +6188,122 @@ export async function checks() {
       problems.push('fireflyState.driftRadius is ' + fireflyState.driftRadius + ', expected ~0.15.');
     }
 
-    // Verify dotsPerPlantMin/Max are 4–6
-    if (fireflyState.dotsPerPlantMin !== 4 || fireflyState.dotsPerPlantMax !== 6) {
-      problems.push('firefly dotsPerPlantMin/Max are ' + fireflyState.dotsPerPlantMin + '/' + fireflyState.dotsPerPlantMax + ', expected 4/6.');
+    // Verify dotsPerPlantMin/Max are functions returning correct values
+    if (typeof fireflyState.dotsPerPlantMin !== 'function') {
+      problems.push('fireflyState.dotsPerPlantMin is not a function (got ' + typeof fireflyState.dotsPerPlantMin + ') — expected a getter function (issue #753).');
+    } else {
+      var minVal = fireflyState.dotsPerPlantMin();
+      var maxVal = fireflyState.dotsPerPlantMax();
+      if (typeof minVal !== 'number' || minVal < 4 || minVal > 9) {
+        problems.push('firefly dotsPerPlantMin() returned ' + minVal + ', expected between 4 and 9 depending on visit count (issue #753).');
+      }
+      if (typeof maxVal !== 'number' || maxVal < 6 || maxVal > 9) {
+        problems.push('firefly dotsPerPlantMax() returned ' + maxVal + ', expected between 6 and 9 depending on visit count (issue #753).');
+      }
+      if (minVal > maxVal) {
+        problems.push('firefly dotsPerPlantMin() (' + minVal + ') > dotsPerPlantMax() (' + maxVal + ') — min must be <= max (issue #753).');
+      }
+    }
+
+    // Verify getExtraDotCount exists and returns correct values for visit count milestones (issue #753)
+    if (typeof fireflyState.getExtraDotCount !== 'function') {
+      problems.push('fireflyState.getExtraDotCount is not a function — extra dot count helper missing (issue #753).');
+    } else {
+      // Test each threshold directly (independent of current window state)
+      var extra0 = fireflyState.getExtraDotCount(0);
+      if (extra0 !== 0) {
+        problems.push('fireflyState.getExtraDotCount(0) returned ' + extra0 + ', expected 0 (extra dots only appear at visitCount >= 5).');
+      }
+      var extra1 = fireflyState.getExtraDotCount(1);
+      if (extra1 !== 0) {
+        problems.push('fireflyState.getExtraDotCount(1) returned ' + extra1 + ', expected 0 (extra dots only appear at visitCount >= 5).');
+      }
+      var extra4 = fireflyState.getExtraDotCount(4);
+      if (extra4 !== 0) {
+        problems.push('fireflyState.getExtraDotCount(4) returned ' + extra4 + ', expected 0 (extra dots only appear at visitCount >= 5).');
+      }
+      var extra5 = fireflyState.getExtraDotCount(5);
+      if (extra5 !== 1) {
+        problems.push('fireflyState.getExtraDotCount(5) returned ' + extra5 + ', expected 1 (first extra dot at 5 visits).');
+      }
+      var extra9 = fireflyState.getExtraDotCount(9);
+      if (extra9 !== 1) {
+        problems.push('fireflyState.getExtraDotCount(9) returned ' + extra9 + ', expected 1 (still only 1 extra dot at 9 visits).');
+      }
+      var extra10 = fireflyState.getExtraDotCount(10);
+      if (extra10 !== 2) {
+        problems.push('fireflyState.getExtraDotCount(10) returned ' + extra10 + ', expected 2 (second extra dot at 10 visits).');
+      }
+      var extra14 = fireflyState.getExtraDotCount(14);
+      if (extra14 !== 2) {
+        problems.push('fireflyState.getExtraDotCount(14) returned ' + extra14 + ', expected 2 (still only 2 extra dots at 14 visits).');
+      }
+      var extra15 = fireflyState.getExtraDotCount(15);
+      if (extra15 !== 3) {
+        problems.push('fireflyState.getExtraDotCount(15) returned ' + extra15 + ', expected 3 (third extra dot at 15 visits).');
+      }
+      var extra100 = fireflyState.getExtraDotCount(100);
+      if (extra100 !== 3) {
+        problems.push('fireflyState.getExtraDotCount(100) returned ' + extra100 + ', expected 3 (capped at +3 per plant).');
+      }
+    }
+
+    // Verify extraDotsPerPlant returns the current extra count
+    if (typeof fireflyState.extraDotsPerPlant !== 'function') {
+      problems.push('fireflyState.extraDotsPerPlant is not a function — state getter missing (issue #753).');
+    }
+
+    // Verify getSyncState entries include isBonusDot (issue #753)
+    if (typeof fireflyState.getSyncState === 'function') {
+      var syncState = fireflyState.getSyncState();
+      if (syncState && syncState.length > 0) {
+        var hasBonusFlag = false;
+        var hasBonus = false;
+        for (var si = 0; si < syncState.length; si++) {
+          if (syncState[si].hasOwnProperty('isBonusDot')) {
+            hasBonusFlag = true;
+            if (syncState[si].isBonusDot) {
+              hasBonus = true;
+            }
+          }
+        }
+        if (!hasBonusFlag) {
+          problems.push('firefly getSyncState() entries are missing isBonusDot property — bonus dot tracking not exposed (issue #753).');
+        }
+      }
+    }
+
+    // Verify per-group dot counts do not exceed 9 (issue #753)
+    if (fireflyState.plantGroups && Array.isArray(fireflyState.plantGroups)) {
+      for (var pgi = 0; pgi < fireflyState.plantGroups.length; pgi++) {
+        var pg = fireflyState.plantGroups[pgi];
+        if (pg.count > 9) {
+          problems.push('firefly plantGroup "' + pg.plantRef + '" has ' + pg.count + ' dots — maximum is 9 (issue #753).');
+        }
+        // Verify bonus dots have valid dotData structure
+        if (pg.dotData) {
+          var bonusDotCount = 0;
+          for (var ddi = 0; ddi < pg.dotData.length; ddi++) {
+            if (pg.dotData[ddi].isBonusDot) {
+              bonusDotCount++;
+              // Verify bonus dot has all required properties (same structure as baseline)
+              var bd = pg.dotData[ddi];
+              if (typeof bd.phaseOffset !== 'number' || typeof bd.freq !== 'number' ||
+                  typeof bd.driftPhase !== 'number' || typeof bd.driftAngle !== 'number' ||
+                  typeof bd.baseX !== 'number' || typeof bd.baseY !== 'number' || typeof bd.baseZ !== 'number' ||
+                  typeof bd.sizeBase !== 'number') {
+                problems.push('Bonus dot (index ' + ddi + ') in plantGroup "' + pg.plantRef + '" is missing required animation properties — all dots must share the same structure (issue #753).');
+                break;
+              }
+            }
+          }
+          // Check that the number of bonus dots does not exceed the configured extra count
+          var configuredExtra = typeof fireflyState.getExtraDotCount === 'function' ? fireflyState.getExtraDotCount() : 0;
+          if (bonusDotCount > configuredExtra) {
+            problems.push('plantGroup "' + pg.plantRef + '" has ' + bonusDotCount + ' bonus dots, but extra dot count is ' + configuredExtra + ' — bonus dots may exceed the configured limit (issue #753).');
+          }
+        }
+      }
     }
 
     // Verify glowTexture exists and is a valid CanvasTexture
@@ -6214,7 +6327,7 @@ export async function checks() {
       }
     } else {
       // Verify each plant group has valid structure
-      var validPlantRefs = ['plant', 'plant2'];
+      var validPlantRefs = ['plant', 'plant2', 'plant3'];
       fireflyState.plantGroups.forEach(function(group, gi) {
         if (!group.plantRef) {
           problems.push('firefly group #' + gi + ' has no plantRef — each group must reference a plant.');
