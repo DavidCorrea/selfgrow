@@ -640,6 +640,31 @@ function recordPollinationEvent(flowerPos) {
     fm._petalScale = isPlant3 ? 0.85 : 1.0;
     group.add(fm.group);
 
+    /* Calyx remnant (issue #746): a tiny dried-brown ring at the stem tip
+     * that persists through the dormant phase after the flower fades. */
+    let _calyxMesh = null;
+
+    function createCalyx() {
+      if (_calyxMesh) return; // already exists
+      const calyxGeo = new THREE.TorusGeometry(0.006, 0.002, 6, 6);
+      const calyxMat = new THREE.MeshStandardMaterial({
+        color: 0x4a3a2a,
+        roughness: 0.9,
+        metalness: 0.0
+      });
+      _calyxMesh = new THREE.Mesh(calyxGeo, calyxMat);
+      _calyxMesh.position.set(0, stemHeight - 0.002, 0);
+      fm.group.add(_calyxMesh);
+    }
+
+    function removeCalyx() {
+      if (!_calyxMesh) return;
+      fm.group.remove(_calyxMesh);
+      _calyxMesh.geometry.dispose();
+      _calyxMesh.material.dispose();
+      _calyxMesh = null;
+    }
+
     /* Pollination state (issue #614) */
     let _pollinated = false;
     let _hasSeedHead = false;
@@ -873,6 +898,8 @@ function recordPollinationEvent(flowerPos) {
       /* Pollination accessors (issue #614) */
       isPollinated: () => _pollinated,
       hasSeedHead: () => _hasSeedHead,
+      /* Calyx remnant accessor (issue #746) */
+      hasCalyx: () => _calyxMesh !== null,
       /* Internal flag set by creature.js on landing/ascend completion */
       _needsPollination: false
     };
@@ -1139,6 +1166,9 @@ function recordPollinationEvent(flowerPos) {
       switch (phase) {
         case 'dormant':
           if (elapsed >= phaseDuration) {
+            /* --- Calyx remnant: remove when budding begins (issue #746) --- */
+            removeCalyx();
+
             phase = 'budding';
             phaseStart = performance.now();
             phaseDuration = durations.budding;
@@ -1381,6 +1411,9 @@ function recordPollinationEvent(flowerPos) {
               removeSeedHead();
             }
             _pollinated = false;
+
+            /* --- Calyx remnant: appear when the flower fades (issue #746) --- */
+            createCalyx();
 
             updateDOMDescriptions();
             // Restore normal dormant descriptions

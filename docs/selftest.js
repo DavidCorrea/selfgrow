@@ -531,6 +531,23 @@ export async function checks() {
       if (!firstPlant.flower.petals || !Array.isArray(firstPlant.flower.petals) || firstPlant.flower.petals.length < 3) {
         problems.push('plant.flower.petals is missing or has fewer than 3 petals.');
       }
+
+      // Calyx remnant checks (issue #746)
+      if (typeof firstPlant.flower.hasCalyx !== 'function') {
+        problems.push('plant.flower.hasCalyx is not a function — calyx state accessor missing (issue #746).');
+      } else {
+        var calyxVal = firstPlant.flower.hasCalyx();
+        if (typeof calyxVal !== 'boolean') {
+          problems.push('plant.flower.hasCalyx() returned ' + typeof calyxVal + ', expected boolean (issue #746).');
+        }
+        // If the flower is in a visible phase (budding, opening, bloom, fading),
+        // the calyx must not be present — it only appears during dormant.
+        var phase = firstPlant.flower.getPhase();
+        var visiblePhases = ['budding', 'opening', 'bloom', 'fading'];
+        if (visiblePhases.indexOf(phase) !== -1 && calyxVal === true) {
+          problems.push('plant.flower.hasCalyx() returned true during "' + phase + '" phase — calyx should only appear during dormant (issue #746).');
+        }
+      }
     }
   }
 
@@ -558,6 +575,21 @@ export async function checks() {
       }
       if (secondPlant.flower.petals && Array.isArray(secondPlant.flower.petals) && secondPlant.flower.petals.length < 3) {
         problems.push('plant2.flower.petals has fewer than 3 petals.');
+      }
+
+      // Calyx remnant checks for plant2 (issue #746)
+      if (typeof secondPlant.flower.hasCalyx !== 'function') {
+        problems.push('plant2.flower.hasCalyx is not a function — calyx state accessor missing (issue #746).');
+      } else {
+        var calyxVal = secondPlant.flower.hasCalyx();
+        if (typeof calyxVal !== 'boolean') {
+          problems.push('plant2.flower.hasCalyx() returned ' + typeof calyxVal + ', expected boolean (issue #746).');
+        }
+        var phase = secondPlant.flower.getPhase();
+        var visiblePhases = ['budding', 'opening', 'bloom', 'fading'];
+        if (visiblePhases.indexOf(phase) !== -1 && calyxVal === true) {
+          problems.push('plant2.flower.hasCalyx() returned true during "' + phase + '" phase — calyx should only appear during dormant (issue #746).');
+        }
       }
     }
   }
@@ -707,6 +739,21 @@ export async function checks() {
                 p3PlotDesc.textContent.indexOf('amber') === -1) {
               problems.push('plot-description does not mention warm-hued blossoms despite plant3 being in "' + p3Phase + '" phase (issue #734).');
             }
+          }
+        }
+
+        // Calyx remnant checks for plant3 (issue #746)
+        if (typeof plant3Obj.flower.hasCalyx !== 'function') {
+          problems.push('plant3.flower.hasCalyx is not a function — calyx state accessor missing (issue #746).');
+        } else {
+          var p3CalyxVal = plant3Obj.flower.hasCalyx();
+          if (typeof p3CalyxVal !== 'boolean') {
+            problems.push('plant3.flower.hasCalyx() returned ' + typeof p3CalyxVal + ', expected boolean (issue #746).');
+          }
+          var p3Phase = plant3Obj.flower.getPhase();
+          var visiblePhases = ['budding', 'opening', 'bloom', 'fading'];
+          if (visiblePhases.indexOf(p3Phase) !== -1 && p3CalyxVal === true) {
+            problems.push('plant3.flower.hasCalyx() returned true during "' + p3Phase + '" phase — calyx should only appear during dormant (issue #746).');
           }
         }
       }
