@@ -1530,22 +1530,21 @@ export function createFallenLeaves(scene) {
 
   const leafGeo = new THREE.ShapeGeometry(leafShape);
 
-  /* Shared material — starts fully transparent, opacity/colour driven by seasons */
-  const leafMat = new THREE.MeshStandardMaterial({
-    color: 0xaa6a2a,       // autumn brown/orange baseline
-    roughness: 0.8,
-    metalness: 0.0,
-    side: THREE.DoubleSide,
-    transparent: true,
-    opacity: 0,            // hidden until autumn
-    depthWrite: false       // avoid z-fighting with ground
-  });
-
   const meshes = [];
   const basePositions = [];
   const baseRotations = [];
 
   for (let i = 0; i < LEAF_COUNT; i++) {
+    /* Per-mesh material so individual leaves can receive custom tints (issue #740) */
+    const leafMat = new THREE.MeshStandardMaterial({
+      color: 0xaa6a2a,       // autumn brown/orange baseline
+      roughness: 0.8,
+      metalness: 0.0,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0,            // hidden until autumn
+      depthWrite: false       // avoid z-fighting with ground
+    });
     const leaf = new THREE.Mesh(leafGeo, leafMat);
 
     /* Random position within SPREAD_RADIUS of origin */
@@ -1658,10 +1657,11 @@ export function createFallenLeaves(scene) {
   }
 
   /* Exposed state for seasonal cycle updates and self-test */
+  /* material still exported (pointing to first leaf) for backwards compat */
   const state = {
     type: 'fallen-leaves',
     meshes,
-    material: leafMat,
+    material: meshes.length > 0 ? meshes[0].material : null,
     count: LEAF_COUNT,
     spreadRadius: SPREAD_RADIUS,
     basePositions,
@@ -2131,19 +2131,40 @@ export function startSeasonalCycle(initialProgress) {
     /* --- Fallen leaves lifecycle (issue #448) --- */
     const fallenLeaves = gs.fallenLeaves;
     if (fallenLeaves && fallenLeaves.meshes && fallenLeaves.meshes.length > 0) {
-      const leafMat = fallenLeaves.material;
       const seasonName = SEASON_NAMES[seasonIndex];
 
-      if (seasonName === 'Autumn') {
-        /* Autumn: leaves gradually appear, colour from transparent → warm brown/orange */
-        // t goes 0→1 through autumn
-        // opacity: 0 at start of autumn, 1 at end
-        const opacity = t;
-        leafMat.opacity = opacity;
+      /* Determine plant3 position for warm-tint proximity (issue #740) */
+      const plant3Pos = gs.plant3 && gs.plant3.group ? gs.plant3.group.position : null;
 
-        // Colour: lerp from a pale hint to full autumn orange
-        const startColour = new THREE.Color(0x4a3a2a); // faint brown (barely visible)
-        leafMat.color.copy(startColour).lerp(autumnLeafColour, t);
+      if (seasonName === 'Autumn') {
+        /* Autumn: leaves gradually appear, colour from transparent → warm brown/orange.
+         * Leaves near plant3 (<0.3 units) receive a warmer tint (0xdd8840). */
+        const warmTintColour = new THREE.Color(0xdd8840);
+
+        for (let i = 0; i < fallenLeaves.meshes.length; i++) {
+          const leaf = fallenLeaves.meshes[i];
+          const mat = leaf.material;
+
+          // t goes 0→1 through autumn
+          // opacity: 0 at start of autumn, 1 at end
+          const opacity = t;
+          mat.opacity = opacity;
+
+          // Determine target colour based on proximity to plant3
+          let targetColour = autumnLeafColour;
+          if (plant3Pos) {
+            const dx = leaf.position.x - plant3Pos.x;
+            const dz = leaf.position.z - plant3Pos.z;
+            const dist = Math.sqrt(dx * dx + dz * dz);
+            if (dist < 0.3) {
+              targetColour = warmTintColour;
+            }
+          }
+
+          // Colour: lerp from a pale hint to the target autumn colour
+          const startColour = new THREE.Color(0x4a3a2a); // faint brown (barely visible)
+          mat.color.copy(startColour).lerp(targetColour, t);
+        }
 
         /* Update DOM when leaves first appear */
         if (t > 0.1 && !fallenLeaves._domUpdated) {
@@ -2154,21 +2175,24 @@ export function startSeasonalCycle(initialProgress) {
           }
         }
       } else if (seasonName === 'Winter') {
-        /* Winter: leaves desaturate from autumn warm → desaturated brown,
+        /* Winter: leaves desaturate from autumn colours → desaturated brown,
          * and fade out during the latter part of winter (transition to spring) */
         // t goes 0→1 through winter
 
-        // Colour lerps across the whole winter
-        leafMat.color.copy(autumnLeafColour).lerp(winterLeafColour, t);
+        for (let i = 0; i < fallenLeaves.meshes.length; i++) {
+          const leaf = fallenLeaves.meshes[i];
+          const mat = leaf.material;
 
-        // Opacity: stays 1 for the first ~60% of winter, then fades to 0
-        // by the end of winter — so by spring the leaves are already invisible.
-        if (t < 0.6) {
-          leafMat.opacity = 1;
-        } else {
-          // Remap t from [0.6, 1] to [0, 1] for the fade-out
-          const fadeT = (t - 0.6) / 0.4;
-          leafMat.opacity = Math.max(0, 1 - fadeT);
+          // Colour lerps across the whole winter from each leaf's autumn colour
+          mat.color.copy(mat.color).lerp(winterLeafColour, t);
+
+          // Opacity: stays 1 for the first ~60% of winter, then fades to 0
+          if (t < 0.6) {
+            mat.opacity = 1;
+          } else {
+            const fadeT = (t - 0.6) / 0.4;
+            mat.opacity = Math.max(0, 1 - fadeT);
+          }
         }
 
         /* --- Soil patches (issue #622): create if absent, show during winter --- */
@@ -2200,10 +2224,13 @@ export function startSeasonalCycle(initialProgress) {
         }
       } else if (seasonName === 'Spring') {
         /* Spring: leaves should already be invisible (fade-out finished in late winter) */
-        leafMat.opacity = 0;
-
-        // Colour stays at winter desaturated brown
-        leafMat.color.copy(winterLeafColour);
+        for (let i = 0; i < fallenLeaves.meshes.length; i++) {
+          const leaf = fallenLeaves.meshes[i];
+          const mat = leaf.material;
+          mat.opacity = 0;
+          // Colour stays at winter desaturated brown
+          mat.color.copy(winterLeafColour);
+        }
 
         /* --- Soil patches (issue #622): fade out during first 30% of spring --- */
         if (fallenLeaves.patches && fallenLeaves.patchMaterial) {
@@ -2270,7 +2297,10 @@ export function startSeasonalCycle(initialProgress) {
         }
       } else {
         /* Summer: leaves fully transparent */
-        leafMat.opacity = 0;
+        for (let i = 0; i < fallenLeaves.meshes.length; i++) {
+          const leaf = fallenLeaves.meshes[i];
+          leaf.material.opacity = 0;
+        }
       }
     }
 
