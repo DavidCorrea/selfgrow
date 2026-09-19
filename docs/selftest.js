@@ -10937,6 +10937,36 @@ export async function checks() {
     }
   }
 
+  /* ---------- Plant3 pollinated pause acknowledgment phrase (issue #748) ---------- */
+  // When the butterfly pauses at plant3's pollinated bloom, the phrase pool
+  // should include one plant3-specific variant alongside the generic pool.
+  {
+    const gs748 = window.__gardenState;
+    if (!gs748) {
+      problems.push('window.__gardenState is not set — cannot verify plant3 pollinated pause phrase (issue #748).');
+    } else {
+      const creatureState748 = gs748.creature;
+      if (!creatureState748) {
+        problems.push('creature state not found via __gardenState.creature (issue #748).');
+      } else {
+        // Check the constant exists and is a non-empty string
+        if (typeof creatureState748.PLANT3_POLLINATED_PAUSE_PHRASE !== 'string' || creatureState748.PLANT3_POLLINATED_PAUSE_PHRASE.trim().length === 0) {
+          problems.push('creatureState.PLANT3_POLLINATED_PAUSE_PHRASE is missing or not a non-empty string (issue #748).');
+        } else {
+          // Check it matches the expected text exactly
+          const expectedPhrase = 'The butterfly hovers near the low plant\'s warm amber blossoms.';
+          if (creatureState748.PLANT3_POLLINATED_PAUSE_PHRASE !== expectedPhrase) {
+            problems.push('creatureState.PLANT3_POLLINATED_PAUSE_PHRASE is "' + creatureState748.PLANT3_POLLINATED_PAUSE_PHRASE + '", expected "' + expectedPhrase + '" (issue #748).');
+          }
+          // Check it doesn't contain exclamation marks
+          if (creatureState748.PLANT3_POLLINATED_PAUSE_PHRASE.indexOf('!') !== -1) {
+            problems.push('creatureState.PLANT3_POLLINATED_PAUSE_PHRASE contains an exclamation mark — expected calm phrasing (issue #748).');
+          }
+        }
+      }
+    }
+  }
+
   /* ---------- Butterfly stillness settling checks (issue #696) ---------- */
   // The butterfly should start with getSettleMul() at 1.0 (no settling).
   // When _stillnessDuration is artificially set high, getSettleMul() should
