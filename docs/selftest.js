@@ -11,7 +11,7 @@ import { createCreature, computeCentreCrossBlend, computeGreetingParams } from "
 import { computeDisplacement } from "./groundRipple.js";
 import { isReducedMotion, onMotionChange } from "./motion.js";
 import { SEASON_PALETTES, SEASON_NAMES, SEASON_DURATION_MS, CYCLE_DURATION_MS, getWeatheringAmount } from "./garden.js";
-import { TIME_OF_DAY_AUDIO, WEATHER_AUDIO_MODIFIERS, SEASON_AUDIO_MODIFIERS, DEFAULT_WEATHER_MODIFIER, DEFAULT_SEASON_MODIFIER } from "./ambientAudio.js";
+import { TIME_OF_DAY_AUDIO, WEATHER_AUDIO_MODIFIERS, SEASON_AUDIO_MODIFIERS, DEFAULT_WEATHER_MODIFIER, DEFAULT_SEASON_MODIFIER, getWarmthGain } from "./ambientAudio.js";
 
 /* ---------- getWeatheringAmount pure-function tests (issue #755) ---------- */
 // Verify the function returns the correct darkening factor for each milestone
@@ -45,6 +45,47 @@ import { TIME_OF_DAY_AUDIO, WEATHER_AUDIO_MODIFIERS, SEASON_AUDIO_MODIFIERS, DEF
   if (getWeatheringAmount(undefined) !== 0) throw new Error('undefined should return 0');
   if (getWeatheringAmount(null) !== 0) throw new Error('null should return 0');
   if (getWeatheringAmount('foo') !== 0) throw new Error('string should return 0');
+})();
+
+/* ---------- getWarmthGain pure-function tests (issue #763) ---------- */
+(function testGetWarmthGain() {
+  // visitCount < 2: returns 0
+  if (getWarmthGain(0) !== 0) throw new Error('visitCount=0 should return 0, got ' + getWarmthGain(0));
+  if (getWarmthGain(1) !== 0) throw new Error('visitCount=1 should return 0, got ' + getWarmthGain(1));
+  if (getWarmthGain(-1) !== 0) throw new Error('visitCount=-1 should return 0, got ' + getWarmthGain(-1));
+
+  // non-numeric inputs return 0
+  if (getWarmthGain(undefined) !== 0) throw new Error('undefined should return 0, got ' + getWarmthGain(undefined));
+  if (getWarmthGain(null) !== 0) throw new Error('null should return 0, got ' + getWarmthGain(null));
+  if (getWarmthGain('foo') !== 0) throw new Error('string should return 0, got ' + getWarmthGain('foo'));
+
+  // visitCount 2–4: 0.003
+  if (Math.abs(getWarmthGain(2) - 0.003) > 0.0001) throw new Error('visitCount=2 should return 0.003, got ' + getWarmthGain(2));
+  if (Math.abs(getWarmthGain(3) - 0.003) > 0.0001) throw new Error('visitCount=3 should return 0.003, got ' + getWarmthGain(3));
+  if (Math.abs(getWarmthGain(4) - 0.003) > 0.0001) throw new Error('visitCount=4 should return 0.003, got ' + getWarmthGain(4));
+
+  // visitCount 5–14: 0.007
+  if (Math.abs(getWarmthGain(5) - 0.007) > 0.0001) throw new Error('visitCount=5 should return 0.007, got ' + getWarmthGain(5));
+  if (Math.abs(getWarmthGain(6) - 0.007) > 0.0001) throw new Error('visitCount=6 should return 0.007, got ' + getWarmthGain(6));
+  if (Math.abs(getWarmthGain(10) - 0.007) > 0.0001) throw new Error('visitCount=10 should return 0.007, got ' + getWarmthGain(10));
+  if (Math.abs(getWarmthGain(14) - 0.007) > 0.0001) throw new Error('visitCount=14 should return 0.007, got ' + getWarmthGain(14));
+
+  // visitCount 15–24: 0.010
+  if (Math.abs(getWarmthGain(15) - 0.010) > 0.0001) throw new Error('visitCount=15 should return 0.010, got ' + getWarmthGain(15));
+  if (Math.abs(getWarmthGain(16) - 0.010) > 0.0001) throw new Error('visitCount=16 should return 0.010, got ' + getWarmthGain(16));
+  if (Math.abs(getWarmthGain(20) - 0.010) > 0.0001) throw new Error('visitCount=20 should return 0.010, got ' + getWarmthGain(20));
+  if (Math.abs(getWarmthGain(24) - 0.010) > 0.0001) throw new Error('visitCount=24 should return 0.010, got ' + getWarmthGain(24));
+
+  // visitCount >= 25: 0.015 (hard cap)
+  if (Math.abs(getWarmthGain(25) - 0.015) > 0.0001) throw new Error('visitCount=25 should return 0.015, got ' + getWarmthGain(25));
+  if (Math.abs(getWarmthGain(50) - 0.015) > 0.0001) throw new Error('visitCount=50 should return 0.015, got ' + getWarmthGain(50));
+  if (Math.abs(getWarmthGain(100) - 0.015) > 0.0001) throw new Error('visitCount=100 should return 0.015, got ' + getWarmthGain(100));
+
+  // Boundary: visitCount exactly at thresholds
+  if (Math.abs(getWarmthGain(2) - 0.003) > 0.0001) throw new Error('visitCount=2 (boundary) should return 0.003, got ' + getWarmthGain(2));
+  if (Math.abs(getWarmthGain(5) - 0.007) > 0.0001) throw new Error('visitCount=5 (boundary) should return 0.007, got ' + getWarmthGain(5));
+  if (Math.abs(getWarmthGain(15) - 0.010) > 0.0001) throw new Error('visitCount=15 (boundary) should return 0.010, got ' + getWarmthGain(15));
+  if (Math.abs(getWarmthGain(25) - 0.015) > 0.0001) throw new Error('visitCount=25 (boundary) should return 0.015, got ' + getWarmthGain(25));
 })();
 
 /* ---------- computeGreetingParams pure-function tests (issue #762) ---------- */
