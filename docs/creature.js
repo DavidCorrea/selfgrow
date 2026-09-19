@@ -136,6 +136,37 @@ const GLOW_TRAIL_PHRASES = [
   'Faint luminous dust clings to the butterfly\'s path, dissolving into the night air.'
 ];
 
+/* --- Greeting tier thresholds (issue #762) --- */
+const GREETING_TIER_1_THRESHOLD = 2;   // visitCount >= 2 triggers greeting
+const GREETING_TIER_2_THRESHOLD = 5;   // visitCount >= 5: closer start, longer
+const GREETING_TIER_3_THRESHOLD = 15;  // visitCount >= 15: closest, hover before move
+
+/**
+ * computeGreetingParams — return greeting tier parameters by visitCount.
+ *
+ * Returns null when visitCount < 2 (no greeting). Otherwise returns
+ * { duration, startRadiusMax, hoverDuration } with values that scale
+ * expressiveness by how familiar the butterfly is with the visitor.
+ *
+ * Pure function — no side effects, no access to global state.
+ *
+ * @param {number} visitCount — cumulative garden visits
+ * @returns {{ duration: number, startRadiusMax: number, hoverDuration: number }|null}
+ */
+export function computeGreetingParams(visitCount) {
+  if (typeof visitCount !== 'number' || visitCount < GREETING_TIER_1_THRESHOLD) {
+    return null;
+  }
+  if (visitCount >= GREETING_TIER_3_THRESHOLD) {
+    return { duration: 6.0, startRadiusMax: 0.1, hoverDuration: 1.5 };
+  }
+  if (visitCount >= GREETING_TIER_2_THRESHOLD) {
+    return { duration: 5.0, startRadiusMax: 0.15, hoverDuration: 0 };
+  }
+  // visitCount >= 2 and < 5
+  return { duration: 4.0, startRadiusMax: 0.3, hoverDuration: 0 };
+}
+
 /**
  * Compute a blend factor [0,1] for the return-visitor centre-crossing.
  *
@@ -199,6 +230,8 @@ export function createCreature(scene) {
   let _greetingActive = false;
   let _greetingStartPos = null;   // { x, y, z } near-origin start position
   let _greetingStartTime = 0;     // time value when greeting started
+  let _greetingDuration = 0;      // total greeting duration in seconds
+  let _greetingHoverDuration = 0; // hover period before outward movement (seconds)
   let _sessionGreeted = false;    // prevents re-triggering in same session
 
   /* --- Build the butterfly group --- */
@@ -1324,31 +1357,46 @@ export function createCreature(scene) {
       finalY += sway;
     }
 
-    /* --- Return-visitor greeting flutter (issue #752): on page load with
+    /* --- Return-visitor greeting flutter (issue #752/#762): on page load with
      * visitCount >= 2, butterfly starts near garden centre and drifts
-     * outward into its normal orbit over ~4 seconds via smoothstep ease.
+     * outward into its normal orbit via smoothstep ease. Expressiveness
+     * tiers with cumulative visitCount (#762):
+     *   visitCount 2-4:   4.0s duration, 0.3 max radius, no hover
+     *   visitCount 5-14:  5.0s duration, 0.15 max radius, no hover
+     *   visitCount >= 15: 6.0s duration, 0.1 max radius, 1.5s hover before move
      * One-shot per session. Under prefers-reduced-motion, the early-return
      * above prevents this code from running entirely. --- */
     if (!_sessionGreeted && time > 0) {
       _sessionGreeted = true;
       if (window.__gardenState && typeof window.__gardenState.visitCount === 'number' && window.__gardenState.visitCount >= 2) {
-        const angle = Math.random() * Math.PI * 2;
-        const r = Math.random() * 0.3;
-        _greetingActive = true;
-        _greetingStartPos = {
-          x: Math.cos(angle) * r,
-          y: 0.5 + Math.random() * 0.3,
-          z: Math.sin(angle) * r
-        };
-        _greetingStartTime = time;
+        const params = computeGreetingParams(window.__gardenState.visitCount);
+        if (params) {
+          const angle = Math.random() * Math.PI * 2;
+          const r = Math.random() * params.startRadiusMax;
+          _greetingActive = true;
+          _greetingStartPos = {
+            x: Math.cos(angle) * r,
+            y: 0.5 + Math.random() * 0.3,
+            z: Math.sin(angle) * r
+          };
+          _greetingStartTime = time;
+          _greetingDuration = params.duration;
+          _greetingHoverDuration = params.hoverDuration;
+        }
       }
     }
     if (_greetingActive) {
       const elapsed = time - _greetingStartTime;
-      const duration = 4.0;
-      if (elapsed < duration) {
-        const t = elapsed / duration;
-        const eased = t * t * (3 - 2 * t); // smoothstep
+      const effectiveDuration = _greetingDuration;
+      if (elapsed < _greetingHoverDuration) {
+        // Hover phase: stay at start position
+        finalX = _greetingStartPos.x;
+        finalY = _greetingStartPos.y;
+        finalZ = _greetingStartPos.z;
+      } else if (elapsed < effectiveDuration) {
+        // Outward phase: smoothstep from start to orbit
+        const moveT = (elapsed - _greetingHoverDuration) / (effectiveDuration - _greetingHoverDuration);
+        const eased = moveT * moveT * (3 - 2 * moveT); // smoothstep
         finalX = _greetingStartPos.x + (finalX - _greetingStartPos.x) * eased;
         finalY = _greetingStartPos.y + (finalY - _greetingStartPos.y) * eased;
         finalZ = _greetingStartPos.z + (finalZ - _greetingStartPos.z) * eased;
