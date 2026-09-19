@@ -11572,5 +11572,64 @@ export async function checks() {
     }
   }
 
+  /* ---------- Warmer-hued sprouts from plant3 seeds (issue #741) ---------- */
+  // Seeds with parentLabel 'plant3' should germinate into sprouts with a
+  // subtly warmer green tint (stem ~0x6a8a3a, leaf ~0x6a8a2a) compared to
+  // the standard green (0x3a7a2a) used for plant1/plant2 seeds.
+  {
+    const gs = window.__gardenState;
+    if (!gs || typeof gs.createGerminatedSprout !== 'function') {
+      problems.push('window.__gardenState.createGerminatedSprout is not exposed — cannot verify sprout colours (issue #741).');
+    } else {
+      // Create a standard sprout (no parentLabel or 'plant' parentLabel)
+      const standardBase = { x: 0, y: 0, z: 0 };
+      const standardSprout = gs.createGerminatedSprout(standardBase);
+      const standardStemHex = standardSprout.stem.material.color.getHex();
+      const standardLeafHex = standardSprout.leaves[0].material.color.getHex();
+      if (standardStemHex !== 0x3a7a2a) {
+        problems.push('Standard sprout stem colour is 0x' + standardStemHex.toString(16) + ', expected 0x3a7a2a (issue #741).');
+      }
+      if (standardLeafHex !== 0x3a7a2a) {
+        problems.push('Standard sprout leaf colour is 0x' + standardLeafHex.toString(16) + ', expected 0x3a7a2a (issue #741).');
+      }
+
+      // Create a warm sprout (parentLabel 'plant3')
+      const warmBase = { x: 1, y: 0, z: 1 };
+      const warmSprout = gs.createGerminatedSprout(warmBase, 'plant3');
+      const warmStemHex = warmSprout.stem.material.color.getHex();
+      const warmLeafHex = warmSprout.leaves[0].material.color.getHex();
+      if (warmStemHex !== 0x6a8a3a) {
+        problems.push('plant3 sprout stem colour is 0x' + warmStemHex.toString(16) + ', expected 0x6a8a3a (warmer green, issue #741).');
+      }
+      if (warmLeafHex !== 0x6a8a2a) {
+        problems.push('plant3 sprout leaf colour is 0x' + warmLeafHex.toString(16) + ', expected 0x6a8a2a (warmer green, issue #741).');
+      }
+
+      // Verify plant1/plant2 seeds also produce standard colours (explicit parentLabel)
+      const p1Base = { x: -1, y: 0, z: 0 };
+      const p1Sprout = gs.createGerminatedSprout(p1Base, 'plant');
+      const p1StemHex = p1Sprout.stem.material.color.getHex();
+      if (p1StemHex !== 0x3a7a2a) {
+        problems.push('plant seed sprout stem colour is 0x' + p1StemHex.toString(16) + ', expected 0x3a7a2a (issue #741).');
+      }
+
+      const p2Base = { x: 0, y: 0, z: -1 };
+      const p2Sprout = gs.createGerminatedSprout(p2Base, 'plant2');
+      const p2StemHex = p2Sprout.stem.material.color.getHex();
+      if (p2StemHex !== 0x3a7a2a) {
+        problems.push('plant2 seed sprout stem colour is 0x' + p2StemHex.toString(16) + ', expected 0x3a7a2a (issue #741).');
+      }
+
+      // Verify that the colours are subtly different, not a dramatic contrast
+      const diff = Math.abs(warmStemHex - standardStemHex);
+      if (diff < 0x100) {
+        problems.push('Warm sprout stem colour (0x' + warmStemHex.toString(16) + ') is too close to standard (0x' + standardStemHex.toString(16) + ') — the difference should be perceptible but subtle (issue #741).');
+      }
+      if (diff > 0x500000) {
+        problems.push('Warm sprout stem colour (0x' + warmStemHex.toString(16) + ') is too far from standard (0x' + standardStemHex.toString(16) + ') — the difference should be subtle, not dramatic (issue #741).');
+      }
+    }
+  }
+
   return problems;
 }
