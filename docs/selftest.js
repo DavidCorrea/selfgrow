@@ -11512,5 +11512,24 @@ export async function checks() {
     }
   }
 
+  /* ---------- Seed description parentLabel for third plant (issue #739) ---------- */
+  // When groundSeeds.parentLabel is 'plant3', the description text must
+  // read 'near the low plant' rather than falling through to 'central'.
+  if (gardenState && gardenState.groundSeeds) {
+    const gs = gardenState.groundSeeds;
+    if (gs.parentLabel === 'plant3' && gs.meshes && gs.meshes.length > 0) {
+      const growingDesc = document.getElementById('growing-description');
+      const plotDesc = document.getElementById('plot-description');
+      if (growingDesc && growingDesc.textContent.indexOf('low plant') === -1 &&
+          growingDesc.textContent.indexOf('Tiny seeds rest') !== -1) {
+        problems.push('groundSeeds with parentLabel "plant3" should produce description containing "low plant" — growing-description had: "' + growingDesc.textContent + '" (issue #739).');
+      }
+      if (plotDesc && plotDesc.textContent.indexOf('low plant') === -1 &&
+          plotDesc.textContent.indexOf('Tiny seeds rest') !== -1) {
+        problems.push('groundSeeds with parentLabel "plant3" should produce description containing "low plant" — plot-description had: "' + plotDesc.textContent + '" (issue #739).');
+      }
+    }
+  }
+
   return problems;
 }
