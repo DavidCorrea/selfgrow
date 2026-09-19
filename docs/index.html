@@ -1773,6 +1773,59 @@
     createGroundDetails(scene);
 
     startSeasonalCycle(initial ? initial.seasonProgress : undefined);
+
+    /* --- Returning-visitor ground warmth pulse on page load (issue #754) ---
+     * When visitCount >= 2, the ground centre briefly pulses a subtle warm tone:
+     *   - Ramp 0→1 over 0.5s (lerping ~8% toward 0x6a5a3a)
+     *   - Hold at 1 for 1s
+     *   - Decay 1→0 over 1.5s
+     * Under prefers-reduced-motion, a static ~3% warmth is applied for the session.
+     * The _groundWarmPulse value is read by garden.js's startSeasonalCycle tick
+     * and composed additively with the seasonal colour. */
+    if (window.__gardenState.visitCount >= 2) {
+      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      if (reducedMotion) {
+        // Static ~3% warmth (0.375 * 0.08 = 0.03 = 3%) — persists for the session
+        window.__gardenState._groundWarmPulse = 0.375;
+      } else {
+        // Animated pulse: ramp 0→1 over 0.5s, hold 1s, decay 1→0 over 1.5s
+        const pulseStartTime = performance.now();
+        const RAMP_DURATION = 500;
+        const HOLD_DURATION = 1000;
+        const DECAY_DURATION = 1500;
+        const TOTAL_DURATION = RAMP_DURATION + HOLD_DURATION + DECAY_DURATION;
+
+        function pulseTick() {
+          const elapsed = performance.now() - pulseStartTime;
+          let value = 0;
+
+          if (elapsed < RAMP_DURATION) {
+            // Ramp 0→1 over 0.5s with ease-out
+            const t = elapsed / RAMP_DURATION;
+            value = 1 - Math.pow(1 - t, 3);
+          } else if (elapsed < RAMP_DURATION + HOLD_DURATION) {
+            // Hold at 1 for 1s
+            value = 1;
+          } else if (elapsed < TOTAL_DURATION) {
+            // Decay 1→0 over 1.5s with ease-out cubic
+            const t = (elapsed - RAMP_DURATION - HOLD_DURATION) / DECAY_DURATION;
+            value = Math.pow(1 - t, 3);
+          }
+
+          window.__gardenState._groundWarmPulse = Math.max(0, Math.min(1, value));
+
+          if (elapsed < TOTAL_DURATION) {
+            requestAnimationFrame(pulseTick);
+          } else {
+            window.__gardenState._groundWarmPulse = 0;
+          }
+        }
+
+        requestAnimationFrame(pulseTick);
+      }
+    }
+
     startDayNightCycle(sunLight, scene, ambientLight, hemiLight, fillLight, initial ? initial.dayNightProgress : undefined);
     startWeatherCycle(sunLight, scene, ambientLight, hemiLight, fillLight, particles, initial ? initial.weatherProgress : undefined);
 
