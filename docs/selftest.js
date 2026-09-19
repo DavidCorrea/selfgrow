@@ -11678,5 +11678,100 @@ export async function checks() {
     }
   }
 
+  /* ---------- Dawn mist checks (issue #747) ---------- */
+  const dawnMist = window.__gardenState && window.__gardenState.dawnMist;
+  if (!dawnMist) {
+    problems.push('window.__gardenState.dawnMist is missing — the dawn mist module was not created (issue #747).');
+  } else {
+    if (dawnMist.type !== 'dawn-mist') {
+      problems.push('dawnMist.type is "' + dawnMist.type + '", expected "dawn-mist" (issue #747).');
+    }
+
+    if (!dawnMist.group) {
+      problems.push('dawnMist.group is missing — the mist group was not created (issue #747).');
+    } else if (window.__gardenState && window.__gardenState.scene) {
+      // Verify the group is a child of the scene
+      var found = false;
+      window.__gardenState.scene.traverse(function(child) {
+        if (child === dawnMist.group) found = true;
+      });
+      if (!found) {
+        problems.push('dawnMist.group is not a child of the scene — the mist group was not added to the garden (issue #747).');
+      }
+    }
+
+    // Verify particle count matches configured number
+    if (!dawnMist.particles || !Array.isArray(dawnMist.particles)) {
+      problems.push('dawnMist.particles is missing or not an array — no mist particles were created (issue #747).');
+    } else if (dawnMist.particleCount && dawnMist.particles.length !== dawnMist.particleCount) {
+      problems.push('dawnMist.particles.length (' + dawnMist.particles.length + ') does not match particleCount (' + dawnMist.particleCount + ') (issue #747).');
+    }
+
+    // Verify each particle has a sprite and data
+    if (dawnMist.particles && Array.isArray(dawnMist.particles)) {
+      for (var pi = 0; pi < dawnMist.particles.length; pi++) {
+        var p = dawnMist.particles[pi];
+        if (!p.sprite || !p.sprite.isSprite) {
+          problems.push('dawnMist.particles[' + pi + '] has no valid THREE.Sprite (issue #747).');
+          break;
+        }
+        if (!p.data) {
+          problems.push('dawnMist.particles[' + pi + '] has no data object for drift animation (issue #747).');
+          break;
+        }
+      }
+    }
+
+    // Verify getTargetOpacity returns correct values at key points
+    if (typeof dawnMist.getTargetOpacity !== 'function') {
+      problems.push('dawnMist.getTargetOpacity is not a function — opacity computation missing (issue #747).');
+    } else {
+      // At t=0 (early Morning, within hold window), opacity should be peak
+      var opacityAtDawn = dawnMist.getTargetOpacity(0);
+      if (opacityAtDawn <= 0) {
+        problems.push('dawnMist.getTargetOpacity(0) returned ' + opacityAtDawn + ', expected ' + dawnMist.peakOpacity + ' (positive) at dawn (t=0) (issue #747).');
+      }
+
+      // At t=0.5 (Midday/Evening, outside dawn window), opacity should be 0
+      var opacityAtMidday = dawnMist.getTargetOpacity(0.5);
+      if (opacityAtMidday !== 0) {
+        problems.push('dawnMist.getTargetOpacity(0.5) returned ' + opacityAtMidday + ', expected 0 outside the dawn window (issue #747).');
+      }
+
+      // At t=0.99 (end of Night, within fade-in window), opacity should be > 0 but < peak
+      var opacityAtDusk = dawnMist.getTargetOpacity(0.99);
+      if (opacityAtDusk <= 0 || opacityAtDusk > dawnMist.peakOpacity) {
+        problems.push('dawnMist.getTargetOpacity(0.99) returned ' + opacityAtDusk + ', expected between 0 and ' + dawnMist.peakOpacity + ' during fade-in (issue #747).');
+      }
+
+      // At t=0.1 (late Morning, within fade-out window), opacity should be > 0 but < peak
+      var opacityAtLateMorning = dawnMist.getTargetOpacity(0.1);
+      if (opacityAtLateMorning <= 0 || opacityAtLateMorning > dawnMist.peakOpacity) {
+        problems.push('dawnMist.getTargetOpacity(0.1) returned ' + opacityAtLateMorning + ', expected between 0 and ' + dawnMist.peakOpacity + ' during fade-out (issue #747).');
+      }
+
+      // Under reduced motion, opacity should always be 0
+      var originalReducedMotion = dawnMist.reducedMotion;
+      // Temporarily set reduced motion to true to test
+      dawnMist.reducedMotion = true;
+      var reducedOpacity = dawnMist.getTargetOpacity(0);
+      dawnMist.reducedMotion = originalReducedMotion;
+      if (reducedOpacity !== 0) {
+        problems.push('dawnMist.getTargetOpacity(0) returned ' + reducedOpacity + ' when reducedMotion=true, expected 0 (issue #747).');
+      }
+    }
+
+    // Verify config constants are exposed correctly
+    if (dawnMist.peakOpacity !== 0.08) {
+      problems.push('dawnMist.peakOpacity is ' + dawnMist.peakOpacity + ', expected 0.08 (issue #747).');
+    }
+    if (dawnMist.mistColor !== 0xd0c4b0) {
+      problems.push('dawnMist.mistColor is 0x' + (dawnMist.mistColor ? dawnMist.mistColor.toString(16) : 'undefined') + ', expected 0xd0c4b0 (issue #747).');
+    }
+    if (dawnMist.maxHeight !== 0.15) {
+      problems.push('dawnMist.maxHeight is ' + dawnMist.maxHeight + ', expected 0.15 (issue #747).');
+    }
+  }
+
   return problems;
 }

@@ -223,6 +223,7 @@
     import { createCreature } from "./creature.js";
     import { createAmbientAudio } from "./ambientAudio.js";
     import { createFireflies } from "./fireflies.js";
+    import { createDawnMist } from "./dawnMist.js";
 
     const wrapper = document.getElementById('garden-canvas-wrapper');
     const scene = new THREE.Scene();
@@ -518,6 +519,9 @@
     /* --- Firefly glow dots near plants during Night phase --- */
     const fireflies = createFireflies(scene);
 
+    /* --- Dawn mist: subtle ground-level mist during early Morning (issue #747) --- */
+    const dawnMist = createDawnMist(scene);
+
     /* Animation loop */
     let animTime = 0;
     let lastFrameTime = performance.now();
@@ -558,6 +562,9 @@
 
       /* Update firefly glow dots */
       fireflies.update(animTime, dt);
+
+      /* Update dawn mist (issue #747) */
+      dawnMist.update(animTime);
 
       /* Update distant horizon silhouette to blend with current sky colour */
       if (scene.background instanceof THREE.Color) {
@@ -1505,6 +1512,7 @@
       creatureNotifyCameraMoved: creature.notifyCameraMoved,
       fireflies: fireflies.state,
       firefliesUpdate: fireflies.update,
+      dawnMist: dawnMist.state,
       /* Base seasonal ground colour (before winter legacy or rain darkening).
        * Set by startSeasonalCycle each tick, read by weather.js for rain darkening (issue #528). */
       baseGroundColor: new THREE.Color(0x4a3728),
