@@ -43,6 +43,30 @@ const CYCLE_DURATION_MS = SEASON_DURATION_MS * 4; // ~12 minute full cycle
 
 export { SEASON_PALETTES, SEASON_NAMES, SEASON_DURATION_MS, CYCLE_DURATION_MS };
 
+/* --- Cumulative-visit plant stem weathering tint (issue #755) ---
+ * After many return visits, the main plant stems receive a slight permanent
+ * darker tint shifting toward a deeper brown (0x3a2a1a).
+ *   visitCount < 5:  no tint (0%)
+ *   visitCount >= 5:  3% darkening
+ *   visitCount >= 10: 5% darkening
+ *   visitCount >= 25: 7% darkening
+ *   visitCount >= 50: 10% darkening (capped)
+ */
+const WEATHERING_COLOR = new THREE.Color(0x3a2a1a);
+
+/**
+ * Returns the weathering darkening factor for plant stems based on visit count.
+ * @param {number} visitCount - Cumulative visit count
+ * @returns {number} Darkening factor [0, 0.10], capped at 0.10 (10%)
+ */
+export function getWeatheringAmount(visitCount) {
+  if (typeof visitCount !== 'number' || visitCount < 5) return 0;
+  if (visitCount >= 50) return 0.10;
+  if (visitCount >= 25) return 0.07;
+  if (visitCount >= 10) return 0.05;
+  return 0.03;
+}
+
 export function initGarden(scene, initialProgress) {
   console.log('selfgrow garden initialised. The soil awaits…');
 
@@ -2124,9 +2148,19 @@ export function startSeasonalCycle(initialProgress) {
     const plant = gs.plant;
     const groundMat = gs.groundMat;
 
+    /* --- Cumulative-visit weathering tint (issue #755) ---
+     * After the seasonal palette lerp, darken stem materials toward
+     * WEATHERING_COLOR based on visitCount. Applied statically each tick
+     * (so it composes with the seasonal lerp), affecting only stems, not leaves.
+     */
+    const weatheringAmount = getWeatheringAmount(gs.visitCount);
+
     if (plant) {
       if (plant.stemMat) {
         plant.stemMat.color.copy(current.stem).lerp(next.stem, t);
+        if (weatheringAmount > 0) {
+          plant.stemMat.color.lerp(WEATHERING_COLOR, weatheringAmount);
+        }
       }
       if (plant.leafMat) {
         plant.leafMat.color.copy(current.leaf).lerp(next.leaf, t);
@@ -2138,6 +2172,9 @@ export function startSeasonalCycle(initialProgress) {
     if (plant2) {
       if (plant2.stemMat) {
         plant2.stemMat.color.copy(current.stem).lerp(next.stem, t);
+        if (weatheringAmount > 0) {
+          plant2.stemMat.color.lerp(WEATHERING_COLOR, weatheringAmount);
+        }
       }
       if (plant2.leafMat) {
         plant2.leafMat.color.copy(current.leaf).lerp(next.leaf, t);
@@ -2148,6 +2185,9 @@ export function startSeasonalCycle(initialProgress) {
     if (plant3) {
       if (plant3.stemMat) {
         plant3.stemMat.color.copy(current.stem).lerp(next.stem, t);
+        if (weatheringAmount > 0) {
+          plant3.stemMat.color.lerp(WEATHERING_COLOR, weatheringAmount);
+        }
       }
       if (plant3.leafMat) {
         plant3.leafMat.color.copy(current.leaf).lerp(next.leaf, t);

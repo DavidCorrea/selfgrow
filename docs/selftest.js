@@ -10,8 +10,42 @@ import { saveGardenState, loadGardenState, fastForwardState, clearGardenState, a
 import { createCreature } from "./creature.js";
 import { computeDisplacement } from "./groundRipple.js";
 import { isReducedMotion, onMotionChange } from "./motion.js";
-import { SEASON_PALETTES, SEASON_NAMES, SEASON_DURATION_MS, CYCLE_DURATION_MS } from "./garden.js";
+import { SEASON_PALETTES, SEASON_NAMES, SEASON_DURATION_MS, CYCLE_DURATION_MS, getWeatheringAmount } from "./garden.js";
 import { TIME_OF_DAY_AUDIO, WEATHER_AUDIO_MODIFIERS, SEASON_AUDIO_MODIFIERS, DEFAULT_WEATHER_MODIFIER, DEFAULT_SEASON_MODIFIER } from "./ambientAudio.js";
+
+/* ---------- getWeatheringAmount pure-function tests (issue #755) ---------- */
+// Verify the function returns the correct darkening factor for each milestone
+// and edge cases, independently of the live scene.
+(function testGetWeatheringAmount() {
+  // visitCount < 5: 0% (no weathering)
+  if (getWeatheringAmount(0) !== 0) throw new Error('visitCount=0 should return 0, got ' + getWeatheringAmount(0));
+  if (getWeatheringAmount(1) !== 0) throw new Error('visitCount=1 should return 0, got ' + getWeatheringAmount(1));
+  if (getWeatheringAmount(4) !== 0) throw new Error('visitCount=4 should return 0, got ' + getWeatheringAmount(4));
+
+  // visitCount >= 5: 3%
+  if (getWeatheringAmount(5) !== 0.03) throw new Error('visitCount=5 should return 0.03, got ' + getWeatheringAmount(5));
+  if (getWeatheringAmount(6) !== 0.03) throw new Error('visitCount=6 should return 0.03, got ' + getWeatheringAmount(6));
+  if (getWeatheringAmount(9) !== 0.03) throw new Error('visitCount=9 should return 0.03, got ' + getWeatheringAmount(9));
+
+  // visitCount >= 10: 5%
+  if (getWeatheringAmount(10) !== 0.05) throw new Error('visitCount=10 should return 0.05, got ' + getWeatheringAmount(10));
+  if (getWeatheringAmount(15) !== 0.05) throw new Error('visitCount=15 should return 0.05, got ' + getWeatheringAmount(15));
+  if (getWeatheringAmount(24) !== 0.05) throw new Error('visitCount=24 should return 0.05, got ' + getWeatheringAmount(24));
+
+  // visitCount >= 25: 7%
+  if (getWeatheringAmount(25) !== 0.07) throw new Error('visitCount=25 should return 0.07, got ' + getWeatheringAmount(25));
+  if (getWeatheringAmount(35) !== 0.07) throw new Error('visitCount=35 should return 0.07, got ' + getWeatheringAmount(35));
+  if (getWeatheringAmount(49) !== 0.07) throw new Error('visitCount=49 should return 0.07, got ' + getWeatheringAmount(49));
+
+  // visitCount >= 50: 10% (capped)
+  if (getWeatheringAmount(50) !== 0.10) throw new Error('visitCount=50 should return 0.10, got ' + getWeatheringAmount(50));
+  if (getWeatheringAmount(100) !== 0.10) throw new Error('visitCount=100 should return 0.10, got ' + getWeatheringAmount(100));
+
+  // non-numeric inputs return 0
+  if (getWeatheringAmount(undefined) !== 0) throw new Error('undefined should return 0');
+  if (getWeatheringAmount(null) !== 0) throw new Error('null should return 0');
+  if (getWeatheringAmount('foo') !== 0) throw new Error('string should return 0');
+})();
 
 export async function checks() {
   const problems = [];
@@ -1375,10 +1409,15 @@ export async function checks() {
         problems.push('Ground colour ' + groundMat.color.getHexString() + ' does not match expected seasonal colour ' + expectedGround.getHexString() + ' (distance ' + groundDist.toFixed(4) + ') — the base lerp or winter legacy blend may be wrong.');
       }
 
+      // Factor in cumulative-visit weathering tint (issue #755)
       const expectedStem = new THREE.Color(current.stem).lerp(new THREE.Color(next.stem), t);
+      const weatheringAmt = getWeatheringAmount(gardenState.visitCount);
+      if (weatheringAmt > 0) {
+        expectedStem.lerp(new THREE.Color(0x3a2a1a), weatheringAmt);
+      }
       const stemDist = colorDist(plant.stemMat.color, expectedStem);
       if (stemDist > 0.02) {
-        problems.push('Stem colour ' + plant.stemMat.color.getHexString() + ' does not match expected seasonal colour ' + expectedStem.getHexString() + ' (distance ' + stemDist.toFixed(4) + ') — stem should follow the plain palette lerp, unaffected by the winter legacy blend.');
+        problems.push('Stem colour ' + plant.stemMat.color.getHexString() + ' does not match expected seasonal colour + weathering ' + expectedStem.getHexString() + ' (distance ' + stemDist.toFixed(4) + ') — stem should follow the palette lerp plus cumulative weathering tint (issue #755).');
       }
 
       const expectedLeaf = new THREE.Color(current.leaf).lerp(new THREE.Color(next.leaf), t);
@@ -1467,15 +1506,21 @@ export async function checks() {
             expectedLeaf.lerp(new THREE.Color(0x3a7c1a), actualBlend);
           }
 
+          // Factor in cumulative-visit weathering tint (issue #755)
+          const stemWeatherAmt = getWeatheringAmount(springGs.visitCount);
+          if (stemWeatherAmt > 0) {
+            expectedStem.lerp(new THREE.Color(0x3a2a1a), stemWeatherAmt);
+          }
+
           const stemDist2 = colorDist(plant1.stemMat.color, expectedStem);
           const leafDist2 = colorDist(plant1.leafMat.color, expectedLeaf);
 
           if (stemDist2 > 0.02) {
             problems.push('plant stem colour ' + plant1.stemMat.color.getHexString() +
-              ' does not match expected enriched colour ' + expectedStem.getHexString() +
+              ' does not match expected enriched+weathered colour ' + expectedStem.getHexString() +
               ' (distance ' + stemDist2.toFixed(4) + ') at seasonIndex=' + seasonIndex +
               ' seasonProgress=' + seasonProgress.toFixed(3) +
-              ' enrichBlend=' + actualBlend.toFixed(5) + ' (issue #622).');
+              ' enrichBlend=' + actualBlend.toFixed(5) + ' weatheringAmt=' + stemWeatherAmt.toFixed(2) + ' (issue #622, #755).');
           }
 
           if (leafDist2 > 0.02) {
@@ -1562,20 +1607,28 @@ export async function checks() {
         const next = SEASON_PALETTES[SEASON_NAMES[(seasonIndex + 1) % 4].toLowerCase()];
         const t = seasonProgress;
 
+        // Factor in cumulative-visit weathering tint (issue #755)
         const baseStem = new THREE.Color(current.stem).lerp(new THREE.Color(next.stem), t);
         const baseLeaf = new THREE.Color(current.leaf).lerp(new THREE.Color(next.leaf), t);
+        const stemWeatherAmt = getWeatheringAmount(springGs.visitCount);
+        if (stemWeatherAmt > 0) {
+          baseStem.lerp(new THREE.Color(0x3a2a1a), stemWeatherAmt);
+        }
 
         const stemDist3 = colorDist(plant2.stemMat.color, baseStem);
         const leafDist3 = colorDist(plant2.leafMat.color, baseLeaf);
 
         if (stemDist3 > 0.02) {
           problems.push('plant2 stem colour ' + plant2.stemMat.color.getHexString() +
-            ' shows enrichment (distance ' + stemDist3.toFixed(4) + ' from base seasonal colour) — ' +
-            'only the nearest plant (plant1) should be enriched (issue #622).');
+            ' does not match base seasonal colour + weathering ' + baseStem.getHexString() +
+            ' (distance ' + stemDist3.toFixed(4) + ') at seasonIndex=' + seasonIndex +
+            ' seasonProgress=' + seasonProgress.toFixed(3) +
+            ' weatheringAmt=' + stemWeatherAmt.toFixed(2) + ' (issue #622, #755).');
         }
         if (leafDist3 > 0.02) {
           problems.push('plant2 leaf colour ' + plant2.leafMat.color.getHexString() +
-            ' shows enrichment (distance ' + leafDist3.toFixed(4) + ' from base seasonal colour) — ' +
+            ' does not match base seasonal colour ' + baseLeaf.getHexString() +
+            ' (distance ' + leafDist3.toFixed(4) + ') — ' +
             'only the nearest plant (plant1) should be enriched (issue #622).');
         }
       }
