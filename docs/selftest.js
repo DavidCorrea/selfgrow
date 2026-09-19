@@ -4224,6 +4224,39 @@ export async function checks() {
     }
   }
 
+  /* ---------- Return-visitor butterfly greeting flutter checks (issue #752) ---------- */
+  // On page load with visitCount >= 2, the butterfly group should begin
+  // within 0.3 units of origin and reach its normal orbit within 4 seconds.
+  // One-shot per session. Under prefers-reduced-motion, no greeting animation.
+  if (!creatureState) {
+    problems.push('window.__gardenState.creature is not set — cannot verify greeting flutter checks (issue #752).');
+  } else {
+    if (typeof creatureState.getGreetingActive !== 'function') {
+      problems.push('creature.state.getGreetingActive is not a function — greeting state getter missing (issue #752).');
+    } else {
+      // Verify getGreetingActive returns a boolean
+      var ga = creatureState.getGreetingActive();
+      if (typeof ga !== 'boolean') {
+        problems.push('creature.state.getGreetingActive() returned ' + typeof ga + ', expected boolean (issue #752).');
+      }
+
+      // When reduced motion is active, greeting must never be active
+      if (creatureState.reducedMotion && ga === true) {
+        problems.push('creature.state.getGreetingActive() returned true but reducedMotion is true — greeting must not activate under prefers-reduced-motion (issue #752).');
+      }
+
+      // If greeting is active, verify the butterfly is near origin (within 0.3 units)
+      if (ga && creatureState.group) {
+        var gx = creatureState.group.position.x;
+        var gz = creatureState.group.position.z;
+        var dist = Math.sqrt(gx * gx + gz * gz);
+        if (dist > 0.3) {
+          problems.push('Butterfly greeting is active but position is ' + dist.toFixed(3) + ' units from origin — expected within 0.3 units (issue #752).');
+        }
+      }
+    }
+  }
+
   /* ---------- Butterfly lingers longer at pollinated flowers checks (issue #679) ---------- */
   // When the butterfly pauses at a blooming flower whose isPollinated() returns true,
   // the pause hold duration is extended from 3-5s to 5-8s (multiplied by ~1.6x).

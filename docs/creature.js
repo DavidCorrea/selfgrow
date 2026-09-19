@@ -143,6 +143,12 @@ export function createCreature(scene) {
   /* Track last update time for dt calculation (frame-rate-independent lerp) */
   let _prevUpdateTime = -1;
 
+  /* Return-visitor greeting flutter state (issue #752) */
+  let _greetingActive = false;
+  let _greetingStartPos = null;   // { x, y, z } near-origin start position
+  let _greetingStartTime = 0;     // time value when greeting started
+  let _sessionGreeted = false;    // prevents re-triggering in same session
+
   /* --- Build the butterfly group --- */
   const group = new THREE.Group();
   group.name = 'creature';
@@ -418,6 +424,8 @@ export function createCreature(scene) {
     },
     getGlowTrailMaxParticles: () => GLOW_TRAIL_MAX_PARTICLES,
     getIsReducedMotion: () => state.reducedMotion,
+    /* Return-visitor greeting accessor for selftest (issue #752) */
+    getGreetingActive: () => _greetingActive,
     ORBIT_HEIGHT_MIN,
     ORBIT_HEIGHT_MAX,
     OVERCAST_HEIGHT_MIN,
@@ -1253,6 +1261,40 @@ export function createCreature(scene) {
       const sway = Math.sin(time * 1.5) * LANDING_SWAY_AMPLITUDE;
       finalY += sway;
     }
+
+    /* --- Return-visitor greeting flutter (issue #752): on page load with
+     * visitCount >= 2, butterfly starts near garden centre and drifts
+     * outward into its normal orbit over ~4 seconds via smoothstep ease.
+     * One-shot per session. Under prefers-reduced-motion, the early-return
+     * above prevents this code from running entirely. --- */
+    if (!_sessionGreeted && time > 0) {
+      _sessionGreeted = true;
+      if (window.__gardenState && typeof window.__gardenState.visitCount === 'number' && window.__gardenState.visitCount >= 2) {
+        const angle = Math.random() * Math.PI * 2;
+        const r = Math.random() * 0.3;
+        _greetingActive = true;
+        _greetingStartPos = {
+          x: Math.cos(angle) * r,
+          y: 0.5 + Math.random() * 0.3,
+          z: Math.sin(angle) * r
+        };
+        _greetingStartTime = time;
+      }
+    }
+    if (_greetingActive) {
+      const elapsed = time - _greetingStartTime;
+      const duration = 4.0;
+      if (elapsed < duration) {
+        const t = elapsed / duration;
+        const eased = t * t * (3 - 2 * t); // smoothstep
+        finalX = _greetingStartPos.x + (finalX - _greetingStartPos.x) * eased;
+        finalY = _greetingStartPos.y + (finalY - _greetingStartPos.y) * eased;
+        finalZ = _greetingStartPos.z + (finalZ - _greetingStartPos.z) * eased;
+      } else {
+        _greetingActive = false;
+      }
+    }
+
     group.position.set(finalX, finalY + windNudge, finalZ);
 
     /* --- Orient the butterfly along its flight direction --- */
