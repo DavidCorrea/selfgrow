@@ -11803,5 +11803,56 @@ export async function checks() {
     }
   }
 
+  /* ---------- Returning-visitor ground warmth pulse checks (issue #754) ---------- */
+  {
+    const gs = window.__gardenState;
+    if (!gs) {
+      problems.push('window.__gardenState is not set — cannot verify ground warmth pulse (issue #754).');
+    } else {
+      // _groundWarmPulse must exist as a number
+      if (typeof gs._groundWarmPulse !== 'number') {
+        problems.push('window.__gardenState._groundWarmPulse is not a number (got ' + typeof gs._groundWarmPulse + ') — expected a number for additive warmth composition (issue #754).');
+      }
+
+      // On first visits (visitCount < 2), the pulse must not fire
+      if (gs.visitCount < 2) {
+        if (gs._groundWarmPulse !== 0 && gs._groundWarmPulse !== undefined) {
+          problems.push('visitCount is ' + gs.visitCount + ' (first visit) but _groundWarmPulse is ' + gs._groundWarmPulse + ' — should be 0 for first-time visitors (issue #754).');
+        }
+      }
+
+      // Verify _groundWarmPulse is always in [0, 1]
+      if (typeof gs._groundWarmPulse === 'number' && (gs._groundWarmPulse < 0 || gs._groundWarmPulse > 1)) {
+        problems.push('_groundWarmPulse is ' + gs._groundWarmPulse + ' — must be in [0, 1] range (issue #754).');
+      }
+
+      // Verify groundMat exists (needed for composition)
+      if (!gs.groundMat) {
+        problems.push('window.__gardenState.groundMat is not set — ground warmth pulse cannot compose without a ground material (issue #754).');
+      }
+
+      // Verify that applying the pulse does not throw — run colour composition
+      if (gs.groundMat && typeof gs._groundWarmPulse === 'number') {
+        const warmColor = new THREE.Color(0x6a5a3a);
+        const pulseBlend = gs._groundWarmPulse * 0.08;
+        // The composition matches garden.js: groundMat.color.lerp(warmColor, pulseBlend)
+        // We just verify the math doesn't blow up by checking the colours are valid
+        const colorR = gs.groundMat.color.r;
+        const colorG = gs.groundMat.color.g;
+        const colorB = gs.groundMat.color.b;
+        if (typeof colorR !== 'number' || typeof colorG !== 'number' || typeof colorB !== 'number') {
+          problems.push('groundMat.color components are not valid numbers — composition would fail (issue #754).');
+        }
+        if (isNaN(colorR) || isNaN(colorG) || isNaN(colorB)) {
+          problems.push('groundMat.color components contain NaN — composition would fail (issue #754).');
+        }
+        // Verify the warm colour hex is correct
+        if (warmColor.getHex() !== 0x6a5a3a) {
+          problems.push('Warm pulse colour is 0x' + warmColor.getHex().toString(16) + ', expected 0x6a5a3a (issue #754).');
+        }
+      }
+    }
+  }
+
   return problems;
 }

@@ -56,6 +56,7 @@ export function initGarden(scene, initialProgress) {
   window.__gardenState.dayNightProgress = 0;
   window.__gardenState.weatherProgress = 0;
   window.__gardenState.plant1Maturity = 0;
+  window.__gardenState._groundWarmPulse = 0;
   delete window.__gardenState.plant2Maturity;
 
   /* Expose sprout leaf-generation helpers for self-testing and the seasonal
@@ -2176,6 +2177,21 @@ export function startSeasonalCycle(initialProgress) {
         gs.winterLegacyBlend = winterLegacyBlend;
       } else {
         gs.winterLegacyBlend = 0;
+      }
+
+      /* --- Returning-visitor ground warmth pulse (issue #754) ---
+       * When _groundWarmPulse > 0, the ground colour lerps ~8% toward
+       * a warm brown (0x6a5a3a) proportional to the pulse value.
+       * This composes additively after winter legacy and before rain
+       * darkening in weather.js, because it applies after the base
+       * colour and winter legacy have been set.
+       * The value is driven from index.html's page-load logic and
+       * decays back to 0 automatically. */
+      const warmPulse = gs._groundWarmPulse || 0;
+      if (warmPulse > 0) {
+        const warmColor = new THREE.Color(0x6a5a3a);
+        const pulseBlend = warmPulse * 0.08;
+        groundMat.color.lerp(warmColor, pulseBlend);
       }
     }
 
