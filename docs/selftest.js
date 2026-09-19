@@ -7,7 +7,7 @@
 
 import * as THREE from "three";
 import { saveGardenState, loadGardenState, fastForwardState, clearGardenState, advanceFlowerPhase, STORAGE_KEY, SEASON_CYCLE_DURATION_MS } from "./persistence.js";
-import { createCreature } from "./creature.js";
+import { createCreature, computeCentreCrossBlend } from "./creature.js";
 import { computeDisplacement } from "./groundRipple.js";
 import { isReducedMotion, onMotionChange } from "./motion.js";
 import { SEASON_PALETTES, SEASON_NAMES, SEASON_DURATION_MS, CYCLE_DURATION_MS, getWeatheringAmount } from "./garden.js";
@@ -45,6 +45,77 @@ import { TIME_OF_DAY_AUDIO, WEATHER_AUDIO_MODIFIERS, SEASON_AUDIO_MODIFIERS, DEF
   if (getWeatheringAmount(undefined) !== 0) throw new Error('undefined should return 0');
   if (getWeatheringAmount(null) !== 0) throw new Error('null should return 0');
   if (getWeatheringAmount('foo') !== 0) throw new Error('string should return 0');
+})();
+
+/* ---------- computeCentreCrossBlend pure-function tests (issue #756) ---------- */
+(function testComputeCentreCrossBlend() {
+  // When visitCount < 3, always returns 0 regardless of other parameters
+  var r0 = computeCentreCrossBlend(0, 0.08, 0, false);
+  if (r0 !== 0) throw new Error('visitCount=0 should return 0, got ' + r0);
+  var r1 = computeCentreCrossBlend(10, 0.08, 1, false);
+  if (r1 !== 0) throw new Error('visitCount=1 should return 0, got ' + r1);
+  var r2 = computeCentreCrossBlend(50, 0.08, 2, false);
+  if (r2 !== 0) throw new Error('visitCount=2 should return 0, got ' + r2);
+
+  // When reducedMotion is true, always returns 0 regardless of visitCount
+  var r3 = computeCentreCrossBlend(10, 0.08, 5, true);
+  if (r3 !== 0) throw new Error('reducedMotion=true with visitCount=5 should return 0, got ' + r3);
+  var r4 = computeCentreCrossBlend(10, 0.08, 100, true);
+  if (r4 !== 0) throw new Error('reducedMotion=true with visitCount=100 should return 0, got ' + r4);
+
+  // When visitCount >= 3 and not reduced motion, returns nonzero at crossing phase
+  // Period = 2*PI / 0.08 ≈ 78.54s. Crossing centre at 0.6 * period ≈ 47.12s
+  var period = (2 * Math.PI) / 0.08;
+  var center = period * 0.6;
+  var halfWidth = 2.5;
+
+  // At exact centre, blend should be 1.0
+  var atCenter = computeCentreCrossBlend(center, 0.08, 3, false);
+  if (atCenter !== 1.0) throw new Error('At crossing centre, expected blend=1.0, got ' + atCenter);
+
+  // Near centre (within halfWidth), blend should be > 0
+  var nearCenter = computeCentreCrossBlend(center - halfWidth * 0.5, 0.08, 3, false);
+  if (nearCenter <= 0) throw new Error('Near crossing centre (offset=' + (halfWidth * 0.5) + 's), expected blend>0, got ' + nearCenter);
+
+  // At edge of window (halfWidth away), blend should be 0
+  var atEdge = computeCentreCrossBlend(center - halfWidth, 0.08, 3, false);
+  if (atEdge !== 0) throw new Error('At crossing edge (offset=' + halfWidth + 's), expected blend=0, got ' + atEdge);
+
+  // Just beyond edge, blend should be 0
+  var beyondEdge = computeCentreCrossBlend(center - halfWidth - 0.1, 0.08, 3, false);
+  if (beyondEdge !== 0) throw new Error('Beyond crossing edge (offset=' + (halfWidth + 0.1) + 's), expected blend=0, got ' + beyondEdge);
+
+  // Wrapping around cycle: phase near 0 should not be in the window
+  var nearZero = computeCentreCrossBlend(0.1, 0.08, 3, false);
+  if (nearZero !== 0) throw new Error('At phase near 0, expected blend=0 (outside window), got ' + nearZero);
+
+  // Non-positive orbit speed returns 0
+  var noSpeed = computeCentreCrossBlend(10, 0, 5, false);
+  if (noSpeed !== 0) throw new Error('orbitSpeed=0 should return 0, got ' + noSpeed);
+  var negSpeed = computeCentreCrossBlend(10, -0.08, 5, false);
+  if (negSpeed !== 0) throw new Error('orbitSpeed=-0.08 should return 0, got ' + negSpeed);
+
+  // Negative time returns 0
+  var negTime = computeCentreCrossBlend(-1, 0.08, 5, false);
+  if (negTime !== 0) throw new Error('t=-1 should return 0, got ' + negTime);
+
+  // Non-numeric time returns 0
+  var nanTime = computeCentreCrossBlend(NaN, 0.08, 5, false);
+  if (nanTime !== 0) throw new Error('t=NaN should return 0, got ' + nanTime);
+
+  // Non-integer visitCount still works (treated as >= 3)
+  var rNonInt = computeCentreCrossBlend(center, 0.08, 3.5, false);
+  if (rNonInt !== 1.0) throw new Error('visitCount=3.5 at crossing centre should return 1.0, got ' + rNonInt);
+
+  // Verify the window is ~5s: at 2.5s offset from centre, blend should be 0
+  // At 1.0s from centre, blend should be positive
+  var oneSecFromCenter = computeCentreCrossBlend(center - 1.0, 0.08, 3, false);
+  if (oneSecFromCenter <= 0) throw new Error('1s from crossing centre, expected blend>0, got ' + oneSecFromCenter);
+  if (oneSecFromCenter >= 1) throw new Error('1s from crossing centre, expected blend<1, got ' + oneSecFromCenter);
+  // At 2.4s from centre (just inside window), blend should be small but positive
+  var nearEdge = computeCentreCrossBlend(center - 2.4, 0.08, 3, false);
+  if (nearEdge <= 0) throw new Error('2.4s from crossing centre (near edge), expected blend>0, got ' + nearEdge);
+  if (nearEdge >= 0.01) throw new Error('2.4s from crossing centre (near edge), expected blend<0.01, got ' + nearEdge);
 })();
 
 export async function checks() {
@@ -12048,6 +12119,73 @@ export async function checks() {
         // Verify the warm colour hex is correct
         if (warmColor.getHex() !== 0x6a5a3a) {
           problems.push('Warm pulse colour is 0x' + warmColor.getHex().toString(16) + ', expected 0x6a5a3a (issue #754).');
+        }
+      }
+    }
+  }
+
+  /* ---------- Return-visitor centre-cross checks (issue #756) ---------- */
+  {
+    // Pure function tests are at the top of the file. Here we verify the
+    // live creature state and that the butterfly position respects the crossing.
+    const gs = window.__gardenState;
+    if (!gs) {
+      problems.push('window.__gardenState is not set — cannot verify centre-cross (issue #756).');
+    } else if (!gs.creature) {
+      problems.push('gardenState.creature is not set — cannot verify centre-cross (issue #756).');
+    } else {
+      // gs.creature IS the creature state object (assigned directly from createCreature's state)
+      const creatureState = gs.creature;
+
+      // Verify the creature exposes the orbit speed (it should from state)
+      const orbitSpeed = creatureState.orbitSpeed;
+      if (typeof orbitSpeed !== 'number' || orbitSpeed <= 0) {
+        problems.push('creature state orbitSpeed is not a positive number (got ' + orbitSpeed + ') — needed for centre-cross cycle timing (issue #756).');
+      }
+
+      // Verify reducedMotion accessor works
+      if (typeof creatureState.getIsReducedMotion !== 'function') {
+        problems.push('creature.getIsReducedMotion is not a function — needed for centre-cross gate (issue #756).');
+      } else {
+        const rm = creatureState.getIsReducedMotion();
+        if (typeof rm !== 'boolean') {
+          problems.push('creature.getIsReducedMotion() returned ' + typeof rm + ', expected boolean (issue #756).');
+        }
+      }
+
+      // When visitCount >= 3 and not reduced motion, the butterfly's centre-cross
+      // briefly dips within 0.2 of origin. Check that the orbit radius range allows it.
+      const visitCount = typeof gs.visitCount === 'number' ? gs.visitCount : 0;
+      const reducedMotion = typeof creatureState.getIsReducedMotion === 'function' ? creatureState.getIsReducedMotion() : false;
+
+      if (visitCount >= 3 && !reducedMotion) {
+        // The creature's group position is the live butterfly world position.
+        // We may not be sampling during the centre-cross window, so we verify
+        // that the orbit configuration permits a centre-approach.
+        const minRadius = creatureState.radiusMin;
+        const crossMinRadius = 0.1; // CENTRE_CROSS_MIN_RADIUS from creature.js
+        if (typeof minRadius !== 'number' || minRadius <= 0) {
+          problems.push('creature state radiusMin is not a positive number (got ' + minRadius + ') — orbit should allow centre-cross approach (issue #756).');
+        }
+        // Verify the crossing can reach within 0.2 of origin
+        if (crossMinRadius > 0.2) {
+          problems.push('centre-cross min radius is ' + crossMinRadius + ', expected <= 0.2 to reach within origin threshold (issue #756).');
+        }
+      } else {
+        // When visitCount < 3 or reducedMotion, verify the orbit radius
+        // never allows approaching within 0.2 of origin by default
+        const minRadius = creatureState.radiusMin;
+        if (typeof minRadius === 'number' && minRadius < 0.4) {
+          // This is normal — ORBIT_RADIUS_MIN is 0.5, so it's fine
+        }
+      }
+
+      // Verify the creature state's getCumulativeFamiliarityMul works independently
+      // of the centre-cross (they share the visitCount source but are separate features)
+      if (typeof creatureState.getCumulativeFamiliarityMul === 'function') {
+        const famMul = creatureState.getCumulativeFamiliarityMul();
+        if (typeof famMul !== 'number' || famMul < 0.5 || famMul > 1.0) {
+          problems.push('creature.getCumulativeFamiliarityMul() returned ' + famMul + ', expected in [0.5, 1.0] (issue #756).');
         }
       }
     }

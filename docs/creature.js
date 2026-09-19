@@ -110,6 +110,12 @@ const FAMILIARITY_THRESHOLD_2 = 15;     // visits — second familiarity tier
 const FAMILIARITY_MUL_1 = 0.85;         // radius max multiplier at ≥5 visits (~15% smaller)
 const FAMILIARITY_MUL_2 = 0.75;         // radius max multiplier at ≥15 visits (~25% smaller)
 
+/* Return-visitor centre-cross (issue #756) */
+const CENTRE_CROSS_VISIT_THRESHOLD = 3;     // visits — minimum for centre crossing
+const CENTRE_CROSS_HALF_WIDTH = 2.5;        // seconds — half the crossing window duration
+const CENTRE_CROSS_MIN_RADIUS = 0.1;         // units — radius at centre of crossing (within 0.2 of origin)
+const CENTRE_CROSS_PHASE_OFFSET = 0.6;       // fraction of orbit cycle when crossing peaks
+
 /* --- Butterfly glow-trail particles (issue #691) ---
  * When the butterfly leaves firefly proximity (> 0.6 units after being
  * within 0.5 units) during Night, 2-3 tiny warm-glow particles trail
@@ -129,6 +135,52 @@ const GLOW_TRAIL_PHRASES = [
   'Brief glowing motes scatter behind the butterfly, fading as it leaves the firefly glow.',
   'Faint luminous dust clings to the butterfly\'s path, dissolving into the night air.'
 ];
+
+/**
+ * Compute a blend factor [0,1] for the return-visitor centre-crossing.
+ *
+ * When visitCount >= 3 and prefers-reduced-motion is false, returns a
+ * smooth pulse (peak=1) once per orbit cycle. The pulse reaches the
+ * garden centre (within 0.2 units of origin) before returning to the
+ * outer orbit. Duration is ~5s at normal orbit speed.
+ *
+ * When visitCount < 3 or reducedMotion is true, always returns 0.
+ *
+ * Pure function — no side effects, no access to global state.
+ *
+ * @param {number} t - current time in seconds
+ * @param {number} orbitSpeed - effective orbit speed (rad/s, including season multipliers)
+ * @param {number} visitCount - cumulative visit count
+ * @param {boolean} reducedMotion - whether prefers-reduced-motion is active
+ * @returns {number} blend factor in [0, 1]
+ */
+export function computeCentreCrossBlend(t, orbitSpeed, visitCount, reducedMotion) {
+  // No centre crossing when reduced motion or visitCount < threshold
+  if (reducedMotion || visitCount < CENTRE_CROSS_VISIT_THRESHOLD) return 0;
+  if (orbitSpeed <= 0) return 0;
+  if (typeof t !== 'number' || t < 0 || Number.isNaN(t)) return 0;
+
+  // Full orbit period in seconds
+  var period = (2 * Math.PI) / orbitSpeed;
+  if (period <= 0) return 0;
+
+  // Phase within the current orbit (0 to period)
+  var phase = t % period;
+
+  // Centre of the crossing window — at CENTRE_CROSS_PHASE_OFFSET fraction through
+  var center = period * CENTRE_CROSS_PHASE_OFFSET;
+
+  // Distance from the centre phase, wrapping around the cycle
+  var diff = Math.abs(phase - center);
+  var wrapped = Math.min(diff, period - diff);
+
+  if (wrapped > CENTRE_CROSS_HALF_WIDTH) return 0;
+
+  // Smooth bell: 1 at centre, 0 at edges (smoothstep)
+  var normalized = wrapped / CENTRE_CROSS_HALF_WIDTH;
+  var blend = 1 - normalized * normalized * (3 - 2 * normalized);
+  return blend;
+}
 
 /**
  * Create a small butterfly creature and add it to the scene.
@@ -728,10 +780,12 @@ export function createCreature(scene) {
     const effectiveOrbitRadiusMax = ORBIT_RADIUS_MAX * _currentSeasonRadiusMul;
 
     /* --- Cumulative-visit familiarity: shrink ORBIT_RADIUS_MAX based on return visits (issue #704) --- */
+    var _visitCount = 0;
     {
       const vc = window.__gardenState && typeof window.__gardenState.visitCount === 'number'
         ? window.__gardenState.visitCount
         : 0;
+      _visitCount = vc;
       if (vc >= FAMILIARITY_THRESHOLD_2) {
         _familiarityMul = FAMILIARITY_MUL_2;
       } else if (vc >= FAMILIARITY_THRESHOLD_1) {
@@ -755,6 +809,14 @@ export function createCreature(scene) {
     const radiusFamiliarity = ORBIT_RADIUS_MIN + radiusFactor * (effectiveOrbitRadiusMax * _familiarityMul - ORBIT_RADIUS_MIN);
     const radius = Math.min(radiusStillness, radiusFamiliarity);
 
+    /* --- Return-visitor centre-cross (issue #756): when visitCount >= 3,
+     * the butterfly's orbit briefly dips toward the garden centre once per
+     * full orbit cycle (~78s at normal speed). The crossing lasts ~5s and
+     * reaches within 0.2 units of the origin. Subtle — no change in wing-flap
+     * rhythm or orbit speed. Under prefers-reduced-motion, no crossing. --- */
+    const crossBlend = computeCentreCrossBlend(time, effectiveOrbitSpeed, _visitCount, state.reducedMotion);
+    const crossRadius = radius * (1 - crossBlend) + CENTRE_CROSS_MIN_RADIUS * crossBlend;
+
     // Vertical position: gentle bobbing (with Overcast shelter adjustment, issue #633)
     const heightFactor = 0.5 + 0.5 * Math.sin(t * FREQ_Y + PHASE_Y);
     // Shelter level eases the height min/max toward overcast values during active flight only
@@ -766,8 +828,8 @@ export function createCreature(scene) {
     const xOffset = Math.sin(t * FREQ_X * 1.7 + PHASE_X + 1.2) * 0.3;
     const zOffset = Math.cos(t * FREQ_Z * 1.7 + PHASE_Z + 0.8) * 0.3;
 
-    const orbitX = Math.cos(angle) * radius + xOffset;
-    const orbitZ = Math.sin(angle) * radius + zOffset;
+    const orbitX = Math.cos(angle) * crossRadius + xOffset;
+    const orbitZ = Math.sin(angle) * crossRadius + zOffset;
     const orbitY = y;
 
     /* --- Pause state machine: butterfly visits blooming flowers --- */
@@ -1304,8 +1366,11 @@ export function createCreature(scene) {
     const nextAngle = nextT + Math.sin(nextT * 0.23) * 0.4;
     const nextRadiusFactor = 0.5 + 0.5 * Math.sin(nextT * FREQ_X + PHASE_X);
     const nextRadius = ORBIT_RADIUS_MIN + nextRadiusFactor * (effectiveOrbitRadiusMax - ORBIT_RADIUS_MIN);
-    const nx = Math.cos(nextAngle) * nextRadius + Math.sin(nextT * FREQ_X * 1.7 + PHASE_X + 1.2) * 0.3;
-    const nz = Math.sin(nextAngle) * nextRadius + Math.cos(nextT * FREQ_Z * 1.7 + PHASE_Z + 0.8) * 0.3;
+    // Apply centre-cross blend to look-ahead too for consistent orientation
+    const nextCrossBlend = computeCentreCrossBlend(time + lookAhead, effectiveOrbitSpeed, _visitCount, state.reducedMotion);
+    const nextCrossRadius = nextRadius * (1 - nextCrossBlend) + CENTRE_CROSS_MIN_RADIUS * nextCrossBlend;
+    const nx = Math.cos(nextAngle) * nextCrossRadius + Math.sin(nextT * FREQ_X * 1.7 + PHASE_X + 1.2) * 0.3;
+    const nz = Math.sin(nextAngle) * nextCrossRadius + Math.cos(nextT * FREQ_Z * 1.7 + PHASE_Z + 0.8) * 0.3;
     const ny = ORBIT_HEIGHT_MIN + (0.5 + 0.5 * Math.sin(nextT * FREQ_Y + PHASE_Y)) * (ORBIT_HEIGHT_MAX - ORBIT_HEIGHT_MIN);
 
     const dir = new THREE.Vector3(nx - finalX, 0, nz - finalZ).normalize();
