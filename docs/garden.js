@@ -7,6 +7,7 @@
 
 import * as THREE from "three";
 import { createPlantDroplets } from "./droplets.js";
+import { setWindRotation, getWindRotation } from "./groundRipple.js";
 
 /* --- Seasonal colour palettes ---
  * Each season defines stem, leaf, and ground colours.
@@ -2233,6 +2234,30 @@ export function startSeasonalCycle(initialProgress) {
         const pulseBlend = warmPulse * 0.08;
         groundMat.color.lerp(warmColor, pulseBlend);
       }
+    }
+
+    /* --- Seasonal wind direction rotation (issue #767) ---
+     * Slowly rotates the ground ripple wave angles to give a subtle
+     * seasonal wind cue. Target angles:
+     *   Spring: 0        (eastward)
+     *   Summer: π/2      (southward)
+     *   Autumn: π        (westward)
+     *   Winter: 3π/4     (north-westward)
+     * Lerps smoothly so there are no sudden jumps.
+     * Under prefers-reduced-motion, no rotation is applied.
+     */
+    const reducedMotionMedia = window.matchMedia('(prefers-reduced-motion: reduce)');
+    if (!reducedMotionMedia.matches) {
+      const targetRotations = [0, Math.PI / 2, Math.PI, 3 * Math.PI / 4];
+      const targetRotation = targetRotations[seasonIndex];
+      const currentRotation = getWindRotation();
+      // Smooth lerp toward target — rate is ~0.01 per frame (60fps => ~1.6s to reach target)
+      const lerpAlpha = 0.01;
+      const newRotation = currentRotation + (targetRotation - currentRotation) * lerpAlpha;
+      setWindRotation(newRotation);
+    } else {
+      // Under reduced motion, keep rotation at 0 (no seasonal wind variation)
+      setWindRotation(0);
     }
 
     /* --- Fallen leaves lifecycle (issue #448) --- */

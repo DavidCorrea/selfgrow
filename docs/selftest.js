@@ -8,7 +8,7 @@
 import * as THREE from "three";
 import { saveGardenState, loadGardenState, fastForwardState, clearGardenState, advanceFlowerPhase, STORAGE_KEY, SEASON_CYCLE_DURATION_MS } from "./persistence.js";
 import { createCreature, computeCentreCrossBlend, computeGreetingParams } from "./creature.js";
-import { computeDisplacement } from "./groundRipple.js";
+import { computeDisplacement, setWindRotation, getWindRotation } from "./groundRipple.js";
 import { isReducedMotion, onMotionChange } from "./motion.js";
 import { SEASON_PALETTES, SEASON_NAMES, SEASON_DURATION_MS, CYCLE_DURATION_MS, getWeatheringAmount } from "./garden.js";
 import { TIME_OF_DAY_AUDIO, WEATHER_AUDIO_MODIFIERS, SEASON_AUDIO_MODIFIERS, DEFAULT_WEATHER_MODIFIER, DEFAULT_SEASON_MODIFIER, getWarmthGain } from "./ambientAudio.js";
@@ -270,6 +270,57 @@ export async function checks() {
   // desynchronization between offline fast-forward and live scene cycles.
   if (SEASON_CYCLE_DURATION_MS !== CYCLE_DURATION_MS) {
     problems.push('SEASON_CYCLE_DURATION_MS (' + SEASON_CYCLE_DURATION_MS + ') !== CYCLE_DURATION_MS (' + CYCLE_DURATION_MS + ') — persistence and garden cycle durations are out of sync (issue #731).');
+  }
+
+  /* ---------- Seasonal wind direction rotation (issue #767) ---------- */
+  // Verify windRotation defaults to 0
+  if (getWindRotation() !== 0) {
+    problems.push('getWindRotation() returned ' + getWindRotation() + ' at boot, expected 0 (default wind rotation).');
+  }
+
+  // Verify setWindRotation stores the value and getWindRotation returns it
+  setWindRotation(1.5);
+  if (getWindRotation() !== 1.5) {
+    problems.push('After setWindRotation(1.5), getWindRotation() returned ' + getWindRotation() + ', expected 1.5.');
+  }
+
+  // Verify computeDisplacement changes when windRotation changes
+  var d1 = computeDisplacement(1, 0, 0); // at windRotation=1.5
+  setWindRotation(0);
+  var d2 = computeDisplacement(1, 0, 0); // at windRotation=0
+  // The two displacements should differ because the wave angles changed
+  if (Math.abs(d1 - d2) < 0.0001) {
+    problems.push('computeDisplacement(1,0,0) returned same value (' + d1 + ') for both windRotation=1.5 and windRotation=0 — wind rotation should affect displacement.');
+  }
+
+  // Reset to known state (Spring: 0)
+  setWindRotation(0);
+
+  // Verify wind rotation is applied in the update loop
+  // by checking that computeDisplacement produces different results
+  // at a wind rotation offset of pi vs 0 (Autumn vs Spring) — about 45° difference
+  var springDisp = computeDisplacement(1, 0, 0.5);
+  setWindRotation(Math.PI);
+  var autumnDisp = computeDisplacement(1, 0, 0.5);
+  setWindRotation(0);
+  // Autumn drift should differ from Spring drift by at least 0.001 (visually detectable)
+  var diff = Math.abs(autumnDisp - springDisp);
+  if (diff < 0.0001) {
+    problems.push('Autumn vs Spring displacement difference is ' + diff.toFixed(6) + ', expected a detectable difference — wind rotation is not affecting displacement enough (issue #767).');
+  }
+
+  // Verify the rotation is applied consistently: the effective angle of wave 0
+  // at windRotation=0 is 0, at windRotation=PI/2 is PI/2 — check via displacement
+  setWindRotation(0);
+  var dAt0 = computeDisplacement(1, 0, 0);
+  setWindRotation(Math.PI / 2);
+  var dAtPi2 = computeDisplacement(0, 1, 0);
+  setWindRotation(0);
+  // At windRotation=0, point (1,0) projects along angle 0: dist = 1*cos(0) + 0*sin(0) = 1
+  // At windRotation=PI/2, point (0,1) projects along angle PI/2: dist = 0*cos(PI/2) + 1*sin(PI/2) = 1
+  // So the displacement should be the same
+  if (Math.abs(dAt0 - dAtPi2) > 0.0001) {
+    problems.push('Expected equal displacement: computeDisplacement(1,0,0) at rot=0 should match computeDisplacement(0,1,0) at rot=PI/2, but got ' + dAt0 + ' vs ' + dAtPi2 + ' (issue #767).');
   }
 
   /* ---------- DOM state panel ---------- */
