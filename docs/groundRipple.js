@@ -34,6 +34,40 @@ const waves = [
   { angle: 4.0,       speed: 0.25, freq: 1.0,  amp: 0.001, phase: 0.9 },
 ];
 
+/* --- Seasonal wind direction rotation (issue #767) ---
+ * A small angle offset applied on top of each wave's angle that slowly
+ * rotates with the seasons. Set via setWindRotation() from garden.js.
+ * Default 0 (Spring: eastward).
+ */
+let windRotation = 0;
+
+/**
+ * Set the current wind direction rotation offset in radians.
+ * This offset is added to every wave's angle so ground ripple displacement,
+ * seed drift, and butterfly drift all shift direction together.
+ * @param {number} angle — rotation offset in radians
+ */
+export function setWindRotation(angle) {
+  windRotation = angle;
+}
+
+/**
+ * Get the current wind direction rotation offset in radians.
+ * @returns {number}
+ */
+export function getWindRotation() {
+  return windRotation;
+}
+
+/**
+ * Compute the effective wave angle including wind rotation.
+ * @param {number} baseAngle — the wave's base angle in radians
+ * @returns {number} — baseAngle + windRotation
+ */
+function effectiveAngle(baseAngle) {
+  return baseAngle + windRotation;
+}
+
 /**
  * Compute the wave displacement at a given (x, z) position at a given time.
  * Uses the same multi-frequency sine wave parameters as the ground ripple
@@ -48,7 +82,8 @@ export function computeDisplacement(x, z, time) {
   let displacement = 0;
   for (let w = 0; w < waves.length; w++) {
     const wave = waves[w];
-    const dist = x * Math.cos(wave.angle) + z * Math.sin(wave.angle);
+    const angle = effectiveAngle(wave.angle);
+    const dist = x * Math.cos(angle) + z * Math.sin(angle);
     displacement += wave.amp * Math.sin(dist * wave.freq + time * wave.speed + wave.phase);
   }
   return displacement;
@@ -112,8 +147,10 @@ export function createGroundRipple(groundMesh) {
       let displacement = 0;
       for (let w = 0; w < waves.length; w++) {
         const wave = waves[w];
+        // Apply wind rotation to wave angle (issue #767)
+        const angle = effectiveAngle(wave.angle);
         // Project position onto wave direction
-        const dist = lx * Math.cos(wave.angle) + ly * Math.sin(wave.angle);
+        const dist = lx * Math.cos(angle) + ly * Math.sin(angle);
         displacement += wave.amp * Math.sin(dist * wave.freq + time * wave.speed + wave.phase);
       }
 
