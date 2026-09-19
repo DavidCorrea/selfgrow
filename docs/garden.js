@@ -272,6 +272,36 @@ export function initGarden(scene, initialProgress) {
  * @param {string} opts.leafShape - "narrow" (pointy) or "broad" (wider, rounder).
  */
 function createPlant(opts) {
+/**
+ * Record a pollination event for firefly drift bias (issue #692).
+ * Stores the flower world position and a timestamp. Prunes events
+ * older than 120s so the array stays bounded.
+ *
+ * @param {THREE.Vector3} flowerPos - World position of the pollinated flower
+ */
+function recordPollinationEvent(flowerPos) {
+  if (!flowerPos) return;
+  const gs = window.__gardenState;
+  if (!gs) return;
+  if (!Array.isArray(gs.pollinationEvents)) {
+    gs.pollinationEvents = [];
+  }
+
+  // Add the new event
+  gs.pollinationEvents.push({
+    x: flowerPos.x,
+    y: flowerPos.y || 0,
+    z: flowerPos.z,
+    timestamp: performance.now()
+  });
+
+  // Prune events older than 120s
+  const cutoff = performance.now() - 120000;
+  gs.pollinationEvents = gs.pollinationEvents.filter(function(e) {
+    return e.timestamp >= cutoff;
+  });
+}
+
   const {
     scene,
     position,
@@ -1162,6 +1192,8 @@ function createPlant(opts) {
             plantState.flower._needsPollination = false;
             _pollinated = true;
             applyPollinationDarkening();
+            /* Record pollination event for firefly drift bias (issue #692) */
+            recordPollinationEvent(fm.group.position);
           }
 
           /* --- Seed head: if previously pollinated, show tiny brown spheres --- */

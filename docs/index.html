@@ -987,6 +987,17 @@
       ' The butterfly sways near the fireflies, their tiny lights pulsing warmly.'
     ];
 
+    /* Firefly pollination bias description suffixes (issue #692).
+     * During Night when fireflies are near a recently pollinated flower,
+     * a brief sentence is appended to the growing description.
+     * Stripped when no active pollination events exist within bias radius.
+     */
+    const FIREFLY_POLLINATION_BIAS_SUFFIXES = [
+      ' The fireflies drift subtly toward where the butterfly touched the flower.',
+      ' The fireflies cluster gently near the recently visited blossom.',
+      ' A faint pull draws the fireflies toward the pollinated flower.'
+    ];
+
     /* Firefly pulse synchronization description suffixes (issue #676).
      * During Night when nearby fireflies synchronise their pulse phases,
      * a brief sentence is appended to the growing description before the
@@ -1280,6 +1291,94 @@
      *
      * Composition order: base + seasonCtx + timeCtx + weatherCtx + trembleSuffix + butterflySuffix.
      */
+    let lastFireflyPollinationBiasText = '';
+    let fireflyPollinationBiasFallBelowTimestamp = 0;
+    const FIREFLY_POLLINATION_BIAS_DEBOUNCE_MS = 3000;
+
+    function updateFireflyPollinationBiasDescription() {
+      /* Only active during Night phase (t >= 0.75) */
+      const dayNight = window.__gardenState && window.__gardenState.dayNight;
+      if (!dayNight || typeof dayNight.getCycleProgress !== 'function') return;
+      const t = dayNight.getCycleProgress();
+      if (t < 0.75 || t >= 1.0) return;
+
+      /* Read firefly pollination bias state */
+      const fireflies = window.__gardenState && window.__gardenState.fireflies;
+      if (!fireflies || typeof fireflies.getPollinationBias !== 'function') return;
+      const biasInfo = fireflies.getPollinationBias();
+
+      const el = document.getElementById('growing-description');
+      if (!el) return;
+
+      const now = Date.now();
+
+      if (biasInfo.active) {
+        /* Reset fall-below timestamp */
+        fireflyPollinationBiasFallBelowTimestamp = 0;
+
+        /* Find and save butterfly suffix (outermost layer) */
+        let butterflySuffix = '';
+        for (const suffix of BUTTERFLY_SUFFIXES) {
+          if (el.textContent.endsWith(suffix)) {
+            butterflySuffix = suffix;
+            break;
+          }
+        }
+
+        /* Strip butterfly suffix */
+        const withoutButterfly = butterflySuffix
+          ? el.textContent.slice(0, -butterflySuffix.length)
+          : el.textContent;
+
+        /* Strip any existing pollination bias suffix */
+        const withoutBias = stripSuffixes(withoutButterfly, FIREFLY_POLLINATION_BIAS_SUFFIXES);
+
+        /* Cycle variant using fireflySync variant slot (reuse) */
+        var biasVariantState = _variantState.fireflySync; // reuse existing slot
+        if (biasVariantState.lastPhase !== 'bias-active' || now - biasVariantState.lastChangeTime >= VARIANT_CYCLE_MS) {
+          biasVariantState.lastPhase = 'bias-active';
+          biasVariantState.lastChangeTime = now;
+          // Use a separate index for bias phrases, derived from variantState
+          // We'll just use time-based cycling on the bias suffix array
+        }
+        var biasIdx = Math.floor((now / VARIANT_CYCLE_MS) % FIREFLY_POLLINATION_BIAS_SUFFIXES.length);
+        const biasSuffix = FIREFLY_POLLINATION_BIAS_SUFFIXES[biasIdx];
+        const composed = withoutBias + biasSuffix + butterflySuffix;
+
+        if (composed !== lastFireflyPollinationBiasText) {
+          lastFireflyPollinationBiasText = composed;
+          el.textContent = composed;
+        }
+      } else {
+        /* No active bias — check debounce before removing */
+        if (fireflyPollinationBiasFallBelowTimestamp === 0) {
+          fireflyPollinationBiasFallBelowTimestamp = now;
+        } else if (now - fireflyPollinationBiasFallBelowTimestamp >= FIREFLY_POLLINATION_BIAS_DEBOUNCE_MS) {
+          let butterflySuffix = '';
+          for (const suffix of BUTTERFLY_SUFFIXES) {
+            if (el.textContent.endsWith(suffix)) {
+              butterflySuffix = suffix;
+              break;
+            }
+          }
+
+          const withoutButterfly = butterflySuffix
+            ? el.textContent.slice(0, -butterflySuffix.length)
+            : el.textContent;
+
+          const withoutBias = stripSuffixes(withoutButterfly, FIREFLY_POLLINATION_BIAS_SUFFIXES);
+          const composed = withoutBias + butterflySuffix;
+
+          if (composed !== lastFireflyPollinationBiasText) {
+            lastFireflyPollinationBiasText = composed;
+            el.textContent = composed;
+          }
+
+          fireflyPollinationBiasFallBelowTimestamp = 0;
+        }
+      }
+    }
+
     let lastLeafTrembleText = '';
     let leafTrembleDebounceStart = 0;
     const LEAF_TREMBLE_DEBOUNCE_MS = 1500;
@@ -1422,6 +1521,8 @@
       BUTTERFLY_SETTLE_PHRASES,
       chooseFireflyProximitySuffix,
       updateFireflySyncDescription,
+      updateFireflyPollinationBiasDescription,
+      FIREFLY_POLLINATION_BIAS_SUFFIXES,
       updateLeafTrembleDescription,
       LEAF_TREMBLE_SUFFIXES,
       updateAudioWeather,
@@ -1718,6 +1819,9 @@
 
     /* Poll the firefly sync state every ~1s and update sync description during Night */
     setInterval(updateFireflySyncDescription, 1000);
+
+    /* Poll the firefly pollination bias state every ~1s and update bias description during Night (issue #692) */
+    setInterval(updateFireflyPollinationBiasDescription, 1000);
 
     /* Poll the leaf tremble state every ~500ms and update leaf-tremble description (issue #675) */
     setInterval(updateLeafTrembleDescription, 500);

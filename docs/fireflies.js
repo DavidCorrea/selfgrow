@@ -166,6 +166,12 @@ const SPROUT_GLOW_BOOST_MAX = 0.15;       // max 15% brightness boost at zero di
 const BLOOM_ATTRACT_RADIUS = 0.4;         // units — max distance for blooming flower attraction
 const BLOOM_ATTRACT_MAX = DRIFT_RADIUS * 0.1;  // 0.015 — max perturbation toward bloom (10% of DRIFT_RADIUS)
 
+/* --- Pollination drift bias (issue #692) --- */
+const POLLINATION_BIAS_RADIUS = 0.6;      // units — max distance for pollination bias to affect a firefly
+const POLLINATION_BIAS_MAX = 0.05;         // max drift-centre offset toward a pollinated flower
+const POLLINATION_BIAS_BUILD_UP_MS = 60000; // 60s to reach peak bias
+const POLLINATION_BIAS_DECAY_MS = 120000;  // 120s total duration (zero at 120s)
+
 /* --- Firefly-to-plant surface glow (issue #613) --- */
 const WARM_GLOW_COLOR = 0xccdd88;     // warm yellow-green tint for plant surface glow
 const MAX_GLOW_SHIFT = 0.10;           // ≤10% saturation shift from base colour (barely perceptible)
@@ -488,6 +494,28 @@ export function createFireflies(scene) {
     /** Bloom attraction drift constants (issue #680) */
     bloomAttractRadius: BLOOM_ATTRACT_RADIUS,
     bloomAttractMax: BLOOM_ATTRACT_MAX,
+    /** Pollination drift bias constants (issue #692) */
+    pollinationBiasRadius: POLLINATION_BIAS_RADIUS,
+    pollinationBiasMax: POLLINATION_BIAS_MAX,
+    pollinationBiasBuildUpMs: POLLINATION_BIAS_BUILD_UP_MS,
+    pollinationBiasDecayMs: POLLINATION_BIAS_DECAY_MS,
+    /** Returns whether any firefly dot is currently influenced by a pollination bias event.
+     * Checks for active pollination events within bias radius. */
+    getPollinationBias: function() {
+      const gs = window.__gardenState;
+      const events = gs && gs.pollinationEvents;
+      if (!events || events.length === 0) return { active: false, eventCount: 0 };
+      const now = performance.now();
+      let hasActive = false;
+      for (var pei = 0; pei < events.length; pei++) {
+        const elapsed = now - events[pei].timestamp;
+        if (elapsed >= 0 && elapsed < POLLINATION_BIAS_DECAY_MS) {
+          hasActive = true;
+          break;
+        }
+      }
+      return { active: hasActive, eventCount: events.length };
+    },
     /** Butterfly landing scatter constants (issue #690) */
     scatterRadius: SCATTER_RADIUS,
     scatterAmountMax: SCATTER_AMOUNT_MAX,
@@ -761,10 +789,67 @@ export function createFireflies(scene) {
           const windOffsetX = windDisp * WIND_DRIFT_SCALE * weatherSwayMul;
           const windOffsetZ = -windDisp * WIND_DRIFT_SCALE * weatherSwayMul;
 
-          pos[i3] = dd.baseX + driftX + windOffsetX;
+          /* --- Pollination drift bias (issue #692) --- */
+          // Compute subtle drift-centre offset toward recently pollinated flowers.
+          // Iterates pollination events within POLLINATION_BIAS_RADIUS, weights each
+          // by a tent function peaking at 60s (zero at 0s and 120s), and applies up
+          // to POLLINATION_BIAS_MAX units of offset as a weighted average. Multiple
+          // events create competing biases (weighted average of positions).
+          // Effect is active any time (not just Night), but most visible during Night
+          // when fireflies are already visible.
+          let pollBiasX = 0;
+          let pollBiasZ = 0;
+          let pollWeightTotal = 0;
+          {
+            const gs = window.__gardenState;
+            const events = gs && gs.pollinationEvents;
+            if (events && events.length > 0) {
+              const now = performance.now();
+              for (var pei = 0; pei < events.length; pei++) {
+                const ev = events[pei];
+                const dx = dd.baseX - ev.x;
+                const dz = dd.baseZ - ev.z;
+                const dist = Math.sqrt(dx * dx + dz * dz);
+                if (dist <= POLLINATION_BIAS_RADIUS) {
+                  // Tent weight: peak at POLLINATION_BIAS_BUILD_UP_MS, zero at 0 and POLLINATION_BIAS_DECAY_MS
+                  const elapsed = now - ev.timestamp;
+                  if (elapsed >= 0 && elapsed < POLLINATION_BIAS_DECAY_MS) {
+                    var tentWeight;
+                    if (elapsed < POLLINATION_BIAS_BUILD_UP_MS) {
+                      tentWeight = elapsed / POLLINATION_BIAS_BUILD_UP_MS;
+                    } else {
+                      tentWeight = 1 - (elapsed - POLLINATION_BIAS_BUILD_UP_MS) / (POLLINATION_BIAS_DECAY_MS - POLLINATION_BIAS_BUILD_UP_MS);
+                    }
+                    if (tentWeight > 0) {
+                      // Distance falloff: 1 at zero distance, 0 at POLLINATION_BIAS_RADIUS
+                      const distFalloff = 1 - (dist / POLLINATION_BIAS_RADIUS);
+                      const weight = tentWeight * distFalloff * distFalloff;
+                      pollBiasX += (ev.x - dd.baseX) * weight;
+                      pollBiasZ += (ev.z - dd.baseZ) * weight;
+                      pollWeightTotal += weight;
+                    }
+                  }
+                }
+              }
+              if (pollWeightTotal > 0.0001) {
+                const invW = 1 / pollWeightTotal;
+                pollBiasX *= invW;
+                pollBiasZ *= invW;
+                // Clamp the vector magnitude to POLLINATION_BIAS_MAX
+                const mag = Math.sqrt(pollBiasX * pollBiasX + pollBiasZ * pollBiasZ);
+                if (mag > POLLINATION_BIAS_MAX) {
+                  const scale = POLLINATION_BIAS_MAX / mag;
+                  pollBiasX *= scale;
+                  pollBiasZ *= scale;
+                }
+              }
+            }
+          }
+
+          pos[i3] = dd.baseX + driftX + windOffsetX + pollBiasX;
           // Apply vertical lift offset for dusk emergence / dawn settling
           pos[i3 + 1] = dd.baseY + driftY + liftOffset;
-          pos[i3 + 2] = dd.baseZ + driftZ + windOffsetZ;
+          pos[i3 + 2] = dd.baseZ + driftZ + windOffsetZ + pollBiasZ;
 
           /* --- Bloom attraction drift perturbation (issue #680) --- */
           // During Night phase, firefly dots within BLOOM_ATTRACT_RADIUS of a

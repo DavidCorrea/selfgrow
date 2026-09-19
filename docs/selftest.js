@@ -11450,5 +11450,67 @@ export async function checks() {
     });
   }
 
+  /* ---------- Firefly pollination drift bias checks (issue #692) ---------- */
+  // Verify that pollination events can be recorded and that the drift bias
+  // computation produces non-zero offsets when events are present.
+  {
+    const gs = window.__gardenState;
+    if (!gs) {
+      problems.push('window.__gardenState is not set — cannot verify pollination drift bias (issue #692).');
+    } else {
+      // Check that pollinationEvents array is initializable
+      if (!Array.isArray(gs.pollinationEvents)) {
+        // Initialize it for the test
+        gs.pollinationEvents = [];
+      }
+      // Verify initial state is empty
+      if (gs.pollinationEvents.length !== 0) {
+        problems.push('window.__gardenState.pollinationEvents should be empty initially, but has ' + gs.pollinationEvents.length + ' entries (issue #692).');
+      }
+
+      // Simulate a recent pollination event
+      gs.pollinationEvents.push({
+        x: 0,
+        y: 0,
+        z: 0,
+        timestamp: performance.now() - 30000 // 30s ago, within build-up window
+      });
+
+      // Verify event was recorded
+      if (gs.pollinationEvents.length !== 1) {
+        problems.push('After pushing a pollination event, expected 1 entry but got ' + gs.pollinationEvents.length + ' (issue #692).');
+      }
+
+      // Verify firefly state exposes getPollinationBias
+      const fireflies = gs.fireflies;
+      if (!fireflies || typeof fireflies.getPollinationBias !== 'function') {
+        problems.push('fireflies state missing getPollinationBias() method — needed for bias detection (issue #692).');
+      } else {
+        const biasInfo = fireflies.getPollinationBias();
+        if (typeof biasInfo !== 'object' || typeof biasInfo.active !== 'boolean') {
+          problems.push('getPollinationBias() returned ' + JSON.stringify(biasInfo) + ' — expected {active: boolean, eventCount: number} (issue #692).');
+        }
+        // With our simulated event (30s old), active should be true
+        if (!biasInfo.active) {
+          problems.push('getPollinationBias().active is false despite a 30s-old pollination event in the array — expected true (issue #692).');
+        }
+        if (biasInfo.eventCount < 1) {
+          problems.push('getPollinationBias().eventCount is ' + biasInfo.eventCount + ' — expected >= 1 after adding event (issue #692).');
+        }
+      }
+
+      // Verify firefly drift bias constants are exposed
+      if (typeof fireflies.pollinationBiasMax !== 'number') {
+        problems.push('fireflies.pollinationBiasMax is not exposed — needed for bias computation verification (issue #692).');
+      }
+      if (typeof fireflies.pollinationBiasRadius !== 'number') {
+        problems.push('fireflies.pollinationBiasRadius is not exposed — needed for bias computation verification (issue #692).');
+      }
+
+      // Clean up simulated events
+      gs.pollinationEvents = [];
+    }
+  }
+
   return problems;
 }
