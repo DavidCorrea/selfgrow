@@ -60,6 +60,7 @@ const POLLINATED_PAUSE_PHRASES = [
   'A familiar flower draws the butterfly back again.',
   'The butterfly revisits a flower it has touched before.'
 ];
+const PLANT3_POLLINATED_PAUSE_PHRASE = 'The butterfly hovers near the low plant\'s warm amber blossoms.';
 const POLLINATED_ACK_COOLDOWN_MS = 30000; // ms cooldown between repeated pollinated-flower acknowledgments
 const PAUSE_EXIT_DURATION = 1.0;  // seconds to ease back to normal flight
 const PAUSE_DIP_AMOUNT = 0.15;    // how much closer the butterfly dips to the flower
@@ -365,6 +366,7 @@ export function createCreature(scene) {
     getPauseHoldDuration: () => pauseHoldDuration,
     POLLINATED_PAUSE_MULTIPLIER,
     POLLINATED_PAUSE_PHRASES,
+    PLANT3_POLLINATED_PAUSE_PHRASE,
     POLLINATED_ACK_COOLDOWN_MS,
     /* Wind perturbation exposed for selftest */
     windNudge: () => _windNudge,
@@ -807,7 +809,10 @@ export function createCreature(scene) {
                     const now = performance.now();
                     if (now - _lastPollinatedAckTime >= POLLINATED_ACK_COOLDOWN_MS) {
                       _lastPollinatedAckTime = now;
-                      const phrase = POLLINATED_PAUSE_PHRASES[Math.floor(Math.random() * POLLINATED_PAUSE_PHRASES.length)];
+                      const phrasePool = plantRefs[i] === 'plant3'
+                        ? POLLINATED_PAUSE_PHRASES.concat([PLANT3_POLLINATED_PAUSE_PHRASE])
+                        : POLLINATED_PAUSE_PHRASES;
+                      const phrase = phrasePool[Math.floor(Math.random() * phrasePool.length)];
                       if (window.__gardenState && typeof window.__gardenState.setAcknowledgment === 'function') {
                         window.__gardenState.setAcknowledgment(phrase);
                       }
