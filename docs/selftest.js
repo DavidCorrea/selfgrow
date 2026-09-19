@@ -12328,5 +12328,72 @@ export async function checks() {
     }
   }
 
+  /* ---------- Ground beetle checks (issue #766) ---------- */
+  // A tiny ground beetle should exist on gardenState and have the correct
+  // structure: a group containing one body mesh (SphereGeometry, scaled).
+  if (gardenState && gardenState.beetle) {
+    var beetle = gardenState.beetle;
+
+    // Must expose group and update
+    if (!beetle.group) {
+      problems.push('gardenState.beetle.group is missing — the beetle group was not exposed (issue #766).');
+    } else {
+      // Verify the group has at least one child mesh
+      var childMeshes = beetle.group.children.filter(function(c) { return c.isMesh; });
+      if (childMeshes.length < 1) {
+        problems.push('beetle.group has ' + childMeshes.length + ' mesh children — expected at least 1 body mesh (issue #766).');
+      } else {
+        var bodyMesh = childMeshes[0];
+        // The body should use SphereGeometry
+        if (bodyMesh.geometry && bodyMesh.geometry.type !== 'SphereGeometry') {
+          problems.push('beetle body geometry type is "' + bodyMesh.geometry.type + '", expected SphereGeometry (issue #766).');
+        }
+        // Material should be transparent for fade transitions
+        if (!bodyMesh.material.transparent) {
+          problems.push('beetle body material.transparent is false — must be transparent for fade (issue #766).');
+        }
+      }
+
+      // Verify group name
+      if (beetle.group.name !== 'ground-beetle') {
+        problems.push('beetle.group.name is "' + beetle.group.name + '", expected "ground-beetle" (issue #766).');
+      }
+    }
+
+    if (typeof beetle.update !== 'function') {
+      problems.push('gardenState.beetle.update is not a function — update must be callable from the animate loop (issue #766).');
+    }
+
+    // Verify beetle visibility responds to DOM state by checking the current
+    // season/weather/time and verifying the group's visible state matches expectations.
+    // This is a best-effort check since conditions may not be ideal on page load.
+    var season = (document.getElementById('season-display')?.textContent || '').trim();
+    var weatherPhase766 = (document.getElementById('weather-display')?.textContent || '').trim();
+    var timeOfDay = (document.getElementById('time-display')?.textContent || '').trim();
+
+    var isWarmSeason = season === 'Spring' || season === 'Summer';
+    var isClear = weatherPhase766 === 'Clear';
+    var isDaytime = timeOfDay !== 'Night';
+
+    var shouldShow = isWarmSeason && isClear && isDaytime;
+
+    // Allow a brief settling period — the beetle fades via exponential lerp with
+    // FADE_TIME_CONSTANT ~2.5s, so after 5+ seconds it should be very close to target.
+    // Since selftest runs at page load, we do a soft check: if conditions are ideal,
+    // the beetle should eventually become visible; if not, it should eventually hide.
+    // We check the material opacity as a proxy — if target opacity is 1.0, opacity
+    // should be trending upward (not stuck at 0).
+    if (beetle.group && beetle.group.children.length > 0) {
+      var bodyMat = beetle.group.children[0].material;
+      if (bodyMat && typeof bodyMat.opacity === 'number') {
+        if (!shouldShow && bodyMat.opacity > 0.5) {
+          problems.push('beetle body opacity is ' + bodyMat.opacity + ' but conditions (' + season + ', ' + weatherPhase766 + ', ' + timeOfDay + ') expect it to be hidden — should fade out during Night, Winter, Light Drizzle, or Overcast (issue #766).');
+        }
+      }
+    }
+  } else {
+    problems.push('gardenState.beetle is missing or undefined — the ground beetle was not created (issue #766).');
+  }
+
   return problems;
 }

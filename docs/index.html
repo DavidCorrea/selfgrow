@@ -224,6 +224,7 @@
     import { createAmbientAudio } from "./ambientAudio.js";
     import { createFireflies } from "./fireflies.js";
     import { createDawnMist } from "./dawnMist.js";
+    import { createBeetle } from "./beetle.js";
 
     const wrapper = document.getElementById('garden-canvas-wrapper');
     const scene = new THREE.Scene();
@@ -519,6 +520,9 @@
     /* --- Firefly glow dots near plants during Night phase --- */
     const fireflies = createFireflies(scene);
 
+    /* --- Tiny ground beetle near plant stems during warm conditions (issue #766) --- */
+    const beetle = createBeetle(scene);
+
     /* --- Dawn mist: subtle ground-level mist during early Morning (issue #747) --- */
     const dawnMist = createDawnMist(scene);
 
@@ -565,6 +569,9 @@
 
       /* Update dawn mist (issue #747) */
       dawnMist.update(animTime);
+
+      /* Update ground beetle (issue #766) */
+      beetle.update(animTime);
 
       /* Update distant horizon silhouette to blend with current sky colour */
       if (scene.background instanceof THREE.Color) {
@@ -1515,6 +1522,7 @@
       fireflies: fireflies.state,
       firefliesUpdate: fireflies.update,
       dawnMist: dawnMist.state,
+      beetle: { group: beetle.group, update: beetle.update },
       /* Base seasonal ground colour (before winter legacy or rain darkening).
        * Set by startSeasonalCycle each tick, read by weather.js for rain darkening (issue #528). */
       baseGroundColor: new THREE.Color(0x4a3728),
