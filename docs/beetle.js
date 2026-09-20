@@ -8,6 +8,7 @@
  * animates crawling.
  *
  * Exports: createBeetle(scene) → { group, update }
+ *          selectPetalPauseTarget(petals, refPos, maxDist) → petal|null
  */
 
 import * as THREE from "three";
@@ -30,6 +31,21 @@ const FADE_TIME_CONSTANT = 2.5;   // seconds — exponential lerp (~86% after 5s
 /* Camera stillness: must be still for this long before crawling resumes */
 const SETTLE_STILLNESS_MIN = 20;  // seconds — matches creature.js convention
 
+/* Petal pause (issue #772): after Light Drizzle ends, the beetle briefly
+ * freezes at the nearest fallen petal from its anchor plant (2-4s), then
+ * resumes crawling from the exact crawlPhase it held. */
+const PETAL_PAUSE_MIN_MS = 2000;
+const PETAL_PAUSE_MAX_MS = 4000;
+const PETAL_PAUSE_COOLDOWN_MS = 20000; // seconds of quiet before the next pause
+const PETAL_PAUSE_MAX_DIST = 0.15;      // units — petals land within ~0.08 of the stem
+
+const PETAL_PAUSE_PHRASES = [
+  'The beetle pauses to inspect a fallen petal.',
+  'The ground beetle lingers beside a petal resting on the soil.',
+  'A fallen petal draws the beetle\u2019s brief attention.',
+  'The beetle halts at the fallen petal, still and intent.'
+];
+
 /* --- Helper: determine if beetle should be visible --- */
 function shouldBeVisible(season, weather, timeOfDay) {
   // Visible during Spring OR Summer AND Clear weather AND daytime (not Night)
@@ -38,6 +54,46 @@ function shouldBeVisible(season, weather, timeOfDay) {
   const isDaytime = timeOfDay !== 'Night';
 
   return isWarmSeason && isClear && isDaytime;
+}
+
+/**
+ * Pick the nearest fallen petal worth pausing at.
+ *
+ * Candidates are petals already resting on the ground ('resting') or fading
+ * away once the drizzle ends ('fading') — 'falling' petals are still in the
+ * air. Petals farther than maxDist from refPos are ignored. Returns null when
+ * there is nothing nearby to pause at.
+ *
+ * @param {Array} petals - entries from a flower's getFallenPetals()
+ * @param {{x: number, z: number}} refPos - position to measure distance from
+ * @param {number} maxDist - maximum distance (units) to consider
+ * @returns {object|null} nearest candidate petal entry, or null
+ */
+export function selectPetalPauseTarget(petals, refPos, maxDist) {
+  if (!Array.isArray(petals) || !refPos ||
+      typeof refPos.x !== 'number' || typeof refPos.z !== 'number') {
+    return null;
+  }
+  const maxD = (typeof maxDist === 'number' && maxDist > 0) ? maxDist : Infinity;
+
+  let best = null;
+  let bestDist = Infinity;
+  for (let i = 0; i < petals.length; i++) {
+    const petal = petals[i];
+    if (!petal) continue;
+    if (petal.state !== 'resting' && petal.state !== 'fading') continue;
+    const endPos = petal.endPos;
+    if (!endPos || typeof endPos.x !== 'number' || typeof endPos.z !== 'number') continue;
+    const dx = endPos.x - refPos.x;
+    const dz = endPos.z - refPos.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    if (dist > maxD) continue;
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = petal;
+    }
+  }
+  return best;
 }
 
 /**
@@ -77,6 +133,17 @@ export function createBeetle(scene) {
   let _crawlActive = false;        // whether crawling animation is running
   let _anchorPos = null;           // { x, z } — plant stem anchor
   let _anchorFound = false;        // whether we've found a plant anchor
+  let _anchorLabel = null;         // which plant ('plant'/'plant2'/'plant3') is anchored
+
+  /* Petal pause state (issue #772) */
+  let _prevWeather = '';               // last frame's weather — detects drizzle end
+  let _petalPauseEligible = false;     // drizzle just ended — one pause may fire
+  let _petalPauseActive = false;       // pause currently in progress
+  let _petalPauseElapsed = 0;          // ms spent paused so far
+  let _petalPauseDuration = 0;         // ms to stay paused (2-4s)
+  let _prePauseCrawlPhase = 0;         // crawlPhase snapshot for a clean resume
+  let _pauseTargetPetal = null;        // the petal being examined
+  let _lastPetalPauseTime = -Infinity; // timestamp of the previous pause
 
   /* --- Determine anchor position: nearest plant stem --- */
   function findAnchor() {
@@ -89,7 +156,7 @@ export function createBeetle(scene) {
       const plant = gs[plantLabels[i]];
       if (plant && plant.group) {
         const pos = plant.group.position;
-        return { x: pos.x, z: pos.z };
+        return { x: pos.x, z: pos.z, label: plantLabels[i] };
       }
     }
     return null;
@@ -100,12 +167,92 @@ export function createBeetle(scene) {
   if (initialAnchor) {
     _anchorPos = initialAnchor;
     _anchorFound = true;
+    _anchorLabel = initialAnchor.label;
     // Place group at anchor + slight offset so beetle sits near the stem base
     group.position.set(
       _anchorPos.x + CRAWL_ARC_OFFSET,
       0.005,
       _anchorPos.z
     );
+  }
+
+  /* --- Petal pause helpers (issue #772) --- */
+
+  /* Clear any in-progress pause. When restoreCrawlPhase is true the crawl
+   * phase is restored from its pre-pause snapshot, so crawling resumes from
+   * exactly where it stopped. */
+  function clearPetalPause(restoreCrawlPhase) {
+    if (restoreCrawlPhase && _petalPauseActive) {
+      _crawlPhase = _prePauseCrawlPhase;
+    }
+    _petalPauseActive = false;
+    _petalPauseElapsed = 0;
+    _petalPauseDuration = 0;
+    _prePauseCrawlPhase = 0;
+    _pauseTargetPetal = null;
+  }
+
+  /* Face the paused beetle toward its petal target (matches the crawl's
+   * atan2(dx, dz) facing convention). */
+  function rotateTowardPauseTarget() {
+    const targetPos = _pauseTargetPetal && _pauseTargetPetal.endPos;
+    if (!targetPos) return;
+    const dx = targetPos.x - group.position.x;
+    const dz = targetPos.z - group.position.z;
+    if (dx === 0 && dz === 0) return;
+    group.rotation.y = Math.atan2(dx, dz);
+  }
+
+  /* Tell the DOM layer what is happening — the acknowledgment panel is the
+   * text description of the garden's current state. */
+  function postPetalPauseAcknowledgment() {
+    const ackEl = document.getElementById('garden-state-acknowledgment');
+    if (!ackEl) return;
+    ackEl.textContent = PETAL_PAUSE_PHRASES[Math.floor(Math.random() * PETAL_PAUSE_PHRASES.length)];
+  }
+
+  /* Begin a one-shot pause at the nearest fallen petal from the anchor
+   * plant's flower. Safe to call every frame — it either starts a pause,
+   * stays quiet, or gives up eligibility once petals have faded away. */
+  function tryStartPetalPause() {
+    if (_petalPauseActive || !_petalPauseEligible || !_anchorFound) return;
+
+    const now = performance.now();
+    if (now - _lastPetalPauseTime < PETAL_PAUSE_COOLDOWN_MS) return;
+
+    const gs = window.__gardenState;
+    const plant = _anchorLabel && gs && gs[_anchorLabel];
+    const flower = plant && plant.flower;
+    if (!flower || typeof flower.getFallenPetals !== 'function') return;
+
+    const petals = flower.getFallenPetals();
+    if (!Array.isArray(petals) || petals.length === 0) {
+      // Every petal has faded away — nothing left to pause at.
+      _petalPauseEligible = false;
+      return;
+    }
+
+    const target = selectPetalPauseTarget(
+      petals,
+      { x: group.position.x, z: group.position.z },
+      PETAL_PAUSE_MAX_DIST
+    );
+    if (!target) {
+      // Petals exist but none have settled within reach yet (they may still
+      // be falling) — keep eligibility so one touching down can trigger.
+      return;
+    }
+
+    // Freeze the crawl, snapshot the phase, reorient toward the petal.
+    _petalPauseActive = true;
+    _prePauseCrawlPhase = _crawlPhase;
+    _pauseTargetPetal = target;
+    _petalPauseDuration = PETAL_PAUSE_MIN_MS + Math.random() * (PETAL_PAUSE_MAX_MS - PETAL_PAUSE_MIN_MS);
+    _petalPauseElapsed = 0;
+    _lastPetalPauseTime = now;
+    _petalPauseEligible = false; // one-shot — a single pause per rain event
+    rotateTowardPauseTarget();
+    postPetalPauseAcknowledgment();
   }
 
   /* --- Update function, called every animation frame --- */
@@ -123,6 +270,7 @@ export function createBeetle(scene) {
       if (anchor) {
         _anchorPos = anchor;
         _anchorFound = true;
+        _anchorLabel = anchor.label;
         group.position.set(
           _anchorPos.x + CRAWL_ARC_OFFSET,
           0.005,
@@ -136,6 +284,14 @@ export function createBeetle(scene) {
     const weather = (document.getElementById('weather-display')?.textContent || '').trim();
     const timeOfDay = (document.getElementById('time-display')?.textContent || '').trim();
 
+    /* Detect the end of a Light Drizzle: resting petals are now on the ground
+     * (garden.js flips them to 'fading' the moment drizzle ends), so the
+     * beetle becomes eligible for a single pause at the nearest petal. */
+    if (_prevWeather === 'Light Drizzle' && weather !== 'Light Drizzle') {
+      _petalPauseEligible = true;
+    }
+    _prevWeather = weather;
+
     /* Determine target visibility */
     const shouldShow = shouldBeVisible(season, weather, timeOfDay);
     _targetOpacity = shouldShow ? 1.0 : 0.0;
@@ -145,6 +301,7 @@ export function createBeetle(scene) {
 
     if (reducedMotion) {
       // No animation — just appear/disappear based on weather/season/time
+      clearPetalPause(true); // the beetle never pauses under reduced motion
       if (shouldShow && _anchorFound) {
         group.visible = true;
         bodyMat.opacity = 1.0;
@@ -160,6 +317,12 @@ export function createBeetle(scene) {
         bodyMat.opacity = 0;
       }
       return;
+    }
+
+    /* If the environment is no longer active mid-pause (drizzle returns,
+     * night falls, etc.), abort the pause so the fade-out stays neutral. */
+    if (_petalPauseActive && !shouldShow) {
+      clearPetalPause(true);
     }
 
     /* --- Exponential fade toward target --- */
@@ -182,7 +345,10 @@ export function createBeetle(scene) {
       group.visible = false;
     }
 
-    if (!_anchorFound || _opacity <= 0) return;
+    if (!_anchorFound || _opacity <= 0) {
+      clearPetalPause(true);
+      return;
+    }
 
     /* --- Camera stillness check --- */
     let isCameraStill = true;
@@ -194,7 +360,28 @@ export function createBeetle(scene) {
     if (!isCameraStill) {
       // Camera just moved — freeze in place, don't advance crawl phase
       _crawlActive = false;
+      clearPetalPause(true); // abort any petal pause and resume from its snapshot
       return;
+    }
+
+    /* --- Petal pause (issue #772): hold at the fallen petal for 2-4s --- */
+    if (_petalPauseActive) {
+      _petalPauseElapsed += dt * 1000;
+      rotateTowardPauseTarget();
+      if (_petalPauseElapsed >= _petalPauseDuration) {
+        // Pause complete — resume exactly where the crawl left off.
+        _crawlPhase = _prePauseCrawlPhase;
+        clearPetalPause(false);
+      } else {
+        // Position stays frozen at the pause spot.
+        return;
+      }
+    }
+
+    /* One-shot pause at a fallen petal after Light Drizzle ends (issue #772). */
+    tryStartPetalPause();
+    if (_petalPauseActive) {
+      return; // pause began this frame — hold the current spot
     }
 
     /* --- Crawl animation (only when camera is still) --- */
