@@ -10,7 +10,7 @@ import { saveGardenState, loadGardenState, fastForwardState, clearGardenState, a
 import { createCreature, computeCentreCrossBlend, computeGreetingParams } from "./creature.js";
 import { computeDisplacement, setWindRotation, getWindRotation } from "./groundRipple.js";
 import { isReducedMotion, onMotionChange } from "./motion.js";
-import { selectPetalPauseTarget } from "./beetle.js";
+import { selectPetalPauseTarget, getSeasonalOpacity } from "./beetle.js";
 import { SEASON_PALETTES, SEASON_NAMES, SEASON_DURATION_MS, CYCLE_DURATION_MS, getWeatheringAmount } from "./garden.js";
 import { TIME_OF_DAY_AUDIO, WEATHER_AUDIO_MODIFIERS, SEASON_AUDIO_MODIFIERS, DEFAULT_WEATHER_MODIFIER, DEFAULT_SEASON_MODIFIER, getWarmthGain } from "./ambientAudio.js";
 
@@ -405,6 +405,100 @@ export async function checks() {
   // So the displacement should be the same
   if (Math.abs(dAt0 - dAtPi2) > 0.0001) {
     problems.push('Expected equal displacement: computeDisplacement(1,0,0) at rot=0 should match computeDisplacement(0,1,0) at rot=PI/2, but got ' + dAt0 + ' vs ' + dAtPi2 + ' (issue #767).');
+  }
+
+  /* ---------- Beetle seasonal opacity ramp checks (issue #775) ---------- */
+  // getSeasonalOpacity must be a function
+  if (typeof getSeasonalOpacity !== 'function') {
+    problems.push('getSeasonalOpacity is not exported from beetle.js — expected a function.');
+  } else {
+    // reducedMotion=true always returns 1.0 regardless of season
+    [0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0].forEach(function(sp) {
+      var v = getSeasonalOpacity(sp, true);
+      if (v !== 1.0) {
+        problems.push('getSeasonalOpacity(' + sp + ', true) returned ' + v + ', expected 1.0 (reducedMotion bypasses ramp).');
+      }
+    });
+
+    // Spring ramp-up (seasonIndex=0): first 20% ramps 0→1
+    // seasonProgress=0 → start of Spring → opacity 0
+    var v = getSeasonalOpacity(0, false);
+    if (v !== 0) {
+      problems.push('getSeasonalOpacity(0, false) returned ' + v + ', expected 0 (start of Spring, no ramp yet).');
+    }
+    // seasonProgress=0.05 → 5% through cycle = 20% through Spring → opacity 1
+    var v2 = getSeasonalOpacity(0.05, false);
+    if (Math.abs(v2 - 1.0) > 0.001) {
+      problems.push('getSeasonalOpacity(0.05, false) returned ' + v2 + ', expected 1.0 (at 20% of Spring, ramp complete).');
+    }
+    // seasonProgress=0.025 → 2.5% through cycle = 10% through Spring → opacity 0.5
+    var v3 = getSeasonalOpacity(0.025, false);
+    if (Math.abs(v3 - 0.5) > 0.001) {
+      problems.push('getSeasonalOpacity(0.025, false) returned ' + v3 + ', expected 0.5 (mid-ramp in Spring).');
+    }
+    // seasonProgress=0.01 → 1% through cycle = 4% through Spring → opacity 0.2
+    var v4 = getSeasonalOpacity(0.01, false);
+    if (Math.abs(v4 - 0.2) > 0.001) {
+      problems.push('getSeasonalOpacity(0.01, false) returned ' + v4 + ', expected 0.2 (early Spring ramp).');
+    }
+
+    // Summer (seasonIndex=1): full opacity throughout
+    // seasonProgress=0.3 → 30% through cycle = 20% through Summer → opacity 1
+    var v5 = getSeasonalOpacity(0.3, false);
+    if (v5 !== 1.0) {
+      problems.push('getSeasonalOpacity(0.3, false) returned ' + v5 + ', expected 1.0 (Summer should be full opacity).');
+    }
+    // seasonProgress=0.4 → 40% through cycle = 60% through Summer → opacity 1
+    var v6 = getSeasonalOpacity(0.4, false);
+    if (v6 !== 1.0) {
+      problems.push('getSeasonalOpacity(0.4, false) returned ' + v6 + ', expected 1.0 (Summer should be full opacity).');
+    }
+
+    // Autumn ramp-down (seasonIndex=2): last 20% ramps 1→0
+    // seasonProgress=0.7 → 70% through cycle = 80% through Autumn → opacity 1 (outside ramp)
+    var v7 = getSeasonalOpacity(0.7, false);
+    if (v7 !== 1.0) {
+      problems.push('getSeasonalOpacity(0.7, false) returned ' + v7 + ', expected 1.0 (before last 20% of Autumn).');
+    }
+    // seasonProgress=0.74 → 74% through cycle = 96% through Autumn → opacity 0.2 (80% into the 20% ramp)
+    // withinSeasonProgress = (0.74*4) % 1 = 2.96 % 1 = 0.96
+    // autumnRampProgress = (0.96 - 0.8) / 0.2 = 0.8
+    // opacity = 1 - 0.8 = 0.2
+    var v8 = getSeasonalOpacity(0.74, false);
+    // withinSeasonProgress = (0.74*4)%1 = 2.96%1 = 0.96, (1-0.96)/0.2 = 0.2
+    if (Math.abs(v8 - 0.2) > 0.001) {
+      problems.push('getSeasonalOpacity(0.74, false) returned ' + v8 + ', expected 0.2 (late Autumn ramp).');
+    }
+    // seasonProgress=0.75 → 75% through cycle = 100% through Autumn → opacity 0
+    var v9 = getSeasonalOpacity(0.75, false);
+    if (v9 !== 0) {
+      problems.push('getSeasonalOpacity(0.75, false) returned ' + v9 + ', expected 0 (end of Autumn, start of Winter).');
+    }
+
+    // Winter (seasonIndex=3): always 0
+    // seasonProgress=0.8 → 80% through cycle → Winter
+    var v10 = getSeasonalOpacity(0.8, false);
+    if (v10 !== 0) {
+      problems.push('getSeasonalOpacity(0.8, false) returned ' + v10 + ', expected 0 (Winter, beetle overwintering).');
+    }
+    // seasonProgress=0.9 → 90% through cycle → Winter
+    var v11 = getSeasonalOpacity(0.9, false);
+    if (v11 !== 0) {
+      problems.push('getSeasonalOpacity(0.9, false) returned ' + v11 + ', expected 0 (Winter, beetle overwintering).');
+    }
+
+    // Boundary: seasonProgress=1.0 wraps to start of Spring (same as 0)
+    var v12 = getSeasonalOpacity(1.0, false);
+    if (v12 !== 0) {
+      problems.push('getSeasonalOpacity(1.0, false) returned ' + v12 + ', expected 0 (wraps to start of Spring).');
+    }
+
+    // Middle of Spring (seasonIndex=0, withinSeasonProgress > 0.2): full opacity
+    // seasonProgress=0.1 → 10% through cycle = 40% through Spring → opacity 1
+    var v13 = getSeasonalOpacity(0.1, false);
+    if (v13 !== 1.0) {
+      problems.push('getSeasonalOpacity(0.1, false) returned ' + v13 + ', expected 1.0 (mid-Spring, past ramp window).');
+    }
   }
 
   /* ---------- DOM state panel ---------- */

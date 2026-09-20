@@ -9,6 +9,7 @@
  *
  * Exports: createBeetle(scene) → { group, update }
  *          selectPetalPauseTarget(petals, refPos, maxDist) → petal|null
+ *          getSeasonalOpacity(seasonProgress, reducedMotion) → number
  */
 
 import * as THREE from "three";
@@ -45,6 +46,50 @@ const PETAL_PAUSE_PHRASES = [
   'A fallen petal draws the beetle\u2019s brief attention.',
   'The beetle halts at the fallen petal, still and intent.'
 ];
+
+/**
+ * Compute the seasonal opacity ramp multiplier for the beetle.
+ *
+ * During the first 20% of Spring, ramps from 0 to 1.
+ * During the last 20% of Autumn, ramps from 1 to 0.
+ * During Winter, returns 0 (beetle overwinters underground).
+ * Otherwise (Summer, middle of Spring/Autumn), returns 1.
+ * Under prefers-reduced-motion, returns 1 (no ramp — matches existing behavior
+ * where the beetle appears/disappears at the threshold).
+ *
+ * This opacity multiplies the existing weather-fade opacity, so both layers
+ * compose independently.
+ *
+ * @param {number} seasonProgress - 0-1 value from window.__gardenState.seasonProgress
+ * @param {boolean} reducedMotion - prefers-reduced-motion is active
+ * @returns {number} opacity multiplier in [0, 1]
+ */
+export function getSeasonalOpacity(seasonProgress, reducedMotion) {
+  if (reducedMotion) return 1.0;
+
+  // Derive season index (0=Spring, 1=Summer, 2=Autumn, 3=Winter)
+  // and within-season progress (0-1) from the 0-1 cycle progress
+  var seasonIndex = Math.floor(seasonProgress * 4) % 4;
+  var withinSeasonProgress = (seasonProgress * 4) % 1;
+
+  if (seasonIndex === 0 && withinSeasonProgress < 0.2) {
+    // Spring ramp-up: first 20% of Spring, opacity 0→1
+    return withinSeasonProgress / 0.2;
+  }
+
+  if (seasonIndex === 2 && withinSeasonProgress > 0.8) {
+    // Autumn ramp-down: last 20% of Autumn, opacity 1→0
+    return (1 - withinSeasonProgress) / 0.2;
+  }
+
+  if (seasonIndex === 3) {
+    // Winter: beetle is overwintering underground
+    return 0;
+  }
+
+  // Summer and middle portions of Spring/Autumn: full opacity
+  return 1.0;
+}
 
 /* --- Helper: determine if beetle should be visible --- */
 function shouldBeVisible(season, weather, timeOfDay) {
@@ -119,6 +164,22 @@ export function createBeetle(scene) {
   body.scale.set(1, BODY_HEIGHT_RATIO, BODY_WIDTH_RATIO);
   body.position.y = 0.005; // just above ground surface
   group.add(body);
+
+  /* --- Burrow: a small dark ellipse visible on the ground during Winter --- */
+  const burrowGeo = new THREE.CircleGeometry(0.003, 8);
+  const burrowMat = new THREE.MeshBasicMaterial({
+    color: 0x1a0a00,
+    transparent: true,
+    opacity: 0.18,
+    depthWrite: false,
+    side: THREE.DoubleSide
+  });
+  const burrow = new THREE.Mesh(burrowGeo, burrowMat);
+  burrow.rotation.x = -Math.PI / 2; // flat on ground
+  burrow.position.y = 0.002; // just above ground surface
+  burrow.visible = false;
+  burrow.name = 'burrow';
+  group.add(burrow);
 
   /* Start invisible */
   group.visible = false;
@@ -292,17 +353,32 @@ export function createBeetle(scene) {
     }
     _prevWeather = weather;
 
-    /* Determine target visibility */
-    const shouldShow = shouldBeVisible(season, weather, timeOfDay);
-    _targetOpacity = shouldShow ? 1.0 : 0.0;
-
     /* Check reduced motion */
     const reducedMotion = isReducedMotion();
+
+    /* --- Seasonal opacity ramp (issue #775) ---
+     * Read seasonProgress from garden state to determine seasonal emergence/
+     * retreat. The seasonal opacity multiplies the weather-fade target, so
+     * the beetle fades in gradually during early Spring and fades out
+     * during late Autumn, independently of weather transitions. */
+    const seasonProgress = window.__gardenState && typeof window.__gardenState.seasonProgress === 'number'
+      ? window.__gardenState.seasonProgress
+      : 0;
+    const seasonalOpacity = getSeasonalOpacity(seasonProgress, reducedMotion);
+
+    /* Derive season index for burrow visibility — same derivation as in
+     * getSeasonalOpacity so they stay in sync. */
+    const _seasonIndex = Math.floor(seasonProgress * 4) % 4;
+
+    /* Determine target visibility: weather/season/time conditions combined
+     * with the seasonal opacity ramp. */
+    const shouldShow = shouldBeVisible(season, weather, timeOfDay);
+    _targetOpacity = shouldShow ? seasonalOpacity : 0.0;
 
     if (reducedMotion) {
       // No animation — just appear/disappear based on weather/season/time
       clearPetalPause(true); // the beetle never pauses under reduced motion
-      if (shouldShow && _anchorFound) {
+      if (shouldShow && seasonalOpacity > 0 && _anchorFound) {
         group.visible = true;
         bodyMat.opacity = 1.0;
         body.scale.set(1, BODY_HEIGHT_RATIO, BODY_WIDTH_RATIO);
@@ -316,12 +392,22 @@ export function createBeetle(scene) {
         group.visible = false;
         bodyMat.opacity = 0;
       }
+      // Burrow: visible during Winter regardless of other conditions
+      burrow.visible = _seasonIndex === 3;
+      if (_anchorFound && _seasonIndex === 3) {
+        // Position burrow near anchor
+        burrow.position.set(
+          _anchorPos.x + CRAWL_ARC_OFFSET,
+          0.002,
+          _anchorPos.z
+        );
+      }
       return;
     }
 
     /* If the environment is no longer active mid-pause (drizzle returns,
      * night falls, etc.), abort the pause so the fade-out stays neutral. */
-    if (_petalPauseActive && !shouldShow) {
+    if (_petalPauseActive && _targetOpacity <= 0) {
       clearPetalPause(true);
     }
 
@@ -343,6 +429,18 @@ export function createBeetle(scene) {
       group.visible = true;
     } else {
       group.visible = false;
+    }
+
+    /* --- Burrow visibility (issue #775) ---
+     * During Winter, show a small dark opening where the beetle overwinters.
+     * Visible only during Winter (seasonIndex === 3), positioned near anchor. */
+    burrow.visible = _seasonIndex === 3;
+    if (_anchorFound && _seasonIndex === 3) {
+      burrow.position.set(
+        _anchorPos.x + CRAWL_ARC_OFFSET,
+        0.002,
+        _anchorPos.z
+      );
     }
 
     if (!_anchorFound || _opacity <= 0) {
