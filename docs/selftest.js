@@ -10,6 +10,7 @@ import { saveGardenState, loadGardenState, fastForwardState, clearGardenState, a
 import { createCreature, computeCentreCrossBlend, computeGreetingParams } from "./creature.js";
 import { computeDisplacement, setWindRotation, getWindRotation } from "./groundRipple.js";
 import { isReducedMotion, onMotionChange } from "./motion.js";
+import { selectPetalPauseTarget } from "./beetle.js";
 import { SEASON_PALETTES, SEASON_NAMES, SEASON_DURATION_MS, CYCLE_DURATION_MS, getWeatheringAmount } from "./garden.js";
 import { TIME_OF_DAY_AUDIO, WEATHER_AUDIO_MODIFIERS, SEASON_AUDIO_MODIFIERS, DEFAULT_WEATHER_MODIFIER, DEFAULT_SEASON_MODIFIER, getWarmthGain } from "./ambientAudio.js";
 
@@ -231,6 +232,89 @@ import { TIME_OF_DAY_AUDIO, WEATHER_AUDIO_MODIFIERS, SEASON_AUDIO_MODIFIERS, DEF
   var nearEdge = computeCentreCrossBlend(center - 2.4, 0.08, 3, false);
   if (nearEdge <= 0) throw new Error('2.4s from crossing centre (near edge), expected blend>0, got ' + nearEdge);
   if (nearEdge >= 0.01) throw new Error('2.4s from crossing centre (near edge), expected blend<0.01, got ' + nearEdge);
+})();
+
+/* ---------- selectPetalPauseTarget pure-function tests (issue #772) ---------- */
+// The beetle's post-drizzle petal pause picks the nearest resting/fading
+// petal near its anchor plant. Verify the selection logic directly with
+// fabricated petal entries, independently of the live scene.
+(function testSelectPetalPauseTarget() {
+  const refPos = { x: 0, z: 0 };
+
+  // Empty / missing arrays return null
+  if (selectPetalPauseTarget([], refPos, 1) !== null) {
+    throw new Error('selectPetalPauseTarget([], ...) should return null for an empty petal array (issue #772)');
+  }
+  if (selectPetalPauseTarget(null, refPos, 1) !== null) {
+    throw new Error('selectPetalPauseTarget(null, ...) should return null (issue #772)');
+  }
+  if (selectPetalPauseTarget(undefined, refPos, 1) !== null) {
+    throw new Error('selectPetalPauseTarget(undefined, ...) should return null (issue #772)');
+  }
+
+  // A missing/malformed refPos returns null
+  if (selectPetalPauseTarget([{ state: 'resting', endPos: { x: 0.02, z: 0 } }], null, 1) !== null) {
+    throw new Error('selectPetalPauseTarget should return null without a valid refPos (issue #772)');
+  }
+
+  // Petals still falling are not candidates — only resting/fading count
+  const fallingPetal = { state: 'falling', endPos: { x: 0.02, z: 0.02 } };
+  if (selectPetalPauseTarget([fallingPetal], refPos, 1) !== null) {
+    throw new Error('selectPetalPauseTarget should ignore petals still in "falling" state (issue #772)');
+  }
+
+  // Petals beyond maxDist are excluded
+  const farPetal = { state: 'resting', endPos: { x: 0.5, z: 0 } };
+  if (selectPetalPauseTarget([farPetal], refPos, 0.1) !== null) {
+    throw new Error('selectPetalPauseTarget should return null when the only petal is beyond maxDist (issue #772)');
+  }
+
+  // A resting petal within range is returned
+  const nearPetal = { state: 'resting', endPos: { x: 0.03, z: 0.04 } };
+  if (selectPetalPauseTarget([nearPetal], refPos, 1) !== nearPetal) {
+    throw new Error('selectPetalPauseTarget should return the nearest resting petal in range (issue #772)');
+  }
+
+  // Fading petals are also candidates — garden.js flips resting petals to
+  // 'fading' the moment the drizzle ends, so the pause must accept them
+  const fadingPetal = { state: 'fading', endPos: { x: 0.02, z: 0 } };
+  if (selectPetalPauseTarget([fadingPetal], refPos, 1) !== fadingPetal) {
+    throw new Error('selectPetalPauseTarget should accept petals in "fading" state (issue #772)');
+  }
+
+  // Nearest of many candidates wins
+  const far2 = { state: 'resting', endPos: { x: 0.1, z: 0 } };
+  const near2 = { state: 'resting', endPos: { x: 0.01, z: 0 } };
+  const mid2 = { state: 'resting', endPos: { x: 0.05, z: 0 } };
+  const resultNearest = selectPetalPauseTarget([far2, near2, mid2], refPos, 1);
+  if (resultNearest !== near2) {
+    throw new Error('selectPetalPauseTarget should pick the nearest petal among several candidates (issue #772)');
+  }
+
+  // Distances are measured from the supplied refPos, not the origin
+  const offRef = { x: 1, z: 1 };
+  const petalAtOrigin = { state: 'resting', endPos: { x: 0, z: 0 } };
+  if (selectPetalPauseTarget([petalAtOrigin], offRef, 1) !== null) {
+    throw new Error('selectPetalPauseTarget should measure distance from the supplied refPos (issue #772)');
+  }
+
+  // Entries missing endPos are skipped without breaking the search
+  const noEndPos = { state: 'resting' };
+  const okPetal = { state: 'resting', endPos: { x: 0.02, z: 0 } };
+  const resultMissing = selectPetalPauseTarget([noEndPos, okPetal], refPos, 1);
+  if (resultMissing !== okPetal) {
+    throw new Error('selectPetalPauseTarget should skip entries without endPos and still find valid ones (issue #772)');
+  }
+
+  // A positive maxDist behaves as an upper bound; an omitted maxDist is open-ended
+  const justInside = { state: 'resting', endPos: { x: 0.099, z: 0 } };
+  const justOutside = { state: 'resting', endPos: { x: 0.101, z: 0 } };
+  if (selectPetalPauseTarget([justInside], refPos, 0.1) !== justInside) {
+    throw new Error('selectPetalPauseTarget should accept a petal just inside maxDist (issue #772)');
+  }
+  if (selectPetalPauseTarget([justOutside], refPos, 0.1) !== null) {
+    throw new Error('selectPetalPauseTarget should reject a petal just outside maxDist (issue #772)');
+  }
 })();
 
 export async function checks() {
