@@ -10,7 +10,7 @@ import { saveGardenState, loadGardenState, fastForwardState, clearGardenState, a
 import { createCreature, computeCentreCrossBlend, computeGreetingParams } from "./creature.js";
 import { computeDisplacement, setWindRotation, getWindRotation } from "./groundRipple.js";
 import { isReducedMotion, onMotionChange } from "./motion.js";
-import { selectPetalPauseTarget } from "./beetle.js";
+import { selectPetalPauseTarget, computeSeasonalOpacityMultiplier } from "./beetle.js";
 import { SEASON_PALETTES, SEASON_NAMES, SEASON_DURATION_MS, CYCLE_DURATION_MS, getWeatheringAmount } from "./garden.js";
 import { TIME_OF_DAY_AUDIO, WEATHER_AUDIO_MODIFIERS, SEASON_AUDIO_MODIFIERS, DEFAULT_WEATHER_MODIFIER, DEFAULT_SEASON_MODIFIER, getWarmthGain } from "./ambientAudio.js";
 
@@ -315,6 +315,64 @@ import { TIME_OF_DAY_AUDIO, WEATHER_AUDIO_MODIFIERS, SEASON_AUDIO_MODIFIERS, DEF
   if (selectPetalPauseTarget([justOutside], refPos, 0.1) !== null) {
     throw new Error('selectPetalPauseTarget should reject a petal just outside maxDist (issue #772)');
   }
+})();
+
+/* ---------- computeSeasonalOpacityMultiplier pure-function tests (issue #775) ---------- */
+(function testComputeSeasonalOpacityMultiplier() {
+  // Edge cases: invalid or out-of-range inputs return 1.0
+  if (computeSeasonalOpacityMultiplier(undefined, false) !== 1.0) throw new Error('undefined seasonProgress should return 1.0');
+  if (computeSeasonalOpacityMultiplier(-0.1, false) !== 1.0) throw new Error('negative seasonProgress should return 1.0');
+  if (computeSeasonalOpacityMultiplier(1.5, false) !== 1.0) throw new Error('seasonProgress > 1 should return 1.0');
+
+  // Reduced motion: always returns 1.0 regardless of seasonProgress
+  if (computeSeasonalOpacityMultiplier(0, true) !== 1.0) throw new Error('reducedMotion=true at Spring start should return 1.0');
+  if (computeSeasonalOpacityMultiplier(0.025, true) !== 1.0) throw new Error('reducedMotion=true at Spring 10% should return 1.0');
+  if (computeSeasonalOpacityMultiplier(0.6875, true) !== 1.0) throw new Error('reducedMotion=true at Autumn 75% should return 1.0');
+  if (computeSeasonalOpacityMultiplier(0.75, true) !== 1.0) throw new Error('reducedMotion=true at Autumn end should return 1.0');
+
+  // Spring start (seasonProgress=0, withinSpring=0): returns 0
+  if (computeSeasonalOpacityMultiplier(0, false) !== 0) throw new Error('Spring start (seasonProgress=0) should return 0, got ' + computeSeasonalOpacityMultiplier(0, false));
+
+  // Spring 10% into season (seasonProgress=0.025, withinSpring=0.1): returns 0.5
+  var r1 = computeSeasonalOpacityMultiplier(0.025, false);
+  if (Math.abs(r1 - 0.5) > 0.001) throw new Error('Spring 10% (seasonProgress=0.025) should return 0.5, got ' + r1);
+
+  // Spring 20% into season (seasonProgress=0.05, withinSpring=0.2): returns 1.0
+  var r2 = computeSeasonalOpacityMultiplier(0.05, false);
+  if (Math.abs(r2 - 1.0) > 0.001) throw new Error('Spring 20% (seasonProgress=0.05) should return 1.0, got ' + r2);
+
+  // Spring 30% (seasonProgress=0.075): outside ramp, returns 1.0
+  if (computeSeasonalOpacityMultiplier(0.075, false) !== 1.0) throw new Error('Spring 30% (seasonProgress=0.075) should return 1.0, got ' + computeSeasonalOpacityMultiplier(0.075, false));
+
+  // Summer (seasonProgress=0.3, seasonIndex=1): returns 1.0
+  if (computeSeasonalOpacityMultiplier(0.3, false) !== 1.0) throw new Error('Summer (seasonProgress=0.3) should return 1.0, got ' + computeSeasonalOpacityMultiplier(0.3, false));
+
+  // Autumn 75% (seasonProgress=0.6875, withinAutumn=0.75): returns 1.0 (outside ramp)
+  if (computeSeasonalOpacityMultiplier(0.6875, false) !== 1.0) throw new Error('Autumn 75% (seasonProgress=0.6875) should return 1.0, got ' + computeSeasonalOpacityMultiplier(0.6875, false));
+
+  // Autumn 90% (seasonProgress=0.725, withinAutumn=0.9): ramp progress = (0.9-0.8)/0.2 = 0.5, multiplier = 1-0.5 = 0.5
+  var r3 = computeSeasonalOpacityMultiplier(0.725, false);
+  if (Math.abs(r3 - 0.5) > 0.001) throw new Error('Autumn 90% (seasonProgress=0.725) should return 0.5, got ' + r3);
+
+  // Autumn near end (seasonProgress=0.749, withinAutumn≈0.996): ramp approaches 0
+  var r4 = computeSeasonalOpacityMultiplier(0.749, false);
+  if (r4 >= 1 || r4 < 0) throw new Error('Autumn near end (seasonProgress=0.749) should be in (0,1), got ' + r4);
+  if (r4 > 0.1) throw new Error('Autumn near end (seasonProgress=0.749) should be near 0, got ' + r4);
+
+  // At exactly seasonProgress=0.75, the cycle flips to Winter (index 3), so multiplier=1.0
+  // (Winter has no ramp — the beetle is controlled by shouldBeVisible instead)
+  if (computeSeasonalOpacityMultiplier(0.75, false) !== 1.0) throw new Error('Winter boundary (seasonProgress=0.75) should return 1.0 (no ramp in Winter)');
+
+  // Winter (seasonProgress=0.8): returns 1.0 (no ramp for Winter; beetle shouldn't be visible anyway)
+  if (computeSeasonalOpacityMultiplier(0.8, false) !== 1.0) throw new Error('Winter (seasonProgress=0.8) should return 1.0, got ' + computeSeasonalOpacityMultiplier(0.8, false));
+
+  // Exact boundary: Spring at exact ramp edge (withinSpring=0.2 exactly)
+  // withinSeasonProgress = (0.05 * 4) % 1 = 0.2; 0.2 < 0.2 is false, so returns 1.0
+  if (computeSeasonalOpacityMultiplier(0.05, false) !== 1.0) throw new Error('Spring at exact ramp boundary (seasonProgress=0.05) should return 1.0');
+
+  // Exact boundary: Autumn ramp start (withinAutumn = 0.8 exactly)
+  // withinSeasonProgress = (0.7 * 4) % 1 = 0.8; 0.8 > 0.8 is false, so returns 1.0
+  if (computeSeasonalOpacityMultiplier(0.7, false) !== 1.0) throw new Error('Autumn at ramp start boundary (seasonProgress=0.7) should return 1.0');
 })();
 
 export async function checks() {
@@ -12536,7 +12594,7 @@ export async function checks() {
     var weatherPhase766 = (document.getElementById('weather-display')?.textContent || '').trim();
     var timeOfDay = (document.getElementById('time-display')?.textContent || '').trim();
 
-    var isWarmSeason = season === 'Spring' || season === 'Summer';
+    var isWarmSeason = season === 'Spring' || season === 'Summer' || season === 'Autumn';
     var isClear = weatherPhase766 === 'Clear';
     var isDaytime = timeOfDay !== 'Night';
 
@@ -12555,6 +12613,38 @@ export async function checks() {
           problems.push('beetle body opacity is ' + bodyMat.opacity + ' but conditions (' + season + ', ' + weatherPhase766 + ', ' + timeOfDay + ') expect it to be hidden — should fade out during Night, Winter, Light Drizzle, or Overcast (issue #766).');
         }
       }
+    }
+    // Burrow checks (issue #775): the beetle group should have a small dark
+    // CircleGeometry mesh (Winter burrow) as its second child.
+    if (beetle.group && beetle.group.children.length >= 2) {
+      var burrowMesh = beetle.group.children[1];
+      if (burrowMesh && burrowMesh.isMesh) {
+        if (burrowMesh.geometry.type !== 'CircleGeometry') {
+          problems.push('beetle burrow geometry type is "' + burrowMesh.geometry.type + '", expected CircleGeometry (issue #775).');
+        }
+        if (Math.abs(burrowMesh.rotation.x - (-Math.PI / 2)) > 0.01) {
+          problems.push('beetle burrow rotation.x is ' + burrowMesh.rotation.x + ', expected -PI/2 (flat on ground) (issue #775).');
+        }
+        var burrowMat = burrowMesh.material;
+        if (!burrowMat.transparent) {
+          problems.push('beetle burrow material.transparent is false — expected true for low-opacity ground patch (issue #775).');
+        }
+        if (typeof burrowMat.opacity !== 'number' || burrowMat.opacity < 0.1 || burrowMat.opacity > 0.25) {
+          problems.push('beetle burrow material.opacity is ' + burrowMat.opacity + ', expected between 0.1 and 0.25 (issue #775).');
+        }
+        // During Winter the burrow should be visible; outside Winter it should be hidden.
+        // This is a soft check since conditions vary at page load.
+        if (season === 'Winter' && !burrowMesh.visible) {
+          problems.push('beetle burrow is not visible during Winter — expected visible (issue #775).');
+        }
+        if (season !== 'Winter' && burrowMesh.visible) {
+          problems.push('beetle burrow is visible outside Winter (season=' + season + ') — expected hidden (issue #775).');
+        }
+      } else {
+        problems.push('beetle group child[1] is not a Mesh — expected the winter burrow patch (issue #775).');
+      }
+    } else {
+      problems.push('beetle group has fewer than 2 children — expected body mesh + winter burrow (issue #775).');
     }
   } else {
     problems.push('gardenState.beetle is missing or undefined — the ground beetle was not created (issue #766).');

@@ -9,6 +9,7 @@
  *
  * Exports: createBeetle(scene) → { group, update }
  *          selectPetalPauseTarget(petals, refPos, maxDist) → petal|null
+ *          computeSeasonalOpacityMultiplier(seasonProgress, reducedMotion) → number
  */
 
 import * as THREE from "three";
@@ -24,6 +25,48 @@ const BODY_COLOR = 0x2a1a0a;      // dark brown/black
 const CRAWL_SPEED = 0.005;        // units/s — very slow
 const CRAWL_ARC_RADIUS = 0.04;    // units — short path near plant base
 const CRAWL_ARC_OFFSET = 0.02;    // units — offset from plant stem center
+
+/* --- Seasonal ramp configuration (issue #775) --- */
+const SEASON_DURATION_MS = 180_000;        // 3 minutes per season
+const RAMP_FRACTION = 0.20;                // first/last 20% of season for opacity ramp
+const RAMP_DURATION_MS = SEASON_DURATION_MS * RAMP_FRACTION;  // 36s ramp window
+
+/**
+ * Compute a seasonal opacity multiplier for gradual emergence in Spring
+ * and retreat in Autumn.
+ *
+ * During the first RAMP_FRACTION of Spring, returns a 0→1 ramp.
+ * During the last RAMP_FRACTION of Autumn, returns a 1→0 ramp.
+ * Outside these windows (or when reducedMotion is true), returns 1.0.
+ *
+ * @param {number} seasonProgress - window.__gardenState.seasonProgress (0–1 full cycle)
+ * @param {boolean} reducedMotion - Whether prefers-reduced-motion is active
+ * @returns {number} Opacity multiplier in [0, 1]
+ */
+export function computeSeasonalOpacityMultiplier(seasonProgress, reducedMotion) {
+  if (typeof seasonProgress !== 'number' || seasonProgress < 0 || seasonProgress > 1) {
+    return 1.0;
+  }
+  if (reducedMotion) {
+    return 1.0;
+  }
+
+  var seasonIndex = Math.floor(seasonProgress * 4) % 4;
+  var withinSeasonProgress = (seasonProgress * 4) % 1;
+
+  // 0=Spring, 1=Summer, 2=Autumn, 3=Winter
+  if (seasonIndex === 0 && withinSeasonProgress < RAMP_FRACTION) {
+    // Spring ramp-up: 0 → 1 over first 20%
+    return withinSeasonProgress / RAMP_FRACTION;
+  } else if (seasonIndex === 2 && withinSeasonProgress > (1 - RAMP_FRACTION)) {
+    // Autumn ramp-down: 1 → 0 over last 20%
+    var autumnRampProgress = (withinSeasonProgress - (1 - RAMP_FRACTION)) / RAMP_FRACTION;
+    return 1.0 - autumnRampProgress;
+  }
+
+  // Outside ramp windows: full opacity
+  return 1.0;
+}
 
 /* Fade transition */
 const FADE_TIME_CONSTANT = 2.5;   // seconds — exponential lerp (~86% after 5s)
@@ -48,8 +91,9 @@ const PETAL_PAUSE_PHRASES = [
 
 /* --- Helper: determine if beetle should be visible --- */
 function shouldBeVisible(season, weather, timeOfDay) {
-  // Visible during Spring OR Summer AND Clear weather AND daytime (not Night)
-  const isWarmSeason = season === 'Spring' || season === 'Summer';
+  // Visible during Spring, Summer, OR Autumn AND Clear weather AND daytime (not Night)
+  // Autumn is included so the seasonal ramp-down can play during its last 20%
+  const isWarmSeason = season === 'Spring' || season === 'Summer' || season === 'Autumn';
   const isClear = weather === 'Clear';
   const isDaytime = timeOfDay !== 'Night';
 
@@ -119,6 +163,22 @@ export function createBeetle(scene) {
   body.scale.set(1, BODY_HEIGHT_RATIO, BODY_WIDTH_RATIO);
   body.position.y = 0.005; // just above ground surface
   group.add(body);
+
+  /* --- Burrow: a small dark ellipse on the ground visible during Winter --- */
+  const burrowGeo = new THREE.CircleGeometry(0.003, 16);
+  const burrowMat = new THREE.MeshStandardMaterial({
+    color: 0x2a1a0a,
+    roughness: 0.9,
+    metalness: 0.0,
+    transparent: true,
+    opacity: 0.18,
+    depthWrite: false  // sits on ground, don't occlude
+  });
+  const burrow = new THREE.Mesh(burrowGeo, burrowMat);
+  burrow.rotation.x = -Math.PI / 2; // flat on ground
+  burrow.position.y = 0.003; // just above ground surface
+  burrow.visible = false;
+  group.add(burrow);
 
   /* Start invisible */
   group.visible = false;
@@ -276,7 +336,16 @@ export function createBeetle(scene) {
           0.005,
           _anchorPos.z
         );
+        // Position burrow at anchor
+        burrow.position.x = 0;
+        burrow.position.z = 0;
       }
+    }
+
+    /* Keep burrow position synced with group position */
+    if (_anchorFound) {
+      burrow.position.x = 0;
+      burrow.position.z = 0;
     }
 
     /* Read current season, weather, time from DOM */
@@ -299,8 +368,13 @@ export function createBeetle(scene) {
     /* Check reduced motion */
     const reducedMotion = isReducedMotion();
 
+    /* --- Burrow visibility: show only during Winter --- */
+    var isWinter = season === 'Winter';
+    burrow.visible = isWinter && _anchorFound;
+
     if (reducedMotion) {
       // No animation — just appear/disappear based on weather/season/time
+      // The seasonal ramp is skipped under reduced motion (multiplier stays 1.0)
       clearPetalPause(true); // the beetle never pauses under reduced motion
       if (shouldShow && _anchorFound) {
         group.visible = true;
@@ -318,6 +392,12 @@ export function createBeetle(scene) {
       }
       return;
     }
+
+    /* --- Apply seasonal opacity ramp (issue #775) --- */
+    var gs = window.__gardenState;
+    var seasonProgress = gs && typeof gs.seasonProgress === 'number' ? gs.seasonProgress : 0;
+    var seasonalMultiplier = computeSeasonalOpacityMultiplier(seasonProgress, reducedMotion);
+    _targetOpacity *= seasonalMultiplier;
 
     /* If the environment is no longer active mid-pause (drizzle returns,
      * night falls, etc.), abort the pause so the fade-out stays neutral. */
