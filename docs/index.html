@@ -225,6 +225,7 @@
     import { createFireflies } from "./fireflies.js";
     import { createDawnMist } from "./dawnMist.js";
     import { createBeetle } from "./beetle.js";
+    import { createCondensation } from "./condensation.js";
 
     const wrapper = document.getElementById('garden-canvas-wrapper');
     const scene = new THREE.Scene();
@@ -526,6 +527,9 @@
     /* --- Dawn mist: subtle ground-level mist during early Morning (issue #747) --- */
     const dawnMist = createDawnMist(scene);
 
+    /* --- Dawn condensation: transient moisture beads and wet carapace sheen (issue #773) --- */
+    const condensation = createCondensation();
+
     /* Animation loop */
     let animTime = 0;
     let lastFrameTime = performance.now();
@@ -569,6 +573,9 @@
 
       /* Update dawn mist (issue #747) */
       dawnMist.update(animTime);
+
+      /* Update dawn condensation beads and carapace sheen (issue #773) */
+      condensation.update();
 
       /* Update ground beetle (issue #766) */
       beetle.update(animTime);
@@ -1522,6 +1529,7 @@
       fireflies: fireflies.state,
       firefliesUpdate: fireflies.update,
       dawnMist: dawnMist.state,
+      condensation: condensation.state,
       beetle: { group: beetle.group, update: beetle.update },
       /* Base seasonal ground colour (before winter legacy or rain darkening).
        * Set by startSeasonalCycle each tick, read by weather.js for rain darkening (issue #528). */

@@ -12560,5 +12560,135 @@ export async function checks() {
     problems.push('gardenState.beetle is missing or undefined — the ground beetle was not created (issue #766).');
   }
 
+  /* ---------- Dawn condensation checks (issue #773) ---------- */
+  // During the dawn window (t ∈ [0.95, 0.12]) beads must appear on plants
+  // and the carapace roughness must ease toward 0.5, all on the dawn mist's
+  // own curve. Beads must stay separate from the drizzle droplet system.
+  const condensation = gardenState && gardenState.condensation;
+  if (!condensation) {
+    problems.push('gardenState.condensation is missing — the dawn condensation module was not created (issue #773).');
+  } else {
+    if (condensation.type !== 'condensation') {
+      problems.push('condensation.type is "' + condensation.type + '", expected "condensation" (issue #773).');
+    }
+
+    // Curve functions must mirror the dawn mist's window exactly.
+    if (typeof condensation.getWindowFactor !== 'function' ||
+        typeof condensation.getBeadOpacity !== 'function' ||
+        typeof condensation.getCarapaceRoughness !== 'function') {
+      problems.push('condensation is missing getWindowFactor / getBeadOpacity / getCarapaceRoughness (issue #773).');
+    } else {
+      // Peak during the hold window (t=0.04): factor 1, bead opacity 0.25, wet carapace 0.5
+      var factorPeak = condensation.getWindowFactor(0.04);
+      if (factorPeak !== 1) {
+        problems.push('condensation.getWindowFactor(0.04) returned ' + factorPeak + ', expected 1 at peak (issue #773).');
+      }
+      var opacityPeak = condensation.getBeadOpacity(0.04);
+      if (Math.abs(opacityPeak - condensation.peakBeadOpacity) > 0.0001) {
+        problems.push('condensation.getBeadOpacity(0.04) returned ' + opacityPeak + ', expected ' + condensation.peakBeadOpacity + ' (peak bead opacity) (issue #773).');
+      }
+      var roughPeak = condensation.getCarapaceRoughness(0.04);
+      if (Math.abs(roughPeak - condensation.carapaceWetRoughness) > 0.0001) {
+        problems.push('condensation.getCarapaceRoughness(0.04) returned ' + roughPeak + ', expected ' + condensation.carapaceWetRoughness + ' (wet carapace) (issue #773).');
+      }
+
+      // Outside the window (t=0.5 midday, t=0.14 late morning): factor 0, dry carapace 0.85
+      var factorMidday = condensation.getWindowFactor(0.5);
+      if (factorMidday !== 0) {
+        problems.push('condensation.getWindowFactor(0.5) returned ' + factorMidday + ', expected 0 outside the dawn window (issue #773).');
+      }
+      var roughMidday = condensation.getCarapaceRoughness(0.5);
+      if (Math.abs(roughMidday - condensation.carapaceBaseRoughness) > 0.0001) {
+        problems.push('condensation.getCarapaceRoughness(0.5) returned ' + roughMidday + ', expected ' + condensation.carapaceBaseRoughness + ' (dry carapace) outside the dawn window (issue #773).');
+      }
+      var factorLate = condensation.getWindowFactor(0.14);
+      if (factorLate !== 0) {
+        problems.push('condensation.getWindowFactor(0.14) returned ' + factorLate + ', expected 0 after the fade-out completes (issue #773).');
+      }
+
+      // Mid-fades (t=0.98 fade-in, t=0.10 fade-out) are strictly between 0 and 1
+      var factorFadeIn = condensation.getWindowFactor(0.98);
+      if (factorFadeIn <= 0 || factorFadeIn >= 1) {
+        problems.push('condensation.getWindowFactor(0.98) returned ' + factorFadeIn + ', expected strictly between 0 and 1 during fade-in (issue #773).');
+      }
+      var factorFadeOut = condensation.getWindowFactor(0.10);
+      if (factorFadeOut <= 0 || factorFadeOut >= 1) {
+        problems.push('condensation.getWindowFactor(0.10) returned ' + factorFadeOut + ', expected strictly between 0 and 1 during fade-out (issue #773).');
+      }
+    }
+
+    // Config constants must line up with dawnMist's window and beetle.js's body
+    if (condensation.dawnFadeInStart !== 0.95 || condensation.dawnHoldEnd !== 0.08 ||
+        condensation.dawnFadeOutEnd !== 0.12) {
+      problems.push('condensation dawn window constants are ' + condensation.dawnFadeInStart + '/' + condensation.dawnHoldEnd + '/' + condensation.dawnFadeOutEnd + ', expected 0.95/0.08/0.12 to match the dawn mist (issue #773).');
+    }
+
+    // Every existing plant must carry at least (leaves + 1) specular beads
+    var condPlantLabels = ['plant', 'plant2', 'plant3'];
+    for (var cli = 0; cli < condPlantLabels.length; cli++) {
+      var clabel = condPlantLabels[cli];
+      var condPlant = gardenState && gardenState[clabel];
+      if (!condPlant || !condPlant.leaves) continue; // plant not yet grown
+
+      var plantCondBeads = condensation.plantBeads && condensation.plantBeads[clabel];
+      var expectedBeads = condPlant.leaves.length + 1;
+      if (!plantCondBeads || plantCondBeads.length < expectedBeads) {
+        problems.push('condensation.plantBeads["' + clabel + '"] has ' + (plantCondBeads ? plantCondBeads.length : 0) + ' beads, expected at least ' + expectedBeads + ' (one per leaf plus one on the stem) (issue #773).');
+      } else {
+        for (var cbj = 0; cbj < plantCondBeads.length; cbj++) {
+          var condBead = plantCondBeads[cbj];
+          if (!condBead || !condBead.isMesh) {
+            problems.push('condensation.plantBeads["' + clabel + '"][' + cbj + '] is not a THREE.Mesh (issue #773).');
+            break;
+          }
+          var condMat = condBead.material;
+          if (!condMat) {
+            problems.push('condensation bead on "' + clabel + '" has no material (issue #773).');
+            break;
+          }
+          if (Math.abs(condMat.metalness - 0.7) > 0.01) {
+            problems.push('condensation bead metalness is ' + condMat.metalness + ', expected ~0.7 for a specular highlight (issue #773).');
+            break;
+          }
+          if (Math.abs(condMat.roughness - 0.2) > 0.01) {
+            problems.push('condensation bead roughness is ' + condMat.roughness + ', expected ~0.2 for a specular highlight (issue #773).');
+            break;
+          }
+          if (condMat.opacity < 0 || condMat.opacity > condensation.peakBeadOpacity + 0.001) {
+            problems.push('condensation bead opacity is ' + condMat.opacity + ', expected within [0, ' + condensation.peakBeadOpacity + '] (issue #773).');
+            break;
+          }
+        }
+      }
+
+      // Beads must be separate from the Light Drizzle droplet system
+      if (condPlant.droplets && condPlant.droplets.droplets) {
+        var plantCondBeadList = condensation.plantBeads && condensation.plantBeads[clabel];
+        if (plantCondBeadList) {
+          for (var cbi = 0; cbi < plantCondBeadList.length; cbi++) {
+            if (condPlant.droplets.droplets.indexOf(plantCondBeadList[cbi]) !== -1) {
+              problems.push('condensation bead on "' + clabel + '" is shared with the drizzle droplet system — the two effects must stay independent (issue #773).');
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    // The beetle body material must still exist at the path condensation drives
+    if (gardenState && gardenState.beetle && gardenState.beetle.group) {
+      var beetleMesh = gardenState.beetle.group.children[0];
+      if (beetleMesh && beetleMesh.material && typeof beetleMesh.material.roughness === 'number') {
+        // The driven roughness must stay within the dry→wet range
+        var liveRoughness = beetleMesh.material.roughness;
+        if (liveRoughness < condensation.carapaceWetRoughness - 0.001 || liveRoughness > condensation.carapaceBaseRoughness + 0.001) {
+          problems.push('beetle body roughness is ' + liveRoughness + ', expected within [' + condensation.carapaceWetRoughness + ', ' + condensation.carapaceBaseRoughness + '] (issue #773).');
+        }
+      } else {
+        problems.push('beetle body material is missing or has no roughness — condensation has no carapace to drive (issue #773).');
+      }
+    }
+  }
+
   return problems;
 }
