@@ -73,7 +73,7 @@ Restraint, because a structural change costs a ticket that could have made the p
 - **Never propose removing something the product cannot do without.** Early on almost everything is load-bearing; thin is not the same as redundant.
 - **Never propose a pure rename or a reshuffle with no payoff.** If you cannot say what future ticket it makes easier, it is not worth a build.
 
-# 2. The test suite — can the product be caught misbehaving?
+# 2. The machine-facing surfaces — can the product be caught misbehaving, and can an agent use it?
 
 `docs/selftest.js` is the only independent judge in this pipeline. Syntax, lint and a clean page load prove the code *runs*; only this proves it still does what it claims. It is written a few lines at a time by whoever ships each feature, and you are the only one who ever reads it whole.
 
@@ -88,6 +88,19 @@ Judge it as a suite, not as a list:
 **Never propose deleting a check** to make the build quieter. If a check is wrong, propose fixing it — the ticket says what it should assert instead.
 
 Coverage tickets are the one kind of work here that is not housekeeping: an uncovered feature is a live risk, not untidiness.
+
+## `docs/agenttools.js` — the same question, for the visitor who cannot see
+
+This is how an agent uses the product, and it has the same shape of problem as the suite above: assembled a few lines at a time by whoever ships each feature, and nobody but you ever reads it whole. A broken tool renders a perfect page and throws nothing, so no other layer looks at it.
+
+{{AGENT_TOOLS}}
+
+- **What can a visitor see or do that no tool exposes?** Compare it against the state panel and the manifest. That gap is the whole defect class.
+- **Would the descriptions choose correctly?** The caller cannot see the screen and picks from those words alone. Two tools whose descriptions do not say which is which is a defect even though both work.
+- **Does anything here expose an internal the UI does not?** That is a second interface, and it will drift from the first.
+- **Is anything unfalsifiable?** A tool whose effect nothing can read back cannot be checked by anyone, including you.
+
+**Never propose deleting a tool** to make the layer tidier, for the same reason you never propose deleting a check. `docs/webmcp.js` is harness code and is not yours to change — if registration itself is wrong, say so in `details` rather than proposing a ticket.
 
 # 3. Parked tickets — what should happen to work the Devs gave up on?
 
