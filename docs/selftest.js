@@ -11850,6 +11850,48 @@ export async function checks() {
         if (text20 !== 'Welcome back. This garden has grown with you through many visits.') {
           problems.push('getMilestoneAcknowledgment(20) returned "' + text20 + '", expected the 10-visit milestone text (issue #697).');
         }
+
+        // visitCount = 24 (boundary: still falls through to >=10 tier)
+        var text24 = fn(24);
+        if (text24 !== 'Welcome back. This garden has grown with you through many visits.') {
+          problems.push('getMilestoneAcknowledgment(24) returned "' + text24 + '", expected the 10-visit milestone text (issue #697).');
+        }
+
+        // visitCount = 25 (first visit to new tier — many seasons)
+        var text25 = fn(25);
+        if (text25 !== 'Many seasons have turned here alongside you.') {
+          problems.push('getMilestoneAcknowledgment(25) returned "' + text25 + '", expected the 25-visit milestone text (issue #697).');
+        }
+
+        // visitCount = 49 (still in the >=25 tier)
+        var text49 = fn(49);
+        if (text49 !== 'Many seasons have turned here alongside you.') {
+          problems.push('getMilestoneAcknowledgment(49) returned "' + text49 + '", expected the 25-visit milestone text (issue #697).');
+        }
+
+        // visitCount = 50 (first visit to deeper tier — carries presence visibly)
+        var text50 = fn(50);
+        if (text50 !== 'This garden carries your presence in every bloom it has witnessed.') {
+          problems.push('getMilestoneAcknowledgment(50) returned "' + text50 + '", expected the 50-visit milestone text (issue #697).');
+        }
+
+        // visitCount = 99 (still in the >=50 tier)
+        var text99 = fn(99);
+        if (text99 !== 'This garden carries your presence in every bloom it has witnessed.') {
+          problems.push('getMilestoneAcknowledgment(99) returned "' + text99 + '", expected the 50-visit milestone text (issue #697).');
+        }
+
+        // visitCount = 100 (deepest tier — deep familiarity, garden knows you)
+        var text100 = fn(100);
+        if (text100 !== 'The garden knows you now, through a hundred returns.') {
+          problems.push('getMilestoneAcknowledgment(100) returned "' + text100 + '", expected the 100-visit milestone text (issue #697).');
+        }
+
+        // visitCount = 200 (beyond deepest tier, should stay at 100)
+        var text200 = fn(200);
+        if (text200 !== 'The garden knows you now, through a hundred returns.') {
+          problems.push('getMilestoneAcknowledgment(200) returned "' + text200 + '", expected the 100-visit milestone text (issue #697).');
+        }
       }
 
       // Verify the DOM acknowledgment matches the expected milestone for the current visitCount
