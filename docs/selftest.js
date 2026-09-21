@@ -521,7 +521,7 @@ export async function checks() {
     }
   }
 
-  /* Check that the full expected order is: Season, Time, Weather, Growing, Plot, Acknowledgment */
+  /* Check that the full expected order is: Season, Time, Weather, Growing, Plot, Acknowledgment, Visit (issue #632, #780) */
   if (statePanel) {
     var sections = statePanel.querySelectorAll('.state-section');
     var sectionLabels = [];
@@ -529,12 +529,37 @@ export async function checks() {
       var label = sec.querySelector('.state-label');
       if (label) sectionLabels.push(label.textContent.trim());
     });
-    var expectedOrder = ['Season', 'Time of day', 'Weather', 'Growing', 'Plot', 'Acknowledgment'];
+    var expectedOrder = ['Season', 'Time of day', 'Weather', 'Growing', 'Plot', 'Acknowledgment', 'Visit'];
     for (var i = 0; i < expectedOrder.length; i++) {
       if (i >= sectionLabels.length) {
         problems.push('State panel section order check: expected "' + expectedOrder[i] + '" at position ' + (i + 1) + ' but panel only has ' + sectionLabels.length + ' sections.');
       } else if (sectionLabels[i] !== expectedOrder[i]) {
         problems.push('State panel section order mismatch at position ' + (i + 1) + ': expected "' + expectedOrder[i] + '", got "' + sectionLabels[i] + '" (issue #632).');
+      }
+    }
+  }
+
+  /* Check visit-display in state panel (issue #780) */
+  var visitDisplay = document.getElementById('visit-display');
+  if (!visitDisplay) {
+    problems.push('Missing #visit-display element in the state panel — visit count display is required (issue #780).');
+  } else {
+    var gs = window.__gardenState;
+    if (!gs || typeof gs.visitCount !== 'number') {
+      problems.push('window.__gardenState.visitCount is not set — cannot verify visit display (issue #780).');
+    } else {
+      var expectedText;
+      // First-time visitors: visitCount === 1 and no saved state was restored
+      // We detect first visit by checking if visitCount is 1 and there's no
+      // saved state (which means it was initialized fresh)
+      if (gs.visitCount === 1 && !gs.returningVisitorGreeting) {
+        expectedText = 'First visit';
+      } else {
+        expectedText = 'Visit #' + gs.visitCount;
+      }
+      var actualText = visitDisplay.textContent.trim();
+      if (actualText !== expectedText) {
+        problems.push('visit-display textContent is "' + actualText + '", expected "' + expectedText + '" — the visit count displayed in the state panel does not match __gardenState.visitCount (' + gs.visitCount + ') (issue #780).');
       }
     }
   }

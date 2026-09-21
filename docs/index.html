@@ -194,6 +194,11 @@
         <span class="state-label">Acknowledgment</span>
         <span class="state-value" id="garden-state-acknowledgment" aria-live="polite"></span>
       </div>
+
+      <div class="state-section">
+        <span class="state-label">Visit</span>
+        <span class="state-value" id="visit-display"></span>
+      </div>
     </aside>
   </div>
 
@@ -1781,6 +1786,18 @@
           ackEl.textContent = 'Welcome to the garden. The soil is rich and the air is still \u2014 something is about to grow.';
         }
         lastAcknowledgmentTime = performance.now();
+      }
+    }
+
+    /* --- Visit display in state panel (issue #780) --- */
+    {
+      const visitEl = document.getElementById('visit-display');
+      if (visitEl) {
+        if (window.__gardenState.visitCount <= 1 && !savedState) {
+          visitEl.textContent = 'First visit';
+        } else {
+          visitEl.textContent = 'Visit #' + window.__gardenState.visitCount;
+        }
       }
     }
 
