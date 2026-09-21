@@ -68,6 +68,34 @@ export function getWeatheringAmount(visitCount) {
   return 0.03;
 }
 
+/* --- Cumulative visit-warmth flower hue shift for plant3 (issue #781) ---
+ * The third plant's flowers shift incrementally toward a deeper amber-orange
+ * (0xcc5500) at visit milestones, capped at visitCount=50.
+ *   visitCount < 5:   no shift (0%)
+ *   visitCount >= 5:  15% toward deep amber
+ *   visitCount >= 10: 40% toward deep amber
+ *   visitCount >= 25: 75% toward deep amber
+ *   visitCount >= 50: 100% (fully shifted to ~0xcc5500)
+ *
+ * The shift is computed once at flower-creation time (which happens on page
+ * load from saved visitCount), so prefers-reduced-motion is naturally respected
+ * with no animation.
+ */
+const FLOWER_WARMTH_TARGET = new THREE.Color(0xcc5500);
+
+/**
+ * Returns the lerp factor for plant3 flower warmth shift based on visit count.
+ * @param {number} visitCount - Cumulative visit count
+ * @returns {number} Lerp factor [0, 1] toward deep amber-orange (0xcc5500)
+ */
+export function getFlowerWarmthAmount(visitCount) {
+  if (typeof visitCount !== 'number' || visitCount < 5) return 0;
+  if (visitCount >= 50) return 1.0;
+  if (visitCount >= 25) return 0.75;
+  if (visitCount >= 10) return 0.40;
+  return 0.15;
+}
+
 export function initGarden(scene, initialProgress) {
   console.log('selfgrow garden initialised. The soil awaits…');
 
@@ -655,8 +683,22 @@ function recordPollinationEvent(flowerPos) {
     // Distinct flower characteristics per plant:
     //   plant:  lavender (0xdda0dd), 5 petals, 1.0x scale
     //   plant2: pale pink (0xddb0b0), 5 petals, 1.0x scale
-    //   plant3: warm yellow/amber (0xddd090), 6 petals, 0.85x scale
-    const flowerColor = isPlant2 ? 0xddb0b0 : (isPlant3 ? 0xddd090 : 0xdda0dd);
+    //   plant3: warm yellow/amber (0xddd090) shifting toward deep amber-orange
+    //           (0xcc5500) with cumulative visit warmth (issue #781), 6 petals, 0.85x scale
+    let flowerColor;
+    if (isPlant2) {
+      flowerColor = 0xddb0b0;
+    } else if (isPlant3) {
+      // Cumulative visit warmth: shift hue toward deep amber-orange based on
+      // visit count milestones. Computed once on load so prefers-reduced-motion
+      // is naturally respected. (issue #781)
+      const gs = window.__gardenState;
+      const visitCount = (gs && typeof gs.visitCount === 'number') ? gs.visitCount : 0;
+      const warmthAmount = getFlowerWarmthAmount(visitCount);
+      flowerColor = new THREE.Color(0xddd090).lerp(FLOWER_WARMTH_TARGET, warmthAmount).getHex();
+    } else {
+      flowerColor = 0xdda0dd;
+    }
     const fm = createFlowerMeshes(stemHeight, flowerColor, {
       petalCount: isPlant3 ? 6 : 5,
       petalScale: isPlant3 ? 0.85 : 1.0

@@ -11,7 +11,7 @@ import { createCreature, computeCentreCrossBlend, computeGreetingParams } from "
 import { computeDisplacement, setWindRotation, getWindRotation } from "./groundRipple.js";
 import { isReducedMotion, onMotionChange } from "./motion.js";
 import { selectPetalPauseTarget, computeSeasonalOpacityMultiplier } from "./beetle.js";
-import { SEASON_PALETTES, SEASON_NAMES, SEASON_DURATION_MS, CYCLE_DURATION_MS, getWeatheringAmount } from "./garden.js";
+import { SEASON_PALETTES, SEASON_NAMES, SEASON_DURATION_MS, CYCLE_DURATION_MS, getWeatheringAmount, getFlowerWarmthAmount } from "./garden.js";
 import { TIME_OF_DAY_AUDIO, WEATHER_AUDIO_MODIFIERS, SEASON_AUDIO_MODIFIERS, DEFAULT_WEATHER_MODIFIER, DEFAULT_SEASON_MODIFIER, getWarmthGain } from "./ambientAudio.js";
 
 /* ---------- getWeatheringAmount pure-function tests (issue #755) ---------- */
@@ -46,6 +46,44 @@ import { TIME_OF_DAY_AUDIO, WEATHER_AUDIO_MODIFIERS, SEASON_AUDIO_MODIFIERS, DEF
   if (getWeatheringAmount(undefined) !== 0) throw new Error('undefined should return 0');
   if (getWeatheringAmount(null) !== 0) throw new Error('null should return 0');
   if (getWeatheringAmount('foo') !== 0) throw new Error('string should return 0');
+})();
+
+/* ---------- getFlowerWarmthAmount pure-function tests (issue #781) ---------- */
+(function testGetFlowerWarmthAmount() {
+  // visitCount < 5: 0 (no shift)
+  if (getFlowerWarmthAmount(0) !== 0) throw new Error('visitCount=0 should return 0, got ' + getFlowerWarmthAmount(0));
+  if (getFlowerWarmthAmount(1) !== 0) throw new Error('visitCount=1 should return 0, got ' + getFlowerWarmthAmount(1));
+  if (getFlowerWarmthAmount(4) !== 0) throw new Error('visitCount=4 should return 0, got ' + getFlowerWarmthAmount(4));
+
+  // visitCount >= 5: 0.15
+  if (getFlowerWarmthAmount(5) !== 0.15) throw new Error('visitCount=5 should return 0.15, got ' + getFlowerWarmthAmount(5));
+  if (getFlowerWarmthAmount(6) !== 0.15) throw new Error('visitCount=6 should return 0.15, got ' + getFlowerWarmthAmount(6));
+  if (getFlowerWarmthAmount(9) !== 0.15) throw new Error('visitCount=9 should return 0.15, got ' + getFlowerWarmthAmount(9));
+
+  // visitCount >= 10: 0.40
+  if (getFlowerWarmthAmount(10) !== 0.40) throw new Error('visitCount=10 should return 0.40, got ' + getFlowerWarmthAmount(10));
+  if (getFlowerWarmthAmount(15) !== 0.40) throw new Error('visitCount=15 should return 0.40, got ' + getFlowerWarmthAmount(15));
+  if (getFlowerWarmthAmount(24) !== 0.40) throw new Error('visitCount=24 should return 0.40, got ' + getFlowerWarmthAmount(24));
+
+  // visitCount >= 25: 0.75
+  if (getFlowerWarmthAmount(25) !== 0.75) throw new Error('visitCount=25 should return 0.75, got ' + getFlowerWarmthAmount(25));
+  if (getFlowerWarmthAmount(35) !== 0.75) throw new Error('visitCount=35 should return 0.75, got ' + getFlowerWarmthAmount(35));
+  if (getFlowerWarmthAmount(49) !== 0.75) throw new Error('visitCount=49 should return 0.75, got ' + getFlowerWarmthAmount(49));
+
+  // visitCount >= 50: 1.0 (capped)
+  if (getFlowerWarmthAmount(50) !== 1.0) throw new Error('visitCount=50 should return 1.0, got ' + getFlowerWarmthAmount(50));
+  if (getFlowerWarmthAmount(100) !== 1.0) throw new Error('visitCount=100 should return 1.0, got ' + getFlowerWarmthAmount(100));
+
+  // non-numeric inputs return 0
+  if (getFlowerWarmthAmount(undefined) !== 0) throw new Error('undefined should return 0');
+  if (getFlowerWarmthAmount(null) !== 0) throw new Error('null should return 0');
+  if (getFlowerWarmthAmount('foo') !== 0) throw new Error('string should return 0');
+
+  // Boundary: visitCount exactly at thresholds
+  if (getFlowerWarmthAmount(5) !== 0.15) throw new Error('visitCount=5 (boundary) should return 0.15, got ' + getFlowerWarmthAmount(5));
+  if (getFlowerWarmthAmount(10) !== 0.40) throw new Error('visitCount=10 (boundary) should return 0.40, got ' + getFlowerWarmthAmount(10));
+  if (getFlowerWarmthAmount(25) !== 0.75) throw new Error('visitCount=25 (boundary) should return 0.75, got ' + getFlowerWarmthAmount(25));
+  if (getFlowerWarmthAmount(50) !== 1.0) throw new Error('visitCount=50 (boundary) should return 1.0, got ' + getFlowerWarmthAmount(50));
 })();
 
 /* ---------- getWarmthGain pure-function tests (issue #763) ---------- */
