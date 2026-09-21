@@ -69,6 +69,11 @@ const HARNESS_PATHS = [
   // to `ls docs/` before planning. An empty docs/ is the expected state of a
   // brand-new project; a missing one is a puzzle.
   "docs/.gitkeep",
+  // Harness code that happens to live in docs/ because it runs in the browser.
+  // It registers whatever tools the product declares and names the WebMCP API
+  // so that no product ever has to; a reset that deleted it would take the
+  // agent-tool contract with it and leave agenttools.js registered by nothing.
+  "docs/webmcp.js",
 ];
 
 // Only branches the agents create are touched. A human's work-in-progress branch
