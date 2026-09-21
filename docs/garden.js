@@ -96,6 +96,32 @@ export function getFlowerWarmthAmount(visitCount) {
   return 0.15;
 }
 
+/* --- Cumulative visit ground warm baseline (issue #789) ---
+ * At high visit counts the ground soil receives a subtle permanent warm
+ * tint toward 0x6a5a30, composing additively with the seasonal palette,
+ * winter legacy, and the per-session warmth pulse (issue #754).
+ *   visitCount < 25:  no shift (0%)
+ *   visitCount >= 25: ~3% toward 0x6a5a30
+ *   visitCount >= 50: ~5% toward 0x6a5a30
+ *   visitCount >= 100: ~8% toward 0x6a5a30 (capped)
+ *
+ * Computed once on page load (no animation, respects prefers-reduced-motion).
+ */
+const GROUND_WARM_TARGET = new THREE.Color(0x6a5a30);
+
+/**
+ * Returns the lerp factor for the permanent ground warm baseline
+ * based on cumulative visit count.
+ * @param {number} visitCount - Cumulative visit count
+ * @returns {number} Lerp factor [0, 0.08] toward 0x6a5a30
+ */
+export function getGroundWarmBaseline(visitCount) {
+  if (typeof visitCount !== 'number' || visitCount < 25) return 0;
+  if (visitCount >= 100) return 0.08;
+  if (visitCount >= 50) return 0.05;
+  return 0.03;
+}
+
 export function initGarden(scene, initialProgress) {
   console.log('selfgrow garden initialised. The soil awaits…');
 
@@ -2466,6 +2492,22 @@ export function startSeasonalCycle(initialProgress) {
         const warmColor = new THREE.Color(0x6a5a3a);
         const pulseBlend = warmPulse * 0.08;
         groundMat.color.lerp(warmColor, pulseBlend);
+      }
+
+      /* --- Cumulative-visit permanent ground warm baseline (issue #789) ---
+       * At high visit counts (>= 25), a subtle permanent warm tint toward
+       * 0x6a5a30 is lerped into the ground colour. This composes additively
+       * after the seasonal colour, winter legacy, and per-session warmth pulse
+       * — so it is independent from the pulse and persistent across sessions.
+       * The baseline value is computed once on page load from visitCount and
+       * stored in _groundWarmBaseline (no animation, respects reduced motion).
+       * Rain darkening in weather.js reads baseGroundColor (set before all
+       * of these modifications), so this does not interfere.
+       * See also: edge ring warming (issue #726), stem weathering (#755),
+       * flower warmth shift (#781), returning-visitor pulse (#754). */
+      const warmBaseline = gs._groundWarmBaseline || 0;
+      if (warmBaseline > 0) {
+        groundMat.color.lerp(GROUND_WARM_TARGET, warmBaseline);
       }
     }
 

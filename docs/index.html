@@ -214,7 +214,7 @@
   <script type="module">
     import * as THREE from "three";
     import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-    import { initGarden, startSeasonalCycle, createFallenLeaves, createGroundDetails } from "./garden.js";
+    import { initGarden, startSeasonalCycle, createFallenLeaves, createGroundDetails, getGroundWarmBaseline } from "./garden.js";
     import { createAmbientParticles } from "./particles.js";
     import { createGroundNoiseTexture } from "./groundNoise.js";
     import { createHorizon } from "./horizon.js";
@@ -1607,6 +1607,14 @@
     } else {
       window.__gardenState.visitCount = 1;
     }
+
+    /* --- Cumulative-visit permanent ground warm baseline (issue #789) ---
+     * At high visit counts (>= 25), the ground colour receives a subtle
+     * permanent warm tint toward 0x6a5a30, computed once on page load
+     * (no animation, naturally respects prefers-reduced-motion).
+     * Composed additively in garden.js's startSeasonalCycle alongside
+     * the seasonal palette, winter legacy, and per-session warmth pulse. */
+    window.__gardenState._groundWarmBaseline = getGroundWarmBaseline(window.__gardenState.visitCount);
 
     /* --- Cumulative visit warm tint on garden edge ring (issue #726) ---
      * The ring gradually warms its colour from #5a4a38 toward #6a5a30
