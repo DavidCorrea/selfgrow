@@ -611,6 +611,7 @@ async function main() {
         Filed: findings.length
           ? findings.map((f) => `"${f.title}"`).join("; ")
           : "nothing — the session held up",
+        "Tool surface": result.data.toolSurface || "",
         Verified: result.data.verified || "",
         Regressed: result.data.regressed || "",
       },
