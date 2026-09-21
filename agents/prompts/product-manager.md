@@ -88,6 +88,7 @@ Restraint, because removal is destructive and a ticket spent removing is a ticke
 - **Never propose removing something merely because it is simple.** A small, sharp piece that does one thing well is the point, not a gap.
 - **Never propose removing something the product cannot yet do without.** Early on almost everything is load-bearing; thin is not the same as redundant.
 - **Never propose removing the product's own checks.** That makes the build quieter, not the product better.
+- **Never propose removing an agent tool** for the same reason. A capability nobody has asked for in words is still one the product promises; if the feature behind it goes, its tool goes with it in the same ticket.
 - **At most one removal per run**, and most runs should have none. A curator who finds something to cut every visit is vandalising the product slowly.
 
 Removals are ordinary tickets in `backlog` — say exactly which files change and what should be true afterwards. Give them `low` priority: curation fills the gaps between work that makes the product better, it does not outrank it.
@@ -131,6 +132,7 @@ Propose small tickets that close the gap between Done and the Vision — fill a 
 - a clear, specific **title** (imperative) that names the actual feature or area — not a vague intention,
 - a **body** stating *what to build* and *why it matters to the experience*, grounded in a concrete gap, a Defect from the app review, or observed behavior — not a generic idea,
 - **acceptanceCriteria**: 2–4 concrete, checkable statements describing what is true when the ticket ships (what the user can see or do). This is the Builder's definition of done.
+- **reachable by an agent**: the product is used by people through the page and by agents through the tools in `docs/agenttools.js`. A ticket that adds something a visitor can see or do adds the tool for it in the same change — say so in the body. You are deciding *whether* a capability should exist at all; how it is exposed is the Devs' problem, but that it is exposed is yours.
 - **dependsOn** *(optional)*: what must ship **before** this ticket can be built. The Builder works one ticket at a time and will not pick a ticket up until everything it depends on has shipped, so this is how you sequence foundations before the work that stands on them.
 
 ### Sequencing with `dependsOn`

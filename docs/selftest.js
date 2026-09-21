@@ -11,6 +11,7 @@ import { createCreature, computeCentreCrossBlend, computeGreetingParams } from "
 import { computeDisplacement, setWindRotation, getWindRotation } from "./groundRipple.js";
 import { isReducedMotion, onMotionChange } from "./motion.js";
 import { selectPetalPauseTarget, computeSeasonalOpacityMultiplier } from "./beetle.js";
+import { tools, readGardenState } from "./agenttools.js";
 import { SEASON_PALETTES, SEASON_NAMES, SEASON_DURATION_MS, CYCLE_DURATION_MS, getWeatheringAmount, getFlowerWarmthAmount } from "./garden.js";
 import { TIME_OF_DAY_AUDIO, WEATHER_AUDIO_MODIFIERS, SEASON_AUDIO_MODIFIERS, DEFAULT_WEATHER_MODIFIER, DEFAULT_SEASON_MODIFIER, getWarmthGain } from "./ambientAudio.js";
 
@@ -13002,6 +13003,31 @@ export async function checks() {
     }
   } else {
     problems.push('gardenState.creature is missing — cannot verify beetle-lift state machine (issue #774).');
+  }
+
+  /* ---------- Agent tool layer ---------- */
+  // The tools are how an agent uses this garden, and nothing else on the page
+  // exercises them: a broken tool renders fine and throws nothing.
+  var declaredTools = tools();
+  var gardenStateTool = declaredTools.find(function (t) { return t.name === 'get-garden-state'; });
+  if (!gardenStateTool) {
+    problems.push('agenttools.js no longer declares "get-garden-state" — the only way an agent can read this garden.');
+  } else {
+    var toolState = await gardenStateTool.execute({}, { signal: new AbortController().signal });
+    var panelState = readGardenState();
+    for (var field of ['season', 'timeOfDay', 'weather', 'growing', 'plot', 'acknowledgment', 'visit']) {
+      if (!(field in toolState)) {
+        problems.push('get-garden-state omitted "' + field + '" — the state panel shows it, so an agent must be able to read it.');
+      }
+    }
+    // The tool's whole promise is that it reports the panel rather than a
+    // separate copy of the truth, so a drifting id has to fail here.
+    if (toolState.season !== panelState.season) {
+      problems.push('get-garden-state reported season "' + toolState.season + '" while the panel shows "' + panelState.season + '".');
+    }
+    if (panelState.season === null) {
+      problems.push('get-garden-state could not find #season-display — the state panel ids the agent tools read have moved.');
+    }
   }
 
   return problems;

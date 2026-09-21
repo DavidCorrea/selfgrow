@@ -72,6 +72,11 @@ const SOURCE_DIR = join(repoRoot, "docs");
 const SOURCE_EXTENSIONS = /\.(m?js|css)$/;
 
 const SELFTEST_FILE = "selftest.js";
+const AGENT_TOOLS_FILE = "agenttools.js";
+// Harness code that lives in docs/ because it runs in the browser. It is not the
+// product's to reshape, so it is kept out of the review entirely rather than
+// offered as a module the Tech Lead might propose restructuring.
+const HARNESS_IN_PRODUCT = new Set(["webmcp.js"]);
 
 // How much source is INLINED in the prompt. Deliberately modest, because it is
 // no longer how the review sees the codebase.
@@ -176,7 +181,12 @@ export function listSourceFiles(dir) {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) {
       found.push(...listSourceFiles(path));
-    } else if (SOURCE_EXTENSIONS.test(entry.name) && entry.name !== SELFTEST_FILE) {
+    } else if (
+      SOURCE_EXTENSIONS.test(entry.name)
+      && entry.name !== SELFTEST_FILE
+      && entry.name !== AGENT_TOOLS_FILE
+      && !HARNESS_IN_PRODUCT.has(entry.name)
+    ) {
       found.push(path);
     }
   }
@@ -285,6 +295,18 @@ function readSelfTest() {
     const source = fs.readFileSync(join(SOURCE_DIR, SELFTEST_FILE), "utf-8");
     return source.length > MAX_SELFTEST_CHARS
       ? `${source.slice(0, MAX_SELFTEST_CHARS)}\n\n_(truncated — the suite is ${source.length} characters)_`
+      : source;
+  } catch {
+    return "";
+  }
+}
+
+/** The agent tool layer, read whole for the same reason the suite is. */
+function readAgentTools() {
+  try {
+    const source = fs.readFileSync(join(SOURCE_DIR, AGENT_TOOLS_FILE), "utf-8");
+    return source.length > MAX_SELFTEST_CHARS
+      ? `${source.slice(0, MAX_SELFTEST_CHARS)}\n\n_(truncated — the layer is ${source.length} characters)_`
       : source;
   } catch {
     return "";
@@ -422,6 +444,7 @@ async function main() {
         SOURCES: formatSources(sources, changes.changedFiles),
         CHANGES: renderChanges(since, changes),
         SELFTEST: readSelfTest() || "(the product ships no self-check suite yet)",
+        AGENT_TOOLS: readAgentTools() || "(the product declares no agent tools yet)",
         BLOCKED: renderBlocked(blocked),
         BOARD_STATE: boardState,
         PAST: past.length ? past.join("\n\n") : "(nothing recorded yet — this is the first review)",

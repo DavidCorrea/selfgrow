@@ -2209,12 +2209,198 @@ async function checkSelfTests(browser, url, dir) {
   return failures;
 }
 
+// How long the whole tool layer may take to answer. Every handler is called
+// once, so this bounds the product, not a single tool.
+const AGENT_TOOLS_TIMEOUT_MS = 3000;
+
+// A tool name is what an agent types. Lowercase kebab-case keeps it unambiguous
+// across the JSON boundary and matches the names in the WebMCP specification's
+// own examples.
+const TOOL_NAME_PATTERN = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
+
+// Below this a description is a label, not an interface. The caller cannot see
+// the screen and picks the tool from these words alone.
+const MIN_TOOL_DESCRIPTION_CHARS = 40;
+
+/**
+ * Judge the tool descriptors a product declares.
+ *
+ * Pure, and separate from the browser work on purpose: everything here is a
+ * property of the descriptors themselves, so it can be tested in Node against
+ * hand-written cases instead of only against whatever the product happens to
+ * ship today. The browser's job is to collect these summaries and to call the
+ * handlers; deciding what is wrong with them is this function's.
+ *
+ * `summaries` are plain objects, one per tool — see checkAgentTools.
+ * Returns an array of plain-language failure messages, empty when all holds.
+ */
+export function validateToolDescriptors(summaries) {
+  if (!Array.isArray(summaries)) {
+    return ["docs/agenttools.js tools() did not return an array of tool descriptors"];
+  }
+  if (!summaries.length) {
+    return ["docs/agenttools.js tools() returned no tools — a product no agent can use"];
+  }
+
+  const problems = [];
+  const seen = new Set();
+
+  for (const [index, tool] of summaries.entries()) {
+    const label = tool.name ? `"${tool.name}"` : `tool #${index + 1}`;
+
+    if (!tool.name) {
+      problems.push(`${label} has no name — every tool needs one an agent can call it by.`);
+    } else if (!TOOL_NAME_PATTERN.test(tool.name)) {
+      problems.push(`${label} is not a lowercase kebab-case name (expected e.g. "get-garden-state").`);
+    } else if (seen.has(tool.name)) {
+      problems.push(`${label} is declared twice — a caller cannot tell which one it is invoking.`);
+    }
+    if (tool.name) seen.add(tool.name);
+
+    const description = (tool.description || "").trim();
+    if (!description) {
+      problems.push(`${label} has no description — it is the whole interface, and the caller cannot see the screen.`);
+    } else if (description.length < MIN_TOOL_DESCRIPTION_CHARS) {
+      problems.push(
+        `${label} has a ${description.length}-character description — say what it returns and when it is worth `
+        + `asking, in at least ${MIN_TOOL_DESCRIPTION_CHARS} characters.`
+      );
+    }
+
+    if (!tool.inputSchema || tool.inputSchema.type !== "object") {
+      problems.push(`${label} needs an inputSchema that is a JSON Schema object (\`{ type: "object", ... }\`).`);
+    }
+
+    if (!tool.hasExecute) {
+      problems.push(`${label} has no execute() — a described capability nothing implements.`);
+    }
+    if (!tool.hasExample) {
+      problems.push(`${label} has no example input — the build calls every tool, and cannot call this one.`);
+    }
+
+    if (tool.mutates && !tool.annotated) {
+      problems.push(
+        `${label} changes something but declares no annotations — set readOnlyHint: false, and `
+        + `consequentialHint: true when it is destructive, so a caller knows whether to ask a human first.`
+      );
+    }
+
+    if (tool.invocation && !tool.invocation.ok) {
+      problems.push(`${label} failed when called with its own example — ${tool.invocation.error}`);
+    }
+  }
+
+  return problems;
+}
+
+/**
+ * Run the product's declared tools, in the real browser, on the real page.
+ *
+ * The self-check contract proves the product does what it claims for a person.
+ * This proves it does what it claims for an agent — a surface that is invisible
+ * in every other layer, because a broken tool breaks no page and throws no
+ * console error. It is assembled one ticket at a time by whoever ships each
+ * feature, which is the same way selftest.js is assembled and the same reason
+ * somebody has to read it whole.
+ *
+ * Registration is deliberately NOT exercised here: `document.modelContext` does
+ * not exist in headless Chromium, so the only honest thing to verify is that the
+ * descriptors are sound and the handlers work. Whether the browser accepts them
+ * is docs/webmcp.js's business, and it is one call.
+ *
+ * No model is involved, so it costs nothing and cannot be argued with. A project
+ * that ships no agenttools.js yet passes, so a brand-new repo isn't blocked
+ * before it has anything to expose.
+ */
+async function checkAgentTools(browser, url, dir) {
+  if (!fs.existsSync(join(dir, "agenttools.js"))) {
+    log("info", "Verify: no docs/agenttools.js yet — skipping the agent-tools layer.");
+    return [];
+  }
+
+  const page = await browser.newPage();
+  try {
+    await page.goto(url, { waitUntil: "networkidle", timeout: 20000 });
+    const summaries = await page.evaluate(
+      async ({ timeoutMs }) => {
+        let mod;
+        try {
+          mod = await import("./agenttools.js");
+        } catch (e) {
+          return { fatal: `docs/agenttools.js could not be imported — ${e.message}` };
+        }
+        if (typeof mod.tools !== "function") {
+          return { fatal: "docs/agenttools.js does not export tools()" };
+        }
+
+        let declared;
+        try {
+          declared = mod.tools();
+        } catch (e) {
+          return { fatal: `docs/agenttools.js tools() threw — ${e.message}` };
+        }
+        if (!Array.isArray(declared)) return { summaries: declared };
+
+        const deadline = Date.now() + timeoutMs;
+        const collected = [];
+        for (const tool of declared) {
+          const summary = {
+            name: tool && tool.name,
+            description: tool && tool.description,
+            inputSchema: tool && tool.inputSchema,
+            hasExecute: !!(tool && typeof tool.execute === "function"),
+            hasExample: !!(tool && tool.example !== undefined),
+            annotated: !!(tool && tool.annotations),
+            mutates: !(tool && tool.annotations && tool.annotations.readOnlyHint),
+          };
+
+          if (summary.hasExecute && summary.hasExample) {
+            const remaining = deadline - Date.now();
+            const controller = new AbortController();
+            try {
+              if (remaining <= 0) throw new Error("the tool layer ran out of time before this tool was reached");
+              const result = await Promise.race([
+                tool.execute(tool.example, { signal: controller.signal }),
+                new Promise((_, reject) =>
+                  setTimeout(() => {
+                    controller.abort();
+                    reject(new Error(`it did not answer within ${timeoutMs}ms`));
+                  }, remaining)
+                ),
+              ]);
+              // An agent receives this across a JSON boundary, so a result it
+              // cannot carry is the same as no result at all.
+              JSON.stringify(result === undefined ? null : result);
+              summary.invocation = { ok: true };
+            } catch (e) {
+              summary.invocation = { ok: false, error: e.message };
+            }
+          }
+
+          collected.push(summary);
+        }
+        return { summaries: collected };
+      },
+      { timeoutMs: AGENT_TOOLS_TIMEOUT_MS }
+    );
+
+    if (summaries.fatal) return [summaries.fatal];
+    return validateToolDescriptors(summaries.summaries).slice(0, 12);
+  } catch (e) {
+    log("warn", "Verify: agent tools could not run.", errorData(e));
+    return [];
+  } finally {
+    await page.close().catch(() => {});
+  }
+}
+
 /**
  * Verify the built app under `relDir`. Returns { ok, layer, errors }:
- *   - layer "syntax"   — a JS file fails `node --check`
- *   - layer "lint"     — ESLint reports an error (e.g. no-undef: undefined function)
- *   - layer "runtime"  — the page throws a console error / uncaught exception / failed load
- *   - layer "selftest" — the product's own checks() reported a broken claim
+ *   - layer "syntax"     — a JS file fails `node --check`
+ *   - layer "lint"       — ESLint reports an error (e.g. no-undef: undefined function)
+ *   - layer "runtime"    — the page throws a console error / uncaught exception / failed load
+ *   - layer "selftest"   — the product's own checks() reported a broken claim
+ *   - layer "agenttools" — a tool the product declares is unsound or does not run
  * ok:true (layer null) means all available layers passed (or were skipped).
  */
 export async function verifyBuild(relDir = "docs") {
@@ -2285,11 +2471,22 @@ export async function verifyBuild(relDir = "docs") {
   // page itself is sound; check failures on a page that is already throwing
   // would just be noise from the same root cause.
   let selfTestFailures = [];
+  let agentToolFailures = [];
   if (!errors.length) {
     try {
       selfTestFailures = await checkSelfTests(browser, `http://127.0.0.1:${port}/`, dir);
     } catch (e) {
       log("warn", "Verify: self-check layer failed to run.", errorData(e));
+    }
+    // Layer 5 — the product against what it promises an agent. Only worth
+    // running once its own checks pass: a broken product reports broken tools
+    // from the same root cause.
+    if (!selfTestFailures.length) {
+      try {
+        agentToolFailures = await checkAgentTools(browser, `http://127.0.0.1:${port}/`, dir);
+      } catch (e) {
+        log("warn", "Verify: agent-tools layer failed to run.", errorData(e));
+      }
     }
   }
 
@@ -2299,6 +2496,9 @@ export async function verifyBuild(relDir = "docs") {
   if (errors.length) return { ok: false, layer: "runtime", errors: [...new Set(errors)] };
   if (selfTestFailures.length) {
     return { ok: false, layer: "selftest", errors: [...new Set(selfTestFailures)] };
+  }
+  if (agentToolFailures.length) {
+    return { ok: false, layer: "agenttools", errors: [...new Set(agentToolFailures)] };
   }
   return { ok: true, layer: null, errors: [] };
 }
