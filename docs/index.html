@@ -1765,6 +1765,15 @@
      * for a given visitCount, so selftest can verify the mapping without
      * needing to reload the page. First-visit text is returned separately. */
     function getMilestoneAcknowledgment(visitCount) {
+      if (visitCount >= 100) {
+        return 'The garden knows you now, through a hundred returns.';
+      }
+      if (visitCount >= 50) {
+        return 'This garden carries your presence in every bloom it has witnessed.';
+      }
+      if (visitCount >= 25) {
+        return 'Many seasons have turned here alongside you.';
+      }
       if (visitCount >= 10) {
         return 'Welcome back. This garden has grown with you through many visits.';
       }
