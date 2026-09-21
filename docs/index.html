@@ -231,6 +231,8 @@
     import { createDawnMist } from "./dawnMist.js";
     import { createBeetle } from "./beetle.js";
     import { createCondensation } from "./condensation.js";
+    /* Registers the tools in agenttools.js with the browser's agent API. */
+    import "./webmcp.js";
 
     const wrapper = document.getElementById('garden-canvas-wrapper');
     const scene = new THREE.Scene();
