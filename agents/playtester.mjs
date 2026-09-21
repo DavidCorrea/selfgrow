@@ -151,6 +151,114 @@ function readPage() {
   };
 }
 
+// How long the whole tool pass may take. Every tool is called once, so this
+// bounds the product rather than a single tool, and it is small on purpose: this
+// is one part of a two-minute session, not the session.
+const TOOL_BUDGET_MS = Number(process.env.PLAYTEST_TOOL_BUDGET_MS || 10_000);
+
+// WebMCP is behind a flag in the Chromium Playwright ships. Passing it is what
+// makes this agent a real consumer of the tool layer rather than a simulated
+// one: it calls getTools() and executeTool() exactly as a browser agent would,
+// through the same registration path a visitor's agent will use.
+const WEBMCP_FLAG = "--enable-blink-features=WebMCP";
+
+/**
+ * Use the product the way an agent would — through the tools it declares.
+ *
+ * The state layer answers "what is happening" for someone reading the page. This
+ * answers it for something that cannot read the page at all, and it is the only
+ * place in the pipeline where the tool surface is exercised by a consumer rather
+ * than by a validator. verifyBuild proves the tools RUN; nobody else asks whether
+ * they are any good to use.
+ *
+ * Every tool is called with no arguments, which is the honest thing to do: the
+ * browser hands an agent a name, a description and a schema, and nothing else. A
+ * tool that needed arguments will have failed here, and whether its description
+ * told the caller what it wanted is exactly the question this role is for.
+ *
+ * Tools marked consequential are described but never called. The annotation
+ * exists so a caller knows to ask a human first, and an agent that fires them
+ * anyway is the failure the annotation is meant to prevent.
+ *
+ * Best-effort by construction: returns null when anything goes wrong, and the
+ * session is reported exactly as it was before this existed.
+ */
+async function useAgentTools(page) {
+  try {
+    return await page.evaluate(async ({ budgetMs }) => {
+      const deadline = Date.now() + budgetMs;
+      const withinBudget = () => Date.now() < deadline;
+
+      const record = (descriptor, call) => ({
+        name: descriptor.name,
+        description: descriptor.description,
+        // The browser hands inputSchema back already serialized; a direct import
+        // hands back the object. Stringifying a string would show the reader a
+        // wall of escaped quotes instead of the schema.
+        schema: descriptor.inputSchema
+          ? (typeof descriptor.inputSchema === "string" ? descriptor.inputSchema : JSON.stringify(descriptor.inputSchema))
+          : "(none)",
+        consequential: !!(descriptor.annotations && descriptor.annotations.consequentialHint),
+        readOnly: !!(descriptor.annotations && descriptor.annotations.readOnlyHint),
+        call,
+      });
+
+      // The real path: the tools as the browser registered them.
+      if (document.modelContext && typeof document.modelContext.getTools === "function") {
+        const registered = await document.modelContext.getTools();
+        const used = [];
+        for (const descriptor of registered) {
+          const consequential = !!(descriptor.annotations && descriptor.annotations.consequentialHint);
+          if (consequential || !withinBudget()) {
+            used.push(record(descriptor, { skipped: true }));
+            continue;
+          }
+          try {
+            const returned = await document.modelContext.executeTool(descriptor, "{}");
+            used.push(record(descriptor, { ok: true, returned: String(returned).slice(0, 800) }));
+          } catch (e) {
+            used.push(record(descriptor, { ok: false, error: e.message }));
+          }
+        }
+        return { path: "the browser's own agent API", tools: used };
+      }
+
+      // The fallback: this browser has no agent API, so the handlers are called
+      // directly. Worth saying out loud in the transcript — it is a weaker test,
+      // and a silent downgrade would look exactly like a passing one.
+      let mod;
+      try {
+        mod = await import("./agenttools.js");
+      } catch (e) {
+        return { path: "nothing — the product declares no tools", tools: [], note: e.message };
+      }
+      if (typeof mod.tools !== "function") return { path: "nothing — no tools() export", tools: [] };
+
+      const used = [];
+      for (const descriptor of mod.tools()) {
+        const consequential = !!(descriptor.annotations && descriptor.annotations.consequentialHint);
+        if (consequential || !withinBudget()) {
+          used.push(record(descriptor, { skipped: true }));
+          continue;
+        }
+        try {
+          const returned = await descriptor.execute(
+            descriptor.example === undefined ? {} : descriptor.example,
+            { signal: new AbortController().signal }
+          );
+          used.push(record(descriptor, { ok: true, returned: JSON.stringify(returned).slice(0, 800) }));
+        } catch (e) {
+          used.push(record(descriptor, { ok: false, error: e.message }));
+        }
+      }
+      return { path: "a direct import — this browser has no agent API", tools: used };
+    }, { budgetMs: TOOL_BUDGET_MS });
+  } catch (e) {
+    log("warn", "Playtest: the tool pass could not run — reporting the session without it.", errorData(e));
+    return null;
+  }
+}
+
 /**
  * Sit with the app and write down what it says over time.
  *
@@ -178,7 +286,7 @@ export async function observeApp() {
   const consoleErrors = [];
   let browser;
   try {
-    browser = await chromium.launch();
+    browser = await chromium.launch({ args: [WEBMCP_FLAG] });
   } catch (e) {
     log("warn", "Playtest: could not launch a browser — skipping.", errorData(e));
     local?.server.close();
@@ -227,13 +335,18 @@ export async function observeApp() {
     await page.waitForTimeout(2000);
     const afterReload = (await page.evaluate(readPage)).state;
 
+    // Used after the reload so nothing a tool does can perturb the observation
+    // or the persistence check above, and before the frames so a tool that
+    // changed something is visible in them.
+    const agentTools = await useAgentTools(page);
+
     // Shot last, and after the reload, so the frames show the same garden the
     // final timeline sample describes rather than a fresh one. Resizing for the
     // mobile frame is destructive to the desktop layout, which is why nothing is
     // measured after this point.
     const frames = await captureFrames(page);
 
-    return { opening, tabOrder, timeline, afterReload, consoleErrors, url, frames };
+    return { opening, tabOrder, timeline, afterReload, agentTools, consoleErrors, url, frames };
   } catch (e) {
     log("warn", "Playtest: the session broke off early — reporting what was seen.", errorData(e));
     return null;
@@ -251,8 +364,36 @@ export async function observeApp() {
  * being asked for an impression of an experience, and a wall of serialized DOM
  * invites it to audit structure instead.
  */
+/**
+ * The tool pass, as something a reader can judge rather than a JSON dump: what
+ * each tool said it did, and what came back when it was called.
+ */
+export function renderToolPass(agentTools) {
+  if (!agentTools) return "(the tool pass could not run this session)";
+  if (!agentTools.tools.length) {
+    return `Reached through ${agentTools.path}. **The product declares no tools, so an agent cannot use it at all.**`;
+  }
+  const lines = [`Reached through ${agentTools.path}.`, ""];
+  for (const tool of agentTools.tools) {
+    lines.push(`### ${tool.name}${tool.readOnly ? " (read-only)" : ""}`);
+    lines.push(`Told: "${tool.description}"`);
+    lines.push(`Takes: ${tool.schema}`);
+    if (tool.call.skipped) {
+      lines.push(tool.consequential
+        ? "Not called — it is marked consequential, so a caller is meant to ask a person first."
+        : "Not called — the tool pass ran out of time before reaching it.");
+    } else if (tool.call.ok) {
+      lines.push(`Called it with no arguments. Got back:\n\n\`\`\`\n${tool.call.returned}\n\`\`\``);
+    } else {
+      lines.push(`Called it with no arguments. **It failed: ${tool.call.error}**`);
+    }
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+
 export function renderSession(session, { showingFrames = true } = {}) {
-  const { opening, tabOrder, timeline, afterReload, consoleErrors, url } = session;
+  const { opening, tabOrder, timeline, afterReload, agentTools, consoleErrors, url } = session;
   // The transcript must describe the turn it is actually part of. The text-only
   // fallback in report() sends this same session with no images attached, and a
   // transcript that still announced two screenshots would have the agent describe
@@ -284,6 +425,9 @@ export function renderSession(session, { showingFrames = true } = {}) {
     sameAfterReload
       ? "The garden came back exactly as it was left."
       : `The garden came back different:\n${afterReload || "(the panel said nothing)"}`,
+    "",
+    `## What the tools offered an agent`,
+    renderToolPass(agentTools),
     "",
     `## Errors in the console during the session`,
     consoleErrors.length ? consoleErrors.map((e) => `- ${e}`).join("\n") : "(none)",
