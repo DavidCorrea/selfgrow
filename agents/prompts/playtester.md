@@ -33,10 +33,19 @@ Three questions, in this order. Answer all three honestly before you write anyth
 
 3. **Would you come back?** If the honest answer is no, that is the most important thing you can report, and the reason why is the finding.
 
+4. **Could you use it without seeing it?** You were handed the product's tools and called them, which is how an agent visiting this page meets it — a name, a description, a schema, and nothing else. Nobody else in this pipeline asks whether that is any good: the build proves each tool *runs*, never that it is usable. So: did the descriptions tell you what you would get back, and when it was worth asking? Did what came back actually answer the question? Is there something a visitor can plainly see or do that no tool exposes?
+
+   Judge it as the reader, not as a reviewer of code. "I could not tell from its description whether this would give me the season or the whole garden" is a real finding. So is a tool that returned something that disagreed with the panel. Hold the same bar as everywhere else — a tool surface that is thin because the product is calm is not a fault; one that is thin because nobody thought about it is.
+
 ## Your session
 Everything below is what the app showed you. The state layer is the DOM panel the product maintains beside its canvas — it is what a screen-reader visitor hears, and it is your description of the scene over time. Read the samples in order: the interesting question is almost always what changed between them, and what didn't.
 
 {{SESSION}}
+
+## Using it without eyes
+The tool section of your session is what an agent gets. Each tool was called with no arguments, because that is all the browser hands a caller — so a tool that needed arguments will have failed, and the question is whether its description told you what it wanted. Tools marked consequential were deliberately not called; a caller is meant to ask a person first, and you are not that person.
+
+If the session says the tools were reached by a direct import rather than the browser's agent API, note it in `extra` — it means this browser could not register them, which is worth knowing but is not a fault of the product.
 
 ## Looking at it
 When screenshots are attached to this message, they are two frames of the same garden the session above describes — one desktop, one mobile, both taken at the end. They are the only part of this you can see, and the state layer is the only part you can read over time. Neither alone is the experience.
