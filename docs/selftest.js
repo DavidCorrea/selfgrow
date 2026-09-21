@@ -12713,6 +12713,88 @@ export async function checks() {
     problems.push('gardenState.beetle is missing or undefined — the ground beetle was not created (issue #766).');
   }
 
+  /* ---------- Beetle stillness-depth crawl checks (issue #782) ---------- */
+  // After 40+ seconds of camera stillness, the beetle's crawl speed should
+  // gradually reduce to 40% of normal. After 80+ seconds, occasional pauses
+  // begin. All timings reset when the camera moves. __gardenState.beetle
+  // must expose getStillnessCrawlMul() for verification.
+  {
+    var gs782 = window.__gardenState;
+    var beetle782 = gs782 && gs782.beetle;
+    if (!beetle782) {
+      problems.push('gardenState.beetle is missing — cannot verify stillness-depth crawl (issue #782).');
+    } else {
+      if (typeof beetle782.getStillnessCrawlMul !== 'function') {
+        problems.push('beetle.getStillnessCrawlMul is not a function — expected a getter for the stillness crawl speed multiplier (issue #782).');
+      } else {
+        // Test 1: With no stillness induced (or camera moving), multiplier should be 1.0
+        var mulNormal = beetle782.getStillnessCrawlMul();
+        if (typeof mulNormal !== 'number' || mulNormal < 0.95 || mulNormal > 1.0) {
+          problems.push('beetle.getStillnessCrawlMul() returned ' + mulNormal + ' with no induced stillness — expected ~1.0 (issue #782).');
+        }
+
+        if (typeof gs782._stillnessDuration !== 'number') {
+          problems.push('window.__gardenState._stillnessDuration is not a number — cannot induce stillness (issue #782).');
+        } else {
+          // Store original descriptor for restoration
+          var stillnessDesc782 = Object.getOwnPropertyDescriptor(gs782, '_stillnessDuration');
+
+          // Test 2: Induce 60s of stillness (above the 40s ramp start but below 80s pause start)
+          Object.defineProperty(gs782, '_stillnessDuration', {
+            get: function() { return 60000; },
+            enumerable: true,
+            configurable: true
+          });
+
+          // Call beetle.update a few times with simulated dt to let the depth logic run
+          if (typeof beetle782.update === 'function') {
+            // Simulate 12s of frames (0.016s per frame) to ensure the ramp settles
+            for (var simI = 0; simI < 12; simI++) {
+              beetle782.update(1 + simI * 0.016);
+            }
+          }
+
+          var mulRamped = beetle782.getStillnessCrawlMul();
+          if (typeof mulRamped !== 'number' || mulRamped > 0.95 || mulRamped < 0.35) {
+            problems.push('beetle.getStillnessCrawlMul() at 60s stillness returned ' + mulRamped + ', expected between 0.35 and 0.95 (should be ramped below 1.0) (issue #782).');
+          }
+
+          // Verify it's below the normal value to confirm ramping occurred
+          if (typeof mulRamped === 'number' && typeof mulNormal === 'number' && mulRamped >= mulNormal) {
+            problems.push('beetle.getStillnessCrawlMul() at 60s stillness (' + mulRamped + ') did not decrease from normal (' + mulNormal + ') — ramp did not activate (issue #782).');
+          }
+
+          // Expected: at 60s stillness, speed should be at STILLNESS_SPEED_MIN (0.4) since
+          // ramp runs 40-50s and 60s is past the ramp window
+          var expectedAt60 = 0.4; // fully ramped
+          if (typeof mulRamped === 'number' && Math.abs(mulRamped - expectedAt60) > 0.05) {
+            problems.push('beetle.getStillnessCrawlMul() at 60s stillness returned ' + mulRamped + ', expected ~' + expectedAt60 + ' (fully ramped to 40%) (issue #782).');
+          }
+
+          // Test 3: After camera moves, multiplier must reset to 1.0
+          // Induce a move by setting stillness to 0 and calling update
+          Object.defineProperty(gs782, '_stillnessDuration', {
+            get: function() { return 0; },
+            enumerable: true,
+            configurable: true
+          });
+          if (typeof beetle782.update === 'function') {
+            beetle782.update(100);
+          }
+          var mulReset = beetle782.getStillnessCrawlMul();
+          if (typeof mulReset !== 'number' || mulReset < 0.95 || mulReset > 1.0) {
+            problems.push('beetle.getStillnessCrawlMul() after camera move returned ' + mulReset + ', expected ~1.0 — multiplier did not reset when stillness duration dropped (issue #782).');
+          }
+
+          // Restore original descriptor
+          if (stillnessDesc782) {
+            Object.defineProperty(gs782, '_stillnessDuration', stillnessDesc782);
+          }
+        }
+      }
+    }
+  }
+
   /* ---------- Dawn condensation checks (issue #773) ---------- */
   // During the dawn window (t ∈ [0.95, 0.12]) beads must appear on plants
   // and the carapace roughness must ease toward 0.5, all on the dawn mist's

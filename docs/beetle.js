@@ -26,6 +26,16 @@ const CRAWL_SPEED = 0.005;        // units/s — very slow
 const CRAWL_ARC_RADIUS = 0.04;    // units — short path near plant base
 const CRAWL_ARC_OFFSET = 0.02;    // units — offset from plant stem center
 
+/* Stillness-depth crawl speed parameters (issue #782) — prolonged stillness slows
+ * the beetle to 40% speed after 40s, and occasional pauses begin after 80s. */
+const STILLNESS_SPEED_RAMP_START = 40;      // seconds — after this, speed starts ramping down
+const STILLNESS_SPEED_RAMP_DURATION = 10;    // seconds — ramp duration from 1.0 to 0.4
+const STILLNESS_SPEED_MIN = 0.4;            // minimum crawl speed multiplier (40%)
+const STILLNESS_PAUSE_START = 80;           // seconds — after this, occasional pauses begin
+const STILLNESS_PAUSE_MIN_MS = 1000;        // minimum pause duration (1s)
+const STILLNESS_PAUSE_MAX_MS = 3000;        // maximum pause duration (3s)
+const STILLNESS_PAUSE_COOLDOWN_MS = 8000;   // cooldown between pauses (8s)
+
 /* --- Seasonal ramp configuration (issue #775) --- */
 const SEASON_DURATION_MS = 180_000;        // 3 minutes per season
 const RAMP_FRACTION = 0.20;                // first/last 20% of season for opacity ramp
@@ -204,6 +214,14 @@ export function createBeetle(scene) {
   let _prePauseCrawlPhase = 0;         // crawlPhase snapshot for a clean resume
   let _pauseTargetPetal = null;        // the petal being examined
   let _lastPetalPauseTime = -Infinity; // timestamp of the previous pause
+
+  /* Stillness-depth state (issue #782) */
+  let _stillnessCrawlMul = 1.0;            // current crawl speed multiplier from stillness depth
+  let _stillnessPauseActive = false;       // occasional pause from prolonged stillness
+  let _stillnessPauseElapsed = 0;          // ms spent in stillness pause so far
+  let _stillnessPauseDuration = 0;         // ms to stay paused (1-3s)
+  let _prevStillnessCrawlPhase = 0;        // crawlPhase snapshot for resume after stillness pause
+  let _lastStillnessPauseTime = -Infinity; // timestamp of the previous stillness pause
 
   /* --- Determine anchor position: nearest plant stem --- */
   function findAnchor() {
@@ -430,18 +448,34 @@ export function createBeetle(scene) {
       return;
     }
 
-    /* --- Camera stillness check --- */
+    /* Compute stillness duration from garden state for depth behaviors below */
+    let stillnessSec = 0;
     let isCameraStill = true;
     if (window.__gardenState && typeof window.__gardenState._stillnessDuration === 'number') {
-      const stillnessSec = window.__gardenState._stillnessDuration / 1000;
+      stillnessSec = window.__gardenState._stillnessDuration / 1000;
       isCameraStill = stillnessSec >= SETTLE_STILLNESS_MIN;
     }
 
     if (!isCameraStill) {
-      // Camera just moved — freeze in place, don't advance crawl phase
+      // Camera just moved — freeze in place, reset stillness-depth state
       _crawlActive = false;
+      _stillnessCrawlMul = 1.0;
+      _stillnessPauseActive = false;
+      _stillnessPauseElapsed = 0;
+      _stillnessPauseDuration = 0;
+      _lastStillnessPauseTime = -Infinity;
       clearPetalPause(true); // abort any petal pause and resume from its snapshot
       return;
+    }
+
+    /* --- Stillness-depth: crawl speed ramp (issue #782) --- */
+    // After 40s of stillness, linearly ramp crawl speed from 1.0 to STILLNESS_SPEED_MIN over 10s
+    if (stillnessSec >= STILLNESS_SPEED_RAMP_START) {
+      const rampElapsed = Math.min(stillnessSec - STILLNESS_SPEED_RAMP_START, STILLNESS_SPEED_RAMP_DURATION);
+      const rampProgress = rampElapsed / STILLNESS_SPEED_RAMP_DURATION; // 0→1 over ramp window
+      _stillnessCrawlMul = 1.0 - rampProgress * (1.0 - STILLNESS_SPEED_MIN);
+    } else {
+      _stillnessCrawlMul = 1.0;
     }
 
     /* --- Petal pause (issue #772): hold at the fallen petal for 2-4s --- */
@@ -464,11 +498,43 @@ export function createBeetle(scene) {
       return; // pause began this frame — hold the current spot
     }
 
+    /* --- Stillness-depth: occasional pause after 80s (issue #782) --- */
+    // After 80+ seconds of stillness, the beetle occasionally pauses for 1-3s at a
+    // random point on its arc before resuming. The crawl phase is preserved so the
+    // beetle continues from exactly where it stopped.
+    if (stillnessSec >= STILLNESS_PAUSE_START && !_stillnessPauseActive) {
+      const now = performance.now();
+      if (now - _lastStillnessPauseTime >= STILLNESS_PAUSE_COOLDOWN_MS) {
+        // Random chance each frame: roughly once per cooldown period
+        if (Math.random() < dt * 0.15) { // ~15% chance per second of stillness
+          _stillnessPauseActive = true;
+          _prevStillnessCrawlPhase = _crawlPhase;
+          _stillnessPauseDuration = STILLNESS_PAUSE_MIN_MS + Math.random() * (STILLNESS_PAUSE_MAX_MS - STILLNESS_PAUSE_MIN_MS);
+          _stillnessPauseElapsed = 0;
+          _lastStillnessPauseTime = now;
+        }
+      }
+    }
+
+    if (_stillnessPauseActive) {
+      _stillnessPauseElapsed += dt * 1000;
+      // Body stays frozen at the pause spot (no repositioning)
+      if (_stillnessPauseElapsed >= _stillnessPauseDuration) {
+        // Pause complete — resume exactly where the crawl left off
+        _crawlPhase = _prevStillnessCrawlPhase;
+        _stillnessPauseActive = false;
+        _stillnessPauseElapsed = 0;
+        _stillnessPauseDuration = 0;
+      } else {
+        return; // stay frozen this frame
+      }
+    }
+
     /* --- Crawl animation (only when camera is still) --- */
     _crawlActive = true;
 
-    // Advance crawl phase slowly (~0.005 units/s)
-    _crawlPhase += CRAWL_SPEED / CRAWL_ARC_RADIUS * dt;
+    // Advance crawl phase slowly (~0.005 units/s), modulated by stillness depth
+    _crawlPhase += CRAWL_SPEED * _stillnessCrawlMul / CRAWL_ARC_RADIUS * dt;
 
     // Short arc near plant base: figure-eight or small looping path
     // Using a lemniscate-like pattern for organic appearance
@@ -489,5 +555,5 @@ export function createBeetle(scene) {
     );
   }
 
-  return { group, update };
+  return { group, update, getStillnessCrawlMul: () => _stillnessCrawlMul };
 }

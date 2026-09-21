@@ -1535,7 +1535,7 @@
       firefliesUpdate: fireflies.update,
       dawnMist: dawnMist.state,
       condensation: condensation.state,
-      beetle: { group: beetle.group, update: beetle.update },
+      beetle: { group: beetle.group, update: beetle.update, getStillnessCrawlMul: beetle.getStillnessCrawlMul },
       /* Base seasonal ground colour (before winter legacy or rain darkening).
        * Set by startSeasonalCycle each tick, read by weather.js for rain darkening (issue #528). */
       baseGroundColor: new THREE.Color(0x4a3728),
