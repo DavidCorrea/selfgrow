@@ -428,6 +428,15 @@ export function createCreature(scene) {
   let _sproutOffsetX = 0;
   let _sproutOffsetZ = 0;
 
+  /* --- Beetle proximity lift state (issue #774) --- */
+  // When butterfly passes near the active ground beetle during warm Clear daytime,
+  // its y-position briefly lifts by ~0.08-0.12 units over ~1s, then decays over ~2s.
+  let _beetleLiftPhase = 'idle';        // 'idle' | 'lifting' | 'decaying'
+  let _beetleLiftOffset = 0;            // current y displacement
+  let _beetleLiftTimer = 0;             // elapsed time in current phase (seconds)
+  let _beetleLiftAmount = 0;            // peak offset for this lift event
+  let _lastBeetleLiftTime = 0;          // performance.now() timestamp for cooldown
+
   /* --- Leaf brush tremble tracking (issue #640) --- */
   // Each entry: { leaf, originalRotX, startTime }
   let _leafTrembles = [];
@@ -511,6 +520,10 @@ export function createCreature(scene) {
     getIsReducedMotion: () => state.reducedMotion,
     /* Return-visitor greeting accessor for selftest (issue #752) */
     getGreetingActive: () => _greetingActive,
+    /* Beetle proximity lift accessors for selftest (issue #774) */
+    getBeetleLiftOffset: () => _beetleLiftOffset,
+    getBeetleLiftPhase: () => _beetleLiftPhase,
+    getLastBeetleLiftTime: () => _lastBeetleLiftTime,
     ORBIT_HEIGHT_MIN,
     ORBIT_HEIGHT_MAX,
     OVERCAST_HEIGHT_MIN,
@@ -1405,7 +1418,72 @@ export function createCreature(scene) {
       }
     }
 
-    group.position.set(finalX, finalY + windNudge, finalZ);
+    /* --- Beetle proximity lift (issue #774): when butterfly passes within ~0.15
+     * horizontal units of the active ground beetle during warm (Spring/Summer)
+     * Clear daytime, briefly lift by 0.08-0.12 units over ~1s, then decay over
+     * ~2s with cubic ease-out. 10s cooldown. No lift during Night (butterfly
+     * rests), Light Drizzle (butterfly shelters), or under reduced-motion. --- */
+    if (!state.reducedMotion && !_isNightPhase &&
+        (seasonName === 'Spring' || seasonName === 'Summer')) {
+      const beetle = window.__gardenState && window.__gardenState.beetle &&
+                       window.__gardenState.beetle.group;
+      const weatherPhase = window.__gardenState && window.__gardenState.weather &&
+                            window.__gardenState.weather.getPhase();
+      if (beetle && weatherPhase === 'Clear') {
+        const bx = beetle.position.x;
+        const bz = beetle.position.z;
+        const dx = finalX - bx;
+        const dz = finalZ - bz;
+        const hDist = Math.sqrt(dx * dx + dz * dz);
+
+        if (hDist <= 0.15 && _beetleLiftPhase === 'idle') {
+          const now = performance.now();
+          if (now - _lastBeetleLiftTime >= 10000) {
+            // Initiate a lift
+            _beetleLiftPhase = 'lifting';
+            _beetleLiftTimer = 0;
+            _beetleLiftAmount = 0.08 + Math.random() * 0.04; // 0.08-0.12
+            _lastBeetleLiftTime = now;
+          }
+        }
+      }
+    }
+
+    // Advance the beetle lift state machine
+    if (_beetleLiftPhase === 'lifting') {
+      _beetleLiftTimer += dt;
+      const liftDuration = 1.0; // ~1 second to reach peak
+      if (_beetleLiftTimer < liftDuration) {
+        const t = _beetleLiftTimer / liftDuration;
+        // Cubic ease-in: starts slow, accelerates
+        const eased = t * t * t;
+        _beetleLiftOffset = _beetleLiftAmount * eased;
+      } else {
+        // Peak reached — transition to decay
+        _beetleLiftPhase = 'decaying';
+        _beetleLiftTimer -= liftDuration;
+        _beetleLiftOffset = _beetleLiftAmount;
+      }
+    }
+
+    if (_beetleLiftPhase === 'decaying') {
+      _beetleLiftTimer += dt;
+      const decayDuration = 2.0; // ~2 seconds to settle back
+      if (_beetleLiftTimer < decayDuration) {
+        const t = _beetleLiftTimer / decayDuration;
+        // Cubic ease-out: fast start, slow finish (1 - (1-t)^3)
+        const eased = 1 - (1 - t) * (1 - t) * (1 - t);
+        _beetleLiftOffset = _beetleLiftAmount * (1 - eased);
+      } else {
+        // Fully decayed — reset
+        _beetleLiftPhase = 'idle';
+        _beetleLiftOffset = 0;
+        _beetleLiftTimer = 0;
+        _beetleLiftAmount = 0;
+      }
+    }
+
+    group.position.set(finalX, finalY + windNudge + _beetleLiftOffset, finalZ);
 
     /* --- Orient the butterfly along its flight direction --- */
     // Use a small look-at offset to face the direction of travel
