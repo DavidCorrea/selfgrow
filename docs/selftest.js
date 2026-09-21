@@ -12,7 +12,7 @@ import { computeDisplacement, setWindRotation, getWindRotation } from "./groundR
 import { isReducedMotion, onMotionChange } from "./motion.js";
 import { selectPetalPauseTarget, computeSeasonalOpacityMultiplier } from "./beetle.js";
 import { tools, readGardenState } from "./agenttools.js";
-import { SEASON_PALETTES, SEASON_NAMES, SEASON_DURATION_MS, CYCLE_DURATION_MS, getWeatheringAmount, getFlowerWarmthAmount } from "./garden.js";
+import { SEASON_PALETTES, SEASON_NAMES, SEASON_DURATION_MS, CYCLE_DURATION_MS, getWeatheringAmount, getFlowerWarmthAmount, getGroundWarmBaseline } from "./garden.js";
 import { TIME_OF_DAY_AUDIO, WEATHER_AUDIO_MODIFIERS, SEASON_AUDIO_MODIFIERS, DEFAULT_WEATHER_MODIFIER, DEFAULT_SEASON_MODIFIER, getWarmthGain } from "./ambientAudio.js";
 
 /* ---------- getWeatheringAmount pure-function tests (issue #755) ---------- */
@@ -85,6 +85,38 @@ import { TIME_OF_DAY_AUDIO, WEATHER_AUDIO_MODIFIERS, SEASON_AUDIO_MODIFIERS, DEF
   if (getFlowerWarmthAmount(10) !== 0.40) throw new Error('visitCount=10 (boundary) should return 0.40, got ' + getFlowerWarmthAmount(10));
   if (getFlowerWarmthAmount(25) !== 0.75) throw new Error('visitCount=25 (boundary) should return 0.75, got ' + getFlowerWarmthAmount(25));
   if (getFlowerWarmthAmount(50) !== 1.0) throw new Error('visitCount=50 (boundary) should return 1.0, got ' + getFlowerWarmthAmount(50));
+})();
+
+/* ---------- getGroundWarmBaseline pure-function tests (issue #789) ---------- */
+(function testGetGroundWarmBaseline() {
+  // visitCount < 25: 0 (no warm shift)
+  if (getGroundWarmBaseline(0) !== 0) throw new Error('visitCount=0 should return 0, got ' + getGroundWarmBaseline(0));
+  if (getGroundWarmBaseline(1) !== 0) throw new Error('visitCount=1 should return 0, got ' + getGroundWarmBaseline(1));
+  if (getGroundWarmBaseline(24) !== 0) throw new Error('visitCount=24 should return 0, got ' + getGroundWarmBaseline(24));
+
+  // visitCount >= 25: 0.03 (3%)
+  if (getGroundWarmBaseline(25) !== 0.03) throw new Error('visitCount=25 should return 0.03, got ' + getGroundWarmBaseline(25));
+  if (getGroundWarmBaseline(30) !== 0.03) throw new Error('visitCount=30 should return 0.03, got ' + getGroundWarmBaseline(30));
+  if (getGroundWarmBaseline(49) !== 0.03) throw new Error('visitCount=49 should return 0.03, got ' + getGroundWarmBaseline(49));
+
+  // visitCount >= 50: 0.05 (5%)
+  if (getGroundWarmBaseline(50) !== 0.05) throw new Error('visitCount=50 should return 0.05, got ' + getGroundWarmBaseline(50));
+  if (getGroundWarmBaseline(75) !== 0.05) throw new Error('visitCount=75 should return 0.05, got ' + getGroundWarmBaseline(75));
+  if (getGroundWarmBaseline(99) !== 0.05) throw new Error('visitCount=99 should return 0.05, got ' + getGroundWarmBaseline(99));
+
+  // visitCount >= 100: 0.08 (8%, capped)
+  if (getGroundWarmBaseline(100) !== 0.08) throw new Error('visitCount=100 should return 0.08, got ' + getGroundWarmBaseline(100));
+  if (getGroundWarmBaseline(200) !== 0.08) throw new Error('visitCount=200 should return 0.08, got ' + getGroundWarmBaseline(200));
+
+  // non-numeric inputs return 0
+  if (getGroundWarmBaseline(undefined) !== 0) throw new Error('undefined should return 0');
+  if (getGroundWarmBaseline(null) !== 0) throw new Error('null should return 0');
+  if (getGroundWarmBaseline('foo') !== 0) throw new Error('string should return 0');
+
+  // Boundary: visitCount exactly at thresholds
+  if (getGroundWarmBaseline(25) !== 0.03) throw new Error('visitCount=25 (boundary) should return 0.03, got ' + getGroundWarmBaseline(25));
+  if (getGroundWarmBaseline(50) !== 0.05) throw new Error('visitCount=50 (boundary) should return 0.05, got ' + getGroundWarmBaseline(50));
+  if (getGroundWarmBaseline(100) !== 0.08) throw new Error('visitCount=100 (boundary) should return 0.08, got ' + getGroundWarmBaseline(100));
 })();
 
 /* ---------- getWarmthGain pure-function tests (issue #763) ---------- */
@@ -13125,6 +13157,18 @@ export async function checks() {
     }
     if (panelState.season === null) {
       problems.push('get-garden-state could not find #season-display — the state panel ids the agent tools read have moved.');
+    }
+  }
+
+  /* ---------- Cumulative-visit ground warm baseline (issue #789) ---------- */
+  var gs = window.__gardenState;
+  if (!gs || typeof gs.visitCount !== 'number') {
+    problems.push('window.__gardenState.visitCount is not set — cannot verify ground warm baseline (issue #789).');
+  } else {
+    var expectedBaseline = getGroundWarmBaseline(gs.visitCount);
+    var actualBaseline = gs._groundWarmBaseline;
+    if (typeof actualBaseline !== 'number' || actualBaseline !== expectedBaseline) {
+      problems.push('window.__gardenState._groundWarmBaseline is ' + JSON.stringify(actualBaseline) + ', expected ' + expectedBaseline + ' (from getGroundWarmBaseline(' + gs.visitCount + ')) — ground warm baseline not set correctly on page load (issue #789).');
     }
   }
 
