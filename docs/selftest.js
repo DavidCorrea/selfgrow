@@ -3442,6 +3442,104 @@ export async function checks() {
     if (p3FadedGreeting.indexOf("low plant's flowers have faded") === -1) {
       problems.push('computeReturningVisitorGreeting with plant3 flower bloom→fading should mention "the low plant\'s flowers have faded", got: "' + p3FadedGreeting + '" (issue #735).');
     }
+
+    /* --- Beetle emergence/retreat detection (issue #787) --- */
+
+    // Test: Beetle emerges when Winter→Spring
+    const beetleEmergenceSaved = {
+      seasonProgress: 0.76, // Winter (0.76 * 4 = 3.04, floor = 3)
+      plant2Maturity: 0.5,
+      plant1FlowerPhase: 'dormant',
+      plant1FlowerProgress: 0,
+      plant2FlowerPhase: 'dormant',
+      plant2FlowerProgress: 0
+    };
+    const beetleEmergenceCurrent = {
+      seasonProgress: 0.02, // Spring (0.02 * 4 = 0.08, floor = 0)
+      plant2Maturity: 0.5,
+      plant1FlowerPhase: 'dormant',
+      plant1FlowerProgress: 0,
+      plant2FlowerPhase: 'dormant',
+      plant2FlowerProgress: 0
+    };
+    const beetleEmergenceGreeting = gardenState.computeReturningVisitorGreeting(60000, beetleEmergenceSaved, beetleEmergenceCurrent);
+    if (beetleEmergenceGreeting.indexOf('ground beetle has emerged from its burrow') === -1) {
+      problems.push('computeReturningVisitorGreeting with Winter→Spring should mention "a ground beetle has emerged from its burrow", got: "' + beetleEmergenceGreeting + '" (issue #787).');
+    }
+
+    // Test: Beetle retreats when Spring/Summer/Autumn→Winter
+    const beetleRetreatSaved = {
+      seasonProgress: 0.35, // Summer (0.35 * 4 = 1.4, floor = 1)
+      plant2Maturity: 0.5,
+      plant1FlowerPhase: 'dormant',
+      plant1FlowerProgress: 0,
+      plant2FlowerPhase: 'dormant',
+      plant2FlowerProgress: 0
+    };
+    const beetleRetreatCurrent = {
+      seasonProgress: 0.76, // Winter (0.76 * 4 = 3.04, floor = 3)
+      plant2Maturity: 0.5,
+      plant1FlowerPhase: 'dormant',
+      plant1FlowerProgress: 0,
+      plant2FlowerPhase: 'dormant',
+      plant2FlowerProgress: 0
+    };
+    const beetleRetreatGreeting = gardenState.computeReturningVisitorGreeting(60000, beetleRetreatSaved, beetleRetreatCurrent);
+    if (beetleRetreatGreeting.indexOf('ground beetle has retreated to its burrow') === -1) {
+      problems.push('computeReturningVisitorGreeting with Summer→Winter should mention "the ground beetle has retreated to its burrow for winter", got: "' + beetleRetreatGreeting + '" (issue #787).');
+    }
+
+    /* --- Ground seed drop detection (issue #787) --- */
+
+    // Test: Seeds newly scattered when saved had no groundSeeds but current does
+    const seedDropSaved = {
+      seasonProgress: 0.1,
+      plant2Maturity: 0.5,
+      plant1FlowerPhase: 'dormant',
+      plant1FlowerProgress: 0,
+      plant2FlowerPhase: 'dormant',
+      plant2FlowerProgress: 0
+      // no groundSeeds property
+    };
+    const seedDropCurrent = {
+      seasonProgress: 0.1,
+      plant2Maturity: 0.8,
+      plant1FlowerPhase: 'dormant',
+      plant1FlowerProgress: 0,
+      plant2FlowerPhase: 'dormant',
+      plant2FlowerProgress: 0,
+      groundSeeds: { count: 5, parentLabel: 'plant', parentPos: { x: 0, z: 0 }, basePositions: [] }
+    };
+    const seedDropGreeting = gardenState.computeReturningVisitorGreeting(60000, seedDropSaved, seedDropCurrent);
+    if (seedDropGreeting.indexOf('seeds lie scattered on the ground') === -1) {
+      problems.push('computeReturningVisitorGreeting with new groundSeeds should mention "seeds lie scattered on the ground", got: "' + seedDropGreeting + '" (issue #787).');
+    }
+
+    /* --- Sprout germination detection (issue #787) --- */
+
+    // Test: Fresh sprouts when saved has no seeds and current has seeds in Spring
+    const sproutSaved = {
+      seasonProgress: 0.1, // Spring
+      plant2Maturity: 0.5,
+      plant1FlowerPhase: 'dormant',
+      plant1FlowerProgress: 0,
+      plant2FlowerPhase: 'dormant',
+      plant2FlowerProgress: 0
+      // no groundSeeds
+    };
+    const sproutCurrent = {
+      seasonProgress: 0.1, // Spring (0.1 * 4 = 0.4, floor = 0)
+      plant2Maturity: 0.8,
+      plant1FlowerPhase: 'dormant',
+      plant1FlowerProgress: 0,
+      plant2FlowerPhase: 'dormant',
+      plant2FlowerProgress: 0,
+      groundSeeds: { count: 5, parentLabel: 'plant', parentPos: { x: 0, z: 0 }, basePositions: [] }
+    };
+    const sproutGreeting = gardenState.computeReturningVisitorGreeting(60000, sproutSaved, sproutCurrent);
+    if (sproutGreeting.indexOf('fresh green sprouts are emerging') === -1) {
+      problems.push('computeReturningVisitorGreeting with new seeds in Spring should mention "fresh green sprouts are emerging from the soil", got: "' + sproutGreeting + '" (issue #787).');
+    }
   }
 
   // Check the DOM reflects the returning visitor scenario when saved state exists

@@ -1644,10 +1644,13 @@
      * not match any context string — updaters treat it as the base text and compose
      * context around it.
      *
-     * Detects three types of change by comparing savedState to currentState:
+     * Detects changes by comparing savedState to currentState:
      *   1. plant2 appeared (saved had no plant2, current does)
      *   2. season changed (derived from seasonProgress)
      *   3. flower bloomed or faded (derived from flower phase)
+     *   4. beetle emergence/retreat (season transition to/from Winter)
+     *   5. ground seed drop (saved had no seeds, current does)
+     *   6. sprout germination (new seeds in Spring)
      * Falls back to generic time-based greeting when nothing specific changed.
      */
     function computeReturningVisitorGreeting(elapsedMs, savedState, currentState) {
@@ -1672,6 +1675,31 @@
 
       if (currentSeasonIndex !== savedSeasonIndex && currentSeasonIndex >= 0) {
         parts.push('the garden has entered ' + SEASON_NAMES[currentSeasonIndex]);
+      }
+
+      // 4. Detect beetle emergence or retreat based on season change
+      if (currentSeasonIndex !== savedSeasonIndex && currentSeasonIndex >= 0) {
+        // Winter → Spring: beetle emerges
+        if (savedSeasonIndex === 3 && currentSeasonIndex === 0) {
+          parts.push('a ground beetle has emerged from its burrow');
+        }
+        // Spring/Summer/Autumn → Winter: beetle retreats
+        if (savedSeasonIndex !== 3 && currentSeasonIndex === 3) {
+          parts.push('the ground beetle has retreated to its burrow for winter');
+        }
+      }
+
+      // 5. Detect ground seed drop
+      const savedHadSeeds = !!savedState.groundSeeds && savedState.groundSeeds.count > 0;
+      const currentHasSeeds = !!(currentState && currentState.groundSeeds && currentState.groundSeeds.count > 0);
+
+      if (!savedHadSeeds && currentHasSeeds) {
+        parts.push('seeds lie scattered on the ground');
+
+        // 6. If seeds are newly present and it is Spring, sprouts are germinating
+        if (currentSeasonIndex === 0) {
+          parts.push('fresh green sprouts are emerging from the soil');
+        }
       }
 
       // 3. Detect flower bloom or fade (plant1)
