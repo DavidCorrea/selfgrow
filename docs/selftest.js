@@ -12925,5 +12925,42 @@ export async function checks() {
     }
   }
 
+  /* ---------- Butterfly beetle-proximity lift checks (issue #774) ---------- */
+  // The beetle lift state machine is wired in the creature state object:
+  // - getBeetleLiftOffset returns a number (0 when idle)
+  // - getBeetleLiftPhase returns the current phase string
+  // - getLastBeetleLiftTime is 0 before any lift
+  if (gardenState && gardenState.creature) {
+    var creature774 = gardenState.creature;
+    if (typeof creature774.getBeetleLiftOffset !== 'function') {
+      problems.push('creature.getBeetleLiftOffset is not a function — beetle-lift accessor missing (issue #774).');
+    } else {
+      var idleOffset = creature774.getBeetleLiftOffset();
+      if (typeof idleOffset !== 'number') {
+        problems.push('creature.getBeetleLiftOffset() returned ' + typeof idleOffset + ', expected a number (issue #774).');
+      } else if (idleOffset !== 0) {
+        problems.push('creature.getBeetleLiftOffset() returned ' + idleOffset + ', expected 0 when no lift is active (issue #774).');
+      }
+    }
+    if (typeof creature774.getBeetleLiftPhase !== 'function') {
+      problems.push('creature.getBeetleLiftPhase is not a function — beetle-lift phase accessor missing (issue #774).');
+    } else {
+      var phaseVal = creature774.getBeetleLiftPhase();
+      if (phaseVal !== 'idle') {
+        problems.push('creature.getBeetleLiftPhase() returned "' + phaseVal + '", expected "idle" at boot (issue #774).');
+      }
+    }
+    if (typeof creature774.getLastBeetleLiftTime !== 'function') {
+      problems.push('creature.getLastBeetleLiftTime is not a function — lift cooldown accessor missing (issue #774).');
+    } else {
+      var lastTime = creature774.getLastBeetleLiftTime();
+      if (lastTime !== 0) {
+        problems.push('creature.getLastBeetleLiftTime() returned ' + lastTime + ', expected 0 at boot (no lift occurred yet) (issue #774).');
+      }
+    }
+  } else {
+    problems.push('gardenState.creature is missing — cannot verify beetle-lift state machine (issue #774).');
+  }
+
   return problems;
 }
