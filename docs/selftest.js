@@ -13477,5 +13477,47 @@ export async function checks() {
     }
   }
 
+  /* ---------- Context phrase pool size checks (issue #803) ---------- */
+  // Verify each of the 11 environmental context pools has ≥10 variants
+  // to reduce text repetition across the 30s variant cycling.
+  if (window.__gardenState) {
+    var contextPools = [
+      { name: 'seasonContexts', label: 'Season', keys: ['Spring', 'Summer', 'Autumn', 'Winter'] },
+      { name: 'timeContexts', label: 'Time of day', keys: ['Morning', 'Midday', 'Evening', 'Night'] },
+      { name: 'weatherContexts', label: 'Weather', keys: ['Clear', 'Overcast', 'Light Drizzle'] }
+    ];
+
+    for (var pi = 0; pi < contextPools.length; pi++) {
+      var poolInfo = contextPools[pi];
+      var pool = window.__gardenState[poolInfo.name];
+      if (!pool) {
+        problems.push('window.__gardenState.' + poolInfo.name + ' is not set — cannot verify context pool sizes (issue #803).');
+        continue;
+      }
+      for (var ki = 0; ki < poolInfo.keys.length; ki++) {
+        var key = poolInfo.keys[ki];
+        var variants = pool[key];
+        if (!Array.isArray(variants)) {
+          problems.push(poolInfo.name + '["' + key + '"] is not an array — expected an array of context phrases (issue #803).');
+        } else if (variants.length < 10) {
+          problems.push(poolInfo.name + '["' + key + '"] has only ' + variants.length + ' variants — expected at least 10 to reduce text repetition (issue #803).');
+        }
+        // Verify no duplicates within each pool
+        if (Array.isArray(variants) && variants.length > 0) {
+          var seen = {};
+          for (var vi = 0; vi < variants.length; vi++) {
+            var phrase = variants[vi];
+            if (seen[phrase]) {
+              problems.push('Duplicate phrase found in ' + poolInfo.name + '["' + key + '"]: "' + phrase + '" appears at least twice (issue #803).');
+            }
+            seen[phrase] = true;
+          }
+        }
+      }
+    }
+  } else {
+    problems.push('window.__gardenState is not set — cannot verify context phrase pool sizes (issue #803).');
+  }
+
   return problems;
 }
