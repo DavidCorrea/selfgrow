@@ -102,3 +102,46 @@ export function createGroundNoiseTexture() {
 
   return texture;
 }
+
+/**
+ * Create a radial gradient canvas texture for the ground plane's alpha map.
+ *
+ * The texture is fully opaque (alpha=1) from the centre out to a fadeStart
+ * fraction of the radius, then smoothly fades to transparent (alpha=0) at
+ * the outer edge. This produces a natural edge fade on the CircleGeometry
+ * ground plane without a hard boundary.
+ *
+ * @param {number} fadeStart - Normalised radius [0,1] where fade begins.
+ *   Default 0.91 (~5.0/5.5 — fade over the outer ~0.5 units of a 5.5-radius circle).
+ * @returns {THREE.CanvasTexture} A 256×256 canvas texture for use as alphaMap.
+ */
+export function createGroundAlphaMap(fadeStart = 0.91) {
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+
+  // Centre of the canvas
+  const cx = size / 2;
+  const cy = size / 2;
+  const maxR = size / 2;
+  const fadeR = maxR * fadeStart;
+  const fadeWidth = maxR - fadeR;
+
+  // Radial gradient from opaque centre to transparent edge
+  const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, maxR);
+  gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+  gradient.addColorStop(fadeStart, 'rgba(255, 255, 255, 1)');
+  gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, size, size);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.needsUpdate = true;
+
+  return texture;
+}

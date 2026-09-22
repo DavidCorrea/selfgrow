@@ -216,7 +216,7 @@
     import { OrbitControls } from "three/addons/controls/OrbitControls.js";
     import { initGarden, startSeasonalCycle, createFallenLeaves, createGroundDetails, getGroundWarmBaseline } from "./garden.js";
     import { createAmbientParticles } from "./particles.js";
-    import { createGroundNoiseTexture } from "./groundNoise.js";
+    import { createGroundNoiseTexture, createGroundAlphaMap } from "./groundNoise.js";
     import { createHorizon } from "./horizon.js";
     import { createScrub } from "./scrub.js";
     import { startDayNightCycle } from "./daynight.js";
@@ -263,10 +263,10 @@
     sunLight.shadow.mapSize.height = 1024;
     sunLight.shadow.camera.near = 0.1;
     sunLight.shadow.camera.far = 20;
-    sunLight.shadow.camera.left = -5;
-    sunLight.shadow.camera.right = 5;
-    sunLight.shadow.camera.top = 5;
-    sunLight.shadow.camera.bottom = -5;
+    sunLight.shadow.camera.left = -7;
+    sunLight.shadow.camera.right = 7;
+    sunLight.shadow.camera.top = 7;
+    sunLight.shadow.camera.bottom = -7;
     scene.add(sunLight);
 
     /* Secondary fill light from opposite side */
@@ -274,12 +274,17 @@
     fillLight.position.set(-3, 2, -2);
     scene.add(fillLight);
 
-    /* Ground plane — rich soil with subtle procedural noise texture */
-    const groundGeo = new THREE.CircleGeometry(4, 32);
+    /* Ground plane — rich soil with subtle procedural noise texture
+     * and radial alpha fade at the outer edge for a natural transition
+     * into the scene background. */
+    const groundGeo = new THREE.CircleGeometry(5.5, 48);
     const groundNoiseTexture = createGroundNoiseTexture();
+    const groundAlphaMap = createGroundAlphaMap();
     const groundMat = new THREE.MeshStandardMaterial({
       color: 0x4a3728,
       map: groundNoiseTexture,
+      alphaMap: groundAlphaMap,
+      transparent: true,
       roughness: 0.9,
       metalness: 0.0,
       side: THREE.DoubleSide
@@ -291,7 +296,7 @@
     scene.add(ground);
 
     /* A subtle ring around the plot */
-    const ringGeo = new THREE.RingGeometry(3.8, 4.2, 48);
+    const ringGeo = new THREE.RingGeometry(5.2, 5.8, 48);
     const ringMat = new THREE.MeshStandardMaterial({
       color: 0x5a4a38,
       roughness: 0.8,
@@ -327,8 +332,8 @@
 
     const NUM_GRASS = 35;
     const NUM_MOSS = 22;
-    const MIN_RADIUS = 3.8;
-    const MAX_RADIUS = 3.95;
+    const MIN_RADIUS = 5.2;
+    const MAX_RADIUS = 5.4;
 
     function randomAngle() {
       return Math.random() * Math.PI * 2;
@@ -407,8 +412,8 @@
     controls.dampingFactor = 0.08;
     controls.minPolarAngle = 0.1;          // never fully top-down
     controls.maxPolarAngle = Math.PI / 2.3; // never below the ground plane
-    controls.minDistance = 1.5;            // prevent zooming too close — keep plants in context
-    controls.maxDistance = 12;             // prevent zooming too far — horizon and scrub remain visible
+    controls.minDistance = 2.0;            // prevent zooming too close — keep plants in context
+    controls.maxDistance = 15;             // prevent zooming too far — horizon and scrub remain visible
     controls.target.set(0, 0.4, 0);        // aim at the seedling's height
     controls.rotateSpeed = 0.5;            // unhurried, botanical pace
     controls.update();
