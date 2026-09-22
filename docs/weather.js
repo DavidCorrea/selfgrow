@@ -14,6 +14,7 @@
  */
 
 import * as THREE from "three";
+import { redrawGradientTexture } from "./daynight.js";
 
 /* --- Configuration --- */
 const CYCLE_DURATION_MS = 300_000; // ~5 minutes for a full weather loop
@@ -351,11 +352,20 @@ export function startWeatherCycle(sunLight, scene, ambientLight, hemiLight, fill
     // These compose on top of whatever day/night set on this frame:
     // we read the current scene/light values and apply multipliers.
 
-    // Sky colour: multiply the current scene background by weather sky tint
-    if (scene.background instanceof THREE.Color) {
-      _tempColor.copy(scene.background);
-      _tempColor.multiply(current.skyTint);
-      scene.background.copy(_tempColor);
+    // Sky colour: apply weather sky tint to the vertical gradient sky
+    // (issue #801). Read the flat sky colour from day/night, apply the
+    // weather skyTint multiplier, then redraw the gradient texture with
+    // the tinted colour. The fog colour follows the same tinted sky.
+    const dayNight = window.__gardenState && window.__gardenState.dayNight;
+    if (dayNight && typeof dayNight.getSkyColor === 'function') {
+      var baseSky = dayNight.getSkyColor();
+      _tempColor.copy(baseSky).multiply(current.skyTint);
+      
+      // Redraw the gradient texture with the weather-tinted sky colour
+      const gradTex = dayNight.getGradientTexture();
+      if (gradTex && gradTex._ctx) {
+        redrawGradientTexture(gradTex._ctx, gradTex, _tempColor);
+      }
     }
 
     // Fog (issue #654): colour tracks the weather-tinted sky and density

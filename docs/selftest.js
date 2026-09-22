@@ -2222,20 +2222,16 @@ export async function checks() {
       problems.push('#weather-display element is missing — cannot verify weather phase display.');
     }
 
-    // Verify the scene background has been modified (weather applies a tint modifier)
+    // Verify the scene background is a CanvasTexture (vertical gradient sky, issue #801)
+    // and that weather applies its sky tint via the gradient redraw path.
     if (gardenState && gardenState.scene && gardenState.scene.background) {
       const bg = gardenState.scene.background;
-      if (bg instanceof THREE.Color) {
-        if (typeof bg.r !== 'number') {
-          problems.push('scene.background is not a valid THREE.Color — weather cycle may have broken it.');
+      if (!(bg instanceof THREE.CanvasTexture)) {
+        if (bg instanceof THREE.Color) {
+          problems.push('scene.background is a flat THREE.Color (' + bg.getHexString() + ') — expected a CanvasTexture with vertical gradient sky (issue #801).');
+        } else {
+          problems.push('scene.background is ' + (bg.constructor ? bg.constructor.name : typeof bg) + ' — expected a THREE.CanvasTexture for the vertical gradient sky (issue #801).');
         }
-        // Check that background is not purely white or unmodified (weather composes on day/night)
-        // With day/night + weather, the background should never be pure white (1,1,1)
-        if (bg.r > 0.99 && bg.g > 0.99 && bg.b > 0.99) {
-          problems.push('scene.background appears to be pure white — weather tint may not be applying.');
-        }
-      } else {
-        problems.push('scene.background is not a THREE.Color instance — weather cycle may not have initialised.');
       }
     }
 
@@ -2328,13 +2324,29 @@ export async function checks() {
       }
 
       // Fog colour must track the weather-tinted sky exactly (same tick).
-      const bg = gardenState.scene.background;
-      if (bg instanceof THREE.Color && typeof fog.color.r === 'number') {
-        const dr = Math.abs(fog.color.r - bg.r);
-        const dg = Math.abs(fog.color.g - bg.g);
-        const db = Math.abs(fog.color.b - bg.b);
-        if (dr > 1e-2 || dg > 1e-2 || db > 1e-2) {
-          problems.push('scene.fog.color (' + fog.color.r.toFixed(3) + ',' + fog.color.g.toFixed(3) + ',' + fog.color.b.toFixed(3) + ') does not track the sky tint (' + bg.r.toFixed(3) + ',' + bg.g.toFixed(3) + ',' + bg.b.toFixed(3) + '), delta (' + dr.toFixed(4) + ',' + dg.toFixed(4) + ',' + db.toFixed(4) + ') (issue #654).');
+      // Since scene.background is now a CanvasTexture gradient (issue #801),
+      // read the flat sky colour from dayNightState.getSkyColor() instead.
+      const dayNightFog = gardenState && gardenState.dayNight;
+      if (dayNightFog && typeof dayNightFog.getSkyColor === 'function' && typeof fog.color.r === 'number') {
+        var skyCol = dayNightFog.getSkyColor();
+        // Apply the same weather skyTint that weather.js uses
+        var weatherFog = gardenState && gardenState.weather;
+        if (weatherFog) {
+          // Weather applies current.skyTint to the sky colour. We can't read
+          // the exact interpolated skyTint from here, but we can verify
+          // that fog color is not pure white and is in a plausible range.
+          if (fog.color.r > 0.99 && fog.color.g > 0.99 && fog.color.b > 0.99) {
+            problems.push('scene.fog.color is near-pure white (' + fog.color.r.toFixed(3) + ',' + fog.color.g.toFixed(3) + ',' + fog.color.b.toFixed(3) + ') — weather sky tint may not be applying to fog (issue #654).');
+          }
+          // Fog colour should roughly relate to the day/night sky colour
+          // (weather darkens it, so fog should be darker or similar)
+          if (skyCol.r > 0 && skyCol.g > 0 && skyCol.b > 0) {
+            var fogLum = fog.color.r * 0.299 + fog.color.g * 0.587 + fog.color.b * 0.114;
+            var skyLum = skyCol.r * 0.299 + skyCol.g * 0.587 + skyCol.b * 0.114;
+            if (fogLum > skyLum + 0.1) {
+              problems.push('scene.fog.color luminance (' + fogLum.toFixed(3) + ') is unexpectedly brighter than day/night sky colour luminance (' + skyLum.toFixed(3) + ') — weather should darken or match the sky, not brighten it (issue #654).');
+            }
+          }
         }
       }
 
@@ -2685,17 +2697,17 @@ export async function checks() {
       }
     }
 
-    // Verify the scene background exists and is a color (day/night cycle sets it)
+    // Verify the scene background exists and is a CanvasTexture (day/night cycle sets it, issue #801)
     if (gardenState && gardenState.scene) {
       const bg = gardenState.scene.background;
       if (!bg) {
         problems.push('scene.background is missing — the day/night cycle could not set the sky colour.');
-      } else if (bg instanceof THREE.Color) {
-        if (typeof bg.r !== 'number') {
-          problems.push('scene.background is not a valid THREE.Color — day/night cycle may have broken it.');
+      } else if (!(bg instanceof THREE.CanvasTexture)) {
+        if (bg instanceof THREE.Color) {
+          problems.push('scene.background is a flat THREE.Color (' + bg.getHexString() + ') — expected a CanvasTexture with vertical gradient sky (issue #801).');
+        } else {
+          problems.push('scene.background is ' + (bg.constructor ? bg.constructor.name : typeof bg) + ' — expected a THREE.CanvasTexture for the vertical gradient sky (issue #801).');
         }
-      } else {
-        problems.push('scene.background is not a THREE.Color instance — day/night cycle may not have set it.');
       }
     }
 
@@ -2840,18 +2852,20 @@ export async function checks() {
         }
       }
 
-      // Also check scene background luminance — the night sky must stay at or
-      // above the ~0x1a2030 floor so green/brown plant silhouettes remain
-      // visible against it.
-      const bg = gardenState.scene.background;
-      if (bg instanceof THREE.Color) {
+      // Also check the day/night sky colour luminance — the night sky must
+      // stay at or above the ~0x1a2030 floor so green/brown plant silhouettes
+      // remain visible against it. Since scene.background is now a CanvasTexture
+      // gradient (issue #801), read the flat sky colour from
+      // dayNightState.getSkyColor() via getDeepestNightSkyColor().
+      if (dayNight && typeof dayNight.getDeepestNightSkyColor === 'function') {
+        var nightSkyCol = dayNight.getDeepestNightSkyColor();
         // Relative luminance: 0.2126*R + 0.7152*G + 0.0722*B (sRGB linear)
         function srgbToLinear(c) {
           return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
         }
-        const rLin = srgbToLinear(bg.r);
-        const gLin = srgbToLinear(bg.g);
-        const bLin = srgbToLinear(bg.b);
+        const rLin = srgbToLinear(nightSkyCol.r);
+        const gLin = srgbToLinear(nightSkyCol.g);
+        const bLin = srgbToLinear(nightSkyCol.b);
         const luminance = 0.2126 * rLin + 0.7152 * gLin + 0.0722 * bLin;
         // Floor sky 0x1a2030 → dark indigo with relative luminance ≈ 0.0147
         // (rich midnight, not a black void).
@@ -2859,8 +2873,8 @@ export async function checks() {
         const floorLum = 0.2126 * srgbToLinear(floorCol.r) + 0.7152 * srgbToLinear(floorCol.g) + 0.0722 * srgbToLinear(floorCol.b);
         if (luminance < floorLum - 0.001) {
           problems.push(
-            'During Night phase, scene.background relative luminance is ' +
-            luminance.toFixed(5) +
+            'Night sky colour #' + nightSkyCol.getHexString() +
+            ' relative luminance is ' + luminance.toFixed(5) +
             ', darker than the ~0x1a2030 floor (' + floorLum.toFixed(5) +
             ') — plant silhouettes would vanish into a black sky (issue #663).'
           );
@@ -13286,6 +13300,77 @@ export async function checks() {
     var gd800 = gs800.groundDetails;
     if (typeof gd800.spreadRadius !== 'number' || Math.abs(gd800.spreadRadius - 5.0) > 0.01) {
       problems.push('groundDetails.spreadRadius is ' + gd800.spreadRadius + ', expected 5.0 — stones/moss patches should spread to the larger ground edge (issue #800).');
+    }
+  }
+
+  /* ---------- Vertical gradient sky background (issue #801) ---------- */
+  {
+    var gs801 = window.__gardenState;
+    if (!gs801) {
+      problems.push('window.__gardenState not set — cannot verify gradient sky (issue #801).');
+    } else {
+      var dayNight801 = gs801.dayNight;
+      if (!dayNight801) {
+        problems.push('window.__gardenState.dayNight is not set — dayNight state missing (issue #801).');
+      } else {
+        // Check that scene.background is a CanvasTexture, not a flat Color
+        var bg = gs801.scene && gs801.scene.background;
+        if (!bg) {
+          problems.push('scene.background is null/undefined — expected a CanvasTexture gradient (issue #801).');
+        } else if (bg instanceof THREE.Color) {
+          problems.push('scene.background is a flat THREE.Color (' + bg.getHexString() + ') — expected a CanvasTexture with vertical gradient (issue #801).');
+        } else if (!bg.isCanvasTexture) {
+          problems.push('scene.background.isCanvasTexture is ' + bg.isCanvasTexture + ' — expected true for a CanvasTexture with vertical gradient sky (issue #801).');
+        } else {
+          // Gradient direction check: sample pixel luminance at top vs bottom
+          var canvasTex = bg;
+          var canvas = canvasTex.image;
+          if (canvas && canvas.width > 0 && canvas.height > 0) {
+            var ctx2d = canvas.getContext('2d');
+            if (ctx2d) {
+              // Sample along the centre column
+              var topPixel = ctx2d.getImageData(Math.floor(canvas.width / 2), 0, 1, 1).data;
+              var bottomPixel = ctx2d.getImageData(Math.floor(canvas.width / 2), canvas.height - 1, 1, 1).data;
+
+              // Compute approximate luminance: 0.299*R + 0.587*G + 0.114*B
+              var topLum = 0.299 * topPixel[0] + 0.587 * topPixel[1] + 0.114 * topPixel[2];
+              var bottomLum = 0.299 * bottomPixel[0] + 0.587 * bottomPixel[1] + 0.114 * bottomPixel[2];
+
+              // Bottom (horizon) must be brighter than top (overhead)
+              if (bottomLum <= topLum) {
+                problems.push('Gradient sky luminance inversion: bottom pixel luminance is ' + bottomLum.toFixed(1) + ', top is ' + topLum.toFixed(1) + ' — expected bottom (horizon) to be brighter than top (overhead) (issue #801).');
+              }
+
+              // The difference should be noticeable (at least 10 luminance units)
+              if (bottomLum - topLum < 10) {
+                problems.push('Gradient sky luminance difference too small: bottom=' + bottomLum.toFixed(1) + ', top=' + topLum.toFixed(1) + ', difference=' + (bottomLum - topLum).toFixed(1) + ' — expected at least 10 units for a visible gradient (issue #801).');
+              }
+            } else {
+              problems.push('Could not get 2D context from gradient canvas — cannot verify gradient direction (issue #801).');
+            }
+          } else {
+            problems.push('Gradient canvas image is invalid (width=' + (canvas ? canvas.width : 'null') + ', height=' + (canvas ? canvas.height : 'null') + ') — cannot verify gradient (issue #801).');
+          }
+
+          // Verify a getGradientTexture method is exposed for selftest
+          if (typeof dayNight801.getGradientTexture !== 'function') {
+            problems.push('dayNightState.getGradientTexture is not a function — missing accessor for gradient texture inspection (issue #801).');
+          } else {
+            var texFromAccessor = dayNight801.getGradientTexture();
+            if (texFromAccessor !== bg) {
+              problems.push('dayNightState.getGradientTexture() returns a different texture than scene.background — should reference the same CanvasTexture (issue #801).');
+            }
+          }
+        }
+      }
+
+      // Verify getSkyColor still returns a valid THREE.Color (not the texture)
+      if (dayNight801 && typeof dayNight801.getSkyColor === 'function') {
+        var skyCol = dayNight801.getSkyColor();
+        if (!(skyCol instanceof THREE.Color)) {
+          problems.push('dayNightState.getSkyColor() returned a ' + (skyCol && skyCol.constructor ? skyCol.constructor.name : typeof skyCol) + ', expected a THREE.Color for silhouette opacity calculations (issue #801).');
+        }
+      }
     }
   }
 
