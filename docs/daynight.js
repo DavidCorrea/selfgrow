@@ -3,12 +3,14 @@
  *
  * Drives a continuous ~3-minute day/night cycle that:
  *  - Orbits the sun light around the scene (radius ~7) with varying elevation
- *  - Blends scene.background through four colour phases: sunrise, midday blue,
- *    sunset orange, deep night indigo
+ *  - Sets scene.background to a vertical canvas gradient texture that is
+ *    lighter near the horizon and deeper/richer overhead, carrying the
+ *    day/night phase hue (issue #801)
  *  - Dims lighting at night but keeps the garden calmly visible
  *  - Updates #time-display through Morning / Midday / Evening / Night phases
  *
  * Exports: startDayNightCycle(sunLight, scene, ambientLight, hemiLight, fillLight)
+ *          createInitialSkyGradient(initialColor) → CanvasTexture
  */
 
 import * as THREE from "three";
@@ -18,6 +20,13 @@ const CYCLE_DURATION_MS = 180_000; // ~3 minutes for a full day/night loop
 const SUN_RADIUS = 7;
 const SUN_MAX_Y = 8;
 const SUN_OFFSET_Y = 0.5;
+
+/* Gradient canvas dimensions */
+const GRADIENT_SIZE = 256;
+
+/* Luminance multiplier for the overhead (top) colour — 0.45 gives a
+ * noticeably deeper top while keeping the phase hue identifiable. */
+const TOP_LUMINANCE_FACTOR = 0.45;
 
 /* Four distinct phases, evenly spaced in the cycle.
  * t=0 → Morning (sunrise warm)
@@ -46,6 +55,64 @@ const PHASE_NAMES = [
 ];
 
 /* --- Helpers --- */
+
+/**
+ * Create a 256×256 canvas gradient texture for the scene background.
+ *
+ * Draws a vertical linear gradient: the bottom (y=0, horizon) carries the
+ * given sky colour at full luminance; the top (y=1, overhead) carries the
+ * same hue darkened to ~0.45× luminance for atmospheric depth.
+ *
+ * Returns a single THREE.CanvasTexture that can be reused — call
+ * redrawGradientTexture(ctx, texture, bottomColor) each frame instead of
+ * allocating a new canvas.
+ *
+ * @param {THREE.Color} initialColor - The initial sky colour.
+ * @returns {THREE.CanvasTexture} A reusable canvas texture for scene.background.
+ */
+export function createInitialSkyGradient(initialColor) {
+  const canvas = document.createElement('canvas');
+  canvas.width = GRADIENT_SIZE;
+  canvas.height = GRADIENT_SIZE;
+  const ctx = canvas.getContext('2d');
+
+  /* Store the canvas and context on the texture for efficient re-draw */
+  const texture = new THREE.CanvasTexture(canvas);
+  texture._ctx = ctx;
+
+  /* Draw the initial gradient */
+  redrawGradientTexture(ctx, texture, initialColor);
+
+  return texture;
+}
+
+/**
+ * Redraw the vertical gradient on an existing canvas/texture.
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {THREE.CanvasTexture} texture
+ * @param {THREE.Color} bottomColor - Sky colour at the horizon (full luminance).
+ */
+export function redrawGradientTexture(ctx, texture, bottomColor) {
+  const w = texture.image.width;
+  const h = texture.image.height;
+
+  /* Compute the darker top colour: same hue, reduced luminance */
+  const topColor = bottomColor.clone().multiplyScalar(TOP_LUMINANCE_FACTOR);
+
+  const bottomCSS = bottomColor.getStyle();
+  const topCSS = topColor.getStyle();
+
+  /* Draw vertical linear gradient from top to bottom */
+  const gradient = ctx.createLinearGradient(0, 0, 0, h);
+  gradient.addColorStop(0, topCSS);      // top (overhead) — darker
+  gradient.addColorStop(1, bottomCSS);   // bottom (horizon) — full luminance
+
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, w, h);
+
+  texture.needsUpdate = true;
+}
 
 /** Interpolate between two adjacent sky colour stops */
 function getSkyColor(t) {
@@ -99,6 +166,21 @@ export function startDayNightCycle(sunLight, scene, ambientLight, hemiLight, fil
   const sunBaseColor = sunLight.color.clone();
   const fillBaseColor = fillLight.color.clone();
 
+  /* ---------- Gradient sky background (issue #801) ----------
+   * Create a single canvas texture once and redraw it each tick.
+   * The initial colour is computed from initialProgress if given,
+   * otherwise defaults to Midday (0x87ceeb).
+   */
+  const initColor = initialProgress !== undefined
+    ? getSkyColor(initialProgress)
+    : new THREE.Color(0x87ceeb);
+  const skyTexture = createInitialSkyGradient(initColor);
+  scene.background = skyTexture;
+
+  /* Closure variable for the flat sky colour so horizon/scrub can still
+   * read it for opacity calculations. Updated each tick. */
+  let flatSkyColor = initColor.clone();
+
   /** Compute sun intensity based on elevation */
   function sunIntensityFromElevation(y) {
     // y ranges from ~-6.5 (deep night) to ~8.5 (high noon)
@@ -118,7 +200,11 @@ export function startDayNightCycle(sunLight, scene, ambientLight, hemiLight, fil
     },
     getPhaseName: () => getPhaseName((performance.now() - startTime) % CYCLE_DURATION_MS / CYCLE_DURATION_MS),
     getSunPosition: () => sunLight.position.clone(),
-    getSkyColor: () => scene.background.clone(),
+    // Return the flat sky colour, not the gradient texture — horizon/scrub
+    // use this for opacity calculations (issue #801).
+    getSkyColor: () => flatSkyColor.clone(),
+    /** Return the gradient canvas texture for selftest pixel inspection */
+    getGradientTexture: () => skyTexture,
     getShadowDrift: () => ({ x: _shadowDriftX, z: _shadowDriftZ }),
     getAmbientFloor: () => MIN_AMBIENT_INTENSITY,
     getDeepestNightSkyColor: () => SKY_STOPS[3].color.clone()
@@ -159,9 +245,12 @@ export function startDayNightCycle(sunLight, scene, ambientLight, hemiLight, fil
       _shadowDriftZ = 0;
     }
 
-    /* --- Sky colour --- */
+    /* --- Sky colour (flat luminance for horizon/scrub opacity) --- */
     const skyColor = getSkyColor(t);
-    scene.background = skyColor;
+    flatSkyColor.copy(skyColor);
+
+    /* --- Redraw the vertical gradient sky on the existing canvas (issue #801) --- */
+    redrawGradientTexture(skyTexture._ctx, skyTexture, skyColor);
 
     /* --- Sun intensity --- */
     const intensity = sunIntensityFromElevation(y);

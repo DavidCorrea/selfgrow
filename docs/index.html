@@ -219,7 +219,7 @@
     import { createGroundNoiseTexture, createGroundAlphaMap } from "./groundNoise.js";
     import { createHorizon } from "./horizon.js";
     import { createScrub } from "./scrub.js";
-    import { startDayNightCycle } from "./daynight.js";
+    import { startDayNightCycle, createInitialSkyGradient } from "./daynight.js";
     import { startWeatherCycle } from "./weather.js";
     import { loadGardenState, saveGardenState, fastForwardState, clearGardenState, SEASON_CYCLE_DURATION_MS } from "./persistence.js";
     import { createRain } from "./rain.js";
@@ -236,7 +236,8 @@
 
     const wrapper = document.getElementById('garden-canvas-wrapper');
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x87ceeb); /* soft sky blue */
+    /* Vertical gradient sky: lighter near horizon, deeper overhead (issue #801) */
+    scene.background = createInitialSkyGradient(new THREE.Color(0x87ceeb));
 
     const camera = new THREE.PerspectiveCamera(45, wrapper.clientWidth / wrapper.clientHeight, 0.1, 100);
     camera.position.set(4, 3, 6);
@@ -592,10 +593,13 @@
       /* Update ground beetle (issue #766) */
       beetle.update(animTime);
 
-      /* Update distant horizon silhouette to blend with current sky colour */
-      if (scene.background instanceof THREE.Color) {
-        horizon.update(scene.background);
-        scrub.update(scene.background);
+      /* Update distant horizon/scrub silhouettes with the flat sky colour
+       * (the gradient texture is not a Color, so read from dayNightState). */
+      var _dayNight = window.__gardenState && window.__gardenState.dayNight;
+      if (_dayNight && typeof _dayNight.getSkyColor === 'function') {
+        var _skyColor = _dayNight.getSkyColor();
+        horizon.update(_skyColor);
+        scrub.update(_skyColor);
       }
 
       renderer.render(scene, camera);
