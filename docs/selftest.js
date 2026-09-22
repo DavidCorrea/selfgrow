@@ -13519,5 +13519,56 @@ export async function checks() {
     problems.push('window.__gardenState is not set — cannot verify context phrase pool sizes (issue #803).');
   }
 
+  /* ---------- Session elapsed-time phrase pool checks (issue #804) ---------- */
+  if (window.__gardenState) {
+    var sessionPools = window.__gardenState.SESSION_TIME_PHRASES;
+    if (!sessionPools) {
+      problems.push('window.__gardenState.SESSION_TIME_PHRASES is not set — session-time phrases missing (issue #804).');
+    } else {
+      var expectedThresholds = [30000, 60000, 120000, 180000];
+      for (var ti = 0; ti < expectedThresholds.length; ti++) {
+        var thresh = expectedThresholds[ti];
+        var pool = sessionPools[thresh];
+        if (!Array.isArray(pool)) {
+          problems.push('SESSION_TIME_PHRASES[' + thresh + '] is not an array — expected an array of phrases (issue #804).');
+        } else {
+          if (pool.length < 3) {
+            problems.push('SESSION_TIME_PHRASES[' + thresh + 'ms] has only ' + pool.length + ' variants — expected at least 3 (issue #804).');
+          }
+          var seen = {};
+          for (var pi = 0; pi < pool.length; pi++) {
+            var phrase = pool[pi];
+            if (typeof phrase !== 'string' || phrase.trim().length === 0) {
+              problems.push('SESSION_TIME_PHRASES[' + thresh + 'ms][' + pi + '] is empty or not a string (issue #804).');
+            } else {
+              if (phrase.indexOf('!') !== -1) {
+                problems.push('SESSION_TIME_PHRASES[' + thresh + 'ms] phrase contains exclamation mark: "' + phrase + '" — session phrases should be calm (issue #804).');
+              }
+              if (seen[phrase]) {
+                problems.push('Duplicate phrase found in SESSION_TIME_PHRASES[' + thresh + 'ms]: "' + phrase + '" appears at least twice (issue #804).');
+              }
+              seen[phrase] = true;
+            }
+          }
+        }
+      }
+    }
+  } else {
+    problems.push('window.__gardenState is not set — cannot verify session-time phrases (issue #804).');
+  }
+
+  /* ---------- _pickSessionPhrase returns valid phrase (issue #804) ---------- */
+  if (window.__gardenState && window.__gardenState._pickSessionPhrase) {
+    var pickFn = window.__gardenState._pickSessionPhrase;
+    var result = pickFn(30000);
+    if (typeof result !== 'string') {
+      problems.push('_pickSessionPhrase(30000) returned non-string: ' + JSON.stringify(result) + ' (issue #804).');
+    }
+    // Reset used phrases for clean state
+    window.__gardenState._sessionTimePhrasesUsed = [];
+  } else if (window.__gardenState) {
+    problems.push('window.__gardenState._pickSessionPhrase is not set — cannot verify phrase selection (issue #804).');
+  }
+
   return problems;
 }
