@@ -754,12 +754,12 @@ export async function checks() {
         problems.push('controls.minPolarAngle is ' + ctrl.minPolarAngle + ', expected > 0 to prevent fully top-down view.');
       }
 
-      // Verify zoom limits (issue #459)
-      if (typeof ctrl.minDistance !== 'number' || ctrl.minDistance !== 1.5) {
-        problems.push('controls.minDistance is ' + ctrl.minDistance + ', expected 1.5 to prevent zooming too close.');
+      // Verify zoom limits — enlarged ground plane requires wider bounds (issue #800)
+      if (typeof ctrl.minDistance !== 'number' || ctrl.minDistance !== 2.0) {
+        problems.push('controls.minDistance is ' + ctrl.minDistance + ', expected 2.0 to prevent zooming too close on the larger ground.');
       }
-      if (typeof ctrl.maxDistance !== 'number' || ctrl.maxDistance !== 12) {
-        problems.push('controls.maxDistance is ' + ctrl.maxDistance + ', expected 12 to prevent zooming too far.');
+      if (typeof ctrl.maxDistance !== 'number' || ctrl.maxDistance !== 15) {
+        problems.push('controls.maxDistance is ' + ctrl.maxDistance + ', expected 15 to prevent zooming too far with the expanded garden.');
       }
       // Verify target is a Vector3 pointing near the plant (y ~0.4)
       if (!ctrl.target || typeof ctrl.target.y !== 'number') {
@@ -886,9 +886,9 @@ export async function checks() {
         });
       }
 
-      // Verify spreadRadius is 3.5
-      if (typeof gd.spreadRadius !== 'number' || Math.abs(gd.spreadRadius - 3.5) > 0.01) {
-        problems.push('groundDetails.spreadRadius is ' + gd.spreadRadius + ', expected 3.5 (issue #664).');
+      // Verify spreadRadius is 5.0 (enlarged for larger ground, issue #800)
+      if (typeof gd.spreadRadius !== 'number' || Math.abs(gd.spreadRadius - 5.0) > 0.01) {
+        problems.push('groundDetails.spreadRadius is ' + gd.spreadRadius + ', expected 5.0 — stones/moss patches should spread to the larger ground edge (issue #800).');
       }
     }
   } else if (!gardenState) {
@@ -3822,10 +3822,10 @@ export async function checks() {
             problems.push('scrub mesh #' + i + ' material.opacity is ' + mat.opacity + ', expected a positive number for fade blending.');
           }
 
-          // Verify position radius is between ~5 and 6 units from origin
+          // Verify position radius is between ~6.5 and 7.5 units from origin (enlarged for larger ground, issue #800)
           var dist = Math.sqrt(mesh.position.x * mesh.position.x + mesh.position.z * mesh.position.z);
-          if (dist < 4.5 || dist > 6.5) {
-            problems.push('scrub mesh #' + i + ' at distance ' + dist.toFixed(2) + ' from origin — expected between ~5 and 6 (mid-ground between plot and horizon).');
+          if (dist < 5.5 || dist > 8.0) {
+            problems.push('scrub mesh #' + i + ' at distance ' + dist.toFixed(2) + ' from origin — expected between ~6.5 and 7.5 (mid-ground between plot and horizon, issue #800).');
           }
         });
       }
@@ -13169,6 +13169,123 @@ export async function checks() {
     var actualBaseline = gs._groundWarmBaseline;
     if (typeof actualBaseline !== 'number' || actualBaseline !== expectedBaseline) {
       problems.push('window.__gardenState._groundWarmBaseline is ' + JSON.stringify(actualBaseline) + ', expected ' + expectedBaseline + ' (from getGroundWarmBaseline(' + gs.visitCount + ')) — ground warm baseline not set correctly on page load (issue #789).');
+    }
+  }
+
+  /* ---------- Ground plane radius and edge fade (issue #800) ---------- */
+  var gs800 = window.__gardenState;
+  if (!gs800 || !gs800.scene) {
+    problems.push('window.__gardenState.scene is not set — cannot verify ground plane (issue #800).');
+  } else {
+    // Find the ground mesh: CircleGeometry with y=-0.01
+    var groundMesh = null;
+    gs800.scene.traverse(function(child) {
+      if (child.isMesh && child.geometry && child.geometry.type === 'CircleGeometry' && Math.abs(child.position.y + 0.01) < 0.001) {
+        groundMesh = child;
+      }
+    });
+    if (!groundMesh) {
+      problems.push('No ground mesh (CircleGeometry at y=-0.01) found in the scene — the ground plane was not created (issue #800).');
+    } else {
+      var radius = groundMesh.geometry.parameters.radius;
+      if (typeof radius !== 'number' || radius < 5.5 || radius > 5.6) {
+        problems.push('Ground plane radius is ' + radius + ', expected ≥ 5.5 (issue #800).');
+      }
+
+      var segments = groundMesh.geometry.parameters.segments;
+      if (typeof segments !== 'number' || segments < 48) {
+        problems.push('Ground plane has ' + segments + ' radial segments, expected ≥ 48 for smooth edge fade (issue #800).');
+      }
+
+      // Verify the material has an alphaMap for edge fade
+      var mat = groundMesh.material;
+      if (!mat.transparent) {
+        problems.push('Ground material.transparent is false — must be true to support alphaMap edge fade (issue #800).');
+      }
+      if (!mat.alphaMap) {
+        problems.push('Ground material.alphaMap is missing — expected a radial gradient texture for edge fade (issue #800).');
+      }
+    }
+
+    // Find the ring mesh: RingGeometry
+    var ringMesh = null;
+    gs800.scene.traverse(function(child) {
+      if (child.isMesh && child.geometry && child.geometry.type === 'RingGeometry') {
+        ringMesh = child;
+      }
+    });
+    if (!ringMesh) {
+      problems.push('No RingGeometry mesh found in the scene — the edge ring was not created (issue #800).');
+    } else {
+      var innerR = ringMesh.geometry.parameters.innerRadius;
+      var outerR = ringMesh.geometry.parameters.outerRadius;
+      if (Math.abs(innerR - 5.2) > 0.01 || Math.abs(outerR - 5.8) > 0.01) {
+        problems.push('Ring geometry radii are (' + innerR + ', ' + outerR + '), expected (5.2, 5.8) — ring should scale proportionally with ground radius (issue #800).');
+      }
+    }
+
+    // Check perimeter detail is positioned correctly
+    var perimeterGroup = null;
+    gs800.scene.traverse(function(child) {
+      if (child.isGroup && child.name === 'perimeter-detail') {
+        perimeterGroup = child;
+      }
+    });
+    if (!perimeterGroup) {
+      problems.push('No perimeter-detail group found in scene — perimeter grass/moss tufts missing (issue #800).');
+    } else {
+      // Verify children are within the expected radius range (5.2-5.4)
+      var outOfRange = 0;
+      perimeterGroup.children.forEach(function(child) {
+        if (child.isMesh) {
+          var dist = Math.sqrt(child.position.x * child.position.x + child.position.z * child.position.z);
+          if (dist < 5.1 || dist > 5.5) {
+            outOfRange++;
+          }
+        }
+      });
+      if (outOfRange > 5) {
+        problems.push('Perimeter detail has ' + outOfRange + ' children outside expected radius range (5.2-5.4) — tufts/hummocks should reposition to the new edge (issue #800).');
+      }
+    }
+  }
+
+  /* ---------- Camera min/max distance adjusted for larger ground (issue #800) ---------- */
+  if (gs800 && gs800.controls) {
+    var ctrl800 = gs800.controls;
+    if (ctrl800.minDistance !== 2.0) {
+      problems.push('controls.minDistance is ' + ctrl800.minDistance + ', expected 2.0 — should be increased to keep larger ground in view (issue #800).');
+    }
+    if (ctrl800.maxDistance !== 15) {
+      problems.push('controls.maxDistance is ' + ctrl800.maxDistance + ', expected 15 — should be increased to keep larger ground in view (issue #800).');
+    }
+  }
+
+  /* ---------- Scrub radii scaled for larger ground (issue #800) ---------- */
+  if (gs800 && gs800.scrub && gs800.scrub.group) {
+    var scrubGroup = gs800.scrub.group;
+    var minScrubDist = Infinity;
+    var maxScrubDist = 0;
+    scrubGroup.children.forEach(function(child) {
+      if (child.isMesh) {
+        var dist = Math.sqrt(child.position.x * child.position.x + child.position.z * child.position.z);
+        if (dist < minScrubDist) minScrubDist = dist;
+        if (dist > maxScrubDist) maxScrubDist = dist;
+      }
+    });
+    if (minScrubDist < 6.0) {
+      problems.push('Scrub inner radius appears to be ~' + minScrubDist.toFixed(1) + ', expected ≥ 6.5 — scrub should be pushed outward for larger ground (issue #800).');
+    }
+    if (maxScrubDist < 7.0) {
+      problems.push('Scrub outer radius appears to be ~' + maxScrubDist.toFixed(1) + ', expected ≥ 7.5 — scrub should be pushed outward for larger ground (issue #800).');
+    }
+  }
+
+  /* ---------- Ground details spread radius (issue #800) ---------- */
+  if (gs800 && gs800.groundDetails) {
+    var gd800 = gs800.groundDetails;
+    if (typeof gd800.spreadRadius !== 'number' || Math.abs(gd800.spreadRadius - 5.0) > 0.01) {
+      problems.push('groundDetails.spreadRadius is ' + gd800.spreadRadius + ', expected 5.0 — stones/moss patches should spread to the larger ground edge (issue #800).');
     }
   }
 

@@ -2053,7 +2053,7 @@ function createSoilPatches(scene, basePositions, fallenLeavesState) {
 export function createGroundDetails(scene) {
   const STONE_COUNT = 20 + Math.floor(Math.random() * 11); // 20-30
   const MOSS_COUNT = 10 + Math.floor(Math.random() * 6);   // 10-15
-  const SPREAD_RADIUS = 3.5;
+  const SPREAD_RADIUS = 5.0;
 
   /* --- Stones --- */
   const stoneMat = new THREE.MeshStandardMaterial({

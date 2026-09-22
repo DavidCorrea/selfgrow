@@ -1,8 +1,8 @@
 /**
  * scrub.js — selfgrow mid-ground bush/scrub silhouettes
  *
- * Creates a ring of low-poly domed bush silhouettes at radius ~5–6 from
- * centre, positioned between the garden plot (ground circle radius 4) and
+ * Creates a ring of low-poly domed bush silhouettes at radius ~6.5–7.5 from
+ * centre, positioned between the garden plot (ground circle radius 5.5) and
  * the distant horizon tree line (radius ~10.5). Each bush is a simple
  * half-ellipse shape with varied height (0.2–0.5 units) and width (0.3–0.6
  * units). The material blends with the current sky colour via the same
@@ -15,8 +15,8 @@
 import * as THREE from "three";
 
 /* --- Configuration --- */
-const SCRUB_RADIUS_INNER = 5.0;
-const SCRUB_RADIUS_OUTER = 6.0;
+const SCRUB_RADIUS_INNER = 6.5;
+const SCRUB_RADIUS_OUTER = 7.5;
 const BUSH_COUNT = 50;
 const BASE_COLOR = 0x1a2a1e;        // Deep green-black silhouette
 const MIN_HEIGHT = 0.2;
