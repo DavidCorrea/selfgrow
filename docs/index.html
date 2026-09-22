@@ -1985,6 +1985,212 @@
      * so the two cannot fire too close together. --- */
     scheduleNextPresenceCheck();
 
+    /* --- Environmental phase transition acknowledgment (issue #802) ---
+     * When the day phase, weather, or season transitions to a new state,
+     * inject a brief transition acknowledgment into #garden-state-acknowledgment.
+     * The transition text persists for ~10s then reverts to normal acknowledgment cycling.
+     * Each transition type draws from a small pool of 3-4 variants so the same
+     * event phrase does not repeat identically within 3 occurrences. */
+
+    /* Transition phrase pools: keyed by "OldPhase→NewPhase" */
+    const DAY_TRANSITION_PHRASES = {
+      'Morning→Midday': [
+        'Morning fills the garden, the light climbing across the leaves.',
+        'The morning light strengthens, shadows shortening as the sun climbs higher.',
+        'The light grows bolder as morning gives way to midday.',
+        'Morning deepens toward noon, the sun rising steadily above the garden.'
+      ],
+      'Midday→Evening': [
+        'The sun begins its descent, golden tones creeping into the afternoon light.',
+        'Midday mellows as the sun arcs westward, warmth settling deep in the soil.',
+        'The afternoon light softens, the first hints of evening colour touching the leaves.',
+        'The bright noon light fades as the sun sinks toward the treeline.'
+      ],
+      'Evening→Night': [
+        'Dusk gathers as the last sunlight drains from the garden, stars emerging overhead.',
+        'Evening slips into night as the sky deepens to indigo and the first stars appear.',
+        'The warm colours of dusk give way to darkness, the garden settling into night.',
+        'The garden fades into twilight as the stars take possession of the sky.'
+      ],
+      'Night→Morning': [
+        'The eastern sky pales — dawn breaks over the garden, the night receding softly.',
+        'Night loosens its hold as pale morning light seeps across the horizon.',
+        'First light touches the highest leaves as the garden stirs from darkness.',
+        'The stars dim one by one as a soft glow rises in the east, heralding morning.'
+      ]
+    };
+
+    const WEATHER_TRANSITION_PHRASES = {
+      'Clear→Overcast': [
+        'The air shifts as clouds gather overhead, the light turning soft and grey.',
+        'A veil of cloud draws across the sky, muting the sunlight to a gentle grey.',
+        'Clouds knit together overhead, the garden sinking into a quiet, shadowless light.',
+        'The sky pales as cloud cover thickens, softening every edge and shadow.'
+      ],
+      'Overcast→Light Drizzle': [
+        'A fine rain begins to fall, pattering softly on the leaves.',
+        'The grey sky releases a gentle rain, each droplet trembling on the foliage.',
+        'The first drops descend from the overcast sky, the garden sighing under the rain.',
+        'Thin strands of rain begin to drift down, the air cooling with the falling water.'
+      ],
+      'Light Drizzle→Clear': [
+        'The rain thins and stops, the clouds parting to let the sun through.',
+        'The last droplets fall as the grey curtain lifts, sunlight breaking across the garden.',
+        'The drizzle fades, the clouds dispersing as clear light sweeps back over the garden.',
+        'The rain ceases and the sky clears, warm light returning to the rain-washed leaves.'
+      ]
+    };
+
+    const SEASON_TRANSITION_PHRASES = {
+      'Spring→Summer': [
+        'The air warms as spring ripens into summer, the garden filling with dense green growth.',
+        'Spring deepens toward summer, the leaves broadening under a strengthening sun.',
+        'The garden sheds the last traces of spring coolness as summer verdure takes hold.',
+        'The light turns rich and warm as the season shifts from spring to summer.'
+      ],
+      'Summer→Autumn': [
+        'A change touches the air as summer edges toward autumn, gold and amber seeping into the leaves.',
+        'The first hints of autumn colour appear among the green as the warmth of summer fades.',
+        'Summer relinquishes its hold as the garden begins its slow turn toward autumn.',
+        'The light takes on a golden quality as summer gives way to the turning season.'
+      ],
+      'Autumn→Winter': [
+        'The last leaves fall as autumn gives way to winter, the air turning sharp and still.',
+        'Cold settles into the garden as autumn surrenders to winter, bare branches etched against the sky.',
+        'A deep stillness descends as autumn fades and winter claims the garden.',
+        'The garden strips down to its bones as winter follows autumn, frost tracing across every surface.'
+      ],
+      'Winter→Spring': [
+        'A subtle warmth returns to the air as winter loosens its grip and the first hints of spring appear.',
+        'The frost recedes as winter turns toward spring, the soil beginning to stir beneath the surface.',
+        'The first pale shoots push through the soil as winter gives way to the renewal of spring.',
+        'The garden stirs from its winter sleep as the air softens and the light gains strength.'
+      ]
+    };
+
+    const TRANSITION_PHRASE_POOLS = {
+      day: DAY_TRANSITION_PHRASES,
+      weather: WEATHER_TRANSITION_PHRASES,
+      season: SEASON_TRANSITION_PHRASES
+    };
+
+    /* Track recent phrases per transition key: Map<key, string[]> of last 3 used */
+    const _recentTransitionPhrases = new Map();
+
+    function pickTransitionPhrase(transitionKey, pool) {
+      const variants = pool[transitionKey];
+      if (!variants || variants.length === 0) return null;
+
+      const used = _recentTransitionPhrases.get(transitionKey) || [];
+      const recentSet = new Set(used);
+
+      /* Find a variant not in the recent 3; if all have been used recently, pick the least recent */
+      let available = variants.filter(function(v) { return !recentSet.has(v); });
+      if (available.length === 0) {
+        available = variants;
+      }
+
+      const picked = available[Math.floor(Math.random() * available.length)];
+
+      /* Update recent list: keep last 3 */
+      used.push(picked);
+      if (used.length > 3) used.shift();
+      _recentTransitionPhrases.set(transitionKey, used);
+
+      return picked;
+    }
+
+    let _transitionTimer = null;
+    let _lastTransitionTime = 0;
+    const TRANSITION_ACK_DURATION_MS = 10000;
+
+    function injectTransitionAcknowledgment(text) {
+      if (_transitionTimer) {
+        clearTimeout(_transitionTimer);
+        _transitionTimer = null;
+      }
+
+      _lastTransitionTime = performance.now();
+      setAcknowledgment(text);
+
+      _transitionTimer = setTimeout(function() {
+        _transitionTimer = null;
+        /* Revert: the normal presence/stillness cycling will pick up naturally.
+         * Clear the acknowledgment text so the next presence check fills it. */
+        setAcknowledgment('');
+      }, TRANSITION_ACK_DURATION_MS);
+    }
+
+    /* Suppress transition detection during the first 1s after page load so the
+     * initial greeting is not overwritten. */
+    let _pageLoadGrace = true;
+    setTimeout(function() { _pageLoadGrace = false; }, 1000);
+
+    /* Known phase values for each display. We track the last known so we can
+     * detect transitions when a mutation fires. */
+    let _lastTimePhase = (document.getElementById('time-display')?.textContent || '').trim();
+    let _lastWeatherPhase = (document.getElementById('weather-display')?.textContent || '').trim();
+    let _lastSeasonPhase = (document.getElementById('season-display')?.textContent || '').trim();
+
+    const _transitionObserver = new MutationObserver(function(mutations) {
+      if (_pageLoadGrace) return;
+
+      for (let i = 0; i < mutations.length; i++) {
+        const target = mutations[i].target;
+        const currentText = (target.textContent || '').trim();
+
+        if (target.id === 'time-display' && currentText !== _lastTimePhase) {
+          const transitionKey = _lastTimePhase + '→' + currentText;
+          const pool = DAY_TRANSITION_PHRASES;
+          if (pool[transitionKey]) {
+            const phrase = pickTransitionPhrase(transitionKey, pool);
+            if (phrase) injectTransitionAcknowledgment(phrase);
+          }
+          _lastTimePhase = currentText;
+        }
+
+        if (target.id === 'weather-display' && currentText !== _lastWeatherPhase) {
+          const transitionKey = _lastWeatherPhase + '→' + currentText;
+          const pool = WEATHER_TRANSITION_PHRASES;
+          if (pool[transitionKey]) {
+            const phrase = pickTransitionPhrase(transitionKey, pool);
+            if (phrase) injectTransitionAcknowledgment(phrase);
+          }
+          _lastWeatherPhase = currentText;
+        }
+
+        if (target.id === 'season-display' && currentText !== _lastSeasonPhase) {
+          const transitionKey = _lastSeasonPhase + '→' + currentText;
+          const pool = SEASON_TRANSITION_PHRASES;
+          if (pool[transitionKey]) {
+            const phrase = pickTransitionPhrase(transitionKey, pool);
+            if (phrase) injectTransitionAcknowledgment(phrase);
+          }
+          _lastSeasonPhase = currentText;
+        }
+      }
+    });
+
+    _transitionObserver.observe(document.getElementById('time-display'), { childList: true, subtree: true, characterData: true });
+    _transitionObserver.observe(document.getElementById('weather-display'), { childList: true, subtree: true, characterData: true });
+    _transitionObserver.observe(document.getElementById('season-display'), { childList: true, subtree: true, characterData: true });
+
+    /* Expose transition state on __gardenState for selftest verification */
+    window.__gardenState.TRANSITION_PHRASE_POOLS = TRANSITION_PHRASE_POOLS;
+    Object.defineProperty(window.__gardenState, '_lastTransitionTime', {
+      get: function() { return _lastTransitionTime; },
+      enumerable: true,
+      configurable: true
+    });
+    window.__gardenState._recentTransitionPhrases = _recentTransitionPhrases;
+    window.__gardenState._pickTransitionPhrase = pickTransitionPhrase;
+    window.__gardenState._injectTransitionAcknowledgment = injectTransitionAcknowledgment;
+    Object.defineProperty(window.__gardenState, '_pageLoadGrace', {
+      get: function() { return _pageLoadGrace; },
+      enumerable: true,
+      configurable: true
+    });
+
     /* --- Periodic save: every 2 seconds capture current state --- */
     setInterval(saveGardenState, 2000);
 

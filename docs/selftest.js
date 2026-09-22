@@ -13374,5 +13374,108 @@ export async function checks() {
     }
   }
 
+  /* ---------- Environmental phase transition acknowledgment (issue #802) ---------- */
+  {
+    const gs802 = window.__gardenState;
+    if (!gs802) {
+      problems.push('window.__gardenState not set — cannot verify transition acknowledgment (issue #802).');
+    } else {
+      // Verify the phrase pools are exposed
+      if (!gs802.TRANSITION_PHRASE_POOLS) {
+        problems.push('window.__gardenState.TRANSITION_PHRASE_POOLS is not set — transition phrase data missing (issue #802).');
+      } else {
+        const pools = gs802.TRANSITION_PHRASE_POOLS;
+        const expectedPoolKeys = ['day', 'weather', 'season'];
+        for (let pi = 0; pi < expectedPoolKeys.length; pi++) {
+          const key = expectedPoolKeys[pi];
+          if (!pools[key] || typeof pools[key] !== 'object') {
+            problems.push('TRANSITION_PHRASE_POOLS.' + key + ' is missing or not an object (issue #802).');
+          }
+        }
+
+        // Verify each transition key has 3-4 variants
+        const expectedTransitions = {
+          day: ['Morning→Midday', 'Midday→Evening', 'Evening→Night', 'Night→Morning'],
+          weather: ['Clear→Overcast', 'Overcast→Light Drizzle', 'Light Drizzle→Clear'],
+          season: ['Spring→Summer', 'Summer→Autumn', 'Autumn→Winter', 'Winter→Spring']
+        };
+
+        for (const poolKey in expectedTransitions) {
+          const pool = pools[poolKey];
+          if (!pool) continue;
+          const keys = expectedTransitions[poolKey];
+          for (let ki = 0; ki < keys.length; ki++) {
+            const tk = keys[ki];
+            if (!pool[tk]) {
+              problems.push('TRANSITION_PHRASE_POOLS.' + poolKey + ' is missing transition key "' + tk + '" (issue #802).');
+            } else if (!Array.isArray(pool[tk])) {
+              problems.push('TRANSITION_PHRASE_POOLS.' + poolKey + '["' + tk + '"] is not an array (issue #802).');
+            } else if (pool[tk].length < 3 || pool[tk].length > 4) {
+              problems.push('TRANSITION_PHRASE_POOLS.' + poolKey + '["' + tk + '"] has ' + pool[tk].length + ' variants, expected 3-4 (issue #802).');
+            }
+          }
+        }
+      }
+
+      // Verify _lastTransitionTime exists and is a number
+      if (typeof gs802._lastTransitionTime !== 'number') {
+        problems.push('window.__gardenState._lastTransitionTime is not a number — transition timing not exposed (issue #802).');
+      }
+
+      // Verify _pickTransitionPhrase exists as a function
+      if (typeof gs802._pickTransitionPhrase !== 'function') {
+        problems.push('window.__gardenState._pickTransitionPhrase is not a function — phrase selection not exposed (issue #802).');
+      } else {
+        // Test that pickTransitionPhrase returns a variant from the pool
+        const phrase = gs802._pickTransitionPhrase('Morning→Midday', gs802.TRANSITION_PHRASE_POOLS.day);
+        if (typeof phrase !== 'string' || phrase.length === 0) {
+          problems.push('_pickTransitionPhrase("Morning→Midday", day pool) returned "' + phrase + '" — expected a non-empty string (issue #802).');
+        }
+
+        // Test that calling it 5 times with the same key produces at least 2 distinct variants
+        // (should cycle through the pool of 4)
+        const results = [];
+        for (let ri = 0; ri < 6; ri++) {
+          const p = gs802._pickTransitionPhrase('Morning→Midday', gs802.TRANSITION_PHRASE_POOLS.day);
+          if (p) results.push(p);
+        }
+        const uniqueResults = new Set(results);
+        if (uniqueResults.size < 2) {
+          problems.push('_pickTransitionPhrase returned only ' + uniqueResults.size + ' unique variant(s) after 6 calls — expected at least 2 to confirm phrase cycling (issue #802).');
+        }
+
+        // Verify the recent phrases tracking map exists
+        if (!gs802._recentTransitionPhrases || !(gs802._recentTransitionPhrases instanceof Map)) {
+          problems.push('window.__gardenState._recentTransitionPhrases is not a Map — recent phrase tracking missing (issue #802).');
+        } else {
+          // Check that after 6 calls to "Morning→Midday", the recent list has 3 entries (max 3)
+          const recent = gs802._recentTransitionPhrases.get('Morning→Midday');
+          if (recent && recent.length > 3) {
+            problems.push('_recentTransitionPhrases for "Morning→Midday" has ' + recent.length + ' entries — should track at most 3 (issue #802).');
+          }
+        }
+      }
+
+      // Verify _injectTransitionAcknowledgment exists
+      if (typeof gs802._injectTransitionAcknowledgment !== 'function') {
+        problems.push('window.__gardenState._injectTransitionAcknowledgment is not a function — transition injector not exposed (issue #802).');
+      }
+
+      // Verify the acknowledgment element exists
+      const ackEl = document.getElementById('garden-state-acknowledgment');
+      if (!ackEl) {
+        problems.push('#garden-state-acknowledgment element is missing — cannot display transition acknowledgments (issue #802).');
+      }
+
+      // Verify the three display elements exist (observer targets)
+      ['time-display', 'weather-display', 'season-display'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (!el) {
+          problems.push('#' + id + ' element is missing — transition observer cannot watch it (issue #802).');
+        }
+      });
+    }
+  }
+
   return problems;
 }
