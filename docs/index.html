@@ -2246,11 +2246,104 @@
       configurable: true
     });
 
+    /* --- Session elapsed-time acknowledgment (issue #804) ---
+     * At four thresholds after page load (30s, 60s, 120s, 180s), inject a
+     * session-duration phrase into the acknowledgment. Each threshold draws
+     * from a small phrase pool of 3+ variants. Composes alongside existing
+     * acknowledgment mechanisms (stillness, presence cycling, transition events)
+     * without overriding them — defers if a transition acknowledgment was set
+     * within the last 3s so transitions take priority. */
+
+    const SESSION_TIME_PHRASES = {
+      30000: [
+        'You have been sitting with the garden for a little while.',
+        'A short time has passed as the garden continues its quiet rhythm.',
+        'The garden has noticed you staying a while.',
+        'Moments drift by as you and the garden rest together.'
+      ],
+      60000: [
+        'Time passes gently as you watch the garden.',
+        'The garden has settled into your patient company.',
+        'You have spent a quiet minute with the garden now.',
+        'The garden keeps its calm pace, and you are still here with it.'
+      ],
+      120000: [
+        'The garden has settled around your presence over these minutes.',
+        'You have been here long enough that the garden feels familiar.',
+        'The light and shadows have shifted while you watched the garden.',
+        'Two minutes have passed in quiet companionship with the garden.'
+      ],
+      180000: [
+        'The garden holds your presence like a part of its own stillness.',
+        'Three minutes now, and the garden has woven itself into your awareness.',
+        'You have become part of the garden\'s calm for these minutes.',
+        'Time in the garden flows softly, and you have been here for several minutes.'
+      ]
+    };
+
+    const SESSION_TIME_THRESHOLDS = [30000, 60000, 120000, 180000];
+    let _sessionTimers = [];
+    let _sessionTimePhrasesUsed = [];
+
+    function _pickSessionPhrase(thresholdMs) {
+      var pool = SESSION_TIME_PHRASES[thresholdMs];
+      if (!pool || pool.length === 0) return null;
+      var available = pool.filter(function(phrase) {
+        return _sessionTimePhrasesUsed.indexOf(phrase) === -1;
+      });
+      if (available.length === 0) {
+        // All used this session — reset tracking so we can repeat
+        _sessionTimePhrasesUsed = [];
+        available = pool.slice();
+      }
+      var picked = available[Math.floor(Math.random() * available.length)];
+      _sessionTimePhrasesUsed.push(picked);
+      return picked;
+    }
+
+    /* Start session timers immediately after page load. The page-load greeting
+     * persists for at least 30s before the first session timer fires, so it
+     * is never overwritten too early. */
+    for (var ti = 0; ti < SESSION_TIME_THRESHOLDS.length; ti++) {
+      (function(thresh) {
+        var timerId = setTimeout(function fireSessionAcknowledgment() {
+          var phrase = _pickSessionPhrase(thresh);
+          if (!phrase) return;
+
+          /* If a transition acknowledgment was set within the last 3s,
+           * defer this session acknowledgment by 2s so transitions take priority. */
+          var timeSinceTransition = performance.now() - _lastTransitionTime;
+          if (timeSinceTransition < 3000) {
+            var retryId = setTimeout(fireSessionAcknowledgment, 2000);
+            _sessionTimers.push(retryId);
+            return;
+          }
+
+          setAcknowledgment(phrase);
+          lastAcknowledgmentTime = performance.now();
+        }, thresh);
+        _sessionTimers.push(timerId);
+      })(SESSION_TIME_THRESHOLDS[ti]);
+    }
+
+    /* Expose session-time state on __gardenState for selftest verification */
+    window.__gardenState.SESSION_TIME_PHRASES = SESSION_TIME_PHRASES;
+    window.__gardenState._sessionTimers = _sessionTimers;
+    window.__gardenState._sessionTimePhrasesUsed = _sessionTimePhrasesUsed;
+    window.__gardenState._pickSessionPhrase = _pickSessionPhrase;
+
     /* --- Periodic save: every 2 seconds capture current state --- */
     setInterval(saveGardenState, 2000);
 
-    /* Also save when the page is about to unload */
-    window.addEventListener('beforeunload', saveGardenState);
+    /* Also save when the page is about to unload — and clear session timers
+     * so no orphaned timer remains (issue #804). */
+    window.addEventListener('beforeunload', function sessionCleanup() {
+      saveGardenState();
+      for (var ti = 0; ti < _sessionTimers.length; ti++) {
+        clearTimeout(_sessionTimers[ti]);
+      }
+      _sessionTimers = [];
+    });
   </script>
 </body>
 </html>
