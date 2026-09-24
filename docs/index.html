@@ -2062,6 +2062,101 @@
     /* Poll the leaf tremble state every ~500ms and update leaf-tremble description (issue #675) */
     setInterval(updateLeafTrembleDescription, 500);
 
+    /* --- Periodic garden-history phrase in plot description (issue #790) ---
+     * Every 90-120 seconds, picks a phrase from a small pool that references
+     * the garden's accumulated visit count. The phrase is composed into the
+     * plot description alongside existing weather/time/season context layers.
+     * Does not fire within 5s of page load, or within 30s of a camera interaction.
+     * On camera interaction, the timer resets (defers the next phrase by 30s).
+     * The pool avoids repeating the last-chosen phrase. */
+    const HISTORY_PHRASES = [
+      (n) => 'The soil here has warmed through ' + n + ' return visits.',
+      (n) => 'This garden has seen ' + n + ' seasons turn.',
+      (n) => 'The stems carry the memory of ' + n + ' visits.',
+      (n) => 'The garden remembers ' + n + ' returns.',
+      (n) => 'The quiet growth holds the trace of ' + n + ' visits.',
+      (n) => n + ' visits have passed through this garden\'s stillness.'
+    ];
+
+    let _historyUpdateTimer = null;
+    let _currentHistoryPhrase = '';
+    let _lastHistoryPhraseIndex = -1;
+    const HISTORY_UPDATE_GRACE_MS = 5000;
+    const HISTORY_CAMERA_COOLDOWN_MS = 30000;
+    const HISTORY_UPDATE_MIN_MS = 90000;
+    const HISTORY_UPDATE_MAX_MS = 120000;
+    let _historyUpdatePageLoaded = false;
+
+    setTimeout(function() { _historyUpdatePageLoaded = true; }, HISTORY_UPDATE_GRACE_MS);
+
+    function updateHistoryDescription() {
+      /* Respect page-load grace period */
+      if (!_historyUpdatePageLoaded) {
+        scheduleHistoryDescriptionUpdate();
+        return;
+      }
+
+      /* Respect camera-interaction cooldown */
+      var now = performance.now();
+      if (now - lastInteractionTime < HISTORY_CAMERA_COOLDOWN_MS) {
+        scheduleHistoryDescriptionUpdate();
+        return;
+      }
+
+      var plotEl = document.getElementById('plot-description');
+      if (!plotEl) {
+        scheduleHistoryDescriptionUpdate();
+        return;
+      }
+
+      /* Pick a new phrase, avoiding repetition of the last one */
+      var idx;
+      do {
+        idx = Math.floor(Math.random() * HISTORY_PHRASES.length);
+      } while (idx === _lastHistoryPhraseIndex && HISTORY_PHRASES.length > 1);
+      _lastHistoryPhraseIndex = idx;
+
+      var visitCount = window.__gardenState.visitCount || 1;
+      var newPhrase = HISTORY_PHRASES[idx](visitCount);
+
+      /* Strip old history phrase from current plot description */
+      var currentText = plotEl.textContent;
+      var base;
+      if (_currentHistoryPhrase && currentText.indexOf(_currentHistoryPhrase) !== -1) {
+        base = currentText.replace(_currentHistoryPhrase, '').replace(/\s+/g, ' ').trim();
+      } else {
+        base = currentText;
+      }
+
+      /* Compose: existing description + new history phrase */
+      plotEl.textContent = base + ' ' + newPhrase;
+      _currentHistoryPhrase = newPhrase;
+
+      scheduleHistoryDescriptionUpdate();
+    }
+
+    function scheduleHistoryDescriptionUpdate() {
+      if (_historyUpdateTimer) {
+        clearTimeout(_historyUpdateTimer);
+      }
+      var delay = HISTORY_UPDATE_MIN_MS + Math.random() * (HISTORY_UPDATE_MAX_MS - HISTORY_UPDATE_MIN_MS);
+      _historyUpdateTimer = setTimeout(updateHistoryDescription, delay);
+    }
+
+    /* Start the history phrase updater after initial page set-up */
+    scheduleHistoryDescriptionUpdate();
+
+    /* Reset the history timer on camera interaction so a cooldown starts fresh */
+    controls.addEventListener('start', function onCameraInteraction() {
+      if (_historyUpdateTimer) {
+        clearTimeout(_historyUpdateTimer);
+        _historyUpdateTimer = null;
+      }
+      /* Schedule a new update after the cooldown + random delay */
+      var delay = HISTORY_CAMERA_COOLDOWN_MS + HISTORY_UPDATE_MIN_MS + Math.random() * (HISTORY_UPDATE_MAX_MS - HISTORY_UPDATE_MIN_MS);
+      _historyUpdateTimer = setTimeout(updateHistoryDescription, delay);
+    });
+
     /* --- Periodic visitor presence acknowledgment (issue #596):
      * Runs a randomized timer (30-60s delay) that picks a phrase
      * from PRESENCE_PHRASES, avoiding repetition of the last phrase.
@@ -2381,6 +2476,11 @@
     window.__gardenState._sessionTimePhrasesUsed = _sessionTimePhrasesUsed;
     window.__gardenState._pickSessionPhrase = _pickSessionPhrase;
 
+    /* Expose garden-history phrase updater state on __gardenState for selftest (issue #790) */
+    window.__gardenState.HISTORY_PHRASES = HISTORY_PHRASES;
+    window.__gardenState.updateHistoryDescription = updateHistoryDescription;
+    window.__gardenState.scheduleHistoryDescriptionUpdate = scheduleHistoryDescriptionUpdate;
+
     /* --- Periodic save: every 2 seconds capture current state --- */
     setInterval(saveGardenState, 2000);
 
@@ -2392,6 +2492,10 @@
         clearTimeout(_sessionTimers[ti]);
       }
       _sessionTimers = [];
+      if (_historyUpdateTimer) {
+        clearTimeout(_historyUpdateTimer);
+        _historyUpdateTimer = null;
+      }
     });
   </script>
 </body>
