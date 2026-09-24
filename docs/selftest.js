@@ -13477,6 +13477,67 @@ export async function checks() {
     }
   }
 
+  /* ---------- Fallback phrase pool checks (issue #815) ---------- */
+  // Verify the fallback phrase pool exists, has >=3 variants, and the picker
+  // returns a non-empty string. Also verify that after a simulated transition
+  // acknowledgment cycle the DOM acknowledgment is never blank.
+  if (window.__gardenState) {
+    var gs815 = window.__gardenState;
+
+    // Check FALLBACK_PHRASES exists and has >=3 variants
+    if (!Array.isArray(gs815.FALLBACK_PHRASES)) {
+      problems.push('window.__gardenState.FALLBACK_PHRASES is not an array — fallback phrase pool missing (issue #815).');
+    } else {
+      if (gs815.FALLBACK_PHRASES.length < 3) {
+        problems.push('window.__gardenState.FALLBACK_PHRASES has only ' + gs815.FALLBACK_PHRASES.length + ' variants — expected at least 3 (issue #815).');
+      }
+      // Verify no duplicates
+      var seen = {};
+      for (var fi = 0; fi < gs815.FALLBACK_PHRASES.length; fi++) {
+        var phrase = gs815.FALLBACK_PHRASES[fi];
+        if (typeof phrase !== 'string' || phrase.trim() === '') {
+          problems.push('window.__gardenState.FALLBACK_PHRASES[' + fi + '] is empty or not a string — expected a non-empty phrase (issue #815).');
+        }
+        if (seen[phrase]) {
+          problems.push('Duplicate phrase found in FALLBACK_PHRASES: "' + phrase + '" appears at least twice (issue #815).');
+        }
+        seen[phrase] = true;
+      }
+    }
+
+    // Check pickFallbackPhrase exists and returns a non-empty string
+    if (typeof gs815.pickFallbackPhrase !== 'function') {
+      problems.push('window.__gardenState.pickFallbackPhrase is not a function — fallback phrase picker missing (issue #815).');
+    } else {
+      var result = gs815.pickFallbackPhrase();
+      if (typeof result !== 'string' || result.trim() === '') {
+        problems.push('pickFallbackPhrase() returned an empty or non-string value: "' + result + '" (issue #815).');
+      }
+      // Call it again to verify it returns a non-empty string on repeated calls
+      var result2 = gs815.pickFallbackPhrase();
+      if (typeof result2 !== 'string' || result2.trim() === '') {
+        problems.push('pickFallbackPhrase() returned an empty or non-string value on second call: "' + result2 + '" (issue #815).');
+      }
+    }
+
+    // Check _injectTransitionAcknowledgment exists and can be called without error
+    if (typeof gs815._injectTransitionAcknowledgment !== 'function') {
+      problems.push('window.__gardenState._injectTransitionAcknowledgment is not a function — cannot simulate transition acknowledgment cycle (issue #815).');
+    } else {
+      // Call injectTransitionAcknowledgment with a test phrase
+      var ackEl815 = document.getElementById('garden-state-acknowledgment');
+      if (ackEl815) {
+        gs815._injectTransitionAcknowledgment('A transition is occurring in the garden.');
+        // Immediately after injection, the acknowledgment should be the test phrase
+        if (ackEl815.textContent.trim() !== 'A transition is occurring in the garden.') {
+          problems.push('After injectTransitionAcknowledgment, acknowledgment text is "' + ackEl815.textContent.trim() + '" — expected the injected phrase (issue #815).');
+        }
+      }
+    }
+  } else {
+    problems.push('window.__gardenState is not set — cannot verify fallback phrase pool (issue #815).');
+  }
+
   /* ---------- Context phrase pool size checks (issue #803) ---------- */
   // Verify each of the 11 environmental context pools has ≥10 variants
   // to reduce text repetition across the 30s variant cycling.

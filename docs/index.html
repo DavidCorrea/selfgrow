@@ -445,6 +445,35 @@
 
     let lastPresencePhraseIndex = -1;
 
+    /* Fallback phrases — used when a transition acknowledgment expires
+     * so the acknowledgment section never displays blank text (issue #815). */
+    const FALLBACK_PHRASES = [
+      'The garden continues its quiet rhythm.',
+      'Stillness settles over the garden once more.',
+      'The garden rests in patient silence.',
+      'Calm returns to the garden as it awaits your attention.'
+    ];
+
+    let _fallbackPhraseLastTwo = [];
+
+    function pickFallbackPhrase() {
+      var available = FALLBACK_PHRASES.filter(function(phrase) {
+        return _fallbackPhraseLastTwo.indexOf(phrase) === -1;
+      });
+      if (available.length === 0) {
+        /* All phrases have been used in the last 2 picks — reset tracking
+         * to allow any phrase to be used again. */
+        _fallbackPhraseLastTwo = [];
+        available = FALLBACK_PHRASES.slice();
+      }
+      var picked = available[Math.floor(Math.random() * available.length)];
+      _fallbackPhraseLastTwo.push(picked);
+      if (_fallbackPhraseLastTwo.length > 2) {
+        _fallbackPhraseLastTwo.shift();
+      }
+      return picked;
+    }
+
     function setAcknowledgment(text) {
       const ackEl = document.getElementById('garden-state-acknowledgment');
       if (ackEl) {
@@ -2156,6 +2185,7 @@
     }
 
     let _transitionTimer = null;
+    let _transitionFallbackTimer = null;
     let _lastTransitionTime = 0;
     const TRANSITION_ACK_DURATION_MS = 10000;
 
@@ -2164,15 +2194,32 @@
         clearTimeout(_transitionTimer);
         _transitionTimer = null;
       }
+      if (_transitionFallbackTimer) {
+        clearTimeout(_transitionFallbackTimer);
+        _transitionFallbackTimer = null;
+      }
 
       _lastTransitionTime = performance.now();
       setAcknowledgment(text);
 
       _transitionTimer = setTimeout(function() {
         _transitionTimer = null;
-        /* Revert: the normal presence/stillness cycling will pick up naturally.
-         * Clear the acknowledgment text so the next presence check fills it. */
-        setAcknowledgment('');
+        /* Instead of clearing to empty string (which leaves the acknowledgment
+         * section blank for 30-60s until the next presence check), set a brief
+         * fallback phrase from a small pool (issue #815). */
+        var fallback = pickFallbackPhrase();
+        setAcknowledgment(fallback);
+
+        /* Schedule a one-shot presence check 8-12s later to replace the
+         * fallback with a fresh presence phrase, then resume normal cycling. */
+        var oneShotDelay = 8000 + Math.random() * 4000;
+        _transitionFallbackTimer = setTimeout(function() {
+          _transitionFallbackTimer = null;
+          lastAcknowledgmentTime = performance.now();
+          setAcknowledgment(pickPresencePhrase());
+          /* scheduleNextPresenceCheck is already running from initialization,
+           * so normal presence cycling resumes from here. */
+        }, oneShotDelay);
       }, TRANSITION_ACK_DURATION_MS);
     }
 
@@ -2240,6 +2287,8 @@
     window.__gardenState._recentTransitionPhrases = _recentTransitionPhrases;
     window.__gardenState._pickTransitionPhrase = pickTransitionPhrase;
     window.__gardenState._injectTransitionAcknowledgment = injectTransitionAcknowledgment;
+    window.__gardenState.FALLBACK_PHRASES = FALLBACK_PHRASES;
+    window.__gardenState.pickFallbackPhrase = pickFallbackPhrase;
     Object.defineProperty(window.__gardenState, '_pageLoadGrace', {
       get: function() { return _pageLoadGrace; },
       enumerable: true,
