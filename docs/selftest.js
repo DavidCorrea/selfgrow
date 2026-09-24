@@ -726,11 +726,11 @@ export async function checks() {
     }
 
     var exposure = gardenState.renderer.toneMappingExposure;
-    if (typeof exposure !== 'number' || Math.abs(exposure - 1.2) > 0.001) {
+    if (typeof exposure !== 'number' || Math.abs(exposure - 1.5) > 0.001) {
       problems.push(
         'renderer.toneMappingExposure is ' + exposure +
-        ', expected 1.2 — the increased exposure preserves shadow detail ' +
-        'across all environmental phase combinations (issue #716).'
+        ', expected 1.5 — the increased exposure preserves shadow detail ' +
+        'across all environmental phase combinations (issue #817).'
       );
     }
   }
@@ -2733,19 +2733,29 @@ export async function checks() {
     }
   }
 
-  /* ---------- Night brightness floors (issue #663) ---------- */
+  /* ---------- Night brightness floors (issue #817) ---------- */
   // The Night phase must keep the garden visibly botanical:
-  //  - ambientLight.intensity never falls below 0.2 (explicit ambient floor)
+  //  - ambientLight.intensity never falls below 0.35 (explicit ambient floor)
+  //  - sunLight max intensity 1.6 (directional light ceiling)
   //  - the sky never goes darker than ~0x1a2030 (rich midnight indigo, not black)
   // These are static properties of the day/night configuration, so they are
   // verifiable now regardless of the current phase.
   if (dayNight) {
     if (typeof dayNight.getAmbientFloor !== 'function') {
-      problems.push('dayNight.getAmbientFloor is not a function — the ambient brightness floor is not exposed (issue #663).');
+      problems.push('dayNight.getAmbientFloor is not a function — the ambient brightness floor is not exposed (issue #817).');
     } else {
       const ambientFloor = dayNight.getAmbientFloor();
-      if (typeof ambientFloor !== 'number' || ambientFloor < 0.2) {
-        problems.push('dayNight.getAmbientFloor() returned ' + ambientFloor + ', expected >= 0.2 so plants remain visible as botanical silhouettes during Night (issue #663).');
+      if (typeof ambientFloor !== 'number' || Math.abs(ambientFloor - 0.35) > 0.001) {
+        problems.push('dayNight.getAmbientFloor() returned ' + ambientFloor + ', expected 0.35 so plants remain visibly botanical even at deepest Night (issue #817).');
+      }
+    }
+
+    if (typeof dayNight.getSunLightMaxIntensity !== 'function') {
+      problems.push('dayNight.getSunLightMaxIntensity is not a function — the directional light ceiling is not exposed (issue #817).');
+    } else {
+      const maxIntensity = dayNight.getSunLightMaxIntensity();
+      if (typeof maxIntensity !== 'number' || Math.abs(maxIntensity - 1.6) > 0.001) {
+        problems.push('dayNight.getSunLightMaxIntensity() returned ' + maxIntensity + ', expected 1.6 so directional light is bright enough for botanical visibility at noon (issue #817).');
       }
     }
 

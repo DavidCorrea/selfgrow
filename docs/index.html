@@ -249,7 +249,7 @@
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ReinhardToneMapping;
-    renderer.toneMappingExposure = 1.2;
+    renderer.toneMappingExposure = 1.5;
     wrapper.prepend(renderer.domElement);
 
     /* Ambient light — soft fill */
@@ -257,7 +257,7 @@
     scene.add(ambientLight);
 
     /* Directional light — sun source, casts shadows */
-    const sunLight = new THREE.DirectionalLight(0xffeedd, 1.2);
+    const sunLight = new THREE.DirectionalLight(0xffeedd, 1.6);
     sunLight.position.set(5, 10, 4);
     sunLight.castShadow = true;
     sunLight.shadow.mapSize.width = 1024;

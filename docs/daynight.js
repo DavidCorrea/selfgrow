@@ -38,7 +38,7 @@ const TOP_LUMINANCE_FACTOR = 0.45;
  * Night sky is set to a rich midnight indigo (0x1a2030), not a black void,
  * so plant silhouettes remain visible against the sky (issue #663).
  */
-const MIN_AMBIENT_INTENSITY = 0.2;      // floor — plants stay visible at night (issue #663)
+const MIN_AMBIENT_INTENSITY = 0.35;     // floor — plants stay visibly botanical (issue #817)
 const SKY_STOPS = [
   { t: 0.00, color: new THREE.Color(0xf4a460) },  // sunrise warm
   { t: 0.25, color: new THREE.Color(0x87ceeb) },  // midday blue
@@ -186,7 +186,7 @@ export function startDayNightCycle(sunLight, scene, ambientLight, hemiLight, fil
     // y ranges from ~-6.5 (deep night) to ~8.5 (high noon)
     // Map y in [-1, 8] to intensity in [0.05, 1.2]
     const clamped = THREE.MathUtils.clamp((y + 1) / 9, 0, 1);
-    return 0.05 + clamped * 1.15;
+    return 0.05 + clamped * 1.55;
   }
 
   /* Track shadow drift offset for self-test visibility */
@@ -207,6 +207,7 @@ export function startDayNightCycle(sunLight, scene, ambientLight, hemiLight, fil
     getGradientTexture: () => skyTexture,
     getShadowDrift: () => ({ x: _shadowDriftX, z: _shadowDriftZ }),
     getAmbientFloor: () => MIN_AMBIENT_INTENSITY,
+    getSunLightMaxIntensity: () => 1.6,
     getDeepestNightSkyColor: () => SKY_STOPS[3].color.clone()
   };
 
@@ -281,7 +282,7 @@ export function startDayNightCycle(sunLight, scene, ambientLight, hemiLight, fil
     }
 
     /* --- Ambient light: dim at night, with explicit floor so plants stay visible (issue #663) --- */
-    const ambientIntensity = Math.max(MIN_AMBIENT_INTENSITY, 0.25 + THREE.MathUtils.clamp((y + 1) / 9, 0, 1) * 0.28);
+    const ambientIntensity = Math.max(MIN_AMBIENT_INTENSITY, 0.35 + THREE.MathUtils.clamp((y + 1) / 9, 0, 1) * 0.28);
     ambientLight.intensity = ambientIntensity;
 
     /* --- Hemisphere light: sky/ground blend follows sky colour --- */
