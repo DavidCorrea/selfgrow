@@ -27,6 +27,7 @@
 import * as THREE from "three";
 import { isReducedMotion, onMotionChange } from "./motion.js";
 import { computeDisplacement } from "./groundRipple.js";
+import { SEASON_DURATION_MS } from "./garden.js";
 
 /* --- Configuration --- */
 const DOTS_MIN = 4;
@@ -93,7 +94,6 @@ const PULSE_FREQ_MAX = 0.5;        // Hz
 const DRIFT_FREQ = 0.12;           // frequency of drift oscillation
 
 /* --- Seasonal ramp configuration (issue #623) --- */
-const SEASON_DURATION_MS = 180_000;        // 3 minutes per season
 const RAMP_FRACTION = 0.20;                // first/last 20% of season for ramp
 const RAMP_DURATION_MS = SEASON_DURATION_MS * RAMP_FRACTION;  // 36s ramp window
 const DOT_STAGGER_INTERVAL_MS = 4000;      // ~4s between individual dots appearing

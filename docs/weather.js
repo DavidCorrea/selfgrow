@@ -17,7 +17,7 @@ import * as THREE from "three";
 import { redrawGradientTexture } from "./daynight.js";
 
 /* --- Configuration --- */
-const CYCLE_DURATION_MS = 300_000; // ~5 minutes for a full weather loop
+export const CYCLE_DURATION_MS = 300_000; // ~5 minutes for a full weather loop
 const TRANSITION_DURATION_MS = 15_000; // minimum 15s for smooth lerp (effectively the whole phase)
 
 /* Three weather phases + wrap-around to Clear
