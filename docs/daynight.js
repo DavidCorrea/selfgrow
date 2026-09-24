@@ -184,7 +184,7 @@ export function startDayNightCycle(sunLight, scene, ambientLight, hemiLight, fil
   /** Compute sun intensity based on elevation */
   function sunIntensityFromElevation(y) {
     // y ranges from ~-6.5 (deep night) to ~8.5 (high noon)
-    // Map y in [-1, 8] to intensity in [0.05, 1.2]
+    // Map y in [-1, 8] to intensity in [0.05, 1.6]
     const clamped = THREE.MathUtils.clamp((y + 1) / 9, 0, 1);
     return 0.05 + clamped * 1.55;
   }

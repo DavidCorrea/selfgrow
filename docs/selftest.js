@@ -2794,7 +2794,7 @@ export async function checks() {
   // Night+Overcast worst case must exceed 0.25 for discernible plant shapes.
   //
   // Values are derived from the constants in daynight.js and weather.js.
-  const nightBaseAmbi = 0.25;    // daynight.js ambient floor (raised #595)
+  const nightBaseAmbi = 0.35;    // daynight.js ambient floor (raised #817)
   const nightBaseHemi = 0.18;    // daynight.js hemi floor (raised #595)
   const nightBaseFill = 0.15;    // daynight.js fill floor (raised #595)
 
@@ -2814,7 +2814,7 @@ export async function checks() {
       nightOvercastTotal.toFixed(3) +
       ', below visibility threshold of ' + minVisibleThreshold +
       ' — the garden would be too dark (issue #595). ' +
-      'Expected ambient floor >= 0.25, hemi floor >= 0.18, fill floor >= 0.15.'
+      'Expected ambient floor >= 0.35, hemi floor >= 0.18, fill floor >= 0.15.'
     );
   }
 
@@ -2844,11 +2844,11 @@ export async function checks() {
         }
       });
       if (ambientLightObj) {
-        if (ambientLightObj.intensity < 0.249) {
+        if (ambientLightObj.intensity < 0.349) {
           problems.push(
             'During Night phase, ambientLight.intensity is ' +
             ambientLightObj.intensity.toFixed(4) +
-            ' — expected at least 0.25 for plants to remain visible (issue #595).'
+            ' — expected at least 0.35 for plants to remain visible (issue #817).'
           );
         }
         // Issue #663: the explicit ambient floor must also hold live.
