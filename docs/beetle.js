@@ -14,6 +14,7 @@
 
 import * as THREE from "three";
 import { isReducedMotion } from "./motion.js";
+import { SEASON_DURATION_MS } from "./garden.js";
 
 /* --- Configuration --- */
 const BODY_LENGTH = 0.01;         // units — elongate sphere for beetle body
@@ -36,8 +37,7 @@ const STILLNESS_PAUSE_MIN_MS = 1000;        // minimum pause duration (1s)
 const STILLNESS_PAUSE_MAX_MS = 3000;        // maximum pause duration (3s)
 const STILLNESS_PAUSE_COOLDOWN_MS = 8000;   // cooldown between pauses (8s)
 
-/* --- Seasonal ramp configuration (issue #775) --- */
-const SEASON_DURATION_MS = 180_000;        // 3 minutes per season
+ /* --- Seasonal ramp configuration (issue #775) --- */
 const RAMP_FRACTION = 0.20;                // first/last 20% of season for opacity ramp
 const RAMP_DURATION_MS = SEASON_DURATION_MS * RAMP_FRACTION;  // 36s ramp window
 

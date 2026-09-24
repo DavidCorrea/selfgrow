@@ -21,15 +21,17 @@
  * fast-forward to where they would be if the garden had kept growing.
  */
 
-import { CYCLE_DURATION_MS } from "./garden.js";
+import { CYCLE_DURATION_MS, SEASON_NAMES, SEASON_DURATION_MS } from "./garden.js";
+import { CYCLE_DURATION_MS as DAYNIGHT_CYCLE_DURATION_MS } from "./daynight.js";
+import { CYCLE_DURATION_MS as WEATHER_CYCLE_DURATION_MS } from "./weather.js";
 
 const STORAGE_KEY = 'selfgrow_garden_state';
 
-/* Cycle durations (ms) — must match values in garden.js, daynight.js, weather.js */
+/* Cycle durations (ms) — imported from authoritative modules */
 // SEASON_CYCLE_DURATION_MS is imported from garden.js as CYCLE_DURATION_MS and
 // re-exported under the original name so importers (selftest.js) keep working.
-const DAYNIGHT_CYCLE_DURATION_MS = 180_000; // 3 min
-const WEATHER_CYCLE_DURATION_MS = 300_000;  // 5 min
+// DAYNIGHT_CYCLE_DURATION_MS is imported from daynight.js
+// WEATHER_CYCLE_DURATION_MS is imported from weather.js
 const PLANT1_GROW_DURATION_MS = 18_000;     // 18s (issue #542)
 const PLANT2_GROW_DURATION_MS = 25_000;     // 25s
 
@@ -222,11 +224,8 @@ export function fastForwardState(savedState) {
   let groundSeeds = null;
   if (savedState.groundSeeds && savedState.groundSeeds.count > 0) {
     // Check if the seeds have been removed by spring (after 30% of spring has passed)
-    const SEASON_NAMES = ['Spring', 'Summer', 'Autumn', 'Winter'];
-    const SEASON_DURATION_MS = 180_000; // must match garden.js
-    const CYCLE_DURATION_MS = SEASON_DURATION_MS * 4;
     const cycleTime = (seasonProgress * CYCLE_DURATION_MS) % CYCLE_DURATION_MS;
-    const seasonIndex = Math.floor(cycleTime / SEASON_DURATION_MS) % 4;
+    const seasonIndex = Math.floor(cycleTime / SEASON_DURATION_MS) % SEASON_NAMES.length;
     // Local progress within the current season (0-1). Named distinctly from the
     // function-scoped seasonProgress (cycle progress 0-1) to avoid shadowing it.
     const seasonPhaseProgress = (cycleTime % SEASON_DURATION_MS) / SEASON_DURATION_MS;

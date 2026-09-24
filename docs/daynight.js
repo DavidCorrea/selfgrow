@@ -16,7 +16,7 @@
 import * as THREE from "three";
 
 /* --- Configuration --- */
-const CYCLE_DURATION_MS = 180_000; // ~3 minutes for a full day/night loop
+export const CYCLE_DURATION_MS = 180_000; // ~3 minutes for a full day/night loop
 const SUN_RADIUS = 7;
 const SUN_MAX_Y = 8;
 const SUN_OFFSET_Y = 0.5;
