@@ -13641,5 +13641,53 @@ export async function checks() {
     problems.push('window.__gardenState._pickSessionPhrase is not set — cannot verify phrase selection (issue #804).');
   }
 
+  /* ---------- Garden-history phrase updater checks (issue #790) ---------- */
+  if (!window.__gardenState) {
+    problems.push('window.__gardenState is not set — cannot verify history phrase updater (issue #790).');
+  } else {
+    // Verify HISTORY_PHRASES pool exists with 4-6 entries
+    if (!window.__gardenState.HISTORY_PHRASES) {
+      problems.push('window.__gardenState.HISTORY_PHRASES is not set — garden history phrases missing (issue #790).');
+    } else if (!Array.isArray(window.__gardenState.HISTORY_PHRASES)) {
+      problems.push('window.__gardenState.HISTORY_PHRASES is not an array — expected array of phrase functions (issue #790).');
+    } else {
+      var hp = window.__gardenState.HISTORY_PHRASES;
+      if (hp.length < 4) {
+        problems.push('HISTORY_PHRASES has only ' + hp.length + ' entries — expected at least 4 (issue #790).');
+      }
+      if (hp.length > 6) {
+        problems.push('HISTORY_PHRASES has ' + hp.length + ' entries — expected at most 6 (issue #790).');
+      }
+      // Each entry must be a function that produces a string containing the visit count
+      for (var hi = 0; hi < hp.length; hi++) {
+        if (typeof hp[hi] !== 'function') {
+          problems.push('HISTORY_PHRASES[' + hi + '] is not a function (issue #790).');
+        } else {
+          var phraseText = hp[hi](5);
+          if (typeof phraseText !== 'string' || phraseText.trim().length === 0) {
+            problems.push('HISTORY_PHRASES[' + hi + '](5) returned empty or non-string: ' + JSON.stringify(phraseText) + ' (issue #790).');
+          }
+          // The phrase must contain the visit count value
+          if (phraseText.indexOf('5') === -1) {
+            problems.push('HISTORY_PHRASES[' + hi + '](5) returned phrase without expected visit count: "' + phraseText + '" (issue #790).');
+          }
+          // Verify with a different count to ensure it's dynamic
+          var phraseText2 = hp[hi](10);
+          if (phraseText2.indexOf('10') === -1) {
+            problems.push('HISTORY_PHRASES[' + hi + '](10) returned phrase without "10": "' + phraseText2 + '" (issue #790).');
+          }
+        }
+      }
+    }
+
+    // Verify updater functions are exposed
+    if (typeof window.__gardenState.updateHistoryDescription !== 'function') {
+      problems.push('window.__gardenState.updateHistoryDescription is not a function — history phrase updater missing (issue #790).');
+    }
+    if (typeof window.__gardenState.scheduleHistoryDescriptionUpdate !== 'function') {
+      problems.push('window.__gardenState.scheduleHistoryDescriptionUpdate is not a function — history phrase scheduler missing (issue #790).');
+    }
+  }
+
   return problems;
 }
