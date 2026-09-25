@@ -2735,10 +2735,127 @@ export async function verifyBuild(relDir = "docs") {
 
 // Viewports the layout is measured at. Defects are reported per viewport, since
 // nearly all of them are width-dependent.
-const REVIEW_VIEWPORTS = [
-  { label: "desktop", width: 1280, height: 800 },
-  { label: "mobile", width: 390, height: 844 },
+//
+// The phone is a real one, not a narrow desktop window: touch and isMobile change
+// what the page is told about itself (pointer media queries, the meta viewport),
+// and a layout that only reflows for a narrow mouse-driven window has not been
+// tested on the device a visitor holds. The desktop is a common laptop-to-monitor
+// size wide enough that a layout leaving most of it empty is visibly doing so.
+export const REVIEW_VIEWPORTS = [
+  { label: "desktop", width: 1440, height: 900, touch: false },
+  { label: "phone", width: 390, height: 844, touch: true },
 ];
+
+// Playwright context options for a viewport, so every page opened at one is the
+// same device rather than the same width.
+export const viewportOptions = (vp) => ({
+  viewport: { width: vp.width, height: vp.height },
+  isMobile: vp.touch,
+  hasTouch: vp.touch,
+});
+
+// A page whose content spans less than this share of a desktop window is a
+// narrow column in the middle of an empty screen. Loose on purpose: a sidebar
+// layout with generous margins clears it easily, and only a layout that ignores
+// most of the window does not.
+const MIN_DESKTOP_CONTENT_SPAN = 0.6;
+
+// The smallest comfortable touch target. WCAG asks for 44px at AAA and 24px at
+// AA; 40 sits between them because a phone game is tapped repeatedly, and a
+// target a thumb misses one time in five is a control that does not work.
+const MIN_TAP_TARGET_PX = 40;
+
+/**
+ * How much of a desktop window the page's content actually uses, as a defect
+ * message — or null when it uses enough. `span` is the horizontal extent of every
+ * visible piece of content (text, media, controls) — not of the containers around
+ * it, since a full-width background behind a centred column is still a column.
+ */
+export function describeNarrowLayout({ viewportWidth, contentLeft, contentRight }) {
+  if (!(viewportWidth > 0) || !(contentRight > contentLeft)) return null;
+  const left = Math.max(0, contentLeft);
+  const right = Math.min(viewportWidth, contentRight);
+  const share = (right - left) / viewportWidth;
+  if (share >= MIN_DESKTOP_CONTENT_SPAN) return null;
+  return `narrow centre column: content spans ${Math.round(share * 100)}% of the ${viewportWidth}px window ` +
+    `(${Math.round(left)}px to ${Math.round(right)}px) — a large screen should use the whole window, ` +
+    `not leave ${Math.round((1 - share) * 100)}% of it empty.`;
+}
+
+/**
+ * Controls too small to hit reliably with a thumb, as defect messages — capped
+ * like every other kind, so a toolbar of tiny icons names the worst few rather
+ * than all of them. `targets` are the rendered boxes of interactive elements.
+ */
+export function describeSmallTapTargets(targets) {
+  // A box a pixel thin is the visually-hidden pattern (a skip link, a label for
+  // screen readers) — present for assistive technology, never meant to be tapped.
+  const isVisuallyHidden = (target) => target.width <= 1 || target.height <= 1;
+  return targets
+    .filter((target) => !isVisuallyHidden(target))
+    .filter((target) => target.width < MIN_TAP_TARGET_PX || target.height < MIN_TAP_TARGET_PX)
+    .sort((a, b) => Math.min(a.width, a.height) - Math.min(b.width, b.height))
+    .slice(0, MAX_DEFECTS_PER_KIND)
+    .map((target) =>
+      `tap target ${Math.round(target.width)}x${Math.round(target.height)}px is under the ${MIN_TAP_TARGET_PX}px minimum for touch: ${target.label}`
+    );
+}
+
+/**
+ * The raw boxes the screen-use checks above judge: the horizontal extent of all
+ * visible content, and the size of every visible control. Measured in the page,
+ * judged in node, so the thresholds are testable without a browser.
+ */
+async function measureScreenUse(page) {
+  return page.evaluate(() => {
+    const isShown = (el, rect) => {
+      const style = getComputedStyle(el);
+      return style.display !== "none" && style.visibility !== "hidden" &&
+        Number(style.opacity) !== 0 && rect.width > 0 && rect.height > 0;
+    };
+    const describe = (el) => {
+      const id = el.id ? `#${el.id}` : "";
+      const text = (el.innerText || el.value || el.getAttribute("aria-label") || "").trim().replace(/\s+/g, " ").slice(0, 30);
+      return `${el.tagName.toLowerCase()}${id}${text ? ` ("${text}")` : ""}`;
+    };
+
+    let contentLeft = Infinity;
+    let contentRight = -Infinity;
+    for (const el of [...document.querySelectorAll("body *")].slice(0, 1500)) {
+      const isContent = ["IMG", "SVG", "CANVAS", "VIDEO", "INPUT", "BUTTON", "SELECT", "TEXTAREA"].includes(el.tagName.toUpperCase()) ||
+        [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim().length > 0);
+      if (!isContent) continue;
+      const rect = el.getBoundingClientRect();
+      if (!isShown(el, rect)) continue;
+      contentLeft = Math.min(contentLeft, rect.left);
+      contentRight = Math.max(contentRight, rect.right);
+    }
+
+    const controls = document.querySelectorAll('a[href], button, input:not([type="hidden"]), select, textarea, [role="button"]');
+    const tapTargets = [];
+    for (const el of controls) {
+      // A checkbox wrapped in its label is tapped through the label, so the label
+      // is the target a thumb actually aims at.
+      const target = el.closest("label") || el;
+      const rect = target.getBoundingClientRect();
+      if (!isShown(target, rect)) continue;
+      tapTargets.push({ label: describe(el), width: rect.width, height: rect.height });
+    }
+    return { viewportWidth: window.innerWidth, contentLeft, contentRight, tapTargets };
+  });
+}
+
+/**
+ * The screen-use defects for one viewport. Each check only means something on its
+ * own kind of screen — a phone column is SUPPOSED to be narrow, and a mouse does
+ * not need a 40px target.
+ */
+async function measureScreenUseDefects(page, vp) {
+  const measured = await measureScreenUse(page);
+  if (vp.touch) return describeSmallTapTargets(measured.tapTargets);
+  const narrow = describeNarrowLayout(measured);
+  return narrow ? [narrow] : [];
+}
 
 // Caps so one badly-broken page can't produce a thousand-line report. The point
 // is to name the worst offenders, not to enumerate every instance.
@@ -2953,7 +3070,7 @@ async function exerciseTarget(loc, t) {
  * Returns a list of human-readable findings. Best-effort; never throws.
  */
 async function exploreInteractions(browser, url) {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  const page = await browser.newPage(viewportOptions(REVIEW_VIEWPORTS[0]));
   const errors = [];
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
   page.on("pageerror", (e) => errors.push(e.message));
@@ -3017,7 +3134,7 @@ async function exploreInteractions(browser, url) {
     // Measure the app as the user LEAVES it — panels open, fields filled. First
     // paint is the easy case; a layout usually breaks once something is expanded,
     // and this state is unreachable from a fresh page load.
-    postDefects = await measureLayoutDefects(page, "desktop, after interacting");
+    postDefects = await measureLayoutDefects(page);
   } catch (e) {
     findings.push(`interaction sweep stopped early: ${String(e.message).split("\n")[0]}`);
   } finally {
@@ -3075,11 +3192,12 @@ export async function reviewApp(relDir = "docs") {
   for (const vp of REVIEW_VIEWPORTS) {
     let page;
     try {
-      page = await browser.newPage({ viewport: { width: vp.width, height: vp.height } });
+      page = await browser.newPage(viewportOptions(vp));
       await page.goto(url, { waitUntil: "networkidle", timeout: 20000 });
       // The product may animate in; let it settle so we measure a steady state.
       await page.waitForTimeout(1500);
       recordDefects(vp.label, await measureLayoutDefects(page));
+      recordDefects(vp.label, await measureScreenUseDefects(page, vp));
     } catch (e) {
       log("warn", `App review: could not measure the ${vp.label} layout.`, errorData(e));
     } finally {
