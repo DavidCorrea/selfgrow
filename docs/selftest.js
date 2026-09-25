@@ -155,6 +155,32 @@ export async function checks() {
     offlineSummary.hidden = wasHidden;
   }
 
+  // ─── Tap target sizes must meet WCAG minimum ────────────────
+
+  const gatherBtn2 = document.getElementById("btn-gather");
+  if (gatherBtn2) {
+    const h = parseFloat(getComputedStyle(gatherBtn2).height);
+    if (h < 39.9) {
+      problems.push(`#btn-gather computed height is ${h}px — expected at least 40px (WCAG minimum tap target).`);
+    }
+  } else {
+    problems.push("Expected #btn-gather to exist for tap target check — it was not found.");
+  }
+
+  const dismissBtn2 = document.getElementById("btn-dismiss-offline");
+  if (dismissBtn2) {
+    // Temporarily unhide to measure computed style
+    const wasHidden2 = dismissBtn2.closest("#offline-summary").hidden;
+    dismissBtn2.closest("#offline-summary").hidden = false;
+    const h = parseFloat(getComputedStyle(dismissBtn2).height);
+    if (h < 39.9) {
+      problems.push(`#btn-dismiss-offline computed height is ${h}px — expected at least 40px (WCAG minimum tap target).`);
+    }
+    dismissBtn2.closest("#offline-summary").hidden = wasHidden2;
+  } else {
+    problems.push("Expected #btn-dismiss-offline to exist for tap target check — it was not found.");
+  }
+
   // ─── DOM shows a numeric wood value (page engine is running) ────
 
   if (woodEl) {
