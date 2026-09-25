@@ -153,7 +153,17 @@ function cancelPendingRuns() {
   }
 }
 
-function closeAllIssues() {
+/**
+ * Close every open issue as "not planned".
+ *
+ * The reason is load-bearing, not cosmetic. A bare `gh issue close` records the
+ * issue as COMPLETED, and COMPLETED is what `isShipped` counts: the PO retro,
+ * Health and the weekly report all read recently closed issues, so the new
+ * product's first week would open by "shipping" the old product's whole unbuilt
+ * backlog. Agent PRs are closed, not merged, so they close no issue themselves;
+ * this is the only place a reset closes one.
+ */
+export function closeAllIssues() {
   const issues = fetchOpenIssues();
   log("info", `Closing ${issues.length} open issue(s)...`);
   for (const issue of issues) {
