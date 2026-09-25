@@ -82,6 +82,9 @@ const DIGEST_DAY = Number(process.env.PM_WEEKLY_DAY ?? 0);
 const REPEATED_FINDING_LIMIT = 3;
 const REPEATED_FINDING_WEEKS = 4;
 
+// The agents that run once a week — see checkWeeklyAgents.
+const WEEKLY_WORKFLOWS = ["product-owner", "playtester", "tech-lead"];
+
 // Every workflow that runs a model session, and so can have one capped or aborted.
 const MODEL_WORKFLOWS = ["devs", "product-manager", "product-owner", "playtester", "tech-lead"];
 
@@ -113,7 +116,7 @@ function gatherFacts() {
   return readFacts({
     shippedRecently: () => fetchShippedIssues(200),
     open: () => fetchOpenIssues(),
-    runs: () => JSON.parse(ghExec(["run", "list", "--limit", "60", "--json", "workflowName,conclusion,createdAt,status"])),
+    weeklyRuns: readWeeklyRuns,
     agentPrs: () =>
       fetchOpenAgentPullRequests().map((pr) => classifyAgentPullRequest(pr, { staleMs: PR_STALE_MS })),
     changelog: readChangelog,
@@ -138,6 +141,24 @@ function gatherFacts() {
 function readLastDigest() {
   const weekStart = expectedDigestWeek();
   return { weekStart, url: findDiscussion(DIGEST_CATEGORY, digestTitlePrefix(weekStart))?.url || null };
+}
+
+/**
+ * Each weekly agent's last completed run, asked of its own workflow. Reading the
+ * repository's last 60 runs across every workflow used to be the source, and CI
+ * alone runs often enough to push a week-old weekly run out of that window — at
+ * which point a failing agent read as one that had never run.
+ */
+function readWeeklyRuns() {
+  return WEEKLY_WORKFLOWS.map((workflow) => ({
+    workflow,
+    runs: JSON.parse(
+      ghExec([
+        "run", "list", "--workflow", `${workflow}.yml`, "--status", "completed",
+        "--limit", "1", "--json", "conclusion,createdAt",
+      ])
+    ),
+  }));
 }
 
 /**
@@ -275,15 +296,13 @@ export function checkAbandonRate({ open, shippedRecently }) {
  * run is invisible for seven days, and a skipped one looks exactly like a quiet
  * one.
  */
-export function checkWeeklyAgents({ runs }) {
-  const weekly = ["product-owner", "playtester", "tech-lead"];
+export function checkWeeklyAgents({ weeklyRuns }) {
   const problems = [];
-  for (const name of weekly) {
-    const mine = runs.filter((r) => r.workflowName === name && r.status === "completed");
-    if (!mine.length) continue; // never run, or scrolled off the window — not a fault
-    const last = mine[0];
+  for (const { workflow, runs } of weeklyRuns) {
+    const last = runs[0];
+    if (!last) continue; // never run — not a fault
     if (last.conclusion !== "success") {
-      problems.push(`${name} last run ${last.conclusion} (${last.createdAt.slice(0, 10)})`);
+      problems.push(`${workflow} last run ${last.conclusion} (${last.createdAt.slice(0, 10)})`);
     }
   }
   return problems.length ? `Weekly agents failing: ${problems.join("; ")}.` : null;
