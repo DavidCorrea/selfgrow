@@ -56,7 +56,7 @@ import {
   viewportOptions,
 } from "./shared.mjs";
 import { readJournal, appendJournal, renderJournalEntry } from "./discussions.mjs";
-import { isAnswered, answeringTickets, applyFollowUp } from "./playtest-findings.mjs";
+import { isAnswered, answeringTickets, applyFollowUp, PLAYTESTER_JOURNAL } from "./playtest-findings.mjs";
 import { pathToFileURL } from "url";
 import { join } from "path";
 import fs from "fs";
@@ -119,8 +119,9 @@ const APP_DIR = join(repoRoot, "docs");
 // The thread this role remembers itself in. Its own past verdicts are the only
 // way it can say "you fixed that", "this is worse than last week", or "I have
 // said this three weeks running" — none of which a stateless run can produce, and
-// all of which are most of what makes a reviewer worth listening to.
-const JOURNAL = "Playtester — log";
+// all of which are most of what makes a reviewer worth listening to. The Product
+// Owner reads its verdicts too, which is why the title lives with the findings.
+const JOURNAL = PLAYTESTER_JOURNAL;
 
 // The deployed site, when there is one. Playing the LIVE page rather than a local
 // copy of the repository is the difference between "the code we merged works" and

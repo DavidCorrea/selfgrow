@@ -36,14 +36,20 @@ import {
   readDecisions,
   renderDecisions,
 } from "./discussions.mjs";
-import { needsAnswer } from "./playtest-findings.mjs";
+import { PLAYTESTER_JOURNAL, renderOpenFindings, renderPlaytesterVerdicts } from "./playtest-findings.mjs";
+import { pathToFileURL } from "url";
 
 const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 
 /**
  * The week as it actually went, from what the pipeline wrote down: what shipped,
- * what got stuck, what the Playtester noticed. This is the retro's evidence, and
- * it is counted rather than recalled.
+ * what got stuck, what the Playtester said. This is the retro's evidence, and it
+ * is counted rather than recalled.
+ *
+ * Every open finding rather than only the untriaged ones, and the Playtester's
+ * own verdicts from its journal. "Still untriaged" was empty every Monday — the
+ * Product Manager answers findings daily — so five sessions of "the canvas is a
+ * dark void" never reached the role that decides whether a milestone is done.
  */
 function readWeek() {
   const since = daysAgo(7);
@@ -51,17 +57,19 @@ function readWeek() {
   return {
     shipped: fetchShippedIssues().filter((i) => (i.closedAt || "") >= since),
     parked: open.filter(isBlocked),
-    playtest: open.filter(needsAnswer),
+    open,
+    verdicts: readJournal(PLAYTESTER_JOURNAL),
   };
 }
 
-function renderWeek({ shipped, parked, playtest }) {
+export function renderWeek({ shipped, parked, open, verdicts }, now = Date.now()) {
   const section = (title, items, empty) =>
     `### ${title}\n${items.length ? items.map((i) => `- #${i.number} ${i.title}`).join("\n") : empty}`;
   return [
     section("Shipped this week", shipped, "(nothing shipped)"),
     section("Parked — the Devs gave up after repeated failures", parked, "(nothing parked)"),
-    section("What the Playtester noticed, still untriaged", playtest, "(nothing outstanding)"),
+    `### What the Playtester concluded, its last sessions oldest first\n${renderPlaytesterVerdicts(verdicts)}`,
+    `### Playtest findings still open\n${renderOpenFindings(open, now)}`,
   ].join("\n\n");
 }
 
@@ -253,8 +261,12 @@ async function main() {
   printRunSummary("Product Owner");
 }
 
-main().catch((err) => {
-  log("error", `Product Owner failed: ${err.message || err}`);
-  printRunSummary("Product Owner");
-  process.exit(1);
-});
+// Guarded so the week's rendering can be tested without running the retro — the
+// same convention as the Product Manager and the Playtester.
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  main().catch((err) => {
+    log("error", `Product Owner failed: ${err.message || err}`);
+    printRunSummary("Product Owner");
+    process.exit(1);
+  });
+}

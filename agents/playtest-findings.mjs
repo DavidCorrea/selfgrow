@@ -31,6 +31,7 @@ import {
   rewriteIssueBody,
   commentIssue,
   isPlaytestFeedback,
+  PLAYTEST_LABEL,
 } from "./shared.mjs";
 
 export const ANSWERED_LABEL = "answered";
@@ -48,12 +49,30 @@ export const ESCALATE_AFTER = Number(process.env.PLAYTEST_ESCALATE_AFTER || 2);
 // read back from the same listing that carries the finding.
 const ANSWERED_BY_LINE_RE = /^[ \t]*answered by[ \t]*:[ \t]*(.+)$/im;
 
-/** The tickets currently recorded as this finding's answer (may be empty). */
-export function answeringTickets(issue) {
-  const line = (issue?.body || "").match(ANSWERED_BY_LINE_RE);
+// Every earlier answer to this same finding, which a new answer replaced. Kept
+// because the likeliest mistake after an answer fails is prescribing it again,
+// and the PM cannot avoid repeating what it cannot see.
+const TRIED_BEFORE_LINE_RE = /^[ \t]*tried before[ \t]*:[ \t]*(.+)$/im;
+
+const lineNumbers = (body, re) => {
+  const line = (body || "").match(re);
   if (!line) return [];
   return [...new Set((line[1].match(/#(\d+)/g) || []).map((s) => Number(s.slice(1))))];
+};
+
+/** The tickets currently recorded as this finding's answer (may be empty). */
+export function answeringTickets(issue) {
+  return lineNumbers(issue?.body, ANSWERED_BY_LINE_RE);
 }
+
+/** The tickets of every earlier answer a newer one replaced (may be empty). */
+export function triedBefore(issue) {
+  return lineNumbers(issue?.body, TRIED_BEFORE_LINE_RE);
+}
+
+// Where the Playtester remembers itself — its verdicts are read here by the
+// roles that act on them, not only by the Playtester.
+export const PLAYTESTER_JOURNAL = "Playtester — log";
 
 /** A finding the PM has answered and the Playtester has not yet judged. */
 export function isAnswered(issue) {
@@ -94,11 +113,15 @@ export function addressesLine(findingNumber) {
  * finding that needed a second approach stays visible as one.
  */
 export function planAnswer(issue, tickets) {
-  const line = `Answered by: ${tickets.map((n) => `#${n}`).join(", ")}`;
-  const body = (issue.body || "").trim();
+  const tried = [...new Set([...triedBefore(issue), ...answeringTickets(issue)])].filter((n) => !tickets.includes(n));
+  const lines = [
+    `Answered by: ${tickets.map((n) => `#${n}`).join(", ")}`,
+    ...(tried.length ? [`Tried before: ${tried.map((n) => `#${n}`).join(", ")}`] : []),
+  ];
+  const body = (issue.body || "").replace(ANSWERED_BY_LINE_RE, "").replace(TRIED_BEFORE_LINE_RE, "").trim();
   const count = persistCount(issue);
   return {
-    body: ANSWERED_BY_LINE_RE.test(body) ? body.replace(ANSWERED_BY_LINE_RE, line) : `${body}\n\n${line}`,
+    body: `${body}\n\n${lines.join("\n")}`,
     add: [ANSWERED_LABEL],
     remove: count ? [persistedLabel(count)] : [],
     comment: [
@@ -196,4 +219,176 @@ export function applyFollowUp(issue, followUp, openNumbers) {
   }
   log("info", `Playtest: #${issue.number} ${plan.close ? "verified and closed" : plan.escalated ? "escalated" : "persisting"}.`);
   return plan;
+}
+
+// ---------------------------------------------------------------------------
+// Hearing the Playtester — what the roles that act on findings are shown.
+//
+// The Playtester's verdicts used to reach only its own journal, which no other
+// role read, and the Product Owner saw only findings "still untriaged" — a list
+// the Product Manager empties every morning, so it was always empty by Monday.
+// Five sessions of the same verdict were therefore invisible to the one role
+// that decides whether a milestone is done.
+// ---------------------------------------------------------------------------
+
+const DAY_MS = 86_400_000;
+const sameTitle = (a, b) => String(a || "").toLowerCase().trim() === String(b || "").toLowerCase().trim();
+const numbered = (numbers) => numbers.map((n) => `#${n}`).join(", ");
+
+function findingStage(issue) {
+  const answered = labelNames(issue).includes(ANSWERED_LABEL);
+  if (isEscalated(issue)) {
+    return answered ? "escalated, and answered again with a different approach" : "escalated — no answer so far has fixed it";
+  }
+  return answered ? "answered, waiting on the Playtester" : "untriaged";
+}
+
+/**
+ * Every open finding, with how long it has been open, where it stands, and how
+ * many sessions it has outlived its answer. Age and persistence are the two
+ * facts that tell a complaint the backlog is failing to answer from a new one.
+ */
+export function renderOpenFindings(openIssues, now = Date.now()) {
+  const findings = openIssues.filter(isPlaytestFeedback);
+  if (!findings.length) return "(no playtest findings open)";
+  return findings
+    .map((issue) => {
+      const days = issue.createdAt ? Math.floor((now - Date.parse(issue.createdAt)) / DAY_MS) : null;
+      const answers = answeringTickets(issue);
+      const tried = triedBefore(issue);
+      const facts = [
+        days === null ? "" : `open ${days} day(s)`,
+        findingStage(issue),
+        persistCount(issue) ? `persisted ${persistCount(issue)} session(s) since its answer landed` : "",
+        answers.length ? `answered by ${numbered(answers)}` : "",
+        tried.length ? `earlier answers that did not fix it: ${numbered(tried)}` : "",
+      ].filter(Boolean);
+      return `- #${issue.number} ${issue.title} — ${facts.join("; ")}`;
+    })
+    .join("\n");
+}
+
+/**
+ * The verdict line of each Playtester journal entry, oldest first. Each is the
+ * Playtester's own summary of a whole session, and read in a row they show the
+ * one thing no single finding can: whether the product is getting better.
+ */
+export function renderPlaytesterVerdicts(entries) {
+  if (!entries.length) return "(the Playtester has no sessions on record)";
+  return entries
+    .map((entry) => {
+      const date = String(entry).match(/^\[([^\]]*)\]/)?.[1] || "undated";
+      const verdict = String(entry).match(/\*\*Decided:\*\*\s*([\s\S]*?)(?=\n\*\*|$)/)?.[1].trim();
+      return `- ${date}: ${verdict || "(no verdict recorded)"}`;
+    })
+    .join("\n");
+}
+
+/**
+ * Closed findings and closed tickets, for telling the PM what earlier answers
+ * tried. Throws when either listing fails: an empty history reads as "nothing
+ * has been tried", which is precisely the belief that had one complaint answered
+ * five times the same way.
+ *
+ * Titles and close reasons only for the tickets — the question is what was tried
+ * and whether it shipped, not how. The limit is a window, not a census: a ticket
+ * older than it is named by number alone.
+ */
+export function fetchAnswerHistory() {
+  const list = (argv, what) => {
+    try {
+      return JSON.parse(ghExec(argv));
+    } catch (e) {
+      throw new Error(`Could not list ${what}: ${e.message}`, { cause: e });
+    }
+  };
+  const closedFindings = list(
+    ["issue", "list", "--state", "closed", "--label", PLAYTEST_LABEL, "--limit", "200", "--json", "number,title,body,stateReason"],
+    "closed playtest findings"
+  );
+  const closedTickets = list(
+    ["issue", "list", "--state", "closed", "--limit", "500", "--json", "number,title,stateReason"],
+    "closed tickets"
+  );
+  return { closedFindings, closedTickets: new Map(closedTickets.map((i) => [i.number, i])) };
+}
+
+/**
+ * The earlier answers to this complaint, and whether each helped: answers to
+ * this same finding that a newer one replaced, the answer that just failed if it
+ * escalated, and every closed finding filed under the same title — the
+ * Playtester reuses a title exactly when a complaint persists, so a same-titled
+ * finding is the same complaint coming back.
+ */
+export function priorAnswers(finding, closedFindings) {
+  const rounds = [];
+  const tried = triedBefore(finding);
+  if (tried.length) rounds.push({ from: finding.number, tickets: tried, outcome: "did not fix it" });
+  const current = answeringTickets(finding);
+  if (isEscalated(finding) && !isAnswered(finding) && current.length) {
+    rounds.push({ from: finding.number, tickets: current, outcome: "shipped, and the Playtester still saw this — escalated" });
+  }
+  for (const earlier of closedFindings) {
+    if (earlier.number === finding.number || !sameTitle(earlier.title, finding.title)) continue;
+    const earlierTried = triedBefore(earlier);
+    if (earlierTried.length) rounds.push({ from: earlier.number, tickets: earlierTried, outcome: "did not fix it" });
+    rounds.push({
+      from: earlier.number,
+      tickets: answeringTickets(earlier),
+      outcome:
+        earlier.stateReason === "COMPLETED"
+          ? "the Playtester verified it fixed, and the complaint came back anyway"
+          : "closed without the Playtester ever confirming it was fixed",
+    });
+  }
+  return rounds;
+}
+
+/** priorAnswers as prompt text, naming each ticket and whether it shipped. */
+export function renderPriorAnswers(finding, history, openIssues) {
+  const rounds = priorAnswers(finding, history.closedFindings);
+  if (!rounds.length) return "";
+  const open = new Map(openIssues.map((i) => [i.number, i]));
+  const describe = (n) => {
+    if (open.has(n)) return `#${n} ${open.get(n).title} (not shipped yet)`;
+    const closed = history.closedTickets.get(n);
+    if (!closed) return `#${n}`;
+    return `#${n} ${closed.title} (${closed.stateReason === "COMPLETED" ? "shipped" : "retired"})`;
+  };
+  const lines = rounds.map((round) => {
+    const where = round.from === finding.number ? "On this finding" : `On #${round.from}, an earlier filing of the same complaint`;
+    const tickets = round.tickets.length
+      ? round.tickets.map(describe).join("; ")
+      : "tickets not recorded (answered before answers were tracked)";
+    return `- ${where}: ${tickets} — ${round.outcome}.`;
+  });
+  return ["#### Answered before", ...lines].join("\n");
+}
+
+/**
+ * The Product Manager handing a finding up instead of answering it again, when
+ * it cannot see an approach that differs from what already failed. It stays
+ * waiting on the PM, marked so the Product Owner sees it among what holds the
+ * milestone open.
+ */
+export function planEscalation(reason) {
+  return {
+    add: [ESCALATED_LABEL],
+    remove: [],
+    comment: [
+      "## Escalated by the Product Manager",
+      "",
+      String(reason || "").trim() || "(no reason given)",
+      "",
+      "_No answer the Product Manager can see differs enough from what was already tried. Left for the Product Owner to weigh against the milestone and the Vision._",
+    ].join("\n"),
+  };
+}
+
+/** Apply planEscalation. Best-effort, like every board write. */
+export function escalateFinding(issue, reason) {
+  const plan = planEscalation(reason);
+  editIssueLabels(issue.number, plan);
+  commentIssue(issue.number, plan.comment);
+  log("info", `Playtest: #${issue.number} escalated by the Product Manager.`);
 }

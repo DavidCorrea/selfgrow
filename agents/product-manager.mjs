@@ -36,7 +36,16 @@ import {
   acknowledgeIdea,
 } from "./discussions.mjs";
 import { publishWeeklyReport } from "./weekly-report.mjs";
-import { needsAnswer, isAnswered, isEscalated, addressesLine, answerFinding } from "./playtest-findings.mjs";
+import {
+  needsAnswer,
+  isAnswered,
+  isEscalated,
+  addressesLine,
+  answerFinding,
+  escalateFinding,
+  fetchAnswerHistory,
+  renderPriorAnswers,
+} from "./playtest-findings.mjs";
 import { listSourceFiles, formatSources, SOURCE_DIR } from "./tech-lead.mjs";
 
 // The day the Product Manager does more than groom: it also reviews the shipped
@@ -411,21 +420,41 @@ function renderCuration(weekly, shippedCode) {
  * answered is waiting for the Playtester to say whether its tickets worked, and
  * showing it here would invite a second answer before anyone had looked.
  *
- * An escalated finding is back because its last answer shipped and did not
- * change what the Playtester saw. Its body still names those tickets, and the
- * heading says so, because the likeliest mistake now is prescribing them again.
+ * Each comes with every earlier answer to the same complaint — on this finding
+ * or on an earlier one filed under the same title — and whether it helped,
+ * because the PM has no memory of its own and otherwise prescribes the same fix
+ * again: "the canvas is a dark void" was answered five times, each time with a
+ * few small tickets in the same direction.
  */
-export function renderPlaytestFeedback(openIssues) {
+export function renderPlaytestFeedback(openIssues, history = { closedFindings: [], closedTickets: new Map() }) {
   const feedback = openIssues.filter(needsAnswer);
   if (!feedback.length) return "(no playtest feedback waiting on you this run)";
   return feedback
     .map((issue) => {
       const flag = isEscalated(issue)
-        ? " _(escalated — its last answer shipped and the Playtester still saw this; try a different approach)_"
+        ? " _(escalated — what was tried has not fixed this; try a different approach)_"
         : "";
-      return `### #${issue.number} — ${issue.title}${flag}\n${(issue.body || "").trim()}`;
+      return [
+        `### #${issue.number} — ${issue.title}${flag}`,
+        (issue.body || "").trim(),
+        renderPriorAnswers(issue, history, openIssues),
+      ].filter(Boolean).join("\n\n");
     })
     .join("\n\n");
+}
+
+/**
+ * Hand up the findings the PM chose to escalate rather than answer again. Only
+ * a finding waiting on it and not already escalated: one already marked is in
+ * front of the Product Owner, and re-escalating it every morning would bury its
+ * history under the same comment.
+ */
+function escalateFindings(escalate, openIssues) {
+  const byNumber = new Map(openIssues.map((i) => [i.number, i]));
+  for (const entry of escalate) {
+    const finding = byNumber.get(Number(entry?.number));
+    if (finding && needsAnswer(finding) && !isEscalated(finding)) escalateFinding(finding, entry.reason);
+  }
 }
 
 /**
@@ -645,7 +674,11 @@ async function main() {
         MILESTONE: renderMilestone(milestone),
         BOARD_STATE: boardState,
         APP_OBSERVATIONS: appObservations,
-        PLAYTEST_FEEDBACK: renderPlaytestFeedback(openIssues),
+        // The history costs two listings, so it is read only on a day there is a
+        // finding to answer.
+        PLAYTEST_FEEDBACK: openIssues.some(needsAnswer)
+          ? renderPlaytestFeedback(openIssues, fetchAnswerHistory())
+          : renderPlaytestFeedback(openIssues),
         CURATION: renderCuration(weekly, shippedCode),
       }),
       tools: ["read", "bash"],
@@ -682,6 +715,10 @@ async function main() {
   //    seen them ship — even if the PM also listed it in `retire` out of habit.
   for (const [number, tickets] of groomed.answers) answerFinding(answerable.get(number), tickets);
   planned.entries = planned.entries.filter((e) => !groomed.answers.has(e.number));
+  // A finding answered this run is not also escalated: the answer is the newer
+  // judgement.
+  const escalate = Array.isArray(data.escalate) ? data.escalate : [];
+  escalateFindings(escalate.filter((e) => !groomed.answers.has(Number(e?.number))), openIssues);
   // 5. Now close the originals — only if the replacements actually landed.
   await executeRetirements(planned, groomed);
 
