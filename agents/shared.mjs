@@ -256,14 +256,6 @@ export function getLastModelUsed() {
 // the ~16x accounting error this counter exists to have fixed.
 let modelTurnCount = 0;
 
-/**
- * How many agent SESSIONS this run has started (successes and failures alike).
- * Not the billed unit — see getModelTurnCount for what the provider charges.
- */
-export function getModelRequestCount() {
-  return modelRequestCount;
-}
-
 /** Real OpenRouter requests this run made — one per agent turn, not per session. */
 export function getModelTurnCount() {
   return modelTurnCount;
@@ -1124,60 +1116,6 @@ export function returnToCleanMain(branchName, opts = {}) {
   }
 }
 
-export function abortRebase() {
-  try {
-    gitExec(["rebase", "--abort"]);
-    log("info", "Aborted rebase.");
-  } catch {
-    // ignore — may not be in a rebase
-  }
-}
-
-/**
- * Land a branch on main, surviving concurrent pushes from other runs.
- *
- * Each attempt re-fetches origin/main, rebases the branch on top of it, then
- * fast-forwards main and pushes. If the push is rejected (another run advanced
- * origin/main in between), we retry from a fresh fetch.
- */
-export function mergeBranchToMain(branchName, { retries = 5 } = {}) {
-  let pushed = false;
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    gitExec(["fetch", "origin"]);
-    gitExec(["checkout", branchName]);
-    try {
-      gitExec(["rebase", "origin/main"]);
-    } catch (e) {
-      // Leave no half-finished rebase behind for callers' cleanup.
-      abortRebase();
-      throw new Error(`Rebase of ${branchName} onto origin/main failed: ${e.message}`);
-    }
-    gitExec(["checkout", "main"]);
-    gitExec(["reset", "--hard", "origin/main"]);
-    gitExec(["merge", "--ff-only", branchName]);
-    try {
-      gitExec(["push", "origin", "main"]);
-      log("info", `Merged ${branchName} into main and pushed (attempt ${attempt}).`);
-      pushed = true;
-      break;
-    } catch (e) {
-      if (attempt === retries) {
-        throw new Error(`Push to main rejected after ${retries} attempts: ${e.message}`);
-      }
-      log("warn", `Push to main rejected, retrying (${attempt}/${retries}).`);
-    }
-  }
-  if (!pushed) return;
-
-  try {
-    gitExec(["branch", "-d", branchName]);
-    log("info", `Deleted local branch ${branchName}.`);
-  } catch {
-    // not fully merged according to git — leave it for inspection
-  }
-  deleteRemoteBranch(branchName);
-}
-
 // ---------------------------------------------------------------------------
 // GitHub issue helpers
 // ---------------------------------------------------------------------------
@@ -1198,8 +1136,6 @@ function ghComment(issueNumber, body) {
  * @param {string} [info.commitSha]     - Full commit SHA on main.
  */
 export async function closeIssue(issueNumber, info = {}) {
-  // Tolerate the legacy `closeIssue(n, commitMessage)` call shape.
-  if (typeof info === "string") info = { commitMessage: info };
   const { summary, commitMessage, commitSha } = info;
 
   const lines = ["## ✅ Resolved by the Devs", ""];
@@ -1225,15 +1161,6 @@ export async function commentIssue(issueNumber, body) {
     ghComment(issueNumber, body);
   } catch (e) {
     log("warn", `Could not comment on issue #${issueNumber}`, errorData(e));
-  }
-}
-
-export async function labelIssue(issueNumber, label) {
-  try {
-    ghExec(["issue", "edit", String(issueNumber), "--add-label", label]);
-    log("info", `Labeled issue #${issueNumber} as "${label}"`);
-  } catch (e) {
-    log("warn", `Could not label issue #${issueNumber}`, errorData(e));
   }
 }
 
@@ -1439,13 +1366,7 @@ export function ensurePriorityLabels() {
     // Muted grey-blue: waiting is a normal state, not a warning.
     [WAITING_LABEL, "c5def5"],
   ];
-  for (const [name, color] of labels) {
-    try {
-      ghExec(["label", "create", name, "--color", color, "--force"]);
-    } catch {
-      // label may already exist / no perms — non-fatal
-    }
-  }
+  for (const [name, color] of labels) ensureLabel(name, color);
 }
 
 /**
