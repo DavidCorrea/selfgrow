@@ -6,7 +6,8 @@ only when the concern is actually addressed.
 
 ## `shared.mjs` is five modules in one file
 
-**Where:** `agents/shared.mjs`, ~2,500 lines.
+**Where:** `agents/shared.mjs`, ~3,550 lines (and growing — it was ~2,500 when
+this was written).
 
 It holds the model chain, the agent runner, prompt loading, git, GitHub issues,
 the project board, PRs, and a Playwright build verifier. Every agent imports from
@@ -16,30 +17,15 @@ The seams already exist as banner comments, and the split falls out along them:
 `agent.mjs`, `github.mjs`, `verify.mjs`.
 
 **Why it matters:** every agent can reach every capability, so the Playtester
-*can* push to `main` — least privilege is enforced by two GitHub identities at the
-token level and by nothing at all in code. The ESLint config also has to grant
+*can* call anything its GitHub token allows — least privilege is enforced at the
+token level and by nothing at all in code. (Partly narrowed: the git push token
+now reaches only the jobs that push, so the Playtester can no longer `git push`;
+it still holds a token that writes through the API.) The ESLint config also has to grant
 browser globals to the whole directory, because the DOM-measuring code that runs
 inside Chromium lives in the same file as the git helpers.
 
 Deliberately not done as part of a cleanup: it touches every import in the repo,
 and it should be its own change with the test suite green on both sides.
-
-## Nothing measures whether the pipeline is working
-
-**Where:** the pipeline as a whole. Data exists in `recordTicket` and the wiki
-Changelog; nothing aggregates it.
-
-Every guard in the system is about *not corrupting main*. There is no signal for
-merged-per-day, cost-per-merged-ticket, or abandonment rate. From outside, "the Builder retried three tickets to death today" and "the
-Builder shipped three" look identical.
-
-**Why it matters:** a pipeline that quietly stops producing looks exactly like
-one that is producing. Post-mortems on the Lessons page record individual
-failures, but nothing records a trend, so a regression in throughput has no
-surface to appear on.
-
-A weekly line appended to a wiki `Health.md` would cover it without another
-agent, or a job on an existing one.
 
 ## The Reviewer shares a model chain with the Builder it reviews
 
@@ -77,9 +63,11 @@ requests per run in the job log, and OpenRouter's dashboard has the account view
 
 **Why it matters:** cost-per-merged-ticket is the number that would show a
 regression in how efficiently the pipeline works, and it now exists only as
-scattered per-run lines in job logs nobody reads. This is the same gap as the
-entry above about throughput, in a different unit — and both would be answered by
-one structured line per run appended somewhere durable.
+scattered per-run lines in job logs nobody reads. Throughput has the same gap in a
+different unit: Health (`agents/health.mjs`) now alarms on quiet days, a high
+abandon rate, a missing digest, a repeated finding and aborting sessions, but it
+speaks only on exception, so nothing records merged-per-day as a trend. Both would
+be answered by one structured line per run appended somewhere durable.
 
 ## Nothing catches a semantically duplicated ticket
 
@@ -133,6 +121,14 @@ exist, would catch it.
 Nothing verifies the scope, either: the only real test of `archiveProductMemory`
 is a reset, and running one to check it destroys the thing it is testing.
 
+**Status (2026-09-25): partly addressed.** `archiveProductMemory` now logs every
+thread it will archive and keep, pages through both categories, and throws —
+stopping the reset before the product is deleted — when the threads cannot be
+read or any rename fails; `agents/archive-memory.test.mjs` covers that against a
+fake `gh`. Still open: the label is set once at creation and never revisited, an
+unlabelled lesson still defaults to "keep", and nothing refuses a reset that
+archives nothing while journals exist.
+
 ## Decisions are ranked by recency, which is the wrong axis
 
 **Where:** `agents/discussions.mjs` — `readDecisions`, `DECISION_BODIES`.
@@ -175,6 +171,10 @@ artefact a person actually reads.
 The fix is to persist the Builder's own summary where the next run can find it —
 the PR body is the obvious place, since it already survives the run that wrote it.
 
+**Status (2026-09-25):** the PR body now always ends with `Closes #N`, so the
+ticket closing no longer depends on the model writing it. The changelog line is
+still reconstructed from the branch name; persisting the summary is still open.
+
 ## The product contract has time-dependent checks, and they fail at random
 
 **Where:** `docs/selftest.js` — the plant growth-scale assertion (~line 671, "below
@@ -214,3 +214,92 @@ about the Reviewer's independence, seen from the other side. That entry argues f
 investing in `checks()` rather than more review cycles, because only `checks()`
 can disagree with the Builder for reasons that have nothing to do with how a model
 reads a diff. That argument holds only while `checks()` is right.
+
+## An agent's tools can still reach the runner's secrets through root
+
+**Where:** `agents/secrets.mjs`, `agents/shared.mjs` — `confinedTools`,
+`gitExec`, `ghExec`; the GitHub-hosted runner itself.
+
+Secrets no longer sit in any agent's start environment, the bash tool's children
+get an allowlisted environment, and the read tool is confined to the checkout.
+The whole design rests on one kernel setting: `ptrace_scope` 1 stops a process
+reading its parent's memory. Three gaps remain around it:
+
+- GitHub's runners give the runner user **passwordless `sudo`**, and root is not
+  bound by `ptrace_scope`. A bash tool call can read the agent process's memory,
+  where every secret now lives.
+- `gh` and `git` children are started *with* `GH_TOKEN` / the push header in
+  their environment. A background process the bash tool left running is the
+  same user, and can read `/proc/<pid>/environ` of each later `gh` or `git`
+  child while it runs.
+- Only `read` and `bash` are confined. pi's `edit` and `write` tools are not, so
+  an agent can write outside the checkout.
+
+**Why it matters:** the agents read text strangers wrote (Ideas, issues, a
+contributor's PR), and an injected instruction that reaches a tool call can
+exfiltrate the OpenRouter key or the PAT. The PAT is the expensive one. Cheapest
+mitigation: make `AGENT_PAT` a fine-grained token scoped to this one repository,
+so a leak is bounded to it. The structural fix is running the tools as a
+separate user, or in a container, with no `sudo`.
+
+## Closed-issue listings are truncated without anyone noticing
+
+**Where:** `agents/shared.mjs` — `fetchShippedIssues` (`--limit 200`);
+`agents/playtest-findings.mjs` — `fetchAnswerHistory` (200 findings, 500
+tickets).
+
+Open-issue, board and PR listings now throw when a result reaches its limit.
+The closed-issue listings do not: they quietly take the newest N. Today that is
+harmless — they are used as recent windows (a week of shipped work, the recent
+answer history), and `fetchAnswerHistory` says so in its comment.
+
+**Why it matters:** the same "a truncated list passes for the whole" bug that
+released blocked work could return if a caller starts reading one of these as
+complete — a Health check counting all shipped work since the reset, say.
+
+## Shipped work depends on GitHub's commit search index
+
+**Where:** `agents/shared.mjs` — `fetchProductStart`, used by
+`fetchShippedIssues`.
+
+When the current product began is found by searching commits for the reset's
+message, because the agents check `main` out one commit deep. Search is indexed
+asynchronously, so for a while right after a reset it may not find the reset
+commit, and then "no reset" means every closed ticket counts as this product's.
+
+**Why it matters:** the window is short and a reset is rare, but the first Health
+run, retro or report after a reset is exactly the one most likely to fall in it,
+and it would credit the new product with the old one's work. Recording the start
+somewhere the agents read directly (a wiki page the reset writes) would remove
+the dependency.
+
+## An answered finding whose ticket is parked never moves again
+
+**Where:** `agents/playtest-findings.mjs` — `planFollowUp`.
+
+A persisting verdict counts against an answer only once every answering ticket
+is closed. A parked ticket stays open, so a finding answered by one stays
+`answered` indefinitely: the Playtester's "still there" never counts, it never
+escalates, and the PM does not see it again because it is no longer waiting on
+an answer.
+
+**Why it matters:** this is the dark-void failure again by a different route — a
+complaint that looks handled because tickets exist for it. The Tech Lead may
+eventually rule on the parked ticket, but nothing ties that ruling back to the
+finding. Treating a parked answering ticket as landed, or surfacing such findings
+to the PM, would close it.
+
+## Findings closed before answers were tracked have no answer history
+
+**Where:** `agents/playtest-findings.mjs` — `priorAnswers`,
+`renderPriorAnswers`.
+
+The `Answered by:` line only exists on findings answered since the lifecycle
+landed. An earlier finding under the same title shows up in the PM's history as
+"tickets not recorded (answered before answers were tracked)".
+
+**Why it matters:** the history exists so the PM does not prescribe a failed
+answer again, and the longest-running complaints are exactly the ones whose
+answers predate it. It fades on its own as old findings age out, and a reset
+clears it; noted so an empty history on an old complaint is not read as "nothing
+was tried".
