@@ -1,9 +1,10 @@
 // Whether the app uses the screen it is on. The layout checks elsewhere say a
 // page is broken; these say a page that works is still wrong for the device —
-// a desktop window left mostly empty, a phone control too small for a thumb.
+// a desktop window left mostly empty, a phone control too small for a thumb —
+// and the case none of them can see at all: a page that shows nothing.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { describeNarrowLayout, describeSmallTapTargets } from "./shared.mjs";
+import { describeBlankScreen, describeNarrowLayout, describeSmallTapTargets } from "./shared.mjs";
 
 const desktop = (contentLeft, contentRight) => ({ viewportWidth: 1440, contentLeft, contentRight });
 
@@ -55,5 +56,29 @@ test("controls on a touch phone", async (t) => {
     assert.equal(defects.length, 5);
     assert.match(defects[0], /button5$/);
     assert.match(defects[4], /button25$/);
+  });
+});
+
+test("a page that shows nothing", async (t) => {
+  await t.test("passes a page with something painted on it", () => {
+    assert.equal(describeBlankScreen({ paintedPixels: 40_000, contentElements: 12 }), null);
+  });
+
+  await t.test("passes a page showing a single short word", () => {
+    assert.equal(describeBlankScreen({ paintedPixels: 43, contentElements: 1 }), null);
+  });
+
+  await t.test("flags a page that painted only its background", () => {
+    assert.match(
+      describeBlankScreen({ paintedPixels: 0, contentElements: 0 }),
+      /renders visually empty: 0 pixel\(s\) differ from its background colour, and no element carries any text or media/
+    );
+  });
+
+  await t.test("flags content that exists but cannot be seen", () => {
+    assert.match(
+      describeBlankScreen({ paintedPixels: 3, contentElements: 7 }),
+      /7 element\(s\) carry text or media, but none of it can be seen/
+    );
   });
 });

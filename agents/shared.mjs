@@ -2827,6 +2827,78 @@ async function measureScreenUseDefects(page, vp) {
   return narrow ? [narrow] : [];
 }
 
+// A screen where fewer pixels than this differ from its dominant colour shows
+// nothing. A count, not a share of the screen: a single word on an otherwise
+// empty page is dozens of pixels even shrunk onto a phone, and is not a blank
+// page — one that painted only its background, or an opaque layer over
+// everything, is.
+const MIN_PAINTED_PIXELS = 20;
+// How far a pixel's luminance (0-255) may sit from the dominant one and still
+// count as the same colour — enough to absorb a gradient's banding, not a glyph.
+const SAME_COLOUR_TOLERANCE = 10;
+
+/**
+ * Whether the page shows anything at all, as a defect message — or null when it
+ * does. Every other layout check measures what is on screen and so says nothing
+ * when nothing is: an empty page has no overflow, no overlap and no bad contrast.
+ * `contentElements` is how many visible elements carry text or media, which tells
+ * a page that rendered nothing from one whose content is hidden behind something.
+ */
+export function describeBlankScreen({ paintedPixels, contentElements }) {
+  if (paintedPixels >= MIN_PAINTED_PIXELS) return null;
+  const cause = contentElements
+    ? `${contentElements} element(s) carry text or media, but none of it can be seen — it is covered, off-screen, or the colour of the background`
+    : "no element carries any text or media";
+  return `the page renders visually empty: ${paintedPixels} pixel(s) differ from its background colour, and ${cause}.`;
+}
+
+/**
+ * What the blank-screen check judges, read from pixels rather than the DOM: a
+ * scene drawn into a canvas is invisible to every element-based check, and a
+ * canvas that painted nothing looks exactly like one that painted a world.
+ *
+ * The screenshot is decoded by the browser on a page of its own, because decoding
+ * a PNG in node would mean a dependency, and decoding it inside the product's own
+ * page would let the product's scripts and policies interfere with the measurement.
+ */
+async function measureBlankness(page) {
+  const contentElements = await page.evaluate(() =>
+    [...document.querySelectorAll("body *")].slice(0, 1500).filter((el) => {
+      const rect = el.getBoundingClientRect();
+      const style = getComputedStyle(el);
+      if (rect.width === 0 || rect.height === 0 || style.visibility === "hidden" || Number(style.opacity) === 0) return false;
+      return ["img", "svg", "canvas", "video"].includes(el.tagName.toLowerCase()) ||
+        [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim().length > 0);
+    }).length
+  );
+  const screenshot = (await page.screenshot({ type: "png" })).toString("base64");
+  const decoder = await page.context().browser().newPage();
+  try {
+    const paintedPixels = await decoder.evaluate(async ({ png, tolerance }) => {
+      const blob = await (await fetch(`data:image/png;base64,${png}`)).blob();
+      const bitmap = await createImageBitmap(blob);
+      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+      const context = canvas.getContext("2d");
+      context.drawImage(bitmap, 0, 0);
+      const { data } = context.getImageData(0, 0, bitmap.width, bitmap.height);
+      const pixels = data.length / 4;
+      const luminance = new Uint8Array(pixels);
+      const histogram = new Array(256).fill(0);
+      for (let i = 0; i < pixels; i++) {
+        luminance[i] = Math.round(0.2126 * data[i * 4] + 0.7152 * data[i * 4 + 1] + 0.0722 * data[i * 4 + 2]);
+        histogram[luminance[i]]++;
+      }
+      const dominant = histogram.indexOf(Math.max(...histogram));
+      let painted = 0;
+      for (let i = 0; i < pixels; i++) if (Math.abs(luminance[i] - dominant) > tolerance) painted++;
+      return painted;
+    }, { png: screenshot, tolerance: SAME_COLOUR_TOLERANCE });
+    return { paintedPixels, contentElements };
+  } finally {
+    await decoder.close().catch(() => {});
+  }
+}
+
 // Caps so one badly-broken page can't produce a thousand-line report. The point
 // is to name the worst offenders, not to enumerate every instance.
 const MAX_DEFECTS_PER_KIND = 5;
@@ -3168,6 +3240,8 @@ export async function reviewApp(relDir = "docs") {
       await page.waitForTimeout(1500);
       recordDefects(vp.label, await measureLayoutDefects(page));
       recordDefects(vp.label, await measureScreenUseDefects(page, vp));
+      const blank = describeBlankScreen(await measureBlankness(page));
+      if (blank) recordDefects(vp.label, [blank]);
     } catch (e) {
       log("warn", `App review: could not measure the ${vp.label} layout.`, errorData(e));
     } finally {
