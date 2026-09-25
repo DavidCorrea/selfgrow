@@ -13,11 +13,15 @@
 
 import { execFileSync } from "child_process";
 import { fileURLToPath } from "url";
-import { dirname, join, relative, extname } from "path";
+import { dirname, join, relative, extname, sep } from "path";
 import fs from "fs";
+import os from "os";
 import http from "http";
 import {
   createAgentSession,
+  createBashToolDefinition,
+  createReadToolDefinition,
+  detectSupportedImageMimeTypeFromFile,
   DefaultResourceLoader,
   ModelRuntime,
   SessionManager,
@@ -450,6 +454,86 @@ export async function runAgent(opts) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// What an agent's tools can reach
+// ---------------------------------------------------------------------------
+
+// The variables a tool subprocess keeps. An ALLOWLIST, because the agents read
+// text strangers wrote — Ideas, issues, ticket bodies — and pi's bash tool
+// otherwise hands every child the runner's whole environment, so one injected
+// `env` would print OPENROUTER_API_KEY and the PAT into the transcript. A
+// denylist fails open: the next secret a workflow adds is exposed until someone
+// remembers to name it. What survives is what a shell, git, node, npm and
+// Playwright need to find themselves and each other.
+const TOOL_ENV_NAMES = new Set([
+  "PATH",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "SHELL",
+  "LANG",
+  "LANGUAGE",
+  "TERM",
+  "TZ",
+  "TMPDIR",
+  "CI",
+  "NODE_ENV",
+  "PLAYWRIGHT_BROWSERS_PATH",
+]);
+// PI_* is pi's own session metadata (model, session id), which its bash tool
+// advertises to the agent; it carries nothing secret.
+const TOOL_ENV_PREFIXES = ["LC_", "XDG_", "PI_"];
+
+/** The subset of `env` a tool subprocess may see — see TOOL_ENV_NAMES. */
+export function toolSubprocessEnv(env) {
+  return Object.fromEntries(
+    Object.entries(env).filter(
+      ([name]) => TOOL_ENV_NAMES.has(name) || TOOL_ENV_PREFIXES.some((prefix) => name.startsWith(prefix))
+    )
+  );
+}
+
+/**
+ * True when a fully resolved path lies inside one of `roots`.
+ *
+ * The read tool needs this even with a clean bash env, because read runs IN the
+ * runner's own process: `/proc/self/environ` through it is the unfiltered
+ * environment, secrets and all. Callers pass a realpath so a symlink in the
+ * checkout cannot point back out.
+ */
+export function isInsideRoots(realPath, roots) {
+  return roots.some((root) => realPath === root || realPath.startsWith(root + sep));
+}
+
+// The repo is what agents work on; the temp dir is where pi's bash tool spills
+// output too long to return, and it tells the agent to read it from there.
+const readableRoots = () => [fs.realpathSync(repoRoot), fs.realpathSync(os.tmpdir())];
+
+async function assertReadable(absolutePath) {
+  const realPath = await fs.promises.realpath(absolutePath);
+  if (!isInsideRoots(realPath, readableRoots())) {
+    throw new Error(`${absolutePath} is outside the repository — the read tool only reads the checkout.`);
+  }
+  return realPath;
+}
+
+// Replaces pi's built-in read and bash by name (a custom tool of the same name
+// wins in pi's registry); each agent's `tools` list still decides which it gets.
+function confinedTools() {
+  return [
+    createReadToolDefinition(repoRoot, {
+      operations: {
+        access: async (path) => fs.promises.access(await assertReadable(path), fs.constants.R_OK),
+        readFile: async (path) => fs.promises.readFile(await assertReadable(path)),
+        detectImageMimeType: detectSupportedImageMimeTypeFromFile,
+      },
+    }),
+    createBashToolDefinition(repoRoot, {
+      spawnHook: (context) => ({ ...context, env: toolSubprocessEnv(context.env) }),
+    }),
+  ];
+}
+
 /**
  * Run a single one-shot agent against exactly one model. The chain logic lives in
  * runAgent; this is the per-model attempt.
@@ -524,6 +608,7 @@ async function runAgentOnce({
       thinkingLevel,
       modelRuntime,
       tools,
+      customTools: confinedTools(),
     }).then(({ session }) => {
       let output = "";
       // Turns spent so far, read live. The session's own message list is the only
