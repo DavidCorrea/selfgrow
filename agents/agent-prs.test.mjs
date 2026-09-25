@@ -9,6 +9,7 @@ import {
   issueNumberFromAgentBranch,
   classifyAgentPullRequest,
   decideAgentPullRequest,
+  agentPullRequestBody,
 } from "./shared.mjs";
 
 const HOUR = 3_600_000;
@@ -142,5 +143,15 @@ describe("deciding what a run does about an open pull request", () => {
 
   test("a young PR whose ticket closed is still left to the run that opened it", () => {
     assert.deepEqual(decide({ createdAt: hoursOld(2) }, { issueOpen: false }), { action: "leave", claimed: true });
+  });
+});
+
+describe("writing the body of a ticket's pull request", () => {
+  test("closes the ticket on merge with a keyword GitHub acts on", () => {
+    assert.equal(agentPullRequestBody("Add rain sound.", 687), "Add rain sound.\n\nCloses #687");
+  });
+
+  test("a PR for no ticket carries only its summary", () => {
+    assert.equal(agentPullRequestBody("Add rain sound.", null), "Add rain sound.");
   });
 });

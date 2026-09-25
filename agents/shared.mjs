@@ -1916,6 +1916,18 @@ function ghAs(token, argv, opts = {}) {
   return ghExec(argv, { ...opts, env: { ...process.env, GH_TOKEN: token } });
 }
 
+/**
+ * The body of a ticket's PR: what the Builder says it did, then the closing line.
+ *
+ * `Closes`, not `Refs`: GitHub closes an issue on merge only for a closing
+ * keyword, and `Refs` is not one. With it, whether the ticket closed rested on the
+ * model happening to write "closes #N" in its commit message — and a PR merged by
+ * the reconcile step, which never runs closeIssue, left its ticket open.
+ */
+export function agentPullRequestBody(summary, issueNumber) {
+  return issueNumber ? `${summary}\n\nCloses #${issueNumber}` : summary;
+}
+
 /** Open a PR from `branchName` into main as the bot. Returns PR number, or null. */
 export function createPR(branchName, title, body) {
   try {
