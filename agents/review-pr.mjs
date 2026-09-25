@@ -26,7 +26,7 @@
 // opens and the PAT approves, because GitHub will not let an author approve their
 // own PR. Here the author IS the PAT's owner, so the identities flip: the bot
 // approves instead.
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import { pathToFileURL } from "url";
 import {
   log,
@@ -124,14 +124,14 @@ ${readVision()}`,
  * or drop.
  */
 function pushFix(problems) {
-  if (!gitExec("status --porcelain")) {
+  if (!gitExec(["status", "--porcelain"])) {
     log("info", "The fix produced no changes.");
     return false;
   }
   try {
-    gitExec("add -A");
-    gitExec(`commit -m "Address review on #${PR_NUMBER}\n\n${problems.slice(0, 400).replace(/"/g, "'")}"`);
-    gitExec(`push origin HEAD:${PR_BRANCH}`);
+    gitExec(["add", "-A"]);
+    gitExec(["commit", "-m", `Address review on #${PR_NUMBER}\n\n${problems.slice(0, 400)}`]);
+    gitExec(["push", "origin", `HEAD:${PR_BRANCH}`]);
     log("info", "Pushed a fix to the contributor's branch.");
     return true;
   } catch (e) {
@@ -149,9 +149,10 @@ function pushFix(problems) {
  * runs on every PR rather than only when a path matched.
  */
 function verifyHarness() {
-  for (const [name, command] of [["lint", "npm run lint"], ["tests", "npm test"]]) {
+  for (const [name, npmArgs] of [["lint", ["run", "lint"]], ["tests", ["test"]]]) {
+    const command = `npm ${npmArgs.join(" ")}`;
     try {
-      execSync(command, { cwd: repoRoot, stdio: "pipe" });
+      execFileSync("npm", npmArgs, { cwd: repoRoot, stdio: "pipe" });
     } catch (e) {
       const output = `${e.stdout || ""}${e.stderr || ""}`.toString().trim();
       return {

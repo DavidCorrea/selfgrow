@@ -39,16 +39,15 @@
 // Discussions are GraphQL-only. Everything below is a thin wrapper over one
 // mutation or query, and every string that could contain model-written text is
 // passed as a VARIABLE rather than interpolated into the document.
-import { execFileSync } from "child_process";
 import { log, errorData } from "./log.mjs";
-import { repoRoot } from "./shared.mjs";
+import { ghExec } from "./shared.mjs";
 
 const OWNER = process.env.GITHUB_REPOSITORY_OWNER || "";
 
 /**
  * Run one GraphQL document with variables.
  *
- * execFileSync, not execSync, and that is not a style preference. A GraphQL
+ * ghExec runs gh from argv with no shell, and that is not a style preference. A GraphQL
  * document is full of `$variable` declarations, and passing one through a shell
  * lets the shell expand them first — `query($owner: String!)` arrives at GitHub as
  * `query(: String!)` and is rejected with a parse error that names a colon and
@@ -70,9 +69,7 @@ function graphql(query, variables = {}) {
     // by models.
     args.push(typeof value === "number" || typeof value === "boolean" ? "-F" : "-f", `${key}=${value}`);
   }
-  return JSON.parse(
-    execFileSync("gh", args, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }).toString()
-  );
+  return JSON.parse(ghExec(args));
 }
 
 /** The repository and the category to post in, resolved together. */

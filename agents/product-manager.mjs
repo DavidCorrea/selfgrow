@@ -1,5 +1,4 @@
 import { pathToFileURL } from "url";
-import { execSync } from "child_process";
 import fs from "fs";
 import {
   log,
@@ -27,7 +26,7 @@ import {
   isPlaytestFeedback,
   isManualIssue,
   rewriteIssueBody,
-  repoRoot,
+  ghExec,
   getCurrentMilestone,
   setIssueMilestone,
 } from "./shared.mjs";
@@ -379,10 +378,7 @@ function readFileSafely(path) {
 function fetchClosedIssues(limit = 200) {
   try {
     return JSON.parse(
-      execSync(`gh issue list --state closed --limit ${limit} --json number,title,closedAt,labels`, {
-        cwd: repoRoot,
-        maxBuffer: 10 * 1024 * 1024,
-      }).toString()
+      ghExec(["issue", "list", "--state", "closed", "--limit", String(limit), "--json", "number,title,closedAt,labels"])
     );
   } catch (e) {
     log("warn", "Could not read recently closed tickets.", errorData(e));

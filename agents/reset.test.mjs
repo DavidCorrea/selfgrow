@@ -2,13 +2,13 @@
 // pin down is that the machine never deletes itself.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import { isHarnessPath } from "./reset.mjs";
 import { repoRoot } from "./shared.mjs";
 
 test("deciding what survives a reset", async (t) => {
   await t.test("keeps every tracked file outside docs/, so a new root harness file cannot be deleted unnoticed", () => {
-    const tracked = execSync("git ls-files", { cwd: repoRoot }).toString().split("\n").filter(Boolean);
+    const tracked = execFileSync("git", ["ls-files"], { cwd: repoRoot }).toString().split("\n").filter(Boolean);
     const unkept = tracked.filter((path) => !path.startsWith("docs/") && !isHarnessPath(path));
     assert.deepEqual(unkept, [], "add these to HARNESS_PATHS in reset.mjs, or move them under docs/ if they are product");
   });

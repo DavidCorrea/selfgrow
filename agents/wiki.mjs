@@ -23,7 +23,7 @@
 //   - Nothing may be left uncommitted in the clone between calls, because each
 //     attempt hard-resets it. The API makes that impossible to get wrong: there
 //     is no way to write to a page except through a mutation.
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import fs from "fs";
 import { join } from "path";
 import { log, errorData } from "./log.mjs";
@@ -44,13 +44,14 @@ const PUSH_ATTEMPTS = 5;
 export function cloneWiki(dir = DEFAULT_WIKI_DIR, { cwd = process.cwd() } = {}) {
   try {
     const repo = JSON.parse(
-      execSync("gh repo view --json nameWithOwner", { cwd, maxBuffer: 10 * 1024 * 1024 }).toString()
+      execFileSync("gh", ["repo", "view", "--json", "nameWithOwner"], { cwd, maxBuffer: 10 * 1024 * 1024 }).toString()
     ).nameWithOwner;
     const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN || "";
     const url = `https://x-access-token:${token}@github.com/${repo}.wiki.git`;
-    execSync(`rm -rf "${dir}" && git clone "${url}" "${dir}"`, { cwd, maxBuffer: 10 * 1024 * 1024 });
-    execSync(`git -C "${dir}" config user.name "github-actions[bot]"`, { maxBuffer: 10 * 1024 * 1024 });
-    execSync(`git -C "${dir}" config user.email "github-actions[bot]@users.noreply.github.com"`, { maxBuffer: 10 * 1024 * 1024 });
+    fs.rmSync(dir, { recursive: true, force: true });
+    execFileSync("git", ["clone", url, dir], { cwd, maxBuffer: 10 * 1024 * 1024 });
+    git(dir, ["config", "user.name", "github-actions[bot]"]);
+    git(dir, ["config", "user.email", "github-actions[bot]@users.noreply.github.com"]);
     log("info", `Wiki: cloned ${repo}.wiki.`);
     return dir;
   } catch (e) {
@@ -97,14 +98,16 @@ export function readPage(pageFile) {
   }
 }
 
-function git(dir, args) {
-  return execSync(`git -C "${dir}" ${args}`, { maxBuffer: 10 * 1024 * 1024, stdio: "pipe" });
+// argv, never a shell string: commit messages here carry model-written text (see
+// gitExec in shared.mjs for why that matters on a runner holding a PAT).
+function git(dir, argv) {
+  return execFileSync("git", ["-C", dir, ...argv], { maxBuffer: 10 * 1024 * 1024, stdio: "pipe" });
 }
 
 function currentBranch(dir) {
   try {
     // GitHub wikis are still `master`; read it rather than assume it.
-    return git(dir, "rev-parse --abbrev-ref HEAD").toString().trim() || "master";
+    return git(dir, ["rev-parse", "--abbrev-ref", "HEAD"]).toString().trim() || "master";
   } catch {
     return "master";
   }
@@ -137,8 +140,8 @@ export function commitToWiki(pageFile, mutate, message) {
       // Start from the remote every time. A previous attempt may have left a
       // local commit that lost its race, and a sibling has almost certainly
       // pushed since we cloned.
-      git(dir, "fetch --quiet origin");
-      git(dir, `reset --hard --quiet origin/${branch}`);
+      git(dir, ["fetch", "--quiet", "origin"]);
+      git(dir, ["reset", "--hard", "--quiet", `origin/${branch}`]);
 
       let current = "";
       try {
@@ -150,9 +153,9 @@ export function commitToWiki(pageFile, mutate, message) {
       if (next === current) return true; // already recorded by someone else
 
       fs.writeFileSync(path, next, "utf-8");
-      git(dir, `add "${pageFile}"`);
-      git(dir, `commit -q -m "${String(message).replace(/"/g, '\\"')}"`);
-      git(dir, "push --quiet");
+      git(dir, ["add", "--", pageFile]);
+      git(dir, ["commit", "-q", "-m", String(message)]);
+      git(dir, ["push", "--quiet"]);
       log("info", `Wiki: updated ${pageFile}.`);
       return true;
     } catch (e) {

@@ -110,7 +110,7 @@ function checkChain() {
 /** Undo the dependency bump so the repo stays on the pi it was working with. */
 function revertBump() {
   try {
-    gitExec("checkout -- package.json package-lock.json");
+    gitExec(["checkout", "--", "package.json", "package-lock.json"]);
     execFileSync("npm", ["ci"], { cwd: repoRoot, stdio: "pipe", maxBuffer: 10 * 1024 * 1024 });
     log("info", "Reverted the bump and reinstalled the previous pi.");
   } catch (e) {
@@ -184,7 +184,7 @@ async function main() {
     endInstall();
     log("error", `Could not install pi ${to} — leaving the repo on ${from}.`, errorData(e));
     revertBump();
-    gitExec("checkout main");
+    gitExec(["checkout", "main"]);
     deleteRemoteBranch(branchName);
     createIssue(
       `pi ${to} could not be installed`,
@@ -203,7 +203,7 @@ async function main() {
   } catch (e) {
     log("error", `pi ${to} is installed but its registry could not be read — reverting.`, errorData(e));
     revertBump();
-    gitExec("checkout main");
+    gitExec(["checkout", "main"]);
     deleteRemoteBranch(branchName);
     createIssue(
       `pi ${to} installs but its model registry cannot be read`,
@@ -220,7 +220,7 @@ async function main() {
       `pi ${to} no longer knows ${report.broken.length} of ${report.entries.length} configured model(s) — reverting the bump.`
     );
     revertBump();
-    gitExec("checkout main");
+    gitExec(["checkout", "main"]);
     deleteRemoteBranch(branchName);
     createIssue(
       `pi ${to} leaves the model chain broken`,
@@ -239,23 +239,18 @@ async function main() {
   }
 
   // Commit whatever actually changed.
-  const changed = gitExec("status --porcelain");
+  const changed = gitExec(["status", "--porcelain"]);
   if (!changed) {
     log("warn", "Nothing changed on disk despite a version difference — no PR to open.");
-    gitExec("checkout main");
+    gitExec(["checkout", "main"]);
     deleteRemoteBranch(branchName);
     printRunSummary("pi update");
     return;
   }
   log("info", `Committing:\n${changed}`);
-  gitExec("add -A");
-  // execFileSync, not a shell string: the message is ours, but this file should not
-  // be the one that reintroduces shell interpolation of generated text.
-  execFileSync("git", ["commit", "-m", `Bump ${PI_PACKAGE} to ${to} and re-check the model chain`], {
-    cwd: repoRoot,
-    maxBuffer: 10 * 1024 * 1024,
-  });
-  gitExec(`push origin ${branchName}`);
+  gitExec(["add", "-A"]);
+  gitExec(["commit", "-m", `Bump ${PI_PACKAGE} to ${to} and re-check the model chain`]);
+  gitExec(["push", "origin", branchName]);
 
   const body = buildPrBody({ from, to, report });
   appendJobSummary(`## pi update\n\n${body}`);
@@ -272,7 +267,7 @@ async function main() {
     printRunSummary("pi update");
     process.exit(1);
   }
-  try { gitExec("checkout main"); } catch { /* the merge already landed */ }
+  try { gitExec(["checkout", "main"]); } catch { /* the merge already landed */ }
 
   log("info", `pi ${from} → ${to} merged via PR #${prNumber}.`);
   printRunSummary("pi update");

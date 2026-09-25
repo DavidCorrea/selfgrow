@@ -28,14 +28,13 @@
 //
 // Guarded by a typed confirmation (see requireConfirmation), because every other
 // agent here only adds and this one is irreversible in the directions that matter.
-import { execSync } from "child_process";
 import { pathToFileURL } from "url";
 import {
   log,
   printRunSummary,
   errorData,
-  repoRoot,
   gitExec,
+  ghExec,
   configureGitIdentity,
   getWikiDir,
   writePage,
@@ -95,13 +94,7 @@ export function isHarnessPath(path) {
 // sweeps every branch any agent ever made, whatever it was for.
 const AGENT_BRANCH_NAMESPACE = "agent/";
 
-function sh(cmd) {
-  return execSync(cmd, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }).toString();
-}
-
-function shJson(cmd) {
-  return JSON.parse(sh(cmd));
-}
+const ghJson = (argv) => JSON.parse(ghExec(argv));
 
 /**
  * Cancel every queued or in-progress run except this one. Without this, the
@@ -112,8 +105,8 @@ function cancelPendingRuns() {
   let runs = [];
   try {
     runs = [
-      ...shJson('gh run list --status queued --json databaseId,workflowName --limit 100'),
-      ...shJson('gh run list --status in_progress --json databaseId,workflowName --limit 100'),
+      ...ghJson(["run", "list", "--status", "queued", "--json", "databaseId,workflowName", "--limit", "100"]),
+      ...ghJson(["run", "list", "--status", "in_progress", "--json", "databaseId,workflowName", "--limit", "100"]),
     ];
   } catch (e) {
     log("warn", "Could not list workflow runs — skipping cancellation.", errorData(e));
@@ -128,7 +121,7 @@ function cancelPendingRuns() {
   log("info", `Cancelling ${pending.length} pending workflow run(s)...`);
   for (const run of pending) {
     try {
-      sh(`gh run cancel ${run.databaseId}`);
+      ghExec(["run", "cancel", String(run.databaseId)]);
       log("info", `Cancelled ${run.workflowName} (${run.databaseId}).`);
     } catch (e) {
       log("warn", `Could not cancel run ${run.databaseId}`, errorData(e));
@@ -141,7 +134,7 @@ function closeAllIssues() {
   log("info", `Closing ${issues.length} open issue(s)...`);
   for (const issue of issues) {
     try {
-      sh(`gh issue close ${issue.number} --reason "not planned"`);
+      ghExec(["issue", "close", String(issue.number), "--reason", "not planned"]);
       log("info", `Closed #${issue.number}: ${issue.title}`);
     } catch (e) {
       log("warn", `Could not close #${issue.number}`, errorData(e));
@@ -156,7 +149,7 @@ function closeAllIssues() {
 function clearAgentBranches() {
   let openPRs = [];
   try {
-    openPRs = shJson('gh pr list --state open --json number,headRefName --limit 200');
+    openPRs = ghJson(["pr", "list", "--state", "open", "--json", "number,headRefName", "--limit", "200"]);
   } catch (e) {
     log("warn", "Could not list pull requests — skipping PR cleanup.", errorData(e));
   }
@@ -171,7 +164,7 @@ function clearAgentBranches() {
 
   let branches = [];
   try {
-    branches = sh(`git ls-remote --heads origin "refs/heads/${AGENT_BRANCH_NAMESPACE}*"`)
+    branches = gitExec(["ls-remote", "--heads", "origin", `refs/heads/${AGENT_BRANCH_NAMESPACE}*`])
       .split("\n")
       .map((line) => line.split("refs/heads/")[1])
       .filter(Boolean);
@@ -189,9 +182,7 @@ function clearAgentBranches() {
 function clearBoard() {
   let items = [];
   try {
-    const res = shJson(
-      `gh project item-list ${PROJECT_NUMBER} --owner ${PROJECT_OWNER} --format json --limit 500`
-    );
+    const res = ghJson(["project", "item-list", PROJECT_NUMBER, "--owner", PROJECT_OWNER, "--format", "json", "--limit", "500"]);
     items = res.items || [];
   } catch (e) {
     log("warn", "Could not list board items — skipping board clear.", errorData(e));
@@ -200,7 +191,7 @@ function clearBoard() {
   log("info", `Removing ${items.length} board item(s)...`);
   for (const item of items) {
     try {
-      sh(`gh project item-delete ${PROJECT_NUMBER} --owner ${PROJECT_OWNER} --id ${item.id}`);
+      ghExec(["project", "item-delete", PROJECT_NUMBER, "--owner", PROJECT_OWNER, "--id", item.id]);
     } catch (e) {
       log("warn", `Could not remove board item ${item.id}`, errorData(e));
     }
@@ -272,7 +263,7 @@ function resetDiscussionMemory() {
 function deleteAttemptLabels() {
   let labels = [];
   try {
-    labels = shJson("gh label list --json name --limit 200");
+    labels = ghJson(["label", "list", "--json", "name", "--limit", "200"]);
   } catch (e) {
     log("warn", "Could not list labels — skipping label cleanup.", errorData(e));
     return;
@@ -285,7 +276,7 @@ function deleteAttemptLabels() {
   log("info", `Deleting ${stale.length} attempts:N label(s)...`);
   for (const name of stale) {
     try {
-      sh(`gh label delete "${name}" --yes`);
+      ghExec(["label", "delete", name, "--yes"]);
     } catch (e) {
       log("warn", `Could not delete label ${name}`, errorData(e));
     }
@@ -297,13 +288,13 @@ function deleteAttemptLabels() {
  * GitHub-side and reversible-ish, while this rewrites the repo.
  */
 function clearProduct() {
-  gitExec("fetch origin");
-  gitExec("checkout main");
-  gitExec("reset --hard origin/main");
+  gitExec(["fetch", "origin"]);
+  gitExec(["checkout", "main"]);
+  gitExec(["reset", "--hard", "origin/main"]);
 
   // Ask git what is tracked rather than guessing: a path git does not know makes
   // `git rm` fail, and this is the last and least reversible step.
-  const tracked = gitExec("ls-files").split("\n").map((p) => p.trim()).filter(Boolean);
+  const tracked = gitExec(["ls-files"]).split("\n").map((p) => p.trim()).filter(Boolean);
   const doomed = tracked.filter((path) => !isHarnessPath(path));
 
   if (!doomed.length) {
@@ -317,12 +308,11 @@ function clearProduct() {
   // command line should carry.
   const BATCH = 100;
   for (let i = 0; i < doomed.length; i += BATCH) {
-    const batch = doomed.slice(i, i + BATCH).map((path) => `"${path}"`).join(" ");
-    gitExec(`rm -r --quiet -- ${batch}`);
+    gitExec(["rm", "-r", "--quiet", "--", ...doomed.slice(i, i + BATCH)]);
   }
-  gitExec('commit -m "Clear the previous product for a fresh start"');
+  gitExec(["commit", "-m", "Clear the previous product for a fresh start"]);
   try {
-    gitExec("push origin main");
+    gitExec(["push", "origin", "main"]);
     log("info", `Deleted ${doomed.length} product file(s) from main.`);
   } catch (e) {
     log("error", "Could not push the product deletion to main — do it by hand.", errorData(e));
