@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "child_process";
-import { isHarnessPath } from "./reset.mjs";
+import { isHarnessPath, incompleteResetMessage } from "./reset.mjs";
 import { repoRoot } from "./shared.mjs";
 
 test("deciding what survives a reset", async (t) => {
@@ -29,5 +29,19 @@ test("deciding what survives a reset", async (t) => {
   await t.test("matches whole path segments, not name prefixes", () => {
     assert.equal(isHarnessPath("agents-old/run.mjs"), false);
     assert.equal(isHarnessPath("agents/devs.mjs"), true);
+  });
+});
+
+test("ending a reset that could not do everything", async (t) => {
+  await t.test("says nothing when every step was done", () => {
+    assert.equal(incompleteResetMessage([]), null);
+  });
+
+  // The operator finishes these by hand, so the message is the checklist.
+  await t.test("lists every step that was not done, so none reads as success", () => {
+    const message = incompleteResetMessage(["clear the board (could not list its items)", "delete label attempts:2"]);
+    assert.match(message, /INCOMPLETE — 2 thing\(s\) were not done/);
+    assert.match(message, /^- clear the board \(could not list its items\)$/m);
+    assert.match(message, /^- delete label attempts:2$/m);
   });
 });
