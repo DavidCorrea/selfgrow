@@ -243,9 +243,10 @@ function resetWikiMemory() {
  *
  * Renamed, not deleted, so the previous project stays readable.
  *
- * If journals exist and not one could be archived, archiveProductMemory throws
- * and the reset stops here — before clearProduct, so the product is never
- * deleted while its reasoning is left behind for the next one.
+ * If the threads cannot be read, or any one of them cannot be renamed,
+ * archiveProductMemory throws and the reset stops here — before clearProduct, so
+ * the product is never deleted while its reasoning is left behind for the next
+ * one. Re-running is the fix: what was archived is skipped the second time.
  */
 function resetDiscussionMemory() {
   const archived = archiveProductMemory();

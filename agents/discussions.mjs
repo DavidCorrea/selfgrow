@@ -688,26 +688,19 @@ export function planMemoryArchive(nodes) {
 }
 
 /**
- * Why a reset must stop, or null when it may go on.
- *
- * Journals are always due for archiving, so journals due and none archived means
- * every rename failed. Carrying on would delete the product while leaving its
- * reasoning in place for the next one to read as its own.
- */
-export function emptyArchiveRefusal(plan, archived) {
-  const journals = plan.archive.filter((thread) => thread.category?.name === JOURNAL_CATEGORY);
-  if (!journals.length || archived > 0) return null;
-  return `Discussions: ${journals.length} journal(s) were due for archiving and none were archived — refusing to go on.`;
-}
-
-/**
  * Archive the memory a reset should not carry into a new product: every journal,
  * and the lesson threads explicitly labelled `product`.
  *
- * Returns how many threads were archived. Best-effort per thread — a reset that
- * half-succeeds is better than one that aborts, since the alternative is a new
- * product inheriting the old one's reasoning. Throws only when nothing at all was
- * archived although journals exist; see emptyArchiveRefusal.
+ * Returns how many threads were archived, and THROWS unless every thread due was
+ * — whether the read failed (including running into DISCUSSION_PAGE_CAP) or a
+ * single rename did. The reset deletes the product right after this, and a journal
+ * left under its own title is found by the next product's find-or-create, which
+ * appends to it and reads the old product's reasoning as its own. That is the one
+ * outcome worse than a reset that stops: stopping costs a re-run, and a re-run is
+ * safe, because threads already archived are skipped.
+ *
+ * Every rename is still attempted before throwing, so the re-run has as little
+ * left to do as possible and the log names exactly what is left.
  */
 export function archiveProductMemory({ on = new Date() } = {}) {
   let nodes;
@@ -719,8 +712,9 @@ export function archiveProductMemory({ on = new Date() } = {}) {
     const fields = "id title authorAssociation category { name } labels(first: 10) { nodes { name } }";
     nodes = [JOURNAL_CATEGORY, LESSON_CATEGORY].flatMap((category) => readCategory(category, fields));
   } catch (e) {
-    log("warn", "Discussions: could not archive product memory — do it by hand before starting.", errorData(e));
-    return 0;
+    const message = "Discussions: could not read the journals and lessons to archive — refusing to go on.";
+    log("error", message, errorData(e));
+    throw new Error(`${message} ${e.message}`);
   }
 
   const plan = planMemoryArchive(nodes);
@@ -728,7 +722,7 @@ export function archiveProductMemory({ on = new Date() } = {}) {
   log("info", `Discussions: archiving ${plan.archive.length} thread(s).`, { threads: describe(plan.archive) });
   log("info", `Discussions: keeping ${plan.keep.length} thread(s).`, { threads: describe(plan.keep) });
 
-  let archived = 0;
+  const failed = [];
   for (const thread of plan.archive) {
     try {
       graphql(
@@ -737,21 +731,25 @@ export function archiveProductMemory({ on = new Date() } = {}) {
          }`,
         { id: thread.id, title: archivedTitle(thread.title, on) }
       );
-      archived++;
     } catch (e) {
       log("warn", `Discussions: could not archive "${thread.title}".`, errorData(e));
+      failed.push(thread);
     }
   }
 
-  const refusal = emptyArchiveRefusal(plan, archived);
-  if (refusal) throw new Error(refusal);
+  if (failed.length) {
+    throw new Error(
+      `Discussions: could not archive ${failed.length} of ${plan.archive.length} thread(s) — refusing to go on: ` +
+        describe(failed).join("; ")
+    );
+  }
   log(
     "info",
-    archived
-      ? `Discussions: archived ${archived} product-scoped thread(s); machine lessons and decisions kept.`
+    plan.archive.length
+      ? `Discussions: archived ${plan.archive.length} product-scoped thread(s); machine lessons and decisions kept.`
       : "Discussions: nothing product-scoped to archive."
   );
-  return archived;
+  return plan.archive.length;
 }
 
 // ---------------------------------------------------------------------------
