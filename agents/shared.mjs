@@ -1495,9 +1495,16 @@ export function isBlocked(issue) {
 // waiting its turn hasn't failed at all, and marking it blocked would invite the
 // PM to retire work that is perfectly good and simply not ready yet.
 //
-// A dependency counts as met once its issue is closed, so the ordering resolves
-// itself as the Builder ships: no state to maintain, and the whole graph is
-// visible in the issue body a human reads.
+// A dependency counts as met once its issue is closed as shipped, so the ordering
+// resolves itself as the Builder ships: no state to maintain, and the whole graph
+// is visible in the issue body a human reads.
+//
+// Closed as NOT PLANNED is not shipped. A retired prerequisite used to release
+// everything waiting on it — including when the PM split it into pieces none of
+// which had shipped yet — so the dependant was built on a foundation that did
+// not exist. It now stays waiting, and the board tells whoever reads it which
+// prerequisite was retired, so the PM can re-scope or retire the dependant
+// rather than leave it stranded.
 // ---------------------------------------------------------------------------
 
 const DEPENDS_ON_LINE_RE = /^[ \t]*(?:blocked by|depends on)[ \t]*:[ \t]*(.+)$/im;
@@ -1512,8 +1519,9 @@ export function dependencyNumbers(issue) {
 
 /**
  * Dependencies that haven't shipped yet, given the set of still-open issue
- * numbers. A dependency that is closed — or that never existed / was retired —
- * is treated as met, so a stale reference can never strand a ticket forever.
+ * numbers. A dependency that is closed as shipped — or that never existed — is
+ * treated as met, so a stale reference can never strand a ticket forever. One
+ * closed as not planned is unmet: see retiredDependencies.
  *
  * But only once that is confirmed. Absent from the open set used to be enough,
  * and absent is not the same as closed: an issue filed after the listing, or one
@@ -1523,27 +1531,51 @@ export function unmetDependencies(issue, openNumbers, isShipped = isConfirmedShi
   return dependencyNumbers(issue).filter((n) => openNumbers.has(n) || !isShipped(n));
 }
 
-// Confirmed only — an issue can be reopened, but a run is short enough that one
-// closing mid-run and reopening is not worth a second lookup.
-const confirmedShipped = new Set();
+/**
+ * Dependencies that were closed as not planned. Each one will never ship, so the
+ * ticket waiting on it will never be released by the Builder; only re-scoping or
+ * retiring the ticket frees it, and that is the PM's call to make.
+ */
+export function retiredDependencies(issue, openNumbers, isRetired = isConfirmedRetired) {
+  return dependencyNumbers(issue).filter((n) => !openNumbers.has(n) && isRetired(n));
+}
+
+// Confirmed outcomes only — an issue can be reopened, but a run is short enough
+// that one closing mid-run and reopening is not worth a second lookup.
+const confirmedOutcomes = new Map();
 
 /**
- * Whether issue `number` is closed, or does not exist at all — either way nothing
- * is left to wait for. False when it is open, or when the lookup fails: a
- * dependency nobody could see is one that has not been shown to ship.
+ * What became of dependency `number`: "shipped" when it closed as anything but
+ * not planned, or does not exist at all (either way nothing is left to wait
+ * for); "retired" when it closed as not planned; "unconfirmed" when it is open,
+ * or when the lookup fails — a dependency nobody could see is one that has not
+ * been shown to ship.
  */
-export function isConfirmedShipped(number) {
-  if (confirmedShipped.has(number)) return true;
-  let shipped;
+function dependencyOutcome(number) {
+  if (confirmedOutcomes.has(number)) return confirmedOutcomes.get(number);
+  let outcome;
   try {
-    shipped = ghExec(["api", `repos/{owner}/{repo}/issues/${number}`, "--jq", ".state"], { stdio: "pipe" }).trim() === "closed";
+    const [state, reason] = ghExec(
+      ["api", `repos/{owner}/{repo}/issues/${number}`, "--jq", `.state + " " + (.state_reason // "")`],
+      { stdio: "pipe" }
+    ).trim().split(" ");
+    if (state !== "closed") outcome = "unconfirmed";
+    else outcome = reason === "not_planned" ? "retired" : "shipped";
   } catch (e) {
     // 404: never existed. 410: deleted. A stale reference, not a blocker.
-    shipped = /HTTP (404|410)/.test(`${e.stderr || ""} ${e.message}`);
-    if (!shipped) log("warn", `Dependencies: could not confirm #${number} has shipped — treating it as unmet.`, errorData(e));
+    outcome = /HTTP (404|410)/.test(`${e.stderr || ""} ${e.message}`) ? "shipped" : "unconfirmed";
+    if (outcome === "unconfirmed") log("warn", `Dependencies: could not confirm #${number} has shipped — treating it as unmet.`, errorData(e));
   }
-  if (shipped) confirmedShipped.add(number);
-  return shipped;
+  if (outcome !== "unconfirmed") confirmedOutcomes.set(number, outcome);
+  return outcome;
+}
+
+export function isConfirmedShipped(number) {
+  return dependencyOutcome(number) === "shipped";
+}
+
+export function isConfirmedRetired(number) {
+  return dependencyOutcome(number) === "retired";
 }
 
 // Not every issue is work.
@@ -2000,7 +2032,7 @@ export function getBoardSnapshot() {
  * filing order is shipping order closely enough for context. Draft items have
  * no number and sort as oldest.
  */
-export function formatBoardState(boardItems, openIssues) {
+export function formatBoardState(boardItems, openIssues, isRetired = isConfirmedRetired) {
   // Labels per open ticket (so the board shows priority / tech-debt tags).
   //
   // The `agent` marker itself is plumbing and stays hidden — but its ABSENCE is
@@ -2018,7 +2050,15 @@ export function formatBoardState(boardItems, openIssues) {
     const labs = num != null ? labelsByNumber.get(num) || [] : [];
     return labs.length ? ` _(${labs.join(", ")})_` : "";
   };
-  const line = (i) => `- ${i.number ? "#" + i.number + " " : ""}${i.title}${tag(i.number)}`;
+  // A `waiting` tag alone reads as "not yet", and a ticket waiting on a retired
+  // prerequisite is "never": the card says which one, so the reader can act.
+  const openNumbers = new Set(openIssues.map((i) => i.number));
+  const openByNumber = new Map(openIssues.map((i) => [i.number, i]));
+  const retiredNote = (num) => {
+    const retired = openByNumber.has(num) ? retiredDependencies(openByNumber.get(num), openNumbers, isRetired) : [];
+    return retired.length ? ` — waits on ${retired.map((n) => `#${n}`).join(", ")}, retired without shipping` : "";
+  };
+  const line = (i) => `- ${i.number ? "#" + i.number + " " : ""}${i.title}${tag(i.number)}${retiredNote(i.number)}`;
 
   const groups = {};
   for (const it of boardItems) (groups[it.status] ||= []).push(it);

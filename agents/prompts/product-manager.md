@@ -125,6 +125,8 @@ Each piece must be **independently shippable** — it stands alone, leaves the s
 
 **Already built.** Before leaving a ticket on the board, satisfy yourself it is not asking for finished work. Check narrowly — `ls docs/`, then read the specific files it would touch — not a survey of the codebase. If the work is genuinely there, `retire` it saying where it lives. If it is only partly there, keep the ticket and rewrite its body to name the remaining gap.
 
+**Waiting on a retired ticket.** A ticket marked `waits on #N, retired without shipping` will never be released: what it was built on was retired, and the Devs will not start it until that ships. Decide what it needs now. If the work still makes sense, `retire` it and propose it again in `backlog` with the `dependsOn` it actually needs — the retired ticket's replacements, or nothing if the groundwork already exists. If it no longer does, just `retire` it.
+
 **Out of scope.** A ticket that contradicts the Vision, or cannot ship as a static browser-only site under `docs/`, goes in `retire` with that as the reason.
 
 Be decisive but not trigger-happy: retiring a good ticket costs the project that work outright, and nothing downstream will catch the mistake.
