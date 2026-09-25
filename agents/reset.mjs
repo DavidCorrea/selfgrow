@@ -96,6 +96,28 @@ const AGENT_BRANCH_NAMESPACE = "agent/";
 
 const ghJson = (argv) => JSON.parse(ghExec(argv));
 
+// Everything this run skipped or could not do, in words an operator can act on.
+//
+// Each step is best-effort and the run goes on past a failed one, because what
+// the later steps do is still worth doing; the one step whose failure must stop
+// the run before the product is deleted (archiving the memory) throws instead.
+// What a failed step must never do is let the run end on "Reset complete": a
+// board that could not be listed was a warning in the middle of the log, and the
+// run then reported success with the previous product's tickets still on it.
+const notDone = [];
+
+/**
+ * The message a reset ends on when something was not done, or null when it all
+ * was. Lists every gap, because the operator finishes them by hand.
+ */
+export function incompleteResetMessage(gaps) {
+  if (!gaps.length) return null;
+  return (
+    `Reset INCOMPLETE — ${gaps.length} thing(s) were not done. Finish them by hand before starting:\n` +
+    gaps.map((gap) => `- ${gap}`).join("\n")
+  );
+}
+
 /**
  * Cancel every queued or in-progress run except this one. Without this, the
  * reset races the pipeline it is trying to stop.
@@ -110,6 +132,7 @@ function cancelPendingRuns() {
     ];
   } catch (e) {
     log("warn", "Could not list workflow runs — skipping cancellation.", errorData(e));
+    notDone.push("cancel queued and running workflow runs (could not list them)");
     return;
   }
 
@@ -125,6 +148,7 @@ function cancelPendingRuns() {
       log("info", `Cancelled ${run.workflowName} (${run.databaseId}).`);
     } catch (e) {
       log("warn", `Could not cancel run ${run.databaseId}`, errorData(e));
+      notDone.push(`cancel workflow run ${run.databaseId} (${run.workflowName})`);
     }
   }
 }
@@ -138,6 +162,7 @@ function closeAllIssues() {
       log("info", `Closed #${issue.number}: ${issue.title}`);
     } catch (e) {
       log("warn", `Could not close #${issue.number}`, errorData(e));
+      notDone.push(`close issue #${issue.number}`);
     }
   }
 }
@@ -152,6 +177,7 @@ function clearAgentBranches() {
     openPRs = ghJson(["pr", "list", "--state", "open", "--json", "number,headRefName", "--limit", "200"]);
   } catch (e) {
     log("warn", "Could not list pull requests — skipping PR cleanup.", errorData(e));
+    notDone.push("close open agent PRs (could not list them)");
   }
 
   // closePR deletes the head branch too, so the sweep below only has to catch
@@ -159,7 +185,9 @@ function clearAgentBranches() {
   const agentPRs = openPRs.filter((pr) => pr.headRefName.startsWith(AGENT_BRANCH_NAMESPACE));
   log("info", `Closing ${agentPRs.length} open agent PR(s)...`);
   for (const pr of agentPRs) {
-    closePR(pr.number, "Closing as part of a project reset — this work belongs to the previous product.");
+    if (!closePR(pr.number, "Closing as part of a project reset — this work belongs to the previous product.")) {
+      notDone.push(`close agent PR #${pr.number}`);
+    }
   }
 
   let branches = [];
@@ -170,6 +198,7 @@ function clearAgentBranches() {
       .filter(Boolean);
   } catch (e) {
     log("warn", "Could not list remote branches — skipping branch cleanup.", errorData(e));
+    notDone.push("delete orphaned agent branches (could not list them)");
     return;
   }
 
@@ -179,14 +208,20 @@ function clearAgentBranches() {
   }
 }
 
+const BOARD_LISTING_LIMIT = 500;
+
 function clearBoard() {
   let items = [];
   try {
-    const res = ghJson(["project", "item-list", PROJECT_NUMBER, "--owner", PROJECT_OWNER, "--format", "json", "--limit", "500"]);
+    const res = ghJson(["project", "item-list", PROJECT_NUMBER, "--owner", PROJECT_OWNER, "--format", "json", "--limit", String(BOARD_LISTING_LIMIT)]);
     items = res.items || [];
   } catch (e) {
     log("warn", "Could not list board items — skipping board clear.", errorData(e));
+    notDone.push("clear the board (could not list its items)");
     return;
+  }
+  if (items.length >= BOARD_LISTING_LIMIT) {
+    notDone.push(`clear the board past its first ${BOARD_LISTING_LIMIT} items (the listing stopped there)`);
   }
   log("info", `Removing ${items.length} board item(s)...`);
   for (const item of items) {
@@ -194,6 +229,7 @@ function clearBoard() {
       ghExec(["project", "item-delete", PROJECT_NUMBER, "--owner", PROJECT_OWNER, "--id", item.id]);
     } catch (e) {
       log("warn", `Could not remove board item ${item.id}`, errorData(e));
+      notDone.push(`remove board item ${item.id}`);
     }
   }
 }
@@ -218,6 +254,7 @@ const EMPTY_WIKI_PAGES = {
 function resetWikiMemory() {
   if (!getWikiDir()) {
     log("warn", "Wiki unreachable — memory pages NOT reset. Do this by hand before starting.");
+    notDone.push("reset the wiki's memory pages (the wiki was unreachable)");
     return;
   }
   for (const [page, content] of Object.entries(EMPTY_WIKI_PAGES)) {
@@ -267,6 +304,7 @@ function deleteAttemptLabels() {
     labels = ghJson(["label", "list", "--json", "name", "--limit", "200"]);
   } catch (e) {
     log("warn", "Could not list labels — skipping label cleanup.", errorData(e));
+    notDone.push("delete the attempts:N labels (could not list them)");
     return;
   }
   const stale = labels.map((l) => l.name).filter((name) => /^attempts:/.test(name));
@@ -280,6 +318,7 @@ function deleteAttemptLabels() {
       ghExec(["label", "delete", name, "--yes"]);
     } catch (e) {
       log("warn", `Could not delete label ${name}`, errorData(e));
+      notDone.push(`delete label ${name}`);
     }
   }
 }
@@ -317,6 +356,7 @@ function clearProduct() {
     log("info", `Deleted ${doomed.length} product file(s) from main.`);
   } catch (e) {
     log("error", "Could not push the product deletion to main — do it by hand.", errorData(e));
+    notDone.push("push the product deletion to main (the push failed)");
   }
 }
 
@@ -360,6 +400,11 @@ function main() {
   resetDiscussionMemory();
   deleteAttemptLabels();
   clearProduct();
+  const incomplete = incompleteResetMessage(notDone);
+  if (incomplete) {
+    log("error", incomplete);
+    process.exit(1);
+  }
   log(
     "info",
     "Reset complete. Remaining manual steps: write the new Vision in the wiki, " +
