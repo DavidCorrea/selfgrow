@@ -658,14 +658,52 @@ export function archivedTitle(title, on = new Date()) {
 }
 
 /**
+ * Split the pipeline's discussion memory into what a reset archives and what it
+ * keeps: every journal and every lesson labelled `product` go, the rest stays.
+ *
+ * Threads a stranger wrote, and ones already archived, are in neither list —
+ * they are not this reset's memory to decide about. An UNLABELLED lesson lands
+ * in `keep`, on purpose (archiving a machine lesson costs more than keeping a
+ * product one), which is exactly why the lists are logged: a labelling failure
+ * is otherwise invisible until the new product reads a stale lesson.
+ */
+export function planMemoryArchive(nodes) {
+  const plan = { archive: [], keep: [] };
+  for (const thread of nodes) {
+    if (!isTrustedAuthor(thread.authorAssociation)) continue;
+    if (String(thread.title || "").startsWith("[archived ")) continue;
+    const category = thread.category?.name;
+    const isProductLesson =
+      category === LESSON_CATEGORY && (thread.labels?.nodes || []).some((l) => l.name === SCOPE_LABELS.product);
+    plan[category === JOURNAL_CATEGORY || isProductLesson ? "archive" : "keep"].push(thread);
+  }
+  return plan;
+}
+
+/**
+ * Why a reset must stop, or null when it may go on.
+ *
+ * Journals are always due for archiving, so journals due and none archived means
+ * every rename failed. Carrying on would delete the product while leaving its
+ * reasoning in place for the next one to read as its own.
+ */
+export function emptyArchiveRefusal(plan, archived) {
+  const journals = plan.archive.filter((thread) => thread.category?.name === JOURNAL_CATEGORY);
+  if (!journals.length || archived > 0) return null;
+  return `Discussions: ${journals.length} journal(s) were due for archiving and none were archived — refusing to go on.`;
+}
+
+/**
  * Archive the memory a reset should not carry into a new product: every journal,
  * and the lesson threads explicitly labelled `product`.
  *
  * Returns how many threads were archived. Best-effort per thread — a reset that
  * half-succeeds is better than one that aborts, since the alternative is a new
- * product inheriting the old one's reasoning.
+ * product inheriting the old one's reasoning. Throws only when nothing at all was
+ * archived although journals exist; see emptyArchiveRefusal.
  */
 export function archiveProductMemory({ on = new Date() } = {}) {
+  let nodes;
   try {
     const repo = process.env.GITHUB_REPOSITORY || "";
     const [owner, name] = repo.includes("/") ? repo.split("/") : [OWNER, ""];
@@ -683,41 +721,41 @@ export function archiveProductMemory({ on = new Date() } = {}) {
        }`,
       { owner, name }
     );
-    const nodes = result?.data?.repository?.discussions?.nodes || [];
-    const doomed = nodes.filter((d) => {
-      if (!isTrustedAuthor(d.authorAssociation)) return false; // not ours to touch
-      if (String(d.title || "").startsWith("[archived ")) return false; // already done
-      const category = d.category?.name;
-      if (category === JOURNAL_CATEGORY) return true; // every journal is about the product
-      if (category !== LESSON_CATEGORY) return false; // Decisions and Announcements stay
-      return (d.labels?.nodes || []).some((l) => l.name === SCOPE_LABELS.product);
-    });
-
-    let archived = 0;
-    for (const thread of doomed) {
-      try {
-        graphql(
-          `mutation($id: ID!, $title: String!) {
-             updateDiscussion(input: {discussionId: $id, title: $title}) { discussion { number } }
-           }`,
-          { id: thread.id, title: archivedTitle(thread.title, on) }
-        );
-        archived++;
-      } catch (e) {
-        log("warn", `Discussions: could not archive "${thread.title}".`, errorData(e));
-      }
-    }
-    log(
-      "info",
-      archived
-        ? `Discussions: archived ${archived} product-scoped thread(s); machine lessons and decisions kept.`
-        : "Discussions: nothing product-scoped to archive."
-    );
-    return archived;
+    nodes = result?.data?.repository?.discussions?.nodes || [];
   } catch (e) {
     log("warn", "Discussions: could not archive product memory — do it by hand before starting.", errorData(e));
     return 0;
   }
+
+  const plan = planMemoryArchive(nodes);
+  const describe = (threads) => threads.map((t) => `[${t.category?.name}] ${t.title}`);
+  log("info", `Discussions: archiving ${plan.archive.length} thread(s).`, { threads: describe(plan.archive) });
+  log("info", `Discussions: keeping ${plan.keep.length} thread(s).`, { threads: describe(plan.keep) });
+
+  let archived = 0;
+  for (const thread of plan.archive) {
+    try {
+      graphql(
+        `mutation($id: ID!, $title: String!) {
+           updateDiscussion(input: {discussionId: $id, title: $title}) { discussion { number } }
+         }`,
+        { id: thread.id, title: archivedTitle(thread.title, on) }
+      );
+      archived++;
+    } catch (e) {
+      log("warn", `Discussions: could not archive "${thread.title}".`, errorData(e));
+    }
+  }
+
+  const refusal = emptyArchiveRefusal(plan, archived);
+  if (refusal) throw new Error(refusal);
+  log(
+    "info",
+    archived
+      ? `Discussions: archived ${archived} product-scoped thread(s); machine lessons and decisions kept.`
+      : "Discussions: nothing product-scoped to archive."
+  );
+  return archived;
 }
 
 // ---------------------------------------------------------------------------

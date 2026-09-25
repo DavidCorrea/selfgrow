@@ -8,6 +8,8 @@ import {
   renderJournalEntry,
   renderLessonThreads,
   archivedTitle,
+  planMemoryArchive,
+  emptyArchiveRefusal,
   renderDecisions,
   renderInboundIdeas,
   collectPages,
@@ -152,6 +154,67 @@ test("archiving a thread a reset should not carry forward", async (t) => {
     const once = archivedTitle("A failure class", on);
     assert.equal(once.startsWith("[archived "), true);
     assert.equal(archivedTitle(once, on).startsWith("[archived "), true);
+  });
+});
+
+test("deciding which memory a reset archives", async (t) => {
+  const thread = (title, category, { labels = [], author = "OWNER" } = {}) => ({
+    title,
+    authorAssociation: author,
+    category: { name: category },
+    labels: { nodes: labels.map((name) => ({ name })) },
+  });
+  const titles = (threads) => threads.map((t) => t.title);
+
+  await t.test("archives every journal", () => {
+    const plan = planMemoryArchive([thread("Playtester — log", "Journals")]);
+    assert.deepEqual(titles(plan.archive), ["Playtester — log"]);
+  });
+
+  await t.test("archives only the lessons labelled product", () => {
+    const plan = planMemoryArchive([
+      thread("Weather flickers", "Lessons", { labels: ["product"] }),
+      thread("Provider error read as empty", "Lessons", { labels: ["machine"] }),
+    ]);
+    assert.deepEqual(titles(plan.archive), ["Weather flickers"]);
+    assert.deepEqual(titles(plan.keep), ["Provider error read as empty"]);
+  });
+
+  // The quiet default the logged lists exist to expose.
+  await t.test("keeps an unlabelled lesson", () => {
+    const plan = planMemoryArchive([thread("Unscoped", "Lessons")]);
+    assert.deepEqual(titles(plan.keep), ["Unscoped"]);
+  });
+
+  await t.test("keeps decisions", () => {
+    const plan = planMemoryArchive([thread("Spend is capped", "Decisions")]);
+    assert.deepEqual(titles(plan.keep), ["Spend is capped"]);
+  });
+
+  await t.test("leaves a stranger's thread and an archived one out of both lists", () => {
+    const plan = planMemoryArchive([
+      thread("Playtester — log", "Journals", { author: "NONE" }),
+      thread("[archived 2026-09-04] Tech Lead — log", "Journals"),
+    ]);
+    assert.deepEqual(plan, { archive: [], keep: [] });
+  });
+});
+
+test("refusing a reset that archived nothing", async (t) => {
+  const journal = { title: "Playtester — log", category: { name: "Journals" } };
+  const lesson = { title: "Weather flickers", category: { name: "Lessons" } };
+
+  await t.test("refuses when journals were due and none were archived", () => {
+    assert.match(emptyArchiveRefusal({ archive: [journal], keep: [] }, 0), /1 journal\(s\).*refusing/);
+  });
+
+  await t.test("goes on once anything was archived", () => {
+    assert.equal(emptyArchiveRefusal({ archive: [journal, lesson], keep: [] }, 1), null);
+  });
+
+  await t.test("goes on when there were no journals to archive", () => {
+    assert.equal(emptyArchiveRefusal({ archive: [], keep: [] }, 0), null);
+    assert.equal(emptyArchiveRefusal({ archive: [lesson], keep: [] }, 0), null);
   });
 });
 
