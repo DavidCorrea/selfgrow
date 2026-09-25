@@ -117,7 +117,7 @@ test("landing the product deletion through a pull request", async (t) => {
     `#!/bin/sh
 printf '%s\\n' "$*" >> "${callLog}"
 case "$*" in
-  "pr create"*) [ "$FAKE_GH_CREATE_FAILS" = 1 ] && exit 1; echo "https://github.com/o/r/pull/9" ;;
+  "pr create"*) cat > /dev/null; [ "$FAKE_GH_CREATE_FAILS" = 1 ] && exit 1; echo "https://github.com/o/r/pull/9" ;;
   *"--auto"*) exit 1 ;;
   "pr merge"*) [ "$FAKE_GH_MERGE_FAILS" = 1 ] && exit 1; exit 0 ;;
 esac
