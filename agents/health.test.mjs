@@ -86,26 +86,34 @@ test("noticing that tickets are being written the Devs cannot build", async (t) 
 });
 
 test("noticing a weekly agent that has stopped working", async (t) => {
-  const run = (workflowName, conclusion, day) => ({
-    workflowName, conclusion, status: "completed", createdAt: `${day}T09:00:00Z`,
-  });
+  const run = (conclusion, day) => ({ conclusion, createdAt: `${day}T09:00:00Z` });
+  const weekly = (workflow, ...runs) => ({ workflow, runs });
 
   await t.test("says nothing when the last run succeeded", () => {
-    assert.equal(checkWeeklyAgents({ runs: [run("tech-lead", "success", daysAgo(1))] }), null);
+    assert.equal(checkWeeklyAgents({ weeklyRuns: [weekly("tech-lead", run("success", daysAgo(1)))] }), null);
   });
 
   await t.test("names the agent whose last run failed", () => {
-    const finding = checkWeeklyAgents({ runs: [run("tech-lead", "failure", daysAgo(1))] });
+    const finding = checkWeeklyAgents({ weeklyRuns: [weekly("tech-lead", run("failure", daysAgo(1)))] });
     assert.match(finding, /tech-lead last run failure/);
   });
 
   await t.test("judges only the most recent run, so an old failure since fixed is not reported", () => {
-    const runs = [run("tech-lead", "success", daysAgo(1)), run("tech-lead", "failure", daysAgo(8))];
-    assert.equal(checkWeeklyAgents({ runs }), null);
+    const weeklyRuns = [weekly("tech-lead", run("success", daysAgo(1)), run("failure", daysAgo(8)))];
+    assert.equal(checkWeeklyAgents({ weeklyRuns }), null);
   });
 
   await t.test("ignores an agent that has never run", () => {
-    assert.equal(checkWeeklyAgents({ runs: [] }), null);
+    assert.equal(checkWeeklyAgents({ weeklyRuns: [weekly("tech-lead")] }), null);
+  });
+
+  await t.test("still sees a failure a week old, however busy the other workflows were", () => {
+    const weeklyRuns = [
+      weekly("product-owner", run("success", daysAgo(2))),
+      weekly("playtester", run("failure", daysAgo(7))),
+      weekly("tech-lead", run("success", daysAgo(3))),
+    ];
+    assert.match(checkWeeklyAgents({ weeklyRuns }), /playtester last run failure/);
   });
 });
 
@@ -195,7 +203,7 @@ test("telling a check that could not run apart from one that came back clear", a
   });
 
   await t.test("an unreadable fact costs only the checks that read it", async () => {
-    const { facts } = await readFacts({ runs: failingRead, site: () => ({ url: "https://x/", status: 404 }) });
+    const { facts } = await readFacts({ weeklyRuns: failingRead, site: () => ({ url: "https://x/", status: 404 }) });
     const { findings, unknown } = await runChecks([checkDeployedSite, checkWeeklyAgents], facts);
     assert.equal(findings.length, 1);
     assert.match(findings[0], /returned HTTP 404/);
