@@ -101,6 +101,12 @@ test("saying why we stopped a session", async (t) => {
     );
   });
 
+  await t.test("names the cap the session actually had, when a role brings its own", () => {
+    const builderLimits = { turns: 80, minutes: 20 };
+    assert.match(sessionAbortError("Builder", "turns", 80, builderLimits).message, /80-turn session cap/);
+    assert.match(sessionAbortError("Builder", "minutes", 61, builderLimits).message, /20-minute session cap/);
+  });
+
   await t.test("the silence limit sits well under the session cap", () => {
     assert.ok(MAX_MODEL_SILENCE_MINUTES * 2 <= MAX_SESSION_MINUTES);
   });

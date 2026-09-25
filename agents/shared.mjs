@@ -229,8 +229,10 @@ export function isDailyQuotaExhausted(err) {
 
 // Hard ceiling on TURNS INSIDE one session. Nothing else stops a session that is
 // looping rather than working: a Scout once ran 101 turns without producing a
-// plan. 40 is ~4x the 8-10 turns a healthy session takes on a merged ticket, so it
-// never fires on real work; it only stops a loop.
+// plan. 40 is comfortably above what the planning and reviewing roles need, so for
+// them it only stops a loop. The Builder is the exception — its merged sessions
+// ran 34-36 turns, and every devs "abort" in September was this cap cutting real
+// work off — so it carries its own, larger limits (BUILDER_SESSION_LIMITS).
 export const MAX_SESSION_TURNS = Number(process.env.MAX_SESSION_TURNS || 40);
 
 // The same guard in the other unit the runner can kill us over. A turn cap does
@@ -243,6 +245,11 @@ export const MAX_SESSION_TURNS = Number(process.env.MAX_SESSION_TURNS || 40);
 // an orphaned branch. So this must stay comfortably under every job's
 // timeout-minutes — see the workflows, where the job cap is 2-3x this.
 export const MAX_SESSION_MINUTES = Number(process.env.MAX_SESSION_MINUTES || 12);
+
+// Both caps together, as a session receives them. A role whose healthy sessions
+// are longer than the default passes its own — see BUILDER_SESSION_LIMITS in
+// devs.mjs — rather than every role inheriting the longest one's budget.
+export const DEFAULT_SESSION_LIMITS = { turns: MAX_SESSION_TURNS, minutes: MAX_SESSION_MINUTES };
 
 // How long the MODEL may go without a word — no token, no event — before it
 // counts as that model failing. The session cap alone let one hung request spend
@@ -282,7 +289,7 @@ export function createModelSilenceClock(now = Date.now) {
  * logged for every turn-capped session — indistinguishable from a provider
  * failure. The flag decides what runAgent does next (see chainVerdict).
  */
-export function sessionAbortError(label, reason, turns) {
+export function sessionAbortError(label, reason, turns, limits = DEFAULT_SESSION_LIMITS) {
   if (reason === "silent") {
     const err = new Error(
       `${label}: the model sent nothing for ${MAX_MODEL_SILENCE_MINUTES} minute(s) — ` +
@@ -291,7 +298,7 @@ export function sessionAbortError(label, reason, turns) {
     err.modelSilent = true;
     return err;
   }
-  const limit = reason === "turns" ? `${MAX_SESSION_TURNS}-turn` : `${MAX_SESSION_MINUTES}-minute`;
+  const limit = reason === "turns" ? `${limits.turns}-turn` : `${limits.minutes}-minute`;
   const err = new Error(`${label} was stopped by the ${limit} session cap (${turns} turn(s) spent).`);
   err.sessionCapped = true;
   return err;
@@ -611,6 +618,7 @@ async function runAgentOnce({
   thinkingLevel = MIN_THINKING_LEVEL,
   modelId = MODEL_ID,
   images = [],
+  sessionLimits = DEFAULT_SESSION_LIMITS,
 }) {
   // Clamp rather than trust the caller — "off" costs a request and returns 400
   // on reasoning-mandatory endpoints (see MIN_THINKING_LEVEL).
@@ -714,10 +722,10 @@ async function runAgentOnce({
       const sessionDeadline = setTimeout(() => {
         stopSession(
           "minutes",
-          `hit the ${MAX_SESSION_MINUTES}-minute session cap. ` +
+          `hit the ${sessionLimits.minutes}-minute session cap. ` +
             "Stopping here keeps the job's own timeout from killing the run mid-session."
         );
-      }, MAX_SESSION_MINUTES * 60 * 1000);
+      }, sessionLimits.minutes * 60 * 1000);
       // Never hold the process open on this timer alone.
       sessionDeadline.unref?.();
 
@@ -749,13 +757,13 @@ async function runAgentOnce({
           (m) => m.role === "assistant"
         ).length;
         chargeTurns(turnsSeen);
-        if (turnsSeen >= MAX_SESSION_TURNS) {
+        if (turnsSeen >= sessionLimits.turns) {
           // Abort once, then let the normal completion path record the spend. A
           // session this long is looping, not thinking: every further turn is a
           // charged request the run will not get a merge out of.
           stopSession(
             "turns",
-            `hit the ${MAX_SESSION_TURNS}-turn session cap. ` +
+            `hit the ${sessionLimits.turns}-turn session cap. ` +
               "The session is looping; stopping it here protects the day's remaining requests."
           );
         }
@@ -799,7 +807,7 @@ async function runAgentOnce({
           // model is always a failure: whatever it said before going quiet is not
           // an answer.
           if (abortReason === "silent" || (abortReason && lastAssistant?.stopReason === "error")) {
-            throw sessionAbortError(label, abortReason, recordSpend());
+            throw sessionAbortError(label, abortReason, recordSpend(), sessionLimits);
           }
           // The model can fail without throwing — the error lands on the
           // assistant message as stopReason "error". Surface it loudly instead
@@ -847,7 +855,7 @@ async function runAgentOnce({
           // Marked as capped rather than a model fault so runAgent does NOT walk
           // the rest of the chain — a runaway usually repeats, and proving it costs
           // another MAX_SESSION_TURNS per model.
-          if (abortReason && !output.trim()) throw sessionAbortError(label, abortReason, turns);
+          if (abortReason && !output.trim()) throw sessionAbortError(label, abortReason, turns, sessionLimits);
           return output;
         })
         .catch((err) => {
@@ -862,7 +870,7 @@ async function runAgentOnce({
           // remaining model to watch the same runaway repeat, and a silent model
           // must let it move on.
           if (abortReason && !err?.sessionCapped && !err?.modelSilent) {
-            throw sessionAbortError(label, abortReason, turns);
+            throw sessionAbortError(label, abortReason, turns, sessionLimits);
           }
           throw err;
         });

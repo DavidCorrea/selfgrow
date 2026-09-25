@@ -92,6 +92,17 @@ const MAX_TICKETS_PER_RUN = PINNED_TICKET
   : Number(process.env.MAX_TICKETS_PER_RUN || 3);
 const RUN_BUDGET_MS = Number(process.env.BUILD_RUN_BUDGET_MINUTES || 45) * 60 * 1000;
 
+// The Builder's own session caps. The shared 40 turns / 12 minutes was sized for
+// roles that plan or review; merged Builder sessions ran 34-36 turns, so the cap
+// cut off real work at around 7 minutes and the ticket was abandoned as if the
+// model had failed. 80 turns is ~2x a merged build, so it still stops a loop; the
+// minutes follow from the pace those builds kept (40 turns in ~7 minutes), with
+// headroom — still far inside the job's budget (devs.yml).
+const BUILDER_SESSION_LIMITS = {
+  turns: Number(process.env.BUILDER_MAX_SESSION_TURNS || 80),
+  minutes: Number(process.env.BUILDER_MAX_SESSION_MINUTES || 20),
+};
+
 // ---------------------------------------------------------------------------
 // Prompt builders
 // ---------------------------------------------------------------------------
@@ -433,6 +444,7 @@ async function runBuildReviewLoop(ctx, plan) {
           systemPrompt: buildBuilderPrompt(plan.output, ctx.reviewerFeedback, ctx.issueObj),
           tools: ["read", "bash", "edit", "write"],
           thinkingLevel: "medium",
+          sessionLimits: BUILDER_SESSION_LIMITS,
         })
       );
     } catch (e) {
