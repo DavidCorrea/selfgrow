@@ -22,6 +22,7 @@ import {
   ghExec,
   printRunSummary,
   fetchOpenIssues,
+  fetchShippedIssues,
   isBuildable,
   isBlocked,
   attemptCount,
@@ -78,8 +79,7 @@ const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice
  */
 function gatherFacts() {
   return readFacts({
-    closedRecently: () =>
-      JSON.parse(ghExec(["issue", "list", "--state", "closed", "--limit", "200", "--json", "number,title,closedAt,labels"])),
+    shippedRecently: () => fetchShippedIssues(200),
     open: () => fetchOpenIssues(),
     runs: () => JSON.parse(ghExec(["run", "list", "--limit", "60", "--json", "workflowName,conclusion,createdAt,status"])),
     agentPrs: () =>
@@ -149,9 +149,9 @@ async function fetchSite() {
 // --- The checks. Each returns a finding string, or null when all is well. ------
 
 /** Merges are the pipeline's output; no output for two days is the headline fault. */
-export function checkShipping({ closedRecently, open }) {
+export function checkShipping({ shippedRecently, open }) {
   const since = daysAgo(QUIET_DAYS_BEFORE_ALARM);
-  const shipped = closedRecently.filter((i) => (i.closedAt || "") >= since);
+  const shipped = shippedRecently.filter((i) => (i.closedAt || "") >= since);
   if (shipped.length > 0) return null;
 
   const openNumbers = new Set(open.map((i) => i.number));
@@ -164,9 +164,9 @@ export function checkShipping({ closedRecently, open }) {
 }
 
 /** A merge that never reaches the changelog is a merge the digest cannot report. */
-export function checkChangelogKeepingUp({ changelog, closedRecently }) {
+export function checkChangelogKeepingUp({ changelog, shippedRecently }) {
   const since = daysAgo(CHANGELOG_STALE_DAYS);
-  const shipped = closedRecently.filter((i) => (i.closedAt || "") >= since).length;
+  const shipped = shippedRecently.filter((i) => (i.closedAt || "") >= since).length;
   if (shipped === 0) return null; // nothing to record; silence is correct
 
   const recorded = [...changelog.matchAll(/^## (\d{4}-\d{2}-\d{2})$/gm)].some((m) => m[1] >= since);
@@ -179,10 +179,10 @@ export function checkChangelogKeepingUp({ changelog, closedRecently }) {
 }
 
 /** Tickets the Devs engaged and gave up on, as a share of what they engaged. */
-export function checkAbandonRate({ open, closedRecently }) {
+export function checkAbandonRate({ open, shippedRecently }) {
   const parked = open.filter(isBlocked).length;
   const struggling = open.filter((i) => attemptCount(i) > 0 && !isBlocked(i)).length;
-  const shipped = closedRecently.filter((i) => (i.closedAt || "") >= daysAgo(7)).length;
+  const shipped = shippedRecently.filter((i) => (i.closedAt || "") >= daysAgo(7)).length;
   const engaged = shipped + parked + struggling;
   if (engaged < 5) return null; // too few to mean anything
 
@@ -286,9 +286,9 @@ const CHECKS = [
  * The numbers, whether or not anything is wrong. Always logged and written to the
  * job summary; never filed as an issue on its own.
  */
-export function renderVitals({ open, closedRecently, site, agentPrs = [] }) {
+export function renderVitals({ open, shippedRecently, site, agentPrs = [] }) {
   const openNumbers = new Set(open.map((i) => i.number));
-  const shipped7 = closedRecently.filter((i) => (i.closedAt || "") >= daysAgo(7)).length;
+  const shipped7 = shippedRecently.filter((i) => (i.closedAt || "") >= daysAgo(7)).length;
   return [
     site ? `Site: ${site.error ? "unreachable" : `HTTP ${site.status}`}` : "Site: not checked",
     `Shipped (7d): ${shipped7}`,

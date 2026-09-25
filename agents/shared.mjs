@@ -1222,6 +1222,45 @@ function rejectTruncated(count, what, limit = LISTING_LIMIT) {
   }
 }
 
+/**
+ * Whether a closed ticket was actually built. Closed is not the same thing:
+ * the PM also closes tickets it retires — split, superseded, won't-do, a triaged
+ * playtest finding — and every report that counted "closed" listed those as
+ * shipped. A retired "The visual canvas is a dark void" appeared under "Shipped
+ * this week", and the retro concluded the dark canvas was solved.
+ *
+ * The close reason is the one signal every path sets: the Devs close as
+ * completed, a retirement closes as not planned. Linked PRs are not — the Devs
+ * close most tickets themselves, so their closedByPullRequestsReferences is empty.
+ */
+export function isShipped(issue) {
+  return issue.stateReason === "COMPLETED";
+}
+
+/**
+ * Closed tickets that shipped, newest first. Throws when the listing fails: an
+ * empty list is a week where nothing shipped, and every reader of this would
+ * report exactly that.
+ *
+ * Labels included deliberately: the weekly report tells what a person asked for
+ * from what the pipeline proposed by the ABSENCE of the `agent` label. Fetch
+ * without labels and every shipped ticket looks human-filed.
+ */
+export function fetchShippedIssues(limit = 200) {
+  let closed;
+  try {
+    closed = JSON.parse(
+      ghExec([
+        "issue", "list", "--state", "closed", "--limit", String(limit),
+        "--json", "number,title,closedAt,labels,stateReason",
+      ])
+    );
+  } catch (e) {
+    throw new Error(`Could not list closed issues: ${e.message}`, { cause: e });
+  }
+  return closed.filter(isShipped);
+}
+
 // ---------------------------------------------------------------------------
 // Milestones — the planning horizon
 //
@@ -1240,6 +1279,9 @@ function rejectTruncated(count, what, limit = LISTING_LIMIT) {
  * The milestone the project is currently working toward, or null when none is
  * open. Throws when it cannot tell: "none is open" is what makes startMilestone
  * create one without closing the old, and two open milestones is no horizon.
+ *
+ * `closed` is GitHub's count, which includes retired tickets, so it is shown as
+ * "closed" and never as "shipped" — see isShipped.
  */
 export function getCurrentMilestone() {
   let list;
@@ -1269,7 +1311,7 @@ export function startMilestone(title, description) {
     );
     if (current) {
       ghExec(["api", "--method", "PATCH", `repos/{owner}/{repo}/milestones/${current.number}`, "-f", "state=closed"]);
-      log("info", `Milestones: closed "${current.title}" (${current.closed} of ${current.open + current.closed} shipped).`);
+      log("info", `Milestones: closed "${current.title}" (${current.closed} of ${current.open + current.closed} closed).`);
     }
     log("info", `Milestones: now working toward "${title}".`);
     return { title, description, number: created.number, open: 0, closed: 0 };
@@ -1735,16 +1777,26 @@ function parkBlockedTicket(number, attempts, reason, currentLabels) {
   log("warn", `Ticket #${number} parked as blocked after ${attempts} failed attempt(s).`);
 }
 
-/** Close a ticket the Product Manager decided to retire (split/superseded/won't-do). */
+/**
+ * Close a ticket the Product Manager decided to retire (split/superseded/won't-do).
+ *
+ * As NOT PLANNED, and off the board. A plain close is "completed", and its card
+ * used to be moved to Done — the column the prompts define as already shipped —
+ * so every report and every later run read a retirement as work that was built.
+ * Removed rather than left in some other column because the board's own
+ * automation moves a closed item to Done, and no column means "decided against".
+ */
 export async function retireIssue(number, reason) {
   const body = ["## Retired by the Product Manager", "", reason || "Superseded or no longer worth building in its current form."].join("\n");
   try {
     ghComment(number, body);
-    ghExec(["issue", "close", String(number)]);
+    ghExec(["issue", "close", String(number), "--reason", "not planned"]);
     log("info", `Retired issue #${number}.`);
   } catch (e) {
     log("warn", `Could not retire #${number}.`, errorData(e));
+    return;
   }
+  removeCard(number);
 }
 
 /**
@@ -1894,6 +1946,20 @@ export function moveCard(issueNumber, statusName) {
     return true;
   } catch (e) {
     log("warn", `Board: could not move issue #${issueNumber} to "${statusName}".`, errorData(e));
+    return false;
+  }
+}
+
+/** Take an issue's card off the board, if it has one. Best-effort; returns boolean. */
+function removeCard(issueNumber) {
+  const itemId = findProjectItemId(issueNumber);
+  if (!itemId) return false;
+  try {
+    ghExec(["project", "item-delete", PROJECT_NUMBER, "--owner", PROJECT_OWNER, "--id", itemId]);
+    log("info", `Board: removed issue #${issueNumber}.`);
+    return true;
+  } catch (e) {
+    log("warn", `Board: could not remove issue #${issueNumber}.`, errorData(e));
     return false;
   }
 }

@@ -391,7 +391,6 @@ async function resolveBlocked(verdicts, blocked) {
       ? `Parked after repeated failures, and replaced by #${replacement}. ${verdict.reason || ""}`.trim()
       : `Parked after repeated failures and dropped. ${verdict.reason || ""}`.trim();
     await retireIssue(number, reason);
-    moveCard(number, "Done");
     recordTicket("retired", number, `#${number}`);
     handled++;
   }

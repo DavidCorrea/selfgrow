@@ -48,18 +48,18 @@ export function cleanMarkdown(text) {
  * What the week actually contained, from what the pipeline already wrote down.
  * No model involved — the numbers are counted, not estimated.
  */
-export function gatherWeek({ closed, open }) {
+export function gatherWeek({ shipped, open }) {
   const since = daysAgo(7);
-  const shipped = closed.filter((i) => (i.closedAt || "") >= since);
+  const shippedThisWeek = shipped.filter((i) => (i.closedAt || "") >= since);
   return {
-    shipped,
+    shipped: shippedThisWeek,
     parked: open.filter(isBlocked),
     playtest: open.filter(isPlaytestFeedback),
     // What the reader themselves asked for, and what became of it. Everything
     // else in this report is the pipeline talking about its own work; this is the
     // only part that answers "what happened to the thing I filed?".
     yours: {
-      shipped: shipped.filter(isManualIssue),
+      shipped: shippedThisWeek.filter(isManualIssue),
       open: open.filter((i) => isManualIssue(i) && !isBlocked(i)),
       parked: open.filter((i) => isManualIssue(i) && isBlocked(i)),
     },
@@ -118,8 +118,8 @@ const DIGEST_CATEGORY = process.env.DIGEST_CATEGORY || "Announcements";
  * digest's "what shipped" section as well as the Story page, and asking
  * twice would pay twice for the same paragraphs.
  */
-export async function publishWeeklyReport({ closed, open, milestone }) {
-  const week = gatherWeek({ closed, open });
+export async function publishWeeklyReport({ shipped, open, milestone }) {
+  const week = gatherWeek({ shipped, open });
 
   const narrative = cleanMarkdown(
     await withLogGroup("Weekly report", () =>

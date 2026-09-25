@@ -18,8 +18,6 @@ import {
   fillTemplate,
   runAgent,
   extractAgentResponse,
-  errorData,
-  ghExec,
   getBoardSnapshot,
   readVision,
   commitToWiki,
@@ -28,6 +26,7 @@ import {
   isBlocked,
   isPlaytestFeedback,
   fetchOpenIssues,
+  fetchShippedIssues,
 } from "./shared.mjs";
 import {
   readJournal,
@@ -47,18 +46,10 @@ const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice
  * it is counted rather than recalled.
  */
 function readWeek() {
-  let closed = [];
-  try {
-    closed = JSON.parse(
-      ghExec(["issue", "list", "--state", "closed", "--limit", "200", "--json", "number,title,closedAt"])
-    );
-  } catch (e) {
-    log("warn", "Could not read what shipped this week.", errorData(e));
-  }
-  const open = fetchOpenIssues();
   const since = daysAgo(7);
+  const open = fetchOpenIssues();
   return {
-    shipped: closed.filter((i) => (i.closedAt || "") >= since),
+    shipped: fetchShippedIssues().filter((i) => (i.closedAt || "") >= since),
     parked: open.filter(isBlocked),
     playtest: open.filter(isPlaytestFeedback),
   };
@@ -214,7 +205,7 @@ async function main() {
           return decisions.length ? renderDecisions(decisions) : "(nothing settled yet)";
         })(),
         MILESTONE: milestone
-          ? `**${milestone.title}** — ${milestone.description || "no description"} (${milestone.closed} shipped, ${milestone.open} still open)`
+          ? `**${milestone.title}** — ${milestone.description || "no description"} (${milestone.closed} closed, ${milestone.open} still open)`
           : "(none set — this is the first)",
       }),
     })

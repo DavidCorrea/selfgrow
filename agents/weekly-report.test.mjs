@@ -45,7 +45,7 @@ test("unwrapping a fenced response", async (t) => {
 
 test("counting what the week contained", async (t) => {
   const facts = {
-    closed: [
+    shipped: [
       { number: 1, title: "Shipped", closedAt: `${daysAgo(1)}T10:00:00Z` },
       { number: 2, title: "Old", closedAt: `${daysAgo(30)}T10:00:00Z` },
     ],
