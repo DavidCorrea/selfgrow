@@ -381,8 +381,9 @@ function fetchClosedIssues(limit = 200) {
       ghExec(["issue", "list", "--state", "closed", "--limit", String(limit), "--json", "number,title,closedAt,labels"])
     );
   } catch (e) {
-    log("warn", "Could not read recently closed tickets.", errorData(e));
-    return [];
+    // Thrown, not []: an empty list is a report that says nothing shipped, and it
+    // would be published. The caller skips the week's report instead.
+    throw new Error(`Could not list recently closed tickets: ${e.message}`, { cause: e });
   }
 }
 

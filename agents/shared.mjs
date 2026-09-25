@@ -1198,15 +1198,21 @@ export async function labelIssue(issueNumber, label) {
   }
 }
 
-/** Fetch open issues live via gh. Returns [] on failure. */
+/**
+ * Fetch open issues live via gh. Throws when the listing fails.
+ *
+ * It used to return [] instead, and every caller read that as "the board is
+ * empty": the Devs saw nothing to build, the PM groomed without dedup, and Health
+ * judged an empty backlog. A failed lookup is not an empty board, so it is not
+ * allowed to look like one.
+ */
 export function fetchOpenIssues(limit = 100) {
   try {
     return JSON.parse(
       ghExec(["issue", "list", "--state", "open", "--json", "number,title,body,labels,createdAt", "--limit", String(limit)])
     );
   } catch (e) {
-    log("warn", "Could not fetch open issues.", errorData(e));
-    return [];
+    throw new Error(`Could not list open issues: ${e.message}`, { cause: e });
   }
 }
 
@@ -1224,19 +1230,21 @@ export function fetchOpenIssues(limit = 100) {
 // counting it.
 // ---------------------------------------------------------------------------
 
-/** The milestone the project is currently working toward, or null. */
+/**
+ * The milestone the project is currently working toward, or null when none is
+ * open. Throws when it cannot tell: "none is open" is what makes startMilestone
+ * create one without closing the old, and two open milestones is no horizon.
+ */
 export function getCurrentMilestone() {
+  let list;
   try {
-    const list = JSON.parse(
-      ghExec(["api", "repos/{owner}/{repo}/milestones?state=open&sort=due_on&direction=asc"])
-    );
-    if (!list.length) return null;
-    const { title, description, number, open_issues: open, closed_issues: closed } = list[0];
-    return { title, description, number, open, closed };
+    list = JSON.parse(ghExec(["api", "repos/{owner}/{repo}/milestones?state=open&sort=due_on&direction=asc"]));
   } catch (e) {
-    log("warn", "Milestones: could not read the current one.", errorData(e));
-    return null;
+    throw new Error(`Could not read the open milestones: ${e.message}`, { cause: e });
   }
+  if (!list.length) return null;
+  const { title, description, number, open_issues: open, closed_issues: closed } = list[0];
+  return { title, description, number, open, closed };
 }
 
 /**
@@ -1247,9 +1255,9 @@ export function getCurrentMilestone() {
  */
 export function startMilestone(title, description) {
   if (!title) return null;
-  const current = getCurrentMilestone();
-  if (current && current.title === title) return current;
   try {
+    const current = getCurrentMilestone();
+    if (current && current.title === title) return current;
     const created = JSON.parse(
       ghExec(["api", "repos/{owner}/{repo}/milestones", "-f", `title=${title}`, "-f", `description=${description || ""}`])
     );
@@ -1763,20 +1771,22 @@ function findProjectItemId(issueNumber) {
 
 /**
  * List every board item with its column (Status). Returns
- * [{ number, title, status }] — number is null for draft items. [] on failure.
+ * [{ number, title, status }] — number is null for draft items. Throws when the
+ * board cannot be read: the PM dedups new tickets against these titles, and an
+ * unreadable board is not an empty one.
  */
 export function listProjectItems() {
+  let res;
   try {
-    const res = ghProjectJson(PROJECT_ITEM_LIST_ARGS);
-    return (res.items || []).map((it) => ({
-      number: it.content && typeof it.content.number === "number" ? it.content.number : null,
-      title: it.title || (it.content && it.content.title) || "(untitled)",
-      status: it.status || "No Status",
-    }));
+    res = ghProjectJson(PROJECT_ITEM_LIST_ARGS);
   } catch (e) {
-    log("warn", "Board: could not list items.", errorData(e));
-    return [];
+    throw new Error(`Could not list the board's items: ${e.message}`, { cause: e });
   }
+  return (res.items || []).map((it) => ({
+    number: it.content && typeof it.content.number === "number" ? it.content.number : null,
+    title: it.title || (it.content && it.content.title) || "(untitled)",
+    status: it.status || "No Status",
+  }));
 }
 
 /** Add an issue to the board; returns the item id (or null). Idempotent in effect. */
@@ -2071,7 +2081,11 @@ export function issueNumberFromAgentBranch(branchName) {
 
 /**
  * Every open PR the pipeline opened for a ticket, with enough state to judge it.
- * Never throws — a listing that fails must not stop a run from building.
+ *
+ * Throws when the listing fails. It used to return [] so a run could keep
+ * building — but these PRs ARE the guard against building a ticket twice, and an
+ * empty list drops the guard: every ticket with a PR in flight looks unclaimed,
+ * and the run opens a second PR beside it.
  */
 export function fetchOpenAgentPullRequests() {
   let prs;
@@ -2084,8 +2098,7 @@ export function fetchOpenAgentPullRequests() {
       )
     );
   } catch (e) {
-    log("warn", "PR: could not list open pull requests.", errorData(e));
-    return [];
+    throw new Error(`Could not list open pull requests: ${e.message}`, { cause: e });
   }
   return prs.filter((pr) => issueNumberFromAgentBranch(pr.headRefName));
 }

@@ -265,20 +265,21 @@ export function postDiscussion({ category, title, body, lock = true }) {
  * problem, rather than a new one every day the problem persists.
  */
 export function findOpenDiscussion(category, prefix) {
+  // Authorship matters here too: this is how the standing health alert finds
+  // itself, and a thread it wrongly adopted would be one it then edits and
+  // closes on somebody else's behalf.
+  const isMine = (d) => isOwnThread(d, category, prefix);
+  let nodes;
   try {
-    // Authorship matters here too: this is how the standing health alert finds
-    // itself, and a thread it wrongly adopted would be one it then edits and
-    // closes on somebody else's behalf.
-    const isMine = (d) => isOwnThread(d, category, prefix);
-    const nodes = readCategory(category, "id number title url authorAssociation category { name }", {
+    nodes = readCategory(category, "id number title url authorAssociation category { name }", {
       filter: "states: OPEN,",
       until: isMine,
     });
-    return nodes.find(isMine) || null;
   } catch (e) {
-    log("warn", "Discussions: could not read existing posts.", errorData(e));
-    return null;
+    // Not null: "no open post" is what makes the caller post another one.
+    throw new Error(`Could not read the open posts in ${category}: ${e.message}`, { cause: e });
   }
+  return nodes.find(isMine) || null;
 }
 
 /**
