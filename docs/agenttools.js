@@ -8,7 +8,7 @@
  * @module agenttools
  */
 
-import { getState, gatherWood, craftUpgrade, UPGRADE_COST } from "./engine.js";
+import { getState, gatherWood, gatherStone, craftUpgrade, buildWall, UPGRADE_COST, STONE_UPGRADE_COST } from "./engine.js";
 
 const GOAL_WOOD = 10;
 
@@ -32,11 +32,56 @@ function readOfflineGained() {
 function withGoal(s) {
   const upgradeAvailable = s.wood >= UPGRADE_COST;
   const reachedFirstGoal = s.wood >= GOAL_WOOD;
+  const stoneUnlocked = s.stoneRate > 0;
+
+  let nextGoal;
+  if (!reachedFirstGoal) {
+    nextGoal = {
+      description: "Gather " + GOAL_WOOD + " wood",
+      type: "first-goal",
+      target: GOAL_WOOD,
+      progress: s.wood,
+      reached: false,
+    };
+  } else if (stoneUnlocked && s.wallLevel <= 0) {
+    if (s.stone < STONE_UPGRADE_COST) {
+      nextGoal = {
+        description: "Gather " + STONE_UPGRADE_COST + " stone",
+        type: "stone-goal",
+        target: STONE_UPGRADE_COST,
+        progress: s.stone,
+        reached: false,
+      };
+    } else {
+      nextGoal = {
+        description: "Build a Wall (" + STONE_UPGRADE_COST + " stone)",
+        type: "build-wall",
+        cost: STONE_UPGRADE_COST,
+        progress: s.stone,
+        canBuild: s.stone >= STONE_UPGRADE_COST,
+        reached: false,
+      };
+    }
+  } else {
+    nextGoal = {
+      description: "Craft a Sharpening (" + UPGRADE_COST + " wood)",
+      type: "upgrade",
+      cost: UPGRADE_COST,
+      progressToNext: s.wood % UPGRADE_COST,
+      upgradeAvailable: upgradeAvailable,
+    };
+  }
+
   return {
     wood: s.wood,
     rate: s.rate,
     timestamp: s.timestamp,
     upgradeLevel: s.upgradeLevel,
+    stone: s.stone,
+    stoneRate: s.stoneRate,
+    totalWoodEarned: s.totalWoodEarned,
+    clickPower: s.clickPower,
+    wallLevel: s.wallLevel,
     offlineSummaryVisible: !document.getElementById('offline-summary')?.hidden,
     offlineGained: readOfflineGained(),
     firstGoal: {
@@ -44,21 +89,7 @@ function withGoal(s) {
       current: Math.min(s.wood, GOAL_WOOD),
       reached: s.wood >= GOAL_WOOD,
     },
-    nextGoal: reachedFirstGoal
-      ? {
-          description: "Craft a Sharpening (" + UPGRADE_COST + " wood)",
-          type: "upgrade",
-          cost: UPGRADE_COST,
-          progressToNext: s.wood % UPGRADE_COST,
-          upgradeAvailable: upgradeAvailable,
-        }
-      : {
-          description: "Gather " + GOAL_WOOD + " wood",
-          type: "first-goal",
-          target: GOAL_WOOD,
-          progress: s.wood,
-          reached: false,
-        },
+    nextGoal,
   };
 }
 
@@ -70,10 +101,11 @@ export function tools() {
     {
       name: "read-state",
       description: "Returns the current game state the page is showing to the "
-        + "visitor: wood count, accumulation rate, number of upgrades crafted, "
-        + "timestamp, whether the offline-summary overlay is currently visible, "
-        + "how much wood was gained while away (offlineGained, 0 when none pending), "
-        + "and the current goal (first goal or upgrade goal).",
+        + "visitor: wood count, accumulation rate, stone count, stone accumulation rate, "
+        + "number of upgrades crafted, click power (wood per gather), wall level, "
+        + "total wood earned cumulatively, timestamp, whether the offline-summary overlay "
+        + "is currently visible, how much wood was gained while away (offlineGained, 0 when none pending), "
+        + "and the current goal (first goal, upgrade goal, or stone goal).",
       inputSchema: { type: "object", properties: {} },
       annotations: { readOnlyHint: true },
       example: {},
@@ -85,15 +117,17 @@ export function tools() {
       name: "perform-action",
       description: "Performs a named action the visitor could take from the "
         + "page, and returns the state afterwards. Supported actions: "
-        + '"gather" — instantly adds +1 wood; '
+        + '"gather" — instantly adds +1 wood (or more if wall built); '
         + '"sharpen" — consumes ' + UPGRADE_COST + ' wood to permanently increase the wood accumulation rate; '
+        + '"gather-stone" — instantly adds +1 stone (only available after first sharpen upgrade); '
+        + '"build-wall" — consumes ' + STONE_UPGRADE_COST + ' stone to permanently increase click power to +2; '
         + '"dismiss-offline" — dismisses the offline-summary overlay if visible.',
       inputSchema: {
         type: "object",
         properties: {
           action: {
             type: "string",
-            description: 'The action to perform. Supported: "gather", "sharpen", "dismiss-offline".',
+            description: 'The action to perform. Supported: "gather", "sharpen", "gather-stone", "build-wall", "dismiss-offline".',
           },
         },
         required: ["action"],
@@ -108,6 +142,13 @@ export function tools() {
           const result = craftUpgrade();
           return withGoal(result.state);
         }
+        if (action === "gather-stone") {
+          return withGoal(gatherStone());
+        }
+        if (action === "build-wall") {
+          const result = buildWall();
+          return withGoal(result.state);
+        }
         if (action === "dismiss-offline") {
           const overlay = document.getElementById("offline-summary");
           if (overlay && !overlay.hidden) {
@@ -115,12 +156,18 @@ export function tools() {
             overlay.style.display = ""; // clear inline display override
             const btnGather = document.getElementById("btn-gather");
             if (btnGather) btnGather.disabled = false;
+            const btnSharpen = document.getElementById("btn-sharpen");
+            if (btnSharpen) btnSharpen.disabled = false;
+            const btnGatherStone = document.getElementById("btn-gather-stone");
+            if (btnGatherStone) btnGatherStone.disabled = false;
+            const btnBuildWall = document.getElementById("btn-build-wall");
+            if (btnBuildWall) btnBuildWall.disabled = false;
             document.body.style.pointerEvents = "";
             overlay.style.pointerEvents = "";
           }
           return withGoal(getState());
         }
-        throw new Error('Unknown action "' + action + '". Supported: gather, sharpen, dismiss-offline');
+        throw new Error('Unknown action "' + action + '". Supported: gather, sharpen, gather-stone, build-wall, dismiss-offline');
       },
     },
   ];

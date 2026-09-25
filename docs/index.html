@@ -386,6 +386,14 @@
       <span class="stat-label" id="tick-label">Tick</span>
       <span class="stat-value" id="tick-value" aria-labelledby="tick-label">—</span>
     </div>
+    <div class="stat" id="stone-stat" hidden>
+      <span class="stat-label" id="stone-label">Stone</span>
+      <span class="stat-value" id="stone-value" aria-labelledby="stone-label">0</span>
+    </div>
+    <div class="stat" id="stone-rate-stat" hidden>
+      <span class="stat-label" id="stone-rate-label">Stone Rate</span>
+      <span class="stat-value" id="stone-rate-value" aria-labelledby="stone-rate-label">0/s</span>
+    </div>
   </section>
 
   <!-- ═══ Action Area Panel ═══ -->
@@ -397,8 +405,14 @@
     <button class="btn" id="btn-sharpen" type="button" aria-label="Sharpen Axe" hidden>
       &#x2692; Sharpen Axe (5 wood)
     </button>
+    <button class="btn" id="btn-gather-stone" type="button" aria-label="Gather Stone" hidden>
+      &#x26AA; Gather Stone
+    </button>
+    <button class="btn" id="btn-build-wall" type="button" aria-label="Build Wall" hidden>
+      &#x1F3F0; Build Wall (5 stone)
+    </button>
     <span class="footer-note" aria-live="polite">
-      Click to gather +1 wood. More actions appear as the world expands.
+      Click to gather wood. More actions appear as the world expands.
     </span>
   </section>
 
@@ -428,15 +442,21 @@
   <!-- ═══ Engine + live UI render loop ═══ -->
   <script type="module">
     import "./webmcp.js";
-    import { init, getState, gatherWood, craftUpgrade, consumeOfflineWoodGained, UPGRADE_COST } from "./engine.js";
+    import { init, getState, gatherWood, gatherStone, craftUpgrade, buildWall, consumeOfflineWoodGained, UPGRADE_COST, STONE_UPGRADE_COST } from "./engine.js";
 
     init();
 
     const stateEl = document.getElementById("wood-value");
     const rateEl = document.getElementById("rate-value");
     const tickEl = document.getElementById("tick-value");
+    const stoneEl = document.getElementById("stone-value");
+    const stoneRateEl = document.getElementById("stone-rate-value");
+    const stoneStat = document.getElementById("stone-stat");
+    const stoneRateStat = document.getElementById("stone-rate-stat");
     const btnGather = document.getElementById("btn-gather");
     const btnSharpen = document.getElementById("btn-sharpen");
+    const btnGatherStone = document.getElementById("btn-gather-stone");
+    const btnBuildWall = document.getElementById("btn-build-wall");
     const goalText = document.getElementById("goal-text");
     const goalFill = document.getElementById("goal-progress-fill");
     const goalProgress = document.getElementById("goal-panel").querySelector(".progress-track");
@@ -446,10 +466,12 @@
 
     const GOAL_WOOD = 10;
     let goalReached = false;
-    // Track whether player has ever reached 10 wood to persist the sharpen button
+    let stoneUnlocked = false;
+    let wallBuilt = false;
 
     // ─── Cooldown state ───
     let cooldown = false;
+    let stoneCooldown = false;
     const COOLDOWN_MS = 500;
 
     function setCooldown() {
@@ -458,6 +480,15 @@
       setTimeout(() => {
         cooldown = false;
         btnGather.disabled = false;
+      }, COOLDOWN_MS);
+    }
+
+    function setStoneCooldown() {
+      stoneCooldown = true;
+      btnGatherStone.disabled = true;
+      setTimeout(() => {
+        stoneCooldown = false;
+        btnGatherStone.disabled = false;
       }, COOLDOWN_MS);
     }
 
@@ -489,6 +520,34 @@
       }
     });
 
+    function handleGatherStone() {
+      if (stoneCooldown) return;
+      gatherStone();
+      setStoneCooldown();
+      renderUI();
+    }
+
+    btnGatherStone.addEventListener("click", handleGatherStone);
+    btnGatherStone.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        handleGatherStone();
+      }
+    });
+
+    function handleBuildWall() {
+      buildWall();
+      renderUI();
+    }
+
+    btnBuildWall.addEventListener("click", handleBuildWall);
+    btnBuildWall.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        handleBuildWall();
+      }
+    });
+
     // ─── Offline summary ───
     function showOfflineSummary() {
       const gained = consumeOfflineWoodGained();
@@ -501,6 +560,8 @@
         // can reach them through the covering overlay.
         btnGather.disabled = true;
         btnSharpen.disabled = true;
+        if (btnGatherStone) btnGatherStone.disabled = true;
+        if (btnBuildWall) btnBuildWall.disabled = true;
 
         // Seal the body against pointer events — the overlay is the only
         // interactive layer. The overlay itself keeps pointer-events: auto
@@ -518,8 +579,11 @@
       offlineSummary.hidden = true;
       offlineSummary.style.display = ""; // clear inline display override
 
-      // Restore interactivity: re-enable gather (sharpen is managed by renderUI)
+      // Re-enable all action buttons
       btnGather.disabled = false;
+      btnSharpen.disabled = false;
+      btnGatherStone.disabled = false;
+      btnBuildWall.disabled = false;
       document.body.style.pointerEvents = "";
       offlineSummary.style.pointerEvents = "";
     }
@@ -543,6 +607,7 @@
     function renderUI() {
       const s = getState();
       const wood = s.wood;
+      const stone = s.stone;
 
       // Wood count
       if (stateEl) {
@@ -561,6 +626,35 @@
         tickEl.textContent = "\u25B6";
       }
 
+      // Stone display (unlocked after first sharpen upgrade)
+      if (s.upgradeLevel >= 1 && !stoneUnlocked) {
+        stoneUnlocked = true;
+        stoneStat.hidden = false;
+        stoneRateStat.hidden = false;
+        btnGatherStone.hidden = false;
+        btnGatherStone.disabled = false;
+      }
+
+      if (stoneEl) {
+        stoneEl.textContent = Number.isInteger(stone) || stone >= 10
+          ? String(Math.floor(stone))
+          : stone.toFixed(2);
+      }
+
+      if (stoneRateEl) {
+        stoneRateEl.textContent = s.stoneRate.toFixed(2) + "/s";
+      }
+
+      // Build Wall button (show when stone >= 5, or after wall is built)
+      if (stoneUnlocked) {
+        if (s.wallLevel <= 0) {
+          btnBuildWall.hidden = stone < STONE_UPGRADE_COST;
+        } else {
+          btnBuildWall.hidden = true;
+        }
+        btnBuildWall.disabled = stone < STONE_UPGRADE_COST;
+      }
+
       // Goal
       if (wood >= GOAL_WOOD) {
         if (!goalReached) {
@@ -568,16 +662,34 @@
           // Show the sharpen button forever once unlocked
           btnSharpen.hidden = false;
         }
-        // Show upgrade goal: gather wood to craft the next sharpening
-        const woodForUpgrade = wood;
-        const pct = (woodForUpgrade / UPGRADE_COST) * 100;
-        goalText.textContent = "Craft a Sharpening (" + UPGRADE_COST + " wood)";
-        if (goalFill) goalFill.style.width = Math.min(pct, 100) + "%";
-        if (goalProgress) goalProgress.setAttribute("aria-valuenow", Math.floor(woodForUpgrade % UPGRADE_COST));
-        if (goalProgress) goalProgress.setAttribute("aria-valuemax", UPGRADE_COST);
 
-        // Disable sharpen if not enough wood, enable otherwise
-        btnSharpen.disabled = wood < UPGRADE_COST;
+        if (stoneUnlocked && s.wallLevel <= 0) {
+          // Stone goal: gather 5 stone then build a wall
+          if (stone < STONE_UPGRADE_COST) {
+            const pct = (stone / STONE_UPGRADE_COST) * 100;
+            goalText.textContent = "Gather " + STONE_UPGRADE_COST + " stone";
+            if (goalFill) goalFill.style.width = Math.min(pct, 100) + "%";
+            if (goalProgress) goalProgress.setAttribute("aria-valuenow", Math.floor(stone));
+            if (goalProgress) goalProgress.setAttribute("aria-valuemax", STONE_UPGRADE_COST);
+          } else {
+            goalText.textContent = "Build a Wall (" + STONE_UPGRADE_COST + " stone)";
+            const pct = (stone / STONE_UPGRADE_COST) * 100;
+            if (goalFill) goalFill.style.width = Math.min(pct, 100) + "%";
+            if (goalProgress) goalProgress.setAttribute("aria-valuenow", Math.floor(stone));
+            if (goalProgress) goalProgress.setAttribute("aria-valuemax", STONE_UPGRADE_COST);
+          }
+        } else {
+          // Show upgrade goal: gather wood to craft the next sharpening
+          const woodForUpgrade = wood;
+          const pct = (woodForUpgrade / UPGRADE_COST) * 100;
+          goalText.textContent = "Craft a Sharpening (" + UPGRADE_COST + " wood)";
+          if (goalFill) goalFill.style.width = Math.min(pct, 100) + "%";
+          if (goalProgress) goalProgress.setAttribute("aria-valuenow", Math.floor(woodForUpgrade % UPGRADE_COST));
+          if (goalProgress) goalProgress.setAttribute("aria-valuemax", UPGRADE_COST);
+
+          // Disable sharpen if not enough wood, enable otherwise
+          btnSharpen.disabled = wood < UPGRADE_COST;
+        }
       } else {
         goalReached = false;
         const pct = (wood / GOAL_WOOD) * 100;

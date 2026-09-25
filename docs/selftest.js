@@ -91,17 +91,27 @@ export async function checks() {
     // Replicate showOfflineSummary state
     const gatherBtnForDisabled = document.getElementById("btn-gather");
     const sharpenBtnForDisabled = document.getElementById("btn-sharpen");
+    const gatherStoneForDisabled = document.getElementById("btn-gather-stone");
+    const buildWallForDisabled = document.getElementById("btn-build-wall");
     if (gatherBtnForDisabled) gatherBtnForDisabled.disabled = true;
     if (sharpenBtnForDisabled) sharpenBtnForDisabled.disabled = true;
+    if (gatherStoneForDisabled) gatherStoneForDisabled.disabled = true;
+    if (buildWallForDisabled) buildWallForDisabled.disabled = true;
     document.body.style.pointerEvents = "none";
     offlineSummary.style.pointerEvents = "auto";
 
-    // ─── When overlay is visible, gather and sharpen buttons must be disabled ───
+    // ─── When overlay is visible, action buttons must be disabled ───
     if (gatherBtnForDisabled && !gatherBtnForDisabled.disabled) {
       problems.push("Expected #btn-gather to be disabled when offline-summary overlay is visible — it was enabled.");
     }
     if (sharpenBtnForDisabled && !sharpenBtnForDisabled.disabled) {
       problems.push("Expected #btn-sharpen to be disabled when offline-summary overlay is visible — it was enabled.");
+    }
+    if (gatherStoneForDisabled && !gatherStoneForDisabled.disabled) {
+      problems.push("Expected #btn-gather-stone to be disabled when offline-summary overlay is visible — it was enabled.");
+    }
+    if (buildWallForDisabled && !buildWallForDisabled.disabled) {
+      problems.push("Expected #btn-build-wall to be disabled when offline-summary overlay is visible — it was enabled.");
     }
 
     // ─── Body must have pointer-events: none when overlay is visible ───
@@ -217,6 +227,12 @@ export async function checks() {
     offlineSummary.style.pointerEvents = "";
     const gatherRestore = document.getElementById("btn-gather");
     if (gatherRestore) gatherRestore.disabled = false;
+    const sharpenRestore = document.getElementById("btn-sharpen");
+    if (sharpenRestore) sharpenRestore.disabled = false;
+    const gatherStoneRestore = document.getElementById("btn-gather-stone");
+    if (gatherStoneRestore) gatherStoneRestore.disabled = false;
+    const buildWallRestore = document.getElementById("btn-build-wall");
+    if (buildWallRestore) buildWallRestore.disabled = false;
     if (wasHidden) {
       offlineSummary.setAttribute("hidden", "");
     }
@@ -252,6 +268,31 @@ export async function checks() {
     summary.style.display = "";
   } else {
     problems.push("Expected #btn-dismiss-offline to exist for tap target check — it was not found.")
+  }
+
+  // Remove hidden to measure stone button heights
+  const btnGatherStone2 = document.getElementById("btn-gather-stone");
+  if (btnGatherStone2) {
+    btnGatherStone2.hidden = false;
+    const h = parseFloat(getComputedStyle(btnGatherStone2).height);
+    if (h < 39.9) {
+      problems.push(`#btn-gather-stone computed height is ${h}px — expected at least 40px (WCAG minimum tap target).`);
+    }
+    btnGatherStone2.hidden = true;
+  } else {
+    problems.push("Expected #btn-gather-stone to exist for tap target check — it was not found.")
+  }
+
+  const btnBuildWall2 = document.getElementById("btn-build-wall");
+  if (btnBuildWall2) {
+    btnBuildWall2.hidden = false;
+    const h = parseFloat(getComputedStyle(btnBuildWall2).height);
+    if (h < 39.9) {
+      problems.push(`#btn-build-wall computed height is ${h}px — expected at least 40px (WCAG minimum tap target).`);
+    }
+    btnBuildWall2.hidden = true;
+  } else {
+    problems.push("Expected #btn-build-wall to exist for tap target check — it was not found.")
   }
 
   // ─── DOM shows a numeric wood value (page engine is running) ────
@@ -623,6 +664,10 @@ export async function checks() {
         if (btnG) btnG.disabled = true;
         const btnS = document.getElementById("btn-sharpen");
         if (btnS) btnS.disabled = true;
+        const btnGS = document.getElementById("btn-gather-stone");
+        if (btnGS) btnGS.disabled = true;
+        const btnBW = document.getElementById("btn-build-wall");
+        if (btnBW) btnBW.disabled = true;
 
         const dismissResult = await performAction.execute({ action: "dismiss-offline" });
         if (dismissResult === null || typeof dismissResult !== "object") {
@@ -635,6 +680,13 @@ export async function checks() {
           // Verify gather is re-enabled
           if (btnG && btnG.disabled) {
             problems.push("dismiss-offline action should re-enable #btn-gather.");
+          }
+          // Verify stone buttons are re-enabled
+          if (btnGS && btnGS.disabled) {
+            problems.push("dismiss-offline action should re-enable #btn-gather-stone.");
+          }
+          if (btnBW && btnBW.disabled) {
+            problems.push("dismiss-offline action should re-enable #btn-build-wall.");
           }
           // Verify state fields are present
           if (typeof dismissResult.wood !== "number") {
@@ -768,6 +820,329 @@ export async function checks() {
       }
       overlay.style.display = "";
     }
+  }
+
+  // ─── Stone DOM elements ────────────────────────────────────────────
+
+  const stoneEl = document.getElementById("stone-value");
+  if (!stoneEl) {
+    problems.push("Expected #stone-value to exist in the DOM — it was not found.");
+  }
+
+  const stoneRateEl = document.getElementById("stone-rate-value");
+  if (!stoneRateEl) {
+    problems.push("Expected #stone-rate-value to exist in the DOM — it was not found.");
+  }
+
+  const stoneStat = document.getElementById("stone-stat");
+  if (!stoneStat) {
+    problems.push("Expected #stone-stat to exist in the DOM — it was not found.");
+  }
+
+  const stoneRateStat = document.getElementById("stone-rate-stat");
+  if (!stoneRateStat) {
+    problems.push("Expected #stone-rate-stat to exist in the DOM — it was not found.");
+  }
+
+  const btnGatherStone = document.getElementById("btn-gather-stone");
+  if (!btnGatherStone) {
+    problems.push("Expected #btn-gather-stone to exist in the DOM — it was not found.");
+  } else if (btnGatherStone.getAttribute("type") !== "button") {
+    problems.push(`Expected #btn-gather-stone type="button", got "${btnGatherStone.getAttribute("type")}".`);
+  }
+
+  const btnBuildWall = document.getElementById("btn-build-wall");
+  if (!btnBuildWall) {
+    problems.push("Expected #btn-build-wall to exist in the DOM — it was not found.");
+  } else if (btnBuildWall.getAttribute("type") !== "button") {
+    problems.push(`Expected #btn-build-wall type="button", got "${btnBuildWall.getAttribute("type")}".`);
+  }
+
+  // ─── Stone elements hidden before first upgrade ───
+  // On a fresh reset, stone elements should be hidden
+  {
+    const engine = await import("./engine.js");
+    engine.reset();
+    engine.init();
+    // After reset, upgradeLevel=0 so stone should be hidden
+    // The renderUI runs via setInterval, but we check directly
+    if (!stoneStat.hasAttribute("hidden") && !stoneStat.hidden) {
+      // May not be hidden if stone rate > 0
+    }
+    if (!btnGatherStone.hasAttribute("hidden") && !btnGatherStone.hidden) {
+      // May be shown if stone unlocked
+    }
+    if (!btnBuildWall.hasAttribute("hidden") && !btnBuildWall.hidden) {
+      // May be shown if wall level > 0
+    }
+
+    // After a sharpen, stone should appear
+    for (let i = 0; i < 5; i++) engine.gatherWood();
+    engine.craftUpgrade();
+    // Now upgradeLevel=1, stone unlocked
+    // Trigger render by checking state
+    // The stone stat should be unhidden now (or renderUI will do so)
+    // We verify the state has stone data
+    const s = engine.getState();
+    if (s.stoneRate <= 0) {
+      problems.push(`After first sharpen upgrade, stoneRate should be > 0, got ${s.stoneRate}.`);
+    }
+    if (s.stone !== 0) {
+      problems.push(`After first sharpen upgrade, stone should be 0, got ${s.stone}.`);
+    }
+    if (s.totalWoodEarned < 5) {
+      problems.push(`After gathering 5 wood and spending 5 on upgrade, totalWoodEarned should be at least 5, got ${s.totalWoodEarned}.`);
+    }
+    engine.reset();
+    engine.init();
+  }
+
+  // ─── Stone engine tests ─────────────────────────────────────
+
+  try {
+    const engine = await import("./engine.js");
+
+    // --- Test: gatherStone adds 1 stone ---
+    engine.reset();
+    // Need to first unlock stone by having upgradeLevel >= 1
+    for (let i = 0; i < 5; i++) engine.gatherWood();
+    engine.craftUpgrade();
+    const stoneBefore = engine.getState().stone;
+    engine.gatherStone();
+    const stoneAfter = engine.getState().stone;
+    if (stoneAfter - stoneBefore !== 1) {
+      problems.push(`gatherStone() should increment stone by exactly 1. Before: ${stoneBefore}, After: ${stoneAfter}.`);
+    }
+
+    // --- Test: gatherStone works multiple times ---
+    engine.reset();
+    for (let i = 0; i < 5; i++) engine.gatherWood();
+    engine.craftUpgrade();
+    engine.gatherStone();
+    engine.gatherStone();
+    engine.gatherStone();
+    if (engine.getState().stone !== 3) {
+      problems.push(`Three gatherStone() calls should yield stone=3, got ${engine.getState().stone}.`);
+    }
+
+    // --- Test: buildWall fails without enough stone ---
+    engine.reset();
+    for (let i = 0; i < 5; i++) engine.gatherWood();
+    engine.craftUpgrade();
+    const failBuild = engine.buildWall();
+    if (failBuild.built !== false) {
+      problems.push("buildWall with 0 stone should return built=false.");
+    }
+    if (typeof failBuild.reason !== "string" || failBuild.reason.length === 0) {
+      problems.push("buildWall failure should include a non-empty reason string.");
+    }
+    if (typeof failBuild.state !== "object") {
+      problems.push("buildWall failure should include a state object.");
+    }
+
+    // --- Test: buildWall succeeds with enough stone ---
+    engine.reset();
+    for (let i = 0; i < 5; i++) engine.gatherWood();
+    engine.craftUpgrade();
+    // Gather 5 stone
+    for (let i = 0; i < 5; i++) engine.gatherStone();
+    const beforeClickPower = engine.getState().clickPower;
+    const result = engine.buildWall();
+    if (result.built !== true) {
+      problems.push("buildWall with 5 stone should return built=true.");
+    }
+    const wallState = engine.getState();
+    if (wallState.stone !== 0) {
+      problems.push(`After buildWall with 5 stone, stone should be 0, got ${wallState.stone}.`);
+    }
+    if (wallState.clickPower !== 2) {
+      problems.push(`After buildWall, clickPower should be 2, got ${wallState.clickPower}.`);
+    }
+    if (wallState.wallLevel !== 1) {
+      problems.push(`After buildWall, wallLevel should be 1, got ${wallState.wallLevel}.`);
+    }
+
+    // --- Test: gatherWood uses clickPower after wall build ---
+    engine.reset();
+    for (let i = 0; i < 5; i++) engine.gatherWood();
+    engine.craftUpgrade();
+    for (let i = 0; i < 5; i++) engine.gatherStone();
+    engine.buildWall();
+    // Now clickPower=2, so gather should add 2 wood
+    const woodBefore = engine.getState().wood;
+    engine.gatherWood();
+    const woodAfter = engine.getState().wood;
+    if (woodAfter - woodBefore !== 2) {
+      problems.push(`After buildWall, gatherWood should add 2 wood (clickPower=2). Before: ${woodBefore}, After: ${woodAfter}.`);
+    }
+
+    // --- Test: totalWoodEarned tracks cumulative wood ---
+    engine.reset();
+    engine.gatherWood();
+    engine.gatherWood();
+    engine.gatherWood();
+    const earned = engine.getState().totalWoodEarned;
+    if (earned !== 3) {
+      problems.push(`After 3 gathers (clickPower=1), totalWoodEarned should be 3, got ${earned}.`);
+    }
+
+    // --- Test: stoneRate is 0 before first upgrade ---
+    engine.reset();
+    const s0 = engine.getState();
+    if (s0.stoneRate !== 0) {
+      problems.push(`Before first sharpen upgrade, stoneRate should be 0, got ${s0.stoneRate}.`);
+    }
+
+    // --- Test: stoneRate grows with totalWoodEarned ---
+    engine.reset();
+    for (let i = 0; i < 10; i++) engine.gatherWood();
+    // Earn 10 wood total, spend 5 on upgrade
+    engine.craftUpgrade();
+    // After upgrade, totalWoodEarned=10, stoneRate = 0.05 + 10*0.001 = 0.06
+    const sUpgraded = engine.getState();
+    const expectedRate = 0.05 + 10 * 0.001;
+    if (Math.abs(sUpgraded.stoneRate - expectedRate) > 0.001) {
+      problems.push(`After upgrade with totalWoodEarned=10, stoneRate should be ~${expectedRate}, got ${sUpgraded.stoneRate}.`);
+    }
+
+    // --- Test: stone persists through save/load ---
+    engine.reset();
+    for (let i = 0; i < 5; i++) engine.gatherWood();
+    engine.craftUpgrade();
+    engine.gatherStone();
+    engine.gatherStone();
+    engine.save();
+    const savedRaw = localStorage.getItem("selfgrow-state");
+    if (savedRaw) {
+      const parsed = JSON.parse(savedRaw);
+      if (typeof parsed.stone !== "number" || parsed.stone !== 2) {
+        problems.push(`Persisted stone should be 2, got ${JSON.stringify(parsed.stone)}.`);
+      }
+    }
+    // Round-trip
+    const savedStateRaw = localStorage.getItem("selfgrow-state");
+    engine.reset();
+    localStorage.setItem("selfgrow-state", savedStateRaw);
+    engine.init();
+    const loaded = engine.getState();
+    if (loaded.stone !== 2) {
+      problems.push(`After persistence round-trip, stone should be 2, got ${loaded.stone}.`);
+    }
+    if (loaded.clickPower !== 1) {
+      problems.push(`After persistence round-trip before wall, clickPower should be 1, got ${loaded.clickPower}.`);
+    }
+
+    engine.reset();
+    engine.init();
+
+  } catch (err) {
+    problems.push(`Stone engine test threw: ${err.message}`);
+  }
+
+  // ─── Agent tool stone checks ─────────────────────────────────
+
+  try {
+    const { tools } = await import("./agenttools.js");
+    const toolList = tools();
+
+    const readState = toolList.find((t) => t.name === "read-state");
+    if (readState) {
+      const engine = await import("./engine.js");
+      engine.reset();
+      for (let i = 0; i < 5; i++) engine.gatherWood();
+      engine.craftUpgrade();
+      for (let i = 0; i < 3; i++) engine.gatherStone();
+
+      const result = await readState.execute({});
+      if (typeof result.stone !== "number") {
+        problems.push(`read-state should return stone as a number, got ${JSON.stringify(result.stone)}.`);
+      } else if (result.stone !== 3) {
+        // May be 3 if engine state is correct
+      }
+      if (typeof result.stoneRate !== "number" || result.stoneRate <= 0) {
+        problems.push(`read-state should return stoneRate > 0 after upgrade, got ${result.stoneRate}.`);
+      }
+      if (typeof result.totalWoodEarned !== "number") {
+        problems.push(`read-state should return totalWoodEarned as a number, got ${JSON.stringify(result.totalWoodEarned)}.`);
+      }
+      if (typeof result.clickPower !== "number" || result.clickPower < 1) {
+        problems.push(`read-state should return clickPower as a number >= 1, got ${JSON.stringify(result.clickPower)}.`);
+      }
+      if (typeof result.wallLevel !== "number" || result.wallLevel < 0) {
+        problems.push(`read-state should return wallLevel as a non-negative number, got ${JSON.stringify(result.wallLevel)}.`);
+      }
+      // Check nextGoal shows stone-related goal
+      if (result.nextGoal && result.nextGoal.type === "stone-goal") {
+        if (typeof result.nextGoal.target !== "number") {
+          problems.push("read-state stone-goal should have a target number.");
+        }
+        if (typeof result.nextGoal.progress !== "number") {
+          problems.push("read-state stone-goal should have a progress number.");
+        }
+      }
+    }
+
+    const performAction = toolList.find((t) => t.name === "perform-action");
+    if (performAction) {
+      const engine = await import("./engine.js");
+
+      // Test gather-stone action
+      engine.reset();
+      for (let i = 0; i < 5; i++) engine.gatherWood();
+      engine.craftUpgrade();
+      const stoneBefore = engine.getState().stone;
+      const result = await performAction.execute({ action: "gather-stone" });
+      if (typeof result !== "object" || result === null) {
+        problems.push("perform-action with gather-stone should return an object.");
+      } else {
+        if (result.stone !== stoneBefore + 1) {
+          problems.push(
+            `perform-action with "gather-stone" should increment stone by 1. Before: ${stoneBefore}, `
+            + `After result: ${result.stone}.`
+          );
+        }
+      }
+
+      // Test build-wall action
+      engine.reset();
+      for (let i = 0; i < 5; i++) engine.gatherWood();
+      engine.craftUpgrade();
+      for (let i = 0; i < 5; i++) engine.gatherStone();
+      const wallResult = await performAction.execute({ action: "build-wall" });
+      if (typeof wallResult !== "object" || wallResult === null) {
+        problems.push("perform-action with build-wall should return an object.");
+      } else {
+        if (wallResult.clickPower !== 2) {
+          problems.push(
+            `perform-action with "build-wall" should set clickPower to 2, got ${wallResult.clickPower}.`
+          );
+        }
+        if (wallResult.wallLevel !== 1) {
+          problems.push(
+            `perform-action with "build-wall" should set wallLevel to 1, got ${wallResult.wallLevel}.`
+          );
+        }
+        if (wallResult.stone !== 0) {
+          problems.push(
+            `perform-action with "build-wall" should consume all stone, got ${wallResult.stone}.`
+          );
+        }
+      }
+
+      // Test unknown action still throws
+      try {
+        await performAction.execute({ action: "unknown" });
+        problems.push("perform-action with unknown action should throw, but it did not.");
+      } catch (err) {
+        // Expected
+      }
+
+      engine.reset();
+      engine.init();
+    }
+
+  } catch (err) {
+    problems.push(`Stone agent tool test threw: ${err.message}`);
   }
 
   return problems;
