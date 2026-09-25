@@ -55,7 +55,7 @@ jobs:
     # Up to two verify → review → fix cycles, each bounded by MAX_SESSION_MINUTES.
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The PR's own branch, with history — the Reviewer reads
           # `git diff main...HEAD` and a fix is pushed back here.

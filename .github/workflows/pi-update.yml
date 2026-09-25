@@ -39,7 +39,7 @@ jobs:
     # npm install, a registry assertion, and a PR. No model calls at all.
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The PAT, because this job pushes a branch and opens a PR on it. A push
           # made with GITHUB_TOKEN triggers no workflows, so the PR's required
@@ -70,7 +70,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup
       - name: Assert the model chain against the installed pi
         run: node agents/model-check.mjs
