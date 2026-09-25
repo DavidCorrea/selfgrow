@@ -29,6 +29,7 @@
 // Guarded by a typed confirmation (see requireConfirmation), because every other
 // agent here only adds and this one is irreversible in the directions that matter.
 import { execSync } from "child_process";
+import { pathToFileURL } from "url";
 import {
   log,
   printRunSummary,
@@ -63,6 +64,13 @@ const HARNESS_PATHS = [
   "eslint.config.mjs",
   "package.json",
   "package-lock.json",
+  // The machine's own documentation. They describe the harness and the domain
+  // it works in, not any one product, and they were missing from this list until
+  // a reset would have deleted them along with the garden.
+  "README.md",
+  "DOMAIN.md",
+  "STRUCTURE.md",
+  "IMPROVEMENTS.md",
   // Keeps the empty docs/ directory itself across a reset. Git tracks files and
   // not directories, so without this placeholder docs/ stops existing the moment
   // its last file is deleted — and the agents are told the code lives there and
@@ -75,6 +83,11 @@ const HARNESS_PATHS = [
   // agent-tool contract with it and leave agenttools.js registered by nothing.
   "docs/webmcp.js",
 ];
+
+/** Whether a tracked path belongs to the harness, and so survives a reset. */
+export function isHarnessPath(path) {
+  return HARNESS_PATHS.some((keep) => path === keep || path.startsWith(`${keep}/`));
+}
 
 // Only branches the agents create are touched. A human's work-in-progress branch
 // is not this script's business.
@@ -285,9 +298,7 @@ function clearProduct() {
   // Ask git what is tracked rather than guessing: a path git does not know makes
   // `git rm` fail, and this is the last and least reversible step.
   const tracked = gitExec("ls-files").split("\n").map((p) => p.trim()).filter(Boolean);
-  const isHarness = (path) =>
-    HARNESS_PATHS.some((keep) => path === keep || path.startsWith(`${keep}/`));
-  const doomed = tracked.filter((path) => !isHarness(path));
+  const doomed = tracked.filter((path) => !isHarnessPath(path));
 
   if (!doomed.length) {
     log("info", "No product files left to delete.");
@@ -360,9 +371,12 @@ function main() {
   printRunSummary("Reset");
 }
 
-try {
-  main();
-} catch (err) {
-  log("error", "Reset failed.", errorData(err));
-  process.exit(1);
+// Guarded so the keep-list can be tested without arming the reset.
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  try {
+    main();
+  } catch (err) {
+    log("error", "Reset failed.", errorData(err));
+    process.exit(1);
+  }
 }
