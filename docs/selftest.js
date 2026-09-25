@@ -13593,6 +13593,62 @@ export async function checks() {
     problems.push('window.__gardenState is not set — cannot verify fallback phrase pool (issue #815).');
   }
 
+  /* ---------- Wind swell accent checks (issue #824) ---------- */
+  // A weather or time-of-day display flip should fire a gentle wind-gain swell
+  // accent, recorded on __gardenState. Under prefers-reduced-motion the accent
+  // must be suppressed (no audio modulation) while still recording metadata.
+  if (window.__gardenState) {
+    var gs824 = window.__gardenState;
+    var accentAudio824 = gs824.ambientAudio;
+    if (!accentAudio824 || typeof accentAudio824.accentWindSwell !== 'function') {
+      problems.push('window.__gardenState.ambientAudio.accentWindSwell is not a function — wind swell accent missing (issue #824).');
+    } else {
+      // Fire the accent for a weather transition key and verify the hook.
+      var key824 = 'Clear→Overcast';
+      accentAudio824.accentWindSwell(key824);
+      if (gs824._lastAccentTransitionKey !== key824) {
+        problems.push('After accentWindSwell("' + key824 + '"), _lastAccentTransitionKey is "' + gs824._lastAccentTransitionKey + '" — expected "' + key824 + '" (issue #824).');
+      }
+      if (typeof gs824._lastAccentTime !== 'number' || gs824._lastAccentTime <= 0) {
+        problems.push('_lastAccentTime is not a positive timestamp — the accent did not record when it fired (issue #824).');
+      } else if (Date.now() - gs824._lastAccentTime > 5000) {
+        problems.push('_lastAccentTime is stale (' + gs824._lastAccentTime + ') — the accent did not fire during this check run (issue #824).');
+      }
+
+      // Under prefers-reduced-motion the audio modulation must be suppressed,
+      // while the accent metadata is still recorded.
+      var origMM824 = window.matchMedia;
+      window.matchMedia = function() {
+        return {
+          matches: true,
+          media: '(prefers-reduced-motion: reduce)',
+          addEventListener: function() {},
+          removeEventListener: function() {}
+        };
+      };
+      try {
+        accentAudio824.accentWindSwell('Morning→Midday');
+        if (gs824._lastAccentTransitionKey !== 'Morning→Midday') {
+          problems.push('Reduced-motion accent call recorded transition key "' + gs824._lastAccentTransitionKey + '" — expected "Morning→Midday" (issue #824).');
+        }
+        if (accentAudio824.state.lastAccentSuppressed !== true || accentAudio824.state.lastAccentSuppressionReason !== 'reduced-motion') {
+          problems.push('Under prefers-reduced-motion, accentWindSwell did not suppress audio modulation (suppressed=' + accentAudio824.state.lastAccentSuppressed + ', reason="' + accentAudio824.state.lastAccentSuppressionReason + '") — expected suppressed with reason "reduced-motion" (issue #824).');
+        }
+      } finally {
+        window.matchMedia = origMM824;
+      }
+
+      // A second transition key must overwrite the metadata (proves the hook
+      // tracks the most recent accent, not just the first).
+      accentAudio824.accentWindSwell('Evening→Night');
+      if (gs824._lastAccentTransitionKey !== 'Evening→Night') {
+        problems.push('Second accent call left _lastAccentTransitionKey as "' + gs824._lastAccentTransitionKey + '" — expected "Evening→Night" (issue #824).');
+      }
+    }
+  } else {
+    problems.push('window.__gardenState is not set — cannot verify wind swell accent (issue #824).');
+  }
+
   /* ---------- Context phrase pool size checks (issue #803) ---------- */
   // Verify each of the 11 environmental context pools has ≥10 variants
   // to reduce text repetition across the 30s variant cycling.
