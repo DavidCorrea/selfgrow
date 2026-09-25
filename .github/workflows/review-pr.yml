@@ -16,10 +16,23 @@ permissions:
   pull-requests: write
   issues: write
 
-# Merging to main takes the same lock as every other writer, so this cannot race
-# a Devs run mid-merge.
+# One lock per PR, NOT the shared `agent-main-writer`. GitHub keeps only one
+# PENDING run per concurrency group and cancels the older one when another
+# queues — so sharing the Devs' lock meant a Devs dispatch arriving while a human
+# PR's review waited silently dropped that review, and nothing ever re-ran it.
+#
+# Nor does anything here need that lock, even around the merge. This job never
+# pushes to main: its fixes go to the PR's own branch, and it lands the PR with
+# GitHub's merge API (`mergePR`), which GitHub applies to main atomically. A Devs
+# merge landing first just moves main under it, and the required checks are not
+# strict, so that does not invalidate this PR. Putting the lock on only the
+# merging job would not help either — that job would sit in the same one-slot
+# queue and be dropped the same way.
+#
+# Per PR, a newer push replacing an older push's queued review is what we want:
+# the latest commit is the one worth reviewing.
 concurrency:
-  group: agent-main-writer
+  group: review-pr-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 
 jobs:

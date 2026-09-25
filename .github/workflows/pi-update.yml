@@ -24,17 +24,18 @@ permissions:
   issues: write
   pull-requests: write
 
-# It pushes a branch and merges to main, so it takes the same lock as every other
-# writer. A Builder mid-merge and a dependency bump racing on main is exactly the
-# non-fast-forward this group exists to prevent.
-concurrency:
-  group: agent-main-writer
-  cancel-in-progress: false
-
 jobs:
   update:
     # Never on a PR — that event only wants the free `check` job below.
     if: github.event_name != 'pull_request'
+    # It pushes a branch and merges to main, so it takes the same lock as the
+    # Devs: a Builder mid-merge and a dependency bump racing on main is what this
+    # group exists to prevent. On this job only, not the workflow — the read-only
+    # `check` gate runs on every dependency PR, and holding the writer lock there
+    # queued it behind a whole Devs run and could bump a pending Devs run out.
+    concurrency:
+      group: agent-main-writer
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     # npm install, a registry assertion, and a PR. No model calls at all.
     timeout-minutes: 20

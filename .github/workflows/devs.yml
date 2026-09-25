@@ -27,8 +27,9 @@ permissions:
   issues: write
   pull-requests: write
 
-# Serialize every workflow that writes to main (devs + product-owner)
-# so concurrent runs never race on branches or the push to main.
+# Serialize the runs that write to main (devs + pi-update's `update` job) so
+# concurrent runs never race on branches or the merge to main. review-pr stays
+# out of this group on purpose — see the note there.
 concurrency:
   group: agent-main-writer
   cancel-in-progress: false
