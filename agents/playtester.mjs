@@ -168,10 +168,12 @@ const WEBMCP_FLAG = "--enable-blink-features=WebMCP";
  * than by a validator. verifyBuild proves the tools RUN; nobody else asks whether
  * they are any good to use.
  *
- * Every tool is called with no arguments, which is the honest thing to do: the
- * browser hands an agent a name, a description and a schema, and nothing else. A
- * tool that needed arguments will have failed here, and whether its description
- * told the caller what it wanted is exactly the question this role is for.
+ * Every tool is called with its declared `example`, the same input the build
+ * calls it with. Calling with nothing meant any tool that needs input — telling
+ * a sandbox how long to be away, naming an action — always failed, so the
+ * Playtester could only ever judge its error, never what it does. The browser
+ * does not hand the example back (webmcp.js forwards only the specification's
+ * fields), so it is read from agenttools.js on both paths.
  *
  * Tools marked consequential are described but never called. The annotation
  * exists so a caller knows to ask a human first, and an agent that fires them
@@ -182,7 +184,18 @@ const WEBMCP_FLAG = "--enable-blink-features=WebMCP";
  */
 async function useAgentTools(page) {
   try {
-    return await page.evaluate(async ({ budgetMs }) => {
+    const declared = await page.evaluate(async () => {
+      try {
+        const mod = await import("./agenttools.js");
+        return typeof mod.tools === "function"
+          ? mod.tools().map((descriptor) => ({ name: descriptor.name, example: descriptor.example }))
+          : [];
+      } catch {
+        return [];
+      }
+    });
+    const inputs = toolInputs(declared);
+    return await page.evaluate(async ({ budgetMs, inputs }) => {
       const deadline = Date.now() + budgetMs;
       const withinBudget = () => Date.now() < deadline;
 
@@ -210,11 +223,12 @@ async function useAgentTools(page) {
             used.push(record(descriptor, { skipped: true }));
             continue;
           }
+          const input = JSON.stringify(inputs[descriptor.name] ?? {});
           try {
-            const returned = await document.modelContext.executeTool(descriptor, "{}");
-            used.push(record(descriptor, { ok: true, returned: String(returned).slice(0, 800) }));
+            const returned = await document.modelContext.executeTool(descriptor, input);
+            used.push(record(descriptor, { ok: true, input, returned: String(returned).slice(0, 800) }));
           } catch (e) {
-            used.push(record(descriptor, { ok: false, error: e.message }));
+            used.push(record(descriptor, { ok: false, input, error: e.message }));
           }
         }
         return { path: "the browser's own agent API", tools: used };
@@ -238,22 +252,31 @@ async function useAgentTools(page) {
           used.push(record(descriptor, { skipped: true }));
           continue;
         }
+        const input = JSON.stringify(inputs[descriptor.name] ?? {});
         try {
-          const returned = await descriptor.execute(
-            descriptor.example === undefined ? {} : descriptor.example,
-            { signal: new AbortController().signal }
-          );
-          used.push(record(descriptor, { ok: true, returned: JSON.stringify(returned).slice(0, 800) }));
+          const returned = await descriptor.execute(JSON.parse(input), { signal: new AbortController().signal });
+          used.push(record(descriptor, { ok: true, input, returned: JSON.stringify(returned).slice(0, 800) }));
         } catch (e) {
-          used.push(record(descriptor, { ok: false, error: e.message }));
+          used.push(record(descriptor, { ok: false, input, error: e.message }));
         }
       }
       return { path: "a direct import — this browser has no agent API", tools: used };
-    }, { budgetMs: TOOL_BUDGET_MS });
+    }, { budgetMs: TOOL_BUDGET_MS, inputs });
   } catch (e) {
     log("warn", "Playtest: the tool pass could not run — reporting the session without it.", errorData(e));
     return null;
   }
+}
+
+/**
+ * What each tool is called with, by name: its declared example, or nothing when
+ * it declares none. Computed out here rather than in the page so the choice can
+ * be tested without a browser.
+ */
+export function toolInputs(declared) {
+  return Object.fromEntries(
+    declared.map(({ name, example }) => [name, example === undefined ? {} : example])
+  );
 }
 
 /**
@@ -380,9 +403,9 @@ export function renderToolPass(agentTools) {
         ? "Not called — it is marked consequential, so a caller is meant to ask a person first."
         : "Not called — the tool pass ran out of time before reaching it.");
     } else if (tool.call.ok) {
-      lines.push(`Called it with no arguments. Got back:\n\n\`\`\`\n${tool.call.returned}\n\`\`\``);
+      lines.push(`Called it with \`${tool.call.input}\`. Got back:\n\n\`\`\`\n${tool.call.returned}\n\`\`\``);
     } else {
-      lines.push(`Called it with no arguments. **It failed: ${tool.call.error}**`);
+      lines.push(`Called it with \`${tool.call.input}\`. **It failed: ${tool.call.error}**`);
     }
     lines.push("");
   }
