@@ -190,6 +190,17 @@ it did not do**, because it once ended on "Reset complete" with the previous
 product's tickets still on the board. Its commit message marks **when the
 current product began**, which is how shipped work is bounded to this product.
 
+It **lands the product deletion through a pull request**, on a dated `reset/`
+branch merged with a merge commit so that message reaches `main` intact: `main`'s
+ruleset refuses direct pushes, and the first reset after it was added did every
+step but that one. If the PR does not merge, it is left open and listed by URL in
+what the reset did not do. It also **closes every open milestone** — closed, not
+deleted, since milestones are history like closed issues. Left open, the old
+product's milestone was read by the new product's first Product Owner run as its
+own, closed as delivered and written up in a retro about a product that no longer
+existed; the Product Owner only ever reads the open milestone, so a closed one
+never carries over.
+
 ---
 
 ## The dev loop
