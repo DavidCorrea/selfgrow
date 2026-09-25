@@ -16,6 +16,13 @@ permissions:
   # It appends one entry per run to its own journal thread (a Discussion).
   discussions: write
 
+# One retro per week, so one run at a time: two overlapping dispatches would each
+# read the same week and write two retros and two journal entries. Its own group,
+# not the writer lock — it never touches main.
+concurrency:
+  group: product-owner
+  cancel-in-progress: false
+
 jobs:
   refine-vision:
     runs-on: ubuntu-latest
