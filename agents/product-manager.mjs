@@ -652,8 +652,9 @@ async function main() {
   kickBuilder();
 
   // The week's report goes out last, so it describes a board this run has already
-  // finished grooming. Best-effort: a failed report must never cost the day's
-  // building.
+  // finished grooming. Caught so a failed report cannot cost the day's building —
+  // but the run still FAILS, after everything else is done. It used to log a
+  // warning and go green, and the digest stopped for two Sundays with nobody told.
   if (weekly) {
     try {
       await publishWeeklyReport({
@@ -662,7 +663,8 @@ async function main() {
         milestone,
       });
     } catch (e) {
-      log("warn", "Weekly report: could not publish.", errorData(e));
+      log("error", "Weekly report: could not publish.", errorData(e));
+      process.exitCode = 1;
     }
   }
 

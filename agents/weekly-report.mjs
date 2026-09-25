@@ -18,10 +18,10 @@
 // addressed to a human is a human on the critical path, and this pipeline is
 // meant to run without one.
 import { log, withLogGroup } from "./log.mjs";
-import { postDiscussion } from "./discussions.mjs";
+import { findDiscussion, postDiscussion } from "./discussions.mjs";
 // readPage reaches the Story, which now carries the project's long arc so the
 // changelog can be trimmed without amputating its early chapters.
-import { readChangelog, readPage, writeStory } from "./wiki.mjs";
+import { readChangelog, readPage, trimSections, writeStory } from "./wiki.mjs";
 import {
   loadPrompt,
   fillTemplate,
@@ -34,7 +34,28 @@ import {
 // Who the digest @-mentions. Without it the issue is still filed, just silently.
 const NOTIFY_USER = process.env.GH_NOTIFY_USER || "";
 
-const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
+const daysAgo = (n, now = Date.now()) => new Date(now - n * 86_400_000).toISOString().slice(0, 10);
+
+/** The first day of the week a report written at `now` covers — the week's key. */
+export const digestWeekStart = (now = new Date()) => daysAgo(7, now.getTime());
+
+// The part of a digest's title that names its week, and nothing that can change
+// between two runs on the same day. The shipped count is deliberately after it:
+// the week of 08-30 was posted three times, by three Sunday runs whose counts
+// could differ, and a lookup on the whole title would miss every earlier post.
+export const digestTitlePrefix = (weekStart) => `Week of ${weekStart} —`;
+
+export const digestTitle = (weekStart, shippedCount) => `${digestTitlePrefix(weekStart)} ${shippedCount} shipped`;
+
+// How much changelog the report reads. The Story carries the arc, so the report
+// only needs enough recent history to see this week against the one before it —
+// two weeks of dated sections. It used to read the page whole: the 45 days the
+// page keeps grew from 5 KB to 17 KB over the three Sundays in which the session
+// went from answering in 25 seconds to hitting the 12-minute cap on its first turn.
+const REPORT_CHANGELOG_DAYS = Number(process.env.REPORT_CHANGELOG_DAYS || 14);
+
+/** The recent end of the changelog — the part the report actually needs. */
+export const reportChangelog = (changelog) => trimSections(changelog, REPORT_CHANGELOG_DAYS);
 
 /** Strip the code fence a model wraps prose in about a third of the time. */
 export function cleanMarkdown(text) {
@@ -117,8 +138,23 @@ const DIGEST_CATEGORY = process.env.DIGEST_CATEGORY || "Announcements";
  * One model session for both: the narrative it produces is the body of the
  * digest's "what shipped" section as well as the Story page, and asking
  * twice would pay twice for the same paragraphs.
+ *
+ * Throws when the report cannot be made, rather than logging and returning:
+ * it failed silently for two Sundays running — a capped session logged a
+ * warning, the run went green, and nothing noticed the digest had stopped.
  */
-export async function publishWeeklyReport({ shipped, open, milestone }) {
+export async function publishWeeklyReport({ shipped, open, milestone, now = new Date() }) {
+  const weekStart = digestWeekStart(now);
+  // Checked BEFORE the model runs, and the whole report skipped rather than just
+  // the post: a re-run on the same Sunday would otherwise pay for a second
+  // session and evolve the Story twice from one week. A lookup that fails throws
+  // — "not found" is an instruction to post, so guessing would duplicate.
+  const existing = findDiscussion(DIGEST_CATEGORY, digestTitlePrefix(weekStart));
+  if (existing) {
+    log("info", `Weekly report: the week of ${weekStart} is already published at ${existing.url} — not posting it again.`);
+    return existing.url;
+  }
+
   const week = gatherWeek({ shipped, open });
 
   const narrative = cleanMarkdown(
@@ -131,7 +167,7 @@ export async function publishWeeklyReport({ shipped, open, milestone }) {
           // regenerating the whole history from a trimmed record would quietly
           // amputate the project's early chapters every time the window moved.
           STORY_SO_FAR: readPage("Story.md").trim() || "(nothing written yet — this is the first)",
-          CHANGELOG: readChangelog(),
+          CHANGELOG: reportChangelog(readChangelog()),
           SHIPPED: week.shipped.length
             ? week.shipped.map((i) => `- ${i.title} (#${i.number})`).join("\n")
             : "(nothing shipped this week)",
@@ -145,6 +181,7 @@ export async function publishWeeklyReport({ shipped, open, milestone }) {
       })
     )
   );
+  if (!narrative) throw new Error(`Weekly report: the model returned nothing for the week of ${weekStart}.`);
 
   const { story, week: weekProse } = splitReport(narrative);
 
@@ -154,13 +191,13 @@ export async function publishWeeklyReport({ shipped, open, milestone }) {
     log("warn", "Weekly report: no story produced — leaving Story unchanged.");
   }
 
-  const title = `Week of ${daysAgo(7)} — ${week.shipped.length} shipped`;
   const url = postDiscussion({
     category: DIGEST_CATEGORY,
-    title,
+    title: digestTitle(weekStart, week.shipped.length),
     body: renderDigest(week, weekProse, milestone),
   });
-  if (url) log("info", `Weekly report: published at ${url}`);
+  if (!url) throw new Error(`Weekly report: the digest for the week of ${weekStart} could not be posted to ${DIGEST_CATEGORY}.`);
+  log("info", `Weekly report: published at ${url}`);
   return url;
 }
 
