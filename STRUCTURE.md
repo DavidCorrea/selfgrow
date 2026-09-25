@@ -41,7 +41,7 @@ Each is invoked as `node agents/<name>.mjs` by the workflow named beside it.
 | `pi-update.mjs` | `pi-update.yml` — Tue 07:00 | bumps the pi coding agent; reverts if the model chain breaks |
 | `model-check.mjs` | `pi-update.yml`, second step | asserts the model chain against pi's bundled snapshot |
 | `verify-product.mjs` | `ci.yml` | runs `verifyBuild()` as a job whose exit code a ruleset can require |
-| `reset.mjs` | `reset.yml` — `workflow_dispatch` | deletes the product, keeps the machine |
+| `reset.mjs` | `reset.yml` — `workflow_dispatch` | deletes the product (through a `reset/` PR), keeps the machine |
 
 ## `agents/` — libraries
 
