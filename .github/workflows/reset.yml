@@ -1,8 +1,8 @@
 name: reset
 
 # Run manually, with the other workflows paused: cancels pending runs, closes all
-# open issues and agent PRs, clears the board, resets the wiki's memory pages, and
-# deletes the previous product — on a reset/ branch, landed on main through a pull
+# open issues, milestones and agent PRs, clears the board, resets the wiki's memory
+# pages, archives the product's Discussions memory, and deletes the previous product — on a reset/ branch, landed on main through a pull
 # request once the required checks pass, because main's ruleset takes nothing else.
 #
 # Every other workflow here is additive — this is the one that dismantles. It used

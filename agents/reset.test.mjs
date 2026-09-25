@@ -10,6 +10,8 @@ import {
   isHarnessPath,
   incompleteResetMessage,
   closeAllIssues,
+  closeAllMilestones,
+  notDone,
   resetBranchName,
   unmergedDeletionGap,
   landProductDeletion,
@@ -83,6 +85,59 @@ esac
     closeAllIssues();
     const closes = fs.readFileSync(callLog, "utf-8").split("\n").filter((c) => c.startsWith("issue close"));
     assert.deepEqual(closes, ["issue close 3 --reason not planned", "issue close 4 --reason not planned"]);
+  });
+});
+
+// A `gh` first on PATH that lists two open milestones and refuses to close the
+// second (or, scripted, to list them at all): the gh boundary, not our code.
+test("closing the previous product's milestones", async (t) => {
+  const fakeBin = fs.mkdtempSync(join(os.tmpdir(), "selfgrow-reset-milestones-"));
+  const callLog = join(fakeBin, "calls.log");
+  fs.writeFileSync(
+    join(fakeBin, "gh"),
+    `#!/bin/sh
+printf '%s\\n' "$*" >> "${callLog}"
+case "$*" in
+  "api repos/{owner}/{repo}/milestones?state=open"*)
+    [ "$FAKE_GH_LIST_FAILS" = 1 ] && exit 1
+    echo '[{"number":1,"title":"A living atmosphere"},{"number":2,"title":"Stuck"}]' ;;
+  *"milestones/2 "*) exit 1 ;;
+esac
+`,
+    { mode: 0o755 }
+  );
+  const realPath = process.env.PATH;
+  process.env.PATH = `${fakeBin}:${realPath}`;
+  t.after(() => {
+    process.env.PATH = realPath;
+    fs.rmSync(fakeBin, { recursive: true, force: true });
+  });
+  t.beforeEach(() => {
+    fs.writeFileSync(callLog, "");
+    notDone.length = 0;
+    delete process.env.FAKE_GH_LIST_FAILS;
+  });
+  const calls = () => fs.readFileSync(callLog, "utf-8").split("\n").filter(Boolean);
+
+  // Left open, the new product's Product Owner read it as its own current milestone.
+  await t.test("closes every open milestone rather than deleting it", () => {
+    closeAllMilestones();
+    const closes = calls().filter((call) => call.includes("--method"));
+    assert.deepEqual(closes, [
+      "api --method PATCH repos/{owner}/{repo}/milestones/1 -f state=closed",
+      "api --method PATCH repos/{owner}/{repo}/milestones/2 -f state=closed",
+    ]);
+  });
+
+  await t.test("reports a milestone it could not close as not done", () => {
+    closeAllMilestones();
+    assert.deepEqual(notDone, ['close milestone "Stuck" (#2)']);
+  });
+
+  await t.test("reports the milestones as not done when they cannot be listed", () => {
+    process.env.FAKE_GH_LIST_FAILS = "1";
+    closeAllMilestones();
+    assert.deepEqual(notDone, ["close the open milestones (could not list them)"]);
   });
 });
 
