@@ -236,6 +236,10 @@ function resetWikiMemory() {
  * almost all about the machine.
  *
  * Renamed, not deleted, so the previous project stays readable.
+ *
+ * If journals exist and not one could be archived, archiveProductMemory throws
+ * and the reset stops here — before clearProduct, so the product is never
+ * deleted while its reasoning is left behind for the next one.
  */
 function resetDiscussionMemory() {
   const archived = archiveProductMemory();
