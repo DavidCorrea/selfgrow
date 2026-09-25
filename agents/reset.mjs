@@ -43,6 +43,7 @@ import {
   fetchOpenIssues,
   PROJECT_OWNER,
   PROJECT_NUMBER,
+  RESET_COMMIT_MESSAGE,
 } from "./shared.mjs";
 import { archiveProductMemory } from "./discussions.mjs";
 
@@ -360,7 +361,7 @@ function clearProduct() {
   for (let i = 0; i < doomed.length; i += BATCH) {
     gitExec(["rm", "-r", "--quiet", "--", ...doomed.slice(i, i + BATCH)]);
   }
-  gitExec(["commit", "-m", "Clear the previous product for a fresh start"]);
+  gitExec(["commit", "-m", RESET_COMMIT_MESSAGE]);
   try {
     gitExec(["push", "origin", "main"]);
     log("info", `Deleted ${doomed.length} product file(s) from main.`);

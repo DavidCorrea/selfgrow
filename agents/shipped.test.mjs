@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import fs from "fs";
 import os from "os";
 import { join } from "path";
-import { isShipped, fetchShippedIssues, retireIssue } from "./shared.mjs";
+import { isShipped, fetchShippedIssues, retireIssue, productStartedAt, RESET_COMMIT_MESSAGE } from "./shared.mjs";
 
 let fakeBin;
 const realPath = process.env.PATH;
@@ -20,6 +20,7 @@ const FAKE_GH = `#!/bin/sh
 printf '%s\\n' "$*" >> "$FAKE_GH_LOG"
 case "$1 $2" in
   "issue list") cat "$FAKE_GH_CLOSED" ;;
+  "search commits") [ -n "$FAKE_GH_SEARCH_FAILS" ] && { echo "HTTP 503" >&2; exit 1; }; cat "$FAKE_GH_RESETS" ;;
   "issue comment") cat > /dev/null ;;
   "project item-list") echo '{"items":[{"id":"ITEM_7","content":{"number":7}}]}' ;;
 esac
@@ -31,14 +32,22 @@ before(() => {
   process.env.PATH = `${fakeBin}:${realPath}`;
   process.env.FAKE_GH_CLOSED = join(fakeBin, "closed.json");
   process.env.FAKE_GH_LOG = join(fakeBin, "calls.log");
+  process.env.FAKE_GH_RESETS = join(fakeBin, "resets.json");
+  process.env.GITHUB_REPOSITORY = "owner/repo";
 });
 
-beforeEach(() => fs.writeFileSync(process.env.FAKE_GH_LOG, ""));
+beforeEach(() => {
+  fs.writeFileSync(process.env.FAKE_GH_LOG, "");
+  fs.writeFileSync(process.env.FAKE_GH_RESETS, "[]");
+  delete process.env.FAKE_GH_SEARCH_FAILS;
+});
 
 after(() => {
   process.env.PATH = realPath;
   delete process.env.FAKE_GH_CLOSED;
   delete process.env.FAKE_GH_LOG;
+  delete process.env.FAKE_GH_RESETS;
+  delete process.env.GITHUB_REPOSITORY;
   fs.rmSync(fakeBin, { recursive: true, force: true });
 });
 
@@ -72,6 +81,63 @@ test("listing what shipped", async (t) => {
     fs.writeFileSync(process.env.FAKE_GH_CLOSED, "[]");
     fetchShippedIssues();
     assert.match(calls().find((c) => c.startsWith("issue list")), /stateReason/);
+  });
+});
+
+// A reset keeps closed issues, so without a lower bound the old product's work,
+// shipped in the days before the reset, was the new product's first week.
+const commit = (message, date) => ({ commit: { message, committer: { date } } });
+
+test("finding when the current product began", async (t) => {
+  await t.test("is the newest reset, when there have been several", () => {
+    const start = productStartedAt([
+      commit(RESET_COMMIT_MESSAGE, "2026-08-24T17:02:11Z"),
+      commit(RESET_COMMIT_MESSAGE, "2026-08-28T18:36:11Z"),
+    ]);
+    assert.equal(start, "2026-08-28T18:36:11Z");
+  });
+
+  await t.test("ignores a commit that only mentions the reset", () => {
+    const start = productStartedAt([
+      commit(`Explain why "${RESET_COMMIT_MESSAGE}" runs last`, "2026-09-01T00:00:00Z"),
+      commit(RESET_COMMIT_MESSAGE, "2026-08-28T18:36:11Z"),
+    ]);
+    assert.equal(start, "2026-08-28T18:36:11Z");
+  });
+
+  await t.test("is unbounded when there has never been a reset", () => {
+    assert.equal(productStartedAt([]), null);
+  });
+});
+
+test("listing what shipped after a reset", async (t) => {
+  const closed = [
+    { number: 1, title: "Old product, shipped before the reset", stateReason: "COMPLETED", closedAt: "2026-08-27T10:00:00Z" },
+    { number: 2, title: "New product, shipped after it", stateReason: "COMPLETED", closedAt: "2026-08-29T10:00:00Z" },
+  ];
+
+  await t.test("leaves out work the previous product shipped", () => {
+    fs.writeFileSync(process.env.FAKE_GH_CLOSED, JSON.stringify(closed));
+    fs.writeFileSync(process.env.FAKE_GH_RESETS, JSON.stringify([commit(RESET_COMMIT_MESSAGE, "2026-08-28T18:36:11Z")]));
+    assert.deepEqual(fetchShippedIssues().map((i) => i.number), [2]);
+  });
+
+  await t.test("keeps everything when there has never been a reset", () => {
+    fs.writeFileSync(process.env.FAKE_GH_CLOSED, JSON.stringify(closed));
+    assert.deepEqual(fetchShippedIssues().map((i) => i.number), [1, 2]);
+  });
+
+  await t.test("searches this repository for the reset's own commit message", () => {
+    fs.writeFileSync(process.env.FAKE_GH_CLOSED, "[]");
+    fetchShippedIssues();
+    const search = calls().find((c) => c.startsWith("search commits"));
+    assert.ok(search.includes(RESET_COMMIT_MESSAGE) && search.includes("--repo owner/repo"), search);
+  });
+
+  await t.test("throws rather than guessing there was no reset when the search fails", () => {
+    fs.writeFileSync(process.env.FAKE_GH_CLOSED, JSON.stringify(closed));
+    process.env.FAKE_GH_SEARCH_FAILS = "1";
+    assert.throws(() => fetchShippedIssues(), /Could not find when the current product began/);
   });
 });
 
