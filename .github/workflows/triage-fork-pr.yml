@@ -50,14 +50,18 @@ jobs:
       # contributor's code.
       - uses: ./.github/actions/setup
 
-      - name: Review the contribution
-        run: node agents/triage-fork-pr.mjs
-        env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      # Never as the node step's env — see the action.
+      - uses: ./.github/actions/secrets
+        with:
+          openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
           # The bot, not the PAT. This only reads a diff and posts a comment, and
           # it should hold nothing it does not need — least privilege matters more
           # than usual in a job that a stranger can trigger.
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          gh-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Review the contribution
+        run: node agents/triage-fork-pr.mjs
+        env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}

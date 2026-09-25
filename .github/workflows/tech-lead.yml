@@ -43,15 +43,19 @@ jobs:
       # No Chromium: it reads source, it doesn't drive the app.
       - uses: ./.github/actions/setup
 
+      # Never as the node step's env — see the action.
+      - uses: ./.github/actions/secrets
+        with:
+          openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
+          gh-token: ${{ secrets.AGENT_PAT }}
+
       - name: Run Tech Lead agent
         run: node agents/tech-lead.mjs
         env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           # One session over the manifest, the recently changed source, the
           # self-check suite and any parked tickets — plus however many files the
           # review opens for itself. It reads rather than being fed, so it spends
           # turns: MAX_SESSION_TURNS (40) is the ceiling on a review that keeps
           # opening files.
-          GH_TOKEN: ${{ secrets.AGENT_PAT }}
           GH_PROJECT_OWNER: '@me'
           GH_PROJECT_NUMBER: '3'

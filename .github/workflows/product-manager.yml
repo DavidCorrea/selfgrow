@@ -56,17 +56,20 @@ jobs:
           # Chromium is needed to screenshot the app for the visual check.
           playwright: 'true'
 
+      # Never as the node step's env — see the action.
+      - uses: ./.github/actions/secrets
+        with:
+          openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
+          # PAT carries `project` scope (board) and covers issue creation.
+          gh-token: ${{ secrets.AGENT_PAT }}
+
       - name: Run Product Manager agent
         run: node agents/product-manager.mjs
         env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           # Two sessions on an ordinary day — app review and the main grooming pass —
           # and a third on Sundays, when it also writes the week's report. The dedup
           # check used to be a third session; it deleted good tickets and is gone.
           # The PM runs FIRST each day (00:30) and then dispatches the Devs.
-          #
-          # PAT carries `project` scope (board) and covers issue creation.
-          GH_TOKEN: ${{ secrets.AGENT_PAT }}
           GH_PROJECT_OWNER: '@me'
           GH_PROJECT_NUMBER: '3'
           # Who the Sunday digest @-mentions, so it arrives as a notification
