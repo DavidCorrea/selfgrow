@@ -16,7 +16,7 @@
 // reading, and this one exists to be believed the one time it fires.
 import { pathToFileURL } from "url";
 import { log, withLogGroup, appendJobSummary, errorData } from "./log.mjs";
-import { readPage } from "./wiki.mjs";
+import { readPage, wikiPath } from "./wiki.mjs";
 import { postDiscussion, findOpenDiscussion, resolveDiscussion } from "./discussions.mjs";
 import {
   ghExec,
@@ -76,24 +76,55 @@ const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice
  * the API calls are not, and a check that quietly costs a request is a check
  * nobody will want to add.
  */
-async function gatherFacts() {
-  const closedRecently = JSON.parse(
-    ghExec(["issue", "list", "--state", "closed", "--limit", "200", "--json", "number,title,closedAt,labels"])
-  );
-  const open = fetchOpenIssues(200);
-  const runs = JSON.parse(
-    ghExec(["run", "list", "--limit", "60", "--json", "workflowName,conclusion,createdAt,status"])
-  );
-  return {
-    open,
-    closedRecently,
-    runs,
-    agentPrs: fetchOpenAgentPullRequests().map((pr) =>
-      classifyAgentPullRequest(pr, { staleMs: PR_STALE_MS })
-    ),
-    changelog: readPage("Changelog.md"),
-    site: await fetchSite(),
-  };
+function gatherFacts() {
+  return readFacts({
+    closedRecently: () =>
+      JSON.parse(ghExec(["issue", "list", "--state", "closed", "--limit", "200", "--json", "number,title,closedAt,labels"])),
+    open: () => fetchOpenIssues(200),
+    runs: () => JSON.parse(ghExec(["run", "list", "--limit", "60", "--json", "workflowName,conclusion,createdAt,status"])),
+    agentPrs: () =>
+      fetchOpenAgentPullRequests().map((pr) => classifyAgentPullRequest(pr, { staleMs: PR_STALE_MS })),
+    changelog: readChangelog,
+    site: fetchSite,
+  });
+}
+
+/**
+ * Read each fact on its own, so one that fails costs only the checks that need it.
+ *
+ * A fact that could not be read is not left empty. It used to be — or the whole
+ * run gave up and exited 0 — and an empty fact reads as a healthy one: no open
+ * issues is no abandoned tickets, no PRs is no stalled PRs. So an unreadable fact
+ * throws the moment a check touches it, and that check comes back unknown rather
+ * than clear.
+ */
+export async function readFacts(readers) {
+  const facts = {};
+  const unreadable = [];
+  for (const [name, read] of Object.entries(readers)) {
+    try {
+      facts[name] = await read();
+    } catch (e) {
+      log("warn", `Health: could not read ${name}.`, errorData(e));
+      unreadable.push(name);
+      Object.defineProperty(facts, name, {
+        enumerable: true,
+        get() {
+          throw new Error(`${name} could not be read: ${e.message}`);
+        },
+      });
+    }
+  }
+  return { facts, unreadable };
+}
+
+/**
+ * The changelog, or a throw when the wiki itself is unreachable. readPage answers
+ * "" for both a missing page and a missing wiki, and only the first is a fact.
+ */
+function readChangelog() {
+  if (!wikiPath("Changelog.md")) throw new Error("the wiki could not be cloned");
+  return readPage("Changelog.md");
 }
 
 /**
@@ -267,6 +298,41 @@ export function renderVitals({ open, closedRecently, site, agentPrs = [] }) {
 }
 
 /**
+ * Run every check, keeping "could not tell" apart from "all is well".
+ *
+ * A broken check must not take the others down with it — the whole point is to
+ * still be reporting when something else is wrong. But its silence is not a clear
+ * bill: counted as clear, one throwing check was enough to close a real alert.
+ */
+export async function runChecks(checks, facts) {
+  const findings = [];
+  const unknown = [];
+  for (const check of checks) {
+    try {
+      const finding = await check(facts);
+      if (finding) findings.push(finding);
+    } catch (e) {
+      log("warn", `Health: the ${check.name} check could not run.`, errorData(e));
+      unknown.push(`${check.name}: ${e.message || e}`);
+    }
+  }
+  return { findings, unknown };
+}
+
+/**
+ * What to do with the standing alert, given this run's results.
+ *
+ * Only a run where every check came back clear may close it. With any check
+ * unknown, the problem it reported may be exactly the one that could not be
+ * looked at.
+ */
+export function alertAction({ findings, unknown, standing }) {
+  if (findings.length) return standing ? "hold" : "post";
+  if (unknown.length) return "hold";
+  return standing ? "close" : "none";
+}
+
+/**
  * Publish, update, or clear the standing health alert.
  *
  * One open post at a time, naming everything currently wrong — five separate
@@ -277,22 +343,23 @@ export function renderVitals({ open, closedRecently, site, agentPrs = [] }) {
  * it filing duplicates meant one stale alert suppressed every later one. An alert
  * that cannot clear is an alert that only works once.
  */
-function publishAlert(findings, vitals) {
+function publishAlert({ findings, unknown }, vitals) {
   const standing = findOpenDiscussion(HEALTH_CATEGORY, HEALTH_TITLE_PREFIX);
+  const action = alertAction({ findings, unknown, standing });
 
-  if (!findings.length) {
-    if (standing) {
-      log("info", "Health: everything it reported is fixed — closing the standing alert.");
-      resolveDiscussion(
-        standing.id,
-        `Clear as of ${new Date().toISOString().slice(0, 10)}. Nothing that was reported here is still true.\n\n${vitals}`
-      );
-    }
+  if (action === "none") return;
+  if (action === "close") {
+    log("info", "Health: everything it reported is fixed — closing the standing alert.");
+    resolveDiscussion(
+      standing.id,
+      `Clear as of ${new Date().toISOString().slice(0, 10)}. Nothing that was reported here is still true.\n\n${vitals}`
+    );
     return;
   }
-
-  if (standing) {
-    log("info", `Health: ${standing.url} is already open for this — not posting another.`);
+  if (action === "hold") {
+    if (standing) {
+      log("info", `Health: ${standing.url} stays open — ${findings.length ? "it is still true" : "not everything could be checked"}.`);
+    }
     return;
   }
 
@@ -306,6 +373,7 @@ function publishAlert(findings, vitals) {
       mention,
       "## What is wrong",
       ...findings.map((f) => `- ${f}`),
+      ...(unknown.length ? ["", "## Could not check", ...unknown.map((u) => `- ${u}`)] : []),
       "",
       "## Where things stand",
       vitals,
@@ -319,41 +387,37 @@ function publishAlert(findings, vitals) {
 async function main() {
   log("info", "=== Health — measuring the pipeline ===");
 
-  let facts;
-  try {
-    facts = await withLogGroup("Gathering", () => gatherFacts());
-  } catch (e) {
-    log("error", "Health: could not read the pipeline's own records.", errorData(e));
-    printRunSummary("Health");
-    return;
-  }
+  const { facts, unreadable } = await withLogGroup("Gathering", () => gatherFacts());
 
-  const vitals = renderVitals(facts);
+  const vitals = unreadable.length
+    ? `Vitals incomplete — could not read ${unreadable.join(", ")}.`
+    : renderVitals(facts);
   log("info", vitals);
 
-  const findings = (
-    await Promise.all(
-      CHECKS.map(async (check) => {
-        try {
-          return await check(facts);
-        } catch (e) {
-          // A broken check must not take the others down with it — the whole
-          // point is to still be reporting when something else is wrong.
-          log("warn", `Health: the ${check.name} check threw.`, errorData(e));
-          return null;
-        }
-      })
-    )
-  ).filter(Boolean);
+  const results = await runChecks(CHECKS, facts);
+  const { findings, unknown } = results;
 
-  appendJobSummary(`## Health\n\n${vitals}\n\n${findings.length ? findings.map((f) => `- ${f}`).join("\n") : "No problems found."}`);
+  appendJobSummary(
+    [
+      `## Health\n\n${vitals}\n`,
+      findings.length ? findings.map((f) => `- ${f}`).join("\n") : "No problems found.",
+      unknown.length ? `\n### Could not check\n\n${unknown.map((u) => `- ${u}`).join("\n")}` : "",
+    ].join("\n")
+  );
 
   findings.forEach((f) => log("warn", `Health: ${f}`));
-  if (!findings.length) log("info", "Health: nothing to report.");
+  if (!findings.length && !unknown.length) log("info", "Health: nothing to report.");
   // Called either way: with findings it raises or holds the alert, and with none
-  // it closes a standing one that has been fixed.
-  publishAlert(findings, vitals);
+  // it closes a standing one that has been fixed — unless a check could not run.
+  publishAlert(results, vitals);
   printRunSummary("Health");
+
+  // Reported first, failed after: a run that could not look at everything must
+  // not read as a green one.
+  if (unknown.length) {
+    log("error", `Health: ${unknown.length} check(s) could not run — the pipeline's health is unknown, not fine.`);
+    process.exitCode = 1;
+  }
 }
 
 // Guarded so the checks above can be exercised without touching the API.

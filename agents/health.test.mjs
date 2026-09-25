@@ -10,6 +10,9 @@ import {
   checkWeeklyAgents,
   checkStalledPullRequests,
   checkDeployedSite,
+  readFacts,
+  runChecks,
+  alertAction,
 } from "./health.mjs";
 
 const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
@@ -169,5 +172,72 @@ test("noticing work the pipeline started and never finished", async (t) => {
     });
     assert.match(finding, /#687 \(#694, #713\)/);
     assert.match(finding, /already built/);
+  });
+});
+
+test("telling a check that could not run apart from one that came back clear", async (t) => {
+  const failingRead = () => {
+    throw new Error("gh: HTTP 502");
+  };
+
+  await t.test("a fact that could not be read makes the checks that need it unknown, not clear", async () => {
+    const { facts, unreadable } = await readFacts({ open: failingRead, closedRecently: () => [] });
+    assert.deepEqual(unreadable, ["open"]);
+    const { findings, unknown } = await runChecks([checkShipping, checkAbandonRate], facts);
+    assert.deepEqual(findings, []);
+    assert.equal(unknown.length, 2);
+    assert.match(unknown[0], /checkShipping: open could not be read: gh: HTTP 502/);
+  });
+
+  await t.test("an unreadable fact costs only the checks that read it", async () => {
+    const { facts } = await readFacts({ runs: failingRead, site: () => ({ url: "https://x/", status: 404 }) });
+    const { findings, unknown } = await runChecks([checkDeployedSite, checkWeeklyAgents], facts);
+    assert.equal(findings.length, 1);
+    assert.match(findings[0], /returned HTTP 404/);
+    assert.equal(unknown.length, 1);
+    assert.match(unknown[0], /^checkWeeklyAgents:/);
+  });
+
+  await t.test("an unreadable site is unknown, though an unconfigured one is silent", async () => {
+    const { facts } = await readFacts({ site: failingRead });
+    const { unknown } = await runChecks([checkDeployedSite], facts);
+    assert.equal(unknown.length, 1);
+  });
+
+  await t.test("a check that throws is reported as unknown", async () => {
+    const brokenCheck = () => {
+      throw new Error("bad data");
+    };
+    const { findings, unknown } = await runChecks([brokenCheck], {});
+    assert.deepEqual(findings, []);
+    assert.deepEqual(unknown, ["brokenCheck: bad data"]);
+  });
+});
+
+test("deciding what happens to the standing alert", async (t) => {
+  const standing = { id: "D_1", url: "https://example.test/discussions/1" };
+
+  await t.test("closes it only when every check came back clear", () => {
+    assert.equal(alertAction({ findings: [], unknown: [], standing }), "close");
+  });
+
+  await t.test("keeps it open when nothing was found but a check could not run", () => {
+    assert.equal(alertAction({ findings: [], unknown: ["checkShipping: open could not be read"], standing }), "hold");
+  });
+
+  await t.test("keeps it open while its problem is still true", () => {
+    assert.equal(alertAction({ findings: ["broken"], unknown: [], standing }), "hold");
+  });
+
+  await t.test("posts one when something is wrong and none is open", () => {
+    assert.equal(alertAction({ findings: ["broken"], unknown: ["x"], standing: null }), "post");
+  });
+
+  await t.test("does nothing when all is clear and nothing is open", () => {
+    assert.equal(alertAction({ findings: [], unknown: [], standing: null }), "none");
+  });
+
+  await t.test("posts nothing on unknowns alone, since there is no finding to name", () => {
+    assert.equal(alertAction({ findings: [], unknown: ["x"], standing: null }), "hold");
   });
 });
