@@ -1214,13 +1214,35 @@ export async function labelIssue(issueNumber, label) {
  * judged an empty backlog. A failed lookup is not an empty board, so it is not
  * allowed to look like one.
  */
-export function fetchOpenIssues(limit = 100) {
+export function fetchOpenIssues() {
+  let issues;
   try {
-    return JSON.parse(
-      ghExec(["issue", "list", "--state", "open", "--json", "number,title,body,labels,createdAt", "--limit", String(limit)])
+    issues = JSON.parse(
+      ghExec(["issue", "list", "--state", "open", "--json", "number,title,body,labels,createdAt", "--limit", String(LISTING_LIMIT)])
     );
   } catch (e) {
     throw new Error(`Could not list open issues: ${e.message}`, { cause: e });
+  }
+  rejectTruncated(issues.length, "open issues");
+  return issues;
+}
+
+// How many rows a listing asks gh for. Deliberately far above any real board:
+// the point is not to page through thousands, it is that a listing which reaches
+// this is known to be cut short rather than taken for the whole.
+const LISTING_LIMIT = 1000;
+
+/**
+ * Throw when a listing came back at its limit.
+ *
+ * gh stops at --limit without saying so, and a truncated list reads as a complete
+ * one: an open blocker past the cutoff looked shipped and released everything
+ * waiting on it. Exactly at the limit is treated as cut short too — one false
+ * alarm at a thousand rows is cheaper than one silent miss.
+ */
+function rejectTruncated(count, what, limit = LISTING_LIMIT) {
+  if (count >= limit) {
+    throw new Error(`Listing ${what} reached its limit of ${limit}, so it may be incomplete — raise the limit.`);
   }
 }
 
@@ -1466,9 +1488,36 @@ export function dependencyNumbers(issue) {
  * Dependencies that haven't shipped yet, given the set of still-open issue
  * numbers. A dependency that is closed — or that never existed / was retired —
  * is treated as met, so a stale reference can never strand a ticket forever.
+ *
+ * But only once that is confirmed. Absent from the open set used to be enough,
+ * and absent is not the same as closed: an issue filed after the listing, or one
+ * a listing missed, looked shipped and released everything waiting on it.
  */
-export function unmetDependencies(issue, openNumbers) {
-  return dependencyNumbers(issue).filter((n) => openNumbers.has(n));
+export function unmetDependencies(issue, openNumbers, isShipped = isConfirmedShipped) {
+  return dependencyNumbers(issue).filter((n) => openNumbers.has(n) || !isShipped(n));
+}
+
+// Confirmed only — an issue can be reopened, but a run is short enough that one
+// closing mid-run and reopening is not worth a second lookup.
+const confirmedShipped = new Set();
+
+/**
+ * Whether issue `number` is closed, or does not exist at all — either way nothing
+ * is left to wait for. False when it is open, or when the lookup fails: a
+ * dependency nobody could see is one that has not been shown to ship.
+ */
+export function isConfirmedShipped(number) {
+  if (confirmedShipped.has(number)) return true;
+  let shipped;
+  try {
+    shipped = ghExec(["api", `repos/{owner}/{repo}/issues/${number}`, "--jq", ".state"], { stdio: "pipe" }).trim() === "closed";
+  } catch (e) {
+    // 404: never existed. 410: deleted. A stale reference, not a blocker.
+    shipped = /HTTP (404|410)/.test(`${e.stderr || ""} ${e.message}`);
+    if (!shipped) log("warn", `Dependencies: could not confirm #${number} has shipped — treating it as unmet.`, errorData(e));
+  }
+  if (shipped) confirmedShipped.add(number);
+  return shipped;
 }
 
 // Not every issue is work.
@@ -1512,11 +1561,11 @@ export function isPlaytestFeedback(issue) {
  * True when the Builder may pick this ticket up now: not parked, not a report of
  * something, and everything it declared it depends on has shipped.
  */
-export function isBuildable(issue, openNumbers) {
+export function isBuildable(issue, openNumbers, isShipped = isConfirmedShipped) {
   return (
     !isBlocked(issue) &&
     !isNonWorkIssue(issue) &&
-    unmetDependencies(issue, openNumbers).length === 0
+    unmetDependencies(issue, openNumbers, isShipped).length === 0
   );
 }
 
@@ -1762,13 +1811,20 @@ function repoIssueUrl(issueNumber) {
   return `https://github.com/${repo}/issues/${issueNumber}`;
 }
 
-const PROJECT_ITEM_LIST_ARGS = ["project", "item-list", PROJECT_NUMBER, "--owner", PROJECT_OWNER, "--format", "json", "--limit", "200"];
+/** Every item on the board, raw. Throws when gh fails or the listing was cut short. */
+function readProjectItems() {
+  const res = ghProjectJson([
+    "project", "item-list", PROJECT_NUMBER, "--owner", PROJECT_OWNER, "--format", "json", "--limit", String(LISTING_LIMIT),
+  ]);
+  const items = res.items || [];
+  rejectTruncated(items.length, "the board's items");
+  return items;
+}
 
 /** Find the board item id for an issue number, or null if it isn't on the board. */
 function findProjectItemId(issueNumber) {
   try {
-    const res = ghProjectJson(PROJECT_ITEM_LIST_ARGS);
-    const items = res.items || [];
+    const items = readProjectItems();
     const match = items.find((it) => it.content && it.content.number === Number(issueNumber));
     return match ? match.id : null;
   } catch (e) {
@@ -1784,13 +1840,13 @@ function findProjectItemId(issueNumber) {
  * unreadable board is not an empty one.
  */
 export function listProjectItems() {
-  let res;
+  let items;
   try {
-    res = ghProjectJson(PROJECT_ITEM_LIST_ARGS);
+    items = readProjectItems();
   } catch (e) {
     throw new Error(`Could not list the board's items: ${e.message}`, { cause: e });
   }
-  return (res.items || []).map((it) => ({
+  return items.map((it) => ({
     number: it.content && typeof it.content.number === "number" ? it.content.number : null,
     title: it.title || (it.content && it.content.title) || "(untitled)",
     status: it.status || "No Status",
@@ -2113,13 +2169,14 @@ export function fetchOpenAgentPullRequests() {
     prs = JSON.parse(
       ghAs(
         patToken(),
-        ["pr", "list", "--state", "open", "--limit", "100", "--json", "number,headRefName,createdAt,url,title,mergeable,statusCheckRollup"],
+        ["pr", "list", "--state", "open", "--limit", String(LISTING_LIMIT), "--json", "number,headRefName,createdAt,url,title,mergeable,statusCheckRollup"],
         { stdio: "pipe" }
       )
     );
   } catch (e) {
     throw new Error(`Could not list open pull requests: ${e.message}`, { cause: e });
   }
+  rejectTruncated(prs.length, "open pull requests");
   return prs.filter((pr) => issueNumberFromAgentBranch(pr.headRefName));
 }
 

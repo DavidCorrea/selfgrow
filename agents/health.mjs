@@ -80,7 +80,7 @@ function gatherFacts() {
   return readFacts({
     closedRecently: () =>
       JSON.parse(ghExec(["issue", "list", "--state", "closed", "--limit", "200", "--json", "number,title,closedAt,labels"])),
-    open: () => fetchOpenIssues(200),
+    open: () => fetchOpenIssues(),
     runs: () => JSON.parse(ghExec(["run", "list", "--limit", "60", "--json", "workflowName,conclusion,createdAt,status"])),
     agentPrs: () =>
       fetchOpenAgentPullRequests().map((pr) => classifyAgentPullRequest(pr, { staleMs: PR_STALE_MS })),

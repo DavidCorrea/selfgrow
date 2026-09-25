@@ -457,7 +457,7 @@ function fileFindings(findings, verdict) {
   // Exact titles only. The Playtester repeats itself in the obvious way — the
   // same complaint, worded the same — and anything subtler is caught downstream
   // by the PM's own dedup, which already runs over everything it grooms.
-  const seen = new Set(fetchOpenIssues(100).map((i) => (i.title || "").toLowerCase().trim()));
+  const seen = new Set(fetchOpenIssues().map((i) => (i.title || "").toLowerCase().trim()));
 
   let filed = 0;
   for (const finding of findings.slice(0, MAX_FINDINGS)) {

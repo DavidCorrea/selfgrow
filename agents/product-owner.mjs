@@ -55,7 +55,7 @@ function readWeek() {
   } catch (e) {
     log("warn", "Could not read what shipped this week.", errorData(e));
   }
-  const open = fetchOpenIssues(200);
+  const open = fetchOpenIssues();
   const since = daysAgo(7);
   return {
     shipped: closed.filter((i) => (i.closedAt || "") >= since),
