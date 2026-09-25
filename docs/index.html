@@ -201,6 +201,10 @@
     #offline-summary {
       position: fixed;
       inset: 0;
+      width: 100vw;
+      height: 100vh;
+      min-width: 100vw;
+      min-height: 100vh;
       background: #0a0a0f;
       display: flex;
       align-items: center;
@@ -492,11 +496,32 @@
         offlineAmount.textContent = gained >= 1 ? Math.floor(gained) : gained.toFixed(1);
         offlineSummary.hidden = false;
         offlineSummary.querySelector(".offline-panel").focus();
+
+        // Disable action buttons while overlay is visible so no click
+        // can reach them through the covering overlay.
+        btnGather.disabled = true;
+        btnSharpen.disabled = true;
+
+        // Seal the body against pointer events — the overlay is the only
+        // interactive layer. The overlay itself keeps pointer-events: auto
+        // so its dismiss button remains clickable.
+        document.body.style.pointerEvents = "none";
+        offlineSummary.style.pointerEvents = "auto";
+
+        // Force flex display so the overlay is visible even in edge cases
+        // where the hidden attribute removal doesn't trigger the CSS.
+        offlineSummary.style.display = "flex";
       }
     }
 
     function dismissOffline() {
       offlineSummary.hidden = true;
+      offlineSummary.style.display = ""; // clear inline display override
+
+      // Restore interactivity: re-enable gather (sharpen is managed by renderUI)
+      btnGather.disabled = false;
+      document.body.style.pointerEvents = "";
+      offlineSummary.style.pointerEvents = "";
     }
 
     btnDismiss.addEventListener("click", dismissOffline);

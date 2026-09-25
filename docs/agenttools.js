@@ -70,13 +70,14 @@ export function tools() {
       description: "Performs a named action the visitor could take from the "
         + "page, and returns the state afterwards. Supported actions: "
         + '"gather" — instantly adds +1 wood; '
-        + '"sharpen" — consumes ' + UPGRADE_COST + ' wood to permanently increase the wood accumulation rate.',
+        + '"sharpen" — consumes ' + UPGRADE_COST + ' wood to permanently increase the wood accumulation rate; '
+        + '"dismiss-offline" — dismisses the offline-summary overlay if visible.',
       inputSchema: {
         type: "object",
         properties: {
           action: {
             type: "string",
-            description: 'The action to perform. Supported: "gather", "sharpen".',
+            description: 'The action to perform. Supported: "gather", "sharpen", "dismiss-offline".',
           },
         },
         required: ["action"],
@@ -91,7 +92,19 @@ export function tools() {
           const result = craftUpgrade();
           return withGoal(result.state);
         }
-        throw new Error('Unknown action "' + action + '". Supported: gather, sharpen');
+        if (action === "dismiss-offline") {
+          const overlay = document.getElementById("offline-summary");
+          if (overlay && !overlay.hidden) {
+            overlay.hidden = true;
+            overlay.style.display = ""; // clear inline display override
+            const btnGather = document.getElementById("btn-gather");
+            if (btnGather) btnGather.disabled = false;
+            document.body.style.pointerEvents = "";
+            overlay.style.pointerEvents = "";
+          }
+          return withGoal(getState());
+        }
+        throw new Error('Unknown action "' + action + '". Supported: gather, sharpen, dismiss-offline');
       },
     },
   ];

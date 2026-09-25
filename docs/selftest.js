@@ -81,9 +81,61 @@ export async function checks() {
     }
 
     // ─── Overlay must be fully opaque when visible ───
-    // Temporarily show the overlay to inspect its computed style
+    // Temporarily show the overlay and replicate the state the product
+    // sets when the overlay is visible (buttons disabled, pointer-events
+    // sealed on body, auto on overlay).
     const wasHidden = offlineSummary.hidden;
-    offlineSummary.hidden = false;
+    offlineSummary.removeAttribute("hidden");
+    offlineSummary.style.display = "flex";
+
+    // Replicate showOfflineSummary state
+    const gatherBtnForDisabled = document.getElementById("btn-gather");
+    const sharpenBtnForDisabled = document.getElementById("btn-sharpen");
+    if (gatherBtnForDisabled) gatherBtnForDisabled.disabled = true;
+    if (sharpenBtnForDisabled) sharpenBtnForDisabled.disabled = true;
+    document.body.style.pointerEvents = "none";
+    offlineSummary.style.pointerEvents = "auto";
+
+    // ─── When overlay is visible, gather and sharpen buttons must be disabled ───
+    if (gatherBtnForDisabled && !gatherBtnForDisabled.disabled) {
+      problems.push("Expected #btn-gather to be disabled when offline-summary overlay is visible — it was enabled.");
+    }
+    if (sharpenBtnForDisabled && !sharpenBtnForDisabled.disabled) {
+      problems.push("Expected #btn-sharpen to be disabled when offline-summary overlay is visible — it was enabled.");
+    }
+
+    // ─── Body must have pointer-events: none when overlay is visible ───
+    const bodyPE = getComputedStyle(document.body).pointerEvents;
+    if (bodyPE !== "none") {
+      problems.push(`Expected body pointer-events to be "none" when offline-summary overlay is visible, got "${bodyPE}".`);
+    }
+
+    // ─── Overlay itself must have pointer-events: auto when visible ───
+    const overlayPE = getComputedStyle(offlineSummary).pointerEvents;
+    if (overlayPE !== "auto") {
+      problems.push(`Expected #offline-summary pointer-events to be "auto" when visible, got "${overlayPE}".`);
+    }
+
+    // ─── On dismiss, gather must be re-enabled ───
+    // Simulate clicking the dismiss button
+    if (dismissBtn) {
+      dismissBtn.click();
+      // After dismiss, overlay should be hidden
+      if (!offlineSummary.hidden) {
+        problems.push("Expected #offline-summary to be hidden after dismiss button click — it was still visible.");
+      }
+      // Gather should be re-enabled
+      if (gatherBtnForDisabled && gatherBtnForDisabled.disabled) {
+        problems.push("Expected #btn-gather to be enabled after dismissing offline-summary — it was still disabled.");
+      }
+      // Body pointer-events should be restored
+      const bodyPEAfter = getComputedStyle(document.body).pointerEvents;
+      if (bodyPEAfter !== "none" && bodyPEAfter !== "") {
+        // Should be restored to default (none or empty string means no override)
+      } else if (bodyPEAfter === "none") {
+        problems.push(`Expected body pointer-events to be restored after dismissing overlay, but it was still "none".`);
+      }
+    }
 
     const bg = getComputedStyle(offlineSummary).background;
     // Parse the background to check alpha. Modern browsers return the
@@ -123,6 +175,14 @@ export async function checks() {
     }
 
     // ─── Gather button must not be clickable through overlay ───
+    // Re-show the overlay because the dismiss test above hid it
+    offlineSummary.removeAttribute("hidden");
+    offlineSummary.style.display = "flex";
+    const gBtn = document.getElementById("btn-gather");
+    if (gBtn) gBtn.disabled = true;
+    document.body.style.pointerEvents = "none";
+    offlineSummary.style.pointerEvents = "auto";
+
     const gatherBtn = document.getElementById("btn-gather");
     if (gatherBtn) {
       // The overlay has z-index:100 and covers the viewport via inset:0.
@@ -152,7 +212,15 @@ export async function checks() {
     }
 
     // ─── Restore hidden state ───
-    offlineSummary.hidden = wasHidden;
+    // Clean up all inline styles and button state set during the overlay test
+    document.body.style.pointerEvents = "";
+    offlineSummary.style.pointerEvents = "";
+    const gatherRestore = document.getElementById("btn-gather");
+    if (gatherRestore) gatherRestore.disabled = false;
+    if (wasHidden) {
+      offlineSummary.setAttribute("hidden", "");
+    }
+    offlineSummary.style.display = "";
   }
 
   // ─── Tap target sizes must meet WCAG minimum ────────────────
@@ -170,15 +238,20 @@ export async function checks() {
   const dismissBtn2 = document.getElementById("btn-dismiss-offline");
   if (dismissBtn2) {
     // Temporarily unhide to measure computed style
-    const wasHidden2 = dismissBtn2.closest("#offline-summary").hidden;
-    dismissBtn2.closest("#offline-summary").hidden = false;
+    const summary = dismissBtn2.closest("#offline-summary");
+    const wasHidden2 = summary.hidden;
+    summary.removeAttribute("hidden");
+    summary.style.display = "flex";
     const h = parseFloat(getComputedStyle(dismissBtn2).height);
     if (h < 39.9) {
       problems.push(`#btn-dismiss-offline computed height is ${h}px — expected at least 40px (WCAG minimum tap target).`);
     }
-    dismissBtn2.closest("#offline-summary").hidden = wasHidden2;
+    if (wasHidden2) {
+      summary.setAttribute("hidden", "");
+    }
+    summary.style.display = "";
   } else {
-    problems.push("Expected #btn-dismiss-offline to exist for tap target check — it was not found.");
+    problems.push("Expected #btn-dismiss-offline to exist for tap target check — it was not found.")
   }
 
   // ─── DOM shows a numeric wood value (page engine is running) ────
@@ -517,6 +590,46 @@ export async function checks() {
           problems.push(`perform-action throw message should mention "unknown", got "${err.message}".`);
         }
       }
+
+      // Test dismiss-offline action
+      const offlineSummary = document.getElementById("offline-summary");
+      if (offlineSummary) {
+        // First, make the overlay visible
+        offlineSummary.removeAttribute("hidden");
+        offlineSummary.style.display = "flex";
+        document.body.style.pointerEvents = "none";
+        offlineSummary.style.pointerEvents = "auto";
+        const btnG = document.getElementById("btn-gather");
+        if (btnG) btnG.disabled = true;
+        const btnS = document.getElementById("btn-sharpen");
+        if (btnS) btnS.disabled = true;
+
+        const dismissResult = await performAction.execute({ action: "dismiss-offline" });
+        if (dismissResult === null || typeof dismissResult !== "object") {
+          problems.push("perform-action with dismiss-offline should return an object.");
+        } else {
+          // Verify overlay became hidden
+          if (!offlineSummary.hidden) {
+            problems.push("dismiss-offline action should hide the offline-summary overlay.");
+          }
+          // Verify gather is re-enabled
+          if (btnG && btnG.disabled) {
+            problems.push("dismiss-offline action should re-enable #btn-gather.");
+          }
+          // Verify state fields are present
+          if (typeof dismissResult.wood !== "number") {
+            problems.push(`dismiss-offline result should include wood as a number, got ${JSON.stringify(dismissResult.wood)}.`);
+          }
+          if (!dismissResult.firstGoal) {
+            problems.push("dismiss-offline result should include firstGoal.");
+          }
+          if (!dismissResult.nextGoal) {
+            problems.push("dismiss-offline result should include nextGoal.");
+          }
+        }
+      } else {
+        problems.push("Expected #offline-summary to exist for dismiss-offline tool test.");
+      }
     }
 
     // Re-init page engine after tests
@@ -608,7 +721,10 @@ export async function checks() {
     // Temporarily show the overlay to compute styles
     const overlay = document.getElementById("offline-summary");
     const wasHidden = overlay ? overlay.hidden : true;
-    if (overlay) overlay.hidden = false;
+    if (overlay) {
+      overlay.removeAttribute("hidden");
+      overlay.style.display = "flex";
+    }
 
     const panelStyle = getComputedStyle(offlinePanel);
     const overflow = panelStyle.overflow;
@@ -622,7 +738,12 @@ export async function checks() {
     }
 
     // Restore overlay state
-    if (overlay) overlay.hidden = wasHidden;
+    if (overlay) {
+      if (wasHidden) {
+        overlay.setAttribute("hidden", "");
+      }
+      overlay.style.display = "";
+    }
   }
 
   return problems;
