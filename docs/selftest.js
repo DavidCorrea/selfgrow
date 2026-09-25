@@ -72,6 +72,80 @@ export async function checks() {
     if (!dismissBtn) {
       problems.push("Expected #btn-dismiss-offline to exist inside #offline-summary — it was not found.");
     }
+
+    // ─── Overlay must be fully opaque when visible ───
+    // Temporarily show the overlay to inspect its computed style
+    const wasHidden = offlineSummary.hidden;
+    offlineSummary.hidden = false;
+
+    const bg = getComputedStyle(offlineSummary).background;
+    // Parse the background to check alpha. Modern browsers return the
+    // rgba/rgb form, e.g. "rgba(10, 10, 15, 1)" or "rgb(10, 10, 15)".
+    const rgbaMatch = bg.match(/rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/);
+    const rgbMatch = bg.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+    if (rgbaMatch) {
+      const alpha = parseFloat(rgbaMatch[4]);
+      if (alpha < 1) {
+        problems.push(`Offline-summary overlay background alpha is ${alpha}, expected 1 (fully opaque). Got background: ${bg}. Page text bleeds through a semi-transparent overlay.`);
+      }
+    } else if (rgbMatch) {
+      // rgb() form — already fully opaque, good
+    } else {
+      // Try parsing as other possible background values
+      const hexMatch = bg.match(/#([0-9a-fA-F]{3,8})/);
+      if (hexMatch) {
+        // Check if this is a 4-digit or 8-digit hex with alpha
+        const hex = hexMatch[1];
+        if (hex.length === 8) {
+          const alphaHex = hex.substring(6, 8);
+          const alpha = parseInt(alphaHex, 16) / 255;
+          if (alpha < 1) {
+            problems.push(`Offline-summary overlay background alpha is ${alpha.toFixed(2)}, expected 1 (fully opaque). Got background: ${bg}.`);
+          }
+        } else if (hex.length === 4) {
+          const alphaHex = hex.substring(3, 4);
+          const alpha = parseInt(alphaHex + alphaHex, 16) / 255;
+          if (alpha < 1) {
+            problems.push(`Offline-summary overlay background alpha is ${alpha.toFixed(2)}, expected 1 (fully opaque). Got background: ${bg}.`);
+          }
+        }
+        // 3- or 6-digit hex is fully opaque
+      } else {
+        problems.push(`Cannot parse offline-summary background — unexpected format: "${bg}". Expected a fully opaque color.`);
+      }
+    }
+
+    // ─── Gather button must not be clickable through overlay ───
+    const gatherBtn = document.getElementById("btn-gather");
+    if (gatherBtn) {
+      // The overlay has z-index:100 and covers the viewport via inset:0.
+      // Check that the gather button's pointer-events are effectively
+      // captured by checking that the overlay has a higher z-index than
+      // any container ancestor of the gather button.
+      const overlayZ = parseInt(getComputedStyle(offlineSummary).zIndex);
+      // Find the highest z-index in the gather button's ancestor chain
+      let gatherZ = 0;
+      let el = gatherBtn.parentElement;
+      while (el) {
+        const z = parseInt(getComputedStyle(el).zIndex);
+        if (!isNaN(z) && z > gatherZ) gatherZ = z;
+        el = el.parentElement;
+      }
+      if (overlayZ <= gatherZ) {
+        problems.push(`Offline-summary z-index (${overlayZ}) is not higher than the gather button's highest ancestor z-index (${gatherZ}). The gather button may remain clickable behind the overlay.`);
+      }
+
+      // Also check that the overlay element physically covers the button
+      const overlayRect = offlineSummary.getBoundingClientRect();
+      const btnRect = gatherBtn.getBoundingClientRect();
+      // overlay is inset:0 so it should cover the whole viewport
+      if (overlayRect.width < window.innerWidth - 1 || overlayRect.height < window.innerHeight - 1) {
+        problems.push(`Offline-summary overlay rect (${overlayRect.width}x${overlayRect.height}) does not cover the full viewport (${window.innerWidth}x${window.innerHeight}). The gather button may remain reachable.`);
+      }
+    }
+
+    // ─── Restore hidden state ───
+    offlineSummary.hidden = wasHidden;
   }
 
   // ─── DOM shows a numeric wood value (page engine is running) ────
