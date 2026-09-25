@@ -117,7 +117,11 @@ function stopTick() {
 export function init() {
   if (tickTimer !== null) return; // already running
 
-  loadPersisted();
+  const loaded = loadPersisted();
+  if (!loaded) {
+    // No saved state — start fresh with zero offline gain
+    state.timestamp = now();
+  }
   catchUp();
   persist(); // record the catch-up timestamp
   startTick();

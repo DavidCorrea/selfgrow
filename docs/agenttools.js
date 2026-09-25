@@ -13,6 +13,20 @@ import { getState, gatherWood, craftUpgrade, UPGRADE_COST } from "./engine.js";
 const GOAL_WOOD = 10;
 
 /**
+ * Read the offline wood gain from the DOM.
+ * Returns 0 when no gain is pending (overlay hidden).
+ */
+function readOfflineGained() {
+  const overlay = document.getElementById('offline-summary');
+  if (!overlay || overlay.hidden) return 0;
+  const el = document.getElementById('offline-wood-amount');
+  if (!el) return 0;
+  const text = el.textContent.trim();
+  const num = parseFloat(text);
+  return isNaN(num) ? 0 : Math.max(0, num);
+}
+
+/**
  * Augment a raw state snapshot with goal and upgrade info.
  */
 function withGoal(s) {
@@ -24,6 +38,7 @@ function withGoal(s) {
     timestamp: s.timestamp,
     upgradeLevel: s.upgradeLevel,
     offlineSummaryVisible: !document.getElementById('offline-summary')?.hidden,
+    offlineGained: readOfflineGained(),
     firstGoal: {
       target: GOAL_WOOD,
       current: Math.min(s.wood, GOAL_WOOD),
@@ -57,6 +72,7 @@ export function tools() {
       description: "Returns the current game state the page is showing to the "
         + "visitor: wood count, accumulation rate, number of upgrades crafted, "
         + "timestamp, whether the offline-summary overlay is currently visible, "
+        + "how much wood was gained while away (offlineGained, 0 when none pending), "
         + "and the current goal (first goal or upgrade goal).",
       inputSchema: { type: "object", properties: {} },
       annotations: { readOnlyHint: true },

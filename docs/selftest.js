@@ -506,6 +506,26 @@ export async function checks() {
         if (typeof result.offlineSummaryVisible !== "boolean") {
           problems.push(`read-state should return offlineSummaryVisible as a boolean, got ${JSON.stringify(result.offlineSummaryVisible)}.`);
         }
+        // Check offlineGained field
+        if (typeof result.offlineGained !== "number" || result.offlineGained < 0) {
+          problems.push(`read-state should return offlineGained as a non-negative number, got ${JSON.stringify(result.offlineGained)}.`);
+        }
+        // When overlay is hidden, offlineGained must be 0
+        const offlineSummary = document.getElementById("offline-summary");
+        if (offlineSummary && offlineSummary.hidden && result.offlineGained !== 0) {
+          problems.push(`read-state offlineGained should be 0 when offline-summary overlay is hidden, got ${result.offlineGained}.`);
+        }
+        // Verify offlineGained matches DOM when overlay is visible
+        if (offlineSummary && !offlineSummary.hidden) {
+          const amountEl = document.getElementById("offline-wood-amount");
+          if (amountEl) {
+            const domVal = parseFloat(amountEl.textContent.trim());
+            const expected = isNaN(domVal) ? 0 : Math.max(0, domVal);
+            if (result.offlineGained !== expected) {
+              problems.push(`read-state offlineGained (${result.offlineGained}) does not match DOM value (${expected}).`);
+            }
+          }
+        }
         // Check upgradeLevel field
         if (typeof result.upgradeLevel !== "number" || result.upgradeLevel < 0) {
           problems.push(`read-state should return upgradeLevel as a non-negative number, got ${JSON.stringify(result.upgradeLevel)}.`);
@@ -625,6 +645,10 @@ export async function checks() {
           }
           if (!dismissResult.nextGoal) {
             problems.push("dismiss-offline result should include nextGoal.");
+          }
+          // After dismiss, offlineGained should be 0 (overlay hidden)
+          if (typeof dismissResult.offlineGained !== "number" || dismissResult.offlineGained !== 0) {
+            problems.push(`dismiss-offline result offlineGained should be 0 (overlay is now hidden), got ${JSON.stringify(dismissResult.offlineGained)}.`);
           }
         }
       } else {
