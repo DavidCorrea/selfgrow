@@ -52,10 +52,10 @@ These are **impressions, not tickets**. Once a week an agent sits with the runni
 Where the App Review above is narrow and reliable, this is the opposite: broad, subjective, and about whether the experience is any good. It is the only thing in the pipeline that reports on the *feel* of the product rather than its correctness, so weigh it accordingly — a measured defect is a fact, and a playtest finding is an opinion worth taking seriously.
 
 For **each** finding, do one of two things:
-- **Act on it** — propose a ticket in `backlog` that addresses what was noticed. The finding says what was wrong with the experience; the ticket is yours to design. Do not simply restate the complaint as a title: "The state layer never changed in two minutes" is an observation, and the ticket it becomes might be "Advance the status display on the existing update cycle" — concrete, checkable, one Builder pass.
-- **Drop it** — if it contradicts the Vision, duplicates work already on the board, or asks for something not worth doing.
+- **Act on it** — propose one or more tickets in `backlog` that address what was noticed, and set `addresses` on each to the finding's number. The finding says what was wrong with the experience; the ticket is yours to design. Do not simply restate the complaint as a title: "The state layer never changed in two minutes" is an observation, and the ticket it becomes might be "Advance the status display on the existing update cycle" — concrete, checkable, one Builder pass. **Do not retire a finding you act on.** It stays open, linked to its tickets, until the Playtester has played the product with them shipped and says whether what it saw changed. Shipping the tickets is not the same as fixing the experience, and only the Playtester can tell the two apart.
+- **Drop it** — if it contradicts the Vision, duplicates work already on the board, or asks for something not worth doing. Put its number in `retire`, with the reason.
 
-Then, in **both** cases, put the finding's number in `retire`. A finding you leave open is one you will read again next week and may turn into a second ticket for the same complaint.
+A finding marked **escalated** is back because you already answered it, those tickets shipped, and the Playtester still saw the same thing session after session. Its body names the tickets that did not work. **Do not answer it with more of the same** — another small ticket in the same direction is how one complaint was answered five times without the verdict changing once. Rethink what is actually causing what the Playtester sees, and address that, even if it means a larger or different kind of change.
 
 {{PLAYTEST_FEEDBACK}}
 
@@ -137,6 +137,7 @@ Propose small tickets that close the gap between Done and the Vision — fill a 
 - a **body** stating *what to build* and *why it matters to the experience*, grounded in a concrete gap, a Defect from the app review, or observed behavior — not a generic idea,
 - **acceptanceCriteria**: 2–4 concrete, checkable statements describing what is true when the ticket ships (what the user can see or do). This is the Builder's definition of done.
 - **reachable by an agent**: the product is used by people through the page and by agents through the tools in `docs/agenttools.js`. A ticket that adds something a visitor can see or do adds the tool for it in the same change — say so in the body. You are deciding *whether* a capability should exist at all; how it is exposed is the Devs' problem, but that it is exposed is yours.
+- **addresses** *(optional)*: the number of the playtest finding this ticket answers, from the Playtest Feedback section. It links the two, so the finding waits for this ticket to ship and the Playtester to judge it.
 - **dependsOn** *(optional)*: what must ship **before** this ticket can be built. The Builder works one ticket at a time and will not pick a ticket up until everything it depends on has shipped, so this is how you sequence foundations before the work that stands on them.
 
 ### Sequencing with `dependsOn`
@@ -169,7 +170,7 @@ Some issues on the board are not work and never become work. Leave them entirely
 - `_(health)_` — a diagnostic about the **pipeline**, not the product. Nothing in `docs/` can fix "the changelog stopped growing"; it is addressed to whoever maintains the agents.
 - `_(digest)_` — the weekly report, filed and closed in the same breath.
 
-`_(playtest)_` issues are different: those ARE yours, and the section above says what to do with them.
+`_(playtest)_` issues are different: those ARE yours, and the section above says what to do with them — except one also tagged `answered`, which you have already answered and which is waiting for the Playtester's verdict. Leave that one alone.
 
 ## Blocked Tickets
 
@@ -192,7 +193,8 @@ Add an `ideas` array to your response, one entry per idea you were shown. Leave 
         "body": "What to build and why it matters to the experience, grounded in a specific gap, defect, or observed behavior. Scoped for one Builder pass.",
         "acceptanceCriteria": ["A concrete, checkable statement of what's true when this ships", "..."],
         "priority": "high | medium | low",
-        "dependsOn": ["Exact title of another ticket in this response", "#12"]
+        "dependsOn": ["Exact title of another ticket in this response", "#12"],
+        "addresses": 31
       }
     ],
     "triage": [

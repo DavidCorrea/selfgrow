@@ -63,6 +63,10 @@ test("deciding whether a closed ticket shipped", async (t) => {
   await t.test("does not count a ticket whose close reason is unknown", () => {
     assert.equal(isShipped({ number: 1 }), false);
   });
+
+  await t.test("does not count a verified playtest finding, which is an observation and not work", () => {
+    assert.equal(isShipped({ stateReason: "COMPLETED", labels: [{ name: "playtest" }] }), false);
+  });
 });
 
 test("listing what shipped", async (t) => {

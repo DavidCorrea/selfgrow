@@ -1234,7 +1234,11 @@ function rejectTruncated(count, what, limit = LISTING_LIMIT) {
  * close most tickets themselves, so their closedByPullRequestsReferences is empty.
  */
 export function isShipped(issue) {
-  return issue.stateReason === "COMPLETED";
+  // A playtest finding also closes as completed — once the Playtester confirms
+  // the experience changed — but it is an observation, not work, and listing
+  // "The canvas is a dark void" under what shipped would read as the complaint
+  // having been built. The tickets that answered it are what shipped.
+  return issue.stateReason === "COMPLETED" && !isPlaytestFeedback(issue);
 }
 
 /**
@@ -1402,12 +1406,13 @@ export function isManualIssue(issue) {
 
 /**
  * Rewrite a ticket's body — how the Product Manager sharpens a human request
- * into something buildable instead of closing it for being unclear.
+ * into something buildable instead of closing it for being unclear, and how a
+ * playtest finding records the tickets that answered it.
  */
 export function rewriteIssueBody(issueNumber, body) {
   try {
     ghExec(["issue", "edit", String(issueNumber), "--body-file", "-"], { input: body });
-    log("info", `Sharpened #${issueNumber} into a buildable ticket.`);
+    log("info", `Rewrote the body of #${issueNumber}.`);
     return true;
   } catch (e) {
     log("warn", `Could not rewrite the body of #${issueNumber}.`, errorData(e));
@@ -1439,6 +1444,24 @@ function ensureLabel(name, color = "ededed") {
     ghExec(["label", "create", name, "--color", color, "--force"]);
   } catch {
     // exists / no perms — non-fatal
+  }
+}
+
+/**
+ * Add and remove labels on an issue in one edit, creating any added label first —
+ * `gh issue edit --add-label` refuses a label the repository does not have yet.
+ * Best-effort; returns whether the edit landed.
+ */
+export function editIssueLabels(issueNumber, { add = [], remove = [] } = {}) {
+  add.forEach((name) => ensureLabel(name));
+  const edits = [...add.flatMap((name) => ["--add-label", name]), ...remove.flatMap((name) => ["--remove-label", name])];
+  if (!edits.length) return true;
+  try {
+    ghExec(["issue", "edit", String(issueNumber), ...edits]);
+    return true;
+  } catch (e) {
+    log("warn", `Could not relabel #${issueNumber}.`, errorData(e));
+    return false;
   }
 }
 
@@ -1638,8 +1661,9 @@ export function isConfirmedRetired(number) {
 // ask for it, and the Devs must never pick one up and try to build it:
 //
 //   playtest — an experience the Playtester had ("the page felt static for the
-//              first minute"). The Product Manager turns each into a real ticket
-//              with acceptance criteria, or drops it, and closes the original.
+//              first minute"). The Product Manager answers each with real
+//              tickets, or drops it; an answered one stays open until the
+//              Playtester says whether the experience changed.
 //   health   — a diagnostic about the PIPELINE, addressed to whoever maintains
 //              it. Nothing in docs/ can fix "the changelog stopped growing".
 //   digest   — the weekly report.
@@ -1664,7 +1688,10 @@ export function isNonWorkIssue(issue) {
   return labelNames(issue).some((name) => NON_WORK_LABELS.has(name));
 }
 
-/** Untriaged playtest feedback, which is an observation rather than a ticket. */
+/**
+ * Playtest feedback, which is an observation rather than a ticket — untriaged, or
+ * answered and waiting on the Playtester's verdict (see playtest-findings.mjs).
+ */
 export function isPlaytestFeedback(issue) {
   return labelNames(issue).includes(PLAYTEST_LABEL);
 }

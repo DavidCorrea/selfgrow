@@ -31,9 +31,10 @@
 //
 // What it files is FEEDBACK, not work. Findings land as `playtest`-labelled
 // issues, which isBuildable excludes, so the Builder never picks up "the first
-// minute felt static" as though it were a ticket. The Product Manager converts
-// each one into a real ticket with acceptance criteria, or drops it, and closes
-// the original either way.
+// minute felt static" as though it were a ticket. The Product Manager answers
+// each with real tickets, or drops it. An answered finding comes back here: this
+// role is the only one that can say whether the experience actually changed, so
+// it is the one that closes it (see playtest-findings.mjs).
 import {
   log,
   withLogGroup,
@@ -55,6 +56,7 @@ import {
   viewportOptions,
 } from "./shared.mjs";
 import { readJournal, appendJournal, renderJournalEntry } from "./discussions.mjs";
+import { isAnswered, answeringTickets, applyFollowUp } from "./playtest-findings.mjs";
 import { pathToFileURL } from "url";
 import { join } from "path";
 import fs from "fs";
@@ -473,11 +475,11 @@ export function renderSession(session, { showingFrames = true } = {}) {
  * every week — and a product that is genuinely static will produce the same one —
  * doesn't accumulate as a new issue each time.
  */
-function fileFindings(findings, verdict) {
+function fileFindings(findings, verdict, openIssues) {
   // Exact titles only. The Playtester repeats itself in the obvious way — the
   // same complaint, worded the same — and anything subtler is caught downstream
   // by the PM's own dedup, which already runs over everything it grooms.
-  const seen = new Set(fetchOpenIssues().map((i) => (i.title || "").toLowerCase().trim()));
+  const seen = new Set(openIssues.map((i) => (i.title || "").toLowerCase().trim()));
 
   let filed = 0;
   for (const finding of findings.slice(0, MAX_FINDINGS)) {
@@ -515,6 +517,39 @@ function fileFindings(findings, verdict) {
   return filed;
 }
 
+// Only what the Playtester wrote under "What I noticed" when it filed the
+// finding. The rest of the body is boilerplate and a week-old verdict, and the
+// question now is narrow: is THIS still true?
+function whatWasNoticed(body) {
+  const section = (body || "").match(/## What I noticed\s*\n([\s\S]*?)(?=\n## |$)/);
+  return (section ? section[1] : body || "").trim();
+}
+
+/**
+ * The findings the Product Manager has answered, as the Playtester is asked to
+ * judge them: what it saw then, and which answering tickets have landed.
+ *
+ * Which tickets are still open is stated rather than left to be inferred, because
+ * a finding whose fix has not shipped is expected to persist, and a Playtester
+ * that did not know that would report the unchanged product as a failed fix.
+ */
+export function renderAnsweredFindings(answered, openNumbers) {
+  if (!answered.length) return "(none — nothing you reported is waiting on your verdict)";
+  return answered
+    .map((issue) => {
+      const tickets = answeringTickets(issue)
+        .map((n) => `#${n} (${openNumbers.has(n) ? "not shipped yet" : "closed"})`)
+        .join(", ");
+      return [
+        `### #${issue.number} — ${issue.title}`,
+        `Answered by: ${tickets || "(no tickets recorded)"}`,
+        "",
+        whatWasNoticed(issue.body),
+      ].join("\n");
+    })
+    .join("\n\n");
+}
+
 /**
  * Ask for the impression. Runs the seeing version first and falls back to the
  * text-only one, because the frames are an upgrade to the report and not a
@@ -523,7 +558,7 @@ function fileFindings(findings, verdict) {
  *
  * Returns the agent's raw output, or null when neither attempt produced any.
  */
-async function report(session) {
+async function report(session, answeredFindings) {
   // Read before playing back: what this role said last time bounds what is worth
   // saying now. Empty on a first run, or when the Journals category does not
   // exist yet, and the prompt handles both.
@@ -535,6 +570,7 @@ async function report(session) {
       VISION: readVision(),
       SESSION: transcript,
       MAX_FINDINGS: String(MAX_FINDINGS),
+      ANSWERED: answeredFindings,
       PAST: past.length
         ? past.join("\n\n")
         : "(nothing — this is the first session on record, so there is nothing to verify or compare against)",
@@ -585,7 +621,10 @@ async function main() {
     return;
   }
 
-  const output = await report(session);
+  const openIssues = fetchOpenIssues();
+  const openNumbers = new Set(openIssues.map((i) => i.number));
+  const answered = openIssues.filter(isAnswered);
+  const output = await report(session, renderAnsweredFindings(answered, openNumbers));
   if (output === null) {
     log("warn", "Playtest: the reporting agent failed both with and without the screenshots — nothing filed.");
     printRunSummary("Playtester");
@@ -616,8 +655,22 @@ async function main() {
   else log("warn", "Playtester: no verdict — the prompt asks for one in every session, filed or not.");
 
   const findings = Array.isArray(result.data.findings) ? result.data.findings : [];
-  const filed = fileFindings(findings, verdict);
+  const filed = fileFindings(findings, verdict, openIssues);
   log("info", `Playtest complete — ${filed} finding(s) filed for the Product Manager to triage.`);
+
+  // The verdicts on answered findings. Only numbers that were shown count: a
+  // follow-up naming anything else is the model misremembering, and acting on it
+  // could close an issue nobody asked this role about.
+  const byNumber = new Map(answered.map((i) => [i.number, i]));
+  const followUps = [];
+  for (const followUp of Array.isArray(result.data.followUps) ? result.data.followUps : []) {
+    const finding = byNumber.get(Number(followUp?.number));
+    if (finding && applyFollowUp(finding, followUp, openNumbers)) followUps.push(followUp);
+  }
+  const unjudged = answered.filter((i) => !followUps.some((f) => Number(f.number) === i.number));
+  if (unjudged.length) {
+    log("warn", `Playtester: no verdict on answered finding(s) ${unjudged.map((i) => `#${i.number}`).join(", ")} — they wait for next session.`);
+  }
 
   // Write down what this session concluded, so next week can verify it rather
   // than start over. The TITLES matter more than the prose here: fileFindings
@@ -632,7 +685,7 @@ async function main() {
           ? findings.map((f) => `"${f.title}"`).join("; ")
           : "nothing — the session held up",
         "Tool surface": result.data.toolSurface || "",
-        Verified: result.data.verified || "",
+        "Answered findings": followUps.map((f) => `#${f.number} ${String(f.status).toLowerCase()}`).join("; "),
         Regressed: result.data.regressed || "",
       },
     })
