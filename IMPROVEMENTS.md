@@ -27,30 +27,6 @@ inside Chromium lives in the same file as the git helpers.
 Deliberately not done as part of a cleanup: it touches every import in the repo,
 and it should be its own change with the test suite green on both sides.
 
-## Nothing measures whether the pipeline is working
-
-**Where:** the pipeline as a whole. Data exists in `recordTicket` and the wiki
-Changelog; nothing aggregates it.
-
-Every guard in the system is about *not corrupting main*. There is no signal for
-merged-per-day, cost-per-merged-ticket, or abandonment rate. From outside, "the Builder retried three tickets to death today" and "the
-Builder shipped three" look identical.
-
-**Why it matters:** a pipeline that quietly stops producing looks exactly like
-one that is producing. Post-mortems on the Lessons page record individual
-failures, but nothing records a trend, so a regression in throughput has no
-surface to appear on.
-
-A weekly line appended to a wiki `Health.md` would cover it without another
-agent, or a job on an existing one.
-
-**Status (2026-09-25): largely addressed by Health.** `agents/health.mjs` now
-alarms on two quiet days without merges, an abandon rate above 40%, a missing
-digest, a playtest finding filed three times in four weeks, and a role whose
-sessions keep aborting. What remains is the *trend* — it speaks only on
-exception, so nothing records merged-per-day over time — and the cost half,
-which is the next entry.
-
 ## The Reviewer shares a model chain with the Builder it reviews
 
 **Where:** `agents/devs.mjs` — `runBuildReviewLoop` → `reviewOpenPR`.
@@ -87,9 +63,11 @@ requests per run in the job log, and OpenRouter's dashboard has the account view
 
 **Why it matters:** cost-per-merged-ticket is the number that would show a
 regression in how efficiently the pipeline works, and it now exists only as
-scattered per-run lines in job logs nobody reads. This is the same gap as the
-entry above about throughput, in a different unit — and both would be answered by
-one structured line per run appended somewhere durable.
+scattered per-run lines in job logs nobody reads. Throughput has the same gap in a
+different unit: Health (`agents/health.mjs`) now alarms on quiet days, a high
+abandon rate, a missing digest, a repeated finding and aborting sessions, but it
+speaks only on exception, so nothing records merged-per-day as a trend. Both would
+be answered by one structured line per run appended somewhere durable.
 
 ## Nothing catches a semantically duplicated ticket
 

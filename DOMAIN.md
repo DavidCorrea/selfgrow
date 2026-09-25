@@ -442,13 +442,6 @@ and the prediction was the fragile part." Spend is capped on the OpenRouter key:
 leaves an orphaned branch." So every limit is nested comfortably under the job's
 `timeout-minutes`.
 
-**Session caps are sized per role.** Every session defaults to 40 turns and 12
-minutes, which is ample for the roles that plan and review, so for them a cap only
-ever stops a loop. The **Builder** brings its own — 80 turns, 20 minutes — because
-its merged sessions ran 34–36 turns, and every Devs "abort" in September turned
-out to be the shared cap cutting off work a few turns from done, logged as if the
-model had failed.
-
 **Session caps are per role.** The default is 40 turns and 12 minutes, sized for
 the roles that plan or review, where it only ever stops a loop — a Scout once ran
 101 turns without producing a plan. The **Builder's build session** carries its
