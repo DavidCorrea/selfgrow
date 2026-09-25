@@ -832,12 +832,20 @@ export function loadPrompt(name) {
   );
 }
 
+/**
+ * Substitute `{{NAME}}` placeholders; a name with no replacement stays as written.
+ *
+ * One pass with a replacer function, and both halves matter. The values are
+ * diffs, files and issue bodies, so as a replacement STRING a `$&` or `$'` in
+ * them expanded into the template around it. And substituting one key at a time
+ * meant a value that happened to contain `{{VISION}}` — a prompt file in a diff,
+ * a stranger's PR body — was expanded by the next key, splicing prompt text in
+ * wherever the value said.
+ */
 export function fillTemplate(template, replacements) {
-  let result = template;
-  for (const [key, value] of Object.entries(replacements)) {
-    result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, "g"), value);
-  }
-  return result;
+  return template.replace(/\{\{(\w+)\}\}/g, (placeholder, name) =>
+    Object.hasOwn(replacements, name) ? String(replacements[name]) : placeholder
+  );
 }
 
 // ---------------------------------------------------------------------------
