@@ -333,11 +333,12 @@ test("noticing a role whose sessions keep aborting", async (t) => {
     assert.equal(result, null);
   });
 
-  await t.test("recognises a provider abort, a timeout and a runner kill", () => {
+  await t.test("recognises a provider abort, a timeout, a silent model and a runner kill", () => {
     const aborted = run("Product Manager failed: model call failed: This operation was aborted");
     const timedOut = run("Scout: request timed out");
+    const silent = run("Weekly report (m): aborted after 180s — the model sent nothing for 3 minute(s); trying the next model.");
     const killed = run("The job has exceeded the maximum execution time of 30m0s");
-    for (const other of [timedOut, killed]) {
+    for (const other of [timedOut, silent, killed]) {
       assert.ok(checkAbortedSessions({ roleRuns: [{ workflow: "product-manager", runs: [aborted, other] }] }));
     }
   });
