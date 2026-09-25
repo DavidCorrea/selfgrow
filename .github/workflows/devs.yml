@@ -51,11 +51,15 @@ jobs:
 
       - uses: ./.github/actions/setup
 
+      # Never as the node step's env — see the action.
+      - uses: ./.github/actions/secrets
+        with:
+          gh-token: ${{ secrets.AGENT_PAT }}
+
       - name: Size the run
         id: plan
         run: node agents/plan-build.mjs
         env:
-          GH_TOKEN: ${{ secrets.AGENT_PAT }}
           # The longest queue one run will attempt. A ceiling, not a target: the run
           # stops on whichever of the board or the clock empties first.
           #
@@ -97,31 +101,45 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # The PAT, not GITHUB_TOKEN, because this job PUSHES to the PR's branch.
-          #
-          # GitHub does not trigger workflows for events created by GITHUB_TOKEN —
-          # a deliberate recursion guard — and that applies to a `git push` just as
-          # much as to opening a PR. #503 fixed the opening; #510 showed the other
-          # half. Its first event ran CI and passed; the Builder then pushed a
-          # revision for the Reviewer, and THAT event came back `action_required`,
-          # so the PR sat with no conclusive check and could not merge.
-          #
-          # Any ticket needing a second Builder attempt hit this. The ones that
-          # passed review first time never pushed twice and merged fine, which is
-          # what made it look intermittent.
-          token: ${{ secrets.AGENT_PAT }}
           # Full history is required for fetch/merge/rebase against origin/main.
           fetch-depth: 0
+          # This job pushes, but not with a token left in the checkout's git
+          # config: the Builder's bash tool can read that. gitExec pushes with
+          # GIT_TOKEN from the secrets file instead.
+          persist-credentials: false
 
       - uses: ./.github/actions/setup
         with:
           # The Builder drives the built app to verify a ticket really runs.
           playwright: 'true'
 
+      # Never as the node step's env — see the action.
+      - uses: ./.github/actions/secrets
+        with:
+          openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
+          # AGENT_PAT (= the user) is the default token: Projects, issues, pushing
+          # the branch, OPENING the PR, and merging it. BOT_TOKEN
+          # (= github-actions[bot]) approves it as a DIFFERENT identity, since
+          # GitHub will not let an author approve their own PR.
+          #
+          # These were the other way round until #503. The PAT has to be the one
+          # that pushes and opens, because GitHub starts no workflows for events
+          # created by GITHUB_TOKEN — so a bot-authored PR's required checks never
+          # ran and it could never merge.
+          gh-token: ${{ secrets.AGENT_PAT }}
+          bot-token: ${{ secrets.GITHUB_TOKEN }}
+          # The PAT pushes too, not GITHUB_TOKEN: the recursion guard applies to a
+          # `git push` just as much as to opening a PR. #503 fixed the opening;
+          # #510 showed the other half. Its first event ran CI and passed; the
+          # Builder then pushed a revision for the Reviewer, and THAT event came
+          # back `action_required`, so the PR sat with no conclusive check and
+          # could not merge. Any ticket needing a second Builder attempt hit this,
+          # which is what made it look intermittent.
+          git-token: ${{ secrets.AGENT_PAT }}
+
       - name: Run the Devs
         run: node agents/devs.mjs
         env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           # How far the run may go — NOT the number buildable when the plan job
           # looked. Merging a ticket releases the ones waiting on it, so the board
           # grows mid-run, and a ceiling taken before the first build would leave
@@ -133,16 +151,5 @@ jobs:
           # (360) and leaving a branch and an open PR behind. It has to cover the
           # whole queue now, not one ticket.
           BUILD_RUN_BUDGET_MINUTES: '300'
-          # AGENT_PAT (= the user) is the default token: Projects, issues, pushing
-          # the branch, OPENING the PR, and merging it. BOT_TOKEN
-          # (= github-actions[bot]) approves it as a DIFFERENT identity, since
-          # GitHub will not let an author approve their own PR.
-          #
-          # These were the other way round until #503. The PAT has to be the one
-          # that pushes and opens, because GitHub starts no workflows for events
-          # created by GITHUB_TOKEN — so a bot-authored PR's required checks never
-          # ran and it could never merge.
-          GH_TOKEN: ${{ secrets.AGENT_PAT }}
-          BOT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_PROJECT_OWNER: '@me'
           GH_PROJECT_NUMBER: '3'

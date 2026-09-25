@@ -31,6 +31,7 @@ import {
 // `from "./shared.mjs"` imports keep working, but new code should import from
 // the specific module — that is the point of having split them.
 import { log, appendJobSummary, errorData, getRunLog, getTicketOutcomes, truncate } from "./log.mjs";
+import { secret, gitAuthEnv } from "./secrets.mjs";
 
 export {
   log,
@@ -152,12 +153,20 @@ export const META_ROUTER_IDS = new Set(["auto", "openrouter/free", "openrouter/f
 
 // pi's model/auth runtime. Creation is async and reads ~/.pi auth + the bundled
 // model snapshot, so it's built once and shared by every model call in the run.
-// Credentials still come from OPENROUTER_API_KEY via pi-ai's env lookup.
+// The OpenRouter key is handed over as a runtime key — held in memory, never
+// written to ~/.pi — because in CI it is not in the environment for pi-ai's own
+// lookup to find (see secrets.mjs).
 let modelRuntimePromise;
-function getModelRuntime() {
+async function createModelRuntime() {
   // No network refresh: resolve ids against pi's bundled snapshot, so a run's
   // model lineup can't shift underneath it mid-flight.
-  modelRuntimePromise ??= ModelRuntime.create({ allowModelNetwork: false });
+  const runtime = await ModelRuntime.create({ allowModelNetwork: false });
+  const apiKey = secret("OPENROUTER_API_KEY");
+  if (apiKey) await runtime.setRuntimeApiKey("openrouter", apiKey);
+  return runtime;
+}
+function getModelRuntime() {
+  modelRuntimePromise ??= createModelRuntime();
   return modelRuntimePromise;
 }
 
@@ -992,12 +1001,21 @@ export function extractAgentResponse(label, text, { requireOutcome = true, requi
 // did) stops none of it. With execFileSync there is no shell, so no quoting rules
 // to get wrong — every argument arrives exactly as written.
 
+//
+// Each hands its token to that one child and nowhere else (see secrets.mjs): gh
+// and git are not model-controlled, the tools' shells are. GIT_TOKEN is the token
+// that pushes — given only to the jobs that push, whose checkouts no longer
+// persist one on disk.
+
 export function gitExec(argv, opts = {}) {
-  return execFileSync("git", argv, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024, ...opts }).toString().trim();
+  const env = { ...process.env, ...gitAuthEnv(secret("GIT_TOKEN")) };
+  return execFileSync("git", argv, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024, env, ...opts }).toString().trim();
 }
 
-export function ghExec(argv, opts = {}) {
-  return execFileSync("gh", argv, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024, ...opts }).toString();
+/** gh, authenticated as `token` — by default the run's GH_TOKEN. */
+export function ghExec(argv, { token = secret("GH_TOKEN"), ...opts } = {}) {
+  const env = token ? { ...process.env, GH_TOKEN: token } : process.env;
+  return execFileSync("gh", argv, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024, env, ...opts }).toString();
 }
 
 let gitIdentityConfigured = false;
@@ -2032,15 +2050,15 @@ export function getBoardSnapshot() {
 // second incident: #510's first event ran CI and passed, then the Builder pushed
 // a revision for the Reviewer and that event came back `action_required`. Only
 // tickets needing a second Builder attempt were affected, which is what made it
-// look intermittent. The workflows that push branches now check out with the PAT
-// — see the note on the checkout step in devs.yml.
+// look intermittent. The workflows that push branches now push with the PAT as
+// GIT_TOKEN — see the note on git-token in devs.yml.
 // ---------------------------------------------------------------------------
 
-const patToken = () => process.env.GH_TOKEN || process.env.AGENT_PAT || "";
-const botToken = () => process.env.BOT_TOKEN || process.env.GITHUB_TOKEN || "";
+const patToken = () => secret("GH_TOKEN") || secret("AGENT_PAT");
+const botToken = () => secret("BOT_TOKEN") || secret("GITHUB_TOKEN");
 
 function ghAs(token, argv, opts = {}) {
-  return ghExec(argv, { ...opts, env: { ...process.env, GH_TOKEN: token } });
+  return ghExec(argv, { ...opts, token });
 }
 
 /**

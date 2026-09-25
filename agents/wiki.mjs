@@ -27,6 +27,7 @@ import { execFileSync } from "child_process";
 import fs from "fs";
 import { join } from "path";
 import { log, errorData } from "./log.mjs";
+import { secret, gitAuthEnv } from "./secrets.mjs";
 
 const DEFAULT_WIKI_DIR = "/tmp/selfgrow-wiki";
 
@@ -43,13 +44,16 @@ const PUSH_ATTEMPTS = 5;
  */
 export function cloneWiki(dir = DEFAULT_WIKI_DIR, { cwd = process.cwd() } = {}) {
   try {
+    const ghEnv = wikiToken() ? { ...process.env, GH_TOKEN: wikiToken() } : process.env;
     const repo = JSON.parse(
-      execFileSync("gh", ["repo", "view", "--json", "nameWithOwner"], { cwd, maxBuffer: 10 * 1024 * 1024 }).toString()
+      execFileSync("gh", ["repo", "view", "--json", "nameWithOwner"], { cwd, env: ghEnv, maxBuffer: 10 * 1024 * 1024 }).toString()
     ).nameWithOwner;
-    const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN || "";
-    const url = `https://x-access-token:${token}@github.com/${repo}.wiki.git`;
     fs.rmSync(dir, { recursive: true, force: true });
-    execFileSync("git", ["clone", url, dir], { cwd, maxBuffer: 10 * 1024 * 1024 });
+    execFileSync("git", ["clone", `https://github.com/${repo}.wiki.git`, dir], {
+      cwd,
+      env: gitEnv(),
+      maxBuffer: 10 * 1024 * 1024,
+    });
     git(dir, ["config", "user.name", "github-actions[bot]"]);
     git(dir, ["config", "user.email", "github-actions[bot]@users.noreply.github.com"]);
     log("info", `Wiki: cloned ${repo}.wiki.`);
@@ -101,8 +105,14 @@ export function readPage(pageFile) {
 // argv, never a shell string: commit messages here carry model-written text (see
 // gitExec in shared.mjs for why that matters on a runner holding a PAT).
 function git(dir, argv) {
-  return execFileSync("git", ["-C", dir, ...argv], { maxBuffer: 10 * 1024 * 1024, stdio: "pipe" });
+  return execFileSync("git", ["-C", dir, ...argv], { env: gitEnv(), maxBuffer: 10 * 1024 * 1024, stdio: "pipe" });
 }
+
+// The token rides in each git process's environment, not in the clone's remote
+// URL: the clone lives in the temp dir, which the agents' read tool can open, and
+// a URL-embedded token sat in its .git/config for the whole run.
+const wikiToken = () => secret("GH_TOKEN") || secret("GITHUB_TOKEN");
+const gitEnv = () => ({ ...process.env, ...gitAuthEnv(wikiToken()) });
 
 function currentBranch(dir) {
   try {

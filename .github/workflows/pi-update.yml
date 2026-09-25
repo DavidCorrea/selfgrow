@@ -42,24 +42,31 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # The PAT, because this job pushes a branch and opens a PR on it. A push
-          # made with GITHUB_TOKEN triggers no workflows, so the PR's required
-          # checks would never start and it could never merge. See devs.yml.
-          token: ${{ secrets.AGENT_PAT }}
           # Needs real history: it branches from origin/main and merges back.
           fetch-depth: 0
+          # It pushes with GIT_TOKEN below, so no token is left on disk for the
+          # packages `npm install` runs to find.
+          persist-credentials: false
 
       # No Chromium: nothing here opens a browser.
       - uses: ./.github/actions/setup
 
-      - name: Bump pi and re-check the model chain
-        run: node agents/pi-update.mjs
-        env:
+      # Never as the node step's env — see the action.
+      - uses: ./.github/actions/secrets
+        with:
           # No model calls: the chain is asserted against pi's BUNDLED registry, so
           # this job needs no OpenRouter key at all. It used to probe candidate
           # models live, which is what the key was for.
-          GH_TOKEN: ${{ secrets.AGENT_PAT }}
-          BOT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          gh-token: ${{ secrets.AGENT_PAT }}
+          bot-token: ${{ secrets.GITHUB_TOKEN }}
+          # The PAT, because this job pushes a branch and opens a PR on it. A push
+          # made with GITHUB_TOKEN triggers no workflows, so the PR's required
+          # checks would never start and it could never merge. See devs.yml.
+          git-token: ${{ secrets.AGENT_PAT }}
+
+      - name: Bump pi and re-check the model chain
+        run: node agents/pi-update.mjs
+        env:
           GH_PROJECT_OWNER: '@me'
           GH_PROJECT_NUMBER: '3'
 

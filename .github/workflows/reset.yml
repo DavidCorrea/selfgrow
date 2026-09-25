@@ -33,12 +33,20 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # The PAT, not GITHUB_TOKEN: the checkout's credentials are what pushes
-          # the product deletion to main, and a push by GITHUB_TOKEN would not
-          # carry the permissions the rest of the pipeline was built around.
-          token: ${{ secrets.AGENT_PAT }}
+          # gitExec pushes with GIT_TOKEN below; nothing is left on disk.
+          persist-credentials: false
 
       - uses: ./.github/actions/setup
+
+      # No model runs here, but agents/secrets.mjs refuses a secret in the
+      # environment on every CI run.
+      - uses: ./.github/actions/secrets
+        with:
+          gh-token: ${{ secrets.AGENT_PAT }}
+          # The PAT, not GITHUB_TOKEN, pushes the product deletion to main: a push
+          # by GITHUB_TOKEN would not carry the permissions the rest of the
+          # pipeline was built around.
+          git-token: ${{ secrets.AGENT_PAT }}
 
       - name: Reset GitHub state
         run: node agents/reset.mjs
@@ -46,6 +54,5 @@ jobs:
           # Checked in reset.mjs before anything destructive runs, rather than
           # here, so running the script by hand is guarded too.
           RESET_CONFIRM: ${{ inputs.confirm }}
-          GH_TOKEN: ${{ secrets.AGENT_PAT }}
           GH_PROJECT_OWNER: '@me'
           GH_PROJECT_NUMBER: '3'

@@ -43,11 +43,15 @@ jobs:
 
       - uses: ./.github/actions/setup
 
+      # Never as the node step's env — see the action.
+      - uses: ./.github/actions/secrets
+        with:
+          openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
+          # PAT carries `project` scope (for board cards) and covers issue creation.
+          gh-token: ${{ secrets.AGENT_PAT }}
+
       - name: Run Product Owner agent
         run: node agents/product-owner.mjs
         env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          # PAT carries `project` scope (for board cards) and covers issue creation.
-          GH_TOKEN: ${{ secrets.AGENT_PAT }}
           GH_PROJECT_OWNER: '@me'
           GH_PROJECT_NUMBER: '3'

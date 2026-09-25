@@ -50,6 +50,7 @@ import {
   readVision,
   commentIssue,
 } from "./shared.mjs";
+import { secret } from "./secrets.mjs";
 
 const PR_NUMBER = Number(process.env.PR_NUMBER || 0);
 const PR_TITLE = process.env.PR_TITLE || "";
@@ -147,7 +148,7 @@ function readBaseFiles(diff) {
 export function redactSecrets(text, secretValues) {
   return secretValues
     .filter(Boolean)
-    .reduce((redacted, secret) => redacted.replaceAll(secret, "[redacted]"), text);
+    .reduce((redacted, secretValue) => redacted.replaceAll(secretValue, "[redacted]"), text);
 }
 
 /**
@@ -258,7 +259,7 @@ async function main() {
   );
   commentIssue(
     PR_NUMBER,
-    redactSecrets(comment, [process.env.OPENROUTER_API_KEY, process.env.GH_TOKEN])
+    redactSecrets(comment, [secret("OPENROUTER_API_KEY"), secret("GH_TOKEN")])
   );
   printRunSummary("Fork triage");
 }

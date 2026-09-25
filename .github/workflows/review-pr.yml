@@ -46,9 +46,9 @@ jobs:
     #
     # DEPENDABOT is excluded because this job cannot run for it at all: a
     # Dependabot-triggered event reads the Dependabot secret store, not the Actions
-    # one, so `secrets.AGENT_PAT` resolves EMPTY and the checkout dies on
+    # one, so `secrets.AGENT_PAT` resolves EMPTY — the checkout used to die on
     # "Input required and not supplied: token" before a single line of review
-    # happens. Every dependency bump has been failing this way. Mirroring the PAT
+    # happened, and every dependency bump failed this way. Mirroring the PAT
     # into Dependabot secrets would fix the symptom and hand a bot-opened PR an
     # agent with write access; `check` and `verify-product` are required on main
     # and already gate these, which is the review a version bump actually needs.
@@ -74,27 +74,33 @@ jobs:
           # `git diff main...HEAD` and a fix is pushed back here.
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
-          token: ${{ secrets.AGENT_PAT }}
+          # A fix is pushed with GIT_TOKEN below, not a token left in the
+          # checkout's git config where the agents' bash tool can read it.
+          persist-credentials: false
 
       - uses: ./.github/actions/setup
         with:
           # verifyBuild loads the real page in a real browser.
           playwright: 'true'
 
-      - name: Review the pull request
-        run: node agents/review-pr.mjs
-        env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      # Never as the node step's env — see the action.
+      - uses: ./.github/actions/secrets
+        with:
+          openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
           # The bot is BOTH tokens here, on purpose. shared.mjs approves and merges
           # with GH_TOKEN, and on these PRs the PAT is the author — GitHub does not
           # let an author approve their own PR. So GH_TOKEN is deliberately the bot,
           # which is the mirror image of the pipeline's own PRs, where the bot
           # opens and the PAT approves.
-          #
-          # The checkout above still uses the PAT, because that is what pushes a
-          # fix back to the contributor's branch.
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BOT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          gh-token: ${{ secrets.GITHUB_TOKEN }}
+          bot-token: ${{ secrets.GITHUB_TOKEN }}
+          # Pushing a fix back to the contributor's branch is still the PAT's job,
+          # since a GITHUB_TOKEN push would start none of the PR's checks.
+          git-token: ${{ secrets.AGENT_PAT }}
+
+      - name: Review the pull request
+        run: node agents/review-pr.mjs
+        env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_BRANCH: ${{ github.event.pull_request.head.ref }}
           PR_TITLE: ${{ github.event.pull_request.title }}
