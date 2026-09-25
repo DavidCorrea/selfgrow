@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import {
   issueNumberFromAgentBranch,
   classifyAgentPullRequest,
+  decideAgentPullRequest,
 } from "./shared.mjs";
 
 const HOUR = 3_600_000;
@@ -96,5 +97,50 @@ describe("deciding whether a run may take a PR back", () => {
 
   test("age is reported so a closing comment can say how long it sat", () => {
     assert.equal(verdict({ createdAt: hoursOld(30) }).ageMs, 30 * HOUR);
+  });
+});
+
+describe("deciding what a run does about an open pull request", () => {
+  const decide = (over, { issueOpen = true, alreadyAwaited = false } = {}) =>
+    decideAgentPullRequest(verdict(over), { issueOpen, alreadyAwaited });
+
+  test("a young PR is left to the run that opened it and keeps its ticket", () => {
+    assert.deepEqual(decide({ createdAt: hoursOld(2) }), { action: "leave", claimed: true });
+  });
+
+  test("a stale passing PR has its merge re-armed and keeps its ticket", () => {
+    // Claimed even though the merge is being retried: if it does not land in time
+    // the PR is still open, and the same run must not build the ticket beside it.
+    assert.deepEqual(decide(), { action: "merge", claimed: true });
+  });
+
+  test("a passing PR already waited on this run is not waited on again", () => {
+    assert.deepEqual(decide({}, { alreadyAwaited: true }), { action: "leave", claimed: true });
+  });
+
+  test("a stale PR still waiting on its checks is left and keeps its ticket", () => {
+    assert.deepEqual(
+      decide({ statusCheckRollup: [{ name: "check", state: "PENDING" }] }),
+      { action: "leave", claimed: true }
+    );
+  });
+
+  test("a stale failing PR is closed and releases its ticket for a fresh attempt", () => {
+    assert.deepEqual(
+      decide({ statusCheckRollup: [{ name: "check", conclusion: "FAILURE" }] }),
+      { action: "close", claimed: false }
+    );
+  });
+
+  test("a stale conflicting PR is closed and releases its ticket", () => {
+    assert.deepEqual(decide({ mergeable: "CONFLICTING" }), { action: "close", claimed: false });
+  });
+
+  test("a stale passing PR whose ticket is no longer open is retired, not merged", () => {
+    assert.deepEqual(decide({}, { issueOpen: false }), { action: "retire", claimed: false });
+  });
+
+  test("a young PR whose ticket closed is still left to the run that opened it", () => {
+    assert.deepEqual(decide({ createdAt: hoursOld(2) }, { issueOpen: false }), { action: "leave", claimed: true });
   });
 });

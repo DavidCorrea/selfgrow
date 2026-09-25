@@ -32,6 +32,7 @@ import {
   createPR,
   fetchOpenAgentPullRequests,
   classifyAgentPullRequest,
+  decideAgentPullRequest,
   PR_STALE_MS,
   approvePR,
   mergePR,
@@ -800,19 +801,50 @@ function maybeReplenishBacklog(mergedCount) {
 // ---------------------------------------------------------------------------
 
 /**
- * What to do about one stalled PR, done.
+ * Why a PR is being left as it is, in the words the log needs.
+ */
+function reasonLeftAlone(verdict) {
+  if (!verdict.stale) {
+    // Young enough that the run which opened it may still be watching. Two runs
+    // acting on one PR is how the duplicates started.
+    return `is ${verdict.state} and only ${Math.round(verdict.ageMs / 60_000)}m old — leaving it alone`;
+  }
+  if (verdict.state === "pending") {
+    // Stale AND still pending means its checks never ran or never finished —
+    // usually a run cancelled mid-flight. Nothing to judge yet, so it keeps its
+    // claim rather than being closed on a verdict that does not exist.
+    return `has been waiting on its checks for ${Math.round(verdict.ageMs / 3_600_000)}h — leaving it`;
+  }
+  return "was already waited on this run — leaving its auto-merge armed";
+}
+
+/**
+ * Carry out what decideAgentPullRequest chose for one PR.
  *
  * Deterministic on purpose: no model reads the diff. The PR's own checks already
  * said what is wrong, and they are the one judge in this pipeline that did not
  * write the code.
  */
-async function reconcilePullRequest(verdict, openIssues) {
-  const issue = openIssues.find((i) => i.number === verdict.issueNumber) || null;
+async function reconcilePullRequest(verdict, action, issue, awaitedPrs) {
+  if (action === "leave") {
+    log("info", `PR #${verdict.number} ${reasonLeftAlone(verdict)}; #${verdict.issueNumber} stays claimed.`);
+    return;
+  }
 
-  if (verdict.state === "passing") {
+  if (action === "retire") {
+    log("warn", `PR #${verdict.number} is for #${verdict.issueNumber}, which is no longer open — closing it unmerged.`);
+    closePR(
+      verdict.number,
+      `Closing this without merging: its ticket #${verdict.issueNumber} is no longer open, so the board no longer wants this work. Nothing is struck — the ticket was settled, not failed.`
+    );
+    return;
+  }
+
+  if (action === "merge") {
     // Nothing is wrong with it — its auto-merge simply never fired, or the run
-    // that armed it stopped before it landed. Ask again.
+    // that armed it stopped before it landed. Ask again, once per run.
     log("info", `PR #${verdict.number} (#${verdict.issueNumber}) passed its checks but never landed — re-arming the merge.`);
+    awaitedPrs.add(verdict.number);
     if (await mergePR(verdict.number)) {
       // The PR body closes the issue on merge, but nothing else here ran: say what
       // shipped, so the Story and the digest are not working from a gap.
@@ -821,7 +853,7 @@ async function reconcilePullRequest(verdict, openIssues) {
         `Changelog: recovered PR #${verdict.number}`
       );
       moveCard(verdict.issueNumber, "Done");
-      recordTicket("done", verdict.issueNumber, issue?.title || `#${verdict.issueNumber}`);
+      recordTicket("done", verdict.issueNumber, issue.title);
     }
     return;
   }
@@ -841,7 +873,6 @@ async function reconcilePullRequest(verdict, openIssues) {
     `Closing this: ${reason}\n\nThe ticket goes back on the board with a strike, so the next Scout plans it again knowing this attempt failed. Nothing here is lost — the branch is deleted, not the ticket.`
   );
 
-  if (!issue) return; // ticket already closed — the PR was the only thing left
   const attempts = recordTicketFailure(issue, reason, MAX_TICKET_ATTEMPTS);
   if (attempts >= MAX_TICKET_ATTEMPTS) await writePostMortem(issue, reason);
 }
@@ -853,35 +884,25 @@ async function reconcilePullRequest(verdict, openIssues) {
  * Runs before the first ticket of every run. A ticket whose PR is still in flight
  * is NOT buildable — that is the whole fix for the duplicates: the guard is the
  * open PR itself rather than a label somebody has to remember to set.
+ *
+ * `awaitedPrs` outlives a single call: it is the run's record of the merges it
+ * has already waited on, so each is waited on once per run rather than per pass.
  */
-async function reconcileOpenAgentPrs(openIssues) {
+async function reconcileOpenAgentPrs(openIssues, awaitedPrs) {
   const claimed = new Set();
-  const prs = fetchOpenAgentPullRequests();
-  if (!prs.length) return claimed;
-
-  for (const pr of prs) {
+  for (const pr of fetchOpenAgentPullRequests()) {
     const verdict = classifyAgentPullRequest(pr, { staleMs: PR_STALE_MS });
     if (!verdict.issueNumber) continue;
 
-    if (!verdict.stale) {
-      // Young enough that the run which opened it may still be watching. Two runs
-      // acting on one PR is how the duplicates started.
-      log("info", `PR #${verdict.number} is ${verdict.state} and only ${Math.round(verdict.ageMs / 60_000)}m old — leaving it alone, #${verdict.issueNumber} stays claimed.`);
-      claimed.add(verdict.issueNumber);
-      continue;
-    }
-
-    if (verdict.state === "pending") {
-      // Stale AND still pending means its checks never ran or never finished —
-      // usually a run cancelled mid-flight. Nothing to judge yet, so it keeps its
-      // claim rather than being closed on a verdict that does not exist.
-      log("warn", `PR #${verdict.number} has been waiting on its checks for ${Math.round(verdict.ageMs / 3_600_000)}h — leaving it, but #${verdict.issueNumber} stays claimed.`);
-      claimed.add(verdict.issueNumber);
-      continue;
-    }
+    const issue = openIssues.find((i) => i.number === verdict.issueNumber) || null;
+    const decision = decideAgentPullRequest(verdict, {
+      issueOpen: Boolean(issue),
+      alreadyAwaited: awaitedPrs.has(verdict.number),
+    });
+    if (decision.claimed) claimed.add(verdict.issueNumber);
 
     try {
-      await reconcilePullRequest(verdict, openIssues);
+      await reconcilePullRequest(verdict, decision.action, issue, awaitedPrs);
     } catch (e) {
       // One unreapable PR must not stop the run from building anything else.
       log("warn", `Could not reconcile PR #${verdict.number}.`, errorData(e));
@@ -903,6 +924,7 @@ async function main() {
   const vision = readVision();
 
   const attempted = new Set(); // tickets engaged this run — never re-pick them
+  const awaitedPrs = new Set(); // stalled PRs whose merge this run already waited on
   const deadline = Date.now() + RUN_BUDGET_MS;
   let mergedCount = 0;
   const pinnedTicket = PINNED_TICKET;
@@ -923,7 +945,7 @@ async function main() {
     // with a live PR is not buildable, and a stale one is retired here so the
     // ticket comes back with its failure written down rather than silently
     // re-planned onto a branch beside the one that already failed.
-    const claimed = await withLogGroup("Open pull requests", () => reconcileOpenAgentPrs(open));
+    const claimed = await withLogGroup("Open pull requests", () => reconcileOpenAgentPrs(open, awaitedPrs));
     const untried = open.filter((i) => !attempted.has(i.number) && !claimed.has(i.number));
     let candidates = untried.filter((i) => isBuildable(i, openNumbers));
 
