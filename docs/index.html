@@ -150,6 +150,133 @@
       outline: none;
     }
 
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .btn:disabled:hover {
+      background: var(--accent);
+      outline: none;
+    }
+
+    /* ─── Goal panel ─── */
+    #goal-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    #goal-panel .goal-label {
+      font-size: 0.5rem;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    #goal-text {
+      font-size: 0.55rem;
+      color: var(--text);
+    }
+
+    .progress-track {
+      width: 100%;
+      height: 1.2rem;
+      background: #0a0a1a;
+      border: 3px solid #3a3a5a;
+      image-rendering: pixelated;
+      position: relative;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: var(--highlight);
+      transition: width 0.15s step-end;
+      width: 0%;
+    }
+
+    /* ─── Offline summary overlay ─── */
+    #offline-summary {
+      position: fixed;
+      inset: 0;
+      background: rgba(10, 10, 15, 0.85);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+
+    #offline-summary[hidden] {
+      display: none;
+    }
+
+    .offline-panel {
+      background: var(--panel-bg);
+      border: var(--border-width) solid var(--panel-border);
+      padding: var(--panel-pad);
+      max-width: 480px;
+      width: 90%;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      position: relative;
+    }
+
+    .offline-panel::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(255,255,255,0.015) 2px,
+        rgba(255,255,255,0.015) 4px
+      );
+    }
+
+    .offline-title {
+      font-size: 0.55rem;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .offline-message {
+      font-size: 0.5rem;
+      color: var(--text);
+      line-height: 1.8;
+    }
+
+    .offline-wood-highlight {
+      color: var(--highlight);
+      font-size: 0.65rem;
+    }
+
+    .btn-dismiss {
+      font-family: var(--pixel-font);
+      font-size: 0.5rem;
+      color: var(--bg);
+      background: var(--panel-border);
+      border: 3px solid #cc4a1a;
+      padding: 0.6rem 1.5rem;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      align-self: center;
+      transition: background 0.1s;
+    }
+
+    .btn-dismiss:hover,
+    .btn-dismiss:focus-visible {
+      background: #ff6b35;
+      outline: 2px solid var(--highlight);
+      outline-offset: 3px;
+    }
+
     /* ─── Footer / status text ─── */
     .footer-note {
       font-size: 0.4rem;
@@ -226,39 +353,155 @@
   <!-- ═══ Action Area Panel ═══ -->
   <section class="panel" id="action-area" role="region" aria-label="Actions">
     <h2>Actions</h2>
-    <button class="btn" id="btn-grow" type="button" aria-label="Grow your resources">
-      &#x25B6; Grow
+    <button class="btn" id="btn-gather" type="button" aria-label="Gather Wood">
+      &#x26A0; Gather Wood
     </button>
     <span class="footer-note" aria-live="polite">
-      Click <kbd>Grow</kbd> to begin. More actions appear as the world expands.
+      Click to gather +1 wood. More actions appear as the world expands.
     </span>
   </section>
+
+  <!-- ═══ Goal Panel ═══ -->
+  <section class="panel" id="goal-panel" role="region" aria-label="Current goal">
+    <div class="goal-label" id="goal-label">Next Goal</div>
+    <div id="goal-text">Gather 10 wood</div>
+    <div class="progress-track" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="10" aria-labelledby="goal-label">
+      <div class="progress-fill" id="goal-progress-fill" style="width: 0%;"></div>
+    </div>
+  </section>
+
+  <!-- ═══ Offline Summary Overlay ═══ -->
+  <div id="offline-summary" hidden role="dialog" aria-modal="true" aria-labelledby="offline-title">
+    <div class="offline-panel" tabindex="-1">
+      <div class="offline-title" id="offline-title">Welcome Back</div>
+      <div class="offline-message">
+        While you were away, you gathered<br>
+        <span class="offline-wood-highlight" id="offline-wood-amount">0</span> wood
+      </div>
+      <button class="btn-dismiss" id="btn-dismiss-offline" type="button">
+        OK
+      </button>
+    </div>
+  </div>
 
   <!-- ═══ Engine + live UI render loop ═══ -->
   <script type="module">
     import "./webmcp.js";
-    import { init, getState } from "./engine.js";
+    import { init, getState, gatherWood, consumeOfflineWoodGained } from "./engine.js";
 
     init();
 
     const stateEl = document.getElementById("wood-value");
     const rateEl = document.getElementById("rate-value");
     const tickEl = document.getElementById("tick-value");
+    const btnGather = document.getElementById("btn-gather");
+    const goalText = document.getElementById("goal-text");
+    const goalFill = document.getElementById("goal-progress-fill");
+    const goalProgress = document.getElementById("goal-panel").querySelector(".progress-track");
+    const offlineSummary = document.getElementById("offline-summary");
+    const offlineAmount = document.getElementById("offline-wood-amount");
+    const btnDismiss = document.getElementById("btn-dismiss-offline");
 
+    const GOAL_WOOD = 10;
+    let goalReached = false;
+
+    // ─── Cooldown state ───
+    let cooldown = false;
+    const COOLDOWN_MS = 500;
+
+    function setCooldown() {
+      cooldown = true;
+      btnGather.disabled = true;
+      setTimeout(() => {
+        cooldown = false;
+        btnGather.disabled = false;
+      }, COOLDOWN_MS);
+    }
+
+    function handleGather() {
+      if (cooldown) return;
+      gatherWood();
+      setCooldown();
+      renderUI();
+    }
+
+    btnGather.addEventListener("click", handleGather);
+    btnGather.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        handleGather();
+      }
+    });
+
+    // ─── Offline summary ───
+    function showOfflineSummary() {
+      const gained = consumeOfflineWoodGained();
+      if (gained > 0) {
+        offlineAmount.textContent = gained >= 1 ? Math.floor(gained) : gained.toFixed(1);
+        offlineSummary.hidden = false;
+        offlineSummary.querySelector(".offline-panel").focus();
+      }
+    }
+
+    function dismissOffline() {
+      offlineSummary.hidden = true;
+    }
+
+    btnDismiss.addEventListener("click", dismissOffline);
+    btnDismiss.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        dismissOffline();
+      }
+    });
+
+    // Allow Escape to dismiss
+    offlineSummary.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        dismissOffline();
+      }
+    });
+
+    // ─── Render ───
     function renderUI() {
       const s = getState();
+      const wood = s.wood;
+
+      // Wood count
       if (stateEl) {
-        stateEl.textContent = Number.isInteger(s.wood)
-          ? String(Math.floor(s.wood))
-          : s.wood.toFixed(2);
+        stateEl.textContent = Number.isInteger(wood) || wood >= 10
+          ? String(Math.floor(wood))
+          : wood.toFixed(2);
       }
+
+      // Rate
       if (rateEl) {
         rateEl.textContent = s.rate.toFixed(1) + "/s";
       }
+
+      // Tick indicator
       if (tickEl) {
-        tickEl.textContent = "▶";
+        tickEl.textContent = "\u25B6";
+      }
+
+      // Goal
+      if (wood >= GOAL_WOOD) {
+        if (!goalReached) {
+          goalReached = true;
+          goalText.textContent = "Goal reached! You gathered " + GOAL_WOOD + " wood.";
+        }
+        if (goalFill) goalFill.style.width = "100%";
+        if (goalProgress) goalProgress.setAttribute("aria-valuenow", GOAL_WOOD);
+      } else {
+        goalReached = false;
+        const pct = (wood / GOAL_WOOD) * 100;
+        if (goalFill) goalFill.style.width = Math.min(pct, 100) + "%";
+        if (goalProgress) goalProgress.setAttribute("aria-valuenow", Math.floor(wood));
       }
     }
+
+    // Show offline summary on load if there's offline wood
+    showOfflineSummary();
 
     renderUI();
     setInterval(renderUI, 500);

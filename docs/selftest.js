@@ -30,11 +30,47 @@ export async function checks() {
   if (!actionArea) {
     problems.push("Expected #action-area to exist in the DOM — it was not found.");
   } else {
-    const growBtn = document.getElementById("btn-grow");
-    if (!growBtn) {
-      problems.push("Expected #btn-grow to exist inside #action-area — it was not found.");
-    } else if (growBtn.getAttribute("type") !== "button") {
-      problems.push(`Expected #btn-grow type="button", got "${growBtn.getAttribute("type")}".`);
+    const gatherBtn = document.getElementById("btn-gather");
+    if (!gatherBtn) {
+      problems.push("Expected #btn-gather to exist inside #action-area — it was not found.");
+    } else if (gatherBtn.getAttribute("type") !== "button") {
+      problems.push(`Expected #btn-gather type="button", got "${gatherBtn.getAttribute("type")}".`);
+    } else if (gatherBtn.disabled) {
+      problems.push("Expected #btn-gather to be enabled on page load — it was disabled.");
+    }
+  }
+
+  // ─── Goal panel ───
+  const goalPanel = document.getElementById("goal-panel");
+  if (!goalPanel) {
+    problems.push("Expected #goal-panel to exist in the DOM — it was not found.");
+  } else {
+    const goalText = document.getElementById("goal-text");
+    if (!goalText) {
+      problems.push("Expected #goal-text to exist inside #goal-panel — it was not found.");
+    }
+    const goalFill = document.getElementById("goal-progress-fill");
+    if (!goalFill) {
+      problems.push("Expected #goal-progress-fill to exist inside #goal-panel — it was not found.");
+    }
+    const progressTrack = goalPanel.querySelector(".progress-track");
+    if (!progressTrack) {
+      problems.push("Expected .progress-track to exist inside #goal-panel — it was not found.");
+    } else if (progressTrack.getAttribute("role") !== "progressbar") {
+      problems.push(`Expected .progress-track role="progressbar", got "${progressTrack.getAttribute("role")}".`);
+    }
+  }
+
+  // ─── Offline summary ───
+  const offlineSummary = document.getElementById("offline-summary");
+  if (!offlineSummary) {
+    problems.push("Expected #offline-summary to exist in the DOM — it was not found.");
+  } else if (offlineSummary.getAttribute("role") !== "dialog") {
+    problems.push(`Expected #offline-summary role="dialog", got "${offlineSummary.getAttribute("role")}".`);
+  } else {
+    const dismissBtn = document.getElementById("btn-dismiss-offline");
+    if (!dismissBtn) {
+      problems.push("Expected #btn-dismiss-offline to exist inside #offline-summary — it was not found.");
     }
   }
 
@@ -102,9 +138,74 @@ export async function checks() {
       problems.push("getState() must return a copy — mutating the returned object should not affect engine state.");
     }
 
-    // --- Test 4: agent tool returns real state ---
+    // --- Test 4: gatherWood increments by exactly 1 ---
+    engine.reset();
+    const before = engine.getState().wood;
+    const afterState = engine.gatherWood();
+    const after = afterState.wood;
+    if (after - before !== 1) {
+      problems.push(`gatherWood() should increment wood by exactly 1. Before: ${before}, After: ${after}.`);
+    }
+
+    // --- Test 5: multiple gathers accumulate ---
+    engine.reset();
+    engine.gatherWood();
+    engine.gatherWood();
+    engine.gatherWood();
+    const three = engine.getState().wood;
+    if (three !== 3) {
+      problems.push(`Three gatherWood() calls should yield wood=3, got ${three}.`);
+    }
+
+    // --- Test 6: offline catch-up via consumeOfflineWoodGained ---
+    engine.reset();
+    // Manually set state 3 seconds in the past
+    const threeSecAgo = new Date(Date.now() - 3000).toISOString();
+    const oldState = JSON.stringify({ wood: 5, rate: 0.1, timestamp: threeSecAgo });
+    localStorage.setItem("selfgrow-state", oldState);
+
+    engine.init(); // catches up ~0.3 wood
+
+    const gained = engine.consumeOfflineWoodGained();
+    // The engine should have caught up approximately 0.3 wood
+    if (gained < 0.2 || gained > 0.4) {
+      problems.push(
+        `Offline catch-up from 3 seconds ago should add ~0.3 wood (0.1/s * 3s). Got ${gained.toFixed(4)}.`
+      );
+    }
+
+    // consumeOfflineWoodGained resets after reading
+    const gainedAgain = engine.consumeOfflineWoodGained();
+    if (gainedAgain !== 0) {
+      problems.push(
+        `consumeOfflineWoodGained() should return 0 after being consumed once, got ${gainedAgain}.`
+      );
+    }
+
+    // --- Test 7: gather works even after offline catch-up ---
+    engine.reset();
+    engine.gatherWood();
+    const afterGather = engine.getState().wood;
+    if (afterGather !== 1) {
+      problems.push(`After reset+gather, wood should be 1, got ${afterGather}.`);
+    }
+
+    // Clean up test artifacts
+    localStorage.removeItem("selfgrow-state");
+    engine.reset();
+    engine.init();
+
+  } catch (err) {
+    problems.push(`Engine module test threw: ${err.message}`);
+  }
+
+  // ─── Agent tools ────────────────────────────────────────────────
+
+  try {
     const { tools } = await import("./agenttools.js");
     const toolList = tools();
+
+    // --- read-state tool ---
     const readState = toolList.find((t) => t.name === "read-state");
     if (!readState) {
       problems.push("Expected a tool named 'read-state' in tools() — it was not found.");
@@ -123,37 +224,75 @@ export async function checks() {
           problems.push(`read-state should return a non-empty timestamp string, got ${JSON.stringify(result.timestamp)}.`);
         }
         // Verify the result matches the engine's current state
+        const engine = await import("./engine.js");
         const s = engine.getState();
         if (result.wood !== s.wood) {
           problems.push(`read-state wood (${result.wood}) does not match engine.getState() wood (${s.wood}).`);
         }
+        // Check goal field
+        if (!result.goal) {
+          problems.push("read-state should return a 'goal' field — it was missing.");
+        } else {
+          if (typeof result.goal !== "object") {
+            problems.push(`read-state.goal should be an object, got ${typeof result.goal}.`);
+          } else {
+            if (typeof result.goal.target !== "number" || result.goal.target !== 10) {
+              problems.push(`read-state.goal.target should be 10, got ${JSON.stringify(result.goal.target)}.`);
+            }
+            if (typeof result.goal.current !== "number") {
+              problems.push(`read-state.goal.current should be a number, got ${JSON.stringify(result.goal.current)}.`);
+            }
+            if (typeof result.goal.reached !== "boolean") {
+              problems.push(`read-state.goal.reached should be a boolean, got ${JSON.stringify(result.goal.reached)}.`);
+            }
+          }
+        }
       }
     }
 
-    // --- Test 5: offline catch-up accumulates correctly ---
-    engine.reset();
-    // Set a state that is 5 seconds in the past
-    const fiveSecAgo = new Date(Date.now() - 5000).toISOString();
-    const oldState = JSON.stringify({ wood: 0, rate: 0.1, timestamp: fiveSecAgo });
-    localStorage.setItem("selfgrow-state", oldState);
+    // --- perform-action tool ---
+    const performAction = toolList.find((t) => t.name === "perform-action");
+    if (!performAction) {
+      problems.push("Expected a tool named 'perform-action' in tools() — it was not found.");
+    } else {
+      // Test gather action
+      const engine = await import("./engine.js");
+      engine.reset();
+      const beforeVal = engine.getState().wood;
+      const result = await performAction.execute({ action: "gather" });
+      if (typeof result !== "object" || result === null) {
+        problems.push("perform-action execute() should return an object.");
+      } else {
+        if (result.wood !== beforeVal + 1) {
+          problems.push(
+            `perform-action with "gather" should increment wood by 1. Before: ${beforeVal}, `
+            + `After result: ${result.wood}.`
+          );
+        }
+        // Goal should be present in result
+        if (!result.goal) {
+          problems.push("perform-action result should include a 'goal' field — it was missing.");
+        }
+      }
 
-    engine.init(); // catches up ~0.5 wood
-
-    const caughtUp = engine.getState();
-    // Allow a small tolerance for timer granularity
-    if (caughtUp.wood < 0.4 || caughtUp.wood > 0.6) {
-      problems.push(
-        `Offline catch-up from 5 seconds ago should add ~0.5 wood (0.1/s * 5s). Got ${caughtUp.wood.toFixed(4)}.`
-      );
+      // Test unknown action throws
+      try {
+        await performAction.execute({ action: "unknown" });
+        problems.push("perform-action with unknown action should throw, but it did not.");
+      } catch (err) {
+        // Expected — verify it throws
+        if (!err.message.includes("unknown")) {
+          problems.push(`perform-action throw message should mention "unknown", got "${err.message}".`);
+        }
+      }
     }
 
-    // Clean up test artifacts and re-init the page engine
-    localStorage.removeItem("selfgrow-state");
-    engine.reset();
-    engine.init();
+    // Re-init page engine after tests
+    (await import("./engine.js")).reset();
+    (await import("./engine.js")).init();
 
   } catch (err) {
-    problems.push(`Engine module test threw: ${err.message}`);
+    problems.push(`Agent tools test threw: ${err.message}`);
   }
 
   return problems;
