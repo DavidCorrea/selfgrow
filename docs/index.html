@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>selfgrow — an 8-bit idle game</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <style>
+    /* ─── Reset ─── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ─── 8-bit Palette ─── */
+    :root {
+      --bg: #0a0a0f;
+      --panel-bg: #16162a;
+      --panel-border: #ff6b35;
+      --accent: #ffd700;
+      --text: #e0e0e0;
+      --text-dim: #8888aa;
+      --highlight: #00ff88;
+      --pixel-font: 'Press Start 2P', 'Courier New', monospace;
+      --border-width: 4px;
+      --panel-pad: 1.5rem;
+    }
+
+    html {
+      font-size: 16px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--pixel-font);
+      min-height: 100dvh;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100dvh;
+      padding: 1rem;
+      gap: 1.5rem;
+    }
+
+    /* ─── Panel — chunky bordered box ─── */
+    .panel {
+      background: var(--panel-bg);
+      border: var(--border-width) solid var(--panel-border);
+      padding: var(--panel-pad);
+      width: 100%;
+      max-width: 640px;
+      image-rendering: pixelated;
+    }
+
+    /* "Scanline" texture via repeating gradient */
+    .panel::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(255,255,255,0.015) 2px,
+        rgba(255,255,255,0.015) 4px
+      );
+    }
+
+    .panel {
+      position: relative;
+    }
+
+    /* ─── Status bar ─── */
+    #status-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+
+    #status-bar .stat {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    #status-bar .stat-label {
+      font-size: 0.5rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    #status-bar .stat-value {
+      font-size: 0.85rem;
+      color: var(--highlight);
+    }
+
+    .game-title {
+      font-size: 0.6rem;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+    }
+
+    /* ─── Action area ─── */
+    #action-area {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      align-items: center;
+    }
+
+    #action-area h2 {
+      font-size: 0.6rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .btn {
+      font-family: var(--pixel-font);
+      font-size: 0.55rem;
+      color: var(--bg);
+      background: var(--accent);
+      border: 3px solid #b8960f;
+      padding: 0.85rem 2rem;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      image-rendering: pixelated;
+      transition: background 0.1s, transform 0.05s;
+    }
+
+    .btn:hover,
+    .btn:focus-visible {
+      background: #ffe44d;
+      outline: 2px solid var(--highlight);
+      outline-offset: 3px;
+    }
+
+    .btn:active {
+      transform: scale(0.96);
+    }
+
+    .btn:focus:not(:focus-visible) {
+      outline: none;
+    }
+
+    /* ─── Footer / status text ─── */
+    .footer-note {
+      font-size: 0.4rem;
+      color: var(--text-dim);
+      margin-top: 0.25rem;
+    }
+
+    /* ─── Responsive: single column on narrow viewports ─── */
+    @media (max-width: 480px) {
+      body {
+        padding: 0.75rem;
+        gap: 1rem;
+      }
+
+      :root {
+        --panel-pad: 1rem;
+      }
+
+      #status-bar {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+      }
+
+      #status-bar .stat {
+        width: 100%;
+      }
+
+      .game-title {
+        font-size: 0.5rem;
+      }
+
+      #status-bar .stat-value {
+        font-size: 0.7rem;
+      }
+
+      .btn {
+        width: 100%;
+        text-align: center;
+        padding: 0.7rem 1rem;
+      }
+    }
+
+    /* ─── Accessible: prefers-reduced-motion ─── */
+    @media (prefers-reduced-motion: reduce) {
+      .btn {
+        transition: none;
+      }
+      .btn:active {
+        transform: none;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ═══ Status Bar Panel ═══ -->
+  <section class="panel" id="status-bar" role="region" aria-label="Game status">
+    <div class="game-title" aria-hidden="true">selfgrow</div>
+    <div class="stat">
+      <span class="stat-label" id="gp-label">Grow Points</span>
+      <span class="stat-value" id="gp-value" aria-labelledby="gp-label">0</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label" id="tick-label">Tick</span>
+      <span class="stat-value" id="tick-value" aria-labelledby="tick-label">—</span>
+    </div>
+  </section>
+
+  <!-- ═══ Action Area Panel ═══ -->
+  <section class="panel" id="action-area" role="region" aria-label="Actions">
+    <h2>Actions</h2>
+    <button class="btn" id="btn-grow" type="button" aria-label="Grow your resources">
+      &#x25B6; Grow
+    </button>
+    <span class="footer-note" aria-live="polite">
+      Click <kbd>Grow</kbd> to begin. More actions appear as the world expands.
+    </span>
+  </section>
+
+  <!-- ═══ Agent tool harness ═══ -->
+  <script type="module">
+    import "./webmcp.js";
+  </script>
+</body>
+</html>
