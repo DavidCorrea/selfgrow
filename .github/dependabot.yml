@@ -23,8 +23,15 @@ updates:
       dev-dependencies:
         dependency-type: development
 
+  # Every third-party action is pinned to a commit SHA with its version as a
+  # trailing comment — a tag can be moved to new code, a SHA cannot. Dependabot
+  # is what keeps those pins current, bumping SHA and comment together. `/` only
+  # covers .github/workflows; the composite setup action pins setup-node and
+  # cache itself, so its directory is listed too or those pins would rot.
   - package-ecosystem: github-actions
-    directory: '/'
+    directories:
+      - '/'
+      - '/.github/actions/setup'
     schedule:
       interval: monthly
     open-pull-requests-limit: 3
