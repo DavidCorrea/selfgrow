@@ -16,9 +16,11 @@ and `reset` deletes. Every convention below follows from that split.
 | `docs/` | the product — a static site served from GitHub Pages |
 | `.github/workflows/` | one workflow per scheduled or triggered agent run |
 | `.github/actions/setup/` | composite setup action reused by the workflows |
+| `.github/actions/secrets/` | writes the run's secrets to a mode-600 file, so no agent process starts with them in its environment |
 | `.github/ISSUE_TEMPLATE/` | `problem.yml`, `request.yml`, `config.yml` — human intake |
 
-Root files: `package.json`, `eslint.config.mjs`, `README.md`, `IMPROVEMENTS.md`.
+Root files: `package.json`, `eslint.config.mjs`, `README.md`, `DOMAIN.md`,
+`STRUCTURE.md`, `IMPROVEMENTS.md` — all on the `reset` keep-list.
 No build step, no bundler, no `src/`–`dist/` split.
 
 ## `agents/` — entrypoints
@@ -45,17 +47,23 @@ Each is invoked as `node agents/<name>.mjs` by the workflow named beside it.
 
 Imported, never invoked by a workflow.
 
-- `shared.mjs` — the core library (~2,700 lines): model chain, `runAgent`, prompt
+- `shared.mjs` — the core library (~3,550 lines): model chain, `runAgent`, prompt
   loading, envelope parsing, git, GitHub issues/board/PRs, `verifyBuild`,
   `reviewApp`, and the backlog predicates. Every agent imports from it.
   *(Its size is a known concern — see `IMPROVEMENTS.md`.)*
 - `log.mjs` — the bottom layer: structured logging, run history, the ticket
   ledger behind the run summary. Depends only on `fs`/`env` so `wiki.mjs` can log
   without an import cycle.
+- `secrets.mjs` — the other bottom layer: reads the run's secrets from the file
+  `.github/actions/secrets` wrote, deletes it, and hands each secret only to the
+  child that needs it (`gh`, `git`, pi). `wiki.mjs` and `shared.mjs` both
+  authenticate through it.
 - `wiki.mjs` — the wiki repo as long-term memory (Vision, Changelog, Story).
   Every write is a retried read-modify-write via `commitToWiki`.
 - `discussions.mjs` — the Discussions layer: journals, lessons, decisions, ideas,
   digest, health alerts.
+- `playtest-findings.mjs` — a finding's life after it is filed (untriaged →
+  answered → verified or escalated), and what the PM and PO are shown of it.
 - `weekly-report.mjs` — imported by the PM; gathers the week and renders the
   Story page and the human digest.
 - `models.json` — the ordered model chain, with a `why` per entry.
@@ -67,16 +75,21 @@ output) and `dedup-check.mjs` (free regression harness for the dedup heuristic).
 
 **Tests** live beside their source as `agents/<topic>.test.mjs`, named for a
 *concern* rather than a module — `backlog`, `envelope`, `quota`, `retirement`,
-`manual-work`, `fork-triage`. They target exported pure functions. `npm test`
+`manual-work`, `fork-triage`, `failed-lookups`, `machine-changes`. They target exported pure functions. `npm test`
 globs `agents/*.test.mjs`, so a test placed anywhere else never runs. **There
 are no tests under `docs/`** — the product is verified by `verifyBuild`, not by
 the Node runner.
 
 **Prompts** are `agents/prompts/<role>.md`. A leading underscore marks a shared
 fragment that is never loaded directly: `_profile.md`, `_output.md`,
-`_coding-standards.md`, `_product-contract.md`. `loadPrompt(name)` inlines
-`{{include:fragment-name}}` one level deep; `fillTemplate` then substitutes
-`{{SCREAMING_SNAKE}}` placeholders.
+`_coding-standards.md`, `_product-contract.md`, `_agent-tools.md`.
+`loadPrompt(name)` inlines `{{include:fragment-name}}` one level deep;
+`fillTemplate` then substitutes `{{SCREAMING_SNAKE}}` placeholders in a single
+pass, inserting each value verbatim — a `$&` or a `{{VISION}}` inside a diff is
+never reinterpreted.
+
+**git and gh** run only through `gitExec` / `ghExec` in `shared.mjs`, from an
+argv array — never a shell string.
 
 **Product modules** in `docs/` are camelCase, one concern per file
 (`ambientAudio.js`, `groundRipple.js`), each opening with a
@@ -134,4 +147,5 @@ Three files in `docs/` are not ordinary product modules:
   same change.
 - **`reset` works from a keep-list** (`HARNESS_PATHS`), not a delete-list. A new
   machine-owned file under `docs/` must be added to it or the next reset deletes
-  it.
+  it. So must any new tracked file outside `docs/` — `reset.test.mjs` fails
+  until it is.
