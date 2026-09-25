@@ -70,9 +70,9 @@ export function gatherWeek({ closed, open }) {
 /** The digest body: what shipped, what was heard, where things stand. */
 export function renderDigest(week, narrative, milestone) {
   const mention = NOTIFY_USER
-    ? `${NOTIFY_USER.startsWith("@") ? NOTIFY_USER : `@${NOTIFY_USER}`} — this week in the garden.\n`
+    ? `${NOTIFY_USER.startsWith("@") ? NOTIFY_USER : `@${NOTIFY_USER}`} — this week in the product.\n`
     : "";
-  const lines = [mention, "## What the garden grew", narrative || "_(nothing shipped this week)_", ""];
+  const lines = [mention, "## What shipped", narrative || "_(nothing shipped this week)_", ""];
 
   const yours = week.yours || { shipped: [], open: [], parked: [] };
   if (yours.shipped.length || yours.open.length || yours.parked.length) {
@@ -115,7 +115,7 @@ const DIGEST_CATEGORY = process.env.DIGEST_CATEGORY || "Announcements";
  * Write the Story page and file the week's digest.
  *
  * One model session for both: the narrative it produces is the body of the
- * digest's "what the garden grew" section as well as the Story page, and asking
+ * digest's "what shipped" section as well as the Story page, and asking
  * twice would pay twice for the same paragraphs.
  */
 export async function publishWeeklyReport({ closed, open, milestone }) {

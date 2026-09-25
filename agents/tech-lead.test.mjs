@@ -62,8 +62,8 @@ test("rendering the source within the budget", async (t) => {
 
 test("mapping what the product is made of", async (t) => {
   const withExports = {
-    name: "docs/garden.js",
-    source: "export function initGarden() {}\nexport const SEASONS = [];\nfunction hidden() {}",
+    name: "docs/scene.js",
+    source: "export function initScene() {}\nexport const LEVELS = [];\nfunction hidden() {}",
   };
 
   await t.test("lists every file, whatever the inlining budget did", () => {
@@ -76,8 +76,8 @@ test("mapping what the product is made of", async (t) => {
 
   await t.test("names what each file offers, without reading it", () => {
     const manifest = renderManifest([withExports]);
-    assert.match(manifest, /initGarden/);
-    assert.match(manifest, /SEASONS/);
+    assert.match(manifest, /initScene/);
+    assert.match(manifest, /LEVELS/);
     assert.ok(!manifest.includes("hidden"), "an unexported function is not part of the interface");
   });
 

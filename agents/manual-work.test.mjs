@@ -16,7 +16,7 @@ const humanIssue = (number, title, extra = []) =>
 
 test("telling a person's ticket from the pipeline's", async (t) => {
   await t.test("treats an unlabelled ticket as human-filed", () => {
-    assert.equal(isManualIssue(humanIssue(1, "Make the garden louder")), true);
+    assert.equal(isManualIssue(humanIssue(1, "Make the page louder")), true);
   });
 
   await t.test("treats anything the agents stamped as theirs", () => {
@@ -66,14 +66,14 @@ test("telling the reader what became of what they asked for", async (t) => {
     const week = {
       shipped: [], parked: [], playtest: [], openCount: 3, spend: 100,
       yours: {
-        shipped: [{ number: 1, title: "Louder garden" }],
+        shipped: [{ number: 1, title: "Louder page" }],
         open: [{ number: 3, title: "Quieter nights" }],
         parked: [{ number: 9, title: "Impossible thing" }],
       },
     };
     const body = renderDigest(week, "narrative", null);
     assert.match(body, /## What you asked for/);
-    assert.match(body, /\*\*Shipped\*\* — Louder garden \(#1\)/);
+    assert.match(body, /\*\*Shipped\*\* — Louder page \(#1\)/);
     assert.match(body, /\*\*Stuck\*\* — Impossible thing \(#9\)/);
     assert.match(body, /Still queued — Quieter nights \(#3\)/);
   });

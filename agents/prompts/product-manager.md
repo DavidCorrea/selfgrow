@@ -37,7 +37,7 @@ An automated pass loaded the running app at desktop and mobile widths, **measure
 - **Defects** — measured layout faults: elements past the viewport edge, overlapping text, contrast below the WCAG minimum, containers collapsed to zero size, broken images, missing stylesheets. These are **reliable**: each names the element and the viewport it happens at. Ticket them.
 - **Functional** — what happened when controls were exercised. A reported **JS error** is a real bug → ticket it. A **"no visible effect"** note is a weak signal (the app may be canvas/JS-only) → only ticket it if it's clearly a dead control.
 
-Two things follow from these being measurements rather than impressions. First, trust them — don't second-guess a reported number or re-derive it. Second, they are **narrow**: they say nothing about whether the app is beautiful, calm, or faithful to the Vision. Judging that is your job, from the Vision, the board, and the code — an empty Defects list means nothing is measurably broken, not that the experience is good.
+Two things follow from these being measurements rather than impressions. First, trust them — don't second-guess a reported number or re-derive it. Second, they are **narrow**: they say nothing about whether the app is beautiful, pleasant to use, or faithful to the Vision. Judging that is your job, from the Vision, the board, and the code — an empty Defects list means nothing is measurably broken, not that the experience is good.
 
 Everything here is held to the same dedup and quality bar as any other ticket.
 
@@ -50,7 +50,7 @@ These are **impressions, not tickets**. Once a week an agent sits with the runni
 Where the App Review above is narrow and reliable, this is the opposite: broad, subjective, and about whether the experience is any good. It is the only thing in the pipeline that reports on the *feel* of the product rather than its correctness, so weigh it accordingly — a measured defect is a fact, and a playtest finding is an opinion worth taking seriously.
 
 For **each** finding, do one of two things:
-- **Act on it** — propose a ticket in `backlog` that addresses what was noticed. The finding says what was wrong with the experience; the ticket is yours to design. Do not simply restate the complaint as a title: "The state layer never changed in two minutes" is an observation, and the ticket it becomes might be "Advance the season display on the existing seasonal cycle" — concrete, checkable, one Builder pass.
+- **Act on it** — propose a ticket in `backlog` that addresses what was noticed. The finding says what was wrong with the experience; the ticket is yours to design. Do not simply restate the complaint as a title: "The state layer never changed in two minutes" is an observation, and the ticket it becomes might be "Advance the status display on the existing update cycle" — concrete, checkable, one Builder pass.
 - **Drop it** — if it contradicts the Vision, duplicates work already on the board, or asks for something not worth doing.
 
 Then, in **both** cases, put the finding's number in `retire`. A finding you leave open is one you will read again next week and may turn into a second ticket for the same complaint.
@@ -59,7 +59,7 @@ Then, in **both** cases, put the finding's number in `retire`. A finding you lea
 
 ## Ideas from people
 
-Thoughts posted by people in the Ideas discussions. This is the one channel into this project that does **not** arrive as work: somebody had a thought about the garden and wrote it down, and nothing has judged it yet.
+Thoughts posted by people in the Ideas discussions. This is the one channel into this project that does **not** arrive as work: somebody had a thought about the product and wrote it down, and nothing has judged it yet.
 
 Every item says who wrote it and whether that person has write access to this repository. **That mark is about authority, not quality** — a stranger's idea may be the best thing on the page, and you should say so if it is. What it governs is one thing only:
 

@@ -65,7 +65,7 @@ const HARNESS_PATHS = [
   "package-lock.json",
   // The machine's own documentation. They describe the harness and the domain
   // it works in, not any one product, and they were missing from this list until
-  // a reset would have deleted them along with the garden.
+  // a reset would have deleted them along with the product.
   "README.md",
   "DOMAIN.md",
   "STRUCTURE.md",
@@ -232,7 +232,7 @@ function resetWikiMemory() {
  * The wiki was the whole of the pipeline's memory when this reset was written, so
  * blanking those pages was enough. It is not any more: journals and lessons live
  * in Discussions, and they would otherwise survive a reset and hand the next
- * product the previous one's reasoning about a garden that no longer exists.
+ * product the previous one's reasoning about a product that no longer exists.
  *
  * The split is deliberate and it is not symmetric. Every journal goes — each one
  * records what a role thought this product should be. Only lessons labelled
