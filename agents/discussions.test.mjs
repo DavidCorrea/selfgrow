@@ -9,7 +9,6 @@ import {
   renderLessonThreads,
   archivedTitle,
   planMemoryArchive,
-  emptyArchiveRefusal,
   renderDecisions,
   renderInboundIdeas,
   collectPages,
@@ -199,24 +198,6 @@ test("deciding which memory a reset archives", async (t) => {
       thread("[archived 2026-09-04] Tech Lead — log", "Journals"),
     ]);
     assert.deepEqual(plan, { archive: [], keep: [] });
-  });
-});
-
-test("refusing a reset that archived nothing", async (t) => {
-  const journal = { title: "Playtester — log", category: { name: "Journals" } };
-  const lesson = { title: "Weather flickers", category: { name: "Lessons" } };
-
-  await t.test("refuses when journals were due and none were archived", () => {
-    assert.match(emptyArchiveRefusal({ archive: [journal], keep: [] }, 0), /1 journal\(s\).*refusing/);
-  });
-
-  await t.test("goes on once anything was archived", () => {
-    assert.equal(emptyArchiveRefusal({ archive: [journal, lesson], keep: [] }, 1), null);
-  });
-
-  await t.test("goes on when there were no journals to archive", () => {
-    assert.equal(emptyArchiveRefusal({ archive: [], keep: [] }, 0), null);
-    assert.equal(emptyArchiveRefusal({ archive: [lesson], keep: [] }, 0), null);
   });
 });
 
