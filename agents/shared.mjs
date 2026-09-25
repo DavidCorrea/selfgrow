@@ -1376,6 +1376,20 @@ export function rewriteIssueBody(issueNumber, body) {
 // Marks Builder-filed code-health tickets so the PM (and humans) can spot them.
 export const TECH_DEBT_LABEL = "tech-debt";
 
+/**
+ * True when an open ticket already carries this title, whatever state it is in.
+ *
+ * Pass the WHOLE open board, not the buildable candidates. The Devs used to check
+ * only the tickets offered to the Scout, and a tech-debt ticket filed earlier is
+ * rarely among them — it is unprioritized, waiting on something, parked, or
+ * claimed by an open PR — so the same debt was filed again on every merge that
+ * noticed it.
+ */
+export function isAlreadyTracked(title, openIssues) {
+  const wanted = (title || "").toLowerCase().trim();
+  return openIssues.some((issue) => (issue.title || "").toLowerCase().trim() === wanted);
+}
+
 const _ensuredLabels = new Set();
 function ensureLabel(name, color = "ededed") {
   if (_ensuredLabels.has(name)) return;
