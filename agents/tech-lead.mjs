@@ -23,7 +23,6 @@
 // that goes through the same planning, review and verification as any other
 // change — including the removals, which are the ones that most deserve it.
 import fs from "fs";
-import { execSync } from "child_process";
 import { join, relative } from "path";
 import { pathToFileURL } from "url";
 import {
@@ -35,6 +34,8 @@ import {
   runAgent,
   extractAgentResponse,
   repoRoot,
+  gitExec,
+  ghExec,
   readVision,
   getBoardSnapshot,
   createIssue,
@@ -111,10 +112,7 @@ const MAX_SELFTEST_CHARS = 20000;
 function lastReviewedAt() {
   try {
     const runs = JSON.parse(
-      execSync(`gh run list --workflow tech-lead.yml --status success --limit 2 --json createdAt`, {
-        cwd: repoRoot,
-        maxBuffer: 10 * 1024 * 1024,
-      }).toString()
+      ghExec(["run", "list", "--workflow", "tech-lead.yml", "--status", "success", "--limit", "2", "--json", "createdAt"])
     );
     // [0] is very likely THIS run if it is already recorded, so prefer the one before.
     return runs[1]?.createdAt || runs[0]?.createdAt || null;
@@ -136,15 +134,10 @@ function lastReviewedAt() {
 function readChanges(since) {
   if (!since) return { summary: null, changedFiles: new Set() };
   try {
-    const range = `--since="${since}"`;
-    const commits = execSync(`git log ${range} --no-merges --format="%h %s" -- docs/`, {
-      cwd: repoRoot,
-      maxBuffer: 10 * 1024 * 1024,
-    }).toString().trim();
-    const files = execSync(`git log ${range} --no-merges --name-only --format="" -- docs/`, {
-      cwd: repoRoot,
-      maxBuffer: 10 * 1024 * 1024,
-    }).toString().trim().split("\n").map((f) => f.trim()).filter(Boolean);
+    const range = `--since=${since}`;
+    const commits = gitExec(["log", range, "--no-merges", "--format=%h %s", "--", "docs/"]);
+    const files = gitExec(["log", range, "--no-merges", "--name-only", "--format=", "--", "docs/"])
+      .split("\n").map((f) => f.trim()).filter(Boolean);
     return { summary: commits || null, changedFiles: new Set(files) };
   } catch (e) {
     log("warn", "Could not read what changed since the last review.", errorData(e));

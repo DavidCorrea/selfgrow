@@ -215,8 +215,8 @@ async function writePostMortem(issue, reason) {
  */
 function cleanupBranch(branchName) {
   try {
-    gitExec("checkout main");
-    gitExec(`branch -D ${branchName}`);
+    gitExec(["checkout", "main"]);
+    gitExec(["branch", "-D", branchName]);
     log("info", `Cleaned up local branch ${branchName}.`);
   } catch {
     // branch may not exist locally — fine
@@ -519,17 +519,17 @@ async function runBuildReviewLoop(ctx, plan) {
  */
 function pushAttempt(ctx) {
   try {
-    if (gitExec("status --porcelain")) {
-      gitExec("add -A");
-      gitExec(`commit -m "${ctx.commitMessage.replace(/"/g, '\\"')}"`);
+    if (gitExec(["status", "--porcelain"])) {
+      gitExec(["add", "-A"]);
+      gitExec(["commit", "-m", ctx.commitMessage]);
       log("info", `Committed: ${ctx.commitMessage}`);
     }
-    if (gitExec(`rev-list --count main..${ctx.branchName}`) === "0") {
+    if (gitExec(["rev-list", "--count", `main..${ctx.branchName}`]) === "0") {
       if (!ctx.prNumber) return abandonTicket(ctx, "Builder produced no changes.");
       log("warn", "No new changes this attempt; re-reviewing the existing PR.");
       return null;
     }
-    gitExec(`push origin ${ctx.branchName}`);
+    gitExec(["push", "origin", ctx.branchName]);
     return null;
   } catch (e) {
     return abandonTicket(ctx, `Build pipeline error: ${e.message}`, { closePr: true, fault: false });
@@ -602,7 +602,7 @@ async function reconcileWithMain(ctx) {
   );
   extractAgentResponse("Builder", resolverOutput, { requireOutcome: false, requiredDataFields: ["resolvedFiles"] });
 
-  if (gitExec("diff --name-only --diff-filter=U")) {
+  if (gitExec(["diff", "--name-only", "--diff-filter=U"])) {
     abortMerge();
     return abandonTicket(ctx, "Unresolved merge conflicts with main.", { closePr: true });
   }
@@ -610,9 +610,9 @@ async function reconcileWithMain(ctx) {
     const resolveMsg = ctx.issueNumber
       ? `Resolve merge conflicts with origin/main (refs #${ctx.issueNumber})`
       : "Resolve merge conflicts with origin/main";
-    gitExec("add -A");
-    gitExec(`commit -m "${resolveMsg}"`);
-    gitExec(`push origin ${ctx.branchName}`);
+    gitExec(["add", "-A"]);
+    gitExec(["commit", "-m", resolveMsg]);
+    gitExec(["push", "origin", ctx.branchName]);
     log("info", "Merge conflicts resolved and pushed.");
     return null;
   } catch (e) {
@@ -642,7 +642,7 @@ async function verifyBeforeMerge(ctx) {
 async function landAndRecord(ctx) {
   let commitSha = null;
   try {
-    commitSha = gitExec(`rev-parse ${ctx.branchName}`);
+    commitSha = gitExec(["rev-parse", ctx.branchName]);
   } catch {
     // non-fatal — the closing comment just omits the SHA
   }
@@ -658,7 +658,7 @@ async function landAndRecord(ctx) {
       ticketFault: false,
     });
   }
-  try { gitExec("checkout main"); } catch {}
+  try { gitExec(["checkout", "main"]); } catch {}
 
   // Record the change in the canonical changelog (wiki). The code has already
   // merged, so a failure here cannot undo the feature — but it is reported as an

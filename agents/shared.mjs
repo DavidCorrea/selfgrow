@@ -11,7 +11,7 @@
  *   "skip"    — nothing to do
  */
 
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import { fileURLToPath } from "url";
 import { dirname, join, relative, extname } from "path";
 import fs from "fs";
@@ -892,9 +892,19 @@ export function extractAgentResponse(label, text, { requireOutcome = true, requi
 // Git helpers
 // ---------------------------------------------------------------------------
 
-export function gitExec(args, opts = {}) {
-  const cmd = "git " + args;
-  return execSync(cmd, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024, ...opts }).toString().trim();
+// git and gh are always run from an argv array, never a shell string. Commit
+// messages, issue and PR titles, and branch names all carry model-written text,
+// and this runner holds a PAT: through a shell, a backtick or `$(...)` in any of
+// them is a command, and escaping only `"` (which is what the old string form
+// did) stops none of it. With execFileSync there is no shell, so no quoting rules
+// to get wrong — every argument arrives exactly as written.
+
+export function gitExec(argv, opts = {}) {
+  return execFileSync("git", argv, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024, ...opts }).toString().trim();
+}
+
+export function ghExec(argv, opts = {}) {
+  return execFileSync("gh", argv, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024, ...opts }).toString();
 }
 
 let gitIdentityConfigured = false;
@@ -905,8 +915,8 @@ let gitIdentityConfigured = false;
  */
 export function configureGitIdentity() {
   if (gitIdentityConfigured) return;
-  gitExec('config user.name "github-actions[bot]"');
-  gitExec('config user.email "github-actions[bot]@users.noreply.github.com"');
+  gitExec(["config", "user.name", "github-actions[bot]"]);
+  gitExec(["config", "user.email", "github-actions[bot]@users.noreply.github.com"]);
   gitIdentityConfigured = true;
 }
 
@@ -937,7 +947,7 @@ export function deleteRemoteBranch(branchName) {
     // Best-effort: the branch usually doesn't exist on origin (run-scoped names
     // are unique), so capture stderr rather than leak git's "remote ref does not
     // exist" to the console.
-    gitExec(`push origin --delete ${branchName}`, { stdio: "pipe" });
+    gitExec(["push", "origin", "--delete", branchName], { stdio: "pipe" });
     log("info", `Deleted remote branch ${branchName}.`);
   } catch {
     // remote branch may not exist — fine
@@ -945,31 +955,31 @@ export function deleteRemoteBranch(branchName) {
 }
 
 export function createBranch(branchName) {
-  gitExec("fetch origin");
-  gitExec("checkout main");
+  gitExec(["fetch", "origin"]);
+  gitExec(["checkout", "main"]);
   // Base the branch on the real remote tip, not a possibly-stale local main.
-  gitExec("reset --hard origin/main");
+  gitExec(["reset", "--hard", "origin/main"]);
   // Clear any leftover branch of the same name from a prior failed run. With
   // run-scoped names this is usually a no-op, so capture stderr rather than leak
   // git's "branch not found" to the console.
   try {
-    gitExec(`branch -D ${branchName}`, { stdio: "pipe" });
+    gitExec(["branch", "-D", branchName], { stdio: "pipe" });
   } catch {
     // local branch may not exist — fine
   }
   deleteRemoteBranch(branchName);
-  gitExec(`checkout -b ${branchName}`);
+  gitExec(["checkout", "-b", branchName]);
   log("info", `Created branch: ${branchName}`);
 }
 
 export function mergeMainIntoBranch() {
   try {
-    gitExec("fetch origin");
-    gitExec("merge origin/main --no-edit");
+    gitExec(["fetch", "origin"]);
+    gitExec(["merge", "origin/main", "--no-edit"]);
     log("info", "Merged origin/main into branch — clean.");
     return { clean: true };
   } catch {
-    const status = gitExec("status --porcelain");
+    const status = gitExec(["status", "--porcelain"]);
     const conflicted = status
       .split("\n")
       .filter((l) => l.startsWith("UU") || l.startsWith("AA") || l.startsWith("DD"))
@@ -983,7 +993,7 @@ export function mergeMainIntoBranch() {
 
 export function abortMerge() {
   try {
-    gitExec("merge --abort");
+    gitExec(["merge", "--abort"]);
     log("info", "Aborted merge.");
   } catch {
     // ignore — may not be in a merge
@@ -992,7 +1002,7 @@ export function abortMerge() {
 
 export function abortRebase() {
   try {
-    gitExec("rebase --abort");
+    gitExec(["rebase", "--abort"]);
     log("info", "Aborted rebase.");
   } catch {
     // ignore — may not be in a rebase
@@ -1009,20 +1019,20 @@ export function abortRebase() {
 export function mergeBranchToMain(branchName, { retries = 5 } = {}) {
   let pushed = false;
   for (let attempt = 1; attempt <= retries; attempt++) {
-    gitExec("fetch origin");
-    gitExec(`checkout ${branchName}`);
+    gitExec(["fetch", "origin"]);
+    gitExec(["checkout", branchName]);
     try {
-      gitExec("rebase origin/main");
+      gitExec(["rebase", "origin/main"]);
     } catch (e) {
       // Leave no half-finished rebase behind for callers' cleanup.
       abortRebase();
       throw new Error(`Rebase of ${branchName} onto origin/main failed: ${e.message}`);
     }
-    gitExec("checkout main");
-    gitExec("reset --hard origin/main");
-    gitExec(`merge --ff-only ${branchName}`);
+    gitExec(["checkout", "main"]);
+    gitExec(["reset", "--hard", "origin/main"]);
+    gitExec(["merge", "--ff-only", branchName]);
     try {
-      gitExec("push origin main");
+      gitExec(["push", "origin", "main"]);
       log("info", `Merged ${branchName} into main and pushed (attempt ${attempt}).`);
       pushed = true;
       break;
@@ -1036,7 +1046,7 @@ export function mergeBranchToMain(branchName, { retries = 5 } = {}) {
   if (!pushed) return;
 
   try {
-    gitExec(`branch -d ${branchName}`);
+    gitExec(["branch", "-d", branchName]);
     log("info", `Deleted local branch ${branchName}.`);
   } catch {
     // not fully merged according to git — leave it for inspection
@@ -1048,14 +1058,10 @@ export function mergeBranchToMain(branchName, { retries = 5 } = {}) {
 // GitHub issue helpers
 // ---------------------------------------------------------------------------
 
-// Post a comment by piping the body over stdin, so arbitrary Markdown/prose
-// (backticks, $, quotes, newlines) is never interpreted by the shell.
+// Post a comment by piping the body over stdin: a long body can outgrow what
+// fits in a single argument, and stdin has no such limit.
 function ghComment(issueNumber, body) {
-  execSync(`gh issue comment ${issueNumber} --body-file -`, {
-    cwd: repoRoot,
-    input: body,
-    maxBuffer: 10 * 1024 * 1024,
-  });
+  ghExec(["issue", "comment", String(issueNumber), "--body-file", "-"], { input: body });
 }
 
 /**
@@ -1083,7 +1089,7 @@ export async function closeIssue(issueNumber, info = {}) {
 
   try {
     ghComment(issueNumber, body);
-    execSync(`gh issue close ${issueNumber}`, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 });
+    ghExec(["issue", "close", String(issueNumber)]);
     log("info", `Closed issue #${issueNumber}`);
   } catch (e) {
     log("warn", `Could not close issue #${issueNumber}`, errorData(e));
@@ -1100,10 +1106,7 @@ export async function commentIssue(issueNumber, body) {
 
 export async function labelIssue(issueNumber, label) {
   try {
-    execSync(
-      `gh issue edit ${issueNumber} --add-label "${label}"`,
-      { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }
-    );
+    ghExec(["issue", "edit", String(issueNumber), "--add-label", label]);
     log("info", `Labeled issue #${issueNumber} as "${label}"`);
   } catch (e) {
     log("warn", `Could not label issue #${issueNumber}`, errorData(e));
@@ -1114,25 +1117,12 @@ export async function labelIssue(issueNumber, label) {
 export function fetchOpenIssues(limit = 100) {
   try {
     return JSON.parse(
-      execSync(
-        `gh issue list --state open --json number,title,body,labels,createdAt --limit ${limit}`,
-        { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }
-      ).toString()
+      ghExec(["issue", "list", "--state", "open", "--json", "number,title,body,labels,createdAt", "--limit", String(limit)])
     );
   } catch (e) {
     log("warn", "Could not fetch open issues.", errorData(e));
     return [];
   }
-}
-
-// Marks issues the agents create, so issue-triggered workflows can skip their
-// own creations and avoid self-trigger loops.
-/**
- * Single-quote a value for the shell. Every string here can come from a model,
- * so none of them may be interpolated raw.
- */
-function shellQuote(value) {
-  return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1153,10 +1143,7 @@ function shellQuote(value) {
 export function getCurrentMilestone() {
   try {
     const list = JSON.parse(
-      execSync(`gh api "repos/{owner}/{repo}/milestones?state=open&sort=due_on&direction=asc"`, {
-        cwd: repoRoot,
-        maxBuffer: 10 * 1024 * 1024,
-      }).toString()
+      ghExec(["api", "repos/{owner}/{repo}/milestones?state=open&sort=due_on&direction=asc"])
     );
     if (!list.length) return null;
     const { title, description, number, open_issues: open, closed_issues: closed } = list[0];
@@ -1179,16 +1166,10 @@ export function startMilestone(title, description) {
   if (current && current.title === title) return current;
   try {
     const created = JSON.parse(
-      execSync(
-        `gh api "repos/{owner}/{repo}/milestones" -f title=${shellQuote(title)} -f description=${shellQuote(description || "")}`,
-        { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }
-      ).toString()
+      ghExec(["api", "repos/{owner}/{repo}/milestones", "-f", `title=${title}`, "-f", `description=${description || ""}`])
     );
     if (current) {
-      execSync(
-        `gh api --method PATCH "repos/{owner}/{repo}/milestones/${current.number}" -f state=closed`,
-        { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }
-      );
+      ghExec(["api", "--method", "PATCH", `repos/{owner}/{repo}/milestones/${current.number}`, "-f", "state=closed"]);
       log("info", `Milestones: closed "${current.title}" (${current.closed} of ${current.open + current.closed} shipped).`);
     }
     log("info", `Milestones: now working toward "${title}".`);
@@ -1203,10 +1184,7 @@ export function startMilestone(title, description) {
 export function setIssueMilestone(issueNumber, title) {
   if (!title) return;
   try {
-    execSync(`gh issue edit ${issueNumber} --milestone ${shellQuote(title)}`, {
-      cwd: repoRoot,
-      maxBuffer: 10 * 1024 * 1024,
-    });
+    ghExec(["issue", "edit", String(issueNumber), "--milestone", title]);
   } catch (e) {
     log("warn", `Milestones: could not assign #${issueNumber}.`, errorData(e));
   }
@@ -1233,11 +1211,7 @@ export function isManualIssue(issue) {
  */
 export function rewriteIssueBody(issueNumber, body) {
   try {
-    execSync(`gh issue edit ${issueNumber} --body-file -`, {
-      cwd: repoRoot,
-      input: body,
-      maxBuffer: 10 * 1024 * 1024,
-    });
+    ghExec(["issue", "edit", String(issueNumber), "--body-file", "-"], { input: body });
     log("info", `Sharpened #${issueNumber} into a buildable ticket.`);
     return true;
   } catch (e) {
@@ -1253,7 +1227,7 @@ function ensureLabel(name, color = "ededed") {
   if (_ensuredLabels.has(name)) return;
   _ensuredLabels.add(name);
   try {
-    execSync(`gh label create "${name}" --color ${color} --force`, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 });
+    ghExec(["label", "create", name, "--color", color, "--force"]);
   } catch {
     // exists / no perms — non-fatal
   }
@@ -1267,12 +1241,12 @@ function ensureLabel(name, color = "ededed") {
 export function createIssue(title, body, labels = []) {
   const all = [AGENT_LABEL, ...labels];
   all.forEach((l) => ensureLabel(l, l === TECH_DEBT_LABEL ? "d4c5f9" : "ededed"));
-  const labelArgs = all.map((l) => `--label "${l}"`).join(" ");
+  const labelArgs = all.flatMap((l) => ["--label", l]);
   try {
-    const out = execSync(
-      `gh issue create --title "${String(title).replace(/"/g, '\\"')}" ${labelArgs} --body-file -`,
-      { cwd: repoRoot, input: body || "", maxBuffer: 10 * 1024 * 1024 }
-    ).toString().trim();
+    const out = ghExec(
+      ["issue", "create", "--title", String(title), ...labelArgs, "--body-file", "-"],
+      { input: body || "" }
+    ).trim();
     const match = out.match(/\/issues\/(\d+)/);
     const number = match ? Number(match[1]) : null;
     log("info", `Created issue #${number}: ${title}`);
@@ -1299,10 +1273,7 @@ export function ensurePriorityLabels() {
   ];
   for (const [name, color] of labels) {
     try {
-      execSync(`gh label create "${name}" --color ${color} --force`, {
-        cwd: repoRoot,
-        maxBuffer: 10 * 1024 * 1024,
-      });
+      ghExec(["label", "create", name, "--color", color, "--force"]);
     } catch {
       // label may already exist / no perms — non-fatal
     }
@@ -1322,13 +1293,9 @@ export function setIssuePriority(issueNumber, priority, currentLabels = []) {
   }
   const removes = Object.values(PRIORITY_LABELS)
     .filter((l) => l !== target && currentLabels.includes(l))
-    .map((l) => `--remove-label "${l}"`)
-    .join(" ");
+    .flatMap((l) => ["--remove-label", l]);
   try {
-    execSync(`gh issue edit ${issueNumber} --add-label "${target}" ${removes}`.trim(), {
-      cwd: repoRoot,
-      maxBuffer: 10 * 1024 * 1024,
-    });
+    ghExec(["issue", "edit", String(issueNumber), "--add-label", target, ...removes]);
     log("info", `Priority: #${issueNumber} → ${priority}.`);
     return true;
   } catch (e) {
@@ -1545,10 +1512,7 @@ export function syncWaitingLabels(openIssues) {
     if (waiting === labelled) continue;
     const flag = waiting ? "--add-label" : "--remove-label";
     try {
-      execSync(`gh issue edit ${issue.number} ${flag} "${WAITING_LABEL}"`, {
-        cwd: repoRoot,
-        maxBuffer: 10 * 1024 * 1024,
-      });
+      ghExec(["issue", "edit", String(issue.number), flag, WAITING_LABEL]);
       changed++;
       log("info", waiting
         ? `#${issue.number} labelled ${WAITING_LABEL} (waits on ${unmetDependencies(issue, openNumbers).map((d) => `#${d}`).join(", ")}).`
@@ -1575,11 +1539,11 @@ export function recordTicketFailure(issue, reason, maxAttempts) {
   const nextLabel = `attempts:${next}`;
   ensureLabel(nextLabel, "e4b8b8");
 
-  const edits = [`--add-label "${nextLabel}"`];
+  const edits = ["--add-label", nextLabel];
   const prevLabel = `attempts:${current}`;
-  if (current > 0 && labelNames(issue).includes(prevLabel)) edits.push(`--remove-label "${prevLabel}"`);
+  if (current > 0 && labelNames(issue).includes(prevLabel)) edits.push("--remove-label", prevLabel);
   try {
-    execSync(`gh issue edit ${number} ${edits.join(" ")}`, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 });
+    ghExec(["issue", "edit", String(number), ...edits]);
   } catch (e) {
     log("warn", `Could not bump attempt count on #${number}.`, errorData(e));
   }
@@ -1595,7 +1559,7 @@ export function recordTicketFailure(issue, reason, maxAttempts) {
 function parkBlockedTicket(number, attempts, reason, currentLabels) {
   ensureLabel(BLOCKED_LABEL, "b60205");
   try {
-    execSync(`gh issue edit ${number} --add-label "${BLOCKED_LABEL}"`, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 });
+    ghExec(["issue", "edit", String(number), "--add-label", BLOCKED_LABEL]);
   } catch (e) {
     log("warn", `Could not block #${number}.`, errorData(e));
   }
@@ -1624,7 +1588,7 @@ export async function retireIssue(number, reason) {
   const body = ["## Retired by the Product Manager", "", reason || "Superseded or no longer worth building in its current form."].join("\n");
   try {
     ghComment(number, body);
-    execSync(`gh issue close ${number}`, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 });
+    ghExec(["issue", "close", String(number)]);
     log("info", `Retired issue #${number}.`);
   } catch (e) {
     log("warn", `Could not retire #${number}.`, errorData(e));
@@ -1638,7 +1602,7 @@ export async function retireIssue(number, reason) {
  */
 export function triggerWorkflow(workflowFile) {
   try {
-    execSync(`gh workflow run ${workflowFile}`, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 });
+    ghExec(["workflow", "run", workflowFile]);
     log("info", `Dispatched workflow ${workflowFile}.`);
     return true;
   } catch (e) {
@@ -1661,10 +1625,8 @@ export function triggerWorkflow(workflowFile) {
 export const PROJECT_OWNER = process.env.GH_PROJECT_OWNER || "@me";
 export const PROJECT_NUMBER = process.env.GH_PROJECT_NUMBER || "3";
 
-function ghProjectJson(args) {
-  return JSON.parse(
-    execSync(`gh ${args}`, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }).toString()
-  );
+function ghProjectJson(argv) {
+  return JSON.parse(ghExec(argv));
 }
 
 let _projectMeta = null;
@@ -1676,12 +1638,8 @@ let _projectMeta = null;
 export function getProjectMeta() {
   if (_projectMeta) return _projectMeta;
   try {
-    const view = ghProjectJson(
-      `project view ${PROJECT_NUMBER} --owner ${PROJECT_OWNER} --format json`
-    );
-    const fieldsRaw = ghProjectJson(
-      `project field-list ${PROJECT_NUMBER} --owner ${PROJECT_OWNER} --format json`
-    );
+    const view = ghProjectJson(["project", "view", PROJECT_NUMBER, "--owner", PROJECT_OWNER, "--format", "json"]);
+    const fieldsRaw = ghProjectJson(["project", "field-list", PROJECT_NUMBER, "--owner", PROJECT_OWNER, "--format", "json"]);
     const fields = Array.isArray(fieldsRaw) ? fieldsRaw : fieldsRaw.fields || [];
     const statusField = fields.find((f) => f.name === "Status");
     if (!view.id || !statusField || !statusField.id) {
@@ -1699,16 +1657,16 @@ export function getProjectMeta() {
 }
 
 function repoIssueUrl(issueNumber) {
-  const repo = ghProjectJson("repo view --json nameWithOwner").nameWithOwner;
+  const repo = ghProjectJson(["repo", "view", "--json", "nameWithOwner"]).nameWithOwner;
   return `https://github.com/${repo}/issues/${issueNumber}`;
 }
+
+const PROJECT_ITEM_LIST_ARGS = ["project", "item-list", PROJECT_NUMBER, "--owner", PROJECT_OWNER, "--format", "json", "--limit", "200"];
 
 /** Find the board item id for an issue number, or null if it isn't on the board. */
 function findProjectItemId(issueNumber) {
   try {
-    const res = ghProjectJson(
-      `project item-list ${PROJECT_NUMBER} --owner ${PROJECT_OWNER} --format json --limit 200`
-    );
+    const res = ghProjectJson(PROJECT_ITEM_LIST_ARGS);
     const items = res.items || [];
     const match = items.find((it) => it.content && it.content.number === Number(issueNumber));
     return match ? match.id : null;
@@ -1724,9 +1682,7 @@ function findProjectItemId(issueNumber) {
  */
 export function listProjectItems() {
   try {
-    const res = ghProjectJson(
-      `project item-list ${PROJECT_NUMBER} --owner ${PROJECT_OWNER} --format json --limit 200`
-    );
+    const res = ghProjectJson(PROJECT_ITEM_LIST_ARGS);
     return (res.items || []).map((it) => ({
       number: it.content && typeof it.content.number === "number" ? it.content.number : null,
       title: it.title || (it.content && it.content.title) || "(untitled)",
@@ -1743,9 +1699,9 @@ export function addIssueToProject(issueNumber) {
   const existing = findProjectItemId(issueNumber);
   if (existing) return existing;
   try {
-    const res = ghProjectJson(
-      `project item-add ${PROJECT_NUMBER} --owner ${PROJECT_OWNER} --url ${repoIssueUrl(issueNumber)} --format json`
-    );
+    const res = ghProjectJson([
+      "project", "item-add", PROJECT_NUMBER, "--owner", PROJECT_OWNER, "--url", repoIssueUrl(issueNumber), "--format", "json",
+    ]);
     log("info", `Board: added issue #${issueNumber}.`);
     return res.id || null;
   } catch (e) {
@@ -1769,11 +1725,10 @@ export function moveCard(issueNumber, statusName) {
   const itemId = findProjectItemId(issueNumber) || addIssueToProject(issueNumber);
   if (!itemId) return false;
   try {
-    execSync(
-      `gh project item-edit --id ${itemId} --project-id ${meta.projectId} ` +
-        `--field-id ${meta.statusFieldId} --single-select-option-id ${optionId}`,
-      { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }
-    );
+    ghExec([
+      "project", "item-edit", "--id", itemId, "--project-id", meta.projectId,
+      "--field-id", meta.statusFieldId, "--single-select-option-id", optionId,
+    ]);
     log("info", `Board: moved issue #${issueNumber} → "${statusName}".`);
     return true;
   } catch (e) {
@@ -1862,13 +1817,8 @@ export function getBoardSnapshot() {
 const patToken = () => process.env.GH_TOKEN || process.env.AGENT_PAT || "";
 const botToken = () => process.env.BOT_TOKEN || process.env.GITHUB_TOKEN || "";
 
-function ghAs(token, args, opts = {}) {
-  return execSync(`gh ${args}`, {
-    cwd: repoRoot,
-    maxBuffer: 10 * 1024 * 1024,
-    ...opts,
-    env: { ...process.env, GH_TOKEN: token },
-  });
+function ghAs(token, argv, opts = {}) {
+  return ghExec(argv, { ...opts, env: { ...process.env, GH_TOKEN: token } });
 }
 
 /** Open a PR from `branchName` into main as the bot. Returns PR number, or null. */
@@ -1877,9 +1827,9 @@ export function createPR(branchName, title, body) {
     const out = ghAs(
       // The PAT, so the PR's checks actually start. See the note above.
       patToken(),
-      `pr create --base main --head ${branchName} --title "${String(title).replace(/"/g, '\\"')}" --body-file -`,
+      ["pr", "create", "--base", "main", "--head", branchName, "--title", String(title), "--body-file", "-"],
       { input: body || "" }
-    ).toString().trim();
+    ).trim();
     const m = out.match(/\/pull\/(\d+)/);
     const num = m ? Number(m[1]) : null;
     log("info", `PR: opened #${num} for ${branchName}.`);
@@ -1894,7 +1844,7 @@ export function createPR(branchName, title, body) {
 export function approvePR(prNumber, body) {
   try {
     // The bot, because the PAT is now the author and nobody may approve their own.
-    ghAs(botToken(), `pr review ${prNumber} --approve --body-file -`, {
+    ghAs(botToken(), ["pr", "review", String(prNumber), "--approve", "--body-file", "-"], {
       input: body || "Approved by the Reviewer agent.",
     });
     log("info", `PR: approved #${prNumber}.`);
@@ -1926,7 +1876,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 function prState(prNumber) {
   try {
     return JSON.parse(
-      ghAs(patToken(), `pr view ${prNumber} --json state,mergedAt,mergeStateStatus`, { stdio: "pipe" })
+      ghAs(patToken(), ["pr", "view", String(prNumber), "--json", "state,mergedAt,mergeStateStatus"], { stdio: "pipe" })
     );
   } catch {
     return null;
@@ -1948,13 +1898,13 @@ function prState(prNumber) {
 export async function mergePR(prNumber) {
   let waiting = false;
   try {
-    ghAs(patToken(), `pr merge ${prNumber} --auto --merge --delete-branch`);
+    ghAs(patToken(), ["pr", "merge", String(prNumber), "--auto", "--merge", "--delete-branch"]);
     waiting = true;
     log("info", `PR: #${prNumber} will merge when its checks pass.`);
   } catch (e) {
     log("info", `PR: auto-merge unavailable for #${prNumber} — merging directly.`, errorData(e));
     try {
-      ghAs(patToken(), `pr merge ${prNumber} --merge --delete-branch`);
+      ghAs(patToken(), ["pr", "merge", String(prNumber), "--merge", "--delete-branch"]);
       log("info", `PR: merged #${prNumber}.`);
       return true;
     } catch (direct) {
@@ -1989,8 +1939,8 @@ export async function mergePR(prNumber) {
 /** Close (revoke) a PR without merging, optionally leaving a comment. Deletes the branch. */
 export function closePR(prNumber, comment) {
   try {
-    if (comment) ghAs(patToken(), `pr comment ${prNumber} --body-file -`, { input: comment });
-    ghAs(patToken(), `pr close ${prNumber} --delete-branch`);
+    if (comment) ghAs(patToken(), ["pr", "comment", String(prNumber), "--body-file", "-"], { input: comment });
+    ghAs(patToken(), ["pr", "close", String(prNumber), "--delete-branch"]);
     log("info", `PR: closed #${prNumber}.`);
     return true;
   } catch (e) {
@@ -2044,9 +1994,9 @@ export function fetchOpenAgentPullRequests() {
     prs = JSON.parse(
       ghAs(
         patToken(),
-        "pr list --state open --limit 100 --json number,headRefName,createdAt,url,title,mergeable,statusCheckRollup",
+        ["pr", "list", "--state", "open", "--limit", "100", "--json", "number,headRefName,createdAt,url,title,mergeable,statusCheckRollup"],
         { stdio: "pipe" }
-      ).toString()
+      )
     );
   } catch (e) {
     log("warn", "PR: could not list open pull requests.", errorData(e));
@@ -2411,7 +2361,7 @@ export async function verifyBuild(relDir = "docs") {
   const syntaxErrors = [];
   for (const f of listJsFiles(dir)) {
     try {
-      execSync(`node --check "${f}"`, { cwd: repoRoot, stdio: "pipe" });
+      execFileSync(process.execPath, ["--check", f], { cwd: repoRoot, stdio: "pipe" });
     } catch (e) {
       syntaxErrors.push(`${rel(f)}: ${String(e.stderr || e.message).split("\n")[0]}`);
     }

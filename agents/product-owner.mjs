@@ -10,7 +10,6 @@
 // of a week. Post-mortems record why one ticket failed and are read by the Scout
 // before it plans; this records what a run of tickets adds up to, and is read
 // here, next week, before direction is set again.
-import { execSync } from "child_process";
 import {
   log,
   withLogGroup,
@@ -20,7 +19,7 @@ import {
   runAgent,
   extractAgentResponse,
   errorData,
-  repoRoot,
+  ghExec,
   getBoardSnapshot,
   readVision,
   commitToWiki,
@@ -51,10 +50,7 @@ function readWeek() {
   let closed = [];
   try {
     closed = JSON.parse(
-      execSync(`gh issue list --state closed --limit 200 --json number,title,closedAt`, {
-        cwd: repoRoot,
-        maxBuffer: 10 * 1024 * 1024,
-      }).toString()
+      ghExec(["issue", "list", "--state", "closed", "--limit", "200", "--json", "number,title,closedAt"])
     );
   } catch (e) {
     log("warn", "Could not read what shipped this week.", errorData(e));

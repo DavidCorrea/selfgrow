@@ -14,13 +14,12 @@
 // It speaks only on exception. Silence means fine; an issue means something is
 // wrong and names it. A dashboard that reports daily is a dashboard people stop
 // reading, and this one exists to be believed the one time it fires.
-import { execSync } from "child_process";
 import { pathToFileURL } from "url";
 import { log, withLogGroup, appendJobSummary, errorData } from "./log.mjs";
 import { readPage } from "./wiki.mjs";
 import { postDiscussion, findOpenDiscussion, resolveDiscussion } from "./discussions.mjs";
 import {
-  repoRoot,
+  ghExec,
   printRunSummary,
   fetchOpenIssues,
   isBuildable,
@@ -68,9 +67,6 @@ const SITE_URL = process.env.SITE_URL || "";
 // state layer lives in, which the product contract requires.
 const SITE_MARKER = process.env.SITE_MARKER || "state-panel";
 
-const gh = (args) =>
-  execSync(`gh ${args}`, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }).toString();
-
 const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 
 /**
@@ -82,11 +78,11 @@ const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice
  */
 async function gatherFacts() {
   const closedRecently = JSON.parse(
-    gh(`issue list --state closed --limit 200 --json number,title,closedAt,labels`)
+    ghExec(["issue", "list", "--state", "closed", "--limit", "200", "--json", "number,title,closedAt,labels"])
   );
   const open = fetchOpenIssues(200);
   const runs = JSON.parse(
-    gh(`run list --limit 60 --json workflowName,conclusion,createdAt,status`)
+    ghExec(["run", "list", "--limit", "60", "--json", "workflowName,conclusion,createdAt,status"])
   );
   return {
     open,
