@@ -13,6 +13,11 @@ import {
   readFacts,
   runChecks,
   alertAction,
+  expectedDigestWeek,
+  checkWeeklyDigest,
+  normaliseFindingTitle,
+  checkRepeatedFindings,
+  checkAbortedSessions,
 } from "./health.mjs";
 
 const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
@@ -239,5 +244,105 @@ test("deciding what happens to the standing alert", async (t) => {
 
   await t.test("posts nothing on unknowns alone, since there is no finding to name", () => {
     assert.equal(alertAction({ findings: [], unknown: ["x"], standing: null }), "hold");
+  });
+});
+
+test("noticing that the weekly digest did not go out", async (t) => {
+  await t.test("expects the week the last Sunday report covered, from Monday on", () => {
+    // Sunday 09-20 reported the week of 09-13.
+    assert.equal(expectedDigestWeek(new Date("2026-09-21T16:00:00Z"), 0), "2026-09-13");
+    assert.equal(expectedDigestWeek(new Date("2026-09-26T16:00:00Z"), 0), "2026-09-13");
+  });
+
+  await t.test("does not hold the report day to a report that may still be coming", () => {
+    assert.equal(expectedDigestWeek(new Date("2026-09-27T16:00:00Z"), 0), "2026-09-13");
+  });
+
+  await t.test("follows a moved report day", () => {
+    // A Wednesday report day: Thursday 09-24 expects Wednesday 09-23's week.
+    assert.equal(expectedDigestWeek(new Date("2026-09-24T16:00:00Z"), 3), "2026-09-16");
+  });
+
+  await t.test("says nothing when that week's digest exists", () => {
+    assert.equal(checkWeeklyDigest({ lastDigest: { weekStart: "2026-09-13", url: "https://x/d/1" } }), null);
+  });
+
+  await t.test("names the missing week when it does not", () => {
+    assert.match(checkWeeklyDigest({ lastDigest: { weekStart: "2026-09-13", url: null } }), /week of 2026-09-13/);
+  });
+
+  await t.test("is unknown, not clear, when the digests could not be read", async () => {
+    const { facts } = await readFacts({ lastDigest: () => { throw new Error("gh: HTTP 502"); } });
+    const { findings, unknown } = await runChecks([checkWeeklyDigest], facts);
+    assert.deepEqual(findings, []);
+    assert.equal(unknown.length, 1);
+  });
+});
+
+test("noticing a playtest finding the loop is not fixing", async (t) => {
+  const finding = (number, title, daysBack = 1) => ({ number, title, createdAt: `${daysAgo(daysBack)}T10:00:00Z` });
+  const voidTitle = "The visual canvas is a dark void";
+
+  await t.test("names a finding filed three times", () => {
+    const result = checkRepeatedFindings({
+      playtestFindings: [finding(1, voidTitle), finding(2, voidTitle, 7), finding(3, voidTitle, 14)],
+    });
+    assert.match(result, /dark void/);
+    assert.match(result, /#1, #2, #3/);
+  });
+
+  await t.test("says nothing about a finding filed twice", () => {
+    assert.equal(checkRepeatedFindings({ playtestFindings: [finding(1, voidTitle), finding(2, voidTitle)] }), null);
+  });
+
+  await t.test("treats titles that differ only in case and punctuation as one finding", () => {
+    const result = checkRepeatedFindings({
+      playtestFindings: [finding(1, voidTitle), finding(2, "the visual canvas is a dark void."), finding(3, "The visual  canvas — is a DARK void")],
+    });
+    assert.ok(result);
+  });
+
+  await t.test("ignores filings older than the window", () => {
+    const result = checkRepeatedFindings({
+      playtestFindings: [finding(1, voidTitle), finding(2, voidTitle), finding(3, voidTitle, 60)],
+    });
+    assert.equal(result, null);
+  });
+
+  await t.test("normalises a title to lowercase words", () => {
+    assert.equal(normaliseFindingTitle("  The 'GROWING' text, cut off! "), "the growing text cut off");
+  });
+});
+
+test("noticing a role whose sessions keep aborting", async (t) => {
+  const run = (...annotations) => ({ createdAt: "2026-09-24T05:00:00Z", annotations });
+  const capped = run("Builder (m): hit the 40-turn session cap — aborting it.");
+  const clean = run("Reviewer: REVISE — 3 issue(s)");
+
+  await t.test("names a role with two aborted runs among its last five", () => {
+    const result = checkAbortedSessions({ roleRuns: [{ workflow: "devs", runs: [capped, clean, capped, clean, clean] }] });
+    assert.match(result, /devs in 2 of its last 5 runs/);
+  });
+
+  await t.test("says nothing about a single bad run", () => {
+    assert.equal(checkAbortedSessions({ roleRuns: [{ workflow: "devs", runs: [capped, clean, clean] }] }), null);
+  });
+
+  await t.test("counts only the most recent runs", () => {
+    const result = checkAbortedSessions({ roleRuns: [{ workflow: "devs", runs: [clean, clean, clean, clean, clean, capped, capped] }] });
+    assert.equal(result, null);
+  });
+
+  await t.test("recognises a provider abort, a timeout and a runner kill", () => {
+    const aborted = run("Product Manager failed: model call failed: This operation was aborted");
+    const timedOut = run("Scout: request timed out");
+    const killed = run("The job has exceeded the maximum execution time of 30m0s");
+    for (const other of [timedOut, killed]) {
+      assert.ok(checkAbortedSessions({ roleRuns: [{ workflow: "product-manager", runs: [aborted, other] }] }));
+    }
+  });
+
+  await t.test("does not count ordinary warnings as aborts", () => {
+    assert.equal(checkAbortedSessions({ roleRuns: [{ workflow: "devs", runs: [clean, clean, clean] }] }), null);
   });
 });

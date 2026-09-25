@@ -17,7 +17,8 @@
 import { pathToFileURL } from "url";
 import { log, withLogGroup, appendJobSummary, errorData } from "./log.mjs";
 import { readPage, wikiPath } from "./wiki.mjs";
-import { postDiscussion, findOpenDiscussion, resolveDiscussion } from "./discussions.mjs";
+import { postDiscussion, findOpenDiscussion, findDiscussion, resolveDiscussion } from "./discussions.mjs";
+import { DIGEST_CATEGORY, digestTitlePrefix, digestWeekStart } from "./weekly-report.mjs";
 import {
   ghExec,
   printRunSummary,
@@ -29,6 +30,7 @@ import {
   fetchOpenAgentPullRequests,
   classifyAgentPullRequest,
   PR_STALE_MS,
+  PLAYTEST_LABEL,
 } from "./shared.mjs";
 
 // Who gets the @-mention. The point of an alert is that it reaches a person, so
@@ -68,6 +70,33 @@ const SITE_URL = process.env.SITE_URL || "";
 // state layer lives in, which the product contract requires.
 const SITE_MARKER = process.env.SITE_MARKER || "state-panel";
 
+// The day the Product Manager writes the weekly report — the same variable it
+// reads, so a moved report day moves the deadline this check holds it to.
+const DIGEST_DAY = Number(process.env.PM_WEEKLY_DAY ?? 0);
+
+// The same finding filed this many times inside the window means the loop is
+// not fixing it: the Playtester keeps seeing it, the PM keeps closing it, and
+// nothing that ships changes what a visitor gets. Three, because twice can be a
+// fix that had not deployed yet; the canvas-is-a-dark-void finding was filed five
+// times in three weeks and closed every time.
+const REPEATED_FINDING_LIMIT = 3;
+const REPEATED_FINDING_WEEKS = 4;
+
+// Every workflow that runs a model session, and so can have one capped or aborted.
+const MODEL_WORKFLOWS = ["devs", "product-manager", "product-owner", "playtester", "tech-lead"];
+
+// Of a role's last RUNS_READ runs, how many may abort a session before it reads
+// as the role failing rather than one bad night. An abort does not fail the run —
+// the Devs abandon the ticket and carry on — so the run conclusions are green and
+// only the run's own annotations say it happened.
+const ABORTED_RUNS_READ = 5;
+const ABORTED_RUNS_LIMIT = 2;
+
+// What an aborted session leaves in a run's annotations: our own cap warning,
+// the error pi raises once aborted, a provider that never answered, and the
+// runner killing a job that outlived its timeout-minutes.
+const ABORT_PATTERN = /session cap|this operation was aborted|timed out|exceeded the maximum execution time/i;
+
 const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 
 /**
@@ -86,7 +115,51 @@ function gatherFacts() {
       fetchOpenAgentPullRequests().map((pr) => classifyAgentPullRequest(pr, { staleMs: PR_STALE_MS })),
     changelog: readChangelog,
     site: fetchSite,
+    lastDigest: readLastDigest,
+    // Open and closed: a finding the PM closed is exactly the one that matters
+    // when it comes back. The search only narrows the read; the check applies
+    // the window itself.
+    playtestFindings: () =>
+      JSON.parse(
+        ghExec([
+          "issue", "list", "--label", PLAYTEST_LABEL, "--state", "all", "--limit", "200",
+          "--search", `created:>=${daysAgo(REPEATED_FINDING_WEEKS * 7)}`,
+          "--json", "number,title,createdAt",
+        ])
+      ),
+    roleRuns: readRoleRuns,
   });
+}
+
+/** Whether the digest for the last reported week exists, and where. */
+function readLastDigest() {
+  const weekStart = expectedDigestWeek();
+  return { weekStart, url: findDiscussion(DIGEST_CATEGORY, digestTitlePrefix(weekStart))?.url || null };
+}
+
+/**
+ * Each model-running workflow's latest runs, with every annotation they left.
+ *
+ * Annotations rather than logs: every warning and error this pipeline logs
+ * becomes one, so they carry the abort without downloading megabytes of log per
+ * run. It costs a request per run and one per job — about sixty a day.
+ */
+function readRoleRuns() {
+  const api = (path) => JSON.parse(ghExec(["api", `repos/{owner}/{repo}/${path}`]));
+  return MODEL_WORKFLOWS.map((workflow) => ({
+    workflow,
+    runs: JSON.parse(
+      ghExec([
+        "run", "list", "--workflow", `${workflow}.yml`, "--status", "completed",
+        "--limit", String(ABORTED_RUNS_READ), "--json", "databaseId,createdAt",
+      ])
+    ).map((run) => ({
+      createdAt: run.createdAt,
+      annotations: api(`actions/runs/${run.databaseId}/jobs`).jobs.flatMap((job) =>
+        api(`check-runs/${job.id}/annotations`).map((annotation) => annotation.message)
+      ),
+    })),
+  }));
 }
 
 /**
@@ -273,6 +346,67 @@ export function checkStalledPullRequests({ agentPrs }) {
   return findings.length ? findings.join(" ") : null;
 }
 
+/**
+ * The week whose digest should exist by now: the one covered by the latest
+ * report day strictly before today. Strictly, so the report day itself is not
+ * held to a report that may still be on its way.
+ */
+export function expectedDigestWeek(now = new Date(), reportDay = DIGEST_DAY) {
+  const daysSinceReport = (now.getUTCDay() - reportDay + 7) % 7 || 7;
+  return digestWeekStart(new Date(now.getTime() - daysSinceReport * 86_400_000));
+}
+
+/**
+ * The digest is the one thing addressed to a person, and it stopped for two
+ * Sundays with every run green. Checking the run is not enough; this checks the
+ * post.
+ */
+export function checkWeeklyDigest({ lastDigest }) {
+  if (lastDigest.url) return null;
+  return (
+    `No weekly digest was posted for the week of ${lastDigest.weekStart}. ` +
+    `The Product Manager's Sunday run did not publish it — its report session failed or never ran.`
+  );
+}
+
+/** Titles that differ only in case, punctuation or spacing are the same finding. */
+export function normaliseFindingTitle(title) {
+  return String(title || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
+/** A finding that keeps being filed and closed is one the loop is not fixing. */
+export function checkRepeatedFindings({ playtestFindings }) {
+  const since = daysAgo(REPEATED_FINDING_WEEKS * 7);
+  const byTitle = new Map();
+  for (const finding of playtestFindings.filter((f) => (f.createdAt || "") >= since)) {
+    const key = normaliseFindingTitle(finding.title);
+    byTitle.set(key, [...(byTitle.get(key) || []), finding]);
+  }
+  const repeated = [...byTitle.values()].filter((filed) => filed.length >= REPEATED_FINDING_LIMIT);
+  if (!repeated.length) return null;
+  return (
+    `${repeated.length} playtest finding(s) filed ${REPEATED_FINDING_LIMIT}+ times in ${REPEATED_FINDING_WEEKS} weeks: ` +
+    repeated.map((filed) => `"${filed[0].title}" (${filed.map((f) => `#${f.number}`).join(", ")})`).join("; ") +
+    ". Each was closed and came back — what ships is not changing what the Playtester sees."
+  );
+}
+
+/** A role whose sessions keep being capped or cut off, though its runs are green. */
+export function checkAbortedSessions({ roleRuns }) {
+  const failing = roleRuns
+    .map(({ workflow, runs }) => {
+      const read = runs.slice(0, ABORTED_RUNS_READ);
+      const aborted = read.filter((run) => run.annotations.some((message) => ABORT_PATTERN.test(message)));
+      return { workflow, read: read.length, aborted: aborted.length };
+    })
+    .filter((role) => role.aborted >= ABORTED_RUNS_LIMIT);
+  if (!failing.length) return null;
+  return (
+    `Agent sessions are being aborted: ${failing.map((r) => `${r.workflow} in ${r.aborted} of its last ${r.read} runs`).join("; ")}. ` +
+    `A capped or timed-out session gives up its ticket or report while the run still reports success.`
+  );
+}
+
 const CHECKS = [
   checkDeployedSite,
   checkShipping,
@@ -280,6 +414,9 @@ const CHECKS = [
   checkAbandonRate,
   checkStalledPullRequests,
   checkWeeklyAgents,
+  checkWeeklyDigest,
+  checkRepeatedFindings,
+  checkAbortedSessions,
 ];
 
 /**
