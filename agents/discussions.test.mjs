@@ -10,6 +10,7 @@ import {
   archivedTitle,
   renderDecisions,
   renderInboundIdeas,
+  collectPages,
 } from "./discussions.mjs";
 
 test("deciding whose words count as guidance", async (t) => {
@@ -212,5 +213,54 @@ test("showing ideas from people without letting them give orders", async (t) => 
 
   await t.test("says nothing when nobody posted", () => {
     assert.equal(renderInboundIdeas([]), "");
+  });
+});
+
+test("paging through a category to find a thread", async (t) => {
+  // A fake connection: `pages` of nodes, each linked to the next by a cursor.
+  const connection = (pages) => {
+    const cursors = [];
+    const fetchPage = (after) => {
+      cursors.push(after);
+      const index = after === null ? 0 : Number(after);
+      return {
+        nodes: pages[index],
+        pageInfo: { hasNextPage: index + 1 < pages.length, endCursor: String(index + 1) },
+      };
+    };
+    return { fetchPage, cursors };
+  };
+  const isJournal = (d) => d.title === "Playtester — log";
+
+  // The bug this exists for: a journal older than the first page was "not found",
+  // so find-or-create opened a duplicate and the role lost its memory.
+  await t.test("finds a thread on a later page", () => {
+    const { fetchPage, cursors } = connection([[{ title: "a" }], [{ title: "b" }], [{ title: "Playtester — log" }]]);
+    const nodes = collectPages(fetchPage, { until: isJournal });
+    assert.ok(nodes.some(isJournal));
+    assert.deepEqual(cursors, [null, "1", "2"]);
+  });
+
+  await t.test("stops reading once the thread is found", () => {
+    const { fetchPage, cursors } = connection([[{ title: "Playtester — log" }], [{ title: "b" }]]);
+    collectPages(fetchPage, { until: isJournal });
+    assert.deepEqual(cursors, [null]);
+  });
+
+  await t.test("reads every page when nothing matches", () => {
+    const { fetchPage } = connection([[{ title: "a" }], [{ title: "b" }]]);
+    assert.deepEqual(collectPages(fetchPage).map((d) => d.title), ["a", "b"]);
+  });
+
+  // "Not found" means "create one", so giving up quietly at the cap would open
+  // exactly the duplicate paging is meant to prevent.
+  await t.test("stops at the cap loudly instead of reporting not found", () => {
+    const { fetchPage, cursors } = connection([[{ title: "a" }], [{ title: "b" }], [{ title: "Playtester — log" }]]);
+    assert.throws(() => collectPages(fetchPage, { until: isJournal, maxPages: 2, what: '"Journals"' }), /2 pages of "Journals"/);
+    assert.equal(cursors.length, 2);
+  });
+
+  await t.test("treats an empty or missing page as the end", () => {
+    assert.deepEqual(collectPages(() => undefined), []);
   });
 });
