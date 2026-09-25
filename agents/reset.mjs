@@ -12,7 +12,8 @@
 //      go too). Keeps the columns — the new project needs the same five.
 //   5. Reset the wiki's memory pages.
 //   6. Delete the accumulated `attempts:N` labels.
-//   7. Delete the old product from main (everything outside HARNESS_PATHS).
+//   7. Delete the old product (everything outside HARNESS_PATHS) on a branch,
+//      and land it on main through a pull request once the required checks pass.
 //   8. Archive the product-scoped discussion memory: every role journal, and the
 //      lesson threads labelled `product`. Renamed, not deleted.
 //
@@ -39,6 +40,9 @@ import {
   getWikiDir,
   writePage,
   closePR,
+  createPR,
+  mergePR,
+  createBranch,
   deleteRemoteBranch,
   fetchOpenIssues,
   PROJECT_OWNER,
@@ -334,14 +338,60 @@ function deleteAttemptLabels() {
   }
 }
 
+// The reset's own branch. Not under AGENT_BRANCH_NAMESPACE, which a reset
+// sweeps. review-pr would otherwise pick it up as a person's PR and review a
+// deletion the reset already decided on, so review-pr.yml skips reset/ by name.
+// Dated so a second reset on the same day replaces an unmerged first attempt
+// (createBranch deletes the old branch) rather than failing its push.
+const RESET_BRANCH_NAMESPACE = "reset/";
+
+/** The branch a reset commits the product deletion on, named for the day it ran. */
+export function resetBranchName(date = new Date()) {
+  return `${RESET_BRANCH_NAMESPACE}clear-product-${date.toISOString().slice(0, 10)}`;
+}
+
+/** What the operator is told to finish when the deletion's PR did not merge. */
+export function unmergedDeletionGap(prNumber, repository) {
+  const where = repository ? `https://github.com/${repository}/pull/${prNumber}` : `#${prNumber}`;
+  return (
+    `merge the product deletion, left open as ${where} — its checks failed or had not ` +
+    "finished (auto-merge stays armed if they are still running), or the merge was refused"
+  );
+}
+
+const DELETION_PR_BODY =
+  "Opened by the reset: deletes the previous product and keeps the machine (HARNESS_PATHS in agents/reset.mjs).\n\n" +
+  "Merged with a merge commit, not squashed: the commit on this branch carries the message " +
+  "productStartedAt looks for, and it has to reach main unchanged.";
+
 /**
- * Delete the old product from main and push. Runs LAST: everything above is
- * GitHub-side and reversible-ish, while this rewrites the repo.
+ * Open the deletion's PR from `branchName` and merge it once main's required
+ * checks pass. Returns what was left undone, or null when it landed.
+ *
+ * The Devs' createPR and mergePR, because this has to land exactly the way their
+ * work does: opened by the PAT so the checks actually start, merged with a merge
+ * commit so the reset commit reaches main with its message intact.
  */
-function clearProduct() {
-  gitExec(["fetch", "origin"]);
-  gitExec(["checkout", "main"]);
-  gitExec(["reset", "--hard", "origin/main"]);
+export async function landProductDeletion(branchName) {
+  const prNumber = createPR(branchName, RESET_COMMIT_MESSAGE, DELETION_PR_BODY);
+  if (!prNumber) return `open a pull request from ${branchName}, which holds the product deletion (opening it failed)`;
+  if (await mergePR(prNumber)) return null;
+  return unmergedDeletionGap(prNumber, process.env.GITHUB_REPOSITORY);
+}
+
+/**
+ * Delete the old product on a branch and land it through a pull request. Runs
+ * LAST: everything above is GitHub-side and reversible-ish, while this rewrites
+ * the repo.
+ *
+ * Through a PR because main takes nothing else: a ruleset requires every change
+ * to arrive as a pull request with `check` and `verify-product` passing. This
+ * used to push to main directly; the push was declined, and a reset that had done
+ * every other step ended with the deletion landed by hand.
+ */
+async function clearProduct() {
+  const branchName = resetBranchName();
+  createBranch(branchName);
 
   // Ask git what is tracked rather than guessing: a path git does not know makes
   // `git rm` fail, and this is the last and least reversible step.
@@ -363,12 +413,19 @@ function clearProduct() {
   }
   gitExec(["commit", "-m", RESET_COMMIT_MESSAGE]);
   try {
-    gitExec(["push", "origin", "main"]);
-    log("info", `Deleted ${doomed.length} product file(s) from main.`);
+    gitExec(["push", "origin", branchName]);
   } catch (e) {
-    log("error", "Could not push the product deletion to main — do it by hand.", errorData(e));
-    notDone.push("push the product deletion to main (the push failed)");
+    log("error", `Could not push ${branchName} — the product deletion is not on origin.`, errorData(e));
+    notDone.push(`delete the product from main (pushing ${branchName} failed)`);
+    return;
   }
+
+  const gap = await landProductDeletion(branchName);
+  if (gap) {
+    notDone.push(gap);
+    return;
+  }
+  log("info", `Deleted ${doomed.length} product file(s) from main.`);
 }
 
 // What the operator must type to arm the reset. The repository name, following
@@ -400,7 +457,7 @@ function requireConfirmation() {
   process.exit(1);
 }
 
-function main() {
+async function main() {
   requireConfirmation();
   log("info", "=== RESET — fresh-project cleanup ===");
   cancelPendingRuns();
@@ -410,7 +467,7 @@ function main() {
   resetWikiMemory();
   resetDiscussionMemory();
   deleteAttemptLabels();
-  clearProduct();
+  await clearProduct();
   const incomplete = incompleteResetMessage(notDone);
   if (incomplete) {
     log("error", incomplete);
@@ -426,10 +483,8 @@ function main() {
 
 // Guarded so the keep-list can be tested without arming the reset.
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
-  try {
-    main();
-  } catch (err) {
+  main().catch((err) => {
     log("error", "Reset failed.", errorData(err));
     process.exit(1);
-  }
+  });
 }

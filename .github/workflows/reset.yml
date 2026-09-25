@@ -2,7 +2,8 @@ name: reset
 
 # Run manually, with the other workflows paused: cancels pending runs, closes all
 # open issues and agent PRs, clears the board, resets the wiki's memory pages, and
-# deletes the previous product from main.
+# deletes the previous product — on a reset/ branch, landed on main through a pull
+# request once the required checks pass, because main's ruleset takes nothing else.
 #
 # Every other workflow here is additive — this is the one that dismantles. It used
 # to fire on a bare dispatch, so two clicks in the Actions UI closed every issue
@@ -18,8 +19,9 @@ on:
         type: string
 
 # Wider than the rest of the pipeline because this job is the one that dismantles
-# it: contents to delete the old product from main, actions to cancel the runs
-# that would otherwise race the reset, pull-requests to close abandoned agent PRs.
+# it: contents to push the deletion's branch, actions to cancel the runs
+# that would otherwise race the reset, pull-requests to close abandoned agent PRs
+# and to open and merge the deletion's.
 permissions:
   contents: write
   issues: write
@@ -29,7 +31,11 @@ permissions:
 jobs:
   reset:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The GitHub-side steps take a few minutes; landing the deletion then waits
+    # up to mergePR's ten minutes for `check` and `verify-product`, the second of
+    # which installs a browser. Thirty leaves room for a queued runner, so the job
+    # reaches its own "not done" report instead of being killed mid-wait.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -43,9 +49,10 @@ jobs:
       - uses: ./.github/actions/secrets
         with:
           gh-token: ${{ secrets.AGENT_PAT }}
-          # The PAT, not GITHUB_TOKEN, pushes the product deletion to main: a push
-          # by GITHUB_TOKEN would not carry the permissions the rest of the
-          # pipeline was built around.
+          # The PAT, not GITHUB_TOKEN, pushes the deletion's branch and (as
+          # gh-token) opens its PR: GitHub starts no workflows for events made by
+          # GITHUB_TOKEN, so the required checks would never run and the PR could
+          # never merge. See the note on Pull Requests in shared.mjs.
           git-token: ${{ secrets.AGENT_PAT }}
 
       - name: Reset GitHub state
