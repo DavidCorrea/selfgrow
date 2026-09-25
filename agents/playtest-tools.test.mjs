@@ -4,7 +4,7 @@
 // got back, and what it was not allowed to touch.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { renderToolPass } from "./playtester.mjs";
+import { renderToolPass, toolInputs } from "./playtester.mjs";
 
 const tool = (over = {}) => ({
   name: "get-state",
@@ -12,7 +12,7 @@ const tool = (over = {}) => ({
   schema: '{"type":"object"}',
   readOnly: true,
   consequential: false,
-  call: { ok: true, returned: '{"status":"ready"}' },
+  call: { ok: true, input: "{}", returned: '{"status":"ready"}' },
   ...over,
 });
 
@@ -37,8 +37,13 @@ test("what the caller was told and what came back", async (t) => {
     assert.match(pass([tool()]), /"status":"ready"/);
   });
 
+  await t.test("says what input the tool was called with", () => {
+    const rendered = pass([tool({ call: { ok: true, input: '{"minutes":90}', returned: "{}" } })]);
+    assert.match(rendered, /Called it with `\{"minutes":90\}`/);
+  });
+
   await t.test("reports a failed call as a failure rather than omitting it", () => {
-    const rendered = pass([tool({ call: { ok: false, error: "Failed to parse input arguments" } })]);
+    const rendered = pass([tool({ call: { ok: false, input: "{}", error: "Failed to parse input arguments" } })]);
     assert.match(rendered, /\*\*It failed: Failed to parse input arguments\*\*/);
   });
 
@@ -76,5 +81,24 @@ test("reporting several tools", async (t) => {
     const rendered = pass([tool(), tool({ name: "advance-time", readOnly: false })]);
     assert.match(rendered, /### get-state/);
     assert.match(rendered, /### advance-time/);
+  });
+});
+
+test("what each tool is called with", async (t) => {
+  await t.test("calls a tool that needs input with its declared example", () => {
+    const inputs = toolInputs([{ name: "rehearse-time", example: { minutes: 90 } }]);
+    assert.deepEqual(inputs["rehearse-time"], { minutes: 90 });
+  });
+
+  await t.test("calls a tool that declares no example with nothing", () => {
+    assert.deepEqual(toolInputs([{ name: "get-state" }])["get-state"], {});
+  });
+
+  await t.test("keeps each tool's example to itself", () => {
+    const inputs = toolInputs([
+      { name: "get-state", example: {} },
+      { name: "do-action", example: { action: "start" } },
+    ]);
+    assert.deepEqual(inputs, { "get-state": {}, "do-action": { action: "start" } });
   });
 });

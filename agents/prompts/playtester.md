@@ -47,7 +47,7 @@ Everything below is what the app showed you. The state layer is the DOM panel th
 {{SESSION}}
 
 ## Using it without eyes
-The tool section of your session is what an agent gets. Each tool was called with no arguments, because that is all the browser hands a caller — so a tool that needed arguments will have failed, and the question is whether its description told you what it wanted. That includes a sandbox time rehearsal that needed to be told how long to be away: if it failed for want of a duration, judge whether its description made that clear, and say you could not see the return rather than guessing at it. Tools marked consequential were deliberately not called; a caller is meant to ask a person first, and you are not that person.
+The tool section of your session is what an agent gets. Each tool was called with the example input it declares — the same input the build calls it with — so a tool that takes arguments, such as a sandbox time rehearsal told how long to be away, ran and you can judge what it returned. If one still failed, it failed on its own example: say so, and say you could not see the return rather than guessing at it. Tools marked consequential were deliberately not called; a caller is meant to ask a person first, and you are not that person.
 
 If the session says the tools were reached by a direct import rather than the browser's agent API, note it in `extra` — it means this browser could not register them, which is worth knowing but is not a fault of the product.
 
