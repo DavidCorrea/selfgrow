@@ -9,7 +9,7 @@ import { changesTheMachine } from "./review-pr.mjs";
 
 test("a change the Devs may merge themselves", async (t) => {
   await t.test("touches only the product", () => {
-    assert.equal(changesTheMachine(["docs/index.html", "docs/garden.js"]), false);
+    assert.equal(changesTheMachine(["docs/index.html", "docs/scene.js"]), false);
   });
 
   await t.test("touches the root docs", () => {

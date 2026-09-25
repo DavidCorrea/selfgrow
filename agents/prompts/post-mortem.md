@@ -63,7 +63,7 @@ that something has happened four times.
 ```json
 {
   "status": "success",
-  "summary": "One sentence naming the lesson, e.g. 'The stepper needs the growth engine to exist first'.",
+  "summary": "One sentence naming the lesson, e.g. 'The progress display needs the engine it shows to exist first'.",
   "data": {
     "failureClass": "The KIND of failure, worded so the next occurrence would match it.",
     "lesson": "Three or four sentences of prose, as described above."

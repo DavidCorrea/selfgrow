@@ -6,7 +6,7 @@
 // logged a warning, and let the run report success. The Scribe then had nothing
 // to write from. Nobody noticed, because noticing was nobody's job.
 //
-// So this measures the machine rather than the garden, and it is deliberately
+// So this measures the machine rather than the product, and it is deliberately
 // cheap: no model, no browser, no session. It reads what the pipeline has already
 // written down — issues, runs, the wiki — and compares it to what a
 // working week looks like.

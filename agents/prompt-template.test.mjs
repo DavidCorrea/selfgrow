@@ -22,7 +22,7 @@ test("filling a prompt template", async (t) => {
   });
 
   await t.test("does not expand a placeholder that appears inside a value", () => {
-    const prompt = fillTemplate("{{DIFF}}\n\nVision: {{VISION}}", { DIFF: "+ Read {{VISION}} first", VISION: "a garden" });
-    assert.equal(prompt, "+ Read {{VISION}} first\n\nVision: a garden");
+    const prompt = fillTemplate("{{DIFF}}\n\nVision: {{VISION}}", { DIFF: "+ Read {{VISION}} first", VISION: "a product" });
+    assert.equal(prompt, "+ Read {{VISION}} first\n\nVision: a product");
   });
 });

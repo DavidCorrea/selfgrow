@@ -8,10 +8,10 @@ import { withChangelogEntry, trimSections } from "./wiki.mjs";
 
 test("recording what shipped", async (t) => {
   await t.test("starts a page that does not exist yet", () => {
-    const page = withChangelogEntry("", "Add a garden", "2026-08-30");
+    const page = withChangelogEntry("", "Add a scene", "2026-08-30");
     assert.match(page, /^# Changelog/);
     assert.ok(page.includes("## 2026-08-30"));
-    assert.ok(page.includes("- Add a garden"));
+    assert.ok(page.includes("- Add a scene"));
   });
 
   await t.test("groups a second entry under the same day", () => {
@@ -28,15 +28,15 @@ test("recording what shipped", async (t) => {
   });
 
   await t.test("is safe to replay, so a retried push cannot double-record a merge", () => {
-    const once = withChangelogEntry("", "Add a garden", "2026-08-30");
-    const twice = withChangelogEntry(once, "Add a garden", "2026-08-30");
+    const once = withChangelogEntry("", "Add a scene", "2026-08-30");
+    const twice = withChangelogEntry(once, "Add a scene", "2026-08-30");
     assert.equal(twice, once);
   });
 
   await t.test("keeps content it does not recognise, so a hand-written note survives", () => {
-    const page = withChangelogEntry("Notes I added by hand.", "Add a garden", "2026-08-30");
+    const page = withChangelogEntry("Notes I added by hand.", "Add a scene", "2026-08-30");
     assert.ok(page.includes("Notes I added by hand."));
-    assert.ok(page.includes("- Add a garden"));
+    assert.ok(page.includes("- Add a scene"));
   });
 });
 

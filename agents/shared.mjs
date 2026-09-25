@@ -1556,7 +1556,7 @@ export function isConfirmedShipped(number) {
 // The pipeline files three kinds of issue that describe something rather than
 // ask for it, and the Devs must never pick one up and try to build it:
 //
-//   playtest — an experience the Playtester had ("the garden felt static for the
+//   playtest — an experience the Playtester had ("the page felt static for the
 //              first minute"). The Product Manager turns each into a real ticket
 //              with acceptance criteria, or drops it, and closes the original.
 //   health   — a diagnostic about the PIPELINE, addressed to whoever maintains
@@ -2452,7 +2452,7 @@ export function validateToolDescriptors(summaries) {
     if (!tool.name) {
       problems.push(`${label} has no name — every tool needs one an agent can call it by.`);
     } else if (!TOOL_NAME_PATTERN.test(tool.name)) {
-      problems.push(`${label} is not a lowercase kebab-case name (expected e.g. "get-garden-state").`);
+      problems.push(`${label} is not a lowercase kebab-case name (expected e.g. "get-state").`);
     } else if (seen.has(tool.name)) {
       problems.push(`${label} is declared twice — a caller cannot tell which one it is invoking.`);
     }
@@ -2736,7 +2736,7 @@ const CONTRAST_MIN_LARGE = 3;
 /**
  * Measure layout/appearance defects in the page as rendered. Runs entirely in the
  * browser and returns plain strings. Anything genuinely subjective (does this feel
- * calm? is the hierarchy right?) is deliberately NOT here — this function only
+ * right? is the hierarchy right?) is deliberately NOT here — this function only
  * reports things that are true or false, never matters of taste.
  */
 async function measureLayoutDefects(page) {
@@ -3063,7 +3063,7 @@ export async function reviewApp(relDir = "docs") {
     try {
       page = await browser.newPage({ viewport: { width: vp.width, height: vp.height } });
       await page.goto(url, { waitUntil: "networkidle", timeout: 20000 });
-      // The garden animates in; let it settle so we measure a steady state.
+      // The product may animate in; let it settle so we measure a steady state.
       await page.waitForTimeout(1500);
       recordDefects(vp.label, await measureLayoutDefects(page));
     } catch (e) {

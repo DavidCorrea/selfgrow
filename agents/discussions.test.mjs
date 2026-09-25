@@ -174,10 +174,10 @@ test("deciding which memory a reset archives", async (t) => {
 
   await t.test("archives only the lessons labelled product", () => {
     const plan = planMemoryArchive([
-      thread("Weather flickers", "Lessons", { labels: ["product"] }),
+      thread("Animation flickers", "Lessons", { labels: ["product"] }),
       thread("Provider error read as empty", "Lessons", { labels: ["machine"] }),
     ]);
-    assert.deepEqual(titles(plan.archive), ["Weather flickers"]);
+    assert.deepEqual(titles(plan.archive), ["Animation flickers"]);
     assert.deepEqual(titles(plan.keep), ["Provider error read as empty"]);
   });
 
@@ -227,7 +227,7 @@ test("showing what has been settled", async (t) => {
 
 test("showing ideas from people without letting them give orders", async (t) => {
   const idea = (over = {}) => ({
-    number: 42, title: "Add rain sounds", body: "It would be calming.",
+    number: 42, title: "Add sound effects", body: "It would feel more alive.",
     author: "someone", trusted: false, replies: [], ...over,
   });
 

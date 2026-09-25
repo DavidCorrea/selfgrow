@@ -596,8 +596,8 @@ export function renderLessonThreads(lessons) {
 // not matter while memory lived on the wiki, because reset simply blanked those
 // pages. It matters now: a Lessons thread saying "a transient provider error was
 // read as an empty account" is knowledge about the HARNESS, and relearning it
-// costs another six closed PRs. A thread saying "tickets like this garden's
-// weather work cannot be built as scoped" is about a product that no longer
+// costs another six closed PRs. A thread saying "tickets like this product's
+// animation work cannot be built as scoped" is about a product that no longer
 // exists.
 //
 // So a lesson carries a scope. Only `product` is archived by a reset; `machine`

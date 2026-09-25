@@ -3,17 +3,17 @@
 // reviewApp already tells the Product Manager what is measurably wrong: contrast
 // below the WCAG minimum, an element past the viewport edge, a container collapsed
 // to zero height. Those are facts, and they are narrow on purpose. Nothing in the
-// pipeline asks the question a person asks after two minutes with the garden —
+// pipeline asks the question a person asks after two minutes with the product —
 // did anything happen? did I understand what I was looking at? was it worth
 // staying for? An empty defect list reads as "nothing is wrong" when it means
-// "nothing measurable is wrong", and that gap is where a calm, correct, boring
+// "nothing measurable is wrong", and that gap is where a correct, boring
 // product ships unchallenged.
 //
 // It plays through the DOM, not the canvas. That is not a limitation worked
 // around — the product is required to maintain a real state layer beside the
 // scene (see prompts/_profile.md), precisely because a canvas is opaque to a
 // screen reader and to automation alike. So the surface this agent reads is the
-// same one a blind visitor gets, and a garden whose state layer is dull or wrong
+// same one a blind visitor gets, and a product whose state layer is dull or wrong
 // is failing them first.
 //
 // It also SEES two frames of it. The state layer answers "what is happening"; a
@@ -58,7 +58,7 @@ import { join } from "path";
 import fs from "fs";
 
 // How long to sit with the app, and how often to write down what the state layer
-// says. The garden runs on seasonal and day/night cycles, so a single snapshot
+// says. A product can change on cycles slower than a glance, so a single snapshot
 // cannot tell a living scene from a frozen one — the whole question is what
 // changes between samples. Two minutes is long enough to catch a slow cycle and
 // short enough to stay well inside the session cap.
@@ -80,7 +80,7 @@ const SHOT_VIEWPORTS = [
   { label: "mobile", width: 390, height: 844 },
 ];
 
-// JPEG, not PNG. The garden is a canvas scene — photo-shaped content, where JPEG
+// JPEG, not PNG. The product is a canvas scene — photo-shaped content, where JPEG
 // is several times smaller for no loss that matters to a judgement about mood and
 // hierarchy. Size is not about the bill (two frames cost a fraction of a cent); an
 // oversized attachment makes the provider reject the whole conversation rather
@@ -88,7 +88,7 @@ const SHOT_VIEWPORTS = [
 const SHOT_QUALITY = Number(process.env.PLAYTEST_SHOT_QUALITY || 70);
 
 /**
- * Two frames of the garden as a visitor would see it, as pi image parts.
+ * Two frames of the product as a visitor would see it, as pi image parts.
  *
  * Best-effort by construction: a screenshot that cannot be taken returns an empty
  * list, and the session is reported from the state layer exactly as it was before
@@ -329,7 +329,7 @@ export async function observeApp() {
       timeline.push({ atSeconds: seconds, state });
     }
 
-    // Does the garden remember you? persistence is the difference between a
+    // Does the product remember you? persistence is the difference between a
     // screensaver and a place you return to, so it is worth one reload to find out.
     await page.reload({ waitUntil: "networkidle", timeout: 30_000 });
     await page.waitForTimeout(2000);
@@ -340,7 +340,7 @@ export async function observeApp() {
     // changed something is visible in them.
     const agentTools = await useAgentTools(page);
 
-    // Shot last, and after the reload, so the frames show the same garden the
+    // Shot last, and after the reload, so the frames show the same scene the
     // final timeline sample describes rather than a fresh one. Resizing for the
     // mobile frame is destructive to the desktop layout, which is why nothing is
     // measured after this point.
@@ -423,8 +423,8 @@ export function renderSession(session, { showingFrames = true } = {}) {
     "",
     `## After a reload`,
     sameAfterReload
-      ? "The garden came back exactly as it was left."
-      : `The garden came back different:\n${afterReload || "(the panel said nothing)"}`,
+      ? "The page came back exactly as it was left."
+      : `The page came back different:\n${afterReload || "(the panel said nothing)"}`,
     "",
     `## What the tools offered an agent`,
     renderToolPass(agentTools),
@@ -450,7 +450,7 @@ export function renderSession(session, { showingFrames = true } = {}) {
  * File the findings as untriaged feedback.
  *
  * Deduped against the open board by title, so a complaint the Playtester has
- * every week — and a garden that is genuinely static will produce the same one —
+ * every week — and a product that is genuinely static will produce the same one —
  * doesn't accumulate as a new issue each time.
  */
 function fileFindings(findings, verdict) {
@@ -532,7 +532,7 @@ async function report(session) {
           label: "Playtester",
           systemPrompt: promptFor(true),
           // Deliberately still no tools. The frames arrive attached to the turn, so
-          // seeing the garden costs the agent no ability to go reading the source —
+          // seeing the product costs the agent no ability to go reading the source —
           // which is a different job, and one that would pull an impression into an
           // audit (see renderSession).
           tools: [],

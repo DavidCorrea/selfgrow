@@ -31,10 +31,10 @@ describe("returning to main after abandoning a ticket", () => {
     inWork(["config", "user.name", "test"]);
     inWork(["config", "user.email", "test@example.com"]);
     inWork(["checkout", "--quiet", "-B", "main"]);
-    write("garden.js", "export const plants = 1;\n");
-    commitAll("Plant the garden");
+    write("scene.js", "export const items = 1;\n");
+    commitAll("Add the scene");
     inWork(["push", "--quiet", "origin", "main"]);
-    inWork(["checkout", "--quiet", "-b", "agent/issue-7-more-plants"]);
+    inWork(["checkout", "--quiet", "-b", "agent/issue-7-more-items"]);
   });
 
   afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -43,48 +43,48 @@ describe("returning to main after abandoning a ticket", () => {
     assert.equal(inWork(["rev-parse", "--abbrev-ref", "HEAD"]), "main");
     assert.equal(inWork(["rev-parse", "HEAD"]), inWork(["rev-parse", "origin/main"]));
     assert.equal(inWork(["status", "--porcelain"]), "");
-    assert.equal(inWork(["branch", "--list", "agent/issue-7-more-plants"]), "");
+    assert.equal(inWork(["branch", "--list", "agent/issue-7-more-items"]), "");
   };
 
   test("discards uncommitted edits and stray files a failed verify left behind", () => {
-    write("garden.js", "export const plants = 2; // broken\n");
+    write("scene.js", "export const items = 2; // broken\n");
     write("scratch.js", "leftover\n");
 
-    returnToCleanMain("agent/issue-7-more-plants", { cwd: work });
+    returnToCleanMain("agent/issue-7-more-items", { cwd: work });
 
     assertCleanOnOriginMain();
     assert.equal(fs.existsSync(join(work, "scratch.js")), false);
   });
 
   test("abandons a merge with main that was stopped halfway through a conflict", () => {
-    write("garden.js", "export const plants = 3;\n");
-    commitAll("Grow three plants");
+    write("scene.js", "export const items = 3;\n");
+    commitAll("Add three items");
     inWork(["checkout", "--quiet", "main"]);
-    write("garden.js", "export const plants = 4;\n");
-    commitAll("Grow four plants");
+    write("scene.js", "export const items = 4;\n");
+    commitAll("Add four items");
     inWork(["push", "--quiet", "origin", "main"]);
-    inWork(["checkout", "--quiet", "agent/issue-7-more-plants"]);
+    inWork(["checkout", "--quiet", "agent/issue-7-more-items"]);
     assert.throws(() => inWork(["merge", "origin/main", "--no-edit"]));
 
-    returnToCleanMain("agent/issue-7-more-plants", { cwd: work });
+    returnToCleanMain("agent/issue-7-more-items", { cwd: work });
 
     assertCleanOnOriginMain();
     assert.equal(fs.existsSync(join(work, ".git", "MERGE_HEAD")), false);
   });
 
   test("drops the ticket's committed work that never reached main", () => {
-    write("garden.js", "export const plants = 5;\n");
-    commitAll("Grow five plants");
+    write("scene.js", "export const items = 5;\n");
+    commitAll("Add five items");
 
-    returnToCleanMain("agent/issue-7-more-plants", { cwd: work });
+    returnToCleanMain("agent/issue-7-more-items", { cwd: work });
 
     assertCleanOnOriginMain();
-    assert.equal(fs.readFileSync(join(work, "garden.js"), "utf8"), "export const plants = 1;\n");
+    assert.equal(fs.readFileSync(join(work, "scene.js"), "utf8"), "export const items = 1;\n");
   });
 
   test("fails loudly when there is no main to return to", () => {
     inWork(["remote", "remove", "origin"]);
 
-    assert.throws(() => returnToCleanMain("agent/issue-7-more-plants", { cwd: work }));
+    assert.throws(() => returnToCleanMain("agent/issue-7-more-items", { cwd: work }));
   });
 });

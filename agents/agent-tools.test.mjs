@@ -7,8 +7,8 @@ import { validateToolDescriptors } from "./shared.mjs";
 
 // A descriptor the browser has already reduced to its checkable properties.
 const summary = (over = {}) => ({
-  name: "get-garden-state",
-  description: "Describes the garden right now: the season, the weather, and what is growing in the plot.",
+  name: "get-state",
+  description: "Describes what the page shows right now: every value on screen, what is changing, and what can be done next.",
   inputSchema: { type: "object", properties: {} },
   hasExecute: true,
   hasExample: true,
@@ -40,7 +40,7 @@ test("naming a tool", async (t) => {
   });
 
   await t.test("rejects a name an agent cannot type unambiguously", () => {
-    assert.match(only({ name: "getGardenState" })[0], /kebab-case/);
+    assert.match(only({ name: "getState" })[0], /kebab-case/);
   });
 
   await t.test("names the duplicate rather than silently keeping one", () => {
@@ -61,7 +61,7 @@ test("the description is the whole interface", async (t) => {
 
   await t.test("accepts a description that says what it returns and when to ask", () => {
     assert.deepEqual(only({
-      description: "Returns the current weather over the garden, and how long it has held.",
+      description: "Returns the current score and how long it has held, so a caller knows whether progress has stalled.",
     }), []);
   });
 });

@@ -22,10 +22,10 @@ test("answering a contributor", async (t) => {
   await t.test("lists blocking problems when there are some", () => {
     const body = renderComment(review({
       verdict: "revise",
-      issues: ["docs/garden.js: the season index can go negative"],
+      issues: ["docs/scene.js: the level index can go negative"],
     }));
     assert.match(body, /needs a change/);
-    assert.match(body, /season index can go negative/);
+    assert.match(body, /level index can go negative/);
   });
 
   await t.test("leads with 'already shipped' when that is the answer, and does not blame them", () => {
@@ -67,17 +67,17 @@ test("what the comment must never claim", async (t) => {
 // The review has no tools, so the only base code it sees is what the script
 // reads for it — from paths a stranger wrote into the diff headers.
 test("choosing which base files the review is shown", async (t) => {
-  const tracked = new Set(["docs/index.html", "docs/garden.js"]);
+  const tracked = new Set(["docs/index.html", "docs/scene.js"]);
 
   await t.test("finds every file the diff touches, once each", () => {
     const diff = [
       "diff --git a/docs/index.html b/docs/index.html",
       "--- a/docs/index.html",
       "+++ b/docs/index.html",
-      "diff --git a/docs/garden.js b/docs/garden.js",
+      "diff --git a/docs/scene.js b/docs/scene.js",
       "diff --git a/docs/index.html b/docs/index.html",
     ].join("\n");
-    assert.deepEqual(touchedPaths(diff), ["docs/index.html", "docs/garden.js"]);
+    assert.deepEqual(touchedPaths(diff), ["docs/index.html", "docs/scene.js"]);
   });
 
   await t.test("ignores header-shaped text that is not at the start of a line", () => {
@@ -85,7 +85,7 @@ test("choosing which base files the review is shown", async (t) => {
   });
 
   await t.test("reads a file the base tracks", () => {
-    assert.ok(isReadableBasePath("docs/garden.js", tracked));
+    assert.ok(isReadableBasePath("docs/scene.js", tracked));
   });
 
   await t.test("refuses an absolute path, even one that is tracked", () => {

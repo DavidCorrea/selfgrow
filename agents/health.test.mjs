@@ -42,7 +42,7 @@ test("noticing that nothing is shipping", async (t) => {
 
 test("noticing that the changelog stopped keeping up", async (t) => {
   await t.test("says nothing when recent merges are recorded", () => {
-    const changelog = `# Changelog\n\n## ${daysAgo(0)}\n\n- Add a garden\n`;
+    const changelog = `# Changelog\n\n## ${daysAgo(0)}\n\n- Add a scene\n`;
     assert.equal(checkChangelogKeepingUp({ changelog, closedRecently: closed(3, daysAgo(0)) }), null);
   });
 

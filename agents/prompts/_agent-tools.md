@@ -21,14 +21,29 @@ product's business.**
 export function tools() {
   return [
     {
-      name: "get-garden-state",
-      description: "Returns the garden's current season, time of day, weather, "
-        + "what is growing, and the state of the plot.",
+      name: "get-state",
+      description: "Returns everything the page currently shows a visitor: "
+        + "each value on screen, what is changing, and what can be done next.",
       inputSchema: { type: "object", properties: {} },
       annotations: { readOnlyHint: true },
       example: {},
       async execute(input) {
-        return { season: "Spring", timeOfDay: "Morning" /* ... */ };
+        return { /* the same fields the state layer describes */ };
+      },
+    },
+    {
+      name: "do-action",
+      description: "Performs the named action a visitor could take from the page, "
+        + "and returns the state afterwards so the caller can see what it did.",
+      inputSchema: {
+        type: "object",
+        properties: { action: { type: "string", description: "Which action to take." } },
+        required: ["action"],
+      },
+      annotations: { readOnlyHint: false },
+      example: { action: "..." },
+      async execute({ action }) {
+        return { /* the state after the action */ };
       },
     },
   ];
@@ -81,7 +96,7 @@ systems:
   and its result is a guess. If an action matters, it must also be *visible* in
   something a read tool returns.
 - **Group by what a caller wants, not by what the code stores.** One
-  `get-garden-state` returning six fields beats six single-field tools: an agent
+  `get-state` returning six fields beats six single-field tools: an agent
   asking "what is going on" wants all of it, and six round trips to find out is
   a worse interface than one.
 
