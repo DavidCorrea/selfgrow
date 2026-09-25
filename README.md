@@ -76,7 +76,7 @@ It is also the only role with **eyes**, for the same reason. Everything measurab
 ```mermaid
 flowchart LR
     S["Scout<br/><i>plans</i>"] --> B["Builder<br/><i>writes</i>"]
-    B --> V{"verify<br/>4 layers"}
+    B --> V{"verify<br/>5 layers"}
     V -->|fails| B
     V -->|passes| R{"Reviewer<br/><i>other model</i>"}
     R -->|revise ≤3| B
@@ -85,7 +85,7 @@ flowchart LR
 ```
 
 - **Scout** plans the highest-priority buildable ticket. It does not judge whether the ticket should exist — the PM settled that at 00:30.
-- **verify** runs cheapest-first: `node --check` → ESLint → a real Chromium page load → the product's own `checks()`.
+- **verify** runs cheapest-first: `node --check` → ESLint → a real Chromium page load → the product's own `checks()` → every declared agent tool, called with its own example.
 - **Reviewer** is drawn from a *different model* than wrote the code. Review is only worth its request if it can disagree.
 - **auto-merge** means the agent asks and the required checks answer — it no longer merges on its own say-so. The PAT opens the PR and the bot approves it: GitHub does not start workflows for events created by `GITHUB_TOKEN`, so a bot-opened PR would sit forever waiting on checks that never run.
 
@@ -97,7 +97,7 @@ Failure is first-class: a ticket accrues strikes, gets parked, and the Tech Lead
 | --- | --- |
 | 💰 **Budget** | A spend cap on the OpenRouter key. Enforced at one point — the provider's — because it is the only one that cannot be wrong about the balance. A refusal comes back as an error and stops the chain. |
 | ⏱️ **Time** | Every limit nested so the agent stops itself first. A run killed mid-ticket leaves an orphaned branch; one that stops itself does not. |
-| 🔒 **Concurrency** | One `agent-main-writer` lock. Every wiki write is a retried read-modify-write — the naive version lost a race on ~100 consecutive merges and reported success each time. |
+| 🔒 **Concurrency** | One `agent-main-writer` lock for whatever pushes to `main` (the Devs, pi-update); every other agent has its own, and review-pr one per PR. Every wiki write is a retried read-modify-write — the naive version lost a race on ~100 consecutive merges and reported success each time. |
 | 🎲 **Models** | Two paid models from different provider families. The second exists so the Reviewer can be drawn from a model that did not write the code — review is only worth its request if it can disagree. |
 | ✅ **Enforcement** | `check` and `verify-product` are **required** on `main`. Before, every guarantee was self-imposed — the agents graded their own work and merged on the result. |
 | 📊 **Watching** | Health asks whether the week looks like a working one, including whether the deployed site is up. No model, no key — it must keep working on a day the account is spent. |
@@ -152,7 +152,7 @@ The Changelog is still trimmed: it is read whole into the weekly report.
 
 Your ticket can be **sharpened but never closed for being unclear.** Grooming closes what it cannot describe concretely, and a request typed quickly is exactly that shape; the one channel into this system used to end in a silent drop. Closing it now requires declaring it out of scope, which is a judgement about the *request* rather than the wording.
 
-**Open a PR** and the Devs take it the rest of the way — verified, reviewed, fixed if it needs it, merged. Opening it is the contribution; you are not also the maintainer of it. Two lines they will not cross: **never close your PR** (your branch stays intact, and fixes are separate commits you can drop), and **never merge what has not passed verify**.
+**Open a PR** and the Devs take it the rest of the way — verified, reviewed, fixed if it needs it, merged. Opening it is the contribution; you are not also the maintainer of it. Two lines they will not cross: **never close your PR** (your branch stays intact, and fixes are separate commits you can drop), and **never merge what has not passed verify**. A PR that changes the machine itself (`.github/`, `agents/`, the dependencies) is verified and reviewed but left for a person to merge.
 
 **From a fork?** You get a review, but nothing runs your code — that path would hand a stranger the account's API key. The diff is read as text, judged against the project's own source, and answered in a comment. Expect *"this already shipped"* more often than not: agents work the same tickets you do.
 
