@@ -38,6 +38,13 @@ export async function checks() {
     } else if (gatherBtn.disabled) {
       problems.push("Expected #btn-gather to be enabled on page load — it was disabled.");
     }
+
+    const sharpenBtn = document.getElementById("btn-sharpen");
+    if (!sharpenBtn) {
+      problems.push("Expected #btn-sharpen to exist inside #action-area — it was not found.");
+    } else if (sharpenBtn.getAttribute("type") !== "button") {
+      problems.push(`Expected #btn-sharpen type="button", got "${sharpenBtn.getAttribute("type")}".`);
+    }
   }
 
   // ─── Goal panel ───
@@ -215,8 +222,8 @@ export async function checks() {
     // --- Test 4: gatherWood increments by exactly 1 ---
     engine.reset();
     const before = engine.getState().wood;
-    const afterState = engine.gatherWood();
-    const after = afterState.wood;
+    const gatherResult = engine.gatherWood();
+    const after = gatherResult.wood;
     if (after - before !== 1) {
       problems.push(`gatherWood() should increment wood by exactly 1. Before: ${before}, After: ${after}.`);
     }
@@ -264,6 +271,81 @@ export async function checks() {
       problems.push(`After reset+gather, wood should be 1, got ${afterGather}.`);
     }
 
+    // --- Test 8: initial state has upgradeLevel=0 ---
+    engine.reset();
+    const freshState = engine.getState();
+    if (typeof freshState.upgradeLevel !== "number" || freshState.upgradeLevel !== 0) {
+      problems.push(`Engine initial upgradeLevel should be 0, got ${JSON.stringify(freshState.upgradeLevel)}.`);
+    }
+
+    // --- Test 9: craftUpgrade fails when not enough wood ---
+    engine.reset();
+    const failResult = engine.craftUpgrade();
+    if (failResult.upgraded !== false) {
+      problems.push("craftUpgrade with 0 wood should return upgraded=false.");
+    }
+    if (typeof failResult.reason !== "string" || failResult.reason.length === 0) {
+      problems.push("craftUpgrade failure should include a non-empty reason string.");
+    }
+    if (typeof failResult.state !== "object") {
+      problems.push("craftUpgrade failure should include a state object.");
+    }
+
+    // --- Test 10: craftUpgrade succeeds with enough wood ---
+    engine.reset();
+    // Gather 5 wood
+    for (let i = 0; i < 5; i++) engine.gatherWood();
+    const beforeRate = engine.getState().rate;
+    const result = engine.craftUpgrade();
+    if (result.upgraded !== true) {
+      problems.push("craftUpgrade with 5 wood should return upgraded=true.");
+    }
+    const upgradedState = engine.getState();
+    if (upgradedState.wood !== 0) {
+      problems.push(`After craftUpgrade with 5 wood, wood should be 0, got ${upgradedState.wood}.`);
+    }
+    if (upgradedState.rate !== beforeRate + 0.05) {
+      problems.push(`After craftUpgrade, rate should increase by 0.05. Before: ${beforeRate}, After: ${upgradedState.rate}.`);
+    }
+    if (upgradedState.upgradeLevel !== 1) {
+      problems.push(`After craftUpgrade, upgradeLevel should be 1, got ${upgradedState.upgradeLevel}.`);
+    }
+
+    // --- Test 11: craftUpgrade persists rate increase ---
+    engine.reset();
+    for (let i = 0; i < 5; i++) engine.gatherWood();
+    engine.craftUpgrade();
+    engine.save();
+    const rawSaved = localStorage.getItem("selfgrow-state");
+    if (rawSaved) {
+      const parsed = JSON.parse(rawSaved);
+      if (typeof parsed.upgradeLevel !== "number" || parsed.upgradeLevel !== 1) {
+        problems.push(`Persisted upgradeLevel should be 1, got ${JSON.stringify(parsed.upgradeLevel)}.`);
+      }
+      if (typeof parsed.rate !== "number" || parsed.rate < 0.14 || parsed.rate > 0.16) {
+        problems.push(`Persisted rate after one upgrade should be ~0.15, got ${parsed.rate}.`);
+      }
+    }
+
+    // --- Test 12: upgradeLevel round-trips through load ---
+    engine.reset();
+    for (let i = 0; i < 5; i++) engine.gatherWood();
+    engine.craftUpgrade();
+    const savedRate = engine.getState().rate;
+    engine.save();
+    // Preserve localStorage around reset() which would otherwise wipe it
+    const savedStateRaw = localStorage.getItem("selfgrow-state");
+    engine.reset();
+    localStorage.setItem("selfgrow-state", savedStateRaw);
+    engine.init(); // loads from localStorage
+    const loaded = engine.getState();
+    if (loaded.upgradeLevel !== 1) {
+      problems.push(`After persistence round-trip, upgradeLevel should be 1, got ${loaded.upgradeLevel}.`);
+    }
+    if (loaded.rate !== savedRate) {
+      problems.push(`After persistence round-trip, rate should be ${savedRate}, got ${loaded.rate}.`);
+    }
+
     // Clean up test artifacts
     localStorage.removeItem("selfgrow-state");
     engine.reset();
@@ -303,22 +385,37 @@ export async function checks() {
         if (result.wood !== s.wood) {
           problems.push(`read-state wood (${result.wood}) does not match engine.getState() wood (${s.wood}).`);
         }
-        // Check goal field
-        if (!result.goal) {
-          problems.push("read-state should return a 'goal' field — it was missing.");
+        // Check firstGoal field
+        if (!result.firstGoal) {
+          problems.push("read-state should return a 'firstGoal' field — it was missing.");
         } else {
-          if (typeof result.goal !== "object") {
-            problems.push(`read-state.goal should be an object, got ${typeof result.goal}.`);
+          if (typeof result.firstGoal !== "object") {
+            problems.push(`read-state.firstGoal should be an object, got ${typeof result.firstGoal}.`);
           } else {
-            if (typeof result.goal.target !== "number" || result.goal.target !== 10) {
-              problems.push(`read-state.goal.target should be 10, got ${JSON.stringify(result.goal.target)}.`);
+            if (typeof result.firstGoal.target !== "number" || result.firstGoal.target !== 10) {
+              problems.push(`read-state.firstGoal.target should be 10, got ${JSON.stringify(result.firstGoal.target)}.`);
             }
-            if (typeof result.goal.current !== "number") {
-              problems.push(`read-state.goal.current should be a number, got ${JSON.stringify(result.goal.current)}.`);
+            if (typeof result.firstGoal.current !== "number") {
+              problems.push(`read-state.firstGoal.current should be a number, got ${JSON.stringify(result.firstGoal.current)}.`);
             }
-            if (typeof result.goal.reached !== "boolean") {
-              problems.push(`read-state.goal.reached should be a boolean, got ${JSON.stringify(result.goal.reached)}.`);
+            if (typeof result.firstGoal.reached !== "boolean") {
+              problems.push(`read-state.firstGoal.reached should be a boolean, got ${JSON.stringify(result.firstGoal.reached)}.`);
             }
+          }
+        }
+        // Check upgradeLevel field
+        if (typeof result.upgradeLevel !== "number" || result.upgradeLevel < 0) {
+          problems.push(`read-state should return upgradeLevel as a non-negative number, got ${JSON.stringify(result.upgradeLevel)}.`);
+        }
+        // Check nextGoal field
+        if (!result.nextGoal) {
+          problems.push("read-state should return a 'nextGoal' field — it was missing.");
+        } else {
+          if (typeof result.nextGoal !== "object") {
+            problems.push(`read-state.nextGoal should be an object, got ${typeof result.nextGoal}.`);
+          }
+          if (typeof result.nextGoal.description !== "string" || result.nextGoal.description.length === 0) {
+            problems.push(`read-state.nextGoal.description should be a non-empty string, got ${JSON.stringify(result.nextGoal.description)}.`);
           }
         }
       }
@@ -343,9 +440,40 @@ export async function checks() {
             + `After result: ${result.wood}.`
           );
         }
-        // Goal should be present in result
-        if (!result.goal) {
-          problems.push("perform-action result should include a 'goal' field — it was missing.");
+        // firstGoal should be present in result
+        if (!result.firstGoal) {
+          problems.push("perform-action result should include a 'firstGoal' field — it was missing.");
+        }
+        // nextGoal should be present in result
+        if (!result.nextGoal) {
+          problems.push("perform-action result should include a 'nextGoal' field — it was missing.");
+        }
+      }
+
+      // Test sharpen action
+      engine.reset();
+      for (let i = 0; i < 5; i++) engine.gatherWood();
+      const craftBeforeRate = engine.getState().rate;
+      const sharpenResult = await performAction.execute({ action: "sharpen" });
+      if (typeof sharpenResult !== "object" || sharpenResult === null) {
+        problems.push("perform-action with sharpen should return an object.");
+      } else {
+        if (sharpenResult.rate !== craftBeforeRate + 0.05) {
+          problems.push(
+            `perform-action with "sharpen" should increase rate by 0.05. Before: ${craftBeforeRate}, `
+            + `After: ${sharpenResult.rate}.`
+          );
+        }
+        if (sharpenResult.upgradeLevel !== 1) {
+          problems.push(`perform-action with "sharpen" should set upgradeLevel to 1, got ${sharpenResult.upgradeLevel}.`);
+        }
+        // firstGoal should be present
+        if (!sharpenResult.firstGoal) {
+          problems.push("sharpen result should include a 'firstGoal' field — it was missing.");
+        }
+        // nextGoal should be present
+        if (!sharpenResult.nextGoal) {
+          problems.push("sharpen result should include a 'nextGoal' field — it was missing.");
         }
       }
 
