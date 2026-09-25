@@ -10,8 +10,8 @@
 // product ships unchallenged.
 //
 // It plays through the DOM, not the canvas. That is not a limitation worked
-// around — the product is required to maintain a real state layer beside the
-// scene (see prompts/_profile.md), precisely because a canvas is opaque to a
+// around — the product is required to keep its state in real page elements,
+// beside anything drawn (see prompts/_profile.md), precisely because a canvas is opaque to a
 // screen reader and to automation alike. So the surface this agent reads is the
 // same one a blind visitor gets, and a product whose state layer is dull or wrong
 // is failing them first.

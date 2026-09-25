@@ -6,15 +6,9 @@ On a brand-new project `docs/` may be empty — that's expected; the first work 
 What the project **is** — its purpose, character, and direction — is defined entirely by the Vision. Follow it; beyond the rendering rules below, nothing about style or stack is dictated.
 
 ## Rendering
-The product is rendered in 3D with **Three.js**, loaded straight from a CDN as ESM — no build step, so no bundler and no tree-shaking:
+**How the product looks is the Vision's call**, not this page's. Use whatever the Vision asks for and the browser can do without a build step — styled HTML and CSS, SVG, images, or a `<canvas>` / WebGL library loaded from a CDN as ESM. Pin a library's version once one is working, so a CDN moving on cannot quietly break the product. Import only what the page needs and keep it lean: a page you can feel the code working in has already lost the illusion.
 
-```js
-import * as THREE from "https://esm.sh/three";
-```
-
-Pin a version once one is working, so a CDN moving on cannot quietly break the product. Import only what a scene needs and keep it lean: a page you can feel the code working in has already lost the illusion.
-
-**A WebGL canvas is not the whole app.** Alongside the scene, maintain a real DOM layer describing the product's current state — what is on screen, what it means, what is happening right now — kept accurate as the scene changes and reachable from the keyboard. This is not decoration, and it is not optional:
+**The DOM is the product, whatever draws the pixels.** The product's state — what is on screen, what it means, what is happening right now — lives in real, keyboard-reachable page elements, kept accurate as it changes. If any part is drawn into a canvas, that canvas sits beside this layer; it never replaces it. This is not decoration, and it is not optional:
 
 - A canvas is opaque to screen readers, and the product has to reach someone who never sees the animation at all.
 - The build's own app review measures the **DOM** — contrast, layout, overflow, interactive elements. It cannot see into a canvas. A page that is one bare `<canvas>` is a page it can report nothing about, so real defects would ship unnoticed and nothing downstream would ever catch them.
