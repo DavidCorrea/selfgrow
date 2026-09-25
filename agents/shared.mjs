@@ -1093,6 +1093,37 @@ export function abortMerge() {
   }
 }
 
+/**
+ * Throw away whatever an abandoned ticket left behind and stand on origin/main
+ * again, with the ticket's local branch deleted.
+ *
+ * A ticket can be abandoned mid-anything: a verify that failed on uncommitted
+ * edits, or a conflict-resolution agent that threw with the merge still open.
+ * A plain `git checkout main` fails on either, and it used to fail silently, so
+ * the NEXT ticket's createBranch hit the same dirty tree outside any handler and
+ * took down the whole run.
+ *
+ * So this one throws. If the tree cannot be put back, no ticket after it can
+ * start either, and the run should say so here rather than one ticket later.
+ * `opts` reaches gitExec, which is how the tests point it at a scratch repo.
+ */
+export function returnToCleanMain(branchName, opts = {}) {
+  const git = (argv) => gitExec(argv, { stdio: "pipe", ...opts });
+  try {
+    git(["merge", "--abort"]);
+  } catch {
+    // no merge in progress — the usual case
+  }
+  git(["reset", "--hard"]);
+  git(["clean", "-fd"]);
+  git(["checkout", "-f", "-B", "main", "origin/main"]);
+  try {
+    git(["branch", "-D", branchName]);
+  } catch {
+    // the branch was never created locally — fine
+  }
+}
+
 export function abortRebase() {
   try {
     gitExec(["rebase", "--abort"]);
