@@ -20,6 +20,7 @@ import {
   isBlocked,
   isBuildable,
   dependentsOf,
+  chosenCandidate,
   effectivePriorityRank,
   isDailyQuotaExhausted,
   unmetDependencies,
@@ -363,10 +364,14 @@ async function planChange(ctx, attempt) {
 /** Stage 2 — name the ticket this run is addressing, from the plan. */
 function identifyTicket(ctx, plan) {
   if (!plan.data.issueNumber) return;
-  ctx.issueNumber = plan.data.issueNumber;
-  const issue = ctx.openIssues.find((i) => i.number === ctx.issueNumber);
-  ctx.issueTitle = issue ? issue.title : plan.data.issueTitle || "Unknown issue";
-  ctx.issueObj = issue || { number: ctx.issueNumber, title: ctx.issueTitle, body: "" };
+  const issue = chosenCandidate(plan.data.issueNumber, ctx.openIssues);
+  if (!issue) {
+    log("warn", `Scout chose ${JSON.stringify(plan.data.issueNumber)}, which is not one of the ${ctx.openIssues.length} ticket(s) it was offered — treating it as no choice.`);
+    return;
+  }
+  ctx.issueNumber = issue.number;
+  ctx.issueTitle = issue.title;
+  ctx.issueObj = issue;
   log("info", `Scout: addressing issue #${ctx.issueNumber} — ${ctx.issueTitle}`);
 }
 

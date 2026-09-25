@@ -18,6 +18,7 @@ import {
   slugify,
   createBranchName,
   preferDifferentModel,
+  chosenCandidate,
 } from "./shared.mjs";
 
 const issue = (number, { body = "", labels = [], title = `Ticket ${number}` } = {}) =>
@@ -259,5 +260,27 @@ test("choosing a model for the second opinion", async (t) => {
 
   await t.test("ignores a model that is not in the chain", () => {
     assert.deepEqual(preferDifferentModel(chain, "zzz"), chain);
+  });
+});
+
+test("accepting the ticket the Scout chose", async (t) => {
+  const candidates = [issue(5), issue(8)];
+
+  await t.test("takes a ticket from the list it was offered", () => {
+    assert.equal(chosenCandidate(8, candidates), candidates[1]);
+  });
+
+  await t.test("reads a numeric string as the number the model meant", () => {
+    assert.equal(chosenCandidate(" 5 ", candidates), candidates[0]);
+  });
+
+  await t.test("refuses a ticket that was not offered, which may be parked, claimed or closed", () => {
+    assert.equal(chosenCandidate(99, candidates), null);
+  });
+
+  await t.test("refuses text that is not a ticket number", () => {
+    assert.equal(chosenCandidate("#5", candidates), null);
+    assert.equal(chosenCandidate("the first one", candidates), null);
+    assert.equal(chosenCandidate(5.5, candidates), null);
   });
 });
