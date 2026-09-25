@@ -29,6 +29,8 @@ The project's tickets, grouped by column: **Done** = already shipped, **In progr
 
 {{BOARD_STATE}}
 
+**Done** lists only the most recently shipped tickets; older ones are counted, not named. What they built is in `docs/` — that, not a title list, is where to check whether an idea already exists.
+
 You may also read the code under `docs/` for finer detail. (The vision and changelog live in the wiki, not the repo.)
 
 ## Automated App Review (measured from the live app)
@@ -151,7 +153,7 @@ A ticket is **meaningful** when someone reading only its title and acceptance cr
 
 Tickets must fit the Vision and the project's shipping rules: a static, browser-only site under `docs/`, no build step. **If nothing has shipped yet (empty Done / empty `docs/`), propose foundational tickets first** — the initial page and core experience before any enrichment.
 
-**Never propose anything already on the board above — not in Todo, In progress, or Done.** Quality over quantity: return an empty `backlog` array if nothing is genuinely worth adding next. A few sharp tickets beat a long list of filler, so use the allowance only when the work is really there — but do not hold back work that is. An idea you leave out because you have already listed three is an idea the project waits a whole day for.
+**Never propose anything already on the board above — not in Todo, In progress, or Done — nor anything `docs/` shows was built earlier.** Quality over quantity: return an empty `backlog` array if nothing is genuinely worth adding next. A few sharp tickets beat a long list of filler, so use the allowance only when the work is really there — but do not hold back work that is. An idea you leave out because you have already listed three is an idea the project waits a whole day for.
 
 ## Prioritizing Existing Tickets
 For each **open** ticket shown on the board above (the ones with `#numbers`), assign a priority in the `triage` array. Order the whole backlog by impact toward the vision — the Builder always picks the highest-priority ticket next, so your `high` assignments decide what ships soonest.
