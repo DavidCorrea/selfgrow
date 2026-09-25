@@ -320,6 +320,27 @@
       }
     }
 
+    /* ─── Responsive: multi-column on wide viewports ─── */
+    @media (min-width: 900px) {
+      body {
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        justify-content: flex-start;
+        padding: 1.5rem;
+        gap: 1.5rem;
+      }
+
+      .panel {
+        max-width: none;
+        flex: 1 1 280px;
+      }
+
+      #status-bar {
+        flex: 0 0 100%;
+      }
+    }
+
     /* ─── Accessible: prefers-reduced-motion ─── */
     @media (prefers-reduced-motion: reduce) {
       .btn {

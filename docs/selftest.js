@@ -369,5 +369,77 @@ export async function checks() {
     problems.push(`Agent tools test threw: ${err.message}`);
   }
 
+  // ─── Responsive layout checks ──────────────────────────────
+
+  const viewportWidth = window.innerWidth;
+
+  if (viewportWidth >= 900) {
+    // On wide viewports, panels should fill at least 80% of the viewport width.
+    const panels = document.querySelectorAll(".panel");
+    if (panels.length === 0) {
+      problems.push("Expected at least one .panel element for layout width check — none found.");
+    } else {
+      // Get bounding box across all panels (ignore panels that are hidden)
+      let minLeft = Infinity;
+      let maxRight = -Infinity;
+      let visibleCount = 0;
+      for (const p of panels) {
+        if (p.hidden) continue;
+        const rect = p.getBoundingClientRect();
+        if (rect.width === 0) continue;
+        visibleCount++;
+        if (rect.left < minLeft) minLeft = rect.left;
+        if (rect.right > maxRight) maxRight = rect.right;
+      }
+      if (visibleCount > 0) {
+        const panelSpan = maxRight - minLeft;
+        const pct = (panelSpan / viewportWidth) * 100;
+        if (pct < 80) {
+          problems.push(
+            `On viewport width ${viewportWidth}px, panels span ${panelSpan}px (${pct.toFixed(1)}%) — `
+            + `expected at least 80% (${(viewportWidth * 0.8).toFixed(0)}px).`
+          );
+        }
+      } else {
+        problems.push("No visible .panel elements found for layout width check.");
+      }
+    }
+
+    // Also verify that the computed max-width on .panel is not 640px
+    const firstPanel = document.querySelector(".panel");
+    if (firstPanel) {
+      const maxW = getComputedStyle(firstPanel).maxWidth;
+      // On wide layout, max-width should be 'none' (or anything other than 640px)
+      if (maxW === "640px") {
+        problems.push(
+          `On wide viewport (${viewportWidth}px), computed max-width of .panel is still 640px. `
+          + "Expected the ≥900px media query to override max-width to 'none'."
+        );
+      }
+    }
+  }
+
+  if (viewportWidth <= 480) {
+    // On narrow viewports, panels should stack in a single column.
+    // Verify by checking that each panel's left edge is roughly the same.
+    const panels = document.querySelectorAll(".panel");
+    let baselineLeft = null;
+    for (const p of panels) {
+      if (p.hidden) continue;
+      const rect = p.getBoundingClientRect();
+      if (rect.width === 0) continue;
+      if (baselineLeft === null) {
+        baselineLeft = rect.left;
+      } else {
+        if (Math.abs(rect.left - baselineLeft) > 5) {
+          problems.push(
+            `On narrow viewport (${viewportWidth}px), panels are not in a single column. `
+            + `Expected left edge ~${baselineLeft}px, got ${rect.left}px for element.`
+          );
+        }
+      }
+    }
+  }
+
   return problems;
 }
