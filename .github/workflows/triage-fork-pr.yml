@@ -43,6 +43,8 @@ jobs:
     steps:
       # NO `ref:` — this is the base, on purpose. See rule 1 above.
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       # No Chromium: nothing here opens a browser, because nothing here runs the
       # contributor's code.
