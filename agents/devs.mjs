@@ -12,6 +12,7 @@ import {
   createBranch,
   mergeMainIntoBranch,
   abortMerge,
+  returnToCleanMain,
   deleteRemoteBranch,
   fetchOpenIssues,
   recordTicket,
@@ -212,17 +213,13 @@ async function writePostMortem(issue, reason) {
 // ---------------------------------------------------------------------------
 
 /**
- * Abandon a feature branch: return to main and delete the branch locally and
- * (if it was pushed) on origin. Best-effort — never throws.
+ * Abandon a feature branch: discard the working tree, return to main, and delete
+ * the branch locally and (if it was pushed) on origin. Throws when the tree
+ * cannot be put back — see returnToCleanMain.
  */
 function cleanupBranch(branchName) {
-  try {
-    gitExec(["checkout", "main"]);
-    gitExec(["branch", "-D", branchName]);
-    log("info", `Cleaned up local branch ${branchName}.`);
-  } catch {
-    // branch may not exist locally — fine
-  }
+  returnToCleanMain(branchName);
+  log("info", `Cleaned up local branch ${branchName}.`);
   deleteRemoteBranch(branchName);
 }
 
@@ -329,11 +326,13 @@ function newTicketContext({ openIssues, vision, deadline }) {
 function abandonTicket(ctx, reason, { closePr = false, fault = true } = {}) {
   log("warn", `Abandoning ticket: ${reason}`);
   if (closePr && ctx.prNumber) closePR(ctx.prNumber, reason);
-  cleanupBranch(ctx.branchName);
   if (ctx.issueNumber) {
     moveCard(ctx.issueNumber, "Backlog"); // return to the backlog
     recordTicket("failed", ctx.issueNumber, ctx.issueTitle, reason);
   }
+  // Last, because it is the one step that can throw: the card and the record
+  // are already back where they belong when it does.
+  cleanupBranch(ctx.branchName);
   return ticketResult(ctx, "abandoned", { reason, ticketFault: fault });
 }
 
