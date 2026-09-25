@@ -80,7 +80,7 @@ This is the current Vision (from the wiki):
 {{VISION}}
 
 ## The Board (what the project has actually become)
-The project's shipped and in-flight tickets, grouped by column — **Done** = shipped, **In progress** = active, **Todo / Backlog** = queued. **Done** names only the most recent shipped tickets and counts the rest. Use this (especially **Done**) to judge whether the vision still describes reality, or whether what's been built has opened a new horizon worth naming.
+The project's shipped and in-flight tickets, grouped by column — **Done** = shipped, **In progress** = active, **Todo / Backlog** = queued. Retired tickets (split, superseded, won't-do, a triaged playtest finding) are taken off the board and are not in Done or in "Shipped this week" — closing a ticket is not the same as solving what it described. **Done** names only the most recent shipped tickets and counts the rest. Use this (especially **Done**) to judge whether the vision still describes reality, or whether what's been built has opened a new horizon worth naming.
 
 {{BOARD_STATE}}
 

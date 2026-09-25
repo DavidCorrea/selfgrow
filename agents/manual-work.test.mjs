@@ -40,7 +40,7 @@ test("telling the reader what became of what they asked for", async (t) => {
 
   await t.test("separates their tickets from the pipeline's own", () => {
     const week = gatherWeek({
-      closed: [
+      shipped: [
         { ...humanIssue(1, "Mine"), closedAt: `${daysAgo(1)}T10:00:00Z` },
         { ...agentIssue(2, "Theirs"), closedAt: `${daysAgo(1)}T10:00:00Z` },
       ],
@@ -54,7 +54,7 @@ test("telling the reader what became of what they asked for", async (t) => {
 
   await t.test("calls out a request that got stuck", () => {
     const week = gatherWeek({
-      closed: [],
+      shipped: [],
       open: [humanIssue(9, "Mine, failing", ["blocked"])],
       ledger,
     });

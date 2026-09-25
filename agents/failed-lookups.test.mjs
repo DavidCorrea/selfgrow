@@ -18,6 +18,7 @@ import {
   listProjectItems,
   getCurrentMilestone,
   isConfirmedShipped,
+  fetchShippedIssues,
 } from "./shared.mjs";
 
 let fakeBin;
@@ -70,6 +71,10 @@ test("a listing gh could not answer throws instead of reading as empty", async (
 
   await t.test("the open milestones, where 'none' would start a second one", () => {
     assert.throws(() => getCurrentMilestone(), /Could not read the open milestones/);
+  });
+
+  await t.test("what shipped, where 'nothing' would be published as the week", () => {
+    assert.throws(() => fetchShippedIssues(), /Could not list closed issues/);
   });
 });
 

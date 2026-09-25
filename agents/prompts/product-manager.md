@@ -25,7 +25,7 @@ If a genuinely important piece of work does not serve the milestone — a bug th
 {{MILESTONE}}
 
 ## The Board (what's shipped, active, and queued)
-The project's tickets, grouped by column: **Done** = already shipped, **In progress** = being built right now, **Todo / Backlog** = queued. Your ideas should come from the **gap between what's Done and the Vision** — the next things that move the project toward its north star.
+The project's tickets, grouped by column: **Done** = already shipped, **In progress** = being built right now, **Todo / Backlog** = queued. A ticket you retire is not shipped: it is closed as not planned and taken off the board, so it never lands in Done. Your ideas should come from the **gap between what's Done and the Vision** — the next things that move the project toward its north star.
 
 {{BOARD_STATE}}
 

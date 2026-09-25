@@ -21,21 +21,21 @@ const issue = (number, labels = [], body = "") => ({ number, title: `#${number}`
 
 test("noticing that nothing is shipping", async (t) => {
   await t.test("says nothing while work is merging", () => {
-    assert.equal(checkShipping({ closedRecently: closed(3, daysAgo(0)), open: [] }), null);
+    assert.equal(checkShipping({ shippedRecently: closed(3, daysAgo(0)), open: [] }), null);
   });
 
   await t.test("distinguishes stuck from idle when the board still has work", () => {
-    const finding = checkShipping({ closedRecently: closed(2, daysAgo(9)), open: [issue(1)] });
+    const finding = checkShipping({ shippedRecently: closed(2, daysAgo(9)), open: [issue(1)] });
     assert.match(finding, /stuck, not idle/);
   });
 
   await t.test("blames grooming when there is nothing left to build", () => {
-    const finding = checkShipping({ closedRecently: [], open: [] });
+    const finding = checkShipping({ shippedRecently: [], open: [] });
     assert.match(finding, /backlog is empty/);
   });
 
   await t.test("does not count a blocked ticket as buildable work", () => {
-    const finding = checkShipping({ closedRecently: [], open: [issue(1, ["blocked"])] });
+    const finding = checkShipping({ shippedRecently: [], open: [issue(1, ["blocked"])] });
     assert.match(finding, /backlog is empty/);
   });
 });
@@ -43,39 +43,39 @@ test("noticing that nothing is shipping", async (t) => {
 test("noticing that the changelog stopped keeping up", async (t) => {
   await t.test("says nothing when recent merges are recorded", () => {
     const changelog = `# Changelog\n\n## ${daysAgo(0)}\n\n- Add a scene\n`;
-    assert.equal(checkChangelogKeepingUp({ changelog, closedRecently: closed(3, daysAgo(0)) }), null);
+    assert.equal(checkChangelogKeepingUp({ changelog, shippedRecently: closed(3, daysAgo(0)) }), null);
   });
 
   await t.test("catches the case that ran silently for three days", () => {
     // Tickets shipping, changelog frozen — every wiki push losing its race.
     const finding = checkChangelogKeepingUp({
       changelog: "# Changelog\n",
-      closedRecently: closed(30, daysAgo(0)),
+      shippedRecently: closed(30, daysAgo(0)),
     });
     assert.match(finding, /30 ticket\(s\) shipped/);
     assert.match(finding, /Wiki writes are being dropped/);
   });
 
   await t.test("stays quiet on a genuinely quiet day, when there is nothing to record", () => {
-    assert.equal(checkChangelogKeepingUp({ changelog: "# Changelog\n", closedRecently: [] }), null);
+    assert.equal(checkChangelogKeepingUp({ changelog: "# Changelog\n", shippedRecently: [] }), null);
   });
 });
 
 test("noticing that tickets are being written the Devs cannot build", async (t) => {
   await t.test("ignores a small sample, where one hard ticket proves nothing", () => {
-    assert.equal(checkAbandonRate({ open: [issue(1, ["blocked"])], closedRecently: closed(1, daysAgo(1)) }), null);
+    assert.equal(checkAbandonRate({ open: [issue(1, ["blocked"])], shippedRecently: closed(1, daysAgo(1)) }), null);
   });
 
   await t.test("says nothing when most engaged tickets ship", () => {
     assert.equal(
-      checkAbandonRate({ open: [issue(1, ["blocked"])], closedRecently: closed(9, daysAgo(1)) }),
+      checkAbandonRate({ open: [issue(1, ["blocked"])], shippedRecently: closed(9, daysAgo(1)) }),
       null
     );
   });
 
   await t.test("reports the rate once failures dominate", () => {
     const open = [issue(1, ["blocked"]), issue(2, ["blocked"]), issue(3, ["attempts:1"])];
-    const finding = checkAbandonRate({ open, closedRecently: closed(3, daysAgo(1)) });
+    const finding = checkAbandonRate({ open, shippedRecently: closed(3, daysAgo(1)) });
     assert.match(finding, /50% of engaged tickets are failing/);
   });
 });
@@ -181,7 +181,7 @@ test("telling a check that could not run apart from one that came back clear", a
   };
 
   await t.test("a fact that could not be read makes the checks that need it unknown, not clear", async () => {
-    const { facts, unreadable } = await readFacts({ open: failingRead, closedRecently: () => [] });
+    const { facts, unreadable } = await readFacts({ open: failingRead, shippedRecently: () => [] });
     assert.deepEqual(unreadable, ["open"]);
     const { findings, unknown } = await runChecks([checkShipping, checkAbandonRate], facts);
     assert.deepEqual(findings, []);

@@ -17,6 +17,7 @@ import {
   setIssuePriority,
   recordTicket,
   retireIssue,
+  fetchShippedIssues,
   reviewApp,
   fetchOpenIssues,
   isBuildable,
@@ -26,7 +27,6 @@ import {
   isPlaytestFeedback,
   isManualIssue,
   rewriteIssueBody,
-  ghExec,
   getCurrentMilestone,
   setIssueMilestone,
 } from "./shared.mjs";
@@ -368,25 +368,6 @@ function readFileSafely(path) {
   }
 }
 
-/**
- * Tickets closed recently, for the week's report.
- *
- * Labels included deliberately: the report distinguishes what a person asked for
- * from what the pipeline proposed, and it does that by the ABSENCE of the `agent`
- * label. Fetch without labels and every shipped ticket looks human-filed.
- */
-function fetchClosedIssues(limit = 200) {
-  try {
-    return JSON.parse(
-      ghExec(["issue", "list", "--state", "closed", "--limit", String(limit), "--json", "number,title,closedAt,labels"])
-    );
-  } catch (e) {
-    // Thrown, not []: an empty list is a report that says nothing shipped, and it
-    // would be published. The caller skips the week's report instead.
-    throw new Error(`Could not list recently closed tickets: ${e.message}`, { cause: e });
-  }
-}
-
 function renderMilestone(milestone) {
   if (!milestone) {
     return "No milestone is set. Propose whatever best serves the Vision, and keep the batch coherent — several tickets pulling in one direction beat the same number pulling in five.";
@@ -394,7 +375,7 @@ function renderMilestone(milestone) {
   return [
     `**${milestone.title}**`,
     milestone.description || "",
-    `Progress: ${milestone.closed} shipped, ${milestone.open} still open.`,
+    `Progress: ${milestone.closed} closed, ${milestone.open} still open.`,
   ].filter(Boolean).join("\n\n");
 }
 
@@ -510,7 +491,6 @@ async function executeRetirements({ entries }, { proposed = 0, created = 0 } = {
     // to ship" — the opposite of what happened to it. The PM now says why, and
     // the fallbacks below only cover a PM that didn't.
     await retireIssue(number, reason || defaultRetireReason(issue));
-    moveCard(number, "Done"); // reflect the closure on the board (best-effort)
     // The issue's TITLE, not its number again. This printed "Retired — #522 #522"
     // in every run summary, which reads as a bug in the numbering.
     recordTicket("retired", number, issue?.title || `#${number}`);
@@ -600,7 +580,7 @@ async function main() {
 
   const milestone = getCurrentMilestone();
   log("info", milestone
-    ? `Working toward "${milestone.title}" (${milestone.closed} shipped, ${milestone.open} open).`
+    ? `Working toward "${milestone.title}" (${milestone.closed} closed, ${milestone.open} open).`
     : "No milestone set — the Product Owner sets one each Monday.");
 
   // Curation is weekly, because it is the one part of grooming that needs the
@@ -677,7 +657,7 @@ async function main() {
   if (weekly) {
     try {
       await publishWeeklyReport({
-        closed: fetchClosedIssues(),
+        shipped: fetchShippedIssues(),
         open: fetchOpenIssues(),
         milestone,
       });
