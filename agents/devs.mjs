@@ -30,6 +30,7 @@ import {
   TECH_DEBT_LABEL,
   moveCard,
   createPR,
+  agentPullRequestBody,
   fetchOpenAgentPullRequests,
   classifyAgentPullRequest,
   decideAgentPullRequest,
@@ -540,7 +541,7 @@ function pushAttempt(ctx) {
 /** Open the PR once, after the first push. Returns a terminal result or null. */
 function openPullRequest(ctx) {
   if (ctx.prNumber) return null;
-  const prBody = `${ctx.builderSummary || ctx.commitMessage}${ctx.issueNumber ? `\n\nRefs #${ctx.issueNumber}` : ""}`;
+  const prBody = agentPullRequestBody(ctx.builderSummary || ctx.commitMessage, ctx.issueNumber);
   ctx.prNumber = createPR(ctx.branchName, ctx.commitMessage, prBody);
   if (!ctx.prNumber) return abandonTicket(ctx, "Could not open PR.", { fault: false });
   if (ctx.issueNumber) moveCard(ctx.issueNumber, "In review");
