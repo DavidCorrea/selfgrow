@@ -32,6 +32,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          # Nothing in this job pushes, so the token is not left in the checkout's
+          # git config for the agent, or anything it runs, to pick up and use.
+          persist-credentials: false
           # Real history: the review reads what changed in docs/ since its own
           # last run, and a shallow clone would report a single commit and make
           # every week look like the first one.
