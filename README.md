@@ -178,4 +178,6 @@ npm test        # the harness's own suite
 npm run lint    # agents/ and docs/
 ```
 
-**To start over:** pause the workflows and dispatch `reset`, typing the repository name to confirm. It cancels runs, closes issues and agent PRs, clears the board, resets the wiki's memory, and deletes the product from `main` — leaving the machine and an empty `docs/`.
+**To pause everything:** set the repository variable `PIPELINE_PAUSED` to `true` (Settings → Secrets and variables → Actions → Variables). Every agent job checks it and skips — scheduled, dispatched and PR-triggered alike — while `ci`, `reset` and pi-update's free `check` gate keep running. Delete the variable, or set it to anything else, to resume. One switch instead of disabling each workflow by hand, so none gets forgotten.
+
+**To start over:** pause the pipeline (above) and dispatch `reset`, typing the repository name to confirm. It cancels runs, closes issues and agent PRs, clears the board, resets the wiki's memory, and deletes the product from `main` — leaving the machine and an empty `docs/`.

@@ -1,5 +1,7 @@
 name: triage-fork-pr
 
+# The agent jobs here skip while the repo variable PIPELINE_PAUSED is 'true' — see README.
+
 # An answer for a pull request from outside the project.
 #
 # ─── READ THIS BEFORE CHANGING ANYTHING HERE ───────────────────────────────────
@@ -37,7 +39,7 @@ jobs:
   triage:
     # Forks only. A branch in this repository is handled by review-pr.yml, which
     # can safely do the whole job because it owns the code it is checking out.
-    if: github.event.pull_request.head.repo.full_name != github.repository
+    if: vars.PIPELINE_PAUSED != 'true' && github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

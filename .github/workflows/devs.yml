@@ -1,5 +1,7 @@
 name: devs
 
+# The agent jobs here skip while the repo variable PIPELINE_PAUSED is 'true' — see README.
+
 on:
   schedule:
     # The MOP-UP run, and the only scheduled one. The morning chain stops on the
@@ -38,6 +40,7 @@ jobs:
   # heavy job below cannot cheaply answer for itself: is anything buildable? When
   # the answer is no, no build runner ever starts.
   plan:
+    if: vars.PIPELINE_PAUSED != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -87,7 +90,7 @@ jobs:
     needs: plan
     # Nothing buildable means no job at all, rather than a runner that installs
     # Chromium and finds nothing to do.
-    if: ${{ needs.plan.outputs.count != '0' }}
+    if: ${{ vars.PIPELINE_PAUSED != 'true' && needs.plan.outputs.count != '0' }}
     runs-on: ubuntu-latest
     # Six tickets end to end, plus setup. The run's own BUILD_RUN_BUDGET_MINUTES
     # should stop it first; this is the backstop for a job that hangs rather than

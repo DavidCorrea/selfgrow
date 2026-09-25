@@ -1,5 +1,7 @@
 name: product-manager
 
+# The agent jobs here skip while the repo variable PIPELINE_PAUSED is 'true' — see README.
+
 on:
   schedule:
     # Daily, and the single entry point for the day's work: groom the backlog,
@@ -37,6 +39,7 @@ concurrency:
 
 jobs:
   groom-backlog:
+    if: vars.PIPELINE_PAUSED != 'true'
     runs-on: ubuntu-latest
     # Sized so the agent stops ITSELF first. MAX_SESSION_MINUTES (12) bounds a
     # session, this run makes 3 sessions, and setup is a few minutes on top — so the

@@ -1,8 +1,11 @@
 name: reset
 
-# Run manually, with the other workflows paused: cancels pending runs, closes all
-# open issues and agent PRs, clears the board, resets the wiki's memory pages, and
-# deletes the previous product from main.
+# Run manually, with the pipeline paused (set the repo variable PIPELINE_PAUSED to
+# 'true' — every agent job skips while it is, so nothing rebuilds mid-reset):
+# cancels pending runs, closes all open issues and agent PRs, clears the board,
+# resets the wiki's memory pages, and deletes the previous product from main.
+# This workflow deliberately ignores the switch — it is how you start over while
+# paused.
 #
 # Every other workflow here is additive — this is the one that dismantles. It used
 # to fire on a bare dispatch, so two clicks in the Actions UI closed every issue

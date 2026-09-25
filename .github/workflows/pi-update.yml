@@ -1,5 +1,7 @@
 name: pi-update
 
+# The agent jobs here skip while the repo variable PIPELINE_PAUSED is 'true' — see README.
+
 on:
   schedule:
     # Tuesday. Deliberately a day no other weekly agent runs — the Product Owner
@@ -34,7 +36,7 @@ concurrency:
 jobs:
   update:
     # Never on a PR — that event only wants the free `check` job below.
-    if: github.event_name != 'pull_request'
+    if: vars.PIPELINE_PAUSED != 'true' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     # npm install, a registry assertion, and a PR. No model calls at all.
     timeout-minutes: 20
@@ -64,7 +66,8 @@ jobs:
 
   # The free half, as a gate: assert the chain on every PR that touches the
   # dependency or the chain itself, including Dependabot's own bumps. Costs no
-  # requests and needs no API key, so it can run unconditionally.
+  # requests and needs no API key, so it can run unconditionally — including
+  # while the pipeline is paused, since it is a gate, not an agent.
   check:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest

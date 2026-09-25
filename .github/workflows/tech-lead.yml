@@ -1,5 +1,7 @@
 name: tech-lead
 
+# The agent jobs here skip while the repo variable PIPELINE_PAUSED is 'true' — see README.
+
 on:
   schedule:
     # Thursday. A day of its own: the Product Owner is Monday, pi-update Tuesday,
@@ -23,6 +25,7 @@ concurrency:
 
 jobs:
   review-codebase:
+    if: vars.PIPELINE_PAUSED != 'true'
     runs-on: ubuntu-latest
     # Sized so the agent stops ITSELF first. MAX_SESSION_MINUTES (12) bounds a
     # session, this run makes one, and setup is a few minutes on top — the

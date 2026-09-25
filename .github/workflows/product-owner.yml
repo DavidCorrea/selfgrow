@@ -1,5 +1,7 @@
 name: product-owner
 
+# The agent jobs here skip while the repo variable PIPELINE_PAUSED is 'true' — see README.
+
 on:
   schedule:
     # Monday, and deliberately the morning after the Product Manager's Sunday
@@ -18,6 +20,7 @@ permissions:
 
 jobs:
   refine-vision:
+    if: vars.PIPELINE_PAUSED != 'true'
     runs-on: ubuntu-latest
     # Sized so the agent stops ITSELF first. MAX_SESSION_MINUTES (12) bounds a
     # session, this run makes one session, and setup is a few minutes on top — so the

@@ -1,5 +1,7 @@
 name: review-pr
 
+# The agent jobs here skip while the repo variable PIPELINE_PAUSED is 'true' — see README.
+
 # The Devs, applied to a pull request a person opened.
 #
 # Opening a PR is a contribution, not a request for permission: the team verifies
@@ -24,7 +26,7 @@ concurrency:
 
 jobs:
   review:
-    # Four guards, all necessary.
+    # Four guards, all necessary — plus the pipeline-wide pause switch.
     #
     # FORKS are excluded. A pull_request run from a fork gets no secrets, so the
     # model call would fail anyway — but the important half is that this job checks
@@ -47,6 +49,7 @@ jobs:
     # then be reviewed a second time here, by a second model, on a second budget,
     # after the Devs had already reviewed and merged it.
     if: >-
+      vars.PIPELINE_PAUSED != 'true' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       !startsWith(github.event.pull_request.head.ref, 'agent/') &&
       github.event.pull_request.user.login != 'github-actions[bot]' &&

@@ -1,5 +1,7 @@
 name: playtester
 
+# The agent jobs here skip while the repo variable PIPELINE_PAUSED is 'true' — see README.
+
 on:
   schedule:
     # Wednesday — a day nothing else runs. The Product Owner is Monday,
@@ -24,6 +26,7 @@ concurrency:
 
 jobs:
   play:
+    if: vars.PIPELINE_PAUSED != 'true'
     runs-on: ubuntu-latest
     # Two minutes of watching, plus a reload, plus one model session bounded by
     # MAX_SESSION_MINUTES (12), plus setup and a Chromium install. Sized so the

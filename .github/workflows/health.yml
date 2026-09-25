@@ -1,5 +1,7 @@
 name: health
 
+# The agent jobs here skip while the repo variable PIPELINE_PAUSED is 'true' — see README.
+
 on:
   schedule:
     # After the day's last Builder run (14:00) has finished, so the numbers it
@@ -20,6 +22,7 @@ concurrency:
 
 jobs:
   measure:
+    if: vars.PIPELINE_PAUSED != 'true'
     runs-on: ubuntu-latest
     # No model, no browser, no session — it reads what the pipeline already wrote
     # down. Anything approaching this timeout is the GitHub API being slow.
