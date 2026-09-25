@@ -1661,6 +1661,24 @@ export function dependentsOf(issue, openIssues) {
     .sort((a, b) => priorityRank(a) - priorityRank(b));
 }
 
+/**
+ * The candidate the Scout named, or null when it named none of them.
+ *
+ * The Scout is a model, and its `issueNumber` is whatever it wrote: a number, a
+ * string, a ticket from memory rather than from the list. Taken on trust, a
+ * number outside the list became a stub ticket with an empty body, and the
+ * Builder was sent to fix a ticket nobody had offered — possibly one that is
+ * parked, claimed by an open PR, or already closed. A numeric string is still
+ * the model meaning a number, so it counts.
+ */
+export function chosenCandidate(issueNumber, candidates) {
+  const number = typeof issueNumber === "string" && /^\s*\d+\s*$/.test(issueNumber)
+    ? Number(issueNumber)
+    : issueNumber;
+  if (!Number.isInteger(number)) return null;
+  return candidates.find((candidate) => candidate.number === number) || null;
+}
+
 /** The `Blocked by:` line for an issue body, or "" when there are no deps. */
 export function dependencyLine(numbers) {
   const deps = (numbers || []).filter((n) => Number.isInteger(n) && n > 0);
