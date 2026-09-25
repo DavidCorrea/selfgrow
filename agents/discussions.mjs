@@ -168,6 +168,15 @@ export function collectPages(fetchPage, { until = () => false, maxPages = DISCUS
 }
 
 /**
+ * An `until` for collectPages that matches once `count` nodes have gone by, for a
+ * reader that wants the newest few rather than the whole category.
+ */
+export function untilSeen(count) {
+  let seen = 0;
+  return () => ++seen >= count;
+}
+
+/**
  * Every discussion in one category, newest first by `orderBy`, paged until
  * `until` matches. Returns [] when the category does not exist.
  *
@@ -702,23 +711,12 @@ export function emptyArchiveRefusal(plan, archived) {
 export function archiveProductMemory({ on = new Date() } = {}) {
   let nodes;
   try {
-    const repo = process.env.GITHUB_REPOSITORY || "";
-    const [owner, name] = repo.includes("/") ? repo.split("/") : [OWNER, ""];
-    const result = graphql(
-      `query($owner: String!, $name: String!) {
-         repository(owner: $owner, name: $name) {
-           discussions(first: 100, orderBy: {field: CREATED_AT, direction: DESC}) {
-             nodes {
-               id title authorAssociation
-               category { name }
-               labels(first: 10) { nodes { name } }
-             }
-           }
-         }
-       }`,
-      { owner, name }
-    );
-    nodes = result?.data?.repository?.discussions?.nodes || [];
+    // Every page of both categories a reset archives from. One page of the newest
+    // hundred discussions across the whole repository used to be the read, so a
+    // project with more history than that left its oldest journals in place for
+    // the next product to read as its own.
+    const fields = "id title authorAssociation category { name } labels(first: 10) { nodes { name } }";
+    nodes = [JOURNAL_CATEGORY, LESSON_CATEGORY].flatMap((category) => readCategory(category, fields));
   } catch (e) {
     log("warn", "Discussions: could not archive product memory — do it by hand before starting.", errorData(e));
     return 0;
@@ -799,37 +797,30 @@ const DECISION_BODIES = Number(process.env.DECISION_BODIES || 4);
  */
 export function readDecisions({ bodies = DECISION_BODIES } = {}) {
   try {
-    const repo = process.env.GITHUB_REPOSITORY || "";
-    const [owner, name] = repo.includes("/") ? repo.split("/") : [OWNER, ""];
-    const result = graphql(
-      `query($owner: String!, $name: String!) {
-         repository(owner: $owner, name: $name) {
-           discussions(first: 100, orderBy: {field: UPDATED_AT, direction: DESC}) {
-             nodes { number title body updatedAt authorAssociation category { name } }
-           }
-         }
-       }`,
-      { owner, name }
-    );
-    const nodes = result?.data?.repository?.discussions?.nodes || [];
-    return nodes
-      .filter(
-        (d) =>
-          d.category?.name === DECISION_CATEGORY &&
-          isTrustedAuthor(d.authorAssociation) &&
-          !String(d.title || "").startsWith("[archived ")
-      )
-      .map((d, index) => ({
-        number: d.number,
-        title: d.title,
-        // Only the recent ones carry their reasoning. The rest are a title the
-        // reader can notice and ask about.
-        body: index < Math.max(0, bodies) ? (d.body || "").trim() : "",
-      }));
+    // Every page: all titles go to the reader, and a decision past the first
+    // hundred is still settled.
+    const nodes = readCategory(DECISION_CATEGORY, "number title body authorAssociation", { orderBy: "UPDATED_AT" });
+    return selectDecisions(nodes, { bodies });
   } catch (e) {
     log("warn", "Discussions: could not read the decisions — continuing without them.", errorData(e));
     return [];
   }
+}
+
+/**
+ * The decisions a reader may rely on, newest first: trusted and not archived,
+ * with only the first `bodies` of them carrying their reasoning.
+ */
+export function selectDecisions(nodes, { bodies = DECISION_BODIES } = {}) {
+  return nodes
+    .filter((d) => isTrustedAuthor(d.authorAssociation) && !String(d.title || "").startsWith("[archived "))
+    .map((d, index) => ({
+      number: d.number,
+      title: d.title,
+      // Only the recent ones carry their reasoning. The rest are a title the
+      // reader can notice and ask about.
+      body: index < Math.max(0, bodies) ? (d.body || "").trim() : "",
+    }));
 }
 
 /** Render decisions for a prompt: the reasoning for recent ones, titles for the rest. */
@@ -858,29 +849,19 @@ export function renderDecisions(decisions) {
  */
 export function readInboundIdeas({ limit = 5, comments = 3 } = {}) {
   try {
-    const repo = process.env.GITHUB_REPOSITORY || "";
-    const [owner, name] = repo.includes("/") ? repo.split("/") : [OWNER, ""];
-    const result = graphql(
-      `query($owner: String!, $name: String!, $comments: Int!) {
-         repository(owner: $owner, name: $name) {
-           discussions(first: 50, states: OPEN, orderBy: {field: CREATED_AT, direction: DESC}) {
-             nodes {
-               number title body createdAt authorAssociation
-               author { login }
-               category { name }
-               comments(last: $comments) {
-                 nodes { body authorAssociation author { login } }
-               }
-             }
-           }
-         }
-       }`,
-      { owner, name, comments: Math.max(1, Number(comments)) }
+    const wanted = Math.max(1, limit);
+    // Interpolated rather than a variable because readCategory takes none; `| 0`
+    // makes it an integer whatever the caller passed, so nothing but digits can
+    // reach the document.
+    const replies = Math.max(1, Number(comments) | 0);
+    const nodes = readCategory(
+      IDEAS_CATEGORY,
+      `number title body createdAt authorAssociation author { login }
+       comments(last: ${replies}) { nodes { body authorAssociation author { login } } }`,
+      { filter: "states: OPEN,", until: untilSeen(wanted) }
     );
-    const nodes = result?.data?.repository?.discussions?.nodes || [];
     return nodes
-      .filter((d) => d.category?.name === IDEAS_CATEGORY)
-      .slice(0, Math.max(1, limit))
+      .slice(0, wanted)
       .map((d) => ({
         number: d.number,
         title: d.title,
