@@ -77,8 +77,10 @@ const HARNESS_PATHS = [
 ];
 
 // Only branches the agents create are touched. A human's work-in-progress branch
-// is not this script's business.
-const AGENT_BRANCH_PREFIX = "agent/";
+// is not this script's business. Deliberately wider than shared.mjs's
+// AGENT_BRANCH_PREFIX ("agent/issue-"), which names ticket branches: a reset
+// sweeps every branch any agent ever made, whatever it was for.
+const AGENT_BRANCH_NAMESPACE = "agent/";
 
 function sh(cmd) {
   return execSync(cmd, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 }).toString();
@@ -148,7 +150,7 @@ function clearAgentBranches() {
 
   // closePR deletes the head branch too, so the sweep below only has to catch
   // branches orphaned by a crashed run — ones that never got a PR.
-  const agentPRs = openPRs.filter((pr) => pr.headRefName.startsWith(AGENT_BRANCH_PREFIX));
+  const agentPRs = openPRs.filter((pr) => pr.headRefName.startsWith(AGENT_BRANCH_NAMESPACE));
   log("info", `Closing ${agentPRs.length} open agent PR(s)...`);
   for (const pr of agentPRs) {
     closePR(pr.number, "Closing as part of a project reset — this work belongs to the previous product.");
@@ -156,7 +158,7 @@ function clearAgentBranches() {
 
   let branches = [];
   try {
-    branches = sh(`git ls-remote --heads origin "refs/heads/${AGENT_BRANCH_PREFIX}*"`)
+    branches = sh(`git ls-remote --heads origin "refs/heads/${AGENT_BRANCH_NAMESPACE}*"`)
       .split("\n")
       .map((line) => line.split("refs/heads/")[1])
       .filter(Boolean);
