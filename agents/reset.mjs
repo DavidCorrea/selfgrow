@@ -7,15 +7,16 @@
 //      Builder and vice versa, so a queued signal fired mid-reset would happily
 //      repopulate the board we are about to empty.
 //   2. Close every open issue.
-//   3. Close agent PRs and delete their branches.
-//   4. Remove every item from the board (after closing, so closed-→-Done items
+//   3. Close every open milestone (after the issues, so its counts are final).
+//   4. Close agent PRs and delete their branches.
+//   5. Remove every item from the board (after closing, so closed-→-Done items
 //      go too). Keeps the columns — the new project needs the same five.
-//   5. Reset the wiki's memory pages.
-//   6. Delete the accumulated `attempts:N` labels.
-//   7. Delete the old product (everything outside HARNESS_PATHS) on a branch,
-//      and land it on main through a pull request once the required checks pass.
-//   8. Archive the product-scoped discussion memory: every role journal, and the
+//   6. Reset the wiki's memory pages.
+//   7. Archive the product-scoped discussion memory: every role journal, and the
 //      lesson threads labelled `product`. Renamed, not deleted.
+//   8. Delete the accumulated `attempts:N` labels.
+//   9. Delete the old product (everything outside HARNESS_PATHS) on a branch,
+//      and land it on main through a pull request once the required checks pass.
 //
 // What it deliberately does NOT touch:
 //   - `Vision.md` — the new one is yours to write, and it is the single input
@@ -26,6 +27,9 @@
 //   - Closed issues — GitHub keeps them as history and they cannot be deleted
 //     via the API. The Product Manager only ever reads OPEN issues, so they are
 //     inert; they just remain visible to humans.
+//   - Milestones, beyond closing them — they are history the way closed issues
+//     are. The Product Owner only ever reads the OPEN one, so a closed milestone
+//     is never mistaken for the new product's.
 //
 // Guarded by a typed confirmation (see requireConfirmation), because every other
 // agent here only adds and this one is irreversible in the directions that matter.
@@ -109,7 +113,8 @@ const ghJson = (argv) => JSON.parse(ghExec(argv));
 // What a failed step must never do is let the run end on "Reset complete": a
 // board that could not be listed was a warning in the middle of the log, and the
 // run then reported success with the previous product's tickets still on it.
-const notDone = [];
+// Exported so a test can see what a step reported.
+export const notDone = [];
 
 /**
  * The message a reset ends on when something was not done, or null when it all
@@ -178,6 +183,37 @@ export function closeAllIssues() {
     } catch (e) {
       log("warn", `Could not close #${issue.number}`, errorData(e));
       notDone.push(`close issue #${issue.number}`);
+    }
+  }
+}
+
+/**
+ * Close every open milestone. Closed, not deleted: like closed issues, they are
+ * the previous product's history.
+ *
+ * Left open, the old product's milestone is the first thing the new product's
+ * Product Owner reads as "the current milestone". It did exactly that: closed
+ * the old one as delivered, wrote a retro about a product that no longer exists
+ * into its fresh journal, and carried its vocabulary into the new milestone.
+ * Runs after closeAllIssues so the counts it closes on are final.
+ */
+export function closeAllMilestones() {
+  let milestones = [];
+  try {
+    milestones = ghJson(["api", "repos/{owner}/{repo}/milestones?state=open&per_page=100"]);
+  } catch (e) {
+    log("warn", "Could not list milestones — skipping milestone cleanup.", errorData(e));
+    notDone.push("close the open milestones (could not list them)");
+    return;
+  }
+  log("info", `Closing ${milestones.length} open milestone(s)...`);
+  for (const milestone of milestones) {
+    try {
+      ghExec(["api", "--method", "PATCH", `repos/{owner}/{repo}/milestones/${milestone.number}`, "-f", "state=closed"]);
+      log("info", `Closed milestone "${milestone.title}".`);
+    } catch (e) {
+      log("warn", `Could not close milestone "${milestone.title}"`, errorData(e));
+      notDone.push(`close milestone "${milestone.title}" (#${milestone.number})`);
     }
   }
 }
@@ -462,6 +498,7 @@ async function main() {
   log("info", "=== RESET — fresh-project cleanup ===");
   cancelPendingRuns();
   closeAllIssues();
+  closeAllMilestones();
   clearAgentBranches();
   clearBoard();
   resetWikiMemory();
