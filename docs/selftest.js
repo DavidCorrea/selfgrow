@@ -429,6 +429,10 @@ export async function checks() {
             }
           }
         }
+        // Check offlineSummaryVisible field
+        if (typeof result.offlineSummaryVisible !== "boolean") {
+          problems.push(`read-state should return offlineSummaryVisible as a boolean, got ${JSON.stringify(result.offlineSummaryVisible)}.`);
+        }
         // Check upgradeLevel field
         if (typeof result.upgradeLevel !== "number" || result.upgradeLevel < 0) {
           problems.push(`read-state should return upgradeLevel as a non-negative number, got ${JSON.stringify(result.upgradeLevel)}.`);
@@ -593,6 +597,32 @@ export async function checks() {
         }
       }
     }
+  }
+
+  // ─── Offline panel CSS property checks ──────────────────────
+
+  const offlinePanel = document.querySelector(".offline-panel");
+  if (!offlinePanel) {
+    problems.push("Expected .offline-panel to exist in the DOM — it was not found.");
+  } else {
+    // Temporarily show the overlay to compute styles
+    const overlay = document.getElementById("offline-summary");
+    const wasHidden = overlay ? overlay.hidden : true;
+    if (overlay) overlay.hidden = false;
+
+    const panelStyle = getComputedStyle(offlinePanel);
+    const overflow = panelStyle.overflow;
+    if (overflow !== "hidden") {
+      problems.push(`Expected .offline-panel overflow to be "hidden", got "${overflow}". Content may overflow panel bounds on small viewports.`);
+    }
+
+    const minHeight = parseFloat(panelStyle.minHeight);
+    if (isNaN(minHeight) || minHeight < 180) {
+      problems.push(`Expected .offline-panel min-height to be at least 180px, got ${panelStyle.minHeight}. Panel may collapse on small viewports.`);
+    }
+
+    // Restore overlay state
+    if (overlay) overlay.hidden = wasHidden;
   }
 
   return problems;

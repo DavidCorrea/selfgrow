@@ -23,6 +23,7 @@ function withGoal(s) {
     rate: s.rate,
     timestamp: s.timestamp,
     upgradeLevel: s.upgradeLevel,
+    offlineSummaryVisible: !document.getElementById('offline-summary')?.hidden,
     firstGoal: {
       target: GOAL_WOOD,
       current: Math.min(s.wood, GOAL_WOOD),
@@ -55,7 +56,8 @@ export function tools() {
       name: "read-state",
       description: "Returns the current game state the page is showing to the "
         + "visitor: wood count, accumulation rate, number of upgrades crafted, "
-        + "timestamp, and the current goal (first goal or upgrade goal).",
+        + "timestamp, whether the offline-summary overlay is currently visible, "
+        + "and the current goal (first goal or upgrade goal).",
       inputSchema: { type: "object", properties: {} },
       annotations: { readOnlyHint: true },
       example: {},
