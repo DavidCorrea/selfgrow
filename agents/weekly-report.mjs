@@ -130,7 +130,7 @@ export function renderDigest(week, narrative, milestone) {
 
 // Where the digest is published. Announcements is the category for a maintainer
 // telling everyone what happened, which is exactly what this is.
-const DIGEST_CATEGORY = process.env.DIGEST_CATEGORY || "Announcements";
+export const DIGEST_CATEGORY = process.env.DIGEST_CATEGORY || "Announcements";
 
 /**
  * Write the Story page and file the week's digest.
