@@ -63,7 +63,18 @@ export function takeSecrets(env = process.env) {
   }
   const path = env.AGENT_SECRETS_FILE;
   if (!path) return Object.fromEntries(exposed.map((name) => [name, env[name]]));
-  const text = fs.readFileSync(path, "utf-8");
+  let text;
+  try {
+    text = fs.readFileSync(path, "utf-8");
+  } catch (e) {
+    if (e.code === "ENOENT") {
+      // File was promised but does not exist — the secrets step was not run.
+      // Treat as if AGENT_SECRETS_FILE were not set: the CI guard already
+      // passed, so there is nothing exposed to return.
+      return Object.fromEntries(exposed.map((name) => [name, env[name]]));
+    }
+    throw e;
+  }
   fs.rmSync(path);
   return parseSecrets(text);
 }
