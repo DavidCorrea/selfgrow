@@ -2342,6 +2342,11 @@
           if (pool[transitionKey]) {
             const phrase = pickTransitionPhrase(transitionKey, pool);
             if (phrase) injectTransitionAcknowledgment(phrase);
+            /* Gentle wind-gain swell accent on the phase flip (issue #824).
+             * The _lastTimePhase guard above dedupes, so the accent fires
+             * exactly once per display change — the continuous smooth ramps
+             * driven by updateAudioWeather never reach this observer. */
+            ambientAudio.accentWindSwell(transitionKey);
           }
           _lastTimePhase = currentText;
         }
@@ -2352,6 +2357,7 @@
           if (pool[transitionKey]) {
             const phrase = pickTransitionPhrase(transitionKey, pool);
             if (phrase) injectTransitionAcknowledgment(phrase);
+            ambientAudio.accentWindSwell(transitionKey);
           }
           _lastWeatherPhase = currentText;
         }
@@ -2384,6 +2390,19 @@
     window.__gardenState._injectTransitionAcknowledgment = injectTransitionAcknowledgment;
     window.__gardenState.FALLBACK_PHRASES = FALLBACK_PHRASES;
     window.__gardenState.pickFallbackPhrase = pickFallbackPhrase;
+    /* Expose the last wind swell accent (issue #824) so selftest can verify
+     * the accent fired on the expected transition key. Backed by the audio
+     * module's own state so the hook can never drift from what was played. */
+    Object.defineProperty(window.__gardenState, '_lastAccentTransitionKey', {
+      get: function() { return ambientAudio.state.lastAccentTransitionKey; },
+      enumerable: true,
+      configurable: true
+    });
+    Object.defineProperty(window.__gardenState, '_lastAccentTime', {
+      get: function() { return ambientAudio.state.lastAccentTime; },
+      enumerable: true,
+      configurable: true
+    });
     Object.defineProperty(window.__gardenState, '_pageLoadGrace', {
       get: function() { return _pageLoadGrace; },
       enumerable: true,

@@ -26,7 +26,7 @@
  * on first user interaction (click/tap) to comply with autoplay policies.
  *
  * Exports:
- *   createAmbientAudio() → { start, stop, update(weatherPhase, timeOfDay), resumeOnInteraction, state }
+ *   createAmbientAudio() → { start, stop, update(weatherPhase, timeOfDay), resumeOnInteraction, accentWindSwell(transitionKey), state }
  */
 
 import { isReducedMotion } from "./motion.js";
@@ -257,6 +257,7 @@ export function createAmbientAudio() {
   let windSource = null;
   let windFilter = null;
   let windGain = null;
+  let swellGain = null;   // passthrough gain (1.0) used for transition accents
   let rainSource = null;
   let rainFilter = null;
   let rainGain = null;
@@ -287,7 +288,11 @@ export function createAmbientAudio() {
     cricketChirpCount: 0,
     cricketChirpIntervalSec: 0,
     isPlaying: false,
-    isStarted: false
+    isStarted: false,
+    lastAccentTransitionKey: null,   // "OldPhase→NewPhase" of the last wind swell
+    lastAccentTime: 0,               // Date.now() when the last accent fired
+    lastAccentSuppressed: false,     // true when the accent was skipped
+    lastAccentSuppressionReason: 'none' // 'none' | 'reduced-motion' | 'no-nodes'
   };
 
   /**
@@ -318,8 +323,9 @@ export function createAmbientAudio() {
   }
 
   /**
-   * Create the wind noise source: white noise → lowpass filter → gain → output.
-   * The lowpass filter shapes the noise into a soft whoosh.
+   * Create the wind noise source: white noise → lowpass filter → gain →
+   * swell gain → output. The lowpass filter shapes the noise into a soft
+   * whoosh; the swell gain stays at unity except for brief transition accents.
    */
   function startWind() {
     if (windSource) return;
@@ -339,9 +345,16 @@ export function createAmbientAudio() {
     windGain = ctx.createGain();
     windGain.gain.value = 0;
 
+    /* swellGain sits between windGain and the destination at unity, so the
+     * continuous wind gain automation driven by update() is untouched. The
+     * transition accent modulates only swellGain.gain (1.0 → peak → 1.0). */
+    swellGain = ctx.createGain();
+    swellGain.gain.value = 1.0;
+
     windSource.connect(windFilter);
     windFilter.connect(windGain);
-    windGain.connect(ctx.destination);
+    windGain.connect(swellGain);
+    swellGain.connect(ctx.destination);
 
     windSource.start();
   }
@@ -477,6 +490,7 @@ export function createAmbientAudio() {
     if (windFilter) { windFilter.disconnect(); windFilter = null; }
     if (rainFilter) { rainFilter.disconnect(); rainFilter = null; }
     if (windGain) { windGain.disconnect(); windGain = null; }
+    if (swellGain) { swellGain.disconnect(); swellGain = null; }
     if (rainGain) { rainGain.disconnect(); rainGain = null; }
 
     isStarted = false;
@@ -598,5 +612,55 @@ export function createAmbientAudio() {
     }
   }
 
-  return { start, stop, update, resumeOnInteraction, state };
+  /**
+   * Acoustic accent for weather and time-of-day phase transitions.
+   *
+   * Modulates swellGain (unity → 30% above → unity) so the ambient wind
+   * briefly swells — an audible "moment" coordinated with the transition
+   * acknowledgment text. Only swellGain is automated, so this never
+   * conflicts with the continuous setTargetAtTime ramps from update().
+   *
+   * Firing metadata is always recorded on state so selftest can verify the
+   * accent happened, but the actual audio modulation is skipped under
+   * prefers-reduced-motion or when no AudioContext exists yet.
+   *
+   * @param {string} transitionKey — "OldPhase→NewPhase", e.g. 'Clear→Overcast'
+   */
+  function accentWindSwell(transitionKey) {
+    // Record the accent unconditionally — selftest verifies it fired.
+    state.lastAccentTransitionKey = transitionKey;
+    state.lastAccentTime = Date.now();
+    state.lastAccentSuppressed = false;
+    state.lastAccentSuppressionReason = 'none';
+
+    // Under prefers-reduced-motion the swell is deliberately silent; the
+    // continuous wind ramp still behaves normally, just without the accent.
+    if (isReducedMotion()) {
+      state.lastAccentSuppressed = true;
+      state.lastAccentSuppressionReason = 'reduced-motion';
+      return;
+    }
+    if (!audioContext || !windGain || !swellGain) {
+      // Before the first user gesture there is no AudioContext; record the
+      // intent so the metadata hook stays truthful about what was requested.
+      state.lastAccentSuppressed = true;
+      state.lastAccentSuppressionReason = 'no-nodes';
+      return;
+    }
+
+    const now = audioContext.currentTime;
+    const peakMultiplier = 1.3;  // rise 30% above the intended target gain
+    const attackS = 0.5;         // swell up to the peak
+    const holdS = 0.5;           // hold at the peak
+    const decayS = 0.9;          // settle back to unity
+
+    // Cancel any in-flight accent so a new transition always starts clean.
+    swellGain.gain.cancelScheduledValues(now);
+    swellGain.gain.setValueAtTime(swellGain.gain.value, now);
+    swellGain.gain.linearRampToValueAtTime(peakMultiplier, now + attackS);
+    swellGain.gain.setValueAtTime(peakMultiplier, now + attackS + holdS);
+    swellGain.gain.linearRampToValueAtTime(1.0, now + attackS + holdS + decayS);
+  }
+
+  return { start, stop, update, resumeOnInteraction, accentWindSwell, state };
 }
