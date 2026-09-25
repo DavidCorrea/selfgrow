@@ -7,7 +7,9 @@
 // the chain without ever bumping pi is how it drifts years behind.
 //
 // The run is a no-op unless the version actually moves, so a week with no pi
-// release costs nothing at all — no requests, no PR, no commit.
+// release costs nothing at all — no requests, no PR, no commit. "Moves" means to
+// the newest release that has been public for MIN_RELEASE_AGE_DAYS, not the
+// newest release.
 //
 // What it does about the chain: it ASSERTS it, and nothing more. If an id is gone
 // from the new pi's registry, the whole bump is REVERTED and an issue is filed.
@@ -26,6 +28,7 @@
 import { execFileSync, spawnSync } from "child_process";
 import fs from "fs";
 import { join } from "path";
+import { pathToFileURL } from "url";
 import {
   log,
   logGroup,
@@ -85,12 +88,54 @@ function installedVersion() {
   }
 }
 
-function latestVersion() {
-  return execFileSync("npm", ["view", PI_PACKAGE, "version"], {
-    cwd: repoRoot,
-    encoding: "utf-8",
-    maxBuffer: 10 * 1024 * 1024,
-  }).trim();
+// How long a release must have been public before this installs it. The bump
+// merges itself with no human in the loop, and pi runs holding the model key and
+// a PAT — so "the moment it is published" is exactly the window a hijacked or
+// broken release is live before anyone has noticed and pulled it. A week is a
+// fair price for letting the rest of the ecosystem find out first.
+export const MIN_RELEASE_AGE_DAYS = Number(process.env.PI_MIN_RELEASE_AGE_DAYS || 7);
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const STABLE_VERSION = /^\d+\.\d+\.\d+$/;
+
+/** Negative, zero or positive as `a` is older than, equal to or newer than `b` (x.y.z only). */
+export function compareVersions(a, b) {
+  const [pa, pb] = [a, b].map((v) => v.split(".").map(Number));
+  for (let i = 0; i < 3; i++) {
+    if (pa[i] !== pb[i]) return pa[i] - pb[i];
+  }
+  return 0;
+}
+
+/**
+ * The newest stable version published at least `minAgeDays` before `now`, or null.
+ *
+ * Takes `npm view <pkg> time versions dist-tags --json`. Only versions still in
+ * `versions` count (the time map keeps unpublished ones), prereleases never do,
+ * and nothing above the `latest` tag does — a maintainer moving `latest` back is
+ * how a bad release is withdrawn, and the age alone would not see that.
+ */
+export function newestSettledVersion(registry, { minAgeDays, now }) {
+  const latest = registry["dist-tags"]?.latest;
+  const cutoff = now - minAgeDays * DAY_MS;
+  const settled = (registry.versions || []).filter(
+    (version) =>
+      STABLE_VERSION.test(version) &&
+      (!latest || compareVersions(version, latest) <= 0) &&
+      Date.parse(registry.time?.[version]) <= cutoff
+  );
+  return settled.sort(compareVersions).at(-1) ?? null;
+}
+
+function settledVersion() {
+  const registry = JSON.parse(
+    execFileSync("npm", ["view", PI_PACKAGE, "time", "versions", "dist-tags", "--json"], {
+      cwd: repoRoot,
+      encoding: "utf-8",
+      maxBuffer: 10 * 1024 * 1024,
+    })
+  );
+  return newestSettledVersion(registry, { minAgeDays: MIN_RELEASE_AGE_DAYS, now: Date.now() });
 }
 
 // ---------------------------------------------------------------------------
@@ -120,7 +165,7 @@ function revertBump() {
 
 function buildPrBody({ from, to, report }) {
   const lines = [
-    `Bumps \`${PI_PACKAGE}\` from **${from}** to **${to}**.`,
+    `Bumps \`${PI_PACKAGE}\` from **${from}** to **${to}** — the newest release public for at least ${MIN_RELEASE_AGE_DAYS} day(s).`,
     "",
     "## Model chain",
     "",
@@ -142,28 +187,37 @@ async function main() {
   configureGitIdentity();
 
   const from = installedVersion();
-  const to = latestVersion();
-  log("info", `${PI_PACKAGE}: installed ${from || "(unknown)"}, latest ${to}.`);
+  const to = settledVersion();
+  log(
+    "info",
+    `${PI_PACKAGE}: installed ${from || "(unknown)"}, newest release at least ` +
+      `${MIN_RELEASE_AGE_DAYS} day(s) old ${to || "(none)"}.`
+  );
 
   if (!from) {
     log("error", "pi is not installed — run `npm ci` first. Nothing to compare against.");
     printRunSummary("pi update");
     process.exit(1);
   }
+  // Never a downgrade: a pi installed by hand can be newer than anything settled.
+  const isUpgrade = Boolean(to) && compareVersions(to, from) > 0;
   // Report what a real run would do and stop — no install, no branch, no requests.
   // The only safe way to exercise this script outside CI, since everything after
   // this point mutates the repo.
   if (process.argv.includes("--dry-run")) {
-    log("info", from === to
-      ? "Dry run: already on the latest pi — a real run would exit here having spent nothing."
+    log("info", !isUpgrade
+      ? "Dry run: already on the newest settled pi — a real run would exit here having spent nothing."
       : `Dry run: a real run would branch, install pi ${to}, re-check the chain (${readModelChain().length} model(s)), and open a self-merging PR.`);
     printRunSummary("pi update (dry run)");
     return;
   }
 
-  if (from === to) {
-    log("info", "Already on the latest pi — nothing to do (no requests spent, no PR opened).");
-    appendJobSummary(`## pi update\n\nAlready on \`${PI_PACKAGE}\` **${to}** — no change.`);
+  if (!isUpgrade) {
+    log("info", "Already on the newest settled pi — nothing to do (no requests spent, no PR opened).");
+    appendJobSummary(
+      `## pi update\n\nOn \`${PI_PACKAGE}\` **${from}**; no newer release has been public for ` +
+        `${MIN_RELEASE_AGE_DAYS} day(s) — no change.`
+    );
     printRunSummary("pi update");
     return;
   }
@@ -273,8 +327,10 @@ async function main() {
   printRunSummary("pi update");
 }
 
-main().catch((err) => {
-  log("error", `pi update failed: ${err.message || err}`, errorData(err));
-  printRunSummary("pi update");
-  process.exit(1);
-});
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  main().catch((err) => {
+    log("error", `pi update failed: ${err.message || err}`, errorData(err));
+    printRunSummary("pi update");
+    process.exit(1);
+  });
+}
