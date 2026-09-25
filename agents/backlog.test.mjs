@@ -4,6 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  isAlreadyTracked,
   attemptCount,
   isBlocked,
   dependencyNumbers,
@@ -51,6 +52,26 @@ test("declaring what a ticket waits for", async (t) => {
 
   await t.test("treats a missing body as no dependencies", () => {
     assert.deepEqual(dependencyNumbers({ number: 5 }), []);
+  });
+});
+
+test("recognising work that is already on the board", async (t) => {
+  await t.test("matches a title regardless of case and surrounding space", () => {
+    assert.equal(isAlreadyTracked("  Split garden.js ", [issue(5, { title: "split GARDEN.JS" })]), true);
+  });
+
+  await t.test("counts a parked ticket, which is off the buildable list but still open", () => {
+    const parked = issue(5, { title: "Split garden.js", labels: ["blocked"] });
+    assert.equal(isAlreadyTracked("Split garden.js", [parked]), true);
+  });
+
+  await t.test("counts a ticket still waiting on a prerequisite", () => {
+    const waiting = issue(5, { title: "Split garden.js", body: "Blocked by: #3" });
+    assert.equal(isAlreadyTracked("Split garden.js", [issue(3), waiting]), true);
+  });
+
+  await t.test("finds nothing when no open ticket has the title", () => {
+    assert.equal(isAlreadyTracked("Split garden.js", [issue(5, { title: "Add rain" })]), false);
   });
 });
 

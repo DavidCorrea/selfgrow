@@ -30,6 +30,7 @@ import {
   closeIssue,
   createIssue,
   TECH_DEBT_LABEL,
+  isAlreadyTracked,
   moveCard,
   createPR,
   agentPullRequestBody,
@@ -293,9 +294,12 @@ function planningFailure(ctx, stage) {
  * could interleave: nothing stopped them. Passing an explicit context is what
  * makes each stage nameable and separately readable.
  */
-function newTicketContext({ openIssues, vision, deadline }) {
+function newTicketContext({ openIssues, boardIssues, vision, deadline }) {
   return {
+    // The buildable candidates the Scout chooses from.
     openIssues,
+    // Every open ticket, buildable or not — what a new ticket is deduped against.
+    boardIssues,
     vision,
     deadline,
     // The ticket being addressed, once the Scout has picked one.
@@ -699,10 +703,7 @@ async function landAndRecord(ctx) {
 function fileTechDebt(ctx) {
   const debt = ctx.builderTechDebt;
   if (!debt || !debt.title || !debt.body) return;
-  const duplicate = ctx.openIssues.some(
-    (i) => (i.title || "").toLowerCase().trim() === debt.title.toLowerCase().trim()
-  );
-  if (duplicate) {
+  if (isAlreadyTracked(debt.title, ctx.boardIssues)) {
     log("info", `Tech debt: "${debt.title}" already tracked — skipping.`);
     return;
   }
@@ -743,8 +744,8 @@ async function runToMerge(ctx, plan) {
   }
 }
 
-async function buildTicket(openIssues, vision, deadline) {
-  const ctx = newTicketContext({ openIssues, vision, deadline });
+async function buildTicket(openIssues, boardIssues, vision, deadline) {
+  const ctx = newTicketContext({ openIssues, boardIssues, vision, deadline });
 
   for (let attempt = 1; attempt <= MAX_SCOUT_RETRIES; attempt++) {
     log("info", `=== Scout Attempt ${attempt}/${MAX_SCOUT_RETRIES} ===`);
@@ -1012,7 +1013,7 @@ async function main() {
     }
 
     log("info", `=== Ticket ${n}/${MAX_TICKETS_PER_RUN} — ${candidates.length} buildable ticket(s) on the board ===`);
-    const result = await buildTicket(candidates, vision, deadline);
+    const result = await buildTicket(candidates, open, vision, deadline);
 
     if (result.addressedIssue) attempted.add(result.addressedIssue);
     if (result.outcome === "merged") {
