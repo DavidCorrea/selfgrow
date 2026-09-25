@@ -358,7 +358,7 @@ export const LESSON_CATEGORY = process.env.LESSON_CATEGORY || "Lessons";
 const JOURNAL_TAIL = Number(process.env.JOURNAL_TAIL || 3);
 
 /** Find a discussion by title prefix in a category, open or closed. */
-function findDiscussion(category, prefix) {
+export function findDiscussion(category, prefix) {
   const isMine = (d) => isOwnThread(d, category, prefix);
   const nodes = readCategory(category, "id number title url authorAssociation category { name }", { until: isMine });
   const mine = nodes.find(isMine) || null;

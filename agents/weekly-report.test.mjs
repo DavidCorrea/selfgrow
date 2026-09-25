@@ -2,7 +2,16 @@
 // response is split between the two pages it has to serve.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { splitReport, cleanMarkdown, gatherWeek, renderDigest } from "./weekly-report.mjs";
+import {
+  splitReport,
+  cleanMarkdown,
+  gatherWeek,
+  renderDigest,
+  digestWeekStart,
+  digestTitlePrefix,
+  digestTitle,
+  reportChangelog,
+} from "./weekly-report.mjs";
 
 const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 const issue = (number, title, labels = []) => ({ number, title, labels: labels.map((name) => ({ name })) });
@@ -92,5 +101,44 @@ test("writing the digest", async (t) => {
 
   await t.test("asks the reader for nothing", () => {
     assert.match(renderDigest(week, "x", null), /Nothing here needs a reply/);
+  });
+});
+
+test("knowing which week a digest belongs to", async (t) => {
+  await t.test("names the same week for every run on the same day", () => {
+    // Three Sunday runs posted the week of 08-30 three times; the key they share
+    // is what lets the later ones find the first.
+    const early = digestWeekStart(new Date("2026-09-06T05:03:00Z"));
+    const late = digestWeekStart(new Date("2026-09-06T18:04:00Z"));
+    assert.equal(early, "2026-08-30");
+    assert.equal(late, early);
+  });
+
+  await t.test("finds a week's digest whatever it counted as shipped", () => {
+    const prefix = digestTitlePrefix("2026-08-30");
+    assert.ok(digestTitle("2026-08-30", 4).startsWith(prefix));
+    assert.ok(digestTitle("2026-08-30", 11).startsWith(prefix));
+  });
+
+  await t.test("does not mistake another week's digest for this one", () => {
+    assert.ok(!digestTitle("2026-09-06", 4).startsWith(digestTitlePrefix("2026-08-30")));
+  });
+});
+
+test("bounding the changelog the report reads", async (t) => {
+  const day = (date) => `## ${date}\n- shipped on ${date}\n`;
+  const dates = Array.from({ length: 30 }, (_, i) => daysAgo(i));
+  const changelog = `# Changelog\n\n${dates.map(day).join("\n")}`;
+
+  await t.test("keeps the newest two weeks of days", () => {
+    const bounded = reportChangelog(changelog);
+    assert.ok(bounded.includes(`shipped on ${dates[0]}`));
+    assert.ok(bounded.includes(`shipped on ${dates[13]}`));
+    assert.ok(!bounded.includes(`shipped on ${dates[14]}`));
+  });
+
+  await t.test("leaves a short changelog whole", () => {
+    const short = `# Changelog\n\n${dates.slice(0, 3).map(day).join("\n")}`;
+    assert.equal(reportChangelog(short), short);
   });
 });
