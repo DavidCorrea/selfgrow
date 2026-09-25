@@ -501,11 +501,17 @@ export function createFireflies(scene) {
       }
       return info;
     },
-    /** Whether the glow is currently active (any plant has emissiveIntensity > 0) */
+    /** Whether the glow is currently active (emissive colour matches warm glow tint) */
     isGlowActive: function() {
       var info = this.getPlantGlowInfo();
       for (var ref in info) {
-        if (info[ref].stemEmissiveIntensity > 0.001 || info[ref].leafEmissiveIntensity > 0.001) {
+        var plantObj = window.__gardenState && window.__gardenState[ref];
+        if (!plantObj || !plantObj.stemMat) continue;
+        // Check emissive colour — glow active only when colour is warm glow, not baseline plant colour
+        if (plantObj.stemMat.emissive && plantObj.stemMat.emissive.getHex() === WARM_GLOW_COLOR) {
+          return true;
+        }
+        if (plantObj.leafMat && plantObj.leafMat.emissive && plantObj.leafMat.emissive.getHex() === WARM_GLOW_COLOR) {
           return true;
         }
       }
@@ -1288,18 +1294,18 @@ export function createFireflies(scene) {
         }
       }
     } else {
-      // Reset glow — outside Night phase or fireflies invisible/zero opacity (winter, overcast)
+      // Reset glow — restore baseline emissive for minimum visibility (issue #816)
       for (let gi = 0; gi < plantGroups.length; gi++) {
         const group = plantGroups[gi];
         const plantObj = window.__gardenState && window.__gardenState[group.plantRef];
         if (!plantObj) continue;
         if (plantObj.stemMat) {
-          plantObj.stemMat.emissiveIntensity = 0;
-          plantObj.stemMat.emissive.setHex(0x000000);
+          plantObj.stemMat.emissiveIntensity = plantObj.baselineStemEmissiveIntensity || 0;
+          plantObj.stemMat.emissive.setHex(plantObj.baselineStemEmissiveHex || 0x000000);
         }
         if (plantObj.leafMat) {
-          plantObj.leafMat.emissiveIntensity = 0;
-          plantObj.leafMat.emissive.setHex(0x000000);
+          plantObj.leafMat.emissiveIntensity = plantObj.baselineLeafEmissiveIntensity || 0;
+          plantObj.leafMat.emissive.setHex(plantObj.baselineLeafEmissiveHex || 0x000000);
         }
       }
     }
