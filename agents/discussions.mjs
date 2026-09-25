@@ -136,6 +136,71 @@ export function isOwnThread(node, category, prefix) {
   return isTrustedAuthor(node.authorAssociation);
 }
 
+// How many pages of 100 a category read may take before it gives up. A thousand
+// threads in one category is far past anything this pipeline makes; the cap only
+// exists so a runaway cursor cannot loop forever.
+const DISCUSSION_PAGE_CAP = Number(process.env.DISCUSSION_PAGE_CAP || 10);
+
+/**
+ * Walk a paged connection until `until` matches a node or the pages run out.
+ * Returns every node seen.
+ *
+ * Lookups used to read one page of the newest 25-50 discussions across EVERY
+ * category, which works until it silently doesn't: once fifty newer threads
+ * exist, a role's journal falls off the page, find-or-create opens a duplicate,
+ * and the role has no memory from then on. Lessons lost their recurrence count
+ * the same way, and a health alert could no longer find itself to close.
+ *
+ * Hitting the cap THROWS rather than returning what it saw, because "not found"
+ * is an instruction to create — and a lookup that gave up early would open
+ * exactly the duplicate this exists to prevent.
+ */
+export function collectPages(fetchPage, { until = () => false, maxPages = DISCUSSION_PAGE_CAP, what = "discussions" } = {}) {
+  const nodes = [];
+  let after = null;
+  for (let page = 0; page < maxPages; page++) {
+    const connection = fetchPage(after);
+    const pageNodes = connection?.nodes || [];
+    nodes.push(...pageNodes);
+    if (pageNodes.some(until) || !connection?.pageInfo?.hasNextPage) return nodes;
+    after = connection.pageInfo.endCursor;
+  }
+  const message = `Discussions: read ${maxPages} pages of ${what} without reaching the end — raise DISCUSSION_PAGE_CAP.`;
+  log("error", message);
+  throw new Error(message);
+}
+
+/**
+ * Every discussion in one category, newest first by `orderBy`, paged until
+ * `until` matches. Returns [] when the category does not exist.
+ *
+ * Scoped by category id on the server, so other categories' traffic — the
+ * digest, ideas, decisions — can never push a thread out of reach. `fields` and
+ * `filter` are constants written here, never model text, so interpolating them
+ * does not break the variables-only rule in the header.
+ */
+function readCategory(category, fields, { orderBy = "CREATED_AT", filter = "", until } = {}) {
+  const target = resolveTarget(category);
+  if (!target) return [];
+  const repo = process.env.GITHUB_REPOSITORY || "";
+  const [owner, name] = repo.includes("/") ? repo.split("/") : [OWNER, ""];
+  const fetchPage = (after) =>
+    graphql(
+      `query($owner: String!, $name: String!, $categoryId: ID!, $after: String) {
+         repository(owner: $owner, name: $name) {
+           discussions(first: 100, after: $after, categoryId: $categoryId, ${filter}
+                       orderBy: {field: ${orderBy}, direction: DESC}) {
+             nodes { ${fields} }
+             pageInfo { hasNextPage endCursor }
+           }
+         }
+       }`,
+      // No cursor on the first page: graphql() would send a null as the string "null".
+      { owner, name, categoryId: target.categoryId, ...(after ? { after } : {}) }
+    )?.data?.repository?.discussions;
+  return collectPages(fetchPage, { until, what: `"${category}"` });
+}
+
 /**
  * Restrict new comments to accounts with write access, leaving the post publicly
  * readable. Best-effort: an unlocked memory post is worse than a locked one but
@@ -195,23 +260,15 @@ export function postDiscussion({ category, title, body, lock = true }) {
  */
 export function findOpenDiscussion(category, prefix) {
   try {
-    const repo = process.env.GITHUB_REPOSITORY || "";
-    const [owner, name] = repo.includes("/") ? repo.split("/") : [OWNER, ""];
-    const result = graphql(
-      `query($owner: String!, $name: String!) {
-         repository(owner: $owner, name: $name) {
-           discussions(first: 25, orderBy: {field: CREATED_AT, direction: DESC}) {
-             nodes { id number title url closed authorAssociation category { name } }
-           }
-         }
-       }`,
-      { owner, name }
-    );
-    const nodes = result?.data?.repository?.discussions?.nodes || [];
     // Authorship matters here too: this is how the standing health alert finds
     // itself, and a thread it wrongly adopted would be one it then edits and
     // closes on somebody else's behalf.
-    return nodes.find((d) => !d.closed && isOwnThread(d, category, prefix)) || null;
+    const isMine = (d) => isOwnThread(d, category, prefix);
+    const nodes = readCategory(category, "id number title url authorAssociation category { name }", {
+      filter: "states: OPEN,",
+      until: isMine,
+    });
+    return nodes.find(isMine) || null;
   } catch (e) {
     log("warn", "Discussions: could not read existing posts.", errorData(e));
     return null;
@@ -295,20 +352,9 @@ const JOURNAL_TAIL = Number(process.env.JOURNAL_TAIL || 3);
 
 /** Find a discussion by title prefix in a category, open or closed. */
 function findDiscussion(category, prefix) {
-  const repo = process.env.GITHUB_REPOSITORY || "";
-  const [owner, name] = repo.includes("/") ? repo.split("/") : [OWNER, ""];
-  const result = graphql(
-    `query($owner: String!, $name: String!) {
-       repository(owner: $owner, name: $name) {
-         discussions(first: 50, orderBy: {field: CREATED_AT, direction: DESC}) {
-           nodes { id number title url authorAssociation category { name } }
-         }
-       }
-     }`,
-    { owner, name }
-  );
-  const nodes = result?.data?.repository?.discussions?.nodes || [];
-  const mine = nodes.find((d) => isOwnThread(d, category, prefix)) || null;
+  const isMine = (d) => isOwnThread(d, category, prefix);
+  const nodes = readCategory(category, "id number title url authorAssociation category { name }", { until: isMine });
+  const mine = nodes.find(isMine) || null;
   if (!mine) {
     // Say so when something is WEARING the name — a thread that matches but was
     // written by somebody else is either a mis-set category or an attempt to plant
@@ -500,25 +546,16 @@ function findDiscussionSafely(category, title) {
  */
 export function readLessonThreads({ limit = 5 } = {}) {
   try {
-    const repo = process.env.GITHUB_REPOSITORY || "";
-    const [owner, name] = repo.includes("/") ? repo.split("/") : [OWNER, ""];
-    const result = graphql(
-      `query($owner: String!, $name: String!) {
-         repository(owner: $owner, name: $name) {
-           discussions(first: 50, orderBy: {field: UPDATED_AT, direction: DESC}) {
-             nodes {
-               title body updatedAt authorAssociation
-               category { name }
-               comments(last: 1) { totalCount nodes { body } }
-             }
-           }
-         }
-       }`,
-      { owner, name }
+    // Every lesson, not the most recently updated page: the ranking is by
+    // recurrence, and an old class seen many times is exactly the one a
+    // date-bounded read would drop.
+    const nodes = readCategory(
+      LESSON_CATEGORY,
+      "title body updatedAt authorAssociation comments(last: 1) { totalCount nodes { body } }",
+      { orderBy: "UPDATED_AT" }
     );
-    const nodes = result?.data?.repository?.discussions?.nodes || [];
     return nodes
-      .filter((d) => d.category?.name === LESSON_CATEGORY && isTrustedAuthor(d.authorAssociation))
+      .filter((d) => isTrustedAuthor(d.authorAssociation))
       .map((d) => ({
         title: d.title,
         occurrences: d.comments?.totalCount || 0,
