@@ -59,9 +59,15 @@ jobs:
     # person and the author check alone would stop excluding them. Every one would
     # then be reviewed a second time here, by a second model, on a second budget,
     # after the Devs had already reviewed and merged it.
+    #
+    # The RESET's PR is excluded by branch for the same reason: it is opened by
+    # the PAT too, and it only deletes the previous product. A Reviewer asked to
+    # judge that would be judging a decision the operator already made by typing
+    # the confirmation, and could push "fixes" onto the deletion.
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository &&
       !startsWith(github.event.pull_request.head.ref, 'agent/') &&
+      !startsWith(github.event.pull_request.head.ref, 'reset/') &&
       github.event.pull_request.user.login != 'github-actions[bot]' &&
       github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
