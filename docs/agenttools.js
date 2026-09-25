@@ -8,6 +8,8 @@
  * @module agenttools
  */
 
+import { getState } from "./engine.js";
+
 /**
  * @returns {Array<import("./webmcp.js").ToolDescriptor>}
  */
@@ -16,14 +18,18 @@ export function tools() {
     {
       name: "read-state",
       description: "Returns the current game state the page is showing to the "
-        + "visitor: resource counts, unlocked features, and any active progress. "
-        + "Initially returns an empty state — { resource: 0 } — until the game "
-        + "engine ships.",
+        + "visitor: wood count, accumulation rate, and the timestamp of the "
+        + "last tick or save.",
       inputSchema: { type: "object", properties: {} },
       annotations: { readOnlyHint: true },
       example: {},
       async execute() {
-        return { resource: 0 };
+        const s = getState();
+        return {
+          wood: s.wood,
+          rate: s.rate,
+          timestamp: s.timestamp,
+        };
       },
     },
   ];

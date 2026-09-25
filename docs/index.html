@@ -210,8 +210,12 @@
   <section class="panel" id="status-bar" role="region" aria-label="Game status">
     <div class="game-title" aria-hidden="true">selfgrow</div>
     <div class="stat">
-      <span class="stat-label" id="gp-label">Grow Points</span>
-      <span class="stat-value" id="gp-value" aria-labelledby="gp-label">0</span>
+      <span class="stat-label" id="wood-label">Wood</span>
+      <span class="stat-value" id="wood-value" aria-labelledby="wood-label">0</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label" id="rate-label">Rate</span>
+      <span class="stat-value" id="rate-value" aria-labelledby="rate-label">0.1/s</span>
     </div>
     <div class="stat">
       <span class="stat-label" id="tick-label">Tick</span>
@@ -230,9 +234,34 @@
     </span>
   </section>
 
-  <!-- ═══ Agent tool harness ═══ -->
+  <!-- ═══ Engine + live UI render loop ═══ -->
   <script type="module">
     import "./webmcp.js";
+    import { init, getState } from "./engine.js";
+
+    init();
+
+    const stateEl = document.getElementById("wood-value");
+    const rateEl = document.getElementById("rate-value");
+    const tickEl = document.getElementById("tick-value");
+
+    function renderUI() {
+      const s = getState();
+      if (stateEl) {
+        stateEl.textContent = Number.isInteger(s.wood)
+          ? String(Math.floor(s.wood))
+          : s.wood.toFixed(2);
+      }
+      if (rateEl) {
+        rateEl.textContent = s.rate.toFixed(1) + "/s";
+      }
+      if (tickEl) {
+        tickEl.textContent = "▶";
+      }
+    }
+
+    renderUI();
+    setInterval(renderUI, 500);
   </script>
 </body>
 </html>
