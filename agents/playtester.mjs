@@ -51,6 +51,8 @@ import {
   createIssue,
   recordTicket,
   PLAYTEST_LABEL,
+  REVIEW_VIEWPORTS,
+  viewportOptions,
 } from "./shared.mjs";
 import { readJournal, appendJournal, renderJournalEntry } from "./discussions.mjs";
 import { pathToFileURL } from "url";
@@ -72,14 +74,6 @@ const SAMPLE_EVERY_MS = Number(process.env.PLAYTEST_SAMPLE_MS || 8_000);
 // Product Manager and turn a signal into a chore it learns to skip.
 const MAX_FINDINGS = Number(process.env.MAX_PLAYTEST_FINDINGS || 3);
 
-// The two viewports the pipeline already judges layout at (see REVIEW_VIEWPORTS in
-// shared.mjs). Kept identical so a finding here and a defect there describe the
-// same page rather than two different ones.
-const SHOT_VIEWPORTS = [
-  { label: "desktop", width: 1280, height: 800 },
-  { label: "mobile", width: 390, height: 844 },
-];
-
 // JPEG, not PNG. The product is a canvas scene — photo-shaped content, where JPEG
 // is several times smaller for no loss that matters to a judgement about mood and
 // hierarchy. Size is not about the bill (two frames cost a fraction of a cent); an
@@ -96,7 +90,10 @@ const SHOT_QUALITY = Number(process.env.PLAYTEST_SHOT_QUALITY || 70);
  */
 async function captureFrames(page) {
   const frames = [];
-  for (const viewport of SHOT_VIEWPORTS) {
+  // The same viewports the pipeline judges layout at, so a finding here and a
+  // defect there describe the same page rather than two different ones. Only
+  // their sizes: touch is fixed when a page opens, and this one is already open.
+  for (const viewport of REVIEW_VIEWPORTS) {
     try {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       // One animation frame plus a beat: the scene resizes on a rAF, so shooting
@@ -294,7 +291,7 @@ export async function observeApp() {
   }
 
   try {
-    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    const page = await browser.newPage(viewportOptions(REVIEW_VIEWPORTS[0]));
     page.on("console", (m) => { if (m.type() === "error") consoleErrors.push(m.text()); });
     page.on("pageerror", (e) => consoleErrors.push(`uncaught: ${e.message}`));
     await page.goto(url, { waitUntil: "networkidle", timeout: 30_000 });
@@ -342,7 +339,7 @@ export async function observeApp() {
 
     // Shot last, and after the reload, so the frames show the same scene the
     // final timeline sample describes rather than a fresh one. Resizing for the
-    // mobile frame is destructive to the desktop layout, which is why nothing is
+    // phone frame is destructive to the desktop layout, which is why nothing is
     // measured after this point.
     const frames = await captureFrames(page);
 
