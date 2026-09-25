@@ -18,6 +18,8 @@ import {
   listProjectItems,
   getCurrentMilestone,
   isConfirmedShipped,
+  isConfirmedRetired,
+  unmetDependencies,
   fetchShippedIssues,
 } from "./shared.mjs";
 
@@ -104,8 +106,13 @@ test("a listing that reached its limit throws instead of passing for the whole",
 
 test("confirming a dependency missing from the open listing has shipped", async (t) => {
   await t.test("a closed issue has shipped", () => {
-    scriptGh({ stdout: "closed\n" });
+    scriptGh({ stdout: "closed completed\n" });
     assert.equal(isConfirmedShipped(101), true);
+  });
+
+  await t.test("one closed without a recorded reason has shipped", () => {
+    scriptGh({ stdout: "closed \n" });
+    assert.equal(isConfirmedShipped(105), true);
   });
 
   await t.test("an open one has not, though the listing missed it", () => {
@@ -121,5 +128,29 @@ test("confirming a dependency missing from the open listing has shipped", async 
   await t.test("one gh could not look up has not been shown to ship", () => {
     scriptGh({ stderr: "HTTP 502: Bad Gateway", exit: 1 });
     assert.equal(isConfirmedShipped(104), false);
+  });
+});
+
+test("a dependency closed as not planned", async (t) => {
+  await t.test("has not shipped, but was retired", () => {
+    scriptGh({ stdout: "closed not_planned\n" });
+    assert.equal(isConfirmedShipped(201), false);
+    assert.equal(isConfirmedRetired(201), true);
+  });
+
+  // The work it promised never happened, so what stands on it has nothing to stand on.
+  await t.test("keeps the ticket waiting on it", () => {
+    scriptGh({ stdout: "closed not_planned\n" });
+    assert.deepEqual(unmetDependencies({ number: 5, body: "Blocked by: #202" }, new Set([5])), [202]);
+  });
+
+  await t.test("is not mistaken for one that was retired when it shipped", () => {
+    scriptGh({ stdout: "closed completed\n" });
+    assert.equal(isConfirmedRetired(203), false);
+  });
+
+  await t.test("is not taken for retired while it is still open", () => {
+    scriptGh({ stdout: "open \n" });
+    assert.equal(isConfirmedRetired(204), false);
   });
 });

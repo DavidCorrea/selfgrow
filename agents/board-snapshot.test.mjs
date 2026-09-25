@@ -29,6 +29,19 @@ test("showing the columns still in play", async (t) => {
     assert.match(text, /#3 Ticket 3 _\(from a person\)_/);
   });
 
+  // A `waiting` tag alone would read as "not yet" when it is "never".
+  await t.test("says which prerequisite of a waiting ticket was retired without shipping", () => {
+    const waiting = { ...agentIssue(8), body: "Blocked by: #4, #6" };
+    const text = formatBoardState([card(8, "Todo")], [waiting], (n) => n === 4);
+    assert.match(text, /^- #8 Ticket 8 — waits on #4, retired without shipping$/m);
+  });
+
+  await t.test("adds nothing to a ticket whose prerequisites were not retired", () => {
+    const waiting = { ...agentIssue(8), body: "Blocked by: #4" };
+    const text = formatBoardState([card(8, "Todo")], [waiting], () => false);
+    assert.match(text, /^- #8 Ticket 8$/m);
+  });
+
   await t.test("says so when the board is empty", () => {
     assert.equal(formatBoardState([], []), "(no tickets yet — the board is empty)");
   });

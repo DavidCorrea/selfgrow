@@ -9,6 +9,7 @@ import {
   isBlocked,
   dependencyNumbers,
   unmetDependencies,
+  retiredDependencies,
   isBuildable,
   isPlaytestFeedback,
   isNonWorkIssue,
@@ -110,6 +111,19 @@ test("deciding whether a ticket can be built now", async (t) => {
     const ticket = issue(5, { body: "Blocked by: #3" });
     const lookedUp = [];
     unmetDependencies(ticket, new Set([3, 5]), (n) => lookedUp.push(n));
+    assert.deepEqual(lookedUp, []);
+  });
+
+  await t.test("names the dependencies that were retired, and only those", () => {
+    const ticket = issue(5, { body: "Blocked by: #3, #4, #6" });
+    const onlyFourRetired = (n) => n === 4;
+    assert.deepEqual(retiredDependencies(ticket, new Set([3, 5]), onlyFourRetired), [4]);
+  });
+
+  await t.test("does not look up whether an open dependency was retired", () => {
+    const ticket = issue(5, { body: "Blocked by: #3" });
+    const lookedUp = [];
+    retiredDependencies(ticket, new Set([3, 5]), (n) => lookedUp.push(n));
     assert.deepEqual(lookedUp, []);
   });
 
