@@ -24,7 +24,6 @@ import {
   getCurrentMilestone,
   startMilestone,
   isBlocked,
-  isPlaytestFeedback,
   fetchOpenIssues,
   fetchShippedIssues,
 } from "./shared.mjs";
@@ -37,6 +36,7 @@ import {
   readDecisions,
   renderDecisions,
 } from "./discussions.mjs";
+import { needsAnswer } from "./playtest-findings.mjs";
 
 const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 
@@ -51,7 +51,7 @@ function readWeek() {
   return {
     shipped: fetchShippedIssues().filter((i) => (i.closedAt || "") >= since),
     parked: open.filter(isBlocked),
-    playtest: open.filter(isPlaytestFeedback),
+    playtest: open.filter(needsAnswer),
   };
 }
 

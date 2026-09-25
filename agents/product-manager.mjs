@@ -36,6 +36,7 @@ import {
   acknowledgeIdea,
 } from "./discussions.mjs";
 import { publishWeeklyReport } from "./weekly-report.mjs";
+import { needsAnswer, isAnswered, isEscalated, addressesLine, answerFinding } from "./playtest-findings.mjs";
 import { listSourceFiles, formatSources, SOURCE_DIR } from "./tech-lead.mjs";
 
 // The day the Product Manager does more than groom: it also reviews the shipped
@@ -166,7 +167,7 @@ function kickBuilder() {
 // Compose the issue body the Builder reads: the PM's description followed by the
 // acceptance criteria as a checklist, so "what to build" and "how we know it's
 // done" travel together on the ticket. Criteria are optional and defensive.
-function formatTicketBody(item, dependencyNumbers = []) {
+function formatTicketBody(item, dependencyNumbers = [], findingNumber = null) {
   const parts = [String(item.body || "").trim()];
   const criteria = (Array.isArray(item.acceptanceCriteria) ? item.acceptanceCriteria : [])
     .map((c) => String(c).trim())
@@ -176,7 +177,18 @@ function formatTicketBody(item, dependencyNumbers = []) {
   }
   const deps = dependencyLine(dependencyNumbers);
   if (deps) parts.push(deps);
+  if (findingNumber) parts.push(addressesLine(findingNumber));
   return parts.join("\n\n");
+}
+
+/**
+ * The open finding a proposed ticket says it answers, or null. Only a finding
+ * still waiting on the PM counts: one already answered is waiting on the
+ * Playtester, and re-answering it would reset the count before anyone looked.
+ */
+function findingAddressed(item, answerable) {
+  const number = Number(String(item?.addresses ?? "").replace(/^#/, ""));
+  return answerable.get(number) || null;
 }
 
 // A ticket may declare what must ship first as `dependsOn`, holding either an
@@ -215,10 +227,13 @@ function orderByDependencies(items) {
   return ordered;
 }
 
-async function groomBacklog(proposed, openIssues, boardItems, milestone) {
+async function groomBacklog(proposed, openIssues, boardItems, milestone, answerable = new Map()) {
+  // Finding number → the tickets created for it this run, which is what lets a
+  // finding be marked answered by work that actually exists.
+  const answers = new Map();
   if (!Array.isArray(proposed) || proposed.length === 0) {
     log("info", "Backlog: no tickets proposed.");
-    return;
+    return { proposed: 0, created: 0, answers };
   }
 
   // ONE pass, deterministic, answering only "is this already queued?".
@@ -314,8 +329,10 @@ async function groomBacklog(proposed, openIssues, boardItems, milestone) {
       else log("info", `Backlog: "${item.title}" references unknown dependency "${ref}" — ignoring it.`);
     }
 
-    const number = createIssue(item.title, formatTicketBody(item, deps));
+    const finding = findingAddressed(item, answerable);
+    const number = createIssue(item.title, formatTicketBody(item, deps, finding?.number));
     if (number) {
+      if (finding) answers.set(finding.number, [...(answers.get(finding.number) || []), number]);
       numberByTitle.set(normalizeTitle(item.title), number);
       moveCard(number, "Backlog"); // best-effort; also adds it to the board
       setIssuePriority(number, item.priority || "medium", []);
@@ -333,7 +350,7 @@ async function groomBacklog(proposed, openIssues, boardItems, milestone) {
   log("info", `Backlog: created ${created} ticket(s) (${openIssues.length} already open).`);
   // Returned because retirement now depends on it: a run that promised
   // replacements and created none does not get to close the originals.
-  return { proposed: proposed.length, created };
+  return { proposed: proposed.length, created, answers };
 }
 
 /**
@@ -387,18 +404,27 @@ function renderCuration(weekly, shippedCode) {
 }
 
 /**
- * Untriaged Playtester findings, for the grooming prompt.
+ * The Playtester findings waiting on this run, for the grooming prompt.
  *
  * These are impressions of the live app, not tickets — isBuildable excludes
- * them, so they sit on the board until this run turns each into real work or
- * drops it. Either way the original is closed via `retire`, so a finding cannot
- * be re-triaged next week and become a second ticket for the same complaint.
+ * them. Only the ones still needing an answer are shown: a finding already
+ * answered is waiting for the Playtester to say whether its tickets worked, and
+ * showing it here would invite a second answer before anyone had looked.
+ *
+ * An escalated finding is back because its last answer shipped and did not
+ * change what the Playtester saw. Its body still names those tickets, and the
+ * heading says so, because the likeliest mistake now is prescribing them again.
  */
-function renderPlaytestFeedback(openIssues) {
-  const feedback = openIssues.filter(isPlaytestFeedback);
-  if (!feedback.length) return "(no untriaged playtest feedback this run)";
+export function renderPlaytestFeedback(openIssues) {
+  const feedback = openIssues.filter(needsAnswer);
+  if (!feedback.length) return "(no playtest feedback waiting on you this run)";
   return feedback
-    .map((issue) => `### #${issue.number} — ${issue.title}\n${(issue.body || "").trim()}`)
+    .map((issue) => {
+      const flag = isEscalated(issue)
+        ? " _(escalated — its last answer shipped and the Playtester still saw this; try a different approach)_"
+        : "";
+      return `### #${issue.number} — ${issue.title}${flag}\n${(issue.body || "").trim()}`;
+    })
     .join("\n\n");
 }
 
@@ -445,6 +471,13 @@ function planRetirements(retire, openIssues = []) {
         `Refusing to retire #${number}: it was filed by a person, and the Product Manager ` +
           "did not mark it out of scope. A human ticket that is merely unclear must be sharpened, not closed."
       );
+      continue;
+    }
+    // An answered finding is the Playtester's to close. Retiring one is how five
+    // answers to "the canvas is a dark void" each shipped without anybody asking
+    // whether the canvas was still dark.
+    if (isAnswered(byNumber.get(number) || {})) {
+      log("warn", `Not retiring #${number}: it is an answered playtest finding, open until the Playtester verifies it.`);
       continue;
     }
     allowed.push({ number, reason, issue: byNumber.get(number) });
@@ -537,7 +570,7 @@ function sharpenTickets(sharpen, openIssues = []) {
 /** Used only when the Product Manager closes a ticket without saying why. */
 function defaultRetireReason(issue) {
   if (isPlaytestFeedback(issue || {})) {
-    return "Triaged by the Product Manager — this playtest finding has been read, and either became a ticket of its own or was judged not worth acting on.";
+    return "Triaged by the Product Manager — this playtest finding has been read and judged not worth acting on.";
   }
   return "Retired by the Product Manager — superseded, out of scope, or already built.";
 }
@@ -643,8 +676,13 @@ async function main() {
   // 3. Create new prioritized tickets toward the vision.
   // Full board items, not just titles: grooming needs each item's column to tell
   // shipped work from work still in flight.
-  const groomed = await groomBacklog(data.backlog, remainingOpen, boardItems, milestone);
-  // 4. Now close the originals — only if the replacements actually landed.
+  const answerable = new Map(openIssues.filter(needsAnswer).map((i) => [i.number, i]));
+  const groomed = await groomBacklog(data.backlog, remainingOpen, boardItems, milestone, answerable);
+  // 4. A finding that got tickets stays open, answered, until the Playtester has
+  //    seen them ship — even if the PM also listed it in `retire` out of habit.
+  for (const [number, tickets] of groomed.answers) answerFinding(answerable.get(number), tickets);
+  planned.entries = planned.entries.filter((e) => !groomed.answers.has(e.number));
+  // 5. Now close the originals — only if the replacements actually landed.
   await executeRetirements(planned, groomed);
 
   answerIdeas(data.ideas);
@@ -677,7 +715,7 @@ async function main() {
 // planRetirements and executeRetirements are exported for the test suite: the
 // invariant they hold — nothing is closed by a run that created no replacement —
 // is worth asserting directly, and the incident it came from was silent.
-export { titleTokens, planRetirements, executeRetirements };
+export { titleTokens, planRetirements, executeRetirements, formatTicketBody, findingAddressed };
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
   main().catch((err) => {
