@@ -968,6 +968,19 @@ export async function checks() {
       if (!plant2Obj.leafMat) {
         problems.push('plant2.leafMat is missing — leaf material not exposed for seasonal colour updates.');
       }
+      // Verify emissive properties for minimum visibility (issue #816)
+      if (plant2Obj.stemMat) {
+        const ei = plant2Obj.stemMat.emissiveIntensity;
+        if (typeof ei !== 'number' || ei < 0.08 || ei > 0.12) {
+          problems.push('plant2.stemMat.emissiveIntensity should be in [0.08, 0.12], got ' + ei + ' — emissive ensures minimum visibility in dark phases (issue #816).');
+        }
+      }
+      if (plant2Obj.leafMat) {
+        const ei = plant2Obj.leafMat.emissiveIntensity;
+        if (typeof ei !== 'number' || ei <= 0 || ei > 0.10) {
+          problems.push('plant2.leafMat.emissiveIntensity should be in (0, 0.10], got ' + ei + ' — emissive ensures minimum visibility in dark phases (issue #816).');
+        }
+      }
       if (!plant2Obj.leaves || plant2Obj.leaves.length === 0) {
         problems.push('plant2.leaves is missing or empty — no leaf geometry was created for the second plant.');
       } else if (plant2Obj.leaves.length < 2) {
@@ -1154,6 +1167,19 @@ export async function checks() {
       }
       if (!plant3Obj.leafMat) {
         problems.push('plant3.leafMat is missing — leaf material not exposed for seasonal colour updates.');
+      }
+      // Verify emissive properties for minimum visibility (issue #816)
+      if (plant3Obj.stemMat) {
+        const ei = plant3Obj.stemMat.emissiveIntensity;
+        if (typeof ei !== 'number' || ei < 0.08 || ei > 0.12) {
+          problems.push('plant3.stemMat.emissiveIntensity should be in [0.08, 0.12], got ' + ei + ' — emissive ensures minimum visibility in dark phases (issue #816).');
+        }
+      }
+      if (plant3Obj.leafMat) {
+        const ei = plant3Obj.leafMat.emissiveIntensity;
+        if (typeof ei !== 'number' || ei <= 0 || ei > 0.10) {
+          problems.push('plant3.leafMat.emissiveIntensity should be in (0, 0.10], got ' + ei + ' — emissive ensures minimum visibility in dark phases (issue #816).');
+        }
       }
       if (!plant3Obj.leaves || plant3Obj.leaves.length === 0) {
         problems.push('plant3.leaves is missing or empty — no leaf geometry was created for the third plant.');
@@ -1427,6 +1453,19 @@ export async function checks() {
       // Verify the plant has a leafMat material
       if (!plant.leafMat) {
         problems.push('plant.leafMat is missing — leaf material not exposed for seasonal colour updates.');
+      }
+      // Verify emissive properties for minimum visibility (issue #816)
+      if (plant.stemMat) {
+        const ei = plant.stemMat.emissiveIntensity;
+        if (typeof ei !== 'number' || ei < 0.08 || ei > 0.12) {
+          problems.push('plant.stemMat.emissiveIntensity should be in [0.08, 0.12], got ' + ei + ' — emissive ensures minimum visibility in dark phases (issue #816).');
+        }
+      }
+      if (plant.leafMat) {
+        const ei = plant.leafMat.emissiveIntensity;
+        if (typeof ei !== 'number' || ei <= 0 || ei > 0.10) {
+          problems.push('plant.leafMat.emissiveIntensity should be in (0, 0.10], got ' + ei + ' — emissive ensures minimum visibility in dark phases (issue #816).');
+        }
       }
       // Verify the plant has leaves
       if (!plant.leaves || plant.leaves.length === 0) {
@@ -8604,20 +8643,26 @@ export async function checks() {
           }
         }
 
-        // Test 4: Outside Night phase (t < 0.75), emissiveIntensity should be 0
+        // Test 4: Outside Night phase (t < 0.75), emissiveIntensity should be baseline (minimum visibility, not firefly glow)
         settleGlow('Summer', 'Clear', 0.55);
         stemEmissive = glowPlant.stemMat.emissiveIntensity || 0;
         leafEmissive = glowPlant.leafMat.emissiveIntensity || 0;
-        if (stemEmissive > 0.001 || leafEmissive > 0.001) {
-          problems.push('During Evening (t=0.55), plant emissiveIntensity is > 0 (stem=' + stemEmissive.toFixed(4) + ', leaf=' + leafEmissive.toFixed(4) + ') — expected 0 (glow only active during Night phase).');
+        if (stemEmissive < 0.08 || stemEmissive > 0.12) {
+          problems.push('During Evening (t=0.55), plant stem emissiveIntensity is ' + stemEmissive.toFixed(4) + ', expected baseline ~0.10 (minimum visibility emissive, issue #816).');
+        }
+        if (leafEmissive < 0.06 || leafEmissive > 0.10) {
+          problems.push('During Evening (t=0.55), plant leaf emissiveIntensity is ' + leafEmissive.toFixed(4) + ', expected baseline ~0.08 (minimum visibility emissive, issue #816).');
         }
 
-        // Test 5: During Winter + Night + Clear, emissiveIntensity should be 0 (fireflies invisible)
+        // Test 5: During Winter + Night + Clear, emissiveIntensity should be baseline (minimum visibility, no firefly glow)
         settleGlow('Winter', 'Clear', 0.85);
         stemEmissive = glowPlant.stemMat.emissiveIntensity || 0;
         leafEmissive = glowPlant.leafMat.emissiveIntensity || 0;
-        if (stemEmissive > 0.001 || leafEmissive > 0.001) {
-          problems.push('During Winter+Night+Clear, plant emissiveIntensity is > 0 (stem=' + stemEmissive.toFixed(4) + ', leaf=' + leafEmissive.toFixed(4) + ') — expected 0 (no fireflies in winter, so no glow).');
+        if (stemEmissive < 0.08 || stemEmissive > 0.12) {
+          problems.push('During Winter+Night+Clear, plant stem emissiveIntensity is ' + stemEmissive.toFixed(4) + ', expected baseline ~0.10 (minimum visibility emissive, issue #816).');
+        }
+        if (leafEmissive < 0.06 || leafEmissive > 0.10) {
+          problems.push('During Winter+Night+Clear, plant leaf emissiveIntensity is ' + leafEmissive.toFixed(4) + ', expected baseline ~0.08 (minimum visibility emissive, issue #816).');
         }
 
         // Test 6: Verify isGlowActive returns correct state

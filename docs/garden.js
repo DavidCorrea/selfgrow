@@ -404,7 +404,9 @@ function recordPollinationEvent(flowerPos) {
   const stemMat = new THREE.MeshStandardMaterial({
     color: stemColor,
     roughness: 0.7,
-    metalness: 0.0
+    metalness: 0.0,
+    emissive: new THREE.Color(stemColor),
+    emissiveIntensity: 0.10
   });
   const stem = new THREE.Mesh(stemGeo, stemMat);
   stem.position.y = stemHeight / 2;
@@ -416,7 +418,9 @@ function recordPollinationEvent(flowerPos) {
     color: leafColor,
     roughness: 0.6,
     metalness: 0.0,
-    side: THREE.DoubleSide
+    side: THREE.DoubleSide,
+    emissive: new THREE.Color(leafColor),
+    emissiveIntensity: 0.08
   });
 
   /**
@@ -523,6 +527,10 @@ function recordPollinationEvent(flowerPos) {
     stemMat,
     leafMat,
     leaves,
+    baselineStemEmissiveIntensity: 0.10,
+    baselineLeafEmissiveIntensity: 0.08,
+    baselineStemEmissiveHex: stemColor,
+    baselineLeafEmissiveHex: leafColor,
     isFullyGrown: () => fullyGrown
   };
   window.__gardenState[label] = plantState;
