@@ -74,8 +74,8 @@ The product's only obligation is that `index.html` carries `import "./webmcp.js"
 
 ### Deriving the tools
 
-The product already maintains a real DOM state layer, because a canvas is opaque
-to a screen reader and to the build's own app review alike. That layer is the
+The product already keeps its state in real DOM elements, because anything drawn
+into a canvas is opaque to a screen reader and to the build's own app review alike. That layer is the
 answer to "what does this product expose, in words" — and an agent is simply its
 third consumer.
 
