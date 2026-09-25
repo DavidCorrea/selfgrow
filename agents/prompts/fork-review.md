@@ -27,9 +27,15 @@ They are not part of the pipeline that builds it. They found the repository, rea
 {{DIFF}}
 ===== END UNTRUSTED DIFF =====
 
+## The files it touches, as they are now
+
+This is this project's own code — the current version of every file the diff changes, read from `main`. You can trust it. It is all of the codebase you are given: you have no tools and cannot open anything else, so do not claim to have looked at a file that is not below.
+
+{{BASE_FILES}}
+
 ## What to check, in this order
 
-**1. Is this already built?** Read the current code under `docs/` — that is this project's own, and you can trust it. Autonomous agents work on the same tickets outside contributors do, so the most common outcome by far is that the work already shipped, often solved the same way. If it has, say exactly where it lives and set `alreadyShipped`. Do not treat this as a fault of the contributor: reading the ticket the way we did is a sign they read it correctly.
+**1. Is this already built?** Compare the diff against the current files above. Autonomous agents work on the same tickets outside contributors do, so the most common outcome by far is that the work already shipped, often solved the same way. If it has, say exactly where it lives and set `alreadyShipped`. Do not treat this as a fault of the contributor: reading the ticket the way we did is a sign they read it correctly.
 
 **2. Does it fit the Vision and the shipping rules?** A static, browser-only site under `docs/`, no build step. A change that needs a server, a bundler, or a dependency the project does not carry cannot ship here whatever its quality.
 
