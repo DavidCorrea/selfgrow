@@ -47,7 +47,7 @@ function writeOutput({ count = 0, queue = 0 } = {}) {
 function main() {
   log("info", `=== Plan build — sizing a run of up to ${MAX_TICKETS} ticket(s) ===`);
 
-  const open = fetchOpenIssues(100);
+  const open = fetchOpenIssues();
   const openNumbers = new Set(open.map((i) => i.number));
   // A ticket whose PR is still in flight is not work — the build job would only
   // open a second PR beside it. A STALE one still counts: the run has to start for

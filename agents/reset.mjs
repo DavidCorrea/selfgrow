@@ -130,7 +130,7 @@ function cancelPendingRuns() {
 }
 
 function closeAllIssues() {
-  const issues = fetchOpenIssues(500);
+  const issues = fetchOpenIssues();
   log("info", `Closing ${issues.length} open issue(s)...`);
   for (const issue of issues) {
     try {

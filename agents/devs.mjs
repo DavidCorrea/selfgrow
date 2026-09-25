@@ -786,7 +786,7 @@ function maybeReplenishBacklog(mergedCount) {
   // affords about one: a "low" backlog still has work for tomorrow's run, so
   // spending today's remaining requests to top it up buys nothing. Empty is
   // different — without a refill tomorrow's run would have nothing to do at all.
-  const open = fetchOpenIssues(100);
+  const open = fetchOpenIssues();
   const openNumbers = new Set(open.map((i) => i.number));
   const buildable = open.filter((i) => isBuildable(i, openNumbers)).length;
   if (buildable === 0) {
@@ -940,7 +940,7 @@ async function main() {
     // everything it declared "Blocked by:" has shipped, so foundations get built
     // before the work that stands on them. Re-read every pass: a merge this run
     // may have just released the next ticket.
-    const open = fetchOpenIssues(100);
+    const open = fetchOpenIssues();
     const openNumbers = new Set(open.map((i) => i.number));
     // Settle what earlier runs left open BEFORE choosing, every pass: a ticket
     // with a live PR is not buildable, and a stale one is retired here so the
@@ -1016,7 +1016,7 @@ async function main() {
       // Shipping a ticket is the only thing that releases work waiting on it, so
       // clear the `waiting` labels it just satisfied rather than leaving the board
       // claiming tickets are held back by something already merged.
-      syncWaitingLabels(fetchOpenIssues(100));
+      syncWaitingLabels(fetchOpenIssues());
     }
     if (result.outcome === "abandoned" && result.ticketFault) {
       // Cross-run failure accounting — parks a perpetually-failing ticket so it

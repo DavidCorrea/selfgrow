@@ -60,14 +60,35 @@ test("deciding whether a ticket can be built now", async (t) => {
     assert.equal(isBuildable(ticket, new Set([3, 5])), false);
   });
 
+  // Stand-ins for the lookup that confirms a dependency missing from the open
+  // listing really is closed, or never existed.
+  const shipped = () => true;
+  const unconfirmed = () => false;
+
   await t.test("is released once the dependency ships", () => {
     const ticket = issue(5, { body: "Blocked by: #3" });
-    assert.deepEqual(unmetDependencies(ticket, new Set([5])), []);
-    assert.equal(isBuildable(ticket, new Set([5])), true);
+    assert.deepEqual(unmetDependencies(ticket, new Set([5]), shipped), []);
+    assert.equal(isBuildable(ticket, new Set([5]), shipped), true);
   });
 
   await t.test("treats a dependency that no longer exists as met, so a stale reference cannot strand it", () => {
-    assert.equal(isBuildable(issue(5, { body: "Blocked by: #999" }), new Set([5])), true);
+    assert.equal(isBuildable(issue(5, { body: "Blocked by: #999" }), new Set([5]), shipped), true);
+  });
+
+  await t.test("keeps waiting on a dependency missing from the listing until it is confirmed shipped", () => {
+    // An open blocker past a listing's cutoff, or filed after it, is absent from
+    // the open set without having shipped.
+    const ticket = issue(5, { body: "Blocked by: #3, #4" });
+    const onlyFourShipped = (n) => n === 4;
+    assert.deepEqual(unmetDependencies(ticket, new Set([5]), onlyFourShipped), [3]);
+    assert.equal(isBuildable(ticket, new Set([5]), unconfirmed), false);
+  });
+
+  await t.test("does not look up a dependency the listing shows open", () => {
+    const ticket = issue(5, { body: "Blocked by: #3" });
+    const lookedUp = [];
+    unmetDependencies(ticket, new Set([3, 5]), (n) => lookedUp.push(n));
+    assert.deepEqual(lookedUp, []);
   });
 
   await t.test("refuses a ticket parked after repeated failures", () => {

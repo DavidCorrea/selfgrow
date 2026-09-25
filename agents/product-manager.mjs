@@ -145,7 +145,7 @@ export function nearDuplicateOf(title, existing) {
  * daily run picks the work up.
  */
 function kickBuilder() {
-  const open = fetchOpenIssues(100);
+  const open = fetchOpenIssues();
   const openNumbers = new Set(open.map((i) => i.number));
   // Reconcile the `waiting` labels now that this run's tickets exist, so the
   // board shows what is held back before the Builder even starts.
@@ -678,7 +678,7 @@ async function main() {
     try {
       await publishWeeklyReport({
         closed: fetchClosedIssues(),
-        open: fetchOpenIssues(200),
+        open: fetchOpenIssues(),
         milestone,
       });
     } catch (e) {
