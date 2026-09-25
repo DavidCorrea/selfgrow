@@ -92,10 +92,13 @@ const MODEL_WORKFLOWS = ["devs", "product-manager", "product-owner", "playtester
 const ABORTED_RUNS_READ = 5;
 const ABORTED_RUNS_LIMIT = 2;
 
-// What an aborted session leaves in a run's annotations: our own cap warning,
-// the error pi raises once aborted, a provider that never answered, and the
-// runner killing a job that outlived its timeout-minutes.
-const ABORT_PATTERN = /session cap|this operation was aborted|timed out|exceeded the maximum execution time/i;
+// What an aborted session leaves in a run's annotations: our own cap error,
+// a model we stopped for going silent, the error pi raises once aborted, a
+// provider that never answered, and the runner killing a job that outlived its
+// timeout-minutes. A silent model falls through to the next one, but a role
+// whose models keep going quiet is still losing minutes every run.
+const ABORT_PATTERN =
+  /session cap|sent nothing for|this operation was aborted|timed out|exceeded the maximum execution time/i;
 
 const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 
