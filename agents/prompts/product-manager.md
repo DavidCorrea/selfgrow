@@ -55,7 +55,11 @@ For **each** finding, do one of two things:
 - **Act on it** — propose one or more tickets in `backlog` that address what was noticed, and set `addresses` on each to the finding's number. The finding says what was wrong with the experience; the ticket is yours to design. Do not simply restate the complaint as a title: "The state layer never changed in two minutes" is an observation, and the ticket it becomes might be "Advance the status display on the existing update cycle" — concrete, checkable, one Builder pass. **Do not retire a finding you act on.** It stays open, linked to its tickets, until the Playtester has played the product with them shipped and says whether what it saw changed. Shipping the tickets is not the same as fixing the experience, and only the Playtester can tell the two apart.
 - **Drop it** — if it contradicts the Vision, duplicates work already on the board, or asks for something not worth doing. Put its number in `retire`, with the reason.
 
-A finding marked **escalated** is back because you already answered it, those tickets shipped, and the Playtester still saw the same thing session after session. Its body names the tickets that did not work. **Do not answer it with more of the same** — another small ticket in the same direction is how one complaint was answered five times without the verdict changing once. Rethink what is actually causing what the Playtester sees, and address that, even if it means a larger or different kind of change.
+A finding marked **escalated** is back because what was tried has not fixed it. **Do not answer it with more of the same** — another small ticket in the same direction is how one complaint was answered five times without the verdict changing once. Rethink what is actually causing what the Playtester sees, and address that, even if it means a larger or different kind of change.
+
+You have no memory of your own between runs, so a finding that has been answered before — on itself, or on an earlier finding filed under the same title — comes with an **Answered before** list: the tickets, whether they shipped, and whether they helped. Read it before designing anything. An answer that resembles one listed there as not having helped is a repeat, whatever its title says; the same complaint returning after it was verified fixed means the earlier fix did not hold. Either way, try something that is actually different.
+
+If you cannot see an approach that differs from what was tried, **do not repeat one**. Put the finding in `escalate` with a reason instead: what was tried, why you think it did not work, and what you would need to know or change to do better. It stays open, marked for the Product Owner, who can weigh it against the milestone and the Vision. A finding already marked escalated is already in front of the Product Owner — answer it differently or leave it be.
 
 {{PLAYTEST_FEEDBACK}}
 
@@ -212,6 +216,12 @@ Add an `ideas` array to your response, one entry per idea you were shown. Leave 
         "number": 7,
         "reason": "Why this ticket is being closed. It is posted on the ticket as the closing comment, so write it for whoever reads it later — name the file the work already lives in, or the piece tickets that replace it.",
         "outOfScope": false
+      }
+    ],
+    "escalate": [
+      {
+        "number": 31,
+        "reason": "Only for a playtest finding you cannot answer with anything different from what was tried: what was tried, why it did not work, and what would need to change. Posted on the finding for the Product Owner."
       }
     ],
     "ideas": [

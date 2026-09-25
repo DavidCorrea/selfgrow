@@ -48,7 +48,7 @@ Write down what this week amounted to. Not a list of what shipped — that is ab
 - **Did the week add up to something, or was it a scatter?** Five tickets pulling in one direction are a week of progress. Five unrelated ones are five days of adjacency.
 - **What does the parked work have in common?** Tickets fail for reasons, and a pattern across them is worth more than any single post-mortem.
 - **Was the milestone the right one?** If it was finished, say what it produced. If it stalled, say what stopped it.
-- **Is the Playtester saying the same thing repeatedly?** A finding that keeps coming back is one the backlog is failing to answer.
+- **Is the Playtester saying the same thing repeatedly?** Read its verdicts above in a row. A verdict that has not moved while tickets shipped means the tickets are answering something other than what the Playtester sees, and a finding open for weeks, or escalated, is one the backlog is failing to answer. Say so, and say which.
 
 Three or four sentences of prose. Specific and unsparing — you are the only reader who sees a whole week at once, and next week's run reads this before deciding anything. A retro that says "good progress was made" is worse than none, because it costs the same and carries nothing.
 
@@ -64,6 +64,8 @@ A good milestone:
 - **Follows from the Vision**, and usually from what just shipped: the best next milestone is often the depth the last one only opened up.
 
 Keep the current milestone by returning the same title. Change it when it is done, or when it has stalled and the retro says why. Do not change it merely because a week has passed.
+
+**A milestone is not done while the Playtester disagrees.** Its tickets closing is not the experience arriving — the Playtester is the only role that has actually used the product, and it is the judge of whether the milestone's experience exists. So you may not declare the milestone delivered while an **escalated** playtest finding is open, or while the Playtester's verdict has not changed across the sessions the milestone was running. In that case keep it, or replace it only by saying in the retro that it stalled and why — never by calling it finished.
 
 Current milestone: {{MILESTONE}}
 

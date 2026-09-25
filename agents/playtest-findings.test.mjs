@@ -12,13 +12,20 @@ import {
   needsAnswer,
   isEscalated,
   persistCount,
+  triedBefore,
   planAnswer,
   planFollowUp,
+  planEscalation,
+  priorAnswers,
+  renderPriorAnswers,
+  renderOpenFindings,
+  renderPlaytesterVerdicts,
   ANSWERED_LABEL,
   ESCALATED_LABEL,
 } from "./playtest-findings.mjs";
 import { planRetirements, renderPlaytestFeedback, formatTicketBody, findingAddressed } from "./product-manager.mjs";
 import { renderAnsweredFindings } from "./playtester.mjs";
+import { renderWeek } from "./product-owner.mjs";
 
 const finding = (number, { labels = [], body = "## What I noticed\nThe canvas was dark.\n\n## Why it matters\nNothing to see." } = {}) => ({
   number,
@@ -72,6 +79,13 @@ test("answering a finding", async (t) => {
     const plan = planAnswer(answeredBy([10], [ESCALATED_LABEL, "persisted:2"]), [20]);
     assert.deepEqual(answeringTickets({ body: plan.body }), [20]);
     assert.equal(plan.body.match(/Answered by/g).length, 1);
+  });
+
+  await t.test("keeps every replaced answer as tried before, so the history survives a second approach", () => {
+    const once = planAnswer(answeredBy([10, 11], [ESCALATED_LABEL]), [20]);
+    const twice = planAnswer({ ...finding(591), body: once.body }, [30]);
+    assert.deepEqual(triedBefore({ body: twice.body }), [10, 11, 20]);
+    assert.deepEqual(answeringTickets({ body: twice.body }), [30]);
   });
 
   await t.test("starts a new answer's persist count from zero but keeps it marked escalated", () => {
@@ -175,5 +189,115 @@ test("what each role is shown", async (t) => {
 
   await t.test("the Playtester is told when nothing is waiting on it", () => {
     assert.match(renderAnsweredFindings([], new Set()), /none/);
+  });
+});
+
+test("the Product Owner hears the Playtester", async (t) => {
+  const now = Date.parse("2026-09-25T00:00:00Z");
+  const dated = (issue, createdAt) => ({ ...issue, createdAt });
+
+  await t.test("every open finding is listed with its age and where it stands, not only untriaged ones", () => {
+    const text = renderOpenFindings(
+      [dated(finding(1), "2026-09-20T00:00:00Z"), dated(answeredBy([10]), "2026-09-11T00:00:00Z")],
+      now
+    );
+    assert.match(text, /#1 .* open 5 day\(s\); untriaged/);
+    assert.match(text, /#591 .* open 14 day\(s\); answered, waiting on the Playtester; answered by #10/);
+  });
+
+  await t.test("an escalated finding says how many sessions it outlived its answer", () => {
+    const text = renderOpenFindings([answeredBy([10], [ESCALATED_LABEL, "persisted:2"])], now);
+    assert.match(text, /escalated — no answer so far has fixed it; persisted 2 session\(s\)/);
+  });
+
+  await t.test("ordinary tickets are not listed as findings", () => {
+    assert.match(renderOpenFindings([{ number: 5, title: "Build it", labels: [{ name: "agent" }] }], now), /no playtest findings open/);
+  });
+
+  await t.test("the Playtester's verdicts are read out of its journal entries, oldest first", () => {
+    const text = renderPlaytesterVerdicts([
+      "[2026-09-16] **Decided:** A dark void. I would not come back.\n**Filed:** \"The visual canvas is a dark void\"",
+      "[2026-09-23] **Decided:** Still a dark void.\n**Tool surface:** fine",
+    ]);
+    assert.equal(text, "- 2026-09-16: A dark void. I would not come back.\n- 2026-09-23: Still a dark void.");
+  });
+
+  await t.test("says so when the Playtester has no sessions on record", () => {
+    assert.match(renderPlaytesterVerdicts([]), /no sessions on record/);
+  });
+
+  await t.test("the week carries both the verdicts and the open findings", () => {
+    const week = renderWeek(
+      { shipped: [], parked: [], open: [answeredBy([10])], verdicts: ["[2026-09-23] **Decided:** Still a dark void."] },
+      now
+    );
+    assert.match(week, /Still a dark void/);
+    assert.match(week, /#591 The visual canvas is a dark void/);
+  });
+});
+
+test("the Product Manager remembers what it tried", async (t) => {
+  const history = (closedFindings = [], closedTickets = []) => ({
+    closedFindings,
+    closedTickets: new Map(closedTickets.map((i) => [i.number, i])),
+  });
+  const closedFinding = (number, stateReason, body = "") => ({ number, title: "The visual canvas is a dark void", stateReason, body });
+
+  await t.test("a finding answered for the first time has no history", () => {
+    assert.deepEqual(priorAnswers(finding(812), []), []);
+    assert.equal(renderPriorAnswers(finding(812), history(), []), "");
+  });
+
+  await t.test("an escalated finding shows the answer that shipped and did not help", () => {
+    const rounds = priorAnswers(answeredBy([10], [ESCALATED_LABEL]), []);
+    assert.deepEqual(rounds.map((r) => r.tickets), [[10]]);
+    assert.match(rounds[0].outcome, /still saw this/);
+  });
+
+  await t.test("answers replaced on the same finding are shown as not having fixed it", () => {
+    const issue = { ...finding(812, { labels: [ESCALATED_LABEL] }), body: "Answered by: #30\nTried before: #10, #20" };
+    const rounds = priorAnswers(issue, []);
+    assert.deepEqual(rounds.map((r) => [r.tickets, r.outcome]), [
+      [[10, 20], "did not fix it"],
+      [[30], "shipped, and the Playtester still saw this — escalated"],
+    ]);
+  });
+
+  await t.test("an earlier finding filed under the same title is the same complaint coming back", () => {
+    const rounds = priorAnswers(finding(812), [
+      closedFinding(794, "COMPLETED", "Answered by: #700"),
+      { number: 795, title: "Something else entirely", stateReason: "COMPLETED", body: "Answered by: #701" },
+    ]);
+    assert.deepEqual(rounds.map((r) => r.from), [794]);
+    assert.match(rounds[0].outcome, /verified it fixed, and the complaint came back/);
+  });
+
+  await t.test("an earlier finding retired before answers were tracked still counts as a repeat", () => {
+    const text = renderPriorAnswers(finding(812), history([closedFinding(591, "NOT_PLANNED")]), []);
+    assert.match(text, /On #591, an earlier filing of the same complaint: tickets not recorded/);
+    assert.match(text, /closed without the Playtester ever confirming it was fixed/);
+  });
+
+  await t.test("names each ticket and whether it shipped", () => {
+    const text = renderPriorAnswers(
+      answeredBy([10, 11, 12], [ESCALATED_LABEL]),
+      history([], [{ number: 10, title: "Brighten the ground", stateReason: "COMPLETED" }, { number: 11, title: "Add a glow", stateReason: "NOT_PLANNED" }]),
+      [{ number: 12, title: "Tint the sky" }]
+    );
+    assert.match(text, /#10 Brighten the ground \(shipped\); #11 Add a glow \(retired\); #12 Tint the sky \(not shipped yet\)/);
+  });
+
+  await t.test("the grooming prompt carries the history under the finding it belongs to", () => {
+    const text = renderPlaytestFeedback(
+      [answeredBy([10], [ESCALATED_LABEL])],
+      history([], [{ number: 10, title: "Brighten the ground", stateReason: "COMPLETED" }])
+    );
+    assert.match(text, /#### Answered before\n- On this finding: #10 Brighten the ground \(shipped\)/);
+  });
+
+  await t.test("escalating instead of repeating marks the finding and records why", () => {
+    const plan = planEscalation("Three lighting tickets shipped; the scene is still dark.");
+    assert.deepEqual(plan.add, [ESCALATED_LABEL]);
+    assert.match(plan.comment, /Three lighting tickets shipped/);
   });
 });
