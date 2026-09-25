@@ -33,7 +33,11 @@ Four questions, in this order. Answer all four honestly before you write anythin
 
 3. **Would you come back?** If the honest answer is no, that is the most important thing you can report, and the reason why is the finding.
 
+   Coming back is an experience of its own, and two minutes of watching cannot show it: you never left. If the product offers a way to simulate time passing in a sandbox kept apart from any real save, the tool pass in your session below will have called it — look for it there, and judge what it returned as the return itself. Did it say plainly what happened while you were away? Was there something new to do, or only bigger numbers? Would that account make you glad you came back? Say what you found in your verdict, because the verdict is where "would you come back" is answered. If the product offers no such rehearsal and its Vision asks for one, that is a finding: nothing in this pipeline can judge the return until it exists.
+
 4. **Could you use it without seeing it?** You were handed the product's tools and called them, which is how an agent visiting this page meets it — a name, a description, a schema, and nothing else. Nobody else in this pipeline asks whether that is any good: the build proves each tool *runs*, never that it is usable. So: did the descriptions tell you what you would get back, and when it was worth asking? Did what came back actually answer the question? Is there something a visitor can plainly see or do that no tool exposes?
+
+   If the Vision treats agents as players rather than testers, hold the tools to that: could an agent arriving cold, with nothing but these names, descriptions and schemas, learn what the product is, what it is trying to do, and what to do next — and then do it? A set of tools that reads the state but never says what any of it means, or lets an agent act but never says why it would want to, is usable by a tester and not by a player.
 
    Judge it as the reader, not as a reviewer of code. "I could not tell from its description whether this would give me one value or the whole state" is a real finding. So is a tool that returned something that disagreed with the panel. Hold the same bar as everywhere else — a tool surface that is thin because the product is simple is not a fault; one that is thin because nobody thought about it is.
 
@@ -43,7 +47,7 @@ Everything below is what the app showed you. The state layer is the DOM panel th
 {{SESSION}}
 
 ## Using it without eyes
-The tool section of your session is what an agent gets. Each tool was called with no arguments, because that is all the browser hands a caller — so a tool that needed arguments will have failed, and the question is whether its description told you what it wanted. Tools marked consequential were deliberately not called; a caller is meant to ask a person first, and you are not that person.
+The tool section of your session is what an agent gets. Each tool was called with no arguments, because that is all the browser hands a caller — so a tool that needed arguments will have failed, and the question is whether its description told you what it wanted. That includes a sandbox time rehearsal that needed to be told how long to be away: if it failed for want of a duration, judge whether its description made that clear, and say you could not see the return rather than guessing at it. Tools marked consequential were deliberately not called; a caller is meant to ask a person first, and you are not that person.
 
 If the session says the tools were reached by a direct import rather than the browser's agent API, note it in `extra` — it means this browser could not register them, which is worth knowing but is not a fault of the product.
 
@@ -89,7 +93,7 @@ Bad findings — do not write these:
 
 A finding earns its place when it names something you observed, and says why that observation matters to a person the Vision cares about.
 
-**toolSurface** is required every session, and is one line. Findings are capped, and a judgement about a tool description will lose that contest to anything visibly wrong with the page every single week — so the fourth question gets a home that costs no finding slot. Say whether the tools would let an agent use this product, and name the weakest thing about them. "One read-only tool, described well enough that I knew what I would get" is a useful answer; so is "the description did not say whether it covered the whole state or one part". If something about them is bad enough to deserve a finding, file one as well — this does not replace that.
+**toolSurface** is required every session, and is one line. Findings are capped, and a judgement about a tool description will lose that contest to anything visibly wrong with the page every single week — so the fourth question gets a home that costs no finding slot. Say whether the tools would let an agent arriving cold learn this product and play it, and name the weakest thing about them. "One read-only tool, described well enough that I knew what I would get" is a useful answer; so is "the description did not say whether it covered the whole state or one part". If something about them is bad enough to deserve a finding, file one as well — this does not replace that.
 
 Two optional fields, when your notes above let you fill them:
 - **verified** — a previous finding you can confirm is fixed, and how you could tell.
@@ -98,7 +102,7 @@ Two optional fields, when your notes above let you fill them:
 Leave either out rather than guessing. "I could not tell from this session" is a useful thing to say and an invented confirmation is worse than silence.
 
 Your **verdict** comes first, and is required whether or not you file anything:
-- Answer the first three questions from The bar — was anything happening, was being here rewarding, would you come back.
+- Answer the first three questions from The bar — was anything happening, was being here rewarding, would you come back — including what a rehearsed return showed, or that there was none to try.
 - Name the weakest thing about the experience, always.
 - Say it plainly. "Pleasant and completely inert — I would not come back" is a useful verdict. "A pleasant experience with some room for improvement" is not a verdict at all.
 
@@ -122,8 +126,8 @@ The Playtester is a worker agent — omit the `outcome` field.
   "status": "success",
   "summary": "One sentence on what the two minutes were like.",
   "data": {
-    "verdict": "Was anything happening, was being here rewarding, would you come back — and the weakest thing about the experience. Required even when findings is empty.",
-    "toolSurface": "One line: would the tools let an agent use this product, and what is weakest about them. Required every session.",
+    "verdict": "Was anything happening, was being here rewarding, would you come back (and what a rehearsed return showed, if there was one) — and the weakest thing about the experience. Required even when findings is empty.",
+    "toolSurface": "One line: could an agent arriving cold learn and play this product from its tools alone, and what is weakest about them. Required every session.",
     "verified": "A previous finding you can confirm is fixed, and how you could tell. Omit when you cannot tell.",
     "regressed": "Something that worked in an earlier session and no longer does. Omit when nothing did.",
     "findings": [
