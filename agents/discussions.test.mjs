@@ -13,6 +13,8 @@ import {
   renderDecisions,
   renderInboundIdeas,
   collectPages,
+  untilSeen,
+  selectDecisions,
 } from "./discussions.mjs";
 
 test("deciding whose words count as guidance", async (t) => {
@@ -325,5 +327,44 @@ test("paging through a category to find a thread", async (t) => {
 
   await t.test("treats an empty or missing page as the end", () => {
     assert.deepEqual(collectPages(() => undefined), []);
+  });
+
+  // The ideas reader shows the newest few, so it has no reason to walk the rest.
+  await t.test("stops once enough threads have been seen", () => {
+    const { fetchPage, cursors } = connection([[{ title: "a" }], [{ title: "b" }, { title: "c" }], [{ title: "d" }]]);
+    const nodes = collectPages(fetchPage, { until: untilSeen(2) });
+    assert.deepEqual(nodes.map((d) => d.title), ["a", "b", "c"]);
+    assert.deepEqual(cursors, [null, "1"]);
+  });
+});
+
+test("choosing which decisions a reader sees", async (t) => {
+  const decision = (number, overrides = {}) => ({
+    number,
+    title: `Decision ${number}`,
+    body: `why ${number}`,
+    authorAssociation: "OWNER",
+    ...overrides,
+  });
+
+  await t.test("gives reasoning to the newest few and titles to the rest", () => {
+    const decisions = selectDecisions([decision(3), decision(2), decision(1)], { bodies: 2 });
+    assert.deepEqual(decisions.map((d) => d.body), ["why 3", "why 2", ""]);
+    assert.deepEqual(decisions.map((d) => d.title), ["Decision 3", "Decision 2", "Decision 1"]);
+  });
+
+  // A stranger's thread or an archived one must not use up a reasoning slot, or
+  // the newest real decision would arrive as a bare title.
+  await t.test("drops strangers and archived threads before counting", () => {
+    const decisions = selectDecisions(
+      [
+        decision(4, { authorAssociation: "NONE" }),
+        decision(3, { title: "[archived 2026-01-01] Decision 3" }),
+        decision(2),
+        decision(1),
+      ],
+      { bodies: 1 }
+    );
+    assert.deepEqual(decisions.map((d) => [d.number, d.body]), [[2, "why 2"], [1, ""]]);
   });
 });
