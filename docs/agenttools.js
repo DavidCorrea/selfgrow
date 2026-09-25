@@ -8,23 +8,41 @@
  * @module agenttools
  */
 
-import { getState, gatherWood } from "./engine.js";
+import { getState, gatherWood, craftUpgrade, UPGRADE_COST } from "./engine.js";
 
 const GOAL_WOOD = 10;
 
 /**
- * Augment a raw state snapshot with goal info.
+ * Augment a raw state snapshot with goal and upgrade info.
  */
 function withGoal(s) {
+  const upgradeAvailable = s.wood >= UPGRADE_COST;
+  const reachedFirstGoal = s.wood >= GOAL_WOOD;
   return {
     wood: s.wood,
     rate: s.rate,
     timestamp: s.timestamp,
-    goal: {
+    upgradeLevel: s.upgradeLevel,
+    firstGoal: {
       target: GOAL_WOOD,
       current: Math.min(s.wood, GOAL_WOOD),
       reached: s.wood >= GOAL_WOOD,
     },
+    nextGoal: reachedFirstGoal
+      ? {
+          description: "Craft a Sharpening (" + UPGRADE_COST + " wood)",
+          type: "upgrade",
+          cost: UPGRADE_COST,
+          progressToNext: s.wood % UPGRADE_COST,
+          upgradeAvailable: upgradeAvailable,
+        }
+      : {
+          description: "Gather " + GOAL_WOOD + " wood",
+          type: "first-goal",
+          target: GOAL_WOOD,
+          progress: s.wood,
+          reached: false,
+        },
   };
 }
 
@@ -36,8 +54,8 @@ export function tools() {
     {
       name: "read-state",
       description: "Returns the current game state the page is showing to the "
-        + "visitor: wood count, accumulation rate, timestamp of the last "
-        + "tick or save, and the current goal progress.",
+        + "visitor: wood count, accumulation rate, number of upgrades crafted, "
+        + "timestamp, and the current goal (first goal or upgrade goal).",
       inputSchema: { type: "object", properties: {} },
       annotations: { readOnlyHint: true },
       example: {},
@@ -49,13 +67,14 @@ export function tools() {
       name: "perform-action",
       description: "Performs a named action the visitor could take from the "
         + "page, and returns the state afterwards. Supported actions: "
-        + '"gather" — instantly adds +1 wood.',
+        + '"gather" — instantly adds +1 wood; '
+        + '"sharpen" — consumes ' + UPGRADE_COST + ' wood to permanently increase the wood accumulation rate.',
       inputSchema: {
         type: "object",
         properties: {
           action: {
             type: "string",
-            description: 'The action to perform. Currently supported: "gather".',
+            description: 'The action to perform. Supported: "gather", "sharpen".',
           },
         },
         required: ["action"],
@@ -66,7 +85,11 @@ export function tools() {
         if (action === "gather") {
           return withGoal(gatherWood());
         }
-        throw new Error(`Unknown action "${action}". Supported: gather`);
+        if (action === "sharpen") {
+          const result = craftUpgrade();
+          return withGoal(result.state);
+        }
+        throw new Error('Unknown action "' + action + '". Supported: gather, sharpen');
       },
     },
   ];

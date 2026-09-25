@@ -377,6 +377,9 @@
     <button class="btn" id="btn-gather" type="button" aria-label="Gather Wood">
       &#x26A0; Gather Wood
     </button>
+    <button class="btn" id="btn-sharpen" type="button" aria-label="Sharpen Axe" hidden>
+      &#x2692; Sharpen Axe (5 wood)
+    </button>
     <span class="footer-note" aria-live="polite">
       Click to gather +1 wood. More actions appear as the world expands.
     </span>
@@ -408,7 +411,7 @@
   <!-- ═══ Engine + live UI render loop ═══ -->
   <script type="module">
     import "./webmcp.js";
-    import { init, getState, gatherWood, consumeOfflineWoodGained } from "./engine.js";
+    import { init, getState, gatherWood, craftUpgrade, consumeOfflineWoodGained, UPGRADE_COST } from "./engine.js";
 
     init();
 
@@ -416,6 +419,7 @@
     const rateEl = document.getElementById("rate-value");
     const tickEl = document.getElementById("tick-value");
     const btnGather = document.getElementById("btn-gather");
+    const btnSharpen = document.getElementById("btn-sharpen");
     const goalText = document.getElementById("goal-text");
     const goalFill = document.getElementById("goal-progress-fill");
     const goalProgress = document.getElementById("goal-panel").querySelector(".progress-track");
@@ -425,6 +429,7 @@
 
     const GOAL_WOOD = 10;
     let goalReached = false;
+    // Track whether player has ever reached 10 wood to persist the sharpen button
 
     // ─── Cooldown state ───
     let cooldown = false;
@@ -451,6 +456,19 @@
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
         handleGather();
+      }
+    });
+
+    function handleSharpen() {
+      craftUpgrade();
+      renderUI();
+    }
+
+    btnSharpen.addEventListener("click", handleSharpen);
+    btnSharpen.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        handleSharpen();
       }
     });
 
@@ -497,7 +515,7 @@
 
       // Rate
       if (rateEl) {
-        rateEl.textContent = s.rate.toFixed(1) + "/s";
+        rateEl.textContent = s.rate.toFixed(2) + "/s";
       }
 
       // Tick indicator
@@ -509,15 +527,30 @@
       if (wood >= GOAL_WOOD) {
         if (!goalReached) {
           goalReached = true;
-          goalText.textContent = "Goal reached! You gathered " + GOAL_WOOD + " wood.";
+          // Show the sharpen button forever once unlocked
+          btnSharpen.hidden = false;
         }
-        if (goalFill) goalFill.style.width = "100%";
-        if (goalProgress) goalProgress.setAttribute("aria-valuenow", GOAL_WOOD);
+        // Show upgrade goal: gather wood to craft the next sharpening
+        const woodForUpgrade = wood;
+        const pct = (woodForUpgrade / UPGRADE_COST) * 100;
+        goalText.textContent = "Craft a Sharpening (" + UPGRADE_COST + " wood)";
+        if (goalFill) goalFill.style.width = Math.min(pct, 100) + "%";
+        if (goalProgress) goalProgress.setAttribute("aria-valuenow", Math.floor(woodForUpgrade % UPGRADE_COST));
+        if (goalProgress) goalProgress.setAttribute("aria-valuemax", UPGRADE_COST);
+
+        // Disable sharpen if not enough wood, enable otherwise
+        btnSharpen.disabled = wood < UPGRADE_COST;
       } else {
         goalReached = false;
         const pct = (wood / GOAL_WOOD) * 100;
         if (goalFill) goalFill.style.width = Math.min(pct, 100) + "%";
         if (goalProgress) goalProgress.setAttribute("aria-valuenow", Math.floor(wood));
+        if (goalProgress) goalProgress.setAttribute("aria-valuemax", GOAL_WOOD);
+        goalText.textContent = "Gather " + GOAL_WOOD + " wood";
+
+        // Hide sharpen button until goal is reached
+        btnSharpen.hidden = true;
+        btnSharpen.disabled = false;
       }
     }
 

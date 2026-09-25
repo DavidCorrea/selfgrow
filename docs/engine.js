@@ -11,18 +11,25 @@
 
 const STORAGE_KEY = "selfgrow-state";
 const WOOD_RATE = 0.1; // wood per second
+const UPGRADE_COST = 5; // wood per upgrade
+const RATE_INCREASE_PER_UPGRADE = 0.05; // additional wood per second per upgrade
 const TICK_MS = 1000;  // save interval (ms)
+
+// Exported for external use (tools, UI)
+export { UPGRADE_COST, RATE_INCREASE_PER_UPGRADE };
 
 /**
  * @typedef {Object} GameState
- * @property {number}  wood       — accumulated resource
- * @property {number}  rate       — wood per second
- * @property {string}  timestamp  — ISO date of last tick/save
+ * @property {number}  wood          — accumulated resource
+ * @property {number}  rate          — wood per second
+ * @property {number}  upgradeLevel  — number of upgrades crafted
+ * @property {string}  timestamp     — ISO date of last tick/save
  */
 
 let state = {
   wood: 0,
   rate: WOOD_RATE,
+  upgradeLevel: 0,
   timestamp: new Date().toISOString(),
 };
 
@@ -68,6 +75,7 @@ function loadPersisted() {
       if (saved && typeof saved.wood === "number" && typeof saved.rate === "number" && saved.timestamp) {
         state.wood = saved.wood;
         state.rate = saved.rate;
+        state.upgradeLevel = typeof saved.upgradeLevel === "number" ? saved.upgradeLevel : 0;
         state.timestamp = saved.timestamp;
         return true;
       }
@@ -135,6 +143,23 @@ export function gatherWood() {
 }
 
 /**
+ * Craft an upgrade: consumes UPGRADE_COST wood to permanently increase
+ * the wood accumulation rate by RATE_INCREASE_PER_UPGRADE.
+ *
+ * @returns {{ upgraded: boolean, reason?: string, state: GameState }} whether
+ *   the upgrade succeeded, and if not, a human-readable reason.
+ */
+export function craftUpgrade() {
+  if (state.wood < UPGRADE_COST) {
+    return { upgraded: false, reason: "Not enough wood — need " + UPGRADE_COST, state: getState() };
+  }
+  state.wood -= UPGRADE_COST;
+  state.rate += RATE_INCREASE_PER_UPGRADE;
+  state.upgradeLevel++;
+  return { upgraded: true, state: getState() };
+}
+
+/**
  * Returns the amount of wood gained during the last offline catch-up.
  * Resets to 0 after being read.
  *
@@ -155,6 +180,7 @@ export function getState() {
   return {
     wood: state.wood,
     rate: state.rate,
+    upgradeLevel: state.upgradeLevel,
     timestamp: state.timestamp,
   };
 }
@@ -167,6 +193,7 @@ export function reset() {
   state = {
     wood: 0,
     rate: WOOD_RATE,
+    upgradeLevel: 0,
     timestamp: now(),
   };
   offlineWoodGained = 0;
