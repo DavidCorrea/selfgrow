@@ -2,6 +2,7 @@
  * engine.js — selfgrow's game state engine.
  *
  * One resource ("wood") accumulates at a fixed rate (0.1/sec).
+ * The player can also click/tap to gather +1 wood instantly.
  * State persists to localStorage every tick and catches up on page
  * reload for time spent away.
  *
@@ -25,6 +26,9 @@ let state = {
   timestamp: new Date().toISOString(),
 };
 
+/** Offline wood accumulated on last catch-up (0 if none). */
+let offlineWoodGained = 0;
+
 let tickTimer = null;
 
 // ─── Internal helpers ─────────────────────────────────────────────
@@ -41,7 +45,9 @@ function catchUp() {
   const lastSaved = new Date(state.timestamp).getTime();
   const elapsedSec = (Date.now() - lastSaved) / 1000;
   if (elapsedSec > 0) {
-    state.wood += state.rate * elapsedSec;
+    const gained = state.rate * elapsedSec;
+    state.wood += gained;
+    offlineWoodGained = gained;
     state.timestamp = now();
   }
 }
@@ -119,6 +125,28 @@ export function save() {
 }
 
 /**
+ * Gather +1 wood instantly (active play action).
+ *
+ * @returns {GameState} current state after gathering
+ */
+export function gatherWood() {
+  state.wood += 1;
+  return getState();
+}
+
+/**
+ * Returns the amount of wood gained during the last offline catch-up.
+ * Resets to 0 after being read.
+ *
+ * @returns {number}
+ */
+export function consumeOfflineWoodGained() {
+  const val = offlineWoodGained;
+  offlineWoodGained = 0;
+  return val;
+}
+
+/**
  * Return a snapshot of the current game state.
  *
  * @returns {GameState}
@@ -141,6 +169,7 @@ export function reset() {
     rate: WOOD_RATE,
     timestamp: now(),
   };
+  offlineWoodGained = 0;
   try {
     localStorage.removeItem(STORAGE_KEY);
   } catch {
