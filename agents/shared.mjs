@@ -2036,6 +2036,33 @@ export function classifyAgentPullRequest(pr, { now = Date.now(), staleMs } = {})
   };
 }
 
+/**
+ * What a run does about one classified agent PR, and whether its ticket stays
+ * claimed so the same run does not build it a second time.
+ *
+ *   "leave"  — nothing to do now; the PR stands.
+ *   "merge"  — it passed and never landed: re-arm the merge and wait for it.
+ *   "close"  — failing or conflicting: close it and strike the ticket.
+ *   "retire" — its ticket is no longer open (shipped, split, superseded): close
+ *              it without merging, because landing it would ship work the board
+ *              has already decided against.
+ *
+ * A ticket stays claimed for as long as its PR stays open. Claiming only the PRs
+ * left alone let a passing PR whose merge did not land in time go unclaimed, and
+ * the same run branched the ticket again beside it.
+ *
+ * `alreadyAwaited` is the run's memory of PRs it has already waited on. The
+ * reconcile runs before every ticket, and mergePR waits up to ten minutes; without
+ * it, one PR whose checks never finish costs ten minutes per pass.
+ */
+export function decideAgentPullRequest(verdict, { issueOpen, alreadyAwaited }) {
+  if (!verdict.stale) return { action: "leave", claimed: true };
+  if (!issueOpen) return { action: "retire", claimed: false };
+  if (verdict.state === "pending") return { action: "leave", claimed: true };
+  if (verdict.state === "passing") return { action: alreadyAwaited ? "leave" : "merge", claimed: true };
+  return { action: "close", claimed: false };
+}
+
 // ---------------------------------------------------------------------------
 // Layered build verification: syntax → static analysis (lint) → runtime smoke.
 // Cheap checks first; stop at the first failing layer. ESLint and Playwright
