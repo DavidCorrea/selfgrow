@@ -154,10 +154,15 @@
     }
 
     .action-group.stone-actions {
-      display: none;
+      visibility: hidden;
+      position: absolute;
+      pointer-events: none;
     }
 
     .action-group.stone-actions.visible {
+      visibility: visible;
+      position: static;
+      pointer-events: auto;
       display: flex;
     }
 
