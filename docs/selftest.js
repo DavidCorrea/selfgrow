@@ -176,7 +176,6 @@ export async function checks() {
     // ─── Overlay must be fully opaque when visible ───
     const wasHidden = offlineSummary.hidden;
     offlineSummary.removeAttribute("hidden");
-    offlineSummary.style.display = "flex";
 
     // Replicate showOfflineSummary state
     const gatherBtnForDisabled = document.getElementById("btn-gather");
@@ -266,7 +265,6 @@ export async function checks() {
 
     // ─── Gather button must not be clickable through overlay ───
     offlineSummary.removeAttribute("hidden");
-    offlineSummary.style.display = "flex";
     const gBtn = document.getElementById("btn-gather");
     if (gBtn) gBtn.disabled = true;
     document.body.style.pointerEvents = "none";
@@ -301,7 +299,6 @@ export async function checks() {
     if (wasHidden) {
       offlineSummary.setAttribute("hidden", "");
     }
-    offlineSummary.style.display = "";
   }
 
   // ─── Tap target sizes must meet WCAG minimum ────────────────
@@ -341,7 +338,6 @@ export async function checks() {
     const summary = dismissBtn2.closest("#offline-summary");
     const wasHidden2 = summary.hidden;
     summary.removeAttribute("hidden");
-    summary.style.display = "flex";
     const h = parseFloat(getComputedStyle(dismissBtn2).height);
     if (h < 39.9) {
       problems.push(`#btn-dismiss-offline computed height is ${h}px — expected at least 40px (WCAG minimum tap target).`);
@@ -349,7 +345,6 @@ export async function checks() {
     if (wasHidden2) {
       summary.setAttribute("hidden", "");
     }
-    summary.style.display = "";
   } else {
     problems.push("Expected #btn-dismiss-offline to exist for tap target check — it was not found.")
   }
@@ -906,7 +901,6 @@ export async function checks() {
       const offlineSummary = document.getElementById("offline-summary");
       if (offlineSummary) {
         offlineSummary.removeAttribute("hidden");
-        offlineSummary.style.display = "flex";
         document.body.style.pointerEvents = "none";
         offlineSummary.style.pointerEvents = "auto";
         const btnG = document.getElementById("btn-gather");
@@ -1031,7 +1025,6 @@ export async function checks() {
     const wasHidden = overlay ? overlay.hidden : true;
     if (overlay) {
       overlay.removeAttribute("hidden");
-      overlay.style.display = "flex";
     }
 
     const panelStyle = getComputedStyle(offlinePanel);
@@ -1049,8 +1042,62 @@ export async function checks() {
       if (wasHidden) {
         overlay.setAttribute("hidden", "");
       }
-      overlay.style.display = "";
     }
+  }
+
+  // ─── Offline panel dimension checks when overlay is hidden ───
+  // Per issue #902: when #offline-summary has the hidden attribute,
+  // .offline-panel and .offline-message must still report their
+  // CSS-specified dimensions (not collapsed to 0x0).
+  const offlinePanelHidden = document.querySelector(".offline-panel");
+  const offlineMessageHidden = document.querySelector(".offline-message");
+  const overlayHidden = document.getElementById("offline-summary");
+
+  if (overlayHidden) {
+    // Make sure hidden attribute is set
+    if (!overlayHidden.hidden) {
+      overlayHidden.setAttribute("hidden", "");
+    }
+  }
+
+  if (offlinePanelHidden) {
+    const rect = offlinePanelHidden.getBoundingClientRect();
+    const style = getComputedStyle(offlinePanelHidden);
+    const minH = parseFloat(style.minHeight);
+    if (rect.width < 100) {
+      problems.push(
+        `.offline-panel width when overlay is hidden is ${rect.width}px — expected at least 100px. `
+        + "The panel container is collapsed, likely due to display:none on the parent."
+      );
+    }
+    if (minH >= 200 && rect.height < minH * 0.5) {
+      problems.push(
+        `.offline-panel height when overlay is hidden is ${rect.height}px — `
+        + `expected at least ${minH}px (min-height: ${style.minHeight}). `
+        + "The panel is collapsed when hidden."
+      );
+    }
+  }
+
+  if (offlineMessageHidden) {
+    const rect = offlineMessageHidden.getBoundingClientRect();
+    if (rect.width < 50) {
+      problems.push(
+        `.offline-message width when overlay is hidden is ${rect.width}px — expected at least 50px. `
+        + "The message container is collapsed, likely due to display:none on the parent."
+      );
+    }
+    if (rect.height < 20) {
+      problems.push(
+        `.offline-message height when overlay is hidden is ${rect.height}px — expected at least 20px. `
+        + "The message container is collapsed when hidden."
+      );
+    }
+  }
+
+  // Restore overlay to hidden state for normal page operation
+  if (overlayHidden && !overlayHidden.hidden) {
+    overlayHidden.setAttribute("hidden", "");
   }
 
   return problems;
