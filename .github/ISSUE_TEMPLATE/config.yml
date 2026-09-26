@@ -3,7 +3,7 @@
 # skips them, which is exactly the shape that used to get closed for being vague.
 blank_issues_enabled: false
 contact_links:
-  - name: See the garden
+  - name: See the live product
     url: https://davidcorrea.github.io/selfgrow/
     about: The live product, which is what these issues are about.
   - name: How the pipeline works
