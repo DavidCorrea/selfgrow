@@ -3,7 +3,7 @@ name: pi-update
 on:
   schedule:
     # Tuesday. Deliberately a day no other weekly agent runs — the Product Owner
-    # is Monday, the Playtester Wednesday, the Tech Lead Thursday — so the probes
+    # is Monday, the Tech Lead Thursday, the Playtester nightly at 23:00 — so the probes
     # below never compete with a grooming or building run for the day's requests.
     - cron: '0 7 * * 2'
   workflow_dispatch:

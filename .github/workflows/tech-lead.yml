@@ -3,7 +3,7 @@ name: tech-lead
 on:
   schedule:
     # Thursday. A day of its own: the Product Owner is Monday, pi-update Tuesday,
-    # the Playtester Wednesday, so nothing here competes with another weekly agent
+    # and the Playtester plays nightly at 23:00, so nothing here competes with another agent
     # for the day's requests. A week of shipping is the smallest amount of change
     # worth re-reading the whole codebase over.
     - cron: '0 9 * * 4'

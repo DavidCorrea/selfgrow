@@ -18,7 +18,6 @@ import {
   recordTicket,
   retireIssue,
   fetchShippedIssues,
-  reviewApp,
   fetchOpenIssues,
   isBuildable,
   triggerWorkflow,
@@ -728,10 +727,10 @@ async function main() {
   const vision = readVision();
   ensurePriorityLabels();
 
-  // Measure the live app and exercise its controls. No model is involved, so this
-  // runs every time and costs nothing against the daily request cap.
-  const review = await withLogGroup("App review", () => reviewApp());
-  const appObservations = review || "(no defects measured and nothing broke when exercised)";
+  // App Review is not run here any more. Its measurements reach this role only
+  // through the Playtester's findings: the accessibility barriers filed as they
+  // are, the rest judged against what a player could notice. Read directly, every
+  // measurement became a ticket in the checker's words.
 
   const milestone = getCurrentMilestone();
   log("info", milestone
@@ -766,7 +765,6 @@ async function main() {
         })(),
         MILESTONE: renderMilestone(milestone),
         BOARD_STATE: boardState,
-        APP_OBSERVATIONS: appObservations,
         UNGROOMED: renderUngroomed(openIssues),
         PARKED: renderParked(openIssues),
         // The history costs two listings, so it is read only on a day there is a

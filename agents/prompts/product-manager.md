@@ -21,7 +21,7 @@ This is the current Vision (from the wiki) — what the project is and is becomi
 ## The Milestone (what the project is trying to do right now)
 The Product Owner sets this each week. It is the difference between a backlog and a list: every ticket you propose should serve it, and a batch that pulls in one direction is worth more than the same number pulling in five.
 
-If a genuinely important piece of work does not serve the milestone — a bug that breaks the experience, a defect from the app review — propose it anyway and say so in its body. The milestone is a focus, not a fence.
+If a genuinely important piece of work does not serve the milestone — a bug that breaks the experience, an accessibility barrier the Playtester filed — propose it anyway and say so in its body. The milestone is a focus, not a fence.
 
 {{MILESTONE}}
 
@@ -34,23 +34,13 @@ The project's tickets, grouped by column: **Done** = already shipped, **In progr
 
 You may also read the code under `docs/` for finer detail. (The vision and changelog live in the wiki, not the repo.)
 
-## Automated App Review (measured from the live app)
-An automated pass loaded the running app on a desktop window and on a touch phone in portrait, **measured** its rendered layout, and exercised its interactive elements. Nothing here is a model's opinion about a screenshot — every item is a fact read out of the live page, with the element named:
-
-- **Defects** — measured layout faults: elements past the viewport edge, overlapping text, contrast below the WCAG minimum, containers collapsed to zero size, broken images, missing stylesheets, content squeezed into a narrow column of a desktop window, controls too small to tap on a phone, a page that renders visually empty. These are **reliable** measurements: each names the element and the viewport it happens at.
-- **Functional** — what happened when controls were exercised. A reported **JS error** is a real bug → ticket it. A **"no visible effect"** note is a weak signal (the app may be canvas/JS-only) → only ticket it if it's clearly a dead control.
-
-Two things follow from these being measurements rather than impressions. First, don't second-guess a reported number or re-derive it. But a measurement is evidence, not a ticket: **ticket what a player would notice**, and say it in those terms — "the Gather button is hard to hit on a phone", not "`button#gather` is 39px tall". The measured detail goes in the ticket's `devNotes`, where the Builder can use it. A defect no player could ever see — content that is hidden anyway, a box inside something invisible — is not a ticket: a ticket whose goal is "no visible change" is changing the product to satisfy the checker. Second, they are **narrow**: they say nothing about whether the app is beautiful, pleasant to use, or faithful to the Vision. Judging that is your job, from the Vision, the board, and the code — an empty Defects list means nothing is measurably broken, not that the experience is good.
-
-Everything here is held to the same dedup and quality bar as any other ticket.
-
-{{APP_OBSERVATIONS}}
-
 ## Playtest Feedback (a Playtester spent time with the live app)
 
-These are **impressions, not tickets**. Once a week an agent sits with the running app for two minutes, reads the state layer as it changes, and writes down what that was like. The Builder cannot pick these up — they have no acceptance criteria and often no clear ask — so they stay on the board until you deal with them here.
+These are **findings, not tickets**. Every night an agent sits with the running app for two minutes, reads the state layer as it changes, looks at it, and writes down what that was like. The Builder cannot pick these up — they have no acceptance criteria and often no clear ask — so they stay on the board until you deal with them here.
 
-Where the App Review above is narrow and reliable, this is the opposite: broad, subjective, and about whether the experience is any good. It is the only thing in the pipeline that reports on the *feel* of the product rather than its correctness, so weigh it accordingly — a measured defect is a fact, and a playtest finding is an opinion worth taking seriously.
+They come in two kinds, and both are yours to turn into groomed tickets:
+- **Accessibility barriers** — "Some text is too faint to read", "Some controls are too small to tap on a phone", "Part of the page runs off the screen", "Using a control breaks the page". These are filed straight from App Review's **measurements**, with no model involved, and the exact measurements are in their **Dev Notes**. They are facts: do not drop one for being minor. Answer it with a ticket in the player's terms, and carry the measurements into its `devNotes`.
+- **Impressions** — broad, subjective, and about whether the experience is any good. The only thing in the pipeline that reports on the *feel* of the product rather than its correctness. An impression can lean on a measurement too, in its Dev Notes; the Playtester files one only when a player would notice what was measured.
 
 For **each** finding, do one of two things:
 - **Act on it** — propose one or more tickets in `backlog` that address what was noticed, and set `addresses` on each to the finding's number. The finding says what was wrong with the experience; the ticket is yours to design. Do not simply restate the complaint as a title: "The state layer never changed in two minutes" is an observation, and the ticket it becomes might be "Advance the status display on the existing update cycle" — concrete, checkable, one Builder pass. **Do not retire a finding you act on.** It stays open, linked to its tickets, until the Playtester has played the product with them shipped and says whether what it saw changed. Shipping the tickets is not the same as fixing the experience, and only the Playtester can tell the two apart.
@@ -152,7 +142,7 @@ Be decisive but not trigger-happy: retiring a good ticket costs the project that
 ## Backlog Grooming
 Propose small tickets that close the gap between Done and the Vision — fill a gap, deepen a shipped feature, or pay down debt the board reveals. **Up to 10 per run.** That is a ceiling, not a target: propose 2 if only 2 earn their place, and 10 when 10 genuinely do. Each ticket needs:
 - a clear, specific **title** (imperative) that names the actual feature or area — not a vague intention,
-- a **body** stating *what to build* and *why it matters to the experience*, grounded in a concrete gap, a Defect from the app review, or observed behavior — not a generic idea. Write it about the player: what they see, do, or notice. No selectors, CSS properties, file or function names here,
+- a **body** stating *what to build* and *why it matters to the experience*, grounded in a concrete gap, a playtest finding, or observed behavior — not a generic idea. Write it about the player: what they see, do, or notice. No selectors, CSS properties, file or function names here,
 - **acceptanceCriteria**: 2–4 concrete, checkable statements describing what is true when the ticket ships (what the user can see or do). This is the Builder's definition of done, so it is in the player's terms too,
 - **devNotes** *(optional)*: technical detail for the Builder — the measured numbers, the element, the file you checked. Evidence and context, never the definition of done.
 - **reachable by an agent**: the product is used by people through the page and by agents through the tools in `docs/agenttools.js`. A ticket that adds something a visitor can see or do adds the tool for it in the same change — say so in the body. You are deciding *whether* a capability should exist at all; how it is exposed is the Devs' problem, but that it is exposed is yours.

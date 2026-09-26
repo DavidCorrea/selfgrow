@@ -3487,8 +3487,10 @@ async function exploreInteractions(browser, url) {
 /**
  * Review the built site with no model involved at all: measure the rendered
  * layout at each viewport, then drive every interactive element and record what
- * breaks. Returns a `## Defects` / `## Functional` report for the Product Manager,
- * or null when there's nothing to review (no page yet, Playwright missing).
+ * breaks. Returns `{ report, defects, functional }` — the `## Defects` /
+ * `## Functional` text, each defect with the viewports it occurs at, and each
+ * functional note — or null when there's nothing to review (no page yet,
+ * Playwright missing) or nothing was found. The Playtester reads it as evidence.
  *
  * Costs zero model requests and never throws — any failure degrades to a partial
  * report or null, and the caller proceeds.
@@ -3575,5 +3577,9 @@ export async function reviewApp(relDir = "docs") {
   }
   const report = parts.join("\n\n");
   log("info", `App review (measured layout + interaction sweep):\n${report}`);
-  return report;
+  return {
+    report,
+    defects: [...defectsByViewport].map(([message, viewports]) => ({ message, viewports })),
+    functional,
+  };
 }
