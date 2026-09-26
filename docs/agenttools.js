@@ -8,15 +8,16 @@
  * @module agenttools
  */
 
-import { getState, gatherWood, craftUpgrade, UPGRADE_COST } from "./engine.js";
+import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, consumeOfflineWoodGained, UPGRADE_COST, WALL_COST, STONE_GATHER_AMOUNT } from "./engine.js";
 
 const GOAL_WOOD = 10;
+const GOAL_STONE = 5;
 
 /**
- * Read the offline wood gain from the DOM.
+ * Read the offline gain from the DOM.
  * Returns 0 when no gain is pending (overlay hidden).
  */
-function readOfflineGained() {
+function readOfflineWoodGained() {
   const overlay = document.getElementById('offline-summary');
   if (!overlay || overlay.hidden) return 0;
   const el = document.getElementById('offline-wood-amount');
@@ -26,39 +27,114 @@ function readOfflineGained() {
   return isNaN(num) ? 0 : Math.max(0, num);
 }
 
+function readOfflineStoneGained() {
+  const overlay = document.getElementById('offline-summary');
+  if (!overlay || overlay.hidden) return 0;
+  const el = document.getElementById('offline-stone-amount');
+  if (!el) return 0;
+  const text = el.textContent.trim();
+  const num = parseFloat(text);
+  return isNaN(num) ? 0 : Math.max(0, num);
+}
+
 /**
- * Augment a raw state snapshot with goal and upgrade info.
+ * Compute stone rate from total wood earned.
+ */
+function computeStoneRate(totalWoodEarned) {
+  return 0.05 + totalWoodEarned * 0.001;
+}
+
+/**
+ * Determine the current goal phase based on state.
+ */
+function determineGoal(s) {
+  const reachedFirstGoal = s.wood >= GOAL_WOOD;
+  const doneFirstSharpen = s.upgradeLevel >= 1;
+  const stoneUnlocked = s.stoneUnlocked;
+
+  if (!reachedFirstGoal) {
+    return {
+      description: "Gather " + GOAL_WOOD + " wood",
+      type: "first-goal",
+      target: GOAL_WOOD,
+      progress: s.wood,
+      reached: false,
+    };
+  }
+
+  if (reachedFirstGoal && !doneFirstSharpen) {
+    return {
+      description: "Craft a Sharpening (" + UPGRADE_COST + " wood)",
+      type: "upgrade",
+      cost: UPGRADE_COST,
+      progressToNext: s.wood % UPGRADE_COST,
+      upgradeAvailable: s.wood >= UPGRADE_COST,
+    };
+  }
+
+  // Stone is now unlocked
+  if (!(s.wallLevel > 0) && s.stone < GOAL_STONE) {
+    return {
+      description: "Gather " + GOAL_STONE + " stone",
+      type: "stone-goal",
+      target: GOAL_STONE,
+      progress: s.stone,
+      reached: false,
+    };
+  }
+
+  if (s.stone >= GOAL_STONE && !(s.wallLevel > 0)) {
+    return {
+      description: "Build a Wall (" + WALL_COST + " stone)",
+      type: "build-wall-goal",
+      cost: WALL_COST,
+      progressToNext: s.stone % WALL_COST,
+      wallAvailable: s.stone >= WALL_COST,
+    };
+  }
+
+  // Wall built — back to sharpening cycle
+  return {
+    description: "Craft a Sharpening (" + UPGRADE_COST + " wood)",
+    type: "upgrade",
+    cost: UPGRADE_COST,
+    progressToNext: s.wood % UPGRADE_COST,
+    upgradeAvailable: s.wood >= UPGRADE_COST,
+  };
+}
+
+/**
+ * Augment a raw state snapshot with goal, upgrade, and stone info.
  */
 function withGoal(s) {
   const upgradeAvailable = s.wood >= UPGRADE_COST;
   const reachedFirstGoal = s.wood >= GOAL_WOOD;
+  const canGatherStone = s.stoneUnlocked;
+  const wallAvailable = s.stoneUnlocked && s.stone >= WALL_COST;
+  const stoneRate = s.stoneUnlocked ? computeStoneRate(s.totalWoodEarned) : 0;
+  const clickPower = 1 + s.wallLevel;
+
   return {
     wood: s.wood,
     rate: s.rate,
+    totalWoodEarned: s.totalWoodEarned,
     timestamp: s.timestamp,
     upgradeLevel: s.upgradeLevel,
+    stone: s.stone,
+    stoneRate: stoneRate,
+    stoneUnlocked: s.stoneUnlocked,
+    wallLevel: s.wallLevel,
+    clickPower: clickPower,
+    wallBuilt: s.wallLevel > 0,
     offlineSummaryVisible: !document.getElementById('offline-summary')?.hidden,
-    offlineGained: readOfflineGained(),
+    offlineWoodGained: readOfflineWoodGained(),
+    offlineStoneGained: readOfflineStoneGained(),
     firstGoal: {
       target: GOAL_WOOD,
       current: Math.min(s.wood, GOAL_WOOD),
       reached: s.wood >= GOAL_WOOD,
     },
-    nextGoal: reachedFirstGoal
-      ? {
-          description: "Craft a Sharpening (" + UPGRADE_COST + " wood)",
-          type: "upgrade",
-          cost: UPGRADE_COST,
-          progressToNext: s.wood % UPGRADE_COST,
-          upgradeAvailable: upgradeAvailable,
-        }
-      : {
-          description: "Gather " + GOAL_WOOD + " wood",
-          type: "first-goal",
-          target: GOAL_WOOD,
-          progress: s.wood,
-          reached: false,
-        },
+    nextGoal: determineGoal(s),
   };
 }
 
@@ -71,9 +147,11 @@ export function tools() {
       name: "read-state",
       description: "Returns the current game state the page is showing to the "
         + "visitor: wood count, accumulation rate, number of upgrades crafted, "
-        + "timestamp, whether the offline-summary overlay is currently visible, "
-        + "how much wood was gained while away (offlineGained, 0 when none pending), "
-        + "and the current goal (first goal or upgrade goal).",
+        + "stone count, stone accumulation rate, wall level, click power, "
+        + "whether stone is unlocked, timestamp, whether the offline-summary "
+        + "overlay is currently visible, how much wood and stone were gained "
+        + "while away (offlineWoodGained / offlineStoneGained), and the current "
+        + "goal (first goal, upgrade goal, stone goal, or build-wall goal).",
       inputSchema: { type: "object", properties: {} },
       annotations: { readOnlyHint: true },
       example: {},
@@ -85,15 +163,17 @@ export function tools() {
       name: "perform-action",
       description: "Performs a named action the visitor could take from the "
         + "page, and returns the state afterwards. Supported actions: "
-        + '"gather" — instantly adds +1 wood; '
+        + '"gather" — instantly adds +1 wood (or more based on wall level); '
         + '"sharpen" — consumes ' + UPGRADE_COST + ' wood to permanently increase the wood accumulation rate; '
+        + '"gather-stone" — instantly adds +' + STONE_GATHER_AMOUNT + ' stone (only available after stone is unlocked); '
+        + '"build-wall" — consumes ' + WALL_COST + ' stone to permanently increase click power for wood; '
         + '"dismiss-offline" — dismisses the offline-summary overlay if visible.',
       inputSchema: {
         type: "object",
         properties: {
           action: {
             type: "string",
-            description: 'The action to perform. Supported: "gather", "sharpen", "dismiss-offline".',
+            description: 'The action to perform. Supported: "gather", "sharpen", "gather-stone", "build-wall", "dismiss-offline".',
           },
         },
         required: ["action"],
@@ -108,11 +188,19 @@ export function tools() {
           const result = craftUpgrade();
           return withGoal(result.state);
         }
+        if (action === "gather-stone") {
+          const result = gatherStone();
+          return withGoal(result.state);
+        }
+        if (action === "build-wall") {
+          const result = buildWall();
+          return withGoal(result.state);
+        }
         if (action === "dismiss-offline") {
           const overlay = document.getElementById("offline-summary");
           if (overlay && !overlay.hidden) {
             overlay.hidden = true;
-            overlay.style.display = ""; // clear inline display override
+            overlay.style.display = "";
             const btnGather = document.getElementById("btn-gather");
             if (btnGather) btnGather.disabled = false;
             document.body.style.pointerEvents = "";
@@ -120,7 +208,7 @@ export function tools() {
           }
           return withGoal(getState());
         }
-        throw new Error('Unknown action "' + action + '". Supported: gather, sharpen, dismiss-offline');
+        throw new Error('Unknown action "' + action + '". Supported: gather, sharpen, gather-stone, build-wall, dismiss-offline');
       },
     },
   ];

@@ -20,6 +20,7 @@
       --text: #e0e0e0;
       --text-dim: #8888aa;
       --highlight: #00ff88;
+      --stone-color: #8899cc;
       --pixel-font: 'Press Start 2P', 'Courier New', monospace;
       --border-width: 4px;
       --panel-pad: 1.5rem;
@@ -87,6 +88,10 @@
       gap: 0.25rem;
     }
 
+    #status-bar .stat-hidden {
+      display: none;
+    }
+
     #status-bar .stat-label {
       font-size: 0.5rem;
       color: var(--text-dim);
@@ -97,6 +102,10 @@
     #status-bar .stat-value {
       font-size: 0.85rem;
       color: var(--highlight);
+    }
+
+    #status-bar .stat-value.stone-value {
+      color: var(--stone-color);
     }
 
     .game-title {
@@ -119,6 +128,26 @@
       color: var(--text-dim);
       text-transform: uppercase;
       letter-spacing: 0.1em;
+    }
+
+    .action-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      align-items: center;
+      width: 100%;
+    }
+
+    .action-group.wood-actions {
+      /* default visible */
+    }
+
+    .action-group.stone-actions {
+      display: none;
+    }
+
+    .action-group.stone-actions.visible {
+      display: flex;
     }
 
     .btn {
@@ -159,6 +188,40 @@
 
     .btn:disabled:hover {
       background: var(--accent);
+      outline: none;
+    }
+
+    .btn-stone {
+      background: var(--stone-color);
+      border-color: #5566aa;
+    }
+
+    .btn-stone:hover,
+    .btn-stone:focus-visible {
+      background: #99aadd;
+      outline: 2px solid var(--highlight);
+      outline-offset: 3px;
+    }
+
+    .btn-stone:disabled:hover {
+      background: var(--stone-color);
+      outline: none;
+    }
+
+    .btn-wall {
+      background: #aa8866;
+      border-color: #775533;
+    }
+
+    .btn-wall:hover,
+    .btn-wall:focus-visible {
+      background: #ccaa88;
+      outline: 2px solid var(--highlight);
+      outline-offset: 3px;
+    }
+
+    .btn-wall:disabled:hover {
+      background: #aa8866;
       outline: none;
     }
 
@@ -260,6 +323,11 @@
 
     .offline-wood-highlight {
       color: var(--highlight);
+      font-size: 0.65rem;
+    }
+
+    .offline-stone-highlight {
+      color: var(--stone-color);
       font-size: 0.65rem;
     }
 
@@ -386,17 +454,38 @@
       <span class="stat-label" id="tick-label">Tick</span>
       <span class="stat-value" id="tick-value" aria-labelledby="tick-label">—</span>
     </div>
+    <div class="stat stat-hidden" id="stone-stat">
+      <span class="stat-label" id="stone-label">Stone</span>
+      <span class="stat-value stone-value" id="stone-value" aria-labelledby="stone-label">0</span>
+    </div>
+    <div class="stat stat-hidden" id="stone-rate-stat">
+      <span class="stat-label" id="stone-rate-label">Stone/s</span>
+      <span class="stat-value stone-value" id="stone-rate-value" aria-labelledby="stone-rate-label">0</span>
+    </div>
   </section>
 
   <!-- ═══ Action Area Panel ═══ -->
   <section class="panel" id="action-area" role="region" aria-label="Actions">
     <h2>Actions</h2>
-    <button class="btn" id="btn-gather" type="button" aria-label="Gather Wood">
-      &#x26A0; Gather Wood
-    </button>
-    <button class="btn" id="btn-sharpen" type="button" aria-label="Sharpen Axe" hidden>
-      &#x2692; Sharpen Axe (5 wood)
-    </button>
+
+    <div class="action-group wood-actions">
+      <button class="btn" id="btn-gather" type="button" aria-label="Gather Wood">
+        &#x26A0; Gather Wood
+      </button>
+      <button class="btn" id="btn-sharpen" type="button" aria-label="Sharpen Axe" hidden>
+        &#x2692; Sharpen Axe (5 wood)
+      </button>
+    </div>
+
+    <div class="action-group stone-actions" id="stone-actions">
+      <button class="btn btn-stone" id="btn-gather-stone" type="button" aria-label="Gather Stone">
+        &#x26AA; Gather Stone
+      </button>
+      <button class="btn btn-wall" id="btn-build-wall" type="button" aria-label="Build Wall" disabled>
+        &#x1F3F0; Build Wall (5 stone)
+      </button>
+    </div>
+
     <span class="footer-note" aria-live="polite">
       Click to gather +1 wood. More actions appear as the world expands.
     </span>
@@ -418,6 +507,9 @@
       <div class="offline-message">
         While you were away, you gathered<br>
         <span class="offline-wood-highlight" id="offline-wood-amount">0</span> wood
+        <span id="offline-stone-line" hidden><br>
+        <span class="offline-stone-highlight" id="offline-stone-amount">0</span> stone
+        </span>
       </div>
       <button class="btn-dismiss" id="btn-dismiss-offline" type="button">
         OK
@@ -428,43 +520,64 @@
   <!-- ═══ Engine + live UI render loop ═══ -->
   <script type="module">
     import "./webmcp.js";
-    import { init, getState, gatherWood, craftUpgrade, consumeOfflineWoodGained, UPGRADE_COST } from "./engine.js";
+    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, consumeOfflineWoodGained, consumeOfflineGained, UPGRADE_COST, WALL_COST } from "./engine.js";
 
     init();
 
     const stateEl = document.getElementById("wood-value");
     const rateEl = document.getElementById("rate-value");
     const tickEl = document.getElementById("tick-value");
+    const stoneEl = document.getElementById("stone-value");
+    const stoneRateEl = document.getElementById("stone-rate-value");
+    const stoneStat = document.getElementById("stone-stat");
+    const stoneRateStat = document.getElementById("stone-rate-stat");
     const btnGather = document.getElementById("btn-gather");
     const btnSharpen = document.getElementById("btn-sharpen");
+    const stoneActions = document.getElementById("stone-actions");
+    const btnGatherStone = document.getElementById("btn-gather-stone");
+    const btnBuildWall = document.getElementById("btn-build-wall");
     const goalText = document.getElementById("goal-text");
     const goalFill = document.getElementById("goal-progress-fill");
     const goalProgress = document.getElementById("goal-panel").querySelector(".progress-track");
     const offlineSummary = document.getElementById("offline-summary");
     const offlineAmount = document.getElementById("offline-wood-amount");
+    const offlineStoneLine = document.getElementById("offline-stone-line");
+    const offlineStoneAmount = document.getElementById("offline-stone-amount");
     const btnDismiss = document.getElementById("btn-dismiss-offline");
 
     const GOAL_WOOD = 10;
+    const GOAL_STONE = 5;
     let goalReached = false;
-    // Track whether player has ever reached 10 wood to persist the sharpen button
+    let stoneGoalActive = false; // true once stone is unlocked and first sharpen done
+    let wallBuilt = false;
 
     // ─── Cooldown state ───
-    let cooldown = false;
+    let woodCooldown = false;
+    let stoneCooldown = false;
     const COOLDOWN_MS = 500;
 
-    function setCooldown() {
-      cooldown = true;
+    function setWoodCooldown() {
+      woodCooldown = true;
       btnGather.disabled = true;
       setTimeout(() => {
-        cooldown = false;
+        woodCooldown = false;
         btnGather.disabled = false;
       }, COOLDOWN_MS);
     }
 
+    function setStoneCooldown() {
+      stoneCooldown = true;
+      btnGatherStone.disabled = true;
+      setTimeout(() => {
+        stoneCooldown = false;
+        btnGatherStone.disabled = false;
+      }, COOLDOWN_MS);
+    }
+
     function handleGather() {
-      if (cooldown) return;
+      if (woodCooldown) return;
       gatherWood();
-      setCooldown();
+      setWoodCooldown();
       renderUI();
     }
 
@@ -489,37 +602,80 @@
       }
     });
 
+    function handleGatherStone() {
+      if (stoneCooldown) return;
+      gatherStone();
+      setStoneCooldown();
+      renderUI();
+    }
+
+    btnGatherStone.addEventListener("click", handleGatherStone);
+    btnGatherStone.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        handleGatherStone();
+      }
+    });
+
+    function handleBuildWall() {
+      buildWall();
+      renderUI();
+    }
+
+    btnBuildWall.addEventListener("click", handleBuildWall);
+    btnBuildWall.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        handleBuildWall();
+      }
+    });
+
     // ─── Offline summary ───
     function showOfflineSummary() {
-      const gained = consumeOfflineWoodGained();
-      if (gained > 0) {
-        offlineAmount.textContent = gained >= 1 ? Math.floor(gained) : gained.toFixed(1);
+      const gained = consumeOfflineGained();
+      const woodGained = gained.wood;
+      const stoneGained = gained.stone;
+      const elapsedSec = gained.elapsedSec || 0;
+
+      // Also consume the legacy value in case anything uses it
+      consumeOfflineWoodGained();
+
+      // Only show the overlay for meaningful absences (>3 seconds),
+      // not for page-reload artifacts where elapsed is near zero.
+      if ((woodGained > 0 || stoneGained > 0) && elapsedSec > 3) {
+        offlineAmount.textContent = woodGained >= 1 ? Math.floor(woodGained) : woodGained.toFixed(1);
+        if (stoneGained > 0) {
+          offlineStoneAmount.textContent = stoneGained >= 1 ? Math.floor(stoneGained) : stoneGained.toFixed(2);
+          offlineStoneLine.hidden = false;
+        } else {
+          offlineStoneLine.hidden = true;
+        }
         offlineSummary.hidden = false;
         offlineSummary.querySelector(".offline-panel").focus();
 
-        // Disable action buttons while overlay is visible so no click
-        // can reach them through the covering overlay.
+        // Disable action buttons while overlay is visible
         btnGather.disabled = true;
         btnSharpen.disabled = true;
+        btnGatherStone.disabled = true;
+        btnBuildWall.disabled = true;
 
         // Seal the body against pointer events — the overlay is the only
-        // interactive layer. The overlay itself keeps pointer-events: auto
-        // so its dismiss button remains clickable.
+        // interactive layer.
         document.body.style.pointerEvents = "none";
         offlineSummary.style.pointerEvents = "auto";
 
         // Force flex display so the overlay is visible even in edge cases
-        // where the hidden attribute removal doesn't trigger the CSS.
         offlineSummary.style.display = "flex";
       }
     }
 
     function dismissOffline() {
       offlineSummary.hidden = true;
-      offlineSummary.style.display = ""; // clear inline display override
+      offlineSummary.style.display = "";
 
-      // Restore interactivity: re-enable gather (sharpen is managed by renderUI)
+      // Re-enable only the buttons that should be enabled based on game state
       btnGather.disabled = false;
+      // sharpen, stone and wall buttons will be re-evaluated by renderUI
       document.body.style.pointerEvents = "";
       offlineSummary.style.pointerEvents = "";
     }
@@ -543,6 +699,11 @@
     function renderUI() {
       const s = getState();
       const wood = s.wood;
+      const stone = s.stone;
+      const stoneUnlocked = s.stoneUnlocked;
+      const upgradeLevel = s.upgradeLevel;
+      const wallLevel = s.wallLevel;
+      const clickPower = 1 + wallLevel;
 
       // Wood count
       if (stateEl) {
@@ -561,14 +722,93 @@
         tickEl.textContent = "\u25B6";
       }
 
-      // Goal
-      if (wood >= GOAL_WOOD) {
+      // Stone display (hidden until unlocked)
+      if (stoneUnlocked) {
+        stoneStat.classList.remove("stat-hidden");
+        stoneRateStat.classList.remove("stat-hidden");
+        stoneActions.classList.add("visible");
+
+        if (stoneEl) {
+          stoneEl.textContent = Number.isInteger(stone) || stone >= 10
+            ? String(Math.floor(stone))
+            : stone.toFixed(2);
+        }
+        if (stoneRateEl) {
+          // Compute stone rate from the engine
+          const stoneRate = s.totalWoodEarned * 0.001 + 0.05;
+          stoneRateEl.textContent = stoneRate.toFixed(4) + "/s";
+        }
+      } else {
+        stoneStat.classList.add("stat-hidden");
+        stoneRateStat.classList.add("stat-hidden");
+        stoneActions.classList.remove("visible");
+      }
+
+      // Gather wood button label — show click power
+      if (clickPower > 1) {
+        btnGather.textContent = "\u26A0 Gather Wood (+" + clickPower + ")";
+      } else {
+        btnGather.textContent = "\u26A0 Gather Wood";
+      }
+
+      // Stone gather button: cooldown-aware disabled
+      if (!stoneCooldown && stoneUnlocked) {
+        btnGatherStone.disabled = false;
+      }
+
+      // Build Wall button
+      if (stoneUnlocked) {
+        btnBuildWall.disabled = stone < WALL_COST;
+      } else {
+        btnBuildWall.disabled = true;
+      }
+
+      // Goal system
+      if (wood >= GOAL_WOOD && upgradeLevel >= 1) {
+        // Player has done at least one sharpen — show stone goal
+        if (!stoneGoalActive) {
+          stoneGoalActive = true;
+        }
+
+        if (!wallBuilt && stone < GOAL_STONE) {
+          // Goal: Gather 5 stone
+          const pct = (stone / GOAL_STONE) * 100;
+          goalText.textContent = "Gather " + GOAL_STONE + " stone";
+          if (goalFill) goalFill.style.width = Math.min(pct, 100) + "%";
+          if (goalProgress) goalProgress.setAttribute("aria-valuenow", Math.floor(stone));
+          if (goalProgress) goalProgress.setAttribute("aria-valuemax", GOAL_STONE);
+        } else if (stone >= GOAL_STONE && !wallBuilt) {
+          // Goal: Build a Wall
+          goalText.textContent = "Build a Wall (" + WALL_COST + " stone)";
+          const pct = (stone / WALL_COST) * 100;
+          if (goalFill) goalFill.style.width = Math.min(pct, 100) + "%";
+          if (goalProgress) goalProgress.setAttribute("aria-valuenow", Math.floor(stone));
+          if (goalProgress) goalProgress.setAttribute("aria-valuemax", WALL_COST);
+        } else if (wallBuilt) {
+          // Wall built — show next sharpening goal (or keep showing wall built)
+          wallBuilt = true;
+          const woodForUpgrade = wood;
+          const pct = (woodForUpgrade / UPGRADE_COST) * 100;
+          goalText.textContent = "Craft a Sharpening (" + UPGRADE_COST + " wood)";
+          if (goalFill) goalFill.style.width = Math.min(pct, 100) + "%";
+          if (goalProgress) goalProgress.setAttribute("aria-valuenow", Math.floor(woodForUpgrade % UPGRADE_COST));
+          if (goalProgress) goalProgress.setAttribute("aria-valuemax", UPGRADE_COST);
+        }
+
+        // Track if wall is built
+        if (wallLevel > 0) {
+          wallBuilt = true;
+        }
+
+        // Sharpen button: enable/disable based on wood
+        btnSharpen.disabled = wood < UPGRADE_COST;
+      } else if (wood >= GOAL_WOOD) {
+        // Reached 10 wood but haven't done first sharpen yet
         if (!goalReached) {
           goalReached = true;
-          // Show the sharpen button forever once unlocked
           btnSharpen.hidden = false;
         }
-        // Show upgrade goal: gather wood to craft the next sharpening
+
         const woodForUpgrade = wood;
         const pct = (woodForUpgrade / UPGRADE_COST) * 100;
         goalText.textContent = "Craft a Sharpening (" + UPGRADE_COST + " wood)";
@@ -576,23 +816,27 @@
         if (goalProgress) goalProgress.setAttribute("aria-valuenow", Math.floor(woodForUpgrade % UPGRADE_COST));
         if (goalProgress) goalProgress.setAttribute("aria-valuemax", UPGRADE_COST);
 
-        // Disable sharpen if not enough wood, enable otherwise
         btnSharpen.disabled = wood < UPGRADE_COST;
       } else {
         goalReached = false;
+        stoneGoalActive = false;
         const pct = (wood / GOAL_WOOD) * 100;
         if (goalFill) goalFill.style.width = Math.min(pct, 100) + "%";
         if (goalProgress) goalProgress.setAttribute("aria-valuenow", Math.floor(wood));
         if (goalProgress) goalProgress.setAttribute("aria-valuemax", GOAL_WOOD);
         goalText.textContent = "Gather " + GOAL_WOOD + " wood";
 
-        // Hide sharpen button until goal is reached
         btnSharpen.hidden = true;
         btnSharpen.disabled = false;
       }
+
+      // Show the sharpen button ever after
+      if (upgradeLevel > 0) {
+        btnSharpen.hidden = false;
+      }
     }
 
-    // Show offline summary on load if there's offline wood
+    // Show offline summary on load if there's offline resources
     showOfflineSummary();
 
     renderUI();
