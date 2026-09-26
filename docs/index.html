@@ -262,6 +262,21 @@
       width: 0%;
     }
 
+    .progress-fill.stone-fill {
+      background: var(--stone-color);
+    }
+
+    .goal-resource-label {
+      font-size: 0.45rem;
+      color: var(--text-dim);
+      font-family: var(--body-font);
+      margin-bottom: -0.35rem;
+    }
+
+    .progress-track + .goal-resource-label {
+      margin-top: -0.25rem;
+    }
+
     /* ─── Button icon — match button text size ─── */
     .btn-icon {
       font-size: inherit;
@@ -509,8 +524,13 @@
   <section class="panel" id="goal-panel" role="region" aria-label="Current goal">
     <div class="goal-label" id="goal-label">Next Goal</div>
     <div id="goal-text">Gather 10 wood</div>
-    <div class="progress-track" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="10" aria-labelledby="goal-label">
+    <div class="goal-resource-label" id="goal-resource-label-1" hidden></div>
+    <div class="progress-track" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="10" aria-labelledby="goal-label" id="goal-progress-track-1">
       <div class="progress-fill" id="goal-progress-fill" style="width: 0%;"></div>
+    </div>
+    <div class="goal-resource-label" id="goal-resource-label-2" hidden></div>
+    <div class="progress-track" id="goal-progress-track-2" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="0" aria-labelledby="goal-label" hidden>
+      <div class="progress-fill stone-fill" id="goal-progress-fill-2" style="width: 0%;"></div>
     </div>
   </section>
 
@@ -552,7 +572,11 @@
     const btnBuildWall = document.getElementById("btn-build-wall");
     const goalText = document.getElementById("goal-text");
     const goalFill = document.getElementById("goal-progress-fill");
-    const goalProgress = document.getElementById("goal-panel").querySelector(".progress-track");
+    const goalProgress = document.getElementById("goal-progress-track-1");
+    const goalLabel1 = document.getElementById("goal-resource-label-1");
+    const goalTrack2 = document.getElementById("goal-progress-track-2");
+    const goalFill2 = document.getElementById("goal-progress-fill-2");
+    const goalLabel2 = document.getElementById("goal-resource-label-2");
     const offlineSummary = document.getElementById("offline-summary");
     const offlineAmount = document.getElementById("offline-wood-amount");
     const offlineStoneLine = document.getElementById("offline-stone-line");
@@ -564,6 +588,7 @@
     let goalReached = false;
     let stoneGoalActive = false; // true once stone is unlocked and first sharpen done
     let wallBuilt = false;
+    let dualGoalReached = false;
 
     // ─── Cooldown state ───
     let woodCooldown = false;
@@ -775,40 +800,80 @@
       }
 
       // Goal system
+      // Helper: render a single-resource goal (hide second bar)
+      function renderSingleGoal(description, current, target) {
+        goalText.textContent = description;
+        const pct = (current / target) * 100;
+        if (goalFill) goalFill.style.width = Math.min(pct, 100) + "%";
+        if (goalProgress) goalProgress.setAttribute("aria-valuenow", Math.floor(current));
+        if (goalProgress) goalProgress.setAttribute("aria-valuemax", target);
+        // Hide secondary bar and labels
+        if (goalLabel1) goalLabel1.hidden = true;
+        if (goalTrack2) goalTrack2.hidden = true;
+        if (goalFill2) goalFill2.style.width = "0%";
+        if (goalLabel2) goalLabel2.hidden = true;
+      }
+
+      // Helper: render a dual-resource goal (show both bars)
+      function renderDualGoal(description, res1, res2) {
+        goalText.textContent = description;
+        // First bar (wood)
+        const pct1 = (res1.current / res1.target) * 100;
+        if (goalFill) goalFill.style.width = Math.min(pct1, 100) + "%";
+        if (goalProgress) {
+          goalProgress.setAttribute("aria-valuenow", Math.floor(res1.current));
+          goalProgress.setAttribute("aria-valuemax", res1.target);
+        }
+        if (goalLabel1) {
+          goalLabel1.textContent = res1.name + ": " + Math.floor(res1.current) + "/" + res1.target;
+          goalLabel1.hidden = false;
+        }
+        // Second bar (stone)
+        const pct2 = (res2.current / res2.target) * 100;
+        if (goalFill2) goalFill2.style.width = Math.min(pct2, 100) + "%";
+        if (goalTrack2) {
+          goalTrack2.hidden = false;
+          goalTrack2.setAttribute("aria-valuenow", Math.floor(res2.current));
+          goalTrack2.setAttribute("aria-valuemax", res2.target);
+        }
+        if (goalLabel2) {
+          goalLabel2.textContent = res2.name + ": " + Math.floor(res2.current) + "/" + res2.target;
+          goalLabel2.hidden = false;
+        }
+      }
+
       if (wood >= GOAL_WOOD && upgradeLevel >= 1) {
         // Player has done at least one sharpen — show stone goal
         if (!stoneGoalActive) {
           stoneGoalActive = true;
         }
 
-        if (!wallBuilt && stone < GOAL_STONE) {
-          // Goal: Gather 5 stone
-          const pct = (stone / GOAL_STONE) * 100;
-          goalText.textContent = "Gather " + GOAL_STONE + " stone";
-          if (goalFill) goalFill.style.width = Math.min(pct, 100) + "%";
-          if (goalProgress) goalProgress.setAttribute("aria-valuenow", Math.floor(stone));
-          if (goalProgress) goalProgress.setAttribute("aria-valuemax", GOAL_STONE);
-        } else if (stone >= GOAL_STONE && !wallBuilt) {
-          // Goal: Build a Wall
-          goalText.textContent = "Build a Wall (" + WALL_COST + " stone)";
-          const pct = (stone / WALL_COST) * 100;
-          if (goalFill) goalFill.style.width = Math.min(pct, 100) + "%";
-          if (goalProgress) goalProgress.setAttribute("aria-valuenow", Math.floor(stone));
-          if (goalProgress) goalProgress.setAttribute("aria-valuemax", WALL_COST);
-        } else if (wallBuilt) {
-          // Wall built — show next sharpening goal (or keep showing wall built)
-          wallBuilt = true;
-          const woodForUpgrade = wood;
-          const pct = (woodForUpgrade / UPGRADE_COST) * 100;
-          goalText.textContent = "Craft a Sharpening (" + UPGRADE_COST + " wood)";
-          if (goalFill) goalFill.style.width = Math.min(pct, 100) + "%";
-          if (goalProgress) goalProgress.setAttribute("aria-valuenow", Math.floor(woodForUpgrade % UPGRADE_COST));
-          if (goalProgress) goalProgress.setAttribute("aria-valuemax", UPGRADE_COST);
-        }
-
-        // Track if wall is built
+        // Sync wallBuilt with engine state before goal selection
         if (wallLevel > 0) {
           wallBuilt = true;
+        }
+
+        if (!wallBuilt && stone < GOAL_STONE) {
+          // Goal: Gather 5 stone
+          renderSingleGoal("Gather " + GOAL_STONE + " stone", stone, GOAL_STONE);
+        } else if (stone >= GOAL_STONE && !wallBuilt) {
+          // Goal: Build a Wall
+          renderSingleGoal("Build a Wall (" + WALL_COST + " stone)", stone, WALL_COST);
+        } else if (wallBuilt && !dualGoalReached) {
+          // Dual-goal: forge requires 10 wood AND 5 stone
+          const woodTarget = 10;
+          const stoneTarget = 5;
+          renderDualGoal(
+            "Forge: " + woodTarget + " wood + " + stoneTarget + " stone",
+            { name: "Wood", current: Math.min(wood, woodTarget), target: woodTarget },
+            { name: "Stone", current: Math.min(stone, stoneTarget), target: stoneTarget }
+          );
+          if (wood >= woodTarget && stone >= stoneTarget) {
+            dualGoalReached = true;
+          }
+        } else {
+          // Wall built — show next sharpening goal
+          renderSingleGoal("Craft a Sharpening (" + UPGRADE_COST + " wood)", wood % UPGRADE_COST, UPGRADE_COST);
         }
 
         // Sharpen button: show upgrade text, enable/disable based on wood
@@ -821,12 +886,7 @@
           goalReached = true;
         }
 
-        const woodForUpgrade = wood;
-        const pct = (woodForUpgrade / UPGRADE_COST) * 100;
-        goalText.textContent = "Craft a Sharpening (" + UPGRADE_COST + " wood)";
-        if (goalFill) goalFill.style.width = Math.min(pct, 100) + "%";
-        if (goalProgress) goalProgress.setAttribute("aria-valuenow", Math.floor(woodForUpgrade % UPGRADE_COST));
-        if (goalProgress) goalProgress.setAttribute("aria-valuemax", UPGRADE_COST);
+        renderSingleGoal("Craft a Sharpening (" + UPGRADE_COST + " wood)", wood % UPGRADE_COST, UPGRADE_COST);
 
         btnSharpen.innerHTML = '<span class="btn-icon">\u2692</span> Sharpen Axe (' + UPGRADE_COST + ' wood)';
         btnSharpen.setAttribute("aria-label", "Sharpen Axe (" + UPGRADE_COST + " wood)");
@@ -834,11 +894,7 @@
       } else {
         goalReached = false;
         stoneGoalActive = false;
-        const pct = (wood / GOAL_WOOD) * 100;
-        if (goalFill) goalFill.style.width = Math.min(pct, 100) + "%";
-        if (goalProgress) goalProgress.setAttribute("aria-valuenow", Math.floor(wood));
-        if (goalProgress) goalProgress.setAttribute("aria-valuemax", GOAL_WOOD);
-        goalText.textContent = "Gather " + GOAL_WOOD + " wood";
+        renderSingleGoal("Gather " + GOAL_WOOD + " wood", wood, GOAL_WOOD);
 
         btnSharpen.innerHTML = '<span class="btn-icon">\uD83D\uDD12</span> Sharpen Axe (locked)';
         btnSharpen.setAttribute("aria-label", "Sharpen Axe \u2014 locked, gather " + (GOAL_WOOD - Math.floor(wood)) + " more wood to unlock");
