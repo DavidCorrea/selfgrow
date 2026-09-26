@@ -21,6 +21,7 @@
       --text-dim: #8888aa;
       --highlight: #00ff88;
       --stone-color: #8899cc;
+      --forge-color: #ff8844;
       --pixel-font: 'Press Start 2P', 'Courier New', monospace;
       --body-font: 'Courier New', Courier, monospace;
       --border-width: 4px;
@@ -109,6 +110,10 @@
       color: var(--stone-color);
     }
 
+    #status-bar .stat-value.forge-value {
+      color: var(--forge-color);
+    }
+
     #status-bar .stat-value.stat-total {
       color: var(--highlight);
       opacity: 0.7;
@@ -160,6 +165,19 @@
     }
 
     .action-group.stone-actions.visible {
+      visibility: visible;
+      position: static;
+      pointer-events: auto;
+      display: flex;
+    }
+
+    .action-group.forge-actions {
+      visibility: hidden;
+      position: absolute;
+      pointer-events: none;
+    }
+
+    .action-group.forge-actions.visible {
       visibility: visible;
       position: static;
       pointer-events: auto;
@@ -241,6 +259,23 @@
       outline: none;
     }
 
+    .btn-forge {
+      background: var(--forge-color);
+      border-color: #cc6622;
+    }
+
+    .btn-forge:hover,
+    .btn-forge:focus-visible {
+      background: #ffaa66;
+      outline: 2px solid var(--highlight);
+      outline-offset: 3px;
+    }
+
+    .btn-forge:disabled:hover {
+      background: var(--forge-color);
+      outline: none;
+    }
+
     /* ─── Goal panel ─── */
     #goal-panel {
       display: flex;
@@ -279,6 +314,10 @@
 
     .progress-fill.stone-fill {
       background: var(--stone-color);
+    }
+
+    .progress-fill.forge-fill {
+      background: var(--forge-color);
     }
 
     .goal-resource-label {
@@ -514,6 +553,10 @@
       <span class="stat-label" id="total-stone-label">Total Stone</span>
       <span class="stat-value stat-total stone-total" id="total-stone-value" aria-labelledby="total-stone-label">0</span>
     </div>
+    <div class="stat stat-hidden" id="forge-stat">
+      <span class="stat-label" id="forge-label">Forge</span>
+      <span class="stat-value forge-value" id="forge-value" aria-labelledby="forge-label">0</span>
+    </div>
   </section>
 
   <!-- ═══ Action Area Panel ═══ -->
@@ -535,6 +578,12 @@
       </button>
       <button class="btn btn-wall" id="btn-build-wall" type="button" aria-label="Build Wall" disabled>
         <span class="btn-icon">&#x1F3F0;</span> Build Wall (5 stone)
+      </button>
+    </div>
+
+    <div class="action-group forge-actions" id="forge-actions">
+      <button class="btn btn-forge" id="btn-forge-tool" type="button" aria-label="Forge Tool" disabled>
+        <span class="btn-icon">&#x1F528;</span> Forge Tool (10 wood + 5 stone)
       </button>
     </div>
 
@@ -577,7 +626,7 @@
   <!-- ═══ Engine + live UI render loop ═══ -->
   <script type="module">
     import "./webmcp.js";
-    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, consumeOfflineWoodGained, consumeOfflineGained, UPGRADE_COST, WALL_COST } from "./engine.js";
+    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, consumeOfflineWoodGained, consumeOfflineGained, UPGRADE_COST, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS } from "./engine.js";
 
     init();
 
@@ -591,11 +640,15 @@
     const totalWoodEl = document.getElementById("total-wood-value");
     const totalStoneStat = document.getElementById("total-stone-stat");
     const totalStoneEl = document.getElementById("total-stone-value");
+    const forgeStat = document.getElementById("forge-stat");
+    const forgeValueEl = document.getElementById("forge-value");
     const btnGather = document.getElementById("btn-gather");
     const btnSharpen = document.getElementById("btn-sharpen");
     const stoneActions = document.getElementById("stone-actions");
     const btnGatherStone = document.getElementById("btn-gather-stone");
     const btnBuildWall = document.getElementById("btn-build-wall");
+    const forgeActions = document.getElementById("forge-actions");
+    const btnForgeTool = document.getElementById("btn-forge-tool");
     const goalText = document.getElementById("goal-text");
     const goalFill = document.getElementById("goal-progress-fill");
     const goalProgress = document.getElementById("goal-progress-track-1");
@@ -612,9 +665,8 @@
     const GOAL_WOOD = 10;
     const GOAL_STONE = 5;
     let goalReached = false;
-    let stoneGoalActive = false; // true once stone is unlocked and first sharpen done
+    let stoneGoalActive = false;
     let wallBuilt = false;
-    let dualGoalReached = false;
 
     // ─── Cooldown state ───
     let woodCooldown = false;
@@ -695,6 +747,19 @@
       }
     });
 
+    function handleForgeTool() {
+      forgeTool();
+      renderUI();
+    }
+
+    btnForgeTool.addEventListener("click", handleForgeTool);
+    btnForgeTool.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        handleForgeTool();
+      }
+    });
+
     // ─── Offline summary ───
     function showOfflineSummary() {
       const gained = consumeOfflineGained();
@@ -723,6 +788,7 @@
         btnSharpen.disabled = true;
         btnGatherStone.disabled = true;
         btnBuildWall.disabled = true;
+        btnForgeTool.disabled = true;
 
         // Seal the body against pointer events — the overlay is the only
         // interactive layer.
@@ -738,7 +804,7 @@
 
       // Re-enable only the buttons that should be enabled based on game state
       btnGather.disabled = false;
-      // sharpen, stone and wall buttons will be re-evaluated by renderUI
+      // sharpen, stone, wall, forge buttons will be re-evaluated by renderUI
       document.body.style.pointerEvents = "";
     }
 
@@ -765,7 +831,12 @@
       const stoneUnlocked = s.stoneUnlocked;
       const upgradeLevel = s.upgradeLevel;
       const wallLevel = s.wallLevel;
-      const clickPower = 1 + wallLevel;
+      const forgeLevel = s.forgeLevel;
+      const forgeWoodCost = s.forgeWoodCost;
+      const forgeStoneCost = s.forgeStoneCost;
+      const wallBonus = wallLevel * 1;
+      const forgeClickBonus = forgeLevel * FORGE_CLICK_POWER_BONUS;
+      const clickPower = 1 + wallBonus + forgeClickBonus;
 
       // Wood count
       if (stateEl) {
@@ -797,7 +868,6 @@
             : stone.toFixed(2);
         }
         if (stoneRateEl) {
-          // Compute stone rate from the engine
           const stoneRate = s.totalWoodEarned * 0.001 + 0.05;
           stoneRateEl.textContent = stoneRate.toFixed(4) + "/s";
         }
@@ -806,6 +876,24 @@
         stoneRateStat.classList.add("stat-hidden");
         totalStoneStat.classList.add("stat-hidden");
         stoneActions.classList.remove("visible");
+      }
+
+      // Forge display (hidden until wallLevel >= 1)
+      if (wallLevel >= 1) {
+        forgeStat.classList.remove("stat-hidden");
+        forgeActions.classList.add("visible");
+        if (forgeValueEl) {
+          forgeValueEl.textContent = String(forgeLevel);
+        }
+        // Update forge button text with costs
+        const canForge = wood >= forgeWoodCost && stone >= forgeStoneCost;
+        btnForgeTool.innerHTML = '<span class="btn-icon">\uD83D\uDD28</span> Forge Tool (' + forgeWoodCost + ' wood + ' + forgeStoneCost + ' stone)';
+        btnForgeTool.setAttribute("aria-label", "Forge Tool — costs " + forgeWoodCost + " wood and " + forgeStoneCost + " stone");
+        btnForgeTool.disabled = !canForge;
+      } else {
+        forgeStat.classList.add("stat-hidden");
+        forgeActions.classList.remove("visible");
+        btnForgeTool.disabled = true;
       }
 
       // Total stats (never decrease)
@@ -818,7 +906,7 @@
 
       // Gather wood button label — show click power
       if (clickPower > 1) {
-        btnGather.innerHTML = '<span class="btn-icon">\u26A0</span> Gather Wood (+' + clickPower + ')';
+        btnGather.innerHTML = '<span class="btn-icon">\u26A0</span> Gather Wood (+' + Math.floor(clickPower) + ')';
       } else {
         btnGather.innerHTML = '<span class="btn-icon">\u26A0</span> Gather Wood';
       }
@@ -841,6 +929,8 @@
         goalText.textContent = description;
         const pct = (current / target) * 100;
         if (goalFill) goalFill.style.width = Math.min(pct, 100) + "%";
+        // Ensure default green fill for single goals
+        if (goalFill) goalFill.className = "progress-fill";
         if (goalProgress) goalProgress.setAttribute("aria-valuenow", Math.floor(current));
         if (goalProgress) goalProgress.setAttribute("aria-valuemax", target);
         // Hide secondary bar and labels
@@ -856,6 +946,7 @@
         // First bar (wood)
         const pct1 = (res1.current / res1.target) * 100;
         if (goalFill) goalFill.style.width = Math.min(pct1, 100) + "%";
+        if (goalFill) goalFill.className = "progress-fill"; // green for wood
         if (goalProgress) {
           goalProgress.setAttribute("aria-valuenow", Math.floor(res1.current));
           goalProgress.setAttribute("aria-valuemax", res1.target);
@@ -864,9 +955,13 @@
           goalLabel1.textContent = res1.name + ": " + Math.floor(res1.current) + "/" + res1.target;
           goalLabel1.hidden = false;
         }
-        // Second bar (stone)
+        // Second bar
         const pct2 = (res2.current / res2.target) * 100;
-        if (goalFill2) goalFill2.style.width = Math.min(pct2, 100) + "%";
+        if (goalFill2) {
+          goalFill2.style.width = Math.min(pct2, 100) + "%";
+          // Use forge-fill when the second resource is stone for forge
+          goalFill2.className = "progress-fill forge-fill";
+        }
         if (goalTrack2) {
           goalTrack2.hidden = false;
           goalTrack2.setAttribute("aria-valuenow", Math.floor(res2.current));
@@ -879,12 +974,12 @@
       }
 
       if (wood >= GOAL_WOOD && upgradeLevel >= 1) {
-        // Player has done at least one sharpen — show stone goal
+        // Player has done at least one sharpen — show stone/forge goals
         if (!stoneGoalActive) {
           stoneGoalActive = true;
         }
 
-        // Sync wallBuilt with engine state before goal selection
+        // Sync wallBuilt with engine state
         if (wallLevel > 0) {
           wallBuilt = true;
         }
@@ -895,20 +990,15 @@
         } else if (stone >= GOAL_STONE && !wallBuilt) {
           // Goal: Build a Wall
           renderSingleGoal("Build a Wall (" + WALL_COST + " stone)", stone, WALL_COST);
-        } else if (wallBuilt && !dualGoalReached) {
-          // Dual-goal: forge requires 10 wood AND 5 stone
-          const woodTarget = 10;
-          const stoneTarget = 5;
+        } else if (wallBuilt) {
+          // Forge goal — always visible after wall is built, with escalating costs
           renderDualGoal(
-            "Forge: " + woodTarget + " wood + " + stoneTarget + " stone",
-            { name: "Wood", current: Math.min(wood, woodTarget), target: woodTarget },
-            { name: "Stone", current: Math.min(stone, stoneTarget), target: stoneTarget }
+            "Forge a tool — need " + forgeWoodCost + " wood and " + forgeStoneCost + " stone",
+            { name: "Wood", current: Math.min(wood, forgeWoodCost), target: forgeWoodCost },
+            { name: "Stone", current: Math.min(stone, forgeStoneCost), target: forgeStoneCost }
           );
-          if (wood >= woodTarget && stone >= stoneTarget) {
-            dualGoalReached = true;
-          }
         } else {
-          // Wall built — show next sharpening goal
+          // Fallback — sharpen cycle
           renderSingleGoal("Craft a Sharpening (" + UPGRADE_COST + " wood)", wood % UPGRADE_COST, UPGRADE_COST);
         }
 

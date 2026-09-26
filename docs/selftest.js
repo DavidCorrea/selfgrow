@@ -1358,5 +1358,256 @@ export async function checks() {
     overlayHidden.setAttribute("hidden", "");
   }
 
+  // ─── Forge system checks ────────────────────────────────────────
+
+  // Forge DOM elements
+  const forgeStat = document.getElementById("forge-stat");
+  if (!forgeStat) {
+    problems.push("Expected #forge-stat to exist in the DOM — it was not found.");
+  }
+
+  const forgeValueEl = document.getElementById("forge-value");
+  if (!forgeValueEl) {
+    problems.push("Expected #forge-value to exist in the DOM — it was not found.");
+  }
+
+  const forgeActions = document.getElementById("forge-actions");
+  if (!forgeActions) {
+    problems.push("Expected #forge-actions to exist in the DOM — it was not found.");
+  }
+
+  const btnForgeTool = document.getElementById("btn-forge-tool");
+  if (!btnForgeTool) {
+    problems.push("Expected #btn-forge-tool to exist in the DOM — it was not found.");
+  } else if (btnForgeTool.getAttribute("type") !== "button") {
+    problems.push(`Expected #btn-forge-tool type="button", got "${btnForgeTool.getAttribute("type")}".`);
+  }
+
+  // Forge button must have non-zero dimensions even when hidden
+  if (forgeActions && !forgeActions.classList.contains("visible")) {
+    if (btnForgeTool) {
+      if (btnForgeTool.offsetWidth === 0) {
+        problems.push("btn-forge-tool offsetWidth is 0 when forge-actions is hidden — expected non-zero (collapsed container).");
+      }
+      if (btnForgeTool.offsetHeight === 0) {
+        problems.push("btn-forge-tool offsetHeight is 0 when forge-actions is hidden — expected non-zero (collapsed container).");
+      }
+    }
+  }
+
+  // Forge button tap target
+  if (btnForgeTool) {
+    const h = parseFloat(getComputedStyle(btnForgeTool).height);
+    if (h < 39.9) {
+      problems.push(`#btn-forge-tool computed height is ${h}px — expected at least 40px (WCAG minimum tap target).`);
+    }
+  }
+
+  // ─── Forge engine functionality ────────────────────────────────
+  try {
+    const engine = await import("./engine.js");
+    engine.reset();
+
+    // Forge should fail before wall is built
+    const forgeFailNoWall = engine.forgeTool();
+    if (forgeFailNoWall.forged !== false) {
+      problems.push("forgeTool() with no wall should return forged=false.");
+    }
+    if (typeof forgeFailNoWall.reason !== "string" || forgeFailNoWall.reason.length === 0) {
+      problems.push("forgeTool() failure should include a non-empty reason string.");
+    }
+
+    // Unlock stone and build a wall
+    for (let i = 0; i < 5; i++) engine.gatherWood();
+    engine.craftUpgrade(); // unlocks stone
+    for (let i = 0; i < engine.WALL_COST; i++) engine.gatherStone();
+    engine.buildWall(); // wallLevel=1
+
+    // Forge should fail with insufficient resources
+    const forgeFailNoRes = engine.forgeTool();
+    if (forgeFailNoRes.forged !== false) {
+      problems.push("forgeTool() with insufficient resources should return forged=false.");
+    }
+
+    // Get enough resources for first forge
+    // First forge costs: 10 wood + 5 stone
+    // Current: wood=0 (spent on sharpen), stone=0 (spent on wall)
+    // Need: 10 wood, 5 stone
+    for (let i = 0; i < 10; i++) engine.gatherWood();
+    for (let i = 0; i < 5; i++) engine.gatherStone();
+
+    const stateBeforeForge = engine.getState();
+    const beforeWood = stateBeforeForge.wood;
+    const beforeStone = stateBeforeForge.stone;
+    const beforeRate = stateBeforeForge.rate;
+
+    const forgeResult = engine.forgeTool();
+    if (forgeResult.forged !== true) {
+      problems.push(`forgeTool() with sufficient resources should return forged=true. Got reason: ${forgeResult.reason}`);
+    }
+
+    const stateAfterForge = engine.getState();
+    if (stateAfterForge.forgeLevel !== 1) {
+      problems.push(`After first forge, forgeLevel should be 1, got ${stateAfterForge.forgeLevel}.`);
+    }
+    // Wood should be decremented by forgeWoodCost (10)
+    if (stateAfterForge.wood !== beforeWood - 10) {
+      problems.push(`After first forge, wood should be ${beforeWood - 10}, got ${stateAfterForge.wood}.`);
+    }
+    // Stone should be decremented by forgeStoneCost (5)
+    if (stateAfterForge.stone !== beforeStone - 5) {
+      problems.push(`After first forge, stone should be ${beforeStone - 5}, got ${stateAfterForge.stone}.`);
+    }
+    // Rate should increase by FORGE_WOOD_RATE_BONUS
+    if (stateAfterForge.rate !== beforeRate + engine.FORGE_WOOD_RATE_BONUS) {
+      problems.push(`After first forge, rate should be ${beforeRate + engine.FORGE_WOOD_RATE_BONUS}, got ${stateAfterForge.rate}.`);
+    }
+    // Forge wood cost should escalate
+    if (stateAfterForge.forgeWoodCost !== 15) {
+      problems.push(`After first forge, forgeWoodCost should be 15, got ${stateAfterForge.forgeWoodCost}.`);
+    }
+    // Forge stone cost should escalate
+    if (stateAfterForge.forgeStoneCost !== 8) {
+      problems.push(`After first forge, forgeStoneCost should be 8, got ${stateAfterForge.forgeStoneCost}.`);
+    }
+
+    // GatherWood should give extra click power from forge
+    engine.reset();
+    // Unlock everything
+    for (let i = 0; i < 5; i++) engine.gatherWood();
+    engine.craftUpgrade();
+    for (let i = 0; i < engine.WALL_COST; i++) engine.gatherStone();
+    engine.buildWall();
+    // Wall=1, forge=0: clickPower = 1 + 1*1 + 0*0.5 = 2
+    const woodBeforeGather = engine.getState().wood;
+    // Need to get forge resources: 10 wood, 5 stone
+    for (let i = 0; i < 5; i++) engine.gatherStone();
+    // Actually gather enough wood - wood needs to be at least 10
+    // After reset and above operations, wood is at 0 (spent on sharpen)
+    // We used 5 gatherWood calls before sharpen = 5 wood, then crafted (-5) = 0 wood
+    for (let i = 0; i < 10; i++) engine.gatherWood(); // +10 wood with wall=1 gives 2 each = 20 wood? No wait
+    // Actually with wallLevel=1, gatherWood gives 1 + 1 = 2 per click
+    // So 10 clicks gives 20 wood
+    engine.forgeTool(); // forgeLevel=1
+    // Now gatherWood: clickPower = 1 + 1*1 + 1*0.5 = 2.5
+    const woodBeforeGather2 = engine.getState().wood;
+    engine.gatherWood();
+    const woodAfterGather = engine.getState().wood;
+    const gain = woodAfterGather - woodBeforeGather2;
+    if (Math.abs(gain - 2.5) > 0.01) {
+      problems.push(`gatherWood() with wallLevel=1 and forgeLevel=1 should add 2.5 wood, got ${gain}.`);
+    }
+
+    // Forge persistence round-trip
+    engine.reset();
+    for (let i = 0; i < 5; i++) engine.gatherWood();
+    engine.craftUpgrade();
+    for (let i = 0; i < engine.WALL_COST; i++) engine.gatherStone();
+    engine.buildWall();
+    for (let i = 0; i < 10; i++) engine.gatherWood();
+    for (let i = 0; i < 5; i++) engine.gatherStone();
+    engine.forgeTool();
+    const forgedRate = engine.getState().rate;
+    engine.save();
+    const savedStateRaw = localStorage.getItem("selfgrow-state");
+    engine.reset();
+    localStorage.setItem("selfgrow-state", savedStateRaw);
+    engine.init();
+    const loadedForgeState = engine.getState();
+    if (loadedForgeState.forgeLevel !== 1) {
+      problems.push(`After forge persistence round-trip, forgeLevel should be 1, got ${loadedForgeState.forgeLevel}.`);
+    }
+    if (loadedForgeState.rate !== forgedRate) {
+      problems.push(`After forge persistence round-trip, rate should be ${forgedRate}, got ${loadedForgeState.rate}.`);
+    }
+    if (loadedForgeState.forgeWoodCost !== 15) {
+      problems.push(`After forge persistence round-trip, forgeWoodCost should be 15, got ${loadedForgeState.forgeWoodCost}.`);
+    }
+    if (loadedForgeState.forgeStoneCost !== 8) {
+      problems.push(`After forge persistence round-trip, forgeStoneCost should be 8, got ${loadedForgeState.forgeStoneCost}.`);
+    }
+
+    // Clean up
+    engine.reset();
+    engine.init();
+  } catch (err) {
+    problems.push(`Forge engine test threw: ${err.message}`);
+    console.error(err);
+  }
+
+  // ─── Forge agent tools ────────────────────────────────────────
+  try {
+    const { tools } = await import("./agenttools.js");
+    const toolList = tools();
+
+    // read-state should include forge fields
+    const readState = toolList.find((t) => t.name === "read-state");
+    if (readState) {
+      const result = await readState.execute({});
+      if (typeof result.forgeLevel !== "number") {
+        problems.push(`read-state should return forgeLevel as a number, got ${JSON.stringify(result.forgeLevel)}.`);
+      }
+      if (typeof result.forgeWoodCost !== "number") {
+        problems.push(`read-state should return forgeWoodCost as a number, got ${JSON.stringify(result.forgeWoodCost)}.`);
+      }
+      if (typeof result.forgeStoneCost !== "number") {
+        problems.push(`read-state should return forgeStoneCost as a number, got ${JSON.stringify(result.forgeStoneCost)}.`);
+      }
+    }
+
+    // perform-action forge-tool
+    const performAction = toolList.find((t) => t.name === "perform-action");
+    if (performAction) {
+      const engine = await import("./engine.js");
+      engine.reset();
+
+      // Set up state for forge
+      for (let i = 0; i < 5; i++) engine.gatherWood();
+      await performAction.execute({ action: "sharpen" });
+      for (let i = 0; i < engine.WALL_COST; i++) await performAction.execute({ action: "gather-stone" });
+      await performAction.execute({ action: "build-wall" });
+
+      // Try forging with insufficient resources
+      const failResult = await performAction.execute({ action: "forge-tool" });
+      if (typeof failResult !== "object" || failResult === null) {
+        problems.push("perform-action forge-tool should return an object.");
+      } else {
+        // forgeLevel should still be 0 (forge failed)
+        if (failResult.forgeLevel !== 0) {
+          problems.push(`forge-tool with insufficient resources should not change forgeLevel. Got ${failResult.forgeLevel}.`);
+        }
+      }
+
+      // Get enough resources
+      for (let i = 0; i < 10; i++) await performAction.execute({ action: "gather" });
+      for (let i = 0; i < 5; i++) await performAction.execute({ action: "gather-stone" });
+
+      const forgeToolResult = await performAction.execute({ action: "forge-tool" });
+      if (typeof forgeToolResult !== "object" || forgeToolResult === null) {
+        problems.push("perform-action forge-tool should return an object.");
+      } else {
+        if (forgeToolResult.forgeLevel !== 1) {
+          problems.push(`perform-action forge-tool should set forgeLevel to 1, got ${forgeToolResult.forgeLevel}.`);
+        }
+        if (forgeToolResult.forgeWoodCost !== 15) {
+          problems.push(`perform-action forge-tool forgeWoodCost should be 15, got ${forgeToolResult.forgeWoodCost}.`);
+        }
+        if (forgeToolResult.forgeStoneCost !== 8) {
+          problems.push(`perform-action forge-tool forgeStoneCost should be 8, got ${forgeToolResult.forgeStoneCost}.`);
+        }
+        // Should have nextGoal reflecting forge
+        if (forgeToolResult.nextGoal && forgeToolResult.nextGoal.type !== "forge-goal") {
+          problems.push(`perform-action forge-tool nextGoal type should be "forge-goal", got "${forgeToolResult.nextGoal.type}".`);
+        }
+      }
+
+      engine.reset();
+      engine.init();
+    }
+  } catch (err) {
+    problems.push(`Forge agent tools test threw: ${err.message}`);
+    console.error(err);
+  }
+
   return problems;
 }
