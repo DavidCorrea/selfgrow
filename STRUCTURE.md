@@ -91,9 +91,8 @@ never reinterpreted.
 **git and gh** run only through `gitExec` / `ghExec` in `shared.mjs`, from an
 argv array — never a shell string.
 
-**Product modules** in `docs/` are camelCase, one concern per file
-(`ambientAudio.js`, `groundRipple.js`), each opening with a
-`/** <filename> — <purpose> */` banner. Factory exports are named
+**Product modules** in `docs/` are camelCase, one concern per file, each
+opening with a `/** <filename> — <purpose> */` banner. Factory exports are named
 `create*` / `init*` / `start*`.
 
 **Linting** is `eslint .` with only `no-undef: error` and `no-unused-vars: warn`
@@ -110,17 +109,10 @@ really do run inside Chromium.
 
 ## `docs/` — the product
 
-The current product is a Three.js garden. `index.html` is the whole app shell and
-owns the scene, camera, renderer and loop, plus the DOM state panel. It declares
-an **importmap** pinning `three` to a CDN URL, then a single `<script type="module">`
-imports THREE, OrbitControls and every local module by relative path.
-
-Modules: `garden.js` (plants, seasonal cycle, ground details), `droplets.js`,
-`particles.js`, `groundNoise.js`, `groundRipple.js`, `horizon.js`, `scrub.js`,
-`daynight.js`, `weather.js`, `rain.js`, `stars.js`, `fireflies.js`, `creature.js`,
-`beetle.js`, `dawnMist.js`, `condensation.js`, `ambientAudio.js`,
-`persistence.js` (localStorage state), `motion.js` (shared
-`prefers-reduced-motion` detection).
+What the product is changes with every reset, so this file does not describe it:
+`ls docs/` and the Vision do. What holds for any product is that `index.html` is
+the entry point and owns the DOM state layer, and that its modules are loaded
+from it by relative path, with third-party libraries pinned to a CDN URL.
 
 Three files in `docs/` are not ordinary product modules:
 
@@ -142,8 +134,8 @@ Three files in `docs/` are not ordinary product modules:
 - **Shared prompt text** becomes `agents/prompts/_<name>.md`, pulled in with
   `{{include:_<name>}}`.
 - **New product code** is a camelCase ES module in `docs/`, imported from the
-  `index.html` module script. Third-party dependencies go in the **importmap**,
-  never npm. Any new behavior should gain a check in `docs/selftest.js` in the
+  `index.html` module script. Third-party dependencies load from a CDN at a
+  pinned version (an importmap or a full URL), never npm. Any new behavior should gain a check in `docs/selftest.js` in the
   same change.
 - **`reset` works from a keep-list** (`HARNESS_PATHS`), not a delete-list. A new
   machine-owned file under `docs/` must be added to it or the next reset deletes
