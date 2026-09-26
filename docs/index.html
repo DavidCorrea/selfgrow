@@ -109,6 +109,16 @@
       color: var(--stone-color);
     }
 
+    #status-bar .stat-value.stat-total {
+      color: var(--highlight);
+      opacity: 0.7;
+    }
+
+    #status-bar .stat-value.stat-total.stone-total {
+      color: var(--stone-color);
+      opacity: 0.7;
+    }
+
     .game-title {
       font-size: 0.6rem;
       color: var(--accent);
@@ -491,6 +501,14 @@
       <span class="stat-label" id="stone-rate-label">Stone/s</span>
       <span class="stat-value stone-value" id="stone-rate-value" aria-labelledby="stone-rate-label">0</span>
     </div>
+    <div class="stat">
+      <span class="stat-label" id="total-wood-label">Total Wood</span>
+      <span class="stat-value stat-total" id="total-wood-value" aria-labelledby="total-wood-label">0</span>
+    </div>
+    <div class="stat stat-hidden" id="total-stone-stat">
+      <span class="stat-label" id="total-stone-label">Total Stone</span>
+      <span class="stat-value stat-total stone-total" id="total-stone-value" aria-labelledby="total-stone-label">0</span>
+    </div>
   </section>
 
   <!-- ═══ Action Area Panel ═══ -->
@@ -565,6 +583,9 @@
     const stoneRateEl = document.getElementById("stone-rate-value");
     const stoneStat = document.getElementById("stone-stat");
     const stoneRateStat = document.getElementById("stone-rate-stat");
+    const totalWoodEl = document.getElementById("total-wood-value");
+    const totalStoneStat = document.getElementById("total-stone-stat");
+    const totalStoneEl = document.getElementById("total-stone-value");
     const btnGather = document.getElementById("btn-gather");
     const btnSharpen = document.getElementById("btn-sharpen");
     const stoneActions = document.getElementById("stone-actions");
@@ -762,6 +783,7 @@
       if (stoneUnlocked) {
         stoneStat.classList.remove("stat-hidden");
         stoneRateStat.classList.remove("stat-hidden");
+        totalStoneStat.classList.remove("stat-hidden");
         stoneActions.classList.add("visible");
 
         if (stoneEl) {
@@ -777,7 +799,16 @@
       } else {
         stoneStat.classList.add("stat-hidden");
         stoneRateStat.classList.add("stat-hidden");
+        totalStoneStat.classList.add("stat-hidden");
         stoneActions.classList.remove("visible");
+      }
+
+      // Total stats (never decrease)
+      if (totalWoodEl) {
+        totalWoodEl.textContent = String(Math.floor(s.totalWoodEarned));
+      }
+      if (totalStoneEl) {
+        totalStoneEl.textContent = String(Math.floor(s.totalStoneEarned));
       }
 
       // Gather wood button label — show click power

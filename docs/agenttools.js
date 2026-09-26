@@ -134,6 +134,7 @@ function withGoal(s) {
     wood: s.wood,
     rate: s.rate,
     totalWoodEarned: s.totalWoodEarned,
+    totalStoneEarned: s.totalStoneEarned,
     timestamp: s.timestamp,
     upgradeLevel: s.upgradeLevel,
     stone: s.stone,

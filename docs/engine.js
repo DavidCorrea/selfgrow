@@ -37,6 +37,7 @@ export { UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, STONE_BASE_RATE, WALL_COST, WA
  * @property {number}  stone         — accumulated stone
  * @property {number}  stoneRate     — stone per second (only >0 when unlocked)
  * @property {number}  totalWoodEarned — cumulative wood ever earned (drives stone rate)
+ * @property {number}  totalStoneEarned — cumulative stone ever earned
  * @property {number}  wallLevel     — number of wall upgrades built
  * @property {boolean} stoneUnlocked — whether stone system has been revealed
  * @property {string}  timestamp     — ISO date of last tick/save
@@ -48,6 +49,7 @@ let state = {
   upgradeLevel: 0,
   stone: 0,
   totalWoodEarned: 0,
+  totalStoneEarned: 0,
   wallLevel: 0,
   stoneUnlocked: false,
   timestamp: new Date().toISOString(),
@@ -89,6 +91,7 @@ function catchUp() {
     if (state.stoneUnlocked) {
       stoneGained = computeStoneRate() * elapsedSec;
       state.stone += stoneGained;
+      state.totalStoneEarned += stoneGained;
     }
     offlineGained = { wood: woodGained, stone: stoneGained, elapsedSec: elapsedSec };
     state.timestamp = now();
@@ -114,6 +117,7 @@ function loadPersisted() {
         state.upgradeLevel = typeof saved.upgradeLevel === "number" ? saved.upgradeLevel : 0;
         state.stone = typeof saved.stone === "number" ? saved.stone : 0;
         state.totalWoodEarned = typeof saved.totalWoodEarned === "number" ? saved.totalWoodEarned : 0;
+        state.totalStoneEarned = typeof saved.totalStoneEarned === "number" ? saved.totalStoneEarned : 0;
         state.wallLevel = typeof saved.wallLevel === "number" ? saved.wallLevel : 0;
         state.stoneUnlocked = typeof saved.stoneUnlocked === "boolean" ? saved.stoneUnlocked : false;
         state.timestamp = saved.timestamp;
@@ -134,6 +138,7 @@ function tick() {
   state.totalWoodEarned += state.rate * elapsed;
   if (state.stoneUnlocked) {
     state.stone += computeStoneRate() * elapsed;
+    state.totalStoneEarned += computeStoneRate() * elapsed;
   }
   state.timestamp = now();
   persist();
@@ -230,6 +235,7 @@ export function gatherStone() {
     return { gathered: false, reason: "Stone is not yet unlocked.", state: getState() };
   }
   state.stone += STONE_GATHER_AMOUNT;
+  state.totalStoneEarned += STONE_GATHER_AMOUNT;
   return { gathered: true, state: getState() };
 }
 
@@ -285,6 +291,7 @@ export function getState() {
     upgradeLevel: state.upgradeLevel,
     stone: state.stone,
     totalWoodEarned: state.totalWoodEarned,
+    totalStoneEarned: state.totalStoneEarned,
     wallLevel: state.wallLevel,
     stoneUnlocked: state.stoneUnlocked,
     timestamp: state.timestamp,
@@ -302,6 +309,7 @@ export function reset() {
     upgradeLevel: 0,
     stone: 0,
     totalWoodEarned: 0,
+    totalStoneEarned: 0,
     wallLevel: 0,
     stoneUnlocked: false,
     timestamp: now(),
