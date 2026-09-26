@@ -200,11 +200,9 @@ export function tools() {
           const overlay = document.getElementById("offline-summary");
           if (overlay && !overlay.hidden) {
             overlay.hidden = true;
-            overlay.style.display = "";
             const btnGather = document.getElementById("btn-gather");
             if (btnGather) btnGather.disabled = false;
             document.body.style.pointerEvents = "";
-            overlay.style.pointerEvents = "";
           }
           return withGoal(getState());
         }

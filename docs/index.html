@@ -276,7 +276,10 @@
     }
 
     #offline-summary[hidden] {
-      display: none;
+      display: flex !important;
+      visibility: hidden;
+      opacity: 0;
+      pointer-events: none;
     }
 
     .offline-panel {
@@ -664,20 +667,17 @@
         document.body.style.pointerEvents = "none";
         offlineSummary.style.pointerEvents = "auto";
 
-        // Force flex display so the overlay is visible even in edge cases
-        offlineSummary.style.display = "flex";
+        // The default CSS (without [hidden]) handles full visibility
       }
     }
 
     function dismissOffline() {
       offlineSummary.hidden = true;
-      offlineSummary.style.display = "";
 
       // Re-enable only the buttons that should be enabled based on game state
       btnGather.disabled = false;
       // sharpen, stone and wall buttons will be re-evaluated by renderUI
       document.body.style.pointerEvents = "";
-      offlineSummary.style.pointerEvents = "";
     }
 
     btnDismiss.addEventListener("click", dismissOffline);
