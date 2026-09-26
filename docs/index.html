@@ -397,6 +397,13 @@
       font-family: var(--body-font);
     }
 
+    .offline-milestone {
+      color: var(--accent);
+      font-size: 0.5rem;
+      font-weight: bold;
+      margin-top: 0.5rem;
+    }
+
     .offline-wood-highlight {
       color: var(--highlight);
       font-size: 0.65rem;
@@ -480,6 +487,10 @@
       .offline-message {
         font-size: 0.45rem;
         font-family: var(--body-font);
+      }
+
+      .offline-milestone {
+        font-size: 0.45rem;
       }
     }
 
@@ -616,6 +627,12 @@
         <span class="offline-stone-highlight" id="offline-stone-amount">0</span> stone
         </span>
       </div>
+      <div id="offline-milestones">
+        <div class="offline-milestone" id="milestone-sharpen" hidden>You can now sharpen your axe!</div>
+        <div class="offline-milestone" id="milestone-stone" hidden>Stone is now available!</div>
+        <div class="offline-milestone" id="milestone-wall" hidden>You can now build a wall!</div>
+        <div class="offline-milestone" id="milestone-forge" hidden>The forge is now unlocked!</div>
+      </div>
       <button class="btn-dismiss" id="btn-dismiss-offline" type="button">
         OK
       </button>
@@ -625,7 +642,7 @@
   <!-- ═══ Engine + live UI render loop ═══ -->
   <script type="module">
     import "./webmcp.js";
-    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, consumeOfflineWoodGained, consumeOfflineGained, formatElapsed, UPGRADE_COST, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS } from "./engine.js";
+    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, consumeOfflineWoodGained, consumeOfflineGained, consumeOfflineMilestones, formatElapsed, UPGRADE_COST, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS } from "./engine.js";
 
     init();
 
@@ -780,6 +797,18 @@
         } else {
           offlineStoneLine.hidden = true;
         }
+
+        // ─── Milestone announcements ───
+        const milestones = consumeOfflineMilestones();
+        const sharpenEl = document.getElementById("milestone-sharpen");
+        const stoneEl = document.getElementById("milestone-stone");
+        const wallEl = document.getElementById("milestone-wall");
+        const forgeEl = document.getElementById("milestone-forge");
+        if (sharpenEl) sharpenEl.hidden = !milestones.sharpenAvailable;
+        if (stoneEl) stoneEl.hidden = !milestones.stoneNowUnlocked;
+        if (wallEl) wallEl.hidden = !milestones.wallAvailable;
+        if (forgeEl) forgeEl.hidden = !milestones.forgeNowUnlocked;
+
         offlineSummary.hidden = false;
         offlineSummary.querySelector(".offline-panel").focus();
 
