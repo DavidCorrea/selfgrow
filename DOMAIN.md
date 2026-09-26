@@ -433,6 +433,13 @@ width), tap targets under 40px, and a page that **renders visually empty** —
 read from pixels, because an empty page has no overflow, no overlap and no bad
 contrast to report.
 
+**Hidden content is not a collapsed container.** A container that generates no
+box — `display: none` on it or on any ancestor — is supposed to take no space.
+The check used to look only at the element's own `display`, so the children of
+a hidden overlay measured 0×0 and were reported every day; the PM trusted the
+measurement and filed three tickets (#885, #893, #902) asking to make invisible
+content measurable, the last one with "no visible change" as its goal.
+
 **The product must have a real DOM state layer.** A WebGL canvas is not the whole
 app, for two reasons: screen readers ("the calm should reach someone who never
 sees the animation at all"), and the app review measures the DOM and "cannot see
