@@ -34,7 +34,7 @@ Each is invoked as `node agents/<name>.mjs` by the workflow named beside it.
 | `product-manager.mjs` | `product-manager.yml` — daily 00:30 | grooms the backlog; curates and writes the weekly report on Sundays |
 | `product-owner.mjs` | `product-owner.yml` — Mon 08:00 | weekly retro; sets Vision and milestone |
 | `tech-lead.mjs` | `tech-lead.yml` — Thu 09:00 | whole-codebase shape review, selftest health, diagnoses of parked tickets |
-| `playtester.mjs` | `playtester.yml` — Wed 10:00 | plays the live site and files experiential findings |
+| `playtester.mjs` | `playtester.yml` — daily 23:00 | plays the live site, runs App Review, files experiential findings and measured accessibility barriers |
 | `health.mjs` | `health.yml` — daily 16:00 | measures the pipeline; silent unless something is broken |
 | `review-pr.mjs` | `review-pr.yml` — `pull_request` | the Devs applied to a human PR on a same-repo branch |
 | `triage-fork-pr.mjs` | `triage-fork-pr.yml` — `pull_request_target` | read-only review of a fork PR; never runs its code |
@@ -68,8 +68,8 @@ Imported, never invoked by a workflow.
   Story page and the human digest.
 - `models.json` — the ordered model chain, with a `why` per entry.
 
-Runnable locally but in no workflow: `app-review.mjs` (prints `reviewApp()`
-output) and `dedup-check.mjs` (free regression harness for the dedup heuristic).
+Runnable locally but in no workflow: `app-review.mjs` (prints the `reviewApp()`
+report the Playtester is handed) and `dedup-check.mjs` (free regression harness for the dedup heuristic).
 
 ## Conventions
 

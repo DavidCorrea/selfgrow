@@ -1,6 +1,6 @@
 // Standalone app-review runner — measures docs/ and prints the report WITHOUT
-// acting on it. Use it to see exactly what the Product Manager will be told about
-// the live app, without triggering a full Product Manager run.
+// acting on it. Use it to see exactly what the Playtester will be handed as
+// evidence about the app, without spending a Playtester session.
 //
 // No model and no API key involved — the whole review is measurement. Needs only
 // a Chromium browser:
@@ -9,7 +9,7 @@ import { log, reviewApp, printRunSummary } from "./shared.mjs";
 
 async function main() {
   log("info", "=== App Review (measured — no model involved) ===");
-  const report = await reviewApp();
+  const report = (await reviewApp())?.report;
   if (report) {
     console.log(`\n----- App review -----\n${report}\n----------------------`);
   } else {

@@ -1,8 +1,13 @@
 // PLAYTESTER — the only agent that experiences the product instead of measuring it.
 //
-// reviewApp already tells the Product Manager what is measurably wrong: contrast
-// below the WCAG minimum, an element past the viewport edge, a container collapsed
-// to zero height. Those are facts, and they are narrow on purpose. Nothing in the
+// reviewApp measures what is wrong: contrast below the WCAG minimum, an element
+// past the viewport edge, a container collapsed to zero height. Those are facts,
+// and they are narrow on purpose — and they reach the Product Manager only
+// through this role. The accessibility ones are filed as findings without a
+// model (see measuredFindings); the rest are evidence for the session's
+// judgement. Handed to the PM directly, every measurement became a ticket in the
+// checker's words, including a hidden overlay "fixed" three times over for a
+// defect no player could ever see. Nothing in the
 // pipeline asks the question a person asks after two minutes with the product —
 // did anything happen? did I understand what I was looking at? was it worth
 // staying for? An empty defect list reads as "nothing is wrong" when it means
@@ -51,6 +56,7 @@ import {
   fetchOpenIssues,
   createIssue,
   recordTicket,
+  reviewApp,
   PLAYTEST_LABEL,
   REVIEW_VIEWPORTS,
   viewportOptions,
@@ -71,10 +77,13 @@ import fs from "fs";
 const OBSERVATION_MS = Number(process.env.PLAYTEST_OBSERVATION_MS || 120_000);
 const SAMPLE_EVERY_MS = Number(process.env.PLAYTEST_SAMPLE_MS || 8_000);
 
-// Findings one run may file. A ceiling, not a target. Feedback is cheap to
-// produce and expensive to triage — twenty impressions a week would bury the
-// Product Manager and turn a signal into a chore it learns to skip.
-const MAX_FINDINGS = Number(process.env.MAX_PLAYTEST_FINDINGS || 3);
+// Impressions one session may file. A ceiling, not a target. Feedback is cheap
+// to produce and expensive to triage — twenty impressions a week would bury the
+// Product Manager and turn a signal into a chore it learns to skip. Two, now
+// that it plays every night rather than once a week: three a night would be
+// exactly those twenty. The measured accessibility findings are outside the cap,
+// because there is at most one of each kind open at a time.
+const MAX_FINDINGS = Number(process.env.MAX_PLAYTEST_FINDINGS || 2);
 
 // JPEG, not PNG. The product is a canvas scene — photo-shaped content, where JPEG
 // is several times smaller for no loss that matters to a judgement about mood and
@@ -469,12 +478,90 @@ export function renderSession(session, { showingFrames = true } = {}) {
   ].join("\n");
 }
 
+// The measurements that are barriers for a player, filed whatever the session
+// thought of them: faint text or a control too small to tap is a barrier for
+// somebody whether or not it spoiled the Playtester's two minutes. Worded for
+// the player, with the measurements in Dev Notes, and titled the same every time
+// so the exact-title dedup keeps one of each open.
+const ACCESSIBILITY_BARRIERS = [
+  {
+    matches: (message) => message.startsWith("text contrast"),
+    title: "Some text is too faint to read",
+    observation: "Some of the text on the page is too faint against its background to read comfortably.",
+    whyItMatters: "A player with low vision, or on a phone in daylight, cannot read it at all.",
+  },
+  {
+    matches: (message) => message.startsWith("tap target"),
+    title: "Some controls are too small to tap on a phone",
+    observation: "On a phone, some controls are smaller than a fingertip.",
+    whyItMatters: "A player on a phone misses them, or hits the wrong thing.",
+  },
+  {
+    matches: (message) => message.includes("past the right edge") || message.startsWith("the page scrolls horizontally"),
+    title: "Part of the page runs off the screen",
+    observation: "Part of the page runs past the edge of the screen.",
+    whyItMatters: "A player cannot see what is cut off, and the page slides sideways under their thumb.",
+  },
+];
+
+const BROKEN_CONTROL = {
+  matches: (note) => note.includes("triggered a JS error"),
+  title: "Using a control breaks the page",
+  observation: "Using one of the page's controls throws an error.",
+  whyItMatters: "Whatever the player was trying to do may not have happened, and nothing told them.",
+};
+
+/**
+ * The findings App Review's measurements file without a model: one per kind of
+ * accessibility barrier present, plus one when a control throws. Everything
+ * else it measured is left to the session's judgement.
+ */
+export function measuredFindings(review) {
+  if (!review) return [];
+  const barrier = (kind, lines) =>
+    lines.length ? [{ title: kind.title, observation: kind.observation, whyItMatters: kind.whyItMatters, devNotes: lines.join("\n") }] : [];
+  const layout = ACCESSIBILITY_BARRIERS.flatMap((kind) =>
+    barrier(
+      kind,
+      review.defects
+        .filter((defect) => kind.matches(defect.message))
+        .map((defect) => `- ${defect.message} (at: ${defect.viewports.join("; ")})`)
+    )
+  );
+  const broken = barrier(
+    BROKEN_CONTROL,
+    review.functional.filter((note) => BROKEN_CONTROL.matches(note)).map((note) => `- ${note}`)
+  );
+  return [...layout, ...broken];
+}
+
+/** A finding's issue body. Technical detail goes in Dev Notes, below the player's view. */
+export function findingBody(finding, verdict) {
+  return [
+    "_Filed by the Playtester. It is not buildable: the Product Manager grooms it",
+    "into tickets, and it stays open until the Playtester sees the experience change._",
+    "",
+    "## What I noticed",
+    finding.observation,
+    "",
+    "## Why it matters",
+    finding.whyItMatters || "(not stated)",
+    // The verdict on the whole session, repeated on each finding. One finding
+    // read alone says nothing about whether the visit was good overall, and the
+    // Product Manager triages these one at a time — a complaint about a static
+    // scene means something different in a session that was otherwise worth
+    // staying for than in one that was not.
+    ...(verdict ? ["", "## The session overall", verdict] : []),
+    ...(finding.devNotes ? ["", "## Dev Notes", String(finding.devNotes).trim()] : []),
+  ].join("\n");
+}
+
 /**
  * File the findings as untriaged feedback.
  *
  * Deduped against the open board by title, so a complaint the Playtester has
- * every week — and a product that is genuinely static will produce the same one —
- * doesn't accumulate as a new issue each time.
+ * every session — and a product that is genuinely static will produce the same
+ * one — doesn't accumulate as a new issue each time.
  */
 function fileFindings(findings, verdict, openIssues) {
   // Exact titles only. The Playtester repeats itself in the obvious way — the
@@ -483,32 +570,14 @@ function fileFindings(findings, verdict, openIssues) {
   const seen = new Set(openIssues.map((i) => (i.title || "").toLowerCase().trim()));
 
   let filed = 0;
-  for (const finding of findings.slice(0, MAX_FINDINGS)) {
+  for (const finding of findings) {
     if (!finding?.title || !finding?.observation) continue;
     if (seen.has(finding.title.toLowerCase().trim())) {
       log("info", `Playtest: "${finding.title}" is already on the board — skipping.`);
       continue;
     }
-    const body = [
-      "_Filed by the Playtester after spending time with the live app. This is an",
-      "observation, not a ticket — the Product Manager decides whether it becomes",
-      "work, and what that work is._",
-      "",
-      "## What I noticed",
-      finding.observation,
-      "",
-      "## Why it matters",
-      finding.whyItMatters || "(not stated)",
-      // The verdict on the whole session, repeated on each finding. One finding
-      // read alone says nothing about whether the visit was good overall, and the
-      // Product Manager triages these one at a time — a complaint about a static
-      // scene means something different in a session that was otherwise worth
-      // staying for than in one that was not.
-      ...(verdict
-        ? ["", "## The session overall", verdict]
-        : []),
-    ].join("\n");
-    const number = createIssue(finding.title, body, [PLAYTEST_LABEL]);
+    seen.add(finding.title.toLowerCase().trim());
+    const number = createIssue(finding.title, findingBody(finding, verdict), [PLAYTEST_LABEL]);
     if (number) {
       recordTicket("created", number, finding.title);
       filed++;
@@ -516,6 +585,18 @@ function fileFindings(findings, verdict, openIssues) {
   }
   if (!filed) log("info", "Playtest: nothing new to file.");
   return filed;
+}
+
+/**
+ * App Review's measurements for the prompt, with the ones already filed as
+ * accessibility findings named so the session does not file them again.
+ */
+function renderMeasurements(review, barriers) {
+  if (!review) return "(nothing measured — no defects, and nothing broke when the controls were exercised)";
+  const filed = barriers.length
+    ? `\n\nAlready filed from these, without you: ${barriers.map((finding) => `"${finding.title}"`).join(", ")}. Do not file them again.`
+    : "";
+  return `${review.report}${filed}`;
 }
 
 // Only what the Playtester wrote under "What I noticed" when it filed the
@@ -559,7 +640,7 @@ export function renderAnsweredFindings(answered, openNumbers) {
  *
  * Returns the agent's raw output, or null when neither attempt produced any.
  */
-async function report(session, answeredFindings) {
+async function report(session, answeredFindings, measurements) {
   // Read before playing back: what this role said last time bounds what is worth
   // saying now. Empty on a first run, or when the Journals category does not
   // exist yet, and the prompt handles both.
@@ -572,6 +653,7 @@ async function report(session, answeredFindings) {
       SESSION: transcript,
       MAX_FINDINGS: String(MAX_FINDINGS),
       ANSWERED: answeredFindings,
+      MEASUREMENTS: measurements,
       PAST: past.length
         ? past.join("\n\n")
         : "(nothing — this is the first session on record, so there is nothing to verify or compare against)",
@@ -622,10 +704,24 @@ async function main() {
     return;
   }
 
+  // Measured, not judged: no model is involved, so it costs nothing and runs
+  // every session. Its accessibility findings are filed below even if the
+  // reporting agent fails, because they do not depend on it.
+  const review = await withLogGroup("App review", () => reviewApp());
   const openIssues = fetchOpenIssues();
   const openNumbers = new Set(openIssues.map((i) => i.number));
+  const barriers = measuredFindings(review);
+  const barriersFiled = fileFindings(barriers, "", openIssues);
+  if (barriersFiled) log("info", `Playtest: ${barriersFiled} accessibility finding(s) filed from the measurements.`);
+  // Already-filed barriers count as on the board for everything below.
+  const openAfterBarriers = [...openIssues, ...barriers.map((finding) => ({ title: finding.title }))];
+
   const answered = openIssues.filter(isAnswered);
-  const output = await report(session, renderAnsweredFindings(answered, openNumbers));
+  const output = await report(
+    session,
+    renderAnsweredFindings(answered, openNumbers),
+    renderMeasurements(review, barriers)
+  );
   if (output === null) {
     log("warn", "Playtest: the reporting agent failed both with and without the screenshots — nothing filed.");
     printRunSummary("Playtester");
@@ -635,9 +731,8 @@ async function main() {
   const result = extractAgentResponse("Playtester", output, {
     requireOutcome: false,
     // `verdict` is asked for in the prompt but deliberately NOT required here. A
-    // missing field would discard the whole report, and this agent runs once a
-    // week — losing a session's findings over an absent sentence costs more than
-    // the sentence is worth. It is logged, and its absence is warned about.
+    // missing field would discard the whole report — losing a session's findings
+    // over an absent sentence costs more than the sentence is worth. It is logged, and its absence is warned about.
     requiredDataFields: ["findings"],
   });
   if (!result) {
@@ -655,8 +750,8 @@ async function main() {
   if (verdict) log("info", `Playtester verdict: ${verdict}`);
   else log("warn", "Playtester: no verdict — the prompt asks for one in every session, filed or not.");
 
-  const findings = Array.isArray(result.data.findings) ? result.data.findings : [];
-  const filed = fileFindings(findings, verdict, openIssues);
+  const findings = (Array.isArray(result.data.findings) ? result.data.findings : []).slice(0, MAX_FINDINGS);
+  const filed = fileFindings(findings, verdict, openAfterBarriers);
   log("info", `Playtest complete — ${filed} finding(s) filed for the Product Manager to triage.`);
 
   // The verdicts on answered findings. Only numbers that were shown count: a
@@ -673,9 +768,9 @@ async function main() {
     log("warn", `Playtester: no verdict on answered finding(s) ${unjudged.map((i) => `#${i.number}`).join(", ")} — they wait for next session.`);
   }
 
-  // Write down what this session concluded, so next week can verify it rather
+  // Write down what this session concluded, so the next one can verify it rather
   // than start over. The TITLES matter more than the prose here: fileFindings
-  // dedups on an exact title, so next week reusing one suppresses a repeat
+  // dedups on an exact title, so the next session reusing one suppresses a repeat
   // correctly instead of filing a near-duplicate the PM has to notice by hand.
   appendJournal(
     JOURNAL,

@@ -85,6 +85,8 @@ const REPEATED_FINDING_LIMIT = 3;
 const REPEATED_FINDING_WEEKS = 4;
 
 // The agents that run once a week — see checkWeeklyAgents.
+// The Playtester runs nightly now, but stays here: no other check notices it
+// failing, and a failed night costs a day of findings.
 const WEEKLY_WORKFLOWS = ["product-owner", "playtester", "tech-lead"];
 
 // Every workflow that runs a model session, and so can have one capped or aborted.

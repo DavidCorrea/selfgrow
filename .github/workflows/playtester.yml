@@ -2,12 +2,14 @@ name: playtester
 
 on:
   schedule:
-    # Wednesday — a day nothing else runs. The Product Owner is Monday,
-    # pi-update Tuesday, the Tech Lead Thursday, so this never competes with
-    # another weekly agent for the day's requests. It runs after the PM's 00:30
-    # grooming so its findings sit on the board waiting for the NEXT morning's
-    # run to triage, rather than arriving just too late for today's.
-    - cron: '0 10 * * 3'
+    # Every night, 90 minutes before the PM's 00:30 grooming, so its findings —
+    # App Review's accessibility barriers among them — are on the board for the
+    # very next run to groom. It used to run on Wednesdays only, and App Review
+    # went to the PM directly; a layout regression now waits at most a day for a
+    # player-facing finding instead of reaching the PM in the checker's words.
+    # 23:00 is after the Devs' 14:00 mop-up and the day's merges, so it plays
+    # what shipped today. The job's 30-minute cap ends it before the PM starts.
+    - cron: '0 23 * * *'
   workflow_dispatch:
 
 permissions:

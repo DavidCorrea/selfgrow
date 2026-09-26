@@ -20,7 +20,7 @@ flowchart LR
     MAIN -->|changelog| PM
 
     TL["🔧 Tech Lead<br/><i>Thu</i>"] -->|structure, coverage| PM
-    QA["👀 QA<br/><i>Wed</i>"] -->|findings| PM
+    QA["👀 QA<br/><i>daily</i>"] -->|findings| PM
     MAIN -.->|plays it| QA
     MAIN -.->|reads it| TL
 
@@ -49,7 +49,7 @@ Plus one tester and three pieces of infrastructure — jobs, not roles:
 
 | | Runs | Does |
 | --- | --- | --- |
-| 👀 **QA** | Wed 10:00 | Plays the **live site** for two minutes, looks at two frames of it, files what it was like |
+| 👀 **QA** | daily 23:00 | Plays the **live site** for two minutes, looks at two frames of it, reads App Review's measurements, files what it was like |
 | 📊 **Health** | daily 16:00 | Measures the pipeline; silent unless something breaks |
 | 🤝 **review-pr** / **triage-fork-pr** | on any PR | Finishes yours; reviews a stranger's |
 | 📦 **pi-update** | Tue 07:00 | Dependabot for the model chain |
@@ -65,7 +65,7 @@ Plus one tester and three pieces of infrastructure — jobs, not roles:
 
 **QA is deliberately not the PM.** It plays and reports; the PM decides. The observer should not be the one who acts on the observation — the same reason the Devs do not review their own work.
 
-It is also the only role with **eyes**, for the same reason. Everything measurable about a rendered page — overflow, contrast, collapsed boxes — is measured deterministically and fed to the PM; a vision model adds only taste, and can report a defect that isn't there. QA's output is explicitly not a ticket, so a mistaken impression costs one line of triage instead of a build.
+It is also the only role with **eyes**, for the same reason. Everything measurable about a rendered page — overflow, contrast, collapsed boxes — is measured deterministically and handed to QA as evidence; the accessibility barriers are filed without a model, and the rest only when a player would notice. A vision model adds only taste, and can report a defect that isn't there. QA's output is explicitly not a ticket, so a mistaken impression costs one line of triage instead of a build.
 
 **Sunday and Monday are the hinge.** The PM's Sunday run curates and writes the week's report; the PO reads that week on Monday and sets the milestone the PM grooms against for the next six days.
 

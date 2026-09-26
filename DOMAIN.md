@@ -108,13 +108,27 @@ else's, and wait for the PM.
 **⚒️ Devs** — own *how a ticket gets built*, and write to `main`. Internally
 Scout → Builder → Reviewer.
 
-**👀 QA / Playtester** (Wed 10:00) — "the only agent that experiences the product
+**👀 QA / Playtester** (daily 23:00) — "the only agent that experiences the product
 instead of measuring it." Separate from the PM because "it plays and reports; the
 PM decides. The observer should not be the one who acts on the observation." It
 is the only role with **eyes**: everything measurable about a page is measured
-deterministically and fed to the PM, so "a vision model adds only taste, and can
-report a defect that isn't there." Its output is explicitly **not a ticket**, "so
-a mistaken impression costs one line of triage instead of a build."
+deterministically, so "a vision model adds only taste, and can report a defect
+that isn't there." Its output is explicitly **not a ticket** — nothing it files is
+buildable until the PM grooms it — "so a mistaken impression costs one line of
+triage instead of a build."
+
+**App Review reaches the PM only through the Playtester.** The Playtester runs it
+each session and reads its measurements as evidence. The **accessibility
+barriers** — faint text, tap targets too small, content off the screen, a control
+that throws — are filed as findings **without a model**, worded for the player,
+one per kind with the measurements as Dev Notes: a barrier is a barrier for
+somebody whether or not it spoiled a two-minute session, and a model deciding
+whether faint text "matters" could drop it. Everything else is filed only when a
+player would notice it. Fed to the PM directly, every measurement became a ticket
+in the checker's words, and a hidden overlay was "fixed" three times for a defect
+no player could see. It plays **nightly**, ninety minutes before the PM grooms, so
+a regression waits at most a day; at most two impressions a night, since three
+would be the twenty a week the cap exists to prevent.
 
 It plays the **live site**, not a local copy — "the difference between 'the code
 we merged works' and 'what a visitor gets works'" — and plays through the **DOM
@@ -408,7 +422,8 @@ vision model**, because "everything a screenshot critique was asked to spot —
 overflow, overlap, unreadable contrast, collapsed regions — is a measurable
 property of the rendered page." It "cannot invent a defect that isn't there —
 which matters more than it sounds: a hallucinated defect became a ticket, and the
-Builder then spent real requests 'fixing' nothing."
+Builder then spent real requests 'fixing' nothing." What it measures is handed
+to the Playtester, not the PM (see the Playtester, above).
 
 It measures at **a real phone** (390×844, touch) **and a wide desktop window**
 (1440×900): "a layout that only reflows for a narrow mouse-driven window has not

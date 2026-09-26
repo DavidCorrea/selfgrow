@@ -6,8 +6,9 @@ on:
     # board or the clock, so a day that groomed more work than one run could drain
     # would otherwise retire with buildable tickets untouched.
     #
-    # 14:00 is after every other agent has run (PM 00:30, PO/Playtester/Tech Lead
-    # 08:00-10:00), so it never races one of them for the working tree.
+    # 14:00 is after every other agent has run (PM 00:30, PO/Tech Lead
+    # 08:00-09:00), and before the Playtester's 23:00, so it never races one of
+    # them for the working tree.
     - cron: '0 14 * * *'
 
   # The Product Manager dispatches this explicitly at the end of a run that
