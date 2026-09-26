@@ -8,7 +8,7 @@
  * @module agenttools
  */
 
-import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, consumeOfflineWoodGained, UPGRADE_COST, WALL_COST, STONE_GATHER_AMOUNT, FORGE_CLICK_POWER_BONUS } from "./engine.js";
+import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, consumeOfflineWoodGained, formatElapsed, UPGRADE_COST, WALL_COST, STONE_GATHER_AMOUNT, FORGE_CLICK_POWER_BONUS } from "./engine.js";
 
 const GOAL_WOOD = 10;
 const GOAL_STONE = 5;
@@ -134,6 +134,8 @@ function withGoal(s) {
     totalWoodEarned: s.totalWoodEarned,
     totalStoneEarned: s.totalStoneEarned,
     timestamp: s.timestamp,
+    firstTimestamp: s.firstTimestamp,
+    elapsed: s.firstTimestamp ? formatElapsed(Date.now() - new Date(s.firstTimestamp).getTime()) : '\u2014',
     upgradeLevel: s.upgradeLevel,
     stone: s.stone,
     stoneRate: stoneRate,
@@ -167,7 +169,8 @@ export function tools() {
         + "visitor: wood count, accumulation rate, number of upgrades crafted, "
         + "stone count, stone accumulation rate, wall level, forge level, "
         + "forge wood cost, forge stone cost, click power, "
-        + "whether stone is unlocked, timestamp, whether the offline-summary "
+        + "whether stone is unlocked, timestamp, firstTimestamp (ISO date of first save), "
+        + "elapsed (formatted duration since first save), whether the offline-summary "
         + "overlay is currently visible, how much wood and stone were gained "
         + "while away (offlineWoodGained / offlineStoneGained), and the current "
         + "goal (first goal, upgrade goal, stone goal, build-wall goal, or forge goal).",

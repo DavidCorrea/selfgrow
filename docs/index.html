@@ -532,6 +532,10 @@
       <span class="stat-label" id="tick-label">Tick</span>
       <span class="stat-value" id="tick-value" aria-labelledby="tick-label">—</span>
     </div>
+    <div class="stat">
+      <span class="stat-label" id="elapsed-label">Elapsed</span>
+      <span class="stat-value" id="elapsed-value" aria-labelledby="elapsed-label">—</span>
+    </div>
     <div class="stat stat-hidden" id="stone-stat">
       <span class="stat-label" id="stone-label">Stone</span>
       <span class="stat-value stone-value" id="stone-value" aria-labelledby="stone-label">0</span>
@@ -621,13 +625,14 @@
   <!-- ═══ Engine + live UI render loop ═══ -->
   <script type="module">
     import "./webmcp.js";
-    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, consumeOfflineWoodGained, consumeOfflineGained, UPGRADE_COST, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS } from "./engine.js";
+    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, consumeOfflineWoodGained, consumeOfflineGained, formatElapsed, UPGRADE_COST, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS } from "./engine.js";
 
     init();
 
     const stateEl = document.getElementById("wood-value");
     const rateEl = document.getElementById("rate-value");
     const tickEl = document.getElementById("tick-value");
+    const elapsedEl = document.getElementById("elapsed-value");
     const stoneEl = document.getElementById("stone-value");
     const stoneRateEl = document.getElementById("stone-rate-value");
     const stoneStat = document.getElementById("stone-stat");
@@ -848,6 +853,21 @@
       // Tick indicator
       if (tickEl) {
         tickEl.textContent = "\u25B6";
+      }
+
+      // Elapsed time
+      if (elapsedEl) {
+        if (s.firstTimestamp) {
+          const elapsedMs = Date.now() - new Date(s.firstTimestamp).getTime();
+          // Show '—' until at least one tick has passed (1000ms)
+          if (elapsedMs < 1000) {
+            elapsedEl.textContent = "\u2014";
+          } else {
+            elapsedEl.textContent = formatElapsed(elapsedMs);
+          }
+        } else {
+          elapsedEl.textContent = "\u2014";
+        }
       }
 
       // Stone display (hidden until unlocked)

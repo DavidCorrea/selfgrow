@@ -56,6 +56,7 @@ export { UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, STONE_BASE_RATE, WALL_COST, WA
  * @property {number}  forgeStoneCost  — stone cost for the next forge
  * @property {boolean} stoneUnlocked   — whether stone system has been revealed
  * @property {string}  timestamp       — ISO date of last tick/save
+ * @property {string}  firstTimestamp  — ISO date of first ever save (never updated after init)
  */
 
 let state = {
@@ -69,6 +70,7 @@ let state = {
   forgeLevel: 0,
   stoneUnlocked: false,
   timestamp: new Date().toISOString(),
+  firstTimestamp: null,
 };
 
 /** Offline resources gained on last catch-up. */
@@ -146,6 +148,7 @@ function loadPersisted() {
         state.forgeLevel = typeof saved.forgeLevel === "number" ? saved.forgeLevel : 0;
         state.stoneUnlocked = typeof saved.stoneUnlocked === "boolean" ? saved.stoneUnlocked : false;
         state.timestamp = saved.timestamp;
+        state.firstTimestamp = typeof saved.firstTimestamp === "string" ? saved.firstTimestamp : saved.timestamp;
         return true;
       }
     }
@@ -184,6 +187,28 @@ function stopTick() {
 // ─── Public API ───────────────────────────────────────────────────
 
 /**
+ * Format a duration in milliseconds as a human-readable string.
+ * Outputs e.g. '2d 7h 34m', '5h 0m', '3m 12s', '5s', or '—' for falsy / zero.
+ *
+ * @param {number|null|undefined} ms
+ * @returns {string}
+ */
+export function formatElapsed(ms) {
+  if (!ms || ms <= 0) return '\u2014';
+  const totalSeconds = Math.floor(ms / 1000);
+  if (totalSeconds < 60) return totalSeconds + 's';
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes < 60) return minutes + 'm ' + (seconds > 0 ? seconds + 's' : '').trim();
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  if (hours < 24) return hours + 'h ' + remainingMinutes + 'm';
+  const days = Math.floor(hours / 24);
+  const remainingHours = hours % 24;
+  return days + 'd ' + remainingHours + 'h ' + remainingMinutes + 'm';
+}
+
+/**
  * Initialise the engine: load persisted state, catch up on offline
  * time, persist the catch-up, and start the tick loop.
  *
@@ -196,6 +221,7 @@ export function init() {
   if (!loaded) {
     // No saved state — start fresh with zero offline gain
     state.timestamp = now();
+    state.firstTimestamp = now();
   }
   catchUp();
   persist(); // record the catch-up timestamp
@@ -352,6 +378,7 @@ export function getState() {
     forgeStoneCost: computeForgeStoneCost(state.forgeLevel),
     stoneUnlocked: state.stoneUnlocked,
     timestamp: state.timestamp,
+    firstTimestamp: state.firstTimestamp,
   };
 }
 
@@ -371,6 +398,7 @@ export function reset() {
     forgeLevel: 0,
     stoneUnlocked: false,
     timestamp: now(),
+    firstTimestamp: null,
   };
   offlineGained = { wood: 0, stone: 0, elapsedSec: 0 };
   try {

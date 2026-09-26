@@ -26,6 +26,21 @@ export async function checks() {
     problems.push("Expected #tick-value to exist in the DOM — it was not found.");
   }
 
+  const elapsedEl = document.getElementById("elapsed-value");
+  if (!elapsedEl) {
+    problems.push("Expected #elapsed-value to exist in the DOM — it was not found.");
+  } else {
+    const text = elapsedEl.textContent.trim();
+    // Should either be '—' (no save) or a formatted duration like '0s', '1m 30s', etc.
+    if (text === '\u2014') {
+      // Fresh game — acceptable
+    } else if (/^\d+[dhms]/.test(text)) {
+      // Formatted duration — acceptable
+    } else {
+      problems.push(`#elapsed-value should show either "\u2014" or a formatted duration string, got "${text}".`);
+    }
+  }
+
   // Stone DOM elements
   const stoneEl = document.getElementById("stone-value");
   if (!stoneEl) {
@@ -520,6 +535,34 @@ export async function checks() {
     if (typeof fresh.wallLevel !== "number" || fresh.wallLevel !== 0) {
       problems.push(`Engine initial wallLevel should be 0, got ${JSON.stringify(fresh.wallLevel)}.`);
     }
+    // firstTimestamp should be null on fresh reset (no init)
+    if (fresh.firstTimestamp !== null) {
+      problems.push(`Engine initial firstTimestamp should be null (fresh reset), got ${JSON.stringify(fresh.firstTimestamp)}.`);
+    }
+
+    // --- Test 1b: formatElapsed utility ---
+    if (typeof engine.formatElapsed !== "function") {
+      problems.push("Engine should export formatElapsed function — it was not found.");
+    } else {
+      const tests = [
+        { ms: null, expected: '\u2014' },
+        { ms: 0, expected: '\u2014' },
+        { ms: 5000, expected: '5s' },
+        { ms: 60000, expected: '1m' },
+        { ms: 60000 * 2 + 15000, expected: '2m 15s' },
+        { ms: 3600000 * 3 + 60000 * 45, expected: '3h 45m' },
+        { ms: 86400000 * 2 + 3600000 * 7 + 60000 * 34, expected: '2d 7h 34m' },
+      ];
+      for (const t of tests) {
+        const result = engine.formatElapsed(t.ms);
+        // Normalize whitespace for comparison
+        const normResult = result.replace(/\s+/g, ' ').trim();
+        const normExpected = t.expected.replace(/\s+/g, ' ').trim();
+        if (normResult !== normExpected) {
+          problems.push(`formatElapsed(${JSON.stringify(t.ms)}) returned "${result}", expected "${t.expected}".`);
+        }
+      }
+    }
 
     // --- Test 2: persistence round-trip ---
     engine.reset();
@@ -553,6 +596,10 @@ export async function checks() {
         }
         if (typeof parsed.stoneUnlocked !== "boolean") {
           problems.push(`localStorage state after save() should have stoneUnlocked field, got ${JSON.stringify(parsed.stoneUnlocked)}.`);
+        }
+        // firstTimestamp should be present — null on fresh reset (no init yet)
+        if (parsed.firstTimestamp !== null && typeof parsed.firstTimestamp !== "string") {
+          problems.push(`localStorage state after save() should have firstTimestamp as null or string, got ${JSON.stringify(parsed.firstTimestamp)}.`);
         }
       } catch {
         problems.push("localStorage value from engine.save() is not valid JSON.");
@@ -855,6 +902,13 @@ export async function checks() {
         }
         if (typeof result.timestamp !== "string" || result.timestamp.length === 0) {
           problems.push(`read-state should return a non-empty timestamp string, got ${JSON.stringify(result.timestamp)}.`);
+        }
+        // Elapsed fields
+        if (typeof result.firstTimestamp !== "string" || result.firstTimestamp.length === 0) {
+          problems.push(`read-state should return a non-empty firstTimestamp string, got ${JSON.stringify(result.firstTimestamp)}.`);
+        }
+        if (typeof result.elapsed !== "string" || result.elapsed.length === 0) {
+          problems.push(`read-state should return a non-empty elapsed string, got ${JSON.stringify(result.elapsed)}.`);
         }
         // Stone fields must be present
         if (typeof result.stone !== "number") {
