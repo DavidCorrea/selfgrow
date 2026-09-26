@@ -32,6 +32,21 @@ export async function checks() {
     problems.push("Expected #stone-value to exist in the DOM — it was not found.");
   }
 
+  const totalWoodEl = document.getElementById("total-wood-value");
+  if (!totalWoodEl) {
+    problems.push("Expected #total-wood-value to exist in the DOM — it was not found.");
+  }
+
+  const totalStoneEl = document.getElementById("total-stone-value");
+  if (!totalStoneEl) {
+    problems.push("Expected #total-stone-value to exist in the DOM — it was not found.");
+  }
+
+  const totalStoneStat = document.getElementById("total-stone-stat");
+  if (!totalStoneStat) {
+    problems.push("Expected #total-stone-stat to exist in the DOM — it was not found.");
+  }
+
   const stoneRateEl = document.getElementById("stone-rate-value");
   if (!stoneRateEl) {
     problems.push("Expected #stone-rate-value to exist in the DOM — it was not found.");
@@ -784,6 +799,29 @@ export async function checks() {
       problems.push(`totalWoodEarned should be 8 after sequence, got ${state2.totalWoodEarned}. Expected: 1 (first) + 5 (for sharpen) + 2 (wall boosted gather) = 8.`);
     }
 
+    // --- Test 20: totalStoneEarned tracks stone gained via gatherStone and passive ---
+    engine.reset();
+    // Unlock stone
+    for (let i = 0; i < 5; i++) engine.gatherWood();
+    engine.craftUpgrade();
+    // Gather stone manually
+    for (let i = 0; i < 3; i++) engine.gatherStone();
+    let s = engine.getState();
+    if (s.totalStoneEarned !== 3) {
+      problems.push(`totalStoneEarned after 3 stone gathers should be 3, got ${s.totalStoneEarned}.`);
+    }
+    // totalStoneEarned should not decrease after spending stone
+    for (let i = 0; i < engine.WALL_COST; i++) engine.gatherStone();
+    engine.buildWall(); // spends 5 stone
+    s = engine.getState();
+    // totalStoneEarned should be 3 (first) + 5 (for wall) = 8, regardless of current stone
+    if (s.totalStoneEarned < 8) {
+      problems.push(`totalStoneEarned after gathering 8 stone and spending 5 on wall should be at least 8, got ${s.totalStoneEarned}.`);
+    }
+    if (s.stone !== 3) {
+      problems.push(`stone balance after building wall should be 3 (8 earned − 5 spent), got ${s.stone}. Total earned is ${s.totalStoneEarned} — the two must differ.`);
+    }
+
     // Clean up test artifacts
     localStorage.removeItem("selfgrow-state");
     engine.reset();
@@ -830,6 +868,9 @@ export async function checks() {
         }
         if (typeof result.wallLevel !== "number") {
           problems.push(`read-state should return wallLevel as a number, got ${JSON.stringify(result.wallLevel)}.`);
+        }
+        if (typeof result.totalStoneEarned !== "number") {
+          problems.push(`read-state should return totalStoneEarned as a number, got ${JSON.stringify(result.totalStoneEarned)}.`);
         }
         if (typeof result.clickPower !== "number") {
           problems.push(`read-state should return clickPower as a number, got ${JSON.stringify(result.clickPower)}.`);
