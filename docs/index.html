@@ -833,8 +833,10 @@
 
       // Re-enable only the buttons that should be enabled based on game state
       btnGather.disabled = false;
-      // sharpen, stone, wall, forge buttons will be re-evaluated by renderUI
       document.body.style.pointerEvents = "";
+
+      // Reconcile action button states immediately (no 500ms renderUI delay)
+      renderUI();
     }
 
     btnDismiss.addEventListener("click", dismissOffline);
@@ -1071,6 +1073,9 @@
       }
 
     }
+
+    // Expose renderUI for agent tools and self-test access
+    window.__renderUI = renderUI;
 
     // Show offline summary on load if there's offline resources
     showOfflineSummary();

@@ -332,6 +332,28 @@ export async function checks() {
       if (bodyPEAfter === "none") {
         problems.push(`Expected body pointer-events to be restored after dismissing overlay, but it was still "none".`);
       }
+
+      // ─── After dismiss, action button states must reconcile immediately ───
+      // renderUI() must have been called at the end of dismissOffline()
+      const engineMod = (await import("./engine.js"));
+      const sAfter = engineMod.getState();
+      const woodAfter = sAfter.wood;
+      const sharpenAfter = document.getElementById("btn-sharpen");
+      if (sharpenAfter) {
+        if (woodAfter >= engineMod.UPGRADE_COST && sharpenAfter.disabled) {
+          problems.push(`Expected #btn-sharpen to be enabled after dismissing offline-summary (wood=${woodAfter} >= ${engineMod.UPGRADE_COST}) — it was still disabled.`);
+        }
+        if (woodAfter < engineMod.UPGRADE_COST && !sharpenAfter.disabled) {
+          problems.push(`Expected #btn-sharpen to be disabled after dismissing offline-summary (wood=${woodAfter} < ${engineMod.UPGRADE_COST}) — it was enabled.`);
+        }
+      }
+      const wallAfter = document.getElementById("btn-build-wall");
+      if (wallAfter) {
+        // Button should be hidden or disabled since stone is not unlocked yet
+        if (!wallAfter.disabled) {
+          problems.push("Expected #btn-build-wall to be disabled after dismissing offline-summary (stone not unlocked) — it was enabled.");
+        }
+      }
     }
 
     const bg = getComputedStyle(offlineSummary).background;
@@ -1272,6 +1294,26 @@ export async function checks() {
             problems.push(`dismiss-offline result offlineWoodGained should be 0 (overlay is now hidden), got ${JSON.stringify(dismissResult.offlineWoodGained)}.`);
           }
         }
+
+        // ─── Agent dismiss-offline: DOM button states must reconcile immediately ───
+        const engineMod2 = (await import("./engine.js"));
+        const sAfterAgent = engineMod2.getState();
+        const woodAfterAgent = sAfterAgent.wood;
+        const sharpenAfterAgent = document.getElementById("btn-sharpen");
+        if (sharpenAfterAgent) {
+          if (woodAfterAgent >= engineMod2.UPGRADE_COST && sharpenAfterAgent.disabled) {
+            problems.push(`Agent dismiss-offline: Expected #btn-sharpen to be enabled (wood=${woodAfterAgent} >= ${engineMod2.UPGRADE_COST}) — it was still disabled.`);
+          }
+          if (woodAfterAgent < engineMod2.UPGRADE_COST && !sharpenAfterAgent.disabled) {
+            problems.push(`Agent dismiss-offline: Expected #btn-sharpen to be disabled (wood=${woodAfterAgent} < ${engineMod2.UPGRADE_COST}) — it was enabled.`);
+          }
+        }
+        const wallAfterAgent = document.getElementById("btn-build-wall");
+        if (wallAfterAgent) {
+          if (!wallAfterAgent.disabled) {
+            problems.push("Agent dismiss-offline: Expected #btn-build-wall to be disabled (stone not unlocked) — it was enabled.");
+          }
+        }
       } else {
         problems.push("Expected #offline-summary to exist for dismiss-offline tool test.");
       }
@@ -1779,8 +1821,8 @@ export async function checks() {
     const engine = await import("./engine.js");
     engine.reset();
     engine.init();
-    // Run renderUI to push initial state to DOM
-    // (the sharpen button should show locked state on fresh start)
+    // Ensure the DOM reflects the fresh game state
+    if (typeof window.__renderUI === "function") window.__renderUI();
     const btn = document.getElementById("btn-sharpen");
     if (btn) {
       const aria = btn.getAttribute("aria-label");
