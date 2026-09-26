@@ -65,6 +65,15 @@ export async function checks() {
       problems.push("Expected #btn-sharpen to exist inside #action-area — it was not found.");
     } else if (sharpenBtn.getAttribute("type") !== "button") {
       problems.push(`Expected #btn-sharpen type="button", got "${sharpenBtn.getAttribute("type")}".`);
+    } else if (sharpenBtn.hasAttribute("hidden")) {
+      problems.push("Expected #btn-sharpen to NOT have the hidden attribute — it was hidden, making it invisible to the App Review locator.");
+    } else if (!sharpenBtn.disabled) {
+      problems.push("Expected #btn-sharpen to be disabled on page load (before reaching 10 wood) — it was enabled.");
+    } else {
+      const text = sharpenBtn.textContent.trim();
+      if (!text.includes("locked") && !text.includes("Locked")) {
+        problems.push(`Expected #btn-sharpen text to indicate locked state on page load, got "${text}".`);
+      }
     }
 
     const gatherStoneBtn = document.getElementById("btn-gather-stone");
@@ -80,6 +89,55 @@ export async function checks() {
     } else if (buildWallBtn.getAttribute("type") !== "button") {
       problems.push(`Expected #btn-build-wall type="button", got "${buildWallBtn.getAttribute("type")}".`);
     }
+  }
+
+  // ─── Sharpen button: dynamic transition test ────────────────
+
+  // Verify the engine correctly handles the sharpen/locked pathway.
+  // The static DOM check above confirms the button is visible, disabled,
+  // and shows locked text on initial page load.  These engine-level checks
+  // confirm the underlying logic is correct; the agent-tool tests below
+  // exercise it through the full pipeline.
+  try {
+    const engine = await import("./engine.js");
+    engine.reset();
+
+    // Gather enough wood to reach 10 (GOAL_WOOD)
+    for (let i = 0; i < 10; i++) engine.gatherWood();
+
+    const s = engine.getState();
+    if (s.wood < 10) {
+      problems.push(`Engine should have 10+ wood after 10 gathers, got ${s.wood}.`);
+    }
+    if (s.upgradeLevel !== 0) {
+      problems.push(`Engine upgradeLevel should still be 0 after 10 gathers (no sharpen done), got ${s.upgradeLevel}.`);
+    }
+
+    // Craft the first upgrade and verify transition
+    const upgradeResult = engine.craftUpgrade();
+    if (!upgradeResult.upgraded) {
+      problems.push("craftUpgrade with 10 wood and cost 5 should succeed — it did not.");
+    }
+    const afterUpgrade = engine.getState();
+    if (afterUpgrade.upgradeLevel !== 1) {
+      problems.push(`After craftUpgrade, upgradeLevel should be 1, got ${afterUpgrade.upgradeLevel}.`);
+    }
+    if (!afterUpgrade.stoneUnlocked) {
+      problems.push("After first craftUpgrade, stone should be unlocked.");
+    }
+
+    // Verify sharpen button in DOM is always present (not hidden)
+    const btn = document.getElementById("btn-sharpen");
+    if (btn && btn.hasAttribute("hidden")) {
+      problems.push("Expected #btn-sharpen to NOT have hidden attribute after engine operations — it was hidden.");
+    }
+
+    // Clean up
+    engine.reset();
+    engine.init();
+  } catch (err) {
+    problems.push(`Sharpen button dynamic test threw: ${err.message}`);
+    console.error(err);
   }
 
   // ─── Goal panel ───

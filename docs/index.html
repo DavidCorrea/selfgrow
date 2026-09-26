@@ -472,8 +472,8 @@
       <button class="btn" id="btn-gather" type="button" aria-label="Gather Wood">
         &#x26A0; Gather Wood
       </button>
-      <button class="btn" id="btn-sharpen" type="button" aria-label="Sharpen Axe" hidden>
-        &#x2692; Sharpen Axe (5 wood)
+      <button class="btn" id="btn-sharpen" type="button" aria-label="Sharpen Axe (locked — gather 10 wood to unlock)" disabled>
+        🔒 Sharpen Axe (locked)
       </button>
     </div>
 
@@ -800,13 +800,14 @@
           wallBuilt = true;
         }
 
-        // Sharpen button: enable/disable based on wood
+        // Sharpen button: show upgrade text, enable/disable based on wood
+        btnSharpen.textContent = "\u2692 Sharpen Axe (" + UPGRADE_COST + " wood)";
+        btnSharpen.setAttribute("aria-label", "Sharpen Axe (" + UPGRADE_COST + " wood)");
         btnSharpen.disabled = wood < UPGRADE_COST;
       } else if (wood >= GOAL_WOOD) {
         // Reached 10 wood but haven't done first sharpen yet
         if (!goalReached) {
           goalReached = true;
-          btnSharpen.hidden = false;
         }
 
         const woodForUpgrade = wood;
@@ -816,6 +817,8 @@
         if (goalProgress) goalProgress.setAttribute("aria-valuenow", Math.floor(woodForUpgrade % UPGRADE_COST));
         if (goalProgress) goalProgress.setAttribute("aria-valuemax", UPGRADE_COST);
 
+        btnSharpen.textContent = "\u2692 Sharpen Axe (" + UPGRADE_COST + " wood)";
+        btnSharpen.setAttribute("aria-label", "Sharpen Axe (" + UPGRADE_COST + " wood)");
         btnSharpen.disabled = wood < UPGRADE_COST;
       } else {
         goalReached = false;
@@ -826,14 +829,11 @@
         if (goalProgress) goalProgress.setAttribute("aria-valuemax", GOAL_WOOD);
         goalText.textContent = "Gather " + GOAL_WOOD + " wood";
 
-        btnSharpen.hidden = true;
-        btnSharpen.disabled = false;
+        btnSharpen.textContent = "\uD83D\uDD12 Sharpen Axe (locked)";
+        btnSharpen.setAttribute("aria-label", "Sharpen Axe \u2014 locked, gather " + (GOAL_WOOD - Math.floor(wood)) + " more wood to unlock");
+        btnSharpen.disabled = true;
       }
 
-      // Show the sharpen button ever after
-      if (upgradeLevel > 0) {
-        btnSharpen.hidden = false;
-      }
     }
 
     // Show offline summary on load if there's offline resources
