@@ -1,11 +1,13 @@
+# The product is replaced on every reset but these forms are not, so nothing here
+# names what the product currently is — examples included.
 name: Report something broken
-description: Something in the garden is wrong, missing, or unreachable.
+description: Something in the product is wrong, missing, or unreachable.
 labels: []
 body:
   - type: markdown
     attributes:
       value: |
-        The garden is live at https://davidcorrea.github.io/selfgrow/ — that is the
+        The product is live at https://davidcorrea.github.io/selfgrow/ — that is the
         page to describe, since it is what everyone else sees too.
 
         Automated checks already measure contrast, layout overflow and console
@@ -19,8 +21,8 @@ body:
       label: What happened?
       description: What you saw, and what you expected instead.
       placeholder: |
-        After about a minute the season changed to Autumn, but the plot description
-        still said "a young seedling in spring soil". The two disagreed until I reloaded.
+        After about a minute the number at the top kept rising, but the progress bar
+        underneath stayed where it was. The two disagreed until I reloaded.
     validations:
       required: true
 

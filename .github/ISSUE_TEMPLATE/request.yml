@@ -1,5 +1,7 @@
+# The product is replaced on every reset but these forms are not, so nothing here
+# names what the product currently is — examples included.
 name: Ask for something
-description: Something you want the garden to do, or do differently.
+description: Something you want the product to do, or do differently.
 labels: []
 body:
   - type: markdown
@@ -18,10 +20,11 @@ body:
     id: what
     attributes:
       label: What should change?
-      description: The garden as it is now, and how it should be different. Describe what you want to see or be able to do, not how to build it.
+      description: The product as it is now, and how it should be different. Describe what you want to see or be able to do, not how to build it.
       placeholder: |
-        Right now the weather changes but the garden never sounds different.
-        Rain should be audible — quiet, and only while it is actually raining.
+        Right now every piece of text uses the same font at the same weight, so the
+        headings, numbers and hints all blend together. Headings should stand out,
+        and the small hint text should be easy to read.
     validations:
       required: true
 
@@ -31,8 +34,8 @@ body:
       label: How would you know it worked?
       description: One or two things that would be true afterwards. This is what the agents build toward and what their self-checks assert, so it is the most useful thing on this form.
       placeholder: |
-        - During Light Drizzle I can hear rain, and it fades out when the weather clears.
-        - It never plays when the page loads on a clear day.
+        - Headings use a different font from body text.
+        - The smallest text on the page is still readable on a phone.
     validations:
       required: true
 
