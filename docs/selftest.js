@@ -1585,5 +1585,48 @@ export async function checks() {
     console.error(err);
   }
 
+  // ─── Sharpen button: locked-state aria-label must contain a real number ───
+  // The aria-label in the locked state is "Sharpen Axe — locked, gather N more wood to unlock"
+  // where N is computed from getState().wood. A prior bug rendered the concatenation
+  // expression literally ("gather ' + (GOAL_WOOD - Math.floor(wood)) + ' more") instead
+  // of evaluating it, which is exactly the failure the playtester reported (#924).
+  try {
+    const engine = await import("./engine.js");
+    engine.reset();
+    engine.init();
+    // Run renderUI to push initial state to DOM
+    // (the sharpen button should show locked state on fresh start)
+    const btn = document.getElementById("btn-sharpen");
+    if (btn) {
+      const aria = btn.getAttribute("aria-label");
+      if (!aria) {
+        problems.push("btn-sharpen aria-label is missing — expected a descriptive locked-state string.");
+      } else {
+        // Check for source-code literals that would indicate the expression wasn't evaluated
+        const literalPatterns = ["GOAL_WOOD", "Math.floor", "\" + \""];
+        for (const pat of literalPatterns) {
+          if (aria.includes(pat)) {
+            problems.push(`btn-sharpen aria-label contains literal source text "${pat}": "${aria}". The concatenation expression was not evaluated.`);
+          }
+        }
+        // Check that the aria-label actually contains a numeric character (the gather count)
+        if (!/\d/.test(aria)) {
+          problems.push(`btn-sharpen aria-label should contain a numeric gather count, got: "${aria}".`);
+        }
+        // Check that it says "locked" or "Locked"
+        if (!/locked/i.test(aria)) {
+          problems.push(`btn-sharpen aria-label should indicate locked state on fresh start, got: "${aria}".`);
+        }
+      }
+    } else {
+      problems.push("Expected #btn-sharpen to be in the DOM for aria-label check — it was not found.");
+    }
+    engine.reset();
+    engine.init();
+  } catch (err) {
+    problems.push(`Sharpen button aria-label test threw: ${err.message}`);
+    console.error(err);
+  }
+
   return problems;
 }
