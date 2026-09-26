@@ -26,6 +26,8 @@ import {
   fetchShippedIssues,
   isBuildable,
   isBlocked,
+  isGroomed,
+  isNonWorkIssue,
   attemptCount,
   fetchOpenAgentPullRequests,
   classifyAgentPullRequest,
@@ -255,8 +257,14 @@ export function checkShipping({ shippedRecently, open }) {
   const buildable = open.filter((i) => isBuildable(i, openNumbers)).length;
   // An empty board is a grooming problem, not a shipping one, and the two call
   // for opposite responses — say which.
-  return buildable > 0
-    ? `Nothing has shipped in ${QUIET_DAYS_BEFORE_ALARM} days, though ${buildable} ticket(s) are buildable. The Devs are stuck, not idle.`
+  if (buildable > 0) {
+    return `Nothing has shipped in ${QUIET_DAYS_BEFORE_ALARM} days, though ${buildable} ticket(s) are buildable. The Devs are stuck, not idle.`;
+  }
+  // The Product Manager is the only gate, so work filed by anyone else sits here
+  // until it runs. Filed-but-ungroomed and nothing-filed are different faults.
+  const ungroomed = open.filter((i) => !isGroomed(i) && !isNonWorkIssue(i) && !isBlocked(i)).length;
+  return ungroomed > 0
+    ? `Nothing has shipped in ${QUIET_DAYS_BEFORE_ALARM} days and nothing is buildable: ${ungroomed} ticket(s) are waiting for the Product Manager to groom them. Grooming has stalled.`
     : `Nothing has shipped in ${QUIET_DAYS_BEFORE_ALARM} days and nothing is buildable. The backlog is empty — grooming has stalled.`;
 }
 
