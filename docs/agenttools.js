@@ -8,7 +8,7 @@
  * @module agenttools
  */
 
-import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, consumeOfflineWoodGained, UPGRADE_COST, WALL_COST, STONE_GATHER_AMOUNT } from "./engine.js";
+import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, consumeOfflineWoodGained, UPGRADE_COST, WALL_COST, STONE_GATHER_AMOUNT, FORGE_CLICK_POWER_BONUS } from "./engine.js";
 
 const GOAL_WOOD = 10;
 const GOAL_STONE = 5;
@@ -93,23 +93,21 @@ function determineGoal(s) {
     };
   }
 
-  // Wall built — show dual-goal until both wood and stone reach thresholds
-  // Once both thresholds are met, transition to sharpen cycle
-  const dualWoodTarget = 10;
-  const dualStoneTarget = 5;
-  if (s.wood < dualWoodTarget || s.stone < dualStoneTarget) {
+  // Wall built — show forge goal with escalating costs
+  if (s.wallLevel > 0) {
     return {
-      description: "Forge: " + dualWoodTarget + " wood + " + dualStoneTarget + " stone",
-      type: "dual-goal",
+      description: "Forge a tool \u2014 need " + s.forgeWoodCost + " wood and " + s.forgeStoneCost + " stone",
+      type: "forge-goal",
+      forgeLevel: s.forgeLevel,
       resources: [
-        { name: "Wood", current: Math.min(s.wood, dualWoodTarget), target: dualWoodTarget },
-        { name: "Stone", current: Math.min(s.stone, dualStoneTarget), target: dualStoneTarget },
+        { name: "Wood", current: Math.min(s.wood, s.forgeWoodCost), target: s.forgeWoodCost },
+        { name: "Stone", current: Math.min(s.stone, s.forgeStoneCost), target: s.forgeStoneCost },
       ],
-      reached: false,
+      canForge: s.wood >= s.forgeWoodCost && s.stone >= s.forgeStoneCost,
     };
   }
 
-  // Dual-goal completed — back to sharpening cycle
+  // Fallback — sharpen cycle
   return {
     description: "Craft a Sharpening (" + UPGRADE_COST + " wood)",
     type: "upgrade",
@@ -128,7 +126,7 @@ function withGoal(s) {
   const canGatherStone = s.stoneUnlocked;
   const wallAvailable = s.stoneUnlocked && s.stone >= WALL_COST;
   const stoneRate = s.stoneUnlocked ? computeStoneRate(s.totalWoodEarned) : 0;
-  const clickPower = 1 + s.wallLevel;
+  const clickPower = 1 + s.wallLevel * 1 + s.forgeLevel * FORGE_CLICK_POWER_BONUS;
 
   return {
     wood: s.wood,
@@ -141,6 +139,9 @@ function withGoal(s) {
     stoneRate: stoneRate,
     stoneUnlocked: s.stoneUnlocked,
     wallLevel: s.wallLevel,
+    forgeLevel: s.forgeLevel,
+    forgeWoodCost: s.forgeWoodCost,
+    forgeStoneCost: s.forgeStoneCost,
     clickPower: clickPower,
     wallBuilt: s.wallLevel > 0,
     offlineSummaryVisible: !document.getElementById('offline-summary')?.hidden,
@@ -164,11 +165,12 @@ export function tools() {
       name: "read-state",
       description: "Returns the current game state the page is showing to the "
         + "visitor: wood count, accumulation rate, number of upgrades crafted, "
-        + "stone count, stone accumulation rate, wall level, click power, "
+        + "stone count, stone accumulation rate, wall level, forge level, "
+        + "forge wood cost, forge stone cost, click power, "
         + "whether stone is unlocked, timestamp, whether the offline-summary "
         + "overlay is currently visible, how much wood and stone were gained "
         + "while away (offlineWoodGained / offlineStoneGained), and the current "
-        + "goal (first goal, upgrade goal, stone goal, or build-wall goal).",
+        + "goal (first goal, upgrade goal, stone goal, build-wall goal, or forge goal).",
       inputSchema: { type: "object", properties: {} },
       annotations: { readOnlyHint: true },
       example: {},
@@ -180,17 +182,18 @@ export function tools() {
       name: "perform-action",
       description: "Performs a named action the visitor could take from the "
         + "page, and returns the state afterwards. Supported actions: "
-        + '"gather" — instantly adds +1 wood (or more based on wall level); '
+        + '"gather" — instantly adds +1 wood (or more based on wall and forge level); '
         + '"sharpen" — consumes ' + UPGRADE_COST + ' wood to permanently increase the wood accumulation rate; '
         + '"gather-stone" — instantly adds +' + STONE_GATHER_AMOUNT + ' stone (only available after stone is unlocked); '
         + '"build-wall" — consumes ' + WALL_COST + ' stone to permanently increase click power for wood; '
+        + '"forge-tool" — consumes wood and stone to forge a tool, permanently boosting wood rate and click power; '
         + '"dismiss-offline" — dismisses the offline-summary overlay if visible.',
       inputSchema: {
         type: "object",
         properties: {
           action: {
             type: "string",
-            description: 'The action to perform. Supported: "gather", "sharpen", "gather-stone", "build-wall", "dismiss-offline".',
+            description: 'The action to perform. Supported: "gather", "sharpen", "gather-stone", "build-wall", "forge-tool", "dismiss-offline".',
           },
         },
         required: ["action"],
@@ -213,6 +216,10 @@ export function tools() {
           const result = buildWall();
           return withGoal(result.state);
         }
+        if (action === "forge-tool") {
+          const result = forgeTool();
+          return withGoal(result.state);
+        }
         if (action === "dismiss-offline") {
           const overlay = document.getElementById("offline-summary");
           if (overlay && !overlay.hidden) {
@@ -223,7 +230,7 @@ export function tools() {
           }
           return withGoal(getState());
         }
-        throw new Error('Unknown action "' + action + '". Supported: gather, sharpen, gather-stone, build-wall, dismiss-offline');
+        throw new Error('Unknown action "' + action + '". Supported: gather, sharpen, gather-stone, build-wall, forge-tool, dismiss-offline');
       },
     },
   ];

@@ -9,6 +9,10 @@
  * and can be spent on a "Build Wall" upgrade that increases click
  * power for wood gathering.
  *
+ * After the first wall is built, the forge system unlocks: the player
+ * can consume wood AND stone to forge tools, permanently boosting
+ * wood rate and wall click power with escalating costs.
+ *
  * State persists to localStorage every tick and catches up on page
  * reload for time spent away.
  *
@@ -24,23 +28,34 @@ const STONE_RATE_BOOST_FACTOR = 0.001; // extra stone/s per total wood earned
 const STONE_GATHER_AMOUNT = 1; // stone gained per gather action
 const WALL_COST = 5; // stone per wall upgrade
 const WALL_CLICK_POWER_BONUS = 1; // extra wood per click per wall level
+const FORGE_WOOD_COST_BASE = 10;
+const FORGE_STONE_COST_BASE = 5;
+const FORGE_WOOD_COST_INC = 5;
+const FORGE_STONE_COST_INC = 3;
+const FORGE_WOOD_RATE_BONUS = 0.05; // extra wood/s per forge level
+const FORGE_CLICK_POWER_BONUS = 0.5; // extra wood per click per forge level
 const TICK_MS = 1000;  // save interval (ms)
 
 // Exported for external use (tools, UI)
-export { UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, STONE_BASE_RATE, WALL_COST, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT };
+export { UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, STONE_BASE_RATE, WALL_COST, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT,
+  FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_WOOD_COST_INC, FORGE_STONE_COST_INC,
+  FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS };
 
 /**
  * @typedef {Object} GameState
- * @property {number}  wood          — accumulated wood
- * @property {number}  rate          — wood per second
- * @property {number}  upgradeLevel  — number of sharpen upgrades crafted
- * @property {number}  stone         — accumulated stone
- * @property {number}  stoneRate     — stone per second (only >0 when unlocked)
+ * @property {number}  wood            — accumulated wood
+ * @property {number}  rate            — wood per second
+ * @property {number}  upgradeLevel    — number of sharpen upgrades crafted
+ * @property {number}  stone           — accumulated stone
+ * @property {number}  stoneRate       — stone per second (only >0 when unlocked)
  * @property {number}  totalWoodEarned — cumulative wood ever earned (drives stone rate)
  * @property {number}  totalStoneEarned — cumulative stone ever earned
- * @property {number}  wallLevel     — number of wall upgrades built
- * @property {boolean} stoneUnlocked — whether stone system has been revealed
- * @property {string}  timestamp     — ISO date of last tick/save
+ * @property {number}  wallLevel       — number of wall upgrades built
+ * @property {number}  forgeLevel      — number of forge upgrades crafted
+ * @property {number}  forgeWoodCost   — wood cost for the next forge
+ * @property {number}  forgeStoneCost  — stone cost for the next forge
+ * @property {boolean} stoneUnlocked   — whether stone system has been revealed
+ * @property {string}  timestamp       — ISO date of last tick/save
  */
 
 let state = {
@@ -51,6 +66,7 @@ let state = {
   totalWoodEarned: 0,
   totalStoneEarned: 0,
   wallLevel: 0,
+  forgeLevel: 0,
   stoneUnlocked: false,
   timestamp: new Date().toISOString(),
 };
@@ -74,6 +90,14 @@ function now() {
 function computeStoneRate() {
   if (!state.stoneUnlocked) return 0;
   return STONE_BASE_RATE + state.totalWoodEarned * STONE_RATE_BOOST_FACTOR;
+}
+
+function computeForgeWoodCost(forgeLevel) {
+  return FORGE_WOOD_COST_BASE + forgeLevel * FORGE_WOOD_COST_INC;
+}
+
+function computeForgeStoneCost(forgeLevel) {
+  return FORGE_STONE_COST_BASE + forgeLevel * FORGE_STONE_COST_INC;
 }
 
 /**
@@ -119,6 +143,7 @@ function loadPersisted() {
         state.totalWoodEarned = typeof saved.totalWoodEarned === "number" ? saved.totalWoodEarned : 0;
         state.totalStoneEarned = typeof saved.totalStoneEarned === "number" ? saved.totalStoneEarned : 0;
         state.wallLevel = typeof saved.wallLevel === "number" ? saved.wallLevel : 0;
+        state.forgeLevel = typeof saved.forgeLevel === "number" ? saved.forgeLevel : 0;
         state.stoneUnlocked = typeof saved.stoneUnlocked === "boolean" ? saved.stoneUnlocked : false;
         state.timestamp = saved.timestamp;
         return true;
@@ -188,12 +213,14 @@ export function save() {
 
 /**
  * Gather +1 wood instantly (active play action).
- * Click power increases with wall level: each wall adds +WALL_CLICK_POWER_BONUS.
+ * Click power increases with wall level and forge level.
  *
  * @returns {GameState} current state after gathering
  */
 export function gatherWood() {
-  const clickPower = 1 + state.wallLevel * WALL_CLICK_POWER_BONUS;
+  const wallBonus = state.wallLevel * WALL_CLICK_POWER_BONUS;
+  const forgeBonus = state.forgeLevel * FORGE_CLICK_POWER_BONUS;
+  const clickPower = 1 + wallBonus + forgeBonus;
   state.wood += clickPower;
   state.totalWoodEarned += clickPower;
   return getState();
@@ -258,6 +285,33 @@ export function buildWall() {
 }
 
 /**
+ * Forge a tool: consumes wood and stone to permanently boost wood rate
+ * and wall click power. Only available after the first wall is built.
+ *
+ * Costs escalate with each forge level.
+ *
+ * @returns {{ forged: boolean, reason?: string, state: GameState }}
+ */
+export function forgeTool() {
+  if (state.wallLevel < 1) {
+    return { forged: false, reason: "Build a wall first before you can forge tools.", state: getState() };
+  }
+  const woodCost = computeForgeWoodCost(state.forgeLevel);
+  const stoneCost = computeForgeStoneCost(state.forgeLevel);
+  if (state.wood < woodCost) {
+    return { forged: false, reason: "Not enough wood — need " + woodCost, state: getState() };
+  }
+  if (state.stone < stoneCost) {
+    return { forged: false, reason: "Not enough stone — need " + stoneCost, state: getState() };
+  }
+  state.wood -= woodCost;
+  state.stone -= stoneCost;
+  state.forgeLevel++;
+  state.rate += FORGE_WOOD_RATE_BONUS;
+  return { forged: true, state: getState() };
+}
+
+/**
  * Returns the amount of resources gained during the last offline catch-up.
  * Resets to { wood: 0, stone: 0 } after being read.
  *
@@ -293,6 +347,9 @@ export function getState() {
     totalWoodEarned: state.totalWoodEarned,
     totalStoneEarned: state.totalStoneEarned,
     wallLevel: state.wallLevel,
+    forgeLevel: state.forgeLevel,
+    forgeWoodCost: computeForgeWoodCost(state.forgeLevel),
+    forgeStoneCost: computeForgeStoneCost(state.forgeLevel),
     stoneUnlocked: state.stoneUnlocked,
     timestamp: state.timestamp,
   };
@@ -311,6 +368,7 @@ export function reset() {
     totalWoodEarned: 0,
     totalStoneEarned: 0,
     wallLevel: 0,
+    forgeLevel: 0,
     stoneUnlocked: false,
     timestamp: now(),
   };
