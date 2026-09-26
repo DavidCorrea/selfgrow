@@ -3184,6 +3184,22 @@ async function measureBlankness(page) {
 // Caps so one badly-broken page can't produce a thousand-line report. The point
 // is to name the worst offenders, not to enumerate every instance.
 const MAX_DEFECTS_PER_KIND = 5;
+
+/**
+ * Containers that have children but were laid out into no space. One that
+ * generates no box at all is inside hidden content (`display: none` on it or an
+ * ancestor, or `display: contents`), which is supposed to take no space: flagging
+ * those turned a hidden overlay into three tickets asking to make invisible
+ * content measurable, each with "no visible change" as its goal.
+ */
+export function describeCollapsedContainers(containers) {
+  return containers
+    .filter((container) => container.generatesBox)
+    .slice(0, MAX_DEFECTS_PER_KIND)
+    .map((container) =>
+      `collapsed container (${Math.round(container.width)}x${Math.round(container.height)}) despite ${container.childCount} child element(s): ${container.label}`
+    );
+}
 // WCAG AA: 4.5:1 for body text, 3:1 for large text (>=24px, or >=19px bold).
 const CONTRAST_MIN_NORMAL = 4.5;
 const CONTRAST_MIN_LARGE = 3;
@@ -3195,7 +3211,7 @@ const CONTRAST_MIN_LARGE = 3;
  * reports things that are true or false, never matters of taste.
  */
 async function measureLayoutDefects(page) {
-  return page.evaluate(
+  const measured = await page.evaluate(
     ({ maxPerKind, minNormal, minLarge }) => {
       const defects = [];
       const add = (kind, list, msg) => {
@@ -3268,13 +3284,18 @@ async function measureLayoutDefects(page) {
 
         // --- Collapsed containers: has children but no rendered size. -------
         if (
-          style.display !== "none" &&
           el.children.length > 0 &&
           (rect.width === 0 || rect.height === 0) &&
           style.position !== "absolute" &&
           style.position !== "fixed"
         ) {
-          add("collapsed", collapsed, `collapsed container (${Math.round(rect.width)}x${Math.round(rect.height)}) despite ${el.children.length} child element(s): ${describe(el)}`);
+          collapsed.push({
+            width: rect.width,
+            height: rect.height,
+            childCount: el.children.length,
+            generatesBox: el.getClientRects().length > 0,
+            label: describe(el),
+          });
         }
 
         if (!isRendered(el, style, rect)) continue;
@@ -3348,7 +3369,7 @@ async function measureLayoutDefects(page) {
         }
       }
 
-      return defects;
+      return { defects, collapsed };
     },
     {
       maxPerKind: MAX_DEFECTS_PER_KIND,
@@ -3356,6 +3377,7 @@ async function measureLayoutDefects(page) {
       minLarge: CONTRAST_MIN_LARGE,
     }
   );
+  return [...measured.defects, ...describeCollapsedContainers(measured.collapsed)];
 }
 
 // Most interactive elements the sweep will exercise per run.
