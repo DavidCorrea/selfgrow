@@ -997,10 +997,6 @@
           renderSingleGoal("Craft a Sharpening (" + UPGRADE_COST + " wood)", wood % UPGRADE_COST, UPGRADE_COST);
         }
 
-        // Sharpen button: show upgrade text, enable/disable based on wood
-        btnSharpen.innerHTML = '<span class="btn-icon">\u2692</span> Sharpen Axe (' + UPGRADE_COST + ' wood)';
-        btnSharpen.setAttribute("aria-label", "Sharpen Axe (" + UPGRADE_COST + " wood)");
-        btnSharpen.disabled = wood < UPGRADE_COST;
       } else if (wood >= GOAL_WOOD) {
         // Reached 10 wood but haven't done first sharpen yet
         if (!goalReached) {
@@ -1008,15 +1004,18 @@
         }
 
         renderSingleGoal("Craft a Sharpening (" + UPGRADE_COST + " wood)", wood % UPGRADE_COST, UPGRADE_COST);
-
-        btnSharpen.innerHTML = '<span class="btn-icon">\u2692</span> Sharpen Axe (' + UPGRADE_COST + ' wood)';
-        btnSharpen.setAttribute("aria-label", "Sharpen Axe (" + UPGRADE_COST + " wood)");
-        btnSharpen.disabled = wood < UPGRADE_COST;
       } else {
         goalReached = false;
         stoneGoalActive = false;
         renderSingleGoal("Gather " + GOAL_WOOD + " wood", wood, GOAL_WOOD);
+      }
 
+      // ─── Sharpen button: unconditional reconciliation ────────────
+      if (wood >= GOAL_WOOD || upgradeLevel >= 1) {
+        btnSharpen.innerHTML = '<span class="btn-icon">\u2692</span> Sharpen Axe (' + UPGRADE_COST + ' wood)';
+        btnSharpen.setAttribute("aria-label", "Sharpen Axe (" + UPGRADE_COST + " wood)");
+        btnSharpen.disabled = wood < UPGRADE_COST;
+      } else {
         btnSharpen.innerHTML = '<span class="btn-icon">\uD83D\uDD12</span> Sharpen Axe (locked)';
         btnSharpen.setAttribute("aria-label", "Sharpen Axe \u2014 locked, gather " + (GOAL_WOOD - Math.floor(wood)) + " more wood to unlock");
         btnSharpen.disabled = true;
