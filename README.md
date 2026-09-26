@@ -6,7 +6,7 @@
 
 The product is a variable: what lives in `docs/` is whatever the pipeline has been growing lately, and `reset` exists to throw it away and keep the machine. So this is about the machine. The one thing it demands of any product is [a self-check contract](#the-product-contract).
 
-🌱 **[See the garden](https://davidcorrea.github.io/selfgrow/)**
+🌱 **[See the live product](https://davidcorrea.github.io/selfgrow/)**
 
 ---
 
@@ -160,7 +160,7 @@ Your ticket can be **sharpened but never closed for being unclear.** Grooming cl
 
 Two channels, both **Discussions**, neither asking anything of you.
 
-- 📢 **Weekly digest**, Sundays — what the garden grew, grouped by what the work adds up to rather than by ticket; what you asked for and what became of it; what is stuck. It `@`-mentions you.
+- 📢 **Weekly digest**, Sundays — what the product grew, grouped by what the work adds up to rather than by ticket; what you asked for and what became of it; what is stuck. It `@`-mentions you.
 - 🚨 **Health alerts**, only when something breaks — one open post naming everything wrong, which **closes itself** once none of it is true. Silence means fine.
 
 ## Running it

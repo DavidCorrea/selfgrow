@@ -103,7 +103,7 @@ prose.
 `reset` deletes the product and keeps the machine, and that distinction now has to
 reach the pipeline's memory: a Lessons thread about the harness ("a transient
 provider error read as an empty account") should outlive a reset, while one about
-this garden's weather work should not. The split is made by a `product` /
+one product's features should not. The split is made by a `product` /
 `machine` label, and only `product` is archived.
 
 Two soft spots. The label is applied when a thread is CREATED and never revisited,
