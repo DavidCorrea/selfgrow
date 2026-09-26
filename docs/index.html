@@ -22,6 +22,7 @@
       --highlight: #00ff88;
       --stone-color: #8899cc;
       --pixel-font: 'Press Start 2P', 'Courier New', monospace;
+      --body-font: 'Courier New', Courier, monospace;
       --border-width: 4px;
       --panel-pad: 1.5rem;
     }
@@ -242,6 +243,7 @@
     #goal-text {
       font-size: 0.55rem;
       color: var(--text);
+      font-family: var(--body-font);
     }
 
     .progress-track {
@@ -258,6 +260,12 @@
       background: var(--highlight);
       transition: width 0.15s step-end;
       width: 0%;
+    }
+
+    /* ─── Button icon — match button text size ─── */
+    .btn-icon {
+      font-size: inherit;
+      display: inline;
     }
 
     /* ─── Offline summary overlay ─── */
@@ -322,6 +330,7 @@
       font-size: 0.5rem;
       color: var(--text);
       line-height: 1.8;
+      font-family: var(--body-font);
     }
 
     .offline-wood-highlight {
@@ -361,6 +370,7 @@
       font-size: 0.4rem;
       color: var(--text-dim);
       margin-top: 0.25rem;
+      font-family: var(--body-font);
     }
 
     /* ─── Responsive: single column on narrow viewports ─── */
@@ -405,6 +415,7 @@
 
       .offline-message {
         font-size: 0.45rem;
+        font-family: var(--body-font);
       }
     }
 
@@ -473,19 +484,19 @@
 
     <div class="action-group wood-actions">
       <button class="btn" id="btn-gather" type="button" aria-label="Gather Wood">
-        &#x26A0; Gather Wood
+        <span class="btn-icon">&#x26A0;</span> Gather Wood
       </button>
       <button class="btn" id="btn-sharpen" type="button" aria-label="Sharpen Axe (locked — gather 10 wood to unlock)" disabled>
-        🔒 Sharpen Axe (locked)
+        <span class="btn-icon">🔒</span> Sharpen Axe (locked)
       </button>
     </div>
 
     <div class="action-group stone-actions" id="stone-actions">
       <button class="btn btn-stone" id="btn-gather-stone" type="button" aria-label="Gather Stone">
-        &#x26AA; Gather Stone
+        <span class="btn-icon">&#x26AA;</span> Gather Stone
       </button>
       <button class="btn btn-wall" id="btn-build-wall" type="button" aria-label="Build Wall" disabled>
-        &#x1F3F0; Build Wall (5 stone)
+        <span class="btn-icon">&#x1F3F0;</span> Build Wall (5 stone)
       </button>
     </div>
 
@@ -746,9 +757,9 @@
 
       // Gather wood button label — show click power
       if (clickPower > 1) {
-        btnGather.textContent = "\u26A0 Gather Wood (+" + clickPower + ")";
+        btnGather.innerHTML = '<span class="btn-icon">\u26A0</span> Gather Wood (+' + clickPower + ')';
       } else {
-        btnGather.textContent = "\u26A0 Gather Wood";
+        btnGather.innerHTML = '<span class="btn-icon">\u26A0</span> Gather Wood';
       }
 
       // Stone gather button: cooldown-aware disabled
@@ -801,7 +812,7 @@
         }
 
         // Sharpen button: show upgrade text, enable/disable based on wood
-        btnSharpen.textContent = "\u2692 Sharpen Axe (" + UPGRADE_COST + " wood)";
+        btnSharpen.innerHTML = '<span class="btn-icon">\u2692</span> Sharpen Axe (' + UPGRADE_COST + ' wood)';
         btnSharpen.setAttribute("aria-label", "Sharpen Axe (" + UPGRADE_COST + " wood)");
         btnSharpen.disabled = wood < UPGRADE_COST;
       } else if (wood >= GOAL_WOOD) {
@@ -817,7 +828,7 @@
         if (goalProgress) goalProgress.setAttribute("aria-valuenow", Math.floor(woodForUpgrade % UPGRADE_COST));
         if (goalProgress) goalProgress.setAttribute("aria-valuemax", UPGRADE_COST);
 
-        btnSharpen.textContent = "\u2692 Sharpen Axe (" + UPGRADE_COST + " wood)";
+        btnSharpen.innerHTML = '<span class="btn-icon">\u2692</span> Sharpen Axe (' + UPGRADE_COST + ' wood)';
         btnSharpen.setAttribute("aria-label", "Sharpen Axe (" + UPGRADE_COST + " wood)");
         btnSharpen.disabled = wood < UPGRADE_COST;
       } else {
@@ -829,7 +840,7 @@
         if (goalProgress) goalProgress.setAttribute("aria-valuemax", GOAL_WOOD);
         goalText.textContent = "Gather " + GOAL_WOOD + " wood";
 
-        btnSharpen.textContent = "\uD83D\uDD12 Sharpen Axe (locked)";
+        btnSharpen.innerHTML = '<span class="btn-icon">\uD83D\uDD12</span> Sharpen Axe (locked)';
         btnSharpen.setAttribute("aria-label", "Sharpen Axe \u2014 locked, gather " + (GOAL_WOOD - Math.floor(wood)) + " more wood to unlock");
         btnSharpen.disabled = true;
       }

@@ -349,6 +349,88 @@ export async function checks() {
     problems.push("Expected #btn-dismiss-offline to exist for tap target check — it was not found.")
   }
 
+  // ─── Font-family checks: body text uses readable font, headings use pixel font ───
+
+  const bodyFontExpected = "Courier New";
+  const pixelFontExpected = "Press Start 2P";
+
+  const goalTextEl = document.getElementById("goal-text");
+  if (goalTextEl) {
+    const ff = getComputedStyle(goalTextEl).fontFamily;
+    if (!ff.includes(bodyFontExpected)) {
+      problems.push(`#goal-text font-family is "${ff}" — expected it to include "${bodyFontExpected}" (body/readable font).`);
+    }
+  } else {
+    problems.push("Expected #goal-text to exist for font-family check — it was not found.");
+  }
+
+  const offlineMsgEl = document.querySelector(".offline-message");
+  if (offlineMsgEl) {
+    const ff = getComputedStyle(offlineMsgEl).fontFamily;
+    if (!ff.includes(bodyFontExpected)) {
+      problems.push(`.offline-message font-family is "${ff}" — expected it to include "${bodyFontExpected}" (body/readable font).`);
+    }
+  } else {
+    problems.push("Expected .offline-message to exist for font-family check — it was not found.");
+  }
+
+  const footerNoteEl = document.querySelector(".footer-note");
+  if (footerNoteEl) {
+    const ff = getComputedStyle(footerNoteEl).fontFamily;
+    if (!ff.includes(bodyFontExpected)) {
+      problems.push(`.footer-note font-family is "${ff}" — expected it to include "${bodyFontExpected}" (body/readable font).`);
+    }
+  } else {
+    problems.push("Expected .footer-note to exist for font-family check — it was not found.");
+  }
+
+  // Headings and stat values should use the pixel font
+  const gameTitleEl = document.querySelector(".game-title");
+  if (gameTitleEl) {
+    const ff = getComputedStyle(gameTitleEl).fontFamily;
+    if (!ff.includes(pixelFontExpected)) {
+      problems.push(`.game-title font-family is "${ff}" — expected it to include "${pixelFontExpected}" (pixel display font).`);
+    }
+  } else {
+    problems.push("Expected .game-title to exist for font-family check — it was not found.");
+  }
+
+  const statValueEl = document.querySelector(".stat-value");
+  if (statValueEl) {
+    const ff = getComputedStyle(statValueEl).fontFamily;
+    if (!ff.includes(pixelFontExpected)) {
+      problems.push(`.stat-value font-family is "${ff}" — expected it to include "${pixelFontExpected}" (pixel display font).`);
+    }
+  } else {
+    problems.push("Expected .stat-value to exist for font-family check — it was not found.");
+  }
+
+  const btnEl = document.querySelector(".btn");
+  if (btnEl) {
+    const ff = getComputedStyle(btnEl).fontFamily;
+    if (!ff.includes(pixelFontExpected)) {
+      problems.push(`.btn font-family is "${ff}" — expected it to include "${pixelFontExpected}" (pixel display font).`);
+    }
+  } else {
+    problems.push("Expected .btn to exist for font-family check — it was not found.");
+  }
+
+  // Verify btn-icon is rendered at inherited font-size
+  const btnIconEl = document.querySelector(".btn-icon");
+  if (btnIconEl) {
+    const iconFf = getComputedStyle(btnIconEl).fontFamily;
+    const iconFs = getComputedStyle(btnIconEl).fontSize;
+    const parentBtn = btnIconEl.closest(".btn");
+    if (parentBtn) {
+      const parentFs = getComputedStyle(parentBtn).fontSize;
+      if (iconFs !== parentFs) {
+        problems.push(`.btn-icon font-size is "${iconFs}" — expected "${parentFs}" (inherit from parent .btn).`);
+      }
+    }
+  } else {
+    problems.push("Expected .btn-icon to exist in the DOM — it was not found.");
+  }
+
   // ─── DOM shows a numeric wood value (page engine is running) ────
 
   if (woodEl) {
