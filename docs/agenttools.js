@@ -239,6 +239,8 @@ export function tools() {
             const btnGather = document.getElementById("btn-gather");
             if (btnGather) btnGather.disabled = false;
             document.body.style.pointerEvents = "";
+            // Reconcile action button states immediately (no 500ms renderUI delay)
+            if (typeof window.__renderUI === "function") window.__renderUI();
           }
           return withGoal(getState());
         }
