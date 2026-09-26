@@ -149,6 +149,14 @@ function withGoal(s) {
     offlineSummaryVisible: !document.getElementById('offline-summary')?.hidden,
     offlineWoodGained: readOfflineWoodGained(),
     offlineStoneGained: readOfflineStoneGained(),
+    milestones: {
+      sharpenAvailable: s.wood >= 10 && s.upgradeLevel === 0,
+      stoneNowUnlocked: s.stoneUnlocked,
+      wallAvailable: s.stoneUnlocked && s.stone >= 5 && s.wallLevel === 0,
+      forgeNowUnlocked: s.wallLevel >= 1,
+      sharpenDone: s.upgradeLevel >= 1,
+      wallBuilt: s.wallLevel >= 1,
+    },
     firstGoal: {
       target: GOAL_WOOD,
       current: Math.min(s.wood, GOAL_WOOD),
@@ -172,8 +180,9 @@ export function tools() {
         + "whether stone is unlocked, timestamp, firstTimestamp (ISO date of first save), "
         + "elapsed (formatted duration since first save), whether the offline-summary "
         + "overlay is currently visible, how much wood and stone were gained "
-        + "while away (offlineWoodGained / offlineStoneGained), and the current "
-        + "goal (first goal, upgrade goal, stone goal, build-wall goal, or forge goal).",
+        + "while away (offlineWoodGained / offlineStoneGained), milestones object "
+        + "(sharpenAvailable, stoneNowUnlocked, wallAvailable, forgeNowUnlocked), "
+        + "and the current goal (first goal, upgrade goal, stone goal, build-wall goal, or forge goal).",
       inputSchema: { type: "object", properties: {} },
       annotations: { readOnlyHint: true },
       example: {},

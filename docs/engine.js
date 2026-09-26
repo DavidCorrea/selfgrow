@@ -81,6 +81,63 @@ let tickTimer = null;
 
 // ─── Internal helpers ─────────────────────────────────────────────
 
+let snapshotBeforeCatchUp = null;
+
+/**
+ * @typedef {Object} MilestoneSnapshot
+ * @property {number}  wood
+ * @property {number}  upgradeLevel
+ * @property {number}  stone
+ * @property {number}  wallLevel
+ * @property {boolean} stoneUnlocked
+ */
+
+function takeMilestoneSnapshot() {
+  return {
+    wood: state.wood,
+    upgradeLevel: state.upgradeLevel,
+    stone: state.stone,
+    wallLevel: state.wallLevel,
+    stoneUnlocked: state.stoneUnlocked,
+  };
+}
+
+/**
+ * @typedef {Object} Milestones
+ * @property {boolean} sharpenAvailable  — wood >= 10 and sharpen not yet crafted
+ * @property {boolean} stoneNowUnlocked  — stone was just unlocked this catch-up
+ * @property {boolean} wallAvailable    — stone >= 5 and wall not yet built
+ * @property {boolean} forgeNowUnlocked  — forge was just unlocked this catch-up
+ */
+
+/**
+ * Compare current state against snapshot to determine which milestones
+ * were newly crossed during the catch-up.  Returns object and resets.
+ * After reading, the snapshot is cleared so each catch-up fires once.
+ *
+ * @returns {Milestones}
+ */
+export function consumeOfflineMilestones() {
+  const before = snapshotBeforeCatchUp;
+  if (!before) {
+    return { sharpenAvailable: false, stoneNowUnlocked: false, wallAvailable: false, forgeNowUnlocked: false };
+  }
+
+  const sharpenAvailable = before.upgradeLevel === 0 && state.wood >= 10;
+  const stoneNowUnlocked = before.stoneUnlocked === false && state.stoneUnlocked === true;
+  const wallAvailable = state.stoneUnlocked && before.wallLevel === 0 && state.stone >= 5;
+  const forgeNowUnlocked = before.wallLevel === 0 && state.wallLevel >= 1;
+
+  snapshotBeforeCatchUp = null;
+
+  return {
+    sharpenAvailable,
+    stoneNowUnlocked,
+    wallAvailable,
+    forgeNowUnlocked,
+  };
+}
+
 function now() {
   return new Date().toISOString();
 }
@@ -110,6 +167,9 @@ function catchUp() {
   const lastSaved = new Date(state.timestamp).getTime();
   const elapsedSec = (Date.now() - lastSaved) / 1000;
   if (elapsedSec > 0) {
+    // Capture snapshot before resources are added
+    snapshotBeforeCatchUp = takeMilestoneSnapshot();
+
     const woodGained = state.rate * elapsedSec;
     state.wood += woodGained;
     state.totalWoodEarned += woodGained;
@@ -401,6 +461,7 @@ export function reset() {
     firstTimestamp: null,
   };
   offlineGained = { wood: 0, stone: 0, elapsedSec: 0 };
+  snapshotBeforeCatchUp = null;
   try {
     localStorage.removeItem(STORAGE_KEY);
   } catch {

@@ -232,6 +232,50 @@ export async function checks() {
       problems.push("Expected #btn-dismiss-offline to exist inside #offline-summary — it was not found.");
     }
 
+    // ─── Milestone announcement elements ───
+    const milestoneSharpen = document.getElementById("milestone-sharpen");
+    if (!milestoneSharpen) {
+      problems.push("Expected #milestone-sharpen to exist in the offline-summary — it was not found.");
+    }
+    const milestoneStone = document.getElementById("milestone-stone");
+    if (!milestoneStone) {
+      problems.push("Expected #milestone-stone to exist in the offline-summary — it was not found.");
+    }
+    const milestoneWall = document.getElementById("milestone-wall");
+    if (!milestoneWall) {
+      problems.push("Expected #milestone-wall to exist in the offline-summary — it was not found.");
+    }
+    const milestoneForge = document.getElementById("milestone-forge");
+    if (!milestoneForge) {
+      problems.push("Expected #milestone-forge to exist in the offline-summary — it was not found.");
+    }
+    // Verify milestone elements have offline-milestone class
+    if (milestoneSharpen && !milestoneSharpen.classList.contains("offline-milestone")) {
+      problems.push("Expected #milestone-sharpen to have class 'offline-milestone' — it did not.");
+    }
+    if (milestoneStone && !milestoneStone.classList.contains("offline-milestone")) {
+      problems.push("Expected #milestone-stone to have class 'offline-milestone' — it did not.");
+    }
+    if (milestoneWall && !milestoneWall.classList.contains("offline-milestone")) {
+      problems.push("Expected #milestone-wall to have class 'offline-milestone' — it did not.");
+    }
+    if (milestoneForge && !milestoneForge.classList.contains("offline-milestone")) {
+      problems.push("Expected #milestone-forge to have class 'offline-milestone' — it did not.");
+    }
+    // All milestone elements should be hidden by default
+    if (milestoneSharpen && !milestoneSharpen.hidden) {
+      problems.push("Expected #milestone-sharpen to be hidden by default — it was visible.");
+    }
+    if (milestoneStone && !milestoneStone.hidden) {
+      problems.push("Expected #milestone-stone to be hidden by default — it was visible.");
+    }
+    if (milestoneWall && !milestoneWall.hidden) {
+      problems.push("Expected #milestone-wall to be hidden by default — it was visible.");
+    }
+    if (milestoneForge && !milestoneForge.hidden) {
+      problems.push("Expected #milestone-forge to be hidden by default — it was visible.");
+    }
+
     // ─── Overlay must be fully opaque when visible ───
     const wasHidden = offlineSummary.hidden;
     offlineSummary.removeAttribute("hidden");
@@ -665,6 +709,51 @@ export async function checks() {
       );
     }
 
+    // --- Test 7b: offline milestone detection via consumeOfflineMilestones ---
+    engine.reset();
+    // Simulate a catch-up where wood was 8 and after catch-up is 12 (>=10)
+    // We need to directly set state and call catchUp by manipulating localStorage
+    // Set state with wood=8, upgradeLevel=0 (no sharpen yet)
+    const oldState2 = JSON.stringify({ wood: 8, rate: 0.1, stone: 0, totalWoodEarned: 8, wallLevel: 0, stoneUnlocked: false, timestamp: new Date(Date.now() - 60000).toISOString() });
+    localStorage.removeItem("selfgrow-state");
+    localStorage.setItem("selfgrow-state", oldState2);
+    // Re-init will load the saved state, then catchUp adds ~6 wood (0.1/s * 60s)
+    engine.init();
+    const milestones = engine.consumeOfflineMilestones();
+    if (!milestones.sharpenAvailable) {
+      problems.push("consumeOfflineMilestones should report sharpenAvailable=true when wood crosses 10 and sharpen not yet done.");
+    }
+    if (milestones.stoneNowUnlocked) {
+      problems.push("consumeOfflineMilestones should report stoneNowUnlocked=false when stone was not unlocked.");
+    }
+    if (milestones.wallAvailable) {
+      problems.push("consumeOfflineMilestones should report wallAvailable=false when stone is not unlocked.");
+    }
+    if (milestones.forgeNowUnlocked) {
+      problems.push("consumeOfflineMilestones should report forgeNowUnlocked=false when no wall was built.");
+    }
+
+    // --- Test 7c: offline milestone for stone unlock ---
+    engine.reset();
+    // Test the other direction: detect when stone>=5 and wall not built.
+    const oldState3 = JSON.stringify({ wood: 5, rate: 0.1, upgradeLevel: 1, stone: 2, totalWoodEarned: 5, totalStoneEarned: 2, wallLevel: 0, stoneUnlocked: true, timestamp: new Date(Date.now() - 60000).toISOString() });
+    localStorage.removeItem("selfgrow-state");
+    localStorage.setItem("selfgrow-state", oldState3);
+    engine.init();
+    const milestones2 = engine.consumeOfflineMilestones();
+    if (!milestones2.wallAvailable) {
+      problems.push("consumeOfflineMilestones should report wallAvailable=true when stone >= 5 and wall not built (with stone unlocked).");
+    }
+    if (milestones2.forgeNowUnlocked) {
+      problems.push("consumeOfflineMilestones should report forgeNowUnlocked=false when wall not built.");
+    }
+
+    // --- Test 7d: consumeOfflineMilestones returns empty after first read ---
+    const milestones3 = engine.consumeOfflineMilestones();
+    if (milestones3.sharpenAvailable || milestones3.wallAvailable || milestones3.stoneNowUnlocked || milestones3.forgeNowUnlocked) {
+      problems.push("consumeOfflineMilestones should return all false after being consumed once.");
+    }
+
     // --- Test 8: gather works even after offline catch-up ---
     engine.reset();
     engine.gatherWood();
@@ -973,6 +1062,45 @@ export async function checks() {
         if (typeof result.upgradeLevel !== "number" || result.upgradeLevel < 0) {
           problems.push(`read-state should return upgradeLevel as a non-negative number, got ${JSON.stringify(result.upgradeLevel)}.`);
         }
+        // Check milestones field
+        if (!result.milestones) {
+          problems.push("read-state should return a 'milestones' field — it was missing.");
+        } else {
+          if (typeof result.milestones !== "object") {
+            problems.push(`read-state.milestones should be an object, got ${typeof result.milestones}.`);
+          } else {
+            if (typeof result.milestones.sharpenAvailable !== "boolean") {
+              problems.push(`read-state.milestones.sharpenAvailable should be a boolean, got ${JSON.stringify(result.milestones.sharpenAvailable)}.`);
+            }
+            if (typeof result.milestones.stoneNowUnlocked !== "boolean") {
+              problems.push(`read-state.milestones.stoneNowUnlocked should be a boolean, got ${JSON.stringify(result.milestones.stoneNowUnlocked)}.`);
+            }
+            if (typeof result.milestones.wallAvailable !== "boolean") {
+              problems.push(`read-state.milestones.wallAvailable should be a boolean, got ${JSON.stringify(result.milestones.wallAvailable)}.`);
+            }
+            if (typeof result.milestones.forgeNowUnlocked !== "boolean") {
+              problems.push(`read-state.milestones.forgeNowUnlocked should be a boolean, got ${JSON.stringify(result.milestones.forgeNowUnlocked)}.`);
+            }
+            // On a fresh page load (no wood, no upgrades), milestones should be all false
+            if (result.wood < 10 && result.upgradeLevel === 0) {
+              if (result.milestones.sharpenAvailable) {
+                problems.push("read-state.milestones.sharpenAvailable should be false when wood < 10 and no upgrades.");
+              }
+              if (result.milestones.stoneNowUnlocked) {
+                problems.push("read-state.milestones.stoneNowUnlocked should be false when stone is not unlocked.");
+              }
+              if (result.milestones.forgeNowUnlocked) {
+                problems.push("read-state.milestones.forgeNowUnlocked should be false when no wall is built.");
+              }
+            }
+            // sharpenAvailable should be true when wood >= 10 and upgradeLevel === 0
+            if (result.wood >= 10 && result.upgradeLevel === 0) {
+              if (!result.milestones.sharpenAvailable) {
+                problems.push("read-state.milestones.sharpenAvailable should be true when wood >= 10 and no upgrades done.");
+              }
+            }
+          }
+        }
         // Check nextGoal field
         if (!result.nextGoal) {
           problems.push("read-state should return a 'nextGoal' field — it was missing.");
@@ -1011,6 +1139,9 @@ export async function checks() {
         }
         if (!result.nextGoal) {
           problems.push("perform-action result should include a 'nextGoal' field — it was missing.");
+        }
+        if (!result.milestones) {
+          problems.push("perform-action result should include a 'milestones' field — it was missing.");
         }
       }
 
