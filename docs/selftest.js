@@ -44,6 +44,15 @@ export async function checks() {
       problems.push("Expected #btn-sharpen to exist inside #action-area — it was not found.");
     } else if (sharpenBtn.getAttribute("type") !== "button") {
       problems.push(`Expected #btn-sharpen type="button", got "${sharpenBtn.getAttribute("type")}".`);
+    } else if (sharpenBtn.hasAttribute("hidden")) {
+      problems.push("Expected #btn-sharpen to NOT be hidden via the 'hidden' attribute — it was hidden. The button must always be visible.");
+    } else if (!sharpenBtn.disabled) {
+      problems.push("Expected #btn-sharpen to be disabled on page load (before 10-wood goal) — it was enabled.");
+    } else {
+      const text = sharpenBtn.textContent.trim();
+      if (!text.includes("Locked") && !text.includes("\uD83D\uDD12")) {
+        problems.push(`Expected #btn-sharpen text to contain "Locked" indicator before 10-wood goal, got "${text}".`);
+      }
     }
   }
 
@@ -449,6 +458,40 @@ export async function checks() {
     localStorage.removeItem("selfgrow-state");
     engine.reset();
     engine.init();
+
+    // --- Test 13: Sharpen button transitions from locked to unlocked when 10 wood is gathered ---
+    const sharpenBtnTest = document.getElementById("btn-sharpen");
+    if (sharpenBtnTest) {
+      // Gather 10 wood via the engine
+      for (let i = 0; i < 10; i++) engine.gatherWood();
+
+      // Wait for the page's renderUI to fire (500ms interval)
+      await new Promise((r) => setTimeout(r, 700));
+
+      // After gathering 10 wood, button should NOT be hidden
+      if (sharpenBtnTest.hasAttribute("hidden")) {
+        problems.push("After gathering 10 wood, #btn-sharpen should NOT be hidden — it was still hidden.");
+      }
+      // Button text should no longer contain "Locked"
+      const textAfter = sharpenBtnTest.textContent.trim();
+      if (textAfter.includes("Locked") || textAfter.includes("\uD83D\uDD12")) {
+        problems.push(`After gathering 10 wood, #btn-sharpen text should no longer show "Locked" indicator, got "${textAfter}".`);
+      }
+      // Button should be disabled if wood < 5 (UPGRADE_COST), or enabled if >= 5
+      // We have exactly 10 wood, so it should be enabled (10 >= 5)
+      if (sharpenBtnTest.disabled) {
+        problems.push("After gathering 10 wood (which is >= UPGRADE_COST of 5), #btn-sharpen should be enabled — it was disabled.");
+      }
+
+      // Re-init clean state
+      localStorage.removeItem("selfgrow-state");
+      engine.reset();
+      engine.init();
+      // Wait for renderUI to reflect reset state
+      await new Promise((r) => setTimeout(r, 700));
+    } else {
+      problems.push("Expected #btn-sharpen to exist for unlock transition test — it was not found.");
+    }
 
   } catch (err) {
     problems.push(`Engine module test threw: ${err.message}`);

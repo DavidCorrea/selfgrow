@@ -394,8 +394,8 @@
     <button class="btn" id="btn-gather" type="button" aria-label="Gather Wood">
       &#x26A0; Gather Wood
     </button>
-    <button class="btn" id="btn-sharpen" type="button" aria-label="Sharpen Axe" hidden>
-      &#x2692; Sharpen Axe (5 wood)
+    <button class="btn" id="btn-sharpen" type="button" aria-label="Sharpen Axe" disabled>
+      &#x1F512; Sharpen Axe (Locked — gather 10 wood)
     </button>
     <span class="footer-note" aria-live="polite">
       Click to gather +1 wood. More actions appear as the world expands.
@@ -445,8 +445,6 @@
     const btnDismiss = document.getElementById("btn-dismiss-offline");
 
     const GOAL_WOOD = 10;
-    let goalReached = false;
-    // Track whether player has ever reached 10 wood to persist the sharpen button
 
     // ─── Cooldown state ───
     let cooldown = false;
@@ -563,11 +561,6 @@
 
       // Goal
       if (wood >= GOAL_WOOD) {
-        if (!goalReached) {
-          goalReached = true;
-          // Show the sharpen button forever once unlocked
-          btnSharpen.hidden = false;
-        }
         // Show upgrade goal: gather wood to craft the next sharpening
         const woodForUpgrade = wood;
         const pct = (woodForUpgrade / UPGRADE_COST) * 100;
@@ -576,19 +569,19 @@
         if (goalProgress) goalProgress.setAttribute("aria-valuenow", Math.floor(woodForUpgrade % UPGRADE_COST));
         if (goalProgress) goalProgress.setAttribute("aria-valuemax", UPGRADE_COST);
 
-        // Disable sharpen if not enough wood, enable otherwise
+        // Enable or disable sharpen based on wood
         btnSharpen.disabled = wood < UPGRADE_COST;
+        btnSharpen.textContent = "\u2692\uFE0F Sharpen Axe (" + UPGRADE_COST + " wood)";
       } else {
-        goalReached = false;
         const pct = (wood / GOAL_WOOD) * 100;
         if (goalFill) goalFill.style.width = Math.min(pct, 100) + "%";
         if (goalProgress) goalProgress.setAttribute("aria-valuenow", Math.floor(wood));
         if (goalProgress) goalProgress.setAttribute("aria-valuemax", GOAL_WOOD);
         goalText.textContent = "Gather " + GOAL_WOOD + " wood";
 
-        // Hide sharpen button until goal is reached
-        btnSharpen.hidden = true;
-        btnSharpen.disabled = false;
+        // Sharpen button is always visible but locked until the 10-wood goal is reached
+        btnSharpen.disabled = true;
+        btnSharpen.textContent = "\uD83D\uDD12 Sharpen Axe (Locked \u2014 gather " + GOAL_WOOD + " wood)";
       }
     }
 
