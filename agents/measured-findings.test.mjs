@@ -60,6 +60,11 @@ test("writing a finding", async (t) => {
     assert.match(body, /## Dev Notes\n- text contrast 2\.10:1: p\.hint/);
   });
 
+  await t.test("puts each note on its own line when the model sends a list", () => {
+    const body = findingBody({ ...finding, devNotes: ["button#btn-sharpen: locked", "Tool output: upgradeAvailable: true"] }, "");
+    assert.match(body, /## Dev Notes\n- button#btn-sharpen: locked\n- Tool output: upgradeAvailable: true/);
+  });
+
   await t.test("has no Dev Notes section when there is nothing technical to say", () => {
     assert.doesNotMatch(findingBody(finding, ""), /## Dev Notes/);
   });

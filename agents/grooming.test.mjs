@@ -26,6 +26,11 @@ test("writing a groomed ticket", async (t) => {
     assert.match(body, /## Dev Notes\n`goals\.js` recomputes progress on every tick; cache it per goal\./);
   });
 
+  await t.test("puts each of the PM's notes on its own line when it sends a list", () => {
+    const body = groomedBody(techLeadTicket, { body: "The goal bar keeps up.", devNotes: ["Cache per goal", "See goals.js"] });
+    assert.match(body, /## Dev Notes\n- Cache per goal\n- See goals\.js/);
+  });
+
   await t.test("keeps a person's words as their original request", () => {
     const body = groomedBody(personRequest, { body: "Button labels are readable at every size." });
     assert.match(body, /## Original request\nthe buttons are hard to read/);

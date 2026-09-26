@@ -535,6 +535,14 @@ export function measuredFindings(review) {
   return [...layout, ...broken];
 }
 
+// A model asked for notes sends a string or a list of them; a list stringified
+// as-is joins its items with commas into one unreadable line.
+function notesText(notes) {
+  return Array.isArray(notes)
+    ? notes.map((note) => `- ${String(note).trim().replace(/^- /, "")}`).join("\n")
+    : String(notes).trim();
+}
+
 /** A finding's issue body. Technical detail goes in Dev Notes, below the player's view. */
 export function findingBody(finding, verdict) {
   return [
@@ -552,7 +560,7 @@ export function findingBody(finding, verdict) {
     // scene means something different in a session that was otherwise worth
     // staying for than in one that was not.
     ...(verdict ? ["", "## The session overall", verdict] : []),
-    ...(finding.devNotes ? ["", "## Dev Notes", String(finding.devNotes).trim()] : []),
+    ...(finding.devNotes ? ["", "## Dev Notes", notesText(finding.devNotes)] : []),
   ].join("\n");
 }
 
