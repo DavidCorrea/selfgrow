@@ -153,11 +153,40 @@ export async function checks() {
     if (!goalFill) {
       problems.push("Expected #goal-progress-fill to exist inside #goal-panel — it was not found.");
     }
-    const progressTrack = goalPanel.querySelector(".progress-track");
+    const progressTrack = document.getElementById("goal-progress-track-1");
     if (!progressTrack) {
-      problems.push("Expected .progress-track to exist inside #goal-panel — it was not found.");
+      problems.push("Expected #goal-progress-track-1 to exist inside #goal-panel — it was not found.");
     } else if (progressTrack.getAttribute("role") !== "progressbar") {
-      problems.push(`Expected .progress-track role="progressbar", got "${progressTrack.getAttribute("role")}".`);
+      problems.push(`Expected #goal-progress-track-1 role="progressbar", got "${progressTrack.getAttribute("role")}".`);
+    }
+    // Dual-goal elements
+    const progressTrack2 = document.getElementById("goal-progress-track-2");
+    if (!progressTrack2) {
+      problems.push("Expected #goal-progress-track-2 to exist inside #goal-panel — it was not found.");
+    } else if (progressTrack2.getAttribute("role") !== "progressbar") {
+      problems.push(`Expected #goal-progress-track-2 role="progressbar", got "${progressTrack2.getAttribute("role")}".`);
+    }
+    const goalFill2 = document.getElementById("goal-progress-fill-2");
+    if (!goalFill2) {
+      problems.push("Expected #goal-progress-fill-2 to exist inside #goal-panel — it was not found.");
+    }
+    const goalLabel1 = document.getElementById("goal-resource-label-1");
+    if (!goalLabel1) {
+      problems.push("Expected #goal-resource-label-1 to exist inside #goal-panel — it was not found.");
+    }
+    const goalLabel2 = document.getElementById("goal-resource-label-2");
+    if (!goalLabel2) {
+      problems.push("Expected #goal-resource-label-2 to exist inside #goal-panel — it was not found.");
+    }
+    // Dual-goal secondary bar must be hidden on page load (single-resource goal)
+    if (progressTrack2 && !progressTrack2.hidden) {
+      problems.push("Expected #goal-progress-track-2 to be hidden on page load (single-resource goal) — it was visible.");
+    }
+    if (goalLabel1 && !goalLabel1.hidden) {
+      problems.push("Expected #goal-resource-label-1 to be hidden on page load (single-resource goal) — it was visible.");
+    }
+    if (goalLabel2 && !goalLabel2.hidden) {
+      problems.push("Expected #goal-resource-label-2 to be hidden on page load (single-resource goal) — it was visible.");
     }
   }
 
@@ -1028,6 +1057,88 @@ export async function checks() {
 
   } catch (err) {
     problems.push(`Agent tools test threw: ${err.message}`);
+    console.error(err);
+  }
+
+  // ─── Dual-goal rendering ──────────────────────────────────────
+  try {
+    const engine = await import("./engine.js");
+    engine.reset();
+
+    const track2 = document.getElementById("goal-progress-track-2");
+    const fill2 = document.getElementById("goal-progress-fill-2");
+    const label2 = document.getElementById("goal-resource-label-2");
+    const label1 = document.getElementById("goal-resource-label-1");
+
+    if (!track2) {
+      problems.push("Expected #goal-progress-track-2 to exist for dual-goal rendering test — it was not found.");
+    }
+    if (!fill2) {
+      problems.push("Expected #goal-progress-fill-2 to exist for dual-goal rendering test — it was not found.");
+    }
+    if (!label2) {
+      problems.push("Expected #goal-resource-label-2 to exist for dual-goal rendering test — it was not found.");
+    }
+    if (!label1) {
+      problems.push("Expected #goal-resource-label-1 to exist for dual-goal rendering test — it was not found.");
+    }
+
+    // Simulate dual-goal state: build wall, set resources below dual thresholds
+    // Gather enough wood to stay above 10 after sharpening
+    for (let i = 0; i < 15; i++) engine.gatherWood();
+    engine.craftUpgrade(); // costs 5, leaves 10 wood
+    for (let i = 0; i < engine.WALL_COST; i++) engine.gatherStone();
+    engine.buildWall(); // costs 5 stone, leaves 0
+    // Now wallLevel=1, wood=10, stone=0 — stone is below dual-goal threshold (5)
+    // so dual-goal should be active
+
+    // Trigger a render cycle
+    // We're outside the page's render loop, so we need to check the tools layer
+    // which uses determineGoal on the engine state
+
+    const { tools } = await import("./agenttools.js");
+    const toolList = tools();
+    const readState = toolList.find((t) => t.name === "read-state");
+    if (readState) {
+      const result = await readState.execute({});
+      if (result.nextGoal && result.nextGoal.type === "dual-goal") {
+        // Verify dual-goal structure
+        if (!Array.isArray(result.nextGoal.resources)) {
+          problems.push("dual-goal nextGoal should have a resources array — it was missing.");
+        } else if (result.nextGoal.resources.length !== 2) {
+          problems.push(`dual-goal nextGoal.resources should have exactly 2 entries, got ${result.nextGoal.resources.length}.`);
+        } else {
+          const woodRes = result.nextGoal.resources.find(r => r.name === "Wood");
+          const stoneRes = result.nextGoal.resources.find(r => r.name === "Stone");
+          if (!woodRes) {
+            problems.push("dual-goal nextGoal.resources should include a 'Wood' resource — it was missing.");
+          } else {
+            if (typeof woodRes.current !== "number" || typeof woodRes.target !== "number") {
+              problems.push("dual-goal Wood resource should have current and target as numbers.");
+            }
+            if (woodRes.target !== 10) {
+              problems.push(`dual-goal Wood target should be 10, got ${woodRes.target}.`);
+            }
+          }
+          if (!stoneRes) {
+            problems.push("dual-goal nextGoal.resources should include a 'Stone' resource — it was missing.");
+          } else {
+            if (typeof stoneRes.current !== "number" || typeof stoneRes.target !== "number") {
+              problems.push("dual-goal Stone resource should have current and target as numbers.");
+            }
+            if (stoneRes.target !== 5) {
+              problems.push(`dual-goal Stone target should be 5, got ${stoneRes.target}.`);
+            }
+          }
+        }
+      }
+    }
+
+    // Clean up
+    engine.reset();
+    engine.init();
+  } catch (err) {
+    problems.push(`Dual-goal rendering test threw: ${err.message}`);
     console.error(err);
   }
 

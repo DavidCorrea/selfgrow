@@ -93,7 +93,23 @@ function determineGoal(s) {
     };
   }
 
-  // Wall built — back to sharpening cycle
+  // Wall built — show dual-goal until both wood and stone reach thresholds
+  // Once both thresholds are met, transition to sharpen cycle
+  const dualWoodTarget = 10;
+  const dualStoneTarget = 5;
+  if (s.wood < dualWoodTarget || s.stone < dualStoneTarget) {
+    return {
+      description: "Forge: " + dualWoodTarget + " wood + " + dualStoneTarget + " stone",
+      type: "dual-goal",
+      resources: [
+        { name: "Wood", current: Math.min(s.wood, dualWoodTarget), target: dualWoodTarget },
+        { name: "Stone", current: Math.min(s.stone, dualStoneTarget), target: dualStoneTarget },
+      ],
+      reached: false,
+    };
+  }
+
+  // Dual-goal completed — back to sharpening cycle
   return {
     description: "Craft a Sharpening (" + UPGRADE_COST + " wood)",
     type: "upgrade",
