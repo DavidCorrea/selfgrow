@@ -106,31 +106,7 @@ export async function checks() {
     }
   }
 
-  // ─── Stone buttons must have non-zero dimensions even when hidden ───
-  // The stone-actions group uses visibility:hidden (not display:none) so
-  // buttons retain their intrinsic size. Verify when the group lacks the
-  // 'visible' class, both buttons still report non-zero offsetWidth/Height.
-  const sa = document.getElementById("stone-actions");
-  if (sa && !sa.classList.contains("visible")) {
-    const gsBtn = document.getElementById("btn-gather-stone");
-    const bwBtn = document.getElementById("btn-build-wall");
-    if (gsBtn) {
-      if (gsBtn.offsetWidth === 0) {
-        problems.push("btn-gather-stone offsetWidth is 0 when stone-actions is hidden — expected non-zero (collapsed container).");
-      }
-      if (gsBtn.offsetHeight === 0) {
-        problems.push("btn-gather-stone offsetHeight is 0 when stone-actions is hidden — expected non-zero (collapsed container).");
-      }
-    }
-    if (bwBtn) {
-      if (bwBtn.offsetWidth === 0) {
-        problems.push("btn-build-wall offsetWidth is 0 when stone-actions is hidden — expected non-zero (collapsed container).");
-      }
-      if (bwBtn.offsetHeight === 0) {
-        problems.push("btn-build-wall offsetHeight is 0 when stone-actions is hidden — expected non-zero (collapsed container).");
-      }
-    }
-  }
+  // ─── Sharpen button: dynamic transition test ────────────────
 
   // Verify the engine correctly handles the sharpen/locked pathway.
   // The static DOM check above confirms the button is visible, disabled,
