@@ -190,7 +190,13 @@ function criteriaSection(acceptanceCriteria) {
 // acceptance criteria, which told the Builder how to satisfy a checker rather
 // than what the player should notice.
 function devNotesSection(...notes) {
-  const text = notes.map((note) => String(note || "").trim()).filter(Boolean).join("\n\n");
+  // A model sends a string or a list; a list stringified as-is joins its items
+  // with commas into one unreadable line.
+  const asText = (note) =>
+    Array.isArray(note)
+      ? note.map((item) => `- ${String(item).trim().replace(/^- /, "")}`).join("\n")
+      : String(note || "").trim();
+  const text = notes.map(asText).filter(Boolean).join("\n\n");
   return text ? `## Dev Notes\n${text}` : "";
 }
 
