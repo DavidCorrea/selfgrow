@@ -260,7 +260,7 @@ disagree.
 **Run outcomes** — `merged`; `abandoned` (engaged but couldn't ship, with a
 `ticketFault` flag deciding whether it counts as a strike); `unlanded` (approved
 and armed for auto-merge but not landed in time — **no fault, no strike**);
-`none` (nothing could be planned). After an abandoned ticket the working tree is
+`settled` (the ticket was closed or lost its grooming while it was being built — the PR is closed unmerged, **no strike**); `none` (nothing could be planned). The ticket is re-read right before the merge, because the stale-PR reconcile only runs between tickets: #922 merged two minutes after its ticket #916 was retired, shipping the workaround the retirement refused. A ticket that cannot be re-read is not merged — the PR is left open, unmerged, for the next run's reconcile. After an abandoned ticket the working tree is
 **put back** — any merge aborted, the tree reset to `origin/main` — and the run
 stops if it cannot be, since no later ticket could start from that tree either.
 

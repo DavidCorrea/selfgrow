@@ -41,6 +41,8 @@ import {
   approvePR,
   mergePR,
   closePR,
+  whyTicketNoLongerWanted,
+  fetchTicketState,
   appendChangelogEntry,
   verifyBuild,
   runAgent,
@@ -658,7 +660,40 @@ async function verifyBeforeMerge(ctx) {
 }
 
 /**
- * Stage 7 — approve (as the PAT user, a different identity than the bot author),
+ * Stage 7 — is the ticket still wanted? The board can change while a ticket is
+ * built: the Product Manager retires it, or takes its grooming back. Returns a
+ * terminal result, or null to merge.
+ *
+ * A ticket that could not be read is not merged either: the PR is left open and
+ * unmerged, and the run stops, so the next run's reconcile decides it with a
+ * fresh look — re-arming the merge if the ticket is still open, closing the PR
+ * if it is not.
+ */
+function standDownIfUnwanted(ctx) {
+  if (!ctx.issueNumber) return null;
+  let reason;
+  try {
+    reason = whyTicketNoLongerWanted(fetchTicketState(ctx.issueNumber));
+  } catch (e) {
+    log("error", `Could not re-read #${ctx.issueNumber} before merging — leaving PR #${ctx.prNumber} open for the next run to decide.`, errorData(e));
+    return ticketResult(ctx, "unlanded", {
+      reason: `Could not confirm #${ctx.issueNumber} was still wanted before merging.`,
+      ticketFault: false,
+    });
+  }
+  if (!reason) return null;
+  log("warn", `Not merging PR #${ctx.prNumber}: ${reason}.`);
+  closePR(
+    ctx.prNumber,
+    `Closing this without merging: ${reason}. Nothing is struck — the ticket was settled, not failed.`
+  );
+  cleanupBranch(ctx.branchName);
+  recordTicket("settled", ctx.issueNumber, ctx.issueTitle, reason);
+  return ticketResult(ctx, "settled", { reason, ticketFault: false });
+}
+
+/**
+ * Stage 8 — approve (as the PAT user, a different identity than the bot author),
  * merge, then write down what shipped. Always returns a terminal result.
  */
 async function landAndRecord(ctx) {
@@ -743,6 +778,9 @@ async function runToMerge(ctx, plan) {
 
     const verified = await verifyBeforeMerge(ctx);
     if (verified) return verified;
+
+    const unwanted = standDownIfUnwanted(ctx);
+    if (unwanted) return unwanted;
 
     return await landAndRecord(ctx);
   } catch (buildError) {

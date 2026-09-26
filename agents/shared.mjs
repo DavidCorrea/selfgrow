@@ -2571,6 +2571,31 @@ export function decideAgentPullRequest(verdict, { issueOpen, alreadyAwaited }) {
   return { action: "close", claimed: false };
 }
 
+/**
+ * Why a ticket being built should no longer be merged, or null when it should.
+ *
+ * Asked right before the merge, because the reconcile above only runs between
+ * tickets: a run already building never saw its ticket retired. #922 merged two
+ * minutes after its ticket #916 was closed as not planned, and shipped exactly
+ * the workaround the retirement had refused.
+ */
+export function whyTicketNoLongerWanted(ticket) {
+  if (ticket.state !== "open") return "its ticket was closed while this was being built";
+  if (!isGroomed(ticket)) return "its ticket is no longer groomed, so the Product Manager has taken it back";
+  return null;
+}
+
+/**
+ * A ticket's current state and labels, read fresh. Throws when the read fails —
+ * a failed read is never an open ticket, or the merge it guards goes ahead.
+ */
+export function fetchTicketState(number) {
+  const ticket = JSON.parse(
+    ghExec(["api", `repos/{owner}/{repo}/issues/${number}`, "--jq", "{state, labels: [.labels[] | {name}]}"], { stdio: "pipe" })
+  );
+  return { state: ticket.state, labels: ticket.labels };
+}
+
 // ---------------------------------------------------------------------------
 // Layered build verification: syntax → static analysis (lint) → runtime smoke.
 // Cheap checks first; stop at the first failing layer. ESLint and Playwright

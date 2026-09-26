@@ -10,6 +10,7 @@ import {
   classifyAgentPullRequest,
   decideAgentPullRequest,
   agentPullRequestBody,
+  whyTicketNoLongerWanted,
 } from "./shared.mjs";
 
 const HOUR = 3_600_000;
@@ -153,5 +154,24 @@ describe("writing the body of a ticket's pull request", () => {
 
   test("a PR for no ticket carries only its summary", () => {
     assert.equal(agentPullRequestBody("Add rain sound.", null), "Add rain sound.");
+  });
+});
+
+// A run that is already building does not see its ticket retired: the stale-PR
+// reconcile only runs between tickets. #922 merged two minutes after its ticket
+// #916 was closed as not planned, shipping the workaround the retirement refused.
+describe("re-checking the ticket right before merging", () => {
+  const ticket = (state, labels = ["groomed"]) => ({ state, labels: labels.map((name) => ({ name })) });
+
+  test("merges a ticket that is still open and groomed", () => {
+    assert.equal(whyTicketNoLongerWanted(ticket("open")), null);
+  });
+
+  test("stands down when the ticket was closed while it was being built", () => {
+    assert.match(whyTicketNoLongerWanted(ticket("closed")), /closed while this was being built/);
+  });
+
+  test("stands down when the ticket lost its grooming while it was being built", () => {
+    assert.match(whyTicketNoLongerWanted(ticket("open", [])), /no longer groomed/);
   });
 });
