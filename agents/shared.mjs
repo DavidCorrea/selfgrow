@@ -1993,7 +1993,7 @@ function parkBlockedTicket(number, attempts, reason, currentLabels) {
     "",
     `> ${reason || "no detail"}`,
     "",
-    "It's now **blocked** so the Builder stops retrying it. The Product Manager should split it into a smaller, concrete ticket or retire it.",
+    "It's now **blocked** so the Builder stops retrying it. The Tech Lead diagnoses why it failed on Thursday, and the Product Manager then decides whether it returns smaller or is dropped.",
   ].join("\n");
   try {
     ghComment(number, body);

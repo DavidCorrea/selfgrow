@@ -61,7 +61,7 @@ Plus one tester and three pieces of infrastructure — jobs, not roles:
 
 **The PM adds and subtracts in one breath.** What the product should stop doing is the same judgement as what it should start doing. Split across two roles, the subtractive half proposed removals blind to what the additive half was adding that week.
 
-**The Tech Lead is the only role that sees the whole codebase.** Everything else in engineering is scoped to one ticket. It owns structure, owns `docs/selftest.js` — the only independent judge in the pipeline — and rules on tickets the Devs gave up on, because *"why did this fail"* is a technical question.
+**The Tech Lead is the only role that sees the whole codebase.** Everything else in engineering is scoped to one ticket. It owns structure, owns `docs/selftest.js` — the only independent judge in the pipeline — and diagnoses tickets the Devs gave up on, because *"why did this fail"* is a technical question. Whether they come back is the PM's call.
 
 **QA is deliberately not the PM.** It plays and reports; the PM decides. The observer should not be the one who acts on the observation — the same reason the Devs do not review their own work.
 
@@ -89,7 +89,7 @@ flowchart LR
 - **Reviewer** is drawn from a *different model* than wrote the code. Review is only worth its request if it can disagree.
 - **auto-merge** means the agent asks and the required checks answer — it no longer merges on its own say-so. The PAT opens the PR and the bot approves it: GitHub does not start workflows for events created by `GITHUB_TOKEN`, so a bot-opened PR would sit forever waiting on checks that never run.
 
-Failure is first-class: a ticket accrues strikes, gets parked, and the Tech Lead decides whether it returns smaller or not at all. Every dead end becomes a post-mortem the *next* Scout reads.
+Failure is first-class: a ticket accrues strikes, gets parked, the Tech Lead diagnoses why, and the PM decides whether it returns smaller or not at all. Every dead end becomes a post-mortem the *next* Scout reads.
 
 ## What holds it together
 

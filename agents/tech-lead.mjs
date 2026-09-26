@@ -15,13 +15,15 @@
 //      Builder does not share. It is written incidentally, a few lines at a time,
 //      by whoever shipped each feature, and until now nobody had ever read it
 //      whole or asked whether its checks could actually fail.
-//   3. BLOCKED TICKETS. Work the Devs gave up on twice. "Why did this fail and
-//      what should happen to it" is a technical question, and it used to be
-//      answered by the Product Manager from a title and a failure count.
+//   3. BLOCKED TICKETS. Work the Devs gave up on twice. "Why did this fail" is a
+//      technical question, and it used to be answered by the Product Manager from
+//      a title and a failure count. So the Tech Lead diagnoses, on the ticket
+//      itself; the Product Manager decides whether it returns smaller or is
+//      dropped, because whether it is still worth doing is a product question.
 //
 // It proposes; it does not act. Everything it decides becomes an ordinary ticket
-// that goes through the same planning, review and verification as any other
-// change — including the removals, which are the ones that most deserve it.
+// that the Product Manager grooms before anyone builds it — including the
+// removals, which are the ones that most deserve it.
 import fs from "fs";
 import { join, relative } from "path";
 import { pathToFileURL } from "url";
@@ -40,10 +42,8 @@ import {
   getBoardSnapshot,
   createIssue,
   moveCard,
-  setIssuePriority,
-  ensurePriorityLabels,
   recordTicket,
-  retireIssue,
+  rewriteIssueBody,
   isBlocked,
   dependencyLine,
   errorData,
@@ -316,6 +316,8 @@ function readBlockedTickets(openIssues) {
     number: issue.number,
     title: issue.title,
     body: (issue.body || "").slice(0, 1500),
+    // The diagnosis is written back onto the whole body, never the prompt's cut.
+    fullBody: issue.body || "",
   }));
 }
 
@@ -326,13 +328,19 @@ function renderBlocked(blocked) {
     .join("\n\n");
 }
 
+// How urgent the Tech Lead thinks each kind of proposal is. A view for the
+// Product Manager to weigh, not a priority: structural work and removals should
+// fill the gaps between work that makes the product better, while a feature
+// nothing can catch misbehaving is a live risk rather than housekeeping.
+const URGENCY_BY_KIND = {
+  coverage: "Urgency: a coverage gap — a live risk, not housekeeping.",
+  shape: "Urgency: structural — worth doing between work that makes the product better, not ahead of it.",
+};
+
 /**
- * File a proposal as an ordinary ticket.
- *
- * Structural work and removals are never urgent: they should fill the gaps
- * between the work that makes the product better, not outrank it. The exception
- * is coverage — a feature nothing can catch misbehaving is a live risk, not
- * housekeeping — so those keep the priority the Tech Lead assigned.
+ * File a proposal as an ordinary ticket. It arrives ungroomed, so nothing builds
+ * it until the Product Manager has said what it means for the product and set
+ * its priority.
  */
 function fileProposal(item, dependsOn = []) {
   const criteria = (Array.isArray(item.acceptanceCriteria) ? item.acceptanceCriteria : [])
@@ -342,59 +350,72 @@ function fileProposal(item, dependsOn = []) {
     String(item.body).trim(),
     criteria.length ? `## Acceptance criteria\n${criteria.map((c) => `- [ ] ${c}`).join("\n")}` : "",
     dependencyLine(dependsOn),
+    URGENCY_BY_KIND[item.kind] || "",
     "_Proposed by the Tech Lead, who reads the whole codebase rather than one ticket._",
   ].filter(Boolean).join("\n\n");
 
   const number = createIssue(item.title, body);
   if (!number) return null;
   moveCard(number, "Backlog");
-  setIssuePriority(number, item.kind === "coverage" ? "medium" : "low", []);
   recordTicket("created", number, item.title);
   return number;
 }
 
+const DIAGNOSIS_HEADING = "## Tech Lead diagnosis";
+
 /**
- * Act on the verdicts for parked tickets: each is either replaced by a smaller
- * ticket that can actually ship, or dropped. Both close the original — leaving it
- * open just wastes board space, since the Devs will not touch it.
+ * A parked ticket's body with the Tech Lead's diagnosis as its last section,
+ * replacing any earlier one: the Product Manager decides from the latest
+ * reading, and a stack of old ones would read as several opinions.
  */
+export function withDiagnosis(body, { diagnosis, recommendation, smallerPiece }, date) {
+  const original = String(body || "");
+  const cut = original.indexOf(DIAGNOSIS_HEADING);
+  const kept = (cut === -1 ? original : original.slice(0, cut)).trimEnd();
+  const section = [
+    `${DIAGNOSIS_HEADING} (${date})\n${String(diagnosis || "").trim()}`,
+    `**Recommendation:** ${String(recommendation || "").trim()}`,
+    smallerPiece ? `**Smaller piece:** ${String(smallerPiece).trim()}` : "",
+  ].filter(Boolean).join("\n\n");
+  return kept ? `${kept}\n\n${section}` : section;
+}
+
+export function hasDiagnosis(issue) {
+  return String(issue?.body || "").includes(DIAGNOSIS_HEADING);
+}
+
 // The thread this role remembers itself in.
 const JOURNAL = "Tech Lead — log";
 
 /**
- * The parked-ticket rulings, one line each, for the journal.
+ * The parked-ticket diagnoses, one line each, for the journal.
  *
- * Kept to number + shape of the ruling rather than the reasoning: the reasoning
- * is already on the ticket, and what a future review needs is "have I ruled on
- * this before, and which way".
+ * Kept to number + recommendation rather than the reasoning: the reasoning is on
+ * the ticket, and what a future review needs is "have I diagnosed this before,
+ * and which way did I lean".
  */
-function renderRulings(verdicts) {
-  return (Array.isArray(verdicts) ? verdicts : [])
-    .filter((v) => Number(v?.number))
-    .map((v) => `#${Number(v.number)} ${v.replacement?.title ? "returned smaller" : "dropped"}`)
+function renderDiagnoses(diagnoses) {
+  return (Array.isArray(diagnoses) ? diagnoses : [])
+    .filter((entry) => Number(entry?.number))
+    .map((entry) => `#${Number(entry.number)} ${entry.recommendation || "no recommendation"}`)
     .join("; ");
 }
 
-async function resolveBlocked(verdicts, blocked) {
-  const parked = new Set(blocked.map((t) => t.number));
-  let handled = 0;
-
-  for (const verdict of Array.isArray(verdicts) ? verdicts : []) {
-    const number = Number(verdict?.number);
-    if (!parked.has(number)) continue;
-
-    let replacement = null;
-    if (verdict.replacement?.title && verdict.replacement?.body) {
-      replacement = fileProposal({ ...verdict.replacement, kind: "shape" });
-    }
-    const reason = replacement
-      ? `Parked after repeated failures, and replaced by #${replacement}. ${verdict.reason || ""}`.trim()
-      : `Parked after repeated failures and dropped. ${verdict.reason || ""}`.trim();
-    await retireIssue(number, reason);
-    recordTicket("retired", number, `#${number}`);
-    handled++;
+/**
+ * Write each diagnosis onto its parked ticket, where the Product Manager reads
+ * it. Nothing is closed or filed here: returning a ticket or dropping it is the
+ * Product Manager's decision.
+ */
+function recordDiagnoses(diagnoses, blocked) {
+  const parked = new Map(blocked.map((ticket) => [ticket.number, ticket]));
+  const today = new Date().toISOString().slice(0, 10);
+  let recorded = 0;
+  for (const entry of Array.isArray(diagnoses) ? diagnoses : []) {
+    const ticket = parked.get(Number(entry?.number));
+    if (!ticket || !entry.diagnosis) continue;
+    if (rewriteIssueBody(ticket.number, withDiagnosis(ticket.fullBody, entry, today))) recorded++;
   }
-  if (handled) log("info", `Resolved ${handled} parked ticket(s).`);
+  if (recorded) log("info", `Diagnosed ${recorded} parked ticket(s) for the Product Manager.`);
 }
 
 async function main() {
@@ -411,18 +432,16 @@ async function main() {
     : "First review — reading the whole codebase cold.");
 
   // Nothing to say about the shape of four files, but a parked ticket still needs
-  // a verdict — so a thin product skips the review and keeps the triage.
+  // a diagnosis — so a thin product skips the review and keeps the triage.
   if (sources.length < MIN_FILES_TO_REVIEW && !blocked.length) {
     log("info", `Only ${sources.length} shipped file(s) and nothing parked — nothing to review yet.`);
     printRunSummary("Tech Lead");
     return;
   }
 
-  // Its own past reviews. This role rules on whether a parked ticket comes back,
-
-  // and without a record it can rule the opposite way next week on the same
-
-  // ticket and never know it did.
+  // Its own past reviews. This role diagnoses parked tickets, and without a
+  // record it can lean the opposite way next week on the same ticket and never
+  // know it did.
 
   const past = readJournal(JOURNAL);
 
@@ -458,8 +477,7 @@ async function main() {
   }
   log("info", `Tech Lead: ${parsed.summary || ""}`);
 
-  ensurePriorityLabels();
-  await resolveBlocked(parsed.data?.blocked, blocked);
+  recordDiagnoses(parsed.data?.blocked, blocked);
 
   const proposals = (Array.isArray(parsed.data?.proposals) ? parsed.data.proposals : [])
     .filter((p) => p && p.title && p.body);
@@ -469,10 +487,9 @@ async function main() {
   for (const item of proposals.slice(0, MAX_PROPOSALS)) fileProposal(item);
   if (!proposals.length) log("info", "Tech Lead: the codebase is sound as it stands — nothing proposed.");
 
-  // What this review concluded, for the next one to read. Rulings are the part
-  // worth remembering: this role decides whether a parked ticket comes back, and
-  // without a record it can rule the opposite way next week on the same ticket
-  // and never know it did.
+  // What this review concluded, for the next one to read. Diagnoses are the part
+  // worth remembering: without a record this role can lean the opposite way next
+  // week on the same ticket and never know it did.
   appendJournal(
     JOURNAL,
     renderJournalEntry({
@@ -481,7 +498,7 @@ async function main() {
         : "Nothing proposed — the codebase is sound as it stands",
       because: parsed.summary || "",
       extra: {
-        Rulings: renderRulings(parsed.data?.blocked),
+        Diagnoses: renderDiagnoses(parsed.data?.blocked),
       },
     })
   );
