@@ -94,7 +94,13 @@ one, the Builder writes one, the Reviewer reads one diff. Nobody owns the shape
 of the thing they are collectively producing." Three jobs, one question: the
 codebase's **shape**; the **test suite** (`docs/selftest.js`, "the only
 independent judge in the pipeline"); and **parked tickets**, because *"why did
-this fail"* is a technical question. **It proposes; it does not act** —
+this fail"* is a technical question. It **diagnoses parked tickets; the PM
+decides** them. The diagnosis — why it failed, `return smaller` or `drop`, and
+the smaller piece — is written as the ticket's last section, replacing any
+earlier one, and the PM returns the ticket by proposing that piece with
+`replaces` (the original closes once the replacement exists) or retires it.
+The Tech Lead used to decide alone, but whether work is still worth doing is a
+product question, and the PM is the one who owns the queue. **It proposes; it does not act** —
 everything it decides becomes an ordinary ticket, "including the removals, which
 are the ones that most deserve it." Its tickets arrive ungroomed, like anyone
 else's, and wait for the PM.
@@ -267,7 +273,7 @@ ticket had been retired.
 | Term | Meaning |
 | --- | --- |
 | **strike / attempts** | an `attempts:N` label, bumped on each failure |
-| **parked** | the `blocked` label — out of the queue until someone rules on it |
+| **parked** | the `blocked` label — out of the queue until the Tech Lead diagnoses it and the PM returns it smaller or drops it |
 | **waiting** | prerequisites haven't shipped yet; *normal*, not a failure |
 | **groomed** | the `groomed` label — the PM has said what the player gets and set its priority. Only the PM's run applies it |
 | **buildable** | groomed, not parked, not a report, and every dependency has shipped |

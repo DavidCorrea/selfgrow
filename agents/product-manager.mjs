@@ -52,7 +52,7 @@ import {
   fetchAnswerHistory,
   renderPriorAnswers,
 } from "./playtest-findings.mjs";
-import { listSourceFiles, formatSources, SOURCE_DIR } from "./tech-lead.mjs";
+import { listSourceFiles, formatSources, SOURCE_DIR, hasDiagnosis } from "./tech-lead.mjs";
 
 // The day the Product Manager does more than groom: it also reviews the shipped
 // code for what should be REMOVED, and writes the week's report.
@@ -257,13 +257,44 @@ function orderByDependencies(items) {
   return ordered;
 }
 
+/**
+ * The parked ticket a proposal says it replaces, or null. Only a parked ticket:
+ * returning work smaller is how a parked ticket comes back, and "replacing" any
+ * other open ticket would be a retirement that skipped the retirement rules.
+ */
+export function parkedTicketReplaced(item, openIssues) {
+  const number = Number(String(item?.replaces ?? "").replace(/^#/, ""));
+  const issue = openIssues.find((candidate) => candidate.number === number);
+  return issue && isBlocked(issue) ? issue : null;
+}
+
+/**
+ * The parked tickets, with their bodies — the Tech Lead's diagnosis is the last
+ * section of each — for the prompt.
+ */
+export function renderParked(openIssues) {
+  const parked = openIssues.filter(isBlocked);
+  if (!parked.length) return "(nothing is parked — the Devs are shipping what they pick up)";
+  return parked
+    .map((issue) => {
+      const waiting = hasDiagnosis(issue)
+        ? ""
+        : "\n\n_(no diagnosis yet — the Tech Lead reads parked tickets on Thursdays; leave this one until it has)_";
+      return `### #${issue.number} — ${issue.title}\n\n${(issue.body || "").trim()}${waiting}`;
+    })
+    .join("\n\n");
+}
+
 async function groomBacklog(proposed, openIssues, boardItems, milestone, answerable = new Map()) {
   // Finding number → the tickets created for it this run, which is what lets a
   // finding be marked answered by work that actually exists.
   const answers = new Map();
+  // Parked ticket → the smaller ticket created to replace it this run. The
+  // original closes only once its replacement exists.
+  const replaced = new Map();
   if (!Array.isArray(proposed) || proposed.length === 0) {
     log("info", "Backlog: no tickets proposed.");
-    return { proposed: 0, created: 0, answers };
+    return { proposed: 0, created: 0, answers, replaced };
   }
 
   // ONE pass, deterministic, answering only "is this already queued?".
@@ -365,6 +396,8 @@ async function groomBacklog(proposed, openIssues, boardItems, milestone, answera
     const number = createIssue(item.title, formatTicketBody(item, deps, finding?.number), [GROOMED_LABEL]);
     if (number) {
       if (finding) answers.set(finding.number, [...(answers.get(finding.number) || []), number]);
+      const parked = parkedTicketReplaced(item, openIssues);
+      if (parked) replaced.set(parked.number, { issue: parked, replacement: number });
       numberByTitle.set(normalizeTitle(item.title), number);
       moveCard(number, "Backlog"); // best-effort; also adds it to the board
       setIssuePriority(number, item.priority || "medium", []);
@@ -382,7 +415,7 @@ async function groomBacklog(proposed, openIssues, boardItems, milestone, answera
   log("info", `Backlog: created ${created} ticket(s) (${openIssues.length} already open).`);
   // Returned because retirement now depends on it: a run that promised
   // replacements and created none does not get to close the originals.
-  return { proposed: proposed.length, created, answers };
+  return { proposed: proposed.length, created, answers, replaced };
 }
 
 /**
@@ -608,7 +641,7 @@ export function groomedBody(issue, item) {
 
 /**
  * Which of the PM's `groom` entries to apply. Only open work that is not groomed
- * yet: a report is never work, a parked ticket waits for a ruling first, and
+ * yet: a report is never work, a parked ticket is returned or dropped instead, and
  * re-grooming a groomed ticket would fold its Dev Notes into Dev Notes again.
  */
 export function planGrooming(groom, openIssues = []) {
@@ -735,6 +768,7 @@ async function main() {
         BOARD_STATE: boardState,
         APP_OBSERVATIONS: appObservations,
         UNGROOMED: renderUngroomed(openIssues),
+        PARKED: renderParked(openIssues),
         // The history costs two listings, so it is read only on a day there is a
         // finding to answer.
         PLAYTEST_FEEDBACK: openIssues.some(needsAnswer)
@@ -782,6 +816,13 @@ async function main() {
   escalateFindings(escalate.filter((e) => !groomed.answers.has(Number(e?.number))), openIssues);
   // 5. Now close the originals — only if the replacements actually landed.
   await executeRetirements(planned, groomed);
+  // A parked ticket returned smaller closes against the ticket that replaced it.
+  // A person's request is not dropped by this: it continues as the smaller piece.
+  for (const [number, { issue, replacement }] of groomed.replaced) {
+    if (planned.numbers.has(number)) continue;
+    await retireIssue(number, `Returned smaller as #${replacement}, after the Devs could not ship it as written.`);
+    recordTicket("retired", number, issue.title);
+  }
 
   answerIdeas(data.ideas);
 

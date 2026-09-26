@@ -33,7 +33,7 @@ Each is invoked as `node agents/<name>.mjs` by the workflow named beside it.
 | `plan-build.mjs` | `devs.yml`, first step | decides whether a Devs run has anything to do at all |
 | `product-manager.mjs` | `product-manager.yml` — daily 00:30 | grooms the backlog; curates and writes the weekly report on Sundays |
 | `product-owner.mjs` | `product-owner.yml` — Mon 08:00 | weekly retro; sets Vision and milestone |
-| `tech-lead.mjs` | `tech-lead.yml` — Thu 09:00 | whole-codebase shape review, selftest health, rulings on parked tickets |
+| `tech-lead.mjs` | `tech-lead.yml` — Thu 09:00 | whole-codebase shape review, selftest health, diagnoses of parked tickets |
 | `playtester.mjs` | `playtester.yml` — Wed 10:00 | plays the live site and files experiential findings |
 | `health.mjs` | `health.yml` — daily 16:00 | measures the pipeline; silent unless something is broken |
 | `review-pr.mjs` | `review-pr.yml` — `pull_request` | the Devs applied to a human PR on a same-repo branch |

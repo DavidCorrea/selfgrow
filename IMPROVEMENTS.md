@@ -284,9 +284,9 @@ escalates, and the PM does not see it again because it is no longer waiting on
 an answer.
 
 **Why it matters:** this is the dark-void failure again by a different route — a
-complaint that looks handled because tickets exist for it. The Tech Lead may
-eventually rule on the parked ticket, but nothing ties that ruling back to the
-finding. Treating a parked answering ticket as landed, or surfacing such findings
+complaint that looks handled because tickets exist for it. The PM may
+eventually return the parked ticket smaller, but nothing ties the replacement
+back to the finding. Treating a parked answering ticket as landed, or surfacing such findings
 to the PM, would close it.
 
 ## Findings closed before answers were tracked have no answer history

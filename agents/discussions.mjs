@@ -319,7 +319,7 @@ export function resolveDiscussion(discussionId, comment) {
 //
 // Agents are stateless: every run starts from a fresh checkout, so the Product
 // Owner sets a milestone each Monday having forgotten why it set the last one,
-// and the Tech Lead rules on parked tickets with no record of previous rulings.
+// and the Tech Lead diagnoses parked tickets with no record of previous diagnoses.
 // The wiki holds conclusions (the Vision, the Story) and not the reasoning behind
 // them, so nothing stops a role contradicting itself week to week.
 //

@@ -157,6 +157,7 @@ Propose small tickets that close the gap between Done and the Vision — fill a 
 - **devNotes** *(optional)*: technical detail for the Builder — the measured numbers, the element, the file you checked. Evidence and context, never the definition of done.
 - **reachable by an agent**: the product is used by people through the page and by agents through the tools in `docs/agenttools.js`. A ticket that adds something a visitor can see or do adds the tool for it in the same change — say so in the body. You are deciding *whether* a capability should exist at all; how it is exposed is the Devs' problem, but that it is exposed is yours.
 - **addresses** *(optional)*: the number of the playtest finding this ticket answers, from the Playtest Feedback section. It links the two, so the finding waits for this ticket to ship and the Playtester to judge it.
+- **replaces** *(optional)*: the number of a parked ticket this is the smaller piece of — see Parked Tickets.
 - **dependsOn** *(optional)*: what must ship **before** this ticket can be built. The Builder works one ticket at a time and will not pick a ticket up until everything it depends on has shipped, so this is how you sequence foundations before the work that stands on them.
 
 ### Sequencing with `dependsOn`
@@ -191,9 +192,18 @@ Some issues on the board are not work and never become work. Leave them entirely
 
 `_(playtest)_` issues are different: those ARE yours, and the section above says what to do with them — except one also tagged `answered`, which you have already answered and which is waiting for the Playtester's verdict. Leave that one alone.
 
-## Blocked Tickets
+## Parked Tickets
 
-Tickets tagged `_(blocked)_` have repeatedly failed the Devs. **They are not yours** — the Tech Lead reads the code and the failure reason every Thursday and decides whether each is replaced by something smaller or dropped. Leave them alone: do not re-prioritize them, do not retire them, and do not propose replacements for them.
+Tickets tagged `_(blocked)_` failed the Devs twice and were parked. **Deciding what happens to them is yours.** Why they failed is a technical question, so the Tech Lead reads the code every Thursday and writes a diagnosis onto each one — its last section, with a recommendation. Whether the work is still worth doing is a product question, and that is your call:
+
+{{PARKED}}
+
+For each parked ticket that has a diagnosis, choose one:
+- **Return it smaller** — propose the smaller piece in `backlog`, written as any groomed ticket is (player's view, criteria, `devNotes` with what the previous attempts got wrong), and set `replaces` to the parked ticket's number. The original closes automatically once the smaller ticket exists, pointing at it. This works for a person's ticket too: their request continues as the smaller piece.
+- **Drop it** — put it in `retire` with the reason. A person's ticket still needs `"outOfScope": true` to be dropped.
+- **Disagree with the diagnosis** — you may. Say why in the ticket you propose, or in the retire reason.
+
+A parked ticket with **no diagnosis yet** is waiting for the Tech Lead. Leave it alone this run. Do not re-prioritize a parked ticket either way: it is out of the queue until it is returned or dropped.
 
 The Product Manager is a worker agent — omit the `outcome` field.
 
@@ -214,7 +224,8 @@ Add an `ideas` array to your response, one entry per idea you were shown. Leave 
         "devNotes": "Optional technical detail for the Builder: measurements, elements, files.",
         "priority": "high | medium | low",
         "dependsOn": ["Exact title of another ticket in this response", "#12"],
-        "addresses": 31
+        "addresses": 31,
+        "replaces": 14
       }
     ],
     "triage": [
