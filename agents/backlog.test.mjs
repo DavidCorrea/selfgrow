@@ -89,19 +89,19 @@ test("deciding whether a ticket can be built now", async (t) => {
   const unconfirmed = () => false;
 
   await t.test("is released once the dependency ships", () => {
-    const ticket = issue(5, { body: "Blocked by: #3" });
+    const ticket = issue(5, { body: "Blocked by: #3", labels: ["groomed"] });
     assert.deepEqual(unmetDependencies(ticket, new Set([5]), shipped), []);
     assert.equal(isBuildable(ticket, new Set([5]), shipped), true);
   });
 
   await t.test("treats a dependency that no longer exists as met, so a stale reference cannot strand it", () => {
-    assert.equal(isBuildable(issue(5, { body: "Blocked by: #999" }), new Set([5]), shipped), true);
+    assert.equal(isBuildable(issue(5, { body: "Blocked by: #999", labels: ["groomed"] }), new Set([5]), shipped), true);
   });
 
   await t.test("keeps waiting on a dependency missing from the listing until it is confirmed shipped", () => {
     // An open blocker past a listing's cutoff, or filed after it, is absent from
     // the open set without having shipped.
-    const ticket = issue(5, { body: "Blocked by: #3, #4" });
+    const ticket = issue(5, { body: "Blocked by: #3, #4", labels: ["groomed"] });
     const onlyFourShipped = (n) => n === 4;
     assert.deepEqual(unmetDependencies(ticket, new Set([5]), onlyFourShipped), [3]);
     assert.equal(isBuildable(ticket, new Set([5]), unconfirmed), false);
@@ -128,21 +128,28 @@ test("deciding whether a ticket can be built now", async (t) => {
   });
 
   await t.test("refuses a ticket parked after repeated failures", () => {
-    assert.equal(isBuildable(issue(5, { labels: ["blocked"] }), new Set([5])), false);
+    assert.equal(isBuildable(issue(5, { labels: ["blocked", "groomed"] }), new Set([5])), false);
   });
 
-  await t.test("builds an unblocked ticket with no dependencies", () => {
-    assert.equal(isBuildable(issue(5), new Set([5])), true);
+  await t.test("builds a groomed ticket with no dependencies", () => {
+    assert.equal(isBuildable(issue(5, { labels: ["groomed"] }), new Set([5])), true);
+  });
+
+  await t.test("refuses a ticket the PM has not groomed, whoever filed it", () => {
+    // The PM is the only gate: a Tech Lead ticket, the Builder's tech debt and a
+    // person's request all wait until it has written what the player gets.
+    assert.equal(isBuildable(issue(5), new Set([5])), false);
+    assert.equal(isBuildable(issue(5, { labels: ["agent", "tech-debt", "priority:high"] }), new Set([5])), false);
   });
 
   await t.test("refuses a health alert, which is a diagnostic about the pipeline", () => {
     // Nothing in docs/ can fix "the changelog stopped growing", so the Devs would
     // engage it, fail, and park it after spending two builds finding that out.
-    assert.equal(isBuildable(issue(5, { labels: ["health"] }), new Set([5])), false);
+    assert.equal(isBuildable(issue(5, { labels: ["health", "groomed"] }), new Set([5])), false);
   });
 
   await t.test("refuses a weekly digest, in case its immediate close ever fails", () => {
-    assert.equal(isBuildable(issue(5, { labels: ["digest"] }), new Set([5])), false);
+    assert.equal(isBuildable(issue(5, { labels: ["digest", "groomed"] }), new Set([5])), false);
   });
 
   await t.test("refuses raw playtest feedback, which is an observation rather than work", () => {
@@ -155,7 +162,7 @@ test("deciding whether a ticket can be built now", async (t) => {
   });
 
   await t.test("builds the ticket the PM wrote from a finding, which carries no report label", () => {
-    const ticket = issue(6, { labels: ["priority:high"] });
+    const ticket = issue(6, { labels: ["priority:high", "groomed"] });
     assert.equal(isNonWorkIssue(ticket), false);
     assert.equal(isBuildable(ticket, new Set([6])), true);
   });

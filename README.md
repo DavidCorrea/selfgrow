@@ -41,7 +41,7 @@ Four roles, split by **whose judgement a decision needs** — which is why there
 | Role | Runs | Owns | Writes to |
 | --- | --- | --- | --- |
 | 🧭 **Product Owner** | Mon 08:00 | Where the project is going | Vision, milestone, its journal |
-| 📋 **Product Manager** | daily 00:30 | What the product should and shouldn't be | issues, board, Story, digest |
+| 📋 **Product Manager** | daily 00:30 | What gets built, in what order, and what done means for the player — the only one who marks a ticket ready | issues, board, Story, digest |
 | 🔧 **Tech Lead** | Thu 09:00 | Whether the code can absorb the next ticket | structure + coverage tickets |
 | ⚒️ **Devs** | after the PM, + 14:00 mop-up | How a ticket gets built | `main` |
 
@@ -148,7 +148,7 @@ The Changelog is still trimmed: it is read whole into the weekly report.
 
 ## Contributing
 
-**File an issue** and the PM picks it up next morning. The [forms](.github/ISSUE_TEMPLATE) ask two things — what should change, and how you would know it worked — because that is what the agents build toward.
+**File an issue** and the PM grooms it next morning — only groomed tickets get built, whoever filed them. The [forms](.github/ISSUE_TEMPLATE) ask two things — what should change, and how you would know it worked — because that is what the agents build toward.
 
 Your ticket can be **sharpened but never closed for being unclear.** Grooming closes what it cannot describe concretely, and a request typed quickly is exactly that shape; the one channel into this system used to end in a silent drop. Closing it now requires declaring it out of scope, which is a judgement about the *request* rather than the wording.
 

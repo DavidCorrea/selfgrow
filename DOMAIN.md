@@ -62,9 +62,21 @@ should stop doing is the same judgement as what it should start doing"; split
 across two roles, the subtractive half proposed removals blind to what the
 additive half was adding.
 
-- **Grooming** — create, refine, prioritize. "Everything you leave on the board
-  will be built as written. The Devs plan and implement tickets; they do not
-  question them."
+- **Grooming** — create, refine, prioritize, and **mark ready**. The PM is **the
+  only gate** between whoever files a ticket and the Devs: only its run applies
+  the `groomed` label, and only a groomed ticket is buildable. The Tech Lead, the
+  Builder's tech debt, the Playtester and people all file tickets without it.
+  Before, any open ticket was buildable the moment it was filed — a Tech Lead
+  ticket filed Thursday morning could be built that afternoon with no priority,
+  and tickets read like the checker that prompted them, because nothing stood
+  between the filer and the Devs. "Everything you groom will be built as
+  written. The Devs plan and implement tickets; they do not question them."
+- **A groomed ticket leads with the player.** Its body and acceptance criteria
+  say what the player sees or can do; selectors, CSS and file names go in a
+  **Dev Notes** section. Grooming another role's ticket rewrites the top and
+  keeps what the filer wrote as Dev Notes (a person's words as their **original
+  request**), because the filer's text is usually the evidence a Builder needs.
+  A filer may say how urgent a ticket is; **the priority is the PM's**.
 - **Curation** (Sundays) — what should the product stop doing. Never remove for
   being simple, never remove load-bearing early work, **never remove the
   product's own checks** ("that makes the build quieter, not the product
@@ -84,7 +96,8 @@ codebase's **shape**; the **test suite** (`docs/selftest.js`, "the only
 independent judge in the pipeline"); and **parked tickets**, because *"why did
 this fail"* is a technical question. **It proposes; it does not act** —
 everything it decides becomes an ordinary ticket, "including the removals, which
-are the ones that most deserve it."
+are the ones that most deserve it." Its tickets arrive ungroomed, like anyone
+else's, and wait for the PM.
 
 **⚒️ Devs** — own *how a ticket gets built*, and write to `main`. Internally
 Scout → Builder → Reviewer.
@@ -256,8 +269,9 @@ ticket had been retired.
 | **strike / attempts** | an `attempts:N` label, bumped on each failure |
 | **parked** | the `blocked` label — out of the queue until someone rules on it |
 | **waiting** | prerequisites haven't shipped yet; *normal*, not a failure |
-| **buildable** | not parked, not a report, and every dependency has shipped |
-| **sharpen** | rewrite a vague human request into something buildable |
+| **groomed** | the `groomed` label — the PM has said what the player gets and set its priority. Only the PM's run applies it |
+| **buildable** | groomed, not parked, not a report, and every dependency has shipped |
+| **sharpen** | groom a vague human request with a new body, keeping their words as the original request |
 | **retire** | close a ticket as split, superseded or won't-do — closed as *not planned* and taken off the board |
 | **shipped** | closed as *completed* since the most recent reset, and not a playtest finding |
 

@@ -29,6 +29,12 @@ import {
   rewriteIssueBody,
   getCurrentMilestone,
   setIssueMilestone,
+  GROOMED_LABEL,
+  isGroomed,
+  isBlocked,
+  isNonWorkIssue,
+  editIssueLabels,
+  PRIORITY_LABELS,
 } from "./shared.mjs";
 import {
   readInboundIdeas,
@@ -173,17 +179,32 @@ function kickBuilder() {
 // Backlog grooming — create prioritized tickets on the board (best-effort)
 // ---------------------------------------------------------------------------
 
+function criteriaSection(acceptanceCriteria) {
+  const criteria = (Array.isArray(acceptanceCriteria) ? acceptanceCriteria : [])
+    .map((criterion) => String(criterion).trim())
+    .filter(Boolean);
+  return criteria.length ? `## Acceptance criteria\n${criteria.map((criterion) => `- [ ] ${criterion}`).join("\n")}` : "";
+}
+
+// Technical detail lives in its own section so the top of a ticket can say what
+// the player gets. Tickets used to carry selectors and CSS properties as their
+// acceptance criteria, which told the Builder how to satisfy a checker rather
+// than what the player should notice.
+function devNotesSection(...notes) {
+  const text = notes.map((note) => String(note || "").trim()).filter(Boolean).join("\n\n");
+  return text ? `## Dev Notes\n${text}` : "";
+}
+
 // Compose the issue body the Builder reads: the PM's description followed by the
 // acceptance criteria as a checklist, so "what to build" and "how we know it's
-// done" travel together on the ticket. Criteria are optional and defensive.
+// done" travel together on the ticket, then any Dev Notes. Criteria are optional
+// and defensive.
 function formatTicketBody(item, dependencyNumbers = [], findingNumber = null) {
   const parts = [String(item.body || "").trim()];
-  const criteria = (Array.isArray(item.acceptanceCriteria) ? item.acceptanceCriteria : [])
-    .map((c) => String(c).trim())
-    .filter(Boolean);
-  if (criteria.length) {
-    parts.push(`## Acceptance criteria\n${criteria.map((c) => `- [ ] ${c}`).join("\n")}`);
-  }
+  const criteria = criteriaSection(item.acceptanceCriteria);
+  if (criteria) parts.push(criteria);
+  const devNotes = devNotesSection(item.devNotes);
+  if (devNotes) parts.push(devNotes);
   const deps = dependencyLine(dependencyNumbers);
   if (deps) parts.push(deps);
   if (findingNumber) parts.push(addressesLine(findingNumber));
@@ -339,7 +360,9 @@ async function groomBacklog(proposed, openIssues, boardItems, milestone, answera
     }
 
     const finding = findingAddressed(item, answerable);
-    const number = createIssue(item.title, formatTicketBody(item, deps, finding?.number));
+    // Groomed as it is created: the PM wrote it, so it already says what the
+    // player gets.
+    const number = createIssue(item.title, formatTicketBody(item, deps, finding?.number), [GROOMED_LABEL]);
     if (number) {
       if (finding) answers.set(finding.number, [...(answers.get(finding.number) || []), number]);
       numberByTitle.set(normalizeTitle(item.title), number);
@@ -563,37 +586,74 @@ async function executeRetirements({ entries }, { proposed = 0, created = 0 } = {
 }
 
 /**
- * Rewrite the human-filed tickets the Product Manager found too vague to build,
- * instead of closing them.
+ * The body a groomed ticket gets, or null when the PM kept the body as written.
  *
- * The body it returns replaces the original, so the ticket keeps its number, its
- * author and its place on the board — the person who filed it sees their request
- * become buildable rather than see it closed.
+ * The PM's text leads, because the top of a ticket is what the player gets. What
+ * the filer wrote is kept below it rather than replaced: a Tech Lead's or
+ * Playtester's ticket usually carries the exact evidence a Builder needs, and a
+ * person's request is theirs — rewriting it away used to leave them nothing but
+ * the edit history to find what they asked for.
  */
-function sharpenTickets(sharpen, openIssues = []) {
+export function groomedBody(issue, item) {
+  if (!item?.body) return null;
+  const original = String(issue.body || "").trim();
+  const fromPerson = isManualIssue(issue);
+  return [
+    String(item.body).trim(),
+    criteriaSection(item.acceptanceCriteria),
+    fromPerson ? devNotesSection(item.devNotes) : devNotesSection(item.devNotes, original),
+    fromPerson && original ? `## Original request\n${original}` : "",
+  ].filter(Boolean).join("\n\n");
+}
+
+/**
+ * Which of the PM's `groom` entries to apply. Only open work that is not groomed
+ * yet: a report is never work, a parked ticket waits for a ruling first, and
+ * re-grooming a groomed ticket would fold its Dev Notes into Dev Notes again.
+ */
+export function planGrooming(groom, openIssues = []) {
   const byNumber = new Map(openIssues.map((issue) => [issue.number, issue]));
+  return (Array.isArray(groom) ? groom : [])
+    .map((item) => ({ item, issue: byNumber.get(Number(item?.number)) }))
+    .filter(({ issue }) => issue && !isGroomed(issue) && !isNonWorkIssue(issue) && !isBlocked(issue))
+    .map(({ item, issue }) => ({
+      issue,
+      item,
+      priority: PRIORITY_LABELS[item.priority] ? item.priority : "medium",
+    }));
+}
+
+/**
+ * Mark tickets ready to build. The only place the groomed label is applied: it
+ * is what makes the Product Manager the gate between whoever filed a ticket and
+ * the Devs. A ticket whose rewrite fails is left ungroomed, so it is offered
+ * again next run instead of being built as the filer wrote it.
+ */
+function groomTickets(groom, openIssues) {
   let count = 0;
-  for (const item of Array.isArray(sharpen) ? sharpen : []) {
-    const number = Number(item?.number);
-    const issue = byNumber.get(number);
-    if (!issue || !item?.body) continue;
-    // Only ever applied to human tickets. The pipeline's own are the PM's to
-    // write correctly in the first place, and rewriting one would silently
-    // discard whatever the agent that filed it recorded there.
-    if (!isManualIssue(issue)) {
-      log("warn", `Not sharpening #${number}: the pipeline wrote it, so rewriting it would lose what it recorded.`);
-      continue;
-    }
-    const body = [
-      String(item.body).trim(),
-      Array.isArray(item.acceptanceCriteria) && item.acceptanceCriteria.length
-        ? `## Acceptance criteria\n${item.acceptanceCriteria.map((c) => `- [ ] ${String(c).trim()}`).join("\n")}`
-        : "",
-      "_Filed by a person and sharpened by the Product Manager into something the Devs can build. The original request is in the history._",
-    ].filter(Boolean).join("\n\n");
-    if (rewriteIssueBody(number, body)) count++;
+  for (const { issue, item, priority } of planGrooming(groom, openIssues)) {
+    const body = groomedBody(issue, item);
+    if (body && !rewriteIssueBody(issue.number, body)) continue;
+    if (!editIssueLabels(issue.number, { add: [GROOMED_LABEL] })) continue;
+    setIssuePriority(issue.number, priority, (issue.labels || []).map((label) => label.name || label));
+    count++;
   }
-  if (count) log("info", `Sharpened ${count} human-filed ticket(s).`);
+  if (count) log("info", `Groomed ${count} ticket(s).`);
+}
+
+/**
+ * The open tickets waiting for grooming, with their bodies, for the prompt. The
+ * board lists titles only, and grooming means rewriting what the filer wrote.
+ */
+export function renderUngroomed(openIssues) {
+  const waiting = openIssues.filter((issue) => !isGroomed(issue) && !isNonWorkIssue(issue) && !isBlocked(issue));
+  if (!waiting.length) return "(nothing waiting — every open ticket is groomed)";
+  return waiting
+    .map((issue) => {
+      const origin = isManualIssue(issue) ? " _(from a person)_" : "";
+      return [`### #${issue.number} — ${issue.title}${origin}`, (issue.body || "").trim() || "_(no body)_"].join("\n\n");
+    })
+    .join("\n\n");
 }
 
 /** Used only when the Product Manager closes a ticket without saying why. */
@@ -674,6 +734,7 @@ async function main() {
         MILESTONE: renderMilestone(milestone),
         BOARD_STATE: boardState,
         APP_OBSERVATIONS: appObservations,
+        UNGROOMED: renderUngroomed(openIssues),
         // The history costs two listings, so it is read only on a day there is a
         // finding to answer.
         PLAYTEST_FEEDBACK: openIssues.some(needsAnswer)
@@ -697,9 +758,9 @@ async function main() {
   //    a retirement is usually justified by a replacement the grooming pass has
   //    not created yet — see executeRetirements.
   const planned = planRetirements(data.retire, openIssues);
-  // Sharpen before triage, so a rewritten ticket is prioritized as what it has
-  // become rather than as the one-liner it arrived as.
-  sharpenTickets(data.sharpen, openIssues);
+  // Groom before triage, so a ticket is prioritized as what it has become rather
+  // than as what it arrived as.
+  groomTickets(data.groom, openIssues.filter((i) => !planned.numbers.has(i.number)));
   // Tickets on their way out are excluded from the pool grooming dedups against,
   // exactly as they were when this ran before grooming — a proposal that replaces
   // a ticket must not be rejected as a duplicate of the ticket it replaces.

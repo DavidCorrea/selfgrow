@@ -30,8 +30,13 @@ test("noticing that nothing is shipping", async (t) => {
   });
 
   await t.test("distinguishes stuck from idle when the board still has work", () => {
-    const finding = checkShipping({ shippedRecently: closed(2, daysAgo(9)), open: [issue(1)] });
+    const finding = checkShipping({ shippedRecently: closed(2, daysAgo(9)), open: [issue(1, ["groomed"])] });
     assert.match(finding, /stuck, not idle/);
+  });
+
+  await t.test("names the tickets waiting for the Product Manager to groom them", () => {
+    const finding = checkShipping({ shippedRecently: [], open: [issue(1), issue(2, ["tech-debt"])] });
+    assert.match(finding, /2 ticket\(s\) are waiting for the Product Manager to groom them/);
   });
 
   await t.test("blames grooming when there is nothing left to build", () => {

@@ -1597,6 +1597,7 @@ export function ensurePriorityLabels() {
     [AGENT_LABEL, "ededed"],
     // Muted grey-blue: waiting is a normal state, not a warning.
     [WAITING_LABEL, "c5def5"],
+    [GROOMED_LABEL, "0075ca"],
   ];
   for (const [name, color] of labels) ensureLabel(name, color);
 }
@@ -1791,12 +1792,29 @@ export function isPlaytestFeedback(issue) {
   return labelNames(issue).includes(PLAYTEST_LABEL);
 }
 
+// The Product Manager's mark that a ticket is ready to build: it says what the
+// player gets, how to tell it shipped, and where it sits in the queue. Only the
+// PM's run applies it (see product-manager.mjs). Everyone else — the Tech Lead,
+// the Builder's tech debt, the Playtester, a person — files tickets without it.
+//
+// Before this, any open ticket was buildable the moment it was filed. A Tech Lead
+// ticket filed on Thursday morning could be built that afternoon with no
+// priority and no player-facing description, and tickets written from the App
+// Review read like the checker — selectors and CSS properties as acceptance
+// criteria — because nothing stood between whoever filed them and the Devs.
+export const GROOMED_LABEL = "groomed";
+
+export function isGroomed(issue) {
+  return labelNames(issue).includes(GROOMED_LABEL);
+}
+
 /**
- * True when the Builder may pick this ticket up now: not parked, not a report of
- * something, and everything it declared it depends on has shipped.
+ * True when the Builder may pick this ticket up now: groomed, not parked, not a
+ * report of something, and everything it declared it depends on has shipped.
  */
 export function isBuildable(issue, openNumbers, isShipped = isConfirmedShipped) {
   return (
+    isGroomed(issue) &&
     !isBlocked(issue) &&
     !isNonWorkIssue(issue) &&
     unmetDependencies(issue, openNumbers, isShipped).length === 0
