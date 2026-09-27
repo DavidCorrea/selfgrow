@@ -1035,7 +1035,7 @@
           renderSingleGoal("Gather " + GOAL_STONE + " stone", stone, GOAL_STONE);
         } else if (stone >= GOAL_STONE && !wallBuilt) {
           // Goal: Build a Wall
-          renderSingleGoal("Build a Wall (" + WALL_COST + " stone)", stone, WALL_COST);
+          renderSingleGoal("Build a Wall (" + WALL_COST + " stone)", Math.min(stone, WALL_COST), WALL_COST);
         } else if (wallBuilt) {
           // Forge goal — always visible after wall is built, with escalating costs
           renderDualGoal(
@@ -1045,7 +1045,7 @@
           );
         } else {
           // Fallback — sharpen cycle
-          renderSingleGoal("Craft a Sharpening (" + UPGRADE_COST + " wood)", wood % UPGRADE_COST, UPGRADE_COST);
+          renderSingleGoal("Craft a Sharpening (" + UPGRADE_COST + " wood)", Math.min(wood, UPGRADE_COST), UPGRADE_COST);
         }
 
       } else if (wood >= GOAL_WOOD) {
@@ -1054,7 +1054,7 @@
           goalReached = true;
         }
 
-        renderSingleGoal("Craft a Sharpening (" + UPGRADE_COST + " wood)", wood % UPGRADE_COST, UPGRADE_COST);
+        renderSingleGoal("Craft a Sharpening (" + UPGRADE_COST + " wood)", Math.min(wood, UPGRADE_COST), UPGRADE_COST);
       } else {
         goalReached = false;
         stoneGoalActive = false;
