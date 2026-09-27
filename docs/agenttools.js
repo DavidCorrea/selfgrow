@@ -48,7 +48,7 @@ function computeStoneRate(totalWoodEarned) {
  * Determine the current goal phase based on state.
  */
 function determineGoal(s) {
-  const reachedFirstGoal = s.wood >= GOAL_WOOD;
+  const reachedFirstGoal = s.wood >= GOAL_WOOD || s.upgradeLevel >= 1;
   const doneFirstSharpen = s.upgradeLevel >= 1;
   const stoneUnlocked = s.stoneUnlocked;
 
@@ -67,7 +67,7 @@ function determineGoal(s) {
       description: "Craft a Sharpening (" + UPGRADE_COST + " wood)",
       type: "upgrade",
       cost: UPGRADE_COST,
-      progressToNext: s.wood % UPGRADE_COST,
+      progressToNext: Math.min(s.wood, UPGRADE_COST),
       upgradeAvailable: s.wood >= UPGRADE_COST,
     };
   }
@@ -88,7 +88,7 @@ function determineGoal(s) {
       description: "Build a Wall (" + WALL_COST + " stone)",
       type: "build-wall-goal",
       cost: WALL_COST,
-      progressToNext: s.stone % WALL_COST,
+      progressToNext: Math.min(s.stone, WALL_COST),
       wallAvailable: s.stone >= WALL_COST,
     };
   }
@@ -112,7 +112,7 @@ function determineGoal(s) {
     description: "Craft a Sharpening (" + UPGRADE_COST + " wood)",
     type: "upgrade",
     cost: UPGRADE_COST,
-    progressToNext: s.wood % UPGRADE_COST,
+    progressToNext: Math.min(s.wood, UPGRADE_COST),
     upgradeAvailable: s.wood >= UPGRADE_COST,
   };
 }
@@ -160,7 +160,7 @@ function withGoal(s) {
     firstGoal: {
       target: GOAL_WOOD,
       current: Math.min(s.wood, GOAL_WOOD),
-      reached: s.wood >= GOAL_WOOD,
+      reached: s.wood >= GOAL_WOOD || s.upgradeLevel >= 1,
     },
     nextGoal: determineGoal(s),
   };

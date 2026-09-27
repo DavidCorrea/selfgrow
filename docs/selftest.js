@@ -1960,6 +1960,65 @@ export async function checks() {
     console.error(err);
   }
 
+  // ─── Agent tool progressToNext uses Math.min, not modulo ─────
+  // Issue #945: progressToNext for sharpen and wall goals must cap at the
+  // cost (Math.min) instead of wrapping around with modulo.
+  try {
+    const { tools } = await import("./agenttools.js");
+    const toolList = tools();
+    const readState = toolList.find((t) => t.name === "read-state");
+    if (!readState) {
+      problems.push("Expected read-state tool for progressToNext check.");
+    } else {
+      const engine = await import("./engine.js");
+
+      // --- Sharpen goal: wood > UPGRADE_COST, progressToNext must be UPGRADE_COST ---
+      engine.reset();
+      engine.init();
+      for (let i = 0; i < 12; i++) engine.gatherWood(); // 12 wood, >= GOAL_WOOD (10)
+
+      let result = await readState.execute({});
+      if (result.nextGoal && result.nextGoal.type === "upgrade") {
+        if (result.nextGoal.progressToNext !== engine.UPGRADE_COST) {
+          problems.push(`Agent sharpen goal progressToNext should be ${engine.UPGRADE_COST} (Math.min(wood, cost)) with 12 wood and cost ${engine.UPGRADE_COST}, got ${result.nextGoal.progressToNext}. `
+            + "Using `wood % UPGRADE_COST` would give " + (12 % engine.UPGRADE_COST) + ".");
+        }
+        if (result.nextGoal.upgradeAvailable !== true) {
+          problems.push(`Agent sharpen goal upgradeAvailable should be true with 12 wood >= ${engine.UPGRADE_COST}, got ${result.nextGoal.upgradeAvailable}.`);
+        }
+      } else {
+        problems.push(`Agent sharpen goal type should be "upgrade", got "${result.nextGoal?.type}".`);
+      }
+
+      // --- Wall goal: stone > WALL_COST, progressToNext must be WALL_COST ---
+      engine.reset();
+      engine.init();
+      for (let i = 0; i < 10; i++) engine.gatherWood();
+      engine.craftUpgrade(); // upgradeLevel=1, stone unlocked
+      for (let i = 0; i < 7; i++) engine.gatherStone(); // 7 stone, >= WALL_COST (5)
+
+      result = await readState.execute({});
+      if (result.nextGoal && result.nextGoal.type === "build-wall-goal") {
+        if (result.nextGoal.progressToNext !== engine.WALL_COST) {
+          problems.push(`Agent wall goal progressToNext should be ${engine.WALL_COST} (Math.min(stone, cost)) with 7 stone and cost ${engine.WALL_COST}, got ${result.nextGoal.progressToNext}. `
+            + "Using `stone % WALL_COST` would give " + (7 % engine.WALL_COST) + ".");
+        }
+        if (result.nextGoal.wallAvailable !== true) {
+          problems.push(`Agent wall goal wallAvailable should be true with 7 stone >= ${engine.WALL_COST}, got ${result.nextGoal.wallAvailable}.`);
+        }
+      } else {
+        problems.push(`Agent wall goal type should be "build-wall-goal", got "${result.nextGoal?.type}".`);
+      }
+    }
+
+    // Clean up
+    (await import("./engine.js")).reset();
+    (await import("./engine.js")).init();
+  } catch (err) {
+    problems.push(`Agent tool progressToNext test threw: ${err.message}`);
+    console.error(err);
+  }
+
   // ─── Offline summary overlay appears after any resource gain (no time guard) ───
   // Issue #943: the overlay must appear after any reload where resources were gained,
   // regardless of how short the absence was. The `elapsedSec > 3` guard was removed.
