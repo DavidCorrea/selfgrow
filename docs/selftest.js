@@ -1899,5 +1899,66 @@ export async function checks() {
     console.error(err);
   }
 
+  // ─── Sharpen goal progress bar uses Math.min instead of modulo ───
+  try {
+    const engine = await import("./engine.js");
+    engine.reset();
+    engine.init();
+
+    // Gather 12 wood — that's >= GOAL_WOOD (10) and > UPGRADE_COST (5)
+    for (let i = 0; i < 12; i++) engine.gatherWood();
+
+    // renderUI to update DOM
+    if (typeof window.__renderUI === "function") window.__renderUI();
+
+    const track1 = document.getElementById("goal-progress-track-1");
+    if (!track1) {
+      problems.push("Expected #goal-progress-track-1 to exist for sharpen progress bar check.");
+    } else if (!track1.hidden) {
+      const ariaNow = track1.getAttribute("aria-valuenow");
+      const ariaMax = track1.getAttribute("aria-valuemax");
+      if (ariaNow === null || ariaMax === null) {
+        problems.push(`goal-progress-track-1 is missing aria-valuenow (${ariaNow}) or aria-valuemax (${ariaMax}).`);
+      } else {
+        const current = parseInt(ariaNow, 10);
+        const max = parseInt(ariaMax, 10);
+        // With wood=12 and cost=5, Math.min(wood, UPGRADE_COST)=5, so bar shows 5/5 (100%)
+        if (current !== 5 || max !== 5) {
+          problems.push(`Sharpen goal progress bar should show 5/5 (Math.min(wood, 5)) at wood=12, got ${current}/${max}. `
+            + "Using `wood % UPGRADE_COST` would give 2/5 instead.");
+        }
+      }
+    }
+
+    // Wall goal must also cap at the cost: sharpen once, gather 7 stone
+    // (>= GOAL_STONE and > WALL_COST) without building the wall — the bar
+    // should show 5/5, not 7/5.
+    engine.reset();
+    engine.init();
+    for (let i = 0; i < 10; i++) engine.gatherWood(); // get to GOAL_WOOD (10)
+    engine.craftUpgrade(); // unlocks stone, consumes 5 wood, leaves 5
+    for (let i = 0; i < 5; i++) engine.gatherWood(); // back to 10 wood
+    for (let i = 0; i < 7; i++) engine.gatherStone();
+    if (typeof window.__renderUI === "function") window.__renderUI();
+
+    const track2 = document.getElementById("goal-progress-track-1");
+    if (!track2) {
+      problems.push("Expected #goal-progress-track-1 to exist for wall goal progress check.");
+    } else if (!track2.hidden) {
+      const now = track2.getAttribute("aria-valuenow");
+      const max = track2.getAttribute("aria-valuemax");
+      // Math.min(7, WALL_COST=5)=5, so 5/5
+      if (now !== "5" || max !== "5") {
+        problems.push(`Wall goal progress bar should show 5/5 (Math.min(stone, 5)) with 7 stone, got ${now}/${max}.`);
+      }
+    }
+
+    engine.reset();
+    engine.init();
+  } catch (err) {
+    problems.push(`Sharpen progress bar test threw: ${err.message}`);
+    console.error(err);
+  }
+
   return problems;
 }
