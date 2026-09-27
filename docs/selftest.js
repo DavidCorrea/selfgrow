@@ -867,6 +867,50 @@ export async function checks() {
       problems.push(`After persistence round-trip, stoneUnlocked should be true, got ${loaded.stoneUnlocked}.`);
     }
 
+    // --- Test 13b: loadPersisted backfills stoneUnlocked for old saves ---
+    engine.reset();
+    localStorage.removeItem("selfgrow-state");
+    // Simulate an old save that predates the stone system:
+    // upgradeLevel=1, but no stoneUnlocked field in the persisted data
+    const oldSave = JSON.stringify({
+      wood: 5,
+      rate: 0.15,
+      upgradeLevel: 1,
+      stone: 0,
+      totalWoodEarned: 5,
+      wallLevel: 0,
+      timestamp: new Date().toISOString(),
+    });
+    localStorage.setItem("selfgrow-state", oldSave);
+    engine.init();
+    const loadedOld = engine.getState();
+    if (loadedOld.stoneUnlocked !== true) {
+      problems.push("Old save with upgradeLevel=1 and no stoneUnlocked field should get stoneUnlocked=true on load, "
+        + `got ${loadedOld.stoneUnlocked}. The stone system would be invisible to the player.`);
+    }
+    if (loadedOld.upgradeLevel !== 1) {
+      problems.push(`Old save upgradeLevel should remain 1, got ${loadedOld.upgradeLevel}.`);
+    }
+    // Verify that a fresh save (upgradeLevel=0, no stoneUnlocked) still starts with stone locked
+    engine.reset();
+    localStorage.removeItem("selfgrow-state");
+    const freshSave = JSON.stringify({
+      wood: 0,
+      rate: 0.1,
+      upgradeLevel: 0,
+      stone: 0,
+      totalWoodEarned: 0,
+      wallLevel: 0,
+      timestamp: new Date().toISOString(),
+    });
+    localStorage.setItem("selfgrow-state", freshSave);
+    engine.init();
+    const freshLoaded = engine.getState();
+    if (freshLoaded.stoneUnlocked !== false) {
+      problems.push("Fresh save with upgradeLevel=0 should have stoneUnlocked=false on load, "
+        + `got ${freshLoaded.stoneUnlocked}.`);
+    }
+
     // --- Test 14: gatherStone fails when stone is not unlocked ---
     engine.reset();
     const stoneFail = engine.gatherStone();
