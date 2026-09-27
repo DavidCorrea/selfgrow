@@ -206,7 +206,7 @@ function loadPersisted() {
         state.totalStoneEarned = typeof saved.totalStoneEarned === "number" ? saved.totalStoneEarned : 0;
         state.wallLevel = typeof saved.wallLevel === "number" ? saved.wallLevel : 0;
         state.forgeLevel = typeof saved.forgeLevel === "number" ? saved.forgeLevel : 0;
-        state.stoneUnlocked = typeof saved.stoneUnlocked === "boolean" ? saved.stoneUnlocked : false;
+        state.stoneUnlocked = typeof saved.stoneUnlocked === "boolean" ? saved.stoneUnlocked : (state.upgradeLevel >= 1);
         state.timestamp = saved.timestamp;
         state.firstTimestamp = typeof saved.firstTimestamp === "string" ? saved.firstTimestamp : saved.timestamp;
         return true;
