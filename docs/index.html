@@ -22,6 +22,7 @@
       --highlight: #00ff88;
       --stone-color: #8899cc;
       --forge-color: #ff8844;
+      --map-color: #ff66aa;
       --pixel-font: 'Press Start 2P', 'Courier New', monospace;
       --body-font: 'Courier New', Courier, monospace;
       --border-width: 4px;
@@ -571,6 +572,10 @@
       <span class="stat-label" id="forge-label">Forge</span>
       <span class="stat-value forge-value" id="forge-value" aria-labelledby="forge-label">0</span>
     </div>
+    <div class="stat stat-hidden" id="expedition-stat">
+      <span class="stat-label" id="map-label">Maps</span>
+      <span class="stat-value" id="map-value" aria-labelledby="map-label" style="color: var(--map-color);">0</span>
+    </div>
   </section>
 
   <!-- ═══ Action Area Panel ═══ -->
@@ -598,6 +603,12 @@
     <div class="action-group forge-actions" id="forge-actions">
       <button class="btn btn-forge" id="btn-forge-tool" type="button" aria-label="Forge Tool" disabled>
         <span class="btn-icon">&#x1F528;</span> Forge Tool (10 wood + 5 stone)
+      </button>
+    </div>
+
+    <div class="action-group forge-actions" id="expedition-actions">
+      <button class="btn" id="btn-expedition" type="button" aria-label="Send Expedition" disabled style="background: var(--map-color); border-color: #cc4488;">
+        <span class="btn-icon">&#x1F30D;</span> Send Expedition (10 wood + 5 stone)
       </button>
     </div>
 
@@ -636,6 +647,7 @@
         <div class="offline-milestone" id="milestone-stone" hidden>Stone is now available!</div>
         <div class="offline-milestone" id="milestone-wall" hidden>You can now build a wall!</div>
         <div class="offline-milestone" id="milestone-forge" hidden>The forge is now unlocked!</div>
+        <div class="offline-milestone" id="milestone-expedition" hidden>Expeditions are now unlocked!</div>
       </div>
       <button class="btn-dismiss" id="btn-dismiss-offline" type="button">
         OK
@@ -646,7 +658,7 @@
   <!-- ═══ Engine + live UI render loop ═══ -->
   <script type="module">
     import "./webmcp.js";
-    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, consumeOfflineWoodGained, consumeOfflineGained, consumeOfflineMilestones, formatElapsed, UPGRADE_COST, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS } from "./engine.js";
+    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, consumeOfflineWoodGained, consumeOfflineGained, consumeOfflineMilestones, formatElapsed, UPGRADE_COST, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS } from "./engine.js";
 
     init();
 
@@ -670,6 +682,10 @@
     const btnBuildWall = document.getElementById("btn-build-wall");
     const forgeActions = document.getElementById("forge-actions");
     const btnForgeTool = document.getElementById("btn-forge-tool");
+    const expeditionStat = document.getElementById("expedition-stat");
+    const mapValueEl = document.getElementById("map-value");
+    const expeditionActions = document.getElementById("expedition-actions");
+    const btnExpedition = document.getElementById("btn-expedition");
     const goalText = document.getElementById("goal-text");
     const goalFill = document.getElementById("goal-progress-fill");
     const goalProgress = document.getElementById("goal-progress-track-1");
@@ -781,6 +797,19 @@
       }
     });
 
+    function handleExpedition() {
+      sendExpedition();
+      renderUI();
+    }
+
+    btnExpedition.addEventListener("click", handleExpedition);
+    btnExpedition.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        handleExpedition();
+      }
+    });
+
     // ─── Offline summary ───
     function showOfflineSummary() {
       const gained = consumeOfflineGained();
@@ -812,6 +841,8 @@
         if (stoneEl) stoneEl.hidden = !milestones.stoneNowUnlocked;
         if (wallEl) wallEl.hidden = !milestones.wallAvailable;
         if (forgeEl) forgeEl.hidden = !milestones.forgeNowUnlocked;
+        const expeditionEl = document.getElementById("milestone-expedition");
+        if (expeditionEl) expeditionEl.hidden = !milestones.expeditionNowUnlocked;
 
         offlineSummary.hidden = false;
         offlineSummary.querySelector(".offline-panel").focus();
@@ -822,6 +853,7 @@
         btnGatherStone.disabled = true;
         btnBuildWall.disabled = true;
         btnForgeTool.disabled = true;
+        if (btnExpedition) btnExpedition.disabled = true;
 
         // Seal the body against pointer events — the overlay is the only
         // interactive layer.
@@ -880,9 +912,16 @@
           : wood.toFixed(2);
       }
 
-      // Rate
+      // Rate — includes expedition map multiplier if any
       if (rateEl) {
-        rateEl.textContent = s.rate.toFixed(2) + "/s";
+        const maps = s.maps || 0;
+        const expeditionMultiplier = 1 + maps * 0.05;
+        const effectiveRate = s.rate * expeditionMultiplier;
+        let rateDisplay = effectiveRate.toFixed(2) + "/s";
+        if (maps > 0) {
+          rateDisplay += " (x" + expeditionMultiplier.toFixed(2) + ")";
+        }
+        rateEl.textContent = rateDisplay;
       }
 
       // Tick indicator
@@ -944,6 +983,28 @@
         forgeStat.classList.add("stat-hidden");
         forgeActions.classList.remove("visible");
         btnForgeTool.disabled = true;
+      }
+
+      // Expedition display (hidden until forgeLevel >= 5)
+      if (forgeLevel >= 5) {
+        if (expeditionStat) expeditionStat.classList.remove("stat-hidden");
+        if (expeditionActions) expeditionActions.classList.add("visible");
+        if (mapValueEl) {
+          mapValueEl.textContent = String(s.maps);
+        }
+        // Update expedition button text with costs
+        const eWoodCost = s.expeditionWoodCost || 10;
+        const eStoneCost = s.expeditionStoneCost || 5;
+        const canExpedition = wood >= eWoodCost && stone >= eStoneCost;
+        if (btnExpedition) {
+          btnExpedition.innerHTML = '<span class="btn-icon">\uD83C\uDF0D</span> Send Expedition (' + eWoodCost + ' wood + ' + eStoneCost + ' stone)';
+          btnExpedition.setAttribute("aria-label", "Send Expedition — costs " + eWoodCost + " wood and " + eStoneCost + " stone");
+          btnExpedition.disabled = !canExpedition;
+        }
+      } else {
+        if (expeditionStat) expeditionStat.classList.add("stat-hidden");
+        if (expeditionActions) expeditionActions.classList.remove("visible");
+        if (btnExpedition) btnExpedition.disabled = true;
       }
 
       // Total stats (never decrease)
@@ -1040,6 +1101,17 @@
         } else if (stone >= GOAL_STONE && !wallBuilt) {
           // Goal: Build a Wall
           renderSingleGoal("Build a Wall (" + WALL_COST + " stone)", Math.min(stone, WALL_COST), WALL_COST);
+        } else if (wallBuilt && forgeLevel >= 5) {
+          // Expedition goal — shown once forge level reaches 5, replacing forge goal
+          const eWoodCost = s.expeditionWoodCost || 10;
+          const eStoneCost = s.expeditionStoneCost || 5;
+          renderDualGoal(
+            "Send scouts on expedition \u2014 need " + eWoodCost + " wood and " + eStoneCost + " stone",
+            { name: "Wood", current: Math.min(wood, eWoodCost), target: eWoodCost },
+            { name: "Stone", current: Math.min(stone, eStoneCost), target: eStoneCost }
+          );
+          // Use expedition-fill for second bar and set proper color
+          if (goalFill2) goalFill2.className = "progress-fill";
         } else if (wallBuilt) {
           // Forge goal — always visible after wall is built, with escalating costs
           renderDualGoal(

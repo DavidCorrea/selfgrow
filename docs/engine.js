@@ -34,12 +34,19 @@ const FORGE_WOOD_COST_INC = 5;
 const FORGE_STONE_COST_INC = 3;
 const FORGE_WOOD_RATE_BONUS = 0.05; // extra wood/s per forge level
 const FORGE_CLICK_POWER_BONUS = 0.5; // extra wood per click per forge level
+const EXPEDITION_WOOD_COST_BASE = 10;
+const EXPEDITION_STONE_COST_BASE = 5;
+const EXPEDITION_WOOD_COST_INC = 5;
+const EXPEDITION_STONE_COST_INC = 3;
+const EXPEDITION_WOOD_RATE_MULTIPLIER = 0.05; // additive multiplier per map (n maps = 1 + n*0.05)
 const TICK_MS = 1000;  // save interval (ms)
 
 // Exported for external use (tools, UI)
 export { UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, STONE_BASE_RATE, WALL_COST, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT,
   FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_WOOD_COST_INC, FORGE_STONE_COST_INC,
-  FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS };
+  FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS,
+  EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC,
+  EXPEDITION_WOOD_RATE_MULTIPLIER };
 
 /**
  * @typedef {Object} GameState
@@ -68,6 +75,8 @@ let state = {
   totalStoneEarned: 0,
   wallLevel: 0,
   forgeLevel: 0,
+  expeditionLevel: 0,
+  maps: 0,
   stoneUnlocked: false,
   timestamp: new Date().toISOString(),
   firstTimestamp: null,
@@ -90,6 +99,7 @@ let snapshotBeforeCatchUp = null;
  * @property {number}  stone
  * @property {number}  wallLevel
  * @property {boolean} stoneUnlocked
+ * @property {number}  forgeLevel
  */
 
 function takeMilestoneSnapshot() {
@@ -99,6 +109,7 @@ function takeMilestoneSnapshot() {
     stone: state.stone,
     wallLevel: state.wallLevel,
     stoneUnlocked: state.stoneUnlocked,
+    forgeLevel: state.forgeLevel,
   };
 }
 
@@ -108,6 +119,7 @@ function takeMilestoneSnapshot() {
  * @property {boolean} stoneNowUnlocked  — stone was just unlocked this catch-up
  * @property {boolean} wallAvailable    — stone >= 5 and wall not yet built
  * @property {boolean} forgeNowUnlocked  — forge was just unlocked this catch-up
+ * @property {boolean} expeditionNowUnlocked  — expedition was just unlocked this catch-up
  */
 
 /**
@@ -120,13 +132,14 @@ function takeMilestoneSnapshot() {
 export function consumeOfflineMilestones() {
   const before = snapshotBeforeCatchUp;
   if (!before) {
-    return { sharpenAvailable: false, stoneNowUnlocked: false, wallAvailable: false, forgeNowUnlocked: false };
+    return { sharpenAvailable: false, stoneNowUnlocked: false, wallAvailable: false, forgeNowUnlocked: false, expeditionNowUnlocked: false };
   }
 
   const sharpenAvailable = before.upgradeLevel === 0 && state.wood >= 10;
   const stoneNowUnlocked = before.stoneUnlocked === false && state.stoneUnlocked === true;
   const wallAvailable = state.stoneUnlocked && before.wallLevel === 0 && state.stone >= 5;
   const forgeNowUnlocked = before.wallLevel === 0 && state.wallLevel >= 1;
+  const expeditionNowUnlocked = before.forgeLevel < 5 && state.forgeLevel >= 5;
 
   snapshotBeforeCatchUp = null;
 
@@ -135,6 +148,7 @@ export function consumeOfflineMilestones() {
     stoneNowUnlocked,
     wallAvailable,
     forgeNowUnlocked,
+    expeditionNowUnlocked,
   };
 }
 
@@ -159,6 +173,22 @@ function computeForgeStoneCost(forgeLevel) {
   return FORGE_STONE_COST_BASE + forgeLevel * FORGE_STONE_COST_INC;
 }
 
+function computeExpeditionWoodCost(expeditionLevel) {
+  return EXPEDITION_WOOD_COST_BASE + expeditionLevel * EXPEDITION_WOOD_COST_INC;
+}
+
+function computeExpeditionStoneCost(expeditionLevel) {
+  return EXPEDITION_STONE_COST_BASE + expeditionLevel * EXPEDITION_STONE_COST_INC;
+}
+
+/**
+ * Compute the effective wood accumulation rate including the expedition map multiplier.
+ */
+function getEffectiveRate() {
+  const expeditionMultiplier = 1 + state.maps * EXPEDITION_WOOD_RATE_MULTIPLIER;
+  return state.rate * expeditionMultiplier;
+}
+
 /**
  * Apply offline catch-up: any elapsed time since last save is
  * converted into accumulated resources at current rates.
@@ -170,7 +200,8 @@ function catchUp() {
     // Capture snapshot before resources are added
     snapshotBeforeCatchUp = takeMilestoneSnapshot();
 
-    const woodGained = state.rate * elapsedSec;
+    const effectiveRate = getEffectiveRate();
+    const woodGained = effectiveRate * elapsedSec;
     state.wood += woodGained;
     state.totalWoodEarned += woodGained;
     let stoneGained = 0;
@@ -206,6 +237,8 @@ function loadPersisted() {
         state.totalStoneEarned = typeof saved.totalStoneEarned === "number" ? saved.totalStoneEarned : 0;
         state.wallLevel = typeof saved.wallLevel === "number" ? saved.wallLevel : 0;
         state.forgeLevel = typeof saved.forgeLevel === "number" ? saved.forgeLevel : 0;
+        state.expeditionLevel = typeof saved.expeditionLevel === "number" ? saved.expeditionLevel : 0;
+        state.maps = typeof saved.maps === "number" ? saved.maps : 0;
         state.stoneUnlocked = typeof saved.stoneUnlocked === "boolean" ? saved.stoneUnlocked : (state.upgradeLevel >= 1);
         state.timestamp = saved.timestamp;
         state.firstTimestamp = typeof saved.firstTimestamp === "string" ? saved.firstTimestamp : saved.timestamp;
@@ -222,8 +255,9 @@ function loadPersisted() {
 
 function tick() {
   const elapsed = TICK_MS / 1000;
-  state.wood += state.rate * elapsed;
-  state.totalWoodEarned += state.rate * elapsed;
+  const effectiveRate = getEffectiveRate();
+  state.wood += effectiveRate * elapsed;
+  state.totalWoodEarned += effectiveRate * elapsed;
   if (state.stoneUnlocked) {
     state.stone += computeStoneRate() * elapsed;
     state.totalStoneEarned += computeStoneRate() * elapsed;
@@ -398,6 +432,34 @@ export function forgeTool() {
 }
 
 /**
+ * Send a scout on an expedition: consumes wood and stone to earn 1 'map' resource.
+ * Each map permanently multiplies the wood accumulation rate by 1.05x (additive).
+ * Only available after forge level 5.
+ *
+ * Costs escalate with each expedition level.
+ *
+ * @returns {{ sent: boolean, reason?: string, state: GameState }}
+ */
+export function sendExpedition() {
+  if (state.forgeLevel < 5) {
+    return { sent: false, reason: "Reach forge level 5 before expeditions are available.", state: getState() };
+  }
+  const woodCost = computeExpeditionWoodCost(state.expeditionLevel);
+  const stoneCost = computeExpeditionStoneCost(state.expeditionLevel);
+  if (state.wood < woodCost) {
+    return { sent: false, reason: "Not enough wood — need " + woodCost, state: getState() };
+  }
+  if (state.stone < stoneCost) {
+    return { sent: false, reason: "Not enough stone — need " + stoneCost, state: getState() };
+  }
+  state.wood -= woodCost;
+  state.stone -= stoneCost;
+  state.expeditionLevel++;
+  state.maps++;
+  return { sent: true, state: getState() };
+}
+
+/**
  * Returns the amount of resources gained during the last offline catch-up.
  * Resets to { wood: 0, stone: 0 } after being read.
  *
@@ -436,6 +498,10 @@ export function getState() {
     forgeLevel: state.forgeLevel,
     forgeWoodCost: computeForgeWoodCost(state.forgeLevel),
     forgeStoneCost: computeForgeStoneCost(state.forgeLevel),
+    expeditionLevel: state.expeditionLevel,
+    maps: state.maps,
+    expeditionWoodCost: computeExpeditionWoodCost(state.expeditionLevel),
+    expeditionStoneCost: computeExpeditionStoneCost(state.expeditionLevel),
     stoneUnlocked: state.stoneUnlocked,
     timestamp: state.timestamp,
     firstTimestamp: state.firstTimestamp,
@@ -456,6 +522,8 @@ export function reset() {
     totalStoneEarned: 0,
     wallLevel: 0,
     forgeLevel: 0,
+    expeditionLevel: 0,
+    maps: 0,
     stoneUnlocked: false,
     timestamp: now(),
     firstTimestamp: null,
