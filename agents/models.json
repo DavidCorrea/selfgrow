@@ -6,8 +6,8 @@
       "why": "Paid head, $0.14/$0.28 per M tokens as of pi 0.84.2 — 47th cheapest of the 327 paid OpenRouter models pi knows, and the cheapest that is both coding-tuned and a current frontier-family model. Cheaper entries exist; they trade away the reasoning the Builder leans on."
     },
     {
-      "id": "openrouter/qwen/qwen3.7-flash",
-      "why": "The independent second opinion, and a different provider family from the head — which is the whole point of it. $0.03/$0.13 per M tokens (cheaper than the head), a reasoning model, and a 1M context window. Reviewer sessions are drawn from here whenever the Builder used the head."
+      "id": "openrouter/z-ai/glm-5.3-flash",
+      "why": "The independent second opinion, from a different provider family than the head — which is the whole point of it. Replaced qwen3.7-flash on 2026-09-27: about the same price ($0.045/$0.14 per M tokens on OpenRouter against $0.03/$0.13) and the highest Artificial Analysis Intelligence Index among the cheap flash models (42, current index; DeepSeek V4.1 Flash 39.5, Qwen Flash-Next 39.8). Reads images and video. Slow — about 57 tokens/s — which only a Reviewer or Playtester session pays, well inside their caps."
     }
   ]
 }
