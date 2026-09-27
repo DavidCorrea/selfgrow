@@ -2,12 +2,12 @@
   "_comment": "The text-model chain, as DATA so automation can rewrite it safely. TWO paid models from different provider families, and the count is deliberate: the chain is not a cost-saving device (spend is capped on the OpenRouter key) but the mechanism behind preferDifferentModel — the Reviewer must be able to be drawn from a different model than wrote the code, or review cannot disagree for independent reasons. A second entry is also a real fallback when the first provider is down. The five free models that used to sit below the head are gone: they were fallbacks for an exhausted free tier that no longer bounds anything, they cost a wasted request each on the way down, and one of them was documented as returning an unusable envelope in 18 of 42 sessions. Order still matters — the head writes the code. agents/pi-update.mjs no longer rewrites this file; it asserts it against the installed pi and reverts the bump if an id is gone. Edit by hand.",
   "text": [
     {
-      "id": "openrouter/deepseek/deepseek-v4-flash",
-      "why": "Paid head, $0.14/$0.28 per M tokens as of pi 0.84.2 — 47th cheapest of the 327 paid OpenRouter models pi knows, and the cheapest that is both coding-tuned and a current frontier-family model. Cheaper entries exist; they trade away the reasoning the Builder leans on."
+      "id": "openrouter/deepseek/deepseek-v4.1-flash",
+      "why": "Paid head, and the head writes the code. Replaced deepseek-v4-flash on 2026-09-27 for its agentic coding: DeepSWE v1.1 74.2 against 54.4, Terminal-Bench 4.0 31.2 against 7.0 (DeepSeek's own harness at max effort, so re-judged here by the merge and abandon rates Health reports). General knowledge is about level. Output costs more on OpenRouter ($0.035/$0.60 per M tokens against $0.047/$0.094) and input less; Builder sessions are mostly input, and the week's spend is the number that says whether it was worth it. It reads images, so it is also the Playtester's eyes now (firstVisionModel takes the first entry that can see)."
     },
     {
-      "id": "openrouter/qwen/qwen3.7-flash",
-      "why": "The independent second opinion, and a different provider family from the head — which is the whole point of it. $0.03/$0.13 per M tokens (cheaper than the head), a reasoning model, and a 1M context window. Reviewer sessions are drawn from here whenever the Builder used the head."
+      "id": "openrouter/z-ai/glm-5.3-flash",
+      "why": "The independent second opinion, from a different provider family than the head — which is the whole point of it. Replaced qwen3.7-flash on 2026-09-27: about the same price ($0.045/$0.14 per M tokens on OpenRouter against $0.03/$0.13) and the highest Artificial Analysis Intelligence Index among the cheap flash models (42, current index; DeepSeek V4.1 Flash 39.5, Qwen Flash-Next 39.8). Reads images and video. Slow — about 57 tokens/s — which only a Reviewer or Playtester session pays, well inside their caps."
     }
   ]
 }

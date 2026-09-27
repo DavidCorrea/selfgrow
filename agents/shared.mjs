@@ -414,8 +414,8 @@ async function resolveTextModels() {
 /**
  * The first configured model that accepts image input, or null when none does.
  *
- * Vision is a property of the model, not of the chain: `deepseek-v4-flash` at the
- * head is text-only, and pi drops image content for a model whose registry entry
+ * Vision is a property of the model, not of the chain: an entry can be text-only
+ * (the head was, until 2026-09-27), and pi drops image content for a model whose registry entry
  * does not declare `input: image` — silently, which is the failure mode worth
  * avoiding. So a caller that wants to send a picture pins the model this returns
  * rather than trusting whichever entry the chain reaches first.
