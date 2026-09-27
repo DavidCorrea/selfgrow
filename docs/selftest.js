@@ -1960,5 +1960,81 @@ export async function checks() {
     console.error(err);
   }
 
+  // ─── Offline summary overlay appears after any resource gain (no time guard) ───
+  // Issue #943: the overlay must appear after any reload where resources were gained,
+  // regardless of how short the absence was. The `elapsedSec > 3` guard was removed.
+  try {
+    const engine = await import("./engine.js");
+    const overlay = document.getElementById("offline-summary");
+    if (!overlay) {
+      problems.push("Expected #offline-summary to exist for overlay test.");
+    } else {
+      // Simulate a short absence (~2 seconds) that yields ~0.2 wood via catch-up
+      engine.reset();
+      const twoSecAgo = new Date(Date.now() - 2000).toISOString();
+      const shortState = JSON.stringify({
+        wood: 0, rate: 0.1, upgradeLevel: 0,
+        stone: 0, totalWoodEarned: 0, totalStoneEarned: 0,
+        wallLevel: 0, forgeLevel: 0, stoneUnlocked: false,
+        timestamp: twoSecAgo, firstTimestamp: null
+      });
+      localStorage.setItem("selfgrow-state", shortState);
+      engine.init(); // catches up ~0.2 wood, stores in offlineGained
+
+      // Ensure overlay starts hidden
+      overlay.setAttribute("hidden", "");
+
+      // Call showOfflineSummary
+      if (typeof window.__showOfflineSummary === "function") {
+        window.__showOfflineSummary();
+      } else {
+        problems.push("Expected window.__showOfflineSummary to be exposed — it was not found.");
+      }
+
+      if (overlay.hidden) {
+        problems.push("Offline summary overlay should be visible after showOfflineSummary() with positive wood gain from a short absence.");
+      }
+
+      if (!overlay.hidden) {
+        // Verify the wood amount is displayed
+        const woodAmountEl = document.getElementById("offline-wood-amount");
+        if (woodAmountEl) {
+          const text = woodAmountEl.textContent.trim();
+          const num = parseFloat(text);
+          if (isNaN(num) || num <= 0) {
+            problems.push(`Offline summary wood amount should be a positive number, got "${text}".`);
+          }
+          // Should show at least one decimal place for small gains
+          if (num < 1 && !text.includes(".")) {
+            problems.push(`Offline summary wood amount (${text}) should include at least one decimal place for small gains < 1.`);
+          }
+        }
+
+        // Dismiss and verify
+        const dismissBtn = document.getElementById("btn-dismiss-offline");
+        if (dismissBtn) {
+          dismissBtn.click();
+          if (!overlay.hidden) {
+            problems.push("Offline summary overlay should be hidden after dismiss button click.");
+          }
+          // Verify action buttons are re-enabled
+          const btnG = document.getElementById("btn-gather");
+          if (btnG && btnG.disabled) {
+            problems.push("Expected #btn-gather to be enabled after dismissing offline summary.");
+          }
+        } else {
+          problems.push("Expected #btn-dismiss-offline for overlay test.");
+        }
+      }
+    }
+
+    // Clean up
+    engine.reset();
+    engine.init();
+  } catch (err) {
+    problems.push(`Offline summary overlay test threw: ${err.message}`);
+    console.error(err);
+  }
+
   return problems;
 }
