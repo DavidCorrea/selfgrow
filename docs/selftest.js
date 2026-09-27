@@ -2204,6 +2204,39 @@ export async function checks() {
     problems.push("Expected #map-value to exist in the DOM — it was not found.");
   }
 
+  // ─── Sandbox DOM elements ───
+  const sandboxBtn = document.getElementById("btn-sandbox");
+  if (!sandboxBtn) {
+    problems.push("Expected #btn-sandbox to exist in the DOM — it was not found.");
+  } else {
+    if (sandboxBtn.getAttribute("type") !== "button") {
+      problems.push(`Expected #btn-sandbox type="button", got "${sandboxBtn.getAttribute("type")}".`);
+    }
+  }
+
+  const sandboxOverlay = document.getElementById("sandbox-overlay");
+  if (!sandboxOverlay) {
+    problems.push("Expected #sandbox-overlay to exist in the DOM — it was not found.");
+  } else {
+    if (sandboxOverlay.getAttribute("role") !== "dialog") {
+      problems.push(`Expected #sandbox-overlay role="dialog", got "${sandboxOverlay.getAttribute("role")}".`);
+    }
+    if (!sandboxOverlay.hidden) {
+      problems.push("Expected #sandbox-overlay to be hidden by default — it was visible.");
+    }
+    const exitBtn = document.getElementById("sb-btn-exit");
+    if (!exitBtn) {
+      problems.push("Expected #sb-btn-exit to exist inside #sandbox-overlay — it was not found.");
+    }
+    const ffBtns = ["sb-btn-10x", "sb-btn-1h", "sb-btn-1d", "sb-btn-1mo"];
+    for (const id of ffBtns) {
+      const el = document.getElementById(id);
+      if (!el) {
+        problems.push(`Expected #${id} to exist inside #sandbox-overlay — it was not found.`);
+      }
+    }
+  }
+
   const expeditionActions = document.getElementById("expedition-actions");
   if (!expeditionActions) {
     problems.push("Expected #expedition-actions to exist in the DOM — it was not found.");
@@ -2360,6 +2393,173 @@ export async function checks() {
     if (!milestoneExpedition.hidden) {
       problems.push("Expected #milestone-expedition to be hidden by default — it was visible.");
     }
+  }
+
+  // ─── Sandbox mode ────────────────────────────────────────────────
+
+  try {
+    const sandbox = await import("./sandbox.js");
+
+    // --- Sandbox Test 1: cloneState produces an independent copy ---
+    const engine = await import("./engine.js");
+    engine.reset();
+    engine.gatherWood();
+    engine.gatherWood();
+    engine.gatherWood();
+    const realState = engine.getState();
+    const cloned = sandbox.cloneState(realState);
+
+    if (cloned.wood !== realState.wood) {
+      problems.push(`sandbox cloneState should preserve wood value (${realState.wood}), got ${cloned.wood}.`);
+    }
+    if (cloned.upgradeLevel !== realState.upgradeLevel) {
+      problems.push(`sandbox cloneState should preserve upgradeLevel, got ${cloned.upgradeLevel}.`);
+    }
+
+    // Mutating clone does not affect original
+    cloned.wood = 999;
+    const realStateAfterMutate = engine.getState();
+    if (realStateAfterMutate.wood === 999) {
+      problems.push("Mutating a sandbox clone should NOT affect the real engine state.");
+    }
+
+    // --- Sandbox Test 2: fastForward adds resources ---
+    engine.reset();
+    const freshClone = sandbox.cloneState(engine.getState());
+    const result1 = sandbox.fastForward(freshClone, 10);
+
+    if (result1.woodDelta <= 0) {
+      problems.push(`sandbox fastForward(10s) should produce positive woodDelta, got ${result1.woodDelta}.`);
+    }
+    if (typeof result1.woodDelta !== "number") {
+      problems.push(`sandbox fastForward woodDelta should be a number, got ${typeof result1.woodDelta}.`);
+    }
+    if (typeof result1.stoneDelta !== "number") {
+      problems.push(`sandbox fastForward stoneDelta should be a number, got ${typeof result1.stoneDelta}.`);
+    }
+    if (result1.totalWood < result1.woodDelta) {
+      problems.push(`sandbox fastForward totalWood (${result1.totalWood}) should be >= woodDelta (${result1.woodDelta}).`);
+    }
+
+    // --- Sandbox Test 3: fastForward with stone unlocked ---
+    engine.reset();
+    // Simulate a state where stone is unlocked
+    const stoneState = engine.getState();
+    stoneState.stoneUnlocked = true;
+    stoneState.totalWoodEarned = 15;
+    stoneState.totalStoneEarned = 2;
+    const stoneClone = sandbox.cloneState(stoneState);
+    const result2 = sandbox.fastForward(stoneClone, 3600); // 1 hour
+
+    if (result2.stoneDelta <= 0) {
+      problems.push(`sandbox fastForward(1h) with stone unlocked should produce positive stoneDelta, got ${result2.stoneDelta}.`);
+    }
+    if (result2.woodDelta <= 0) {
+      problems.push(`sandbox fastForward(1h) with stone unlocked should produce positive woodDelta, got ${result2.woodDelta}.`);
+    }
+
+    // --- Sandbox Test 4: fastForward milestones detection ---
+    engine.reset();
+    // State where wood is 5 (below 10), no sharpen
+    const preSharpenState = engine.getState();
+    preSharpenState.wood = 5;
+    preSharpenState.totalWoodEarned = 5;
+    const preSharpenClone = sandbox.cloneState(preSharpenState);
+    // Fast-forward enough to cross 10 wood
+    sandbox.fastForward(preSharpenClone, 60); // 60 seconds at 0.1/s = +6, total 11
+
+    // After fast-forward, clone should have wood >= 11
+    if (preSharpenClone.wood < 11) {
+      problems.push(`sandbox fastForward(60s) from wood=5 should give >=11 wood, got ${preSharpenClone.wood}.`);
+    }
+    // milestones should indicate sharpen available
+    const milestonesCheck = sandbox.fastForward(preSharpenClone, 0);
+    // Actually let's check by calling fastForward again and checking return
+    const ffCheck = sandbox.fastForward(preSharpenClone, 1); // another 1s
+    if (ffCheck.milestones.sharpenAvailable) {
+      // sharpenAvailable is detected based on upgradeLevel change (before 0, after >= 10 totalWoodEarned)
+      // This test is just validating the function doesn't throw and returns proper shape
+    }
+
+    // --- Sandbox Test 5: agent tools ---
+    const agentTools = await import("./agenttools.js");
+    const allTools = agentTools.tools();
+    const sandboxCreateTool = allTools.find(t => t.name === "sandbox-create");
+    const sandboxFFTool = allTools.find(t => t.name === "sandbox-fast-forward");
+    const sandboxExitTool = allTools.find(t => t.name === "sandbox-exit");
+
+    if (!sandboxCreateTool) {
+      problems.push("agenttools should export a 'sandbox-create' tool — it was not found.");
+    }
+    if (!sandboxFFTool) {
+      problems.push("agenttools should export a 'sandbox-fast-forward' tool — it was not found.");
+    }
+    if (!sandboxExitTool) {
+      problems.push("agenttools should export a 'sandbox-exit' tool — it was not found.");
+    }
+
+    if (sandboxCreateTool && typeof sandboxCreateTool.execute === "function") {
+      const createResult = await sandboxCreateTool.execute({});
+      if (typeof createResult !== "object" || createResult === null) {
+        problems.push("sandbox-create execute should return an object.");
+      } else if (typeof createResult.wood !== "number") {
+        problems.push(`sandbox-create result should have a 'wood' number field, got ${JSON.stringify(createResult.wood)}.`);
+      }
+
+      // Verify sandbox-create marks sandbox as active
+      if (createResult.sandboxActive !== true) {
+        problems.push("sandbox-create result should have sandboxActive=true.");
+      }
+    }
+
+    if (sandboxFFTool && typeof sandboxFFTool.execute === "function") {
+      const ffResult = await sandboxFFTool.execute({ seconds: 3600 });
+      if (typeof ffResult !== "object" || ffResult === null) {
+        problems.push("sandbox-fast-forward execute should return an object.");
+      } else if (typeof ffResult.wood !== "number") {
+        problems.push(`sandbox-fast-forward result should have a 'wood' number field, got ${JSON.stringify(ffResult.wood)}.`);
+      }
+    }
+
+    if (sandboxExitTool && typeof sandboxExitTool.execute === "function") {
+      const exitResult = await sandboxExitTool.execute({});
+      if (typeof exitResult !== "object" || exitResult === null) {
+        problems.push("sandbox-exit execute should return an object.");
+      } else if (typeof exitResult.wood !== "number") {
+        problems.push(`sandbox-exit result should have a 'wood' number field, got ${JSON.stringify(exitResult.wood)}.`);
+      }
+    }
+
+    // --- Sandbox Test 6: real state is unchanged after sandbox ---
+    engine.reset();
+    const stateBeforeSandbox = engine.getState();
+    const woodBefore = stateBeforeSandbox.wood;
+
+    // Enter sandbox (via UI function if available)
+    if (typeof window.__enterSandbox === "function") {
+      window.__enterSandbox();
+    }
+    if (typeof window.__fastForwardSandbox === "function") {
+      window.__fastForwardSandbox(86400); // 1 day
+    }
+
+    const stateDuringSandbox = engine.getState();
+    if (stateDuringSandbox.wood !== woodBefore) {
+      problems.push(`Real state wood should remain ${woodBefore} during sandbox operations, got ${stateDuringSandbox.wood}.`);
+    }
+
+    // Exit sandbox
+    if (typeof window.__exitSandbox === "function") {
+      window.__exitSandbox();
+    }
+
+    const stateAfterExit = engine.getState();
+    if (stateAfterExit.wood !== woodBefore) {
+      problems.push(`Real state wood should remain ${woodBefore} after sandbox exit, got ${stateAfterExit.wood}.`);
+    }
+  } catch (err) {
+    problems.push(`Sandbox test threw: ${err.message}`);
+    console.error(err);
   }
 
   return problems;

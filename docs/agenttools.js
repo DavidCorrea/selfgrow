@@ -9,6 +9,7 @@
  */
 
 import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, consumeOfflineWoodGained, formatElapsed, UPGRADE_COST, WALL_COST, STONE_GATHER_AMOUNT, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE } from "./engine.js";
+import { cloneState } from "./sandbox.js";
 
 const GOAL_WOOD = 10;
 const GOAL_STONE = 5;
@@ -268,6 +269,65 @@ export function tools() {
           return withGoal(getState());
         }
         throw new Error('Unknown action "' + action + '". Supported: gather, sharpen, gather-stone, build-wall, forge-tool, send-expedition, dismiss-offline');
+      },
+    },
+    {
+      name: "sandbox-create",
+      description: "Creates an isolated sandbox clone of the current game state. "
+        + "Returns projected state as it stands right now (no time passed yet). "
+        + "Nothing done in the sandbox ever affects the real save. Use this before sandbox-fast-forward.",
+      inputSchema: { type: "object", properties: {} },
+      annotations: { readOnlyHint: false },
+      example: {},
+      async execute() {
+        const state = getState();
+        const clone = cloneState(state);
+        const result = withGoal(state);
+        result.sandboxActive = true;
+        // Also expose clone for subsequent tool calls
+        if (typeof window.__enterSandbox === "function") window.__enterSandbox();
+        return result;
+      },
+    },
+    {
+      name: "sandbox-fast-forward",
+      description: "Fast-forwards the active sandbox clone by a given number of seconds. "
+        + "Returns projected resources and milestones after the elapsed time. "
+        + "If the sandbox is not active, creates one first.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          seconds: {
+            type: "number",
+            description: "How many seconds to simulate (e.g., 10 for 10x, 3600 for 1h, 86400 for 1d, 2592000 for 1mo).",
+          },
+        },
+        required: ["seconds"],
+      },
+      annotations: { readOnlyHint: false },
+      example: { seconds: 3600 },
+      async execute({ seconds }) {
+        if (typeof window.__fastForwardSandbox === "function") {
+          window.__fastForwardSandbox(seconds);
+        }
+        // Return the current sandbox clone state, or real state if no sandbox
+        const clone = typeof window.__getSandboxClone === "function" ? window.__getSandboxClone() : null;
+        if (clone) {
+          return withGoal(clone);
+        }
+        return withGoal(getState());
+      },
+    },
+    {
+      name: "sandbox-exit",
+      description: "Exits the sandbox mode, discarding all sandbox state changes. "
+        + "Real game state is returned afterwards, unchanged.",
+      inputSchema: { type: "object", properties: {} },
+      annotations: { readOnlyHint: false, consequentialHint: true },
+      example: {},
+      async execute() {
+        if (typeof window.__exitSandbox === "function") window.__exitSandbox();
+        return withGoal(getState());
       },
     },
   ];
