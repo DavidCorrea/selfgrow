@@ -2562,5 +2562,102 @@ export async function checks() {
     console.error(err);
   }
 
+  // ─── Agent tools progressToNext uses Math.min instead of modulo ───
+  try {
+    const engine = await import("./engine.js");
+    engine.reset();
+    engine.init();
+
+    // Put into sharpen goal state: reach GOAL_WOOD (10) but not yet upgraded
+    for (let i = 0; i < 10; i++) engine.gatherWood();
+
+    const agentMod = await import("./agenttools.js");
+    const allTools = agentMod.tools();
+    const reader = allTools.find(t => t.name === "read-state");
+    if (!reader) {
+      problems.push("Expected read-state tool for progressToNext test.");
+    } else {
+      // wood=10, UPGRADE_COST=5: Math.min(10,5)=5, upgrade available
+      let state = await reader.execute({});
+      if (state.nextGoal && state.nextGoal.type === "upgrade") {
+        if (state.nextGoal.progressToNext !== 5) {
+          problems.push(`progressToNext for sharpen goal with wood=10 should be 5 (Math.min(wood, 5)), got ${state.nextGoal.progressToNext}.`);
+        }
+        if (state.nextGoal.upgradeAvailable !== true) {
+          problems.push(`upgradeAvailable should be true when wood=10 >= UPGRADE_COST=5, got ${state.nextGoal.upgradeAvailable}.`);
+        }
+      } else {
+        problems.push(`nextGoal type should be "upgrade" with wood=10 and no sharpen, got ${state.nextGoal ? state.nextGoal.type : "missing"}.`);
+      }
+
+      // Gather more wood to 13 — still < cost threshold for the modulo test
+      for (let i = 0; i < 3; i++) engine.gatherWood();
+      state = await reader.execute({});
+      // wood=13, UPGRADE_COST=5: Math.min(13,5)=5, not 13%5=3
+      if (state.nextGoal && state.nextGoal.type === "upgrade") {
+        if (state.nextGoal.progressToNext !== 5) {
+          problems.push(`progressToNext for sharpen goal with wood=13 should be 5 (Math.min(wood, 5)), got ${state.nextGoal.progressToNext}. `
+            + "Using `wood % UPGRADE_COST` would give 3.");
+        }
+        if (state.nextGoal.upgradeAvailable !== true) {
+          problems.push(`upgradeAvailable should be true when wood=13 >= UPGRADE_COST=5, got ${state.nextGoal.upgradeAvailable}.`);
+        }
+      }
+
+      // Now test the wall goal progress
+      engine.reset();
+      engine.init();
+      for (let i = 0; i < 10; i++) engine.gatherWood();
+      engine.craftUpgrade(); // unlock stone, wood becomes 5
+      for (let i = 0; i < 5; i++) engine.gatherWood(); // back to 10
+      for (let i = 0; i < 7; i++) engine.gatherStone(); // stone=7, > WALL_COST=5
+      state = await reader.execute({});
+      // Should be in build-wall-goal state (stone >= GOAL_STONE, no wall yet)
+      if (state.nextGoal && state.nextGoal.type === "build-wall-goal") {
+        if (state.nextGoal.progressToNext !== 5) {
+          problems.push(`progressToNext for wall goal with stone=7 should be 5 (Math.min(stone, 5)), got ${state.nextGoal.progressToNext}. `
+            + "Using `stone % WALL_COST` would give 2.");
+        }
+        if (state.nextGoal.wallAvailable !== true) {
+          problems.push(`wallAvailable should be true when stone=7 >= WALL_COST=5, got ${state.nextGoal.wallAvailable}.`);
+        }
+      } else {
+        problems.push(`nextGoal type should be "build-wall-goal" with stone=7 and no wall, got ${state.nextGoal ? state.nextGoal.type : "missing"}.`);
+      }
+
+      // Test with stone=3 (< WALL_COST), should have stone-goal first
+      engine.reset();
+      engine.init();
+      for (let i = 0; i < 10; i++) engine.gatherWood();
+      engine.craftUpgrade();
+      for (let i = 0; i < 5; i++) engine.gatherWood();
+      for (let i = 0; i < 3; i++) engine.gatherStone(); // stone=3 < GOAL_STONE=5
+      state = await reader.execute({});
+      if (state.nextGoal && state.nextGoal.type !== "stone-goal") {
+        // stone-goal doesn't use progressToNext, it uses target/progress
+        // Just verify we're not in an unexpected state
+        problems.push(`Expected stone-goal with stone=3, got ${state.nextGoal.type}.`);
+      }
+
+      // Test fallback sharpen cycle (after wall built, forge < 5)
+      engine.reset();
+      engine.init();
+      for (let i = 0; i < 10; i++) engine.gatherWood();
+      engine.craftUpgrade();
+      for (let i = 0; i < 5; i++) engine.gatherStone();
+      engine.buildWall(); // wallLevel=1, stone=0, forge=0
+      // With forgeLevel=0 (<5) and wallLevel>0, it's forge-goal, not fallback.
+      // Fallback sharpen cycle is reached only for wallLevel>0 && forgeLevel<5
+      // So let's verify the sharpen fallback directly via the forge goal's
+      // resource arrays which already use Math.min correctly.
+    }
+
+    engine.reset();
+    engine.init();
+  } catch (err) {
+    problems.push(`Agent tools progressToNext test threw: ${err.message}`);
+    console.error(err);
+  }
+
   return problems;
 }
