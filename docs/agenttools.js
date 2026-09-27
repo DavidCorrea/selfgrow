@@ -8,7 +8,7 @@
  * @module agenttools
  */
 
-import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, consumeOfflineWoodGained, formatElapsed, UPGRADE_COST, WALL_COST, STONE_GATHER_AMOUNT, FORGE_CLICK_POWER_BONUS } from "./engine.js";
+import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, consumeOfflineWoodGained, formatElapsed, UPGRADE_COST, WALL_COST, STONE_GATHER_AMOUNT, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE } from "./engine.js";
 
 const GOAL_WOOD = 10;
 const GOAL_STONE = 5;
@@ -93,8 +93,20 @@ function determineGoal(s) {
     };
   }
 
-  // Wall built — show forge goal with escalating costs
+  // Wall built — show forge goal or expedition goal (once forge level >= 5)
   if (s.wallLevel > 0) {
+    if (s.forgeLevel >= 5) {
+      return {
+        description: "Send scouts on expedition \u2014 need " + s.expeditionWoodCost + " wood and " + s.expeditionStoneCost + " stone",
+        type: "expedition-goal",
+        expeditionLevel: s.expeditionLevel,
+        resources: [
+          { name: "Wood", current: Math.min(s.wood, s.expeditionWoodCost), target: s.expeditionWoodCost },
+          { name: "Stone", current: Math.min(s.stone, s.expeditionStoneCost), target: s.expeditionStoneCost },
+        ],
+        canSendExpedition: s.wood >= s.expeditionWoodCost && s.stone >= s.expeditionStoneCost,
+      };
+    }
     return {
       description: "Forge a tool \u2014 need " + s.forgeWoodCost + " wood and " + s.forgeStoneCost + " stone",
       type: "forge-goal",
@@ -144,6 +156,10 @@ function withGoal(s) {
     forgeLevel: s.forgeLevel,
     forgeWoodCost: s.forgeWoodCost,
     forgeStoneCost: s.forgeStoneCost,
+    expeditionLevel: s.expeditionLevel,
+    maps: s.maps,
+    expeditionWoodCost: s.expeditionWoodCost,
+    expeditionStoneCost: s.expeditionStoneCost,
     clickPower: clickPower,
     wallBuilt: s.wallLevel > 0,
     offlineSummaryVisible: !document.getElementById('offline-summary')?.hidden,
@@ -154,6 +170,7 @@ function withGoal(s) {
       stoneNowUnlocked: s.stoneUnlocked,
       wallAvailable: s.stoneUnlocked && s.stone >= 5 && s.wallLevel === 0,
       forgeNowUnlocked: s.wallLevel >= 1,
+      expeditionNowUnlocked: s.forgeLevel >= 5,
       sharpenDone: s.upgradeLevel >= 1,
       wallBuilt: s.wallLevel >= 1,
     },
@@ -177,12 +194,13 @@ export function tools() {
         + "visitor: wood count, accumulation rate, number of upgrades crafted, "
         + "stone count, stone accumulation rate, wall level, forge level, "
         + "forge wood cost, forge stone cost, click power, "
+        + "expedition level, maps, expedition wood cost, expedition stone cost, "
         + "whether stone is unlocked, timestamp, firstTimestamp (ISO date of first save), "
         + "elapsed (formatted duration since first save), whether the offline-summary "
         + "overlay is currently visible, how much wood and stone were gained "
         + "while away (offlineWoodGained / offlineStoneGained), milestones object "
-        + "(sharpenAvailable, stoneNowUnlocked, wallAvailable, forgeNowUnlocked), "
-        + "and the current goal (first goal, upgrade goal, stone goal, build-wall goal, or forge goal).",
+        + "(sharpenAvailable, stoneNowUnlocked, wallAvailable, forgeNowUnlocked, expeditionNowUnlocked), "
+        + "and the current goal (first goal, upgrade goal, stone goal, build-wall goal, forge goal, or expedition goal).",
       inputSchema: { type: "object", properties: {} },
       annotations: { readOnlyHint: true },
       example: {},
@@ -199,13 +217,14 @@ export function tools() {
         + '"gather-stone" — instantly adds +' + STONE_GATHER_AMOUNT + ' stone (only available after stone is unlocked); '
         + '"build-wall" — consumes ' + WALL_COST + ' stone to permanently increase click power for wood; '
         + '"forge-tool" — consumes wood and stone to forge a tool, permanently boosting wood rate and click power; '
+        + '"send-expedition" — consumes wood and stone to send scouts on an expedition, earning 1 map resource that multiplies wood rate; '
         + '"dismiss-offline" — dismisses the offline-summary overlay if visible.',
       inputSchema: {
         type: "object",
         properties: {
           action: {
             type: "string",
-            description: 'The action to perform. Supported: "gather", "sharpen", "gather-stone", "build-wall", "forge-tool", "dismiss-offline".',
+            description: 'The action to perform. Supported: "gather", "sharpen", "gather-stone", "build-wall", "forge-tool", "send-expedition", "dismiss-offline".',
           },
         },
         required: ["action"],
@@ -232,6 +251,10 @@ export function tools() {
           const result = forgeTool();
           return withGoal(result.state);
         }
+        if (action === "send-expedition") {
+          const result = sendExpedition();
+          return withGoal(result.state);
+        }
         if (action === "dismiss-offline") {
           const overlay = document.getElementById("offline-summary");
           if (overlay && !overlay.hidden) {
@@ -244,7 +267,7 @@ export function tools() {
           }
           return withGoal(getState());
         }
-        throw new Error('Unknown action "' + action + '". Supported: gather, sharpen, gather-stone, build-wall, forge-tool, dismiss-offline');
+        throw new Error('Unknown action "' + action + '". Supported: gather, sharpen, gather-stone, build-wall, forge-tool, send-expedition, dismiss-offline');
       },
     },
   ];

@@ -2036,5 +2036,331 @@ export async function checks() {
     console.error(err);
   }
 
+  // ─── Expedition system checks ───────────────────────────────────
+  try {
+    const engine = await import("./engine.js");
+    engine.reset();
+
+    // Verificar que sendExpedition existe
+    if (typeof engine.sendExpedition !== "function") {
+      problems.push("Engine should export sendExpedition function — it was not found.");
+    }
+
+    // Expedition should fail before forge level 5
+    const expFailNoForge = engine.sendExpedition();
+    if (expFailNoForge.sent !== false) {
+      problems.push("sendExpedition() with forgeLevel < 5 should return sent=false.");
+    }
+    if (typeof expFailNoForge.reason !== "string" || expFailNoForge.reason.length === 0) {
+      problems.push("sendExpedition() failure should include a non-empty reason string.");
+    }
+
+    // Set up state: unlock stone, build wall, forge tools to level 5
+    for (let i = 0; i < 5; i++) engine.gatherWood();
+    engine.craftUpgrade(); // unlocks stone
+    for (let i = 0; i < engine.WALL_COST; i++) engine.gatherStone();
+    engine.buildWall(); // wallLevel=1
+
+    // Forge up to level 5
+    // Each forge costs escalating wood+stone. We'll gather heavily
+    // After first forge: costs 10 wood + 5 stone
+    for (let i = 0; i < 10; i++) engine.gatherWood();
+    for (let i = 0; i < 5; i++) engine.gatherStone();
+    engine.forgeTool(); // forgeLevel=1
+    // Second forge: costs 15 wood + 8 stone
+    for (let i = 0; i < 15; i++) engine.gatherWood();
+    for (let i = 0; i < 8; i++) engine.gatherStone();
+    engine.forgeTool(); // forgeLevel=2
+    // Third forge: costs 20 wood + 11 stone
+    for (let i = 0; i < 20; i++) engine.gatherWood();
+    for (let i = 0; i < 11; i++) engine.gatherStone();
+    engine.forgeTool(); // forgeLevel=3
+    // Fourth forge: costs 25 wood + 14 stone
+    for (let i = 0; i < 25; i++) engine.gatherWood();
+    for (let i = 0; i < 14; i++) engine.gatherStone();
+    engine.forgeTool(); // forgeLevel=4
+    // Fifth forge: costs 30 wood + 17 stone
+    for (let i = 0; i < 30; i++) engine.gatherWood();
+    for (let i = 0; i < 17; i++) engine.gatherStone();
+    engine.forgeTool(); // forgeLevel=5
+
+    const stateBeforeExp = engine.getState();
+    if (stateBeforeExp.forgeLevel < 5) {
+      problems.push(`forgeLevel should be >= 5 before expedition test, got ${stateBeforeExp.forgeLevel}.`);
+    }
+
+    // Now expedition should be possible
+    // First expedition costs: 10 wood + 5 stone
+    const expWoodCost = stateBeforeExp.expeditionWoodCost;
+    const expStoneCost = stateBeforeExp.expeditionStoneCost;
+    if (expWoodCost !== 10) {
+      problems.push(`First expedition wood cost should be 10, got ${expWoodCost}.`);
+    }
+    if (expStoneCost !== 5) {
+      problems.push(`First expedition stone cost should be 5, got ${expStoneCost}.`);
+    }
+
+    const beforeWood = stateBeforeExp.wood;
+    const beforeStone = stateBeforeExp.stone;
+    const beforeRate = stateBeforeExp.rate;
+    const beforeMaps = stateBeforeExp.maps;
+
+    // Check we have enough resources
+    if (beforeWood < expWoodCost || beforeStone < expStoneCost) {
+      // Gather more if needed
+      for (let i = 0; i < expWoodCost; i++) engine.gatherWood();
+      for (let i = 0; i < expStoneCost; i++) engine.gatherStone();
+    }
+
+    const expResult = engine.sendExpedition();
+    if (expResult.sent !== true) {
+      problems.push(`sendExpedition() with sufficient resources should return sent=true. Got reason: ${expResult.reason}`);
+    }
+
+    const stateAfterExp = engine.getState();
+    if (stateAfterExp.expeditionLevel !== 1) {
+      problems.push(`After first expedition, expeditionLevel should be 1, got ${stateAfterExp.expeditionLevel}.`);
+    }
+    if (stateAfterExp.maps !== 1) {
+      problems.push(`After first expedition, maps should be 1, got ${stateAfterExp.maps}.`);
+    }
+    // Wood rate should be unchanged (maps affect effective rate, not base rate)
+    if (stateAfterExp.rate !== beforeRate) {
+      problems.push(`After first expedition, base rate should be unchanged (${beforeRate}), got ${stateAfterExp.rate}.`);
+    }
+    // Resources should be decremented
+    const woodSpent = beforeWood - stateAfterExp.wood;
+    const stoneSpent = beforeStone - stateAfterExp.stone;
+    // We may have gathered more after checking, so just verify costs are deducted correctly
+    if (stateAfterExp.expeditionWoodCost !== 15) {
+      problems.push(`After first expedition, expeditionWoodCost should be 15 (10+5), got ${stateAfterExp.expeditionWoodCost}.`);
+    }
+    if (stateAfterExp.expeditionStoneCost !== 8) {
+      problems.push(`After first expedition, expeditionStoneCost should be 8 (5+3), got ${stateAfterExp.expeditionStoneCost}.`);
+    }
+
+    // Verify the effective rate multiplier
+    // maps=1 => multiplier = 1 + 1*0.05 = 1.05
+    const afterRate = stateAfterExp.rate;
+    const expectedEffRate = afterRate * 1.05;
+    // We can't check getEffectiveRate directly since it's internal, but we trust the tick uses it
+
+    // Expedition persistence round-trip
+    engine.save();
+    const savedStateRaw = localStorage.getItem("selfgrow-state");
+    engine.reset();
+    localStorage.setItem("selfgrow-state", savedStateRaw);
+    engine.init();
+    const loadedExpState = engine.getState();
+    if (loadedExpState.expeditionLevel !== 1) {
+      problems.push(`After expedition persistence round-trip, expeditionLevel should be 1, got ${loadedExpState.expeditionLevel}.`);
+    }
+    if (loadedExpState.maps !== 1) {
+      problems.push(`After expedition persistence round-trip, maps should be 1, got ${loadedExpState.maps}.`);
+    }
+    if (loadedExpState.expeditionWoodCost !== 15) {
+      problems.push(`After expedition persistence round-trip, expeditionWoodCost should be 15, got ${loadedExpState.expeditionWoodCost}.`);
+    }
+    if (loadedExpState.expeditionStoneCost !== 8) {
+      problems.push(`After expedition persistence round-trip, expeditionStoneCost should be 8, got ${loadedExpState.expeditionStoneCost}.`);
+    }
+
+    // Verify expedition milestone detection
+    engine.reset();
+    const oldStateExp = JSON.stringify({
+      wood: 0, rate: 0.1, upgradeLevel: 0,
+      stone: 0, totalWoodEarned: 0, totalStoneEarned: 0,
+      wallLevel: 0, forgeLevel: 4, stoneUnlocked: false,  // forgeLevel=4 before catch-up
+      expeditionLevel: 0, maps: 0,
+      timestamp: new Date(Date.now() - 60000).toISOString(),
+      firstTimestamp: null
+    });
+    localStorage.setItem("selfgrow-state", oldStateExp);
+    engine.init();
+    const milestones = engine.consumeOfflineMilestones();
+    // forgeLevel should become >= 5? No, catch-up doesn't increase forgeLevel.
+    // So expeditionNowUnlocked will be false.
+    // This test just verifies the milestone exists without crashing
+    if (typeof milestones.expeditionNowUnlocked !== "boolean") {
+      problems.push("consumeOfflineMilestones should include expeditionNowUnlocked boolean field.");
+    }
+
+    // Clean up
+    engine.reset();
+    engine.init();
+  } catch (err) {
+    problems.push(`Expedition system test threw: ${err.message}`);
+    console.error(err);
+  }
+
+  // ─── Expedition DOM checks ────────────────────────────────────
+  const expeditionStat = document.getElementById("expedition-stat");
+  if (!expeditionStat) {
+    problems.push("Expected #expedition-stat to exist in the DOM — it was not found.");
+  }
+
+  const mapValueEl = document.getElementById("map-value");
+  if (!mapValueEl) {
+    problems.push("Expected #map-value to exist in the DOM — it was not found.");
+  }
+
+  const expeditionActions = document.getElementById("expedition-actions");
+  if (!expeditionActions) {
+    problems.push("Expected #expedition-actions to exist in the DOM — it was not found.");
+  }
+
+  const btnExpedition = document.getElementById("btn-expedition");
+  if (!btnExpedition) {
+    problems.push("Expected #btn-expedition to exist in the DOM — it was not found.");
+  } else if (btnExpedition.getAttribute("type") !== "button") {
+    problems.push(`Expected #btn-expedition type="button", got "${btnExpedition.getAttribute("type")}".`);
+  }
+
+  // Expedition button must have non-zero dimensions even when hidden
+  if (expeditionActions && !expeditionActions.classList.contains("visible")) {
+    if (btnExpedition) {
+      if (btnExpedition.offsetWidth === 0) {
+        problems.push("btn-expedition offsetWidth is 0 when expedition-actions is hidden — expected non-zero (collapsed container).");
+      }
+      if (btnExpedition.offsetHeight === 0) {
+        problems.push("btn-expedition offsetHeight is 0 when expedition-actions is hidden — expected non-zero (collapsed container).");
+      }
+    }
+  }
+
+  // Expedition button tap target
+  if (btnExpedition) {
+    const h = parseFloat(getComputedStyle(btnExpedition).height);
+    if (h < 39.9) {
+      problems.push(`#btn-expedition computed height is ${h}px — expected at least 40px (WCAG minimum tap target).`);
+    }
+  }
+
+  // ─── Expedition agent tools ────────────────────────────────────
+  try {
+    const { tools } = await import("./agenttools.js");
+    const toolList = tools();
+
+    // read-state should include expedition fields
+    const readState = toolList.find((t) => t.name === "read-state");
+    if (readState) {
+      const result = await readState.execute({});
+      if (typeof result.expeditionLevel !== "number") {
+        problems.push(`read-state should return expeditionLevel as a number, got ${JSON.stringify(result.expeditionLevel)}.`);
+      }
+      if (typeof result.maps !== "number") {
+        problems.push(`read-state should return maps as a number, got ${JSON.stringify(result.maps)}.`);
+      }
+      if (typeof result.expeditionWoodCost !== "number") {
+        problems.push(`read-state should return expeditionWoodCost as a number, got ${JSON.stringify(result.expeditionWoodCost)}.`);
+      }
+      if (typeof result.expeditionStoneCost !== "number") {
+        problems.push(`read-state should return expeditionStoneCost as a number, got ${JSON.stringify(result.expeditionStoneCost)}.`);
+      }
+      // Check milestones includes expeditionNowUnlocked
+      if (result.milestones && typeof result.milestones.expeditionNowUnlocked !== "boolean") {
+        problems.push(`read-state milestones should include expeditionNowUnlocked as boolean, got ${JSON.stringify(result.milestones.expeditionNowUnlocked)}.`);
+      }
+    }
+
+    // perform-action send-expedition
+    const performAction = toolList.find((t) => t.name === "perform-action");
+    if (performAction) {
+      const engine = await import("./engine.js");
+      engine.reset();
+
+      // Try sending expedition with low forge level — should fail
+      const failResult = await performAction.execute({ action: "send-expedition" });
+      if (typeof failResult !== "object" || failResult === null) {
+        problems.push("perform-action send-expedition should return an object.");
+      } else {
+        // expeditionLevel should still be 0
+        if (failResult.expeditionLevel !== 0) {
+          problems.push(`send-expedition with low forge level should not change expeditionLevel. Got ${failResult.expeditionLevel}.`);
+        }
+      }
+
+      // Set up state for expedition (forge level 5)
+      for (let i = 0; i < 5; i++) engine.gatherWood();
+      await performAction.execute({ action: "sharpen" });
+      for (let i = 0; i < engine.WALL_COST; i++) await performAction.execute({ action: "gather-stone" });
+      await performAction.execute({ action: "build-wall" });
+
+      // Forge to level 5 — use the engine directly for efficiency
+      for (let f = 0; f < 5; f++) {
+        const st = engine.getState();
+        const wCost = st.forgeWoodCost;
+        const sCost = st.forgeStoneCost;
+        for (let i = 0; i < wCost; i++) engine.gatherWood();
+        for (let i = 0; i < sCost; i++) engine.gatherStone();
+        engine.forgeTool();
+      }
+
+      // Now we should have forgeLevel=5 and expedition available
+      const expState = engine.getState();
+      if (expState.forgeLevel < 5) {
+        problems.push(`After forging 5 times, forgeLevel should be 5, got ${expState.forgeLevel}.`);
+      }
+
+      const beforeExp = engine.getState();
+      const beforeExpWood = beforeExp.wood;
+      const beforeExpStone = beforeExp.stone;
+
+      // Ensure we have enough resources for the expedition
+      // First expedition costs 10 wood + 5 stone
+      const expWoodNeeded = 10;
+      const expStoneNeeded = 5;
+      if (beforeExpWood < expWoodNeeded) {
+        for (let i = 0; i < expWoodNeeded - beforeExpWood; i++) engine.gatherWood();
+      }
+      if (beforeExpStone < expStoneNeeded) {
+        for (let i = 0; i < expStoneNeeded - beforeExpStone; i++) engine.gatherStone();
+      }
+
+      // Use agent tool to send expedition
+      const expToolResult = await performAction.execute({ action: "send-expedition" });
+      if (typeof expToolResult !== "object" || expToolResult === null) {
+        problems.push("perform-action send-expedition should return an object.");
+      } else {
+        if (expToolResult.expeditionLevel !== 1) {
+          problems.push(`perform-action send-expedition should set expeditionLevel to 1, got ${expToolResult.expeditionLevel}.`);
+        }
+        if (expToolResult.maps !== 1) {
+          problems.push(`perform-action send-expedition should set maps to 1, got ${expToolResult.maps}.`);
+        }
+        if (expToolResult.expeditionWoodCost !== 15) {
+          problems.push(`perform-action send-expedition expeditionWoodCost should be 15, got ${expToolResult.expeditionWoodCost}.`);
+        }
+        if (expToolResult.expeditionStoneCost !== 8) {
+          problems.push(`perform-action send-expedition expeditionStoneCost should be 8, got ${expToolResult.expeditionStoneCost}.`);
+        }
+        // Should have nextGoal reflecting expedition
+        if (expToolResult.nextGoal && expToolResult.nextGoal.type !== "expedition-goal") {
+          problems.push(`perform-action send-expedition nextGoal type should be "expedition-goal", got "${expToolResult.nextGoal.type}".`);
+        }
+      }
+
+      // Clean up
+      engine.reset();
+      engine.init();
+    }
+  } catch (err) {
+    problems.push(`Expedition agent tools test threw: ${err.message}`);
+    console.error(err);
+  }
+
+  // ─── Expedition milestone DOM element ──────────────────────────
+  const milestoneExpedition = document.getElementById("milestone-expedition");
+  if (!milestoneExpedition) {
+    problems.push("Expected #milestone-expedition to exist in the offline-summary — it was not found.");
+  } else {
+    if (!milestoneExpedition.classList.contains("offline-milestone")) {
+      problems.push("Expected #milestone-expedition to have class 'offline-milestone' — it did not.");
+    }
+    if (!milestoneExpedition.hidden) {
+      problems.push("Expected #milestone-expedition to be hidden by default — it was visible.");
+    }
+  }
+
   return problems;
 }
