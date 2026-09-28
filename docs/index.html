@@ -670,6 +670,20 @@
       font-family: var(--body-font);
     }
 
+    /* ─── Screen-reader-only live region ─── */
+    .visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      margin: -1px;
+      padding: 0;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      clip-path: inset(50%);
+      white-space: nowrap;
+      border: 0;
+    }
+
     /* ─── Responsive: single column on narrow viewports ─── */
     @media (max-width: 480px) {
       body {
@@ -860,6 +874,11 @@
     </div>
   </section>
 
+  <!-- Polite live region: names each new goal so the game is playable without
+       seeing the screen. Kept outside the panels so overlay isolation never
+       hides it; announcements are suppressed while an overlay is open. -->
+  <div id="goal-announcer" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
+
   <!-- ═══ Offline Summary Overlay ═══ -->
   <div id="offline-summary" hidden role="dialog" aria-modal="true" aria-labelledby="offline-title">
     <div class="offline-panel" tabindex="-1">
@@ -964,6 +983,11 @@
     const goalTrack2 = document.getElementById("goal-progress-track-2");
     const goalFill2 = document.getElementById("goal-progress-fill-2");
     const goalLabel2 = document.getElementById("goal-resource-label-2");
+    const goalAnnouncer = document.getElementById("goal-announcer");
+    // Tracks the goal string last rendered, so we announce only on a real
+    // change rather than on every 500ms render tick. null until the first
+    // render, so nothing is announced before the player has acted.
+    let lastGoalText = null;
     const offlineSummary = document.getElementById("offline-summary");
     const offlineElapsed = document.getElementById("offline-elapsed");
     const offlineAmount = document.getElementById("offline-wood-amount");
@@ -1485,6 +1509,23 @@
         btnSharpen.disabled = true;
       }
 
+      // ─── Goal announcements ──────────────────────────────────────
+      // Speak each new goal once, in a single polite message. The first render
+      // only records the current goal (the player has not acted yet); later
+      // renders speak only when the rendered text actually changes, so the
+      // 500ms tick never re-announces. While an overlay is open the player
+      // cannot act, so we still record the change but stay silent.
+      const currentGoalText = goalText.textContent;
+      if (lastGoalText === null) {
+        lastGoalText = currentGoalText;
+      } else if (currentGoalText !== lastGoalText) {
+        const previousGoalText = lastGoalText;
+        lastGoalText = currentGoalText;
+        if (openOverlays.size === 0) {
+          goalAnnouncer.textContent =
+            "Goal complete: " + previousGoalText + ". New goal: " + currentGoalText;
+        }
+      }
     }
 
     // ─── Sandbox mode ────────────────────────────────────────────
