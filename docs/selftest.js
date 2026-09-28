@@ -3283,5 +3283,170 @@ export async function checks() {
     console.error(err);
   }
 
+  // ─── Save export / import: a portable code (issue #969) ────────
+  try {
+    const engine = await import("./engine.js");
+    const { tools } = await import("./agenttools.js");
+
+    // Preserve the real save so these checks leave no trace.
+    const originalCode = engine.exportSave();
+
+    // (a) A known save round-trips: every required field comes back exactly.
+    const knownSave = {
+      wood: 123.5,
+      rate: 0.35,
+      upgradeLevel: 3,
+      stone: 42,
+      totalWoodEarned: 500,
+      totalStoneEarned: 60,
+      wallLevel: 2,
+      forgeLevel: 1,
+      expeditionLevel: 4,
+      maps: 4,
+      stoneUnlocked: true,
+      discoveryBonus: 0.25,
+      discoveryId: "glowing-seam",
+      discoveryName: "Glowing Seam",
+      timestamp: "2024-05-01T12:00:00.000Z",
+      firstTimestamp: "2024-01-01T00:00:00.000Z",
+    };
+    const requiredFields = [
+      ["wood", knownSave.wood],
+      ["rate", knownSave.rate],
+      ["upgradeLevel", knownSave.upgradeLevel],
+      ["stone", knownSave.stone],
+      ["wallLevel", knownSave.wallLevel],
+      ["forgeLevel", knownSave.forgeLevel],
+      ["expeditionLevel", knownSave.expeditionLevel],
+      ["maps", knownSave.maps],
+      ["stoneUnlocked", knownSave.stoneUnlocked],
+      ["timestamp", knownSave.timestamp],
+      ["firstTimestamp", knownSave.firstTimestamp],
+    ];
+    engine.reset();
+    const imported = engine.importSave(btoa(JSON.stringify(knownSave)));
+    if (!imported.ok) {
+      problems.push(`importSave should accept a valid code, got ${JSON.stringify(imported)}.`);
+    }
+    const restored = engine.getState();
+    for (const [field, expected] of requiredFields) {
+      if (restored[field] !== expected) {
+        problems.push(`importSave should restore ${field}=${JSON.stringify(expected)}, got ${JSON.stringify(restored[field])}.`);
+      }
+    }
+    if (!restored.discovery || restored.discovery.id !== "glowing-seam" || restored.discovery.name !== "Glowing Seam" || restored.discovery.bonus !== 0.25) {
+      problems.push(`importSave should restore the discovery id/name/bonus, got ${JSON.stringify(restored.discovery)}.`);
+    }
+
+    // Exporting the restored save reproduces the code's own fields.
+    const reExported = JSON.parse(atob(engine.exportSave()));
+    for (const [field, expected] of requiredFields) {
+      if (reExported[field] !== expected) {
+        problems.push(`exportSave after importSave should reproduce ${field}=${JSON.stringify(expected)}, got ${JSON.stringify(reExported[field])}.`);
+      }
+    }
+
+    // (b) A corrupted code is refused and the existing save is untouched.
+    const beforeCorrupt = JSON.stringify(engine.getState());
+    for (const badCode of ["", "!!!not-base64!!!", btoa("not valid json"), btoa("{}")]) {
+      const refused = engine.importSave(badCode);
+      if (refused.ok !== false) {
+        problems.push(`importSave should refuse the corrupted code ${JSON.stringify(badCode)} — it returned ok:${refused.ok}.`);
+      }
+      if (typeof refused.reason !== "string" || refused.reason.length === 0) {
+        problems.push(`importSave should give a plain reason when refusing a corrupted code, got ${JSON.stringify(refused.reason)}.`);
+      }
+    }
+    if (JSON.stringify(engine.getState()) !== beforeCorrupt) {
+      problems.push("A refused import must leave the live save byte-identical.");
+    }
+
+    // (c) Clicking Reveal Save Code fills the page with the engine's own code.
+    const revealBtn = document.getElementById("btn-reveal-save");
+    const saveCodeField = document.getElementById("save-code");
+    if (!revealBtn || !saveCodeField) {
+      problems.push("The save panel should provide #btn-reveal-save and #save-code.");
+    } else {
+      revealBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      const revealed = saveCodeField.value;
+      let decoded = null;
+      try {
+        decoded = JSON.parse(atob(revealed));
+      } catch {
+        // reported below
+      }
+      if (!decoded) {
+        problems.push("Clicking Reveal Save Code should fill #save-code with a decodable save code.");
+      } else {
+        for (const [field, expected] of requiredFields) {
+          if (decoded[field] !== expected) {
+            problems.push(`The revealed save code should carry ${field}=${JSON.stringify(expected)}, got ${JSON.stringify(decoded[field])}.`);
+          }
+        }
+      }
+    }
+
+    // (d) Restoring garbage shows a plain error and leaves the save alone.
+    const importInput = document.getElementById("save-import-input");
+    const restoreBtn = document.getElementById("btn-restore-save");
+    const statusEl = document.getElementById("save-status");
+    if (!importInput || !restoreBtn || !statusEl) {
+      problems.push("The save panel should provide #save-import-input, #btn-restore-save and #save-status.");
+    } else {
+      const beforeRestore = JSON.stringify(engine.getState());
+      importInput.value = "definitely not a save code";
+      restoreBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      if (!statusEl.textContent.trim()) {
+        problems.push("Restoring an invalid code should show a plain error in #save-status.");
+      }
+      if (JSON.stringify(engine.getState()) !== beforeRestore) {
+        problems.push("Restoring an invalid code must leave the existing save untouched.");
+      }
+    }
+
+    // (e) The agent tools read and restore the same code the page does.
+    const readCodeTool = tools().find((t) => t.name === "read-save-code");
+    const restoreTool = tools().find((t) => t.name === "restore-save");
+    if (!readCodeTool) {
+      problems.push("agenttools should export a 'read-save-code' tool — it was not found.");
+    }
+    if (!restoreTool) {
+      problems.push("agenttools should export a 'restore-save' tool — it was not found.");
+    }
+    if (readCodeTool) {
+      const readResult = await readCodeTool.execute({});
+      if (typeof readResult.code !== "string" || readResult.code !== engine.exportSave()) {
+        problems.push("read-save-code should return the engine's current save code.");
+      }
+    }
+    if (restoreTool) {
+      engine.reset();
+      const toolResult = await restoreTool.execute({ code: btoa(JSON.stringify(knownSave)) });
+      if (toolResult.ok !== true) {
+        problems.push(`restore-save should accept a valid code, got ${JSON.stringify(toolResult)}.`);
+      } else if (toolResult.wood !== knownSave.wood || toolResult.upgradeLevel !== knownSave.upgradeLevel) {
+        problems.push(`restore-save should return the restored state (wood ${knownSave.wood}, upgradeLevel ${knownSave.upgradeLevel}), got wood ${toolResult.wood}, upgradeLevel ${toolResult.upgradeLevel}.`);
+      }
+      const badResult = await restoreTool.execute({ code: "nonsense" });
+      if (badResult.ok !== false || typeof badResult.reason !== "string") {
+        problems.push(`restore-save should refuse a corrupted code with a reason, got ${JSON.stringify(badResult)}.`);
+      }
+    }
+
+    // Leave the save — and the panel — as they were found, and let the
+    // game's tick keep running for whatever measures the page next.
+    engine.importSave(originalCode);
+    engine.init();
+    if (saveCodeField) saveCodeField.value = "";
+    if (importInput) importInput.value = "";
+    if (statusEl) {
+      statusEl.textContent = "";
+      statusEl.classList.remove("error");
+    }
+  } catch (err) {
+    problems.push(`Save export/import test threw: ${err.message}`);
+    console.error(err);
+  }
+
   return problems;
 }
