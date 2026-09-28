@@ -76,6 +76,12 @@
       position: relative;
     }
 
+    /* While an overlay is open the game behind it leaves layout entirely, so
+       nothing beneath the overlay is rendered, measured, or announced. */
+    body.overlay-open > section {
+      display: none !important;
+    }
+
     /* ─── Status bar ─── */
     #status-bar {
       display: flex;
@@ -1052,6 +1058,50 @@
       }
     });
 
+    // ─── Overlay isolation ───
+    // While any overlay is open the game panels leave layout and the
+    // accessibility tree, and focus is trapped inside the overlay. Closing the
+    // last overlay restores the panels and returns focus where it came from.
+    const openOverlays = new Set();
+    let focusBeforeOverlay = null;
+    const gamePanels = document.querySelectorAll("body > section.panel");
+
+    function applyOverlayIsolation() {
+      const isOpen = openOverlays.size > 0;
+      document.body.classList.toggle("overlay-open", isOpen);
+      gamePanels.forEach((panel) => {
+        if (isOpen) {
+          panel.setAttribute("inert", "");
+          panel.setAttribute("aria-hidden", "true");
+        } else {
+          panel.removeAttribute("inert");
+          panel.removeAttribute("aria-hidden");
+        }
+      });
+    }
+
+    function setOverlayOpen(name, isOpen) {
+      const wasOpen = openOverlays.size > 0;
+      if (isOpen) {
+        if (!openOverlays.has(name) && !wasOpen) {
+          focusBeforeOverlay = document.activeElement;
+        }
+        openOverlays.add(name);
+      } else {
+        openOverlays.delete(name);
+      }
+      applyOverlayIsolation();
+
+      if (wasOpen && openOverlays.size === 0) {
+        const returnFocus = focusBeforeOverlay;
+        focusBeforeOverlay = null;
+        if (returnFocus && document.contains(returnFocus) && !returnFocus.disabled) {
+          returnFocus.focus();
+        }
+      }
+    }
+    window.__setOverlayOpen = setOverlayOpen;
+
     // ─── Offline summary ───
     function showOfflineSummary() {
       const gained = consumeOfflineGained();
@@ -1086,6 +1136,9 @@
         const expeditionEl = document.getElementById("milestone-expedition");
         if (expeditionEl) expeditionEl.hidden = !milestones.expeditionNowUnlocked;
 
+        // Register the overlay first, so the element that opened it is still
+        // focused when we record it as the return-focus target.
+        setOverlayOpen("offline", true);
         offlineSummary.hidden = false;
         offlineSummary.querySelector(".offline-panel").focus();
 
@@ -1115,6 +1168,10 @@
 
       // Reconcile action button states immediately (no 500ms renderUI delay)
       renderUI();
+
+      // Release isolation last, after the page is usable again, so the
+      // returned focus lands on an enabled element.
+      setOverlayOpen("offline", false);
     }
 
     btnDismiss.addEventListener("click", dismissOffline);
@@ -1417,6 +1474,10 @@
       const s = getState();
       sandboxClone = cloneState(s);
 
+      // Register the overlay first, so the sandbox button is still focused when
+      // we record it as the return-focus target.
+      setOverlayOpen("sandbox", true);
+
       // Disable all action buttons
       btnGather.disabled = true;
       btnSharpen.disabled = true;
@@ -1445,6 +1506,9 @@
 
       // Re-enable buttons based on real game state
       renderUI();
+
+      // Release isolation last, after the page is usable again.
+      setOverlayOpen("sandbox", false);
     }
 
     function fastForwardSandbox(simulatedSeconds) {
@@ -1562,6 +1626,7 @@
     // Expose renderUI for agent tools and self-test access
     window.__renderUI = renderUI;
     window.__showOfflineSummary = showOfflineSummary;
+    window.__dismissOffline = dismissOffline;
 
     // Show offline summary on load if there's offline resources
     showOfflineSummary();

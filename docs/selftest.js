@@ -9,6 +9,11 @@
 export async function checks() {
   const problems = [];
 
+  // If a reload left an overlay open, close it so the page is back in its
+  // normal, laid-out state before the checks below measure the panels.
+  if (typeof window.__exitSandbox === "function") window.__exitSandbox();
+  if (typeof window.__dismissOffline === "function") window.__dismissOffline();
+
   // ─── DOM structure ──────────────────────────────────────────────
 
   const woodEl = document.getElementById("wood-value");
@@ -2729,6 +2734,112 @@ export async function checks() {
     engine.init();
   } catch (err) {
     problems.push(`Agent tools progressToNext test threw: ${err.message}`);
+    console.error(err);
+  }
+
+  // ─── Overlay isolation ──────────────────────────────────────────
+  // While an overlay is open the game behind it must leave layout and the
+  // accessibility tree; closing it must restore both, along with the focus.
+  try {
+    const gameSections = () => Array.from(document.querySelectorAll("body > section.panel"));
+    const rectsOverlap = (a, b) =>
+      a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+    const describeActive = () => {
+      const el = document.activeElement;
+      return el ? (el.id || el.tagName) : "null";
+    };
+
+    const sandboxOverlay = document.getElementById("sandbox-overlay");
+    const btnSandbox = document.getElementById("btn-sandbox");
+
+    if (typeof window.__enterSandbox !== "function" || typeof window.__exitSandbox !== "function") {
+      problems.push("Expected window.__enterSandbox/__exitSandbox for the overlay isolation check.");
+    } else if (!sandboxOverlay || !btnSandbox) {
+      problems.push("Expected #sandbox-overlay and #btn-sandbox for the overlay isolation check.");
+    } else {
+      btnSandbox.focus();
+      window.__enterSandbox();
+
+      const panelsWhileOpen = gameSections();
+      if (panelsWhileOpen.length === 0) {
+        problems.push("Expected body > section.panel elements for the overlay isolation check — none found.");
+      }
+      for (const panel of panelsWhileOpen) {
+        const rect = panel.getBoundingClientRect();
+        if (rect.width !== 0 || rect.height !== 0) {
+          problems.push(`Expected #${panel.id} to leave layout while the sandbox overlay is open, but its rect is ${rect.width}x${rect.height}.`);
+        }
+        if (!panel.hasAttribute("inert") || panel.getAttribute("aria-hidden") !== "true") {
+          problems.push(`Expected #${panel.id} to be inert and aria-hidden while the sandbox overlay is open (inert=${panel.hasAttribute("inert")}, aria-hidden=${panel.getAttribute("aria-hidden")}).`);
+        }
+      }
+
+      // The goal text must never share pixels with the sandbox projections.
+      const goalLabel = document.getElementById("goal-label");
+      const goalText = document.getElementById("goal-text");
+      const sbRate = document.getElementById("sb-rate");
+      const sbTotalWood = document.getElementById("sb-total-wood");
+      if (goalLabel && sbRate && rectsOverlap(goalLabel.getBoundingClientRect(), sbRate.getBoundingClientRect())) {
+        problems.push("#goal-label overlaps #sb-rate while the sandbox overlay is open.");
+      }
+      if (goalText && sbTotalWood && rectsOverlap(goalText.getBoundingClientRect(), sbTotalWood.getBoundingClientRect())) {
+        problems.push("#goal-text overlaps #sb-total-wood while the sandbox overlay is open.");
+      }
+
+      if (!sandboxOverlay.contains(document.activeElement)) {
+        problems.push(`Keyboard focus should stay inside #sandbox-overlay while it is open, but activeElement is ${describeActive()}.`);
+      }
+
+      window.__exitSandbox();
+      for (const panel of panelsWhileOpen) {
+        const rect = panel.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) {
+          problems.push(`Expected #${panel.id} to be laid out again after closing the sandbox overlay, but its rect is ${rect.width}x${rect.height}.`);
+        }
+        if (panel.hasAttribute("inert") || panel.hasAttribute("aria-hidden")) {
+          problems.push(`Expected #${panel.id} to be reachable and announced again after closing the sandbox overlay.`);
+        }
+      }
+      if (document.activeElement !== btnSandbox) {
+        problems.push(`Closing the sandbox overlay should return focus to #btn-sandbox, but focus is on ${describeActive()}.`);
+      }
+    }
+
+    // The offline summary overlay shares the same isolation behaviour.
+    if (typeof window.__setOverlayOpen !== "function") {
+      problems.push("Expected window.__setOverlayOpen for the overlay isolation check.");
+    } else {
+      const offlineOverlay = document.getElementById("offline-summary");
+      const dismissBtn = document.getElementById("btn-dismiss-offline");
+      if (!offlineOverlay || !dismissBtn) {
+        problems.push("Expected #offline-summary and #btn-dismiss-offline for the overlay isolation check.");
+      } else {
+        window.__setOverlayOpen("offline", true);
+        offlineOverlay.removeAttribute("hidden");
+        offlineOverlay.querySelector(".offline-panel").focus();
+
+        for (const panel of gameSections()) {
+          const rect = panel.getBoundingClientRect();
+          if (rect.width !== 0 || rect.height !== 0) {
+            problems.push(`Expected #${panel.id} to leave layout while the offline overlay is open, but its rect is ${rect.width}x${rect.height}.`);
+          }
+        }
+
+        dismissBtn.click();
+
+        if (!offlineOverlay.hidden) {
+          problems.push("Expected #offline-summary to be hidden after clicking #btn-dismiss-offline.");
+        }
+        for (const panel of gameSections()) {
+          const rect = panel.getBoundingClientRect();
+          if (rect.width === 0 || rect.height === 0) {
+            problems.push(`Expected #${panel.id} to be laid out again after dismissing the offline overlay, but its rect is ${rect.width}x${rect.height}.`);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    problems.push(`Overlay isolation test threw: ${err.message}`);
     console.error(err);
   }
 
