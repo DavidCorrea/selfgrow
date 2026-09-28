@@ -38,6 +38,19 @@ function readOfflineStoneGained() {
 }
 
 /**
+ * Read the absence duration shown in the welcome-back panel.
+ * Returns null when no panel is showing.
+ */
+function readOfflineElapsed() {
+  const overlay = document.getElementById('offline-summary');
+  if (!overlay || overlay.hidden) return null;
+  const el = document.getElementById('offline-elapsed');
+  if (!el) return null;
+  const text = el.textContent.trim();
+  return text ? text : null;
+}
+
+/**
  * Read the discovery named in the welcome-back panel.
  * Returns null when no panel is showing or it found nothing this return.
  */
@@ -180,6 +193,7 @@ function withGoal(s) {
     offlineSummaryVisible: !document.getElementById('offline-summary')?.hidden,
     offlineWoodGained: readOfflineWoodGained(),
     offlineStoneGained: readOfflineStoneGained(),
+    offlineElapsed: readOfflineElapsed(),
     offlineDiscovery: readOfflineDiscovery(),
     milestones: {
       sharpenAvailable: s.wood >= 10 && s.upgradeLevel === 0,
@@ -228,7 +242,10 @@ export function tools() {
         + "whether stone is unlocked, timestamp, firstTimestamp (ISO date of first save), "
         + "elapsed (formatted duration since first save), whether the offline-summary "
         + "overlay is currently visible, how much wood and stone were gained "
-        + "while away (offlineWoodGained / offlineStoneGained), the away discovery "
+        + "while away (offlineWoodGained / offlineStoneGained), the human-text "
+        + "duration of that absence as shown in the panel (offlineElapsed, e.g. "
+        + "'3m 20s' or '1d 4h 0m', null when nothing was gained or the panel is "
+        + "hidden), the away discovery "
         + "named in the welcome-back panel this return (offlineDiscovery, null when "
         + "nothing was found), the lasting away discovery owned so far (discovery: "
         + "{id, name, bonus} or null, whose bonus is already included in rate), milestones object "
