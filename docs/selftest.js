@@ -237,6 +237,14 @@ export async function checks() {
       problems.push("Expected #btn-dismiss-offline to exist inside #offline-summary — it was not found.");
     }
 
+    // The panel must state how long the player was away (issue #961).
+    const offlineElapsedEl = document.getElementById("offline-elapsed");
+    if (!offlineElapsedEl) {
+      problems.push("Expected #offline-elapsed to exist in the offline-summary — it was not found.");
+    } else if (!offlineElapsedEl.closest(".offline-message")) {
+      problems.push("Expected #offline-elapsed to live inside the .offline-message block — it did not.");
+    }
+
     // ─── Milestone announcement elements ───
     const milestoneSharpen = document.getElementById("milestone-sharpen");
     if (!milestoneSharpen) {
@@ -1129,6 +1137,10 @@ export async function checks() {
         if (typeof result.offlineStoneGained !== "number" || result.offlineStoneGained < 0) {
           problems.push(`read-state should return offlineStoneGained as a non-negative number, got ${JSON.stringify(result.offlineStoneGained)}.`);
         }
+        // Check offlineElapsed field (null when the panel is hidden, else human text)
+        if (result.offlineElapsed !== null && (typeof result.offlineElapsed !== "string" || result.offlineElapsed.length === 0)) {
+          problems.push(`read-state should return offlineElapsed as null or a non-empty string, got ${JSON.stringify(result.offlineElapsed)}.`);
+        }
         // Check upgradeLevel field
         if (typeof result.upgradeLevel !== "number" || result.upgradeLevel < 0) {
           problems.push(`read-state should return upgradeLevel as a non-negative number, got ${JSON.stringify(result.upgradeLevel)}.`);
@@ -2012,6 +2024,31 @@ export async function checks() {
           // Should show at least one decimal place for small gains
           if (num < 1 && !text.includes(".")) {
             problems.push(`Offline summary wood amount (${text}) should include at least one decimal place for small gains < 1.`);
+          }
+        }
+
+        // The panel must name the length of the absence (issue #961).
+        const elapsedEl = document.getElementById("offline-elapsed");
+        const elapsedText = elapsedEl ? elapsedEl.textContent.trim() : "";
+        const elapsedMatch = /^(\d+)s$/.exec(elapsedText);
+        if (!elapsedMatch) {
+          problems.push(`#offline-elapsed should show a seconds duration like "2s" for a ~2s absence, got ${JSON.stringify(elapsedText)}.`);
+        } else {
+          const seconds = parseInt(elapsedMatch[1], 10);
+          if (seconds < 2 || seconds > 10) {
+            problems.push(`#offline-elapsed should read 2-10s for a seeded ~2s absence, got ${JSON.stringify(elapsedText)}.`);
+          }
+        }
+
+        // The agent's read-state must expose the same duration as the panel.
+        const { tools } = await import("./agenttools.js");
+        const readStateTool = tools().find((t) => t.name === "read-state");
+        if (!readStateTool) {
+          problems.push("Expected a read-state tool for the offline-elapsed cross-check — it was not found.");
+        } else {
+          const elapsedState = await readStateTool.execute({});
+          if (elapsedState.offlineElapsed !== elapsedText) {
+            problems.push(`read-state.offlineElapsed should match the panel text ${JSON.stringify(elapsedText)}, got ${JSON.stringify(elapsedState.offlineElapsed)}.`);
           }
         }
 

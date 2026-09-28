@@ -865,7 +865,7 @@
     <div class="offline-panel" tabindex="-1">
       <div class="offline-title" id="offline-title">Welcome Back</div>
       <div class="offline-message">
-        While you were away, you gathered<br>
+        While you were away for <span id="offline-elapsed">a while</span>, you gathered<br>
         <span class="offline-wood-highlight" id="offline-wood-amount">0</span> wood
         <span id="offline-stone-line" hidden><br>
         <span class="offline-stone-highlight" id="offline-stone-amount">0</span> stone
@@ -965,6 +965,7 @@
     const goalFill2 = document.getElementById("goal-progress-fill-2");
     const goalLabel2 = document.getElementById("goal-resource-label-2");
     const offlineSummary = document.getElementById("offline-summary");
+    const offlineElapsed = document.getElementById("offline-elapsed");
     const offlineAmount = document.getElementById("offline-wood-amount");
     const offlineStoneLine = document.getElementById("offline-stone-line");
     const offlineStoneAmount = document.getElementById("offline-stone-amount");
@@ -1142,6 +1143,7 @@
       // Show the overlay whenever any resources were gained during catch-up,
       // regardless of how short the absence was.
       if (woodGained > 0 || stoneGained > 0) {
+        offlineElapsed.textContent = formatElapsed(elapsedSec * 1000);
         offlineAmount.textContent = woodGained >= 1 ? Math.floor(woodGained) : woodGained.toFixed(1);
         if (stoneGained > 0) {
           offlineStoneAmount.textContent = stoneGained >= 1 ? Math.floor(stoneGained) : stoneGained.toFixed(2);
