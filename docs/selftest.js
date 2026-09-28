@@ -819,15 +819,15 @@ export async function checks() {
 
     // --- Test 11: craftUpgrade succeeds with enough wood ---
     engine.reset();
-    for (let i = 0; i < 5; i++) engine.gatherWood();
+    for (let i = 0; i < 10; i++) engine.gatherWood();
     const beforeRate = engine.getState().rate;
     const result = engine.craftUpgrade();
     if (result.upgraded !== true) {
-      problems.push("craftUpgrade with 5 wood should return upgraded=true.");
+      problems.push("craftUpgrade at the first goal (10 wood) should return upgraded=true.");
     }
     const upgradedState = engine.getState();
-    if (upgradedState.wood !== 0) {
-      problems.push(`After craftUpgrade with 5 wood, wood should be 0, got ${upgradedState.wood}.`);
+    if (upgradedState.wood !== 5) {
+      problems.push(`After craftUpgrade with 10 wood, wood should be 5, got ${upgradedState.wood}.`);
     }
     if (upgradedState.rate !== beforeRate + 0.05) {
       problems.push(`After craftUpgrade, rate should increase by 0.05. Before: ${beforeRate}, After: ${upgradedState.rate}.`);
@@ -842,7 +842,7 @@ export async function checks() {
 
     // --- Test 12: craftUpgrade persists rate increase ---
     engine.reset();
-    for (let i = 0; i < 5; i++) engine.gatherWood();
+    for (let i = 0; i < 10; i++) engine.gatherWood();
     engine.craftUpgrade();
     engine.save();
     const rawSaved = localStorage.getItem("selfgrow-state");
@@ -861,7 +861,7 @@ export async function checks() {
 
     // --- Test 13: upgradeLevel round-trips through load ---
     engine.reset();
-    for (let i = 0; i < 5; i++) engine.gatherWood();
+    for (let i = 0; i < 10; i++) engine.gatherWood();
     engine.craftUpgrade();
     const savedRate = engine.getState().rate;
     engine.save();
@@ -936,7 +936,7 @@ export async function checks() {
 
     // --- Test 15: gatherStone succeeds when stone is unlocked ---
     engine.reset();
-    for (let i = 0; i < 5; i++) engine.gatherWood();
+    for (let i = 0; i < 10; i++) engine.gatherWood();
     engine.craftUpgrade(); // unlocks stone
     const stoneBefore = engine.getState().stone;
     const stoneResult = engine.gatherStone();
@@ -950,7 +950,7 @@ export async function checks() {
 
     // --- Test 16: buildWall fails when not enough stone ---
     engine.reset();
-    for (let i = 0; i < 5; i++) engine.gatherWood();
+    for (let i = 0; i < 10; i++) engine.gatherWood();
     engine.craftUpgrade(); // unlocks stone
     const wallFail = engine.buildWall();
     if (wallFail.built !== false) {
@@ -962,7 +962,7 @@ export async function checks() {
 
     // --- Test 17: buildWall succeeds with enough stone ---
     engine.reset();
-    for (let i = 0; i < 5; i++) engine.gatherWood();
+    for (let i = 0; i < 10; i++) engine.gatherWood();
     engine.craftUpgrade(); // unlocks stone
     const wallCost = engine.WALL_COST;
     for (let i = 0; i < wallCost; i++) engine.gatherStone();
@@ -982,7 +982,7 @@ export async function checks() {
 
     // --- Test 18: gatherWood with a wall gives more wood ---
     engine.reset();
-    for (let i = 0; i < 5; i++) engine.gatherWood();
+    for (let i = 0; i < 10; i++) engine.gatherWood();
     engine.craftUpgrade(); // unlocks stone
     for (let i = 0; i < engine.WALL_COST; i++) engine.gatherStone();
     engine.buildWall(); // wallLevel=1, clickPower=2
@@ -1001,23 +1001,22 @@ export async function checks() {
       problems.push(`totalWoodEarned after 1 gather should be 1, got ${state1.totalWoodEarned}.`);
     }
     // With a wall, gatherWood gives +2 but totalWoodEarned should track all wood gained
-    for (let i = 0; i < 5; i++) engine.gatherWood();
+    for (let i = 0; i < 10; i++) engine.gatherWood();
     engine.craftUpgrade();
     for (let i = 0; i < engine.WALL_COST; i++) engine.gatherStone();
     engine.buildWall(); // wallLevel=1
     engine.gatherWood(); // +2
     const state2 = engine.getState();
-    // total: 1 (first gather) + 5 more gathers before sharpen + sharpen (no net change) + 5 stone gathers (no wood) + 2 (wall boosted)
-    // Actually: after reset, 6 gathers (6 totalWoodEarned), sharpen doesn't add, then wallCost stone gathers (no change), then 1 gather for +2
-    // totalWoodEarned should be 6 + 2 = 8
-    if (state2.totalWoodEarned !== 8) {
-      problems.push(`totalWoodEarned should be 8 after sequence, got ${state2.totalWoodEarned}. Expected: 1 (first) + 5 (for sharpen) + 2 (wall boosted gather) = 8.`);
+    // total: 1 (first gather) + 10 more gathers before the first sharpen + sharpen (no net change) + 5 stone gathers (no wood) + 2 (wall boosted)
+    // totalWoodEarned should be 13
+    if (state2.totalWoodEarned !== 13) {
+      problems.push(`totalWoodEarned should be 13 after sequence, got ${state2.totalWoodEarned}. Expected: 1 (first) + 10 (to reach the first goal) + 2 (wall boosted gather) = 13.`);
     }
 
     // --- Test 20: totalStoneEarned tracks stone gained via gatherStone and passive ---
     engine.reset();
     // Unlock stone
-    for (let i = 0; i < 5; i++) engine.gatherWood();
+    for (let i = 0; i < 10; i++) engine.gatherWood();
     engine.craftUpgrade();
     // Gather stone manually
     for (let i = 0; i < 3; i++) engine.gatherStone();
@@ -1230,7 +1229,7 @@ export async function checks() {
 
       // Test sharpen action
       engine.reset();
-      for (let i = 0; i < 5; i++) engine.gatherWood();
+      for (let i = 0; i < 10; i++) engine.gatherWood();
       const craftBeforeRate = engine.getState().rate;
       const sharpenResult = await performAction.execute({ action: "sharpen" });
       if (typeof sharpenResult !== "object" || sharpenResult === null) {
@@ -1260,7 +1259,7 @@ export async function checks() {
       // Test gather-stone action
       engine.reset();
       // Need to unlock stone first
-      for (let i = 0; i < 5; i++) engine.gatherWood();
+      for (let i = 0; i < 10; i++) engine.gatherWood();
       await performAction.execute({ action: "sharpen" });
       const stoneBefore = engine.getState().stone;
       const stoneResult = await performAction.execute({ action: "gather-stone" });
@@ -1284,7 +1283,7 @@ export async function checks() {
 
       // Test build-wall action
       engine.reset();
-      for (let i = 0; i < 5; i++) engine.gatherWood();
+      for (let i = 0; i < 10; i++) engine.gatherWood();
       await performAction.execute({ action: "sharpen" });
       // Gather 5 stone
       for (let i = 0; i < 5; i++) await performAction.execute({ action: "gather-stone" });
@@ -1682,7 +1681,7 @@ export async function checks() {
     }
 
     // Unlock stone and build a wall
-    for (let i = 0; i < 5; i++) engine.gatherWood();
+    for (let i = 0; i < 10; i++) engine.gatherWood();
     engine.craftUpgrade(); // unlocks stone
     for (let i = 0; i < engine.WALL_COST; i++) engine.gatherStone();
     engine.buildWall(); // wallLevel=1
@@ -1695,7 +1694,7 @@ export async function checks() {
 
     // Get enough resources for first forge
     // First forge costs: 10 wood + 5 stone
-    // Current: wood=0 (spent on sharpen), stone=0 (spent on wall)
+    // Current: wood=5 (10 gathered, 5 spent on sharpen), stone=0 (spent on wall)
     // Need: 10 wood, 5 stone
     for (let i = 0; i < 10; i++) engine.gatherWood();
     for (let i = 0; i < 5; i++) engine.gatherStone();
@@ -1738,7 +1737,7 @@ export async function checks() {
     // GatherWood should give extra click power from forge
     engine.reset();
     // Unlock everything
-    for (let i = 0; i < 5; i++) engine.gatherWood();
+    for (let i = 0; i < 10; i++) engine.gatherWood();
     engine.craftUpgrade();
     for (let i = 0; i < engine.WALL_COST; i++) engine.gatherStone();
     engine.buildWall();
@@ -1748,7 +1747,7 @@ export async function checks() {
     for (let i = 0; i < 5; i++) engine.gatherStone();
     // Actually gather enough wood - wood needs to be at least 10
     // After reset and above operations, wood is at 0 (spent on sharpen)
-    // We used 5 gatherWood calls before sharpen = 5 wood, then crafted (-5) = 0 wood
+    // We gathered 10 wood to reach the first goal, then crafted (-5) = 5 wood
     for (let i = 0; i < 10; i++) engine.gatherWood(); // +10 wood with wall=1 gives 2 each = 20 wood? No wait
     // Actually with wallLevel=1, gatherWood gives 1 + 1 = 2 per click
     // So 10 clicks gives 20 wood
@@ -1764,7 +1763,7 @@ export async function checks() {
 
     // Forge persistence round-trip
     engine.reset();
-    for (let i = 0; i < 5; i++) engine.gatherWood();
+    for (let i = 0; i < 10; i++) engine.gatherWood();
     engine.craftUpgrade();
     for (let i = 0; i < engine.WALL_COST; i++) engine.gatherStone();
     engine.buildWall();
@@ -1826,7 +1825,7 @@ export async function checks() {
       engine.reset();
 
       // Set up state for forge
-      for (let i = 0; i < 5; i++) engine.gatherWood();
+      for (let i = 0; i < 10; i++) engine.gatherWood();
       await performAction.execute({ action: "sharpen" });
       for (let i = 0; i < engine.WALL_COST; i++) await performAction.execute({ action: "gather-stone" });
       await performAction.execute({ action: "build-wall" });
@@ -1977,6 +1976,93 @@ export async function checks() {
     console.error(err);
   }
 
+  // ─── Issue #966: one sharpen-availability rule everywhere ───
+  // The button, the goal panel, the read-state tool and craftUpgrade must all
+  // agree on when the first sharpen is available: at the 10-wood first goal.
+  try {
+    const engine = await import("./engine.js");
+    const { tools } = await import("./agenttools.js");
+    const toolList = tools();
+    const readState = toolList.find((t) => t.name === "read-state");
+    const performAction = toolList.find((t) => t.name === "perform-action");
+    const btn = document.getElementById("btn-sharpen");
+    const renderNow = () => { if (typeof window.__renderUI === "function") window.__renderUI(); };
+
+    // --- Below the first goal (9 wood): everything agrees it is unavailable ---
+    engine.reset();
+    for (let i = 0; i < 9; i++) engine.gatherWood();
+    renderNow();
+    const nine = engine.getState();
+    if (engine.sharpenAvailable(nine)) {
+      problems.push("sharpenAvailable should be false at 9 wood, before the first goal is reached.");
+    }
+    const readNine = await readState.execute({});
+    if (readNine.upgradeAvailable !== false) {
+      problems.push(`read-state upgradeAvailable should be false at 9 wood, got ${readNine.upgradeAvailable}.`);
+    }
+    if (readNine.milestones.sharpenAvailable !== false) {
+      problems.push(`read-state milestones.sharpenAvailable should be false at 9 wood, got ${readNine.milestones.sharpenAvailable}.`);
+    }
+    if (!btn || !btn.disabled) {
+      problems.push("Sharpen button should be disabled at 9 wood, before the first goal is reached.");
+    }
+    const trackNine = document.getElementById("goal-progress-track-1");
+    const textNine = document.getElementById("goal-text");
+    if (trackNine && !trackNine.hidden && textNine && /Sharpen/i.test(textNine.textContent)) {
+      const now = parseInt(trackNine.getAttribute("aria-valuenow"), 10);
+      const max = parseInt(trackNine.getAttribute("aria-valuemax"), 10);
+      if (max > 0 && now >= max) {
+        problems.push(`Sharpen goal bar read ${now}/${max} at 9 wood, before the button was enabled.`);
+      }
+    }
+
+    // An agent's sharpen must be refused, with the state left untouched.
+    const refused = await performAction.execute({ action: "sharpen" });
+    const afterRefused = engine.getState();
+    if (refused.ok !== false || typeof refused.reason !== "string" || refused.reason.length === 0) {
+      problems.push(`perform-action "sharpen" at 9 wood should be refused with {ok:false, reason}, got ${JSON.stringify(refused).slice(0, 200)}.`);
+    }
+    if (afterRefused.upgradeLevel !== nine.upgradeLevel || afterRefused.wood !== nine.wood) {
+      problems.push("A refused sharpen at 9 wood must leave wood and upgradeLevel unchanged.");
+    }
+
+    // --- At the first goal (10 wood): everything agrees it is available, no reload ---
+    engine.reset();
+    for (let i = 0; i < 10; i++) engine.gatherWood();
+    renderNow();
+    const ten = engine.getState();
+    if (!engine.sharpenAvailable(ten)) {
+      problems.push("sharpenAvailable should be true at 10 wood, the first goal.");
+    }
+    const readTen = await readState.execute({});
+    if (readTen.upgradeAvailable !== true) {
+      problems.push(`read-state upgradeAvailable should be true at 10 wood, got ${readTen.upgradeAvailable}.`);
+    }
+    if (readTen.milestones.sharpenAvailable !== true) {
+      problems.push(`read-state milestones.sharpenAvailable should be true at 10 wood, got ${readTen.milestones.sharpenAvailable}.`);
+    }
+    if (!btn || btn.disabled) {
+      problems.push("Sharpen button should be enabled within one render cycle after the first goal is reached, with no reload.");
+    }
+    if (btn && !/Sharpen Axe \(\d+ wood\)/.test(btn.textContent.trim())) {
+      problems.push(`Sharpen button at 10 wood should show its wood cost instead of 'locked', got "${btn.textContent.trim()}".`);
+    }
+    const trackTen = document.getElementById("goal-progress-track-1");
+    if (trackTen && !trackTen.hidden) {
+      const now = parseInt(trackTen.getAttribute("aria-valuenow"), 10);
+      const max = parseInt(trackTen.getAttribute("aria-valuemax"), 10);
+      if (!(max > 0 && now >= max)) {
+        problems.push(`Sharpen goal bar should read 100% when the button is enabled at 10 wood, got ${now}/${max}.`);
+      }
+    }
+
+    engine.reset();
+    engine.init();
+  } catch (err) {
+    problems.push(`Sharpen availability rule test threw: ${err.message}`);
+    console.error(err);
+  }
+
   // ─── Offline summary overlay appears after any resource gain (no time guard) ───
   // Issue #943: the overlay must appear after any reload where resources were gained,
   // regardless of how short the absence was. The `elapsedSec > 3` guard was removed.
@@ -2098,7 +2184,7 @@ export async function checks() {
     }
 
     // Set up state: unlock stone, build wall, forge tools to level 5
-    for (let i = 0; i < 5; i++) engine.gatherWood();
+    for (let i = 0; i < 10; i++) engine.gatherWood();
     engine.craftUpgrade(); // unlocks stone
     for (let i = 0; i < engine.WALL_COST; i++) engine.gatherStone();
     engine.buildWall(); // wallLevel=1
@@ -2356,7 +2442,7 @@ export async function checks() {
       }
 
       // Set up state for expedition (forge level 5)
-      for (let i = 0; i < 5; i++) engine.gatherWood();
+      for (let i = 0; i < 10; i++) engine.gatherWood();
       await performAction.execute({ action: "sharpen" });
       for (let i = 0; i < engine.WALL_COST; i++) await performAction.execute({ action: "gather-stone" });
       await performAction.execute({ action: "build-wall" });

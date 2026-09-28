@@ -21,6 +21,7 @@
 
 const STORAGE_KEY = "selfgrow-state";
 const WOOD_RATE = 0.1; // wood per second
+const FIRST_GOAL_WOOD = 10; // wood needed to reach the first goal and unlock the first sharpen
 const UPGRADE_COST = 5; // wood per upgrade
 const RATE_INCREASE_PER_UPGRADE = 0.05; // additional wood per second per upgrade
 const STONE_BASE_RATE = 0.05; // stone per second (after stone unlocked)
@@ -59,7 +60,7 @@ const DISCOVERIES = [
 ];
 
 // Exported for external use (tools, UI)
-export { UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, STONE_BASE_RATE, WALL_COST, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT,
+export { FIRST_GOAL_WOOD, UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, STONE_BASE_RATE, WALL_COST, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT,
   FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_WOOD_COST_INC, FORGE_STONE_COST_INC,
   FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS,
   EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC,
@@ -412,17 +413,47 @@ export function gatherWood() {
 }
 
 /**
+ * The wood a player must have banked before the next sharpen is available.
+ *
+ * The first sharpen is the game's first goal, so it unlocks at FIRST_GOAL_WOOD;
+ * every sharpen after that costs UPGRADE_COST. This is the one rule the
+ * Sharpen button, the goal panel and the agent tools all read.
+ *
+ * @param {{ wood: number, upgradeLevel: number }} s
+ * @returns {number}
+ */
+export function sharpenThreshold(s) {
+  return s.upgradeLevel >= 1 ? UPGRADE_COST : FIRST_GOAL_WOOD;
+}
+
+/**
+ * Whether sharpening is available to this player right now.
+ *
+ * @param {{ wood: number, upgradeLevel: number }} s
+ * @returns {boolean}
+ */
+export function sharpenAvailable(s) {
+  return s.wood >= sharpenThreshold(s);
+}
+
+/**
  * Craft a sharpen upgrade: consumes UPGRADE_COST wood to permanently
  * increase the wood accumulation rate by RATE_INCREASE_PER_UPGRADE.
  *
- * If this is the first upgrade, unlocks the stone system.
+ * If this is the first upgrade, unlocks the stone system. Refuses at exactly
+ * the same gate the Sharpen button uses, so an agent can never sharpen before
+ * a person can.
  *
  * @returns {{ upgraded: boolean, reason?: string, state: GameState }} whether
  *   the upgrade succeeded, and if not, a human-readable reason.
  */
 export function craftUpgrade() {
-  if (state.wood < UPGRADE_COST) {
-    return { upgraded: false, reason: "Not enough wood — need " + UPGRADE_COST, state: getState() };
+  if (!sharpenAvailable(state)) {
+    const needed = Math.ceil(sharpenThreshold(state) - state.wood);
+    const reason = state.upgradeLevel >= 1
+      ? "Not enough wood — need " + UPGRADE_COST
+      : "First goal not reached — gather " + needed + " more wood to unlock sharpening.";
+    return { upgraded: false, reason, state: getState() };
   }
   state.wood -= UPGRADE_COST;
   state.rate += RATE_INCREASE_PER_UPGRADE;
