@@ -31,7 +31,7 @@ Each is invoked as `node agents/<name>.mjs` by the workflow named beside it.
 | --- | --- | --- |
 | `devs.mjs` | `devs.yml` — after the PM, + cron 14:00 | Scout → Builder → Reviewer; drains the buildable queue in one job |
 | `plan-build.mjs` | `devs.yml`, first step | decides whether a Devs run has anything to do at all |
-| `product-manager.mjs` | `product-manager.yml` — daily 00:30 | grooms the backlog; curates and writes the weekly report on Sundays |
+| `product-manager.mjs` | `product-manager.yml` — daily 00:30 + 12:30 | grooms the backlog; the Sunday 00:30 run also curates and writes the weekly report |
 | `product-owner.mjs` | `product-owner.yml` — Mon 08:00 | weekly retro; sets Vision and milestone |
 | `tech-lead.mjs` | `tech-lead.yml` — Thu 09:00 | whole-codebase shape review, selftest health, diagnoses of parked tickets |
 | `playtester.mjs` | `playtester.yml` — daily 23:00 | plays the live site, runs App Review, files experiential findings and measured accessibility barriers |

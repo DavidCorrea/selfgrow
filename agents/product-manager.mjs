@@ -63,7 +63,12 @@ import { listSourceFiles, formatSources, SOURCE_DIR, hasDiagnosis } from "./tech
 // the board on Monday.
 const WEEKLY_DAY = Number(process.env.PM_WEEKLY_DAY ?? 0);
 
-const isWeeklyRun = () => new Date().getUTCDay() === WEEKLY_DAY;
+// The PM grooms twice a day, and only the morning run does the weekly work.
+// Curation allows one removal per run, so a second Sunday run would double the
+// week's removals; the report already refuses to post twice, but would still pay
+// for the attempt. "Morning" is before noon UTC, so a hand-dispatched run on a
+// Sunday morning counts as the weekly one.
+export const isWeeklyRun = (now = new Date()) => now.getUTCDay() === WEEKLY_DAY && now.getUTCHours() < 12;
 
 // How much title-token similarity counts as a near-duplicate.
 //

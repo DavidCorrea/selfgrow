@@ -2,18 +2,21 @@ name: product-manager
 
 on:
   schedule:
-    # Daily, and the single entry point for the day's work: groom the backlog,
-    # then kick the Builder via workflow_run. Deliberately just after OpenRouter's
-    # free-tier cap resets at 00:00 UTC, so the chain runs against a full day's
-    # request allowance rather than whatever a previous run left behind.
+    # Twice a day: groom the backlog, then dispatch the Devs. The Devs empty the
+    # groomed queue in every run, so one grooming pass a day left them idle most
+    # of it — merges were set by how much a single morning run groomed. The
+    # midday run grooms whatever arrived since (Tech Lead tickets, requests,
+    # findings) and starts the Devs again. Only the 00:30 run does the weekly
+    # curation and report (see isWeeklyRun).
     - cron: '30 0 * * *'
+    - cron: '30 12 * * *'
   workflow_dispatch:
   # NOTE: deliberately NOT triggered by `issues`. Grooming CREATES issues, so an
   # issues.opened trigger made the PM trigger itself once per ticket: an 8-ticket
   # run spawned 8 more PM runs. A job-level `if` guard skipped the work but could
   # not stop the runs existing, and a skipped run still *completes*, which used to
-  # kick the Builder anyway. Inbound human issues are picked up by the next daily
-  # run instead.
+  # kick the Builder anyway. Inbound human issues are picked up by the next
+  # scheduled run instead.
   #
   # Also deliberately NOT triggered by the Product Owner: re-grooming the instant
   # the vision changes cost a whole extra chain every week, and the vision is a
@@ -69,7 +72,7 @@ jobs:
           # Two sessions on an ordinary day — app review and the main grooming pass —
           # and a third on Sundays, when it also writes the week's report. The dedup
           # check used to be a third session; it deleted good tickets and is gone.
-          # The PM runs FIRST each day (00:30) and then dispatches the Devs.
+          # The PM runs at 00:30 and 12:30, and each run dispatches the Devs.
           GH_PROJECT_OWNER: '@me'
           GH_PROJECT_NUMBER: '3'
           # Who the Sunday digest @-mentions, so it arrives as a notification
