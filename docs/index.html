@@ -928,7 +928,7 @@
   </div>
   <script type="module">
     import "./webmcp.js";
-    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, consumeOfflineWoodGained, consumeOfflineGained, consumeOfflineMilestones, formatElapsed, UPGRADE_COST, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS } from "./engine.js";
+    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, consumeOfflineWoodGained, consumeOfflineGained, consumeOfflineMilestones, formatElapsed, sharpenAvailable, sharpenThreshold, FIRST_GOAL_WOOD, UPGRADE_COST, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS } from "./engine.js";
     import { cloneState, fastForward } from "./sandbox.js";
 
     init();
@@ -975,7 +975,6 @@
     const discoveryValueEl = document.getElementById("discovery-value");
     const btnDismiss = document.getElementById("btn-dismiss-offline");
 
-    const GOAL_WOOD = 10;
     const GOAL_STONE = 5;
     let goalReached = false;
     let stoneGoalActive = false;
@@ -1429,7 +1428,7 @@
         }
       }
 
-      if (wood >= GOAL_WOOD && upgradeLevel >= 1) {
+      if (wood >= FIRST_GOAL_WOOD && upgradeLevel >= 1) {
         // Player has done at least one sharpen — show stone/forge goals
         if (!stoneGoalActive) {
           stoneGoalActive = true;
@@ -1469,7 +1468,7 @@
           renderSingleGoal("Craft a Sharpening (" + UPGRADE_COST + " wood)", Math.min(wood, UPGRADE_COST), UPGRADE_COST);
         }
 
-      } else if (wood >= GOAL_WOOD) {
+      } else if (wood >= FIRST_GOAL_WOOD) {
         // Reached 10 wood but haven't done first sharpen yet
         if (!goalReached) {
           goalReached = true;
@@ -1479,17 +1478,21 @@
       } else {
         goalReached = false;
         stoneGoalActive = false;
-        renderSingleGoal("Gather " + GOAL_WOOD + " wood", wood, GOAL_WOOD);
+        renderSingleGoal("Gather " + FIRST_GOAL_WOOD + " wood", wood, FIRST_GOAL_WOOD);
       }
 
       // ─── Sharpen button: unconditional reconciliation ────────────
-      if (wood >= GOAL_WOOD || upgradeLevel >= 1) {
+      // Gated by the one availability rule the engine also enforces, so the
+      // button can never stay locked after its threshold is crossed, and an
+      // agent can never sharpen before the button would enable.
+      if (sharpenAvailable(s)) {
         btnSharpen.innerHTML = '<span class="btn-icon">\u2692</span> Sharpen Axe (' + UPGRADE_COST + ' wood)';
         btnSharpen.setAttribute("aria-label", "Sharpen Axe (" + UPGRADE_COST + " wood)");
-        btnSharpen.disabled = wood < UPGRADE_COST;
+        btnSharpen.disabled = false;
       } else {
+        const needed = Math.max(0, Math.ceil(sharpenThreshold(s) - wood));
         btnSharpen.innerHTML = '<span class="btn-icon">\uD83D\uDD12</span> Sharpen Axe (locked)';
-        btnSharpen.setAttribute("aria-label", "Sharpen Axe \u2014 locked, gather " + (GOAL_WOOD - Math.floor(wood)) + " more wood to unlock");
+        btnSharpen.setAttribute("aria-label", "Sharpen Axe \u2014 locked, gather " + needed + " more wood to unlock");
         btnSharpen.disabled = true;
       }
 

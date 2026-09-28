@@ -8,9 +8,8 @@
  * @module agenttools
  */
 
-import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, consumeOfflineWoodGained, formatElapsed, UPGRADE_COST, WALL_COST, STONE_GATHER_AMOUNT, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE } from "./engine.js";
+import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, consumeOfflineWoodGained, formatElapsed, sharpenAvailable, FIRST_GOAL_WOOD, UPGRADE_COST, WALL_COST, STONE_GATHER_AMOUNT, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE } from "./engine.js";
 
-const GOAL_WOOD = 10;
 const GOAL_STONE = 5;
 
 /**
@@ -75,15 +74,15 @@ function computeStoneRate(totalWoodEarned) {
  * Determine the current goal phase based on state.
  */
 function determineGoal(s) {
-  const reachedFirstGoal = s.wood >= GOAL_WOOD;
+  const reachedFirstGoal = s.wood >= FIRST_GOAL_WOOD;
   const doneFirstSharpen = s.upgradeLevel >= 1;
   const stoneUnlocked = s.stoneUnlocked;
 
   if (!reachedFirstGoal) {
     return {
-      description: "Gather " + GOAL_WOOD + " wood",
+      description: "Gather " + FIRST_GOAL_WOOD + " wood",
       type: "first-goal",
-      target: GOAL_WOOD,
+      target: FIRST_GOAL_WOOD,
       progress: s.wood,
       reached: false,
     };
@@ -95,7 +94,7 @@ function determineGoal(s) {
       type: "upgrade",
       cost: UPGRADE_COST,
       progressToNext: Math.min(s.wood, UPGRADE_COST),
-      upgradeAvailable: s.wood >= UPGRADE_COST,
+      upgradeAvailable: sharpenAvailable(s),
     };
   }
 
@@ -152,7 +151,7 @@ function determineGoal(s) {
     type: "upgrade",
     cost: UPGRADE_COST,
     progressToNext: Math.min(s.wood, UPGRADE_COST),
-    upgradeAvailable: s.wood >= UPGRADE_COST,
+    upgradeAvailable: sharpenAvailable(s),
   };
 }
 
@@ -160,8 +159,8 @@ function determineGoal(s) {
  * Augment a raw state snapshot with goal, upgrade, and stone info.
  */
 function withGoal(s) {
-  const upgradeAvailable = s.wood >= UPGRADE_COST;
-  const reachedFirstGoal = s.wood >= GOAL_WOOD;
+  const upgradeAvailable = sharpenAvailable(s);
+  const reachedFirstGoal = s.wood >= FIRST_GOAL_WOOD;
   const canGatherStone = s.stoneUnlocked;
   const wallAvailable = s.stoneUnlocked && s.stone >= WALL_COST;
   const stoneRate = s.stoneUnlocked ? computeStoneRate(s.totalWoodEarned) : 0;
@@ -190,13 +189,14 @@ function withGoal(s) {
     expeditionStoneCost: s.expeditionStoneCost,
     clickPower: clickPower,
     wallBuilt: s.wallLevel > 0,
+    upgradeAvailable: upgradeAvailable,
     offlineSummaryVisible: !document.getElementById('offline-summary')?.hidden,
     offlineWoodGained: readOfflineWoodGained(),
     offlineStoneGained: readOfflineStoneGained(),
     offlineElapsed: readOfflineElapsed(),
     offlineDiscovery: readOfflineDiscovery(),
     milestones: {
-      sharpenAvailable: s.wood >= 10 && s.upgradeLevel === 0,
+      sharpenAvailable: sharpenAvailable(s),
       stoneNowUnlocked: s.stoneUnlocked,
       wallAvailable: s.stoneUnlocked && s.stone >= 5 && s.wallLevel === 0,
       forgeNowUnlocked: s.wallLevel >= 1,
@@ -205,9 +205,9 @@ function withGoal(s) {
       wallBuilt: s.wallLevel >= 1,
     },
     firstGoal: {
-      target: GOAL_WOOD,
-      current: Math.min(s.wood, GOAL_WOOD),
-      reached: s.wood >= GOAL_WOOD,
+      target: FIRST_GOAL_WOOD,
+      current: Math.min(s.wood, FIRST_GOAL_WOOD),
+      reached: s.wood >= FIRST_GOAL_WOOD,
     },
     nextGoal: determineGoal(s),
   };
@@ -263,7 +263,7 @@ export function tools() {
       description: "Performs a named action the visitor could take from the "
         + "page, and returns the state afterwards. Supported actions: "
         + '"gather" — instantly adds +1 wood (or more based on wall and forge level); '
-        + '"sharpen" — consumes ' + UPGRADE_COST + ' wood to permanently increase the wood accumulation rate; '
+        + '"sharpen" — once the first goal is reached, consumes ' + UPGRADE_COST + ' wood to permanently increase the wood accumulation rate (refused with a reason before then); '
         + '"gather-stone" — instantly adds +' + STONE_GATHER_AMOUNT + ' stone (only available after stone is unlocked); '
         + '"build-wall" — consumes ' + WALL_COST + ' stone to permanently increase click power for wood; '
         + '"forge-tool" — consumes wood and stone to forge a tool, permanently boosting wood rate and click power; '
@@ -287,6 +287,9 @@ export function tools() {
         }
         if (action === "sharpen") {
           const result = craftUpgrade();
+          if (!result.upgraded) {
+            return { ok: false, reason: result.reason, ...withGoal(result.state) };
+          }
           return withGoal(result.state);
         }
         if (action === "gather-stone") {
