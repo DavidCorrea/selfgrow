@@ -2557,6 +2557,79 @@ export async function checks() {
     if (stateAfterExit.wood !== woodBefore) {
       problems.push(`Real state wood should remain ${woodBefore} after sandbox exit, got ${stateAfterExit.wood}.`);
     }
+
+    // --- Sandbox Test 7: fast-forward works without a prior create (issue #958) ---
+    engine.reset();
+    if (typeof window.__exitSandbox === "function") window.__exitSandbox();
+    const rehearsalStart = engine.getState();
+    const rehearsalStartWood = rehearsalStart.wood;
+    const rehearsalStartRate = rehearsalStart.rate;
+
+    const ffNoCreate = await sandboxFFTool.execute({ seconds: 3600 });
+    const expectedRehearsalWood = rehearsalStartWood + rehearsalStartRate * 3600;
+    if (!(ffNoCreate.wood > rehearsalStartWood)) {
+      problems.push(`sandbox-fast-forward without a prior create should raise projected wood above ${rehearsalStartWood}, got ${ffNoCreate.wood}.`);
+    }
+    if (Math.abs(ffNoCreate.wood - expectedRehearsalWood) > 1) {
+      problems.push(`sandbox-fast-forward(3600s) should project wood ≈ ${expectedRehearsalWood} (start ${rehearsalStartWood} + rate ${rehearsalStartRate}*3600), got ${ffNoCreate.wood}.`);
+    }
+    if (ffNoCreate.sandboxActive !== true) {
+      problems.push("sandbox-fast-forward without a prior create should report sandboxActive=true.");
+    }
+    if (typeof ffNoCreate.woodGained !== "number" || ffNoCreate.woodGained <= 0) {
+      problems.push(`sandbox-fast-forward(3600s) should report a positive woodGained, got ${ffNoCreate.woodGained}.`);
+    }
+    if (!ffNoCreate.milestones || ffNoCreate.milestones.sharpenAvailable !== true) {
+      problems.push("sandbox-fast-forward(3600s) from a fresh save should cross the sharpen milestone (sharpenAvailable=true).");
+    }
+    const realDuringRehearsal = engine.getState();
+    if (realDuringRehearsal.wood !== rehearsalStartWood) {
+      problems.push(`Real save wood should stay ${rehearsalStartWood} while fast-forwarding, got ${realDuringRehearsal.wood}.`);
+    }
+    if (typeof window.__getSandboxClone !== "function" || !window.__getSandboxClone()) {
+      problems.push("sandbox-fast-forward without a prior create should leave an active sandbox clone behind.");
+    }
+
+    // sandbox-create must return the clone's projection, not the real save.
+    const createAfterFF = await sandboxCreateTool.execute({});
+    const liveClone = typeof window.__getSandboxClone === "function" ? window.__getSandboxClone() : null;
+    if (liveClone && createAfterFF.wood !== liveClone.wood) {
+      problems.push(`sandbox-create should return the clone's wood (${liveClone.wood}), got ${createAfterFF.wood}.`);
+    }
+
+    // --- Sandbox Test 8: fast-forward works immediately after exiting ---
+    if (typeof window.__exitSandbox === "function") window.__exitSandbox();
+    const afterExitWood = engine.getState().wood;
+    const ffAfterExit = await sandboxFFTool.execute({ seconds: 10 });
+    if (!(ffAfterExit.wood > afterExitWood)) {
+      problems.push(`sandbox-fast-forward(10s) right after an exit should raise projected wood above ${afterExitWood}, got ${ffAfterExit.wood}.`);
+    }
+    const afterPostExitFF = engine.getState().wood;
+    if (afterPostExitFF !== afterExitWood) {
+      problems.push(`Real save wood should stay ${afterExitWood} after a post-exit fast-forward, got ${afterPostExitFF}.`);
+    }
+
+    // --- Sandbox Test 9: page fast-forward buttons raise projected wood ---
+    if (typeof window.__enterSandbox === "function") window.__enterSandbox();
+    const sbWoodEl = document.getElementById("sb-wood");
+    const sbBtn1h = document.getElementById("sb-btn-1h");
+    if (!sbWoodEl || !sbBtn1h) {
+      problems.push("Expected #sb-wood and #sb-btn-1h for the page fast-forward check.");
+    } else {
+      const beforeBtnWood = parseFloat(sbWoodEl.textContent);
+      sbBtn1h.click();
+      const afterBtnWood = parseFloat(sbWoodEl.textContent);
+      if (!(afterBtnWood > beforeBtnWood)) {
+        problems.push(`Clicking #sb-btn-1h should raise the projected #sb-wood, but it went ${beforeBtnWood} -> ${afterBtnWood}.`);
+      }
+    }
+
+    // --- Sandbox Test 10: exit restores the real save unchanged ---
+    if (typeof window.__exitSandbox === "function") window.__exitSandbox();
+    const restored = engine.getState();
+    if (restored.wood !== rehearsalStartWood || restored.rate !== rehearsalStartRate) {
+      problems.push(`sandbox-exit should restore the real save (wood ${rehearsalStartWood}, rate ${rehearsalStartRate}), got wood ${restored.wood}, rate ${restored.rate}.`);
+    }
   } catch (err) {
     problems.push(`Sandbox test threw: ${err.message}`);
     console.error(err);

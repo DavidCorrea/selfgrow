@@ -1448,7 +1448,10 @@
     }
 
     function fastForwardSandbox(simulatedSeconds) {
-      if (!sandboxClone) return;
+      // Rehearsing time must work no matter how we got here, so build the
+      // clone from the current save when no sandbox is already open.
+      if (!sandboxClone) enterSandbox();
+      if (!sandboxClone) return null;
 
       const result = fastForward(sandboxClone, simulatedSeconds);
 
@@ -1472,6 +1475,7 @@
       }
 
       renderSandbox();
+      return result;
     }
 
     function renderSandbox() {
