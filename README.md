@@ -28,7 +28,7 @@ Anyone can file a ticket; only the Product Manager marks one ready, and the Devs
 | | Runs | Does |
 | --- | --- | --- |
 | 🧭 **Product Owner** | Mon 08:00 | Sets the Vision and the milestone |
-| 📋 **Product Manager** | daily 00:30 | Grooms every ticket: what the player gets, how to tell it shipped, and its priority. Decides parked tickets. Writes the Sunday digest |
+| 📋 **Product Manager** | daily 00:30 + 12:30 | Grooms every ticket: what the player gets, how to tell it shipped, and its priority. Decides parked tickets. Writes the Sunday digest |
 | ⚒️ **Devs** | after the PM, + 14:00 | Plan, build, verify, review with a different model, merge |
 | 🔧 **Tech Lead** | Thu 09:00 | Reads the whole codebase and the self-check suite; diagnoses tickets the Devs gave up on |
 | 👀 **Playtester** | daily 23:00 | Plays the live site, reads App Review's layout measurements, files what a player would notice |
@@ -44,11 +44,12 @@ Anyone can file a ticket; only the Product Manager marks one ready, and the Devs
 | 07:00 | | 📦 pi-update | | | | | |
 | 08:00 | 🧭 PO | | | | | | |
 | 09:00 | | | | 🔧 Tech Lead | | | |
+| 12:30 | 📋 PM | 📋 PM | 📋 PM | 📋 PM | 📋 PM | 📋 PM | 📋 PM |
 | 14:00 | ⚒️ Devs | ⚒️ Devs | ⚒️ Devs | ⚒️ Devs | ⚒️ Devs | ⚒️ Devs | ⚒️ Devs |
 | 16:00 | 📊 Health | 📊 Health | 📊 Health | 📊 Health | 📊 Health | 📊 Health | 📊 Health |
 | 23:00 | 👀 Playtester | 👀 Playtester | 👀 Playtester | 👀 Playtester | 👀 Playtester | 👀 Playtester | 👀 Playtester |
 
-The Devs also start right after each PM run that leaves groomed work; 14:00 picks up whatever is left. The Playtester plays at 23:00 so its findings are waiting for the PM's next run.
+The Devs also start right after each PM run that leaves groomed work; 14:00 picks up whatever is left. Only the 00:30 Sunday run curates and writes the digest. The Playtester plays at 23:00 so its findings are waiting for the PM's next run.
 
 ## The product contract
 
@@ -65,7 +66,7 @@ Every message it returns blocks the merge.
 
 ## Contributing
 
-- **File an issue.** The PM grooms it the next morning. It can be sharpened, but never closed for being unclear.
+- **File an issue.** The PM grooms it at its next run (00:30 or 12:30 UTC). It can be sharpened, but never closed for being unclear.
 - **Open a PR.** The Devs verify, review and finish it, never close it, and never merge what fails verify. Changes to `.github/`, `agents/` or the dependencies wait for a person to merge.
 - **From a fork?** Your diff is reviewed as text and answered in a comment; nothing runs your code.
 

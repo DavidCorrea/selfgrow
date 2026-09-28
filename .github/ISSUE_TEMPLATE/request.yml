@@ -8,7 +8,7 @@ body:
     attributes:
       value: |
         This project is built by autonomous agents. Nobody is waiting to read this —
-        the Product Manager grooms the backlog every morning and will pick it up then.
+        the Product Manager grooms the backlog twice a day and will pick it up at its next run.
 
         The two fields below are the ones that decide whether this becomes a ticket
         the agents can build. A request they cannot picture concretely gets rewritten

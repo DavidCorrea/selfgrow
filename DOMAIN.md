@@ -56,7 +56,7 @@ used to see only findings "still untriaged", a list the PM empties every
 morning, so five sessions of the same verdict were invisible to the one role
 that decides whether a milestone is done.
 
-**📋 Product Manager** (daily 00:30) — owns *what the product should and
+**📋 Product Manager** (daily 00:30 and 12:30) — owns *what the product should and
 shouldn't be*. Additive and subtractive in one breath, because "what the product
 should stop doing is the same judgement as what it should start doing"; split
 across two roles, the subtractive half proposed removals blind to what the
@@ -77,6 +77,11 @@ additive half was adding.
   keeps what the filer wrote as Dev Notes (a person's words as their **original
   request**), because the filer's text is usually the evidence a Builder needs.
   A filer may say how urgent a ticket is; **the priority is the PM's**.
+- **Twice a day.** The Devs empty the groomed queue in every run, so a single
+  morning pass left them idle most of the day and set the day's merges. The
+  12:30 run grooms what arrived since and dispatches the Devs again. Only the
+  **Sunday 00:30 run** does the weekly work: curation allows one removal per
+  run, and a second Sunday run would have doubled the week's removals.
 - **Curation** (Sundays) — what should the product stop doing. Never remove for
   being simple, never remove load-bearing early work, **never remove the
   product's own checks** ("that makes the build quieter, not the product
