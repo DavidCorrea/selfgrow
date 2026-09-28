@@ -8,7 +8,7 @@
  * @module agenttools
  */
 
-import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, consumeOfflineWoodGained, formatElapsed, sharpenAvailable, FIRST_GOAL_WOOD, UPGRADE_COST, WALL_COST, STONE_GATHER_AMOUNT, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE } from "./engine.js";
+import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, consumeOfflineWoodGained, formatElapsed, sharpenAvailable, displayAmount, FIRST_GOAL_WOOD, UPGRADE_COST, WALL_COST, STONE_GATHER_AMOUNT, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE } from "./engine.js";
 
 const GOAL_STONE = 5;
 
@@ -83,7 +83,7 @@ function determineGoal(s) {
       description: "Gather " + FIRST_GOAL_WOOD + " wood",
       type: "first-goal",
       target: FIRST_GOAL_WOOD,
-      progress: s.wood,
+      progress: displayAmount(s.wood),
       reached: false,
     };
   }
@@ -93,7 +93,7 @@ function determineGoal(s) {
       description: "Craft a Sharpening (" + UPGRADE_COST + " wood)",
       type: "upgrade",
       cost: UPGRADE_COST,
-      progressToNext: Math.min(s.wood, UPGRADE_COST),
+      progressToNext: displayAmount(Math.min(s.wood, UPGRADE_COST)),
       upgradeAvailable: sharpenAvailable(s),
     };
   }
@@ -104,7 +104,7 @@ function determineGoal(s) {
       description: "Gather " + GOAL_STONE + " stone",
       type: "stone-goal",
       target: GOAL_STONE,
-      progress: s.stone,
+      progress: displayAmount(s.stone),
       reached: false,
     };
   }
@@ -114,7 +114,7 @@ function determineGoal(s) {
       description: "Build a Wall (" + WALL_COST + " stone)",
       type: "build-wall-goal",
       cost: WALL_COST,
-      progressToNext: Math.min(s.stone, WALL_COST),
+      progressToNext: displayAmount(Math.min(s.stone, WALL_COST)),
       wallAvailable: s.stone >= WALL_COST,
     };
   }
@@ -127,8 +127,8 @@ function determineGoal(s) {
         type: "expedition-goal",
         expeditionLevel: s.expeditionLevel,
         resources: [
-          { name: "Wood", current: Math.min(s.wood, s.expeditionWoodCost), target: s.expeditionWoodCost },
-          { name: "Stone", current: Math.min(s.stone, s.expeditionStoneCost), target: s.expeditionStoneCost },
+          { name: "Wood", current: displayAmount(Math.min(s.wood, s.expeditionWoodCost)), target: s.expeditionWoodCost },
+          { name: "Stone", current: displayAmount(Math.min(s.stone, s.expeditionStoneCost)), target: s.expeditionStoneCost },
         ],
         canSendExpedition: s.wood >= s.expeditionWoodCost && s.stone >= s.expeditionStoneCost,
       };
@@ -138,8 +138,8 @@ function determineGoal(s) {
       type: "forge-goal",
       forgeLevel: s.forgeLevel,
       resources: [
-        { name: "Wood", current: Math.min(s.wood, s.forgeWoodCost), target: s.forgeWoodCost },
-        { name: "Stone", current: Math.min(s.stone, s.forgeStoneCost), target: s.forgeStoneCost },
+        { name: "Wood", current: displayAmount(Math.min(s.wood, s.forgeWoodCost)), target: s.forgeWoodCost },
+        { name: "Stone", current: displayAmount(Math.min(s.stone, s.forgeStoneCost)), target: s.forgeStoneCost },
       ],
       canForge: s.wood >= s.forgeWoodCost && s.stone >= s.forgeStoneCost,
     };
@@ -150,7 +150,7 @@ function determineGoal(s) {
     description: "Craft a Sharpening (" + UPGRADE_COST + " wood)",
     type: "upgrade",
     cost: UPGRADE_COST,
-    progressToNext: Math.min(s.wood, UPGRADE_COST),
+    progressToNext: displayAmount(Math.min(s.wood, UPGRADE_COST)),
     upgradeAvailable: sharpenAvailable(s),
   };
 }
@@ -206,7 +206,7 @@ function withGoal(s) {
     },
     firstGoal: {
       target: FIRST_GOAL_WOOD,
-      current: Math.min(s.wood, FIRST_GOAL_WOOD),
+      current: displayAmount(Math.min(s.wood, FIRST_GOAL_WOOD)),
       reached: s.wood >= FIRST_GOAL_WOOD,
     },
     nextGoal: determineGoal(s),
