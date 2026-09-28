@@ -272,12 +272,18 @@ export function tools() {
         if (action === "dismiss-offline") {
           const overlay = document.getElementById("offline-summary");
           if (overlay && !overlay.hidden) {
-            overlay.hidden = true;
-            const btnGather = document.getElementById("btn-gather");
-            if (btnGather) btnGather.disabled = false;
-            document.body.style.pointerEvents = "";
-            // Reconcile action button states immediately (no 500ms renderUI delay)
-            if (typeof window.__renderUI === "function") window.__renderUI();
+            if (typeof window.__dismissOffline === "function") {
+              // Route through the page's own handler so overlay isolation and
+              // focus restoration happen exactly as they do for a click.
+              window.__dismissOffline();
+            } else {
+              overlay.hidden = true;
+              const btnGather = document.getElementById("btn-gather");
+              if (btnGather) btnGather.disabled = false;
+              document.body.style.pointerEvents = "";
+              // Reconcile action button states immediately (no 500ms renderUI delay)
+              if (typeof window.__renderUI === "function") window.__renderUI();
+            }
           }
           return withGoal(getState());
         }
