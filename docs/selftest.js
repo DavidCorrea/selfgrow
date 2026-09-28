@@ -229,6 +229,78 @@ export async function checks() {
     }
   }
 
+  // ─── Goal announcer: polite live region for screen readers ───
+  const goalAnnouncer = document.getElementById("goal-announcer");
+  if (!goalAnnouncer) {
+    problems.push("Expected #goal-announcer to exist in the DOM — it was not found.");
+  } else {
+    if (goalAnnouncer.getAttribute("aria-live") !== "polite") {
+      problems.push(`Expected #goal-announcer aria-live="polite", got "${goalAnnouncer.getAttribute("aria-live")}".`);
+    }
+    if (goalAnnouncer.getAttribute("aria-atomic") !== "true") {
+      problems.push(`Expected #goal-announcer aria-atomic="true", got "${goalAnnouncer.getAttribute("aria-atomic")}".`);
+    }
+    if (!goalAnnouncer.classList.contains("visually-hidden")) {
+      problems.push("Expected #goal-announcer to be visually hidden — it lacked the 'visually-hidden' class.");
+    }
+    const announcerStyle = getComputedStyle(goalAnnouncer);
+    if (announcerStyle.position !== "absolute" || announcerStyle.width !== "1px") {
+      problems.push(`Expected #goal-announcer to be hidden from layout, got position "${announcerStyle.position}" and width "${announcerStyle.width}".`);
+    }
+    if (goalAnnouncer.textContent.trim() !== "") {
+      problems.push(`Expected #goal-announcer to be empty on page load (nothing announced before the player acts), got "${goalAnnouncer.textContent}".`);
+    }
+  }
+
+  // ─── Goal announcer: fires on change, not on every render tick ───
+  try {
+    const engine = await import("./engine.js");
+    engine.reset();
+    engine.init();
+
+    if (goalAnnouncer && typeof window.__renderUI === "function") {
+      // Establish a baseline render, then render the same state again. An
+      // unchanged render tick must not produce a fresh announcement.
+      window.__renderUI();
+      const idleMessage = goalAnnouncer.textContent;
+      window.__renderUI();
+      if (goalAnnouncer.textContent !== idleMessage) {
+        problems.push(`Goal announcer must not re-announce an unchanged render tick, got "${goalAnnouncer.textContent}" (was "${idleMessage}").`);
+      }
+
+      // Reaching 10 wood completes the gathering goal and reveals sharpening.
+      for (let i = 0; i < 10; i++) engine.gatherWood();
+      window.__renderUI();
+      const announced = goalAnnouncer.textContent;
+      if (!announced.startsWith("Goal complete:")) {
+        problems.push(`Expected the goal announcer to confirm completion when the goal changes, got "${announced}".`);
+      }
+      const newGoalText = document.getElementById("goal-text").textContent;
+      if (!announced.includes(newGoalText)) {
+        problems.push(`Expected the goal announcer to name the new goal "${newGoalText}", got "${announced}".`);
+      }
+
+      // A goal change while an overlay is open must stay silent.
+      window.__setOverlayOpen("selftest", true);
+      engine.craftUpgrade();
+      window.__renderUI();
+      if (goalAnnouncer.textContent !== announced) {
+        problems.push(`Goal announcer must stay silent while an overlay is open, got "${goalAnnouncer.textContent}" (was "${announced}").`);
+      }
+      window.__setOverlayOpen("selftest", false);
+    }
+  } catch (err) {
+    problems.push(`Goal announcer test threw: ${err.message}`);
+    console.error(err);
+  }
+
+  // Restore a clean game for the checks that follow.
+  {
+    const engine = await import("./engine.js");
+    engine.reset();
+    engine.init();
+  }
+
   // ─── Offline summary ───
   const offlineSummary = document.getElementById("offline-summary");
   if (!offlineSummary) {
