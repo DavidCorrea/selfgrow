@@ -38,6 +38,20 @@ function readOfflineStoneGained() {
 }
 
 /**
+ * Read the discovery named in the welcome-back panel.
+ * Returns null when no panel is showing or it found nothing this return.
+ */
+function readOfflineDiscovery() {
+  const overlay = document.getElementById('offline-summary');
+  if (!overlay || overlay.hidden) return null;
+  const line = document.getElementById('offline-discovery-line');
+  if (!line || line.hidden) return null;
+  const nameEl = document.getElementById('offline-discovery-name');
+  const name = nameEl ? nameEl.textContent.trim() : '';
+  return name ? name : null;
+}
+
+/**
  * Compute stone rate from total wood earned.
  */
 function computeStoneRate(totalWoodEarned) {
@@ -152,6 +166,7 @@ function withGoal(s) {
     stone: s.stone,
     stoneRate: stoneRate,
     stoneUnlocked: s.stoneUnlocked,
+    discovery: s.discovery || null,
     wallLevel: s.wallLevel,
     forgeLevel: s.forgeLevel,
     forgeWoodCost: s.forgeWoodCost,
@@ -165,6 +180,7 @@ function withGoal(s) {
     offlineSummaryVisible: !document.getElementById('offline-summary')?.hidden,
     offlineWoodGained: readOfflineWoodGained(),
     offlineStoneGained: readOfflineStoneGained(),
+    offlineDiscovery: readOfflineDiscovery(),
     milestones: {
       sharpenAvailable: s.wood >= 10 && s.upgradeLevel === 0,
       stoneNowUnlocked: s.stoneUnlocked,
@@ -212,7 +228,10 @@ export function tools() {
         + "whether stone is unlocked, timestamp, firstTimestamp (ISO date of first save), "
         + "elapsed (formatted duration since first save), whether the offline-summary "
         + "overlay is currently visible, how much wood and stone were gained "
-        + "while away (offlineWoodGained / offlineStoneGained), milestones object "
+        + "while away (offlineWoodGained / offlineStoneGained), the away discovery "
+        + "named in the welcome-back panel this return (offlineDiscovery, null when "
+        + "nothing was found), the lasting away discovery owned so far (discovery: "
+        + "{id, name, bonus} or null, whose bonus is already included in rate), milestones object "
         + "(sharpenAvailable, stoneNowUnlocked, wallAvailable, forgeNowUnlocked, expeditionNowUnlocked), "
         + "and the current goal (first goal, upgrade goal, stone goal, build-wall goal, forge goal, or expedition goal).",
       inputSchema: { type: "object", properties: {} },

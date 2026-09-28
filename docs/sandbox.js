@@ -35,6 +35,7 @@ export function cloneState(state) {
     expeditionWoodCost: state.expeditionWoodCost,
     expeditionStoneCost: state.expeditionStoneCost,
     stoneUnlocked: state.stoneUnlocked,
+    discovery: state.discovery ? { ...state.discovery } : null,
     timestamp: state.timestamp,
     firstTimestamp: state.firstTimestamp,
   };

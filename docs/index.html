@@ -121,6 +121,10 @@
       color: var(--forge-color);
     }
 
+    #status-bar .stat-value.discovery-value {
+      color: var(--accent);
+    }
+
     #status-bar .stat-value.stat-total {
       color: var(--highlight);
       opacity: 0.7;
@@ -624,6 +628,18 @@
       font-size: 0.65rem;
     }
 
+    .offline-discovery {
+      color: var(--accent);
+      font-size: 0.5rem;
+      font-weight: bold;
+      font-family: var(--pixel-font);
+      margin-top: 0.5rem;
+    }
+
+    .offline-discovery-name {
+      color: var(--highlight);
+    }
+
     .btn-dismiss {
       font-family: var(--pixel-font);
       font-size: 0.5rem;
@@ -781,6 +797,10 @@
       <span class="stat-label" id="map-label">Maps</span>
       <span class="stat-value" id="map-value" aria-labelledby="map-label" style="color: var(--map-color);">0</span>
     </div>
+    <div class="stat stat-hidden" id="discovery-stat">
+      <span class="stat-label" id="discovery-label">Away Find</span>
+      <span class="stat-value discovery-value" id="discovery-value" aria-labelledby="discovery-label">—</span>
+    </div>
   </section>
 
   <!-- ═══ Action Area Panel ═══ -->
@@ -850,6 +870,9 @@
         <span id="offline-stone-line" hidden><br>
         <span class="offline-stone-highlight" id="offline-stone-amount">0</span> stone
         </span>
+      </div>
+      <div id="offline-discovery-line" class="offline-discovery" hidden>
+        You found the <span class="offline-discovery-name" id="offline-discovery-name"></span>!
       </div>
       <div id="offline-milestones">
         <div class="offline-milestone" id="milestone-sharpen" hidden>You can now sharpen your axe!</div>
@@ -945,6 +968,10 @@
     const offlineAmount = document.getElementById("offline-wood-amount");
     const offlineStoneLine = document.getElementById("offline-stone-line");
     const offlineStoneAmount = document.getElementById("offline-stone-amount");
+    const offlineDiscoveryLine = document.getElementById("offline-discovery-line");
+    const offlineDiscoveryName = document.getElementById("offline-discovery-name");
+    const discoveryStat = document.getElementById("discovery-stat");
+    const discoveryValueEl = document.getElementById("discovery-value");
     const btnDismiss = document.getElementById("btn-dismiss-offline");
 
     const GOAL_WOOD = 10;
@@ -1121,6 +1148,14 @@
           offlineStoneLine.hidden = false;
         } else {
           offlineStoneLine.hidden = true;
+        }
+
+        // ─── Away discovery ───
+        if (gained.discovery) {
+          offlineDiscoveryName.textContent = gained.discovery.name;
+          offlineDiscoveryLine.hidden = false;
+        } else {
+          offlineDiscoveryLine.hidden = true;
         }
 
         // ─── Milestone announcements ───
@@ -1304,6 +1339,15 @@
         if (expeditionStat) expeditionStat.classList.add("stat-hidden");
         if (expeditionActions) expeditionActions.classList.remove("visible");
         if (btnExpedition) btnExpedition.disabled = true;
+      }
+
+      // Away discovery (hidden until one has been found on a past return)
+      const discovery = s.discovery;
+      if (discovery) {
+        discoveryStat.classList.remove("stat-hidden");
+        discoveryValueEl.textContent = discovery.name + " +" + discovery.bonus.toFixed(2) + "/s";
+      } else {
+        discoveryStat.classList.add("stat-hidden");
       }
 
       // Total stats (never decrease)
