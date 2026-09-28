@@ -851,11 +851,11 @@
     <div class="goal-label" id="goal-label">Next Goal</div>
     <div id="goal-text">Gather 10 wood</div>
     <div class="goal-resource-label" id="goal-resource-label-1" hidden></div>
-    <div class="progress-track" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="10" aria-labelledby="goal-label" id="goal-progress-track-1">
+    <div class="progress-track" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="10" aria-labelledby="goal-label goal-text goal-resource-label-1" id="goal-progress-track-1">
       <div class="progress-fill" id="goal-progress-fill" style="width: 0%;"></div>
     </div>
     <div class="goal-resource-label" id="goal-resource-label-2" hidden></div>
-    <div class="progress-track" id="goal-progress-track-2" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="0" aria-labelledby="goal-label" hidden>
+    <div class="progress-track" id="goal-progress-track-2" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="0" aria-labelledby="goal-label goal-text goal-resource-label-2" hidden>
       <div class="progress-fill stone-fill" id="goal-progress-fill-2" style="width: 0%;"></div>
     </div>
   </section>
@@ -928,7 +928,7 @@
   </div>
   <script type="module">
     import "./webmcp.js";
-    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, consumeOfflineWoodGained, consumeOfflineGained, consumeOfflineMilestones, formatElapsed, sharpenAvailable, sharpenThreshold, FIRST_GOAL_WOOD, UPGRADE_COST, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS } from "./engine.js";
+    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, consumeOfflineWoodGained, consumeOfflineGained, consumeOfflineMilestones, formatElapsed, sharpenAvailable, sharpenThreshold, displayAmount, FIRST_GOAL_WOOD, UPGRADE_COST, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS } from "./engine.js";
     import { cloneState, fastForward } from "./sandbox.js";
 
     init();
@@ -976,9 +976,6 @@
     const btnDismiss = document.getElementById("btn-dismiss-offline");
 
     const GOAL_STONE = 5;
-    let goalReached = false;
-    let stoneGoalActive = false;
-    let wallBuilt = false;
 
     // ─── Cooldown state ───
     let woodCooldown = false;
@@ -1239,6 +1236,9 @@
       const wallBonus = wallLevel * 1;
       const forgeClickBonus = forgeLevel * FORGE_CLICK_POWER_BONUS;
       const clickPower = 1 + wallBonus + forgeClickBonus;
+      // Derived from state every render, never cached, so a reset can't leave
+      // the panel showing a goal whose prerequisite no longer holds.
+      const wallBuilt = wallLevel > 0;
 
       // Wood count
       if (stateEl) {
@@ -1379,17 +1379,21 @@
       }
 
       // Goal system
-      // Helper: render a single-resource goal (hide second bar)
-      function renderSingleGoal(description, current, target) {
+      // Helper: render a single-resource goal (hide second bar and label)
+      function renderSingleGoal(description, current, target, resourceName) {
         goalText.textContent = description;
         const pct = (current / target) * 100;
         if (goalFill) goalFill.style.width = Math.min(pct, 100) + "%";
         // Ensure default green fill for single goals
         if (goalFill) goalFill.className = "progress-fill";
-        if (goalProgress) goalProgress.setAttribute("aria-valuenow", Math.floor(current));
+        if (goalProgress) goalProgress.setAttribute("aria-valuenow", String(displayAmount(current)));
         if (goalProgress) goalProgress.setAttribute("aria-valuemax", target);
-        // Hide secondary bar and labels
-        if (goalLabel1) goalLabel1.hidden = true;
+        // Show this goal's exact numbers beside its bar
+        if (goalLabel1) {
+          goalLabel1.textContent = resourceName + ": " + displayAmount(current) + " / " + target;
+          goalLabel1.hidden = false;
+        }
+        // Hide secondary bar and label
         if (goalTrack2) goalTrack2.hidden = true;
         if (goalFill2) goalFill2.style.width = "0%";
         if (goalLabel2) goalLabel2.hidden = true;
@@ -1403,11 +1407,11 @@
         if (goalFill) goalFill.style.width = Math.min(pct1, 100) + "%";
         if (goalFill) goalFill.className = "progress-fill"; // green for wood
         if (goalProgress) {
-          goalProgress.setAttribute("aria-valuenow", Math.floor(res1.current));
+          goalProgress.setAttribute("aria-valuenow", String(displayAmount(res1.current)));
           goalProgress.setAttribute("aria-valuemax", res1.target);
         }
         if (goalLabel1) {
-          goalLabel1.textContent = res1.name + ": " + Math.floor(res1.current) + "/" + res1.target;
+          goalLabel1.textContent = res1.name + ": " + displayAmount(res1.current) + " / " + res1.target;
           goalLabel1.hidden = false;
         }
         // Second bar
@@ -1419,32 +1423,23 @@
         }
         if (goalTrack2) {
           goalTrack2.hidden = false;
-          goalTrack2.setAttribute("aria-valuenow", Math.floor(res2.current));
+          goalTrack2.setAttribute("aria-valuenow", String(displayAmount(res2.current)));
           goalTrack2.setAttribute("aria-valuemax", res2.target);
         }
         if (goalLabel2) {
-          goalLabel2.textContent = res2.name + ": " + Math.floor(res2.current) + "/" + res2.target;
+          goalLabel2.textContent = res2.name + ": " + displayAmount(res2.current) + " / " + res2.target;
           goalLabel2.hidden = false;
         }
       }
 
       if (wood >= FIRST_GOAL_WOOD && upgradeLevel >= 1) {
         // Player has done at least one sharpen — show stone/forge goals
-        if (!stoneGoalActive) {
-          stoneGoalActive = true;
-        }
-
-        // Sync wallBuilt with engine state
-        if (wallLevel > 0) {
-          wallBuilt = true;
-        }
-
         if (!wallBuilt && stone < GOAL_STONE) {
           // Goal: Gather 5 stone
-          renderSingleGoal("Gather " + GOAL_STONE + " stone", stone, GOAL_STONE);
+          renderSingleGoal("Gather " + GOAL_STONE + " stone", stone, GOAL_STONE, "Stone");
         } else if (stone >= GOAL_STONE && !wallBuilt) {
           // Goal: Build a Wall
-          renderSingleGoal("Build a Wall (" + WALL_COST + " stone)", Math.min(stone, WALL_COST), WALL_COST);
+          renderSingleGoal("Build a Wall (" + WALL_COST + " stone)", Math.min(stone, WALL_COST), WALL_COST, "Stone");
         } else if (wallBuilt && forgeLevel >= 5) {
           // Expedition goal — shown once forge level reaches 5, replacing forge goal
           const eWoodCost = s.expeditionWoodCost || 10;
@@ -1465,20 +1460,14 @@
           );
         } else {
           // Fallback — sharpen cycle
-          renderSingleGoal("Craft a Sharpening (" + UPGRADE_COST + " wood)", Math.min(wood, UPGRADE_COST), UPGRADE_COST);
+          renderSingleGoal("Craft a Sharpening (" + UPGRADE_COST + " wood)", Math.min(wood, UPGRADE_COST), UPGRADE_COST, "Wood");
         }
 
       } else if (wood >= FIRST_GOAL_WOOD) {
         // Reached 10 wood but haven't done first sharpen yet
-        if (!goalReached) {
-          goalReached = true;
-        }
-
-        renderSingleGoal("Craft a Sharpening (" + UPGRADE_COST + " wood)", Math.min(wood, UPGRADE_COST), UPGRADE_COST);
+        renderSingleGoal("Craft a Sharpening (" + UPGRADE_COST + " wood)", Math.min(wood, UPGRADE_COST), UPGRADE_COST, "Wood");
       } else {
-        goalReached = false;
-        stoneGoalActive = false;
-        renderSingleGoal("Gather " + FIRST_GOAL_WOOD + " wood", wood, FIRST_GOAL_WOOD);
+        renderSingleGoal("Gather " + FIRST_GOAL_WOOD + " wood", wood, FIRST_GOAL_WOOD, "Wood");
       }
 
       // ─── Sharpen button: unconditional reconciliation ────────────

@@ -217,8 +217,12 @@ export async function checks() {
     if (progressTrack2 && !progressTrack2.hidden) {
       problems.push("Expected #goal-progress-track-2 to be hidden on page load (single-resource goal) — it was visible.");
     }
-    if (goalLabel1 && !goalLabel1.hidden) {
-      problems.push("Expected #goal-resource-label-1 to be hidden on page load (single-resource goal) — it was visible.");
+    // A single-resource goal still shows its exact numbers, so label 1 is
+    // visible and non-empty; only the second resource's label is hidden.
+    if (goalLabel1 && goalLabel1.hidden) {
+      problems.push("Expected #goal-resource-label-1 to be visible on page load (single-resource goal) — it was hidden.");
+    } else if (goalLabel1 && !goalLabel1.textContent.trim()) {
+      problems.push("Expected #goal-resource-label-1 to show its 'current / target' numbers on page load — it was empty.");
     }
     if (goalLabel2 && !goalLabel2.hidden) {
       problems.push("Expected #goal-resource-label-2 to be hidden on page load (single-resource goal) — it was visible.");
@@ -1467,6 +1471,98 @@ export async function checks() {
     engine.init();
   } catch (err) {
     problems.push(`Dual-goal rendering test threw: ${err.message}`);
+    console.error(err);
+  }
+
+  // ─── Issue #967: goal bars show exact 'current / target' numbers ───
+  // Every goal spells out how close it is beside its bar, and those numbers are
+  // the same ones the read-state tool reports at that moment. The numbers are
+  // associated with the bar, so a screen reader reads the goal, its numbers and
+  // its bar together.
+  try {
+    const engine = await import("./engine.js");
+    const { displayAmount } = engine;
+    const { tools } = await import("./agenttools.js");
+    const readState = tools().find((t) => t.name === "read-state");
+    const renderNow = () => { if (typeof window.__renderUI === "function") window.__renderUI(); };
+    const readLabel = (id) => {
+      const el = document.getElementById(id);
+      if (!el || el.hidden) return null;
+      const m = /^(.+?):\s*([\d.]+)\s*\/\s*([\d.]+)$/.exec(el.textContent.trim());
+      return m ? { name: m[1], current: parseFloat(m[2]), target: parseFloat(m[3]) } : { raw: el.textContent.trim() };
+    };
+
+    // The shared rounding rule: integers and values at or above 10 are floored,
+    // everything below keeps two decimals.
+    if (displayAmount(7) !== 7 || displayAmount(7.5) !== 7.5 || displayAmount(10.5) !== 10) {
+      problems.push(`displayAmount should floor integers and values >= 10 and keep two decimals below, got displayAmount(7)=${displayAmount(7)}, displayAmount(7.5)=${displayAmount(7.5)}, displayAmount(10.5)=${displayAmount(10.5)}.`);
+    }
+
+    // Both bars must be labelled by the goal text and their own numbers.
+    const track1 = document.getElementById("goal-progress-track-1");
+    const track2 = document.getElementById("goal-progress-track-2");
+    const labelledBy = (el) => (el ? (el.getAttribute("aria-labelledby") || "").split(/\s+/) : []);
+    for (const id of ["goal-label", "goal-text", "goal-resource-label-1"]) {
+      if (!labelledBy(track1).includes(id)) {
+        problems.push(`#goal-progress-track-1 aria-labelledby should reference #${id}, got "${track1 ? track1.getAttribute("aria-labelledby") : "(no track)"}".`);
+      }
+    }
+    for (const id of ["goal-label", "goal-text", "goal-resource-label-2"]) {
+      if (!labelledBy(track2).includes(id)) {
+        problems.push(`#goal-progress-track-2 aria-labelledby should reference #${id}, got "${track2 ? track2.getAttribute("aria-labelledby") : "(no track)"}".`);
+      }
+    }
+
+    // Single-resource goal: 7 of 10 wood. reset() stops the tick, so the
+    // rendered label and the tool read the same state with no drift between them.
+    engine.reset();
+    for (let i = 0; i < 7; i++) engine.gatherWood();
+    renderNow();
+    const singleLabel = readLabel("goal-resource-label-1");
+    const singleState = await readState.execute({});
+    if (!singleLabel || singleLabel.raw !== undefined) {
+      problems.push(`Single goal should show a 'Name: current / target' label, got ${JSON.stringify(singleLabel)}.`);
+    } else if (singleState.nextGoal.type === "first-goal") {
+      if (singleLabel.current !== singleState.nextGoal.progress || singleLabel.target !== singleState.nextGoal.target) {
+        problems.push(`Single goal label showed "${singleLabel.name}: ${singleLabel.current} / ${singleLabel.target}" but read-state nextGoal reported ${singleState.nextGoal.progress} / ${singleState.nextGoal.target}.`);
+      }
+    } else {
+      problems.push(`Expected a 'first-goal' with 7 wood, got "${singleState.nextGoal.type}".`);
+    }
+
+    // Dual-resource goal: the forge goal after building the wall.
+    engine.reset();
+    for (let i = 0; i < 15; i++) engine.gatherWood();
+    engine.craftUpgrade(); // wood 15 -> 10, unlocks stone
+    for (let i = 0; i < engine.WALL_COST; i++) engine.gatherStone();
+    engine.buildWall(); // wall built, stone back to 0
+    renderNow();
+    const dualLabel1 = readLabel("goal-resource-label-1");
+    const dualLabel2 = readLabel("goal-resource-label-2");
+    const dualState = await readState.execute({});
+    const dualGoal = dualState.nextGoal;
+    if (dualGoal.type !== "forge-goal" || !Array.isArray(dualGoal.resources) || dualGoal.resources.length !== 2) {
+      problems.push(`Expected a dual 'forge-goal' after building the wall, got "${dualGoal.type}".`);
+    } else {
+      const woodRes = dualGoal.resources.find((r) => r.name === "Wood");
+      const stoneRes = dualGoal.resources.find((r) => r.name === "Stone");
+      if (!dualLabel1 || dualLabel1.raw !== undefined || !woodRes) {
+        problems.push(`Dual goal should show a Wood 'current / target' label, got ${JSON.stringify(dualLabel1)}.`);
+      } else if (dualLabel1.current !== woodRes.current || dualLabel1.target !== woodRes.target) {
+        problems.push(`Dual Wood label showed ${dualLabel1.current} / ${dualLabel1.target} but read-state reported ${woodRes.current} / ${woodRes.target}.`);
+      }
+      if (!dualLabel2 || dualLabel2.raw !== undefined || !stoneRes) {
+        problems.push(`Dual goal should show a Stone 'current / target' label, got ${JSON.stringify(dualLabel2)}.`);
+      } else if (dualLabel2.current !== stoneRes.current || dualLabel2.target !== stoneRes.target) {
+        problems.push(`Dual Stone label showed ${dualLabel2.current} / ${dualLabel2.target} but read-state reported ${stoneRes.current} / ${stoneRes.target}.`);
+      }
+    }
+
+    // Clean up
+    engine.reset();
+    engine.init();
+  } catch (err) {
+    problems.push(`Goal label numbers test threw: ${err.message}`);
     console.error(err);
   }
 

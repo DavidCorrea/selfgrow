@@ -347,6 +347,19 @@ function stopTick() {
 // ─── Public API ───────────────────────────────────────────────────
 
 /**
+ * Format a resource quantity the way the status bar and the goal labels show
+ * it: integers and values at or above 10 are floored, everything else keeps
+ * two decimals. The page and the agent tools share this one rule so the goal
+ * panel and the read-state tool can never disagree about a goal's numbers.
+ *
+ * @param {number} v
+ * @returns {number}
+ */
+export function displayAmount(v) {
+  return Number.isInteger(v) || v >= 10 ? Math.floor(v) : parseFloat(v.toFixed(2));
+}
+
+/**
  * Format a duration in milliseconds as a human-readable string.
  * Outputs e.g. '2d 7h 34m', '5h 0m', '3m 12s', '5s', or '—' for falsy / zero.
  *
