@@ -286,28 +286,56 @@ function persist() {
   }
 }
 
+/**
+ * Whether a decoded save carries the fields every save must have to be
+ * trustworthy: a finite wood amount, a finite rate, and a timestamp string.
+ * Anything failing this is rejected before it can touch the live state.
+ *
+ * @param {unknown} saved
+ * @returns {boolean}
+ */
+function isValidSaved(saved) {
+  return Boolean(saved)
+    && typeof saved === "object"
+    && Number.isFinite(saved.wood)
+    && Number.isFinite(saved.rate)
+    && typeof saved.timestamp === "string";
+}
+
+/**
+ * Copy a validated save onto the live state. Every optional field falls back
+ * to its fresh-game default, so an older save that predates a field still
+ * loads. Shared by loadPersisted and importSave so a restored code and a
+ * reloaded save can never disagree about what they set.
+ *
+ * @param {{ wood: number, rate: number, timestamp: string }} saved
+ */
+function applyPersisted(saved) {
+  state.wood = saved.wood;
+  state.rate = saved.rate;
+  state.upgradeLevel = typeof saved.upgradeLevel === "number" ? saved.upgradeLevel : 0;
+  state.stone = typeof saved.stone === "number" ? saved.stone : 0;
+  state.totalWoodEarned = typeof saved.totalWoodEarned === "number" ? saved.totalWoodEarned : 0;
+  state.totalStoneEarned = typeof saved.totalStoneEarned === "number" ? saved.totalStoneEarned : 0;
+  state.wallLevel = typeof saved.wallLevel === "number" ? saved.wallLevel : 0;
+  state.forgeLevel = typeof saved.forgeLevel === "number" ? saved.forgeLevel : 0;
+  state.expeditionLevel = typeof saved.expeditionLevel === "number" ? saved.expeditionLevel : 0;
+  state.maps = typeof saved.maps === "number" ? saved.maps : 0;
+  state.stoneUnlocked = typeof saved.stoneUnlocked === "boolean" ? saved.stoneUnlocked : (state.upgradeLevel >= 1);
+  state.discoveryBonus = typeof saved.discoveryBonus === "number" ? saved.discoveryBonus : 0;
+  state.discoveryId = typeof saved.discoveryId === "string" ? saved.discoveryId : null;
+  state.discoveryName = typeof saved.discoveryName === "string" ? saved.discoveryName : null;
+  state.timestamp = saved.timestamp;
+  state.firstTimestamp = typeof saved.firstTimestamp === "string" ? saved.firstTimestamp : saved.timestamp;
+}
+
 function loadPersisted() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const saved = JSON.parse(raw);
-      if (saved && typeof saved.wood === "number" && typeof saved.rate === "number" && saved.timestamp) {
-        state.wood = saved.wood;
-        state.rate = saved.rate;
-        state.upgradeLevel = typeof saved.upgradeLevel === "number" ? saved.upgradeLevel : 0;
-        state.stone = typeof saved.stone === "number" ? saved.stone : 0;
-        state.totalWoodEarned = typeof saved.totalWoodEarned === "number" ? saved.totalWoodEarned : 0;
-        state.totalStoneEarned = typeof saved.totalStoneEarned === "number" ? saved.totalStoneEarned : 0;
-        state.wallLevel = typeof saved.wallLevel === "number" ? saved.wallLevel : 0;
-        state.forgeLevel = typeof saved.forgeLevel === "number" ? saved.forgeLevel : 0;
-        state.expeditionLevel = typeof saved.expeditionLevel === "number" ? saved.expeditionLevel : 0;
-        state.maps = typeof saved.maps === "number" ? saved.maps : 0;
-        state.stoneUnlocked = typeof saved.stoneUnlocked === "boolean" ? saved.stoneUnlocked : (state.upgradeLevel >= 1);
-        state.discoveryBonus = typeof saved.discoveryBonus === "number" ? saved.discoveryBonus : 0;
-        state.discoveryId = typeof saved.discoveryId === "string" ? saved.discoveryId : null;
-        state.discoveryName = typeof saved.discoveryName === "string" ? saved.discoveryName : null;
-        state.timestamp = saved.timestamp;
-        state.firstTimestamp = typeof saved.firstTimestamp === "string" ? saved.firstTimestamp : saved.timestamp;
+      if (isValidSaved(saved)) {
+        applyPersisted(saved);
         return true;
       }
     }
@@ -408,6 +436,49 @@ export function save() {
   state.timestamp = now();
   persist();
   return { ...state };
+}
+
+/**
+ * Encode the current save as a portable base64 text code — the exact JSON
+ * written to localStorage, so a code is a faithful copy of the save.
+ *
+ * @returns {string}
+ */
+export function exportSave() {
+  return btoa(JSON.stringify(state));
+}
+
+/**
+ * Restore a save from a code produced by exportSave. The code is decoded and
+ * validated before anything is touched, so a corrupted or foreign code returns
+ * a refusal and leaves the live and stored save exactly as they were. On
+ * success the code's fields (including its timestamps) become the save and it
+ * is persisted; the offline catch-up is deliberately not run, so restoring an
+ * old code reproduces that code rather than granting the elapsed time as free
+ * offline progress.
+ *
+ * @param {string} code
+ * @returns {{ ok: boolean, reason?: string, state: GameState }}
+ */
+export function importSave(code) {
+  if (typeof code !== "string" || code.trim() === "") {
+    return { ok: false, reason: "Enter a save code to restore.", state: getState() };
+  }
+
+  let saved;
+  try {
+    saved = JSON.parse(atob(code.trim()));
+  } catch {
+    return { ok: false, reason: "That code is not a valid save — it looks corrupted or incomplete.", state: getState() };
+  }
+
+  if (!isValidSaved(saved)) {
+    return { ok: false, reason: "That code is not a valid save — it is missing required fields.", state: getState() };
+  }
+
+  applyPersisted(saved);
+  persist();
+  return { ok: true, state: getState() };
 }
 
 /**

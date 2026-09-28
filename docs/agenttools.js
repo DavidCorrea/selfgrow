@@ -8,7 +8,7 @@
  * @module agenttools
  */
 
-import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, consumeOfflineWoodGained, formatElapsed, sharpenAvailable, displayAmount, FIRST_GOAL_WOOD, UPGRADE_COST, WALL_COST, STONE_GATHER_AMOUNT, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE } from "./engine.js";
+import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, consumeOfflineWoodGained, formatElapsed, sharpenAvailable, displayAmount, exportSave, importSave, FIRST_GOAL_WOOD, UPGRADE_COST, WALL_COST, STONE_GATHER_AMOUNT, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE } from "./engine.js";
 
 const GOAL_STONE = 5;
 
@@ -327,6 +327,49 @@ export function tools() {
           return withGoal(getState());
         }
         throw new Error('Unknown action "' + action + '". Supported: gather, sharpen, gather-stone, build-wall, forge-tool, send-expedition, dismiss-offline');
+      },
+    },
+    {
+      name: "read-save-code",
+      description: "Returns the visitor's current save as a portable text code — the same "
+        + "string the Save Backup panel reveals and copies. The code encodes the whole "
+        + "save (wood, rate, upgrades, stone, wall, forge, expedition, maps, discoveries "
+        + "and timestamps) and can be handed back to restore-save on another browser or "
+        + "after clearing site data. Use it to back up a save before something risky.",
+      inputSchema: { type: "object", properties: {} },
+      annotations: { readOnlyHint: true },
+      example: {},
+      async execute() {
+        return { code: exportSave() };
+      },
+    },
+    {
+      name: "restore-save",
+      description: "Replaces the current save with the one held in a text code (as returned "
+        + "by read-save-code), restoring wood, upgrades, stone, wall, forge, expedition, "
+        + "maps, discoveries and timestamps. Returns ok:true with the state afterwards, or "
+        + "ok:false and a plain reason when the code is missing, corrupted or not a save — "
+        + "in which case the existing save is left untouched.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          code: {
+            type: "string",
+            description: "A save code produced by read-save-code.",
+          },
+        },
+        required: ["code"],
+      },
+      annotations: { readOnlyHint: false, consequentialHint: true },
+      example: { code: "e30=" },
+      async execute({ code }) {
+        const result = importSave(code);
+        if (!result.ok) {
+          return { ok: false, reason: result.reason, ...withGoal(result.state) };
+        }
+        // Reflect the restored save on the page immediately, like the panel does.
+        if (typeof window.__renderUI === "function") window.__renderUI();
+        return { ok: true, ...withGoal(result.state) };
       },
     },
     {

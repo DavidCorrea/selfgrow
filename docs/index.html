@@ -536,6 +536,69 @@
       margin-top: -0.25rem;
     }
 
+    /* ─── Save backup panel ─── */
+    #save-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    #save-panel h2 {
+      font-size: 0.6rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .save-hint,
+    .save-label {
+      font-size: 0.5rem;
+      color: var(--text-dim);
+      font-family: var(--body-font);
+      line-height: 1.5;
+    }
+
+    .save-label {
+      color: var(--text);
+    }
+
+    #save-code,
+    #save-import-input {
+      width: 100%;
+      min-height: 3.5rem;
+      resize: vertical;
+      background: #0a0a1a;
+      border: 3px solid #3a3a5a;
+      color: var(--text);
+      font-family: var(--body-font);
+      font-size: 0.7rem;
+      padding: 0.5rem;
+      word-break: break-all;
+    }
+
+    #save-code:focus-visible,
+    #save-import-input:focus-visible {
+      outline: 2px solid var(--highlight);
+      outline-offset: 2px;
+    }
+
+    .save-divider {
+      border: none;
+      border-top: 3px solid #3a3a5a;
+      margin: 0.25rem 0;
+    }
+
+    #save-status {
+      font-size: 0.5rem;
+      font-family: var(--body-font);
+      color: var(--highlight);
+      min-height: 1em;
+    }
+
+    #save-status.error {
+      color: var(--panel-border);
+    }
+
     /* ─── Button icon — match button text size ─── */
     .btn-icon {
       font-size: inherit;
@@ -874,6 +937,26 @@
     </div>
   </section>
 
+  <!-- ═══ Save Backup Panel ═══ -->
+  <section class="panel" id="save-panel" role="region" aria-label="Save backup">
+    <h2>Save Backup</h2>
+    <p class="save-hint">Copy this code somewhere safe. Paste it on another browser — or after clearing site data — to bring your world back.</p>
+    <button class="btn" id="btn-reveal-save" type="button" aria-label="Reveal Save Code">
+      <span class="btn-icon">&#x1F4BE;</span> Reveal Save Code
+    </button>
+    <textarea id="save-code" readonly aria-label="Your save code" placeholder="Press Reveal Save Code to show your save here"></textarea>
+    <button class="btn" id="btn-copy-save" type="button" aria-label="Copy Save Code">
+      <span class="btn-icon">&#x1F4CB;</span> Copy Save Code
+    </button>
+    <hr class="save-divider">
+    <label class="save-label" for="save-import-input">Restore from a code</label>
+    <textarea id="save-import-input" aria-label="Paste a save code to restore" placeholder="Paste a save code here"></textarea>
+    <button class="btn" id="btn-restore-save" type="button" aria-label="Restore Save">
+      <span class="btn-icon">&#x21BA;</span> Restore Save
+    </button>
+    <p id="save-status" role="alert"></p>
+  </section>
+
   <!-- Polite live region: names each new goal so the game is playable without
        seeing the screen. Kept outside the panels so overlay isolation never
        hides it; announcements are suppressed while an overlay is open. -->
@@ -947,7 +1030,7 @@
   </div>
   <script type="module">
     import "./webmcp.js";
-    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, consumeOfflineWoodGained, consumeOfflineGained, consumeOfflineMilestones, formatElapsed, sharpenAvailable, sharpenThreshold, displayAmount, FIRST_GOAL_WOOD, UPGRADE_COST, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS } from "./engine.js";
+    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, consumeOfflineWoodGained, consumeOfflineGained, consumeOfflineMilestones, formatElapsed, sharpenAvailable, sharpenThreshold, displayAmount, exportSave, importSave, FIRST_GOAL_WOOD, UPGRADE_COST, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS } from "./engine.js";
     import { cloneState, fastForward } from "./sandbox.js";
 
     init();
@@ -998,6 +1081,12 @@
     const discoveryStat = document.getElementById("discovery-stat");
     const discoveryValueEl = document.getElementById("discovery-value");
     const btnDismiss = document.getElementById("btn-dismiss-offline");
+    const btnRevealSave = document.getElementById("btn-reveal-save");
+    const saveCodeEl = document.getElementById("save-code");
+    const btnCopySave = document.getElementById("btn-copy-save");
+    const saveImportInput = document.getElementById("save-import-input");
+    const btnRestoreSave = document.getElementById("btn-restore-save");
+    const saveStatus = document.getElementById("save-status");
 
     const GOAL_STONE = 5;
 
@@ -1231,6 +1320,44 @@
       setOverlayOpen("offline", false);
     }
 
+    // ─── Save backup ───
+    function setSaveStatus(message, isError) {
+      saveStatus.textContent = message;
+      saveStatus.classList.toggle("error", Boolean(isError));
+    }
+
+    function revealSaveCode() {
+      saveCodeEl.value = exportSave();
+      setSaveStatus("", false);
+    }
+
+    async function copySaveCode() {
+      if (!saveCodeEl.value) saveCodeEl.value = exportSave();
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(saveCodeEl.value);
+        } else {
+          // Fallback for browsers without the async clipboard API.
+          saveCodeEl.select();
+          document.execCommand("copy");
+        }
+        setSaveStatus("Save code copied.", false);
+      } catch {
+        saveCodeEl.select();
+        setSaveStatus("Copy failed \u2014 the code is selected, press Ctrl/Cmd+C.", true);
+      }
+    }
+
+    function restoreSave() {
+      const result = importSave(saveImportInput.value);
+      if (!result.ok) {
+        setSaveStatus(result.reason, true);
+        return;
+      }
+      renderUI();
+      setSaveStatus("Save restored.", false);
+    }
+
     btnDismiss.addEventListener("click", dismissOffline);
     btnDismiss.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
@@ -1245,6 +1372,10 @@
         dismissOffline();
       }
     });
+
+    btnRevealSave.addEventListener("click", revealSaveCode);
+    btnCopySave.addEventListener("click", copySaveCode);
+    btnRestoreSave.addEventListener("click", restoreSave);
 
     // ─── Render ───
     function renderUI() {
@@ -1706,6 +1837,8 @@
     window.__renderUI = renderUI;
     window.__showOfflineSummary = showOfflineSummary;
     window.__dismissOffline = dismissOffline;
+    window.__revealSaveCode = revealSaveCode;
+    window.__restoreSave = restoreSave;
 
     // Show offline summary on load if there's offline resources
     showOfflineSummary();
