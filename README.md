@@ -36,6 +36,20 @@ Anyone can file a ticket; only the Product Manager marks one ready, and the Devs
 | 🤝 **review-pr** / **triage-fork-pr** | on any PR | Finishes a person's PR; reviews a fork's as text |
 | 📦 **pi-update** | Tue 07:00 | Keeps the model chain current |
 
+### The week
+
+| UTC | Mon | Tue | Wed | Thu | Fri | Sat | Sun |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 00:30 | 📋 PM | 📋 PM | 📋 PM | 📋 PM | 📋 PM | 📋 PM | 📋 PM + digest |
+| 07:00 | | 📦 pi-update | | | | | |
+| 08:00 | 🧭 PO | | | | | | |
+| 09:00 | | | | 🔧 Tech Lead | | | |
+| 14:00 | ⚒️ Devs | ⚒️ Devs | ⚒️ Devs | ⚒️ Devs | ⚒️ Devs | ⚒️ Devs | ⚒️ Devs |
+| 16:00 | 📊 Health | 📊 Health | 📊 Health | 📊 Health | 📊 Health | 📊 Health | 📊 Health |
+| 23:00 | 👀 Playtester | 👀 Playtester | 👀 Playtester | 👀 Playtester | 👀 Playtester | 👀 Playtester | 👀 Playtester |
+
+The Devs also start right after each PM run that leaves groomed work; 14:00 picks up whatever is left. The Playtester plays at 23:00 so its findings are waiting for the PM's next run.
+
 ## The product contract
 
 The one thing the machine requires of any product: `docs/` is a static site with an `index.html`, and it exports its own checks.
