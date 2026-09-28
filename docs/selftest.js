@@ -2843,5 +2843,154 @@ export async function checks() {
     console.error(err);
   }
 
+  // ─── Away discovery ─────────────────────────────────────────────
+  // A real return of at least 60s must turn up exactly one discovery, derived
+  // from the absence length alone, name it in the welcome-back panel, and make
+  // its bonus last so it stays readable after the panel is dismissed.
+  try {
+    const engine = await import("./engine.js");
+
+    // (a) The page must carry both discovery surfaces.
+    const discoveryStat = document.getElementById("discovery-stat");
+    const discoveryValue = document.getElementById("discovery-value");
+    const discoveryLine = document.getElementById("offline-discovery-line");
+    const discoveryNameEl = document.getElementById("offline-discovery-name");
+    if (!discoveryStat || !discoveryValue) {
+      problems.push("Expected #discovery-stat and #discovery-value in the status readout for the away discovery.");
+    }
+    if (!discoveryLine || !discoveryNameEl) {
+      problems.push("Expected #offline-discovery-line and #offline-discovery-name in the welcome-back panel for the away discovery.");
+    }
+
+    // (b) The ladder is pure, deterministic and strictly stronger with time.
+    if (typeof engine.discoverForElapsed !== "function") {
+      problems.push("Expected engine.discoverForElapsed to be exported as a pure function.");
+    } else {
+      const find59 = engine.discoverForElapsed(59);
+      const find60 = engine.discoverForElapsed(60);
+      const find600 = engine.discoverForElapsed(600);
+      const find1d = engine.discoverForElapsed(86400);
+      const find1dAgain = engine.discoverForElapsed(86400);
+      if (find59 !== null) {
+        problems.push(`An absence of 59s should find nothing, got ${JSON.stringify(find59)}.`);
+      }
+      if (!find60 || typeof find60.name !== "string" || !find60.id) {
+        problems.push(`An absence of 60s should name a discovery, got ${JSON.stringify(find60)}.`);
+      }
+      if (!(find600 && find60 && find600.bonus > find60.bonus)) {
+        problems.push(`A 600s absence should find something stronger than a 60s one, got ${JSON.stringify(find600)} vs ${JSON.stringify(find60)}.`);
+      }
+      if (!(find1d && find600 && find1d.bonus > find600.bonus)) {
+        problems.push(`A 1d absence should find something stronger than a 600s one, got ${JSON.stringify(find1d)} vs ${JSON.stringify(find600)}.`);
+      }
+      if (!find1d || !find1dAgain || find1dAgain.id !== find1d.id) {
+        problems.push(`The same absence length must always yield the same discovery id, got ${find1d && find1d.id} then ${find1dAgain && find1dAgain.id}.`);
+      }
+    }
+
+    // (c) A 600s return round-trips: state bonus, panel name, status readout,
+    // and the agent's read-state tool.
+    engine.reset();
+    localStorage.setItem("selfgrow-state", JSON.stringify({
+      wood: 5, rate: 0.1, stone: 0, totalWoodEarned: 5,
+      wallLevel: 0, stoneUnlocked: false,
+      timestamp: new Date(Date.now() - 600000).toISOString(),
+    }));
+    engine.init();
+    const expected = engine.discoverForElapsed(600);
+    const returned = engine.getState();
+    if (!expected || !returned.discovery || returned.discovery.id !== expected.id) {
+      problems.push(`A 600s return should credit the ${expected && expected.id} discovery, got ${JSON.stringify(returned.discovery)}.`);
+    }
+    const expectedRate = 0.1 + (expected ? expected.bonus : 0);
+    if (Math.abs(returned.rate - expectedRate) > 1e-9) {
+      problems.push(`The away discovery bonus (${expected && expected.bonus}) should raise rate to ${expectedRate}, got ${returned.rate}.`);
+    }
+
+    window.__showOfflineSummary();
+    if (discoveryLine && discoveryLine.hidden) {
+      problems.push("A 600s return should name its discovery in the welcome-back panel, but #offline-discovery-line was hidden.");
+    }
+    if (discoveryNameEl && expected && discoveryNameEl.textContent.trim() !== expected.name) {
+      problems.push(`The welcome-back panel should name "${expected.name}", got "${discoveryNameEl.textContent.trim()}".`);
+    }
+
+    const { tools } = await import("./agenttools.js");
+    const readState = tools().find((t) => t.name === "read-state");
+    if (!readState) {
+      problems.push("Expected a read-state tool for the away-discovery check.");
+    } else {
+      const whileOpen = await readState.execute({});
+      if (expected && whileOpen.offlineDiscovery !== expected.name) {
+        problems.push(`read-state.offlineDiscovery should name "${expected.name}" while the panel is open, got ${JSON.stringify(whileOpen.offlineDiscovery)}.`);
+      }
+    }
+
+    window.__dismissOffline();
+    if (discoveryStat && discoveryStat.classList.contains("stat-hidden")) {
+      problems.push("Expected #discovery-stat to stay visible after dismissing the panel so the lasting effect is on screen.");
+    }
+    if (discoveryValue && expected && !discoveryValue.textContent.includes(expected.name)) {
+      problems.push(`Expected #discovery-value to show "${expected.name}", got "${discoveryValue.textContent}".`);
+    }
+    if (readState) {
+      const afterDismiss = await readState.execute({});
+      if (!expected || !afterDismiss.discovery || afterDismiss.discovery.id !== expected.id) {
+        problems.push(`read-state.discovery should return the lasting ${expected && expected.id} discovery, got ${JSON.stringify(afterDismiss.discovery)}.`);
+      }
+      if (Math.abs(afterDismiss.rate - expectedRate) > 1e-9) {
+        problems.push(`read-state.rate should include the discovery bonus (${expectedRate}), got ${afterDismiss.rate}.`);
+      }
+    }
+
+    // (d) A return shorter than 60s, and a first-ever visit, find nothing.
+    engine.reset();
+    localStorage.setItem("selfgrow-state", JSON.stringify({
+      wood: 5, rate: 0.1, stone: 0, totalWoodEarned: 5,
+      wallLevel: 0, stoneUnlocked: false,
+      timestamp: new Date(Date.now() - 30000).toISOString(),
+    }));
+    engine.init();
+    if (engine.getState().discovery !== null) {
+      problems.push(`A 30s return should find nothing, got ${JSON.stringify(engine.getState().discovery)}.`);
+    }
+    window.__showOfflineSummary();
+    if (discoveryLine && !discoveryLine.hidden) {
+      problems.push("A 30s return should not name a discovery in the welcome-back panel.");
+    }
+    window.__dismissOffline();
+
+    engine.reset();
+    engine.init(); // fresh visit — no saved state
+    if (engine.getState().discovery !== null) {
+      problems.push("A first-ever visit should find no away discovery.");
+    }
+
+    // (e) A weaker find on a short return cannot lower or re-farm the bonus.
+    engine.reset();
+    localStorage.setItem("selfgrow-state", JSON.stringify({
+      wood: 5, rate: 0.5, stone: 0, totalWoodEarned: 5,
+      wallLevel: 0, stoneUnlocked: false,
+      discoveryId: "ancient-grove", discoveryName: "Ancient Grove", discoveryBonus: 0.40,
+      timestamp: new Date(Date.now() - 61000).toISOString(),
+    }));
+    engine.init();
+    const afterShort = engine.getState();
+    if (Math.abs(afterShort.rate - 0.5) > 1e-9) {
+      problems.push(`A 61s return after owning a stronger discovery must leave rate at 0.50, got ${afterShort.rate}.`);
+    }
+    if (!afterShort.discovery || afterShort.discovery.name !== "Ancient Grove") {
+      problems.push(`A weaker find must not replace the owned Ancient Grove discovery, got ${JSON.stringify(afterShort.discovery)}.`);
+    }
+    window.__showOfflineSummary();
+    window.__dismissOffline();
+
+    engine.reset();
+    engine.init();
+  } catch (err) {
+    problems.push(`Away-discovery test threw: ${err.message}`);
+    console.error(err);
+  }
+
   return problems;
 }

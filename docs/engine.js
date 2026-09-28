@@ -40,6 +40,23 @@ const EXPEDITION_WOOD_COST_INC = 5;
 const EXPEDITION_STONE_COST_INC = 3;
 const EXPEDITION_WOOD_RATE_MULTIPLIER = 0.05; // additive multiplier per map (n maps = 1 + n*0.05)
 const TICK_MS = 1000;  // save interval (ms)
+const DISCOVERY_MIN_SEC = 60; // shortest absence that can turn something up
+
+/**
+ * The away-discovery ladder. Each tier is reached at a minimum absence
+ * length; the strongest tier the absence qualifies for is the one credited.
+ * Ordered by minSec ascending; ties are impossible.
+ *
+ * @type {Array<{ id: string, name: string, minSec: number, bonus: number }>}
+ */
+const DISCOVERIES = [
+  { id: "flint-shard", name: "Flint Shard", minSec: 60, bonus: 0.05 },
+  { id: "clay-deposit", name: "Clay Deposit", minSec: 600, bonus: 0.10 },
+  { id: "wandering-sapling", name: "Wandering Sapling", minSec: 3600, bonus: 0.15 },
+  { id: "glowing-seam", name: "Glowing Seam", minSec: 21600, bonus: 0.25 },
+  { id: "ancient-grove", name: "Ancient Grove", minSec: 86400, bonus: 0.40 },
+  { id: "sunken-vault", name: "Sunken Vault", minSec: 604800, bonus: 0.60 },
+];
 
 // Exported for external use (tools, UI)
 export { UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, STONE_BASE_RATE, WALL_COST, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT,
@@ -62,6 +79,9 @@ export { UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, STONE_BASE_RATE, WALL_COST, WA
  * @property {number}  forgeWoodCost   — wood cost for the next forge
  * @property {number}  forgeStoneCost  — stone cost for the next forge
  * @property {boolean} stoneUnlocked   — whether stone system has been revealed
+ * @property {number}  discoveryBonus  — permanent wood/s bonus from the strongest away discovery
+ * @property {string|null} discoveryId — id of the strongest away discovery found so far
+ * @property {string|null} discoveryName — display name of that discovery
  * @property {string}  timestamp       — ISO date of last tick/save
  * @property {string}  firstTimestamp  — ISO date of first ever save (never updated after init)
  */
@@ -78,13 +98,16 @@ let state = {
   expeditionLevel: 0,
   maps: 0,
   stoneUnlocked: false,
+  discoveryBonus: 0,
+  discoveryId: null,
+  discoveryName: null,
   timestamp: new Date().toISOString(),
   firstTimestamp: null,
 };
 
 /** Offline resources gained on last catch-up. */
-/** @type {{ wood: number, stone: number, elapsedSec: number }} */
-let offlineGained = { wood: 0, stone: 0, elapsedSec: 0 };
+/** @type {{ wood: number, stone: number, elapsedSec: number, discovery: {id: string, name: string, bonus: number}|null }} */
+let offlineGained = { wood: 0, stone: 0, elapsedSec: 0, discovery: null };
 
 let tickTimer = null;
 
@@ -192,8 +215,16 @@ function getEffectiveRate() {
 /**
  * Apply offline catch-up: any elapsed time since last save is
  * converted into accumulated resources at current rates.
+ *
+ * A real return (not the first-ever visit) of at least DISCOVERY_MIN_SEC
+ * also turns up exactly one discovery, derived from the absence length
+ * alone. If it is stronger than anything found before, its wood-rate bonus
+ * becomes permanent; a weaker or repeated find names itself but changes no
+ * stats, so short returns cannot re-farm a bonus already owned.
+ *
+ * @param {boolean} firstVisit — true when there was no saved state to return to
  */
-function catchUp() {
+function catchUp(firstVisit) {
   const lastSaved = new Date(state.timestamp).getTime();
   const elapsedSec = (Date.now() - lastSaved) / 1000;
   if (elapsedSec > 0) {
@@ -210,9 +241,40 @@ function catchUp() {
       state.stone += stoneGained;
       state.totalStoneEarned += stoneGained;
     }
-    offlineGained = { wood: woodGained, stone: stoneGained, elapsedSec: elapsedSec };
+
+    const discovery = firstVisit ? null : discoverForElapsed(elapsedSec);
+    if (discovery && discovery.bonus > state.discoveryBonus) {
+      state.rate += discovery.bonus - state.discoveryBonus;
+      state.discoveryBonus = discovery.bonus;
+      state.discoveryId = discovery.id;
+      state.discoveryName = discovery.name;
+    }
+
+    offlineGained = {
+      wood: woodGained,
+      stone: stoneGained,
+      elapsedSec: elapsedSec,
+      discovery: discovery ? { id: discovery.id, name: discovery.name, bonus: discovery.bonus } : null,
+    };
     state.timestamp = now();
   }
+}
+
+/**
+ * The discovery an absence of the given length turns up, or null when the
+ * absence is too short or invalid. Pure and deterministic: the same length
+ * always yields the same discovery, so it can never be lost or gambled.
+ *
+ * @param {number} elapsedSec
+ * @returns {{ id: string, name: string, bonus: number, minSec: number }|null}
+ */
+export function discoverForElapsed(elapsedSec) {
+  if (!(elapsedSec >= DISCOVERY_MIN_SEC)) return null;
+  let found = null;
+  for (const tier of DISCOVERIES) {
+    if (elapsedSec >= tier.minSec) found = tier;
+  }
+  return found ? { ...found } : null;
 }
 
 function persist() {
@@ -240,6 +302,9 @@ function loadPersisted() {
         state.expeditionLevel = typeof saved.expeditionLevel === "number" ? saved.expeditionLevel : 0;
         state.maps = typeof saved.maps === "number" ? saved.maps : 0;
         state.stoneUnlocked = typeof saved.stoneUnlocked === "boolean" ? saved.stoneUnlocked : (state.upgradeLevel >= 1);
+        state.discoveryBonus = typeof saved.discoveryBonus === "number" ? saved.discoveryBonus : 0;
+        state.discoveryId = typeof saved.discoveryId === "string" ? saved.discoveryId : null;
+        state.discoveryName = typeof saved.discoveryName === "string" ? saved.discoveryName : null;
         state.timestamp = saved.timestamp;
         state.firstTimestamp = typeof saved.firstTimestamp === "string" ? saved.firstTimestamp : saved.timestamp;
         return true;
@@ -317,7 +382,7 @@ export function init() {
     state.timestamp = now();
     state.firstTimestamp = now();
   }
-  catchUp();
+  catchUp(!loaded);
   persist(); // record the catch-up timestamp
   startTick();
 }
@@ -467,7 +532,7 @@ export function sendExpedition() {
  */
 export function consumeOfflineGained() {
   const val = { ...offlineGained };
-  offlineGained = { wood: 0, stone: 0, elapsedSec: 0 };
+  offlineGained = { wood: 0, stone: 0, elapsedSec: 0, discovery: null };
   return val;
 }
 
@@ -503,6 +568,11 @@ export function getState() {
     expeditionWoodCost: computeExpeditionWoodCost(state.expeditionLevel),
     expeditionStoneCost: computeExpeditionStoneCost(state.expeditionLevel),
     stoneUnlocked: state.stoneUnlocked,
+    discovery: state.discoveryId ? {
+      id: state.discoveryId,
+      name: state.discoveryName,
+      bonus: state.discoveryBonus,
+    } : null,
     timestamp: state.timestamp,
     firstTimestamp: state.firstTimestamp,
   };
@@ -525,10 +595,13 @@ export function reset() {
     expeditionLevel: 0,
     maps: 0,
     stoneUnlocked: false,
+    discoveryBonus: 0,
+    discoveryId: null,
+    discoveryName: null,
     timestamp: now(),
     firstTimestamp: null,
   };
-  offlineGained = { wood: 0, stone: 0, elapsedSec: 0 };
+  offlineGained = { wood: 0, stone: 0, elapsedSec: 0, discovery: null };
   snapshotBeforeCatchUp = null;
   try {
     localStorage.removeItem(STORAGE_KEY);
