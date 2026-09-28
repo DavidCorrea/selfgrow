@@ -9,7 +9,6 @@
  */
 
 import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, consumeOfflineWoodGained, formatElapsed, UPGRADE_COST, WALL_COST, STONE_GATHER_AMOUNT, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE } from "./engine.js";
-import { cloneState } from "./sandbox.js";
 
 const GOAL_WOOD = 10;
 const GOAL_STONE = 5;
@@ -185,6 +184,20 @@ function withGoal(s) {
 }
 
 /**
+ * Return the open sandbox clone, opening a sandbox from the current real save
+ * when none is active. Keeps sandbox tools working whatever order they are
+ * called in, including right after a sandbox-exit.
+ *
+ * @returns {import("./engine.js").GameState|null}
+ */
+function ensureSandbox() {
+  const current = typeof window.__getSandboxClone === "function" ? window.__getSandboxClone() : null;
+  if (current) return current;
+  if (typeof window.__enterSandbox === "function") window.__enterSandbox();
+  return typeof window.__getSandboxClone === "function" ? window.__getSandboxClone() : null;
+}
+
+/**
  * @returns {Array<import("./webmcp.js").ToolDescriptor>}
  */
 export function tools() {
@@ -280,12 +293,10 @@ export function tools() {
       annotations: { readOnlyHint: false },
       example: {},
       async execute() {
-        const state = getState();
-        const clone = cloneState(state);
-        const result = withGoal(state);
+        const clone = ensureSandbox();
+        if (!clone) throw new Error("Could not open a sandbox clone.");
+        const result = withGoal(clone);
         result.sandboxActive = true;
-        // Also expose clone for subsequent tool calls
-        if (typeof window.__enterSandbox === "function") window.__enterSandbox();
         return result;
       },
     },
@@ -307,15 +318,21 @@ export function tools() {
       annotations: { readOnlyHint: false },
       example: { seconds: 3600 },
       async execute({ seconds }) {
-        if (typeof window.__fastForwardSandbox === "function") {
-          window.__fastForwardSandbox(seconds);
-        }
-        // Return the current sandbox clone state, or real state if no sandbox
-        const clone = typeof window.__getSandboxClone === "function" ? window.__getSandboxClone() : null;
-        if (clone) {
-          return withGoal(clone);
-        }
-        return withGoal(getState());
+        const clone = ensureSandbox();
+        if (!clone) throw new Error("Could not open a sandbox clone.");
+        const woodBefore = clone.wood;
+        const result = typeof window.__fastForwardSandbox === "function"
+          ? window.__fastForwardSandbox(seconds)
+          : null;
+        const projected = typeof window.__getSandboxClone === "function" ? window.__getSandboxClone() : clone;
+        const out = withGoal(projected || clone);
+        out.sandboxActive = true;
+        out.sandboxSeconds = seconds;
+        out.woodGained = (projected ? projected.wood : clone.wood) - woodBefore;
+        // The clone's milestone crossings during this interval are authoritative;
+        // keep the state-derived keys (sharpenDone, wallBuilt) alongside them.
+        if (result && result.milestones) out.milestones = { ...out.milestones, ...result.milestones };
+        return out;
       },
     },
     {
