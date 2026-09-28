@@ -107,7 +107,7 @@ let state = {
 };
 
 /** Offline resources gained on last catch-up. */
-/** @type {{ wood: number, stone: number, elapsedSec: number, discovery: {id: string, name: string, bonus: number}|null }} */
+/** @type {{ wood: number, stone: number, elapsedSec: number, discovery: {id: string, name: string, bonus: number, credited: boolean}|null }} */
 let offlineGained = { wood: 0, stone: 0, elapsedSec: 0, discovery: null };
 
 let tickTimer = null;
@@ -244,7 +244,10 @@ function catchUp(firstVisit) {
     }
 
     const discovery = firstVisit ? null : discoverForElapsed(elapsedSec);
-    if (discovery && discovery.bonus > state.discoveryBonus) {
+    // A find is only credited when it beats everything owned so far; a weaker
+    // repeat names itself but must not claim a bonus it did not add.
+    const credited = Boolean(discovery && discovery.bonus > state.discoveryBonus);
+    if (credited) {
       state.rate += discovery.bonus - state.discoveryBonus;
       state.discoveryBonus = discovery.bonus;
       state.discoveryId = discovery.id;
@@ -255,7 +258,7 @@ function catchUp(firstVisit) {
       wood: woodGained,
       stone: stoneGained,
       elapsedSec: elapsedSec,
-      discovery: discovery ? { id: discovery.id, name: discovery.name, bonus: discovery.bonus } : null,
+      discovery: discovery ? { id: discovery.id, name: discovery.name, bonus: discovery.bonus, credited } : null,
     };
     state.timestamp = now();
   }

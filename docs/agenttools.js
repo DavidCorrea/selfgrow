@@ -50,8 +50,13 @@ function readOfflineElapsed() {
 }
 
 /**
- * Read the discovery named in the welcome-back panel.
- * Returns null when no panel is showing or it found nothing this return.
+ * Read the away discovery named in the welcome-back panel, with the wood/s
+ * bonus it granted. Returns null when no panel is showing or it found nothing
+ * this return. The bonus is parsed from the panel's own bonus line, so the
+ * number an agent sees is exactly the one the visitor is reading; when the
+ * find granted no bonus the panel shows no line and the bonus is null.
+ *
+ * @returns {{ name: string, bonus: number|null, permanent: boolean }|null}
  */
 function readOfflineDiscovery() {
   const overlay = document.getElementById('offline-summary');
@@ -60,7 +65,12 @@ function readOfflineDiscovery() {
   if (!line || line.hidden) return null;
   const nameEl = document.getElementById('offline-discovery-name');
   const name = nameEl ? nameEl.textContent.trim() : '';
-  return name ? name : null;
+  if (!name) return null;
+
+  const bonusEl = document.getElementById('offline-discovery-bonus');
+  const showsBonus = Boolean(bonusEl && !bonusEl.hidden);
+  const match = showsBonus ? bonusEl.textContent.match(/\+(\d+(?:\.\d+)?)\s*wood\/s/) : null;
+  return { name, bonus: match ? Number(match[1]) : null, permanent: showsBonus };
 }
 
 /**
@@ -246,8 +256,11 @@ export function tools() {
         + "duration of that absence as shown in the panel (offlineElapsed, e.g. "
         + "'3m 20s' or '1d 4h 0m', null when nothing was gained or the panel is "
         + "hidden), the away discovery "
-        + "named in the welcome-back panel this return (offlineDiscovery, null when "
-        + "nothing was found), the lasting away discovery owned so far (discovery: "
+        + "named in the welcome-back panel this return (offlineDiscovery: "
+        + "{name, bonus, permanent} where bonus is the wood/s boost it granted "
+        + "and permanent is true because the find is kept, null when nothing was "
+        + "found or the find granted no bonus), the lasting away discovery owned "
+        + "so far (discovery: "
         + "{id, name, bonus} or null, whose bonus is already included in rate), milestones object "
         + "(sharpenAvailable, stoneNowUnlocked, wallAvailable, forgeNowUnlocked, expeditionNowUnlocked), "
         + "and the current goal (first goal, upgrade goal, stone goal, build-wall goal, forge goal, or expedition goal).",

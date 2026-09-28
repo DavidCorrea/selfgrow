@@ -3146,11 +3146,15 @@ export async function checks() {
     const discoveryValue = document.getElementById("discovery-value");
     const discoveryLine = document.getElementById("offline-discovery-line");
     const discoveryNameEl = document.getElementById("offline-discovery-name");
+    const discoveryBonusEl = document.getElementById("offline-discovery-bonus");
     if (!discoveryStat || !discoveryValue) {
       problems.push("Expected #discovery-stat and #discovery-value in the status readout for the away discovery.");
     }
     if (!discoveryLine || !discoveryNameEl) {
       problems.push("Expected #offline-discovery-line and #offline-discovery-name in the welcome-back panel for the away discovery.");
+    }
+    if (!discoveryBonusEl) {
+      problems.push("Expected #offline-discovery-bonus in the welcome-back panel so the find's wood/s bonus is stated.");
     }
 
     // (b) The ladder is pure, deterministic and strictly stronger with time.
@@ -3205,6 +3209,26 @@ export async function checks() {
     if (discoveryNameEl && expected && discoveryNameEl.textContent.trim() !== expected.name) {
       problems.push(`The welcome-back panel should name "${expected.name}", got "${discoveryNameEl.textContent.trim()}".`);
     }
+    // The panel must state the wood/s bonus the credited find granted and that
+    // it is kept, and the number must equal the rate increase it applied.
+    const rateIncrease = returned.rate - 0.1;
+    if (discoveryBonusEl && expected) {
+      if (discoveryBonusEl.hidden) {
+        problems.push("A credited 600s discovery should state its wood/s bonus in the welcome-back panel, but #offline-discovery-bonus was hidden.");
+      }
+      const bonusText = discoveryBonusEl.textContent.trim();
+      if (!bonusText.includes(`+${expected.bonus.toFixed(2)} wood/s`)) {
+        problems.push(`The discovery bonus line should show +${expected.bonus.toFixed(2)} wood/s, got "${bonusText}".`);
+      }
+      if (!bonusText.includes("yours for good")) {
+        problems.push(`The discovery bonus line should say the find is kept, got "${bonusText}".`);
+      }
+      const shownMatch = bonusText.match(/\+(\d+(?:\.\d+)?)\s*wood\/s/);
+      const shownBonus = shownMatch ? Number(shownMatch[1]) : null;
+      if (shownBonus === null || Math.abs(shownBonus - rateIncrease) > 1e-9) {
+        problems.push(`The shown discovery bonus must equal the ${rateIncrease.toFixed(2)} wood/s actually added to the rate, got ${shownBonus}.`);
+      }
+    }
 
     const { tools } = await import("./agenttools.js");
     const readState = tools().find((t) => t.name === "read-state");
@@ -3212,8 +3236,15 @@ export async function checks() {
       problems.push("Expected a read-state tool for the away-discovery check.");
     } else {
       const whileOpen = await readState.execute({});
-      if (expected && whileOpen.offlineDiscovery !== expected.name) {
-        problems.push(`read-state.offlineDiscovery should name "${expected.name}" while the panel is open, got ${JSON.stringify(whileOpen.offlineDiscovery)}.`);
+      const offlineDiscovery = whileOpen.offlineDiscovery;
+      if (!expected || !offlineDiscovery || offlineDiscovery.name !== expected.name) {
+        problems.push(`read-state.offlineDiscovery should name "${expected.name}" while the panel is open, got ${JSON.stringify(offlineDiscovery)}.`);
+      }
+      if (expected && offlineDiscovery && offlineDiscovery.bonus !== expected.bonus) {
+        problems.push(`read-state.offlineDiscovery.bonus should report ${expected.bonus}, got ${JSON.stringify(offlineDiscovery.bonus)}.`);
+      }
+      if (expected && offlineDiscovery && offlineDiscovery.permanent !== true) {
+        problems.push(`read-state.offlineDiscovery.permanent should be true for a credited find, got ${JSON.stringify(offlineDiscovery.permanent)}.`);
       }
     }
 
@@ -3249,6 +3280,12 @@ export async function checks() {
     if (discoveryLine && !discoveryLine.hidden) {
       problems.push("A 30s return should not name a discovery in the welcome-back panel.");
     }
+    if (discoveryBonusEl && !discoveryBonusEl.hidden) {
+      problems.push("A 30s return should show no discovery bonus line.");
+    }
+    if (discoveryBonusEl && /\+\s*0\b/.test(discoveryBonusEl.textContent)) {
+      problems.push(`A 30s return must not show a stray "+0" discovery bonus, got "${discoveryBonusEl.textContent.trim()}".`);
+    }
     window.__dismissOffline();
 
     engine.reset();
@@ -3274,6 +3311,12 @@ export async function checks() {
       problems.push(`A weaker find must not replace the owned Ancient Grove discovery, got ${JSON.stringify(afterShort.discovery)}.`);
     }
     window.__showOfflineSummary();
+    if (discoveryBonusEl && !discoveryBonusEl.hidden) {
+      problems.push("A weaker find that added nothing to the rate must show no discovery bonus line.");
+    }
+    if (discoveryBonusEl && /\+\s*0\b/.test(discoveryBonusEl.textContent)) {
+      problems.push(`A weaker find must not show a stray "+0" discovery bonus, got "${discoveryBonusEl.textContent.trim()}".`);
+    }
     window.__dismissOffline();
 
     engine.reset();

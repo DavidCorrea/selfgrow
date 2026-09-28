@@ -703,6 +703,10 @@
       color: var(--highlight);
     }
 
+    .offline-discovery-bonus {
+      color: var(--highlight);
+    }
+
     .btn-dismiss {
       font-family: var(--pixel-font);
       font-size: 0.5rem;
@@ -974,7 +978,7 @@
         </span>
       </div>
       <div id="offline-discovery-line" class="offline-discovery" hidden>
-        You found the <span class="offline-discovery-name" id="offline-discovery-name"></span>!
+        You found the <span class="offline-discovery-name" id="offline-discovery-name"></span>! <span class="offline-discovery-bonus" id="offline-discovery-bonus" hidden></span>
       </div>
       <div id="offline-milestones">
         <div class="offline-milestone" id="milestone-sharpen" hidden>You can now sharpen your axe!</div>
@@ -1078,6 +1082,7 @@
     const offlineStoneAmount = document.getElementById("offline-stone-amount");
     const offlineDiscoveryLine = document.getElementById("offline-discovery-line");
     const offlineDiscoveryName = document.getElementById("offline-discovery-name");
+    const offlineDiscoveryBonus = document.getElementById("offline-discovery-bonus");
     const discoveryStat = document.getElementById("discovery-stat");
     const discoveryValueEl = document.getElementById("discovery-value");
     const btnDismiss = document.getElementById("btn-dismiss-offline");
@@ -1262,11 +1267,22 @@
         }
 
         // ─── Away discovery ───
+        // The bonus line is only shown when this return actually raised the
+        // rate, so the panel never claims a boost the game state did not get.
         if (gained.discovery) {
           offlineDiscoveryName.textContent = gained.discovery.name;
           offlineDiscoveryLine.hidden = false;
+          if (gained.discovery.credited) {
+            offlineDiscoveryBonus.textContent = `+${gained.discovery.bonus.toFixed(2)} wood/s, yours for good.`;
+            offlineDiscoveryBonus.hidden = false;
+          } else {
+            offlineDiscoveryBonus.textContent = "";
+            offlineDiscoveryBonus.hidden = true;
+          }
         } else {
           offlineDiscoveryLine.hidden = true;
+          offlineDiscoveryBonus.textContent = "";
+          offlineDiscoveryBonus.hidden = true;
         }
 
         // ─── Milestone announcements ───
