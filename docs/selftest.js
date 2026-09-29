@@ -7127,6 +7127,7 @@ export async function checks() {
     }
 
     const KNOWN_KINDS = ["wood", "stone", "rate"];
+    const poolLength = engine.AWAY_EVENTS.length;
     // Every promise an away event makes, checked on any event: a title, exactly
     // two distinct choices, and each choice a positive amount of a kind the
     // engine can apply, stated in words.
@@ -7164,6 +7165,39 @@ export async function checks() {
       });
       return found;
     };
+
+    // The pool itself must be long enough and well-formed enough to keep a
+    // steady cadence meeting something new (issue #1061): at least six
+    // happenings, each with its own id and title and exactly two distinct kinds
+    // drawn from the vocabulary the engine can actually grant. A pool of three
+    // is what made a regular visitor meet the same three decisions in a loop.
+    if (!Array.isArray(engine.AWAY_EVENTS) || engine.AWAY_EVENTS.length < 6) {
+      const size = Array.isArray(engine.AWAY_EVENTS) ? engine.AWAY_EVENTS.length : JSON.stringify(engine.AWAY_EVENTS);
+      problems.push(`The away-happening pool must hold at least six happenings so a regular return keeps meeting a new decision, got ${size}.`);
+    } else {
+      const poolIds = engine.AWAY_EVENTS.map((event) => event.id);
+      const poolTitles = engine.AWAY_EVENTS.map((event) => event.title);
+      if (new Set(poolIds).size !== poolIds.length) {
+        problems.push(`Every away happening must have its own id, got ${JSON.stringify(poolIds)}.`);
+      }
+      if (new Set(poolTitles).size !== poolTitles.length) {
+        problems.push(`Every away happening must have its own title, got ${JSON.stringify(poolTitles)}.`);
+      }
+      engine.AWAY_EVENTS.forEach((event, i) => {
+        if (!Array.isArray(event.kinds) || event.kinds.length !== 2) {
+          problems.push(`Away happening ${i} ("${event.id}") must name exactly two kinds, got ${JSON.stringify(event.kinds)}.`);
+          return;
+        }
+        if (event.kinds[0] === event.kinds[1]) {
+          problems.push(`Away happening ${i} ("${event.id}") must name two distinct kinds, got ${JSON.stringify(event.kinds)}.`);
+        }
+        for (const kind of event.kinds) {
+          if (!KNOWN_KINDS.includes(kind)) {
+            problems.push(`Away happening ${i} ("${event.id}") names unknown kind ${JSON.stringify(kind)}.`);
+          }
+        }
+      });
+    }
 
     // (a) Below a minute there is no event; a ten-minute absence offers one
     // happening whose two choices each name their own positive grant.
@@ -7583,10 +7617,26 @@ export async function checks() {
     // already offered folded together — deterministic, so the same save always
     // sees the same sequence and nothing can be lost or gambled.
     const cycleState = { rate: 0.1, maps: 0, stoneUnlocked: true, totalWoodEarned: 0 };
-    const poolLength = engine.AWAY_EVENTS.length;
-    const idsByCount = [0, 1, 2].map((count) => engine.awayEventForElapsed(3600, { ...cycleState, eventsOffered: count }).id);
-    if (new Set(idsByCount).size !== 3) {
-      problems.push(`Consecutive happenings must differ: a 1h absence with eventsOffered 0/1/2 offered ${JSON.stringify(idsByCount)}.`);
+
+    // (i0) Every happening in the pool is reachable and well-shaped. Holding
+    // the absence at a multiple of the pool length and stepping the happening
+    // count by one walks the pool in order, so each entry's two choices are
+    // checked and no entry is unreachable weight (issue #1061).
+    const poolStepSec = poolLength * 120;
+    for (let i = 0; i < poolLength; i++) {
+      const pooled = engine.awayEventForElapsed(poolStepSec, { ...cycleState, eventsOffered: i });
+      problems.push(...eventShapeProblems(pooled, `the pool's happening ${i} ("${engine.AWAY_EVENTS[i].id}")`));
+      if (pooled && pooled.id !== engine.AWAY_EVENTS[i].id) {
+        problems.push(`Stepping the happening count must walk the pool in order: count ${i} should offer "${engine.AWAY_EVENTS[i].id}", got "${pooled.id}".`);
+      }
+    }
+
+    // Every consecutive return of the same length offers a different happening
+    // until the pool has cycled, then wraps to the first (issue #1061).
+    const idsByCount = Array.from({ length: poolLength }, (_, count) =>
+      engine.awayEventForElapsed(3600, { ...cycleState, eventsOffered: count }).id);
+    if (new Set(idsByCount).size !== poolLength) {
+      problems.push(`Consecutive happenings must each differ until the pool cycles: a 1h absence with counts 0..${poolLength - 1} offered ${JSON.stringify(idsByCount)}.`);
     }
     const wrappedId = engine.awayEventForElapsed(3600, { ...cycleState, eventsOffered: poolLength }).id;
     if (wrappedId !== idsByCount[0]) {
