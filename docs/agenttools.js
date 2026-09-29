@@ -8,9 +8,7 @@
  * @module agenttools
  */
 
-import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, formatElapsed, sharpenAvailable, displayAmount, exportSave, importSave, FIRST_GOAL_WOOD, UPGRADE_COST, WALL_COST, STONE_GATHER_AMOUNT, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE } from "./engine.js";
-
-const GOAL_STONE = 5;
+import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, formatElapsed, sharpenAvailable, displayAmount, exportSave, importSave, describeGoal, FIRST_GOAL_WOOD, UPGRADE_COST, WALL_COST, STONE_GATHER_AMOUNT, FORGE_CLICK_POWER_BONUS } from "./engine.js";
 
 /**
  * The last return as the welcome-back panel is showing it, read straight from
@@ -53,98 +51,10 @@ function computeStoneRate(totalWoodEarned) {
 }
 
 /**
- * Determine the current goal phase based on state.
- */
-function determineGoal(s) {
-  const reachedFirstGoal = s.wood >= FIRST_GOAL_WOOD;
-  const doneFirstSharpen = s.upgradeLevel >= 1;
-  const stoneUnlocked = s.stoneUnlocked;
-
-  if (!reachedFirstGoal) {
-    return {
-      description: "Gather " + FIRST_GOAL_WOOD + " wood",
-      type: "first-goal",
-      target: FIRST_GOAL_WOOD,
-      progress: displayAmount(s.wood),
-      reached: false,
-    };
-  }
-
-  if (reachedFirstGoal && !doneFirstSharpen) {
-    return {
-      description: "Craft a Sharpening (" + UPGRADE_COST + " wood)",
-      type: "upgrade",
-      cost: UPGRADE_COST,
-      progressToNext: displayAmount(Math.min(s.wood, UPGRADE_COST)),
-      upgradeAvailable: sharpenAvailable(s),
-    };
-  }
-
-  // Stone is now unlocked
-  if (!(s.wallLevel > 0) && s.stone < GOAL_STONE) {
-    return {
-      description: "Gather " + GOAL_STONE + " stone",
-      type: "stone-goal",
-      target: GOAL_STONE,
-      progress: displayAmount(s.stone),
-      reached: false,
-    };
-  }
-
-  if (s.stone >= GOAL_STONE && !(s.wallLevel > 0)) {
-    return {
-      description: "Build a Wall (" + WALL_COST + " stone)",
-      type: "build-wall-goal",
-      cost: WALL_COST,
-      progressToNext: displayAmount(Math.min(s.stone, WALL_COST)),
-      wallAvailable: s.stone >= WALL_COST,
-    };
-  }
-
-  // Wall built — show forge goal or expedition goal (once forge level >= 5)
-  if (s.wallLevel > 0) {
-    if (s.forgeLevel >= 5) {
-      return {
-        description: "Send scouts on expedition \u2014 need " + s.expeditionWoodCost + " wood and " + s.expeditionStoneCost + " stone",
-        type: "expedition-goal",
-        expeditionLevel: s.expeditionLevel,
-        resources: [
-          { name: "Wood", current: displayAmount(Math.min(s.wood, s.expeditionWoodCost)), target: s.expeditionWoodCost },
-          { name: "Stone", current: displayAmount(Math.min(s.stone, s.expeditionStoneCost)), target: s.expeditionStoneCost },
-        ],
-        canSendExpedition: s.wood >= s.expeditionWoodCost && s.stone >= s.expeditionStoneCost,
-      };
-    }
-    return {
-      description: "Forge a tool \u2014 need " + s.forgeWoodCost + " wood and " + s.forgeStoneCost + " stone",
-      type: "forge-goal",
-      forgeLevel: s.forgeLevel,
-      resources: [
-        { name: "Wood", current: displayAmount(Math.min(s.wood, s.forgeWoodCost)), target: s.forgeWoodCost },
-        { name: "Stone", current: displayAmount(Math.min(s.stone, s.forgeStoneCost)), target: s.forgeStoneCost },
-      ],
-      canForge: s.wood >= s.forgeWoodCost && s.stone >= s.forgeStoneCost,
-    };
-  }
-
-  // Fallback — sharpen cycle
-  return {
-    description: "Craft a Sharpening (" + UPGRADE_COST + " wood)",
-    type: "upgrade",
-    cost: UPGRADE_COST,
-    progressToNext: displayAmount(Math.min(s.wood, UPGRADE_COST)),
-    upgradeAvailable: sharpenAvailable(s),
-  };
-}
-
-/**
  * Augment a raw state snapshot with goal, upgrade, and stone info.
  */
 function withGoal(s) {
   const upgradeAvailable = sharpenAvailable(s);
-  const reachedFirstGoal = s.wood >= FIRST_GOAL_WOOD;
-  const canGatherStone = s.stoneUnlocked;
-  const wallAvailable = s.stoneUnlocked && s.stone >= WALL_COST;
   const stoneRate = s.stoneUnlocked ? computeStoneRate(s.totalWoodEarned) : 0;
   const clickPower = 1 + s.wallLevel * 1 + s.forgeLevel * FORGE_CLICK_POWER_BONUS;
   const ret = readReturnSummary();
@@ -192,7 +102,7 @@ function withGoal(s) {
       current: displayAmount(Math.min(s.wood, FIRST_GOAL_WOOD)),
       reached: s.wood >= FIRST_GOAL_WOOD,
     },
-    nextGoal: determineGoal(s),
+    nextGoal: describeGoal(s),
   };
 }
 

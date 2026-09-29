@@ -2489,6 +2489,159 @@ export async function checks() {
     console.error(err);
   }
 
+  // ─── Issue #996: one shared goal rule for the page and the read-state tool ───
+  // The goal panel and the read-state tool must read the same description of
+  // the next goal, so a fix to the goal's progress maths can never again land
+  // in only one of them. Each scenario drives the engine, renders the page and
+  // asks the tool what the goal is — the two must agree on the text, on every
+  // resource's numbers, and on whether the goal's own action is available.
+  try {
+    const engine = await import("./engine.js");
+    const { tools } = await import("./agenttools.js");
+    const readState = tools().find((t) => t.name === "read-state");
+    const renderNow = () => { if (typeof window.__renderUI === "function") window.__renderUI(); };
+    const parseLabel = (id) => {
+      const el = document.getElementById(id);
+      if (!el || el.hidden) return null;
+      const m = /^(.+?):\s*([\d.]+)\s*\/\s*([\d.]+)$/.exec(el.textContent.trim());
+      return m ? { name: m[1], current: parseFloat(m[2]), target: parseFloat(m[3]) } : null;
+    };
+    // The button that carries out each goal's action. The gather goals have
+    // none of their own — their gathering buttons are always available.
+    const ACTION_BUTTON = {
+      "upgrade": "btn-sharpen",
+      "build-wall-goal": "btn-build-wall",
+      "forge-goal": "btn-forge-tool",
+      "expedition-goal": "btn-expedition",
+    };
+
+    // reset() clears storage, so seed the save after it and before init().
+    const loadScenario = (overrides) => {
+      engine.reset();
+      localStorage.setItem("selfgrow-state", JSON.stringify({
+        wood: 0, rate: 0.1, upgradeLevel: 0, stone: 0,
+        totalWoodEarned: 0, totalStoneEarned: 0,
+        wallLevel: 0, forgeLevel: 0, expeditionLevel: 0, maps: 0,
+        stoneUnlocked: false,
+        timestamp: new Date().toISOString(),
+        firstTimestamp: new Date().toISOString(),
+        ...overrides,
+      }));
+      engine.init();
+    };
+
+    const checkGoal = async (scenario, expectedType) => {
+      renderNow();
+      const goal = (await readState.execute({})).nextGoal;
+      if (typeof goal.available !== "boolean") {
+        problems.push(`${scenario}: read-state nextGoal.available should be a boolean, got ${JSON.stringify(goal.available)}.`);
+      }
+      if (expectedType && goal.type !== expectedType) {
+        problems.push(`${scenario}: expected goal type "${expectedType}", got "${goal.type}".`);
+      }
+      if (!Array.isArray(goal.resources) || goal.resources.length === 0) {
+        problems.push(`${scenario}: read-state nextGoal.resources should be a non-empty array, got ${JSON.stringify(goal.resources)}.`);
+        return;
+      }
+
+      // The page's goal text and the tool's goal text are the same words.
+      const shownText = document.getElementById("goal-text").textContent.trim();
+      if (shownText !== goal.description) {
+        problems.push(`${scenario}: page goal text ${JSON.stringify(shownText)} differs from read-state nextGoal.description ${JSON.stringify(goal.description)}.`);
+      }
+
+      // The numbers beside each bar are the tool's numbers.
+      const labels = [parseLabel("goal-resource-label-1"), parseLabel("goal-resource-label-2")];
+      goal.resources.forEach((res, i) => {
+        const label = labels[i];
+        if (!label) {
+          problems.push(`${scenario}: page is missing the label for resource ${i} (${res.name}).`);
+        } else if (label.name !== res.name || label.current !== res.current || label.target !== res.target) {
+          problems.push(`${scenario}: page label ${i} "${label.name}: ${label.current} / ${label.target}" differs from read-state ${res.name} ${res.current} / ${res.target}.`);
+        }
+      });
+
+      // A goal whose action is available never shows a current amount below
+      // its target, and the bar is full exactly when the action is available.
+      if (goal.available && !goal.resources.every((r) => r.current >= r.target)) {
+        problems.push(`${scenario}: goal is available but shows a short bar (${goal.resources.map((r) => r.current + "/" + r.target).join(", ")}).`);
+      }
+      const barFull = (id) => {
+        const el = document.getElementById(id);
+        if (!el || el.hidden) return null;
+        return parseFloat(el.getAttribute("aria-valuenow")) >= parseFloat(el.getAttribute("aria-valuemax"));
+      };
+      const shownBars = [barFull("goal-progress-track-1")];
+      if (goal.resources.length === 2) shownBars.push(barFull("goal-progress-track-2"));
+      const shownFull = shownBars.every((full) => full === true);
+      if (shownFull !== goal.available) {
+        problems.push(`${scenario}: page bars full=${shownFull} but read-state available=${goal.available} for goal "${goal.type}".`);
+      }
+
+      // The goal's own action button is enabled exactly when the tool says so.
+      const buttonId = ACTION_BUTTON[goal.type];
+      if (buttonId) {
+        const btn = document.getElementById(buttonId);
+        if (!btn) {
+          problems.push(`${scenario}: expected a #${buttonId} button for the "${goal.type}" goal.`);
+        } else if (Boolean(btn.disabled) === goal.available) {
+          problems.push(`${scenario}: #${buttonId} disabled=${btn.disabled} but read-state available=${goal.available}.`);
+        }
+      }
+    };
+
+    // Every goal type, and just below each threshold it turns on at.
+    loadScenario({ wood: 7 });
+    await checkGoal("first goal at 7 wood", "first-goal");
+
+    loadScenario({ wood: 9 });
+    await checkGoal("just below the first goal at 9 wood", "first-goal");
+    loadScenario({ wood: 10 });
+    await checkGoal("sharpen available at 10 wood", "upgrade");
+
+    loadScenario({ wood: 10, upgradeLevel: 1, stoneUnlocked: true, stone: 3 });
+    await checkGoal("gather-stone goal at 3 stone", "stone-goal");
+    loadScenario({ wood: 10, upgradeLevel: 1, stoneUnlocked: true, stone: 4 });
+    await checkGoal("just below the wall cost at 4 stone", "stone-goal");
+    loadScenario({ wood: 10, upgradeLevel: 1, stoneUnlocked: true, stone: 5 });
+    await checkGoal("build-wall goal at 5 stone", "build-wall-goal");
+
+    loadScenario({ wood: 10, stone: 4, upgradeLevel: 1, stoneUnlocked: true, wallLevel: 1 });
+    await checkGoal("forge goal below its stone cost", "forge-goal");
+    loadScenario({ wood: 10, stone: 5, upgradeLevel: 1, stoneUnlocked: true, wallLevel: 1 });
+    await checkGoal("forge goal at its costs", "forge-goal");
+    loadScenario({ wood: 10, stone: 5, upgradeLevel: 1, stoneUnlocked: true, wallLevel: 1, forgeLevel: 4 });
+    await checkGoal("forge goal just below forge level 5", "forge-goal");
+
+    loadScenario({ wood: 10, stone: 4, upgradeLevel: 1, stoneUnlocked: true, wallLevel: 1, forgeLevel: 5 });
+    await checkGoal("expedition goal below its stone cost", "expedition-goal");
+    loadScenario({ wood: 10, stone: 5, upgradeLevel: 1, stoneUnlocked: true, wallLevel: 1, forgeLevel: 5 });
+    await checkGoal("expedition goal at its costs", "expedition-goal");
+
+    // Crossing the wall cost moves the page and the tool together at the same
+    // threshold: 4 stone is the gather-stone goal, 5 stone is build-wall.
+    loadScenario({ wood: 10, upgradeLevel: 1, stoneUnlocked: true, stone: 4 });
+    renderNow();
+    const pageBefore = document.getElementById("goal-text").textContent.trim();
+    const toolBefore = (await readState.execute({})).nextGoal.description;
+    loadScenario({ wood: 10, upgradeLevel: 1, stoneUnlocked: true, stone: 5 });
+    renderNow();
+    const pageAfter = document.getElementById("goal-text").textContent.trim();
+    const toolAfter = (await readState.execute({})).nextGoal.description;
+    if (pageBefore !== toolBefore || pageAfter !== toolAfter) {
+      problems.push(`Goal threshold drift: page saw ${JSON.stringify(pageBefore)}/${JSON.stringify(pageAfter)} but read-state saw ${JSON.stringify(toolBefore)}/${JSON.stringify(toolAfter)}.`);
+    }
+    if (pageBefore === pageAfter) {
+      problems.push(`Crossing the wall cost (4 -> 5 stone) should change the goal, but both renders showed ${JSON.stringify(pageAfter)}.`);
+    }
+
+    engine.reset();
+    engine.init();
+  } catch (err) {
+    problems.push(`Shared goal rule test threw: ${err.message}`);
+    console.error(err);
+  }
+
   // ─── Offline summary overlay appears after any resource gain (no time guard) ───
   // Issue #943 removed the `elapsedSec > 3` guard, and issue #989 keeps the
   // panel for any real return at least RETURN_MIN_SEC long, whether or not a
