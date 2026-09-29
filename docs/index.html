@@ -84,6 +84,13 @@
       display: none !important;
     }
 
+    /* The page behind an overlay is sealed: with the game out of layout there
+       is nothing to scroll to, and this stops a scroll gesture that leaks
+       through the overlay from moving anything underneath it. */
+    body.overlay-open {
+      overflow: hidden;
+    }
+
     /* ─── Status bar — a compact header of resource chips ─── */
     #status-bar {
       display: flex;
@@ -475,8 +482,14 @@
       inset: 0;
       width: 100vw;
       height: 100vh;
+      /* The centring axis must match the VISIBLE viewport on a phone: with the
+         browser chrome showing, 100vh is taller than what the visitor can see,
+         so a panel centred in it drifts under the chrome. The dvh line wins
+         where supported; the vh line is the fallback. */
+      height: 100dvh;
       min-width: 100vw;
       min-height: 100vh;
+      min-height: 100dvh;
       background: #0a0a0f;
       display: flex;
       align-items: center;
@@ -493,6 +506,18 @@
 
     .sandbox-panel {
       background: var(--panel-bg);
+      /* The scanline texture rides the panel's own background instead of an
+         absolutely-positioned ::after, so it scrolls with the content
+         (background-attachment: local) and still covers the last line at any
+         scroll offset. */
+      background-image: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(255,255,255,0.015) 2px,
+        rgba(255,255,255,0.015) 4px
+      );
+      background-attachment: local;
       border: var(--border-width) solid #66aa88;
       padding: var(--panel-pad);
       max-width: 520px;
@@ -502,22 +527,18 @@
       flex-direction: column;
       gap: 1rem;
       position: relative;
-      overflow: hidden;
-      min-height: 300px;
-    }
-
-    .sandbox-panel::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-      background: repeating-linear-gradient(
-        0deg,
-        transparent,
-        transparent 2px,
-        rgba(255,255,255,0.015) 2px,
-        rgba(255,255,255,0.015) 4px
-      );
+      /* A rehearsal longer than the window scrolls inside the panel rather than
+         running off the top and bottom of a centred flex item. */
+      overflow-x: hidden;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+      /* The floor can never exceed the cap, or the panel would grow past the
+         viewport on a short screen. */
+      min-height: min(300px, calc(100vh - 1.5rem));
+      min-height: min(300px, calc(100dvh - 1.5rem));
+      max-height: calc(100vh - 1.5rem);
+      max-height: calc(100dvh - 1.5rem);
     }
 
     .sandbox-title {
@@ -703,7 +724,8 @@
 
     @media (max-width: 480px) {
       .sandbox-panel {
-        min-height: 260px;
+        min-height: min(260px, calc(100vh - 1.5rem));
+        min-height: min(260px, calc(100dvh - 1.5rem));
         padding: 0.75rem;
       }
       .sandbox-projections {
@@ -876,8 +898,12 @@
       inset: 0;
       width: 100vw;
       height: 100vh;
+      /* Centre in the VISIBLE viewport, so a phone with browser chrome showing
+         does not push the account under the chrome. dvh wins where supported. */
+      height: 100dvh;
       min-width: 100vw;
       min-height: 100vh;
+      min-height: 100dvh;
       background: #0a0a0f;
       display: flex;
       align-items: center;
@@ -894,6 +920,18 @@
 
     .offline-panel {
       background: var(--panel-bg);
+      /* The scanline texture rides the panel's own background instead of an
+         absolutely-positioned ::after, so it scrolls with the content
+         (background-attachment: local) and still covers the last line at any
+         scroll offset. */
+      background-image: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(255,255,255,0.015) 2px,
+        rgba(255,255,255,0.015) 4px
+      );
+      background-attachment: local;
       border: var(--border-width) solid var(--panel-border);
       padding: var(--panel-pad);
       max-width: 480px;
@@ -903,22 +941,19 @@
       flex-direction: column;
       gap: 1rem;
       position: relative;
-      overflow: hidden;
-      min-height: 220px;
-    }
-
-    .offline-panel::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-      background: repeating-linear-gradient(
-        0deg,
-        transparent,
-        transparent 2px,
-        rgba(255,255,255,0.015) 2px,
-        rgba(255,255,255,0.015) 4px
-      );
+      /* A welcome-back account taller than the window scrolls inside the panel,
+         so the Continue button and the away choices stay reachable instead of
+         falling off a centred flex item. */
+      overflow-x: hidden;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+      /* The floor can never exceed the cap, or the panel would grow past the
+         viewport on a short screen. */
+      min-height: min(220px, calc(100vh - 1.5rem));
+      min-height: min(220px, calc(100dvh - 1.5rem));
+      max-height: calc(100vh - 1.5rem);
+      max-height: calc(100dvh - 1.5rem);
     }
 
     .offline-title {
@@ -1169,7 +1204,8 @@
       }
 
       .offline-panel {
-        min-height: 200px;
+        min-height: min(200px, calc(100vh - 1.5rem));
+        min-height: min(200px, calc(100dvh - 1.5rem));
         padding: 0.75rem;
       }
 
