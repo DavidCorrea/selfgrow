@@ -216,6 +216,14 @@ let offlineGained = { wood: 0, stone: 0, elapsedSec: 0, discovery: null };
  * @property {number}  wood
  * @property {number}  stone
  * @property {{id: string, name: string, bonus: number, credited: boolean, alreadyOwned: boolean}|null} discovery
+ * @property {string|null} eventId — the id of the away event this return itself
+ *   offered, or null when it offered none. It is what ties a later choice back
+ *   to the return that actually posed the decision, so a return that never
+ *   offered one can never inherit another return's chosen option.
+ * @property {{id: string, label: string, effect: {kind: string, amount: number}, effectText: string}|null} chosenOption
+ *   — the option the player took from this return's decision, or null when the
+ *   return offered none or the player has not chosen yet. Written once in
+ *   chooseAwayEventOption so a reload still tells what was chosen.
  * @property {Milestones} milestones
  */
 
@@ -476,9 +484,10 @@ function catchUp(firstVisit, record = true) {
     // first is chosen must not swap out the choice the player is looking at;
     // only choosing clears it. Gated on `record` like the account itself, so a
     // resume that must not contradict an open panel cannot invent a new event.
-    if (record && !firstVisit && elapsedSec >= AWAY_EVENT_MIN_SEC && !state.pendingEvent) {
-      state.pendingEvent = awayEventForElapsed(elapsedSec, state);
-    }
+    const offeredEvent = (record && !firstVisit && elapsedSec >= AWAY_EVENT_MIN_SEC && !state.pendingEvent)
+      ? awayEventForElapsed(elapsedSec, state)
+      : null;
+    if (offeredEvent) state.pendingEvent = offeredEvent;
 
     offlineGained = {
       wood: woodGained,
@@ -498,6 +507,8 @@ function catchUp(firstVisit, record = true) {
         wood: displayAmount(displayAmount(state.wood) - displayAmount(beforeWood)),
         stone: displayAmount(displayAmount(state.stone) - displayAmount(beforeStone)),
         discovery: discoveryRecord,
+        eventId: offeredEvent ? offeredEvent.id : null,
+        chosenOption: null,
         milestones: computeMilestones(before),
       };
     }
@@ -807,6 +818,8 @@ function sanitizeReturnRecord(raw) {
     wood: raw.wood,
     stone: raw.stone,
     discovery: raw.discovery ?? null,
+    eventId: typeof raw.eventId === "string" && raw.eventId !== "" ? raw.eventId : null,
+    chosenOption: sanitizeChosenOption(raw.chosenOption),
     milestones: {
       sharpenAvailable: Boolean(m.sharpenAvailable),
       stoneNowUnlocked: Boolean(m.stoneNowUnlocked),
@@ -814,6 +827,32 @@ function sanitizeReturnRecord(raw) {
       forgeNowUnlocked: Boolean(m.forgeNowUnlocked),
       expeditionNowUnlocked: Boolean(m.expeditionNowUnlocked),
     },
+  };
+}
+
+/**
+ * A persisted record of the option taken from a return's decision, or null when
+ * what was stored cannot be trusted. It keeps the option id, the label and the
+ * effect sentence the panel showed, plus the effect that was actually granted,
+ * so re-opening the account cannot state a different choice from the one whose
+ * effect the state already carries.
+ *
+ * @param {unknown} raw
+ * @returns {{id: string, label: string, effect: {kind: string, amount: number}, effectText: string}|null}
+ */
+function sanitizeChosenOption(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  if (typeof raw.id !== "string" || raw.id === "") return null;
+  if (typeof raw.label !== "string" || typeof raw.effectText !== "string") return null;
+  const effect = raw.effect;
+  if (!effect || typeof effect !== "object") return null;
+  if (effect.kind !== "wood" && effect.kind !== "stone" && effect.kind !== "rate") return null;
+  if (!Number.isFinite(effect.amount)) return null;
+  return {
+    id: raw.id,
+    label: raw.label,
+    effect: { kind: effect.kind, amount: effect.amount },
+    effectText: raw.effectText,
   };
 }
 
@@ -1470,6 +1509,17 @@ export function chooseAwayEventOption(optionId) {
   } else {
     state.rate += amount;
   }
+  // Record the choice in the return's own account — but only when this very
+  // return offered the event, and only once. A return that never posed a
+  // decision must never inherit one, and re-choosing is already refused above.
+  if (state.lastReturn && state.lastReturn.eventId === event.id && !state.lastReturn.chosenOption) {
+    state.lastReturn.chosenOption = {
+      id: option.id,
+      label: option.label,
+      effect: { kind, amount },
+      effectText: option.effectText,
+    };
+  }
   state.pendingEvent = null;
   persist();
   return { chosen: true, chosenOptionId: option.id, effect: { kind, amount }, state: getState() };
@@ -1504,6 +1554,7 @@ export function consumeOfflineGained() {
  *   wood: number,
  *   stone: number,
  *   discovery: {id: string, name: string, bonus: number, credited: boolean, alreadyOwned: boolean}|null,
+ *   chosenOption: {id: string, label: string, effect: {kind: string, amount: number}, effectText: string}|null,
  *   pendingEvent: AwayEvent|null,
  *   nextDiscovery: {id: string, name: string, bonus: number, minSec: number}|null,
  *   milestones: Milestones,
@@ -1521,6 +1572,7 @@ export function getReturnSummary() {
       wood: 0,
       stone: 0,
       discovery: null,
+      chosenOption: null,
       pendingEvent: clonePendingEvent(state.pendingEvent),
       nextDiscovery: nextDiscoveryAfter(state.discoveryId),
       milestones: { sharpenAvailable: false, stoneNowUnlocked: false, wallAvailable: false, forgeNowUnlocked: false, expeditionNowUnlocked: false },
@@ -1535,6 +1587,7 @@ export function getReturnSummary() {
     wood: ret.wood,
     stone: ret.stone,
     discovery: ret.discovery,
+    chosenOption: ret.chosenOption ?? null,
     pendingEvent: clonePendingEvent(state.pendingEvent),
     nextDiscovery: nextDiscoveryAfter(state.discoveryId),
     milestones: ret.milestones,

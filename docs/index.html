@@ -1877,20 +1877,21 @@
     }
 
     // Take one choice of the pending event. The engine grants exactly the
-    // effect that choice stated and clears the event, so the panel redraws
-    // without it — the other choice can never then be taken. Focus moves to
-    // the dismiss button because the button that was focused is now gone.
+    // effect that choice stated, records the choice in the return's own
+    // account, and clears the event, so the panel redraws without it — the
+    // other choice can never then be taken. Focus moves to the dismiss button
+    // because the button that was focused is now gone.
     function chooseAwayOption(optionId) {
-      const offered = getState().pendingEvent;
-      const option = offered && offered.options.find((candidate) => candidate.id === optionId);
       const result = chooseAwayEventOption(optionId);
       if (!result.chosen) return;
       renderUI();
       // renderOfflineEvent(null) hides the buttons and clears any stale line;
-      // write the confirmation after it, from the option the panel offered.
+      // write the confirmation after it, from the choice the engine recorded
+      // on the return, so the panel states exactly what the account holds.
       renderOfflineEvent(null);
-      if (option) {
-        offlineEventChosen.textContent = `You chose: ${option.label} \u2014 ${option.effectText}`;
+      const chosen = getReturnSummary().chosenOption;
+      if (chosen) {
+        offlineEventChosen.textContent = `You chose: ${chosen.label} \u2014 ${chosen.effectText}`;
         offlineEventChosen.hidden = false;
       }
       btnDismiss.focus();
@@ -1962,6 +1963,16 @@
       // the read-state tool reports, so the panel and an agent offer the player
       // the same two choices with the same effects.
       renderOfflineEvent(ret.pendingEvent);
+
+      // The decision this return has already taken, if any. It is part of the
+      // same persisted account the panel was showing, so re-opening the return
+      // — now or after a reload — still names the option and the effect it
+      // granted. A return that offered no decision shows nothing. Written after
+      // renderOfflineEvent, which clears the line for a fresh or absent offer.
+      if (ret.chosenOption) {
+        offlineEventChosen.textContent = `You chose: ${ret.chosenOption.label} \u2014 ${ret.chosenOption.effectText}`;
+        offlineEventChosen.hidden = false;
+      }
 
       // ─── Milestone announcements ───
       const milestones = ret.milestones;
