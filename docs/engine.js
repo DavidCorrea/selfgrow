@@ -923,6 +923,32 @@ export function clonePendingEvent(event) {
 }
 
 /**
+ * A deep copy of a return account, so a reader — the page, a tool or the
+ * sandbox rehearsal — can hold and inspect it without touching the save. The
+ * snapshot carries it so a rehearsal projects the same return the page shows
+ * (see getState and sandbox.cloneState).
+ *
+ * @param {ReturnRecord|null} record
+ * @returns {ReturnRecord|null}
+ */
+function cloneReturnRecord(record) {
+  if (!record) return null;
+  return {
+    firstVisit: record.firstVisit,
+    seen: record.seen,
+    elapsedSec: record.elapsedSec,
+    wood: record.wood,
+    stone: record.stone,
+    discovery: record.discovery ? { ...record.discovery } : null,
+    eventId: record.eventId ?? null,
+    chosenOption: record.chosenOption
+      ? { ...record.chosenOption, effect: { ...record.chosenOption.effect } }
+      : null,
+    milestones: { ...record.milestones },
+  };
+}
+
+/**
  * A persisted away event, or null when what was stored cannot be trusted: no
  * title, not exactly two distinct choices, or a choice whose effect is not one
  * finite positive amount of a kind the engine knows how to apply. A corrupt
@@ -1690,6 +1716,7 @@ export function getState() {
     } : null,
     finds: discoveryCollection(state.discoveryId),
     pendingEvent: clonePendingEvent(state.pendingEvent),
+    lastReturn: cloneReturnRecord(state.lastReturn),
     eventsOffered: state.eventsOffered,
     timestamp: state.timestamp,
     firstTimestamp: state.firstTimestamp,
