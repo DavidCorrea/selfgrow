@@ -8,7 +8,7 @@
  * @module agenttools
  */
 
-import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, chooseAwayEventOption, getReturnSummary, formatElapsed, formatRate, nextDiscoveryAfter, discoveryCollection, returnDiscoveryText, sharpenAvailable, sharpenThreshold, wallAvailable, expeditionUnlocked, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, effectiveWoodRate, expeditionMultiplierFor, clickPowerFor, FIRST_GOAL_WOOD, UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, GOAL_STONE, WALL_COST, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT, EXPEDITION_FORGE_LEVEL, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_WOOD_COST_INC, FORGE_STONE_COST_INC, FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC, EXPEDITION_WOOD_RATE_MULTIPLIER } from "./engine.js";
+import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, chooseAwayEventOption, getReturnSummary, formatElapsed, formatRate, nextDiscoveryAfter, discoveryCollection, returnDiscoveryText, sharpenAvailable, sharpenThreshold, wallAvailable, expeditionUnlocked, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, effectiveWoodRate, expeditionMultiplierFor, clickPowerFor, FIRST_GOAL_WOOD, UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, GOAL_STONE, WALL_COST, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT, EXPEDITION_FORGE_LEVEL, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_WOOD_COST_INC, FORGE_STONE_COST_INC, FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC, EXPEDITION_WOOD_RATE_MULTIPLIER, DISCOVERY_MIN_SEC, AWAY_EVENT_MIN_SEC, AWAY_EVENT_LUMP_SEC, AWAY_EVENT_RATE_BONUS, AWAY_EVENTS, discoverForElapsed, FINDS_LIST_LIMIT } from "./engine.js";
 
 /**
  * The last return as the welcome-back panel is showing it, read straight from
@@ -345,6 +345,68 @@ function rulesNextAwayFind(s) {
 }
 
 /**
+ * The away loop — the part the game is built around — stated as rules: what an
+ * absence turns up, the decision a return offers, and how a sandbox rehearses
+ * one. Every figure is read from the engine's own constants and ladder, and
+ * the sentences are assembled from those same values, so a rule here cannot
+ * drift from the rule the page plays by.
+ *
+ * The ladder's endlessness is derived, not asserted: the deepest rung the
+ * engine can name for an absurd absence is probed, and the ladder counts as
+ * endless because a further rung still follows it.
+ *
+ * @param {import("./engine.js").GameState} s
+ * @returns {object}
+ */
+function rulesAway(s) {
+  const exampleFind = discoverForElapsed(DISCOVERY_MIN_SEC);
+  const deepestFind = discoverForElapsed(1e15);
+  const strongestKinds = [...new Set(AWAY_EVENTS.flatMap((event) => event.kinds))];
+  return {
+    finds: {
+      minSec: DISCOVERY_MIN_SEC,
+      minElapsed: formatElapsed(DISCOVERY_MIN_SEC * 1000),
+      example: exampleFind
+        ? { id: exampleFind.id, name: exampleFind.name, bonus: exampleFind.bonus, minSec: exampleFind.minSec }
+        : null,
+      neverEnds: Boolean(deepestFind && nextDiscoveryAfter(deepestFind.id)),
+      weakerOrRepeatAddsNothing: true,
+      listLimit: FINDS_LIST_LIMIT,
+      rule: "A longer absence always turns up a stronger named find, and a find, once kept, "
+        + "adds permanently to wood/s. The shortest absence that turns anything up is " + DISCOVERY_MIN_SEC
+        + " seconds. The ladder has no end, so there is always "
+        + "a stronger find beyond the one owned; the Finds list shows the " + FINDS_LIST_LIMIT
+        + " strongest kept and summarises the rest. A find weaker than one already owned, or the same "
+        + "rung found again, adds nothing new.",
+    },
+    event: {
+      minSec: AWAY_EVENT_MIN_SEC,
+      minElapsed: formatElapsed(AWAY_EVENT_MIN_SEC * 1000),
+      optionCount: 2,
+      kinds: strongestKinds,
+      // Stone is swapped for wood while the stone system is still locked, so
+      // the choice the player actually sees can differ from the pool's kinds.
+      stoneShownAsWood: !s.stoneUnlocked,
+      lumpSec: AWAY_EVENT_LUMP_SEC,
+      rateBonus: AWAY_EVENT_RATE_BONUS,
+      oneWay: true,
+      rule: "A return of at least " + AWAY_EVENT_MIN_SEC + " seconds offers a happening with exactly two "
+        + "choices. Each choice grants one thing: a lump of wood, "
+        + "a lump of stone (shown as wood while stone is still locked), or a permanent +"
+        + formatRate(AWAY_EVENT_RATE_BONUS) + " wood/s. The wood and stone lumps are worth "
+        + AWAY_EVENT_LUMP_SEC + "s of production at the rates in force. Choosing is one-way: once one "
+        + "option is taken the other can never then be taken.",
+    },
+    sandbox: {
+      tools: ["sandbox-create", "sandbox-fast-forward", "sandbox-fast-forward-next-find", "sandbox-exit"],
+      rule: "An absence can be rehearsed. A sandbox clones the current save and fast-forwarding it "
+        + "projects exactly the find and the happening a real absence of that length would turn up, "
+        + "without touching the real save; sandbox-exit discards the rehearsal.",
+    },
+  };
+}
+
+/**
  * @returns {Array<import("./webmcp.js").ToolDescriptor>}
  */
 export function tools() {
@@ -518,6 +580,16 @@ export function tools() {
         + "sharpen opens stone, the first wall opens the forge, forge level " + EXPEDITION_FORGE_LEVEL
         + " opens expeditions. nextAwayFind is the next rung of the away-find ladder and the "
         + "absence it needs {id, name, minSec, elapsed}, or null when the save names no rung. "
+        + "away describes the loop the game is built around: finds is the away-find ladder "
+        + "(minSec/minElapsed = the shortest absence that turns anything up, an example rung, "
+        + "neverEnds = the ladder has no end so a stronger find always waits, "
+        + "weakerOrRepeatAddsNothing, listLimit, and the rule in words); event is the two-choice "
+        + "happening a return of minSec or more offers (optionCount, kinds it can grant, "
+        + "stoneShownAsWood while stone is locked, lumpSec = seconds of production a wood/stone "
+        + "lump is worth, rateBonus = the permanent wood/s a rate option adds, oneWay, and the "
+        + "rule in words); sandbox names the rehearsal tools and states that fast-forwarding "
+        + "projects the find and happening a real absence would turn up without touching the "
+        + "save. "
         + "Every number is read from the engine's own constants, so an agent that has never "
         + "seen the screen can learn the game and name the first goal and its action.",
       inputSchema: { type: "object", properties: {} },
@@ -530,6 +602,7 @@ export function tools() {
           actions: rulesActions(s),
           unlocks: rulesUnlocks(),
           nextAwayFind: rulesNextAwayFind(s),
+          away: rulesAway(s),
         };
       },
     },

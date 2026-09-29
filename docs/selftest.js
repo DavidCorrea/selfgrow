@@ -6647,6 +6647,91 @@ export async function checks() {
           problems.push(`read-rules "${actionId}" effectText ${JSON.stringify(action.effectText)} does not match the text the page shows beside it: ${JSON.stringify(pageText)}.`);
         }
       }
+
+      // (f) The away loop in the same detail as the crafting loop: the find
+      // ladder, the two-choice happening, and the sandbox rehearsal. Every
+      // figure is compared to the engine's own constant (or the engine's own
+      // ladder lookup), so a rule that drifts from the engine is caught here.
+      const away = rules.away;
+      if (!away || typeof away !== "object") {
+        problems.push(`read-rules.away should describe the away loop (finds, event, sandbox), got ${JSON.stringify(away)}.`);
+      } else {
+        const awayFigures = [
+          ["read-rules away.finds.minSec", away.finds?.minSec, engine.DISCOVERY_MIN_SEC],
+          ["read-rules away.event.minSec", away.event?.minSec, engine.AWAY_EVENT_MIN_SEC],
+          ["read-rules away.event.lumpSec", away.event?.lumpSec, engine.AWAY_EVENT_LUMP_SEC],
+          ["read-rules away.event.rateBonus", away.event?.rateBonus, engine.AWAY_EVENT_RATE_BONUS],
+          ["read-rules away.finds.listLimit", away.finds?.listLimit, engine.FINDS_LIST_LIMIT],
+          ["read-rules away.event.optionCount", away.event?.optionCount, 2],
+        ];
+        for (const [label, actual, expected] of awayFigures) {
+          checkNumber(label, actual, expected);
+        }
+
+        // The two durations read the engine's own formatter for the constants.
+        const awayDurations = [
+          ["read-rules away.finds.minElapsed", away.finds?.minElapsed, engine.formatElapsed(engine.DISCOVERY_MIN_SEC * 1000)],
+          ["read-rules away.event.minElapsed", away.event?.minElapsed, engine.formatElapsed(engine.AWAY_EVENT_MIN_SEC * 1000)],
+        ];
+        for (const [label, actual, expected] of awayDurations) {
+          if (actual !== expected) {
+            problems.push(`${label} should be ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}.`);
+          }
+        }
+
+        // The example rung is the engine's own find for the shortest absence.
+        const awayExample = engine.discoverForElapsed(engine.DISCOVERY_MIN_SEC);
+        if (!away.finds?.example || away.finds.example.id !== awayExample.id || away.finds.example.name !== awayExample.name || away.finds.example.bonus !== awayExample.bonus) {
+          problems.push(`read-rules away.finds.example should be the engine's own find for a ${engine.DISCOVERY_MIN_SEC}s absence (${JSON.stringify({ id: awayExample.id, name: awayExample.name, bonus: awayExample.bonus })}), got ${JSON.stringify(away.finds?.example)}.`);
+        }
+
+        // The ladder's endlessness is read from the ladder itself: the deepest
+        // rung an absurd absence reaches still has a rung beyond it.
+        const deepestFind = engine.discoverForElapsed(1e15);
+        const ladderHasNoEnd = Boolean(deepestFind && engine.nextDiscoveryAfter(deepestFind.id));
+        if (away.finds?.neverEnds !== ladderHasNoEnd) {
+          problems.push(`read-rules away.finds.neverEnds should be ${ladderHasNoEnd} (whether the engine's own ladder names a rung after its deepest), got ${JSON.stringify(away.finds?.neverEnds)}.`);
+        }
+        if (away.finds?.weakerOrRepeatAddsNothing !== true) {
+          problems.push("read-rules away.finds should state that a weaker or repeat find adds nothing new.");
+        }
+        if (away.event?.oneWay !== true) {
+          problems.push("read-rules away.event should state that choosing an option is one-way.");
+        }
+        if (away.event?.stoneShownAsWood !== !state.stoneUnlocked) {
+          problems.push(`read-rules away.event.stoneShownAsWood should be ${!state.stoneUnlocked} for this save (stone unlocked=${state.stoneUnlocked}), got ${JSON.stringify(away.event?.stoneShownAsWood)}.`);
+        }
+
+        // The two choices can grant wood, stone or a permanent wood/s increase.
+        const awayKinds = Array.isArray(away.event?.kinds) ? away.event.kinds : [];
+        for (const kind of ["wood", "stone", "rate"]) {
+          if (!awayKinds.includes(kind)) {
+            problems.push(`read-rules away.event.kinds should include "${kind}", got ${JSON.stringify(awayKinds)}.`);
+          }
+        }
+
+        // Every rehearsal tool named exists in the tool list, and a sandbox
+        // fast-forward really projects the find a real absence would turn up.
+        const allToolNames = tools().map((t) => t.name);
+        const namedSandboxTools = Array.isArray(away.sandbox?.tools) ? away.sandbox.tools : [];
+        if (namedSandboxTools.length === 0) {
+          problems.push("read-rules away.sandbox.tools should name the tools that rehearse an absence.");
+        }
+        for (const toolName of namedSandboxTools) {
+          if (!allToolNames.includes(toolName)) {
+            problems.push(`read-rules away.sandbox.tools names "${toolName}", which is not a tool in tools().`);
+          }
+        }
+        const sandboxFastForward = tools().find((t) => t.name === "sandbox-fast-forward");
+        if (sandboxFastForward) {
+          const rehearsal = await sandboxFastForward.execute({ seconds: engine.DISCOVERY_MIN_SEC });
+          const projectedFind = engine.discoverForElapsed(engine.DISCOVERY_MIN_SEC);
+          if (!rehearsal || !rehearsal.discovery || rehearsal.discovery.id !== projectedFind.id) {
+            problems.push(`A sandbox fast-forward of ${engine.DISCOVERY_MIN_SEC}s (the away loop's shortest find) should project the find ${JSON.stringify(projectedFind?.id)}, got ${JSON.stringify(rehearsal ? rehearsal.discovery : rehearsal)}.`);
+          }
+          if (typeof window.__exitSandbox === "function") window.__exitSandbox();
+        }
+      }
     }
 
     engine.importSave(restoreCode);
