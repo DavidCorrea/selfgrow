@@ -14,10 +14,14 @@ import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, 
  * The last return as the welcome-back panel is showing it, read straight from
  * the engine's own record rather than parsed from the panel's text. The panel
  * and this reader share one source, so they can never report different numbers.
- * A dismissed or first-visit return accounts for nothing, matching the panel
- * being absent.
+ *
+ * `available` is true whenever a real return is on record, whether or not the
+ * panel is currently up — it is what the status panel's re-open control keys
+ * off. The amounts and the find stay zeroed while the panel is hidden, matching
+ * the panel being absent.
  *
  * @returns {{
+ *   available: boolean,
  *   wood: number,
  *   stone: number,
  *   elapsed: string|null,
@@ -25,15 +29,14 @@ import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, 
  * }}
  */
 function readReturnSummary() {
-  const overlay = document.getElementById("offline-summary");
-  if (!overlay || overlay.hidden) {
-    return { wood: 0, stone: 0, elapsed: null, discovery: null };
-  }
   const ret = getReturnSummary();
-  if (!ret.visible) {
-    return { wood: 0, stone: 0, elapsed: null, discovery: null };
+  const available = ret.visible;
+  const overlay = document.getElementById("offline-summary");
+  if (!available || !overlay || overlay.hidden) {
+    return { available, wood: 0, stone: 0, elapsed: null, discovery: null };
   }
   return {
+    available,
     wood: ret.wood,
     stone: ret.stone,
     elapsed: ret.elapsed,
@@ -93,6 +96,9 @@ function withGoal(s) {
     wallBuilt: s.wallLevel > 0,
     upgradeAvailable: upgradeAvailable,
     offlineSummaryVisible: !document.getElementById('offline-summary')?.hidden,
+    // Whether a real return is on record and can be re-opened, independent of
+    // whether the panel is up right now — the same gate the status panel uses.
+    returnAvailable: ret.available,
     offlineWoodGained: ret.wood,
     offlineStoneGained: ret.stone,
     offlineElapsed: ret.elapsed,
@@ -148,7 +154,9 @@ export function tools() {
         + "expedition level, maps, expedition wood cost, expedition stone cost, "
         + "whether stone is unlocked, timestamp, firstTimestamp (ISO date of first save), "
         + "elapsed (formatted duration since first save), whether the offline-summary "
-        + "overlay is currently visible, how much wood and stone were gained "
+        + "overlay is currently visible (offlineSummaryVisible), whether a real return is "
+        + "on record and can be re-opened (returnAvailable, true even after the panel was "
+        + "dismissed), how much wood and stone were gained "
         + "while away (offlineWoodGained / offlineStoneGained), the human-text "
         + "duration of that absence as shown in the panel (offlineElapsed, e.g. "
         + "'3m 20s' or '1d 4h 0m', null when nothing was gained or the panel is "
@@ -184,13 +192,14 @@ export function tools() {
         + '"build-wall" — consumes ' + WALL_COST + ' stone to permanently increase click power for wood; '
         + '"forge-tool" — consumes wood and stone to forge a tool, permanently boosting wood rate and click power; '
         + '"send-expedition" — consumes wood and stone to send scouts on an expedition, earning 1 map resource that multiplies wood rate; '
-        + '"dismiss-offline" — dismisses the offline-summary overlay if visible.',
+        + '"dismiss-offline" — dismisses the offline-summary overlay if visible; '
+        + '"show-return" — re-opens the last return\'s summary (the status panel\'s Last return control), refused with a reason when there is no return on record.',
       inputSchema: {
         type: "object",
         properties: {
           action: {
             type: "string",
-            description: 'The action to perform. Supported: "gather", "sharpen", "gather-stone", "build-wall", "forge-tool", "send-expedition", "dismiss-offline".',
+            description: 'The action to perform. Supported: "gather", "sharpen", "gather-stone", "build-wall", "forge-tool", "send-expedition", "dismiss-offline", "show-return".',
           },
         },
         required: ["action"],
@@ -242,7 +251,19 @@ export function tools() {
           }
           return withGoal(getState());
         }
-        throw new Error('Unknown action "' + action + '". Supported: gather, sharpen, gather-stone, build-wall, forge-tool, send-expedition, dismiss-offline');
+        if (action === "show-return") {
+          const summary = readReturnSummary();
+          if (!summary.available) {
+            return { ok: false, reason: "There is no return to show yet.", ...withGoal(getState()) };
+          }
+          if (typeof window.__showReturn === "function") {
+            // Route through the page's own handler so the overlay opens exactly
+            // as it does for a click on the Last return control.
+            window.__showReturn();
+          }
+          return { ok: true, ...withGoal(getState()) };
+        }
+        throw new Error('Unknown action "' + action + '". Supported: gather, sharpen, gather-stone, build-wall, forge-tool, send-expedition, dismiss-offline, show-return');
       },
     },
     {
