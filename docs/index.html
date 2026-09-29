@@ -242,6 +242,26 @@
       gap: 0.25rem;
     }
 
+    /* Bought upgrades sit under the next one as compact history lines, so a
+       long upgrade list summarises instead of growing the page. */
+    .upgrade-card.is-history {
+      border-left: 3px solid #2c2c48;
+      padding-left: 0.4rem;
+    }
+
+    .upgrade-history-name {
+      font-family: var(--body-font);
+      font-size: 0.45rem;
+      color: var(--text);
+    }
+
+    .upgrade-summary {
+      font-family: var(--body-font);
+      font-size: 0.45rem;
+      color: var(--text-dim);
+      font-style: italic;
+    }
+
     .upgrade-effect {
       font-family: var(--body-font);
       font-size: 0.45rem;
@@ -892,8 +912,11 @@
         max-width: none;
       }
 
+      /* A lower minimum lets every unlocked system stay in one row by
+         narrowing the cards, rather than wrapping to a second row and
+         pushing the page past the window. */
       #action-area {
-        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
       }
     }
 
@@ -1015,6 +1038,7 @@
       <button class="btn btn-forge" id="btn-forge-tool" type="button" aria-label="Forge Tool" disabled>
         <span class="btn-icon">&#x1F528;</span> Forge Tool (10 wood + 5 stone)
       </button>
+      <div class="upgrade-list"></div>
     </article>
 
     <article class="system-card" id="expedition-actions">
@@ -1026,6 +1050,7 @@
       <button class="btn" id="btn-expedition" type="button" aria-label="Send Expedition" disabled style="background: var(--map-color); border-color: #cc4488;">
         <span class="btn-icon">&#x1F30D;</span> Send Expedition (10 wood + 5 stone)
       </button>
+      <div class="upgrade-list"></div>
     </article>
   </section>
 
@@ -1162,6 +1187,7 @@
     const stoneYieldEl = document.getElementById("stone-yield-value");
     const btnGather = document.getElementById("btn-gather");
     const btnSharpen = document.getElementById("btn-sharpen");
+    const woodActions = document.getElementById("wood-actions");
     const stoneActions = document.getElementById("stone-actions");
     const btnGatherStone = document.getElementById("btn-gather-stone");
     const btnBuildWall = document.getElementById("btn-build-wall");
@@ -1550,6 +1576,58 @@
       return "+" + String(rate) + "/s";
     }
 
+    // How many bought upgrades a card shows in full before the rest are
+    // summarised. The list stays bounded as the game grows, so a long upgrade
+    // history never pushes the page past the window.
+    const VISIBLE_UPGRADE_HISTORY = 2;
+
+    /**
+     * List one system card's already-bought upgrades under its next upgrade.
+     *
+     * Newest first, at most VISIBLE_UPGRADE_HISTORY lines in full, with every
+     * older purchase collapsed into a single summary line. The lines are
+     * rebuilt from scratch on each call, so the 500ms render loop is
+     * idempotent rather than stacking a new copy every tick.
+     *
+     * @param {HTMLElement|null} card  the .system-card to write into
+     * @param {string} name            label for one purchase, e.g. "Sharpen Axe"
+     * @param {number} level           how many were bought
+     * @param {string} effect          what one purchase gives
+     */
+    function renderUpgradeHistory(card, name, level, effect) {
+      if (!card) return;
+      const list = card.querySelector(".upgrade-list");
+      if (!list) return;
+
+      for (const stale of list.querySelectorAll(".upgrade-card.is-history, .upgrade-summary")) {
+        stale.remove();
+      }
+      if (!(level > 0)) return;
+
+      const shown = Math.min(level, VISIBLE_UPGRADE_HISTORY);
+      for (let i = 0; i < shown; i++) {
+        const line = document.createElement("div");
+        line.className = "upgrade-card is-history";
+        const title = document.createElement("p");
+        title.className = "upgrade-history-name";
+        title.textContent = name + " Lv " + (level - i);
+        const detail = document.createElement("p");
+        detail.className = "upgrade-effect";
+        detail.textContent = effect;
+        line.append(title, detail);
+        list.append(line);
+      }
+
+      const hiddenCount = level - shown;
+      if (hiddenCount > 0) {
+        const summary = document.createElement("p");
+        summary.className = "upgrade-summary";
+        summary.textContent = "\u2026and " + hiddenCount + " earlier upgrade"
+          + (hiddenCount === 1 ? "" : "s");
+        list.append(summary);
+      }
+    }
+
     function renderUI() {
       for (const row of staticRowText.keys()) restoreStaticText(row);
       const s = getState();
@@ -1827,6 +1905,14 @@
         btnSharpen.setAttribute("aria-label", "Sharpen Axe \u2014 locked, gather " + needed + " more wood to unlock");
         btnSharpen.disabled = true;
       }
+
+      // ─── Purchased upgrade history ───────────────────────────────
+      // Each system card states what a player has already bought, bounded so
+      // the list can never grow the page past the window.
+      renderUpgradeHistory(woodActions, "Sharpen Axe", upgradeLevel, "+0.05 wood/s each");
+      renderUpgradeHistory(stoneActions, "Build Wall", wallLevel, "+1 wood per chop each");
+      renderUpgradeHistory(forgeActions, "Forge Tool", forgeLevel, "+0.5 wood per chop and +0.05/s each");
+      renderUpgradeHistory(expeditionActions, "Send Expedition", s.maps || 0, "+5% wood rate each");
 
       // ─── Goal announcements ──────────────────────────────────────
       // Speak each new goal once, in a single polite message. The first render
