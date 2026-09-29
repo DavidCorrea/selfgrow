@@ -811,6 +811,16 @@
       color: var(--highlight);
     }
 
+    /* The panel's closing line: the same next goal the goal panel shows, so a
+       return always ends with something to reach for. */
+    .offline-next-goal {
+      color: var(--highlight);
+      font-family: var(--pixel-font);
+      font-size: 0.5rem;
+      font-weight: bold;
+      margin-top: 0.5rem;
+    }
+
     .btn-dismiss {
       font-family: var(--pixel-font);
       font-size: 0.5rem;
@@ -897,6 +907,10 @@
       }
 
       .offline-milestone {
+        font-size: 0.45rem;
+      }
+
+      .offline-next-goal {
         font-size: 0.45rem;
       }
     }
@@ -1112,6 +1126,7 @@
         <div class="offline-milestone" id="milestone-forge" hidden>The forge is now unlocked!</div>
         <div class="offline-milestone" id="milestone-expedition" hidden>Expeditions are now unlocked!</div>
       </div>
+      <div class="offline-next-goal" id="offline-next-goal">Next: <span id="offline-next-goal-text"></span></div>
       <button class="btn-dismiss" id="btn-dismiss-offline" type="button">
         OK
       </button>
@@ -1217,6 +1232,7 @@
     const offlineDiscoveryLine = document.getElementById("offline-discovery-line");
     const offlineDiscoveryName = document.getElementById("offline-discovery-name");
     const offlineDiscoveryBonus = document.getElementById("offline-discovery-bonus");
+    const offlineNextGoalText = document.getElementById("offline-next-goal-text");
     const discoveryStat = document.getElementById("discovery-stat");
     const discoveryValueEl = document.getElementById("discovery-value");
     const btnDismiss = document.getElementById("btn-dismiss-offline");
@@ -1921,6 +1937,10 @@
       // 500ms tick never re-announces. While an overlay is open the player
       // cannot act, so we still record the change but stay silent.
       const currentGoalText = goalText.textContent;
+      // The welcome-back panel closes with the goal panel's own rendered text,
+      // written on every render so it can never be stale or drift from the
+      // goal the player is actually working toward.
+      if (offlineNextGoalText) offlineNextGoalText.textContent = currentGoalText;
       if (lastGoalText === null) {
         lastGoalText = currentGoalText;
       } else if (currentGoalText !== lastGoalText) {

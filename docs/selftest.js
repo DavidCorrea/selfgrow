@@ -2745,6 +2745,89 @@ export async function checks() {
     console.error(err);
   }
 
+  // ─── The welcome-back panel ends with the next goal (issue #990) ─────
+  // On every real return the panel must close by naming the player's next
+  // goal, and name it with the goal panel's own text, so the two can never
+  // drift. Six phases cover every branch of the goal rule.
+  try {
+    const engine = await import("./engine.js");
+
+    const overlay = document.getElementById("offline-summary");
+    const nextGoalLine = document.getElementById("offline-next-goal");
+    const nextGoalText = document.getElementById("offline-next-goal-text");
+    const milestones = document.getElementById("offline-milestones");
+    const dismissBtn = document.getElementById("btn-dismiss-offline");
+    const goalTextEl = document.getElementById("goal-text");
+
+    if (!nextGoalLine) {
+      problems.push("Expected #offline-next-goal to exist in the welcome-back panel \u2014 it was not found.");
+    } else {
+      if (!nextGoalLine.closest("#offline-summary")) {
+        problems.push("#offline-next-goal must live inside #offline-summary so it is part of the welcome-back panel.");
+      }
+      if (milestones && !(milestones.compareDocumentPosition(nextGoalLine) & Node.DOCUMENT_POSITION_FOLLOWING)) {
+        problems.push("#offline-next-goal must come after #offline-milestones so the panel ends with the next goal.");
+      }
+    }
+    if (!nextGoalText) {
+      problems.push("Expected #offline-next-goal-text to hold the goal inside #offline-next-goal \u2014 it was not found.");
+    }
+
+    // Each phase seeds a state whose goal the panel must repeat, plus the word
+    // that identifies that goal, so a non-empty but wrong line is caught too.
+    // Values carry margin so the ~1.5s catch-up cannot cross a threshold.
+    const phases = [
+      { name: "first goal", keyword: "wood", save: { wood: 5, totalWoodEarned: 5 } },
+      { name: "sharpen", keyword: "Sharpening", save: { wood: 12, totalWoodEarned: 12 } },
+      { name: "gather stone", keyword: "stone", save: { wood: 12, totalWoodEarned: 12, upgradeLevel: 1, stoneUnlocked: true, stone: 0 } },
+      { name: "build wall", keyword: "Wall", save: { wood: 12, totalWoodEarned: 12, upgradeLevel: 1, stoneUnlocked: true, stone: 5 } },
+      { name: "forge", keyword: "Forge", save: { wood: 12, totalWoodEarned: 12, upgradeLevel: 1, stoneUnlocked: true, stone: 5, wallLevel: 1 } },
+      { name: "expedition", keyword: "expedition", save: { wood: 12, totalWoodEarned: 12, upgradeLevel: 1, stoneUnlocked: true, stone: 20, wallLevel: 1, forgeLevel: 5 } },
+    ];
+
+    for (const phase of phases) {
+      // reset() clears storage, so seed the save after it and before init().
+      engine.reset();
+      localStorage.setItem("selfgrow-state", JSON.stringify({
+        rate: 0.1, stone: 0, wallLevel: 0, forgeLevel: 0, stoneUnlocked: false,
+        firstTimestamp: new Date(Date.now() - 3600000).toISOString(),
+        timestamp: new Date(Date.now() - 1500).toISOString(),
+        ...phase.save,
+      }));
+      engine.init();
+      if (typeof window.__setOverlayOpen === "function") window.__setOverlayOpen("offline", false);
+      overlay.setAttribute("hidden", "");
+      window.__renderUI();
+      window.__showOfflineSummary();
+
+      const lineText = nextGoalText ? nextGoalText.textContent.trim() : "";
+      const panelGoal = goalTextEl ? goalTextEl.textContent.trim() : "";
+
+      if (overlay.hidden) {
+        problems.push(`The welcome-back panel must be visible for the ${phase.name} phase.`);
+      }
+      if (!lineText) {
+        problems.push(`The welcome-back panel must state the next goal for the ${phase.name} phase, but the line was empty.`);
+      }
+      if (lineText !== panelGoal) {
+        problems.push(`The welcome-back panel's next goal for the ${phase.name} phase must equal the goal panel's text \u2014 panel: ${JSON.stringify(lineText)}, goal panel: ${JSON.stringify(panelGoal)}.`);
+      }
+      if (lineText && !lineText.includes(phase.keyword)) {
+        problems.push(`The welcome-back panel's next goal for the ${phase.name} phase should name ${JSON.stringify(phase.keyword)}, got ${JSON.stringify(lineText)}.`);
+      }
+
+      if (dismissBtn) dismissBtn.click();
+    }
+
+    // Leave the page as it was found.
+    if (!overlay.hidden) window.__dismissOffline();
+    engine.reset();
+    engine.init();
+  } catch (err) {
+    problems.push(`Welcome-back next-goal test threw: ${err.message}`);
+    console.error(err);
+  }
+
   // ─── Expedition system checks ───────────────────────────────────
   try {
     const engine = await import("./engine.js");
