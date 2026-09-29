@@ -1339,7 +1339,7 @@
   </div>
   <script type="module">
     import "./webmcp.js";
-    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, markReturnSeen, formatElapsed, nextAwayFindText, sharpenAvailable, sharpenThreshold, expeditionUnlocked, displayAmount, exportSave, importSave, describeGoal, returnDiscoveryText, pauseForHidden, resumeFromHidden, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, clickPowerFor, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
+    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, markReturnSeen, formatElapsed, nextAwayFindText, sharpenAvailable, sharpenThreshold, expeditionUnlocked, displayAmount, formatAmount, formatRate, exportSave, importSave, describeGoal, returnDiscoveryText, pauseForHidden, resumeFromHidden, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, clickPowerFor, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
     import { cloneState, fastForward } from "./sandbox.js";
     import { mountSprites, updateSprites, playReaction } from "./sprites.js";
 
@@ -1564,13 +1564,6 @@
     }
     window.__setOverlayOpen = setOverlayOpen;
 
-    // Format a return amount exactly the way the resource counters show a
-    // quantity, so the panel's "earned" number is the rise the player can read
-    // on the counter and the two can never disagree.
-    function formatReturnAmount(value) {
-      return Number.isInteger(value) || value >= 10 ? String(Math.floor(value)) : value.toFixed(2);
-    }
-
     // ─── Offline summary ───
     function showOfflineSummary() {
       // A first-ever visit, a sub-second reload, and a return read from the
@@ -1582,9 +1575,9 @@
       offlineElapsed.textContent = ret.elapsed;
       // The displayed rise, not the raw catch-up, so the number matches the
       // wood/stone counters exactly — even when a whole resource was not earned.
-      offlineAmount.textContent = formatReturnAmount(ret.wood);
+      offlineAmount.textContent = formatAmount(ret.wood);
       if (ret.stone > 0) {
-        offlineStoneAmount.textContent = formatReturnAmount(ret.stone);
+        offlineStoneAmount.textContent = formatAmount(ret.stone);
         offlineStoneLine.hidden = false;
       } else {
         offlineStoneLine.hidden = true;
@@ -1798,12 +1791,6 @@
       }
     }
 
-    // The stone rate is shown exactly as the engine computes it, never rounded,
-    // so the panel cannot drift from the rate the game actually applies.
-    function formatStoneRate(rate) {
-      return "+" + String(rate) + "/s";
-    }
-
     // How many bought upgrades a card shows in full before the rest are
     // summarised. The list stays bounded as the game grows, so a long upgrade
     // history never pushes the page past the window.
@@ -1894,9 +1881,7 @@
 
       // Wood count
       if (stateEl) {
-        stateEl.textContent = Number.isInteger(wood) || wood >= 10
-          ? String(Math.floor(wood))
-          : wood.toFixed(2);
+        stateEl.textContent = formatAmount(wood);
       }
 
       // Rate — includes expedition map multiplier if any
@@ -1904,9 +1889,9 @@
         const maps = s.maps || 0;
         const expeditionMultiplier = expeditionMultiplierFor(maps);
         const effectiveRate = effectiveWoodRate(s);
-        let rateDisplay = "+" + effectiveRate.toFixed(2) + "/s";
+        let rateDisplay = "+" + formatRate(effectiveRate) + "/s";
         if (maps > 0) {
-          rateDisplay += " (x" + expeditionMultiplier.toFixed(2) + ")";
+          rateDisplay += " (x" + formatRate(expeditionMultiplier) + ")";
         }
         rateEl.textContent = rateDisplay;
       }
@@ -1939,12 +1924,10 @@
         stoneActions.classList.add("visible");
 
         if (stoneEl) {
-          stoneEl.textContent = Number.isInteger(stone) || stone >= 10
-            ? String(Math.floor(stone))
-            : stone.toFixed(2);
+          stoneEl.textContent = formatAmount(stone);
         }
         if (stoneRateEl) {
-          stoneRateEl.textContent = formatStoneRate(computeStoneRate());
+          stoneRateEl.textContent = "+" + formatRate(computeStoneRate()) + "/s";
         }
         if (totalStoneEl) {
           totalStoneEl.textContent = String(Math.floor(s.totalStoneEarned));
@@ -2004,7 +1987,7 @@
       const discovery = s.discovery;
       if (discovery) {
         discoveryStat.classList.remove("stat-hidden");
-        discoveryValueEl.textContent = discovery.name + " +" + discovery.bonus.toFixed(2) + "/s";
+        discoveryValueEl.textContent = discovery.name + " +" + formatRate(discovery.bonus) + "/s";
       } else {
         discoveryStat.classList.add("stat-hidden");
         emptyRow(discoveryStat);
@@ -2067,7 +2050,7 @@
         if (goalProgress) goalProgress.setAttribute("aria-valuemax", target);
         // Show this goal's exact numbers beside its bar
         if (goalLabel1) {
-          goalLabel1.textContent = resourceName + ": " + displayAmount(current) + " / " + target;
+          goalLabel1.textContent = resourceName + ": " + formatAmount(current) + " / " + target;
           goalLabel1.hidden = false;
         }
         // Hide secondary bar and label
@@ -2088,7 +2071,7 @@
           goalProgress.setAttribute("aria-valuemax", res1.target);
         }
         if (goalLabel1) {
-          goalLabel1.textContent = res1.name + ": " + displayAmount(res1.current) + " / " + res1.target;
+          goalLabel1.textContent = res1.name + ": " + formatAmount(res1.current) + " / " + res1.target;
           goalLabel1.hidden = false;
         }
         // Second bar
@@ -2104,7 +2087,7 @@
           goalTrack2.setAttribute("aria-valuemax", res2.target);
         }
         if (goalLabel2) {
-          goalLabel2.textContent = res2.name + ": " + displayAmount(res2.current) + " / " + res2.target;
+          goalLabel2.textContent = res2.name + ": " + formatAmount(res2.current) + " / " + res2.target;
           goalLabel2.hidden = false;
         }
       }
@@ -2296,14 +2279,13 @@
       if (!sandboxClone) return;
 
       const c = sandboxClone;
-      const woodDisplay = c.wood >= 10 ? Math.floor(c.wood) : c.wood.toFixed(2);
-      sbWood.textContent = woodDisplay;
+      sbWood.textContent = formatAmount(c.wood);
       sbTotalWood.textContent = String(Math.floor(c.totalWoodEarned));
 
       const expeditionMultiplier = expeditionMultiplierFor(c.maps || 0);
       const effectiveRate = effectiveWoodRate(c);
-      let rateDisplay = effectiveRate.toFixed(2) + "/s";
-      if (c.maps > 0) rateDisplay += " (x" + expeditionMultiplier.toFixed(2) + ")";
+      let rateDisplay = "+" + formatRate(effectiveRate) + "/s";
+      if (c.maps > 0) rateDisplay += " (x" + formatRate(expeditionMultiplier) + ")";
       sbRate.textContent = rateDisplay;
 
       // Stone display (hidden until unlocked)
@@ -2312,10 +2294,8 @@
         sbStone.hidden = false;
         sbStoneRateLabel.hidden = false;
         sbStoneRate.hidden = false;
-        const stoneDisplay = c.stone >= 10 ? Math.floor(c.stone) : c.stone.toFixed(2);
-        sbStone.textContent = stoneDisplay;
-        const stoneRate = computeStoneRateFor(c.totalWoodEarned).toFixed(4);
-        sbStoneRate.textContent = stoneRate + "/s";
+        sbStone.textContent = formatAmount(c.stone);
+        sbStoneRate.textContent = "+" + formatRate(computeStoneRateFor(c.totalWoodEarned)) + "/s";
       } else {
         sbStoneLabel.hidden = true;
         sbStone.hidden = true;
@@ -2332,7 +2312,7 @@
         sbEarned.textContent = describeEarnings(lastSandboxResult.woodDelta, lastSandboxResult.stoneDelta);
         sbDiscovery.textContent = lastSandboxResult.discovery
           ? lastSandboxResult.discovery.name + (lastSandboxResult.discovery.credited
-            ? " +" + lastSandboxResult.discovery.bonus.toFixed(2) + "/s"
+            ? " +" + formatRate(lastSandboxResult.discovery.bonus) + "/s"
             : " (already owned)")
           : "none this time";
       }
@@ -2356,8 +2336,8 @@
      * Describe what a rehearsal earned, e.g. "+360 wood" or "+360 wood, +54 stone".
      */
     function describeEarnings(woodDelta, stoneDelta) {
-      const parts = ["+" + displayAmount(woodDelta) + " wood"];
-      if (stoneDelta > 0) parts.push("+" + displayAmount(stoneDelta) + " stone");
+      const parts = ["+" + formatAmount(woodDelta) + " wood"];
+      if (stoneDelta > 0) parts.push("+" + formatAmount(stoneDelta) + " stone");
       return parts.join(", ");
     }
 

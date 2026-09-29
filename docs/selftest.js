@@ -2814,13 +2814,11 @@ export async function checks() {
     const elapsedEl = document.getElementById("offline-elapsed");
     const sharpenMilestoneEl = document.getElementById("milestone-sharpen");
 
-    // The wood counter's own formatting, so "the increase the player can see"
-    // is measured exactly as the counter shows it.
-    const counterValue = (v) => parseFloat(Number.isInteger(v) || v >= 10 ? String(Math.floor(v)) : v.toFixed(2));
-    const visibleRise = (before, after) => {
-      const d = counterValue(after) - counterValue(before);
-      return Number.isInteger(d) || d >= 10 ? Math.floor(d) : parseFloat(d.toFixed(2));
-    };
+    // The counter's own rule, read from the engine so "the increase the player
+    // can see" is measured exactly as the counter writes it — a second copy of
+    // the rounding here could measure a rise the counter never shows.
+    const counterValue = (v) => engine.displayAmount(v);
+    const visibleRise = (before, after) => engine.displayAmount(counterValue(after) - counterValue(before));
 
     // Load a saved game `ageMs` old and let the page show the panel exactly as
     // it does on a real reload.
@@ -3694,7 +3692,7 @@ export async function checks() {
       const panelRate = Number.parseFloat(panelRateText.replace(/[^0-9.eE+-]/g, ""));
       const lowestPossible = engine.computeStoneRateFor(woodBeforeRehearsal);
       const highestPossible = engine.computeStoneRateFor(engine.getState().totalWoodEarned);
-      const displayRounding = 5e-5; // the panel prints four decimals
+      const displayRounding = 5e-3; // the panel prints two decimals
       if (!Number.isFinite(panelRate)
         || panelRate < lowestPossible - displayRounding
         || panelRate > highestPossible + displayRounding) {
@@ -4934,10 +4932,10 @@ export async function checks() {
       problems.push(`Unlocked #stone-stat should show its count as readable text, got "${stoneRow.textContent}".`);
     }
     const rateText = document.getElementById("stone-rate-value").textContent;
-    const shownRate = Number.parseFloat(rateText.replace(/[^0-9.eE+-]/g, ""));
     const engineRate = engine.computeStoneRate();
-    if (!Number.isFinite(shownRate) || Math.abs(shownRate - engineRate) > 1e-9) {
-      problems.push(`Shown stone rate "${rateText}" disagrees with the engine's computeStoneRate() (${engineRate}).`);
+    const expectedRateText = "+" + engine.formatRate(engineRate) + "/s";
+    if (rateText !== expectedRateText) {
+      problems.push(`Shown stone rate "${rateText}" should be the engine's one rate string "${expectedRateText}" for computeStoneRate() (${engineRate}/s).`);
     }
 
     // Return the page to a fresh, fully-locked state for whatever measures it next.
@@ -4946,6 +4944,81 @@ export async function checks() {
     renderNow();
   } catch (err) {
     problems.push(`Locked-row readable-text test threw: ${err.message}`);
+    console.error(err);
+  }
+
+  // ─── One rule writes every rate and every amount (issue #1023) ──
+  // The same value used to be written three ways: the status panel printed the
+  // raw stone rate, the sandbox rounded it to four decimals and the rate chip to
+  // two, while each amount surface carried its own copy of the rounding. The
+  // engine now owns one string rule per kind and every surface reads it, so the
+  // page can never contradict itself about the state behind it.
+  try {
+    const engine = await import("./engine.js");
+    const renderNow = () => { if (typeof window.__renderUI === "function") window.__renderUI(); };
+    const originalCode = engine.exportSave();
+    if (typeof window.__exitSandbox === "function") window.__exitSandbox();
+
+    // (a) Each rule writes the string it documents.
+    if (engine.formatRate(0.0533333) !== "0.05" || engine.formatRate(0.12) !== "0.12" || engine.formatRate(1) !== "1.00") {
+      problems.push(`formatRate should write a rate with exactly two decimals, got "${engine.formatRate(0.0533333)}" for 0.0533333, "${engine.formatRate(0.12)}" for 0.12 and "${engine.formatRate(1)}" for 1.`);
+    }
+    if (engine.formatAmount(7.5) !== "7.5" || engine.formatAmount(12.7) !== "12" || engine.formatAmount(3) !== "3") {
+      problems.push(`formatAmount should write a quantity with the amount rule, got "${engine.formatAmount(7.5)}" for 7.5, "${engine.formatAmount(12.7)}" for 12.7 and "${engine.formatAmount(3)}" for 3.`);
+    }
+    // The text rule must be the engine's amount rule, not a second copy of it.
+    for (const v of [0, 0.5, 7.5, 9.99, 10, 10.5, 1234.9]) {
+      if (engine.formatAmount(v) !== String(engine.displayAmount(v))) {
+        problems.push(`formatAmount(${v}) is "${engine.formatAmount(v)}" but the engine's amount rule writes "${String(engine.displayAmount(v))}" — the two must not drift apart.`);
+      }
+    }
+
+    // (b) The status panel and the sandbox write the same stone rate for the
+    // same save, byte for byte, from that one rule. The save carries a
+    // repeating-decimal wood total (0.05 + 1234 * 0.001 = 1.284) so a leftover
+    // four-decimal print or an unrounded float shows up immediately.
+    engine.reset();
+    localStorage.setItem("selfgrow-state", JSON.stringify({
+      wood: 42.5, rate: 0.1, upgradeLevel: 1, stone: 2.25, totalWoodEarned: 1234,
+      totalStoneEarned: 0, wallLevel: 0, forgeLevel: 0, expeditionLevel: 0, maps: 0,
+      stoneUnlocked: true, discoveryBonus: 0, discoveryId: null, discoveryName: null,
+      timestamp: new Date().toISOString(),
+      firstTimestamp: new Date(Date.now() - 3600000).toISOString(),
+    }));
+    engine.init();
+    // Freeze the clock so the two reads cannot land on opposite sides of a tick.
+    engine.pauseForHidden();
+    renderNow();
+
+    const statusStoneRate = document.getElementById("stone-rate-value").textContent;
+    const expectedStoneRate = "+" + engine.formatRate(engine.computeStoneRate()) + "/s";
+    if (statusStoneRate !== expectedStoneRate) {
+      problems.push(`Status panel stone rate "${statusStoneRate}" should be the engine's one rate string "${expectedStoneRate}".`);
+    }
+    if (typeof window.__enterSandbox === "function" && typeof window.__fastForwardSandbox === "function") {
+      window.__enterSandbox();
+      window.__fastForwardSandbox(0); // rehearse the save exactly as cloned
+      const sandboxStoneRate = document.getElementById("sb-stone-rate").textContent;
+      if (sandboxStoneRate !== statusStoneRate) {
+        problems.push(`The status panel stone rate "${statusStoneRate}" and the sandbox stone rate "${sandboxStoneRate}" must read identically for the same save.`);
+      }
+      const woodCounter = document.getElementById("wood-value").textContent;
+      const sandboxWood = document.getElementById("sb-wood").textContent;
+      if (sandboxWood !== woodCounter) {
+        problems.push(`The wood counter "${woodCounter}" and the sandbox wood "${sandboxWood}" must read identically for the same save.`);
+      }
+      window.__exitSandbox();
+    } else {
+      problems.push("Expected window.__enterSandbox/__fastForwardSandbox so the sandbox's stone rate can be compared with the status panel's.");
+    }
+
+    // Leave the save and the page as they were found.
+    engine.reset();
+    engine.importSave(originalCode);
+    engine.init();
+    renderNow();
+  } catch (err) {
+    problems.push(`Shared rate/amount rule test threw: ${err.message}`);
     console.error(err);
   }
 

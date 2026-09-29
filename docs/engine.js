@@ -533,7 +533,7 @@ export function nextAwayFindText(next) {
 export function returnDiscoveryText(discovery) {
   if (!discovery) return "";
   if (discovery.credited) {
-    return `+${discovery.bonus.toFixed(2)} wood/s, yours for good.`;
+    return `+${formatRate(discovery.bonus)} wood/s, yours for good.`;
   }
   return discovery.alreadyOwned
     ? "Already in your collection \u2014 nothing new added to your rate."
@@ -682,6 +682,32 @@ function stopTick() {
  */
 export function displayAmount(v) {
   return Number.isInteger(v) || v >= 10 ? Math.floor(v) : parseFloat(v.toFixed(2));
+}
+
+/**
+ * Write a resource quantity as text with the amount rule above. This is the one
+ * rule every amount on the page is written with — the counters, the welcome-back
+ * panel's "you gathered" lines and the goal labels — so the same save reads
+ * identically everywhere and changing displayAmount moves them all together.
+ *
+ * @param {number} v
+ * @returns {string}
+ */
+export function formatAmount(v) {
+  return String(displayAmount(v));
+}
+
+/**
+ * Write a rate (per-second figure) as text: always exactly two decimals, the
+ * page's existing convention for a wood/s or stone/s figure. Every rate on the
+ * page reads through this one rule, so the status panel, the sandbox and the
+ * chips can never write the same rate two different ways.
+ *
+ * @param {number} rate
+ * @returns {string}
+ */
+export function formatRate(rate) {
+  return rate.toFixed(2);
 }
 
 /**
