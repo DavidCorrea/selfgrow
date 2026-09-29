@@ -535,6 +535,16 @@
       font-family: var(--body-font);
     }
 
+    /* The rung after the one the rehearsal projects you own, so a rehearsal
+       reads like the return it stands in for rather than a wall of totals. */
+    .sandbox-next-find {
+      color: var(--accent);
+      font-family: var(--pixel-font);
+      font-size: 0.5rem;
+      font-weight: bold;
+      margin-top: 0.5rem;
+    }
+
     .btn-sandbox-exit {
       font-family: var(--pixel-font);
       font-size: 0.5rem;
@@ -584,6 +594,9 @@
         padding: 0.75rem;
       }
       .sandbox-projections {
+        font-size: 0.45rem;
+      }
+      .sandbox-next-find {
         font-size: 0.45rem;
       }
       .sandbox-controls .btn {
@@ -1330,6 +1343,8 @@
         <span class="sandbox-projection-value" id="sb-milestones">None yet</span>
       </div>
 
+      <div class="sandbox-next-find" id="sb-next-find" hidden></div>
+
       <div id="sb-milestone-list"></div>
 
       <hr class="sandbox-divider">
@@ -1348,7 +1363,7 @@
   </div>
   <script type="module">
     import "./webmcp.js";
-    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, markReturnSeen, formatElapsed, nextAwayFindText, sharpenAvailable, sharpenThreshold, expeditionUnlocked, displayAmount, formatAmount, formatRate, exportSave, importSave, describeGoal, returnDiscoveryText, pauseForHidden, resumeFromHidden, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, clickPowerFor, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
+    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, markReturnSeen, formatElapsed, nextAwayFindText, nextDiscoveryAfter, sharpenAvailable, sharpenThreshold, expeditionUnlocked, displayAmount, formatAmount, formatRate, exportSave, importSave, describeGoal, returnDiscoveryText, pauseForHidden, resumeFromHidden, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, clickPowerFor, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
     import { cloneState, fastForward } from "./sandbox.js";
     import { mountSprites, updateSprites, playReaction } from "./sprites.js";
 
@@ -2209,6 +2224,7 @@
     const sbStoneRateLabel = document.getElementById("sb-stone-rate-label");
     const sbStoneRate = document.getElementById("sb-stone-rate");
     const sbMilestones = document.getElementById("sb-milestones");
+    const sbNextFind = document.getElementById("sb-next-find");
     const sbMilestoneList = document.getElementById("sb-milestone-list");
     const btnSandbox = document.getElementById("btn-sandbox");
     const sbBtn10x = document.getElementById("sb-btn-10x");
@@ -2331,6 +2347,20 @@
 
       // Milestones summary
       sbMilestones.textContent = "Wood: " + Math.floor(c.totalWoodEarned) + " | Stone: " + Math.floor(c.totalStoneEarned) + " | Upgrades: " + c.upgradeLevel + " | Walls: " + c.wallLevel + " | Forge: " + c.forgeLevel;
+
+      // The next away find the projected clone is reaching for, named by the
+      // engine's own ladder through the one sentence the status bar and the
+      // welcome-back panel use, so the rehearsal reads like the return it
+      // stands in for and can never name a different rung than the agent's
+      // sandbox-fast-forward reports. A run that finds nothing leaves the
+      // clone's discovery id alone, so the line still names the next rung
+      // rather than reading as a dead end; only an unrecognised id (a corrupt
+      // save) yields no rung, and then the line vanishes.
+      if (sbNextFind) {
+        const nextText = nextAwayFindText(nextDiscoveryAfter(c.discoveryId ?? c.discovery?.id ?? null));
+        sbNextFind.textContent = nextText || "";
+        sbNextFind.hidden = !nextText;
+      }
 
       // Last rehearsal: what was simulated, what was earned, and what it found
       if (lastSandboxResult) {
