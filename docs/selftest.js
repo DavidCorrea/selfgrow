@@ -5894,6 +5894,63 @@ export async function checks() {
       window.matchMedia = realMatchMedia;
     }
 
+    // (8) Every system's header icon is the game's own pixel picture. An emoji
+    // glyph renders in whatever shape and colour the operating system picks, so
+    // the game would look different everywhere it runs; a palette-only sprite
+    // cannot. The mount carries no text, which is what catches a revert.
+    const headerSystems = [
+      ["wood-actions", "wood", "Wood"],
+      ["stone-actions", "stone", "Stone"],
+      ["forge-actions", "forge", "Forge"],
+      ["expedition-actions", "expedition", "Expeditions"],
+    ];
+    for (const [cardId, kind, name] of headerSystems) {
+      const card = document.getElementById(cardId);
+      if (!card) {
+        problems.push(`Expected the ${name} system card #${cardId} to exist — it was not found.`);
+        continue;
+      }
+      const head = card.querySelector(".system-head");
+      if (!head) {
+        problems.push(`#${cardId} should have a .system-head holding its icon and readable name.`);
+        continue;
+      }
+      const icon = head.querySelector(".system-icon");
+      if (!icon) {
+        problems.push(`#${cardId} should carry a .system-icon beside its name.`);
+        continue;
+      }
+      if (icon.textContent.trim() !== "") {
+        problems.push(`#${cardId}'s .system-icon should be an empty picture mount, but it holds "${icon.textContent}" — a text glyph such as an emoji renders differently on every platform.`);
+      }
+      if (icon.getAttribute("aria-hidden") !== "true") {
+        problems.push(`#${cardId}'s .system-icon is decorative, so it should stay aria-hidden="true" — the readable name is what a screen reader should announce.`);
+      }
+      const headSvgs = head.querySelectorAll("svg.sprite");
+      if (headSvgs.length !== 1) {
+        problems.push(`#${cardId}'s header should show exactly one pixel-art icon, got ${headSvgs.length}.`);
+        continue;
+      }
+      const iconSvg = headSvgs[0];
+      if (iconSvg.dataset.spriteKind !== kind) {
+        problems.push(`#${cardId}'s header icon should be the ${kind} sprite, got "${iconSvg.dataset.spriteKind}".`);
+      }
+      const iconRects = iconSvg.querySelectorAll("rect");
+      if (iconRects.length < 8) {
+        problems.push(`#${cardId}'s ${kind} header icon should be built from at least 8 pixel rects, got ${iconRects.length}.`);
+      }
+      for (const rect of iconRects) {
+        if (!palette.has(rect.getAttribute("fill"))) {
+          problems.push(`#${cardId}'s ${kind} header icon uses fill "${rect.getAttribute("fill")}", which is not in SPRITE_PALETTE.`);
+          break;
+        }
+      }
+      const nameEl = head.querySelector(".system-name");
+      if (!nameEl || nameEl.textContent.trim() !== name) {
+        problems.push(`#${cardId}'s readable heading should still read "${name}", got "${nameEl ? nameEl.textContent : "(missing)"}".`);
+      }
+    }
+
     // Return the page to a fresh, fully-locked state for whatever measures it next.
     engine.reset();
     engine.init();
