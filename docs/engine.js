@@ -144,6 +144,9 @@ export { FIRST_GOAL_WOOD, UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, STONE_BASE_RA
  * @property {number}  discoveryBonus  — permanent wood/s bonus from the strongest away discovery
  * @property {string|null} discoveryId — id of the strongest away discovery found so far
  * @property {string|null} discoveryName — display name of that discovery
+ * @property {{collected: Array<{id: string, name: string, minSec: number, bonus: number}>, hiddenCount: number, total: number, next: {id: string, name: string, minSec: number, bonus: number}|null}} finds
+ *   — every away find kept so far (the stored rung and every weaker rung
+ *   below it, in ladder order) and the next rung still locked
  * @property {string}  timestamp       — ISO date of last tick/save
  * @property {string}  firstTimestamp  — ISO date of first ever save (never updated after init)
  * @property {ReturnRecord|null} lastReturn — account of the last return; carried in
@@ -503,6 +506,78 @@ export function nextDiscoveryAfter(ownedId) {
   if (ownedIndex === -1) return null;
   const next = DISCOVERIES[ownedIndex + 1];
   return next ? { ...next } : getGeneratedDiscovery(1);
+}
+
+/**
+ * How many collected rungs the Finds list renders at once. The ladder is
+ * endless, so anything older than this is counted into one summary line
+ * rather than rendered.
+ */
+export const FINDS_LIST_LIMIT = 12;
+
+/**
+ * The rung at a position in the full ladder, weak to strong. Pure.
+ *
+ * @param {number} index zero-based position along the ladder
+ * @returns {{ id: string, name: string, minSec: number, bonus: number }}
+ */
+function ladderRungAt(index) {
+  return index < DISCOVERIES.length
+    ? { ...DISCOVERIES[index] }
+    : getGeneratedDiscovery(index - DISCOVERIES.length + 1);
+}
+
+/**
+ * How many rungs the collection holds when `ownedId` is the strongest find
+ * reached. A longer absence reaches every weaker rung below the one it earns,
+ * so the collection is exactly the ladder prefix up to that rung. An id that
+ * names no rung — a corrupt save — holds nothing.
+ *
+ * @param {string|null|undefined} ownedId
+ * @returns {number}
+ */
+function collectedRungCount(ownedId) {
+  if (!ownedId) return 0;
+  const ownedRung = generatedIndex(ownedId);
+  if (ownedRung !== null) return DISCOVERIES.length + Math.min(ownedRung, MAX_GENERATED_RUNGS);
+  const ownedIndex = DISCOVERIES.findIndex((tier) => tier.id === ownedId);
+  return ownedIndex === -1 ? 0 : ownedIndex + 1;
+}
+
+/**
+ * Every away find kept so far — the strongest rung already stored in the save
+ * and every weaker rung below it, in ladder order — plus the next rung still
+ * locked. Nothing extra is persisted: the strongest id alone derives the whole
+ * prefix, so the collection survives a reload and a portable code for free.
+ *
+ * The ladder never ends, so `collected` holds at most `limit` rungs (the
+ * strongest ones) and `hiddenCount` says how many weaker ones were left off;
+ * `total` is the true count. `next` is the rung above the strongest, and null
+ * only when the stored id names no rung at all.
+ *
+ * @param {string|null|undefined} ownedId
+ * @param {number} [limit]
+ * @returns {{
+ *   collected: Array<{id: string, name: string, minSec: number, bonus: number}>,
+ *   hiddenCount: number,
+ *   total: number,
+ *   next: {id: string, name: string, minSec: number, bonus: number}|null,
+ * }}
+ */
+export function discoveryCollection(ownedId, limit = FINDS_LIST_LIMIT) {
+  const cap = Math.max(0, Math.floor(limit));
+  const total = collectedRungCount(ownedId);
+  const shown = Math.min(total, cap);
+  const collected = [];
+  for (let index = total - shown; index < total; index++) {
+    collected.push(ladderRungAt(index));
+  }
+  return {
+    collected,
+    hiddenCount: total - shown,
+    total,
+    next: nextDiscoveryAfter(ownedId),
+  };
 }
 
 /**
@@ -1275,6 +1350,7 @@ export function getState() {
       name: state.discoveryName,
       bonus: state.discoveryBonus,
     } : null,
+    finds: discoveryCollection(state.discoveryId),
     timestamp: state.timestamp,
     firstTimestamp: state.firstTimestamp,
   };

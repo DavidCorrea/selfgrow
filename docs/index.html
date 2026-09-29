@@ -210,6 +210,55 @@
       display: none;
     }
 
+    /* The Finds list — the away finds kept so far, collapsed into the summary
+       line above so the status panel keeps its closed height and the desktop
+       one-screen promise holds. It takes a full row only once opened. */
+    .finds-list {
+      color: var(--text-dim);
+    }
+
+    .finds-list[hidden] {
+      display: none;
+    }
+
+    .finds-list[open] {
+      flex: 0 0 100%;
+    }
+
+    .finds-list > summary {
+      cursor: pointer;
+    }
+
+    .finds-list > summary::marker {
+      color: var(--accent);
+    }
+
+    .finds-entries {
+      list-style: none;
+      margin-top: 0.4rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .finds-entry {
+      font-size: 0.45rem;
+      padding-left: 0.9rem;
+    }
+
+    .finds-collected {
+      color: var(--highlight);
+    }
+
+    .finds-more {
+      color: var(--text-dim);
+    }
+
+    .finds-locked,
+    .finds-empty {
+      color: var(--accent);
+    }
+
     /* ─── Action area — a grid of system cards across the window ─── */
     #action-area {
       display: grid;
@@ -1158,7 +1207,10 @@
       <span class="meta-item"><span>Elapsed</span> <span class="stat-value" id="elapsed-value">—</span></span>
       <span class="meta-item"><span>Total wood</span> <span class="stat-value stat-total" id="total-wood-value">0</span></span>
       <span class="meta-item stat-hidden" id="total-stone-stat"><span>Total stone</span> <span class="stat-value stat-total stone-total" id="total-stone-value"></span></span>
-      <span class="away-find-line" id="next-away-find-line" hidden></span>
+      <details class="finds-list" id="finds-list">
+        <summary class="away-find-line" id="next-away-find-line"></summary>
+        <ul class="finds-entries" id="finds-entries"></ul>
+      </details>
     </div>
     <button class="btn" id="btn-show-return" type="button" aria-label="Show the last return's summary" hidden>
       <span class="btn-icon">&#x1F4DC;</span> Last return
@@ -1420,6 +1472,8 @@
     const offlineDiscoveryNote = document.getElementById("offline-discovery-note");
     const offlineNextFind = document.getElementById("offline-next-find");
     const nextAwayFindLine = document.getElementById("next-away-find-line");
+    const findsList = document.getElementById("finds-list");
+    const findsEntries = document.getElementById("finds-entries");
     const btnShowReturn = document.getElementById("btn-show-return");
     const offlineNextGoalText = document.getElementById("offline-next-goal-text");
     const offlineNextGoalResources = document.getElementById("offline-next-goal-resources");
@@ -1868,6 +1922,83 @@
       }
     }
 
+    // What the Finds list last rendered and the collection it came from, so a
+    // 500ms render tick rewrites the rows only when the collection or the
+    // locked rung actually changed, and so the details' own toggle can fill
+    // them the moment a player opens it.
+    let lastFindsSignature = null;
+    let currentFinds = null;
+
+    function findsRow(className, text) {
+      const row = document.createElement("li");
+      row.className = "finds-entry " + className;
+      row.textContent = text;
+      return row;
+    }
+
+    // Fill the Finds list with the rungs already reached — in ladder order,
+    // each naming the find and the wood/s it grants — then the one rung still
+    // locked and the absence it needs. The engine's `finds` holds the prefix,
+    // so the page and the read-state tool show the same collection.
+    function fillFindsEntries(finds) {
+      findsEntries.textContent = "";
+      if (finds.collected.length === 0) {
+        findsEntries.append(findsRow("finds-empty",
+          `No finds kept yet \u2014 the first is ${finds.next.name}, away ${formatElapsed(finds.next.minSec * 1000)}.`));
+      } else {
+        if (finds.hiddenCount > 0) {
+          findsEntries.append(findsRow("finds-more",
+            `\u2026and ${finds.hiddenCount} earlier ${finds.hiddenCount === 1 ? "find" : "finds"} kept`));
+        }
+        for (const rung of finds.collected) {
+          findsEntries.append(findsRow("finds-collected",
+            `${rung.name} +${formatRate(rung.bonus)} wood/s`));
+        }
+      }
+      findsEntries.append(findsRow("finds-locked",
+        `Locked: ${finds.next.name} \u2014 away ${formatElapsed(finds.next.minSec * 1000)}.`));
+    }
+
+    // The rows exist only while the list is open: a collapsed <details> must
+    // not carry children, which the layout review would measure as a collapsed
+    // container. The summary line alone is the collapsed state, so the status
+    // panel keeps its one-line height until a player asks for more.
+    function renderFindsList(finds) {
+      if (!findsList || !findsEntries) return;
+      // No rung to aim at (an unrecognised saved id): the whole list goes away
+      // rather than leaving an empty disclosure behind.
+      findsList.hidden = !finds.next;
+      if (!finds.next) {
+        lastFindsSignature = null;
+        currentFinds = null;
+        findsEntries.textContent = "";
+        return;
+      }
+      currentFinds = finds;
+      if (!findsList.open) {
+        lastFindsSignature = null;
+        findsEntries.textContent = "";
+        return;
+      }
+      const signature = [finds.total, finds.hiddenCount, finds.next.id,
+        ...finds.collected.map((rung) => rung.id)].join("|");
+      if (signature === lastFindsSignature) return;
+      lastFindsSignature = signature;
+      fillFindsEntries(finds);
+    }
+
+    if (findsList) {
+      findsList.addEventListener("toggle", () => {
+        if (findsList.open && currentFinds) {
+          lastFindsSignature = null;
+          renderFindsList(currentFinds);
+        } else if (!findsList.open && findsEntries) {
+          lastFindsSignature = null;
+          findsEntries.textContent = "";
+        }
+      });
+    }
+
     function renderUI() {
       for (const row of staticRowText.keys()) restoreStaticText(row);
       const s = getState();
@@ -2018,19 +2149,21 @@
         emptyRow(discoveryStat);
       }
 
-      // The next away find — the rung above the one owned, with the absence it
-      // takes, so a longer wait is a distance to a named find rather than an
-      // invisible one. Rendered from the engine's single ladder through the one
-      // sentence the welcome-back panel uses, so the status line, the panel and
-      // the read-state tool can never name different finds. Present on a fresh
-      // save (reaching for the first rung); a save whose discovery id is
-      // unrecognised yields no rung, and the line vanishes rather than wording
-      // a dead end.
+      // The Finds list — every rung the player has reached is kept, not just
+      // the strongest, so a return leaves a row behind and a longer absence has
+      // a named rung to aim at. Its one-line summary names the next away find
+      // (the rung above the one owned, with the absence it takes), worded from
+      // the engine's single ladder through the one sentence the welcome-back
+      // panel uses, so the status line, the panel and the read-state tool can
+      // never name different finds. Present on a fresh save (reaching for the
+      // first rung); a save whose discovery id is unrecognised yields no rung,
+      // and the list vanishes rather than wording a dead end.
+      const nextAway = s.finds.next;
       if (nextAwayFindLine) {
-        const nextAway = getReturnSummary().nextDiscovery;
         nextAwayFindLine.textContent = nextAwayFindText(nextAway) || "";
         nextAwayFindLine.hidden = !nextAway;
       }
+      renderFindsList(s.finds);
 
       // The re-open control is shown exactly when there is a return to show,
       // so a first-ever visit, a sub-second reload and a blip leave it absent
