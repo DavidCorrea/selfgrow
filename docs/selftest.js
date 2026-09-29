@@ -3654,5 +3654,50 @@ export async function checks() {
     console.error(err);
   }
 
+  // ─── Locked systems stay out of the page's readable text ────────
+  // A row hidden only with CSS still reads as real text to a screen reader,
+  // so a locked system must contribute nothing until the game unlocks it, and
+  // once unlocked its rate must be the rate the engine actually applies.
+  try {
+    const engine = await import("./engine.js");
+    const renderNow = () => { if (typeof window.__renderUI === "function") window.__renderUI(); };
+
+    engine.reset();
+    renderNow();
+
+    const lockedRows = ["stone-stat", "forge-stat", "expedition-stat", "discovery-stat", "total-stone-stat"];
+    for (const id of lockedRows) {
+      const row = document.getElementById(id);
+      if (!row) {
+        problems.push(`Expected #${id} to exist in the status panel — it was not found.`);
+      } else if (row.textContent.trim() !== "") {
+        problems.push(`Locked #${id} should contribute no readable text before unlock, got "${row.textContent.trim()}".`);
+      }
+    }
+
+    for (let i = 0; i < 15; i++) engine.gatherWood();
+    engine.craftUpgrade(); // unlocks stone
+    renderNow();
+
+    const stoneRow = document.getElementById("stone-stat");
+    if (stoneRow && !/\d/.test(stoneRow.textContent)) {
+      problems.push(`Unlocked #stone-stat should show its count as readable text, got "${stoneRow.textContent}".`);
+    }
+    const rateText = document.getElementById("stone-rate-value").textContent;
+    const shownRate = Number.parseFloat(rateText.replace(/[^0-9.eE+-]/g, ""));
+    const engineRate = engine.computeStoneRate();
+    if (!Number.isFinite(shownRate) || Math.abs(shownRate - engineRate) > 1e-9) {
+      problems.push(`Shown stone rate "${rateText}" disagrees with the engine's computeStoneRate() (${engineRate}).`);
+    }
+
+    // Return the page to a fresh, fully-locked state for whatever measures it next.
+    engine.reset();
+    engine.init();
+    renderNow();
+  } catch (err) {
+    problems.push(`Locked-row readable-text test threw: ${err.message}`);
+    console.error(err);
+  }
+
   return problems;
 }

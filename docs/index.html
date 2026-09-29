@@ -923,32 +923,32 @@
       <div class="chip stat-hidden" id="stone-stat">
         <span class="chip-icon" aria-hidden="true">&#x1FAA8;</span>
         <span class="chip-name" id="stone-label">Stone</span>
-        <span class="stat-value stone-value" id="stone-value">0</span>
+        <span class="stat-value stone-value" id="stone-value"></span>
         <span class="chip-rate-stat stat-hidden" id="stone-rate-stat">
-          <span class="stat-value stone-value chip-rate" id="stone-rate-value">+0.05/s</span>
+          <span class="stat-value stone-value chip-rate" id="stone-rate-value"></span>
         </span>
       </div>
       <div class="chip stat-hidden" id="forge-stat">
         <span class="chip-icon" aria-hidden="true">&#x1F528;</span>
         <span class="chip-name" id="forge-label">Forge</span>
-        <span class="stat-value forge-value" id="forge-value">0</span>
+        <span class="stat-value forge-value" id="forge-value"></span>
       </div>
       <div class="chip stat-hidden" id="expedition-stat">
         <span class="chip-icon" aria-hidden="true">&#x1F30D;</span>
         <span class="chip-name" id="map-label">Maps</span>
-        <span class="stat-value" id="map-value" style="color: var(--map-color);">0</span>
+        <span class="stat-value" id="map-value" style="color: var(--map-color);"></span>
       </div>
       <div class="chip stat-hidden" id="discovery-stat">
         <span class="chip-icon" aria-hidden="true">&#x2728;</span>
         <span class="chip-name" id="discovery-label">Away Find</span>
-        <span class="stat-value discovery-value" id="discovery-value">—</span>
+        <span class="stat-value discovery-value" id="discovery-value"></span>
       </div>
     </div>
     <div class="meta-line">
       <span class="meta-item"><span>Tick</span> <span class="stat-value" id="tick-value">—</span></span>
       <span class="meta-item"><span>Elapsed</span> <span class="stat-value" id="elapsed-value">—</span></span>
       <span class="meta-item"><span>Total wood</span> <span class="stat-value stat-total" id="total-wood-value">0</span></span>
-      <span class="meta-item stat-hidden" id="total-stone-stat"><span>Total stone</span> <span class="stat-value stat-total stone-total" id="total-stone-value">0</span></span>
+      <span class="meta-item stat-hidden" id="total-stone-stat"><span>Total stone</span> <span class="stat-value stat-total stone-total" id="total-stone-value"></span></span>
     </div>
   </section>
 
@@ -1140,7 +1140,7 @@
   </div>
   <script type="module">
     import "./webmcp.js";
-    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, consumeOfflineWoodGained, consumeOfflineGained, consumeOfflineMilestones, formatElapsed, sharpenAvailable, sharpenThreshold, displayAmount, exportSave, importSave, FIRST_GOAL_WOOD, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS } from "./engine.js";
+    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, consumeOfflineWoodGained, consumeOfflineGained, consumeOfflineMilestones, formatElapsed, sharpenAvailable, sharpenThreshold, displayAmount, exportSave, importSave, FIRST_GOAL_WOOD, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS, computeStoneRate } from "./engine.js";
     import { cloneState, fastForward } from "./sandbox.js";
 
     init();
@@ -1508,7 +1508,47 @@
       return Number.isInteger(value) ? String(value) : value.toFixed(1);
     }
 
+    // A locked system must contribute no text to the page at all: CSS hiding
+    // still leaves its markup in the accessibility tree and in any DOM read,
+    // so a visitor is told about a system the game has not unlocked. The static
+    // icon/label text of each row is remembered once and re-applied before every
+    // render, which lets a locked row be blanked and later refilled without
+    // losing the element references the rest of the UI holds.
+    const staticRowText = new Map();
+    function rememberStaticText(row, staticEls) {
+      staticRowText.set(row, staticEls.filter(Boolean).map((el) => ({
+        node: el.firstChild,
+        text: el.textContent,
+      })));
+    }
+    rememberStaticText(stoneStat, [stoneStat.querySelector(".chip-icon"), stoneStat.querySelector(".chip-name")]);
+    rememberStaticText(forgeStat, [forgeStat.querySelector(".chip-icon"), forgeStat.querySelector(".chip-name")]);
+    rememberStaticText(expeditionStat, [expeditionStat.querySelector(".chip-icon"), expeditionStat.querySelector(".chip-name")]);
+    rememberStaticText(discoveryStat, [discoveryStat.querySelector(".chip-icon"), discoveryStat.querySelector(".chip-name")]);
+    rememberStaticText(totalStoneStat, [totalStoneStat.querySelector("span")]);
+
+    function restoreStaticText(row) {
+      for (const { node, text } of staticRowText.get(row) || []) {
+        if (node) node.nodeValue = text;
+      }
+    }
+
+    // Blank every text node in a row, leaving elements and their ids in place.
+    function emptyRow(row) {
+      const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        node.nodeValue = "";
+      }
+    }
+
+    // The stone rate is shown exactly as the engine computes it, never rounded,
+    // so the panel cannot drift from the rate the game actually applies.
+    function formatStoneRate(rate) {
+      return "+" + String(rate) + "/s";
+    }
+
     function renderUI() {
+      for (const row of staticRowText.keys()) restoreStaticText(row);
       const s = getState();
       const wood = s.wood;
       const stone = s.stone;
@@ -1586,14 +1626,18 @@
             : stone.toFixed(2);
         }
         if (stoneRateEl) {
-          const stoneRate = s.totalWoodEarned * 0.001 + 0.05;
-          stoneRateEl.textContent = stoneRate.toFixed(4) + "/s";
+          stoneRateEl.textContent = formatStoneRate(computeStoneRate());
+        }
+        if (totalStoneEl) {
+          totalStoneEl.textContent = String(Math.floor(s.totalStoneEarned));
         }
       } else {
         stoneStat.classList.add("stat-hidden");
         stoneRateStat.classList.add("stat-hidden");
         totalStoneStat.classList.add("stat-hidden");
         stoneActions.classList.remove("visible");
+        emptyRow(stoneStat);
+        emptyRow(totalStoneStat);
       }
 
       // Forge display (hidden until wallLevel >= 1)
@@ -1612,6 +1656,7 @@
         forgeStat.classList.add("stat-hidden");
         forgeActions.classList.remove("visible");
         btnForgeTool.disabled = true;
+        emptyRow(forgeStat);
       }
 
       // Expedition display (hidden until forgeLevel >= 5)
@@ -1634,6 +1679,7 @@
         if (expeditionStat) expeditionStat.classList.add("stat-hidden");
         if (expeditionActions) expeditionActions.classList.remove("visible");
         if (btnExpedition) btnExpedition.disabled = true;
+        if (expeditionStat) emptyRow(expeditionStat);
       }
 
       // Away discovery (hidden until one has been found on a past return)
@@ -1643,14 +1689,14 @@
         discoveryValueEl.textContent = discovery.name + " +" + discovery.bonus.toFixed(2) + "/s";
       } else {
         discoveryStat.classList.add("stat-hidden");
+        emptyRow(discoveryStat);
       }
 
-      // Total stats (never decrease)
+      // Total stats (never decrease). Total stone is written only when stone
+      // is unlocked — the locked branch above has already emptied the row, and
+      // writing "0" here would put stone back into the readable text.
       if (totalWoodEl) {
         totalWoodEl.textContent = String(Math.floor(s.totalWoodEarned));
-      }
-      if (totalStoneEl) {
-        totalStoneEl.textContent = String(Math.floor(s.totalStoneEarned));
       }
 
       // Gather wood button label — show click power
