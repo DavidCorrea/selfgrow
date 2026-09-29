@@ -11,6 +11,10 @@
     /* ─── Reset ─── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    /* The `hidden` attribute takes an element out of the layout entirely — a
+       control with no return to show must be gone, not merely invisible. */
+    [hidden] { display: none; }
+
     /* ─── 8-bit Palette ─── */
     :root {
       --bg: #0a0a0f;
@@ -171,6 +175,21 @@
     }
 
     .meta-item.stat-hidden {
+      display: none;
+    }
+
+    /* A compact status-panel control that re-opens the last return's account:
+       a reminder the player can revisit, not one of the game's action buttons,
+       so it keeps the 40px tap target but takes far less room. */
+    #btn-show-return {
+      flex: 0 0 auto;
+      min-height: 40px;
+      padding: 0.3rem 0.65rem;
+      font-size: 0.5rem;
+      width: auto;
+    }
+
+    #btn-show-return[hidden] {
       display: none;
     }
 
@@ -1119,6 +1138,9 @@
       <span class="meta-item stat-hidden" id="total-stone-stat"><span>Total stone</span> <span class="stat-value stat-total stone-total" id="total-stone-value"></span></span>
       <span class="away-find-line" id="next-away-find-line" hidden></span>
     </div>
+    <button class="btn" id="btn-show-return" type="button" aria-label="Show the last return's summary" hidden>
+      <span class="btn-icon">&#x1F4DC;</span> Last return
+    </button>
   </section>
 
   <!-- ═══ Next goal — a full-width banner ═══ -->
@@ -1374,6 +1396,7 @@
     const offlineDiscoveryNote = document.getElementById("offline-discovery-note");
     const offlineNextFind = document.getElementById("offline-next-find");
     const nextAwayFindLine = document.getElementById("next-away-find-line");
+    const btnShowReturn = document.getElementById("btn-show-return");
     const offlineNextGoalText = document.getElementById("offline-next-goal-text");
     const discoveryStat = document.getElementById("discovery-stat");
     const discoveryValueEl = document.getElementById("discovery-value");
@@ -1705,6 +1728,18 @@
       }
     });
 
+    // Re-opening reads the same persisted return record the original panel
+    // rendered, so the account is something the player owns rather than a
+    // one-shot notice. It deliberately does not call markReturnSeen: the
+    // absence was already read and must not run again on the next reload.
+    btnShowReturn.addEventListener("click", showOfflineSummary);
+    btnShowReturn.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        showOfflineSummary();
+      }
+    });
+
     // Allow Escape to dismiss
     offlineSummary.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
@@ -1988,6 +2023,11 @@
         nextAwayFindLine.textContent = nextAwayFindText(nextAway) || "";
         nextAwayFindLine.hidden = !nextAway;
       }
+
+      // The re-open control is shown exactly when there is a return to show,
+      // so a first-ever visit, a sub-second reload and a blip leave it absent
+      // rather than offering an account that does not exist.
+      if (btnShowReturn) btnShowReturn.hidden = !getReturnSummary().visible;
 
       // Total stats (never decrease). Total stone is written only when stone
       // is unlocked — the locked branch above has already emptied the row, and
@@ -2414,6 +2454,7 @@
     window.__renderUI = renderUI;
     window.__onVisibilityReturn = onVisibilityReturn;
     window.__showOfflineSummary = showOfflineSummary;
+    window.__showReturn = showOfflineSummary;
     window.__dismissOffline = dismissOffline;
     window.__revealSaveCode = revealSaveCode;
     window.__restoreSave = restoreSave;

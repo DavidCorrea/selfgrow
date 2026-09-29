@@ -3034,6 +3034,113 @@ export async function checks() {
       problems.push("A new unseen absence must open the welcome-back panel on load.");
     }
 
+    // (k)-(m) The account is the player's to revisit (issue #1015). The status
+    // panel carries a control that re-opens the last return's summary from the
+    // same persisted record, so re-opening is byte-identical to the original,
+    // and the agent has the same capability through the show-return action.
+    const btnShowReturn = document.getElementById("btn-show-return");
+    if (!btnShowReturn) {
+      problems.push("Expected #btn-show-return in the status panel to re-open the last return's summary.");
+    } else if (!btnShowReturn.closest("#status-bar")) {
+      problems.push("The Last return control must live in the #status-bar status panel.");
+    }
+
+    // (k) Before any return there is nothing to show: the control is absent,
+    // the agent reports no return, and show-return refuses without opening the
+    // overlay.
+    engine.reset();
+    engine.init();
+    if (typeof window.__setOverlayOpen === "function") window.__setOverlayOpen("offline", false);
+    overlay.setAttribute("hidden", "");
+    window.__renderUI();
+    if (btnShowReturn && !btnShowReturn.hidden) {
+      problems.push("The Last return control must be hidden before the player has had any return.");
+    }
+    if (readStateTool) {
+      const noReturnState = await readStateTool.execute({});
+      if (noReturnState.returnAvailable !== false) {
+        problems.push(`read-state.returnAvailable must be false with no return on record, got ${noReturnState.returnAvailable}.`);
+      }
+    }
+    if (performActionTool) {
+      const noReturnShow = await performActionTool.execute({ action: "show-return" });
+      if (noReturnShow.ok !== false) {
+        problems.push("show-return must refuse with ok:false when there is no return on record.");
+      }
+      if (!overlay.hidden) {
+        problems.push("show-return must not open the welcome-back panel when there is no return.");
+      }
+    }
+
+    // (l) A real return, dismissed, leaves the control in place and the account
+    // still available; clicking it re-opens the very same summary without
+    // altering the record.
+    reloadFromAge(3600000, { wood: 5 });
+    if (overlay.hidden) {
+      problems.push("A 1h return must open the welcome-back panel before the re-open checks.");
+    }
+    const keptPanelElapsed = elapsedEl ? elapsedEl.textContent.trim() : "";
+    const keptPanelWood = woodAmountEl ? woodAmountEl.textContent : "";
+    const keptPanelFind = discoveryNameEl ? discoveryNameEl.textContent : "";
+    window.__dismissOffline();
+    window.__renderUI();
+    if (!overlay.hidden) {
+      problems.push("Dismissing must hide the welcome-back panel before the re-open checks.");
+    }
+    const keptRecord = engine.getReturnSummary();
+    if (!keptRecord.visible) {
+      problems.push("A real return must stay on record after it is dismissed, so it can be re-opened.");
+    }
+    if (btnShowReturn && btnShowReturn.hidden) {
+      problems.push("The Last return control must be shown once the player has had a return.");
+    }
+    if (readStateTool) {
+      const afterDismissState = await readStateTool.execute({});
+      if (afterDismissState.returnAvailable !== true) {
+        problems.push(`read-state.returnAvailable must be true after a return even while the panel is dismissed, got ${afterDismissState.returnAvailable}.`);
+      }
+      if (afterDismissState.offlineWoodGained !== 0) {
+        problems.push(`read-state.offlineWoodGained must stay 0 while the panel is dismissed, got ${afterDismissState.offlineWoodGained}.`);
+      }
+    }
+    if (btnShowReturn) btnShowReturn.click();
+    if (overlay.hidden) {
+      problems.push("Clicking the Last return control must re-open the welcome-back panel.");
+    }
+    if (elapsedEl && elapsedEl.textContent.trim() !== keptPanelElapsed) {
+      problems.push(`Re-opening must show the same absence length: expected "${keptPanelElapsed}", got "${elapsedEl.textContent.trim()}".`);
+    }
+    if (woodAmountEl && woodAmountEl.textContent !== keptPanelWood) {
+      problems.push(`Re-opening must show the same wood earned: expected "${keptPanelWood}", got "${woodAmountEl.textContent}".`);
+    }
+    if (discoveryNameEl && discoveryNameEl.textContent !== keptPanelFind) {
+      problems.push(`Re-opening must show the same find: expected "${keptPanelFind}", got "${discoveryNameEl.textContent}".`);
+    }
+    const reopenedRecord = engine.getReturnSummary();
+    if (reopenedRecord.wood !== keptRecord.wood || reopenedRecord.elapsedSec !== keptRecord.elapsedSec || reopenedRecord.seen !== keptRecord.seen) {
+      problems.push("Re-opening must read the recorded return, not change it.");
+    }
+
+    // (m) The agent's show-return opens the same panel with the same numbers.
+    window.__dismissOffline();
+    window.__renderUI();
+    if (performActionTool) {
+      const shown = await performActionTool.execute({ action: "show-return" });
+      if (shown.ok !== true) {
+        problems.push("show-return must succeed when a return is on record.");
+      }
+      if (overlay.hidden) {
+        problems.push("show-return must open the welcome-back panel.");
+      }
+      const panelWoodNow = woodAmountEl ? parseFloat(woodAmountEl.textContent) : NaN;
+      if (shown.offlineWoodGained !== panelWoodNow) {
+        problems.push(`show-return's offlineWoodGained (${shown.offlineWoodGained}) must equal the panel's wood (${panelWoodNow}).`);
+      }
+      if (shown.offlineElapsed !== (elapsedEl ? elapsedEl.textContent.trim() : "")) {
+        problems.push(`show-return's offlineElapsed (${shown.offlineElapsed}) must equal the panel's absence text.`);
+      }
+    }
+
     // Leave the page as it was found.
     if (!overlay.hidden) window.__dismissOffline();
     engine.reset();
