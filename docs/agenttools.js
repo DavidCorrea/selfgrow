@@ -8,7 +8,7 @@
  * @module agenttools
  */
 
-import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, formatElapsed, nextDiscoveryAfter, returnDiscoveryText, sharpenAvailable, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, effectiveWoodRate, expeditionMultiplierFor, FIRST_GOAL_WOOD, UPGRADE_COST, WALL_COST, STONE_GATHER_AMOUNT, FORGE_CLICK_POWER_BONUS } from "./engine.js";
+import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, formatElapsed, nextDiscoveryAfter, returnDiscoveryText, sharpenAvailable, wallAvailable, expeditionUnlocked, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, effectiveWoodRate, expeditionMultiplierFor, FIRST_GOAL_WOOD, UPGRADE_COST, WALL_COST, STONE_GATHER_AMOUNT, FORGE_CLICK_POWER_BONUS } from "./engine.js";
 
 /**
  * The last return as the welcome-back panel is showing it, read straight from
@@ -109,9 +109,12 @@ function withGoal(s) {
     milestones: {
       sharpenAvailable: sharpenAvailable(s),
       stoneNowUnlocked: s.stoneUnlocked,
-      wallAvailable: s.stoneUnlocked && s.stone >= 5 && s.wallLevel === 0,
+      // The wall and expedition milestones come from the engine's own rules,
+      // the same comparisons the goal panel and the engine's catch-up use, so
+      // an agent can never be told a system is open while the page disagrees.
+      wallAvailable: wallAvailable(s),
       forgeNowUnlocked: s.wallLevel >= 1,
-      expeditionNowUnlocked: s.forgeLevel >= 5,
+      expeditionNowUnlocked: expeditionUnlocked(s),
       sharpenDone: s.upgradeLevel >= 1,
       wallBuilt: s.wallLevel >= 1,
     },

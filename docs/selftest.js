@@ -5529,5 +5529,97 @@ export async function checks() {
     console.error(err);
   }
 
+  // ─── Milestones read the engine's own rule ──────────────────────
+  // The read-state tool must answer "can the wall be built?" and "are
+  // expeditions unlocked?" with the engine's shared rule, never a copied
+  // number, so an agent can never be told a different story than the page.
+
+  try {
+    const engine = await import("./engine.js");
+    const { tools } = await import("./agenttools.js");
+    const readState = tools().find((t) => t.name === "read-state");
+    const restoreCode = engine.exportSave();
+
+    if (typeof engine.wallAvailable !== "function") {
+      problems.push("Expected engine.wallAvailable to be exported so the tools and the page share one wall rule.");
+    }
+    if (typeof engine.expeditionUnlocked !== "function") {
+      problems.push("Expected engine.expeditionUnlocked to be exported so the tools and the page share one expedition rule.");
+    }
+    if (typeof engine.EXPEDITION_FORGE_LEVEL !== "number") {
+      problems.push(`Expected engine.EXPEDITION_FORGE_LEVEL to be an exported number, got ${JSON.stringify(engine.EXPEDITION_FORGE_LEVEL)}.`);
+    }
+
+    if (!readState) {
+      problems.push("Expected a read-state tool when checking milestones against the engine's rule.");
+    } else {
+      // The rules themselves are sensitive to the exported thresholds, so if a
+      // constant ever moves the comparisons below move with it.
+      const wallAt = (stone) => engine.wallAvailable({ stone, stoneUnlocked: true, wallLevel: 0 });
+      if (wallAt(engine.WALL_COST) !== true) {
+        problems.push(`engine.wallAvailable must be true at exactly WALL_COST (${engine.WALL_COST}) stone.`);
+      }
+      if (wallAt(engine.WALL_COST - 1) !== false) {
+        problems.push(`engine.wallAvailable must be false one stone below WALL_COST (${engine.WALL_COST}).`);
+      }
+      if (engine.wallAvailable({ stone: engine.WALL_COST, stoneUnlocked: false, wallLevel: 0 }) !== false) {
+        problems.push("engine.wallAvailable must be false before stone is unlocked.");
+      }
+      if (engine.wallAvailable({ stone: engine.WALL_COST, stoneUnlocked: true, wallLevel: 1 }) !== false) {
+        problems.push("engine.wallAvailable must be false once a wall already stands.");
+      }
+
+      const expeditionAt = (forgeLevel) => engine.expeditionUnlocked({ forgeLevel });
+      if (expeditionAt(engine.EXPEDITION_FORGE_LEVEL) !== true) {
+        problems.push(`engine.expeditionUnlocked must be true at exactly forge level ${engine.EXPEDITION_FORGE_LEVEL}.`);
+      }
+      if (expeditionAt(engine.EXPEDITION_FORGE_LEVEL - 1) !== false) {
+        problems.push(`engine.expeditionUnlocked must be false one forge level below ${engine.EXPEDITION_FORGE_LEVEL}.`);
+      }
+
+      // importSave writes the live save, so read-state and describeGoal — the
+      // page's own goal rule — see exactly the state being asked about.
+      const load = (fields) => {
+        engine.importSave(btoa(JSON.stringify({
+          wood: 100, rate: 0.1, timestamp: new Date().toISOString(), upgradeLevel: 1, ...fields,
+        })));
+      };
+
+      for (const stone of [engine.WALL_COST - 1, engine.WALL_COST]) {
+        load({ stone, stoneUnlocked: true, wallLevel: 0 });
+        const state = engine.getState();
+        const read = await readState.execute({});
+        const expected = engine.wallAvailable(state);
+        if (read.milestones.wallAvailable !== expected) {
+          problems.push(`read-state.milestones.wallAvailable at ${stone} stone must match engine.wallAvailable ${expected}, got ${read.milestones.wallAvailable}.`);
+        }
+        const goal = read.nextGoal;
+        if (goal.type === "build-wall-goal" && goal.wallAvailable !== expected) {
+          problems.push(`The build-wall goal at ${stone} stone reports wallAvailable ${goal.wallAvailable} but the engine's rule says ${expected}.`);
+        }
+      }
+
+      for (const forgeLevel of [engine.EXPEDITION_FORGE_LEVEL - 1, engine.EXPEDITION_FORGE_LEVEL]) {
+        load({ stone: 100, stoneUnlocked: true, wallLevel: 1, forgeLevel });
+        const state = engine.getState();
+        const read = await readState.execute({});
+        const expected = engine.expeditionUnlocked(state);
+        if (read.milestones.expeditionNowUnlocked !== expected) {
+          problems.push(`read-state.milestones.expeditionNowUnlocked at forge level ${forgeLevel} must match engine.expeditionUnlocked ${expected}, got ${read.milestones.expeditionNowUnlocked}.`);
+        }
+        const pageShowsExpedition = read.nextGoal.type === "expedition-goal";
+        if (pageShowsExpedition !== expected) {
+          problems.push(`The page's goal at forge level ${forgeLevel} ${pageShowsExpedition ? "shows" : "hides"} the expedition goal, but the engine's rule says unlocked=${expected}.`);
+        }
+      }
+    }
+
+    engine.importSave(restoreCode);
+    if (typeof window.__renderUI === "function") window.__renderUI();
+  } catch (err) {
+    problems.push(`Milestone-rule agreement test threw: ${err.message}`);
+    console.error(err);
+  }
+
   return problems;
 }

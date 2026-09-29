@@ -28,6 +28,7 @@ const STONE_BASE_RATE = 0.05; // stone per second (after stone unlocked)
 const STONE_RATE_BOOST_FACTOR = 0.001; // extra stone/s per total wood earned
 const STONE_GATHER_AMOUNT = 1; // stone gained per gather action
 const WALL_COST = 5; // stone per wall upgrade
+const EXPEDITION_FORGE_LEVEL = 5; // forge level that unlocks expeditions
 const GOAL_STONE = 5; // stone the gather-stone goal asks for
 const WALL_CLICK_POWER_BONUS = 1; // extra wood per click per wall level
 const FORGE_WOOD_COST_BASE = 10;
@@ -119,7 +120,7 @@ function generatedIndex(id) {
 }
 
 // Exported for external use (tools, UI)
-export { FIRST_GOAL_WOOD, UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, STONE_BASE_RATE, STONE_RATE_BOOST_FACTOR, WALL_COST, GOAL_STONE, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT,
+export { FIRST_GOAL_WOOD, UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, STONE_BASE_RATE, STONE_RATE_BOOST_FACTOR, WALL_COST, EXPEDITION_FORGE_LEVEL, GOAL_STONE, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT,
   FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_WOOD_COST_INC, FORGE_STONE_COST_INC,
   FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS,
   EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC,
@@ -257,7 +258,7 @@ export function milestonesBetween(before, after) {
     stoneNowUnlocked: before.stoneUnlocked === false && after.stoneUnlocked === true,
     wallAvailable: after.stoneUnlocked && before.wallLevel === 0 && before.stone < WALL_COST && after.stone >= WALL_COST,
     forgeNowUnlocked: before.wallLevel === 0 && after.wallLevel >= 1,
-    expeditionNowUnlocked: before.forgeLevel < 5 && after.forgeLevel >= 5,
+    expeditionNowUnlocked: before.forgeLevel < EXPEDITION_FORGE_LEVEL && after.forgeLevel >= EXPEDITION_FORGE_LEVEL,
   };
 }
 
@@ -856,6 +857,31 @@ export function sharpenAvailable(s) {
 }
 
 /**
+ * Whether the wall can be built right now: stone is revealed, no wall stands
+ * yet, and there is enough stone for one. The one rule the goal panel, the
+ * engine's own milestone reports and the read-state tool all compare, so an
+ * agent can never be told a wall is buildable while the page disagrees.
+ *
+ * @param {{ stone: number, stoneUnlocked: boolean, wallLevel: number }} s
+ * @returns {boolean}
+ */
+export function wallAvailable(s) {
+  return s.stoneUnlocked && s.wallLevel === 0 && s.stone >= WALL_COST;
+}
+
+/**
+ * Whether expeditions are unlocked: the forge has been taken far enough. The
+ * one rule the engine's refusal, the goal panel and the read-state tool share,
+ * so changing the forge gate changes every reader at once.
+ *
+ * @param {{ forgeLevel: number }} s
+ * @returns {boolean}
+ */
+export function expeditionUnlocked(s) {
+  return s.forgeLevel >= EXPEDITION_FORGE_LEVEL;
+}
+
+/**
  * The one-resource list for a goal whose bar measures a single amount.
  * `current` is capped at `target`, so a met goal always fills its bar.
  *
@@ -936,7 +962,7 @@ export function describeGoal(s) {
 
   if (s.wallLevel < 1) {
     const resources = singleGoalResources("Stone", s.stone, WALL_COST);
-    const available = s.stone >= WALL_COST;
+    const available = wallAvailable(s);
     return {
       type: "build-wall-goal",
       description: "Build a Wall (" + WALL_COST + " stone)",
@@ -948,7 +974,7 @@ export function describeGoal(s) {
     };
   }
 
-  if (s.forgeLevel >= 5) {
+  if (expeditionUnlocked(s)) {
     const woodTarget = s.expeditionWoodCost;
     const stoneTarget = s.expeditionStoneCost;
     const available = s.wood >= woodTarget && s.stone >= stoneTarget;
@@ -1084,8 +1110,8 @@ export function forgeTool() {
  * @returns {{ sent: boolean, reason?: string, state: GameState }}
  */
 export function sendExpedition() {
-  if (state.forgeLevel < 5) {
-    return { sent: false, reason: "Reach forge level 5 before expeditions are available.", state: getState() };
+  if (!expeditionUnlocked(state)) {
+    return { sent: false, reason: "Reach forge level " + EXPEDITION_FORGE_LEVEL + " before expeditions are available.", state: getState() };
   }
   const woodCost = computeExpeditionWoodCost(state.expeditionLevel);
   const stoneCost = computeExpeditionStoneCost(state.expeditionLevel);
