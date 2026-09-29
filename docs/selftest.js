@@ -4852,6 +4852,221 @@ export async function checks() {
     console.error(err);
   }
 
+  // ─── Every away find reached is kept in a Finds list (issue #1030) ────
+  // A longer absence reaches every weaker rung below the one it earns, so the
+  // collection is the ladder prefix the save's strongest id already implies.
+  // The page shows it as a collapsed Finds list, and the read-state tool
+  // returns the same list, so a returning player and an agent see one story.
+  try {
+    const engine = await import("./engine.js");
+    const { tools } = await import("./agenttools.js");
+    const readState = tools().find((t) => t.name === "read-state");
+    const originalCode = engine.exportSave();
+
+    // (a) The pure collection rule: the prefix up to the strongest rung, each
+    // entry naming the find and the wood/s it grants, plus the locked next one.
+    const empty = engine.discoveryCollection(null);
+    if (empty.total !== 0 || empty.collected.length !== 0 || empty.hiddenCount !== 0) {
+      problems.push(`A fresh save has kept no finds; discoveryCollection(null) should be empty, got ${JSON.stringify(empty)}.`);
+    }
+    if (!empty.next || empty.next.id !== "flint-shard") {
+      problems.push(`A fresh save should still be reaching for flint-shard, got ${JSON.stringify(empty.next)}.`);
+    }
+
+    const clay = engine.discoveryCollection("clay-deposit");
+    const clayIds = clay.collected.map((r) => r.id).join(",");
+    if (clayIds !== "flint-shard,clay-deposit") {
+      problems.push(`Owning clay-deposit should keep flint-shard and clay-deposit in ladder order, got "${clayIds}".`);
+    }
+    const clayBonuses = clay.collected.map((r) => r.bonus).join(",");
+    if (clayBonuses !== "0.05,0.1") {
+      problems.push(`Each collected find must carry the wood/s it grants; expected "0.05,0.1", got "${clayBonuses}".`);
+    }
+    if (!clay.next || clay.next.id !== "wandering-sapling") {
+      problems.push(`After clay-deposit the next locked find should be wandering-sapling, got ${JSON.stringify(clay.next)}.`);
+    }
+
+    // The list continues past the fixed rungs into the generated ladder, so
+    // there is always a collected past and a named next.
+    const deep = engine.discoveryCollection("deep-find-3");
+    const expectedDeepIds = ["flint-shard", "clay-deposit", "wandering-sapling", "glowing-seam",
+      "ancient-grove", "sunken-vault", "deep-find-1", "deep-find-2", "deep-find-3"];
+    if (deep.collected.map((r) => r.id).join(",") !== expectedDeepIds.join(",")) {
+      problems.push(`The collection must run from the fixed rungs into the generated ones; expected ${expectedDeepIds.join(",")}, got ${deep.collected.map((r) => r.id).join(",")}.`);
+    }
+    if (!deep.next || deep.next.id !== "deep-find-4") {
+      problems.push(`After deep-find-3 the next locked find should be deep-find-4, got ${JSON.stringify(deep.next)}.`);
+    }
+
+    // The render cap keeps the strongest rungs and counts the rest, so an
+    // endless ladder can never render an endless list.
+    const capped = engine.discoveryCollection("deep-find-3", 4);
+    if (capped.collected.length !== 4 || capped.hiddenCount !== 5 || capped.total !== 9) {
+      problems.push(`A 4-rung cap should show the strongest 4 of 9 with hiddenCount 5, got ${capped.collected.length} shown / ${capped.hiddenCount} hidden / ${capped.total} total.`);
+    }
+    if (capped.collected.map((r) => r.id).join(",") !== "sunken-vault,deep-find-1,deep-find-2,deep-find-3") {
+      problems.push(`The cap must slice from the strong end of the ladder, got ${capped.collected.map((r) => r.id).join(",")}.`);
+    }
+
+    const unknown = engine.discoveryCollection("not-a-real-find");
+    if (unknown.collected.length !== 0 || unknown.next !== null) {
+      problems.push(`An unrecognised saved id must yield no collection and no next rung, got ${JSON.stringify(unknown)}.`);
+    }
+
+    // (b) A return that turns up a find fills a new row: load a save whose
+    // 600s absence earns clay-deposit, then read the page.
+    engine.reset();
+    localStorage.setItem("selfgrow-state", JSON.stringify({
+      wood: 5, rate: 0.1, stone: 0, totalWoodEarned: 5,
+      wallLevel: 0, stoneUnlocked: false,
+      firstTimestamp: new Date(Date.now() - 3600000).toISOString(),
+      timestamp: new Date(Date.now() - 600000).toISOString(),
+    }));
+    engine.init();
+    window.__renderUI();
+
+    const ownedFind = engine.getState().discovery;
+    if (!ownedFind || ownedFind.id !== "clay-deposit") {
+      problems.push(`A 600s absence should credit clay-deposit so the Finds list has a new row; got ${JSON.stringify(ownedFind)}.`);
+    }
+
+    const findsDetails = document.getElementById("finds-list");
+    const findsEntriesEl = document.getElementById("finds-entries");
+    const statusLine = document.getElementById("next-away-find-line");
+    if (!findsDetails) {
+      problems.push("Expected a #finds-list <details> in the status panel so the collection is readable on demand — it was not found.");
+    } else if (!findsDetails.closest("#status-bar")) {
+      problems.push("#finds-list must live inside #status-bar so it is part of the status panel.");
+    } else if (findsDetails.open) {
+      problems.push("The Finds list must start collapsed so the desktop one-screen promise holds; it was open on load.");
+    }
+    if (!findsEntriesEl) {
+      problems.push("Expected #finds-entries inside #finds-list to hold the collected finds — it was not found.");
+    }
+
+    const expectedSummary = engine.nextAwayFindText(engine.nextDiscoveryAfter("clay-deposit"));
+    if (statusLine && statusLine.textContent.trim() !== expectedSummary) {
+      problems.push(`The Finds summary should read ${JSON.stringify(expectedSummary)}, got ${JSON.stringify(statusLine.textContent.trim())}.`);
+    }
+
+    // Collapsed, the list carries no rows at all — the one-line summary is the
+    // whole closed state, which is what keeps the status panel its old height.
+    if (findsEntriesEl && findsEntriesEl.childElementCount !== 0) {
+      problems.push(`A collapsed Finds list must carry no rows; found ${findsEntriesEl.childElementCount}.`);
+    }
+
+    if (findsDetails && findsEntriesEl) {
+      findsDetails.open = true; // a player opening the summary
+      // `toggle` fires as a task, so let it run before reading the rows the
+      // open state is supposed to build.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const collectedTexts = [...findsEntriesEl.querySelectorAll(".finds-collected")].map((li) => li.textContent);
+      const expectedTexts = ["Flint Shard +0.05 wood/s", "Clay Deposit +0.10 wood/s"];
+      if (collectedTexts.join(" | ") !== expectedTexts.join(" | ")) {
+        problems.push(`The opened Finds list should name each collected find and the wood/s it grants, expected ${JSON.stringify(expectedTexts)}, got ${JSON.stringify(collectedTexts)}.`);
+      }
+      const lockedRows = [...findsEntriesEl.querySelectorAll(".finds-locked")];
+      const nextRung = engine.nextDiscoveryAfter("clay-deposit");
+      const neededAbsence = engine.formatElapsed(nextRung.minSec * 1000);
+      if (lockedRows.length !== 1) {
+        problems.push(`The Finds list must show exactly one locked next rung, got ${lockedRows.length}.`);
+      } else {
+        const lockedText = lockedRows[0].textContent;
+        if (!lockedText.includes(nextRung.name)) {
+          problems.push(`The locked row should name the next find "${nextRung.name}", got "${lockedText}".`);
+        }
+        if (!lockedText.includes(neededAbsence)) {
+          problems.push(`The locked row should state the absence needed ("${neededAbsence}"), got "${lockedText}".`);
+        }
+      }
+      findsDetails.open = false; // leave the panel as a player found it
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      if (findsEntriesEl.childElementCount !== 0) {
+        problems.push(`Closing the Finds list must drop its rows again so the status panel stays one line; found ${findsEntriesEl.childElementCount}.`);
+      }
+    }
+
+    // The page's collected rows and the agent's list are the same collection.
+    if (readState) {
+      const read = await readState.execute({});
+      const stateFinds = engine.getState().finds;
+      if (!read.finds) {
+        problems.push("read-state should return the Finds list the page shows, but read-state.finds was missing.");
+      } else {
+        const readIds = read.finds.collected.map((r) => r.id).join(",");
+        const engineIds = stateFinds.collected.map((r) => r.id).join(",");
+        if (readIds !== engineIds) {
+          problems.push(`read-state.finds.collected (${readIds}) must match the engine's collection (${engineIds}).`);
+        }
+        if (read.finds.total !== stateFinds.total) {
+          problems.push(`read-state.finds.total should be ${stateFinds.total}, got ${read.finds.total}.`);
+        }
+        const readNext = read.finds.next;
+        if (!readNext || !stateFinds.next || readNext.name !== stateFinds.next.name || readNext.minSec !== stateFinds.next.minSec) {
+          problems.push(`read-state.finds.next should match the page's locked rung ${JSON.stringify(stateFinds.next)}, got ${JSON.stringify(readNext)}.`);
+        }
+        if (read.finds.collected[1] && read.finds.collected[1].woodPerSec !== 0.1) {
+          problems.push(`read-state.finds should report the wood/s each find grants; clay-deposit expected 0.1, got ${read.finds.collected[1].woodPerSec}.`);
+        }
+      }
+    }
+
+    // (c) The collection survives a save exported and restored elsewhere: the
+    // whole state is what the code carries, so the prefix must come back.
+    const portableCode = engine.exportSave();
+    engine.reset();
+    const restored = engine.importSave(portableCode);
+    const restoredFinds = restored.state.finds;
+    if (restoredFinds.collected.map((r) => r.id).join(",") !== "flint-shard,clay-deposit") {
+      problems.push(`A restored save should still keep flint-shard and clay-deposit, got ${restoredFinds.collected.map((r) => r.id).join(",")} (import ok: ${restored.ok}).`);
+    }
+    if (!restoredFinds.next || restoredFinds.next.id !== "wandering-sapling") {
+      problems.push(`A restored save should still have wandering-sapling locked next, got ${JSON.stringify(restoredFinds.next)}.`);
+    }
+
+    // (d) A save deep in the generated ladder keeps the strongest rungs and
+    // summarises the older ones, so the list can never render forever.
+    engine.reset();
+    localStorage.setItem("selfgrow-state", JSON.stringify({
+      wood: 5, rate: 0.1, stone: 0, totalWoodEarned: 5,
+      wallLevel: 0, stoneUnlocked: false,
+      discoveryId: "deep-find-10", discoveryName: "Iron Garden", discoveryBonus: 1.1,
+      firstTimestamp: new Date().toISOString(),
+      timestamp: new Date().toISOString(),
+    }));
+    engine.init();
+    window.__renderUI();
+    const deepFinds = engine.getState().finds;
+    const expectedShown = Math.min(engine.FINDS_LIST_LIMIT, deepFinds.total);
+    if (deepFinds.collected.length !== expectedShown || deepFinds.hiddenCount !== deepFinds.total - expectedShown) {
+      problems.push(`A save of ${deepFinds.total} rungs should show the newest ${expectedShown} and summarise the rest, got ${deepFinds.collected.length} shown / ${deepFinds.hiddenCount} hidden.`);
+    }
+    if (findsDetails && findsEntriesEl) {
+      findsDetails.open = true;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const moreRows = [...findsEntriesEl.querySelectorAll(".finds-more")];
+      const shownCollected = findsEntriesEl.querySelectorAll(".finds-collected").length;
+      if (moreRows.length !== 1 || !moreRows[0].textContent.includes(String(deepFinds.hiddenCount))) {
+        problems.push(`The capped Finds list should summarise the omitted finds in one line, got ${JSON.stringify(moreRows.map((li) => li.textContent))}.`);
+      }
+      if (shownCollected !== expectedShown) {
+        problems.push(`The capped Finds list should render ${expectedShown} rungs, got ${shownCollected}.`);
+      }
+      if (moreRows.length === 1 && findsEntriesEl.firstElementChild !== moreRows[0]) {
+        problems.push("The summarised older finds must come before the rendered rungs so the list still reads in ladder order.");
+      }
+      findsDetails.open = false;
+    }
+
+    // Leave the page as it was found.
+    engine.reset();
+    if (originalCode) engine.importSave(originalCode);
+    window.__renderUI();
+  } catch (err) {
+    problems.push(`Finds-list test threw: ${err.message}`);
+    console.error(err);
+  }
+
   // ─── Save export / import: a portable code (issue #969) ────────
   try {
     const engine = await import("./engine.js");

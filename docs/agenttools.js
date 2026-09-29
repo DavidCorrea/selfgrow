@@ -8,7 +8,7 @@
  * @module agenttools
  */
 
-import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, formatElapsed, nextDiscoveryAfter, returnDiscoveryText, sharpenAvailable, wallAvailable, expeditionUnlocked, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, effectiveWoodRate, expeditionMultiplierFor, clickPowerFor, FIRST_GOAL_WOOD, UPGRADE_COST, WALL_COST, STONE_GATHER_AMOUNT } from "./engine.js";
+import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, formatElapsed, nextDiscoveryAfter, discoveryCollection, returnDiscoveryText, sharpenAvailable, wallAvailable, expeditionUnlocked, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, effectiveWoodRate, expeditionMultiplierFor, clickPowerFor, FIRST_GOAL_WOOD, UPGRADE_COST, WALL_COST, STONE_GATHER_AMOUNT } from "./engine.js";
 
 /**
  * The last return as the welcome-back panel is showing it, read straight from
@@ -67,6 +67,11 @@ function withGoal(s) {
   // one ladder lookup for both, so the tool and the panel cannot disagree.
   const ownedDiscoveryId = s.discoveryId ?? s.discovery?.id ?? null;
   const nextDiscovery = nextDiscoveryAfter(ownedDiscoveryId);
+  // The whole collection, not just the strongest rung: every find the player
+  // has reached plus the next locked one. getState() already derives it; a raw
+  // snapshot (the sandbox clone) gets the same derivation here, so the page and
+  // the tools read one list.
+  const finds = s.finds ?? discoveryCollection(ownedDiscoveryId);
 
   return {
     wood: s.wood,
@@ -108,6 +113,17 @@ function withGoal(s) {
     nextAwayDiscovery: nextDiscovery
       ? { name: nextDiscovery.name, minSec: nextDiscovery.minSec, elapsed: formatElapsed(nextDiscovery.minSec * 1000) }
       : null,
+    // The Finds list the page shows: the rungs already reached in ladder order,
+    // each with the wood/s it grants, how many weaker ones the display
+    // summarises (hiddenCount), and the next rung still locked.
+    finds: {
+      collected: finds.collected.map((rung) => ({ id: rung.id, name: rung.name, bonus: rung.bonus, woodPerSec: rung.bonus })),
+      hiddenCount: finds.hiddenCount,
+      total: finds.total,
+      next: finds.next
+        ? { id: finds.next.id, name: finds.next.name, minSec: finds.next.minSec, elapsed: formatElapsed(finds.next.minSec * 1000) }
+        : null,
+    },
     milestones: {
       sharpenAvailable: sharpenAvailable(s),
       stoneNowUnlocked: s.stoneUnlocked,
@@ -177,7 +193,11 @@ export function tools() {
         + "next away discovery still to earn (nextAwayDiscovery: {name, minSec, elapsed} "
         + "where minSec is the absence in seconds needed to find it and elapsed is that "
         + "duration as text) \u2014 the ladder has no end, so this names a rung for every valid "
-        + "save and is null only when the saved discovery id is unrecognised), milestones object "
+        + "save and is null only when the saved discovery id is unrecognised). finds is the "
+        + "Finds list the page shows: {collected: [{id, name, bonus, woodPerSec}] in ladder order "
+        + "(weaker to stronger), hiddenCount (how many older finds the display summarises), total "
+        + "(the true number kept), next: {id, name, minSec, elapsed} for the rung still locked or "
+        + "null when the saved id is unrecognised}. milestones object "
         + "(sharpenAvailable, stoneNowUnlocked, wallAvailable, forgeNowUnlocked, expeditionNowUnlocked), "
         + "and the current goal (first goal, upgrade goal, stone goal, build-wall goal, forge goal, or expedition goal) as nextGoal "
         + "{description, type, available, resources: [{name, current, target}]}, whose resources are the same "
