@@ -4723,6 +4723,96 @@ export async function checks() {
     }
     reactionProbe.remove();
 
+    // (6) The picture shows the system's level. Each stage is a genuinely
+    // different picture, level 0 is always the base stage, and a card never
+    // disagrees with its header chip.
+    const pictureSig = (selector) => {
+      const svg = document.querySelector(selector);
+      return svg ? rectSignature(svg) : null;
+    };
+    const expectedSig = (kind, level) => {
+      const probe = document.createElement("div");
+      probe.innerHTML = sprites.spriteSvg(kind, level);
+      return rectSignature(probe.querySelector("svg"));
+    };
+    const seedAtLevels = (overrides) => {
+      engine.reset();
+      localStorage.setItem("selfgrow-state", JSON.stringify({
+        wood: 10, rate: 0.1, upgradeLevel: 0, stone: 10,
+        totalWoodEarned: 0, totalStoneEarned: 0,
+        wallLevel: 0, forgeLevel: 0, expeditionLevel: 0, maps: 0,
+        stoneUnlocked: true,
+        timestamp: new Date().toISOString(),
+        firstTimestamp: new Date().toISOString(),
+        ...overrides,
+      }));
+      engine.init();
+      renderNow();
+    };
+
+    const systems = [
+      { kind: "wood", level: "upgradeLevel", card: "#btn-gather svg.sprite", chip: "#wood-stat .sprite-mount svg.sprite" },
+      { kind: "stone", level: "wallLevel", card: "#btn-gather-stone svg.sprite", chip: "#stone-stat .sprite-mount svg.sprite" },
+      { kind: "forge", level: "forgeLevel", card: "#btn-forge-tool svg.sprite", chip: "#forge-stat .sprite-mount svg.sprite" },
+      { kind: "expedition", level: "expeditionLevel", card: "#btn-expedition svg.sprite", chip: "#expedition-stat .sprite-mount svg.sprite" },
+    ];
+    for (const system of systems) {
+      const byLevel = new Map();
+      for (const level of [0, 1, 6]) {
+        seedAtLevels({ [system.level]: level });
+        const card = pictureSig(system.card);
+        const chip = pictureSig(system.chip);
+        if (!card) {
+          problems.push(`The ${system.kind} card picture should exist at ${system.level}=${level} — it was not found.`);
+          continue;
+        }
+        if (card !== expectedSig(system.kind, level)) {
+          problems.push(`The ${system.kind} picture at ${system.level}=${level} should be the stage sprite drawn for that level.`);
+        }
+        if (chip !== card) {
+          problems.push(`The ${system.kind} card picture and its header chip should be the same picture at ${system.level}=${level}.`);
+        }
+        byLevel.set(level, card);
+      }
+      if (byLevel.size === 3
+          && (byLevel.get(0) === byLevel.get(1)
+            || byLevel.get(1) === byLevel.get(6)
+            || byLevel.get(0) === byLevel.get(6))) {
+        problems.push(`The ${system.kind} picture should change as its level rises: levels 0, 1 and 6 should each draw a different picture.`);
+      }
+    }
+
+    // The picture is a drawing of the level, not a random one: same inputs,
+    // same pixels, however often the render loop redraws it.
+    if (sprites.spriteSvg("forge", 3) !== sprites.spriteSvg("forge", 3)) {
+      problems.push("Drawing the forge picture at the same level twice should produce the same picture.");
+    }
+
+    // (7) With reduced motion on the picture is still drawn at the current
+    // level — it simply never animates (playReaction already checks that half).
+    const realMatchMedia = window.matchMedia;
+    try {
+      window.matchMedia = () => ({
+        matches: true,
+        media: "(prefers-reduced-motion: reduce)",
+        addEventListener() {},
+        removeEventListener() {},
+        addListener() {},
+        removeListener() {},
+      });
+      seedAtLevels({ upgradeLevel: 3 });
+      const reducedSvg = document.querySelector("#btn-gather svg.sprite");
+      if (!reducedSvg) {
+        problems.push("With reduced motion on, the wood picture should still be drawn — it was not found.");
+      } else if (pictureSig("#btn-gather svg.sprite") !== expectedSig("wood", 3)) {
+        problems.push("With reduced motion on, the wood picture should still be drawn at its current level.");
+      } else if (reducedSvg.dataset.spriteStage !== String(sprites.spriteStage("wood", 3))) {
+        problems.push(`With reduced motion on, the wood picture should be drawn at level 3's stage, got stage ${reducedSvg.dataset.spriteStage}.`);
+      }
+    } finally {
+      window.matchMedia = realMatchMedia;
+    }
+
     // Return the page to a fresh, fully-locked state for whatever measures it next.
     engine.reset();
     engine.init();

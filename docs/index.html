@@ -1305,7 +1305,7 @@
     import "./webmcp.js";
     import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, formatElapsed, sharpenAvailable, sharpenThreshold, displayAmount, exportSave, importSave, describeGoal, returnDiscoveryText, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
     import { cloneState, fastForward } from "./sandbox.js";
-    import { mountSprites, playReaction } from "./sprites.js";
+    import { mountSprites, updateSprites, playReaction } from "./sprites.js";
 
     init();
     mountSprites();
@@ -1816,6 +1816,16 @@
       const forgeLevel = s.forgeLevel;
       const forgeWoodCost = s.forgeWoodCost;
       const forgeStoneCost = s.forgeStoneCost;
+      // Each system's picture shows how far it has grown, drawn from the same
+      // level the panel reads beside it — one source of truth, no art state.
+      // A mount is only rebuilt when its stage changes, so both the card
+      // picture and the header chip update together and stay identical.
+      updateSprites(document, {
+        wood: upgradeLevel,
+        stone: wallLevel,
+        forge: forgeLevel,
+        expedition: s.expeditionLevel,
+      });
       const wallBonus = wallLevel * 1;
       const forgeClickBonus = forgeLevel * FORGE_CLICK_POWER_BONUS;
       const clickPower = 1 + wallBonus + forgeClickBonus;
