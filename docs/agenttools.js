@@ -401,7 +401,11 @@ function rulesAway(s) {
         + AWAY_EVENT_LUMP_SEC + "s of production at the rates in force, and the rate option adds "
         + AWAY_EVENT_RATE_BONUS_FRACTION + " of the same wood/s for good, so it pays for itself in "
         + (AWAY_EVENT_LUMP_SEC / AWAY_EVENT_RATE_BONUS_FRACTION) + "s of production at any rate "
-        + "(rateBonus / rateBonusFraction state the same rule). Choosing is one-way: once one "
+        + "(rateBonus / rateBonusFraction state the same rule). The absence and how many happenings "
+        + "this save has already been offered together choose which one, so returns of the same "
+        + "length advance through the pool (" + AWAY_EVENTS.length + " happenings) instead of repeating "
+        + "one decision; the sequence is fixed for a save, so a return can never be a gamble. "
+        + "Choosing is one-way: once one "
         + "option is taken the other can never then be taken.",
     },
     sandbox: {

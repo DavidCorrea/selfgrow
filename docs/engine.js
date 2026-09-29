@@ -79,10 +79,12 @@ const DISCOVERIES = [
  * The small fixed pool of away events. Each is a happening drawn from the time
  * away that offers exactly two choices, and each choice's kind names the one
  * thing it grants: a lump of wood, a lump of stone, or a permanent wood/s
- * increase. The absence itself picks an entry (see awayEventForElapsed), so the
- * pool only has to be long enough that two different absences need not offer
- * the same decision. The two kinds within an entry are always distinct — the
- * choice's own id is its kind — so a pair never shows two identical buttons.
+ * increase. The absence and the save's own count of happenings already offered
+ * together pick an entry (see awayEventForElapsed), so checking in on the same
+ * cadence still advances through the pool rather than repeating one decision,
+ * and the pool only has to be long enough that two different absences need not
+ * offer the same decision. The two kinds within an entry are always distinct —
+ * the choice's own id is its kind — so a pair never shows two identical buttons.
  *
  * @type {Array<{ id: string, title: string, kinds: [string, string] }>}
  */
@@ -184,6 +186,10 @@ export { FIRST_GOAL_WOOD, UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, STONE_BASE_RA
  * @property {AwayEvent|null} pendingEvent — the two-choice happening a real
  *   return is offering, carried in the save until the player picks one, so a
  *   reload before choosing offers the same event rather than losing it
+ * @property {number} eventsOffered — how many happenings this save has actually
+ *   been offered (see catchUp). The away event is picked from the absence and
+ *   this count together, so two returns of the same length cycle through the
+ *   pool instead of repeating one decision forever
  */
 
 let state = {
@@ -205,6 +211,7 @@ let state = {
   firstTimestamp: null,
   lastReturn: null,
   pendingEvent: null,
+  eventsOffered: 0,
 };
 
 /** Offline resources gained on last catch-up. */
@@ -239,9 +246,10 @@ let offlineGained = { wood: 0, stone: 0, elapsedSec: 0, discovery: null };
 
 /**
  * A happening drawn from an absence that offers exactly two choices. It is
- * derived from the absence (see awayEventForElapsed), stored on the state until
- * one option is chosen, and then cleared — so a reload before choosing offers
- * the same event, and an event can only ever grant one of its two effects.
+ * derived from the absence and the save's happening count (see
+ * awayEventForElapsed), stored on the state until one option is chosen, and
+ * then cleared — so a reload before choosing offers the same event, and an
+ * event can only ever grant one of its two effects.
  *
  * @typedef {Object} AwayEvent
  * @property {string} id
@@ -497,7 +505,13 @@ function catchUp(firstVisit, record = true) {
     const offeredEvent = (record && !firstVisit && elapsedSec >= AWAY_EVENT_MIN_SEC && !state.pendingEvent)
       ? awayEventForElapsed(elapsedSec, state)
       : null;
-    if (offeredEvent) state.pendingEvent = offeredEvent;
+    // Counted only when a happening is actually set, so the count is the number
+    // of decisions a player has really been shown — an absence that finds one
+    // already waiting never skips the next entry in the pool.
+    if (offeredEvent) {
+      state.pendingEvent = offeredEvent;
+      state.eventsOffered += 1;
+    }
 
     offlineGained = {
       wood: woodGained,
@@ -627,10 +641,12 @@ function awayOption(kind, s) {
 /**
  * The away event an absence of the given length offers, or null when the
  * absence is shorter than a minute or invalid. Pure and deterministic: the
- * absence alone picks the pool entry, so the same trip always offers the same
- * happening and the same two choices. The amounts read the state the player
- * returns to, which a reload reproduces, so a persisted event can be
- * regenerated identically.
+ * absence and the state's own `eventsOffered` count together pick the pool
+ * entry, so consecutive returns of the same length offer different happenings
+ * until the pool has cycled, while the same save's sequence is the same
+ * sequence every time — nothing is randomised and nothing can be lost. The
+ * amounts read the state the player returns to, which a reload reproduces, so a
+ * persisted event can be regenerated identically.
  *
  * @param {number} elapsedSec
  * @param {object} s  the state the option amounts are drawn from
@@ -638,7 +654,8 @@ function awayOption(kind, s) {
  */
 export function awayEventForElapsed(elapsedSec, s) {
   if (!(elapsedSec >= AWAY_EVENT_MIN_SEC)) return null;
-  const entry = AWAY_EVENTS[Math.floor(elapsedSec) % AWAY_EVENTS.length];
+  const offset = Number.isFinite(s.eventsOffered) && s.eventsOffered >= 0 ? Math.floor(s.eventsOffered) : 0;
+  const entry = AWAY_EVENTS[(Math.floor(elapsedSec) + offset) % AWAY_EVENTS.length];
   return {
     id: entry.id,
     title: entry.title,
@@ -966,6 +983,9 @@ function applyPersisted(saved) {
   state.firstTimestamp = typeof saved.firstTimestamp === "string" ? saved.firstTimestamp : saved.timestamp;
   state.lastReturn = sanitizeReturnRecord(saved.lastReturn);
   state.pendingEvent = sanitizePendingEvent(saved.pendingEvent);
+  state.eventsOffered = Number.isFinite(saved.eventsOffered) && saved.eventsOffered >= 0
+    ? Math.floor(saved.eventsOffered)
+    : 0;
 }
 
 function loadPersisted() {
@@ -1670,6 +1690,7 @@ export function getState() {
     } : null,
     finds: discoveryCollection(state.discoveryId),
     pendingEvent: clonePendingEvent(state.pendingEvent),
+    eventsOffered: state.eventsOffered,
     timestamp: state.timestamp,
     firstTimestamp: state.firstTimestamp,
   };
@@ -1699,6 +1720,7 @@ export function reset() {
     firstTimestamp: null,
     lastReturn: null,
     pendingEvent: null,
+    eventsOffered: 0,
   };
   offlineGained = { wood: 0, stone: 0, elapsedSec: 0, discovery: null };
   snapshotBeforeCatchUp = null;

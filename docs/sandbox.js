@@ -40,6 +40,9 @@ export function cloneState(state) {
     // engine's own event clone so the rehearsal holds an independent event and
     // can show the choice that is actually pending (see fastForward).
     pendingEvent: clonePendingEvent(state.pendingEvent),
+    // How many happenings this save has been offered, so a rehearsal derives
+    // the happening the next real return of the same length would offer.
+    eventsOffered: state.eventsOffered ?? 0,
     timestamp: state.timestamp,
     firstTimestamp: state.firstTimestamp,
   };
