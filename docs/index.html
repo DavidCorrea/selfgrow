@@ -594,6 +594,52 @@
       margin-top: 0.5rem;
     }
 
+    /* The decision a real absence of the rehearsed length would offer: the
+       happening and its two choices, read from the engine's own rule. It is
+       shown as plain text, never as controls — a rehearsal names the choice
+       without being able to take it — so the panel reads like the return it
+       stands in for while the sandbox stays read-only. */
+    .sandbox-away-event {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      text-align: left;
+      margin-top: 0.5rem;
+      padding-top: 0.6rem;
+      border-top: 3px solid #3a3a5a;
+    }
+
+    .sandbox-away-event[hidden] {
+      display: none;
+    }
+
+    .sandbox-away-event-title {
+      color: var(--accent);
+      font-family: var(--pixel-font);
+      font-size: 0.5rem;
+      font-weight: bold;
+      line-height: 1.6;
+    }
+
+    .sandbox-away-option {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+      font-family: var(--body-font);
+      font-size: 0.45rem;
+      line-height: 1.6;
+    }
+
+    .sandbox-away-option-label {
+      color: var(--highlight);
+      font-weight: bold;
+    }
+
+    .sandbox-away-option-effect {
+      color: var(--text-dim);
+      font-size: 0.4rem;
+    }
+
     .btn-sandbox-exit {
       font-family: var(--pixel-font);
       font-size: 0.5rem;
@@ -661,6 +707,9 @@
         font-size: 0.45rem;
       }
       .sandbox-next-find {
+        font-size: 0.45rem;
+      }
+      .sandbox-away-event-title {
         font-size: 0.45rem;
       }
       .sandbox-controls .btn {
@@ -1516,6 +1565,15 @@
       <div class="sandbox-next-find" id="sb-next-find" hidden></div>
 
       <div id="sb-milestone-list"></div>
+
+      <!-- The decision a real absence of the rehearsed length would offer: the
+           happening and both choices, named from the engine's own rule. Shown
+           as text only — the sandbox never offers a control that resolves the
+           choice, so a rehearsal can name a decision without spending it. -->
+      <div id="sb-away-event" class="sandbox-away-event" hidden>
+        <div class="sandbox-away-event-title" id="sb-away-event-title"></div>
+        <div id="sb-away-event-options"></div>
+      </div>
 
       <hr class="sandbox-divider">
 
@@ -2565,6 +2623,9 @@
     const sbMilestones = document.getElementById("sb-milestones");
     const sbNextFind = document.getElementById("sb-next-find");
     const sbMilestoneList = document.getElementById("sb-milestone-list");
+    const sbAwayEvent = document.getElementById("sb-away-event");
+    const sbAwayEventTitle = document.getElementById("sb-away-event-title");
+    const sbAwayEventOptions = document.getElementById("sb-away-event-options");
     const btnSandbox = document.getElementById("btn-sandbox");
     const sbBtn10x = document.getElementById("sb-btn-10x");
     const sbBtn1h = document.getElementById("sb-btn-1h");
@@ -2742,6 +2803,44 @@
             : " (already owned)")
           : "none this time";
       }
+
+      // The decision a real absence of the rehearsed length would offer, drawn
+      // by the engine's own rule from the clone the rehearsal returned to, so
+      // the happening and both choices are the very ones a real return would
+      // show. The block is read-only — it names the choice without offering a
+      // way to take it — and hides entirely when the rehearsal was too short.
+      renderSandboxAwayEvent(lastSandboxResult ? lastSandboxResult.event : null);
+    }
+
+    /**
+     * Show the away event a rehearsal would offer, as plain text: its title and
+     * one row per choice, each stating the label and the effect sentence the
+     * engine drew from the amount choosing it would grant. There is deliberately
+     * no control here — resolving the choice belongs to a real return.
+     *
+     * @param {{title: string, options: Array<{label: string, effectText: string}>}|null} event
+     */
+    function renderSandboxAwayEvent(event) {
+      sbAwayEventOptions.replaceChildren();
+      if (!event) {
+        sbAwayEventTitle.textContent = "";
+        sbAwayEvent.hidden = true;
+        return;
+      }
+      sbAwayEventTitle.textContent = event.title;
+      for (const option of event.options) {
+        const row = document.createElement("div");
+        row.className = "sandbox-away-option";
+        const label = document.createElement("span");
+        label.className = "sandbox-away-option-label";
+        label.textContent = option.label;
+        const effect = document.createElement("span");
+        effect.className = "sandbox-away-option-effect";
+        effect.textContent = option.effectText;
+        row.append(label, effect);
+        sbAwayEventOptions.appendChild(row);
+      }
+      sbAwayEvent.hidden = false;
     }
 
     /**

@@ -586,7 +586,11 @@ export function tools() {
       name: "sandbox-fast-forward",
       description: "Fast-forwards the active sandbox clone by a given number of seconds. "
         + "Returns projected resources, milestones, and the away find a real absence of that "
-        + "same length would name (null when the length turns up nothing). "
+        + "same length would name (null when the length turns up nothing). Also returns event — "
+        + "the two-choice happening a real absence of that length would offer, read from the "
+        + "engine's own rule ({id, title, options: [{id, label, effect: {kind, amount}, effectText}]} "
+        + "with exactly two options), or null when the absence is too short. The event is "
+        + "reported only: the sandbox never resolves the choice and the real save is untouched. "
         + "If the sandbox is not active, creates one first.",
       inputSchema: {
         type: "object",
@@ -615,6 +619,10 @@ export function tools() {
         // The rehearsal's own away find, named by the engine's discovery rule —
         // what a real absence of this length would turn up, not a bigger number.
         out.discovery = result ? result.discovery : null;
+        // The decision a real absence of this length would offer, drawn by the
+        // engine's own rule. Reported, never resolved: the sandbox has no way
+        // to choose, so a caller can see the choice without spending it.
+        out.event = result ? result.event : null;
         // The clone's milestone crossings during this interval are authoritative;
         // keep the state-derived keys (sharpenDone, wallBuilt) alongside them.
         if (result && result.milestones) out.milestones = { ...out.milestones, ...result.milestones };
@@ -629,8 +637,11 @@ export function tools() {
         + "targetedDiscovery {id, name, minSec} naming the rung it jumped to (null, without "
         + "fast-forwarding, when the save holds no recognised find id), and discovery — the "
         + "find a real absence of that length turns up, read from the engine's own rule, so "
-        + "the result always matches what the game would show. Also returns the projected "
-        + "state afterwards. If the sandbox is not active, creates one first.",
+        + "the result always matches what the game would show. Also returns event — the "
+        + "two-choice happening a real absence of that length would offer ({id, title, options} "
+        + "with exactly two options, or null when it is too short) — reported only, never "
+        + "resolved. Also returns the projected state afterwards. If the sandbox is not active, "
+        + "creates one first.",
       inputSchema: { type: "object", properties: {} },
       annotations: { readOnlyHint: false },
       example: {},
@@ -649,6 +660,7 @@ export function tools() {
           out.sandboxSeconds = 0;
           out.targetedDiscovery = null;
           out.discovery = null;
+          out.event = null;
           return out;
         }
         const woodBefore = clone.wood;
@@ -664,6 +676,10 @@ export function tools() {
         // The rehearsal's own away find, named by the engine's discovery rule —
         // the very rung that was targeted, never a bigger number.
         out.discovery = result ? result.discovery : null;
+        // The decision a real absence of this length would offer, reported the
+        // same way sandbox-fast-forward reports it, so the two rehearsals of
+        // the same absence can never disagree about the choice it offers.
+        out.event = result ? result.event : null;
         if (result && result.milestones) out.milestones = { ...out.milestones, ...result.milestones };
         return out;
       },
