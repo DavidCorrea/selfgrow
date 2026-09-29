@@ -145,14 +145,22 @@ let snapshotBeforeCatchUp = null;
  * @property {number}  forgeLevel
  */
 
-function takeMilestoneSnapshot() {
+/**
+ * The subset of a game state the milestone rules compare. Pure, so the real
+ * catch-up, the sandbox and the agent tools all read one comparison instead of
+ * keeping a copy that can drift.
+ *
+ * @param {GameState} s
+ * @returns {MilestoneSnapshot}
+ */
+export function milestoneSnapshot(s) {
   return {
-    wood: state.wood,
-    upgradeLevel: state.upgradeLevel,
-    stone: state.stone,
-    wallLevel: state.wallLevel,
-    stoneUnlocked: state.stoneUnlocked,
-    forgeLevel: state.forgeLevel,
+    wood: s.wood,
+    upgradeLevel: s.upgradeLevel,
+    stone: s.stone,
+    wallLevel: s.wallLevel,
+    stoneUnlocked: s.stoneUnlocked,
+    forgeLevel: s.forgeLevel,
   };
 }
 
@@ -166,22 +174,33 @@ function takeMilestoneSnapshot() {
  */
 
 /**
+ * Which milestones were newly crossed between two states. A milestone counts
+ * only when it was not already satisfied before, so a report names what
+ * actually opened up rather than what is merely true now.
+ *
+ * @param {MilestoneSnapshot} before
+ * @param {GameState} after
+ * @returns {Milestones}
+ */
+export function milestonesBetween(before, after) {
+  return {
+    sharpenAvailable: before.upgradeLevel === 0 && before.wood < FIRST_GOAL_WOOD && after.wood >= FIRST_GOAL_WOOD,
+    stoneNowUnlocked: before.stoneUnlocked === false && after.stoneUnlocked === true,
+    wallAvailable: after.stoneUnlocked && before.wallLevel === 0 && before.stone < WALL_COST && after.stone >= WALL_COST,
+    forgeNowUnlocked: before.wallLevel === 0 && after.wallLevel >= 1,
+    expeditionNowUnlocked: before.forgeLevel < 5 && after.forgeLevel >= 5,
+  };
+}
+
+/**
  * Which milestones the catch-up just crossed, comparing the live state against
- * the snapshot taken before any resource was added. A milestone counts only
- * when it was not already satisfied before, so the panel names what actually
- * opened up while the player was away.
+ * the snapshot taken before any resource was added.
  *
  * @param {MilestoneSnapshot} before
  * @returns {Milestones}
  */
 function computeMilestones(before) {
-  return {
-    sharpenAvailable: before.upgradeLevel === 0 && before.wood < FIRST_GOAL_WOOD && state.wood >= FIRST_GOAL_WOOD,
-    stoneNowUnlocked: before.stoneUnlocked === false && state.stoneUnlocked === true,
-    wallAvailable: state.stoneUnlocked && before.wallLevel === 0 && before.stone < WALL_COST && state.stone >= WALL_COST,
-    forgeNowUnlocked: before.wallLevel === 0 && state.wallLevel >= 1,
-    expeditionNowUnlocked: before.forgeLevel < 5 && state.forgeLevel >= 5,
-  };
+  return milestonesBetween(before, state);
 }
 
 /**
@@ -283,7 +302,7 @@ function catchUp(firstVisit) {
   const elapsedSec = (Date.now() - lastSaved) / 1000;
   if (elapsedSec > 0) {
     // Capture snapshot before resources are added
-    const before = takeMilestoneSnapshot();
+    const before = milestoneSnapshot(state);
     snapshotBeforeCatchUp = before;
     const beforeWood = before.wood;
     const beforeStone = before.stone;

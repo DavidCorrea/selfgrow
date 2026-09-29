@@ -7,7 +7,7 @@
  * @module sandbox
  */
 
-import { discoverForElapsed, computeStoneRateFor, effectiveWoodRate } from "./engine.js";
+import { discoverForElapsed, computeStoneRateFor, effectiveWoodRate, milestoneSnapshot, milestonesBetween } from "./engine.js";
 
 /**
  * Deep-clone a game state object for isolated sandbox use.
@@ -60,12 +60,9 @@ export function cloneState(state) {
  * }}
  */
 export function fastForward(clone, seconds) {
-  const beforeWood = clone.totalWoodEarned;
-  const beforeStone = clone.totalStoneEarned;
-  const beforeUpgrade = clone.upgradeLevel;
-  const beforeStoneUnlocked = clone.stoneUnlocked;
-  const beforeWall = clone.wallLevel;
-  const beforeForge = clone.forgeLevel;
+  // The engine's own comparison input, captured before any resource is added,
+  // so a rehearsal announces the same milestones a real return would.
+  const before = milestoneSnapshot(clone);
 
   // Simulate passive accumulation at current rates, using the engine's own
   // effective-rate rule so a rehearsal can never promise a rate the game would
@@ -101,13 +98,6 @@ export function fastForward(clone, seconds) {
     ? { id: found.id, name: found.name, bonus: found.bonus, credited }
     : null;
 
-  // Detect milestones crossed
-  const sharpenAvailable = beforeUpgrade === 0 && clone.totalWoodEarned >= 10;
-  const stoneNowUnlocked = beforeStoneUnlocked === false && clone.stoneUnlocked === true;
-  const wallAvailable = clone.stoneUnlocked && beforeWall === 0 && clone.stone >= 5;
-  const forgeNowUnlocked = beforeWall === 0 && clone.wallLevel >= 1;
-  const expeditionNowUnlocked = beforeForge < 5 && clone.forgeLevel >= 5;
-
   return {
     seconds,
     discovery,
@@ -115,12 +105,6 @@ export function fastForward(clone, seconds) {
     stoneDelta: stoneGained,
     totalWood: clone.wood,
     totalStone: clone.stone,
-    milestones: {
-      sharpenAvailable,
-      stoneNowUnlocked,
-      wallAvailable,
-      forgeNowUnlocked,
-      expeditionNowUnlocked,
-    },
+    milestones: milestonesBetween(before, clone),
   };
 }

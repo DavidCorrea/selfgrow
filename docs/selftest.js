@@ -3531,6 +3531,60 @@ export async function checks() {
       problems.push(`sandbox fastForward(10s) is too short for a find and should report discovery=null, got ${JSON.stringify(shortRehearsal.discovery)}.`);
     }
 
+    // --- Sandbox Test 4c: a rehearsal announces only milestones that were
+    // genuinely new before the simulated time (issue #1006). A player who could
+    // already build a wall must not be told a wall just opened up.
+    engine.reset();
+    const alreadyWallState = engine.getState();
+    alreadyWallState.stoneUnlocked = true;
+    alreadyWallState.wallLevel = 0;
+    alreadyWallState.stone = engine.WALL_COST;
+    const alreadyWallClone = sandbox.cloneState(alreadyWallState);
+    const alreadyWallResult = sandbox.fastForward(alreadyWallClone, 10);
+    if (alreadyWallResult.milestones.wallAvailable) {
+      problems.push(`sandbox fastForward announced wallAvailable=true, but the clone could already build a wall before the absence (stone ${engine.WALL_COST} >= WALL_COST ${engine.WALL_COST}); a rehearsal must report only newly crossed milestones.`);
+    }
+
+    // --- Sandbox Test 4d: the first-goal milestone is anchored to the engine's
+    // own comparison, so a clone below the goal crossing it is named.
+    const belowGoalState = engine.getState();
+    belowGoalState.wood = 5;
+    belowGoalState.totalWoodEarned = 5;
+    const belowGoalClone = sandbox.cloneState(belowGoalState);
+    const belowGoalResult = sandbox.fastForward(belowGoalClone, 60);
+    if (!belowGoalResult.milestones.sharpenAvailable) {
+      problems.push(`sandbox fastForward from wood=5 crossing ${engine.FIRST_GOAL_WOOD} wood should report sharpenAvailable=true, got false (wood now ${belowGoalClone.wood}).`);
+    }
+
+    // --- Sandbox Test 4e: a rehearsal's milestones are exactly the engine's own
+    // milestonesBetween comparison for the same start and duration, so the
+    // sandbox and a real return can never disagree (issue #1006).
+    engine.reset();
+    const parityClone = sandbox.cloneState(engine.getState());
+    const parityBefore = engine.milestoneSnapshot(parityClone);
+    const parityResult = sandbox.fastForward(parityClone, 3600);
+    const parityExpected = engine.milestonesBetween(parityBefore, parityClone);
+    for (const key of Object.keys(parityExpected)) {
+      if (parityResult.milestones[key] !== parityExpected[key]) {
+        problems.push(`sandbox milestones.${key} (${parityResult.milestones[key]}) should match engine.milestonesBetween (${parityExpected[key]}) for the same rehearsal start and duration.`);
+      }
+    }
+
+    // --- Sandbox Test 4f: each fast-forward replaces the panel's milestone
+    // list instead of appending to it, so repeated rehearsals stay readable.
+    engine.reset();
+    engine.init();
+    if (typeof window.__enterSandbox === "function" && typeof window.__fastForwardSandbox === "function") {
+      window.__enterSandbox();
+      window.__fastForwardSandbox(3600);
+      window.__fastForwardSandbox(3600);
+      const milestoneRuns = document.querySelectorAll("#sb-milestone-list .sandbox-milestone").length;
+      if (milestoneRuns > 1) {
+        problems.push(`After two fast-forwards the sandbox milestone list kept ${milestoneRuns} runs of announcements; each run should replace the previous list (expected at most 1).`);
+      }
+      window.__exitSandbox();
+    }
+
     // --- Sandbox Test 5: agent tools ---
     const agentTools = await import("./agenttools.js");
     const allTools = agentTools.tools();

@@ -2133,6 +2133,9 @@
       const s = getState();
       sandboxClone = cloneState(s);
       lastSandboxResult = null;
+      // A fresh rehearsal starts from an empty list; the previous session's
+      // announcements are not this run's news.
+      sbMilestoneList.replaceChildren();
 
       // Register the overlay first, so the sandbox button is still focused when
       // we record it as the return-focus target.
@@ -2179,6 +2182,10 @@
 
       const result = fastForward(sandboxClone, simulatedSeconds);
       lastSandboxResult = result;
+
+      // Each run replaces the last one's list, so the rehearsal never grows
+      // into an unreadable pile of old news.
+      sbMilestoneList.replaceChildren();
 
       // Append milestone announcements
       const milestones = [];
