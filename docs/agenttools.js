@@ -394,6 +394,53 @@ export function tools() {
       },
     },
     {
+      name: "sandbox-fast-forward-next-find",
+      description: "Fast-forwards the active sandbox clone by exactly the absence the next "
+        + "away find needs — one call to rehearse \"when do I get the next find\" instead of "
+        + "guessing a preset length. Returns sandboxSeconds (the absence it simulated), "
+        + "targetedDiscovery {id, name, minSec} naming the rung it jumped to (null, without "
+        + "fast-forwarding, when the save holds no recognised find id), and discovery — the "
+        + "find a real absence of that length turns up, read from the engine's own rule, so "
+        + "the result always matches what the game would show. Also returns the projected "
+        + "state afterwards. If the sandbox is not active, creates one first.",
+      inputSchema: { type: "object", properties: {} },
+      annotations: { readOnlyHint: false },
+      example: {},
+      async execute() {
+        const clone = ensureSandbox();
+        if (!clone) throw new Error("Could not open a sandbox clone.");
+        // The same ladder lookup the sandbox panel, the status bar and the
+        // welcome-back panel read, so this jump can never rehearse an interval
+        // that targets a different find than the one the page names.
+        const rung = nextDiscoveryAfter(clone.discoveryId ?? clone.discovery?.id ?? null);
+        if (!rung) {
+          // A corrupt save names no rung. Report the projection as it stands
+          // with no target rather than inventing an interval or throwing.
+          const out = withGoal(clone);
+          out.sandboxActive = true;
+          out.sandboxSeconds = 0;
+          out.targetedDiscovery = null;
+          out.discovery = null;
+          return out;
+        }
+        const woodBefore = clone.wood;
+        const result = typeof window.__fastForwardSandbox === "function"
+          ? window.__fastForwardSandbox(rung.minSec)
+          : null;
+        const projected = typeof window.__getSandboxClone === "function" ? window.__getSandboxClone() : clone;
+        const out = withGoal(projected || clone);
+        out.sandboxActive = true;
+        out.sandboxSeconds = rung.minSec;
+        out.targetedDiscovery = { id: rung.id, name: rung.name, minSec: rung.minSec };
+        out.woodGained = (projected ? projected.wood : clone.wood) - woodBefore;
+        // The rehearsal's own away find, named by the engine's discovery rule —
+        // the very rung that was targeted, never a bigger number.
+        out.discovery = result ? result.discovery : null;
+        if (result && result.milestones) out.milestones = { ...out.milestones, ...result.milestones };
+        return out;
+      },
+    },
+    {
       name: "sandbox-exit",
       description: "Exits the sandbox mode, discarding all sandbox state changes. "
         + "Real game state is returned afterwards, unchanged.",
