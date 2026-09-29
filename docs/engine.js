@@ -109,7 +109,7 @@ let state = {
 };
 
 /** Offline resources gained on last catch-up. */
-/** @type {{ wood: number, stone: number, elapsedSec: number, discovery: {id: string, name: string, bonus: number, credited: boolean}|null }} */
+/** @type {{ wood: number, stone: number, elapsedSec: number, discovery: {id: string, name: string, bonus: number, credited: boolean, alreadyOwned: boolean}|null }} */
 let offlineGained = { wood: 0, stone: 0, elapsedSec: 0, discovery: null };
 
 /**
@@ -122,7 +122,7 @@ let offlineGained = { wood: 0, stone: 0, elapsedSec: 0, discovery: null };
  *   elapsedSec: number,
  *   wood: number,
  *   stone: number,
- *   discovery: {id: string, name: string, bonus: number, credited: boolean}|null,
+ *   discovery: {id: string, name: string, bonus: number, credited: boolean, alreadyOwned: boolean}|null,
  *   milestones: Milestones,
  * }|null}
  */
@@ -281,9 +281,14 @@ function catchUp(firstVisit) {
     }
 
     const discovery = firstVisit ? null : discoverForElapsed(elapsedSec);
+    const ownedBefore = state.discoveryId;
     // A find is only credited when it beats everything owned so far; a weaker
     // repeat names itself but must not claim a bonus it did not add.
     const credited = Boolean(discovery && discovery.bonus > state.discoveryBonus);
+    // A repeated rung and a weaker rung both added nothing, but they are not the
+    // same news: one is already in the collection, the other is outshone by a
+    // find the player already owns. The panel words the two differently.
+    const alreadyOwned = Boolean(discovery && !credited && discovery.id === ownedBefore);
     if (credited) {
       state.rate += discovery.bonus - state.discoveryBonus;
       state.discoveryBonus = discovery.bonus;
@@ -291,11 +296,15 @@ function catchUp(firstVisit) {
       state.discoveryName = discovery.name;
     }
 
+    const discoveryRecord = discovery
+      ? { id: discovery.id, name: discovery.name, bonus: discovery.bonus, credited, alreadyOwned }
+      : null;
+
     offlineGained = {
       wood: woodGained,
       stone: stoneGained,
       elapsedSec: elapsedSec,
-      discovery: discovery ? { id: discovery.id, name: discovery.name, bonus: discovery.bonus, credited } : null,
+      discovery: discoveryRecord,
     };
 
     // The account of this return, recorded once. The wood and stone amounts
@@ -306,7 +315,7 @@ function catchUp(firstVisit) {
       elapsedSec,
       wood: displayAmount(displayAmount(state.wood) - displayAmount(beforeWood)),
       stone: displayAmount(displayAmount(state.stone) - displayAmount(beforeStone)),
-      discovery: discovery ? { id: discovery.id, name: discovery.name, bonus: discovery.bonus, credited } : null,
+      discovery: discoveryRecord,
       milestones: computeMilestones(before),
     };
     state.timestamp = now();
@@ -346,6 +355,25 @@ export function nextDiscoveryAfter(ownedId) {
   if (ownedIndex === -1) return null;
   const next = DISCOVERIES[ownedIndex + 1];
   return next ? { ...next } : null;
+}
+
+/**
+ * The one sentence that says what a return's find did to the wood rate: the
+ * boost it added and that the find is kept, or — when it added nothing —
+ * plainly which of the two no-change cases this is. Pure, so the welcome-back
+ * panel and the agent tools word the same return identically.
+ *
+ * @param {{name: string, bonus: number, credited: boolean, alreadyOwned?: boolean}|null} discovery
+ * @returns {string} the sentence, or "" when the return turned up no find
+ */
+export function returnDiscoveryText(discovery) {
+  if (!discovery) return "";
+  if (discovery.credited) {
+    return `+${discovery.bonus.toFixed(2)} wood/s, yours for good.`;
+  }
+  return discovery.alreadyOwned
+    ? "Already in your collection \u2014 nothing new added to your rate."
+    : "You already own a stronger find \u2014 nothing new added to your rate.";
 }
 
 function persist() {
@@ -860,7 +888,7 @@ export function consumeOfflineGained() {
  *   elapsed: string,
  *   wood: number,
  *   stone: number,
- *   discovery: {id: string, name: string, bonus: number, credited: boolean}|null,
+ *   discovery: {id: string, name: string, bonus: number, credited: boolean, alreadyOwned: boolean}|null,
  *   nextDiscovery: {id: string, name: string, bonus: number, minSec: number}|null,
  *   milestones: Milestones,
  * }}

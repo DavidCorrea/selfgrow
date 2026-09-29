@@ -811,6 +811,12 @@
       color: var(--highlight);
     }
 
+    /* What a repeat or weaker find did to the rate: nothing. Given its own
+       line so a return that changed nothing cannot read as a lasting boost. */
+    .offline-discovery-note {
+      color: var(--stone-color);
+    }
+
     /* The panel's closing line: the same next goal the goal panel shows, so a
        return always ends with something to reach for. */
     .offline-next-goal {
@@ -1131,7 +1137,7 @@
         </span>
       </div>
       <div id="offline-discovery-line" class="offline-discovery" hidden>
-        You found the <span class="offline-discovery-name" id="offline-discovery-name"></span>! <span class="offline-discovery-bonus" id="offline-discovery-bonus" hidden></span>
+        You found the <span class="offline-discovery-name" id="offline-discovery-name"></span>! <span class="offline-discovery-bonus" id="offline-discovery-bonus" hidden></span><span class="offline-discovery-note" id="offline-discovery-note" hidden></span>
       </div>
       <div class="offline-next-find" id="offline-next-find" hidden></div>
       <div id="offline-milestones">
@@ -1195,7 +1201,7 @@
   </div>
   <script type="module">
     import "./webmcp.js";
-    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, formatElapsed, sharpenAvailable, sharpenThreshold, displayAmount, exportSave, importSave, describeGoal, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS, computeStoneRateFor, computeStoneRate } from "./engine.js";
+    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, formatElapsed, sharpenAvailable, sharpenThreshold, displayAmount, exportSave, importSave, describeGoal, returnDiscoveryText, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS, computeStoneRateFor, computeStoneRate } from "./engine.js";
     import { cloneState, fastForward } from "./sandbox.js";
 
     init();
@@ -1247,6 +1253,7 @@
     const offlineDiscoveryLine = document.getElementById("offline-discovery-line");
     const offlineDiscoveryName = document.getElementById("offline-discovery-name");
     const offlineDiscoveryBonus = document.getElementById("offline-discovery-bonus");
+    const offlineDiscoveryNote = document.getElementById("offline-discovery-note");
     const offlineNextFind = document.getElementById("offline-next-find");
     const offlineNextGoalText = document.getElementById("offline-next-goal-text");
     const discoveryStat = document.getElementById("discovery-stat");
@@ -1435,22 +1442,31 @@
       }
 
       // ─── Away discovery ───
-      // The bonus line is only shown when this return actually raised the
-      // rate, so the panel never claims a boost the game state did not get.
+      // The find is always named, and what it did to the rate is always said:
+      // the credited case shows the wood/s it added, an already-owned or weaker
+      // find says plainly it added nothing new. The two share one sentence from
+      // the engine, so the panel can never claim a boost the state did not get.
       if (ret.discovery) {
         offlineDiscoveryName.textContent = ret.discovery.name;
         offlineDiscoveryLine.hidden = false;
+        const findText = returnDiscoveryText(ret.discovery);
         if (ret.discovery.credited) {
-          offlineDiscoveryBonus.textContent = `+${ret.discovery.bonus.toFixed(2)} wood/s, yours for good.`;
+          offlineDiscoveryBonus.textContent = findText;
           offlineDiscoveryBonus.hidden = false;
+          offlineDiscoveryNote.textContent = "";
+          offlineDiscoveryNote.hidden = true;
         } else {
           offlineDiscoveryBonus.textContent = "";
           offlineDiscoveryBonus.hidden = true;
+          offlineDiscoveryNote.textContent = findText;
+          offlineDiscoveryNote.hidden = false;
         }
       } else {
         offlineDiscoveryLine.hidden = true;
         offlineDiscoveryBonus.textContent = "";
         offlineDiscoveryBonus.hidden = true;
+        offlineDiscoveryNote.textContent = "";
+        offlineDiscoveryNote.hidden = true;
       }
 
       // ─── Next away find ───
