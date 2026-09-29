@@ -3702,6 +3702,84 @@ export async function checks() {
       problems.push("Mutating a sandbox clone should NOT affect the real engine state.");
     }
 
+    // --- Sandbox Test 1b: the clone is the engine's own snapshot, mirrored
+    // whole (issue #1054). Building the clone from the snapshot means a field
+    // the engine tracks can never be silently missing from a rehearsal — the
+    // Finds list and the last return's account included.
+    const snapshot = engine.getState();
+    const mirror = sandbox.cloneState(snapshot);
+    for (const key of Object.keys(snapshot)) {
+      if (!Object.prototype.hasOwnProperty.call(mirror, key)) {
+        problems.push(`sandbox cloneState dropped the engine's "${key}" field — a rehearsal must mirror every field the snapshot carries.`);
+      }
+    }
+    for (const key of ["finds", "lastReturn", "pendingEvent", "eventsOffered"]) {
+      if (!Object.prototype.hasOwnProperty.call(snapshot, key)) {
+        problems.push(`engine.getState() must carry "${key}" so a rehearsal cannot silently omit a field the game tracks.`);
+      }
+    }
+    if (JSON.stringify(mirror.finds) !== JSON.stringify(snapshot.finds)) {
+      problems.push(`sandbox cloneState should carry the save's Finds list (${JSON.stringify(snapshot.finds)}), got ${JSON.stringify(mirror.finds)}.`);
+    }
+    if (JSON.stringify(mirror.lastReturn) !== JSON.stringify(snapshot.lastReturn)) {
+      problems.push(`sandbox cloneState should carry the save's last return (${JSON.stringify(snapshot.lastReturn)}), got ${JSON.stringify(mirror.lastReturn)}.`);
+    }
+    // A field the engine adds to the snapshot later must flow through with no
+    // per-field change here.
+    const probedSnapshot = { ...snapshot, probeField: { nested: 1 } };
+    const probedClone = sandbox.cloneState(probedSnapshot);
+    if (!probedClone.probeField || probedClone.probeField.nested !== 1) {
+      problems.push(`sandbox cloneState should carry a field the snapshot adds without any per-field change, got ${JSON.stringify(probedClone.probeField)}.`);
+    } else {
+      probedClone.probeField.nested = 2;
+      if (probedSnapshot.probeField.nested !== 1) {
+        problems.push("sandbox cloneState must deep-copy nested fields: mutating the clone reached the snapshot it was built from.");
+      }
+    }
+
+    // A real one-hour absence actually records a last return, and a rehearsal
+    // of that save must carry it as an independent copy — something a
+    // hand-retyped mirror could never do.
+    const oneHourAgo = new Date(Date.now() - 3600 * 1000).toISOString();
+    localStorage.setItem("selfgrow-state", JSON.stringify({
+      wood: 0, rate: 0.1, upgradeLevel: 0, stone: 0,
+      totalWoodEarned: 0, totalStoneEarned: 0,
+      wallLevel: 0, forgeLevel: 0, expeditionLevel: 0, maps: 0,
+      stoneUnlocked: false,
+      discoveryBonus: 0, discoveryId: null, discoveryName: null,
+      lastReturn: null, pendingEvent: null, eventsOffered: 0,
+      timestamp: oneHourAgo, firstTimestamp: oneHourAgo,
+    }));
+    engine.init();
+    const returnSnapshot = engine.getState();
+    if (!returnSnapshot.lastReturn) {
+      problems.push("engine.getState() should carry the last return after a real 1h absence, got null.");
+    } else {
+      const returnClone = sandbox.cloneState(returnSnapshot);
+      if (JSON.stringify(returnClone.lastReturn) !== JSON.stringify(returnSnapshot.lastReturn)) {
+        problems.push(`sandbox cloneState should carry the 1h save's last return (${JSON.stringify(returnSnapshot.lastReturn)}), got ${JSON.stringify(returnClone.lastReturn)}.`);
+      }
+      returnClone.lastReturn.wood = 999999;
+      returnClone.lastReturn.seen = true;
+      const realAfterReturnMutate = engine.getState().lastReturn;
+      if (realAfterReturnMutate && (realAfterReturnMutate.wood === 999999 || realAfterReturnMutate.seen === true)) {
+        problems.push("Mutating a clone's lastReturn must not reach the real save — the rehearsal's copy must be independent.");
+      }
+    }
+
+    // --- Sandbox Test 1c: a rehearsal projects exactly the wood a real absence
+    // of the same length would — the engine's own effective rate times seconds.
+    engine.reset();
+    const rateSnapshot = engine.getState();
+    rateSnapshot.rate = 0.25;
+    rateSnapshot.maps = 4;
+    const rateClone = sandbox.cloneState(rateSnapshot);
+    const rateResult = sandbox.fastForward(rateClone, 3600);
+    const expectedWood = engine.effectiveWoodRate(rateSnapshot) * 3600;
+    if (Math.abs(rateResult.woodDelta - expectedWood) > 1e-9) {
+      problems.push(`sandbox fastForward(3600s) woodDelta ${rateResult.woodDelta} should equal the engine's effectiveWoodRate * 3600 (${expectedWood}).`);
+    }
+
     // --- Sandbox Test 2: fastForward adds resources ---
     engine.reset();
     const freshClone = sandbox.cloneState(engine.getState());
@@ -3966,8 +4044,8 @@ export async function checks() {
         problems.push(`sandbox-fast-forward-next-find should report the find a real ${nextFindRung.minSec}s absence turns up (${JSON.stringify(projectedRule)}), got ${JSON.stringify(nextFindResult.discovery)}.`);
       }
       const cloneAfterNextFind = typeof window.__getSandboxClone === "function" ? window.__getSandboxClone() : null;
-      if (!cloneAfterNextFind || cloneAfterNextFind.discoveryId !== nextFindRung.id) {
-        problems.push(`sandbox-fast-forward-next-find should leave the clone owning "${nextFindRung.id}", got "${cloneAfterNextFind ? cloneAfterNextFind.discoveryId : "(no clone)"}".`);
+      if (!cloneAfterNextFind || cloneAfterNextFind.discovery?.id !== nextFindRung.id) {
+        problems.push(`sandbox-fast-forward-next-find should leave the clone owning "${nextFindRung.id}", got "${cloneAfterNextFind ? cloneAfterNextFind.discovery?.id : "(no clone)"}".`);
       }
       if (nextFindResult.sandboxActive !== true) {
         problems.push("sandbox-fast-forward-next-find should report sandboxActive=true.");
@@ -4202,8 +4280,8 @@ export async function checks() {
           if (!afterJumpClone) {
             problems.push("Clicking #sb-btn-next-find should leave the sandbox clone in place.");
           } else {
-            if (afterJumpClone.discoveryId !== jumpRung.id) {
-              problems.push(`Clicking #sb-btn-next-find should fast-forward exactly ${jumpRung.minSec}s so the clone owns "${jumpRung.id}", got "${afterJumpClone.discoveryId}" — a wrong interval lands on a different rung or none.`);
+            if (afterJumpClone.discovery?.id !== jumpRung.id) {
+              problems.push(`Clicking #sb-btn-next-find should fast-forward exactly ${jumpRung.minSec}s so the clone owns "${jumpRung.id}", got "${afterJumpClone.discovery?.id}" — a wrong interval lands on a different rung or none.`);
             }
             const expectedJumpWood = woodBeforeJump + rateBeforeJump * jumpRung.minSec;
             if (Math.abs(afterJumpClone.wood - expectedJumpWood) > 1e-6) {

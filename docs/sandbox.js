@@ -7,45 +7,41 @@
  * @module sandbox
  */
 
-import { discoverForElapsed, awayEventForElapsed, clonePendingEvent, computeStoneRateFor, effectiveWoodRate, milestoneSnapshot, milestonesBetween } from "./engine.js";
+import { discoverForElapsed, awayEventForElapsed, computeStoneRateFor, effectiveWoodRate, milestoneSnapshot, milestonesBetween } from "./engine.js";
+
+/**
+ * Deep-copy a value so a rehearsal holds its own copy of everything the save
+ * tracks — nested objects and arrays included — and can never write through to
+ * the real save. Only the JSON-shaped values a save carries are expected.
+ *
+ * @template T
+ * @param {T} value
+ * @returns {T}
+ */
+function deepClone(value) {
+  if (Array.isArray(value)) return value.map(deepClone);
+  if (value && typeof value === "object") {
+    const copy = {};
+    for (const key of Object.keys(value)) copy[key] = deepClone(value[key]);
+    return copy;
+  }
+  return value;
+}
 
 /**
  * Deep-clone a game state object for isolated sandbox use.
+ *
+ * The clone is built from the engine's own full state snapshot rather than a
+ * hand-retyped field list, so every field the game tracks — the Finds list,
+ * the pending decision and the last return's account included — is present in
+ * a rehearsal, and a field the engine later adds appears here for free (see
+ * engine.getState).
  *
  * @param {import("./engine.js").GameState} state
  * @returns {import("./engine.js").GameState}
  */
 export function cloneState(state) {
-  return {
-    wood: state.wood,
-    rate: state.rate,
-    upgradeLevel: state.upgradeLevel,
-    stone: state.stone,
-    totalWoodEarned: state.totalWoodEarned,
-    totalStoneEarned: state.totalStoneEarned,
-    wallLevel: state.wallLevel,
-    forgeLevel: state.forgeLevel,
-    forgeWoodCost: state.forgeWoodCost,
-    forgeStoneCost: state.forgeStoneCost,
-    expeditionLevel: state.expeditionLevel,
-    maps: state.maps,
-    expeditionWoodCost: state.expeditionWoodCost,
-    expeditionStoneCost: state.expeditionStoneCost,
-    stoneUnlocked: state.stoneUnlocked,
-    discovery: state.discovery ? { ...state.discovery } : null,
-    discoveryBonus: state.discovery?.bonus ?? 0,
-    discoveryId: state.discovery?.id ?? null,
-    discoveryName: state.discovery?.name ?? null,
-    // The decision a real return is already waiting on, copied through the
-    // engine's own event clone so the rehearsal holds an independent event and
-    // can show the choice that is actually pending (see fastForward).
-    pendingEvent: clonePendingEvent(state.pendingEvent),
-    // How many happenings this save has been offered, so a rehearsal derives
-    // the happening the next real return of the same length would offer.
-    eventsOffered: state.eventsOffered ?? 0,
-    timestamp: state.timestamp,
-    firstTimestamp: state.firstTimestamp,
-  };
+  return deepClone(state);
 }
 
 /**
@@ -93,14 +89,15 @@ export function fastForward(clone, seconds) {
 
   // A rehearsal must turn up what a real absence of the same length would, so
   // this calls the engine's own rule rather than keeping a second ladder. The
-  // bonus is credited only when it beats what the clone already owns.
+  // bonus is credited only when it beats what the clone already owns. The
+  // snapshot carries the owned find as a nested `discovery`, the same shape the
+  // page and the tools read, so the clone never keeps a second copy of it.
   const found = discoverForElapsed(seconds);
-  const credited = Boolean(found && found.bonus > clone.discoveryBonus);
+  const ownedBonus = clone.discovery ? clone.discovery.bonus : 0;
+  const credited = Boolean(found && found.bonus > ownedBonus);
   if (credited) {
-    clone.rate += found.bonus - clone.discoveryBonus;
-    clone.discoveryBonus = found.bonus;
-    clone.discoveryId = found.id;
-    clone.discoveryName = found.name;
+    clone.rate += found.bonus - ownedBonus;
+    clone.discovery = { id: found.id, name: found.name, bonus: found.bonus };
   }
   const discovery = found
     ? { id: found.id, name: found.name, bonus: found.bonus, credited }
