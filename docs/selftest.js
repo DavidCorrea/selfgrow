@@ -1176,8 +1176,18 @@ export async function checks() {
         if (!result.stoneUnlocked && result.stoneRate !== 0) {
           problems.push(`read-state stoneRate should be 0 when stone is not unlocked, got ${result.stoneRate}.`);
         }
-        // Verify the result matches the engine's current state
+        // The stone rate the tool reports must be the engine's own rule, so a
+        // change to the engine's constants moves the page, this tool and the
+        // sandbox together instead of leaving a stale copy behind.
         const engine = await import("./engine.js");
+        if (engine.computeStoneRateFor(0) !== engine.STONE_BASE_RATE) {
+          problems.push(`engine.computeStoneRateFor(0) should equal STONE_BASE_RATE (${engine.STONE_BASE_RATE}), got ${engine.computeStoneRateFor(0)}.`);
+        }
+        const rateAtThousandWood = engine.STONE_BASE_RATE + 1000 * engine.STONE_RATE_BOOST_FACTOR;
+        if (Math.abs(engine.computeStoneRateFor(1000) - rateAtThousandWood) > 1e-12) {
+          problems.push(`engine.computeStoneRateFor(1000) should equal STONE_BASE_RATE + 1000 * STONE_RATE_BOOST_FACTOR (${rateAtThousandWood}), got ${engine.computeStoneRateFor(1000)}.`);
+        }
+        // Verify the result matches the engine's current state
         const s = engine.getState();
         if (result.wood !== s.wood) {
           problems.push(`read-state wood (${result.wood}) does not match engine.getState() wood (${s.wood}).`);
@@ -1271,6 +1281,32 @@ export async function checks() {
           }
         }
       }
+    }
+
+    // --- read-state reports the engine's stone rate, not a second copy ---
+    // Unlock stone with a non-zero wood total, so a duplicated formula would
+    // have something to disagree about.
+    if (readState) {
+      const engine = await import("./engine.js");
+      engine.reset();
+      for (let i = 0; i < 10; i++) engine.gatherWood();
+      engine.craftUpgrade(); // unlocks stone
+      engine.gatherWood();
+
+      const unlocked = await readState.execute({});
+      const engineRate = engine.computeStoneRate();
+      if (engineRate <= 0) {
+        problems.push(`Unlocked stone should yield a positive engine rate, got ${engineRate} — the read-state rate check below would be vacuous.`);
+      }
+      if (unlocked.stoneUnlocked !== true) {
+        problems.push(`read-state should report stoneUnlocked=true after the first sharpen, got ${JSON.stringify(unlocked.stoneUnlocked)}.`);
+      }
+      if (Math.abs(unlocked.stoneRate - engineRate) > 1e-12) {
+        problems.push(`read-state stoneRate (${unlocked.stoneRate}) disagrees with the engine's computeStoneRate() (${engineRate}) while stone is unlocked — the tool must not keep its own copy of the stone-rate formula.`);
+      }
+
+      engine.reset();
+      engine.init();
     }
 
     // --- perform-action tool ---
@@ -3398,6 +3434,46 @@ export async function checks() {
     }
     if (result2.woodDelta <= 0) {
       problems.push(`sandbox fastForward(1h) with stone unlocked should produce positive woodDelta, got ${result2.woodDelta}.`);
+    }
+
+    // A rehearsal must project the engine's stone rate for the clone's own wood
+    // total, never a second copy that could promise stone the game would not pay.
+    const projectedStoneRate = result2.stoneDelta / 3600;
+    const engineStoneRate = engine.computeStoneRateFor(stoneState.totalWoodEarned + result2.woodDelta);
+    if (Math.abs(projectedStoneRate - engineStoneRate) > 1e-9) {
+      problems.push(`Sandbox projected stone rate ${projectedStoneRate}/s disagrees with the engine's computeStoneRateFor() for the same wood total (${engineStoneRate}/s).`);
+    }
+
+    // --- Sandbox Test 3b: the rehearsal panel shows the engine's stone rate ---
+    // The panel is a third reader of the same rule, so it must show a number the
+    // engine's rule produces for the clone's wood total — a second copy of the
+    // formula would show something else entirely. A long wood total is used so a
+    // changed constant moves the displayed number well clear of the read's own
+    // slack (the live tick can credit wood between the clone and the read).
+    if (typeof window.__enterSandbox !== "function" || typeof window.__fastForwardSandbox !== "function") {
+      problems.push("Expected window.__enterSandbox/__fastForwardSandbox to drive the sandbox panel.");
+    } else {
+      engine.reset();
+      for (let i = 0; i < 10; i++) engine.gatherWood();
+      engine.craftUpgrade(); // unlocks stone
+      for (let i = 0; i < 2000; i++) engine.gatherWood();
+      const woodBeforeRehearsal = engine.getState().totalWoodEarned;
+
+      window.__enterSandbox();
+      window.__fastForwardSandbox(0); // a zero-second window leaves the wood total as cloned
+      const panelRateText = document.getElementById("sb-stone-rate").textContent;
+      const panelRate = Number.parseFloat(panelRateText.replace(/[^0-9.eE+-]/g, ""));
+      const lowestPossible = engine.computeStoneRateFor(woodBeforeRehearsal);
+      const highestPossible = engine.computeStoneRateFor(engine.getState().totalWoodEarned);
+      const displayRounding = 5e-5; // the panel prints four decimals
+      if (!Number.isFinite(panelRate)
+        || panelRate < lowestPossible - displayRounding
+        || panelRate > highestPossible + displayRounding) {
+        problems.push(`Sandbox panel shows stone rate "${panelRateText}" but the engine's rule gives ${lowestPossible}/s to ${highestPossible}/s for the wood total it rehearsed — the panel must not keep its own formula.`);
+      }
+      window.__exitSandbox();
+      engine.reset();
+      engine.init();
     }
 
     // --- Sandbox Test 4: fastForward milestones detection ---

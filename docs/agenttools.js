@@ -8,7 +8,7 @@
  * @module agenttools
  */
 
-import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, formatElapsed, sharpenAvailable, displayAmount, exportSave, importSave, describeGoal, FIRST_GOAL_WOOD, UPGRADE_COST, WALL_COST, STONE_GATHER_AMOUNT, FORGE_CLICK_POWER_BONUS } from "./engine.js";
+import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, formatElapsed, sharpenAvailable, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, FIRST_GOAL_WOOD, UPGRADE_COST, WALL_COST, STONE_GATHER_AMOUNT, FORGE_CLICK_POWER_BONUS } from "./engine.js";
 
 /**
  * The last return as the welcome-back panel is showing it, read straight from
@@ -44,18 +44,11 @@ function readReturnSummary() {
 }
 
 /**
- * Compute stone rate from total wood earned.
- */
-function computeStoneRate(totalWoodEarned) {
-  return 0.05 + totalWoodEarned * 0.001;
-}
-
-/**
  * Augment a raw state snapshot with goal, upgrade, and stone info.
  */
 function withGoal(s) {
   const upgradeAvailable = sharpenAvailable(s);
-  const stoneRate = s.stoneUnlocked ? computeStoneRate(s.totalWoodEarned) : 0;
+  const stoneRate = s.stoneUnlocked ? computeStoneRateFor(s.totalWoodEarned) : 0;
   const clickPower = 1 + s.wallLevel * 1 + s.forgeLevel * FORGE_CLICK_POWER_BONUS;
   const ret = readReturnSummary();
 

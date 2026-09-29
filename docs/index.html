@@ -1180,7 +1180,7 @@
   </div>
   <script type="module">
     import "./webmcp.js";
-    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, formatElapsed, sharpenAvailable, sharpenThreshold, displayAmount, exportSave, importSave, describeGoal, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS, computeStoneRate } from "./engine.js";
+    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, formatElapsed, sharpenAvailable, sharpenThreshold, displayAmount, exportSave, importSave, describeGoal, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS, computeStoneRateFor, computeStoneRate } from "./engine.js";
     import { cloneState, fastForward } from "./sandbox.js";
 
     init();
@@ -2064,7 +2064,7 @@
         sbStoneRate.hidden = false;
         const stoneDisplay = c.stone >= 10 ? Math.floor(c.stone) : c.stone.toFixed(2);
         sbStone.textContent = stoneDisplay;
-        const stoneRate = (0.05 + c.totalWoodEarned * 0.001).toFixed(4);
+        const stoneRate = computeStoneRateFor(c.totalWoodEarned).toFixed(4);
         sbStoneRate.textContent = stoneRate + "/s";
       } else {
         sbStoneLabel.hidden = true;
