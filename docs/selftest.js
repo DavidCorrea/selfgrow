@@ -6513,6 +6513,79 @@ export async function checks() {
       }
     }
 
+    // (g) The welcome-back panel is where a player actually meets the event:
+    // it shows the happening's title and one button per choice, each carrying
+    // the option's own label and effect sentence. Clicking a button grants
+    // exactly that stated effect once and the section disappears, so the other
+    // choice can never then be taken.
+    seedAwaySave(600000, { stoneUnlocked: true });
+    if (typeof window.__showOfflineSummary !== "function") {
+      problems.push("index.html must expose showOfflineSummary so a return can offer its event to a player.");
+    } else {
+      const panelEvent = engine.getState().pendingEvent;
+      window.__showOfflineSummary();
+      const panel = document.getElementById("offline-summary");
+      const eventSection = document.getElementById("offline-event");
+      if (!panel || panel.hidden) {
+        problems.push("The welcome-back panel should be visible for a 600s return that owes a decision.");
+      }
+      if (!panelEvent) {
+        problems.push("A 600s return should seed a pending event for the panel to render.");
+      } else if (!eventSection || eventSection.hidden) {
+        problems.push("The welcome-back panel must show the pending away event, but #offline-event was hidden.");
+      } else {
+        const titleEl = document.getElementById("offline-event-title");
+        if (!titleEl || titleEl.textContent !== panelEvent.title) {
+          problems.push(`The panel must show the event title ${JSON.stringify(panelEvent.title)}, got ${JSON.stringify(titleEl && titleEl.textContent)}.`);
+        }
+        panelEvent.options.forEach((option, i) => {
+          const labelEl = document.getElementById(`away-option-label-${i}`);
+          const effectEl = document.getElementById(`away-option-effect-${i}`);
+          const button = document.getElementById(`away-option-${i}`);
+          const buttonText = button ? button.textContent : "";
+          if (!labelEl || labelEl.textContent !== option.label) {
+            problems.push(`Panel option ${i} label should read ${JSON.stringify(option.label)}, got ${JSON.stringify(labelEl && labelEl.textContent)}.`);
+          }
+          if (!effectEl || effectEl.textContent !== option.effectText) {
+            problems.push(`Panel option ${i} effect should read ${JSON.stringify(option.effectText)}, got ${JSON.stringify(effectEl && effectEl.textContent)}.`);
+          }
+          if (!buttonText.includes(option.label) || !buttonText.includes(option.effectText)) {
+            problems.push(`Panel option ${i} button must show both its label and its effect text, got ${JSON.stringify(buttonText)}.`);
+          }
+        });
+
+        // Click the first choice and hold the grant against what its own
+        // button promised, then confirm the decision is spent.
+        const chosenOption = panelEvent.options[0];
+        const beforeClick = engine.getState();
+        const button0 = document.getElementById("away-option-0");
+        if (!button0) {
+          problems.push("The panel must render a clickable button for each away-event option.");
+        } else {
+          button0.click();
+          const afterClick = engine.getState();
+          const effect = chosenOption.effect;
+          if (effect.kind === "wood" && Math.abs((afterClick.wood - beforeClick.wood) - effect.amount) > 1e-9) {
+            problems.push(`Clicking the wood option should add exactly +${effect.amount} wood, got ${afterClick.wood - beforeClick.wood}.`);
+          }
+          if (effect.kind === "stone" && Math.abs((afterClick.stone - beforeClick.stone) - effect.amount) > 1e-9) {
+            problems.push(`Clicking the stone option should add exactly +${effect.amount} stone, got ${afterClick.stone - beforeClick.stone}.`);
+          }
+          if (effect.kind === "rate" && Math.abs((afterClick.rate - beforeClick.rate) - effect.amount) > 1e-9) {
+            problems.push(`Clicking the rate option should add exactly +${effect.amount} wood/s, got ${afterClick.rate - beforeClick.rate}.`);
+          }
+          if (afterClick.pendingEvent !== null) {
+            problems.push(`Choosing through the panel must clear the event, got ${JSON.stringify(afterClick.pendingEvent)}.`);
+          }
+          if (!eventSection.hidden) {
+            problems.push("The away-event section must disappear once a choice has been taken.");
+          }
+        }
+      }
+      // Close the panel so later checks start from a usable page.
+      if (typeof window.__dismissOffline === "function") window.__dismissOffline();
+    }
+
     engine.reset();
     engine.init();
   } catch (err) {
