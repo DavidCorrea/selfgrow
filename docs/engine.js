@@ -505,6 +505,22 @@ export function nextDiscoveryAfter(ownedId) {
 }
 
 /**
+ * The one sentence that names the next away find and the absence it takes, so
+ * the status panel and the welcome-back panel word the same rung identically.
+ * It reads whatever rung nextDiscoveryAfter produced — the ladder lookup has
+ * one home, so no surface can invent a different find. Pure, and null in,
+ * null out: a save with no known next rung yields no sentence rather than a
+ * dead end.
+ *
+ * @param {{ id: string, name: string, bonus: number, minSec: number }|null|undefined} next
+ * @returns {string|null} the sentence for a valid rung, or null
+ */
+export function nextAwayFindText(next) {
+  if (!next) return null;
+  return `Next away find: ${next.name} \u2014 away ${formatElapsed(next.minSec * 1000)}.`;
+}
+
+/**
  * The one sentence that says what a return's find did to the wood rate: the
  * boost it added and that the find is kept, or — when it added nothing —
  * plainly which of the two no-change cases this is. Pure, so the welcome-back
