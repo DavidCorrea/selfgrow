@@ -5894,6 +5894,27 @@ export async function checks() {
       problems.push("A refused import must leave the live save byte-identical.");
     }
 
+    // (b2) inspectSave answers without touching the save, so the page can ask
+    // whether a code is good before it offers to apply it.
+    const beforeInspect = JSON.stringify(engine.getState());
+    const goodLook = engine.inspectSave(btoa(JSON.stringify(knownSave)));
+    if (!goodLook.ok || !goodLook.saved || goodLook.saved.wood !== knownSave.wood) {
+      problems.push(`inspectSave should decode a valid code without applying it, got ${JSON.stringify(goodLook)}.`);
+    }
+    const emptyLook = engine.inspectSave("");
+    if (emptyLook.ok !== false || typeof emptyLook.reason !== "string" || emptyLook.reason.length === 0) {
+      problems.push(`inspectSave should refuse an empty code with a plain reason, got ${JSON.stringify(emptyLook)}.`);
+    }
+    if ("saved" in emptyLook) {
+      problems.push("inspectSave should not carry a save when it refuses a code.");
+    }
+    if (engine.inspectSave("!!!not-base64!!!").ok !== false) {
+      problems.push("inspectSave should refuse a code that is not base64.");
+    }
+    if (JSON.stringify(engine.getState()) !== beforeInspect) {
+      problems.push("inspectSave must never change the live save.");
+    }
+
     // (c) Clicking Reveal Save Code fills the page with the engine's own code.
     const revealBtn = document.getElementById("btn-reveal-save");
     const saveCodeField = document.getElementById("save-code");
@@ -5934,6 +5955,94 @@ export async function checks() {
       }
       if (JSON.stringify(engine.getState()) !== beforeRestore) {
         problems.push("Restoring an invalid code must leave the existing save untouched.");
+      }
+    }
+
+    // (d2) A valid code arms the restore instead of performing it: the panel
+    // names what the current save holds, asks for a second press, and leaves
+    // the world untouched until that press arrives.
+    const confirmBlock = document.getElementById("save-confirm");
+    const confirmText = document.getElementById("save-confirm-text");
+    const confirmBtn = document.getElementById("btn-restore-confirm");
+    const cancelBtn = document.getElementById("btn-restore-cancel");
+    if (!importInput || !restoreBtn || !statusEl || !confirmBlock || !confirmText || !confirmBtn || !cancelBtn) {
+      problems.push("The save panel should provide #save-confirm, #save-confirm-text, #btn-restore-confirm and #btn-restore-cancel for the restore confirmation.");
+    } else {
+      // A current save with named systems, and a different code to restore.
+      const currentSave = {
+        wood: 777,
+        rate: 0.2,
+        upgradeLevel: 2,
+        stone: 11,
+        totalWoodEarned: 900,
+        totalStoneEarned: 12,
+        wallLevel: 1,
+        forgeLevel: 0,
+        expeditionLevel: 0,
+        maps: 0,
+        stoneUnlocked: true,
+        timestamp: "2024-06-01T00:00:00.000Z",
+        firstTimestamp: "2024-06-01T00:00:00.000Z",
+      };
+      const incomingSave = { ...currentSave, wood: 42, stone: 0, wallLevel: 0, stoneUnlocked: false };
+
+      engine.importSave(btoa(JSON.stringify(currentSave)));
+      const currentStateJson = JSON.stringify(engine.getState());
+
+      importInput.value = btoa(JSON.stringify(incomingSave));
+      restoreBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+      if (confirmBlock.hidden) {
+        problems.push("Pressing Restore Save with a valid code should reveal the confirmation prompt (it stayed hidden).");
+      }
+      if (!confirmText.textContent.includes("777")) {
+        problems.push(`The confirmation should name the current save's wood (777), got ${JSON.stringify(confirmText.textContent)}.`);
+      }
+      if (!confirmText.textContent.includes("stone")) {
+        problems.push(`The confirmation should name the systems the current save has unlocked (stone), got ${JSON.stringify(confirmText.textContent)}.`);
+      }
+      if (JSON.stringify(engine.getState()) !== currentStateJson) {
+        problems.push("Pressing Restore Save with a valid code must not change the save before it is confirmed.");
+      }
+
+      // Cancel leaves the world and the pasted code exactly as they were.
+      const pastedCode = importInput.value;
+      cancelBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      if (!confirmBlock.hidden) {
+        problems.push("Cancelling a pending restore should hide the confirmation prompt.");
+      }
+      if (JSON.stringify(engine.getState()) !== currentStateJson) {
+        problems.push("Cancelling a pending restore must leave the current save untouched.");
+      }
+      if (importInput.value !== pastedCode) {
+        problems.push("Cancelling a pending restore must leave the pasted code as it was.");
+      }
+
+      // A second press, then Confirm, replaces the save and reports success.
+      restoreBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      confirmBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      const afterConfirm = engine.getState();
+      if (afterConfirm.wood !== incomingSave.wood) {
+        problems.push(`Confirming a restore should replace the save with the code's (wood ${incomingSave.wood}), got ${afterConfirm.wood}.`);
+      }
+      if (!/restored/i.test(statusEl.textContent)) {
+        problems.push(`Confirming a restore should report success in #save-status, got ${JSON.stringify(statusEl.textContent)}.`);
+      }
+      if (!confirmBlock.hidden) {
+        problems.push("Confirming a restore should hide the confirmation prompt afterwards.");
+      }
+
+      // An invalid code still reports its plain reason and arms nothing.
+      importInput.value = "definitely not a save code";
+      restoreBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      if (!statusEl.textContent.trim()) {
+        problems.push("Restoring an invalid code should show a plain reason in #save-status.");
+      }
+      if (!confirmBlock.hidden) {
+        problems.push("Restoring an invalid code should not show the confirmation prompt.");
+      }
+      if (JSON.stringify(engine.getState()) !== JSON.stringify(afterConfirm)) {
+        problems.push("Restoring an invalid code must leave the save untouched.");
       }
     }
 

@@ -1204,6 +1204,35 @@ export function exportSave() {
 }
 
 /**
+ * Check a save code without touching the live save — the deliberate first half
+ * of a restore. Returns ok:true and the decoded, validated save when the code
+ * could be applied, or ok:false and a plain reason when it could not. importSave
+ * is the only writer and calls this, so a prompt that tells a player a code is
+ * good can never disagree with the restore that follows it.
+ *
+ * @param {string} code
+ * @returns {{ ok: boolean, reason?: string, saved?: object }}
+ */
+export function inspectSave(code) {
+  if (typeof code !== "string" || code.trim() === "") {
+    return { ok: false, reason: "Enter a save code to restore." };
+  }
+
+  let saved;
+  try {
+    saved = JSON.parse(atob(code.trim()));
+  } catch {
+    return { ok: false, reason: "That code is not a valid save — it looks corrupted or incomplete." };
+  }
+
+  if (!isValidSaved(saved)) {
+    return { ok: false, reason: "That code is not a valid save — it is missing required fields." };
+  }
+
+  return { ok: true, saved };
+}
+
+/**
  * Restore a save from a code produced by exportSave. The code is decoded and
  * validated before anything is touched, so a corrupted or foreign code returns
  * a refusal and leaves the live and stored save exactly as they were. On
@@ -1216,22 +1245,12 @@ export function exportSave() {
  * @returns {{ ok: boolean, reason?: string, state: GameState }}
  */
 export function importSave(code) {
-  if (typeof code !== "string" || code.trim() === "") {
-    return { ok: false, reason: "Enter a save code to restore.", state: getState() };
+  const inspected = inspectSave(code);
+  if (!inspected.ok) {
+    return { ok: false, reason: inspected.reason, state: getState() };
   }
 
-  let saved;
-  try {
-    saved = JSON.parse(atob(code.trim()));
-  } catch {
-    return { ok: false, reason: "That code is not a valid save — it looks corrupted or incomplete.", state: getState() };
-  }
-
-  if (!isValidSaved(saved)) {
-    return { ok: false, reason: "That code is not a valid save — it is missing required fields.", state: getState() };
-  }
-
-  applyPersisted(saved);
+  applyPersisted(inspected.saved);
   persist();
   return { ok: true, state: getState() };
 }

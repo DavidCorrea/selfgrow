@@ -875,6 +875,32 @@
       margin: 0.25rem 0;
     }
 
+    #save-confirm {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      padding: 0.5rem;
+      border: 3px solid var(--highlight);
+      background: #0a0a1a;
+    }
+
+    #save-confirm[hidden] {
+      display: none;
+    }
+
+    #save-confirm-text {
+      font-size: 0.5rem;
+      font-family: var(--body-font);
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    .save-confirm-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
     #save-status {
       font-size: 0.5rem;
       font-family: var(--body-font);
@@ -1533,6 +1559,19 @@
           <button class="btn" id="btn-restore-save" type="button" aria-label="Restore Save">
             <span class="btn-icon">&#x21BA;</span> Restore Save
           </button>
+          <!-- Deliberate second step: restoring replaces the world, so the page
+               names what is about to be lost and asks before it is lost. -->
+          <div id="save-confirm" hidden>
+            <p id="save-confirm-text"></p>
+            <div class="save-confirm-actions">
+              <button class="btn" id="btn-restore-confirm" type="button" aria-label="Confirm Restore Save" aria-describedby="save-confirm-text">
+                Confirm Restore
+              </button>
+              <button class="btn" id="btn-restore-cancel" type="button" aria-label="Cancel Restore Save">
+                Cancel
+              </button>
+            </div>
+          </div>
           <p id="save-status" role="alert"></p>
         </div>
       </details>
@@ -1657,7 +1696,7 @@
   </div>
   <script type="module">
     import "./webmcp.js";
-    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, chooseAwayEventOption, markReturnSeen, formatElapsed, nextAwayFindText, nextDiscoveryAfter, sharpenAvailable, sharpenThreshold, expeditionUnlocked, displayAmount, formatAmount, formatRate, exportSave, importSave, describeGoal, returnDiscoveryLine, pauseForHidden, resumeFromHidden, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, clickPowerFor, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
+    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, chooseAwayEventOption, markReturnSeen, formatElapsed, nextAwayFindText, nextDiscoveryAfter, sharpenAvailable, sharpenThreshold, expeditionUnlocked, displayAmount, formatAmount, formatRate, exportSave, importSave, inspectSave, describeGoal, returnDiscoveryLine, pauseForHidden, resumeFromHidden, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, clickPowerFor, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
     import { cloneState, fastForward } from "./sandbox.js";
     import { mountSprites, mountSprite, updateSprites, playReaction } from "./sprites.js";
 
@@ -1746,6 +1785,10 @@
     const saveImportInput = document.getElementById("save-import-input");
     const btnRestoreSave = document.getElementById("btn-restore-save");
     const saveStatus = document.getElementById("save-status");
+    const saveConfirm = document.getElementById("save-confirm");
+    const saveConfirmText = document.getElementById("save-confirm-text");
+    const btnRestoreConfirm = document.getElementById("btn-restore-confirm");
+    const btnRestoreCancel = document.getElementById("btn-restore-cancel");
 
     // ─── Cooldown state ───
     let woodCooldown = false;
@@ -2110,14 +2153,64 @@
       }
     }
 
+    // The code whose restore is waiting on a confirming press, or null when no
+    // restore is pending. Held here rather than re-read from the textarea so
+    // editing the code after the prompt cannot make the confirm press restore
+    // something the player was never shown.
+    let pendingRestoreCode = null;
+
+    // What the current save holds, in the player's own terms: its wood and the
+    // systems it has unlocked. This is the sentence the restore prompt shows,
+    // so the world a code would replace is always named before it is replaced.
+    function describeCurrentSave() {
+      const s = getState();
+      const systems = [];
+      if (s.stoneUnlocked) systems.push("stone");
+      if (s.wallLevel >= 1) systems.push("walls", "the forge");
+      if ((s.maps || 0) > 0) systems.push("expedition maps");
+      const unlocked = systems.length ? systems.join(", ") : "no systems unlocked yet";
+      return "Restoring replaces this save: " + displayAmount(s.wood) + " wood and " + unlocked + ".";
+    }
+
+    function hideRestoreConfirm() {
+      pendingRestoreCode = null;
+      saveConfirm.hidden = true;
+    }
+
+    // Step one: a valid code arms the restore and names what it would replace;
+    // anything else reports its plain reason and changes nothing.
     function restoreSave() {
-      const result = importSave(saveImportInput.value);
+      const inspected = inspectSave(saveImportInput.value);
+      if (!inspected.ok) {
+        hideRestoreConfirm();
+        setSaveStatus(inspected.reason, true);
+        return;
+      }
+      pendingRestoreCode = saveImportInput.value;
+      saveConfirmText.textContent = describeCurrentSave() + " Press Confirm Restore to replace it.";
+      saveConfirm.hidden = false;
+      setSaveStatus("", false);
+      btnRestoreConfirm.focus();
+    }
+
+    // Step two: the deliberate press. The armed code is restored, not whatever
+    // the textarea holds now, so the prompt and the restore cannot disagree.
+    function confirmRestore() {
+      const code = pendingRestoreCode;
+      hideRestoreConfirm();
+      if (code === null) return;
+      const result = importSave(code);
       if (!result.ok) {
         setSaveStatus(result.reason, true);
         return;
       }
       renderUI();
       setSaveStatus("Save restored.", false);
+    }
+
+    function cancelRestore() {
+      hideRestoreConfirm();
+      setSaveStatus("Restore cancelled \u2014 your current save is unchanged.", false);
     }
 
     btnDismiss.addEventListener("click", dismissOffline);
@@ -2164,6 +2257,13 @@
     btnRevealSave.addEventListener("click", revealSaveCode);
     btnCopySave.addEventListener("click", copySaveCode);
     btnRestoreSave.addEventListener("click", restoreSave);
+    btnRestoreConfirm.addEventListener("click", confirmRestore);
+    btnRestoreCancel.addEventListener("click", cancelRestore);
+    // Editing the pasted code drops a prompt that no longer describes it, so a
+    // confirming press can never restore a code the player has since changed.
+    saveImportInput.addEventListener("input", () => {
+      if (!saveConfirm.hidden) hideRestoreConfirm();
+    });
 
     // ─── Render ───
     // Click power can carry a half-unit bonus from the forge, so it is shown
