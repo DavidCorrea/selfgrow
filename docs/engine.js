@@ -62,11 +62,11 @@ const DISCOVERIES = [
 ];
 
 // Exported for external use (tools, UI)
-export { FIRST_GOAL_WOOD, UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, STONE_BASE_RATE, WALL_COST, GOAL_STONE, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT,
+export { FIRST_GOAL_WOOD, UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, STONE_BASE_RATE, STONE_RATE_BOOST_FACTOR, WALL_COST, GOAL_STONE, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT,
   FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_WOOD_COST_INC, FORGE_STONE_COST_INC,
   FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS,
   EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC,
-  EXPEDITION_WOOD_RATE_MULTIPLIER, RETURN_MIN_SEC, computeStoneRate };
+  EXPEDITION_WOOD_RATE_MULTIPLIER, RETURN_MIN_SEC, computeStoneRateFor, computeStoneRate };
 
 /**
  * @typedef {Object} GameState
@@ -204,12 +204,22 @@ function now() {
 }
 
 /**
+ * The stone-rate rule itself: stone per second for a given lifetime wood total.
+ * Unlock is deliberately not part of it, so renderers, the sandbox and the
+ * agent tools can project a rate for any state without a second copy of the
+ * formula drifting away from the engine's constants.
+ */
+function computeStoneRateFor(totalWoodEarned) {
+  return STONE_BASE_RATE + totalWoodEarned * STONE_RATE_BOOST_FACTOR;
+}
+
+/**
  * Compute the current stone accumulation rate based on total wood earned.
  * Only meaningful when stone is unlocked.
  */
 function computeStoneRate() {
   if (!state.stoneUnlocked) return 0;
-  return STONE_BASE_RATE + state.totalWoodEarned * STONE_RATE_BOOST_FACTOR;
+  return computeStoneRateFor(state.totalWoodEarned);
 }
 
 function computeForgeWoodCost(forgeLevel) {

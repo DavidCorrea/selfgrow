@@ -7,11 +7,9 @@
  * @module sandbox
  */
 
-import { discoverForElapsed } from "./engine.js";
+import { discoverForElapsed, computeStoneRateFor } from "./engine.js";
 
-// ─── Internal constants (mirror engine.js values) ───
-const STONE_BASE_RATE = 0.05;
-const STONE_RATE_BOOST_FACTOR = 0.001;
+// ─── Internal constant (mirrors engine.js) ───
 const EXPEDITION_WOOD_RATE_MULTIPLIER = 0.05;
 
 /**
@@ -44,16 +42,6 @@ export function cloneState(state) {
     timestamp: state.timestamp,
     firstTimestamp: state.firstTimestamp,
   };
-}
-
-/**
- * Compute stone rate for a given clone state.
- * @param {import("./engine.js").GameState} clone
- * @returns {number}
- */
-function computeStoneRate(clone) {
-  if (!clone.stoneUnlocked) return 0;
-  return STONE_BASE_RATE + clone.totalWoodEarned * STONE_RATE_BOOST_FACTOR;
 }
 
 /**
@@ -101,9 +89,11 @@ export function fastForward(clone, seconds) {
   clone.wood += woodGained;
   clone.totalWoodEarned += woodGained;
 
+  // The projected stone rate is the engine's own rule, applied to the clone, so
+  // a rehearsal can never promise a rate the game would not pay.
   let stoneGained = 0;
   if (clone.stoneUnlocked) {
-    stoneGained = computeStoneRate(clone) * seconds;
+    stoneGained = computeStoneRateFor(clone.totalWoodEarned) * seconds;
     clone.stone += stoneGained;
     clone.totalStoneEarned += stoneGained;
   }
