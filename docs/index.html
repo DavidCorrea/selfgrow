@@ -1024,6 +1024,23 @@
       font-size: 0.4rem;
     }
 
+    /* What the player chose, stated after the buttons are gone. The words are
+       the chosen option's own label and effect, so the panel can never claim
+       a choice that granted something else. Hidden until a choice is taken. */
+    .offline-event-chosen {
+      color: var(--highlight);
+      font-family: var(--body-font);
+      font-size: 0.45rem;
+      line-height: 1.6;
+      margin-top: 0.5rem;
+      padding-top: 0.6rem;
+      border-top: 3px solid #3a3a5a;
+    }
+
+    .offline-event-chosen[hidden] {
+      display: none;
+    }
+
     .btn-dismiss {
       font-family: var(--pixel-font);
       font-size: 0.5rem;
@@ -1450,6 +1467,9 @@
           </button>
         </div>
       </div>
+      <!-- The choice once taken: names the option and the effect it granted,
+           announced to assistive tech. Empty and hidden until then. -->
+      <div id="offline-event-chosen" class="offline-event-chosen" role="status" aria-live="polite" hidden></div>
       <div id="offline-milestones">
         <div class="offline-milestone" id="milestone-sharpen" hidden>You can now sharpen your axe!</div>
         <div class="offline-milestone" id="milestone-stone" hidden>Stone is now available!</div>
@@ -1573,6 +1593,7 @@
     const offlineNextFind = document.getElementById("offline-next-find");
     const offlineEvent = document.getElementById("offline-event");
     const offlineEventTitle = document.getElementById("offline-event-title");
+    const offlineEventChosen = document.getElementById("offline-event-chosen");
     const awayOptionButtons = [
       document.getElementById("away-option-0"),
       document.getElementById("away-option-1"),
@@ -1765,6 +1786,10 @@
     // never shows an empty prompt.
     function renderOfflineEvent(event) {
       if (!offlineEvent) return;
+      // A fresh offer, or none at all, supersedes any earlier confirmation: the
+      // panel only ever states the choice the current event left to take.
+      offlineEventChosen.textContent = "";
+      offlineEventChosen.hidden = true;
       if (!event) {
         offlineEvent.hidden = true;
         return;
@@ -1786,10 +1811,18 @@
     // without it — the other choice can never then be taken. Focus moves to
     // the dismiss button because the button that was focused is now gone.
     function chooseAwayOption(optionId) {
+      const offered = getState().pendingEvent;
+      const option = offered && offered.options.find((candidate) => candidate.id === optionId);
       const result = chooseAwayEventOption(optionId);
       if (!result.chosen) return;
       renderUI();
+      // renderOfflineEvent(null) hides the buttons and clears any stale line;
+      // write the confirmation after it, from the option the panel offered.
       renderOfflineEvent(null);
+      if (option) {
+        offlineEventChosen.textContent = `You chose: ${option.label} \u2014 ${option.effectText}`;
+        offlineEventChosen.hidden = false;
+      }
       btnDismiss.focus();
     }
 

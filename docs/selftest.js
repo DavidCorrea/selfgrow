@@ -6649,7 +6649,32 @@ export async function checks() {
           if (!eventSection.hidden) {
             problems.push("The away-event section must disappear once a choice has been taken.");
           }
+
+          // The panel must then say plainly what was chosen, naming the option
+          // and the effect it granted — the same words the button promised.
+          const chosenLine = document.getElementById("offline-event-chosen");
+          if (!chosenLine) {
+            problems.push("The panel must have an #offline-event-chosen line stating the choice.");
+          } else if (chosenLine.hidden) {
+            problems.push("After choosing, the panel must show #offline-event-chosen stating what was chosen.");
+          } else {
+            if (!chosenLine.textContent.includes(chosenOption.label)) {
+              problems.push(`The chosen line must name the chosen option ${JSON.stringify(chosenOption.label)}, got ${JSON.stringify(chosenLine.textContent)}.`);
+            }
+            if (!chosenLine.textContent.includes(chosenOption.effectText)) {
+              problems.push(`The chosen line must state the effect ${JSON.stringify(chosenOption.effectText)}, got ${JSON.stringify(chosenLine.textContent)}.`);
+            }
+          }
         }
+
+        // Both choices must be keyboard-reachable before the click, so a
+        // player who never uses a mouse still faces the same two options.
+        panelEvent.options.forEach((option, i) => {
+          const button = document.getElementById(`away-option-${i}`);
+          if (!button || button.tabIndex < 0) {
+            problems.push(`Panel option ${i} must be keyboard-reachable, got tabIndex ${button ? button.tabIndex : "no button"}.`);
+          }
+        });
       }
       // Close the panel so later checks start from a usable page.
       if (typeof window.__dismissOffline === "function") window.__dismissOffline();
