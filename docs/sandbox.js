@@ -7,7 +7,7 @@
  * @module sandbox
  */
 
-import { discoverForElapsed, computeStoneRateFor, effectiveWoodRate, milestoneSnapshot, milestonesBetween } from "./engine.js";
+import { discoverForElapsed, awayEventForElapsed, computeStoneRateFor, effectiveWoodRate, milestoneSnapshot, milestonesBetween } from "./engine.js";
 
 /**
  * Deep-clone a game state object for isolated sandbox use.
@@ -52,6 +52,7 @@ export function cloneState(state) {
  * @returns {{
  *   seconds: number,
  *   discovery: { id: string, name: string, bonus: number, credited: boolean }|null,
+ *   event: import("./engine.js").AwayEvent|null,
  *   woodDelta: number,
  *   stoneDelta: number,
  *   totalWood: number,
@@ -98,9 +99,17 @@ export function fastForward(clone, seconds) {
     ? { id: found.id, name: found.name, bonus: found.bonus, credited }
     : null;
 
+  // A real return of a minute or more also offers a decision, so a rehearsal
+  // that stopped at the find would no longer stand in for the return it
+  // projects. The engine's own rule derives it from the absence and the state
+  // the player returns to, read here after the earnings and the find have been
+  // credited — exactly the order a real catch-up uses, so the amounts match.
+  const event = awayEventForElapsed(seconds, clone);
+
   return {
     seconds,
     discovery,
+    event,
     woodDelta: woodGained,
     stoneDelta: stoneGained,
     totalWood: clone.wood,

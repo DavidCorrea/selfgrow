@@ -4214,6 +4214,125 @@ export async function checks() {
     if (restored.wood !== rehearsalStartWood || restored.rate !== rehearsalStartRate) {
       problems.push(`sandbox-exit should restore the real save (wood ${rehearsalStartWood}, rate ${rehearsalStartRate}), got wood ${restored.wood}, rate ${restored.rate}.`);
     }
+
+    // --- Sandbox Test 11: a rehearsal names the away event, with both choices,
+    // from the engine's own rule, and never resolves it (issue #1039). A real
+    // return of a minute or more offers a decision, so a rehearsal that stopped
+    // at the find no longer stands in for the return it projects. The event is
+    // read from the rule itself rather than copied, so the rehearsal can never
+    // name a different happening or promise a different effect than a return. ---
+
+    // (a) The clone's rehearsal reports exactly the event the engine's rule
+    // would for the same absence and the same returned-to state, with two
+    // distinct options; an absence below the threshold offers none.
+    engine.reset();
+    const eventClone = sandbox.cloneState(engine.getState());
+    const eventResult = sandbox.fastForward(eventClone, 3600);
+    // Derived after the earnings and the find are credited, from the clone the
+    // rehearsal left behind — the same order a real catch-up uses.
+    const engineEventRule = engine.awayEventForElapsed(3600, eventClone);
+    if (!eventResult.event) {
+      problems.push("sandbox fastForward(3600s) should name the away event a real 1-hour absence would offer, got none.");
+    } else if (JSON.stringify(eventResult.event) !== JSON.stringify(engineEventRule)) {
+      problems.push(`sandbox fastForward(3600s) event must match engine.awayEventForElapsed(3600s, the same post-gain clone) (${JSON.stringify(engineEventRule)}), got ${JSON.stringify(eventResult.event)}.`);
+    } else {
+      if (eventResult.event.title.trim() === "") {
+        problems.push(`sandbox fastForward(3600s) event must carry a non-empty title, got ${JSON.stringify(eventResult.event.title)}.`);
+      }
+      const optionIds = eventResult.event.options.map((option) => option.id);
+      if (optionIds.length !== 2 || optionIds[0] === optionIds[1]) {
+        problems.push(`sandbox fastForward(3600s) event must offer two distinct options, got ${JSON.stringify(optionIds)}.`);
+      }
+    }
+
+    const shortEventClone = sandbox.cloneState(engine.getState());
+    const shortEventResult = sandbox.fastForward(shortEventClone, 10);
+    if (shortEventResult.event !== null) {
+      problems.push(`sandbox fastForward(10s) is shorter than the away-event threshold and must report event=null, got ${JSON.stringify(shortEventResult.event)}.`);
+    }
+
+    // (b) An agent's rehearsal reports the same event, so the tool and the panel
+    // cannot disagree about the choice an absence offers.
+    engine.reset();
+    if (typeof window.__exitSandbox === "function") window.__exitSandbox();
+    const toolEventResult = await sandboxFFTool.execute({ seconds: 3600 });
+    const toolEventClone = typeof window.__getSandboxClone === "function" ? window.__getSandboxClone() : null;
+    const toolEventRule = toolEventClone ? engine.awayEventForElapsed(3600, toolEventClone) : null;
+    if (!toolEventRule) {
+      problems.push("Expected an active sandbox clone after sandbox-fast-forward(3600s) so its away event can be checked.");
+    } else if (JSON.stringify(toolEventResult.event) !== JSON.stringify(toolEventRule)) {
+      problems.push(`sandbox-fast-forward(3600s) should report the away event a real 1-hour absence offers (${JSON.stringify(toolEventRule)}), got ${JSON.stringify(toolEventResult.event)}.`);
+    }
+    if (typeof window.__exitSandbox === "function") window.__exitSandbox();
+
+    // (c) The sandbox panel shows that event's title and both option labels
+    // after a long-enough rehearsal, and hides the block after a run that is too
+    // short to offer one.
+    engine.reset();
+    if (typeof window.__exitSandbox === "function") window.__exitSandbox();
+    if (typeof window.__enterSandbox === "function") window.__enterSandbox();
+    const sbAwayEventEl = document.getElementById("sb-away-event");
+    const sbAwayEventTitleEl = document.getElementById("sb-away-event-title");
+    const sbAwayEventOptionsEl = document.getElementById("sb-away-event-options");
+    if (!sbAwayEventEl || !sbAwayEventTitleEl || !sbAwayEventOptionsEl) {
+      problems.push("Expected #sb-away-event, #sb-away-event-title and #sb-away-event-options in the sandbox panel.");
+    } else {
+      if (!sbAwayEventEl.hidden) {
+        problems.push("Expected #sb-away-event to start hidden before any rehearsal.");
+      }
+      window.__fastForwardSandbox(3600);
+      const panelEventClone = typeof window.__getSandboxClone === "function" ? window.__getSandboxClone() : null;
+      const panelEventRule = panelEventClone ? engine.awayEventForElapsed(3600, panelEventClone) : null;
+      if (!panelEventRule) {
+        problems.push("Expected a 1h rehearsal on a fresh save to offer an away event so the panel has one to name.");
+      } else {
+        if (sbAwayEventEl.hidden) {
+          problems.push("After a 1h rehearsal #sb-away-event should show the away event a real 1-hour absence offers, but it was hidden.");
+        }
+        if (sbAwayEventTitleEl.textContent.trim() !== panelEventRule.title) {
+          problems.push(`#sb-away-event-title should name the event "${panelEventRule.title}", got "${sbAwayEventTitleEl.textContent.trim()}".`);
+        }
+        const shownOptions = Array.from(sbAwayEventOptionsEl.children);
+        if (shownOptions.length !== panelEventRule.options.length) {
+          problems.push(`#sb-away-event-options should show both options (${panelEventRule.options.length}), got ${shownOptions.length}.`);
+        } else {
+          panelEventRule.options.forEach((option, index) => {
+            if (!shownOptions[index].textContent.includes(option.label)) {
+              problems.push(`#sb-away-event option ${index} should state "${option.label}", got "${shownOptions[index].textContent.trim()}".`);
+            }
+          });
+        }
+        // The block names the choice but offers no way to take it.
+        if (sbAwayEventEl.querySelector("button, [role='button'], input, select, textarea")) {
+          problems.push("#sb-away-event must offer no control — a rehearsal shows the choice but never resolves it.");
+        }
+      }
+      window.__fastForwardSandbox(10);
+      if (!sbAwayEventEl.hidden) {
+        problems.push("After a 10s rehearsal, too short for an away event, #sb-away-event should be hidden.");
+      }
+      if (sbAwayEventTitleEl.textContent.trim() !== "" || sbAwayEventOptionsEl.children.length !== 0) {
+        problems.push("#sb-away-event should be emptied when a rehearsal offers no event, so no stale happening is left on screen.");
+      }
+    }
+    if (typeof window.__exitSandbox === "function") window.__exitSandbox();
+
+    // (d) The whole rehearsal leaves the real save alone: its wood and its own
+    // pending event are untouched, so the sandbox only ever reports a choice.
+    engine.reset();
+    const saveBeforeRehearsal = engine.getState();
+    if (typeof window.__enterSandbox === "function") window.__enterSandbox();
+    window.__fastForwardSandbox(3600);
+    window.__fastForwardSandbox(86400);
+    const saveDuringRehearsal = engine.getState();
+    if (typeof window.__exitSandbox === "function") window.__exitSandbox();
+    const saveAfterRehearsal = engine.getState();
+    if (saveDuringRehearsal.wood !== saveBeforeRehearsal.wood || saveAfterRehearsal.wood !== saveBeforeRehearsal.wood) {
+      problems.push(`The real save's wood must stay ${saveBeforeRehearsal.wood} across a rehearsal that shows an away event, got ${saveDuringRehearsal.wood} during and ${saveAfterRehearsal.wood} after.`);
+    }
+    if (JSON.stringify(saveAfterRehearsal.pendingEvent) !== JSON.stringify(saveBeforeRehearsal.pendingEvent)) {
+      problems.push(`A sandbox rehearsal must not touch the real save's pendingEvent: expected ${JSON.stringify(saveBeforeRehearsal.pendingEvent)}, got ${JSON.stringify(saveAfterRehearsal.pendingEvent)}.`);
+    }
   } catch (err) {
     problems.push(`Sandbox test threw: ${err.message}`);
     console.error(err);
