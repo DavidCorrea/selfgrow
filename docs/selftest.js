@@ -1740,6 +1740,146 @@ export async function checks() {
     }
   }
 
+  // ─── The one-screen promise survives a fully-unlocked world ────
+  // The check above measures whatever save the page happens to hold. Re-run
+  // the same fit test against every system unlocked and several upgrades
+  // bought, so a layout that only fits a fresh save cannot pass. The window
+  // must grow a grid column and bound the upgrade lists rather than add
+  // height.
+  if (window.innerWidth >= 1280 && window.innerHeight >= 720) {
+    const engine = await import("./engine.js");
+    const renderNow = () => { if (typeof window.__renderUI === "function") window.__renderUI(); };
+    const originalSave = localStorage.getItem("selfgrow-state");
+    // A valid save with every system unlocked and upgrades already bought:
+    // stone, 12 sharpenings, 3 walls, forge level 7 (which opens expeditions)
+    // and 4 maps.
+    const fullyUnlockedSave = {
+      wood: 500,
+      rate: 1.6,
+      upgradeLevel: 12,
+      stone: 120,
+      totalWoodEarned: 8000,
+      totalStoneEarned: 400,
+      wallLevel: 3,
+      forgeLevel: 7,
+      expeditionLevel: 4,
+      maps: 4,
+      stoneUnlocked: true,
+      discoveryBonus: 0.4,
+      discoveryId: "ancient-grove",
+      discoveryName: "Ancient Grove",
+      timestamp: new Date().toISOString(),
+      firstTimestamp: new Date().toISOString(),
+    };
+    // The product shows this many bought upgrades in full per card before
+    // collapsing the rest into a summary. Kept here as the expectation.
+    const VISIBLE_UPGRADE_HISTORY = 2;
+    const purchasedLevels = {
+      "wood-actions": fullyUnlockedSave.upgradeLevel,
+      "stone-actions": fullyUnlockedSave.wallLevel,
+      "forge-actions": fullyUnlockedSave.forgeLevel,
+      "expedition-actions": fullyUnlockedSave.maps,
+    };
+
+    try {
+      engine.reset();
+      localStorage.setItem("selfgrow-state", JSON.stringify(fullyUnlockedSave));
+      engine.init();
+      renderNow();
+
+      const unlockedDoc = document.documentElement;
+      if (unlockedDoc.scrollHeight > window.innerHeight) {
+        problems.push(
+          `With every system unlocked the page scrolls vertically on a `
+          + `${window.innerWidth}x${window.innerHeight} window: content is `
+          + `${unlockedDoc.scrollHeight}px tall but the window is ${window.innerHeight}px.`
+        );
+      }
+      if (unlockedDoc.scrollWidth > window.innerWidth) {
+        problems.push(
+          `With every system unlocked the page scrolls horizontally on a `
+          + `${window.innerWidth}x${window.innerHeight} window: content is `
+          + `${unlockedDoc.scrollWidth}px wide but the window is ${window.innerWidth}px.`
+        );
+      }
+      for (const p of document.querySelectorAll("body > section.panel")) {
+        const rect = p.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) continue;
+        if (rect.bottom > window.innerHeight + 1) {
+          problems.push(
+            `With every system unlocked #${p.id} extends past the bottom of a `
+            + `${window.innerHeight}px window (bottom ${Math.round(rect.bottom)}px).`
+          );
+        }
+        if (rect.right > window.innerWidth + 1) {
+          problems.push(
+            `With every system unlocked #${p.id} extends past the right edge of a `
+            + `${window.innerWidth}px window (right ${Math.round(rect.right)}px).`
+          );
+        }
+      }
+
+      const unlockedCards = [...document.querySelectorAll("#action-area .system-card")]
+        .filter((c) => getComputedStyle(c).display !== "none" && c.getBoundingClientRect().height > 0);
+      if (unlockedCards.length < 4) {
+        problems.push(
+          `A fully-unlocked save shows ${unlockedCards.length} system cards — expected all four `
+          + "(wood, stone, forge, expeditions) to be on screen."
+        );
+      }
+
+      // New systems must add a grid column, not a second row: every visible
+      // card's top edge has to line up.
+      if (unlockedCards.length > 1) {
+        const tops = unlockedCards.map((c) => Math.round(c.getBoundingClientRect().top));
+        const spread = Math.max(...tops) - Math.min(...tops);
+        if (spread > 3) {
+          problems.push(
+            `With every system unlocked the system cards wrap onto more than one grid row `
+            + `(tops range ${Math.min(...tops)}-${Math.max(...tops)}px) — the cards should `
+            + "narrow so every system stays in one row."
+          );
+        }
+      }
+
+      // A long upgrade list must summarise rather than print every purchase.
+      for (const card of unlockedCards) {
+        const purchased = purchasedLevels[card.id];
+        if (typeof purchased !== "number" || purchased <= 0) continue;
+        const historyLines = card.querySelectorAll(".upgrade-list .upgrade-card.is-history");
+        const summary = card.querySelector(".upgrade-summary");
+        if (historyLines.length > purchased) {
+          problems.push(
+            `Card #${card.id} shows ${historyLines.length} upgrade history lines but only `
+            + `${purchased} upgrades were bought.`
+          );
+        }
+        if (purchased > VISIBLE_UPGRADE_HISTORY) {
+          if (!summary) {
+            problems.push(
+              `Card #${card.id} has ${purchased} bought upgrades but no .upgrade-summary — `
+              + "older upgrades must collapse into a summary instead of listing every one."
+            );
+          }
+          if (historyLines.length >= purchased) {
+            problems.push(
+              `Card #${card.id} lists all ${purchased} bought upgrades in full — the list must `
+              + `be capped at ${VISIBLE_UPGRADE_HISTORY} and the rest summarised.`
+            );
+          }
+        }
+      }
+    } catch (err) {
+      problems.push(`Fully-unlocked layout check threw: ${err.message}`);
+      console.error(err);
+    } finally {
+      engine.reset();
+      if (originalSave !== null) localStorage.setItem("selfgrow-state", originalSave);
+      engine.init();
+      renderNow();
+    }
+  }
+
   // ─── Header chips and system cards state what a player sees ────
   // Each unlocked resource chip must show its amount and per-second rate as
   // real text, and each visible system card must carry its own action button.
