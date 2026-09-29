@@ -2925,6 +2925,115 @@ export async function checks() {
       }
     }
 
+    // (h)-(j) A real return's account is carried in the save itself, so a
+    // reload before the player dismisses it tells the same story instead of
+    // the few seconds since the last tick. This helper reloads the save
+    // exactly as it stands, wound back `ageMs`, and opens the panel only when
+    // the account is unseen, mirroring the page's own load behaviour.
+    const stoneAmountEl = document.getElementById("offline-stone-amount");
+    const discoveryNameEl = document.getElementById("offline-discovery-name");
+    function reloadKeepingAccount(ageMs) {
+      const saved = JSON.parse(localStorage.getItem("selfgrow-state"));
+      engine.reset();
+      localStorage.setItem("selfgrow-state", JSON.stringify({
+        ...saved,
+        timestamp: new Date(Date.now() - ageMs).toISOString(),
+      }));
+      engine.init();
+      if (typeof window.__setOverlayOpen === "function") window.__setOverlayOpen("offline", false);
+      overlay.setAttribute("hidden", "");
+      if (!engine.getReturnSummary().seen) window.__showOfflineSummary();
+      return engine.getReturnSummary();
+    }
+
+    // (h) A 1h return reloaded three seconds later, before it was dismissed,
+    // still reports the same absence, earnings and find, never the seconds
+    // since the last tick. This goes red if catchUp overwrites the record.
+    reloadFromAge(3600000, { wood: 5 });
+    if (overlay.hidden) {
+      problems.push("A 1h return must open the welcome-back panel on load.");
+    }
+    const realReturn = engine.getReturnSummary();
+    if (realReturn.seen) {
+      problems.push("A freshly recorded return must be unseen until the player dismisses it.");
+    }
+    if (!(realReturn.elapsedSec >= 3600)) {
+      problems.push(`A 1h return must report at least 3600s away, got ${realReturn.elapsedSec}.`);
+    }
+    const realElapsed = elapsedEl ? elapsedEl.textContent.trim() : "";
+    const realWood = woodAmountEl ? woodAmountEl.textContent : "";
+    const realStone = stoneAmountEl ? stoneAmountEl.textContent : "";
+    const realFind = discoveryNameEl ? discoveryNameEl.textContent : "";
+
+    const reloadedBeforeDismiss = reloadKeepingAccount(3000);
+    if (!(reloadedBeforeDismiss.elapsedSec >= 3600)) {
+      problems.push(`A reload before dismissing must keep the real absence (expected >= 3600s, got ${reloadedBeforeDismiss.elapsedSec}).`);
+    }
+    if (overlay.hidden) {
+      problems.push("A reload before dismissing must still show the welcome-back panel.");
+    }
+    if (elapsedEl && elapsedEl.textContent.trim() !== realElapsed) {
+      problems.push(`A reload before dismissing changed the absence text: expected "${realElapsed}", got "${elapsedEl.textContent.trim()}".`);
+    }
+    if (woodAmountEl && woodAmountEl.textContent !== realWood) {
+      problems.push(`A reload before dismissing changed the wood earned: expected "${realWood}", got "${woodAmountEl.textContent}".`);
+    }
+    if (stoneAmountEl && stoneAmountEl.textContent !== realStone) {
+      problems.push(`A reload before dismissing changed the stone earned: expected "${realStone}", got "${stoneAmountEl.textContent}".`);
+    }
+    if (discoveryNameEl && discoveryNameEl.textContent !== realFind) {
+      problems.push(`A reload before dismissing changed the find: expected "${realFind}", got "${discoveryNameEl.textContent}".`);
+    }
+    if (reloadedBeforeDismiss.discovery && realReturn.discovery && reloadedBeforeDismiss.discovery.id !== realReturn.discovery.id) {
+      problems.push(`A reload before dismissing changed the discovery: expected ${realReturn.discovery.id}, got ${reloadedBeforeDismiss.discovery.id}.`);
+    }
+    if (readStateTool && !overlay.hidden) {
+      const readAfterReload = await readStateTool.execute({});
+      if (readAfterReload.offlineElapsed !== (elapsedEl ? elapsedEl.textContent.trim() : "")) {
+        problems.push("read-state must report the kept return's absence after a reload, not the seconds since the last tick.");
+      }
+    }
+
+    // (i) Dismissing marks the account seen and persists that, so a reload
+    // afterwards does not run that same absence again on its own. The agent's
+    // dismiss-offline action routes through the same page handler, so it must
+    // leave the same seen flag — page and tool cannot disagree.
+    const performActionTool = tools().find((t) => t.name === "perform-action");
+    if (performActionTool) {
+      await performActionTool.execute({ action: "dismiss-offline" });
+    } else {
+      window.__dismissOffline();
+    }
+    const persistedAfterDismiss = JSON.parse(localStorage.getItem("selfgrow-state"));
+    if (!persistedAfterDismiss.lastReturn || persistedAfterDismiss.lastReturn.seen !== true) {
+      problems.push("Dismissing the welcome-back panel must persist the return account marked seen.");
+    }
+    const reloadedAfterDismiss = reloadKeepingAccount(300);
+    if (reloadedAfterDismiss.visible) {
+      problems.push("A reload after dismissing must not report that same return as a visible return.");
+    }
+    if (!overlay.hidden) {
+      problems.push("A reload after dismissing must not re-open the welcome-back panel on its own.");
+    }
+
+    // (j) A genuinely new absence of at least a minute replaces the kept
+    // account. The 1h return gives a Wandering Sapling; a new 90s absence is a
+    // different, shorter trip and must be the one reported.
+    reloadFromAge(3600000, { wood: 5 });
+    if (!(engine.getReturnSummary().elapsedSec >= 3600)) {
+      problems.push("The kept account for the 90s replacement check should start as a 1h absence.");
+    }
+    const replacedReturn = reloadKeepingAccount(90000);
+    if (!(Math.abs(replacedReturn.elapsedSec - 90) < 5)) {
+      problems.push(`A new 90s absence must replace the kept account: expected about 90s, got ${replacedReturn.elapsedSec}.`);
+    }
+    if (!replacedReturn.discovery || replacedReturn.discovery.id !== "flint-shard") {
+      problems.push(`A new 90s absence must report its own find (flint-shard), got ${JSON.stringify(replacedReturn.discovery)}.`);
+    }
+    if (overlay.hidden) {
+      problems.push("A new unseen absence must open the welcome-back panel on load.");
+    }
+
     // Leave the page as it was found.
     if (!overlay.hidden) window.__dismissOffline();
     engine.reset();

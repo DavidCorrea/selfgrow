@@ -145,6 +145,8 @@ export { FIRST_GOAL_WOOD, UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, STONE_BASE_RA
  * @property {string|null} discoveryName — display name of that discovery
  * @property {string}  timestamp       — ISO date of last tick/save
  * @property {string}  firstTimestamp  — ISO date of first ever save (never updated after init)
+ * @property {ReturnRecord|null} lastReturn — account of the last return; carried in
+ *   the save so a reload before the player dismisses it still tells the real story
  */
 
 let state = {
@@ -164,6 +166,7 @@ let state = {
   discoveryName: null,
   timestamp: new Date().toISOString(),
   firstTimestamp: null,
+  lastReturn: null,
 };
 
 /** Offline resources gained on last catch-up. */
@@ -172,19 +175,21 @@ let offlineGained = { wood: 0, stone: 0, elapsedSec: 0, discovery: null };
 
 /**
  * The account of the last return, written once inside catchUp and read — never
- * consumed — by the welcome-back panel and the agent tools. Keeping it in one
- * place means the page can never disagree with itself about a return.
+ * consumed — by the welcome-back panel and the agent tools. It lives on the
+ * state so the save carries it: a tab discarded and restored before the player
+ * reads the panel reloads to the same real absence, not the seconds since the
+ * last tick. `seen` flips only in markReturnSeen, so the page and the read
+ * tools can never disagree about whether the account has been read.
  *
- * @type {{
- *   firstVisit: boolean,
- *   elapsedSec: number,
- *   wood: number,
- *   stone: number,
- *   discovery: {id: string, name: string, bonus: number, credited: boolean, alreadyOwned: boolean}|null,
- *   milestones: Milestones,
- * }|null}
+ * @typedef {Object} ReturnRecord
+ * @property {boolean} firstVisit
+ * @property {boolean} seen
+ * @property {number}  elapsedSec
+ * @property {number}  wood
+ * @property {number}  stone
+ * @property {{id: string, name: string, bonus: number, credited: boolean, alreadyOwned: boolean}|null} discovery
+ * @property {Milestones} milestones
  */
-let lastReturn = null;
 
 let tickTimer = null;
 
@@ -359,15 +364,34 @@ function getEffectiveRate() {
  * stats, so short returns cannot re-farm a bonus already owned.
  *
  * @param {boolean} firstVisit — true when there was no saved state to return to
- * @param {boolean} [record] — whether to replace the account of the last return.
- *   False still credits the absence and advances the timestamp, but leaves the
- *   account alone, so a return that arrives while an overlay is already open
- *   cannot contradict the panel that overlay is showing.
+ * @param {boolean} [record] — whether this catch-up may write the account of
+ *   the last return. False still credits the absence and advances the
+ *   timestamp, but leaves the account alone, so a return that arrives while an
+ *   overlay is already open cannot contradict the panel that overlay is
+ *   showing. Even when true the account is only replaced by a genuinely new
+ *   trip or a real absence, so a reload before the player has read and
+ *   dismissed the panel keeps telling the absence they actually had.
  */
 function catchUp(firstVisit, record = true) {
-  if (record) lastReturn = null;
+  const kept = state.lastReturn;
   const lastSaved = new Date(state.timestamp).getTime();
   const elapsedSec = (Date.now() - lastSaved) / 1000;
+
+  // Whether this catch-up may write a new account of the last return. A kept,
+  // unseen account outlives a reload that credits only the seconds since the
+  // last tick: replacing it there would tell the player 'away 3s' instead of
+  // the absence they had, and can hide the panel entirely. It is replaced by a
+  // genuinely new trip (`firstVisit`), by an account the player already
+  // dismissed (`seen`), or by a real absence of at least DISCOVERY_MIN_SEC —
+  // the same bar a return must clear to turn up anything, so the account the
+  // panel shows and the state this catch-up credited describe one trip.
+  const replaceAccount = record
+    && (!kept || kept.seen || (!firstVisit && elapsedSec >= DISCOVERY_MIN_SEC));
+  // Retire a replaceable account even when no time is credited at all: an
+  // immediate tab switch must not leave a dismissed account standing as the
+  // last return, waiting to be announced on the next reload.
+  if (replaceAccount) state.lastReturn = null;
+
   if (elapsedSec > 0) {
     // Capture snapshot before resources are added
     const before = milestoneSnapshot(state);
@@ -416,9 +440,10 @@ function catchUp(firstVisit, record = true) {
     // The account of this return, recorded once. The wood and stone amounts
     // are the rises the resource counters themselves show, so the panel cannot
     // claim a number the counters disagree with.
-    if (record) {
-      lastReturn = {
+    if (replaceAccount) {
+      state.lastReturn = {
         firstVisit,
+        seen: false,
         elapsedSec,
         wood: displayAmount(displayAmount(state.wood) - displayAmount(beforeWood)),
         stone: displayAmount(displayAmount(state.stone) - displayAmount(beforeStone)),
@@ -523,6 +548,40 @@ function isValidSaved(saved) {
 }
 
 /**
+ * A persisted return account, or null when what was stored cannot be trusted.
+ * A save from before returns were persisted, a hand-edited code, or a
+ * truncated record all fall back to null rather than putting an unreadable
+ * panel on screen. Milestone flags are coerced to booleans so a partial
+ * record renders as 'nothing new' instead of `undefined`.
+ *
+ * @param {unknown} raw
+ * @returns {ReturnRecord|null}
+ */
+function sanitizeReturnRecord(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  if (!Number.isFinite(raw.elapsedSec) || !Number.isFinite(raw.wood) || !Number.isFinite(raw.stone)) return null;
+  if (typeof raw.firstVisit !== "boolean" || typeof raw.seen !== "boolean") return null;
+  if (raw.discovery != null && typeof raw.discovery !== "object") return null;
+  if (!raw.milestones || typeof raw.milestones !== "object") return null;
+  const m = raw.milestones;
+  return {
+    firstVisit: raw.firstVisit,
+    seen: raw.seen,
+    elapsedSec: raw.elapsedSec,
+    wood: raw.wood,
+    stone: raw.stone,
+    discovery: raw.discovery ?? null,
+    milestones: {
+      sharpenAvailable: Boolean(m.sharpenAvailable),
+      stoneNowUnlocked: Boolean(m.stoneNowUnlocked),
+      wallAvailable: Boolean(m.wallAvailable),
+      forgeNowUnlocked: Boolean(m.forgeNowUnlocked),
+      expeditionNowUnlocked: Boolean(m.expeditionNowUnlocked),
+    },
+  };
+}
+
+/**
  * Copy a validated save onto the live state. Every optional field falls back
  * to its fresh-game default, so an older save that predates a field still
  * loads. Shared by loadPersisted and importSave so a restored code and a
@@ -547,6 +606,7 @@ function applyPersisted(saved) {
   state.discoveryName = typeof saved.discoveryName === "string" ? saved.discoveryName : null;
   state.timestamp = saved.timestamp;
   state.firstTimestamp = typeof saved.firstTimestamp === "string" ? saved.firstTimestamp : saved.timestamp;
+  state.lastReturn = sanitizeReturnRecord(saved.lastReturn);
 }
 
 function loadPersisted() {
@@ -1042,10 +1102,13 @@ export function consumeOfflineGained() {
  * The account of the last return, read — never consumed — so the welcome-back
  * panel and the agent tools always read the same numbers. `visible` is true
  * only for a real return away at least RETURN_MIN_SEC, so a first-ever visit
- * and a sub-second reload show no panel.
+ * and a sub-second reload show no panel. `seen` is false until the player
+ * dismisses the panel, which is what lets a reload before that re-show the
+ * same real absence instead of the seconds since the last tick.
  *
  * @returns {{
  *   visible: boolean,
+ *   seen: boolean,
  *   firstVisit: boolean,
  *   elapsedSec: number,
  *   elapsed: string,
@@ -1057,10 +1120,11 @@ export function consumeOfflineGained() {
  * }}
  */
 export function getReturnSummary() {
-  const ret = lastReturn;
+  const ret = state.lastReturn;
   if (!ret) {
     return {
       visible: false,
+      seen: true,
       firstVisit: true,
       elapsedSec: 0,
       elapsed: formatElapsed(0),
@@ -1073,6 +1137,7 @@ export function getReturnSummary() {
   }
   return {
     visible: !ret.firstVisit && ret.elapsedSec >= RETURN_MIN_SEC,
+    seen: ret.seen,
     firstVisit: ret.firstVisit,
     elapsedSec: ret.elapsedSec,
     elapsed: formatElapsed(ret.elapsedSec * 1000),
@@ -1082,6 +1147,17 @@ export function getReturnSummary() {
     nextDiscovery: nextDiscoveryAfter(state.discoveryId),
     milestones: ret.milestones,
   };
+}
+
+/**
+ * Mark the last return's account as seen and persist it. This is the one place
+ * the flag flips, so the page and the read tools cannot disagree about whether
+ * the player has been shown the account.
+ */
+export function markReturnSeen() {
+  if (!state.lastReturn || state.lastReturn.seen) return;
+  state.lastReturn.seen = true;
+  persist();
 }
 
 /**
@@ -1148,10 +1224,10 @@ export function reset() {
     discoveryName: null,
     timestamp: now(),
     firstTimestamp: null,
+    lastReturn: null,
   };
   offlineGained = { wood: 0, stone: 0, elapsedSec: 0, discovery: null };
   snapshotBeforeCatchUp = null;
-  lastReturn = null;
   pausedForHidden = false;
   try {
     localStorage.removeItem(STORAGE_KEY);
