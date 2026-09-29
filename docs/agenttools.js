@@ -8,7 +8,7 @@
  * @module agenttools
  */
 
-import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, formatElapsed, formatRate, nextDiscoveryAfter, discoveryCollection, returnDiscoveryText, sharpenAvailable, sharpenThreshold, wallAvailable, expeditionUnlocked, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, effectiveWoodRate, expeditionMultiplierFor, clickPowerFor, FIRST_GOAL_WOOD, UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, GOAL_STONE, WALL_COST, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT, EXPEDITION_FORGE_LEVEL, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_WOOD_COST_INC, FORGE_STONE_COST_INC, FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC, EXPEDITION_WOOD_RATE_MULTIPLIER } from "./engine.js";
+import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, chooseAwayEventOption, getReturnSummary, formatElapsed, formatRate, nextDiscoveryAfter, discoveryCollection, returnDiscoveryText, sharpenAvailable, sharpenThreshold, wallAvailable, expeditionUnlocked, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, effectiveWoodRate, expeditionMultiplierFor, clickPowerFor, FIRST_GOAL_WOOD, UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, GOAL_STONE, WALL_COST, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT, EXPEDITION_FORGE_LEVEL, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_WOOD_COST_INC, FORGE_STONE_COST_INC, FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC, EXPEDITION_WOOD_RATE_MULTIPLIER } from "./engine.js";
 
 /**
  * The last return as the welcome-back panel is showing it, read straight from
@@ -91,6 +91,10 @@ function withGoal(s) {
     stoneRate: stoneRate,
     stoneUnlocked: s.stoneUnlocked,
     discovery: s.discovery || null,
+    // The two-choice happening a real return is offering right now, or null
+    // when there is none. Cloned by the engine, so the tool can hand it out
+    // without a caller being able to edit the save through it.
+    pendingEvent: s.pendingEvent ?? null,
     wallLevel: s.wallLevel,
     forgeLevel: s.forgeLevel,
     forgeWoodCost: s.forgeWoodCost,
@@ -374,7 +378,12 @@ export function tools() {
         + "(sharpenAvailable, stoneNowUnlocked, wallAvailable, forgeNowUnlocked, expeditionNowUnlocked), "
         + "and the current goal (first goal, upgrade goal, stone goal, build-wall goal, forge goal, or expedition goal) as nextGoal "
         + "{description, type, available, resources: [{name, current, target}]}, whose resources are the same "
-        + "figures the page prints beside the goal's bar and on the welcome-back panel's next-goal line.",
+        + "figures the page prints beside the goal's bar and on the welcome-back panel's next-goal line. "
+        + "pendingEvent is the two-choice happening a real return is offering, or null when "
+        + "there is none: {id, title, options: [{id, label, effect: {kind, amount}, effectText}]}"
+        + " with exactly two options. Each effectText states exactly what choosing that option "
+        + "grants (a lump of wood, a lump of stone, or a permanent wood/s increase), and each "
+        + "option's id is the value to pass to the choose-away-event action.",
       inputSchema: { type: "object", properties: {} },
       annotations: { readOnlyHint: true },
       example: {},
@@ -392,6 +401,7 @@ export function tools() {
         + '"build-wall" — consumes ' + WALL_COST + ' stone to permanently increase click power for wood; '
         + '"forge-tool" — consumes wood and stone to forge a tool, permanently boosting wood rate and click power; '
         + '"send-expedition" — consumes wood and stone to send scouts on an expedition, earning 1 map resource that multiplies wood rate; '
+        + '"choose-away-event" — takes one option of the pending away event, granting exactly the effect that option states and then removing the event; pass the chosen option\'s id in "option" (a wood, stone or rate option, as read from read-state.pendingEvent.options[].id). Choosing is irreversible — the other option can never then be taken — and is refused with a reason when no event is pending or the option is not one of its two. '
         + '"dismiss-offline" — dismisses the offline-summary overlay if visible; '
         + '"show-return" — re-opens the last return\'s summary (the status panel\'s Last return control), refused with a reason when there is no return on record.',
       inputSchema: {
@@ -399,14 +409,18 @@ export function tools() {
         properties: {
           action: {
             type: "string",
-            description: 'The action to perform. Supported: "gather", "sharpen", "gather-stone", "build-wall", "forge-tool", "send-expedition", "dismiss-offline", "show-return".',
+            description: 'The action to perform. Supported: "gather", "sharpen", "gather-stone", "build-wall", "forge-tool", "send-expedition", "choose-away-event", "dismiss-offline", "show-return".',
+          },
+          option: {
+            type: "string",
+            description: 'Only for "choose-away-event": the id of the option to take ("wood", "stone" or "rate"), as listed in read-state.pendingEvent.options[].id.',
           },
         },
         required: ["action"],
       },
       annotations: { readOnlyHint: false },
       example: { action: "gather" },
-      async execute({ action }) {
+      async execute({ action, option }) {
         if (action === "gather") {
           return withGoal(gatherWood());
         }
@@ -432,6 +446,15 @@ export function tools() {
         if (action === "send-expedition") {
           const result = sendExpedition();
           return withGoal(result.state);
+        }
+        if (action === "choose-away-event") {
+          // The engine's own one apply-then-clear path, so the effect an agent
+          // takes is exactly the effect a click on the option would grant.
+          const result = chooseAwayEventOption(option);
+          if (!result.chosen) {
+            return { ok: false, reason: result.reason, ...withGoal(result.state) };
+          }
+          return { ok: true, chosenOptionId: result.chosenOptionId, effect: result.effect, ...withGoal(result.state) };
         }
         if (action === "dismiss-offline") {
           const overlay = document.getElementById("offline-summary");
@@ -463,7 +486,7 @@ export function tools() {
           }
           return { ok: true, ...withGoal(getState()) };
         }
-        throw new Error('Unknown action "' + action + '". Supported: gather, sharpen, gather-stone, build-wall, forge-tool, send-expedition, dismiss-offline, show-return');
+        throw new Error('Unknown action "' + action + '". Supported: gather, sharpen, gather-stone, build-wall, forge-tool, send-expedition, choose-away-event, dismiss-offline, show-return');
       },
     },
     {

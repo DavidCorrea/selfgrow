@@ -6301,5 +6301,297 @@ export async function checks() {
     console.error(err);
   }
 
+  // ─── Away event with two choices (issue #1036) ───────────────────
+  // A real return must offer a decision, not only a bigger number: one
+  // happening drawn from the absence, with exactly two options, each stating
+  // the one thing it grants. The event is derived deterministically, lives in
+  // the save until chosen, grants exactly one stated effect once, and is
+  // reachable by agents through read-state and perform-action.
+  try {
+    const engine = await import("./engine.js");
+    const { tools } = await import("./agenttools.js");
+    const readState = tools().find((t) => t.name === "read-state");
+    const performAction = tools().find((t) => t.name === "perform-action");
+
+    if (typeof engine.awayEventForElapsed !== "function" || typeof engine.chooseAwayEventOption !== "function") {
+      problems.push("engine must export awayEventForElapsed and chooseAwayEventOption for the away event.");
+    }
+
+    const KNOWN_KINDS = ["wood", "stone", "rate"];
+    // Every promise an away event makes, checked on any event: a title, exactly
+    // two distinct choices, and each choice a positive amount of a kind the
+    // engine can apply, stated in words.
+    const eventShapeProblems = (event, label) => {
+      const found = [];
+      if (!event || typeof event !== "object") {
+        found.push(`${label} should be an event with a title and two options, got ${JSON.stringify(event)}.`);
+        return found;
+      }
+      if (typeof event.title !== "string" || event.title.trim() === "") {
+        found.push(`${label} should carry a non-empty title, got ${JSON.stringify(event.title)}.`);
+      }
+      if (!Array.isArray(event.options) || event.options.length !== 2) {
+        found.push(`${label} should offer exactly two options, got ${JSON.stringify(event.options)}.`);
+        return found;
+      }
+      const ids = event.options.map((o) => o.id);
+      if (ids[0] === ids[1]) {
+        found.push(`${label} must offer two distinct choices, but both options are "${ids[0]}".`);
+      }
+      event.options.forEach((option, i) => {
+        if (!KNOWN_KINDS.includes(option.id)) {
+          found.push(`${label} option ${i} has unknown id ${JSON.stringify(option.id)}.`);
+        }
+        if (typeof option.label !== "string" || option.label.trim() === "") {
+          found.push(`${label} option ${i} must state what it grants, got label ${JSON.stringify(option.label)}.`);
+        }
+        if (typeof option.effectText !== "string" || option.effectText.trim() === "") {
+          found.push(`${label} option ${i} must state its effect in effectText, got ${JSON.stringify(option.effectText)}.`);
+        }
+        const effect = option.effect;
+        if (!effect || effect.kind !== option.id || !Number.isFinite(effect.amount) || effect.amount <= 0) {
+          found.push(`${label} option ${i} must carry one finite positive effect of its own kind, got ${JSON.stringify(effect)}.`);
+        }
+      });
+      return found;
+    };
+
+    // (a) Below a minute there is no event; a ten-minute absence offers one
+    // happening whose two choices each name their own positive grant.
+    const sampleState = { rate: 0.1, maps: 0, stoneUnlocked: true, totalWoodEarned: 0 };
+    if (engine.awayEventForElapsed(59, sampleState) !== null) {
+      problems.push(`A 59s absence is shorter than a minute, so it must offer no away event, got ${JSON.stringify(engine.awayEventForElapsed(59, sampleState))}.`);
+    }
+    const sampleEvent = engine.awayEventForElapsed(600, sampleState);
+    problems.push(...eventShapeProblems(sampleEvent, "awayEventForElapsed(600)"));
+
+    // (b) The absence alone derives the event: the same length always offers
+    // the same happening and the same two choices.
+    const sampleAgain = engine.awayEventForElapsed(600, sampleState);
+    if (JSON.stringify(sampleEvent) !== JSON.stringify(sampleAgain)) {
+      problems.push(`The same absence must offer the same event: 600s gave ${JSON.stringify(sampleEvent)} then ${JSON.stringify(sampleAgain)}.`);
+    }
+
+    // Loads a save that is `ageMs` old the way a returning player's browser
+    // would, after clearing any live state.
+    const seedAwaySave = (ageMs, overrides = {}) => {
+      engine.reset();
+      const aged = new Date(Date.now() - ageMs).toISOString();
+      localStorage.setItem("selfgrow-state", JSON.stringify({
+        wood: 0, rate: 0.1, upgradeLevel: 0, stone: 0,
+        totalWoodEarned: 0, totalStoneEarned: 0,
+        wallLevel: 0, forgeLevel: 0, expeditionLevel: 0, maps: 0,
+        stoneUnlocked: false,
+        discoveryBonus: 0, discoveryId: null, discoveryName: null,
+        lastReturn: null, pendingEvent: null,
+        timestamp: aged, firstTimestamp: aged,
+        ...overrides,
+      }));
+      engine.init();
+    };
+
+    // (c) A real return of at least a minute reports the pending event through
+    // the live state and the return summary alike, agreeing with each other.
+    seedAwaySave(600000, { stoneUnlocked: true });
+    const eventFromState = engine.getState().pendingEvent;
+    problems.push(...eventShapeProblems(eventFromState, "getState().pendingEvent after a 600s return"));
+    const eventFromSummary = engine.getReturnSummary().pendingEvent;
+    problems.push(...eventShapeProblems(eventFromSummary, "getReturnSummary().pendingEvent after a 600s return"));
+    if (JSON.stringify(eventFromState) !== JSON.stringify(eventFromSummary)) {
+      problems.push(`getState and getReturnSummary must report the same pending event, got ${JSON.stringify(eventFromState)} and ${JSON.stringify(eventFromSummary)}.`);
+    }
+
+    // (d) The event lives in the save until chosen: reloading before choosing
+    // reports the very same event, the same options and the same effects.
+    const savedBeforeReload = localStorage.getItem("selfgrow-state");
+    const eventBeforeReload = JSON.stringify(engine.getState().pendingEvent);
+    engine.reset();
+    localStorage.setItem("selfgrow-state", savedBeforeReload);
+    engine.init();
+    const eventAfterReload = JSON.stringify(engine.getState().pendingEvent);
+    if (eventAfterReload !== eventBeforeReload) {
+      problems.push(`A reload before choosing must keep the pending event: expected ${eventBeforeReload}, got ${eventAfterReload}.`);
+    }
+
+    // (e) Choosing a choice grants exactly its stated effect, once; the event
+    // is then gone and a second choice is refused. Each kind — wood, stone and
+    // rate — is exercised so every grant is compared against the exact amount
+    // the choice itself stated.
+    const verifyChoice = (label, optionIndex) => {
+      const pending = engine.getState().pendingEvent;
+      problems.push(...eventShapeProblems(pending, `${label} pending event`));
+      if (!pending) return;
+      const option = pending.options[optionIndex];
+      const before = engine.getState();
+      const result = engine.chooseAwayEventOption(option.id);
+      if (result.chosen !== true) {
+        problems.push(`${label}: choosing option "${option.id}" should succeed, got refusal ${JSON.stringify(result.reason)}.`);
+        return;
+      }
+      const after = engine.getState();
+      const effect = option.effect;
+      if (effect.kind === "wood") {
+        const woodRise = after.wood - before.wood;
+        const lifetimeRise = after.totalWoodEarned - before.totalWoodEarned;
+        if (Math.abs(woodRise - effect.amount) > 1e-9 || Math.abs(lifetimeRise - effect.amount) > 1e-9) {
+          problems.push(`${label}: choosing +${effect.amount} wood should raise wood and lifetime wood by that much, got ${woodRise} and ${lifetimeRise}.`);
+        }
+      } else if (effect.kind === "stone") {
+        const stoneRise = after.stone - before.stone;
+        const lifetimeRise = after.totalStoneEarned - before.totalStoneEarned;
+        if (Math.abs(stoneRise - effect.amount) > 1e-9 || Math.abs(lifetimeRise - effect.amount) > 1e-9) {
+          problems.push(`${label}: choosing +${effect.amount} stone should raise stone and lifetime stone by that much, got ${stoneRise} and ${lifetimeRise}.`);
+        }
+      } else {
+        const rateRise = after.rate - before.rate;
+        if (Math.abs(rateRise - effect.amount) > 1e-9) {
+          problems.push(`${label}: choosing +${effect.amount} wood/s should raise the rate by that much, got ${rateRise}.`);
+        }
+      }
+      if (after.pendingEvent !== null) {
+        problems.push(`${label}: the event must be gone after choosing, got ${JSON.stringify(after.pendingEvent)}.`);
+      }
+      const again = engine.chooseAwayEventOption(option.id);
+      if (again.chosen !== false) {
+        problems.push(`${label}: choosing a second time must be refused, got ${JSON.stringify(again)}.`);
+      }
+    };
+
+    // 600s picks the first pool entry (wood + stone), 601s the second
+    // (wood + rate) and 602s the third (stone + rate); the option index picked
+    // below is the one that exercises rate where the pair offers one.
+    seedAwaySave(600000, { stoneUnlocked: true });
+    verifyChoice("600s return, first choice", 0);
+    seedAwaySave(601000, { stoneUnlocked: true });
+    verifyChoice("601s return, second choice", 1);
+    seedAwaySave(602000, { stoneUnlocked: true });
+    verifyChoice("602s return, first choice", 0);
+
+    // With stone still locked the stone option is replaced, so an early return
+    // never offers a resource the player cannot yet hold.
+    const lockedEvent = engine.awayEventForElapsed(600, { rate: 0.1, maps: 0, stoneUnlocked: false, totalWoodEarned: 0 });
+    problems.push(...eventShapeProblems(lockedEvent, "awayEventForElapsed(600) with stone locked"));
+    if (lockedEvent && lockedEvent.options.some((option) => option.id === "stone")) {
+      problems.push(`With stone locked an away event must not offer stone, got ${JSON.stringify(lockedEvent.options.map((o) => o.id))}.`);
+    }
+
+    // (f) An agent reads the pending event and chooses through the tools,
+    // applying exactly the effect the page would, and is refused afterwards.
+    seedAwaySave(600000, { stoneUnlocked: true });
+    const readWithEvent = await readState.execute({});
+    problems.push(...eventShapeProblems(readWithEvent.pendingEvent, "read-state.pendingEvent after a 600s return"));
+    const toolOption = readWithEvent.pendingEvent ? readWithEvent.pendingEvent.options[0] : null;
+    if (!toolOption) {
+      problems.push("read-state.pendingEvent must carry options an agent can choose from.");
+    } else {
+      const beforeTool = engine.getState();
+      const toolResult = await performAction.execute({ action: "choose-away-event", option: toolOption.id });
+      if (toolResult.ok === false) {
+        problems.push(`perform-action choose-away-event must accept "${toolOption.id}", got refusal ${JSON.stringify(toolResult.reason)}.`);
+      }
+      const afterTool = engine.getState();
+      const effect = toolOption.effect;
+      if (effect.kind === "wood" && Math.abs((afterTool.wood - beforeTool.wood) - effect.amount) > 1e-9) {
+        problems.push(`perform-action choose-away-event must add exactly +${effect.amount} wood, got ${afterTool.wood - beforeTool.wood}.`);
+      }
+      if (effect.kind === "stone" && Math.abs((afterTool.stone - beforeTool.stone) - effect.amount) > 1e-9) {
+        problems.push(`perform-action choose-away-event must add exactly +${effect.amount} stone, got ${afterTool.stone - beforeTool.stone}.`);
+      }
+      if (effect.kind === "rate" && Math.abs((afterTool.rate - beforeTool.rate) - effect.amount) > 1e-9) {
+        problems.push(`perform-action choose-away-event must add exactly +${effect.amount} wood/s, got ${afterTool.rate - beforeTool.rate}.`);
+      }
+      if (afterTool.pendingEvent !== null) {
+        problems.push(`perform-action choose-away-event must clear the event, got ${JSON.stringify(afterTool.pendingEvent)}.`);
+      }
+      const readAfterChoice = await readState.execute({});
+      if (readAfterChoice.pendingEvent !== null) {
+        problems.push(`read-state must report no pending event after one was chosen, got ${JSON.stringify(readAfterChoice.pendingEvent)}.`);
+      }
+      const secondChoice = await performAction.execute({ action: "choose-away-event", option: toolOption.id });
+      if (secondChoice.ok !== false) {
+        problems.push(`perform-action choose-away-event must refuse a second choice, got ${JSON.stringify(secondChoice)}.`);
+      }
+    }
+
+    // (g) The welcome-back panel is where a player actually meets the event:
+    // it shows the happening's title and one button per choice, each carrying
+    // the option's own label and effect sentence. Clicking a button grants
+    // exactly that stated effect once and the section disappears, so the other
+    // choice can never then be taken.
+    seedAwaySave(600000, { stoneUnlocked: true });
+    if (typeof window.__showOfflineSummary !== "function") {
+      problems.push("index.html must expose showOfflineSummary so a return can offer its event to a player.");
+    } else {
+      const panelEvent = engine.getState().pendingEvent;
+      window.__showOfflineSummary();
+      const panel = document.getElementById("offline-summary");
+      const eventSection = document.getElementById("offline-event");
+      if (!panel || panel.hidden) {
+        problems.push("The welcome-back panel should be visible for a 600s return that owes a decision.");
+      }
+      if (!panelEvent) {
+        problems.push("A 600s return should seed a pending event for the panel to render.");
+      } else if (!eventSection || eventSection.hidden) {
+        problems.push("The welcome-back panel must show the pending away event, but #offline-event was hidden.");
+      } else {
+        const titleEl = document.getElementById("offline-event-title");
+        if (!titleEl || titleEl.textContent !== panelEvent.title) {
+          problems.push(`The panel must show the event title ${JSON.stringify(panelEvent.title)}, got ${JSON.stringify(titleEl && titleEl.textContent)}.`);
+        }
+        panelEvent.options.forEach((option, i) => {
+          const labelEl = document.getElementById(`away-option-label-${i}`);
+          const effectEl = document.getElementById(`away-option-effect-${i}`);
+          const button = document.getElementById(`away-option-${i}`);
+          const buttonText = button ? button.textContent : "";
+          if (!labelEl || labelEl.textContent !== option.label) {
+            problems.push(`Panel option ${i} label should read ${JSON.stringify(option.label)}, got ${JSON.stringify(labelEl && labelEl.textContent)}.`);
+          }
+          if (!effectEl || effectEl.textContent !== option.effectText) {
+            problems.push(`Panel option ${i} effect should read ${JSON.stringify(option.effectText)}, got ${JSON.stringify(effectEl && effectEl.textContent)}.`);
+          }
+          if (!buttonText.includes(option.label) || !buttonText.includes(option.effectText)) {
+            problems.push(`Panel option ${i} button must show both its label and its effect text, got ${JSON.stringify(buttonText)}.`);
+          }
+        });
+
+        // Click the first choice and hold the grant against what its own
+        // button promised, then confirm the decision is spent.
+        const chosenOption = panelEvent.options[0];
+        const beforeClick = engine.getState();
+        const button0 = document.getElementById("away-option-0");
+        if (!button0) {
+          problems.push("The panel must render a clickable button for each away-event option.");
+        } else {
+          button0.click();
+          const afterClick = engine.getState();
+          const effect = chosenOption.effect;
+          if (effect.kind === "wood" && Math.abs((afterClick.wood - beforeClick.wood) - effect.amount) > 1e-9) {
+            problems.push(`Clicking the wood option should add exactly +${effect.amount} wood, got ${afterClick.wood - beforeClick.wood}.`);
+          }
+          if (effect.kind === "stone" && Math.abs((afterClick.stone - beforeClick.stone) - effect.amount) > 1e-9) {
+            problems.push(`Clicking the stone option should add exactly +${effect.amount} stone, got ${afterClick.stone - beforeClick.stone}.`);
+          }
+          if (effect.kind === "rate" && Math.abs((afterClick.rate - beforeClick.rate) - effect.amount) > 1e-9) {
+            problems.push(`Clicking the rate option should add exactly +${effect.amount} wood/s, got ${afterClick.rate - beforeClick.rate}.`);
+          }
+          if (afterClick.pendingEvent !== null) {
+            problems.push(`Choosing through the panel must clear the event, got ${JSON.stringify(afterClick.pendingEvent)}.`);
+          }
+          if (!eventSection.hidden) {
+            problems.push("The away-event section must disappear once a choice has been taken.");
+          }
+        }
+      }
+      // Close the panel so later checks start from a usable page.
+      if (typeof window.__dismissOffline === "function") window.__dismissOffline();
+    }
+
+    engine.reset();
+    engine.init();
+  } catch (err) {
+    problems.push(`Away event test threw: ${err.message}`);
+    console.error(err);
+  }
+
   return problems;
 }

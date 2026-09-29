@@ -955,6 +955,75 @@
       margin-top: 0.5rem;
     }
 
+    /* The decision a return offers: one happening drawn from the absence and
+       exactly two choices, each a button that states the one thing it grants.
+       Kept in the panel with the return's own account, so a player reads what
+       the time away turned up and then picks, instead of only a bigger number. */
+    .offline-event {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+      padding-top: 0.6rem;
+      border-top: 3px solid #3a3a5a;
+    }
+
+    .offline-event[hidden] {
+      display: none;
+    }
+
+    .offline-event-title {
+      color: var(--accent);
+      font-family: var(--pixel-font);
+      font-size: 0.5rem;
+      font-weight: bold;
+      line-height: 1.6;
+    }
+
+    .offline-event-options {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    /* One choice. Both the promise (the label) and its restatement (the
+       effect text) come from the engine's own option, so the button can never
+       state something choosing would not grant. */
+    .btn-away-option {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+      font-family: var(--body-font);
+      font-size: 0.45rem;
+      color: var(--text);
+      background: #1a1a2a;
+      border: 3px solid var(--panel-border);
+      padding: 0.5rem 0.75rem;
+      min-height: 44px;
+      text-align: left;
+      line-height: 1.6;
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+
+    .btn-away-option:hover,
+    .btn-away-option:focus-visible {
+      background: #2a2a3a;
+      border-color: var(--highlight);
+      outline: 2px solid var(--highlight);
+      outline-offset: 2px;
+    }
+
+    .away-option-label {
+      color: var(--highlight);
+      font-weight: bold;
+    }
+
+    .away-option-effect {
+      color: var(--text-dim);
+      font-size: 0.4rem;
+    }
+
     .btn-dismiss {
       font-family: var(--pixel-font);
       font-size: 0.5rem;
@@ -1367,6 +1436,22 @@
         You found the <span class="offline-discovery-name" id="offline-discovery-name"></span>! <span class="offline-discovery-bonus" id="offline-discovery-bonus" hidden></span><span class="offline-discovery-note" id="offline-discovery-note" hidden></span>
       </div>
       <div class="offline-next-find" id="offline-next-find" hidden></div>
+      <!-- The decision a return offers: the happening the absence turned up
+           and exactly two choices, each button stating the one thing it
+           grants. Hidden entirely when the return left nothing to decide. -->
+      <div id="offline-event" class="offline-event" hidden>
+        <div class="offline-event-title" id="offline-event-title"></div>
+        <div class="offline-event-options">
+          <button class="btn-away-option" id="away-option-0" type="button">
+            <span class="away-option-label" id="away-option-label-0"></span>
+            <span class="away-option-effect" id="away-option-effect-0"></span>
+          </button>
+          <button class="btn-away-option" id="away-option-1" type="button">
+            <span class="away-option-label" id="away-option-label-1"></span>
+            <span class="away-option-effect" id="away-option-effect-1"></span>
+          </button>
+        </div>
+      </div>
       <div id="offline-milestones">
         <div class="offline-milestone" id="milestone-sharpen" hidden>You can now sharpen your axe!</div>
         <div class="offline-milestone" id="milestone-stone" hidden>Stone is now available!</div>
@@ -1431,7 +1516,7 @@
   </div>
   <script type="module">
     import "./webmcp.js";
-    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, markReturnSeen, formatElapsed, nextAwayFindText, nextDiscoveryAfter, sharpenAvailable, sharpenThreshold, expeditionUnlocked, displayAmount, formatAmount, formatRate, exportSave, importSave, describeGoal, returnDiscoveryText, pauseForHidden, resumeFromHidden, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, clickPowerFor, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
+    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, chooseAwayEventOption, markReturnSeen, formatElapsed, nextAwayFindText, nextDiscoveryAfter, sharpenAvailable, sharpenThreshold, expeditionUnlocked, displayAmount, formatAmount, formatRate, exportSave, importSave, describeGoal, returnDiscoveryText, pauseForHidden, resumeFromHidden, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, clickPowerFor, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
     import { cloneState, fastForward } from "./sandbox.js";
     import { mountSprites, updateSprites, playReaction } from "./sprites.js";
 
@@ -1487,6 +1572,20 @@
     const offlineDiscoveryBonus = document.getElementById("offline-discovery-bonus");
     const offlineDiscoveryNote = document.getElementById("offline-discovery-note");
     const offlineNextFind = document.getElementById("offline-next-find");
+    const offlineEvent = document.getElementById("offline-event");
+    const offlineEventTitle = document.getElementById("offline-event-title");
+    const awayOptionButtons = [
+      document.getElementById("away-option-0"),
+      document.getElementById("away-option-1"),
+    ];
+    const awayOptionLabels = [
+      document.getElementById("away-option-label-0"),
+      document.getElementById("away-option-label-1"),
+    ];
+    const awayOptionEffects = [
+      document.getElementById("away-option-effect-0"),
+      document.getElementById("away-option-effect-1"),
+    ];
     const nextAwayFindLine = document.getElementById("next-away-find-line");
     const findsList = document.getElementById("finds-list");
     const findsEntries = document.getElementById("finds-entries");
@@ -1660,6 +1759,41 @@
     window.__setOverlayOpen = setOverlayOpen;
 
     // ─── Offline summary ───
+    // Write the pending away event into the welcome-back panel: its title and
+    // one button per choice, each showing the label and the effect sentence the
+    // engine drew from the same amount choosing will grant. Hides the whole
+    // section when there is no decision, so a return that turned up nothing
+    // never shows an empty prompt.
+    function renderOfflineEvent(event) {
+      if (!offlineEvent) return;
+      if (!event) {
+        offlineEvent.hidden = true;
+        return;
+      }
+      offlineEventTitle.textContent = event.title;
+      event.options.forEach((option, index) => {
+        const button = awayOptionButtons[index];
+        if (!button) return;
+        awayOptionLabels[index].textContent = option.label;
+        awayOptionEffects[index].textContent = option.effectText;
+        button.dataset.optionId = option.id;
+        button.disabled = false;
+      });
+      offlineEvent.hidden = false;
+    }
+
+    // Take one choice of the pending event. The engine grants exactly the
+    // effect that choice stated and clears the event, so the panel redraws
+    // without it — the other choice can never then be taken. Focus moves to
+    // the dismiss button because the button that was focused is now gone.
+    function chooseAwayOption(optionId) {
+      const result = chooseAwayEventOption(optionId);
+      if (!result.chosen) return;
+      renderUI();
+      renderOfflineEvent(null);
+      btnDismiss.focus();
+    }
+
     function showOfflineSummary() {
       // A first-ever visit, a sub-second reload, and a return read from the
       // engine's own record — never a single-use "gained" value — so the panel
@@ -1716,6 +1850,12 @@
           || "Next away find: a deeper discovery still waits.";
         offlineNextFind.hidden = false;
       }
+
+      // ─── Pending away event ───
+      // The decision the absence turned up, drawn from the same persisted event
+      // the read-state tool reports, so the panel and an agent offer the player
+      // the same two choices with the same effects.
+      renderOfflineEvent(ret.pendingEvent);
 
       // ─── Milestone announcements ───
       const milestones = ret.milestones;
@@ -1814,6 +1954,20 @@
         e.preventDefault();
         dismissOffline();
       }
+    });
+
+    // Each away-event button takes the option it is currently showing; the id
+    // is written by renderOfflineEvent from the engine's own option, so a click
+    // can only ever choose a choice the event actually offers.
+    awayOptionButtons.forEach((button) => {
+      if (!button) return;
+      button.addEventListener("click", () => chooseAwayOption(button.dataset.optionId));
+      button.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          chooseAwayOption(button.dataset.optionId);
+        }
+      });
     });
 
     // Re-opening reads the same persisted return record the original panel
