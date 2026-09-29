@@ -42,6 +42,7 @@ const EXPEDITION_STONE_COST_INC = 3;
 const EXPEDITION_WOOD_RATE_MULTIPLIER = 0.05; // additive multiplier per map (n maps = 1 + n*0.05)
 const TICK_MS = 1000;  // save interval (ms)
 const DISCOVERY_MIN_SEC = 60; // shortest absence that can turn something up
+const RETURN_MIN_SEC = 1; // shortest absence that counts as a real return
 
 /**
  * The away-discovery ladder. Each tier is reached at a minimum absence
@@ -64,7 +65,7 @@ export { FIRST_GOAL_WOOD, UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, STONE_BASE_RA
   FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_WOOD_COST_INC, FORGE_STONE_COST_INC,
   FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS,
   EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC,
-  EXPEDITION_WOOD_RATE_MULTIPLIER, computeStoneRate };
+  EXPEDITION_WOOD_RATE_MULTIPLIER, RETURN_MIN_SEC, computeStoneRate };
 
 /**
  * @typedef {Object} GameState
@@ -110,6 +111,22 @@ let state = {
 /** @type {{ wood: number, stone: number, elapsedSec: number, discovery: {id: string, name: string, bonus: number, credited: boolean}|null }} */
 let offlineGained = { wood: 0, stone: 0, elapsedSec: 0, discovery: null };
 
+/**
+ * The account of the last return, written once inside catchUp and read — never
+ * consumed — by the welcome-back panel and the agent tools. Keeping it in one
+ * place means the page can never disagree with itself about a return.
+ *
+ * @type {{
+ *   firstVisit: boolean,
+ *   elapsedSec: number,
+ *   wood: number,
+ *   stone: number,
+ *   discovery: {id: string, name: string, bonus: number, credited: boolean}|null,
+ *   milestones: Milestones,
+ * }|null}
+ */
+let lastReturn = null;
+
 let tickTimer = null;
 
 // ─── Internal helpers ─────────────────────────────────────────────
@@ -147,6 +164,25 @@ function takeMilestoneSnapshot() {
  */
 
 /**
+ * Which milestones the catch-up just crossed, comparing the live state against
+ * the snapshot taken before any resource was added. A milestone counts only
+ * when it was not already satisfied before, so the panel names what actually
+ * opened up while the player was away.
+ *
+ * @param {MilestoneSnapshot} before
+ * @returns {Milestones}
+ */
+function computeMilestones(before) {
+  return {
+    sharpenAvailable: before.upgradeLevel === 0 && before.wood < FIRST_GOAL_WOOD && state.wood >= FIRST_GOAL_WOOD,
+    stoneNowUnlocked: before.stoneUnlocked === false && state.stoneUnlocked === true,
+    wallAvailable: state.stoneUnlocked && before.wallLevel === 0 && before.stone < WALL_COST && state.stone >= WALL_COST,
+    forgeNowUnlocked: before.wallLevel === 0 && state.wallLevel >= 1,
+    expeditionNowUnlocked: before.forgeLevel < 5 && state.forgeLevel >= 5,
+  };
+}
+
+/**
  * Compare current state against snapshot to determine which milestones
  * were newly crossed during the catch-up.  Returns object and resets.
  * After reading, the snapshot is cleared so each catch-up fires once.
@@ -158,22 +194,8 @@ export function consumeOfflineMilestones() {
   if (!before) {
     return { sharpenAvailable: false, stoneNowUnlocked: false, wallAvailable: false, forgeNowUnlocked: false, expeditionNowUnlocked: false };
   }
-
-  const sharpenAvailable = before.upgradeLevel === 0 && state.wood >= 10;
-  const stoneNowUnlocked = before.stoneUnlocked === false && state.stoneUnlocked === true;
-  const wallAvailable = state.stoneUnlocked && before.wallLevel === 0 && state.stone >= 5;
-  const forgeNowUnlocked = before.wallLevel === 0 && state.wallLevel >= 1;
-  const expeditionNowUnlocked = before.forgeLevel < 5 && state.forgeLevel >= 5;
-
   snapshotBeforeCatchUp = null;
-
-  return {
-    sharpenAvailable,
-    stoneNowUnlocked,
-    wallAvailable,
-    forgeNowUnlocked,
-    expeditionNowUnlocked,
-  };
+  return computeMilestones(before);
 }
 
 function now() {
@@ -226,11 +248,15 @@ function getEffectiveRate() {
  * @param {boolean} firstVisit — true when there was no saved state to return to
  */
 function catchUp(firstVisit) {
+  lastReturn = null;
   const lastSaved = new Date(state.timestamp).getTime();
   const elapsedSec = (Date.now() - lastSaved) / 1000;
   if (elapsedSec > 0) {
     // Capture snapshot before resources are added
-    snapshotBeforeCatchUp = takeMilestoneSnapshot();
+    const before = takeMilestoneSnapshot();
+    snapshotBeforeCatchUp = before;
+    const beforeWood = before.wood;
+    const beforeStone = before.stone;
 
     const effectiveRate = getEffectiveRate();
     const woodGained = effectiveRate * elapsedSec;
@@ -259,6 +285,18 @@ function catchUp(firstVisit) {
       stone: stoneGained,
       elapsedSec: elapsedSec,
       discovery: discovery ? { id: discovery.id, name: discovery.name, bonus: discovery.bonus, credited } : null,
+    };
+
+    // The account of this return, recorded once. The wood and stone amounts
+    // are the rises the resource counters themselves show, so the panel cannot
+    // claim a number the counters disagree with.
+    lastReturn = {
+      firstVisit,
+      elapsedSec,
+      wood: displayAmount(displayAmount(state.wood) - displayAmount(beforeWood)),
+      stone: displayAmount(displayAmount(state.stone) - displayAmount(beforeStone)),
+      discovery: discovery ? { id: discovery.id, name: discovery.name, bonus: discovery.bonus, credited } : null,
+      milestones: computeMilestones(before),
     };
     state.timestamp = now();
   }
@@ -655,6 +693,49 @@ export function consumeOfflineGained() {
 }
 
 /**
+ * The account of the last return, read — never consumed — so the welcome-back
+ * panel and the agent tools always read the same numbers. `visible` is true
+ * only for a real return away at least RETURN_MIN_SEC, so a first-ever visit
+ * and a sub-second reload show no panel.
+ *
+ * @returns {{
+ *   visible: boolean,
+ *   firstVisit: boolean,
+ *   elapsedSec: number,
+ *   elapsed: string,
+ *   wood: number,
+ *   stone: number,
+ *   discovery: {id: string, name: string, bonus: number, credited: boolean}|null,
+ *   milestones: Milestones,
+ * }}
+ */
+export function getReturnSummary() {
+  const ret = lastReturn;
+  if (!ret) {
+    return {
+      visible: false,
+      firstVisit: true,
+      elapsedSec: 0,
+      elapsed: formatElapsed(0),
+      wood: 0,
+      stone: 0,
+      discovery: null,
+      milestones: { sharpenAvailable: false, stoneNowUnlocked: false, wallAvailable: false, forgeNowUnlocked: false, expeditionNowUnlocked: false },
+    };
+  }
+  return {
+    visible: !ret.firstVisit && ret.elapsedSec >= RETURN_MIN_SEC,
+    firstVisit: ret.firstVisit,
+    elapsedSec: ret.elapsedSec,
+    elapsed: formatElapsed(ret.elapsedSec * 1000),
+    wood: ret.wood,
+    stone: ret.stone,
+    discovery: ret.discovery,
+    milestones: ret.milestones,
+  };
+}
+
+/**
  * Legacy wrapper — returns only wood gained from offline catch-up.
  * @returns {number}
  */
@@ -721,6 +802,7 @@ export function reset() {
   };
   offlineGained = { wood: 0, stone: 0, elapsedSec: 0, discovery: null };
   snapshotBeforeCatchUp = null;
+  lastReturn = null;
   try {
     localStorage.removeItem(STORAGE_KEY);
   } catch {
