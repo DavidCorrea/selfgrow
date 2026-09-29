@@ -3161,19 +3161,41 @@ export async function checks() {
     console.error(err);
   }
 
-  // ─── The welcome-back panel ends with the next goal (issue #990) ─────
+  // ─── The welcome-back panel ends with the next goal (issues #990, #1024) ─
   // On every real return the panel must close by naming the player's next
-  // goal, and name it with the goal panel's own text, so the two can never
-  // drift. Six phases cover every branch of the goal rule.
+  // goal and how far they now are from it, in the goal panel's own text and
+  // numbers, so the two can never drift. Six phases cover every branch of the
+  // goal rule — four single-resource goals and two dual-resource goals.
   try {
     const engine = await import("./engine.js");
+    const { tools } = await import("./agenttools.js");
 
     const overlay = document.getElementById("offline-summary");
     const nextGoalLine = document.getElementById("offline-next-goal");
     const nextGoalText = document.getElementById("offline-next-goal-text");
+    const nextGoalResources = document.getElementById("offline-next-goal-resources");
     const milestones = document.getElementById("offline-milestones");
     const dismissBtn = document.getElementById("btn-dismiss-offline");
     const goalTextEl = document.getElementById("goal-text");
+    const goalResourceLabels = [
+      document.getElementById("goal-resource-label-1"),
+      document.getElementById("goal-resource-label-2"),
+    ];
+    const readState = tools().find((tool) => tool.name === "read-state");
+
+    // Split the panel's figures into the resource name and its current/target
+    // pair, so each can be compared with the goal panel and with the tool.
+    function parseGoalFigures(text) {
+      return text
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .map((entry) => {
+          const match = entry.match(/^(.+?):\s*([\d.]+)\s*\/\s*([\d.]+)$/);
+          if (!match) return { text: entry, name: null, current: NaN, target: NaN };
+          return { text: entry, name: match[1], current: parseFloat(match[2]), target: parseFloat(match[3]) };
+        });
+    }
 
     if (!nextGoalLine) {
       problems.push("Expected #offline-next-goal to exist in the welcome-back panel \u2014 it was not found.");
@@ -3187,6 +3209,14 @@ export async function checks() {
     }
     if (!nextGoalText) {
       problems.push("Expected #offline-next-goal-text to hold the goal inside #offline-next-goal \u2014 it was not found.");
+    }
+    if (!nextGoalResources) {
+      problems.push("Expected #offline-next-goal-resources to hold the next goal's current/target figures \u2014 it was not found.");
+    } else if (nextGoalLine && !nextGoalLine.contains(nextGoalResources)) {
+      problems.push("#offline-next-goal-resources must sit on the welcome-back panel's last line, inside #offline-next-goal, so a returning player reads the goal and its progress together.");
+    }
+    if (!readState) {
+      problems.push("Expected a tool named 'read-state' to compare the welcome-back panel's next-goal figures against \u2014 it was not found.");
     }
 
     // Each phase seeds a state whose goal the panel must repeat, plus the word
@@ -3230,6 +3260,39 @@ export async function checks() {
       }
       if (lineText && !lineText.includes(phase.keyword)) {
         problems.push(`The welcome-back panel's next goal for the ${phase.name} phase should name ${JSON.stringify(phase.keyword)}, got ${JSON.stringify(lineText)}.`);
+      }
+
+      // The same line must say how close the goal is: the figures the goal
+      // panel prints beside its bar(s), in the same words.
+      const figuresText = nextGoalResources ? nextGoalResources.textContent.trim() : "";
+      const panelFigures = goalResourceLabels
+        .filter((label) => label && !label.hidden && label.textContent.trim())
+        .map((label) => label.textContent.trim())
+        .join(", ");
+
+      if (!figuresText) {
+        problems.push(`The welcome-back panel must state how far the next goal is for the ${phase.name} phase, but its figures were empty.`);
+      }
+      if (figuresText !== panelFigures) {
+        problems.push(`The welcome-back panel's next-goal figures for the ${phase.name} phase must equal the goal panel's own labels \u2014 panel: ${JSON.stringify(figuresText)}, goal panel: ${JSON.stringify(panelFigures)}.`);
+      }
+
+      // The read-state tool is the third reader of that one rule: an agent must
+      // be told the same names and the same numbers the panel shows.
+      const panelEntries = parseGoalFigures(figuresText);
+      const toolResources = readState ? (await readState.execute({})).nextGoal.resources : [];
+
+      if (readState && panelEntries.length !== toolResources.length) {
+        problems.push(`The welcome-back panel's next goal for the ${phase.name} phase must carry the same number of resources as read-state reports \u2014 panel: ${panelEntries.length} (${JSON.stringify(figuresText)}), read-state: ${toolResources.length}.`);
+      }
+      for (let i = 0; i < panelEntries.length; i++) {
+        const entry = panelEntries[i];
+        const fromTool = toolResources[i];
+        if (!entry.name) {
+          problems.push(`The welcome-back panel's next goal for the ${phase.name} phase must write each resource as "Name: current / target", got ${JSON.stringify(entry.text)}.`);
+        } else if (fromTool && (entry.name !== fromTool.name || entry.current !== fromTool.current || entry.target !== fromTool.target)) {
+          problems.push(`The welcome-back panel's next-goal figures for the ${phase.name} phase must equal read-state's nextGoal.resources \u2014 panel: ${entry.name} ${entry.current} / ${entry.target}, read-state: ${fromTool.name} ${fromTool.current} / ${fromTool.target}.`);
+        }
       }
 
       if (dismissBtn) dismissBtn.click();

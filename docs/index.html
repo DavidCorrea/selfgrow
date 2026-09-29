@@ -850,13 +850,22 @@
     }
 
     /* The panel's closing line: the same next goal the goal panel shows, so a
-       return always ends with something to reach for. */
+       return always ends with something to reach for. line-height matches the
+       panel's other multi-line text, so a goal whose name and figures wrap read
+       as two lines instead of overlapping. */
     .offline-next-goal {
       color: var(--highlight);
       font-family: var(--pixel-font);
       font-size: 0.5rem;
       font-weight: bold;
+      line-height: 1.8;
       margin-top: 0.5rem;
+    }
+
+    /* The goal's current/target figures stay on one line, so a wrap never splits
+       a resource from its own numbers. */
+    #offline-next-goal-resources {
+      white-space: nowrap;
     }
 
     /* The rung after the one this return named, so a longer wait reads as a
@@ -1285,7 +1294,7 @@
         <div class="offline-milestone" id="milestone-forge" hidden>The forge is now unlocked!</div>
         <div class="offline-milestone" id="milestone-expedition" hidden>Expeditions are now unlocked!</div>
       </div>
-      <div class="offline-next-goal" id="offline-next-goal">Next: <span id="offline-next-goal-text"></span></div>
+      <div class="offline-next-goal" id="offline-next-goal">Next: <span id="offline-next-goal-text"></span> (<span id="offline-next-goal-resources"></span>)</div>
       <button class="btn-dismiss" id="btn-dismiss-offline" type="button">
         OK
       </button>
@@ -1398,6 +1407,7 @@
     const nextAwayFindLine = document.getElementById("next-away-find-line");
     const btnShowReturn = document.getElementById("btn-show-return");
     const offlineNextGoalText = document.getElementById("offline-next-goal-text");
+    const offlineNextGoalResources = document.getElementById("offline-next-goal-resources");
     const discoveryStat = document.getElementById("discovery-stat");
     const discoveryValueEl = document.getElementById("discovery-value");
     const btnDismiss = document.getElementById("btn-dismiss-offline");
@@ -2039,6 +2049,13 @@
       }
 
       // Goal system
+      // Write one goal resource as the text both the goal panel's labels and the
+      // welcome-back panel's next-goal line show. One rule for all three places,
+      // so a returning player reads the same numbers the goal panel reports.
+      function goalResourceText(name, current, target) {
+        return name + ": " + formatAmount(current) + " / " + target;
+      }
+
       // Helper: render a single-resource goal (hide second bar and label)
       function renderSingleGoal(description, current, target, resourceName) {
         goalText.textContent = description;
@@ -2050,7 +2067,7 @@
         if (goalProgress) goalProgress.setAttribute("aria-valuemax", target);
         // Show this goal's exact numbers beside its bar
         if (goalLabel1) {
-          goalLabel1.textContent = resourceName + ": " + formatAmount(current) + " / " + target;
+          goalLabel1.textContent = goalResourceText(resourceName, current, target);
           goalLabel1.hidden = false;
         }
         // Hide secondary bar and label
@@ -2071,7 +2088,7 @@
           goalProgress.setAttribute("aria-valuemax", res1.target);
         }
         if (goalLabel1) {
-          goalLabel1.textContent = res1.name + ": " + formatAmount(res1.current) + " / " + res1.target;
+          goalLabel1.textContent = goalResourceText(res1.name, res1.current, res1.target);
           goalLabel1.hidden = false;
         }
         // Second bar
@@ -2087,7 +2104,7 @@
           goalTrack2.setAttribute("aria-valuemax", res2.target);
         }
         if (goalLabel2) {
-          goalLabel2.textContent = res2.name + ": " + formatAmount(res2.current) + " / " + res2.target;
+          goalLabel2.textContent = goalResourceText(res2.name, res2.current, res2.target);
           goalLabel2.hidden = false;
         }
       }
@@ -2154,6 +2171,15 @@
       // written on every render so it can never be stale or drift from the
       // goal the player is actually working toward.
       if (offlineNextGoalText) offlineNextGoalText.textContent = currentGoalText;
+      // ...and how close the player is to it: the same per-resource numbers the
+      // goal panel prints beside its bar, read from the same goal object, so a
+      // returning player can see what happened and how far the next goal is
+      // without dismissing the panel.
+      if (offlineNextGoalResources) {
+        offlineNextGoalResources.textContent = goal.resources
+          .map((resource) => goalResourceText(resource.name, resource.current, resource.target))
+          .join(", ");
+      }
       if (lastGoalText === null) {
         lastGoalText = currentGoalText;
       } else if (currentGoalText !== lastGoalText) {
