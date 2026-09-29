@@ -1108,6 +1108,12 @@
         <span class="sandbox-projection-value" id="sb-rate">0.10/s</span>
         <span class="sandbox-projection-label">Total Wood Earned</span>
         <span class="sandbox-projection-value" id="sb-total-wood">0</span>
+        <span class="sandbox-projection-label">Simulated</span>
+        <span class="sandbox-projection-value" id="sb-elapsed">&mdash;</span>
+        <span class="sandbox-projection-label">Earned</span>
+        <span class="sandbox-projection-value" id="sb-earned">&mdash;</span>
+        <span class="sandbox-projection-label">Away Find</span>
+        <span class="sandbox-projection-value" id="sb-discovery">None yet</span>
         <span class="sandbox-projection-label" id="sb-stone-label" hidden>Stone</span>
         <span class="sandbox-projection-value highlight-stone" id="sb-stone" hidden>0</span>
         <span class="sandbox-projection-label" id="sb-stone-rate-label" hidden>Stone Rate</span>
@@ -1794,10 +1800,16 @@
 
     // ─── Sandbox mode ────────────────────────────────────────────
     let sandboxClone = null;
+    // The result of the most recent fast-forward, so the panel can keep showing
+    // the duration, earnings and find it just simulated rather than only totals.
+    let lastSandboxResult = null;
     const sandboxOverlay = document.getElementById("sandbox-overlay");
     const sbWood = document.getElementById("sb-wood");
     const sbRate = document.getElementById("sb-rate");
     const sbTotalWood = document.getElementById("sb-total-wood");
+    const sbElapsed = document.getElementById("sb-elapsed");
+    const sbEarned = document.getElementById("sb-earned");
+    const sbDiscovery = document.getElementById("sb-discovery");
     const sbStoneLabel = document.getElementById("sb-stone-label");
     const sbStone = document.getElementById("sb-stone");
     const sbStoneRateLabel = document.getElementById("sb-stone-rate-label");
@@ -1816,6 +1828,7 @@
 
       const s = getState();
       sandboxClone = cloneState(s);
+      lastSandboxResult = null;
 
       // Register the overlay first, so the sandbox button is still focused when
       // we record it as the return-focus target.
@@ -1861,6 +1874,7 @@
       if (!sandboxClone) return null;
 
       const result = fastForward(sandboxClone, simulatedSeconds);
+      lastSandboxResult = result;
 
       // Append milestone announcements
       const milestones = [];
@@ -1869,6 +1883,7 @@
       if (result.milestones.wallAvailable) milestones.push("Can now build a wall!");
       if (result.milestones.forgeNowUnlocked) milestones.push("Forge unlocked!");
       if (result.milestones.expeditionNowUnlocked) milestones.push("Expeditions unlocked!");
+      if (result.discovery) milestones.push("Away find: " + result.discovery.name + "!");
 
       const listEl = document.createElement("div");
       listEl.className = "sandbox-milestone";
@@ -1918,6 +1933,40 @@
 
       // Milestones summary
       sbMilestones.textContent = "Wood: " + Math.floor(c.totalWoodEarned) + " | Stone: " + Math.floor(c.totalStoneEarned) + " | Upgrades: " + c.upgradeLevel + " | Walls: " + c.wallLevel + " | Forge: " + c.forgeLevel;
+
+      // Last rehearsal: what was simulated, what was earned, and what it found
+      if (lastSandboxResult) {
+        sbElapsed.textContent = formatSimulatedDuration(lastSandboxResult.seconds);
+        sbEarned.textContent = describeEarnings(lastSandboxResult.woodDelta, lastSandboxResult.stoneDelta);
+        sbDiscovery.textContent = lastSandboxResult.discovery
+          ? lastSandboxResult.discovery.name + (lastSandboxResult.discovery.credited
+            ? " +" + lastSandboxResult.discovery.bonus.toFixed(2) + "/s"
+            : " (already owned)")
+          : "none this time";
+      }
+    }
+
+    /**
+     * Name a simulated duration in plain words: 10 seconds, 1 hour, 1 day,
+     * 1 month. Falls back to a seconds count for anything unmapped.
+     */
+    function formatSimulatedDuration(seconds) {
+      const known = {
+        10: "10 seconds",
+        3600: "1 hour",
+        86400: "1 day",
+        2592000: "1 month",
+      };
+      return known[seconds] || seconds + " seconds";
+    }
+
+    /**
+     * Describe what a rehearsal earned, e.g. "+360 wood" or "+360 wood, +54 stone".
+     */
+    function describeEarnings(woodDelta, stoneDelta) {
+      const parts = ["+" + displayAmount(woodDelta) + " wood"];
+      if (stoneDelta > 0) parts.push("+" + displayAmount(stoneDelta) + " stone");
+      return parts.join(", ");
     }
 
     btnSandbox.addEventListener("click", enterSandbox);

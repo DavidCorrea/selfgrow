@@ -2892,6 +2892,38 @@ export async function checks() {
       // This test is just validating the function doesn't throw and returns proper shape
     }
 
+    // --- Sandbox Test 4b: a rehearsal names the find a real absence would ---
+    // The sandbox must reuse the engine's discovery rule, so the same length
+    // can never name a different find than a real return would.
+    const oneHourClone = sandbox.cloneState(engine.getState());
+    const oneHourResult = sandbox.fastForward(oneHourClone, 3600);
+    const oneHourRealRule = engine.discoverForElapsed(3600);
+    if (oneHourResult.seconds !== 3600) {
+      problems.push(`sandbox fastForward should report the simulated seconds (3600), got ${oneHourResult.seconds}.`);
+    }
+    if (!oneHourResult.discovery) {
+      problems.push("sandbox fastForward(3600s) should name the away find a real 1-hour absence would, got none.");
+    } else if (oneHourResult.discovery.id !== "wandering-sapling") {
+      problems.push(`sandbox fastForward(3600s) should find 'wandering-sapling', got '${oneHourResult.discovery.id}'.`);
+    } else if (oneHourResult.discovery.name !== oneHourRealRule.name || oneHourResult.discovery.bonus !== oneHourRealRule.bonus) {
+      problems.push(`sandbox fastForward(3600s) find should match engine.discoverForElapsed(3600s) (${JSON.stringify(oneHourRealRule)}), got ${JSON.stringify(oneHourResult.discovery)}.`);
+    }
+
+    const oneDayClone = sandbox.cloneState(engine.getState());
+    const oneDayResult = sandbox.fastForward(oneDayClone, 86400);
+    const oneDayRealRule = engine.discoverForElapsed(86400);
+    if (!oneDayResult.discovery || oneDayResult.discovery.id !== "ancient-grove") {
+      problems.push(`sandbox fastForward(86400s) should find 'ancient-grove', got ${oneDayResult.discovery ? oneDayResult.discovery.id : "none"}.`);
+    } else if (oneDayResult.discovery.bonus !== oneDayRealRule.bonus) {
+      problems.push(`sandbox fastForward(86400s) find should match engine.discoverForElapsed(86400s) (${JSON.stringify(oneDayRealRule)}), got ${JSON.stringify(oneDayResult.discovery)}.`);
+    }
+
+    const shortRehearsalClone = sandbox.cloneState(engine.getState());
+    const shortRehearsal = sandbox.fastForward(shortRehearsalClone, 10);
+    if (shortRehearsal.discovery !== null) {
+      problems.push(`sandbox fastForward(10s) is too short for a find and should report discovery=null, got ${JSON.stringify(shortRehearsal.discovery)}.`);
+    }
+
     // --- Sandbox Test 5: agent tools ---
     const agentTools = await import("./agenttools.js");
     const allTools = agentTools.tools();
@@ -2929,6 +2961,9 @@ export async function checks() {
         problems.push("sandbox-fast-forward execute should return an object.");
       } else if (typeof ffResult.wood !== "number") {
         problems.push(`sandbox-fast-forward result should have a 'wood' number field, got ${JSON.stringify(ffResult.wood)}.`);
+      }
+      if (!ffResult.discovery || ffResult.discovery.id !== "wandering-sapling") {
+        problems.push(`sandbox-fast-forward(3600s) should return the find 'wandering-sapling', got ${ffResult.discovery ? ffResult.discovery.id : "none"}.`);
       }
     }
 
@@ -3032,6 +3067,19 @@ export async function checks() {
       const afterBtnWood = parseFloat(sbWoodEl.textContent);
       if (!(afterBtnWood > beforeBtnWood)) {
         problems.push(`Clicking #sb-btn-1h should raise the projected #sb-wood, but it went ${beforeBtnWood} -> ${afterBtnWood}.`);
+      }
+
+      const sbElapsedEl = document.getElementById("sb-elapsed");
+      const sbDiscoveryEl = document.getElementById("sb-discovery");
+      if (!sbElapsedEl || !sbDiscoveryEl) {
+        problems.push("Expected #sb-elapsed and #sb-discovery to report the last rehearsal in the sandbox panel.");
+      } else {
+        if (sbElapsedEl.textContent !== "1 hour") {
+          problems.push(`#sb-elapsed should read '1 hour' after the 1h fast-forward, got '${sbElapsedEl.textContent}'.`);
+        }
+        if (!/Wandering Sapling/.test(sbDiscoveryEl.textContent)) {
+          problems.push(`#sb-discovery should name 'Wandering Sapling' after the 1h fast-forward, got '${sbDiscoveryEl.textContent}'.`);
+        }
       }
     }
 
