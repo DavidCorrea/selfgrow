@@ -194,6 +194,7 @@
       border: 3px solid #3a3a5a;
       padding: 0.7rem;
       min-width: 0;
+      position: relative;
     }
 
     .system-card.visible {
@@ -227,6 +228,92 @@
       width: 100%;
       padding: 0.7rem 0.75rem;
       font-size: 0.5rem;
+    }
+
+    /* ─── Pixel-art sprites — drawn in code, never a canvas ─── */
+    .sprite-host {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 0;
+    }
+
+    .sprite-host svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+      image-rendering: pixelated;
+    }
+
+    .gather-sprite {
+      width: 4rem;
+      height: 4rem;
+    }
+
+    .chip-sprite {
+      width: 1.05rem;
+      height: 1.05rem;
+    }
+
+    /* The gather picture is the button: picture on top, real text below. */
+    .system-card .btn-art {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.6rem;
+    }
+
+    .gather-label {
+      display: block;
+    }
+
+    /* ─── Gather reactions: each system answers in its own way ─── */
+    .gather-sprite.reacting[data-sprite="tree"] { animation: sprite-shake 400ms steps(2, end); }
+    .gather-sprite.reacting[data-sprite="rock"] { animation: sprite-chip 400ms steps(3, end); }
+    .gather-sprite.reacting[data-sprite="anvil"] { animation: sprite-spark 400ms steps(4, end); }
+    .gather-sprite.reacting[data-sprite="map"] { animation: sprite-puff 400ms steps(3, end); }
+
+    @keyframes sprite-shake {
+      0%, 100% { transform: translateX(0) rotate(0deg); }
+      25% { transform: translateX(-2px) rotate(-4deg); }
+      75% { transform: translateX(2px) rotate(4deg); }
+    }
+
+    @keyframes sprite-chip {
+      0%, 100% { transform: translateY(0) scale(1); }
+      40% { transform: translateY(2px) scale(0.94); }
+      70% { transform: translateY(0) scale(1.03); }
+    }
+
+    @keyframes sprite-spark {
+      0%, 100% { transform: translateY(0); filter: brightness(1); }
+      30% { transform: translateY(-2px); filter: brightness(1.7); }
+      60% { transform: translateY(0); filter: brightness(1.2); }
+    }
+
+    @keyframes sprite-puff {
+      0%, 100% { transform: scale(1) rotate(0deg); }
+      50% { transform: scale(1.08) rotate(-3deg); }
+    }
+
+    /* The floating "+N" that names what a use just gave. */
+    .float-gain {
+      position: absolute;
+      top: 0.5rem;
+      left: 50%;
+      transform: translateX(-50%);
+      font-family: var(--pixel-font);
+      font-size: 0.7rem;
+      color: var(--highlight);
+      pointer-events: none;
+      z-index: 5;
+      animation: float-gain-rise 600ms ease-out forwards;
+    }
+
+    @keyframes float-gain-rise {
+      0% { opacity: 1; transform: translate(-50%, 0); }
+      100% { opacity: 0; transform: translate(-50%, -2.75rem); }
     }
 
     .upgrade-list {
@@ -898,12 +985,21 @@
     }
 
     /* ─── Accessible: prefers-reduced-motion ─── */
+    /* The pictures still render — only the motion is dropped. */
     @media (prefers-reduced-motion: reduce) {
       .btn {
         transition: none;
       }
       .btn:active {
         transform: none;
+      }
+      .gather-sprite,
+      .chip-sprite,
+      .float-gain {
+        animation: none !important;
+      }
+      .float-gain {
+        display: none !important;
       }
     }
   </style>
@@ -915,13 +1011,13 @@
     <div class="game-title" aria-hidden="true">selfgrow</div>
     <div class="chip-row">
       <div class="chip" id="wood-stat">
-        <span class="chip-icon" aria-hidden="true">&#x1F332;</span>
+        <span class="sprite-host chip-sprite" data-sprite="tree"></span>
         <span class="chip-name" id="wood-label">Wood</span>
         <span class="stat-value" id="wood-value">0</span>
         <span class="stat-value chip-rate" id="rate-value">+0.10/s</span>
       </div>
       <div class="chip stat-hidden" id="stone-stat">
-        <span class="chip-icon" aria-hidden="true">&#x1FAA8;</span>
+        <span class="sprite-host chip-sprite" data-sprite="rock"></span>
         <span class="chip-name" id="stone-label">Stone</span>
         <span class="stat-value stone-value" id="stone-value">0</span>
         <span class="chip-rate-stat stat-hidden" id="stone-rate-stat">
@@ -929,12 +1025,12 @@
         </span>
       </div>
       <div class="chip stat-hidden" id="forge-stat">
-        <span class="chip-icon" aria-hidden="true">&#x1F528;</span>
+        <span class="sprite-host chip-sprite" data-sprite="anvil"></span>
         <span class="chip-name" id="forge-label">Forge</span>
         <span class="stat-value forge-value" id="forge-value">0</span>
       </div>
       <div class="chip stat-hidden" id="expedition-stat">
-        <span class="chip-icon" aria-hidden="true">&#x1F30D;</span>
+        <span class="sprite-host chip-sprite" data-sprite="map"></span>
         <span class="chip-name" id="map-label">Maps</span>
         <span class="stat-value" id="map-value" style="color: var(--map-color);">0</span>
       </div>
@@ -974,8 +1070,9 @@
         <h3 class="system-name">Wood</h3>
       </div>
       <p class="system-yield" id="wood-yield-value">+1 / chop</p>
-      <button class="btn" id="btn-gather" type="button" aria-label="Gather Wood">
-        <span class="btn-icon">&#x26A0;</span> Gather Wood
+      <button class="btn btn-art" id="btn-gather" type="button" aria-label="Gather Wood">
+        <span class="sprite-host gather-sprite" data-sprite="tree"></span>
+        <span class="gather-label">Gather Wood</span>
       </button>
       <div class="upgrade-list">
         <div class="upgrade-card">
@@ -993,8 +1090,9 @@
         <h3 class="system-name">Stone</h3>
       </div>
       <p class="system-yield" id="stone-yield-value">+1 / mine</p>
-      <button class="btn btn-stone" id="btn-gather-stone" type="button" aria-label="Gather Stone">
-        <span class="btn-icon">&#x26AA;</span> Gather Stone
+      <button class="btn btn-stone btn-art" id="btn-gather-stone" type="button" aria-label="Gather Stone">
+        <span class="sprite-host gather-sprite" data-sprite="rock"></span>
+        <span class="gather-label">Gather Stone</span>
       </button>
       <div class="upgrade-list">
         <div class="upgrade-card">
@@ -1012,8 +1110,9 @@
         <h3 class="system-name">Forge</h3>
       </div>
       <p class="system-yield">+0.05 wood/s and +0.5 per chop</p>
-      <button class="btn btn-forge" id="btn-forge-tool" type="button" aria-label="Forge Tool" disabled>
-        <span class="btn-icon">&#x1F528;</span> Forge Tool (10 wood + 5 stone)
+      <button class="btn btn-forge btn-art" id="btn-forge-tool" type="button" aria-label="Forge Tool" disabled>
+        <span class="sprite-host gather-sprite" data-sprite="anvil"></span>
+        <span class="gather-label">Forge Tool (10 wood + 5 stone)</span>
       </button>
     </article>
 
@@ -1023,8 +1122,9 @@
         <h3 class="system-name">Expeditions</h3>
       </div>
       <p class="system-yield">+5% wood rate per map</p>
-      <button class="btn" id="btn-expedition" type="button" aria-label="Send Expedition" disabled style="background: var(--map-color); border-color: #cc4488;">
-        <span class="btn-icon">&#x1F30D;</span> Send Expedition (10 wood + 5 stone)
+      <button class="btn btn-art" id="btn-expedition" type="button" aria-label="Send Expedition" disabled style="background: var(--map-color); border-color: #cc4488;">
+        <span class="sprite-host gather-sprite" data-sprite="map"></span>
+        <span class="gather-label">Send Expedition (10 wood + 5 stone)</span>
       </button>
     </article>
   </section>
@@ -1136,6 +1236,7 @@
     import "./webmcp.js";
     import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, consumeOfflineWoodGained, consumeOfflineGained, consumeOfflineMilestones, formatElapsed, sharpenAvailable, sharpenThreshold, displayAmount, exportSave, importSave, FIRST_GOAL_WOOD, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS } from "./engine.js";
     import { cloneState, fastForward } from "./sandbox.js";
+    import { createSpriteSvg } from "./sprites.js";
 
     init();
 
@@ -1155,6 +1256,7 @@
     const woodYieldEl = document.getElementById("wood-yield-value");
     const stoneYieldEl = document.getElementById("stone-yield-value");
     const btnGather = document.getElementById("btn-gather");
+    const woodActions = document.getElementById("wood-actions");
     const btnSharpen = document.getElementById("btn-sharpen");
     const stoneActions = document.getElementById("stone-actions");
     const btnGatherStone = document.getElementById("btn-gather-stone");
@@ -1197,6 +1299,46 @@
 
     const GOAL_STONE = 5;
 
+    // ─── Pixel-art sprites ───
+    // Each gather picture is drawn into its placeholder as real SVG elements
+    // on load. Nothing re-renders the host afterwards, so the button keeps its
+    // picture for the game's whole life.
+    function mountSprites() {
+      document.querySelectorAll(".sprite-host").forEach((host) => {
+        host.replaceChildren(createSpriteSvg(host.dataset.sprite));
+      });
+    }
+    mountSprites();
+    window.__mountSprites = mountSprites;
+
+    // ─── Gather feedback ───
+    // A use makes the picture react and floats a "+N" from the card. Both are
+    // pure decoration: the authoritative amount stays as real text in the
+    // header chip. Under reduced motion nothing moves, but the pictures stay.
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const REACTION_MS = 400;
+    const FLOAT_MS = 600;
+
+    function showActionFeedback(button, card, amountText) {
+      if (reduceMotion.matches) return;
+
+      const sprite = button.querySelector(".gather-sprite");
+      if (sprite) {
+        sprite.classList.remove("reacting");
+        void sprite.offsetWidth; // restart the animation on rapid repeat use
+        sprite.classList.add("reacting");
+        setTimeout(() => sprite.classList.remove("reacting"), REACTION_MS);
+      }
+
+      if (!card) return;
+      const gain = document.createElement("span");
+      gain.className = "float-gain";
+      gain.textContent = amountText;
+      gain.setAttribute("aria-hidden", "true");
+      card.appendChild(gain);
+      setTimeout(() => gain.remove(), FLOAT_MS);
+    }
+
     // ─── Cooldown state ───
     let woodCooldown = false;
     let stoneCooldown = false;
@@ -1222,9 +1364,11 @@
 
     function handleGather() {
       if (woodCooldown) return;
-      gatherWood();
+      const beforeWood = getState().wood;
+      const after = gatherWood();
       setWoodCooldown();
       renderUI();
+      showActionFeedback(btnGather, woodActions, "+" + formatClickPower(after.wood - beforeWood));
     }
 
     btnGather.addEventListener("click", handleGather);
@@ -1250,9 +1394,10 @@
 
     function handleGatherStone() {
       if (stoneCooldown) return;
-      gatherStone();
+      const result = gatherStone();
       setStoneCooldown();
       renderUI();
+      if (result.gathered) showActionFeedback(btnGatherStone, stoneActions, "+" + STONE_GATHER_AMOUNT);
     }
 
     btnGatherStone.addEventListener("click", handleGatherStone);
@@ -1277,8 +1422,9 @@
     });
 
     function handleForgeTool() {
-      forgeTool();
+      const result = forgeTool();
       renderUI();
+      if (result.forged) showActionFeedback(btnForgeTool, forgeActions, "+1");
     }
 
     btnForgeTool.addEventListener("click", handleForgeTool);
@@ -1290,8 +1436,9 @@
     });
 
     function handleExpedition() {
-      sendExpedition();
+      const result = sendExpedition();
       renderUI();
+      if (result.sent) showActionFeedback(btnExpedition, expeditionActions, "+1");
     }
 
     btnExpedition.addEventListener("click", handleExpedition);
@@ -1597,9 +1744,11 @@
         if (forgeValueEl) {
           forgeValueEl.textContent = String(forgeLevel);
         }
-        // Update forge button text with costs
+        // Update forge button label with costs — only the real-text label, so
+        // the pixel-art picture the button already carries is never erased.
         const canForge = wood >= forgeWoodCost && stone >= forgeStoneCost;
-        btnForgeTool.innerHTML = '<span class="btn-icon">\uD83D\uDD28</span> Forge Tool (' + forgeWoodCost + ' wood + ' + forgeStoneCost + ' stone)';
+        const forgeLabel = btnForgeTool && btnForgeTool.querySelector(".gather-label");
+        if (forgeLabel) forgeLabel.textContent = "Forge Tool (" + forgeWoodCost + " wood + " + forgeStoneCost + " stone)";
         btnForgeTool.setAttribute("aria-label", "Forge Tool — costs " + forgeWoodCost + " wood and " + forgeStoneCost + " stone");
         btnForgeTool.disabled = !canForge;
       } else {
@@ -1620,7 +1769,8 @@
         const eStoneCost = s.expeditionStoneCost || 5;
         const canExpedition = wood >= eWoodCost && stone >= eStoneCost;
         if (btnExpedition) {
-          btnExpedition.innerHTML = '<span class="btn-icon">\uD83C\uDF0D</span> Send Expedition (' + eWoodCost + ' wood + ' + eStoneCost + ' stone)';
+          const expeditionLabel = btnExpedition.querySelector(".gather-label");
+          if (expeditionLabel) expeditionLabel.textContent = "Send Expedition (" + eWoodCost + " wood + " + eStoneCost + " stone)";
           btnExpedition.setAttribute("aria-label", "Send Expedition — costs " + eWoodCost + " wood and " + eStoneCost + " stone");
           btnExpedition.disabled = !canExpedition;
         }
@@ -1647,11 +1797,13 @@
         totalStoneEl.textContent = String(Math.floor(s.totalStoneEarned));
       }
 
-      // Gather wood button label — show click power
-      if (clickPower > 1) {
-        btnGather.innerHTML = '<span class="btn-icon">\u26A0</span> Gather Wood (+' + formatClickPower(clickPower) + ')';
-      } else {
-        btnGather.innerHTML = '<span class="btn-icon">\u26A0</span> Gather Wood';
+      // Gather wood button label — show click power. The label is real text set
+      // in place; the button's pixel-art picture stays untouched.
+      const gatherLabelEl = btnGather.querySelector(".gather-label");
+      if (gatherLabelEl) {
+        gatherLabelEl.textContent = clickPower > 1
+          ? "Gather Wood (+" + formatClickPower(clickPower) + ")"
+          : "Gather Wood";
       }
 
       // Stone gather button: cooldown-aware disabled

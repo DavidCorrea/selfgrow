@@ -3606,5 +3606,185 @@ export async function checks() {
     console.error(err);
   }
 
+  // ─── Gather actions are pixel-art pictures, and they still work ───
+  // Each unlocked system's action is a picture drawn in code that IS the
+  // button, the matching header chip shows the same picture smaller, using the
+  // picture reacts, a "+N" floats up naming the gain, and every value stays
+  // real text so a screen reader and the agent tools see what a player sees.
+  try {
+    const engine = await import("./engine.js");
+    const sprites = await import("./sprites.js");
+    const paletteFills = new Set(
+      Object.values(sprites.SPRITE_PALETTE).filter((c) => typeof c === "string")
+    );
+
+    // The picture stands for this system, and each one is a distinct drawing.
+    const actionSprites = [
+      { button: "btn-gather", sprite: "tree" },
+      { button: "btn-gather-stone", sprite: "rock" },
+      { button: "btn-forge-tool", sprite: "anvil" },
+      { button: "btn-expedition", sprite: "map" },
+    ];
+    const chipSprites = [
+      { chip: "wood-stat", sprite: "tree" },
+      { chip: "stone-stat", sprite: "rock" },
+      { chip: "forge-stat", sprite: "anvil" },
+      { chip: "expedition-stat", sprite: "map" },
+    ];
+
+    // A sprite is real SVG page elements: a 16×16 viewBox, crisp edges, many
+    // <rect> cells, and only colours from the game's own palette.
+    const inspectSprite = (svg, where) => {
+      if (!svg) {
+        problems.push(`Expected ${where} to hold a pixel-art SVG picture drawn in code — none was found.`);
+        return;
+      }
+      if (svg.getAttribute("viewBox") !== "0 0 16 16") {
+        problems.push(`Expected ${where} sprite viewBox "0 0 16 16", got "${svg.getAttribute("viewBox")}".`);
+      }
+      if (svg.getAttribute("shape-rendering") !== "crispEdges") {
+        problems.push(`Expected ${where} sprite shape-rendering "crispEdges" so the art stays crisp, got "${svg.getAttribute("shape-rendering")}".`);
+      }
+      if (svg.getAttribute("role") !== "img" || !(svg.getAttribute("aria-label") || "").trim()) {
+        problems.push(`Expected ${where} sprite to be role="img" with a non-empty accessible name, got role="${svg.getAttribute("role")}" label="${svg.getAttribute("aria-label")}".`);
+      }
+      const rects = svg.querySelectorAll("rect");
+      if (rects.length < 20) {
+        problems.push(`Expected ${where} sprite to be built from many <rect> cells, got ${rects.length}.`);
+      }
+      for (const rect of rects) {
+        const fill = (rect.getAttribute("fill") || "").toLowerCase();
+        if (!paletteFills.has(fill)) {
+          problems.push(`Expected ${where} sprite to use only the game palette, but found fill "${fill}".`);
+          break;
+        }
+      }
+    };
+
+    for (const { button, sprite } of actionSprites) {
+      const btn = document.getElementById(button);
+      if (!btn) {
+        problems.push(`Expected #${button} to exist as a gather action — it was not found.`);
+        continue;
+      }
+      if (btn.tagName !== "BUTTON" || btn.getAttribute("type") !== "button") {
+        problems.push(`Expected the #${button} picture action to remain a native <button type="button">, got <${btn.tagName.toLowerCase()}>.`);
+      }
+      if (!(btn.getAttribute("aria-label") || "").trim()) {
+        problems.push(`Expected #${button} to carry an accessible name so the picture is operable by a screen reader, got none.`);
+      }
+      const svg = btn.querySelector("svg[data-sprite]");
+      if (svg && svg.getAttribute("data-sprite") !== sprite) {
+        problems.push(`Expected #${button} to show the "${sprite}" picture, got "${svg.getAttribute("data-sprite")}".`);
+      }
+      inspectSprite(svg, `#${button}`);
+    }
+
+    for (const { chip, sprite } of chipSprites) {
+      const chipEl = document.getElementById(chip);
+      if (!chipEl) {
+        problems.push(`Expected #${chip} resource chip to exist — it was not found.`);
+        continue;
+      }
+      const svg = chipEl.querySelector(".chip-sprite svg[data-sprite]");
+      if (svg && svg.getAttribute("data-sprite") !== sprite) {
+        problems.push(`Expected the #${chip} chip to show the "${sprite}" picture, got "${svg.getAttribute("data-sprite")}".`);
+      }
+      inspectSprite(svg, `#${chip} chip`);
+    }
+
+    // A full render — which rewrites every card's text on each tick — must
+    // never erase the pictures. Put the game deep enough that the forge and
+    // expedition branches actually run, then render and re-check them.
+    const originalCode = engine.exportSave();
+    const stamp = new Date().toISOString();
+    engine.importSave(btoa(JSON.stringify({
+      wood: 500, rate: 0.2, upgradeLevel: 1, stone: 500,
+      totalWoodEarned: 500, totalStoneEarned: 500,
+      wallLevel: 1, forgeLevel: 5, expeditionLevel: 0, maps: 0,
+      stoneUnlocked: true, timestamp: stamp, firstTimestamp: stamp,
+    })));
+    if (typeof window.__renderUI === "function") window.__renderUI();
+
+    const forgeSvg = document.querySelector("#btn-forge-tool svg[data-sprite]");
+    const expeditionSvg = document.querySelector("#btn-expedition svg[data-sprite]");
+    if (!forgeSvg) {
+      problems.push("Rendering the page erased the forge button's pixel-art picture — the button label must be text-only, never re-written as HTML.");
+    }
+    if (!expeditionSvg) {
+      problems.push("Rendering the page erased the expedition button's pixel-art picture — the button label must be text-only, never re-written as HTML.");
+    }
+    const forgeText = document.querySelector("#btn-forge-tool .gather-label");
+    if (!forgeText || !forgeText.textContent.includes("Forge Tool (") || !/\d/.test(forgeText.textContent)) {
+      problems.push(`Expected the forge button label to stay real text with its costs, got "${forgeText ? forgeText.textContent : "(missing)"}".`);
+    }
+
+    // Using the wood picture must gather wood, react, and float the gain.
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const woodActionsEl = document.getElementById("wood-actions");
+    const woodBtn = document.getElementById("btn-gather");
+    engine.importSave(btoa(JSON.stringify({
+      wood: 25, rate: 0.1, upgradeLevel: 0, stone: 0,
+      totalWoodEarned: 25, totalStoneEarned: 0,
+      wallLevel: 0, forgeLevel: 0, expeditionLevel: 0, maps: 0,
+      stoneUnlocked: false, timestamp: stamp, firstTimestamp: stamp,
+    })));
+    if (typeof window.__renderUI === "function") window.__renderUI();
+    // The gather button enables itself after its own 500ms cooldown.
+    for (let i = 0; i < 20 && woodBtn && woodBtn.disabled; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    if (!woodBtn) {
+      problems.push("Expected #btn-gather to exist to drive the picture action — it was not found.");
+    } else {
+      const woodBefore = engine.getState().wood;
+      woodBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      const woodAfter = engine.getState().wood;
+      if (!(woodAfter > woodBefore)) {
+        problems.push(`Clicking the wood picture should gather wood: wood stayed at ${woodBefore}.`);
+      }
+
+      const floated = woodActionsEl ? woodActionsEl.querySelector(".float-gain") : null;
+      const reacting = woodBtn.querySelector(".gather-sprite.reacting");
+      if (reducedMotion) {
+        if (floated) problems.push("With reduced motion enabled using the picture must not float a '+N' — one appeared.");
+        if (reacting) problems.push("With reduced motion enabled using the picture must not animate — a .reacting sprite appeared.");
+      } else {
+        if (!floated) {
+          problems.push("Using the wood picture should float a '+N' naming the gain — none appeared.");
+        } else if (!/^\+\d/.test(floated.textContent)) {
+          problems.push(`The floating gain should read like "+N", got "${floated.textContent}".`);
+        }
+        if (!reacting) {
+          problems.push("Using the wood picture should react — the sprite never gained .reacting.");
+        }
+      }
+    }
+
+    // The reduced-motion stylesheet must stop the motion, leaving the art.
+    let css = "";
+    for (const styleEl of document.querySelectorAll("style")) css += styleEl.textContent;
+    const rmIndex = css.indexOf("prefers-reduced-motion");
+    if (rmIndex === -1) {
+      problems.push("Expected a prefers-reduced-motion rule in the page stylesheet — none was found.");
+    } else {
+      const rmBlock = css.slice(rmIndex, rmIndex + 800);
+      if (!rmBlock.includes(".gather-sprite")) {
+        problems.push("The prefers-reduced-motion rule should disable the .gather-sprite reaction — it does not mention .gather-sprite.");
+      }
+      if (!rmBlock.includes(".float-gain")) {
+        problems.push("The prefers-reduced-motion rule should disable the .float-gain animation — it does not mention .float-gain.");
+      }
+    }
+
+    // Leave the save as it was found and let the tick keep running.
+    engine.importSave(originalCode);
+    engine.init();
+    if (typeof window.__renderUI === "function") window.__renderUI();
+  } catch (err) {
+    problems.push(`Pixel-art gather action test threw: ${err.message}`);
+    console.error(err);
+  }
+
   return problems;
 }
