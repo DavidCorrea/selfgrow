@@ -1303,7 +1303,7 @@
   </div>
   <script type="module">
     import "./webmcp.js";
-    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, formatElapsed, sharpenAvailable, sharpenThreshold, displayAmount, exportSave, importSave, describeGoal, returnDiscoveryText, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
+    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, formatElapsed, sharpenAvailable, sharpenThreshold, displayAmount, exportSave, importSave, describeGoal, returnDiscoveryText, pauseForHidden, resumeFromHidden, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
     import { cloneState, fastForward } from "./sandbox.js";
     import { mountSprites, updateSprites, playReaction } from "./sprites.js";
 
@@ -2331,6 +2331,49 @@
       }
     });
 
+    // ─── Returning from a hidden tab ─────────────────────────────
+    /**
+     * Keep the game honest across a hidden spell. Browsers throttle timers in a
+     * hidden tab, so a tick left running would credit one simulated second for
+     * a call that may be a minute late and stamp the save as current, silently
+     * dropping the rest of the real absence. Hiding therefore stops the tick,
+     * and coming back credits the whole gap through the same catch-up a reload
+     * runs — then greets the player with the welcome-back panel.
+     *
+     * The visibility is a parameter so the self-check can drive both halves of
+     * the return; a real event reads it from the document.
+     *
+     * @param {boolean} [hidden]
+     * @returns {object|null} the return summary getReturnSummary() reports —
+     *   the same account the welcome-back panel renders — or null when nothing
+     *   was hidden and there is therefore nothing to greet.
+     */
+    function onVisibilityReturn(hidden = document.hidden) {
+      if (hidden) {
+        pauseForHidden();
+        return null;
+      }
+
+      // An overlay already owns the screen: the absence is still credited, but
+      // it is not announced over a panel that is showing its own account.
+      const greet = openOverlays.size === 0;
+      const summary = resumeFromHidden({ record: greet });
+      if (!summary) return null;
+
+      // Render before greeting: the panel closes with the goal text its own
+      // render writes, and the render reconciles the buttons the panel then
+      // locks for as long as it is up.
+      renderUI();
+      if (greet) showOfflineSummary();
+      return summary;
+    }
+
+    document.addEventListener("visibilitychange", () => onVisibilityReturn());
+    window.addEventListener("focus", () => onVisibilityReturn());
+    // A page opened into a background tab is hidden from its first moment, so
+    // it takes the hidden path before it can ever run a throttled tick.
+    if (document.hidden) pauseForHidden();
+
     // Expose for agent tools and self-test access
     window.__enterSandbox = enterSandbox;
     window.__exitSandbox = exitSandbox;
@@ -2339,6 +2382,7 @@
 
     // Expose renderUI for agent tools and self-test access
     window.__renderUI = renderUI;
+    window.__onVisibilityReturn = onVisibilityReturn;
     window.__showOfflineSummary = showOfflineSummary;
     window.__dismissOffline = dismissOffline;
     window.__revealSaveCode = revealSaveCode;
