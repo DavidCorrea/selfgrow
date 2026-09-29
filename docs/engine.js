@@ -719,22 +719,44 @@ export function nextAwayFindText(next) {
 }
 
 /**
- * The one sentence that says what a return's find did to the wood rate: the
- * boost it added and that the find is kept, or — when it added nothing —
- * plainly which of the two no-change cases this is. Pure, so the welcome-back
- * panel and the agent tools word the same return identically.
+ * The one rule that words a return's find, split into the three parts the
+ * welcome-back panel renders: the words before the name (lead), the find's own
+ * name, and the words after it (tail). A credited find reads as news and names
+ * the wood/s it added; a repeat or an out-classed find has an empty lead, so
+ * the sentence can never open by claiming a find the state did not make. Pure,
+ * so the panel and the agent tools word the same return identically.
+ *
+ * @param {{name: string, bonus: number, credited: boolean, alreadyOwned?: boolean}|null} discovery
+ * @returns {{lead: string, name: string, tail: string}} the sentence parts
+ */
+export function returnDiscoveryLine(discovery) {
+  if (!discovery) return { lead: "", name: "", tail: "" };
+  if (discovery.credited) {
+    return {
+      lead: "You found the ",
+      name: discovery.name,
+      tail: `! +${formatRate(discovery.bonus)} wood/s, yours for good.`,
+    };
+  }
+  return {
+    lead: "",
+    name: discovery.name,
+    tail: discovery.alreadyOwned
+      ? " is already in your collection \u2014 nothing new added to your rate."
+      : " \u2014 you already own a stronger find, so nothing new was added to your rate.",
+  };
+}
+
+/**
+ * The whole sentence that words a return's find — the lead, name and tail of
+ * returnDiscoveryLine joined. Pure, and "" when the return turned up no find.
  *
  * @param {{name: string, bonus: number, credited: boolean, alreadyOwned?: boolean}|null} discovery
  * @returns {string} the sentence, or "" when the return turned up no find
  */
 export function returnDiscoveryText(discovery) {
-  if (!discovery) return "";
-  if (discovery.credited) {
-    return `+${formatRate(discovery.bonus)} wood/s, yours for good.`;
-  }
-  return discovery.alreadyOwned
-    ? "Already in your collection \u2014 nothing new added to your rate."
-    : "You already own a stronger find \u2014 nothing new added to your rate.";
+  const line = returnDiscoveryLine(discovery);
+  return line.lead + line.name + line.tail;
 }
 
 function persist() {

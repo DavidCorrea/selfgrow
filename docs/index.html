@@ -1432,9 +1432,7 @@
         <span class="offline-stone-highlight" id="offline-stone-amount">0</span> stone
         </span>
       </div>
-      <div id="offline-discovery-line" class="offline-discovery" hidden>
-        You found the <span class="offline-discovery-name" id="offline-discovery-name"></span>! <span class="offline-discovery-bonus" id="offline-discovery-bonus" hidden></span><span class="offline-discovery-note" id="offline-discovery-note" hidden></span>
-      </div>
+      <div id="offline-discovery-line" class="offline-discovery" hidden><span class="offline-discovery-lead" id="offline-discovery-lead"></span><span class="offline-discovery-name" id="offline-discovery-name"></span><span class="offline-discovery-bonus" id="offline-discovery-bonus" hidden></span><span class="offline-discovery-note" id="offline-discovery-note" hidden></span></div>
       <div class="offline-next-find" id="offline-next-find" hidden></div>
       <!-- The decision a return offers: the happening the absence turned up
            and exactly two choices, each button stating the one thing it
@@ -1516,7 +1514,7 @@
   </div>
   <script type="module">
     import "./webmcp.js";
-    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, chooseAwayEventOption, markReturnSeen, formatElapsed, nextAwayFindText, nextDiscoveryAfter, sharpenAvailable, sharpenThreshold, expeditionUnlocked, displayAmount, formatAmount, formatRate, exportSave, importSave, describeGoal, returnDiscoveryText, pauseForHidden, resumeFromHidden, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, clickPowerFor, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
+    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, chooseAwayEventOption, markReturnSeen, formatElapsed, nextAwayFindText, nextDiscoveryAfter, sharpenAvailable, sharpenThreshold, expeditionUnlocked, displayAmount, formatAmount, formatRate, exportSave, importSave, describeGoal, returnDiscoveryLine, pauseForHidden, resumeFromHidden, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, clickPowerFor, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
     import { cloneState, fastForward } from "./sandbox.js";
     import { mountSprites, updateSprites, playReaction } from "./sprites.js";
 
@@ -1568,6 +1566,7 @@
     const offlineStoneLine = document.getElementById("offline-stone-line");
     const offlineStoneAmount = document.getElementById("offline-stone-amount");
     const offlineDiscoveryLine = document.getElementById("offline-discovery-line");
+    const offlineDiscoveryLead = document.getElementById("offline-discovery-lead");
     const offlineDiscoveryName = document.getElementById("offline-discovery-name");
     const offlineDiscoveryBonus = document.getElementById("offline-discovery-bonus");
     const offlineDiscoveryNote = document.getElementById("offline-discovery-note");
@@ -1814,26 +1813,30 @@
 
       // ─── Away discovery ───
       // The find is always named, and what it did to the rate is always said:
-      // the credited case shows the wood/s it added, an already-owned or weaker
-      // find says plainly it added nothing new. The two share one sentence from
-      // the engine, so the panel can never claim a boost the state did not get.
+      // the credited case reads as news and names the wood/s added, an
+      // already-owned or weaker find says plainly it added nothing new. Both
+      // come from one engine rule, so the panel can never claim a boost the
+      // state did not get, and the lead is empty for a no-change find.
       if (ret.discovery) {
-        offlineDiscoveryName.textContent = ret.discovery.name;
+        const line = returnDiscoveryLine(ret.discovery);
+        offlineDiscoveryLead.textContent = line.lead;
+        offlineDiscoveryName.textContent = line.name;
         offlineDiscoveryLine.hidden = false;
-        const findText = returnDiscoveryText(ret.discovery);
         if (ret.discovery.credited) {
-          offlineDiscoveryBonus.textContent = findText;
+          offlineDiscoveryBonus.textContent = line.tail;
           offlineDiscoveryBonus.hidden = false;
           offlineDiscoveryNote.textContent = "";
           offlineDiscoveryNote.hidden = true;
         } else {
           offlineDiscoveryBonus.textContent = "";
           offlineDiscoveryBonus.hidden = true;
-          offlineDiscoveryNote.textContent = findText;
+          offlineDiscoveryNote.textContent = line.tail;
           offlineDiscoveryNote.hidden = false;
         }
       } else {
         offlineDiscoveryLine.hidden = true;
+        offlineDiscoveryLead.textContent = "";
+        offlineDiscoveryName.textContent = "";
         offlineDiscoveryBonus.textContent = "";
         offlineDiscoveryBonus.hidden = true;
         offlineDiscoveryNote.textContent = "";
