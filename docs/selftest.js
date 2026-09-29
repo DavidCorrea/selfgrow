@@ -4477,5 +4477,156 @@ export async function checks() {
     console.error(err);
   }
 
+  // ─── Pixel-art gather pictures ──────────────────────────────────
+  // Each unlocked system's action is a picture, not a plain text button: an
+  // in-code SVG that IS the button, mirrored smaller in its header chip, whose
+  // real-text label and accessible name stay intact through every render.
+  try {
+    const engine = await import("./engine.js");
+    const sprites = await import("./sprites.js");
+    const renderNow = () => { if (typeof window.__renderUI === "function") window.__renderUI(); };
+
+    const palette = new Set(Object.values(sprites.SPRITE_PALETTE));
+    const rectSignature = (svg) => Array.from(svg.querySelectorAll("rect"))
+      .map((r) => [r.getAttribute("x"), r.getAttribute("y"), r.getAttribute("fill")].join(":"))
+      .join("|");
+
+    engine.reset();
+    engine.init();
+    renderNow();
+
+    // (1) Every action button carries its own picture, named and in-palette.
+    const actions = [
+      ["btn-gather", "wood"],
+      ["btn-gather-stone", "stone"],
+      ["btn-forge-tool", "forge"],
+      ["btn-expedition", "expedition"],
+    ];
+    const actionSvgs = {};
+    for (const [id, kind] of actions) {
+      const button = document.getElementById(id);
+      if (!button) {
+        problems.push(`Expected the ${kind} gather action #${id} to exist — it was not found.`);
+        continue;
+      }
+      if (!(button.getAttribute("aria-label") || "").trim()) {
+        problems.push(`#${id} should keep a non-empty aria-label so the picture-button has an accessible name.`);
+      }
+      const svg = button.querySelector("svg.sprite");
+      if (!svg) {
+        problems.push(`#${id} should contain the ${kind} pixel-art picture (svg.sprite) — it was not found.`);
+        continue;
+      }
+      if (svg.dataset.spriteKind !== kind) {
+        problems.push(`#${id} picture should be the ${kind} sprite, got "${svg.dataset.spriteKind}".`);
+      }
+      const rects = svg.querySelectorAll("rect");
+      if (rects.length < 8) {
+        problems.push(`#${id} ${kind} picture should be built from at least 8 pixel rects, got ${rects.length}.`);
+      }
+      for (const rect of rects) {
+        if (!palette.has(rect.getAttribute("fill"))) {
+          problems.push(`#${id} ${kind} picture uses fill "${rect.getAttribute("fill")}", which is not in SPRITE_PALETTE.`);
+          break;
+        }
+      }
+      actionSvgs[id] = svg;
+    }
+
+    if (document.querySelector("canvas")) {
+      problems.push("The page should draw its pixel art as page elements, not a <canvas> — a canvas was found.");
+    }
+
+    // (2) The same picture, smaller, sits in that resource's header chip.
+    const chips = [
+      ["wood-stat", "wood"],
+      ["stone-stat", "stone"],
+      ["forge-stat", "forge"],
+      ["expedition-stat", "expedition"],
+    ];
+    const chipSvgs = {};
+    for (const [id, kind] of chips) {
+      const chip = document.getElementById(id);
+      if (!chip) {
+        problems.push(`Expected the ${kind} header chip #${id} to exist — it was not found.`);
+        continue;
+      }
+      const svg = chip.querySelector(".sprite-mount svg.sprite");
+      if (!svg) {
+        problems.push(`#${id} should show the same ${kind} picture in the header chip — it was not found.`);
+        continue;
+      }
+      if (svg.dataset.spriteKind !== kind) {
+        problems.push(`#${id} chip picture should be the ${kind} sprite, got "${svg.dataset.spriteKind}".`);
+      }
+      chipSvgs[id] = svg;
+    }
+    if (actionSvgs["btn-gather"] && chipSvgs["wood-stat"]
+        && rectSignature(actionSvgs["btn-gather"]) !== rectSignature(chipSvgs["wood-stat"])) {
+      problems.push("The wood card picture and the wood chip picture should be the same sprite (same rects).");
+    }
+
+    // (3) Re-rendering must not wipe the picture or the real-text label.
+    for (let i = 0; i < 3; i++) renderNow();
+    const gatherBtnFinal = document.getElementById("btn-gather");
+    if (gatherBtnFinal) {
+      if (!gatherBtnFinal.querySelector(".sprite-mount svg.sprite")) {
+        problems.push("Rendering the UI erased the wood picture inside #btn-gather — the mount should survive a render.");
+      }
+      const labelEl = gatherBtnFinal.querySelector(".btn-label");
+      if (!labelEl || !labelEl.textContent.trim()) {
+        problems.push("Rendering the UI erased #btn-gather's real-text label — it should stay readable.");
+      }
+    }
+
+    // (4) Clicking the picture gathers wood and leaves the button operable.
+    if (gatherBtnFinal) {
+      const woodBefore = engine.getState().wood;
+      gatherBtnFinal.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      const woodAfter = engine.getState().wood;
+      if (!(woodAfter > woodBefore)) {
+        problems.push(`Clicking the wood picture should gather wood: expected wood above ${woodBefore}, got ${woodAfter}.`);
+      }
+      if (!gatherBtnFinal.querySelector(".sprite-mount svg.sprite")) {
+        problems.push("Clicking the wood picture removed the sprite from #btn-gather.");
+      }
+      if (gatherBtnFinal.tagName !== "BUTTON" || gatherBtnFinal.getAttribute("tabindex") === "-1") {
+        problems.push("#btn-gather should stay a keyboard-reachable button after gathering.");
+      }
+    }
+
+    // (5) Reduced motion: the picture shows but nothing animates; with motion a
+    // "+N" floats up showing what was gained.
+    const reactionProbe = document.createElement("button");
+    reactionProbe.type = "button";
+    document.body.appendChild(reactionProbe);
+    sprites.playReaction(reactionProbe, "wood", { reduced: true, gain: "3" });
+    if (reactionProbe.querySelector(".float-gain")) {
+      problems.push("With reduced motion on, using a picture must not float a '+N' — one was added.");
+    }
+    if (reactionProbe.className.trim() !== "") {
+      problems.push(`With reduced motion on, using a picture must not add a reaction class, got "${reactionProbe.className}".`);
+    }
+    sprites.playReaction(reactionProbe, "wood", { reduced: false, gain: "3" });
+    const float = reactionProbe.querySelector(".float-gain");
+    if (!float) {
+      problems.push("Using a picture with motion on should float a '+N' showing what was gained — none was added.");
+    } else if (float.textContent !== "+3") {
+      problems.push(`The floated gain should read "+3", got "${float.textContent}".`);
+    }
+    if (!reactionProbe.classList.contains("react-wood")) {
+      problems.push("Using the wood picture with motion on should add the wood reaction class.");
+    }
+    reactionProbe.remove();
+
+    // Return the page to a fresh, fully-locked state for whatever measures it next.
+    engine.reset();
+    engine.init();
+    renderNow();
+  } catch (err) {
+    problems.push(`Pixel-art action test threw: ${err.message}`);
+    console.error(err);
+  }
+
   return problems;
 }
