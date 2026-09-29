@@ -46,9 +46,11 @@ const DISCOVERY_MIN_SEC = 60; // shortest absence that can turn something up
 const RETURN_MIN_SEC = 1; // shortest absence that counts as a real return
 
 /**
- * The away-discovery ladder. Each tier is reached at a minimum absence
- * length; the strongest tier the absence qualifies for is the one credited.
- * Ordered by minSec ascending; ties are impossible.
+ * The away-discovery ladder's fixed rungs. Each tier is reached at a minimum
+ * absence length; the strongest tier the absence qualifies for is the one
+ * credited. Ordered by minSec ascending; ties are impossible. Past the last
+ * of these the ladder continues with deterministic generated rungs (see
+ * getGeneratedDiscovery), so it never runs out of something to find.
  *
  * @type {Array<{ id: string, name: string, minSec: number, bonus: number }>}
  */
@@ -60,6 +62,61 @@ const DISCOVERIES = [
   { id: "ancient-grove", name: "Ancient Grove", minSec: 86400, bonus: 0.40 },
   { id: "sunken-vault", name: "Sunken Vault", minSec: 604800, bonus: 0.60 },
 ];
+
+// Everything past the fixed rungs is derived from the top rung and the rung
+// number, so the ladder is endless without a list that can be exhausted.
+const DEEP_FIND_BASE_MIN_SEC = DISCOVERIES[DISCOVERIES.length - 1].minSec;
+const DEEP_FIND_BASE_BONUS = DISCOVERIES[DISCOVERIES.length - 1].bonus;
+const SECONDS_PER_DAY = 86400;
+const DEEP_FIND_BONUS_STEP = 0.05;
+// How far past the top rung an absence may reach. Quadratic growth means even
+// a value this large names a rung millions of years out, so it bounds the walk
+// without ever being the answer a real absence gets.
+const MAX_GENERATED_RUNGS = 100000;
+
+// Two fixed vocabularies indexed by rung number name each generated find
+// reproducibly. Their different lengths stop the pairs repeating together
+// before many rungs have passed.
+const DEEP_FIND_ADJECTIVES = [
+  "Buried", "Whispering", "Gilded", "Hollow", "Starlit", "Forgotten",
+  "Radiant", "Tidal", "Amber", "Iron", "Mossy", "Obsidian",
+];
+const DEEP_FIND_NOUNS = [
+  "Archive", "Monolith", "Reliquary", "Spire", "Cache", "Sanctum",
+  "Obelisk", "Foundry", "Observatory", "Labyrinth", "Garden", "Beacon", "Menagerie",
+];
+
+/**
+ * The k-th rung past the fixed ladder (k starts at 1, one day beyond the top
+ * tier). Pure and deterministic — the same k is always the same find — and
+ * strictly stronger and further than the rung before it, so reaching one can
+ * only ever leave a stronger one beyond.
+ *
+ * @param {number} k
+ * @returns {{ id: string, name: string, minSec: number, bonus: number }}
+ */
+function getGeneratedDiscovery(k) {
+  const index = Math.floor(k);
+  return {
+    id: `deep-find-${index}`,
+    name: `${DEEP_FIND_ADJECTIVES[(index - 1) % DEEP_FIND_ADJECTIVES.length]} ${DEEP_FIND_NOUNS[(index - 1) % DEEP_FIND_NOUNS.length]}`,
+    minSec: DEEP_FIND_BASE_MIN_SEC + SECONDS_PER_DAY * (index * (index + 1)) / 2,
+    bonus: Math.round((DEEP_FIND_BASE_BONUS + DEEP_FIND_BONUS_STEP * index) * 100) / 100,
+  };
+}
+
+/**
+ * The rung number behind a generated id, or null when the id names no rung.
+ *
+ * @param {string} id
+ * @returns {number|null}
+ */
+function generatedIndex(id) {
+  const match = /^deep-find-(\d+)$/.exec(id);
+  if (!match) return null;
+  const index = Number(match[1]);
+  return index >= 1 ? index : null;
+}
 
 // Exported for external use (tools, UI)
 export { FIRST_GOAL_WOOD, UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, STONE_BASE_RATE, STONE_RATE_BOOST_FACTOR, WALL_COST, GOAL_STONE, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT,
@@ -363,7 +420,9 @@ function catchUp(firstVisit) {
 /**
  * The discovery an absence of the given length turns up, or null when the
  * absence is too short or invalid. Pure and deterministic: the same length
- * always yields the same discovery, so it can never be lost or gambled.
+ * always yields the same discovery, so it can never be lost or gambled. Past
+ * the last fixed rung the generated ladder keeps going, so a longer absence
+ * always has a stronger find waiting.
  *
  * @param {number} elapsedSec
  * @returns {{ id: string, name: string, bonus: number, minSec: number }|null}
@@ -374,25 +433,37 @@ export function discoverForElapsed(elapsedSec) {
   for (const tier of DISCOVERIES) {
     if (elapsedSec >= tier.minSec) found = tier;
   }
+  if (elapsedSec > DEEP_FIND_BASE_MIN_SEC) {
+    // Thresholds rise with every rung, so the first rung that is out of reach
+    // ends the walk; the cap only stops an absurd absence from spinning here.
+    for (let k = 1; k <= MAX_GENERATED_RUNGS; k++) {
+      const rung = getGeneratedDiscovery(k);
+      if (elapsedSec < rung.minSec) break;
+      found = rung;
+    }
+  }
   return found ? { ...found } : null;
 }
 
 /**
  * The away discovery that comes next after the one owned, and the absence
  * length needed to earn it. An account owning nothing is reaching for the
- * first rung, so the ladder always names something to wait for; an account
- * already holding the strongest tier has nothing further to find and gets
- * null. Unknown ids also yield null rather than guessing a rung.
+ * first rung; owning a fixed tier reaches for the next fixed tier, and owning
+ * the last fixed tier reaches for the first generated rung. The ladder never
+ * ends, so a valid save always has something further to find. Only an unknown
+ * id — a corrupt save — yields null rather than guessing a rung.
  *
  * @param {string|null|undefined} ownedId
  * @returns {{ id: string, name: string, bonus: number, minSec: number }|null}
  */
 export function nextDiscoveryAfter(ownedId) {
   if (!ownedId) return { ...DISCOVERIES[0] };
+  const ownedRung = generatedIndex(ownedId);
+  if (ownedRung !== null) return getGeneratedDiscovery(ownedRung + 1);
   const ownedIndex = DISCOVERIES.findIndex((tier) => tier.id === ownedId);
   if (ownedIndex === -1) return null;
   const next = DISCOVERIES[ownedIndex + 1];
-  return next ? { ...next } : null;
+  return next ? { ...next } : getGeneratedDiscovery(1);
 }
 
 /**

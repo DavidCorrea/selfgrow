@@ -1582,13 +1582,14 @@
 
       // ─── Next away find ───
       // The rung after what is owned, with the absence it takes, so a longer
-      // wait is a distance to a named find. Always shown on a real return; the
-      // strongest-discovery case says so rather than naming another tier.
+      // wait is a distance to a named find. The ladder has no end, so this
+      // always names a rung for a valid save; the fallback only covers a save
+      // whose discovery id is unrecognised, and must never read as a dead end.
       if (offlineNextFind) {
         const next = ret.nextDiscovery;
         offlineNextFind.textContent = next
           ? `Next away find: ${next.name} \u2014 away ${formatElapsed(next.minSec * 1000)}.`
-          : "Nothing further to find \u2014 every away discovery is yours.";
+          : "Next away find: a deeper discovery still waits.";
         offlineNextFind.hidden = false;
       }
 

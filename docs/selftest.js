@@ -4020,7 +4020,7 @@ export async function checks() {
 
     // (b2) The next-discovery lookup walks the engine's own ladder: nothing
     // owned reaches for the first tier, an owned tier reaches for the rung
-    // above it, and the strongest tier has nothing beyond it.
+    // above it, and the rungs past the last fixed tier never run out.
     if (typeof engine.nextDiscoveryAfter !== "function") {
       problems.push("Expected engine.nextDiscoveryAfter to be exported as a pure function.");
     } else {
@@ -4036,8 +4036,36 @@ export async function checks() {
         problems.push("nextDiscoveryAfter must never return the tier already owned.");
       }
       const afterStrongest = engine.nextDiscoveryAfter("sunken-vault");
-      if (afterStrongest !== null) {
-        problems.push(`nextDiscoveryAfter('sunken-vault') should be null (nothing stronger exists), got ${JSON.stringify(afterStrongest)}.`);
+      if (!afterStrongest || !afterStrongest.name || !(afterStrongest.minSec > 604800) || !(afterStrongest.bonus > 0.60) || afterStrongest.id === "sunken-vault") {
+        problems.push(`nextDiscoveryAfter('sunken-vault') should name a stronger further rung (id ≠ sunken-vault, minSec > 604800, bonus > 0.60), got ${JSON.stringify(afterStrongest)}.`);
+      }
+      const afterThat = afterStrongest ? engine.nextDiscoveryAfter(afterStrongest.id) : null;
+      if (!afterThat || !(afterThat.bonus > afterStrongest.bonus) || !(afterThat.minSec > afterStrongest.minSec)) {
+        problems.push(`The generated ladder must never terminate: the rung after ${afterStrongest && afterStrongest.id} should be stronger and further still, got ${JSON.stringify(afterThat)}.`);
+      }
+    }
+
+    // (b3) The fixed ladder stays intact and the generated rungs continue it
+    // deterministically. The longest fixed absence still finds the last fixed
+    // tier, a longer one finds a stronger generated rung, and the rung the
+    // panel names as "next" is exactly what an absence of its length earns.
+    if (typeof engine.discoverForElapsed === "function" && typeof engine.nextDiscoveryAfter === "function") {
+      const longestFixed = engine.discoverForElapsed(604800);
+      if (!longestFixed || longestFixed.id !== "sunken-vault") {
+        problems.push(`An absence of exactly 604800s must still find sunken-vault, got ${JSON.stringify(longestFixed)}.`);
+      }
+      const beyond = engine.discoverForElapsed(1209600);
+      if (!beyond || beyond.id === "sunken-vault" || !(beyond.bonus > 0.60)) {
+        problems.push(`A 14d absence should find a generated rung stronger than sunken-vault (bonus > 0.60), got ${JSON.stringify(beyond)}.`);
+      }
+      const beyondAgain = engine.discoverForElapsed(1209600);
+      if (!beyond || !beyondAgain || beyondAgain.id !== beyond.id) {
+        problems.push(`Generated rungs must be deterministic: a 14d absence gave ${beyond && beyond.id} then ${beyondAgain && beyondAgain.id}.`);
+      }
+      const nextRung = engine.nextDiscoveryAfter("sunken-vault");
+      const atNextRung = nextRung ? engine.discoverForElapsed(nextRung.minSec) : null;
+      if (!nextRung || !atNextRung || atNextRung.id !== nextRung.id) {
+        problems.push(`The rung named after sunken-vault (${nextRung && nextRung.id}) should be exactly what an absence of ${nextRung && nextRung.minSec}s finds, got ${JSON.stringify(atNextRung)}.`);
       }
     }
 
@@ -4154,29 +4182,51 @@ export async function checks() {
       }
     }
 
-    // (c2) An account already holding the strongest find must be told there is
-    // nothing further to wait for, not offered another tier.
+    // (c2) An account already holding the strongest fixed find must still be
+    // offered a further rung: the ladder never ends, so a long enough absence
+    // credits a new named discovery, raises the rate by its bonus, and the
+    // panel and read-state both name the rung after it.
     engine.reset();
+    const beyondStrongest = engine.nextDiscoveryAfter("sunken-vault");
+    if (!beyondStrongest) {
+      problems.push("nextDiscoveryAfter('sunken-vault') must name a further rung so the ladder never ends, got null.");
+    }
+    const longAbsenceSec = beyondStrongest ? beyondStrongest.minSec : 691200;
     localStorage.setItem("selfgrow-state", JSON.stringify({
       wood: 5, rate: 0.6, stone: 0, totalWoodEarned: 5,
       wallLevel: 0, stoneUnlocked: false,
       discoveryId: "sunken-vault", discoveryName: "Sunken Vault", discoveryBonus: 0.60,
-      timestamp: new Date(Date.now() - 600000).toISOString(),
+      timestamp: new Date(Date.now() - longAbsenceSec * 1000).toISOString(),
     }));
     engine.init();
+    const maxedState = engine.getState();
+    if (!beyondStrongest || !maxedState.discovery || maxedState.discovery.id !== beyondStrongest.id) {
+      problems.push(`A maxed account returning after ${longAbsenceSec}s should credit the new rung ${beyondStrongest && beyondStrongest.id}, got ${JSON.stringify(maxedState.discovery)}.`);
+    }
+    if (beyondStrongest) {
+      const maxedRate = 0.6 + (beyondStrongest.bonus - 0.60);
+      if (Math.abs(maxedState.rate - maxedRate) > 1e-9) {
+        problems.push(`The new rung's bonus (${beyondStrongest.bonus}) should raise a maxed account's rate to ${maxedRate}, got ${maxedState.rate}.`);
+      }
+    }
     window.__showOfflineSummary();
     if (nextFindEl) {
       if (nextFindEl.hidden) {
-        problems.push("Even with every discovery owned, #offline-next-find must say so rather than staying hidden.");
+        problems.push("A maxed account's return must still name the next away find, but #offline-next-find was hidden.");
       }
-      if (!/nothing further to find/i.test(nextFindEl.textContent)) {
-        problems.push(`With every away discovery owned, #offline-next-find should say there is nothing further to find, got "${nextFindEl.textContent}".`);
+      if (/nothing further to find/i.test(nextFindEl.textContent)) {
+        problems.push(`#offline-next-find must never tell a maxed account there is nothing left to find, got "${nextFindEl.textContent}".`);
+      }
+      const afterNew = beyondStrongest ? engine.nextDiscoveryAfter(beyondStrongest.id) : null;
+      if (afterNew && !nextFindEl.textContent.includes(afterNew.name)) {
+        problems.push(`A maxed account's return should name the next rung "${afterNew.name}", got "${nextFindEl.textContent}".`);
       }
     }
     if (readState) {
       const maxed = await readState.execute({});
-      if (maxed.nextAwayDiscovery !== null) {
-        problems.push(`read-state.nextAwayDiscovery should be null once sunken-vault is owned, got ${JSON.stringify(maxed.nextAwayDiscovery)}.`);
+      const afterNew = beyondStrongest ? engine.nextDiscoveryAfter(beyondStrongest.id) : null;
+      if (!afterNew || !maxed.nextAwayDiscovery || maxed.nextAwayDiscovery.name !== afterNew.name || maxed.nextAwayDiscovery.minSec !== afterNew.minSec) {
+        problems.push(`read-state.nextAwayDiscovery should name the further rung ${JSON.stringify(afterNew)} for a maxed account, got ${JSON.stringify(maxed.nextAwayDiscovery)}.`);
       }
     }
     window.__dismissOffline();

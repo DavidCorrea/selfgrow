@@ -163,7 +163,8 @@ export function tools() {
         + "{id, name, bonus} or null, whose bonus is already included in rate), and the "
         + "next away discovery still to earn (nextAwayDiscovery: {name, minSec, elapsed} "
         + "where minSec is the absence in seconds needed to find it and elapsed is that "
-        + "duration as text, or null once the strongest away discovery is owned), milestones object "
+        + "duration as text) \u2014 the ladder has no end, so this names a rung for every valid "
+        + "save and is null only when the saved discovery id is unrecognised), milestones object "
         + "(sharpenAvailable, stoneNowUnlocked, wallAvailable, forgeNowUnlocked, expeditionNowUnlocked), "
         + "and the current goal (first goal, upgrade goal, stone goal, build-wall goal, forge goal, or expedition goal).",
       inputSchema: { type: "object", properties: {} },
