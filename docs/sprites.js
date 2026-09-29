@@ -278,6 +278,130 @@ export const SPRITE_STAGES = {
       "############",
     ],
   ],
+  // Single-stage icon pictures. They are not systems and never level up, but
+  // they are mounted exactly like the four above so no button or title falls
+  // back to a platform emoji: the same sprite shows on every device.
+  // A scroll to read the last return by: a gold parchment, outlined and
+  // ruled in the darker colours so it reads on its gold button too.
+  scroll: [
+    [
+      "............",
+      "############",
+      "#yyyyyyyyyy#",
+      "#ybbbbbbbby#",
+      "#yyyyyyyyyy#",
+      "#ybbbbbbbby#",
+      "#yyyyyyyyyy#",
+      "#ybbbbbbbby#",
+      "#yyyyyyyyyy#",
+      "#ybbbbbbbby#",
+      "#yyyyyyyyyy#",
+      "############",
+    ],
+  ],
+  // A padlock for the Sharpen button while it is still locked.
+  lock: [
+    [
+      "............",
+      "...######...",
+      "...#bbbb#...",
+      "...#bbbb#...",
+      "..########..",
+      "..#bbbbbb#..",
+      "..#bbbbbb#..",
+      "..#bb##bb#..",
+      "..#bbbbbb#..",
+      "..########..",
+      "............",
+      "............",
+    ],
+  ],
+  // An axe for the Sharpen button once it can be used.
+  axe: [
+    [
+      "............",
+      "..########..",
+      ".#ssssssss#.",
+      ".#ssssssss#.",
+      ".#ssssssss#.",
+      ".#ssssssss#.",
+      "..####rr##..",
+      "......#rr#..",
+      "......#rr#..",
+      "......#rr#..",
+      "......#rr#..",
+      "......#rr#..",
+    ],
+  ],
+  // A keep for the Build Wall button.
+  castle: [
+    [
+      "............",
+      "#..#....#..#",
+      "#bb#....#bb#",
+      "#bb#....#bb#",
+      "#bb######bb#",
+      "#bbbbbbbbbb#",
+      "#bbbbbbbbbb#",
+      "#bbbbbbbbbb#",
+      "#bbb####bbb#",
+      "#bbb####bbb#",
+      "#bbb####bbb#",
+      "############",
+    ],
+  ],
+  // A disk for the Reveal Save Code button.
+  floppy: [
+    [
+      "............",
+      "############",
+      "#bbbbbbbbbb#",
+      "#b########b#",
+      "#b#ssssss#b#",
+      "#b#ssssss#b#",
+      "#b########b#",
+      "#bbbbbbbbbb#",
+      "#b########b#",
+      "#b#wwwwww#b#",
+      "#b#wwwwww#b#",
+      "############",
+    ],
+  ],
+  // A clipboard for the Copy Save Code button.
+  clipboard: [
+    [
+      "............",
+      "...######...",
+      "...#ssss#...",
+      "############",
+      "#bbbbbbbbbb#",
+      "#byyyyyyyyb#",
+      "#bbbbbbbbbb#",
+      "#byyyyyyyyb#",
+      "#bbbbbbbbbb#",
+      "#byyyyyyyyb#",
+      "#bbbbbbbbbb#",
+      "############",
+    ],
+  ],
+  // A stopwatch for the Sandbox button and the sandbox title: a stone bezel
+  // and gold face, so it reads on the gold button and the dark panel alike.
+  stopwatch: [
+    [
+      "............",
+      ".....bb.....",
+      "....#bb#....",
+      "..bbbbbbbb..",
+      ".byyyyyyyyb.",
+      "#byyyyyyyyb#",
+      "#byy##yyyyb#",
+      "#byyyyyyyyb#",
+      ".byyyyyyyyb.",
+      "..bbbbbbbb..",
+      "............",
+      "............",
+    ],
+  ],
 };
 
 /** The CSS class each kind's reaction animates (see index.html keyframes). */

@@ -1274,6 +1274,23 @@
       height: 0.9rem;
     }
 
+    /* Icon-sized pictures inside a button label — the scroll, lock, axe,
+       castle, floppy, clipboard and stopwatch. Small enough to sit on the
+       text baseline beside the button's own words, which still carry the
+       meaning. */
+    .btn .btn-icon svg.sprite {
+      width: 0.8rem;
+      height: 0.8rem;
+      vertical-align: middle;
+    }
+
+    /* The sandbox title's stopwatch, a touch larger than a button icon. */
+    .sandbox-title .sprite-mount svg.sprite {
+      width: 0.9rem;
+      height: 0.9rem;
+      vertical-align: -0.15rem;
+    }
+
     .gather-btn {
       position: relative;
       display: flex;
@@ -1409,7 +1426,7 @@
       </details>
     </div>
     <button class="btn" id="btn-show-return" type="button" aria-label="Show the last return's summary" hidden>
-      <span class="btn-icon">&#x1F4DC;</span> Last return
+      <span class="btn-icon sprite-mount" data-sprite="scroll" aria-hidden="true"></span> Last return
     </button>
   </section>
 
@@ -1442,7 +1459,7 @@
       <div class="upgrade-list">
         <div class="upgrade-card">
           <button class="btn" id="btn-sharpen" type="button" aria-label="Sharpen Axe (locked — gather 10 wood to unlock)" disabled>
-            <span class="btn-icon">&#x1F512;</span> Sharpen Axe (locked)
+            <span class="btn-icon sprite-mount" data-sprite="lock" aria-hidden="true"></span> Sharpen Axe (locked)
           </button>
           <p class="upgrade-effect">+0.05 wood/s. The first sharpen unlocks stone.</p>
         </div>
@@ -1462,7 +1479,7 @@
       <div class="upgrade-list">
         <div class="upgrade-card">
           <button class="btn btn-wall" id="btn-build-wall" type="button" aria-label="Build Wall" disabled>
-            <span class="btn-icon">&#x1F3F0;</span> Build Wall (5 stone)
+            <span class="btn-icon sprite-mount" data-sprite="castle" aria-hidden="true"></span> Build Wall (5 stone)
           </button>
           <p class="upgrade-effect">+1 wood per chop. The first wall unlocks the forge.</p>
         </div>
@@ -1504,11 +1521,11 @@
         <div class="save-body">
           <p class="save-hint">Copy this code somewhere safe. Paste it on another browser — or after clearing site data — to bring your world back.</p>
           <button class="btn" id="btn-reveal-save" type="button" aria-label="Reveal Save Code">
-            <span class="btn-icon">&#x1F4BE;</span> Reveal Save Code
+            <span class="btn-icon sprite-mount" data-sprite="floppy" aria-hidden="true"></span> Reveal Save Code
           </button>
           <textarea id="save-code" readonly aria-label="Your save code" placeholder="Press Reveal Save Code to show your save here"></textarea>
           <button class="btn" id="btn-copy-save" type="button" aria-label="Copy Save Code">
-            <span class="btn-icon">&#x1F4CB;</span> Copy Save Code
+            <span class="btn-icon sprite-mount" data-sprite="clipboard" aria-hidden="true"></span> Copy Save Code
           </button>
           <hr class="save-divider">
           <label class="save-label" for="save-import-input">Restore from a code</label>
@@ -1520,7 +1537,7 @@
         </div>
       </details>
       <button class="btn btn-sandbox" id="btn-sandbox" type="button" aria-label="Open sandbox mode to rehearse time">
-        <span class="btn-icon">&#x23F1;</span> Sandbox
+        <span class="btn-icon sprite-mount" data-sprite="stopwatch" aria-hidden="true"></span> Sandbox
       </button>
     </div>
     <p class="footer-note" aria-live="polite">
@@ -1582,7 +1599,7 @@
   <!-- ═══ Sandbox Overlay ═══ -->
   <div id="sandbox-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="sandbox-title">
     <div class="sandbox-panel" tabindex="-1">
-      <div class="sandbox-title" id="sandbox-title">&#x23F1; Sandbox — Time Rehearsal</div>
+      <div class="sandbox-title" id="sandbox-title"><span class="sprite-mount" data-sprite="stopwatch" aria-hidden="true"></span> Sandbox — Time Rehearsal</div>
       <div class="sandbox-subtitle">Projected state — nothing here affects your real save.</div>
 
       <hr class="sandbox-divider">
@@ -1640,7 +1657,7 @@
     import "./webmcp.js";
     import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, chooseAwayEventOption, markReturnSeen, formatElapsed, nextAwayFindText, nextDiscoveryAfter, sharpenAvailable, sharpenThreshold, expeditionUnlocked, displayAmount, formatAmount, formatRate, exportSave, importSave, describeGoal, returnDiscoveryLine, pauseForHidden, resumeFromHidden, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, clickPowerFor, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
     import { cloneState, fastForward } from "./sandbox.js";
-    import { mountSprites, updateSprites, playReaction } from "./sprites.js";
+    import { mountSprites, mountSprite, updateSprites, playReaction } from "./sprites.js";
 
     init();
     mountSprites();
@@ -2627,12 +2644,16 @@
       // button can never stay locked after its threshold is crossed, and an
       // agent can never sharpen before the button would enable.
       if (sharpenAvailable(s)) {
-        btnSharpen.innerHTML = '<span class="btn-icon">\u2692</span> Sharpen Axe (' + UPGRADE_COST + ' wood)';
+        btnSharpen.innerHTML = '<span class="btn-icon sprite-mount" data-sprite="axe" aria-hidden="true"></span> Sharpen Axe (' + UPGRADE_COST + ' wood)';
+        // The button is rebuilt here every render, so its picture is mounted
+        // here too — the render loop's sprite pass skips an unchanged stage.
+        mountSprite(btnSharpen.querySelector("[data-sprite]"), "axe");
         btnSharpen.setAttribute("aria-label", "Sharpen Axe (" + UPGRADE_COST + " wood)");
         btnSharpen.disabled = false;
       } else {
         const needed = Math.max(0, Math.ceil(sharpenThreshold(s) - wood));
-        btnSharpen.innerHTML = '<span class="btn-icon">\uD83D\uDD12</span> Sharpen Axe (locked)';
+        btnSharpen.innerHTML = '<span class="btn-icon sprite-mount" data-sprite="lock" aria-hidden="true"></span> Sharpen Axe (locked)';
+        mountSprite(btnSharpen.querySelector("[data-sprite]"), "lock");
         btnSharpen.setAttribute("aria-label", "Sharpen Axe \u2014 locked, gather " + needed + " more wood to unlock");
         btnSharpen.disabled = true;
       }

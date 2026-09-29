@@ -6308,6 +6308,127 @@ export async function checks() {
       }
     }
 
+    // (9) The remaining buttons and the sandbox title draw their icons from the
+    // game's own palette too, so no label falls back to an emoji that renders
+    // differently on every device. Each mount is a real, decorative picture
+    // while the button's own text keeps the meaning.
+    const iconMounts = [
+      ["#btn-show-return", ["scroll"]],
+      // The Sharpen button is a padlock while locked and an axe once unlocked;
+      // the state-driven check below pins which one each state draws.
+      ["#btn-sharpen", ["lock", "axe"]],
+      ["#btn-build-wall", ["castle"]],
+      ["#btn-reveal-save", ["floppy"]],
+      ["#btn-copy-save", ["clipboard"]],
+      ["#btn-sandbox", ["stopwatch"]],
+      ["#sandbox-title", ["stopwatch"]],
+    ];
+    for (const [selector, kinds] of iconMounts) {
+      const host = document.querySelector(selector);
+      if (!host) {
+        problems.push(`Expected ${selector} to exist and carry its ${kinds.join("/")} icon — it was not found.`);
+        continue;
+      }
+      const mount = host.querySelector(".sprite-mount");
+      if (!mount) {
+        problems.push(`${selector} should mount its ${kinds.join("/")} icon as a .sprite-mount — none was found.`);
+        continue;
+      }
+      if (mount.getAttribute("aria-hidden") !== "true") {
+        problems.push(`${selector}'s icon is decorative, so it should stay aria-hidden="true" — the button's own text carries the meaning.`);
+      }
+      if (mount.textContent.trim() !== "") {
+        problems.push(`${selector}'s icon mount should hold a picture, not text, but it holds "${mount.textContent}" — a text glyph such as an emoji renders differently on every platform.`);
+      }
+      const svg = mount.querySelector("svg.sprite");
+      if (!svg) {
+        problems.push(`${selector} should draw its icon as svg.sprite — it was not found.`);
+        continue;
+      }
+      if (!kinds.includes(svg.dataset.spriteKind)) {
+        problems.push(`${selector}'s icon should be the ${kinds.join("/")} sprite, got "${svg.dataset.spriteKind}".`);
+      }
+      if (svg.getAttribute("viewBox") !== "0 0 12 12") {
+        problems.push(`${selector}'s ${kinds[0]} icon should be a 12x12 pixel grid, got viewBox "${svg.getAttribute("viewBox")}".`);
+      }
+      const iconRects = svg.querySelectorAll("rect");
+      if (iconRects.length < 8) {
+        problems.push(`${selector}'s icon should be built from at least 8 pixel rects, got ${iconRects.length}.`);
+      }
+      for (const rect of iconRects) {
+        const fill = rect.getAttribute("fill");
+        if (!palette.has(fill)) {
+          problems.push(`${selector}'s ${kinds[0]} icon uses fill "${fill}", which is not in SPRITE_PALETTE.`);
+          break;
+        }
+      }
+    }
+
+    // The buttons whose icons were replaced, and the sandbox title, must not
+    // hold a single emoji code point. A regex over the real rendered text is
+    // what catches a future revert to a platform glyph.
+    const emojiHosts = [
+      ["#btn-show-return", "the Last return button"],
+      ["#btn-sharpen", "the Sharpen button"],
+      ["#btn-build-wall", "the Build Wall button"],
+      ["#btn-reveal-save", "the Reveal Save Code button"],
+      ["#btn-copy-save", "the Copy Save Code button"],
+      ["#btn-sandbox", "the Sandbox button"],
+      ["#sandbox-title", "the sandbox title"],
+    ];
+    for (const [selector, name] of emojiHosts) {
+      const host = document.querySelector(selector);
+      if (!host) continue;
+      const match = host.textContent.match(/[\p{Extended_Pictographic}\uFE0F]/u);
+      if (match) {
+        problems.push(`${name} (${selector}) should carry no platform emoji, but its text holds "${match[0]}" — an emoji renders differently on every device.`);
+      }
+    }
+
+    // The Sharpen button's picture tracks its state: a padlock while locked,
+    // an axe once the wood is there — the same state its label reports.
+    const sharpenIconKind = () => {
+      const svg = document.querySelector("#btn-sharpen svg.sprite");
+      return svg ? svg.dataset.spriteKind : null;
+    };
+    engine.reset();
+    engine.init();
+    renderNow();
+    if (sharpenIconKind() !== "lock") {
+      problems.push(`A fresh Sharpen button should draw the lock icon, got "${sharpenIconKind()}".`);
+    }
+    const sharpenNeeded = engine.sharpenThreshold(engine.getState());
+    while (engine.getState().wood < sharpenNeeded) engine.gatherWood();
+    renderNow();
+    if (sharpenIconKind() !== "axe") {
+      problems.push(`Once ${sharpenNeeded} wood is gathered the Sharpen button should swap the lock for the axe icon, got "${sharpenIconKind()}".`);
+    }
+
+    // With reduced motion on the icons are simply static: still drawn, still
+    // part of their button, and never given a reaction animation.
+    try {
+      window.matchMedia = () => ({
+        matches: true,
+        media: "(prefers-reduced-motion: reduce)",
+        addEventListener() {},
+        removeEventListener() {},
+        addListener() {},
+        removeListener() {},
+      });
+      engine.reset();
+      engine.init();
+      renderNow();
+      if (!document.querySelector("#btn-sharpen .sprite-mount svg.sprite")) {
+        problems.push("With reduced motion on, the Sharpen button's icon should still be drawn — it was not found.");
+      }
+      const sharpenReduced = document.getElementById("btn-sharpen");
+      if (sharpenReduced && /react-/.test(sharpenReduced.className)) {
+        problems.push(`With reduced motion on, the Sharpen button should carry no reaction animation, got class "${sharpenReduced.className}".`);
+      }
+    } finally {
+      window.matchMedia = realMatchMedia;
+    }
+
     // Return the page to a fresh, fully-locked state for whatever measures it next.
     engine.reset();
     engine.init();
