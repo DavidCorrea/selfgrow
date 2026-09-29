@@ -45,6 +45,9 @@ const EXPEDITION_WOOD_RATE_MULTIPLIER = 0.05; // additive multiplier per map (n 
 const TICK_MS = 1000;  // save interval (ms)
 const DISCOVERY_MIN_SEC = 60; // shortest absence that can turn something up
 const RETURN_MIN_SEC = 1; // shortest absence that counts as a real return
+const AWAY_EVENT_MIN_SEC = DISCOVERY_MIN_SEC; // shortest absence that offers a decision
+const AWAY_EVENT_LUMP_SEC = 30; // seconds of production a wood or stone option grants
+const AWAY_EVENT_RATE_BONUS = 0.02; // permanent wood/s a rate option adds
 
 /**
  * The away-discovery ladder's fixed rungs. Each tier is reached at a minimum
@@ -62,6 +65,23 @@ const DISCOVERIES = [
   { id: "glowing-seam", name: "Glowing Seam", minSec: 21600, bonus: 0.25 },
   { id: "ancient-grove", name: "Ancient Grove", minSec: 86400, bonus: 0.40 },
   { id: "sunken-vault", name: "Sunken Vault", minSec: 604800, bonus: 0.60 },
+];
+
+/**
+ * The small fixed pool of away events. Each is a happening drawn from the time
+ * away that offers exactly two choices, and each choice's kind names the one
+ * thing it grants: a lump of wood, a lump of stone, or a permanent wood/s
+ * increase. The absence itself picks an entry (see awayEventForElapsed), so the
+ * pool only has to be long enough that two different absences need not offer
+ * the same decision. The two kinds within an entry are always distinct — the
+ * choice's own id is its kind — so a pair never shows two identical buttons.
+ *
+ * @type {Array<{ id: string, title: string, kinds: [string, string] }>}
+ */
+const AWAY_EVENTS = [
+  { id: "wandering-trader", title: "A wandering trader stops at your fire", kinds: ["wood", "stone"] },
+  { id: "fallen-log-cache", title: "Something is cached beneath a fallen log", kinds: ["wood", "rate"] },
+  { id: "old-quarry-face", title: "An old quarry face has crumbled open", kinds: ["stone", "rate"] },
 ];
 
 // Everything past the fixed rungs is derived from the top rung and the rung
@@ -151,6 +171,9 @@ export { FIRST_GOAL_WOOD, UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, STONE_BASE_RA
  * @property {string}  firstTimestamp  — ISO date of first ever save (never updated after init)
  * @property {ReturnRecord|null} lastReturn — account of the last return; carried in
  *   the save so a reload before the player dismisses it still tells the real story
+ * @property {AwayEvent|null} pendingEvent — the two-choice happening a real
+ *   return is offering, carried in the save until the player picks one, so a
+ *   reload before choosing offers the same event rather than losing it
  */
 
 let state = {
@@ -171,6 +194,7 @@ let state = {
   timestamp: new Date().toISOString(),
   firstTimestamp: null,
   lastReturn: null,
+  pendingEvent: null,
 };
 
 /** Offline resources gained on last catch-up. */
@@ -193,6 +217,19 @@ let offlineGained = { wood: 0, stone: 0, elapsedSec: 0, discovery: null };
  * @property {number}  stone
  * @property {{id: string, name: string, bonus: number, credited: boolean, alreadyOwned: boolean}|null} discovery
  * @property {Milestones} milestones
+ */
+
+/**
+ * A happening drawn from an absence that offers exactly two choices. It is
+ * derived from the absence (see awayEventForElapsed), stored on the state until
+ * one option is chosen, and then cleared — so a reload before choosing offers
+ * the same event, and an event can only ever grant one of its two effects.
+ *
+ * @typedef {Object} AwayEvent
+ * @property {string} id
+ * @property {string} title
+ * @property {Array<{id: string, label: string, effect: {kind: string, amount: number}, effectText: string}>} options
+ *   exactly two distinct choices, each with the one effect it grants
  */
 
 let tickTimer = null;
@@ -434,6 +471,15 @@ function catchUp(firstVisit, record = true) {
       ? { id: discovery.id, name: discovery.name, bonus: discovery.bonus, credited, alreadyOwned }
       : null;
 
+    // The decision a real return offers, drawn from the departure alone. An
+    // event already waiting is never replaced — a second absence before the
+    // first is chosen must not swap out the choice the player is looking at;
+    // only choosing clears it. Gated on `record` like the account itself, so a
+    // resume that must not contradict an open panel cannot invent a new event.
+    if (record && !firstVisit && elapsedSec >= AWAY_EVENT_MIN_SEC && !state.pendingEvent) {
+      state.pendingEvent = awayEventForElapsed(elapsedSec, state);
+    }
+
     offlineGained = {
       wood: woodGained,
       stone: stoneGained,
@@ -485,6 +531,82 @@ export function discoverForElapsed(elapsedSec) {
     }
   }
   return found ? { ...found } : null;
+}
+
+/**
+ * The kind each of an entry's two options will actually offer in this save.
+ * Stone is swapped for wood while the stone system is still locked, so an early
+ * return never offers a resource the player cannot yet hold; should that swap
+ * collide with the entry's other option, the later one becomes a rate bonus
+ * instead, keeping the two choices distinct. Pure.
+ *
+ * @param {[string, string]} kinds
+ * @param {{ stoneUnlocked: boolean }} s
+ * @returns {[string, string]}
+ */
+function resolveAwayOptionKinds(kinds, s) {
+  const resolved = kinds.map((kind) => (kind === "stone" && !s.stoneUnlocked ? "wood" : kind));
+  if (resolved[0] === resolved[1]) resolved[1] = "rate";
+  return resolved;
+}
+
+/**
+ * One choice of an away event: the exact effect choosing it grants and the
+ * words that state it. The label and the effect sentence both read the one
+ * effect amount, so a choice's promise can never disagree with what choosing
+ * it adds. Pure.
+ *
+ * @param {string} kind  "wood", "stone" or "rate"
+ * @param {object} s  the state the amounts are drawn from
+ * @returns {{ id: string, label: string, effect: { kind: string, amount: number }, effectText: string }}
+ */
+function awayOption(kind, s) {
+  if (kind === "wood") {
+    const amount = displayAmount(effectiveWoodRate(s) * AWAY_EVENT_LUMP_SEC);
+    return {
+      id: "wood",
+      label: `Take +${formatAmount(amount)} wood`,
+      effect: { kind: "wood", amount },
+      effectText: `Grants +${formatAmount(amount)} wood.`,
+    };
+  }
+  if (kind === "stone") {
+    const amount = displayAmount(computeStoneRateFor(s.totalWoodEarned) * AWAY_EVENT_LUMP_SEC);
+    return {
+      id: "stone",
+      label: `Take +${formatAmount(amount)} stone`,
+      effect: { kind: "stone", amount },
+      effectText: `Grants +${formatAmount(amount)} stone.`,
+    };
+  }
+  return {
+    id: "rate",
+    label: `Permanent +${formatRate(AWAY_EVENT_RATE_BONUS)} wood/s`,
+    effect: { kind: "rate", amount: AWAY_EVENT_RATE_BONUS },
+    effectText: `Permanently adds +${formatRate(AWAY_EVENT_RATE_BONUS)} wood/s.`,
+  };
+}
+
+/**
+ * The away event an absence of the given length offers, or null when the
+ * absence is shorter than a minute or invalid. Pure and deterministic: the
+ * absence alone picks the pool entry, so the same trip always offers the same
+ * happening and the same two choices. The amounts read the state the player
+ * returns to, which a reload reproduces, so a persisted event can be
+ * regenerated identically.
+ *
+ * @param {number} elapsedSec
+ * @param {object} s  the state the option amounts are drawn from
+ * @returns {AwayEvent|null}
+ */
+export function awayEventForElapsed(elapsedSec, s) {
+  if (!(elapsedSec >= AWAY_EVENT_MIN_SEC)) return null;
+  const entry = AWAY_EVENTS[Math.floor(elapsedSec) % AWAY_EVENTS.length];
+  return {
+    id: entry.id,
+    title: entry.title,
+    options: resolveAwayOptionKinds(entry.kinds, s).map((kind) => awayOption(kind, s)),
+  };
 }
 
 /**
@@ -674,6 +796,61 @@ function sanitizeReturnRecord(raw) {
 }
 
 /**
+ * A deep copy of a pending away event, so a reader — the page or a tool — can
+ * hold and inspect it without touching the save.
+ *
+ * @param {AwayEvent|null} event
+ * @returns {AwayEvent|null}
+ */
+function clonePendingEvent(event) {
+  if (!event) return null;
+  return {
+    id: event.id,
+    title: event.title,
+    options: event.options.map((option) => ({
+      id: option.id,
+      label: option.label,
+      effect: { ...option.effect },
+      effectText: option.effectText,
+    })),
+  };
+}
+
+/**
+ * A persisted away event, or null when what was stored cannot be trusted: no
+ * title, not exactly two distinct choices, or a choice whose effect is not one
+ * finite positive amount of a kind the engine knows how to apply. A corrupt
+ * save loses the decision rather than offering a choice that grants nothing —
+ * or worse, something the engine cannot grant.
+ *
+ * @param {unknown} raw
+ * @returns {AwayEvent|null}
+ */
+function sanitizePendingEvent(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  if (typeof raw.id !== "string" || raw.id === "") return null;
+  if (typeof raw.title !== "string" || raw.title === "") return null;
+  if (!Array.isArray(raw.options) || raw.options.length !== 2) return null;
+  const options = [];
+  for (const option of raw.options) {
+    if (!option || typeof option !== "object") return null;
+    const effect = option.effect;
+    if (option.id !== "wood" && option.id !== "stone" && option.id !== "rate") return null;
+    if (!effect || effect.kind !== option.id) return null;
+    if (!Number.isFinite(effect.amount) || effect.amount <= 0) return null;
+    if (typeof option.label !== "string" || typeof option.effectText !== "string") return null;
+    options.push({
+      id: option.id,
+      label: option.label,
+      effect: { kind: effect.kind, amount: effect.amount },
+      effectText: option.effectText,
+    });
+  }
+  if (options[0].id === options[1].id) return null;
+  return { id: raw.id, title: raw.title, options };
+}
+
+/**
  * Copy a validated save onto the live state. Every optional field falls back
  * to its fresh-game default, so an older save that predates a field still
  * loads. Shared by loadPersisted and importSave so a restored code and a
@@ -699,6 +876,7 @@ function applyPersisted(saved) {
   state.timestamp = saved.timestamp;
   state.firstTimestamp = typeof saved.firstTimestamp === "string" ? saved.firstTimestamp : saved.timestamp;
   state.lastReturn = sanitizeReturnRecord(saved.lastReturn);
+  state.pendingEvent = sanitizePendingEvent(saved.pendingEvent);
 }
 
 function loadPersisted() {
@@ -1240,6 +1418,40 @@ export function sendExpedition() {
 }
 
 /**
+ * Choose one option of the pending away event: apply exactly the effect that
+ * option states — once — and clear the event, so the other option can never be
+ * taken and a second choice is refused. Refuses when no event is pending or the
+ * id names no option of it. This is the one place an event's effect is granted,
+ * so the page and the agent tools cannot disagree about what choosing grants.
+ *
+ * @param {string} optionId
+ * @returns {{ chosen: boolean, reason?: string, chosenOptionId?: string, effect?: {kind: string, amount: number}, state: GameState }}
+ */
+export function chooseAwayEventOption(optionId) {
+  const event = state.pendingEvent;
+  if (!event) {
+    return { chosen: false, reason: "There is no away event to choose from.", state: getState() };
+  }
+  const option = event.options.find((candidate) => candidate.id === optionId);
+  if (!option) {
+    return { chosen: false, reason: `"${optionId}" is not one of this event's options.`, state: getState() };
+  }
+  const { kind, amount } = option.effect;
+  if (kind === "wood") {
+    state.wood += amount;
+    state.totalWoodEarned += amount;
+  } else if (kind === "stone") {
+    state.stone += amount;
+    state.totalStoneEarned += amount;
+  } else {
+    state.rate += amount;
+  }
+  state.pendingEvent = null;
+  persist();
+  return { chosen: true, chosenOptionId: option.id, effect: { kind, amount }, state: getState() };
+}
+
+/**
  * Returns the amount of resources gained during the last offline catch-up.
  * Resets to { wood: 0, stone: 0 } after being read.
  *
@@ -1268,6 +1480,7 @@ export function consumeOfflineGained() {
  *   wood: number,
  *   stone: number,
  *   discovery: {id: string, name: string, bonus: number, credited: boolean, alreadyOwned: boolean}|null,
+ *   pendingEvent: AwayEvent|null,
  *   nextDiscovery: {id: string, name: string, bonus: number, minSec: number}|null,
  *   milestones: Milestones,
  * }}
@@ -1284,6 +1497,7 @@ export function getReturnSummary() {
       wood: 0,
       stone: 0,
       discovery: null,
+      pendingEvent: clonePendingEvent(state.pendingEvent),
       nextDiscovery: nextDiscoveryAfter(state.discoveryId),
       milestones: { sharpenAvailable: false, stoneNowUnlocked: false, wallAvailable: false, forgeNowUnlocked: false, expeditionNowUnlocked: false },
     };
@@ -1297,6 +1511,7 @@ export function getReturnSummary() {
     wood: ret.wood,
     stone: ret.stone,
     discovery: ret.discovery,
+    pendingEvent: clonePendingEvent(state.pendingEvent),
     nextDiscovery: nextDiscoveryAfter(state.discoveryId),
     milestones: ret.milestones,
   };
@@ -1351,6 +1566,7 @@ export function getState() {
       bonus: state.discoveryBonus,
     } : null,
     finds: discoveryCollection(state.discoveryId),
+    pendingEvent: clonePendingEvent(state.pendingEvent),
     timestamp: state.timestamp,
     firstTimestamp: state.firstTimestamp,
   };
@@ -1379,6 +1595,7 @@ export function reset() {
     timestamp: now(),
     firstTimestamp: null,
     lastReturn: null,
+    pendingEvent: null,
   };
   offlineGained = { wood: 0, stone: 0, elapsedSec: 0, discovery: null };
   snapshotBeforeCatchUp = null;
