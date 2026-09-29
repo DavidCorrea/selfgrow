@@ -7,6 +7,8 @@
  * @module sandbox
  */
 
+import { discoverForElapsed } from "./engine.js";
+
 // ─── Internal constants (mirror engine.js values) ───
 const STONE_BASE_RATE = 0.05;
 const STONE_RATE_BOOST_FACTOR = 0.001;
@@ -36,6 +38,9 @@ export function cloneState(state) {
     expeditionStoneCost: state.expeditionStoneCost,
     stoneUnlocked: state.stoneUnlocked,
     discovery: state.discovery ? { ...state.discovery } : null,
+    discoveryBonus: state.discovery?.bonus ?? 0,
+    discoveryId: state.discovery?.id ?? null,
+    discoveryName: state.discovery?.name ?? null,
     timestamp: state.timestamp,
     firstTimestamp: state.firstTimestamp,
   };
@@ -70,6 +75,8 @@ function getEffectiveRate(clone) {
  * @param {import("./engine.js").GameState} clone — mutated in place
  * @param {number} seconds — how many seconds to simulate
  * @returns {{
+ *   seconds: number,
+ *   discovery: { id: string, name: string, bonus: number, credited: boolean }|null,
  *   woodDelta: number,
  *   stoneDelta: number,
  *   totalWood: number,
@@ -85,7 +92,10 @@ export function fastForward(clone, seconds) {
   const beforeWall = clone.wallLevel;
   const beforeForge = clone.forgeLevel;
 
-  // Simulate passive accumulation at current rates
+  // Simulate passive accumulation at current rates. Wood and stone are credited
+  // before any find, so the earnings are exactly rate * seconds and a stronger
+  // find only ever raises the rate for time yet to come — the same order the
+  // real catch-up uses.
   const effectiveRate = getEffectiveRate(clone);
   const woodGained = effectiveRate * seconds;
   clone.wood += woodGained;
@@ -98,6 +108,21 @@ export function fastForward(clone, seconds) {
     clone.totalStoneEarned += stoneGained;
   }
 
+  // A rehearsal must turn up what a real absence of the same length would, so
+  // this calls the engine's own rule rather than keeping a second ladder. The
+  // bonus is credited only when it beats what the clone already owns.
+  const found = discoverForElapsed(seconds);
+  const credited = Boolean(found && found.bonus > clone.discoveryBonus);
+  if (credited) {
+    clone.rate += found.bonus - clone.discoveryBonus;
+    clone.discoveryBonus = found.bonus;
+    clone.discoveryId = found.id;
+    clone.discoveryName = found.name;
+  }
+  const discovery = found
+    ? { id: found.id, name: found.name, bonus: found.bonus, credited }
+    : null;
+
   // Detect milestones crossed
   const sharpenAvailable = beforeUpgrade === 0 && clone.totalWoodEarned >= 10;
   const stoneNowUnlocked = beforeStoneUnlocked === false && clone.stoneUnlocked === true;
@@ -106,6 +131,8 @@ export function fastForward(clone, seconds) {
   const expeditionNowUnlocked = beforeForge < 5 && clone.forgeLevel >= 5;
 
   return {
+    seconds,
+    discovery,
     woodDelta: woodGained,
     stoneDelta: stoneGained,
     totalWood: clone.wood,

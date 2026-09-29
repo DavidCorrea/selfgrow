@@ -398,13 +398,16 @@ export function tools() {
         if (!clone) throw new Error("Could not open a sandbox clone.");
         const result = withGoal(clone);
         result.sandboxActive = true;
+        // No time has passed yet, so this rehearsal has named no find.
+        result.discovery = null;
         return result;
       },
     },
     {
       name: "sandbox-fast-forward",
       description: "Fast-forwards the active sandbox clone by a given number of seconds. "
-        + "Returns projected resources and milestones after the elapsed time. "
+        + "Returns projected resources, milestones, and the away find a real absence of that "
+        + "same length would name (null when the length turns up nothing). "
         + "If the sandbox is not active, creates one first.",
       inputSchema: {
         type: "object",
@@ -430,6 +433,9 @@ export function tools() {
         out.sandboxActive = true;
         out.sandboxSeconds = seconds;
         out.woodGained = (projected ? projected.wood : clone.wood) - woodBefore;
+        // The rehearsal's own away find, named by the engine's discovery rule —
+        // what a real absence of this length would turn up, not a bigger number.
+        out.discovery = result ? result.discovery : null;
         // The clone's milestone crossings during this interval are authoritative;
         // keep the state-derived keys (sharpenDone, wallBuilt) alongside them.
         if (result && result.milestones) out.milestones = { ...out.milestones, ...result.milestones };
