@@ -7222,6 +7222,95 @@ export async function checks() {
       }
     }
 
+    // (i) The happening advances with the save's own history, so a player who
+    // returns on the same cadence is not handed the same decision every time
+    // (issue #1051). The pool entry is the absence and the count of happenings
+    // already offered folded together — deterministic, so the same save always
+    // sees the same sequence and nothing can be lost or gambled.
+    const cycleState = { rate: 0.1, maps: 0, stoneUnlocked: true, totalWoodEarned: 0 };
+    const poolLength = engine.AWAY_EVENTS.length;
+    const idsByCount = [0, 1, 2].map((count) => engine.awayEventForElapsed(3600, { ...cycleState, eventsOffered: count }).id);
+    if (new Set(idsByCount).size !== 3) {
+      problems.push(`Consecutive happenings must differ: a 1h absence with eventsOffered 0/1/2 offered ${JSON.stringify(idsByCount)}.`);
+    }
+    const wrappedId = engine.awayEventForElapsed(3600, { ...cycleState, eventsOffered: poolLength }).id;
+    if (wrappedId !== idsByCount[0]) {
+      problems.push(`After the pool has cycled the sequence must wrap: eventsOffered ${poolLength} should offer "${idsByCount[0]}" again, got "${wrappedId}".`);
+    }
+    if (engine.awayEventForElapsed(3600, cycleState).id !== idsByCount[0]) {
+      problems.push(`A state with no happening count must fall back to 0: expected "${idsByCount[0]}", got "${engine.awayEventForElapsed(3600, cycleState).id}".`);
+    }
+
+    // (i2) A real sequence: the same save returning twice at the same length is
+    // offered two different happenings, and the count of happenings offered is
+    // carried in the save so the second return can differ from the first.
+    seedAwaySave(600000, { stoneUnlocked: true });
+    const firstReturnEvent = engine.getState().pendingEvent;
+    if (!firstReturnEvent) {
+      problems.push("A 600s return should offer a happening for the same-cadence checks.");
+    } else if (engine.getState().eventsOffered !== 1) {
+      problems.push(`Offering a happening must count it: after one 600s return eventsOffered should be 1, got ${engine.getState().eventsOffered}.`);
+    } else {
+      const choseFirst = engine.chooseAwayEventOption(firstReturnEvent.options[0].id);
+      if (!choseFirst.chosen) {
+        problems.push(`Choosing the first return's happening should succeed, got refusal ${JSON.stringify(choseFirst.reason)}.`);
+      }
+      const settled = JSON.parse(localStorage.getItem("selfgrow-state"));
+      if (settled.eventsOffered !== 1) {
+        problems.push(`The happening count must be persisted with the save: expected eventsOffered 1 after choosing, got ${JSON.stringify(settled.eventsOffered)}.`);
+      }
+      // The same save returns again, the same length later.
+      settled.timestamp = new Date(Date.now() - 600000).toISOString();
+      engine.reset();
+      localStorage.setItem("selfgrow-state", JSON.stringify(settled));
+      engine.init();
+      const secondReturn = engine.getState();
+      if (!secondReturn.pendingEvent) {
+        problems.push("A second 600s return should offer a happening, got none.");
+      } else {
+        if (secondReturn.pendingEvent.id === firstReturnEvent.id) {
+          problems.push(`Two consecutive 600s returns must offer different happenings, but both offered "${firstReturnEvent.id}".`);
+        }
+        const expectedSecondId = engine.AWAY_EVENTS[(600 + 1) % poolLength].id;
+        if (secondReturn.pendingEvent.id !== expectedSecondId) {
+          problems.push(`The second 600s return should offer "${expectedSecondId}", got "${secondReturn.pendingEvent.id}".`);
+        }
+        if (secondReturn.eventsOffered !== 2) {
+          problems.push(`The happening count must advance with each offering: after two returns expected eventsOffered 2, got ${secondReturn.eventsOffered}.`);
+        }
+      }
+
+      // (i3) The count travels with the save: an exported code restores it.
+      const code = engine.exportSave();
+      engine.reset();
+      const restored = engine.importSave(code);
+      if (!restored.ok) {
+        problems.push(`Restoring a save code with a happening count should succeed, got ${JSON.stringify(restored.reason)}.`);
+      } else if (restored.state.eventsOffered !== 2) {
+        problems.push(`A restored save must keep the happening count: expected eventsOffered 2, got ${restored.state.eventsOffered}.`);
+      }
+
+      // (i4) The happening a rehearsal derives is the one a real next return of
+      // that absence would offer, and the read tool reports the decision the
+      // page is holding — the page, the sandbox and the read tools agree.
+      const { cloneState, fastForward } = await import("./sandbox.js");
+      const rehearsalClone = cloneState({ ...engine.getState(), pendingEvent: null });
+      const rehearsal = fastForward(rehearsalClone, 600);
+      const nextRealEvent = engine.awayEventForElapsed(600, rehearsalClone);
+      const expectedNextId = engine.AWAY_EVENTS[(600 + 2) % poolLength].id;
+      if (!rehearsal.event || !nextRealEvent) {
+        problems.push(`A 600s rehearsal from a save with two happenings offered should name the next happening, got ${JSON.stringify(rehearsal.event)}.`);
+      } else if (rehearsal.event.id !== nextRealEvent.id) {
+        problems.push(`The rehearsed happening must be the one the engine's own rule derives (${nextRealEvent.id}), got ${rehearsal.event.id}.`);
+      } else if (rehearsal.event.id !== expectedNextId) {
+        problems.push(`The rehearsed 600s happening after two offered should be "${expectedNextId}", got "${rehearsal.event.id}".`);
+      }
+      const readNow = await readState.execute({});
+      if (JSON.stringify(readNow.pendingEvent) !== JSON.stringify(engine.getState().pendingEvent)) {
+        problems.push(`read-state.pendingEvent must match the decision the page holds: page ${JSON.stringify(engine.getState().pendingEvent)}, tool ${JSON.stringify(readNow.pendingEvent)}.`);
+      }
+    }
+
     engine.reset();
     engine.init();
   } catch (err) {
