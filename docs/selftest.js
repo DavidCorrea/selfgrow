@@ -6856,6 +6856,94 @@ export async function checks() {
       if (typeof window.__dismissOffline === "function") window.__dismissOffline();
     }
 
+    // (h) A held decision must stay in view after the welcome-back panel is
+    // dismissed (issue #1047): the status panel names the happening and the
+    // Last return control re-opens the same two choices, so a choice the game
+    // is holding for the player cannot be forgotten. With nothing pending the
+    // status panel says nothing. Page and read-state never disagree.
+    const indicator = document.getElementById("away-decision-waiting");
+    const indicatorName = document.getElementById("away-decision-waiting-name");
+    const indicatorVisible = () => Boolean(indicator)
+      && !indicator.classList.contains("stat-hidden")
+      && getComputedStyle(indicator).display !== "none";
+    if (!indicator || !indicatorName) {
+      problems.push("The status panel must carry an #away-decision-waiting element naming a held decision.");
+    } else {
+      seedAwaySave(600000, { stoneUnlocked: true });
+      window.__renderUI();
+      const waitingEvent = engine.getState().pendingEvent;
+      if (!waitingEvent) {
+        problems.push("A 600s return should leave a pending event for the status panel to name.");
+      } else if (!indicatorVisible()) {
+        problems.push("After a real return, the status panel must state that an away decision is waiting.");
+      }
+      if (waitingEvent && indicatorName.textContent !== waitingEvent.title) {
+        problems.push(`The waiting line must name the happening ${JSON.stringify(waitingEvent.title)}, got ${JSON.stringify(indicatorName.textContent)}.`);
+      }
+
+      // Dismissing the welcome-back panel without choosing must not hide the
+      // reminder: the decision is still in the save, so the page must still
+      // say so.
+      if (typeof window.__dismissOffline === "function") window.__dismissOffline();
+      if (waitingEvent && !indicatorVisible()) {
+        problems.push("Dismissing the welcome-back panel without choosing must keep the waiting line visible.");
+      }
+
+      // The page and the read tool must agree about whether a decision waits.
+      const readWhileWaiting = await readState.execute({});
+      if (JSON.stringify(readWhileWaiting.pendingEvent) !== JSON.stringify(waitingEvent)) {
+        problems.push(`read-state.pendingEvent must match the page's held decision: page ${JSON.stringify(waitingEvent)}, tool ${JSON.stringify(readWhileWaiting.pendingEvent)}.`);
+      }
+
+      // Re-opening the last return shows the same two choices with the same
+      // effects, drawn from the same persisted event.
+      const showReturnBtn = document.getElementById("btn-show-return");
+      if (!showReturnBtn || showReturnBtn.hidden) {
+        problems.push("The Last return control must be present while a return's record exists.");
+      } else {
+        showReturnBtn.click();
+        const reopenedEvent = document.getElementById("offline-event");
+        const reopenedTitle = document.getElementById("offline-event-title");
+        if (!reopenedEvent || reopenedEvent.hidden) {
+          problems.push("Re-opening the last return must show the pending away event.");
+        } else if (waitingEvent) {
+          if (reopenedTitle.textContent !== waitingEvent.title) {
+            problems.push(`Re-opened panel must title the happening ${JSON.stringify(waitingEvent.title)}, got ${JSON.stringify(reopenedTitle.textContent)}.`);
+          }
+          waitingEvent.options.forEach((option, i) => {
+            const labelEl = document.getElementById(`away-option-label-${i}`);
+            const effectEl = document.getElementById(`away-option-effect-${i}`);
+            if (!labelEl || labelEl.textContent !== option.label) {
+              problems.push(`Re-opened option ${i} label should read ${JSON.stringify(option.label)}, got ${JSON.stringify(labelEl && labelEl.textContent)}.`);
+            }
+            if (!effectEl || effectEl.textContent !== option.effectText) {
+              problems.push(`Re-opened option ${i} effect should read ${JSON.stringify(option.effectText)}, got ${JSON.stringify(effectEl && effectEl.textContent)}.`);
+            }
+          });
+
+          // Taking the choice clears both the waiting line and the save.
+          const reopenButton0 = document.getElementById("away-option-0");
+          if (reopenButton0) reopenButton0.click();
+          if (indicatorVisible()) {
+            problems.push("Taking the waiting choice must clear the status panel's waiting line.");
+          }
+          const readAfterTaken = await readState.execute({});
+          if (readAfterTaken.pendingEvent !== null) {
+            problems.push(`read-state must report no pending event after the waiting choice is taken, got ${JSON.stringify(readAfterTaken.pendingEvent)}.`);
+          }
+        }
+        if (typeof window.__dismissOffline === "function") window.__dismissOffline();
+      }
+
+      // With nothing pending there is nothing to wait for, so no line.
+      engine.reset();
+      engine.init();
+      window.__renderUI();
+      if (indicatorVisible()) {
+        problems.push("With no pending decision the status panel must show no waiting line.");
+      }
+    }
+
     engine.reset();
     engine.init();
   } catch (err) {
