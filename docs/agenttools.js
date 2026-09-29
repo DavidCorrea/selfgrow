@@ -8,7 +8,7 @@
  * @module agenttools
  */
 
-import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, chooseAwayEventOption, getReturnSummary, formatElapsed, formatRate, nextDiscoveryAfter, discoveryCollection, returnDiscoveryText, sharpenAvailable, sharpenThreshold, wallAvailable, expeditionUnlocked, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, effectiveWoodRate, expeditionMultiplierFor, clickPowerFor, FIRST_GOAL_WOOD, UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, GOAL_STONE, WALL_COST, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT, EXPEDITION_FORGE_LEVEL, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_WOOD_COST_INC, FORGE_STONE_COST_INC, FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC, EXPEDITION_WOOD_RATE_MULTIPLIER, DISCOVERY_MIN_SEC, AWAY_EVENT_MIN_SEC, AWAY_EVENT_LUMP_SEC, AWAY_EVENT_RATE_BONUS, AWAY_EVENTS, discoverForElapsed, FINDS_LIST_LIMIT } from "./engine.js";
+import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, chooseAwayEventOption, getReturnSummary, formatElapsed, formatRate, nextDiscoveryAfter, discoveryCollection, returnDiscoveryText, sharpenAvailable, sharpenThreshold, wallAvailable, expeditionUnlocked, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, effectiveWoodRate, expeditionMultiplierFor, clickPowerFor, FIRST_GOAL_WOOD, UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, GOAL_STONE, WALL_COST, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT, EXPEDITION_FORGE_LEVEL, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_WOOD_COST_INC, FORGE_STONE_COST_INC, FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC, EXPEDITION_WOOD_RATE_MULTIPLIER, DISCOVERY_MIN_SEC, AWAY_EVENT_MIN_SEC, AWAY_EVENT_LUMP_SEC, AWAY_EVENT_RATE_BONUS_FRACTION, awayRateBonusFor, AWAY_EVENTS, discoverForElapsed, FINDS_LIST_LIMIT } from "./engine.js";
 
 /**
  * The last return as the welcome-back panel is showing it, read straight from
@@ -362,6 +362,9 @@ function rulesAway(s) {
   const exampleFind = discoverForElapsed(DISCOVERY_MIN_SEC);
   const deepestFind = discoverForElapsed(1e15);
   const strongestKinds = [...new Set(AWAY_EVENTS.flatMap((event) => event.kinds))];
+  // The one amount this save's rate option would add, read once so the figure
+  // the rule states and the figure rateBonus reports can never differ.
+  const rateBonus = awayRateBonusFor(s);
   return {
     finds: {
       minSec: DISCOVERY_MIN_SEC,
@@ -388,13 +391,17 @@ function rulesAway(s) {
       // the choice the player actually sees can differ from the pool's kinds.
       stoneShownAsWood: !s.stoneUnlocked,
       lumpSec: AWAY_EVENT_LUMP_SEC,
-      rateBonus: AWAY_EVENT_RATE_BONUS,
+      rateBonus,
+      rateBonusFraction: AWAY_EVENT_RATE_BONUS_FRACTION,
       oneWay: true,
       rule: "A return of at least " + AWAY_EVENT_MIN_SEC + " seconds offers a happening with exactly two "
         + "choices. Each choice grants one thing: a lump of wood, "
         + "a lump of stone (shown as wood while stone is still locked), or a permanent +"
-        + formatRate(AWAY_EVENT_RATE_BONUS) + " wood/s. The wood and stone lumps are worth "
-        + AWAY_EVENT_LUMP_SEC + "s of production at the rates in force. Choosing is one-way: once one "
+        + formatRate(rateBonus) + " wood/s. The wood and stone lumps are worth "
+        + AWAY_EVENT_LUMP_SEC + "s of production at the rates in force, and the rate option adds "
+        + AWAY_EVENT_RATE_BONUS_FRACTION + " of the same wood/s for good, so it pays for itself in "
+        + (AWAY_EVENT_LUMP_SEC / AWAY_EVENT_RATE_BONUS_FRACTION) + "s of production at any rate "
+        + "(rateBonus / rateBonusFraction state the same rule). Choosing is one-way: once one "
         + "option is taken the other can never then be taken.",
     },
     sandbox: {
@@ -457,7 +464,8 @@ export function tools() {
         + "pendingEvent is the two-choice happening a real return is offering, or null when "
         + "there is none: {id, title, options: [{id, label, effect: {kind, amount}, effectText}]}"
         + " with exactly two options. Each effectText states exactly what choosing that option "
-        + "grants (a lump of wood, a lump of stone, or a permanent wood/s increase), and each "
+        + "grants (a lump of wood, a lump of stone, or a permanent wood/s increase sized from "
+        + "the wood/s in force when the return is collected), and each "
         + "option's id is the value to pass to the choose-away-event action.",
       inputSchema: { type: "object", properties: {} },
       annotations: { readOnlyHint: true },
@@ -586,7 +594,9 @@ export function tools() {
         + "weakerOrRepeatAddsNothing, listLimit, and the rule in words); event is the two-choice "
         + "happening a return of minSec or more offers (optionCount, kinds it can grant, "
         + "stoneShownAsWood while stone is locked, lumpSec = seconds of production a wood/stone "
-        + "lump is worth, rateBonus = the permanent wood/s a rate option adds, oneWay, and the "
+        + "lump is worth, rateBonus = the permanent wood/s a rate option adds for this save "
+        + "(read from the state, not a constant) and rateBonusFraction = the share of the effective "
+        + "wood/s that bonus is, oneWay, and the "
         + "rule in words); sandbox names the rehearsal tools and states that fast-forwarding "
         + "projects the find and happening a real absence would turn up without touching the "
         + "save. "
