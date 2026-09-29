@@ -330,6 +330,24 @@ export function discoverForElapsed(elapsedSec) {
   return found ? { ...found } : null;
 }
 
+/**
+ * The away discovery that comes next after the one owned, and the absence
+ * length needed to earn it. An account owning nothing is reaching for the
+ * first rung, so the ladder always names something to wait for; an account
+ * already holding the strongest tier has nothing further to find and gets
+ * null. Unknown ids also yield null rather than guessing a rung.
+ *
+ * @param {string|null|undefined} ownedId
+ * @returns {{ id: string, name: string, bonus: number, minSec: number }|null}
+ */
+export function nextDiscoveryAfter(ownedId) {
+  if (!ownedId) return { ...DISCOVERIES[0] };
+  const ownedIndex = DISCOVERIES.findIndex((tier) => tier.id === ownedId);
+  if (ownedIndex === -1) return null;
+  const next = DISCOVERIES[ownedIndex + 1];
+  return next ? { ...next } : null;
+}
+
 function persist() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -843,6 +861,7 @@ export function consumeOfflineGained() {
  *   wood: number,
  *   stone: number,
  *   discovery: {id: string, name: string, bonus: number, credited: boolean}|null,
+ *   nextDiscovery: {id: string, name: string, bonus: number, minSec: number}|null,
  *   milestones: Milestones,
  * }}
  */
@@ -857,6 +876,7 @@ export function getReturnSummary() {
       wood: 0,
       stone: 0,
       discovery: null,
+      nextDiscovery: nextDiscoveryAfter(state.discoveryId),
       milestones: { sharpenAvailable: false, stoneNowUnlocked: false, wallAvailable: false, forgeNowUnlocked: false, expeditionNowUnlocked: false },
     };
   }
@@ -868,6 +888,7 @@ export function getReturnSummary() {
     wood: ret.wood,
     stone: ret.stone,
     discovery: ret.discovery,
+    nextDiscovery: nextDiscoveryAfter(state.discoveryId),
     milestones: ret.milestones,
   };
 }
