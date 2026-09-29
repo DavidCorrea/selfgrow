@@ -178,6 +178,13 @@
       display: none;
     }
 
+    /* The held decision a return left unchosen, named in the status panel so
+       it cannot disappear from view once the welcome-back panel is dismissed.
+       Accent colour sets it apart from the plain counters around it. */
+    .meta-item.away-waiting {
+      color: var(--accent);
+    }
+
     /* A compact status-panel control that re-opens the last return's account:
        a reminder the player can revisit, not one of the game's action buttons,
        so it keeps the 40px tap target but takes far less room. */
@@ -1359,6 +1366,7 @@
       <span class="meta-item"><span>Elapsed</span> <span class="stat-value" id="elapsed-value">—</span></span>
       <span class="meta-item"><span>Total wood</span> <span class="stat-value stat-total" id="total-wood-value">0</span></span>
       <span class="meta-item stat-hidden" id="total-stone-stat"><span>Total stone</span> <span class="stat-value stat-total stone-total" id="total-stone-value"></span></span>
+      <span class="meta-item stat-hidden away-waiting" id="away-decision-waiting"><span>Decision waiting:</span> <span class="stat-value" id="away-decision-waiting-name"></span></span>
       <details class="finds-list" id="finds-list">
         <summary class="away-find-line" id="next-away-find-line"></summary>
         <ul class="finds-entries" id="finds-entries"></ul>
@@ -1666,6 +1674,8 @@
       document.getElementById("away-option-effect-0"),
       document.getElementById("away-option-effect-1"),
     ];
+    const awayDecisionWaiting = document.getElementById("away-decision-waiting");
+    const awayDecisionWaitingName = document.getElementById("away-decision-waiting-name");
     const nextAwayFindLine = document.getElementById("next-away-find-line");
     const findsList = document.getElementById("finds-list");
     const findsEntries = document.getElementById("finds-entries");
@@ -2431,10 +2441,24 @@
       }
       renderFindsList(s.finds);
 
+      // Read the last return once, so the re-open control and the held-decision
+      // reminder below are drawn from the same record and can never disagree.
+      const returnSummary = getReturnSummary();
+
       // The re-open control is shown exactly when there is a return to show,
       // so a first-ever visit, a sub-second reload and a blip leave it absent
       // rather than offering an account that does not exist.
-      if (btnShowReturn) btnShowReturn.hidden = !getReturnSummary().visible;
+      if (btnShowReturn) btnShowReturn.hidden = !returnSummary.visible;
+
+      // A decision the return turned up but the player has not yet taken stays
+      // in the save after the welcome-back panel is dismissed. The status panel
+      // names it and the Last return button re-opens it, so a held choice can
+      // never be forgotten; no pending event means no such line.
+      if (awayDecisionWaiting) {
+        const waitingEvent = returnSummary.pendingEvent;
+        awayDecisionWaiting.classList.toggle("stat-hidden", !waitingEvent);
+        awayDecisionWaitingName.textContent = waitingEvent ? waitingEvent.title : "";
+      }
 
       // Total stats (never decrease). Total stone is written only when stone
       // is unlocked — the locked branch above has already emptied the row, and
