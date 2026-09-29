@@ -954,6 +954,93 @@
       }
     }
 
+    /* ─── Pixel-art gather pictures ───
+       Each system's action IS its picture: an in-code SVG built from real page
+       elements, sitting inside the button beside its real-text label. */
+    .sprite-mount {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+    }
+
+    .sprite-mount svg.sprite {
+      display: block;
+      width: 1.875rem;
+      height: 1.875rem;
+    }
+
+    /* The same picture, smaller, in the resource header chip. */
+    .chip .sprite-mount svg.sprite {
+      width: 0.9rem;
+      height: 0.9rem;
+    }
+
+    .gather-btn {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.3rem;
+    }
+
+    .gather-btn .btn-label {
+      font: inherit;
+    }
+
+    /* Reactions — the picture answers a use of its own button. */
+    .react-wood .sprite-mount svg.sprite { animation: sprite-shake 0.4s steps(2, end); }
+    .react-stone .sprite-mount svg.sprite { animation: sprite-chip 0.3s steps(3, end); }
+    .react-forge .sprite-mount svg.sprite { animation: sprite-spark 0.4s steps(4, end); }
+    .react-expedition .sprite-mount svg.sprite { animation: sprite-sway 0.5s ease-in-out; }
+
+    @keyframes sprite-shake {
+      0% { transform: translateX(0); }
+      25% { transform: translateX(-2px) rotate(-2deg); }
+      50% { transform: translateX(2px) rotate(2deg); }
+      75% { transform: translateX(-2px) rotate(-2deg); }
+      100% { transform: translateX(0); }
+    }
+
+    @keyframes sprite-chip {
+      0% { transform: translate(0, 0); }
+      35% { transform: translate(-2px, -1px) rotate(-6deg); }
+      70% { transform: translate(1px, 0) rotate(3deg); }
+      100% { transform: translate(0, 0); }
+    }
+
+    @keyframes sprite-spark {
+      0% { filter: brightness(1); transform: translateY(0); }
+      30% { filter: brightness(1.9); transform: translateY(-2px); }
+      60% { filter: brightness(1.3); transform: translateY(1px); }
+      100% { filter: brightness(1); transform: translateY(0); }
+    }
+
+    @keyframes sprite-sway {
+      0% { transform: rotate(0deg); }
+      30% { transform: rotate(-7deg); }
+      65% { transform: rotate(6deg); }
+      100% { transform: rotate(0deg); }
+    }
+
+    .float-gain {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      color: var(--highlight);
+      font-family: var(--pixel-font);
+      font-size: 0.6rem;
+      text-shadow: 1px 1px 0 #0a0a0f;
+      pointer-events: none;
+      animation: float-up 0.7s ease-out forwards;
+    }
+
+    @keyframes float-up {
+      0% { opacity: 1; transform: translate(-50%, 0); }
+      100% { opacity: 0; transform: translate(-50%, -2.5rem); }
+    }
+
     /* ─── Accessible: prefers-reduced-motion ─── */
     @media (prefers-reduced-motion: reduce) {
       .btn {
@@ -961,6 +1048,17 @@
       }
       .btn:active {
         transform: none;
+      }
+      /* The pictures still show; nothing animates. */
+      .react-wood .sprite-mount svg.sprite,
+      .react-stone .sprite-mount svg.sprite,
+      .react-forge .sprite-mount svg.sprite,
+      .react-expedition .sprite-mount svg.sprite,
+      .float-gain {
+        animation: none;
+      }
+      .float-gain {
+        display: none;
       }
     }
   </style>
@@ -972,13 +1070,13 @@
     <div class="game-title" aria-hidden="true">selfgrow</div>
     <div class="chip-row">
       <div class="chip" id="wood-stat">
-        <span class="chip-icon" aria-hidden="true">&#x1F332;</span>
+        <span class="sprite-mount" data-sprite="wood" aria-hidden="true"></span>
         <span class="chip-name" id="wood-label">Wood</span>
         <span class="stat-value" id="wood-value">0</span>
         <span class="stat-value chip-rate" id="rate-value">+0.10/s</span>
       </div>
       <div class="chip stat-hidden" id="stone-stat">
-        <span class="chip-icon" aria-hidden="true">&#x1FAA8;</span>
+        <span class="sprite-mount" data-sprite="stone" aria-hidden="true"></span>
         <span class="chip-name" id="stone-label">Stone</span>
         <span class="stat-value stone-value" id="stone-value"></span>
         <span class="chip-rate-stat stat-hidden" id="stone-rate-stat">
@@ -986,12 +1084,12 @@
         </span>
       </div>
       <div class="chip stat-hidden" id="forge-stat">
-        <span class="chip-icon" aria-hidden="true">&#x1F528;</span>
+        <span class="sprite-mount" data-sprite="forge" aria-hidden="true"></span>
         <span class="chip-name" id="forge-label">Forge</span>
         <span class="stat-value forge-value" id="forge-value"></span>
       </div>
       <div class="chip stat-hidden" id="expedition-stat">
-        <span class="chip-icon" aria-hidden="true">&#x1F30D;</span>
+        <span class="sprite-mount" data-sprite="expedition" aria-hidden="true"></span>
         <span class="chip-name" id="map-label">Maps</span>
         <span class="stat-value" id="map-value" style="color: var(--map-color);"></span>
       </div>
@@ -1031,8 +1129,9 @@
         <h3 class="system-name">Wood</h3>
       </div>
       <p class="system-yield" id="wood-yield-value">+1 / chop</p>
-      <button class="btn" id="btn-gather" type="button" aria-label="Gather Wood">
-        <span class="btn-icon">&#x26A0;</span> Gather Wood
+      <button class="btn gather-btn" id="btn-gather" type="button" aria-label="Gather Wood">
+        <span class="sprite-mount" data-sprite="wood" aria-hidden="true"></span>
+        <span class="btn-label">Gather Wood</span>
       </button>
       <div class="upgrade-list">
         <div class="upgrade-card">
@@ -1050,8 +1149,9 @@
         <h3 class="system-name">Stone</h3>
       </div>
       <p class="system-yield" id="stone-yield-value">+1 / mine</p>
-      <button class="btn btn-stone" id="btn-gather-stone" type="button" aria-label="Gather Stone">
-        <span class="btn-icon">&#x26AA;</span> Gather Stone
+      <button class="btn btn-stone gather-btn" id="btn-gather-stone" type="button" aria-label="Gather Stone">
+        <span class="sprite-mount" data-sprite="stone" aria-hidden="true"></span>
+        <span class="btn-label">Gather Stone</span>
       </button>
       <div class="upgrade-list">
         <div class="upgrade-card">
@@ -1069,8 +1169,9 @@
         <h3 class="system-name">Forge</h3>
       </div>
       <p class="system-yield">+0.05 wood/s and +0.5 per chop</p>
-      <button class="btn btn-forge" id="btn-forge-tool" type="button" aria-label="Forge Tool" disabled>
-        <span class="btn-icon">&#x1F528;</span> Forge Tool (10 wood + 5 stone)
+      <button class="btn btn-forge gather-btn" id="btn-forge-tool" type="button" aria-label="Forge Tool" disabled>
+        <span class="sprite-mount" data-sprite="forge" aria-hidden="true"></span>
+        <span class="btn-label">Forge Tool (10 wood + 5 stone)</span>
       </button>
       <div class="upgrade-list"></div>
     </article>
@@ -1081,8 +1182,9 @@
         <h3 class="system-name">Expeditions</h3>
       </div>
       <p class="system-yield">+5% wood rate per map</p>
-      <button class="btn" id="btn-expedition" type="button" aria-label="Send Expedition" disabled style="background: var(--map-color); border-color: #cc4488;">
-        <span class="btn-icon">&#x1F30D;</span> Send Expedition (10 wood + 5 stone)
+      <button class="btn gather-btn" id="btn-expedition" type="button" aria-label="Send Expedition" disabled style="background: var(--map-color); border-color: #cc4488;">
+        <span class="sprite-mount" data-sprite="expedition" aria-hidden="true"></span>
+        <span class="btn-label">Send Expedition (10 wood + 5 stone)</span>
       </button>
       <div class="upgrade-list"></div>
     </article>
@@ -1203,8 +1305,10 @@
     import "./webmcp.js";
     import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, formatElapsed, sharpenAvailable, sharpenThreshold, displayAmount, exportSave, importSave, describeGoal, returnDiscoveryText, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS, computeStoneRateFor, computeStoneRate } from "./engine.js";
     import { cloneState, fastForward } from "./sandbox.js";
+    import { mountSprites, playReaction } from "./sprites.js";
 
     init();
+    mountSprites();
 
     const stateEl = document.getElementById("wood-value");
     const rateEl = document.getElementById("rate-value");
@@ -1291,9 +1395,12 @@
 
     function handleGather() {
       if (woodCooldown) return;
+      const before = getState().wood;
       gatherWood();
+      const gained = getState().wood - before;
       setWoodCooldown();
       renderUI();
+      playReaction(btnGather, "wood", { gain: formatClickPower(gained) });
     }
 
     btnGather.addEventListener("click", handleGather);
@@ -1319,9 +1426,11 @@
 
     function handleGatherStone() {
       if (stoneCooldown) return;
-      gatherStone();
+      const result = gatherStone();
+      if (!result.gathered) return;
       setStoneCooldown();
       renderUI();
+      playReaction(btnGatherStone, "stone", { gain: formatClickPower(STONE_GATHER_AMOUNT) });
     }
 
     btnGatherStone.addEventListener("click", handleGatherStone);
@@ -1346,8 +1455,9 @@
     });
 
     function handleForgeTool() {
-      forgeTool();
+      const result = forgeTool();
       renderUI();
+      if (result.forged) playReaction(btnForgeTool, "forge", { gain: 1 });
     }
 
     btnForgeTool.addEventListener("click", handleForgeTool);
@@ -1359,8 +1469,9 @@
     });
 
     function handleExpedition() {
-      sendExpedition();
+      const result = sendExpedition();
       renderUI();
+      if (result.sent) playReaction(btnExpedition, "expedition", { gain: 1 });
     }
 
     btnExpedition.addEventListener("click", handleExpedition);
@@ -1595,6 +1706,13 @@
       return Number.isInteger(value) ? String(value) : value.toFixed(1);
     }
 
+    // Write a button's visible label without touching the picture beside it, so
+    // a render can never wipe out the sprite that is the button.
+    function setButtonLabel(button, text) {
+      const label = button && button.querySelector(".btn-label");
+      if (label) label.textContent = text;
+    }
+
     // A locked system must contribute no text to the page at all: CSS hiding
     // still leaves its markup in the accessibility tree and in any DOM read,
     // so a visitor is told about a system the game has not unlocked. The static
@@ -1608,9 +1726,9 @@
         text: el.textContent,
       })));
     }
-    rememberStaticText(stoneStat, [stoneStat.querySelector(".chip-icon"), stoneStat.querySelector(".chip-name")]);
-    rememberStaticText(forgeStat, [forgeStat.querySelector(".chip-icon"), forgeStat.querySelector(".chip-name")]);
-    rememberStaticText(expeditionStat, [expeditionStat.querySelector(".chip-icon"), expeditionStat.querySelector(".chip-name")]);
+    rememberStaticText(stoneStat, [stoneStat.querySelector(".chip-name")]);
+    rememberStaticText(forgeStat, [forgeStat.querySelector(".chip-name")]);
+    rememberStaticText(expeditionStat, [expeditionStat.querySelector(".chip-name")]);
     rememberStaticText(discoveryStat, [discoveryStat.querySelector(".chip-icon"), discoveryStat.querySelector(".chip-name")]);
     rememberStaticText(totalStoneStat, [totalStoneStat.querySelector("span")]);
 
@@ -1787,7 +1905,7 @@
         }
         // Update forge button text with costs
         const canForge = wood >= forgeWoodCost && stone >= forgeStoneCost;
-        btnForgeTool.innerHTML = '<span class="btn-icon">\uD83D\uDD28</span> Forge Tool (' + forgeWoodCost + ' wood + ' + forgeStoneCost + ' stone)';
+        setButtonLabel(btnForgeTool, "Forge Tool (" + forgeWoodCost + " wood + " + forgeStoneCost + " stone)");
         btnForgeTool.setAttribute("aria-label", "Forge Tool — costs " + forgeWoodCost + " wood and " + forgeStoneCost + " stone");
         btnForgeTool.disabled = !canForge;
       } else {
@@ -1809,7 +1927,7 @@
         const eStoneCost = s.expeditionStoneCost || 5;
         const canExpedition = wood >= eWoodCost && stone >= eStoneCost;
         if (btnExpedition) {
-          btnExpedition.innerHTML = '<span class="btn-icon">\uD83C\uDF0D</span> Send Expedition (' + eWoodCost + ' wood + ' + eStoneCost + ' stone)';
+          setButtonLabel(btnExpedition, "Send Expedition (" + eWoodCost + " wood + " + eStoneCost + " stone)");
           btnExpedition.setAttribute("aria-label", "Send Expedition — costs " + eWoodCost + " wood and " + eStoneCost + " stone");
           btnExpedition.disabled = !canExpedition;
         }
@@ -1839,9 +1957,9 @@
 
       // Gather wood button label — show click power
       if (clickPower > 1) {
-        btnGather.innerHTML = '<span class="btn-icon">\u26A0</span> Gather Wood (+' + formatClickPower(clickPower) + ')';
+        setButtonLabel(btnGather, "Gather Wood (+" + formatClickPower(clickPower) + ")");
       } else {
-        btnGather.innerHTML = '<span class="btn-icon">\u26A0</span> Gather Wood';
+        setButtonLabel(btnGather, "Gather Wood");
       }
 
       // Stone gather button: cooldown-aware disabled
