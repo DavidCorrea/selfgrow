@@ -18,7 +18,8 @@ import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, 
  * `available` is true whenever a real return is on record, whether or not the
  * panel is currently up — it is what the status panel's re-open control keys
  * off. The amounts and the find stay zeroed while the panel is hidden, matching
- * the panel being absent.
+ * the panel being absent; `chosenOption` is a fact of the record itself, so it
+ * is reported whenever the return is on record, even after the panel is hidden.
  *
  * @returns {{
  *   available: boolean,
@@ -26,14 +27,16 @@ import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, 
  *   stone: number,
  *   elapsed: string|null,
  *   discovery: { name: string, bonus: number|null, permanent: boolean, alreadyOwned: boolean, sentence: string }|null,
+ *   chosenOption: { id: string, label: string, effect: {kind: string, amount: number}, effectText: string }|null,
  * }}
  */
 function readReturnSummary() {
   const ret = getReturnSummary();
   const available = ret.visible;
+  const chosenOption = ret.chosenOption ?? null;
   const overlay = document.getElementById("offline-summary");
   if (!available || !overlay || overlay.hidden) {
-    return { available, wood: 0, stone: 0, elapsed: null, discovery: null };
+    return { available, wood: 0, stone: 0, elapsed: null, discovery: null, chosenOption };
   }
   return {
     available,
@@ -49,6 +52,7 @@ function readReturnSummary() {
           sentence: returnDiscoveryText(ret.discovery),
         }
       : null,
+    chosenOption,
   };
 }
 
@@ -114,6 +118,10 @@ function withGoal(s) {
     offlineStoneGained: ret.stone,
     offlineElapsed: ret.elapsed,
     offlineDiscovery: ret.discovery,
+    // The option taken from the last return's decision, or null when it offered
+    // none or the player has not chosen. It is the same record the panel words
+    // its 'You chose' line from, so the page and the tool cannot disagree.
+    offlineChosenOption: ret.chosenOption,
     nextAwayDiscovery: nextDiscovery
       ? { name: nextDiscovery.name, minSec: nextDiscovery.minSec, elapsed: formatElapsed(nextDiscovery.minSec * 1000) }
       : null,
@@ -366,7 +374,11 @@ export function tools() {
         + "weaker than one owned, in which case alreadyOwned says whether it was the "
         + "same rung already in the collection, and sentence is the exact sentence the panel "
         + "shows for it (a credited find names the wood/s it added; a repeat or weaker "
-        + "find makes no claim of a new find); offlineDiscovery itself is null when nothing was found. The away discovery owned so far (discovery: "
+        + "find makes no claim of a new find); offlineDiscovery itself is null when nothing was found. "
+        + "offlineChosenOption is the option the player took from that same return's decision "
+        + "({id, label, effect: {kind, amount}, effectText}) or null when the return offered no decision "
+        + "or none has been taken yet; it is part of the return's own record, so it survives a reload and "
+        + "matches the panel's 'You chose' line. The away discovery owned so far (discovery: "
         + "{id, name, bonus} or null, whose bonus is already included in rate), and the "
         + "next away discovery still to earn (nextAwayDiscovery: {name, minSec, elapsed} "
         + "where minSec is the absence in seconds needed to find it and elapsed is that "

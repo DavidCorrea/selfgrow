@@ -7061,5 +7061,145 @@ export async function checks() {
     console.error(err);
   }
 
+  // ─── The away decision stays in the return's account (issue #1048) ─
+  // The choice a return offered is part of that return's record, not just the
+  // panel's memory: after choosing, re-opening the last return — even after a
+  // reload — still names the option taken and the effect it granted. A return
+  // that never offered a decision records none, and the page and the read tool
+  // word the same choice from that one record.
+  try {
+    const engine = await import("./engine.js");
+    const { tools } = await import("./agenttools.js");
+    const readState = tools().find((t) => t.name === "read-state");
+
+    // Loads a save `ageMs` old exactly as a returning browser would.
+    const seedAwaySave = (ageMs, overrides = {}) => {
+      engine.reset();
+      const aged = new Date(Date.now() - ageMs).toISOString();
+      localStorage.setItem("selfgrow-state", JSON.stringify({
+        wood: 0, rate: 0.1, upgradeLevel: 0, stone: 0,
+        totalWoodEarned: 0, totalStoneEarned: 0,
+        wallLevel: 0, forgeLevel: 0, expeditionLevel: 0, maps: 0,
+        stoneUnlocked: false,
+        discoveryBonus: 0, discoveryId: null, discoveryName: null,
+        lastReturn: null, pendingEvent: null,
+        timestamp: aged, firstTimestamp: aged,
+        ...overrides,
+      }));
+      engine.init();
+    };
+
+    // (a) Choosing records the option in the return's own account: its id, its
+    // label, the effect it granted and the sentence it stated.
+    seedAwaySave(600000, { stoneUnlocked: true });
+    const pending = engine.getState().pendingEvent;
+    let chosenOption = null;
+    if (!pending) {
+      problems.push("A 600s return should offer an away event for the decision-record checks.");
+    } else {
+      const option = pending.options[0];
+      const result = engine.chooseAwayEventOption(option.id);
+      if (!result.chosen) {
+        problems.push(`Choosing the pending option "${option.id}" should succeed, got refusal ${JSON.stringify(result.reason)}.`);
+      }
+      chosenOption = engine.getReturnSummary().chosenOption;
+      if (!chosenOption) {
+        problems.push("After choosing an away option the return's account must record it, but getReturnSummary().chosenOption was null.");
+      } else {
+        if (chosenOption.id !== option.id) {
+          problems.push(`The recorded choice must be option "${option.id}", got "${chosenOption.id}".`);
+        }
+        if (chosenOption.label !== option.label) {
+          problems.push(`The recorded choice must keep the label ${JSON.stringify(option.label)}, got ${JSON.stringify(chosenOption.label)}.`);
+        }
+        if (chosenOption.effectText !== option.effectText) {
+          problems.push(`The recorded choice must keep the effect sentence ${JSON.stringify(option.effectText)}, got ${JSON.stringify(chosenOption.effectText)}.`);
+        }
+        if (chosenOption.effect.kind !== option.effect.kind || chosenOption.effect.amount !== option.effect.amount) {
+          problems.push(`The recorded choice must keep the granted effect ${JSON.stringify(option.effect)}, got ${JSON.stringify(chosenOption.effect)}.`);
+        }
+      }
+    }
+
+    // (b) The choice survives a reload: round-trip the saved account through
+    // localStorage and re-init. The saved timestamp is aged a few seconds —
+    // under the minute that would record a genuinely newer return — so the
+    // reload credits the wait without replacing the account being re-opened.
+    const saved = JSON.parse(localStorage.getItem("selfgrow-state"));
+    saved.timestamp = new Date(Date.now() - 3000).toISOString();
+    engine.reset();
+    localStorage.setItem("selfgrow-state", JSON.stringify(saved));
+    engine.init();
+    const reloaded = engine.getReturnSummary();
+    if (!reloaded.visible) {
+      problems.push("A 3s reload of a return with a taken decision should still show the return record.");
+    }
+    if (!chosenOption) {
+      // Already reported above; nothing more to compare.
+    } else if (!reloaded.chosenOption) {
+      problems.push("Re-opening the last return after a reload must still record the chosen option, but chosenOption was null.");
+    } else {
+      if (reloaded.chosenOption.id !== chosenOption.id || reloaded.chosenOption.label !== chosenOption.label || reloaded.chosenOption.effectText !== chosenOption.effectText) {
+        problems.push(`The reloaded account must state the same choice: expected ${JSON.stringify(chosenOption)}, got ${JSON.stringify(reloaded.chosenOption)}.`);
+      }
+      if (reloaded.chosenOption.effect.kind !== chosenOption.effect.kind || reloaded.chosenOption.effect.amount !== chosenOption.effect.amount) {
+        problems.push(`The reloaded account must keep the granted effect ${JSON.stringify(chosenOption.effect)}, got ${JSON.stringify(reloaded.chosenOption.effect)}.`);
+      }
+    }
+
+    // (c) The re-opened panel shows the choice from that same record.
+    const chosenLine = document.getElementById("offline-event-chosen");
+    if (!chosenLine) {
+      problems.push("The panel must have an #offline-event-chosen line stating the choice.");
+    } else if (typeof window.__showOfflineSummary === "function") {
+      window.__showOfflineSummary();
+      const eventSection = document.getElementById("offline-event");
+      if (eventSection && !eventSection.hidden) {
+        problems.push("A return whose decision is already taken must not re-offer the event.");
+      }
+      if (chosenLine.hidden) {
+        problems.push("Re-opening the last return must show the chosen option, but #offline-event-chosen was hidden.");
+      } else if (reloaded.chosenOption) {
+        if (!chosenLine.textContent.includes(reloaded.chosenOption.label)) {
+          problems.push(`The re-opened chosen line must name ${JSON.stringify(reloaded.chosenOption.label)}, got ${JSON.stringify(chosenLine.textContent)}.`);
+        }
+        if (!chosenLine.textContent.includes(reloaded.chosenOption.effectText)) {
+          problems.push(`The re-opened chosen line must state ${JSON.stringify(reloaded.chosenOption.effectText)}, got ${JSON.stringify(chosenLine.textContent)}.`);
+        }
+      }
+      if (typeof window.__dismissOffline === "function") window.__dismissOffline();
+    }
+
+    // (d) The read tool reports the same choice from the same record.
+    if (readState && reloaded.chosenOption) {
+      const readAfter = await readState.execute({});
+      if (!readAfter.offlineChosenOption) {
+        problems.push("read-state must report the chosen away option (offlineChosenOption), but it was null.");
+      } else if (readAfter.offlineChosenOption.id !== reloaded.chosenOption.id || readAfter.offlineChosenOption.label !== reloaded.chosenOption.label || readAfter.offlineChosenOption.effectText !== reloaded.chosenOption.effectText) {
+        problems.push(`read-state.offlineChosenOption must match the account: expected ${JSON.stringify(reloaded.chosenOption)}, got ${JSON.stringify(readAfter.offlineChosenOption)}.`);
+      }
+    }
+
+    // (e) A return that never offered a decision records none, and the read
+    // tool agrees — so a choice can never leak onto a return that had none.
+    seedAwaySave(3000, {});
+    const noDecision = engine.getReturnSummary();
+    if (noDecision.chosenOption !== null) {
+      problems.push(`A short return with no happening must record no chosen option, got ${JSON.stringify(noDecision.chosenOption)}.`);
+    }
+    if (readState) {
+      const readNoDecision = await readState.execute({});
+      if (readNoDecision.offlineChosenOption !== null) {
+        problems.push(`read-state.offlineChosenOption must be null for a return with no happening, got ${JSON.stringify(readNoDecision.offlineChosenOption)}.`);
+      }
+    }
+
+    engine.reset();
+    engine.init();
+  } catch (err) {
+    problems.push(`Away decision account test threw: ${err.message}`);
+    console.error(err);
+  }
+
   return problems;
 }
