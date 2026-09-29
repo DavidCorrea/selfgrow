@@ -8,7 +8,7 @@
  * @module agenttools
  */
 
-import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, formatElapsed, nextDiscoveryAfter, discoveryCollection, returnDiscoveryText, sharpenAvailable, wallAvailable, expeditionUnlocked, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, effectiveWoodRate, expeditionMultiplierFor, clickPowerFor, FIRST_GOAL_WOOD, UPGRADE_COST, WALL_COST, STONE_GATHER_AMOUNT } from "./engine.js";
+import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, formatElapsed, formatRate, nextDiscoveryAfter, discoveryCollection, returnDiscoveryText, sharpenAvailable, sharpenThreshold, wallAvailable, expeditionUnlocked, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, effectiveWoodRate, expeditionMultiplierFor, clickPowerFor, FIRST_GOAL_WOOD, UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, GOAL_STONE, WALL_COST, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT, EXPEDITION_FORGE_LEVEL, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_WOOD_COST_INC, FORGE_STONE_COST_INC, FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC, EXPEDITION_WOOD_RATE_MULTIPLIER } from "./engine.js";
 
 /**
  * The last return as the welcome-back panel is showing it, read straight from
@@ -160,6 +160,179 @@ function ensureSandbox() {
 }
 
 /**
+ * The game's progression in the order it comes, read from the engine's own
+ * thresholds and worded the way the goal panel words it. A cold agent can take
+ * the first entry and act on it: the first goal and the action that reaches it.
+ *
+ * @param {import("./engine.js").GameState} s
+ * @returns {Array<{order: number, type: string, description: string, action: string, requirement: object}>}
+ */
+function rulesGoals(s) {
+  return [
+    {
+      order: 1,
+      type: "first-goal",
+      description: "Gather " + FIRST_GOAL_WOOD + " wood",
+      action: "gather",
+      requirement: { wood: FIRST_GOAL_WOOD },
+    },
+    {
+      order: 2,
+      type: "upgrade",
+      description: "Craft a Sharpening (" + UPGRADE_COST + " wood)",
+      action: "sharpen",
+      requirement: { wood: UPGRADE_COST },
+    },
+    {
+      order: 3,
+      type: "stone-goal",
+      description: "Gather " + GOAL_STONE + " stone",
+      action: "gather-stone",
+      requirement: { stone: GOAL_STONE },
+    },
+    {
+      order: 4,
+      type: "build-wall-goal",
+      description: "Build a Wall (" + WALL_COST + " stone)",
+      action: "build-wall",
+      requirement: { stone: WALL_COST },
+    },
+    {
+      order: 5,
+      type: "forge-goal",
+      description: "Forge a tool \u2014 need " + s.forgeWoodCost + " wood and " + s.forgeStoneCost + " stone",
+      action: "forge-tool",
+      requirement: { wood: s.forgeWoodCost, stone: s.forgeStoneCost },
+    },
+    {
+      order: 6,
+      type: "expedition-goal",
+      description: "Send scouts on expedition \u2014 need " + s.expeditionWoodCost + " wood and " + s.expeditionStoneCost + " stone",
+      action: "send-expedition",
+      requirement: { forgeLevel: EXPEDITION_FORGE_LEVEL, wood: s.expeditionWoodCost, stone: s.expeditionStoneCost },
+    },
+  ];
+}
+
+/**
+ * A repeatable upgrade's escalating cost stated as a formula, so a caller can
+ * project the price at any level rather than only the level it read. The
+ * numbers are the engine's own base and increment constants.
+ */
+function escalatingCostFormula(woodBase, woodIncrement, stoneBase, stoneIncrement) {
+  return "wood = " + woodBase + " + level * " + woodIncrement
+    + ", stone = " + stoneBase + " + level * " + stoneIncrement;
+}
+
+/**
+ * Every action a visitor can take, with what it costs, what it changes, the
+ * sentence the page prints beside its button, and what must be true before it
+ * works. Costs, effects and effect text are assembled only from engine
+ * constants and the live state's own derived costs, so the rules an agent
+ * learns are exactly the ones the page plays by.
+ *
+ * @param {import("./engine.js").GameState} s
+ * @returns {Array<{id: string, label: string, cost: object, costFormula?: string, effect: object, effectText: string, requires?: object}>}
+ */
+function rulesActions(s) {
+  const clickPower = clickPowerFor(s);
+  return [
+    {
+      id: "gather",
+      label: "Gather Wood",
+      cost: {},
+      effect: { woodPerChop: clickPower },
+      effectText: "+" + String(clickPower) + " / chop",
+    },
+    {
+      id: "sharpen",
+      label: "Sharpen Axe",
+      cost: { wood: UPGRADE_COST },
+      effect: { woodRatePerSec: RATE_INCREASE_PER_UPGRADE },
+      effectText: "+" + formatRate(RATE_INCREASE_PER_UPGRADE) + " wood/s. The first sharpen unlocks stone.",
+      requires: { woodBanked: sharpenThreshold(s) },
+    },
+    {
+      id: "gather-stone",
+      label: "Gather Stone",
+      cost: {},
+      effect: { stone: STONE_GATHER_AMOUNT },
+      effectText: "+" + String(STONE_GATHER_AMOUNT) + " / mine",
+      requires: { stoneUnlocked: true },
+    },
+    {
+      id: "build-wall",
+      label: "Build Wall",
+      cost: { stone: WALL_COST },
+      effect: { woodPerChop: WALL_CLICK_POWER_BONUS },
+      effectText: "+" + String(WALL_CLICK_POWER_BONUS) + " wood per chop. The first wall unlocks the forge.",
+      requires: { stoneUnlocked: true },
+    },
+    {
+      id: "forge-tool",
+      label: "Forge Tool",
+      cost: { wood: s.forgeWoodCost, stone: s.forgeStoneCost },
+      costFormula: escalatingCostFormula(FORGE_WOOD_COST_BASE, FORGE_WOOD_COST_INC, FORGE_STONE_COST_BASE, FORGE_STONE_COST_INC),
+      effect: { woodRatePerSec: FORGE_WOOD_RATE_BONUS, woodPerChop: FORGE_CLICK_POWER_BONUS },
+      effectText: "+" + formatRate(FORGE_WOOD_RATE_BONUS) + " wood/s and +" + String(FORGE_CLICK_POWER_BONUS) + " per chop",
+      requires: { wallLevel: 1 },
+    },
+    {
+      id: "send-expedition",
+      label: "Send Expedition",
+      cost: { wood: s.expeditionWoodCost, stone: s.expeditionStoneCost },
+      costFormula: escalatingCostFormula(EXPEDITION_WOOD_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_BASE, EXPEDITION_STONE_COST_INC),
+      effect: { woodRateMultiplierPerMap: EXPEDITION_WOOD_RATE_MULTIPLIER },
+      effectText: "+" + (EXPEDITION_WOOD_RATE_MULTIPLIER * 100) + "% wood rate per map",
+      requires: { forgeLevel: EXPEDITION_FORGE_LEVEL },
+    },
+  ];
+}
+
+/**
+ * What each system unlocks and what opens it, read from the same gates the
+ * engine enforces, so the chain an agent learns is the chain the game plays.
+ *
+ * @returns {Array<{system: string, openedBy: string, at: object, description: string}>}
+ */
+function rulesUnlocks() {
+  return [
+    {
+      system: "stone",
+      openedBy: "sharpen",
+      at: { upgradeLevel: 1 },
+      description: "The first sharpen unlocks stone.",
+    },
+    {
+      system: "forge",
+      openedBy: "build-wall",
+      at: { wallLevel: 1 },
+      description: "The first wall unlocks the forge.",
+    },
+    {
+      system: "expedition",
+      openedBy: "forge-tool",
+      at: { forgeLevel: EXPEDITION_FORGE_LEVEL },
+      description: "Reaching forge level " + EXPEDITION_FORGE_LEVEL + " unlocks expeditions.",
+    },
+  ];
+}
+
+/**
+ * The next rung of the away-find ladder and the absence it needs, read from the
+ * engine's own ladder so the rules and the page name the same find.
+ *
+ * @param {import("./engine.js").GameState} s
+ * @returns {{ id: string, name: string, minSec: number, elapsed: string }|null}
+ */
+function rulesNextAwayFind(s) {
+  const next = nextDiscoveryAfter(s.discoveryId ?? s.discovery?.id ?? null);
+  return next
+    ? { id: next.id, name: next.name, minSec: next.minSec, elapsed: formatElapsed(next.minSec * 1000) }
+    : null;
+}
+
+/**
  * @returns {Array<import("./webmcp.js").ToolDescriptor>}
  */
 export function tools() {
@@ -291,6 +464,37 @@ export function tools() {
           return { ok: true, ...withGoal(getState()) };
         }
         throw new Error('Unknown action "' + action + '". Supported: gather, sharpen, gather-stone, build-wall, forge-tool, send-expedition, dismiss-offline, show-return');
+      },
+    },
+    {
+      name: "read-rules",
+      description: "Returns the game's rules — what to aim for and how it opens up — "
+        + "without any of the current numbers read-state reports. goals lists the progression "
+        + "in the order it comes, each {order, type, description, action (the action id that "
+        + "reaches it), requirement (the engine thresholds it needs)}: first-goal ('Gather "
+        + FIRST_GOAL_WOOD + " wood'), upgrade (craft a sharpening), stone-goal, "
+        + "build-wall-goal, forge-goal, expedition-goal. actions lists every action a visitor "
+        + "can take, each {id, label, cost (wood/stone consumed, empty when free), costFormula "
+        + "(the escalating rule for the repeatable forge/expedition costs, so a price at any "
+        + "level can be projected), effect (the numeric change it makes, e.g. woodRatePerSec "
+        + "or woodPerChop), effectText (the exact sentence the page prints beside that button), "
+        + "requires (what must be true before it works)}. unlocks names the chain: the first "
+        + "sharpen opens stone, the first wall opens the forge, forge level " + EXPEDITION_FORGE_LEVEL
+        + " opens expeditions. nextAwayFind is the next rung of the away-find ladder and the "
+        + "absence it needs {id, name, minSec, elapsed}, or null when the save names no rung. "
+        + "Every number is read from the engine's own constants, so an agent that has never "
+        + "seen the screen can learn the game and name the first goal and its action.",
+      inputSchema: { type: "object", properties: {} },
+      annotations: { readOnlyHint: true },
+      example: {},
+      async execute() {
+        const s = getState();
+        return {
+          goals: rulesGoals(s),
+          actions: rulesActions(s),
+          unlocks: rulesUnlocks(),
+          nextAwayFind: rulesNextAwayFind(s),
+        };
       },
     },
     {

@@ -6159,5 +6159,147 @@ export async function checks() {
     console.error(err);
   }
 
+  // ─── Agent tools: read-rules ────────────────────────────────────
+  // An agent arriving cold must learn the game from one read: the ordered
+  // goals, every action's cost and effect, what unlocks what, and the next away
+  // find. Every number is compared to the engine's own constant (or the state's
+  // own derived cost) and every effect sentence to the text the page prints
+  // beside the same button, so a copy of the rules that drifts is caught here.
+  try {
+    const engine = await import("./engine.js");
+    const { tools } = await import("./agenttools.js");
+    const readRules = tools().find((t) => t.name === "read-rules");
+    const restoreCode = engine.exportSave();
+    const renderNow = () => { if (typeof window.__renderUI === "function") window.__renderUI(); };
+    const checkNumber = (label, actual, expected) => {
+      if (typeof actual !== "number" || Math.abs(actual - expected) > 1e-9) {
+        problems.push(`${label} should be ${expected}, got ${JSON.stringify(actual)}.`);
+      }
+    };
+
+    if (!readRules) {
+      problems.push("Expected a tool named 'read-rules' in tools() — a cold agent cannot learn the game's rules without it.");
+    } else {
+      if (!readRules.annotations || readRules.annotations.readOnlyHint !== true) {
+        problems.push("read-rules must be annotated readOnlyHint: true — it only reads the rules.");
+      }
+
+      // A mid-game save, so the forge/expedition formulas are evaluated at a
+      // non-zero level and the chop-power sentence is not trivially "+1 / chop".
+      engine.importSave(btoa(JSON.stringify({
+        wood: 100, rate: 0.4, timestamp: new Date().toISOString(),
+        upgradeLevel: 2, stone: 40, stoneUnlocked: true,
+        wallLevel: 1, forgeLevel: 2, expeditionLevel: 1, maps: 1,
+        discoveryId: "flint-shard", discoveryName: "Flint Shard", discoveryBonus: 0.05,
+      })));
+      renderNow();
+
+      const state = engine.getState();
+      const rules = await readRules.execute({});
+      const actionById = (id) => (Array.isArray(rules.actions) ? rules.actions.find((a) => a.id === id) : null);
+
+      // (a) The ordered goals, and the first one names both the goal and its action.
+      if (!Array.isArray(rules.goals) || rules.goals.length === 0) {
+        problems.push("read-rules.goals must be a non-empty array of the game's goals in the order they come.");
+      } else {
+        const first = rules.goals[0];
+        if (first.description !== "Gather " + engine.FIRST_GOAL_WOOD + " wood") {
+          problems.push(`read-rules.goals[0].description should name the first goal "Gather ${engine.FIRST_GOAL_WOOD} wood", got ${JSON.stringify(first.description)}.`);
+        }
+        if (first.action !== "gather") {
+          problems.push(`read-rules.goals[0].action should be "gather" — the action that reaches the first goal — got ${JSON.stringify(first.action)}.`);
+        }
+        const order = rules.goals.map((g) => g.type).join(",");
+        const expectedOrder = "first-goal,upgrade,stone-goal,build-wall-goal,forge-goal,expedition-goal";
+        if (order !== expectedOrder) {
+          problems.push(`read-rules.goals should follow the progression order ${expectedOrder}, got ${order}.`);
+        }
+        for (let i = 0; i < rules.goals.length; i++) {
+          if (rules.goals[i].order !== i + 1) {
+            problems.push(`read-rules.goals[${i}].order should be ${i + 1}, got ${JSON.stringify(rules.goals[i].order)}.`);
+          }
+        }
+      }
+
+      // (b) Every cost and effect is the engine's own constant.
+      checkNumber("read-rules gather effect.woodPerChop", actionById("gather")?.effect?.woodPerChop, engine.clickPowerFor(state));
+      checkNumber("read-rules sharpen cost.wood", actionById("sharpen")?.cost?.wood, engine.UPGRADE_COST);
+      checkNumber("read-rules sharpen effect.woodRatePerSec", actionById("sharpen")?.effect?.woodRatePerSec, engine.RATE_INCREASE_PER_UPGRADE);
+      checkNumber("read-rules gather-stone effect.stone", actionById("gather-stone")?.effect?.stone, engine.STONE_GATHER_AMOUNT);
+      checkNumber("read-rules build-wall cost.stone", actionById("build-wall")?.cost?.stone, engine.WALL_COST);
+      checkNumber("read-rules build-wall effect.woodPerChop", actionById("build-wall")?.effect?.woodPerChop, engine.WALL_CLICK_POWER_BONUS);
+
+      const forgeWood = engine.FORGE_WOOD_COST_BASE + state.forgeLevel * engine.FORGE_WOOD_COST_INC;
+      const forgeStone = engine.FORGE_STONE_COST_BASE + state.forgeLevel * engine.FORGE_STONE_COST_INC;
+      checkNumber(`read-rules forge-tool cost.wood at forge level ${state.forgeLevel}`, actionById("forge-tool")?.cost?.wood, forgeWood);
+      checkNumber(`read-rules forge-tool cost.stone at forge level ${state.forgeLevel}`, actionById("forge-tool")?.cost?.stone, forgeStone);
+      checkNumber("read-rules forge-tool effect.woodRatePerSec", actionById("forge-tool")?.effect?.woodRatePerSec, engine.FORGE_WOOD_RATE_BONUS);
+      checkNumber("read-rules forge-tool effect.woodPerChop", actionById("forge-tool")?.effect?.woodPerChop, engine.FORGE_CLICK_POWER_BONUS);
+      if (typeof actionById("forge-tool")?.costFormula !== "string"
+          || !actionById("forge-tool").costFormula.includes("level * " + engine.FORGE_WOOD_COST_INC)) {
+        problems.push("read-rules forge-tool costFormula should state the escalating rule using the engine's own increment constant.");
+      }
+
+      const expeditionWood = engine.EXPEDITION_WOOD_COST_BASE + state.expeditionLevel * engine.EXPEDITION_WOOD_COST_INC;
+      const expeditionStone = engine.EXPEDITION_STONE_COST_BASE + state.expeditionLevel * engine.EXPEDITION_STONE_COST_INC;
+      checkNumber(`read-rules send-expedition cost.wood at expedition level ${state.expeditionLevel}`, actionById("send-expedition")?.cost?.wood, expeditionWood);
+      checkNumber(`read-rules send-expedition cost.stone at expedition level ${state.expeditionLevel}`, actionById("send-expedition")?.cost?.stone, expeditionStone);
+      checkNumber("read-rules send-expedition effect.woodRateMultiplierPerMap", actionById("send-expedition")?.effect?.woodRateMultiplierPerMap, engine.EXPEDITION_WOOD_RATE_MULTIPLIER);
+
+      // (c) The unlock chain, read from the same gates the engine enforces.
+      const unlockFor = (system) => (Array.isArray(rules.unlocks) ? rules.unlocks.find((u) => u.system === system) : null);
+      if (unlockFor("stone")?.openedBy !== "sharpen") {
+        problems.push("read-rules.unlocks should say stone is opened by sharpen.");
+      }
+      if (unlockFor("forge")?.openedBy !== "build-wall") {
+        problems.push("read-rules.unlocks should say the forge is opened by build-wall.");
+      }
+      const expeditionUnlock = unlockFor("expedition");
+      if (expeditionUnlock?.openedBy !== "forge-tool" || expeditionUnlock?.at?.forgeLevel !== engine.EXPEDITION_FORGE_LEVEL) {
+        problems.push(`read-rules.unlocks should say expeditions are opened by forge-tool at forge level ${engine.EXPEDITION_FORGE_LEVEL}, got ${JSON.stringify(expeditionUnlock)}.`);
+      }
+
+      // (d) The next away-find rung and the absence it needs, read from the ladder.
+      const ownedId = state.discovery ? state.discovery.id : null;
+      const next = engine.nextDiscoveryAfter(ownedId);
+      if (!rules.nextAwayFind || !next) {
+        problems.push(`read-rules.nextAwayFind should name the rung after ${ownedId}, got ${JSON.stringify(rules.nextAwayFind)}.`);
+      } else if (rules.nextAwayFind.id !== next.id || rules.nextAwayFind.name !== next.name || rules.nextAwayFind.minSec !== next.minSec) {
+        problems.push(`read-rules.nextAwayFind should be ${JSON.stringify({ id: next.id, name: next.name, minSec: next.minSec })}, got ${JSON.stringify(rules.nextAwayFind)}.`);
+      }
+
+      // (e) Each effect sentence is the exact text the page prints beside the
+      // same button, so what an agent reads is what a visitor sees.
+      const textOf = (el) => (el ? el.textContent.trim() : null);
+      const effectBeside = (buttonId) => {
+        const button = document.getElementById(buttonId);
+        const card = button ? button.closest(".upgrade-card") : null;
+        return card ? card.querySelector(".upgrade-effect") : null;
+      };
+      const effectTextChecks = [
+        ["gather", textOf(document.getElementById("wood-yield-value"))],
+        ["gather-stone", textOf(document.getElementById("stone-yield-value"))],
+        ["sharpen", textOf(effectBeside("btn-sharpen"))],
+        ["build-wall", textOf(effectBeside("btn-build-wall"))],
+        ["forge-tool", textOf(document.querySelector("#forge-actions .system-yield"))],
+        ["send-expedition", textOf(document.querySelector("#expedition-actions .system-yield"))],
+      ];
+      for (const [actionId, pageText] of effectTextChecks) {
+        const action = actionById(actionId);
+        if (!action) {
+          problems.push(`read-rules should list the "${actionId}" action — it was missing.`);
+        } else if (action.effectText !== pageText) {
+          problems.push(`read-rules "${actionId}" effectText ${JSON.stringify(action.effectText)} does not match the text the page shows beside it: ${JSON.stringify(pageText)}.`);
+        }
+      }
+    }
+
+    engine.importSave(restoreCode);
+    renderNow();
+  } catch (err) {
+    problems.push(`read-rules tool test threw: ${err.message}`);
+    console.error(err);
+  }
+
   return problems;
 }
