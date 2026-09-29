@@ -4034,6 +4034,58 @@ export async function checks() {
       }
     }
 
+    // --- Sandbox Test 9b: a rehearsal names the next away find — the same
+    // rung the agent's sandbox-fast-forward reports — so the panel reads like
+    // the return it stands in for rather than only reporting totals. ---
+    if (typeof window.__enterSandbox === "function" && typeof window.__exitSandbox === "function") {
+      // Start a fresh rehearsal from the real save the previous tests left
+      // untouched, so the clone's ladder position is deterministic.
+      window.__exitSandbox();
+      window.__enterSandbox();
+
+      const sbNextFindEl = document.getElementById("sb-next-find");
+      if (!sbNextFindEl) {
+        problems.push("Expected #sb-next-find in the sandbox panel so a rehearsal names the next away find.");
+      } else {
+        const ffFind = await sandboxFFTool.execute({ seconds: 3600 });
+        const nextAway = ffFind.nextAwayDiscovery;
+        const expectedFindText = nextAway
+          ? engine.nextAwayFindText({ name: nextAway.name, minSec: nextAway.minSec })
+          : null;
+        if (!expectedFindText) {
+          problems.push("sandbox-fast-forward(3600s) should report a nextAwayDiscovery so the sandbox panel has a rung to name.");
+        } else if (sbNextFindEl.hidden || !sbNextFindEl.textContent.trim()) {
+          problems.push("After a 1h fast-forward the sandbox panel should name the next away find in #sb-next-find, but it was empty or hidden.");
+        } else {
+          const shownFind = sbNextFindEl.textContent.trim();
+          if (shownFind !== expectedFindText) {
+            problems.push(`#sb-next-find should word the next away find exactly as the engine's sentence does, expected "${expectedFindText}", got "${shownFind}".`);
+          }
+          if (!shownFind.startsWith("Next away find:")) {
+            problems.push(`#sb-next-find should start with "Next away find:", got "${shownFind}".`);
+          }
+          if (nextAway.elapsed && !shownFind.includes(nextAway.elapsed)) {
+            problems.push(`#sb-next-find should state the absence the next find needs ("${nextAway.elapsed}"), got "${shownFind}".`);
+          }
+        }
+
+        // A run that turns up nothing must still name the next rung rather
+        // than read as a dead end.
+        const ffNothing = await sandboxFFTool.execute({ seconds: 10 });
+        if (ffNothing.discovery) {
+          problems.push(`sandbox-fast-forward(10s) should turn up nothing, got ${JSON.stringify(ffNothing.discovery)}.`);
+        }
+        const nothingNext = ffNothing.nextAwayDiscovery;
+        const expectedNothingText = nothingNext
+          ? engine.nextAwayFindText({ name: nothingNext.name, minSec: nothingNext.minSec })
+          : null;
+        if (!expectedNothingText || sbNextFindEl.hidden || sbNextFindEl.textContent.trim() !== expectedNothingText) {
+          problems.push(`After a fast-forward that finds nothing, #sb-next-find should still name the next rung "${expectedNothingText}", got "${sbNextFindEl.hidden ? "(hidden)" : sbNextFindEl.textContent.trim()}".`);
+        }
+      }
+      window.__exitSandbox();
+    }
+
     // --- Sandbox Test 10: exit restores the real save unchanged ---
     if (typeof window.__exitSandbox === "function") window.__exitSandbox();
     const restored = engine.getState();
