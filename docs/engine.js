@@ -66,7 +66,8 @@ export { FIRST_GOAL_WOOD, UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, STONE_BASE_RA
   FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_WOOD_COST_INC, FORGE_STONE_COST_INC,
   FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS,
   EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC,
-  EXPEDITION_WOOD_RATE_MULTIPLIER, RETURN_MIN_SEC, computeStoneRateFor, computeStoneRate };
+  EXPEDITION_WOOD_RATE_MULTIPLIER, RETURN_MIN_SEC, computeStoneRateFor, computeStoneRate,
+  expeditionMultiplierFor, effectiveWoodRate };
 
 /**
  * @typedef {Object} GameState
@@ -239,11 +240,29 @@ function computeExpeditionStoneCost(expeditionLevel) {
 }
 
 /**
+ * The expedition-rate rule itself: how much a number of earned maps scales the
+ * wood accumulation rate. The per-map step lives only in this constant, so the
+ * status panel, the sandbox and the agent tools can all show the multiplier the
+ * game would pay instead of hardcoding their own copy of it.
+ */
+function expeditionMultiplierFor(maps) {
+  return 1 + (maps || 0) * EXPEDITION_WOOD_RATE_MULTIPLIER;
+}
+
+/**
+ * The effective wood rate for any state: its base rate scaled by the maps it has
+ * earned. This is the one rule every display reads, so a change to the engine's
+ * per-map multiplier moves the page and the tools together.
+ */
+function effectiveWoodRate(state) {
+  return state.rate * expeditionMultiplierFor(state.maps);
+}
+
+/**
  * Compute the effective wood accumulation rate including the expedition map multiplier.
  */
 function getEffectiveRate() {
-  const expeditionMultiplier = 1 + state.maps * EXPEDITION_WOOD_RATE_MULTIPLIER;
-  return state.rate * expeditionMultiplier;
+  return effectiveWoodRate(state);
 }
 
 /**
@@ -837,7 +856,9 @@ export function forgeTool() {
 
 /**
  * Send a scout on an expedition: consumes wood and stone to earn 1 'map' resource.
- * Each map permanently multiplies the wood accumulation rate by 1.05x (additive).
+ * Each map permanently multiplies the wood accumulation rate additively by
+ * EXPEDITION_WOOD_RATE_MULTIPLIER; expeditionMultiplierFor() is the one rule
+ * that turns a map count into the factor.
  * Only available after forge level 5.
  *
  * Costs escalate with each expedition level.

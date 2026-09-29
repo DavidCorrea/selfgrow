@@ -7,10 +7,7 @@
  * @module sandbox
  */
 
-import { discoverForElapsed, computeStoneRateFor } from "./engine.js";
-
-// ─── Internal constant (mirrors engine.js) ───
-const EXPEDITION_WOOD_RATE_MULTIPLIER = 0.05;
+import { discoverForElapsed, computeStoneRateFor, effectiveWoodRate } from "./engine.js";
 
 /**
  * Deep-clone a game state object for isolated sandbox use.
@@ -45,16 +42,6 @@ export function cloneState(state) {
 }
 
 /**
- * Compute effective wood rate including expedition map multiplier.
- * @param {import("./engine.js").GameState} clone
- * @returns {number}
- */
-function getEffectiveRate(clone) {
-  const expeditionMultiplier = 1 + clone.maps * EXPEDITION_WOOD_RATE_MULTIPLIER;
-  return clone.rate * expeditionMultiplier;
-}
-
-/**
  * Fast-forward a sandbox clone by a given number of simulated seconds.
  *
  * Mutates the clone in place and returns the projected resource deltas.
@@ -80,11 +67,12 @@ export function fastForward(clone, seconds) {
   const beforeWall = clone.wallLevel;
   const beforeForge = clone.forgeLevel;
 
-  // Simulate passive accumulation at current rates. Wood and stone are credited
-  // before any find, so the earnings are exactly rate * seconds and a stronger
-  // find only ever raises the rate for time yet to come — the same order the
-  // real catch-up uses.
-  const effectiveRate = getEffectiveRate(clone);
+  // Simulate passive accumulation at current rates, using the engine's own
+  // effective-rate rule so a rehearsal can never promise a rate the game would
+  // not pay. Wood and stone are credited before any find, so the earnings are
+  // exactly rate * seconds and a stronger find only ever raises the rate for
+  // time yet to come — the same order the real catch-up uses.
+  const effectiveRate = effectiveWoodRate(clone);
   const woodGained = effectiveRate * seconds;
   clone.wood += woodGained;
   clone.totalWoodEarned += woodGained;

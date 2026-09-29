@@ -8,7 +8,7 @@
  * @module agenttools
  */
 
-import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, formatElapsed, nextDiscoveryAfter, returnDiscoveryText, sharpenAvailable, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, FIRST_GOAL_WOOD, UPGRADE_COST, WALL_COST, STONE_GATHER_AMOUNT, FORGE_CLICK_POWER_BONUS } from "./engine.js";
+import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, formatElapsed, nextDiscoveryAfter, returnDiscoveryText, sharpenAvailable, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, effectiveWoodRate, expeditionMultiplierFor, FIRST_GOAL_WOOD, UPGRADE_COST, WALL_COST, STONE_GATHER_AMOUNT, FORGE_CLICK_POWER_BONUS } from "./engine.js";
 
 /**
  * The last return as the welcome-back panel is showing it, read straight from
@@ -66,6 +66,11 @@ function withGoal(s) {
   return {
     wood: s.wood,
     rate: s.rate,
+    // The rate the game actually pays once the earned maps are applied, plus
+    // the map factor itself — both read from the engine's own rule so the tool,
+    // the status panel and the sandbox can never show different figures.
+    effectiveRate: effectiveWoodRate(s),
+    expeditionMultiplier: expeditionMultiplierFor(s.maps),
     totalWoodEarned: s.totalWoodEarned,
     totalStoneEarned: s.totalStoneEarned,
     timestamp: s.timestamp,
@@ -135,7 +140,9 @@ export function tools() {
     {
       name: "read-state",
       description: "Returns the current game state the page is showing to the "
-        + "visitor: wood count, accumulation rate, number of upgrades crafted, "
+        + "visitor: wood count, base accumulation rate (rate), the rate the game "
+        + "actually pays once earned maps are applied (effectiveRate) and the map "
+        + "factor scaling it (expeditionMultiplier), number of upgrades crafted, "
         + "stone count, stone accumulation rate, wall level, forge level, "
         + "forge wood cost, forge stone cost, click power, "
         + "expedition level, maps, expedition wood cost, expedition stone cost, "
