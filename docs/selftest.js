@@ -3855,6 +3855,88 @@ export async function checks() {
       engine.init();
     }
 
+    // --- Sandbox Test 3c: the panel never prints a lifetime total under a word
+    // that already names the amount currently held (issue #1062) ---
+    // Wood and Stone name what the clone holds right now, so a lifetime total
+    // under either word reads as the same number twice. Each lifetime total
+    // needs its own label, and the Milestones row reports only levels, where no
+    // resource word can be mistaken for a holding.
+    if (typeof window.__enterSandbox !== "function" || typeof window.__fastForwardSandbox !== "function") {
+      problems.push("Expected window.__enterSandbox/__fastForwardSandbox to drive the sandbox panel's resource labels.");
+    } else {
+      engine.reset();
+      for (let i = 0; i < 10; i++) engine.gatherWood();
+      engine.craftUpgrade(); // unlocks stone
+      for (let i = 0; i < 200; i++) engine.gatherWood();
+
+      window.__enterSandbox();
+      window.__fastForwardSandbox(3600); // long enough that lifetime stone is a number that moved
+
+      const cloneForLabels = typeof window.__getSandboxClone === "function" ? window.__getSandboxClone() : null;
+      if (!cloneForLabels) {
+        problems.push("Expected an active sandbox clone to check the panel's resource labels.");
+      } else {
+        const labelFor = (valueId, fieldName) => {
+          const valueEl = document.getElementById(valueId);
+          if (!valueEl) {
+            problems.push(`Expected #${valueId} in the sandbox panel to check the ${fieldName} label, but it was missing.`);
+            return null;
+          }
+          if (valueEl.hidden) {
+            problems.push(`#${valueId} should be visible in the sandbox panel because ${fieldName} is unlocked in the rehearsal.`);
+          }
+          const labelEl = valueEl.previousElementSibling;
+          if (!labelEl || !labelEl.classList.contains("sandbox-projection-label")) {
+            problems.push(`Expected a .sandbox-projection-label immediately before #${valueId} in the sandbox panel.`);
+            return null;
+          }
+          return labelEl.textContent;
+        };
+
+        const currentWoodLabel = labelFor("sb-wood", "wood");
+        const lifetimeWoodLabel = labelFor("sb-total-wood", "lifetime wood");
+        const currentStoneLabel = labelFor("sb-stone", "stone");
+        const lifetimeStoneLabel = labelFor("sb-total-stone", "lifetime stone");
+        if (currentWoodLabel !== null && lifetimeWoodLabel !== null && currentWoodLabel === lifetimeWoodLabel) {
+          problems.push(`The sandbox panel labels current wood and lifetime wood both "${currentWoodLabel}" — one word must not name two different numbers.`);
+        }
+        if (currentStoneLabel !== null && lifetimeStoneLabel !== null && currentStoneLabel === lifetimeStoneLabel) {
+          problems.push(`The sandbox panel labels current stone and lifetime stone both "${currentStoneLabel}" — one word must not name two different numbers.`);
+        }
+        if (lifetimeStoneLabel !== null && lifetimeStoneLabel.trim() !== "Total Stone Earned") {
+          problems.push(`Expected the lifetime stone row to be labelled "Total Stone Earned", got "${lifetimeStoneLabel}".`);
+        }
+
+        const totalStoneEl = document.getElementById("sb-total-stone");
+        const expectedTotalStone = String(Math.floor(cloneForLabels.totalStoneEarned));
+        if (expectedTotalStone === "0") {
+          problems.push("The lifetime-stone label check rehearsed a clone that earned no stone, so it could not tell whether the row reports a real total.");
+        }
+        if (totalStoneEl && totalStoneEl.textContent !== expectedTotalStone) {
+          problems.push(`The sandbox panel's lifetime stone row shows "${totalStoneEl.textContent}", but the rehearsed clone earned ${expectedTotalStone} stone in total.`);
+        }
+
+        const milestonesEl = document.getElementById("sb-milestones");
+        if (!milestonesEl) {
+          problems.push("Expected #sb-milestones in the sandbox panel to report the clone's levels, but it was missing.");
+        } else {
+          const milestonesText = milestonesEl.textContent;
+          if (/wood|stone/i.test(milestonesText)) {
+            problems.push(`The sandbox panel's Milestones row "${milestonesText}" names wood or stone, which already label the amounts currently held — it should report only levels.`);
+          }
+          for (const [name, level] of [["Upgrades", cloneForLabels.upgradeLevel], ["Walls", cloneForLabels.wallLevel], ["Forge", cloneForLabels.forgeLevel]]) {
+            if (!milestonesText.includes(name + ": " + level)) {
+              problems.push(`The sandbox panel's Milestones row "${milestonesText}" should report ${name}: ${level} — a row stripped of its levels is not a summary.`);
+            }
+          }
+        }
+      }
+
+      window.__exitSandbox();
+      engine.reset();
+      engine.init();
+    }
+
     // --- Sandbox Test 4: fastForward milestones detection ---
     engine.reset();
     // State where wood is 5 (below 10), no sharpen

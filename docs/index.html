@@ -1621,6 +1621,8 @@
         <span class="sandbox-projection-value highlight-stone" id="sb-stone" hidden>0</span>
         <span class="sandbox-projection-label" id="sb-stone-rate-label" hidden>Stone Rate</span>
         <span class="sandbox-projection-value" id="sb-stone-rate" hidden>0/s</span>
+        <span class="sandbox-projection-label" id="sb-total-stone-label" hidden>Total Stone Earned</span>
+        <span class="sandbox-projection-value" id="sb-total-stone" hidden>0</span>
         <span class="sandbox-projection-label">Milestones</span>
         <span class="sandbox-projection-value" id="sb-milestones">None yet</span>
       </div>
@@ -2714,6 +2716,8 @@
     const sbStone = document.getElementById("sb-stone");
     const sbStoneRateLabel = document.getElementById("sb-stone-rate-label");
     const sbStoneRate = document.getElementById("sb-stone-rate");
+    const sbTotalStoneLabel = document.getElementById("sb-total-stone-label");
+    const sbTotalStone = document.getElementById("sb-total-stone");
     const sbMilestones = document.getElementById("sb-milestones");
     const sbNextFind = document.getElementById("sb-next-find");
     const sbMilestoneList = document.getElementById("sb-milestone-list");
@@ -2831,17 +2835,24 @@
         sbStone.hidden = false;
         sbStoneRateLabel.hidden = false;
         sbStoneRate.hidden = false;
+        sbTotalStoneLabel.hidden = false;
+        sbTotalStone.hidden = false;
         sbStone.textContent = formatAmount(c.stone);
         sbStoneRate.textContent = "+" + formatRate(computeStoneRateFor(c.totalWoodEarned)) + "/s";
+        sbTotalStone.textContent = String(Math.floor(c.totalStoneEarned));
       } else {
         sbStoneLabel.hidden = true;
         sbStone.hidden = true;
         sbStoneRateLabel.hidden = true;
         sbStoneRate.hidden = true;
+        sbTotalStoneLabel.hidden = true;
+        sbTotalStone.hidden = true;
       }
 
-      // Milestones summary
-      sbMilestones.textContent = "Wood: " + Math.floor(c.totalWoodEarned) + " | Stone: " + Math.floor(c.totalStoneEarned) + " | Upgrades: " + c.upgradeLevel + " | Walls: " + c.wallLevel + " | Forge: " + c.forgeLevel;
+      // Milestones summary. Lifetime wood and stone already have their own rows
+      // above, so this line reports only levels — no resource word here may
+      // label a total when the same word labels the amount currently held.
+      sbMilestones.textContent = "Upgrades: " + c.upgradeLevel + " | Walls: " + c.wallLevel + " | Forge: " + c.forgeLevel;
 
       // The next away find the projected clone is reaching for, named by the
       // engine's own ladder through the one sentence the status bar and the
