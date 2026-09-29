@@ -287,10 +287,6 @@
       gap: 0.4rem;
     }
 
-    .system-icon {
-      font-size: 0.9rem;
-    }
-
     .system-name {
       font-size: 0.55rem;
       color: var(--accent);
@@ -1229,6 +1225,12 @@
       height: 0.9rem;
     }
 
+    /* And again, at icon size, beside each system's name. */
+    .system-head .sprite-mount svg.sprite {
+      width: 0.9rem;
+      height: 0.9rem;
+    }
+
     .gather-btn {
       position: relative;
       display: flex;
@@ -1385,7 +1387,7 @@
   <section class="panel" id="action-area" role="region" aria-label="Systems">
     <article class="system-card visible" id="wood-actions">
       <div class="system-head">
-        <span class="system-icon" aria-hidden="true">&#x1F332;</span>
+        <span class="system-icon sprite-mount" data-sprite="wood" aria-hidden="true"></span>
         <h3 class="system-name">Wood</h3>
       </div>
       <p class="system-yield" id="wood-yield-value">+1 / chop</p>
@@ -1405,7 +1407,7 @@
 
     <article class="system-card" id="stone-actions">
       <div class="system-head">
-        <span class="system-icon" aria-hidden="true">&#x1FAA8;</span>
+        <span class="system-icon sprite-mount" data-sprite="stone" aria-hidden="true"></span>
         <h3 class="system-name">Stone</h3>
       </div>
       <p class="system-yield" id="stone-yield-value">+1 / mine</p>
@@ -1425,7 +1427,7 @@
 
     <article class="system-card" id="forge-actions">
       <div class="system-head">
-        <span class="system-icon" aria-hidden="true">&#x1F528;</span>
+        <span class="system-icon sprite-mount" data-sprite="forge" aria-hidden="true"></span>
         <h3 class="system-name">Forge</h3>
       </div>
       <p class="system-yield">+0.05 wood/s and +0.5 per chop</p>
@@ -1438,7 +1440,7 @@
 
     <article class="system-card" id="expedition-actions">
       <div class="system-head">
-        <span class="system-icon" aria-hidden="true">&#x1F30D;</span>
+        <span class="system-icon sprite-mount" data-sprite="expedition" aria-hidden="true"></span>
         <h3 class="system-name">Expeditions</h3>
       </div>
       <p class="system-yield">+5% wood rate per map</p>
