@@ -2027,14 +2027,25 @@ export async function checks() {
     }
 
     const panelStyle = getComputedStyle(offlinePanel);
-    const overflow = panelStyle.overflow;
-    if (overflow !== "hidden") {
-      problems.push(`Expected .offline-panel overflow to be "hidden", got "${overflow}". Content may overflow panel bounds on small viewports.`);
+    // The panel must scroll its own content rather than clip it: a clip here is
+    // what put the Continue button past the edge of a short screen.
+    const overflowY = panelStyle.overflowY;
+    if (overflowY !== "auto" && overflowY !== "scroll") {
+      problems.push(`Expected .offline-panel overflow-y to be "auto" or "scroll", got "${overflowY}". Content that is taller than the window must scroll, not be cut off.`);
     }
 
     const minHeight = parseFloat(panelStyle.minHeight);
     if (isNaN(minHeight) || minHeight < 180) {
       problems.push(`Expected .offline-panel min-height to be at least 180px, got ${panelStyle.minHeight}. Panel may collapse on small viewports.`);
+    }
+
+    // …and it must be capped to the visible viewport, or a centred panel taller
+    // than the window still hangs off both edges.
+    const maxHeight = parseFloat(panelStyle.maxHeight);
+    if (isNaN(maxHeight) || maxHeight <= 0) {
+      problems.push(`Expected .offline-panel max-height to be a positive length within the viewport, got "${panelStyle.maxHeight}". Without a cap a tall panel cannot be scrolled into reach.`);
+    } else if (maxHeight >= window.innerHeight) {
+      problems.push(`Expected .offline-panel max-height (${maxHeight}px) to stay within the ${window.innerHeight}px window.`);
     }
 
     if (overlay) {
@@ -4661,6 +4672,151 @@ export async function checks() {
     }
   } catch (err) {
     problems.push(`Overlay isolation test threw: ${err.message}`);
+    console.error(err);
+  }
+
+  // ─── Overlay panels scroll on a short screen ────────────────────
+  // A welcome-back account or a rehearsal taller than the window must scroll
+  // inside its own panel. A fixed, vertically centred card with no scrolling
+  // pushes its last control — the Continue button, the Exit button — past the
+  // edge of a short screen, turning a return into a dead end. Each panel is
+  // capped to the visible viewport, so its content scrolls and every control
+  // stays reachable, while the page behind the overlay can never scroll or
+  // show through and focus never leaves the open panel.
+  try {
+    const viewportHeight = window.innerHeight;
+
+    const computed = (el, property) => getComputedStyle(el).getPropertyValue(property);
+
+    // Only elements a visitor could actually Tab to right now count: an element
+    // that is display:none, visibility:hidden, inert, or inside a hidden
+    // ancestor is unreachable and so cannot leak focus out of the overlay.
+    const isTabbable = (el) => {
+      if (el.disabled) return false;
+      for (let node = el; node && node.nodeType === 1; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        if (style.display === "none" || style.visibility === "hidden") return false;
+        if (node.hasAttribute("inert")) return false;
+      }
+      return true;
+    };
+
+    // A filler taller than the window, kept from shrinking so it really does
+    // overflow the flex column — the cap, not the content's own height, is what
+    // has to keep the panel on screen. It goes immediately before the control's
+    // own block, so that control really is the last thing in the panel and
+    // reaching it really does require scrolling.
+    const addOverflowFiller = (panel, before) => {
+      const filler = document.createElement("div");
+      filler.className = "selftest-overflow-filler";
+      filler.style.cssText = `flex: 0 0 auto; height: ${viewportHeight + 200}px;`;
+      let anchor = before;
+      while (anchor.parentElement && anchor.parentElement !== panel) anchor = anchor.parentElement;
+      panel.insertBefore(filler, anchor);
+      return filler;
+    };
+
+    const checkPanelStaysReachable = ({ label, overlay, panel, lastControlId }) => {
+      const lastControl = document.getElementById(lastControlId);
+      if (!overlay || !panel || !lastControl) {
+        problems.push(`Expected the ${label} overlay, its panel and #${lastControlId} for the panel-scroll check.`);
+        return;
+      }
+
+      const filler = addOverflowFiller(panel, lastControl);
+      const pageScrollBefore = document.scrollingElement.scrollTop;
+
+      // Capped and centred: the panel must fit the window while it overflows.
+      const panelRect = panel.getBoundingClientRect();
+      if (panelRect.top < -0.5 || panelRect.bottom > viewportHeight + 0.5) {
+        problems.push(`The ${label} panel must stay inside the ${viewportHeight}px window when its content is taller, but it spans ${Math.round(panelRect.top)}..${Math.round(panelRect.bottom)}px.`);
+      }
+      if (Math.abs(panelRect.top - (viewportHeight - panelRect.bottom)) > 1.5) {
+        problems.push(`The ${label} panel must stay vertically centred when its content is taller, but its top is ${Math.round(panelRect.top)}px and its bottom gap is ${Math.round(viewportHeight - panelRect.bottom)}px.`);
+      }
+      if (panel.scrollHeight - panel.clientHeight <= 1) {
+        problems.push(`The ${label} panel must scroll when its content is taller than the window, but scrollHeight ${panel.scrollHeight} is not above clientHeight ${panel.clientHeight}.`);
+      }
+
+      // The last control must be reachable: focusing it scrolls the panel.
+      lastControl.focus();
+      const controlRect = lastControl.getBoundingClientRect();
+      if (controlRect.top < panelRect.top - 1 || controlRect.bottom > panelRect.bottom + 1) {
+        problems.push(`Focusing #${lastControlId} in the ${label} panel must bring it fully into view, but it sits at ${Math.round(controlRect.top)}..${Math.round(controlRect.bottom)}px outside the panel box ${Math.round(panelRect.top)}..${Math.round(panelRect.bottom)}px.`);
+      }
+      if (panel.scrollTop <= 0) {
+        problems.push(`Focusing #${lastControlId} in the ${label} panel must scroll the panel toward it, but scrollTop stayed ${panel.scrollTop}.`);
+      }
+
+      // The page behind the overlay must stay put and stay sealed.
+      if (document.scrollingElement.scrollTop !== pageScrollBefore) {
+        problems.push(`Scrolling the ${label} panel must not scroll the page behind the overlay, but document.scrollingElement.scrollTop moved ${pageScrollBefore} -> ${document.scrollingElement.scrollTop}.`);
+      }
+      if (computed(document.body, "overflow") !== "hidden") {
+        problems.push(`The page behind the ${label} overlay must be sealed (body overflow hidden), got "${computed(document.body, "overflow")}".`);
+      }
+      document.scrollingElement.scrollTop = 500;
+      if (document.scrollingElement.scrollTop !== 0) {
+        problems.push(`The page behind the ${label} overlay must not scroll or reveal, but it moved to ${document.scrollingElement.scrollTop}px.`);
+      }
+
+      // Focus trap: nothing tabbable may sit outside the open overlay.
+      const tabbables = document.querySelectorAll('a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      for (const el of tabbables) {
+        if (overlay.contains(el) || !isTabbable(el)) continue;
+        problems.push(`While the ${label} overlay is open, #${el.id || el.tagName} is tabbable outside it — focus must stay inside the open panel.`);
+      }
+
+      // Content that fits must be unchanged: centred, with no scrollbar, and not
+      // filling the window. When the real content is still taller than the
+      // window (a long rehearsal on a small phone) the panel must instead stay
+      // capped and scrollable — that is exactly what the cap is for.
+      filler.remove();
+      panel.scrollTop = 0;
+      const fittedRect = panel.getBoundingClientRect();
+      const stillOverflowsCap = panel.scrollHeight - panel.clientHeight > 1;
+      if (stillOverflowsCap) {
+        const cap = parseFloat(computed(panel, "max-height"));
+        if (!(cap > 0) || fittedRect.height > cap + 1) {
+          problems.push(`The ${label} panel must stay capped to the window when its own content is taller, but it is ${Math.round(fittedRect.height)}px tall against a ${computed(panel, "max-height")} cap.`);
+        }
+      } else if (fittedRect.height >= viewportHeight) {
+        problems.push(`The ${label} panel must not fill the window when its content fits, but it is ${Math.round(fittedRect.height)}px tall in a ${viewportHeight}px window.`);
+      }
+      if (Math.abs(fittedRect.top - (viewportHeight - fittedRect.bottom)) > 1.5) {
+        problems.push(`The ${label} panel must stay vertically centred, but its top is ${Math.round(fittedRect.top)}px and its bottom gap is ${Math.round(viewportHeight - fittedRect.bottom)}px.`);
+      }
+    };
+
+    const offlineOverlay = document.getElementById("offline-summary");
+    const sandboxOverlay = document.getElementById("sandbox-overlay");
+
+    // Open the welcome-back panel by hand so the check never borrows a return
+    // from the engine, then put the page back exactly as it was.
+    window.__setOverlayOpen("offline", true);
+    offlineOverlay.removeAttribute("hidden");
+    checkPanelStaysReachable({
+      label: "welcome-back",
+      overlay: offlineOverlay,
+      panel: document.querySelector(".offline-panel"),
+      lastControlId: "btn-dismiss-offline",
+    });
+    offlineOverlay.setAttribute("hidden", "");
+    window.__setOverlayOpen("offline", false);
+
+    // The sandbox panel is driven the way a visitor drives it, so the check
+    // measures the real panel with a completed rehearsal in it.
+    window.__enterSandbox();
+    window.__fastForwardSandbox(3600);
+    checkPanelStaysReachable({
+      label: "sandbox",
+      overlay: sandboxOverlay,
+      panel: document.querySelector(".sandbox-panel"),
+      lastControlId: "sb-btn-exit",
+    });
+    window.__exitSandbox();
+  } catch (err) {
+    problems.push(`Overlay panel scroll test threw: ${err.message}`);
     console.error(err);
   }
 
