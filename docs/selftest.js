@@ -4333,6 +4333,116 @@ export async function checks() {
     if (JSON.stringify(saveAfterRehearsal.pendingEvent) !== JSON.stringify(saveBeforeRehearsal.pendingEvent)) {
       problems.push(`A sandbox rehearsal must not touch the real save's pendingEvent: expected ${JSON.stringify(saveBeforeRehearsal.pendingEvent)}, got ${JSON.stringify(saveAfterRehearsal.pendingEvent)}.`);
     }
+
+    // --- Sandbox Test 11b: a rehearsal honors the decision already waiting
+    // (issue #1045). A real return that turned up a happening leaves it pending
+    // until the player chooses, and the engine's own catch-up derives a new one
+    // only when none is pending. A rehearsal must follow the same gate, or it
+    // would show a happening the absence it stands in for would never offer. ---
+
+    // (e) cloneState carries the waiting decision as an independent copy, so a
+    // rehearsal can hold it and still never write through to the save's own.
+    engine.reset();
+    const waitingDecision = {
+      id: "waiting-decision",
+      title: "A decision is already waiting",
+      options: [
+        { id: "wood", label: "Take +3 wood", effect: { kind: "wood", amount: 3 }, effectText: "Grants +3 wood." },
+        { id: "rate", label: "Permanent +0.02 wood/s", effect: { kind: "rate", amount: 0.02 }, effectText: "Permanently adds +0.02 wood/s." },
+      ],
+    };
+    const saveWithWaitingDecision = { ...engine.getState(), pendingEvent: waitingDecision };
+    const carriedClone = sandbox.cloneState(saveWithWaitingDecision);
+    if (JSON.stringify(carriedClone.pendingEvent) !== JSON.stringify(waitingDecision)) {
+      problems.push(`sandbox cloneState should carry the save's pending away event (${JSON.stringify(waitingDecision)}), got ${JSON.stringify(carriedClone.pendingEvent)}.`);
+    } else {
+      carriedClone.pendingEvent.options[0].label = "MUTATED";
+      if (waitingDecision.options[0].label === "MUTATED") {
+        problems.push(`sandbox cloneState must deep-copy the pending event: mutating the clone's option reached the save's own event (${JSON.stringify(waitingDecision.options[0])}).`);
+      }
+    }
+
+    // (f) A rehearsal keeps that decision rather than deriving a new happening,
+    // and neither replaces nor clears it — the engine's own !pendingEvent gate.
+    // The rehearsed length is one whose derived happening differs, so a derived
+    // event can never pass for the pending one here.
+    const pendingRehearsalSeconds = 1000;
+    const pendingRehearsalClone = sandbox.cloneState(saveWithWaitingDecision);
+    const pendingRehearsal = sandbox.fastForward(pendingRehearsalClone, pendingRehearsalSeconds);
+    const derivedForPendingRehearsal = engine.awayEventForElapsed(pendingRehearsalSeconds, pendingRehearsalClone);
+    if (JSON.stringify(pendingRehearsal.event) !== JSON.stringify(waitingDecision)) {
+      problems.push(`A rehearsal must show the away event already pending in the save (${JSON.stringify(waitingDecision)}), got ${JSON.stringify(pendingRehearsal.event)}.`);
+    }
+    if (pendingRehearsal.event && derivedForPendingRehearsal && pendingRehearsal.event.id === derivedForPendingRehearsal.id) {
+      problems.push(`A rehearsal of ${pendingRehearsalSeconds}s derived a new happening "${pendingRehearsal.event.id}" instead of keeping the pending one — the sandbox must match the engine's !pendingEvent gate.`);
+    }
+    if (JSON.stringify(pendingRehearsalClone.pendingEvent) !== JSON.stringify(waitingDecision)) {
+      problems.push(`A rehearsal must neither replace nor clear the carried pending event: expected ${JSON.stringify(waitingDecision)}, got ${JSON.stringify(pendingRehearsalClone.pendingEvent)}.`);
+    }
+
+    // (g) The same holds for a real save: the decision actually waiting is what
+    // the sandbox tool, the panel and the read tool all show, and rehearsing an
+    // absence never spends it — it is still waiting after the sandbox is left.
+    const readStateForEvent = allTools.find(t => t.name === "read-state");
+    engine.reset();
+    if (typeof window.__exitSandbox === "function") window.__exitSandbox();
+    const waitingSaveTimestamp = new Date(Date.now() - 600000).toISOString();
+    localStorage.setItem("selfgrow-state", JSON.stringify({
+      wood: 0, rate: 0.1, upgradeLevel: 0, stone: 0,
+      totalWoodEarned: 0, totalStoneEarned: 0,
+      wallLevel: 0, forgeLevel: 0, expeditionLevel: 0, maps: 0,
+      stoneUnlocked: false,
+      discoveryBonus: 0, discoveryId: null, discoveryName: null,
+      lastReturn: null, pendingEvent: null,
+      timestamp: waitingSaveTimestamp, firstTimestamp: waitingSaveTimestamp,
+    }));
+    engine.init();
+    const realWaitingDecision = engine.getState().pendingEvent;
+    if (!realWaitingDecision) {
+      problems.push("Expected a 600s-old save to be waiting on an away event so a rehearsal's honoring of it can be checked, got none.");
+    } else if (!readStateForEvent) {
+      problems.push("Expected a read-state tool to check the decision a rehearsal left waiting.");
+    } else {
+      const toolRehearsalSeconds = 1000;
+      const derivedForToolRehearsal = engine.awayEventForElapsed(toolRehearsalSeconds, engine.getState());
+      if (derivedForToolRehearsal && derivedForToolRehearsal.id === realWaitingDecision.id) {
+        problems.push(`Expected the happening a ${toolRehearsalSeconds}s absence derives (${derivedForToolRehearsal.id}) to differ from the decision already waiting (${realWaitingDecision.id}), so this check can tell a derived happening from the pending one.`);
+      }
+
+      const waitingRehearsal = await sandboxFFTool.execute({ seconds: toolRehearsalSeconds });
+      if (!waitingRehearsal.event) {
+        problems.push(`sandbox-fast-forward(${toolRehearsalSeconds}s) must show the decision already waiting in the real save ("${realWaitingDecision.id}"), got no event.`);
+      } else if (JSON.stringify(waitingRehearsal.event) !== JSON.stringify(realWaitingDecision)) {
+        problems.push(`sandbox-fast-forward(${toolRehearsalSeconds}s) should show the decision the real save is waiting on (${JSON.stringify(realWaitingDecision)}), got ${JSON.stringify(waitingRehearsal.event)}.`);
+      }
+
+      const sbWaitingTitle = document.getElementById("sb-away-event-title");
+      if (!sbWaitingTitle || sbWaitingTitle.textContent.trim() !== realWaitingDecision.title) {
+        problems.push(`The sandbox panel should show the waiting decision's title "${realWaitingDecision.title}", got "${sbWaitingTitle ? sbWaitingTitle.textContent.trim() : "(missing)"}".`);
+      }
+      const sbWaitingOptions = document.getElementById("sb-away-event-options");
+      const shownWaitingOptions = sbWaitingOptions ? Array.from(sbWaitingOptions.children).map((row) => row.textContent) : [];
+      realWaitingDecision.options.forEach((option, index) => {
+        if (!shownWaitingOptions[index] || !shownWaitingOptions[index].includes(option.label)) {
+          problems.push(`The sandbox panel should show the waiting decision's option "${option.label}", got "${shownWaitingOptions[index] ?? "(missing)"}".`);
+        }
+      });
+
+      const pendingAfterRehearsal = engine.getState().pendingEvent;
+      if (JSON.stringify(pendingAfterRehearsal) !== JSON.stringify(realWaitingDecision)) {
+        problems.push(`Rehearsing an absence must leave the real save's decision waiting unchanged: expected ${JSON.stringify(realWaitingDecision)}, got ${JSON.stringify(pendingAfterRehearsal)}.`);
+      }
+      const readWhileWaiting = await readStateForEvent.execute({});
+      if (JSON.stringify(readWhileWaiting.pendingEvent) !== JSON.stringify(realWaitingDecision)) {
+        problems.push(`read-state must report the decision still waiting after a rehearsal (${JSON.stringify(realWaitingDecision)}), got ${JSON.stringify(readWhileWaiting.pendingEvent)}.`);
+      }
+
+      if (typeof window.__exitSandbox === "function") window.__exitSandbox();
+      const pendingAfterExit = engine.getState().pendingEvent;
+      if (JSON.stringify(pendingAfterExit) !== JSON.stringify(realWaitingDecision)) {
+        problems.push(`Exiting the sandbox must leave the real decision still waiting: expected ${JSON.stringify(realWaitingDecision)}, got ${JSON.stringify(pendingAfterExit)}.`);
+      }
+    }
   } catch (err) {
     problems.push(`Sandbox test threw: ${err.message}`);
     console.error(err);

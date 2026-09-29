@@ -7,7 +7,7 @@
  * @module sandbox
  */
 
-import { discoverForElapsed, awayEventForElapsed, computeStoneRateFor, effectiveWoodRate, milestoneSnapshot, milestonesBetween } from "./engine.js";
+import { discoverForElapsed, awayEventForElapsed, clonePendingEvent, computeStoneRateFor, effectiveWoodRate, milestoneSnapshot, milestonesBetween } from "./engine.js";
 
 /**
  * Deep-clone a game state object for isolated sandbox use.
@@ -36,6 +36,10 @@ export function cloneState(state) {
     discoveryBonus: state.discovery?.bonus ?? 0,
     discoveryId: state.discovery?.id ?? null,
     discoveryName: state.discovery?.name ?? null,
+    // The decision a real return is already waiting on, copied through the
+    // engine's own event clone so the rehearsal holds an independent event and
+    // can show the choice that is actually pending (see fastForward).
+    pendingEvent: clonePendingEvent(state.pendingEvent),
     timestamp: state.timestamp,
     firstTimestamp: state.firstTimestamp,
   };
@@ -101,10 +105,13 @@ export function fastForward(clone, seconds) {
 
   // A real return of a minute or more also offers a decision, so a rehearsal
   // that stopped at the find would no longer stand in for the return it
-  // projects. The engine's own rule derives it from the absence and the state
-  // the player returns to, read here after the earnings and the find have been
-  // credited — exactly the order a real catch-up uses, so the amounts match.
-  const event = awayEventForElapsed(seconds, clone);
+  // projects. A decision already waiting is never replaced — the engine's own
+  // catch-up derives a new happening only when none is pending — so the
+  // rehearsal shows the choice the player is actually looking at, and derives
+  // one only when nothing is waiting. A derived event reads the state the
+  // player returns to, after the earnings and the find have been credited,
+  // exactly the order a real catch-up uses, so the amounts match.
+  const event = clone.pendingEvent ?? awayEventForElapsed(seconds, clone);
 
   return {
     seconds,
