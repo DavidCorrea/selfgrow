@@ -1180,7 +1180,7 @@
   </div>
   <script type="module">
     import "./webmcp.js";
-    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, formatElapsed, sharpenAvailable, sharpenThreshold, displayAmount, exportSave, importSave, FIRST_GOAL_WOOD, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS, computeStoneRate } from "./engine.js";
+    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, formatElapsed, sharpenAvailable, sharpenThreshold, displayAmount, exportSave, importSave, describeGoal, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS, computeStoneRate } from "./engine.js";
     import { cloneState, fastForward } from "./sandbox.js";
 
     init();
@@ -1242,8 +1242,6 @@
     const saveImportInput = document.getElementById("save-import-input");
     const btnRestoreSave = document.getElementById("btn-restore-save");
     const saveStatus = document.getElementById("save-status");
-
-    const GOAL_STONE = 5;
 
     // ─── Cooldown state ───
     let woodCooldown = false;
@@ -1660,7 +1658,6 @@
       const clickPower = 1 + wallBonus + forgeClickBonus;
       // Derived from state every render, never cached, so a reset can't leave
       // the panel showing a goal whose prerequisite no longer holds.
-      const wallBuilt = wallLevel > 0;
 
       // What one use of each system gives, stated in real text and derived
       // from the same click power the button label uses.
@@ -1869,42 +1866,32 @@
         }
       }
 
-      if (wood >= FIRST_GOAL_WOOD && upgradeLevel >= 1) {
-        // Player has done at least one sharpen — show stone/forge goals
-        if (!wallBuilt && stone < GOAL_STONE) {
-          // Goal: Gather 5 stone
-          renderSingleGoal("Gather " + GOAL_STONE + " stone", stone, GOAL_STONE, "Stone");
-        } else if (stone >= GOAL_STONE && !wallBuilt) {
-          // Goal: Build a Wall
-          renderSingleGoal("Build a Wall (" + WALL_COST + " stone)", Math.min(stone, WALL_COST), WALL_COST, "Stone");
-        } else if (wallBuilt && forgeLevel >= 5) {
-          // Expedition goal — shown once forge level reaches 5, replacing forge goal
-          const eWoodCost = s.expeditionWoodCost || 10;
-          const eStoneCost = s.expeditionStoneCost || 5;
-          renderDualGoal(
-            "Send scouts on expedition \u2014 need " + eWoodCost + " wood and " + eStoneCost + " stone",
-            { name: "Wood", current: Math.min(wood, eWoodCost), target: eWoodCost },
-            { name: "Stone", current: Math.min(stone, eStoneCost), target: eStoneCost }
-          );
-          // Use expedition-fill for second bar and set proper color
-          if (goalFill2) goalFill2.className = "progress-fill";
-        } else if (wallBuilt) {
-          // Forge goal — always visible after wall is built, with escalating costs
-          renderDualGoal(
-            "Forge a tool — need " + forgeWoodCost + " wood and " + forgeStoneCost + " stone",
-            { name: "Wood", current: Math.min(wood, forgeWoodCost), target: forgeWoodCost },
-            { name: "Stone", current: Math.min(stone, forgeStoneCost), target: forgeStoneCost }
-          );
-        } else {
-          // Fallback — sharpen cycle
-          renderSingleGoal("Craft a Sharpening (" + UPGRADE_COST + " wood)", Math.min(wood, UPGRADE_COST), UPGRADE_COST, "Wood");
+      // The goal panel renders the engine's one goal description — the same
+      // object the read-state tool returns — so the goal's text, its bars and
+      // the button beside it can never tell different stories.
+      const goal = describeGoal(s);
+      if (goal.resources.length === 2) {
+        renderDualGoal(goal.description, goal.resources[0], goal.resources[1]);
+        // The expedition goal's second bar uses the plain stone fill; the forge
+        // goal's keeps the forge fill.
+        if (goalFill2) {
+          goalFill2.className = goal.type === "expedition-goal" ? "progress-fill" : "progress-fill forge-fill";
         }
-
-      } else if (wood >= FIRST_GOAL_WOOD) {
-        // Reached 10 wood but haven't done first sharpen yet
-        renderSingleGoal("Craft a Sharpening (" + UPGRADE_COST + " wood)", Math.min(wood, UPGRADE_COST), UPGRADE_COST, "Wood");
       } else {
-        renderSingleGoal("Gather " + FIRST_GOAL_WOOD + " wood", wood, FIRST_GOAL_WOOD, "Wood");
+        renderSingleGoal(goal.description, goal.resources[0].current, goal.resources[0].target, goal.resources[0].name);
+      }
+
+      // The goal's own action button obeys exactly the availability the shared
+      // rule reports, so a full bar and an enabled button always coincide.
+      if (goal.type === "build-wall-goal") {
+        btnBuildWall.disabled = !goal.available;
+      } else if (goal.type === "forge-goal") {
+        btnForgeTool.disabled = !goal.available;
+      } else if (goal.type === "expedition-goal" && btnExpedition) {
+        btnExpedition.disabled = !goal.available;
+      } else if (goal.type === "upgrade") {
+        // The sharpen button's own reconciliation below uses the same rule.
+        btnSharpen.disabled = !goal.available;
       }
 
       // ─── Sharpen button: unconditional reconciliation ────────────

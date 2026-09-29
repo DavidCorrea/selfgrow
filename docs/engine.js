@@ -28,6 +28,7 @@ const STONE_BASE_RATE = 0.05; // stone per second (after stone unlocked)
 const STONE_RATE_BOOST_FACTOR = 0.001; // extra stone/s per total wood earned
 const STONE_GATHER_AMOUNT = 1; // stone gained per gather action
 const WALL_COST = 5; // stone per wall upgrade
+const GOAL_STONE = 5; // stone the gather-stone goal asks for
 const WALL_CLICK_POWER_BONUS = 1; // extra wood per click per wall level
 const FORGE_WOOD_COST_BASE = 10;
 const FORGE_STONE_COST_BASE = 5;
@@ -61,7 +62,7 @@ const DISCOVERIES = [
 ];
 
 // Exported for external use (tools, UI)
-export { FIRST_GOAL_WOOD, UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, STONE_BASE_RATE, WALL_COST, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT,
+export { FIRST_GOAL_WOOD, UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, STONE_BASE_RATE, WALL_COST, GOAL_STONE, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT,
   FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_WOOD_COST_INC, FORGE_STONE_COST_INC,
   FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS,
   EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC,
@@ -559,6 +560,132 @@ export function sharpenThreshold(s) {
  */
 export function sharpenAvailable(s) {
   return s.wood >= sharpenThreshold(s);
+}
+
+/**
+ * The one-resource list for a goal whose bar measures a single amount.
+ * `current` is capped at `target`, so a met goal always fills its bar.
+ *
+ * @param {string} name
+ * @param {number} amount
+ * @param {number} target
+ * @returns {Array<{ name: string, current: number, target: number }>}
+ */
+function singleGoalResources(name, amount, target) {
+  return [{ name, current: displayAmount(Math.min(amount, target)), target }];
+}
+
+/**
+ * Describe the goal the player is working toward right now — its wording, the
+ * numbers that fill its progress bar(s), and whether the action it asks for is
+ * available.
+ *
+ * This is the one rule the goal panel, the welcome-back panel's "next goal"
+ * line and the read-state tool all read, so a goal's text, its bar and the
+ * button beside it can never tell different stories. The ordering is the
+ * game's progression: first goal, sharpen, gather stone, build wall, forge,
+ * expedition. Each `resources` entry's `current` is capped at its `target`, so a
+ * goal whose action is available never shows a short bar.
+ *
+ * The legacy fields the tools suite already reads (`progress`, `target`,
+ * `cost`, `progressToNext`, `upgradeAvailable`, `wallAvailable`, `canForge`,
+ * `canSendExpedition`, `forgeLevel`, `expeditionLevel`) are kept alongside the
+ * shared `resources`/`available` shape so the read-state tool's contract does
+ * not change.
+ *
+ * @param {GameState} s
+ * @returns {{
+ *   type: string,
+ *   description: string,
+ *   available: boolean,
+ *   resources: Array<{ name: string, current: number, target: number }>,
+ * }}
+ */
+export function describeGoal(s) {
+  if (s.wood < FIRST_GOAL_WOOD) {
+    const resources = singleGoalResources("Wood", s.wood, FIRST_GOAL_WOOD);
+    return {
+      type: "first-goal",
+      description: "Gather " + FIRST_GOAL_WOOD + " wood",
+      available: false,
+      resources,
+      target: FIRST_GOAL_WOOD,
+      progress: resources[0].current,
+      reached: false,
+    };
+  }
+
+  if (s.upgradeLevel < 1) {
+    const resources = singleGoalResources("Wood", s.wood, UPGRADE_COST);
+    return {
+      type: "upgrade",
+      description: "Craft a Sharpening (" + UPGRADE_COST + " wood)",
+      available: sharpenAvailable(s),
+      resources,
+      cost: UPGRADE_COST,
+      progressToNext: resources[0].current,
+      upgradeAvailable: sharpenAvailable(s),
+    };
+  }
+
+  if (s.wallLevel < 1 && s.stone < GOAL_STONE) {
+    const resources = singleGoalResources("Stone", s.stone, GOAL_STONE);
+    return {
+      type: "stone-goal",
+      description: "Gather " + GOAL_STONE + " stone",
+      available: false,
+      resources,
+      target: GOAL_STONE,
+      progress: resources[0].current,
+      reached: false,
+    };
+  }
+
+  if (s.wallLevel < 1) {
+    const resources = singleGoalResources("Stone", s.stone, WALL_COST);
+    const available = s.stone >= WALL_COST;
+    return {
+      type: "build-wall-goal",
+      description: "Build a Wall (" + WALL_COST + " stone)",
+      available,
+      resources,
+      cost: WALL_COST,
+      progressToNext: resources[0].current,
+      wallAvailable: available,
+    };
+  }
+
+  if (s.forgeLevel >= 5) {
+    const woodTarget = s.expeditionWoodCost;
+    const stoneTarget = s.expeditionStoneCost;
+    const available = s.wood >= woodTarget && s.stone >= stoneTarget;
+    return {
+      type: "expedition-goal",
+      description: "Send scouts on expedition \u2014 need " + woodTarget + " wood and " + stoneTarget + " stone",
+      available,
+      resources: [
+        { name: "Wood", current: displayAmount(Math.min(s.wood, woodTarget)), target: woodTarget },
+        { name: "Stone", current: displayAmount(Math.min(s.stone, stoneTarget)), target: stoneTarget },
+      ],
+      expeditionLevel: s.expeditionLevel,
+      canSendExpedition: available,
+    };
+  }
+
+  const woodTarget = s.forgeWoodCost;
+  const stoneTarget = s.forgeStoneCost;
+  const available = s.wood >= woodTarget && s.stone >= stoneTarget;
+  return {
+    type: "forge-goal",
+    description: "Forge a tool \u2014 need " + woodTarget + " wood and " + stoneTarget + " stone",
+    available,
+    resources: [
+      { name: "Wood", current: displayAmount(Math.min(s.wood, woodTarget)), target: woodTarget },
+      { name: "Stone", current: displayAmount(Math.min(s.stone, stoneTarget)), target: stoneTarget },
+    ],
+    forgeLevel: s.forgeLevel,
+    canForge: available,
+  };
 }
 
 /**
