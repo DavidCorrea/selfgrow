@@ -4480,6 +4480,145 @@ export async function checks() {
     console.error(err);
   }
 
+  // ─── The status panel names the next away find (issue #1016) ────
+  // Away finds are the reward for coming back, so the next rung and the absence
+  // it takes must be visible between returns, not only inside the welcome-back
+  // panel. The status line is rendered from the engine's one ladder through the
+  // one sentence the welcome-back panel words, so the three can never tell
+  // different stories. It is present on a fresh save (the first rung), advances
+  // as stronger finds are credited, and vanishes rather than word a dead end
+  // when the saved discovery id is unrecognised.
+  try {
+    const engine = await import("./engine.js");
+    const { tools } = await import("./agenttools.js");
+    const readState = tools().find((t) => t.name === "read-state");
+
+    const lineEl = document.getElementById("next-away-find-line");
+    const offlineNextFind = document.getElementById("offline-next-find");
+    const overlay = document.getElementById("offline-summary");
+
+    if (!lineEl) {
+      problems.push("Expected #next-away-find-line in the status panel so the next away find is always named — it was not found.");
+    } else if (!lineEl.closest("#status-bar")) {
+      problems.push("#next-away-find-line must live inside #status-bar so it is part of the status panel.");
+    }
+    if (typeof engine.nextAwayFindText !== "function") {
+      problems.push("Expected engine.nextAwayFindText to be exported so the status line and the welcome-back panel word the next find from one source.");
+    } else if (engine.nextAwayFindText(null) !== null) {
+      problems.push(`engine.nextAwayFindText(null) should be null (no rung, no sentence), got ${JSON.stringify(engine.nextAwayFindText(null))}.`);
+    }
+
+    // (a) A fresh save names the first rung — the player always has a next
+    // thing to reach for, and the absence it takes, from the very first visit.
+    engine.reset();
+    engine.init();
+    window.__renderUI();
+    const firstRung = engine.nextDiscoveryAfter(null);
+    const firstNeeded = firstRung ? engine.formatElapsed(firstRung.minSec * 1000) : null;
+    if (lineEl) {
+      const shown = lineEl.hidden ? "" : lineEl.textContent.trim();
+      if (!shown) {
+        problems.push("On a fresh save the status panel must name the next away find (the first rung), but #next-away-find-line was empty or hidden.");
+      }
+      if (firstRung && !shown.includes(firstRung.name)) {
+        problems.push(`On a fresh save the status panel should name "${firstRung.name}", got "${shown}".`);
+      }
+      if (firstNeeded && !shown.includes(firstNeeded)) {
+        problems.push(`On a fresh save the status panel should state the absence needed ("${firstNeeded}"), got "${shown}".`);
+      }
+      if (/nothing/i.test(shown)) {
+        problems.push(`The status line must never read as a dead end, got "${shown}".`);
+      }
+    }
+    if (readState) {
+      const freshRead = await readState.execute({});
+      const nextAway = freshRead.nextAwayDiscovery;
+      if (!firstRung || !nextAway || nextAway.name !== firstRung.name || nextAway.minSec !== firstRung.minSec) {
+        problems.push(`read-state.nextAwayDiscovery should match the fresh save's first rung ${JSON.stringify(firstRung)}, got ${JSON.stringify(nextAway)}.`);
+      }
+      if (lineEl && nextAway && !lineEl.textContent.includes(nextAway.elapsed)) {
+        problems.push(`The status line's absence must match read-state.nextAwayDiscovery.elapsed ("${nextAway.elapsed}"), got "${lineEl.textContent.trim()}".`);
+      }
+    }
+
+    // (b) A credited find advances the line to the rung above it, and the line
+    // reads the same sentence the welcome-back panel shows for that rung.
+    engine.reset();
+    localStorage.setItem("selfgrow-state", JSON.stringify({
+      wood: 5, rate: 0.1, stone: 0, totalWoodEarned: 5,
+      wallLevel: 0, stoneUnlocked: false,
+      firstTimestamp: new Date(Date.now() - 3600000).toISOString(),
+      timestamp: new Date(Date.now() - 600000).toISOString(),
+    }));
+    engine.init();
+    window.__renderUI();
+    const ownedFind = engine.getState().discovery;
+    const advancedRung = engine.nextDiscoveryAfter(ownedFind && ownedFind.id);
+    const advancedText = engine.nextAwayFindText(advancedRung);
+    if (!ownedFind || !advancedRung) {
+      problems.push("A 600s return should credit a find with a rung above it, so the status line has something to advance to.");
+    }
+    if (lineEl) {
+      const shown = lineEl.hidden ? "" : lineEl.textContent.trim();
+      if (shown !== advancedText) {
+        problems.push(`After crediting ${ownedFind && ownedFind.name}, the status line should read ${JSON.stringify(advancedText)}, got ${JSON.stringify(shown)}.`);
+      }
+    }
+    if (readState) {
+      const advancedRead = await readState.execute({});
+      const nextAway = advancedRead.nextAwayDiscovery;
+      if (!advancedRung || !nextAway || nextAway.name !== advancedRung.name || nextAway.minSec !== advancedRung.minSec) {
+        problems.push(`read-state.nextAwayDiscovery should match the advanced rung ${JSON.stringify(advancedRung)}, got ${JSON.stringify(nextAway)}.`);
+      }
+    }
+    // The welcome-back panel's own next-find line must be byte-identical to the
+    // status line: both are one engine sentence about one rung.
+    if (typeof window.__setOverlayOpen === "function") window.__setOverlayOpen("offline", false);
+    overlay.setAttribute("hidden", "");
+    window.__showOfflineSummary();
+    if (offlineNextFind && lineEl) {
+      const panelLine = offlineNextFind.textContent.trim();
+      const statusLine = lineEl.textContent.trim();
+      if (panelLine !== statusLine) {
+        problems.push(`The welcome-back panel's next find (${JSON.stringify(panelLine)}) must equal the status line (${JSON.stringify(statusLine)}).`);
+      }
+    }
+    if (!overlay.hidden) window.__dismissOffline();
+
+    // (c) An unrecognised discovery id is a corrupt save: the ladder yields no
+    // rung, so the line carries no readable text and disappears rather than
+    // telling the player nothing is left to find.
+    engine.reset();
+    localStorage.setItem("selfgrow-state", JSON.stringify({
+      wood: 5, rate: 0.1, stone: 0, totalWoodEarned: 5,
+      wallLevel: 0, stoneUnlocked: false,
+      discoveryId: "not-a-real-find", discoveryName: "Nowhere", discoveryBonus: 0.05,
+      firstTimestamp: new Date().toISOString(),
+      timestamp: new Date().toISOString(),
+    }));
+    engine.init();
+    window.__renderUI();
+    if (engine.nextDiscoveryAfter("not-a-real-find") !== null) {
+      problems.push("nextDiscoveryAfter should return null for an unknown discovery id, so the status line has no rung to name.");
+    }
+    if (lineEl) {
+      if (!lineEl.hidden) {
+        problems.push("An unrecognised discovery id must hide the status line rather than word a dead end.");
+      }
+      if (lineEl.textContent.trim() !== "") {
+        problems.push(`An unrecognised discovery id must leave the status line with no readable text, got ${JSON.stringify(lineEl.textContent.trim())}.`);
+      }
+    }
+
+    // Leave the page as it was found.
+    engine.reset();
+    engine.init();
+    window.__renderUI();
+  } catch (err) {
+    problems.push(`Status-panel next-away-find test threw: ${err.message}`);
+    console.error(err);
+  }
+
   // ─── Save export / import: a portable code (issue #969) ────────
   try {
     const engine = await import("./engine.js");

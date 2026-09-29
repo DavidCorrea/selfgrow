@@ -178,6 +178,19 @@
       color: var(--text);
     }
 
+    /* The next away find — named in the status readout so a player always
+       sees the rung they are reaching for and how long the absence must be.
+       It shares the meta row when it fits and wraps to its own line when it
+       does not, so it can never push the page past the window. */
+    .away-find-line {
+      color: var(--accent);
+      letter-spacing: 0.02em;
+    }
+
+    .away-find-line[hidden] {
+      display: none;
+    }
+
     /* ─── Action area — a grid of system cards across the window ─── */
     #action-area {
       display: grid;
@@ -1104,6 +1117,7 @@
       <span class="meta-item"><span>Elapsed</span> <span class="stat-value" id="elapsed-value">—</span></span>
       <span class="meta-item"><span>Total wood</span> <span class="stat-value stat-total" id="total-wood-value">0</span></span>
       <span class="meta-item stat-hidden" id="total-stone-stat"><span>Total stone</span> <span class="stat-value stat-total stone-total" id="total-stone-value"></span></span>
+      <span class="away-find-line" id="next-away-find-line" hidden></span>
     </div>
   </section>
 
@@ -1303,7 +1317,7 @@
   </div>
   <script type="module">
     import "./webmcp.js";
-    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, markReturnSeen, formatElapsed, sharpenAvailable, sharpenThreshold, displayAmount, exportSave, importSave, describeGoal, returnDiscoveryText, pauseForHidden, resumeFromHidden, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
+    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, markReturnSeen, formatElapsed, nextAwayFindText, sharpenAvailable, sharpenThreshold, displayAmount, exportSave, importSave, describeGoal, returnDiscoveryText, pauseForHidden, resumeFromHidden, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
     import { cloneState, fastForward } from "./sandbox.js";
     import { mountSprites, updateSprites, playReaction } from "./sprites.js";
 
@@ -1359,6 +1373,7 @@
     const offlineDiscoveryBonus = document.getElementById("offline-discovery-bonus");
     const offlineDiscoveryNote = document.getElementById("offline-discovery-note");
     const offlineNextFind = document.getElementById("offline-next-find");
+    const nextAwayFindLine = document.getElementById("next-away-find-line");
     const offlineNextGoalText = document.getElementById("offline-next-goal-text");
     const discoveryStat = document.getElementById("discovery-stat");
     const discoveryValueEl = document.getElementById("discovery-value");
@@ -1586,10 +1601,8 @@
       // always names a rung for a valid save; the fallback only covers a save
       // whose discovery id is unrecognised, and must never read as a dead end.
       if (offlineNextFind) {
-        const next = ret.nextDiscovery;
-        offlineNextFind.textContent = next
-          ? `Next away find: ${next.name} \u2014 away ${formatElapsed(next.minSec * 1000)}.`
-          : "Next away find: a deeper discovery still waits.";
+        offlineNextFind.textContent = nextAwayFindText(ret.nextDiscovery)
+          || "Next away find: a deeper discovery still waits.";
         offlineNextFind.hidden = false;
       }
 
@@ -1960,6 +1973,20 @@
       } else {
         discoveryStat.classList.add("stat-hidden");
         emptyRow(discoveryStat);
+      }
+
+      // The next away find — the rung above the one owned, with the absence it
+      // takes, so a longer wait is a distance to a named find rather than an
+      // invisible one. Rendered from the engine's single ladder through the one
+      // sentence the welcome-back panel uses, so the status line, the panel and
+      // the read-state tool can never name different finds. Present on a fresh
+      // save (reaching for the first rung); a save whose discovery id is
+      // unrecognised yields no rung, and the line vanishes rather than wording
+      // a dead end.
+      if (nextAwayFindLine) {
+        const nextAway = getReturnSummary().nextDiscovery;
+        nextAwayFindLine.textContent = nextAwayFindText(nextAway) || "";
+        nextAwayFindLine.hidden = !nextAway;
       }
 
       // Total stats (never decrease). Total stone is written only when stone
