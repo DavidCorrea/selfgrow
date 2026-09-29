@@ -76,15 +76,17 @@ const DISCOVERIES = [
 ];
 
 /**
- * The small fixed pool of away events. Each is a happening drawn from the time
+ * The fixed pool of away events. Each is a happening drawn from the time
  * away that offers exactly two choices, and each choice's kind names the one
  * thing it grants: a lump of wood, a lump of stone, or a permanent wood/s
  * increase. The absence and the save's own count of happenings already offered
  * together pick an entry (see awayEventForElapsed), so checking in on the same
- * cadence still advances through the pool rather than repeating one decision,
- * and the pool only has to be long enough that two different absences need not
- * offer the same decision. The two kinds within an entry are always distinct —
- * the choice's own id is its kind — so a pair never shows two identical buttons.
+ * cadence still advances through the pool rather than repeating one decision.
+ * The pool holds happenings of each kind pair more than once, so a regular
+ * visitor meets several different decisions — not three in a loop — before the
+ * sequence returns to the one it started on. The two kinds within an entry are
+ * always distinct — the choice's own id is its kind — so a pair never shows two
+ * identical buttons.
  *
  * @type {Array<{ id: string, title: string, kinds: [string, string] }>}
  */
@@ -92,6 +94,9 @@ const AWAY_EVENTS = [
   { id: "wandering-trader", title: "A wandering trader stops at your fire", kinds: ["wood", "stone"] },
   { id: "fallen-log-cache", title: "Something is cached beneath a fallen log", kinds: ["wood", "rate"] },
   { id: "old-quarry-face", title: "An old quarry face has crumbled open", kinds: ["stone", "rate"] },
+  { id: "flooded-creek", title: "A flooded creek has cut a fresh channel", kinds: ["wood", "stone"] },
+  { id: "wild-hive", title: "A wild hive hangs heavy in a dead tree", kinds: ["wood", "rate"] },
+  { id: "clay-seam", title: "A clay seam has opened along the riverbank", kinds: ["stone", "rate"] },
 ];
 
 // Everything past the fixed rungs is derived from the top rung and the rung
