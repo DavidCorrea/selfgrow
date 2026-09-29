@@ -1192,6 +1192,11 @@ export async function checks() {
         if (result.wood !== s.wood) {
           problems.push(`read-state wood (${result.wood}) does not match engine.getState() wood (${s.wood}).`);
         }
+        // The chop power an agent reads must be the engine's own rule, so the
+        // button, the Wood card and the tool can never promise three numbers.
+        if (result.clickPower !== engine.clickPowerFor(s)) {
+          problems.push(`read-state clickPower (${result.clickPower}) does not match engine.clickPowerFor(state) (${engine.clickPowerFor(s)}).`);
+        }
         // Check firstGoal field
         if (!result.firstGoal) {
           problems.push("read-state should return a 'firstGoal' field — it was missing.");
@@ -1990,11 +1995,19 @@ export async function checks() {
     engine.buildWall(); // wallLevel = 1, so click power rises
     renderNow();
     const lived = engine.getState();
-    const clickPower = 1 + lived.wallLevel + lived.forgeLevel * 0.5;
+    const clickPower = engine.clickPowerFor(lived);
     const expected = "+" + (Number.isInteger(clickPower) ? clickPower : clickPower.toFixed(1)) + " / chop";
     const shown = woodYieldEl.textContent.trim();
     if (shown !== expected) {
       problems.push(`Wood card yields "${shown}" but the engine's click power is ${clickPower} (expected "${expected}").`);
+    }
+    // The button label is the other promise of the same number: it must name
+    // exactly the chop power the engine's rule gives for this state.
+    const btnGather = document.getElementById("btn-gather");
+    const btnLabel = btnGather?.querySelector(".btn-label")?.textContent.trim();
+    const expectedLabel = "Gather Wood (+" + (Number.isInteger(clickPower) ? clickPower : clickPower.toFixed(1)) + ")";
+    if (btnLabel !== expectedLabel) {
+      problems.push(`Gather Wood button reads "${btnLabel}" but the engine's click power is ${clickPower} (expected "${expectedLabel}").`);
     }
     engine.reset();
     engine.init();

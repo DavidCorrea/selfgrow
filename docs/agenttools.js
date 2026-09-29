@@ -8,7 +8,7 @@
  * @module agenttools
  */
 
-import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, formatElapsed, nextDiscoveryAfter, returnDiscoveryText, sharpenAvailable, wallAvailable, expeditionUnlocked, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, effectiveWoodRate, expeditionMultiplierFor, FIRST_GOAL_WOOD, UPGRADE_COST, WALL_COST, STONE_GATHER_AMOUNT, FORGE_CLICK_POWER_BONUS } from "./engine.js";
+import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, formatElapsed, nextDiscoveryAfter, returnDiscoveryText, sharpenAvailable, wallAvailable, expeditionUnlocked, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, effectiveWoodRate, expeditionMultiplierFor, clickPowerFor, FIRST_GOAL_WOOD, UPGRADE_COST, WALL_COST, STONE_GATHER_AMOUNT } from "./engine.js";
 
 /**
  * The last return as the welcome-back panel is showing it, read straight from
@@ -58,7 +58,9 @@ function readReturnSummary() {
 function withGoal(s) {
   const upgradeAvailable = sharpenAvailable(s);
   const stoneRate = s.stoneUnlocked ? computeStoneRateFor(s.totalWoodEarned) : 0;
-  const clickPower = 1 + s.wallLevel * 1 + s.forgeLevel * FORGE_CLICK_POWER_BONUS;
+  // The engine's own chop-power rule, so the agent is told exactly the number
+  // the Gather Wood button promises.
+  const clickPower = clickPowerFor(s);
   const ret = readReturnSummary();
   // Snapshots come in two shapes: the raw state (has discoveryId) and
   // getState()'s view (only discovery.id). Reading whichever is present keeps

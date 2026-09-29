@@ -125,7 +125,7 @@ export { FIRST_GOAL_WOOD, UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, STONE_BASE_RA
   FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS,
   EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC,
   EXPEDITION_WOOD_RATE_MULTIPLIER, RETURN_MIN_SEC, computeStoneRateFor, computeStoneRate,
-  expeditionMultiplierFor, effectiveWoodRate };
+  expeditionMultiplierFor, effectiveWoodRate, clickPowerFor };
 
 /**
  * @typedef {Object} GameState
@@ -818,15 +818,25 @@ export function importSave(code) {
 }
 
 /**
- * Gather +1 wood instantly (active play action).
- * Click power increases with wall level and forge level.
+ * The wood one chop adds, for a given state: the base chop plus the wall and
+ * forge bonuses. This is the one rule the engine's own gather, the page's
+ * "+N / chop" card, the Gather Wood button label and the agent's read-state
+ * all report, so the number a player is promised is the number they get.
+ *
+ * @param {{ wallLevel: number, forgeLevel: number }} s
+ * @returns {number}
+ */
+function clickPowerFor(s) {
+  return 1 + s.wallLevel * WALL_CLICK_POWER_BONUS + s.forgeLevel * FORGE_CLICK_POWER_BONUS;
+}
+
+/**
+ * Gather the current chop power in wood instantly (active play action).
  *
  * @returns {GameState} current state after gathering
  */
 export function gatherWood() {
-  const wallBonus = state.wallLevel * WALL_CLICK_POWER_BONUS;
-  const forgeBonus = state.forgeLevel * FORGE_CLICK_POWER_BONUS;
-  const clickPower = 1 + wallBonus + forgeBonus;
+  const clickPower = clickPowerFor(state);
   state.wood += clickPower;
   state.totalWoodEarned += clickPower;
   return getState();

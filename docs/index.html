@@ -1339,7 +1339,7 @@
   </div>
   <script type="module">
     import "./webmcp.js";
-    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, markReturnSeen, formatElapsed, nextAwayFindText, sharpenAvailable, sharpenThreshold, expeditionUnlocked, displayAmount, exportSave, importSave, describeGoal, returnDiscoveryText, pauseForHidden, resumeFromHidden, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
+    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, markReturnSeen, formatElapsed, nextAwayFindText, sharpenAvailable, sharpenThreshold, expeditionUnlocked, displayAmount, exportSave, importSave, describeGoal, returnDiscoveryText, pauseForHidden, resumeFromHidden, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, clickPowerFor, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
     import { cloneState, fastForward } from "./sandbox.js";
     import { mountSprites, updateSprites, playReaction } from "./sprites.js";
 
@@ -1877,9 +1877,9 @@
         forge: forgeLevel,
         expedition: s.expeditionLevel,
       });
-      const wallBonus = wallLevel * 1;
-      const forgeClickBonus = forgeLevel * FORGE_CLICK_POWER_BONUS;
-      const clickPower = 1 + wallBonus + forgeClickBonus;
+      // The engine's own chop-power rule — the same number the Gather Wood
+      // button below promises and an agent reads from the tools.
+      const clickPower = clickPowerFor(s);
       // Derived from state every render, never cached, so a reset can't leave
       // the panel showing a goal whose prerequisite no longer holds.
 
