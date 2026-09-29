@@ -1140,7 +1140,7 @@
   </div>
   <script type="module">
     import "./webmcp.js";
-    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, consumeOfflineWoodGained, consumeOfflineGained, consumeOfflineMilestones, formatElapsed, sharpenAvailable, sharpenThreshold, displayAmount, exportSave, importSave, FIRST_GOAL_WOOD, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS, computeStoneRate } from "./engine.js";
+    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, formatElapsed, sharpenAvailable, sharpenThreshold, displayAmount, exportSave, importSave, FIRST_GOAL_WOOD, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS, computeStoneRate } from "./engine.js";
     import { cloneState, fastForward } from "./sandbox.js";
 
     init();
@@ -1352,81 +1352,84 @@
     }
     window.__setOverlayOpen = setOverlayOpen;
 
+    // Format a return amount exactly the way the resource counters show a
+    // quantity, so the panel's "earned" number is the rise the player can read
+    // on the counter and the two can never disagree.
+    function formatReturnAmount(value) {
+      return Number.isInteger(value) || value >= 10 ? String(Math.floor(value)) : value.toFixed(2);
+    }
+
     // ─── Offline summary ───
     function showOfflineSummary() {
-      const gained = consumeOfflineGained();
-      const woodGained = gained.wood;
-      const stoneGained = gained.stone;
-      const elapsedSec = gained.elapsedSec || 0;
+      // A first-ever visit, a sub-second reload, and a return read from the
+      // engine's own record — never a single-use "gained" value — so the panel
+      // and the agent tools always agree about what the return was.
+      const ret = getReturnSummary();
+      if (!ret.visible) return;
 
-      // Also consume the legacy value in case anything uses it
-      consumeOfflineWoodGained();
+      offlineElapsed.textContent = ret.elapsed;
+      // The displayed rise, not the raw catch-up, so the number matches the
+      // wood/stone counters exactly — even when a whole resource was not earned.
+      offlineAmount.textContent = formatReturnAmount(ret.wood);
+      if (ret.stone > 0) {
+        offlineStoneAmount.textContent = formatReturnAmount(ret.stone);
+        offlineStoneLine.hidden = false;
+      } else {
+        offlineStoneLine.hidden = true;
+      }
 
-      // Show the overlay whenever any resources were gained during catch-up,
-      // regardless of how short the absence was.
-      if (woodGained > 0 || stoneGained > 0) {
-        offlineElapsed.textContent = formatElapsed(elapsedSec * 1000);
-        offlineAmount.textContent = woodGained >= 1 ? Math.floor(woodGained) : woodGained.toFixed(1);
-        if (stoneGained > 0) {
-          offlineStoneAmount.textContent = stoneGained >= 1 ? Math.floor(stoneGained) : stoneGained.toFixed(2);
-          offlineStoneLine.hidden = false;
+      // ─── Away discovery ───
+      // The bonus line is only shown when this return actually raised the
+      // rate, so the panel never claims a boost the game state did not get.
+      if (ret.discovery) {
+        offlineDiscoveryName.textContent = ret.discovery.name;
+        offlineDiscoveryLine.hidden = false;
+        if (ret.discovery.credited) {
+          offlineDiscoveryBonus.textContent = `+${ret.discovery.bonus.toFixed(2)} wood/s, yours for good.`;
+          offlineDiscoveryBonus.hidden = false;
         } else {
-          offlineStoneLine.hidden = true;
-        }
-
-        // ─── Away discovery ───
-        // The bonus line is only shown when this return actually raised the
-        // rate, so the panel never claims a boost the game state did not get.
-        if (gained.discovery) {
-          offlineDiscoveryName.textContent = gained.discovery.name;
-          offlineDiscoveryLine.hidden = false;
-          if (gained.discovery.credited) {
-            offlineDiscoveryBonus.textContent = `+${gained.discovery.bonus.toFixed(2)} wood/s, yours for good.`;
-            offlineDiscoveryBonus.hidden = false;
-          } else {
-            offlineDiscoveryBonus.textContent = "";
-            offlineDiscoveryBonus.hidden = true;
-          }
-        } else {
-          offlineDiscoveryLine.hidden = true;
           offlineDiscoveryBonus.textContent = "";
           offlineDiscoveryBonus.hidden = true;
         }
-
-        // ─── Milestone announcements ───
-        const milestones = consumeOfflineMilestones();
-        const sharpenEl = document.getElementById("milestone-sharpen");
-        const stoneEl = document.getElementById("milestone-stone");
-        const wallEl = document.getElementById("milestone-wall");
-        const forgeEl = document.getElementById("milestone-forge");
-        if (sharpenEl) sharpenEl.hidden = !milestones.sharpenAvailable;
-        if (stoneEl) stoneEl.hidden = !milestones.stoneNowUnlocked;
-        if (wallEl) wallEl.hidden = !milestones.wallAvailable;
-        if (forgeEl) forgeEl.hidden = !milestones.forgeNowUnlocked;
-        const expeditionEl = document.getElementById("milestone-expedition");
-        if (expeditionEl) expeditionEl.hidden = !milestones.expeditionNowUnlocked;
-
-        // Register the overlay first, so the element that opened it is still
-        // focused when we record it as the return-focus target.
-        setOverlayOpen("offline", true);
-        offlineSummary.hidden = false;
-        offlineSummary.querySelector(".offline-panel").focus();
-
-        // Disable action buttons while overlay is visible
-        btnGather.disabled = true;
-        btnSharpen.disabled = true;
-        btnGatherStone.disabled = true;
-        btnBuildWall.disabled = true;
-        btnForgeTool.disabled = true;
-        if (btnExpedition) btnExpedition.disabled = true;
-
-        // Seal the body against pointer events — the overlay is the only
-        // interactive layer.
-        document.body.style.pointerEvents = "none";
-        offlineSummary.style.pointerEvents = "auto";
-
-        // The default CSS (without [hidden]) handles full visibility
+      } else {
+        offlineDiscoveryLine.hidden = true;
+        offlineDiscoveryBonus.textContent = "";
+        offlineDiscoveryBonus.hidden = true;
       }
+
+      // ─── Milestone announcements ───
+      const milestones = ret.milestones;
+      const sharpenEl = document.getElementById("milestone-sharpen");
+      const stoneEl = document.getElementById("milestone-stone");
+      const wallEl = document.getElementById("milestone-wall");
+      const forgeEl = document.getElementById("milestone-forge");
+      if (sharpenEl) sharpenEl.hidden = !milestones.sharpenAvailable;
+      if (stoneEl) stoneEl.hidden = !milestones.stoneNowUnlocked;
+      if (wallEl) wallEl.hidden = !milestones.wallAvailable;
+      if (forgeEl) forgeEl.hidden = !milestones.forgeNowUnlocked;
+      const expeditionEl = document.getElementById("milestone-expedition");
+      if (expeditionEl) expeditionEl.hidden = !milestones.expeditionNowUnlocked;
+
+      // Register the overlay first, so the element that opened it is still
+      // focused when we record it as the return-focus target.
+      setOverlayOpen("offline", true);
+      offlineSummary.hidden = false;
+      offlineSummary.querySelector(".offline-panel").focus();
+
+      // Disable action buttons while overlay is visible
+      btnGather.disabled = true;
+      btnSharpen.disabled = true;
+      btnGatherStone.disabled = true;
+      btnBuildWall.disabled = true;
+      btnForgeTool.disabled = true;
+      if (btnExpedition) btnExpedition.disabled = true;
+
+      // Seal the body against pointer events — the overlay is the only
+      // interactive layer.
+      document.body.style.pointerEvents = "none";
+      offlineSummary.style.pointerEvents = "auto";
+
+      // The default CSS (without [hidden]) handles full visibility
     }
 
     function dismissOffline() {

@@ -8,69 +8,41 @@
  * @module agenttools
  */
 
-import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, consumeOfflineWoodGained, formatElapsed, sharpenAvailable, displayAmount, exportSave, importSave, FIRST_GOAL_WOOD, UPGRADE_COST, WALL_COST, STONE_GATHER_AMOUNT, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE } from "./engine.js";
+import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, formatElapsed, sharpenAvailable, displayAmount, exportSave, importSave, FIRST_GOAL_WOOD, UPGRADE_COST, WALL_COST, STONE_GATHER_AMOUNT, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE } from "./engine.js";
 
 const GOAL_STONE = 5;
 
 /**
- * Read the offline gain from the DOM.
- * Returns 0 when no gain is pending (overlay hidden).
- */
-function readOfflineWoodGained() {
-  const overlay = document.getElementById('offline-summary');
-  if (!overlay || overlay.hidden) return 0;
-  const el = document.getElementById('offline-wood-amount');
-  if (!el) return 0;
-  const text = el.textContent.trim();
-  const num = parseFloat(text);
-  return isNaN(num) ? 0 : Math.max(0, num);
-}
-
-function readOfflineStoneGained() {
-  const overlay = document.getElementById('offline-summary');
-  if (!overlay || overlay.hidden) return 0;
-  const el = document.getElementById('offline-stone-amount');
-  if (!el) return 0;
-  const text = el.textContent.trim();
-  const num = parseFloat(text);
-  return isNaN(num) ? 0 : Math.max(0, num);
-}
-
-/**
- * Read the absence duration shown in the welcome-back panel.
- * Returns null when no panel is showing.
- */
-function readOfflineElapsed() {
-  const overlay = document.getElementById('offline-summary');
-  if (!overlay || overlay.hidden) return null;
-  const el = document.getElementById('offline-elapsed');
-  if (!el) return null;
-  const text = el.textContent.trim();
-  return text ? text : null;
-}
-
-/**
- * Read the away discovery named in the welcome-back panel, with the wood/s
- * bonus it granted. Returns null when no panel is showing or it found nothing
- * this return. The bonus is parsed from the panel's own bonus line, so the
- * number an agent sees is exactly the one the visitor is reading; when the
- * find granted no bonus the panel shows no line and the bonus is null.
+ * The last return as the welcome-back panel is showing it, read straight from
+ * the engine's own record rather than parsed from the panel's text. The panel
+ * and this reader share one source, so they can never report different numbers.
+ * A dismissed or first-visit return accounts for nothing, matching the panel
+ * being absent.
  *
- * @returns {{ name: string, bonus: number|null, permanent: boolean }|null}
+ * @returns {{
+ *   wood: number,
+ *   stone: number,
+ *   elapsed: string|null,
+ *   discovery: { name: string, bonus: number|null, permanent: boolean }|null,
+ * }}
  */
-function readOfflineDiscovery() {
-  const overlay = document.getElementById('offline-summary');
-  if (!overlay || overlay.hidden) return null;
-  const line = document.getElementById('offline-discovery-line');
-  if (!line || line.hidden) return null;
-  const nameEl = document.getElementById('offline-discovery-name');
-  const name = nameEl ? nameEl.textContent.trim() : '';
-  if (!name) return null;
-
-  const bonusEl = document.getElementById('offline-discovery-bonus');
-  const showsBonus = Boolean(bonusEl && !bonusEl.hidden);
-  const match = showsBonus ? bonusEl.textContent.match(/\+(\d+(?:\.\d+)?)\s*wood\/s/) : null;
-  return { name, bonus: match ? Number(match[1]) : null, permanent: showsBonus };
+function readReturnSummary() {
+  const overlay = document.getElementById("offline-summary");
+  if (!overlay || overlay.hidden) {
+    return { wood: 0, stone: 0, elapsed: null, discovery: null };
+  }
+  const ret = getReturnSummary();
+  if (!ret.visible) {
+    return { wood: 0, stone: 0, elapsed: null, discovery: null };
+  }
+  return {
+    wood: ret.wood,
+    stone: ret.stone,
+    elapsed: ret.elapsed,
+    discovery: ret.discovery
+      ? { name: ret.discovery.name, bonus: ret.discovery.credited ? ret.discovery.bonus : null, permanent: ret.discovery.credited }
+      : null,
+  };
 }
 
 /**
@@ -175,6 +147,7 @@ function withGoal(s) {
   const wallAvailable = s.stoneUnlocked && s.stone >= WALL_COST;
   const stoneRate = s.stoneUnlocked ? computeStoneRate(s.totalWoodEarned) : 0;
   const clickPower = 1 + s.wallLevel * 1 + s.forgeLevel * FORGE_CLICK_POWER_BONUS;
+  const ret = readReturnSummary();
 
   return {
     wood: s.wood,
@@ -201,10 +174,10 @@ function withGoal(s) {
     wallBuilt: s.wallLevel > 0,
     upgradeAvailable: upgradeAvailable,
     offlineSummaryVisible: !document.getElementById('offline-summary')?.hidden,
-    offlineWoodGained: readOfflineWoodGained(),
-    offlineStoneGained: readOfflineStoneGained(),
-    offlineElapsed: readOfflineElapsed(),
-    offlineDiscovery: readOfflineDiscovery(),
+    offlineWoodGained: ret.wood,
+    offlineStoneGained: ret.stone,
+    offlineElapsed: ret.elapsed,
+    offlineDiscovery: ret.discovery,
     milestones: {
       sharpenAvailable: sharpenAvailable(s),
       stoneNowUnlocked: s.stoneUnlocked,

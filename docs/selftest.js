@@ -2350,8 +2350,9 @@ export async function checks() {
   }
 
   // ─── Offline summary overlay appears after any resource gain (no time guard) ───
-  // Issue #943: the overlay must appear after any reload where resources were gained,
-  // regardless of how short the absence was. The `elapsedSec > 3` guard was removed.
+  // Issue #943 removed the `elapsedSec > 3` guard, and issue #989 keeps the
+  // panel for any real return at least RETURN_MIN_SEC long, whether or not a
+  // whole resource was earned. The elapsed check below uses a 2-second absence.
   try {
     const engine = await import("./engine.js");
     const overlay = document.getElementById("offline-summary");
@@ -2447,6 +2448,160 @@ export async function checks() {
     engine.init();
   } catch (err) {
     problems.push(`Offline summary overlay test threw: ${err.message}`);
+    console.error(err);
+  }
+
+  // ─── A truthful welcome-back summary (issue #989) ───────────────
+  // The return is recorded once in the engine (getReturnSummary) and read —
+  // never consumed — by the panel and the agent tools. So the panel always
+  // accounts for a real return, its wood is exactly the counter's visible rise,
+  // and an action that opened up is named even when nothing was visibly earned.
+  try {
+    const engine = await import("./engine.js");
+    const { tools } = await import("./agenttools.js");
+    const readStateTool = tools().find((t) => t.name === "read-state");
+    if (typeof engine.getReturnSummary !== "function") {
+      problems.push("Expected engine.getReturnSummary to be exported so the panel and tools share one return record.");
+    }
+    if (!readStateTool) {
+      problems.push("Expected a read-state tool for the welcome-back summary checks.");
+    }
+
+    const overlay = document.getElementById("offline-summary");
+    const woodAmountEl = document.getElementById("offline-wood-amount");
+    const elapsedEl = document.getElementById("offline-elapsed");
+    const sharpenMilestoneEl = document.getElementById("milestone-sharpen");
+
+    // The wood counter's own formatting, so "the increase the player can see"
+    // is measured exactly as the counter shows it.
+    const counterValue = (v) => parseFloat(Number.isInteger(v) || v >= 10 ? String(Math.floor(v)) : v.toFixed(2));
+    const visibleRise = (before, after) => {
+      const d = counterValue(after) - counterValue(before);
+      return Number.isInteger(d) || d >= 10 ? Math.floor(d) : parseFloat(d.toFixed(2));
+    };
+
+    // Load a saved game `ageMs` old and let the page show the panel exactly as
+    // it does on a real reload.
+    function reloadFromAge(ageMs, saved) {
+      engine.reset();
+      localStorage.setItem("selfgrow-state", JSON.stringify({
+        wood: 5, rate: 0.1, stone: 0, totalWoodEarned: 5,
+        wallLevel: 0, stoneUnlocked: false,
+        firstTimestamp: new Date(Date.now() - 3600000).toISOString(),
+        timestamp: new Date(Date.now() - ageMs).toISOString(),
+        ...saved,
+      }));
+      engine.init();
+      if (typeof window.__setOverlayOpen === "function") window.__setOverlayOpen("offline", false);
+      overlay.setAttribute("hidden", "");
+      window.__showOfflineSummary();
+    }
+
+    // (a) A return whose counter rise rounds to nothing must still show the panel,
+    // and the wood it reports must be that rise — not the raw catch-up. At 12
+    // wood the counter floors, so the visible rise is 0 while 0.3 was earned.
+    reloadFromAge(3000, { wood: 12, totalWoodEarned: 12 });
+    if (overlay.hidden) {
+      problems.push("A 3s return from a save must show the welcome-back panel even when the counter's visible rise is 0.");
+    }
+    const highRise = visibleRise(12, engine.getState().wood);
+    if (!woodAmountEl || parseFloat(woodAmountEl.textContent) !== highRise) {
+      problems.push(`The panel's wood (${woodAmountEl && woodAmountEl.textContent}) must equal the counter's visible rise (${highRise}) across the reload.`);
+    }
+
+    // (b) A fractional earn (<1 wood) shows the real rise, and it equals the
+    // counter's increase across the reload.
+    reloadFromAge(2000, { wood: 5 });
+    if (overlay.hidden) {
+      problems.push("A 2s return that earns under one wood must show the welcome-back panel.");
+    }
+    const panelWood = woodAmountEl ? parseFloat(woodAmountEl.textContent) : NaN;
+    if (!(panelWood > 0)) {
+      problems.push(`The panel must show the fractional wood earned on a 2s return, got "${woodAmountEl && woodAmountEl.textContent}".`);
+    }
+    const fractionalRise = visibleRise(5, engine.getState().wood);
+    if (panelWood !== fractionalRise) {
+      problems.push(`The panel's wood (${panelWood}) must equal the counter's visible rise (${fractionalRise}) across the reload.`);
+    }
+
+    // (c) Reading the summary does not spend it: two reads, a second render,
+    // and a dismiss-then-re-show all report the same return.
+    const firstWood = panelWood;
+    const firstElapsed = elapsedEl ? elapsedEl.textContent.trim() : "";
+    const summaryOnce = engine.getReturnSummary();
+    const summaryTwice = engine.getReturnSummary();
+    if (summaryOnce.wood !== summaryTwice.wood || summaryOnce.visible !== summaryTwice.visible || summaryOnce.elapsed !== summaryTwice.elapsed) {
+      problems.push("getReturnSummary() must read the return, not consume it — two reads disagreed.");
+    }
+    window.__showOfflineSummary();
+    if (overlay.hidden || (woodAmountEl && parseFloat(woodAmountEl.textContent) !== firstWood)) {
+      problems.push("A second showOfflineSummary() must show the same return, not a spent/empty one.");
+    }
+    window.__dismissOffline();
+    window.__showOfflineSummary();
+    if (overlay.hidden) {
+      problems.push("Re-showing the panel after a dismiss must still show the recorded return.");
+    }
+    if (elapsedEl && elapsedEl.textContent.trim() !== firstElapsed) {
+      problems.push(`Re-showing the panel must keep the same absence length (${firstElapsed}), got "${elapsedEl.textContent.trim()}".`);
+    }
+
+    // (d) A return that crosses the first goal names the newly available action
+    // even though nothing was visibly earned: 9.999 wood shows as 10.00, so the
+    // counter's rise is 0 while the axe becomes sharpenable.
+    reloadFromAge(2000, { wood: 9.999, totalWoodEarned: 9.999 });
+    if (overlay.hidden) {
+      problems.push("A return that crosses the first goal must show the welcome-back panel.");
+    }
+    const crossingRise = visibleRise(9.999, engine.getState().wood);
+    if (!woodAmountEl || parseFloat(woodAmountEl.textContent) !== crossingRise) {
+      problems.push(`The panel's wood (${woodAmountEl && woodAmountEl.textContent}) must equal the counter's visible rise (${crossingRise}) when a milestone is crossed.`);
+    }
+    if (sharpenMilestoneEl && sharpenMilestoneEl.hidden) {
+      problems.push("Crossing the first goal while away must name 'you can now sharpen your axe', even when no wood was visibly earned.");
+    }
+
+    // (e) A first-ever visit has no return to report and shows no panel.
+    engine.reset();
+    engine.init();
+    if (typeof window.__setOverlayOpen === "function") window.__setOverlayOpen("offline", false);
+    overlay.setAttribute("hidden", "");
+    if (engine.getReturnSummary().visible) {
+      problems.push("A first-ever visit with no saved game must report no return.");
+    }
+    window.__showOfflineSummary();
+    if (!overlay.hidden) {
+      problems.push("A first-ever visit with no saved game must show no welcome-back panel.");
+    }
+
+    // (f) A sub-second reload is not a return, so it shows nothing either.
+    reloadFromAge(300, { wood: 5 });
+    if (engine.getReturnSummary().visible) {
+      problems.push("A sub-second reload must report no return.");
+    }
+    if (!overlay.hidden) {
+      problems.push("A sub-second reload must show no welcome-back panel.");
+    }
+
+    // (g) The agent's read-state reports the same return the panel is showing.
+    reloadFromAge(2000, { wood: 5 });
+    if (readStateTool && !overlay.hidden) {
+      const panelValue = parseFloat(woodAmountEl.textContent);
+      const readState = await readStateTool.execute({});
+      if (readState.offlineWoodGained !== panelValue) {
+        problems.push(`read-state.offlineWoodGained (${readState.offlineWoodGained}) must equal the panel's wood (${panelValue}) — the page cannot disagree about a return.`);
+      }
+      if (readState.offlineElapsed !== (elapsedEl ? elapsedEl.textContent.trim() : "")) {
+        problems.push(`read-state.offlineElapsed (${readState.offlineElapsed}) must equal the panel's absence text.`);
+      }
+    }
+
+    // Leave the page as it was found.
+    if (!overlay.hidden) window.__dismissOffline();
+    engine.reset();
+    engine.init();
+  } catch (err) {
+    problems.push(`Welcome-back summary test threw: ${err.message}`);
     console.error(err);
   }
 
