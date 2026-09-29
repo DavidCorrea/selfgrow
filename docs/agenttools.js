@@ -587,9 +587,11 @@ export function tools() {
       description: "Fast-forwards the active sandbox clone by a given number of seconds. "
         + "Returns projected resources, milestones, and the away find a real absence of that "
         + "same length would name (null when the length turns up nothing). Also returns event — "
-        + "the two-choice happening a real absence of that length would offer, read from the "
-        + "engine's own rule ({id, title, options: [{id, label, effect: {kind, amount}, effectText}]} "
-        + "with exactly two options), or null when the absence is too short. The event is "
+        + "the two-choice happening a real return would offer, read from the engine's own rule "
+        + "({id, title, options: [{id, label, effect: {kind, amount}, effectText}]} with exactly "
+        + "two options): the decision already pending in the real save when one is waiting, "
+        + "otherwise the happening this absence would derive — null when nothing is waiting and "
+        + "the absence is too short. The event is "
         + "reported only: the sandbox never resolves the choice and the real save is untouched. "
         + "If the sandbox is not active, creates one first.",
       inputSchema: {
@@ -638,8 +640,10 @@ export function tools() {
         + "fast-forwarding, when the save holds no recognised find id), and discovery — the "
         + "find a real absence of that length turns up, read from the engine's own rule, so "
         + "the result always matches what the game would show. Also returns event — the "
-        + "two-choice happening a real absence of that length would offer ({id, title, options} "
-        + "with exactly two options, or null when it is too short) — reported only, never "
+        + "two-choice happening a real return would offer ({id, title, options} with exactly two "
+        + "options): the decision already pending in the real save when one is waiting, otherwise "
+        + "the one this absence would derive — null when nothing is waiting and the absence is "
+        + "too short — reported only, never "
         + "resolved. Also returns the projected state afterwards. If the sandbox is not active, "
         + "creates one first.",
       inputSchema: { type: "object", properties: {} },

@@ -818,13 +818,15 @@ function sanitizeReturnRecord(raw) {
 }
 
 /**
- * A deep copy of a pending away event, so a reader — the page or a tool — can
- * hold and inspect it without touching the save.
+ * A deep copy of a pending away event, so a reader — the page, a tool or the
+ * sandbox rehearsal — can hold and inspect it without touching the save. The
+ * sandbox carries a copy of the event through cloneState, and reusing this one
+ * copy of the shape keeps a clone from silently dropping a choice field.
  *
  * @param {AwayEvent|null} event
  * @returns {AwayEvent|null}
  */
-function clonePendingEvent(event) {
+export function clonePendingEvent(event) {
   if (!event) return null;
   return {
     id: event.id,
