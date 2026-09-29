@@ -8,7 +8,7 @@
  * @module agenttools
  */
 
-import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, formatElapsed, sharpenAvailable, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, FIRST_GOAL_WOOD, UPGRADE_COST, WALL_COST, STONE_GATHER_AMOUNT, FORGE_CLICK_POWER_BONUS } from "./engine.js";
+import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, formatElapsed, nextDiscoveryAfter, sharpenAvailable, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, FIRST_GOAL_WOOD, UPGRADE_COST, WALL_COST, STONE_GATHER_AMOUNT, FORGE_CLICK_POWER_BONUS } from "./engine.js";
 
 /**
  * The last return as the welcome-back panel is showing it, read straight from
@@ -51,6 +51,11 @@ function withGoal(s) {
   const stoneRate = s.stoneUnlocked ? computeStoneRateFor(s.totalWoodEarned) : 0;
   const clickPower = 1 + s.wallLevel * 1 + s.forgeLevel * FORGE_CLICK_POWER_BONUS;
   const ret = readReturnSummary();
+  // Snapshots come in two shapes: the raw state (has discoveryId) and
+  // getState()'s view (only discovery.id). Reading whichever is present keeps
+  // one ladder lookup for both, so the tool and the panel cannot disagree.
+  const ownedDiscoveryId = s.discoveryId ?? s.discovery?.id ?? null;
+  const nextDiscovery = nextDiscoveryAfter(ownedDiscoveryId);
 
   return {
     wood: s.wood,
@@ -81,6 +86,9 @@ function withGoal(s) {
     offlineStoneGained: ret.stone,
     offlineElapsed: ret.elapsed,
     offlineDiscovery: ret.discovery,
+    nextAwayDiscovery: nextDiscovery
+      ? { name: nextDiscovery.name, minSec: nextDiscovery.minSec, elapsed: formatElapsed(nextDiscovery.minSec * 1000) }
+      : null,
     milestones: {
       sharpenAvailable: sharpenAvailable(s),
       stoneNowUnlocked: s.stoneUnlocked,
@@ -135,9 +143,11 @@ export function tools() {
         + "named in the welcome-back panel this return (offlineDiscovery: "
         + "{name, bonus, permanent} where bonus is the wood/s boost it granted "
         + "and permanent is true because the find is kept, null when nothing was "
-        + "found or the find granted no bonus), the lasting away discovery owned "
-        + "so far (discovery: "
-        + "{id, name, bonus} or null, whose bonus is already included in rate), milestones object "
+        + "found or the find granted no bonus), the away discovery owned so far (discovery: "
+        + "{id, name, bonus} or null, whose bonus is already included in rate), and the "
+        + "next away discovery still to earn (nextAwayDiscovery: {name, minSec, elapsed} "
+        + "where minSec is the absence in seconds needed to find it and elapsed is that "
+        + "duration as text, or null once the strongest away discovery is owned), milestones object "
         + "(sharpenAvailable, stoneNowUnlocked, wallAvailable, forgeNowUnlocked, expeditionNowUnlocked), "
         + "and the current goal (first goal, upgrade goal, stone goal, build-wall goal, forge goal, or expedition goal).",
       inputSchema: { type: "object", properties: {} },

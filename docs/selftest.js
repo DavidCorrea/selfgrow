@@ -3917,6 +3917,10 @@ export async function checks() {
     const discoveryLine = document.getElementById("offline-discovery-line");
     const discoveryNameEl = document.getElementById("offline-discovery-name");
     const discoveryBonusEl = document.getElementById("offline-discovery-bonus");
+    const nextFindEl = document.getElementById("offline-next-find");
+    if (!nextFindEl) {
+      problems.push("Expected #offline-next-find in the welcome-back panel so the next away find is named.");
+    }
     if (!discoveryStat || !discoveryValue) {
       problems.push("Expected #discovery-stat and #discovery-value in the status readout for the away discovery.");
     }
@@ -3950,6 +3954,29 @@ export async function checks() {
       }
       if (!find1d || !find1dAgain || find1dAgain.id !== find1d.id) {
         problems.push(`The same absence length must always yield the same discovery id, got ${find1d && find1d.id} then ${find1dAgain && find1dAgain.id}.`);
+      }
+    }
+
+    // (b2) The next-discovery lookup walks the engine's own ladder: nothing
+    // owned reaches for the first tier, an owned tier reaches for the rung
+    // above it, and the strongest tier has nothing beyond it.
+    if (typeof engine.nextDiscoveryAfter !== "function") {
+      problems.push("Expected engine.nextDiscoveryAfter to be exported as a pure function.");
+    } else {
+      const firstRung = engine.nextDiscoveryAfter(null);
+      if (!firstRung || firstRung.id !== "flint-shard" || firstRung.minSec !== 60) {
+        problems.push(`nextDiscoveryAfter(null) should name the first tier flint-shard at 60s, got ${JSON.stringify(firstRung)}.`);
+      }
+      const afterClay = engine.nextDiscoveryAfter("clay-deposit");
+      if (!afterClay || afterClay.id !== "wandering-sapling" || afterClay.minSec !== 3600) {
+        problems.push(`nextDiscoveryAfter('clay-deposit') should name 'wandering-sapling' at 3600s, got ${JSON.stringify(afterClay)}.`);
+      }
+      if (afterClay && afterClay.id === "clay-deposit") {
+        problems.push("nextDiscoveryAfter must never return the tier already owned.");
+      }
+      const afterStrongest = engine.nextDiscoveryAfter("sunken-vault");
+      if (afterStrongest !== null) {
+        problems.push(`nextDiscoveryAfter('sunken-vault') should be null (nothing stronger exists), got ${JSON.stringify(afterStrongest)}.`);
       }
     }
 
@@ -4000,6 +4027,22 @@ export async function checks() {
       }
     }
 
+    // The panel must also name the rung above the one just found, with the
+    // absence it takes, so a longer wait reads as a distance to that find.
+    const expectedNext = engine.nextDiscoveryAfter(returned.discovery && returned.discovery.id);
+    if (nextFindEl) {
+      if (nextFindEl.hidden) {
+        problems.push("A visible return should name the next away find in #offline-next-find, but it was hidden.");
+      }
+      if (expectedNext && !nextFindEl.textContent.includes(expectedNext.name)) {
+        problems.push(`#offline-next-find should name the next rung "${expectedNext.name}", got "${nextFindEl.textContent}".`);
+      }
+      const neededText = expectedNext ? engine.formatElapsed(expectedNext.minSec * 1000) : null;
+      if (neededText && !nextFindEl.textContent.includes(neededText)) {
+        problems.push(`#offline-next-find should state the absence needed ("${neededText}"), got "${nextFindEl.textContent}".`);
+      }
+    }
+
     const { tools } = await import("./agenttools.js");
     const readState = tools().find((t) => t.name === "read-state");
     if (!readState) {
@@ -4015,6 +4058,12 @@ export async function checks() {
       }
       if (expected && offlineDiscovery && offlineDiscovery.permanent !== true) {
         problems.push(`read-state.offlineDiscovery.permanent should be true for a credited find, got ${JSON.stringify(offlineDiscovery.permanent)}.`);
+      }
+      // read-state must expose the same next find the panel names, so an agent
+      // learns the same goal a visitor does.
+      const nextAway = whileOpen.nextAwayDiscovery;
+      if (!expectedNext || !nextAway || nextAway.name !== expectedNext.name || nextAway.minSec !== expectedNext.minSec) {
+        problems.push(`read-state.nextAwayDiscovery should match the next rung ${JSON.stringify(expectedNext)}, got ${JSON.stringify(nextAway)}.`);
       }
     }
 
@@ -4034,6 +4083,33 @@ export async function checks() {
         problems.push(`read-state.rate should include the discovery bonus (${expectedRate}), got ${afterDismiss.rate}.`);
       }
     }
+
+    // (c2) An account already holding the strongest find must be told there is
+    // nothing further to wait for, not offered another tier.
+    engine.reset();
+    localStorage.setItem("selfgrow-state", JSON.stringify({
+      wood: 5, rate: 0.6, stone: 0, totalWoodEarned: 5,
+      wallLevel: 0, stoneUnlocked: false,
+      discoveryId: "sunken-vault", discoveryName: "Sunken Vault", discoveryBonus: 0.60,
+      timestamp: new Date(Date.now() - 600000).toISOString(),
+    }));
+    engine.init();
+    window.__showOfflineSummary();
+    if (nextFindEl) {
+      if (nextFindEl.hidden) {
+        problems.push("Even with every discovery owned, #offline-next-find must say so rather than staying hidden.");
+      }
+      if (!/nothing further to find/i.test(nextFindEl.textContent)) {
+        problems.push(`With every away discovery owned, #offline-next-find should say there is nothing further to find, got "${nextFindEl.textContent}".`);
+      }
+    }
+    if (readState) {
+      const maxed = await readState.execute({});
+      if (maxed.nextAwayDiscovery !== null) {
+        problems.push(`read-state.nextAwayDiscovery should be null once sunken-vault is owned, got ${JSON.stringify(maxed.nextAwayDiscovery)}.`);
+      }
+    }
+    window.__dismissOffline();
 
     // (d) A return shorter than 60s, and a first-ever visit, find nothing.
     engine.reset();

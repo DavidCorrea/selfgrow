@@ -821,6 +821,16 @@
       margin-top: 0.5rem;
     }
 
+    /* The rung after the one this return named, so a longer wait reads as a
+       goal with a distance rather than a mystery. */
+    .offline-next-find {
+      color: var(--accent);
+      font-family: var(--pixel-font);
+      font-size: 0.5rem;
+      font-weight: bold;
+      margin-top: 0.5rem;
+    }
+
     .btn-dismiss {
       font-family: var(--pixel-font);
       font-size: 0.5rem;
@@ -911,6 +921,10 @@
       }
 
       .offline-next-goal {
+        font-size: 0.45rem;
+      }
+
+      .offline-next-find {
         font-size: 0.45rem;
       }
     }
@@ -1119,6 +1133,7 @@
       <div id="offline-discovery-line" class="offline-discovery" hidden>
         You found the <span class="offline-discovery-name" id="offline-discovery-name"></span>! <span class="offline-discovery-bonus" id="offline-discovery-bonus" hidden></span>
       </div>
+      <div class="offline-next-find" id="offline-next-find" hidden></div>
       <div id="offline-milestones">
         <div class="offline-milestone" id="milestone-sharpen" hidden>You can now sharpen your axe!</div>
         <div class="offline-milestone" id="milestone-stone" hidden>Stone is now available!</div>
@@ -1232,6 +1247,7 @@
     const offlineDiscoveryLine = document.getElementById("offline-discovery-line");
     const offlineDiscoveryName = document.getElementById("offline-discovery-name");
     const offlineDiscoveryBonus = document.getElementById("offline-discovery-bonus");
+    const offlineNextFind = document.getElementById("offline-next-find");
     const offlineNextGoalText = document.getElementById("offline-next-goal-text");
     const discoveryStat = document.getElementById("discovery-stat");
     const discoveryValueEl = document.getElementById("discovery-value");
@@ -1435,6 +1451,18 @@
         offlineDiscoveryLine.hidden = true;
         offlineDiscoveryBonus.textContent = "";
         offlineDiscoveryBonus.hidden = true;
+      }
+
+      // ─── Next away find ───
+      // The rung after what is owned, with the absence it takes, so a longer
+      // wait is a distance to a named find. Always shown on a real return; the
+      // strongest-discovery case says so rather than naming another tier.
+      if (offlineNextFind) {
+        const next = ret.nextDiscovery;
+        offlineNextFind.textContent = next
+          ? `Next away find: ${next.name} \u2014 away ${formatElapsed(next.minSec * 1000)}.`
+          : "Nothing further to find \u2014 every away discovery is yours.";
+        offlineNextFind.hidden = false;
       }
 
       // ─── Milestone announcements ───
