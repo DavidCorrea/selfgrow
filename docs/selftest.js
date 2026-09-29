@@ -4243,6 +4243,19 @@ export async function checks() {
       if (optionIds.length !== 2 || optionIds[0] === optionIds[1]) {
         problems.push(`sandbox fastForward(3600s) event must offer two distinct options, got ${JSON.stringify(optionIds)}.`);
       }
+      // The rate choice the rehearsal shows carries the engine's own derived
+      // amount for the clone it projects, so the panel's promise is the number
+      // the rule would grant (issue #1050).
+      const rehearsalRateOption = eventResult.event.options.find((option) => option.effect.kind === "rate");
+      if (rehearsalRateOption) {
+        const expectedRehearsalBonus = engine.awayRateBonusFor(eventClone);
+        if (Math.abs(rehearsalRateOption.effect.amount - expectedRehearsalBonus) > 1e-9) {
+          problems.push(`A rehearsal's rate option should grant the engine's own awayRateBonusFor ${expectedRehearsalBonus} for the clone it projects, got ${rehearsalRateOption.effect.amount}.`);
+        }
+        if (!rehearsalRateOption.label.includes(engine.formatRate(rehearsalRateOption.effect.amount))) {
+          problems.push(`A rehearsal's rate option label must name the ${engine.formatRate(rehearsalRateOption.effect.amount)} wood/s it grants, got ${JSON.stringify(rehearsalRateOption.label)}.`);
+        }
+      }
     }
 
     const shortEventClone = sandbox.cloneState(engine.getState());
@@ -6660,7 +6673,8 @@ export async function checks() {
           ["read-rules away.finds.minSec", away.finds?.minSec, engine.DISCOVERY_MIN_SEC],
           ["read-rules away.event.minSec", away.event?.minSec, engine.AWAY_EVENT_MIN_SEC],
           ["read-rules away.event.lumpSec", away.event?.lumpSec, engine.AWAY_EVENT_LUMP_SEC],
-          ["read-rules away.event.rateBonus", away.event?.rateBonus, engine.AWAY_EVENT_RATE_BONUS],
+          ["read-rules away.event.rateBonus", away.event?.rateBonus, engine.awayRateBonusFor(state)],
+          ["read-rules away.event.rateBonusFraction", away.event?.rateBonusFraction, engine.AWAY_EVENT_RATE_BONUS_FRACTION],
           ["read-rules away.finds.listLimit", away.finds?.listLimit, engine.FINDS_LIST_LIMIT],
           ["read-rules away.event.optionCount", away.event?.optionCount, 2],
         ];
@@ -6812,6 +6826,53 @@ export async function checks() {
       problems.push(`The same absence must offer the same event: 600s gave ${JSON.stringify(sampleEvent)} then ${JSON.stringify(sampleAgain)}.`);
     }
 
+    // (b2) The rate choice is sized from the player's own wood/s, so it stays a
+    // real decision as production grows (issue #1050). The lump is
+    // AWAY_EVENT_LUMP_SEC of production; the rate choice is
+    // AWAY_EVENT_RATE_BONUS_FRACTION of the same rate for good, so both read one
+    // rate, the trade-off is the same at 0.1/s and at 50/s, and a revert to a
+    // fixed bonus fails here because 0.02 is worth minutes early and nothing
+    // late.
+    const rateChoiceFor = (stateOfSave) => {
+      const event = engine.awayEventForElapsed(601, stateOfSave);
+      const kindOf = (option) => (option && option.effect ? option.effect.kind : null);
+      return {
+        lump: event ? event.options.find((option) => kindOf(option) === "wood") : null,
+        rate: event ? event.options.find((option) => kindOf(option) === "rate") : null,
+      };
+    };
+    const earlySave = { rate: 0.1, maps: 0, stoneUnlocked: true, totalWoodEarned: 0 };
+    const lateSave = { rate: 50, maps: 0, stoneUnlocked: true, totalWoodEarned: 0 };
+    const earlyChoice = rateChoiceFor(earlySave);
+    const lateChoice = rateChoiceFor(lateSave);
+    if (!earlyChoice.rate || !lateChoice.rate || !lateChoice.lump) {
+      problems.push(`A 601s absence must offer a wood lump and a permanent-rate choice, got ${JSON.stringify(engine.awayEventForElapsed(601, lateSave))}.`);
+    } else {
+      for (const [stage, choice, stateOfSave] of [["early", earlyChoice, earlySave], ["late", lateChoice, lateSave]]) {
+        const expectedBonus = engine.awayRateBonusFor(stateOfSave);
+        if (Math.abs(choice.rate.effect.amount - expectedBonus) > 1e-9) {
+          problems.push(`The ${stage} (rate ${stateOfSave.rate}/s) rate choice should grant the engine's own awayRateBonusFor ${expectedBonus}, got ${choice.rate.effect.amount}.`);
+        }
+        const promisedFigure = engine.formatRate(choice.rate.effect.amount);
+        if (!choice.rate.label.includes(promisedFigure) || !choice.rate.effectText.includes(promisedFigure)) {
+          problems.push(`The ${stage} rate choice must state the ${promisedFigure} wood/s it grants, got label ${JSON.stringify(choice.rate.label)} and effect ${JSON.stringify(choice.rate.effectText)}.`);
+        }
+      }
+      if (!(lateChoice.rate.effect.amount > 0.02)) {
+        problems.push(`At rate 50/s the rate choice must be worth more than the old fixed 0.02 wood/s, got ${lateChoice.rate.effect.amount}.`);
+      }
+      if (earlyChoice.rate.effect.amount >= lateChoice.rate.effect.amount) {
+        problems.push(`The rate choice must grow with the player's own rate: rate 0.1/s offered ${earlyChoice.rate.effect.amount}, rate 50/s offered ${lateChoice.rate.effect.amount}.`);
+      }
+      // Both choices read the one rate, so the lump is worth exactly the
+      // seconds of production the rate choice takes to pay for itself.
+      const lumpOverBonus = lateChoice.lump.effect.amount / lateChoice.rate.effect.amount;
+      const paybackSec = engine.AWAY_EVENT_LUMP_SEC / engine.AWAY_EVENT_RATE_BONUS_FRACTION;
+      if (Math.abs(lumpOverBonus - paybackSec) > 1e-9) {
+        problems.push(`At a late rate the lump must be worth the same ${paybackSec}s of production the rate choice takes to pay for itself, got a ratio of ${lumpOverBonus}.`);
+      }
+    }
+
     // Loads a save that is `ageMs` old the way a returning player's browser
     // would, after clearing any live state.
     const seedAwaySave = (ageMs, overrides = {}) => {
@@ -6904,6 +6965,8 @@ export async function checks() {
     verifyChoice("600s return, first choice", 0);
     seedAwaySave(601000, { stoneUnlocked: true });
     verifyChoice("601s return, second choice", 1);
+    seedAwaySave(601000, { stoneUnlocked: true, rate: 50 });
+    verifyChoice("601s return at a high rate, rate choice", 1);
     seedAwaySave(602000, { stoneUnlocked: true });
     verifyChoice("602s return, first choice", 0);
 
@@ -6950,6 +7013,26 @@ export async function checks() {
       const secondChoice = await performAction.execute({ action: "choose-away-event", option: toolOption.id });
       if (secondChoice.ok !== false) {
         problems.push(`perform-action choose-away-event must refuse a second choice, got ${JSON.stringify(secondChoice)}.`);
+      }
+    }
+
+    // (f2) The agent's read states the same figure the page and the sandbox do:
+    // at a high rate the pending event's rate option carries the engine's own
+    // derived amount for this save, and its label names that figure (#1050).
+    seedAwaySave(601000, { stoneUnlocked: true, rate: 50 });
+    const highRateRead = await readState.execute({});
+    const highRateOptions = highRateRead.pendingEvent ? highRateRead.pendingEvent.options : [];
+    const highRateRateOption = highRateOptions.find((option) => option.effect.kind === "rate");
+    if (!highRateRateOption) {
+      problems.push(`A 601s return at a high rate must offer an agent a rate option, got ${JSON.stringify(highRateRead.pendingEvent)}.`);
+    } else {
+      const expectedAgentBonus = engine.awayRateBonusFor(engine.getState());
+      if (Math.abs(highRateRateOption.effect.amount - expectedAgentBonus) > 1e-9) {
+        problems.push(`read-state's rate option should grant the engine's own awayRateBonusFor ${expectedAgentBonus}, got ${highRateRateOption.effect.amount}.`);
+      }
+      const agentFigure = engine.formatRate(highRateRateOption.effect.amount);
+      if (!highRateRateOption.label.includes(agentFigure) || !highRateRateOption.effectText.includes(agentFigure)) {
+        problems.push(`read-state's rate option must state the ${agentFigure} wood/s it grants, got label ${JSON.stringify(highRateRateOption.label)} and effect ${JSON.stringify(highRateRateOption.effectText)}.`);
       }
     }
 

@@ -47,7 +47,15 @@ const DISCOVERY_MIN_SEC = 60; // shortest absence that can turn something up
 const RETURN_MIN_SEC = 1; // shortest absence that counts as a real return
 const AWAY_EVENT_MIN_SEC = DISCOVERY_MIN_SEC; // shortest absence that offers a decision
 const AWAY_EVENT_LUMP_SEC = 30; // seconds of production a wood or stone option grants
-const AWAY_EVENT_RATE_BONUS = 0.02; // permanent wood/s a rate option adds
+// The permanent wood/s a rate option adds, as a share of the effective wood/s
+// in force when the return is collected. A fixed share keeps the rate choice
+// worth the same as the lump however far the player has grown: the lump is
+// AWAY_EVENT_LUMP_SEC (30s) of production, so the bonus pays for itself in
+// AWAY_EVENT_LUMP_SEC / AWAY_EVENT_RATE_BONUS_FRACTION = 600s of production,
+// whether the rate is 0.1/s or 100/s. A fixed amount would instead be worth
+// minutes of production early and nothing at all later, leaving one real
+// option wearing two labels.
+const AWAY_EVENT_RATE_BONUS_FRACTION = 0.05;
 
 /**
  * The away-discovery ladder's fixed rungs. Each tier is reached at a minimum
@@ -146,7 +154,8 @@ export { FIRST_GOAL_WOOD, UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, STONE_BASE_RA
   EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC,
   EXPEDITION_WOOD_RATE_MULTIPLIER, RETURN_MIN_SEC, computeStoneRateFor, computeStoneRate,
   expeditionMultiplierFor, effectiveWoodRate, clickPowerFor,
-  DISCOVERY_MIN_SEC, AWAY_EVENT_MIN_SEC, AWAY_EVENT_LUMP_SEC, AWAY_EVENT_RATE_BONUS, AWAY_EVENTS };
+  DISCOVERY_MIN_SEC, AWAY_EVENT_MIN_SEC, AWAY_EVENT_LUMP_SEC, AWAY_EVENT_RATE_BONUS_FRACTION,
+  awayRateBonusFor, AWAY_EVENTS };
 
 /**
  * @typedef {Object} GameState
@@ -563,6 +572,21 @@ function resolveAwayOptionKinds(kinds, s) {
 }
 
 /**
+ * The permanent wood/s a rate option adds for the state a return is collected
+ * in: the fixed share of the effective wood/s, quantised by the page's own
+ * amount rule so the figure printed on the button is the figure granted — the
+ * property the wood and stone lumps already have. The floor keeps a degenerate
+ * (zero or tiny) rate from offering a bonus that adds nothing, so the option
+ * stays a real choice even before any growth. Pure.
+ *
+ * @param {object} s  the state the amount is drawn from
+ * @returns {number}
+ */
+function awayRateBonusFor(s) {
+  return Math.max(displayAmount(effectiveWoodRate(s) * AWAY_EVENT_RATE_BONUS_FRACTION), 0.01);
+}
+
+/**
  * One choice of an away event: the exact effect choosing it grants and the
  * words that state it. The label and the effect sentence both read the one
  * effect amount, so a choice's promise can never disagree with what choosing
@@ -591,11 +615,12 @@ function awayOption(kind, s) {
       effectText: `Grants +${formatAmount(amount)} stone.`,
     };
   }
+  const amount = awayRateBonusFor(s);
   return {
     id: "rate",
-    label: `Permanent +${formatRate(AWAY_EVENT_RATE_BONUS)} wood/s`,
-    effect: { kind: "rate", amount: AWAY_EVENT_RATE_BONUS },
-    effectText: `Permanently adds +${formatRate(AWAY_EVENT_RATE_BONUS)} wood/s.`,
+    label: `Permanent +${formatRate(amount)} wood/s`,
+    effect: { kind: "rate", amount },
+    effectText: `Permanently adds +${formatRate(amount)} wood/s.`,
   };
 }
 
