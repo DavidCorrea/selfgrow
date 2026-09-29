@@ -26,7 +26,7 @@
       --pixel-font: 'Press Start 2P', 'Courier New', monospace;
       --body-font: 'Courier New', Courier, monospace;
       --border-width: 4px;
-      --panel-pad: 1.5rem;
+      --panel-pad: 0.85rem;
     }
 
     html {
@@ -40,11 +40,10 @@
     body {
       display: flex;
       flex-direction: column;
-      align-items: center;
-      justify-content: center;
+      align-items: stretch;
       min-height: 100dvh;
-      padding: 1rem;
-      gap: 1.5rem;
+      padding: 0.75rem;
+      gap: 0.75rem;
     }
 
     /* ─── Panel — chunky bordered box ─── */
@@ -53,7 +52,6 @@
       border: var(--border-width) solid var(--panel-border);
       padding: var(--panel-pad);
       width: 100%;
-      max-width: 640px;
       image-rendering: pixelated;
     }
 
@@ -82,57 +80,12 @@
       display: none !important;
     }
 
-    /* ─── Status bar ─── */
+    /* ─── Status bar — a compact header of resource chips ─── */
     #status-bar {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      justify-content: space-between;
-      gap: 0.75rem;
-    }
-
-    #status-bar .stat {
-      display: flex;
-      flex-direction: column;
-      gap: 0.25rem;
-    }
-
-    #status-bar .stat-hidden {
-      display: none;
-    }
-
-    #status-bar .stat-label {
-      font-size: 0.5rem;
-      color: var(--text-dim);
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-    }
-
-    #status-bar .stat-value {
-      font-size: 0.85rem;
-      color: var(--highlight);
-    }
-
-    #status-bar .stat-value.stone-value {
-      color: var(--stone-color);
-    }
-
-    #status-bar .stat-value.forge-value {
-      color: var(--forge-color);
-    }
-
-    #status-bar .stat-value.discovery-value {
-      color: var(--accent);
-    }
-
-    #status-bar .stat-value.stat-total {
-      color: var(--highlight);
-      opacity: 0.7;
-    }
-
-    #status-bar .stat-value.stat-total.stone-total {
-      color: var(--stone-color);
-      opacity: 0.7;
+      gap: 0.5rem 0.75rem;
     }
 
     .game-title {
@@ -140,54 +93,160 @@
       color: var(--accent);
       text-transform: uppercase;
       letter-spacing: 0.15em;
+      margin-right: 0.25rem;
     }
 
-    /* ─── Action area ─── */
-    #action-area {
+    .chip-row {
       display: flex;
-      flex-direction: column;
-      gap: 1.5rem;
-      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      flex: 1 1 auto;
     }
 
-    #action-area h2 {
-      font-size: 0.6rem;
-      color: var(--text-dim);
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-    }
-
-    .action-group {
+    .chip {
       display: flex;
-      flex-direction: column;
-      gap: 0.75rem;
       align-items: center;
-      width: 100%;
+      gap: 0.3rem;
+      background: #0a0a1a;
+      border: 2px solid #3a3a5a;
+      padding: 0.25rem 0.5rem;
+      white-space: nowrap;
     }
 
-    .action-group.wood-actions {
-      /* default visible */
-    }
-
-    .action-group.stone-actions {
+    .chip.stat-hidden,
+    .chip-rate-stat.stat-hidden {
       display: none;
     }
 
-    .action-group.stone-actions.visible {
+    .chip-icon {
+      font-size: 0.7rem;
+    }
+
+    .chip-name {
+      font-size: 0.45rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .chip .stat-value {
+      font-size: 0.7rem;
+      color: var(--highlight);
+    }
+
+    .chip .stat-value.stone-value {
+      color: var(--stone-color);
+    }
+
+    .chip .stat-value.forge-value {
+      color: var(--forge-color);
+    }
+
+    .chip .stat-value.discovery-value {
+      color: var(--accent);
+    }
+
+    .chip-rate-stat {
+      display: inline-flex;
+    }
+
+    .chip-rate {
+      color: var(--text-dim);
+      font-size: 0.55rem;
+    }
+
+    .meta-line {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem 1rem;
+      flex: 0 0 100%;
+      font-family: var(--body-font);
+      font-size: 0.45rem;
+      color: var(--text-dim);
+    }
+
+    .meta-item {
+      display: inline-flex;
+      gap: 0.25rem;
+    }
+
+    .meta-item.stat-hidden {
+      display: none;
+    }
+
+    .meta-item .stat-value {
+      color: var(--text);
+    }
+
+    /* ─── Action area — a grid of system cards across the window ─── */
+    #action-area {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 0.75rem;
+      align-items: start;
+    }
+
+    .system-card {
+      display: none;
+      flex-direction: column;
+      gap: 0.5rem;
+      background: #101020;
+      border: 3px solid #3a3a5a;
+      padding: 0.7rem;
+      min-width: 0;
+    }
+
+    .system-card.visible {
       display: flex;
     }
 
-    .action-group.forge-actions {
-      visibility: hidden;
-      position: absolute;
-      pointer-events: none;
+    .system-head {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
     }
 
-    .action-group.forge-actions.visible {
-      visibility: visible;
-      position: static;
-      pointer-events: auto;
+    .system-icon {
+      font-size: 0.9rem;
+    }
+
+    .system-name {
+      font-size: 0.55rem;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .system-yield {
+      font-family: var(--body-font);
+      font-size: 0.5rem;
+      color: var(--highlight);
+    }
+
+    .system-card .btn {
+      width: 100%;
+      padding: 0.7rem 0.75rem;
+      font-size: 0.5rem;
+    }
+
+    .upgrade-list {
       display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      margin-top: 0.15rem;
+    }
+
+    .upgrade-card {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .upgrade-effect {
+      font-family: var(--body-font);
+      font-size: 0.45rem;
+      color: var(--text-dim);
+      line-height: 1.4;
     }
 
     .btn {
@@ -481,11 +540,13 @@
       }
     }
 
-    /* ─── Goal panel ─── */
+    /* ─── Goal panel — a full-width banner ─── */
     #goal-panel {
       display: flex;
       flex-direction: column;
-      gap: 0.75rem;
+      gap: 0.4rem;
+      border-color: var(--accent);
+      max-width: none;
     }
 
     #goal-panel .goal-label {
@@ -503,7 +564,7 @@
 
     .progress-track {
       width: 100%;
-      height: 1.2rem;
+      height: 1rem;
       background: #0a0a1a;
       border: 3px solid #3a3a5a;
       image-rendering: pixelated;
@@ -529,25 +590,48 @@
       font-size: 0.45rem;
       color: var(--text-dim);
       font-family: var(--body-font);
-      margin-bottom: -0.35rem;
+      margin-bottom: -0.15rem;
     }
 
-    .progress-track + .goal-resource-label {
-      margin-top: -0.25rem;
-    }
-
-    /* ─── Save backup panel ─── */
+    /* ─── Save backup — a compact bottom bar ─── */
     #save-panel {
       display: flex;
       flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    .save-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
       gap: 0.75rem;
     }
 
-    #save-panel h2 {
-      font-size: 0.6rem;
+    .save-details {
+      flex: 1 1 260px;
+    }
+
+    .save-summary {
+      cursor: pointer;
+      font-size: 0.5rem;
       color: var(--text-dim);
       text-transform: uppercase;
       letter-spacing: 0.1em;
+      min-height: 40px;
+      display: flex;
+      align-items: center;
+    }
+
+    .save-summary:focus-visible {
+      outline: 2px solid var(--highlight);
+      outline-offset: 2px;
+    }
+
+    .save-body {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
     }
 
     .save-hint,
@@ -751,38 +835,34 @@
       border: 0;
     }
 
-    /* ─── Responsive: single column on narrow viewports ─── */
+    /* ─── Responsive: cards stack in one column on a phone ─── */
     @media (max-width: 480px) {
       body {
-        padding: 0.75rem;
-        gap: 1rem;
+        padding: 0.6rem;
+        gap: 0.6rem;
       }
 
       :root {
-        --panel-pad: 1rem;
+        --panel-pad: 0.75rem;
       }
 
       #status-bar {
         flex-direction: column;
         align-items: flex-start;
-        gap: 0.5rem;
-      }
-
-      #status-bar .stat {
-        width: 100%;
       }
 
       .game-title {
         font-size: 0.5rem;
       }
 
-      #status-bar .stat-value {
-        font-size: 0.7rem;
+      #action-area {
+        grid-template-columns: 1fr;
       }
 
       .btn {
         width: 100%;
         text-align: center;
+        min-height: 44px;
         padding: 0.7rem 1rem;
       }
 
@@ -801,24 +881,19 @@
       }
     }
 
-    /* ─── Responsive: multi-column on wide viewports ─── */
+    /* ─── Responsive: fill the window on wide viewports ─── */
     @media (min-width: 900px) {
       body {
-        flex-direction: row;
-        flex-wrap: wrap;
-        align-items: flex-start;
-        justify-content: flex-start;
-        padding: 1.5rem;
-        gap: 1.5rem;
+        padding: 1rem;
+        gap: 1rem;
       }
 
       .panel {
         max-width: none;
-        flex: 1 1 280px;
       }
 
-      #status-bar {
-        flex: 0 0 100%;
+      #action-area {
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
       }
     }
 
@@ -835,99 +910,49 @@
 </head>
 <body>
 
-  <!-- ═══ Status Bar Panel ═══ -->
+  <!-- ═══ Header — title, then one chip per unlocked resource ═══ -->
   <section class="panel" id="status-bar" role="region" aria-label="Game status">
     <div class="game-title" aria-hidden="true">selfgrow</div>
-    <div class="stat">
-      <span class="stat-label" id="wood-label">Wood</span>
-      <span class="stat-value" id="wood-value" aria-labelledby="wood-label">0</span>
+    <div class="chip-row">
+      <div class="chip" id="wood-stat">
+        <span class="chip-icon" aria-hidden="true">&#x1F332;</span>
+        <span class="chip-name" id="wood-label">Wood</span>
+        <span class="stat-value" id="wood-value">0</span>
+        <span class="stat-value chip-rate" id="rate-value">+0.10/s</span>
+      </div>
+      <div class="chip stat-hidden" id="stone-stat">
+        <span class="chip-icon" aria-hidden="true">&#x1FAA8;</span>
+        <span class="chip-name" id="stone-label">Stone</span>
+        <span class="stat-value stone-value" id="stone-value">0</span>
+        <span class="chip-rate-stat stat-hidden" id="stone-rate-stat">
+          <span class="stat-value stone-value chip-rate" id="stone-rate-value">+0.05/s</span>
+        </span>
+      </div>
+      <div class="chip stat-hidden" id="forge-stat">
+        <span class="chip-icon" aria-hidden="true">&#x1F528;</span>
+        <span class="chip-name" id="forge-label">Forge</span>
+        <span class="stat-value forge-value" id="forge-value">0</span>
+      </div>
+      <div class="chip stat-hidden" id="expedition-stat">
+        <span class="chip-icon" aria-hidden="true">&#x1F30D;</span>
+        <span class="chip-name" id="map-label">Maps</span>
+        <span class="stat-value" id="map-value" style="color: var(--map-color);">0</span>
+      </div>
+      <div class="chip stat-hidden" id="discovery-stat">
+        <span class="chip-icon" aria-hidden="true">&#x2728;</span>
+        <span class="chip-name" id="discovery-label">Away Find</span>
+        <span class="stat-value discovery-value" id="discovery-value">—</span>
+      </div>
     </div>
-    <div class="stat">
-      <span class="stat-label" id="rate-label">Rate</span>
-      <span class="stat-value" id="rate-value" aria-labelledby="rate-label">0.1/s</span>
-    </div>
-    <div class="stat">
-      <span class="stat-label" id="tick-label">Tick</span>
-      <span class="stat-value" id="tick-value" aria-labelledby="tick-label">—</span>
-    </div>
-    <div class="stat">
-      <span class="stat-label" id="elapsed-label">Elapsed</span>
-      <span class="stat-value" id="elapsed-value" aria-labelledby="elapsed-label">—</span>
-    </div>
-    <div class="stat stat-hidden" id="stone-stat">
-      <span class="stat-label" id="stone-label">Stone</span>
-      <span class="stat-value stone-value" id="stone-value" aria-labelledby="stone-label">0</span>
-    </div>
-    <div class="stat stat-hidden" id="stone-rate-stat">
-      <span class="stat-label" id="stone-rate-label">Stone/s</span>
-      <span class="stat-value stone-value" id="stone-rate-value" aria-labelledby="stone-rate-label">0</span>
-    </div>
-    <div class="stat">
-      <span class="stat-label" id="total-wood-label">Total Wood</span>
-      <span class="stat-value stat-total" id="total-wood-value" aria-labelledby="total-wood-label">0</span>
-    </div>
-    <div class="stat stat-hidden" id="total-stone-stat">
-      <span class="stat-label" id="total-stone-label">Total Stone</span>
-      <span class="stat-value stat-total stone-total" id="total-stone-value" aria-labelledby="total-stone-label">0</span>
-    </div>
-    <div class="stat stat-hidden" id="forge-stat">
-      <span class="stat-label" id="forge-label">Forge</span>
-      <span class="stat-value forge-value" id="forge-value" aria-labelledby="forge-label">0</span>
-    </div>
-    <div class="stat stat-hidden" id="expedition-stat">
-      <span class="stat-label" id="map-label">Maps</span>
-      <span class="stat-value" id="map-value" aria-labelledby="map-label" style="color: var(--map-color);">0</span>
-    </div>
-    <div class="stat stat-hidden" id="discovery-stat">
-      <span class="stat-label" id="discovery-label">Away Find</span>
-      <span class="stat-value discovery-value" id="discovery-value" aria-labelledby="discovery-label">—</span>
+    <div class="meta-line">
+      <span class="meta-item"><span>Tick</span> <span class="stat-value" id="tick-value">—</span></span>
+      <span class="meta-item"><span>Elapsed</span> <span class="stat-value" id="elapsed-value">—</span></span>
+      <span class="meta-item"><span>Total wood</span> <span class="stat-value stat-total" id="total-wood-value">0</span></span>
+      <span class="meta-item stat-hidden" id="total-stone-stat"><span>Total stone</span> <span class="stat-value stat-total stone-total" id="total-stone-value">0</span></span>
     </div>
   </section>
 
-  <!-- ═══ Action Area Panel ═══ -->
-  <section class="panel" id="action-area" role="region" aria-label="Actions">
-    <h2>Actions</h2>
-
-    <div class="action-group wood-actions">
-      <button class="btn" id="btn-gather" type="button" aria-label="Gather Wood">
-        <span class="btn-icon">&#x26A0;</span> Gather Wood
-      </button>
-      <button class="btn" id="btn-sharpen" type="button" aria-label="Sharpen Axe (locked — gather 10 wood to unlock)" disabled>
-        <span class="btn-icon">🔒</span> Sharpen Axe (locked)
-      </button>
-    </div>
-
-    <div class="action-group stone-actions" id="stone-actions">
-      <button class="btn btn-stone" id="btn-gather-stone" type="button" aria-label="Gather Stone">
-        <span class="btn-icon">&#x26AA;</span> Gather Stone
-      </button>
-      <button class="btn btn-wall" id="btn-build-wall" type="button" aria-label="Build Wall" disabled>
-        <span class="btn-icon">&#x1F3F0;</span> Build Wall (5 stone)
-      </button>
-    </div>
-
-    <div class="action-group forge-actions" id="forge-actions">
-      <button class="btn btn-forge" id="btn-forge-tool" type="button" aria-label="Forge Tool" disabled>
-        <span class="btn-icon">&#x1F528;</span> Forge Tool (10 wood + 5 stone)
-      </button>
-    </div>
-
-    <div class="action-group forge-actions" id="expedition-actions">
-      <button class="btn" id="btn-expedition" type="button" aria-label="Send Expedition" disabled style="background: var(--map-color); border-color: #cc4488;">
-        <span class="btn-icon">&#x1F30D;</span> Send Expedition (10 wood + 5 stone)
-      </button>
-    </div>
-
-    <button class="btn btn-sandbox" id="btn-sandbox" type="button" aria-label="Open sandbox mode to rehearse time">
-      <span class="btn-icon">&#x23F1;</span> Sandbox
-    </button>
-
-    <span class="footer-note" aria-live="polite">
-      Click to gather +1 wood. More actions appear as the world expands.
-    </span>
-  </section>
-
-  <!-- ═══ Goal Panel ═══ -->
+  <!-- ═══ Next goal — a full-width banner ═══ -->
   <section class="panel" id="goal-panel" role="region" aria-label="Current goal">
     <div class="goal-label" id="goal-label">Next Goal</div>
     <div id="goal-text">Gather 10 wood</div>
@@ -941,24 +966,99 @@
     </div>
   </section>
 
-  <!-- ═══ Save Backup Panel ═══ -->
+  <!-- ═══ System cards — one per unlocked system, in a grid ═══ -->
+  <section class="panel" id="action-area" role="region" aria-label="Systems">
+    <article class="system-card visible" id="wood-actions">
+      <div class="system-head">
+        <span class="system-icon" aria-hidden="true">&#x1F332;</span>
+        <h3 class="system-name">Wood</h3>
+      </div>
+      <p class="system-yield" id="wood-yield-value">+1 / chop</p>
+      <button class="btn" id="btn-gather" type="button" aria-label="Gather Wood">
+        <span class="btn-icon">&#x26A0;</span> Gather Wood
+      </button>
+      <div class="upgrade-list">
+        <div class="upgrade-card">
+          <button class="btn" id="btn-sharpen" type="button" aria-label="Sharpen Axe (locked — gather 10 wood to unlock)" disabled>
+            <span class="btn-icon">&#x1F512;</span> Sharpen Axe (locked)
+          </button>
+          <p class="upgrade-effect">+0.05 wood/s. The first sharpen unlocks stone.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="system-card" id="stone-actions">
+      <div class="system-head">
+        <span class="system-icon" aria-hidden="true">&#x1FAA8;</span>
+        <h3 class="system-name">Stone</h3>
+      </div>
+      <p class="system-yield" id="stone-yield-value">+1 / mine</p>
+      <button class="btn btn-stone" id="btn-gather-stone" type="button" aria-label="Gather Stone">
+        <span class="btn-icon">&#x26AA;</span> Gather Stone
+      </button>
+      <div class="upgrade-list">
+        <div class="upgrade-card">
+          <button class="btn btn-wall" id="btn-build-wall" type="button" aria-label="Build Wall" disabled>
+            <span class="btn-icon">&#x1F3F0;</span> Build Wall (5 stone)
+          </button>
+          <p class="upgrade-effect">+1 wood per chop. The first wall unlocks the forge.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="system-card" id="forge-actions">
+      <div class="system-head">
+        <span class="system-icon" aria-hidden="true">&#x1F528;</span>
+        <h3 class="system-name">Forge</h3>
+      </div>
+      <p class="system-yield">+0.05 wood/s and +0.5 per chop</p>
+      <button class="btn btn-forge" id="btn-forge-tool" type="button" aria-label="Forge Tool" disabled>
+        <span class="btn-icon">&#x1F528;</span> Forge Tool (10 wood + 5 stone)
+      </button>
+    </article>
+
+    <article class="system-card" id="expedition-actions">
+      <div class="system-head">
+        <span class="system-icon" aria-hidden="true">&#x1F30D;</span>
+        <h3 class="system-name">Expeditions</h3>
+      </div>
+      <p class="system-yield">+5% wood rate per map</p>
+      <button class="btn" id="btn-expedition" type="button" aria-label="Send Expedition" disabled style="background: var(--map-color); border-color: #cc4488;">
+        <span class="btn-icon">&#x1F30D;</span> Send Expedition (10 wood + 5 stone)
+      </button>
+    </article>
+  </section>
+
+  <!-- ═══ Save backup — a compact bottom bar ═══ -->
   <section class="panel" id="save-panel" role="region" aria-label="Save backup">
-    <h2>Save Backup</h2>
-    <p class="save-hint">Copy this code somewhere safe. Paste it on another browser — or after clearing site data — to bring your world back.</p>
-    <button class="btn" id="btn-reveal-save" type="button" aria-label="Reveal Save Code">
-      <span class="btn-icon">&#x1F4BE;</span> Reveal Save Code
-    </button>
-    <textarea id="save-code" readonly aria-label="Your save code" placeholder="Press Reveal Save Code to show your save here"></textarea>
-    <button class="btn" id="btn-copy-save" type="button" aria-label="Copy Save Code">
-      <span class="btn-icon">&#x1F4CB;</span> Copy Save Code
-    </button>
-    <hr class="save-divider">
-    <label class="save-label" for="save-import-input">Restore from a code</label>
-    <textarea id="save-import-input" aria-label="Paste a save code to restore" placeholder="Paste a save code here"></textarea>
-    <button class="btn" id="btn-restore-save" type="button" aria-label="Restore Save">
-      <span class="btn-icon">&#x21BA;</span> Restore Save
-    </button>
-    <p id="save-status" role="alert"></p>
+    <div class="save-bar">
+      <details class="save-details">
+        <summary class="save-summary">Save backup — copy or restore a code</summary>
+        <div class="save-body">
+          <p class="save-hint">Copy this code somewhere safe. Paste it on another browser — or after clearing site data — to bring your world back.</p>
+          <button class="btn" id="btn-reveal-save" type="button" aria-label="Reveal Save Code">
+            <span class="btn-icon">&#x1F4BE;</span> Reveal Save Code
+          </button>
+          <textarea id="save-code" readonly aria-label="Your save code" placeholder="Press Reveal Save Code to show your save here"></textarea>
+          <button class="btn" id="btn-copy-save" type="button" aria-label="Copy Save Code">
+            <span class="btn-icon">&#x1F4CB;</span> Copy Save Code
+          </button>
+          <hr class="save-divider">
+          <label class="save-label" for="save-import-input">Restore from a code</label>
+          <textarea id="save-import-input" aria-label="Paste a save code to restore" placeholder="Paste a save code here"></textarea>
+          <button class="btn" id="btn-restore-save" type="button" aria-label="Restore Save">
+            <span class="btn-icon">&#x21BA;</span> Restore Save
+          </button>
+          <p id="save-status" role="alert"></p>
+        </div>
+      </details>
+      <button class="btn btn-sandbox" id="btn-sandbox" type="button" aria-label="Open sandbox mode to rehearse time">
+        <span class="btn-icon">&#x23F1;</span> Sandbox
+      </button>
+    </div>
+    <p class="footer-note" aria-live="polite">
+      Click to gather wood. More systems appear as the world expands.
+    </p>
   </section>
 
   <!-- Polite live region: names each new goal so the game is playable without
@@ -1034,7 +1134,7 @@
   </div>
   <script type="module">
     import "./webmcp.js";
-    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, consumeOfflineWoodGained, consumeOfflineGained, consumeOfflineMilestones, formatElapsed, sharpenAvailable, sharpenThreshold, displayAmount, exportSave, importSave, FIRST_GOAL_WOOD, UPGRADE_COST, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS } from "./engine.js";
+    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, consumeOfflineWoodGained, consumeOfflineGained, consumeOfflineMilestones, formatElapsed, sharpenAvailable, sharpenThreshold, displayAmount, exportSave, importSave, FIRST_GOAL_WOOD, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS } from "./engine.js";
     import { cloneState, fastForward } from "./sandbox.js";
 
     init();
@@ -1052,6 +1152,8 @@
     const totalStoneEl = document.getElementById("total-stone-value");
     const forgeStat = document.getElementById("forge-stat");
     const forgeValueEl = document.getElementById("forge-value");
+    const woodYieldEl = document.getElementById("wood-yield-value");
+    const stoneYieldEl = document.getElementById("stone-yield-value");
     const btnGather = document.getElementById("btn-gather");
     const btnSharpen = document.getElementById("btn-sharpen");
     const stoneActions = document.getElementById("stone-actions");
@@ -1394,6 +1496,12 @@
     btnRestoreSave.addEventListener("click", restoreSave);
 
     // ─── Render ───
+    // Click power can carry a half-unit bonus from the forge, so it is shown
+    // as a whole number when it is one and to one decimal otherwise.
+    function formatClickPower(value) {
+      return Number.isInteger(value) ? String(value) : value.toFixed(1);
+    }
+
     function renderUI() {
       const s = getState();
       const wood = s.wood;
@@ -1411,6 +1519,15 @@
       // the panel showing a goal whose prerequisite no longer holds.
       const wallBuilt = wallLevel > 0;
 
+      // What one use of each system gives, stated in real text and derived
+      // from the same click power the button label uses.
+      if (woodYieldEl) {
+        woodYieldEl.textContent = "+" + formatClickPower(clickPower) + " / chop";
+      }
+      if (stoneYieldEl) {
+        stoneYieldEl.textContent = "+" + formatClickPower(STONE_GATHER_AMOUNT) + " / mine";
+      }
+
       // Wood count
       if (stateEl) {
         stateEl.textContent = Number.isInteger(wood) || wood >= 10
@@ -1423,7 +1540,7 @@
         const maps = s.maps || 0;
         const expeditionMultiplier = 1 + maps * 0.05;
         const effectiveRate = s.rate * expeditionMultiplier;
-        let rateDisplay = effectiveRate.toFixed(2) + "/s";
+        let rateDisplay = "+" + effectiveRate.toFixed(2) + "/s";
         if (maps > 0) {
           rateDisplay += " (x" + expeditionMultiplier.toFixed(2) + ")";
         }
@@ -1532,7 +1649,7 @@
 
       // Gather wood button label — show click power
       if (clickPower > 1) {
-        btnGather.innerHTML = '<span class="btn-icon">\u26A0</span> Gather Wood (+' + Math.floor(clickPower) + ')';
+        btnGather.innerHTML = '<span class="btn-icon">\u26A0</span> Gather Wood (+' + formatClickPower(clickPower) + ')';
       } else {
         btnGather.innerHTML = '<span class="btn-icon">\u26A0</span> Gather Wood';
       }
