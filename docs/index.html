@@ -1303,7 +1303,7 @@
   </div>
   <script type="module">
     import "./webmcp.js";
-    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, formatElapsed, sharpenAvailable, sharpenThreshold, displayAmount, exportSave, importSave, describeGoal, returnDiscoveryText, pauseForHidden, resumeFromHidden, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
+    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, markReturnSeen, formatElapsed, sharpenAvailable, sharpenThreshold, displayAmount, exportSave, importSave, describeGoal, returnDiscoveryText, pauseForHidden, resumeFromHidden, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
     import { cloneState, fastForward } from "./sandbox.js";
     import { mountSprites, updateSprites, playReaction } from "./sprites.js";
 
@@ -1629,6 +1629,9 @@
     }
 
     function dismissOffline() {
+      // Dismissing is the moment the account is read, so record it before the
+      // page becomes usable: a later reload must not re-run this same absence.
+      markReturnSeen();
       offlineSummary.hidden = true;
 
       // Re-enable only the buttons that should be enabled based on game state
@@ -2388,8 +2391,10 @@
     window.__revealSaveCode = revealSaveCode;
     window.__restoreSave = restoreSave;
 
-    // Show offline summary on load if there's offline resources
-    showOfflineSummary();
+    // Greet the player on load only when the last return's account is not yet
+    // seen — a reload before they dismissed the panel still owes them the real
+    // absence, while a reload after dismissing must not re-run it.
+    if (!getReturnSummary().seen) showOfflineSummary();
 
     renderUI();
     setInterval(renderUI, 500);
