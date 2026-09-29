@@ -4929,5 +4929,250 @@ export async function checks() {
     console.error(err);
   }
 
+  // ─── Crediting a backgrounded tab when it is focused again (issue #1005) ──
+  // Browsers throttle timers in a hidden tab, so a tab left in the background
+  // used to silently undercount: each throttled call credited one simulated
+  // second and stamped the save as current, dropping the real gap between
+  // calls, and the return was never announced at all. Hiding must stop the
+  // tick outright, and the return must credit the whole absence through the
+  // same catch-up a reload runs — so the counters, the rates and the
+  // welcome-back panel match a reload for the same gap, and the panel and the
+  // read-state tool report one account.
+  try {
+    const engine = await import("./engine.js");
+    const { tools } = await import("./agenttools.js");
+    const readState = tools().find((t) => t.name === "read-state");
+    const overlay = document.getElementById("offline-summary");
+    const woodAmountEl = document.getElementById("offline-wood-amount");
+    const stoneLineEl = document.getElementById("offline-stone-line");
+    const stoneAmountEl = document.getElementById("offline-stone-amount");
+    const elapsedEl = document.getElementById("offline-elapsed");
+    const renderNow = () => { if (typeof window.__renderUI === "function") window.__renderUI(); };
+
+    if (typeof window.__onVisibilityReturn !== "function") {
+      problems.push("Expected window.__onVisibilityReturn to be exposed so the self-check can drive a tab returning from hidden.");
+    }
+    if (typeof engine.pauseForHidden !== "function" || typeof engine.resumeFromHidden !== "function") {
+      problems.push("Expected engine.pauseForHidden and engine.resumeFromHidden so a hidden tab stops the tick and has its whole absence credited on return.");
+    }
+    if (!readState) {
+      problems.push("Expected a read-state tool for the backgrounded-tab checks.");
+    }
+
+    // Drive the page's real wiring: it listens for visibilitychange, so the
+    // check fakes the tab's visibility and fires the event a browser would.
+    // document.hidden is a prototype accessor, so an own property shadows it.
+    const setTabHidden = (hidden) => {
+      try {
+        Object.defineProperty(document, "hidden", { configurable: true, get: () => hidden });
+      } catch {
+        // A browser that refuses the override still exposes the handler.
+        if (typeof window.__onVisibilityReturn === "function") window.__onVisibilityReturn(hidden);
+        return;
+      }
+      document.dispatchEvent(new Event("visibilitychange"));
+    };
+
+    // The absence a real player would leave for: long enough to turn up a find,
+    // and credited by rewinding the save's own timestamp rather than making the
+    // suite wait a minute and a half for it.
+    const ABSENCE_MS = 90000;
+
+    const seeded = {
+      wood: 5, rate: 0.1, upgradeLevel: 1,
+      stone: 0.2, totalWoodEarned: 5, totalStoneEarned: 0.2,
+      wallLevel: 0, forgeLevel: 0, expeditionLevel: 0, maps: 0,
+      stoneUnlocked: true, discoveryBonus: 0, discoveryId: null, discoveryName: null,
+      timestamp: new Date().toISOString(),
+      firstTimestamp: new Date(Date.now() - 3600000).toISOString(),
+    };
+    const loadSeededSave = () => {
+      engine.reset();
+      localStorage.setItem("selfgrow-state", JSON.stringify(seeded));
+      engine.init();
+    };
+    // Rewind the stored save the way a longer absence would have left it, so a
+    // 90-second gap costs the suite no wall-clock time.
+    const pretendAwayFor = (ms) => {
+      const saved = JSON.parse(localStorage.getItem("selfgrow-state"));
+      saved.timestamp = new Date(Date.now() - ms).toISOString();
+      engine.importSave(btoa(JSON.stringify(saved)));
+    };
+
+    // Preserve the page's real save so these checks leave no trace.
+    const originalCode = engine.exportSave();
+    if (typeof window.__dismissOffline === "function") window.__dismissOffline();
+
+    // (a) Hiding stops the game. A tick left running would credit a throttled
+    // call's single simulated second and stamp the save as current — exactly
+    // the undercount this fixes — so nothing may move while the tab is hidden.
+    // The wait outlasts one tick interval (1s), which is what makes a tick that
+    // was left running visible.
+    loadSeededSave();
+    setTabHidden(true);
+    const woodWhileHidden = engine.getState().wood;
+    const stampWhileHidden = engine.getState().timestamp;
+    await new Promise((resolve) => setTimeout(resolve, 1050));
+    if (engine.getState().wood !== woodWhileHidden) {
+      problems.push(`A hidden tab must credit nothing until it returns: wood moved from ${woodWhileHidden} to ${engine.getState().wood} while the tab was hidden.`);
+    }
+    // A browser may report the same hidden tab more than once: a repeat must not
+    // re-stamp the save, which would drop the absence already accumulated.
+    setTabHidden(true);
+    if (engine.getState().timestamp !== stampWhileHidden) {
+      problems.push(`A repeated hidden event must not re-stamp the save — the absence already away is at risk: timestamp moved from ${stampWhileHidden} to ${engine.getState().timestamp}.`);
+    }
+
+    // (b) Returning credits the whole real absence, not one throttled tick, and
+    // greets the player with the account of it.
+    pretendAwayFor(ABSENCE_MS);
+    setTabHidden(false);
+    const ret = engine.getReturnSummary();
+    if (!ret.visible) {
+      problems.push("Returning to a tab that was hidden must record a return, but getReturnSummary().visible was false.");
+    }
+    if (!(ret.elapsedSec >= 1)) {
+      problems.push(`A hidden tab's return must account for the whole absence, but getReturnSummary() reported only ${ret.elapsedSec}s of a ${ABSENCE_MS / 1000}s gap.`);
+    }
+    if (overlay.hidden) {
+      problems.push("Returning to a tab that was hidden must show the welcome-back panel.");
+    }
+
+    // The wood and stone are the seeded rates over the whole gap: the discovery
+    // the absence turns up raises the rate from now on, never for the gap that
+    // earned it. Tolerance is the counters' own rounding.
+    const woodExpected = seeded.rate * ret.elapsedSec;
+    if (Math.abs(ret.wood - woodExpected) > 0.05) {
+      problems.push(`A return's wood (${ret.wood}) must be the seeded ${seeded.rate}/s across the whole ${ret.elapsedSec}s away (${woodExpected}), not one throttled tick.`);
+    }
+    // The stone is the rate the save pays, which the wood earned over the gap
+    // has itself raised — the same figure a reload of this absence would pay.
+    // Tolerance is the counters' own flooring.
+    const stoneExpected = engine.computeStoneRateFor(seeded.totalWoodEarned + woodExpected) * ret.elapsedSec;
+    if (!(ret.stone > 0) || Math.abs(ret.stone - stoneExpected) > 0.05) {
+      problems.push(`A return's stone (${ret.stone}) must be the save's own rate across the whole ${ret.elapsedSec}s away (${stoneExpected}); only the counters' flooring may differ.`);
+    }
+
+    // The rate left behind is the one a reload of this absence would leave, read
+    // from the engine's own ladder rather than restated here.
+    const find = engine.discoverForElapsed(ret.elapsedSec);
+    const rateExpected = seeded.rate + (find ? find.bonus : 0);
+    if (Math.abs(engine.getState().rate - rateExpected) > 1e-9) {
+      problems.push(`A return must leave the rate a reload would (${rateExpected}/s for a ${ret.elapsedSec}s absence), got ${engine.getState().rate}/s.`);
+    }
+    if (find && !ret.discovery) {
+      problems.push(`A ${ret.elapsedSec}s absence turns up "${find.name}", but the return reported no find.`);
+    }
+
+    // The panel, the counter and the read-state tool are one account.
+    if (!overlay.hidden) {
+      if (!woodAmountEl || parseFloat(woodAmountEl.textContent) !== ret.wood) {
+        problems.push(`The panel's wood (${woodAmountEl && woodAmountEl.textContent}) must be the return's own account (${ret.wood}).`);
+      }
+      if (elapsedEl && elapsedEl.textContent.trim() !== ret.elapsed) {
+        problems.push(`The panel's absence (${elapsedEl.textContent.trim()}) must be the return's own account (${ret.elapsed}).`);
+      }
+      if (ret.stone > 0 && stoneLineEl && stoneLineEl.hidden) {
+        problems.push(`The panel must show the stone earned on a ${ret.elapsedSec}s return (${ret.stone}), but its stone line is hidden.`);
+      }
+      if (stoneLineEl && !stoneLineEl.hidden && parseFloat(stoneAmountEl.textContent) !== ret.stone) {
+        problems.push(`The panel's stone (${stoneAmountEl.textContent}) must be the return's own account (${ret.stone}).`);
+      }
+      const read = readState && await readState.execute({});
+      if (read) {
+        if (read.offlineWoodGained !== ret.wood) {
+          problems.push(`read-state.offlineWoodGained (${read.offlineWoodGained}) must be the wood the panel accounts for (${ret.wood}).`);
+        }
+        if (read.offlineStoneGained !== ret.stone) {
+          problems.push(`read-state.offlineStoneGained (${read.offlineStoneGained}) must be the stone the panel accounts for (${ret.stone}).`);
+        }
+        if (read.offlineElapsed !== ret.elapsed) {
+          problems.push(`read-state.offlineElapsed (${read.offlineElapsed}) must be the absence the panel accounts for (${ret.elapsed}).`);
+        }
+      }
+    }
+
+    // (c) Nothing is credited twice. A focus without a hidden spell behind it
+    // must add no wood and must leave the account — and the panel — alone.
+    const woodAfterReturn = engine.getState().wood;
+    setTabHidden(false);
+    if (engine.getState().wood !== woodAfterReturn) {
+      problems.push(`A return with no hidden spell behind it must credit nothing: wood moved from ${woodAfterReturn} to ${engine.getState().wood}.`);
+    }
+    renderNow();
+    if (!overlay.hidden && woodAmountEl && parseFloat(woodAmountEl.textContent) !== ret.wood) {
+      problems.push("A stray return must leave the panel showing the same account it already had.");
+    }
+    // (d) A switch away shorter than the return threshold is not a return: the
+    // time is credited, but nothing is announced and no panel appears.
+    if (typeof window.__dismissOffline === "function") window.__dismissOffline();
+    const woodBeforeBlip = engine.getState().wood;
+    setTabHidden(true);
+    setTabHidden(false);
+    if (engine.getReturnSummary().visible) {
+      problems.push("A tab switched away and straight back must not count as a return.");
+    }
+    if (engine.getState().wood < woodBeforeBlip) {
+      problems.push(`A short switch away must never lose wood: ${woodBeforeBlip} became ${engine.getState().wood}.`);
+    }
+    if (typeof window.__showOfflineSummary === "function") window.__showOfflineSummary();
+    if (!overlay.hidden) {
+      problems.push("A tab switched away and straight back must show no welcome-back panel.");
+    }
+    const blipRead = readState && await readState.execute({});
+    if (blipRead && blipRead.offlineWoodGained !== 0) {
+      problems.push(`read-state must report no return while no panel is showing, got offlineWoodGained ${blipRead.offlineWoodGained}.`);
+    }
+
+    // (e) A return while another overlay already owns the screen credits the
+    // absence but announces nothing, so the open panel is never contradicted.
+    if (typeof window.__enterSandbox === "function") {
+      window.__enterSandbox();
+      setTabHidden(true);
+      pretendAwayFor(ABSENCE_MS);
+      const woodBeforeOverlayReturn = engine.getState().wood;
+      setTabHidden(false);
+      if (engine.getReturnSummary().visible) {
+        problems.push("A return while another overlay is open must not record a return to announce.");
+      }
+      if (!overlay.hidden) {
+        problems.push("A return while another overlay is open must not open the welcome-back panel over it.");
+      }
+      const overlayRise = engine.getState().wood - woodBeforeOverlayReturn;
+      if (!(overlayRise > 5)) {
+        problems.push(`A return while an overlay is open must still credit the real absence: wood rose ${overlayRise} over a ${ABSENCE_MS / 1000}s gap.`);
+      }
+      const overlayRead = readState && await readState.execute({});
+      if (overlayRead && overlayRead.offlineWoodGained !== 0) {
+        problems.push(`read-state must report no return while no panel is showing, got offlineWoodGained ${overlayRead.offlineWoodGained}.`);
+      }
+      const woodAfterOverlayReturn = engine.getState().wood;
+      setTabHidden(false);
+      if (engine.getState().wood !== woodAfterOverlayReturn) {
+        problems.push(`A stray return while an overlay is open must credit nothing: wood moved from ${woodAfterOverlayReturn} to ${engine.getState().wood}.`);
+      }
+      window.__exitSandbox();
+    } else {
+      problems.push("Expected window.__enterSandbox to open an overlay for the backgrounded-tab checks.");
+    }
+
+    // Leave the page as it was found: visible, ticking, the real save restored.
+    setTabHidden(false);
+    delete document.hidden;
+    engine.importSave(originalCode);
+    renderNow();
+  } catch (err) {
+    // A failed check must not leave the tab hidden or the tick stopped behind it.
+    try {
+      delete document.hidden;
+      const engine = await import("./engine.js");
+      if (typeof engine.resumeFromHidden === "function") engine.resumeFromHidden();
+    } catch {
+      // nothing left to restore
+    }
+    problems.push(`Backgrounded-tab return test threw: ${err.message}`);
+    console.error(err);
+  }
+
   return problems;
 }

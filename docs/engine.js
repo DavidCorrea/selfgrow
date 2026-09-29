@@ -188,6 +188,13 @@ let lastReturn = null;
 
 let tickTimer = null;
 
+/**
+ * Whether the game is paused because the tab is hidden. While true the tick is
+ * stopped and the save's timestamp is the moment the tab went away, so the
+ * whole absence is still ahead to be credited. See pauseForHidden.
+ */
+let pausedForHidden = false;
+
 // ─── Internal helpers ─────────────────────────────────────────────
 
 let snapshotBeforeCatchUp = null;
@@ -352,9 +359,13 @@ function getEffectiveRate() {
  * stats, so short returns cannot re-farm a bonus already owned.
  *
  * @param {boolean} firstVisit — true when there was no saved state to return to
+ * @param {boolean} [record] — whether to replace the account of the last return.
+ *   False still credits the absence and advances the timestamp, but leaves the
+ *   account alone, so a return that arrives while an overlay is already open
+ *   cannot contradict the panel that overlay is showing.
  */
-function catchUp(firstVisit) {
-  lastReturn = null;
+function catchUp(firstVisit, record = true) {
+  if (record) lastReturn = null;
   const lastSaved = new Date(state.timestamp).getTime();
   const elapsedSec = (Date.now() - lastSaved) / 1000;
   if (elapsedSec > 0) {
@@ -405,14 +416,16 @@ function catchUp(firstVisit) {
     // The account of this return, recorded once. The wood and stone amounts
     // are the rises the resource counters themselves show, so the panel cannot
     // claim a number the counters disagree with.
-    lastReturn = {
-      firstVisit,
-      elapsedSec,
-      wood: displayAmount(displayAmount(state.wood) - displayAmount(beforeWood)),
-      stone: displayAmount(displayAmount(state.stone) - displayAmount(beforeStone)),
-      discovery: discoveryRecord,
-      milestones: computeMilestones(before),
-    };
+    if (record) {
+      lastReturn = {
+        firstVisit,
+        elapsedSec,
+        wood: displayAmount(displayAmount(state.wood) - displayAmount(beforeWood)),
+        stone: displayAmount(displayAmount(state.stone) - displayAmount(beforeStone)),
+        discovery: discoveryRecord,
+        milestones: computeMilestones(before),
+      };
+    }
     state.timestamp = now();
   }
 }
@@ -634,6 +647,45 @@ export function init() {
   catchUp(!loaded);
   persist(); // record the catch-up timestamp
   startTick();
+}
+
+/**
+ * Stop the game while the tab is hidden. Browsers throttle timers in a hidden
+ * tab, so a running tick would credit one simulated second for a call that may
+ * be a minute late — and stamp the save as current, dropping the rest of the
+ * real gap. Stopping the tick outright means nothing advances the timestamp
+ * while the tab is away, so the whole absence is still there for
+ * resumeFromHidden to credit in one piece. Idempotent.
+ */
+export function pauseForHidden() {
+  if (pausedForHidden) return;
+  pausedForHidden = true;
+  stopTick();
+  state.timestamp = now();
+  persist();
+}
+
+/**
+ * Resume the game after a hidden spell, crediting the whole real absence
+ * through the same catch-up a reload runs — so the counters, the rates and the
+ * account a returning player sees are the ones a reload of the same save would
+ * have produced.
+ *
+ * Returns the account of the return for the caller to greet the player with,
+ * or null when the tab was never paused, so a stray focus credits nothing and
+ * announces nothing.
+ *
+ * @param {{ record?: boolean }} [options] — record false credits the absence
+ *   without replacing the account of the last return.
+ * @returns {ReturnType<typeof getReturnSummary>|null}
+ */
+export function resumeFromHidden({ record = true } = {}) {
+  if (!pausedForHidden) return null;
+  pausedForHidden = false;
+  catchUp(false, record);
+  persist();
+  startTick();
+  return getReturnSummary();
 }
 
 /**
@@ -1100,6 +1152,7 @@ export function reset() {
   offlineGained = { wood: 0, stone: 0, elapsedSec: 0, discovery: null };
   snapshotBeforeCatchUp = null;
   lastReturn = null;
+  pausedForHidden = false;
   try {
     localStorage.removeItem(STORAGE_KEY);
   } catch {
@@ -1111,6 +1164,10 @@ export function reset() {
 
 if (typeof window !== "undefined") {
   window.addEventListener("beforeunload", () => {
+    // A tab closed while hidden keeps the timestamp pauseForHidden saved at
+    // hide time: stamping it as "now" here would throw away the whole absence
+    // the player is about to be credited for when they come back.
+    if (pausedForHidden) return;
     state.timestamp = now();
     persist();
   });
