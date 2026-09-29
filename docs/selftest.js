@@ -4628,5 +4628,112 @@ export async function checks() {
     console.error(err);
   }
 
+  // ─── The expedition wood-rate multiplier lives in the engine only ──
+  // The status panel, the sandbox panel and the read-state tool all state the
+  // rate the game pays once earned maps are applied. Each must read the
+  // engine's one per-map rule, so changing EXPEDITION_WOOD_RATE_MULTIPLIER moves
+  // every display together instead of leaving a stale copy behind — the same
+  // page/engine disagreement the stone rate once had.
+  try {
+    const engine = await import("./engine.js");
+    const { tools } = await import("./agenttools.js");
+    const renderNow = () => { if (typeof window.__renderUI === "function") window.__renderUI(); };
+
+    // Preserve the real save so these checks leave no trace.
+    const originalCode = engine.exportSave();
+    if (typeof window.__exitSandbox === "function") window.__exitSandbox();
+
+    const mapSave = {
+      wood: 1000,
+      rate: 1.6,
+      upgradeLevel: 5,
+      stone: 500,
+      totalWoodEarned: 20000,
+      totalStoneEarned: 800,
+      wallLevel: 3,
+      forgeLevel: 5,
+      expeditionLevel: 4,
+      maps: 4,
+      stoneUnlocked: true,
+      discoveryBonus: 0,
+      discoveryId: null,
+      discoveryName: null,
+      timestamp: new Date().toISOString(),
+      firstTimestamp: new Date(Date.now() - 3600000).toISOString(),
+    };
+    const imported = engine.importSave(btoa(JSON.stringify(mapSave)));
+    if (!imported.ok) {
+      problems.push(`The expedition wood-rate check needs a save with maps, but importSave refused it: ${JSON.stringify(imported.reason)}.`);
+    } else {
+      const maps = mapSave.maps;
+      // Expected figures derive from the engine's own constant, never from the
+      // helper under test, so a re-hardcoded display or a stale copy makes the
+      // check go red even when the helper itself is correct.
+      const expectedMultiplier = 1 + maps * engine.EXPEDITION_WOOD_RATE_MULTIPLIER;
+      const expectedRate = mapSave.rate * expectedMultiplier;
+      const displayRounding = 5e-3; // the panels print two decimals
+
+      // The engine's rule must reproduce those figures for this save.
+      if (Math.abs(engine.expeditionMultiplierFor(maps) - expectedMultiplier) > 1e-12) {
+        problems.push(`engine.expeditionMultiplierFor(${maps}) should be ${expectedMultiplier}, got ${engine.expeditionMultiplierFor(maps)}.`);
+      }
+      if (Math.abs(engine.effectiveWoodRate(engine.getState()) - expectedRate) > 1e-12) {
+        problems.push(`engine.effectiveWoodRate() should be ${expectedRate}/s for that save, got ${engine.effectiveWoodRate(engine.getState())}/s.`);
+      }
+
+      // (a) The status panel states the same rate and the same map factor.
+      renderNow();
+      const statusText = document.getElementById("rate-value").textContent;
+      const statusRate = Number.parseFloat((statusText.match(/([+-]?\d+(?:\.\d+)?)\s*\/s/) || [])[1]);
+      const statusBadge = Number.parseFloat((statusText.match(/\(x([\d.]+)\)/) || [])[1]);
+      if (!Number.isFinite(statusRate) || Math.abs(statusRate - expectedRate) > displayRounding) {
+        problems.push(`Status panel shows wood rate "${statusText}" but the engine's rule gives ${expectedRate}/s for ${maps} maps — the panel must not keep its own multiplier.`);
+      }
+      if (!Number.isFinite(statusBadge) || Math.abs(statusBadge - expectedMultiplier) > displayRounding) {
+        problems.push(`Status panel shows map multiplier in "${statusText}" but the engine's per-map rule gives x${expectedMultiplier} — the panel must not hardcode it.`);
+      }
+
+      // (b) The sandbox panel rehearsing the same save states the same figures.
+      if (typeof window.__enterSandbox === "function" && typeof window.__fastForwardSandbox === "function") {
+        window.__enterSandbox();
+        window.__fastForwardSandbox(0); // a zero-second window rehearses the save as cloned
+        const sandboxText = document.getElementById("sb-rate").textContent;
+        const sandboxRate = Number.parseFloat((sandboxText.match(/(\d+(?:\.\d+)?)\s*\/s/) || [])[1]);
+        const sandboxBadge = Number.parseFloat((sandboxText.match(/\(x([\d.]+)\)/) || [])[1]);
+        if (!Number.isFinite(sandboxRate) || Math.abs(sandboxRate - expectedRate) > displayRounding) {
+          problems.push(`Sandbox panel shows wood rate "${sandboxText}" but the engine's rule gives ${expectedRate}/s for ${maps} maps — the panel must not keep its own multiplier.`);
+        }
+        if (!Number.isFinite(sandboxBadge) || Math.abs(sandboxBadge - expectedMultiplier) > displayRounding) {
+          problems.push(`Sandbox panel shows map multiplier in "${sandboxText}" but the engine's per-map rule gives x${expectedMultiplier} — the panel must not hardcode it.`);
+        }
+        window.__exitSandbox();
+      } else {
+        problems.push("Expected window.__enterSandbox/__fastForwardSandbox to drive the sandbox panel for the expedition wood-rate check.");
+      }
+
+      // (c) The read-state tool reports the rate the game pays and the map factor.
+      const readState = tools().find((t) => t.name === "read-state");
+      if (!readState) {
+        problems.push("Expected a tool named 'read-state' for the expedition wood-rate check — it was not found.");
+      } else {
+        const read = await readState.execute({});
+        if (Math.abs(read.effectiveRate - expectedRate) > 1e-12) {
+          problems.push(`read-state.effectiveRate should be the paid rate ${expectedRate}/s, got ${read.effectiveRate}/s.`);
+        }
+        if (Math.abs(read.expeditionMultiplier - expectedMultiplier) > 1e-12) {
+          problems.push(`read-state.expeditionMultiplier should be ${expectedMultiplier}, got ${read.expeditionMultiplier}.`);
+        }
+      }
+    }
+
+    // Leave the save and the page as they were found.
+    engine.importSave(originalCode);
+    engine.init();
+    renderNow();
+  } catch (err) {
+    problems.push(`Expedition wood-rate multiplier test threw: ${err.message}`);
+    console.error(err);
+  }
+
   return problems;
 }

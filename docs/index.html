@@ -1303,7 +1303,7 @@
   </div>
   <script type="module">
     import "./webmcp.js";
-    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, formatElapsed, sharpenAvailable, sharpenThreshold, displayAmount, exportSave, importSave, describeGoal, returnDiscoveryText, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS, computeStoneRateFor, computeStoneRate } from "./engine.js";
+    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, formatElapsed, sharpenAvailable, sharpenThreshold, displayAmount, exportSave, importSave, describeGoal, returnDiscoveryText, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_CLICK_POWER_BONUS, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
     import { cloneState, fastForward } from "./sandbox.js";
     import { mountSprites, playReaction } from "./sprites.js";
 
@@ -1840,8 +1840,8 @@
       // Rate — includes expedition map multiplier if any
       if (rateEl) {
         const maps = s.maps || 0;
-        const expeditionMultiplier = 1 + maps * 0.05;
-        const effectiveRate = s.rate * expeditionMultiplier;
+        const expeditionMultiplier = expeditionMultiplierFor(maps);
+        const effectiveRate = effectiveWoodRate(s);
         let rateDisplay = "+" + effectiveRate.toFixed(2) + "/s";
         if (maps > 0) {
           rateDisplay += " (x" + expeditionMultiplier.toFixed(2) + ")";
@@ -2212,8 +2212,8 @@
       sbWood.textContent = woodDisplay;
       sbTotalWood.textContent = String(Math.floor(c.totalWoodEarned));
 
-      const expeditionMultiplier = 1 + c.maps * 0.05;
-      const effectiveRate = c.rate * expeditionMultiplier;
+      const expeditionMultiplier = expeditionMultiplierFor(c.maps || 0);
+      const effectiveRate = effectiveWoodRate(c);
       let rateDisplay = effectiveRate.toFixed(2) + "/s";
       if (c.maps > 0) rateDisplay += " (x" + expeditionMultiplier.toFixed(2) + ")";
       sbRate.textContent = rateDisplay;
