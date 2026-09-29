@@ -631,6 +631,21 @@
       background: #5599bb;
     }
 
+    /* The rehearsal that jumps straight to the next find: it names a find and an
+       absence rather than a duration, so it takes a full row of its own to stay
+       readable beside the fixed presets, and wears the sandbox's green to read
+       as "go to the next thing" rather than "add another interval". */
+    .sandbox-controls .btn-next-find {
+      flex: 1 0 100%;
+      background: #66aa88;
+      border-color: #448866;
+    }
+
+    .sandbox-controls .btn-next-find:hover,
+    .sandbox-controls .btn-next-find:focus-visible {
+      background: #88ccaa;
+    }
+
     .sandbox-divider {
       border: none;
       border-top: 1px solid #334;
@@ -1406,6 +1421,7 @@
         <button class="btn btn-sandbox-fastforward" id="sb-btn-1h" type="button" aria-label="Fast-forward 1 hour">1h</button>
         <button class="btn btn-sandbox-fastforward" id="sb-btn-1d" type="button" aria-label="Fast-forward 1 day">1d</button>
         <button class="btn btn-sandbox-fastforward" id="sb-btn-1mo" type="button" aria-label="Fast-forward 1 month">1mo</button>
+        <button class="btn btn-sandbox-fastforward btn-next-find" id="sb-btn-next-find" type="button" hidden></button>
       </div>
 
       <div class="sandbox-actions">
@@ -2364,6 +2380,7 @@
     const sbBtn1h = document.getElementById("sb-btn-1h");
     const sbBtn1d = document.getElementById("sb-btn-1d");
     const sbBtn1mo = document.getElementById("sb-btn-1mo");
+    const sbBtnNextFind = document.getElementById("sb-btn-next-find");
     const sbBtnExit = document.getElementById("sb-btn-exit");
 
     function enterSandbox() {
@@ -2489,10 +2506,40 @@
       // clone's discovery id alone, so the line still names the next rung
       // rather than reading as a dead end; only an unrecognised id (a corrupt
       // save) yields no rung, and then the line vanishes.
+      //
+      // The rung is resolved once and shared with the rehearsal control below,
+      // so the button and the line can never name different finds.
+      const nextRung = nextDiscoveryAfter(c.discoveryId ?? c.discovery?.id ?? null);
       if (sbNextFind) {
-        const nextText = nextAwayFindText(nextDiscoveryAfter(c.discoveryId ?? c.discovery?.id ?? null));
+        const nextText = nextAwayFindText(nextRung);
         sbNextFind.textContent = nextText || "";
         sbNextFind.hidden = !nextText;
+      }
+
+      // Rehearse the one absence the player is actually waiting on, so reaching
+      // the next find is one click instead of a guess at which preset is long
+      // enough. The label states the find and the absence it needs, in the same
+      // words the status bar and welcome-back panel use, and the seconds ride on
+      // the element itself so a click runs the ordinary fast-forward path rather
+      // than a second copy of the interval. A corrupt save (no known rung) hides
+      // the control instead of offering a jump to nowhere.
+      if (sbBtnNextFind) {
+        const absence = nextRung ? formatElapsed(nextRung.minSec * 1000) : "";
+        sbBtnNextFind.textContent = nextRung
+          ? "Next find: " + nextRung.name + " \u2014 away " + absence
+          : "";
+        sbBtnNextFind.hidden = !nextRung;
+        // An empty seconds value is what a hidden control carries, so the click
+        // handler's positivity guard refuses a stale jump after a corrupt save.
+        sbBtnNextFind.dataset.seconds = nextRung ? String(nextRung.minSec) : "";
+        if (nextRung) {
+          sbBtnNextFind.setAttribute(
+            "aria-label",
+            "Fast-forward to the next away find: " + nextRung.name + " \u2014 away " + absence
+          );
+        } else {
+          sbBtnNextFind.removeAttribute("aria-label");
+        }
       }
 
       // Last rehearsal: what was simulated, what was earned, and what it found
@@ -2553,6 +2600,16 @@
     sbBtn1mo.addEventListener("click", () => fastForwardSandbox(2592000));
     sbBtn1mo.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fastForwardSandbox(2592000); }
+    });
+
+    /** Jump the rehearsal straight to the absence the next find needs. */
+    function fastForwardToNextFind() {
+      const seconds = Number(sbBtnNextFind.dataset.seconds);
+      if (seconds > 0) fastForwardSandbox(seconds);
+    }
+    sbBtnNextFind.addEventListener("click", fastForwardToNextFind);
+    sbBtnNextFind.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fastForwardToNextFind(); }
     });
 
     sbBtnExit.addEventListener("click", exitSandbox);

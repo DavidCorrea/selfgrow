@@ -3499,7 +3499,7 @@ export async function checks() {
     if (!exitBtn) {
       problems.push("Expected #sb-btn-exit to exist inside #sandbox-overlay — it was not found.");
     }
-    const ffBtns = ["sb-btn-10x", "sb-btn-1h", "sb-btn-1d", "sb-btn-1mo"];
+    const ffBtns = ["sb-btn-10x", "sb-btn-1h", "sb-btn-1d", "sb-btn-1mo", "sb-btn-next-find"];
     for (const id of ffBtns) {
       const el = document.getElementById(id);
       if (!el) {
@@ -3927,6 +3927,66 @@ export async function checks() {
       }
     }
 
+    // --- Sandbox Test 5b: sandbox-fast-forward-next-find rehearses exactly the
+    // absence the next away find needs, naming that rung for the caller (#1031).
+    // The sandbox panel reads the same ladder, so this tool is how an agent
+    // makes the same jump a visitor can. ---
+    const nextFindFFTool = allTools.find(t => t.name === "sandbox-fast-forward-next-find");
+    if (!nextFindFFTool) {
+      problems.push("agenttools should export a 'sandbox-fast-forward-next-find' tool — it was not found.");
+    } else if (typeof nextFindFFTool.execute === "function") {
+      engine.reset();
+      engine.init();
+      if (typeof window.__exitSandbox === "function") window.__exitSandbox();
+      // A fresh save owns nothing, so the next rung is the ladder's first — a
+      // deterministic target for the check.
+      const nextFindRung = engine.nextDiscoveryAfter(null);
+      const nextFindResult = await nextFindFFTool.execute({});
+
+      if (nextFindResult.sandboxSeconds !== nextFindRung.minSec) {
+        problems.push(`sandbox-fast-forward-next-find should fast-forward exactly the next find's absence (${nextFindRung.minSec}s), got ${JSON.stringify(nextFindResult.sandboxSeconds)}.`);
+      }
+      const targetedRung = nextFindResult.targetedDiscovery;
+      if (!targetedRung || targetedRung.id !== nextFindRung.id || targetedRung.name !== nextFindRung.name || targetedRung.minSec !== nextFindRung.minSec) {
+        problems.push(`sandbox-fast-forward-next-find should report the rung it targeted (${JSON.stringify({ id: nextFindRung.id, name: nextFindRung.name, minSec: nextFindRung.minSec })}), got ${JSON.stringify(targetedRung)}.`);
+      }
+      const projectedRule = engine.discoverForElapsed(nextFindRung.minSec);
+      if (!nextFindResult.discovery || nextFindResult.discovery.id !== nextFindRung.id || nextFindResult.discovery.bonus !== projectedRule.bonus) {
+        problems.push(`sandbox-fast-forward-next-find should report the find a real ${nextFindRung.minSec}s absence turns up (${JSON.stringify(projectedRule)}), got ${JSON.stringify(nextFindResult.discovery)}.`);
+      }
+      const cloneAfterNextFind = typeof window.__getSandboxClone === "function" ? window.__getSandboxClone() : null;
+      if (!cloneAfterNextFind || cloneAfterNextFind.discoveryId !== nextFindRung.id) {
+        problems.push(`sandbox-fast-forward-next-find should leave the clone owning "${nextFindRung.id}", got "${cloneAfterNextFind ? cloneAfterNextFind.discoveryId : "(no clone)"}".`);
+      }
+      if (nextFindResult.sandboxActive !== true) {
+        problems.push("sandbox-fast-forward-next-find should report sandboxActive=true.");
+      }
+      if (typeof window.__exitSandbox === "function") window.__exitSandbox();
+
+      // A corrupt save names no rung: the tool degrades to a null target rather
+      // than throwing or rehearsing an invented interval.
+      engine.reset();
+      engine.init();
+      if (typeof window.__exitSandbox === "function") window.__exitSandbox();
+      if (typeof window.__enterSandbox === "function") window.__enterSandbox();
+      const corruptClone = typeof window.__getSandboxClone === "function" ? window.__getSandboxClone() : null;
+      if (corruptClone) {
+        corruptClone.discoveryId = "not-a-real-rung";
+        const corruptResult = await nextFindFFTool.execute({});
+        if (corruptResult.targetedDiscovery !== null) {
+          problems.push(`sandbox-fast-forward-next-find should report targetedDiscovery=null for an unrecognised find id, got ${JSON.stringify(corruptResult.targetedDiscovery)}.`);
+        }
+        if (typeof corruptResult.sandboxSeconds !== "number" || corruptResult.sandboxSeconds !== 0) {
+          problems.push(`sandbox-fast-forward-next-find should simulate nothing for an unrecognised find id, got ${JSON.stringify(corruptResult.sandboxSeconds)}.`);
+        }
+      } else {
+        problems.push("Expected an active sandbox clone to check the unrecognised-find-id path of sandbox-fast-forward-next-find.");
+      }
+      if (typeof window.__exitSandbox === "function") window.__exitSandbox();
+      engine.reset();
+      engine.init();
+    }
+
     // --- Sandbox Test 6: real state is unchanged after sandbox ---
     engine.reset();
     const stateBeforeSandbox = engine.getState();
@@ -4081,6 +4141,68 @@ export async function checks() {
           : null;
         if (!expectedNothingText || sbNextFindEl.hidden || sbNextFindEl.textContent.trim() !== expectedNothingText) {
           problems.push(`After a fast-forward that finds nothing, #sb-next-find should still name the next rung "${expectedNothingText}", got "${sbNextFindEl.hidden ? "(hidden)" : sbNextFindEl.textContent.trim()}".`);
+        }
+      }
+      window.__exitSandbox();
+    }
+
+    // --- Sandbox Test 9c: the panel's rehearsal control jumps straight to the
+    // next away find's absence (issue #1031). It names the rung and the absence
+    // in its own words, and pressing it simulates exactly that interval through
+    // the ordinary fast-forward — so the clone ends up owning precisely the
+    // find it promised, never one a different interval would give. ---
+    if (typeof window.__enterSandbox === "function" && typeof window.__exitSandbox === "function") {
+      window.__exitSandbox();
+      window.__enterSandbox();
+
+      const nextFindBtn = document.getElementById("sb-btn-next-find");
+      if (!nextFindBtn) {
+        problems.push("Expected #sb-btn-next-find in the sandbox controls so a rehearsal can jump straight to the next away find.");
+      } else {
+        const preJumpClone = typeof window.__getSandboxClone === "function" ? window.__getSandboxClone() : null;
+        const ownedId = preJumpClone ? (preJumpClone.discoveryId ?? preJumpClone.discovery?.id ?? null) : null;
+        const jumpRung = engine.nextDiscoveryAfter(ownedId);
+        if (!jumpRung) {
+          problems.push("Expected a next away find rung from the current save so #sb-btn-next-find has somewhere to jump.");
+        } else {
+          const absenceText = engine.formatElapsed(jumpRung.minSec * 1000).trim();
+          if (nextFindBtn.hidden) {
+            problems.push(`#sb-btn-next-find should be visible while the next away find "${jumpRung.name}" exists, but it was hidden.`);
+          }
+          if (nextFindBtn.offsetWidth === 0 || nextFindBtn.offsetHeight === 0) {
+            problems.push("#sb-btn-next-find should have non-zero dimensions while the sandbox is open.");
+          }
+          const nextFindBtnText = nextFindBtn.textContent.trim();
+          if (!nextFindBtnText.includes(jumpRung.name) || !nextFindBtnText.includes(absenceText)) {
+            problems.push(`#sb-btn-next-find should name the next find "${jumpRung.name}" and its absence "${absenceText}", got "${nextFindBtnText}".`);
+          }
+          const nextFindBtnLabel = nextFindBtn.getAttribute("aria-label") || "";
+          if (!nextFindBtnLabel.includes(jumpRung.name) || !nextFindBtnLabel.includes(absenceText)) {
+            problems.push(`#sb-btn-next-find aria-label should name the next find "${jumpRung.name}" and its absence "${absenceText}", got "${nextFindBtnLabel}".`);
+          }
+          if (nextFindBtn.dataset.seconds !== String(jumpRung.minSec)) {
+            problems.push(`#sb-btn-next-find should carry the absence it rehearses (${jumpRung.minSec} seconds), got "${nextFindBtn.dataset.seconds}".`);
+          }
+
+          const woodBeforeJump = preJumpClone ? preJumpClone.wood : 0;
+          const rateBeforeJump = preJumpClone ? engine.effectiveWoodRate(preJumpClone) : 0;
+          nextFindBtn.click();
+          const afterJumpClone = typeof window.__getSandboxClone === "function" ? window.__getSandboxClone() : null;
+          if (!afterJumpClone) {
+            problems.push("Clicking #sb-btn-next-find should leave the sandbox clone in place.");
+          } else {
+            if (afterJumpClone.discoveryId !== jumpRung.id) {
+              problems.push(`Clicking #sb-btn-next-find should fast-forward exactly ${jumpRung.minSec}s so the clone owns "${jumpRung.id}", got "${afterJumpClone.discoveryId}" — a wrong interval lands on a different rung or none.`);
+            }
+            const expectedJumpWood = woodBeforeJump + rateBeforeJump * jumpRung.minSec;
+            if (Math.abs(afterJumpClone.wood - expectedJumpWood) > 1e-6) {
+              problems.push(`Clicking #sb-btn-next-find should simulate exactly ${jumpRung.minSec}s of wood (expected ${expectedJumpWood}, got ${afterJumpClone.wood}) — the control must run the ordinary fast-forward, not its own interval.`);
+            }
+          }
+          const sbDiscoveryAfterJump = document.getElementById("sb-discovery");
+          if (!sbDiscoveryAfterJump || !sbDiscoveryAfterJump.textContent.includes(jumpRung.name)) {
+            problems.push(`After clicking #sb-btn-next-find, #sb-discovery should name the find a real ${absenceText} absence turns up ("${jumpRung.name}"), got "${sbDiscoveryAfterJump ? sbDiscoveryAfterJump.textContent.trim() : "(missing)"}".`);
+          }
         }
       }
       window.__exitSandbox();
