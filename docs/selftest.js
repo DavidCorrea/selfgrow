@@ -1704,6 +1704,127 @@ export async function checks() {
     }
   }
 
+  // ─── One-screen promise: no scrolling on a desktop (>= 1280x720) ────
+  // The whole game must fit the window now and as it grows. Measured on the
+  // document element, and again per panel so clipping (which a bare
+  // overflow:hidden would hide) is caught rather than only the scrollbar.
+  if (window.innerWidth >= 1280 && window.innerHeight >= 720) {
+    const doc = document.documentElement;
+    if (doc.scrollHeight > window.innerHeight) {
+      problems.push(
+        `On a ${window.innerWidth}x${window.innerHeight} window the page scrolls vertically: `
+        + `content is ${doc.scrollHeight}px tall but the window is ${window.innerHeight}px.`
+      );
+    }
+    if (doc.scrollWidth > window.innerWidth) {
+      problems.push(
+        `On a ${window.innerWidth}x${window.innerHeight} window the page scrolls horizontally: `
+        + `content is ${doc.scrollWidth}px wide but the window is ${window.innerWidth}px.`
+      );
+    }
+    for (const p of document.querySelectorAll("body > section.panel")) {
+      const rect = p.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) continue;
+      if (rect.bottom > window.innerHeight + 1) {
+        problems.push(
+          `#${p.id} extends past the bottom of a ${window.innerHeight}px window `
+          + `(bottom ${Math.round(rect.bottom)}px) — the game must fit without scrolling.`
+        );
+      }
+      if (rect.right > window.innerWidth + 1) {
+        problems.push(
+          `#${p.id} extends past the right edge of a ${window.innerWidth}px window `
+          + `(right ${Math.round(rect.right)}px).`
+        );
+      }
+    }
+  }
+
+  // ─── Header chips and system cards state what a player sees ────
+  // Each unlocked resource chip must show its amount and per-second rate as
+  // real text, and each visible system card must carry its own action button.
+  const isLaidOut = (el) => {
+    const style = getComputedStyle(el);
+    const rect = el.getBoundingClientRect();
+    return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+  };
+
+  const headerEl = document.getElementById("status-bar");
+  if (!headerEl) {
+    problems.push("Expected #status-bar to exist as the resource header — it was not found.");
+  } else {
+    const chipChecks = [
+      { chip: "wood-stat", amount: "wood-value", rate: "rate-value", label: "Wood" },
+      { chip: "stone-stat", amount: "stone-value", rate: "stone-rate-value", label: "Stone" },
+    ];
+    for (const { chip, amount, rate, label } of chipChecks) {
+      const chipEl = document.getElementById(chip);
+      if (!chipEl) {
+        problems.push(`Expected #${chip} resource chip in #status-bar — it was not found.`);
+        continue;
+      }
+      if (!isLaidOut(chipEl)) continue; // locked resource: not on screen yet
+      const amountEl = document.getElementById(amount);
+      const rateEl = document.getElementById(rate);
+      if (!amountEl || !chipEl.contains(amountEl) || !/\d/.test(amountEl.textContent)) {
+        problems.push(`The ${label} chip should show its amount as real text in #${amount}.`);
+      }
+      if (!rateEl || !chipEl.contains(rateEl) || !rateEl.textContent.includes("/s")) {
+        problems.push(`The ${label} chip should show its per-second rate in #${rate}.`);
+      }
+    }
+  }
+
+  const actionAreaEl = document.getElementById("action-area");
+  if (!actionAreaEl) {
+    problems.push("Expected #action-area to exist as the system-card grid — it was not found.");
+  } else {
+    const cards = document.querySelectorAll("#action-area .system-card");
+    if (cards.length === 0) {
+      problems.push("Expected one .system-card per system inside #action-area — none found.");
+    }
+    let visibleCards = 0;
+    for (const card of cards) {
+      if (!isLaidOut(card)) continue;
+      visibleCards++;
+      if (!card.querySelector("button.btn")) {
+        problems.push(`Visible system card #${card.id || "(no id)"} has no action button — a player cannot use it.`);
+      }
+      const nameEl = card.querySelector(".system-name");
+      if (!nameEl || !nameEl.textContent.trim()) {
+        problems.push(`Visible system card #${card.id || "(no id)"} has no system name — a player cannot tell what it is.`);
+      }
+    }
+    if (visibleCards === 0) {
+      problems.push("Expected at least one visible .system-card (the unlocked systems) — none were laid out.");
+    }
+  }
+
+  // ─── The Wood card's yield equals the engine's click power ────
+  // A player is told what one chop gives; that number must be the number the
+  // next chop actually delivers, bonuses included.
+  const woodYieldEl = document.getElementById("wood-yield-value");
+  if (woodYieldEl) {
+    const engine = await import("./engine.js");
+    const renderNow = () => { if (typeof window.__renderUI === "function") window.__renderUI(); };
+    engine.reset();
+    for (let i = 0; i < 15; i++) engine.gatherWood();
+    engine.craftUpgrade(); // unlocks stone
+    for (let i = 0; i < engine.WALL_COST; i++) engine.gatherStone();
+    engine.buildWall(); // wallLevel = 1, so click power rises
+    renderNow();
+    const lived = engine.getState();
+    const clickPower = 1 + lived.wallLevel + lived.forgeLevel * 0.5;
+    const expected = "+" + (Number.isInteger(clickPower) ? clickPower : clickPower.toFixed(1)) + " / chop";
+    const shown = woodYieldEl.textContent.trim();
+    if (shown !== expected) {
+      problems.push(`Wood card yields "${shown}" but the engine's click power is ${clickPower} (expected "${expected}").`);
+    }
+    engine.reset();
+    engine.init();
+    renderNow();
+  }
+
   // ─── Offline panel CSS property checks ──────────────────────
 
   const offlinePanel = document.querySelector(".offline-panel");
@@ -1814,15 +1935,12 @@ export async function checks() {
     problems.push(`Expected #btn-forge-tool type="button", got "${btnForgeTool.getAttribute("type")}".`);
   }
 
-  // Forge button must have non-zero dimensions even when hidden
-  if (forgeActions && !forgeActions.classList.contains("visible")) {
-    if (btnForgeTool) {
-      if (btnForgeTool.offsetWidth === 0) {
-        problems.push("btn-forge-tool offsetWidth is 0 when forge-actions is hidden — expected non-zero (collapsed container).");
-      }
-      if (btnForgeTool.offsetHeight === 0) {
-        problems.push("btn-forge-tool offsetHeight is 0 when forge-actions is hidden — expected non-zero (collapsed container).");
-      }
+  // The forge button is only on screen once the forge is unlocked and its
+  // card is visible; measure it then, because a display:none card collapses
+  // to nothing (which is the intended "not available yet" state).
+  if (forgeActions && forgeActions.classList.contains("visible") && btnForgeTool) {
+    if (btnForgeTool.offsetWidth === 0 || btnForgeTool.offsetHeight === 0) {
+      problems.push("btn-forge-tool should have non-zero dimensions while the forge card is visible.");
     }
   }
 
@@ -2545,15 +2663,12 @@ export async function checks() {
     problems.push(`Expected #btn-expedition type="button", got "${btnExpedition.getAttribute("type")}".`);
   }
 
-  // Expedition button must have non-zero dimensions even when hidden
-  if (expeditionActions && !expeditionActions.classList.contains("visible")) {
-    if (btnExpedition) {
-      if (btnExpedition.offsetWidth === 0) {
-        problems.push("btn-expedition offsetWidth is 0 when expedition-actions is hidden — expected non-zero (collapsed container).");
-      }
-      if (btnExpedition.offsetHeight === 0) {
-        problems.push("btn-expedition offsetHeight is 0 when expedition-actions is hidden — expected non-zero (collapsed container).");
-      }
+  // The expedition button is only on screen once expeditions unlock and its
+  // card is visible; measure it then, because a display:none card collapses
+  // to nothing (which is the intended "not available yet" state).
+  if (expeditionActions && expeditionActions.classList.contains("visible") && btnExpedition) {
+    if (btnExpedition.offsetWidth === 0 || btnExpedition.offsetHeight === 0) {
+      problems.push("btn-expedition should have non-zero dimensions while the expedition card is visible.");
     }
   }
 
