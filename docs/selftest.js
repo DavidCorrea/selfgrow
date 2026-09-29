@@ -4281,7 +4281,7 @@ export async function checks() {
         const ffFind = await sandboxFFTool.execute({ seconds: 3600 });
         const nextAway = ffFind.nextAwayDiscovery;
         const expectedFindText = nextAway
-          ? engine.nextAwayFindText({ name: nextAway.name, minSec: nextAway.minSec })
+          ? engine.nextAwayFindText({ name: nextAway.name, minSec: nextAway.minSec, bonus: nextAway.bonus })
           : null;
         if (!expectedFindText) {
           problems.push("sandbox-fast-forward(3600s) should report a nextAwayDiscovery so the sandbox panel has a rung to name.");
@@ -4308,7 +4308,7 @@ export async function checks() {
         }
         const nothingNext = ffNothing.nextAwayDiscovery;
         const expectedNothingText = nothingNext
-          ? engine.nextAwayFindText({ name: nothingNext.name, minSec: nothingNext.minSec })
+          ? engine.nextAwayFindText({ name: nothingNext.name, minSec: nothingNext.minSec, bonus: nothingNext.bonus })
           : null;
         if (!expectedNothingText || sbNextFindEl.hidden || sbNextFindEl.textContent.trim() !== expectedNothingText) {
           problems.push(`After a fast-forward that finds nothing, #sb-next-find should still name the next rung "${expectedNothingText}", got "${sbNextFindEl.hidden ? "(hidden)" : sbNextFindEl.textContent.trim()}".`);
@@ -5475,6 +5475,7 @@ export async function checks() {
     const { tools } = await import("./agenttools.js");
     const readState = tools().find((t) => t.name === "read-state");
 
+    const readRules = tools().find((t) => t.name === "read-rules");
     const lineEl = document.getElementById("next-away-find-line");
     const offlineNextFind = document.getElementById("offline-next-find");
     const overlay = document.getElementById("offline-summary");
@@ -5488,6 +5489,22 @@ export async function checks() {
       problems.push("Expected engine.nextAwayFindText to be exported so the status line and the welcome-back panel word the next find from one source.");
     } else if (engine.nextAwayFindText(null) !== null) {
       problems.push(`engine.nextAwayFindText(null) should be null (no rung, no sentence), got ${JSON.stringify(engine.nextAwayFindText(null))}.`);
+    }
+
+    // The sentence names the wood/s the rung grants — a player deciding whether
+    // a long absence is worth it reads the reward, not just the distance. The
+    // figure is the rung's own bonus, written by the page's one rate formatter,
+    // so the line can never promise a number the game would not credit.
+    const sampleRung = engine.nextDiscoveryAfter(null);
+    if (sampleRung) {
+      const sampleText = engine.nextAwayFindText(sampleRung);
+      const sampleReward = "+" + engine.formatRate(sampleRung.bonus) + " wood/s";
+      if (!sampleText.includes(sampleReward)) {
+        problems.push(`nextAwayFindText should state the ${sampleReward} the rung grants, got ${JSON.stringify(sampleText)}.`);
+      }
+      if (sampleText.includes("undefined")) {
+        problems.push(`nextAwayFindText must never word a missing bonus, got ${JSON.stringify(sampleText)}.`);
+      }
     }
 
     // (a) A fresh save names the first rung — the player always has a next
@@ -5508,6 +5525,9 @@ export async function checks() {
       if (firstNeeded && !shown.includes(firstNeeded)) {
         problems.push(`On a fresh save the status panel should state the absence needed ("${firstNeeded}"), got "${shown}".`);
       }
+      if (firstRung && !shown.includes("+" + engine.formatRate(firstRung.bonus) + " wood/s")) {
+        problems.push(`On a fresh save the status panel should state the reward "+" + engine.formatRate(firstRung.bonus) + " wood/s", got "${shown}".`);
+      }
       if (/nothing/i.test(shown)) {
         problems.push(`The status line must never read as a dead end, got "${shown}".`);
       }
@@ -5517,6 +5537,9 @@ export async function checks() {
       const nextAway = freshRead.nextAwayDiscovery;
       if (!firstRung || !nextAway || nextAway.name !== firstRung.name || nextAway.minSec !== firstRung.minSec) {
         problems.push(`read-state.nextAwayDiscovery should match the fresh save's first rung ${JSON.stringify(firstRung)}, got ${JSON.stringify(nextAway)}.`);
+      }
+      if (firstRung && nextAway && nextAway.bonus !== firstRung.bonus) {
+        problems.push(`read-state.nextAwayDiscovery.bonus should equal the rung's ${firstRung.bonus}, got ${nextAway.bonus}.`);
       }
       if (lineEl && nextAway && !lineEl.textContent.includes(nextAway.elapsed)) {
         problems.push(`The status line's absence must match read-state.nextAwayDiscovery.elapsed ("${nextAway.elapsed}"), got "${lineEl.textContent.trim()}".`);
@@ -5551,6 +5574,28 @@ export async function checks() {
       const nextAway = advancedRead.nextAwayDiscovery;
       if (!advancedRung || !nextAway || nextAway.name !== advancedRung.name || nextAway.minSec !== advancedRung.minSec) {
         problems.push(`read-state.nextAwayDiscovery should match the advanced rung ${JSON.stringify(advancedRung)}, got ${JSON.stringify(nextAway)}.`);
+      }
+      if (advancedRung && nextAway && nextAway.bonus !== advancedRung.bonus) {
+        problems.push(`read-state.nextAwayDiscovery.bonus should equal the advanced rung's ${advancedRung.bonus}, got ${nextAway.bonus}.`);
+      }
+    }
+    // The reward the status line promises is exactly what the game's own
+    // credited-return sentence states for that rung — one figure, two surfaces.
+    if (advancedRung) {
+      const reward = "+" + engine.formatRate(advancedRung.bonus) + " wood/s";
+      if (advancedText && !advancedText.includes(reward)) {
+        problems.push(`The status line should promise the ${reward} the rung grants, got ${JSON.stringify(advancedText)}.`);
+      }
+      const creditedLine = engine.returnDiscoveryLine({ name: advancedRung.name, bonus: advancedRung.bonus, credited: true });
+      if (!creditedLine.tail.includes(reward)) {
+        problems.push(`The welcome-back credited sentence should state the same ${reward} the status line promises, got ${JSON.stringify(creditedLine.tail)}.`);
+      }
+    }
+    if (readRules) {
+      const rulesRead = await readRules.execute({});
+      const ruleNext = rulesRead.nextAwayFind;
+      if (advancedRung && (!ruleNext || ruleNext.bonus !== advancedRung.bonus)) {
+        problems.push(`read-rules.nextAwayFind.bonus should equal the rung's ${advancedRung.bonus}, got ${JSON.stringify(ruleNext)}.`);
       }
     }
     // The welcome-back panel's own next-find line must be byte-identical to the

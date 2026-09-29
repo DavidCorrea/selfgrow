@@ -762,19 +762,21 @@ export function discoveryCollection(ownedId, limit = FINDS_LIST_LIMIT) {
 }
 
 /**
- * The one sentence that names the next away find and the absence it takes, so
- * the status panel and the welcome-back panel word the same rung identically.
- * It reads whatever rung nextDiscoveryAfter produced — the ladder lookup has
- * one home, so no surface can invent a different find. Pure, and null in,
- * null out: a save with no known next rung yields no sentence rather than a
- * dead end.
+ * The one sentence that names the next away find, the absence it takes, and
+ * the wood/s it grants, so the status panel and the welcome-back panel word
+ * the same rung identically. It reads whatever rung nextDiscoveryAfter
+ * produced — the ladder lookup has one home, so no surface can invent a
+ * different find, and the reward is the rung's own bonus, the same figure the
+ * Finds list and a credited return state for it. Pure, and null in, null out:
+ * a save with no known next rung yields no sentence rather than a dead end.
  *
  * @param {{ id: string, name: string, bonus: number, minSec: number }|null|undefined} next
  * @returns {string|null} the sentence for a valid rung, or null
  */
 export function nextAwayFindText(next) {
   if (!next) return null;
-  return `Next away find: ${next.name} \u2014 away ${formatElapsed(next.minSec * 1000)}.`;
+  const reward = Number.isFinite(next.bonus) ? `, +${formatRate(next.bonus)} wood/s` : "";
+  return `Next away find: ${next.name} \u2014 away ${formatElapsed(next.minSec * 1000)}${reward}.`;
 }
 
 /**
