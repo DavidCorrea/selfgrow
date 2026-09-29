@@ -3917,6 +3917,7 @@ export async function checks() {
     const discoveryLine = document.getElementById("offline-discovery-line");
     const discoveryNameEl = document.getElementById("offline-discovery-name");
     const discoveryBonusEl = document.getElementById("offline-discovery-bonus");
+    const discoveryNoteEl = document.getElementById("offline-discovery-note");
     const nextFindEl = document.getElementById("offline-next-find");
     if (!nextFindEl) {
       problems.push("Expected #offline-next-find in the welcome-back panel so the next away find is named.");
@@ -3929,6 +3930,12 @@ export async function checks() {
     }
     if (!discoveryBonusEl) {
       problems.push("Expected #offline-discovery-bonus in the welcome-back panel so the find's wood/s bonus is stated.");
+    }
+    if (!discoveryNoteEl) {
+      problems.push("Expected #offline-discovery-note in the welcome-back panel so a find that added nothing says so plainly.");
+    }
+    if (typeof engine.returnDiscoveryText !== "function") {
+      problems.push("Expected engine.returnDiscoveryText to be exported so the panel and the tools word a find from one source.");
     }
 
     // (b) The ladder is pure, deterministic and strictly stronger with time.
@@ -4025,6 +4032,9 @@ export async function checks() {
       if (shownBonus === null || Math.abs(shownBonus - rateIncrease) > 1e-9) {
         problems.push(`The shown discovery bonus must equal the ${rateIncrease.toFixed(2)} wood/s actually added to the rate, got ${shownBonus}.`);
       }
+      if (discoveryNoteEl && !discoveryNoteEl.hidden) {
+        problems.push("A credited find should state its gain, not a no-change note, so #offline-discovery-note must stay hidden.");
+      }
     }
 
     // The panel must also name the rung above the one just found, with the
@@ -4058,6 +4068,12 @@ export async function checks() {
       }
       if (expected && offlineDiscovery && offlineDiscovery.permanent !== true) {
         problems.push(`read-state.offlineDiscovery.permanent should be true for a credited find, got ${JSON.stringify(offlineDiscovery.permanent)}.`);
+      }
+      if (expected && offlineDiscovery && offlineDiscovery.alreadyOwned !== false) {
+        problems.push(`read-state.offlineDiscovery.alreadyOwned should be false for a credited find, got ${JSON.stringify(offlineDiscovery.alreadyOwned)}.`);
+      }
+      if (expected && offlineDiscovery && discoveryBonusEl && offlineDiscovery.note !== discoveryBonusEl.textContent.trim()) {
+        problems.push(`read-state.offlineDiscovery.note should equal the panel's credited bonus text, got ${JSON.stringify(offlineDiscovery.note)} vs ${JSON.stringify(discoveryBonusEl.textContent.trim())}.`);
       }
       // read-state must expose the same next find the panel names, so an agent
       // learns the same goal a visitor does.
@@ -4111,6 +4127,63 @@ export async function checks() {
     }
     window.__dismissOffline();
 
+    // (c3) A find the player already owns must still be named, and must plainly
+    // say it added nothing new — in the panel and in the agent's read-state
+    // alike, so a return that changed nothing cannot read like a lasting boost.
+    engine.reset();
+    localStorage.setItem("selfgrow-state", JSON.stringify({
+      wood: 5, rate: 0.20, stone: 0, totalWoodEarned: 5,
+      wallLevel: 0, stoneUnlocked: false,
+      discoveryId: "clay-deposit", discoveryName: "Clay Deposit", discoveryBonus: 0.10,
+      timestamp: new Date(Date.now() - 600000).toISOString(),
+    }));
+    engine.init();
+    const repeated = engine.getState();
+    if (Math.abs(repeated.rate - 0.20) > 1e-9) {
+      problems.push(`A repeated clay-deposit find must leave rate at 0.20, got ${repeated.rate}.`);
+    }
+    window.__showOfflineSummary();
+    if (discoveryLine && discoveryLine.hidden) {
+      problems.push("A repeated find must still be named in the welcome-back panel, but #offline-discovery-line was hidden.");
+    }
+    if (discoveryNameEl && repeated.discovery && discoveryNameEl.textContent.trim() !== repeated.discovery.name) {
+      problems.push(`A repeated find should be named "Clay Deposit", got "${discoveryNameEl.textContent.trim()}".`);
+    }
+    if (discoveryBonusEl && !discoveryBonusEl.hidden) {
+      problems.push("A repeated find added nothing to the rate and must not show a bonus line.");
+    }
+    const repeatNoteText = discoveryNoteEl ? discoveryNoteEl.textContent.trim() : "";
+    if (discoveryNoteEl && discoveryNoteEl.hidden) {
+      problems.push("A repeated find must plainly say it added nothing new, but #offline-discovery-note was hidden.");
+    }
+    if (discoveryNoteEl && !/already in your collection/i.test(repeatNoteText)) {
+      problems.push(`A repeated find's note should say it was already in the collection, got "${repeatNoteText}".`);
+    }
+    if (discoveryNoteEl && !/nothing new/i.test(repeatNoteText)) {
+      problems.push(`A repeated find's note should say nothing new was added, got "${repeatNoteText}".`);
+    }
+    if (readState) {
+      const repeatedRead = await readState.execute({});
+      const repeatedDiscovery = repeatedRead.offlineDiscovery;
+      if (!repeatedDiscovery) {
+        problems.push("read-state.offlineDiscovery should report a repeated find while the panel is open, got null.");
+      } else {
+        if (repeatedDiscovery.name !== "Clay Deposit") {
+          problems.push(`read-state.offlineDiscovery should name "Clay Deposit", got ${JSON.stringify(repeatedDiscovery.name)}.`);
+        }
+        if (repeatedDiscovery.bonus !== null || repeatedDiscovery.permanent !== false) {
+          problems.push(`A repeated find added nothing, so read-state.offlineDiscovery should report bonus null and permanent false, got ${JSON.stringify(repeatedDiscovery)}.`);
+        }
+        if (repeatedDiscovery.alreadyOwned !== true) {
+          problems.push(`read-state.offlineDiscovery.alreadyOwned should be true for a repeated find, got ${JSON.stringify(repeatedDiscovery.alreadyOwned)}.`);
+        }
+        if (repeatedDiscovery.note !== repeatNoteText) {
+          problems.push(`read-state.offlineDiscovery.note should match the panel's note, got ${JSON.stringify(repeatedDiscovery.note)} vs ${JSON.stringify(repeatNoteText)}.`);
+        }
+      }
+    }
+    window.__dismissOffline();
+
     // (d) A return shorter than 60s, and a first-ever visit, find nothing.
     engine.reset();
     localStorage.setItem("selfgrow-state", JSON.stringify({
@@ -4131,6 +4204,9 @@ export async function checks() {
     }
     if (discoveryBonusEl && /\+\s*0\b/.test(discoveryBonusEl.textContent)) {
       problems.push(`A 30s return must not show a stray "+0" discovery bonus, got "${discoveryBonusEl.textContent.trim()}".`);
+    }
+    if (discoveryNoteEl && !discoveryNoteEl.hidden) {
+      problems.push("A 30s return found nothing, so no discovery note should be shown.");
     }
     window.__dismissOffline();
 
@@ -4162,6 +4238,25 @@ export async function checks() {
     }
     if (discoveryBonusEl && /\+\s*0\b/.test(discoveryBonusEl.textContent)) {
       problems.push(`A weaker find must not show a stray "+0" discovery bonus, got "${discoveryBonusEl.textContent.trim()}".`);
+    }
+    const weakerNoteText = discoveryNoteEl ? discoveryNoteEl.textContent.trim() : "";
+    if (discoveryNoteEl && discoveryNoteEl.hidden) {
+      problems.push("A weaker find must plainly say it added nothing new, but #offline-discovery-note was hidden.");
+    }
+    if (discoveryNoteEl && !/stronger find/i.test(weakerNoteText)) {
+      problems.push(`A weaker find's note should say a stronger find is already owned, got "${weakerNoteText}".`);
+    }
+    if (discoveryNoteEl && !/nothing new/i.test(weakerNoteText)) {
+      problems.push(`A weaker find's note should say nothing new was added, got "${weakerNoteText}".`);
+    }
+    if (readState) {
+      const weakerRead = await readState.execute({});
+      const weakerDiscovery = weakerRead.offlineDiscovery;
+      if (!weakerDiscovery || weakerDiscovery.alreadyOwned !== false) {
+        problems.push(`read-state.offlineDiscovery.alreadyOwned should be false for a weaker find, got ${JSON.stringify(weakerDiscovery)}.`);
+      } else if (weakerDiscovery.note !== weakerNoteText) {
+        problems.push(`read-state.offlineDiscovery.note should match the weaker find's panel note, got ${JSON.stringify(weakerDiscovery.note)} vs ${JSON.stringify(weakerNoteText)}.`);
+      }
     }
     window.__dismissOffline();
 
