@@ -4433,6 +4433,7 @@ export async function checks() {
     const discoveryStat = document.getElementById("discovery-stat");
     const discoveryValue = document.getElementById("discovery-value");
     const discoveryLine = document.getElementById("offline-discovery-line");
+    const discoveryLeadEl = document.getElementById("offline-discovery-lead");
     const discoveryNameEl = document.getElementById("offline-discovery-name");
     const discoveryBonusEl = document.getElementById("offline-discovery-bonus");
     const discoveryNoteEl = document.getElementById("offline-discovery-note");
@@ -4446,6 +4447,9 @@ export async function checks() {
     if (!discoveryLine || !discoveryNameEl) {
       problems.push("Expected #offline-discovery-line and #offline-discovery-name in the welcome-back panel for the away discovery.");
     }
+    if (!discoveryLeadEl) {
+      problems.push("Expected #offline-discovery-lead in the welcome-back panel so the find sentence is worded from the engine rule.");
+    }
     if (!discoveryBonusEl) {
       problems.push("Expected #offline-discovery-bonus in the welcome-back panel so the find's wood/s bonus is stated.");
     }
@@ -4454,6 +4458,37 @@ export async function checks() {
     }
     if (typeof engine.returnDiscoveryText !== "function") {
       problems.push("Expected engine.returnDiscoveryText to be exported so the panel and the tools word a find from one source.");
+    }
+    if (typeof engine.returnDiscoveryLine !== "function") {
+      problems.push("Expected engine.returnDiscoveryLine to be exported so the panel words a find from one rule.");
+    } else {
+      // A credited find reads as news and names the wood/s it added.
+      const creditedSentence = engine.returnDiscoveryText({ name: "Clay Deposit", bonus: 0.1, credited: true });
+      if (!/^You found the Clay Deposit!/.test(creditedSentence)) {
+        problems.push(`A credited find should read as news ("You found the Clay Deposit!"), got ${JSON.stringify(creditedSentence)}.`);
+      }
+      if (!creditedSentence.includes("+0.10 wood/s")) {
+        problems.push(`A credited find should name the wood/s it added, got ${JSON.stringify(creditedSentence)}.`);
+      }
+      // A repeat and an out-classed find make no new-find claim and say plainly
+      // they added nothing.
+      const repeatSentence = engine.returnDiscoveryText({ name: "Clay Deposit", bonus: 0.1, credited: false, alreadyOwned: true });
+      if (/you found/i.test(repeatSentence)) {
+        problems.push(`A repeated find must not read as newly found, got ${JSON.stringify(repeatSentence)}.`);
+      }
+      if (!repeatSentence.includes("Clay Deposit") || !/nothing new/i.test(repeatSentence)) {
+        problems.push(`A repeated find should name the find and says it added nothing, got ${JSON.stringify(repeatSentence)}.`);
+      }
+      const weakerSentence = engine.returnDiscoveryText({ name: "Flint Shard", bonus: 0.05, credited: false, alreadyOwned: false });
+      if (/you found/i.test(weakerSentence)) {
+        problems.push(`A weaker find must not read as newly found, got ${JSON.stringify(weakerSentence)}.`);
+      }
+      if (!weakerSentence.includes("Flint Shard") || !/nothing new/i.test(weakerSentence)) {
+        problems.push(`A weaker find should name the find and says it added nothing, got ${JSON.stringify(weakerSentence)}.`);
+      }
+      if (engine.returnDiscoveryText(null) !== "") {
+        problems.push("A return with no find should word no sentence.");
+      }
     }
 
     // (b) The ladder is pure, deterministic and strictly stronger with time.
@@ -4559,6 +4594,14 @@ export async function checks() {
     if (discoveryNameEl && expected && discoveryNameEl.textContent.trim() !== expected.name) {
       problems.push(`The welcome-back panel should name "${expected.name}", got "${discoveryNameEl.textContent.trim()}".`);
     }
+    // The whole sentence the panel shows must be the engine rule's sentence, so
+    // the claim and the caveat can never be split by a wrap.
+    if (discoveryLine && expected) {
+      const expectedSentence = engine.returnDiscoveryText({ name: expected.name, bonus: expected.bonus, credited: true });
+      if (discoveryLine.textContent.trim() !== expectedSentence) {
+        problems.push(`A credited 600s find's panel line should read ${JSON.stringify(expectedSentence)}, got ${JSON.stringify(discoveryLine.textContent.trim())}.`);
+      }
+    }
     // The panel must state the wood/s bonus the credited find granted and that
     // it is kept, and the number must equal the rate increase it applied.
     const rateIncrease = returned.rate - 0.1;
@@ -4618,8 +4661,8 @@ export async function checks() {
       if (expected && offlineDiscovery && offlineDiscovery.alreadyOwned !== false) {
         problems.push(`read-state.offlineDiscovery.alreadyOwned should be false for a credited find, got ${JSON.stringify(offlineDiscovery.alreadyOwned)}.`);
       }
-      if (expected && offlineDiscovery && discoveryBonusEl && offlineDiscovery.note !== discoveryBonusEl.textContent.trim()) {
-        problems.push(`read-state.offlineDiscovery.note should equal the panel's credited bonus text, got ${JSON.stringify(offlineDiscovery.note)} vs ${JSON.stringify(discoveryBonusEl.textContent.trim())}.`);
+      if (expected && offlineDiscovery && discoveryLine && offlineDiscovery.sentence !== discoveryLine.textContent.trim()) {
+        problems.push(`read-state.offlineDiscovery.sentence should equal the panel's credited sentence, got ${JSON.stringify(offlineDiscovery.sentence)} vs ${JSON.stringify(discoveryLine.textContent.trim())}.`);
       }
       // read-state must expose the same next find the panel names, so an agent
       // learns the same goal a visitor does.
@@ -4717,6 +4760,17 @@ export async function checks() {
     if (discoveryNameEl && repeated.discovery && discoveryNameEl.textContent.trim() !== repeated.discovery.name) {
       problems.push(`A repeated find should be named "Clay Deposit", got "${discoveryNameEl.textContent.trim()}".`);
     }
+    // A repeated find must not read as newly found anywhere in the panel line,
+    // and the whole line must be the engine's sentence for a repeat.
+    if (discoveryLine && repeated.discovery) {
+      const repeatSentence = engine.returnDiscoveryText({ name: repeated.discovery.name, bonus: repeated.discovery.bonus, credited: false, alreadyOwned: true });
+      if (/you found/i.test(discoveryLine.textContent)) {
+        problems.push(`A repeated find's panel line must not claim a new find, got "${discoveryLine.textContent.trim()}".`);
+      }
+      if (discoveryLine.textContent.trim() !== repeatSentence) {
+        problems.push(`A repeated find's panel line should read ${JSON.stringify(repeatSentence)}, got ${JSON.stringify(discoveryLine.textContent.trim())}.`);
+      }
+    }
     if (discoveryBonusEl && !discoveryBonusEl.hidden) {
       problems.push("A repeated find added nothing to the rate and must not show a bonus line.");
     }
@@ -4745,8 +4799,8 @@ export async function checks() {
         if (repeatedDiscovery.alreadyOwned !== true) {
           problems.push(`read-state.offlineDiscovery.alreadyOwned should be true for a repeated find, got ${JSON.stringify(repeatedDiscovery.alreadyOwned)}.`);
         }
-        if (repeatedDiscovery.note !== repeatNoteText) {
-          problems.push(`read-state.offlineDiscovery.note should match the panel's note, got ${JSON.stringify(repeatedDiscovery.note)} vs ${JSON.stringify(repeatNoteText)}.`);
+        if (repeatedDiscovery.sentence !== (discoveryLine ? discoveryLine.textContent.trim() : "")) {
+          problems.push(`read-state.offlineDiscovery.sentence should match the panel's sentence, got ${JSON.stringify(repeatedDiscovery.sentence)} vs ${JSON.stringify(discoveryLine ? discoveryLine.textContent.trim() : "")}.`);
         }
       }
     }
@@ -4817,13 +4871,28 @@ export async function checks() {
     if (discoveryNoteEl && !/nothing new/i.test(weakerNoteText)) {
       problems.push(`A weaker find's note should say nothing new was added, got "${weakerNoteText}".`);
     }
+    // An out-classed find must not read as newly found anywhere in the panel
+    // line, and the whole line must be the engine's sentence for it.
+    const weakerFind = engine.discoverForElapsed(61);
+    if (discoveryLine && weakerFind) {
+      const weakerSentence = engine.returnDiscoveryText({ name: weakerFind.name, bonus: weakerFind.bonus, credited: false, alreadyOwned: false });
+      if (/you found/i.test(discoveryLine.textContent)) {
+        problems.push(`A weaker find's panel line must not claim a new find, got "${discoveryLine.textContent.trim()}".`);
+      }
+      if (!discoveryLine.textContent.includes(weakerFind.name)) {
+        problems.push(`A weaker find's panel line should still name "${weakerFind.name}", got "${discoveryLine.textContent.trim()}".`);
+      }
+      if (discoveryLine.textContent.trim() !== weakerSentence) {
+        problems.push(`A weaker find's panel line should read ${JSON.stringify(weakerSentence)}, got ${JSON.stringify(discoveryLine.textContent.trim())}.`);
+      }
+    }
     if (readState) {
       const weakerRead = await readState.execute({});
       const weakerDiscovery = weakerRead.offlineDiscovery;
       if (!weakerDiscovery || weakerDiscovery.alreadyOwned !== false) {
         problems.push(`read-state.offlineDiscovery.alreadyOwned should be false for a weaker find, got ${JSON.stringify(weakerDiscovery)}.`);
-      } else if (weakerDiscovery.note !== weakerNoteText) {
-        problems.push(`read-state.offlineDiscovery.note should match the weaker find's panel note, got ${JSON.stringify(weakerDiscovery.note)} vs ${JSON.stringify(weakerNoteText)}.`);
+      } else if (weakerDiscovery.sentence !== (discoveryLine ? discoveryLine.textContent.trim() : "")) {
+        problems.push(`read-state.offlineDiscovery.sentence should match the weaker find's panel sentence, got ${JSON.stringify(weakerDiscovery.sentence)} vs ${JSON.stringify(discoveryLine ? discoveryLine.textContent.trim() : "")}.`);
       }
     }
     window.__dismissOffline();
