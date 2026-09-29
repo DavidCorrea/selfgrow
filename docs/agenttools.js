@@ -179,7 +179,9 @@ export function tools() {
         + "duration as text) \u2014 the ladder has no end, so this names a rung for every valid "
         + "save and is null only when the saved discovery id is unrecognised), milestones object "
         + "(sharpenAvailable, stoneNowUnlocked, wallAvailable, forgeNowUnlocked, expeditionNowUnlocked), "
-        + "and the current goal (first goal, upgrade goal, stone goal, build-wall goal, forge goal, or expedition goal).",
+        + "and the current goal (first goal, upgrade goal, stone goal, build-wall goal, forge goal, or expedition goal) as nextGoal "
+        + "{description, type, available, resources: [{name, current, target}]}, whose resources are the same "
+        + "figures the page prints beside the goal's bar and on the welcome-back panel's next-goal line.",
       inputSchema: { type: "object", properties: {} },
       annotations: { readOnlyHint: true },
       example: {},
