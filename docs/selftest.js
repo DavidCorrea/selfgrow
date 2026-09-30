@@ -8586,5 +8586,113 @@ export async function checks() {
     console.error(err);
   }
 
+  // ─── In-session first discovery ────────────────────────────────
+  // A fresh save must deliver something new within its first two minutes of
+  // active play, without waiting for an absence. The engine's own rule, the
+  // page's message line and the read-state tool must all tell the same story,
+  // and the away cadence must be untouched.
+  try {
+    const engine = await import("./engine.js");
+    const { tools } = await import("./agenttools.js");
+    const readState = tools().find((t) => t.name === "read-state");
+
+    // The pure rule: nothing before the threshold, the first rung at it, and
+    // nothing once a discovery is already owned.
+    if (engine.sessionFindFor(engine.SESSION_FIND_SEC - 1, null) !== null) {
+      problems.push(`sessionFindFor just below ${engine.SESSION_FIND_SEC}s should be null, got ${JSON.stringify(engine.sessionFindFor(engine.SESSION_FIND_SEC - 1, null))}.`);
+    }
+    const atThreshold = engine.sessionFindFor(engine.SESSION_FIND_SEC, null);
+    if (!atThreshold || atThreshold.id !== "flint-shard" || Math.abs(atThreshold.bonus - 0.05) > 1e-12) {
+      problems.push(`sessionFindFor at ${engine.SESSION_FIND_SEC}s should be the Flint Shard rung (+0.05 wood/s), got ${JSON.stringify(atThreshold)}.`);
+    }
+    if (engine.sessionFindFor(engine.SESSION_FIND_SEC, "flint-shard") !== null) {
+      problems.push(`sessionFindFor should be null when the save already owns a discovery, got ${JSON.stringify(engine.sessionFindFor(engine.SESSION_FIND_SEC, "flint-shard"))}.`);
+    }
+
+    // No live tick runs in the checks, so drive the active seconds directly.
+    engine.reset();
+    const fresh = engine.getState();
+    const rateBefore = fresh.rate;
+    if (fresh.sessionFind !== null) {
+      problems.push(`A fresh save should have no sessionFind yet, got ${JSON.stringify(fresh.sessionFind)}.`);
+    }
+
+    engine.advanceActivePlay(engine.SESSION_FIND_SEC - 1);
+    const beforeThreshold = engine.getState();
+    if (beforeThreshold.sessionFind !== null) {
+      problems.push(`Just below the threshold a fresh save should have no sessionFind, got ${JSON.stringify(beforeThreshold.sessionFind)}.`);
+    }
+    if (Math.abs(beforeThreshold.rate - rateBefore) > 1e-12) {
+      problems.push(`Active play before the session find must not change the rate, expected ${rateBefore}, got ${beforeThreshold.rate}.`);
+    }
+
+    engine.advanceActivePlay(1);
+    const granted = engine.getState();
+    if (!granted.sessionFind || granted.sessionFind.id !== "flint-shard") {
+      problems.push(`At ${engine.SESSION_FIND_SEC}s of active play a fresh save should grant the Flint Shard, got ${JSON.stringify(granted.sessionFind)}.`);
+    } else {
+      if (Math.abs(granted.sessionFind.bonus - 0.05) > 1e-12) {
+        problems.push(`The session find's bonus should be 0.05 wood/s, got ${granted.sessionFind.bonus}.`);
+      }
+      if (typeof granted.sessionFind.text !== "string" || granted.sessionFind.text.trim() === "") {
+        problems.push(`The session find should carry its own announcement text, got ${JSON.stringify(granted.sessionFind.text)}.`);
+      }
+      if (Math.abs(granted.rate - (rateBefore + 0.05)) > 1e-12) {
+        problems.push(`Crediting the session find should raise the rate by 0.05, expected ${rateBefore + 0.05}, got ${granted.rate}.`);
+      }
+      const textAfter = granted.sessionFind.text;
+
+      // Granted once, not once per tick — otherwise the rate would climb every
+      // second and the page would re-announce forever.
+      engine.advanceActivePlay(60);
+      const repeated = engine.getState();
+      if (Math.abs(repeated.rate - granted.rate) > 1e-12) {
+        problems.push(`A later advance must not grant the session find again — rate moved from ${granted.rate} to ${repeated.rate}.`);
+      }
+      if (!repeated.sessionFind || repeated.sessionFind.text !== textAfter) {
+        problems.push("The session find announcement should stay the same after later advances.");
+      }
+
+      // The page's message line must show the engine's own sentence.
+      if (typeof window.__renderUI === "function") window.__renderUI();
+      const newsEl = document.getElementById("session-news");
+      if (!newsEl) {
+        problems.push("Expected a #session-news message element in the status panel — it was not found.");
+      } else {
+        if (newsEl.hidden) {
+          problems.push("#session-news should be visible once the session find is granted.");
+        }
+        if (newsEl.textContent.trim() !== textAfter) {
+          problems.push(`#session-news should read the engine's own announcement text, expected ${JSON.stringify(textAfter)}, got ${JSON.stringify(newsEl.textContent)}.`);
+        }
+      }
+
+      // The read-state tool must report the same happening.
+      if (!readState) {
+        problems.push("Expected a read-state tool to report the session find — it was not found.");
+      } else {
+        const read = await readState.execute({});
+        if (!read.sessionFind || read.sessionFind.id !== "flint-shard") {
+          problems.push(`read-state should report the session find, got ${JSON.stringify(read.sessionFind)}.`);
+        } else if (read.sessionFind.text !== textAfter) {
+          problems.push(`read-state sessionFind.text should match the engine's stored text, expected ${JSON.stringify(textAfter)}, got ${JSON.stringify(read.sessionFind.text)}.`);
+        }
+      }
+
+      // The in-session find credits the ladder's first rung, so the collection
+      // holds exactly it — the away ladder's own derivation is undisturbed.
+      if (!granted.finds || granted.finds.total !== 1) {
+        problems.push(`After the session find the collection should hold exactly the first rung, got ${JSON.stringify(granted.finds && granted.finds.total)}.`);
+      }
+    }
+
+    // Leave the engine as a running save for any later checks.
+    engine.reset();
+    engine.init();
+  } catch (err) {
+    problems.push(`In-session first discovery test threw: ${err.message}`);
+    console.error(err);
+  }
+
   return problems;
 }
