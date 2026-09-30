@@ -183,9 +183,33 @@
 
     /* The held decision a return left unchosen, named in the status panel so
        it cannot disappear from view once the welcome-back panel is dismissed.
-       Accent colour sets it apart from the plain counters around it. */
+       It is itself the way back: a real button that opens the two choices, so
+       the reward a return handed the player is one step away, not a rumour.
+       Accent colour and a chunky border set it apart from the plain counters
+       around it, and the 44px target keeps it tappable on a phone. */
     .meta-item.away-waiting {
       color: var(--accent);
+      min-height: 44px;
+      padding: 0.3rem 0.6rem;
+      background: #0a0a1a;
+      border: 2px solid var(--accent);
+      font-family: var(--body-font);
+      font-size: 0.45rem;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+    }
+
+    .meta-item.away-waiting:hover {
+      background: #1f1f0a;
+    }
+
+    .meta-item.away-waiting:focus-visible {
+      outline: 2px solid var(--highlight);
+      outline-offset: 2px;
+    }
+
+    .meta-item.away-waiting:focus:not(:focus-visible) {
+      outline: none;
     }
 
     /* The first discovery active play earns, named in its own line of the
@@ -1649,7 +1673,7 @@
       <span class="meta-item"><span>Elapsed</span> <span class="stat-value" id="elapsed-value">—</span></span>
       <span class="meta-item"><span>Total wood</span> <span class="stat-value stat-total" id="total-wood-value">0</span></span>
       <span class="meta-item stat-hidden" id="total-stone-stat"><span>Total stone</span> <span class="stat-value stat-total stone-total" id="total-stone-value"></span></span>
-      <span class="meta-item stat-hidden away-waiting" id="away-decision-waiting"><span>Decision waiting:</span> <span class="stat-value" id="away-decision-waiting-name"></span></span>
+      <button type="button" class="meta-item stat-hidden away-waiting" id="away-decision-waiting" aria-haspopup="dialog"><span>Decision waiting:</span> <span class="stat-value" id="away-decision-waiting-name"></span></button>
       <details class="finds-list" id="finds-list">
         <summary class="away-find-line" id="next-away-find-line"></summary>
         <ul class="finds-entries" id="finds-entries"></ul>
@@ -2345,6 +2369,19 @@
       renderUI();
     }
 
+    // The one way back to a decision a dismissing player left waiting: the
+    // status panel's waiting line and the agent's open-away-decision action
+    // both call this, so neither can open a different surface. It refuses when
+    // no decision is pending rather than opening a return with no choice in
+    // it. The choices themselves are the panel's existing option buttons,
+    // which run through chooseAwayOption, so a decision taken from here grants
+    // exactly what it states and clears the waiting line the same way.
+    function openAwayDecision() {
+      if (!getReturnSummary().pendingEvent) return false;
+      showOfflineSummary();
+      return true;
+    }
+
     // ─── Save backup ───
     function setSaveStatus(message, isError) {
       saveStatus.textContent = message;
@@ -2466,6 +2503,10 @@
         showOfflineSummary();
       }
     });
+
+    // The waiting line is itself the control that opens the held decision: a
+    // native button, so Enter and Space activate it without extra key handling.
+    awayDecisionWaiting.addEventListener("click", openAwayDecision);
 
     // Allow Escape to dismiss
     offlineSummary.addEventListener("keydown", (e) => {
@@ -2847,6 +2888,15 @@
         const waitingEvent = returnSummary.pendingEvent;
         awayDecisionWaiting.classList.toggle("stat-hidden", !waitingEvent);
         awayDecisionWaitingName.textContent = waitingEvent ? waitingEvent.title : "";
+        // The visible line already reads "Decision waiting: <title>"; the
+        // accessible name says what activating it does, so a screen-reader
+        // user knows it is the way into the two choices, not a readout.
+        awayDecisionWaiting.setAttribute(
+          "aria-label",
+          waitingEvent
+            ? `Decision waiting: ${waitingEvent.title}. Open this return's two choices.`
+            : "Decision waiting"
+        );
       }
 
       // The first find active play earned, named in the status panel the moment
@@ -3521,6 +3571,7 @@
     window.__onVisibilityReturn = onVisibilityReturn;
     window.__showOfflineSummary = showOfflineSummary;
     window.__showReturn = showOfflineSummary;
+    window.__openAwayDecision = openAwayDecision;
     window.__dismissOffline = dismissOffline;
     window.__revealSaveCode = revealSaveCode;
     window.__restoreSave = restoreSave;

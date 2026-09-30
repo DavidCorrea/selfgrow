@@ -566,13 +566,14 @@ export function tools() {
         + '"choose-away-event" — takes one option of the pending away event, granting exactly the effect that option states and then removing the event; pass the chosen option\'s id in "option" (a wood, stone, rate, wall, forge or map option, as read from read-state.pendingEvent.options[].id). Choosing is irreversible — the other option can never then be taken — and is refused with a reason when no event is pending or the option is not one of its two. '
         + '"dismiss-offline" — dismisses the offline-summary overlay if visible; '
         + '"show-return" — re-opens the last return\'s summary (the status panel\'s Last return control), refused with a reason when there is no return on record. '
-        + 'The six world actions (gather, sharpen, gather-stone, build-wall, forge-tool, send-expedition) are refused with a reason while a return or rehearsal panel is open, because a person cannot take them then either; dismiss-offline, show-return and choose-away-event stay available.',
+        + '"open-away-decision" — re-opens the last return at the decision still waiting there (the status panel\'s Decision waiting control), refused with a reason when no decision is pending; take the choice itself with "choose-away-event". '
+        + 'The six world actions (gather, sharpen, gather-stone, build-wall, forge-tool, send-expedition) are refused with a reason while a return or rehearsal panel is open, because a person cannot take them then either; dismiss-offline, show-return, open-away-decision and choose-away-event stay available.',
       inputSchema: {
         type: "object",
         properties: {
           action: {
             type: "string",
-            description: 'The action to perform. Supported: "gather", "sharpen", "gather-stone", "build-wall", "forge-tool", "send-expedition", "choose-away-event", "dismiss-offline", "show-return".',
+            description: 'The action to perform. Supported: "gather", "sharpen", "gather-stone", "build-wall", "forge-tool", "send-expedition", "choose-away-event", "dismiss-offline", "show-return", "open-away-decision".',
           },
           option: {
             type: "string",
@@ -660,7 +661,21 @@ export function tools() {
           }
           return { ok: true, ...withGoal(getState()) };
         }
-        throw new Error('Unknown action "' + action + '". Supported: gather, sharpen, gather-stone, build-wall, forge-tool, send-expedition, choose-away-event, dismiss-offline, show-return');
+        if (action === "open-away-decision") {
+          // The decision the status panel's waiting control opens. Refused
+          // when nothing waits, so an agent cannot ask for a choice that is
+          // not there; opening is observable through offlineSummaryVisible.
+          if (getState().pendingEvent === null) {
+            return { ok: false, reason: "No away decision is waiting to open.", ...withGoal(getState()) };
+          }
+          if (typeof window.__openAwayDecision === "function") {
+            // Route through the page's own handler so the panel opens exactly
+            // as it does for a click on the waiting line.
+            window.__openAwayDecision();
+          }
+          return { ok: true, ...withGoal(getState()) };
+        }
+        throw new Error('Unknown action "' + action + '". Supported: gather, sharpen, gather-stone, build-wall, forge-tool, send-expedition, choose-away-event, dismiss-offline, show-return, open-away-decision');
       },
     },
     {
