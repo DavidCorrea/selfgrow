@@ -123,7 +123,7 @@ function withGoal(s) {
     // its 'You chose' line from, so the page and the tool cannot disagree.
     offlineChosenOption: ret.chosenOption,
     nextAwayDiscovery: nextDiscovery
-      ? { name: nextDiscovery.name, minSec: nextDiscovery.minSec, elapsed: formatElapsed(nextDiscovery.minSec * 1000) }
+      ? { name: nextDiscovery.name, minSec: nextDiscovery.minSec, bonus: nextDiscovery.bonus, woodPerSec: nextDiscovery.bonus, elapsed: formatElapsed(nextDiscovery.minSec * 1000) }
       : null,
     // The Finds list the page shows: the rungs already reached in ladder order,
     // each with the wood/s it grants, how many weaker ones the display
@@ -133,7 +133,7 @@ function withGoal(s) {
       hiddenCount: finds.hiddenCount,
       total: finds.total,
       next: finds.next
-        ? { id: finds.next.id, name: finds.next.name, minSec: finds.next.minSec, elapsed: formatElapsed(finds.next.minSec * 1000) }
+        ? { id: finds.next.id, name: finds.next.name, minSec: finds.next.minSec, bonus: finds.next.bonus, woodPerSec: finds.next.bonus, elapsed: formatElapsed(finds.next.minSec * 1000) }
         : null,
     },
     milestones: {
@@ -331,16 +331,17 @@ function rulesUnlocks() {
 }
 
 /**
- * The next rung of the away-find ladder and the absence it needs, read from the
- * engine's own ladder so the rules and the page name the same find.
+ * The next rung of the away-find ladder, the absence it needs and the wood/s it
+ * grants, read from the engine's own ladder so the rules and the page name the
+ * same find and promise the same reward.
  *
  * @param {import("./engine.js").GameState} s
- * @returns {{ id: string, name: string, minSec: number, elapsed: string }|null}
+ * @returns {{ id: string, name: string, minSec: number, bonus: number, woodPerSec: number, elapsed: string }|null}
  */
 function rulesNextAwayFind(s) {
   const next = nextDiscoveryAfter(s.discoveryId ?? s.discovery?.id ?? null);
   return next
-    ? { id: next.id, name: next.name, minSec: next.minSec, elapsed: formatElapsed(next.minSec * 1000) }
+    ? { id: next.id, name: next.name, minSec: next.minSec, bonus: next.bonus, woodPerSec: next.bonus, elapsed: formatElapsed(next.minSec * 1000) }
     : null;
 }
 
@@ -456,13 +457,14 @@ export function tools() {
         + "or none has been taken yet; it is part of the return's own record, so it survives a reload and "
         + "matches the panel's 'You chose' line. The away discovery owned so far (discovery: "
         + "{id, name, bonus} or null, whose bonus is already included in rate), and the "
-        + "next away discovery still to earn (nextAwayDiscovery: {name, minSec, elapsed} "
-        + "where minSec is the absence in seconds needed to find it and elapsed is that "
+        + "next away discovery still to earn (nextAwayDiscovery: {name, minSec, bonus, woodPerSec, "
+        + "elapsed} where minSec is the absence in seconds needed to find it, bonus/woodPerSec is "
+        + "the wood/s the rung will add when earned, and elapsed is that "
         + "duration as text) \u2014 the ladder has no end, so this names a rung for every valid "
         + "save and is null only when the saved discovery id is unrecognised). finds is the "
         + "Finds list the page shows: {collected: [{id, name, bonus, woodPerSec}] in ladder order "
         + "(weaker to stronger), hiddenCount (how many older finds the display summarises), total "
-        + "(the true number kept), next: {id, name, minSec, elapsed} for the rung still locked or "
+        + "(the true number kept), next: {id, name, minSec, bonus, woodPerSec, elapsed} for the rung still locked or "
         + "null when the saved id is unrecognised}. milestones object "
         + "(sharpenAvailable, stoneNowUnlocked, wallAvailable, forgeNowUnlocked, expeditionNowUnlocked), "
         + "and the current goal (first goal, upgrade goal, stone goal, build-wall goal, forge goal, or expedition goal) as nextGoal "
@@ -593,8 +595,9 @@ export function tools() {
         + "or woodPerChop), effectText (the exact sentence the page prints beside that button), "
         + "requires (what must be true before it works)}. unlocks names the chain: the first "
         + "sharpen opens stone, the first wall opens the forge, forge level " + EXPEDITION_FORGE_LEVEL
-        + " opens expeditions. nextAwayFind is the next rung of the away-find ladder and the "
-        + "absence it needs {id, name, minSec, elapsed}, or null when the save names no rung. "
+        + " opens expeditions. nextAwayFind is the next rung of the away-find ladder, the "
+        + "absence it needs and the wood/s it grants {id, name, minSec, bonus, woodPerSec, elapsed}, "
+        + "or null when the save names no rung. "
         + "away describes the loop the game is built around: finds is the away-find ladder "
         + "(minSec/minElapsed = the shortest absence that turns anything up, an example rung, "
         + "neverEnds = the ladder has no end so a stronger find always waits, "
