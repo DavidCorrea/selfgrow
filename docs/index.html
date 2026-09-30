@@ -1913,7 +1913,7 @@
   </div>
   <script type="module">
     import "./webmcp.js";
-    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, chooseAwayEventOption, markReturnSeen, formatElapsed, nextAwayFindText, nextDiscoveryAfter, sharpenAvailable, sharpenThreshold, expeditionUnlocked, displayAmount, formatAmount, formatRate, exportSave, importSave, inspectSave, describeGoal, returnDiscoveryLine, pauseForHidden, resumeFromHidden, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, clickPowerFor, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
+    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, chooseAwayEventOption, markReturnSeen, formatElapsed, nextAwayFindText, nextDiscoveryAfter, sharpenAvailable, sharpenThreshold, expeditionUnlocked, actionAvailability, displayAmount, formatAmount, formatRate, exportSave, importSave, inspectSave, describeGoal, returnDiscoveryLine, pauseForHidden, resumeFromHidden, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, clickPowerFor, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
     import { cloneState, fastForward, rehearseAwayChoice } from "./sandbox.js";
     import { mountSprites, mountSprite, updateSprites, playReaction } from "./sprites.js";
 
@@ -2168,6 +2168,10 @@
       }
     }
     window.__setOverlayOpen = setOverlayOpen;
+    // The page's own answer to "is a modal panel up right now", so the agent
+    // tools read the exact flag the action buttons are gated on rather than
+    // inferring it from the DOM.
+    window.__panelOpen = () => openOverlays.size > 0;
 
     // ─── Offline summary ───
     // Write the pending away event into the welcome-back panel: its title and
@@ -2314,13 +2318,10 @@
       offlineSummary.hidden = false;
       offlineSummary.querySelector(".offline-panel").focus();
 
-      // Disable action buttons while overlay is visible
-      btnGather.disabled = true;
-      btnSharpen.disabled = true;
-      btnGatherStone.disabled = true;
-      btnBuildWall.disabled = true;
-      btnForgeTool.disabled = true;
-      if (btnExpedition) btnExpedition.disabled = true;
+      // The panel is open, so the shared rule now reports every action as
+      // unavailable; render immediately so the buttons match without waiting
+      // for the 500ms tick.
+      renderUI();
 
       // Seal the body against pointer events — the overlay is the only
       // interactive layer.
@@ -2336,16 +2337,12 @@
       markReturnSeen();
       offlineSummary.hidden = true;
 
-      // Re-enable only the buttons that should be enabled based on game state
-      btnGather.disabled = false;
+      // Restore pointer events, then release isolation before the render: with
+      // no panel open the shared rule reports the real availability again, so
+      // the render re-derives every action button from the current state.
       document.body.style.pointerEvents = "";
-
-      // Reconcile action button states immediately (no 500ms renderUI delay)
-      renderUI();
-
-      // Release isolation last, after the page is usable again, so the
-      // returned focus lands on an enabled element.
       setOverlayOpen("offline", false);
+      renderUI();
     }
 
     // ─── Save backup ───
@@ -2998,6 +2995,20 @@
         btnSharpen.disabled = true;
       }
 
+      // ─── One reconciliation for every world action ───
+      // Each action button's enabled state comes from the engine's shared
+      // actionAvailability rule, gated by whether a panel is open — the same
+      // rule the read-state tool reports. Cooldowns are the only extra lock,
+      // and they are sub-second. This pass runs last so nothing above can leave
+      // a button disagreeing with the tool while a panel opens or closes.
+      const availability = actionAvailability(s, { blocked: openOverlays.size > 0 });
+      btnGather.disabled = !availability.gather || woodCooldown;
+      btnSharpen.disabled = !availability.sharpen;
+      btnGatherStone.disabled = !availability["gather-stone"] || stoneCooldown;
+      btnBuildWall.disabled = !availability["build-wall"];
+      btnForgeTool.disabled = !availability["forge-tool"];
+      if (btnExpedition) btnExpedition.disabled = !availability["send-expedition"];
+
       // ─── Purchased upgrade history ───────────────────────────────
       // Each system card states what a player has already bought, bounded so
       // the list can never grow the page past the window.
@@ -3100,14 +3111,11 @@
       // we record it as the return-focus target.
       setOverlayOpen("sandbox", true);
 
-      // Disable all action buttons
-      btnGather.disabled = true;
-      btnSharpen.disabled = true;
-      btnGatherStone.disabled = true;
-      btnBuildWall.disabled = true;
-      btnForgeTool.disabled = true;
-      if (btnExpedition) btnExpedition.disabled = true;
+      // The panel is open, so the shared action rule now reports every action
+      // as unavailable; render immediately so the buttons match without
+      // waiting for the 500ms tick.
       btnSandbox.disabled = true;
+      renderUI();
 
       document.body.style.pointerEvents = "none";
       sandboxOverlay.style.pointerEvents = "auto";
@@ -3128,14 +3136,11 @@
       sandboxOverlay.style.pointerEvents = "";
       document.body.style.pointerEvents = "";
 
-      btnGather.disabled = false;
+      // Re-enable the sandbox button, then release isolation before the render
+      // so the shared rule re-derives every action button from the real state.
       btnSandbox.disabled = false;
-
-      // Re-enable buttons based on real game state
-      renderUI();
-
-      // Release isolation last, after the page is usable again.
       setOverlayOpen("sandbox", false);
+      renderUI();
     }
 
     function fastForwardSandbox(simulatedSeconds) {
