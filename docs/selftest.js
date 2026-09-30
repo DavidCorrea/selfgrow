@@ -151,7 +151,7 @@ export async function checks() {
     // Craft the first upgrade and verify transition
     const upgradeResult = engine.craftUpgrade();
     if (!upgradeResult.upgraded) {
-      problems.push("craftUpgrade with 10 wood and cost 5 should succeed — it did not.");
+      problems.push("craftUpgrade with 10 wood and the first sharpen costing 10 should succeed — it did not.");
     }
     const afterUpgrade = engine.getState();
     if (afterUpgrade.upgradeLevel !== 1) {
@@ -428,12 +428,13 @@ export async function checks() {
       const sAfter = engineMod.getState();
       const woodAfter = sAfter.wood;
       const sharpenAfter = document.getElementById("btn-sharpen");
+      const sharpenCostAfter = engineMod.nextSharpenCost(sAfter);
       if (sharpenAfter) {
-        if (woodAfter >= engineMod.UPGRADE_COST && sharpenAfter.disabled) {
-          problems.push(`Expected #btn-sharpen to be enabled after dismissing offline-summary (wood=${woodAfter} >= ${engineMod.UPGRADE_COST}) — it was still disabled.`);
+        if (woodAfter >= sharpenCostAfter && sharpenAfter.disabled) {
+          problems.push(`Expected #btn-sharpen to be enabled after dismissing offline-summary (wood=${woodAfter} >= ${sharpenCostAfter}) — it was still disabled.`);
         }
-        if (woodAfter < engineMod.UPGRADE_COST && !sharpenAfter.disabled) {
-          problems.push(`Expected #btn-sharpen to be disabled after dismissing offline-summary (wood=${woodAfter} < ${engineMod.UPGRADE_COST}) — it was enabled.`);
+        if (woodAfter < sharpenCostAfter && !sharpenAfter.disabled) {
+          problems.push(`Expected #btn-sharpen to be disabled after dismissing offline-summary (wood=${woodAfter} < ${sharpenCostAfter}) — it was enabled.`);
         }
       }
       const wallAfter = document.getElementById("btn-build-wall");
@@ -902,8 +903,8 @@ export async function checks() {
       problems.push("craftUpgrade at the first goal (10 wood) should return upgraded=true.");
     }
     const upgradedState = engine.getState();
-    if (upgradedState.wood !== 5) {
-      problems.push(`After craftUpgrade with 10 wood, wood should be 5, got ${upgradedState.wood}.`);
+    if (upgradedState.wood !== 0) {
+      problems.push(`After craftUpgrade with 10 wood and the first sharpen costing 10, wood should be 0, got ${upgradedState.wood}.`);
     }
     if (upgradedState.rate !== beforeRate + 0.05) {
       problems.push(`After craftUpgrade, rate should increase by 0.05. Before: ${beforeRate}, After: ${upgradedState.rate}.`);
@@ -1477,12 +1478,13 @@ export async function checks() {
         const sAfterAgent = engineMod2.getState();
         const woodAfterAgent = sAfterAgent.wood;
         const sharpenAfterAgent = document.getElementById("btn-sharpen");
+        const sharpenCostAgent = engineMod2.nextSharpenCost(sAfterAgent);
         if (sharpenAfterAgent) {
-          if (woodAfterAgent >= engineMod2.UPGRADE_COST && sharpenAfterAgent.disabled) {
-            problems.push(`Agent dismiss-offline: Expected #btn-sharpen to be enabled (wood=${woodAfterAgent} >= ${engineMod2.UPGRADE_COST}) — it was still disabled.`);
+          if (woodAfterAgent >= sharpenCostAgent && sharpenAfterAgent.disabled) {
+            problems.push(`Agent dismiss-offline: Expected #btn-sharpen to be enabled (wood=${woodAfterAgent} >= ${sharpenCostAgent}) — it was still disabled.`);
           }
-          if (woodAfterAgent < engineMod2.UPGRADE_COST && !sharpenAfterAgent.disabled) {
-            problems.push(`Agent dismiss-offline: Expected #btn-sharpen to be disabled (wood=${woodAfterAgent} < ${engineMod2.UPGRADE_COST}) — it was enabled.`);
+          if (woodAfterAgent < sharpenCostAgent && !sharpenAfterAgent.disabled) {
+            problems.push(`Agent dismiss-offline: Expected #btn-sharpen to be disabled (wood=${woodAfterAgent} < ${sharpenCostAgent}) — it was enabled.`);
           }
         }
         const wallAfterAgent = document.getElementById("btn-build-wall");
@@ -1530,8 +1532,8 @@ export async function checks() {
 
     // Simulate dual-goal state: build wall, set resources below dual thresholds
     // Gather enough wood to stay above 10 after sharpening
-    for (let i = 0; i < 15; i++) engine.gatherWood();
-    engine.craftUpgrade(); // costs 5, leaves 10 wood
+    for (let i = 0; i < 20; i++) engine.gatherWood();
+    engine.craftUpgrade(); // costs the first sharpen's 10 wood
     for (let i = 0; i < engine.WALL_COST; i++) engine.gatherStone();
     engine.buildWall(); // costs 5 stone, leaves 0
     // Now wallLevel=1, wood=10, stone=0 — stone is below dual-goal threshold (5)
@@ -1645,8 +1647,8 @@ export async function checks() {
 
     // Dual-resource goal: the forge goal after building the wall.
     engine.reset();
-    for (let i = 0; i < 15; i++) engine.gatherWood();
-    engine.craftUpgrade(); // wood 15 -> 10, unlocks stone
+    for (let i = 0; i < 20; i++) engine.gatherWood();
+    engine.craftUpgrade(); // costs the first sharpen's 10 wood, unlocks stone
     for (let i = 0; i < engine.WALL_COST; i++) engine.gatherStone();
     engine.buildWall(); // wall built, stone back to 0
     renderNow();
@@ -2528,7 +2530,7 @@ export async function checks() {
     engine.reset();
     engine.init();
 
-    // Gather 12 wood — that's >= GOAL_WOOD (10) and > UPGRADE_COST (5)
+    // Gather 12 wood — that's >= the first sharpen's price (10)
     for (let i = 0; i < 12; i++) engine.gatherWood();
 
     // renderUI to update DOM
@@ -2545,10 +2547,11 @@ export async function checks() {
       } else {
         const current = parseInt(ariaNow, 10);
         const max = parseInt(ariaMax, 10);
-        // With wood=12 and cost=5, Math.min(wood, UPGRADE_COST)=5, so bar shows 5/5 (100%)
-        if (current !== 5 || max !== 5) {
-          problems.push(`Sharpen goal progress bar should show 5/5 (Math.min(wood, 5)) at wood=12, got ${current}/${max}. `
-            + "Using `wood % UPGRADE_COST` would give 2/5 instead.");
+        // With wood=12 and the first sharpen costing 10, Math.min(wood, 10)=10,
+        // so the bar shows 10/10 (100%).
+        if (current !== 10 || max !== 10) {
+          problems.push(`Sharpen goal progress bar should show 10/10 (Math.min(wood, 10)) at wood=12, got ${current}/${max}. `
+            + "Using `wood % nextSharpenCost` would give 2/10 instead.");
         }
       }
     }
@@ -2559,8 +2562,8 @@ export async function checks() {
     engine.reset();
     engine.init();
     for (let i = 0; i < 10; i++) engine.gatherWood(); // get to GOAL_WOOD (10)
-    engine.craftUpgrade(); // unlocks stone, consumes 5 wood, leaves 5
-    for (let i = 0; i < 5; i++) engine.gatherWood(); // back to 10 wood
+    engine.craftUpgrade(); // unlocks stone, consumes 10 wood, leaves 0
+    for (let i = 0; i < 10; i++) engine.gatherWood(); // back to 10 wood
     for (let i = 0; i < 7; i++) engine.gatherStone();
     if (typeof window.__renderUI === "function") window.__renderUI();
 
@@ -2667,6 +2670,107 @@ export async function checks() {
     engine.init();
   } catch (err) {
     problems.push(`Sharpen availability rule test threw: ${err.message}`);
+    console.error(err);
+  }
+
+  // ─── Issue #1100: each sharpen costs more than the last ───
+  // A rising sharpening price is what keeps the flat-rate forge and expeditions
+  // worth buying. The button, the goal, the read-state/read-rules tools and
+  // craftUpgrade must all quote the one nextSharpenCost rule, and it must rise
+  // with ownership, so the button can never be the permanent best buy.
+  try {
+    const engine = await import("./engine.js");
+    const { tools } = await import("./agenttools.js");
+    const toolList = tools();
+    const readState = toolList.find((t) => t.name === "read-state");
+    const readRules = toolList.find((t) => t.name === "read-rules");
+    const renderNow = () => { if (typeof window.__renderUI === "function") window.__renderUI(); };
+    const expectedCost = (owned) => Math.round(engine.FIRST_GOAL_WOOD * engine.SHARPEN_COST_RATE ** owned);
+
+    // (a) The first sharpen costs the first goal; every later one costs more.
+    if (engine.nextSharpenCost({ upgradeLevel: 0 }) !== engine.FIRST_GOAL_WOOD) {
+      problems.push(`nextSharpenCost at 0 owned should be the first goal ${engine.FIRST_GOAL_WOOD}, got ${engine.nextSharpenCost({ upgradeLevel: 0 })}.`);
+    }
+    let previousCost = -Infinity;
+    for (let owned = 0; owned <= 5; owned++) {
+      const cost = engine.nextSharpenCost({ upgradeLevel: owned });
+      if (cost !== expectedCost(owned)) {
+        problems.push(`nextSharpenCost at ${owned} owned should be ${expectedCost(owned)}, got ${cost}.`);
+      }
+      if (cost <= previousCost) {
+        problems.push(`nextSharpenCost must rise with ownership: ${owned} owned costs ${cost}, not more than the ${previousCost} before it.`);
+      }
+      previousCost = cost;
+    }
+    if (expectedCost(1) <= expectedCost(0)) {
+      problems.push(`The second sharpen (${expectedCost(1)} wood) must cost more than the first (${expectedCost(0)} wood).`);
+    }
+
+    // (b) After one sharpen, the button, read-state and read-rules all quote 12.
+    engine.reset();
+    localStorage.setItem("selfgrow-state", JSON.stringify({
+      wood: 30, rate: 0.15, upgradeLevel: 1, stone: 0, stoneUnlocked: true,
+      totalWoodEarned: 20, totalStoneEarned: 0,
+      wallLevel: 0, forgeLevel: 0, expeditionLevel: 0, maps: 0,
+      timestamp: new Date().toISOString(), firstTimestamp: new Date().toISOString(),
+    }));
+    engine.init();
+    renderNow();
+    const oneOwnedCost = engine.nextSharpenCost(engine.getState());
+    const btn = document.getElementById("btn-sharpen");
+    if (!btn || !btn.textContent.includes("Sharpen Axe (" + oneOwnedCost + " wood)")) {
+      problems.push(`Sharpen button should show the next price (${oneOwnedCost} wood) after one sharpen, got "${btn ? btn.textContent.trim() : "(no button)"}".`);
+    }
+    const stateOne = await readState.execute({});
+    if (stateOne.nextSharpenCost !== oneOwnedCost) {
+      problems.push(`read-state.nextSharpenCost after one sharpen should be ${oneOwnedCost}, got ${stateOne.nextSharpenCost}.`);
+    }
+    const rulesOne = await readRules.execute({});
+    const sharpenAction = Array.isArray(rulesOne.actions) ? rulesOne.actions.find((a) => a.id === "sharpen") : null;
+    if (!sharpenAction || sharpenAction.cost?.wood !== oneOwnedCost) {
+      problems.push(`read-rules sharpen cost after one sharpen should be ${oneOwnedCost}, got ${JSON.stringify(sharpenAction && sharpenAction.cost)}.`);
+    }
+    if (!sharpenAction || typeof sharpenAction.costFormula !== "string" || !sharpenAction.costFormula.includes(String(engine.SHARPEN_COST_RATE))) {
+      problems.push(`read-rules sharpen costFormula should state the rising rule using SHARPEN_COST_RATE, got ${JSON.stringify(sharpenAction && sharpenAction.costFormula)}.`);
+    }
+
+    // (c) At the forge unlock, forging is no worse a deal than the next sharpen:
+    // it costs no more wood and grants at least as much wood/s.
+    const forgeUnlockState = { upgradeLevel: 1, wallLevel: 1, forgeLevel: 0 };
+    const forgeWoodCost = engine.FORGE_WOOD_COST_BASE + 0 * engine.FORGE_WOOD_COST_INC;
+    if (forgeWoodCost > engine.nextSharpenCost(forgeUnlockState)) {
+      problems.push(`At forge unlock the forge should cost no more wood (${forgeWoodCost}) than the next sharpen (${engine.nextSharpenCost(forgeUnlockState)}).`);
+    }
+    if (engine.FORGE_WOOD_RATE_BONUS < engine.RATE_INCREASE_PER_UPGRADE) {
+      problems.push(`At forge unlock forging should grant at least as much wood/s (${engine.FORGE_WOOD_RATE_BONUS}) as a sharpen (${engine.RATE_INCREASE_PER_UPGRADE}).`);
+    }
+
+    // (d) A save that already owns sharpenings prices its next from that count,
+    // and survives an export/import round-trip with the price intact.
+    engine.reset();
+    localStorage.setItem("selfgrow-state", JSON.stringify({
+      wood: 40, rate: 0.25, upgradeLevel: 3, stone: 10, stoneUnlocked: true,
+      totalWoodEarned: 50, totalStoneEarned: 10,
+      wallLevel: 1, forgeLevel: 0, expeditionLevel: 0, maps: 0,
+      timestamp: new Date().toISOString(), firstTimestamp: new Date().toISOString(),
+    }));
+    engine.init();
+    if (engine.nextSharpenCost(engine.getState()) !== expectedCost(3)) {
+      problems.push(`A loaded save owning 3 sharpenings should price its next at ${expectedCost(3)}, got ${engine.nextSharpenCost(engine.getState())}.`);
+    }
+    const code = engine.exportSave();
+    engine.reset();
+    const restored = engine.importSave(code);
+    if (!restored.ok) {
+      problems.push(`The sharpening save should round-trip through export/import, got ${JSON.stringify(restored.reason)}.`);
+    } else if (engine.nextSharpenCost(engine.getState()) !== expectedCost(3)) {
+      problems.push(`After export/import the next sharpen should still cost ${expectedCost(3)} from 3 owned, got ${engine.nextSharpenCost(engine.getState())}.`);
+    }
+
+    engine.reset();
+    engine.init();
+  } catch (err) {
+    problems.push(`Rising sharpen price test threw: ${err.message}`);
     console.error(err);
   }
 
@@ -5205,30 +5309,30 @@ export async function checks() {
     if (!reader) {
       problems.push("Expected read-state tool for progressToNext test.");
     } else {
-      // wood=10, UPGRADE_COST=5: Math.min(10,5)=5, upgrade available
+      // wood=10, first sharpen costs 10: Math.min(10,10)=10, upgrade available
       let state = await reader.execute({});
       if (state.nextGoal && state.nextGoal.type === "upgrade") {
-        if (state.nextGoal.progressToNext !== 5) {
-          problems.push(`progressToNext for sharpen goal with wood=10 should be 5 (Math.min(wood, 5)), got ${state.nextGoal.progressToNext}.`);
+        if (state.nextGoal.progressToNext !== 10) {
+          problems.push(`progressToNext for sharpen goal with wood=10 should be 10 (Math.min(wood, 10)), got ${state.nextGoal.progressToNext}.`);
         }
         if (state.nextGoal.upgradeAvailable !== true) {
-          problems.push(`upgradeAvailable should be true when wood=10 >= UPGRADE_COST=5, got ${state.nextGoal.upgradeAvailable}.`);
+          problems.push(`upgradeAvailable should be true when wood=10 >= nextSharpenCost=10, got ${state.nextGoal.upgradeAvailable}.`);
         }
       } else {
         problems.push(`nextGoal type should be "upgrade" with wood=10 and no sharpen, got ${state.nextGoal ? state.nextGoal.type : "missing"}.`);
       }
 
-      // Gather more wood to 13 — still < cost threshold for the modulo test
+      // Gather more wood to 13 — still in the sharpen goal, capped at its 10 target
       for (let i = 0; i < 3; i++) engine.gatherWood();
       state = await reader.execute({});
-      // wood=13, UPGRADE_COST=5: Math.min(13,5)=5, not 13%5=3
+      // wood=13, cost=10: Math.min(13,10)=10, not 13%10=3
       if (state.nextGoal && state.nextGoal.type === "upgrade") {
-        if (state.nextGoal.progressToNext !== 5) {
-          problems.push(`progressToNext for sharpen goal with wood=13 should be 5 (Math.min(wood, 5)), got ${state.nextGoal.progressToNext}. `
-            + "Using `wood % UPGRADE_COST` would give 3.");
+        if (state.nextGoal.progressToNext !== 10) {
+          problems.push(`progressToNext for sharpen goal with wood=13 should be 10 (Math.min(wood, 10)), got ${state.nextGoal.progressToNext}. `
+            + "Using `wood % nextSharpenCost` would give 3.");
         }
         if (state.nextGoal.upgradeAvailable !== true) {
-          problems.push(`upgradeAvailable should be true when wood=13 >= UPGRADE_COST=5, got ${state.nextGoal.upgradeAvailable}.`);
+          problems.push(`upgradeAvailable should be true when wood=13 >= nextSharpenCost=10, got ${state.nextGoal.upgradeAvailable}.`);
         }
       }
 
@@ -5236,8 +5340,8 @@ export async function checks() {
       engine.reset();
       engine.init();
       for (let i = 0; i < 10; i++) engine.gatherWood();
-      engine.craftUpgrade(); // unlock stone, wood becomes 5
-      for (let i = 0; i < 5; i++) engine.gatherWood(); // back to 10
+      engine.craftUpgrade(); // unlock stone, wood becomes 0
+      for (let i = 0; i < 10; i++) engine.gatherWood(); // back to 10
       for (let i = 0; i < 7; i++) engine.gatherStone(); // stone=7, > WALL_COST=5
       state = await reader.execute({});
       // Should be in build-wall-goal state (stone >= GOAL_STONE, no wall yet)
@@ -5258,7 +5362,7 @@ export async function checks() {
       engine.init();
       for (let i = 0; i < 10; i++) engine.gatherWood();
       engine.craftUpgrade();
-      for (let i = 0; i < 5; i++) engine.gatherWood();
+      for (let i = 0; i < 10; i++) engine.gatherWood();
       for (let i = 0; i < 3; i++) engine.gatherStone(); // stone=3 < GOAL_STONE=5
       state = await reader.execute({});
       if (state.nextGoal && state.nextGoal.type !== "stone-goal") {
@@ -5272,6 +5376,7 @@ export async function checks() {
       engine.init();
       for (let i = 0; i < 10; i++) engine.gatherWood();
       engine.craftUpgrade();
+      for (let i = 0; i < 10; i++) engine.gatherWood();
       for (let i = 0; i < 5; i++) engine.gatherStone();
       engine.buildWall(); // wallLevel=1, stone=0, forge=0
       // With forgeLevel=0 (<5) and wallLevel>0, it's forge-goal, not fallback.
@@ -7745,8 +7850,12 @@ export async function checks() {
 
       // (b) Every cost and effect is the engine's own constant.
       checkNumber("read-rules gather effect.woodPerChop", actionById("gather")?.effect?.woodPerChop, engine.clickPowerFor(state));
-      checkNumber("read-rules sharpen cost.wood", actionById("sharpen")?.cost?.wood, engine.UPGRADE_COST);
+      checkNumber("read-rules sharpen cost.wood", actionById("sharpen")?.cost?.wood, engine.nextSharpenCost(state));
       checkNumber("read-rules sharpen effect.woodRatePerSec", actionById("sharpen")?.effect?.woodRatePerSec, engine.RATE_INCREASE_PER_UPGRADE);
+      if (typeof actionById("sharpen")?.costFormula !== "string"
+          || !actionById("sharpen").costFormula.includes(String(engine.SHARPEN_COST_RATE))) {
+        problems.push("read-rules sharpen costFormula should state the rising-price rule using the engine's own SHARPEN_COST_RATE constant.");
+      }
       checkNumber("read-rules gather-stone effect.stone", actionById("gather-stone")?.effect?.stone, engine.STONE_GATHER_AMOUNT);
       checkNumber("read-rules build-wall cost.stone", actionById("build-wall")?.cost?.stone, engine.WALL_COST);
       checkNumber("read-rules build-wall effect.woodPerChop", actionById("build-wall")?.effect?.woodPerChop, engine.WALL_CLICK_POWER_BONUS);

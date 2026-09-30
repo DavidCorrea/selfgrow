@@ -8,7 +8,7 @@
  * @module agenttools
  */
 
-import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, chooseAwayEventOption, getReturnSummary, formatElapsed, formatRate, nextDiscoveryAfter, discoveryCollection, returnDiscoveryText, sharpenAvailable, sharpenThreshold, wallAvailable, expeditionUnlocked, actionAvailability, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, effectiveWoodRate, expeditionMultiplierFor, clickPowerFor, FIRST_GOAL_WOOD, UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, GOAL_STONE, WALL_COST, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT, EXPEDITION_FORGE_LEVEL, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_WOOD_COST_INC, FORGE_STONE_COST_INC, FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC, EXPEDITION_WOOD_RATE_MULTIPLIER, DISCOVERY_MIN_SEC, AWAY_EVENT_MIN_SEC, AWAY_EVENT_LUMP_SEC, AWAY_EVENT_RATE_BONUS_FRACTION, awayRateBonusFor, AWAY_EVENTS, discoverForElapsed, FINDS_LIST_LIMIT } from "./engine.js";
+import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, chooseAwayEventOption, getReturnSummary, formatElapsed, formatRate, nextDiscoveryAfter, discoveryCollection, returnDiscoveryText, sharpenAvailable, sharpenThreshold, wallAvailable, expeditionUnlocked, actionAvailability, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, effectiveWoodRate, expeditionMultiplierFor, clickPowerFor, FIRST_GOAL_WOOD, SHARPEN_COST_RATE, nextSharpenCost, RATE_INCREASE_PER_UPGRADE, GOAL_STONE, WALL_COST, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT, EXPEDITION_FORGE_LEVEL, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_WOOD_COST_INC, FORGE_STONE_COST_INC, FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC, EXPEDITION_WOOD_RATE_MULTIPLIER, DISCOVERY_MIN_SEC, AWAY_EVENT_MIN_SEC, AWAY_EVENT_LUMP_SEC, AWAY_EVENT_RATE_BONUS_FRACTION, awayRateBonusFor, AWAY_EVENTS, discoverForElapsed, FINDS_LIST_LIMIT } from "./engine.js";
 
 /**
  * The last return as the welcome-back panel is showing it, read straight from
@@ -123,6 +123,9 @@ function withGoal(s) {
     savePersisted: s.savePersisted ?? getState().savePersisted,
     elapsed: s.firstTimestamp ? formatElapsed(Date.now() - new Date(s.firstTimestamp).getTime()) : '\u2014',
     upgradeLevel: s.upgradeLevel,
+    // The wood the next sharpen costs, read from the engine's own rising-price
+    // rule so the tool quotes exactly what the button label shows.
+    nextSharpenCost: nextSharpenCost(s),
     stone: s.stone,
     stoneRate: stoneRate,
     stoneUnlocked: s.stoneUnlocked,
@@ -232,9 +235,9 @@ function rulesGoals(s) {
     {
       order: 2,
       type: "upgrade",
-      description: "Craft a Sharpening (" + UPGRADE_COST + " wood)",
+      description: "Craft a Sharpening (" + nextSharpenCost(s) + " wood)",
       action: "sharpen",
-      requirement: { wood: UPGRADE_COST },
+      requirement: { wood: nextSharpenCost(s) },
     },
     {
       order: 3,
@@ -300,7 +303,8 @@ function rulesActions(s) {
     {
       id: "sharpen",
       label: "Sharpen Axe",
-      cost: { wood: UPGRADE_COST },
+      cost: { wood: nextSharpenCost(s) },
+      costFormula: "wood = round(" + FIRST_GOAL_WOOD + " * " + SHARPEN_COST_RATE + " ^ owned), so the price rises with each sharpening owned",
       effect: { woodRatePerSec: RATE_INCREASE_PER_UPGRADE },
       effectText: "+" + formatRate(RATE_INCREASE_PER_UPGRADE) + " wood/s. The first sharpen unlocks stone.",
       requires: { woodBanked: sharpenThreshold(s) },
@@ -473,6 +477,8 @@ export function tools() {
         + "visitor: wood count, base accumulation rate (rate), the rate the game "
         + "actually pays once earned maps are applied (effectiveRate) and the map "
         + "factor scaling it (expeditionMultiplier), number of upgrades crafted, "
+        + "the wood the next sharpen costs (nextSharpenCost, the same figure the "
+        + "Sharpen button shows), "
         + "stone count, stone accumulation rate, wall level, forge level, "
         + "forge wood cost, forge stone cost, click power, "
         + "expedition level, maps, expedition wood cost, expedition stone cost, "
@@ -543,7 +549,7 @@ export function tools() {
       description: "Performs a named action the visitor could take from the "
         + "page, and returns the state afterwards. Supported actions: "
         + '"gather" — instantly adds +1 wood (or more based on wall and forge level); '
-        + '"sharpen" — once the first goal is reached, consumes ' + UPGRADE_COST + ' wood to permanently increase the wood accumulation rate (refused with a reason before then); '
+        + '"sharpen" — once the first goal is reached, consumes the next sharpen\'s wood price (which rises with each one owned) to permanently increase the wood accumulation rate (refused with a reason before then); '
         + '"gather-stone" — instantly adds +' + STONE_GATHER_AMOUNT + ' stone (only available after stone is unlocked); '
         + '"build-wall" — consumes ' + WALL_COST + ' stone to permanently increase click power for wood; '
         + '"forge-tool" — consumes wood and stone to forge a tool, permanently boosting wood rate and click power; '
@@ -657,7 +663,7 @@ export function tools() {
         + FIRST_GOAL_WOOD + " wood'), upgrade (craft a sharpening), stone-goal, "
         + "build-wall-goal, forge-goal, expedition-goal. actions lists every action a visitor "
         + "can take, each {id, label, cost (wood/stone consumed, empty when free), costFormula "
-        + "(the escalating rule for the repeatable forge/expedition costs, so a price at any "
+        + "(the escalating rule for the repeatable sharpen/forge/expedition costs, so a price at any "
         + "level can be projected), effect (the numeric change it makes, e.g. woodRatePerSec "
         + "or woodPerChop), effectText (the exact sentence the page prints beside that button), "
         + "requires (what must be true before it works)}. unlocks names the chain: the first "

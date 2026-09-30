@@ -1913,7 +1913,7 @@
   </div>
   <script type="module">
     import "./webmcp.js";
-    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, chooseAwayEventOption, markReturnSeen, formatElapsed, nextAwayFindText, nextDiscoveryAfter, sharpenAvailable, sharpenThreshold, expeditionUnlocked, actionAvailability, displayAmount, formatAmount, formatRate, exportSave, importSave, inspectSave, describeGoal, returnDiscoveryLine, pauseForHidden, resumeFromHidden, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, clickPowerFor, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
+    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, chooseAwayEventOption, markReturnSeen, formatElapsed, nextAwayFindText, nextDiscoveryAfter, sharpenAvailable, sharpenThreshold, expeditionUnlocked, actionAvailability, displayAmount, formatAmount, formatRate, exportSave, importSave, inspectSave, describeGoal, returnDiscoveryLine, pauseForHidden, resumeFromHidden, nextSharpenCost, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, clickPowerFor, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
     import { cloneState, fastForward, rehearseAwayChoice } from "./sandbox.js";
     import { mountSprites, mountSprite, updateSprites, playReaction } from "./sprites.js";
 
@@ -2981,11 +2981,12 @@
       // button can never stay locked after its threshold is crossed, and an
       // agent can never sharpen before the button would enable.
       if (sharpenAvailable(s)) {
-        btnSharpen.innerHTML = '<span class="btn-icon sprite-mount" data-sprite="axe" aria-hidden="true"></span> Sharpen Axe (' + UPGRADE_COST + ' wood)';
+        const sharpenCost = nextSharpenCost(s);
+        btnSharpen.innerHTML = '<span class="btn-icon sprite-mount" data-sprite="axe" aria-hidden="true"></span> Sharpen Axe (' + sharpenCost + ' wood)';
         // The button is rebuilt here every render, so its picture is mounted
         // here too — the render loop's sprite pass skips an unchanged stage.
         mountSprite(btnSharpen.querySelector("[data-sprite]"), "axe");
-        btnSharpen.setAttribute("aria-label", "Sharpen Axe (" + UPGRADE_COST + " wood)");
+        btnSharpen.setAttribute("aria-label", "Sharpen Axe (" + sharpenCost + " wood)");
         btnSharpen.disabled = false;
       } else {
         const needed = Math.max(0, Math.ceil(sharpenThreshold(s) - wood));

@@ -22,7 +22,7 @@
 const STORAGE_KEY = "selfgrow-state";
 const WOOD_RATE = 0.1; // wood per second
 const FIRST_GOAL_WOOD = 10; // wood needed to reach the first goal and unlock the first sharpen
-const UPGRADE_COST = 5; // wood per upgrade
+const SHARPEN_COST_RATE = 1.15; // each sharpen costs this much more than the last
 const RATE_INCREASE_PER_UPGRADE = 0.05; // additional wood per second per upgrade
 const STONE_BASE_RATE = 0.05; // stone per second (after stone unlocked)
 const STONE_RATE_BOOST_FACTOR = 0.001; // extra stone/s per total wood earned
@@ -159,7 +159,7 @@ function generatedIndex(id) {
 }
 
 // Exported for external use (tools, UI)
-export { FIRST_GOAL_WOOD, UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, STONE_BASE_RATE, STONE_RATE_BOOST_FACTOR, WALL_COST, EXPEDITION_FORGE_LEVEL, GOAL_STONE, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT,
+export { FIRST_GOAL_WOOD, SHARPEN_COST_RATE, RATE_INCREASE_PER_UPGRADE, STONE_BASE_RATE, STONE_RATE_BOOST_FACTOR, WALL_COST, EXPEDITION_FORGE_LEVEL, GOAL_STONE, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT,
   FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_WOOD_COST_INC, FORGE_STONE_COST_INC,
   FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS,
   EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC,
@@ -1394,17 +1394,30 @@ export function gatherWood() {
 }
 
 /**
- * The wood a player must have banked before the next sharpen is available.
+ * The wood the next sharpen costs, given how many the player already owns.
  *
- * The first sharpen is the game's first goal, so it unlocks at FIRST_GOAL_WOOD;
- * every sharpen after that costs UPGRADE_COST. This is the one rule the
- * Sharpen button, the goal panel and the agent tools all read.
+ * The first sharpen is the game's first goal, so it costs FIRST_GOAL_WOOD (10).
+ * Each further one costs SHARPEN_COST_RATE times the one before, rounded, so
+ * the price rises as the player collects sharpenings and the flat-rate forge
+ * and expeditions become the better next purchase. This is the one rule the
+ * Sharpen button, the goal panel, the engine's own craft and the agent tools
+ * all read, so no two of them can quote a different price.
+ *
+ * @param {{ upgradeLevel: number }} s
+ * @returns {number}
+ */
+export function nextSharpenCost(s) {
+  return Math.round(FIRST_GOAL_WOOD * SHARPEN_COST_RATE ** (s.upgradeLevel || 0));
+}
+
+/**
+ * The wood a player must have banked before the next sharpen is available.
  *
  * @param {{ wood: number, upgradeLevel: number }} s
  * @returns {number}
  */
 export function sharpenThreshold(s) {
-  return s.upgradeLevel >= 1 ? UPGRADE_COST : FIRST_GOAL_WOOD;
+  return nextSharpenCost(s);
 }
 
 /**
@@ -1543,13 +1556,14 @@ export function describeGoal(s) {
   }
 
   if (s.upgradeLevel < 1) {
-    const resources = singleGoalResources("Wood", s.wood, UPGRADE_COST);
+    const cost = nextSharpenCost(s);
+    const resources = singleGoalResources("Wood", s.wood, cost);
     return {
       type: "upgrade",
-      description: "Craft a Sharpening (" + UPGRADE_COST + " wood)",
+      description: "Craft a Sharpening (" + cost + " wood)",
       available: sharpenAvailable(s),
       resources,
-      cost: UPGRADE_COST,
+      cost,
       progressToNext: resources[0].current,
       upgradeAvailable: sharpenAvailable(s),
     };
@@ -1616,8 +1630,9 @@ export function describeGoal(s) {
 }
 
 /**
- * Craft a sharpen upgrade: consumes UPGRADE_COST wood to permanently
- * increase the wood accumulation rate by RATE_INCREASE_PER_UPGRADE.
+ * Craft a sharpen upgrade: consumes the next sharpen's wood price (which rises
+ * with each one owned) to permanently increase the wood accumulation rate by
+ * RATE_INCREASE_PER_UPGRADE.
  *
  * If this is the first upgrade, unlocks the stone system. Refuses at exactly
  * the same gate the Sharpen button uses, so an agent can never sharpen before
@@ -1628,13 +1643,14 @@ export function describeGoal(s) {
  */
 export function craftUpgrade() {
   if (!sharpenAvailable(state)) {
-    const needed = Math.ceil(sharpenThreshold(state) - state.wood);
+    const cost = nextSharpenCost(state);
+    const needed = Math.ceil(cost - state.wood);
     const reason = state.upgradeLevel >= 1
-      ? "Not enough wood — need " + UPGRADE_COST
+      ? "Not enough wood — need " + cost
       : "First goal not reached — gather " + needed + " more wood to unlock sharpening.";
     return { upgraded: false, reason, state: getState() };
   }
-  state.wood -= UPGRADE_COST;
+  state.wood -= nextSharpenCost(state);
   state.rate += RATE_INCREASE_PER_UPGRADE;
   state.upgradeLevel++;
 
