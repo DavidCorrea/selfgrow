@@ -5,7 +5,7 @@
 // for a person to merge; everything else goes through as before.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { changesTheMachine } from "./review-pr.mjs";
+import { changesTheMachine } from "./shared.mjs";
 
 test("a change the Devs may merge themselves", async (t) => {
   await t.test("touches only the product", () => {
