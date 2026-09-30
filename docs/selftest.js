@@ -3284,6 +3284,110 @@ export async function checks() {
       }
     }
 
+    // (n) Every absence is accounted for on return, however short (issue
+    // #1092). An account that can never be shown — a first-ever-visit record or
+    // a sub-second blip — must not mask the next real absence: a short reload
+    // afterwards still reports its own elapsed time, earnings and next find.
+    const offlineNextFindEl = document.getElementById("offline-next-find");
+    const btnGatherEl = document.getElementById("btn-gather");
+    const btnSharpenEl = document.getElementById("btn-sharpen");
+    const neutralMilestones = {
+      sharpenAvailable: false, stoneNowUnlocked: false, wallAvailable: false,
+      forgeNowUnlocked: false, expeditionNowUnlocked: false,
+    };
+    // Seed a save carrying `record` as its kept last return, wind it back
+    // `ageMs`, and greet exactly as the page's own load does. The seeded record
+    // is the shape applyPersisted/sanitizeReturnRecord expect, so the engine
+    // sees the record a real save would carry rather than a partial object.
+    function reloadWithSeededAccount(record, ageMs = 5000) {
+      engine.reset();
+      localStorage.setItem("selfgrow-state", JSON.stringify({
+        wood: 5, rate: 0.1, stone: 0, totalWoodEarned: 5,
+        wallLevel: 0, stoneUnlocked: false,
+        firstTimestamp: new Date(Date.now() - 3600000).toISOString(),
+        timestamp: new Date(Date.now() - ageMs).toISOString(),
+        lastReturn: record,
+      }));
+      engine.init();
+      if (typeof window.__setOverlayOpen === "function") window.__setOverlayOpen("offline", false);
+      overlay.setAttribute("hidden", "");
+      if (!engine.getReturnSummary().seen) window.__showOfflineSummary();
+      return engine.getReturnSummary();
+    }
+    const evidenceRecord = (overrides) => ({
+      firstVisit: false, seen: false, elapsedSec: 0.3, wood: 0, stone: 0,
+      discovery: null, eventId: null, chosenOption: null,
+      milestones: neutralMilestones, ...overrides,
+    });
+    // Both kinds of account that can never be announced: a first-ever-visit
+    // record and a sub-second blip. Either one, kept unseen, previously
+    // returned nothing at all on the next short reload.
+    const maskingAccounts = [
+      { label: "a first-ever-visit record", record: evidenceRecord({ firstVisit: true, elapsedSec: 0.001 }) },
+      { label: "a sub-second blip", record: evidenceRecord({ firstVisit: false, elapsedSec: 0.3 }) },
+    ];
+    for (const { label, record } of maskingAccounts) {
+      const returned = reloadWithSeededAccount(record);
+      if (!returned.visible) {
+        problems.push(`A short reload after ${label} must report a visible return, got visible:${returned.visible}.`);
+      }
+      if (!(returned.elapsedSec >= 4 && returned.elapsedSec <= 10)) {
+        problems.push(`A short reload after ${label} must account for its ~5s absence, got ${returned.elapsedSec}s.`);
+      }
+      if (overlay.hidden) {
+        problems.push(`A short reload after ${label} must open the welcome-back panel.`);
+      }
+      const seededElapsedText = elapsedEl ? elapsedEl.textContent.trim() : "";
+      if (seededElapsedText !== returned.elapsed) {
+        problems.push(`The panel after ${label} must show the reported absence ${JSON.stringify(returned.elapsed)}, got ${JSON.stringify(seededElapsedText)}.`);
+      }
+      if (readStateTool && !overlay.hidden) {
+        const readShort = await readStateTool.execute({});
+        if (readShort.offlineSummaryVisible !== true) {
+          problems.push(`read-state.offlineSummaryVisible must be true while the panel after ${label} is open, got ${readShort.offlineSummaryVisible}.`);
+        }
+        if (readShort.offlineElapsed !== seededElapsedText) {
+          problems.push(`read-state.offlineElapsed (${readShort.offlineElapsed}) must equal the panel's absence after ${label} (${seededElapsedText}).`);
+        }
+      }
+      // No find is due on a ~5s absence, so the account must still name the
+      // next find and the absence it needs.
+      if (!offlineNextFindEl || offlineNextFindEl.hidden || !/away /.test(offlineNextFindEl.textContent)) {
+        problems.push(`A short reload after ${label} must still name the next find and its absence, got ${JSON.stringify(offlineNextFindEl && offlineNextFindEl.textContent)}.`);
+      }
+      // Dismissing returns to the game with every action button in its
+      // engine-derived state: seen flips, the overlay hides, and the buttons
+      // agree with the actual game state rather than the overlay's lock.
+      window.__dismissOffline();
+      if (!engine.getReturnSummary().seen) {
+        problems.push(`Dismissing the account after ${label} must mark the return seen.`);
+      }
+      if (!overlay.hidden) {
+        problems.push(`Dismissing the account after ${label} must hide the welcome-back panel.`);
+      }
+      if (btnGatherEl && btnGatherEl.disabled) {
+        problems.push(`Gather Wood must be enabled after dismissing the account from ${label}.`);
+      }
+      if (readStateTool && btnSharpenEl) {
+        const readDisabled = await readStateTool.execute({});
+        if (btnSharpenEl.disabled !== !readDisabled.upgradeAvailable) {
+          problems.push(`Sharpen must match its engine-derived availability (${readDisabled.upgradeAvailable}) after dismissing ${label}, got disabled:${btnSharpenEl.disabled}.`);
+        }
+      }
+    }
+
+    // (o) The fix must not become 'always replace': a kept, visible, unseen 1h
+    // account still outlives a 3s reload. A naive replacement would report ~3s
+    // here and go red.
+    const keptHour = reloadWithSeededAccount(evidenceRecord({ firstVisit: false, elapsedSec: 3600, wood: 12, stone: 0 }));
+    if (!(keptHour.elapsedSec >= 3600)) {
+      problems.push(`A kept visible 1h account must survive a 3s reload, got ${keptHour.elapsedSec}s.`);
+    }
+    if (!keptHour.visible || overlay.hidden) {
+      problems.push("A kept visible 1h account must still open the welcome-back panel after a 3s reload.");
+    }
+    if (!overlay.hidden) window.__dismissOffline();
+
     // Leave the page as it was found.
     if (!overlay.hidden) window.__dismissOffline();
     engine.reset();
