@@ -784,6 +784,56 @@
       }
     }
 
+    /* A rehearsal on a wide screen has room to be read sideways: the panel
+       widens and its account splits into two columns — what the rehearsal
+       projects on the left, what it lets you rehearse and decide on the
+       right — so a desktop player takes the whole rehearsal in at a glance.
+       The phone layout above stays a single column. */
+    @media (min-width: 900px) {
+      .sandbox-panel {
+        max-width: min(1000px, calc(100vw - 2rem));
+        width: 92%;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        /* Dense packing backfills the second column beside the first, so the
+           right column starts level with the projections instead of being
+           pushed below the tall left-hand totals. */
+        grid-auto-flow: row dense;
+        column-gap: 1.5rem;
+        row-gap: 0.75rem;
+        /* Rows pack under the heading rather than stretching to fill the
+           panel, matching the top-aligned column it replaces. */
+        align-content: start;
+      }
+
+      /* The heading, the first rule and the exit button run the full width.
+         Everything else falls into two columns: the left holds the account
+         (projected totals, the next find and the milestones already reached),
+         the right holds the decision and the controls that drive the
+         rehearsal. Dense packing starts both columns level, so the controls
+         sit beside the projections instead of below them. The exit stays a
+         full-width row at the foot of the grid — the last thing in the panel,
+         so it is still reached by scrolling a rehearsal taller than the
+         window. */
+      .sandbox-panel > * {
+        grid-column: 1 / -1;
+      }
+      .sandbox-projections,
+      .sandbox-next-find,
+      #sb-milestone-list {
+        grid-column: 1;
+      }
+      #sb-away-event,
+      .sandbox-controls {
+        grid-column: 2;
+      }
+      /* The rule before the controls would be pushed to the foot of the grid
+         by the two columns; the column gap separates them instead. */
+      .sandbox-divider:last-of-type {
+        display: none;
+      }
+    }
+
     /* ─── Goal panel — a full-width banner ─── */
     #goal-panel {
       display: flex;
@@ -1316,6 +1366,47 @@
 
       .offline-next-find {
         font-size: 0.45rem;
+      }
+    }
+
+    /* A return on a wide screen has room to be read sideways: the panel widens
+       and its account splits into two columns — the gathered totals and the
+       goal on the left, the find, the decision and the milestones on the
+       right — so a desktop player takes the whole return in at a glance. The
+       phone layout above stays a single column. */
+    @media (min-width: 900px) {
+      .offline-panel {
+        max-width: min(1000px, calc(100vw - 2rem));
+        width: 92%;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        /* Dense packing backfills the second column beside the first, so the
+           right column starts level with the gathered totals instead of being
+           pushed below them. */
+        grid-auto-flow: row dense;
+        column-gap: 1.5rem;
+        row-gap: 0.75rem;
+        /* Rows pack under the heading rather than stretching to fill the
+           panel, matching the top-aligned column it replaces. */
+        align-content: start;
+      }
+
+      /* The heading, the OK button and the account that closes the panel run
+         the full width; the rest is split left (what you gathered) and right
+         (what the absence turned up). */
+      .offline-panel > * {
+        grid-column: 1 / -1;
+      }
+      .offline-message,
+      #offline-discovery-line,
+      .offline-next-goal {
+        grid-column: 1;
+      }
+      #offline-next-find,
+      #offline-event,
+      #offline-event-chosen,
+      #offline-milestones {
+        grid-column: 2;
       }
     }
 
