@@ -638,9 +638,10 @@ export function skillPathsFor(names, tools) {
   });
 }
 
-// The two roles that decide what a visitor sees: one writes to the rules, the
-// other checks the changed lines against them.
-export const BUILDER_SKILLS = ["web-interface-guidelines"];
+// The two roles that decide what a visitor sees. The Builder gets taste and the
+// rules; the Reviewer gets only the rules, because it judges a change against the
+// Vision and the ticket, not against its own sense of what would look better.
+export const BUILDER_SKILLS = ["frontend-design", "web-interface-guidelines"];
 export const REVIEWER_SKILLS = ["web-interface-guidelines"];
 
 /**

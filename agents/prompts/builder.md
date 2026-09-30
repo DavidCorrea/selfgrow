@@ -12,7 +12,7 @@ Read the proposal, explore the files you need to modify, and implement the chang
 
 Follow the coding standards above in everything you write — the Reviewer checks against them.
 
-If the change touches anything a visitor sees — markup, CSS, copy, or how the page responds — read the `web-interface-guidelines` skill before you write it. The Reviewer checks the changed lines against the guidelines.
+If the change touches anything a visitor sees — markup, CSS, copy, or how the page responds — read the `frontend-design` and `web-interface-guidelines` skills before you write it. The Reviewer checks the changed lines against the guidelines.
 
 Organize files under `docs/` however best fits the change — split into modules when it genuinely improves clarity. If `docs/` has no entry point yet (brand-new project), create an `index.html` (plus whatever else is needed) as the base, then implement the proposal.
 
