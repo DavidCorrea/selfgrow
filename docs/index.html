@@ -129,10 +129,6 @@
       display: none;
     }
 
-    .chip-icon {
-      font-size: 0.7rem;
-    }
-
     .chip-name {
       font-size: 0.45rem;
       color: var(--text-dim);
@@ -1505,7 +1501,7 @@
         <span class="stat-value" id="map-value" style="color: var(--map-color);"></span>
       </div>
       <div class="chip stat-hidden" id="discovery-stat">
-        <span class="chip-icon" aria-hidden="true">&#x2728;</span>
+        <span class="sprite-mount" data-sprite="discovery" aria-hidden="true"></span>
         <span class="chip-name" id="discovery-label">Away Find</span>
         <span class="stat-value discovery-value" id="discovery-value"></span>
       </div>
@@ -1634,7 +1630,7 @@
           <label class="save-label" for="save-import-input">Restore from a code</label>
           <textarea id="save-import-input" aria-label="Paste a save code to restore" placeholder="Paste a save code here"></textarea>
           <button class="btn" id="btn-restore-save" type="button" aria-label="Restore Save">
-            <span class="btn-icon">&#x21BA;</span> Restore Save
+            <span class="btn-icon sprite-mount" data-sprite="restore" aria-hidden="true"></span> Restore Save
           </button>
           <!-- Deliberate second step: restoring replaces the world, so the page
                names what is about to be lost and asks before it is lost. -->
@@ -2375,7 +2371,7 @@
     rememberStaticText(stoneStat, [stoneStat.querySelector(".chip-name")]);
     rememberStaticText(forgeStat, [forgeStat.querySelector(".chip-name")]);
     rememberStaticText(expeditionStat, [expeditionStat.querySelector(".chip-name")]);
-    rememberStaticText(discoveryStat, [discoveryStat.querySelector(".chip-icon"), discoveryStat.querySelector(".chip-name")]);
+    rememberStaticText(discoveryStat, [discoveryStat.querySelector(".chip-name")]);
     rememberStaticText(totalStoneStat, [totalStoneStat.querySelector("span")]);
 
     function restoreStaticText(row) {
