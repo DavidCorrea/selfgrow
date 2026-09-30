@@ -8273,5 +8273,70 @@ export async function checks() {
     console.error(err);
   }
 
+  // ─── A failed save warns plainly instead of losing progress (issue #1071) ──
+  try {
+    const engine = await import("./engine.js");
+    const { tools } = await import("./agenttools.js");
+    const readState = tools().find((t) => t.name === "read-state");
+    const saveWarning = document.getElementById("save-warning");
+
+    if (!saveWarning) {
+      problems.push("Expected a #save-warning element so a failed save can be reported to the player — it was not found.");
+    }
+
+    // read-state must report a boolean outcome even when saving works, so an
+    // agent can always tell whether the current save is being persisted.
+    const healthyRead = await readState.execute({});
+    if (typeof healthyRead.savePersisted !== "boolean") {
+      problems.push(`read-state should return savePersisted as a boolean, got ${JSON.stringify(healthyRead.savePersisted)}.`);
+    }
+
+    // Force every localStorage write to fail, as private browsing or a full
+    // quota does. Restored in the finally so no later check inherits it.
+    const realSetItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function () {
+      throw new DOMException("QuotaExceededError");
+    };
+    try {
+      engine.save();
+      if (typeof window.__renderUI === "function") window.__renderUI();
+    } finally {
+      Storage.prototype.setItem = realSetItem;
+    }
+
+    const failedRead = await readState.execute({});
+    if (failedRead.savePersisted !== false) {
+      problems.push(`When a save write fails, read-state.savePersisted must be false, got ${JSON.stringify(failedRead.savePersisted)}.`);
+    }
+    if (saveWarning) {
+      if (saveWarning.hidden) {
+        problems.push("A failed save must show the #save-warning notice, but it was hidden.");
+      } else {
+        const warningText = saveWarning.textContent;
+        if (!/not saved|not being saved/i.test(warningText)) {
+          problems.push(`The save warning must plainly say progress is not being saved, got ${JSON.stringify(warningText)}.`);
+        }
+        if (!/save code/i.test(warningText)) {
+          problems.push(`The save warning must name copying a save code as the way to keep progress, got ${JSON.stringify(warningText)}.`);
+        }
+      }
+    }
+
+    // Once storage works again, the very next write clears the warning — a
+    // warning that could never clear would be worse than none.
+    engine.save();
+    if (typeof window.__renderUI === "function") window.__renderUI();
+    const recoveredRead = await readState.execute({});
+    if (recoveredRead.savePersisted !== true) {
+      problems.push(`After storage recovers, read-state.savePersisted must be true, got ${JSON.stringify(recoveredRead.savePersisted)}.`);
+    }
+    if (saveWarning && !saveWarning.hidden) {
+      problems.push("Once a save write succeeds again, the #save-warning notice must be hidden, but it was still shown.");
+    }
+  } catch (err) {
+    problems.push(`Failed-save warning test threw: ${err.message}`);
+    console.error(err);
+  }
+
   return problems;
 }
