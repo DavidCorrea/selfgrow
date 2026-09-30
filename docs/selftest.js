@@ -8816,6 +8816,182 @@ export async function checks() {
       }
     }
 
+    // (h2) The waiting line is itself the way back to a held decision
+    // (issue #1107): a real button in the status panel, keyboard-reachable and
+    // with an accessible name saying which happening it opens. Activating it
+    // opens the welcome-back panel's two choices; taking one there grants
+    // exactly the effect it states and clears the waiting line — the same path
+    // the Last return control uses, so the reward a return handed the player
+    // sits one step from the status bar instead of behind a second control.
+    // The tool layer reaches the same decision through open-away-decision.
+    const overlayForWaiting = document.getElementById("offline-summary");
+    // The one effect a choice states, checked against the state it left — the
+    // same comparison the panel-click path makes, so a grant that is merely
+    // stored (not applied) fails here.
+    const effectGrants = (before, after, effect) => {
+      if (effect.kind === "wood") return Math.abs((after.wood - before.wood) - effect.amount) < 1e-9;
+      if (effect.kind === "stone") return Math.abs((after.stone - before.stone) - effect.amount) < 1e-9;
+      if (effect.kind === "rate") return Math.abs((after.rate - before.rate) - effect.amount) < 1e-9;
+      if (effect.kind === "wall") return (after.wallLevel - before.wallLevel) === effect.amount;
+      if (effect.kind === "forge") return (after.forgeLevel - before.forgeLevel) === effect.amount;
+      if (effect.kind === "map") return (after.maps - before.maps) === effect.amount && (after.expeditionLevel - before.expeditionLevel) === effect.amount;
+      return false;
+    };
+
+    // With nothing pending there is no control to offer: a fresh save and a
+    // sub-minute return must both leave it hidden.
+    engine.reset();
+    engine.init();
+    if (typeof window.__dismissOffline === "function") window.__dismissOffline();
+    window.__renderUI();
+    if (indicatorVisible()) {
+      problems.push("A fresh save must not show a waiting-decision control.");
+    }
+    seedAwaySave(5000, { stoneUnlocked: true });
+    window.__renderUI();
+    if (engine.getState().pendingEvent !== null) {
+      problems.push(`A 5s return must not offer a decision, got ${JSON.stringify(engine.getState().pendingEvent)}.`);
+    }
+    if (indicatorVisible()) {
+      problems.push("A return with no pending decision must hide the waiting-decision control.");
+    }
+
+    // A real return leaves a real button: in the status panel, a 44px target,
+    // and an accessible name naming the happening it will open.
+    seedAwaySave(600000, { stoneUnlocked: true });
+    window.__renderUI();
+    const waitingControl = document.getElementById("away-decision-waiting");
+    const pendingForControl = engine.getState().pendingEvent;
+    if (!pendingForControl) {
+      problems.push("A 600s return should leave a pending event for the waiting-decision control to open.");
+    }
+    if (!waitingControl) {
+      problems.push("The status panel must carry an #away-decision-waiting control for a held decision.");
+    } else if (waitingControl.tagName !== "BUTTON") {
+      problems.push(`A waiting decision must be a real button so it is keyboard-reachable, got a <${waitingControl.tagName.toLowerCase()}>.`);
+    } else {
+      if (!waitingControl.closest("#status-bar")) {
+        problems.push("The waiting-decision control must live in the #status-bar status panel.");
+      }
+      if (waitingControl.type !== "button") {
+        problems.push(`The waiting-decision control must be type="button", got ${JSON.stringify(waitingControl.type)}.`);
+      }
+      if (waitingControl.getAttribute("aria-haspopup") !== "dialog") {
+        problems.push(`The waiting-decision control must announce aria-haspopup="dialog", got ${JSON.stringify(waitingControl.getAttribute("aria-haspopup"))}.`);
+      }
+      const computedMinHeight = parseFloat(getComputedStyle(waitingControl).minHeight);
+      if (!Number.isFinite(computedMinHeight) || computedMinHeight < 44) {
+        problems.push(`The waiting-decision control must keep a tap target of at least 44px, got min-height ${getComputedStyle(waitingControl).minHeight}.`);
+      }
+      const controlBox = waitingControl.getBoundingClientRect();
+      if (controlBox.height < 44) {
+        problems.push(`The waiting-decision control must render at least 44px tall, got ${controlBox.height}px.`);
+      }
+      const accessibleName = (waitingControl.getAttribute("aria-label") || waitingControl.textContent || "").trim();
+      if (accessibleName === "") {
+        problems.push("The waiting-decision control must have a non-empty accessible name.");
+      } else if (pendingForControl && !accessibleName.includes(pendingForControl.title)) {
+        problems.push(`The waiting-decision control's accessible name must name the happening ${JSON.stringify(pendingForControl.title)}, got ${JSON.stringify(accessibleName)}.`);
+      }
+      if (!indicatorVisible()) {
+        problems.push("After a real return the status panel must show the waiting-decision control.");
+      }
+    }
+
+    // Activating it opens the two choices; taking one grants exactly what it
+    // states and clears the waiting line, matching the welcome-back panel.
+    if (waitingControl && pendingForControl) {
+      if (typeof window.__dismissOffline === "function") window.__dismissOffline();
+      if (overlayForWaiting && !overlayForWaiting.hidden) {
+        problems.push("The welcome-back panel must be closed before the waiting-decision control is activated.");
+      }
+      waitingControl.click();
+      const openedEventSection = document.getElementById("offline-event");
+      if (!overlayForWaiting || overlayForWaiting.hidden) {
+        problems.push("Activating the waiting-decision control must open the welcome-back panel at the held decision.");
+      } else if (!openedEventSection || openedEventSection.hidden) {
+        problems.push("The panel opened from the waiting-decision control must show the pending away event.");
+      } else {
+        pendingForControl.options.forEach((option, i) => {
+          const optionButton = document.getElementById(`away-option-${i}`);
+          if (!optionButton) {
+            problems.push(`The decision opened from the waiting control must offer option ${i} ("${option.id}") in the panel.`);
+          }
+        });
+        const beforeControlChoice = engine.getState();
+        const controlChoiceButton = document.getElementById("away-option-0");
+        if (!controlChoiceButton) {
+          problems.push("The decision opened from the waiting control must render a clickable button per option.");
+        } else {
+          controlChoiceButton.click();
+          const afterControlChoice = engine.getState();
+          const chosenEffect = pendingForControl.options[0].effect;
+          if (!effectGrants(beforeControlChoice, afterControlChoice, chosenEffect)) {
+            problems.push(`Taking the waiting decision from the status panel must grant exactly ${JSON.stringify(chosenEffect)}, got wood ${afterControlChoice.wood - beforeControlChoice.wood}, stone ${afterControlChoice.stone - beforeControlChoice.stone}, rate ${afterControlChoice.rate - beforeControlChoice.rate}, wall ${afterControlChoice.wallLevel - beforeControlChoice.wallLevel}, forge ${afterControlChoice.forgeLevel - beforeControlChoice.forgeLevel}, maps ${afterControlChoice.maps - beforeControlChoice.maps}.`);
+          }
+          if (afterControlChoice.pendingEvent !== null) {
+            problems.push(`Taking the waiting decision from the status panel must clear the event, got ${JSON.stringify(afterControlChoice.pendingEvent)}.`);
+          }
+          if (indicatorVisible()) {
+            problems.push("Taking the waiting decision must clear the status panel's waiting line.");
+          }
+        }
+      }
+      if (typeof window.__dismissOffline === "function") window.__dismissOffline();
+    }
+
+    // An agent reaches and takes the same decision: open-away-decision refuses
+    // with nothing waiting and opens the pending decision otherwise, and
+    // choose-away-event then grants exactly the stated effect and clears it.
+    engine.reset();
+    engine.init();
+    if (typeof window.__dismissOffline === "function") window.__dismissOffline();
+    window.__renderUI();
+    const noDecisionOpen = await performAction.execute({ action: "open-away-decision" });
+    if (noDecisionOpen.ok !== false) {
+      problems.push("perform-action open-away-decision must refuse with ok:false when no decision is waiting.");
+    }
+    if (overlayForWaiting && !overlayForWaiting.hidden) {
+      problems.push("open-away-decision must not open the welcome-back panel when no decision is waiting.");
+    }
+
+    seedAwaySave(600000, { stoneUnlocked: true });
+    window.__renderUI();
+    const pendingForAgent = engine.getState().pendingEvent;
+    const agentOpen = await performAction.execute({ action: "open-away-decision" });
+    if (agentOpen.ok === false) {
+      problems.push(`perform-action open-away-decision should succeed with a waiting decision, got refusal ${JSON.stringify(agentOpen.reason)}.`);
+    }
+    if (!overlayForWaiting || overlayForWaiting.hidden) {
+      problems.push("perform-action open-away-decision must open the welcome-back panel at the waiting decision.");
+    }
+    const agentReadWhileOpened = await readState.execute({});
+    if (agentReadWhileOpened.offlineSummaryVisible !== true) {
+      problems.push("read-state.offlineSummaryVisible must be true after open-away-decision, so an agent can observe the effect.");
+    }
+    if (pendingForAgent) {
+      const agentBefore = engine.getState();
+      const agentChoice = await performAction.execute({ action: "choose-away-event", option: pendingForAgent.options[0].id });
+      if (agentChoice.ok === false) {
+        problems.push(`perform-action choose-away-event should take the opened decision, got refusal ${JSON.stringify(agentChoice.reason)}.`);
+      }
+      const agentAfter = engine.getState();
+      const agentEffect = pendingForAgent.options[0].effect;
+      if (!effectGrants(agentBefore, agentAfter, agentEffect)) {
+        problems.push(`Taking the opened decision through the tools must grant exactly ${JSON.stringify(agentEffect)}, got wood ${agentAfter.wood - agentBefore.wood}, stone ${agentAfter.stone - agentBefore.stone}, rate ${agentAfter.rate - agentBefore.rate}.`);
+      }
+      if (agentAfter.pendingEvent !== null) {
+        problems.push(`Taking the opened decision through the tools must clear the event, got ${JSON.stringify(agentAfter.pendingEvent)}.`);
+      }
+      // The engine change is the tool's to make; the page reconciles the
+      // status panel on its own tick, so render once before reading the DOM.
+      window.__renderUI();
+      if (indicatorVisible()) {
+        problems.push("Taking the opened decision through the tools must clear the status panel's waiting line.");
+      }
+    }
+    if (typeof window.__dismissOffline === "function") window.__dismissOffline();
+
     // (i) The happening advances with the save's own history, so a player who
     // returns on the same cadence is not handed the same decision every time
     // (issue #1051). The pool entry is the absence and the count of happenings
