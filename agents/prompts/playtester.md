@@ -44,7 +44,9 @@ Four questions, in this order. Answer all four honestly before you write anythin
 
 3. **Would you come back?** If the honest answer is no, that is the most important thing you can report, and the reason why is the finding.
 
-   Coming back is an experience of its own, and two minutes of watching cannot show it: you never left. If the product offers a way to simulate time passing in a sandbox kept apart from any real save, the tool pass in your session below will have called it — look for it there, and judge what it returned as the return itself. Did it say plainly what happened while you were away? Was there something new to do, or only bigger numbers? Would that account make you glad you came back? Say what you found in your verdict, because the verdict is where "would you come back" is answered. If the product offers no such rehearsal and its Vision asks for one, that is a finding: nothing in this pipeline can judge the return until it exists.
+   Coming back is an experience of its own, so your session includes one: after watching, you closed the page and came back later, and "Coming back … later" below is what the page showed you. That was a real absence as far as the game can tell, so judge it as the return itself. Did it say plainly what happened while you were away? Was there something new to do, or only bigger numbers? Would that account make you glad you came back? Say what you found in your verdict, because the verdict is where "would you come back" is answered.
+
+   Compare like with like. The controls are listed three times — at load, when you stopped watching, and on your return — because they change as the game does. A button locked at load and open two minutes later is the game working, not a contradiction.
 
 4. **Could you use it without seeing it?** You were handed the product's tools and called them, which is how an agent visiting this page meets it — a name, a description, a schema, and nothing else. Nobody else in this pipeline asks whether that is any good: the build proves each tool *runs*, never that it is usable. So: did the descriptions tell you what you would get back, and when it was worth asking? Did what came back actually answer the question? Is there something a visitor can plainly see or do that no tool exposes?
 
@@ -125,7 +127,7 @@ One optional field, when your notes above let you fill it:
 Leave it out rather than guessing. "I could not tell from this session" is a useful thing to say and an invented confirmation is worse than silence.
 
 Your **verdict** comes first, and is required whether or not you file anything:
-- Answer the first three questions from The bar — was anything happening, was being here rewarding, would you come back — including what a rehearsed return showed, or that there was none to try.
+- Answer the first three questions from The bar — was anything happening, was being here rewarding, would you come back — including what your return showed.
 - Name the weakest thing about the experience, always.
 - Say it plainly. "Pleasant and completely inert — I would not come back" is a useful verdict. "A pleasant experience with some room for improvement" is not a verdict at all.
 
@@ -150,7 +152,7 @@ The Playtester is a worker agent — omit the `outcome` field.
   "status": "success",
   "summary": "One sentence on what the two minutes were like.",
   "data": {
-    "verdict": "Was anything happening, was being here rewarding, would you come back (and what a rehearsed return showed, if there was one) — and the weakest thing about the experience. Required even when findings is empty.",
+    "verdict": "Was anything happening, was being here rewarding, would you come back (and what your return showed) — and the weakest thing about the experience. Required even when findings is empty.",
     "toolSurface": "One line: could an agent arriving cold learn and play this product from its tools alone, and what is weakest about them. Required every session.",
     "followUps": [
       { "number": 12, "status": "verified | persisting", "note": "What you saw this session that shows it." }
