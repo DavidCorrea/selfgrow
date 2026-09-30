@@ -16,6 +16,7 @@ An automated check has already passed on this change — syntax, a lint pass (no
 1. Run `git diff main...HEAD` (and `git status`) to see exactly what changed — focus your attention there first.
 2. Then sanity-check the whole page so a previous run's breakage doesn't ship: open the changed files and look for anything broken.
 3. If a change context is provided below, verify the change actually does what it claims (and, for an issue fix, that the reported symptom is resolved).
+4. If the diff touches markup, CSS, copy or UI behavior, read the `web-interface-guidelines` skill and check the changed lines against it. Its "What blocks a merge" section says which violations are blocking.
 
 {{CHANGE_CONTEXT}}
 
@@ -25,6 +26,7 @@ Only flag things that genuinely should not ship:
 - A feature that is visibly broken or does nothing
 - Can't ship as a static, browser-only site under `docs/` (needs a server or a build step)
 - Clear drift from the Vision
+- An accessibility barrier the change introduces — the blocking rules in the `web-interface-guidelines` skill
 - A material violation of the Coding Standards above — e.g. a sprawling function doing many things, dead/duplicated code introduced by this change, an error swallowed silently, or a new public interface left untested. Judge severity: block on real violations, not on borderline taste calls.
 
 ## What to Ignore (do NOT block on these)

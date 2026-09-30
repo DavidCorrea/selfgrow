@@ -638,6 +638,11 @@ export function skillPathsFor(names, tools) {
   });
 }
 
+// The two roles that decide what a visitor sees: one writes to the rules, the
+// other checks the changed lines against them.
+export const BUILDER_SKILLS = ["web-interface-guidelines"];
+export const REVIEWER_SKILLS = ["web-interface-guidelines"];
+
 /**
  * Run a single one-shot agent against exactly one model. The chain logic lives in
  * runAgent; this is the per-model attempt.
