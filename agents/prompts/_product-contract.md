@@ -52,3 +52,28 @@ functions, drives the DOM, or round-trips stored state is unconstrained.
 Justify choices from the product's own properties, never by precedent. "That is
 how another product does it" is not a reason — if a design is right, it can be
 argued for on its own terms.
+
+## Project Skills
+
+Know-how that belongs to this product rather than to any product — how its
+genre works, what its audience expects — lives in `docs/skills/<name>/SKILL.md`.
+Every agent that can read files is offered all of them, by name and
+description, and loads the ones its task needs. They are product: a reset
+deletes them with everything else in `docs/`.
+
+A skill is a Markdown file with frontmatter:
+
+```markdown
+---
+name: <name>            # the same as its directory
+description: <what it covers and when to load it — the only part an agent sees before deciding>
+---
+
+<the guidance itself>
+```
+
+- **The build loads each one.** A skill with no description, a name that does
+  not match its directory, or a name a harness skill already has fails the build.
+- **Change one when a ticket asks for it**, or when the product has moved and
+  what it says is no longer true. Every later agent that loads it acts on what
+  it says, so a wrong skill misleads every run that follows.
