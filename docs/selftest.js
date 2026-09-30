@@ -4285,12 +4285,23 @@ export async function checks() {
       problems.push(`sandbox fastForward(1h) with stone unlocked should produce positive woodDelta, got ${result2.woodDelta}.`);
     }
 
-    // A rehearsal must project the engine's stone rate for the clone's own wood
-    // total, never a second copy that could promise stone the game would not pay.
-    const projectedStoneRate = result2.stoneDelta / 3600;
-    const engineStoneRate = engine.computeStoneRateFor(stoneState.totalWoodEarned + result2.woodDelta);
-    if (Math.abs(projectedStoneRate - engineStoneRate) > 1e-9) {
-      problems.push(`Sandbox projected stone rate ${projectedStoneRate}/s disagrees with the engine's computeStoneRateFor() for the same wood total (${engineStoneRate}/s).`);
+    // A rehearsal must project the stone the same span of play would earn — the
+    // integral of the stone-rate curve as wood grows at the absence's rate —
+    // never the end-of-span rate applied to the whole span, which double-counts
+    // the wood boost and overpays a long gap. The expected value is recomputed
+    // here from the engine's exported constants so a second copy of the formula
+    // cannot drift away from it unnoticed.
+    const spanSeconds = 3600;
+    const woodBeforeSpan = stoneState.totalWoodEarned;
+    const woodRate = engine.effectiveWoodRate(stoneState);
+    const expectedStone = engine.STONE_BASE_RATE * spanSeconds
+      + engine.STONE_RATE_BOOST_FACTOR * (woodBeforeSpan * spanSeconds + woodRate * spanSeconds * spanSeconds / 2);
+    if (Math.abs(result2.stoneDelta - expectedStone) > 1e-9) {
+      problems.push(`sandbox fastForward(1h) stoneDelta ${result2.stoneDelta} should equal the integral of the stone-rate curve over the span (${expectedStone}).`);
+    }
+    const overpay = engine.computeStoneRateFor(woodBeforeSpan + result2.woodDelta) * spanSeconds;
+    if (!(result2.stoneDelta < overpay)) {
+      problems.push(`sandbox fastForward(1h) stoneDelta ${result2.stoneDelta} should be strictly less than the overpaying end-of-span rate product (${overpay}); the boost is counted twice if it is not.`);
     }
 
     // --- Sandbox Test 3b: the rehearsal panel shows the engine's stone rate ---
@@ -7565,12 +7576,13 @@ export async function checks() {
     if (Math.abs(ret.wood - woodExpected) > 0.05) {
       problems.push(`A return's wood (${ret.wood}) must be the seeded ${seeded.rate}/s across the whole ${ret.elapsedSec}s away (${woodExpected}), not one throttled tick.`);
     }
-    // The stone is the rate the save pays, which the wood earned over the gap
-    // has itself raised — the same figure a reload of this absence would pay.
-    // Tolerance is the counters' own flooring.
-    const stoneExpected = engine.computeStoneRateFor(seeded.totalWoodEarned + woodExpected) * ret.elapsedSec;
+    // The stone is the integral of the rate curve across the gap — the same
+    // figure a real stretch of play would earn — computed by the engine's own
+    // helper so a restated formula here cannot drift from it. Tolerance is the
+    // counters' own flooring.
+    const stoneExpected = engine.stoneGainForSpan(seeded.totalWoodEarned, seeded.rate, ret.elapsedSec);
     if (!(ret.stone > 0) || Math.abs(ret.stone - stoneExpected) > 0.05) {
-      problems.push(`A return's stone (${ret.stone}) must be the save's own rate across the whole ${ret.elapsedSec}s away (${stoneExpected}); only the counters' flooring may differ.`);
+      problems.push(`A return's stone (${ret.stone}) must be the integral of the rate curve across the whole ${ret.elapsedSec}s away (${stoneExpected}); only the counters' flooring may differ.`);
     }
 
     // The rate left behind is the one a reload of this absence would leave, read
@@ -7691,6 +7703,112 @@ export async function checks() {
       // nothing left to restore
     }
     problems.push(`Backgrounded-tab return test threw: ${err.message}`);
+    console.error(err);
+  }
+
+  // ─── Offline stone is what playing the span would earn (issue #1106) ──────
+  // Crediting a whole absence at the rate the player ended at counts the
+  // wood-driven stone boost twice: the boost the span itself earned is already
+  // in the ending rate. The credit must be the integral of the rate curve —
+  // engine.stoneGainForSpan — so a long return pays exactly what the same
+  // stretch at the keyboard would, and the counter, the panel and the sandbox
+  // all state one number.
+  try {
+    const engine = await import("./engine.js");
+    const sandbox = await import("./sandbox.js");
+    const { tools } = await import("./agenttools.js");
+    const readState = tools().find((t) => t.name === "read-state");
+    const overlay = document.getElementById("offline-summary");
+    const stoneAmountEl = document.getElementById("offline-stone-amount");
+
+    if (typeof engine.stoneGainForSpan !== "function") {
+      problems.push("Expected engine.stoneGainForSpan to be exported so the return, the panel and the sandbox share one stone-credit rule.");
+    }
+
+    const originalCode = engine.exportSave();
+    const MONTH_SEC = 30 * 86400;
+    const baseSave = {
+      wood: 1000, rate: 2, upgradeLevel: 3,
+      stone: 5, totalWoodEarned: 1000, totalStoneEarned: 5,
+      wallLevel: 0, forgeLevel: 0, expeditionLevel: 0, maps: 0,
+      stoneUnlocked: true, discoveryBonus: 0, discoveryId: null, discoveryName: null,
+      firstTimestamp: new Date(Date.now() - 2 * MONTH_SEC * 1000).toISOString(),
+    };
+    // Load a save `awaySec` old and let catchUp credit the absence, then show
+    // the panel exactly as a reload does.
+    const returnFromAway = (awaySec) => {
+      engine.reset();
+      localStorage.setItem("selfgrow-state", JSON.stringify({
+        ...baseSave,
+        timestamp: new Date(Date.now() - awaySec * 1000).toISOString(),
+      }));
+      engine.init();
+      if (typeof window.__setOverlayOpen === "function") window.__setOverlayOpen("offline", false);
+      if (overlay) overlay.setAttribute("hidden", "");
+      if (typeof window.__showOfflineSummary === "function") window.__showOfflineSummary();
+      return engine.getReturnSummary();
+    };
+
+    if (typeof engine.stoneGainForSpan === "function") {
+      // (a) A month away credits the integral of the rate curve, strictly less
+      // than the overpaying end-of-span rate product, and the counter, the
+      // panel and the read-state tool all state that same amount.
+      const ret = returnFromAway(MONTH_SEC);
+      const credited = engine.getState().stone - baseSave.stone;
+      const integral = engine.stoneGainForSpan(baseSave.totalWoodEarned, baseSave.rate, ret.elapsedSec);
+      if (Math.abs(credited - integral) > Math.max(1, integral * 1e-9)) {
+        problems.push(`A month away must credit the integral of the rate curve (${integral}), got ${credited}.`);
+      }
+      const overpay = engine.computeStoneRateFor(baseSave.totalWoodEarned + baseSave.rate * ret.elapsedSec) * ret.elapsedSec;
+      if (!(credited < overpay)) {
+        problems.push(`A month away credited ${credited}, which is not less than the overpaying end-of-span rate product ${overpay} — the wood boost is counted twice.`);
+      }
+      const counterRise = engine.displayAmount(engine.displayAmount(engine.getState().stone) - engine.displayAmount(baseSave.stone));
+      if (ret.stone !== counterRise) {
+        problems.push(`The panel's stone (${ret.stone}) must be the counter's own visible rise (${counterRise}).`);
+      }
+      if (overlay && !overlay.hidden && stoneAmountEl && parseFloat(stoneAmountEl.textContent) !== ret.stone) {
+        problems.push(`The panel's stone (${stoneAmountEl.textContent}) must be the return's own account (${ret.stone}).`);
+      }
+      if (readState) {
+        const read = await readState.execute({});
+        if (read.offlineStoneGained !== ret.stone) {
+          problems.push(`read-state.offlineStoneGained (${read.offlineStoneGained}) must be the stone the panel accounts for (${ret.stone}).`);
+        }
+      }
+
+      // (b) The sandbox's projection for a span equals what a real return of the
+      // same length credits — including a month, resolved fast enough that a
+      // rehearsal never stalls the page (the integral is O(1), never a loop).
+      const startState = (() => {
+        engine.reset();
+        localStorage.setItem("selfgrow-state", JSON.stringify({ ...baseSave, timestamp: new Date().toISOString() }));
+        engine.init();
+        return engine.getState();
+      })();
+      const clone = sandbox.cloneState(startState);
+      const startedAt = performance.now();
+      const projected = sandbox.fastForward(clone, MONTH_SEC);
+      const elapsedMs = performance.now() - startedAt;
+      if (elapsedMs > 500) {
+        problems.push(`A month-long rehearsal took ${elapsedMs.toFixed(0)}ms; it must resolve in one step, not by walking the gap.`);
+      }
+      const projectedIntegral = engine.stoneGainForSpan(startState.totalWoodEarned, engine.effectiveWoodRate(startState), MONTH_SEC);
+      if (Math.abs(projected.stoneDelta - projectedIntegral) > Math.max(1, Math.abs(projectedIntegral) * 1e-9)) {
+        problems.push(`The sandbox projected ${projected.stoneDelta} stone but the integral over the span is ${projectedIntegral}.`);
+      }
+      const realReturn = returnFromAway(MONTH_SEC);
+      const realCredited = engine.getState().stone - baseSave.stone;
+      if (Math.abs(projected.stoneDelta - realCredited) > Math.max(1, Math.abs(realCredited) * 1e-6)) {
+        problems.push(`The sandbox projected ${projected.stoneDelta} stone for a month away but a real return credited ${realCredited} (${realReturn.elapsedSec}s) — they must agree.`);
+      }
+    }
+
+    engine.importSave(originalCode);
+    engine.init();
+    if (typeof window.__renderUI === "function") window.__renderUI();
+  } catch (err) {
+    problems.push(`Offline stone credit test threw: ${err.message}`);
     console.error(err);
   }
 

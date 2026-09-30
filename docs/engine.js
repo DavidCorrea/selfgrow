@@ -172,7 +172,7 @@ export { FIRST_GOAL_WOOD, SHARPEN_COST_RATE, RATE_INCREASE_PER_UPGRADE, STONE_BA
   FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_WOOD_COST_INC, FORGE_STONE_COST_INC,
   FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS,
   EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC,
-  EXPEDITION_WOOD_RATE_MULTIPLIER, RETURN_MIN_SEC, computeStoneRateFor, computeStoneRate,
+  EXPEDITION_WOOD_RATE_MULTIPLIER, RETURN_MIN_SEC, computeStoneRateFor, computeStoneRate, stoneGainForSpan,
   expeditionMultiplierFor, effectiveWoodRate, clickPowerFor,
   DISCOVERY_MIN_SEC, SESSION_FIND_SEC, AWAY_EVENT_MIN_SEC, AWAY_EVENT_LUMP_SEC, AWAY_EVENT_RATE_BONUS_FRACTION,
   awayRateBonusFor, AWAY_EVENTS };
@@ -404,6 +404,28 @@ function computeStoneRateFor(totalWoodEarned) {
 }
 
 /**
+ * The stone an absence of `elapsedSec` seconds earns, given the lifetime wood
+ * the player held when it started and the wood rate they earn at throughout.
+ *
+ * The stone rate climbs with lifetime wood (computeStoneRateFor), and wood
+ * earned during the absence is part of that lifetime. Crediting the whole span
+ * at the rate the player *ended* at would count the boost twice and overpay a
+ * long gap by STONE_RATE_BOOST_FACTOR * woodRate * elapsedSec^2 / 2. This is
+ * the exact integral of the rate curve for wood growing linearly at `woodRate`
+ * — the same stone playing the span would earn, for any absence length, in
+ * this one closed form (no step cap, no slow loop for a month away).
+ *
+ * @param {number} totalWoodEarned — lifetime wood before the span
+ * @param {number} woodRate — wood per second earned throughout the span
+ * @param {number} elapsedSec — length of the span in seconds
+ * @returns {number}
+ */
+function stoneGainForSpan(totalWoodEarned, woodRate, elapsedSec) {
+  return STONE_BASE_RATE * elapsedSec
+    + STONE_RATE_BOOST_FACTOR * (totalWoodEarned * elapsedSec + woodRate * elapsedSec * elapsedSec / 2);
+}
+
+/**
  * Compute the current stone accumulation rate based on total wood earned.
  * Only meaningful when stone is unlocked.
  */
@@ -510,11 +532,15 @@ function catchUp(firstVisit, record = true) {
 
     const effectiveRate = getEffectiveRate();
     const woodGained = effectiveRate * elapsedSec;
+    // The stone the span earns is the integral of the rate curve, so capture
+    // the wood total the span started from before folding the new wood in —
+    // the boost is already covered by the integral.
+    const woodBeforeSpan = state.totalWoodEarned;
     state.wood += woodGained;
     state.totalWoodEarned += woodGained;
     let stoneGained = 0;
     if (state.stoneUnlocked) {
-      stoneGained = computeStoneRate() * elapsedSec;
+      stoneGained = stoneGainForSpan(woodBeforeSpan, effectiveRate, elapsedSec);
       state.stone += stoneGained;
       state.totalStoneEarned += stoneGained;
     }

@@ -7,7 +7,7 @@
  * @module sandbox
  */
 
-import { discoverForElapsed, awayEventForElapsed, computeStoneRateFor, effectiveWoodRate, milestoneSnapshot, milestonesBetween, applyAwayOptionToState } from "./engine.js";
+import { discoverForElapsed, awayEventForElapsed, computeStoneRateFor, stoneGainForSpan, effectiveWoodRate, milestoneSnapshot, milestonesBetween, applyAwayOptionToState } from "./engine.js";
 
 /**
  * Deep-copy a value so a rehearsal holds its own copy of everything the save
@@ -75,14 +75,18 @@ export function fastForward(clone, seconds) {
   // time yet to come — the same order the real catch-up uses.
   const effectiveRate = effectiveWoodRate(clone);
   const woodGained = effectiveRate * seconds;
+  // The stone the span earns is the integral of the rate curve over it (the
+  // engine's own stoneGainForSpan), so capture the wood total the span started
+  // from before folding the new wood in. Crediting the whole span at the
+  // post-absence rate would overpay a long rehearsal the way it overpaid a real
+  // return.
+  const woodBeforeSpan = clone.totalWoodEarned;
   clone.wood += woodGained;
   clone.totalWoodEarned += woodGained;
 
-  // The projected stone rate is the engine's own rule, applied to the clone, so
-  // a rehearsal can never promise a rate the game would not pay.
   let stoneGained = 0;
   if (clone.stoneUnlocked) {
-    stoneGained = computeStoneRateFor(clone.totalWoodEarned) * seconds;
+    stoneGained = stoneGainForSpan(woodBeforeSpan, effectiveRate, seconds);
     clone.stone += stoneGained;
     clone.totalStoneEarned += stoneGained;
   }
