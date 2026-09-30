@@ -46,6 +46,7 @@ import {
   appendChangelogEntry,
   verifyBuild,
   runAgent,
+  revertMachineEdits,
   BUILDER_SKILLS,
   REVIEWER_SKILLS,
   getLastModelUsed,
@@ -481,6 +482,15 @@ async function runBuildReviewLoop(ctx, plan) {
     if (builderResult.summary) ctx.builderSummary = builderResult.summary;
     log("info", `Builder: ${builderResult.summary}`);
 
+    // First, before verify or the Reviewer reads anything: both load prompts and
+    // skills from agents/, and the Devs merge their own PRs. What the ticket
+    // needed from the product still stands and is reviewed as usual.
+    const reverted = revertMachineEdits();
+    if (reverted.length) {
+      log("warn", `Builder changed the machine — undone: ${reverted.join(", ")}. That is left to a person.`);
+      ctx.revertedMachinePaths = [...new Set([...(ctx.revertedMachinePaths || []), ...reverted])];
+    }
+
     // Layered verify (syntax → lint → runtime) on the working tree BEFORE
     // committing. Failures go straight back to the Builder to fix — broken code
     // never reaches the PR or the merge.
@@ -577,6 +587,10 @@ function openPullRequest(ctx) {
 async function reviewOpenPR(ctx, attempt) {
   const reviewContext = [
     ctx.builderSummary ? `The Builder reports: ${ctx.builderSummary}` : null,
+    ctx.revertedMachinePaths
+      ? `The Builder also changed ${ctx.revertedMachinePaths.join(", ")}. Those are the machine, not the product, so the ` +
+        "pipeline undid them and they are not in this PR. Judge whether the change still does what the ticket asks without them."
+      : null,
     ctx.issueObj ? `This change should fix issue #${ctx.issueObj.number}: "${ctx.issueObj.title}".` : null,
     `This is PR #${ctx.prNumber} on branch ${ctx.branchName}.`,
   ].filter(Boolean).join("\n");
