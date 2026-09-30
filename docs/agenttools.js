@@ -89,6 +89,10 @@ function withGoal(s) {
     totalStoneEarned: s.totalStoneEarned,
     timestamp: s.timestamp,
     firstTimestamp: s.firstTimestamp,
+    // Whether the most recent save write reached storage — false while the page
+    // shows its "progress not saved" warning. Read from the live save so a
+    // sandbox projection reports the real outcome, not a clone's absent field.
+    savePersisted: s.savePersisted ?? getState().savePersisted,
     elapsed: s.firstTimestamp ? formatElapsed(Date.now() - new Date(s.firstTimestamp).getTime()) : '\u2014',
     upgradeLevel: s.upgradeLevel,
     stone: s.stone,
@@ -436,6 +440,9 @@ export function tools() {
         + "forge wood cost, forge stone cost, click power, "
         + "expedition level, maps, expedition wood cost, expedition stone cost, "
         + "whether stone is unlocked, timestamp, firstTimestamp (ISO date of first save), "
+        + "whether the current save is actually being persisted to storage (savePersisted: "
+        + "false while a write is failing and the page shows its 'progress not saved' warning, "
+        + "true when saving works), "
         + "elapsed (formatted duration since first save), whether the offline-summary "
         + "overlay is currently visible (offlineSummaryVisible), whether a real return is "
         + "on record and can be re-opened (returnAvailable, true even after the panel was "

@@ -957,6 +957,31 @@
       color: var(--panel-border);
     }
 
+    /* ─── Save-failure warning — shown only while writes fail ─── */
+    #save-warning {
+      display: flex;
+      gap: 0.5rem;
+      align-items: baseline;
+      margin-top: 0.5rem;
+      padding: 0.5rem 0.6rem;
+      background: #2a0f0a;
+      border: var(--border-width) solid var(--panel-border);
+      font-size: 0.5rem;
+      font-family: var(--body-font);
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    #save-warning[hidden] {
+      display: none;
+    }
+
+    #save-warning .save-warning-title {
+      color: var(--panel-border);
+      font-family: var(--pixel-font);
+      white-space: nowrap;
+    }
+
     /* ─── Button icon — match button text size ─── */
     .btn-icon {
       font-size: inherit;
@@ -1499,6 +1524,13 @@
     <button class="btn" id="btn-show-return" type="button" aria-label="Show the last return's summary" hidden>
       <span class="btn-icon sprite-mount" data-sprite="scroll" aria-hidden="true"></span> Last return
     </button>
+    <!-- Shown only while a save write is failing, so the player is told the
+         world is not being kept before it is lost — with the one remedy that
+         still works: a save code copied from Save backup. -->
+    <div id="save-warning" role="alert" hidden>
+      <span class="save-warning-title">Progress not saved</span>
+      <span class="save-warning-text">Storage is unavailable or full, so this world is not being kept. Copy a save code from Save backup to keep it.</span>
+    </div>
   </section>
 
   <!-- ═══ Next goal — a full-width banner ═══ -->
@@ -1832,6 +1864,7 @@
     const saveImportInput = document.getElementById("save-import-input");
     const btnRestoreSave = document.getElementById("btn-restore-save");
     const saveStatus = document.getElementById("save-status");
+    const saveWarning = document.getElementById("save-warning");
     const saveConfirm = document.getElementById("save-confirm");
     const saveConfirmText = document.getElementById("save-confirm-text");
     const btnRestoreConfirm = document.getElementById("btn-restore-confirm");
@@ -2491,6 +2524,9 @@
     function renderUI() {
       for (const row of staticRowText.keys()) restoreStaticText(row);
       const s = getState();
+      // Re-derived every render: a failed write shows the warning, and the very
+      // next successful write hides it again, so a recovered storage clears it.
+      if (saveWarning) saveWarning.hidden = s.savePersisted !== false;
       const wood = s.wood;
       const stone = s.stone;
       const stoneUnlocked = s.stoneUnlocked;

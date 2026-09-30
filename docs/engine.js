@@ -263,6 +263,13 @@ let offlineGained = { wood: 0, stone: 0, elapsedSec: 0, discovery: null };
  *   exactly two distinct choices, each with the one effect it grants
  */
 
+/**
+ * Whether the most recent save write reached localStorage. Kept outside the
+ * persisted `state` object so it is never itself written into the save, and
+ * re-checked on every persist() so a storage that recovers clears the warning.
+ */
+let lastPersistOk = true;
+
 let tickTimer = null;
 
 /**
@@ -821,8 +828,12 @@ export function returnDiscoveryText(discovery) {
 function persist() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    lastPersistOk = true;
   } catch {
-    // storage full or unavailable — silently degrade
+    // Storage full or unavailable (e.g. private browsing). The write is lost,
+    // so record it: the page warns and the read tools can report it instead of
+    // letting progress vanish silently.
+    lastPersistOk = false;
   }
 }
 
@@ -1761,6 +1772,7 @@ export function getState() {
     eventsOffered: state.eventsOffered,
     timestamp: state.timestamp,
     firstTimestamp: state.firstTimestamp,
+    savePersisted: lastPersistOk,
   };
 }
 
@@ -1793,6 +1805,7 @@ export function reset() {
   offlineGained = { wood: 0, stone: 0, elapsedSec: 0, discovery: null };
   snapshotBeforeCatchUp = null;
   pausedForHidden = false;
+  lastPersistOk = true;
   try {
     localStorage.removeItem(STORAGE_KEY);
   } catch {
