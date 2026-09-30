@@ -13,6 +13,7 @@ and `reset` deletes. Every convention below follows from that split.
 | --- | --- |
 | `agents/` | the pipeline: role entrypoints, shared libraries, unit tests |
 | `agents/prompts/` | Markdown system prompts and shared `_`-prefixed fragments |
+| `agents/skills/` | harness skills, one `<name>/SKILL.md` each — know-how that holds for any product, given only to the roles that name it |
 | `docs/` | the product — a static site served from GitHub Pages |
 | `.github/workflows/` | one workflow per scheduled or triggered agent run |
 | `.github/actions/setup/` | composite setup action reused by the workflows |
@@ -75,7 +76,7 @@ report the Playtester is handed) and `dedup-check.mjs` (free regression harness 
 
 **Tests** live beside their source as `agents/<topic>.test.mjs`, named for a
 *concern* rather than a module — `backlog`, `envelope`, `quota`, `retirement`,
-`manual-work`, `fork-triage`, `failed-lookups`, `machine-changes`. They target exported pure functions. `npm test`
+`manual-work`, `fork-triage`, `failed-lookups`, `machine-changes`, `skills`. They target exported pure functions. `npm test`
 globs `agents/*.test.mjs`, so a test placed anywhere else never runs. **There
 are no tests under `docs/`** — the product is verified by `verifyBuild`, not by
 the Node runner.
@@ -114,7 +115,7 @@ What the product is changes with every reset, so this file does not describe it:
 the entry point and owns the DOM state layer, and that its modules are loaded
 from it by relative path, with third-party libraries pinned to a CDN URL.
 
-Three files in `docs/` are not ordinary product modules:
+Three files and one directory in `docs/` are not ordinary product modules:
 
 - **`selftest.js`** exports `checks()` and is **not loaded by `index.html`**.
   `verifyBuild()` imports it dynamically in the browser, and skips the layer
@@ -124,6 +125,11 @@ Three files in `docs/` are not ordinary product modules:
 - **`webmcp.js`** is **harness code that happens to run in the browser**. It is
   the only place the WebMCP API is named, is on the `reset` keep-list, and is
   excluded from the Tech Lead's review. Product tickets do not touch it.
+- **`skills/`** holds project skills, one `<name>/SKILL.md` each: know-how that
+  is only true of this product, such as its genre. Agents read them rather than
+  the page loading them, and every agent that can read files is offered all of
+  them. They are product: the Devs edit them, `verifyBuild()`'s `skills` layer
+  fails on one pi would not load, and a reset deletes them.
 
 ## Where new files go
 
@@ -133,6 +139,13 @@ Three files in `docs/` are not ordinary product modules:
   judgement functions.
 - **Shared prompt text** becomes `agents/prompts/_<name>.md`, pulled in with
   `{{include:_<name>}}`.
+- **Know-how an agent loads only when its task needs it** is a skill. If it
+  holds for any product, it goes in `agents/skills/<name>/` and the roles that
+  should get it name it in their `runAgent` call's `skills` list
+  (`BUILDER_SKILLS` and `REVIEWER_SKILLS` in `shared.mjs`). If it is only true of
+  this product, it goes in `docs/skills/<name>/` and every agent that can read
+  gets it. A skill needs the read or bash tool; guidance for an agent with
+  neither is a prompt fragment.
 - **New product code** is a camelCase ES module in `docs/`, imported from the
   `index.html` module script. Third-party dependencies load from a CDN at a
   pinned version (an importmap or a full URL), never npm. Any new behavior should gain a check in `docs/selftest.js` in the
