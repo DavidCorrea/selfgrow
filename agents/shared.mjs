@@ -3579,7 +3579,7 @@ async function exerciseTarget(loc, t) {
  * (low-confidence; a canvas/JS-only app can legitimately not change the DOM).
  * Returns a list of human-readable findings. Best-effort; never throws.
  */
-async function exploreInteractions(browser, url) {
+export async function exploreInteractions(browser, url) {
   const page = await browser.newPage(viewportOptions(REVIEW_VIEWPORTS[0]));
   const errors = [];
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
@@ -3615,6 +3615,11 @@ async function exploreInteractions(browser, url) {
     for (const t of targets) {
       const loc = page.locator(`[data-explore-id="${t.id}"]`);
       if ((await loc.count()) === 0) continue; // DOM changed out from under us
+      // Checked at the moment of pressing, not when tagged: an earlier control
+      // may have revealed this one. One a visitor cannot press yet is the game
+      // withholding it, not a defect, and reporting it drowned out the controls
+      // that are on offer and still cannot be pressed.
+      if (!(await loc.isVisible()) || !(await loc.isEnabled())) continue;
       const errBefore = errors.length;
       const htmlBefore = await page.evaluate(() => document.body.innerHTML);
       let action;
