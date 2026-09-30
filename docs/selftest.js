@@ -4281,7 +4281,7 @@ export async function checks() {
         const ffFind = await sandboxFFTool.execute({ seconds: 3600 });
         const nextAway = ffFind.nextAwayDiscovery;
         const expectedFindText = nextAway
-          ? engine.nextAwayFindText({ name: nextAway.name, minSec: nextAway.minSec })
+          ? engine.nextAwayFindText({ name: nextAway.name, minSec: nextAway.minSec, bonus: nextAway.bonus })
           : null;
         if (!expectedFindText) {
           problems.push("sandbox-fast-forward(3600s) should report a nextAwayDiscovery so the sandbox panel has a rung to name.");
@@ -4308,7 +4308,7 @@ export async function checks() {
         }
         const nothingNext = ffNothing.nextAwayDiscovery;
         const expectedNothingText = nothingNext
-          ? engine.nextAwayFindText({ name: nothingNext.name, minSec: nothingNext.minSec })
+          ? engine.nextAwayFindText({ name: nothingNext.name, minSec: nothingNext.minSec, bonus: nothingNext.bonus })
           : null;
         if (!expectedNothingText || sbNextFindEl.hidden || sbNextFindEl.textContent.trim() !== expectedNothingText) {
           problems.push(`After a fast-forward that finds nothing, #sb-next-find should still name the next rung "${expectedNothingText}", got "${sbNextFindEl.hidden ? "(hidden)" : sbNextFindEl.textContent.trim()}".`);
@@ -5666,6 +5666,7 @@ export async function checks() {
     const engine = await import("./engine.js");
     const { tools } = await import("./agenttools.js");
     const readState = tools().find((t) => t.name === "read-state");
+    const readRules = tools().find((t) => t.name === "read-rules");
 
     const lineEl = document.getElementById("next-away-find-line");
     const offlineNextFind = document.getElementById("offline-next-find");
@@ -5700,9 +5701,18 @@ export async function checks() {
       if (firstNeeded && !shown.includes(firstNeeded)) {
         problems.push(`On a fresh save the status panel should state the absence needed ("${firstNeeded}"), got "${shown}".`);
       }
+      const firstReward = firstRung ? `+${engine.formatRate(firstRung.bonus)} wood/s` : null;
+      if (firstReward && !shown.includes(firstReward)) {
+        problems.push(`On a fresh save the status panel should state the wood/s the next find grants ("${firstReward}"), got "${shown}".`);
+      }
       if (/nothing/i.test(shown)) {
         problems.push(`The status line must never read as a dead end, got "${shown}".`);
       }
+    }
+    // The one formatter states the reward itself, so no surface can omit it.
+    const firstSentence = engine.nextAwayFindText(firstRung);
+    if (firstRung && (!firstSentence || !firstSentence.includes(`+${engine.formatRate(firstRung.bonus)} wood/s`))) {
+      problems.push(`nextAwayFindText should state the wood/s the rung grants (+${firstRung && engine.formatRate(firstRung.bonus)} wood/s), got ${JSON.stringify(firstSentence)}.`);
     }
     if (readState) {
       const freshRead = await readState.execute({});
@@ -5712,6 +5722,19 @@ export async function checks() {
       }
       if (lineEl && nextAway && !lineEl.textContent.includes(nextAway.elapsed)) {
         problems.push(`The status line's absence must match read-state.nextAwayDiscovery.elapsed ("${nextAway.elapsed}"), got "${lineEl.textContent.trim()}".`);
+      }
+      if (firstRung && nextAway && nextAway.woodPerSec !== firstRung.bonus) {
+        problems.push(`read-state.nextAwayDiscovery.woodPerSec should equal the rung's bonus ${firstRung.bonus}, got ${nextAway.woodPerSec}.`);
+      }
+      if (firstRung && freshRead.finds && freshRead.finds.next && freshRead.finds.next.woodPerSec !== firstRung.bonus) {
+        problems.push(`read-state.finds.next.woodPerSec should equal the rung's bonus ${firstRung.bonus}, got ${freshRead.finds.next.woodPerSec}.`);
+      }
+    }
+    if (readRules && firstRung) {
+      const rules = await readRules.execute({});
+      const rulesNext = rules.nextAwayFind;
+      if (!rulesNext || rulesNext.bonus !== firstRung.bonus || rulesNext.woodPerSec !== firstRung.bonus) {
+        problems.push(`read-rules.nextAwayFind should carry the rung's bonus ${firstRung.bonus} as bonus/woodPerSec, got ${JSON.stringify(rulesNext)}.`);
       }
     }
 
@@ -5755,6 +5778,10 @@ export async function checks() {
       const statusLine = lineEl.textContent.trim();
       if (panelLine !== statusLine) {
         problems.push(`The welcome-back panel's next find (${JSON.stringify(panelLine)}) must equal the status line (${JSON.stringify(statusLine)}).`);
+      }
+      const advancedReward = advancedRung ? `+${engine.formatRate(advancedRung.bonus)} wood/s` : null;
+      if (advancedReward && !panelLine.includes(advancedReward)) {
+        problems.push(`The welcome-back panel's next find should state the wood/s the rung grants ("${advancedReward}"), got "${panelLine}".`);
       }
     }
     if (!overlay.hidden) window.__dismissOffline();
