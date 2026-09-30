@@ -23,6 +23,7 @@ import {
   createReadToolDefinition,
   detectSupportedImageMimeTypeFromFile,
   DefaultResourceLoader,
+  loadSkillsFromDir,
   ModelRuntime,
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
@@ -621,20 +622,58 @@ function confinedTools() {
 // disk can slip into an agent's instructions.
 export const SKILLS_DIR = join(repoRoot, "agents", "skills");
 
+// Skills the product ships, laid out the same way. They are product, not
+// machine: the Devs write them like any other file in docs/, every agent that
+// can read gets all of them, and a reset deletes them with the rest.
+export const PROJECT_SKILLS_DIR = join(repoRoot, "docs", "skills");
+
+const skillDirectories = (dir) =>
+  fs.existsSync(dir)
+    ? fs.readdirSync(dir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort()
+    : [];
+
 /**
- * The SKILL.md paths for `names`, checked up front. pi reports a missing skill
- * as a diagnostic and runs on without it, and it lists skills only to an agent
- * that has read or bash to open them — both would leave the agent silently
- * without what its caller asked for.
+ * The SKILL.md paths an agent gets: the harness skills its caller named, checked
+ * up front, then every project skill. pi reports a missing skill as a diagnostic
+ * and runs on without it, and it lists skills only to an agent that has read or
+ * bash to open them — both would leave the agent silently without what its
+ * caller asked for. Project skills are nobody's request, so an agent that cannot
+ * read simply goes without them.
  */
-export function skillPathsFor(names, tools) {
-  if (names.length && !tools.some((tool) => tool === "read" || tool === "bash")) {
+export function skillPathsFor(names, tools, projectSkillsDir = PROJECT_SKILLS_DIR) {
+  const canRead = tools.some((tool) => tool === "read" || tool === "bash");
+  if (names.length && !canRead) {
     throw new Error(`Skills ${names.join(", ")} were requested, but an agent needs the read or bash tool to load a skill (tools: [${tools.join(", ")}]).`);
   }
-  return names.map((name) => {
+  const harnessPaths = names.map((name) => {
     const path = join(SKILLS_DIR, name, "SKILL.md");
     if (!fs.existsSync(path)) throw new Error(`Unknown skill "${name}": ${relative(repoRoot, path)} does not exist.`);
     return path;
+  });
+  if (!canRead) return harnessPaths;
+  const projectPaths = skillDirectories(projectSkillsDir)
+    .map((name) => join(projectSkillsDir, name, "SKILL.md"))
+    .filter((path) => fs.existsSync(path));
+  return [...harnessPaths, ...projectPaths];
+}
+
+/**
+ * Why each project skill would not reach an agent, as build errors — empty when
+ * they all load. The Devs write these, and pi skips a broken one with no more
+ * than a diagnostic nobody reads, so the build is the only place it can be seen.
+ */
+export function projectSkillProblems(projectSkillsDir = PROJECT_SKILLS_DIR) {
+  const harnessNames = new Set(skillDirectories(SKILLS_DIR));
+  return skillDirectories(projectSkillsDir).flatMap((name) => {
+    const dir = join(projectSkillsDir, name);
+    const where = `${relative(repoRoot, dir) || dir}/SKILL.md`;
+    if (!fs.existsSync(join(dir, "SKILL.md"))) return [`${relative(repoRoot, dir) || dir} has no SKILL.md, so it is not a skill.`];
+    if (harnessNames.has(name)) return [`${where}: "${name}" is already a harness skill in agents/skills/ — pick another name.`];
+    const { skills, diagnostics } = loadSkillsFromDir({ dir, source: "project" });
+    if (diagnostics.length) return diagnostics.map((diagnostic) => `${where}: ${diagnostic.message} — pi skips a skill it cannot load cleanly.`);
+    const loadedName = skills[0]?.name;
+    if (loadedName !== name) return [`${where}: the skill is named "${loadedName}" but its directory is "${name}" — make them match.`];
+    return [];
   });
 }
 
@@ -2949,6 +2988,7 @@ async function checkAgentTools(browser, url, dir) {
  * Verify the built app under `relDir`. Returns { ok, layer, errors }:
  *   - layer "syntax"     — a JS file fails `node --check`
  *   - layer "lint"       — ESLint reports an error (e.g. no-undef: undefined function)
+ *   - layer "skills"     — a skill in docs/skills/ would not load (see projectSkillProblems)
  *   - layer "runtime"    — the page throws a console error / uncaught exception / failed load
  *   - layer "selftest"   — the product's own checks() reported a broken claim
  *   - layer "agenttools" — a tool the product declares is unsound or does not run
@@ -2987,7 +3027,14 @@ export async function verifyBuild(relDir = "docs") {
     log("warn", "Verify: ESLint unavailable — skipping lint layer.", errorData(e));
   }
 
-  // Layer 3 — runtime smoke (Playwright, best-effort).
+  // Layer 3 — the product's skills load. Only for the real product: it is the
+  // one whose skills the agents are handed.
+  if (dir === join(repoRoot, "docs")) {
+    const skillErrors = projectSkillProblems();
+    if (skillErrors.length) return { ok: false, layer: "skills", errors: skillErrors };
+  }
+
+  // Layer 4 — runtime smoke (Playwright, best-effort).
   if (!fs.existsSync(join(dir, "index.html"))) {
     log("info", "Verify: no index.html yet — skipping runtime check.");
     return { ok: true, layer: null, errors: [] };
@@ -3018,7 +3065,7 @@ export async function verifyBuild(relDir = "docs") {
     errors.push(`navigation: ${e.message}`);
   }
 
-  // Layer 4 — the product against its own claims. Only worth running when the
+  // Layer 5 — the product against its own claims. Only worth running when the
   // page itself is sound; check failures on a page that is already throwing
   // would just be noise from the same root cause.
   let selfTestFailures = [];
@@ -3029,7 +3076,7 @@ export async function verifyBuild(relDir = "docs") {
     } catch (e) {
       log("warn", "Verify: self-check layer failed to run.", errorData(e));
     }
-    // Layer 5 — the product against what it promises an agent. Only worth
+    // Layer 6 — the product against what it promises an agent. Only worth
     // running once its own checks pass: a broken product reports broken tools
     // from the same root cause.
     if (!selfTestFailures.length) {
