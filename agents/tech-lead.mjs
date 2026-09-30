@@ -331,10 +331,12 @@ function renderBlocked(blocked) {
 // How urgent the Tech Lead thinks each kind of proposal is. A view for the
 // Product Manager to weigh, not a priority: structural work and removals should
 // fill the gaps between work that makes the product better, while a feature
-// nothing can catch misbehaving is a live risk rather than housekeeping.
+// nothing can catch misbehaving is a live risk rather than housekeeping. An
+// interface defect is either, depending on whether it locks someone out.
 const URGENCY_BY_KIND = {
   coverage: "Urgency: a coverage gap — a live risk, not housekeeping.",
   shape: "Urgency: structural — worth doing between work that makes the product better, not ahead of it.",
+  interface: "Urgency: an interface defect already on the page — a barrier locks someone out; polish can wait for a gap.",
 };
 
 /**
@@ -467,6 +469,10 @@ async function main() {
         })(),
       }),
       tools: ["read"],
+      // The Reviewer checks these rules only on the lines a change touches, so a
+      // violation already in docs/ is never looked at again unless someone here
+      // files it.
+      skills: ["web-interface-guidelines"],
     })
   );
 
