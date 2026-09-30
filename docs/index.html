@@ -1338,6 +1338,36 @@
       }
     }
 
+    /* ─── Responsive: a sidebar beside the systems on a wide window ───
+       On the widest screens the panels stop stacking down the middle. The
+       status, goal and save panels form a left column and the system cards
+       fill the rest, so a window with room to spare shows more of the world
+       at once instead of empty margins. Below this the panels keep the
+       single-column reflow a phone reads comfortably. */
+    @media (min-width: 1100px) {
+      body {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 3fr);
+        align-items: start;
+        align-content: start;
+      }
+
+      #status-bar,
+      #goal-panel,
+      #save-panel {
+        grid-column: 1;
+      }
+
+      #status-bar { grid-row: 1; }
+      #goal-panel { grid-row: 2; }
+      #save-panel { grid-row: 3; }
+
+      #action-area {
+        grid-column: 2;
+        grid-row: 1 / span 3;
+      }
+    }
+
     /* ─── Pixel-art gather pictures ───
        Each system's action IS its picture: an in-code SVG built from real page
        elements, sitting inside the button beside its real-text label. */

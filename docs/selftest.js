@@ -1745,6 +1745,43 @@ export async function checks() {
     }
   }
 
+  // ─── Side-by-side panels on a wide window ────────────────────────────
+  // The vision promises a wide screen shows panels beside each other rather
+  // than one narrow column down the middle. Assert at least two game panels
+  // overlap vertically while being disjoint horizontally, and that the page
+  // never grows a horizontal scrollbar as the window widens.
+  if (viewportWidth >= 1100) {
+    const boxes = [...document.querySelectorAll("body > section.panel")]
+      .map((p) => p.getBoundingClientRect())
+      .filter((r) => r.width > 0 && r.height > 0);
+
+    const overlapsVertically = (a, b) => a.top < b.bottom && b.top < a.bottom;
+    const disjointHorizontally = (a, b) => a.right <= b.left + 1 || b.right <= a.left + 1;
+
+    let hasSideBySide = false;
+    for (let i = 0; i < boxes.length && !hasSideBySide; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        if (overlapsVertically(boxes[i], boxes[j]) && disjointHorizontally(boxes[i], boxes[j])) {
+          hasSideBySide = true;
+          break;
+        }
+      }
+    }
+    if (!hasSideBySide) {
+      problems.push(
+        `On a ${viewportWidth}px window every panel sits in one vertical stack — `
+        + "expected at least two panels side by side so a wide screen is filled."
+      );
+    }
+
+    if (document.documentElement.scrollWidth > viewportWidth) {
+      problems.push(
+        `On a ${viewportWidth}px window the page scrolls horizontally: content is `
+        + `${document.documentElement.scrollWidth}px wide but the window is ${viewportWidth}px.`
+      );
+    }
+  }
+
   // ─── One-screen promise: no scrolling on a desktop (>= 1280x720) ────
   // The whole game must fit the window now and as it grows. Measured on the
   // document element, and again per panel so clipping (which a bare
