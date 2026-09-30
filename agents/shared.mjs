@@ -445,14 +445,20 @@ export async function firstVisionModel() {
  *                                          actual system prompt (not a user message).
  * @param {string} [opts.task]           - The user turn that kicks the agent off.
  * @param {string[]} [opts.tools]        - Allowed tool names.
+ * @param {string[]} [opts.skills]       - Names of skills under agents/skills/ the
+ *                                          agent may load. Needs read or bash.
  * @param {string} [opts.thinkingLevel]  - "off" | "low" | "medium" | "high".
  * @param {string} [opts.modelId]        - Pin a single model; omit to use the chain.
  * @param {object[]} [opts.images]       - Image parts ({ type, data, mimeType }) to
  *                                          attach to the kickoff turn. Requires a
  *                                          model that accepts image input.
  */
-export async function runAgent(opts) {
-  const { modelId, label = "Agent", expectJson = true, avoidModel = null } = opts;
+export async function runAgent(callerOpts) {
+  const { modelId, label = "Agent", expectJson = true, avoidModel = null } = callerOpts;
+  // Resolved once, before the chain: a skill that is missing is missing for every
+  // model, and a failed attempt would otherwise walk the chain to prove it.
+  const { skills = [], ...agentOpts } = callerOpts;
+  const opts = { ...agentOpts, skillPaths: skillPathsFor(skills, callerOpts.tools ?? ["read"]) };
 
   // Explicit model: run exactly that one (caller owns any fallback, e.g. vision).
   if (modelId) return runAgentOnce(opts);
@@ -606,6 +612,32 @@ function confinedTools() {
   ];
 }
 
+// ---------------------------------------------------------------------------
+// Skills
+// ---------------------------------------------------------------------------
+
+// Skills the harness ships, one `<name>/SKILL.md` each. Only these, and only the
+// ones a caller names: the loader runs with noSkills, so nothing on the runner's
+// disk can slip into an agent's instructions.
+export const SKILLS_DIR = join(repoRoot, "agents", "skills");
+
+/**
+ * The SKILL.md paths for `names`, checked up front. pi reports a missing skill
+ * as a diagnostic and runs on without it, and it lists skills only to an agent
+ * that has read or bash to open them — both would leave the agent silently
+ * without what its caller asked for.
+ */
+export function skillPathsFor(names, tools) {
+  if (names.length && !tools.some((tool) => tool === "read" || tool === "bash")) {
+    throw new Error(`Skills ${names.join(", ")} were requested, but an agent needs the read or bash tool to load a skill (tools: [${tools.join(", ")}]).`);
+  }
+  return names.map((name) => {
+    const path = join(SKILLS_DIR, name, "SKILL.md");
+    if (!fs.existsSync(path)) throw new Error(`Unknown skill "${name}": ${relative(repoRoot, path)} does not exist.`);
+    return path;
+  });
+}
+
 /**
  * Run a single one-shot agent against exactly one model. The chain logic lives in
  * runAgent; this is the per-model attempt.
@@ -615,6 +647,7 @@ async function runAgentOnce({
   systemPrompt,
   task = DEFAULT_TASK,
   tools = ["read"],
+  skillPaths = [],
   thinkingLevel = MIN_THINKING_LEVEL,
   modelId = MODEL_ID,
   images = [],
@@ -648,12 +681,14 @@ async function runAgentOnce({
   // Set our role as the real system prompt and run with a clean, deterministic
   // resource set — no ambient skills/extensions/context files from disk (~/.pi),
   // and no default APPEND_SYSTEM.md. Discovery is rooted at the repo, matching
-  // the session cwd the agent actually reads and edits in.
+  // the session cwd the agent actually reads and edits in. The only skills are
+  // the ones the caller named (see skillPathsFor).
   const loader = new DefaultResourceLoader({
     cwd: repoRoot,
     agentDir: repoRoot,
     systemPrompt,
     appendSystemPrompt: [],
+    additionalSkillPaths: skillPaths,
     noSkills: true,
     noExtensions: true,
     noPromptTemplates: true,
