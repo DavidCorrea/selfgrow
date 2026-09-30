@@ -39,6 +39,7 @@ import {
   loadPrompt,
   fillTemplate,
   runAgent,
+  changesTheMachine,
   BUILDER_SKILLS,
   REVIEWER_SKILLS,
   extractAgentResponse,
@@ -79,19 +80,6 @@ const RUN_BUDGET_MS =
 // afford to re-review leaves the PR in a worse state than not starting.
 const TAIL_RESERVE_MS =
   Number(process.env.PR_TAIL_RESERVE_MINUTES || 12) * 60 * 1000;
-
-// The paths that ARE the machine: its workflows and permissions, its agents and
-// prompts, and the dependencies it runs on. A change there decides what every
-// later review, merge and secret does, so the agents that would be governed by it
-// are the wrong ones to wave it through — an approval from the pipeline is only
-// as trustworthy as the pipeline, and this is the change that could rewrite it.
-const MACHINE_DIRS = [".github/", "agents/"];
-const MACHINE_FILES = new Set(["package.json", "package-lock.json"]);
-
-/** True when any changed path is part of the machine — see MACHINE_DIRS. */
-export function changesTheMachine(paths) {
-  return paths.some((path) => MACHINE_FILES.has(path) || MACHINE_DIRS.some((dir) => path.startsWith(dir)));
-}
 
 /**
  * Every path the branch changes against main, as it stands now — after any fix

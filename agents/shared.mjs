@@ -1185,6 +1185,39 @@ export function ghExec(argv, { token = secret("GH_TOKEN"), ...opts } = {}) {
   return execFileSync("gh", argv, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024, env, ...opts }).toString();
 }
 
+// The paths that ARE the machine: its workflows and permissions, its agents,
+// prompts and skills, and the dependencies it runs on. A change there decides
+// what every later review, merge and secret does, so the agents that would be
+// governed by it are the wrong ones to wave it through — an approval from the
+// pipeline is only as trustworthy as the pipeline, and this is the change that
+// could rewrite it.
+const MACHINE_DIRS = [".github/", "agents/"];
+const MACHINE_FILES = new Set(["package.json", "package-lock.json"]);
+
+/** True when any changed path is part of the machine — see MACHINE_DIRS. */
+export function changesTheMachine(paths) {
+  return paths.some((path) => MACHINE_FILES.has(path) || MACHINE_DIRS.some((dir) => path.startsWith(dir)));
+}
+
+const nulSeparated = (output) => output.split("\0").filter(Boolean);
+
+/**
+ * Undo every change the working tree holds to the machine, and return the paths
+ * undone. The Devs merge their own PRs, so without this a Builder that edited a
+ * prompt or a skill would merge it unreviewed — and before that, the Reviewer in
+ * the same run would already be reading the edited version.
+ */
+export function revertMachineEdits(dir = repoRoot) {
+  const git = (argv) => gitExec(argv, { cwd: dir });
+  const tracked = nulSeparated(git(["diff", "HEAD", "--name-only", "--no-renames", "-z"]))
+    .filter((path) => changesTheMachine([path]));
+  const added = nulSeparated(git(["ls-files", "--others", "--exclude-standard", "-z"]))
+    .filter((path) => changesTheMachine([path]));
+  if (tracked.length) git(["restore", "--source=HEAD", "--staged", "--worktree", "--", ...tracked]);
+  for (const path of added) fs.rmSync(join(dir, path), { force: true });
+  return [...tracked, ...added].sort();
+}
+
 let gitIdentityConfigured = false;
 
 /**

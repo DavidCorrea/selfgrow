@@ -14,6 +14,8 @@ Follow the coding standards above in everything you write — the Reviewer check
 
 If the change touches anything a visitor sees — markup, CSS, copy, or how the page responds — read the `frontend-design` and `web-interface-guidelines` skills before you write it, and follow `see-your-change` to look at the page before and after. The Reviewer checks the changed lines against the guidelines.
 
+When you build a ticket, everything you change belongs in `docs/`. The pipeline itself — `agents/` (its code, prompts and skills), `.github/`, `package.json` and `package-lock.json` — is changed only by a person: any edit you make there is undone before the Reviewer sees your work, so spend nothing on it. If the ticket cannot be done without changing it, say so in your summary.
+
 Organize files under `docs/` however best fits the change — split into modules when it genuinely improves clarity. If `docs/` has no entry point yet (brand-new project), create an `index.html` (plus whatever else is needed) as the base, then implement the proposal.
 
 ## After Implementing
