@@ -45,6 +45,10 @@ const EXPEDITION_WOOD_RATE_MULTIPLIER = 0.05; // additive multiplier per map (n 
 const TICK_MS = 1000;  // save interval (ms)
 const DISCOVERY_MIN_SEC = 60; // shortest absence that can turn something up
 const RETURN_MIN_SEC = 1; // shortest absence that counts as a real return
+// How long a fresh save must be actively played before its first discovery is
+// granted. Away finds are turned up by an absence (DISCOVERY_MIN_SEC); this is
+// the in-session counterpart, so a first visit is not an empty wait.
+const SESSION_FIND_SEC = 90;
 const AWAY_EVENT_MIN_SEC = DISCOVERY_MIN_SEC; // shortest absence that offers a decision
 const AWAY_EVENT_LUMP_SEC = 30; // seconds of production a wood or stone option grants
 // The permanent wood/s a rate option adds, as a share of the effective wood/s
@@ -161,7 +165,7 @@ export { FIRST_GOAL_WOOD, UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, STONE_BASE_RA
   EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC,
   EXPEDITION_WOOD_RATE_MULTIPLIER, RETURN_MIN_SEC, computeStoneRateFor, computeStoneRate,
   expeditionMultiplierFor, effectiveWoodRate, clickPowerFor,
-  DISCOVERY_MIN_SEC, AWAY_EVENT_MIN_SEC, AWAY_EVENT_LUMP_SEC, AWAY_EVENT_RATE_BONUS_FRACTION,
+  DISCOVERY_MIN_SEC, SESSION_FIND_SEC, AWAY_EVENT_MIN_SEC, AWAY_EVENT_LUMP_SEC, AWAY_EVENT_RATE_BONUS_FRACTION,
   awayRateBonusFor, AWAY_EVENTS };
 
 /**
@@ -181,6 +185,10 @@ export { FIRST_GOAL_WOOD, UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, STONE_BASE_RA
  * @property {number}  discoveryBonus  — permanent wood/s bonus from the strongest away discovery
  * @property {string|null} discoveryId — id of the strongest away discovery found so far
  * @property {string|null} discoveryName — display name of that discovery
+ * @property {number}  activeSec       — seconds this save has been actively played
+ * @property {{id: string, name: string, bonus: number, text: string}|null} sessionFind
+ *   — the first discovery active play earned this save, with the sentence the
+ *   status panel shows for it, or null until (or unless) it is earned
  * @property {{collected: Array<{id: string, name: string, minSec: number, bonus: number}>, hiddenCount: number, total: number, next: {id: string, name: string, minSec: number, bonus: number}|null}} finds
  *   — every away find kept so far (the stored rung and every weaker rung
  *   below it, in ladder order) and the next rung still locked
@@ -212,6 +220,11 @@ let state = {
   discoveryBonus: 0,
   discoveryId: null,
   discoveryName: null,
+  // Seconds this save has been actively played, and the first discovery that
+  // activity earned (null until it is granted). Both persisted so the trigger
+  // survives a reload and is credited at most once.
+  activeSec: 0,
+  sessionFind: null,
   timestamp: new Date().toISOString(),
   firstTimestamp: null,
   lastReturn: null,
@@ -507,10 +520,7 @@ function catchUp(firstVisit, record = true) {
     // find the player already owns. The panel words the two differently.
     const alreadyOwned = Boolean(discovery && !credited && discovery.id === ownedBefore);
     if (credited) {
-      state.rate += discovery.bonus - state.discoveryBonus;
-      state.discoveryBonus = discovery.bonus;
-      state.discoveryId = discovery.id;
-      state.discoveryName = discovery.name;
+      creditDiscovery(discovery);
     }
 
     const discoveryRecord = discovery
@@ -586,6 +596,70 @@ export function discoverForElapsed(elapsedSec) {
     }
   }
   return found ? { ...found } : null;
+}
+
+/**
+ * The discovery a fresh session earns by playing long enough, or null. Away
+ * finds are turned up by an absence; this is the in-session counterpart that
+ * keeps a first visit from being an empty wait. A save that already owns any
+ * discovery has nothing left to earn here, and the find is always the ladder's
+ * first rung, so active play can never outrun the away ladder. Pure.
+ *
+ * @param {number} activeSec — seconds of active play this save has accumulated
+ * @param {string|null|undefined} ownedDiscoveryId — the strongest find owned, if any
+ * @returns {{ id: string, name: string, bonus: number, minSec: number }|null}
+ */
+export function sessionFindFor(activeSec, ownedDiscoveryId) {
+  if (!(activeSec >= SESSION_FIND_SEC)) return null;
+  if (ownedDiscoveryId) return null;
+  return { ...DISCOVERIES[0] };
+}
+
+/**
+ * Credit one discovery onto the live state: raise the rate by exactly the
+ * rung's bonus and remember it as the strongest find. The one place a find is
+ * written, so the away catch-up and the in-session trigger cannot apply
+ * different arithmetic.
+ *
+ * @param {{ id: string, name: string, bonus: number }} find
+ */
+function creditDiscovery(find) {
+  state.rate += find.bonus - state.discoveryBonus;
+  state.discoveryBonus = find.bonus;
+  state.discoveryId = find.id;
+  state.discoveryName = find.name;
+}
+
+/**
+ * Advance this save's count of actively played seconds by `sec` and, the first
+ * time the total reaches SESSION_FIND_SEC on a save that owns nothing, credit
+ * the ladder's first rung and record the sentence announcing it. Called once
+ * per live tick, so active play — not an absence — is what earns it. It happens
+ * at most once: the find is stored, so later ticks have nothing to grant, and a
+ * save that already owns any discovery is never granted a second one. The away
+ * cadences are untouched. Returns the state after the advance.
+ *
+ * @param {number} sec
+ * @returns {GameState}
+ */
+export function advanceActivePlay(sec) {
+  state.activeSec += sec;
+  if (!state.sessionFind) {
+    const find = sessionFindFor(state.activeSec, state.discoveryId);
+    if (find) {
+      creditDiscovery(find);
+      state.sessionFind = {
+        id: find.id,
+        name: find.name,
+        bonus: find.bonus,
+        // The same sentence the welcome-back panel words a credited away find
+        // with, so the page and the read tools announce it identically.
+        text: returnDiscoveryText({ id: find.id, name: find.name, bonus: find.bonus, credited: true }),
+      };
+      persist();
+    }
+  }
+  return getState();
 }
 
 /**
@@ -1007,6 +1081,23 @@ function sanitizePendingEvent(raw) {
 }
 
 /**
+ * A persisted in-session find, or null when what was stored cannot be trusted.
+ * It is display text and a bonus, so a partial or hand-edited record loses the
+ * announcement rather than putting `undefined` on the page.
+ *
+ * @param {unknown} raw
+ * @returns {{id: string, name: string, bonus: number, text: string}|null}
+ */
+function sanitizeSessionFind(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  if (typeof raw.id !== "string" || raw.id === "") return null;
+  if (typeof raw.name !== "string" || raw.name === "") return null;
+  if (!Number.isFinite(raw.bonus)) return null;
+  if (typeof raw.text !== "string" || raw.text === "") return null;
+  return { id: raw.id, name: raw.name, bonus: raw.bonus, text: raw.text };
+}
+
+/**
  * Copy a validated save onto the live state. Every optional field falls back
  * to its fresh-game default, so an older save that predates a field still
  * loads. Shared by loadPersisted and importSave so a restored code and a
@@ -1029,6 +1120,8 @@ function applyPersisted(saved) {
   state.discoveryBonus = typeof saved.discoveryBonus === "number" ? saved.discoveryBonus : 0;
   state.discoveryId = typeof saved.discoveryId === "string" ? saved.discoveryId : null;
   state.discoveryName = typeof saved.discoveryName === "string" ? saved.discoveryName : null;
+  state.activeSec = Number.isFinite(saved.activeSec) && saved.activeSec >= 0 ? saved.activeSec : 0;
+  state.sessionFind = sanitizeSessionFind(saved.sessionFind);
   state.timestamp = saved.timestamp;
   state.firstTimestamp = typeof saved.firstTimestamp === "string" ? saved.firstTimestamp : saved.timestamp;
   state.lastReturn = sanitizeReturnRecord(saved.lastReturn);
@@ -1065,6 +1158,7 @@ function tick() {
     state.stone += computeStoneRate() * elapsed;
     state.totalStoneEarned += computeStoneRate() * elapsed;
   }
+  advanceActivePlay(elapsed);
   state.timestamp = now();
   persist();
 }
@@ -1775,6 +1869,9 @@ export function getState() {
       bonus: state.discoveryBonus,
     } : null,
     finds: discoveryCollection(state.discoveryId),
+    // The first find active play earned in this session, with the sentence the
+    // page's status message shows for it, or null when none has been earned.
+    sessionFind: state.sessionFind ? { ...state.sessionFind } : null,
     pendingEvent: clonePendingEvent(state.pendingEvent),
     lastReturn: cloneReturnRecord(state.lastReturn),
     eventsOffered: state.eventsOffered,
@@ -1804,6 +1901,8 @@ export function reset() {
     discoveryBonus: 0,
     discoveryId: null,
     discoveryName: null,
+    activeSec: 0,
+    sessionFind: null,
     timestamp: now(),
     firstTimestamp: null,
     lastReturn: null,

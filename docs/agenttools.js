@@ -99,6 +99,10 @@ function withGoal(s) {
     stoneRate: stoneRate,
     stoneUnlocked: s.stoneUnlocked,
     discovery: s.discovery || null,
+    // The first find active play earned in this session, or null when none has
+    // been earned: {id, name, bonus, text} where text is the exact sentence the
+    // page's status message shows announcing it.
+    sessionFind: s.sessionFind ?? null,
     // The two-choice happening a real return is offering right now, or null
     // when there is none. Cloned by the engine, so the tool can hand it out
     // without a caller being able to edit the save through it.
@@ -482,7 +486,12 @@ export function tools() {
         + " with exactly two options. Each effectText states exactly what choosing that option "
         + "grants (a lump of wood, a lump of stone, or a permanent wood/s increase sized from "
         + "the wood/s in force when the return is collected), and each "
-        + "option's id is the value to pass to the choose-away-event action.",
+        + "option's id is the value to pass to the choose-away-event action."
+        + " sessionFind is the first discovery active play earned in this session "
+        + "(an in-session counterpart to an away find), or null when none has been "
+        + "earned: {id, name, bonus, text}, where bonus is the wood/s it added (already "
+        + "included in rate) and text is the exact sentence the page's status message "
+        + "shows announcing it.",
       inputSchema: { type: "object", properties: {} },
       annotations: { readOnlyHint: true },
       example: {},

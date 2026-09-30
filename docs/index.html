@@ -188,6 +188,23 @@
       color: var(--accent);
     }
 
+    /* The first discovery active play earns, named in its own line of the
+       status panel the moment it happens. It takes a full row so it never
+       squeezes the resource chips, and accent colour sets the news apart from
+       the plain counters around it. */
+    .session-news {
+      flex: 0 0 100%;
+      margin: 0.35rem 0 0;
+      font-family: var(--body-font);
+      font-size: 0.55rem;
+      color: var(--accent);
+      letter-spacing: 0.02em;
+    }
+
+    .session-news[hidden] {
+      display: none;
+    }
+
     /* A compact status-panel control that re-opens the last return's account:
        a reminder the player can revisit, not one of the game's action buttons,
        so it keeps the 40px tap target but takes far less room. */
@@ -1638,6 +1655,10 @@
         <ul class="finds-entries" id="finds-entries"></ul>
       </details>
     </div>
+    <!-- The first discovery active play earns, announced in its own line the
+         moment it happens, so the player sees something new early — not only
+         the wood counter. Live region: a screen reader reads it when it appears. -->
+    <p class="session-news" id="session-news" role="status" aria-live="polite" hidden></p>
     <button class="btn" id="btn-show-return" type="button" aria-label="Show the last return's summary" hidden>
       <span class="btn-icon sprite-mount" data-sprite="scroll" aria-hidden="true"></span> Last return
     </button>
@@ -1938,6 +1959,10 @@
     // change rather than on every 500ms render tick. null until the first
     // render, so nothing is announced before the player has acted.
     let lastGoalText = null;
+    // Tracks the session find's announcement last written, so the 500ms render
+    // tick only writes (and a live region only speaks) on a real change rather
+    // than repeating the same sentence all session. null until the first render.
+    let lastSessionNews = null;
     const offlineSummary = document.getElementById("offline-summary");
     const offlineElapsed = document.getElementById("offline-elapsed");
     const offlineAmount = document.getElementById("offline-wood-amount");
@@ -1967,6 +1992,7 @@
     const awayDecisionWaiting = document.getElementById("away-decision-waiting");
     const awayDecisionWaitingName = document.getElementById("away-decision-waiting-name");
     const nextAwayFindLine = document.getElementById("next-away-find-line");
+    const sessionNewsEl = document.getElementById("session-news");
     const findsList = document.getElementById("finds-list");
     const findsEntries = document.getElementById("finds-entries");
     const btnShowReturn = document.getElementById("btn-show-return");
@@ -2824,6 +2850,18 @@
         const waitingEvent = returnSummary.pendingEvent;
         awayDecisionWaiting.classList.toggle("stat-hidden", !waitingEvent);
         awayDecisionWaitingName.textContent = waitingEvent ? waitingEvent.title : "";
+      }
+
+      // The first find active play earned, named in the status panel the moment
+      // it happens. Written only when the sentence changes, so the 500ms tick
+      // never re-announces it; a fresh save (no find yet) stays hidden.
+      if (sessionNewsEl) {
+        const newsText = s.sessionFind ? s.sessionFind.text : "";
+        if (newsText !== lastSessionNews) {
+          lastSessionNews = newsText;
+          sessionNewsEl.textContent = newsText;
+          sessionNewsEl.hidden = newsText === "";
+        }
       }
 
       // Total stats (never decrease). Total stone is written only when stone
