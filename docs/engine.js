@@ -1986,6 +1986,27 @@ export function getReturnSummary() {
 }
 
 /**
+ * The last return as one status-bar headline: how long the player was away
+ * and the wood (and stone, once any stone was earned) the return gathered.
+ * Built from the same record getReturnSummary() exposes and worded with the
+ * same formatElapsed/formatAmount rules the welcome-back panel uses, so the
+ * status line and the panel can never disagree. Empty for anything that is
+ * not a real return — a first-ever visit or a sub-second reload — so the line
+ * is absent rather than claiming an absence that did not happen. It reads
+ * from the persisted record, so it survives a dismissal and a reload and
+ * updates on the next return.
+ *
+ * @returns {string}
+ */
+export function lastReturnHeadline() {
+  const ret = getReturnSummary();
+  if (!ret.visible) return "";
+  let line = `Away ${ret.elapsed} \u2014 gathered ${formatAmount(ret.wood)} wood`;
+  if (ret.stone > 0) line += `, ${formatAmount(ret.stone)} stone`;
+  return line;
+}
+
+/**
  * Mark the last return's account as seen and persist it. This is the one place
  * the flag flips, so the page and the read tools cannot disagree about whether
  * the player has been shown the account.

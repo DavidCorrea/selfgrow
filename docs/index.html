@@ -229,6 +229,24 @@
       display: none;
     }
 
+    /* The last return in one line of the status panel: how long the player was
+       away and the wood (and stone) the return gathered, so the account reads
+       at a glance without opening the welcome-back panel. It takes a full row
+       and wraps rather than nowrap — on a phone it stays one readable line
+       instead of overflowing the header. */
+    .return-headline {
+      flex: 0 0 100%;
+      margin: 0.35rem 0 0;
+      font-family: var(--body-font);
+      font-size: 0.55rem;
+      color: var(--text);
+      letter-spacing: 0.02em;
+    }
+
+    .return-headline[hidden] {
+      display: none;
+    }
+
     /* A compact status-panel control that re-opens the last return's account:
        a reminder the player can revisit, not one of the game's action buttons,
        so it keeps the 40px tap target but takes far less room. */
@@ -1683,6 +1701,11 @@
          moment it happens, so the player sees something new early — not only
          the wood counter. Live region: a screen reader reads it when it appears. -->
     <p class="session-news" id="session-news" role="status" aria-live="polite" hidden></p>
+    <!-- The last return in one line, so how long the player was away and what
+         the return gathered reads without opening the welcome-back panel and
+         survives a quick dismissal. A live region: a screen reader is told
+         the headline without hearing the whole panel again. -->
+    <p class="return-headline" id="return-headline" role="status" aria-live="polite" hidden></p>
     <button class="btn" id="btn-show-return" type="button" aria-label="Show the last return's summary" hidden>
       <span class="btn-icon sprite-mount" data-sprite="scroll" aria-hidden="true"></span> Last return
     </button>
@@ -1937,7 +1960,7 @@
   </div>
   <script type="module">
     import "./webmcp.js";
-    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, chooseAwayEventOption, markReturnSeen, formatElapsed, nextAwayFindText, nextDiscoveryAfter, sharpenAvailable, sharpenThreshold, expeditionUnlocked, actionAvailability, displayAmount, formatAmount, formatRate, exportSave, importSave, inspectSave, describeGoal, returnDiscoveryLine, pauseForHidden, resumeFromHidden, nextSharpenCost, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, clickPowerFor, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
+    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, lastReturnHeadline, chooseAwayEventOption, markReturnSeen, formatElapsed, nextAwayFindText, nextDiscoveryAfter, sharpenAvailable, sharpenThreshold, expeditionUnlocked, actionAvailability, displayAmount, formatAmount, formatRate, exportSave, importSave, inspectSave, describeGoal, returnDiscoveryLine, pauseForHidden, resumeFromHidden, nextSharpenCost, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, clickPowerFor, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
     import { cloneState, fastForward, rehearseAwayChoice } from "./sandbox.js";
     import { mountSprites, mountSprite, updateSprites, playReaction } from "./sprites.js";
 
@@ -1987,6 +2010,7 @@
     // tick only writes (and a live region only speaks) on a real change rather
     // than repeating the same sentence all session. null until the first render.
     let lastSessionNews = null;
+    let lastReturnHeadlineText = null;
     const offlineSummary = document.getElementById("offline-summary");
     const offlineElapsed = document.getElementById("offline-elapsed");
     const offlineAmount = document.getElementById("offline-wood-amount");
@@ -2017,6 +2041,7 @@
     const awayDecisionWaitingName = document.getElementById("away-decision-waiting-name");
     const nextAwayFindLine = document.getElementById("next-away-find-line");
     const sessionNewsEl = document.getElementById("session-news");
+    const returnHeadlineEl = document.getElementById("return-headline");
     const findsList = document.getElementById("finds-list");
     const findsEntries = document.getElementById("finds-entries");
     const btnShowReturn = document.getElementById("btn-show-return");
@@ -2908,6 +2933,20 @@
           lastSessionNews = newsText;
           sessionNewsEl.textContent = newsText;
           sessionNewsEl.hidden = newsText === "";
+        }
+      }
+
+      // The last return's account in one line, read from the same engine rule
+      // the welcome-back panel words itself from, so the status bar tells the
+      // story without a click and cannot disagree with the panel or the tool.
+      // Written only when the sentence changes, so the 500ms tick never
+      // re-announces it; no real return means no line.
+      if (returnHeadlineEl) {
+        const headlineText = lastReturnHeadline();
+        if (headlineText !== lastReturnHeadlineText) {
+          lastReturnHeadlineText = headlineText;
+          returnHeadlineEl.textContent = headlineText;
+          returnHeadlineEl.hidden = headlineText === "";
         }
       }
 

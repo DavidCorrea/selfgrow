@@ -8,7 +8,7 @@
  * @module agenttools
  */
 
-import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, chooseAwayEventOption, getReturnSummary, formatElapsed, formatRate, nextDiscoveryAfter, discoveryCollection, returnDiscoveryText, sharpenAvailable, sharpenThreshold, wallAvailable, expeditionUnlocked, actionAvailability, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, effectiveWoodRate, expeditionMultiplierFor, clickPowerFor, FIRST_GOAL_WOOD, SHARPEN_COST_RATE, nextSharpenCost, RATE_INCREASE_PER_UPGRADE, GOAL_STONE, WALL_COST, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT, EXPEDITION_FORGE_LEVEL, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_WOOD_COST_INC, FORGE_STONE_COST_INC, FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC, EXPEDITION_WOOD_RATE_MULTIPLIER, DISCOVERY_MIN_SEC, AWAY_EVENT_MIN_SEC, AWAY_EVENT_LUMP_SEC, AWAY_EVENT_RATE_BONUS_FRACTION, awayRateBonusFor, AWAY_EVENTS, discoverForElapsed, FINDS_LIST_LIMIT } from "./engine.js";
+import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, chooseAwayEventOption, getReturnSummary, lastReturnHeadline, formatElapsed, formatRate, nextDiscoveryAfter, discoveryCollection, returnDiscoveryText, sharpenAvailable, sharpenThreshold, wallAvailable, expeditionUnlocked, actionAvailability, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, effectiveWoodRate, expeditionMultiplierFor, clickPowerFor, FIRST_GOAL_WOOD, SHARPEN_COST_RATE, nextSharpenCost, RATE_INCREASE_PER_UPGRADE, GOAL_STONE, WALL_COST, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT, EXPEDITION_FORGE_LEVEL, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_WOOD_COST_INC, FORGE_STONE_COST_INC, FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC, EXPEDITION_WOOD_RATE_MULTIPLIER, DISCOVERY_MIN_SEC, AWAY_EVENT_MIN_SEC, AWAY_EVENT_LUMP_SEC, AWAY_EVENT_RATE_BONUS_FRACTION, awayRateBonusFor, AWAY_EVENTS, discoverForElapsed, FINDS_LIST_LIMIT } from "./engine.js";
 
 /**
  * The last return as the welcome-back panel is showing it, read straight from
@@ -156,6 +156,13 @@ function withGoal(s) {
     offlineWoodGained: ret.wood,
     offlineStoneGained: ret.stone,
     offlineElapsed: ret.elapsed,
+    // The last return as the one status-bar line the page shows, from the same
+    // engine rule the page renders it with. Unlike the offlineWoodGained/
+    // offlineStoneGained pair — which zero out once the panel is dismissed —
+    // this stays for as long as a real return is on record, so a caller sees at
+    // a glance what the status bar still shows, and an empty string when no
+    // real return has happened.
+    lastReturnHeadline: lastReturnHeadline(),
     offlineDiscovery: ret.discovery,
     // The option taken from the last return's decision, or null when it offered
     // none or the player has not chosen. It is the same record the panel words
@@ -497,7 +504,10 @@ export function tools() {
         + "while away (offlineWoodGained / offlineStoneGained), the human-text "
         + "duration of that absence as shown in the panel (offlineElapsed, e.g. "
         + "'3m 20s' or '1d 4h 0m', null when nothing was gained or the panel is "
-        + "hidden), the away discovery "
+        + "hidden), the same return as the single status-bar line the page keeps showing "
+        + "(lastReturnHeadline, e.g. 'Away 1h 0m \u2014 gathered 12 wood, 3 stone', an empty "
+        + "string when no real return is on record; it stays after the panel is dismissed "
+        + "so the status bar and this tool agree), the away discovery "
         + "named in the welcome-back panel this return (offlineDiscovery: "
         + "{name, bonus, permanent, alreadyOwned, sentence}). bonus is the wood/s boost "
         + "the find granted and permanent is true because the find is kept; both are "

@@ -3313,6 +3313,89 @@ export async function checks() {
       }
     }
 
+    // (g2) The last return's account in one status-bar line (issue #1108).
+    // The opening panel is not required to read what the return was: the line
+    // states the absence and the wood (and stone) earned, from the same engine
+    // rule the panel words itself from, so the two can never disagree. It is a
+    // polite status line, survives a dismissal, and is absent when there is no
+    // real return.
+    const returnHeadlineEl = document.getElementById("return-headline");
+    if (!returnHeadlineEl) {
+      problems.push("Expected #return-headline in the status panel to show the last return in one line.");
+    } else {
+      if (!returnHeadlineEl.closest("#status-bar")) {
+        problems.push("The last-return headline must live in the #status-bar status panel.");
+      }
+      if (returnHeadlineEl.getAttribute("role") !== "status" || returnHeadlineEl.getAttribute("aria-live") !== "polite") {
+        problems.push("The last-return headline must be a polite status line (role=status, aria-live=polite).");
+      }
+    }
+
+    reloadFromAge(3600000, { wood: 5 });
+    window.__renderUI();
+    const headlineReturn = engine.getReturnSummary();
+    const headlineEngine = engine.lastReturnHeadline();
+    if (!headlineEngine) {
+      problems.push("A real 1h return must produce a non-empty status-bar headline.");
+    }
+    if (returnHeadlineEl) {
+      if (returnHeadlineEl.hidden || returnHeadlineEl.textContent === "") {
+        problems.push("The status bar must show the last return's headline after a real return.");
+      }
+      if (returnHeadlineEl.textContent !== headlineEngine) {
+        problems.push(`The status-bar headline (${JSON.stringify(returnHeadlineEl.textContent)}) must equal engine.lastReturnHeadline() (${JSON.stringify(headlineEngine)}).`);
+      }
+      const headlineElapsed = headlineReturn.elapsed;
+      const headlineWood = engine.formatAmount(headlineReturn.wood);
+      if (!returnHeadlineEl.textContent.includes(headlineElapsed)) {
+        problems.push(`The status-bar headline must name the absence the panel shows (${JSON.stringify(headlineElapsed)}), got ${JSON.stringify(returnHeadlineEl.textContent)}.`);
+      }
+      if (!returnHeadlineEl.textContent.includes(headlineWood)) {
+        problems.push(`The status-bar headline must name the wood the return earned (${JSON.stringify(headlineWood)}), got ${JSON.stringify(returnHeadlineEl.textContent)}.`);
+      }
+      if (headlineReturn.stone > 0 && !returnHeadlineEl.textContent.includes(engine.formatAmount(headlineReturn.stone) + " stone")) {
+        problems.push(`The status-bar headline must name the stone the return earned (${engine.formatAmount(headlineReturn.stone)}), got ${JSON.stringify(returnHeadlineEl.textContent)}.`);
+      }
+      if (readStateTool) {
+        const headlineState = await readStateTool.execute({});
+        if (headlineState.lastReturnHeadline !== returnHeadlineEl.textContent) {
+          problems.push(`read-state.lastReturnHeadline (${JSON.stringify(headlineState.lastReturnHeadline)}) must equal the status bar's headline (${JSON.stringify(returnHeadlineEl.textContent)}).`);
+        }
+      }
+    }
+
+    // The line is kept when the panel is dismissed — that quick dismissal is
+    // exactly when it has to keep telling the story — and unchanged.
+    window.__dismissOffline();
+    window.__renderUI();
+    if (returnHeadlineEl && returnHeadlineEl.hidden) {
+      problems.push("The status-bar headline must stay after the welcome-back panel is dismissed.");
+    }
+    if (returnHeadlineEl && returnHeadlineEl.textContent !== headlineEngine) {
+      problems.push(`Dismissing the panel must not change the status-bar headline: expected ${JSON.stringify(headlineEngine)}, got ${JSON.stringify(returnHeadlineEl.textContent)}.`);
+    }
+
+    // A first-ever visit and a sub-second reload claim no return, so no line.
+    engine.reset();
+    engine.init();
+    if (typeof window.__setOverlayOpen === "function") window.__setOverlayOpen("offline", false);
+    overlay.setAttribute("hidden", "");
+    window.__renderUI();
+    if (engine.lastReturnHeadline() !== "") {
+      problems.push(`A first-ever visit must produce no headline, got ${JSON.stringify(engine.lastReturnHeadline())}.`);
+    }
+    if (returnHeadlineEl && (!returnHeadlineEl.hidden || returnHeadlineEl.textContent !== "")) {
+      problems.push("The status-bar headline must be hidden on a first-ever visit.");
+    }
+    reloadFromAge(300, { wood: 5 });
+    window.__renderUI();
+    if (engine.lastReturnHeadline() !== "") {
+      problems.push(`A sub-second reload must produce no headline, got ${JSON.stringify(engine.lastReturnHeadline())}.`);
+    }
+    if (returnHeadlineEl && !returnHeadlineEl.hidden) {
+      problems.push("The status-bar headline must be hidden after a sub-second reload.");
+    }
+
     // (h)-(j) A real return's account is carried in the save itself, so a
     // reload before the player dismisses it tells the same story instead of
     // the few seconds since the last tick. This helper reloads the save
