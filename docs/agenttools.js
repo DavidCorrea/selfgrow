@@ -409,10 +409,13 @@ function rulesAway(s) {
         + "option is taken the other can never then be taken.",
     },
     sandbox: {
-      tools: ["sandbox-create", "sandbox-fast-forward", "sandbox-fast-forward-next-find", "sandbox-exit"],
+      tools: ["sandbox-create", "sandbox-fast-forward", "sandbox-fast-forward-next-find", "sandbox-rehearse-choice", "sandbox-exit"],
       rule: "An absence can be rehearsed. A sandbox clones the current save and fast-forwarding it "
         + "projects exactly the find and the happening a real absence of that length would turn up, "
-        + "without touching the real save; sandbox-exit discards the rehearsal.",
+        + "without touching the real save. Each choice the happening offers can then be rehearsed "
+        + "against the clone (sandbox-rehearse-choice), which reports the projected wood, stone and "
+        + "rates that choice would leave behind without spending it; sandbox-exit discards the "
+        + "rehearsal and leaves the real choice unresolved.",
     },
   };
 }
@@ -784,6 +787,70 @@ export function tools() {
         // the same absence can never disagree about the choice it offers.
         out.event = result ? result.event : null;
         if (result && result.milestones) out.milestones = { ...out.milestones, ...result.milestones };
+        return out;
+      },
+    },
+    {
+      name: "sandbox-rehearse-choice",
+      description: "Rehearses one option of the two-choice happening the sandbox is currently "
+        + "offering, against the isolated sandbox clone only. Returns where that choice would lead — "
+        + "the projected wood, stone, wood/s (woodRate) and stone/s (stoneRate) it would leave "
+        + "behind — so a caller can compare the options before spending the real choice. The real "
+        + "save's pending event is never resolved or touched; only the clone changes, and calling "
+        + "it again with the other option compares outcomes rather than adding them. Returns "
+        + "rehearsed:false with a reason when the sandbox is offering no choice or the id names no "
+        + "option of it. Fast-forward first so a happening is offered.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          option: {
+            type: "string",
+            description: "Which option of the offered happening to rehearse, by its id (e.g. 'wood', 'stone' or 'rate').",
+          },
+        },
+        required: ["option"],
+      },
+      annotations: { readOnlyHint: false },
+      example: { option: "wood" },
+      async execute({ option }) {
+        const clone = ensureSandbox();
+        if (!clone) throw new Error("Could not open a sandbox clone.");
+        // The happening the sandbox is offering: the one it just projected, or
+        // the decision the clone is already carrying when nothing has been
+        // fast-forwarded yet. Never the real save's — this only reads the clone.
+        const event = typeof window.__getSandboxEvent === "function"
+          ? window.__getSandboxEvent()
+          : clone.pendingEvent;
+        if (!event) {
+          const out = withGoal(clone);
+          out.sandboxActive = true;
+          out.rehearsed = false;
+          out.reason = "The sandbox is offering no away-event choice right now; fast-forward first.";
+          return out;
+        }
+        const projection = typeof window.__rehearseSandboxChoice === "function"
+          ? window.__rehearseSandboxChoice(option)
+          : null;
+        if (!projection) {
+          const out = withGoal(clone);
+          out.sandboxActive = true;
+          out.rehearsed = false;
+          out.reason = `"${option}" is not one of the options the sandbox is offering.`;
+          return out;
+        }
+        const projected = typeof window.__getSandboxClone === "function" ? window.__getSandboxClone() : clone;
+        const out = withGoal(projected || clone);
+        out.sandboxActive = true;
+        out.rehearsed = true;
+        out.option = projection.optionId;
+        out.effect = projection.effect;
+        out.woodRate = projection.woodRate;
+        out.stoneRate = projection.stoneRate;
+        // The happening being rehearsed, and the real save's own decision read
+        // straight from the engine — proof for the caller that the rehearsal
+        // changed only the clone and left the real choice waiting.
+        out.event = event;
+        out.realPendingEvent = getState().pendingEvent;
         return out;
       },
     },

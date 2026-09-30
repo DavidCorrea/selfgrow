@@ -619,10 +619,10 @@
     }
 
     /* The decision a real absence of the rehearsed length would offer: the
-       happening and its two choices, read from the engine's own rule. It is
-       shown as plain text, never as controls — a rehearsal names the choice
-       without being able to take it — so the panel reads like the return it
-       stands in for while the sandbox stays read-only. */
+       happening and its two choices, read from the engine's own rule. Each
+       choice carries a control that rehearses it against the isolated clone and
+       prints where it leads — a projection, not a purchase — so the panel reads
+       like the return it stands in for while the real choice stays unspent. */
     .sandbox-away-event {
       display: flex;
       flex-direction: column;
@@ -662,6 +662,51 @@
     .sandbox-away-option-effect {
       color: var(--text-dim);
       font-size: 0.4rem;
+    }
+
+    /* Rehearsing an option is a real control, but it only ever touches the
+       isolated clone: pressing it projects where that choice leads and says so,
+       without resolving the decision the real return is still holding. It wears
+       the sandbox's green so it reads as "try this", not "take this". */
+    .sandbox-away-option-rehearse {
+      font-family: var(--pixel-font);
+      font-size: 0.4rem;
+      color: var(--bg);
+      background: #66aa88;
+      border: 2px solid #448866;
+      padding: 0.3rem 0.6rem;
+      min-height: 40px;
+      cursor: pointer;
+      align-self: flex-start;
+      transition: background 0.1s;
+    }
+
+    .sandbox-away-option-rehearse:hover,
+    .sandbox-away-option-rehearse:focus-visible {
+      background: #88ccaa;
+      outline: 2px solid var(--highlight);
+      outline-offset: 2px;
+    }
+
+    /* The option being rehearsed is marked, so a glance tells which of the two
+       outcomes the numbers below describe. */
+    .sandbox-away-option.is-rehearsed .sandbox-away-option-label {
+      color: var(--accent);
+    }
+
+    .sandbox-away-option-projection {
+      color: var(--text-dim);
+      font-family: var(--body-font);
+      font-size: 0.4rem;
+      line-height: 1.6;
+    }
+
+    .sandbox-away-event-note {
+      color: var(--text-dim);
+      font-family: var(--body-font);
+      font-size: 0.4rem;
+      font-style: italic;
+      line-height: 1.6;
     }
 
     .btn-sandbox-exit {
@@ -1671,12 +1716,14 @@
       <div id="sb-milestone-list"></div>
 
       <!-- The decision a real absence of the rehearsed length would offer: the
-           happening and both choices, named from the engine's own rule. Shown
-           as text only — the sandbox never offers a control that resolves the
-           choice, so a rehearsal can name a decision without spending it. -->
+           happening and both choices, named from the engine's own rule. Each
+           choice carries a control that rehearses it against the isolated clone
+           and prints where it leads; the real choice is never resolved here, so
+           a rehearsal can compare outcomes without spending one. -->
       <div id="sb-away-event" class="sandbox-away-event" hidden>
         <div class="sandbox-away-event-title" id="sb-away-event-title"></div>
         <div id="sb-away-event-options"></div>
+        <div class="sandbox-away-event-note" id="sb-away-event-note" hidden></div>
       </div>
 
       <hr class="sandbox-divider">
@@ -1697,7 +1744,7 @@
   <script type="module">
     import "./webmcp.js";
     import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, chooseAwayEventOption, markReturnSeen, formatElapsed, nextAwayFindText, nextDiscoveryAfter, sharpenAvailable, sharpenThreshold, expeditionUnlocked, displayAmount, formatAmount, formatRate, exportSave, importSave, inspectSave, describeGoal, returnDiscoveryLine, pauseForHidden, resumeFromHidden, UPGRADE_COST, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, clickPowerFor, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
-    import { cloneState, fastForward } from "./sandbox.js";
+    import { cloneState, fastForward, rehearseAwayChoice } from "./sandbox.js";
     import { mountSprites, mountSprite, updateSprites, playReaction } from "./sprites.js";
 
     init();
@@ -2805,6 +2852,14 @@
     // The result of the most recent fast-forward, so the panel can keep showing
     // the duration, earnings and find it just simulated rather than only totals.
     let lastSandboxResult = null;
+    // The happening the current rehearsal is offering, and the clone's state
+    // just before any choice was rehearsed. A rehearsal resets the clone to this
+    // baseline first, so trying the other option compares the two outcomes
+    // rather than adding them together. The projection records which option was
+    // last rehearsed and where it led, so the panel can mark that row.
+    let sandboxEvent = null;
+    let sandboxEventBaseline = null;
+    let sandboxRehearsedProjection = null;
     const sandboxOverlay = document.getElementById("sandbox-overlay");
     const sbWood = document.getElementById("sb-wood");
     const sbRate = document.getElementById("sb-rate");
@@ -2824,6 +2879,7 @@
     const sbAwayEvent = document.getElementById("sb-away-event");
     const sbAwayEventTitle = document.getElementById("sb-away-event-title");
     const sbAwayEventOptions = document.getElementById("sb-away-event-options");
+    const sbAwayEventNote = document.getElementById("sb-away-event-note");
     const btnSandbox = document.getElementById("btn-sandbox");
     const sbBtn10x = document.getElementById("sb-btn-10x");
     const sbBtn1h = document.getElementById("sb-btn-1h");
@@ -2838,6 +2894,13 @@
       const s = getState();
       sandboxClone = cloneState(s);
       lastSandboxResult = null;
+      // A rehearsal starts from whatever choice the real save is already
+      // holding, so entering the sandbox names the decision the player is
+      // looking at without a fast-forward first. The baseline is the state a
+      // rehearsal option is applied to; it is recaptured after each run.
+      sandboxEvent = sandboxClone.pendingEvent ?? null;
+      sandboxEventBaseline = cloneState(sandboxClone);
+      sandboxRehearsedProjection = null;
       // A fresh rehearsal starts from an empty list; the previous session's
       // announcements are not this run's news.
       sbMilestoneList.replaceChildren();
@@ -2865,6 +2928,11 @@
 
     function exitSandbox() {
       sandboxClone = null;
+      // The rehearsal and the choice it projected are discarded with the clone,
+      // so a later entry starts clean and the real decision is untouched.
+      sandboxEvent = null;
+      sandboxEventBaseline = null;
+      sandboxRehearsedProjection = null;
       sandboxOverlay.hidden = true;
       sandboxOverlay.style.pointerEvents = "";
       document.body.style.pointerEvents = "";
@@ -2887,6 +2955,13 @@
 
       const result = fastForward(sandboxClone, simulatedSeconds);
       lastSandboxResult = result;
+      // The happening this absence offers, and the state a rehearsal of one of
+      // its options starts from — captured after the earnings and the find, the
+      // very state a real return would pose the decision in. Any projection
+      // from the previous run is dropped: these are a new absence's numbers.
+      sandboxEvent = result.event;
+      sandboxEventBaseline = cloneState(sandboxClone);
+      sandboxRehearsedProjection = null;
 
       // Each run replaces the last one's list, so the rehearsal never grows
       // into an unreadable pile of old news.
@@ -3012,40 +3087,101 @@
       // The decision a real absence of the rehearsed length would offer, drawn
       // by the engine's own rule from the clone the rehearsal returned to, so
       // the happening and both choices are the very ones a real return would
-      // show. The block is read-only — it names the choice without offering a
-      // way to take it — and hides entirely when the rehearsal was too short.
-      renderSandboxAwayEvent(lastSandboxResult ? lastSandboxResult.event : null);
+      // show. Each choice can be rehearsed here — a projection, never a grant —
+      // and the block hides entirely when the rehearsal was too short.
+      renderSandboxAwayEvent(sandboxEvent);
     }
 
     /**
-     * Show the away event a rehearsal would offer, as plain text: its title and
-     * one row per choice, each stating the label and the effect sentence the
-     * engine drew from the amount choosing it would grant. There is deliberately
-     * no control here — resolving the choice belongs to a real return.
+     * Show the away event a rehearsal would offer: its title and one row per
+     * choice. Each row states the label and the effect sentence the engine drew
+     * from the amount choosing it would grant, and carries a control that
+     * rehearses that option against the isolated clone — never the real save.
+     * The row whose option was last rehearsed is marked, and its projection
+     * states the wood, stone and rates that choice would leave behind.
      *
-     * @param {{title: string, options: Array<{label: string, effectText: string}>}|null} event
+     * @param {{title: string, options: Array<{id: string, label: string, effectText: string}>}|null} event
      */
     function renderSandboxAwayEvent(event) {
       sbAwayEventOptions.replaceChildren();
       if (!event) {
         sbAwayEventTitle.textContent = "";
+        sbAwayEventNote.textContent = "";
+        sbAwayEventNote.hidden = true;
         sbAwayEvent.hidden = true;
         return;
       }
       sbAwayEventTitle.textContent = event.title;
+      const projection = sandboxRehearsedProjection;
       for (const option of event.options) {
+        const isRehearsed = Boolean(projection && projection.optionId === option.id);
         const row = document.createElement("div");
-        row.className = "sandbox-away-option";
+        row.className = "sandbox-away-option" + (isRehearsed ? " is-rehearsed" : "");
         const label = document.createElement("span");
         label.className = "sandbox-away-option-label";
         label.textContent = option.label;
         const effect = document.createElement("span");
         effect.className = "sandbox-away-option-effect";
         effect.textContent = option.effectText;
-        row.append(label, effect);
+        const rehearse = document.createElement("button");
+        rehearse.type = "button";
+        rehearse.className = "sandbox-away-option-rehearse";
+        rehearse.dataset.option = option.id;
+        rehearse.textContent = "Rehearse this choice";
+        rehearse.setAttribute("aria-label", "Rehearse this choice: " + option.label);
+        rehearse.addEventListener("click", () => rehearseSandboxChoice(option.id));
+        row.append(label, effect, rehearse);
+        if (isRehearsed) {
+          const projected = document.createElement("span");
+          projected.className = "sandbox-away-option-projection";
+          projected.textContent = describeRehearsalProjection(projection);
+          row.appendChild(projected);
+        }
         sbAwayEventOptions.appendChild(row);
       }
+      sbAwayEventNote.textContent = "Rehearsal \u2014 nothing is spent.";
+      sbAwayEventNote.hidden = false;
       sbAwayEvent.hidden = false;
+    }
+
+    /**
+     * Rehearse one option of the happening the sandbox is offering, against the
+     * isolated clone only. The clone is reset to the post-fast-forward baseline
+     * first, so rehearsing the other option compares the two outcomes instead of
+     * adding them, and the real save's pending decision is never touched.
+     *
+     * @param {string} optionId
+     * @returns {object|null} the projection, or null when no event is offered or
+     *   the id names no option of it.
+     */
+    function rehearseSandboxChoice(optionId) {
+      if (!sandboxClone || !sandboxEvent) return null;
+      sandboxClone = cloneState(sandboxEventBaseline);
+      const projection = rehearseAwayChoice(sandboxClone, sandboxEvent, optionId);
+      if (!projection) return null;
+      sandboxRehearsedProjection = projection;
+      renderSandbox();
+      return projection;
+    }
+
+    /**
+     * State where a rehearsed option leads: the projected wood and wood/s, plus
+     * stone and its rate once stone is unlocked. Words only — this is a
+     * projection, never a grant.
+     *
+     * @param {{wood: number, stone: number, woodRate: number, stoneRate: number}} projection
+     * @returns {string}
+     */
+    function describeRehearsalProjection(projection) {
+      const parts = [
+        "Projected wood " + formatAmount(projection.wood),
+        "wood rate +" + formatRate(projection.woodRate) + "/s",
+      ];
+      if (projection.stoneRate > 0 || projection.stone > 0) {
+        parts.push("stone " + formatAmount(projection.stone));
+        parts.push("stone rate +" + formatRate(projection.stoneRate) + "/s");
+      }
+      return parts.join(" \u00b7 ");
     }
 
     /**
@@ -3169,6 +3305,8 @@
     window.__exitSandbox = exitSandbox;
     window.__fastForwardSandbox = fastForwardSandbox;
     window.__getSandboxClone = () => sandboxClone;
+    window.__getSandboxEvent = () => sandboxEvent;
+    window.__rehearseSandboxChoice = rehearseSandboxChoice;
 
     // Expose renderUI for agent tools and self-test access
     window.__renderUI = renderUI;
