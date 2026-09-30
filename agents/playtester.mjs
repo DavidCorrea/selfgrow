@@ -361,6 +361,11 @@ export async function observeApp() {
       timeline.push({ atSeconds: seconds, state });
     }
 
+    // The page as it stands when watching ends. The controls are read again
+    // because they change as the game does: compared with the list from page
+    // load, a button that unlocked a minute in reads as one that never did.
+    const closing = await page.evaluate(readPage);
+
     // Does the product remember you? persistence is the difference between a
     // screensaver and a place you return to, so it is worth one reload to find out.
     await page.reload({ waitUntil: "networkidle", timeout: 30_000 });
@@ -378,7 +383,7 @@ export async function observeApp() {
     // measured after this point.
     const frames = await captureFrames(page);
 
-    return { opening, tabOrder, timeline, afterReload, agentTools, consoleErrors, url, frames };
+    return { opening, tabOrder, timeline, closing, afterReload, agentTools, consoleErrors, url, frames };
   } catch (e) {
     log("warn", "Playtest: the session broke off early — reporting what was seen.", errorData(e));
     return null;
@@ -425,7 +430,7 @@ export function renderToolPass(agentTools) {
 }
 
 export function renderSession(session, { showingFrames = true } = {}) {
-  const { opening, tabOrder, timeline, afterReload, agentTools, consoleErrors, url } = session;
+  const { opening, tabOrder, timeline, closing, afterReload, agentTools, consoleErrors, url } = session;
   // The transcript must describe the turn it is actually part of. The text-only
   // fallback in report() sends this same session with no images attached, and a
   // transcript that still announced two screenshots would have the agent describe
@@ -437,7 +442,7 @@ export function renderSession(session, { showingFrames = true } = {}) {
 
   return [
     url ? `_Played at ${url}._\n` : "",
-    `## The page when it loaded`,
+    `## The page when it loaded, before any time passed`,
     `Title: ${opening.title || "(none)"}`,
     `Headings: ${opening.headings.join(" / ") || "(none)"}`,
     `Landmarks: ${opening.landmarks.join(", ") || "(none)"}`,
@@ -452,6 +457,9 @@ export function renderSession(session, { showingFrames = true } = {}) {
     unchanged
       ? `**Nothing in the state layer changed across the whole ${Math.round(OBSERVATION_MS / 1000)} seconds.**`
       : `The state layer changed while watching — compare the samples above to see what moved and what stayed put.`,
+    "",
+    `## The page when you stopped watching`,
+    `Interactive elements: ${closing.controls.join(", ") || "(none)"}`,
     "",
     `## After a reload`,
     sameAfterReload
