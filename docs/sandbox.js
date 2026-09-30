@@ -7,7 +7,7 @@
  * @module sandbox
  */
 
-import { discoverForElapsed, awayEventForElapsed, computeStoneRateFor, effectiveWoodRate, milestoneSnapshot, milestonesBetween } from "./engine.js";
+import { discoverForElapsed, awayEventForElapsed, computeStoneRateFor, effectiveWoodRate, milestoneSnapshot, milestonesBetween, applyAwayOptionToState } from "./engine.js";
 
 /**
  * Deep-copy a value so a rehearsal holds its own copy of everything the save
@@ -122,5 +122,48 @@ export function fastForward(clone, seconds) {
     totalWood: clone.wood,
     totalStone: clone.stone,
     milestones: milestonesBetween(before, clone),
+  };
+}
+
+/**
+ * Rehearse one option of an away event against an isolated clone: apply the
+ * option's effect with the engine's own rule, clear the clone's pending event
+ * so a second rehearsal starts from a clean choice, and report where the option
+ * leads. Mutates only the clone passed in — the real save is never reachable
+ * from here — so a player can compare the two outcomes before spending the real
+ * choice. Returns null when the id names no option of the event.
+ *
+ * @param {import("./engine.js").GameState} clone — mutated in place
+ * @param {import("./engine.js").AwayEvent} event
+ * @param {string} optionId
+ * @returns {{
+ *   optionId: string,
+ *   label: string,
+ *   effect: {kind: string, amount: number},
+ *   wood: number,
+ *   stone: number,
+ *   woodRate: number,
+ *   stoneRate: number,
+ *   rehearsal: boolean,
+ * }|null}
+ */
+export function rehearseAwayChoice(clone, event, optionId) {
+  const option = event.options.find((candidate) => candidate.id === optionId);
+  if (!option) return null;
+  const effect = applyAwayOptionToState(clone, option);
+  // The clone no longer owes the choice it just rehearsed, so a second
+  // rehearsal against the same clone is a fresh decision rather than a repeat.
+  clone.pendingEvent = null;
+  return {
+    optionId: option.id,
+    label: option.label,
+    effect,
+    wood: clone.wood,
+    stone: clone.stone,
+    // The rates the engine's own rules pay for the clone as it now stands, so a
+    // projection can never promise a rate the game would not grant.
+    woodRate: effectiveWoodRate(clone),
+    stoneRate: clone.stoneUnlocked ? computeStoneRateFor(clone.totalWoodEarned) : 0,
+    rehearsal: true,
   };
 }

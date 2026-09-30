@@ -4486,10 +4486,18 @@ export async function checks() {
             }
           });
         }
-        // The block names the choice but offers no way to take it.
-        if (sbAwayEventEl.querySelector("button, [role='button'], input, select, textarea")) {
-          problems.push("#sb-away-event must offer no control — a rehearsal shows the choice but never resolves it.");
+        // The block offers exactly one rehearsal control per option, and no
+        // control that could resolve the real choice.
+        const panelRehearsalButtons = sbAwayEventOptionsEl.querySelectorAll("button.sandbox-away-option-rehearse");
+        if (panelRehearsalButtons.length !== panelEventRule.options.length) {
+          problems.push(`#sb-away-event should offer one rehearsal control per option (${panelEventRule.options.length}), got ${panelRehearsalButtons.length}.`);
         }
+        panelEventRule.options.forEach((option, index) => {
+          const button = panelRehearsalButtons[index];
+          if (button && button.dataset.option !== option.id) {
+            problems.push(`#sb-away-event rehearsal control ${index} should target option "${option.id}", got "${button.dataset.option}".`);
+          }
+        });
       }
       window.__fastForwardSandbox(10);
       if (!sbAwayEventEl.hidden) {
@@ -4497,6 +4505,109 @@ export async function checks() {
       }
       if (sbAwayEventTitleEl.textContent.trim() !== "" || sbAwayEventOptionsEl.children.length !== 0) {
         problems.push("#sb-away-event should be emptied when a rehearsal offers no event, so no stale happening is left on screen.");
+      }
+    }
+    if (typeof window.__exitSandbox === "function") window.__exitSandbox();
+
+    // --- Sandbox Test 11c-2: the sandbox rehearses each offered option and
+    // shows where it leads, without resolving the real choice (issue #1069). A
+    // return's happening asks the player to pick between, say, a lump of wood
+    // and a permanent rate increase; the sandbox applies each option to its
+    // isolated clone and prints the projected wood, stone and rate afterwards,
+    // so the choice can be compared before it is spent for real. ---
+
+    // (h) Each offered option carries a rehearsal control; using one resets the
+    // clone to the post-fast-forward baseline, applies that option with the
+    // engine's own rule, and marks the row and the projection.
+    engine.reset();
+    if (typeof window.__exitSandbox === "function") window.__exitSandbox();
+    if (typeof window.__enterSandbox === "function") window.__enterSandbox();
+    window.__fastForwardSandbox(3600);
+    {
+      const sbAwayEventEl = document.getElementById("sb-away-event");
+      const sbAwayOptionsEl = document.getElementById("sb-away-event-options");
+      const sbAwayNoteEl = document.getElementById("sb-away-event-note");
+      const event = typeof window.__getSandboxEvent === "function" ? window.__getSandboxEvent() : null;
+      const rehearsalButtonFor = (id) =>
+        sbAwayOptionsEl.querySelector(`button.sandbox-away-option-rehearse[data-option="${id}"]`);
+      if (!event) {
+        problems.push("Expected the sandbox to offer an away event after a 1h rehearsal so its options can be rehearsed.");
+      } else if (!sbAwayEventEl || sbAwayEventEl.hidden) {
+        problems.push("Expected #sb-away-event to be visible while a choice can be rehearsed.");
+      } else {
+        const baseline = sandbox.cloneState(window.__getSandboxClone());
+        const firstOption = event.options[0];
+        const firstButton = rehearsalButtonFor(firstOption.id);
+        if (!firstButton) {
+          problems.push(`Expected a rehearsal control for option "${firstOption.id}".`);
+        } else {
+          firstButton.click();
+          const expected = sandbox.cloneState(baseline);
+          engine.applyAwayOptionToState(expected, firstOption);
+          const projected = window.__getSandboxClone();
+          if (!projected) {
+            problems.push("Expected an active sandbox clone after rehearsing a choice.");
+          } else {
+            if (Math.abs(projected.wood - expected.wood) > 1e-9) {
+              problems.push(`Rehearsing option "${firstOption.id}" should leave projected wood ${expected.wood}, got ${projected.wood}.`);
+            }
+            if (Math.abs(projected.stone - expected.stone) > 1e-9) {
+              problems.push(`Rehearsing option "${firstOption.id}" should leave projected stone ${expected.stone}, got ${projected.stone}.`);
+            }
+            if (Math.abs(projected.rate - expected.rate) > 1e-9) {
+              problems.push(`Rehearsing option "${firstOption.id}" should leave projected rate ${expected.rate}, got ${projected.rate}.`);
+            }
+          }
+          const rehearsedRow = sbAwayOptionsEl.querySelector(".sandbox-away-option.is-rehearsed");
+          if (!rehearsedRow) {
+            problems.push("Rehearsing a choice should mark that option's row as the rehearsal.");
+          }
+          const projectionEl = sbAwayOptionsEl.querySelector(".sandbox-away-option.is-rehearsed .sandbox-away-option-projection");
+          if (!projectionEl || projectionEl.textContent.trim() === "") {
+            problems.push("Rehearsing a choice should fill that row's projection with the projected wood, stone and rate.");
+          }
+          // The panel's own projection rows follow the rehearsed clone, so the
+          // player sees the choice's effect in the numbers they already read.
+          if (projected) {
+            const sbWoodEl = document.getElementById("sb-wood");
+            const sbRateEl = document.getElementById("sb-rate");
+            const expectedWoodText = engine.formatAmount(projected.wood);
+            const expectedRateText = engine.formatRate(engine.effectiveWoodRate(projected));
+            const woodMoved = sbWoodEl && sbWoodEl.textContent.trim() === expectedWoodText;
+            const rateMoved = sbRateEl && sbRateEl.textContent.includes(expectedRateText);
+            if (!woodMoved && !rateMoved) {
+              problems.push(`Rehearsing option "${firstOption.id}" should move #sb-wood or #sb-rate to the effect's value (wood ${expectedWoodText}, rate ${expectedRateText}), got wood "${sbWoodEl ? sbWoodEl.textContent.trim() : "(missing)"}", rate "${sbRateEl ? sbRateEl.textContent.trim() : "(missing)"}".`);
+            }
+          }
+          if (!sbAwayNoteEl || !/nothing is spent/i.test(sbAwayNoteEl.textContent)) {
+            problems.push("Expected #sb-away-event-note to state that a rehearsal spends nothing.");
+          }
+          // Rehearsing the other option compares outcomes: the clone resets to
+          // the baseline rather than stacking both effects.
+          if (event.options.length > 1) {
+            const secondOption = event.options[1];
+            const secondButton = rehearsalButtonFor(secondOption.id);
+            if (!secondButton) {
+              problems.push(`Expected a rehearsal control for option "${secondOption.id}".`);
+            } else {
+              secondButton.click();
+              const expectedSecond = sandbox.cloneState(baseline);
+              engine.applyAwayOptionToState(expectedSecond, secondOption);
+              const afterSecond = window.__getSandboxClone();
+              if (!afterSecond) {
+                problems.push("Expected an active sandbox clone after rehearsing the second option.");
+              } else if (Math.abs(afterSecond.wood - expectedSecond.wood) > 1e-9
+                || Math.abs(afterSecond.stone - expectedSecond.stone) > 1e-9
+                || Math.abs(afterSecond.rate - expectedSecond.rate) > 1e-9) {
+                problems.push(`Rehearsing the second option should compare outcomes from the baseline (wood ${expectedSecond.wood}, stone ${expectedSecond.stone}, rate ${expectedSecond.rate}), got wood ${afterSecond.wood}, stone ${afterSecond.stone}, rate ${afterSecond.rate}.`);
+              }
+              const markedRows = sbAwayOptionsEl.querySelectorAll(".sandbox-away-option.is-rehearsed");
+              if (markedRows.length !== 1) {
+                problems.push(`Exactly one option row should be marked as the rehearsed choice, got ${markedRows.length}.`);
+              }
+            }
+          }
+        }
       }
     }
     if (typeof window.__exitSandbox === "function") window.__exitSandbox();
@@ -4626,6 +4737,87 @@ export async function checks() {
       if (JSON.stringify(pendingAfterExit) !== JSON.stringify(realWaitingDecision)) {
         problems.push(`Exiting the sandbox must leave the real decision still waiting: expected ${JSON.stringify(realWaitingDecision)}, got ${JSON.stringify(pendingAfterExit)}.`);
       }
+    }
+
+    // (i) An agent rehearses a choice through the sandbox tool and reads the
+    // projected wood, stone and rate, while the real save's decision stays
+    // waiting — the same capability a visitor has in the panel (issue #1069).
+    const sandboxRehearseTool = allTools.find(t => t.name === "sandbox-rehearse-choice");
+    if (!sandboxRehearseTool) {
+      problems.push("agenttools should export a 'sandbox-rehearse-choice' tool — it was not found.");
+    } else if (typeof sandboxRehearseTool.execute === "function") {
+      // A real return is waiting on a decision, so the tool has one to rehearse.
+      engine.reset();
+      if (typeof window.__exitSandbox === "function") window.__exitSandbox();
+      const toolSaveTimestamp = new Date(Date.now() - 600000).toISOString();
+      localStorage.setItem("selfgrow-state", JSON.stringify({
+        wood: 0, rate: 0.1, upgradeLevel: 0, stone: 0,
+        totalWoodEarned: 0, totalStoneEarned: 0,
+        wallLevel: 0, forgeLevel: 0, expeditionLevel: 0, maps: 0,
+        stoneUnlocked: false,
+        discoveryBonus: 0, discoveryId: null, discoveryName: null,
+        lastReturn: null, pendingEvent: null,
+        timestamp: toolSaveTimestamp, firstTimestamp: toolSaveTimestamp,
+      }));
+      engine.init();
+      const realEventForTool = engine.getState().pendingEvent;
+      if (!realEventForTool) {
+        problems.push("Expected a 600s-old save to be waiting on an away event so the rehearsal tool has one to offer.");
+      } else {
+        // Open a sandbox that carries the waiting decision, without fast-forwarding.
+        if (typeof window.__enterSandbox === "function") window.__enterSandbox();
+        const optionToRehearse = realEventForTool.options[0];
+        const beforeTool = sandbox.cloneState(window.__getSandboxClone());
+        const toolResult = await sandboxRehearseTool.execute({ option: optionToRehearse.id });
+        if (toolResult.rehearsed !== true) {
+          problems.push(`sandbox-rehearse-choice should report rehearsed:true for option "${optionToRehearse.id}", got ${JSON.stringify(toolResult.reason ?? toolResult.rehearsed)}.`);
+        } else {
+          const expectedTool = sandbox.cloneState(beforeTool);
+          engine.applyAwayOptionToState(expectedTool, optionToRehearse);
+          if (Math.abs(toolResult.wood - expectedTool.wood) > 1e-9) {
+            problems.push(`sandbox-rehearse-choice should report projected wood ${expectedTool.wood}, got ${toolResult.wood}.`);
+          }
+          if (Math.abs(toolResult.stone - expectedTool.stone) > 1e-9) {
+            problems.push(`sandbox-rehearse-choice should report projected stone ${expectedTool.stone}, got ${toolResult.stone}.`);
+          }
+          if (Math.abs(toolResult.rate - expectedTool.rate) > 1e-9) {
+            problems.push(`sandbox-rehearse-choice should report projected rate ${expectedTool.rate}, got ${toolResult.rate}.`);
+          }
+          if (Math.abs(toolResult.woodRate - engine.effectiveWoodRate(expectedTool)) > 1e-9) {
+            problems.push(`sandbox-rehearse-choice should report the projected woodRate ${engine.effectiveWoodRate(expectedTool)}, got ${toolResult.woodRate}.`);
+          }
+        }
+        // The rehearsal never resolves the real choice.
+        const realAfterTool = engine.getState().pendingEvent;
+        if (JSON.stringify(realAfterTool) !== JSON.stringify(realEventForTool)) {
+          problems.push(`sandbox-rehearse-choice must leave the real save's decision waiting: expected ${JSON.stringify(realEventForTool)}, got ${JSON.stringify(realAfterTool)}.`);
+        }
+        if (toolResult.realPendingEvent && JSON.stringify(toolResult.realPendingEvent) !== JSON.stringify(realEventForTool)) {
+          problems.push(`sandbox-rehearse-choice should report the real save's still-waiting decision, got ${JSON.stringify(toolResult.realPendingEvent)}.`);
+        }
+        // Leaving the sandbox leaves the decision offering the same two options.
+        if (typeof window.__exitSandbox === "function") window.__exitSandbox();
+        const afterExitForTool = engine.getState().pendingEvent;
+        if (!afterExitForTool || afterExitForTool.options.length !== realEventForTool.options.length) {
+          problems.push(`After exiting the sandbox the real decision must still offer both options, got ${afterExitForTool ? afterExitForTool.options.length : "none"}.`);
+        } else {
+          realEventForTool.options.forEach((option, index) => {
+            if (afterExitForTool.options[index] && afterExitForTool.options[index].id !== option.id) {
+              problems.push(`After exiting the sandbox the real decision should still offer "${option.id}" at position ${index}, got "${afterExitForTool.options[index].id}".`);
+            }
+          });
+        }
+      }
+
+      // The tool refuses — without throwing — when no choice is offered.
+      engine.reset();
+      if (typeof window.__exitSandbox === "function") window.__exitSandbox();
+      if (typeof window.__enterSandbox === "function") window.__enterSandbox();
+      const noEventResult = await sandboxRehearseTool.execute({ option: "wood" });
+      if (noEventResult.rehearsed !== false) {
+        problems.push(`sandbox-rehearse-choice should report rehearsed:false when no choice is offered, got ${JSON.stringify(noEventResult.rehearsed)}.`);
+      }
+      if (typeof window.__exitSandbox === "function") window.__exitSandbox();
     }
   } catch (err) {
     problems.push(`Sandbox test threw: ${err.message}`);

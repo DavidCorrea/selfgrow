@@ -1577,6 +1577,32 @@ export function sendExpedition() {
 }
 
 /**
+ * Apply one away event option's effect to a state object: the one place an
+ * option's effect is granted, so a real choice and a sandbox rehearsal follow
+ * exactly the same rule and can never promise different numbers. Mutates only
+ * the state passed in — the module's own state for a real choice, an isolated
+ * clone for a rehearsal — and returns the {kind, amount} effect it applied.
+ * Pure with respect to everything but its argument.
+ *
+ * @param {object} s  the state to credit
+ * @param {{ effect: { kind: string, amount: number } }} option
+ * @returns {{ kind: string, amount: number }}
+ */
+export function applyAwayOptionToState(s, option) {
+  const { kind, amount } = option.effect;
+  if (kind === "wood") {
+    s.wood += amount;
+    s.totalWoodEarned += amount;
+  } else if (kind === "stone") {
+    s.stone += amount;
+    s.totalStoneEarned += amount;
+  } else {
+    s.rate += amount;
+  }
+  return { kind, amount };
+}
+
+/**
  * Choose one option of the pending away event: apply exactly the effect that
  * option states — once — and clear the event, so the other option can never be
  * taken and a second choice is refused. Refuses when no event is pending or the
@@ -1595,16 +1621,7 @@ export function chooseAwayEventOption(optionId) {
   if (!option) {
     return { chosen: false, reason: `"${optionId}" is not one of this event's options.`, state: getState() };
   }
-  const { kind, amount } = option.effect;
-  if (kind === "wood") {
-    state.wood += amount;
-    state.totalWoodEarned += amount;
-  } else if (kind === "stone") {
-    state.stone += amount;
-    state.totalStoneEarned += amount;
-  } else {
-    state.rate += amount;
-  }
+  const { kind, amount } = applyAwayOptionToState(state, option);
   // Record the choice in the return's own account — but only when this very
   // return offered the event, and only once. A return that never posed a
   // decision must never inherit one, and re-choosing is already refused above.
