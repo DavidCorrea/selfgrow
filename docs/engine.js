@@ -1443,6 +1443,53 @@ export function expeditionUnlocked(s) {
 }
 
 /**
+ * Whether each world action is available to the player right now.
+ *
+ * This is the one rule the action buttons and the read-state tool both read, so
+ * a button can never be disabled for an action the tool reports as available,
+ * or enabled for one the engine would refuse. Each entry is derived from the
+ * same condition the action's own engine refusal uses:
+ *
+ * - gather          — always available (wood can always be chopped)
+ * - sharpen         — sharpenAvailable
+ * - gather-stone    — stone is unlocked
+ * - build-wall      — stone is unlocked and there is enough for a wall
+ * - forge-tool      — a wall stands and there is enough wood and stone
+ * - send-expedition — expeditions are unlocked and there is enough wood and stone
+ *
+ * `blocked` is the modal rule: while a return or rehearsal panel is open the
+ * player cannot act on the world, so every action is unavailable. Passing the
+ * page's own open-panel state here keeps the page and the tools in agreement at
+ * the exact moment a panel opens or closes.
+ *
+ * @param {{ wood: number, stone: number, stoneUnlocked: boolean, wallLevel: number,
+ *   forgeLevel: number, forgeWoodCost: number, forgeStoneCost: number,
+ *   expeditionWoodCost: number, expeditionStoneCost: number }} s
+ * @param {{ blocked?: boolean }} [options]
+ * @returns {Record<string, boolean>}
+ */
+export function actionAvailability(s, { blocked = false } = {}) {
+  if (blocked) {
+    return {
+      gather: false,
+      sharpen: false,
+      "gather-stone": false,
+      "build-wall": false,
+      "forge-tool": false,
+      "send-expedition": false,
+    };
+  }
+  return {
+    gather: true,
+    sharpen: sharpenAvailable(s),
+    "gather-stone": s.stoneUnlocked,
+    "build-wall": s.stoneUnlocked && s.stone >= WALL_COST,
+    "forge-tool": s.wallLevel >= 1 && s.wood >= s.forgeWoodCost && s.stone >= s.forgeStoneCost,
+    "send-expedition": expeditionUnlocked(s) && s.wood >= s.expeditionWoodCost && s.stone >= s.expeditionStoneCost,
+  };
+}
+
+/**
  * The one-resource list for a goal whose bar measures a single amount.
  * `current` is capped at `target`, so a met goal always fills its bar.
  *

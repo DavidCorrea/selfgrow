@@ -2823,6 +2823,147 @@ export async function checks() {
     console.error(err);
   }
 
+  // ─── The page and the read-state tool agree on what can be done (issue #1094) ───
+  // The bug was two authorities: renderUI() re-derived the action buttons every
+  // 500ms while the panel code disabled them directly, so with a panel open the
+  // button could be locked while read-state still reported the action available.
+  // Both now read the engine's one actionAvailability rule, gated by whether a
+  // panel is open. These checks hold them to that both while a panel is up and
+  // the instant it closes.
+  try {
+    const engine = await import("./engine.js");
+    const { tools } = await import("./agenttools.js");
+    const readState = tools().find((t) => t.name === "read-state");
+    const renderNow = () => { if (typeof window.__renderUI === "function") window.__renderUI(); };
+    const ACTION_BUTTON = {
+      gather: "btn-gather",
+      sharpen: "btn-sharpen",
+      "gather-stone": "btn-gather-stone",
+      "build-wall": "btn-build-wall",
+      "forge-tool": "btn-forge-tool",
+      "send-expedition": "btn-expedition",
+    };
+
+    if (!readState) {
+      problems.push("Expected a read-state tool to compare against the page — it was not found.");
+    } else {
+      // (a) The blocked rule itself: while a panel is open every action is
+      // unavailable, and with no panel each entry is the engine's own condition.
+      const rich = {
+        wood: 100, stone: 100, stoneUnlocked: true, wallLevel: 1, forgeLevel: 5,
+        forgeWoodCost: 10, forgeStoneCost: 5, expeditionWoodCost: 10, expeditionStoneCost: 5,
+      };
+      const blockedRule = engine.actionAvailability(rich, { blocked: true });
+      for (const [name, available] of Object.entries(blockedRule)) {
+        if (available !== false) {
+          problems.push(`actionAvailability(blocked) should report "${name}" unavailable while a panel is open, got ${JSON.stringify(available)}.`);
+        }
+      }
+      const openRule = engine.actionAvailability(rich, { blocked: false });
+      for (const [name, available] of Object.entries(openRule)) {
+        if (available !== true) {
+          problems.push(`actionAvailability should report "${name}" available for a save that meets every condition, got ${JSON.stringify(available)}.`);
+        }
+      }
+      const poor = {
+        wood: 0, stone: 0, stoneUnlocked: false, wallLevel: 0, forgeLevel: 0,
+        forgeWoodCost: 10, forgeStoneCost: 5, expeditionWoodCost: 10, expeditionStoneCost: 5,
+      };
+      const poorRule = engine.actionAvailability(poor, { blocked: false });
+      if (poorRule.gather !== true) {
+        problems.push(`actionAvailability should always report "gather" available, got ${JSON.stringify(poorRule.gather)}.`);
+      }
+      for (const name of ["sharpen", "gather-stone", "build-wall", "forge-tool", "send-expedition"]) {
+        if (poorRule[name] !== false) {
+          problems.push(`actionAvailability should report "${name}" unavailable for a save that cannot afford it, got ${JSON.stringify(poorRule[name])}.`);
+        }
+      }
+
+      // (b) Drive the real page. Seed 10 wood so Sharpen is genuinely available,
+      // open the sandbox panel through the page's own entry point, and compare.
+      engine.reset();
+      localStorage.setItem("selfgrow-state", JSON.stringify({
+        wood: 10, rate: 0.1, upgradeLevel: 0, stone: 0,
+        totalWoodEarned: 10, totalStoneEarned: 0,
+        wallLevel: 0, forgeLevel: 0, expeditionLevel: 0, maps: 0,
+        stoneUnlocked: false,
+        timestamp: new Date().toISOString(), firstTimestamp: new Date().toISOString(),
+      }));
+      engine.init();
+      renderNow();
+
+      const beforePanel = await readState.execute({});
+      if (beforePanel.actionAvailability.sharpen !== true) {
+        problems.push(`With 10 wood and no panel open, read-state should report "sharpen" available, got ${JSON.stringify(beforePanel.actionAvailability.sharpen)}.`);
+      }
+      const sharpenBefore = document.getElementById("btn-sharpen");
+      if (sharpenBefore && sharpenBefore.disabled) {
+        problems.push("With 10 wood and no panel open, #btn-sharpen should be enabled — it was disabled.");
+      }
+
+      if (typeof window.__enterSandbox !== "function") {
+        problems.push("Expected window.__enterSandbox to open the sandbox panel — it was not found.");
+      } else {
+        window.__enterSandbox();
+        const duringPanel = await readState.execute({});
+        for (const [name, id] of Object.entries(ACTION_BUTTON)) {
+          if (duringPanel.actionAvailability[name] !== false) {
+            problems.push(`While the sandbox panel is open read-state reports "${name}" available=${JSON.stringify(duringPanel.actionAvailability[name])} — expected false.`);
+          }
+          const btn = document.getElementById(id);
+          if (!btn) {
+            problems.push(`Expected a #${id} button for the "${name}" action — it was not found.`);
+          } else if (!btn.disabled) {
+            problems.push(`While the sandbox panel is open #${id} is enabled but read-state reports "${name}" unavailable — the page and the tool disagree.`);
+          }
+        }
+        if (duringPanel.nextGoal.available !== false) {
+          problems.push(`While the sandbox panel is open nextGoal.available should be false, got ${JSON.stringify(duringPanel.nextGoal.available)}.`);
+        }
+
+        window.__exitSandbox();
+        renderNow();
+        const afterPanel = await readState.execute({});
+        for (const [name, id] of Object.entries(ACTION_BUTTON)) {
+          const btn = document.getElementById(id);
+          if (!btn) continue;
+          // disabled must be the exact opposite of what the tool reports.
+          if (Boolean(btn.disabled) === Boolean(afterPanel.actionAvailability[name])) {
+            problems.push(`After the sandbox panel closed #${id} disabled=${btn.disabled} but read-state reports "${name}" available=${afterPanel.actionAvailability[name]} — the page still disagrees with the tool.`);
+          }
+        }
+        if (afterPanel.actionAvailability.sharpen !== true) {
+          problems.push(`After the sandbox panel closed, 10 wood should make "sharpen" available again, got ${JSON.stringify(afterPanel.actionAvailability.sharpen)}.`);
+        }
+        const sharpenAfter = document.getElementById("btn-sharpen");
+        if (sharpenAfter && sharpenAfter.disabled) {
+          problems.push("After the sandbox panel closed, #btn-sharpen should be enabled at 10 wood — it stayed locked.");
+        }
+
+        // The tool refuses a world action while the panel is open, and grants it
+        // again once the panel closes.
+        window.__enterSandbox();
+        const performAction = tools().find((t) => t.name === "perform-action");
+        const refused = await performAction.execute({ action: "gather" });
+        if (refused.ok !== false) {
+          problems.push("perform-action gather should be refused while a panel is open, but it was not.");
+        }
+        window.__exitSandbox();
+        const allowed = await performAction.execute({ action: "gather" });
+        if (allowed.ok === false) {
+          problems.push(`perform-action gather should work after the panel closes, but it was refused: ${JSON.stringify(allowed.reason)}.`);
+        }
+      }
+    }
+
+    engine.reset();
+    engine.init();
+    renderNow();
+  } catch (err) {
+    problems.push(`Panel/action agreement test threw: ${err.message}`);
+    console.error(err);
+  }
+
   // ─── Offline summary overlay appears after any resource gain (no time guard) ───
   // Issue #943 removed the `elapsedSec > 3` guard, and issue #989 keeps the
   // panel for any real return at least RETURN_MIN_SEC long, whether or not a

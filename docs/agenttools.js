@@ -8,7 +8,7 @@
  * @module agenttools
  */
 
-import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, chooseAwayEventOption, getReturnSummary, formatElapsed, formatRate, nextDiscoveryAfter, discoveryCollection, returnDiscoveryText, sharpenAvailable, sharpenThreshold, wallAvailable, expeditionUnlocked, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, effectiveWoodRate, expeditionMultiplierFor, clickPowerFor, FIRST_GOAL_WOOD, UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, GOAL_STONE, WALL_COST, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT, EXPEDITION_FORGE_LEVEL, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_WOOD_COST_INC, FORGE_STONE_COST_INC, FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC, EXPEDITION_WOOD_RATE_MULTIPLIER, DISCOVERY_MIN_SEC, AWAY_EVENT_MIN_SEC, AWAY_EVENT_LUMP_SEC, AWAY_EVENT_RATE_BONUS_FRACTION, awayRateBonusFor, AWAY_EVENTS, discoverForElapsed, FINDS_LIST_LIMIT } from "./engine.js";
+import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, chooseAwayEventOption, getReturnSummary, formatElapsed, formatRate, nextDiscoveryAfter, discoveryCollection, returnDiscoveryText, sharpenAvailable, sharpenThreshold, wallAvailable, expeditionUnlocked, actionAvailability, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, effectiveWoodRate, expeditionMultiplierFor, clickPowerFor, FIRST_GOAL_WOOD, UPGRADE_COST, RATE_INCREASE_PER_UPGRADE, GOAL_STONE, WALL_COST, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT, EXPEDITION_FORGE_LEVEL, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_WOOD_COST_INC, FORGE_STONE_COST_INC, FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC, EXPEDITION_WOOD_RATE_MULTIPLIER, DISCOVERY_MIN_SEC, AWAY_EVENT_MIN_SEC, AWAY_EVENT_LUMP_SEC, AWAY_EVENT_RATE_BONUS_FRACTION, awayRateBonusFor, AWAY_EVENTS, discoverForElapsed, FINDS_LIST_LIMIT } from "./engine.js";
 
 /**
  * The last return as the welcome-back panel is showing it, read straight from
@@ -57,6 +57,28 @@ function readReturnSummary() {
 }
 
 /**
+ * Whether a modal panel is open right now, so this layer can gate its answers
+ * on the same fact the page's action buttons are gated on. Prefers the page's
+ * own flag (window.__panelOpen, backed by the page's open-overlay set); the DOM
+ * fallback keeps the tools honest if they are ever driven without that flag.
+ *
+ * @returns {boolean}
+ */
+function panelOpen() {
+  if (typeof window.__panelOpen === "function") return Boolean(window.__panelOpen());
+  const offline = document.getElementById("offline-summary");
+  const sandbox = document.getElementById("sandbox-overlay");
+  return Boolean((offline && !offline.hidden) || (sandbox && !sandbox.hidden));
+}
+
+/**
+ * The six world actions a player can only take when no panel is up. The panel
+ * controls (dismiss-offline, show-return) and the away-event choice are not
+ * world actions and stay available while a panel is open.
+ */
+const WORLD_ACTIONS = new Set(["gather", "sharpen", "gather-stone", "build-wall", "forge-tool", "send-expedition"]);
+
+/**
  * Augment a raw state snapshot with goal, upgrade, and stone info.
  */
 function withGoal(s) {
@@ -76,6 +98,12 @@ function withGoal(s) {
   // snapshot (the sandbox clone) gets the same derivation here, so the page and
   // the tools read one list.
   const finds = s.finds ?? discoveryCollection(ownedDiscoveryId);
+  // The same per-action availability the page's buttons obey, gated by the
+  // same panel-open fact, so an agent comparing this with the page never finds
+  // an action reported available that the page refuses.
+  const blocked = panelOpen();
+  const availability = actionAvailability(s, { blocked });
+  const goal = describeGoal(s);
 
   return {
     wood: s.wood,
@@ -161,7 +189,12 @@ function withGoal(s) {
       current: displayAmount(Math.min(s.wood, FIRST_GOAL_WOOD)),
       reached: s.wood >= FIRST_GOAL_WOOD,
     },
-    nextGoal: describeGoal(s),
+    nextGoal: { ...goal, available: goal.available && !blocked },
+    // Per-action availability for the six world actions, each keyed exactly as
+    // perform-action names it. While a panel is open every entry is false,
+    // matching the page's disabled buttons; otherwise each entry is derived
+    // from the same engine rule the button uses.
+    actionAvailability: availability,
   };
 }
 
@@ -481,6 +514,12 @@ export function tools() {
         + "and the current goal (first goal, upgrade goal, stone goal, build-wall goal, forge goal, or expedition goal) as nextGoal "
         + "{description, type, available, resources: [{name, current, target}]}, whose resources are the same "
         + "figures the page prints beside the goal's bar and on the welcome-back panel's next-goal line. "
+        + "actionAvailability is the per-action enabled state for the six world actions, each keyed as "
+        + "perform-action names it {gather, sharpen, 'gather-stone', 'build-wall', 'forge-tool', "
+        + "'send-expedition'}: true exactly when the page's button for that action is enabled. While a "
+        + "return or rehearsal panel is open every entry is false and nextGoal.available is false too, "
+        + "because the page locks the world actions while the panel is up; once the panel closes both "
+        + "reflect the current state immediately. "
         + "pendingEvent is the two-choice happening a real return is offering, or null when "
         + "there is none: {id, title, options: [{id, label, effect: {kind, amount}, effectText}]}"
         + " with exactly two options. Each effectText states exactly what choosing that option "
@@ -511,7 +550,8 @@ export function tools() {
         + '"send-expedition" — consumes wood and stone to send scouts on an expedition, earning 1 map resource that multiplies wood rate; '
         + '"choose-away-event" — takes one option of the pending away event, granting exactly the effect that option states and then removing the event; pass the chosen option\'s id in "option" (a wood, stone or rate option, as read from read-state.pendingEvent.options[].id). Choosing is irreversible — the other option can never then be taken — and is refused with a reason when no event is pending or the option is not one of its two. '
         + '"dismiss-offline" — dismisses the offline-summary overlay if visible; '
-        + '"show-return" — re-opens the last return\'s summary (the status panel\'s Last return control), refused with a reason when there is no return on record.',
+        + '"show-return" — re-opens the last return\'s summary (the status panel\'s Last return control), refused with a reason when there is no return on record. '
+        + 'The six world actions (gather, sharpen, gather-stone, build-wall, forge-tool, send-expedition) are refused with a reason while a return or rehearsal panel is open, because a person cannot take them then either; dismiss-offline, show-return and choose-away-event stay available.',
       inputSchema: {
         type: "object",
         properties: {
@@ -529,6 +569,17 @@ export function tools() {
       annotations: { readOnlyHint: false },
       example: { action: "gather" },
       async execute({ action, option }) {
+        // The six world actions are gated by the same panel-open fact the page
+        // uses to disable its buttons: while a panel is up the page refuses
+        // them, so the tool must too rather than reporting a success the player
+        // could not have achieved.
+        if (WORLD_ACTIONS.has(action) && panelOpen()) {
+          return {
+            ok: false,
+            reason: "A panel is open \u2014 dismiss it before taking world actions.",
+            ...withGoal(getState()),
+          };
+        }
         if (action === "gather") {
           return withGoal(gatherWood());
         }
