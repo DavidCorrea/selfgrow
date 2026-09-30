@@ -77,6 +77,22 @@ import fs from "fs";
 const OBSERVATION_MS = Number(process.env.PLAYTEST_OBSERVATION_MS || 120_000);
 const SAMPLE_EVERY_MS = Number(process.env.PLAYTEST_SAMPLE_MS || 8_000);
 
+// How long the Playtester is away before it comes back. The return is half of
+// what an idle game is, and it used to be a reload two seconds after watching:
+// the game rightly showed nothing for an absence of two seconds, and the
+// Playtester reported that the return was empty. The browser's clock is moved
+// forward between closing the page and opening it again, so the product sees a
+// real absence and nothing about it is simulated by the product itself.
+const AWAY_MS = Number(process.env.PLAYTEST_AWAY_MS || 60 * 60 * 1000);
+
+/** An absence as a person would say it: "1 hour", "3 days", "2 minutes". */
+export function formatAbsence(ms) {
+  const units = [["day", 24 * 60 * 60 * 1000], ["hour", 60 * 60 * 1000], ["minute", 60 * 1000]];
+  const [unit, size] = units.find(([, unitMs]) => ms >= unitMs) || units[units.length - 1];
+  const count = Math.max(1, Math.round(ms / size));
+  return `${count} ${unit}${count === 1 ? "" : "s"}`;
+}
+
 // Impressions one session may file. A ceiling, not a target. Feedback is cheap
 // to produce and expensive to triage — twenty impressions a week would bury the
 // Product Manager and turn a signal into a chore it learns to skip. Two, now
@@ -151,9 +167,19 @@ function readPage() {
     return `${el.tagName.toLowerCase()}${id}${label ? ` "${label}"` : ""}`;
   };
   const panel = document.querySelector('[role="region"], aside, main');
+  // Whatever is open on top of the page — a welcome back, a choice to make. It
+  // sits outside the state panel, and on a return it is the return.
+  const dialogs = [...document.querySelectorAll('[role="dialog"], [role="alertdialog"], dialog')]
+    .filter((el) => el.checkVisibility());
+  // A panel the page is not rendering — hidden behind a dialog, say — is not
+  // something a visitor can read, and innerText on it falls back to the raw
+  // source text, hidden warnings and all.
+  const stateHidden = panel ? !panel.checkVisibility() : false;
   return {
     title: document.title,
-    state: (panel?.innerText || document.body.innerText || "").trim().slice(0, 1200),
+    state: stateHidden ? "" : (panel?.innerText || document.body.innerText || "").trim().slice(0, 1200),
+    stateHidden,
+    dialog: dialogs.map((el) => el.innerText.trim()).filter(Boolean).join("\n\n").slice(0, 1200),
     landmarks: [...document.querySelectorAll("[role], main, nav, aside, header, footer")].map(describe),
     headings: [...document.querySelectorAll("h1,h2,h3")].map((h) => h.innerText.trim()).filter(Boolean),
     controls: [...document.querySelectorAll("button, a[href], input, select, [tabindex]")].map(describe),
@@ -326,10 +352,18 @@ export async function observeApp() {
   }
 
   try {
-    const page = await browser.newPage(viewportOptions(REVIEW_VIEWPORTS[0]));
-    page.on("console", (m) => { if (m.type() === "error") consoleErrors.push(m.text()); });
-    page.on("pageerror", (e) => consoleErrors.push(`uncaught: ${e.message}`));
-    await page.goto(url, { waitUntil: "networkidle", timeout: 30_000 });
+    // One context for the whole session, so the save survives the absence, with a
+    // clock that runs at normal speed until the Playtester goes away.
+    const context = await browser.newContext(viewportOptions(REVIEW_VIEWPORTS[0]));
+    await context.clock.install();
+    const openPage = async () => {
+      const opened = await context.newPage();
+      opened.on("console", (m) => { if (m.type() === "error") consoleErrors.push(m.text()); });
+      opened.on("pageerror", (e) => consoleErrors.push(`uncaught: ${e.message}`));
+      await opened.goto(url, { waitUntil: "networkidle", timeout: 30_000 });
+      return opened;
+    };
+    let page = await openPage();
 
     const opening = await page.evaluate(readPage);
 
@@ -366,24 +400,26 @@ export async function observeApp() {
     // load, a button that unlocked a minute in reads as one that never did.
     const closing = await page.evaluate(readPage);
 
-    // Does the product remember you? persistence is the difference between a
-    // screensaver and a place you return to, so it is worth one reload to find out.
-    await page.reload({ waitUntil: "networkidle", timeout: 30_000 });
+    // Go away and come back. The page is closed rather than reloaded so it gets
+    // the chance to save the way it would when a visitor leaves.
+    const leftAt = await page.evaluate(() => Date.now());
+    await page.close();
+    await context.clock.setSystemTime(leftAt + AWAY_MS);
+    page = await openPage();
     await page.waitForTimeout(2000);
-    const afterReload = (await page.evaluate(readPage)).state;
+    const returned = await page.evaluate(readPage);
 
-    // Used after the reload so nothing a tool does can perturb the observation
-    // or the persistence check above, and before the frames so a tool that
-    // changed something is visible in them.
+    // Used after the return so nothing a tool does can perturb the observation
+    // or the return above, and before the frames so a tool that changed
+    // something is visible in them.
     const agentTools = await useAgentTools(page);
 
-    // Shot last, and after the reload, so the frames show the same scene the
-    // final timeline sample describes rather than a fresh one. Resizing for the
-    // phone frame is destructive to the desktop layout, which is why nothing is
-    // measured after this point.
+    // Shot last, on the return, so the frames show what the page offered on the
+    // way back in. Resizing for the phone frame is destructive to the desktop
+    // layout, which is why nothing is measured after this point.
     const frames = await captureFrames(page);
 
-    return { opening, tabOrder, timeline, closing, afterReload, agentTools, consoleErrors, url, frames };
+    return { opening, tabOrder, timeline, closing, awayMs: AWAY_MS, returned, agentTools, consoleErrors, url, frames };
   } catch (e) {
     log("warn", "Playtest: the session broke off early — reporting what was seen.", errorData(e));
     return null;
@@ -395,7 +431,7 @@ export async function observeApp() {
 
 /**
  * Render the session as something a reader can follow in order: what the page
- * offered, what changed while watching, what survived a reload.
+ * offered, what changed while watching, and what it showed on the way back in.
  *
  * Deliberately prose-shaped rather than a JSON dump. The agent reading it is
  * being asked for an impression of an experience, and a wall of serialized DOM
@@ -430,7 +466,7 @@ export function renderToolPass(agentTools) {
 }
 
 export function renderSession(session, { showingFrames = true } = {}) {
-  const { opening, tabOrder, timeline, closing, afterReload, agentTools, consoleErrors, url } = session;
+  const { opening, tabOrder, timeline, closing, awayMs, returned, agentTools, consoleErrors, url } = session;
   // The transcript must describe the turn it is actually part of. The text-only
   // fallback in report() sends this same session with no images attached, and a
   // transcript that still announced two screenshots would have the agent describe
@@ -438,7 +474,8 @@ export function renderSession(session, { showingFrames = true } = {}) {
   const frames = showingFrames ? session.frames || [] : [];
 
   const unchanged = timeline.length > 1 && timeline.every((s) => s.state === timeline[0].state);
-  const sameAfterReload = afterReload === timeline[timeline.length - 1]?.state;
+  const sameAfterReturn = returned.state === closing.state && returned.controls.join() === closing.controls.join();
+  const away = formatAbsence(awayMs);
 
   return [
     url ? `_Played at ${url}._\n` : "",
@@ -461,10 +498,20 @@ export function renderSession(session, { showingFrames = true } = {}) {
     `## The page when you stopped watching`,
     `Interactive elements: ${closing.controls.join(", ") || "(none)"}`,
     "",
-    `## After a reload`,
-    sameAfterReload
-      ? "The page came back exactly as it was left."
-      : `The page came back different:\n${afterReload || "(the panel said nothing)"}`,
+    `## Coming back ${away} later`,
+    `You closed the page and opened it again ${away} later. The browser's clock was moved forward; the game ` +
+      "was not touched, so what it shows is what it makes of a real absence.",
+    "",
+    returned.dialog
+      ? `On top of the page when you came back:\n${returned.dialog}`
+      : "Nothing appeared on top of the page when you came back.",
+    "",
+    returned.stateHidden
+      ? "The state panel was hidden behind it, so there was nothing else on the page to read."
+      : sameAfterReturn
+      ? `The page came back exactly as it was left — ${away} away changed nothing.`
+      : `The state panel on your return:\n${returned.state || "(the panel said nothing)"}\n\n` +
+        `Interactive elements on your return: ${returned.controls.join(", ") || "(none)"}`,
     "",
     `## What the tools offered an agent`,
     renderToolPass(agentTools),
@@ -477,7 +524,7 @@ export function renderSession(session, { showingFrames = true } = {}) {
     // how many there are or what they show will invent the missing one.
     frames.length
       ? `## Screenshots attached to this message\n${frames
-          .map((f, i) => `${i + 1}. ${f.label} — ${f.width}px wide, taken after the reload above`)
+          .map((f, i) => `${i + 1}. ${f.label} — ${f.width}px wide, taken on the return above`)
           .join("\n")}`
       // Reached both when the capture failed and when this is the text-only
       // fallback in report(). The instruction is the same either way, and naming a
