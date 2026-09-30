@@ -402,6 +402,42 @@ export const SPRITE_STAGES = {
       "............",
     ],
   ],
+  // A four-point sparkle for the Away Find status chip: gold core with white
+  // tips, so it reads against the dark chip instead of an OS-picked emoji.
+  discovery: [
+    [
+      "............",
+      ".....ww.....",
+      ".....ww.....",
+      "....yyyy....",
+      "...yyyyyy...",
+      "wwyyyyyyyyww",
+      "wwyyyyyyyyww",
+      "...yyyyyy...",
+      "....yyyy....",
+      ".....ww.....",
+      ".....ww.....",
+      "............",
+    ],
+  ],
+  // A left arrow for the Restore Save button: stone blue-grey, so it reads on
+  // the gold button beside the floppy and clipboard pictures.
+  restore: [
+    [
+      "............",
+      "............",
+      "...b........",
+      "..bb........",
+      ".bbbbbbbbbbb",
+      "bbbbbbbbbbbb",
+      "bbbbbbbbbbbb",
+      ".bbbbbbbbbbb",
+      "..bb........",
+      "...b........",
+      "............",
+      "............",
+    ],
+  ],
 };
 
 /** The CSS class each kind's reaction animates (see index.html keyframes). */

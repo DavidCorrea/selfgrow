@@ -6730,6 +6730,8 @@ export async function checks() {
       ["#btn-build-wall", ["castle"]],
       ["#btn-reveal-save", ["floppy"]],
       ["#btn-copy-save", ["clipboard"]],
+      ["#btn-restore-save", ["restore"]],
+      ["#discovery-stat", ["discovery"]],
       ["#btn-sandbox", ["stopwatch"]],
       ["#sandbox-title", ["stopwatch"]],
     ];
@@ -6783,6 +6785,8 @@ export async function checks() {
       ["#btn-build-wall", "the Build Wall button"],
       ["#btn-reveal-save", "the Reveal Save Code button"],
       ["#btn-copy-save", "the Copy Save Code button"],
+      ["#btn-restore-save", "the Restore Save button"],
+      ["#discovery-stat", "the Away Find chip"],
       ["#btn-sandbox", "the Sandbox button"],
       ["#sandbox-title", "the sandbox title"],
     ];
@@ -6792,6 +6796,25 @@ export async function checks() {
       const match = host.textContent.match(/[\p{Extended_Pictographic}\uFE0F]/u);
       if (match) {
         problems.push(`${name} (${selector}) should carry no platform emoji, but its text holds "${match[0]}" — an emoji renders differently on every device.`);
+      }
+    }
+
+    // The sparkle (U+2728) and the undo arrow (U+21BA) are not both caught by
+    // the pictographic regex above, so name them directly: neither may survive
+    // as rendered text on the two controls whose icons are now pixel pictures.
+    const replacedGlyphHosts = [
+      ["#discovery-stat", "the Away Find chip"],
+      ["#btn-restore-save", "the Restore Save button"],
+    ];
+    for (const [selector, name] of replacedGlyphHosts) {
+      const host = document.querySelector(selector);
+      if (!host) continue;
+      const text = host.textContent;
+      if (text.includes("\u2728")) {
+        problems.push(`${name} (${selector}) should draw its sparkle as a pixel picture, but its text still holds U+2728 — a platform glyph renders differently on every device.`);
+      }
+      if (text.includes("\u21BA")) {
+        problems.push(`${name} (${selector}) should draw its arrow as a pixel picture, but its text still holds U+21BA — a platform glyph renders differently on every device.`);
       }
     }
 
