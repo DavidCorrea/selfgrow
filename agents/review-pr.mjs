@@ -39,6 +39,8 @@ import {
   loadPrompt,
   fillTemplate,
   runAgent,
+  BUILDER_SKILLS,
+  REVIEWER_SKILLS,
   extractAgentResponse,
   errorData,
   gitExec,
@@ -229,6 +231,7 @@ async function main() {
           label: "Reviewer",
           systemPrompt: buildReviewPrompt(),
           tools: ["read", "bash"],
+          skills: REVIEWER_SKILLS,
         })
       );
       const review = extractAgentResponse("Reviewer", output, { requiredDataFields: ["issues"] });
@@ -279,6 +282,7 @@ async function main() {
         label: "Builder",
         systemPrompt: buildFixPrompt(problems),
         tools: ["read", "bash", "edit", "write"],
+        skills: BUILDER_SKILLS,
         thinkingLevel: "medium",
         // Whoever reviewed it should not also be the one fixing it.
         avoidModel: getLastModelUsed(),

@@ -46,6 +46,8 @@ import {
   appendChangelogEntry,
   verifyBuild,
   runAgent,
+  BUILDER_SKILLS,
+  REVIEWER_SKILLS,
   getLastModelUsed,
 } from "./shared.mjs";
 import {
@@ -445,6 +447,7 @@ async function runBuildReviewLoop(ctx, plan) {
           label: "Builder",
           systemPrompt: buildBuilderPrompt(plan.output, ctx.reviewerFeedback, ctx.issueObj),
           tools: ["read", "bash", "edit", "write"],
+          skills: BUILDER_SKILLS,
           thinkingLevel: "medium",
           sessionLimits: BUILDER_SESSION_LIMITS,
         })
@@ -587,6 +590,7 @@ async function reviewOpenPR(ctx, attempt) {
       label: "Reviewer",
       systemPrompt: buildReviewerPrompt(reviewContext),
       tools: ["read", "bash"],
+      skills: REVIEWER_SKILLS,
       avoidModel: ctx.builderModel,
     })
   );
