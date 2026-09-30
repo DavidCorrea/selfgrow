@@ -3295,7 +3295,8 @@
      * from the amount choosing it would grant, and carries a control that
      * rehearses that option against the isolated clone — never the real save.
      * The row whose option was last rehearsed is marked, and its projection
-     * states the wood, stone and rates that choice would leave behind.
+     * states the wood, stone, rates and any system level that choice would
+     * leave behind.
      *
      * @param {{title: string, options: Array<{id: string, label: string, effectText: string}>}|null} event
      */
@@ -3363,10 +3364,13 @@
 
     /**
      * State where a rehearsed option leads: the projected wood and wood/s, plus
-     * stone and its rate once stone is unlocked. Words only — this is a
-     * projection, never a grant.
+     * stone and its rate once stone is unlocked, and — when the choice grants
+     * progress in a system — the wall level, forge level or map count it would
+     * leave behind. Words only — this is a projection, never a grant.
      *
-     * @param {{wood: number, stone: number, woodRate: number, stoneRate: number}} projection
+     * @param {{wood: number, stone: number, woodRate: number, stoneRate: number,
+     *   effect: {kind: string, amount: number}, wallLevel: number,
+     *   forgeLevel: number, maps: number}} projection
      * @returns {string}
      */
     function describeRehearsalProjection(projection) {
@@ -3377,6 +3381,13 @@
       if (projection.stoneRate > 0 || projection.stone > 0) {
         parts.push("stone " + formatAmount(projection.stone));
         parts.push("stone rate +" + formatRate(projection.stoneRate) + "/s");
+      }
+      if (projection.effect && projection.effect.kind === "wall") {
+        parts.push("wall level " + projection.wallLevel);
+      } else if (projection.effect && projection.effect.kind === "forge") {
+        parts.push("forge level " + projection.forgeLevel);
+      } else if (projection.effect && projection.effect.kind === "map") {
+        parts.push("maps " + projection.maps);
       }
       return parts.join(" \u00b7 ");
     }

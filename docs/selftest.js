@@ -8034,7 +8034,7 @@ export async function checks() {
       problems.push("engine must export awayEventForElapsed and chooseAwayEventOption for the away event.");
     }
 
-    const KNOWN_KINDS = ["wood", "stone", "rate"];
+    const KNOWN_KINDS = ["wood", "stone", "rate", "wall", "forge", "map"];
     const poolLength = engine.AWAY_EVENTS.length;
     // Every promise an away event makes, checked on any event: a title, exactly
     // two distinct choices, and each choice a positive amount of a kind the
@@ -8131,7 +8131,7 @@ export async function checks() {
     // fixed bonus fails here because 0.02 is worth minutes early and nothing
     // late.
     const rateChoiceFor = (stateOfSave) => {
-      const event = engine.awayEventForElapsed(601, stateOfSave);
+      const event = engine.awayEventForElapsed(604, stateOfSave);
       const kindOf = (option) => (option && option.effect ? option.effect.kind : null);
       return {
         lump: event ? event.options.find((option) => kindOf(option) === "wood") : null,
@@ -8143,7 +8143,7 @@ export async function checks() {
     const earlyChoice = rateChoiceFor(earlySave);
     const lateChoice = rateChoiceFor(lateSave);
     if (!earlyChoice.rate || !lateChoice.rate || !lateChoice.lump) {
-      problems.push(`A 601s absence must offer a wood lump and a permanent-rate choice, got ${JSON.stringify(engine.awayEventForElapsed(601, lateSave))}.`);
+      problems.push(`A 604s absence must offer a wood lump and a permanent-rate choice, got ${JSON.stringify(engine.awayEventForElapsed(604, lateSave))}.`);
     } else {
       for (const [stage, choice, stateOfSave] of [["early", earlyChoice, earlySave], ["late", lateChoice, lateSave]]) {
         const expectedBonus = engine.awayRateBonusFor(stateOfSave);
@@ -8240,6 +8240,35 @@ export async function checks() {
         if (Math.abs(stoneRise - effect.amount) > 1e-9 || Math.abs(lifetimeRise - effect.amount) > 1e-9) {
           problems.push(`${label}: choosing +${effect.amount} stone should raise stone and lifetime stone by that much, got ${stoneRise} and ${lifetimeRise}.`);
         }
+      } else if (effect.kind === "wall") {
+        const wallRise = after.wallLevel - before.wallLevel;
+        if (wallRise !== effect.amount) {
+          problems.push(`${label}: choosing +${effect.amount} wall level should raise the wall level by that much, got ${wallRise}.`);
+        }
+        if (after.forgeLevel !== before.forgeLevel || after.maps !== before.maps) {
+          problems.push(`${label}: a wall grant must not change the forge or maps, got forge ${after.forgeLevel} (was ${before.forgeLevel}) and maps ${after.maps} (was ${before.maps}).`);
+        }
+      } else if (effect.kind === "forge") {
+        const forgeRise = after.forgeLevel - before.forgeLevel;
+        if (forgeRise !== effect.amount) {
+          problems.push(`${label}: choosing +${effect.amount} forge level should raise the forge level by that much, got ${forgeRise}.`);
+        }
+        const rateRise = after.rate - before.rate;
+        if (Math.abs(rateRise - engine.FORGE_WOOD_RATE_BONUS * effect.amount) > 1e-9) {
+          problems.push(`${label}: choosing a forge grant should raise the rate by ${engine.FORGE_WOOD_RATE_BONUS} per level, got ${rateRise}.`);
+        }
+        if (after.wallLevel !== before.wallLevel || after.maps !== before.maps) {
+          problems.push(`${label}: a forge grant must not change the wall or maps, got wall ${after.wallLevel} and maps ${after.maps}.`);
+        }
+      } else if (effect.kind === "map") {
+        const mapRise = after.maps - before.maps;
+        const expeditionRise = after.expeditionLevel - before.expeditionLevel;
+        if (mapRise !== effect.amount || expeditionRise !== effect.amount) {
+          problems.push(`${label}: choosing +${effect.amount} map should raise maps and the expedition level by that much, got ${mapRise} and ${expeditionRise}.`);
+        }
+        if (after.wallLevel !== before.wallLevel || after.forgeLevel !== before.forgeLevel) {
+          problems.push(`${label}: a map grant must not change the wall or forge, got wall ${after.wallLevel} and forge ${after.forgeLevel}.`);
+        }
       } else {
         const rateRise = after.rate - before.rate;
         if (Math.abs(rateRise - effect.amount) > 1e-9) {
@@ -8255,17 +8284,22 @@ export async function checks() {
       }
     };
 
-    // 600s picks the first pool entry (wood + stone), 601s the second
-    // (wood + rate) and 602s the third (stone + rate); the option index picked
-    // below is the one that exercises rate where the pair offers one.
+    // 600s picks the stonemason happening (wall + wood), 601s the smith
+    // (forge + stone) and 602s the scout (map + rate); a forge or map option is
+    // only shown once its system is unlocked, so the saves below seed the level
+    // that opens it. 604s picks the wood + rate happening the rate checks read.
     seedAwaySave(600000, { stoneUnlocked: true });
-    verifyChoice("600s return, first choice", 0);
+    verifyChoice("600s return, wall choice", 0);
     seedAwaySave(601000, { stoneUnlocked: true });
-    verifyChoice("601s return, second choice", 1);
-    seedAwaySave(601000, { stoneUnlocked: true, rate: 50 });
-    verifyChoice("601s return at a high rate, rate choice", 1);
-    seedAwaySave(602000, { stoneUnlocked: true });
-    verifyChoice("602s return, first choice", 0);
+    verifyChoice("601s return, stone choice", 1);
+    seedAwaySave(604000, { stoneUnlocked: true });
+    verifyChoice("604s return, rate choice", 1);
+    seedAwaySave(604000, { stoneUnlocked: true, rate: 50 });
+    verifyChoice("604s return at a high rate, rate choice", 1);
+    seedAwaySave(601000, { stoneUnlocked: true, wallLevel: 1 });
+    verifyChoice("601s return with a wall, forge choice", 0);
+    seedAwaySave(602000, { stoneUnlocked: true, wallLevel: 1, forgeLevel: engine.EXPEDITION_FORGE_LEVEL });
+    verifyChoice("602s return with expeditions open, map choice", 0);
 
     // With stone still locked the stone option is replaced, so an early return
     // never offers a resource the player cannot yet hold.
@@ -8273,6 +8307,133 @@ export async function checks() {
     problems.push(...eventShapeProblems(lockedEvent, "awayEventForElapsed(600) with stone locked"));
     if (lockedEvent && lockedEvent.options.some((option) => option.id === "stone")) {
       problems.push(`With stone locked an away event must not offer stone, got ${JSON.stringify(lockedEvent.options.map((o) => o.id))}.`);
+    }
+
+    // (e2) A happening can grant progress in a system the player already has
+    // (issue #1101) — a wall level, a forge level or a map — but only once that
+    // system is unlocked, and its button states the exact grant. Choosing it
+    // changes exactly that system, and the agent tools name and apply the same
+    // grant. The three happenings live at pool positions 6-8 (600s, 601s, 602s).
+    const wallEligibleState = { rate: 0.1, maps: 0, stoneUnlocked: true, wallLevel: 0, forgeLevel: 0, totalWoodEarned: 0 };
+    const wallLockedState = { ...wallEligibleState, stoneUnlocked: false };
+    const wallEvent = engine.awayEventForElapsed(600, wallEligibleState);
+    const wallGrant = wallEvent && wallEvent.options.find((option) => option.effect.kind === "wall");
+    if (!wallGrant) {
+      problems.push(`With stone unlocked a 600s return must offer a wall grant, got ${JSON.stringify(wallEvent)}.`);
+    } else {
+      if (wallGrant.effect.amount !== 1) {
+        problems.push(`A wall grant must add exactly one wall level, got amount ${wallGrant.effect.amount}.`);
+      }
+      if (!wallGrant.label.includes("wall") || !wallGrant.effectText.includes("wall")) {
+        problems.push(`The wall button must state the wall level it grants, got label ${JSON.stringify(wallGrant.label)} and effect ${JSON.stringify(wallGrant.effectText)}.`);
+      }
+    }
+    const wallLockedEvent = engine.awayEventForElapsed(600, wallLockedState);
+    if (wallLockedEvent && wallLockedEvent.options.some((option) => option.effect.kind === "wall")) {
+      problems.push(`Before stone is unlocked a 600s return must not offer a wall grant, got ${JSON.stringify(wallLockedEvent.options.map((o) => o.effect.kind))}.`);
+    }
+
+    const forgeEligible = engine.awayEventForElapsed(601, { ...wallEligibleState, wallLevel: 1 });
+    const forgeLocked = engine.awayEventForElapsed(601, wallEligibleState);
+    if (!forgeEligible.options.some((option) => option.effect.kind === "forge")) {
+      problems.push(`With a wall standing a 601s return must offer a forge grant, got ${JSON.stringify(forgeEligible.options.map((o) => o.effect.kind))}.`);
+    }
+    if (forgeLocked.options.some((option) => option.effect.kind === "forge")) {
+      problems.push(`Before a wall stands a 601s return must not offer a forge grant, got ${JSON.stringify(forgeLocked.options.map((o) => o.effect.kind))}.`);
+    }
+    const forgeGrant = forgeEligible.options.find((option) => option.effect.kind === "forge");
+    if (forgeGrant && (!forgeGrant.label.includes("forge") || !forgeGrant.effectText.includes("forge"))) {
+      problems.push(`The forge button must state the forge level it grants, got label ${JSON.stringify(forgeGrant.label)} and effect ${JSON.stringify(forgeGrant.effectText)}.`);
+    }
+
+    const mapUnlockedState = { ...wallEligibleState, wallLevel: 1, forgeLevel: engine.EXPEDITION_FORGE_LEVEL };
+    const mapEligible = engine.awayEventForElapsed(602, mapUnlockedState);
+    const mapLocked = engine.awayEventForElapsed(602, { ...mapUnlockedState, forgeLevel: engine.EXPEDITION_FORGE_LEVEL - 1 });
+    if (!mapEligible.options.some((option) => option.effect.kind === "map")) {
+      problems.push(`With expeditions open a 602s return must offer a map grant, got ${JSON.stringify(mapEligible.options.map((o) => o.effect.kind))}.`);
+    }
+    if (mapLocked.options.some((option) => option.effect.kind === "map")) {
+      problems.push(`Before expeditions open a 602s return must not offer a map grant, got ${JSON.stringify(mapLocked.options.map((o) => o.effect.kind))}.`);
+    }
+    const mapGrant = mapEligible.options.find((option) => option.effect.kind === "map");
+    if (mapGrant && (!mapGrant.label.includes("map") || !mapGrant.effectText.includes("map"))) {
+      problems.push(`The map button must state the map it grants, got label ${JSON.stringify(mapGrant.label)} and effect ${JSON.stringify(mapGrant.effectText)}.`);
+    }
+
+    // Applying each grant changes exactly that one system and nothing else.
+    const systemBaseline = () => ({ wood: 100, rate: 1, stone: 100, totalWoodEarned: 0, totalStoneEarned: 0, wallLevel: 2, forgeLevel: 2, expeditionLevel: 2, maps: 2, stoneUnlocked: true });
+    const wallBase = systemBaseline();
+    engine.applyAwayOptionToState(wallBase, { effect: { kind: "wall", amount: 1 } });
+    if (wallBase.wallLevel !== 3 || wallBase.forgeLevel !== 2 || wallBase.maps !== 2 || wallBase.expeditionLevel !== 2 || wallBase.rate !== 1) {
+      problems.push(`A wall grant must raise only the wall level, got ${JSON.stringify({ wallLevel: wallBase.wallLevel, forgeLevel: wallBase.forgeLevel, maps: wallBase.maps, expeditionLevel: wallBase.expeditionLevel, rate: wallBase.rate })}.`);
+    }
+    const forgeBase = systemBaseline();
+    engine.applyAwayOptionToState(forgeBase, { effect: { kind: "forge", amount: 1 } });
+    if (forgeBase.forgeLevel !== 3 || Math.abs(forgeBase.rate - (1 + engine.FORGE_WOOD_RATE_BONUS)) > 1e-9 || forgeBase.wallLevel !== 2 || forgeBase.maps !== 2) {
+      problems.push(`A forge grant must raise only the forge level (and its wood/s), got ${JSON.stringify({ forgeLevel: forgeBase.forgeLevel, rate: forgeBase.rate, wallLevel: forgeBase.wallLevel, maps: forgeBase.maps })}.`);
+    }
+    const mapBase = systemBaseline();
+    engine.applyAwayOptionToState(mapBase, { effect: { kind: "map", amount: 1 } });
+    if (mapBase.maps !== 3 || mapBase.expeditionLevel !== 3 || mapBase.wallLevel !== 2 || mapBase.forgeLevel !== 2 || mapBase.rate !== 1) {
+      problems.push(`A map grant must raise only maps and the expedition level, got ${JSON.stringify({ maps: mapBase.maps, expeditionLevel: mapBase.expeditionLevel, wallLevel: mapBase.wallLevel, forgeLevel: mapBase.forgeLevel, rate: mapBase.rate })}.`);
+    }
+
+    // The agent reads and takes the same system grant the page offers.
+    const chooseSystemGrant = async (label, ageMs, overrides, kind, check) => {
+      seedAwaySave(ageMs, overrides);
+      const read = await readState.execute({});
+      const offered = read.pendingEvent && read.pendingEvent.options.find((option) => option.effect.kind === kind);
+      if (!offered) {
+        problems.push(`${label}: read-state must offer a ${kind} option, got ${JSON.stringify(read.pendingEvent)}.`);
+        return;
+      }
+      const before = engine.getState();
+      const chosen = await performAction.execute({ action: "choose-away-event", option: kind });
+      if (chosen.ok === false) {
+        problems.push(`${label}: perform-action choose-away-event "${kind}" should succeed, got refusal ${JSON.stringify(chosen.reason)}.`);
+        return;
+      }
+      check(before, engine.getState());
+    };
+    await chooseSystemGrant("wall via the tools", 600000, { stoneUnlocked: true }, "wall", (before, after) => {
+      if (after.wallLevel !== before.wallLevel + 1) {
+        problems.push(`Choosing the wall grant through perform-action should raise the wall level by 1, got ${after.wallLevel - before.wallLevel}.`);
+      }
+    });
+    await chooseSystemGrant("forge via the tools", 601000, { stoneUnlocked: true, wallLevel: 1 }, "forge", (before, after) => {
+      if (after.forgeLevel !== before.forgeLevel + 1) {
+        problems.push(`Choosing the forge grant through perform-action should raise the forge level by 1, got ${after.forgeLevel - before.forgeLevel}.`);
+      }
+      if (Math.abs((after.rate - before.rate) - engine.FORGE_WOOD_RATE_BONUS) > 1e-9) {
+        problems.push(`Choosing the forge grant through perform-action should raise the rate by ${engine.FORGE_WOOD_RATE_BONUS}, got ${after.rate - before.rate}.`);
+      }
+    });
+    await chooseSystemGrant("map via the tools", 602000, { stoneUnlocked: true, wallLevel: 1, forgeLevel: engine.EXPEDITION_FORGE_LEVEL }, "map", (before, after) => {
+      if (after.maps !== before.maps + 1 || after.expeditionLevel !== before.expeditionLevel + 1) {
+        problems.push(`Choosing the map grant through perform-action should raise maps and the expedition level by 1, got maps ${after.maps - before.maps} and expedition level ${after.expeditionLevel - before.expeditionLevel}.`);
+      }
+    });
+
+    // The sandbox can rehearse the wall choice and show where it leads: the
+    // projection reports the wall level the clone would hold. Driving the real
+    // page's sandbox proves the rehearsal control and the row it prints agree.
+    seedAwaySave(3000, { stoneUnlocked: true });
+    if (typeof window.__enterSandbox === "function" && typeof window.__fastForwardSandbox === "function" && typeof window.__rehearseSandboxChoice === "function") {
+      window.__enterSandbox();
+      window.__fastForwardSandbox(600);
+      const wallProjection = window.__rehearseSandboxChoice("wall");
+      if (!wallProjection) {
+        problems.push("The sandbox must be able to rehearse the wall choice a 600s absence offers.");
+      } else {
+        if (wallProjection.wallLevel !== 1) {
+          problems.push(`Rehearsing the wall choice should leave the clone at wall level 1, got ${wallProjection.wallLevel}.`);
+        }
+        const projectionLine = document.querySelector(".sandbox-away-option-projection");
+        if (!projectionLine || !projectionLine.textContent.includes("wall")) {
+          problems.push(`The sandbox projection for the wall choice must say where it leads, got ${JSON.stringify(projectionLine && projectionLine.textContent)}.`);
+        }
+      }
+      window.__exitSandbox();
     }
 
     // (f) An agent reads the pending event and chooses through the tools,
@@ -8300,6 +8461,15 @@ export async function checks() {
       if (effect.kind === "rate" && Math.abs((afterTool.rate - beforeTool.rate) - effect.amount) > 1e-9) {
         problems.push(`perform-action choose-away-event must add exactly +${effect.amount} wood/s, got ${afterTool.rate - beforeTool.rate}.`);
       }
+      if (effect.kind === "wall" && (afterTool.wallLevel - beforeTool.wallLevel) !== effect.amount) {
+        problems.push(`perform-action choose-away-event must grant exactly +${effect.amount} wall level, got ${afterTool.wallLevel - beforeTool.wallLevel}.`);
+      }
+      if (effect.kind === "forge" && (afterTool.forgeLevel - beforeTool.forgeLevel) !== effect.amount) {
+        problems.push(`perform-action choose-away-event must grant exactly +${effect.amount} forge level, got ${afterTool.forgeLevel - beforeTool.forgeLevel}.`);
+      }
+      if (effect.kind === "map" && ((afterTool.maps - beforeTool.maps) !== effect.amount || (afterTool.expeditionLevel - beforeTool.expeditionLevel) !== effect.amount)) {
+        problems.push(`perform-action choose-away-event must grant exactly +${effect.amount} map, got maps ${afterTool.maps - beforeTool.maps} and expedition level ${afterTool.expeditionLevel - beforeTool.expeditionLevel}.`);
+      }
       if (afterTool.pendingEvent !== null) {
         problems.push(`perform-action choose-away-event must clear the event, got ${JSON.stringify(afterTool.pendingEvent)}.`);
       }
@@ -8316,12 +8486,12 @@ export async function checks() {
     // (f2) The agent's read states the same figure the page and the sandbox do:
     // at a high rate the pending event's rate option carries the engine's own
     // derived amount for this save, and its label names that figure (#1050).
-    seedAwaySave(601000, { stoneUnlocked: true, rate: 50 });
+    seedAwaySave(604000, { stoneUnlocked: true, rate: 50 });
     const highRateRead = await readState.execute({});
     const highRateOptions = highRateRead.pendingEvent ? highRateRead.pendingEvent.options : [];
     const highRateRateOption = highRateOptions.find((option) => option.effect.kind === "rate");
     if (!highRateRateOption) {
-      problems.push(`A 601s return at a high rate must offer an agent a rate option, got ${JSON.stringify(highRateRead.pendingEvent)}.`);
+      problems.push(`A 604s return at a high rate must offer an agent a rate option, got ${JSON.stringify(highRateRead.pendingEvent)}.`);
     } else {
       const expectedAgentBonus = engine.awayRateBonusFor(engine.getState());
       if (Math.abs(highRateRateOption.effect.amount - expectedAgentBonus) > 1e-9) {
@@ -8393,6 +8563,15 @@ export async function checks() {
           }
           if (effect.kind === "rate" && Math.abs((afterClick.rate - beforeClick.rate) - effect.amount) > 1e-9) {
             problems.push(`Clicking the rate option should add exactly +${effect.amount} wood/s, got ${afterClick.rate - beforeClick.rate}.`);
+          }
+          if (effect.kind === "wall" && (afterClick.wallLevel - beforeClick.wallLevel) !== effect.amount) {
+            problems.push(`Clicking the wall option should add exactly +${effect.amount} wall level, got ${afterClick.wallLevel - beforeClick.wallLevel}.`);
+          }
+          if (effect.kind === "forge" && (afterClick.forgeLevel - beforeClick.forgeLevel) !== effect.amount) {
+            problems.push(`Clicking the forge option should add exactly +${effect.amount} forge level, got ${afterClick.forgeLevel - beforeClick.forgeLevel}.`);
+          }
+          if (effect.kind === "map" && ((afterClick.maps - beforeClick.maps) !== effect.amount || (afterClick.expeditionLevel - beforeClick.expeditionLevel) !== effect.amount)) {
+            problems.push(`Clicking the map option should add exactly +${effect.amount} map, got maps ${afterClick.maps - beforeClick.maps} and expedition level ${afterClick.expeditionLevel - beforeClick.expeditionLevel}.`);
           }
           if (afterClick.pendingEvent !== null) {
             problems.push(`Choosing through the panel must clear the event, got ${JSON.stringify(afterClick.pendingEvent)}.`);

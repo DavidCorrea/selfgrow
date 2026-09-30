@@ -83,14 +83,20 @@ const DISCOVERIES = [
  * The fixed pool of away events. Each is a happening drawn from the time
  * away that offers exactly two choices, and each choice's kind names the one
  * thing it grants: a lump of wood, a lump of stone, or a permanent wood/s
- * increase. The absence and the save's own count of happenings already offered
- * together pick an entry (see awayEventForElapsed), so checking in on the same
- * cadence still advances through the pool rather than repeating one decision.
- * The pool holds happenings of each kind pair more than once, so a regular
- * visitor meets several different decisions — not three in a loop — before the
- * sequence returns to the one it started on. The two kinds within an entry are
- * always distinct — the choice's own id is its kind — so a pair never shows two
- * identical buttons.
+ * increase, or — the happenings that touch a system — one wall level, one
+ * forge level or one map. The absence and the save's own count of happenings
+ * already offered together pick an entry (see awayEventForElapsed), so checking
+ * in on the same cadence still advances through the pool rather than repeating
+ * one decision. The pool holds happenings of each kind pair more than once, so a
+ * regular visitor meets several different decisions — not three in a loop —
+ * before the sequence returns to the one it started on. The two kinds within an
+ * entry are always distinct — the choice's own id is its kind — so a pair never
+ * shows two identical buttons.
+ *
+ * A happening that grants progress in a system (wall, forge or map) is only
+ * ever offered once that system is unlocked: resolveAwayOptionKinds swaps an
+ * ineligible grant for a lump the player can actually use, so an early return
+ * never dangles a wall, a forge or an expedition it cannot reach.
  *
  * @type {Array<{ id: string, title: string, kinds: [string, string] }>}
  */
@@ -101,6 +107,9 @@ const AWAY_EVENTS = [
   { id: "flooded-creek", title: "A flooded creek has cut a fresh channel", kinds: ["wood", "stone"] },
   { id: "wild-hive", title: "A wild hive hangs heavy in a dead tree", kinds: ["wood", "rate"] },
   { id: "clay-seam", title: "A clay seam has opened along the riverbank", kinds: ["stone", "rate"] },
+  { id: "stonemason-at-the-fire", title: "A stonemason rests at your fire", kinds: ["wall", "wood"] },
+  { id: "wandering-smith", title: "A smith passing through offers their tools", kinds: ["forge", "stone"] },
+  { id: "scout-with-a-chart", title: "A scout arrives with a chart of the far country", kinds: ["map", "rate"] },
 ];
 
 // Everything past the fixed rungs is derived from the top rung and the rung
@@ -663,19 +672,42 @@ export function advanceActivePlay(sec) {
 }
 
 /**
+ * The kind an entry's ineligible grant falls back to, so a happening never
+ * offers progress in a system the player has not unlocked. Each rule mirrors
+ * the gate the system's own action enforces: a wall needs stone (buildWall), a
+ * forge needs a standing wall (forgeTool) and a map needs expeditions open
+ * (sendExpedition). A grant already usable is returned unchanged. Pure.
+ *
+ * @param {string} kind
+ * @param {{ stoneUnlocked: boolean, wallLevel: number, forgeLevel: number }} s
+ * @returns {string}
+ */
+function usableAwayKind(kind, s) {
+  if (kind === "wall" && !s.stoneUnlocked) return "wood";
+  if (kind === "forge" && !(s.wallLevel >= 1)) return "wood";
+  if (kind === "map" && !expeditionUnlocked(s)) return "stone";
+  return kind;
+}
+
+/**
  * The kind each of an entry's two options will actually offer in this save.
- * Stone is swapped for wood while the stone system is still locked, so an early
- * return never offers a resource the player cannot yet hold; should that swap
- * collide with the entry's other option, the later one becomes a rate bonus
- * instead, keeping the two choices distinct. Pure.
+ * A grant the player cannot use is swapped for a lump they can — a wall or a
+ * forge for wood, a map for stone — and stone is further swapped for wood
+ * while the stone system is still locked, so an early return never offers a
+ * resource the player cannot yet hold. Should any swap collide with the entry's
+ * other option, the later one becomes a rate bonus (or, if the pair is already
+ * two rate bonuses, wood), keeping the two choices distinct. Pure.
  *
  * @param {[string, string]} kinds
- * @param {{ stoneUnlocked: boolean }} s
+ * @param {{ stoneUnlocked: boolean, wallLevel: number, forgeLevel: number }} s
  * @returns {[string, string]}
  */
 function resolveAwayOptionKinds(kinds, s) {
-  const resolved = kinds.map((kind) => (kind === "stone" && !s.stoneUnlocked ? "wood" : kind));
-  if (resolved[0] === resolved[1]) resolved[1] = "rate";
+  const resolved = kinds.map((kind) => {
+    const usable = usableAwayKind(kind, s);
+    return usable === "stone" && !s.stoneUnlocked ? "wood" : usable;
+  });
+  if (resolved[0] === resolved[1]) resolved[1] = resolved[0] === "rate" ? "wood" : "rate";
   return resolved;
 }
 
@@ -700,7 +732,7 @@ function awayRateBonusFor(s) {
  * effect amount, so a choice's promise can never disagree with what choosing
  * it adds. Pure.
  *
- * @param {string} kind  "wood", "stone" or "rate"
+ * @param {string} kind  "wood", "stone", "rate", "wall", "forge" or "map"
  * @param {object} s  the state the amounts are drawn from
  * @returns {{ id: string, label: string, effect: { kind: string, amount: number }, effectText: string }}
  */
@@ -721,6 +753,30 @@ function awayOption(kind, s) {
       label: `Take +${formatAmount(amount)} stone`,
       effect: { kind: "stone", amount },
       effectText: `Grants +${formatAmount(amount)} stone.`,
+    };
+  }
+  if (kind === "wall") {
+    return {
+      id: "wall",
+      label: "Gain +1 wall level, raising wood per chop",
+      effect: { kind: "wall", amount: 1 },
+      effectText: "Grants +1 wall level, raising wood per chop.",
+    };
+  }
+  if (kind === "forge") {
+    return {
+      id: "forge",
+      label: `Gain +1 forge level, permanently +${formatRate(FORGE_WOOD_RATE_BONUS)} wood/s`,
+      effect: { kind: "forge", amount: 1 },
+      effectText: `Grants +1 forge level, permanently adding +${formatRate(FORGE_WOOD_RATE_BONUS)} wood/s.`,
+    };
+  }
+  if (kind === "map") {
+    return {
+      id: "map",
+      label: `Gain +1 map, permanently +${EXPEDITION_WOOD_RATE_MULTIPLIER * 100}% wood/s`,
+      effect: { kind: "map", amount: 1 },
+      effectText: `Grants +1 map, permanently multiplying wood/s by +${EXPEDITION_WOOD_RATE_MULTIPLIER * 100}%.`,
     };
   }
   const amount = awayRateBonusFor(s);
@@ -987,7 +1043,7 @@ function sanitizeChosenOption(raw) {
   if (typeof raw.label !== "string" || typeof raw.effectText !== "string") return null;
   const effect = raw.effect;
   if (!effect || typeof effect !== "object") return null;
-  if (effect.kind !== "wood" && effect.kind !== "stone" && effect.kind !== "rate") return null;
+  if (!AWAY_OPTION_KINDS.has(effect.kind)) return null;
   if (!Number.isFinite(effect.amount)) return null;
   return {
     id: raw.id,
@@ -996,6 +1052,14 @@ function sanitizeChosenOption(raw) {
     effectText: raw.effectText,
   };
 }
+
+/**
+ * Every kind an away option can grant — the two lumps, the permanent rate and
+ * the three system grants. The pool, a persisted event and a persisted choice
+ * all validate against this one list, so a kind the engine can apply is never
+ * silently dropped when the save is reloaded.
+ */
+const AWAY_OPTION_KINDS = new Set(["wood", "stone", "rate", "wall", "forge", "map"]);
 
 /**
  * A deep copy of a pending away event, so a reader — the page, a tool or the
@@ -1065,7 +1129,7 @@ function sanitizePendingEvent(raw) {
   for (const option of raw.options) {
     if (!option || typeof option !== "object") return null;
     const effect = option.effect;
-    if (option.id !== "wood" && option.id !== "stone" && option.id !== "rate") return null;
+    if (!AWAY_OPTION_KINDS.has(option.id)) return null;
     if (!effect || effect.kind !== option.id) return null;
     if (!Number.isFinite(effect.amount) || effect.amount <= 0) return null;
     if (typeof option.label !== "string" || typeof option.effectText !== "string") return null;
@@ -1772,6 +1836,18 @@ export function applyAwayOptionToState(s, option) {
   } else if (kind === "stone") {
     s.stone += amount;
     s.totalStoneEarned += amount;
+  } else if (kind === "wall") {
+    s.wallLevel += amount;
+  } else if (kind === "forge") {
+    // Mirror forgeTool: one forge level permanently raises wood rate by the
+    // same per-level bonus the in-game forge pays.
+    s.forgeLevel += amount;
+    s.rate += FORGE_WOOD_RATE_BONUS * amount;
+  } else if (kind === "map") {
+    // Mirror sendExpedition: a map advances the expedition level and adds one
+    // map, whose multiplier the engine derives from the map count alone.
+    s.maps += amount;
+    s.expeditionLevel += amount;
   } else {
     s.rate += amount;
   }

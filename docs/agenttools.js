@@ -442,8 +442,11 @@ function rulesAway(s) {
       oneWay: true,
       rule: "A return of at least " + AWAY_EVENT_MIN_SEC + " seconds offers a happening with exactly two "
         + "choices. Each choice grants one thing: a lump of wood, "
-        + "a lump of stone (shown as wood while stone is still locked), or a permanent +"
-        + formatRate(rateBonus) + " wood/s. The wood and stone lumps are worth "
+        + "a lump of stone (shown as wood while stone is still locked), a permanent +"
+        + formatRate(rateBonus) + " wood/s, or progress in a system the player already has — "
+        + "one wall level (offered only once stone is unlocked), one forge level (only once a wall stands) "
+        + "or one map (only once expeditions are open); each such button states its exact grant, so choosing "
+        + "changes what the player can do next. The wood and stone lumps are worth "
         + AWAY_EVENT_LUMP_SEC + "s of production at the rates in force, and the rate option adds "
         + AWAY_EVENT_RATE_BONUS_FRACTION + " of the same wood/s for good, so it pays for itself in "
         + (AWAY_EVENT_LUMP_SEC / AWAY_EVENT_RATE_BONUS_FRACTION) + "s of production at any rate "
@@ -459,8 +462,9 @@ function rulesAway(s) {
       rule: "An absence can be rehearsed. A sandbox clones the current save and fast-forwarding it "
         + "projects exactly the find and the happening a real absence of that length would turn up, "
         + "without touching the real save. Each choice the happening offers can then be rehearsed "
-        + "against the clone (sandbox-rehearse-choice), which reports the projected wood, stone and "
-        + "rates that choice would leave behind without spending it; sandbox-exit discards the "
+        + "against the clone (sandbox-rehearse-choice), which reports the projected wood, stone, "
+        + "rates and any wall, forge or map level that choice would leave behind without spending it; "
+        + "sandbox-exit discards the "
         + "rehearsal and leaves the real choice unresolved.",
     },
   };
@@ -529,8 +533,13 @@ export function tools() {
         + "pendingEvent is the two-choice happening a real return is offering, or null when "
         + "there is none: {id, title, options: [{id, label, effect: {kind, amount}, effectText}]}"
         + " with exactly two options. Each effectText states exactly what choosing that option "
-        + "grants (a lump of wood, a lump of stone, or a permanent wood/s increase sized from "
-        + "the wood/s in force when the return is collected), and each "
+        + "grants: a lump of wood, a lump of stone (shown as wood while stone is still locked), "
+        + "a permanent wood/s increase sized from "
+        + "the wood/s in force when the return is collected, or progress in a system the player "
+        + "already has — one wall level (only once stone is unlocked), one forge level (only once "
+        + "a wall stands) or one map (only once expeditions are open), so a choice can change what "
+        + "the player does next. A system grant is only ever offered once its system is unlocked, "
+        + "so the option the player sees is one they can actually use. Each "
         + "option's id is the value to pass to the choose-away-event action."
         + " sessionFind is the first discovery active play earned in this session "
         + "(an in-session counterpart to an away find), or null when none has been "
@@ -554,7 +563,7 @@ export function tools() {
         + '"build-wall" — consumes ' + WALL_COST + ' stone to permanently increase click power for wood; '
         + '"forge-tool" — consumes wood and stone to forge a tool, permanently boosting wood rate and click power; '
         + '"send-expedition" — consumes wood and stone to send scouts on an expedition, earning 1 map resource that multiplies wood rate; '
-        + '"choose-away-event" — takes one option of the pending away event, granting exactly the effect that option states and then removing the event; pass the chosen option\'s id in "option" (a wood, stone or rate option, as read from read-state.pendingEvent.options[].id). Choosing is irreversible — the other option can never then be taken — and is refused with a reason when no event is pending or the option is not one of its two. '
+        + '"choose-away-event" — takes one option of the pending away event, granting exactly the effect that option states and then removing the event; pass the chosen option\'s id in "option" (a wood, stone, rate, wall, forge or map option, as read from read-state.pendingEvent.options[].id). Choosing is irreversible — the other option can never then be taken — and is refused with a reason when no event is pending or the option is not one of its two. '
         + '"dismiss-offline" — dismisses the offline-summary overlay if visible; '
         + '"show-return" — re-opens the last return\'s summary (the status panel\'s Last return control), refused with a reason when there is no return on record. '
         + 'The six world actions (gather, sharpen, gather-stone, build-wall, forge-tool, send-expedition) are refused with a reason while a return or rehearsal panel is open, because a person cannot take them then either; dismiss-offline, show-return and choose-away-event stay available.',
@@ -567,7 +576,7 @@ export function tools() {
           },
           option: {
             type: "string",
-            description: 'Only for "choose-away-event": the id of the option to take ("wood", "stone" or "rate"), as listed in read-state.pendingEvent.options[].id.',
+            description: 'Only for "choose-away-event": the id of the option to take ("wood", "stone", "rate", "wall", "forge" or "map"), as listed in read-state.pendingEvent.options[].id.',
           },
         },
         required: ["action"],
@@ -871,7 +880,8 @@ export function tools() {
       description: "Rehearses one option of the two-choice happening the sandbox is currently "
         + "offering, against the isolated sandbox clone only. Returns where that choice would lead — "
         + "the projected wood, stone, wood/s (woodRate) and stone/s (stoneRate) it would leave "
-        + "behind — so a caller can compare the options before spending the real choice. The real "
+        + "behind, and — for a choice that grants progress in a system — the wallLevel, forgeLevel or "
+        + "maps it would leave, so a caller can compare the options before spending the real choice. The real "
         + "save's pending event is never resolved or touched; only the clone changes, and calling "
         + "it again with the other option compares outcomes rather than adding them. Returns "
         + "rehearsed:false with a reason when the sandbox is offering no choice or the id names no "
@@ -881,7 +891,7 @@ export function tools() {
         properties: {
           option: {
             type: "string",
-            description: "Which option of the offered happening to rehearse, by its id (e.g. 'wood', 'stone' or 'rate').",
+            description: "Which option of the offered happening to rehearse, by its id (e.g. 'wood', 'stone', 'rate', 'wall', 'forge' or 'map').",
           },
         },
         required: ["option"],
