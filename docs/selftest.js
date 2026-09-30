@@ -1782,6 +1782,90 @@ export async function checks() {
     }
   }
 
+  // ─── Wide overlays: the sandbox and welcome-back panels use the room ───
+  // The end-of-session panels were the narrowest thing a desktop player ever
+  // saw: capped at ~520px and centred in a wide window. On a wide viewport
+  // they must widen past that cap and lay their content in two columns, while
+  // a phone keeps one readable column that never spills past the window.
+  const overlayPanels = [
+    {
+      label: "sandbox",
+      panel: document.querySelector(".sandbox-panel"),
+      leftChild: document.querySelector(".sandbox-projections"),
+      leftName: ".sandbox-projections",
+      rightChild: document.querySelector(".sandbox-controls"),
+      rightName: ".sandbox-controls",
+    },
+    {
+      label: "welcome-back",
+      panel: document.querySelector(".offline-panel"),
+      leftChild: document.querySelector(".offline-message"),
+      leftName: ".offline-message",
+      rightChild: document.querySelector("#offline-milestones"),
+      rightName: "#offline-milestones",
+    },
+  ];
+
+  // A grid track list is "none" when the element is not a grid, otherwise the
+  // resolved pixel widths of each track, one per column.
+  const countGridTracks = (value) =>
+    value === "none" || value === "" ? 0 : value.trim().split(/\s+/).length;
+
+  for (const { label, panel, leftChild, leftName, rightChild, rightName } of overlayPanels) {
+    if (!panel) {
+      problems.push(`Expected the ${label} overlay panel to exist in the DOM — it was not found.`);
+      continue;
+    }
+    if (!leftChild || !rightChild) {
+      problems.push(
+        `Expected ${leftName} and ${rightName} in the ${label} panel for the wide-layout check.`
+      );
+      continue;
+    }
+
+    const panelRect = panel.getBoundingClientRect();
+    const tracks = countGridTracks(getComputedStyle(panel).gridTemplateColumns);
+
+    if (viewportWidth >= 900) {
+      if (panelRect.width <= 520) {
+        problems.push(
+          `On a ${viewportWidth}px viewport the ${label} panel is ${Math.round(panelRect.width)}px wide — `
+          + "expected it to widen past the 520px cap so a desktop player can use the room."
+        );
+      }
+      if (tracks < 2) {
+        problems.push(
+          `On a ${viewportWidth}px viewport the ${label} panel lays its content in ${tracks} column(s) — `
+          + "expected at least two so the return reads across the width."
+        );
+      }
+      const leftRect = leftChild.getBoundingClientRect();
+      const rightRect = rightChild.getBoundingClientRect();
+      if (!(leftRect.left < rightRect.left - 1)) {
+        problems.push(
+          `On a ${viewportWidth}px viewport ${leftName} starts at ${Math.round(leftRect.left)}px and `
+          + `${rightName} at ${Math.round(rightRect.left)}px — expected the ${label} panel's two columns `
+          + "to sit side by side."
+        );
+      }
+    }
+
+    if (viewportWidth <= 480) {
+      if (tracks > 1) {
+        problems.push(
+          `On a ${viewportWidth}px viewport the ${label} panel lays its content in ${tracks} columns — `
+          + "expected a single readable column on a phone."
+        );
+      }
+      if (panelRect.width > viewportWidth + 1) {
+        problems.push(
+          `On a ${viewportWidth}px viewport the ${label} panel is ${Math.round(panelRect.width)}px wide — `
+          + "wider than the window, so its content would be cut off."
+        );
+      }
+    }
+  }
+
   // ─── One-screen promise: no scrolling on a desktop (>= 1280x720) ────
   // The whole game must fit the window now and as it grows. Measured on the
   // document element, and again per panel so clipping (which a bare
