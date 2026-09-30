@@ -144,6 +144,9 @@ export function fastForward(clone, seconds) {
  *   stone: number,
  *   woodRate: number,
  *   stoneRate: number,
+ *   wallLevel: number,
+ *   forgeLevel: number,
+ *   maps: number,
  *   rehearsal: boolean,
  * }|null}
  */
@@ -164,6 +167,12 @@ export function rehearseAwayChoice(clone, event, optionId) {
     // projection can never promise a rate the game would not grant.
     woodRate: effectiveWoodRate(clone),
     stoneRate: clone.stoneUnlocked ? computeStoneRateFor(clone.totalWoodEarned) : 0,
+    // The system levels a grant in a system (wall, forge or map) would leave
+    // behind, so a rehearsal shows where choosing it leads — a wall raised, a
+    // forge advanced, a map brought home — rather than only bigger numbers.
+    wallLevel: clone.wallLevel,
+    forgeLevel: clone.forgeLevel,
+    maps: clone.maps,
     rehearsal: true,
   };
 }
