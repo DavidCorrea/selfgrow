@@ -456,16 +456,24 @@ function catchUp(firstVisit, record = true) {
   const lastSaved = new Date(state.timestamp).getTime();
   const elapsedSec = (Date.now() - lastSaved) / 1000;
 
+  // Whether a kept account is one the panel could ever show — the very rule
+  // getReturnSummary().visible encodes. An account that is not visible (a
+  // first-ever visit, a sub-second blip) can never be announced, so keeping it
+  // would mask the next real absence entirely: the reported bug is a short
+  // reload crediting a few seconds with no panel and no record of it.
+  const keptVisible = Boolean(kept && !kept.firstVisit && kept.elapsedSec >= RETURN_MIN_SEC);
+
   // Whether this catch-up may write a new account of the last return. A kept,
-  // unseen account outlives a reload that credits only the seconds since the
-  // last tick: replacing it there would tell the player 'away 3s' instead of
-  // the absence they had, and can hide the panel entirely. It is replaced by a
-  // genuinely new trip (`firstVisit`), by an account the player already
-  // dismissed (`seen`), or by a real absence of at least DISCOVERY_MIN_SEC —
-  // the same bar a return must clear to turn up anything, so the account the
-  // panel shows and the state this catch-up credited describe one trip.
+  // visible, unseen account outlives a reload that credits only the seconds
+  // since the last tick: replacing it there would tell the player 'away 3s'
+  // instead of the absence they had, and can hide the panel entirely. It is
+  // replaced by a genuinely new trip (`firstVisit`), by an account the player
+  // already dismissed (`seen`), by an account that was never shown
+  // (`!keptVisible`), or by a real absence of at least DISCOVERY_MIN_SEC — the
+  // same bar a return must clear to turn up anything, so the account the panel
+  // shows and the state this catch-up credited describe one trip.
   const replaceAccount = record
-    && (!kept || kept.seen || (!firstVisit && elapsedSec >= DISCOVERY_MIN_SEC));
+    && (!kept || kept.seen || !keptVisible || (!firstVisit && elapsedSec >= DISCOVERY_MIN_SEC));
   // Retire a replaceable account even when no time is credited at all: an
   // immediate tab switch must not leave a dismissed account standing as the
   // last return, waiting to be announced on the next reload.
