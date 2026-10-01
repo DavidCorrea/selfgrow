@@ -3471,6 +3471,111 @@ export async function checks() {
       problems.push(`Dismissing the panel must not change the status-bar headline: expected ${JSON.stringify(headlineEngine)}, got ${JSON.stringify(returnHeadlineEl.textContent)}.`);
     }
 
+    // (g2a) The line names the find the return turned up and what it added to
+    // the rate, in the panel's own words (issue #1122). The panel is dismissed
+    // early, so the find — the one genuinely new thing the return brought — is
+    // exactly what the line must keep telling.
+    if (!headlineReturn.discovery || !headlineReturn.discovery.credited) {
+      problems.push(`A 1h return from nothing must credit a find, got ${JSON.stringify(headlineReturn.discovery)}.`);
+    } else {
+      const findSentence = engine.returnDiscoveryText(headlineReturn.discovery);
+      if (!headlineEngine.includes(findSentence)) {
+        problems.push(`The status-bar headline must name the find the panel words (${JSON.stringify(findSentence)}), got ${JSON.stringify(headlineEngine)}.`);
+      }
+      const findBonusText = `+${engine.formatRate(headlineReturn.discovery.bonus)} wood/s`;
+      if (!headlineEngine.includes(findBonusText)) {
+        problems.push(`The status-bar headline must name what the find added to the rate (${JSON.stringify(findBonusText)}), got ${JSON.stringify(headlineEngine)}.`);
+      }
+      // The agent's read tool reports the same sentence the page shows, so the
+      // page and the tool tell one story about the return (issue #1122).
+      if (readStateTool) {
+        const findRead = await readStateTool.execute({});
+        if (!findRead.lastReturnHeadline.includes(findSentence)) {
+          problems.push(`read-state.lastReturnHeadline must be the same sentence the status line shows (${JSON.stringify(findSentence)}), got ${JSON.stringify(findRead.lastReturnHeadline)}.`);
+        }
+        if (returnHeadlineEl && findRead.lastReturnHeadline !== returnHeadlineEl.textContent) {
+          problems.push(`read-state.lastReturnHeadline (${JSON.stringify(findRead.lastReturnHeadline)}) must equal the status bar's headline (${JSON.stringify(returnHeadlineEl.textContent)}) after a credited find.`);
+        }
+      }
+    }
+
+    // (g2b) A repeat of a find already owned reads that nothing new was added
+    // and never claims a bonus the state did not get.
+    const rungOneHour = engine.discoverForElapsed(3600);
+    reloadFromAge(3600000, {
+      wood: 5, rate: 0.1 + rungOneHour.bonus,
+      discoveryId: rungOneHour.id, discoveryName: rungOneHour.name, discoveryBonus: rungOneHour.bonus,
+    });
+    window.__renderUI();
+    const repeatReturn = engine.getReturnSummary();
+    const repeatHeadline = engine.lastReturnHeadline();
+    if (!repeatReturn.discovery || repeatReturn.discovery.alreadyOwned !== true) {
+      problems.push(`A 1h return owning the ${rungOneHour.id} rung must report a repeated find, got ${JSON.stringify(repeatReturn.discovery)}.`);
+    } else {
+      const repeatSentence = engine.returnDiscoveryText(repeatReturn.discovery);
+      if (!repeatHeadline.includes(repeatSentence)) {
+        problems.push(`The status-bar headline must name a repeated find in the panel's words (${JSON.stringify(repeatSentence)}), got ${JSON.stringify(repeatHeadline)}.`);
+      }
+      if (/you found/i.test(repeatHeadline)) {
+        problems.push(`A repeated find must not read as newly found in the status-bar headline, got ${JSON.stringify(repeatHeadline)}.`);
+      }
+      if (!/nothing new/i.test(repeatHeadline)) {
+        problems.push(`A repeated find must plainly say nothing new was added in the status-bar headline, got ${JSON.stringify(repeatHeadline)}.`);
+      }
+      if (returnHeadlineEl && returnHeadlineEl.textContent !== repeatHeadline) {
+        problems.push(`The status-bar headline (${JSON.stringify(returnHeadlineEl.textContent)}) must equal engine.lastReturnHeadline() (${JSON.stringify(repeatHeadline)}) for a repeated find.`);
+      }
+    }
+
+    // (g2c) A find weaker than one already held reads that nothing new was
+    // added, and names the rung it turned up.
+    reloadFromAge(3600000, {
+      wood: 5, rate: 0.7,
+      discoveryId: "sunken-vault", discoveryName: "Sunken Vault", discoveryBonus: 0.60,
+    });
+    window.__renderUI();
+    const weakerReturn = engine.getReturnSummary();
+    const weakerHeadline = engine.lastReturnHeadline();
+    if (!weakerReturn.discovery || weakerReturn.discovery.credited !== false || weakerReturn.discovery.alreadyOwned !== false) {
+      problems.push(`A 1h return owning a stronger find must report an out-classed find, got ${JSON.stringify(weakerReturn.discovery)}.`);
+    } else {
+      const weakerSentence = engine.returnDiscoveryText(weakerReturn.discovery);
+      if (!weakerHeadline.includes(weakerSentence)) {
+        problems.push(`The status-bar headline must name an out-classed find in the panel's words (${JSON.stringify(weakerSentence)}), got ${JSON.stringify(weakerHeadline)}.`);
+      }
+      if (/you found/i.test(weakerHeadline)) {
+        problems.push(`An out-classed find must not read as newly found in the status-bar headline, got ${JSON.stringify(weakerHeadline)}.`);
+      }
+      if (!/nothing new/i.test(weakerHeadline)) {
+        problems.push(`An out-classed find must plainly say nothing new was added in the status-bar headline, got ${JSON.stringify(weakerHeadline)}.`);
+      }
+    }
+
+    // (g2d) A return with no find leaves the line exactly as it reads today:
+    // the absence and the wood, no find sentence (issue #1122).
+    reloadFromAge(30000, { wood: 5 });
+    window.__renderUI();
+    const noFindReturn = engine.getReturnSummary();
+    const noFindHeadline = engine.lastReturnHeadline();
+    if (noFindReturn.discovery !== null) {
+      problems.push(`A 30s return must turn up no find, got ${JSON.stringify(noFindReturn.discovery)}.`);
+    }
+    if (engine.returnDiscoveryText(noFindReturn.discovery) !== "") {
+      problems.push("A return with no find must word no find sentence.");
+    }
+    if (noFindHeadline !== `Away ${noFindReturn.elapsed} \u2014 gathered ${engine.formatAmount(noFindReturn.wood)} wood`) {
+      problems.push(`A return with no find must read as today: expected ${JSON.stringify(`Away ${noFindReturn.elapsed} \u2014 gathered ${engine.formatAmount(noFindReturn.wood)} wood`)}, got ${JSON.stringify(noFindHeadline)}.`);
+    }
+    if (returnHeadlineEl && returnHeadlineEl.textContent !== noFindHeadline) {
+      problems.push(`The status-bar headline (${JSON.stringify(returnHeadlineEl.textContent)}) must equal engine.lastReturnHeadline() (${JSON.stringify(noFindHeadline)}) for a findless return.`);
+    }
+    if (readStateTool) {
+      const noFindRead = await readStateTool.execute({});
+      if (noFindRead.lastReturnHeadline !== noFindHeadline) {
+        problems.push(`read-state.lastReturnHeadline (${JSON.stringify(noFindRead.lastReturnHeadline)}) must be the findless status line (${JSON.stringify(noFindHeadline)}).`);
+      }
+    }
+
     // A first-ever visit and a sub-second reload claim no return, so no line.
     engine.reset();
     engine.init();
