@@ -1330,6 +1330,18 @@
       font-size: 0.4rem;
     }
 
+    /* The way to decline both choices. Styled as an option so it reads as part
+       of the same decision, but quieter: it grants nothing, so it must not
+       look like a third reward. */
+    .btn-away-set-aside {
+      border-style: dashed;
+      background: transparent;
+    }
+
+    .btn-away-set-aside .away-option-label {
+      color: var(--text-dim);
+    }
+
     /* What the player chose, stated after the buttons are gone. The words are
        the chosen option's own label and effect, so the panel can never claim
        a choice that granted something else. Hidden until a choice is taken. */
@@ -1898,6 +1910,13 @@
             <span class="away-option-effect" id="away-option-effect-1"></span>
           </button>
         </div>
+        <!-- The way to decline both choices: set the decision aside, granting
+             nothing and losing nothing, so a later absence can offer a new
+             happening instead of repeating this one forever. -->
+        <button class="btn-away-option btn-away-set-aside" id="away-option-set-aside" type="button">
+          <span class="away-option-label">Set this aside</span>
+          <span class="away-option-effect">Take no reward and lose nothing</span>
+        </button>
       </div>
       <!-- The choice once taken: names the option and the effect it granted,
            announced to assistive tech. Empty and hidden until then. -->
@@ -1982,7 +2001,7 @@
   </div>
   <script type="module">
     import "./webmcp.js";
-    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, lastReturnHeadline, chooseAwayEventOption, markReturnSeen, formatElapsed, nextAwayFindText, nextDiscoveryAfter, sharpenAvailable, sharpenThreshold, expeditionUnlocked, actionAvailability, displayAmount, formatAmount, formatRate, exportSave, importSave, inspectSave, describeGoal, returnDiscoveryLine, returnAdvanceText, pauseForHidden, resumeFromHidden, nextSharpenCost, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, clickPowerFor, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
+    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, lastReturnHeadline, chooseAwayEventOption, setAsideAwayEvent, markReturnSeen, formatElapsed, nextAwayFindText, nextDiscoveryAfter, sharpenAvailable, sharpenThreshold, expeditionUnlocked, actionAvailability, displayAmount, formatAmount, formatRate, exportSave, importSave, inspectSave, describeGoal, returnDiscoveryLine, returnAdvanceText, pauseForHidden, resumeFromHidden, nextSharpenCost, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, clickPowerFor, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
     import { cloneState, fastForward, rehearseAwayChoice } from "./sandbox.js";
     import { mountSprites, mountSprite, updateSprites, playReaction } from "./sprites.js";
 
@@ -2061,6 +2080,7 @@
       document.getElementById("away-option-effect-0"),
       document.getElementById("away-option-effect-1"),
     ];
+    const awayOptionSetAside = document.getElementById("away-option-set-aside");
     const awayDecisionWaiting = document.getElementById("away-decision-waiting");
     const awayDecisionWaitingName = document.getElementById("away-decision-waiting-name");
     const nextAwayFindLine = document.getElementById("next-away-find-line");
@@ -2306,6 +2326,24 @@
         offlineEventChosen.hidden = false;
       }
       btnDismiss.focus();
+    }
+
+    // Set a held decision aside rather than taking either option: grant nothing
+    // and lose nothing, so a player who wants neither is not stuck seeing the
+    // same decision on every return. Routes through the engine's own primitive,
+    // which refuses when nothing waits and leaves the return's account
+    // untouched — no choice is recorded — then redraws so the status panel's
+    // waiting line goes with the event. Focus returns to the dismiss button
+    // because the control that was focused is now gone.
+    function setAsideAwayDecision() {
+      const result = setAsideAwayEvent();
+      if (!result.dismissed) return false;
+      renderUI();
+      renderOfflineEvent(null);
+      offlineEventChosen.textContent = "Decision set aside \u2014 nothing gained, nothing lost.";
+      offlineEventChosen.hidden = false;
+      btnDismiss.focus();
+      return true;
     }
 
     function showOfflineSummary() {
@@ -2561,6 +2599,19 @@
         }
       });
     });
+
+    // The set-aside control declines both choices. It is a native button, so it
+    // is keyboard-reachable; the explicit key handling matches the option
+    // buttons, where preventDefault stops a second synthetic click.
+    if (awayOptionSetAside) {
+      awayOptionSetAside.addEventListener("click", setAsideAwayDecision);
+      awayOptionSetAside.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          setAsideAwayDecision();
+        }
+      });
+    }
 
     // Re-opening reads the same persisted return record the original panel
     // rendered, so the account is something the player owns rather than a
@@ -3672,6 +3723,7 @@
     window.__showOfflineSummary = showOfflineSummary;
     window.__showReturn = showOfflineSummary;
     window.__openAwayDecision = openAwayDecision;
+    window.__setAsideAwayDecision = setAsideAwayDecision;
     window.__dismissOffline = dismissOffline;
     window.__revealSaveCode = revealSaveCode;
     window.__restoreSave = restoreSave;

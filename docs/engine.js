@@ -2193,6 +2193,27 @@ export function chooseAwayEventOption(optionId) {
 }
 
 /**
+ * Set a pending away event aside without taking either option: grant nothing
+ * and lose nothing, so a player who wants neither half of a decision is not
+ * stuck facing it on every return. The event already counted itself against
+ * `eventsOffered` when it was offered, so clearing it here lets a later
+ * absence of at least a minute derive the next happening in the pool rather
+ * than repeating the one set aside. `lastReturn.chosenOption` is deliberately
+ * left alone — no option was taken, so no choice is recorded. Refuses when
+ * nothing is pending.
+ *
+ * @returns {{ dismissed: boolean, reason?: string, state: GameState }}
+ */
+export function setAsideAwayEvent() {
+  if (!state.pendingEvent) {
+    return { dismissed: false, reason: "There is no away decision waiting to set aside.", state: getState() };
+  }
+  state.pendingEvent = null;
+  persist();
+  return { dismissed: true, state: getState() };
+}
+
+/**
  * Returns the amount of resources gained during the last offline catch-up.
  * Resets to { wood: 0, stone: 0 } after being read.
  *

@@ -8,7 +8,7 @@
  * @module agenttools
  */
 
-import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, chooseAwayEventOption, getReturnSummary, lastReturnHeadline, formatElapsed, formatRate, nextDiscoveryAfter, discoveryCollection, returnDiscoveryText, sharpenAvailable, sharpenThreshold, wallAvailable, expeditionUnlocked, actionAvailability, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, effectiveWoodRate, expeditionMultiplierFor, clickPowerFor, FIRST_GOAL_WOOD, SHARPEN_COST_RATE, nextSharpenCost, RATE_INCREASE_PER_UPGRADE, GOAL_STONE, WALL_COST, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT, EXPEDITION_FORGE_LEVEL, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_WOOD_COST_INC, FORGE_STONE_COST_INC, FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC, EXPEDITION_WOOD_RATE_MULTIPLIER, DISCOVERY_MIN_SEC, AWAY_EVENT_MIN_SEC, AWAY_EVENT_LUMP_SEC, AWAY_EVENT_LUMP_FRACTION, AWAY_EVENT_RATE_HORIZON_SEC, AWAY_EVENTS, discoverForElapsed, FINDS_LIST_LIMIT } from "./engine.js";
+import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, chooseAwayEventOption, setAsideAwayEvent, getReturnSummary, lastReturnHeadline, formatElapsed, formatRate, nextDiscoveryAfter, discoveryCollection, returnDiscoveryText, sharpenAvailable, sharpenThreshold, wallAvailable, expeditionUnlocked, actionAvailability, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, effectiveWoodRate, expeditionMultiplierFor, clickPowerFor, FIRST_GOAL_WOOD, SHARPEN_COST_RATE, nextSharpenCost, RATE_INCREASE_PER_UPGRADE, GOAL_STONE, WALL_COST, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT, EXPEDITION_FORGE_LEVEL, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_WOOD_COST_INC, FORGE_STONE_COST_INC, FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC, EXPEDITION_WOOD_RATE_MULTIPLIER, DISCOVERY_MIN_SEC, AWAY_EVENT_MIN_SEC, AWAY_EVENT_LUMP_SEC, AWAY_EVENT_LUMP_FRACTION, AWAY_EVENT_RATE_HORIZON_SEC, AWAY_EVENTS, discoverForElapsed, FINDS_LIST_LIMIT } from "./engine.js";
 
 /**
  * The last return as the welcome-back panel is showing it, read straight from
@@ -598,13 +598,14 @@ export function tools() {
         + '"dismiss-offline" — dismisses the offline-summary overlay if visible; '
         + '"show-return" — re-opens the last return\'s summary (the status panel\'s Last return control), refused with a reason when there is no return on record. '
         + '"open-away-decision" — re-opens the last return at the decision still waiting there (the status panel\'s Decision waiting control), refused with a reason when no decision is pending; take the choice itself with "choose-away-event". '
-        + 'The six world actions (gather, sharpen, gather-stone, build-wall, forge-tool, send-expedition) are refused with a reason while a return or rehearsal panel is open, because a person cannot take them then either; dismiss-offline, show-return, open-away-decision and choose-away-event stay available.',
+        + '"set-aside-away-decision" — sets the waiting away decision aside without taking either option, granting nothing and losing nothing, so a later absence of at least a minute can offer a new happening; refused with a reason when no decision is waiting. No choice is recorded. '
+        + 'The six world actions (gather, sharpen, gather-stone, build-wall, forge-tool, send-expedition) are refused with a reason while a return or rehearsal panel is open, because a person cannot take them then either; dismiss-offline, show-return, open-away-decision, set-aside-away-decision and choose-away-event stay available.',
       inputSchema: {
         type: "object",
         properties: {
           action: {
             type: "string",
-            description: 'The action to perform. Supported: "gather", "sharpen", "gather-stone", "build-wall", "forge-tool", "send-expedition", "choose-away-event", "dismiss-offline", "show-return", "open-away-decision".',
+            description: 'The action to perform. Supported: "gather", "sharpen", "gather-stone", "build-wall", "forge-tool", "send-expedition", "choose-away-event", "dismiss-offline", "show-return", "open-away-decision", "set-aside-away-decision".',
           },
           option: {
             type: "string",
@@ -706,7 +707,23 @@ export function tools() {
           }
           return { ok: true, ...withGoal(getState()) };
         }
-        throw new Error('Unknown action "' + action + '". Supported: gather, sharpen, gather-stone, build-wall, forge-tool, send-expedition, choose-away-event, dismiss-offline, show-return, open-away-decision');
+        if (action === "set-aside-away-decision") {
+          // The player's same way out of a decision they want neither half of:
+          // grant nothing, lose nothing, record no choice. Refused when nothing
+          // waits, so an agent cannot dismiss a decision that is not there.
+          if (getState().pendingEvent === null) {
+            return { ok: false, reason: "No away decision is waiting to set aside.", ...withGoal(getState()) };
+          }
+          if (typeof window.__setAsideAwayDecision === "function") {
+            // Route through the page's own handler so the panel and the status
+            // line reconcile exactly as they do for a click on the control.
+            window.__setAsideAwayDecision();
+          } else {
+            setAsideAwayEvent();
+          }
+          return { ok: true, ...withGoal(getState()) };
+        }
+        throw new Error('Unknown action "' + action + '". Supported: gather, sharpen, gather-stone, build-wall, forge-tool, send-expedition, choose-away-event, dismiss-offline, show-return, open-away-decision, set-aside-away-decision');
       },
     },
     {
