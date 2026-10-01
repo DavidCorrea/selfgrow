@@ -9652,6 +9652,156 @@ export async function checks() {
         problems.push("Taking the opened decision through the tools must clear the status panel's waiting line.");
       }
     }
+
+    // (h3) A waiting decision can be set aside (issue #1125): a player who
+    // wants neither option gets a way out that grants nothing and loses
+    // nothing, clearing the status panel's waiting line so the next absence of
+    // a minute or more can offer a fresh happening. The agent's action does the
+    // same, and read-state then reports no pending decision.
+    if (typeof engine.setAsideAwayEvent !== "function") {
+      problems.push("engine must export setAsideAwayEvent so a held decision can be set aside.");
+    } else {
+      // Engine: setting aside changes no counter and records no choice, and it
+      // survives a reload.
+      seedAwaySave(600000, { stoneUnlocked: true });
+      const setAsideBefore = engine.getState();
+      const setAsideId = setAsideBefore.pendingEvent ? setAsideBefore.pendingEvent.id : null;
+      if (!setAsideId) {
+        problems.push("A 600s return should leave a pending event for the set-aside checks.");
+      }
+      const setAsideResult = engine.setAsideAwayEvent();
+      if (setAsideResult.dismissed !== true) {
+        problems.push(`Setting a waiting decision aside should succeed, got ${JSON.stringify(setAsideResult)}.`);
+      }
+      const setAsideAfter = engine.getState();
+      if (setAsideAfter.pendingEvent !== null) {
+        problems.push(`Setting a decision aside must clear the pending event, got ${JSON.stringify(setAsideAfter.pendingEvent)}.`);
+      }
+      if (setAsideAfter.wood !== setAsideBefore.wood || setAsideAfter.stone !== setAsideBefore.stone
+        || Math.abs(setAsideAfter.rate - setAsideBefore.rate) > 1e-9
+        || Math.abs(engine.computeStoneRateFor(setAsideAfter.totalWoodEarned) - engine.computeStoneRateFor(setAsideBefore.totalWoodEarned)) > 1e-9) {
+        problems.push(`Setting a decision aside must grant nothing and lose nothing, but wood went ${setAsideBefore.wood}->${setAsideAfter.wood}, stone ${setAsideBefore.stone}->${setAsideAfter.stone}, rate ${setAsideBefore.rate}->${setAsideAfter.rate}, stone rate ${engine.computeStoneRateFor(setAsideBefore.totalWoodEarned)}->${engine.computeStoneRateFor(setAsideAfter.totalWoodEarned)}.`);
+      }
+      if (setAsideAfter.eventsOffered !== setAsideBefore.eventsOffered) {
+        problems.push(`Setting a decision aside must not change how many happenings were offered: expected ${setAsideBefore.eventsOffered}, got ${setAsideAfter.eventsOffered}.`);
+      }
+      if ((setAsideAfter.lastReturn && setAsideAfter.lastReturn.chosenOption) !== (setAsideBefore.lastReturn && setAsideBefore.lastReturn.chosenOption)) {
+        problems.push("Setting a decision aside must not record a chosen option in the return's account.");
+      }
+      const setAsideSave = localStorage.getItem("selfgrow-state");
+      engine.reset();
+      localStorage.setItem("selfgrow-state", setAsideSave);
+      engine.init();
+      if (engine.getState().pendingEvent !== null) {
+        problems.push(`Setting a decision aside must persist: a reload still shows ${JSON.stringify(engine.getState().pendingEvent)}.`);
+      }
+
+      // Refusal: with nothing pending there is nothing to set aside, and it
+      // must refuse rather than throw.
+      const setAsideNothing = engine.setAsideAwayEvent();
+      if (setAsideNothing.dismissed !== false) {
+        problems.push(`Setting aside with no decision waiting must be refused, got ${JSON.stringify(setAsideNothing)}.`);
+      }
+
+      // Follow-through: the same persisted save returning later offers a new
+      // happening — not the one set aside — and its first option still grants
+      // exactly what it states.
+      const agedSave = JSON.parse(setAsideSave);
+      agedSave.timestamp = new Date(Date.now() - 600000).toISOString();
+      engine.reset();
+      localStorage.setItem("selfgrow-state", JSON.stringify(agedSave));
+      engine.init();
+      const nextAfterSetAside = engine.getState().pendingEvent;
+      if (!nextAfterSetAside) {
+        problems.push("A later 600s absence after setting a decision aside should offer a new happening, got none.");
+      } else {
+        if (nextAfterSetAside.id === setAsideId) {
+          problems.push(`A later absence after setting a decision aside must offer a different happening, but it offered "${setAsideId}" again.`);
+        }
+        const followBefore = engine.getState();
+        const followResult = engine.chooseAwayEventOption(nextAfterSetAside.options[0].id);
+        if (followResult.chosen !== true) {
+          problems.push(`The fresh happening after a set-aside should still be takeable, got refusal ${JSON.stringify(followResult.reason)}.`);
+        } else if (!effectGrants(followBefore, engine.getState(), nextAfterSetAside.options[0].effect)) {
+          problems.push(`Taking the fresh happening after a set-aside must grant exactly ${JSON.stringify(nextAfterSetAside.options[0].effect)}.`);
+        }
+      }
+
+      // DOM: the set-aside control exists, is keyboard-reachable, and clicking
+      // it while a decision waits grants nothing and clears the waiting line.
+      seedAwaySave(600000, { stoneUnlocked: true });
+      if (typeof window.__showOfflineSummary === "function") window.__showOfflineSummary();
+      const setAsideControl = document.getElementById("away-option-set-aside");
+      const pendingForSetAside = engine.getState().pendingEvent;
+      if (!pendingForSetAside) {
+        problems.push("A 600s return should leave a pending event for the set-aside control to clear.");
+      }
+      if (!setAsideControl) {
+        problems.push("The welcome-back panel must offer a set-aside control for a waiting decision.");
+      } else {
+        if (setAsideControl.tagName !== "BUTTON" || setAsideControl.tabIndex < 0) {
+          problems.push(`The set-aside control must be a keyboard-reachable button, got a <${setAsideControl.tagName.toLowerCase()}> with tabIndex ${setAsideControl.tabIndex}.`);
+        }
+        if (!setAsideControl.closest("#offline-event")) {
+          problems.push("The set-aside control must live inside the panel's #offline-event section.");
+        }
+        const beforeSetAsideClick = engine.getState();
+        setAsideControl.click();
+        const afterSetAsideClick = engine.getState();
+        if (afterSetAsideClick.wood !== beforeSetAsideClick.wood || afterSetAsideClick.stone !== beforeSetAsideClick.stone
+          || afterSetAsideClick.wallLevel !== beforeSetAsideClick.wallLevel || afterSetAsideClick.forgeLevel !== beforeSetAsideClick.forgeLevel
+          || afterSetAsideClick.maps !== beforeSetAsideClick.maps || Math.abs(afterSetAsideClick.rate - beforeSetAsideClick.rate) > 1e-9) {
+          problems.push(`Clicking set-aside must grant no reward, but the state changed from ${JSON.stringify(beforeSetAsideClick)} to ${JSON.stringify(afterSetAsideClick)}.`);
+        }
+        if (afterSetAsideClick.pendingEvent !== null) {
+          problems.push(`Clicking set-aside must clear the pending event, got ${JSON.stringify(afterSetAsideClick.pendingEvent)}.`);
+        }
+        if (indicatorVisible()) {
+          problems.push("Clicking set-aside must clear the status panel's waiting line.");
+        }
+        const setAsideEventSection = document.getElementById("offline-event");
+        if (setAsideEventSection && !setAsideEventSection.hidden) {
+          problems.push("Clicking set-aside must hide the decision's option section.");
+        }
+        const setAsideLine = document.getElementById("offline-event-chosen");
+        if (!setAsideLine || setAsideLine.hidden || !setAsideLine.textContent.includes("set aside")) {
+          problems.push(`Clicking set-aside must state plainly that the decision was set aside, got ${JSON.stringify(setAsideLine && setAsideLine.textContent)}.`);
+        }
+      }
+      if (typeof window.__dismissOffline === "function") window.__dismissOffline();
+
+      // Agent: the same outcome is reachable through the tools.
+      engine.reset();
+      engine.init();
+      if (typeof window.__renderUI === "function") window.__renderUI();
+      const setAsideNoDecision = await performAction.execute({ action: "set-aside-away-decision" });
+      if (setAsideNoDecision.ok !== false) {
+        problems.push("perform-action set-aside-away-decision must refuse with ok:false when no decision is waiting.");
+      }
+      seedAwaySave(600000, { stoneUnlocked: true });
+      if (typeof window.__renderUI === "function") window.__renderUI();
+      const setAsideAgentBefore = engine.getState();
+      const setAsideAgent = await performAction.execute({ action: "set-aside-away-decision" });
+      if (setAsideAgent.ok === false) {
+        problems.push(`perform-action set-aside-away-decision should succeed with a waiting decision, got refusal ${JSON.stringify(setAsideAgent.reason)}.`);
+      }
+      const setAsideAgentAfter = engine.getState();
+      if (setAsideAgentAfter.pendingEvent !== null) {
+        problems.push(`perform-action set-aside-away-decision must clear the pending event, got ${JSON.stringify(setAsideAgentAfter.pendingEvent)}.`);
+      }
+      if (setAsideAgentAfter.wood !== setAsideAgentBefore.wood || setAsideAgentAfter.stone !== setAsideAgentBefore.stone) {
+        problems.push("perform-action set-aside-away-decision must grant nothing and lose nothing.");
+      }
+      if (typeof window.__renderUI === "function") window.__renderUI();
+      if (indicatorVisible()) {
+        problems.push("perform-action set-aside-away-decision must clear the status panel's waiting line.");
+      }
+      const setAsideRead = await readState.execute({});
+      if (setAsideRead.pendingEvent !== null) {
+        problems.push(`read-state must report no pending decision after set-aside-away-decision, got ${JSON.stringify(setAsideRead.pendingEvent)}.`);
+      }
+      if (typeof window.__dismissOffline === "function") window.__dismissOffline();
+    }
     if (typeof window.__dismissOffline === "function") window.__dismissOffline();
 
     // (i) The happening advances with the save's own history, so a player who
