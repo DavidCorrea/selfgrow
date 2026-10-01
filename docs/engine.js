@@ -1795,9 +1795,76 @@ function singleGoalResources(name, amount, target) {
 }
 
 /**
+ * How long a resource still needs to reach a target at the rate in force: 0
+ * once it is met, and Infinity when nothing is producing it — a resource with
+ * no rate in force never arrives, so its wait can never be quoted as a
+ * countdown.
+ *
+ * @param {number} amount — what the player holds now, uncapped
+ * @param {number} target — how much the goal asks for
+ * @param {number} rate — the rate in force, units per second
+ * @returns {number} seconds still needed
+ */
+function secondsToTarget(amount, target, rate) {
+  if (amount >= target) return 0;
+  return rate > 0 ? (target - amount) / rate : Infinity;
+}
+
+/**
+ * How long one of a goal's own resources still needs, at the rate in force:
+ * wood at the effective wood rate, stone at the rate its lifetime wood has
+ * earned. The amount is the live state's, not the resource's `current` (which
+ * is capped at its target), so a met resource contributes no time and an unmet
+ * one is measured from what the player really holds.
+ *
+ * @param {GameState} s
+ * @param {{ name: string, target: number }} resource
+ * @returns {number} seconds still needed, 0 when met, Infinity when nothing produces it
+ */
+function goalResourceWait(s, resource) {
+  if (resource.name === "Stone") {
+    const stoneRate = s.stoneUnlocked ? computeStoneRateFor(s.totalWoodEarned) : 0;
+    return secondsToTarget(s.stone, resource.target, stoneRate);
+  }
+  return secondsToTarget(s.wood, resource.target, effectiveWoodRate(s));
+}
+
+/**
+ * How far the current goal still is at the rate in force, as one rule every
+ * surface reads: the goal panel's readout, the welcome-back panel's "Next"
+ * line and the read-state tool all take these fields off the same shared goal
+ * object, so the three can never quote different distances.
+ *
+ * A two-resource goal is timed from whichever resource finishes last, so the
+ * estimate is never optimistic; a resource already met contributes nothing.
+ * `ready` is true exactly when every resource is already gathered — the same
+ * fact the page's full bar shows, whether or not a panel is blocking the
+ * action — and then the goal reads as ready rather than counting down. A
+ * resource nothing is producing yields no estimate at all (formatElapsed's own
+ * '\u2014') instead of a countdown built from a zero rate.
+ *
+ * @param {GameState} s
+ * @param {Array<{ name: string, target: number }>} resources
+ * @returns {{ ready: boolean, etaSec: number|null, etaText: string }}
+ */
+function goalDistance(s, resources) {
+  const waits = resources.map((resource) => goalResourceWait(s, resource));
+  if (waits.every((seconds) => seconds === 0)) {
+    return { ready: true, etaSec: 0, etaText: "Ready" };
+  }
+  const slowest = Math.max(...waits);
+  if (!Number.isFinite(slowest)) {
+    return { ready: false, etaSec: null, etaText: formatElapsed(0) };
+  }
+  // Whole seconds, never below one: the goal is not met, so some wait remains.
+  const etaSec = Math.max(1, Math.ceil(slowest));
+  return { ready: false, etaSec, etaText: "~" + formatElapsed(etaSec * 1000) + " left" };
+}
+
+/**
  * Describe the goal the player is working toward right now — its wording, the
- * numbers that fill its progress bar(s), and whether the action it asks for is
- * available.
+ * numbers that fill its progress bar(s), how far off it is at the rate in
+ * force, and whether the action it asks for is available.
  *
  * This is the one rule the goal panel, the welcome-back panel's "next goal"
  * line and the read-state tool all read, so a goal's text, its bar and the
@@ -1818,6 +1885,9 @@ function singleGoalResources(name, amount, target) {
  *   description: string,
  *   available: boolean,
  *   resources: Array<{ name: string, current: number, target: number }>,
+ *   ready: boolean,
+ *   etaSec: number|null,
+ *   etaText: string,
  * }}
  */
 export function describeGoal(s) {
@@ -1831,6 +1901,7 @@ export function describeGoal(s) {
       target: FIRST_GOAL_WOOD,
       progress: resources[0].current,
       reached: false,
+      ...goalDistance(s, resources),
     };
   }
 
@@ -1845,6 +1916,7 @@ export function describeGoal(s) {
       cost,
       progressToNext: resources[0].current,
       upgradeAvailable: sharpenAvailable(s),
+      ...goalDistance(s, resources),
     };
   }
 
@@ -1858,6 +1930,7 @@ export function describeGoal(s) {
       target: GOAL_STONE,
       progress: resources[0].current,
       reached: false,
+      ...goalDistance(s, resources),
     };
   }
 
@@ -1872,6 +1945,7 @@ export function describeGoal(s) {
       cost: WALL_COST,
       progressToNext: resources[0].current,
       wallAvailable: available,
+      ...goalDistance(s, resources),
     };
   }
 
@@ -1879,32 +1953,36 @@ export function describeGoal(s) {
     const woodTarget = s.expeditionWoodCost;
     const stoneTarget = s.expeditionStoneCost;
     const available = s.wood >= woodTarget && s.stone >= stoneTarget;
+    const resources = [
+      { name: "Wood", current: displayAmount(Math.min(s.wood, woodTarget)), target: woodTarget },
+      { name: "Stone", current: displayAmount(Math.min(s.stone, stoneTarget)), target: stoneTarget },
+    ];
     return {
       type: "expedition-goal",
       description: "Send scouts on expedition \u2014 need " + woodTarget + " wood and " + stoneTarget + " stone",
       available,
-      resources: [
-        { name: "Wood", current: displayAmount(Math.min(s.wood, woodTarget)), target: woodTarget },
-        { name: "Stone", current: displayAmount(Math.min(s.stone, stoneTarget)), target: stoneTarget },
-      ],
+      resources,
       expeditionLevel: s.expeditionLevel,
       canSendExpedition: available,
+      ...goalDistance(s, resources),
     };
   }
 
   const woodTarget = s.forgeWoodCost;
   const stoneTarget = s.forgeStoneCost;
   const available = s.wood >= woodTarget && s.stone >= stoneTarget;
+  const resources = [
+    { name: "Wood", current: displayAmount(Math.min(s.wood, woodTarget)), target: woodTarget },
+    { name: "Stone", current: displayAmount(Math.min(s.stone, stoneTarget)), target: stoneTarget },
+  ];
   return {
     type: "forge-goal",
     description: "Forge a tool \u2014 need " + woodTarget + " wood and " + stoneTarget + " stone",
     available,
-    resources: [
-      { name: "Wood", current: displayAmount(Math.min(s.wood, woodTarget)), target: woodTarget },
-      { name: "Stone", current: displayAmount(Math.min(s.stone, stoneTarget)), target: stoneTarget },
-    ],
+    resources,
     forgeLevel: s.forgeLevel,
     canForge: available,
+    ...goalDistance(s, resources),
   };
 }
 

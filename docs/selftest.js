@@ -2933,6 +2933,187 @@ export async function checks() {
     console.error(err);
   }
 
+  // ─── The goal's distance at the rate in force (issue #1124) ───
+  // The goal panel, the welcome-back panel's Next line and the read-state tool
+  // must all quote one estimate of how long the current goal still needs at the
+  // rate in force. A two-resource goal is timed from the resource that finishes
+  // last, so the estimate is never optimistic; a goal whose resources are
+  // already gathered reads Ready rather than counting down; and a resource
+  // nothing is producing yields no countdown at all rather than one built from
+  // a zero rate.
+  try {
+    const engine = await import("./engine.js");
+    const { tools } = await import("./agenttools.js");
+    const readState = tools().find((t) => t.name === "read-state");
+    const renderNow = () => { if (typeof window.__renderUI === "function") window.__renderUI(); };
+
+    // A reload must never leave a panel from an earlier check standing: an open
+    // panel blocks the world actions, which would make an available goal read
+    // as unavailable below.
+    if (typeof window.__exitSandbox === "function") window.__exitSandbox();
+    if (typeof window.__dismissOffline === "function") window.__dismissOffline();
+
+    const goalEtaEl = document.getElementById("goal-eta");
+    const offlineEtaEl = document.getElementById("offline-next-goal-eta");
+
+    if (!goalEtaEl) {
+      problems.push("Expected #goal-eta inside #goal-panel to show how long the goal still needs \u2014 it was not found.");
+    } else if (!document.getElementById("goal-panel")?.contains(goalEtaEl)) {
+      problems.push("#goal-eta must live inside #goal-panel so the estimate sits with the goal it describes.");
+    }
+    if (!offlineEtaEl) {
+      problems.push("Expected #offline-next-goal-eta on the welcome-back panel's Next line \u2014 it was not found.");
+    } else {
+      const nextGoalLine = document.getElementById("offline-next-goal");
+      const nextGoalFigures = document.getElementById("offline-next-goal-resources");
+      if (nextGoalLine && !nextGoalLine.contains(offlineEtaEl)) {
+        problems.push("#offline-next-goal-eta must sit on the welcome-back panel's Next line, inside #offline-next-goal.");
+      }
+      if (nextGoalFigures && !(nextGoalFigures.compareDocumentPosition(offlineEtaEl) & Node.DOCUMENT_POSITION_FOLLOWING)) {
+        problems.push("#offline-next-goal-eta must come after the goal's own current/target figures.");
+      }
+    }
+
+    // reset() clears storage, so seed the save after it and before init().
+    const loadScenario = (overrides) => {
+      engine.reset();
+      localStorage.setItem("selfgrow-state", JSON.stringify({
+        wood: 0, rate: 0.1, upgradeLevel: 0, stone: 0,
+        totalWoodEarned: 0, totalStoneEarned: 0,
+        wallLevel: 0, forgeLevel: 0, expeditionLevel: 0, maps: 0,
+        stoneUnlocked: false,
+        timestamp: new Date().toISOString(),
+        firstTimestamp: new Date().toISOString(),
+        ...overrides,
+      }));
+      engine.init();
+    };
+
+    // Render the page, then read the tool in the same turn of the event loop, so
+    // the two are answering about one and the same state.
+    const readGoal = async () => {
+      renderNow();
+      const state = await readState.execute({});
+      return { state, goal: state.nextGoal };
+    };
+
+    // Both readouts the ticket asks for: the goal panel's own line and the
+    // welcome-back panel's Next line, each the shared goal's own etaText.
+    const checkEtaShown = (scenario, goal) => {
+      if (goalEtaEl && goalEtaEl.textContent.trim() !== goal.etaText) {
+        problems.push(`${scenario}: #goal-eta shows ${JSON.stringify(goalEtaEl.textContent.trim())} but read-state nextGoal.etaText is ${JSON.stringify(goal.etaText)}.`);
+      }
+      if (offlineEtaEl && offlineEtaEl.textContent.trim() !== goal.etaText) {
+        problems.push(`${scenario}: the welcome-back panel's Next line shows ${JSON.stringify(offlineEtaEl.textContent.trim())} but read-state nextGoal.etaText is ${JSON.stringify(goal.etaText)}.`);
+      }
+    };
+
+    // A known distance: 3 more wood at 0.10 wood/s is 30s.
+    loadScenario({ wood: 7, rate: 0.1 });
+    const firstGoal = (await readGoal()).goal;
+    if (firstGoal.type !== "first-goal") {
+      problems.push(`Goal estimate test expected the first goal at 7 wood, got type ${JSON.stringify(firstGoal.type)}.`);
+    }
+    if (typeof firstGoal.etaSec !== "number" || Math.abs(firstGoal.etaSec - 30) > 1) {
+      problems.push(`First goal at 7 wood and 0.10 wood/s needs about 30s, got etaSec ${JSON.stringify(firstGoal.etaSec)}.`);
+    }
+    if (firstGoal.ready !== false) {
+      problems.push(`First goal at 7 wood is not gathered yet, so ready should be false, got ${JSON.stringify(firstGoal.ready)}.`);
+    }
+    if (!/^~.+ left$/.test(firstGoal.etaText)) {
+      problems.push(`An unmet goal should read "~<duration> left", got ${JSON.stringify(firstGoal.etaText)}.`);
+    }
+    checkEtaShown("first goal at 7 wood", firstGoal);
+
+    // The same goal at three times the rate is a third of the wait, and both
+    // readouts move with it.
+    loadScenario({ wood: 7, rate: 0.3 });
+    const fasterGoal = (await readGoal()).goal;
+    if (typeof fasterGoal.etaSec !== "number" || Math.abs(fasterGoal.etaSec - 10) > 1) {
+      problems.push(`First goal at 7 wood and 0.30 wood/s needs about 10s, got etaSec ${JSON.stringify(fasterGoal.etaSec)}.`);
+    }
+    if (!(fasterGoal.etaSec < firstGoal.etaSec)) {
+      problems.push(`Tripling the wood rate must shorten the estimate, but 0.10 wood/s gave ${firstGoal.etaSec}s and 0.30 wood/s gave ${fasterGoal.etaSec}s.`);
+    }
+    checkEtaShown("first goal at 7 wood and 0.30 wood/s", fasterGoal);
+
+    // A goal whose target is already gathered is ready, not counting down — and
+    // its bar and its own button stay consistent with that.
+    loadScenario({ wood: 10 });
+    const metGoal = (await readGoal()).goal;
+    if (metGoal.type !== "upgrade") {
+      problems.push(`Expected the sharpen goal at 10 wood, got type ${JSON.stringify(metGoal.type)}.`);
+    }
+    if (metGoal.ready !== true) {
+      problems.push(`A goal whose wood target is already gathered should be ready, got ready ${JSON.stringify(metGoal.ready)}.`);
+    }
+    if (metGoal.etaText !== "Ready" || / left$/.test(metGoal.etaText)) {
+      problems.push(`A met goal should read "Ready" rather than counting down, got ${JSON.stringify(metGoal.etaText)}.`);
+    }
+    if (metGoal.etaSec !== 0) {
+      problems.push(`A met goal has no time left to count, so etaSec should be 0, got ${JSON.stringify(metGoal.etaSec)}.`);
+    }
+    if (metGoal.available !== true) {
+      problems.push(`A met goal's own action should be available, got available ${JSON.stringify(metGoal.available)}.`);
+    }
+    const metBar = document.getElementById("goal-progress-track-1");
+    if (metBar && parseFloat(metBar.getAttribute("aria-valuenow")) < parseFloat(metBar.getAttribute("aria-valuemax"))) {
+      problems.push(`A ready goal's bar should be full, got ${metBar.getAttribute("aria-valuenow")}/${metBar.getAttribute("aria-valuemax")}.`);
+    }
+    const metButton = document.getElementById("btn-sharpen");
+    if (metButton && metButton.disabled) {
+      problems.push("A ready goal's own button should be enabled \u2014 #btn-sharpen was disabled.");
+    }
+    checkEtaShown("sharpen goal at 10 wood", metGoal);
+
+    // A two-resource goal is timed from whichever resource finishes last. A save
+    // holding one forge is asked for 15 wood and 8 stone: at 0.10 wood/s the
+    // missing 3 wood arrives in ~30s, but the 8 stone takes ~130s at the stone
+    // rate, so the estimate must be the stone's — the slower one — never the
+    // wood's. (The first forge and the first expedition ask for exactly the 10
+    // wood the first goal has already handed over, so theirs is a wood target
+    // that can never be short; only a later one has two live waits to choose
+    // between.)
+    loadScenario({ wood: 12, totalWoodEarned: 12, rate: 0.1, upgradeLevel: 1, stoneUnlocked: true, wallLevel: 1, forgeLevel: 1, stone: 0 });
+    const dualState = await readGoal();
+    const dualGoal = dualState.goal;
+    if (dualGoal.type !== "forge-goal") {
+      problems.push(`Expected a forge goal with wood and stone both short, got type ${JSON.stringify(dualGoal.type)}.`);
+    } else {
+      const woodTarget = dualGoal.resources.find((r) => r.name === "Wood").target;
+      const stoneTarget = dualGoal.resources.find((r) => r.name === "Stone").target;
+      const woodWait = (woodTarget - dualState.state.wood) / dualState.state.effectiveRate;
+      const stoneWait = (stoneTarget - dualState.state.stone) / dualState.state.stoneRate;
+      const slowest = Math.max(woodWait, stoneWait);
+      if (Math.abs(dualGoal.etaSec - slowest) > 1) {
+        problems.push(`A two-resource goal must be timed from the resource that finishes last (~${slowest.toFixed(1)}s here), got etaSec ${dualGoal.etaSec}.`);
+      }
+      if (dualGoal.etaSec < woodWait - 1 || dualGoal.etaSec < stoneWait - 1) {
+        problems.push(`The goal estimate must never be shorter than either resource's own wait, got etaSec ${dualGoal.etaSec} for wood ${woodWait.toFixed(1)}s and stone ${stoneWait.toFixed(1)}s.`);
+      }
+    }
+    checkEtaShown("forge goal with wood and stone both short", dualGoal);
+
+    // A resource nothing is producing has no countdown: with the gather-stone
+    // goal while stone is locked, the estimate is the unknown marker rather
+    // than a duration divided by a zero rate.
+    loadScenario({ wood: 12, totalWoodEarned: 12, upgradeLevel: 1, stoneUnlocked: false, stone: 0 });
+    const noRateGoal = (await readGoal()).goal;
+    if (noRateGoal.type !== "stone-goal") {
+      problems.push(`Expected the gather-stone goal with stone locked, got type ${JSON.stringify(noRateGoal.type)}.`);
+    } else if (noRateGoal.etaSec !== null || / left$/.test(noRateGoal.etaText)) {
+      problems.push(`A goal whose only resource has no rate in force must not count down, got etaSec ${JSON.stringify(noRateGoal.etaSec)} and etaText ${JSON.stringify(noRateGoal.etaText)}.`);
+    }
+    checkEtaShown("gather-stone goal while stone is locked", noRateGoal);
+
+    // Leave the page as it was found.
+    engine.reset();
+    engine.init();
+  } catch (err) {
+    problems.push(`Goal estimate test threw: ${err.message}`);
+    console.error(err);
+  }
+
   // ─── The page and the read-state tool agree on what can be done (issue #1094) ───
   // The bug was two authorities: renderUI() re-derived the action buttons every
   // 500ms while the panel code disabled them directly, so with a panel open the
@@ -3939,6 +4120,7 @@ export async function checks() {
     const nextGoalLine = document.getElementById("offline-next-goal");
     const nextGoalText = document.getElementById("offline-next-goal-text");
     const nextGoalResources = document.getElementById("offline-next-goal-resources");
+    const nextGoalEta = document.getElementById("offline-next-goal-eta");
     const milestones = document.getElementById("offline-milestones");
     const dismissBtn = document.getElementById("btn-dismiss-offline");
     const goalTextEl = document.getElementById("goal-text");
@@ -3979,6 +4161,11 @@ export async function checks() {
       problems.push("Expected #offline-next-goal-resources to hold the next goal's current/target figures \u2014 it was not found.");
     } else if (nextGoalLine && !nextGoalLine.contains(nextGoalResources)) {
       problems.push("#offline-next-goal-resources must sit on the welcome-back panel's last line, inside #offline-next-goal, so a returning player reads the goal and its progress together.");
+    }
+    if (!nextGoalEta) {
+      problems.push("Expected #offline-next-goal-eta to hold how far off the next goal is \u2014 it was not found.");
+    } else if (nextGoalLine && !nextGoalLine.contains(nextGoalEta)) {
+      problems.push("#offline-next-goal-eta must sit on the welcome-back panel's last line, inside #offline-next-goal, so the return says what to reach for and how far off it is.");
     }
     if (!readState) {
       problems.push("Expected a tool named 'read-state' to compare the welcome-back panel's next-goal figures against \u2014 it was not found.");
@@ -4045,7 +4232,8 @@ export async function checks() {
       // The read-state tool is the third reader of that one rule: an agent must
       // be told the same names and the same numbers the panel shows.
       const panelEntries = parseGoalFigures(figuresText);
-      const toolResources = readState ? (await readState.execute({})).nextGoal.resources : [];
+      const toolGoal = readState ? (await readState.execute({})).nextGoal : null;
+      const toolResources = toolGoal ? toolGoal.resources : [];
 
       if (readState && panelEntries.length !== toolResources.length) {
         problems.push(`The welcome-back panel's next goal for the ${phase.name} phase must carry the same number of resources as read-state reports \u2014 panel: ${panelEntries.length} (${JSON.stringify(figuresText)}), read-state: ${toolResources.length}.`);
@@ -4058,6 +4246,16 @@ export async function checks() {
         } else if (fromTool && (entry.name !== fromTool.name || entry.current !== fromTool.current || entry.target !== fromTool.target)) {
           problems.push(`The welcome-back panel's next-goal figures for the ${phase.name} phase must equal read-state's nextGoal.resources \u2014 panel: ${entry.name} ${entry.current} / ${entry.target}, read-state: ${fromTool.name} ${fromTool.current} / ${fromTool.target}.`);
         }
+      }
+
+      // ...and how far off that goal is, from the one shared estimate the goal
+      // panel prints under its own goal (issue #1124), so the return tells the
+      // player both what to reach for and how far away it is.
+      const etaShown = nextGoalEta ? nextGoalEta.textContent.trim() : "";
+      if (!etaShown) {
+        problems.push(`The welcome-back panel must state how far off the next goal is for the ${phase.name} phase, but its estimate was empty.`);
+      } else if (toolGoal && etaShown !== toolGoal.etaText) {
+        problems.push(`The welcome-back panel's next-goal estimate for the ${phase.name} phase must equal read-state's nextGoal.etaText \u2014 panel: ${JSON.stringify(etaShown)}, read-state: ${JSON.stringify(toolGoal.etaText)}.`);
       }
 
       if (dismissBtn) dismissBtn.click();
