@@ -2183,6 +2183,10 @@
     // accessibility tree, and focus is trapped inside the overlay. Closing the
     // last overlay restores the panels and returns focus where it came from.
     const openOverlays = new Set();
+    // Set when a credited absence arrives while a panel is up: its account is on
+    // record and must be shown as soon as the screen is free again, so no wood
+    // or stone is ever credited without an account.
+    let pendingReturnGreeting = false;
     let focusBeforeOverlay = null;
     const gamePanels = document.querySelectorAll("body > section.panel");
 
@@ -2217,6 +2221,14 @@
         focusBeforeOverlay = null;
         if (returnFocus && document.contains(returnFocus) && !returnFocus.disabled) {
           returnFocus.focus();
+        }
+        // A credited absence that arrived while a panel was up owes the player
+        // its account: with the screen now free, show it. It is the account the
+        // engine kept — folded into the one just dismissed, or recorded whole
+        // when no account was on screen — so nothing credited stays unaccounted.
+        if (pendingReturnGreeting) {
+          pendingReturnGreeting = false;
+          showOfflineSummary();
         }
       }
     }
@@ -3589,17 +3601,23 @@
         return null;
       }
 
-      // An overlay already owns the screen: the absence is still credited, but
-      // it is not announced over a panel that is showing its own account.
-      const greet = openOverlays.size === 0;
-      const summary = resumeFromHidden({ record: greet });
+      // An overlay already owns the screen: the absence is still credited and
+      // accounted for, but its account is folded into whatever that panel is
+      // already showing rather than replacing it, and the greeting waits until
+      // the screen is free so the open panel is never contradicted mid-view.
+      const deferred = openOverlays.size > 0;
+      const summary = resumeFromHidden({ record: true, defer: deferred });
       if (!summary) return null;
 
       // Render before greeting: the panel closes with the goal text its own
       // render writes, and the render reconciles the buttons the panel then
       // locks for as long as it is up.
       renderUI();
-      if (greet) showOfflineSummary();
+      if (!deferred) {
+        showOfflineSummary();
+      } else if (summary.visible) {
+        pendingReturnGreeting = true;
+      }
       return summary;
     }
 

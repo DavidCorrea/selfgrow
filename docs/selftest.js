@@ -7999,16 +7999,18 @@ export async function checks() {
       problems.push(`read-state must report no return while no panel is showing, got offlineWoodGained ${blipRead.offlineWoodGained}.`);
     }
 
-    // (e) A return while another overlay already owns the screen credits the
-    // absence but announces nothing, so the open panel is never contradicted.
+    // (e) A return while another overlay already owns the screen keeps the
+    // absence on record without announcing it over that panel; once the screen
+    // is free the account is shown, so nothing is credited without an account.
     if (typeof window.__enterSandbox === "function") {
       window.__enterSandbox();
       setTabHidden(true);
       pretendAwayFor(ABSENCE_MS);
       const woodBeforeOverlayReturn = engine.getState().wood;
       setTabHidden(false);
-      if (engine.getReturnSummary().visible) {
-        problems.push("A return while another overlay is open must not record a return to announce.");
+      const overlayReturn = engine.getReturnSummary();
+      if (!overlayReturn.visible) {
+        problems.push("A return while another overlay is open must keep the absence on record, but getReturnSummary().visible was false — the credit would go unaccounted.");
       }
       if (!overlay.hidden) {
         problems.push("A return while another overlay is open must not open the welcome-back panel over it.");
@@ -8018,17 +8020,101 @@ export async function checks() {
         problems.push(`A return while an overlay is open must still credit the real absence: wood rose ${overlayRise} over a ${ABSENCE_MS / 1000}s gap.`);
       }
       const overlayRead = readState && await readState.execute({});
-      if (overlayRead && overlayRead.offlineWoodGained !== 0) {
-        problems.push(`read-state must report no return while no panel is showing, got offlineWoodGained ${overlayRead.offlineWoodGained}.`);
+      if (overlayRead) {
+        if (!overlayRead.returnAvailable) {
+          problems.push("read-state.returnAvailable must be true after an absence credited while an overlay was open — the gap must never be recorded as an empty return.");
+        }
+        if (!overlayRead.lastReturnHeadline) {
+          problems.push("read-state.lastReturnHeadline must name an absence credited while an overlay was open, but it was empty.");
+        }
       }
-      const woodAfterOverlayReturn = engine.getState().wood;
-      setTabHidden(false);
-      if (engine.getState().wood !== woodAfterOverlayReturn) {
-        problems.push(`A stray return while an overlay is open must credit nothing: wood moved from ${woodAfterOverlayReturn} to ${engine.getState().wood}.`);
-      }
+      // Exiting the sandbox frees the screen and hands the player the account
+      // the return kept while the overlay owned it.
       window.__exitSandbox();
+      if (overlay.hidden) {
+        problems.push("Once the overlay closes, the absence credited while it was open must be shown, but the welcome-back panel stayed hidden.");
+      } else {
+        if (!woodAmountEl || parseFloat(woodAmountEl.textContent) !== overlayReturn.wood) {
+          problems.push(`The panel shown once the overlay closed must account for the whole absence (${overlayReturn.wood} wood), got ${woodAmountEl && woodAmountEl.textContent}.`);
+        }
+        const shownRead = readState && await readState.execute({});
+        if (shownRead && shownRead.offlineWoodGained !== overlayReturn.wood) {
+          problems.push(`read-state.offlineWoodGained (${shownRead.offlineWoodGained}) must be the wood the freed-screen panel accounts for (${overlayReturn.wood}).`);
+        }
+      }
+      if (typeof window.__dismissOffline === "function") window.__dismissOffline();
     } else {
       problems.push("Expected window.__enterSandbox to open an overlay for the backgrounded-tab checks.");
+    }
+
+    // (f) An absence credited while the welcome-back panel is already up is
+    // folded into the account on screen, never dropped: the counters rise, the
+    // panel's own account grows to cover the new span, and the player reads the
+    // merged account once the panel is free again.
+    {
+      if (typeof window.__dismissOffline === "function") window.__dismissOffline();
+      loadSeededSave();
+      // A first real absence, left on screen as the unseen account.
+      const woodBeforeFirstReturn = engine.getState().wood;
+      setTabHidden(true);
+      pretendAwayFor(ABSENCE_MS);
+      setTabHidden(false);
+      const firstReturn = engine.getReturnSummary();
+      if (!firstReturn.visible || overlay.hidden) {
+        problems.push("The fold check needs a first return on screen: expected a visible account and an open panel.");
+      }
+      const firstPanelWood = woodAmountEl && woodAmountEl.textContent;
+      const firstPanelElapsed = elapsedEl && elapsedEl.textContent;
+
+      // A second absence, this time with the welcome-back panel already up.
+      setTabHidden(true);
+      pretendAwayFor(ABSENCE_MS);
+      setTabHidden(false);
+      const merged = engine.getReturnSummary();
+      if (!merged.visible) {
+        problems.push("An absence credited while the welcome-back panel is up must stay on record, but getReturnSummary().visible was false.");
+      }
+      if (!(merged.elapsedSec > firstReturn.elapsedSec)) {
+        problems.push(`The folded account must cover the new span too: elapsed was ${firstReturn.elapsedSec}s before and ${merged.elapsedSec}s after.`);
+      }
+      if (!(merged.wood > firstReturn.wood)) {
+        problems.push(`The folded account must add the new span's wood: it was ${firstReturn.wood} before and ${merged.wood} after.`);
+      }
+      // The panel already on screen is not swapped mid-view: it still shows the
+      // account it opened with until the player is done with it.
+      if (woodAmountEl && woodAmountEl.textContent !== firstPanelWood) {
+        problems.push(`A deferred absence must not replace the account on the open panel: its wood read "${woodAmountEl.textContent}", was "${firstPanelWood}".`);
+      }
+      if (elapsedEl && elapsedEl.textContent !== firstPanelElapsed) {
+        problems.push(`A deferred absence must not replace the account on the open panel: its absence read "${elapsedEl.textContent}", was "${firstPanelElapsed}".`);
+      }
+      // The merged account explains every wood on the counter across both spans:
+      // it is the counters' own visible rise, read through the product's amount
+      // rule, so a dropped or doubled absence is off by a whole span and fails.
+      const counterRise = engine.displayAmount(engine.getState().wood) - engine.displayAmount(woodBeforeFirstReturn);
+      if (merged.wood !== engine.displayAmount(counterRise)) {
+        problems.push(`The folded account (${merged.wood} wood) must be the counters' own rise across both spans (${counterRise}) — no wood may be credited without an account.`);
+      }
+      // Dismissing frees the screen and re-shows the merged account, so a
+      // dismissal never costs the player the folded absence.
+      if (typeof window.__dismissOffline === "function") window.__dismissOffline();
+      if (overlay.hidden) {
+        problems.push("Dismissing the first account must re-show the folded one, but the welcome-back panel stayed hidden.");
+      } else {
+        if (woodAmountEl && parseFloat(woodAmountEl.textContent) !== merged.wood) {
+          problems.push(`The re-shown panel's wood (${woodAmountEl.textContent}) must be the folded account (${merged.wood}).`);
+        }
+        const mergedRead = readState && await readState.execute({});
+        if (mergedRead) {
+          if (!mergedRead.returnAvailable) {
+            problems.push("read-state.returnAvailable must stay true for a folded absence.");
+          }
+          if (mergedRead.offlineWoodGained !== merged.wood) {
+            problems.push(`read-state.offlineWoodGained (${mergedRead.offlineWoodGained}) must be the folded account (${merged.wood}).`);
+          }
+        }
+      }
+      if (typeof window.__dismissOffline === "function") window.__dismissOffline();
     }
 
     // Leave the page as it was found: visible, ticking, the real save restored.
