@@ -2108,11 +2108,13 @@ export function getReturnSummary() {
 }
 
 /**
- * The last return as one status-bar headline: how long the player was away
- * and the wood (and stone, once any stone was earned) the return gathered.
- * Built from the same record getReturnSummary() exposes and worded with the
- * same formatElapsed/formatAmount rules the welcome-back panel uses, so the
- * status line and the panel can never disagree. Empty for anything that is
+ * The last return as one status-bar headline: how long the player was away,
+ * the wood (and stone, once any stone was earned) the return gathered, the
+ * step the absence took for itself, and the find it turned up. Built from the
+ * same record getReturnSummary() exposes and worded with the same
+ * formatElapsed/formatAmount and returnDiscoveryText rules the welcome-back
+ * panel uses, so the status line, the panel and the read tools can never
+ * disagree. Empty for anything that is
  * not a real return — a first-ever visit or a sub-second reload — so the line
  * is absent rather than claiming an absence that did not happen. It reads
  * from the persisted record, so it survives a dismissal and a reload and
@@ -2130,6 +2132,15 @@ export function lastReturnHeadline() {
   // did with it — from the one record the panel and the tools also read.
   if (ret.advance) {
     line += ` \u2014 ${ret.advance.name.toLowerCase()} (${formatAmount(ret.advance.woodSpent)} wood)`;
+  }
+  // The find the return turned up is the one genuinely new thing it brought,
+  // so the line names it and the rate it added — worded by returnDiscoveryText
+  // so the status line, the welcome-back panel and the read tools say the same
+  // sentence. A repeat or an out-classed find reads that nothing was added, so
+  // the line can never claim a bonus the state did not get.
+  const findText = returnDiscoveryText(ret.discovery);
+  if (findText) {
+    line += ` \u2014 ${findText}`;
   }
   return line;
 }
