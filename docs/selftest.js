@@ -7136,6 +7136,63 @@ export async function checks() {
     }
     reactionProbe.remove();
 
+    // (5b) The floated "+N" must stay readable over every button it floats
+    // above, on desktop and on a phone alike. All four buttons are bright, so
+    // the gain's fill and its outline both have to clear 4.5:1 against them.
+    const parseRgb = (css) => {
+      const match = css.match(/rgba?\(([^)]+)\)/);
+      if (!match) return null;
+      const parts = match[1].split(",").map((n) => parseFloat(n));
+      return parts.length >= 3 ? parts.slice(0, 3) : null;
+    };
+    const channelLuminance = (c) => {
+      const s = c / 255;
+      return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+    };
+    const relativeLuminance = ([r, g, b]) =>
+      0.2126 * channelLuminance(r) + 0.7152 * channelLuminance(g) + 0.0722 * channelLuminance(b);
+    const contrastRatio = (fore, back) => {
+      const lf = relativeLuminance(fore);
+      const lb = relativeLuminance(back);
+      const [hi, lo] = lf >= lb ? [lf, lb] : [lb, lf];
+      return (hi + 0.05) / (lo + 0.05);
+    };
+    const gainSurfaces = ["#btn-gather", "#btn-gather-stone", "#btn-forge-tool", "#btn-expedition"];
+    for (const selector of gainSurfaces) {
+      const button = document.querySelector(selector);
+      if (!button) {
+        problems.push(`Expected ${selector} to exist so the floated "+N" label can be measured over it — it was not found.`);
+        continue;
+      }
+      sprites.playReaction(button, "wood", { reduced: false, gain: "7" });
+      const gainEl = button.querySelector(".float-gain");
+      if (!gainEl) {
+        problems.push(`Tapping ${selector} should float a "+N" gain to measure — none appeared.`);
+        continue;
+      }
+      const gainStyle = getComputedStyle(gainEl);
+      const gainFont = gainStyle.fontFamily;
+      if (!/press start 2p/i.test(gainFont)) {
+        problems.push(`The floated "+N" over ${selector} should stay in the pixel font, got "${gainFont}".`);
+      }
+      const gainAnimation = gainStyle.animationName || gainStyle.animation || "";
+      if (!/float-up/.test(gainAnimation)) {
+        problems.push(`The floated "+N" over ${selector} should still rise and fade via float-up, got animation "${gainAnimation}".`);
+      }
+      const fore = parseRgb(gainStyle.color);
+      const back = parseRgb(getComputedStyle(button).backgroundColor);
+      if (!fore || !back) {
+        problems.push(`Could not measure the floated "+N" contrast over ${selector}: text "${gainStyle.color}", surface "${getComputedStyle(button).backgroundColor}".`);
+      } else {
+        const ratio = contrastRatio(fore, back);
+        if (ratio < 4.5) {
+          problems.push(`Floated "+N" over ${selector} has ${ratio.toFixed(2)}:1 contrast (text ${gainStyle.color} on ${getComputedStyle(button).backgroundColor}) — needs at least 4.5:1.`);
+        }
+      }
+      gainEl.remove();
+      button.classList.remove("react-wood");
+    }
+
     // (6) The picture shows the system's level. Each stage is a genuinely
     // different picture, level 0 is always the base stage, and a card never
     // disagrees with its header chip.
