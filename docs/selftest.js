@@ -8482,9 +8482,9 @@ export async function checks() {
         const awayFigures = [
           ["read-rules away.finds.minSec", away.finds?.minSec, engine.DISCOVERY_MIN_SEC],
           ["read-rules away.event.minSec", away.event?.minSec, engine.AWAY_EVENT_MIN_SEC],
-          ["read-rules away.event.lumpSec", away.event?.lumpSec, engine.AWAY_EVENT_LUMP_SEC],
-          ["read-rules away.event.rateBonus", away.event?.rateBonus, engine.awayRateBonusFor(state)],
-          ["read-rules away.event.rateBonusFraction", away.event?.rateBonusFraction, engine.AWAY_EVENT_RATE_BONUS_FRACTION],
+          ["read-rules away.event.lumpMinSec", away.event?.lumpMinSec, engine.AWAY_EVENT_LUMP_SEC],
+          ["read-rules away.event.lumpFraction", away.event?.lumpFraction, engine.AWAY_EVENT_LUMP_FRACTION],
+          ["read-rules away.event.rateHorizonSec", away.event?.rateHorizonSec, engine.AWAY_EVENT_RATE_HORIZON_SEC],
           ["read-rules away.finds.listLimit", away.finds?.listLimit, engine.FINDS_LIST_LIMIT],
           ["read-rules away.event.optionCount", away.event?.optionCount, 2],
         ];
@@ -8670,51 +8670,71 @@ export async function checks() {
       problems.push(`The same absence must offer the same event: 600s gave ${JSON.stringify(sampleEvent)} then ${JSON.stringify(sampleAgain)}.`);
     }
 
-    // (b2) The rate choice is sized from the player's own wood/s, so it stays a
-    // real decision as production grows (issue #1050). The lump is
-    // AWAY_EVENT_LUMP_SEC of production; the rate choice is
-    // AWAY_EVENT_RATE_BONUS_FRACTION of the same rate for good, so both read one
-    // rate, the trade-off is the same at 0.1/s and at 50/s, and a revert to a
-    // fixed bonus fails here because 0.02 is worth minutes early and nothing
-    // late.
-    const rateChoiceFor = (stateOfSave) => {
-      const event = engine.awayEventForElapsed(604, stateOfSave);
-      const kindOf = (option) => (option && option.effect ? option.effect.kind : null);
-      return {
-        lump: event ? event.options.find((option) => kindOf(option) === "wood") : null,
-        rate: event ? event.options.find((option) => kindOf(option) === "rate") : null,
-      };
+    // (b2) Both choices are sized from the absence that produced them, so the
+    // decision is worth taking (issue #1116): the wood lump is at least a tenth
+    // of the haul the absence earned (with a floor so a short absence still
+    // offers something, and never more than the haul itself), and the rate
+    // choice is worth that same lump over the hour it is measured across. A
+    // revert to the old fixed constants fails here: 30s of production and a 5%
+    // bonus were worth +7.5 wood and +0.01/s against a 900-wood haul.
+    const RATE_HORIZON_SEC = 3600;
+    const woodLumpFor = (stateOfSave, elapsedSec) => {
+      const event = engine.awayEventForElapsed(elapsedSec, stateOfSave);
+      const option = event ? event.options.find((o) => o.effect && o.effect.kind === "wood") : null;
+      return option ? option.effect.amount : null;
     };
-    const earlySave = { rate: 0.1, maps: 0, stoneUnlocked: true, totalWoodEarned: 0 };
-    const lateSave = { rate: 50, maps: 0, stoneUnlocked: true, totalWoodEarned: 0 };
-    const earlyChoice = rateChoiceFor(earlySave);
-    const lateChoice = rateChoiceFor(lateSave);
-    if (!earlyChoice.rate || !lateChoice.rate || !lateChoice.lump) {
-      problems.push(`A 604s absence must offer a wood lump and a permanent-rate choice, got ${JSON.stringify(engine.awayEventForElapsed(604, lateSave))}.`);
+    const hourSave = { rate: 0.25, maps: 0, stoneUnlocked: true, totalWoodEarned: 0 };
+    const hourLump = woodLumpFor(hourSave, RATE_HORIZON_SEC);
+    const hourProduction = hourSave.rate * RATE_HORIZON_SEC;
+    if (hourLump === null) {
+      problems.push(`A one-hour absence must offer a wood lump, got ${JSON.stringify(engine.awayEventForElapsed(RATE_HORIZON_SEC, hourSave))}.`);
     } else {
-      for (const [stage, choice, stateOfSave] of [["early", earlyChoice, earlySave], ["late", lateChoice, lateSave]]) {
-        const expectedBonus = engine.awayRateBonusFor(stateOfSave);
-        if (Math.abs(choice.rate.effect.amount - expectedBonus) > 1e-9) {
-          problems.push(`The ${stage} (rate ${stateOfSave.rate}/s) rate choice should grant the engine's own awayRateBonusFor ${expectedBonus}, got ${choice.rate.effect.amount}.`);
-        }
-        const promisedFigure = engine.formatRate(choice.rate.effect.amount);
-        if (!choice.rate.label.includes(promisedFigure) || !choice.rate.effectText.includes(promisedFigure)) {
-          problems.push(`The ${stage} rate choice must state the ${promisedFigure} wood/s it grants, got label ${JSON.stringify(choice.rate.label)} and effect ${JSON.stringify(choice.rate.effectText)}.`);
-        }
+      if (hourLump < hourProduction / 10) {
+        problems.push(`A one-hour absence's wood lump must be at least a tenth of the ${hourProduction} wood it earned, got ${hourLump}.`);
       }
-      if (!(lateChoice.rate.effect.amount > 0.02)) {
-        problems.push(`At rate 50/s the rate choice must be worth more than the old fixed 0.02 wood/s, got ${lateChoice.rate.effect.amount}.`);
+      if (hourLump > hourProduction) {
+        problems.push(`A one-hour absence's wood lump must never exceed the ${hourProduction} wood it earned, got ${hourLump}.`);
       }
-      if (earlyChoice.rate.effect.amount >= lateChoice.rate.effect.amount) {
-        problems.push(`The rate choice must grow with the player's own rate: rate 0.1/s offered ${earlyChoice.rate.effect.amount}, rate 50/s offered ${lateChoice.rate.effect.amount}.`);
+    }
+
+    // The same lump grows with the absence: a minute offers a small positive
+    // amount, an hour a clearly larger one.
+    const minuteLump = woodLumpFor(hourSave, 60);
+    if (minuteLump === null || !(minuteLump > 0)) {
+      problems.push(`A one-minute absence must still offer a positive wood lump, got ${minuteLump}.`);
+    } else if (hourLump !== null && !(hourLump > minuteLump)) {
+      problems.push(`The wood lump must grow with the absence: a one-hour absence offered ${hourLump}, a one-minute one offered ${minuteLump}.`);
+    }
+
+    // Over the horizon a rate choice is measured across, it is worth the lump it
+    // competes with, so neither option is a rounding error beside the haul.
+    const rateEventSave = { rate: 0.25, maps: 0, stoneUnlocked: true, totalWoodEarned: 0, eventsOffered: 4 };
+    const rateEvent = engine.awayEventForElapsed(RATE_HORIZON_SEC, rateEventSave);
+    const rateLumpOption = rateEvent ? rateEvent.options.find((o) => o.effect && o.effect.kind === "wood") : null;
+    const rateOption = rateEvent ? rateEvent.options.find((o) => o.effect && o.effect.kind === "rate") : null;
+    if (!rateLumpOption || !rateOption) {
+      problems.push(`A one-hour absence with a rate-bearing happening must offer a wood lump and a rate choice, got ${JSON.stringify(rateEvent)}.`);
+    } else {
+      const expectedBonus = engine.awayRateBonusFor(rateEventSave, RATE_HORIZON_SEC);
+      if (Math.abs(rateOption.effect.amount - expectedBonus) > 1e-9) {
+        problems.push(`A one-hour rate choice should grant the engine's own awayRateBonusFor over ${RATE_HORIZON_SEC}s ${expectedBonus}, got ${rateOption.effect.amount}.`);
       }
-      // Both choices read the one rate, so the lump is worth exactly the
-      // seconds of production the rate choice takes to pay for itself.
-      const lumpOverBonus = lateChoice.lump.effect.amount / lateChoice.rate.effect.amount;
-      const paybackSec = engine.AWAY_EVENT_LUMP_SEC / engine.AWAY_EVENT_RATE_BONUS_FRACTION;
-      if (Math.abs(lumpOverBonus - paybackSec) > 1e-9) {
-        problems.push(`At a late rate the lump must be worth the same ${paybackSec}s of production the rate choice takes to pay for itself, got a ratio of ${lumpOverBonus}.`);
+      const promisedFigure = engine.formatRate(rateOption.effect.amount);
+      if (!rateOption.label.includes(promisedFigure) || !rateOption.effectText.includes(promisedFigure)) {
+        problems.push(`A one-hour rate choice must state the ${promisedFigure} wood/s it grants, got label ${JSON.stringify(rateOption.label)} and effect ${JSON.stringify(rateOption.effectText)}.`);
       }
+      const rateWorth = rateOption.effect.amount * RATE_HORIZON_SEC;
+      const rateToLump = rateWorth / rateLumpOption.effect.amount;
+      if (!(rateToLump >= 0.5 && rateToLump <= 2)) {
+        problems.push(`Over ${RATE_HORIZON_SEC}s a one-hour rate choice must be worth within a factor of two of the ${rateLumpOption.effect.amount} lump, got ${rateWorth} (ratio ${rateToLump}).`);
+      }
+    }
+
+    // A one-minute absence still offers a positive rate choice.
+    const minuteRateEvent = engine.awayEventForElapsed(60, { ...hourSave, eventsOffered: 4 });
+    const minuteRateOption = minuteRateEvent ? minuteRateEvent.options.find((o) => o.effect && o.effect.kind === "rate") : null;
+    if (!minuteRateOption || !(minuteRateOption.effect.amount > 0)) {
+      problems.push(`A one-minute absence must offer a positive rate choice, got ${JSON.stringify(minuteRateEvent)}.`);
     }
 
     // Loads a save that is `ageMs` old the way a returning player's browser
@@ -8756,6 +8776,21 @@ export async function checks() {
     const eventAfterReload = JSON.stringify(engine.getState().pendingEvent);
     if (eventAfterReload !== eventBeforeReload) {
       problems.push(`A reload before choosing must keep the pending event: expected ${eventBeforeReload}, got ${eventAfterReload}.`);
+    }
+
+    // (d2) End to end: a real one-hour return's wood choice is a clear share of
+    // the haul the account above it reports, not a few seconds of production.
+    seedAwaySave(3600000, { stoneUnlocked: true });
+    const hourReturn = engine.getReturnSummary();
+    const hourReturnWoodChoice = hourReturn.pendingEvent
+      ? hourReturn.pendingEvent.options.find((o) => o.effect && o.effect.kind === "wood") || null
+      : null;
+    if (!hourReturnWoodChoice) {
+      problems.push(`A seeded one-hour return must offer a wood choice, got ${JSON.stringify(hourReturn.pendingEvent)}.`);
+    } else if (hourReturnWoodChoice.effect.amount < hourReturn.wood / 10) {
+      problems.push(`A one-hour return's wood choice (+${hourReturnWoodChoice.effect.amount}) must be at least a tenth of the ${hourReturn.wood} wood the return credited.`);
+    } else if (hourReturnWoodChoice.effect.amount > hourReturn.wood) {
+      problems.push(`A one-hour return's wood choice (+${hourReturnWoodChoice.effect.amount}) must not exceed the ${hourReturn.wood} wood the return credited.`);
     }
 
     // (e) Choosing a choice grants exactly its stated effect, once; the event
@@ -9040,7 +9075,7 @@ export async function checks() {
     if (!highRateRateOption) {
       problems.push(`A 604s return at a high rate must offer an agent a rate option, got ${JSON.stringify(highRateRead.pendingEvent)}.`);
     } else {
-      const expectedAgentBonus = engine.awayRateBonusFor(engine.getState());
+      const expectedAgentBonus = engine.awayRateBonusFor(engine.getState(), 604);
       if (Math.abs(highRateRateOption.effect.amount - expectedAgentBonus) > 1e-9) {
         problems.push(`read-state's rate option should grant the engine's own awayRateBonusFor ${expectedAgentBonus}, got ${highRateRateOption.effect.amount}.`);
       }
