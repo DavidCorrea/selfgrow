@@ -577,13 +577,18 @@ function getEffectiveRate() {
  * @param {boolean} firstVisit — true when there was no saved state to return to
  * @param {boolean} [record] — whether this catch-up may write the account of
  *   the last return. False still credits the absence and advances the
- *   timestamp, but leaves the account alone, so a return that arrives while an
- *   overlay is already open cannot contradict the panel that overlay is
- *   showing. Even when true the account is only replaced by a genuinely new
- *   trip or a real absence, so a reload before the player has read and
- *   dismissed the panel keeps telling the absence they actually had.
+ *   timestamp, but leaves the account alone. Even when true the account is only
+ *   replaced by a genuinely new trip or a real absence, so a reload before the
+ *   player has read and dismissed the panel keeps telling the absence they
+ *   actually had.
+ * @param {boolean} [defer] — true when the credited absence arrives while an
+ *   overlay is already open. The time is still credited and accounted for, but
+ *   an unseen account the open panel could be showing is folded into rather
+ *   than replaced, so the panel the player is reading keeps the account it is
+ *   on and the absence is announced once the screen is free. Ignored when no
+ *   such account is on screen to protect.
  */
-function catchUp(firstVisit, record = true) {
+function catchUp(firstVisit, record = true, defer = false) {
   const kept = state.lastReturn;
   const lastSaved = new Date(state.timestamp).getTime();
   const elapsedSec = (Date.now() - lastSaved) / 1000;
@@ -595,6 +600,11 @@ function catchUp(firstVisit, record = true) {
   // reload crediting a few seconds with no panel and no record of it.
   const keptVisible = Boolean(kept && !kept.firstVisit && kept.elapsedSec >= RETURN_MIN_SEC);
 
+  // A deferred absence must not replace the account an open panel is showing:
+  // its credited span is folded into that account instead, so the absence is
+  // never credited without an account and the panel is never swapped mid-view.
+  const foldIntoKept = Boolean(defer && kept && keptVisible && !kept.seen);
+
   // Whether this catch-up may write a new account of the last return. A kept,
   // visible, unseen account outlives a reload that credits only the seconds
   // since the last tick: replacing it there would tell the player 'away 3s'
@@ -604,7 +614,7 @@ function catchUp(firstVisit, record = true) {
   // (`!keptVisible`), or by a real absence of at least DISCOVERY_MIN_SEC — the
   // same bar a return must clear to turn up anything, so the account the panel
   // shows and the state this catch-up credited describe one trip.
-  const replaceAccount = record
+  const replaceAccount = record && !foldIntoKept
     && (!kept || kept.seen || !keptVisible || (!firstVisit && elapsedSec >= DISCOVERY_MIN_SEC));
   // Retire a replaceable account even when no time is credited at all: an
   // immediate tab switch must not leave a dismissed account standing as the
@@ -669,8 +679,8 @@ function catchUp(firstVisit, record = true) {
     // The account of this return, recorded once. The wood and stone amounts
     // are the rises the resource counters themselves show, so the panel cannot
     // claim a number the counters disagree with.
-    if (replaceAccount) {
-      state.lastReturn = {
+    if (replaceAccount || foldIntoKept) {
+      const account = {
         firstVisit,
         seen: false,
         elapsedSec,
@@ -691,6 +701,10 @@ function catchUp(firstVisit, record = true) {
         advance,
         milestones: computeMilestones(before),
       };
+      // A deferred account is folded into the one already on screen rather than
+      // replacing it, so the account the player finally reads covers every
+      // credited second and the choice on the panel is not swapped under them.
+      state.lastReturn = foldIntoKept ? mergeReturnAccounts(kept, account) : account;
     }
     state.timestamp = now();
   }
@@ -1146,6 +1160,45 @@ function sanitizeReturnRecord(raw) {
 }
 
 /**
+ * Fold a freshly credited absence into the account an open panel is already
+ * showing, instead of replacing it. The elapsed time and the gathered wood and
+ * stone add up, so the account the player finally reads covers every credited
+ * second; the event the on-screen panel is offering and the choice taken from
+ * it are kept, so taking that choice still records; and the find, the step and
+ * the milestone flags widen rather than reset, so nothing the account already
+ * announced is lost.
+ *
+ * @param {ReturnRecord} base — the account still on screen
+ * @param {ReturnRecord} add — the account of the absence just credited
+ * @returns {ReturnRecord}
+ */
+function mergeReturnAccounts(base, add) {
+  return {
+    ...base,
+    elapsedSec: base.elapsedSec + add.elapsedSec,
+    // Each account already holds the counter's visible rise, so their sum is
+    // the rise across both spans; it is re-read through the same amount rule
+    // every other figure uses, so the panel, the status line and the read tools
+    // state one number rather than a sum the display would round differently.
+    wood: displayAmount(base.wood + add.wood),
+    stone: displayAmount(base.stone + add.stone),
+    // A fresh find that added a bonus is the one worth naming; an out-classed
+    // or already-owned find is kept only when nothing stronger is on the card.
+    discovery: add.discovery && (add.discovery.credited || !base.discovery)
+      ? add.discovery
+      : base.discovery,
+    advance: add.advance ?? base.advance ?? null,
+    milestones: {
+      sharpenAvailable: base.milestones.sharpenAvailable || add.milestones.sharpenAvailable,
+      stoneNowUnlocked: base.milestones.stoneNowUnlocked || add.milestones.stoneNowUnlocked,
+      wallAvailable: base.milestones.wallAvailable || add.milestones.wallAvailable,
+      forgeNowUnlocked: base.milestones.forgeNowUnlocked || add.milestones.forgeNowUnlocked,
+      expeditionNowUnlocked: base.milestones.expeditionNowUnlocked || add.milestones.expeditionNowUnlocked,
+    },
+  };
+}
+
+/**
  * A persisted record of the step an absence took for itself, or null when what
  * was stored cannot be trusted. A record whose step cannot be read loses only
  * the step's own sentence, never the rest of the account: the panel then says
@@ -1482,16 +1535,20 @@ export function pauseForHidden() {
  *
  * Returns the account of the return for the caller to greet the player with,
  * or null when the tab was never paused, so a stray focus credits nothing and
- * announces nothing.
+ * announces nothing. The caller decides when to greet: when an overlay is
+ * already open it keeps the account on record and shows it once the screen is
+ * free, rather than announcing it over the open panel.
  *
- * @param {{ record?: boolean }} [options] — record false credits the absence
- *   without replacing the account of the last return.
+ * @param {{ record?: boolean, defer?: boolean }} [options] — record false
+ *   credits the absence without writing the account of the last return; defer
+ *   true folds the credited absence into an unseen account already on screen
+ *   rather than replacing it.
  * @returns {ReturnType<typeof getReturnSummary>|null}
  */
-export function resumeFromHidden({ record = true } = {}) {
+export function resumeFromHidden({ record = true, defer = false } = {}) {
   if (!pausedForHidden) return null;
   pausedForHidden = false;
-  catchUp(false, record);
+  catchUp(false, record, defer);
   persist();
   startTick();
   return getReturnSummary();
