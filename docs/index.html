@@ -915,6 +915,18 @@
       font-family: var(--body-font);
     }
 
+    /* The goal's own readout of how far off it is at the rate in force. Same
+       pixel face and green as the welcome-back panel's Next line, because it is
+       the same fact, and tabular figures so the countdown's digits do not shift
+       the line as they tick. */
+    .goal-eta {
+      font-size: 0.5rem;
+      color: var(--highlight);
+      font-family: var(--pixel-font);
+      font-weight: bold;
+      font-variant-numeric: tabular-nums;
+    }
+
     .progress-track {
       width: 100%;
       height: 1rem;
@@ -1230,6 +1242,12 @@
     /* The goal's current/target figures stay on one line, so a wrap never splits
        a resource from its own numbers. */
     #offline-next-goal-resources {
+      white-space: nowrap;
+    }
+
+    /* ...and so does the distance to that goal, so "~1m 20s left" is never split
+       across a line break. */
+    #offline-next-goal-eta {
       white-space: nowrap;
     }
 
@@ -1722,6 +1740,7 @@
   <section class="panel" id="goal-panel" role="region" aria-label="Current goal">
     <div class="goal-label" id="goal-label">Next Goal</div>
     <div id="goal-text">Gather 10 wood</div>
+    <div id="goal-eta" class="goal-eta">~1m 40s left</div>
     <div class="goal-resource-label" id="goal-resource-label-1" hidden></div>
     <div class="progress-track" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="10" aria-labelledby="goal-label goal-text goal-resource-label-1" id="goal-progress-track-1">
       <div class="progress-fill" id="goal-progress-fill" style="width: 0%;"></div>
@@ -1893,7 +1912,7 @@
         <div class="offline-milestone" id="milestone-forge" hidden>The forge is now unlocked!</div>
         <div class="offline-milestone" id="milestone-expedition" hidden>Expeditions are now unlocked!</div>
       </div>
-      <div class="offline-next-goal" id="offline-next-goal">Next: <span id="offline-next-goal-text"></span> (<span id="offline-next-goal-resources"></span>)</div>
+      <div class="offline-next-goal" id="offline-next-goal">Next: <span id="offline-next-goal-text"></span> (<span id="offline-next-goal-resources"></span>) <span id="offline-next-goal-eta"></span></div>
       <button class="btn-dismiss" id="btn-dismiss-offline" type="button">
         OK
       </button>
@@ -1998,6 +2017,7 @@
     const expeditionActions = document.getElementById("expedition-actions");
     const btnExpedition = document.getElementById("btn-expedition");
     const goalText = document.getElementById("goal-text");
+    const goalEta = document.getElementById("goal-eta");
     const goalFill = document.getElementById("goal-progress-fill");
     const goalProgress = document.getElementById("goal-progress-track-1");
     const goalLabel1 = document.getElementById("goal-resource-label-1");
@@ -2051,6 +2071,7 @@
     const btnShowReturn = document.getElementById("btn-show-return");
     const offlineNextGoalText = document.getElementById("offline-next-goal-text");
     const offlineNextGoalResources = document.getElementById("offline-next-goal-resources");
+    const offlineNextGoalEta = document.getElementById("offline-next-goal-eta");
     const discoveryStat = document.getElementById("discovery-stat");
     const discoveryValueEl = document.getElementById("discovery-value");
     const btnDismiss = document.getElementById("btn-dismiss-offline");
@@ -3076,6 +3097,12 @@
         renderSingleGoal(goal.description, goal.resources[0].current, goal.resources[0].target, goal.resources[0].name);
       }
 
+      // The distance to that goal at the rate in force, read off the same shared
+      // goal object the welcome-back panel's Next line and the read-state tool
+      // read. Written every render, so the estimate tracks a rate change (a
+      // sharpen, a forge, a map) as closely as the bars do.
+      if (goalEta) goalEta.textContent = goal.etaText;
+
       // The goal's own action button obeys exactly the availability the shared
       // rule reports, so a full bar and an enabled button always coincide.
       if (goal.type === "build-wall-goal") {
@@ -3142,6 +3169,10 @@
       // written on every render so it can never be stale or drift from the
       // goal the player is actually working toward.
       if (offlineNextGoalText) offlineNextGoalText.textContent = currentGoalText;
+      // ...and how far off it is: the same shared estimate the goal panel shows,
+      // so a returning player reads what to reach for and its distance rather
+      // than only the goal's name.
+      if (offlineNextGoalEta) offlineNextGoalEta.textContent = goal.etaText;
       // ...and how close the player is to it: the same per-resource numbers the
       // goal panel prints beside its bar, read from the same goal object, so a
       // returning player can see what happened and how far the next goal is
