@@ -1884,6 +1884,9 @@
            announced to assistive tech. Empty and hidden until then. -->
       <div id="offline-event-chosen" class="offline-event-chosen" role="status" aria-live="polite" hidden></div>
       <div id="offline-milestones">
+        <!-- The step the absence itself took while away, from the engine's own
+             record: which step and the wood it spent. Hidden when it took none. -->
+        <div class="offline-milestone" id="offline-advance" role="status" aria-live="polite" hidden></div>
         <div class="offline-milestone" id="milestone-sharpen" hidden>You can now sharpen your axe!</div>
         <div class="offline-milestone" id="milestone-stone" hidden>Stone is now available!</div>
         <div class="offline-milestone" id="milestone-wall" hidden>You can now build a wall!</div>
@@ -1960,7 +1963,7 @@
   </div>
   <script type="module">
     import "./webmcp.js";
-    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, lastReturnHeadline, chooseAwayEventOption, markReturnSeen, formatElapsed, nextAwayFindText, nextDiscoveryAfter, sharpenAvailable, sharpenThreshold, expeditionUnlocked, actionAvailability, displayAmount, formatAmount, formatRate, exportSave, importSave, inspectSave, describeGoal, returnDiscoveryLine, pauseForHidden, resumeFromHidden, nextSharpenCost, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, clickPowerFor, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
+    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, lastReturnHeadline, chooseAwayEventOption, markReturnSeen, formatElapsed, nextAwayFindText, nextDiscoveryAfter, sharpenAvailable, sharpenThreshold, expeditionUnlocked, actionAvailability, displayAmount, formatAmount, formatRate, exportSave, importSave, inspectSave, describeGoal, returnDiscoveryLine, returnAdvanceText, pauseForHidden, resumeFromHidden, nextSharpenCost, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, clickPowerFor, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
     import { cloneState, fastForward, rehearseAwayChoice } from "./sandbox.js";
     import { mountSprites, mountSprite, updateSprites, playReaction } from "./sprites.js";
 
@@ -2025,6 +2028,7 @@
     const offlineEvent = document.getElementById("offline-event");
     const offlineEventTitle = document.getElementById("offline-event-title");
     const offlineEventChosen = document.getElementById("offline-event-chosen");
+    const offlineAdvance = document.getElementById("offline-advance");
     const awayOptionButtons = [
       document.getElementById("away-option-0"),
       document.getElementById("away-option-1"),
@@ -2349,6 +2353,14 @@
       }
 
       // ─── Milestone announcements ───
+      // The step the absence took for itself, named from the engine's own
+      // record with the wood it spent, so the panel cannot imply the ladder is
+      // still waiting where the return already climbed a rung.
+      if (offlineAdvance) {
+        offlineAdvance.textContent = returnAdvanceText(ret.advance);
+        offlineAdvance.hidden = !ret.advance;
+      }
+
       const milestones = ret.milestones;
       const sharpenEl = document.getElementById("milestone-sharpen");
       const stoneEl = document.getElementById("milestone-stone");

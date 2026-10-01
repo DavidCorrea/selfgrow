@@ -28,21 +28,26 @@ import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, 
  *   elapsed: string|null,
  *   discovery: { name: string, bonus: number|null, permanent: boolean, alreadyOwned: boolean, sentence: string }|null,
  *   chosenOption: { id: string, label: string, effect: {kind: string, amount: number}, effectText: string }|null,
+ *   advance: { kind: string, name: string, woodSpent: number }|null,
  * }}
  */
 function readReturnSummary() {
   const ret = getReturnSummary();
   const available = ret.visible;
   const chosenOption = ret.chosenOption ?? null;
+  // The step the absence took for itself is a fact of the record, like the
+  // option it took, so it is reported whether or not the panel is on screen.
+  const advance = ret.advance ?? null;
   const overlay = document.getElementById("offline-summary");
   if (!available || !overlay || overlay.hidden) {
-    return { available, wood: 0, stone: 0, elapsed: null, discovery: null, chosenOption };
+    return { available, wood: 0, stone: 0, elapsed: null, discovery: null, chosenOption, advance };
   }
   return {
     available,
     wood: ret.wood,
     stone: ret.stone,
     elapsed: ret.elapsed,
+    advance,
     discovery: ret.discovery
       ? {
           name: ret.discovery.name,
@@ -168,6 +173,11 @@ function withGoal(s) {
     // none or the player has not chosen. It is the same record the panel words
     // its 'You chose' line from, so the page and the tool cannot disagree.
     offlineChosenOption: ret.chosenOption,
+    // The progression step the absence itself took (the first sharpen), or null
+    // when it took none. {kind, name, woodSpent} — the same record the panel's
+    // advance line and the status-bar headline are built from, so an agent sees
+    // the step the return left behind without re-deriving it from the numbers.
+    offlineAdvance: ret.advance,
     nextAwayDiscovery: nextDiscovery
       ? { name: nextDiscovery.name, minSec: nextDiscovery.minSec, bonus: nextDiscovery.bonus, woodPerSec: nextDiscovery.bonus, elapsed: formatElapsed(nextDiscovery.minSec * 1000) }
       : null,
@@ -519,7 +529,11 @@ export function tools() {
         + "offlineChosenOption is the option the player took from that same return's decision "
         + "({id, label, effect: {kind, amount}, effectText}) or null when the return offered no decision "
         + "or none has been taken yet; it is part of the return's own record, so it survives a reload and "
-        + "matches the panel's 'You chose' line. The away discovery owned so far (discovery: "
+        + "matches the panel's 'You chose' line. offlineAdvance is the progression step the absence "
+        + "itself took while the player was away ({kind, name, woodSpent}, e.g. the first sharpen that "
+        + "opens stone) or null when it took none — the same record the panel's advance line and the "
+        + "status-bar headline are worded from, and the woodSpent is already reflected in the wood "
+        + "counter. The away discovery owned so far (discovery: "
         + "{id, name, bonus} or null, whose bonus is already included in rate), and the "
         + "next away discovery still to earn (nextAwayDiscovery: {name, minSec, bonus, woodPerSec, "
         + "elapsed} where minSec is the absence in seconds needed to find it, bonus/woodPerSec is "
