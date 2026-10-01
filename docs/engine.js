@@ -50,16 +50,17 @@ const RETURN_MIN_SEC = 1; // shortest absence that counts as a real return
 // the in-session counterpart, so a first visit is not an empty wait.
 const SESSION_FIND_SEC = 90;
 const AWAY_EVENT_MIN_SEC = DISCOVERY_MIN_SEC; // shortest absence that offers a decision
-const AWAY_EVENT_LUMP_SEC = 30; // seconds of production a wood or stone option grants
-// The permanent wood/s a rate option adds, as a share of the effective wood/s
-// in force when the return is collected. A fixed share keeps the rate choice
-// worth the same as the lump however far the player has grown: the lump is
-// AWAY_EVENT_LUMP_SEC (30s) of production, so the bonus pays for itself in
-// AWAY_EVENT_LUMP_SEC / AWAY_EVENT_RATE_BONUS_FRACTION = 600s of production,
-// whether the rate is 0.1/s or 100/s. A fixed amount would instead be worth
-// minutes of production early and nothing at all later, leaving one real
-// option wearing two labels.
-const AWAY_EVENT_RATE_BONUS_FRACTION = 0.05;
+// A wood or stone lump is a share of the production the absence itself earned,
+// so the return's decision stays worth taking however long the player was away:
+// the lump is AWAY_EVENT_LUMP_FRACTION of the haul it sits beside, never less
+// than AWAY_EVENT_LUMP_SEC seconds of production (so even a one-minute absence
+// offers something real) and never more than the absence actually produced.
+const AWAY_EVENT_LUMP_SEC = 30; // floor: seconds of production a lump never drops below
+const AWAY_EVENT_LUMP_FRACTION = 0.1; // share of the absence's own production a lump grants
+// A rate option is worth the same lump over the hour that follows: its bonus per
+// second is that lump spread across AWAY_EVENT_RATE_HORIZON_SEC, so the two
+// choices stay comparable and both grow with the absence that produced them.
+const AWAY_EVENT_RATE_HORIZON_SEC = 3600;
 
 /**
  * The away-discovery ladder's fixed rungs. Each tier is reached at a minimum
@@ -174,8 +175,8 @@ export { FIRST_GOAL_WOOD, SHARPEN_COST_RATE, RATE_INCREASE_PER_UPGRADE, STONE_BA
   EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC,
   EXPEDITION_WOOD_RATE_MULTIPLIER, RETURN_MIN_SEC, computeStoneRateFor, computeStoneRate, stoneGainForSpan,
   expeditionMultiplierFor, effectiveWoodRate, clickPowerFor,
-  DISCOVERY_MIN_SEC, SESSION_FIND_SEC, AWAY_EVENT_MIN_SEC, AWAY_EVENT_LUMP_SEC, AWAY_EVENT_RATE_BONUS_FRACTION,
-  awayRateBonusFor, AWAY_EVENTS };
+  DISCOVERY_MIN_SEC, SESSION_FIND_SEC, AWAY_EVENT_MIN_SEC, AWAY_EVENT_LUMP_SEC, AWAY_EVENT_LUMP_FRACTION,
+  AWAY_EVENT_RATE_HORIZON_SEC, awayRateBonusFor, AWAY_EVENTS };
 
 /**
  * @typedef {Object} GameState
@@ -843,18 +844,38 @@ function resolveAwayOptionKinds(kinds, s) {
 }
 
 /**
- * The permanent wood/s a rate option adds for the state a return is collected
- * in: the fixed share of the effective wood/s, quantised by the page's own
- * amount rule so the figure printed on the button is the figure granted — the
- * property the wood and stone lumps already have. The floor keeps a degenerate
- * (zero or tiny) rate from offering a bonus that adds nothing, so the option
- * stays a real choice even before any growth. Pure.
+ * The lump a wood or stone option grants, drawn from the absence that offered
+ * it: AWAY_EVENT_LUMP_FRACTION of the production the absence earned, with a
+ * floor of AWAY_EVENT_LUMP_SEC seconds of production so a short absence still
+ * offers something real, and capped at the production itself so no absence can
+ * promise more than its own haul. Quantised by the page's own amount rule so the
+ * figure printed on the button is exactly the figure granted. Pure.
  *
- * @param {object} s  the state the amount is drawn from
+ * @param {number} perSec  the resource's production rate at the return
+ * @param {number} elapsedSec  length of the absence that produced the haul
  * @returns {number}
  */
-function awayRateBonusFor(s) {
-  return Math.max(displayAmount(effectiveWoodRate(s) * AWAY_EVENT_RATE_BONUS_FRACTION), 0.01);
+function awayLumpFor(perSec, elapsedSec) {
+  const produced = perSec * elapsedSec;
+  const share = Math.max(produced * AWAY_EVENT_LUMP_FRACTION, perSec * AWAY_EVENT_LUMP_SEC);
+  return displayAmount(Math.min(share, produced));
+}
+
+/**
+ * The permanent wood/s a rate option adds for the state a return is collected
+ * in, drawn from the same absence-scaled lump: over the horizon it is measured
+ * across, the rate choice is worth the lump it competes with, so neither option
+ * is a rounding error beside the haul. Quantised by the page's own amount rule
+ * so the figure printed on the button is the figure granted — the property the
+ * wood and stone lumps already have. The floor keeps a degenerate (zero or tiny)
+ * lump from offering a bonus that adds nothing. Pure.
+ *
+ * @param {object} s  the state the amount is drawn from
+ * @param {number} [elapsedSec]  the absence the return came from
+ * @returns {number}
+ */
+function awayRateBonusFor(s, elapsedSec = AWAY_EVENT_RATE_HORIZON_SEC) {
+  return Math.max(displayAmount(awayLumpFor(effectiveWoodRate(s), elapsedSec) / AWAY_EVENT_RATE_HORIZON_SEC), 0.01);
 }
 
 /**
@@ -865,11 +886,12 @@ function awayRateBonusFor(s) {
  *
  * @param {string} kind  "wood", "stone", "rate", "wall", "forge" or "map"
  * @param {object} s  the state the amounts are drawn from
+ * @param {number} elapsedSec  the absence the option came from
  * @returns {{ id: string, label: string, effect: { kind: string, amount: number }, effectText: string }}
  */
-function awayOption(kind, s) {
+function awayOption(kind, s, elapsedSec) {
   if (kind === "wood") {
-    const amount = displayAmount(effectiveWoodRate(s) * AWAY_EVENT_LUMP_SEC);
+    const amount = awayLumpFor(effectiveWoodRate(s), elapsedSec);
     return {
       id: "wood",
       label: `Take +${formatAmount(amount)} wood`,
@@ -878,7 +900,7 @@ function awayOption(kind, s) {
     };
   }
   if (kind === "stone") {
-    const amount = displayAmount(computeStoneRateFor(s.totalWoodEarned) * AWAY_EVENT_LUMP_SEC);
+    const amount = awayLumpFor(computeStoneRateFor(s.totalWoodEarned), elapsedSec);
     return {
       id: "stone",
       label: `Take +${formatAmount(amount)} stone`,
@@ -910,7 +932,7 @@ function awayOption(kind, s) {
       effectText: `Grants +1 map, permanently multiplying wood/s by +${EXPEDITION_WOOD_RATE_MULTIPLIER * 100}%.`,
     };
   }
-  const amount = awayRateBonusFor(s);
+  const amount = awayRateBonusFor(s, elapsedSec);
   return {
     id: "rate",
     label: `Permanent +${formatRate(amount)} wood/s`,
@@ -940,7 +962,7 @@ export function awayEventForElapsed(elapsedSec, s) {
   return {
     id: entry.id,
     title: entry.title,
-    options: resolveAwayOptionKinds(entry.kinds, s).map((kind) => awayOption(kind, s)),
+    options: resolveAwayOptionKinds(entry.kinds, s).map((kind) => awayOption(kind, s, elapsedSec)),
   };
 }
 

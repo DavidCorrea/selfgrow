@@ -8,7 +8,7 @@
  * @module agenttools
  */
 
-import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, chooseAwayEventOption, getReturnSummary, lastReturnHeadline, formatElapsed, formatRate, nextDiscoveryAfter, discoveryCollection, returnDiscoveryText, sharpenAvailable, sharpenThreshold, wallAvailable, expeditionUnlocked, actionAvailability, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, effectiveWoodRate, expeditionMultiplierFor, clickPowerFor, FIRST_GOAL_WOOD, SHARPEN_COST_RATE, nextSharpenCost, RATE_INCREASE_PER_UPGRADE, GOAL_STONE, WALL_COST, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT, EXPEDITION_FORGE_LEVEL, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_WOOD_COST_INC, FORGE_STONE_COST_INC, FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC, EXPEDITION_WOOD_RATE_MULTIPLIER, DISCOVERY_MIN_SEC, AWAY_EVENT_MIN_SEC, AWAY_EVENT_LUMP_SEC, AWAY_EVENT_RATE_BONUS_FRACTION, awayRateBonusFor, AWAY_EVENTS, discoverForElapsed, FINDS_LIST_LIMIT } from "./engine.js";
+import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, chooseAwayEventOption, getReturnSummary, lastReturnHeadline, formatElapsed, formatRate, nextDiscoveryAfter, discoveryCollection, returnDiscoveryText, sharpenAvailable, sharpenThreshold, wallAvailable, expeditionUnlocked, actionAvailability, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, effectiveWoodRate, expeditionMultiplierFor, clickPowerFor, FIRST_GOAL_WOOD, SHARPEN_COST_RATE, nextSharpenCost, RATE_INCREASE_PER_UPGRADE, GOAL_STONE, WALL_COST, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT, EXPEDITION_FORGE_LEVEL, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_WOOD_COST_INC, FORGE_STONE_COST_INC, FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC, EXPEDITION_WOOD_RATE_MULTIPLIER, DISCOVERY_MIN_SEC, AWAY_EVENT_MIN_SEC, AWAY_EVENT_LUMP_SEC, AWAY_EVENT_LUMP_FRACTION, AWAY_EVENT_RATE_HORIZON_SEC, AWAY_EVENTS, discoverForElapsed, FINDS_LIST_LIMIT } from "./engine.js";
 
 /**
  * The last return as the welcome-back panel is showing it, read straight from
@@ -425,9 +425,6 @@ function rulesAway(s) {
   const exampleFind = discoverForElapsed(DISCOVERY_MIN_SEC);
   const deepestFind = discoverForElapsed(1e15);
   const strongestKinds = [...new Set(AWAY_EVENTS.flatMap((event) => event.kinds))];
-  // The one amount this save's rate option would add, read once so the figure
-  // the rule states and the figure rateBonus reports can never differ.
-  const rateBonus = awayRateBonusFor(s);
   return {
     finds: {
       minSec: DISCOVERY_MIN_SEC,
@@ -453,21 +450,22 @@ function rulesAway(s) {
       // Stone is swapped for wood while the stone system is still locked, so
       // the choice the player actually sees can differ from the pool's kinds.
       stoneShownAsWood: !s.stoneUnlocked,
-      lumpSec: AWAY_EVENT_LUMP_SEC,
-      rateBonus,
-      rateBonusFraction: AWAY_EVENT_RATE_BONUS_FRACTION,
+      lumpMinSec: AWAY_EVENT_LUMP_SEC,
+      lumpFraction: AWAY_EVENT_LUMP_FRACTION,
+      rateHorizonSec: AWAY_EVENT_RATE_HORIZON_SEC,
       oneWay: true,
       rule: "A return of at least " + AWAY_EVENT_MIN_SEC + " seconds offers a happening with exactly two "
         + "choices. Each choice grants one thing: a lump of wood, "
-        + "a lump of stone (shown as wood while stone is still locked), a permanent +"
-        + formatRate(rateBonus) + " wood/s, or progress in a system the player already has — "
+        + "a lump of stone (shown as wood while stone is still locked), a permanent "
+        + "wood/s increase, or progress in a system the player already has — "
         + "one wall level (offered only once stone is unlocked), one forge level (only once a wall stands) "
         + "or one map (only once expeditions are open); each such button states its exact grant, so choosing "
-        + "changes what the player can do next. The wood and stone lumps are worth "
-        + AWAY_EVENT_LUMP_SEC + "s of production at the rates in force, and the rate option adds "
-        + AWAY_EVENT_RATE_BONUS_FRACTION + " of the same wood/s for good, so it pays for itself in "
-        + (AWAY_EVENT_LUMP_SEC / AWAY_EVENT_RATE_BONUS_FRACTION) + "s of production at any rate "
-        + "(rateBonus / rateBonusFraction state the same rule). The absence and how many happenings "
+        + "changes what the player can do next. The wood and stone lumps grow with the absence that "
+        + "offers them: each is at least lumpFraction of the production the absence earned and never more "
+        + "than it, and at least lumpMinSec seconds of production at the rates in force, so a long absence "
+        + "offers a haul worth choosing and a short one still offers something. The rate option adds, per "
+        + "second, one rateHorizonSec'th of that same lump for good, so over that horizon the two choices "
+        + "are worth the same amount at any rate. The absence and how many happenings "
         + "this save has already been offered together choose which one, so returns of the same "
         + "length advance through the pool (" + AWAY_EVENTS.length + " happenings) instead of repeating "
         + "one decision; the sequence is fixed for a save, so a return can never be a gamble. "
@@ -727,10 +725,10 @@ export function tools() {
         + "neverEnds = the ladder has no end so a stronger find always waits, "
         + "weakerOrRepeatAddsNothing, listLimit, and the rule in words); event is the two-choice "
         + "happening a return of minSec or more offers (optionCount, kinds it can grant, "
-        + "stoneShownAsWood while stone is locked, lumpSec = seconds of production a wood/stone "
-        + "lump is worth, rateBonus = the permanent wood/s a rate option adds for this save "
-        + "(read from the state, not a constant) and rateBonusFraction = the share of the effective "
-        + "wood/s that bonus is, oneWay, and the "
+        + "stoneShownAsWood while stone is locked, lumpMinSec = the least seconds of production a "
+        + "wood/stone lump is worth, lumpFraction = the share of the absence's own production the lump "
+        + "grants (never more than the absence produced) and rateHorizonSec = the seconds over which the "
+        + "permanent wood/s a rate option adds is worth that same lump, oneWay, and the "
         + "rule in words); sandbox names the rehearsal tools and states that fast-forwarding "
         + "projects the find and happening a real absence would turn up without touching the "
         + "save. "
