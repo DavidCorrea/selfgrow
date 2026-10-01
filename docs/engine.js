@@ -50,16 +50,18 @@ const RETURN_MIN_SEC = 1; // shortest absence that counts as a real return
 // the in-session counterpart, so a first visit is not an empty wait.
 const SESSION_FIND_SEC = 90;
 const AWAY_EVENT_MIN_SEC = DISCOVERY_MIN_SEC; // shortest absence that offers a decision
-const AWAY_EVENT_LUMP_SEC = 30; // seconds of production a wood or stone option grants
-// The permanent wood/s a rate option adds, as a share of the effective wood/s
-// in force when the return is collected. A fixed share keeps the rate choice
-// worth the same as the lump however far the player has grown: the lump is
-// AWAY_EVENT_LUMP_SEC (30s) of production, so the bonus pays for itself in
-// AWAY_EVENT_LUMP_SEC / AWAY_EVENT_RATE_BONUS_FRACTION = 600s of production,
-// whether the rate is 0.1/s or 100/s. A fixed amount would instead be worth
-// minutes of production early and nothing at all later, leaving one real
-// option wearing two labels.
-const AWAY_EVENT_RATE_BONUS_FRACTION = 0.05;
+// Each wood or stone option grants this share of the wood the absence itself
+// credited. Scaling to the haul makes the decision read as the point of the
+// return — a fifth of what the panel just paid — instead of a few seconds of
+// production beside it; an absence-scaled share stays meaningful at every
+// length and at every rate, and can never exceed the haul it is a share of.
+const AWAY_EVENT_LUMP_SHARE = 0.2;
+// The permanent-rate option pays back that same lump over this many seconds of
+// the hour that follows, so rate = lump / AWAY_EVENT_RATE_HORIZON_SEC. Tying
+// the rate to the credited haul keeps both choices worth a comparable amount,
+// and at an hour's absence the rate choice is worth exactly the lump (a fifth
+// of the haul) over the hour — never a rounding error beside the summary.
+const AWAY_EVENT_RATE_HORIZON_SEC = 3600;
 
 /**
  * The away-discovery ladder's fixed rungs. Each tier is reached at a minimum
@@ -174,8 +176,8 @@ export { FIRST_GOAL_WOOD, SHARPEN_COST_RATE, RATE_INCREASE_PER_UPGRADE, STONE_BA
   EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC,
   EXPEDITION_WOOD_RATE_MULTIPLIER, RETURN_MIN_SEC, computeStoneRateFor, computeStoneRate, stoneGainForSpan,
   expeditionMultiplierFor, effectiveWoodRate, clickPowerFor,
-  DISCOVERY_MIN_SEC, SESSION_FIND_SEC, AWAY_EVENT_MIN_SEC, AWAY_EVENT_LUMP_SEC, AWAY_EVENT_RATE_BONUS_FRACTION,
-  awayRateBonusFor, AWAY_EVENTS };
+  DISCOVERY_MIN_SEC, SESSION_FIND_SEC, AWAY_EVENT_MIN_SEC, AWAY_EVENT_LUMP_SHARE, AWAY_EVENT_RATE_HORIZON_SEC,
+  awayLumpFor, awayRateBonusFor, AWAY_EVENTS };
 
 /**
  * @typedef {Object} GameState
@@ -649,7 +651,7 @@ function catchUp(firstVisit, record = true) {
     // only choosing clears it. Gated on `record` like the account itself, so a
     // resume that must not contradict an open panel cannot invent a new event.
     const offeredEvent = (record && !firstVisit && elapsedSec >= AWAY_EVENT_MIN_SEC && !state.pendingEvent)
-      ? awayEventForElapsed(elapsedSec, state)
+      ? awayEventForElapsed(elapsedSec, state, woodGained)
       : null;
     // Counted only when a happening is actually set, so the count is the number
     // of decisions a player has really been shown — an absence that finds one
@@ -829,18 +831,42 @@ function resolveAwayOptionKinds(kinds, s) {
 }
 
 /**
- * The permanent wood/s a rate option adds for the state a return is collected
- * in: the fixed share of the effective wood/s, quantised by the page's own
- * amount rule so the figure printed on the button is the figure granted — the
- * property the wood and stone lumps already have. The floor keeps a degenerate
- * (zero or tiny) rate from offering a bonus that adds nothing, so the option
- * stays a real choice even before any growth. Pure.
+ * The wood (and, by symmetry, stone) lump a wood or stone option grants: the
+ * fixed share of the wood the absence itself credited, quantised by the page's
+ * own amount rule so the figure printed on the button is the figure granted.
+ * `earnedWood` is the haul the return paid (the engine's own catch-up and the
+ * sandbox both know it exactly); when it is omitted — a synthetic call that
+ * only has a state — the haul is taken to be the state's effective rate over
+ * the absence, the figure the engine would earn at the rate in force. The
+ * share keeps the lump at most the haul it is drawn from. Pure.
  *
- * @param {object} s  the state the amount is drawn from
+ * @param {object} s  the state the fallback rate is drawn from
+ * @param {number} elapsedSec  the absence length in seconds
+ * @param {number} [earnedWood]  the wood the absence credited, when known
  * @returns {number}
  */
-function awayRateBonusFor(s) {
-  return Math.max(displayAmount(effectiveWoodRate(s) * AWAY_EVENT_RATE_BONUS_FRACTION), 0.01);
+function awayLumpFor(s, elapsedSec, earnedWood) {
+  const haul = Number.isFinite(earnedWood)
+    ? Math.max(earnedWood, 0)
+    : effectiveWoodRate(s) * (Number.isFinite(elapsedSec) ? Math.max(elapsedSec, 0) : 0);
+  return displayAmount(haul * AWAY_EVENT_LUMP_SHARE);
+}
+
+/**
+ * The permanent wood/s a rate option adds for the absence a return is
+ * collected from: the lump the absence earned, paid back over the hour that
+ * follows (rate = lump / AWAY_EVENT_RATE_HORIZON_SEC). Quantised by the page's
+ * own amount rule so the figure printed on the button is the figure granted,
+ * with a small floor so a short absence's rate button still reads as a real,
+ * non-zero choice at two decimals. Pure.
+ *
+ * @param {object} s  the state the amount is drawn from
+ * @param {number} elapsedSec  the absence length in seconds
+ * @param {number} [earnedWood]  the wood the absence credited, when known
+ * @returns {number}
+ */
+function awayRateBonusFor(s, elapsedSec, earnedWood) {
+  return Math.max(displayAmount(awayLumpFor(s, elapsedSec, earnedWood) / AWAY_EVENT_RATE_HORIZON_SEC), 0.01);
 }
 
 /**
@@ -851,11 +877,13 @@ function awayRateBonusFor(s) {
  *
  * @param {string} kind  "wood", "stone", "rate", "wall", "forge" or "map"
  * @param {object} s  the state the amounts are drawn from
+ * @param {number} elapsedSec  the absence length in seconds
+ * @param {number} [earnedWood]  the wood the absence credited, when known
  * @returns {{ id: string, label: string, effect: { kind: string, amount: number }, effectText: string }}
  */
-function awayOption(kind, s) {
+function awayOption(kind, s, elapsedSec, earnedWood) {
   if (kind === "wood") {
-    const amount = displayAmount(effectiveWoodRate(s) * AWAY_EVENT_LUMP_SEC);
+    const amount = awayLumpFor(s, elapsedSec, earnedWood);
     return {
       id: "wood",
       label: `Take +${formatAmount(amount)} wood`,
@@ -864,7 +892,7 @@ function awayOption(kind, s) {
     };
   }
   if (kind === "stone") {
-    const amount = displayAmount(computeStoneRateFor(s.totalWoodEarned) * AWAY_EVENT_LUMP_SEC);
+    const amount = awayLumpFor(s, elapsedSec, earnedWood);
     return {
       id: "stone",
       label: `Take +${formatAmount(amount)} stone`,
@@ -896,7 +924,7 @@ function awayOption(kind, s) {
       effectText: `Grants +1 map, permanently multiplying wood/s by +${EXPEDITION_WOOD_RATE_MULTIPLIER * 100}%.`,
     };
   }
-  const amount = awayRateBonusFor(s);
+  const amount = awayRateBonusFor(s, elapsedSec, earnedWood);
   return {
     id: "rate",
     label: `Permanent +${formatRate(amount)} wood/s`,
@@ -917,16 +945,18 @@ function awayOption(kind, s) {
  *
  * @param {number} elapsedSec
  * @param {object} s  the state the option amounts are drawn from
+ * @param {number} [earnedWood]  the wood the absence itself credited, so each
+ *   lump is a share of the haul the return just paid
  * @returns {AwayEvent|null}
  */
-export function awayEventForElapsed(elapsedSec, s) {
+export function awayEventForElapsed(elapsedSec, s, earnedWood) {
   if (!(elapsedSec >= AWAY_EVENT_MIN_SEC)) return null;
   const offset = Number.isFinite(s.eventsOffered) && s.eventsOffered >= 0 ? Math.floor(s.eventsOffered) : 0;
   const entry = AWAY_EVENTS[(Math.floor(elapsedSec) + offset) % AWAY_EVENTS.length];
   return {
     id: entry.id,
     title: entry.title,
-    options: resolveAwayOptionKinds(entry.kinds, s).map((kind) => awayOption(kind, s)),
+    options: resolveAwayOptionKinds(entry.kinds, s).map((kind) => awayOption(kind, s, elapsedSec, earnedWood)),
   };
 }
 

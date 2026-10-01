@@ -115,7 +115,7 @@ export function fastForward(clone, seconds) {
   // one only when nothing is waiting. A derived event reads the state the
   // player returns to, after the earnings and the find have been credited,
   // exactly the order a real catch-up uses, so the amounts match.
-  const event = clone.pendingEvent ?? awayEventForElapsed(seconds, clone);
+  const event = clone.pendingEvent ?? awayEventForElapsed(seconds, clone, woodGained);
 
   return {
     seconds,
