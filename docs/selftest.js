@@ -821,25 +821,31 @@ export async function checks() {
       );
     }
 
-    // --- Test 7b: offline milestone detection via consumeOfflineMilestones ---
+    // --- Test 7b: an absence takes the first sharpen its own wood pays for ---
     engine.reset();
-    // Simulate a catch-up where wood was 8 and after catch-up is 12 (>=10)
-    // We need to directly set state and call catchUp by manipulating localStorage
-    // Set state with wood=8, upgradeLevel=0 (no sharpen yet)
+    // A save below the first goal (8 wood) with a 60s absence earns 6 more, so
+    // the span's own wood reaches the 10-wood price: the world sharpens the axe
+    // itself and opens stone rather than handing back the same unmade goal.
     const oldState2 = JSON.stringify({ wood: 8, rate: 0.1, stone: 0, totalWoodEarned: 8, wallLevel: 0, stoneUnlocked: false, timestamp: new Date(Date.now() - 60000).toISOString() });
     localStorage.removeItem("selfgrow-state");
     localStorage.setItem("selfgrow-state", oldState2);
-    // Re-init will load the saved state, then catchUp adds ~6 wood (0.1/s * 60s)
     engine.init();
-    const milestones = engine.consumeOfflineMilestones();
-    if (!milestones.sharpenAvailable) {
-      problems.push("consumeOfflineMilestones should report sharpenAvailable=true when wood crosses 10 and sharpen not yet done.");
+    const crossedSharpen = engine.getState();
+    if (crossedSharpen.upgradeLevel !== 1) {
+      problems.push(`A 60s absence from 8 wood must craft the first sharpen its own wood pays for, got upgradeLevel ${crossedSharpen.upgradeLevel}.`);
     }
-    if (milestones.stoneNowUnlocked) {
-      problems.push("consumeOfflineMilestones should report stoneNowUnlocked=false when stone was not unlocked.");
+    if (!crossedSharpen.stoneUnlocked) {
+      problems.push("An absence that takes the first sharpen must open stone, got stoneUnlocked false.");
+    }
+    const milestones = engine.consumeOfflineMilestones();
+    if (!milestones.stoneNowUnlocked) {
+      problems.push("consumeOfflineMilestones should report stoneNowUnlocked=true when the absence itself opened stone.");
+    }
+    if (milestones.sharpenAvailable) {
+      problems.push("A return that already sharpened must not also report sharpenAvailable=true.");
     }
     if (milestones.wallAvailable) {
-      problems.push("consumeOfflineMilestones should report wallAvailable=false when stone is not unlocked.");
+      problems.push("consumeOfflineMilestones should report wallAvailable=false when stone is below the wall's cost.");
     }
     if (milestones.forgeNowUnlocked) {
       problems.push("consumeOfflineMilestones should report forgeNowUnlocked=false when no wall was built.");
@@ -3190,6 +3196,7 @@ export async function checks() {
     const woodAmountEl = document.getElementById("offline-wood-amount");
     const elapsedEl = document.getElementById("offline-elapsed");
     const sharpenMilestoneEl = document.getElementById("milestone-sharpen");
+    const offlineAdvanceEl = document.getElementById("offline-advance");
 
     // The counter's own rule, read from the engine so "the increase the player
     // can see" is measured exactly as the counter writes it — a second copy of
@@ -3263,19 +3270,108 @@ export async function checks() {
       problems.push(`Re-showing the panel must keep the same absence length (${firstElapsed}), got "${elapsedEl.textContent.trim()}".`);
     }
 
-    // (d) A return that crosses the first goal names the newly available action
-    // even though nothing was visibly earned: 9.999 wood shows as 10.00, so the
-    // counter's rise is 0 while the axe becomes sharpenable.
+    // (d) A return that crosses the first goal takes the step itself: the wood
+    // the span earned reaches the sharpen's price while away, so the world
+    // sharpens the axe, opens stone, and the panel names the step and its wood
+    // spend instead of claiming the sharpen is still waiting. 9.999 wood shows
+    // as 10.00, so the counter's rise is negative across the reload — the
+    // account reports the wood the span produced instead, and the spend is
+    // named separately, so the two reconcile with the counter the player sees.
     reloadFromAge(2000, { wood: 9.999, totalWoodEarned: 9.999 });
     if (overlay.hidden) {
       problems.push("A return that crosses the first goal must show the welcome-back panel.");
     }
-    const crossingRise = visibleRise(9.999, engine.getState().wood);
-    if (!woodAmountEl || parseFloat(woodAmountEl.textContent) !== crossingRise) {
-      problems.push(`The panel's wood (${woodAmountEl && woodAmountEl.textContent}) must equal the counter's visible rise (${crossingRise}) when a milestone is crossed.`);
+    const stepped = engine.getReturnSummary();
+    const steppedState = engine.getState();
+    if (!stepped.advance || stepped.advance.kind !== "sharpen" || stepped.advance.woodSpent !== 10) {
+      problems.push(`A return that reaches the sharpen's price must report the step it took (advance.woodSpent 10), got ${JSON.stringify(stepped.advance)}.`);
     }
-    if (sharpenMilestoneEl && sharpenMilestoneEl.hidden) {
-      problems.push("Crossing the first goal while away must name 'you can now sharpen your axe', even when no wood was visibly earned.");
+    if (steppedState.upgradeLevel !== 1 || !steppedState.stoneUnlocked) {
+      problems.push(`The absence must sharpen the axe and open stone itself, got upgradeLevel ${steppedState.upgradeLevel} and stoneUnlocked ${steppedState.stoneUnlocked}.`);
+    }
+    if (stepped.wood < 0) {
+      problems.push(`A return that spent wood on its own step must not report a negative gather, got ${stepped.wood}.`);
+    }
+    if (steppedState.wood >= 10) {
+      problems.push(`The sharpen's 10 wood must be gone from the counter, got ${steppedState.wood}.`);
+    }
+    const steppedSentence = engine.returnAdvanceText(stepped.advance);
+    if (offlineAdvanceEl && (offlineAdvanceEl.hidden || offlineAdvanceEl.textContent.trim() !== steppedSentence)) {
+      problems.push(`The panel's advance line (${JSON.stringify(offlineAdvanceEl && offlineAdvanceEl.textContent)}) must be the engine's own sentence ${JSON.stringify(steppedSentence)}.`);
+    }
+    if (sharpenMilestoneEl && !sharpenMilestoneEl.hidden) {
+      problems.push("A return that has already taken the sharpen must not claim it is still available.");
+    }
+
+    // (d2) A one-hour absence from nothing takes the first sharpen the span's
+    // own wood pays for: it spends 10, opens stone, and stone then accrues for
+    // the rest of the absence. The panel line, the status-bar headline and the
+    // agent's read-state all name the same step and spend, and the counter
+    // shows the spend (issue #1117).
+    reloadFromAge(3600000, { wood: 0, totalWoodEarned: 0 });
+    window.__renderUI();
+    const stepReturn = engine.getReturnSummary();
+    const stepState = engine.getState();
+    if (stepState.upgradeLevel !== 1) {
+      problems.push(`A 1h absence from 0 wood must craft the first sharpen, got upgradeLevel ${stepState.upgradeLevel}.`);
+    }
+    if (!stepState.stoneUnlocked) {
+      problems.push("A 1h absence from 0 wood must open stone, got stoneUnlocked false.");
+    }
+    if (!(stepState.stone > 0)) {
+      problems.push(`A 1h absence that opened stone must accrue stone for the rest of the span, got ${stepState.stone}.`);
+    }
+    if (Math.abs(stepState.wood - 525) > 1e-6) {
+      problems.push(`After a 1h absence from 0 wood the counter must show 525 wood (535 produced \u2212 10 spent), got ${stepState.wood}.`);
+    }
+    if (Math.abs(stepState.totalWoodEarned - 535) > 1e-6) {
+      problems.push(`A 1h absence from 0 wood must credit 535 lifetime wood \u2014 the sharpen's spend is real, got ${stepState.totalWoodEarned}.`);
+    }
+    if (!stepReturn.advance || stepReturn.advance.woodSpent !== 10) {
+      problems.push(`The 1h return must report the step it took and the 10 wood it spent, got ${JSON.stringify(stepReturn.advance)}.`);
+    }
+    const stepSentence = engine.returnAdvanceText(stepReturn.advance);
+    if (!stepSentence.includes("10 wood")) {
+      problems.push(`The advance sentence must name the wood spent, got ${JSON.stringify(stepSentence)}.`);
+    }
+    if (offlineAdvanceEl && (offlineAdvanceEl.hidden || offlineAdvanceEl.textContent.trim() !== stepSentence)) {
+      problems.push(`The panel's advance line (${JSON.stringify(offlineAdvanceEl && offlineAdvanceEl.textContent)}) must be the engine's own sentence ${JSON.stringify(stepSentence)}.`);
+    }
+    const stepHeadline = engine.lastReturnHeadline();
+    if (!stepHeadline.includes("10 wood")) {
+      problems.push(`The status-bar headline must name the wood the return spent, got ${JSON.stringify(stepHeadline)}.`);
+    }
+    if (readStateTool) {
+      const stepRead = await readStateTool.execute({});
+      if (!stepRead.offlineAdvance || stepRead.offlineAdvance.woodSpent !== 10) {
+        problems.push(`read-state.offlineAdvance must report the step and its 10 wood spend, got ${JSON.stringify(stepRead.offlineAdvance)}.`);
+      }
+      if (stepRead.upgradeLevel !== 1 || stepRead.stoneUnlocked !== true) {
+        problems.push(`read-state must agree with the world the return left behind: expected upgradeLevel 1 and stone unlocked, got ${stepRead.upgradeLevel} / ${stepRead.stoneUnlocked}.`);
+      }
+    }
+
+    // (d3) An absence that cannot yet afford the step takes none and claims
+    // none: 30s at the base rate earns 3 wood, short of the 10-wood price, so
+    // the world is exactly as the player left it.
+    reloadFromAge(30000, { wood: 0, totalWoodEarned: 0 });
+    window.__renderUI();
+    const noStepReturn = engine.getReturnSummary();
+    const noStepState = engine.getState();
+    if (noStepReturn.advance) {
+      problems.push(`A 30s absence that earns 3 wood cannot pay the 10-wood sharpen and must claim no step, got ${JSON.stringify(noStepReturn.advance)}.`);
+    }
+    if (noStepState.upgradeLevel !== 0 || noStepState.stoneUnlocked) {
+      problems.push(`An absence with nothing yet affordable must leave the world untouched, got upgradeLevel ${noStepState.upgradeLevel} and stoneUnlocked ${noStepState.stoneUnlocked}.`);
+    }
+    if (offlineAdvanceEl && !offlineAdvanceEl.hidden) {
+      problems.push("An absence that took no step must show no advance line.");
+    }
+    if (readStateTool) {
+      const noStepRead = await readStateTool.execute({});
+      if (noStepRead.offlineAdvance !== null) {
+        problems.push(`read-state.offlineAdvance must be null when no step was taken, got ${JSON.stringify(noStepRead.offlineAdvance)}.`);
+      }
     }
 
     // (e) A first-ever visit has no return to report and shows no panel.
@@ -5886,8 +5982,10 @@ export async function checks() {
     // (c) A 600s return round-trips: state bonus, panel name, status readout,
     // and the agent's read-state tool.
     engine.reset();
+    // Seeded above the sharpen's price so the absence takes no step of its own
+    // (see #1117) and this check keeps testing the find it is about.
     localStorage.setItem("selfgrow-state", JSON.stringify({
-      wood: 5, rate: 0.1, stone: 0, totalWoodEarned: 5,
+      wood: 12, rate: 0.1, stone: 0, totalWoodEarned: 12,
       wallLevel: 0, stoneUnlocked: false,
       timestamp: new Date(Date.now() - 600000).toISOString(),
     }));
@@ -6015,7 +6113,7 @@ export async function checks() {
     }
     const longAbsenceSec = beyondStrongest ? beyondStrongest.minSec : 691200;
     localStorage.setItem("selfgrow-state", JSON.stringify({
-      wood: 5, rate: 0.6, stone: 0, totalWoodEarned: 5,
+      wood: 12, rate: 0.6, stone: 0, totalWoodEarned: 12,
       wallLevel: 0, stoneUnlocked: false,
       discoveryId: "sunken-vault", discoveryName: "Sunken Vault", discoveryBonus: 0.60,
       timestamp: new Date(Date.now() - longAbsenceSec * 1000).toISOString(),
@@ -6058,7 +6156,7 @@ export async function checks() {
     // alike, so a return that changed nothing cannot read like a lasting boost.
     engine.reset();
     localStorage.setItem("selfgrow-state", JSON.stringify({
-      wood: 5, rate: 0.20, stone: 0, totalWoodEarned: 5,
+      wood: 12, rate: 0.20, stone: 0, totalWoodEarned: 12,
       wallLevel: 0, stoneUnlocked: false,
       discoveryId: "clay-deposit", discoveryName: "Clay Deposit", discoveryBonus: 0.10,
       timestamp: new Date(Date.now() - 600000).toISOString(),
@@ -6156,7 +6254,7 @@ export async function checks() {
     // (e) A weaker find on a short return cannot lower or re-farm the bonus.
     engine.reset();
     localStorage.setItem("selfgrow-state", JSON.stringify({
-      wood: 5, rate: 0.5, stone: 0, totalWoodEarned: 5,
+      wood: 12, rate: 0.5, stone: 0, totalWoodEarned: 12,
       wallLevel: 0, stoneUnlocked: false,
       discoveryId: "ancient-grove", discoveryName: "Ancient Grove", discoveryBonus: 0.40,
       timestamp: new Date(Date.now() - 61000).toISOString(),

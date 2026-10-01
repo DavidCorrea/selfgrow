@@ -268,6 +268,10 @@ let offlineGained = { wood: 0, stone: 0, elapsedSec: 0, discovery: null };
  *   — the option the player took from this return's decision, or null when the
  *   return offered none or the player has not chosen yet. Written once in
  *   chooseAwayEventOption so a reload still tells what was chosen.
+ * @property {{kind: string, name: string, woodSpent: number}|null} advance
+ *   — the progression step the absence itself took while away, or null when it
+ *   took none. Recorded once in catchUp so the panel, the status line and the
+ *   read tools tell one story about what the return did.
  * @property {Milestones} milestones
  */
 
@@ -354,7 +358,11 @@ export function milestoneSnapshot(s) {
  */
 export function milestonesBetween(before, after) {
   return {
-    sharpenAvailable: before.upgradeLevel === 0 && before.wood < FIRST_GOAL_WOOD && after.wood >= FIRST_GOAL_WOOD,
+    // The first sharpen is only newly available if it is still uncrafted after
+    // the catch-up: an absence that took the step itself has spent the wood and
+    // raised upgradeLevel, so it must never also claim the step is waiting.
+    sharpenAvailable: before.upgradeLevel === 0 && after.upgradeLevel === 0
+      && before.wood < FIRST_GOAL_WOOD && after.wood >= FIRST_GOAL_WOOD,
     stoneNowUnlocked: before.stoneUnlocked === false && after.stoneUnlocked === true,
     wallAvailable: after.stoneUnlocked && before.wallLevel === 0 && before.stone < WALL_COST && after.stone >= WALL_COST,
     forgeNowUnlocked: before.wallLevel === 0 && after.wallLevel >= 1,
@@ -432,6 +440,86 @@ function stoneGainForSpan(totalWoodEarned, woodRate, elapsedSec) {
 function computeStoneRate() {
   if (!state.stoneUnlocked) return 0;
   return computeStoneRateFor(state.totalWoodEarned);
+}
+
+/**
+ * The name the panel and the tools word an absence's own sharpen with. One
+ * constant, so the page and an agent can never describe the step two ways.
+ */
+const SHARPEN_ADVANCE_NAME = "Sharpened your axe";
+
+/**
+ * Credit the passive production of `elapsedSec` seconds onto the live state,
+ * taking the one progression step the absence itself can pay for.
+ *
+ * A player who leaves with nothing and returns to the same unmade first goal
+ * is handed back the ladder with more wood in front of it. The first sharpen
+ * is the game's own first goal and it opens stone, so an absence that starts
+ * below its price and earns the difference takes that step at the instant its
+ * own wood reaches the price — spending only wood the span itself earned, and
+ * taking no step at all when the price is not reached. The step is applied
+ * through the same applySharpenToState a click uses, so its spend, its rate
+ * rise and its stone unlock cannot diverge from the Sharpen button.
+ *
+ * The span is credited in one closed form: wood up to the craft instant at the
+ * rate in force, then wood for the rest of the span at the raised rate (so the
+ * step pays off for every second left), and stone — newly opened by the step —
+ * only from the craft instant on, through the same stoneGainForSpan integral a
+ * span without a step uses. With no step available this credits exactly what
+ * it credited before: one span, at the current rate.
+ *
+ * @param {number} elapsedSec
+ * @returns {{wood: number, stone: number, advance: {kind: string, name: string, woodSpent: number}|null}}
+ *   the wood and stone the span produced, and the step it took, if any.
+ */
+function creditAbsenceProduction(elapsedSec) {
+  const effectiveRate = getEffectiveRate();
+  const woodBeforeSpan = state.totalWoodEarned;
+
+  // The one step an absence may take for itself: the first sharpen, once the
+  // span's own wood reaches its price. A save already holding the price would
+  // have sharpened before leaving, so only one starting below it qualifies.
+  const sharpenCost = nextSharpenCost(state);
+  const woodShortOfSharpen = sharpenCost - state.wood;
+  const sharpenWhileAway = state.upgradeLevel === 0
+    && woodShortOfSharpen > 0
+    && effectiveRate * elapsedSec >= woodShortOfSharpen;
+
+  // The wood earned up to the craft instant. Without a step, the whole span is
+  // this span and is credited at once at the rate in force.
+  const secondsBeforeStep = sharpenWhileAway ? woodShortOfSharpen / effectiveRate : elapsedSec;
+  const woodBeforeStep = effectiveRate * secondsBeforeStep;
+  state.wood += woodBeforeStep;
+  state.totalWoodEarned += woodBeforeStep;
+
+  let advance = null;
+  if (sharpenWhileAway) {
+    applySharpenToState(state);
+    advance = { kind: "sharpen", name: SHARPEN_ADVANCE_NAME, woodSpent: sharpenCost };
+  }
+
+  // The rest of the span earns at whatever rate is now in force, so a step
+  // that raised the rate is paid for every second that remains of the absence.
+  const secondsAfterStep = elapsedSec - secondsBeforeStep;
+  const rateAfterStep = getEffectiveRate();
+  const woodAfterStep = rateAfterStep * secondsAfterStep;
+  state.wood += woodAfterStep;
+  state.totalWoodEarned += woodAfterStep;
+
+  let stone = 0;
+  if (state.stoneUnlocked) {
+    // A step opens stone, so its accrual can only start at the craft instant:
+    // the integral runs over the remaining span from the lifetime wood the
+    // state then held. A span that already had stone runs the whole absence
+    // from the wood it started with, exactly as before.
+    stone = sharpenWhileAway
+      ? stoneGainForSpan(state.totalWoodEarned - woodAfterStep, rateAfterStep, secondsAfterStep)
+      : stoneGainForSpan(woodBeforeSpan, effectiveRate, elapsedSec);
+    state.stone += stone;
+    state.totalStoneEarned += stone;
+  }
+
+  return { wood: woodBeforeStep + woodAfterStep, stone, advance };
 }
 
 function computeForgeWoodCost(forgeLevel) {
@@ -530,20 +618,13 @@ function catchUp(firstVisit, record = true) {
     const beforeWood = before.wood;
     const beforeStone = before.stone;
 
-    const effectiveRate = getEffectiveRate();
-    const woodGained = effectiveRate * elapsedSec;
-    // The stone the span earns is the integral of the rate curve, so capture
-    // the wood total the span started from before folding the new wood in —
-    // the boost is already covered by the integral.
-    const woodBeforeSpan = state.totalWoodEarned;
-    state.wood += woodGained;
-    state.totalWoodEarned += woodGained;
-    let stoneGained = 0;
-    if (state.stoneUnlocked) {
-      stoneGained = stoneGainForSpan(woodBeforeSpan, effectiveRate, elapsedSec);
-      state.stone += stoneGained;
-      state.totalStoneEarned += stoneGained;
-    }
+    // The span's production — and the one step it may take for itself, the
+    // first sharpen, at the instant its own wood reaches the price (see
+    // creditAbsenceProduction).
+    const production = creditAbsenceProduction(elapsedSec);
+    const woodGained = production.wood;
+    const stoneGained = production.stone;
+    const advance = production.advance;
 
     const discovery = firstVisit ? null : discoverForElapsed(elapsedSec);
     const ownedBefore = state.discoveryId;
@@ -593,11 +674,21 @@ function catchUp(firstVisit, record = true) {
         firstVisit,
         seen: false,
         elapsedSec,
-        wood: displayAmount(displayAmount(state.wood) - displayAmount(beforeWood)),
+        // The wood the account reports is the counter's own rise, so the panel
+        // cannot claim a number the counters disagree with. An absence that
+        // took its own step spends wood mid-span, which makes that rise a net
+        // figure — one that can even go negative when the span only just
+        // reached the price — so there the account reports the wood the span
+        // produced instead; the advance line names the spend and the two
+        // reconcile to the counter the player is looking at.
+        wood: advance
+          ? displayAmount(woodGained)
+          : displayAmount(displayAmount(state.wood) - displayAmount(beforeWood)),
         stone: displayAmount(displayAmount(state.stone) - displayAmount(beforeStone)),
         discovery: discoveryRecord,
         eventId: offeredEvent ? offeredEvent.id : null,
         chosenOption: null,
+        advance,
         milestones: computeMilestones(before),
       };
     }
@@ -1043,6 +1134,7 @@ function sanitizeReturnRecord(raw) {
     discovery: raw.discovery ?? null,
     eventId: typeof raw.eventId === "string" && raw.eventId !== "" ? raw.eventId : null,
     chosenOption: sanitizeChosenOption(raw.chosenOption),
+    advance: sanitizeAdvance(raw.advance),
     milestones: {
       sharpenAvailable: Boolean(m.sharpenAvailable),
       stoneNowUnlocked: Boolean(m.stoneNowUnlocked),
@@ -1051,6 +1143,23 @@ function sanitizeReturnRecord(raw) {
       expeditionNowUnlocked: Boolean(m.expeditionNowUnlocked),
     },
   };
+}
+
+/**
+ * A persisted record of the step an absence took for itself, or null when what
+ * was stored cannot be trusted. A record whose step cannot be read loses only
+ * the step's own sentence, never the rest of the account: the panel then says
+ * what the return gathered without claiming a step it cannot name.
+ *
+ * @param {unknown} raw
+ * @returns {{kind: string, name: string, woodSpent: number}|null}
+ */
+function sanitizeAdvance(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  if (typeof raw.kind !== "string" || raw.kind === "") return null;
+  if (typeof raw.name !== "string" || raw.name === "") return null;
+  if (!Number.isFinite(raw.woodSpent)) return null;
+  return { kind: raw.kind, name: raw.name, woodSpent: raw.woodSpent };
 }
 
 /**
@@ -1132,6 +1241,7 @@ function cloneReturnRecord(record) {
     chosenOption: record.chosenOption
       ? { ...record.chosenOption, effect: { ...record.chosenOption.effect } }
       : null,
+    advance: record.advance ? { ...record.advance } : null,
     milestones: { ...record.milestones },
   };
 }
@@ -1740,16 +1850,25 @@ export function craftUpgrade() {
       : "First goal not reached — gather " + needed + " more wood to unlock sharpening.";
     return { upgraded: false, reason, state: getState() };
   }
-  state.wood -= nextSharpenCost(state);
-  state.rate += RATE_INCREASE_PER_UPGRADE;
-  state.upgradeLevel++;
-
-  // First upgrade unlocks stone!
-  if (state.upgradeLevel === 1) {
-    state.stoneUnlocked = true;
-  }
-
+  applySharpenToState(state);
   return { upgraded: true, state: getState() };
+}
+
+/**
+ * The one mutation a sharpen makes on a state: pay the next sharpen's rising
+ * price, permanently raise the wood rate, count the upgrade, and — on the
+ * first one — open stone. Shared by the Sharpen button (craftUpgrade) and the
+ * absence that takes the step for itself (creditAbsenceProduction), so a step
+ * the world takes while the player is away can never spend, raise or unlock
+ * differently from the one a click takes. Callers check the gate first.
+ *
+ * @param {GameState} s — mutated in place
+ */
+function applySharpenToState(s) {
+  s.wood -= nextSharpenCost(s);
+  s.rate += RATE_INCREASE_PER_UPGRADE;
+  s.upgradeLevel++;
+  if (s.upgradeLevel === 1) s.stoneUnlocked = true;
 }
 
 /**
@@ -1946,6 +2065,7 @@ export function consumeOfflineGained() {
  *   stone: number,
  *   discovery: {id: string, name: string, bonus: number, credited: boolean, alreadyOwned: boolean}|null,
  *   chosenOption: {id: string, label: string, effect: {kind: string, amount: number}, effectText: string}|null,
+ *   advance: {kind: string, name: string, woodSpent: number}|null,
  *   pendingEvent: AwayEvent|null,
  *   nextDiscovery: {id: string, name: string, bonus: number, minSec: number}|null,
  *   milestones: Milestones,
@@ -1964,6 +2084,7 @@ export function getReturnSummary() {
       stone: 0,
       discovery: null,
       chosenOption: null,
+      advance: null,
       pendingEvent: clonePendingEvent(state.pendingEvent),
       nextDiscovery: nextDiscoveryAfter(state.discoveryId),
       milestones: { sharpenAvailable: false, stoneNowUnlocked: false, wallAvailable: false, forgeNowUnlocked: false, expeditionNowUnlocked: false },
@@ -1979,6 +2100,7 @@ export function getReturnSummary() {
     stone: ret.stone,
     discovery: ret.discovery,
     chosenOption: ret.chosenOption ?? null,
+    advance: ret.advance ?? null,
     pendingEvent: clonePendingEvent(state.pendingEvent),
     nextDiscovery: nextDiscoveryAfter(state.discoveryId),
     milestones: ret.milestones,
@@ -2003,7 +2125,27 @@ export function lastReturnHeadline() {
   if (!ret.visible) return "";
   let line = `Away ${ret.elapsed} \u2014 gathered ${formatAmount(ret.wood)} wood`;
   if (ret.stone > 0) line += `, ${formatAmount(ret.stone)} stone`;
+  // The step the absence took for itself belongs in the same line: the status
+  // bar then tells the whole story — what was gathered, and what the return
+  // did with it — from the one record the panel and the tools also read.
+  if (ret.advance) {
+    line += ` \u2014 ${ret.advance.name.toLowerCase()} (${formatAmount(ret.advance.woodSpent)} wood)`;
+  }
   return line;
+}
+
+/**
+ * The sentence the welcome-back panel and the read tools word a return's own
+ * progression step with: what the absence did and the wood it spent, so the
+ * page and an agent can never describe one step two ways. Empty when the
+ * return took no step.
+ *
+ * @param {{kind: string, name: string, woodSpent: number}|null} advance
+ * @returns {string}
+ */
+export function returnAdvanceText(advance) {
+  if (!advance) return "";
+  return `${advance.name} while you were away \u2014 spent ${formatAmount(advance.woodSpent)} wood.`;
 }
 
 /**
