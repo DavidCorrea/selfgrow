@@ -8921,6 +8921,13 @@ export async function checks() {
       if (!rateOption.label.includes(promisedFigure) || !rateOption.effectText.includes(promisedFigure)) {
         problems.push(`A one-hour rate choice must state the ${promisedFigure} wood/s it grants, got label ${JSON.stringify(rateOption.label)} and effect ${JSON.stringify(rateOption.effectText)}.`);
       }
+      // The rate option's sentence states what its bonus is worth over the
+      // same hour the lump beside it is a total for, so a player compares two
+      // totals rather than a total against a rate.
+      const hourFigure = engine.formatAmount(engine.displayAmount(rateOption.effect.amount * RATE_HORIZON_SEC));
+      if (!rateOption.effectText.includes(hourFigure) || !rateOption.effectText.includes("hour") || !rateOption.effectText.includes("wood")) {
+        problems.push(`A one-hour rate choice must state its +${hourFigure} wood hour-value, got ${JSON.stringify(rateOption.effectText)}.`);
+      }
       const rateWorth = rateOption.effect.amount * RATE_HORIZON_SEC;
       const rateToLump = rateWorth / rateLumpOption.effect.amount;
       if (!(rateToLump >= 0.5 && rateToLump <= 2)) {
@@ -9281,6 +9288,26 @@ export async function checks() {
       if (!highRateRateOption.label.includes(agentFigure) || !highRateRateOption.effectText.includes(agentFigure)) {
         problems.push(`read-state's rate option must state the ${agentFigure} wood/s it grants, got label ${JSON.stringify(highRateRateOption.label)} and effect ${JSON.stringify(highRateRateOption.effectText)}.`);
       }
+      // It states the same hour-value the panel and the pure engine do, so an
+      // agent comparing the rate choice with the lump beside it reads two
+      // totals rather than a total and a rate.
+      const agentHourFigure = engine.formatAmount(engine.displayAmount(highRateRateOption.effect.amount * engine.AWAY_EVENT_RATE_HORIZON_SEC));
+      if (!highRateRateOption.effectText.includes(agentHourFigure) || !highRateRateOption.effectText.includes("hour")) {
+        problems.push(`read-state's rate option must state its +${agentHourFigure} wood hour-value, got ${JSON.stringify(highRateRateOption.effectText)}.`);
+      }
+    }
+
+    // (f3) The welcome-back panel renders that same sentence for a rate choice:
+    // the figure the button states is the figure read-state reports, so a player
+    // and an agent read the identical words about the same option.
+    if (highRateRateOption && typeof window.__showOfflineSummary === "function") {
+      window.__showOfflineSummary();
+      const rateIndex = highRateOptions.indexOf(highRateRateOption);
+      const panelRateEffect = document.getElementById(`away-option-effect-${rateIndex}`);
+      if (!panelRateEffect || panelRateEffect.textContent !== highRateRateOption.effectText) {
+        problems.push(`The welcome-back panel's rate option must read ${JSON.stringify(highRateRateOption.effectText)}, got ${JSON.stringify(panelRateEffect && panelRateEffect.textContent)}.`);
+      }
+      window.__dismissOffline?.();
     }
 
     // (g) The welcome-back panel is where a player actually meets the event:
