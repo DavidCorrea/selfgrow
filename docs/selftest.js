@@ -9852,15 +9852,12 @@ export async function checks() {
     }
 
     // Every consecutive return of the same length offers a different happening
-    // until the pool has cycled, then wraps to the first (issue #1061).
+    // until the pool has been offered in full, after which the deterministic
+    // ladder continues past it rather than wrapping (issues #1061, #1137).
     const idsByCount = Array.from({ length: poolLength }, (_, count) =>
       engine.awayEventForElapsed(3600, { ...cycleState, eventsOffered: count }).id);
     if (new Set(idsByCount).size !== poolLength) {
-      problems.push(`Consecutive happenings must each differ until the pool cycles: a 1h absence with counts 0..${poolLength - 1} offered ${JSON.stringify(idsByCount)}.`);
-    }
-    const wrappedId = engine.awayEventForElapsed(3600, { ...cycleState, eventsOffered: poolLength }).id;
-    if (wrappedId !== idsByCount[0]) {
-      problems.push(`After the pool has cycled the sequence must wrap: eventsOffered ${poolLength} should offer "${idsByCount[0]}" again, got "${wrappedId}".`);
+      problems.push(`Consecutive happenings must each differ until the pool is exhausted: a 1h absence with counts 0..${poolLength - 1} offered ${JSON.stringify(idsByCount)}.`);
     }
     if (engine.awayEventForElapsed(3600, cycleState).id !== idsByCount[0]) {
       problems.push(`A state with no happening count must fall back to 0: expected "${idsByCount[0]}", got "${engine.awayEventForElapsed(3600, cycleState).id}".`);
@@ -9933,6 +9930,95 @@ export async function checks() {
       const readNow = await readState.execute({});
       if (JSON.stringify(readNow.pendingEvent) !== JSON.stringify(engine.getState().pendingEvent)) {
         problems.push(`read-state.pendingEvent must match the decision the page holds: page ${JSON.stringify(engine.getState().pendingEvent)}, tool ${JSON.stringify(readNow.pendingEvent)}.`);
+      }
+    }
+
+    // (i5) A save that has been offered every pool happening keeps meeting a
+    // decision (issue #1137): the ladder continues past the pool with a
+    // generated happening whose id and title the pool never uses, derived
+    // deterministically from the save's own count so a reload reproduces it.
+    const poolIdList = engine.AWAY_EVENTS.map((event) => event.id);
+    const poolTitleList = engine.AWAY_EVENTS.map((event) => event.title);
+    const beyondPoolState = { ...cycleState, rate: 5, eventsOffered: poolLength };
+    const generatedEvent = engine.awayEventForElapsed(600, beyondPoolState);
+    problems.push(...eventShapeProblems(generatedEvent, `the happening past the pool at eventsOffered ${poolLength}`));
+    if (generatedEvent && poolIdList.includes(generatedEvent.id)) {
+      problems.push(`A save offered all ${poolLength} pool happenings must not be handed a pool id again, got "${generatedEvent.id}".`);
+    }
+    if (generatedEvent && poolTitleList.includes(generatedEvent.title)) {
+      problems.push(`A save offered all ${poolLength} pool happenings must meet a title the pool never uses, got "${generatedEvent.title}".`);
+    }
+
+    // The same save derives the same generated happening every time, and the
+    // next offer derives a different title — deterministic, never a gamble.
+    const generatedAgain = engine.awayEventForElapsed(600, beyondPoolState);
+    if (JSON.stringify(generatedEvent) !== JSON.stringify(generatedAgain)) {
+      problems.push(`The generated happening must be deterministic: the same save derived ${JSON.stringify(generatedEvent)} then ${JSON.stringify(generatedAgain)}.`);
+    }
+    const generatedNext = engine.awayEventForElapsed(600, { ...beyondPoolState, eventsOffered: poolLength + 1 });
+    if (generatedEvent && generatedNext && generatedNext.title === generatedEvent.title) {
+      problems.push(`Each further generated happening must carry a new title: both ${generatedEvent.id} and ${generatedNext.id} were titled "${generatedEvent.title}".`);
+    }
+
+    // A real return past the pool offers the generated happening, and a reload
+    // before choosing keeps the very same one in the save.
+    seedAwaySave(600000, { stoneUnlocked: true, rate: 5, eventsOffered: poolLength });
+    const generatedFromReturn = engine.getState().pendingEvent;
+    problems.push(...eventShapeProblems(generatedFromReturn, "a real return past the pool"));
+    if (generatedFromReturn && poolIdList.includes(generatedFromReturn.id)) {
+      problems.push(`A real return past the pool must offer a happening outside the pool, got "${generatedFromReturn.id}".`);
+    }
+    const generatedSave = localStorage.getItem("selfgrow-state");
+    engine.reset();
+    localStorage.setItem("selfgrow-state", generatedSave);
+    engine.init();
+    if (JSON.stringify(engine.getState().pendingEvent) !== JSON.stringify(generatedFromReturn)) {
+      problems.push(`A reload before choosing must keep the generated happening: expected ${JSON.stringify(generatedFromReturn)}, got ${JSON.stringify(engine.getState().pendingEvent)}.`);
+    }
+
+    if (generatedFromReturn) {
+      // Each generated choice grants exactly the effect its button states and
+      // is written into the last return's account like any fixed happening.
+      for (const option of generatedFromReturn.options) {
+        seedAwaySave(600000, { stoneUnlocked: true, rate: 5, eventsOffered: poolLength });
+        const generatedBefore = engine.getState();
+        const generatedChoice = engine.chooseAwayEventOption(option.id);
+        if (generatedChoice.chosen !== true) {
+          problems.push(`Choosing the generated option "${option.id}" should succeed, got refusal ${JSON.stringify(generatedChoice.reason)}.`);
+          continue;
+        }
+        if (!effectGrants(generatedBefore, engine.getState(), option.effect)) {
+          problems.push(`Choosing the generated option "${option.id}" must grant exactly ${JSON.stringify(option.effect)}, got wood ${engine.getState().wood - generatedBefore.wood}, stone ${engine.getState().stone - generatedBefore.stone}, rate ${engine.getState().rate - generatedBefore.rate}, wall ${engine.getState().wallLevel - generatedBefore.wallLevel}, forge ${engine.getState().forgeLevel - generatedBefore.forgeLevel}, maps ${engine.getState().maps - generatedBefore.maps}.`);
+        }
+        const recordedChoice = engine.getReturnSummary().chosenOption;
+        if (!recordedChoice || recordedChoice.id !== option.id
+          || recordedChoice.effect.kind !== option.effect.kind
+          || Math.abs(recordedChoice.effect.amount - option.effect.amount) > 1e-9) {
+          problems.push(`Choosing a generated option must be recorded in the last return's account as ${JSON.stringify({ id: option.id, effect: option.effect })}, got ${JSON.stringify(recordedChoice)}.`);
+        }
+      }
+
+      // The page and the agent tools name the same generated happening, and the
+      // action tool accepts either of its option ids.
+      seedAwaySave(600000, { stoneUnlocked: true, rate: 5, eventsOffered: poolLength });
+      const readGenerated = await readState.execute({});
+      if (JSON.stringify(readGenerated.pendingEvent) !== JSON.stringify(generatedFromReturn)) {
+        problems.push(`read-state must report the generated happening: expected ${JSON.stringify(generatedFromReturn)}, got ${JSON.stringify(readGenerated.pendingEvent)}.`);
+      }
+      for (const option of generatedFromReturn.options) {
+        seedAwaySave(600000, { stoneUnlocked: true, rate: 5, eventsOffered: poolLength });
+        const toolGeneratedBefore = engine.getState();
+        const toolGeneratedChoice = await performAction.execute({ action: "choose-away-event", option: option.id });
+        if (toolGeneratedChoice.ok === false) {
+          problems.push(`perform-action choose-away-event must accept the generated option "${option.id}", got refusal ${JSON.stringify(toolGeneratedChoice.reason)}.`);
+          continue;
+        }
+        if (!effectGrants(toolGeneratedBefore, engine.getState(), option.effect)) {
+          problems.push(`perform-action choosing the generated option "${option.id}" must grant exactly ${JSON.stringify(option.effect)}, got wood ${engine.getState().wood - toolGeneratedBefore.wood}, stone ${engine.getState().stone - toolGeneratedBefore.stone}, rate ${engine.getState().rate - toolGeneratedBefore.rate}.`);
+        }
+        if (engine.getReturnSummary().chosenOption?.id !== option.id) {
+          problems.push(`perform-action choosing a generated option must be recorded in the last return's account, expected id "${option.id}", got ${JSON.stringify(engine.getReturnSummary().chosenOption)}.`);
+        }
       }
     }
 

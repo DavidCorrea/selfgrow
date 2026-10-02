@@ -97,7 +97,10 @@ const DISCOVERIES = [
  * regular visitor meets several different decisions — not three in a loop —
  * before the sequence returns to the one it started on. The two kinds within an
  * entry are always distinct — the choice's own id is its kind — so a pair never
- * shows two identical buttons.
+ * shows two identical buttons. Once every entry here has been offered the pool
+ * is exhausted, and the sequence continues with generated happenings (see
+ * getGeneratedAwayEvent) rather than wrapping onto a title the player has
+ * already read.
  *
  * A happening that grants progress in a system (wall, forge or map) is only
  * ever offered once that system is unlocked: resolveAwayOptionKinds swaps an
@@ -117,6 +120,51 @@ const AWAY_EVENTS = [
   { id: "wandering-smith", title: "A smith passing through offers their tools", kinds: ["forge", "stone"] },
   { id: "scout-with-a-chart", title: "A scout arrives with a chart of the far country", kinds: ["map", "rate"] },
 ];
+
+// Every generated happening draws its two kinds from the pool's own six
+// distinct pairs, so a continuation still offers two different things to choose
+// between and every kind the pool can grant can still turn up. The two within a
+// pair are always distinct, so a generated button is never a duplicate of its
+// neighbour.
+const AWAY_EVENT_KIND_PAIRS = [
+  ["wood", "stone"],
+  ["wood", "rate"],
+  ["stone", "rate"],
+  ["wall", "wood"],
+  ["forge", "stone"],
+  ["map", "rate"],
+];
+
+// Two fixed vocabularies indexed by ladder number name each generated happening
+// reproducibly, exactly as the generated finds are named. Their different
+// lengths stop the pairs repeating together before many happenings have passed.
+const DEEP_HAPPENING_ADJECTIVES = [
+  "Restless", "Weary", "Hooded", "Sunburnt", "Wayworn", "Quiet",
+  "Painted", "Roaming", "Keen", "Solemn", "Singing", "Frostbit",
+];
+const DEEP_HAPPENING_NOUNS = [
+  "Pilgrim", "Caravan", "Fowler", "Prospector", "Minstrel", "Outrider",
+  "Heron", "Nomad", "Trader", "Falcon", "Stranger", "Peddler", "Wanderer",
+];
+
+/**
+ * The k-th happening past the fixed pool (k starts at 1, the offer that follows
+ * the last pool entry). Pure and deterministic — the same k is always the same
+ * happening — so a save's continuation is fixed and a reload reproduces it. Its
+ * kinds come from the pool's own pairs, so the two choices stay distinct and
+ * the existing eligibility swap (resolveAwayOptionKinds) still applies.
+ *
+ * @param {number} k
+ * @returns {{ id: string, title: string, kinds: [string, string] }}
+ */
+function getGeneratedAwayEvent(k) {
+  const index = Math.floor(k);
+  return {
+    id: `deep-happening-${index}`,
+    title: `${DEEP_HAPPENING_ADJECTIVES[(index - 1) % DEEP_HAPPENING_ADJECTIVES.length]} ${DEEP_HAPPENING_NOUNS[(index - 1) % DEEP_HAPPENING_NOUNS.length]} draws near`,
+    kinds: AWAY_EVENT_KIND_PAIRS[(index - 1) % AWAY_EVENT_KIND_PAIRS.length].slice(),
+  };
+}
 
 // Everything past the fixed rungs is derived from the top rung and the rung
 // number, so the ladder is endless without a list that can be exhausted.
@@ -986,8 +1034,11 @@ function awayOption(kind, s, elapsedSec) {
  * absence is shorter than a minute or invalid. Pure and deterministic: the
  * absence and the state's own `eventsOffered` count together pick the pool
  * entry, so consecutive returns of the same length offer different happenings
- * until the pool has cycled, while the same save's sequence is the same
- * sequence every time — nothing is randomised and nothing can be lost. The
+ * until the pool has been offered in full, while the same save's sequence is
+ * the same sequence every time — nothing is randomised and nothing can be lost.
+ * Once every pool entry has been offered the sequence continues with generated
+ * happenings (see getGeneratedAwayEvent), each named by the save's own count,
+ * so a regular visitor keeps meeting a decision rather than a repeat. The
  * amounts read the state the player returns to, which a reload reproduces, so a
  * persisted event can be regenerated identically.
  *
@@ -998,7 +1049,12 @@ function awayOption(kind, s, elapsedSec) {
 export function awayEventForElapsed(elapsedSec, s) {
   if (!(elapsedSec >= AWAY_EVENT_MIN_SEC)) return null;
   const offset = Number.isFinite(s.eventsOffered) && s.eventsOffered >= 0 ? Math.floor(s.eventsOffered) : 0;
-  const entry = AWAY_EVENTS[(Math.floor(elapsedSec) + offset) % AWAY_EVENTS.length];
+  // The fixed pool carries the first happenings; once every entry has been
+  // offered the deterministic ladder continues past it, so the sequence never
+  // wraps back onto a title the player has already read (issue #1137).
+  const entry = offset < AWAY_EVENTS.length
+    ? AWAY_EVENTS[(Math.floor(elapsedSec) + offset) % AWAY_EVENTS.length]
+    : getGeneratedAwayEvent(offset - AWAY_EVENTS.length + 1);
   return {
     id: entry.id,
     title: entry.title,
