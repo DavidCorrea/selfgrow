@@ -970,11 +970,14 @@ function awayOption(kind, s, elapsedSec) {
     };
   }
   const amount = awayRateBonusFor(s, elapsedSec);
+  // Derived from the same granted amount, so the hour-value the sentence
+  // promises can never drift from what choosing the option adds.
+  const hourValue = displayAmount(amount * AWAY_EVENT_RATE_HORIZON_SEC);
   return {
     id: "rate",
     label: `Permanent +${formatRate(amount)} wood/s`,
     effect: { kind: "rate", amount },
-    effectText: `Permanently adds +${formatRate(amount)} wood/s.`,
+    effectText: `Permanently adds +${formatRate(amount)} wood/s \u2014 worth +${formatAmount(hourValue)} wood over the next hour.`,
   };
 }
 
