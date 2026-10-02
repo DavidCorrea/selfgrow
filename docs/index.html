@@ -2025,7 +2025,7 @@
   </div>
   <script type="module">
     import "./webmcp.js";
-    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, lastReturnHeadline, chooseAwayEventOption, setAsideAwayEvent, markReturnSeen, formatElapsed, nextAwayFindText, nextDiscoveryAfter, sharpenAvailable, sharpenThreshold, expeditionUnlocked, actionAvailability, displayAmount, formatAmount, formatRate, exportSave, importSave, inspectSave, describeGoal, returnDiscoveryLine, returnAdvanceText, pauseForHidden, resumeFromHidden, nextSharpenCost, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, clickPowerFor, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
+    import { init, getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, getReturnSummary, lastReturnHeadline, chooseAwayEventOption, setAsideAwayEvent, markReturnSeen, formatElapsed, nextAwayFindText, nextDiscoveryAfter, sharpenAvailable, sharpenThreshold, expeditionUnlocked, actionAvailability, displayAmount, formatAmount, formatRate, exportSave, importSave, inspectSave, describeGoal, returnDiscoveryLine, returnAdvanceText, returnRateText, awayOptionRaisesWoodRate, pauseForHidden, resumeFromHidden, nextSharpenCost, STONE_GATHER_AMOUNT, WALL_COST, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, clickPowerFor, computeStoneRateFor, computeStoneRate, effectiveWoodRate, expeditionMultiplierFor } from "./engine.js";
     import { cloneState, fastForward, rehearseAwayChoice } from "./sandbox.js";
     import { mountSprites, mountSprite, updateSprites, playReaction } from "./sprites.js";
 
@@ -2348,9 +2348,14 @@
       // write the confirmation after it, from the choice the engine recorded
       // on the return, so the panel states exactly what the account holds.
       renderOfflineEvent(null);
-      const chosen = getReturnSummary().chosenOption;
+      const summary = getReturnSummary();
+      const chosen = summary.chosenOption;
       if (chosen) {
-        offlineEventChosen.textContent = `You chose: ${chosen.label} \u2014 ${chosen.effectText}`;
+        // A choice that sped the world up names the pace it now runs at, from
+        // the return's own record, so the confirmation reads as a faster world
+        // rather than a small number that appeared.
+        const rateText = awayOptionRaisesWoodRate(chosen.effect.kind) ? returnRateText(summary) : "";
+        offlineEventChosen.textContent = `You chose: ${chosen.label} \u2014 ${chosen.effectText}${rateText ? ` ${rateText}` : ""}`;
         offlineEventChosen.hidden = false;
       }
       btnDismiss.focus();
@@ -2397,14 +2402,18 @@
       // the credited case reads as news and names the wood/s added, an
       // already-owned or weaker find says plainly it added nothing new. Both
       // come from one engine rule, so the panel can never claim a boost the
-      // state did not get, and the lead is empty for a no-change find.
+      // state did not get, and the lead is empty for a no-change find. A
+      // credited find also names the pace the world now runs at, from the same
+      // returnRateText rule the status line and the read tools word, so a
+      // lasting bonus reads as a faster world beside the bonus it added.
       if (ret.discovery) {
         const line = returnDiscoveryLine(ret.discovery);
         offlineDiscoveryLead.textContent = line.lead;
         offlineDiscoveryName.textContent = line.name;
         offlineDiscoveryLine.hidden = false;
         if (ret.discovery.credited) {
-          offlineDiscoveryBonus.textContent = line.tail;
+          const rateText = returnRateText(ret);
+          offlineDiscoveryBonus.textContent = rateText ? `${line.tail} ${rateText}` : line.tail;
           offlineDiscoveryBonus.hidden = false;
           offlineDiscoveryNote.textContent = "";
           offlineDiscoveryNote.hidden = true;
@@ -2447,7 +2456,12 @@
       // granted. A return that offered no decision shows nothing. Written after
       // renderOfflineEvent, which clears the line for a fresh or absent offer.
       if (ret.chosenOption) {
-        offlineEventChosen.textContent = `You chose: ${ret.chosenOption.label} \u2014 ${ret.chosenOption.effectText}`;
+        // The choice already taken, with the pace it left the world at when it
+        // was one that sped it up — read from the same record and the same
+        // engine rule the live confirmation uses, so re-opening the account
+        // cannot state a different world.
+        const rateText = awayOptionRaisesWoodRate(ret.chosenOption.effect.kind) ? returnRateText(ret) : "";
+        offlineEventChosen.textContent = `You chose: ${ret.chosenOption.label} \u2014 ${ret.chosenOption.effectText}${rateText ? ` ${rateText}` : ""}`;
         offlineEventChosen.hidden = false;
       }
 

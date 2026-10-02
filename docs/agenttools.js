@@ -8,7 +8,7 @@
  * @module agenttools
  */
 
-import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, chooseAwayEventOption, setAsideAwayEvent, getReturnSummary, lastReturnHeadline, formatElapsed, formatRate, nextDiscoveryAfter, discoveryCollection, returnDiscoveryText, sharpenAvailable, sharpenThreshold, wallAvailable, expeditionUnlocked, actionAvailability, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, effectiveWoodRate, expeditionMultiplierFor, clickPowerFor, firstFindProgress, FIRST_GOAL_WOOD, SHARPEN_COST_RATE, nextSharpenCost, RATE_INCREASE_PER_UPGRADE, GOAL_STONE, WALL_COST, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT, EXPEDITION_FORGE_LEVEL, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_WOOD_COST_INC, FORGE_STONE_COST_INC, FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC, EXPEDITION_WOOD_RATE_MULTIPLIER, DISCOVERY_MIN_SEC, AWAY_EVENT_MIN_SEC, AWAY_EVENT_LUMP_SEC, AWAY_EVENT_LUMP_FRACTION, AWAY_EVENT_RATE_HORIZON_SEC, AWAY_EVENTS, discoverForElapsed, FINDS_LIST_LIMIT } from "./engine.js";
+import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, chooseAwayEventOption, setAsideAwayEvent, getReturnSummary, lastReturnHeadline, formatElapsed, formatRate, nextDiscoveryAfter, discoveryCollection, returnDiscoveryText, returnRateText, sharpenAvailable, sharpenThreshold, wallAvailable, expeditionUnlocked, actionAvailability, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, effectiveWoodRate, expeditionMultiplierFor, clickPowerFor, firstFindProgress, FIRST_GOAL_WOOD, SHARPEN_COST_RATE, nextSharpenCost, RATE_INCREASE_PER_UPGRADE, GOAL_STONE, WALL_COST, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT, EXPEDITION_FORGE_LEVEL, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_WOOD_COST_INC, FORGE_STONE_COST_INC, FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC, EXPEDITION_WOOD_RATE_MULTIPLIER, DISCOVERY_MIN_SEC, AWAY_EVENT_MIN_SEC, AWAY_EVENT_LUMP_SEC, AWAY_EVENT_LUMP_FRACTION, AWAY_EVENT_RATE_HORIZON_SEC, AWAY_EVENTS, discoverForElapsed, FINDS_LIST_LIMIT } from "./engine.js";
 
 /**
  * The last return as the welcome-back panel is showing it, read straight from
@@ -26,9 +26,12 @@ import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, 
  *   wood: number,
  *   stone: number,
  *   elapsed: string|null,
- *   discovery: { name: string, bonus: number|null, permanent: boolean, alreadyOwned: boolean, sentence: string }|null,
+ *   discovery: { name: string, bonus: number|null, permanent: boolean, alreadyOwned: boolean, sentence: string, resultingWoodPerSec: number|null }|null,
  *   chosenOption: { id: string, label: string, effect: {kind: string, amount: number}, effectText: string }|null,
  *   advance: { kind: string, name: string, woodSpent: number }|null,
+ *   rateBefore: number|null,
+ *   rateAfter: number|null,
+ *   rateSentence: string,
  * }}
  */
 function readReturnSummary() {
@@ -38,9 +41,15 @@ function readReturnSummary() {
   // The step the absence took for itself is a fact of the record, like the
   // option it took, so it is reported whether or not the panel is on screen.
   const advance = ret.advance ?? null;
+  // The world's pace before and after the return, and the one sentence that
+  // states it. Like chosenOption and advance these are facts of the record, so
+  // an agent reads the resulting wood/s whether or not the panel is up.
+  const rateBefore = Number.isFinite(ret.rateBefore) ? ret.rateBefore : null;
+  const rateAfter = Number.isFinite(ret.rateAfter) ? ret.rateAfter : null;
+  const rateSentence = returnRateText(ret);
   const overlay = document.getElementById("offline-summary");
   if (!available || !overlay || overlay.hidden) {
-    return { available, wood: 0, stone: 0, elapsed: null, discovery: null, chosenOption, advance };
+    return { available, wood: 0, stone: 0, elapsed: null, discovery: null, chosenOption, advance, rateBefore, rateAfter, rateSentence };
   }
   return {
     available,
@@ -55,9 +64,15 @@ function readReturnSummary() {
           permanent: ret.discovery.credited,
           alreadyOwned: Boolean(ret.discovery.alreadyOwned),
           sentence: returnDiscoveryText(ret.discovery),
+          // The pace the world runs at once this find was credited, so an agent
+          // sees the same resulting wood/s the panel and status chip show.
+          resultingWoodPerSec: rateAfter,
         }
       : null,
     chosenOption,
+    rateBefore,
+    rateAfter,
+    rateSentence,
   };
 }
 
@@ -179,6 +194,13 @@ function withGoal(s) {
     // none or the player has not chosen. It is the same record the panel words
     // its 'You chose' line from, so the page and the tool cannot disagree.
     offlineChosenOption: ret.chosenOption,
+    // The world's pace before and after the last return, and the one sentence
+    // the panel, the status line and this tool all word it with. Reported as
+    // facts of the record like offlineChosenOption, so an agent can see what a
+    // return's find or rate choice left the world at without the panel being up.
+    offlineRateBefore: ret.rateBefore,
+    offlineRateAfter: ret.rateAfter,
+    offlineRateSentence: ret.rateSentence,
     // The progression step the absence itself took (the first sharpen), or null
     // when it took none. {kind, name, woodSpent} — the same record the panel's
     // advance line and the status-bar headline are built from, so an agent sees
@@ -523,13 +545,15 @@ export function tools() {
         + "'3m 20s' or '1d 4h 0m', null when nothing was gained or the panel is "
         + "hidden), the same return as the single status-bar line the page keeps showing "
         + "(lastReturnHeadline, e.g. 'Away 1h 0m \u2014 gathered 12 wood, 3 stone \u2014 You "
-        + "found the Clay Deposit! +0.10 wood/s, yours for good.', which names the find the "
-        + "return turned up and what it added to the rate in the panel's own words, or says "
+        + "found the Clay Deposit! +0.10 wood/s, yours for good. The world now runs at +0.25 wood/s "
+        + "\u2014 +0.15 more than when you left.', which names the find the "
+        + "return turned up, what it added to the rate, and the pace the world now runs at in the "
+        + "panel's own words, or says "
         + "nothing new was added for a repeat or out-classed find, an empty "
         + "string when no real return is on record; it stays after the panel is dismissed "
         + "so the status bar and this tool agree), the away discovery "
         + "named in the welcome-back panel this return (offlineDiscovery: "
-        + "{name, bonus, permanent, alreadyOwned, sentence}). bonus is the wood/s boost "
+        + "{name, bonus, permanent, alreadyOwned, sentence, resultingWoodPerSec}). bonus is the wood/s boost "
         + "the find granted and permanent is true because the find is kept; both are "
         + "null/false when the find added nothing because it was already owned or was "
         + "weaker than one owned, in which case alreadyOwned says whether it was the "
@@ -543,7 +567,12 @@ export function tools() {
         + "itself took while the player was away ({kind, name, woodSpent}, e.g. the first sharpen that "
         + "opens stone) or null when it took none — the same record the panel's advance line and the "
         + "status-bar headline are worded from, and the woodSpent is already reflected in the wood "
-        + "counter. The away discovery owned so far (discovery: "
+        + "counter. offlineRateBefore / offlineRateAfter are the world's effective wood/s just before and "
+        + "after the last return, and offlineRateSentence is the one sentence that states the pace the "
+        + "return left behind (e.g. 'The world now runs at +0.25 wood/s \u2014 +0.15 more than when you "
+        + "left.'), or an empty string when the pace did not change; it is the same sentence the status "
+        + "bar's last-return line and the welcome-back panel show, and offlineRateAfter agrees with the "
+        + "effectiveRate the status chip shows at the moment of the return. The away discovery owned so far (discovery: "
         + "{id, name, bonus} or null, whose bonus is already included in rate), and the "
         + "next away discovery still to earn (nextAwayDiscovery: {name, minSec, bonus, woodPerSec, "
         + "elapsed} where minSec is the absence in seconds needed to find it, bonus/woodPerSec is "
