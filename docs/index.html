@@ -212,6 +212,25 @@
       outline: none;
     }
 
+    /* The progress toward the first find — named in its own line of the status
+       panel while it is still unearned, so a fresh save opens with a rung to
+       reach and the player's own chops visibly move it. It takes a full row so
+       it never squeezes the resource chips; a plain readout, not a live region,
+       because the find itself is what gets announced (see .session-news). */
+    .first-find-line {
+      flex: 0 0 100%;
+      margin: 0.35rem 0 0;
+      font-family: var(--body-font);
+      font-size: 0.55rem;
+      color: var(--text);
+      letter-spacing: 0.02em;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .first-find-line[hidden] {
+      display: none;
+    }
+
     /* The first discovery active play earns, named in its own line of the
        status panel the moment it happens. It takes a full row so it never
        squeezes the resource chips, and accent colour sets the news apart from
@@ -1727,6 +1746,11 @@
         <ul class="finds-entries" id="finds-entries"></ul>
       </details>
     </div>
+    <!-- How far active play has come toward the first find, named while it is
+         still unearned so a fresh save opens with a rung to reach and each
+         Gather Wood visibly moves it. Hidden the moment the find is earned, at
+         which point the line below announces it. -->
+    <p class="first-find-line" id="first-find-line" hidden></p>
     <!-- The first discovery active play earns, announced in its own line the
          moment it happens, so the player sees something new early — not only
          the wood counter. Live region: a screen reader reads it when it appears. -->
@@ -2052,6 +2076,9 @@
     // tick only writes (and a live region only speaks) on a real change rather
     // than repeating the same sentence all session. null until the first render.
     let lastSessionNews = null;
+    // Tracks the first-find line last written, so the 500ms render tick only
+    // rewrites it on a real change rather than churning the DOM every frame.
+    let lastFirstFindText = null;
     let lastReturnHeadlineText = null;
     const offlineSummary = document.getElementById("offline-summary");
     const offlineElapsed = document.getElementById("offline-elapsed");
@@ -2085,6 +2112,7 @@
     const awayDecisionWaitingName = document.getElementById("away-decision-waiting-name");
     const nextAwayFindLine = document.getElementById("next-away-find-line");
     const sessionNewsEl = document.getElementById("session-news");
+    const firstFindLineEl = document.getElementById("first-find-line");
     const returnHeadlineEl = document.getElementById("return-headline");
     const findsList = document.getElementById("finds-list");
     const findsEntries = document.getElementById("finds-entries");
@@ -3018,6 +3046,27 @@
             ? `Decision waiting: ${waitingEvent.title}. Open this return's two choices.`
             : "Decision waiting"
         );
+      }
+
+      // How far active play has come toward the first find, named while it is
+      // still unearned. Read from the engine's own progress value, so the line
+      // and the read-state tool cannot show different figures; gathering wood
+      // credits the same seconds the engine banks, so each chop steps the line.
+      // Written only when the sentence changes, so the tick never churns it, and
+      // hidden the moment the find is earned (the line below then announces it).
+      if (firstFindLineEl) {
+        const firstFind = s.firstFind;
+        const firstFindText = firstFind
+          ? "First find: " + firstFind.name + " \u2014 "
+            + formatAmount(firstFind.earnedSec) + "/" + firstFind.needSec
+            + " \u00b7 " + Math.round(firstFind.progress * 100) + "%"
+            + " \u00b7 gather to hurry it"
+          : "";
+        if (firstFindText !== lastFirstFindText) {
+          lastFirstFindText = firstFindText;
+          firstFindLineEl.textContent = firstFindText;
+          firstFindLineEl.hidden = firstFindText === "";
+        }
       }
 
       // The first find active play earned, named in the status panel the moment

@@ -8,7 +8,7 @@
  * @module agenttools
  */
 
-import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, chooseAwayEventOption, setAsideAwayEvent, getReturnSummary, lastReturnHeadline, formatElapsed, formatRate, nextDiscoveryAfter, discoveryCollection, returnDiscoveryText, sharpenAvailable, sharpenThreshold, wallAvailable, expeditionUnlocked, actionAvailability, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, effectiveWoodRate, expeditionMultiplierFor, clickPowerFor, FIRST_GOAL_WOOD, SHARPEN_COST_RATE, nextSharpenCost, RATE_INCREASE_PER_UPGRADE, GOAL_STONE, WALL_COST, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT, EXPEDITION_FORGE_LEVEL, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_WOOD_COST_INC, FORGE_STONE_COST_INC, FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC, EXPEDITION_WOOD_RATE_MULTIPLIER, DISCOVERY_MIN_SEC, AWAY_EVENT_MIN_SEC, AWAY_EVENT_LUMP_SEC, AWAY_EVENT_LUMP_FRACTION, AWAY_EVENT_RATE_HORIZON_SEC, AWAY_EVENTS, discoverForElapsed, FINDS_LIST_LIMIT } from "./engine.js";
+import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, sendExpedition, chooseAwayEventOption, setAsideAwayEvent, getReturnSummary, lastReturnHeadline, formatElapsed, formatRate, nextDiscoveryAfter, discoveryCollection, returnDiscoveryText, sharpenAvailable, sharpenThreshold, wallAvailable, expeditionUnlocked, actionAvailability, displayAmount, exportSave, importSave, describeGoal, computeStoneRateFor, effectiveWoodRate, expeditionMultiplierFor, clickPowerFor, firstFindProgress, FIRST_GOAL_WOOD, SHARPEN_COST_RATE, nextSharpenCost, RATE_INCREASE_PER_UPGRADE, GOAL_STONE, WALL_COST, WALL_CLICK_POWER_BONUS, STONE_GATHER_AMOUNT, EXPEDITION_FORGE_LEVEL, FORGE_WOOD_COST_BASE, FORGE_STONE_COST_BASE, FORGE_WOOD_COST_INC, FORGE_STONE_COST_INC, FORGE_WOOD_RATE_BONUS, FORGE_CLICK_POWER_BONUS, EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC, EXPEDITION_WOOD_RATE_MULTIPLIER, DISCOVERY_MIN_SEC, AWAY_EVENT_MIN_SEC, AWAY_EVENT_LUMP_SEC, AWAY_EVENT_LUMP_FRACTION, AWAY_EVENT_RATE_HORIZON_SEC, AWAY_EVENTS, discoverForElapsed, FINDS_LIST_LIMIT } from "./engine.js";
 
 /**
  * The last return as the welcome-back panel is showing it, read straight from
@@ -139,6 +139,12 @@ function withGoal(s) {
     // been earned: {id, name, bonus, text} where text is the exact sentence the
     // page's status message shows announcing it.
     sessionFind: s.sessionFind ?? null,
+    // How far active play has come toward the first find, or null once it is
+    // owned or earned: {id, name, bonus, earnedSec, needSec, progress,
+    // remainingSec}, the same figure the page's first-find line shows. Derived
+    // by the engine's own rule from whichever snapshot shape was handed in, so
+    // the tool and the page cannot disagree.
+    firstFind: s.firstFind ?? firstFindProgress(s),
     // The two-choice happening a real return is offering right now, or null
     // when there is none. Cloned by the engine, so the tool can hand it out
     // without a caller being able to edit the save through it.
@@ -576,7 +582,14 @@ export function tools() {
         + "(an in-session counterpart to an away find), or null when none has been "
         + "earned: {id, name, bonus, text}, where bonus is the wood/s it added (already "
         + "included in rate) and text is the exact sentence the page's status message "
-        + "shows announcing it.",
+        + "shows announcing it. firstFind is how far active play has come toward that "
+        + "find while it is still unearned — {id, name, bonus, earnedSec, needSec, "
+        + "progress, remainingSec} where earnedSec is the active seconds banked so far "
+        + "(gathering wood credits them, so the player's own action brings the find "
+        + "forward), needSec is the seconds required, progress is earnedSec/needSec "
+        + "(0 to 1) and remainingSec is what is still needed. It is the same value the "
+        + "page's first-find line shows, and it is null once the find is owned or "
+        + "earned (see sessionFind).",
       inputSchema: { type: "object", properties: {} },
       annotations: { readOnlyHint: true },
       example: {},
