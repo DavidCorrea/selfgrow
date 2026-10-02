@@ -474,7 +474,10 @@ function rulesAway(s) {
         + "are worth the same amount at any rate. The absence and how many happenings "
         + "this save has already been offered together choose which one, so returns of the same "
         + "length advance through the pool (" + AWAY_EVENTS.length + " happenings) instead of repeating "
-        + "one decision; the sequence is fixed for a save, so a return can never be a gamble. "
+        + "one decision. Once every pool happening has been offered the sequence continues past the "
+        + "pool with generated happenings, each carrying a title this save has not met, so a steady "
+        + "cadence keeps meeting a new decision rather than wrapping onto a repeat; the sequence is "
+        + "fixed for a save, so a return can never be a gamble. "
         + "Choosing is one-way: once one "
         + "option is taken the other can never then be taken.",
     },
