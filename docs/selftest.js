@@ -10229,5 +10229,135 @@ export async function checks() {
     console.error(err);
   }
 
+  // ─── First find earned by gathering ─────────────────────────────
+  // The player's own chops must move the first-find progress, so attention
+  // reaches it sooner than idling while the timer still accrues on its own.
+  // The pure rule, the live engine, the page's line and the read-state tool
+  // must all tell the same story.
+  try {
+    const engine = await import("./engine.js");
+    const { tools } = await import("./agenttools.js");
+    const readState = tools().find((t) => t.name === "read-state");
+
+    // The pure progress rule: nothing banked is 0, half the wait is 50%, and
+    // there is no progress to show once the find is owned or earned.
+    const atZero = engine.firstFindProgress({ activeSec: 0 });
+    if (!atZero || atZero.earnedSec !== 0 || atZero.needSec !== engine.SESSION_FIND_SEC || atZero.progress !== 0) {
+      problems.push(`firstFindProgress at 0 active seconds should be 0/${engine.SESSION_FIND_SEC} (0%), got ${JSON.stringify(atZero)}.`);
+    }
+    const halfway = engine.firstFindProgress({ activeSec: engine.SESSION_FIND_SEC / 2 });
+    if (!halfway || Math.abs(halfway.progress - 0.5) > 1e-12 || Math.abs(halfway.remainingSec - engine.SESSION_FIND_SEC / 2) > 1e-12) {
+      problems.push(`firstFindProgress at half the wait should be 50% with the other half remaining, got ${JSON.stringify(halfway)}.`);
+    }
+    if (halfway && halfway.name !== "Flint Shard") {
+      problems.push(`firstFindProgress should name the rung being earned (Flint Shard), got ${JSON.stringify(halfway.name)}.`);
+    }
+    if (engine.firstFindProgress({ activeSec: engine.SESSION_FIND_SEC, discoveryId: "flint-shard" }) !== null) {
+      problems.push("firstFindProgress should be null once a find is owned.");
+    }
+    if (engine.firstFindProgress({ activeSec: 10, sessionFind: { id: "flint-shard" } }) !== null) {
+      problems.push("firstFindProgress should be null once the session find is earned.");
+    }
+
+    // reset() stops the live tick, so the active seconds here move only when a
+    // check drives them — this block is deterministic.
+    engine.reset();
+    const freshRead = readState ? await readState.execute({}) : null;
+    const freshState = engine.getState();
+    if (!freshState.firstFind || freshState.firstFind.name !== "Flint Shard") {
+      problems.push(`A fresh save should have first-find progress toward Flint Shard, got ${JSON.stringify(freshState.firstFind)}.`);
+    }
+    if (!readState) {
+      problems.push("Expected a read-state tool to report first-find progress — it was not found.");
+    } else if (!freshRead.firstFind || freshRead.firstFind.name !== "Flint Shard"
+      || Math.abs(freshRead.firstFind.needSec - freshState.firstFind.needSec) > 1e-9
+      || Math.abs(freshRead.firstFind.progress - freshState.firstFind.progress) > 1e-9) {
+      problems.push(`read-state.firstFind should match the engine's own progress on a fresh save, got ${JSON.stringify(freshRead.firstFind)} vs ${JSON.stringify(freshState.firstFind)}.`);
+    }
+
+    const lineEl = document.getElementById("first-find-line");
+    if (!lineEl) {
+      problems.push("Expected a #first-find-line element in the status panel — it was not found.");
+    } else if (typeof window.__renderUI === "function") {
+      window.__renderUI();
+      if (lineEl.hidden) {
+        problems.push("#first-find-line should be visible on a fresh save with a find still unearned.");
+      }
+      if (!lineEl.textContent.includes("Flint Shard")) {
+        problems.push(`#first-find-line should name the rung being earned (Flint Shard), got ${JSON.stringify(lineEl.textContent)}.`);
+      }
+      // One chop must visibly step the line: same rung, further along.
+      const lineBefore = lineEl.textContent;
+      engine.gatherWood();
+      window.__renderUI();
+      if (lineEl.textContent === lineBefore) {
+        problems.push(`#first-find-line should advance after a Gather Wood, but it still read ${JSON.stringify(lineBefore)}.`);
+      }
+    }
+
+    // Each Gather Wood credits exactly SESSION_FIND_GATHER_SEC active seconds,
+    // and an untouched tab would need the whole SESSION_FIND_SEC — so gathering
+    // brings the find forward rather than paying for it by waiting.
+    engine.reset();
+    engine.gatherWood();
+    const afterOneGather = engine.getState();
+    const oneGatherSec = afterOneGather.firstFind && afterOneGather.firstFind.earnedSec;
+    if (Math.abs(oneGatherSec - engine.SESSION_FIND_GATHER_SEC) > 1e-9) {
+      problems.push(`One gather should bank exactly ${engine.SESSION_FIND_GATHER_SEC} active seconds toward the first find, got ${JSON.stringify(oneGatherSec)}.`);
+    }
+
+    const expectedGathers = engine.SESSION_FIND_SEC / engine.SESSION_FIND_GATHER_SEC;
+    engine.reset();
+    let gathersToFind = 0;
+    for (let i = 0; i < expectedGathers + 5 && !engine.getState().sessionFind; i++) {
+      engine.gatherWood();
+      gathersToFind = i + 1;
+    }
+    const earnedState = engine.getState();
+    if (!earnedState.sessionFind) {
+      problems.push(`Gathering repeatedly should earn the first find within ${expectedGathers} chops, but ${gathersToFind} chops did not.`);
+    } else {
+      if (gathersToFind > expectedGathers) {
+        problems.push(`Gathering should earn the first find within ${expectedGathers} chops (${engine.SESSION_FIND_SEC}s of active play at ${engine.SESSION_FIND_GATHER_SEC}s each), took ${gathersToFind}.`);
+      }
+      const expectedText = engine.returnDiscoveryText({ id: earnedState.sessionFind.id, name: earnedState.sessionFind.name, bonus: earnedState.sessionFind.bonus, credited: true });
+      if (earnedState.sessionFind.text !== expectedText) {
+        problems.push(`The gathered find should be announced in the welcome-back panel's own words, expected ${JSON.stringify(expectedText)}, got ${JSON.stringify(earnedState.sessionFind.text)}.`);
+      }
+
+      // The page swaps the progress line for the announcement on the same chop.
+      if (lineEl && typeof window.__renderUI === "function") {
+        window.__renderUI();
+        if (!lineEl.hidden) {
+          problems.push("#first-find-line should hide once the first find is earned.");
+        }
+        const newsEl = document.getElementById("session-news");
+        if (!newsEl || newsEl.hidden) {
+          problems.push("#session-news should be visible once gathering earns the first find.");
+        } else if (newsEl.textContent.trim() !== earnedState.sessionFind.text) {
+          problems.push(`#session-news should announce the gathered find in the engine's own sentence, expected ${JSON.stringify(earnedState.sessionFind.text)}, got ${JSON.stringify(newsEl.textContent)}.`);
+        }
+      }
+
+      // The read tool sees the same: progress gone, the find named.
+      if (readState) {
+        const earnedRead = await readState.execute({});
+        if (earnedRead.firstFind !== null) {
+          problems.push(`read-state.firstFind should be null once the find is earned, got ${JSON.stringify(earnedRead.firstFind)}.`);
+        }
+        if (!earnedRead.sessionFind || earnedRead.sessionFind.id !== "flint-shard") {
+          problems.push(`read-state.sessionFind should report the gathered find, got ${JSON.stringify(earnedRead.sessionFind)}.`);
+        }
+      }
+    }
+
+    // Leave the engine as a running save for any later checks.
+    engine.reset();
+    engine.init();
+  } catch (err) {
+    problems.push(`First find by gathering test threw: ${err.message}`);
+    console.error(err);
+  }
+
   return problems;
 }

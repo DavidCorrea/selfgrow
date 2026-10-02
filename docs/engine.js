@@ -49,6 +49,11 @@ const RETURN_MIN_SEC = 1; // shortest absence that counts as a real return
 // granted. Away finds are turned up by an absence (DISCOVERY_MIN_SEC); this is
 // the in-session counterpart, so a first visit is not an empty wait.
 const SESSION_FIND_SEC = 90;
+// Active seconds a single Gather Wood credits toward that first find. A player
+// who gathers on the page's 500ms cooldown therefore reaches it in about 15s,
+// while leaving the tab untouched still takes the full SESSION_FIND_SEC — so
+// attention is rewarded and idling is never punished.
+const SESSION_FIND_GATHER_SEC = 3;
 const AWAY_EVENT_MIN_SEC = DISCOVERY_MIN_SEC; // shortest absence that offers a decision
 // A wood or stone lump is a share of the production the absence itself earned,
 // so the return's decision stays worth taking however long the player was away:
@@ -175,7 +180,7 @@ export { FIRST_GOAL_WOOD, SHARPEN_COST_RATE, RATE_INCREASE_PER_UPGRADE, STONE_BA
   EXPEDITION_WOOD_COST_BASE, EXPEDITION_STONE_COST_BASE, EXPEDITION_WOOD_COST_INC, EXPEDITION_STONE_COST_INC,
   EXPEDITION_WOOD_RATE_MULTIPLIER, RETURN_MIN_SEC, computeStoneRateFor, computeStoneRate, stoneGainForSpan,
   expeditionMultiplierFor, effectiveWoodRate, clickPowerFor,
-  DISCOVERY_MIN_SEC, SESSION_FIND_SEC, AWAY_EVENT_MIN_SEC, AWAY_EVENT_LUMP_SEC, AWAY_EVENT_LUMP_FRACTION,
+  DISCOVERY_MIN_SEC, SESSION_FIND_SEC, SESSION_FIND_GATHER_SEC, AWAY_EVENT_MIN_SEC, AWAY_EVENT_LUMP_SEC, AWAY_EVENT_LUMP_FRACTION,
   AWAY_EVENT_RATE_HORIZON_SEC, awayRateBonusFor, AWAY_EVENTS };
 
 /**
@@ -199,6 +204,9 @@ export { FIRST_GOAL_WOOD, SHARPEN_COST_RATE, RATE_INCREASE_PER_UPGRADE, STONE_BA
  * @property {{id: string, name: string, bonus: number, text: string}|null} sessionFind
  *   — the first discovery active play earned this save, with the sentence the
  *   status panel shows for it, or null until (or unless) it is earned
+ * @property {{id: string, name: string, bonus: number, earnedSec: number, needSec: number, progress: number, remainingSec: number}|null} firstFind
+ *   — how far active play has come toward the first find, or null once it is
+ *   owned or earned; the one progress value the page, sandbox and tools read
  * @property {{collected: Array<{id: string, name: string, minSec: number, bonus: number}>, hiddenCount: number, total: number, next: {id: string, name: string, minSec: number, bonus: number}|null}} finds
  *   — every away find kept so far (the stored rung and every weaker rung
  *   below it, in ladder order) and the next rung still locked
@@ -754,6 +762,35 @@ export function sessionFindFor(activeSec, ownedDiscoveryId) {
   if (!(activeSec >= SESSION_FIND_SEC)) return null;
   if (ownedDiscoveryId) return null;
   return { ...DISCOVERIES[0] };
+}
+
+/**
+ * How far the live save's first find has come, as one shared value the page,
+ * the sandbox projections and the read tools all read. Null once the find is
+ * owned or earned — there is nothing left to progress toward — and otherwise
+ * the rung being earned with how many active seconds it still needs. Pure, so
+ * no surface can show a different figure than the rule that grants the find.
+ *
+ * @param {{ activeSec?: number, discoveryId?: string|null, discovery?: {id: string}|null, sessionFind?: object|null }} s
+ * @returns {{ id: string, name: string, bonus: number, earnedSec: number, needSec: number, progress: number, remainingSec: number }|null}
+ */
+export function firstFindProgress(s) {
+  if (!s) return null;
+  const ownedDiscoveryId = s.discoveryId ?? s.discovery?.id ?? null;
+  if (ownedDiscoveryId || s.sessionFind) return null;
+  const activeSec = Number.isFinite(s.activeSec) && s.activeSec >= 0 ? s.activeSec : 0;
+  const earnedSec = Math.min(activeSec, SESSION_FIND_SEC);
+  const needSec = SESSION_FIND_SEC;
+  const rung = DISCOVERIES[0];
+  return {
+    id: rung.id,
+    name: rung.name,
+    bonus: rung.bonus,
+    earnedSec,
+    needSec,
+    progress: earnedSec / needSec,
+    remainingSec: needSec - earnedSec,
+  };
 }
 
 /**
@@ -1669,7 +1706,10 @@ export function gatherWood() {
   const clickPower = clickPowerFor(state);
   state.wood += clickPower;
   state.totalWoodEarned += clickPower;
-  return getState();
+  // The player's own chopping counts as active play toward the first find, so
+  // gathering brings it forward instead of merely waiting out the timer. The
+  // once-only and first-rung-only guards live in advanceActivePlay.
+  return advanceActivePlay(SESSION_FIND_GATHER_SEC);
 }
 
 /**
@@ -2389,6 +2429,11 @@ export function getState() {
     // The first find active play earned in this session, with the sentence the
     // page's status message shows for it, or null when none has been earned.
     sessionFind: state.sessionFind ? { ...state.sessionFind } : null,
+    // Active seconds this save has played, and how far their next first find
+    // has come — the one value the status panel, the sandbox and the read
+    // tools all read, so none of them can show different progress.
+    activeSec: state.activeSec,
+    firstFind: firstFindProgress(state),
     pendingEvent: clonePendingEvent(state.pendingEvent),
     lastReturn: cloneReturnRecord(state.lastReturn),
     eventsOffered: state.eventsOffered,
