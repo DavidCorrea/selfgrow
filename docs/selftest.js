@@ -6311,11 +6311,16 @@ export async function checks() {
       problems.push(`The welcome-back panel should name "${expected.name}", got "${discoveryNameEl.textContent.trim()}".`);
     }
     // The whole sentence the panel shows must be the engine rule's sentence, so
-    // the claim and the caveat can never be split by a wrap.
+    // the claim and the caveat can never be split by a wrap. A credited find
+    // also names the pace the world now runs at, from the same returnRateText
+    // rule the status line and the read tools word, so the panel line is the
+    // find sentence followed by that pace sentence.
     if (discoveryLine && expected) {
       const expectedSentence = engine.returnDiscoveryText({ name: expected.name, bonus: expected.bonus, credited: true });
-      if (discoveryLine.textContent.trim() !== expectedSentence) {
-        problems.push(`A credited 600s find's panel line should read ${JSON.stringify(expectedSentence)}, got ${JSON.stringify(discoveryLine.textContent.trim())}.`);
+      const creditedRateText = engine.returnRateText(engine.getReturnSummary());
+      const expectedPanelLine = creditedRateText ? `${expectedSentence} ${creditedRateText}` : expectedSentence;
+      if (discoveryLine.textContent.trim() !== expectedPanelLine) {
+        problems.push(`A credited 600s find's panel line should read ${JSON.stringify(expectedPanelLine)}, got ${JSON.stringify(discoveryLine.textContent.trim())}.`);
       }
     }
     // The panel must state the wood/s bonus the credited find granted and that
@@ -6377,8 +6382,9 @@ export async function checks() {
       if (expected && offlineDiscovery && offlineDiscovery.alreadyOwned !== false) {
         problems.push(`read-state.offlineDiscovery.alreadyOwned should be false for a credited find, got ${JSON.stringify(offlineDiscovery.alreadyOwned)}.`);
       }
-      if (expected && offlineDiscovery && discoveryLine && offlineDiscovery.sentence !== discoveryLine.textContent.trim()) {
-        problems.push(`read-state.offlineDiscovery.sentence should equal the panel's credited sentence, got ${JSON.stringify(offlineDiscovery.sentence)} vs ${JSON.stringify(discoveryLine.textContent.trim())}.`);
+      const expectedFindSentence = expected ? engine.returnDiscoveryText({ name: expected.name, bonus: expected.bonus, credited: true }) : "";
+      if (expected && offlineDiscovery && offlineDiscovery.sentence !== expectedFindSentence) {
+        problems.push(`read-state.offlineDiscovery.sentence should equal the panel's credited find sentence ${JSON.stringify(expectedFindSentence)}, got ${JSON.stringify(offlineDiscovery.sentence)}.`);
       }
       // read-state must expose the same next find the panel names, so an agent
       // learns the same goal a visitor does.
@@ -10166,6 +10172,203 @@ export async function checks() {
     engine.init();
   } catch (err) {
     problems.push(`Away decision account test threw: ${err.message}`);
+    console.error(err);
+  }
+
+  // ─── A return states the wood/s it leaves the world at (issue #1138) ──
+  // A credited away find, and a rate-bearing away choice, permanently raise the
+  // world's effective wood/s. The welcome-back panel, the status bar's
+  // last-return line and the read-state tool all word that pace from one engine
+  // rule and one value on the return's own record, so a lasting bonus reads as
+  // a faster world rather than a small number that appeared, and no surface can
+  // quote a different pace.
+  try {
+    const engine = await import("./engine.js");
+    const { tools } = await import("./agenttools.js");
+    const readState = tools().find((t) => t.name === "read-state");
+
+    if (typeof engine.returnRateText !== "function") {
+      problems.push("Expected engine.returnRateText to be exported so the panel, the status line and the tools word a return's pace from one rule.");
+    }
+    if (typeof engine.awayOptionRaisesWoodRate !== "function") {
+      problems.push("Expected engine.awayOptionRaisesWoodRate to be exported so a surface knows which choices speed the world up.");
+    }
+
+    // (a) The pure rule names both the new pace and the change, and is empty
+    // when the world's pace is unchanged or the record carries no comparison.
+    if (typeof engine.returnRateText === "function") {
+      const raised = engine.returnRateText({ rateBefore: 0.1, rateAfter: 0.25 });
+      if (!raised.includes(`+${engine.formatRate(0.25)} wood/s`)) {
+        problems.push(`returnRateText must name the new pace +${engine.formatRate(0.25)} wood/s, got ${JSON.stringify(raised)}.`);
+      }
+      if (!raised.includes(`+${engine.formatRate(0.15)}`)) {
+        problems.push(`returnRateText must name the change +${engine.formatRate(0.15)} from before the return, got ${JSON.stringify(raised)}.`);
+      }
+      if (engine.returnRateText({ rateBefore: 0.1, rateAfter: 0.1 }) !== "") {
+        problems.push(`returnRateText must be "" when the pace did not change, got ${JSON.stringify(engine.returnRateText({ rateBefore: 0.1, rateAfter: 0.1 }))}.`);
+      }
+      if (engine.returnRateText(null) !== "" || engine.returnRateText({}) !== "") {
+        problems.push("returnRateText must be \"\" for a missing record or one with no rate comparison.");
+      }
+    }
+
+    // The predicate agrees with the engine's own effect rule: only the rate, a
+    // forge level and a map change the wood/s.
+    if (typeof engine.awayOptionRaisesWoodRate === "function") {
+      for (const kind of ["rate", "forge", "map"]) {
+        if (!engine.awayOptionRaisesWoodRate(kind)) {
+          problems.push(`awayOptionRaisesWoodRate("${kind}") must be true — that choice raises the wood/s.`);
+        }
+      }
+      for (const kind of ["wood", "stone", "wall"]) {
+        if (engine.awayOptionRaisesWoodRate(kind)) {
+          problems.push(`awayOptionRaisesWoodRate("${kind}") must be false — that choice does not change the wood/s.`);
+        }
+      }
+    }
+
+    // Loads a save `ageMs` old exactly as a returning browser would. Wood is
+    // seeded above the sharpen's price so the absence takes no step of its own
+    // and each check keeps testing the find or the choice it is about.
+    const seedReturn = (ageMs, overrides = {}) => {
+      engine.reset();
+      const aged = new Date(Date.now() - ageMs).toISOString();
+      localStorage.setItem("selfgrow-state", JSON.stringify({
+        wood: 12, rate: 0.1, upgradeLevel: 0, stone: 0,
+        totalWoodEarned: 12, totalStoneEarned: 0,
+        wallLevel: 0, forgeLevel: 0, expeditionLevel: 0, maps: 0,
+        stoneUnlocked: false,
+        discoveryBonus: 0, discoveryId: null, discoveryName: null,
+        lastReturn: null, pendingEvent: null,
+        timestamp: aged, firstTimestamp: aged,
+        ...overrides,
+      }));
+      engine.init();
+    };
+
+    // (b) A 1h credited-find return: the record carries the pace before and
+    // after, and that after-value is exactly the effective wood/s the status
+    // chip shows — one figure, not two distant numbers.
+    seedReturn(3600000, {});
+    const findReturn = engine.getReturnSummary();
+    const chipRate = engine.effectiveWoodRate(engine.getState());
+    if (!findReturn.discovery || !findReturn.discovery.credited) {
+      problems.push(`A 1h return from 12 wood must credit a find, got ${JSON.stringify(findReturn.discovery)}.`);
+    }
+    if (typeof findReturn.rateAfter !== "number" || Math.abs(findReturn.rateAfter - chipRate) > 1e-9) {
+      problems.push(`A credited find's return record must carry the resulting effective wood/s ${chipRate} the status chip shows, got ${JSON.stringify(findReturn.rateAfter)}.`);
+    }
+    if (typeof findReturn.rateBefore !== "number" || !(findReturn.rateAfter > findReturn.rateBefore)) {
+      problems.push(`A credited find's return must record a rate rise, got before ${JSON.stringify(findReturn.rateBefore)} and after ${JSON.stringify(findReturn.rateAfter)}.`);
+    }
+    const paceText = engine.returnRateText(findReturn);
+    if (!paceText || !paceText.includes(`+${engine.formatRate(findReturn.rateAfter)} wood/s`)) {
+      problems.push(`A credited find's pace sentence must name the new wood/s ${engine.formatRate(findReturn.rateAfter)}, got ${JSON.stringify(paceText)}.`);
+    }
+
+    // The panel states it beside the bonus the find added, so the bonus and the
+    // world it leaves behind are read together.
+    window.__showOfflineSummary();
+    const bonusEl = document.getElementById("offline-discovery-bonus");
+    const newPaceFigure = `+${engine.formatRate(findReturn.rateAfter)} wood/s`;
+    if (!bonusEl) {
+      problems.push("Expected #offline-discovery-bonus in the welcome-back panel.");
+    } else {
+      if (!bonusEl.textContent.includes(newPaceFigure)) {
+        problems.push(`The panel's credited-find bonus line must state the world's new ${newPaceFigure}, got ${JSON.stringify(bonusEl.textContent)}.`);
+      }
+      if (!bonusEl.textContent.includes(paceText)) {
+        problems.push(`The panel's credited-find bonus line must carry the engine's own pace sentence ${JSON.stringify(paceText)}, got ${JSON.stringify(bonusEl.textContent)}.`);
+      }
+    }
+
+    // The status-bar line carries it in its find clause, and the read tool
+    // reports the same resulting wood/s and sentence.
+    const headline = engine.lastReturnHeadline();
+    if (!headline.includes(paceText)) {
+      problems.push(`The status-bar headline must state the world's new pace (${JSON.stringify(paceText)}), got ${JSON.stringify(headline)}.`);
+    }
+    if (readState) {
+      const readFind = await readState.execute({});
+      if (typeof readFind.offlineRateAfter !== "number" || Math.abs(readFind.offlineRateAfter - chipRate) > 1e-9) {
+        problems.push(`read-state.offlineRateAfter must report the same resulting wood/s ${chipRate}, got ${JSON.stringify(readFind.offlineRateAfter)}.`);
+      }
+      if (readFind.offlineRateSentence !== paceText) {
+        problems.push(`read-state.offlineRateSentence must be the same pace sentence ${JSON.stringify(paceText)}, got ${JSON.stringify(readFind.offlineRateSentence)}.`);
+      }
+      const resultingWoodPerSec = readFind.offlineDiscovery ? readFind.offlineDiscovery.resultingWoodPerSec : null;
+      if (typeof resultingWoodPerSec !== "number" || Math.abs(resultingWoodPerSec - chipRate) > 1e-9) {
+        problems.push(`read-state.offlineDiscovery.resultingWoodPerSec must report ${chipRate}, got ${JSON.stringify(resultingWoodPerSec)}.`);
+      }
+    }
+    if (typeof window.__dismissOffline === "function") window.__dismissOffline();
+
+    // (c) Taking a rate option's choice: the return's own record carries the new
+    // pace, the confirmation says it, and it matches the chip. A 604s absence
+    // offers the pool's wood+rate happening (index 1).
+    seedReturn(604000, {});
+    const choiceEvent = engine.getState().pendingEvent;
+    const rateOptionIndex = choiceEvent ? choiceEvent.options.findIndex((o) => o.effect.kind === "rate") : -1;
+    if (!choiceEvent || rateOptionIndex < 0) {
+      problems.push(`A 604s return must offer a wood+rate happening, got ${JSON.stringify(choiceEvent)}.`);
+    } else {
+      const beforeChoice = engine.getReturnSummary();
+      window.__showOfflineSummary();
+      const rateButton = document.getElementById(`away-option-${rateOptionIndex}`);
+      if (!rateButton) {
+        problems.push("The panel must render a button for the rate option.");
+      } else {
+        rateButton.click();
+        const afterChoice = engine.getReturnSummary();
+        const chipAfterChoice = engine.effectiveWoodRate(engine.getState());
+        if (!afterChoice.chosenOption || afterChoice.chosenOption.effect.kind !== "rate") {
+          problems.push(`Choosing the rate option must record a rate choice, got ${JSON.stringify(afterChoice.chosenOption)}.`);
+        }
+        if (typeof afterChoice.rateAfter !== "number" || Math.abs(afterChoice.rateAfter - chipAfterChoice) > 1e-9) {
+          problems.push(`A rate choice must leave the return's rateAfter at the resulting effective wood/s ${chipAfterChoice}, got ${JSON.stringify(afterChoice.rateAfter)}.`);
+        }
+        if (!(afterChoice.rateAfter > beforeChoice.rateAfter)) {
+          problems.push(`A rate choice must raise the world's pace: before ${JSON.stringify(beforeChoice.rateAfter)}, after ${JSON.stringify(afterChoice.rateAfter)}.`);
+        }
+        const choicePace = engine.returnRateText(afterChoice);
+        if (!choicePace || !choicePace.includes(`+${engine.formatRate(afterChoice.rateAfter)} wood/s`)) {
+          problems.push(`A rate choice's pace sentence must name the new wood/s ${engine.formatRate(afterChoice.rateAfter)}, got ${JSON.stringify(choicePace)}.`);
+        }
+        const chosenEl = document.getElementById("offline-event-chosen");
+        if (!chosenEl || chosenEl.hidden) {
+          problems.push("The panel must confirm the rate choice in #offline-event-chosen.");
+        } else if (!chosenEl.textContent.includes(choicePace)) {
+          problems.push(`The rate choice confirmation must state the world's new pace (${JSON.stringify(choicePace)}), got ${JSON.stringify(chosenEl.textContent)}.`);
+        }
+        if (readState) {
+          const readChoice = await readState.execute({});
+          if (typeof readChoice.offlineRateAfter !== "number" || Math.abs(readChoice.offlineRateAfter - chipAfterChoice) > 1e-9) {
+            problems.push(`read-state.offlineRateAfter must report the rate choice's resulting wood/s ${chipAfterChoice}, got ${JSON.stringify(readChoice.offlineRateAfter)}.`);
+          }
+        }
+      }
+      if (typeof window.__dismissOffline === "function") window.__dismissOffline();
+    }
+
+    // (d) A return that changes nothing states no pace clause, and the exact
+    // existing headline is preserved so a findless, rate-neutral return reads
+    // as before.
+    seedReturn(30000, { wood: 5, totalWoodEarned: 5 });
+    const flatReturn = engine.getReturnSummary();
+    if (engine.returnRateText(flatReturn) !== "") {
+      problems.push(`A rate-neutral return must word no pace clause, got ${JSON.stringify(engine.returnRateText(flatReturn))}.`);
+    }
+    const flatHeadline = engine.lastReturnHeadline();
+    const expectedFlat = `Away ${flatReturn.elapsed} \u2014 gathered ${engine.formatAmount(flatReturn.wood)} wood`;
+    if (flatHeadline !== expectedFlat) {
+      problems.push(`A rate-neutral return must keep the exact findless headline: expected ${JSON.stringify(expectedFlat)}, got ${JSON.stringify(flatHeadline)}.`);
+    }
+    if (typeof window.__dismissOffline === "function") window.__dismissOffline();
+
+    engine.reset();
+    engine.init();
+  } catch (err) {
+    problems.push(`Return pace test threw: ${err.message}`);
     console.error(err);
   }
 

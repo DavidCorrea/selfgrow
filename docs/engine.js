@@ -329,6 +329,12 @@ let offlineGained = { wood: 0, stone: 0, elapsedSec: 0, discovery: null };
  *   — the progression step the absence itself took while away, or null when it
  *   took none. Recorded once in catchUp so the panel, the status line and the
  *   read tools tell one story about what the return did.
+ * @property {number|null} rateBefore — the world's effective wood/s just before
+ *   the absence was credited. Null on an account saved before this field, so an
+ *   old save shows no pace clause rather than a guessed one.
+ * @property {number|null} rateAfter — the world's effective wood/s once the
+ *   return's own production, its step and its find (and, later, any rate-bearing
+ *   choice) were applied. The after-half of returnRateText's one comparison.
  * @property {Milestones} milestones
  */
 
@@ -687,7 +693,10 @@ function catchUp(firstVisit, record = true, defer = false) {
 
     // The span's production — and the one step it may take for itself, the
     // first sharpen, at the instant its own wood reaches the price (see
-    // creditAbsenceProduction).
+    // creditAbsenceProduction). The world's pace is read on either side of the
+    // whole span, so the account can state the pace the return left behind and
+    // how much faster it now runs, from one pair of engine values.
+    const rateBeforeAbsence = effectiveWoodRate(state);
     const production = creditAbsenceProduction(elapsedSec);
     const woodGained = production.wood;
     const stoneGained = production.stone;
@@ -705,6 +714,9 @@ function catchUp(firstVisit, record = true, defer = false) {
     if (credited) {
       creditDiscovery(discovery);
     }
+    // The pace the world runs at once the absence's production, its step and
+    // its find are all in: the after-half of the account's one comparison.
+    const rateAfterAbsence = effectiveWoodRate(state);
 
     const discoveryRecord = discovery
       ? { id: discovery.id, name: discovery.name, bonus: discovery.bonus, credited, alreadyOwned }
@@ -756,6 +768,8 @@ function catchUp(firstVisit, record = true, defer = false) {
         eventId: offeredEvent ? offeredEvent.id : null,
         chosenOption: null,
         advance,
+        rateBefore: rateBeforeAbsence,
+        rateAfter: rateAfterAbsence,
         milestones: computeMilestones(before),
       };
       // A deferred account is folded into the one already on screen rather than
@@ -1063,6 +1077,20 @@ export function awayEventForElapsed(elapsedSec, s) {
 }
 
 /**
+ * The change an away option makes to the world's pace, as a predicate: a rate
+ * bonus raises it directly, and a forge level and a map each raise it through
+ * the same engine rule the in-game actions use. Every other kind leaves the
+ * rate as it was. One rule, so a surface can decide whether a choice sped the
+ * world up without a second copy of the mapping. Pure.
+ *
+ * @param {string} kind  "wood", "stone", "rate", "wall", "forge" or "map"
+ * @returns {boolean}
+ */
+export function awayOptionRaisesWoodRate(kind) {
+  return kind === "rate" || kind === "forge" || kind === "map";
+}
+
+/**
  * The away discovery that comes next after the one owned, and the absence
  * length needed to earn it. An account owning nothing is reaching for the
  * first rung; owning a fixed tier reaches for the next fixed tier, and owning
@@ -1212,6 +1240,35 @@ export function returnDiscoveryText(discovery) {
   return line.lead + line.name + line.tail;
 }
 
+// The smallest rate rise worth a sentence: a float artefact (or a step that
+// computed to exactly the rate in force) is not a faster world, so it is not
+// announced.
+const RATE_CHANGE_EPSILON = 1e-9;
+
+/**
+ * The one sentence that states what pace a return left the world at, built from
+ * the before/after rate on its own record. A credited find, an absence's own
+ * sharpen step and a rate-bearing away choice all raise the effective wood/s,
+ * and this is the single rule every surface words that rise with — the panel,
+ * the status line and the read tools all call it on the same record, so no two
+ * of them can quote a different world. It names both the resulting pace and how
+ * much faster than before, so a lasting bonus reads as a faster world rather
+ * than a small number that appeared. Pure, and "" when the record carries no
+ * rate comparison or the pace did not actually change.
+ *
+ * @param {{rateBefore?: number|null, rateAfter?: number|null}|null} ret
+ * @returns {string} the sentence, or "" when the world's pace did not change
+ */
+export function returnRateText(ret) {
+  if (!ret) return "";
+  const before = ret.rateBefore;
+  const after = ret.rateAfter;
+  if (!Number.isFinite(before) || !Number.isFinite(after)) return "";
+  const delta = after - before;
+  if (!(delta > RATE_CHANGE_EPSILON)) return "";
+  return `The world now runs at +${formatRate(after)} wood/s \u2014 +${formatRate(delta)} more than when you left.`;
+}
+
 function persist() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -1267,6 +1324,8 @@ function sanitizeReturnRecord(raw) {
     eventId: typeof raw.eventId === "string" && raw.eventId !== "" ? raw.eventId : null,
     chosenOption: sanitizeChosenOption(raw.chosenOption),
     advance: sanitizeAdvance(raw.advance),
+    rateBefore: Number.isFinite(raw.rateBefore) ? raw.rateBefore : null,
+    rateAfter: Number.isFinite(raw.rateAfter) ? raw.rateAfter : null,
     milestones: {
       sharpenAvailable: Boolean(m.sharpenAvailable),
       stoneNowUnlocked: Boolean(m.stoneNowUnlocked),
@@ -1306,6 +1365,11 @@ function mergeReturnAccounts(base, add) {
       ? add.discovery
       : base.discovery,
     advance: add.advance ?? base.advance ?? null,
+    // The account on screen holds the pace the world started the return at; the
+    // absence just credited holds the pace it now runs at, so the folded
+    // account states the whole change rather than only the last span of it.
+    rateBefore: Number.isFinite(base.rateBefore) ? base.rateBefore : (Number.isFinite(add.rateBefore) ? add.rateBefore : null),
+    rateAfter: Number.isFinite(add.rateAfter) ? add.rateAfter : (Number.isFinite(base.rateAfter) ? base.rateAfter : null),
     milestones: {
       sharpenAvailable: base.milestones.sharpenAvailable || add.milestones.sharpenAvailable,
       stoneNowUnlocked: base.milestones.stoneNowUnlocked || add.milestones.stoneNowUnlocked,
@@ -1413,6 +1477,8 @@ function cloneReturnRecord(record) {
       ? { ...record.chosenOption, effect: { ...record.chosenOption.effect } }
       : null,
     advance: record.advance ? { ...record.advance } : null,
+    rateBefore: Number.isFinite(record.rateBefore) ? record.rateBefore : null,
+    rateAfter: Number.isFinite(record.rateAfter) ? record.rateAfter : null,
     milestones: { ...record.milestones },
   };
 }
@@ -2285,6 +2351,11 @@ export function chooseAwayEventOption(optionId) {
       effect: { kind, amount },
       effectText: option.effectText,
     };
+    // A choice that raises the world's pace — a rate bonus, a forge level or a
+    // map — changes the resulting wood/s, so the return's own record carries the
+    // pace it now runs at. Every surface words that one figure, so a lasting
+    // bonus reads as a faster world rather than a small number that appeared.
+    state.lastReturn.rateAfter = effectiveWoodRate(state);
   }
   state.pendingEvent = null;
   persist();
@@ -2343,6 +2414,8 @@ export function consumeOfflineGained() {
  *   discovery: {id: string, name: string, bonus: number, credited: boolean, alreadyOwned: boolean}|null,
  *   chosenOption: {id: string, label: string, effect: {kind: string, amount: number}, effectText: string}|null,
  *   advance: {kind: string, name: string, woodSpent: number}|null,
+ *   rateBefore: number|null,
+ *   rateAfter: number|null,
  *   pendingEvent: AwayEvent|null,
  *   nextDiscovery: {id: string, name: string, bonus: number, minSec: number}|null,
  *   milestones: Milestones,
@@ -2362,6 +2435,8 @@ export function getReturnSummary() {
       discovery: null,
       chosenOption: null,
       advance: null,
+      rateBefore: null,
+      rateAfter: null,
       pendingEvent: clonePendingEvent(state.pendingEvent),
       nextDiscovery: nextDiscoveryAfter(state.discoveryId),
       milestones: { sharpenAvailable: false, stoneNowUnlocked: false, wallAvailable: false, forgeNowUnlocked: false, expeditionNowUnlocked: false },
@@ -2378,6 +2453,8 @@ export function getReturnSummary() {
     discovery: ret.discovery,
     chosenOption: ret.chosenOption ?? null,
     advance: ret.advance ?? null,
+    rateBefore: ret.rateBefore ?? null,
+    rateAfter: ret.rateAfter ?? null,
     pendingEvent: clonePendingEvent(state.pendingEvent),
     nextDiscovery: nextDiscoveryAfter(state.discoveryId),
     milestones: ret.milestones,
@@ -2418,6 +2495,15 @@ export function lastReturnHeadline() {
   const findText = returnDiscoveryText(ret.discovery);
   if (findText) {
     line += ` \u2014 ${findText}`;
+  }
+  // The pace the return left the world at belongs in the line too: the status
+  // bar then says not only what was found but what it did to the world, so a
+  // lasting bonus reads as a faster world. Worded by returnRateText from the
+  // record's own before/after pair, so the status line, the panel and the read
+  // tools state one figure.
+  const rateText = returnRateText(ret);
+  if (rateText) {
+    line += ` ${rateText}`;
   }
   return line;
 }
