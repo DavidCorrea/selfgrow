@@ -6528,6 +6528,90 @@ export async function checks() {
     }
     window.__dismissOffline();
 
+    // (c4) A credited find that outclasses one already owned did not stack on
+    // it — it replaced it — so the find sentence must state the net pace gain
+    // and name the find it supersedes, and that gain must equal the pace line's
+    // '+X more than when you left'. The panel, the status headline and
+    // read-state must all state the same supersede wording and the same gain
+    // (issue #1144).
+    engine.reset();
+    const priorRung = engine.discoverForElapsed(60); // flint-shard, +0.05
+    const strongerRung = engine.discoverForElapsed(3600); // wandering-sapling, +0.15
+    const netGain = strongerRung.bonus - priorRung.bonus;
+    // Seeded above the sharpen's price so the absence takes no step of its own
+    // and the find is the only thing that changes the world's pace.
+    localStorage.setItem("selfgrow-state", JSON.stringify({
+      wood: 12, rate: 0.1 + priorRung.bonus, stone: 0, totalWoodEarned: 12,
+      wallLevel: 0, stoneUnlocked: false,
+      discoveryId: priorRung.id, discoveryName: priorRung.name, discoveryBonus: priorRung.bonus,
+      timestamp: new Date(Date.now() - 3600000).toISOString(),
+    }));
+    engine.init();
+    const supersededReturn = engine.getReturnSummary();
+    if (!supersededReturn.discovery || supersededReturn.discovery.credited !== true) {
+      problems.push(`A 1h return owning ${priorRung.id} must credit the stronger ${strongerRung.id}, got ${JSON.stringify(supersededReturn.discovery)}.`);
+    } else {
+      const superseded = supersededReturn.discovery.superseded;
+      if (!superseded || superseded.name !== priorRung.name || Math.abs(superseded.bonus - priorRung.bonus) > 1e-9) {
+        problems.push(`The credited find must carry the find it supersedes (${priorRung.name} +${priorRung.bonus}), got ${JSON.stringify(superseded)}.`);
+      }
+      const supersedeSentence = engine.returnDiscoveryText(supersededReturn.discovery);
+      if (!supersedeSentence.includes(priorRung.name)) {
+        problems.push(`A superseding find's sentence must name the find it replaces (${priorRung.name}), got ${JSON.stringify(supersedeSentence)}.`);
+      }
+      if (!supersedeSentence.includes(`+${engine.formatRate(netGain)} wood/s`)) {
+        problems.push(`A superseding find's sentence must state the net ${engine.formatRate(netGain)} wood/s the world gained, got ${JSON.stringify(supersedeSentence)}.`);
+      }
+      if (supersedeSentence.includes(`+${engine.formatRate(strongerRung.bonus)} wood/s`)) {
+        problems.push(`A superseding find's sentence must not state the rung's full ${engine.formatRate(strongerRung.bonus)} wood/s, got ${JSON.stringify(supersedeSentence)}.`);
+      }
+      const paceText = engine.returnRateText(supersededReturn);
+      if (!paceText.includes(`+${engine.formatRate(netGain)} more than when you left`)) {
+        problems.push(`The pace line must state the same net ${engine.formatRate(netGain)} wood/s gain as the find sentence, got ${JSON.stringify(paceText)}.`);
+      }
+    }
+
+    window.__showOfflineSummary();
+    if (supersededReturn.discovery) {
+      const supersedeSentence = engine.returnDiscoveryText(supersededReturn.discovery);
+      const panelRateText = engine.returnRateText(supersededReturn);
+      const expectedPanel = panelRateText ? `${supersedeSentence} ${panelRateText}` : supersedeSentence;
+      if (discoveryLine && discoveryLine.textContent.trim() !== expectedPanel) {
+        problems.push(`A superseding find's panel line should read ${JSON.stringify(expectedPanel)}, got ${JSON.stringify(discoveryLine.textContent.trim())}.`);
+      }
+      if (discoveryNameEl && discoveryNameEl.textContent.trim() !== supersededReturn.discovery.name) {
+        problems.push(`The panel should name the new find "${supersededReturn.discovery.name}", got "${discoveryNameEl.textContent.trim()}".`);
+      }
+      const supersedeHeadline = engine.lastReturnHeadline();
+      if (!supersedeHeadline.includes(supersedeSentence)) {
+        problems.push(`The status headline must name the superseding find in the panel's words (${JSON.stringify(supersedeSentence)}), got ${JSON.stringify(supersedeHeadline)}.`);
+      }
+      if (discoveryBonusEl && discoveryBonusEl.hidden) {
+        problems.push("A superseding find must state its gain in #offline-discovery-bonus, but it was hidden.");
+      }
+      if (readState) {
+        const supersedeRead = await readState.execute({});
+        const readDiscovery = supersedeRead.offlineDiscovery;
+        if (!readDiscovery) {
+          problems.push("read-state.offlineDiscovery should report the superseding find while the panel is open, got null.");
+        } else {
+          if (readDiscovery.superseded !== priorRung.name) {
+            problems.push(`read-state.offlineDiscovery.superseded should name "${priorRung.name}", got ${JSON.stringify(readDiscovery.superseded)}.`);
+          }
+          if (typeof readDiscovery.bonus !== "number" || Math.abs(readDiscovery.bonus - netGain) > 1e-9) {
+            problems.push(`read-state.offlineDiscovery.bonus should report the net ${netGain} wood/s gain, got ${JSON.stringify(readDiscovery.bonus)}.`);
+          }
+          if (readDiscovery.sentence !== supersedeSentence) {
+            problems.push(`read-state.offlineDiscovery.sentence should equal the panel's superseding find sentence ${JSON.stringify(supersedeSentence)}, got ${JSON.stringify(readDiscovery.sentence)}.`);
+          }
+        }
+        if (supersedeRead.lastReturnHeadline !== supersedeHeadline) {
+          problems.push(`read-state.lastReturnHeadline (${JSON.stringify(supersedeRead.lastReturnHeadline)}) must equal the status bar's headline (${JSON.stringify(supersedeHeadline)}) for a superseding find.`);
+        }
+      }
+    }
+    window.__dismissOffline();
+
     // (d) A return shorter than 60s, and a first-ever visit, find nothing.
     engine.reset();
     localStorage.setItem("selfgrow-state", JSON.stringify({
