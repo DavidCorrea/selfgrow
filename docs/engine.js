@@ -299,7 +299,7 @@ let state = {
 };
 
 /** Offline resources gained on last catch-up. */
-/** @type {{ wood: number, stone: number, elapsedSec: number, discovery: {id: string, name: string, bonus: number, credited: boolean, alreadyOwned: boolean}|null }} */
+/** @type {{ wood: number, stone: number, elapsedSec: number, discovery: {id: string, name: string, bonus: number, credited: boolean, alreadyOwned: boolean, superseded: {id: string, name: string, bonus: number}|null}|null }} */
 let offlineGained = { wood: 0, stone: 0, elapsedSec: 0, discovery: null };
 
 /**
@@ -316,7 +316,11 @@ let offlineGained = { wood: 0, stone: 0, elapsedSec: 0, discovery: null };
  * @property {number}  elapsedSec
  * @property {number}  wood
  * @property {number}  stone
- * @property {{id: string, name: string, bonus: number, credited: boolean, alreadyOwned: boolean}|null} discovery
+ * @property {{id: string, name: string, bonus: number, credited: boolean, alreadyOwned: boolean, superseded: {id: string, name: string, bonus: number}|null}|null} discovery
+ *   — the find the return turned up, with the find it superseded when a
+ *   credited rung replaced a weaker one the save already owned. `superseded`
+ *   is null when nothing was owned, so a first find keeps its rung's own
+ *   bonus.
  * @property {string|null} eventId — the id of the away event this return itself
  *   offered, or null when it offered none. It is what ties a later choice back
  *   to the return that actually posed the decision, so a return that never
@@ -704,6 +708,8 @@ function catchUp(firstVisit, record = true, defer = false) {
 
     const discovery = firstVisit ? null : discoverForElapsed(elapsedSec);
     const ownedBefore = state.discoveryId;
+    const ownedBeforeName = state.discoveryName;
+    const ownedBeforeBonus = state.discoveryBonus;
     // A find is only credited when it beats everything owned so far; a weaker
     // repeat names itself but must not claim a bonus it did not add.
     const credited = Boolean(discovery && discovery.bonus > state.discoveryBonus);
@@ -718,8 +724,17 @@ function catchUp(firstVisit, record = true, defer = false) {
     // its find are all in: the after-half of the account's one comparison.
     const rateAfterAbsence = effectiveWoodRate(state);
 
+    // A credited rung does not stack on a weaker one it outclasses — it
+    // replaces it — so the pace gain is the difference of the two bonuses, not
+    // the rung's own. Carrying the replaced find lets the sentence state that
+    // difference and name what it supersedes, matching the pace line's own
+    // comparison. Null when nothing was owned, so a first find keeps its
+    // rung's own bonus and wording.
+    const superseded = credited && ownedBefore && ownedBeforeBonus > 0
+      ? { id: ownedBefore, name: ownedBeforeName, bonus: ownedBeforeBonus }
+      : null;
     const discoveryRecord = discovery
-      ? { id: discovery.id, name: discovery.name, bonus: discovery.bonus, credited, alreadyOwned }
+      ? { id: discovery.id, name: discovery.name, bonus: discovery.bonus, credited, alreadyOwned, superseded }
       : null;
 
     // The decision a real return offers, drawn from the departure alone. An
@@ -1204,15 +1219,26 @@ export function nextAwayFindText(next) {
  * welcome-back panel renders: the words before the name (lead), the find's own
  * name, and the words after it (tail). A credited find reads as news and names
  * the wood/s it added; a repeat or an out-classed find has an empty lead, so
- * the sentence can never open by claiming a find the state did not make. Pure,
- * so the panel and the agent tools word the same return identically.
+ * the sentence can never open by claiming a find the state did not make. A
+ * credited find that outclassed one already owned did not stack on it — it
+ * replaced it — so its sentence states the net pace gain and names the find it
+ * supersedes, the same arithmetic the pace line states. Pure, so the panel and
+ * the agent tools word the same return identically.
  *
- * @param {{name: string, bonus: number, credited: boolean, alreadyOwned?: boolean}|null} discovery
+ * @param {{name: string, bonus: number, credited: boolean, alreadyOwned?: boolean, superseded?: {name: string, bonus: number}|null}|null} discovery
  * @returns {{lead: string, name: string, tail: string}} the sentence parts
  */
 export function returnDiscoveryLine(discovery) {
   if (!discovery) return { lead: "", name: "", tail: "" };
   if (discovery.credited) {
+    if (discovery.superseded) {
+      const gain = discovery.bonus - discovery.superseded.bonus;
+      return {
+        lead: "You found the ",
+        name: discovery.name,
+        tail: `! It replaces your ${discovery.superseded.name} \u2014 +${formatRate(gain)} wood/s more, yours for good.`,
+      };
+    }
     return {
       lead: "You found the ",
       name: discovery.name,
@@ -1232,7 +1258,7 @@ export function returnDiscoveryLine(discovery) {
  * The whole sentence that words a return's find — the lead, name and tail of
  * returnDiscoveryLine joined. Pure, and "" when the return turned up no find.
  *
- * @param {{name: string, bonus: number, credited: boolean, alreadyOwned?: boolean}|null} discovery
+ * @param {{name: string, bonus: number, credited: boolean, alreadyOwned?: boolean, superseded?: {name: string, bonus: number}|null}|null} discovery
  * @returns {string} the sentence, or "" when the return turned up no find
  */
 export function returnDiscoveryText(discovery) {
@@ -1471,7 +1497,12 @@ function cloneReturnRecord(record) {
     elapsedSec: record.elapsedSec,
     wood: record.wood,
     stone: record.stone,
-    discovery: record.discovery ? { ...record.discovery } : null,
+    discovery: record.discovery
+      ? {
+          ...record.discovery,
+          superseded: record.discovery.superseded ? { ...record.discovery.superseded } : null,
+        }
+      : null,
     eventId: record.eventId ?? null,
     chosenOption: record.chosenOption
       ? { ...record.chosenOption, effect: { ...record.chosenOption.effect } }
@@ -2452,7 +2483,7 @@ export function consumeOfflineGained() {
  *   elapsed: string,
  *   wood: number,
  *   stone: number,
- *   discovery: {id: string, name: string, bonus: number, credited: boolean, alreadyOwned: boolean}|null,
+ *   discovery: {id: string, name: string, bonus: number, credited: boolean, alreadyOwned: boolean, superseded: {id: string, name: string, bonus: number}|null}|null,
  *   chosenOption: {id: string, label: string, effect: {kind: string, amount: number}, effectText: string}|null,
  *   advance: {kind: string, name: string, woodSpent: number}|null,
  *   rateBefore: number|null,

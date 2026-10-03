@@ -26,7 +26,7 @@ import { getState, gatherWood, craftUpgrade, gatherStone, buildWall, forgeTool, 
  *   wood: number,
  *   stone: number,
  *   elapsed: string|null,
- *   discovery: { name: string, bonus: number|null, permanent: boolean, alreadyOwned: boolean, sentence: string, resultingWoodPerSec: number|null }|null,
+ *   discovery: { name: string, bonus: number|null, permanent: boolean, alreadyOwned: boolean, superseded: string|null, sentence: string, resultingWoodPerSec: number|null }|null,
  *   chosenOption: { id: string, label: string, effect: {kind: string, amount: number}, effectText: string }|null,
  *   advance: { kind: string, name: string, woodSpent: number }|null,
  *   rateBefore: number|null,
@@ -60,9 +60,18 @@ function readReturnSummary() {
     discovery: ret.discovery
       ? {
           name: ret.discovery.name,
-          bonus: ret.discovery.credited ? ret.discovery.bonus : null,
+          // The net wood/s the find added to the world. A find that outclassed
+          // one already owned replaced it rather than stacked on it, so the
+          // gain is the difference of the two bonuses — the same figure the
+          // find sentence and the pace line state. Null when nothing was added.
+          bonus: ret.discovery.credited
+            ? ret.discovery.bonus - (ret.discovery.superseded ? ret.discovery.superseded.bonus : 0)
+            : null,
           permanent: ret.discovery.credited,
           alreadyOwned: Boolean(ret.discovery.alreadyOwned),
+          // The name of the weaker find this one replaced, or null when nothing
+          // was owned — so an agent can tell what the new find superseded.
+          superseded: ret.discovery.superseded ? ret.discovery.superseded.name : null,
           sentence: returnDiscoveryText(ret.discovery),
           // The pace the world runs at once this find was credited, so an agent
           // sees the same resulting wood/s the panel and status chip show.
@@ -553,13 +562,16 @@ export function tools() {
         + "string when no real return is on record; it stays after the panel is dismissed "
         + "so the status bar and this tool agree), the away discovery "
         + "named in the welcome-back panel this return (offlineDiscovery: "
-        + "{name, bonus, permanent, alreadyOwned, sentence, resultingWoodPerSec}). bonus is the wood/s boost "
-        + "the find granted and permanent is true because the find is kept; both are "
-        + "null/false when the find added nothing because it was already owned or was "
+        + "{name, bonus, permanent, alreadyOwned, superseded, sentence, resultingWoodPerSec}). bonus is the "
+        + "net wood/s the find added to the world — a credited find that outclassed one already owned "
+        + "replaced it rather than stacked on it, so bonus is the difference of the two, the same figure "
+        + "the find sentence and the pace line state — and permanent is true because the find is kept; "
+        + "both are null/false when the find added nothing because it was already owned or was "
         + "weaker than one owned, in which case alreadyOwned says whether it was the "
-        + "same rung already in the collection, and sentence is the exact sentence the panel "
-        + "shows for it (a credited find names the wood/s it added; a repeat or weaker "
-        + "find makes no claim of a new find); offlineDiscovery itself is null when nothing was found. "
+        + "same rung already in the collection. superseded names the weaker find the credited one replaced, "
+        + "or null when nothing was owned before it. sentence is the exact sentence the panel "
+        + "shows for it (a credited find names the net wood/s it added and the find it supersedes; a repeat "
+        + "or weaker find makes no claim of a new find); offlineDiscovery itself is null when nothing was found. "
         + "offlineChosenOption is the option the player took from that same return's decision "
         + "({id, label, effect: {kind, amount}, effectText}) or null when the return offered no decision "
         + "or none has been taken yet; it is part of the return's own record, so it survives a reload and "
