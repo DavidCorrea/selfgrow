@@ -7266,6 +7266,210 @@ export async function checks() {
       }
     }
 
+    // (f) A save code always reveals, even while a return's permanent-rate
+    // choice is waiting or has been taken (issue #1143). The rate option's
+    // effect sentence carries an em dash (U+2014), which `btoa` alone rejects,
+    // so a code had to be built through the JSON's UTF-8 bytes instead — with
+    // the plain encoder the export threw, the Reveal Save Code press died
+    // mid-assignment and the read-save-code tool rejected. Reach for a backup
+    // at exactly this moment must work.
+    const utf8SaveCode = (save) => {
+      let binary = "";
+      for (const byte of new TextEncoder().encode(JSON.stringify(save))) {
+        binary += String.fromCharCode(byte);
+      }
+      return btoa(binary);
+    };
+
+    const rateOptionText = "Permanently adds +0.05 wood/s \u2014 worth +180 wood over the next hour.";
+    const pendingRateSave = {
+      wood: 654.25,
+      rate: 0.55,
+      upgradeLevel: 1,
+      stone: 12,
+      totalWoodEarned: 1200,
+      totalStoneEarned: 20,
+      wallLevel: 1,
+      forgeLevel: 0,
+      expeditionLevel: 0,
+      maps: 0,
+      stoneUnlocked: true,
+      timestamp: "2024-07-01T00:00:00.000Z",
+      firstTimestamp: "2024-07-01T00:00:00.000Z",
+      pendingEvent: {
+        id: "rate-vs-wood",
+        title: "The forest offers a choice",
+        options: [
+          { id: "rate", label: "Permanent +0.05 wood/s", effect: { kind: "rate", amount: 0.05 }, effectText: rateOptionText },
+          { id: "wood", label: "Take +30 wood", effect: { kind: "wood", amount: 30 }, effectText: "Grants +30 wood." },
+        ],
+      },
+    };
+
+    engine.reset();
+    const loadedPending = engine.importSave(utf8SaveCode(pendingRateSave));
+    if (!loadedPending.ok) {
+      problems.push(`A save with a pending rate option should import, got ${JSON.stringify(loadedPending.reason)}.`);
+    }
+
+    // Exporting and re-importing that save must not throw, and the pending
+    // decision must come back whole.
+    let pendingCode = null;
+    try {
+      pendingCode = engine.exportSave();
+    } catch (err) {
+      problems.push(`exportSave must not throw while a rate option is pending — it threw "${err.message}".`);
+    }
+    if (pendingCode) {
+      const roundTrip = engine.inspectSave(pendingCode);
+      if (!roundTrip.ok) {
+        problems.push(`A code exported while a rate option was pending should be readable, got ${JSON.stringify(roundTrip.reason)}.`);
+      } else {
+        const pendingOption = roundTrip.saved.pendingEvent && roundTrip.saved.pendingEvent.options.find((o) => o.id === "rate");
+        if (!pendingOption || pendingOption.effectText !== rateOptionText) {
+          problems.push(`The pending rate option's effect sentence should round-trip, got ${JSON.stringify(pendingOption && pendingOption.effectText)}.`);
+        }
+        if (roundTrip.saved.wood !== pendingRateSave.wood || roundTrip.saved.rate !== pendingRateSave.rate) {
+          problems.push(`The code should carry wood ${pendingRateSave.wood} and rate ${pendingRateSave.rate}, got wood ${roundTrip.saved.wood}, rate ${roundTrip.saved.rate}.`);
+        }
+      }
+      engine.reset();
+      const pendingBack = engine.importSave(pendingCode);
+      const backOption = pendingBack.ok && engine.getState().pendingEvent
+        ? engine.getState().pendingEvent.options.find((o) => o.id === "rate")
+        : null;
+      if (!pendingBack.ok || !backOption || backOption.effectText !== rateOptionText) {
+        problems.push("Importing the code should restore the pending rate option's effect sentence unchanged.");
+      }
+    }
+
+    // (g) Once the rate option has been chosen, the choice is part of the
+    // save: the code must still reveal, copy and paste back with the same
+    // wood, rate and chosen option.
+    const chosenRateSave = {
+      ...pendingRateSave,
+      pendingEvent: null,
+      rate: 0.6,
+      lastReturn: {
+        firstVisit: false,
+        seen: true,
+        elapsedSec: 3600,
+        wood: 200,
+        stone: 0,
+        discovery: null,
+        eventId: "rate-vs-wood",
+        chosenOption: {
+          id: "rate",
+          label: "Permanent +0.05 wood/s",
+          effect: { kind: "rate", amount: 0.05 },
+          effectText: rateOptionText,
+        },
+        advance: null,
+        rateBefore: 0.55,
+        rateAfter: 0.6,
+        milestones: {
+          sharpenAvailable: false,
+          stoneNowUnlocked: false,
+          wallAvailable: false,
+          forgeNowUnlocked: false,
+          expeditionNowUnlocked: false,
+        },
+      },
+    };
+    engine.reset();
+    const loadedChosen = engine.importSave(utf8SaveCode(chosenRateSave));
+    if (!loadedChosen.ok) {
+      problems.push(`A save with a chosen rate option should import, got ${JSON.stringify(loadedChosen.reason)}.`);
+    }
+    let chosenCode = null;
+    try {
+      chosenCode = engine.exportSave();
+    } catch (err) {
+      problems.push(`exportSave must not throw once a rate option has been chosen — it threw "${err.message}".`);
+    }
+    if (chosenCode) {
+      engine.reset();
+      const chosenBack = engine.importSave(chosenCode);
+      const chosen = chosenBack.ok && engine.getState().lastReturn ? engine.getState().lastReturn.chosenOption : null;
+      if (!chosenBack.ok || !chosen || chosen.effectText !== rateOptionText) {
+        problems.push("Pasting back the code of a chosen rate option should restore the chosen option unchanged.");
+      }
+      if (engine.getState().wood !== chosenRateSave.wood || engine.getState().rate !== chosenRateSave.rate) {
+        problems.push(`Pasting back the code should restore wood ${chosenRateSave.wood} and rate ${chosenRateSave.rate}, got wood ${engine.getState().wood}, rate ${engine.getState().rate}.`);
+      }
+    }
+
+    // (h) While the decision waits, the panel's own press shows a code and the
+    // read-save-code tool returns the very same code — no error either way.
+    engine.reset();
+    engine.importSave(utf8SaveCode(pendingRateSave));
+    if (revealBtn && saveCodeField) {
+      saveCodeField.value = "";
+      if (statusEl) {
+        statusEl.textContent = "";
+        statusEl.classList.remove("error");
+      }
+      revealBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      const panelCode = saveCodeField.value;
+      const panelLook = engine.inspectSave(panelCode);
+      if (!panelCode || !panelLook.ok) {
+        problems.push("Pressing Reveal Save Code while a rate option waits should fill #save-code with a readable code.");
+      } else {
+        const shownOption = panelLook.saved.pendingEvent && panelLook.saved.pendingEvent.options.find((o) => o.id === "rate");
+        if (!shownOption || shownOption.effectText !== rateOptionText) {
+          problems.push("The revealed code should carry the pending rate option's effect sentence.");
+        }
+      }
+      if (statusEl && statusEl.classList.contains("error")) {
+        problems.push(`Revealing a save code while a rate option waits must not report an error, got ${JSON.stringify(statusEl.textContent)}.`);
+      }
+
+      // Copying hands the shown code on without disturbing it, even though the
+      // save holds text `btoa` cannot take alone.
+      const copySaveBtn = document.getElementById("btn-copy-save");
+      if (copySaveBtn) {
+        copySaveBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        if (saveCodeField.value !== panelCode) {
+          problems.push("Copying the save code while a rate option waits must leave the revealed code unchanged.");
+        }
+      }
+
+      if (readCodeTool) {
+        const liveCode = engine.exportSave();
+        let toolCode = null;
+        try {
+          toolCode = (await readCodeTool.execute({})).code;
+        } catch (err) {
+          problems.push(`read-save-code must not reject while a rate option waits — it threw "${err.message}".`);
+        }
+        if (typeof toolCode !== "string" || toolCode !== liveCode) {
+          problems.push("read-save-code should return the engine's current save code while a rate option waits.");
+        } else if (toolCode !== panelCode && liveCode === panelCode) {
+          problems.push("read-save-code should return the same code the Save Backup panel shows while a rate option waits.");
+        }
+      }
+    }
+
+    // (i) A code revealed before UTF-8 encoding shipped still restores: an
+    // ASCII-only save encodes and decodes byte-for-byte as it always did.
+    const legacySave = {
+      wood: 88,
+      rate: 0.3,
+      upgradeLevel: 2,
+      timestamp: "2023-01-01T00:00:00.000Z",
+      firstTimestamp: "2023-01-01T00:00:00.000Z",
+    };
+    const legacyCode = btoa(JSON.stringify(legacySave));
+    engine.reset();
+    const legacyLook = engine.inspectSave(legacyCode);
+    if (!legacyLook.ok || legacyLook.saved.wood !== legacySave.wood) {
+      problems.push("A save code revealed before UTF-8 encoding shipped should still decode.");
+    }
+    const legacyBack = engine.importSave(legacyCode);
+    if (!legacyBack.ok || engine.getState().wood !== legacySave.wood || engine.getState().rate !== legacySave.rate) {
+      problems.push("A save code revealed before UTF-8 encoding shipped should still restore its wood and rate.");
+    }
+
     // Leave the save — and the panel — as they were found, and let the
     // game's tick keep running for whatever measures the page next.
     engine.importSave(originalCode);

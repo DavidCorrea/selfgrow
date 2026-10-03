@@ -1748,13 +1748,54 @@ export function save() {
 }
 
 /**
+ * Encode a save's JSON as a portable base64 code, through its UTF-8 bytes.
+ * The save can carry text no ASCII code could: a return decision's rate option
+ * writes an em dash into its effect sentence, and `btoa` throws above U+00FF.
+ * Encoding to UTF-8 bytes first makes every save — pending choice or not —
+ * exportable. A pure-ASCII save encodes byte-for-byte as it always did, so a
+ * code revealed before this change still means the same thing.
+ *
+ * @param {object} save
+ * @returns {string}
+ */
+function encodeSaveCode(save) {
+  const bytes = new TextEncoder().encode(JSON.stringify(save));
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+/**
+ * Decode a base64 code produced by encodeSaveCode back into a save object.
+ * The bytes are read as UTF-8; when they are not valid UTF-8 — a stray Latin-1
+ * byte in an older code — they are read one byte per character instead, so an
+ * old code restores as it always did rather than landing as replacement
+ * characters. Throws when the result is not JSON, for the caller to refuse.
+ *
+ * @param {string} code
+ * @returns {object}
+ */
+function decodeSaveCode(code) {
+  const binary = atob(code);
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  let json;
+  try {
+    json = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    json = binary;
+  }
+  return JSON.parse(json);
+}
+
+/**
  * Encode the current save as a portable base64 text code — the exact JSON
- * written to localStorage, so a code is a faithful copy of the save.
+ * written to localStorage, so a code is a faithful copy of the save. Never
+ * depends on the text the save holds, so a backup can always be taken.
  *
  * @returns {string}
  */
 export function exportSave() {
-  return btoa(JSON.stringify(state));
+  return encodeSaveCode(state);
 }
 
 /**
@@ -1774,7 +1815,7 @@ export function inspectSave(code) {
 
   let saved;
   try {
-    saved = JSON.parse(atob(code.trim()));
+    saved = decodeSaveCode(code.trim());
   } catch {
     return { ok: false, reason: "That code is not a valid save — it looks corrupted or incomplete." };
   }
