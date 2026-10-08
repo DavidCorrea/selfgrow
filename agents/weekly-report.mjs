@@ -19,6 +19,7 @@
 // meant to run without one.
 import { log, withLogGroup } from "./log.mjs";
 import { findDiscussion, postDiscussion } from "./discussions.mjs";
+import { daysAgo, closedWithin } from "./time.mjs";
 // readPage reaches the Story, which now carries the project's long arc so the
 // changelog can be trimmed without amputating its early chapters.
 import { readChangelog, readPage, trimSections, writeStory } from "./wiki.mjs";
@@ -28,8 +29,6 @@ import { isBlocked, isPlaytestFeedback, isManualIssue } from "./backlog.mjs";
 
 // Who the digest @-mentions. Without it the issue is still filed, just silently.
 const NOTIFY_USER = process.env.GH_NOTIFY_USER || "";
-
-const daysAgo = (n, now = Date.now()) => new Date(now - n * 86_400_000).toISOString().slice(0, 10);
 
 /** The first day of the week a report written at `now` covers — the week's key. */
 export const digestWeekStart = (now = new Date()) => daysAgo(7, now.getTime());
@@ -65,8 +64,7 @@ export function cleanMarkdown(text) {
  * No model involved — the numbers are counted, not estimated.
  */
 export function gatherWeek({ shipped, open }) {
-  const since = daysAgo(7);
-  const shippedThisWeek = shipped.filter((i) => (i.closedAt || "") >= since);
+  const shippedThisWeek = closedWithin(shipped, 7);
   return {
     shipped: shippedThisWeek,
     parked: open.filter(isBlocked),

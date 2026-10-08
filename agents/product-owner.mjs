@@ -17,6 +17,7 @@ import { getBoardSnapshot } from "./board-snapshot.mjs";
 import { getCurrentMilestone, startMilestone, fetchOpenIssues } from "./github.mjs";
 import { isBlocked } from "./backlog.mjs";
 import { fetchShippedIssues } from "./shipped.mjs";
+import { closedWithin } from "./time.mjs";
 import { readVision, commitToWiki } from "./wiki.mjs";
 import {
   readJournal,
@@ -30,7 +31,6 @@ import {
 import { PLAYTESTER_JOURNAL, renderOpenFindings, renderPlaytesterVerdicts } from "./playtest-findings.mjs";
 import { pathToFileURL } from "url";
 
-const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 
 /**
  * The week as it actually went, from what the pipeline wrote down: what shipped,
@@ -43,10 +43,9 @@ const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice
  * dark void" never reached the role that decides whether a milestone is done.
  */
 function readWeek() {
-  const since = daysAgo(7);
   const open = fetchOpenIssues();
   return {
-    shipped: fetchShippedIssues().filter((i) => (i.closedAt || "") >= since),
+    shipped: closedWithin(fetchShippedIssues(), 7),
     parked: open.filter(isBlocked),
     open,
     verdicts: readJournal(PLAYTESTER_JOURNAL),

@@ -23,6 +23,7 @@ import { ghExec } from "./git.mjs";
 import { printRunSummary } from "./agent.mjs";
 import { fetchOpenIssues } from "./github.mjs";
 import { fetchShippedIssues } from "./shipped.mjs";
+import { daysAgo, closedWithin } from "./time.mjs";
 import {
   isBuildable,
   isBlocked,
@@ -109,7 +110,6 @@ const ABORTED_RUNS_LIMIT = 2;
 const ABORT_PATTERN =
   /session cap|sent nothing for|this operation was aborted|timed out|exceeded the maximum execution time/i;
 
-const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 
 /**
  * Everything the checks below read, gathered once.
@@ -253,8 +253,7 @@ async function fetchSite() {
 
 /** Merges are the pipeline's output; no output for two days is the headline fault. */
 export function checkShipping({ shippedRecently, open }) {
-  const since = daysAgo(QUIET_DAYS_BEFORE_ALARM);
-  const shipped = shippedRecently.filter((i) => (i.closedAt || "") >= since);
+  const shipped = closedWithin(shippedRecently, QUIET_DAYS_BEFORE_ALARM);
   if (shipped.length > 0) return null;
 
   const openNumbers = new Set(open.map((i) => i.number));
@@ -275,7 +274,7 @@ export function checkShipping({ shippedRecently, open }) {
 /** A merge that never reaches the changelog is a merge the digest cannot report. */
 export function checkChangelogKeepingUp({ changelog, shippedRecently }) {
   const since = daysAgo(CHANGELOG_STALE_DAYS);
-  const shipped = shippedRecently.filter((i) => (i.closedAt || "") >= since).length;
+  const shipped = closedWithin(shippedRecently, CHANGELOG_STALE_DAYS).length;
   if (shipped === 0) return null; // nothing to record; silence is correct
 
   const recorded = [...changelog.matchAll(/^## (\d{4}-\d{2}-\d{2})$/gm)].some((m) => m[1] >= since);
@@ -291,7 +290,7 @@ export function checkChangelogKeepingUp({ changelog, shippedRecently }) {
 export function checkAbandonRate({ open, shippedRecently }) {
   const parked = open.filter(isBlocked).length;
   const struggling = open.filter((i) => attemptCount(i) > 0 && !isBlocked(i)).length;
-  const shipped = shippedRecently.filter((i) => (i.closedAt || "") >= daysAgo(7)).length;
+  const shipped = closedWithin(shippedRecently, 7).length;
   const engaged = shipped + parked + struggling;
   if (engaged < 5) return null; // too few to mean anything
 
@@ -459,7 +458,7 @@ const CHECKS = [
  */
 function renderVitals({ open, shippedRecently, site, agentPrs = [] }) {
   const openNumbers = new Set(open.map((i) => i.number));
-  const shipped7 = shippedRecently.filter((i) => (i.closedAt || "") >= daysAgo(7)).length;
+  const shipped7 = closedWithin(shippedRecently, 7).length;
   return [
     site ? `Site: ${site.error ? "unreachable" : `HTTP ${site.status}`}` : "Site: not checked",
     `Shipped (7d): ${shipped7}`,
