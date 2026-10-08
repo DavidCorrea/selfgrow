@@ -26,7 +26,7 @@ import {
 } from "./log.mjs";
 import { secret } from "./secrets.mjs";
 import { agentsDir, repoRoot } from "./paths.mjs";
-import { containsParseableJSON } from "./prompts.mjs";
+import { containsParseableJSON, extractAgentResponse } from "./prompts.mjs";
 
 // ---------------------------------------------------------------------------
 // Agent runner
@@ -646,7 +646,24 @@ export function projectSkillProblems(projectSkillsDir = PROJECT_SKILLS_DIR) {
 // rules, and a way to look at what it built; the Reviewer gets only the rules, because it judges a change against the
 // Vision and the ticket, not against its own sense of what would look better.
 export const BUILDER_SKILLS = ["frontend-design", "web-interface-guidelines", "see-your-change"];
-export const REVIEWER_SKILLS = ["web-interface-guidelines"];
+const REVIEWER_SKILLS = ["web-interface-guidelines"];
+
+/**
+ * One Reviewer session, configured the same wherever a change is judged, and its
+ * answer parsed. Null when the answer could not be read — what that means is the
+ * caller's to decide.
+ */
+export async function runReviewer({ group, systemPrompt, avoidModel = null }) {
+  const output = await runAgent({
+    label: "Reviewer",
+    group,
+    systemPrompt,
+    tools: ["read", "bash"],
+    skills: REVIEWER_SKILLS,
+    avoidModel,
+  });
+  return extractAgentResponse("Reviewer", output, { requiredDataFields: ["issues"] });
+}
 
 /** Assistant messages so far — one per charged completion, whatever event revealed it. */
 export function countAssistantTurns(messages = []) {

@@ -4,7 +4,7 @@ import {
   isDailyQuotaExhausted,
   runAgent,
   BUILDER_SKILLS,
-  REVIEWER_SKILLS,
+  runReviewer,
   getLastModelUsed,
 } from "./agent.mjs";
 import { loadPrompt, fillTemplate, extractAgentResponse } from "./prompts.mjs";
@@ -590,16 +590,10 @@ async function reviewOpenPR(ctx, attempt) {
   // Builder and Reviewer used to come off the same chain, usually landing on the
   // same model, so the three review cycles bought three re-rolls of one opinion.
   // Falls back to the same model rather than skipping the review.
-  const reviewerOutput = await runAgent({
-    label: "Reviewer",
+  const reviewerResult = await runReviewer({
     group: `Reviewer (attempt ${attempt})`,
     systemPrompt: buildReviewerPrompt(reviewContext),
-    tools: ["read", "bash"],
-    skills: REVIEWER_SKILLS,
     avoidModel: ctx.builderModel,
-  });
-  const reviewerResult = extractAgentResponse("Reviewer", reviewerOutput, {
-    requiredDataFields: ["issues"],
   });
   if (!reviewerResult) {
     return { approved: false, feedback: "The Reviewer output could not be parsed. Check your work for obvious issues." };

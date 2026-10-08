@@ -36,7 +36,7 @@ import {
   runEntrypoint,
   runAgent,
   BUILDER_SKILLS,
-  REVIEWER_SKILLS,
+  runReviewer,
   getLastModelUsed,
 } from "./agent.mjs";
 import { loadPrompt, fillTemplate, extractAgentResponse } from "./prompts.mjs";
@@ -206,14 +206,7 @@ async function main() {
 
     // 2. Review, when there is something worth reviewing.
     if (!problems) {
-      const output = await runAgent({
-        label: "Reviewer",
-        group: `Reviewer (cycle ${cycle})`,
-        systemPrompt: buildReviewPrompt(),
-        tools: ["read", "bash"],
-        skills: REVIEWER_SKILLS,
-      });
-      const review = extractAgentResponse("Reviewer", output, { requiredDataFields: ["issues"] });
+      const review = await runReviewer({ group: `Reviewer (cycle ${cycle})`, systemPrompt: buildReviewPrompt() });
       if (!review) {
         // The reviewer is the only thing that can hold a green build back, so an
         // unreadable answer must not read as approval.
