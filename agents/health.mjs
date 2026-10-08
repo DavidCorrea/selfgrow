@@ -17,7 +17,7 @@
 import { pathToFileURL } from "url";
 import { log, withLogGroup, appendJobSummary, errorData } from "./log.mjs";
 import { readPage, wikiPath } from "./wiki.mjs";
-import { postDiscussion, findOpenDiscussion, findDiscussion, resolveDiscussion } from "./discussions.mjs";
+import { postDiscussion, findOpenDiscussion, findDiscussion, resolveDiscussion, mentionLine } from "./discussions.mjs";
 import { DIGEST_CATEGORY, digestTitlePrefix, digestWeekStart } from "./weekly-report.mjs";
 import { ghExec } from "./git.mjs";
 import { printRunSummary } from "./agent.mjs";
@@ -37,10 +37,6 @@ import {
   classifyAgentPullRequest,
   PR_STALE_MS,
 } from "./pull-requests.mjs";
-
-// Who gets the @-mention. The point of an alert is that it reaches a person, so
-// it falls back to the repo's owner rather than going quietly nowhere.
-const NOTIFY_USER = process.env.GH_NOTIFY_USER || "";
 
 // Where alerts are published, and how one is recognised on a later run.
 //
@@ -533,9 +529,7 @@ function publishAlert({ findings, unknown }, vitals) {
     return;
   }
 
-  const mention = NOTIFY_USER
-    ? `${NOTIFY_USER.startsWith("@") ? NOTIFY_USER : `@${NOTIFY_USER}`} — the pipeline needs a look.\n`
-    : "";
+  const mention = mentionLine("the pipeline needs a look.");
   const alert = postDiscussion({
     category: HEALTH_CATEGORY,
     title: `${HEALTH_TITLE_PREFIX} ${findings.length} problem(s)`,

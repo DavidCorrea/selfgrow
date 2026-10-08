@@ -18,7 +18,7 @@
 // addressed to a human is a human on the critical path, and this pipeline is
 // meant to run without one.
 import { log, withLogGroup } from "./log.mjs";
-import { findDiscussion, postDiscussion } from "./discussions.mjs";
+import { findDiscussion, postDiscussion, mentionLine } from "./discussions.mjs";
 import { daysAgo, closedWithin } from "./time.mjs";
 // readPage reaches the Story, which now carries the project's long arc so the
 // changelog can be trimmed without amputating its early chapters.
@@ -26,9 +26,6 @@ import { readChangelog, readPage, trimSections, writeStory } from "./wiki.mjs";
 import { loadPrompt, fillTemplate } from "./prompts.mjs";
 import { runAgent } from "./agent.mjs";
 import { isBlocked, isPlaytestFeedback, isManualIssue } from "./backlog.mjs";
-
-// Who the digest @-mentions. Without it the issue is still filed, just silently.
-const NOTIFY_USER = process.env.GH_NOTIFY_USER || "";
 
 /** The first day of the week a report written at `now` covers — the week's key. */
 export const digestWeekStart = (now = new Date()) => daysAgo(7, now.getTime());
@@ -83,9 +80,7 @@ export function gatherWeek({ shipped, open }) {
 
 /** The digest body: what shipped, what was heard, where things stand. */
 export function renderDigest(week, narrative, milestone) {
-  const mention = NOTIFY_USER
-    ? `${NOTIFY_USER.startsWith("@") ? NOTIFY_USER : `@${NOTIFY_USER}`} — this week in the product.\n`
-    : "";
+  const mention = mentionLine("this week in the product.");
   const lines = [mention, "## What shipped", narrative || "_(nothing shipped this week)_", ""];
 
   const yours = week.yours || { shipped: [], open: [], parked: [] };

@@ -44,6 +44,17 @@ import { ghExec } from "./git.mjs";
 
 const OWNER = process.env.GITHUB_REPOSITORY_OWNER || "";
 
+// Who a post @-mentions, so it arrives as a notification rather than waiting to
+// be found. The workflows set it to the repository's owner; unset, posts still
+// land, just silently.
+const NOTIFY_USER = process.env.GH_NOTIFY_USER || "";
+
+/** The opening line that @-mentions the person to notify, or "" when nobody is set. */
+export function mentionLine(reason) {
+  if (!NOTIFY_USER) return "";
+  return `${NOTIFY_USER.startsWith("@") ? NOTIFY_USER : `@${NOTIFY_USER}`} — ${reason}\n`;
+}
+
 /**
  * Run one GraphQL document with variables.
  *
