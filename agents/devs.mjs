@@ -968,6 +968,26 @@ async function reconcileOpenAgentPrs(openIssues, awaitedPrs) {
   return claimed;
 }
 
+/** Say why this pass has nothing to build. */
+function explainNothingAvailable({ open, attempted, claimed, pass, mergedCount }) {
+  const untried = open.filter((i) => !attempted.has(i.number) && !claimed.has(i.number) && !isBlocked(i));
+  const waiting = describeWaiting(untried, new Set(open.map((i) => i.number)));
+  if (claimed.size) {
+    // Not an empty board — the work is open as PRs. Naming them is the
+    // difference between "nothing to do" and "everything is waiting on a
+    // check", which look identical from the run's own logs.
+    log("info", `Nothing available: ${[...claimed].map((n) => `#${n}`).join(", ")} still claimed by an open PR.`);
+  } else if (waiting.length) {
+    // Not idle — every remaining ticket is waiting on something. Say what, so
+    // a stuck backlog is diagnosable instead of looking like an empty one.
+    log("info", `Nothing available: ${waiting.join("; ")}.`);
+  } else {
+    log("info", pass === 1
+      ? "No buildable tickets — nothing to build. (The Product Manager grooms the backlog.)"
+      : `Backlog drained this run — built ${mergedCount}.`);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Main — drain the highest-priority tickets within a wall-clock budget.
 // ---------------------------------------------------------------------------
@@ -1013,22 +1033,7 @@ async function main() {
     }
 
     if (candidates.length === 0) {
-      const untried = open.filter((i) => !attempted.has(i.number) && !claimed.has(i.number) && !isBlocked(i));
-      const waiting = describeWaiting(untried, new Set(open.map((i) => i.number)));
-      if (claimed.size) {
-        // Not an empty board — the work is open as PRs. Naming them is the
-        // difference between "nothing to do" and "everything is waiting on a
-        // check", which look identical from the run's own logs.
-        log("info", `Nothing available: ${[...claimed].map((n) => `#${n}`).join(", ")} still claimed by an open PR.`);
-      } else if (waiting.length) {
-        // Not idle — every remaining ticket is waiting on something. Say what, so
-        // a stuck backlog is diagnosable instead of looking like an empty one.
-        log("info", `Nothing available: ${waiting.join("; ")}.`);
-      } else {
-        log("info", n === 1
-          ? "No buildable tickets — nothing to build. (The Product Manager grooms the backlog.)"
-          : `Backlog drained this run — built ${mergedCount}.`);
-      }
+      explainNothingAvailable({ open, attempted, claimed, pass: n, mergedCount });
       break;
     }
 
