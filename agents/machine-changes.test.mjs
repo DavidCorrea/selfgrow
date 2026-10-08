@@ -10,7 +10,7 @@ import fs from "fs";
 import os from "os";
 import { join } from "path";
 import { execFileSync } from "child_process";
-import { changesTheMachine, revertMachineEdits } from "./shared.mjs";
+import { changesTheMachine, revertMachineEdits } from "./git.mjs";
 
 test("a change the Devs may merge themselves", async (t) => {
   await t.test("touches only the product", () => {
@@ -36,7 +36,7 @@ test("a change left for a human to merge", async (t) => {
   });
 
   await t.test("edits an agent or its prompt", () => {
-    assert.equal(changesTheMachine(["agents/shared.mjs"]), true);
+    assert.equal(changesTheMachine(["agents/agent.mjs"]), true);
     assert.equal(changesTheMachine(["agents/prompts/reviewer.md"]), true);
   });
 

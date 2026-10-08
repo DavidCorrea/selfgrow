@@ -11,7 +11,7 @@ import {
   sessionAbortError,
   MAX_MODEL_SILENCE_MINUTES,
   MAX_SESSION_MINUTES,
-} from "./shared.mjs";
+} from "./agent.mjs";
 
 const fakeClock = () => {
   let ms = 0;

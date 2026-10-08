@@ -7,7 +7,7 @@
 // key, because two patterns matched things that were never about money.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isDailyQuotaExhausted } from "./shared.mjs";
+import { isDailyQuotaExhausted } from "./agent.mjs";
 
 const err = (message, extra = {}) => Object.assign(new Error(message), extra);
 

@@ -35,21 +35,18 @@
 // agent here only adds and this one is irreversible in the directions that matter.
 import { pathToFileURL } from "url";
 import { log, errorData } from "./log.mjs";
+import { printRunSummary } from "./agent.mjs";
 import {
-  printRunSummary,
   gitExec,
   ghExec,
   configureGitIdentity,
-  closePR,
-  createPR,
-  mergePR,
   createBranch,
   deleteRemoteBranch,
-  fetchOpenIssues,
-  PROJECT_OWNER,
-  PROJECT_NUMBER,
-  RESET_COMMIT_MESSAGE,
-} from "./shared.mjs";
+} from "./git.mjs";
+import { closePR, createPR, mergePR } from "./pull-requests.mjs";
+import { fetchOpenIssues } from "./github.mjs";
+import { PROJECT_OWNER, PROJECT_NUMBER } from "./board.mjs";
+import { RESET_COMMIT_MESSAGE } from "./shipped.mjs";
 import { getWikiDir, writePage } from "./wiki.mjs";
 import { archiveProductMemory } from "./discussions.mjs";
 
@@ -96,7 +93,7 @@ export function isHarnessPath(path) {
 }
 
 // Only branches the agents create are touched. A human's work-in-progress branch
-// is not this script's business. Deliberately wider than shared.mjs's
+// is not this script's business. Deliberately wider than pull-requests.mjs's
 // AGENT_BRANCH_PREFIX ("agent/issue-"), which names ticket branches: a reset
 // sweeps every branch any agent ever made, whatever it was for.
 const AGENT_BRANCH_NAMESPACE = "agent/";

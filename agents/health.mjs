@@ -19,21 +19,23 @@ import { log, withLogGroup, appendJobSummary, errorData } from "./log.mjs";
 import { readPage, wikiPath } from "./wiki.mjs";
 import { postDiscussion, findOpenDiscussion, findDiscussion, resolveDiscussion } from "./discussions.mjs";
 import { DIGEST_CATEGORY, digestTitlePrefix, digestWeekStart } from "./weekly-report.mjs";
+import { ghExec } from "./git.mjs";
+import { printRunSummary } from "./agent.mjs";
+import { fetchOpenIssues } from "./github.mjs";
+import { fetchShippedIssues } from "./shipped.mjs";
 import {
-  ghExec,
-  printRunSummary,
-  fetchOpenIssues,
-  fetchShippedIssues,
   isBuildable,
   isBlocked,
   isGroomed,
   isNonWorkIssue,
   attemptCount,
+  PLAYTEST_LABEL,
+} from "./backlog.mjs";
+import {
   fetchOpenAgentPullRequests,
   classifyAgentPullRequest,
   PR_STALE_MS,
-  PLAYTEST_LABEL,
-} from "./shared.mjs";
+} from "./pull-requests.mjs";
 
 // Who gets the @-mention. The point of an alert is that it reaches a person, so
 // it falls back to the repo's owner rather than going quietly nowhere.

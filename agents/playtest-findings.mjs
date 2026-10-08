@@ -23,15 +23,15 @@
 // Every stage is derived from labels and one body line, like `waiting` and the
 // `Blocked by:` line: nothing here keeps state of its own, so nothing can drift.
 import { log, errorData } from "./log.mjs";
+import { ghExec } from "./git.mjs";
 import {
-  ghExec,
   labelNames,
   editIssueLabels,
   rewriteIssueBody,
-  commentIssue,
   isPlaytestFeedback,
   PLAYTEST_LABEL,
-} from "./shared.mjs";
+} from "./backlog.mjs";
+import { commentIssue } from "./github.mjs";
 
 export const ANSWERED_LABEL = "answered";
 export const ESCALATED_LABEL = "escalated";

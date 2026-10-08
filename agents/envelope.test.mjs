@@ -5,7 +5,7 @@
 // direction and the run burns the whole chain on answers that were fine.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { extractJSON, extractAgentResponse } from "./shared.mjs";
+import { extractJSON, extractAgentResponse } from "./prompts.mjs";
 
 const envelope = (over = {}) => JSON.stringify({
   status: "success",

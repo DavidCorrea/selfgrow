@@ -41,22 +41,12 @@
 // role is the only one that can say whether the experience actually changed, so
 // it is the one that closes it (see playtest-findings.mjs).
 import { log, withLogGroup, errorData, recordTicket } from "./log.mjs";
-import {
-  printRunSummary,
-  loadPrompt,
-  fillTemplate,
-  runAgent,
-  firstVisionModel,
-  extractAgentResponse,
-  repoRoot,
-  startStaticServer,
-  fetchOpenIssues,
-  createIssue,
-  reviewApp,
-  PLAYTEST_LABEL,
-  REVIEW_VIEWPORTS,
-  viewportOptions,
-} from "./shared.mjs";
+import { printRunSummary, runAgent, firstVisionModel } from "./agent.mjs";
+import { loadPrompt, fillTemplate, extractAgentResponse } from "./prompts.mjs";
+import { repoRoot } from "./paths.mjs";
+import { startStaticServer, reviewApp, REVIEW_VIEWPORTS, viewportOptions } from "./verify.mjs";
+import { fetchOpenIssues } from "./github.mjs";
+import { createIssue, PLAYTEST_LABEL } from "./backlog.mjs";
 import { readVision } from "./wiki.mjs";
 import { readJournal, appendJournal, renderJournalEntry } from "./discussions.mjs";
 import { isAnswered, answeringTickets, applyFollowUp, PLAYTESTER_JOURNAL } from "./playtest-findings.mjs";

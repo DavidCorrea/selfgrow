@@ -9,7 +9,8 @@
 // require. Nothing here is new verification; it is the existing verification made
 // non-optional.
 import { log } from "./log.mjs";
-import { printRunSummary, verifyBuild } from "./shared.mjs";
+import { printRunSummary } from "./agent.mjs";
+import { verifyBuild } from "./verify.mjs";
 
 const report = await verifyBuild();
 

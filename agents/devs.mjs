@@ -1,9 +1,14 @@
 import { log, withLogGroup, errorData, recordTicket } from "./log.mjs";
 import {
   printRunSummary,
-  loadPrompt,
-  fillTemplate,
-  extractAgentResponse,
+  isDailyQuotaExhausted,
+  runAgent,
+  BUILDER_SKILLS,
+  REVIEWER_SKILLS,
+  getLastModelUsed,
+} from "./agent.mjs";
+import { loadPrompt, fillTemplate, extractAgentResponse } from "./prompts.mjs";
+import {
   gitExec,
   configureGitIdentity,
   createBranchName,
@@ -12,22 +17,24 @@ import {
   abortMerge,
   returnToCleanMain,
   deleteRemoteBranch,
-  fetchOpenIssues,
+  revertMachineEdits,
+} from "./git.mjs";
+import { fetchOpenIssues, triggerWorkflow, closeIssue } from "./github.mjs";
+import {
   recordTicketFailure,
   isBlocked,
   isBuildable,
   dependentsOf,
   chosenCandidate,
   effectivePriorityRank,
-  isDailyQuotaExhausted,
   unmetDependencies,
   syncWaitingLabels,
-  triggerWorkflow,
-  closeIssue,
   createIssue,
   TECH_DEBT_LABEL,
   isAlreadyTracked,
-  moveCard,
+} from "./backlog.mjs";
+import { moveCard } from "./board.mjs";
+import {
   createPR,
   agentPullRequestBody,
   fetchOpenAgentPullRequests,
@@ -39,13 +46,8 @@ import {
   closePR,
   whyTicketNoLongerWanted,
   fetchTicketState,
-  verifyBuild,
-  runAgent,
-  revertMachineEdits,
-  BUILDER_SKILLS,
-  REVIEWER_SKILLS,
-  getLastModelUsed,
-} from "./shared.mjs";
+} from "./pull-requests.mjs";
+import { verifyBuild } from "./verify.mjs";
 import { readVision, appendChangelogEntry } from "./wiki.mjs";
 import {
   appendLessonOccurrence,

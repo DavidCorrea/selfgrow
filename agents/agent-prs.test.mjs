@@ -11,7 +11,7 @@ import {
   decideAgentPullRequest,
   agentPullRequestBody,
   whyTicketNoLongerWanted,
-} from "./shared.mjs";
+} from "./pull-requests.mjs";
 
 const HOUR = 3_600_000;
 const NOW = Date.parse("2026-09-16T12:00:00Z");

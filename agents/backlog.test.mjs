@@ -17,11 +17,10 @@ import {
   effectivePriorityRank,
   dependentsOf,
   dependencyLine,
-  slugify,
-  createBranchName,
-  preferDifferentModel,
   chosenCandidate,
-} from "./shared.mjs";
+} from "./backlog.mjs";
+import { slugify, createBranchName } from "./git.mjs";
+import { preferDifferentModel } from "./agent.mjs";
 
 const issue = (number, { body = "", labels = [], title = `Ticket ${number}` } = {}) =>
   ({ number, title, body, labels: labels.map((name) => ({ name })) });

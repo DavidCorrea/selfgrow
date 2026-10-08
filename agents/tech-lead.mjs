@@ -28,22 +28,13 @@ import fs from "fs";
 import { join, relative } from "path";
 import { pathToFileURL } from "url";
 import { log, withLogGroup, recordTicket, errorData } from "./log.mjs";
-import {
-  printRunSummary,
-  loadPrompt,
-  fillTemplate,
-  runAgent,
-  extractAgentResponse,
-  repoRoot,
-  gitExec,
-  ghExec,
-  getBoardSnapshot,
-  createIssue,
-  moveCard,
-  rewriteIssueBody,
-  isBlocked,
-  dependencyLine,
-} from "./shared.mjs";
+import { printRunSummary, runAgent } from "./agent.mjs";
+import { loadPrompt, fillTemplate, extractAgentResponse } from "./prompts.mjs";
+import { repoRoot } from "./paths.mjs";
+import { gitExec, ghExec } from "./git.mjs";
+import { getBoardSnapshot } from "./board-snapshot.mjs";
+import { createIssue, rewriteIssueBody, isBlocked, dependencyLine } from "./backlog.mjs";
+import { moveCard } from "./board.mjs";
 import { readVision } from "./wiki.mjs";
 import {
   readJournal,

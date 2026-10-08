@@ -37,16 +37,10 @@
 import { isAbsolute } from "path";
 import { pathToFileURL } from "url";
 import { log, withLogGroup, errorData } from "./log.mjs";
-import {
-  printRunSummary,
-  loadPrompt,
-  fillTemplate,
-  runAgent,
-  extractAgentResponse,
-  gitExec,
-  ghExec,
-  commentIssue,
-} from "./shared.mjs";
+import { printRunSummary, runAgent } from "./agent.mjs";
+import { loadPrompt, fillTemplate, extractAgentResponse } from "./prompts.mjs";
+import { gitExec, ghExec } from "./git.mjs";
+import { commentIssue } from "./github.mjs";
 import { readVision } from "./wiki.mjs";
 import { secret } from "./secrets.mjs";
 

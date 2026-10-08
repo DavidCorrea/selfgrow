@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import fs from "fs";
 import os from "os";
 import { join } from "path";
-import { gitExec } from "./shared.mjs";
+import { gitExec } from "./git.mjs";
 
 describe("gitExec with model-written text", () => {
   let repo;

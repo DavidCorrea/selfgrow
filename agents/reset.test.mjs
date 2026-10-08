@@ -16,7 +16,8 @@ import {
   unmergedDeletionGap,
   landProductDeletion,
 } from "./reset.mjs";
-import { repoRoot, RESET_COMMIT_MESSAGE } from "./shared.mjs";
+import { repoRoot } from "./paths.mjs";
+import { RESET_COMMIT_MESSAGE } from "./shipped.mjs";
 
 test("deciding what survives a reset", async (t) => {
   await t.test("keeps every tracked file outside docs/, so a new root harness file cannot be deleted unnoticed", () => {

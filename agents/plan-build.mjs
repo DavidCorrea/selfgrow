@@ -20,17 +20,19 @@
 // Prints `count` and `queue` to GITHUB_OUTPUT for the workflow to consume.
 import fs from "fs";
 import { log } from "./log.mjs";
+import { printRunSummary } from "./agent.mjs";
+import { fetchOpenIssues } from "./github.mjs";
 import {
-  printRunSummary,
-  fetchOpenIssues,
   isBuildable,
-  fetchOpenAgentPullRequests,
-  classifyAgentPullRequest,
-  PR_STALE_MS,
   unmetDependencies,
   priorityRank,
   effectivePriorityRank,
-} from "./shared.mjs";
+} from "./backlog.mjs";
+import {
+  fetchOpenAgentPullRequests,
+  classifyAgentPullRequest,
+  PR_STALE_MS,
+} from "./pull-requests.mjs";
 
 // Most tickets one run will attempt, one after another. A ceiling on the queue,
 // not a target: the run stops earlier whenever the board empties or the wall

@@ -22,14 +22,9 @@ import { findDiscussion, postDiscussion } from "./discussions.mjs";
 // readPage reaches the Story, which now carries the project's long arc so the
 // changelog can be trimmed without amputating its early chapters.
 import { readChangelog, readPage, trimSections, writeStory } from "./wiki.mjs";
-import {
-  loadPrompt,
-  fillTemplate,
-  runAgent,
-  isBlocked,
-  isPlaytestFeedback,
-  isManualIssue,
-} from "./shared.mjs";
+import { loadPrompt, fillTemplate } from "./prompts.mjs";
+import { runAgent } from "./agent.mjs";
+import { isBlocked, isPlaytestFeedback, isManualIssue } from "./backlog.mjs";
 
 // Who the digest @-mentions. Without it the issue is still filed, just silently.
 const NOTIFY_USER = process.env.GH_NOTIFY_USER || "";

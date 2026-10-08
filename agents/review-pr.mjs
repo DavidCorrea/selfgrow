@@ -35,22 +35,17 @@ import { pathToFileURL } from "url";
 import { log, withLogGroup, errorData } from "./log.mjs";
 import {
   printRunSummary,
-  loadPrompt,
-  fillTemplate,
   runAgent,
-  changesTheMachine,
   BUILDER_SKILLS,
   REVIEWER_SKILLS,
-  extractAgentResponse,
-  gitExec,
-  configureGitIdentity,
-  verifyBuild,
-  repoRoot,
-  commentIssue,
-  approvePR,
-  mergePR,
   getLastModelUsed,
-} from "./shared.mjs";
+} from "./agent.mjs";
+import { loadPrompt, fillTemplate, extractAgentResponse } from "./prompts.mjs";
+import { changesTheMachine, gitExec, configureGitIdentity } from "./git.mjs";
+import { verifyBuild } from "./verify.mjs";
+import { repoRoot } from "./paths.mjs";
+import { commentIssue } from "./github.mjs";
+import { approvePR, mergePR } from "./pull-requests.mjs";
 import { readVision } from "./wiki.mjs";
 
 const PR_NUMBER = Number(process.env.PR_NUMBER || 0);

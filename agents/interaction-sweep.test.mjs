@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import fs from "fs";
 import os from "os";
 import { join } from "path";
-import { exploreInteractions, startStaticServer } from "./shared.mjs";
+import { exploreInteractions, startStaticServer } from "./verify.mjs";
 
 const PAGE = `<!doctype html>
 <html><body>

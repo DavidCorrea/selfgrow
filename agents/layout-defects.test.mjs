@@ -2,7 +2,7 @@
 // the page and judged here, so what counts as broken is testable without a browser.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { describeCollapsedContainers } from "./shared.mjs";
+import { describeCollapsedContainers } from "./verify.mjs";
 
 const container = (overrides = {}) => ({
   width: 0,

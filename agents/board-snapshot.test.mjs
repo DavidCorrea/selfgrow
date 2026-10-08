@@ -3,7 +3,8 @@
 // every run's prompt is longer than the last, without limit.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { formatBoardState, RECENT_DONE_SHOWN, AGENT_LABEL } from "./shared.mjs";
+import { formatBoardState, RECENT_DONE_SHOWN } from "./board-snapshot.mjs";
+import { AGENT_LABEL } from "./backlog.mjs";
 
 const card = (number, status, title = `Ticket ${number}`) => ({ number, title, status });
 const agentIssue = (number, title = `Ticket ${number}`) =>

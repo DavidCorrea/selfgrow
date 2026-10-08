@@ -27,7 +27,7 @@ import {
   registryModelId,
   META_ROUTER_IDS,
   TEXT_MODELS,
-} from "./shared.mjs";
+} from "./agent.mjs";
 
 /**
  * Classify every configured id against the registry. Returns

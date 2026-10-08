@@ -12,16 +12,11 @@ import assert from "node:assert/strict";
 import fs from "fs";
 import os from "os";
 import { join } from "path";
-import {
-  fetchOpenIssues,
-  fetchOpenAgentPullRequests,
-  listProjectItems,
-  getCurrentMilestone,
-  isConfirmedShipped,
-  isConfirmedRetired,
-  unmetDependencies,
-  fetchShippedIssues,
-} from "./shared.mjs";
+import { fetchOpenIssues, getCurrentMilestone } from "./github.mjs";
+import { fetchOpenAgentPullRequests } from "./pull-requests.mjs";
+import { listProjectItems } from "./board.mjs";
+import { isConfirmedShipped, isConfirmedRetired, unmetDependencies } from "./backlog.mjs";
+import { fetchShippedIssues } from "./shipped.mjs";
 
 let fakeBin;
 const realPath = process.env.PATH;

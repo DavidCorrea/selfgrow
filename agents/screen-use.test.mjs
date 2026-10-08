@@ -4,7 +4,7 @@
 // and the case none of them can see at all: a page that shows nothing.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { describeBlankScreen, describeNarrowLayout, describeSmallTapTargets } from "./shared.mjs";
+import { describeBlankScreen, describeNarrowLayout, describeSmallTapTargets } from "./verify.mjs";
 
 const desktop = (contentLeft, contentRight) => ({ viewportWidth: 1440, contentLeft, contentRight });
 

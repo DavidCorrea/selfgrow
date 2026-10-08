@@ -3,7 +3,7 @@
 // template syntax.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { fillTemplate } from "./shared.mjs";
+import { fillTemplate } from "./prompts.mjs";
 
 test("filling a prompt template", async (t) => {
   await t.test("substitutes every occurrence of a placeholder", () => {

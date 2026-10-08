@@ -11,19 +11,12 @@
 // before it plans; this records what a run of tickets adds up to, and is read
 // here, next week, before direction is set again.
 import { log, withLogGroup } from "./log.mjs";
-import {
-  printRunSummary,
-  loadPrompt,
-  fillTemplate,
-  runAgent,
-  extractAgentResponse,
-  getBoardSnapshot,
-  getCurrentMilestone,
-  startMilestone,
-  isBlocked,
-  fetchOpenIssues,
-  fetchShippedIssues,
-} from "./shared.mjs";
+import { printRunSummary, runAgent } from "./agent.mjs";
+import { loadPrompt, fillTemplate, extractAgentResponse } from "./prompts.mjs";
+import { getBoardSnapshot } from "./board-snapshot.mjs";
+import { getCurrentMilestone, startMilestone, fetchOpenIssues } from "./github.mjs";
+import { isBlocked } from "./backlog.mjs";
+import { fetchShippedIssues } from "./shipped.mjs";
 import { readVision, commitToWiki } from "./wiki.mjs";
 import {
   readJournal,

@@ -30,20 +30,11 @@ import fs from "fs";
 import { join } from "path";
 import { pathToFileURL } from "url";
 import { log, logGroup, errorData, appendJobSummary } from "./log.mjs";
-import {
-  printRunSummary,
-  repoRoot,
-  gitExec,
-  configureGitIdentity,
-  createBranch,
-  deleteRemoteBranch,
-  createPR,
-  approvePR,
-  mergePR,
-  createIssue,
-  readModelChain,
-  TECH_DEBT_LABEL,
-} from "./shared.mjs";
+import { printRunSummary, readModelChain } from "./agent.mjs";
+import { repoRoot } from "./paths.mjs";
+import { gitExec, configureGitIdentity, createBranch, deleteRemoteBranch } from "./git.mjs";
+import { createPR, approvePR, mergePR } from "./pull-requests.mjs";
+import { createIssue, TECH_DEBT_LABEL } from "./backlog.mjs";
 
 const PI_PACKAGE = "@earendil-works/pi-coding-agent";
 
@@ -51,7 +42,7 @@ const PI_PACKAGE = "@earendil-works/pi-coding-agent";
 // Subprocess helpers
 //
 // Everything that touches pi's registry MUST run in a FRESH process. This one
-// imported shared.mjs (and through it the OLD pi) before npm replaced it on disk,
+// imported agent.mjs (and through it the OLD pi) before npm replaced it on disk,
 // so any check performed in-process would report the version we are replacing.
 // ---------------------------------------------------------------------------
 
@@ -258,7 +249,7 @@ async function main() {
     deleteRemoteBranch(branchName);
     createIssue(
       `pi ${to} installs but its model registry cannot be read`,
-      `\`agents/model-check.mjs\` could not resolve any model against \`${PI_PACKAGE}@${to}\`, so the bump was reverted and the repo stays on ${from}.\n\n\`\`\`\n${(e.message || String(e)).slice(0, 1500)}\n\`\`\`\n\nThis usually means pi's API changed — \`ModelRuntime.create\` / \`getModels\` in \`agents/shared.mjs\` are the places to look.`,
+      `\`agents/model-check.mjs\` could not resolve any model against \`${PI_PACKAGE}@${to}\`, so the bump was reverted and the repo stays on ${from}.\n\n\`\`\`\n${(e.message || String(e)).slice(0, 1500)}\n\`\`\`\n\nThis usually means pi's API changed — \`ModelRuntime.create\` / \`getModels\` in \`agents/agent.mjs\` are the places to look.`,
       [TECH_DEBT_LABEL]
     );
     printRunSummary("pi update");

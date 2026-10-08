@@ -3,7 +3,7 @@
 // unusable by the agents it claims to serve — this is the only thing that looks.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { validateToolDescriptors } from "./shared.mjs";
+import { validateToolDescriptors } from "./verify.mjs";
 
 // A descriptor the browser has already reduced to its checkable properties.
 const summary = (over = {}) => ({

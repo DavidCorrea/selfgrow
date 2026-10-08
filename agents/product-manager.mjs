@@ -1,36 +1,35 @@
 import { pathToFileURL } from "url";
 import fs from "fs";
 import { log, withLogGroup, errorData, recordTicket } from "./log.mjs";
+import { printRunSummary, runAgent } from "./agent.mjs";
+import { loadPrompt, fillTemplate, extractAgentResponse } from "./prompts.mjs";
+import { getBoardSnapshot } from "./board-snapshot.mjs";
 import {
-  printRunSummary,
-  loadPrompt,
-  fillTemplate,
-  runAgent,
-  extractAgentResponse,
-  getBoardSnapshot,
   createIssue,
-  moveCard,
   ensurePriorityLabels,
   setIssuePriority,
   retireIssue,
-  fetchShippedIssues,
-  fetchOpenIssues,
   isBuildable,
-  triggerWorkflow,
   dependencyLine,
   syncWaitingLabels,
   isPlaytestFeedback,
   isManualIssue,
   rewriteIssueBody,
-  getCurrentMilestone,
-  setIssueMilestone,
   GROOMED_LABEL,
   isGroomed,
   isBlocked,
   isNonWorkIssue,
   editIssueLabels,
   PRIORITY_LABELS,
-} from "./shared.mjs";
+} from "./backlog.mjs";
+import { moveCard } from "./board.mjs";
+import { fetchShippedIssues } from "./shipped.mjs";
+import {
+  fetchOpenIssues,
+  triggerWorkflow,
+  getCurrentMilestone,
+  setIssueMilestone,
+} from "./github.mjs";
 import { readVision } from "./wiki.mjs";
 import {
   readInboundIdeas,

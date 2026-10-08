@@ -6,7 +6,7 @@ name: ci
 #
 # It exists because agents/ was unlinted and untested while the code inside it
 # refused to merge a product that didn't carry its own checks. A typo in
-# shared.mjs was caught by a 3am cron run failing, which is both the slowest and
+# the agent code was caught by a 3am cron run failing, which is both the slowest and
 # the most expensive place to find one.
 # Runs on EVERY pull request, with no path filter. That is deliberate and it is
 # not about thoroughness: a required status check that does not run on some paths

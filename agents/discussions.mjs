@@ -40,7 +40,7 @@
 // mutation or query, and every string that could contain model-written text is
 // passed as a VARIABLE rather than interpolated into the document.
 import { log, errorData } from "./log.mjs";
-import { ghExec } from "./shared.mjs";
+import { ghExec } from "./git.mjs";
 
 const OWNER = process.env.GITHUB_REPOSITORY_OWNER || "";
 
