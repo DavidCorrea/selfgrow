@@ -79,9 +79,6 @@ export const TEXT_MODELS = (
   .map((s) => s.trim())
   .filter(Boolean);
 
-// Back-compat: the historical single-model default is just the head of the chain.
-const MODEL_ID = TEXT_MODELS[0];
-
 // Never send thinkingLevel "off": both configured models are reasoning models,
 // and some endpoints reject a disabled-reasoning request
 // outright ("Reasoning is mandatory for this endpoint and cannot be disabled",
@@ -229,6 +226,27 @@ export function createModelSilenceClock(now = Date.now) {
   };
 }
 
+// Why we stop a session ourselves, worded once for both the log line at the
+// moment we stop it and the error the caller receives.
+const SESSION_STOPS = {
+  turns: {
+    cap: (limits) => `the ${limits.turns}-turn session cap`,
+    why: "The session is looping; stopping it here protects the day's remaining requests.",
+  },
+  minutes: {
+    cap: (limits) => `the ${limits.minutes}-minute session cap`,
+    why: "Stopping here keeps the job's own timeout from killing the run mid-session.",
+  },
+};
+const MODEL_SILENCE = `the model sent nothing for ${MAX_MODEL_SILENCE_MINUTES} minute(s)`;
+
+/** What the log says at the moment we stop a session, and why. */
+function stopLogMessage(reason, limits) {
+  if (reason === "silent") return `${MODEL_SILENCE}; trying the next model.`;
+  const stop = SESSION_STOPS[reason];
+  return `hit ${stop.cap(limits)}. ${stop.why}`;
+}
+
 /**
  * The error for a session WE stopped, saying why in our words. pi reports its
  * own abort as "This operation was aborted", which is what the devs and PM runs
@@ -237,15 +255,11 @@ export function createModelSilenceClock(now = Date.now) {
  */
 export function sessionAbortError(label, reason, turns, limits = DEFAULT_SESSION_LIMITS) {
   if (reason === "silent") {
-    const err = new Error(
-      `${label}: the model sent nothing for ${MAX_MODEL_SILENCE_MINUTES} minute(s) — ` +
-        `treated as that model failing (${turns} turn(s) spent).`
-    );
+    const err = new Error(`${label}: ${MODEL_SILENCE} — treated as that model failing (${turns} turn(s) spent).`);
     err.modelSilent = true;
     return err;
   }
-  const limit = reason === "turns" ? `${limits.turns}-turn` : `${limits.minutes}-minute`;
-  const err = new Error(`${label} was stopped by the ${limit} session cap (${turns} turn(s) spent).`);
+  const err = new Error(`${label} was stopped by ${SESSION_STOPS[reason].cap(limits)} (${turns} turn(s) spent).`);
   err.sessionCapped = true;
   return err;
 }
@@ -623,6 +637,96 @@ export function projectSkillProblems(projectSkillsDir = PROJECT_SKILLS_DIR) {
 export const BUILDER_SKILLS = ["frontend-design", "web-interface-guidelines", "see-your-change"];
 export const REVIEWER_SKILLS = ["web-interface-guidelines"];
 
+/** Assistant messages so far — one per charged completion, whatever event revealed it. */
+export function countAssistantTurns(messages = []) {
+  return messages.filter((message) => message.role === "assistant").length;
+}
+
+/** The text of an assistant message, whether pi gave it as a string or as parts. */
+export function assistantText(message) {
+  if (!message?.content) return "";
+  if (!Array.isArray(message.content)) return message.content;
+  return message.content
+    .filter((part) => part.type === "text")
+    .map((part) => part.text)
+    .join("");
+}
+
+/**
+ * Watch one session against its limits: the turn cap, the session deadline and
+ * the model-silence clock. Stops the session at the first limit to bite and
+ * remembers which one it was (`abortReason`: "turns", "minutes" or "silent").
+ *
+ * Spend is charged AS IT HAPPENS rather than in one lump when the session
+ * settles, because a session that never settles — the runner's timeout, a
+ * cancel — would otherwise be spent but uncounted. `settle()` clears the timers
+ * and catches whatever the last event missed: a final assistant message can land
+ * with no further event to observe it. It reconciles rather than adds, so a
+ * session is never billed twice in our own accounting — both exit paths used to
+ * add the whole count independently, and over-reporting starves later runs as
+ * surely as under-reporting overspends. Returns the session's turn count.
+ */
+export function watchSession(session, { limits, label, startTime }) {
+  let abortReason = null;
+  let chargedTurns = 0;
+  const turnsSoFar = () => countAssistantTurns(session.state?.messages);
+  const chargeTurns = (turns) => {
+    if (turns <= chargedTurns) return;
+    modelTurnCount += turns - chargedTurns;
+    chargedTurns = turns;
+  };
+  // Error, not warn: an aborted session is lost work, and it used to show only
+  // as a warning annotation on a run that stayed green. Only the first limit to
+  // bite gets to abort and name itself.
+  const stop = (reason) => {
+    if (abortReason) return;
+    abortReason = reason;
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
+    log("error", `${label}: aborted after ${elapsed}s — ${stopLogMessage(reason, limits)}`);
+    session.abort().catch(() => {});
+  };
+
+  // Stop a session that is slow rather than looping, before the runner does: the
+  // caller gets its partial output, the spend is recorded, and the run ends on
+  // its own terms. Neither timer may hold the process open on its own.
+  const deadline = setTimeout(() => stop("minutes"), limits.minutes * 60 * 1000);
+  deadline.unref?.();
+
+  // Stop a model that has gone quiet, so the chain can try the next one while
+  // there is still session time left for it (see MAX_MODEL_SILENCE_MINUTES).
+  const silence = createModelSilenceClock();
+  const silenceWatch = setInterval(() => {
+    if (silence.silentForMs() >= MAX_MODEL_SILENCE_MINUTES * 60 * 1000) stop("silent");
+  }, 10 * 1000);
+  silenceWatch.unref?.();
+
+  session.subscribe((event) => {
+    silence.hear(event);
+    // Streaming deltas arrive thousands of times per turn and never change the
+    // message COUNT, so don't walk the list for them — only for the events that
+    // can mean a message was appended.
+    if (event.type === "message_update" || event.type === "bash_execution_update") return;
+    const turns = turnsSoFar();
+    chargeTurns(turns);
+    // A session this long is looping, not thinking: every further turn is a
+    // charged request the run will not get a merge out of.
+    if (turns >= limits.turns) stop("turns");
+  });
+
+  return {
+    get abortReason() {
+      return abortReason;
+    },
+    settle() {
+      clearTimeout(deadline);
+      clearInterval(silenceWatch);
+      const turns = turnsSoFar();
+      chargeTurns(turns);
+      return turns;
+    },
+  };
+}
+
 /**
  * Run a single one-shot agent against exactly one model. The chain logic lives in
  * runAgent; this is the per-model attempt.
@@ -634,7 +738,7 @@ async function runAgentOnce({
   tools = ["read"],
   skillPaths = [],
   thinkingLevel = MIN_THINKING_LEVEL,
-  modelId = MODEL_ID,
+  modelId,
   images = [],
   sessionLimits = DEFAULT_SESSION_LIMITS,
 }) {
@@ -692,210 +796,97 @@ async function runAgentOnce({
       `${modelTurnCount} request(s) spent so far)`
   );
 
-  return loader.reload().then(() =>
-    createAgentSession({
-      cwd: repoRoot,
-      sessionManager: SessionManager.inMemory(),
-      resourceLoader: loader,
-      model,
-      thinkingLevel,
-      modelRuntime,
-      tools,
-      customTools: confinedTools(),
-    }).then(({ session }) => {
-      let output = "";
-      // Turns spent so far, read live. The session's own message list is the only
-      // honest source — an assistant message IS a charged completion, whatever the
-      // event that revealed it — so count from state on every event rather than
-      // trusting one event type to mean "a turn happened".
-      let turnsSeen = 0;
-      // Why WE stopped the session, if we did: "turns", "minutes" or "silent".
-      // One variable rather than a flag per limit, so only the first limit to
-      // bite gets to abort and name itself.
-      let abortReason = null;
-      const named = label.includes(modelId) ? label : `${label} (${modelId})`;
-      // Error, not warn: an aborted session is lost work, and it used to show only
-      // as a warning annotation on a run that stayed green.
-      const stopSession = (reason, why) => {
-        if (abortReason) return;
-        abortReason = reason;
-        const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
-        log("error", `${named}: aborted after ${elapsed}s — ${why}`);
-        session.abort().catch(() => {});
-      };
-      // Turns already added to modelTurnCount. Spend is charged AS IT HAPPENS
-      // rather than in one lump when the session settles, because a session that
-      // never settles — the runner's timeout, a cancel — would otherwise be spent
-      // but uncounted, and the signal handler would have nothing to write down.
-      // It also makes the budget checks honest mid-session instead of only
-      // between them.
-      let chargedTurns = 0;
-      const chargeTurns = (turns) => {
-        if (turns <= chargedTurns) return;
-        modelTurnCount += turns - chargedTurns;
-        chargedTurns = turns;
-      };
+  await loader.reload();
+  const { session } = await createAgentSession({
+    cwd: repoRoot,
+    sessionManager: SessionManager.inMemory(),
+    resourceLoader: loader,
+    model,
+    thinkingLevel,
+    modelRuntime,
+    tools,
+    customTools: confinedTools(),
+  });
+  const watch = watchSession(session, {
+    limits: sessionLimits,
+    label: label.includes(modelId) ? label : `${label} (${modelId})`,
+    startTime,
+  });
+  let streamed = "";
+  session.subscribe((event) => {
+    if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
+      streamed += event.assistantMessageEvent.delta;
+    }
+  });
 
-      // Stop a session that is slow rather than looping, before the runner does.
-      // Aborting here is worth real money: the caller gets its partial output, the
-      // spend is recorded, and the run ends on its own terms.
-      const sessionDeadline = setTimeout(() => {
-        stopSession(
-          "minutes",
-          `hit the ${sessionLimits.minutes}-minute session cap. ` +
-            "Stopping here keeps the job's own timeout from killing the run mid-session."
+  try {
+    // With images, the kickoff turn has to be a content ARRAY, which prompt()
+    // does not take — sendUserMessage does, and triggers a turn the same way.
+    await (images.length
+      ? session.sendUserMessage([{ type: "text", text: task }, ...images])
+      : session.prompt(task));
+
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    const lastAssistant = session.state.messages.findLast((message) => message.role === "assistant");
+    // A session WE stopped ends its turn as stopReason "error" with pi's "This
+    // operation was aborted" — which the check below would report as the model
+    // failing. Say which of our limits it was instead. A silent model is always a
+    // failure: whatever it said before going quiet is not an answer.
+    if (watch.abortReason === "silent" || (watch.abortReason && lastAssistant?.stopReason === "error")) {
+      throw sessionAbortError(label, watch.abortReason, watch.settle(), sessionLimits);
+    }
+    // The model can fail without throwing — the error lands on the assistant
+    // message as stopReason "error". Surface it loudly instead of returning empty
+    // output (which looks like an unparseable response).
+    if (lastAssistant?.stopReason === "error") {
+      const detail = lastAssistant.errorMessage || "unknown error";
+      // A free slug that OpenRouter has since moved behind payment. Called out by
+      // name because model-check.mjs structurally CANNOT catch it: that check
+      // reads pi's BUNDLED snapshot, which still reports the id as costing 0/0
+      // long after the live provider stopped serving it free. Without this the
+      // failure reads as a generic model error and the dead entry sits in the
+      // chain wasting a request per fallthrough.
+      if (/unavailable for free|available for free/i.test(detail)) {
+        log(
+          "error",
+          `${label}: "${modelId}" is NO LONGER FREE at OpenRouter, though pi's snapshot still lists it as free. ` +
+            `model-check.mjs cannot see this — remove or repoint the entry in agents/models.json by hand.`
         );
-      }, sessionLimits.minutes * 60 * 1000);
-      // Never hold the process open on this timer alone.
-      sessionDeadline.unref?.();
-
-      // Stop a model that has gone quiet, so the chain can try the next one while
-      // there is still session time left for it (see MAX_MODEL_SILENCE_MINUTES).
-      const silence = createModelSilenceClock();
-      const silenceWatch = setInterval(() => {
-        if (silence.silentForMs() < MAX_MODEL_SILENCE_MINUTES * 60 * 1000) return;
-        stopSession(
-          "silent",
-          `the model sent nothing for ${MAX_MODEL_SILENCE_MINUTES} minute(s); trying the next model.`
-        );
-      }, 10 * 1000);
-      silenceWatch.unref?.();
-
-      session.subscribe((event) => {
-        silence.hear(event);
-        if (
-          event.type === "message_update" &&
-          event.assistantMessageEvent.type === "text_delta"
-        ) {
-          output += event.assistantMessageEvent.delta;
-        }
-        // Streaming deltas arrive thousands of times per turn and never change the
-        // message COUNT, so don't walk the list for them — only for the events that
-        // can mean a message was appended.
-        if (event.type === "message_update" || event.type === "bash_execution_update") return;
-        turnsSeen = (session.state?.messages || []).filter(
-          (m) => m.role === "assistant"
-        ).length;
-        chargeTurns(turnsSeen);
-        if (turnsSeen >= sessionLimits.turns) {
-          // Abort once, then let the normal completion path record the spend. A
-          // session this long is looping, not thinking: every further turn is a
-          // charged request the run will not get a merge out of.
-          stopSession(
-            "turns",
-            `hit the ${sessionLimits.turns}-turn session cap. ` +
-              "The session is looping; stopping it here protects the day's remaining requests."
-          );
-        }
-      });
-
-      // Settle up, whichever way the session ends. The turns were charged as they
-      // arrived, so this only catches whatever the last event missed — a final
-      // assistant message can land with no further event to observe it.
-      //
-      // Reconciling rather than adding is what keeps this idempotent. Both paths
-      // below used to add the whole count independently, so a session that threw
-      // INSIDE the success path (a model error, say) was billed twice in our own
-      // accounting — over-reporting, which starves later runs as surely as
-      // under-reporting overspends. Returns the turn count so the caller can log it.
-      const recordSpend = () => {
-        clearTimeout(sessionDeadline);
-        clearInterval(silenceWatch);
-        const turns = (session.state?.messages || []).filter(
-          (m) => m.role === "assistant"
-        ).length;
-        chargeTurns(turns);
-        return turns;
-      };
-
-      // With images, the kickoff turn has to be a content ARRAY, which prompt()
-      // does not take — sendUserMessage does, and triggers a turn the same way.
-      const kickoff = images.length
-        ? session.sendUserMessage([{ type: "text", text: task }, ...images])
-        : session.prompt(task);
-
-      return kickoff
-        .then(() => {
-          const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-          const messages = session.state.messages;
-          const lastAssistant = [...messages].reverse().find(
-            (m) => m.role === "assistant"
-          );
-          // A session WE stopped ends its turn as stopReason "error" with pi's
-          // "This operation was aborted" — which the check below would report as
-          // the model failing. Say which of our limits it was instead. A silent
-          // model is always a failure: whatever it said before going quiet is not
-          // an answer.
-          if (abortReason === "silent" || (abortReason && lastAssistant?.stopReason === "error")) {
-            throw sessionAbortError(label, abortReason, recordSpend(), sessionLimits);
-          }
-          // The model can fail without throwing — the error lands on the
-          // assistant message as stopReason "error". Surface it loudly instead
-          // of returning empty output (which looks like an unparseable response).
-          if (lastAssistant && lastAssistant.stopReason === "error") {
-            recordSpend();
-            session.dispose();
-            const detail = lastAssistant.errorMessage || "unknown error";
-            // A free slug that OpenRouter has since moved behind payment. Called
-            // out by name because model-check.mjs structurally CANNOT catch it:
-            // that check reads pi's BUNDLED snapshot, which still reports the id
-            // as costing 0/0 long after the live provider stopped serving it
-            // free. Without this the failure reads as a generic model error and
-            // the dead entry sits in the chain wasting a request per fallthrough.
-            if (/unavailable for free|available for free/i.test(detail)) {
-              log(
-                "error",
-                `${label}: "${modelId}" is NO LONGER FREE at OpenRouter, though pi's snapshot still lists it as free. ` +
-                  `model-check.mjs cannot see this — remove or repoint the entry in agents/models.json by hand.`
-              );
-            }
-            throw new Error(`${label} model call failed: ${detail}`);
-          }
-          if (lastAssistant && lastAssistant.content) {
-            const fullText = Array.isArray(lastAssistant.content)
-              ? lastAssistant.content
-                  .filter((c) => c.type === "text")
-                  .map((c) => c.text)
-                  .join("")
-              : lastAssistant.content;
-            if (fullText) output = fullText;
-          }
-          // A session is ONE budget unit but many OpenRouter requests: the
-          // agentic loop issues a completion per turn, so every tool call is
-          // another charge against the daily cap. Count assistant messages —
-          // that's one per turn — because that is what the account is billed for.
-          const turns = recordSpend();
-          log(
-            "info",
-            `${label} agent completed in ${elapsed}s — ${turns} turn(s), ` +
-              `${modelTurnCount} request(s) this run`
-          );
-          session.dispose();
-          // An aborted session that produced nothing is a failure, and a loud one.
-          // Marked as capped rather than a model fault so runAgent does NOT walk
-          // the rest of the chain — a runaway usually repeats, and proving it costs
-          // another MAX_SESSION_TURNS per model.
-          if (abortReason && !output.trim()) throw sessionAbortError(label, abortReason, turns, sessionLimits);
-          return output;
-        })
-        .catch((err) => {
-          // A session that throws still spent every turn it took to get there —
-          // and retry loops are exactly where the cap goes — so count before
-          // rethrowing rather than under-reporting the expensive case.
-          const turns = recordSpend();
-          session.dispose();
-          // An abort can surface here instead of above, depending on where the
-          // session was when it was stopped. Name our reason either way: a cap
-          // must stop runAgent rather than pay another MAX_SESSION_TURNS per
-          // remaining model to watch the same runaway repeat, and a silent model
-          // must let it move on.
-          if (abortReason && !err?.sessionCapped && !err?.modelSilent) {
-            throw sessionAbortError(label, abortReason, turns, sessionLimits);
-          }
-          throw err;
-        });
-    })
-  );
+      }
+      throw new Error(`${label} model call failed: ${detail}`);
+    }
+    const output = assistantText(lastAssistant) || streamed;
+    // A session is ONE budget unit but many OpenRouter requests: the agentic loop
+    // issues a completion per turn, so every tool call is another charge. Count
+    // assistant messages — one per turn — because that is what the account is
+    // billed for.
+    const turns = watch.settle();
+    log(
+      "info",
+      `${label} agent completed in ${elapsed}s — ${turns} turn(s), ` +
+        `${modelTurnCount} request(s) this run`
+    );
+    // An aborted session that produced nothing is a failure, and a loud one.
+    // Marked as capped rather than a model fault so runAgent does NOT walk the
+    // rest of the chain — a runaway usually repeats, and proving it costs another
+    // MAX_SESSION_TURNS per model.
+    if (watch.abortReason && !output.trim()) throw sessionAbortError(label, watch.abortReason, turns, sessionLimits);
+    return output;
+  } catch (err) {
+    // An abort can surface here instead of above, depending on where the session
+    // was when it was stopped. Name our reason either way: a cap must stop
+    // runAgent rather than pay another MAX_SESSION_TURNS per remaining model to
+    // watch the same runaway repeat, and a silent model must let it move on.
+    if (watch.abortReason && !err?.sessionCapped && !err?.modelSilent) {
+      throw sessionAbortError(label, watch.abortReason, watch.settle(), sessionLimits);
+    }
+    throw err;
+  } finally {
+    // A session that throws still spent every turn it took to get there — and
+    // retry loops are exactly where the cap goes — so it is charged either way.
+    watch.settle();
+    session.dispose();
+  }
 }
 
 export function printRunSummary(title = "Run Summary") {
