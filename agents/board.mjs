@@ -49,9 +49,11 @@ function getProjectMeta() {
   }
 }
 
+let _repoName = null;
+
 function repoIssueUrl(issueNumber) {
-  const repo = ghProjectJson(["repo", "view", "--json", "nameWithOwner"]).nameWithOwner;
-  return `https://github.com/${repo}/issues/${issueNumber}`;
+  _repoName ??= ghProjectJson(["repo", "view", "--json", "nameWithOwner"]).nameWithOwner;
+  return `https://github.com/${_repoName}/issues/${issueNumber}`;
 }
 
 /** Every item on the board, raw. Throws when gh fails or the listing was cut short. */
@@ -124,7 +126,7 @@ export function moveCard(issueNumber, statusName) {
     log("warn", `Board: no column "${statusName}" — skipping move for #${issueNumber}.`);
     return false;
   }
-  const itemId = findProjectItemId(issueNumber) || addIssueToProject(issueNumber);
+  const itemId = addIssueToProject(issueNumber);
   if (!itemId) return false;
   try {
     ghExec([
