@@ -21,9 +21,7 @@ import {
 } from "./backlog.mjs";
 import { slugify, createBranchName } from "./git.mjs";
 import { preferDifferentModel } from "./agent.mjs";
-
-const issue = (number, { body = "", labels = [], title = `Ticket ${number}` } = {}) =>
-  ({ number, title, body, labels: labels.map((name) => ({ name })) });
+import { issue } from "./fixtures.mjs";
 
 test("declaring what a ticket waits for", async (t) => {
   await t.test("reads the numbers off a Blocked by: line", () => {

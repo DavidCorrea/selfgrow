@@ -5,9 +5,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { withDiagnosis, hasDiagnosis } from "./tech-lead.mjs";
 import { parkedTicketReplaced, renderParked } from "./product-manager.mjs";
-
-const issue = (number, { body = "", labels = [], title = `Ticket ${number}` } = {}) =>
-  ({ number, title, body, labels: labels.map((name) => ({ name })) });
+import { issue } from "./fixtures.mjs";
 
 const diagnosis = {
   diagnosis: "Both attempts rewrote the whole goal system and ran out of turns.",
