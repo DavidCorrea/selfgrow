@@ -974,7 +974,11 @@ export function runEntrypoint(moduleUrl, label, main, { onCrash, exitWhenDone = 
     },
     async (err) => {
       log("error", `${label} failed: ${err.message || err}`, errorData(err));
-      await onCrash?.(err);
+      try {
+        await onCrash?.(err);
+      } catch (crashErr) {
+        log("error", `${label} could not report its crash: ${crashErr.message || crashErr}`, errorData(crashErr));
+      }
       printRunSummary(label);
       process.exit(1);
     }
