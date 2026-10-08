@@ -447,6 +447,53 @@ export function dependentsOf(issue, openIssues) {
 }
 
 /**
+ * The open tickets a Builder may take now, best first: ranked by what each one
+ * unblocks, not only by its own label, and carrying that list so the Scout — who
+ * chooses from labels — can see why a low ticket sorts first. #170 was
+ * priority:low and gated a chain of three priority:high tickets; on its label
+ * alone it was passed over every time.
+ *
+ * Ties go to the oldest, so a re-run reaches for the same tickets in the same
+ * order. Attempt count is deliberately NOT a tiebreak: hard, foundational tickets
+ * are exactly the ones that fail once, and demoting them let every easy
+ * peripheral ticket overtake them forever. Perpetual failures are parked at
+ * MAX_TICKET_ATTEMPTS instead.
+ */
+export function rankBuildable(open, { exclude = new Set() } = {}) {
+  const openNumbers = new Set(open.map((issue) => issue.number));
+  return open
+    .filter((issue) => !exclude.has(issue.number) && isBuildable(issue, openNumbers))
+    .map((issue) => {
+      const unblocks = dependentsOf(issue, open);
+      if (!unblocks.length) return issue;
+      return {
+        ...issue,
+        unblocks: unblocks.map((dependent) => ({
+          number: dependent.number,
+          title: dependent.title,
+          priority: labelNames(dependent).find((name) => name.startsWith("priority:")) || "unlabeled",
+        })),
+      };
+    })
+    .sort(
+      (a, b) =>
+        effectivePriorityRank(a, open) - effectivePriorityRank(b, open) ||
+        a.number - b.number
+    );
+}
+
+/**
+ * "#n waits on #a, #b" for each ticket held back by an unshipped dependency, so a
+ * stuck backlog is diagnosable instead of looking like an empty one.
+ */
+export function describeWaiting(issues, openNumbers) {
+  return issues
+    .map((issue) => ({ number: issue.number, deps: unmetDependencies(issue, openNumbers) }))
+    .filter((waiting) => waiting.deps.length)
+    .map((waiting) => `#${waiting.number} waits on ${waiting.deps.map((dep) => `#${dep}`).join(", ")}`);
+}
+
+/**
  * The candidate the Scout named, or null when it named none of them.
  *
  * The Scout is a model, and its `issueNumber` is whatever it wrote: a number, a

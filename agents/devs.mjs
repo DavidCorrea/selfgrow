@@ -24,14 +24,13 @@ import {
   recordTicketFailure,
   isBlocked,
   isBuildable,
-  dependentsOf,
   chosenCandidate,
-  effectivePriorityRank,
-  unmetDependencies,
   syncWaitingLabels,
   createIssue,
   TECH_DEBT_LABEL,
   isAlreadyTracked,
+  rankBuildable,
+  describeWaiting,
 } from "./backlog.mjs";
 import { moveCard } from "./board.mjs";
 import {
@@ -1004,39 +1003,12 @@ async function main() {
     // before the work that stands on them. Re-read every pass: a merge this run
     // may have just released the next ticket.
     const open = fetchOpenIssues();
-    const openNumbers = new Set(open.map((i) => i.number));
     // Settle what earlier runs left open BEFORE choosing, every pass: a ticket
     // with a live PR is not buildable, and a stale one is retired here so the
     // ticket comes back with its failure written down rather than silently
     // re-planned onto a branch beside the one that already failed.
     const claimed = await withLogGroup("Open pull requests", () => reconcileOpenAgentPrs(open, awaitedPrs));
-    const untried = open.filter((i) => !attempted.has(i.number) && !claimed.has(i.number));
-    let candidates = untried.filter((i) => isBuildable(i, openNumbers));
-
-    // Rank by what each ticket unblocks, not only by its own label, and say so in
-    // the ticket itself. The Scout chooses from labels, so sorting alone would not
-    // move it: #170 is priority:low and gates a chain of three priority:high
-    // tickets, and on its label the Scout will reach past it every time.
-    candidates = [...candidates]
-      .map((issue) => {
-        const unblocks = dependentsOf(issue, open);
-        if (!unblocks.length) return issue;
-        return {
-          ...issue,
-          unblocks: unblocks.map((d) => ({
-            number: d.number,
-            title: d.title,
-            priority: (d.labels || [])
-              .map((l) => l.name || l)
-              .find((n) => n.startsWith("priority:")) || "unlabeled",
-          })),
-        };
-      })
-      .sort(
-        (a, b) =>
-          effectivePriorityRank(a, open) - effectivePriorityRank(b, open) ||
-          a.number - b.number
-      );
+    let candidates = rankBuildable(open, { exclude: new Set([...attempted, ...claimed]) });
 
     // A pinned run sees only its own ticket, so a hand-started rebuild of one
     // ticket cannot drift onto whatever else the board is offering.
@@ -1049,10 +1021,8 @@ async function main() {
     }
 
     if (candidates.length === 0) {
-      const waiting = untried
-        .filter((i) => !isBlocked(i))
-        .map((i) => `#${i.number} waits on ${unmetDependencies(i, openNumbers).map((d) => `#${d}`).join(", ")}`)
-        .filter((s) => !s.endsWith("waits on "));
+      const untried = open.filter((i) => !attempted.has(i.number) && !claimed.has(i.number) && !isBlocked(i));
+      const waiting = describeWaiting(untried, new Set(open.map((i) => i.number)));
       if (claimed.size) {
         // Not an empty board — the work is open as PRs. Naming them is the
         // difference between "nothing to do" and "everything is waiting on a
