@@ -60,6 +60,69 @@ export function startStaticServer(rootDir) {
     server.listen(0, "127.0.0.1", () => resolve({ server, port: server.address().port }));
   });
 }
+
+/**
+ * Chromium, when there is a page to load and Playwright to load it with; null
+ * otherwise, saying which. Both are skips rather than failures: a brand-new
+ * project has no page yet, and a runner without Playwright still has to ship.
+ */
+async function chromiumFor(dir, prefix, skipping) {
+  if (!fs.existsSync(join(dir, "index.html"))) {
+    log("info", `${prefix}: no index.html yet — ${skipping}.`);
+    return null;
+  }
+  try {
+    return (await import("playwright")).chromium;
+  } catch (e) {
+    log("warn", `${prefix}: Playwright unavailable — ${skipping}.`, errorData(e));
+    return null;
+  }
+}
+
+/**
+ * Serve `dir` and launch Chromium, hand both to `use(browser, url)`, and close
+ * them afterwards however `use` ends. A browser that will not launch throws, with
+ * the server already closed.
+ */
+async function withServedSite(chromium, dir, use) {
+  const { server, port } = await startStaticServer(dir);
+  let browser;
+  try {
+    browser = await chromium.launch();
+    return await use(browser, `http://127.0.0.1:${port}/`);
+  } finally {
+    await browser?.close().catch(() => {});
+    server.close();
+  }
+}
+
+/**
+ * Load the page and run `inPage(arg)` inside it, where it can import the
+ * product's own modules. Returns what `inPage` returned, or null — logged — when
+ * the product has no `file` yet or the page could not run it.
+ *
+ * A product that ships no such file yet passes its layer, so a brand-new repo
+ * isn't blocked before it has anything to check. No model is involved in either
+ * layer, so they cost nothing and cannot be argued with.
+ */
+async function runInProductPage(browser, url, dir, { file, layer, what, inPage, arg }) {
+  if (!fs.existsSync(join(dir, file))) {
+    log("info", `Verify: no docs/${file} yet — skipping the ${layer} layer.`);
+    return null;
+  }
+  let page;
+  try {
+    page = await browser.newPage();
+    await page.goto(url, { waitUntil: "networkidle", timeout: 20000 });
+    return await page.evaluate(inPage, arg);
+  } catch (e) {
+    log("warn", `Verify: ${what} could not run.`, errorData(e));
+    return null;
+  } finally {
+    await page?.close().catch(() => {});
+  }
+}
+
 // How long the product's whole self-check suite may run. A suite that can hang
 // the page is itself a defect, and a Builder waiting on it is burning its clock.
 const SELF_TEST_TIMEOUT_MS = 2000;
@@ -76,60 +139,44 @@ const SELF_TEST_TIMEOUT_MS = 2000;
  * `docs/selftest.js` exports `checks()`, which returns an array of
  * human-readable failure strings — empty when everything holds. What counts as
  * a check is the product's business; that it can be executed is ours.
- *
- * No model is involved, so it costs nothing and cannot be argued with. A project
- * that ships no selftest.js yet passes, so a brand-new repo isn't blocked before
- * it has anything to check.
  */
 async function checkSelfTests(browser, url, dir) {
-  if (!fs.existsSync(join(dir, "selftest.js"))) {
-    log("info", "Verify: no docs/selftest.js yet — skipping the self-check layer.");
-    return [];
-  }
+  const failures = await runInProductPage(browser, url, dir, {
+    file: "selftest.js",
+    layer: "self-check",
+    what: "self-checks",
+    arg: { timeoutMs: SELF_TEST_TIMEOUT_MS },
+    inPage: async ({ timeoutMs }) => {
+      let mod;
+      try {
+        mod = await import("./selftest.js");
+      } catch (e) {
+        return [`docs/selftest.js could not be imported — ${e.message}`];
+      }
+      if (typeof mod.checks !== "function") {
+        return ["docs/selftest.js does not export checks()"];
+      }
 
-  const page = await browser.newPage();
-  const failures = [];
-  try {
-    await page.goto(url, { waitUntil: "networkidle", timeout: 20000 });
-    const result = await page.evaluate(
-      async ({ timeoutMs }) => {
-        let mod;
-        try {
-          mod = await import("./selftest.js");
-        } catch (e) {
-          return [`docs/selftest.js could not be imported — ${e.message}`];
-        }
-        if (typeof mod.checks !== "function") {
-          return ["docs/selftest.js does not export checks()"];
-        }
-
-        // Time the suite here rather than letting the browser give up, so a
-        // runaway check is reported as the product's failure to bound itself.
-        const started = performance.now();
-        let problems;
-        try {
-          problems = await mod.checks();
-        } catch (e) {
-          return [`docs/selftest.js checks() threw — ${e.message}`];
-        }
-        const elapsed = performance.now() - started;
-        if (elapsed > timeoutMs) {
-          return [`docs/selftest.js checks() took ${Math.round(elapsed)}ms — it must finish within ${timeoutMs}ms`];
-        }
-        if (!Array.isArray(problems)) {
-          return ["docs/selftest.js checks() did not return an array of failure strings"];
-        }
-        return problems.map(String).slice(0, 12); // enough to act on
-      },
-      { timeoutMs: SELF_TEST_TIMEOUT_MS }
-    );
-    failures.push(...result);
-  } catch (e) {
-    log("warn", "Verify: self-checks could not run.", errorData(e));
-  } finally {
-    await page.close().catch(() => {});
-  }
-  return failures;
+      // Time the suite here rather than letting the browser give up, so a
+      // runaway check is reported as the product's failure to bound itself.
+      const started = performance.now();
+      let problems;
+      try {
+        problems = await mod.checks();
+      } catch (e) {
+        return [`docs/selftest.js checks() threw — ${e.message}`];
+      }
+      const elapsed = performance.now() - started;
+      if (elapsed > timeoutMs) {
+        return [`docs/selftest.js checks() took ${Math.round(elapsed)}ms — it must finish within ${timeoutMs}ms`];
+      }
+      if (!Array.isArray(problems)) {
+        return ["docs/selftest.js checks() did not return an array of failure strings"];
+      }
+      return problems.map(String).slice(0, 12); // enough to act on
+    },
+  });
+  return failures ?? [];
 }
 
 // How long the whole tool layer may take to answer. Every handler is called
@@ -230,91 +277,142 @@ export function validateToolDescriptors(summaries) {
  * not exist in headless Chromium, so the only honest thing to verify is that the
  * descriptors are sound and the handlers work. Whether the browser accepts them
  * is docs/webmcp.js's business, and it is one call.
- *
- * No model is involved, so it costs nothing and cannot be argued with. A project
- * that ships no agenttools.js yet passes, so a brand-new repo isn't blocked
- * before it has anything to expose.
  */
 async function checkAgentTools(browser, url, dir) {
-  if (!fs.existsSync(join(dir, "agenttools.js"))) {
-    log("info", "Verify: no docs/agenttools.js yet — skipping the agent-tools layer.");
-    return [];
-  }
+  const result = await runInProductPage(browser, url, dir, {
+    file: "agenttools.js",
+    layer: "agent-tools",
+    what: "agent tools",
+    arg: { timeoutMs: AGENT_TOOLS_TIMEOUT_MS },
+    inPage: async ({ timeoutMs }) => {
+      let mod;
+      try {
+        mod = await import("./agenttools.js");
+      } catch (e) {
+        return { fatal: `docs/agenttools.js could not be imported — ${e.message}` };
+      }
+      if (typeof mod.tools !== "function") {
+        return { fatal: "docs/agenttools.js does not export tools()" };
+      }
 
-  const page = await browser.newPage();
-  try {
-    await page.goto(url, { waitUntil: "networkidle", timeout: 20000 });
-    const summaries = await page.evaluate(
-      async ({ timeoutMs }) => {
-        let mod;
-        try {
-          mod = await import("./agenttools.js");
-        } catch (e) {
-          return { fatal: `docs/agenttools.js could not be imported — ${e.message}` };
-        }
-        if (typeof mod.tools !== "function") {
-          return { fatal: "docs/agenttools.js does not export tools()" };
-        }
+      let declared;
+      try {
+        declared = mod.tools();
+      } catch (e) {
+        return { fatal: `docs/agenttools.js tools() threw — ${e.message}` };
+      }
+      if (!Array.isArray(declared)) return { summaries: declared };
 
-        let declared;
-        try {
-          declared = mod.tools();
-        } catch (e) {
-          return { fatal: `docs/agenttools.js tools() threw — ${e.message}` };
-        }
-        if (!Array.isArray(declared)) return { summaries: declared };
+      const deadline = Date.now() + timeoutMs;
+      const collected = [];
+      for (const tool of declared) {
+        const summary = {
+          name: tool && tool.name,
+          description: tool && tool.description,
+          inputSchema: tool && tool.inputSchema,
+          hasExecute: !!(tool && typeof tool.execute === "function"),
+          hasExample: !!(tool && tool.example !== undefined),
+          annotated: !!(tool && tool.annotations),
+          mutates: !(tool && tool.annotations && tool.annotations.readOnlyHint),
+        };
 
-        const deadline = Date.now() + timeoutMs;
-        const collected = [];
-        for (const tool of declared) {
-          const summary = {
-            name: tool && tool.name,
-            description: tool && tool.description,
-            inputSchema: tool && tool.inputSchema,
-            hasExecute: !!(tool && typeof tool.execute === "function"),
-            hasExample: !!(tool && tool.example !== undefined),
-            annotated: !!(tool && tool.annotations),
-            mutates: !(tool && tool.annotations && tool.annotations.readOnlyHint),
-          };
-
-          if (summary.hasExecute && summary.hasExample) {
-            const remaining = deadline - Date.now();
-            const controller = new AbortController();
-            try {
-              if (remaining <= 0) throw new Error("the tool layer ran out of time before this tool was reached");
-              const result = await Promise.race([
-                tool.execute(tool.example, { signal: controller.signal }),
-                new Promise((_, reject) =>
-                  setTimeout(() => {
-                    controller.abort();
-                    reject(new Error(`it did not answer within ${timeoutMs}ms`));
-                  }, remaining)
-                ),
-              ]);
-              // An agent receives this across a JSON boundary, so a result it
-              // cannot carry is the same as no result at all.
-              JSON.stringify(result === undefined ? null : result);
-              summary.invocation = { ok: true };
-            } catch (e) {
-              summary.invocation = { ok: false, error: e.message };
-            }
+        if (summary.hasExecute && summary.hasExample) {
+          const remaining = deadline - Date.now();
+          const controller = new AbortController();
+          try {
+            if (remaining <= 0) throw new Error("the tool layer ran out of time before this tool was reached");
+            const result = await Promise.race([
+              tool.execute(tool.example, { signal: controller.signal }),
+              new Promise((_, reject) =>
+                setTimeout(() => {
+                  controller.abort();
+                  reject(new Error(`it did not answer within ${timeoutMs}ms`));
+                }, remaining)
+              ),
+            ]);
+            // An agent receives this across a JSON boundary, so a result it
+            // cannot carry is the same as no result at all.
+            JSON.stringify(result === undefined ? null : result);
+            summary.invocation = { ok: true };
+          } catch (e) {
+            summary.invocation = { ok: false, error: e.message };
           }
-
-          collected.push(summary);
         }
-        return { summaries: collected };
-      },
-      { timeoutMs: AGENT_TOOLS_TIMEOUT_MS }
-    );
 
-    if (summaries.fatal) return [summaries.fatal];
-    return validateToolDescriptors(summaries.summaries).slice(0, 12);
-  } catch (e) {
-    log("warn", "Verify: agent tools could not run.", errorData(e));
-    return [];
-  } finally {
-    await page.close().catch(() => {});
+        collected.push(summary);
+      }
+      return { summaries: collected };
+    },
+  });
+  if (!result) return [];
+  if (result.fatal) return [result.fatal];
+  return validateToolDescriptors(result.summaries).slice(0, 12);
+}
+
+const PASSED = { ok: true, layer: null, errors: [] };
+const failed = (layer, errors) => ({ ok: false, layer, errors: [...new Set(errors)] });
+
+/** Run `layers` ([name, check] pairs) in order; the first to report errors fails the build. */
+async function firstFailingLayer(layers) {
+  for (const [layer, check] of layers) {
+    const errors = await check();
+    if (errors.length) return failed(layer, errors);
   }
+  return null;
+}
+
+function syntaxErrors(dir) {
+  const errors = [];
+  for (const file of listJsFiles(dir)) {
+    try {
+      execFileSync(process.execPath, ["--check", file], { cwd: repoRoot, stdio: "pipe" });
+    } catch (e) {
+      errors.push(`${relative(repoRoot, file)}: ${String(e.stderr || e.message).split("\n")[0]}`);
+    }
+  }
+  return errors;
+}
+
+/** ESLint's errors under `relDir`, or none when ESLint is unavailable (warned). */
+async function lintErrors(relDir) {
+  try {
+    const { ESLint } = await import("eslint");
+    // Don't throw when a pattern matches nothing (no .mjs files, or an empty
+    // docs/ on a brand-new project) — that's not a verification failure.
+    const eslint = new ESLint({ errorOnUnmatchedPattern: false });
+    const results = await eslint.lintFiles([join(relDir, "**/*.js"), join(relDir, "**/*.mjs")]);
+    return results.flatMap((result) =>
+      result.messages
+        .filter((message) => message.severity === 2)
+        .map((message) => `${relative(repoRoot, result.filePath)}:${message.line} ${message.message} (${message.ruleId || "parse"})`)
+    );
+  } catch (e) {
+    log("warn", "Verify: ESLint unavailable — skipping lint layer.", errorData(e));
+    return [];
+  }
+}
+
+/**
+ * Load the page and collect what goes wrong: console errors, uncaught exceptions,
+ * failed loads. The page stays open and keeps listening while the later layers
+ * run, so the array can still grow after this returns.
+ */
+async function pageLoadErrors(browser, url) {
+  const errors = [];
+  try {
+    const page = await browser.newPage();
+    page.on("console", (m) => { if (m.type() === "error") errors.push(`console: ${m.text()}`); });
+    page.on("pageerror", (e) => errors.push(`uncaught: ${e.message}`));
+    page.on("requestfailed", (r) => {
+      const t = r.failure()?.errorText || "";
+      if (!/aborted/i.test(t)) errors.push(`failed load: ${r.url()} (${t})`);
+    });
+    await page.goto(url, { waitUntil: "networkidle", timeout: 20000 });
+    await page.waitForTimeout(2500);
+  } catch (e) {
+    errors.push(`navigation: ${e.message}`);
+  }
+  return errors;
 }
 
 /**
@@ -329,109 +427,38 @@ async function checkAgentTools(browser, url, dir) {
  */
 export async function verifyBuild(relDir = "docs") {
   const dir = join(repoRoot, relDir);
-  const rel = (f) => relative(repoRoot, f);
+  const staticFailure = await firstFailingLayer([
+    ["syntax", () => syntaxErrors(dir)],
+    ["lint", () => lintErrors(relDir)],
+    // Only for the real product: it is the one whose skills the agents are handed.
+    ["skills", () => (dir === join(repoRoot, "docs") ? projectSkillProblems() : [])],
+  ]);
+  if (staticFailure) return staticFailure;
 
-  // Layer 1 — syntax.
-  const syntaxErrors = [];
-  for (const f of listJsFiles(dir)) {
-    try {
-      execFileSync(process.execPath, ["--check", f], { cwd: repoRoot, stdio: "pipe" });
-    } catch (e) {
-      syntaxErrors.push(`${rel(f)}: ${String(e.stderr || e.message).split("\n")[0]}`);
-    }
-  }
-  if (syntaxErrors.length) return { ok: false, layer: "syntax", errors: syntaxErrors };
-
-  // Layer 2 — static analysis (ESLint, best-effort).
+  const chromium = await chromiumFor(dir, "Verify", "skipping runtime check");
+  if (!chromium) return PASSED;
   try {
-    const { ESLint } = await import("eslint");
-    // Don't throw when a pattern matches nothing (no .mjs files, or an empty
-    // docs/ on a brand-new project) — that's not a verification failure.
-    const eslint = new ESLint({ errorOnUnmatchedPattern: false });
-    const results = await eslint.lintFiles([join(relDir, "**/*.js"), join(relDir, "**/*.mjs")]);
-    const lintErrors = [];
-    for (const r of results) {
-      for (const m of r.messages) {
-        if (m.severity === 2) lintErrors.push(`${rel(r.filePath)}:${m.line} ${m.message} (${m.ruleId || "parse"})`);
-      }
-    }
-    if (lintErrors.length) return { ok: false, layer: "lint", errors: [...new Set(lintErrors)] };
-  } catch (e) {
-    log("warn", "Verify: ESLint unavailable — skipping lint layer.", errorData(e));
-  }
-
-  // Layer 3 — the product's skills load. Only for the real product: it is the
-  // one whose skills the agents are handed.
-  if (dir === join(repoRoot, "docs")) {
-    const skillErrors = projectSkillProblems();
-    if (skillErrors.length) return { ok: false, layer: "skills", errors: skillErrors };
-  }
-
-  // Layer 4 — runtime smoke (Playwright, best-effort).
-  if (!fs.existsSync(join(dir, "index.html"))) {
-    log("info", "Verify: no index.html yet — skipping runtime check.");
-    return { ok: true, layer: null, errors: [] };
-  }
-  let chromium;
-  try {
-    ({ chromium } = await import("playwright"));
-  } catch (e) {
-    log("warn", "Verify: Playwright unavailable — skipping runtime check.", errorData(e));
-    return { ok: true, layer: null, errors: [] };
-  }
-
-  const { server, port } = await startStaticServer(dir);
-  const errors = [];
-  let browser;
-  try {
-    browser = await chromium.launch();
-    const page = await browser.newPage();
-    page.on("console", (m) => { if (m.type() === "error") errors.push(`console: ${m.text()}`); });
-    page.on("pageerror", (e) => errors.push(`uncaught: ${e.message}`));
-    page.on("requestfailed", (r) => {
-      const t = r.failure()?.errorText || "";
-      if (!/aborted/i.test(t)) errors.push(`failed load: ${r.url()} (${t})`);
+    return await withServedSite(chromium, dir, async (browser, url) => {
+      const loadErrors = await pageLoadErrors(browser, url);
+      // The product against its own claims, then against what it promises an
+      // agent — each only once the layer before it is sound, because a page that
+      // is already throwing fails its checks, and a product failing its checks
+      // reports broken tools, from the same root cause.
+      const productFailure = loadErrors.length
+        ? null
+        : await firstFailingLayer([
+            ["selftest", () => checkSelfTests(browser, url, dir)],
+            ["agenttools", () => checkAgentTools(browser, url, dir)],
+          ]);
+      // Read the load errors last: the page went on listening while the product's
+      // own layers ran, and anything it reported meanwhile is still the page failing.
+      if (loadErrors.length) return failed("runtime", loadErrors);
+      return productFailure ?? PASSED;
     });
-    await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: "networkidle", timeout: 20000 });
-    await page.waitForTimeout(2500);
   } catch (e) {
-    errors.push(`navigation: ${e.message}`);
+    // The browser would not launch, so the page never loaded.
+    return failed("runtime", [`navigation: ${e.message}`]);
   }
-
-  // Layer 5 — the product against its own claims. Only worth running when the
-  // page itself is sound; check failures on a page that is already throwing
-  // would just be noise from the same root cause.
-  let selfTestFailures = [];
-  let agentToolFailures = [];
-  if (!errors.length) {
-    try {
-      selfTestFailures = await checkSelfTests(browser, `http://127.0.0.1:${port}/`, dir);
-    } catch (e) {
-      log("warn", "Verify: self-check layer failed to run.", errorData(e));
-    }
-    // Layer 6 — the product against what it promises an agent. Only worth
-    // running once its own checks pass: a broken product reports broken tools
-    // from the same root cause.
-    if (!selfTestFailures.length) {
-      try {
-        agentToolFailures = await checkAgentTools(browser, `http://127.0.0.1:${port}/`, dir);
-      } catch (e) {
-        log("warn", "Verify: agent-tools layer failed to run.", errorData(e));
-      }
-    }
-  }
-
-  if (browser) await browser.close().catch(() => {});
-  server.close();
-
-  if (errors.length) return { ok: false, layer: "runtime", errors: [...new Set(errors)] };
-  if (selfTestFailures.length) {
-    return { ok: false, layer: "selftest", errors: [...new Set(selfTestFailures)] };
-  }
-  if (agentToolFailures.length) {
-    return { ok: false, layer: "agenttools", errors: [...new Set(agentToolFailures)] };
-  }
-  return { ok: true, layer: null, errors: [] };
 }
 
 // ---------------------------------------------------------------------------
@@ -970,20 +997,9 @@ export async function exploreInteractions(browser, url) {
  */
 export async function reviewApp(relDir = "docs") {
   const dir = join(repoRoot, relDir);
-  if (!fs.existsSync(join(dir, "index.html"))) {
-    log("info", "App review: no index.html yet — skipping.");
-    return null;
-  }
-  let chromium;
-  try {
-    ({ chromium } = await import("playwright"));
-  } catch (e) {
-    log("warn", "App review: Playwright unavailable — skipping.", errorData(e));
-    return null;
-  }
+  const chromium = await chromiumFor(dir, "App review", "skipping");
+  if (!chromium) return null;
 
-  const { server, port } = await startStaticServer(dir);
-  const url = `http://127.0.0.1:${port}/`;
   // defect message -> the viewports it occurs at. Most faults reproduce at every
   // width, and repeating each one per viewport buried the width-specific ones
   // (which are the interesting kind) in three times as much text.
@@ -995,46 +1011,42 @@ export async function reviewApp(relDir = "docs") {
     }
   };
   let functional = [];
-  let browser;
   try {
-    browser = await chromium.launch();
+    await withServedSite(chromium, dir, async (browser, url) => {
+      // Measure the layout at each viewport (best-effort per viewport, so one bad
+      // width still lets the others report).
+      for (const vp of REVIEW_VIEWPORTS) {
+        let page;
+        try {
+          page = await browser.newPage(viewportOptions(vp));
+          await page.goto(url, { waitUntil: "networkidle", timeout: 20000 });
+          // The product may animate in; let it settle so we measure a steady state.
+          await page.waitForTimeout(1500);
+          recordDefects(vp.label, await measureLayoutDefects(page));
+          recordDefects(vp.label, await measureScreenUseDefects(page, vp));
+          const blank = describeBlankScreen(await measureBlankness(page));
+          if (blank) recordDefects(vp.label, [blank]);
+        } catch (e) {
+          log("warn", `App review: could not measure the ${vp.label} layout.`, errorData(e));
+        } finally {
+          if (page) await page.close().catch(() => {});
+        }
+      }
+
+      // Drive the app and record what breaks, then measure the state it's left in.
+      try {
+        const sweep = await exploreInteractions(browser, url);
+        functional = sweep.findings;
+        recordDefects("desktop, after interacting", sweep.postDefects);
+      } catch (e) {
+        log("warn", "App review: interaction sweep failed.", errorData(e));
+      }
+    });
   } catch (e) {
+    // Everything inside is caught per step, so only the launch itself lands here.
     log("warn", "App review: could not launch browser — skipping.", errorData(e));
-    server.close();
     return null;
   }
-
-  // Measure the layout at each viewport (best-effort per viewport, so one bad
-  // width still lets the others report).
-  for (const vp of REVIEW_VIEWPORTS) {
-    let page;
-    try {
-      page = await browser.newPage(viewportOptions(vp));
-      await page.goto(url, { waitUntil: "networkidle", timeout: 20000 });
-      // The product may animate in; let it settle so we measure a steady state.
-      await page.waitForTimeout(1500);
-      recordDefects(vp.label, await measureLayoutDefects(page));
-      recordDefects(vp.label, await measureScreenUseDefects(page, vp));
-      const blank = describeBlankScreen(await measureBlankness(page));
-      if (blank) recordDefects(vp.label, [blank]);
-    } catch (e) {
-      log("warn", `App review: could not measure the ${vp.label} layout.`, errorData(e));
-    } finally {
-      if (page) await page.close().catch(() => {});
-    }
-  }
-
-  // Drive the app and record what breaks, then measure the state it's left in.
-  try {
-    const sweep = await exploreInteractions(browser, url);
-    functional = sweep.findings;
-    recordDefects("desktop, after interacting", sweep.postDefects);
-  } catch (e) {
-    log("warn", "App review: interaction sweep failed.", errorData(e));
-  }
-
-  await browser.close().catch(() => {});
-  server.close();
 
   const parts = [];
   if (defectsByViewport.size) {
