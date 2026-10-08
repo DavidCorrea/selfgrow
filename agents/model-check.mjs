@@ -24,7 +24,7 @@ import { log } from "./log.mjs";
 import {
   readModelChain,
   listRegistryModels,
-  registryModelId,
+  modelIdOf,
   META_ROUTER_IDS,
   TEXT_MODELS,
 } from "./agent.mjs";
@@ -36,7 +36,7 @@ import {
  */
 export async function checkModelChain() {
   const all = await listRegistryModels();
-  const byId = new Map(all.map((m) => [registryModelId(m), m]));
+  const byId = new Map(all.map((m) => [modelIdOf(m), m]));
 
   // TEXT_MODEL (env) overrides the file, so check whatever the agents would
   // actually use — a CI run pinning a model deserves the same assertion.

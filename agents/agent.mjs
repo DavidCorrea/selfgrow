@@ -113,7 +113,8 @@ function getModelRuntime() {
   return modelRuntimePromise;
 }
 
-const modelIdOf = (m) => `${m.provider}/${m.id}`;
+/** A registry model's chain id (`provider/id`). */
+export const modelIdOf = (m) => `${m.provider}/${m.id}`;
 
 /**
  * True when an error means the ACCOUNT cannot pay, rather than one model failing.
@@ -306,13 +307,10 @@ export async function listRegistryModels() {
   return (await getModelRuntime()).getModels();
 }
 
-/** A registry model's chain id (`provider/id`). */
-export const registryModelId = modelIdOf;
-
 /** Every model pi knows, or null when the runtime can't be read. */
 async function getAllModels() {
   try {
-    return (await getModelRuntime()).getModels();
+    return await listRegistryModels();
   } catch (e) {
     log("warn", "Model chain: could not read pi's registry.", errorData(e));
     return null;
@@ -355,9 +353,14 @@ async function resolveTextModels() {
     log("warn", "Model chain: using configured ids as-is.");
     return TEXT_MODELS;
   }
+  return chainPresentIn(all);
+}
+
+/** The configured ids that `registry` still has, in chain order, saying which are gone. */
+function chainPresentIn(registry) {
   const present = [];
   for (const id of TEXT_MODELS) {
-    if (all.some((m) => modelIdOf(m) === id)) present.push(id);
+    if (registry.some((m) => modelIdOf(m) === id)) present.push(id);
     else log("warn", `Model chain: "${id}" is not in pi's registry (rotated out / version drift?) — skipping it.`);
   }
   if (!present.length) {
@@ -381,7 +384,7 @@ async function resolveTextModels() {
 export async function firstVisionModel() {
   const all = await getAllModels();
   if (!all) return null;
-  for (const id of await resolveTextModels()) {
+  for (const id of chainPresentIn(all)) {
     const model = all.find((m) => modelIdOf(m) === id);
     if (model && (model.input || []).includes("image")) return id;
   }
