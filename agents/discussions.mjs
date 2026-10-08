@@ -826,7 +826,7 @@ export function selectDecisions(nodes, { bodies = DECISION_BODIES } = {}) {
 
 /** Render decisions for a prompt: the reasoning for recent ones, titles for the rest. */
 export function renderDecisions(decisions) {
-  if (!decisions.length) return "";
+  if (!decisions.length) return "(nothing settled yet)";
   const detailed = decisions.filter((d) => d.body);
   const listed = decisions.filter((d) => !d.body);
   const parts = detailed.map((d) => `### ${d.title}\n(#${d.number})\n\n${d.body}`);

@@ -451,10 +451,7 @@ async function main() {
         PAST: past.length ? past.join("\n\n") : "(nothing recorded yet — this is the first review)",
         // Structural decisions it might otherwise propose undoing. Most of what is
         // in Decisions is about the harness, which is exactly this role's subject.
-        DECISIONS: (() => {
-          const decisions = readDecisions();
-          return decisions.length ? renderDecisions(decisions) : "(nothing settled yet)";
-        })(),
+        DECISIONS: renderDecisions(readDecisions()),
       }),
       tools: ["read"],
       // The Reviewer checks these rules only on the lines a change touches, so a
