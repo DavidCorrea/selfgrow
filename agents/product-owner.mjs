@@ -180,6 +180,8 @@ async function main() {
   // scratch and could contradict last week without noticing.
   const past = readJournal(JOURNAL);
   log("info", `Reviewing a week of ${week.shipped.length} shipped, ${week.parked.length} parked.`);
+  // Most-recurrent first, the same ordering the Scout reads.
+  const lessons = readLessonThreads();
 
   const rawOutput = await runAgent({
     label: "Product Owner",
@@ -187,11 +189,7 @@ async function main() {
       VISION: vision,
       BOARD_STATE: boardState,
       WEEK: renderWeek(week),
-      // Most-recurrent first, the same ordering the Scout reads.
-      LESSONS: (() => {
-        const threads = readLessonThreads();
-        return threads.length ? renderLessonThreads(threads) : "(nothing recorded yet)";
-      })(),
+      LESSONS: lessons.length ? renderLessonThreads(lessons) : "(nothing recorded yet)",
       PAST: past.length ? past.join("\n\n") : "(nothing recorded yet — this is the first)",
       // What the project has already settled. This role changes direction, so it
       // is the one most able to undo a decision without realising there was one.

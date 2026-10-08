@@ -719,18 +719,17 @@ async function main() {
     ? formatSources(readSources())
     : "";
 
+  // The one input that does not arrive as work. Read here rather than in the
+  // Devs on purpose: an idea is not a ticket until this role says it is, and an
+  // idea from someone without write access must never reach an agent that can
+  // act on text — see renderInboundIdeas for how the trust is marked.
+  const ideas = readInboundIdeas();
+
   const rawOutput = await runAgent({
     label: "Product Manager",
     systemPrompt: fillTemplate(loadPrompt("product-manager"), {
       VISION: vision,
-      // The one input that does not arrive as work. Read here rather than in the
-      // Devs on purpose: an idea is not a ticket until this role says it is, and
-      // an idea from someone without write access must never reach an agent that
-      // can act on text — see renderInboundIdeas for how the trust is marked.
-      IDEAS: (() => {
-        const ideas = readInboundIdeas();
-        return ideas.length ? renderInboundIdeas(ideas) : "(nothing posted)";
-      })(),
+      IDEAS: ideas.length ? renderInboundIdeas(ideas) : "(nothing posted)",
       MILESTONE: renderMilestone(milestone),
       BOARD_STATE: boardState,
       UNGROOMED: renderUngroomed(openIssues),
