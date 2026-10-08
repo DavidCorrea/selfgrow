@@ -24,15 +24,31 @@ import { repoRoot } from "./paths.mjs";
 // that pushes — given only to the jobs that push, whose checkouts no longer
 // persist one on disk.
 
+const EXEC_OPTIONS = { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024 };
+
 export function gitExec(argv, opts = {}) {
   const env = { ...process.env, ...gitAuthEnv(secret("GIT_TOKEN")) };
-  return execFileSync("git", argv, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024, env, ...opts }).toString().trim();
+  return execFileSync("git", argv, { ...EXEC_OPTIONS, env, ...opts }).toString().trim();
 }
 
 /** gh, authenticated as `token` — by default the run's GH_TOKEN. */
 export function ghExec(argv, { token = secret("GH_TOKEN"), ...opts } = {}) {
   const env = token ? { ...process.env, GH_TOKEN: token } : process.env;
-  return execFileSync("gh", argv, { cwd: repoRoot, maxBuffer: 10 * 1024 * 1024, env, ...opts }).toString();
+  return execFileSync("gh", argv, { ...EXEC_OPTIONS, env, ...opts }).toString();
+}
+
+/**
+ * Run git where failing is an expected answer — the branch is not there, no merge
+ * is in progress — and say whether it worked. git's complaint is captured rather
+ * than printed. Cleanup only: anything a caller relies on goes through gitExec.
+ */
+function gitTry(argv, opts = {}) {
+  try {
+    gitExec(argv, { stdio: "pipe", ...opts });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // The paths that ARE the machine: its workflows and permissions, its agents,
@@ -101,18 +117,11 @@ export function createBranchName(issueNumber, issueTitle, suggestion) {
 }
 
 /**
- * Delete a branch on origin if it exists. Best-effort — never throws.
+ * Delete a branch on origin if it exists. Best-effort — never throws. The branch
+ * usually doesn't exist on origin, since run-scoped names are unique.
  */
 export function deleteRemoteBranch(branchName) {
-  try {
-    // Best-effort: the branch usually doesn't exist on origin (run-scoped names
-    // are unique), so capture stderr rather than leak git's "remote ref does not
-    // exist" to the console.
-    gitExec(["push", "origin", "--delete", branchName], { stdio: "pipe" });
-    log("info", `Deleted remote branch ${branchName}.`);
-  } catch {
-    // remote branch may not exist — fine
-  }
+  if (gitTry(["push", "origin", "--delete", branchName])) log("info", `Deleted remote branch ${branchName}.`);
 }
 
 export function createBranch(branchName) {
@@ -121,13 +130,8 @@ export function createBranch(branchName) {
   // Base the branch on the real remote tip, not a possibly-stale local main.
   gitExec(["reset", "--hard", "origin/main"]);
   // Clear any leftover branch of the same name from a prior failed run. With
-  // run-scoped names this is usually a no-op, so capture stderr rather than leak
-  // git's "branch not found" to the console.
-  try {
-    gitExec(["branch", "-D", branchName], { stdio: "pipe" });
-  } catch {
-    // local branch may not exist — fine
-  }
+  // run-scoped names this is usually a no-op.
+  gitTry(["branch", "-D", branchName]);
   deleteRemoteBranch(branchName);
   gitExec(["checkout", "-b", branchName]);
   log("info", `Created branch: ${branchName}`);
@@ -152,13 +156,9 @@ export function mergeMainIntoBranch() {
   }
 }
 
+/** Abort a merge in progress, if there is one. */
 export function abortMerge() {
-  try {
-    gitExec(["merge", "--abort"]);
-    log("info", "Aborted merge.");
-  } catch {
-    // ignore — may not be in a merge
-  }
+  if (gitTry(["merge", "--abort"])) log("info", "Aborted merge.");
 }
 
 /**
@@ -177,17 +177,11 @@ export function abortMerge() {
  */
 export function returnToCleanMain(branchName, opts = {}) {
   const git = (argv) => gitExec(argv, { stdio: "pipe", ...opts });
-  try {
-    git(["merge", "--abort"]);
-  } catch {
-    // no merge in progress — the usual case
-  }
+  // No merge in progress is the usual case.
+  gitTry(["merge", "--abort"], opts);
   git(["reset", "--hard"]);
   git(["clean", "-fd"]);
   git(["checkout", "-f", "-B", "main", "origin/main"]);
-  try {
-    git(["branch", "-D", branchName]);
-  } catch {
-    // the branch was never created locally — fine
-  }
+  // The branch may never have been created locally.
+  gitTry(["branch", "-D", branchName], opts);
 }

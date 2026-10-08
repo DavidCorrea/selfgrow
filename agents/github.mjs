@@ -22,7 +22,7 @@ export function ghComment(issueNumber, body) {
  * @param {string} [info.commitMessage] - Commit subject line.
  * @param {string} [info.commitSha]     - Full commit SHA on main.
  */
-export async function closeIssue(issueNumber, info = {}) {
+export function closeIssue(issueNumber, info = {}) {
   const { summary, commitMessage, commitSha } = info;
 
   const lines = ["## ✅ Resolved by the Devs", ""];
@@ -43,7 +43,7 @@ export async function closeIssue(issueNumber, info = {}) {
   }
 }
 
-export async function commentIssue(issueNumber, body) {
+export function commentIssue(issueNumber, body) {
   try {
     ghComment(issueNumber, body);
   } catch (e) {
