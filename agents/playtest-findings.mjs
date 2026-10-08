@@ -41,7 +41,7 @@ const PERSISTED_LABEL_RE = /^persisted:(\d+)$/;
 // answer is declared the wrong one. Two rather than one because a single session
 // is a single opinion from a model that sees two frames: one "still there" can
 // be the Playtester's variance, two in a row is the product.
-export const ESCALATE_AFTER = Number(process.env.PLAYTEST_ESCALATE_AFTER || 2);
+const ESCALATE_AFTER = Number(process.env.PLAYTEST_ESCALATE_AFTER || 2);
 
 // The body line naming the current answer. One line in the finding's own body,
 // the same shape as `Blocked by:`, so the answer travels with the issue and is

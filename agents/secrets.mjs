@@ -23,7 +23,7 @@ import fs from "fs";
 // Every name this pipeline treats as a secret. Checked in CI against the
 // environment, so a workflow that still passes one the old way fails loudly
 // instead of quietly re-opening the hole.
-export const SECRET_NAMES = ["OPENROUTER_API_KEY", "GH_TOKEN", "AGENT_PAT", "BOT_TOKEN", "GITHUB_TOKEN", "GIT_TOKEN"];
+const SECRET_NAMES = ["OPENROUTER_API_KEY", "GH_TOKEN", "AGENT_PAT", "BOT_TOKEN", "GITHUB_TOKEN", "GIT_TOKEN"];
 
 /**
  * `NAME=value` lines into { NAME: value }. Blank lines are skipped. An unknown

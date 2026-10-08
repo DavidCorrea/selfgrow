@@ -109,12 +109,9 @@ const BUILDER_SESSION_LIMITS = {
 // ---------------------------------------------------------------------------
 
 /**
- * Past dead ends, for the Scout to read before planning. Framed as advice rather
- * than prohibition: a lesson explains why something failed once, which is a
- * reason to plan differently, not proof that the work is impossible.
- */
-/**
- * The dead ends the Scout should plan around.
+ * The dead ends the Scout should plan around. Framed as advice rather than
+ * prohibition: a lesson explains why something failed once, which is a reason to
+ * plan differently, not proof that the work is impossible.
  *
  * MOST-RECURRENT first: a failure seen four times is likelier to catch this ticket
  * than one seen once last night, which is the ordering the old wiki page could

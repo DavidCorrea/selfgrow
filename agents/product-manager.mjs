@@ -521,10 +521,6 @@ function escalateFindings(escalate, openIssues) {
 }
 
 /**
- * Close the tickets the PM chose to retire (blocked tickets it split or dropped).
- * Returns the set of retired issue numbers. Best-effort.
- */
-/**
  * Validate what the PM asked to retire, WITHOUT closing anything yet.
  *
  * Split from the closing half because closing used to run first, before the

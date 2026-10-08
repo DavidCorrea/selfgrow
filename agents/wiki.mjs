@@ -42,7 +42,7 @@ const PUSH_ATTEMPTS = 5;
  * Returns the directory, or null when the wiki cannot be reached — every caller
  * degrades rather than failing, because a missing wiki must never stop a build.
  */
-export function cloneWiki(dir = DEFAULT_WIKI_DIR, { cwd = process.cwd() } = {}) {
+function cloneWiki(dir = DEFAULT_WIKI_DIR, { cwd = process.cwd() } = {}) {
   try {
     const ghEnv = wikiToken() ? { ...process.env, GH_TOKEN: wikiToken() } : process.env;
     const repo = JSON.parse(

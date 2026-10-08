@@ -346,12 +346,12 @@ export function resolveDiscussion(discussionId, comment) {
 // Where journals live. Repo settings, so it cannot be created from here: when it
 // is missing every journal call degrades to a warning and a no-op, which is the
 // same way a missing wiki degrades rather than failing a run.
-export const JOURNAL_CATEGORY = process.env.JOURNAL_CATEGORY || "Journals";
+const JOURNAL_CATEGORY = process.env.JOURNAL_CATEGORY || "Journals";
 
 // Where failures live, one thread per failure CLASS. Same shape as a journal and
 // the same helpers, because the pattern is identical: a thread names a recurring
 // thing, its comments are the times it happened.
-export const LESSON_CATEGORY = process.env.LESSON_CATEGORY || "Lessons";
+const LESSON_CATEGORY = process.env.LESSON_CATEGORY || "Lessons";
 
 // How many past entries a reader gets. Three is enough to see a direction and a
 // contradiction, and short enough that it cannot crowd out the run's real input.
@@ -387,7 +387,7 @@ export function findDiscussion(category, prefix) {
  * with no thread, an unreachable API. A journal is context, never a precondition:
  * no agent may fail because it could not remember.
  */
-export function readThread(category, title, { last = JOURNAL_TAIL } = {}) {
+function readThread(category, title, { last = JOURNAL_TAIL } = {}) {
   try {
     const thread = findDiscussion(category, title);
     if (!thread) return [];
@@ -427,7 +427,7 @@ export function readJournal(title, options) {
  * Best-effort throughout, for the same reason as readJournal: writing down what a
  * run decided must never be able to fail the run that decided it.
  */
-export function appendThread(category, title, entry, { intro = "" } = {}) {
+function appendThread(category, title, entry, { intro = "" } = {}) {
   const body = String(entry || "").trim();
   if (!body) return false;
   try {
@@ -614,7 +614,7 @@ export function renderLessonThreads(lessons) {
 // record that the previous project existed.
 // ---------------------------------------------------------------------------
 
-export const SCOPE_LABELS = { product: "product", machine: "machine" };
+const SCOPE_LABELS = { product: "product", machine: "machine" };
 
 /** The label id for a name, or null when the repository has no such label. */
 function findLabelId(name) {
@@ -633,7 +633,7 @@ function findLabelId(name) {
  * Label a discussion, best-effort. A missing label is a warning rather than a
  * failure: the thread it would have marked is worth more than the mark.
  */
-export function labelDiscussion(discussionId, labelName) {
+function labelDiscussion(discussionId, labelName) {
   try {
     const labelId = findLabelId(labelName);
     if (!labelId) {
@@ -779,8 +779,8 @@ export function archiveProductMemory({ on = new Date() } = {}) {
 // instruction to follow.
 // ---------------------------------------------------------------------------
 
-export const DECISION_CATEGORY = process.env.DECISION_CATEGORY || "Decisions";
-export const IDEAS_CATEGORY = process.env.IDEAS_CATEGORY || "Ideas";
+const DECISION_CATEGORY = process.env.DECISION_CATEGORY || "Decisions";
+const IDEAS_CATEGORY = process.env.IDEAS_CATEGORY || "Ideas";
 
 // How many decision bodies a prompt gets. Titles are cheap and all of them go;
 // bodies are ~1-2k characters each, so this is the number that has to be bounded.

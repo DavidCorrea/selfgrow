@@ -455,7 +455,7 @@ const CHECKS = [
  * The numbers, whether or not anything is wrong. Always logged and written to the
  * job summary; never filed as an issue on its own.
  */
-export function renderVitals({ open, shippedRecently, site, agentPrs = [] }) {
+function renderVitals({ open, shippedRecently, site, agentPrs = [] }) {
   const openNumbers = new Set(open.map((i) => i.number));
   const shipped7 = shippedRecently.filter((i) => (i.closedAt || "") >= daysAgo(7)).length;
   return [

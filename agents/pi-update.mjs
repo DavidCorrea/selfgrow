@@ -90,7 +90,7 @@ function installedVersion() {
 // a PAT — so "the moment it is published" is exactly the window a hijacked or
 // broken release is live before anyone has noticed and pulled it. A week is a
 // fair price for letting the rest of the ecosystem find out first.
-export const MIN_RELEASE_AGE_DAYS = Number(process.env.PI_MIN_RELEASE_AGE_DAYS || 7);
+const MIN_RELEASE_AGE_DAYS = Number(process.env.PI_MIN_RELEASE_AGE_DAYS || 7);
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const STABLE_VERSION = /^\d+\.\d+\.\d+$/;

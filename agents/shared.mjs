@@ -36,9 +36,9 @@ import { secret, gitAuthEnv } from "./secrets.mjs";
 // Paths
 // ---------------------------------------------------------------------------
 
-export const __dirname = dirname(fileURLToPath(import.meta.url));
+const __dirname = dirname(fileURLToPath(import.meta.url));
 export const repoRoot = join(__dirname, "..");
-export const promptsDir = join(__dirname, "prompts");
+const promptsDir = join(__dirname, "prompts");
 
 // ---------------------------------------------------------------------------
 // Agent runner
@@ -55,7 +55,7 @@ export const promptsDir = join(__dirname, "prompts");
 // These are pi registry ids (provider/id); override via env TEXT_MODEL
 // (comma-separated). The chain itself lives in agents/models.json, as DATA rather
 // than a literal here, so tooling can read and assert it without parsing prose.
-export const MODELS_FILE = join(__dirname, "models.json");
+const MODELS_FILE = join(__dirname, "models.json");
 
 /** The configured chain as [{ id, why }] — the file's order, which is meaningful. */
 export function readModelChain() {
@@ -70,22 +70,6 @@ export function readModelChain() {
     console.log(`WARN: model chain: could not read ${MODELS_FILE} (${e.message}) — falling back to auto-discovery.`);
     return [];
   }
-}
-
-/** Write the chain back, preserving the file's `_comment`. Used by pi-update.mjs. */
-export function writeModelChain(entries) {
-  let existing = {};
-  try {
-    existing = JSON.parse(fs.readFileSync(MODELS_FILE, "utf-8"));
-  } catch { /* writing a fresh file is fine */ }
-  // `paid` rides along because dropping it would silently re-arm the free-only
-  // assertion in model-check.mjs, and the next repair would evict a head that is
-  // billing money on purpose.
-  const payload = {
-    ...existing,
-    text: entries.map(({ id, why, paid }) => (paid ? { id, paid, why } : { id, why })),
-  };
-  fs.writeFileSync(MODELS_FILE, JSON.stringify(payload, null, 2) + "\n", "utf-8");
 }
 
 // These ids must exist in pi's bundled model snapshot (pi-ai's
@@ -110,13 +94,13 @@ export const TEXT_MODELS = (
   .filter(Boolean);
 
 // Back-compat: the historical single-model default is just the head of the chain.
-export const MODEL_ID = TEXT_MODELS[0];
+const MODEL_ID = TEXT_MODELS[0];
 
 // Never send thinkingLevel "off": both configured models are reasoning models,
 // and some endpoints reject a disabled-reasoning request
 // outright ("Reasoning is mandatory for this endpoint and cannot be disabled",
 // HTTP 400) — a wasted request against the daily cap. "low" is the real floor.
-export const MIN_THINKING_LEVEL = "low";
+const MIN_THINKING_LEVEL = "low";
 
 // Default kickoff turn when a caller doesn't supply one. The agent's full role
 // lives in the system prompt; this just tells it to begin.
@@ -209,7 +193,7 @@ export function isDailyQuotaExhausted(err) {
 // them it only stops a loop. The Builder is the exception — its merged sessions
 // ran 34-36 turns, and every devs "abort" in September was this cap cutting real
 // work off — so it carries its own, larger limits (BUILDER_SESSION_LIMITS).
-export const MAX_SESSION_TURNS = Number(process.env.MAX_SESSION_TURNS || 40);
+const MAX_SESSION_TURNS = Number(process.env.MAX_SESSION_TURNS || 40);
 
 // The same guard in the other unit the runner can kill us over. A turn cap does
 // nothing about a session that is slow rather than looping, and the runner's job
@@ -225,7 +209,7 @@ export const MAX_SESSION_MINUTES = Number(process.env.MAX_SESSION_MINUTES || 12)
 // Both caps together, as a session receives them. A role whose healthy sessions
 // are longer than the default passes its own — see BUILDER_SESSION_LIMITS in
 // devs.mjs — rather than every role inheriting the longest one's budget.
-export const DEFAULT_SESSION_LIMITS = { turns: MAX_SESSION_TURNS, minutes: MAX_SESSION_MINUTES };
+const DEFAULT_SESSION_LIMITS = { turns: MAX_SESSION_TURNS, minutes: MAX_SESSION_MINUTES };
 
 // How long the MODEL may go without a word — no token, no event — before it
 // counts as that model failing. The session cap alone let one hung request spend
@@ -311,11 +295,6 @@ export function getLastModelUsed() {
 // the ~16x accounting error this counter exists to have fixed.
 let modelTurnCount = 0;
 
-/** Real OpenRouter requests this run made — one per agent turn, not per session. */
-export function getModelTurnCount() {
-  return modelTurnCount;
-}
-
 /**
  * Every model pi knows, as [{ provider, id, cost, ... }]. Throws if the registry
  * can't be read — callers that must not fail use getAllModels() instead.
@@ -341,17 +320,6 @@ async function getAllModels() {
 }
 
 /**
- * Resolve the text-model chain against pi's ACTUAL registry, so a pi upgrade that
- * rotates an id out degrades to the surviving entries instead of throwing on the
- * first one. Returns an ordered list of ids, possibly empty.
- *
- * An empty result is deliberately fatal upstream (runAgent throws). This used to
- * auto-discover free OpenRouter models so the agents "kept running" — which is
- * the quiet demotion model-check.mjs exists to catch, and it is worse now that the
- * configured models are chosen for cost, coding ability and provider family. A
- * loud failure is better than a day's work done by an arbitrary model.
- */
-/**
  * The chain, reordered so `avoid` is tried LAST.
  *
  * Review is only worth its request if it can disagree, and a Reviewer drawn from
@@ -370,6 +338,17 @@ export function preferDifferentModel(chain, avoid) {
   return others.length ? [...others, ...chain.filter((id) => id === avoid)] : chain;
 }
 
+/**
+ * Resolve the text-model chain against pi's ACTUAL registry, so a pi upgrade that
+ * rotates an id out degrades to the surviving entries instead of throwing on the
+ * first one. Returns an ordered list of ids, possibly empty.
+ *
+ * An empty result is deliberately fatal upstream (runAgent throws). This used to
+ * auto-discover free OpenRouter models so the agents "kept running" — which is
+ * the quiet demotion model-check.mjs exists to catch, and it is worse now that the
+ * configured models are chosen for cost, coding ability and provider family. A
+ * loud failure is better than a day's work done by an arbitrary model.
+ */
 async function resolveTextModels() {
   const all = await getAllModels();
   if (!all) {
@@ -600,7 +579,7 @@ export const SKILLS_DIR = join(repoRoot, "agents", "skills");
 // Skills the product ships, laid out the same way. They are product, not
 // machine: the Devs write them like any other file in docs/, every agent that
 // can read gets all of them, and a reset deletes them with the rest.
-export const PROJECT_SKILLS_DIR = join(repoRoot, "docs", "skills");
+const PROJECT_SKILLS_DIR = join(repoRoot, "docs", "skills");
 
 const skillDirectories = (dir) =>
   fs.existsSync(dir)
@@ -1365,6 +1344,25 @@ export async function commentIssue(issueNumber, body) {
   }
 }
 
+// How many rows a listing asks gh for. Deliberately far above any real board:
+// the point is not to page through thousands, it is that a listing which reaches
+// this is known to be cut short rather than taken for the whole.
+const LISTING_LIMIT = 1000;
+
+/**
+ * Throw when a listing came back at its limit.
+ *
+ * gh stops at --limit without saying so, and a truncated list reads as a complete
+ * one: an open blocker past the cutoff looked shipped and released everything
+ * waiting on it. Exactly at the limit is treated as cut short too — one false
+ * alarm at a thousand rows is cheaper than one silent miss.
+ */
+function rejectTruncated(count, what, limit = LISTING_LIMIT) {
+  if (count >= limit) {
+    throw new Error(`Listing ${what} reached its limit of ${limit}, so it may be incomplete — raise the limit.`);
+  }
+}
+
 /**
  * Fetch open issues live via gh. Throws when the listing fails.
  *
@@ -1384,25 +1382,6 @@ export function fetchOpenIssues() {
   }
   rejectTruncated(issues.length, "open issues");
   return issues;
-}
-
-// How many rows a listing asks gh for. Deliberately far above any real board:
-// the point is not to page through thousands, it is that a listing which reaches
-// this is known to be cut short rather than taken for the whole.
-const LISTING_LIMIT = 1000;
-
-/**
- * Throw when a listing came back at its limit.
- *
- * gh stops at --limit without saying so, and a truncated list reads as a complete
- * one: an open blocker past the cutoff looked shipped and released everything
- * waiting on it. Exactly at the limit is treated as cut short too — one false
- * alarm at a thousand rows is cheaper than one silent miss.
- */
-function rejectTruncated(count, what, limit = LISTING_LIMIT) {
-  if (count >= limit) {
-    throw new Error(`Listing ${what} reached its limit of ${limit}, so it may be incomplete — raise the limit.`);
-  }
 }
 
 /**
@@ -1724,7 +1703,7 @@ export function setIssuePriority(issueNumber, priority, currentLabels = []) {
 // skips blocked tickets, and the Product Manager splits or retires them.
 // ---------------------------------------------------------------------------
 
-export const BLOCKED_LABEL = "blocked";
+const BLOCKED_LABEL = "blocked";
 const ATTEMPTS_LABEL_RE = /^attempts:(\d+)$/;
 
 /** An issue's label names as plain strings (gh returns objects; humans add strings). */
@@ -1862,8 +1841,8 @@ export function isConfirmedRetired(number) {
 // eventually park — spending two builds to discover the issue was never a
 // request.
 export const PLAYTEST_LABEL = "playtest";
-export const HEALTH_LABEL = "health";
-export const DIGEST_LABEL = "digest";
+const HEALTH_LABEL = "health";
+const DIGEST_LABEL = "digest";
 
 const NON_WORK_LABELS = new Set([PLAYTEST_LABEL, HEALTH_LABEL, DIGEST_LABEL]);
 
@@ -1997,7 +1976,7 @@ export function dependencyLine(numbers) {
 // Shown on tickets whose prerequisites haven't shipped, so the board answers
 // "why isn't this moving?" at a glance instead of only inside the issue body.
 // Distinct from BLOCKED_LABEL ("parked, it keeps failing") — this one is normal.
-export const WAITING_LABEL = "waiting";
+const WAITING_LABEL = "waiting";
 
 /**
  * Reconcile the `waiting` label across the open backlog: add it to tickets with
@@ -2153,7 +2132,7 @@ let _projectMeta = null;
  * Discover and cache the project's node id, the Status field id, and a
  * {columnName: optionId} map. Returns null if it can't be resolved.
  */
-export function getProjectMeta() {
+function getProjectMeta() {
   if (_projectMeta) return _projectMeta;
   try {
     const view = ghProjectJson(["project", "view", PROJECT_NUMBER, "--owner", PROJECT_OWNER, "--format", "json"]);
@@ -2222,7 +2201,7 @@ export function listProjectItems() {
 }
 
 /** Add an issue to the board; returns the item id (or null). Idempotent in effect. */
-export function addIssueToProject(issueNumber) {
+function addIssueToProject(issueNumber) {
   const existing = findProjectItemId(issueNumber);
   if (existing) return existing;
   try {
@@ -2413,7 +2392,7 @@ export function agentPullRequestBody(summary, issueNumber) {
   return issueNumber ? `${summary}\n\nCloses #${issueNumber}` : summary;
 }
 
-/** Open a PR from `branchName` into main as the bot. Returns PR number, or null. */
+/** Open a PR from `branchName` into main as the PAT user. Returns PR number, or null. */
 export function createPR(branchName, title, body) {
   try {
     const out = ghAs(
@@ -2432,7 +2411,7 @@ export function createPR(branchName, title, body) {
   }
 }
 
-/** Submit an approving review as the PAT user (a different identity than the bot author). */
+/** Submit an approving review as the bot (a different identity than the PAT author). */
 export function approvePR(prNumber, body) {
   try {
     // The bot, because the PAT is now the author and nobody may approve their own.
@@ -2447,7 +2426,6 @@ export function approvePR(prNumber, body) {
   }
 }
 
-/** Merge a PR with a merge commit and delete its branch. Best-effort. */
 // How long to wait for a PR to actually land after asking for it.
 //
 // The agents open a PR and try to merge it seconds later, long before any
@@ -2476,7 +2454,8 @@ function prState(prNumber) {
 }
 
 /**
- * Merge a pull request, letting the repository's required checks decide.
+ * Merge a pull request with a merge commit and delete its branch, letting the
+ * repository's required checks decide.
  *
  * Asks for auto-merge rather than merging outright: GitHub then merges the
  * moment the checks pass, and refuses if they do not. That inverts where the

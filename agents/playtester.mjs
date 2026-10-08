@@ -427,14 +427,6 @@ export async function observeApp() {
 }
 
 /**
- * Render the session as something a reader can follow in order: what the page
- * offered, what changed while watching, and what it showed on the way back in.
- *
- * Deliberately prose-shaped rather than a JSON dump. The agent reading it is
- * being asked for an impression of an experience, and a wall of serialized DOM
- * invites it to audit structure instead.
- */
-/**
  * The tool pass, as something a reader can judge rather than a JSON dump: what
  * each tool said it did, and what came back when it was called.
  */
@@ -462,6 +454,14 @@ export function renderToolPass(agentTools) {
   return lines.join("\n");
 }
 
+/**
+ * Render the session as something a reader can follow in order: what the page
+ * offered, what changed while watching, and what it showed on the way back in.
+ *
+ * Deliberately prose-shaped rather than a JSON dump. The agent reading it is
+ * being asked for an impression of an experience, and a wall of serialized DOM
+ * invites it to audit structure instead.
+ */
 export function renderSession(session, { showingFrames = true } = {}) {
   const { opening, tabOrder, timeline, closing, awayMs, returned, agentTools, consoleErrors, url } = session;
   // The transcript must describe the turn it is actually part of. The text-only
