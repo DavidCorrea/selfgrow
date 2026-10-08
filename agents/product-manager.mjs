@@ -695,6 +695,48 @@ function answerIdeas(ideas) {
   if (entries.length) log("info", `Answered ${entries.length} idea(s) from people.`);
 }
 
+/**
+ * Act on what the Product Manager decided, in the order that keeps nothing
+ * closed before its replacement exists.
+ */
+async function applyDecisions(data, { openIssues, boardItems, milestone }) {
+  // 1. Decide what to retire, but do not close it yet. Closing runs LAST, because
+  //    a retirement is usually justified by a replacement the grooming pass has
+  //    not created yet — see executeRetirements.
+  const planned = planRetirements(data.retire, openIssues);
+  // Groom before triage, so a ticket is prioritized as what it has become rather
+  // than as what it arrived as.
+  groomTickets(data.groom, openIssues.filter((i) => !planned.numbers.has(i.number)));
+  // Tickets on their way out are excluded from the pool grooming dedups against,
+  // exactly as they were when this ran before grooming — a proposal that replaces
+  // a ticket must not be rejected as a duplicate of the ticket it replaces.
+  const remainingOpen = openIssues.filter((i) => !planned.numbers.has(i.number));
+  // 2. Triage + prioritize existing open tickets (pull inbound onto the board).
+  triageExisting(remainingOpen, boardItems, data.triage);
+  // 3. Create new prioritized tickets toward the vision.
+  // Full board items, not just titles: grooming needs each item's column to tell
+  // shipped work from work still in flight.
+  const answerable = new Map(openIssues.filter(needsAnswer).map((i) => [i.number, i]));
+  const groomed = await groomBacklog(data.backlog, remainingOpen, boardItems, milestone, answerable);
+  // 4. A finding that got tickets stays open, answered, until the Playtester has
+  //    seen them ship — even if the PM also listed it in `retire` out of habit.
+  for (const [number, tickets] of groomed.answers) answerFinding(answerable.get(number), tickets);
+  planned.entries = planned.entries.filter((e) => !groomed.answers.has(e.number));
+  // A finding answered this run is not also escalated: the answer is the newer
+  // judgement.
+  const escalate = Array.isArray(data.escalate) ? data.escalate : [];
+  escalateFindings(escalate.filter((e) => !groomed.answers.has(Number(e?.number))), openIssues);
+  // 5. Now close the originals — only if the replacements actually landed.
+  await executeRetirements(planned, groomed);
+  // A parked ticket returned smaller closes against the ticket that replaced it.
+  // A person's request is not dropped by this: it continues as the smaller piece.
+  for (const [number, { issue, replacement }] of groomed.replaced) {
+    if (planned.numbers.has(number)) continue;
+    await retireIssue(number, `Returned smaller as #${replacement}, after the Devs could not ship it as written.`);
+    recordTicket("retired", number, issue.title);
+  }
+}
+
 async function main() {
   log("info", "=== Product Manager — Backlog Grooming ===");
 
@@ -747,46 +789,10 @@ async function main() {
 
   // Worker agent — parse JSON but don't require an outcome field.
   const parsed = extractAgentResponse("Product Manager", rawOutput, { requireOutcome: false });
-  if (!parsed) {
-    return;
-  }
+  if (!parsed) return;
 
   const data = parsed.data || {};
-  // 1. Decide what to retire, but do not close it yet. Closing runs LAST, because
-  //    a retirement is usually justified by a replacement the grooming pass has
-  //    not created yet — see executeRetirements.
-  const planned = planRetirements(data.retire, openIssues);
-  // Groom before triage, so a ticket is prioritized as what it has become rather
-  // than as what it arrived as.
-  groomTickets(data.groom, openIssues.filter((i) => !planned.numbers.has(i.number)));
-  // Tickets on their way out are excluded from the pool grooming dedups against,
-  // exactly as they were when this ran before grooming — a proposal that replaces
-  // a ticket must not be rejected as a duplicate of the ticket it replaces.
-  const remainingOpen = openIssues.filter((i) => !planned.numbers.has(i.number));
-  // 2. Triage + prioritize existing open tickets (pull inbound onto the board).
-  triageExisting(remainingOpen, boardItems, data.triage);
-  // 3. Create new prioritized tickets toward the vision.
-  // Full board items, not just titles: grooming needs each item's column to tell
-  // shipped work from work still in flight.
-  const answerable = new Map(openIssues.filter(needsAnswer).map((i) => [i.number, i]));
-  const groomed = await groomBacklog(data.backlog, remainingOpen, boardItems, milestone, answerable);
-  // 4. A finding that got tickets stays open, answered, until the Playtester has
-  //    seen them ship — even if the PM also listed it in `retire` out of habit.
-  for (const [number, tickets] of groomed.answers) answerFinding(answerable.get(number), tickets);
-  planned.entries = planned.entries.filter((e) => !groomed.answers.has(e.number));
-  // A finding answered this run is not also escalated: the answer is the newer
-  // judgement.
-  const escalate = Array.isArray(data.escalate) ? data.escalate : [];
-  escalateFindings(escalate.filter((e) => !groomed.answers.has(Number(e?.number))), openIssues);
-  // 5. Now close the originals — only if the replacements actually landed.
-  await executeRetirements(planned, groomed);
-  // A parked ticket returned smaller closes against the ticket that replaced it.
-  // A person's request is not dropped by this: it continues as the smaller piece.
-  for (const [number, { issue, replacement }] of groomed.replaced) {
-    if (planned.numbers.has(number)) continue;
-    await retireIssue(number, `Returned smaller as #${replacement}, after the Devs could not ship it as written.`);
-    recordTicket("retired", number, issue.title);
-  }
+  await applyDecisions(data, { openIssues, boardItems, milestone });
 
   answerIdeas(data.ideas);
 
@@ -808,7 +814,6 @@ async function main() {
       process.exitCode = 1;
     }
   }
-
 }
 
 // Only groom when RUN, never when imported — the same guard tech-lead.mjs uses,
