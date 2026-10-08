@@ -48,24 +48,31 @@ export function fillTemplate(template, replacements) {
 // JSON extraction + envelope validation
 // ---------------------------------------------------------------------------
 
-export function extractJSON(label, text) {
-  // Try to extract from a fenced code block first
-  const blockMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-  const candidate = blockMatch ? blockMatch[1].trim() : text.trim();
-
-  // Try direct parse first
+/**
+ * The JSON a model's answer carries, or undefined when there is none: a fenced
+ * block if there is one, else the whole text, else the first balanced object in
+ * it. Undefined rather than null, because `null` is itself valid JSON.
+ */
+function parseJSONLoose(text) {
+  const trimmed = (text || "").trim();
+  if (!trimmed) return undefined;
+  const block = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  const candidate = block ? block[1].trim() : trimmed;
   try {
     return JSON.parse(candidate);
-  } catch { /* fall through */ }
-
-  // Try to find a complete JSON object by matching braces.
-  const jsonObj = extractFirstJSONObject(candidate);
-  if (jsonObj) {
-    try {
-      return JSON.parse(jsonObj);
-    } catch { /* fall through */ }
+  } catch { /* not JSON as a whole — look for an object inside it */ }
+  const object = extractFirstJSONObject(candidate);
+  if (!object) return undefined;
+  try {
+    return JSON.parse(object);
+  } catch {
+    return undefined;
   }
+}
 
+export function extractJSON(label, text) {
+  const parsed = parseJSONLoose(text);
+  if (parsed !== undefined) return parsed;
   const snippet = text.length > 200 ? text.slice(0, 200) + "…" : text;
   log("warn", `${label}: output could not be parsed as JSON`, { raw: snippet });
   return null;
@@ -77,22 +84,7 @@ export function extractJSON(label, text) {
  * extractJSON this logs nothing — a rejected attempt is routine, not a problem.
  */
 export function containsParseableJSON(text) {
-  const t = (text || "").trim();
-  if (!t) return false;
-  const block = t.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-  const candidate = block ? block[1].trim() : t;
-  try {
-    JSON.parse(candidate);
-    return true;
-  } catch { /* fall through */ }
-  const obj = extractFirstJSONObject(candidate);
-  if (!obj) return false;
-  try {
-    JSON.parse(obj);
-    return true;
-  } catch {
-    return false;
-  }
+  return parseJSONLoose(text) !== undefined;
 }
 
 /**
