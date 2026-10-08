@@ -4,7 +4,7 @@
 import fs from "fs";
 import os from "os";
 import { join, sep, relative } from "path";
-import { pathToFileURL } from "url";
+import { fileURLToPath } from "url";
 import {
   ModelRuntime,
   createReadToolDefinition,
@@ -966,7 +966,7 @@ export function printRunSummary(title = "Run Summary") {
  * `onCrash` runs first, for a role that owes someone an answer even then.
  */
 export function runEntrypoint(moduleUrl, label, main, { onCrash } = {}) {
-  if (!process.argv[1] || pathToFileURL(process.argv[1]).href !== moduleUrl) return;
+  if (!isEntrypoint(moduleUrl, process.argv[1])) return;
   main().then(
     () => printRunSummary(label),
     async (err) => {
@@ -976,4 +976,16 @@ export function runEntrypoint(moduleUrl, label, main, { onCrash } = {}) {
       process.exit(1);
     }
   );
+}
+
+/**
+ * Whether the file at `moduleUrl` is the script Node was started with. Node
+ * resolves a module's own URL to its real path but leaves argv as typed, so a
+ * checkout reached through a symlink would otherwise look like an import, and
+ * the role would exit 0 without running.
+ */
+export function isEntrypoint(moduleUrl, entryScript) {
+  if (!entryScript) return false;
+  const entryPath = fs.existsSync(entryScript) ? fs.realpathSync(entryScript) : entryScript;
+  return entryPath === fileURLToPath(moduleUrl);
 }
