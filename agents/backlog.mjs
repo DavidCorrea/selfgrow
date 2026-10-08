@@ -234,6 +234,29 @@ export function isBlocked(issue) {
   return labelNames(issue).includes(BLOCKED_LABEL);
 }
 
+const DIAGNOSIS_HEADING = "## Tech Lead diagnosis";
+
+/**
+ * A parked ticket's body with the Tech Lead's diagnosis as its last section,
+ * replacing any earlier one: the Product Manager decides from the latest
+ * reading, and a stack of old ones would read as several opinions.
+ */
+export function withDiagnosis(body, { diagnosis, recommendation, smallerPiece }, date) {
+  const original = String(body || "");
+  const cut = original.indexOf(DIAGNOSIS_HEADING);
+  const kept = (cut === -1 ? original : original.slice(0, cut)).trimEnd();
+  const section = [
+    `${DIAGNOSIS_HEADING} (${date})\n${String(diagnosis || "").trim()}`,
+    `**Recommendation:** ${String(recommendation || "").trim()}`,
+    smallerPiece ? `**Smaller piece:** ${String(smallerPiece).trim()}` : "",
+  ].filter(Boolean).join("\n\n");
+  return kept ? `${kept}\n\n${section}` : section;
+}
+
+export function hasDiagnosis(issue) {
+  return String(issue?.body || "").includes(DIAGNOSIS_HEADING);
+}
+
 // ---------------------------------------------------------------------------
 // Ticket dependencies
 //

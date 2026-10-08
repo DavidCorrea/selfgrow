@@ -1,4 +1,3 @@
-import fs from "fs";
 import { log, errorData, recordTicket } from "./log.mjs";
 import { runEntrypoint, runAgent } from "./agent.mjs";
 import { loadPrompt, fillTemplate, extractAgentResponse } from "./prompts.mjs";
@@ -20,6 +19,7 @@ import {
   isNonWorkIssue,
   editIssueLabels,
   PRIORITY_LABELS,
+  hasDiagnosis,
 } from "./backlog.mjs";
 import { moveCard } from "./board.mjs";
 import { fetchShippedIssues } from "./shipped.mjs";
@@ -46,7 +46,7 @@ import {
   fetchAnswerHistory,
   renderPriorAnswers,
 } from "./playtest-findings.mjs";
-import { listSourceFiles, formatSources, SOURCE_DIR, hasDiagnosis } from "./tech-lead.mjs";
+import { readSources, formatSources } from "./product-source.mjs";
 
 // The day the Product Manager does more than groom: it also reviews the shipped
 // code for what should be REMOVED, and writes the week's report.
@@ -447,14 +447,6 @@ function triageExisting(openIssues, boardItems, triage) {
   }
 }
 
-function readFileSafely(path) {
-  try {
-    return fs.readFileSync(path, "utf-8");
-  } catch {
-    return "";
-  }
-}
-
 function renderMilestone(milestone) {
   if (!milestone) {
     return "No milestone is set. Propose whatever best serves the Vision, and keep the batch coherent — several tickets pulling in one direction beat the same number pulling in five.";
@@ -744,12 +736,7 @@ async function main() {
   // the run stays cheap.
   const weekly = isWeeklyRun();
   const shippedCode = weekly
-    ? formatSources(
-        listSourceFiles(SOURCE_DIR).map((path) => ({
-          name: path.replace(`${SOURCE_DIR}/`, "docs/"),
-          source: readFileSafely(path),
-        }))
-      )
+    ? formatSources(readSources())
     : "";
 
   const rawOutput = await runAgent({

@@ -3,7 +3,7 @@
 // because whether it is still worth doing is a product question.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { withDiagnosis, hasDiagnosis } from "./tech-lead.mjs";
+import { withDiagnosis, hasDiagnosis } from "./backlog.mjs";
 import { parkedTicketReplaced, renderParked } from "./product-manager.mjs";
 import { issue } from "./fixtures.mjs";
 

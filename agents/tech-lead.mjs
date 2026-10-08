@@ -24,15 +24,13 @@
 // It proposes; it does not act. Everything it decides becomes an ordinary ticket
 // that the Product Manager grooms before anyone builds it — including the
 // removals, which are the ones that most deserve it.
-import fs from "fs";
-import { join, relative } from "path";
 import { log, recordTicket, errorData } from "./log.mjs";
 import { runEntrypoint, runAgent } from "./agent.mjs";
 import { loadPrompt, fillTemplate, extractAgentResponse } from "./prompts.mjs";
-import { repoRoot } from "./paths.mjs";
 import { gitExec, ghExec } from "./git.mjs";
 import { getBoardSnapshot } from "./board-snapshot.mjs";
-import { createIssue, rewriteIssueBody, isBlocked, dependencyLine } from "./backlog.mjs";
+import { createIssue, rewriteIssueBody, isBlocked, dependencyLine, withDiagnosis } from "./backlog.mjs";
+import { readSources, renderManifest, formatSources, readSelfTest, readAgentTools } from "./product-source.mjs";
 import { moveCard } from "./board.mjs";
 import { readVision } from "./wiki.mjs";
 import {
@@ -51,41 +49,6 @@ const MAX_PROPOSALS = 3;
 // Below this the product is too thin to have a shape worth discussing — early on
 // almost everything is load-bearing, and there is nothing to consolidate.
 const MIN_FILES_TO_REVIEW = 4;
-
-const SOURCE_DIR = join(repoRoot, "docs");
-
-// What counts as a unit of shipped work. Markup is deliberately excluded: a page
-// is rarely removable on its own, and including it crowds out the code where
-// accumulated cruft actually hides.
-const SOURCE_EXTENSIONS = /\.(m?js|css)$/;
-
-const SELFTEST_FILE = "selftest.js";
-const AGENT_TOOLS_FILE = "agenttools.js";
-// Harness code that lives in docs/ because it runs in the browser. It is not the
-// product's to reshape, so it is kept out of the review entirely rather than
-// offered as a module the Tech Lead might propose restructuring.
-const HARNESS_IN_PRODUCT = new Set(["webmcp.js"]);
-
-// How much source is INLINED in the prompt. Deliberately modest, because it is
-// no longer how the review sees the codebase.
-//
-// It used to be everything, capped at 24,000 characters — and the product is
-// 136,000. Eight of fourteen files were dropped without being named, the largest
-// was cut to its first tenth, and the review would conclude the codebase was
-// sound having read under a fifth of it. Raising the cap only moves the number at
-// which that happens again.
-//
-// So the prompt carries a complete MANIFEST of what exists — every file, its
-// size, its exports — and inlines only the recently changed ones. Everything else
-// the review opens for itself with the `read` tool, which it has always had. That
-// is how a person would do it: read the map, then open what matters.
-const MAX_CHARS_PER_FILE = 6000;
-const MAX_INLINED_CHARS = 30000;
-
-// The self-check suite gets its own allowance and is read as a whole. Judging
-// whether a suite's checks could fail is impossible from a truncated third of it,
-// and it is the one file this agent is here to own.
-const MAX_SELFTEST_CHARS = 20000;
 
 /**
  * When this agent last completed a review, so the report below can say what has
@@ -148,151 +111,6 @@ function renderChanges(since, { summary, changedFiles }) {
   ].join("\n");
 }
 
-/** Every source file under docs/, deepest paths included, as repo-relative names. */
-export function listSourceFiles(dir) {
-  let entries;
-  try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-  const found = [];
-  for (const entry of entries) {
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      found.push(...listSourceFiles(path));
-    } else if (
-      SOURCE_EXTENSIONS.test(entry.name)
-      && entry.name !== SELFTEST_FILE
-      && entry.name !== AGENT_TOOLS_FILE
-      && !HARNESS_IN_PRODUCT.has(entry.name)
-    ) {
-      found.push(path);
-    }
-  }
-  return found;
-}
-
-/**
- * Read the shipped source. The judgement here is about craft, so it gets the
- * actual code rather than a file listing — a name says almost nothing about
- * whether a module earns its place.
- */
-function readSources() {
-  return listSourceFiles(SOURCE_DIR).map((path) => {
-    let source = "";
-    try { source = fs.readFileSync(path, "utf-8"); } catch { /* unreadable — report the name alone */ }
-    return { name: relative(repoRoot, path), source };
-  });
-}
-
-/**
- * Order the source so the most relevant files come first.
- *
- * Recently changed files, then the rest largest-first. Changed files earn the
- * front because they are where a new problem is most likely to be; large files
- * come next because cruft accumulates by volume — a 4,000-line module is a better
- * place to look for two jobs in one file than a 40-line one.
- */
-export function prioritizeSources(sources, changedFiles = new Set()) {
-  const changed = (file) => changedFiles.has(file.name);
-  return [...sources].sort((a, b) => {
-    if (changed(a) !== changed(b)) return changed(a) ? -1 : 1;
-    return b.source.length - a.source.length;
-  });
-}
-
-// `export function foo`, `export const bar`, `export class Baz` — enough to say
-// what a module offers without reading it. Not a parser, and it does not need to
-// be: a missed export costs a line of the map, not a wrong judgement.
-const EXPORT_RE = /^export\s+(?:async\s+)?(?:function|const|let|class)\s+([A-Za-z0-9_$]+)/gm;
-
-function exportsOf(source) {
-  return [...source.matchAll(EXPORT_RE)].map((m) => m[1]);
-}
-
-/**
- * Every file in the product, with its size and what it offers.
- *
- * Always complete, whatever the budget. This is what makes "I have not read that
- * file" something the review can know rather than a silent gap: it can see that
- * groundNoise.js exists and exports createGroundNoiseTexture even on a week when
- * nothing inlined it.
- */
-export function renderManifest(sources, changedFiles = new Set()) {
-  const rows = prioritizeSources(sources, changedFiles).map((file) => {
-    const names = exportsOf(file.source);
-    const marker = changedFiles.has(file.name) ? " *" : "";
-    return `- \`${file.name}\`${marker} — ${file.source.length} chars, exports: ${names.length ? names.join(", ") : "(none)"}`;
-  });
-  return [
-    rows.join("\n"),
-    changedFiles.size ? "\n`*` marks a file touched since your last review." : "",
-  ].filter(Boolean).join("\n");
-}
-
-/**
- * Inline the most relevant source, and say plainly what was left for the review
- * to open itself.
- *
- * The distinction matters more than the budget: a file that is merely NOT INLINED
- * is one the review can still read, while a file it does not know exists is a
- * silent hole it will conclude around. The manifest above covers the second case;
- * this only decides what is convenient to have already.
- */
-export function formatSources(sources, changedFiles = new Set()) {
-  const ordered = prioritizeSources(sources, changedFiles);
-  const blocks = [];
-  const notInlined = [];
-  let budget = MAX_INLINED_CHARS;
-
-  for (const file of ordered) {
-    if (budget <= 0) {
-      notInlined.push(file.name);
-      continue;
-    }
-    const body = file.source.slice(0, Math.min(MAX_CHARS_PER_FILE, budget));
-    budget -= body.length;
-    const truncated = body.length < file.source.length
-      ? `\n_(showing the first ${body.length} of ${file.source.length} characters — open the file to see the rest)_`
-      : "";
-    blocks.push(`### ${file.name}\n\`\`\`\n${body}\n\`\`\`${truncated}`);
-  }
-
-  if (notInlined.length) {
-    blocks.push(
-      `### Not inlined\nThese are in the manifest above but not reproduced here, to keep this readable. ` +
-        `Open any of them with the read tool — do NOT judge them unread:\n` +
-        notInlined.map((name) => `- ${name}`).join("\n")
-    );
-  }
-  return blocks.join("\n\n");
-}
-
-/** The self-check suite, read on its own terms. */
-function readSelfTest() {
-  try {
-    const source = fs.readFileSync(join(SOURCE_DIR, SELFTEST_FILE), "utf-8");
-    return source.length > MAX_SELFTEST_CHARS
-      ? `${source.slice(0, MAX_SELFTEST_CHARS)}\n\n_(truncated — the suite is ${source.length} characters)_`
-      : source;
-  } catch {
-    return "";
-  }
-}
-
-/** The agent tool layer, read whole for the same reason the suite is. */
-function readAgentTools() {
-  try {
-    const source = fs.readFileSync(join(SOURCE_DIR, AGENT_TOOLS_FILE), "utf-8");
-    return source.length > MAX_SELFTEST_CHARS
-      ? `${source.slice(0, MAX_SELFTEST_CHARS)}\n\n_(truncated — the layer is ${source.length} characters)_`
-      : source;
-  } catch {
-    return "";
-  }
-}
-
 /**
  * Tickets the Devs engaged and gave up on. Each carries the reason the last
  * attempt failed, recorded on the issue when it was parked, which is the
@@ -348,29 +166,6 @@ function fileProposal(item, dependsOn = []) {
   moveCard(number, "Backlog");
   recordTicket("created", number, item.title);
   return number;
-}
-
-const DIAGNOSIS_HEADING = "## Tech Lead diagnosis";
-
-/**
- * A parked ticket's body with the Tech Lead's diagnosis as its last section,
- * replacing any earlier one: the Product Manager decides from the latest
- * reading, and a stack of old ones would read as several opinions.
- */
-export function withDiagnosis(body, { diagnosis, recommendation, smallerPiece }, date) {
-  const original = String(body || "");
-  const cut = original.indexOf(DIAGNOSIS_HEADING);
-  const kept = (cut === -1 ? original : original.slice(0, cut)).trimEnd();
-  const section = [
-    `${DIAGNOSIS_HEADING} (${date})\n${String(diagnosis || "").trim()}`,
-    `**Recommendation:** ${String(recommendation || "").trim()}`,
-    smallerPiece ? `**Smaller piece:** ${String(smallerPiece).trim()}` : "",
-  ].filter(Boolean).join("\n\n");
-  return kept ? `${kept}\n\n${section}` : section;
-}
-
-export function hasDiagnosis(issue) {
-  return String(issue?.body || "").includes(DIAGNOSIS_HEADING);
 }
 
 // The thread this role remembers itself in.
@@ -433,7 +228,6 @@ async function main() {
 
   const past = readJournal(JOURNAL);
 
-
   const rawOutput = await runAgent({
     label: "Tech Lead",
     systemPrompt: fillTemplate(loadPrompt("tech-lead"), {
@@ -493,6 +287,5 @@ async function main() {
 
 // Only review when RUN, never when imported, so the file-selection helpers can be
 // exercised without spending a session on the model.
-export { SOURCE_DIR };
 
 runEntrypoint(import.meta.url, "Tech Lead", main);
