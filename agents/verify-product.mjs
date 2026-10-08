@@ -22,4 +22,6 @@ async function main() {
   process.exitCode = 1;
 }
 
-runEntrypoint(import.meta.url, "Verify product", main);
+// Exit as soon as the verdict is in: a socket the browser left open would
+// otherwise hold this required check until the job's timeout.
+runEntrypoint(import.meta.url, "Verify product", main, { exitWhenDone: true });

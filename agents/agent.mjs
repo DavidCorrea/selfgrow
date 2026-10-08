@@ -965,10 +965,13 @@ export function printRunSummary(title = "Run Summary") {
  * open by the failure would otherwise keep the job alive until its timeout.
  * `onCrash` runs first, for a role that owes someone an answer even then.
  */
-export function runEntrypoint(moduleUrl, label, main, { onCrash } = {}) {
+export function runEntrypoint(moduleUrl, label, main, { onCrash, exitWhenDone = false } = {}) {
   if (!isEntrypoint(moduleUrl, process.argv[1])) return;
   main().then(
-    () => printRunSummary(label),
+    () => {
+      printRunSummary(label);
+      if (exitWhenDone) process.exit();
+    },
     async (err) => {
       log("error", `${label} failed: ${err.message || err}`, errorData(err));
       await onCrash?.(err);
