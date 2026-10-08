@@ -10,7 +10,7 @@
 // of a week. Post-mortems record why one ticket failed and are read by the Scout
 // before it plans; this records what a run of tickets adds up to, and is read
 // here, next week, before direction is set again.
-import { log, withLogGroup } from "./log.mjs";
+import { log } from "./log.mjs";
 import { runEntrypoint, runAgent } from "./agent.mjs";
 import { loadPrompt, fillTemplate, extractAgentResponse } from "./prompts.mjs";
 import { getBoardSnapshot } from "./board-snapshot.mjs";
@@ -181,28 +181,26 @@ async function main() {
   const past = readJournal(JOURNAL);
   log("info", `Reviewing a week of ${week.shipped.length} shipped, ${week.parked.length} parked.`);
 
-  const rawOutput = await withLogGroup("Product Owner", () =>
-    runAgent({
-      label: "Product Owner",
-      systemPrompt: fillTemplate(loadPrompt("product-owner"), {
-        VISION: vision,
-        BOARD_STATE: boardState,
-        WEEK: renderWeek(week),
-        // Most-recurrent first, the same ordering the Scout reads.
-        LESSONS: (() => {
-          const threads = readLessonThreads();
-          return threads.length ? renderLessonThreads(threads) : "(nothing recorded yet)";
-        })(),
-        PAST: past.length ? past.join("\n\n") : "(nothing recorded yet — this is the first)",
-        // What the project has already settled. This role changes direction, so it
-        // is the one most able to undo a decision without realising there was one.
-        DECISIONS: renderDecisions(readDecisions()),
-        MILESTONE: milestone
-          ? `**${milestone.title}** — ${milestone.description || "no description"} (${milestone.closed} closed, ${milestone.open} still open)`
-          : "(none set — this is the first)",
-      }),
-    })
-  );
+  const rawOutput = await runAgent({
+    label: "Product Owner",
+    systemPrompt: fillTemplate(loadPrompt("product-owner"), {
+      VISION: vision,
+      BOARD_STATE: boardState,
+      WEEK: renderWeek(week),
+      // Most-recurrent first, the same ordering the Scout reads.
+      LESSONS: (() => {
+        const threads = readLessonThreads();
+        return threads.length ? renderLessonThreads(threads) : "(nothing recorded yet)";
+      })(),
+      PAST: past.length ? past.join("\n\n") : "(nothing recorded yet — this is the first)",
+      // What the project has already settled. This role changes direction, so it
+      // is the one most able to undo a decision without realising there was one.
+      DECISIONS: renderDecisions(readDecisions()),
+      MILESTONE: milestone
+        ? `**${milestone.title}** — ${milestone.description || "no description"} (${milestone.closed} closed, ${milestone.open} still open)`
+        : "(none set — this is the first)",
+    }),
+  });
 
   const parsed = extractAgentResponse("Product Owner", rawOutput, {});
   if (!parsed) {

@@ -17,7 +17,7 @@
 // arrives as a notification, and closes itself immediately — an open issue
 // addressed to a human is a human on the critical path, and this pipeline is
 // meant to run without one.
-import { log, withLogGroup } from "./log.mjs";
+import { log } from "./log.mjs";
 import { findDiscussion, postDiscussion, mentionLine } from "./discussions.mjs";
 import { daysAgo, closedWithin } from "./time.mjs";
 // readPage reaches the Story, which now carries the project's long arc so the
@@ -146,28 +146,26 @@ export async function publishWeeklyReport({ shipped, open, milestone, now = new 
   const week = gatherWeek({ shipped, open });
 
   const narrative = cleanMarkdown(
-    await withLogGroup("Weekly report", () =>
-      runAgent({
-        label: "Weekly report",
-        systemPrompt: fillTemplate(loadPrompt("weekly-report"), {
-          // The Story carries the arc; the changelog only has to carry what is
-          // recent. That split is what lets the changelog be trimmed at all —
-          // regenerating the whole history from a trimmed record would quietly
-          // amputate the project's early chapters every time the window moved.
-          STORY_SO_FAR: readPage("Story.md").trim() || "(nothing written yet — this is the first)",
-          CHANGELOG: reportChangelog(readChangelog()),
-          SHIPPED: week.shipped.length
-            ? week.shipped.map((i) => `- ${i.title} (#${i.number})`).join("\n")
-            : "(nothing shipped this week)",
-        }),
-        // This agent's answer IS the artifact, so the JSON envelope every other
-        // agent returns would be the wrong shape — and the chain must not reject
-        // prose for lacking it.
-        task: "Write the two sections now, exactly as described. No JSON, no envelope, no code fences.",
-        expectJson: false,
-        tools: [],
-      })
-    )
+    await runAgent({
+      label: "Weekly report",
+      systemPrompt: fillTemplate(loadPrompt("weekly-report"), {
+        // The Story carries the arc; the changelog only has to carry what is
+        // recent. That split is what lets the changelog be trimmed at all —
+        // regenerating the whole history from a trimmed record would quietly
+        // amputate the project's early chapters every time the window moved.
+        STORY_SO_FAR: readPage("Story.md").trim() || "(nothing written yet — this is the first)",
+        CHANGELOG: reportChangelog(readChangelog()),
+        SHIPPED: week.shipped.length
+          ? week.shipped.map((i) => `- ${i.title} (#${i.number})`).join("\n")
+          : "(nothing shipped this week)",
+      }),
+      // This agent's answer IS the artifact, so the JSON envelope every other
+      // agent returns would be the wrong shape — and the chain must not reject
+      // prose for lacking it.
+      task: "Write the two sections now, exactly as described. No JSON, no envelope, no code fences.",
+      expectJson: false,
+      tools: [],
+    })
   );
   if (!narrative) throw new Error(`Weekly report: the model returned nothing for the week of ${weekStart}.`);
 

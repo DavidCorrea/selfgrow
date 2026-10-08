@@ -190,18 +190,16 @@ function buildReviewerPrompt(changeContext = "") {
 async function writePostMortem(issue, reason) {
   if (!issue?.number) return;
   try {
-    const raw = await withLogGroup("Post-mortem", () =>
-      runAgent({
-        label: "Post-mortem",
-        systemPrompt: fillTemplate(loadPrompt("post-mortem"), {
-          TICKET_TITLE: issue.title || `#${issue.number}`,
-          TICKET_NUMBER: String(issue.number),
-          TICKET_BODY: (issue.body || "(no description)").slice(0, 2000),
-          FAILURE_REASONS: reason || "(no reason was recorded)",
-        }),
-        tools: [],
-      })
-    );
+    const raw = await runAgent({
+      label: "Post-mortem",
+      systemPrompt: fillTemplate(loadPrompt("post-mortem"), {
+        TICKET_TITLE: issue.title || `#${issue.number}`,
+        TICKET_NUMBER: String(issue.number),
+        TICKET_BODY: (issue.body || "(no description)").slice(0, 2000),
+        FAILURE_REASONS: reason || "(no reason was recorded)",
+      }),
+      tools: [],
+    });
     const parsed = extractAgentResponse("Post-mortem", raw, { requireOutcome: false });
     const lesson = parsed?.data?.lesson;
     if (!lesson) {
@@ -270,7 +268,7 @@ function cleanupBranch(branchName) {
  */
 async function runPlanningAgent(label, opts) {
   try {
-    return await withLogGroup(label, () => runAgent(opts));
+    return await runAgent({ ...opts, group: label });
   } catch (e) {
     if (isDailyQuotaExhausted(e)) throw e;
     log("error", `${label} failed — abandoning this ticket, not the run: ${e.message || e}`, errorData(e));
@@ -438,16 +436,15 @@ async function runBuildReviewLoop(ctx, plan) {
 
     let builderOutput;
     try {
-      builderOutput = await withLogGroup(`Builder (attempt ${attempt})`, () =>
-        runAgent({
-          label: "Builder",
-          systemPrompt: buildBuilderPrompt(plan.output, ctx.reviewerFeedback, ctx.issueObj),
-          tools: ["read", "bash", "edit", "write"],
-          skills: BUILDER_SKILLS,
-          thinkingLevel: "medium",
-          sessionLimits: BUILDER_SESSION_LIMITS,
-        })
-      );
+      builderOutput = await runAgent({
+        label: "Builder",
+        group: `Builder (attempt ${attempt})`,
+        systemPrompt: buildBuilderPrompt(plan.output, ctx.reviewerFeedback, ctx.issueObj),
+        tools: ["read", "bash", "edit", "write"],
+        skills: BUILDER_SKILLS,
+        thinkingLevel: "medium",
+        sessionLimits: BUILDER_SESSION_LIMITS,
+      });
     } catch (e) {
       // A capped session, or an exhausted account, is not transient: every
       // remaining attempt is guaranteed to fail the same way, and retrying just
@@ -594,15 +591,14 @@ async function reviewOpenPR(ctx, attempt) {
   // Builder and Reviewer used to come off the same chain, usually landing on the
   // same model, so the three review cycles bought three re-rolls of one opinion.
   // Falls back to the same model rather than skipping the review.
-  const reviewerOutput = await withLogGroup(`Reviewer (attempt ${attempt})`, () =>
-    runAgent({
-      label: "Reviewer",
-      systemPrompt: buildReviewerPrompt(reviewContext),
-      tools: ["read", "bash"],
-      skills: REVIEWER_SKILLS,
-      avoidModel: ctx.builderModel,
-    })
-  );
+  const reviewerOutput = await runAgent({
+    label: "Reviewer",
+    group: `Reviewer (attempt ${attempt})`,
+    systemPrompt: buildReviewerPrompt(reviewContext),
+    tools: ["read", "bash"],
+    skills: REVIEWER_SKILLS,
+    avoidModel: ctx.builderModel,
+  });
   const reviewerResult = extractAgentResponse("Reviewer", reviewerOutput, {
     requiredDataFields: ["issues"],
   });
@@ -629,14 +625,13 @@ async function reconcileWithMain(ctx) {
   log("warn", "Merge conflict with origin/main — sending to Builder for resolution.", {
     conflictedFiles: mergeResult.conflictedFiles,
   });
-  const resolverOutput = await withLogGroup("Builder (conflict resolution)", () =>
-    runAgent({
-      label: "Builder",
-      systemPrompt: buildMergeConflictPrompt(mergeResult.conflictedFiles, mergeResult.statusOutput, ctx.commitMessage),
-      tools: ["read", "bash", "edit", "write"],
-      thinkingLevel: "medium",
-    })
-  );
+  const resolverOutput = await runAgent({
+    label: "Builder",
+    group: "Builder (conflict resolution)",
+    systemPrompt: buildMergeConflictPrompt(mergeResult.conflictedFiles, mergeResult.statusOutput, ctx.commitMessage),
+    tools: ["read", "bash", "edit", "write"],
+    thinkingLevel: "medium",
+  });
   extractAgentResponse("Builder", resolverOutput, { requireOutcome: false, requiredDataFields: ["resolvedFiles"] });
 
   if (gitExec(["diff", "--name-only", "--diff-filter=U"])) {

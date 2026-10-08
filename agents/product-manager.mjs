@@ -1,5 +1,5 @@
 import fs from "fs";
-import { log, withLogGroup, errorData, recordTicket } from "./log.mjs";
+import { log, errorData, recordTicket } from "./log.mjs";
 import { runEntrypoint, runAgent } from "./agent.mjs";
 import { loadPrompt, fillTemplate, extractAgentResponse } from "./prompts.mjs";
 import { getBoardSnapshot } from "./board-snapshot.mjs";
@@ -752,33 +752,31 @@ async function main() {
       )
     : "";
 
-  const rawOutput = await withLogGroup("Product Manager", () =>
-    runAgent({
-      label: "Product Manager",
-      systemPrompt: fillTemplate(loadPrompt("product-manager"), {
-        VISION: vision,
-        // The one input that does not arrive as work. Read here rather than in the
-        // Devs on purpose: an idea is not a ticket until this role says it is, and
-        // an idea from someone without write access must never reach an agent that
-        // can act on text — see renderInboundIdeas for how the trust is marked.
-        IDEAS: (() => {
-          const ideas = readInboundIdeas();
-          return ideas.length ? renderInboundIdeas(ideas) : "(nothing posted)";
-        })(),
-        MILESTONE: renderMilestone(milestone),
-        BOARD_STATE: boardState,
-        UNGROOMED: renderUngroomed(openIssues),
-        PARKED: renderParked(openIssues),
-        // The history costs two listings, so it is read only on a day there is a
-        // finding to answer.
-        PLAYTEST_FEEDBACK: openIssues.some(needsAnswer)
-          ? renderPlaytestFeedback(openIssues, fetchAnswerHistory())
-          : renderPlaytestFeedback(openIssues),
-        CURATION: renderCuration(weekly, shippedCode),
-      }),
-      tools: ["read", "bash"],
-    })
-  );
+  const rawOutput = await runAgent({
+    label: "Product Manager",
+    systemPrompt: fillTemplate(loadPrompt("product-manager"), {
+      VISION: vision,
+      // The one input that does not arrive as work. Read here rather than in the
+      // Devs on purpose: an idea is not a ticket until this role says it is, and
+      // an idea from someone without write access must never reach an agent that
+      // can act on text — see renderInboundIdeas for how the trust is marked.
+      IDEAS: (() => {
+        const ideas = readInboundIdeas();
+        return ideas.length ? renderInboundIdeas(ideas) : "(nothing posted)";
+      })(),
+      MILESTONE: renderMilestone(milestone),
+      BOARD_STATE: boardState,
+      UNGROOMED: renderUngroomed(openIssues),
+      PARKED: renderParked(openIssues),
+      // The history costs two listings, so it is read only on a day there is a
+      // finding to answer.
+      PLAYTEST_FEEDBACK: openIssues.some(needsAnswer)
+        ? renderPlaytestFeedback(openIssues, fetchAnswerHistory())
+        : renderPlaytestFeedback(openIssues),
+      CURATION: renderCuration(weekly, shippedCode),
+    }),
+    tools: ["read", "bash"],
+  });
 
   // Worker agent — parse JSON but don't require an outcome field.
   const parsed = extractAgentResponse("Product Manager", rawOutput, { requireOutcome: false });

@@ -17,6 +17,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import {
   log,
+  withLogGroup,
   errorData,
   truncate,
   getRunLog,
@@ -400,6 +401,8 @@ export async function firstVisionModel() {
  *
  * @param {object} opts
  * @param {string} [opts.label]          - Name for logging.
+ * @param {string} [opts.group]          - Title of the collapsible log section the
+ *                                          session runs in; defaults to the label.
  * @param {string} opts.systemPrompt     - The agent's role/instructions. Set as the
  *                                          actual system prompt (not a user message).
  * @param {string} [opts.task]           - The user turn that kicks the agent off.
@@ -412,7 +415,11 @@ export async function firstVisionModel() {
  *                                          attach to the kickoff turn. Requires a
  *                                          model that accepts image input.
  */
-export async function runAgent(callerOpts) {
+export async function runAgent({ group, ...callerOpts }) {
+  return withLogGroup(group ?? callerOpts.label ?? "Agent", () => runAgentChain(callerOpts));
+}
+
+async function runAgentChain(callerOpts) {
   const { modelId, label = "Agent", expectJson = true, avoidModel = null } = callerOpts;
   // Resolved once, before the chain: a skill that is missing is missing for every
   // model, and a failed attempt would otherwise walk the chain to prove it.

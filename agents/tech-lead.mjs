@@ -26,7 +26,7 @@
 // removals, which are the ones that most deserve it.
 import fs from "fs";
 import { join, relative } from "path";
-import { log, withLogGroup, recordTicket, errorData } from "./log.mjs";
+import { log, recordTicket, errorData } from "./log.mjs";
 import { runEntrypoint, runAgent } from "./agent.mjs";
 import { loadPrompt, fillTemplate, extractAgentResponse } from "./prompts.mjs";
 import { repoRoot } from "./paths.mjs";
@@ -434,30 +434,28 @@ async function main() {
   const past = readJournal(JOURNAL);
 
 
-  const rawOutput = await withLogGroup("Tech Lead", () =>
-    runAgent({
-      label: "Tech Lead",
-      systemPrompt: fillTemplate(loadPrompt("tech-lead"), {
-        VISION: readVision(),
-        MANIFEST: renderManifest(sources, changes.changedFiles),
-        SOURCES: formatSources(sources, changes.changedFiles),
-        CHANGES: renderChanges(since, changes),
-        SELFTEST: readSelfTest() || "(the product ships no self-check suite yet)",
-        AGENT_TOOLS: readAgentTools() || "(the product declares no agent tools yet)",
-        BLOCKED: renderBlocked(blocked),
-        BOARD_STATE: boardState,
-        PAST: past.length ? past.join("\n\n") : "(nothing recorded yet — this is the first review)",
-        // Structural decisions it might otherwise propose undoing. Most of what is
-        // in Decisions is about the harness, which is exactly this role's subject.
-        DECISIONS: renderDecisions(readDecisions()),
-      }),
-      tools: ["read"],
-      // The Reviewer checks these rules only on the lines a change touches, so a
-      // violation already in docs/ is never looked at again unless someone here
-      // files it.
-      skills: ["web-interface-guidelines"],
-    })
-  );
+  const rawOutput = await runAgent({
+    label: "Tech Lead",
+    systemPrompt: fillTemplate(loadPrompt("tech-lead"), {
+      VISION: readVision(),
+      MANIFEST: renderManifest(sources, changes.changedFiles),
+      SOURCES: formatSources(sources, changes.changedFiles),
+      CHANGES: renderChanges(since, changes),
+      SELFTEST: readSelfTest() || "(the product ships no self-check suite yet)",
+      AGENT_TOOLS: readAgentTools() || "(the product declares no agent tools yet)",
+      BLOCKED: renderBlocked(blocked),
+      BOARD_STATE: boardState,
+      PAST: past.length ? past.join("\n\n") : "(nothing recorded yet — this is the first review)",
+      // Structural decisions it might otherwise propose undoing. Most of what is
+      // in Decisions is about the harness, which is exactly this role's subject.
+      DECISIONS: renderDecisions(readDecisions()),
+    }),
+    tools: ["read"],
+    // The Reviewer checks these rules only on the lines a change touches, so a
+    // violation already in docs/ is never looked at again unless someone here
+    // files it.
+    skills: ["web-interface-guidelines"],
+  });
 
   const parsed = extractAgentResponse("Tech Lead", rawOutput, { requireOutcome: false });
   if (!parsed) {

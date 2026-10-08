@@ -35,7 +35,7 @@
 // model away from printing the key in a public comment. Everything it needs from
 // the base is read here, by this script, and handed over in the prompt.
 import { isAbsolute } from "path";
-import { log, withLogGroup, errorData } from "./log.mjs";
+import { log, errorData } from "./log.mjs";
 import { runEntrypoint, runAgent } from "./agent.mjs";
 import { loadPrompt, fillTemplate, extractAgentResponse } from "./prompts.mjs";
 import { gitExec, ghExec } from "./git.mjs";
@@ -201,26 +201,24 @@ async function main() {
     return;
   }
 
-  const output = await withLogGroup("Fork review", () =>
-    runAgent({
-      label: "Fork review",
-      systemPrompt: fillTemplate(loadPrompt("fork-review"), {
-        PR_NUMBER: String(PR_NUMBER),
-        PR_AUTHOR,
-        PR_TITLE,
-        PR_BODY: PR_BODY || "(no description given)",
-        DIFF: read.diff,
-        TRUNCATED: read.truncated
-          ? "This diff was too large to include in full. You are seeing the beginning of it — say so in your summary, and do not claim to have judged the whole change."
-          : "",
-        BASE_FILES: readBaseFiles(read.diff),
-        VISION: readVision(),
-      }),
-      // None. See the header: a read tool in a job holding secrets, steered by a
-      // stranger's diff, is a way to publish those secrets.
-      tools: [],
-    })
-  );
+  const output = await runAgent({
+    label: "Fork review",
+    systemPrompt: fillTemplate(loadPrompt("fork-review"), {
+      PR_NUMBER: String(PR_NUMBER),
+      PR_AUTHOR,
+      PR_TITLE,
+      PR_BODY: PR_BODY || "(no description given)",
+      DIFF: read.diff,
+      TRUNCATED: read.truncated
+        ? "This diff was too large to include in full. You are seeing the beginning of it — say so in your summary, and do not claim to have judged the whole change."
+        : "",
+      BASE_FILES: readBaseFiles(read.diff),
+      VISION: readVision(),
+    }),
+    // None. See the header: a read tool in a job holding secrets, steered by a
+    // stranger's diff, is a way to publish those secrets.
+    tools: [],
+  });
 
   const review = extractAgentResponse("Fork review", output, {
     requiredDataFields: ["issues"],

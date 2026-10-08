@@ -206,14 +206,13 @@ async function main() {
 
     // 2. Review, when there is something worth reviewing.
     if (!problems) {
-      const output = await withLogGroup(`Reviewer (cycle ${cycle})`, () =>
-        runAgent({
-          label: "Reviewer",
-          systemPrompt: buildReviewPrompt(),
-          tools: ["read", "bash"],
-          skills: REVIEWER_SKILLS,
-        })
-      );
+      const output = await runAgent({
+        label: "Reviewer",
+        group: `Reviewer (cycle ${cycle})`,
+        systemPrompt: buildReviewPrompt(),
+        tools: ["read", "bash"],
+        skills: REVIEWER_SKILLS,
+      });
       const review = extractAgentResponse("Reviewer", output, { requiredDataFields: ["issues"] });
       if (!review) {
         // The reviewer is the only thing that can hold a green build back, so an
@@ -254,17 +253,16 @@ async function main() {
     //    nobody's authority.
     if (cycle === MAX_CYCLES || Date.now() + TAIL_RESERVE_MS > deadline) break;
 
-    const fix = await withLogGroup(`Builder (cycle ${cycle})`, () =>
-      runAgent({
-        label: "Builder",
-        systemPrompt: buildFixPrompt(problems),
-        tools: ["read", "bash", "edit", "write"],
-        skills: BUILDER_SKILLS,
-        thinkingLevel: "medium",
-        // Whoever reviewed it should not also be the one fixing it.
-        avoidModel: getLastModelUsed(),
-      })
-    );
+    const fix = await runAgent({
+      label: "Builder",
+      group: `Builder (cycle ${cycle})`,
+      systemPrompt: buildFixPrompt(problems),
+      tools: ["read", "bash", "edit", "write"],
+      skills: BUILDER_SKILLS,
+      thinkingLevel: "medium",
+      // Whoever reviewed it should not also be the one fixing it.
+      avoidModel: getLastModelUsed(),
+    });
     extractAgentResponse("Builder", fix, { requireOutcome: false, requiredDataFields: ["commitMessage"] });
     if (!pushFix(problems)) break;
   }

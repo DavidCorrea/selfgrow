@@ -715,19 +715,18 @@ async function report(session, answeredFindings, measurements) {
 
   if (visionModel) {
     try {
-      return await withLogGroup(`Playtester (seeing, ${visionModel})`, () =>
-        runAgent({
-          label: "Playtester",
-          systemPrompt: promptFor(true),
-          // Deliberately still no tools. The frames arrive attached to the turn, so
-          // seeing the product costs the agent no ability to go reading the source —
-          // which is a different job, and one that would pull an impression into an
-          // audit (see renderSession).
-          tools: [],
-          modelId: visionModel,
-          images: frames.map((f) => f.image),
-        })
-      );
+      return await runAgent({
+        label: "Playtester",
+        group: `Playtester (seeing, ${visionModel})`,
+        systemPrompt: promptFor(true),
+        // Deliberately still no tools. The frames arrive attached to the turn, so
+        // seeing the product costs the agent no ability to go reading the source —
+        // which is a different job, and one that would pull an impression into an
+        // audit (see renderSession).
+        tools: [],
+        modelId: visionModel,
+        images: frames.map((f) => f.image),
+      });
     } catch (e) {
       log("warn", `Playtest: ${visionModel} could not report on the frames — retrying from the state layer alone.`, errorData(e));
     }
@@ -736,9 +735,7 @@ async function report(session, answeredFindings, measurements) {
   }
 
   try {
-    return await withLogGroup("Playtester", () =>
-      runAgent({ label: "Playtester", systemPrompt: promptFor(false), tools: [] })
-    );
+    return await runAgent({ label: "Playtester", systemPrompt: promptFor(false), tools: [] });
   } catch (e) {
     log("error", "Playtest: the reporting agent failed.", errorData(e));
     return null;
