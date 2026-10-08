@@ -31,7 +31,7 @@ import { join } from "path";
 import { log, logGroup, errorData, appendJobSummary } from "./log.mjs";
 import { runEntrypoint, readModelChain } from "./agent.mjs";
 import { repoRoot } from "./paths.mjs";
-import { gitExec, configureGitIdentity, createBranch, deleteRemoteBranch } from "./git.mjs";
+import { gitExec, configureGitIdentity, createBranch, deleteRemoteBranch, commitAll } from "./git.mjs";
 import { createPR, approvePR, mergePR } from "./pull-requests.mjs";
 import { createIssue, TECH_DEBT_LABEL } from "./backlog.mjs";
 
@@ -289,8 +289,7 @@ async function main() {
     return;
   }
   log("info", `Committing:\n${changed}`);
-  gitExec(["add", "-A"]);
-  gitExec(["commit", "-m", `Bump ${PI_PACKAGE} to ${to} and re-check the model chain`]);
+  commitAll(`Bump ${PI_PACKAGE} to ${to} and re-check the model chain`);
   gitExec(["push", "origin", branchName]);
 
   const body = buildPrBody({ from, to, report });

@@ -97,6 +97,12 @@ export function configureGitIdentity() {
   gitIdentityConfigured = true;
 }
 
+/** Stage everything in the working tree and commit it as one change. */
+export function commitAll(message) {
+  gitExec(["add", "-A"]);
+  gitExec(["commit", "-m", message]);
+}
+
 export function slugify(str) {
   return (str || "")
     .toLowerCase()

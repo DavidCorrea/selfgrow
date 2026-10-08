@@ -40,7 +40,7 @@ import {
   getLastModelUsed,
 } from "./agent.mjs";
 import { loadPrompt, fillTemplate, extractAgentResponse } from "./prompts.mjs";
-import { changesTheMachine, gitExec, configureGitIdentity } from "./git.mjs";
+import { changesTheMachine, gitExec, configureGitIdentity, commitAll } from "./git.mjs";
 import { verifyBuild } from "./verify.mjs";
 import { repoRoot } from "./paths.mjs";
 import { commentIssue } from "./github.mjs";
@@ -137,8 +137,7 @@ function pushFix(problems) {
     return false;
   }
   try {
-    gitExec(["add", "-A"]);
-    gitExec(["commit", "-m", `Address review on #${PR_NUMBER}\n\n${problems.slice(0, 400)}`]);
+    commitAll(`Address review on #${PR_NUMBER}\n\n${problems.slice(0, 400)}`);
     gitExec(["push", "origin", `HEAD:${PR_BRANCH}`]);
     log("info", "Pushed a fix to the contributor's branch.");
     return true;

@@ -18,6 +18,7 @@ import {
   returnToCleanMain,
   deleteRemoteBranch,
   revertMachineEdits,
+  commitAll,
 } from "./git.mjs";
 import { fetchOpenIssues, triggerWorkflow, closeIssue } from "./github.mjs";
 import {
@@ -548,8 +549,7 @@ async function runBuildReviewLoop(ctx, plan) {
 function pushAttempt(ctx) {
   try {
     if (gitExec(["status", "--porcelain"])) {
-      gitExec(["add", "-A"]);
-      gitExec(["commit", "-m", ctx.commitMessage]);
+      commitAll(ctx.commitMessage);
       log("info", `Committed: ${ctx.commitMessage}`);
     }
     if (gitExec(["rev-list", "--count", `main..${ctx.branchName}`]) === "0") {
@@ -635,8 +635,7 @@ async function reconcileWithMain(ctx) {
     const resolveMsg = ctx.issueNumber
       ? `Resolve merge conflicts with origin/main (refs #${ctx.issueNumber})`
       : "Resolve merge conflicts with origin/main";
-    gitExec(["add", "-A"]);
-    gitExec(["commit", "-m", resolveMsg]);
+    commitAll(resolveMsg);
     gitExec(["push", "origin", ctx.branchName]);
     log("info", "Merge conflicts resolved and pushed.");
     return null;
