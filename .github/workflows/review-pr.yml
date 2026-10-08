@@ -93,11 +93,11 @@ jobs:
       - uses: ./.github/actions/secrets
         with:
           openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
-          # The bot is BOTH tokens here, on purpose. pull-requests.mjs approves and merges
-          # with GH_TOKEN, and on these PRs the PAT is the author — GitHub does not
-          # let an author approve their own PR. So GH_TOKEN is deliberately the bot,
-          # which is the mirror image of the pipeline's own PRs, where the bot
-          # opens and the PAT approves.
+          # The bot is BOTH tokens here, on purpose. pull-requests.mjs approves with
+          # BOT_TOKEN and merges with GH_TOKEN, and on these PRs the PAT is the
+          # author — GitHub does not let an author approve their own PR. So GH_TOKEN
+          # is deliberately the bot too, unlike the pipeline's own PRs, where the
+          # PAT opens and merges and the bot approves.
           gh-token: ${{ secrets.GITHUB_TOKEN }}
           bot-token: ${{ secrets.GITHUB_TOKEN }}
           # Pushing a fix back to the contributor's branch is still the PAT's job,

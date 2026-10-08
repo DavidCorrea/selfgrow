@@ -126,10 +126,8 @@ function prState(prNumber) {
  * without it configured must still be able to ship.
  */
 export async function mergePR(prNumber) {
-  let waiting = false;
   try {
     ghAs(patToken(), ["pr", "merge", String(prNumber), "--auto", "--merge", "--delete-branch"]);
-    waiting = true;
     log("info", `PR: #${prNumber} will merge when its checks pass.`);
   } catch (e) {
     log("info", `PR: auto-merge unavailable for #${prNumber} — merging directly.`, errorData(e));
@@ -146,7 +144,7 @@ export async function mergePR(prNumber) {
   // Wait for it to actually land. The next ticket branches from this merge, so
   // continuing before it exists would build on a main that does not have it yet.
   const deadline = Date.now() + MERGE_WAIT_MS;
-  while (waiting && Date.now() < deadline) {
+  while (Date.now() < deadline) {
     await sleep(MERGE_POLL_MS);
     const state = prState(prNumber);
     if (state?.mergedAt) {
@@ -258,6 +256,7 @@ export function classifyAgentPullRequest(pr, { now = Date.now(), staleMs } = {})
   else if (pending.length || !checks.length) state = "pending";
   else state = "passing";
 
+  const ageMs = now - new Date(pr.createdAt).getTime();
   return {
     number: pr.number,
     url: pr.url,
@@ -265,8 +264,8 @@ export function classifyAgentPullRequest(pr, { now = Date.now(), staleMs } = {})
     branch: pr.headRefName,
     state,
     failedChecks: failed.map((c) => c.name || c.context).filter(Boolean),
-    ageMs: now - new Date(pr.createdAt).getTime(),
-    stale: now - new Date(pr.createdAt).getTime() > staleMs,
+    ageMs,
+    stale: ageMs > staleMs,
   };
 }
 
