@@ -63,14 +63,20 @@ uses. Listed from the bottom layer up:
   (`changesTheMachine`, `revertMachineEdits`), and branch operations.
 - `prompts.mjs` — `loadPrompt`, `fillTemplate`, and parsing an agent's JSON
   response envelope.
-- `agent.mjs` — the model chain, session limits, `runAgent`, what an agent's
-  tools may reach, skills (`BUILDER_SKILLS`, `REVIEWER_SKILLS`), and
-  `printRunSummary`.
+- `agent.mjs` — the model chain, session limits, `runAgent` (which opens the
+  session's log section itself), `runReviewer`, what an agent's tools may reach,
+  skills (`BUILDER_SKILLS`, `REVIEWER_SKILLS`), `printRunSummary`, and
+  `runEntrypoint`, which every entrypoint ends with.
 - `github.mjs` — issues (`fetchOpenIssues`, `closeIssue`, `commentIssue`),
   milestones, `triggerWorkflow`, and `LISTING_LIMIT` / `rejectTruncated`, which
   every listing uses to refuse a cut-short answer.
 - `backlog.mjs` — labels and ticket state: `createIssue`, priority, dependencies,
-  `isBuildable`, failure tracking, parking, `retireIssue`.
+  `isBuildable` and `rankBuildable`, failure tracking, parking and the Tech
+  Lead's diagnosis on a parked ticket, `retireIssue`, and the sections a ticket
+  body is built from (`criteriaSection`, `devNotesSection`, `dependencyLine`).
+- `product-source.mjs` — the product's source as the Tech Lead and the PM's
+  weekly curation read it: which files count, the manifest, and how much is
+  inlined.
 - `shipped.mjs` — telling a ticket that was built from one that was only closed,
   and when the current product started.
 - `board.mjs` — the project board. Best-effort: it never throws.
@@ -88,6 +94,7 @@ uses. Listed from the bottom layer up:
   answered → verified or escalated), and what the PM and PO are shown of it.
 - `weekly-report.mjs` — imported by the PM; gathers the week and renders the
   Story page and the human digest.
+- `time.mjs` — `daysAgo` and `closedWithin`: UTC calendar days for every role that reports on "this week".
 - `models.json` — the ordered model chain, with a `why` per entry.
 
 Runnable locally but in no workflow: `app-review.mjs` (prints the `reviewApp()`
@@ -100,7 +107,8 @@ report the Playtester is handed) and `dedup-check.mjs` (free regression harness 
 `manual-work`, `fork-triage`, `failed-lookups`, `machine-changes`, `skills`. They target exported pure functions. `npm test`
 globs `agents/*.test.mjs`, so a test placed anywhere else never runs. **There
 are no tests under `docs/`** — the product is verified by `verifyBuild`, not by
-the Node runner.
+the Node runner. A builder shared by several suites goes in `agents/fixtures.mjs`,
+which the glob does not pick up.
 
 **Prompts** are `agents/prompts/<role>.md`. A leading underscore marks a shared
 fragment that is never loaded directly: `_profile.md`, `_output.md`,
@@ -157,7 +165,10 @@ Three files and one directory in `docs/` are not ordinary product modules:
 - **A new agent role** is 3–4 coordinated files: `agents/<role>.mjs`, a
   `.github/workflows/<role>.yml` using `.github/actions/setup`, usually
   `agents/prompts/<role>.md`, and `agents/<topic>.test.mjs` if it exports pure
-  judgement functions.
+  judgement functions. The role file ends with
+  `runEntrypoint(import.meta.url, "<Role>", main)`, so importing it for a test
+  never starts a run and the run summary prints once however it ends. A role
+  never imports another role's file: what two roles share goes in a library.
 - **Shared prompt text** becomes `agents/prompts/_<name>.md`, pulled in with
   `{{include:_<name>}}`.
 - **Know-how an agent loads only when its task needs it** is a skill. If it
