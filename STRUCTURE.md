@@ -48,17 +48,38 @@ Each is invoked as `node agents/<name>.mjs` by the workflow named beside it.
 
 Imported, never invoked by a workflow.
 
-- `shared.mjs` — the core library (~3,550 lines): model chain, `runAgent`, prompt
-  loading, envelope parsing, git, GitHub issues/board/PRs, `verifyBuild`,
-  `reviewApp`, and the backlog predicates. Every agent imports from it.
-  *(Its size is a known concern — see `IMPROVEMENTS.md`.)*
+Each owns one concern, and an agent imports from the module that owns what it
+uses. Listed from the bottom layer up:
+
+- `paths.mjs` — `repoRoot`, `agentsDir`, `promptsDir`.
 - `log.mjs` — the bottom layer: structured logging, run history, the ticket
   ledger behind the run summary. Depends only on `fs`/`env` so `wiki.mjs` can log
   without an import cycle.
 - `secrets.mjs` — the other bottom layer: reads the run's secrets from the file
   `.github/actions/secrets` wrote, deletes it, and hands each secret only to the
-  child that needs it (`gh`, `git`, pi). `wiki.mjs` and `shared.mjs` both
-  authenticate through it.
+  child that needs it (`gh`, `git`, pi). `wiki.mjs`, `git.mjs` and the agent
+  runner all authenticate through it.
+- `git.mjs` — `gitExec` / `ghExec`, the guard on edits to the machine
+  (`changesTheMachine`, `revertMachineEdits`), and branch operations.
+- `prompts.mjs` — `loadPrompt`, `fillTemplate`, and parsing an agent's JSON
+  response envelope.
+- `agent.mjs` — the model chain, session limits, `runAgent`, what an agent's
+  tools may reach, skills (`BUILDER_SKILLS`, `REVIEWER_SKILLS`), and
+  `printRunSummary`.
+- `github.mjs` — issues (`fetchOpenIssues`, `closeIssue`, `commentIssue`),
+  milestones, `triggerWorkflow`, and `LISTING_LIMIT` / `rejectTruncated`, which
+  every listing uses to refuse a cut-short answer.
+- `backlog.mjs` — labels and ticket state: `createIssue`, priority, dependencies,
+  `isBuildable`, failure tracking, parking, `retireIssue`.
+- `shipped.mjs` — telling a ticket that was built from one that was only closed,
+  and when the current product started.
+- `board.mjs` — the project board. Best-effort: it never throws.
+- `board-snapshot.mjs` — the board and backlog rendered as text for the PM, PO
+  and Tech Lead.
+- `pull-requests.mjs` — opening, approving and merging PRs under two identities,
+  and classifying the open agent PRs.
+- `verify.mjs` — `verifyBuild` (the merge gate) and `reviewApp` (the layout
+  measurements the Playtester reads).
 - `wiki.mjs` — the wiki repo as long-term memory (Vision, Changelog, Story).
   Every write is a retried read-modify-write via `commitToWiki`.
 - `discussions.mjs` — the Discussions layer: journals, lessons, decisions, ideas,
@@ -89,7 +110,7 @@ fragment that is never loaded directly: `_profile.md`, `_output.md`,
 pass, inserting each value verbatim — a `$&` or a `{{VISION}}` inside a diff is
 never reinterpreted.
 
-**git and gh** run only through `gitExec` / `ghExec` in `shared.mjs`, from an
+**git and gh** run only through `gitExec` / `ghExec` in `git.mjs`, from an
 argv array — never a shell string.
 
 **Product modules** in `docs/` are camelCase, one concern per file, each
@@ -97,9 +118,9 @@ opening with a `/** <filename> — <purpose> */` banner. Factory exports are nam
 `create*` / `init*` / `start*`.
 
 **Linting** is `eslint .` with only `no-undef: error` and `no-unused-vars: warn`
-in both blocks. `docs/**` gets browser globals; `agents/**` gets node *and*
-browser globals, because the `page.evaluate()` callback bodies in `shared.mjs`
-really do run inside Chromium.
+in both blocks. `docs/**` gets browser globals; `agents/**` gets node globals,
+and only `verify.mjs` and `playtester.mjs` add browser ones, because their
+`page.evaluate()` callback bodies really do run inside Chromium.
 
 ## Entry points
 
@@ -142,7 +163,7 @@ Three files and one directory in `docs/` are not ordinary product modules:
 - **Know-how an agent loads only when its task needs it** is a skill. If it
   holds for any product, it goes in `agents/skills/<name>/` and the roles that
   should get it name it in their `runAgent` call's `skills` list
-  (`BUILDER_SKILLS` and `REVIEWER_SKILLS` in `shared.mjs`). If it is only true of
+  (`BUILDER_SKILLS` and `REVIEWER_SKILLS` in `agent.mjs`). If it is only true of
   this product, it goes in `docs/skills/<name>/` and every agent that can read
   gets it. A skill needs the read or bash tool; guidance for an agent with
   neither is a prompt fragment.
