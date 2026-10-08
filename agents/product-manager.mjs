@@ -1,7 +1,6 @@
-import { pathToFileURL } from "url";
 import fs from "fs";
 import { log, withLogGroup, errorData, recordTicket } from "./log.mjs";
-import { printRunSummary, runAgent } from "./agent.mjs";
+import { runEntrypoint, runAgent } from "./agent.mjs";
 import { loadPrompt, fillTemplate, extractAgentResponse } from "./prompts.mjs";
 import { getBoardSnapshot } from "./board-snapshot.mjs";
 import {
@@ -784,7 +783,6 @@ async function main() {
   // Worker agent — parse JSON but don't require an outcome field.
   const parsed = extractAgentResponse("Product Manager", rawOutput, { requireOutcome: false });
   if (!parsed) {
-    printRunSummary("Product Manager");
     return;
   }
 
@@ -846,7 +844,6 @@ async function main() {
     }
   }
 
-  printRunSummary("Product Manager");
 }
 
 // Only groom when RUN, never when imported — the same guard tech-lead.mjs uses,
@@ -857,10 +854,4 @@ async function main() {
 // is worth asserting directly, and the incident it came from was silent.
 export { titleTokens, planRetirements, executeRetirements, formatTicketBody, findingAddressed };
 
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
-  main().catch((err) => {
-    log("error", `Product Manager failed: ${err.message || err}`);
-    printRunSummary("Product Manager");
-    process.exit(1);
-  });
-}
+runEntrypoint(import.meta.url, "Product Manager", main);

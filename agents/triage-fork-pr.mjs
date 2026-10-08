@@ -35,9 +35,8 @@
 // model away from printing the key in a public comment. Everything it needs from
 // the base is read here, by this script, and handed over in the prompt.
 import { isAbsolute } from "path";
-import { pathToFileURL } from "url";
 import { log, withLogGroup, errorData } from "./log.mjs";
-import { printRunSummary, runAgent } from "./agent.mjs";
+import { runEntrypoint, runAgent } from "./agent.mjs";
 import { loadPrompt, fillTemplate, extractAgentResponse } from "./prompts.mjs";
 import { gitExec, ghExec } from "./git.mjs";
 import { commentIssue } from "./github.mjs";
@@ -199,7 +198,6 @@ async function main() {
 
   const read = readDiff();
   if (!read) {
-    printRunSummary("Fork triage");
     return;
   }
 
@@ -235,7 +233,6 @@ async function main() {
       `Thanks for this, @${PR_AUTHOR}. An automated review ran but could not produce a usable result, ` +
         "so a maintainer will need to look at this by hand."
     );
-    printRunSummary("Fork triage");
     return;
   }
 
@@ -253,13 +250,6 @@ async function main() {
     PR_NUMBER,
     redactSecrets(comment, [secret("OPENROUTER_API_KEY"), secret("GH_TOKEN")])
   );
-  printRunSummary("Fork triage");
 }
 
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
-  main().catch((err) => {
-    log("error", `Fork triage failed: ${err.message || err}`);
-    printRunSummary("Fork triage");
-    process.exit(1);
-  });
-}
+runEntrypoint(import.meta.url, "Fork triage", main);

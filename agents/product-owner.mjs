@@ -11,7 +11,7 @@
 // before it plans; this records what a run of tickets adds up to, and is read
 // here, next week, before direction is set again.
 import { log, withLogGroup } from "./log.mjs";
-import { printRunSummary, runAgent } from "./agent.mjs";
+import { runEntrypoint, runAgent } from "./agent.mjs";
 import { loadPrompt, fillTemplate, extractAgentResponse } from "./prompts.mjs";
 import { getBoardSnapshot } from "./board-snapshot.mjs";
 import { getCurrentMilestone, startMilestone, fetchOpenIssues } from "./github.mjs";
@@ -29,7 +29,6 @@ import {
   renderDecisions,
 } from "./discussions.mjs";
 import { PLAYTESTER_JOURNAL, renderOpenFindings, renderPlaytesterVerdicts } from "./playtest-findings.mjs";
-import { pathToFileURL } from "url";
 
 
 /**
@@ -171,7 +170,6 @@ async function main() {
   const vision = readVision();
   if (vision.startsWith("(Vision unavailable")) {
     log("error", "Wiki not reachable / not seeded — skipping the review.");
-    printRunSummary("Product Owner");
     return;
   }
 
@@ -208,7 +206,6 @@ async function main() {
 
   const parsed = extractAgentResponse("Product Owner", rawOutput, {});
   if (!parsed) {
-    printRunSummary("Product Owner");
     return;
   }
   const data = parsed.data || {};
@@ -238,22 +235,14 @@ async function main() {
   // 4. The Vision, which most weeks should not move at all.
   if (parsed.outcome === "skip") {
     log("info", `Product Owner: vision unchanged. ${parsed.summary || ""}`);
-    printRunSummary("Product Owner");
     return;
   }
   const refinement = applyRefinement(parsed);
   if (refinement && commitToWiki("Vision.md", refinement.refine, refinement.summary)) {
     log("info", `Product Owner: ${refinement.summary}`);
   }
-  printRunSummary("Product Owner");
 }
 
 // Guarded so the week's rendering can be tested without running the retro — the
 // same convention as the Product Manager and the Playtester.
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
-  main().catch((err) => {
-    log("error", `Product Owner failed: ${err.message || err}`);
-    printRunSummary("Product Owner");
-    process.exit(1);
-  });
-}
+runEntrypoint(import.meta.url, "Product Owner", main);

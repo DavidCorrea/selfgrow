@@ -26,9 +26,8 @@
 // removals, which are the ones that most deserve it.
 import fs from "fs";
 import { join, relative } from "path";
-import { pathToFileURL } from "url";
 import { log, withLogGroup, recordTicket, errorData } from "./log.mjs";
-import { printRunSummary, runAgent } from "./agent.mjs";
+import { runEntrypoint, runAgent } from "./agent.mjs";
 import { loadPrompt, fillTemplate, extractAgentResponse } from "./prompts.mjs";
 import { repoRoot } from "./paths.mjs";
 import { gitExec, ghExec } from "./git.mjs";
@@ -425,7 +424,6 @@ async function main() {
   // a diagnosis — so a thin product skips the review and keeps the triage.
   if (sources.length < MIN_FILES_TO_REVIEW && !blocked.length) {
     log("info", `Only ${sources.length} shipped file(s) and nothing parked — nothing to review yet.`);
-    printRunSummary("Tech Lead");
     return;
   }
 
@@ -463,7 +461,6 @@ async function main() {
 
   const parsed = extractAgentResponse("Tech Lead", rawOutput, { requireOutcome: false });
   if (!parsed) {
-    printRunSummary("Tech Lead");
     return;
   }
   log("info", `Tech Lead: ${parsed.summary || ""}`);
@@ -494,17 +491,10 @@ async function main() {
     })
   );
 
-  printRunSummary("Tech Lead");
 }
 
 // Only review when RUN, never when imported, so the file-selection helpers can be
 // exercised without spending a session on the model.
 export { SOURCE_DIR };
 
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
-  main().catch((err) => {
-    log("error", `Tech Lead failed: ${err.message || err}`);
-    printRunSummary("Tech Lead");
-    process.exit(1);
-  });
-}
+runEntrypoint(import.meta.url, "Tech Lead", main);

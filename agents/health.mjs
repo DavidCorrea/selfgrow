@@ -14,13 +14,12 @@
 // It speaks only on exception. Silence means fine; an issue means something is
 // wrong and names it. A dashboard that reports daily is a dashboard people stop
 // reading, and this one exists to be believed the one time it fires.
-import { pathToFileURL } from "url";
 import { log, withLogGroup, appendJobSummary, errorData } from "./log.mjs";
 import { readPage, wikiPath } from "./wiki.mjs";
 import { postDiscussion, findOpenDiscussion, findDiscussion, resolveDiscussion, mentionLine } from "./discussions.mjs";
 import { DIGEST_CATEGORY, digestTitlePrefix, digestWeekStart } from "./weekly-report.mjs";
 import { ghExec } from "./git.mjs";
-import { printRunSummary } from "./agent.mjs";
+import { runEntrypoint } from "./agent.mjs";
 import { fetchOpenIssues } from "./github.mjs";
 import { fetchShippedIssues } from "./shipped.mjs";
 import { daysAgo, closedWithin } from "./time.mjs";
@@ -574,7 +573,6 @@ async function main() {
   // Called either way: with findings it raises or holds the alert, and with none
   // it closes a standing one that has been fixed — unless a check could not run.
   publishAlert(results, vitals);
-  printRunSummary("Health");
 
   // Reported first, failed after: a run that could not look at everything must
   // not read as a green one.
@@ -585,10 +583,4 @@ async function main() {
 }
 
 // Guarded so the checks above can be exercised without touching the API.
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
-  main().catch((err) => {
-    log("error", `Health failed: ${err.message || err}`);
-    printRunSummary("Health");
-    process.exit(1);
-  });
-}
+runEntrypoint(import.meta.url, "Health", main);

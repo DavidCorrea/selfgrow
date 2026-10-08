@@ -4,6 +4,7 @@
 import fs from "fs";
 import os from "os";
 import { join, sep, relative } from "path";
+import { pathToFileURL } from "url";
 import {
   ModelRuntime,
   createReadToolDefinition,
@@ -928,4 +929,27 @@ export function printRunSummary(title = "Run Summary") {
     md.push("_No tickets affected._");
   }
   appendJobSummary(md.join("\n"));
+}
+
+/**
+ * Run a role's `main` when its file is the process entry point, never when it is
+ * imported — the tests import role files for their pure functions, and loading
+ * one must not start a run. The summary is printed once, however the run ends,
+ * so no early return can forget it.
+ *
+ * A crash exits hard rather than setting exitCode: a session or browser left
+ * open by the failure would otherwise keep the job alive until its timeout.
+ * `onCrash` runs first, for a role that owes someone an answer even then.
+ */
+export function runEntrypoint(moduleUrl, label, main, { onCrash } = {}) {
+  if (!process.argv[1] || pathToFileURL(process.argv[1]).href !== moduleUrl) return;
+  main().then(
+    () => printRunSummary(label),
+    async (err) => {
+      log("error", `${label} failed: ${err.message || err}`, errorData(err));
+      await onCrash?.(err);
+      printRunSummary(label);
+      process.exit(1);
+    }
+  );
 }

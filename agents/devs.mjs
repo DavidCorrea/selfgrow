@@ -1,6 +1,6 @@
 import { log, withLogGroup, errorData, recordTicket } from "./log.mjs";
 import {
-  printRunSummary,
+  runEntrypoint,
   isDailyQuotaExhausted,
   runAgent,
   BUILDER_SKILLS,
@@ -1111,11 +1111,6 @@ async function main() {
     `Run complete — ${mergedCount} ticket(s) merged.`
   );
   maybeReplenishBacklog(mergedCount);
-  printRunSummary("Devs");
 }
 
-main().catch((err) => {
-  log("error", `Pipeline failed: ${err.message || err}`);
-  printRunSummary("Devs");
-  process.exit(1);
-});
+runEntrypoint(import.meta.url, "Devs", main);

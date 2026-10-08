@@ -33,9 +33,8 @@
 //
 // Guarded by a typed confirmation (see requireConfirmation), because every other
 // agent here only adds and this one is irreversible in the directions that matter.
-import { pathToFileURL } from "url";
 import { log, errorData } from "./log.mjs";
-import { printRunSummary } from "./agent.mjs";
+import { runEntrypoint } from "./agent.mjs";
 import {
   gitExec,
   ghExec,
@@ -528,20 +527,15 @@ async function main() {
   const incomplete = incompleteResetMessage(notDone);
   if (incomplete) {
     log("error", incomplete);
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
   log(
     "info",
     "Reset complete. Remaining manual steps: write the new Vision in the wiki, " +
       "re-enable the paused workflows, then dispatch the Product Manager."
   );
-  printRunSummary("Reset");
 }
 
 // Guarded so the keep-list can be tested without arming the reset.
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
-  main().catch((err) => {
-    log("error", "Reset failed.", errorData(err));
-    process.exit(1);
-  });
-}
+runEntrypoint(import.meta.url, "Reset", main);

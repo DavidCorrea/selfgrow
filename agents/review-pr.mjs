@@ -31,10 +31,9 @@
 // own PR. Here the author IS the PAT's owner, so the identities flip: the bot
 // approves instead.
 import { execFileSync } from "child_process";
-import { pathToFileURL } from "url";
 import { log, withLogGroup, errorData } from "./log.mjs";
 import {
-  printRunSummary,
+  runEntrypoint,
   runAgent,
   BUILDER_SKILLS,
   REVIEWER_SKILLS,
@@ -223,7 +222,6 @@ async function main() {
           "The Devs could not produce a usable review of this change. The automated checks pass, " +
             "so it is safe to merge, but nobody has read it — merge it yourself if you are happy with it."
         );
-        printRunSummary("PR review");
         return;
       }
       if (review.outcome === "approve" && changesTheMachine(changedPaths())) {
@@ -234,7 +232,6 @@ async function main() {
             "will not approve or merge it — that is left to a person. Review and merge it yourself when you are happy with it."
         );
         log("info", `#${PR_NUMBER} changes the machine — reviewed, left for a human to merge.`);
-        printRunSummary("PR review");
         return;
       }
       if (review.outcome === "approve") {
@@ -246,7 +243,6 @@ async function main() {
         } else {
           say("This is approved and passing, but the merge failed — it may need a branch update or a protected-branch rule satisfied.");
         }
-        printRunSummary("PR review");
         return;
       }
       problems = (review.data.issues || []).join("\n- ");
@@ -286,17 +282,13 @@ async function main() {
       `- ${problems || "an unknown problem — see the run log"}`,
     ].join("\n")
   );
-  printRunSummary("PR review");
 }
 
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
-  main().catch((err) => {
-    log("error", `PR review failed: ${err.message || err}`);
-    // Never leave the author guessing: a crashed run is still an answer.
+runEntrypoint(import.meta.url, "PR review", main, {
+  // Never leave the author guessing: a crashed run is still an answer.
+  onCrash: () => {
     if (PR_NUMBER) {
       say("The Devs hit an unexpected error reviewing this and stopped. Your branch is untouched by this run.");
     }
-    printRunSummary("PR review");
-    process.exit(1);
-  });
-}
+  },
+});

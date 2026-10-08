@@ -41,7 +41,7 @@
 // role is the only one that can say whether the experience actually changed, so
 // it is the one that closes it (see playtest-findings.mjs).
 import { log, withLogGroup, errorData, recordTicket } from "./log.mjs";
-import { printRunSummary, runAgent, firstVisionModel } from "./agent.mjs";
+import { runEntrypoint, runAgent, firstVisionModel } from "./agent.mjs";
 import { loadPrompt, fillTemplate, extractAgentResponse } from "./prompts.mjs";
 import { repoRoot } from "./paths.mjs";
 import { startStaticServer, reviewApp, REVIEW_VIEWPORTS, viewportOptions } from "./verify.mjs";
@@ -50,7 +50,6 @@ import { createIssue, PLAYTEST_LABEL } from "./backlog.mjs";
 import { readVision } from "./wiki.mjs";
 import { readJournal, appendJournal, renderJournalEntry } from "./discussions.mjs";
 import { isAnswered, answeringTickets, applyFollowUp, PLAYTESTER_JOURNAL } from "./playtest-findings.mjs";
-import { pathToFileURL } from "url";
 import { join } from "path";
 import fs from "fs";
 
@@ -750,7 +749,6 @@ async function main() {
   const session = await withLogGroup("Playing the app", () => observeApp());
   if (!session) {
     log("info", "Playtest: no session to report on.");
-    printRunSummary("Playtester");
     return;
   }
 
@@ -774,7 +772,6 @@ async function main() {
   );
   if (output === null) {
     log("warn", "Playtest: the reporting agent failed both with and without the screenshots — nothing filed.");
-    printRunSummary("Playtester");
     return;
   }
 
@@ -787,7 +784,6 @@ async function main() {
   });
   if (!result) {
     log("warn", "Playtest: no usable report — nothing filed.");
-    printRunSummary("Playtester");
     return;
   }
 
@@ -836,15 +832,8 @@ async function main() {
       },
     })
   );
-  printRunSummary("Playtester");
 }
 
 // Guarded so the observation half can be imported and exercised without spending
 // a model request — same convention as the Product Manager and the Tech Lead.
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
-  main().catch((err) => {
-    log("error", `Playtester failed: ${err.message || err}`);
-    printRunSummary("Playtester");
-    process.exit(1);
-  });
-}
+runEntrypoint(import.meta.url, "Playtester", main);

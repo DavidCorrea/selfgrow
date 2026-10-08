@@ -28,9 +28,8 @@
 import { execFileSync, spawnSync } from "child_process";
 import fs from "fs";
 import { join } from "path";
-import { pathToFileURL } from "url";
 import { log, logGroup, errorData, appendJobSummary } from "./log.mjs";
-import { printRunSummary, readModelChain } from "./agent.mjs";
+import { runEntrypoint, readModelChain } from "./agent.mjs";
 import { repoRoot } from "./paths.mjs";
 import { gitExec, configureGitIdentity, createBranch, deleteRemoteBranch } from "./git.mjs";
 import { createPR, approvePR, mergePR } from "./pull-requests.mjs";
@@ -314,12 +313,4 @@ async function main() {
   log("info", `pi ${from} → ${to} merged via PR #${prNumber}.`);
 }
 
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
-  main()
-    .catch((err) => {
-      log("error", `pi update failed: ${err.message || err}`, errorData(err));
-      process.exitCode = 1;
-    })
-    // One summary however the run ends, so no early return can forget it.
-    .finally(() => printRunSummary(isDryRun ? "pi update (dry run)" : "pi update"));
-}
+runEntrypoint(import.meta.url, isDryRun ? "pi update (dry run)" : "pi update", main);

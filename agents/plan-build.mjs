@@ -20,7 +20,7 @@
 // Prints `count` and `queue` to GITHUB_OUTPUT for the workflow to consume.
 import fs from "fs";
 import { log } from "./log.mjs";
-import { printRunSummary } from "./agent.mjs";
+import { runEntrypoint } from "./agent.mjs";
 import { fetchOpenIssues } from "./github.mjs";
 import {
   isBuildable,
@@ -46,7 +46,7 @@ function writeOutput({ count = 0, queue = 0 } = {}) {
   else console.log(payload.trim()); // local runs just print it
 }
 
-function main() {
+async function main() {
   log("info", `=== Plan build — sizing a run of up to ${MAX_TICKETS} ticket(s) ===`);
 
   const open = fetchOpenIssues();
@@ -74,7 +74,6 @@ function main() {
       log("info", "Nothing buildable — the backlog is empty or entirely parked.");
     }
     writeOutput();
-    printRunSummary("Plan build");
     return;
   }
 
@@ -127,7 +126,6 @@ function main() {
   // build job. `queue` is how far the run may go, and is deliberately the larger
   // of the two whenever the board is expected to grow.
   writeOutput({ count: ordered.length, queue });
-  printRunSummary("Plan build");
 }
 
-main();
+runEntrypoint(import.meta.url, "Plan build", main);

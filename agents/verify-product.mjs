@@ -9,17 +9,17 @@
 // require. Nothing here is new verification; it is the existing verification made
 // non-optional.
 import { log } from "./log.mjs";
-import { printRunSummary } from "./agent.mjs";
+import { runEntrypoint } from "./agent.mjs";
 import { verifyBuild } from "./verify.mjs";
 
-const report = await verifyBuild();
-
-if (report.ok) {
-  log("info", "Product verification passed.");
-  printRunSummary("Verify product");
-  process.exit(0);
+async function main() {
+  const report = await verifyBuild();
+  if (report.ok) {
+    log("info", "Product verification passed.");
+    return;
+  }
+  log("error", `Product verification failed at the ${report.layer} layer.`, { errors: report.errors });
+  process.exitCode = 1;
 }
 
-log("error", `Product verification failed at the ${report.layer} layer.`, { errors: report.errors });
-printRunSummary("Verify product");
-process.exit(1);
+runEntrypoint(import.meta.url, "Verify product", main);

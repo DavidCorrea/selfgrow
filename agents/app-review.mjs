@@ -7,7 +7,7 @@
 //   npx playwright install chromium && node agents/app-review.mjs
 import { log } from "./log.mjs";
 import { reviewApp } from "./verify.mjs";
-import { printRunSummary } from "./agent.mjs";
+import { runEntrypoint } from "./agent.mjs";
 
 async function main() {
   log("info", "=== App Review (measured — no model involved) ===");
@@ -17,11 +17,6 @@ async function main() {
   } else {
     log("info", "Nothing to report — see the log above for why (no page yet / Playwright missing / nothing broken).");
   }
-  printRunSummary("App Review");
 }
 
-main().catch((err) => {
-  log("error", `App Review failed: ${err.message || err}`);
-  printRunSummary("App Review");
-  process.exit(1);
-});
+runEntrypoint(import.meta.url, "App Review", main);
