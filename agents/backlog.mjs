@@ -470,6 +470,33 @@ export function dependencyLine(numbers) {
   return deps.length ? `Blocked by: ${deps.map((n) => `#${n}`).join(", ")}` : "";
 }
 
+/** The acceptance criteria as a checklist, or "" when there are none. */
+export function criteriaSection(acceptanceCriteria) {
+  const criteria = (Array.isArray(acceptanceCriteria) ? acceptanceCriteria : [])
+    .map((criterion) => String(criterion).trim())
+    .filter(Boolean);
+  return criteria.length ? `## Acceptance criteria\n${criteria.map((criterion) => `- [ ] ${criterion}`).join("\n")}` : "";
+}
+
+/**
+ * A model sends notes as a string or a list; a list stringified as-is joins its
+ * items with commas into one unreadable line.
+ */
+export function notesText(note) {
+  return Array.isArray(note)
+    ? note.map((item) => `- ${String(item).trim().replace(/^- /, "")}`).join("\n")
+    : String(note || "").trim();
+}
+
+// Technical detail lives in its own section so the top of a ticket can say what
+// the player gets. Tickets used to carry selectors and CSS properties as their
+// acceptance criteria, which told the Builder how to satisfy a checker rather
+// than what the player should notice.
+export function devNotesSection(...notes) {
+  const text = notes.map(notesText).filter(Boolean).join("\n\n");
+  return text ? `## Dev Notes\n${text}` : "";
+}
+
 /**
  * Reconcile the `waiting` label across the open backlog: add it to tickets with
  * unmet dependencies, remove it from tickets that have been released. Derived

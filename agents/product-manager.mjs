@@ -9,6 +9,8 @@ import {
   retireIssue,
   isBuildable,
   dependencyLine,
+  criteriaSection,
+  devNotesSection,
   syncWaitingLabels,
   isPlaytestFeedback,
   isManualIssue,
@@ -177,28 +179,6 @@ function kickBuilder() {
 // ---------------------------------------------------------------------------
 // Backlog grooming — create prioritized tickets on the board (best-effort)
 // ---------------------------------------------------------------------------
-
-function criteriaSection(acceptanceCriteria) {
-  const criteria = (Array.isArray(acceptanceCriteria) ? acceptanceCriteria : [])
-    .map((criterion) => String(criterion).trim())
-    .filter(Boolean);
-  return criteria.length ? `## Acceptance criteria\n${criteria.map((criterion) => `- [ ] ${criterion}`).join("\n")}` : "";
-}
-
-// Technical detail lives in its own section so the top of a ticket can say what
-// the player gets. Tickets used to carry selectors and CSS properties as their
-// acceptance criteria, which told the Builder how to satisfy a checker rather
-// than what the player should notice.
-function devNotesSection(...notes) {
-  // A model sends a string or a list; a list stringified as-is joins its items
-  // with commas into one unreadable line.
-  const asText = (note) =>
-    Array.isArray(note)
-      ? note.map((item) => `- ${String(item).trim().replace(/^- /, "")}`).join("\n")
-      : String(note || "").trim();
-  const text = notes.map(asText).filter(Boolean).join("\n\n");
-  return text ? `## Dev Notes\n${text}` : "";
-}
 
 // Compose the issue body the Builder reads: the PM's description followed by the
 // acceptance criteria as a checklist, so "what to build" and "how we know it's

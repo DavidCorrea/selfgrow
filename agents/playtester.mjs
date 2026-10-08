@@ -46,7 +46,7 @@ import { loadPrompt, fillTemplate, extractAgentResponse } from "./prompts.mjs";
 import { repoRoot } from "./paths.mjs";
 import { startStaticServer, reviewApp, REVIEW_VIEWPORTS, viewportOptions } from "./verify.mjs";
 import { fetchOpenIssues } from "./github.mjs";
-import { createIssue, PLAYTEST_LABEL } from "./backlog.mjs";
+import { createIssue, PLAYTEST_LABEL, notesText } from "./backlog.mjs";
 import { readVision } from "./wiki.mjs";
 import { readJournal, appendJournal, renderJournalEntry } from "./discussions.mjs";
 import { isAnswered, answeringTickets, applyFollowUp, PLAYTESTER_JOURNAL } from "./playtest-findings.mjs";
@@ -578,12 +578,6 @@ export function measuredFindings(review) {
 
 // A model asked for notes sends a string or a list of them; a list stringified
 // as-is joins its items with commas into one unreadable line.
-function notesText(notes) {
-  return Array.isArray(notes)
-    ? notes.map((note) => `- ${String(note).trim().replace(/^- /, "")}`).join("\n")
-    : String(notes).trim();
-}
-
 /** A finding's issue body. Technical detail goes in Dev Notes, below the player's view. */
 export function findingBody(finding, verdict) {
   return [

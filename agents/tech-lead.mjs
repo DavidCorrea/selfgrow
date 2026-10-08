@@ -29,7 +29,7 @@ import { runEntrypoint, runAgent } from "./agent.mjs";
 import { loadPrompt, fillTemplate, extractAgentResponse } from "./prompts.mjs";
 import { gitExec, ghExec } from "./git.mjs";
 import { getBoardSnapshot } from "./board-snapshot.mjs";
-import { createIssue, rewriteIssueBody, isBlocked, dependencyLine, withDiagnosis } from "./backlog.mjs";
+import { createIssue, rewriteIssueBody, isBlocked, dependencyLine, criteriaSection, withDiagnosis } from "./backlog.mjs";
 import { readSources, renderManifest, formatSources, readSelfTest, readAgentTools } from "./product-source.mjs";
 import { moveCard } from "./board.mjs";
 import { readVision } from "./wiki.mjs";
@@ -150,12 +150,9 @@ const URGENCY_BY_KIND = {
  * its priority.
  */
 function fileProposal(item, dependsOn = []) {
-  const criteria = (Array.isArray(item.acceptanceCriteria) ? item.acceptanceCriteria : [])
-    .map((c) => String(c).trim())
-    .filter(Boolean);
   const body = [
     String(item.body).trim(),
-    criteria.length ? `## Acceptance criteria\n${criteria.map((c) => `- [ ] ${c}`).join("\n")}` : "",
+    criteriaSection(item.acceptanceCriteria),
     dependencyLine(dependsOn),
     URGENCY_BY_KIND[item.kind] || "",
     "_Proposed by the Tech Lead, who reads the whole codebase rather than one ticket._",
