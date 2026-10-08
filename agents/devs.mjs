@@ -730,7 +730,7 @@ async function landAndRecord(ctx) {
 
   // Close the issue with a meaningful summary, mark the card Done.
   if (ctx.issueNumber) {
-    await closeIssue(ctx.issueNumber, {
+    closeIssue(ctx.issueNumber, {
       summary: ctx.builderSummary,
       commitMessage: ctx.commitMessage,
       commitSha,
@@ -983,7 +983,6 @@ async function main() {
   const awaitedPrs = new Set(); // stalled PRs whose merge this run already waited on
   const deadline = Date.now() + RUN_BUDGET_MS;
   let mergedCount = 0;
-  const pinnedTicket = PINNED_TICKET;
 
   for (let n = 1; n <= MAX_TICKETS_PER_RUN; n++) {
     if (Date.now() > deadline) {
@@ -1005,10 +1004,10 @@ async function main() {
 
     // A pinned run sees only its own ticket, so a hand-started rebuild of one
     // ticket cannot drift onto whatever else the board is offering.
-    if (pinnedTicket) {
-      candidates = candidates.filter((i) => i.number === pinnedTicket);
+    if (PINNED_TICKET) {
+      candidates = candidates.filter((i) => i.number === PINNED_TICKET);
       if (!candidates.length) {
-        log("info", `Pinned ticket #${pinnedTicket} is no longer available (closed, parked, or newly blocked) — nothing to do.`);
+        log("info", `Pinned ticket #${PINNED_TICKET} is no longer available (closed, parked, or newly blocked) — nothing to do.`);
         break;
       }
     }

@@ -22,6 +22,7 @@ import {
   editIssueLabels,
   PRIORITY_LABELS,
   hasDiagnosis,
+  labelNames,
 } from "./backlog.mjs";
 import { moveCard } from "./board.mjs";
 import { fetchShippedIssues } from "./shipped.mjs";
@@ -421,7 +422,7 @@ function triageExisting(openIssues, boardItems, triage) {
     }
     const priority = priorityOf.get(iss.number);
     if (priority) {
-      const current = (iss.labels || []).map((l) => l.name || l);
+      const current = labelNames(iss);
       setIssuePriority(iss.number, priority, current);
     }
   }
@@ -641,7 +642,7 @@ function groomTickets(groom, openIssues) {
     const body = groomedBody(issue, item);
     if (body && !rewriteIssueBody(issue.number, body)) continue;
     if (!editIssueLabels(issue.number, { add: [GROOMED_LABEL] })) continue;
-    setIssuePriority(issue.number, priority, (issue.labels || []).map((label) => label.name || label));
+    setIssuePriority(issue.number, priority, labelNames(issue));
     count++;
   }
   if (count) log("info", `Groomed ${count} ticket(s).`);
