@@ -29,11 +29,9 @@ import { execFileSync, spawnSync } from "child_process";
 import fs from "fs";
 import { join } from "path";
 import { pathToFileURL } from "url";
+import { log, logGroup, errorData, appendJobSummary } from "./log.mjs";
 import {
-  log,
-  logGroup,
   printRunSummary,
-  errorData,
   repoRoot,
   gitExec,
   configureGitIdentity,
@@ -44,7 +42,6 @@ import {
   mergePR,
   createIssue,
   readModelChain,
-  appendJobSummary,
   TECH_DEBT_LABEL,
 } from "./shared.mjs";
 

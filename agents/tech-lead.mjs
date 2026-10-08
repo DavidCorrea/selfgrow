@@ -27,9 +27,8 @@
 import fs from "fs";
 import { join, relative } from "path";
 import { pathToFileURL } from "url";
+import { log, withLogGroup, recordTicket, errorData } from "./log.mjs";
 import {
-  log,
-  withLogGroup,
   printRunSummary,
   loadPrompt,
   fillTemplate,
@@ -38,16 +37,14 @@ import {
   repoRoot,
   gitExec,
   ghExec,
-  readVision,
   getBoardSnapshot,
   createIssue,
   moveCard,
-  recordTicket,
   rewriteIssueBody,
   isBlocked,
   dependencyLine,
-  errorData,
 } from "./shared.mjs";
+import { readVision } from "./wiki.mjs";
 import {
   readJournal,
   appendJournal,

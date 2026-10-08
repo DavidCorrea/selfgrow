@@ -32,9 +32,8 @@
 // approves instead.
 import { execFileSync } from "child_process";
 import { pathToFileURL } from "url";
+import { log, withLogGroup, errorData } from "./log.mjs";
 import {
-  log,
-  withLogGroup,
   printRunSummary,
   loadPrompt,
   fillTemplate,
@@ -43,7 +42,6 @@ import {
   BUILDER_SKILLS,
   REVIEWER_SKILLS,
   extractAgentResponse,
-  errorData,
   gitExec,
   configureGitIdentity,
   verifyBuild,
@@ -51,9 +49,9 @@ import {
   commentIssue,
   approvePR,
   mergePR,
-  readVision,
   getLastModelUsed,
 } from "./shared.mjs";
+import { readVision } from "./wiki.mjs";
 
 const PR_NUMBER = Number(process.env.PR_NUMBER || 0);
 const PR_BRANCH = process.env.PR_BRANCH || "";

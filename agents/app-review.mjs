@@ -5,7 +5,8 @@
 // No model and no API key involved — the whole review is measurement. Needs only
 // a Chromium browser:
 //   npx playwright install chromium && node agents/app-review.mjs
-import { log, reviewApp, printRunSummary } from "./shared.mjs";
+import { log } from "./log.mjs";
+import { reviewApp, printRunSummary } from "./shared.mjs";
 
 async function main() {
   log("info", "=== App Review (measured — no model involved) ===");

@@ -28,34 +28,9 @@ import {
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
 
-// Two layers below this one. shared.mjs re-exports both so the existing
-// `from "./shared.mjs"` imports keep working, but new code should import from
-// the specific module — that is the point of having split them.
+// Two layers below this one.
 import { log, appendJobSummary, errorData, getRunLog, getTicketOutcomes, truncate } from "./log.mjs";
 import { secret, gitAuthEnv } from "./secrets.mjs";
-
-export {
-  log,
-  logGroup,
-  withLogGroup,
-  appendJobSummary,
-  truncate,
-  errorData,
-  getRunLog,
-  recordTicket,
-} from "./log.mjs";
-export {
-  cloneWiki,
-  getWikiDir,
-  wikiPath,
-  readPage,
-  commitToWiki,
-  readVision,
-  readChangelog,
-  appendChangelogEntry,
-  writePage,
-  writeStory,
-} from "./wiki.mjs";
 
 // ---------------------------------------------------------------------------
 // Paths

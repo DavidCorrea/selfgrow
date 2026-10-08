@@ -19,8 +19,8 @@
 //
 // Prints `count` and `queue` to GITHUB_OUTPUT for the workflow to consume.
 import fs from "fs";
+import { log } from "./log.mjs";
 import {
-  log,
   printRunSummary,
   fetchOpenIssues,
   isBuildable,

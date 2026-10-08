@@ -1,11 +1,9 @@
+import { log, withLogGroup, errorData, recordTicket } from "./log.mjs";
 import {
-  log,
-  withLogGroup,
   printRunSummary,
   loadPrompt,
   fillTemplate,
   extractAgentResponse,
-  errorData,
   gitExec,
   configureGitIdentity,
   createBranchName,
@@ -15,7 +13,6 @@ import {
   returnToCleanMain,
   deleteRemoteBranch,
   fetchOpenIssues,
-  recordTicket,
   recordTicketFailure,
   isBlocked,
   isBuildable,
@@ -26,7 +23,6 @@ import {
   unmetDependencies,
   syncWaitingLabels,
   triggerWorkflow,
-  readVision,
   closeIssue,
   createIssue,
   TECH_DEBT_LABEL,
@@ -43,7 +39,6 @@ import {
   closePR,
   whyTicketNoLongerWanted,
   fetchTicketState,
-  appendChangelogEntry,
   verifyBuild,
   runAgent,
   revertMachineEdits,
@@ -51,6 +46,7 @@ import {
   REVIEWER_SKILLS,
   getLastModelUsed,
 } from "./shared.mjs";
+import { readVision, appendChangelogEntry } from "./wiki.mjs";
 import {
   appendLessonOccurrence,
   readLessonThreads,

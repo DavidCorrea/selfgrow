@@ -34,15 +34,12 @@
 // Guarded by a typed confirmation (see requireConfirmation), because every other
 // agent here only adds and this one is irreversible in the directions that matter.
 import { pathToFileURL } from "url";
+import { log, errorData } from "./log.mjs";
 import {
-  log,
   printRunSummary,
-  errorData,
   gitExec,
   ghExec,
   configureGitIdentity,
-  getWikiDir,
-  writePage,
   closePR,
   createPR,
   mergePR,
@@ -53,6 +50,7 @@ import {
   PROJECT_NUMBER,
   RESET_COMMIT_MESSAGE,
 } from "./shared.mjs";
+import { getWikiDir, writePage } from "./wiki.mjs";
 import { archiveProductMemory } from "./discussions.mjs";
 
 // Everything the agent harness needs in order to keep running. The product is

@@ -1,21 +1,17 @@
 import { pathToFileURL } from "url";
 import fs from "fs";
+import { log, withLogGroup, errorData, recordTicket } from "./log.mjs";
 import {
-  log,
-  withLogGroup,
   printRunSummary,
   loadPrompt,
   fillTemplate,
   runAgent,
   extractAgentResponse,
-  errorData,
   getBoardSnapshot,
-  readVision,
   createIssue,
   moveCard,
   ensurePriorityLabels,
   setIssuePriority,
-  recordTicket,
   retireIssue,
   fetchShippedIssues,
   fetchOpenIssues,
@@ -35,6 +31,7 @@ import {
   editIssueLabels,
   PRIORITY_LABELS,
 } from "./shared.mjs";
+import { readVision } from "./wiki.mjs";
 import {
   readInboundIdeas,
   renderInboundIdeas,

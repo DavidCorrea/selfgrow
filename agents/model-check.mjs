@@ -20,8 +20,8 @@
 //
 //   node agents/model-check.mjs           # human-readable, exit 1 on any breakage
 //   node agents/model-check.mjs --json    # machine-readable, for the update workflow
+import { log } from "./log.mjs";
 import {
-  log,
   readModelChain,
   listRegistryModels,
   registryModelId,

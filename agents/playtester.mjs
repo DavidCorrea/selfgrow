@@ -40,27 +40,24 @@
 // each with real tickets, or drops it. An answered finding comes back here: this
 // role is the only one that can say whether the experience actually changed, so
 // it is the one that closes it (see playtest-findings.mjs).
+import { log, withLogGroup, errorData, recordTicket } from "./log.mjs";
 import {
-  log,
-  withLogGroup,
   printRunSummary,
   loadPrompt,
   fillTemplate,
   runAgent,
   firstVisionModel,
   extractAgentResponse,
-  errorData,
   repoRoot,
-  readVision,
   startStaticServer,
   fetchOpenIssues,
   createIssue,
-  recordTicket,
   reviewApp,
   PLAYTEST_LABEL,
   REVIEW_VIEWPORTS,
   viewportOptions,
 } from "./shared.mjs";
+import { readVision } from "./wiki.mjs";
 import { readJournal, appendJournal, renderJournalEntry } from "./discussions.mjs";
 import { isAnswered, answeringTickets, applyFollowUp, PLAYTESTER_JOURNAL } from "./playtest-findings.mjs";
 import { pathToFileURL } from "url";

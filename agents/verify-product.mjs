@@ -8,7 +8,8 @@
 // This is the same function, in a job whose exit code a repository ruleset can
 // require. Nothing here is new verification; it is the existing verification made
 // non-optional.
-import { log, printRunSummary, verifyBuild } from "./shared.mjs";
+import { log } from "./log.mjs";
+import { printRunSummary, verifyBuild } from "./shared.mjs";
 
 const report = await verifyBuild();
 

@@ -36,20 +36,18 @@
 // the base is read here, by this script, and handed over in the prompt.
 import { isAbsolute } from "path";
 import { pathToFileURL } from "url";
+import { log, withLogGroup, errorData } from "./log.mjs";
 import {
-  log,
-  withLogGroup,
   printRunSummary,
   loadPrompt,
   fillTemplate,
   runAgent,
   extractAgentResponse,
-  errorData,
   gitExec,
   ghExec,
-  readVision,
   commentIssue,
 } from "./shared.mjs";
+import { readVision } from "./wiki.mjs";
 import { secret } from "./secrets.mjs";
 
 const PR_NUMBER = Number(process.env.PR_NUMBER || 0);

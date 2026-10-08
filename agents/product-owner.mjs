@@ -10,23 +10,21 @@
 // of a week. Post-mortems record why one ticket failed and are read by the Scout
 // before it plans; this records what a run of tickets adds up to, and is read
 // here, next week, before direction is set again.
+import { log, withLogGroup } from "./log.mjs";
 import {
-  log,
-  withLogGroup,
   printRunSummary,
   loadPrompt,
   fillTemplate,
   runAgent,
   extractAgentResponse,
   getBoardSnapshot,
-  readVision,
-  commitToWiki,
   getCurrentMilestone,
   startMilestone,
   isBlocked,
   fetchOpenIssues,
   fetchShippedIssues,
 } from "./shared.mjs";
+import { readVision, commitToWiki } from "./wiki.mjs";
 import {
   readJournal,
   appendJournal,

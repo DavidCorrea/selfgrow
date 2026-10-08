@@ -22,10 +22,9 @@
 //
 // Every stage is derived from labels and one body line, like `waiting` and the
 // `Blocked by:` line: nothing here keeps state of its own, so nothing can drift.
+import { log, errorData } from "./log.mjs";
 import {
-  log,
   ghExec,
-  errorData,
   labelNames,
   editIssueLabels,
   rewriteIssueBody,
