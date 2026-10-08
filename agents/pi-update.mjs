@@ -168,7 +168,22 @@ function buildPrBody({ from, to, report }) {
   return lines.join("\n");
 }
 
+/**
+ * Back out of a bump that cannot land: undo it on disk, drop the branch, and file
+ * the issue that says why. Staying on a pi whose chain works beats advancing to
+ * one whose chain doesn't.
+ */
+function abandonBump(branchName, title, body) {
+  revertBump();
+  gitExec(["checkout", "main"]);
+  deleteRemoteBranch(branchName);
+  createIssue(title, body, [TECH_DEBT_LABEL]);
+  process.exitCode = 1;
+}
+
 // ---------------------------------------------------------------------------
+
+const isDryRun = process.argv.includes("--dry-run");
 
 async function main() {
   log("info", "=== pi update — bump the agent runtime and re-check the model chain ===");
@@ -184,19 +199,18 @@ async function main() {
 
   if (!from) {
     log("error", "pi is not installed — run `npm ci` first. Nothing to compare against.");
-    printRunSummary("pi update");
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
   // Never a downgrade: a pi installed by hand can be newer than anything settled.
   const isUpgrade = Boolean(to) && compareVersions(to, from) > 0;
   // Report what a real run would do and stop — no install, no branch, no requests.
   // The only safe way to exercise this script outside CI, since everything after
   // this point mutates the repo.
-  if (process.argv.includes("--dry-run")) {
+  if (isDryRun) {
     log("info", !isUpgrade
       ? "Dry run: already on the newest settled pi — a real run would exit here having spent nothing."
       : `Dry run: a real run would branch, install pi ${to}, re-check the chain (${readModelChain().length} model(s)), and open a self-merging PR.`);
-    printRunSummary("pi update (dry run)");
     return;
   }
 
@@ -206,7 +220,6 @@ async function main() {
       `## pi update\n\nOn \`${PI_PACKAGE}\` **${from}**; no newer release has been public for ` +
         `${MIN_RELEASE_AGE_DAYS} day(s) — no change.`
     );
-    printRunSummary("pi update");
     return;
   }
 
@@ -225,16 +238,12 @@ async function main() {
   } catch (e) {
     endInstall();
     log("error", `Could not install pi ${to} — leaving the repo on ${from}.`, errorData(e));
-    revertBump();
-    gitExec(["checkout", "main"]);
-    deleteRemoteBranch(branchName);
-    createIssue(
+    abandonBump(
+      branchName,
       `pi ${to} could not be installed`,
-      `\`agents/pi-update.mjs\` failed to install \`${PI_PACKAGE}@${to}\` (currently on ${from}).\n\n\`\`\`\n${(e.message || String(e)).slice(0, 1500)}\n\`\`\`\n\nThe repo is unchanged. Investigate before the next weekly run.`,
-      [TECH_DEBT_LABEL]
+      `\`agents/pi-update.mjs\` failed to install \`${PI_PACKAGE}@${to}\` (currently on ${from}).\n\n\`\`\`\n${(e.message || String(e)).slice(0, 1500)}\n\`\`\`\n\nThe repo is unchanged. Investigate before the next weekly run.`
     );
-    printRunSummary("pi update");
-    process.exit(1);
+    return;
   }
   endInstall();
 
@@ -244,16 +253,12 @@ async function main() {
     report = checkChain();
   } catch (e) {
     log("error", `pi ${to} is installed but its registry could not be read — reverting.`, errorData(e));
-    revertBump();
-    gitExec(["checkout", "main"]);
-    deleteRemoteBranch(branchName);
-    createIssue(
+    abandonBump(
+      branchName,
       `pi ${to} installs but its model registry cannot be read`,
-      `\`agents/model-check.mjs\` could not resolve any model against \`${PI_PACKAGE}@${to}\`, so the bump was reverted and the repo stays on ${from}.\n\n\`\`\`\n${(e.message || String(e)).slice(0, 1500)}\n\`\`\`\n\nThis usually means pi's API changed — \`ModelRuntime.create\` / \`getModels\` in \`agents/agent.mjs\` are the places to look.`,
-      [TECH_DEBT_LABEL]
+      `\`agents/model-check.mjs\` could not resolve any model against \`${PI_PACKAGE}@${to}\`, so the bump was reverted and the repo stays on ${from}.\n\n\`\`\`\n${(e.message || String(e)).slice(0, 1500)}\n\`\`\`\n\nThis usually means pi's API changed — \`ModelRuntime.create\` / \`getModels\` in \`agents/agent.mjs\` are the places to look.`
     );
-    printRunSummary("pi update");
-    process.exit(1);
+    return;
   }
 
   if (!report.ok) {
@@ -261,10 +266,8 @@ async function main() {
       "error",
       `pi ${to} no longer knows ${report.broken.length} of ${report.entries.length} configured model(s) — reverting the bump.`
     );
-    revertBump();
-    gitExec(["checkout", "main"]);
-    deleteRemoteBranch(branchName);
-    createIssue(
+    abandonBump(
+      branchName,
       `pi ${to} leaves the model chain broken`,
       [
         `Bumping \`${PI_PACKAGE}\` from ${from} to ${to} breaks ${report.broken.length} of ${report.entries.length} configured model(s). The bump was **reverted** — the repo stays on ${from}.`,
@@ -273,11 +276,9 @@ async function main() {
         ...report.broken.map((b) => `- \`${b.id}\` — ${b.status}`),
         "",
         "Pick the replacement by hand in `agents/models.json`: a paid model from a different provider family than the surviving entry, coding-tuned, with reasoning support. Two entries is the target — the second exists so the Reviewer can be drawn from a different model than wrote the code.",
-      ].join("\n"),
-      [TECH_DEBT_LABEL]
+      ].join("\n")
     );
-    printRunSummary("pi update");
-    process.exit(1);
+    return;
   }
 
   // Commit whatever actually changed.
@@ -286,7 +287,6 @@ async function main() {
     log("warn", "Nothing changed on disk despite a version difference — no PR to open.");
     gitExec(["checkout", "main"]);
     deleteRemoteBranch(branchName);
-    printRunSummary("pi update");
     return;
   }
   log("info", `Committing:\n${changed}`);
@@ -300,25 +300,26 @@ async function main() {
   const prNumber = createPR(branchName, `Bump pi to ${to} and re-check the model chain`, body);
   if (!prNumber) {
     log("error", "Could not open the PR — the branch is pushed, so nothing is lost. Open it by hand.");
-    printRunSummary("pi update");
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
   approvePR(prNumber, "Approved automatically: the chain is asserted by model-check.mjs against the pi being installed.");
   if (!(await mergePR(prNumber))) {
     log("error", `PR #${prNumber} could not be merged — leaving it open for inspection.`);
-    printRunSummary("pi update");
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
   try { gitExec(["checkout", "main"]); } catch { /* the merge already landed */ }
 
   log("info", `pi ${from} → ${to} merged via PR #${prNumber}.`);
-  printRunSummary("pi update");
 }
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
-  main().catch((err) => {
-    log("error", `pi update failed: ${err.message || err}`, errorData(err));
-    printRunSummary("pi update");
-    process.exit(1);
-  });
+  main()
+    .catch((err) => {
+      log("error", `pi update failed: ${err.message || err}`, errorData(err));
+      process.exitCode = 1;
+    })
+    // One summary however the run ends, so no early return can forget it.
+    .finally(() => printRunSummary(isDryRun ? "pi update (dry run)" : "pi update"));
 }
