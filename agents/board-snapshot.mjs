@@ -1,6 +1,6 @@
 // The board and backlog rendered as text for the PM, PO and Tech Lead.
 
-import { AGENT_LABEL, isConfirmedRetired, retiredDependencies } from "./backlog.mjs";
+import { AGENT_LABEL, isConfirmedRetired, isManualIssue, labelNames, retiredDependencies } from "./backlog.mjs";
 import { listProjectItems } from "./board.mjs";
 import { fetchOpenIssues } from "./github.mjs";
 
@@ -48,10 +48,9 @@ export function formatBoardState(boardItems, openIssues, isRetired = isConfirmed
   // too. So it is inverted into something the reader can act on: an agent ticket
   // gets no marker, a human one says so.
   const labelsByNumber = new Map(
-    openIssues.map((i) => {
-      const names = (i.labels || []).map((l) => l.name || l);
-      const visible = names.filter((n) => n !== AGENT_LABEL);
-      return [i.number, names.includes(AGENT_LABEL) ? visible : [...visible, "from a person"]];
+    openIssues.map((issue) => {
+      const visible = labelNames(issue).filter((name) => name !== AGENT_LABEL);
+      return [issue.number, isManualIssue(issue) ? [...visible, "from a person"] : visible];
     })
   );
   const tag = (num) => {

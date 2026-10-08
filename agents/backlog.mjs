@@ -6,10 +6,94 @@ import { removeCard } from "./board.mjs";
 import { ghExec } from "./git.mjs";
 import { ghComment } from "./github.mjs";
 
+// ---------------------------------------------------------------------------
+// Labels — every label the pipeline applies, and the color it is created in
+// ---------------------------------------------------------------------------
+
 // Stamped on every issue the pipeline creates (see createIssue), which makes its
 // ABSENCE the reliable marker of a human-filed one. Absence is the better test
 // precisely because no human action maintains it: there is no label to forget.
 export const AGENT_LABEL = "agent";
+
+// Marks Builder-filed code-health tickets so the PM (and humans) can spot them.
+export const TECH_DEBT_LABEL = "tech-debt";
+
+// Priority is expressed as a single label so it shows on board cards and is
+// visible to the Builder via the issue's labels.
+export const PRIORITY_LABELS = { high: "priority:high", medium: "priority:medium", low: "priority:low" };
+
+// The Product Manager's mark that a ticket is ready to build: it says what the
+// player gets, how to tell it shipped, and where it sits in the queue. Only the
+// PM's run applies it (see product-manager.mjs). Everyone else — the Tech Lead,
+// the Builder's tech debt, the Playtester, a person — files tickets without it.
+//
+// Before this, any open ticket was buildable the moment it was filed. A Tech Lead
+// ticket filed on Thursday morning could be built that afternoon with no
+// priority and no player-facing description, and tickets written from the App
+// Review read like the checker — selectors and CSS properties as acceptance
+// criteria — because nothing stood between whoever filed them and the Devs.
+export const GROOMED_LABEL = "groomed";
+
+// Shown on tickets whose prerequisites haven't shipped, so the board answers
+// "why isn't this moving?" at a glance instead of only inside the issue body.
+// Distinct from BLOCKED_LABEL ("parked, it keeps failing") — this one is normal.
+const WAITING_LABEL = "waiting";
+
+// A ticket the Builder failed to ship too many times, parked so the Scout stops
+// re-picking it (see recordTicketFailure). `attempts:N` counts the failures.
+const BLOCKED_LABEL = "blocked";
+const ATTEMPTS_LABEL_RE = /^attempts:(\d+)$/;
+
+// Not every issue is work.
+//
+// The pipeline files three kinds of issue that describe something rather than
+// ask for it, and the Devs must never pick one up and try to build it:
+//
+//   playtest — an experience the Playtester had ("the page felt static for the
+//              first minute"). The Product Manager answers each with real
+//              tickets, or drops it; an answered one stays open until the
+//              Playtester says whether the experience changed.
+//   health   — a diagnostic about the PIPELINE, addressed to whoever maintains
+//              it. Nothing in docs/ can fix "the changelog stopped growing".
+//   digest   — the weekly report.
+//
+// The last two are now published as Discussions rather than issues, which is a
+// better fit and removes the problem at the source. These stay because issues
+// filed under the old behaviour are still open, and because a label can always be
+// added by hand — a guard that costs a set lookup is cheaper than the build it
+// would otherwise waste.
+//
+// Left buildable, each is a ticket the Devs engage, fail to satisfy, and
+// eventually park — spending two builds to discover the issue was never a
+// request.
+export const PLAYTEST_LABEL = "playtest";
+const HEALTH_LABEL = "health";
+const DIGEST_LABEL = "digest";
+
+// The color each label is created in, whichever code path adds it first: the
+// creation uses --force, so a label first added with the wrong color would keep it.
+const LABEL_COLORS = {
+  [TECH_DEBT_LABEL]: "d4c5f9",
+  [PRIORITY_LABELS.high]: "d73a4a",
+  [PRIORITY_LABELS.medium]: "fbca04",
+  [PRIORITY_LABELS.low]: "0e8a16",
+  [GROOMED_LABEL]: "0075ca",
+  // Muted grey-blue: waiting is a normal state, not a warning.
+  [WAITING_LABEL]: "c5def5",
+  [BLOCKED_LABEL]: "b60205",
+};
+const ATTEMPTS_COLOR = "e4b8b8";
+const DEFAULT_LABEL_COLOR = "ededed";
+
+function labelColor(name) {
+  if (ATTEMPTS_LABEL_RE.test(name)) return ATTEMPTS_COLOR;
+  return LABEL_COLORS[name] ?? DEFAULT_LABEL_COLOR;
+}
+
+/** An issue's label names as plain strings (gh returns objects; humans add strings). */
+export function labelNames(issue) {
+  return (issue?.labels || []).map((l) => l.name || l);
+}
 
 /**
  * An issue a person filed, rather than the pipeline.
@@ -36,8 +120,6 @@ export function rewriteIssueBody(issueNumber, body) {
     return false;
   }
 }
-// Marks Builder-filed code-health tickets so the PM (and humans) can spot them.
-export const TECH_DEBT_LABEL = "tech-debt";
 
 /**
  * True when an open ticket already carries this title, whatever state it is in.
@@ -54,11 +136,11 @@ export function isAlreadyTracked(title, openIssues) {
 }
 
 const _ensuredLabels = new Set();
-function ensureLabel(name, color = "ededed") {
+function ensureLabel(name) {
   if (_ensuredLabels.has(name)) return;
   _ensuredLabels.add(name);
   try {
-    ghExec(["label", "create", name, "--color", color, "--force"]);
+    ghExec(["label", "create", name, "--color", labelColor(name), "--force"]);
   } catch {
     // exists / no perms — non-fatal
   }
@@ -67,17 +149,18 @@ function ensureLabel(name, color = "ededed") {
 /**
  * Add and remove labels on an issue in one edit, creating any added label first —
  * `gh issue edit --add-label` refuses a label the repository does not have yet.
- * Best-effort; returns whether the edit landed.
+ * Best-effort; returns whether the edit landed. `failure` is what the log says
+ * when it does not.
  */
-export function editIssueLabels(issueNumber, { add = [], remove = [] } = {}) {
-  add.forEach((name) => ensureLabel(name));
+export function editIssueLabels(issueNumber, { add = [], remove = [], failure = `Could not relabel #${issueNumber}.` } = {}) {
+  add.forEach(ensureLabel);
   const edits = [...add.flatMap((name) => ["--add-label", name]), ...remove.flatMap((name) => ["--remove-label", name])];
   if (!edits.length) return true;
   try {
     ghExec(["issue", "edit", String(issueNumber), ...edits]);
     return true;
   } catch (e) {
-    log("warn", `Could not relabel #${issueNumber}.`, errorData(e));
+    log("warn", failure, errorData(e));
     return false;
   }
 }
@@ -89,7 +172,7 @@ export function editIssueLabels(issueNumber, { add = [], remove = [] } = {}) {
  */
 export function createIssue(title, body, labels = []) {
   const all = [AGENT_LABEL, ...labels];
-  all.forEach((l) => ensureLabel(l, l === TECH_DEBT_LABEL ? "d4c5f9" : "ededed"));
+  all.forEach(ensureLabel);
   const labelArgs = all.flatMap((l) => ["--label", l]);
   try {
     const out = ghExec(
@@ -106,22 +189,9 @@ export function createIssue(title, body, labels = []) {
   }
 }
 
-// Priority is expressed as a single label so it shows on board cards and is
-// visible to the Builder via the issue's labels.
-export const PRIORITY_LABELS = { high: "priority:high", medium: "priority:medium", low: "priority:low" };
-
 /** Ensure the priority labels and the `agent` marker label exist. Best-effort, idempotent. */
 export function ensurePriorityLabels() {
-  const labels = [
-    [PRIORITY_LABELS.high, "d73a4a"],
-    [PRIORITY_LABELS.medium, "fbca04"],
-    [PRIORITY_LABELS.low, "0e8a16"],
-    [AGENT_LABEL, "ededed"],
-    // Muted grey-blue: waiting is a normal state, not a warning.
-    [WAITING_LABEL, "c5def5"],
-    [GROOMED_LABEL, "0075ca"],
-  ];
-  for (const [name, color] of labels) ensureLabel(name, color);
+  [...Object.values(PRIORITY_LABELS), AGENT_LABEL, WAITING_LABEL, GROOMED_LABEL].forEach(ensureLabel);
 }
 
 /**
@@ -135,17 +205,10 @@ export function setIssuePriority(issueNumber, priority, currentLabels = []) {
     log("warn", `Priority: unknown level "${priority}" for #${issueNumber}.`);
     return false;
   }
-  const removes = Object.values(PRIORITY_LABELS)
-    .filter((l) => l !== target && currentLabels.includes(l))
-    .flatMap((l) => ["--remove-label", l]);
-  try {
-    ghExec(["issue", "edit", String(issueNumber), "--add-label", target, ...removes]);
-    log("info", `Priority: #${issueNumber} → ${priority}.`);
-    return true;
-  } catch (e) {
-    log("warn", `Could not set priority on #${issueNumber}.`, errorData(e));
-    return false;
-  }
+  const remove = Object.values(PRIORITY_LABELS).filter((label) => label !== target && currentLabels.includes(label));
+  const landed = editIssueLabels(issueNumber, { add: [target], remove, failure: `Could not set priority on #${issueNumber}.` });
+  if (landed) log("info", `Priority: #${issueNumber} → ${priority}.`);
+  return landed;
 }
 
 // ---------------------------------------------------------------------------
@@ -157,14 +220,6 @@ export function setIssuePriority(issueNumber, priority, currentLabels = []) {
 // label) and, once it crosses a threshold, park it with `blocked` — the Builder
 // skips blocked tickets, and the Product Manager splits or retires them.
 // ---------------------------------------------------------------------------
-
-const BLOCKED_LABEL = "blocked";
-const ATTEMPTS_LABEL_RE = /^attempts:(\d+)$/;
-
-/** An issue's label names as plain strings (gh returns objects; humans add strings). */
-export function labelNames(issue) {
-  return (issue?.labels || []).map((l) => l.name || l);
-}
 
 /** Cumulative failed-attempt count the Builder has recorded on an issue (0 if none). */
 export function attemptCount(issue) {
@@ -273,32 +328,7 @@ export function isConfirmedRetired(number) {
   return dependencyOutcome(number) === "retired";
 }
 
-// Not every issue is work.
-//
-// The pipeline files three kinds of issue that describe something rather than
-// ask for it, and the Devs must never pick one up and try to build it:
-//
-//   playtest — an experience the Playtester had ("the page felt static for the
-//              first minute"). The Product Manager answers each with real
-//              tickets, or drops it; an answered one stays open until the
-//              Playtester says whether the experience changed.
-//   health   — a diagnostic about the PIPELINE, addressed to whoever maintains
-//              it. Nothing in docs/ can fix "the changelog stopped growing".
-//   digest   — the weekly report.
-//
-// The last two are now published as Discussions rather than issues, which is a
-// better fit and removes the problem at the source. These stay because issues
-// filed under the old behaviour are still open, and because a label can always be
-// added by hand — a guard that costs a set lookup is cheaper than the build it
-// would otherwise waste.
-//
-// Left buildable, each is a ticket the Devs engage, fail to satisfy, and
-// eventually park — spending two builds to discover the issue was never a
-// request.
-export const PLAYTEST_LABEL = "playtest";
-const HEALTH_LABEL = "health";
-const DIGEST_LABEL = "digest";
-
+// Issues that describe something rather than ask for it — see PLAYTEST_LABEL.
 const NON_WORK_LABELS = new Set([PLAYTEST_LABEL, HEALTH_LABEL, DIGEST_LABEL]);
 
 /** An issue that reports something rather than asking for work. */
@@ -314,18 +344,7 @@ export function isPlaytestFeedback(issue) {
   return labelNames(issue).includes(PLAYTEST_LABEL);
 }
 
-// The Product Manager's mark that a ticket is ready to build: it says what the
-// player gets, how to tell it shipped, and where it sits in the queue. Only the
-// PM's run applies it (see product-manager.mjs). Everyone else — the Tech Lead,
-// the Builder's tech debt, the Playtester, a person — files tickets without it.
-//
-// Before this, any open ticket was buildable the moment it was filed. A Tech Lead
-// ticket filed on Thursday morning could be built that afternoon with no
-// priority and no player-facing description, and tickets written from the App
-// Review read like the checker — selectors and CSS properties as acceptance
-// criteria — because nothing stood between whoever filed them and the Devs.
-export const GROOMED_LABEL = "groomed";
-
+/** Groomed by the Product Manager — see GROOMED_LABEL. */
 export function isGroomed(issue) {
   return labelNames(issue).includes(GROOMED_LABEL);
 }
@@ -351,7 +370,7 @@ const PRIORITY_RANK = {
 
 /** A ticket's own priority as a sortable rank; unlabelled sorts last. */
 export function priorityRank(issue) {
-  const names = (issue.labels || []).map((l) => l.name || l);
+  const names = labelNames(issue);
   for (const [label, rank] of Object.entries(PRIORITY_RANK)) {
     if (names.includes(label)) return rank;
   }
@@ -428,11 +447,6 @@ export function dependencyLine(numbers) {
   return deps.length ? `Blocked by: ${deps.map((n) => `#${n}`).join(", ")}` : "";
 }
 
-// Shown on tickets whose prerequisites haven't shipped, so the board answers
-// "why isn't this moving?" at a glance instead of only inside the issue body.
-// Distinct from BLOCKED_LABEL ("parked, it keeps failing") — this one is normal.
-const WAITING_LABEL = "waiting";
-
 /**
  * Reconcile the `waiting` label across the open backlog: add it to tickets with
  * unmet dependencies, remove it from tickets that have been released. Derived
@@ -452,16 +466,15 @@ export function syncWaitingLabels(openIssues) {
     const waiting = unmetDependencies(issue, openNumbers).length > 0;
     const labelled = labelNames(issue).includes(WAITING_LABEL);
     if (waiting === labelled) continue;
-    const flag = waiting ? "--add-label" : "--remove-label";
-    try {
-      ghExec(["issue", "edit", String(issue.number), flag, WAITING_LABEL]);
-      changed++;
-      log("info", waiting
-        ? `#${issue.number} labelled ${WAITING_LABEL} (waits on ${unmetDependencies(issue, openNumbers).map((d) => `#${d}`).join(", ")}).`
-        : `#${issue.number} released — ${WAITING_LABEL} label removed.`);
-    } catch (e) {
-      log("warn", `Could not update the ${WAITING_LABEL} label on #${issue.number}.`, errorData(e));
-    }
+    const landed = editIssueLabels(issue.number, {
+      [waiting ? "add" : "remove"]: [WAITING_LABEL],
+      failure: `Could not update the ${WAITING_LABEL} label on #${issue.number}.`,
+    });
+    if (!landed) continue;
+    changed++;
+    log("info", waiting
+      ? `#${issue.number} labelled ${WAITING_LABEL} (waits on ${unmetDependencies(issue, openNumbers).map((d) => `#${d}`).join(", ")}).`
+      : `#${issue.number} released — ${WAITING_LABEL} label removed.`);
   }
   return changed;
 }
@@ -478,17 +491,12 @@ export function recordTicketFailure(issue, reason, maxAttempts) {
 
   const current = attemptCount(issue);
   const next = current + 1;
-  const nextLabel = `attempts:${next}`;
-  ensureLabel(nextLabel, "e4b8b8");
-
-  const edits = ["--add-label", nextLabel];
-  const prevLabel = `attempts:${current}`;
-  if (current > 0 && labelNames(issue).includes(prevLabel)) edits.push("--remove-label", prevLabel);
-  try {
-    ghExec(["issue", "edit", String(number), ...edits]);
-  } catch (e) {
-    log("warn", `Could not bump attempt count on #${number}.`, errorData(e));
-  }
+  const previousLabel = `attempts:${current}`;
+  editIssueLabels(number, {
+    add: [`attempts:${next}`],
+    remove: current > 0 && labelNames(issue).includes(previousLabel) ? [previousLabel] : [],
+    failure: `Could not bump attempt count on #${number}.`,
+  });
 
   if (next >= maxAttempts) {
     parkBlockedTicket(number, next, reason, labelNames(issue));
@@ -499,12 +507,7 @@ export function recordTicketFailure(issue, reason, maxAttempts) {
 }
 
 function parkBlockedTicket(number, attempts, reason, currentLabels) {
-  ensureLabel(BLOCKED_LABEL, "b60205");
-  try {
-    ghExec(["issue", "edit", String(number), "--add-label", BLOCKED_LABEL]);
-  } catch (e) {
-    log("warn", `Could not block #${number}.`, errorData(e));
-  }
+  editIssueLabels(number, { add: [BLOCKED_LABEL], failure: `Could not block #${number}.` });
   // Demote so it sinks even if a human later unblocks it without re-triaging.
   setIssuePriority(number, "low", currentLabels);
 
