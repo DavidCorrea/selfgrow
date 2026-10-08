@@ -91,7 +91,7 @@ const PINNED_TICKET = Number(process.env.TICKET_NUMBER || 0) || null;
 
 const MAX_TICKETS_PER_RUN = PINNED_TICKET
   ? 1
-  : Number(process.env.MAX_TICKETS_PER_RUN || 3);
+  : Number(process.env.MAX_TICKETS_PER_RUN || 6);
 const RUN_BUDGET_MS = Number(process.env.BUILD_RUN_BUDGET_MINUTES || 45) * 60 * 1000;
 
 // The Builder's own session caps. The shared 40 turns / 12 minutes was sized for
