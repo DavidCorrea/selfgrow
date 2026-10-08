@@ -304,6 +304,44 @@ export function toolInputs(declared) {
 }
 
 /**
+ * What the keyboard alone can reach, in the order it reaches it. The Vision
+ * makes screen-reader visitors first-class, so "can you get to the state layer
+ * without a mouse" is a question about the product, not a checklist.
+ */
+async function walkTabOrder(page) {
+  const tabOrder = [];
+  for (let stop = 0; stop < 8; stop++) {
+    await page.keyboard.press("Tab");
+    const focused = await page.evaluate(() => {
+      const el = document.activeElement;
+      if (!el || el === document.body) return null;
+      const id = el.id ? `#${el.id}` : "";
+      return `${el.tagName.toLowerCase()}${id}: ${(el.innerText || el.getAttribute("aria-label") || "").trim().slice(0, 60)}`;
+    });
+    if (!focused) break;
+    if (tabOrder.includes(focused)) break; // wrapped around
+    tabOrder.push(focused);
+  }
+  return tabOrder;
+}
+
+/**
+ * The actual sit-and-watch. Each sample is what the state layer would tell
+ * someone who asked "what's happening now?" at that moment.
+ */
+async function watch(page) {
+  const timeline = [];
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < OBSERVATION_MS) {
+    await page.waitForTimeout(SAMPLE_EVERY_MS);
+    const seconds = Math.round((Date.now() - startedAt) / 1000);
+    const { state } = await page.evaluate(readPage);
+    timeline.push({ atSeconds: seconds, state });
+  }
+  return timeline;
+}
+
+/**
  * Sit with the app and write down what it says over time.
  *
  * Returns null when there is nothing to play — no product yet, or no browser —
@@ -353,33 +391,8 @@ export async function observeApp() {
 
     const opening = await page.evaluate(readPage);
 
-    // What the keyboard alone can reach, in the order it reaches it. The Vision
-    // makes screen-reader visitors first-class, so "can you get to the state
-    // layer without a mouse" is a question about the product, not a checklist.
-    const tabOrder = [];
-    for (let stop = 0; stop < 8; stop++) {
-      await page.keyboard.press("Tab");
-      const focused = await page.evaluate(() => {
-        const el = document.activeElement;
-        if (!el || el === document.body) return null;
-        const id = el.id ? `#${el.id}` : "";
-        return `${el.tagName.toLowerCase()}${id}: ${(el.innerText || el.getAttribute("aria-label") || "").trim().slice(0, 60)}`;
-      });
-      if (!focused) break;
-      if (tabOrder.includes(focused)) break; // wrapped around
-      tabOrder.push(focused);
-    }
-
-    // The actual sit-and-watch. Each sample is what the state layer would tell
-    // someone who asked "what's happening now?" at that moment.
-    const timeline = [];
-    const startedAt = Date.now();
-    while (Date.now() - startedAt < OBSERVATION_MS) {
-      await page.waitForTimeout(SAMPLE_EVERY_MS);
-      const seconds = Math.round((Date.now() - startedAt) / 1000);
-      const { state } = await page.evaluate(readPage);
-      timeline.push({ atSeconds: seconds, state });
-    }
+    const tabOrder = await walkTabOrder(page);
+    const timeline = await watch(page);
 
     // The page as it stands when watching ends. The controls are read again
     // because they change as the game does: compared with the list from page
