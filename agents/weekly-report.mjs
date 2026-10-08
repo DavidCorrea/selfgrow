@@ -186,14 +186,14 @@ export async function publishWeeklyReport({ shipped, open, milestone, now = new 
     log("warn", "Weekly report: no story produced — leaving Story unchanged.");
   }
 
-  const url = postDiscussion({
+  const digest = postDiscussion({
     category: DIGEST_CATEGORY,
     title: digestTitle(weekStart, week.shipped.length),
     body: renderDigest(week, weekProse, milestone),
   });
-  if (!url) throw new Error(`Weekly report: the digest for the week of ${weekStart} could not be posted to ${DIGEST_CATEGORY}.`);
-  log("info", `Weekly report: published at ${url}`);
-  return url;
+  if (!digest) throw new Error(`Weekly report: the digest for the week of ${weekStart} could not be posted to ${DIGEST_CATEGORY}.`);
+  log("info", `Weekly report: published at ${digest.url}`);
+  return digest.url;
 }
 
 /**

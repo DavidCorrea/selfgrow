@@ -537,7 +537,7 @@ function publishAlert({ findings, unknown }, vitals) {
   const mention = NOTIFY_USER
     ? `${NOTIFY_USER.startsWith("@") ? NOTIFY_USER : `@${NOTIFY_USER}`} — the pipeline needs a look.\n`
     : "";
-  const url = postDiscussion({
+  const alert = postDiscussion({
     category: HEALTH_CATEGORY,
     title: `${HEALTH_TITLE_PREFIX} ${findings.length} problem(s)`,
     body: [
@@ -552,7 +552,7 @@ function publishAlert({ findings, unknown }, vitals) {
       "_Posted by the health check, which runs daily, stays quiet unless something breaks, and closes this by itself once nothing here is true any more._",
     ].join("\n"),
   });
-  if (url) log("warn", `Health: ${findings.length} problem(s) — ${url}`);
+  if (alert) log("warn", `Health: ${findings.length} problem(s) — ${alert.url}`);
 }
 
 async function main() {
