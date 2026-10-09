@@ -94,17 +94,6 @@ function rowsForForm(index) {
   return Math.min(MAX_ROWS, BASE_ROWS + Math.floor(index / FORMS_PER_ROW));
 }
 
-/** How many cells hold a plant: a few once anything grows, more as the form fills. */
-function plantsForForm(index, fill, cells) {
-  if (index === 0) return 0;
-  // The planted share follows the garden's position in the whole ladder — form
-  // and fill together — so a new form carries on from where the last one left
-  // off instead of emptying the soil it inherits.
-  const progress = (index + fill) / (FORMS.length - 1);
-  const share = 0.25 + 0.6 * progress;
-  return Math.max(1, Math.min(cells - 1, Math.round(cells * share)));
-}
-
 function drawSoil(ctx, x, y, palette) {
   ctx.fillStyle = palette.soilDeep;
   ctx.fillRect(x, y, CELL, CELL);
@@ -112,6 +101,19 @@ function drawSoil(ctx, x, y, palette) {
   ctx.fillRect(x + 2, y + 2, CELL - 4, CELL - 4);
   ctx.fillStyle = palette.soilLight;
   ctx.fillRect(x + 2, y + 2, CELL - 4, 2);
+}
+
+/** A seed that has just sprouted: a low shoot on a fresh mound of soil. */
+function drawSprout(ctx, x, y, palette) {
+  const base = y + CELL;
+  const centre = x + CELL / 2;
+  ctx.fillStyle = palette.soilLight;
+  ctx.fillRect(centre - 4, base - 2, 8, 2);
+  ctx.fillStyle = palette.leafDeep;
+  ctx.fillRect(centre - 1, base - 6, 2, 5);
+  ctx.fillStyle = palette.leafLight;
+  ctx.fillRect(centre - 4, base - 6, 3, 2);
+  ctx.fillRect(centre + 2, base - 6, 3, 2);
 }
 
 /** One plant on the soil, chosen by the form and grown by how full it is. */
@@ -182,9 +184,13 @@ function drawTree(ctx, x, y, palette, index, growthTier) {
 /**
  * Draw `state`'s garden onto `canvas`, painting only with `palette`.
  *
- * The picture is a pure view of the state's growth: the same amount always
- * draws the same way, and every colour comes from the palette read off `:root`,
- * so the plot belongs to the same garden as the panels around it.
+ * The picture is a pure view of the state: the form still sets how much ground
+ * there is and how big a grown plant is, and the plot's own counts say what
+ * stands on it — the grown plants first, then the sprouting seeds, then bare
+ * soil. The same amount always draws the same way, and every colour comes from
+ * the palette read off `:root`, so the plot belongs to the same garden as the
+ * panels around it. The number of sprites is bounded by the cells on screen, so
+ * a save carrying more plants than plots cannot flood the picture.
  */
 export function drawGarden(canvas, state, palette) {
   if (!canvas || !palette) return;
@@ -202,12 +208,16 @@ export function drawGarden(canvas, state, palette) {
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, width, height);
 
-  const plants = plantsForForm(form.index, form.fill, cells);
+  const wanted = (value) => (Number.isFinite(value) && value > 0 ? Math.floor(value) : 0);
+  const plants = Math.min(cells, wanted(state && state.plants));
+  // Seeds only take the ground the grown plants have not already filled.
+  const sprouts = Math.min(cells - plants, wanted(state && state.seeds));
   const growthTier = Math.min(2, Math.floor(form.fill * 3));
   for (let cell = 0; cell < cells; cell += 1) {
     const x = (cell % COLUMNS) * CELL;
     const y = Math.floor(cell / COLUMNS) * CELL;
     drawSoil(ctx, x, y, palette);
     if (cell < plants) drawPlant(ctx, x, y, palette, form.index, growthTier);
+    else if (cell < plants + sprouts) drawSprout(ctx, x, y, palette);
   }
 }

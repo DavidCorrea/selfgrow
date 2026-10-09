@@ -24,19 +24,22 @@ export function tools() {
         "Returns everything the page shows a visitor right now: the growth " +
         "total and the rate it is climbing at (in growth per second), the " +
         "garden form the plot is drawing (its name and its index among the " +
-        "forms, lowest first), the ungrown seeds in the soil, the grown " +
-        "plants, how many plots of soil there are, the portable save string, " +
-        "and whether this browser is keeping the garden. It also returns the " +
-        "next seed: what it costs (nextSeedCost), whether the garden can " +
-        "afford it now (canPlantSeed), whether the plot is full (plotFull), " +
-        "how far along the cost the garden is as a 0-to-1 fraction " +
-        "(seedCostProgress), and the seconds until it can afford it " +
+        "forms, lowest first), the ungrown seeds sprouting in the soil, the " +
+        "grown plants, the total planted (totalPlanted), how many plots of " +
+        "soil there are (capacity), the growing time a seed takes " +
+        "(growSeconds), the seconds until the next seed matures into a plant " +
+        "(secondsToNextPlant, null when no seed is growing), the portable " +
+        "save string, and whether this browser is keeping the garden. It also " +
+        "returns the next seed: what it costs (nextSeedCost), whether the " +
+        "garden can afford it now (canPlantSeed), whether the plot is full " +
+        "(plotFull), how far along the cost the garden is as a 0-to-1 " +
+        "fraction (seedCostProgress), and the seconds until it can afford it " +
         "(secondsToNextSeed, null when full or not growing). It also reports " +
         "away: the time since the visitor was last here and what it grew — " +
-        "seconds (0 on a first visit or a quick reload), earned growth, the " +
-        "form it started at (from) and reached (to), the formsFound on the " +
-        "way, and a plain summary sentence. Ask it before acting so you know " +
-        "what the visitor sees.",
+        "seconds (0 on a first visit or a quick reload), earned growth, how " +
+        "many seeds matured (matured), the form it started at (from) and " +
+        "reached (to), the formsFound on the way, and a plain summary " +
+        "sentence. Ask it before acting so you know what the visitor sees.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
       example: {},
@@ -66,12 +69,14 @@ export function tools() {
       title: "Plant a seed",
       description:
         "Does what the page's Plant a seed button does: spends the garden's " +
-        "growth on another seed and raises the rate it keeps growing at, so " +
-        "each seed makes the number climb faster. The price rises with every " +
-        "seed planted, so get-state's nextSeedCost is what this will charge. " +
-        "It refuses, changing nothing, when the garden has not saved enough " +
-        "growth or every plot is full. Returns whether it planted, the cost, " +
-        "the reason when it refused, and the state afterwards.",
+        "growth on another seed and puts a sprouting seed in the soil. The " +
+        "sprout speeds nothing up yet — after growSeconds it matures into a " +
+        "grown plant, and it is the grown plant that raises the rate the " +
+        "garden keeps growing at. The price rises with every seed or plant " +
+        "already in the plot, so get-state's nextSeedCost is what this will " +
+        "charge. It refuses, changing nothing, when the garden has not saved " +
+        "enough growth or every plot is full. Returns whether it planted, the " +
+        "cost, the reason when it refused, and the state afterwards.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: false },
       example: {},

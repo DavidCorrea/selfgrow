@@ -13,7 +13,7 @@
  */
 
 /** The save format. Bump it only if the shape below actually changes. */
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 /** A readable marker, so a save is recognisable and the version is obvious. */
 export const SAVE_PREFIX = "SELFGROW1.";
@@ -32,6 +32,14 @@ export const LAST_SEEN_KEY = "selfgrow.garden.seen";
 
 /** How many plots of soil the garden has to plant in. */
 export const PLOT_CAPACITY = 12;
+
+/**
+ * How long a planted seed stays an ungrown sprout before it becomes a grown
+ * plant. Growth comes from plants, not seeds, so this is the wait between
+ * planting and the garden speeding up — the same wall-clock rule the growth
+ * loop uses, so a return resolves several of these in one calculation.
+ */
+export const GROW_SECONDS = 30;
 
 /** Bare soil and one ungrown seed. */
 export function newGarden() {
@@ -68,17 +76,44 @@ function assertAmount(value, field) {
 }
 
 /**
+ * The sprouting seeds a save should carry, as their remaining seconds.
+ *
+ * A live garden already holds a `sprouts` array; a caller that only knows a
+ * count of ungrown seeds (the shape the page and older code pass around) gets
+ * fresh `GROW_SECONDS` timers for each. Either way the number of plots is the
+ * bound, so a value nothing could have reached is refused rather than written.
+ */
+function sproutTimersForSave(garden) {
+  if (Array.isArray(garden.sprouts)) {
+    if (garden.sprouts.length > PLOT_CAPACITY) {
+      throw new Error(
+        `a garden can hold at most ${PLOT_CAPACITY} ungrown seeds, but this one holds ${garden.sprouts.length}.`
+      );
+    }
+    return garden.sprouts.map((timer) => (Number.isFinite(timer) && timer > 0 ? timer : 0));
+  }
+  assertCount(garden.seeds, "seeds");
+  if (garden.seeds > PLOT_CAPACITY) {
+    throw new Error(
+      `a garden can hold at most ${PLOT_CAPACITY} ungrown seeds, but this one holds ${garden.seeds}.`
+    );
+  }
+  return Array.from({ length: garden.seeds }, () => GROW_SECONDS);
+}
+
+/**
  * Turn a garden into the one string a player can copy out and paste back.
  *
- * @returns {string} e.g. `SELFGROW1.eyJ2ZXJzaW9uIjoy...`
+ * @returns {string} e.g. `SELFGROW1.eyJ2ZXJzaW9uIjoz...`
  */
 export function encodeSave(garden) {
-  assertCount(garden.seeds, "seeds");
-  assertCount(garden.plants, "plants");
+  const sprouts = sproutTimersForSave(garden);
+  assertCount(garden.plants ?? 0, "plants");
   const body = JSON.stringify({
     version: SAVE_VERSION,
-    seeds: garden.seeds,
-    plants: garden.plants,
+    seeds: sprouts.length,
+    plants: garden.plants ?? 0,
+    sprouts,
     growth: savedAmount(garden.growth),
     rate: savedAmount(garden.rate),
   });
@@ -91,10 +126,14 @@ export function encodeSave(garden) {
  * Every failure carries why it failed, because the message is shown to the
  * visitor and read by an agent deciding what to fix.
  *
- * A version-1 save — written before the garden kept its growth — is read as a
- * migration: its seeds and plants are kept and it starts with nothing grown.
+ * Older saves are read as migrations: version 1 (before growth was kept) starts
+ * with nothing grown, and in both older versions the seeds that used to speed
+ * the garden up instantly become ungrown sprouts with their full growing time
+ * left, so nothing already planted is lost. Their rate is rewritten to match:
+ * the old per-seed production is taken back out and the grown plants' production
+ * put in its place.
  *
- * @returns {{version: number, seeds: number, plants: number, growth: number, rate: number}}
+ * @returns {{version: number, seeds: number, plants: number, sprouts: number[], growth: number, rate: number}}
  * @throws {Error} when the text is empty, not a selfgrow save, damaged,
  *   the wrong version, or carries a bad plot count, growth or rate.
  */
@@ -116,19 +155,56 @@ export function decodeSave(text) {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("that save is empty or the wrong shape.");
   }
-  if (parsed.version !== 1 && parsed.version !== SAVE_VERSION) {
+  if (parsed.version !== 1 && parsed.version !== 2 && parsed.version !== SAVE_VERSION) {
     throw new Error(
       `that save is version ${JSON.stringify(parsed.version)}, but this garden reads version ${SAVE_VERSION}.`
     );
   }
-  assertCount(parsed.seeds, "seeds");
   assertCount(parsed.plants, "plants");
+  const sprouts = readSproutsFromSave(parsed);
   // Version 1 had no growth of its own; migrating it starts with nothing grown.
   const growth = parsed.version === 1 ? 0 : parsed.growth;
-  const rate = parsed.version === 1 ? 0 : parsed.rate;
+  let rate = parsed.version === 1 ? 0 : parsed.rate;
   assertAmount(growth, "growth");
   assertAmount(rate, "rate");
-  return { version: SAVE_VERSION, seeds: parsed.seeds, plants: parsed.plants, growth, rate };
+  // Before version 3 every planted seed sped the garden up at once. Take that
+  // production back out and let the grown plants carry it instead, so migrating
+  // neither grants growth for free nor takes away what the visitor earned.
+  if (parsed.version < SAVE_VERSION) {
+    rate = Math.max(0, rate - PLANT_PRODUCTION * parsed.seeds) + PLANT_PRODUCTION * parsed.plants;
+  }
+  return { version: SAVE_VERSION, seeds: sprouts.length, plants: parsed.plants, sprouts, growth, rate };
+}
+
+/**
+ * The ungrown seeds a save carries, as an array of seconds left to grow.
+ *
+ * Version 3 writes the timers it has; older saves only carry a count, and each
+ * of those seeds wakes as a fresh sprout with its whole growing time left.
+ */
+function readSproutsFromSave(parsed) {
+  if (Array.isArray(parsed.sprouts)) {
+    if (parsed.sprouts.length > PLOT_CAPACITY) {
+      throw new Error(
+        `the save has ${parsed.sprouts.length} ungrown seeds, but the garden has only ${PLOT_CAPACITY} plots.`
+      );
+    }
+    return parsed.sprouts.map((timer, index) => {
+      if (typeof timer !== "number" || !Number.isFinite(timer) || timer < 0) {
+        throw new Error(
+          `the save's ungrown seed ${index} must be a number of seconds of 0 or more, but it is ${JSON.stringify(timer)}.`
+        );
+      }
+      return timer;
+    });
+  }
+  assertCount(parsed.seeds, "seeds");
+  if (parsed.seeds > PLOT_CAPACITY) {
+    throw new Error(
+      `the save has ${parsed.seeds} ungrown seeds, but the garden has only ${PLOT_CAPACITY} plots.`
+    );
+  }
+  return Array.from({ length: parsed.seeds }, () => GROW_SECONDS);
 }
 
 /** The browser's store, or null when it cannot even be reached. */
@@ -232,7 +308,10 @@ export function elapsedSeconds(lastSeenMs, nowMs) {
 
 // --- The live garden ---------------------------------------------------------
 
-let garden = newGarden();
+// The live garden: the ungrown seeds as their remaining seconds, and the grown
+// plants. `seeds` is the length of `sprouts` and is never stored separately, so
+// a seed becoming a plant is one move between the two.
+let garden = { version: SAVE_VERSION, sprouts: [GROW_SECONDS], plants: 0 };
 const listeners = new Set();
 
 /** Tell everyone watching that the garden moved. */
@@ -241,14 +320,43 @@ function notify() {
   for (const listener of listeners) listener(snapshot);
 }
 
-/** A copy of the current garden. */
+/**
+ * A copy of the current garden: the ungrown seed count (and their timers) plus
+ * the grown plants. Growth and rate live beside this (see `getGrowthState`).
+ */
 export function getGarden() {
-  return { ...garden };
+  return {
+    version: garden.version,
+    seeds: garden.sprouts.length,
+    plants: garden.plants,
+    sprouts: [...garden.sprouts],
+  };
 }
 
-/** Replace the garden and tell everyone who is watching. */
+/** A whole count of 0 or more, capped at `limit`. Anything else counts as zero. */
+function wholeCount(value, limit) {
+  if (!Number.isInteger(value) || value < 0) return 0;
+  return Math.min(value, limit);
+}
+
+/**
+ * Replace the garden and tell everyone who is watching.
+ *
+ * `next` may carry the ungrown seeds either as a `sprouts` array of seconds or
+ * as a `seeds` count; a bare count becomes that many fresh `GROW_SECONDS`
+ * sprouts. Either way the plot's capacity is the bound.
+ */
 export function setGarden(next) {
-  garden = { version: SAVE_VERSION, seeds: next.seeds, plants: next.plants };
+  const hasTimers = Array.isArray(next.sprouts);
+  const maturedEarly = hasTimers ? next.sprouts.filter((t) => Number.isFinite(t) && t <= 0).length : 0;
+  const sprouts = hasTimers
+    ? next.sprouts.filter((t) => Number.isFinite(t) && t > 0).slice(0, PLOT_CAPACITY)
+    : Array.from({ length: wholeCount(next.seeds, PLOT_CAPACITY) }, () => GROW_SECONDS);
+  garden = {
+    version: SAVE_VERSION,
+    sprouts,
+    plants: wholeCount(next.plants, Number.MAX_SAFE_INTEGER) + maturedEarly,
+  };
   notify();
 }
 
@@ -300,13 +408,39 @@ export function tend() {
 }
 
 /**
- * Let the garden grow for `seconds` at the current rate, in one step. Elapsed
- * time is the only input, so a timer that a hidden tab slowed or skipped still
- * catches up exactly when it next runs. A zero, negative or non-finite span
- * grows nothing.
+ * Let the garden grow for `seconds`, and let every seed that is due mature.
+ *
+ * Elapsed time is the only input, so a timer a hidden tab slowed or skipped
+ * still catches up exactly when it next runs. The span is walked by jumping to
+ * the next seed that matures, so a month away resolves in at most one step per
+ * plot in the garden rather than one per tick: played and offline time land in
+ * the same place, with no cap on how long the absence was. A zero, negative or
+ * non-finite span grows nothing.
  */
 export function advance(seconds) {
-  if (Number.isFinite(seconds) && seconds > 0) growth += rate * seconds;
+  if (!(Number.isFinite(seconds) && seconds > 0)) {
+    notify();
+    return getGrowthState();
+  }
+
+  let remaining = seconds;
+  // Each pass matures at least one seed, so the passes are bounded by the plots.
+  for (let pass = 0; remaining > 0 && pass <= PLOT_CAPACITY; pass += 1) {
+    const nextSprout = garden.sprouts.length ? Math.min(...garden.sprouts) : Infinity;
+    const gap = Math.min(remaining, nextSprout);
+    growth += rate * gap;
+    remaining -= gap;
+    if (garden.sprouts.length) {
+      garden.sprouts = garden.sprouts.map((timer) => Math.max(0, timer - gap));
+      const matured = garden.sprouts.filter((timer) => timer <= 0).length;
+      if (matured > 0) {
+        garden.sprouts = garden.sprouts.filter((timer) => timer > 0);
+        garden.plants += matured;
+        rate += matured * PLANT_PRODUCTION;
+      }
+    }
+    if (!(gap > 0)) break;
+  }
   notify();
   return getGrowthState();
 }
@@ -314,43 +448,47 @@ export function advance(seconds) {
 // --- Planting a seed ---------------------------------------------------------
 //
 // The first place one system touches another: a seed costs the growth the soil
-// loop earns, and the seed it plants raises the rate the garden keeps growing
-// at. The price rises with every seed already in the soil, so each next one is
-// a little further away, while production rises by a fixed step, so the wait
-// stays a goal rather than a wall.
+// loop earns, and lands in the soil as a sprout. The sprout does not speed the
+// garden up — only a grown plant produces — so the rate rises when a plant
+// matures, a little after the seed is paid for. The price rises with every seed
+// or plant already in the plot, so each next one is a little further away, while
+// production rises by a fixed step per plant, so the wait stays a goal rather
+// than a wall.
 
 /** What the first seed costs, and how fast the price climbs after that. */
 export const SEED_COST_BASE = 5;
 export const SEED_COST_RATE = 1.15;
 
-/** How much faster the garden grows for each seed in the soil. */
-export const SEED_PRODUCTION = 0.5;
+/** How much faster the garden grows for each grown plant. */
+export const PLANT_PRODUCTION = 0.5;
 
 /**
- * What the next seed costs when `seeds` are already in the soil.
+ * What the next seed costs when `planted` seeds and plants already fill the plot.
  *
- * Strictly increasing in the seed count. The exponential passes what a number
- * can hold at a seed count nothing will reach, but a save that somehow carries
- * one still has to render a finite price, so the result is capped at
- * `Number.MAX_SAFE_INTEGER` rather than left as `Infinity`.
+ * Strictly increasing in the planted count, so a sprouting seed never makes the
+ * next one cheaper. The exponential passes what a number can hold at a count
+ * nothing will reach, but a save that somehow carries one still has to render a
+ * finite price, so the result is capped at `Number.MAX_SAFE_INTEGER` rather than
+ * left as `Infinity`.
  */
-export function nextSeedCost(seeds) {
-  const count = Number.isFinite(seeds) && seeds > 0 ? Math.floor(seeds) : 0;
+export function nextSeedCost(planted) {
+  const count = Number.isFinite(planted) && planted > 0 ? Math.floor(planted) : 0;
   const cost = Math.ceil(SEED_COST_BASE * SEED_COST_RATE ** count);
   return Number.isFinite(cost) ? Math.min(cost, Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
 }
 
 /**
- * Plant a seed: spend growth for it, and shorten the wait for the next one by
- * raising the rate the garden grows at. Refuses with a reason when the plot is
- * full or the garden has not saved enough growth, and changes nothing when it
- * refuses.
+ * Plant a seed: spend growth for it, and put a sprouting seed in the soil that
+ * will become a grown plant after `GROW_SECONDS`. The rate does not change yet —
+ * it rises when the seed matures. Refuses with a reason when the plot is full or
+ * the garden has not saved enough growth, and changes nothing when it refuses.
  *
  * @returns {{ok: boolean, reason: string|null, cost: number}}
  */
 export function plantSeed() {
-  const cost = nextSeedCost(garden.seeds);
-  if (garden.seeds >= PLOT_CAPACITY) {
+  const planted = garden.sprouts.length + garden.plants;
+  const cost = nextSeedCost(planted);
+  if (planted >= PLOT_CAPACITY) {
     return { ok: false, reason: "the plot is full", cost };
   }
   if (growth < cost) {
@@ -358,8 +496,7 @@ export function plantSeed() {
   }
 
   growth -= cost;
-  rate += SEED_PRODUCTION;
-  garden = { ...garden, seeds: garden.seeds + 1 };
+  garden = { ...garden, sprouts: [...garden.sprouts, GROW_SECONDS] };
   writeStoredGarden(garden);
   notify();
   return { ok: true, reason: null, cost };

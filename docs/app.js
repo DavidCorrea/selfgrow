@@ -12,6 +12,7 @@
  */
 
 import {
+  GROW_SECONDS,
   PLOT_CAPACITY,
   STORAGE_KEY,
   advance,
@@ -60,6 +61,7 @@ const elements = {
   seeds: document.querySelector('[data-field="seeds"]'),
   plants: document.querySelector('[data-field="plants"]'),
   capacity: document.querySelector('[data-field="capacity"]'),
+  nextPlant: document.querySelector('[data-field="next-plant"]'),
   storage: document.querySelector('[data-field="storage"]'),
   plot: document.getElementById("garden-plot"),
   description: document.getElementById("plot-description"),
@@ -118,16 +120,20 @@ export function getDisplayedState() {
   const garden = getGarden();
   const { growth, rate } = getGrowthState();
   const form = gardenForm(growth);
-  const seedCost = nextSeedCost(garden.seeds);
-  const plotFull = garden.seeds >= PLOT_CAPACITY;
+  const planted = garden.seeds + garden.plants;
+  const seedCost = nextSeedCost(planted);
+  const plotFull = planted >= PLOT_CAPACITY;
   return {
     seeds: garden.seeds,
     plants: garden.plants,
+    totalPlanted: planted,
     growth,
     rate,
     form: form.index,
     formName: form.name,
     capacity: PLOT_CAPACITY,
+    growSeconds: GROW_SECONDS,
+    secondsToNextPlant: secondsToNextPlant(garden.sprouts),
     nextSeedCost: seedCost,
     canPlantSeed: !plotFull && growth >= seedCost,
     plotFull,
@@ -139,6 +145,12 @@ export function getDisplayedState() {
   };
 }
 
+/** How long until the soonest ungrown seed becomes a plant, or null if none. */
+function secondsToNextPlant(sprouts) {
+  if (!Array.isArray(sprouts) || !sprouts.length) return null;
+  return Math.max(0, Math.min(...sprouts));
+}
+
 /** The one portable string a player can copy out of the page. */
 export function exportSave() {
   return encodeSave({ ...getGarden(), ...getGrowthState() });
@@ -146,10 +158,10 @@ export function exportSave() {
 
 // --- Time away ---------------------------------------------------------------
 //
-// The live growth and rate travel in the save, and the moment the visitor left
-// travels beside it. Coming back, the whole gap is counted with the same rule a
-// tick uses — one multiplication by the rate — so a month away finishes at once
-// and lands exactly where a month played would.
+// The live growth, rate and sprout timers travel in the save, and the moment
+// the visitor left travels beside it. Coming back, the whole gap is walked with
+// the same rule a tick uses — jumping straight to each seed that matures — so a
+// month away finishes at once and lands exactly where a month played would.
 
 /** The last return this visit, for `get-state`, or null before the first one. */
 let lastReturn = null;
@@ -185,8 +197,12 @@ function formatAway(seconds) {
 export function summarizeReturn(away) {
   if (!away || !(away.seconds > 0)) return "The garden is as you left it.";
 
+  const matured = away.matured > 0
+    ? ` ${countLabel(away.matured, "seed", "seeds")} matured into ` +
+      `${countLabel(away.matured, "plant", "plants")}.`
+    : "";
   const grown = `While you were away ${formatAway(away.seconds)}, the garden earned ` +
-    `${growthFormat.format(away.earned)} growth and is now ${away.form}.`;
+    `${growthFormat.format(away.earned)} growth and is now ${away.form}.` + matured;
 
   // "What was found": the forms the absence grew it into, named at the top.
   let found = "";
@@ -207,11 +223,12 @@ export function summarizeReturn(away) {
  * Count the time since `lastSeenMs` against `saved`'s growth and rate, with no
  * cap, and put the garden where that much played time would have left it.
  *
- * @param {{seeds: number, plants: number, growth: number, rate: number}} saved
+ * @param {{seeds: number, plants: number, sprouts: number[], growth: number, rate: number}} saved
  * @param {number|null} lastSeenMs
  * @param {number} nowMs
- * @returns {object} the `away` report: the span, what it earned and grew into,
- *   the summary sentence, and what to reach for next.
+ * @returns {object} the `away` report: the span, what it earned and grew into
+ *   (including how many seeds matured), the summary sentence, and what to
+ *   reach for next.
  */
 export function applyReturn(saved, lastSeenMs, nowMs) {
   const seconds = elapsedSeconds(lastSeenMs, nowMs);
@@ -220,14 +237,18 @@ export function applyReturn(saved, lastSeenMs, nowMs) {
   const fromForm = gardenForm(startGrowth);
 
   setGrowth(startGrowth, startRate);
+  const plantsBefore = getGarden().plants;
   advance(seconds);
+  const matured = getGarden().plants - plantsBefore;
 
   const growth = getGrowthState().growth;
+  const endGarden = getGarden();
   const toForm = gardenForm(growth);
   const nextIndex = toForm.index + 1;
   const away = {
     seconds,
     earned: growth - startGrowth,
+    matured,
     from: fromForm.index,
     fromName: fromForm.name,
     to: toForm.index,
@@ -236,7 +257,7 @@ export function applyReturn(saved, lastSeenMs, nowMs) {
     growth,
     nextFormName: nextIndex < FORMS.length ? FORMS[nextIndex].name : null,
     growthToNextForm: Math.max(0, toForm.nextAt - growth),
-    nextSeedCost: nextSeedCost(getGarden().seeds),
+    nextSeedCost: nextSeedCost(endGarden.seeds + endGarden.plants),
   };
   away.summary = summarizeReturn(away);
 
@@ -296,13 +317,21 @@ function formatDuration(seconds) {
 /** The next seed as words: always how far away it is, never only its price. */
 function describeGoal(state) {
   const cost = numberFormat.format(state.nextSeedCost);
-  if (state.plotFull) return `All ${numberFormat.format(state.capacity)} plots hold a seed.`;
-  if (state.canPlantSeed) return `Ready to plant — ${cost} growth saved.`;
-  if (!(state.rate > 0)) return `Tend the soil to grow faster — ${cost} growth needed.`;
+  const ripening =
+    state.secondsToNextPlant == null ? "" : ` Next plant matures in ${formatDuration(state.secondsToNextPlant)}.`;
+  if (state.plotFull) return `All ${numberFormat.format(state.capacity)} plots hold a seed or plant.${ripening}`;
+  if (state.canPlantSeed) return `Ready to plant — ${cost} growth saved.${ripening}`;
+  if (!(state.rate > 0)) return `Tend the soil to grow faster — ${cost} growth needed.${ripening}`;
   return (
     `${growthFormat.format(state.growth)} / ${cost} growth — about ` +
-    `${formatDuration(state.secondsToNextSeed)} at +${growthFormat.format(state.rate)}/s.`
+    `${formatDuration(state.secondsToNextSeed)} at +${growthFormat.format(state.rate)}/s.${ripening}`
   );
+}
+
+/** The next plant maturing, as words, for the readout beside the numbers. */
+function describeNextPlant(state) {
+  if (state.secondsToNextPlant == null) return "none growing";
+  return `${formatDuration(state.secondsToNextPlant)} / ${formatDuration(state.growSeconds)}`;
 }
 
 /** The Plant a seed button, the goal it is reaching for, and the meter between. */
@@ -313,7 +342,7 @@ function renderPlanting(state) {
 
   setText(
     elements.goalTitle,
-    state.plotFull ? "Every plot holds a seed" : `Plant seed #${numberFormat.format(state.seeds + 1)}`
+    state.plotFull ? "Every plot holds a seed or plant" : `Plant seed #${numberFormat.format(state.totalPlanted + 1)}`
   );
   if (elements.meter) elements.meter.setAttribute("aria-valuenow", String(state.seedCostProgress));
   if (elements.meterFill) elements.meterFill.style.width = `${(state.seedCostProgress * 100).toFixed(1)}%`;
@@ -331,8 +360,8 @@ function plantSeedFromButton() {
     return;
   }
   announce(
-    `Planted a seed for ${numberFormat.format(result.cost)} growth — the garden now grows at ` +
-      `+${growthFormat.format(getGrowthState().rate)}/s.`
+    `Planted a seed for ${numberFormat.format(result.cost)} growth — it will grow into a plant in ` +
+      `${formatDuration(GROW_SECONDS)}.`
   );
 }
 
@@ -350,6 +379,7 @@ function render() {
   setText(elements.seeds, numberFormat.format(state.seeds));
   setText(elements.plants, numberFormat.format(state.plants));
   setText(elements.capacity, numberFormat.format(state.capacity));
+  setText(elements.nextPlant, describeNextPlant(state));
   setText(elements.storage, state.storageAvailable ? "Yes" : "No");
   setText(elements.description, describePlot(state));
   renderPlanting(state);
@@ -361,7 +391,7 @@ function render() {
 
   // The picture follows the growth, not the stored garden, so it redraws when
   // the amount or the form it falls in changes — and stays put when nothing does.
-  const plotKey = `${state.form}:${state.growth}`;
+  const plotKey = `${state.form}:${state.growth}:${state.seeds}:${state.plants}`;
   if (plotKey !== lastPlotKey) {
     drawGarden(elements.plot, state, readPalette());
     lastPlotKey = plotKey;
