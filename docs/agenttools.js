@@ -34,6 +34,9 @@ export function tools() {
       description:
         "Returns everything the page shows a visitor right now: the growth " +
         "total and the rate it is climbing at (in growth per second), the " +
+        "season the garden's age falls in (season: its key, name and growth " +
+        "multiplier — the cycle repeats on its own and no season grows slower " +
+        "than the base rate), the " +
         "garden form the plot is drawing (its name and its index among the " +
         "forms, lowest first), the next named form it is growing toward " +
         "(nextFormName, null past the last form), how much growth still " +

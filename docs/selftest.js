@@ -26,6 +26,9 @@ import {
   PLOT_CAPACITY,
   SAVE_PREFIX,
   SAVE_VERSION,
+  SEASONS,
+  SEASON_CYCLE_SECONDS,
+  SEASON_SECONDS,
   SEED_COST_BASE,
   SEED_COST_RATE,
   SEED_KINDS,
@@ -46,6 +49,8 @@ import {
   pollinatorAt,
   pollinatorSecondsWithin,
   readLastSeen,
+  seasonAt,
+  seasonMultiplierSecondsWithin,
   readStoredGarden,
   setGarden,
   setGrowth,
@@ -1940,7 +1945,7 @@ function checkCompactReadout(problems) {
   // folded to a screen reader so the garden, numbers and buttons share a screen.
   const fields = [
     "growth", "form", "seeds", "plants", "kind-herb", "kind-bloom", "beds", "capacity",
-    "pollinator", "next-plant", "next-bed", "storage",
+    "season", "pollinator", "next-plant", "next-bed", "storage",
   ];
   for (const field of fields) {
     if (!document.querySelector(`[data-field="${field}"]`)) {
@@ -1962,6 +1967,20 @@ function checkCompactReadout(problems) {
 }
 
 // --- Time away ---------------------------------------------------------------
+
+/**
+ * The season multipliers seen over a span, summed second by second — an
+ * independent count of the schedule `seasonMultiplierSecondsWithin` closes into
+ * one calculation. It reads the season directly, so it is a real second opinion
+ * rather than a second copy of the closed form.
+ */
+function seasonWeightSecondsByBruteForce(ageSeconds, spanSeconds) {
+  let total = 0;
+  for (let offset = 0; offset < spanSeconds; offset += 1) {
+    total += seasonAt(ageSeconds + offset + 0.5).multiplier;
+  }
+  return total;
+}
 
 /**
  * Elapsed time is counted, not invented: a missing or backdated span grows
@@ -1987,7 +2006,9 @@ function checkOfflineTime(problems) {
   try {
     // No sprouts in the ground: this isolates the plain elapsed-time rule.
     setGarden({ seeds: 0, plants: 0 });
-    const expected = 0.5 * 30 * DAY;
+    // A month of growth at +0.5/s, with each second weighted by the season it
+    // falls in (the garden starts at age 0, in winter).
+    const expected = 0.5 * seasonWeightSecondsByBruteForce(0, 30 * DAY);
     const tolerance = Math.max(1e-6, expected * 1e-9);
 
     setGrowth(0, 0.5);
@@ -2260,6 +2281,123 @@ function checkPollinator(problems) {
 }
 
 /**
+ * The season cycle: a repeating four-season turn read from the garden's age,
+ * each season growing the garden at least at its base rate and at least one
+ * faster, and a return that crosses a boundary says so.
+ */
+function checkSeason(problems) {
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  try {
+    // The four seasons, in the order the cycle visits them.
+    if (!Array.isArray(SEASONS) || SEASONS.length !== 4) {
+      problems.push(`SEASONS should hold the four seasons, but it is ${JSON.stringify(SEASONS)}.`);
+      return;
+    }
+    const keys = SEASONS.map((season) => season.key);
+    if (keys.join(",") !== "winter,spring,summer,autumn") {
+      problems.push(`the season cycle should run winter, spring, summer, autumn, but it is ${keys.join(", ")}.`);
+    }
+    let faster = 0;
+    for (const season of SEASONS) {
+      if (!(season.multiplier >= 1)) {
+        problems.push(
+          `the ${season.key} season grows at x${season.multiplier}; no season may grow slower than the base rate.`
+        );
+      }
+      if (season.multiplier > 1) faster += 1;
+    }
+    if (faster < 1) {
+      problems.push("every season grows at the base rate; at least one season must be more generous than the garden's normal rate.");
+    }
+
+    // The cycle turns on its own: each SEASON_SECONDS is the next season, and a
+    // whole turn comes back to where it started.
+    const atBoundary = [
+      [0, "winter"],
+      [SEASON_SECONDS - 1, "winter"],
+      [SEASON_SECONDS, "spring"],
+      [SEASON_SECONDS * 3, "autumn"],
+      [SEASON_CYCLE_SECONDS, "winter"],
+      [SEASON_CYCLE_SECONDS + SEASON_SECONDS, "spring"],
+    ];
+    for (const [ageValue, key] of atBoundary) {
+      const season = seasonAt(ageValue);
+      if (season.key !== key) {
+        problems.push(`at age ${ageValue}s the garden should be in ${key}, but seasonAt reports ${season.key}.`);
+      }
+    }
+
+    // The closed form must match an independent second-by-second count, a month
+    // included, and never weigh a span below the plain span itself.
+    const spans = [
+      [0, 600],
+      [SEASON_SECONDS - 1, 2],
+      [SEASON_SECONDS, SEASON_SECONDS],
+      [500, 200],
+      [1234, 5000],
+      [0, 30 * 86400],
+    ];
+    for (const [ageValue, span] of spans) {
+      const closed = seasonMultiplierSecondsWithin(ageValue, span);
+      const counted = seasonWeightSecondsByBruteForce(ageValue, span);
+      const tolerance = Math.max(1e-6, span * 1e-9);
+      if (Math.abs(closed - counted) > tolerance) {
+        problems.push(
+          `seasonMultiplierSecondsWithin(${ageValue}, ${span}) gave ${closed} weighted seconds, ` +
+            `but counting the schedule gave ${counted}.`
+        );
+      }
+      if (closed < span - tolerance) {
+        problems.push(
+          `seasonMultiplierSecondsWithin(${ageValue}, ${span}) gave ${closed}, less than the plain ${span}s; ` +
+            "the multiplier must never drop below 1."
+        );
+      }
+    }
+
+    // The readout and get-state name the season and its multiplier.
+    const row = document.querySelector('[data-field="season"]');
+    if (!row) {
+      problems.push('the page has no season readout (expected [data-field="season"]), so the season is not stated.');
+    }
+    setGarden({ seeds: 0, plants: 0 });
+    setGrowth(0, 1, SEASON_SECONDS); // the first second of spring
+    const springState = getDisplayedState();
+    if (springState.season.key !== "spring" || springState.season.multiplier !== 1.5) {
+      problems.push(
+        `at age ${SEASON_SECONDS}s get-state reports season ${JSON.stringify(springState.season)}, ` +
+          "expected spring at x1.5."
+      );
+    }
+    if (springState.rate !== 1.5) {
+      problems.push(`in spring the displayed rate is ${springState.rate}/s on a base of 1/s, expected 1.5/s.`);
+    }
+    if (row && !/spring/i.test(String(row.textContent))) {
+      problems.push(`the season readout says ${JSON.stringify(row.textContent)}, expected it to name spring.`);
+    }
+
+    // A return that crosses a season boundary reports both seasons.
+    const away = buildAwayReport(
+      { growth: 0, rate: 1, sprouts: [], plants: 0, beds: 1, age: SEASON_SECONDS - 100 },
+      SEASON_SECONDS
+    );
+    if (!away.crossedSeason || away.fromSeason?.key !== "winter" || away.toSeason?.key !== "spring") {
+      problems.push(
+        `a return from winter across the boundary reported from ${away.fromSeason?.key} to ${away.toSeason?.key} ` +
+          `(crossedSeason ${away.crossedSeason}); expected winter into spring.`
+      );
+    }
+    if (!/winter/i.test(away.summary) || !/spring/i.test(away.summary)) {
+      problems.push(`the return summary does not name the season it crossed: "${away.summary}"`);
+    }
+  } finally {
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
+  }
+}
+
+/**
  * A long absence lands the garden where played time would, and its return is
  * stated in words and shown on the plot.
  */
@@ -2289,9 +2427,13 @@ function checkReturnSummary(problems) {
     // so the expected total adds those verified seconds at each rate.
     const visitSecondsEarly = pollinatorSecondsWithin(0, GROW_SECONDS);
     const visitSecondsRest = pollinatorSecondsWithin(GROW_SECONDS, 30 * DAY - GROW_SECONDS);
+    // Each stretch weighs its seconds by the season they fall in, the same way
+    // the simulation does, on top of the pollinator's extra seconds.
+    const seasonEarly = seasonWeightSecondsByBruteForce(0, GROW_SECONDS);
+    const seasonRest = seasonWeightSecondsByBruteForce(GROW_SECONDS, 30 * DAY - GROW_SECONDS);
     const expectedEarned =
-      0.5 * (GROW_SECONDS + (POLLINATOR_BOOST - 1) * visitSecondsEarly) +
-      1.5 * (30 * DAY - GROW_SECONDS + (POLLINATOR_BOOST - 1) * visitSecondsRest);
+      0.5 * (seasonEarly + (POLLINATOR_BOOST - 1) * visitSecondsEarly) +
+      1.5 * (seasonRest + (POLLINATOR_BOOST - 1) * visitSecondsRest);
     const tolerance = Math.max(1e-6, expectedEarned * 1e-9);
     if (Math.abs(away.earned - expectedEarned) > tolerance) {
       problems.push(`after 30 days away the garden earned ${away.earned} growth, expected ${expectedEarned}.`);
@@ -2640,6 +2782,12 @@ async function checkAgentTools(problems) {
     problems.push(
       `get-state reported the pollinator as ${JSON.stringify(state.pollinator)}, but the page holds ` +
         `${JSON.stringify(shown.pollinator)}.`
+    );
+  }
+  if (JSON.stringify(state.season) !== JSON.stringify(shown.season)) {
+    problems.push(
+      `get-state reported the season as ${JSON.stringify(state.season)}, but the page holds ` +
+        `${JSON.stringify(shown.season)}.`
     );
   }
 
@@ -3030,6 +3178,7 @@ export async function checks() {
     checkSimulateGarden(problems);
     checkReturnSummary(problems);
     checkPollinator(problems);
+    checkSeason(problems);
     checkSandbox(problems);
     await checkAgentTools(problems);
   } finally {

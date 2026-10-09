@@ -14,6 +14,7 @@
 import {
   GROW_SECONDS,
   PLOTS_PER_BED,
+  POLLINATOR_BOOST,
   SEED_KINDS,
   STORAGE_KEY,
   advance,
@@ -30,6 +31,7 @@ import {
   plantSeed,
   pollinatorAt,
   readLastSeen,
+  seasonAt,
   readStoredGarden,
   setGarden,
   setGrowth,
@@ -112,6 +114,7 @@ const elements = {
   beds: document.querySelector('[data-field="beds"]'),
   capacity: document.querySelector('[data-field="capacity"]'),
   pollinator: document.querySelector('[data-field="pollinator"]'),
+  season: document.querySelector('[data-field="season"]'),
   nextPlant: document.querySelector('[data-field="next-plant"]'),
   nextBed: document.querySelector('[data-field="next-bed"]'),
   openBed: document.getElementById("open-bed"),
@@ -132,6 +135,7 @@ const elements = {
   sandboxMatured: document.querySelector('[data-field="sandbox-matured"]'),
   sandboxSeeds: document.querySelector('[data-field="sandbox-seeds"]'),
   sandboxPlants: document.querySelector('[data-field="sandbox-plants"]'),
+  sandboxSeason: document.querySelector('[data-field="sandbox-season"]'),
   sandboxSummary: document.getElementById("sandbox-summary"),
   sandboxGoalTitle: document.getElementById("sandbox-goal-title"),
   sandboxGoalDetail: document.getElementById("sandbox-goal-detail"),
@@ -231,11 +235,14 @@ function describeGardenState(garden, growth, rate, age) {
     total: kind.total,
     canPlant: !plotFull && growth >= kind.cost,
   }));
-  // The visiting pollinator multiplies what is displayed, but never the rate
-  // the garden keeps: `rate` is the boosted number a visitor reads, `baseRate`
-  // is the one that is saved and compounded, so the boost is applied once.
+  // The season the age falls in and the visiting pollinator multiply what is
+  // displayed, but never the rate the garden keeps: `rate` is the boosted
+  // number a visitor reads, `baseRate` is the one that is saved and compounded,
+  // so each boost is applied once. Season and pollinator are added here just as
+  // the simulation adds their seconds, so the readout matches what it earns.
   const pollinator = pollinatorAt(age, garden.plants);
-  const displayRate = rate * pollinator.multiplier;
+  const season = seasonAt(age);
+  const displayRate = rate * (season.multiplier + (pollinator.visiting ? POLLINATOR_BOOST - 1 : 0));
   const goal = nextSeedGoal({ growth, plotFull, capacity: garden.capacity, kinds });
   const goalCost = goal ? goal.cost : kinds[0].cost;
   return {
@@ -249,6 +256,7 @@ function describeGardenState(garden, growth, rate, age) {
     rate: displayRate,
     baseRate: rate,
     age,
+    season,
     pollinator,
     form: form.index,
     formName: form.name,
@@ -360,8 +368,12 @@ export function summarizeReturn(away) {
   const pollinator = away.pollinator?.visiting
     ? ` A pollinator is visiting — the garden is growing ${away.pollinator.multiplier} times as fast while it stays.`
     : "";
+  const season = away.crossedSeason
+    ? ` The garden turned from ${away.fromSeason.name} into ${away.toSeason.name} — its growth is now ` +
+      `x${away.toSeason.multiplier}.`
+    : "";
   const grown = `While you were away ${formatAway(away.seconds)}, the garden earned ` +
-    `${formatGrowth(away.earned)} growth and is now ${away.form}.` + matured + pollinator;
+    `${formatGrowth(away.earned)} growth and is now ${away.form}.` + matured + pollinator + season;
 
   // "What was found": the forms the absence grew it into, named at the top.
   let found = "";
@@ -414,6 +426,10 @@ export function buildAwayReport(start, seconds) {
   // that arrives during a visit can say so rather than only showing bigger
   // numbers.
   report.pollinator = pollinatorAt(after.age, after.plants);
+  // The season at each end, so a return that crossed a boundary can name it.
+  report.fromSeason = seasonAt(before.age);
+  report.toSeason = seasonAt(after.age);
+  report.crossedSeason = report.fromSeason.key !== report.toSeason.key;
   report.summary = summarizeReturn(report);
   return report;
 }
@@ -546,6 +562,7 @@ function rehearseSandbox() {
     elapsed: formatAway(sandbox.seconds),
     growth: display.growth,
     rate: display.rate,
+    season: display.season,
     pollinator: display.pollinator,
     form: display.form,
     formName: display.formName,
@@ -671,6 +688,11 @@ function describeNextBed(state) {
   const cost = formatAmount(state.nextBedCost);
   const percent = Math.round(state.bedCostProgress * 100);
   return `${cost} growth · ${percent}% saved`;
+}
+
+/** The season the garden is in, and how much faster it grows for it. */
+function describeSeason(state) {
+  return `${state.season.name} — x${state.season.multiplier} growth`;
 }
 
 /** Whether a pollinator is visiting, and how much faster the garden grows. */
@@ -811,6 +833,7 @@ function render() {
   setText(elements.beds, formatAmount(state.beds));
   setText(elements.capacity, formatAmount(state.capacity));
   setText(elements.pollinator, describePollinator(state));
+  setText(elements.season, describeSeason(state));
   setText(elements.kindHerb, describeKind(state.kinds[0]));
   setText(elements.kindBloom, describeKind(state.kinds[1]));
   setText(elements.nextPlant, describeNextPlant(state));
@@ -851,6 +874,7 @@ function renderSandbox(state) {
   setText(elements.sandboxMatured, formatAmount(rehearsal.matured));
   setText(elements.sandboxSeeds, formatAmount(rehearsal.seeds));
   setText(elements.sandboxPlants, formatAmount(rehearsal.plants));
+  setText(elements.sandboxSeason, describeSeason(rehearsal));
   setText(elements.sandboxSummary, rehearsal.summary);
   setText(elements.sandboxGoalTitle, rehearsal.goalTitle);
   setText(elements.sandboxGoalDetail, rehearsal.goalDetail);
