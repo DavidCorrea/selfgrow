@@ -25,6 +25,7 @@ import {
   nextSeedCost,
   openBed,
   plantSeed,
+  pollinatorAt,
   readLastSeen,
   readStoredGarden,
   setGarden,
@@ -65,6 +66,7 @@ const elements = {
   plants: document.querySelector('[data-field="plants"]'),
   beds: document.querySelector('[data-field="beds"]'),
   capacity: document.querySelector('[data-field="capacity"]'),
+  pollinator: document.querySelector('[data-field="pollinator"]'),
   nextPlant: document.querySelector('[data-field="next-plant"]'),
   nextBed: document.querySelector('[data-field="next-bed"]'),
   openBed: document.getElementById("open-bed"),
@@ -142,9 +144,9 @@ function setText(element, text) {
  * they are the same values from the same place, never two sources to drift.
  */
 export function getDisplayedState() {
-  const { growth, rate } = getGrowthState();
+  const { growth, rate, age } = getGrowthState();
   return {
-    ...describeGardenState(getGarden(), growth, rate),
+    ...describeGardenState(getGarden(), growth, rate, age),
     save: exportSave(),
     away: lastReturn,
     sandbox: getSandboxState(),
@@ -157,18 +159,26 @@ export function getDisplayedState() {
  * one. `garden` is `getGarden()`'s shape (or an equivalent), so a simulated
  * garden and the live one are described by one function and cannot disagree.
  */
-function describeGardenState(garden, growth, rate) {
+function describeGardenState(garden, growth, rate, age) {
   const form = gardenForm(growth);
   const planted = garden.seeds + garden.plants;
   const seedCost = nextSeedCost(planted);
   const plotFull = planted >= garden.capacity;
   const bedCost = nextBedCost(garden.beds);
+  // A visiting pollinator multiplies what is displayed, but never the rate the
+  // garden keeps: `rate` is the boosted number a visitor reads, `baseRate` is
+  // the one that is saved and compounded, so the boost is applied once.
+  const pollinator = pollinatorAt(age, garden.plants);
+  const displayRate = rate * pollinator.multiplier;
   return {
     seeds: garden.seeds,
     plants: garden.plants,
     totalPlanted: planted,
     growth,
-    rate,
+    rate: displayRate,
+    baseRate: rate,
+    age,
+    pollinator,
     form: form.index,
     formName: form.name,
     beds: garden.beds,
@@ -179,11 +189,11 @@ function describeGardenState(garden, growth, rate) {
     canPlantSeed: !plotFull && growth >= seedCost,
     plotFull,
     seedCostProgress: seedCost > 0 ? Math.min(1, Math.max(0, growth / seedCost)) : 1,
-    secondsToNextSeed: plotFull || !(rate > 0) ? null : Math.max(0, (seedCost - growth) / rate),
+    secondsToNextSeed: plotFull || !(displayRate > 0) ? null : Math.max(0, (seedCost - growth) / displayRate),
     nextBedCost: bedCost,
     canOpenBed: plotFull && growth >= bedCost,
     bedCostProgress: bedCost > 0 ? Math.min(1, Math.max(0, growth / bedCost)) : 1,
-    secondsToNextBed: !plotFull || !(rate > 0) ? null : Math.max(0, (bedCost - growth) / rate),
+    secondsToNextBed: !plotFull || !(displayRate > 0) ? null : Math.max(0, (bedCost - growth) / displayRate),
   };
 }
 
@@ -243,8 +253,11 @@ export function summarizeReturn(away) {
     ? ` ${countLabel(away.matured, "seed", "seeds")} matured into ` +
       `${countLabel(away.matured, "plant", "plants")}.`
     : "";
+  const pollinator = away.pollinator?.visiting
+    ? ` A pollinator is visiting — the garden is growing ${away.pollinator.multiplier} times as fast while it stays.`
+    : "";
   const grown = `While you were away ${formatAway(away.seconds)}, the garden earned ` +
-    `${growthFormat.format(away.earned)} growth and is now ${away.form}.` + matured;
+    `${growthFormat.format(away.earned)} growth and is now ${away.form}.` + matured + pollinator;
 
   // "What was found": the forms the absence grew it into, named at the top.
   let found = "";
@@ -293,6 +306,10 @@ export function buildAwayReport(start, seconds) {
     growthToNextForm: Math.max(0, toForm.nextAt - after.growth),
     nextSeedCost: nextSeedCost(after.sprouts.length + after.plants),
   };
+  // Whether a pollinator is on the plot at the end of the span, so a return
+  // that arrives during a visit can say so rather than only showing bigger
+  // numbers.
+  report.pollinator = pollinatorAt(after.age, after.plants);
   report.summary = summarizeReturn(report);
   return report;
 }
@@ -316,6 +333,7 @@ export function applyReturn(saved, lastSeenMs, nowMs) {
   const start = {
     growth: saved.growth,
     rate: saved.rate,
+    age: saved.age,
     sprouts: live.sprouts,
     plants: live.plants,
     beds: live.beds,
@@ -323,7 +341,7 @@ export function applyReturn(saved, lastSeenMs, nowMs) {
   const away = buildAwayReport(start, seconds);
   const after = simulateGarden(start, seconds);
 
-  setGrowth(after.growth, after.rate);
+  setGrowth(after.growth, after.rate, after.age);
   setGarden({ beds: start.beds, plants: after.plants, sprouts: after.sprouts });
 
   lastReturn = away;
@@ -374,8 +392,8 @@ let sandbox = null;
 /** A copy of the live garden's state — the point a rehearsal runs forward from. */
 function gardenSnapshot() {
   const garden = getGarden();
-  const { growth, rate } = getGrowthState();
-  return { growth, rate, sprouts: garden.sprouts, plants: garden.plants, beds: garden.beds };
+  const { growth, rate, age } = getGrowthState();
+  return { growth, rate, age, sprouts: garden.sprouts, plants: garden.plants, beds: garden.beds };
 }
 
 /** Start a fresh sandbox from the garden as it is now, wound back to zero. */
@@ -397,7 +415,8 @@ function rehearseSandbox() {
       capacity: end.beds * PLOTS_PER_BED,
     },
     end.growth,
-    end.rate
+    end.rate,
+    end.age
   );
   const goal = describeNextGoal(display);
   sandbox.shown = {
@@ -406,6 +425,7 @@ function rehearseSandbox() {
     elapsed: formatAway(sandbox.seconds),
     growth: display.growth,
     rate: display.rate,
+    pollinator: display.pollinator,
     form: display.form,
     formName: display.formName,
     seeds: display.seeds,
@@ -470,7 +490,7 @@ export function getSandboxState() {
 export function loadGardenSave(text) {
   const garden = decodeSave(text);
   setGarden(garden);
-  setGrowth(garden.growth, garden.rate);
+  setGrowth(garden.growth, garden.rate, garden.age);
   const persisted = writeStoredGarden(getGarden());
   writeLastSeen(Date.now());
   return { ok: true, persisted, state: getDisplayedState() };
@@ -527,6 +547,13 @@ function describeNextBed(state) {
   const cost = numberFormat.format(state.nextBedCost);
   const percent = Math.round(state.bedCostProgress * 100);
   return `${cost} growth · ${percent}% saved`;
+}
+
+/** Whether a pollinator is visiting, and how much faster the garden grows. */
+function describePollinator(state) {
+  const pollinator = state.pollinator;
+  if (!pollinator || !pollinator.visiting) return "none visiting";
+  return `visiting — x${pollinator.multiplier} growth`;
 }
 
 /** The next plant maturing, as words, for the readout beside the numbers. */
@@ -632,6 +659,7 @@ function render() {
   setText(elements.plants, numberFormat.format(state.plants));
   setText(elements.beds, numberFormat.format(state.beds));
   setText(elements.capacity, numberFormat.format(state.capacity));
+  setText(elements.pollinator, describePollinator(state));
   setText(elements.nextPlant, describeNextPlant(state));
   setText(elements.nextBed, describeNextBed(state));
   setText(elements.storage, state.storageAvailable ? "Yes" : "No");
@@ -646,7 +674,8 @@ function render() {
 
   // The picture follows the growth, not the stored garden, so it redraws when
   // the amount or the form it falls in changes — and stays put when nothing does.
-  const plotKey = `${state.form}:${state.growth}:${state.seeds}:${state.plants}:${state.beds}`;
+  const plotKey =
+    `${state.form}:${state.growth}:${state.seeds}:${state.plants}:${state.beds}:${state.pollinator.visiting}`;
   if (plotKey !== lastPlotKey) {
     drawGarden(elements.plot, state, readPalette());
     lastPlotKey = plotKey;
@@ -729,7 +758,7 @@ function start() {
     const next = readStoredGarden();
     if (next.damaged) return;
     setGarden(next.garden);
-    setGrowth(next.garden.growth, next.garden.rate);
+    setGrowth(next.garden.growth, next.garden.rate, next.garden.age);
   });
 
   elements.tend?.addEventListener("click", () => {

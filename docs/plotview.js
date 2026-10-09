@@ -191,6 +191,27 @@ function drawTree(ctx, x, y, palette, index, growthTier) {
 }
 
 /**
+ * A visitor on the plot: a small bee hovering above the first grown plant.
+ *
+ * Drawn from the same `:root` palette as everything else — a sun body with
+ * dark stripes and bloom wings — so it belongs to the garden rather than
+ * looking pasted on. It is never the only account of the visit: the readout
+ * and `get-state` name the pollinator and the boost it brings.
+ */
+function drawPollinator(ctx, x, y, palette) {
+  const centre = x + CELL / 2;
+  const top = y + 2;
+  ctx.fillStyle = palette.bloom;
+  ctx.fillRect(centre - 6, top - 2, 4, 3);
+  ctx.fillRect(centre + 2, top - 2, 4, 3);
+  ctx.fillStyle = palette.sun;
+  ctx.fillRect(centre - 4, top, 8, 5);
+  ctx.fillStyle = palette.soilDeep;
+  ctx.fillRect(centre - 4, top + 1, 8, 1);
+  ctx.fillRect(centre - 4, top + 3, 8, 1);
+}
+
+/**
  * Draw `state`'s garden onto `canvas`, painting only with `palette`.
  *
  * The picture is a pure view of the state: the form and the beds of soil set how
@@ -228,5 +249,10 @@ export function drawGarden(canvas, state, palette) {
     drawSoil(ctx, x, y, palette);
     if (cell < plants) drawPlant(ctx, x, y, palette, form.index, growthTier);
     else if (cell < plants + sprouts) drawSprout(ctx, x, y, palette);
+  }
+  // A visit is drawn over the first plant, the one the bee lands on; with no
+  // plants there is nowhere for it to visit.
+  if (plants > 0 && state && state.pollinator && state.pollinator.visiting) {
+    drawPollinator(ctx, 0, 0, palette);
   }
 }

@@ -42,7 +42,14 @@ export function tools() {
         "takes (growSeconds), the seconds until the next seed matures into a " +
         "plant (secondsToNextPlant, null when no seed is growing), the " +
         "portable save string, and whether this browser is keeping the " +
-        "garden. It also returns the next seed: what it costs (nextSeedCost), " +
+        "garden. It reports the visiting pollinator as `pollinator`: whether " +
+        "one is on the plot now (visiting), the factor it is multiplying the " +
+        "growth rate by (multiplier, 1 when none), and the constant boost a " +
+        "visit is worth (boost). While one visits, `rate` is the boosted rate " +
+        "the page shows and `baseRate` is the rate without it, so a caller can " +
+        "see how much faster the garden is growing than it would without the " +
+        "visitor. It also returns the garden's age in seconds (age), which is " +
+        "what the visit schedule is read from. It also returns the next seed: what it costs (nextSeedCost), " +
         "whether the garden can afford it now (canPlantSeed), whether the " +
         "plot is full (plotFull), how far along the cost the garden is as a " +
         "0-to-1 fraction (seedCostProgress), and the seconds until it can " +
