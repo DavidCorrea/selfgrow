@@ -13,7 +13,7 @@
  */
 
 /** The save format. Bump it only if the shape below actually changes. */
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 
 /** A readable marker, so a save is recognisable and the version is obvious. */
 export const SAVE_PREFIX = "SELFGROW1.";
@@ -30,8 +30,21 @@ export const STORAGE_KEY = "selfgrow.garden";
  */
 export const LAST_SEEN_KEY = "selfgrow.garden.seen";
 
-/** How many plots of soil the garden has to plant in. */
-export const PLOT_CAPACITY = 12;
+/** How many plots of soil each bed of soil offers. */
+export const PLOTS_PER_BED = 12;
+
+/**
+ * How many plots the smallest garden has to plant in.
+ *
+ * The garden's actual capacity is its bed count times this; a garden that fills
+ * every plot is offered the next bed rather than a wall, so this is the size of
+ * one bed, not the limit of the garden.
+ */
+export const PLOT_CAPACITY = PLOTS_PER_BED;
+
+/** What the first bed beyond the starting one costs, and how fast it climbs. */
+export const BED_COST_BASE = 200;
+export const BED_COST_RATE = 1.15;
 
 /**
  * How long a planted seed stays an ungrown sprout before it becomes a grown
@@ -41,9 +54,9 @@ export const PLOT_CAPACITY = 12;
  */
 export const GROW_SECONDS = 30;
 
-/** Bare soil and one ungrown seed. */
+/** Bare soil, one bed of it, and one ungrown seed. */
 export function newGarden() {
-  return { version: SAVE_VERSION, seeds: 1, plants: 0 };
+  return { version: SAVE_VERSION, seeds: 1, plants: 0, beds: 1 };
 }
 
 /**
@@ -53,6 +66,22 @@ export function newGarden() {
 function assertCount(value, field) {
   if (typeof value !== "number" || !Number.isFinite(value) || !Number.isInteger(value) || value < 0) {
     throw new Error(`the save's ${field} must be a whole number of 0 or more, but it is ${JSON.stringify(value)}.`);
+  }
+}
+
+/**
+ * A bed count must be a whole number of one or more. A live garden or a caller
+ * that never knew about beds falls back to one bed rather than to none, because
+ * a garden with no soil could never grow again.
+ */
+function bedCount(value) {
+  return Number.isInteger(value) && value >= 1 ? value : 1;
+}
+
+/** Refuse a bed count written into a save that is not whole beds. */
+function assertBeds(value) {
+  if (typeof value !== "number" || !Number.isFinite(value) || !Number.isInteger(value) || value < 1) {
+    throw new Error(`the save's beds must be a whole number of 1 or more, but it is ${JSON.stringify(value)}.`);
   }
 }
 
@@ -83,19 +112,20 @@ function assertAmount(value, field) {
  * fresh `GROW_SECONDS` timers for each. Either way the number of plots is the
  * bound, so a value nothing could have reached is refused rather than written.
  */
-function sproutTimersForSave(garden) {
+function sproutTimersForSave(garden, beds) {
+  const capacity = beds * PLOTS_PER_BED;
   if (Array.isArray(garden.sprouts)) {
-    if (garden.sprouts.length > PLOT_CAPACITY) {
+    if (garden.sprouts.length > capacity) {
       throw new Error(
-        `a garden can hold at most ${PLOT_CAPACITY} ungrown seeds, but this one holds ${garden.sprouts.length}.`
+        `a garden of ${beds} bed(s) can hold at most ${capacity} ungrown seeds, but this one holds ${garden.sprouts.length}.`
       );
     }
     return garden.sprouts.map((timer) => (Number.isFinite(timer) && timer > 0 ? timer : 0));
   }
   assertCount(garden.seeds, "seeds");
-  if (garden.seeds > PLOT_CAPACITY) {
+  if (garden.seeds > capacity) {
     throw new Error(
-      `a garden can hold at most ${PLOT_CAPACITY} ungrown seeds, but this one holds ${garden.seeds}.`
+      `a garden of ${beds} bed(s) can hold at most ${capacity} ungrown seeds, but this one holds ${garden.seeds}.`
     );
   }
   return Array.from({ length: garden.seeds }, () => GROW_SECONDS);
@@ -107,7 +137,8 @@ function sproutTimersForSave(garden) {
  * @returns {string} e.g. `SELFGROW1.eyJ2ZXJzaW9uIjoz...`
  */
 export function encodeSave(garden) {
-  const sprouts = sproutTimersForSave(garden);
+  const beds = bedCount(garden.beds);
+  const sprouts = sproutTimersForSave(garden, beds);
   assertCount(garden.plants ?? 0, "plants");
   const body = JSON.stringify({
     version: SAVE_VERSION,
@@ -116,6 +147,7 @@ export function encodeSave(garden) {
     sprouts,
     growth: savedAmount(garden.growth),
     rate: savedAmount(garden.rate),
+    beds,
   });
   return SAVE_PREFIX + btoa(body);
 }
@@ -127,13 +159,14 @@ export function encodeSave(garden) {
  * visitor and read by an agent deciding what to fix.
  *
  * Older saves are read as migrations: version 1 (before growth was kept) starts
- * with nothing grown, and in both older versions the seeds that used to speed
+ * with nothing grown, and in both versions before 3 the seeds that used to speed
  * the garden up instantly become ungrown sprouts with their full growing time
  * left, so nothing already planted is lost. Their rate is rewritten to match:
  * the old per-seed production is taken back out and the grown plants' production
- * put in its place.
+ * put in its place. Before version 4 the garden had exactly one bed, so older
+ * saves open onto one bed of soil whatever they may say.
  *
- * @returns {{version: number, seeds: number, plants: number, sprouts: number[], growth: number, rate: number}}
+ * @returns {{version: number, seeds: number, plants: number, sprouts: number[], growth: number, rate: number, beds: number}}
  * @throws {Error} when the text is empty, not a selfgrow save, damaged,
  *   the wrong version, or carries a bad plot count, growth or rate.
  */
@@ -155,13 +188,16 @@ export function decodeSave(text) {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("that save is empty or the wrong shape.");
   }
-  if (parsed.version !== 1 && parsed.version !== 2 && parsed.version !== SAVE_VERSION) {
+  if (parsed.version !== 1 && parsed.version !== 2 && parsed.version !== 3 && parsed.version !== SAVE_VERSION) {
     throw new Error(
       `that save is version ${JSON.stringify(parsed.version)}, but this garden reads version ${SAVE_VERSION}.`
     );
   }
   assertCount(parsed.plants, "plants");
-  const sprouts = readSproutsFromSave(parsed);
+  // Before version 4 there was one bed of soil and no field for it; a save that
+  // carries one anyway is still read as the single bed it must have been.
+  const beds = parsed.version < SAVE_VERSION ? 1 : readBeds(parsed);
+  const sprouts = readSproutsFromSave(parsed, beds * PLOTS_PER_BED);
   // Version 1 had no growth of its own; migrating it starts with nothing grown.
   const growth = parsed.version === 1 ? 0 : parsed.growth;
   let rate = parsed.version === 1 ? 0 : parsed.rate;
@@ -170,10 +206,17 @@ export function decodeSave(text) {
   // Before version 3 every planted seed sped the garden up at once. Take that
   // production back out and let the grown plants carry it instead, so migrating
   // neither grants growth for free nor takes away what the visitor earned.
-  if (parsed.version < SAVE_VERSION) {
+  if (parsed.version <= 2) {
     rate = Math.max(0, rate - PLANT_PRODUCTION * parsed.seeds) + PLANT_PRODUCTION * parsed.plants;
   }
-  return { version: SAVE_VERSION, seeds: sprouts.length, plants: parsed.plants, sprouts, growth, rate };
+  return { version: SAVE_VERSION, seeds: sprouts.length, plants: parsed.plants, sprouts, growth, rate, beds };
+}
+
+/** The bed count a save carries, defaulting to one when it does not say. */
+function readBeds(parsed) {
+  if (parsed.beds === undefined || parsed.beds === null) return 1;
+  assertBeds(parsed.beds);
+  return parsed.beds;
 }
 
 /**
@@ -182,11 +225,11 @@ export function decodeSave(text) {
  * Version 3 writes the timers it has; older saves only carry a count, and each
  * of those seeds wakes as a fresh sprout with its whole growing time left.
  */
-function readSproutsFromSave(parsed) {
+function readSproutsFromSave(parsed, capacity) {
   if (Array.isArray(parsed.sprouts)) {
-    if (parsed.sprouts.length > PLOT_CAPACITY) {
+    if (parsed.sprouts.length > capacity) {
       throw new Error(
-        `the save has ${parsed.sprouts.length} ungrown seeds, but the garden has only ${PLOT_CAPACITY} plots.`
+        `the save has ${parsed.sprouts.length} ungrown seeds, but the garden has only ${capacity} plots.`
       );
     }
     return parsed.sprouts.map((timer, index) => {
@@ -199,9 +242,9 @@ function readSproutsFromSave(parsed) {
     });
   }
   assertCount(parsed.seeds, "seeds");
-  if (parsed.seeds > PLOT_CAPACITY) {
+  if (parsed.seeds > capacity) {
     throw new Error(
-      `the save has ${parsed.seeds} ungrown seeds, but the garden has only ${PLOT_CAPACITY} plots.`
+      `the save has ${parsed.seeds} ungrown seeds, but the garden has only ${capacity} plots.`
     );
   }
   return Array.from({ length: parsed.seeds }, () => GROW_SECONDS);
@@ -311,7 +354,7 @@ export function elapsedSeconds(lastSeenMs, nowMs) {
 // The live garden: the ungrown seeds as their remaining seconds, and the grown
 // plants. `seeds` is the length of `sprouts` and is never stored separately, so
 // a seed becoming a plant is one move between the two.
-let garden = { version: SAVE_VERSION, sprouts: [GROW_SECONDS], plants: 0 };
+let garden = { version: SAVE_VERSION, sprouts: [GROW_SECONDS], plants: 0, beds: 1 };
 const listeners = new Set();
 
 /** Tell everyone watching that the garden moved. */
@@ -321,15 +364,19 @@ function notify() {
 }
 
 /**
- * A copy of the current garden: the ungrown seed count (and their timers) plus
- * the grown plants. Growth and rate live beside this (see `getGrowthState`).
+ * A copy of the current garden: how many beds of soil it has (and how many
+ * plots that is), the ungrown seed count (and their timers), and the grown
+ * plants. Growth and rate live beside this (see `getGrowthState`).
  */
 export function getGarden() {
+  const beds = bedCount(garden.beds);
   return {
     version: garden.version,
     seeds: garden.sprouts.length,
     plants: garden.plants,
     sprouts: [...garden.sprouts],
+    beds,
+    capacity: beds * PLOTS_PER_BED,
   };
 }
 
@@ -347,15 +394,18 @@ function wholeCount(value, limit) {
  * sprouts. Either way the plot's capacity is the bound.
  */
 export function setGarden(next) {
+  const beds = bedCount(next.beds);
+  const capacity = beds * PLOTS_PER_BED;
   const hasTimers = Array.isArray(next.sprouts);
   const maturedEarly = hasTimers ? next.sprouts.filter((t) => Number.isFinite(t) && t <= 0).length : 0;
   const sprouts = hasTimers
-    ? next.sprouts.filter((t) => Number.isFinite(t) && t > 0).slice(0, PLOT_CAPACITY)
-    : Array.from({ length: wholeCount(next.seeds, PLOT_CAPACITY) }, () => GROW_SECONDS);
+    ? next.sprouts.filter((t) => Number.isFinite(t) && t > 0).slice(0, capacity)
+    : Array.from({ length: wholeCount(next.seeds, capacity) }, () => GROW_SECONDS);
   garden = {
     version: SAVE_VERSION,
     sprouts,
     plants: wholeCount(next.plants, Number.MAX_SAFE_INTEGER) + maturedEarly,
+    beds,
   };
   notify();
 }
@@ -425,7 +475,8 @@ export function advance(seconds) {
 
   let remaining = seconds;
   // Each pass matures at least one seed, so the passes are bounded by the plots.
-  for (let pass = 0; remaining > 0 && pass <= PLOT_CAPACITY; pass += 1) {
+  const capacity = bedCount(garden.beds) * PLOTS_PER_BED;
+  for (let pass = 0; remaining > 0 && pass <= capacity; pass += 1) {
     const nextSprout = garden.sprouts.length ? Math.min(...garden.sprouts) : Infinity;
     const gap = Math.min(remaining, nextSprout);
     growth += rate * gap;
@@ -486,9 +537,10 @@ export function nextSeedCost(planted) {
  * @returns {{ok: boolean, reason: string|null, cost: number}}
  */
 export function plantSeed() {
+  const capacity = bedCount(garden.beds) * PLOTS_PER_BED;
   const planted = garden.sprouts.length + garden.plants;
   const cost = nextSeedCost(planted);
-  if (planted >= PLOT_CAPACITY) {
+  if (planted >= capacity) {
     return { ok: false, reason: "the plot is full", cost };
   }
   if (growth < cost) {
@@ -500,4 +552,53 @@ export function plantSeed() {
   writeStoredGarden(garden);
   notify();
   return { ok: true, reason: null, cost };
+}
+
+// --- Opening a new bed -------------------------------------------------------
+//
+// The plot is endless: once every plot holds a seed or a plant, the goal becomes
+// the next bed rather than a dead end. Opening it spends the growth the garden
+// has earned and widens the soil by another `PLOTS_PER_BED` plots, so there is
+// always a next goal. The price rises exponentially with every bed already
+// opened, while production rises with every plant, so the wait stays a goal
+// rather than a wall.
+
+/**
+ * What the next bed costs when the garden already owns `beds` of them.
+ *
+ * Strictly increasing in the bed count, so opening one never makes the next
+ * cheaper. Capped at `Number.MAX_SAFE_INTEGER` so a save that somehow reached an
+ * unreachable bed count still renders a finite price rather than `Infinity`.
+ */
+export function nextBedCost(beds) {
+  const count = Number.isFinite(beds) && beds > 0 ? Math.floor(beds) : 1;
+  const cost = Math.ceil(BED_COST_BASE * BED_COST_RATE ** count);
+  return Number.isFinite(cost) ? Math.min(cost, Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
+}
+
+/**
+ * Open the next bed of soil: spend the growth it asks for and add
+ * `PLOTS_PER_BED` more plots to plant in. Refuses with a reason, changing
+ * nothing, when the plot still has room to plant — a bed is only worth opening
+ * when it is needed — or when the garden has not saved the price.
+ *
+ * @returns {{ok: boolean, reason: string|null, cost: number, beds: number}}
+ */
+export function openBed() {
+  const beds = bedCount(garden.beds);
+  const capacity = beds * PLOTS_PER_BED;
+  const planted = garden.sprouts.length + garden.plants;
+  const cost = nextBedCost(beds);
+  if (planted < capacity) {
+    return { ok: false, reason: "the plot still has room", cost, beds };
+  }
+  if (growth < cost) {
+    return { ok: false, reason: "not enough growth", cost, beds };
+  }
+
+  growth -= cost;
+  garden = { ...garden, beds: beds + 1 };
+  writeStoredGarden(garden);
+  notify();
+  return { ok: true, reason: null, cost, beds: beds + 1 };
 }

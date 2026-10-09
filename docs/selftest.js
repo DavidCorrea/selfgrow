@@ -19,6 +19,7 @@ import {
   GROW_SECONDS,
   LAST_SEEN_KEY,
   PLANT_PRODUCTION,
+  PLOTS_PER_BED,
   PLOT_CAPACITY,
   SAVE_PREFIX,
   SAVE_VERSION,
@@ -34,6 +35,7 @@ import {
   getGarden,
   getGrowthState,
   newGarden,
+  nextBedCost,
   nextSeedCost,
   readLastSeen,
   readStoredGarden,
@@ -216,10 +218,10 @@ function checkPixelEdges(problems) {
 
 function checkStartState(problems) {
   const start = newGarden();
-  if (start.seeds !== 1 || start.plants !== 0) {
+  if (start.seeds !== 1 || start.plants !== 0 || start.beds !== 1) {
     problems.push(
-      `a new garden should be bare soil with one ungrown seed (1 seed, 0 plants), but it is ` +
-      `${start.seeds} seed(s) and ${start.plants} plant(s).`
+      `a new garden should be bare soil with one bed and one ungrown seed (1 bed, 1 seed, 0 plants), but it is ` +
+      `${start.beds} bed(s), ${start.seeds} seed(s) and ${start.plants} plant(s).`
     );
   }
 
@@ -229,10 +231,10 @@ function checkStartState(problems) {
     removeItem: () => {},
   };
   const { garden } = readStoredGarden(empty);
-  if (garden.seeds !== 1 || garden.plants !== 0) {
+  if (garden.seeds !== 1 || garden.plants !== 0 || garden.beds !== 1) {
     problems.push(
-      `a first visit with nothing saved should open the starting garden (1 seed, 0 plants), ` +
-      `but it opened ${garden.seeds} seed(s) and ${garden.plants} plant(s).`
+      `a first visit with nothing saved should open the starting garden (1 bed, 1 seed, 0 plants), ` +
+      `but it opened ${garden.beds} bed(s), ${garden.seeds} seed(s) and ${garden.plants} plant(s).`
     );
   }
 }
@@ -243,8 +245,10 @@ function checkSaveCodec(problems) {
     { seeds: 0, plants: 0 },
     { seeds: 5, plants: 3 },
     { seeds: PLOT_CAPACITY, plants: 0 },
+    { seeds: 5, plants: 3, beds: 3 },
   ];
   for (const sample of samples) {
+    const beds = sample.beds ?? 1;
     let roundTripped;
     try {
       roundTripped = decodeSave(encodeSave(sample));
@@ -252,10 +256,10 @@ function checkSaveCodec(problems) {
       problems.push(`a save could not round-trip (${sample.seeds} seeds, ${sample.plants} plants): ${e.message}`);
       continue;
     }
-    if (roundTripped.seeds !== sample.seeds || roundTripped.plants !== sample.plants) {
+    if (roundTripped.seeds !== sample.seeds || roundTripped.plants !== sample.plants || roundTripped.beds !== beds) {
       problems.push(
-        `a save did not round-trip: put in ${sample.seeds} seeds / ${sample.plants} plants, ` +
-        `got back ${roundTripped.seeds} / ${roundTripped.plants}.`
+        `a save did not round-trip: put in ${beds} beds / ${sample.seeds} seeds / ${sample.plants} plants, ` +
+        `got back ${roundTripped.beds} / ${roundTripped.seeds} / ${roundTripped.plants}.`
       );
     }
   }
@@ -275,6 +279,25 @@ function checkSaveCodec(problems) {
     problems.push(`a save carrying sprout timers could not round-trip: ${e.message}`);
   }
 
+  // A version-3 save predates beds: it opens onto exactly one bed, and its rate
+  // is kept as it was, because its grown plants already carried the production.
+  const version3 = `${SAVE_PREFIX}${btoa(
+    JSON.stringify({ version: 3, seeds: 2, plants: 1, growth: 5, rate: 0.5, sprouts: [10, 5] })
+  )}`;
+  try {
+    const migrated = decodeSave(version3);
+    if (migrated.beds !== 1) {
+      problems.push(`a version-3 save should migrate to 1 bed, but it migrated to ${migrated.beds} beds.`);
+    }
+    if (migrated.rate !== 0.5) {
+      problems.push(
+        `a version-3 save's rate should be kept as 0.5 (its plants already produced), but it became ${migrated.rate}.`
+      );
+    }
+  } catch (e) {
+    problems.push(`a version-3 save should still load, but it was refused: ${e.message}`);
+  }
+
   const payload = (value) => `SELFGROW1.${btoa(JSON.stringify(value))}`;
   const rejects = [
     ["an empty string", ""],
@@ -288,6 +311,8 @@ function checkSaveCodec(problems) {
     ["seeds given as text", payload({ version: SAVE_VERSION, seeds: "1", plants: 0 })],
     ["seeds beyond a finite number", payload({ version: SAVE_VERSION, seeds: 1e999, plants: 0 })],
     ["plants missing", payload({ version: SAVE_VERSION, seeds: 1 })],
+    ["beds below one", payload({ version: SAVE_VERSION, seeds: 1, plants: 0, beds: 0 })],
+    ["a fractional bed count", payload({ version: SAVE_VERSION, seeds: 1, plants: 0, beds: 1.5 })],
   ];
   for (const [label, value] of rejects) {
     try {
@@ -356,7 +381,7 @@ function checkDurableSave(problems) {
 function checkPageReadout(problems) {
   const state = getDisplayedState();
 
-  for (const field of ["seeds", "plants", "capacity"]) {
+  for (const field of ["seeds", "plants", "beds", "capacity"]) {
     const el = document.querySelector(`[data-field="${field}"]`);
     if (!el) {
       problems.push(`the page has no readout for the garden's ${field} (expected [data-field="${field}"]).`);
@@ -917,12 +942,20 @@ function checkSeedGoalReadout(problems) {
       );
     }
 
-    // Full: the goal tells the truth instead of promising a seed that cannot land.
-    setGarden({ seeds: PLOT_CAPACITY, plants: 0 });
+    // Full: the goal becomes the next bed, naming it and its cost, while the
+    // Plant a seed control stays disabled and says the plot is full.
+    setGarden({ beds: 1, seeds: PLOT_CAPACITY, plants: 0 });
     setGrowth(0, 1);
+    const bedCost = nextBedCost(1);
     const fullDetail = String(detailEl.textContent);
-    if (!fullDetail.includes(numberFormat.format(PLOT_CAPACITY))) {
-      problems.push(`with every plot full the goal does not state the plot count: ${JSON.stringify(fullDetail)}`);
+    if (!fullDetail.includes(numberFormat.format(bedCost))) {
+      problems.push(
+        `with every plot full the goal does not state the next bed's ${bedCost}-growth cost: ${JSON.stringify(fullDetail)}`
+      );
+    }
+    const goalTitle = String(document.getElementById("goal-title")?.textContent ?? "");
+    if (!/bed\s*#2/i.test(goalTitle)) {
+      problems.push(`with every plot full the goal title does not name the next bed: ${JSON.stringify(goalTitle)}`);
     }
     const button = document.getElementById("plant-seed");
     if (button && !button.disabled) {
@@ -980,6 +1013,134 @@ function checkNextPlantReadout(problems) {
   } finally {
     setGarden(gardenBefore);
     setGrowth(growthBefore.growth, growthBefore.rate);
+  }
+}
+
+/**
+ * The plot is endless: once every plot holds a seed the goal becomes the next
+ * bed, and spending its price opens more soil and lets more seeds be planted.
+ */
+function checkBedProgression(problems) {
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const storageBefore = rawStorage();
+  const canvas = document.getElementById("garden-plot");
+  try {
+    // One full bed of soil, and nothing more to plant in it.
+    setGarden({ beds: 1, seeds: PLOTS_PER_BED, plants: 0 });
+
+    const cost = nextBedCost(1);
+    // The promised price of the first extra bed — 200 base times 1.15 — stated
+    // here as a literal so a change to the cost curve turns this red.
+    const firstCost = 230;
+    if (cost !== firstCost) {
+      problems.push(`the first extra bed should cost ${firstCost} growth, but nextBedCost(1) is ${cost}.`);
+    }
+    if (!(nextBedCost(2) > nextBedCost(1))) {
+      problems.push(
+        `the next bed must cost more than the last, but 1 bed costs ${nextBedCost(1)} and 2 cost ${nextBedCost(2)}.`
+      );
+    }
+
+    // Offered but short of the price: not yet openable.
+    setGrowth(cost - 1, 1);
+    let state = getDisplayedState();
+    if (!state.plotFull) {
+      problems.push(`a bed with ${PLOTS_PER_BED} seeds should be full, but the state says plotFull is ${state.plotFull}.`);
+    }
+    if (state.canOpenBed) {
+      problems.push(`the garden can open a ${cost}-growth bed at ${cost - 1} growth; it must not.`);
+    }
+    if (state.secondsToNextBed == null) {
+      problems.push("with a full plot and growth climbing, secondsToNextBed should be reported, but it is null.");
+    }
+
+    // Exactly the price: the next bed is ready.
+    setGrowth(cost, 1);
+    state = getDisplayedState();
+    if (!state.canOpenBed) {
+      problems.push(`the garden cannot open a ${cost}-growth bed at exactly ${cost} growth.`);
+    }
+    const button = document.getElementById("open-bed");
+    if (!button) {
+      problems.push("the page has no Open the next bed control (#open-bed), so a full plot cannot widen.");
+    } else {
+      if (button.hidden || getComputedStyle(button).display === "none") {
+        problems.push("with every plot full the Open the next bed control is not shown.");
+      }
+      if (button.disabled) problems.push(`with ${cost} growth saved the Open the next bed control is disabled.`);
+      if (!String(button.textContent).includes(numberFormat.format(cost))) {
+        problems.push(
+          `the Open the next bed label is ${JSON.stringify(button.textContent)}, which does not state its ${cost}-growth cost.`
+        );
+      }
+      button.click();
+    }
+
+    const opened = getGarden();
+    const afterGrowth = getGrowthState();
+    if (opened.beds !== 2 || opened.capacity !== PLOTS_PER_BED * 2) {
+      problems.push(
+        `opening a bed left the garden with ${opened.beds} beds / ${opened.capacity} plots, ` +
+          `expected 2 beds / ${PLOTS_PER_BED * 2} plots.`
+      );
+    }
+    if (afterGrowth.growth !== 0) {
+      problems.push(`opening a ${cost}-growth bed from ${cost} growth left ${afterGrowth.growth} growth, expected 0.`);
+    }
+
+    // The goal carries on: the next bed's cost and progress are shown, and the
+    // control steps back out of the way now that there is soil to plant again.
+    state = getDisplayedState();
+    if (state.plotFull) {
+      problems.push("after opening a second bed the enlarged plot is still reported full.");
+    }
+    const openButton = document.getElementById("open-bed");
+    if (openButton && (!openButton.hidden || getComputedStyle(openButton).display !== "none")) {
+      problems.push(
+        "after opening a bed the Open the next bed control is still shown, though the plot is no longer full."
+      );
+    }
+    if (!(state.nextBedCost > cost)) {
+      problems.push(`after opening a bed the next bed should cost more than ${cost}, but it is ${state.nextBedCost}.`);
+    }
+    const nextBedEl = document.querySelector('[data-field="next-bed"]');
+    if (!nextBedEl) {
+      problems.push('the page has no next-bed readout (expected [data-field="next-bed"]).');
+    } else {
+      const text = String(nextBedEl.textContent);
+      if (!text.includes(numberFormat.format(state.nextBedCost))) {
+        problems.push(`the next-bed readout ${JSON.stringify(text)} does not state the ${state.nextBedCost}-growth cost.`);
+      }
+      if (!text.includes("%")) {
+        problems.push(`the next-bed readout ${JSON.stringify(text)} does not show progress.`);
+      }
+    }
+
+    // The extra soil is real: seed 13, impossible on one bed, can now be planted.
+    const seedCost = nextSeedCost(PLOTS_PER_BED);
+    setGrowth(seedCost, 1);
+    document.getElementById("plant-seed")?.click();
+    if (getGarden().seeds !== PLOTS_PER_BED + 1) {
+      problems.push(
+        `after opening a second bed the garden could not plant seed ${PLOTS_PER_BED + 1} ` +
+          `(it holds ${getGarden().seeds} seeds), so the new soil is not usable.`
+      );
+    }
+
+    // The extra bed widens the drawn ground, with everything else held still.
+    setGrowth(0, 0);
+    setGarden({ beds: 1, seeds: 6, plants: 0 });
+    const oneBed = canvas ? canvas.toDataURL() : null;
+    setGarden({ beds: 2, seeds: 6, plants: 0 });
+    const twoBeds = canvas ? canvas.toDataURL() : null;
+    if (canvas && oneBed && oneBed === twoBeds) {
+      problems.push("the plot drew the same picture with one bed and with two, so a new bed is invisible on it.");
+    }
+  } finally {
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate);
+    restoreRawStorage(storageBefore);
   }
 }
 
@@ -1319,6 +1480,14 @@ async function checkAgentTools(problems) {
         `${shown.totalPlanted}.`
     );
   }
+  for (const field of ["beds", "capacity", "nextBedCost", "canOpenBed", "bedCostProgress", "secondsToNextBed"]) {
+    if (state[field] !== shown[field]) {
+      problems.push(
+        `get-state reported ${field}=${JSON.stringify(state[field])}, but the page holds ${JSON.stringify(shown[field])}.`
+      );
+    }
+  }
+
   if (JSON.stringify(state.away) !== JSON.stringify(shown.away)) {
     problems.push("get-state's away does not match the page's return report.");
   }
@@ -1425,6 +1594,59 @@ async function checkAgentTools(problems) {
     }
   }
 
+  const openTool = find("open-bed");
+  if (!openTool) {
+    problems.push("agenttools.js has no open-bed tool, so an agent cannot do what the Open the next bed button does.");
+  } else {
+    const gardenBefore = getGarden();
+    const growthBefore = getGrowthState();
+    const storageBefore = rawStorage();
+    try {
+      // Refused while the plot still has room to plant.
+      setGarden({ beds: 1, seeds: 1, plants: 0 });
+      setGrowth(nextBedCost(1) * 2, 0);
+      const early = await openTool.execute({}, {});
+      if (early.ok || getGarden().beds !== 1) {
+        problems.push("the open-bed tool opened a bed while the plot still had room to plant.");
+      }
+
+      // Refused without the growth to pay for it.
+      setGarden({ beds: 1, seeds: PLOT_CAPACITY, plants: 0 });
+      setGrowth(nextBedCost(1) - 1, 0);
+      const poor = await openTool.execute({}, {});
+      if (poor.ok || getGarden().beds !== 1) {
+        problems.push("the open-bed tool opened a bed with less growth than it costs.");
+      }
+
+      // Opened on a full plot with the price saved.
+      setGarden({ beds: 1, seeds: PLOT_CAPACITY, plants: 0 });
+      const bedCost = nextBedCost(1);
+      setGrowth(bedCost, 0);
+      const openedResult = await openTool.execute({}, {});
+      const afterGarden = getGarden();
+      const afterGrowth = getGrowthState();
+      if (!openedResult.ok || openedResult.cost !== bedCost || openedResult.beds !== 2) {
+        problems.push(
+          `the open-bed tool reported ok=${openedResult.ok} cost=${openedResult.cost} beds=${openedResult.beds}, ` +
+            `expected ok=true cost=${bedCost} beds=2.`
+        );
+      }
+      if (afterGarden.beds !== 2 || afterGarden.capacity !== PLOTS_PER_BED * 2 || afterGrowth.growth !== 0) {
+        problems.push(
+          `the open-bed tool left the garden at ${afterGarden.beds} beds / ${afterGarden.capacity} plots / ` +
+            `${afterGrowth.growth} growth, expected 2 / ${PLOTS_PER_BED * 2} / 0.`
+        );
+      }
+      if (!openedResult.state || openedResult.state.beds !== 2 || openedResult.state.capacity !== PLOTS_PER_BED * 2) {
+        problems.push("the open-bed tool did not return the state after opening.");
+      }
+    } finally {
+      setGarden(gardenBefore);
+      setGrowth(growthBefore.growth, growthBefore.rate);
+      restoreRawStorage(storageBefore);
+    }
+  }
+
   const exported = await exportTool.execute({}, {});
   if (exported.save !== shown.save) {
     problems.push("export-save returned a different save than the page shows.");
@@ -1504,6 +1726,7 @@ export async function checks() {
     checkPlantingSpendsAndRaisesProduction(problems);
     checkSeedGoalReadout(problems);
     checkNextPlantReadout(problems);
+    checkBedProgression(problems);
     checkLargeCounts(problems);
     checkPortableSave(problems);
     checkNoOverflow(problems);
