@@ -27,16 +27,10 @@ A ticket that fails two runs is **parked** with a post-mortem, and the Tech Lead
 
 ## Who does what
 
-| | Runs (UTC) | Decides |
-| --- | --- | --- |
-| 🧭 **Product Owner** | Mon 08:00 | The Vision and the week's milestone |
-| 📋 **Product Manager** | daily 00:30 + 12:30 | What gets built, in what order, and what "done" means. Writes the Sunday digest |
-| ⚒️ **Devs** | after the PM, + daily 14:00 | How to build a ticket, and whether a build is good enough to merge |
-| 🔧 **Tech Lead** | Thu 09:00 | Whether the codebase still holds together; why parked tickets failed |
-| 👀 **Playtester** | daily 23:00 | Whether the product is any good to be in front of |
-| 📊 **Health** | daily 16:00 | Nothing. It watches the pipeline and speaks only when something is broken |
-| 🤝 **review-pr** / **triage-fork-pr** | on any PR | Finish a person's PR; review a fork's as text |
-| 📦 **pi-update** | Tue 07:00 | Keeps the agent runtime current, and reverts if the model chain breaks |
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/roles-dark.svg">
+  <img alt="Roles, each owning a kind of judgement: the Product Owner decides the Vision and the week's milestone; the Product Manager decides what gets built, in what order, and what done means, and writes the Sunday digest; the Devs decide how to build a ticket and whether a build is good enough to merge; the Tech Lead decides whether the codebase still holds together and why parked tickets failed. Jobs, which run on their own and own no judgement: the Playtester judges whether the product is any good to be in front of; Health watches the pipeline and speaks only when something is broken; review-pr and triage-fork-pr finish a person's PR or review a fork's as text; pi-update keeps the agent runtime current and reverts if the model chain breaks." src=".github/readme/roles-light.svg">
+</picture>
 
 ### When it runs
 

@@ -1,4 +1,4 @@
-# Draws the README's images, "How a change flows" and "When it runs", each in a
+# Draws the README's images, "Who does what", "How a change flows" and "When it runs", each in a
 # light and a dark version, in one shared style.
 # Edit the cards below, then run:  python3 .github/readme/make_images.py .github/readme
 # The numbers they show (tries per run, failed runs before parking, schedules) are
@@ -25,6 +25,7 @@ ICONS = {
     "devs": '<path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14"/>',
     "health": '<path d="M3 12h4l2.5-6 4 12 2.5-6H21"/>',
     "update": '<path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4.5V9h-4.5"/>',
+    "pull": '<circle cx="6" cy="6" r="2.2"/><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="18" r="2.2"/><path d="M6 8.2v7.6"/><path d="M18 15.8V9a3 3 0 0 0-3-3h-4"/><path d="M13 3.5L10.5 6 13 8.5"/>',
 }
 
 def icon_chip(x, y, accent, name, size=28):
@@ -35,7 +36,7 @@ def icon_chip(x, y, accent, name, size=28):
             f'stroke-linecap="round" stroke-linejoin="round" color="{accent}">{ICONS[name]}</g>')
 ACCENT = dict(issues="#8b949e", owner="#a371f7", manager="#4493f8", devs="#3fb950",
               live="#d29922", tester="#db61a2", lead="#2fb5a8", parked="#f0883e",
-              health="#39c5cf", update="#8b949e")
+              health="#39c5cf", update="#8b949e", pull="#768bfa")
 
 FONT = "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
 
@@ -211,8 +212,62 @@ def build_schedule(name):
     parts.append('</svg>')
     return "\n".join(parts)
 
+# Who does what, split as DOMAIN.md splits it: a role owns a kind of judgement, a
+# job runs on a schedule and owns none. When each one runs is the schedule image's.
+ROLES = [
+    ("Roles", "each owns a kind of judgement", [
+        ("owner", "owner", "Product Owner", "The Vision and the week's milestone."),
+        ("manager", "manager", "Product Manager", "What gets built, in what order, and what \u201cdone\u201d means. Writes the Sunday digest."),
+        ("devs", "devs", "Devs", "How to build a ticket, and whether a build is good enough to merge."),
+        ("lead", "lead", "Tech Lead", "Whether the codebase still holds together, and why parked tickets failed."),
+    ]),
+    ("Jobs", "run on their own and own no judgement", [
+        ("tester", "tester", "Playtester", "Whether the product is any good to be in front of."),
+        ("health", "health", "Health", "Watches the pipeline and speaks only when something is broken."),
+        ("pull", "pull", "review-pr / triage-fork-pr", "Finishes a person's PR; reviews a fork's as text."),
+        ("update", "update", "pi-update", "Keeps the agent runtime current, and reverts if the model chain breaks."),
+    ]),
+]
+
+def wrap(text, limit):
+    lines, line = [], ""
+    for word in text.split():
+        if line and len(line) + 1 + len(word) > limit:
+            lines.append(line)
+            line = word
+        else:
+            line = f"{line} {word}".strip()
+    return lines + [line]
+
+def build_roles(name):
+    t = THEMES[name]
+    width, margin, gap, card_height, section_gap = 1280, 40, 20, 124, 36
+    card_width = (width - margin * 2 - gap * 3) / 4
+    height = margin + len(ROLES) * (34 + card_height) + section_gap * (len(ROLES) - 1) + margin - 6
+    parts = canvas(t, width, height, "Who does what in selfgrow")
+    y = margin
+    for section, subtitle, members in ROLES:
+        parts.append(f'<text x="{margin}" y="{y + 14}" font-size="13" font-weight="700" letter-spacing="0.06em" fill="{t["text"]}">{section.upper()}</text>')
+        parts.append(f'<text x="{margin + 14 + len(section) * 10.5}" y="{y + 14}" font-size="12.5" fill="{t["muted"]}">{subtitle}</text>')
+        y += 34
+        for index, (accent_key, icon_name, title, decides) in enumerate(members):
+            x = margin + index * (card_width + gap)
+            accent = ACCENT[accent_key]
+            parts.append(f'<rect x="{x}" y="{y}" width="{card_width}" height="{card_height}" rx="16" fill="{t["card"]}" stroke="{t["border"]}" filter="url(#shadow)"/>')
+            parts.append(f'<rect x="{x}" y="{y}" width="{card_width}" height="{card_height}" rx="16" fill="{accent}" fill-opacity="0.05"/>')
+            parts.append(icon_chip(x + 16, y + 16, accent, icon_name))
+            title_size = 16 if len(title) < 20 else 14
+            parts.append(f'<text x="{x + 54}" y="{y + 35}" font-size="{title_size}" font-weight="650" fill="{t["text"]}">{title}</text>')
+            for line_index, line in enumerate(wrap(decides, 36)):
+                parts.append(f'<text x="{x + 18}" y="{y + 70 + line_index * 19}" font-size="13" fill="{t["muted"]}">{line}</text>')
+        y += card_height + section_gap
+    parts.append('</svg>')
+    return "\n".join(parts)
+
 out = sys.argv[1]
 for name in THEMES:
+    with open(f"{out}/roles-{name}.svg", "w") as handle:
+        handle.write(build_roles(name))
     with open(f"{out}/flow-{name}.svg", "w") as handle:
         handle.write(build_flow(name))
     with open(f"{out}/schedule-{name}.svg", "w") as handle:
