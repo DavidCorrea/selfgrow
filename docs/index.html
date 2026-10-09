@@ -21,7 +21,7 @@
     <main id="main" class="stage">
       <section class="panel" aria-labelledby="garden-heading">
         <h2 id="garden-heading" class="panel-title">The garden</h2>
-        <p class="panel-note">Bare soil and one seed, waiting. Tend the soil to earn growth and speed the garden up; the number then climbs on its own, and the garden grows through named forms as it does. Spend that growth on another seed and it sprouts in the soil — wait for it to mature into a plant and the garden grows faster still, so fill the plot. Everything the plot draws is stated beside it, so the picture and the numbers always agree.</p>
+        <p class="panel-note">Bare soil and one seed, waiting. Tend the soil to earn growth and speed the garden up; the number then climbs on its own, and the garden grows through named forms as it does. Spend that growth on another seed and it sprouts in the soil — wait for it to mature into a plant and the garden grows faster still. When every plot holds a seed or plant the goal becomes the next bed: spend the growth it asks for and the plot widens by another bed of soil, so there is always a next goal. Everything the plot draws is stated beside it, so the picture and the numbers always agree.</p>
 
         <canvas id="garden-plot" class="plot" width="144" height="48" aria-hidden="true"></canvas>
         <p class="plot-description" id="plot-description"></p>
@@ -52,8 +52,16 @@
             <dd class="readout-value" data-field="next-plant">30s / 30s</dd>
           </div>
           <div class="readout-row">
+            <dt class="readout-term">Beds of soil</dt>
+            <dd class="readout-value" data-field="beds">1</dd>
+          </div>
+          <div class="readout-row">
             <dt class="readout-term">Plots of soil</dt>
             <dd class="readout-value" data-field="capacity">12</dd>
+          </div>
+          <div class="readout-row">
+            <dt class="readout-term">Next bed</dt>
+            <dd class="readout-value" data-field="next-bed">230 growth · 0% saved</dd>
           </div>
           <div class="readout-row">
             <dt class="readout-term">Saved in this browser</dt>
@@ -64,6 +72,8 @@
         <button type="button" class="btn tend" id="tend">Tend the soil</button>
 
         <button type="button" class="btn plant" id="plant-seed">Plant a seed — 6 growth</button>
+
+        <button type="button" class="btn plant" id="open-bed" hidden>Open the next bed — 230 growth</button>
 
         <div class="goal">
           <p class="goal-title" id="goal-title">Plant seed #2</p>

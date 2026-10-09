@@ -77,21 +77,30 @@ export function gardenForm(growth) {
 // --- Drawing the form on the soil -------------------------------------------
 //
 // The plot is a small grid of soil cells drawn at whole-pixel sizes and scaled
-// up by CSS with `image-rendering: pixelated`. The ground widens a little as
-// the garden rises through forms, and a bounded number of plants stands on it —
-// never more plants than there is ground, so a month of growth cannot flood the
-// picture.
+// up by CSS with `image-rendering: pixelated`. The ground widens as the garden
+// rises through forms and widens again with every bed of soil opened, while a
+// bounded number of plants stands on it — never more plants than there is
+// ground, so a month of growth cannot flood the picture.
 
 /** One cell of soil, in canvas pixels. */
 const CELL = 24;
 const COLUMNS = 6;
 const BASE_ROWS = 2;
-const MAX_ROWS = 4;
+const MAX_ROWS = 10;
 const FORMS_PER_ROW = 3;
+// Every bed beyond the first widens the drawn ground by two rows of soil, so
+// opening a bed is visible, while the row cap keeps the sprite count bounded.
+const ROWS_PER_BED = 2;
 
 /** How many rows of soil this form has spread to. */
 function rowsForForm(index) {
   return Math.min(MAX_ROWS, BASE_ROWS + Math.floor(index / FORMS_PER_ROW));
+}
+
+/** The beds of soil a drawn state owns; anything unknown is one bed. */
+function bedsFor(state) {
+  const beds = state && Number.isFinite(state.beds) ? Math.floor(state.beds) : 1;
+  return beds >= 1 ? beds : 1;
 }
 
 function drawSoil(ctx, x, y, palette) {
@@ -184,19 +193,19 @@ function drawTree(ctx, x, y, palette, index, growthTier) {
 /**
  * Draw `state`'s garden onto `canvas`, painting only with `palette`.
  *
- * The picture is a pure view of the state: the form still sets how much ground
- * there is and how big a grown plant is, and the plot's own counts say what
- * stands on it — the grown plants first, then the sprouting seeds, then bare
- * soil. The same amount always draws the same way, and every colour comes from
- * the palette read off `:root`, so the plot belongs to the same garden as the
- * panels around it. The number of sprites is bounded by the cells on screen, so
- * a save carrying more plants than plots cannot flood the picture.
+ * The picture is a pure view of the state: the form and the beds of soil set how
+ * much ground there is and how big a grown plant is, and the plot's own counts
+ * say what stands on it — the grown plants first, then the sprouting seeds, then
+ * bare soil. The same amount always draws the same way, and every colour comes
+ * from the palette read off `:root`, so the plot belongs to the same garden as
+ * the panels around it. The number of sprites is bounded by the cells on screen,
+ * so a save carrying more plants than plots cannot flood the picture.
  */
 export function drawGarden(canvas, state, palette) {
   if (!canvas || !palette) return;
   const growth = state && Number.isFinite(state.growth) ? state.growth : 0;
   const form = gardenForm(growth);
-  const rows = rowsForForm(form.index);
+  const rows = Math.min(MAX_ROWS, rowsForForm(form.index) + (bedsFor(state) - 1) * ROWS_PER_BED);
   const cells = rows * COLUMNS;
   const width = COLUMNS * CELL;
   const height = rows * CELL;

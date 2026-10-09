@@ -13,7 +13,7 @@
 
 import {
   GROW_SECONDS,
-  PLOT_CAPACITY,
+  PLOTS_PER_BED,
   STORAGE_KEY,
   advance,
   decodeSave,
@@ -21,7 +21,9 @@ import {
   encodeSave,
   getGarden,
   getGrowthState,
+  nextBedCost,
   nextSeedCost,
+  openBed,
   plantSeed,
   readLastSeen,
   readStoredGarden,
@@ -60,8 +62,11 @@ const elements = {
   meterFill: document.getElementById("seed-meter-fill"),
   seeds: document.querySelector('[data-field="seeds"]'),
   plants: document.querySelector('[data-field="plants"]'),
+  beds: document.querySelector('[data-field="beds"]'),
   capacity: document.querySelector('[data-field="capacity"]'),
   nextPlant: document.querySelector('[data-field="next-plant"]'),
+  nextBed: document.querySelector('[data-field="next-bed"]'),
+  openBed: document.getElementById("open-bed"),
   storage: document.querySelector('[data-field="storage"]'),
   plot: document.getElementById("garden-plot"),
   description: document.getElementById("plot-description"),
@@ -97,10 +102,11 @@ function readPalette() {
 const countLabel = (count, singular, plural) =>
   `${numberFormat.format(count)} ${count === 1 ? singular : plural}`;
 
-/** The picture, said in words: the same growth and form the plot draws. */
+/** The picture, said in words: the same growth, beds and form the plot draws. */
 function describePlot(state) {
   return (
     `${growthFormat.format(state.growth)} growth — ${state.formName}. ` +
+    `${countLabel(state.beds, "bed of soil", "beds of soil")}, ` +
     `${countLabel(state.seeds, "ungrown seed", "ungrown seeds")}, ` +
     `${countLabel(state.plants, "grown plant", "grown plants")}.`
   );
@@ -122,7 +128,8 @@ export function getDisplayedState() {
   const form = gardenForm(growth);
   const planted = garden.seeds + garden.plants;
   const seedCost = nextSeedCost(planted);
-  const plotFull = planted >= PLOT_CAPACITY;
+  const plotFull = planted >= garden.capacity;
+  const bedCost = nextBedCost(garden.beds);
   return {
     seeds: garden.seeds,
     plants: garden.plants,
@@ -131,7 +138,8 @@ export function getDisplayedState() {
     rate,
     form: form.index,
     formName: form.name,
-    capacity: PLOT_CAPACITY,
+    beds: garden.beds,
+    capacity: garden.capacity,
     growSeconds: GROW_SECONDS,
     secondsToNextPlant: secondsToNextPlant(garden.sprouts),
     nextSeedCost: seedCost,
@@ -139,6 +147,10 @@ export function getDisplayedState() {
     plotFull,
     seedCostProgress: seedCost > 0 ? Math.min(1, Math.max(0, growth / seedCost)) : 1,
     secondsToNextSeed: plotFull || !(rate > 0) ? null : Math.max(0, (seedCost - growth) / rate),
+    nextBedCost: bedCost,
+    canOpenBed: plotFull && growth >= bedCost,
+    bedCostProgress: bedCost > 0 ? Math.min(1, Math.max(0, growth / bedCost)) : 1,
+    secondsToNextBed: !plotFull || !(rate > 0) ? null : Math.max(0, (bedCost - growth) / rate),
     save: exportSave(),
     away: lastReturn,
     storageAvailable: isStorageAvailable,
@@ -319,13 +331,35 @@ function describeGoal(state) {
   const cost = numberFormat.format(state.nextSeedCost);
   const ripening =
     state.secondsToNextPlant == null ? "" : ` Next plant matures in ${formatDuration(state.secondsToNextPlant)}.`;
-  if (state.plotFull) return `All ${numberFormat.format(state.capacity)} plots hold a seed or plant.${ripening}`;
   if (state.canPlantSeed) return `Ready to plant — ${cost} growth saved.${ripening}`;
   if (!(state.rate > 0)) return `Tend the soil to grow faster — ${cost} growth needed.${ripening}`;
   return (
     `${growthFormat.format(state.growth)} / ${cost} growth — about ` +
     `${formatDuration(state.secondsToNextSeed)} at +${growthFormat.format(state.rate)}/s.${ripening}`
   );
+}
+
+/**
+ * The next bed as words, once every plot is full: what it costs, how far along
+ * that the garden is, and when it can be opened.
+ */
+function describeBedGoal(state) {
+  const cost = numberFormat.format(state.nextBedCost);
+  const ripening =
+    state.secondsToNextPlant == null ? "" : ` Next plant matures in ${formatDuration(state.secondsToNextPlant)}.`;
+  if (state.canOpenBed) return `Ready to open — ${cost} growth saved.${ripening}`;
+  if (!(state.rate > 0)) return `Tend the soil to grow faster — ${cost} growth needed.${ripening}`;
+  return (
+    `${growthFormat.format(state.growth)} / ${cost} growth — about ` +
+    `${formatDuration(state.secondsToNextBed)} at +${growthFormat.format(state.rate)}/s.${ripening}`
+  );
+}
+
+/** The next bed's price and progress, always on the page once shown. */
+function describeNextBed(state) {
+  const cost = numberFormat.format(state.nextBedCost);
+  const percent = Math.round(state.bedCostProgress * 100);
+  return `${cost} growth · ${percent}% saved`;
 }
 
 /** The next plant maturing, as words, for the readout beside the numbers. */
@@ -340,13 +374,34 @@ function renderPlanting(state) {
   setText(elements.plant, state.plotFull ? "Plant a seed — the plot is full" : `Plant a seed — ${cost} growth`);
   if (elements.plant) elements.plant.disabled = !state.canPlantSeed;
 
-  setText(
-    elements.goalTitle,
-    state.plotFull ? "Every plot holds a seed or plant" : `Plant seed #${numberFormat.format(state.totalPlanted + 1)}`
-  );
-  if (elements.meter) elements.meter.setAttribute("aria-valuenow", String(state.seedCostProgress));
-  if (elements.meterFill) elements.meterFill.style.width = `${(state.seedCostProgress * 100).toFixed(1)}%`;
-  setText(elements.goalDetail, describeGoal(state));
+  // While every plot is full the goal becomes the next bed, so the garden always
+  // has something to reach for instead of ending at "every plot holds a seed".
+  if (state.plotFull) {
+    setText(elements.goalTitle, `Open bed #${numberFormat.format(state.beds + 1)}`);
+    setMeter(state.bedCostProgress);
+    setText(elements.goalDetail, describeBedGoal(state));
+  } else {
+    setText(elements.goalTitle, `Plant seed #${numberFormat.format(state.totalPlanted + 1)}`);
+    setMeter(state.seedCostProgress);
+    setText(elements.goalDetail, describeGoal(state));
+  }
+
+  renderOpenBed(state);
+}
+
+/** Point the goal meter at `progress`, from 0 to 1. */
+function setMeter(progress) {
+  if (elements.meter) elements.meter.setAttribute("aria-valuenow", String(progress));
+  if (elements.meterFill) elements.meterFill.style.width = `${(progress * 100).toFixed(1)}%`;
+}
+
+/** The Open the next bed button: offered only when every plot is full. */
+function renderOpenBed(state) {
+  const button = elements.openBed;
+  if (!button) return;
+  button.hidden = !state.plotFull;
+  setText(button, `Open the next bed — ${numberFormat.format(state.nextBedCost)} growth`);
+  button.disabled = !state.canOpenBed;
 }
 
 function plantSeedFromButton() {
@@ -365,6 +420,22 @@ function plantSeedFromButton() {
   );
 }
 
+function openBedFromButton() {
+  const result = openBed();
+  if (!result.ok) {
+    announce(
+      result.reason === "not enough growth"
+        ? "Not enough growth for the next bed yet."
+        : "Every plot still has room — plant in it first."
+    );
+    return;
+  }
+  announce(
+    `Opened bed #${numberFormat.format(result.beds)} for ${numberFormat.format(result.cost)} growth — ` +
+      `${numberFormat.format(result.beds * PLOTS_PER_BED)} plots of soil now.`
+  );
+}
+
 let lastPlotKey = null;
 
 function render() {
@@ -378,8 +449,10 @@ function render() {
   setText(elements.form, state.formName);
   setText(elements.seeds, numberFormat.format(state.seeds));
   setText(elements.plants, numberFormat.format(state.plants));
+  setText(elements.beds, numberFormat.format(state.beds));
   setText(elements.capacity, numberFormat.format(state.capacity));
   setText(elements.nextPlant, describeNextPlant(state));
+  setText(elements.nextBed, describeNextBed(state));
   setText(elements.storage, state.storageAvailable ? "Yes" : "No");
   setText(elements.description, describePlot(state));
   renderPlanting(state);
@@ -391,7 +464,7 @@ function render() {
 
   // The picture follows the growth, not the stored garden, so it redraws when
   // the amount or the form it falls in changes — and stays put when nothing does.
-  const plotKey = `${state.form}:${state.growth}:${state.seeds}:${state.plants}`;
+  const plotKey = `${state.form}:${state.growth}:${state.seeds}:${state.plants}:${state.beds}`;
   if (plotKey !== lastPlotKey) {
     drawGarden(elements.plot, state, readPalette());
     lastPlotKey = plotKey;
@@ -463,6 +536,10 @@ function start() {
   });
   elements.plant?.addEventListener("click", () => {
     plantSeedFromButton();
+    persist();
+  });
+  elements.openBed?.addEventListener("click", () => {
+    openBedFromButton();
     persist();
   });
   elements.copy?.addEventListener("click", copySave);

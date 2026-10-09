@@ -276,6 +276,12 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* The `.plant` display rule would otherwise beat the `hidden` attribute, so the
+   Open the next bed control stays on screen once the plot is no longer full. */
+.btn[hidden] {
+  display: none;
+}
+
 /* A control that cannot be used yet says so plainly, in the same flat palette
    rather than a dimmed copy that a low-contrast visitor cannot read. */
 .btn:disabled {

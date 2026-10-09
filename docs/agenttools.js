@@ -3,13 +3,14 @@
  *
  * Derived from what the page shows a visitor and what it lets them do — nothing
  * more. `get-state` returns every value on the page; `tend` is the Tend the soil
- * button; `plant-seed` is the Plant a seed button; `export-save` is the Copy
- * save button; `import-save` is the Load save button, and returns the same
- * fields afterwards so the caller can see what it changed.
+ * button; `plant-seed` is the Plant a seed button; `open-bed` is the Open the
+ * next bed button; `export-save` is the Copy save button; `import-save` is the
+ * Load save button, and returns the same fields afterwards so the caller can see
+ * what it changed.
  */
 
 import { getDisplayedState, exportSave, loadGardenSave } from "./app.js";
-import { plantSeed, tend } from "./garden.js";
+import { openBed, plantSeed, tend } from "./garden.js";
 
 // The save for the starting garden, so `import-save`'s example always validates
 // and runs. Importing it leaves the garden exactly as it starts.
@@ -25,21 +26,28 @@ export function tools() {
         "total and the rate it is climbing at (in growth per second), the " +
         "garden form the plot is drawing (its name and its index among the " +
         "forms, lowest first), the ungrown seeds sprouting in the soil, the " +
-        "grown plants, the total planted (totalPlanted), how many plots of " +
-        "soil there are (capacity), the growing time a seed takes " +
-        "(growSeconds), the seconds until the next seed matures into a plant " +
-        "(secondsToNextPlant, null when no seed is growing), the portable " +
-        "save string, and whether this browser is keeping the garden. It also " +
-        "returns the next seed: what it costs (nextSeedCost), whether the " +
-        "garden can afford it now (canPlantSeed), whether the plot is full " +
-        "(plotFull), how far along the cost the garden is as a 0-to-1 " +
-        "fraction (seedCostProgress), and the seconds until it can afford it " +
-        "(secondsToNextSeed, null when full or not growing). It also reports " +
-        "away: the time since the visitor was last here and what it grew — " +
-        "seconds (0 on a first visit or a quick reload), earned growth, how " +
-        "many seeds matured (matured), the form it started at (from) and " +
-        "reached (to), the formsFound on the way, and a plain summary " +
-        "sentence. Ask it before acting so you know what the visitor sees.",
+        "grown plants, the total planted (totalPlanted), how many beds of " +
+        "soil the garden owns (beds), how many plots those beds make " +
+        "(capacity = beds times the plots per bed), the growing time a seed " +
+        "takes (growSeconds), the seconds until the next seed matures into a " +
+        "plant (secondsToNextPlant, null when no seed is growing), the " +
+        "portable save string, and whether this browser is keeping the " +
+        "garden. It also returns the next seed: what it costs (nextSeedCost), " +
+        "whether the garden can afford it now (canPlantSeed), whether the " +
+        "plot is full (plotFull), how far along the cost the garden is as a " +
+        "0-to-1 fraction (seedCostProgress), and the seconds until it can " +
+        "afford it (secondsToNextSeed, null when full or not growing). Once " +
+        "every plot is full it also returns the next bed: what opening it " +
+        "costs (nextBedCost), whether the garden can afford it now " +
+        "(canOpenBed — only ever true on a full plot), how far along that " +
+        "cost it is as a 0-to-1 fraction (bedCostProgress), and the seconds " +
+        "until it can afford it (secondsToNextBed, null unless the plot is " +
+        "full and the garden is growing). It also reports away: the time " +
+        "since the visitor was last here and what it grew — seconds (0 on a " +
+        "first visit or a quick reload), earned growth, how many seeds " +
+        "matured (matured), the form it started at (from) and reached (to), " +
+        "the formsFound on the way, and a plain summary sentence. Ask it " +
+        "before acting so you know what the visitor sees.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
       example: {},
@@ -75,14 +83,45 @@ export function tools() {
         "garden keeps growing at. The price rises with every seed or plant " +
         "already in the plot, so get-state's nextSeedCost is what this will " +
         "charge. It refuses, changing nothing, when the garden has not saved " +
-        "enough growth or every plot is full. Returns whether it planted, the " +
-        "cost, the reason when it refused, and the state afterwards.",
+        "enough growth or every plot is full — capacity comes from the number " +
+        "of beds the garden owns, so open-bed is how a full plot grows. " +
+        "Returns whether it planted, the cost, the reason when it refused, " +
+        "and the state afterwards.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: false },
       example: {},
       async execute() {
         const result = plantSeed();
         return { ok: result.ok, reason: result.reason, cost: result.cost, state: getDisplayedState() };
+      },
+    },
+    {
+      name: "open-bed",
+      title: "Open the next bed of soil",
+      description:
+        "Does what the page's Open the next bed button does: spends the " +
+        "garden's growth on another bed of soil and adds more plots to plant " +
+        "in. It is how a plot that is full keeps growing — get-state's " +
+        "nextBedCost is what this will charge, and its preconditions are a " +
+        "full plot (plotFull) and enough growth (canOpenBed). Opening widens " +
+        "the drawn plot and raises the garden's plots of soil (capacity) by " +
+        "a whole bed. The next bed costs more than the last, so the price " +
+        "climbs. It refuses, changing nothing, when the plot still has room " +
+        "to plant or the garden has not saved enough growth. Returns whether " +
+        "it opened, the cost, how many beds the garden now owns, the reason " +
+        "when it refused, and the state afterwards.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      annotations: { readOnlyHint: false },
+      example: {},
+      async execute() {
+        const result = openBed();
+        return {
+          ok: result.ok,
+          reason: result.reason,
+          cost: result.cost,
+          beds: result.beds,
+          state: getDisplayedState(),
+        };
       },
     },
     {
