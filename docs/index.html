@@ -90,6 +90,8 @@
           </div>
           <p class="goal-detail" id="goal-detail"></p>
         </div>
+
+        <button type="button" class="btn plant" id="open-sandbox">Rehearse time in a sandbox</button>
       </section>
 
       <section class="panel" aria-labelledby="save-heading">
@@ -114,6 +116,66 @@
           <button type="button" class="btn" id="load-save">Load save</button>
         </div>
         <p class="save-status" id="save-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section class="panel" id="sandbox" aria-labelledby="sandbox-heading" hidden>
+        <h2 id="sandbox-heading" class="panel-title">Rehearse time</h2>
+        <p class="panel-note">A copy of the garden, wound forward so you can see what an hour, a day or a month away would do. It lives only in this tab: nothing here is saved, and the real garden is left exactly as it is.</p>
+
+        <dl class="readout" aria-label="What the rehearsal garden holds">
+          <div class="readout-row">
+            <dt class="readout-term">Time wound forward</dt>
+            <dd class="readout-value" id="sandbox-elapsed" data-field="sandbox-elapsed">none yet</dd>
+          </div>
+          <div class="readout-row">
+            <dt class="readout-term">Growth</dt>
+            <dd class="readout-value readout-growth">
+              <span id="sandbox-growth">0.0</span>
+              <span class="readout-rate" id="sandbox-rate">+0.0/s</span>
+            </dd>
+          </div>
+          <div class="readout-row">
+            <dt class="readout-term">Garden form</dt>
+            <dd class="readout-value" data-field="sandbox-form">bare soil</dd>
+          </div>
+          <div class="readout-row">
+            <dt class="readout-term">Seeds matured</dt>
+            <dd class="readout-value" data-field="sandbox-matured">0</dd>
+          </div>
+          <div class="readout-row">
+            <dt class="readout-term">Ungrown seeds</dt>
+            <dd class="readout-value" data-field="sandbox-seeds">1</dd>
+          </div>
+          <div class="readout-row">
+            <dt class="readout-term">Grown plants</dt>
+            <dd class="readout-value" data-field="sandbox-plants">0</dd>
+          </div>
+        </dl>
+
+        <p class="panel-note" id="sandbox-summary" role="status"></p>
+
+        <div class="goal">
+          <p class="goal-title" id="sandbox-goal-title"></p>
+          <div
+            class="meter"
+            id="sandbox-meter"
+            role="progressbar"
+            aria-labelledby="sandbox-goal-title"
+            aria-valuemin="0"
+            aria-valuemax="1"
+            aria-valuenow="0"
+          >
+            <div class="meter-fill" id="sandbox-meter-fill"></div>
+          </div>
+          <p class="goal-detail" id="sandbox-goal-detail"></p>
+        </div>
+
+        <div class="save-actions">
+          <button type="button" class="btn" id="sandbox-hour">Fast-forward 1 hour</button>
+          <button type="button" class="btn" id="sandbox-day">Fast-forward 1 day</button>
+          <button type="button" class="btn" id="sandbox-month">Fast-forward 1 month</button>
+          <button type="button" class="btn" id="sandbox-reset">Reset to the start</button>
+        </div>
       </section>
     </main>
 

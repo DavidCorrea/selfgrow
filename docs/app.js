@@ -29,6 +29,7 @@ import {
   readStoredGarden,
   setGarden,
   setGrowth,
+  simulateGarden,
   storageAvailable,
   subscribe,
   tend,
@@ -75,6 +76,24 @@ const elements = {
   copy: document.getElementById("copy-save"),
   load: document.getElementById("load-save"),
   status: document.getElementById("save-status"),
+  openSandbox: document.getElementById("open-sandbox"),
+  sandbox: document.getElementById("sandbox"),
+  sandboxElapsed: document.getElementById("sandbox-elapsed"),
+  sandboxGrowth: document.getElementById("sandbox-growth"),
+  sandboxRate: document.getElementById("sandbox-rate"),
+  sandboxForm: document.querySelector('[data-field="sandbox-form"]'),
+  sandboxMatured: document.querySelector('[data-field="sandbox-matured"]'),
+  sandboxSeeds: document.querySelector('[data-field="sandbox-seeds"]'),
+  sandboxPlants: document.querySelector('[data-field="sandbox-plants"]'),
+  sandboxSummary: document.getElementById("sandbox-summary"),
+  sandboxGoalTitle: document.getElementById("sandbox-goal-title"),
+  sandboxGoalDetail: document.getElementById("sandbox-goal-detail"),
+  sandboxMeter: document.getElementById("sandbox-meter"),
+  sandboxMeterFill: document.getElementById("sandbox-meter-fill"),
+  sandboxHour: document.getElementById("sandbox-hour"),
+  sandboxDay: document.getElementById("sandbox-day"),
+  sandboxMonth: document.getElementById("sandbox-month"),
+  sandboxReset: document.getElementById("sandbox-reset"),
 };
 
 const isStorageAvailable = storageAvailable();
@@ -123,8 +142,22 @@ function setText(element, text) {
  * they are the same values from the same place, never two sources to drift.
  */
 export function getDisplayedState() {
-  const garden = getGarden();
   const { growth, rate } = getGrowthState();
+  return {
+    ...describeGardenState(getGarden(), growth, rate),
+    save: exportSave(),
+    away: lastReturn,
+    sandbox: getSandboxState(),
+    storageAvailable: isStorageAvailable,
+  };
+}
+
+/**
+ * Everything a garden state shows, read the same way the page reads the live
+ * one. `garden` is `getGarden()`'s shape (or an equivalent), so a simulated
+ * garden and the live one are described by one function and cannot disagree.
+ */
+function describeGardenState(garden, growth, rate) {
   const form = gardenForm(growth);
   const planted = garden.seeds + garden.plants;
   const seedCost = nextSeedCost(planted);
@@ -151,9 +184,6 @@ export function getDisplayedState() {
     canOpenBed: plotFull && growth >= bedCost,
     bedCostProgress: bedCost > 0 ? Math.min(1, Math.max(0, growth / bedCost)) : 1,
     secondsToNextBed: !plotFull || !(rate > 0) ? null : Math.max(0, (bedCost - growth) / rate),
-    save: exportSave(),
-    away: lastReturn,
-    storageAvailable: isStorageAvailable,
   };
 }
 
@@ -232,46 +262,69 @@ export function summarizeReturn(away) {
 }
 
 /**
- * Count the time since `lastSeenMs` against `saved`'s growth and rate, with no
- * cap, and put the garden where that much played time would have left it.
+ * Describe a span of time against a garden state, with no cap on the span.
  *
- * @param {{seeds: number, plants: number, sprouts: number[], growth: number, rate: number}} saved
- * @param {number|null} lastSeenMs
- * @param {number} nowMs
- * @returns {object} the `away` report: the span, what it earned and grew into
- *   (including how many seeds matured), the summary sentence, and what to
- *   reach for next.
+ * Pure, and the one place a return report is built: `start` is a garden state
+ * (`{growth, rate, sprouts, plants, beds}`) and the result is the same `away`
+ * report the page shows after an absence — the span, what it earned and grew
+ * into (including how many seeds matured), the summary sentence, and what to
+ * reach for next. The sandbox rehearses with it, so a rehearsal reads exactly
+ * as the real absence would.
+ *
+ * @returns {object} the `away` report, its `summary` included.
  */
-export function applyReturn(saved, lastSeenMs, nowMs) {
-  const seconds = elapsedSeconds(lastSeenMs, nowMs);
-  const startGrowth = Number.isFinite(saved.growth) && saved.growth > 0 ? saved.growth : 0;
-  const startRate = Number.isFinite(saved.rate) && saved.rate > 0 ? saved.rate : 0;
-  const fromForm = gardenForm(startGrowth);
-
-  setGrowth(startGrowth, startRate);
-  const plantsBefore = getGarden().plants;
-  advance(seconds);
-  const matured = getGarden().plants - plantsBefore;
-
-  const growth = getGrowthState().growth;
-  const endGarden = getGarden();
-  const toForm = gardenForm(growth);
+export function buildAwayReport(start, seconds) {
+  const before = simulateGarden(start, 0);
+  const after = simulateGarden(start, seconds);
+  const fromForm = gardenForm(before.growth);
+  const toForm = gardenForm(after.growth);
   const nextIndex = toForm.index + 1;
-  const away = {
-    seconds,
-    earned: growth - startGrowth,
-    matured,
+  const report = {
+    seconds: Number.isFinite(seconds) && seconds > 0 ? seconds : 0,
+    earned: after.growth - before.growth,
+    matured: after.plants - before.plants,
     from: fromForm.index,
     fromName: fromForm.name,
     to: toForm.index,
     form: toForm.name,
     formsFound: FORMS.slice(fromForm.index + 1, toForm.index + 1).map((entry) => entry.name),
-    growth,
+    growth: after.growth,
     nextFormName: nextIndex < FORMS.length ? FORMS[nextIndex].name : null,
-    growthToNextForm: Math.max(0, toForm.nextAt - growth),
-    nextSeedCost: nextSeedCost(endGarden.seeds + endGarden.plants),
+    growthToNextForm: Math.max(0, toForm.nextAt - after.growth),
+    nextSeedCost: nextSeedCost(after.sprouts.length + after.plants),
   };
-  away.summary = summarizeReturn(away);
+  report.summary = summarizeReturn(report);
+  return report;
+}
+
+/**
+ * Count the time since `lastSeenMs` against the garden's growth and rate, with
+ * no cap, and put the garden where that much played time would have left it.
+ *
+ * The report comes from `buildAwayReport` and the live garden is set to the end
+ * of that same simulation, so what the page shows and what the summary says can
+ * never disagree.
+ *
+ * @param {{growth: number, rate: number}} saved the growth and rate left behind
+ * @param {number|null} lastSeenMs
+ * @param {number} nowMs
+ * @returns {object} the `away` report.
+ */
+export function applyReturn(saved, lastSeenMs, nowMs) {
+  const seconds = elapsedSeconds(lastSeenMs, nowMs);
+  const live = getGarden();
+  const start = {
+    growth: saved.growth,
+    rate: saved.rate,
+    sprouts: live.sprouts,
+    plants: live.plants,
+    beds: live.beds,
+  };
+  const away = buildAwayReport(start, seconds);
+  const after = simulateGarden(start, seconds);
+
+  setGrowth(after.growth, after.rate);
+  setGarden({ beds: start.beds, plants: after.plants, sprouts: after.sprouts });
 
   lastReturn = away;
   showReturnSummary(away);
@@ -290,6 +343,120 @@ function showReturnSummary(away) {
   }
   element.textContent = away.summary;
   element.hidden = false;
+}
+
+// --- Rehearsing time in a sandbox -------------------------------------------
+//
+// A copy of the garden held only in memory, wound forward on demand, so a
+// visitor can see what an hour, a day or a month away does without risking the
+// real one. Nothing here is ever saved or written: the sandbox keeps its own
+// snapshot and span, and the real garden, its save and its last-seen moment are
+// exactly as they were. The summary and the next goal come from the same
+// `summarizeReturn` and `describeNextGoal` the real return uses, so a rehearsal
+// reads exactly as the real absence would.
+
+/** The three fast-forward jumps the page offers, in the order it offers them. */
+export const SANDBOX_SPANS = Object.freeze([
+  { key: "hour", label: "1 hour", seconds: 3600 },
+  { key: "day", label: "1 day", seconds: 86400 },
+  { key: "month", label: "1 month", seconds: 2592000 },
+]);
+
+/** The seconds a span name stands for, or 0 for a name that is not a span. */
+export function sandboxSpanSeconds(key) {
+  const span = SANDBOX_SPANS.find((entry) => entry.key === key);
+  return span ? span.seconds : 0;
+}
+
+/** The open sandbox: its opening snapshot, how far it has wound, and its read. */
+let sandbox = null;
+
+/** A copy of the live garden's state — the point a rehearsal runs forward from. */
+function gardenSnapshot() {
+  const garden = getGarden();
+  const { growth, rate } = getGrowthState();
+  return { growth, rate, sprouts: garden.sprouts, plants: garden.plants, beds: garden.beds };
+}
+
+/** Start a fresh sandbox from the garden as it is now, wound back to zero. */
+function startSandbox() {
+  sandbox = { snapshot: gardenSnapshot(), seconds: 0, shown: null };
+}
+
+/** Recompute what the open sandbox shows, from its snapshot and its span. */
+function rehearseSandbox() {
+  if (!sandbox) return;
+  const end = simulateGarden(sandbox.snapshot, sandbox.seconds);
+  const away = buildAwayReport(sandbox.snapshot, sandbox.seconds);
+  const display = describeGardenState(
+    {
+      seeds: end.sprouts.length,
+      plants: end.plants,
+      sprouts: end.sprouts,
+      beds: end.beds,
+      capacity: end.beds * PLOTS_PER_BED,
+    },
+    end.growth,
+    end.rate
+  );
+  const goal = describeNextGoal(display);
+  sandbox.shown = {
+    open: true,
+    seconds: sandbox.seconds,
+    elapsed: formatAway(sandbox.seconds),
+    growth: display.growth,
+    rate: display.rate,
+    form: display.form,
+    formName: display.formName,
+    seeds: display.seeds,
+    plants: display.plants,
+    beds: display.beds,
+    capacity: display.capacity,
+    matured: away.matured,
+    summary: away.summary,
+    goalTitle: goal.title,
+    goalDetail: goal.detail,
+    goalProgress: goal.progress,
+  };
+}
+
+/**
+ * Open a sandbox on a copy of the real garden, wound back to its start.
+ *
+ * Reads the live garden and keeps nothing of the real one: no save, no
+ * last-seen, no growth. Opening again re-copies the garden as it is now.
+ */
+export function openSandbox() {
+  startSandbox();
+  rehearseSandbox();
+  render();
+  return getSandboxState();
+}
+
+/**
+ * Wind the sandbox forward by `seconds`, opening it first if it is closed. A
+ * span that is not a positive number adds no time.
+ */
+export function fastForwardSandbox(seconds) {
+  if (!sandbox) startSandbox();
+  if (Number.isFinite(seconds) && seconds > 0) sandbox.seconds += seconds;
+  rehearseSandbox();
+  render();
+  return getSandboxState();
+}
+
+/** Put the sandbox back to the moment it was opened. Safe while it is closed. */
+export function resetSandbox() {
+  if (!sandbox) return getSandboxState();
+  sandbox.seconds = 0;
+  rehearseSandbox();
+  render();
+  return getSandboxState();
+}
+
+/** What the sandbox shows, or `{open: false}` while it is closed. */
+export function getSandboxState() {
+  return sandbox ? sandbox.shown : { open: false };
 }
 
 /**
@@ -368,31 +535,45 @@ function describeNextPlant(state) {
   return `${formatDuration(state.secondsToNextPlant)} / ${formatDuration(state.growSeconds)}`;
 }
 
+/**
+ * The next thing worth reaching for, as a title, a sentence and 0-to-1
+ * progress. While every plot is full the goal becomes the next bed, so the
+ * garden always has something to reach for instead of ending at "every plot
+ * holds a seed" — and a sandbox rehearsal asks for the same goal afterwards.
+ */
+function describeNextGoal(state) {
+  if (state.plotFull) {
+    return {
+      title: `Open bed #${numberFormat.format(state.beds + 1)}`,
+      detail: describeBedGoal(state),
+      progress: state.bedCostProgress,
+    };
+  }
+  return {
+    title: `Plant seed #${numberFormat.format(state.totalPlanted + 1)}`,
+    detail: describeGoal(state),
+    progress: state.seedCostProgress,
+  };
+}
+
 /** The Plant a seed button, the goal it is reaching for, and the meter between. */
 function renderPlanting(state) {
   const cost = numberFormat.format(state.nextSeedCost);
   setText(elements.plant, state.plotFull ? "Plant a seed — the plot is full" : `Plant a seed — ${cost} growth`);
   if (elements.plant) elements.plant.disabled = !state.canPlantSeed;
 
-  // While every plot is full the goal becomes the next bed, so the garden always
-  // has something to reach for instead of ending at "every plot holds a seed".
-  if (state.plotFull) {
-    setText(elements.goalTitle, `Open bed #${numberFormat.format(state.beds + 1)}`);
-    setMeter(state.bedCostProgress);
-    setText(elements.goalDetail, describeBedGoal(state));
-  } else {
-    setText(elements.goalTitle, `Plant seed #${numberFormat.format(state.totalPlanted + 1)}`);
-    setMeter(state.seedCostProgress);
-    setText(elements.goalDetail, describeGoal(state));
-  }
+  const goal = describeNextGoal(state);
+  setText(elements.goalTitle, goal.title);
+  setMeter(goal.progress);
+  setText(elements.goalDetail, goal.detail);
 
   renderOpenBed(state);
 }
 
-/** Point the goal meter at `progress`, from 0 to 1. */
-function setMeter(progress) {
-  if (elements.meter) elements.meter.setAttribute("aria-valuenow", String(progress));
-  if (elements.meterFill) elements.meterFill.style.width = `${(progress * 100).toFixed(1)}%`;
+/** Point a goal meter at `progress`, from 0 to 1. */
+function setMeter(progress, meter = elements.meter, fill = elements.meterFill) {
+  if (meter) meter.setAttribute("aria-valuenow", String(progress));
+  if (fill) fill.style.width = `${(progress * 100).toFixed(1)}%`;
 }
 
 /** The Open the next bed button: offered only when every plot is full. */
@@ -456,6 +637,7 @@ function render() {
   setText(elements.storage, state.storageAvailable ? "Yes" : "No");
   setText(elements.description, describePlot(state));
   renderPlanting(state);
+  renderSandbox(state);
   // Leave the field alone while the visitor is editing it; a re-render should
   // not erase a save they are about to paste.
   if (elements.save && document.activeElement !== elements.save) {
@@ -469,6 +651,26 @@ function render() {
     drawGarden(elements.plot, state, readPalette());
     lastPlotKey = plotKey;
   }
+}
+
+/** The rehearsal panel: the garden it wound forward, or hidden while it is shut. */
+function renderSandbox(state) {
+  const rehearsal = state.sandbox;
+  if (elements.sandbox) elements.sandbox.hidden = !rehearsal.open;
+  if (elements.openSandbox) elements.openSandbox.hidden = rehearsal.open;
+  if (!rehearsal.open) return;
+
+  setText(elements.sandboxElapsed, rehearsal.elapsed);
+  setText(elements.sandboxGrowth, growthFormat.format(rehearsal.growth));
+  setText(elements.sandboxRate, `+${growthFormat.format(rehearsal.rate)}/s`);
+  setText(elements.sandboxForm, rehearsal.formName);
+  setText(elements.sandboxMatured, numberFormat.format(rehearsal.matured));
+  setText(elements.sandboxSeeds, numberFormat.format(rehearsal.seeds));
+  setText(elements.sandboxPlants, numberFormat.format(rehearsal.plants));
+  setText(elements.sandboxSummary, rehearsal.summary);
+  setText(elements.sandboxGoalTitle, rehearsal.goalTitle);
+  setText(elements.sandboxGoalDetail, rehearsal.goalDetail);
+  setMeter(rehearsal.goalProgress, elements.sandboxMeter, elements.sandboxMeterFill);
 }
 
 async function copySave() {
@@ -545,6 +747,12 @@ function start() {
   elements.copy?.addEventListener("click", copySave);
   elements.load?.addEventListener("click", loadSave);
   elements.save?.addEventListener("input", () => announce(""));
+
+  elements.openSandbox?.addEventListener("click", () => openSandbox());
+  elements.sandboxHour?.addEventListener("click", () => fastForwardSandbox(sandboxSpanSeconds("hour")));
+  elements.sandboxDay?.addEventListener("click", () => fastForwardSandbox(sandboxSpanSeconds("day")));
+  elements.sandboxMonth?.addEventListener("click", () => fastForwardSandbox(sandboxSpanSeconds("month")));
+  elements.sandboxReset?.addEventListener("click", () => resetSandbox());
 
   // The live clock is wall time, not ticks, because ticks stop while a tab sleeps
   // and the visitor still expects that time to count. A backwards or missing
