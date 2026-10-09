@@ -40,7 +40,43 @@ import {
 import { FORMS, drawGarden, gardenForm } from "./plotview.js";
 
 const numberFormat = new Intl.NumberFormat("en");
-const growthFormat = new Intl.NumberFormat("en", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const decimalFormat = new Intl.NumberFormat("en", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+// An amount this large or larger reads compact (12.3K); below it every amount
+// stays exact, so the first minutes of play read as they always have.
+const COMPACT_FROM = 1e4;
+// Thousand, million, billion, trillion. Past the last one an amount is written
+// as an exponent, so even an absurd one stays short on the page.
+const COMPACT_SUFFIXES = ["K", "M", "B", "T"];
+
+/**
+ * A large amount written short — 12.3K, 4.5M, 1.1B — or `null` below 10,000,
+ * so a caller falls back to its own exact format. One function, so the same
+ * amount reads the same everywhere the page states it.
+ */
+function compactAmount(value) {
+  if (!Number.isFinite(value) || value < COMPACT_FROM) return null;
+  let scaled = value;
+  let suffixIndex = -1;
+  // Promote at 999.95, not 1000, so 999,999 rounds up to 1.0M rather than
+  // 1000.0K — a suffix only ever carries a value that reads as less than 1000.
+  while (scaled >= 999.95 && suffixIndex < COMPACT_SUFFIXES.length - 1) {
+    scaled /= 1000;
+    suffixIndex += 1;
+  }
+  if (scaled >= 999.95) return value.toExponential(1);
+  return `${decimalFormat.format(scaled)}${COMPACT_SUFFIXES[suffixIndex]}`;
+}
+
+/** A growth total or rate: compact once large, one decimal below that. */
+export function formatGrowth(value) {
+  return compactAmount(value) ?? decimalFormat.format(value);
+}
+
+/** A counted amount — a cost, a seed, a bed: compact once large, exact below. */
+export function formatAmount(value) {
+  return compactAmount(value) ?? numberFormat.format(value);
+}
 
 // How often the garden's growth is carried forward on screen. Elapsed time, not
 // the tick count, is what grows it, so a slow or skipped tick changes the
@@ -121,12 +157,12 @@ function readPalette() {
 }
 
 const countLabel = (count, singular, plural) =>
-  `${numberFormat.format(count)} ${count === 1 ? singular : plural}`;
+  `${formatAmount(count)} ${count === 1 ? singular : plural}`;
 
 /** The picture, said in words: the same growth, beds and form the plot draws. */
 function describePlot(state) {
   return (
-    `${growthFormat.format(state.growth)} growth — ${state.formName}. ` +
+    `${formatGrowth(state.growth)} growth — ${state.formName}. ` +
     `${countLabel(state.beds, "bed of soil", "beds of soil")}, ` +
     `${countLabel(state.seeds, "ungrown seed", "ungrown seeds")}, ` +
     `${countLabel(state.plants, "grown plant", "grown plants")}.`
@@ -257,7 +293,7 @@ export function summarizeReturn(away) {
     ? ` A pollinator is visiting — the garden is growing ${away.pollinator.multiplier} times as fast while it stays.`
     : "";
   const grown = `While you were away ${formatAway(away.seconds)}, the garden earned ` +
-    `${growthFormat.format(away.earned)} growth and is now ${away.form}.` + matured + pollinator;
+    `${formatGrowth(away.earned)} growth and is now ${away.form}.` + matured + pollinator;
 
   // "What was found": the forms the absence grew it into, named at the top.
   let found = "";
@@ -268,8 +304,8 @@ export function summarizeReturn(away) {
 
   // "What is now possible": the next form, or the next seed once past them all.
   const next = away.nextFormName
-    ? ` ${away.nextFormName} is ${growthFormat.format(away.growthToNextForm)} growth away — keep tending.`
-    : ` A seed costs ${numberFormat.format(away.nextSeedCost)} growth — plant one when you can.`;
+    ? ` ${away.nextFormName} is ${formatGrowth(away.growthToNextForm)} growth away — keep tending.`
+    : ` A seed costs ${formatAmount(away.nextSeedCost)} growth — plant one when you can.`;
 
   return grown + found + next;
 }
@@ -515,14 +551,14 @@ function formatDuration(seconds) {
 
 /** The next seed as words: always how far away it is, never only its price. */
 function describeGoal(state) {
-  const cost = numberFormat.format(state.nextSeedCost);
+  const cost = formatAmount(state.nextSeedCost);
   const ripening =
     state.secondsToNextPlant == null ? "" : ` Next plant matures in ${formatDuration(state.secondsToNextPlant)}.`;
   if (state.canPlantSeed) return `Ready to plant — ${cost} growth saved.${ripening}`;
   if (!(state.rate > 0)) return `Tend the soil to grow faster — ${cost} growth needed.${ripening}`;
   return (
-    `${growthFormat.format(state.growth)} / ${cost} growth — about ` +
-    `${formatDuration(state.secondsToNextSeed)} at +${growthFormat.format(state.rate)}/s.${ripening}`
+    `${formatGrowth(state.growth)} / ${cost} growth — about ` +
+    `${formatDuration(state.secondsToNextSeed)} at +${formatGrowth(state.rate)}/s.${ripening}`
   );
 }
 
@@ -531,20 +567,20 @@ function describeGoal(state) {
  * that the garden is, and when it can be opened.
  */
 function describeBedGoal(state) {
-  const cost = numberFormat.format(state.nextBedCost);
+  const cost = formatAmount(state.nextBedCost);
   const ripening =
     state.secondsToNextPlant == null ? "" : ` Next plant matures in ${formatDuration(state.secondsToNextPlant)}.`;
   if (state.canOpenBed) return `Ready to open — ${cost} growth saved.${ripening}`;
   if (!(state.rate > 0)) return `Tend the soil to grow faster — ${cost} growth needed.${ripening}`;
   return (
-    `${growthFormat.format(state.growth)} / ${cost} growth — about ` +
-    `${formatDuration(state.secondsToNextBed)} at +${growthFormat.format(state.rate)}/s.${ripening}`
+    `${formatGrowth(state.growth)} / ${cost} growth — about ` +
+    `${formatDuration(state.secondsToNextBed)} at +${formatGrowth(state.rate)}/s.${ripening}`
   );
 }
 
 /** The next bed's price and progress, always on the page once shown. */
 function describeNextBed(state) {
-  const cost = numberFormat.format(state.nextBedCost);
+  const cost = formatAmount(state.nextBedCost);
   const percent = Math.round(state.bedCostProgress * 100);
   return `${cost} growth · ${percent}% saved`;
 }
@@ -571,13 +607,13 @@ function describeNextPlant(state) {
 function describeNextGoal(state) {
   if (state.plotFull) {
     return {
-      title: `Open bed #${numberFormat.format(state.beds + 1)}`,
+      title: `Open bed #${formatAmount(state.beds + 1)}`,
       detail: describeBedGoal(state),
       progress: state.bedCostProgress,
     };
   }
   return {
-    title: `Plant seed #${numberFormat.format(state.totalPlanted + 1)}`,
+    title: `Plant seed #${formatAmount(state.totalPlanted + 1)}`,
     detail: describeGoal(state),
     progress: state.seedCostProgress,
   };
@@ -585,7 +621,7 @@ function describeNextGoal(state) {
 
 /** The Plant a seed button, the goal it is reaching for, and the meter between. */
 function renderPlanting(state) {
-  const cost = numberFormat.format(state.nextSeedCost);
+  const cost = formatAmount(state.nextSeedCost);
   setText(elements.plant, state.plotFull ? "Plant a seed — the plot is full" : `Plant a seed — ${cost} growth`);
   if (elements.plant) elements.plant.disabled = !state.canPlantSeed;
 
@@ -608,7 +644,7 @@ function renderOpenBed(state) {
   const button = elements.openBed;
   if (!button) return;
   button.hidden = !state.plotFull;
-  setText(button, `Open the next bed — ${numberFormat.format(state.nextBedCost)} growth`);
+  setText(button, `Open the next bed — ${formatAmount(state.nextBedCost)} growth`);
   button.disabled = !state.canOpenBed;
 }
 
@@ -623,7 +659,7 @@ function plantSeedFromButton() {
     return;
   }
   announce(
-    `Planted a seed for ${numberFormat.format(result.cost)} growth — it will grow into a plant in ` +
+    `Planted a seed for ${formatAmount(result.cost)} growth — it will grow into a plant in ` +
       `${formatDuration(GROW_SECONDS)}.`
   );
 }
@@ -639,8 +675,8 @@ function openBedFromButton() {
     return;
   }
   announce(
-    `Opened bed #${numberFormat.format(result.beds)} for ${numberFormat.format(result.cost)} growth — ` +
-      `${numberFormat.format(result.beds * PLOTS_PER_BED)} plots of soil now.`
+    `Opened bed #${formatAmount(result.beds)} for ${formatAmount(result.cost)} growth — ` +
+      `${formatAmount(result.beds * PLOTS_PER_BED)} plots of soil now.`
   );
 }
 
@@ -652,13 +688,13 @@ function render() {
   if (document.hidden) return;
 
   const state = getDisplayedState();
-  setText(elements.growth, growthFormat.format(state.growth));
-  setText(elements.rate, `+${growthFormat.format(state.rate)}/s`);
+  setText(elements.growth, formatGrowth(state.growth));
+  setText(elements.rate, `+${formatGrowth(state.rate)}/s`);
   setText(elements.form, state.formName);
-  setText(elements.seeds, numberFormat.format(state.seeds));
-  setText(elements.plants, numberFormat.format(state.plants));
-  setText(elements.beds, numberFormat.format(state.beds));
-  setText(elements.capacity, numberFormat.format(state.capacity));
+  setText(elements.seeds, formatAmount(state.seeds));
+  setText(elements.plants, formatAmount(state.plants));
+  setText(elements.beds, formatAmount(state.beds));
+  setText(elements.capacity, formatAmount(state.capacity));
   setText(elements.pollinator, describePollinator(state));
   setText(elements.nextPlant, describeNextPlant(state));
   setText(elements.nextBed, describeNextBed(state));
@@ -690,12 +726,12 @@ function renderSandbox(state) {
   if (!rehearsal.open) return;
 
   setText(elements.sandboxElapsed, rehearsal.elapsed);
-  setText(elements.sandboxGrowth, growthFormat.format(rehearsal.growth));
-  setText(elements.sandboxRate, `+${growthFormat.format(rehearsal.rate)}/s`);
+  setText(elements.sandboxGrowth, formatGrowth(rehearsal.growth));
+  setText(elements.sandboxRate, `+${formatGrowth(rehearsal.rate)}/s`);
   setText(elements.sandboxForm, rehearsal.formName);
-  setText(elements.sandboxMatured, numberFormat.format(rehearsal.matured));
-  setText(elements.sandboxSeeds, numberFormat.format(rehearsal.seeds));
-  setText(elements.sandboxPlants, numberFormat.format(rehearsal.plants));
+  setText(elements.sandboxMatured, formatAmount(rehearsal.matured));
+  setText(elements.sandboxSeeds, formatAmount(rehearsal.seeds));
+  setText(elements.sandboxPlants, formatAmount(rehearsal.plants));
   setText(elements.sandboxSummary, rehearsal.summary);
   setText(elements.sandboxGoalTitle, rehearsal.goalTitle);
   setText(elements.sandboxGoalDetail, rehearsal.goalDetail);

@@ -56,6 +56,8 @@ import {
   buildAwayReport,
   exportSave,
   fastForwardSandbox,
+  formatAmount,
+  formatGrowth,
   getDisplayedState,
   getSandboxState,
   loadGardenSave,
@@ -64,9 +66,6 @@ import {
   summarizeReturn,
 } from "./app.js";
 import { FORMS, gardenForm } from "./plotview.js";
-
-const numberFormat = new Intl.NumberFormat("en");
-const growthFormat = new Intl.NumberFormat("en", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 // The design system is itself a promise: one palette, two embedded pixel fonts
 // split by role, square pixel edges. These are the checks for it.
@@ -481,10 +480,11 @@ function checkPageReadout(problems) {
       problems.push(`the page has no readout for the garden's ${field} (expected [data-field="${field}"]).`);
       continue;
     }
-    const shown = Number(String(el.textContent).replace(/,/g, ""));
-    if (shown !== state[field]) {
+    const shown = String(el.textContent).trim();
+    const expected = formatAmount(state[field]);
+    if (shown !== expected) {
       problems.push(
-        `the page shows ${JSON.stringify(el.textContent)} for ${field}, but the garden holds ${state[field]}.`
+        `the page shows ${JSON.stringify(shown)} for ${field}, but the garden holds ${state[field]} (${expected}).`
       );
     }
   }
@@ -527,10 +527,10 @@ function checkPageReadout(problems) {
   } else {
     const text = description.textContent;
     const expected = [
-      ["growth", growthFormat.format(state.growth)],
+      ["growth", formatGrowth(state.growth)],
       ["the garden form", state.formName],
-      ["seeds", numberFormat.format(state.seeds)],
-      ["plants", numberFormat.format(state.plants)],
+      ["seeds", formatAmount(state.seeds)],
+      ["plants", formatAmount(state.plants)],
     ];
     for (const [what, value] of expected) {
       if (!text.includes(value)) {
@@ -559,7 +559,7 @@ function checkPortableSave(problems) {
       problems.push(`loading a save for 4 seeds / 2 plants left the garden at ${now.seeds} / ${now.plants}.`);
     }
     const seedsEl = document.querySelector('[data-field="seeds"]');
-    if (seedsEl && Number(String(seedsEl.textContent).replace(/,/g, "")) !== 4) {
+    if (seedsEl && String(seedsEl.textContent).trim() !== formatAmount(4)) {
       problems.push(`after loading a save, the page shows ${JSON.stringify(seedsEl.textContent)} seeds instead of 4.`);
     }
     if (exportSave() !== portable) {
@@ -801,7 +801,7 @@ function checkGrowthRateShowsAndRuns(problems) {
       problems.push(`after one second at +0.5/s the garden held ${after.growth} growth, expected 0.5.`);
     }
     const rateText = String(document.getElementById("growth-rate")?.textContent ?? "").trim();
-    if (!/^\+[\d,]+(\.\d+)?\/s$/.test(rateText)) {
+    if (!/^\+[\d,.]+([KMBT]|e[+-]?\d+)?\/s$/.test(rateText)) {
       problems.push(`the page shows the growth rate as ${JSON.stringify(rateText)}, expected a "+x/s" form like "+0.5/s".`);
     }
   } finally {
@@ -922,7 +922,7 @@ function checkPlantingSpendsAndRaisesProduction(problems) {
 
     setGrowth(cost - 1, 0.2);
     const label = String(button.textContent);
-    if (!label.includes(numberFormat.format(cost))) {
+    if (!label.includes(formatAmount(cost))) {
       problems.push(`the Plant a seed label is ${JSON.stringify(label)}, which does not state its ${cost}-growth cost.`);
     }
     if (!button.disabled) {
@@ -1002,7 +1002,7 @@ function checkSeedGoalReadout(problems) {
     // cost and how long it will take, and the meter must track the fraction.
     setGrowth(cost / 2, 1);
     const halfDetail = String(detailEl.textContent);
-    if (!halfDetail.includes(numberFormat.format(cost))) {
+    if (!halfDetail.includes(formatAmount(cost))) {
       problems.push(`the next-seed goal does not state its ${cost}-growth cost: ${JSON.stringify(halfDetail)}`);
     }
     if (!halfDetail.includes(`${Math.ceil((cost - cost / 2) / 1)}s`)) {
@@ -1042,7 +1042,7 @@ function checkSeedGoalReadout(problems) {
     setGrowth(0, 1);
     const bedCost = nextBedCost(1);
     const fullDetail = String(detailEl.textContent);
-    if (!fullDetail.includes(numberFormat.format(bedCost))) {
+    if (!fullDetail.includes(formatAmount(bedCost))) {
       problems.push(
         `with every plot full the goal does not state the next bed's ${bedCost}-growth cost: ${JSON.stringify(fullDetail)}`
       );
@@ -1163,7 +1163,7 @@ function checkBedProgression(problems) {
         problems.push("with every plot full the Open the next bed control is not shown.");
       }
       if (button.disabled) problems.push(`with ${cost} growth saved the Open the next bed control is disabled.`);
-      if (!String(button.textContent).includes(numberFormat.format(cost))) {
+      if (!String(button.textContent).includes(formatAmount(cost))) {
         problems.push(
           `the Open the next bed label is ${JSON.stringify(button.textContent)}, which does not state its ${cost}-growth cost.`
         );
@@ -1203,7 +1203,7 @@ function checkBedProgression(problems) {
       problems.push('the page has no next-bed readout (expected [data-field="next-bed"]).');
     } else {
       const text = String(nextBedEl.textContent);
-      if (!text.includes(numberFormat.format(state.nextBedCost))) {
+      if (!text.includes(formatAmount(state.nextBedCost))) {
         problems.push(`the next-bed readout ${JSON.stringify(text)} does not state the ${state.nextBedCost}-growth cost.`);
       }
       if (!text.includes("%")) {
@@ -1247,17 +1247,163 @@ function checkLargeCounts(problems) {
     loadGardenSave(huge);
     const seedsEl = document.querySelector('[data-field="seeds"]');
     const plantedEl = document.querySelector('[data-field="plants"]');
-    if (Number(String(seedsEl?.textContent).replace(/,/g, "")) !== 3) {
+    if (!seedsEl || String(seedsEl.textContent).trim() !== formatAmount(3)) {
       problems.push(`with 3 seeds, the page shows ${JSON.stringify(seedsEl?.textContent)} instead of 3.`);
     }
-    if (!plantedEl || !String(plantedEl.textContent).includes("123")) {
-      problems.push(`with 123456789 plants, the page shows ${JSON.stringify(plantedEl?.textContent)}.`);
+    if (!plantedEl || String(plantedEl.textContent).trim() !== formatAmount(123456789)) {
+      problems.push(
+        `with 123456789 plants, the page shows ${JSON.stringify(plantedEl?.textContent)}, ` +
+          `expected the compact ${JSON.stringify(formatAmount(123456789))}.`
+      );
     }
     checkNoOverflow(problems);
   } finally {
     setGarden(before);
     setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
     restoreRawStorage(beforeRaw);
+  }
+}
+
+/**
+ * A garden grown huge stays readable: every amount at or above ten thousand
+ * reads compact (12.3K, 4.5M, 1.1B) on the readout, the goal labels and the
+ * action buttons, amounts below ten thousand read exactly as they always have,
+ * and the same amount never reads two ways. The raw figures, not the strings,
+ * are what the state reaches an agent with.
+ */
+function checkCompactAmounts(problems) {
+  for (const [amount, expected] of [[6, "6"], [230, "230"], [9999, "9,999"]]) {
+    if (formatAmount(amount) !== expected) {
+      problems.push(
+        `formatAmount(${amount}) reads ${JSON.stringify(formatAmount(amount))}, expected the exact ${JSON.stringify(expected)}.`
+      );
+    }
+  }
+  if (formatGrowth(6) !== "6.0") {
+    problems.push(`formatGrowth(6) reads ${JSON.stringify(formatGrowth(6))}, expected the exact "6.0".`);
+  }
+
+  const compact = [
+    [10000, "10.0K"],
+    [12345, "12.3K"],
+    [999999, "1.0M"], // rounds up rather than reading 1000.0K
+    [4500000, "4.5M"],
+    [1.1e9, "1.1B"],
+    [1e12, "1.0T"],
+    [1e15, "1.0e+15"], // past trillions an exponent keeps an absurd amount short
+  ];
+  for (const [amount, expected] of compact) {
+    if (formatAmount(amount) !== expected) {
+      problems.push(
+        `formatAmount(${amount}) reads ${JSON.stringify(formatAmount(amount))}, expected the compact ${JSON.stringify(expected)}.`
+      );
+    }
+    if (formatGrowth(amount) !== formatAmount(amount)) {
+      problems.push(
+        `growth ${amount} reads as ${JSON.stringify(formatGrowth(amount))} but the same amount as a count reads ` +
+          `${JSON.stringify(formatAmount(amount))}; one amount must read one way.`
+      );
+    }
+  }
+
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const storageBefore = rawStorage();
+  const textOf = (selector) => String(document.querySelector(selector)?.textContent ?? "").trim();
+  try {
+    // A garden big enough that the next seed costs five figures, so the readout,
+    // the seed goal and both action labels have to say a compact amount.
+    const planted = 55;
+    setGarden({ seeds: 0, plants: planted, beds: 30 });
+    setGrowth(123456789, 4500000);
+    const state = getDisplayedState();
+
+    if (state.nextSeedCost < 1e4) {
+      problems.push(
+        `the compact-amount check's next seed costs ${state.nextSeedCost}; it must exceed 10,000 to exercise the compact form.`
+      );
+    }
+    if (typeof state.growth !== "number" || typeof state.nextSeedCost !== "number") {
+      problems.push(
+        `the state a visitor's page reads carries ${JSON.stringify(state.growth)} growth / ` +
+          `${JSON.stringify(state.nextSeedCost)} next seed; an agent must get the raw figures, not the compact strings.`
+      );
+    }
+    if (textOf("#growth-total") !== formatGrowth(state.growth)) {
+      problems.push(
+        `with a huge garden the growth total reads ${JSON.stringify(textOf("#growth-total"))}, ` +
+          `expected the compact ${JSON.stringify(formatGrowth(state.growth))}.`
+      );
+    }
+    if (textOf("#growth-rate") !== `+${formatGrowth(state.rate)}/s`) {
+      problems.push(
+        `with a huge garden the growth rate reads ${JSON.stringify(textOf("#growth-rate"))}, ` +
+          `expected the compact ${JSON.stringify(`+${formatGrowth(state.rate)}/s`)}.`
+      );
+    }
+    if (!String(document.getElementById("plot-description")?.textContent ?? "").includes(formatGrowth(state.growth))) {
+      problems.push(
+        `the plot description does not state the compact growth ${JSON.stringify(formatGrowth(state.growth))}.`
+      );
+    }
+    const plantLabel = String(document.getElementById("plant-seed")?.textContent ?? "");
+    if (!plantLabel.includes(formatAmount(state.nextSeedCost))) {
+      problems.push(
+        `the Plant a seed label ${JSON.stringify(plantLabel)} does not state its compact ` +
+          `${JSON.stringify(formatAmount(state.nextSeedCost))}-growth cost.`
+      );
+    }
+    const seedGoal = String(document.getElementById("goal-detail")?.textContent ?? "");
+    if (!seedGoal.includes(formatAmount(state.nextSeedCost))) {
+      problems.push(
+        `the next-seed goal ${JSON.stringify(seedGoal)} does not state its compact ` +
+          `${JSON.stringify(formatAmount(state.nextSeedCost))}-growth cost.`
+      );
+    }
+    const nextBed = textOf('[data-field="next-bed"]');
+    if (!nextBed.includes(formatAmount(state.nextBedCost))) {
+      problems.push(
+        `the next-bed readout ${JSON.stringify(nextBed)} does not state its compact ` +
+          `${JSON.stringify(formatAmount(state.nextBedCost))}-growth cost.`
+      );
+    }
+
+    // A full plot of 29 beds: the next bed costs five figures, and its button
+    // and goal both have to say it compactly.
+    const beds = 29;
+    setGarden({ beds, seeds: beds * PLOTS_PER_BED, plants: 0 });
+    const full = getDisplayedState();
+    if (!full.plotFull || full.nextBedCost < 1e4) {
+      problems.push(
+        `the compact-amount check's full garden is plotFull ${full.plotFull} with a ` +
+          `${full.nextBedCost}-growth bed; it must be full with a bed over 10,000.`
+      );
+    }
+    setGrowth(full.nextBedCost + 1, 1);
+    const openLabel = String(document.getElementById("open-bed")?.textContent ?? "");
+    if (!openLabel.includes(formatAmount(full.nextBedCost))) {
+      problems.push(
+        `the Open the next bed label ${JSON.stringify(openLabel)} does not state its compact ` +
+          `${JSON.stringify(formatAmount(full.nextBedCost))}-growth cost.`
+      );
+    }
+    if (!String(document.getElementById("goal-title")?.textContent ?? "").includes(formatAmount(beds + 1))) {
+      problems.push(
+        `the next-goal title does not name the compact bed #${formatAmount(beds + 1)}: ` +
+          `${JSON.stringify(String(document.getElementById("goal-title")?.textContent ?? ""))}`
+      );
+    }
+    const bedGoal = String(document.getElementById("goal-detail")?.textContent ?? "");
+    if (!bedGoal.includes(formatAmount(full.nextBedCost))) {
+      problems.push(
+        `the next-bed goal ${JSON.stringify(bedGoal)} does not state its compact ` +
+          `${JSON.stringify(formatAmount(full.nextBedCost))}-growth cost.`
+      );
+    }
+  } finally {
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
+    restoreRawStorage(storageBefore);
   }
 }
 
@@ -1686,7 +1832,7 @@ function checkReturnSummary(problems) {
       } else {
         const text = strip.textContent;
         const expected = [
-          ["the earned growth", growthFormat.format(away.earned)],
+          ["the earned growth", formatGrowth(away.earned)],
           ["the form reached", expectedForm.name],
         ];
         const nextIndex = expectedForm.index + 1;
@@ -2300,6 +2446,7 @@ export async function checks() {
     checkNextPlantReadout(problems);
     checkBedProgression(problems);
     checkLargeCounts(problems);
+    checkCompactAmounts(problems);
     checkPortableSave(problems);
     checkNoOverflow(problems);
     checkCompactReadout(problems);
