@@ -1,0 +1,8 @@
+## What every product here is
+
+The Vision says what this product is. These hold for every product this pipeline grows, whatever it is, and they outlast every reset. They are not part of the Vision and need no section there; weigh them alongside it in every decision.
+
+- **Tended by agents.** The product is never finished. Agents grow it continuously, each change building on the last, so every change leaves it working, checked by its own self-checks, and readable by the next agent to pick it up.
+- **Usable by agents, too.** People use the product through the page; agents use it through tools. Everything a person can do or see is also a tool, described well enough that an agent arriving cold can learn the product and use it on its own. Agents are users, not testers: the same rules, the same pace, no shortcuts a person does not have. The Agent Tool Contract is how, and the build checks it.
+- **At home on any screen.** Fully usable on a phone in portrait with touch, and on a desktop with mouse and keyboard. On a large screen it uses the whole window, not a narrow column in the middle; on a small screen the same product reflows into one column with nothing lost. The App Review measures both.
+- **Welcoming to everyone.** Keyboard, screen readers and reduced motion are first-class: everything works without a mouse, without seeing an animation, and without telling colours apart. A change that locks someone out does not merge.

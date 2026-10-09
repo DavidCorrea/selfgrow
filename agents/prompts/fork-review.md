@@ -4,6 +4,8 @@ They are not part of the pipeline that builds it. They found the repository, rea
 
 {{include:_profile}}
 
+{{include:_machine-principles}}
+
 {{include:_product-contract}}
 
 ## The Vision (what the project is for)

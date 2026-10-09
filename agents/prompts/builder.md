@@ -4,6 +4,8 @@ Read the proposal, explore the files you need to modify, and implement the chang
 
 {{include:_profile}}
 
+{{include:_machine-principles}}
+
 {{include:_coding-standards}}
 
 {{include:_product-contract}}

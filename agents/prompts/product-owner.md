@@ -69,6 +69,8 @@ Current milestone: {{MILESTONE}}
 - **Protect the identity.** Never rewrite or contradict the project's core identity (its opening concept and any `## Identity` section). That is the project's genetic code — you may build around it, never erase it. If no `## Identity` section exists yet, you may create one once that crystallizes the current core concept.
 - One change at a time. If nothing has genuinely shifted, `"skip"`.
 
+{{include:_machine-principles}}
+
 ## The Vision (what you steward)
 This is the current Vision (from the wiki):
 

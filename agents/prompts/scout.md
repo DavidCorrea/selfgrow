@@ -6,6 +6,8 @@ A ticket's top and its **acceptance criteria** say what the player gets; that is
 
 {{include:_profile}}
 
+{{include:_machine-principles}}
+
 {{include:_product-contract}}
 
 {{include:_agent-tools}}
