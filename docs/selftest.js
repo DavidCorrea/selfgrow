@@ -7,9 +7,10 @@
  *
  * The checks cover the things a person and an agent rely on: the save codec
  * refuses everything it should, the browser copy survives a reload, the page's
- * readout equals the state behind it, and a save can leave and come back.
- * They snapshot the garden and the browser's storage and restore both, so they
- * leave no residue and run fast.
+ * readout equals the state behind it, a save can leave and come back, and the
+ * growth always maps to the same drawn form and the same words at both ends of
+ * the scale. They snapshot the garden and the browser's storage and restore
+ * both, so they leave no residue and run fast.
  */
 
 import {
@@ -31,8 +32,10 @@ import {
   writeStoredGarden,
 } from "./garden.js";
 import { exportSave, getDisplayedState, loadGardenSave } from "./app.js";
+import { FORMS, gardenForm } from "./plotview.js";
 
 const numberFormat = new Intl.NumberFormat("en");
+const growthFormat = new Intl.NumberFormat("en", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 // The design system is itself a promise: one palette, one embedded pixel font,
 // square pixel edges. These are the checks for it.
@@ -360,15 +363,32 @@ function checkPageReadout(problems) {
     );
   }
 
+  const formEl = document.querySelector('[data-field="form"]');
+  if (!formEl) {
+    problems.push(
+      'the page has no garden-form readout (expected [data-field="form"]), so the form the plot draws is not stated in words.'
+    );
+  } else if (String(formEl.textContent).trim() !== state.formName) {
+    problems.push(
+      `the page names the garden form ${JSON.stringify(String(formEl.textContent).trim())}, ` +
+      `but the plot draws ${JSON.stringify(state.formName)}.`
+    );
+  }
+
   const description = document.getElementById("plot-description");
   if (!description || !description.textContent.trim()) {
-    problems.push("the plot has no text description, so the picture is the only account of the soil.");
+    problems.push("the plot has no text description, so the picture is the only account of the garden.");
   } else {
     const text = description.textContent;
-    for (const field of ["seeds", "plants", "capacity"]) {
-      const formatted = numberFormat.format(state[field]);
-      if (!text.includes(formatted)) {
-        problems.push(`the plot description does not state ${field} (${formatted}): "${text}"`);
+    const expected = [
+      ["growth", growthFormat.format(state.growth)],
+      ["the garden form", state.formName],
+      ["seeds", numberFormat.format(state.seeds)],
+      ["plants", numberFormat.format(state.plants)],
+    ];
+    for (const [what, value] of expected) {
+      if (!text.includes(value)) {
+        problems.push(`the plot description does not state ${what} (${value}): "${text}"`);
       }
     }
   }
@@ -422,33 +442,140 @@ function checkPlotDrawing(problems) {
     problems.push("the page has no plot canvas (#garden-plot) to draw the garden into.");
     return;
   }
-  const before = getGarden();
-  const growthBefore = getGrowthState();
+  const before = getGrowthState();
   try {
-    const snapshot = (seeds, plants) => {
-      setGarden({ seeds, plants });
+    const snapshot = (growth) => {
+      setGrowth(growth, 0);
       return canvas.toDataURL();
     };
-    const bare = snapshot(0, 0);
-    const seeded = snapshot(1, 0);
-    const planted = snapshot(0, 1);
-    if (bare === seeded) {
-      problems.push("the plot looks identical with and without a seed, so it is not drawing the garden's state.");
+    const bare = snapshot(0);
+    const sprout = snapshot(1);
+    const seedling = snapshot(10);
+    const far = snapshot(1e12);
+    if (bare === sprout) {
+      problems.push("the plot draws the same picture at 0 and 1 growth, so the garden does not grow at the first threshold.");
     }
-    if (seeded === planted) {
-      problems.push("a seed and a grown plant draw the same, so the plot does not show the garden's form.");
+    if (sprout === seedling) {
+      problems.push("the plot draws the same picture at 1 and 10 growth, so it does not change form at the first threshold.");
     }
-    setGarden({ seeds: 0, plants: 0 });
-    setGrowth(0, 0);
-    const ungrowing = canvas.toDataURL();
-    setGrowth(5, 1);
-    const growing = canvas.toDataURL();
-    if (ungrowing === growing) {
-      problems.push("the plot looks the same whether or not the garden is growing, so it does not draw the live growth.");
+    if (seedling === far) {
+      problems.push("the plot draws the same picture at 10 and 1e12 growth, so the far end is frozen.");
+    }
+    if (snapshot(1e12) !== far) {
+      problems.push("the same amount of growth drew two different pictures, so the plot is not a pure view of the state.");
     }
   } finally {
-    setGarden(before);
-    setGrowth(growthBefore.growth, growthBefore.rate);
+    setGrowth(before.growth, before.rate);
+  }
+}
+
+// --- The picture beside the numbers -----------------------------------------
+
+/**
+ * The mapping from growth to a drawn form, at both ends of the scale. The
+ * picture has to keep changing however large the number grows, and the same
+ * amount must always draw the same way.
+ */
+function checkGardenFormMapping(problems) {
+  // Every threshold lands on its own form, named as the page states it.
+  for (const [index, form] of FORMS.entries()) {
+    const mapped = gardenForm(form.at);
+    if (mapped.index !== index || mapped.name !== form.name) {
+      problems.push(
+        `growth ${form.at} should be form ${index} "${form.name}", but it maps to form ${mapped.index} "${mapped.name}".`
+      );
+    }
+  }
+
+  // The same amount always maps the same way.
+  for (const amount of [0, 1, 10, 100, 1e12, 1e15]) {
+    const first = JSON.stringify(gardenForm(amount));
+    const second = JSON.stringify(gardenForm(amount));
+    if (first !== second) {
+      problems.push(`growth ${amount} mapped two different ways (${first} then ${second}).`);
+    }
+  }
+
+  // It moves forward with the amount and never jumps back.
+  const ladder = [0, 1, 10, 100, 1e3, 1e6, 1e9, 1e12];
+  const indices = ladder.map((amount) => gardenForm(amount).index);
+  for (let i = 1; i < indices.length; i += 1) {
+    if (indices[i] < indices[i - 1]) {
+      problems.push(
+        `the garden form went backwards as growth rose (${ladder[i - 1]} → form ${indices[i - 1]}, ${ladder[i]} → form ${indices[i]}).`
+      );
+    }
+  }
+
+  // Zero growth is bare soil, and the far end draws a different form.
+  const bare = gardenForm(0);
+  const far = gardenForm(1e12);
+  if (bare.index !== 0 || bare.name !== FORMS[0].name) {
+    problems.push(`zero growth should be bare soil, but it is form ${bare.index} "${bare.name}".`);
+  }
+  if (bare.name === far.name || bare.index === far.index) {
+    problems.push(`growth 0 and growth 1e12 draw the same form "${bare.name}", so the picture stops changing.`);
+  }
+  if (!(far.index > gardenForm(1e6).index)) {
+    problems.push(`growth 1e6 and 1e12 do not change form (both form ${gardenForm(1e6).index}), so the far end is frozen.`);
+  }
+
+  // Fill stays between 0 and 1, and keeps moving past the last threshold.
+  for (const amount of [2, 20, 5e3, 5e11, 1e15]) {
+    const { fill } = gardenForm(amount);
+    if (!(fill >= 0 && fill <= 1)) {
+      problems.push(`growth ${amount} has fill ${fill}; it must stay between 0 and 1.`);
+    }
+  }
+  const past = gardenForm(1e15);
+  if (far.index === past.index && far.fill === past.fill) {
+    problems.push("growth past the last threshold (1e12 → 1e15) does not change the picture at all.");
+  }
+
+  // Nothing grown — a missing, negative or impossible amount — is bare soil.
+  for (const bad of [Number.NaN, Infinity, -Infinity, -1, undefined, null, "5"]) {
+    const mapped = gardenForm(bad);
+    if (mapped.index !== 0 || mapped.name !== FORMS[0].name || mapped.fill !== 0) {
+      problems.push(
+        `growth ${JSON.stringify(bad)} should be bare soil, but it maps to form ${mapped.index} "${mapped.name}" at ${mapped.fill} fill.`
+      );
+    }
+  }
+}
+
+/**
+ * The plot is redrawn discretely, never animated, so a visitor who asks for no
+ * motion still sees the change — and the description states the same form in
+ * words when the garden advances.
+ */
+function checkPlotMotion(problems) {
+  const canvas = document.getElementById("garden-plot");
+  if (!canvas) return; // checkPlotDrawing reports the missing canvas.
+
+  const style = getComputedStyle(canvas);
+  if (style.animationName && style.animationName !== "none") {
+    problems.push(
+      `the plot canvas carries a CSS animation (${style.animationName}); it must be redrawn discretely so a reduced-motion visitor sees the same picture.`
+    );
+  }
+  if (style.transitionDuration && style.transitionDuration !== "0s") {
+    problems.push(
+      `the plot canvas carries a CSS transition (${style.transitionDuration}); it must be redrawn discretely so a reduced-motion visitor sees the same picture.`
+    );
+  }
+
+  const before = getGrowthState();
+  try {
+    setGrowth(1e3, 0);
+    const { name } = gardenForm(1e3);
+    const text = String(document.getElementById("plot-description")?.textContent ?? "");
+    if (!text.includes(name)) {
+      problems.push(
+        `after the garden advanced to growth 1000 the description does not state its form "${name}": "${text}"`
+      );
+    }
+  } finally {
+    setGrowth(before.growth, before.rate);
   }
 }
 
@@ -525,12 +652,18 @@ function checkGrowthRateShowsAndRuns(problems) {
 function checkGrowthIsBoundedAndFinite(problems) {
   const before = getGrowthState();
   try {
-    // A session's growth runs far past the plot; the plot must not overfill.
+    // A session's growth runs far past the plot; the form must stay on scale.
     setGrowth(PLOT_CAPACITY + 1000, 1);
-    const state = getDisplayedState();
-    if (!Number.isInteger(state.sprouts) || state.sprouts < 0 || state.sprouts > state.capacity) {
+    const form = gardenForm(getGrowthState().growth);
+    if (
+      !Number.isInteger(form.index) ||
+      form.index < 0 ||
+      form.index >= FORMS.length ||
+      !(form.fill >= 0 && form.fill <= 1)
+    ) {
       problems.push(
-        `with growth far past the plot, it draws ${state.sprouts} sprouts into ${state.capacity} plots — expected 0 to ${state.capacity}.`
+        `with growth far past the plot, the garden is form ${form.index} at ${form.fill} fill — ` +
+        `expected a form from 0 to ${FORMS.length - 1} with fill from 0 to 1.`
       );
     }
 
@@ -612,10 +745,16 @@ async function checkAgentTools(problems) {
       `${shown.seeds} / ${shown.plants}.`
     );
   }
-  if (state.growth !== shown.growth || state.rate !== shown.rate || state.sprouts !== shown.sprouts) {
+  if (
+    state.growth !== shown.growth ||
+    state.rate !== shown.rate ||
+    state.form !== shown.form ||
+    state.formName !== shown.formName
+  ) {
     problems.push(
-      `get-state reported growth ${state.growth} at ${state.rate}/s with ${state.sprouts} sprouts, ` +
-      `but the page shows ${shown.growth} at ${shown.rate}/s with ${shown.sprouts} sprouts.`
+      `get-state reported growth ${state.growth} at ${state.rate}/s as form ${state.form} ` +
+      `"${state.formName}", but the page shows ${shown.growth} at ${shown.rate}/s as form ` +
+      `${shown.form} "${shown.formName}".`
     );
   }
   if (state.save !== shown.save) {
@@ -720,6 +859,8 @@ export async function checks() {
     checkDurableSave(problems);
     checkPageReadout(problems);
     checkPlotDrawing(problems);
+    checkGardenFormMapping(problems);
+    checkPlotMotion(problems);
     checkLargeCounts(problems);
     checkPortableSave(problems);
     checkNoOverflow(problems);
