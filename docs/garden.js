@@ -13,7 +13,7 @@
  */
 
 /** The save format. Bump it only if the shape below actually changes. */
-export const SAVE_VERSION = 6;
+export const SAVE_VERSION = 7;
 
 /** A readable marker, so a save is recognisable and the version is obvious. */
 export const SAVE_PREFIX = "SELFGROW1.";
@@ -202,6 +202,7 @@ export function encodeSave(garden) {
     growth: amountOrZero(source.growth),
     rate: amountOrZero(source.rate),
     age: amountOrZero(source.age),
+    lifetime: amountOrZero(source.lifetime),
     beds,
   });
   return SAVE_PREFIX + btoa(body);
@@ -223,11 +224,14 @@ export function encodeSave(garden) {
  * garden's age, so earlier saves open at age zero with no visit already past.
  * Version 6 added the second kind of seed: every seed and plant a version-1
  * to 5 save carries is the first kind, and the second kind opens empty, so no
- * existing save loses a plant it had.
+ * existing save loses a plant it had. Version 7 added the lifetime growth a
+ * garden has produced over its whole life; an older save starts it at the
+ * growth it currently holds, so nothing already earned is forgotten.
  *
- * @returns {{version: number, seeds: number, plants: number, sprouts: number[], bloomSprouts: number[], plantCounts: number[], growth: number, rate: number, age: number, beds: number}}
+ * @returns {{version: number, seeds: number, plants: number, sprouts: number[], bloomSprouts: number[], plantCounts: number[], growth: number, rate: number, age: number, lifetime: number, beds: number}}
  * @throws {Error} when the text is empty, not a selfgrow save, damaged,
- *   the wrong version, or carries a bad plot count, growth, rate or age.
+ *   the wrong version, or carries a bad plot count, growth, rate, age or
+ *   lifetime.
  */
 export function decodeSave(text) {
   if (typeof text !== "string" || !text.trim()) {
@@ -280,6 +284,10 @@ export function decodeSave(text) {
     const seedCount = Array.isArray(parsed.sprouts) ? parsed.sprouts.length : parsed.seeds;
     rate = Math.max(0, rate - PLANT_PRODUCTION * seedCount) + PLANT_PRODUCTION * parsed.plants;
   }
+  // Before version 7 there was no lifetime total. A garden that never kept one
+  // has still produced everything it holds, so its lifetime starts at exactly
+  // the growth it carries rather than at nothing.
+  const lifetime = parsed.version < 7 ? growth : readLifetime(parsed);
   return {
     version: SAVE_VERSION,
     seeds: sprouts.length + bloomSprouts.length,
@@ -290,8 +298,21 @@ export function decodeSave(text) {
     growth,
     rate,
     age,
+    lifetime,
     beds,
   };
+}
+
+/**
+ * The lifetime growth a save carries, whole and zero or more. A save that does
+ * not say opens at nothing grown over its life; a negative or non-finite one is
+ * refused with a reason, because it would put the garden's whole history below
+ * the growth it currently holds.
+ */
+function readLifetime(parsed) {
+  if (parsed.lifetime === undefined || parsed.lifetime === null) return 0;
+  assertAmount(parsed.lifetime, "lifetime");
+  return parsed.lifetime;
 }
 
 /** The second kind's grown plants a save carries, whole and zero or more. */
@@ -573,9 +594,14 @@ export function subscribe(listener) {
 //
 // Growth is the garden's first resource: one tap of the soil earns a little of
 // it and raises the rate it keeps arriving at, so the number climbs on its own
-// after the click. The live amount, rate and age are written with the garden's
-// save (see `writeStoredGarden`) so a visit can resume where the last one
-// stopped, and time away can be counted from the rate it was left at.
+// after the click. The live amount, rate, age and lifetime are written with the
+// garden's save (see `writeStoredGarden`) so a visit can resume where the last
+// one stopped, and time away can be counted from the rate it was left at.
+//
+// `lifetime` is everything the garden has ever produced, and unlike the growth
+// balance it is never spent: planting a seed or opening a bed takes from the
+// balance and leaves the lifetime where it is, so the garden's whole history
+// survives a replant and is what a replant's lasting bonus is earned from.
 
 /** What one tend of the soil earns, and how much faster it makes the garden. */
 export const TEND_YIELD = 1;
@@ -584,28 +610,46 @@ export const TEND_RATE_STEP = 0.1;
 let growth = 0;
 let rate = 0;
 let age = 0;
+let lifetime = 0;
 
 /**
- * The live growth since this visit began, its rate in growth/second, and the
- * garden's age in seconds of elapsed time. Age is what a pollinator's schedule
- * is read from, so it is kept beside the growth rather than derived from a
- * foreground timer: a hidden tab still ages the garden.
+ * The live growth since this visit began, its rate in growth/second, the
+ * garden's age in seconds of elapsed time, and the growth it has produced over
+ * its whole life. Age is what a pollinator's schedule is read from, so it is
+ * kept beside the growth rather than derived from a foreground timer: a hidden
+ * tab still ages the garden. Lifetime is kept the same way, so the garden's
+ * whole history is not something a visitor could lose by not watching.
  */
 export function getGrowthState() {
-  return { growth, rate, age };
+  return { growth, rate, age, lifetime };
 }
 
 /**
  * Put the live growth back to a known point — the snapshot a caller took. Out
  * of range or missing values fall back to nothing grown rather than to `NaN`,
- * and a missing age restarts at zero rather than leaving the clock somewhere
- * unknown.
+ * a missing age restarts at zero rather than leaving the clock somewhere
+ * unknown, and a missing lifetime starts the garden's history at nothing.
  */
-export function setGrowth(growthValue, rateValue = 0, ageValue = 0) {
+export function setGrowth(growthValue, rateValue = 0, ageValue = 0, lifetimeValue = 0) {
   growth = Number.isFinite(growthValue) && growthValue > 0 ? growthValue : 0;
   rate = Number.isFinite(rateValue) && rateValue > 0 ? rateValue : 0;
   age = Number.isFinite(ageValue) && ageValue > 0 ? ageValue : 0;
+  lifetime = Number.isFinite(lifetimeValue) && lifetimeValue > 0 ? lifetimeValue : 0;
   notify();
+}
+
+/**
+ * What replanting the garden right now would earn as a lasting bonus: the
+ * square root of the growth it has produced over its whole life, floored to a
+ * whole number.
+ *
+ * Sublinear on purpose. Twice the lifetime growth is worth less than twice the
+ * bonus, so several runs add up to more than one long one and a visitor is
+ * never punished for replanting. Pure and deterministic, so the readout, the
+ * page and an agent's state cannot disagree about what a replant is worth.
+ */
+export function replantBonus(lifetimeGrowth) {
+  return Math.floor(Math.sqrt(amountOrZero(lifetimeGrowth)));
 }
 
 // --- The visiting pollinator -------------------------------------------------
@@ -742,6 +786,7 @@ export function seasonMultiplierSecondsWithin(ageSeconds, spanSeconds) {
 export function tend() {
   growth += TEND_YIELD;
   rate += TEND_RATE_STEP;
+  lifetime += TEND_YIELD;
   notify();
   return getGrowthState();
 }
@@ -863,6 +908,9 @@ export function advance(seconds) {
     },
     seconds
   );
+  // Everything the garden earned over the span is added to its lifetime, so
+  // the total it can never spend counts exactly the growth that arrived.
+  lifetime += Math.max(0, next.growth - growth);
   growth = next.growth;
   rate = next.rate;
   age = next.age;
