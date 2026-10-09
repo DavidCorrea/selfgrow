@@ -38,23 +38,14 @@ A ticket that fails two runs is **parked** with a post-mortem, and the Tech Lead
 | 🤝 **review-pr** / **triage-fork-pr** | on any PR | Finish a person's PR; review a fork's as text |
 | 📦 **pi-update** | Tue 07:00 | Keeps the agent runtime current, and reverts if the model chain breaks |
 
-<details>
-<summary>The week at a glance</summary>
+### When it runs
 
-| UTC | Mon | Tue | Wed | Thu | Fri | Sat | Sun |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 00:30 | 📋 PM | 📋 PM | 📋 PM | 📋 PM | 📋 PM | 📋 PM | 📋 PM + digest |
-| 07:00 | | 📦 pi-update | | | | | |
-| 08:00 | 🧭 PO | | | | | | |
-| 09:00 | | | | 🔧 Tech Lead | | | |
-| 12:30 | 📋 PM | 📋 PM | 📋 PM | 📋 PM | 📋 PM | 📋 PM | 📋 PM |
-| 14:00 | ⚒️ Devs | ⚒️ Devs | ⚒️ Devs | ⚒️ Devs | ⚒️ Devs | ⚒️ Devs | ⚒️ Devs |
-| 16:00 | 📊 Health | 📊 Health | 📊 Health | 📊 Health | 📊 Health | 📊 Health | 📊 Health |
-| 23:00 | 👀 Playtester | 👀 Playtester | 👀 Playtester | 👀 Playtester | 👀 Playtester | 👀 Playtester | 👀 Playtester |
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/schedule-dark.svg">
+  <img alt="The week in UTC. Every day: the Product Manager at 00:30 and 12:30 (the Sunday 00:30 run also writes the digest), the Devs at 14:00 and right after each PM run, Health at 16:00, and the Playtester at 23:00. Weekly: pi-update on Tuesday at 07:00, the Product Owner on Monday at 08:00, the Tech Lead on Thursday at 09:00." src=".github/readme/schedule-light.svg">
+</picture>
 
-The Devs also start right after each PM run that leaves groomed work, and keep going while tickets become buildable, up to 6 a run. The Playtester plays at 23:00 so its findings are waiting for the PM's next run.
-
-</details>
+The Devs keep going while tickets become buildable, up to 6 a run. The Playtester plays at 23:00 so its findings are waiting for the PM's next run.
 
 ## What keeps it honest
 
