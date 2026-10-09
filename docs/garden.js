@@ -13,13 +13,22 @@
  */
 
 /** The save format. Bump it only if the shape below actually changes. */
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 
 /** A readable marker, so a save is recognisable and the version is obvious. */
 export const SAVE_PREFIX = "SELFGROW1.";
 
 /** The one key the garden is stored under in the browser. */
 export const STORAGE_KEY = "selfgrow.garden";
+
+/**
+ * When the visitor was last seen, in device-local milliseconds.
+ *
+ * This is kept beside the garden rather than inside its portable save string,
+ * because a timestamp is about this browser, not about the garden itself: the
+ * string a player copies out must not depend on when it happened to be copied.
+ */
+export const LAST_SEEN_KEY = "selfgrow.garden.seen";
 
 /** How many plots of soil the garden has to plant in. */
 export const PLOT_CAPACITY = 12;
@@ -40,14 +49,39 @@ function assertCount(value, field) {
 }
 
 /**
+ * A growth amount or rate written to a save. A finite number of zero or more is
+ * kept as it is; anything missing, negative or not a number is written as zero,
+ * so a caller that never knew about growth still produces a valid save.
+ */
+function savedAmount(value) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+/**
+ * A growth amount or rate read back out of a save: full zero or more, finite.
+ * A negative, missing or non-finite value is refused with a reason.
+ */
+function assertAmount(value, field) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    throw new Error(`the save's ${field} must be a number of 0 or more, but it is ${JSON.stringify(value)}.`);
+  }
+}
+
+/**
  * Turn a garden into the one string a player can copy out and paste back.
  *
- * @returns {string} e.g. `SELFGROW1.eyJ2ZXJzaW9uIjox...`
+ * @returns {string} e.g. `SELFGROW1.eyJ2ZXJzaW9uIjoy...`
  */
 export function encodeSave(garden) {
   assertCount(garden.seeds, "seeds");
   assertCount(garden.plants, "plants");
-  const body = JSON.stringify({ version: SAVE_VERSION, seeds: garden.seeds, plants: garden.plants });
+  const body = JSON.stringify({
+    version: SAVE_VERSION,
+    seeds: garden.seeds,
+    plants: garden.plants,
+    growth: savedAmount(garden.growth),
+    rate: savedAmount(garden.rate),
+  });
   return SAVE_PREFIX + btoa(body);
 }
 
@@ -57,9 +91,12 @@ export function encodeSave(garden) {
  * Every failure carries why it failed, because the message is shown to the
  * visitor and read by an agent deciding what to fix.
  *
- * @returns {{version: number, seeds: number, plants: number}}
+ * A version-1 save — written before the garden kept its growth — is read as a
+ * migration: its seeds and plants are kept and it starts with nothing grown.
+ *
+ * @returns {{version: number, seeds: number, plants: number, growth: number, rate: number}}
  * @throws {Error} when the text is empty, not a selfgrow save, damaged,
- *   the wrong version, or carries a bad plot count.
+ *   the wrong version, or carries a bad plot count, growth or rate.
  */
 export function decodeSave(text) {
   if (typeof text !== "string" || !text.trim()) {
@@ -79,14 +116,19 @@ export function decodeSave(text) {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("that save is empty or the wrong shape.");
   }
-  if (parsed.version !== SAVE_VERSION) {
+  if (parsed.version !== 1 && parsed.version !== SAVE_VERSION) {
     throw new Error(
       `that save is version ${JSON.stringify(parsed.version)}, but this garden reads version ${SAVE_VERSION}.`
     );
   }
   assertCount(parsed.seeds, "seeds");
   assertCount(parsed.plants, "plants");
-  return { version: SAVE_VERSION, seeds: parsed.seeds, plants: parsed.plants };
+  // Version 1 had no growth of its own; migrating it starts with nothing grown.
+  const growth = parsed.version === 1 ? 0 : parsed.growth;
+  const rate = parsed.version === 1 ? 0 : parsed.rate;
+  assertAmount(growth, "growth");
+  assertAmount(rate, "rate");
+  return { version: SAVE_VERSION, seeds: parsed.seeds, plants: parsed.plants, growth, rate };
 }
 
 /** The browser's store, or null when it cannot even be reached. */
@@ -135,15 +177,57 @@ export function readStoredGarden(storage = defaultStorage()) {
   }
 }
 
-/** @returns {boolean} whether the garden was actually written. */
+/**
+ * Write the garden to the browser. The live growth and rate are carried in the
+ * same save, so time away can be counted from exactly what the visitor left.
+ *
+ * @returns {boolean} whether the garden was actually written.
+ */
 export function writeStoredGarden(garden, storage = defaultStorage()) {
   if (!storage) return false;
   try {
-    storage.setItem(STORAGE_KEY, encodeSave(garden));
+    storage.setItem(STORAGE_KEY, encodeSave({ ...garden, ...getGrowthState() }));
     return true;
   } catch {
     return false;
   }
+}
+
+/** When the visitor was last here, in device-local milliseconds, or null. */
+export function readLastSeen(storage = defaultStorage()) {
+  if (!storage) return null;
+  let raw;
+  try {
+    raw = storage.getItem(LAST_SEEN_KEY);
+  } catch {
+    return null;
+  }
+  if (raw == null || raw === "") return null;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : null;
+}
+
+/** @returns {boolean} whether the timestamp was actually written. */
+export function writeLastSeen(nowMs, storage = defaultStorage()) {
+  if (!storage || !Number.isFinite(nowMs)) return false;
+  try {
+    storage.setItem(LAST_SEEN_KEY, String(nowMs));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * How many seconds passed between `lastSeenMs` and `nowMs`.
+ *
+ * A missing or non-finite input, or a clock that ran backwards, counts as no
+ * time at all — the garden must never grow on a span it cannot trust.
+ */
+export function elapsedSeconds(lastSeenMs, nowMs) {
+  if (!Number.isFinite(lastSeenMs) || !Number.isFinite(nowMs)) return 0;
+  const span = (nowMs - lastSeenMs) / 1000;
+  return span > 0 ? span : 0;
 }
 
 // --- The live garden ---------------------------------------------------------
@@ -178,9 +262,9 @@ export function subscribe(listener) {
 //
 // Growth is the garden's first resource: one tap of the soil earns a little of
 // it and raises the rate it keeps arriving at, so the number climbs on its own
-// after the click. It is deliberately not part of the saved garden — this loop
-// is a session of play, not the durable seed count — so a save string still
-// carries exactly what it carried before growth existed.
+// after the click. The live amount and rate are written with the garden's save
+// (see `writeStoredGarden`) so a visit can resume where the last one stopped,
+// and time away can be counted from the rate it was left at.
 
 /** What one tend of the soil earns, and how much faster it makes the garden. */
 export const TEND_YIELD = 1;
