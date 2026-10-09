@@ -8,7 +8,7 @@
     <title>selfgrow — a garden that tends itself</title>
     <link rel="stylesheet" href="./garden.css" />
     <script type="module">
-      import "./main.js";
+      import "./app.js";
       import "./webmcp.js";
     </script>
   </head>
@@ -19,25 +19,55 @@
     </header>
 
     <main id="main" class="stage">
-      <section class="panel" aria-labelledby="seedbed-heading">
-        <h2 id="seedbed-heading" class="panel-title">The seedbed</h2>
-        <p class="panel-note">Plant a seed by hand. Once it is in the soil, the garden does the rest.</p>
-        <div class="seedbed" id="seedbed" aria-hidden="true"></div>
-        <p class="readout">
-          <span class="readout-label">Seeds planted</span>
-          <span class="readout-value" id="seed-count" aria-live="polite">0</span>
-        </p>
-        <button type="button" class="btn" id="plant-seed">Plant a seed</button>
+      <section class="panel" aria-labelledby="garden-heading">
+        <h2 id="garden-heading" class="panel-title">The garden</h2>
+        <p class="panel-note">Bare soil and one seed, waiting. Everything the plot draws is stated beside it, so the picture and the counts always agree.</p>
+
+        <canvas id="garden-plot" class="plot" width="144" height="48" aria-hidden="true"></canvas>
+        <p class="plot-description" id="plot-description"></p>
+
+        <dl class="readout" aria-label="What the garden holds">
+          <div class="readout-row">
+            <dt class="readout-term">Ungrown seeds</dt>
+            <dd class="readout-value" data-field="seeds">1</dd>
+          </div>
+          <div class="readout-row">
+            <dt class="readout-term">Grown plants</dt>
+            <dd class="readout-value" data-field="plants">0</dd>
+          </div>
+          <div class="readout-row">
+            <dt class="readout-term">Plots of soil</dt>
+            <dd class="readout-value" data-field="capacity">12</dd>
+          </div>
+          <div class="readout-row">
+            <dt class="readout-term">Saved in this browser</dt>
+            <dd class="readout-value" data-field="storage">Yes</dd>
+          </div>
+        </dl>
       </section>
 
-      <section class="panel" aria-labelledby="grows-heading">
-        <h2 id="grows-heading" class="panel-title">About the garden</h2>
-        <p class="panel-note">Every number in this garden has a shape on the plot, so the picture and the count always agree.</p>
-        <ul class="facts">
-          <li><span class="fact-dot fact-leaf" aria-hidden="true"></span>The first 8 seeds grow into sprouts.</li>
-          <li><span class="fact-dot fact-bloom" aria-hidden="true"></span>The seed count keeps rising past the plot.</li>
-          <li><span class="fact-dot fact-water" aria-hidden="true"></span>Panel, button and soil share one small palette.</li>
-        </ul>
+      <section class="panel" aria-labelledby="save-heading">
+        <h2 id="save-heading" class="panel-title">Your save</h2>
+        <p class="panel-note">The garden keeps itself. Copy this one line to carry it to another browser, or paste a line in and load it back.</p>
+
+        <label class="field-label" for="save-value">Garden save</label>
+        <textarea
+          id="save-value"
+          class="save-value"
+          name="save"
+          rows="4"
+          spellcheck="false"
+          autocomplete="off"
+          autocapitalize="off"
+          aria-describedby="save-hint"
+        ></textarea>
+        <p class="field-hint" id="save-hint">Starts with SELFGROW1. Load replaces the current garden.</p>
+
+        <div class="save-actions">
+          <button type="button" class="btn" id="copy-save">Copy save</button>
+          <button type="button" class="btn" id="load-save">Load save</button>
+        </div>
+        <p class="save-status" id="save-status" role="status" aria-live="polite"></p>
       </section>
     </main>
 
