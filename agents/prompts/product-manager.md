@@ -164,7 +164,8 @@ A ticket is **meaningful** when someone reading only its title and acceptance cr
 - vague intentions ("Improve the journal", "Polish the UI", "Make it feel nicer") — say what specifically changes and to what end,
 - subjective nitpicks with no clear win,
 - pure refactors with no user-facing payoff,
-- anything you can't write a checkable acceptance criterion for — that's the signal it's still too vague to build.
+- anything you can't write a checkable acceptance criterion for — that's the signal it's still too vague to build,
+- asking for explanatory text — paragraphs describing the state, sentences restating what the picture or a number already shows, copy that explains how something works. Ask for what a visitor can see or do; "states it in text" is met by a label and a value, not a sentence.
 
 Tickets must fit the Vision and the project's shipping rules: a static, browser-only site under `docs/`, no build step. **If nothing has shipped yet (empty Done / empty `docs/`), propose foundational tickets first** — the initial page and core experience before any enrichment.
 

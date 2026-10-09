@@ -12,3 +12,5 @@ What the project **is** — its purpose, character, and direction — is defined
 
 - A canvas is opaque to screen readers, and the product has to reach someone who never sees the animation at all.
 - The build's own app review measures the **DOM** — contrast, layout, overflow, interactive elements. It cannot see into a canvas. A page that is one bare `<canvas>` is a page it can report nothing about, so real defects would ship unnoticed and nothing downstream would ever catch them.
+
+That layer is labels and values, not prose. A heading, a short label beside a number, a button that names its action, an `aria-label`, or text hidden from view but read by screen readers all carry the state. A sentence restating what the picture or a number already shows does not; neither does a paragraph explaining how the product works.

@@ -61,7 +61,7 @@ When the picture is the state, it has to keep up with numbers that grow exponent
 
 - **Every action answers within a tenth of a second**: the number changes, a sprite frame changes, the button responds. A click that seems to do nothing gets clicked twice.
 - **Make big moments feel different from small ones.** Buying the 100th generator or a first prestige deserves more than the 3rd.
-- **Every flourish has a reduced-motion version that says the same thing in text.** The Vision makes the game fully playable without seeing an animation.
+- **Every flourish can be followed without seeing it.** Under reduced motion it still shows what changed, through the picture's final state, a label or a value. The Vision makes the game fully playable without seeing an animation, which is not the same as narrating it.
 
 ## Checking it
 
