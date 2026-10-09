@@ -1,7 +1,8 @@
 /**
  * The page: a soil plot beside the garden's quantities in text and numbers, the
- * Tend the soil action that starts the garden growing, and a save the player can
- * copy out and load back.
+ * Tend the soil action that starts the garden growing, the Plant a seed action
+ * that spends that growth to grow faster, the next seed always shown as progress
+ * and time away, and a save the player can copy out and load back.
  *
  * The plot is drawn from the live growth number through one function —
  * `gardenForm` — that also names the form in words, so the picture and the text
@@ -18,6 +19,8 @@ import {
   encodeSave,
   getGarden,
   getGrowthState,
+  nextSeedCost,
+  plantSeed,
   readStoredGarden,
   setGarden,
   storageAvailable,
@@ -43,6 +46,11 @@ const elements = {
   rate: document.getElementById("growth-rate"),
   form: document.querySelector('[data-field="form"]'),
   tend: document.getElementById("tend"),
+  plant: document.getElementById("plant-seed"),
+  goalTitle: document.getElementById("goal-title"),
+  goalDetail: document.getElementById("goal-detail"),
+  meter: document.getElementById("seed-meter"),
+  meterFill: document.getElementById("seed-meter-fill"),
   seeds: document.querySelector('[data-field="seeds"]'),
   plants: document.querySelector('[data-field="plants"]'),
   capacity: document.querySelector('[data-field="capacity"]'),
@@ -103,6 +111,8 @@ export function getDisplayedState() {
   const garden = getGarden();
   const { growth, rate } = getGrowthState();
   const form = gardenForm(growth);
+  const seedCost = nextSeedCost(garden.seeds);
+  const plotFull = garden.seeds >= PLOT_CAPACITY;
   return {
     seeds: garden.seeds,
     plants: garden.plants,
@@ -111,6 +121,11 @@ export function getDisplayedState() {
     form: form.index,
     formName: form.name,
     capacity: PLOT_CAPACITY,
+    nextSeedCost: seedCost,
+    canPlantSeed: !plotFull && growth >= seedCost,
+    plotFull,
+    seedCostProgress: seedCost > 0 ? Math.min(1, Math.max(0, growth / seedCost)) : 1,
+    secondsToNextSeed: plotFull || !(rate > 0) ? null : Math.max(0, (seedCost - growth) / rate),
     save: encodeSave(garden),
     storageAvailable: isStorageAvailable,
   };
@@ -137,6 +152,62 @@ function announce(message) {
   setText(elements.status, message);
 }
 
+/**
+ * How long until the next seed, in the shortest unit that still says something:
+ * seconds under a minute, then minutes and seconds. A missing span says nothing.
+ */
+function formatDuration(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return "";
+  const whole = Math.ceil(seconds);
+  if (whole < 60) return `${whole}s`;
+  const minutes = Math.floor(whole / 60);
+  const rest = whole % 60;
+  return rest ? `${minutes}m ${rest}s` : `${minutes}m`;
+}
+
+/** The next seed as words: always how far away it is, never only its price. */
+function describeGoal(state) {
+  const cost = numberFormat.format(state.nextSeedCost);
+  if (state.plotFull) return `All ${numberFormat.format(state.capacity)} plots hold a seed.`;
+  if (state.canPlantSeed) return `Ready to plant — ${cost} growth saved.`;
+  if (!(state.rate > 0)) return `Tend the soil to grow faster — ${cost} growth needed.`;
+  return (
+    `${growthFormat.format(state.growth)} / ${cost} growth — about ` +
+    `${formatDuration(state.secondsToNextSeed)} at +${growthFormat.format(state.rate)}/s.`
+  );
+}
+
+/** The Plant a seed button, the goal it is reaching for, and the meter between. */
+function renderPlanting(state) {
+  const cost = numberFormat.format(state.nextSeedCost);
+  setText(elements.plant, state.plotFull ? "Plant a seed — the plot is full" : `Plant a seed — ${cost} growth`);
+  if (elements.plant) elements.plant.disabled = !state.canPlantSeed;
+
+  setText(
+    elements.goalTitle,
+    state.plotFull ? "Every plot holds a seed" : `Plant seed #${numberFormat.format(state.seeds + 1)}`
+  );
+  if (elements.meter) elements.meter.setAttribute("aria-valuenow", String(state.seedCostProgress));
+  if (elements.meterFill) elements.meterFill.style.width = `${(state.seedCostProgress * 100).toFixed(1)}%`;
+  setText(elements.goalDetail, describeGoal(state));
+}
+
+function plantSeedFromButton() {
+  const result = plantSeed();
+  if (!result.ok) {
+    announce(
+      result.reason === "the plot is full"
+        ? "Every plot already holds a seed."
+        : "Not enough growth for another seed yet."
+    );
+    return;
+  }
+  announce(
+    `Planted a seed for ${numberFormat.format(result.cost)} growth — the garden now grows at ` +
+      `+${growthFormat.format(getGrowthState().rate)}/s.`
+  );
+}
+
 let lastPlotKey = null;
 
 function render() {
@@ -153,6 +224,7 @@ function render() {
   setText(elements.capacity, numberFormat.format(state.capacity));
   setText(elements.storage, state.storageAvailable ? "Yes" : "No");
   setText(elements.description, describePlot(state));
+  renderPlanting(state);
   // Leave the field alone while the visitor is editing it; a re-render should
   // not erase a save they are about to paste.
   if (elements.save && document.activeElement !== elements.save) {
@@ -221,6 +293,7 @@ function start() {
   });
 
   elements.tend?.addEventListener("click", tend);
+  elements.plant?.addEventListener("click", plantSeedFromButton);
   elements.copy?.addEventListener("click", copySave);
   elements.load?.addEventListener("click", loadSave);
   elements.save?.addEventListener("input", () => announce(""));
