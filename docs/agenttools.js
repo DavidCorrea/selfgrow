@@ -34,6 +34,12 @@ export function tools() {
       description:
         "Returns everything the page shows a visitor right now: the growth " +
         "total and the rate it is climbing at (in growth per second), the " +
+        "growth the garden has produced over its whole life " +
+        "(lifetimeGrowth — it is never spent, so it survives planting a seed " +
+        "or opening a bed and keeps climbing across a replant), and what " +
+        "replanting right now would earn from that lifetime as a lasting " +
+        "bonus (replantBonus — sublinear in the lifetime, so going further in " +
+        "one run is worth more than replanting early), the " +
         "season the garden's age falls in (season: its key, name and growth " +
         "multiplier — the cycle repeats on its own and no season grows slower " +
         "than the base rate), the " +

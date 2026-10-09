@@ -49,6 +49,7 @@ import {
   pollinatorAt,
   pollinatorSecondsWithin,
   readLastSeen,
+  replantBonus,
   seasonAt,
   seasonMultiplierSecondsWithin,
   readStoredGarden,
@@ -56,6 +57,7 @@ import {
   setGrowth,
   simulateGarden,
   storageAvailable,
+  tend,
   writeLastSeen,
   writeStoredGarden,
 } from "./garden.js";
@@ -588,7 +590,7 @@ function checkPortableSave(problems) {
     }
   } finally {
     setGarden(before);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
     restoreRawStorage(beforeRaw);
   }
 }
@@ -601,8 +603,8 @@ function checkPortableSave(problems) {
  * against its own count, and both read off a mixed garden correctly.
  */
 function checkSeedKindsDiffer(problems) {
-  if (SAVE_VERSION !== 6) {
-    problems.push(`SAVE_VERSION should be 6 (the second seed kind), but it is ${SAVE_VERSION}.`);
+  if (SAVE_VERSION !== 7) {
+    problems.push(`SAVE_VERSION should be 7 (the lifetime total), but it is ${SAVE_VERSION}.`);
   }
   const [herb, bloom] = SEED_KINDS;
   if (bloom.costBase <= herb.costBase) {
@@ -766,7 +768,7 @@ function checkBloomPlanting(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
     restoreRawStorage(storageBefore);
   }
 }
@@ -839,6 +841,169 @@ function checkSaveMigratesKinds(problems) {
     }
   } catch (e) {
     problems.push(`a mixed-kind save could not round-trip: ${e.message}`);
+  }
+}
+
+/**
+ * The garden's whole life: a lifetime total that outlives a replant and keeps
+ * climbing, and the lasting bonus a replant right now would earn from it.
+ *
+ * The lifetime is the ground the replant action stands on, so it is checked at
+ * both ends — the pure curve, the save that carries it, the migration that
+ * starts an older garden at what it already holds, and the readout a visitor
+ * and an agent both read.
+ */
+function checkLifetimeGrowth(problems) {
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const payload = (value) => `${SAVE_PREFIX}${btoa(JSON.stringify(value))}`;
+  try {
+    // The lifetime is part of the save and comes back exactly as it went in.
+    try {
+      const back = decodeSave(
+        encodeSave({ version: SAVE_VERSION, seeds: 1, plants: 1, growth: 7, rate: 0.5, lifetime: 123.5 })
+      );
+      if (back.lifetime !== 123.5) {
+        problems.push(`a save put in a lifetime of 123.5 and gave back ${back.lifetime}.`);
+      }
+    } catch (e) {
+      problems.push(`a save carrying a lifetime could not round-trip: ${e.message}`);
+    }
+
+    // A save from before the lifetime was kept has still produced everything it
+    // holds, so it starts at its current growth rather than at nothing.
+    try {
+      const migrated = decodeSave(
+        payload({ version: 6, seeds: 2, plants: 1, growth: 42.5, rate: 1.2, age: 30, beds: 1 })
+      );
+      if (migrated.lifetime !== 42.5) {
+        problems.push(
+          `a version-6 save holding 42.5 growth should start its lifetime at 42.5, but it started at ` +
+            `${migrated.lifetime}.`
+        );
+      }
+    } catch (e) {
+      problems.push(`a version-6 save should still load, but it was refused: ${e.message}`);
+    }
+
+    // A lifetime that is negative or not a number is refused, not rendered.
+    for (const [label, value] of [
+      ["a negative lifetime", payload({ version: SAVE_VERSION, seeds: 1, plants: 0, growth: 0, rate: 0, lifetime: -1 })],
+      [
+        "a lifetime that is not a number",
+        payload({ version: SAVE_VERSION, seeds: 1, plants: 0, growth: 0, rate: 0, lifetime: "5" }),
+      ],
+    ]) {
+      try {
+        decodeSave(value);
+        problems.push(`the save reader accepted ${label}; it should refuse it.`);
+      } catch {
+        // refused, as it must be.
+      }
+    }
+
+    // The bonus curve is a square root: going further is always worth more, but
+    // each further step is worth less, so several runs beat one long one.
+    for (const [lifetime, expected] of [[0, 0], [99, 9], [100, 10], [400, 20]]) {
+      if (replantBonus(lifetime) !== expected) {
+        problems.push(`replantBonus(${lifetime}) is ${replantBonus(lifetime)}, expected ${expected}.`);
+      }
+    }
+    if (!(replantBonus(99) < replantBonus(100))) {
+      problems.push(
+        `the replant bonus must rise with lifetime, but 99 is worth ${replantBonus(99)} and 100 is worth ` +
+          `${replantBonus(100)}.`
+      );
+    }
+    if (!(replantBonus(400) < 4 * replantBonus(100))) {
+      problems.push(
+        `the replant bonus must be sublinear, but four times the lifetime (400) is worth ${replantBonus(400)} ` +
+          `against ${replantBonus(100)} at 100.`
+      );
+    }
+    if (replantBonus(-5) !== 0 || replantBonus(Number.NaN) !== 0) {
+      problems.push("a negative or missing lifetime must be worth no bonus, not a negative or NaN one.");
+    }
+
+    // Tending the soil and letting time pass both count towards the lifetime,
+    // so the total the garden can never spend tracks what it has produced.
+    setGarden({ seeds: 0, plants: 0 });
+    setGrowth(0, 0, 0, 50);
+    tend();
+    if (getGrowthState().lifetime !== 50 + TEND_YIELD) {
+      problems.push(
+        `tending should add ${TEND_YIELD} to the lifetime (50 to ${50 + TEND_YIELD}), but it became ` +
+          `${getGrowthState().lifetime}.`
+      );
+    }
+    setGrowth(0, 1, 0, 50);
+    advance(10);
+    if (Math.abs(getGrowthState().lifetime - 60) > 1e-9) {
+      problems.push(
+        `10 seconds at +1/s should add 10 to the lifetime (50 to 60), but it became ${getGrowthState().lifetime}.`
+      );
+    }
+
+    // A replant resets the growth balance but never the lifetime: the second
+    // run adds to the first instead of starting the garden's history over.
+    setGrowth(0, 1, 0, 100);
+    advance(100);
+    const firstRun = getGrowthState();
+    if (Math.abs(firstRun.lifetime - 200) > 1e-9) {
+      problems.push(`after a 100-growth first run the lifetime is ${firstRun.lifetime}, expected 200.`);
+    }
+    const bonusAfterOneRun = replantBonus(firstRun.lifetime);
+    setGrowth(0, 1, 0, firstRun.lifetime); // a replant: the balance goes, the history stays
+    if (getGrowthState().lifetime !== firstRun.lifetime) {
+      problems.push("a replant reset the lifetime, so the garden forgot what it had already produced.");
+    }
+    advance(100);
+    const secondRun = getGrowthState();
+    if (!(replantBonus(secondRun.lifetime) > bonusAfterOneRun)) {
+      problems.push(
+        `a second run must be worth more than the first: the bonus went from ${bonusAfterOneRun} to ` +
+          `${replantBonus(secondRun.lifetime)} across the replant.`
+      );
+    }
+
+    // The lifetime and the bonus are the state a visitor and an agent read, and
+    // the page shows the same two numbers.
+    setGrowth(123.5, 0.5, 0, 250);
+    const state = getDisplayedState();
+    if (state.lifetimeGrowth !== 250) {
+      problems.push(`the displayed lifetime is ${state.lifetimeGrowth}, expected the garden's 250.`);
+    }
+    if (state.replantBonus !== replantBonus(250)) {
+      problems.push(
+        `the displayed replant bonus is ${state.replantBonus}, but replantBonus(250) is ${replantBonus(250)}.`
+      );
+    }
+    const lifetimeEl = document.querySelector('[data-field="lifetime"]');
+    const bonusEl = document.querySelector('[data-field="replant-bonus"]');
+    if (!lifetimeEl || !bonusEl) {
+      problems.push(
+        'the page has no lifetime readout (expected [data-field="lifetime"] and [data-field="replant-bonus"]), ' +
+          "so a visitor cannot see what the garden has grown or what a replant is worth."
+      );
+    } else {
+      const shownLifetime = String(lifetimeEl.textContent).trim();
+      const shownBonus = String(bonusEl.textContent).trim();
+      if (shownLifetime !== formatGrowth(state.lifetimeGrowth)) {
+        problems.push(
+          `the page shows ${JSON.stringify(shownLifetime)} for the lifetime, but the garden holds ` +
+            `${state.lifetimeGrowth} (${formatGrowth(state.lifetimeGrowth)}).`
+        );
+      }
+      if (!shownBonus.includes(formatAmount(state.replantBonus))) {
+        problems.push(
+          `the page shows ${JSON.stringify(shownBonus)} for the replant bonus, but a replant right now is worth ` +
+            `${state.replantBonus}.`
+        );
+      }
+    }
+  } finally {
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
   }
 }
 
@@ -947,7 +1112,7 @@ function checkKindReadout(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
   }
 }
 
@@ -1242,7 +1407,7 @@ function checkNextFormMeter(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
   }
 }
 
@@ -1278,7 +1443,7 @@ function checkPlotMotion(problems) {
       );
     }
   } finally {
-    setGrowth(before.growth, before.rate, before.age);
+    setGrowth(before.growth, before.rate, before.age, before.lifetime);
   }
 }
 
@@ -1330,7 +1495,7 @@ function checkTendAnswersImmediately(problems) {
       );
     }
   } finally {
-    setGrowth(before.growth, before.rate, before.age);
+    setGrowth(before.growth, before.rate, before.age, before.lifetime);
   }
 }
 
@@ -1348,7 +1513,7 @@ function checkGrowthRateShowsAndRuns(problems) {
       problems.push(`the page shows the growth rate as ${JSON.stringify(rateText)}, expected a "+x/s" form like "+0.5/s".`);
     }
   } finally {
-    setGrowth(before.growth, before.rate, before.age);
+    setGrowth(before.growth, before.rate, before.age, before.lifetime);
   }
 }
 
@@ -1384,7 +1549,7 @@ function checkGrowthIsBoundedAndFinite(problems) {
       problems.push(`the growth total shows ${JSON.stringify(total)} after a huge elapsed span.`);
     }
   } finally {
-    setGrowth(before.growth, before.rate, before.age);
+    setGrowth(before.growth, before.rate, before.age, before.lifetime);
   }
 }
 
@@ -1515,7 +1680,7 @@ function checkPlantingSpendsAndRaisesProduction(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
     restoreRawStorage(storageBefore);
   }
 }
@@ -1603,7 +1768,7 @@ function checkSeedGoalReadout(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
   }
 }
 
@@ -1649,7 +1814,7 @@ function checkNextPlantReadout(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
   }
 }
 
@@ -1776,7 +1941,7 @@ function checkBedProgression(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
     restoreRawStorage(storageBefore);
   }
 }
@@ -1802,7 +1967,7 @@ function checkLargeCounts(problems) {
     checkNoOverflow(problems);
   } finally {
     setGarden(before);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
     restoreRawStorage(beforeRaw);
   }
 }
@@ -1945,7 +2110,7 @@ function checkCompactAmounts(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
     restoreRawStorage(storageBefore);
   }
 }
@@ -1995,8 +2160,8 @@ function checkCompactReadout(problems) {
   // Every number the page tracks keeps a readout in the DOM, even the ones
   // folded to a screen reader so the garden, numbers and buttons share a screen.
   const fields = [
-    "growth", "form", "seeds", "plants", "kind-herb", "kind-bloom", "beds", "capacity",
-    "season", "pollinator", "next-plant", "next-bed", "storage",
+    "growth", "lifetime", "replant-bonus", "form", "seeds", "plants", "kind-herb", "kind-bloom", "beds",
+    "capacity", "season", "pollinator", "next-plant", "next-bed", "storage",
   ];
   for (const field of fields) {
     if (!document.querySelector(`[data-field="${field}"]`)) {
@@ -2106,7 +2271,7 @@ function checkOfflineTime(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(before.growth, before.rate, before.age);
+    setGrowth(before.growth, before.rate, before.age, before.lifetime);
   }
 }
 
@@ -2327,7 +2492,7 @@ function checkPollinator(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
   }
 }
 
@@ -2444,7 +2609,7 @@ function checkSeason(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
   }
 }
 
@@ -2517,7 +2682,7 @@ function checkSeasonDrawing(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
   }
 }
 
@@ -2609,7 +2774,7 @@ function checkReturnSummary(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
     restoreRawStorage(storageBefore);
   }
 }
@@ -2672,7 +2837,7 @@ function checkSimulateGarden(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
   }
 }
 
@@ -2796,7 +2961,7 @@ function checkSandbox(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
     restoreRawStorage(storageBefore);
     restoreRawLastSeen(seenBefore);
   }
@@ -2880,6 +3045,18 @@ async function checkAgentTools(problems) {
       `${shown.form} "${shown.formName}".`
     );
   }
+  if (state.lifetimeGrowth !== shown.lifetimeGrowth || state.replantBonus !== shown.replantBonus) {
+    problems.push(
+      `get-state reported a lifetime of ${state.lifetimeGrowth} worth a replant bonus of ${state.replantBonus}, ` +
+        `but the page holds ${shown.lifetimeGrowth} worth ${shown.replantBonus}.`
+    );
+  }
+  if (state.replantBonus !== replantBonus(state.lifetimeGrowth)) {
+    problems.push(
+      `get-state's replant bonus is ${state.replantBonus}, but a replant of ${state.lifetimeGrowth} lifetime is ` +
+        `worth ${replantBonus(state.lifetimeGrowth)}.`
+    );
+  }
   if (state.save !== shown.save) {
     problems.push("get-state's save does not match the save the page shows.");
   }
@@ -2943,7 +3120,7 @@ async function checkAgentTools(problems) {
         );
       }
     } finally {
-      setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
+      setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
     }
   }
 
@@ -3058,7 +3235,7 @@ async function checkAgentTools(problems) {
       }
     } finally {
       setGarden(gardenBefore);
-      setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
+      setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
       restoreRawStorage(storageBefore);
     }
   }
@@ -3111,7 +3288,7 @@ async function checkAgentTools(problems) {
       }
     } finally {
       setGarden(gardenBefore);
-      setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
+      setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
       restoreRawStorage(storageBefore);
     }
   }
@@ -3183,7 +3360,7 @@ async function checkAgentTools(problems) {
       }
     } finally {
       setGarden(gardenBefore);
-      setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
+      setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
       restoreRawStorage(storageBefore);
       restoreRawLastSeen(seenBefore);
     }
@@ -3289,6 +3466,7 @@ export async function checks() {
     checkSeedCostCurve(problems);
     checkSeedKindsDiffer(problems);
     checkSaveMigratesKinds(problems);
+    checkLifetimeGrowth(problems);
     checkPlantControl(problems);
     checkPlantingSpendsAndRaisesProduction(problems);
     checkBloomPlanting(problems);
@@ -3309,7 +3487,7 @@ export async function checks() {
     await checkAgentTools(problems);
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
     restoreRawStorage(storageBefore);
   }
 

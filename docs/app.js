@@ -2,7 +2,9 @@
  * The page: a soil plot beside the garden's quantities in text and numbers, the
  * Tend the soil action that starts the garden growing, the Plant a seed action
  * that spends that growth to grow faster, the next seed always shown as progress
- * and time away, and a save the player can copy out and load back.
+ * and time away, the growth the garden has produced over its whole life beside
+ * what a replant right now would earn from it, and a save the player can copy
+ * out and load back.
  *
  * The plot is drawn from the live growth number through one function —
  * `gardenForm` — that also names the form in words, so the picture and the text
@@ -31,6 +33,7 @@ import {
   plantSeed,
   pollinatorAt,
   readLastSeen,
+  replantBonus,
   seasonAt,
   readStoredGarden,
   setGarden,
@@ -96,6 +99,8 @@ const MIN_AWAY_SECONDS = 60;
 const elements = {
   growth: document.getElementById("growth-total"),
   rate: document.getElementById("growth-rate"),
+  lifetime: document.getElementById("lifetime-total"),
+  replantBonus: document.getElementById("replant-bonus"),
   form: document.querySelector('[data-field="form"]'),
   nextForm: document.querySelector('[data-field="next-form"]'),
   formMeter: document.getElementById("form-meter"),
@@ -216,9 +221,15 @@ function setText(element, text) {
  * they are the same values from the same place, never two sources to drift.
  */
 export function getDisplayedState() {
-  const { growth, rate, age } = getGrowthState();
+  const { growth, rate, age, lifetime } = getGrowthState();
   return {
     ...describeGardenState(getGarden(), growth, rate, age),
+    // The garden's whole history, and what replanting right now would earn from
+    // it. They live here rather than in `describeGardenState` because a
+    // rehearsal has no lifetime of its own: a sandbox describes one span of a
+    // garden, not a life.
+    lifetimeGrowth: lifetime,
+    replantBonus: replantBonus(lifetime),
     save: exportSave(),
     away: lastReturn,
     sandbox: getSandboxState(),
@@ -477,7 +488,12 @@ export function applyReturn(saved, lastSeenMs, nowMs) {
   const away = buildAwayReport(start, seconds);
   const after = simulateGarden(start, seconds);
 
-  setGrowth(after.growth, after.rate, after.age);
+  // Everything the absence earned joins the lifetime, on top of the lifetime
+  // the garden was left with, so time away is part of the garden's history
+  // exactly as played time is. A caller that never knew about lifetime (a bare
+  // `{growth, rate}`) starts it at nothing rather than at `NaN`.
+  const savedLifetime = Number.isFinite(saved.lifetime) && saved.lifetime > 0 ? saved.lifetime : 0;
+  setGrowth(after.growth, after.rate, after.age, savedLifetime + away.earned);
   setGarden({
     beds: start.beds,
     plants: after.plants,
@@ -646,7 +662,7 @@ export function getSandboxState() {
 export function loadGardenSave(text) {
   const garden = decodeSave(text);
   setGarden(garden);
-  setGrowth(garden.growth, garden.rate, garden.age);
+  setGrowth(garden.growth, garden.rate, garden.age, garden.lifetime);
   const persisted = writeStoredGarden(getGarden());
   writeLastSeen(Date.now());
   return { ok: true, persisted, state: getDisplayedState() };
@@ -849,6 +865,8 @@ function render() {
   const state = getDisplayedState();
   setText(elements.growth, formatGrowth(state.growth));
   setText(elements.rate, `+${formatGrowth(state.rate)}/s`);
+  setText(elements.lifetime, formatGrowth(state.lifetimeGrowth));
+  setText(elements.replantBonus, `replant now +${formatAmount(state.replantBonus)}`);
   setText(elements.form, state.formName);
   setText(elements.nextForm, describeNextForm(state));
   setMeter(state.formProgress, elements.formMeter, elements.formMeterFill);
@@ -968,7 +986,7 @@ function start() {
     const next = readStoredGarden();
     if (next.damaged) return;
     setGarden(next.garden);
-    setGrowth(next.garden.growth, next.garden.rate, next.garden.age);
+    setGrowth(next.garden.growth, next.garden.rate, next.garden.age, next.garden.lifetime);
   });
 
   elements.tend?.addEventListener("click", () => {
