@@ -3,13 +3,13 @@
  *
  * Derived from what the page shows a visitor and what it lets them do — nothing
  * more. `get-state` returns every value on the page; `tend` is the Tend the soil
- * button; `export-save` is the Copy save button; `import-save` is the Load save
- * button, and returns the same fields afterwards so the caller can see what it
- * changed.
+ * button; `plant-seed` is the Plant a seed button; `export-save` is the Copy
+ * save button; `import-save` is the Load save button, and returns the same
+ * fields afterwards so the caller can see what it changed.
  */
 
 import { getDisplayedState, exportSave, loadGardenSave } from "./app.js";
-import { tend } from "./garden.js";
+import { plantSeed, tend } from "./garden.js";
 
 // The save for the starting garden, so `import-save`'s example always validates
 // and runs. Importing it leaves the garden exactly as it starts.
@@ -26,7 +26,12 @@ export function tools() {
         "garden form the plot is drawing (its name and its index among the " +
         "forms, lowest first), the ungrown seeds in the soil, the grown " +
         "plants, how many plots of soil there are, the portable save string, " +
-        "and whether this browser is keeping the garden. Ask it before " +
+        "and whether this browser is keeping the garden. It also returns the " +
+        "next seed: what it costs (nextSeedCost), whether the garden can " +
+        "afford it now (canPlantSeed), whether the plot is full (plotFull), " +
+        "how far along the cost the garden is as a 0-to-1 fraction " +
+        "(seedCostProgress), and the seconds until it can afford it " +
+        "(secondsToNextSeed, null when full or not growing). Ask it before " +
         "acting so you know what the visitor sees.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
@@ -50,6 +55,25 @@ export function tools() {
       async execute() {
         tend();
         return getDisplayedState();
+      },
+    },
+    {
+      name: "plant-seed",
+      title: "Plant a seed",
+      description:
+        "Does what the page's Plant a seed button does: spends the garden's " +
+        "growth on another seed and raises the rate it keeps growing at, so " +
+        "each seed makes the number climb faster. The price rises with every " +
+        "seed planted, so get-state's nextSeedCost is what this will charge. " +
+        "It refuses, changing nothing, when the garden has not saved enough " +
+        "growth or every plot is full. Returns whether it planted, the cost, " +
+        "the reason when it refused, and the state afterwards.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      annotations: { readOnlyHint: false },
+      example: {},
+      async execute() {
+        const result = plantSeed();
+        return { ok: result.ok, reason: result.reason, cost: result.cost, state: getDisplayedState() };
       },
     },
     {

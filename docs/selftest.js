@@ -7,15 +7,20 @@
  *
  * The checks cover the things a person and an agent rely on: the save codec
  * refuses everything it should, the browser copy survives a reload, the page's
- * readout equals the state behind it, a save can leave and come back, and the
+ * readout equals the state behind it, a save can leave and come back, the
  * growth always maps to the same drawn form and the same words at both ends of
- * the scale. They snapshot the garden and the browser's storage and restore
- * both, so they leave no residue and run fast.
+ * the scale, and a seed costs rising growth and buys rising production with the
+ * next goal always on the page as progress and time. They snapshot the garden
+ * and the browser's storage and restore both, so they leave no residue and run
+ * fast.
  */
 
 import {
   PLOT_CAPACITY,
   SAVE_VERSION,
+  SEED_COST_BASE,
+  SEED_COST_RATE,
+  SEED_PRODUCTION,
   STORAGE_KEY,
   TEND_RATE_STEP,
   TEND_YIELD,
@@ -25,6 +30,7 @@ import {
   getGarden,
   getGrowthState,
   newGarden,
+  nextSeedCost,
   readStoredGarden,
   setGarden,
   setGrowth,
@@ -685,6 +691,196 @@ function checkGrowthIsBoundedAndFinite(problems) {
   }
 }
 
+// --- Planting a second seed --------------------------------------------------
+
+/**
+ * The price of the next seed: higher than the last one, rising by the fixed
+ * rate, and still a finite number at seed counts nothing has reached yet.
+ */
+function checkSeedCostCurve(problems) {
+  const first = nextSeedCost(0);
+  if (first !== SEED_COST_BASE) {
+    problems.push(`the very first seed should cost ${SEED_COST_BASE} growth, but nextSeedCost(0) is ${first}.`);
+  }
+
+  for (let seeds = 0; seeds < 40; seeds += 1) {
+    const cost = nextSeedCost(seeds);
+    const next = nextSeedCost(seeds + 1);
+    if (!(next > cost)) {
+      problems.push(
+        `each seed must cost more than the last: with ${seeds} seeds the next costs ${cost}, ` +
+          `but with ${seeds + 1} it costs ${next}.`
+      );
+      break;
+    }
+  }
+
+  // Past a few seeds the rounding stops mattering, so each price is the last
+  // one times the rate.
+  for (const seeds of [10, 20, 30]) {
+    const ratio = nextSeedCost(seeds + 1) / nextSeedCost(seeds);
+    if (Math.abs(ratio - SEED_COST_RATE) > 0.02) {
+      problems.push(
+        `at ${seeds} seeds the next price multiplies by ${ratio.toFixed(4)}, expected about ${SEED_COST_RATE}.`
+      );
+    }
+  }
+
+  const huge = nextSeedCost(1e9);
+  if (!Number.isFinite(huge) || huge < 0) {
+    problems.push(`a billion seeds should still have a finite price, but nextSeedCost(1e9) is ${huge}.`);
+  }
+}
+
+function checkPlantControl(problems) {
+  const button = document.getElementById("plant-seed");
+  if (!button) {
+    problems.push("the page has no Plant a seed control (#plant-seed), so a second seed cannot be planted.");
+    return;
+  }
+  if (button.tagName.toLowerCase() !== "button") {
+    problems.push(
+      `the Plant a seed control is a <${button.tagName.toLowerCase()}>, not a real <button>, ` +
+        `so keyboard Enter and Space will not activate it.`
+    );
+  }
+  const style = getComputedStyle(button);
+  if (style.display === "none" || style.visibility === "hidden") {
+    problems.push("the Plant a seed control is hidden on the page.");
+  }
+}
+
+/**
+ * The button states its price, is disabled exactly until the garden can afford
+ * it, and on a press spends that price and raises production by one seed's
+ * worth.
+ */
+function checkPlantingSpendsAndRaisesProduction(problems) {
+  const button = document.getElementById("plant-seed");
+  if (!button) return; // checkPlantControl reports its absence.
+
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const storageBefore = rawStorage();
+  try {
+    setGarden({ seeds: 1, plants: 0 });
+    const cost = nextSeedCost(1);
+
+    setGrowth(cost - 1, 0.2);
+    const label = String(button.textContent);
+    if (!label.includes(numberFormat.format(cost))) {
+      problems.push(`the Plant a seed label is ${JSON.stringify(label)}, which does not state its ${cost}-growth cost.`);
+    }
+    if (!button.disabled) {
+      problems.push(`the Plant a seed control is enabled at ${cost - 1} growth, one short of its ${cost}-growth cost.`);
+    }
+
+    setGrowth(cost, 0.2);
+    if (button.disabled) {
+      problems.push(`the Plant a seed control is disabled at ${cost} growth, exactly its ${cost}-growth cost.`);
+    }
+    button.click();
+
+    const after = getGrowthState();
+    const gardenAfter = getGarden();
+    if (after.growth !== 0) {
+      problems.push(`planting a ${cost}-growth seed from ${cost} growth left ${after.growth} growth, expected 0.`);
+    }
+    if (Math.abs(after.rate - (0.2 + SEED_PRODUCTION)) > 1e-9) {
+      problems.push(
+        `planting a seed set the rate to ${after.rate}/s, expected ${0.2 + SEED_PRODUCTION}/s ` +
+          `(the old rate plus one seed's production).`
+      );
+    }
+    if (gardenAfter.seeds !== 2) {
+      problems.push(`planting a seed left the garden with ${gardenAfter.seeds} seeds, expected 2.`);
+    }
+  } finally {
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate);
+    restoreRawStorage(storageBefore);
+  }
+}
+
+/**
+ * The next goal is always on the page as progress and as time, never only as a
+ * number, and it is honest when the plot is full.
+ */
+function checkSeedGoalReadout(problems) {
+  const meter = document.getElementById("seed-meter");
+  const detailEl = document.getElementById("goal-detail");
+  if (!meter || !detailEl) {
+    problems.push("the page has no next-seed goal block (expected #seed-meter and #goal-detail).");
+    return;
+  }
+  if (meter.getAttribute("role") !== "progressbar") {
+    problems.push(`the next-seed meter is not a progressbar (role=${JSON.stringify(meter.getAttribute("role"))}).`);
+  }
+
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  try {
+    setGarden({ seeds: 1, plants: 0 });
+    const cost = nextSeedCost(1);
+
+    // Halfway there, at 1 growth per second: the detail must carry both the
+    // cost and how long it will take, and the meter must track the fraction.
+    setGrowth(cost / 2, 1);
+    const halfDetail = String(detailEl.textContent);
+    if (!halfDetail.includes(numberFormat.format(cost))) {
+      problems.push(`the next-seed goal does not state its ${cost}-growth cost: ${JSON.stringify(halfDetail)}`);
+    }
+    if (!halfDetail.includes(`${Math.ceil((cost - cost / 2) / 1)}s`)) {
+      problems.push(
+        `the next-seed goal does not state how many seconds away the seed is: ${JSON.stringify(halfDetail)}`
+      );
+    }
+    const now = Number(meter.getAttribute("aria-valuenow"));
+    if (Math.abs(now - 0.5) > 0.01) {
+      problems.push(`at half the cost the goal meter reads ${now}, expected 0.5.`);
+    }
+    if (!String(document.getElementById("seed-meter-fill")?.style.width ?? "").startsWith("50")) {
+      problems.push(
+        `at half the cost the goal meter fill is ${JSON.stringify(
+          document.getElementById("seed-meter-fill")?.style.width
+        )}, expected about 50%.`
+      );
+    }
+
+    // Affordable: the goal says it is ready, not how far away it is.
+    setGrowth(cost, 1);
+    if (!String(detailEl.textContent).toLowerCase().includes("ready")) {
+      problems.push(`with enough growth the goal does not say the seed is ready: ${JSON.stringify(detailEl.textContent)}`);
+    }
+
+    // Not growing at all: the goal points at what to do about it.
+    setGrowth(0, 0);
+    if (!String(detailEl.textContent).toLowerCase().includes("tend")) {
+      problems.push(
+        `with no growth and no rate the goal does not say to tend the soil: ${JSON.stringify(detailEl.textContent)}`
+      );
+    }
+
+    // Full: the goal tells the truth instead of promising a seed that cannot land.
+    setGarden({ seeds: PLOT_CAPACITY, plants: 0 });
+    setGrowth(0, 1);
+    const fullDetail = String(detailEl.textContent);
+    if (!fullDetail.includes(numberFormat.format(PLOT_CAPACITY))) {
+      problems.push(`with every plot full the goal does not state the plot count: ${JSON.stringify(fullDetail)}`);
+    }
+    const button = document.getElementById("plant-seed");
+    if (button && !button.disabled) {
+      problems.push("with every plot full the Plant a seed control is still enabled.");
+    }
+    if (button && !String(button.textContent).toLowerCase().includes("full")) {
+      problems.push(`with every plot full the Plant a seed label does not say so: ${JSON.stringify(button.textContent)}`);
+    }
+  } finally {
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate);
+  }
+}
+
 function checkLargeCounts(problems) {
   const before = getGarden();
   const beforeRaw = rawStorage();
@@ -789,6 +985,66 @@ async function checkAgentTools(problems) {
     }
   }
 
+  const plantTool = find("plant-seed");
+  if (!plantTool) {
+    problems.push(
+      "agenttools.js has no plant-seed tool, so an agent cannot do what the page's Plant a seed button does."
+    );
+  } else {
+    const gardenBefore = getGarden();
+    const growthBefore = getGrowthState();
+    const storageBefore = rawStorage();
+    try {
+      setGarden({ seeds: 1, plants: 0 });
+      const cost = nextSeedCost(1);
+      setGrowth(cost, 0.2);
+      const result = await plantTool.execute({}, {});
+      const after = getGrowthState();
+      const gardenAfter = getGarden();
+      if (!result.ok || result.cost !== cost) {
+        problems.push(
+          `the plant-seed tool reported ok=${result.ok} cost=${result.cost}, expected ok=true cost=${cost}.`
+        );
+      }
+      if (after.growth !== 0 || Math.abs(after.rate - (0.2 + SEED_PRODUCTION)) > 1e-9 || gardenAfter.seeds !== 2) {
+        problems.push(
+          `the plant-seed tool left the garden at ${after.growth} growth / ${after.rate}/s / ` +
+            `${gardenAfter.seeds} seeds, expected 0 / ${0.2 + SEED_PRODUCTION} / 2.`
+        );
+      }
+      if (!result.state || result.state.seeds !== 2 || result.state.rate !== after.rate) {
+        problems.push("the plant-seed tool did not return the state after planting.");
+      }
+
+      // Refusing when unaffordable must change nothing at all.
+      setGarden({ seeds: 1, plants: 0 });
+      setGrowth(0, 0);
+      const refused = await plantTool.execute({}, {});
+      const untouched = getGarden();
+      const untouchedGrowth = getGrowthState();
+      if (refused.ok) {
+        problems.push("the plant-seed tool planted a seed with no growth to pay for it.");
+      }
+      if (untouched.seeds !== 1 || untouchedGrowth.growth !== 0 || untouchedGrowth.rate !== 0) {
+        problems.push("the plant-seed tool changed the garden even though it refused.");
+      }
+
+      // A full plot refuses too, even with growth to spare.
+      setGarden({ seeds: PLOT_CAPACITY, plants: 0 });
+      setGrowth(nextSeedCost(PLOT_CAPACITY) * 2, 0);
+      const fullRefused = await plantTool.execute({}, {});
+      if (fullRefused.ok || getGarden().seeds !== PLOT_CAPACITY) {
+        problems.push(
+          `the plant-seed tool planted seed ${getGarden().seeds} on a full plot of ${PLOT_CAPACITY}; it must refuse.`
+        );
+      }
+    } finally {
+      setGarden(gardenBefore);
+      setGrowth(growthBefore.growth, growthBefore.rate);
+      restoreRawStorage(storageBefore);
+    }
+  }
+
   const exported = await exportTool.execute({}, {});
   if (exported.save !== shown.save) {
     problems.push("export-save returned a different save than the page shows.");
@@ -861,6 +1117,10 @@ export async function checks() {
     checkPlotDrawing(problems);
     checkGardenFormMapping(problems);
     checkPlotMotion(problems);
+    checkSeedCostCurve(problems);
+    checkPlantControl(problems);
+    checkPlantingSpendsAndRaisesProduction(problems);
+    checkSeedGoalReadout(problems);
     checkLargeCounts(problems);
     checkPortableSave(problems);
     checkNoOverflow(problems);

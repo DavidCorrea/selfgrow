@@ -226,3 +226,57 @@ export function advance(seconds) {
   notify();
   return getGrowthState();
 }
+
+// --- Planting a seed ---------------------------------------------------------
+//
+// The first place one system touches another: a seed costs the growth the soil
+// loop earns, and the seed it plants raises the rate the garden keeps growing
+// at. The price rises with every seed already in the soil, so each next one is
+// a little further away, while production rises by a fixed step, so the wait
+// stays a goal rather than a wall.
+
+/** What the first seed costs, and how fast the price climbs after that. */
+export const SEED_COST_BASE = 5;
+export const SEED_COST_RATE = 1.15;
+
+/** How much faster the garden grows for each seed in the soil. */
+export const SEED_PRODUCTION = 0.5;
+
+/**
+ * What the next seed costs when `seeds` are already in the soil.
+ *
+ * Strictly increasing in the seed count. The exponential passes what a number
+ * can hold at a seed count nothing will reach, but a save that somehow carries
+ * one still has to render a finite price, so the result is capped at
+ * `Number.MAX_SAFE_INTEGER` rather than left as `Infinity`.
+ */
+export function nextSeedCost(seeds) {
+  const count = Number.isFinite(seeds) && seeds > 0 ? Math.floor(seeds) : 0;
+  const cost = Math.ceil(SEED_COST_BASE * SEED_COST_RATE ** count);
+  return Number.isFinite(cost) ? Math.min(cost, Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
+}
+
+/**
+ * Plant a seed: spend growth for it, and shorten the wait for the next one by
+ * raising the rate the garden grows at. Refuses with a reason when the plot is
+ * full or the garden has not saved enough growth, and changes nothing when it
+ * refuses.
+ *
+ * @returns {{ok: boolean, reason: string|null, cost: number}}
+ */
+export function plantSeed() {
+  const cost = nextSeedCost(garden.seeds);
+  if (garden.seeds >= PLOT_CAPACITY) {
+    return { ok: false, reason: "the plot is full", cost };
+  }
+  if (growth < cost) {
+    return { ok: false, reason: "not enough growth", cost };
+  }
+
+  growth -= cost;
+  rate += SEED_PRODUCTION;
+  garden = { ...garden, seeds: garden.seeds + 1 };
+  writeStoredGarden(garden);
+  notify();
+  return { ok: true, reason: null, cost };
+}
