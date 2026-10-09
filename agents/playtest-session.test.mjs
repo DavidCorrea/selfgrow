@@ -5,7 +5,7 @@
 // days, answered by six builds, because no fix could change what it was shown.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { renderSession, formatAbsence } from "./playtester.mjs";
+import { renderSession, formatAbsence, describePageLength } from "./playtester.mjs";
 
 const page = ({ state = "Wood 0", controls = [], dialog = "" } = {}) => ({
   title: "A game",
@@ -91,5 +91,63 @@ test("naming an absence", async (t) => {
   await t.test("in minutes when shorter than an hour", () => {
     assert.equal(formatAbsence(90 * 1000), "2 minutes");
     assert.equal(formatAbsence(60 * 1000), "1 minute");
+  });
+});
+
+// A frame shows only the first screen, so a page three screens long looked as
+// short as one, and the buttons a visitor had to scroll to were never mentioned.
+test("how long the page is, as the Playtester is told it", async (t) => {
+  const length = (overrides = {}) => ({
+    label: "phone",
+    width: 390,
+    height: 844,
+    pageHeight: 844,
+    controls: [
+      { name: "Tend the soil", firstScreen: true },
+      { name: "Copy save", firstScreen: true },
+    ],
+    ...overrides,
+  });
+
+  await t.test("says when the page fits on one screen", () => {
+    assert.match(describePageLength([length()]), /phone \(390×844\): fits on one screen/);
+  });
+
+  await t.test("says how many screens tall a long page is", () => {
+    assert.match(describePageLength([length({ pageHeight: 2110 })]), /phone \(390×844\): 2\.5 screens tall/);
+  });
+
+  await t.test("names the controls a visitor only reaches by scrolling", () => {
+    const described = describePageLength([
+      length({
+        pageHeight: 2110,
+        controls: [
+          { name: "Tend the soil", firstScreen: false },
+          { name: "Copy save", firstScreen: false },
+          { name: "Menu", firstScreen: true },
+        ],
+      }),
+    ]);
+    assert.match(described, /On the first screen: Menu\./);
+    assert.match(described, /Only after scrolling: Tend the soil, Copy save\./);
+  });
+
+  await t.test("describes every viewport it measured", () => {
+    const described = describePageLength([
+      length({ label: "desktop", width: 1440, height: 900, pageHeight: 900 }),
+      length({ pageHeight: 1688 }),
+    ]);
+    assert.match(described, /desktop \(1440×900\): fits on one screen/);
+    assert.match(described, /phone \(390×844\): 2 screens tall/);
+  });
+
+  await t.test("says so when nothing could be measured", () => {
+    assert.match(describePageLength([]), /could not be measured/);
+  });
+
+  await t.test("appears in the session transcript", () => {
+    const transcript = renderSession(session({ pageLengths: [length({ pageHeight: 2110 })] }));
+    assert.match(transcript, /## How long the page is/);
+    assert.match(transcript, /2\.5 screens tall/);
   });
 });

@@ -21,7 +21,7 @@
 // same one a blind visitor gets, and a product whose state layer is dull or wrong
 // is failing them first.
 //
-// It also SEES two frames of it. The state layer answers "what is happening"; a
+// It also SEES frames of it. The state layer answers "what is happening"; a
 // screenshot answers "what does this look like", which is the one question the
 // pipeline could not ask before — reviewApp measures everything about a rendered
 // page that is true or false (overflow, contrast, collapsed boxes) and
@@ -89,40 +89,115 @@ const MAX_FINDINGS = Number(process.env.MAX_PLAYTEST_FINDINGS || 2);
 
 // JPEG, not PNG. The product is a canvas scene — photo-shaped content, where JPEG
 // is several times smaller for no loss that matters to a judgement about mood and
-// hierarchy. Size is not about the bill (two frames cost a fraction of a cent); an
+// hierarchy. Size is not about the bill (a few frames cost a fraction of a cent); an
 // oversized attachment makes the provider reject the whole conversation rather
 // than the offending turn.
 const SHOT_QUALITY = Number(process.env.PLAYTEST_SHOT_QUALITY || 70);
 
+// A whole-page frame stops here. Past a few screens the image only gets harder to
+// read, and the measured length already says how long the page really is.
+const WHOLE_PAGE_SCREENS = 4;
+
+const asImage = (buffer) => ({ type: "image", data: buffer.toString("base64"), mimeType: "image/jpeg" });
+
 /**
- * Two frames of the product as a visitor would see it, as pi image parts.
+ * The product as a visitor would see it at each viewport: the first screen, the
+ * whole page when it is longer than that, and how long it is and which controls
+ * sit above the fold. A first-screen frame alone made a page three screens long
+ * look as short as one.
  *
- * Best-effort by construction: a screenshot that cannot be taken returns an empty
- * list, and the session is reported from the state layer exactly as it was before
- * this existed. Never throws — a broken capture must not cost the week's feedback.
+ * Best-effort by construction: a screenshot that cannot be taken is left out, and
+ * the session is reported from the state layer exactly as it was before this
+ * existed. Never throws — a broken capture must not cost the week's feedback.
  */
 async function captureFrames(page) {
   const frames = [];
+  const pageLengths = [];
   // The same viewports the pipeline judges layout at, so a finding here and a
   // defect there describe the same page rather than two different ones. Only
   // their sizes: touch is fixed when a page opens, and this one is already open.
   for (const viewport of REVIEW_VIEWPORTS) {
     try {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      await page.evaluate(() => window.scrollTo(0, 0));
       // One animation frame plus a beat: the scene resizes on a rAF, so shooting
       // immediately catches the previous layout at the new size.
       await page.waitForTimeout(1200);
-      const buffer = await page.screenshot({ type: "jpeg", quality: SHOT_QUALITY });
+      const firstScreen = await page.screenshot({ type: "jpeg", quality: SHOT_QUALITY });
+      frames.push({ label: `${viewport.label} — first screen`, width: viewport.width, image: asImage(firstScreen) });
+
+      const length = await page.evaluate(measurePageLength);
+      pageLengths.push({ label: viewport.label, width: viewport.width, height: viewport.height, ...length });
+      if (length.pageHeight <= viewport.height) continue;
+
+      const shownHeight = Math.min(length.pageHeight, viewport.height * WHOLE_PAGE_SCREENS);
+      const wholePage = await page.screenshot({
+        type: "jpeg",
+        quality: SHOT_QUALITY,
+        fullPage: true,
+        clip: { x: 0, y: 0, width: viewport.width, height: shownHeight },
+      });
       frames.push({
-        label: viewport.label,
+        label: `${viewport.label} — ${shownHeight < length.pageHeight ? `the first ${WHOLE_PAGE_SCREENS} screens of the page` : "the whole page"}`,
         width: viewport.width,
-        image: { type: "image", data: buffer.toString("base64"), mimeType: "image/jpeg" },
+        image: asImage(wholePage),
       });
     } catch (e) {
-      log("warn", `Playtest: could not capture the ${viewport.label} frame — reporting without it.`, errorData(e));
+      log("warn", `Playtest: could not capture the ${viewport.label} frames — reporting without them.`, errorData(e));
     }
   }
-  return frames;
+  return { frames, pageLengths };
+}
+
+// Runs in the page. How tall the page is, and which controls a visitor sees
+// without scrolling — named by their visible text, which is what a person reads.
+function measurePageLength() {
+  const screenHeight = window.innerHeight;
+  const controls = [...document.querySelectorAll("button, a[href], input, select, textarea, summary, [role=button]")]
+    .filter((element) => {
+      const box = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return box.width > 0 && box.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+    })
+    .map((element) => {
+      const box = element.getBoundingClientRect();
+      // A form field is named by its label, not its contents: a text box holding a
+      // save code would otherwise be listed as the code.
+      const isField = ["INPUT", "TEXTAREA", "SELECT"].includes(element.tagName);
+      const label = element.labels?.[0]?.innerText || element.getAttribute("aria-label") || element.getAttribute("placeholder");
+      const name = ((isField ? label : element.innerText || element.getAttribute("aria-label")) || element.tagName.toLowerCase())
+        .trim()
+        .replace(/\s+/g, " ")
+        .slice(0, 60);
+      return { name, firstScreen: box.top + window.scrollY + box.height <= screenHeight };
+    });
+  return { pageHeight: document.documentElement.scrollHeight, controls };
+}
+
+/**
+ * The page's length at each viewport, in screens, and which controls are on the
+ * first screen and which only after scrolling. Measured, so the Playtester can
+ * cite it rather than guess it from a frame.
+ */
+export function describePageLength(pageLengths) {
+  if (!pageLengths.length) return "(the page's length could not be measured this session)";
+  return pageLengths
+    .map(({ label, width, height, pageHeight, controls }) => {
+      const size = `${label} (${width}×${height})`;
+      const screens = Math.round((pageHeight / height) * 10) / 10;
+      if (pageHeight <= height) return `- ${size}: fits on one screen.`;
+      const named = (onFirstScreen) => controls.filter((control) => control.firstScreen === onFirstScreen).map((control) => control.name);
+      const above = named(true);
+      const below = named(false);
+      return [
+        `- ${size}: ${screens} screens tall.`,
+        above.length ? `On the first screen: ${above.join(", ")}.` : "No control is on the first screen.",
+        below.length ? `Only after scrolling: ${below.join(", ")}.` : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+    })
+    .join("\n");
 }
 
 const APP_DIR = join(repoRoot, "docs");
@@ -416,9 +491,9 @@ export async function observeApp() {
     // Shot last, on the return, so the frames show what the page offered on the
     // way back in. Resizing for the phone frame is destructive to the desktop
     // layout, which is why nothing is measured after this point.
-    const frames = await captureFrames(page);
+    const { frames, pageLengths } = await captureFrames(page);
 
-    return { opening, tabOrder, timeline, closing, awayMs: AWAY_MS, returned, agentTools, consoleErrors, url, frames };
+    return { opening, tabOrder, timeline, closing, awayMs: AWAY_MS, returned, agentTools, consoleErrors, url, frames, pageLengths };
   } catch (e) {
     log("warn", "Playtest: the session broke off early — reporting what was seen.", errorData(e));
     return null;
@@ -468,7 +543,7 @@ export function renderSession(session, { showingFrames = true } = {}) {
   const { opening, tabOrder, timeline, closing, awayMs, returned, agentTools, consoleErrors, url } = session;
   // The transcript must describe the turn it is actually part of. The text-only
   // fallback in report() sends this same session with no images attached, and a
-  // transcript that still announced two screenshots would have the agent describe
+  // transcript that still announced its screenshots would have the agent describe
   // frames it was never shown.
   const frames = showingFrames ? session.frames || [] : [];
 
@@ -512,6 +587,10 @@ export function renderSession(session, { showingFrames = true } = {}) {
       : `The state panel on your return:\n${returned.state || "(the panel said nothing)"}\n\n` +
         `Interactive elements on your return: ${returned.controls.join(", ") || "(none)"}`,
     "",
+    `## How long the page is`,
+    "Measured on your return, at each size the screenshots were taken at.",
+    describePageLength(session.pageLengths || []),
+    "",
     `## What the tools offered an agent`,
     renderToolPass(agentTools),
     "",
@@ -523,7 +602,7 @@ export function renderSession(session, { showingFrames = true } = {}) {
     // how many there are or what they show will invent the missing one.
     frames.length
       ? `## Screenshots attached to this message\n${frames
-          .map((f, i) => `${i + 1}. ${f.label} — ${f.width}px wide, taken on the return above`)
+          .map((f, i) => `${i + 1}. ${f.label}, ${f.width}px wide, taken on the return above`)
           .join("\n")}`
       // Reached both when the capture failed and when this is the text-only
       // fallback in report(). The instruction is the same either way, and naming a

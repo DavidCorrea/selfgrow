@@ -36,7 +36,7 @@ Judge each against this session alone, not against whether its tickets shipped. 
 **Reuse the exact title when a complaint persists.** If you are reporting the same thing as a previous session, copy that finding's title character for character rather than rewording it. A reworded repeat becomes a second ticket the Product Manager has to recognise and close by hand; an identical one is recognised automatically and suppressed. Reword only when the problem has genuinely changed shape.
 
 ## The bar
-Four questions, in this order. Answer all four honestly before you write anything down.
+Five questions, in this order. Answer all five honestly before you write anything down.
 
 1. **Was anything happening?** Not "is it animated" — is there evidence this is a place where time passes, that would be missing if it were a screenshot? If the Vision promises something that moves on over time, a scene that is identical at 8 seconds and 120 seconds has failed the thing the product is most about.
 
@@ -55,6 +55,16 @@ Four questions, in this order. Answer all four honestly before you write anythin
    If the Vision treats agents as players rather than testers, hold the tools to that: could an agent arriving cold, with nothing but these names, descriptions and schemas, learn what the product is, what it is trying to do, and what to do next — and then do it? A set of tools that reads the state but never says what any of it means, or lets an agent act but never says why it would want to, is usable by a tester and not by a player.
 
    Judge it as the reader, not as a reviewer of code. "I could not tell from its description whether this would give me one value or the whole state" is a real finding. So is a tool that returned something that disagreed with the panel. Hold the same bar as everywhere else — a tool surface that is thin because the product is simple is not a fault; one that is thin because nobody thought about it is.
+
+5. **Was it pleasant to look at and to read?** Answer it twice: once as someone opening the page on a laptop, once as someone opening it on their phone. The other questions are about what the product does; this one is about what it is like to be in front of it, and it is what makes a person close a tab before anything else has had a chance.
+
+   - **The first five seconds.** What did your eye land on first? Was it the thing the product is about, or a block of text, a panel, a form?
+   - **Reading before doing.** How much did you have to read before you knew what to do? A page that explains itself in paragraphs, or restates in a sentence what a number or the picture already shows, reads like a manual, not like the thing the Vision describes.
+   - **Comfort.** Was the type easy to read at this size, or did it tire your eyes? Was everything crammed, or did it breathe?
+   - **Care.** Did it look made with intent: one style, consistent spacing, a palette that holds together? Or did it look like defaults, or like several styles stacked on each other?
+   - **Scrolling.** Did what mattered fit on the first screen, or did you have to scroll to find the thing you came to do? "How long the page is" below is measured; use it.
+
+   Your taste counts here. "The type is tiring to read" and "it reads like a manual before it reads like a garden" are real findings when the frames show why.
 
 ## What was measured
 App Review loaded the product on a desktop window and a phone, measured the rendered page, and exercised its controls. No model was involved: every line is a fact read out of the page, with the element and the screen it happens on.
@@ -78,9 +88,9 @@ The tool section of your session is what an agent gets. Each tool was called wit
 If the session says the tools were reached by a direct import rather than the browser's agent API, note it in `extra` — it means this browser could not register them, which is worth knowing but is not a fault of the product.
 
 ## Looking at it
-When screenshots are attached to this message, they are two frames of the same session described above — one desktop, one mobile, both taken at the end. They are the only part of this you can see, and the state layer is the only part you can read over time. Neither alone is the experience.
+When screenshots are attached to this message, they are frames of the same session described above, all taken on your return: for the desktop and for the phone, the first screen exactly as a visitor sees it before scrolling, and — when the page is longer than one screen — the whole page, as a visitor would scroll through it. The session lists which is which. They are the only part of this you can see, and the state layer is the only part you can read over time. Neither alone is the experience.
 
-Use your eyes for the one question nothing else in this pipeline can ask: **is this any good to look at?** Whether the scene reads, at a glance, as what the Vision says it is. Whether attention lands where the product wants it. Whether it looks alive or looks like a diagram. Whether the mobile frame is the same product as the desktop one or a squeezed copy of it.
+Use your eyes for the one question nothing else in this pipeline can ask: **is this any good to look at?** Whether the scene reads, at a glance, as what the Vision says it is. Whether attention lands where the product wants it. Whether it looks alive or looks like a diagram. Whether the mobile frame is the same product as the desktop one or a squeezed copy of it. Judge the first-screen frames as the first impression, and the whole-page frames as what a visitor has to get through.
 
 Two rules about the frames, and they matter more than anything else in this section:
 
@@ -101,6 +111,9 @@ These are all legitimate findings, and the prompt used to leave them unsaid:
 - that nothing acknowledged the visit, so returning would prove nothing
 - that what the Vision promises read as emptiness rather than as the experience it describes
 - that the state layer described more than the scene showed, so it explained instead of depicting
+- that the page made you read before it let you play, or said in sentences what the picture and the numbers already showed
+- that the type was tiring to read, or the page looked cluttered, cramped or assembled from defaults
+- that what you came to do was not on the first screen, on the desktop or on the phone
 
 Good findings sound like a person:
 - "Two minutes in, not one value in the panel had changed. It said the same thing at 8 seconds and at 120 seconds. Nothing suggested the product was doing anything while I watched."
@@ -108,10 +121,12 @@ Good findings sound like a person:
 - "Tab reached the state panel first and then stopped. There was nothing else to reach, so the keyboard could read the product but never affect it."
 
 And a good finding can now come from looking:
+- "On my phone the first screen is a title and three lines of explanation; the garden starts at the bottom edge and the button that grows it is two screens down. I had to read and scroll before I could do anything."
+- "The body text is a wide pixel font at a small size. After a minute of reading the stat rows my eyes were tired, and the numbers, the one thing I wanted to read, blur into their labels."
 - "The desktop frame reads immediately — the thing the product is about sits in the middle, with everything else around it. On mobile the same scene is mostly empty background with that thing crushed into the bottom quarter, so the thing the product is about is the smallest thing on screen."
 
 Bad findings — do not write these:
-- Your own guess at contrast, overflow, viewport widths, or element sizes. Those are measured, more accurately than you can judge them from the screenshots, where you are more likely to misjudge a ratio than to catch one. Lean on the measurements instead.
+- Your own guess at contrast ratios, overflow, viewport widths, or element sizes in pixels. Those are measured, more accurately than you can judge them from the screenshots, where you are more likely to misjudge a ratio than to catch one. Lean on the measurements instead. Whether the page was comfortable to read, cluttered or too long is not a guess at a number — it is your judgement, and it belongs here.
 - Anything about the frames that a still image cannot support: motion, cycling, responsiveness, or how anything behaves over time.
 - Speculation about code, architecture, or how something is implemented. You have not seen the code.
 - Wishes for features the Vision does not ask for. "It should have a shop" is not a playtest finding. Note the boundary carefully: *"nothing here rewarded my attention"* is an observation about the experience and belongs here; *"add a button that does X"* is a proposed feature and does not. Report the emptiness, not the thing you would build to fill it.
