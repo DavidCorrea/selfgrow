@@ -74,7 +74,7 @@ import {
   resetSandbox,
   summarizeReturn,
 } from "./app.js";
-import { FORMS, drawGarden, gardenForm, motionPhase, plotBounds } from "./plotview.js";
+import { FORMS, drawGarden, gardenForm, motionPhase, plotBounds, seasonLook } from "./plotview.js";
 
 // The design system is itself a promise: one palette, two embedded pixel fonts
 // split by role, square pixel edges. These are the checks for it.
@@ -2449,6 +2449,79 @@ function checkSeason(problems) {
 }
 
 /**
+ * The plot is drawn in the season the state names, and every season looks
+ * different from the others.
+ *
+ * The same planted garden is snapshotted at each season's own age, so the only
+ * thing that varies between the four pictures is the season. Each snapshot is
+ * taken at phase 0 — the still frame reduced motion pins to — so this also
+ * proves a season change shows without the animation. The look the picture uses
+ * is the state's own season, and the four seasons carry four distinct leaf
+ * colours, so a visitor can tell the season from the garden itself.
+ */
+function checkSeasonDrawing(problems) {
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  try {
+    const palette = readPalette();
+    // The first second of each season, in the order the cycle visits them.
+    const seasons = SEASONS.map((season, index) => ({ key: season.key, age: index * SEASON_SECONDS + 1 }));
+    const pictures = new Map();
+    const leafColors = new Set();
+    for (const { key, age } of seasons) {
+      setGarden({ seeds: 0, plants: 6, beds: 1 });
+      setGrowth(1e6, 1, age); // a grove, so the foliage is a whole canopy
+      const state = getDisplayedState();
+      if (state.season.key !== key) {
+        problems.push(`at age ${age}s get-state reports season ${state.season.key}, expected ${key}.`);
+      }
+      pictures.set(key, plotImage(state));
+      const look = seasonLook(palette, state.season.key);
+      if (look.key !== state.season.key) {
+        problems.push(
+          `seasonLook() resolved ${state.season.key} to key ${look.key}, so the picture's season does not match the state's.`
+        );
+      }
+      leafColors.add(look.palette.leaf);
+      // The readout the visitor reads must name the season the picture draws.
+      const row = document.querySelector('[data-field="season"]');
+      if (row && !String(row.textContent).toLowerCase().includes(state.season.name)) {
+        problems.push(
+          `the plot draws ${state.season.name} but the season readout says ${JSON.stringify(row.textContent)}.`
+        );
+      }
+    }
+
+    for (let i = 0; i < seasons.length; i += 1) {
+      for (let j = i + 1; j < seasons.length; j += 1) {
+        const a = seasons[i].key;
+        const b = seasons[j].key;
+        if (pictures.get(a) === pictures.get(b)) {
+          problems.push(
+            `the plot draws the same picture in ${a} and ${b}, so the season is not visible on the garden itself.`
+          );
+        }
+      }
+    }
+    if (leafColors.size !== SEASONS.length) {
+      problems.push(
+        `the ${SEASONS.length} seasons draw ${leafColors.size} distinct leaf colours, expected ${SEASONS.length}; ` +
+          "each season must have its own foliage."
+      );
+    }
+    // An unknown season must fall back to the base garden rather than to a
+    // season it did not find, so a state that never knew about seasons is drawn.
+    const unknown = seasonLook(palette, "nonexistent");
+    if (unknown.key !== null || unknown.palette.leaf !== palette.leaf) {
+      problems.push("seasonLook() invented a look for an unknown season instead of falling back to the base colours.");
+    }
+  } finally {
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
+  }
+}
+
+/**
  * A long absence lands the garden where played time would, and its return is
  * stated in words and shown on the plot.
  */
@@ -3231,6 +3304,7 @@ export async function checks() {
     checkReturnSummary(problems);
     checkPollinator(problems);
     checkSeason(problems);
+    checkSeasonDrawing(problems);
     checkSandbox(problems);
     await checkAgentTools(problems);
   } finally {

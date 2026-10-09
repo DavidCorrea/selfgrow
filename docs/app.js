@@ -151,11 +151,25 @@ const isStorageAvailable = storageAvailable();
 
 let palette = null;
 
-/** The palette, read once from the `:root` CSS variables rather than repeated. */
+/** The seasons the plot has its own foliage colours for, in the cycle's order. */
+const LEAF_SEASONS = ["winter", "spring", "summer", "autumn"];
+
+/**
+ * The palette, read once from the `:root` CSS variables rather than repeated.
+ *
+ * `leafSeasons` holds each season's own leaf trio beside the base one, so the
+ * plot can swap the foliage for the season it is drawing without a second
+ * source of colour anywhere.
+ */
 export function readPalette() {
   if (palette) return palette;
   const style = getComputedStyle(document.documentElement);
   const read = (name) => style.getPropertyValue(name).trim();
+  const readLeaves = (season) => ({
+    leaf: read(`--leaf-${season}`),
+    leafLight: read(`--leaf-${season}-light`),
+    leafDeep: read(`--leaf-${season}-deep`),
+  });
   palette = {
     soil: read("--soil"),
     soilDeep: read("--soil-deep"),
@@ -165,6 +179,7 @@ export function readPalette() {
     leafDeep: read("--leaf-deep"),
     bloom: read("--bloom"),
     sun: read("--sun"),
+    leafSeasons: Object.fromEntries(LEAF_SEASONS.map((season) => [season, readLeaves(season)])),
   };
   return palette;
 }
@@ -172,10 +187,10 @@ export function readPalette() {
 const countLabel = (count, singular, plural) =>
   `${formatAmount(count)} ${count === 1 ? singular : plural}`;
 
-/** The picture, said in words: the same growth, beds and form the plot draws. */
+/** The picture, said in words: the same growth, beds, form and season the plot draws. */
 function describePlot(state) {
   return (
-    `${formatGrowth(state.growth)} growth — ${state.formName}. ` +
+    `${formatGrowth(state.growth)} growth — ${state.formName}, in ${state.season.name}. ` +
     `${countLabel(state.beds, "bed of soil", "beds of soil")}, ` +
     `${countLabel(state.seeds, "ungrown seed", "ungrown seeds")}, ` +
     `${countLabel(state.plants, "grown plant", "grown plants")}.`
@@ -858,10 +873,10 @@ function render() {
   }
 
   // The picture follows the growth, not the stored garden, so it redraws when
-  // the amount, the form it falls in or the kinds on the plot change — and
-  // stays put when nothing does. Its breathing phase is part of the key, so a
-  // still plot (bare soil, or reduced motion) is redrawn only when the state
-  // changes, while a living one advances a frame each tick.
+  // the amount, the form it falls in, the kinds on the plot or the season
+  // change — and stays put when nothing does. Its breathing phase is part of
+  // the key, so a still plot (bare soil, or reduced motion) is redrawn only
+  // when the state changes, while a living one advances a frame each tick.
   const phase = motionPhase({
     reduced: plotReducedMotion,
     frame: plotFrame,
@@ -869,7 +884,7 @@ function render() {
   });
   const plotKey =
     `${state.form}:${state.growth}:${state.seedCounts.join(",")}:${state.plantCounts.join(",")}:` +
-    `${state.beds}:${state.pollinator.visiting}:${phase}`;
+    `${state.beds}:${state.pollinator.visiting}:${state.season.key}:${phase}`;
   if (plotKey !== lastPlotKey) {
     drawGarden(elements.plot, state, readPalette(), phase);
     lastPlotKey = plotKey;
