@@ -13,7 +13,7 @@
  */
 
 /** The save format. Bump it only if the shape below actually changes. */
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 
 /** A readable marker, so a save is recognisable and the version is obvious. */
 export const SAVE_PREFIX = "SELFGROW1.";
@@ -47,12 +47,27 @@ export const BED_COST_BASE = 200;
 export const BED_COST_RATE = 1.15;
 
 /**
- * How long a planted seed stays an ungrown sprout before it becomes a grown
- * plant. Growth comes from plants, not seeds, so this is the wait between
- * planting and the garden speeding up — the same wall-clock rule the growth
- * loop uses, so a return resolves several of these in one calculation.
+ * The kinds of seed a visitor can plant, lowest first, as the one source of
+ * every kind's numbers. `key` is the word an agent names it by, `name` is the
+ * word the readout uses, `costBase`/`costRate` price it, `production` is how
+ * much faster the garden grows per grown plant, and `growSeconds` is how long
+ * its sprouts take to mature. Herb is the first kind and keeps the numbers the
+ * garden always had, so an existing save, test or habit still reads the same;
+ * bloom costs more and earns more but matures slower, so neither kind dominates.
  */
-export const GROW_SECONDS = 30;
+export const SEED_KINDS = Object.freeze([
+  Object.freeze({ key: "herb", name: "herb", costBase: 5, costRate: 1.15, production: 0.5, growSeconds: 30 }),
+  Object.freeze({ key: "bloom", name: "bloom", costBase: 40, costRate: 1.15, production: 5, growSeconds: 45 }),
+]);
+
+/**
+ * How long the first kind's planted seed stays an ungrown sprout before it
+ * becomes a grown plant. Growth comes from plants, not seeds, so this is the
+ * wait between planting and the garden speeding up — the same wall-clock rule
+ * the growth loop uses, so a return resolves several of these in one
+ * calculation.
+ */
+export const GROW_SECONDS = SEED_KINDS[0].growSeconds;
 
 /**
  * How often a pollinator can visit, how long each visit lasts, and how much
@@ -115,30 +130,50 @@ function assertAmount(value, field) {
 }
 
 /**
- * The sprouting seeds a save should carry, as their remaining seconds.
+ * One kind's ungrown seeds as the seconds each has left to grow.
  *
- * A live garden already holds a `sprouts` array; a caller that only knows a
- * count of ungrown seeds (the shape the page and older code pass around) gets
- * fresh `GROW_SECONDS` timers for each. Either way the number of plots is the
- * bound, so a value nothing could have reached is refused rather than written.
+ * A live garden holds them as a `sprouts` (herb) or `bloomSprouts` (bloom)
+ * array; a caller that only knows a count of ungrown seeds (the shape the page
+ * and older code pass around) gets fresh full timers for each. Either way the
+ * plots are the bound, so a value nothing could have reached is refused rather
+ * than written.
  */
-function sproutTimersForSave(garden, beds) {
-  const capacity = beds * PLOTS_PER_BED;
-  if (Array.isArray(garden.sprouts)) {
-    if (garden.sprouts.length > capacity) {
+function sproutTimersForKind(garden, index, capacity) {
+  const field = index === 0 ? "sprouts" : "bloomSprouts";
+  const countField = index === 0 ? "seeds" : "bloomSeeds";
+  const list = garden[field];
+  if (Array.isArray(list)) {
+    if (list.length > capacity) {
       throw new Error(
-        `a garden of ${beds} bed(s) can hold at most ${capacity} ungrown seeds, but this one holds ${garden.sprouts.length}.`
+        `a garden of ${capacity} plots can hold at most ${capacity} ungrown ${SEED_KINDS[index].name} seeds, ` +
+          `but this one holds ${list.length}.`
       );
     }
-    return garden.sprouts.map((timer) => (Number.isFinite(timer) && timer > 0 ? timer : 0));
+    return list.map((timer) => (Number.isFinite(timer) && timer > 0 ? timer : 0));
   }
-  assertCount(garden.seeds, "seeds");
-  if (garden.seeds > capacity) {
+  const count = garden[countField] ?? 0;
+  assertCount(count, countField);
+  if (count > capacity) {
     throw new Error(
-      `a garden of ${beds} bed(s) can hold at most ${capacity} ungrown seeds, but this one holds ${garden.seeds}.`
+      `a garden of ${capacity} plots can hold at most ${capacity} ungrown ${SEED_KINDS[index].name} seeds, ` +
+        `but this one holds ${count}.`
     );
   }
-  return Array.from({ length: garden.seeds }, () => GROW_SECONDS);
+  return Array.from({ length: count }, () => SEED_KINDS[index].growSeconds);
+}
+
+/**
+ * The plants of one kind a save-shaped garden holds, herb-first.
+ *
+ * A garden read back by `getGarden` or `decodeSave` carries its per-kind
+ * counts in `plantCounts`; a plain `{seeds, plants}` (what the page and older
+ * code pass around) is all the first kind. `bloomPlants` carries the second
+ * kind alone when a save-shaped body writes it out.
+ */
+function plantsForKind(garden, index) {
+  if (Array.isArray(garden.plantCounts)) return garden.plantCounts[index] ?? 0;
+  if (index === 0) return garden.plants ?? 0;
+  return garden.bloomPlants ?? 0;
 }
 
 /**
@@ -147,17 +182,26 @@ function sproutTimersForSave(garden, beds) {
  * @returns {string} e.g. `SELFGROW1.eyJ2ZXJzaW9uIjoz...`
  */
 export function encodeSave(garden) {
-  const beds = bedCount(garden.beds);
-  const sprouts = sproutTimersForSave(garden, beds);
-  assertCount(garden.plants ?? 0, "plants");
+  const source = garden ?? {};
+  const beds = bedCount(source.beds);
+  const capacity = beds * PLOTS_PER_BED;
+  const sprouts = sproutTimersForKind(source, 0, capacity);
+  const bloomSprouts = sproutTimersForKind(source, 1, capacity);
+  const plants = plantsForKind(source, 0);
+  const bloomPlants = plantsForKind(source, 1);
+  assertCount(plants, "plants");
+  assertCount(bloomPlants, "bloomPlants");
   const body = JSON.stringify({
     version: SAVE_VERSION,
     seeds: sprouts.length,
-    plants: garden.plants ?? 0,
+    plants,
     sprouts,
-    growth: amountOrZero(garden.growth),
-    rate: amountOrZero(garden.rate),
-    age: amountOrZero(garden.age),
+    bloomSeeds: bloomSprouts.length,
+    bloomPlants,
+    bloomSprouts,
+    growth: amountOrZero(source.growth),
+    rate: amountOrZero(source.rate),
+    age: amountOrZero(source.age),
     beds,
   });
   return SAVE_PREFIX + btoa(body);
@@ -177,8 +221,11 @@ export function encodeSave(garden) {
  * put in its place. Before version 4 the garden had exactly one bed, so older
  * saves open onto one bed of soil whatever they may say. Version 5 added the
  * garden's age, so earlier saves open at age zero with no visit already past.
+ * Version 6 added the second kind of seed: every seed and plant a version-1
+ * to 5 save carries is the first kind, and the second kind opens empty, so no
+ * existing save loses a plant it had.
  *
- * @returns {{version: number, seeds: number, plants: number, sprouts: number[], growth: number, rate: number, age: number, beds: number}}
+ * @returns {{version: number, seeds: number, plants: number, sprouts: number[], bloomSprouts: number[], plantCounts: number[], growth: number, rate: number, age: number, beds: number}}
  * @throws {Error} when the text is empty, not a selfgrow save, damaged,
  *   the wrong version, or carries a bad plot count, growth, rate or age.
  */
@@ -209,13 +256,18 @@ export function decodeSave(text) {
   // Before version 4 there was one bed of soil and no field for it; a save that
   // carries one anyway is still read as the single bed it must have been. The
   // bound is the literal 4 on purpose: a version-4 save really did carry beds,
-  // and widening the save format to 5 must not fold them back into one.
+  // and widening the save format must not fold them back into one.
   const beds = parsed.version < 4 ? 1 : readBeds(parsed);
   // Before version 5 there was no age to count a pollinator against; an older
   // garden opens as freshly planted rather than as if a pollinator had just
   // left, so nothing already past is invented for it.
   const age = parsed.version < 5 ? 0 : readAge(parsed);
-  const sprouts = readSproutsFromSave(parsed, beds * PLOTS_PER_BED);
+  const capacity = beds * PLOTS_PER_BED;
+  const sprouts = readSproutsForKind(parsed, 0, capacity);
+  // Before version 6 there was only the first kind of seed, so every seed and
+  // plant an older save carries is that kind and the second kind opens empty.
+  const bloomSprouts = parsed.version < 6 ? [] : readSproutsForKind(parsed, 1, capacity);
+  const bloomPlants = parsed.version < 6 ? 0 : readBloomPlants(parsed);
   // Version 1 had no growth of its own; migrating it starts with nothing grown.
   const growth = parsed.version === 1 ? 0 : parsed.growth;
   let rate = parsed.version === 1 ? 0 : parsed.rate;
@@ -225,9 +277,28 @@ export function decodeSave(text) {
   // production back out and let the grown plants carry it instead, so migrating
   // neither grants growth for free nor takes away what the visitor earned.
   if (parsed.version <= 2) {
-    rate = Math.max(0, rate - PLANT_PRODUCTION * parsed.seeds) + PLANT_PRODUCTION * parsed.plants;
+    const seedCount = Array.isArray(parsed.sprouts) ? parsed.sprouts.length : parsed.seeds;
+    rate = Math.max(0, rate - PLANT_PRODUCTION * seedCount) + PLANT_PRODUCTION * parsed.plants;
   }
-  return { version: SAVE_VERSION, seeds: sprouts.length, plants: parsed.plants, sprouts, growth, rate, age, beds };
+  return {
+    version: SAVE_VERSION,
+    seeds: sprouts.length + bloomSprouts.length,
+    plants: parsed.plants + bloomPlants,
+    sprouts,
+    bloomSprouts,
+    plantCounts: [parsed.plants, bloomPlants],
+    growth,
+    rate,
+    age,
+    beds,
+  };
+}
+
+/** The second kind's grown plants a save carries, whole and zero or more. */
+function readBloomPlants(parsed) {
+  const value = parsed.bloomPlants ?? 0;
+  assertCount(value, "bloomPlants");
+  return value;
 }
 
 /**
@@ -256,34 +327,40 @@ function readBeds(parsed) {
 }
 
 /**
- * The ungrown seeds a save carries, as an array of seconds left to grow.
+ * One kind's ungrown seeds a save carries, as seconds left to grow.
  *
  * Version 3 writes the timers it has; older saves only carry a count, and each
- * of those seeds wakes as a fresh sprout with its whole growing time left.
+ * of those seeds wakes as a fresh sprout with its whole growing time left. The
+ * second kind's saves write `bloomSprouts`; a version before it has none.
  */
-function readSproutsFromSave(parsed, capacity) {
-  if (Array.isArray(parsed.sprouts)) {
-    if (parsed.sprouts.length > capacity) {
+function readSproutsForKind(parsed, index, capacity) {
+  const field = index === 0 ? "sprouts" : "bloomSprouts";
+  const countField = index === 0 ? "seeds" : "bloomSeeds";
+  const list = parsed[field];
+  if (Array.isArray(list)) {
+    if (list.length > capacity) {
       throw new Error(
-        `the save has ${parsed.sprouts.length} ungrown seeds, but the garden has only ${capacity} plots.`
+        `the save has ${list.length} ungrown ${SEED_KINDS[index].name} seeds, but the garden has only ${capacity} plots.`
       );
     }
-    return parsed.sprouts.map((timer, index) => {
+    return list.map((timer, position) => {
       if (typeof timer !== "number" || !Number.isFinite(timer) || timer < 0) {
         throw new Error(
-          `the save's ungrown seed ${index} must be a number of seconds of 0 or more, but it is ${JSON.stringify(timer)}.`
+          `the save's ungrown ${SEED_KINDS[index].name} seed ${position} must be a number of seconds of 0 or more, ` +
+            `but it is ${JSON.stringify(timer)}.`
         );
       }
       return timer;
     });
   }
-  assertCount(parsed.seeds, "seeds");
-  if (parsed.seeds > capacity) {
+  const count = parsed[countField] ?? 0;
+  assertCount(count, countField);
+  if (count > capacity) {
     throw new Error(
-      `the save has ${parsed.seeds} ungrown seeds, but the garden has only ${capacity} plots.`
+      `the save has ${count} ungrown ${SEED_KINDS[index].name} seeds, but the garden has only ${capacity} plots.`
     );
   }
-  return Array.from({ length: parsed.seeds }, () => GROW_SECONDS);
+  return Array.from({ length: count }, () => SEED_KINDS[index].growSeconds);
 }
 
 /** The browser's store, or null when it cannot even be reached. */
@@ -386,11 +463,19 @@ export function elapsedSeconds(lastSeenMs, nowMs) {
 }
 
 // --- The live garden ---------------------------------------------------------
-
-// The live garden: the ungrown seeds as their remaining seconds, and the grown
-// plants. `seeds` is the length of `sprouts` and is never stored separately, so
-// a seed becoming a plant is one move between the two.
-let garden = { version: SAVE_VERSION, sprouts: [GROW_SECONDS], plants: 0, beds: 1 };
+//
+// The live garden carries each kind's ungrown seeds as their remaining seconds
+// and each kind's grown plants as a count. The first kind's fields are the
+// plain `sprouts`/`plants`, so code and tests that only knew the one kind still
+// read the same; the second kind adds `bloomSprouts`/`bloomPlants`.
+let garden = {
+  version: SAVE_VERSION,
+  sprouts: [GROW_SECONDS],
+  plants: 0,
+  bloomSprouts: [],
+  bloomPlants: 0,
+  beds: 1,
+};
 const listeners = new Set();
 
 /** Tell everyone watching that the garden moved. */
@@ -401,16 +486,21 @@ function notify() {
 
 /**
  * A copy of the current garden: how many beds of soil it has (and how many
- * plots that is), the ungrown seed count (and their timers), and the grown
- * plants. Growth and rate live beside this (see `getGrowthState`).
+ * plots that is), the ungrown seeds (and their timers), and the grown plants.
+ * `seeds`/`plants` are the totals across both kinds; the per-kind counts and
+ * timers are beside them. Growth and rate live beside this (see
+ * `getGrowthState`).
  */
 export function getGarden() {
   const beds = bedCount(garden.beds);
+  const bloomSprouts = garden.bloomSprouts ?? [];
   return {
     version: garden.version,
-    seeds: garden.sprouts.length,
-    plants: garden.plants,
+    seeds: garden.sprouts.length + bloomSprouts.length,
+    plants: garden.plants + (garden.bloomPlants ?? 0),
     sprouts: [...garden.sprouts],
+    bloomSprouts: [...bloomSprouts],
+    plantCounts: [garden.plants, garden.bloomPlants ?? 0],
     beds,
     capacity: beds * PLOTS_PER_BED,
   };
@@ -423,24 +513,51 @@ function wholeCount(value, limit) {
 }
 
 /**
+ * One kind's ungrown seeds read from a garden-shaped object, as the timers that
+ * are still growing and how many had already matured. A bare `seeds` count
+ * (what older code passes) becomes that many fresh sprouts of the kind.
+ */
+function kindSproutsForState(state, index, capacity) {
+  const field = index === 0 ? "sprouts" : "bloomSprouts";
+  const countField = index === 0 ? "seeds" : "bloomSeeds";
+  const list = state[field];
+  if (Array.isArray(list)) {
+    return {
+      growing: list.filter((timer) => Number.isFinite(timer) && timer > 0).slice(0, capacity),
+      matured: list.filter((timer) => Number.isFinite(timer) && timer <= 0).length,
+    };
+  }
+  return {
+    growing: Array.from(
+      { length: wholeCount(state[countField], capacity) },
+      () => SEED_KINDS[index].growSeconds
+    ),
+    matured: 0,
+  };
+}
+
+/**
  * Replace the garden and tell everyone who is watching.
  *
- * `next` may carry the ungrown seeds either as a `sprouts` array of seconds or
- * as a `seeds` count; a bare count becomes that many fresh `GROW_SECONDS`
- * sprouts. Either way the plot's capacity is the bound.
+ * `next` may carry each kind's ungrown seeds either as a `sprouts` array of
+ * seconds or as a count; a bare count becomes that many fresh sprouts of the
+ * kind. A `plantCounts` array (the shape `getGarden` and `decodeSave` return)
+ * splits the grown plants by kind; otherwise `plants` is the first kind. Either
+ * way the plot's capacity is the bound.
  */
 export function setGarden(next) {
   const beds = bedCount(next.beds);
   const capacity = beds * PLOTS_PER_BED;
-  const hasTimers = Array.isArray(next.sprouts);
-  const maturedEarly = hasTimers ? next.sprouts.filter((t) => Number.isFinite(t) && t <= 0).length : 0;
-  const sprouts = hasTimers
-    ? next.sprouts.filter((t) => Number.isFinite(t) && t > 0).slice(0, capacity)
-    : Array.from({ length: wholeCount(next.seeds, capacity) }, () => GROW_SECONDS);
+  const herb = kindSproutsForState(next, 0, capacity);
+  const bloom = kindSproutsForState(next, 1, Math.max(0, capacity - herb.growing.length));
+  const herbPlants = wholeCount(plantsForKind(next, 0), Number.MAX_SAFE_INTEGER) + herb.matured;
+  const bloomPlants = wholeCount(plantsForKind(next, 1), Number.MAX_SAFE_INTEGER) + bloom.matured;
   garden = {
     version: SAVE_VERSION,
-    sprouts,
-    plants: wholeCount(next.plants, Number.MAX_SAFE_INTEGER) + maturedEarly,
+    sprouts: herb.growing,
+    plants: herbPlants,
+    bloomSprouts: bloom.growing,
+    bloomPlants,
     beds,
   };
   notify();
@@ -554,17 +671,46 @@ export function tend() {
   return getGrowthState();
 }
 
+function matureKind(timers, gap, onMatured) {
+  if (!timers.length) return timers;
+  const ticked = timers.map((timer) => Math.max(0, timer - gap));
+  const matured = ticked.filter((timer) => timer <= 0).length;
+  if (matured > 0) onMatured(matured);
+  return ticked.filter((timer) => timer > 0);
+}
+
+/**
+ * One kind's ungrown seed count and timers from any garden-shaped object, for
+ * reading a kind without building a full array of timers. A bare count of
+ * `seeds` (the first kind) or `bloomSeeds` (the second) answers with it.
+ */
+function kindSeedCount(source, index, capacity) {
+  const list = source[index === 0 ? "sprouts" : "bloomSprouts"];
+  if (Array.isArray(list)) {
+    return list.filter((timer) => Number.isFinite(timer) && timer > 0).slice(0, capacity).length;
+  }
+  return wholeCount(source[index === 0 ? "seeds" : "bloomSeeds"], capacity);
+}
+
+/** One kind's ungrown timers from a garden-shaped object, soonest first intact. */
+function kindSproutTimers(source, index, capacity) {
+  const list = source[index === 0 ? "sprouts" : "bloomSprouts"];
+  if (!Array.isArray(list)) return [];
+  return list.filter((timer) => Number.isFinite(timer) && timer > 0).slice(0, capacity);
+}
+
 /**
  * Wind a garden state forward by `seconds`, and return the garden it becomes.
  *
- * This is the one place the growth rule lives. A state is `{growth, rate,
- * sprouts, plants, beds}` and the result is the same shape, so any caller can
- * run a span against a copy without touching the live garden — that is how the
- * sandbox rehearses time. The span is walked by jumping to the next seed that
- * matures, so a month resolves in at most one step per plot rather than one per
- * tick, and a rehearsal lands exactly where played time would, with no cap on
- * how long the span was. A zero, negative or non-finite span grows nothing, and
- * a state missing a field reads as a garden that never grew.
+ * This is the one place the growth rule lives. A state carries each kind's
+ * ungrown seeds (`sprouts` and `bloomSprouts`) and grown plants (`plantCounts`
+ * or `plants`/`bloomPlants`), and the result is the same shape, so any caller
+ * can run a span against a copy without touching the live garden — that is how
+ * the sandbox rehearses time. The span is walked by jumping to the next seed
+ * that matures, so a month resolves in at most one step per plot rather than
+ * one per tick, and a rehearsal lands exactly where played time would, with no
+ * cap on how long the span was. A zero, negative or non-finite span grows
+ * nothing, and a state missing a field reads as a garden that never grew.
  *
  * Pure: it never notifies, never writes, and never touches the live garden.
  */
@@ -575,39 +721,49 @@ export function simulateGarden(state, seconds) {
   let growth = amountOrZero(source.growth);
   let rate = amountOrZero(source.rate);
   let age = Number.isFinite(source.age) && source.age > 0 ? source.age : 0;
-  let sprouts = Array.isArray(source.sprouts)
-    ? source.sprouts.filter((timer) => Number.isFinite(timer) && timer > 0).slice(0, capacity)
-    : [];
-  let plants = Number.isInteger(source.plants) && source.plants > 0 ? source.plants : 0;
+  let sprouts = kindSproutTimers(source, 0, capacity);
+  let bloomSprouts = kindSproutTimers(source, 1, capacity);
+  let herbPlants = wholeCount(plantsForKind(source, 0), Number.MAX_SAFE_INTEGER);
+  let bloomPlants = wholeCount(plantsForKind(source, 1), Number.MAX_SAFE_INTEGER);
 
-  if (!(Number.isFinite(seconds) && seconds > 0)) {
-    return { growth, rate, sprouts, plants, beds, age };
-  }
+  const result = () => ({
+    growth,
+    rate,
+    sprouts,
+    bloomSprouts,
+    plants: herbPlants,
+    bloomPlants,
+    plantCounts: [herbPlants, bloomPlants],
+    beds,
+    age,
+  });
+
+  if (!(Number.isFinite(seconds) && seconds > 0)) return result();
 
   let remaining = seconds;
   // Each pass matures at least one seed, so the passes are bounded by the plots.
   for (let pass = 0; remaining > 0 && pass <= capacity; pass += 1) {
-    const nextSprout = sprouts.length ? Math.min(...sprouts) : Infinity;
-    const gap = Math.min(remaining, nextSprout);
+    const nextHerb = sprouts.length ? Math.min(...sprouts) : Infinity;
+    const nextBloom = bloomSprouts.length ? Math.min(...bloomSprouts) : Infinity;
+    const gap = Math.min(remaining, nextHerb, nextBloom);
     // The plant count is fixed inside a pass, so whether a pollinator is around
     // is read once for the whole gap: a visit multiplies the rate without ever
     // compounding it, and the age carries into the next pass.
-    const visitSeconds = plants > 0 ? pollinatorSecondsWithin(age, gap) : 0;
-    growth += rate * (gap + (POLLINATOR_BOOST - 1) * visitSeconds);
+    const visited = herbPlants + bloomPlants > 0 ? pollinatorSecondsWithin(age, gap) : 0;
+    growth += rate * (gap + (POLLINATOR_BOOST - 1) * visited);
     remaining -= gap;
     age += gap;
-    if (sprouts.length) {
-      sprouts = sprouts.map((timer) => Math.max(0, timer - gap));
-      const matured = sprouts.filter((timer) => timer <= 0).length;
-      if (matured > 0) {
-        sprouts = sprouts.filter((timer) => timer > 0);
-        plants += matured;
-        rate += matured * PLANT_PRODUCTION;
-      }
-    }
+    sprouts = matureKind(sprouts, gap, (matured) => {
+      herbPlants += matured;
+      rate += matured * SEED_KINDS[0].production;
+    });
+    bloomSprouts = matureKind(bloomSprouts, gap, (matured) => {
+      bloomPlants += matured;
+      rate += matured * SEED_KINDS[1].production;
+    });
     if (!(gap > 0)) break;
   }
-  return { growth, rate, sprouts, plants, beds, age };
+  return result();
 }
 
 /**
@@ -619,13 +775,27 @@ export function simulateGarden(state, seconds) {
  */
 export function advance(seconds) {
   const next = simulateGarden(
-    { growth, rate, age, sprouts: garden.sprouts, plants: garden.plants, beds: garden.beds },
+    {
+      growth,
+      rate,
+      age,
+      sprouts: garden.sprouts,
+      bloomSprouts: garden.bloomSprouts,
+      plantCounts: [garden.plants, garden.bloomPlants],
+      beds: garden.beds,
+    },
     seconds
   );
   growth = next.growth;
   rate = next.rate;
   age = next.age;
-  garden = { ...garden, sprouts: next.sprouts, plants: next.plants };
+  garden = {
+    ...garden,
+    sprouts: next.sprouts,
+    plants: next.plants,
+    bloomSprouts: next.bloomSprouts,
+    bloomPlants: next.bloomPlants,
+  };
   notify();
   return getGrowthState();
 }
@@ -640,15 +810,28 @@ export function advance(seconds) {
 // production rises by a fixed step per plant, so the wait stays a goal rather
 // than a wall.
 
-/** What the first seed costs, and how fast the price climbs after that. */
-export const SEED_COST_BASE = 5;
-export const SEED_COST_RATE = 1.15;
+/** What the first herb seed costs, and how fast its price climbs after that. */
+export const SEED_COST_BASE = SEED_KINDS[0].costBase;
+export const SEED_COST_RATE = SEED_KINDS[0].costRate;
 
-/** How much faster the garden grows for each grown plant. */
-export const PLANT_PRODUCTION = 0.5;
+/** How much faster the garden grows for each grown herb plant. */
+export const PLANT_PRODUCTION = SEED_KINDS[0].production;
 
 /**
- * What the next seed costs when `planted` seeds and plants already fill the plot.
+ * The index of a seed kind named by number or key. Anything the garden does not
+ * know is the first kind, so a missing or misspelled kind plants herb rather
+ * than failing.
+ */
+export function kindIndex(kind) {
+  if (typeof kind === "number" && Number.isInteger(kind) && kind >= 0 && kind < SEED_KINDS.length) return kind;
+  const found = SEED_KINDS.findIndex((entry) => entry.key === kind);
+  return found >= 0 ? found : 0;
+}
+
+/**
+ * What the next seed of `kind` costs when `planted` seeds and plants of that
+ * kind already fill the plot. Defaults to the first kind, so older callers read
+ * the same price they always did.
  *
  * Strictly increasing in the planted count, so a sprouting seed never makes the
  * next one cheaper. The exponential passes what a number can hold at a count
@@ -656,36 +839,77 @@ export const PLANT_PRODUCTION = 0.5;
  * finite price, so the result is capped at `Number.MAX_SAFE_INTEGER` rather than
  * left as `Infinity`.
  */
-export function nextSeedCost(planted) {
+export function nextSeedCost(planted, kind = 0) {
+  const entry = SEED_KINDS[kindIndex(kind)];
   const count = Number.isFinite(planted) && planted > 0 ? Math.floor(planted) : 0;
-  const cost = Math.ceil(SEED_COST_BASE * SEED_COST_RATE ** count);
+  const cost = Math.ceil(entry.costBase * entry.costRate ** count);
   return Number.isFinite(cost) ? Math.min(cost, Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
 }
 
 /**
- * Plant a seed: spend growth for it, and put a sprouting seed in the soil that
- * will become a grown plant after `GROW_SECONDS`. The rate does not change yet —
- * it rises when the seed matures. Refuses with a reason when the plot is full or
- * the garden has not saved enough growth, and changes nothing when it refuses.
- *
- * @returns {{ok: boolean, reason: string|null, cost: number}}
+ * Every seed kind as the page and an agent read it: the price of its next seed
+ * (against how many of that kind already grow), how many of its seeds are
+ * ungrown and how many plants are grown, and how long its sprouts take and how
+ * much they produce. Pure, so the readout, the goal and an agent's state cannot
+ * disagree about a kind.
  */
-export function plantSeed() {
+export function gardenKinds(garden) {
+  const source = garden ?? {};
+  const capacity = Number.isInteger(source.capacity) ? source.capacity : Number.MAX_SAFE_INTEGER;
+  return SEED_KINDS.map((entry, index) => {
+    const seeds = kindSeedCount(source, index, capacity);
+    const plants = wholeCount(plantsForKind(source, index), Number.MAX_SAFE_INTEGER);
+    const planted = seeds + plants;
+    return {
+      index,
+      key: entry.key,
+      name: entry.name,
+      seeds,
+      plants,
+      total: planted,
+      growSeconds: entry.growSeconds,
+      production: entry.production,
+      cost: nextSeedCost(planted, index),
+      sproutTimers: kindSproutTimers(source, index, capacity),
+    };
+  });
+}
+
+/**
+ * Plant a seed of `kind` (herb by default): spend growth for it, and put a
+ * sprouting seed in the soil that will become a grown plant after that kind's
+ * growing time. The rate does not change yet — it rises when the seed matures.
+ * Refuses with a reason when the plot is full or the garden has not saved enough
+ * growth, and changes nothing when it refuses.
+ *
+ * @returns {{ok: boolean, reason: string|null, cost: number, kind: string}}
+ */
+export function plantSeed(kind = 0) {
+  const index = kindIndex(kind);
+  const entry = SEED_KINDS[index];
   const capacity = bedCount(garden.beds) * PLOTS_PER_BED;
-  const planted = garden.sprouts.length + garden.plants;
-  const cost = nextSeedCost(planted);
-  if (planted >= capacity) {
-    return { ok: false, reason: "the plot is full", cost };
+  const plantsOfKind = wholeCount(plantsForKind(garden, index), Number.MAX_SAFE_INTEGER);
+  const plantedOfKind = kindSeedCount(garden, index, capacity) + plantsOfKind;
+  const totalPlanted = SEED_KINDS.reduce(
+    (sum, _entry, i) =>
+      sum + kindSeedCount(garden, i, capacity) + wholeCount(plantsForKind(garden, i), Number.MAX_SAFE_INTEGER),
+    0
+  );
+  const cost = nextSeedCost(plantedOfKind, index);
+  if (totalPlanted >= capacity) {
+    return { ok: false, reason: "the plot is full", cost, kind: entry.key };
   }
   if (growth < cost) {
-    return { ok: false, reason: "not enough growth", cost };
+    return { ok: false, reason: "not enough growth", cost, kind: entry.key };
   }
 
   growth -= cost;
-  garden = { ...garden, sprouts: [...garden.sprouts, GROW_SECONDS] };
+  garden = index === 0
+    ? { ...garden, sprouts: [...garden.sprouts, entry.growSeconds] }
+    : { ...garden, bloomSprouts: [...(garden.bloomSprouts ?? []), entry.growSeconds] };
   writeStoredGarden(garden);
   notify();
-  return { ok: true, reason: null, cost };
+  return { ok: true, reason: null, cost, kind: entry.key };
 }
 
 // --- Opening a new bed -------------------------------------------------------
@@ -721,7 +945,12 @@ export function nextBedCost(beds) {
 export function openBed() {
   const beds = bedCount(garden.beds);
   const capacity = beds * PLOTS_PER_BED;
-  const planted = garden.sprouts.length + garden.plants;
+  // Every plot taken by either kind counts: soil is soil, whatever grows in it.
+  const planted = SEED_KINDS.reduce(
+    (sum, _entry, i) =>
+      sum + kindSeedCount(garden, i, capacity) + wholeCount(plantsForKind(garden, i), Number.MAX_SAFE_INTEGER),
+    0
+  );
   const cost = nextBedCost(beds);
   if (planted < capacity) {
     return { ok: false, reason: "the plot still has room", cost, beds };

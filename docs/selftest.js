@@ -28,6 +28,7 @@ import {
   SAVE_VERSION,
   SEED_COST_BASE,
   SEED_COST_RATE,
+  SEED_KINDS,
   STORAGE_KEY,
   TEND_RATE_STEP,
   TEND_YIELD,
@@ -35,8 +36,10 @@ import {
   decodeSave,
   elapsedSeconds,
   encodeSave,
+  gardenKinds,
   getGarden,
   getGrowthState,
+  kindIndex,
   newGarden,
   nextBedCost,
   nextSeedCost,
@@ -581,6 +584,395 @@ function checkPortableSave(problems) {
     setGarden(before);
     setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
     restoreRawStorage(beforeRaw);
+  }
+}
+
+// --- Two kinds of seed ------------------------------------------------------
+
+/**
+ * The two kinds are a real choice: they differ in price, in what a grown plant
+ * produces and in how long the seed takes to mature, each kind is priced
+ * against its own count, and both read off a mixed garden correctly.
+ */
+function checkSeedKindsDiffer(problems) {
+  if (SAVE_VERSION !== 6) {
+    problems.push(`SAVE_VERSION should be 6 (the second seed kind), but it is ${SAVE_VERSION}.`);
+  }
+  const [herb, bloom] = SEED_KINDS;
+  if (bloom.costBase <= herb.costBase) {
+    problems.push(
+      `bloom should cost more to start than herb (${bloom.costBase} vs ${herb.costBase}), so planting is a choice.`
+    );
+  }
+  if (bloom.production <= herb.production) {
+    problems.push(
+      `a grown bloom should produce more than a herb (${bloom.production} vs ${herb.production}/s), so planting is a choice.`
+    );
+  }
+  if (bloom.growSeconds <= herb.growSeconds) {
+    problems.push(
+      `a bloom seed should take longer to mature than a herb (${bloom.growSeconds}s vs ${herb.growSeconds}s), ` +
+        "so planting is a choice."
+    );
+  }
+
+  // Each kind is priced against how many of that kind already grow.
+  if (nextSeedCost(0, "herb") !== SEED_COST_BASE) {
+    problems.push(
+      `the first herb seed should cost ${SEED_COST_BASE}, but nextSeedCost(0, "herb") is ${nextSeedCost(0, "herb")}.`
+    );
+  }
+  const bloomFirst = nextSeedCost(0, "bloom");
+  if (bloomFirst !== bloom.costBase) {
+    problems.push(`the first bloom seed should cost ${bloom.costBase}, but nextSeedCost(0, "bloom") is ${bloomFirst}.`);
+  }
+  if (!(bloomFirst > nextSeedCost(0, "herb"))) {
+    problems.push("a bloom seed should cost more than a herb seed at the same count of each.");
+  }
+  if (!(nextSeedCost(1, "bloom") > bloomFirst)) {
+    problems.push("each bloom seed must cost more than the last, as a herb's does.");
+  }
+
+  // A kind named by key or number resolves; a misspelled one falls back to herb.
+  if (kindIndex("bloom") !== 1 || kindIndex("herb") !== 0 || kindIndex(1) !== 1 || kindIndex("fern") !== 0) {
+    problems.push(
+      `kindIndex resolved ("bloom", "herb", 1, "fern") to ` +
+        `(${kindIndex("bloom")}, ${kindIndex("herb")}, ${kindIndex(1)}, ${kindIndex("fern")}), ` +
+        "expected (1, 0, 1, 0)."
+    );
+  }
+
+  // A mixed garden reads per kind: counts, prices and production.
+  const kinds = gardenKinds({ seeds: 1, plants: 2, bloomSeeds: 3, bloomPlants: 4, capacity: 24 });
+  if (kinds.length !== 2) {
+    problems.push(`gardenKinds should answer for both kinds, but it returned ${kinds.length}.`);
+  }
+  const herbEntry = kinds[0];
+  const bloomEntry = kinds[1];
+  if (!herbEntry || !bloomEntry || herbEntry.key !== "herb" || bloomEntry.key !== "bloom") {
+    problems.push(
+      `gardenKinds returned keys ${JSON.stringify((kinds ?? []).map((kind) => kind.key))}, expected ["herb", "bloom"].`
+    );
+    return;
+  }
+  const plantedCost = (base, rate, planted) => Math.ceil(base * rate ** planted);
+  if (herbEntry.seeds !== 1 || herbEntry.plants !== 2 || herbEntry.cost !== plantedCost(5, 1.15, 3)) {
+    problems.push(
+      `the herb kind read back as ${herbEntry.seeds} seeds / ${herbEntry.plants} plants at ` +
+        `${herbEntry.cost} growth, expected 1 / 2 / ${plantedCost(5, 1.15, 3)}.`
+    );
+  }
+  if (bloomEntry.seeds !== 3 || bloomEntry.plants !== 4 || bloomEntry.cost !== plantedCost(40, 1.15, 7)) {
+    problems.push(
+      `the bloom kind read back as ${bloomEntry.seeds} seeds / ${bloomEntry.plants} plants at ` +
+        `${bloomEntry.cost} growth, expected 3 / 4 / ${plantedCost(40, 1.15, 7)}.`
+    );
+  }
+  if (herbEntry.production !== herb.production || bloomEntry.production !== bloom.production) {
+    problems.push(
+      `gardenKinds reported production ${herbEntry.production} / ${bloomEntry.production}/s, ` +
+        `expected ${herb.production} / ${bloom.production}/s.`
+    );
+  }
+}
+
+/**
+ * Planting a bloom spends its own price, matures after its own longer wait,
+ * and adds its own production while the herb counts stay put.
+ */
+function checkBloomPlanting(problems) {
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const storageBefore = rawStorage();
+  try {
+    const button = document.getElementById("plant-bloom");
+    if (!button) {
+      problems.push("the page has no Plant a bloom control (#plant-bloom), so the second kind cannot be planted.");
+      return;
+    }
+    if (button.tagName.toLowerCase() !== "button") {
+      problems.push(
+        `the Plant a bloom control is a <${button.tagName.toLowerCase()}>, not a real <button>, ` +
+          "so keyboard Enter and Space will not activate it."
+      );
+    }
+
+    setGarden({ seeds: 0, plants: 0 });
+    const cost = nextSeedCost(0, "bloom");
+    setGrowth(cost - 1, 0.2);
+    if (!String(button.textContent).includes(formatAmount(cost))) {
+      problems.push(
+        `the Plant a bloom label is ${JSON.stringify(button.textContent)}, which does not state its ${cost}-growth cost.`
+      );
+    }
+    if (!button.disabled) {
+      problems.push(`the Plant a bloom control is enabled at ${cost - 1} growth, one short of its ${cost}-growth cost.`);
+    }
+
+    setGrowth(cost, 0.2);
+    if (button.disabled) {
+      problems.push(`the Plant a bloom control is disabled at ${cost} growth, exactly its ${cost}-growth cost.`);
+    }
+    button.click();
+
+    const after = getGrowthState();
+    const gardenAfter = getGarden();
+    if (after.growth !== 0) {
+      problems.push(`planting a ${cost}-growth bloom from ${cost} growth left ${after.growth} growth, expected 0.`);
+    }
+    if (Math.abs(after.rate - 0.2) > 1e-9) {
+      problems.push(`planting a bloom set the rate to ${after.rate}/s, expected the unchanged 0.2/s.`);
+    }
+    if (
+      gardenAfter.bloomSprouts.length !== 1 ||
+      gardenAfter.seeds !== 1 ||
+      gardenAfter.plants !== 0 ||
+      gardenAfter.plantCounts[0] !== 0 ||
+      gardenAfter.plantCounts[1] !== 0
+    ) {
+      problems.push(
+        `planting a bloom left the garden at ${gardenAfter.seeds} seeds / ` +
+          `${JSON.stringify(gardenAfter.plantCounts)} plant counts, expected one bloom sprout and no plants of either kind.`
+      );
+    }
+
+    // After the bloom's own longer wait it is a grown plant, producing at its
+    // own higher rate, and the herb side of the garden has not moved.
+    advance(SEED_KINDS[1].growSeconds);
+    const grownGarden = getGarden();
+    const grownState = getGrowthState();
+    if (grownGarden.plantCounts[1] !== 1 || grownGarden.bloomSprouts.length !== 0) {
+      problems.push(
+        `after ${SEED_KINDS[1].growSeconds}s the bloom holds ${JSON.stringify(grownGarden.plantCounts[1])} plants ` +
+          `and ${grownGarden.bloomSprouts.length} sprouts, expected 1 matured plant.`
+      );
+    }
+    if (Math.abs(grownState.rate - (0.2 + SEED_KINDS[1].production)) > 1e-9) {
+      problems.push(
+        `after the bloom matured the rate is ${grownState.rate}/s, expected ${0.2 + SEED_KINDS[1].production}/s.`
+      );
+    }
+    if (grownGarden.plantCounts[0] !== 0 || grownGarden.seeds !== 0) {
+      problems.push(
+        `planting a bloom moved the herb side to ${grownGarden.seeds} seeds / ` +
+          `${grownGarden.plantCounts[0]} plants; the other kind must stay put.`
+      );
+    }
+  } finally {
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
+    restoreRawStorage(storageBefore);
+  }
+}
+
+/**
+ * The save carried the second kind from version 6: a version-5 save is all
+ * first kind and loses nothing, and a mixed garden round-trips by kind.
+ */
+function checkSaveMigratesKinds(problems) {
+  const payload = (value) => `${SAVE_PREFIX}${btoa(JSON.stringify(value))}`;
+
+  // A version-5 save knew one kind: every seed and plant it carries becomes
+  // the first kind, and the second kind opens empty.
+  const version5 = payload({
+    version: 5,
+    seeds: 2,
+    plants: 1,
+    sprouts: [10, 5],
+    growth: 12.5,
+    rate: 0.7,
+    age: 40,
+    beds: 2,
+  });
+  try {
+    const migrated = decodeSave(version5);
+    if (
+      migrated.version !== SAVE_VERSION ||
+      migrated.seeds !== 2 ||
+      migrated.plants !== 1 ||
+      JSON.stringify(migrated.sprouts) !== JSON.stringify([10, 5]) ||
+      JSON.stringify(migrated.bloomSprouts) !== JSON.stringify([]) ||
+      JSON.stringify(migrated.plantCounts) !== JSON.stringify([1, 0]) ||
+      migrated.growth !== 12.5 ||
+      migrated.rate !== 0.7 ||
+      migrated.age !== 40 ||
+      migrated.beds !== 2
+    ) {
+      problems.push(
+        `a version-5 save migrated to ${JSON.stringify(migrated)}; expected its seeds and plants to become ` +
+          "the first kind (2 sprouts / 1 plant / no bloom) with growth, rate, age and beds kept."
+      );
+    }
+  } catch (e) {
+    problems.push(`a version-5 save should still load, but it was refused: ${e.message}`);
+  }
+
+  // A garden holding both kinds round-trips with each kind's share intact.
+  const mixed = encodeSave({
+    sprouts: [5],
+    plants: 1,
+    bloomSprouts: [7],
+    bloomPlants: 2,
+    beds: 1,
+    growth: 3,
+    rate: 1,
+  });
+  try {
+    const back = decodeSave(mixed);
+    if (
+      back.seeds !== 2 ||
+      back.plants !== 3 ||
+      JSON.stringify(back.sprouts) !== JSON.stringify([5]) ||
+      JSON.stringify(back.bloomSprouts) !== JSON.stringify([7]) ||
+      JSON.stringify(back.plantCounts) !== JSON.stringify([1, 2])
+    ) {
+      problems.push(
+        `a mixed-kind save round-tripped to ${JSON.stringify(back)}; expected 1 herb seed / 1 herb plant / ` +
+          "1 bloom seed / 2 bloom plants."
+      );
+    }
+  } catch (e) {
+    problems.push(`a mixed-kind save could not round-trip: ${e.message}`);
+  }
+}
+
+/**
+ * The two kinds are named on the page: a readout row each, with counts, price
+ * and production, a Plant control each naming its kind and price, and a goal
+ * that names the kind worth planting next and what it costs.
+ */
+function checkKindReadout(problems) {
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  try {
+    const rows = new Map([
+      ["herb", document.querySelector('[data-field="kind-herb"]')],
+      ["bloom", document.querySelector('[data-field="kind-bloom"]')],
+    ]);
+    for (const [key, row] of rows) {
+      if (!row) {
+        problems.push(
+          `the page has no ${key} readout (expected [data-field="kind-${key}"]), so the kind is not named.`
+        );
+      }
+    }
+    for (const id of ["plant-seed", "plant-bloom"]) {
+      const button = document.getElementById(id);
+      if (button) {
+        const rect = button.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) {
+          problems.push(`the #${id} control has no size on screen, so its kind cannot be planted from the garden.`);
+        }
+      }
+    }
+
+    setGarden({ seeds: 2, plants: 1 });
+    setGrowth(0, 0.5);
+    const herbRow = rows.get("herb");
+    const bloomRow = rows.get("bloom");
+    const herbCost = nextSeedCost(3, "herb");
+    const bloomCost = nextSeedCost(0, "bloom");
+    if (herbRow && !String(herbRow.textContent).includes(formatAmount(2))) {
+      problems.push(`the herb readout says ${JSON.stringify(herbRow.textContent)}, expected it to count 2 seeds.`);
+    }
+    if (herbRow && !String(herbRow.textContent).includes(formatAmount(1))) {
+      problems.push(`the herb readout says ${JSON.stringify(herbRow.textContent)}, expected it to count 1 plant.`);
+    }
+    if (herbRow && !String(herbRow.textContent).includes(formatAmount(herbCost))) {
+      problems.push(`the herb readout says ${JSON.stringify(herbRow.textContent)}, expected its ${herbCost}-growth price.`);
+    }
+    if (herbRow && !String(herbRow.textContent).includes("0.5")) {
+      problems.push(`the herb readout says ${JSON.stringify(herbRow.textContent)}, expected its 0.5/s production.`);
+    }
+    if (bloomRow && !String(bloomRow.textContent).includes(formatAmount(bloomCost))) {
+      problems.push(
+        `the bloom readout says ${JSON.stringify(bloomRow.textContent)}, expected its ${bloomCost}-growth price.`
+      );
+    }
+    if (bloomRow && !String(bloomRow.textContent).includes("5")) {
+      problems.push(`the bloom readout says ${JSON.stringify(bloomRow.textContent)}, expected its 5/s production.`);
+    }
+
+    const bloomButton = document.getElementById("plant-bloom");
+    if (bloomButton && !String(bloomButton.textContent).includes(formatAmount(bloomCost))) {
+      problems.push(
+        `the Plant a bloom label is ${JSON.stringify(bloomButton.textContent)}, ` +
+          `expected it to state the ${bloomCost}-growth cost.`
+      );
+    }
+    if (bloomButton && !/bloom/i.test(String(bloomButton.textContent))) {
+      problems.push(
+        `the Plant a bloom label is ${JSON.stringify(bloomButton.textContent)}, expected it to name the bloom kind.`
+      );
+    }
+
+    // The goal names the kind worth planting next: with the herb line grown
+    // long and only some growth saved, bloom is the affordable reach.
+    setGarden({ beds: 3, seeds: 0, plants: 30 });
+    setGrowth(200, 1);
+    const state = getDisplayedState();
+    const goalTitle = String(document.getElementById("goal-title")?.textContent ?? "");
+    if (!/bloom/i.test(goalTitle)) {
+      problems.push(
+        `with herb at ${state.kinds[0].cost} growth and bloom affordable, the goal title is ` +
+          `${JSON.stringify(goalTitle)}, expected it to name bloom.`
+      );
+    }
+    if (!goalTitle.includes(formatAmount(state.nextSeedCost))) {
+      problems.push(`the goal title ${JSON.stringify(goalTitle)} does not state its ${state.nextSeedCost}-growth cost.`);
+    }
+    if (state.nextSeedKind !== "bloom" || state.nextSeedCost !== nextSeedCost(0, "bloom")) {
+      problems.push(
+        `the state names the next seed ${state.nextSeedKind} at ${state.nextSeedCost} growth, ` +
+          `expected bloom at ${nextSeedCost(0, "bloom")}.`
+      );
+    }
+
+    // And when nothing is affordable yet, the goal is the soonest seed: the
+    // cheapest kind, which here is the herb (6 growth) beside the bloom (40).
+    setGarden({ seeds: 1, plants: 0 });
+    setGrowth(3, 1);
+    const poorState = getDisplayedState();
+    if (poorState.nextSeedKind !== "herb") {
+      problems.push(
+        `with ${poorState.growth} growth saved the next seed worth planting is ` +
+          `${poorState.nextSeedKind}, expected the soonest kind (herb).`
+      );
+    }
+  } finally {
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
+  }
+}
+
+/** The plot draws the two kinds differently, plants and sprouts alike. */
+function checkPlotDrawsKinds(problems) {
+  const canvas = document.getElementById("garden-plot");
+  if (!canvas || !canvas.getContext) {
+    problems.push("the page has no plot canvas (#garden-plot) to draw the kinds into.");
+    return;
+  }
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  try {
+    const image = (state) => {
+      setGarden(state);
+      setGrowth(0, 0);
+      return canvas.toDataURL();
+    };
+    const herbPlant = image({ plants: 1 });
+    const bloomPlant = image({ plantCounts: [0, 1] });
+    const herbSprout = image({ seeds: 1 });
+    const bloomSprout = image({ bloomSprouts: [SEED_KINDS[1].growSeconds] });
+    if (herbPlant === bloomPlant) {
+      problems.push("a grown herb and a grown bloom draw the same picture, so the two kinds are not visible on the plot.");
+    }
+    if (herbSprout === bloomSprout) {
+      problems.push("a herb sprout and a bloom sprout draw the same picture, so the two kinds are not visible on the plot.");
+    }
+  } finally {
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
   }
 }
 
@@ -1451,7 +1843,10 @@ function checkCompactReadout(problems) {
 
   // Every number the page tracks keeps a readout in the DOM, even the ones
   // folded to a screen reader so the garden, numbers and buttons share a screen.
-  const fields = ["growth", "form", "seeds", "plants", "beds", "capacity", "pollinator", "next-plant", "next-bed", "storage"];
+  const fields = [
+    "growth", "form", "seeds", "plants", "kind-herb", "kind-bloom", "beds", "capacity",
+    "pollinator", "next-plant", "next-bed", "storage",
+  ];
   for (const field of fields) {
     if (!document.querySelector(`[data-field="${field}"]`)) {
       problems.push(
@@ -2067,6 +2462,45 @@ async function checkAgentTools(problems) {
 
   const state = await readTool.execute({}, {});
   const shown = getDisplayedState();
+  // Both kinds are reported: an agent can read each kind's cost, count and
+  // production without seeing the screen.
+  if (!Array.isArray(state.kinds) || state.kinds.length !== 2) {
+    problems.push(
+      `get-state reported ${JSON.stringify(state.kinds?.length ?? state.kinds)} seed kinds, expected the garden's two.`
+    );
+  } else {
+    const keys = state.kinds.map((kind) => kind.key);
+    if (keys[0] !== "herb" || keys[1] !== "bloom") {
+      problems.push(`get-state's kinds are ${JSON.stringify(keys)}, expected ["herb", "bloom"].`);
+    }
+    for (const kind of state.kinds) {
+      const live = SEED_KINDS[kind.index];
+      if (
+        kind.cost !== nextSeedCost(kind.total, kind.index) ||
+        kind.production !== live.production ||
+        kind.growSeconds !== live.growSeconds ||
+        typeof kind.seeds !== "number" ||
+        typeof kind.plants !== "number" ||
+        typeof kind.canPlant !== "boolean"
+      ) {
+        problems.push(
+          `get-state's ${kind.key} kind reported ${JSON.stringify(kind)}, which does not carry its own ` +
+            "cost, production, growing time, seed and plant counts and canPlant."
+        );
+      }
+    }
+    const herbKind = state.kinds[0];
+    const bloomKind = state.kinds[1];
+    if (herbKind.seeds !== shown.seedCounts[0] || bloomKind.seeds !== shown.seedCounts[1]) {
+      problems.push(
+        `get-state reported ${herbKind.seeds} herb seeds / ${bloomKind.seeds} bloom seeds, but the page holds ` +
+          `${shown.seedCounts[0]} / ${shown.seedCounts[1]}.`
+      );
+    }
+    if (herbKind.cost !== nextSeedCost(herbKind.total, 0) || bloomKind.cost !== nextSeedCost(bloomKind.total, 1)) {
+      problems.push("get-state's kind costs do not match nextSeedCost against each kind's own count.");
+    }
+  }
   if (state.seeds !== shown.seeds || state.plants !== shown.plants || state.capacity !== shown.capacity) {
     problems.push(
       `get-state reported ${state.seeds} seeds / ${state.plants} plants, but the page holds ` +
@@ -2211,6 +2645,48 @@ async function checkAgentTools(problems) {
       if (fullRefused.ok || getGarden().seeds !== PLOT_CAPACITY) {
         problems.push(
           `the plant-seed tool planted seed ${getGarden().seeds} on a full plot of ${PLOT_CAPACITY}; it must refuse.`
+        );
+      }
+
+      // The second kind: naming "bloom" plants a bloom, priced and matured as
+      // a bloom, and the state afterwards reports both kinds.
+      setGarden({ seeds: 0, plants: 0 });
+      const bloomCost = nextSeedCost(0, "bloom");
+      setGrowth(bloomCost, 0);
+      const bloomPlanted = await plantTool.execute({ kind: "bloom" }, {});
+      const afterBloom = getGarden();
+      const afterBloomGrowth = getGrowthState();
+      if (!bloomPlanted.ok || bloomPlanted.cost !== bloomCost || bloomPlanted.kind !== "bloom") {
+        problems.push(
+          `the plant-seed tool reported ${JSON.stringify(bloomPlanted)} for a bloom, expected ok=true, ` +
+            `cost ${bloomCost}, kind "bloom".`
+        );
+      }
+      if (afterBloomGrowth.growth !== 0 || afterBloom.bloomSprouts.length !== 1 || afterBloom.plantCounts[0] !== 0) {
+        problems.push(
+          `the plant-seed tool left a bloom as ${afterBloomGrowth.growth} growth / ` +
+            `${afterBloom.bloomSprouts.length} bloom sprouts / ${JSON.stringify(afterBloom.plantCounts)}, ` +
+            "expected 0 / 1 bloom sprout / no herb plants."
+        );
+      }
+      const bloomState = await readTool.execute({}, {});
+      const bloomEntry = (bloomState.kinds ?? []).find((kind) => kind.key === "bloom");
+      if (!bloomEntry || bloomEntry.seeds !== 1 || bloomEntry.production !== SEED_KINDS[1].production) {
+        problems.push(
+          `get-state after planting a bloom reports the bloom kind as ${JSON.stringify(bloomEntry)}, ` +
+            "expected one ungrown bloom seed at the bloom production."
+        );
+      }
+
+      // An unrecognised kind falls back to herb rather than failing or
+      // planting nothing.
+      setGarden({ seeds: 0, plants: 0 });
+      setGrowth(nextSeedCost(0, "herb"), 0);
+      const fallback = await plantTool.execute({ kind: "fern" }, {});
+      if (!fallback.ok || fallback.kind !== "herb" || getGarden().bloomSprouts.length !== 0) {
+        problems.push(
+          `the plant-seed tool answered an unknown kind with ${JSON.stringify(fallback)}, ` +
+            "expected a herb seed as the fallback."
         );
       }
     } finally {
@@ -2436,12 +2912,17 @@ export async function checks() {
     checkOfflineTime(problems);
     checkDurableSave(problems);
     checkPageReadout(problems);
+    checkKindReadout(problems);
     checkPlotDrawing(problems);
+    checkPlotDrawsKinds(problems);
     checkGardenFormMapping(problems);
     checkPlotMotion(problems);
     checkSeedCostCurve(problems);
+    checkSeedKindsDiffer(problems);
+    checkSaveMigratesKinds(problems);
     checkPlantControl(problems);
     checkPlantingSpendsAndRaisesProduction(problems);
+    checkBloomPlanting(problems);
     checkSeedGoalReadout(problems);
     checkNextPlantReadout(problems);
     checkBedProgression(problems);

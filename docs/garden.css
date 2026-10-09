@@ -337,6 +337,15 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* Each kind of seed keeps a row of its own — the two things the plot draws in
+   two different ways, named here. Their values run longer than a plain count,
+   so they read at the rate's size rather than the hero number's. */
+.readout-kind-value {
+  font-size: 14px;
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+}
+
 /* The two main actions share one row when there is room and wrap to a column
    when there is not. The hidden bed button stays outside this wrapper, so it
    never widens the pair. */
