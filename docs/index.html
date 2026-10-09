@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#3a2716" />
+    <meta name="description" content="selfgrow — an idle garden that tends itself, one seed at a time." />
+    <title>selfgrow — a garden that tends itself</title>
+    <link rel="stylesheet" href="./garden.css" />
+    <script type="module">
+      import "./main.js";
+      import "./webmcp.js";
+    </script>
+  </head>
+  <body>
+    <header class="hud">
+      <h1 class="brand">selfgrow</h1>
+      <p class="tagline">a garden that tends itself</p>
+    </header>
+
+    <main id="main" class="stage">
+      <section class="panel" aria-labelledby="seedbed-heading">
+        <h2 id="seedbed-heading" class="panel-title">The seedbed</h2>
+        <p class="panel-note">Plant a seed by hand. Once it is in the soil, the garden does the rest.</p>
+        <div class="seedbed" id="seedbed" aria-hidden="true"></div>
+        <p class="readout">
+          <span class="readout-label">Seeds planted</span>
+          <span class="readout-value" id="seed-count" aria-live="polite">0</span>
+        </p>
+        <button type="button" class="btn" id="plant-seed">Plant a seed</button>
+      </section>
+
+      <section class="panel" aria-labelledby="grows-heading">
+        <h2 id="grows-heading" class="panel-title">About the garden</h2>
+        <p class="panel-note">Every number in this garden has a shape on the plot, so the picture and the count always agree.</p>
+        <ul class="facts">
+          <li><span class="fact-dot fact-leaf" aria-hidden="true"></span>The first 8 seeds grow into sprouts.</li>
+          <li><span class="fact-dot fact-bloom" aria-hidden="true"></span>The seed count keeps rising past the plot.</li>
+          <li><span class="fact-dot fact-water" aria-hidden="true"></span>Panel, button and soil share one small palette.</li>
+        </ul>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <p>Type set in Press Start 2P, © 2012 The Press Start 2P Project Authors, SIL Open Font License 1.1. The font ships inside this page rather than from a network.</p>
+    </footer>
+  </body>
+</html>
