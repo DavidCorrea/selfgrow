@@ -16,13 +16,14 @@
  */
 
 import {
+  GROW_SECONDS,
   LAST_SEEN_KEY,
+  PLANT_PRODUCTION,
   PLOT_CAPACITY,
   SAVE_PREFIX,
   SAVE_VERSION,
   SEED_COST_BASE,
   SEED_COST_RATE,
-  SEED_PRODUCTION,
   STORAGE_KEY,
   TEND_RATE_STEP,
   TEND_YIELD,
@@ -241,7 +242,7 @@ function checkSaveCodec(problems) {
     newGarden(),
     { seeds: 0, plants: 0 },
     { seeds: 5, plants: 3 },
-    { seeds: 1000000, plants: 123456 },
+    { seeds: PLOT_CAPACITY, plants: 0 },
   ];
   for (const sample of samples) {
     let roundTripped;
@@ -257,6 +258,21 @@ function checkSaveCodec(problems) {
         `got back ${roundTripped.seeds} / ${roundTripped.plants}.`
       );
     }
+  }
+
+  // A seed part-way through growing must come back with its timer intact, not
+  // reset, or time away would restart every sprout.
+  const ripening = { plants: 1, sprouts: [4.5, GROW_SECONDS, 0.25] };
+  try {
+    const back = decodeSave(encodeSave(ripening));
+    if (JSON.stringify(back.sprouts) !== JSON.stringify(ripening.sprouts)) {
+      problems.push(
+        `a save put in sprout timers ${JSON.stringify(ripening.sprouts)} and gave back ` +
+          `${JSON.stringify(back.sprouts)}.`
+      );
+    }
+  } catch (e) {
+    problems.push(`a save carrying sprout timers could not round-trip: ${e.message}`);
   }
 
   const payload = (value) => `SELFGROW1.${btoa(JSON.stringify(value))}`;
@@ -456,28 +472,40 @@ function checkPlotDrawing(problems) {
     return;
   }
   const before = getGrowthState();
+  const gardenBefore = getGarden();
   try {
-    const snapshot = (growth) => {
+    const snapshot = (growth, seeds, plants) => {
+      setGarden({ seeds, plants });
       setGrowth(growth, 0);
       return canvas.toDataURL();
     };
-    const bare = snapshot(0);
-    const sprout = snapshot(1);
-    const seedling = snapshot(10);
-    const far = snapshot(1e12);
-    if (bare === sprout) {
-      problems.push("the plot draws the same picture at 0 and 1 growth, so the garden does not grow at the first threshold.");
+    const bare = snapshot(0, 0, 0);
+    const oneSprout = snapshot(0, 1, 0);
+    const onePlant = snapshot(0, 0, 1);
+    const seedling = snapshot(10, 0, 3);
+    const far = snapshot(1e12, 0, 12);
+    if (bare === oneSprout) {
+      problems.push("a sprouting seed in the soil draws the same picture as bare soil, so planting is invisible on the plot.");
     }
-    if (sprout === seedling) {
-      problems.push("the plot draws the same picture at 1 and 10 growth, so it does not change form at the first threshold.");
+    if (oneSprout === onePlant) {
+      problems.push(
+        "a sprouting seed and a grown plant draw the same picture, so the plot does not show a seed growing up."
+      );
+    }
+    if (onePlant === seedling) {
+      problems.push("the plot draws the same picture at a low and a higher form, so it does not change form at the threshold.");
     }
     if (seedling === far) {
       problems.push("the plot draws the same picture at 10 and 1e12 growth, so the far end is frozen.");
     }
-    if (snapshot(1e12) !== far) {
+    if (snapshot(1e12, 0, 12) !== far) {
       problems.push("the same amount of growth drew two different pictures, so the plot is not a pure view of the state.");
     }
+    if (snapshot(1e12, 0, 1e9) !== snapshot(1e12, 0, 1000)) {
+      problems.push("a garden carrying more plants than plots drew a different picture, so the sprites are not bounded by the plot.");
+    }
   } finally {
+    setGarden(gardenBefore);
     setGrowth(before.growth, before.rate);
   }
 }
@@ -793,14 +821,35 @@ function checkPlantingSpendsAndRaisesProduction(problems) {
     if (after.growth !== 0) {
       problems.push(`planting a ${cost}-growth seed from ${cost} growth left ${after.growth} growth, expected 0.`);
     }
-    if (Math.abs(after.rate - (0.2 + SEED_PRODUCTION)) > 1e-9) {
+    if (Math.abs(after.rate - 0.2) > 1e-9) {
       problems.push(
-        `planting a seed set the rate to ${after.rate}/s, expected ${0.2 + SEED_PRODUCTION}/s ` +
-          `(the old rate plus one seed's production).`
+        `planting a seed set the rate to ${after.rate}/s, expected the old 0.2/s — a sprouting seed must not ` +
+          `speed the garden up until it matures.`
       );
     }
-    if (gardenAfter.seeds !== 2) {
-      problems.push(`planting a seed left the garden with ${gardenAfter.seeds} seeds, expected 2.`);
+    if (gardenAfter.seeds !== 2 || gardenAfter.plants !== 0) {
+      problems.push(
+        `planting a seed left the garden with ${gardenAfter.seeds} seeds / ${gardenAfter.plants} plants, ` +
+          `expected 2 sprouts and 0 grown plants.`
+      );
+    }
+
+    // Once the seeds have had their growing time they become plants, and only
+    // then does the garden grow faster.
+    advance(GROW_SECONDS);
+    const grownState = getGrowthState();
+    const grownGarden = getGarden();
+    if (grownGarden.seeds !== 0 || grownGarden.plants !== 2) {
+      problems.push(
+        `after ${GROW_SECONDS}s the garden holds ${grownGarden.seeds} seeds / ${grownGarden.plants} plants, ` +
+          `expected both sprouts to have matured into 2 plants.`
+      );
+    }
+    if (Math.abs(grownState.rate - (0.2 + 2 * PLANT_PRODUCTION)) > 1e-9) {
+      problems.push(
+        `after the seeds matured the rate is ${grownState.rate}/s, expected ${0.2 + 2 * PLANT_PRODUCTION}/s ` +
+          `(the old rate plus two plants' production).`
+      );
     }
   } finally {
     setGarden(gardenBefore);
@@ -888,19 +937,63 @@ function checkSeedGoalReadout(problems) {
   }
 }
 
+/**
+ * The page says how long until the next plant matures, and it matches the
+ * soonest sprout in the soil — an agent and a visitor read the same number.
+ */
+function checkNextPlantReadout(problems) {
+  const readoutEl = document.querySelector('[data-field="next-plant"]');
+  const detailEl = document.getElementById("goal-detail");
+  if (!readoutEl) {
+    problems.push('the page has no next-plant readout (expected [data-field="next-plant"]).');
+  }
+
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  try {
+    setGarden({ sprouts: [8, 41], plants: 1 });
+    setGrowth(0, 0.5);
+    const state = getDisplayedState();
+    if (state.secondsToNextPlant !== 8) {
+      problems.push(
+        `the soonest of two sprouts at 8s and 41s should be 8s to the next plant, but the garden reports ` +
+          `${state.secondsToNextPlant}.`
+      );
+    }
+    if (readoutEl && !String(readoutEl.textContent).includes("8s")) {
+      problems.push(`the next-plant readout says ${JSON.stringify(readoutEl.textContent)}, expected it to mention 8s.`);
+    }
+    if (detailEl && !String(detailEl.textContent).includes("8s")) {
+      problems.push(
+        `the goal block says ${JSON.stringify(detailEl.textContent)}, expected it to say the next plant matures in 8s.`
+      );
+    }
+
+    // With nothing growing, the garden says so rather than naming a time.
+    setGarden({ seeds: 0, plants: 2 });
+    if (getDisplayedState().secondsToNextPlant !== null) {
+      problems.push("with no ungrown seeds the garden still reported a time to the next plant.");
+    }
+    if (readoutEl && !String(readoutEl.textContent).toLowerCase().includes("none")) {
+      problems.push(`with nothing growing the next-plant readout says ${JSON.stringify(readoutEl.textContent)}.`);
+    }
+  } finally {
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate);
+  }
+}
+
 function checkLargeCounts(problems) {
   const before = getGarden();
   const growthBefore = getGrowthState();
   const beforeRaw = rawStorage();
   try {
-    const huge = encodeSave({ seeds: 1e9, plants: 123456789 });
+    const huge = encodeSave({ seeds: 3, plants: 123456789 });
     loadGardenSave(huge);
     const seedsEl = document.querySelector('[data-field="seeds"]');
     const plantedEl = document.querySelector('[data-field="plants"]');
-    if (Number(String(seedsEl?.textContent).replace(/,/g, "")) !== 1e9) {
-      problems.push(
-        `with a billion seeds, the page shows ${JSON.stringify(seedsEl?.textContent)} instead of 1,000,000,000.`
-      );
+    if (Number(String(seedsEl?.textContent).replace(/,/g, "")) !== 3) {
+      problems.push(`with 3 seeds, the page shows ${JSON.stringify(seedsEl?.textContent)} instead of 3.`);
     }
     if (!plantedEl || !String(plantedEl.textContent).includes("123")) {
       problems.push(`with 123456789 plants, the page shows ${JSON.stringify(plantedEl?.textContent)}.`);
@@ -932,6 +1025,7 @@ function checkNoOverflow(problems) {
  */
 function checkOfflineTime(problems) {
   const before = getGrowthState();
+  const gardenBefore = getGarden();
   const nowMs = 1_700_000_000_000;
   const spans = [
     ["a missing timestamp", elapsedSeconds(null, nowMs), 0],
@@ -946,6 +1040,8 @@ function checkOfflineTime(problems) {
 
   const DAY = 86400;
   try {
+    // No sprouts in the ground: this isolates the plain elapsed-time rule.
+    setGarden({ seeds: 0, plants: 0 });
     const expected = 0.5 * 30 * DAY;
     const tolerance = Math.max(1e-6, expected * 1e-9);
 
@@ -966,7 +1062,33 @@ function checkOfflineTime(problems) {
     if (Math.abs(oneStep - expected) > tolerance) {
       problems.push(`a month at +0.5/s gave ${oneStep} growth, expected ${expected} with no cap on the absence.`);
     }
+
+    // Seeds maturing mid-absence must land in the same place one step or many:
+    // the rate rises as each plant matures, and a single jump must still see it.
+    setGarden({ seeds: 3, plants: 0 });
+    setGrowth(0, 1);
+    advance(30 * DAY);
+    const maturesAtOnce = { growth: getGrowthState().growth, garden: getGarden() };
+
+    setGarden({ seeds: 3, plants: 0 });
+    setGrowth(0, 1);
+    for (let day = 0; day < 30; day += 1) advance(DAY);
+    const maturesStepped = { growth: getGrowthState().growth, garden: getGarden() };
+
+    if (maturesAtOnce.garden.plants !== 3 || maturesAtOnce.garden.seeds !== 0) {
+      problems.push(
+        `a month away left ${maturesAtOnce.garden.seeds} seeds / ${maturesAtOnce.garden.plants} plants; ` +
+          "all three seeds should have matured with no cap on the absence."
+      );
+    }
+    if (Math.abs(maturesAtOnce.growth - maturesStepped.growth) > Math.max(1e-6, maturesAtOnce.growth * 1e-9)) {
+      problems.push(
+        `seeds maturing over a month gave ${maturesAtOnce.growth} growth in one step but ` +
+          `${maturesStepped.growth} across thirty days; maturation must resolve the same either way.`
+      );
+    }
   } finally {
+    setGarden(gardenBefore);
     setGrowth(before.growth, before.rate);
   }
 }
@@ -988,17 +1110,42 @@ function checkSaveCarriesGrowth(problems) {
     problems.push(`a save put in 12.5 growth / 0.7 rate and gave back ${back.growth} / ${back.rate}.`);
   }
 
+  // A version-1 save had no growth of its own: its seeds become ungrown sprouts
+  // with their full growing time left, kept rather than lost.
   const legacy = `${SAVE_PREFIX}${btoa(JSON.stringify({ version: 1, seeds: 4, plants: 2 }))}`;
   try {
     const migrated = decodeSave(legacy);
-    if (migrated.seeds !== 4 || migrated.plants !== 2 || migrated.growth !== 0 || migrated.rate !== 0) {
+    if (migrated.seeds !== 4 || migrated.plants !== 2 || migrated.growth !== 0 || migrated.rate !== 1) {
       problems.push(
         `a version-1 save migrated to ${migrated.seeds} seeds / ${migrated.plants} plants / ` +
-          `${migrated.growth} growth / ${migrated.rate} rate, expected 4 / 2 / 0 / 0.`
+          `${migrated.growth} growth / ${migrated.rate} rate, expected 4 sprouts / 2 plants / 0 / 1.`
+      );
+    }
+    if (JSON.stringify(migrated.sprouts) !== JSON.stringify(Array(4).fill(GROW_SECONDS))) {
+      problems.push(
+        `a version-1 save's 4 seeds should wake as 4 fresh ${GROW_SECONDS}s sprouts, but they are ` +
+          `${JSON.stringify(migrated.sprouts)}.`
       );
     }
   } catch (e) {
     problems.push(`a version-1 save should still load, but it was refused: ${e.message}`);
+  }
+
+  // A version-2 save sped the garden up for every planted seed at once. Its rate
+  // is rewritten so the seeds that were never growing stop, and the already-grown
+  // plants keep producing.
+  const version2 = `${SAVE_PREFIX}${btoa(JSON.stringify({ version: 2, seeds: 4, plants: 2, growth: 12.5, rate: 3 }))}`;
+  try {
+    const migrated = decodeSave(version2);
+    if (migrated.seeds !== 4 || migrated.plants !== 2 || migrated.growth !== 12.5 || migrated.rate !== 2) {
+      problems.push(
+        `a version-2 save migrated to ${migrated.seeds} seeds / ${migrated.plants} plants / ` +
+          `${migrated.growth} growth / ${migrated.rate} rate, expected 4 sprouts / 2 plants / 12.5 / 2 ` +
+          `(its seeds' old 4*0.5/s production removed, its plants' 2*0.5/s kept).`
+      );
+    }
+  } catch (e) {
+    problems.push(`a version-2 save should still load, but it was refused: ${e.message}`);
   }
 
   const payload = (value) => `${SAVE_PREFIX}${btoa(JSON.stringify(value))}`;
@@ -1060,10 +1207,15 @@ function checkReturnSummary(problems) {
     const nowMs = 1_700_000_000_000;
     const away = applyReturn(saved, nowMs - 30 * DAY * 1000, nowMs);
 
-    const expectedEarned = 0.5 * 30 * DAY;
+    // The 2 seeds mature after GROW_SECONDS, so the garden earns the old rate for
+    // that short while and the higher rate (each plant adding 0.5/s) for the rest.
+    const expectedEarned = 0.5 * GROW_SECONDS + 1.5 * (30 * DAY - GROW_SECONDS);
     const tolerance = Math.max(1e-6, expectedEarned * 1e-9);
     if (Math.abs(away.earned - expectedEarned) > tolerance) {
-      problems.push(`after 30 days away at +0.5/s the garden earned ${away.earned} growth, expected ${expectedEarned}.`);
+      problems.push(`after 30 days away the garden earned ${away.earned} growth, expected ${expectedEarned}.`);
+    }
+    if (away.matured !== 2) {
+      problems.push(`after 30 days away ${away.matured} seeds had matured, expected the garden's 2.`);
     }
     const after = getGrowthState();
     if (Math.abs(after.growth - expectedEarned) > tolerance) {
@@ -1156,6 +1308,17 @@ async function checkAgentTools(problems) {
   if (state.save !== shown.save) {
     problems.push("get-state's save does not match the save the page shows.");
   }
+  if (
+    state.secondsToNextPlant !== shown.secondsToNextPlant ||
+    state.growSeconds !== shown.growSeconds ||
+    state.totalPlanted !== shown.totalPlanted
+  ) {
+    problems.push(
+      `get-state reported ${state.secondsToNextPlant}s to the next plant / ${state.growSeconds}s growing time / ` +
+        `${state.totalPlanted} planted, but the page holds ${shown.secondsToNextPlant} / ${shown.growSeconds} / ` +
+        `${shown.totalPlanted}.`
+    );
+  }
   if (JSON.stringify(state.away) !== JSON.stringify(shown.away)) {
     problems.push("get-state's away does not match the page's return report.");
   }
@@ -1209,14 +1372,28 @@ async function checkAgentTools(problems) {
           `the plant-seed tool reported ok=${result.ok} cost=${result.cost}, expected ok=true cost=${cost}.`
         );
       }
-      if (after.growth !== 0 || Math.abs(after.rate - (0.2 + SEED_PRODUCTION)) > 1e-9 || gardenAfter.seeds !== 2) {
+      if (after.growth !== 0 || Math.abs(after.rate - 0.2) > 1e-9 || gardenAfter.seeds !== 2) {
         problems.push(
           `the plant-seed tool left the garden at ${after.growth} growth / ${after.rate}/s / ` +
-            `${gardenAfter.seeds} seeds, expected 0 / ${0.2 + SEED_PRODUCTION} / 2.`
+            `${gardenAfter.seeds} seeds, expected 0 / the unchanged 0.2 / 2 sprouts.`
         );
       }
       if (!result.state || result.state.seeds !== 2 || result.state.rate !== after.rate) {
         problems.push("the plant-seed tool did not return the state after planting.");
+      }
+      if (gardenAfter.seeds !== 2 || gardenAfter.plants !== 0) {
+        problems.push(
+          `the plant-seed tool left ${gardenAfter.seeds} sprouts / ${gardenAfter.plants} plants, expected 2 / 0.`
+        );
+      }
+
+      // The seed only speeds the garden up once it has grown up.
+      advance(GROW_SECONDS);
+      if (getGarden().plants !== 2 || Math.abs(getGrowthState().rate - (0.2 + 2 * PLANT_PRODUCTION)) > 1e-9) {
+        problems.push(
+          `after the planted seeds matured the tool side of the garden holds ${getGarden().plants} plants at ` +
+            `${getGrowthState().rate}/s, expected 2 plants at ${0.2 + 2 * PLANT_PRODUCTION}/s.`
+        );
       }
 
       // Refusing when unaffordable must change nothing at all.
@@ -1326,6 +1503,7 @@ export async function checks() {
     checkPlantControl(problems);
     checkPlantingSpendsAndRaisesProduction(problems);
     checkSeedGoalReadout(problems);
+    checkNextPlantReadout(problems);
     checkLargeCounts(problems);
     checkPortableSave(problems);
     checkNoOverflow(problems);
