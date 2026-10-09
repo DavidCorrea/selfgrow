@@ -103,6 +103,57 @@ function bedsFor(state) {
   return beds >= 1 ? beds : 1;
 }
 
+/**
+ * The plot's pixel bounds for `state`: the grid of soil cells it draws and the
+ * sprite cap that grid imposes. Every garden, however large, is drawn inside
+ * these bounds, so the number of sprites can never grow with the save.
+ */
+export function plotBounds(state) {
+  const growth = state && Number.isFinite(state.growth) ? state.growth : 0;
+  const wanted = rowsForForm(gardenForm(growth).index) + (bedsFor(state) - 1) * ROWS_PER_BED;
+  const rows = Math.min(MAX_ROWS, wanted);
+  return {
+    cell: CELL,
+    columns: COLUMNS,
+    maxRows: MAX_ROWS,
+    rows,
+    width: COLUMNS * CELL,
+    height: rows * CELL,
+    cells: rows * COLUMNS,
+  };
+}
+
+// --- Breathing --------------------------------------------------------------
+//
+// The plot is redrawn every tick, and a `phase` that advances with the ticks
+// shifts the foliage by whole pixels so the garden visibly breathes between the
+// milestones where its form changes. The sway is a small repeating pattern, so
+// the same state and phase always draw the same picture and reduced motion can
+// pin the phase to a single still frame.
+
+/** The sideways steps a swaying plant takes, in pixels, one per phase. */
+const SWAY_PATTERN = Object.freeze([0, 1, 1, 0, -1, -1]);
+
+/**
+ * How far a plant sways this phase: a whole pixel, from a per-plant `beat` so
+ * neighbours do not move in lockstep. Always one of SWAY_PATTERN's steps.
+ */
+function swayPixels(phase, beat) {
+  const step = (Math.floor(phase) + beat) % SWAY_PATTERN.length;
+  return SWAY_PATTERN[(step + SWAY_PATTERN.length) % SWAY_PATTERN.length];
+}
+
+/**
+ * The phase to draw at, from the render loop's frame and the visitor's motion
+ * preference. Reduced motion — or a plot with nothing growing on it — is a
+ * single still frame (`0`); otherwise the phase advances with the frame so the
+ * garden breathes. It is pure, so the still frame can be asserted in a test.
+ */
+export function motionPhase({ reduced, frame, living } = {}) {
+  if (reduced || !living) return 0;
+  return Number.isFinite(frame) ? Math.max(0, Math.floor(frame)) : 0;
+}
+
 function drawSoil(ctx, x, y, palette) {
   ctx.fillStyle = palette.soilDeep;
   ctx.fillRect(x, y, CELL, CELL);
@@ -112,8 +163,11 @@ function drawSoil(ctx, x, y, palette) {
   ctx.fillRect(x + 2, y + 2, CELL - 4, 2);
 }
 
-/** A herb seed that has just sprouted: a low shoot on a fresh mound of soil. */
-function drawSprout(ctx, x, y, palette) {
+/**
+ * A herb seed that has just sprouted: a low shoot on a fresh mound of soil. Its
+ * leaves `dx` sway while the shoot stays rooted.
+ */
+function drawSprout(ctx, x, y, palette, dx) {
   const base = y + CELL;
   const centre = x + CELL / 2;
   ctx.fillStyle = palette.soilLight;
@@ -121,12 +175,16 @@ function drawSprout(ctx, x, y, palette) {
   ctx.fillStyle = palette.leafDeep;
   ctx.fillRect(centre - 1, base - 6, 2, 5);
   ctx.fillStyle = palette.leafLight;
-  ctx.fillRect(centre - 4, base - 6, 3, 2);
-  ctx.fillRect(centre + 2, base - 6, 3, 2);
+  ctx.fillRect(centre - 4 + dx, base - 6, 3, 2);
+  ctx.fillRect(centre + 2 + dx, base - 6, 3, 2);
 }
 
-/** A bloom seed that has just sprouted: a closed bud on a fresh mound of soil. */
-function drawBud(ctx, x, y, palette) {
+/**
+ * A bloom seed that has just sprouted: a bud on a fresh mound of soil. `open`
+ * is the second step of the animation — the closed bud opens its petals around
+ * a sun centre, so a sprout visibly opens into a plant.
+ */
+function drawBud(ctx, x, y, palette, open) {
   const base = y + CELL;
   const centre = x + CELL / 2;
   ctx.fillStyle = palette.soilLight;
@@ -134,14 +192,21 @@ function drawBud(ctx, x, y, palette) {
   ctx.fillStyle = palette.leafDeep;
   ctx.fillRect(centre - 1, base - 5, 2, 4);
   ctx.fillStyle = palette.bloom;
-  ctx.fillRect(centre - 2, base - 8, 4, 3);
+  if (open) {
+    ctx.fillRect(centre - 4, base - 8, 3, 3);
+    ctx.fillRect(centre + 1, base - 8, 3, 3);
+    ctx.fillStyle = palette.sun;
+    ctx.fillRect(centre - 1, base - 7, 2, 2);
+  } else {
+    ctx.fillRect(centre - 2, base - 8, 4, 3);
+  }
 }
 
 /** One herb plant on the soil, chosen by the form and grown by how full it is. */
-function drawPlant(ctx, x, y, palette, index, growthTier) {
-  if (index <= 4) drawHerb(ctx, x, y, palette, index, growthTier);
-  else if (index === 5) drawHedge(ctx, x, y, palette, growthTier);
-  else drawTree(ctx, x, y, palette, index, growthTier, false);
+function drawPlant(ctx, x, y, palette, index, growthTier, dx) {
+  if (index <= 4) drawHerb(ctx, x, y, palette, index, growthTier, dx);
+  else if (index === 5) drawHedge(ctx, x, y, palette, growthTier, dx);
+  else drawTree(ctx, x, y, palette, index, growthTier, false, dx);
 }
 
 /**
@@ -149,7 +214,7 @@ function drawPlant(ctx, x, y, palette, index, growthTier) {
  * flower, so the two kinds read differently at every size — petals and a sun
  * centre where the herb carries bare leaf.
  */
-function drawBloomPlant(ctx, x, y, palette, index, growthTier) {
+function drawBloomPlant(ctx, x, y, palette, index, growthTier, dx) {
   const base = y + CELL;
   const centre = x + CELL / 2;
   if (index <= 4) {
@@ -157,53 +222,53 @@ function drawBloomPlant(ctx, x, y, palette, index, growthTier) {
     ctx.fillStyle = palette.leafDeep;
     ctx.fillRect(centre - 1, base - height, 2, height);
     ctx.fillStyle = palette.leaf;
-    ctx.fillRect(centre - 5, base - height + 3, 4, 3);
-    ctx.fillRect(centre + 2, base - height + 5, 4, 3);
+    ctx.fillRect(centre - 5 + dx, base - height + 3, 4, 3);
+    ctx.fillRect(centre + 2 + dx, base - height + 5, 4, 3);
     // The head: petals in the bloom colour around a sun centre.
     ctx.fillStyle = palette.bloom;
-    ctx.fillRect(centre - 3, base - height - 4, 6, 4);
-    ctx.fillRect(centre - 1, base - height - 6, 2, 2);
+    ctx.fillRect(centre - 3 + dx, base - height - 4, 6, 4);
+    ctx.fillRect(centre - 1 + dx, base - height - 6, 2, 2);
     ctx.fillStyle = palette.sun;
-    ctx.fillRect(centre - 1, base - height - 3, 2, 2);
+    ctx.fillRect(centre - 1 + dx, base - height - 3, 2, 2);
   } else if (index === 5) {
-    drawHedge(ctx, x, y, palette, growthTier);
+    drawHedge(ctx, x, y, palette, growthTier, dx);
     ctx.fillStyle = palette.bloom;
-    ctx.fillRect(x + 5, y + CELL - 12, 2, 2);
-    ctx.fillRect(x + CELL - 9, y + CELL - 8, 2, 2);
+    ctx.fillRect(x + 5 + dx, y + CELL - 12, 2, 2);
+    ctx.fillRect(x + CELL - 9 + dx, y + CELL - 8, 2, 2);
     ctx.fillStyle = palette.sun;
-    ctx.fillRect(x + CELL - 12, y + CELL - 11, 2, 2);
+    ctx.fillRect(x + CELL - 12 + dx, y + CELL - 11, 2, 2);
   } else {
-    drawTree(ctx, x, y, palette, index, growthTier, true);
+    drawTree(ctx, x, y, palette, index, growthTier, true, dx);
   }
 }
 
 /** A thin shoot — a sprout, a seedling, or a stand of them, taller as it grows. */
-function drawHerb(ctx, x, y, palette, index, growthTier) {
+function drawHerb(ctx, x, y, palette, index, growthTier, dx) {
   const base = y + CELL;
   const centre = x + CELL / 2;
   const height = 7 + index * 2 + growthTier * 3;
   ctx.fillStyle = palette.leafDeep;
   ctx.fillRect(centre - 1, base - height, 2, height);
   ctx.fillStyle = palette.leaf;
-  ctx.fillRect(centre - 5, base - height + 1, 4, 3);
-  ctx.fillRect(centre + 2, base - height + 4, 4, 3);
-  if (index >= 2) ctx.fillRect(centre - 5, base - height + 7, 4, 3);
+  ctx.fillRect(centre - 5 + dx, base - height + 1, 4, 3);
+  ctx.fillRect(centre + 2 + dx, base - height + 4, 4, 3);
+  if (index >= 2) ctx.fillRect(centre - 5 + dx, base - height + 7, 4, 3);
   if (index >= 4) {
     ctx.fillStyle = palette.sun;
-    ctx.fillRect(centre - 2, base - height - 3, 4, 4);
+    ctx.fillRect(centre - 2 + dx, base - height - 3, 4, 4);
   }
 }
 
-/** A low leafy mass, close to the ground. */
-function drawHedge(ctx, x, y, palette, growthTier) {
+/** A low leafy mass, close to the ground; its whole crown sways by `dx`. */
+function drawHedge(ctx, x, y, palette, growthTier, dx) {
   const base = y + CELL;
   const height = 8 + growthTier * 3;
   ctx.fillStyle = palette.leafDeep;
-  ctx.fillRect(x + 2, base - height, CELL - 4, height);
+  ctx.fillRect(x + 2 + dx, base - height, CELL - 4, height);
   ctx.fillStyle = palette.leaf;
-  ctx.fillRect(x + 4, base - height + 2, CELL - 8, height - 4);
+  ctx.fillRect(x + 4 + dx, base - height + 2, CELL - 8, height - 4);
   ctx.fillStyle = palette.leafLight;
-  ctx.fillRect(x + 6, base - height + 3, CELL - 12, 2);
+  ctx.fillRect(x + 6 + dx, base - height + 3, CELL - 12, 2);
 }
 
 /**
@@ -211,7 +276,7 @@ function drawHedge(ctx, x, y, palette, growthTier) {
  * bloom only from the eighth form on; a bloom plant (`flowered`) is covered in
  * flower from the first tree on, so the kinds stay apart however tall they grow.
  */
-function drawTree(ctx, x, y, palette, index, growthTier, flowered) {
+function drawTree(ctx, x, y, palette, index, growthTier, flowered, dx) {
   const base = y + CELL;
   const centre = x + CELL / 2;
   const trunkHeight = 6 + growthTier * 2;
@@ -222,7 +287,8 @@ function drawTree(ctx, x, y, palette, index, growthTier, flowered) {
   const canopyWidth = Math.min(CELL - 2, 10 + (index - 6) * 2);
   const canopyBottom = base - trunkHeight;
   const canopyTop = canopyBottom - canopyHeight;
-  const left = Math.round(centre - canopyWidth / 2);
+  // The canopy, not the trunk, catches the breeze.
+  const left = Math.round(centre - canopyWidth / 2) + dx;
   ctx.fillStyle = palette.leafDeep;
   ctx.fillRect(left, canopyTop, canopyWidth, canopyHeight);
   ctx.fillStyle = palette.leaf;
@@ -251,9 +317,9 @@ function drawTree(ctx, x, y, palette, index, growthTier, flowered) {
  * looking pasted on. It is never the only account of the visit: the readout
  * and `get-state` name the pollinator and the boost it brings.
  */
-function drawPollinator(ctx, x, y, palette) {
-  const centre = x + CELL / 2;
-  const top = y + 2;
+function drawPollinator(ctx, x, y, palette, driftX, driftY) {
+  const centre = x + CELL / 2 + driftX;
+  const top = y + 2 + driftY;
   ctx.fillStyle = palette.bloom;
   ctx.fillRect(centre - 6, top - 2, 4, 3);
   ctx.fillRect(centre + 2, top - 2, 4, 3);
@@ -267,22 +333,20 @@ function drawPollinator(ctx, x, y, palette) {
 /**
  * Draw `state`'s garden onto `canvas`, painting only with `palette`.
  *
- * The picture is a pure view of the state: the form and the beds of soil set how
- * much ground there is and how big a grown plant is, and the plot's own counts
- * say what stands on it — the grown plants first, then the sprouting seeds, then
- * bare soil. The same amount always draws the same way, and every colour comes
- * from the palette read off `:root`, so the plot belongs to the same garden as
- * the panels around it. The number of sprites is bounded by the cells on screen,
- * so a save carrying more plants than plots cannot flood the picture.
+ * The picture is a pure view of the state and the animation `phase`: the form and
+ * the beds of soil set how much ground there is and how big a grown plant is,
+ * and the plot's own counts say what stands on it — the grown plants first, then
+ * the sprouting seeds, then bare soil. The same state and phase always draw the
+ * same way, and every colour comes from the palette read off `:root`, so the plot
+ * belongs to the same garden as the panels around it. The number of sprites is
+ * bounded by the cells on screen, so a save carrying more plants than plots
+ * cannot flood the picture.
  */
-export function drawGarden(canvas, state, palette) {
+export function drawGarden(canvas, state, palette, phase = 0) {
   if (!canvas || !palette) return;
   const growth = state && Number.isFinite(state.growth) ? state.growth : 0;
   const form = gardenForm(growth);
-  const rows = Math.min(MAX_ROWS, rowsForForm(form.index) + (bedsFor(state) - 1) * ROWS_PER_BED);
-  const cells = rows * COLUMNS;
-  const width = COLUMNS * CELL;
-  const height = rows * CELL;
+  const { cells, width, height } = plotBounds(state);
   if (canvas.width !== width) canvas.width = width;
   if (canvas.height !== height) canvas.height = height;
 
@@ -299,16 +363,20 @@ export function drawGarden(canvas, state, palette) {
   for (let cell = 0; cell < cells; cell += 1) {
     const x = (cell % COLUMNS) * CELL;
     const y = Math.floor(cell / COLUMNS) * CELL;
+    const sway = swayPixels(phase, cell);
     drawSoil(ctx, x, y, palette);
-    if (cell < kinds.herbPlants) drawPlant(ctx, x, y, palette, form.index, growthTier);
-    else if (cell < plants) drawBloomPlant(ctx, x, y, palette, form.index, growthTier);
-    else if (cell < plants + kinds.herbSeeds) drawSprout(ctx, x, y, palette);
-    else if (cell < plants + sprouts) drawBud(ctx, x, y, palette);
+    if (cell < kinds.herbPlants) drawPlant(ctx, x, y, palette, form.index, growthTier, sway);
+    else if (cell < plants) drawBloomPlant(ctx, x, y, palette, form.index, growthTier, sway);
+    else if (cell < plants + kinds.herbSeeds) drawSprout(ctx, x, y, palette, sway);
+    // A bud holds each step for two ticks, so it opens and closes at a calmer
+    // beat than the sway.
+    else if (cell < plants + sprouts) drawBud(ctx, x, y, palette, Math.floor((phase + cell) / 2) % 2 === 0);
   }
   // A visit is drawn over the first plant, the one the bee lands on; with no
-  // plants there is nowhere for it to visit.
+  // plants there is nowhere for it to visit. It drifts a pixel or two on the
+  // breeze rather than hovering dead still.
   if (plants > 0 && state && state.pollinator && state.pollinator.visiting) {
-    drawPollinator(ctx, 0, 0, palette);
+    drawPollinator(ctx, 0, 0, palette, swayPixels(phase, 1), swayPixels(phase, 3));
   }
 }
 
