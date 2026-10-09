@@ -9,6 +9,11 @@ Adapted from anthropics/skills, skills/frontend-design (commit 41bbe19d),
 Apache License 2.0 — see LICENSE.txt. Changes: added "In this pipeline", the
 brief is the Vision and ticket rather than a client to confirm with, and the
 note-keeping advice is removed because no agent here has a notebook to keep.
+
+"Check the built result" is adapted from pbakaus/impeccable,
+.agents/skills/impeccable/reference/craft-floor.md (commit c5ae03ee), Apache
+License 2.0, keeping only the checks this file and web-interface-guidelines did
+not already make.
 -->
 
 # Frontend Design
@@ -70,6 +75,16 @@ When writing the code, be careful of structuring your CSS selector specificities
 ## Restraint and self-critique
 
 Spend your boldness in one place. Let one element be the memorable thing, keep everything around it quiet and disciplined, and cut any decoration that does not serve the brief. Build to a quality floor without announcing it: responsive down to mobile, visible keyboard focus, reduced motion respected, visually accessible, harmonious color palettes. Critique your own work as you build, taking screenshots to review if your environment supports it — a picture is worth 1000 tokens. Consider Chanel's advice: before leaving the house, take a look in the mirror and remove one accessory.
+
+## Check the built result
+
+These are checks on the page as it renders, not intentions. Run them once you have built, in the same pass where you look at your screenshots, and fix what fails before you hand on.
+
+- **Every state, not just the resting one.** Hover, pressed, disabled, loading, error and empty each look designed, with real content in them. A control drawn only in its default state is half built.
+- **Browser surfaces.** The parts you did not draw ship with browser defaults that belong to no design: text selection colour, the caret, scrollbars, the focus ring, link underline offset, and numerals in anything tabular. Theme them from the palette. It is the cheapest sign that a page was built rather than assembled.
+- **Depth is declared once.** An element is raised by a border or by a shadow, not both; a 1px border under a wide soft shadow reads as a ghost. A shadow has an offset and a soft blur; a zero-offset coloured glow is decoration, not depth.
+- **Spacing carries grouping.** Related things sit close, separate groups have clear space between them, and a heading has more space above it than below, so it belongs to what follows. Check the computed values, not your intention.
+- **Coverage.** Everything the ticket asked for is on the page and can be found within a few seconds by someone who did not write it.
 
 ## More on writing in design
 

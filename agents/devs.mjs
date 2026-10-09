@@ -155,7 +155,9 @@ You are fixing issue #${issue.number}: "${issue.title}". Your commit message MUS
 The Reviewer found these problems (may include issues from previous runs):
 ${reviewerFeedback}
 
-Fix ALL issues above. You may edit any file. Do not introduce new issues.`
+Check each one against the code before you change anything, then fix every one that holds. You may edit any file. Do not introduce new issues.
+
+A failure from an automated check is never mistaken. A Reviewer's point can be: if one is, leave the code as it is and say in your summary why, with the evidence. The Reviewer reads your summary before it looks again, so a reasoned disagreement is answered, while a fix made only to comply can break what was right.`
     : "";
 
   return fillTemplate(loadPrompt("builder"), {

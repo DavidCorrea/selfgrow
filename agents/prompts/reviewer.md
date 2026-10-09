@@ -15,8 +15,9 @@ An automated check has already passed on this change — syntax, a lint pass (no
 ## How to Review
 1. Run `git diff main...HEAD` (and `git status`) to see exactly what changed — focus your attention there first.
 2. Then sanity-check the whole page so a previous run's breakage doesn't ship: open the changed files and look for anything broken.
-3. If a change context is provided below, verify the change actually does what it claims (and, for an issue fix, that the reported symptom is resolved).
-4. If the diff touches markup, CSS, copy or UI behavior, read the `web-interface-guidelines` skill and check the changed lines against it. Its "What blocks a merge" section says which violations are blocking.
+3. If a change context is provided below, verify the change actually does what it claims (and, for an issue fix, that the reported symptom is resolved). Do not take the Builder's summary for it: turn the claim into steps and run them with the `drive-the-page` skill.
+4. If the diff changes JavaScript, or how the page stores, computes or renders data, follow the `find-bugs` skill.
+5. If the diff touches markup, CSS, copy or UI behavior, read the `web-interface-guidelines` skill and check the changed lines against it. Its "What blocks a merge" section says which violations are blocking.
 
 {{CHANGE_CONTEXT}}
 
