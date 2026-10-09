@@ -95,6 +95,9 @@ const elements = {
   growth: document.getElementById("growth-total"),
   rate: document.getElementById("growth-rate"),
   form: document.querySelector('[data-field="form"]'),
+  nextForm: document.querySelector('[data-field="next-form"]'),
+  formMeter: document.getElementById("form-meter"),
+  formMeterFill: document.getElementById("form-meter-fill"),
   tend: document.getElementById("tend"),
   plant: document.getElementById("plant-seed"),
   plantBloom: document.getElementById("plant-bloom"),
@@ -175,6 +178,14 @@ function describePlot(state) {
   );
 }
 
+/** The next form the garden is reaching for, in the return summary's words. */
+function describeNextForm(state) {
+  if (!state.nextFormName) {
+    return `the last form — still filling, ${formatGrowth(state.growthToNextForm)} growth to the far end`;
+  }
+  return `next: ${state.nextFormName} — ${formatGrowth(state.growthToNextForm)} growth away`;
+}
+
 function setText(element, text) {
   if (element && element.textContent !== text) element.textContent = text;
 }
@@ -241,6 +252,11 @@ function describeGardenState(garden, growth, rate, age) {
     pollinator,
     form: form.index,
     formName: form.name,
+    // The goal the form line is reaching for: the next named form, how far it
+    // still is, and how full the meter between the two thresholds is now.
+    formProgress: form.fill,
+    nextFormName: form.index + 1 < FORMS.length ? FORMS[form.index + 1].name : null,
+    growthToNextForm: Math.max(0, form.nextAt - growth),
     beds: garden.beds,
     capacity: garden.capacity,
     growSeconds: GROW_SECONDS,
@@ -533,6 +549,9 @@ function rehearseSandbox() {
     pollinator: display.pollinator,
     form: display.form,
     formName: display.formName,
+    formProgress: display.formProgress,
+    nextFormName: display.nextFormName,
+    growthToNextForm: display.growthToNextForm,
     seeds: display.seeds,
     plants: display.plants,
     beds: display.beds,
@@ -785,6 +804,8 @@ function render() {
   setText(elements.growth, formatGrowth(state.growth));
   setText(elements.rate, `+${formatGrowth(state.rate)}/s`);
   setText(elements.form, state.formName);
+  setText(elements.nextForm, describeNextForm(state));
+  setMeter(state.formProgress, elements.formMeter, elements.formMeterFill);
   setText(elements.seeds, formatAmount(state.seeds));
   setText(elements.plants, formatAmount(state.plants));
   setText(elements.beds, formatAmount(state.beds));

@@ -1096,6 +1096,101 @@ function checkGardenFormMapping(problems) {
 }
 
 /**
+ * The form line is also the goal line: it names the next form the garden is
+ * becoming and a meter that fills as growth approaches its threshold, and the
+ * state reports the same goal an agent reads.
+ */
+function checkNextFormMeter(problems) {
+  const span = document.querySelector('[data-field="next-form"]');
+  const meter = document.getElementById("form-meter");
+  const fill = document.getElementById("form-meter-fill");
+  if (!span || !meter || !fill) {
+    problems.push(
+      'the garden-form line has no next-form reading (expected [data-field="next-form"], ' +
+        "#form-meter and #form-meter-fill)."
+    );
+    return;
+  }
+
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const expectedMeter = (state) => ({
+    now: state.formProgress,
+    width: `${(state.formProgress * 100).toFixed(1)}%`,
+  });
+  const shownMeter = () => ({
+    now: Number(meter.getAttribute("aria-valuenow")),
+    width: fill.style.width,
+  });
+  try {
+    // Just below a threshold: the next form is named and the meter is nearly full.
+    setGrowth(99, 1);
+    const near = getDisplayedState();
+    const nearForm = gardenForm(99);
+    const nearName = FORMS[nearForm.index + 1].name;
+    if (near.nextFormName !== nearName || near.growthToNextForm !== nearForm.nextAt - 99) {
+      problems.push(
+        `at growth 99 the state names the next form ${JSON.stringify(near.nextFormName)} ` +
+          `${near.growthToNextForm} growth away, expected ${JSON.stringify(nearName)} at ` +
+          `${nearForm.nextAt - 99} growth.`
+      );
+    }
+    if (near.formProgress !== nearForm.fill) {
+      problems.push(
+        `the form progress at growth 99 is ${near.formProgress}, expected gardenForm().fill ${nearForm.fill}.`
+      );
+    }
+    if (!String(span.textContent).includes(nearName)) {
+      problems.push(
+        `the form line reads ${JSON.stringify(String(span.textContent))}, expected it to name the next form ` +
+          `${JSON.stringify(nearName)}.`
+      );
+    }
+    const nearShown = shownMeter();
+    const nearExpected = expectedMeter(near);
+    if (nearShown.now !== nearExpected.now || nearShown.width !== nearExpected.width) {
+      problems.push(
+        `the form meter at growth 99 reads ${nearShown.now} at ${nearShown.width}, expected ` +
+          `${nearExpected.now} at ${nearExpected.width}.`
+      );
+    }
+
+    // Just past the threshold: the form advances, the name changes and the meter
+    // resets toward the next one.
+    setGrowth(101, 1);
+    const past = getDisplayedState();
+    const pastForm = gardenForm(101);
+    if (!(past.form > near.form) || past.formName !== pastForm.name) {
+      problems.push(
+        `growth 99→101 did not advance the form (${JSON.stringify(near.formName)} → ` +
+          `${JSON.stringify(past.formName)}), expected ${JSON.stringify(pastForm.name)}.`
+      );
+    }
+    if (past.nextFormName === near.nextFormName) {
+      problems.push(
+        `the next form stayed ${JSON.stringify(past.nextFormName)} past the threshold, expected a new one.`
+      );
+    }
+    if (!(past.formProgress < near.formProgress)) {
+      problems.push(
+        `the form meter did not reset past the threshold (${near.formProgress} → ${past.formProgress}).`
+      );
+    }
+    const pastShown = shownMeter();
+    const pastExpected = expectedMeter(past);
+    if (pastShown.now !== pastExpected.now || pastShown.width !== pastExpected.width) {
+      problems.push(
+        `the form meter at growth 101 reads ${pastShown.now} at ${pastShown.width}, expected ` +
+          `${pastExpected.now} at ${pastExpected.width}.`
+      );
+    }
+  } finally {
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
+  }
+}
+
+/**
  * The plot is redrawn discretely, never animated, so a visitor who asks for no
  * motion still sees the change — and the description states the same form in
  * words when the garden advances.
@@ -2916,6 +3011,7 @@ export async function checks() {
     checkPlotDrawing(problems);
     checkPlotDrawsKinds(problems);
     checkGardenFormMapping(problems);
+    checkNextFormMeter(problems);
     checkPlotMotion(problems);
     checkSeedCostCurve(problems);
     checkSeedKindsDiffer(problems);

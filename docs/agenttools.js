@@ -35,7 +35,11 @@ export function tools() {
         "Returns everything the page shows a visitor right now: the growth " +
         "total and the rate it is climbing at (in growth per second), the " +
         "garden form the plot is drawing (its name and its index among the " +
-        "forms, lowest first), the ungrown seeds sprouting in the soil, the " +
+        "forms, lowest first), the next named form it is growing toward " +
+        "(nextFormName, null past the last form), how much growth still " +
+        "separates the garden from it (growthToNextForm), and how full that " +
+        "stretch is as a 0-to-1 fraction (formProgress), the ungrown seeds " +
+        "sprouting in the soil, the " +
         "grown plants, the total planted (totalPlanted), how many beds of " +
         "soil the garden owns (beds), how many plots those beds make " +
         "(capacity = beds times the plots per bed), the growing time a seed " +

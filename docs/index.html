@@ -41,6 +41,22 @@
               <div class="readout-row">
                 <dt class="readout-term">Garden form</dt>
                 <dd class="readout-value" data-field="form" aria-live="polite">bare soil</dd>
+                <!-- The form the garden is becoming shares this line, so the
+                     goal is visible without taking a row of the one screen. -->
+                <dd class="readout-next">
+                  <span class="readout-next-label" data-field="next-form">next: a sprout — 1.0 growth away</span>
+                  <div
+                    class="form-meter"
+                    id="form-meter"
+                    role="progressbar"
+                    aria-label="Progress to the next garden form"
+                    aria-valuemin="0"
+                    aria-valuemax="1"
+                    aria-valuenow="0"
+                  >
+                    <div class="meter-fill" id="form-meter-fill"></div>
+                  </div>
+                </dd>
               </div>
               <div class="readout-row">
                 <dt class="readout-term">Ungrown seeds</dt>
