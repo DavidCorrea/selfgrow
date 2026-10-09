@@ -90,6 +90,8 @@ These are checks on the page as it renders, not intentions. Run them once you ha
 
 Words appear in a design for one reason: to make it easier to understand and use. They are design content, not decoration. Bring the same intentionality and minimalism to copywriting that you would bring to spacing and color. Before writing anything, ask what the design needs to say, and how it can best be said to help the person navigate the experience.
 
+Say it without words first. A picture, a label or a number usually says it better than a sentence, and a sentence that restates what is already on screen is clutter. Do not explain how something works when the visitor can find out by using it. Never write the brief itself into the page: the Vision, its principles and how the page was built are for the people building it, not for the visitor reading it.
+
 Write from the end user's perspective. Name things by what users will understand in simple language, not by how the system is built. A user manages notifications, not webhook config. Describe what something is or does in plain terms rather than selling it. Being specific and legible to new users is always better than being clever.
 
 Use active voice as default. A CTA says exactly what happens when it is used: "Save changes," not "Submit." An action keeps the same name through the whole flow, so the button that says "Publish" produces a toast that says "Published." The vocabulary of an interface is the signposting for someone navigating the product. Cohesion and consistency are how people learn their way around.
