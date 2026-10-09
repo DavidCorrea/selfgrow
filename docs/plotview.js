@@ -154,13 +154,57 @@ export function motionPhase({ reduced, frame, living } = {}) {
   return Number.isFinite(frame) ? Math.max(0, Math.floor(frame)) : 0;
 }
 
-function drawSoil(ctx, x, y, palette) {
+/**
+ * The foliage each season draws: bare twigs in winter, blossom in spring, the
+ * full deep canopy in summer, and turned amber with fallen leaves in autumn.
+ */
+const SEASON_FOLIAGE = Object.freeze({
+  winter: "bare",
+  spring: "blossom",
+  summer: "lush",
+  autumn: "turning",
+});
+
+/**
+ * How a season looks on the plot: the season's own leaf colours, the foliage it
+ * draws, and the key it resolves to.
+ *
+ * The season is the one already in the state — the same value the readout and
+ * `get-state` report — so the picture and the words cannot disagree. An unknown
+ * or missing key falls back to the base leaf colours and the full canopy, which
+ * is what a caller that never knew about seasons has always drawn, and resolves
+ * to `key: null` so the fallback is visible rather than passed off as a season.
+ * Pure, so the look a season draws can be asserted without a canvas.
+ *
+ * @returns {{key: string|null, foliage: string, palette: object}}
+ */
+export function seasonLook(palette, seasonKey) {
+  const leaves = palette && palette.leafSeasons ? palette.leafSeasons[seasonKey] : null;
+  if (!leaves) return { key: null, foliage: "lush", palette };
+  return {
+    key: seasonKey,
+    foliage: SEASON_FOLIAGE[seasonKey] ?? "lush",
+    palette: { ...palette, leaf: leaves.leaf, leafLight: leaves.leafLight, leafDeep: leaves.leafDeep },
+  };
+}
+
+/**
+ * One cell of soil. In autumn a few fallen leaves lie on some of the cells, so
+ * the turned season reads on the ground and not only in the canopy.
+ */
+function drawSoil(ctx, x, y, palette, foliage, cell) {
   ctx.fillStyle = palette.soilDeep;
   ctx.fillRect(x, y, CELL, CELL);
   ctx.fillStyle = palette.soil;
   ctx.fillRect(x + 2, y + 2, CELL - 4, CELL - 4);
   ctx.fillStyle = palette.soilLight;
   ctx.fillRect(x + 2, y + 2, CELL - 4, 2);
+  if (foliage === "turning" && cell % 3 === 1) {
+    ctx.fillStyle = palette.leafDeep;
+    ctx.fillRect(x + 5, y + CELL - 8, 3, 2);
+    ctx.fillStyle = palette.leafLight;
+    ctx.fillRect(x + CELL - 9, y + CELL - 12, 3, 2);
+  }
 }
 
 /**
@@ -203,10 +247,10 @@ function drawBud(ctx, x, y, palette, open) {
 }
 
 /** One herb plant on the soil, chosen by the form and grown by how full it is. */
-function drawPlant(ctx, x, y, palette, index, growthTier, dx) {
+function drawPlant(ctx, x, y, palette, foliage, index, growthTier, dx) {
   if (index <= 4) drawHerb(ctx, x, y, palette, index, growthTier, dx);
-  else if (index === 5) drawHedge(ctx, x, y, palette, growthTier, dx);
-  else drawTree(ctx, x, y, palette, index, growthTier, false, dx);
+  else if (index === 5) drawHedge(ctx, x, y, palette, growthTier, dx, foliage);
+  else drawTree(ctx, x, y, palette, index, growthTier, false, dx, foliage);
 }
 
 /**
@@ -214,7 +258,7 @@ function drawPlant(ctx, x, y, palette, index, growthTier, dx) {
  * flower, so the two kinds read differently at every size — petals and a sun
  * centre where the herb carries bare leaf.
  */
-function drawBloomPlant(ctx, x, y, palette, index, growthTier, dx) {
+function drawBloomPlant(ctx, x, y, palette, foliage, index, growthTier, dx) {
   const base = y + CELL;
   const centre = x + CELL / 2;
   if (index <= 4) {
@@ -231,14 +275,14 @@ function drawBloomPlant(ctx, x, y, palette, index, growthTier, dx) {
     ctx.fillStyle = palette.sun;
     ctx.fillRect(centre - 1 + dx, base - height - 3, 2, 2);
   } else if (index === 5) {
-    drawHedge(ctx, x, y, palette, growthTier, dx);
+    drawHedge(ctx, x, y, palette, growthTier, dx, foliage);
     ctx.fillStyle = palette.bloom;
     ctx.fillRect(x + 5 + dx, y + CELL - 12, 2, 2);
     ctx.fillRect(x + CELL - 9 + dx, y + CELL - 8, 2, 2);
     ctx.fillStyle = palette.sun;
     ctx.fillRect(x + CELL - 12 + dx, y + CELL - 11, 2, 2);
   } else {
-    drawTree(ctx, x, y, palette, index, growthTier, true, dx);
+    drawTree(ctx, x, y, palette, index, growthTier, true, dx, foliage);
   }
 }
 
@@ -260,7 +304,7 @@ function drawHerb(ctx, x, y, palette, index, growthTier, dx) {
 }
 
 /** A low leafy mass, close to the ground; its whole crown sways by `dx`. */
-function drawHedge(ctx, x, y, palette, growthTier, dx) {
+function drawHedge(ctx, x, y, palette, growthTier, dx, foliage) {
   const base = y + CELL;
   const height = 8 + growthTier * 3;
   ctx.fillStyle = palette.leafDeep;
@@ -269,14 +313,20 @@ function drawHedge(ctx, x, y, palette, growthTier, dx) {
   ctx.fillRect(x + 4 + dx, base - height + 2, CELL - 8, height - 4);
   ctx.fillStyle = palette.leafLight;
   ctx.fillRect(x + 6 + dx, base - height + 3, CELL - 12, 2);
+  if (foliage === "blossom") {
+    ctx.fillStyle = palette.bloom;
+    ctx.fillRect(x + 7 + dx, base - height + 5, 2, 2);
+    ctx.fillRect(x + CELL - 11 + dx, base - height + 7, 2, 2);
+  }
 }
 
 /**
  * A trunk under a canopy that grows with the form. A herb carries its own
  * bloom only from the eighth form on; a bloom plant (`flowered`) is covered in
  * flower from the first tree on, so the kinds stay apart however tall they grow.
+ * In winter the canopy falls to bare twigs; in spring it carries blossom.
  */
-function drawTree(ctx, x, y, palette, index, growthTier, flowered, dx) {
+function drawTree(ctx, x, y, palette, index, growthTier, flowered, dx, foliage) {
   const base = y + CELL;
   const centre = x + CELL / 2;
   const trunkHeight = 6 + growthTier * 2;
@@ -289,10 +339,19 @@ function drawTree(ctx, x, y, palette, index, growthTier, flowered, dx) {
   const canopyTop = canopyBottom - canopyHeight;
   // The canopy, not the trunk, catches the breeze.
   const left = Math.round(centre - canopyWidth / 2) + dx;
-  ctx.fillStyle = palette.leafDeep;
-  ctx.fillRect(left, canopyTop, canopyWidth, canopyHeight);
-  ctx.fillStyle = palette.leaf;
-  ctx.fillRect(left + 2, canopyTop + 2, canopyWidth - 4, canopyHeight - 4);
+  if (foliage === "bare") {
+    // Winter: the leaves have dropped, leaving the branches they hung on. The
+    // bloom of a flowering tree stays on them, so the kinds still read apart.
+    ctx.fillStyle = palette.leafDeep;
+    ctx.fillRect(centre - 1, canopyTop, 2, canopyHeight + 1);
+    ctx.fillRect(left + 2, canopyTop + 3, 4, 2);
+    ctx.fillRect(left + canopyWidth - 6, canopyTop + 6, 4, 2);
+  } else {
+    ctx.fillStyle = palette.leafDeep;
+    ctx.fillRect(left, canopyTop, canopyWidth, canopyHeight);
+    ctx.fillStyle = palette.leaf;
+    ctx.fillRect(left + 2, canopyTop + 2, canopyWidth - 4, canopyHeight - 4);
+  }
   if (index >= 8 || flowered) {
     ctx.fillStyle = palette.bloom;
     ctx.fillRect(left + 3, canopyTop + 3, 2, 2);
@@ -300,6 +359,10 @@ function drawTree(ctx, x, y, palette, index, growthTier, flowered, dx) {
     ctx.fillRect(left + Math.floor(canopyWidth / 2), canopyTop + 1, 2, 2);
     ctx.fillStyle = palette.sun;
     ctx.fillRect(left + 6, canopyTop + 5, 2, 2);
+  } else if (foliage === "blossom") {
+    ctx.fillStyle = palette.bloom;
+    ctx.fillRect(left + 4, canopyTop + 3, 2, 2);
+    ctx.fillRect(left + canopyWidth - 7, canopyTop + 4, 2, 2);
   }
   if (index >= 9) {
     ctx.fillStyle = palette.sun;
@@ -335,17 +398,21 @@ function drawPollinator(ctx, x, y, palette, driftX, driftY) {
  *
  * The picture is a pure view of the state and the animation `phase`: the form and
  * the beds of soil set how much ground there is and how big a grown plant is,
- * and the plot's own counts say what stands on it — the grown plants first, then
- * the sprouting seeds, then bare soil. The same state and phase always draw the
- * same way, and every colour comes from the palette read off `:root`, so the plot
- * belongs to the same garden as the panels around it. The number of sprites is
- * bounded by the cells on screen, so a save carrying more plants than plots
- * cannot flood the picture.
+ * the season the state names sets the foliage colours and shape, and the plot's
+ * own counts say what stands on it — the grown plants first, then the sprouting
+ * seeds, then bare soil. The season is read from `state.season.key`, which is the
+ * same value the readout and `get-state` report, so the picture and the words
+ * cannot disagree. The same state and phase always draw the same way, and every
+ * colour comes from the palette read off `:root`, so the plot belongs to the same
+ * garden as the panels around it. The number of sprites is bounded by the cells
+ * on screen, so a save carrying more plants than plots cannot flood the picture.
  */
 export function drawGarden(canvas, state, palette, phase = 0) {
   if (!canvas || !palette) return;
   const growth = state && Number.isFinite(state.growth) ? state.growth : 0;
   const form = gardenForm(growth);
+  const look = seasonLook(palette, state?.season?.key);
+  const paint = look.palette;
   const { cells, width, height } = plotBounds(state);
   if (canvas.width !== width) canvas.width = width;
   if (canvas.height !== height) canvas.height = height;
@@ -364,19 +431,19 @@ export function drawGarden(canvas, state, palette, phase = 0) {
     const x = (cell % COLUMNS) * CELL;
     const y = Math.floor(cell / COLUMNS) * CELL;
     const sway = swayPixels(phase, cell);
-    drawSoil(ctx, x, y, palette);
-    if (cell < kinds.herbPlants) drawPlant(ctx, x, y, palette, form.index, growthTier, sway);
-    else if (cell < plants) drawBloomPlant(ctx, x, y, palette, form.index, growthTier, sway);
-    else if (cell < plants + kinds.herbSeeds) drawSprout(ctx, x, y, palette, sway);
+    drawSoil(ctx, x, y, paint, look.foliage, cell);
+    if (cell < kinds.herbPlants) drawPlant(ctx, x, y, paint, look.foliage, form.index, growthTier, sway);
+    else if (cell < plants) drawBloomPlant(ctx, x, y, paint, look.foliage, form.index, growthTier, sway);
+    else if (cell < plants + kinds.herbSeeds) drawSprout(ctx, x, y, paint, sway);
     // A bud holds each step for two ticks, so it opens and closes at a calmer
     // beat than the sway.
-    else if (cell < plants + sprouts) drawBud(ctx, x, y, palette, Math.floor((phase + cell) / 2) % 2 === 0);
+    else if (cell < plants + sprouts) drawBud(ctx, x, y, paint, Math.floor((phase + cell) / 2) % 2 === 0);
   }
   // A visit is drawn over the first plant, the one the bee lands on; with no
   // plants there is nowhere for it to visit. It drifts a pixel or two on the
   // breeze rather than hovering dead still.
   if (plants > 0 && state && state.pollinator && state.pollinator.visiting) {
-    drawPollinator(ctx, 0, 0, palette, swayPixels(phase, 1), swayPixels(phase, 3));
+    drawPollinator(ctx, 0, 0, paint, swayPixels(phase, 1), swayPixels(phase, 3));
   }
 }
 

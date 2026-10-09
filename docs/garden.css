@@ -40,6 +40,21 @@
   --leaf:        #56a83a;
   --leaf-light:  #86d15a;
   --leaf-deep:   #2f6b28;
+  /* The foliage in each season, in the same green-to-amber family so the plot
+     stays one garden. Summer is the base trio, the deep green the garden has
+     always grown; the plot reads the season's own swatches from these. */
+  --leaf-spring:       #6cc648;
+  --leaf-spring-light: #a6e86a;
+  --leaf-spring-deep:  #3f8f35;
+  --leaf-summer:       #56a83a;
+  --leaf-summer-light: #86d15a;
+  --leaf-summer-deep:  #2f6b28;
+  --leaf-autumn:       #cf7a20;
+  --leaf-autumn-light: #eda63c;
+  --leaf-autumn-deep:  #8a440f;
+  --leaf-winter:       #6c7660;
+  --leaf-winter-light: #8e987c;
+  --leaf-winter-deep:  #3b4433;
   --bloom:       #e0699f;
   --sun:         #f4c542;
   --water:       #4aa3df;
