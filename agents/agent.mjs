@@ -645,7 +645,8 @@ export function projectSkillProblems(projectSkillsDir = PROJECT_SKILLS_DIR) {
 // The two roles that decide what a visitor sees. The Builder gets taste, the
 // details that make it feel good, the rules, ways to make what it builds hold up
 // and stay fast, a method for fixing bugs, and ways to run and look at what it
-// built. The Reviewer gets the rules and a way to run the page, but no taste, because it judges a change against the Vision and the
+// built. The Reviewer gets the rules, a method for finding bugs and a way to run
+// the page, but no taste, because it judges a change against the Vision and the
 // ticket, not against its own sense of what would look better.
 export const BUILDER_SKILLS = [
   "frontend-design",
@@ -657,7 +658,7 @@ export const BUILDER_SKILLS = [
   "drive-the-page",
   "see-your-change",
 ];
-const REVIEWER_SKILLS = ["web-interface-guidelines", "drive-the-page"];
+const REVIEWER_SKILLS = ["web-interface-guidelines", "find-bugs", "drive-the-page"];
 
 /**
  * One Reviewer session, configured the same wherever a change is judged, and its
