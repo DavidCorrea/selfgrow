@@ -192,7 +192,7 @@ function checkPixelFont(problems) {
     [".brand", document.querySelector(".brand"), TITLE_FONT],
     [".panel-title", document.querySelector(".panel-title"), TITLE_FONT],
     [".goal-title", document.querySelector(".goal-title"), TITLE_FONT],
-    [".panel-note", document.querySelector(".panel-note"), BODY_FONT],
+    [".readout-term", document.querySelector(".readout-term"), BODY_FONT],
     [".btn", document.querySelector(".btn"), BODY_FONT],
     [".readout-value", document.querySelector(".readout-value"), BODY_FONT],
   ];
@@ -1246,6 +1246,60 @@ function checkNoOverflow(problems) {
   }
 }
 
+/**
+ * The page says things with the garden, labels and numbers rather than
+ * paragraphs, and the state it folds out of sight still reaches a screen
+ * reader. The picture's words and the readout are the same values from the same
+ * source, so hiding one form must not lose the number.
+ */
+function checkCompactReadout(problems) {
+  // Anything a person reads is a label, a value or a live status line — no
+  // paragraph explaining how the game works or describing the page itself.
+  const prose = [...document.querySelectorAll("p.panel-note:not([role])")];
+  if (prose.length) {
+    const sample = prose[0].textContent.trim().slice(0, 60);
+    problems.push(
+      `the page shows ${prose.length} explanatory paragraph(s), e.g. "${sample}…"; state must be labels and values, ` +
+        "not prose."
+    );
+  }
+
+  // The plot is still said in words, just not shown.
+  const description = document.getElementById("plot-description");
+  const spoken = description ? description.textContent.trim() : "";
+  if (!description || !spoken) {
+    problems.push("the plot has no text description, so a screen reader hears nothing about the picture.");
+  } else {
+    const rect = description.getBoundingClientRect();
+    if (rect.width > 1 || rect.height > 1) {
+      problems.push(
+        "the plot description takes visible space; it must reach a screen reader only so the garden fits one screen."
+      );
+    }
+  }
+
+  // Every number the page tracks keeps a readout in the DOM, even the ones
+  // folded to a screen reader so the garden, numbers and buttons share a screen.
+  const fields = ["growth", "form", "seeds", "plants", "beds", "capacity", "next-plant", "next-bed", "storage"];
+  for (const field of fields) {
+    if (!document.querySelector(`[data-field="${field}"]`)) {
+      problems.push(
+        `the readout for ${field} is gone (expected [data-field="${field}"]), so a screen reader loses a number.`
+      );
+    }
+  }
+
+  // The two actions that grow the garden are on the page and take up space.
+  for (const id of ["tend", "plant-seed"]) {
+    const button = document.getElementById(id);
+    if (!button) continue; // checkTendControl / checkPlantControl report its absence.
+    const rect = button.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) {
+      problems.push(`the #${id} control has no size on screen, so its action cannot be taken from the garden.`);
+    }
+  }
+}
+
 // --- Time away ---------------------------------------------------------------
 
 /**
@@ -2079,6 +2133,7 @@ export async function checks() {
     checkLargeCounts(problems);
     checkPortableSave(problems);
     checkNoOverflow(problems);
+    checkCompactReadout(problems);
     checkSimulateGarden(problems);
     checkReturnSummary(problems);
     checkSandbox(problems);

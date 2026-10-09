@@ -123,17 +123,118 @@ body {
   width: 100%;
   max-width: 1200px;
   margin: 0 auto;
-  padding: 28px clamp(16px, 4vw, 48px);
+  padding: clamp(14px, 2vw, 24px) clamp(16px, 4vw, 48px);
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 28px;
+  gap: 16px;
+  align-items: start;
+}
+
+/* The garden, its numbers and the actions that grow it share one screen: the
+   plot on the left, the readout and buttons beside it, stacking on a phone. */
+.garden-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
   align-items: start;
 }
 
 @media (min-width: 760px) {
-  .stage {
-    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  .garden-layout {
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+    gap: 20px;
   }
+}
+
+.garden-view,
+.garden-side {
+  min-width: 0;
+}
+
+/* Folded panels and their summary: the save and rehearsal, out of the way. */
+.fold {
+  border: 4px solid var(--outline);
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: inset 4px 4px 0 var(--panel-light), inset -4px -4px 0 var(--panel-shade);
+}
+
+.fold-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  padding: 12px 16px;
+  font-family: "Silkscreen", "Courier New", monospace;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--ink);
+  cursor: pointer;
+  list-style: none;
+  touch-action: manipulation;
+}
+
+.fold-summary::-webkit-details-marker {
+  display: none;
+}
+
+.fold-summary::after {
+  content: "▸";
+  margin-left: 12px;
+  color: var(--ink-soft);
+}
+
+.fold[open] .fold-summary::after {
+  content: "▾";
+}
+
+.fold-summary:focus-visible {
+  outline: 3px solid var(--sun);
+  outline-offset: 3px;
+}
+
+.fold-body {
+  display: grid;
+  gap: 16px;
+  padding: 0 16px 16px;
+}
+
+/* A closed fold contributes nothing to the layout: some browsers keep the
+   content laid out (and so overlapping what follows) while its details are shut. */
+.fold:not([open]) .fold-body {
+  display: none;
+}
+
+/* State that reaches a screen reader without taking a line of the screen. The
+   description is parked off-canvas so it shares no pixels with what is shown. */
+.sr-only {
+  position: absolute;
+  top: -9999px;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* A folded-away readout row: a zero-sized box clips its label and value out of
+   view while they stay in the list for a screen reader. */
+.readout-row-sr {
+  position: absolute;
+  top: -9999px;
+  left: -9999px;
+  width: 0;
+  height: 0;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  border: 0;
 }
 
 .panel {
@@ -173,64 +274,59 @@ body {
 }
 
 /* The plot is redrawn discretely — a form appears, it never slides in — so there
-   is no motion to reduce. The description beside it states the same change in
-   words, and this keeps it that way even if a transition is ever added here. */
+   is no motion to reduce. The readout states the same change in words, and this
+   keeps it that way even if a transition is ever added here. */
 @media (prefers-reduced-motion: reduce) {
   .plot {
     transition: none;
   }
 }
 
-.plot-description {
-  margin: 0 0 18px;
-  font-size: 13px;
-  line-height: 1.9;
-  color: var(--ink-soft);
-  overflow-wrap: anywhere;
-}
-
+/* A compact two-column grid of label-above-value pairs: the numbers read at a
+   glance and take about half the height of stacked rows. */
 .readout {
   margin: 0;
   display: grid;
-  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
 }
 
 .readout-row {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 4px 12px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--panel-shade);
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
 }
 
-.readout-row:last-child {
-  padding-bottom: 0;
-  border-bottom: none;
+/* Growth is the hero number, so it keeps a line of its own across the grid. */
+.readout-row:first-child {
+  grid-column: 1 / -1;
 }
 
 .readout-term {
-  font-size: 13px;
-  line-height: 1.8;
+  font-size: 12px;
+  line-height: 1.5;
   color: var(--ink-soft);
   overflow-wrap: anywhere;
 }
 
 .readout-value {
   margin: 0;
-  font-size: 22px;
+  font-size: 18px;
   line-height: 1.3;
   color: var(--leaf-deep);
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
 
+.readout-row:first-child .readout-value {
+  font-size: 26px;
+}
+
 .readout-growth {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  justify-content: flex-end;
   gap: 2px 8px;
 }
 
