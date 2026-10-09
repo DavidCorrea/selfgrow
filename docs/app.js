@@ -1,6 +1,7 @@
 /**
- * The page: a soil plot beside the garden's quantities in text and numbers, and
- * a save the player can copy out and load back.
+ * The page: a soil plot beside the garden's quantities in text and numbers, the
+ * Tend the soil action that starts the garden growing, and a save the player can
+ * copy out and load back.
  *
  * The plot is drawn from the same garden object the readout prints, through one
  * function — `drawGarden` — so the picture and the numbers can never disagree.
@@ -12,13 +13,16 @@
 import {
   PLOT_CAPACITY,
   STORAGE_KEY,
+  advance,
   decodeSave,
   encodeSave,
   getGarden,
+  getGrowthState,
   readStoredGarden,
   setGarden,
   storageAvailable,
   subscribe,
+  tend,
   writeStoredGarden,
 } from "./garden.js";
 
@@ -28,8 +32,20 @@ const CELL = 24;
 const COLUMNS = 6;
 
 const numberFormat = new Intl.NumberFormat("en");
+const growthFormat = new Intl.NumberFormat("en", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+// How often the garden's growth is carried forward on screen. Elapsed time, not
+// the tick count, is what grows it, so a slow or skipped tick changes the
+// smoothness and nothing else.
+const TICK_MS = 250;
+// A single step never counts more than this, so a device that slept for hours
+// cannot hand the garden hours of growth it never watched.
+const MAX_STEP_SECONDS = 60;
 
 const elements = {
+  growth: document.getElementById("growth-total"),
+  rate: document.getElementById("growth-rate"),
+  tend: document.getElementById("tend"),
   seeds: document.querySelector('[data-field="seeds"]'),
   plants: document.querySelector('[data-field="plants"]'),
   capacity: document.querySelector('[data-field="capacity"]'),
@@ -87,6 +103,14 @@ function drawPlant(ctx, x, y, color) {
   ctx.fillRect(x + 10, y + 4, 4, 5); // bloom
 }
 
+/** A short shoot growing on its own: growth earned since the soil was tended. */
+function drawSprout(ctx, x, y, color) {
+  ctx.fillStyle = color.leafDeep;
+  ctx.fillRect(x + CELL / 2 - 1, y + CELL - 10, 2, 6);
+  ctx.fillStyle = color.leaf;
+  ctx.fillRect(x + CELL / 2 - 4, y + CELL - 12, 5, 3);
+}
+
 /**
  * Draw the garden's plot from its state. The same amount always draws the same
  * way, so the picture reads exactly the state the readout prints.
@@ -112,23 +136,24 @@ function drawGarden(canvas, state) {
     drawSoil(ctx, x, y, color);
     if (index < state.plants) drawPlant(ctx, x, y, color);
     else if (index < state.plants + state.seeds) drawSeed(ctx, x, y, color);
+    else if (index < state.plants + state.seeds + state.sprouts) drawSprout(ctx, x, y, color);
   }
 }
 
-function plotClause(count, singular, plural) {
-  return `${numberFormat.format(count)} ${count === 1 ? "holds" : "hold"} ${count === 1 ? singular : plural}`;
-}
+const countLabel = (count, singular, plural) =>
+  `${numberFormat.format(count)} ${count === 1 ? singular : plural}`;
 
 function describePlot(state) {
   return (
     `A plot of ${numberFormat.format(state.capacity)} squares of soil: ` +
-    `${plotClause(state.seeds, "an ungrown seed", "ungrown seeds")}, ` +
-    `${plotClause(state.plants, "a grown plant", "grown plants")}.`
+    `${countLabel(state.seeds, "ungrown seed", "ungrown seeds")}, ` +
+    `${countLabel(state.plants, "grown plant", "grown plants")}, ` +
+    `${countLabel(state.sprouts, "growing sprout", "growing sprouts")}.`
   );
 }
 
 function setText(element, text) {
-  if (element) element.textContent = text;
+  if (element && element.textContent !== text) element.textContent = text;
 }
 
 /**
@@ -139,9 +164,16 @@ function setText(element, text) {
  */
 export function getDisplayedState() {
   const garden = getGarden();
+  const { growth, rate } = getGrowthState();
+  // The plot can only show the squares it has, so growth past them stops adding
+  // sprites rather than overfilling the soil.
+  const sprouts = Math.max(0, Math.min(Math.floor(growth), PLOT_CAPACITY - garden.plants - garden.seeds));
   return {
     seeds: garden.seeds,
     plants: garden.plants,
+    growth,
+    rate,
+    sprouts,
     capacity: PLOT_CAPACITY,
     save: encodeSave(garden),
     storageAvailable: isStorageAvailable,
@@ -169,8 +201,16 @@ function announce(message) {
   setText(elements.status, message);
 }
 
+let lastPlotKey = null;
+
 function render() {
+  // A hidden tab still keeps the garden growing (the timer derives growth from
+  // elapsed time), but there is nobody to see it redraw.
+  if (document.hidden) return;
+
   const state = getDisplayedState();
+  setText(elements.growth, growthFormat.format(state.growth));
+  setText(elements.rate, `+${growthFormat.format(state.rate)}/s`);
   setText(elements.seeds, numberFormat.format(state.seeds));
   setText(elements.plants, numberFormat.format(state.plants));
   setText(elements.capacity, numberFormat.format(state.capacity));
@@ -181,7 +221,12 @@ function render() {
   if (elements.save && document.activeElement !== elements.save) {
     elements.save.value = state.save;
   }
-  drawGarden(elements.plot, state);
+
+  const plotKey = `${state.seeds},${state.plants},${state.sprouts}`;
+  if (plotKey !== lastPlotKey) {
+    drawGarden(elements.plot, state);
+    lastPlotKey = plotKey;
+  }
 }
 
 async function copySave() {
@@ -236,9 +281,26 @@ function start() {
     if (!next.damaged) setGarden(next.garden);
   });
 
+  elements.tend?.addEventListener("click", tend);
   elements.copy?.addEventListener("click", copySave);
   elements.load?.addEventListener("click", loadSave);
   elements.save?.addEventListener("input", () => announce(""));
+
+  let lastTick = performance.now();
+  setInterval(() => {
+    const now = performance.now();
+    const elapsed = Math.min(Math.max(now - lastTick, 0) / 1000, MAX_STEP_SECONDS);
+    lastTick = now;
+    advance(elapsed);
+  }, TICK_MS);
+
+  // Showing the tab again draws the growth the hidden ticks already earned,
+  // and restarts the clock so the gap is not counted twice.
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) return;
+    lastTick = performance.now();
+    render();
+  });
 
   render();
 }

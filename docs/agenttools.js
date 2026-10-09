@@ -2,12 +2,14 @@
  * The product's capabilities, as tools an agent can invoke.
  *
  * Derived from what the page shows a visitor and what it lets them do — nothing
- * more. `get-state` returns every value on the page; `export-save` is the Copy
- * save button; `import-save` is the Load save button, and returns the same
- * fields afterwards so the caller can see what it changed.
+ * more. `get-state` returns every value on the page; `tend` is the Tend the soil
+ * button; `export-save` is the Copy save button; `import-save` is the Load save
+ * button, and returns the same fields afterwards so the caller can see what it
+ * changed.
  */
 
 import { getDisplayedState, exportSave, loadGardenSave } from "./app.js";
+import { tend } from "./garden.js";
 
 // The save for the starting garden, so `import-save`'s example always validates
 // and runs. Importing it leaves the garden exactly as it starts.
@@ -19,14 +21,33 @@ export function tools() {
       name: "get-state",
       title: "Read the garden",
       description:
-        "Returns everything the page shows a visitor right now: the ungrown " +
-        "seeds in the soil, the grown plants, how many plots of soil there are, " +
-        "the portable save string, and whether this browser is keeping the " +
-        "garden. Ask it before acting so you know what the visitor sees.",
+        "Returns everything the page shows a visitor right now: the growth " +
+        "total and the rate it is climbing at (in growth per second), the " +
+        "growing sprouts the plot draws, the ungrown seeds in the soil, the " +
+        "grown plants, how many plots of soil there are, the portable save " +
+        "string, and whether this browser is keeping the garden. Ask it before " +
+        "acting so you know what the visitor sees.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
       example: {},
       async execute() {
+        return getDisplayedState();
+      },
+    },
+    {
+      name: "tend",
+      title: "Tend the soil",
+      description:
+        "Does what the page's Tend the soil button does: earns the garden's " +
+        "growth now and raises the rate it keeps growing at, so the total " +
+        "climbs on its own afterwards. Safe to repeat, each tend adds more. " +
+        "Returns the state afterwards so the caller can see the new total and " +
+        "rate.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      annotations: { readOnlyHint: false },
+      example: {},
+      async execute() {
+        tend();
         return getDisplayedState();
       },
     },

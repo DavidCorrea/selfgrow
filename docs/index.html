@@ -21,12 +21,19 @@
     <main id="main" class="stage">
       <section class="panel" aria-labelledby="garden-heading">
         <h2 id="garden-heading" class="panel-title">The garden</h2>
-        <p class="panel-note">Bare soil and one seed, waiting. Everything the plot draws is stated beside it, so the picture and the counts always agree.</p>
+        <p class="panel-note">Bare soil and one seed, waiting. Tend the soil to earn growth and speed the garden up; the number then climbs on its own. Everything the plot draws is stated beside it, so the picture and the counts always agree.</p>
 
         <canvas id="garden-plot" class="plot" width="144" height="48" aria-hidden="true"></canvas>
         <p class="plot-description" id="plot-description"></p>
 
         <dl class="readout" aria-label="What the garden holds">
+          <div class="readout-row">
+            <dt class="readout-term">Growth</dt>
+            <dd class="readout-value readout-growth">
+              <span id="growth-total" data-field="growth" aria-live="polite">0.0</span>
+              <span class="readout-rate" id="growth-rate">+0.0/s</span>
+            </dd>
+          </div>
           <div class="readout-row">
             <dt class="readout-term">Ungrown seeds</dt>
             <dd class="readout-value" data-field="seeds">1</dd>
@@ -44,6 +51,8 @@
             <dd class="readout-value" data-field="storage">Yes</dd>
           </div>
         </dl>
+
+        <button type="button" class="btn tend" id="tend">Tend the soil</button>
       </section>
 
       <section class="panel" aria-labelledby="save-heading">

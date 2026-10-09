@@ -16,12 +16,17 @@ import {
   PLOT_CAPACITY,
   SAVE_VERSION,
   STORAGE_KEY,
+  TEND_RATE_STEP,
+  TEND_YIELD,
+  advance,
   decodeSave,
   encodeSave,
   getGarden,
+  getGrowthState,
   newGarden,
   readStoredGarden,
   setGarden,
+  setGrowth,
   storageAvailable,
   writeStoredGarden,
 } from "./garden.js";
@@ -418,6 +423,7 @@ function checkPlotDrawing(problems) {
     return;
   }
   const before = getGarden();
+  const growthBefore = getGrowthState();
   try {
     const snapshot = (seeds, plants) => {
       setGarden({ seeds, plants });
@@ -432,8 +438,117 @@ function checkPlotDrawing(problems) {
     if (seeded === planted) {
       problems.push("a seed and a grown plant draw the same, so the plot does not show the garden's form.");
     }
+    setGarden({ seeds: 0, plants: 0 });
+    setGrowth(0, 0);
+    const ungrowing = canvas.toDataURL();
+    setGrowth(5, 1);
+    const growing = canvas.toDataURL();
+    if (ungrowing === growing) {
+      problems.push("the plot looks the same whether or not the garden is growing, so it does not draw the live growth.");
+    }
   } finally {
     setGarden(before);
+    setGrowth(growthBefore.growth, growthBefore.rate);
+  }
+}
+
+// --- The first action and its live rate -------------------------------------
+
+function checkTendControl(problems) {
+  const button = document.getElementById("tend");
+  if (!button) {
+    problems.push("the page has no Tend control (#tend), so there is nothing to press to start the garden.");
+    return;
+  }
+  if (button.tagName.toLowerCase() !== "button") {
+    problems.push(
+      `the Tend control is a <${button.tagName.toLowerCase()}>, not a real <button>, so keyboard Enter and Space will not activate it.`
+    );
+  }
+  if (!String(button.textContent).trim()) {
+    problems.push("the Tend control has no label, so neither a sighted nor a screen-reader visitor can tell what it does.");
+  }
+  if (button.disabled) {
+    problems.push("the Tend control is disabled on arrival, so the garden's first action cannot be taken.");
+  }
+  const style = getComputedStyle(button);
+  if (style.display === "none" || style.visibility === "hidden") {
+    problems.push("the Tend control is hidden on the page.");
+  }
+}
+
+function checkTendAnswersImmediately(problems) {
+  const button = document.getElementById("tend");
+  const total = document.getElementById("growth-total");
+  if (!button || !total) return; // checkTendControl reports the control's absence.
+
+  const before = getGrowthState();
+  try {
+    setGrowth(0, 0);
+    button.click();
+    const after = getGrowthState();
+    if (after.growth !== TEND_YIELD) {
+      problems.push(`pressing Tend took the garden to ${after.growth} growth, expected ${TEND_YIELD}.`);
+    }
+    if (Math.abs(after.rate - TEND_RATE_STEP) > 1e-9) {
+      problems.push(`pressing Tend set the rate to ${after.rate}/s, expected ${TEND_RATE_STEP}/s.`);
+    }
+    const shown = Number(String(total.textContent).replace(/,/g, ""));
+    if (shown !== after.growth) {
+      problems.push(
+        `after pressing Tend the page shows ${JSON.stringify(total.textContent)} growth, but the garden holds ${after.growth}.`
+      );
+    }
+  } finally {
+    setGrowth(before.growth, before.rate);
+  }
+}
+
+function checkGrowthRateShowsAndRuns(problems) {
+  const before = getGrowthState();
+  try {
+    setGrowth(0, 0.5);
+    advance(1);
+    const after = getGrowthState();
+    if (Math.abs(after.growth - 0.5) > 1e-9) {
+      problems.push(`after one second at +0.5/s the garden held ${after.growth} growth, expected 0.5.`);
+    }
+    const rateText = String(document.getElementById("growth-rate")?.textContent ?? "").trim();
+    if (!/^\+[\d,]+(\.\d+)?\/s$/.test(rateText)) {
+      problems.push(`the page shows the growth rate as ${JSON.stringify(rateText)}, expected a "+x/s" form like "+0.5/s".`);
+    }
+  } finally {
+    setGrowth(before.growth, before.rate);
+  }
+}
+
+function checkGrowthIsBoundedAndFinite(problems) {
+  const before = getGrowthState();
+  try {
+    // A session's growth runs far past the plot; the plot must not overfill.
+    setGrowth(PLOT_CAPACITY + 1000, 1);
+    const state = getDisplayedState();
+    if (!Number.isInteger(state.sprouts) || state.sprouts < 0 || state.sprouts > state.capacity) {
+      problems.push(
+        `with growth far past the plot, it draws ${state.sprouts} sprouts into ${state.capacity} plots — expected 0 to ${state.capacity}.`
+      );
+    }
+
+    // A clock can hand the garden a negative, missing or enormous span.
+    setGrowth(1, 0.1);
+    if (advance(-3600).growth !== 1) {
+      problems.push("advancing by a negative span (-3600s) grew the garden; elapsed time must not run backwards.");
+    }
+    if (advance(Number.NaN).growth !== 1) {
+      problems.push("advancing by NaN grew the garden; a missing span must grow nothing.");
+    }
+    advance(1e300);
+    const total = String(document.getElementById("growth-total")?.textContent ?? "");
+    if (/NaN|Infinity/.test(total)) {
+      problems.push(`the growth total shows ${JSON.stringify(total)} after a huge elapsed span.`);
+    }
+  } finally {
+    setGrowth(before.growth, before.rate);
   }
 }
 
@@ -497,8 +612,42 @@ async function checkAgentTools(problems) {
       `${shown.seeds} / ${shown.plants}.`
     );
   }
+  if (state.growth !== shown.growth || state.rate !== shown.rate || state.sprouts !== shown.sprouts) {
+    problems.push(
+      `get-state reported growth ${state.growth} at ${state.rate}/s with ${state.sprouts} sprouts, ` +
+      `but the page shows ${shown.growth} at ${shown.rate}/s with ${shown.sprouts} sprouts.`
+    );
+  }
   if (state.save !== shown.save) {
     problems.push("get-state's save does not match the save the page shows.");
+  }
+
+  const tendTool = find("tend");
+  if (!tendTool) {
+    problems.push("agenttools.js has no tend tool, so an agent cannot do what the Tend button does.");
+  } else {
+    const growthBefore = getGrowthState();
+    try {
+      const result = await tendTool.execute({}, {});
+      const after = getGrowthState();
+      if (
+        after.growth !== growthBefore.growth + TEND_YIELD ||
+        Math.abs(after.rate - (growthBefore.rate + TEND_RATE_STEP)) > 1e-9
+      ) {
+        problems.push(
+          `the tend tool left the garden at ${after.growth} growth / ${after.rate}/s, but the Tend button would ` +
+          `give ${growthBefore.growth + TEND_YIELD} / ${growthBefore.rate + TEND_RATE_STEP}.`
+        );
+      }
+      if (result.growth !== after.growth || result.rate !== after.rate) {
+        problems.push(
+          `the tend tool returned growth ${result.growth} at ${result.rate}/s, but the garden now holds ` +
+          `${after.growth} at ${after.rate}/s.`
+        );
+      }
+    } finally {
+      setGrowth(growthBefore.growth, growthBefore.rate);
+    }
   }
 
   const exported = await exportTool.execute({}, {});
@@ -548,6 +697,7 @@ function restoreRawStorage(snapshot) {
 export async function checks() {
   const problems = [];
   const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
   const storageBefore = rawStorage();
 
   try {
@@ -560,6 +710,11 @@ export async function checks() {
     checkPalette(problems);
     checkPixelEdges(problems);
 
+    checkTendControl(problems);
+    checkTendAnswersImmediately(problems);
+    checkGrowthRateShowsAndRuns(problems);
+    checkGrowthIsBoundedAndFinite(problems);
+
     checkStartState(problems);
     checkSaveCodec(problems);
     checkDurableSave(problems);
@@ -571,6 +726,7 @@ export async function checks() {
     await checkAgentTools(problems);
   } finally {
     setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate);
     restoreRawStorage(storageBefore);
   }
 
