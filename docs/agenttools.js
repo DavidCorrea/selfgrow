@@ -31,8 +31,12 @@ export function tools() {
         "afford it now (canPlantSeed), whether the plot is full (plotFull), " +
         "how far along the cost the garden is as a 0-to-1 fraction " +
         "(seedCostProgress), and the seconds until it can afford it " +
-        "(secondsToNextSeed, null when full or not growing). Ask it before " +
-        "acting so you know what the visitor sees.",
+        "(secondsToNextSeed, null when full or not growing). It also reports " +
+        "away: the time since the visitor was last here and what it grew — " +
+        "seconds (0 on a first visit or a quick reload), earned growth, the " +
+        "form it started at (from) and reached (to), the formsFound on the " +
+        "way, and a plain summary sentence. Ask it before acting so you know " +
+        "what the visitor sees.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
       example: {},

@@ -16,7 +16,9 @@
  */
 
 import {
+  LAST_SEEN_KEY,
   PLOT_CAPACITY,
+  SAVE_PREFIX,
   SAVE_VERSION,
   SEED_COST_BASE,
   SEED_COST_RATE,
@@ -26,18 +28,21 @@ import {
   TEND_YIELD,
   advance,
   decodeSave,
+  elapsedSeconds,
   encodeSave,
   getGarden,
   getGrowthState,
   newGarden,
   nextSeedCost,
+  readLastSeen,
   readStoredGarden,
   setGarden,
   setGrowth,
   storageAvailable,
+  writeLastSeen,
   writeStoredGarden,
 } from "./garden.js";
-import { exportSave, getDisplayedState, loadGardenSave } from "./app.js";
+import { applyReturn, exportSave, getDisplayedState, loadGardenSave, summarizeReturn } from "./app.js";
 import { FORMS, gardenForm } from "./plotview.js";
 
 const numberFormat = new Intl.NumberFormat("en");
@@ -406,6 +411,7 @@ function checkPageReadout(problems) {
 
 function checkPortableSave(problems) {
   const before = getGarden();
+  const growthBefore = getGrowthState();
   const beforeRaw = rawStorage();
   try {
     const portable = encodeSave({ seeds: 4, plants: 2 });
@@ -438,6 +444,7 @@ function checkPortableSave(problems) {
     }
   } finally {
     setGarden(before);
+    setGrowth(growthBefore.growth, growthBefore.rate);
     restoreRawStorage(beforeRaw);
   }
 }
@@ -883,6 +890,7 @@ function checkSeedGoalReadout(problems) {
 
 function checkLargeCounts(problems) {
   const before = getGarden();
+  const growthBefore = getGrowthState();
   const beforeRaw = rawStorage();
   try {
     const huge = encodeSave({ seeds: 1e9, plants: 123456789 });
@@ -900,6 +908,7 @@ function checkLargeCounts(problems) {
     checkNoOverflow(problems);
   } finally {
     setGarden(before);
+    setGrowth(growthBefore.growth, growthBefore.rate);
     restoreRawStorage(beforeRaw);
   }
 }
@@ -911,6 +920,197 @@ function checkNoOverflow(problems) {
     problems.push(
       `the page is wider than its viewport (${widest}px of content in ${doc.clientWidth}px); something runs off the screen.`
     );
+  }
+}
+
+// --- Time away ---------------------------------------------------------------
+
+/**
+ * Elapsed time is counted, not invented: a missing or backdated span grows
+ * nothing, a month in one step equals thirty daily steps, and no cap eats a long
+ * absence.
+ */
+function checkOfflineTime(problems) {
+  const before = getGrowthState();
+  const nowMs = 1_700_000_000_000;
+  const spans = [
+    ["a missing timestamp", elapsedSeconds(null, nowMs), 0],
+    ["a non-finite timestamp", elapsedSeconds(Number.NaN, nowMs), 0],
+    ["a future timestamp", elapsedSeconds(nowMs + 60_000, nowMs), 0],
+    ["a missing now", elapsedSeconds(nowMs, undefined), 0],
+    ["five minutes", elapsedSeconds(nowMs - 300_000, nowMs), 300],
+  ];
+  for (const [label, got, expected] of spans) {
+    if (got !== expected) problems.push(`elapsedSeconds for ${label} returned ${got}, expected ${expected}.`);
+  }
+
+  const DAY = 86400;
+  try {
+    const expected = 0.5 * 30 * DAY;
+    const tolerance = Math.max(1e-6, expected * 1e-9);
+
+    setGrowth(0, 0.5);
+    advance(30 * DAY);
+    const oneStep = getGrowthState().growth;
+
+    setGrowth(0, 0.5);
+    for (let day = 0; day < 30; day += 1) advance(DAY);
+    const stepped = getGrowthState().growth;
+
+    if (Math.abs(oneStep - stepped) > tolerance) {
+      problems.push(
+        `a month in one step gave ${oneStep} growth but thirty daily steps gave ${stepped}; ` +
+          "offline time must match played time."
+      );
+    }
+    if (Math.abs(oneStep - expected) > tolerance) {
+      problems.push(`a month at +0.5/s gave ${oneStep} growth, expected ${expected} with no cap on the absence.`);
+    }
+  } finally {
+    setGrowth(before.growth, before.rate);
+  }
+}
+
+/**
+ * The save carries what is needed to count time away: growth and its rate, a
+ * version-1 save still loads, bad amounts are refused, and the last-seen moment
+ * lives in its own key and round-trips.
+ */
+function checkSaveCarriesGrowth(problems) {
+  const sample = { version: SAVE_VERSION, seeds: 3, plants: 2, growth: 12.5, rate: 0.7 };
+  let back = null;
+  try {
+    back = decodeSave(encodeSave(sample));
+  } catch (e) {
+    problems.push(`a save carrying growth and rate could not round-trip: ${e.message}`);
+  }
+  if (back && (back.growth !== 12.5 || back.rate !== 0.7)) {
+    problems.push(`a save put in 12.5 growth / 0.7 rate and gave back ${back.growth} / ${back.rate}.`);
+  }
+
+  const legacy = `${SAVE_PREFIX}${btoa(JSON.stringify({ version: 1, seeds: 4, plants: 2 }))}`;
+  try {
+    const migrated = decodeSave(legacy);
+    if (migrated.seeds !== 4 || migrated.plants !== 2 || migrated.growth !== 0 || migrated.rate !== 0) {
+      problems.push(
+        `a version-1 save migrated to ${migrated.seeds} seeds / ${migrated.plants} plants / ` +
+          `${migrated.growth} growth / ${migrated.rate} rate, expected 4 / 2 / 0 / 0.`
+      );
+    }
+  } catch (e) {
+    problems.push(`a version-1 save should still load, but it was refused: ${e.message}`);
+  }
+
+  const payload = (value) => `${SAVE_PREFIX}${btoa(JSON.stringify(value))}`;
+  const rejects = [
+    ["a negative growth", payload({ version: SAVE_VERSION, seeds: 1, plants: 0, growth: -1, rate: 0 })],
+    ["a growth that is not a number", payload({ version: SAVE_VERSION, seeds: 1, plants: 0, growth: "1", rate: 0 })],
+    ["a negative rate", payload({ version: SAVE_VERSION, seeds: 1, plants: 0, growth: 0, rate: -1 })],
+    ["a missing rate", payload({ version: SAVE_VERSION, seeds: 1, plants: 0, growth: 0 })],
+  ];
+  for (const [label, value] of rejects) {
+    try {
+      decodeSave(value);
+      problems.push(`the save reader accepted ${label}; it should refuse it.`);
+    } catch {
+      // refused, as it must be.
+    }
+  }
+
+  const backing = new Map();
+  const storage = {
+    getItem: (key) => (backing.has(key) ? backing.get(key) : null),
+    setItem: (key, value) => backing.set(key, String(value)),
+    removeItem: (key) => backing.delete(key),
+  };
+  if (readLastSeen(storage) !== null) problems.push("a store with no last-seen timestamp reported one anyway.");
+  if (!writeLastSeen(123456789, storage)) {
+    problems.push("writing the last-seen timestamp to a working store reported failure.");
+  }
+  if (readLastSeen(storage) !== 123456789) {
+    problems.push(`the last-seen timestamp came back as ${readLastSeen(storage)}, expected 123456789.`);
+  }
+  if (writeLastSeen(Number.NaN, storage)) problems.push("a non-finite last-seen timestamp was written instead of refused.");
+  storage.setItem(LAST_SEEN_KEY, "not-a-number");
+  if (readLastSeen(storage) !== null) {
+    problems.push("a corrupt last-seen value was read as a time instead of ignored.");
+  }
+}
+
+/**
+ * A long absence lands the garden where played time would, and its return is
+ * stated in words and shown on the plot.
+ */
+function checkReturnSummary(problems) {
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const storageBefore = rawStorage();
+  const DAY = 86400;
+  const canvas = document.getElementById("garden-plot");
+  const strip = document.getElementById("return-summary");
+  if (!strip) {
+    problems.push("the page has no return-summary element (#return-summary) to say what happened while away.");
+  }
+  try {
+    const saved = { version: SAVE_VERSION, seeds: 2, plants: 1, growth: 0, rate: 0.5 };
+    setGarden({ seeds: 2, plants: 1 });
+    setGrowth(saved.growth, saved.rate);
+    const beforeImage = canvas ? canvas.toDataURL() : null;
+
+    const nowMs = 1_700_000_000_000;
+    const away = applyReturn(saved, nowMs - 30 * DAY * 1000, nowMs);
+
+    const expectedEarned = 0.5 * 30 * DAY;
+    const tolerance = Math.max(1e-6, expectedEarned * 1e-9);
+    if (Math.abs(away.earned - expectedEarned) > tolerance) {
+      problems.push(`after 30 days away at +0.5/s the garden earned ${away.earned} growth, expected ${expectedEarned}.`);
+    }
+    const after = getGrowthState();
+    if (Math.abs(after.growth - expectedEarned) > tolerance) {
+      problems.push(`after 30 days away the garden holds ${after.growth} growth, expected ${expectedEarned}.`);
+    }
+    const expectedForm = gardenForm(expectedEarned);
+    if (away.to !== expectedForm.index) {
+      problems.push(
+        `after 30 days away the garden is form ${away.to}, expected ${expectedForm.index} ("${expectedForm.name}").`
+      );
+    }
+    if (!(away.to > away.from)) {
+      problems.push(`30 days away did not advance the garden's form (still ${away.from}).`);
+    }
+    if (away.summary !== summarizeReturn(away)) {
+      problems.push("the return summary is not the sentence summarizeReturn builds from the same report.");
+    }
+
+    if (strip) {
+      if (strip.hidden || !strip.textContent.trim()) {
+        problems.push("returning after 30 days did not show the return summary.");
+      } else {
+        const text = strip.textContent;
+        const expected = [
+          ["the earned growth", growthFormat.format(away.earned)],
+          ["the form reached", expectedForm.name],
+        ];
+        const nextIndex = expectedForm.index + 1;
+        if (nextIndex < FORMS.length) expected.push(["the next form", FORMS[nextIndex].name]);
+        for (const [what, value] of expected) {
+          if (!text.includes(value)) problems.push(`the return summary does not state ${what} (${value}): "${text}"`);
+        }
+      }
+    }
+
+    if (canvas && beforeImage && canvas.toDataURL() === beforeImage) {
+      problems.push("the plot drew the same picture after 30 days away, so the return did not show on the garden.");
+    }
+
+    const shown = getDisplayedState();
+    if (JSON.stringify(shown.away) !== JSON.stringify(away)) {
+      problems.push("get-state's away does not match the return the page just reported.");
+    }
+  } finally {
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate);
+    restoreRawStorage(storageBefore);
   }
 }
 
@@ -955,6 +1155,9 @@ async function checkAgentTools(problems) {
   }
   if (state.save !== shown.save) {
     problems.push("get-state's save does not match the save the page shows.");
+  }
+  if (JSON.stringify(state.away) !== JSON.stringify(shown.away)) {
+    problems.push("get-state's away does not match the page's return report.");
   }
 
   const tendTool = find("tend");
@@ -1112,6 +1315,8 @@ export async function checks() {
 
     checkStartState(problems);
     checkSaveCodec(problems);
+    checkSaveCarriesGrowth(problems);
+    checkOfflineTime(problems);
     checkDurableSave(problems);
     checkPageReadout(problems);
     checkPlotDrawing(problems);
@@ -1124,6 +1329,7 @@ export async function checks() {
     checkLargeCounts(problems);
     checkPortableSave(problems);
     checkNoOverflow(problems);
+    checkReturnSummary(problems);
     await checkAgentTools(problems);
   } finally {
     setGarden(gardenBefore);

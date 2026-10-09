@@ -16,19 +16,23 @@ import {
   STORAGE_KEY,
   advance,
   decodeSave,
+  elapsedSeconds,
   encodeSave,
   getGarden,
   getGrowthState,
   nextSeedCost,
   plantSeed,
+  readLastSeen,
   readStoredGarden,
   setGarden,
+  setGrowth,
   storageAvailable,
   subscribe,
   tend,
+  writeLastSeen,
   writeStoredGarden,
 } from "./garden.js";
-import { drawGarden, gardenForm } from "./plotview.js";
+import { FORMS, drawGarden, gardenForm } from "./plotview.js";
 
 const numberFormat = new Intl.NumberFormat("en");
 const growthFormat = new Intl.NumberFormat("en", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -37,9 +41,11 @@ const growthFormat = new Intl.NumberFormat("en", { minimumFractionDigits: 1, max
 // the tick count, is what grows it, so a slow or skipped tick changes the
 // smoothness and nothing else.
 const TICK_MS = 250;
-// A single step never counts more than this, so a device that slept for hours
-// cannot hand the garden hours of growth it never watched.
-const MAX_STEP_SECONDS = 60;
+// How often the live growth is written to the browser, so a tab that is closed
+// without warning still loses almost nothing.
+const PERSIST_MS = 5000;
+// A gap shorter than this is a reload, not an absence worth a welcome-back note.
+const MIN_AWAY_SECONDS = 60;
 
 const elements = {
   growth: document.getElementById("growth-total"),
@@ -57,6 +63,7 @@ const elements = {
   storage: document.querySelector('[data-field="storage"]'),
   plot: document.getElementById("garden-plot"),
   description: document.getElementById("plot-description"),
+  returnSummary: document.getElementById("return-summary"),
   save: document.getElementById("save-value"),
   copy: document.getElementById("copy-save"),
   load: document.getElementById("load-save"),
@@ -126,25 +133,146 @@ export function getDisplayedState() {
     plotFull,
     seedCostProgress: seedCost > 0 ? Math.min(1, Math.max(0, growth / seedCost)) : 1,
     secondsToNextSeed: plotFull || !(rate > 0) ? null : Math.max(0, (seedCost - growth) / rate),
-    save: encodeSave(garden),
+    save: exportSave(),
+    away: lastReturn,
     storageAvailable: isStorageAvailable,
   };
 }
 
 /** The one portable string a player can copy out of the page. */
 export function exportSave() {
-  return encodeSave(getGarden());
+  return encodeSave({ ...getGarden(), ...getGrowthState() });
+}
+
+// --- Time away ---------------------------------------------------------------
+//
+// The live growth and rate travel in the save, and the moment the visitor left
+// travels beside it. Coming back, the whole gap is counted with the same rule a
+// tick uses — one multiplication by the rate — so a month away finishes at once
+// and lands exactly where a month played would.
+
+/** The last return this visit, for `get-state`, or null before the first one. */
+let lastReturn = null;
+
+/** Write the garden and the moment it was written, so time away can be counted. */
+function persist(nowMs = Date.now()) {
+  writeStoredGarden(getGarden());
+  writeLastSeen(nowMs);
+}
+
+/** A span of time away, in the largest whole unit that still reads as a span. */
+function formatAway(seconds) {
+  const whole = Math.round(seconds);
+  if (whole < 60) return countLabel(whole, "second", "seconds");
+  const minutes = Math.round(whole / 60);
+  if (minutes < 60) return countLabel(minutes, "minute", "minutes");
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return countLabel(hours, "hour", "hours");
+  const days = Math.round(hours / 24);
+  if (days < 60) return countLabel(days, "day", "days");
+  const months = Math.round(days / 30);
+  if (months < 12) return countLabel(months, "month", "months");
+  return countLabel(Math.round(months / 12), "year", "years");
+}
+
+/**
+ * The return summary in words: what was earned, what the garden became, and the
+ * next thing worth reaching for. A missing or backdated span has no news.
+ *
+ * Pure, so the same `away` always reads the same — the sentence is checked on
+ * its own, without a page around it.
+ */
+export function summarizeReturn(away) {
+  if (!away || !(away.seconds > 0)) return "The garden is as you left it.";
+
+  const grown = `While you were away ${formatAway(away.seconds)}, the garden earned ` +
+    `${growthFormat.format(away.earned)} growth and is now ${away.form}.`;
+
+  // "What was found": the forms the absence grew it into, named at the top.
+  let found = "";
+  if (away.formsFound.length === 1) found = ` It grew into ${away.formsFound[0]}.`;
+  else if (away.formsFound.length > 1) {
+    found = ` It grew through ${away.formsFound.length} new forms, up to ${away.formsFound[away.formsFound.length - 1]}.`;
+  }
+
+  // "What is now possible": the next form, or the next seed once past them all.
+  const next = away.nextFormName
+    ? ` ${away.nextFormName} is ${growthFormat.format(away.growthToNextForm)} growth away — keep tending.`
+    : ` A seed costs ${numberFormat.format(away.nextSeedCost)} growth — plant one when you can.`;
+
+  return grown + found + next;
+}
+
+/**
+ * Count the time since `lastSeenMs` against `saved`'s growth and rate, with no
+ * cap, and put the garden where that much played time would have left it.
+ *
+ * @param {{seeds: number, plants: number, growth: number, rate: number}} saved
+ * @param {number|null} lastSeenMs
+ * @param {number} nowMs
+ * @returns {object} the `away` report: the span, what it earned and grew into,
+ *   the summary sentence, and what to reach for next.
+ */
+export function applyReturn(saved, lastSeenMs, nowMs) {
+  const seconds = elapsedSeconds(lastSeenMs, nowMs);
+  const startGrowth = Number.isFinite(saved.growth) && saved.growth > 0 ? saved.growth : 0;
+  const startRate = Number.isFinite(saved.rate) && saved.rate > 0 ? saved.rate : 0;
+  const fromForm = gardenForm(startGrowth);
+
+  setGrowth(startGrowth, startRate);
+  advance(seconds);
+
+  const growth = getGrowthState().growth;
+  const toForm = gardenForm(growth);
+  const nextIndex = toForm.index + 1;
+  const away = {
+    seconds,
+    earned: growth - startGrowth,
+    from: fromForm.index,
+    fromName: fromForm.name,
+    to: toForm.index,
+    form: toForm.name,
+    formsFound: FORMS.slice(fromForm.index + 1, toForm.index + 1).map((entry) => entry.name),
+    growth,
+    nextFormName: nextIndex < FORMS.length ? FORMS[nextIndex].name : null,
+    growthToNextForm: Math.max(0, toForm.nextAt - growth),
+    nextSeedCost: nextSeedCost(getGarden().seeds),
+  };
+  away.summary = summarizeReturn(away);
+
+  lastReturn = away;
+  showReturnSummary(away);
+  render();
+  return away;
+}
+
+/** Show the welcome-back sentence, or keep it out of the way for a short gap. */
+function showReturnSummary(away) {
+  const element = elements.returnSummary;
+  if (!element) return;
+  if (!away || !(away.seconds >= MIN_AWAY_SECONDS)) {
+    element.hidden = true;
+    element.textContent = "";
+    return;
+  }
+  element.textContent = away.summary;
+  element.hidden = false;
 }
 
 /**
  * Replace the garden with the one in `text` and keep it.
+ *
+ * The moment of the load is recorded, so a deliberate load is not later read as
+ * a long absence.
  *
  * @throws {Error} when the save cannot be read; the garden is left untouched.
  */
 export function loadGardenSave(text) {
   const garden = decodeSave(text);
   setGarden(garden);
-  const persisted = writeStoredGarden(garden);
+  setGrowth(garden.growth, garden.rate);
+  const persisted = writeStoredGarden(getGarden());
+  writeLastSeen(Date.now());
   return { ok: true, persisted, state: getDisplayedState() };
 }
 
@@ -274,6 +402,11 @@ function start() {
   const stored = readStoredGarden();
   setGarden(stored.garden);
 
+  // Count everything since the visitor was last here, then record this visit as
+  // the new starting point for the next absence.
+  applyReturn(stored.garden, readLastSeen(), Date.now());
+  persist();
+
   // A save that cannot be read is repaired, not left to reset the garden again
   // on every visit.
   if (stored.damaged) {
@@ -289,30 +422,51 @@ function start() {
   window.addEventListener("storage", (event) => {
     if (event.key !== null && event.key !== STORAGE_KEY) return;
     const next = readStoredGarden();
-    if (!next.damaged) setGarden(next.garden);
+    if (next.damaged) return;
+    setGarden(next.garden);
+    setGrowth(next.garden.growth, next.garden.rate);
   });
 
-  elements.tend?.addEventListener("click", tend);
-  elements.plant?.addEventListener("click", plantSeedFromButton);
+  elements.tend?.addEventListener("click", () => {
+    tend();
+    persist();
+  });
+  elements.plant?.addEventListener("click", () => {
+    plantSeedFromButton();
+    persist();
+  });
   elements.copy?.addEventListener("click", copySave);
   elements.load?.addEventListener("click", loadSave);
   elements.save?.addEventListener("input", () => announce(""));
 
-  let lastTick = performance.now();
-  setInterval(() => {
-    const now = performance.now();
-    const elapsed = Math.min(Math.max(now - lastTick, 0) / 1000, MAX_STEP_SECONDS);
+  // The live clock is wall time, not ticks, because ticks stop while a tab sleeps
+  // and the visitor still expects that time to count. A backwards or missing
+  // clock is clamped to no time rather than run in reverse.
+  let lastTick = Date.now();
+  let lastPersist = lastTick;
+  const tick = () => {
+    const now = Date.now();
+    const elapsed = Math.max(0, (now - lastTick) / 1000);
     lastTick = now;
-    advance(elapsed);
-  }, TICK_MS);
+    if (elapsed > 0) advance(elapsed);
+    if (now - lastPersist >= PERSIST_MS) {
+      lastPersist = now;
+      persist(now);
+    }
+  };
+  setInterval(tick, TICK_MS);
 
-  // Showing the tab again draws the growth the hidden ticks already earned,
-  // and restarts the clock so the gap is not counted twice.
+  // Counting the gap on the way back in covers a tab that was hidden or a
+  // device that slept; the garden is never cheated of time nobody watched.
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) return;
-    lastTick = performance.now();
+    if (document.hidden) {
+      persist();
+      return;
+    }
+    tick();
     render();
   });
+  window.addEventListener("pagehide", () => persist());
 
   render();
 }
