@@ -199,6 +199,27 @@ body {
   overflow-wrap: anywhere;
 }
 
+.readout-growth {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 2px 8px;
+}
+
+.readout-rate {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.tend {
+  display: block;
+  width: 100%;
+  margin-top: 16px;
+}
+
 .btn {
   display: inline-block;
   width: auto;

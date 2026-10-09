@@ -151,6 +151,12 @@ export function writeStoredGarden(garden, storage = defaultStorage()) {
 let garden = newGarden();
 const listeners = new Set();
 
+/** Tell everyone watching that the garden moved. */
+function notify() {
+  const snapshot = getGarden();
+  for (const listener of listeners) listener(snapshot);
+}
+
 /** A copy of the current garden. */
 export function getGarden() {
   return { ...garden };
@@ -159,11 +165,64 @@ export function getGarden() {
 /** Replace the garden and tell everyone who is watching. */
 export function setGarden(next) {
   garden = { version: SAVE_VERSION, seeds: next.seeds, plants: next.plants };
-  for (const listener of listeners) listener(getGarden());
+  notify();
 }
 
 /** Listen for changes; returns a function that stops listening. */
 export function subscribe(listener) {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+// --- The live growth loop ----------------------------------------------------
+//
+// Growth is the garden's first resource: one tap of the soil earns a little of
+// it and raises the rate it keeps arriving at, so the number climbs on its own
+// after the click. It is deliberately not part of the saved garden — this loop
+// is a session of play, not the durable seed count — so a save string still
+// carries exactly what it carried before growth existed.
+
+/** What one tend of the soil earns, and how much faster it makes the garden. */
+export const TEND_YIELD = 1;
+export const TEND_RATE_STEP = 0.1;
+
+let growth = 0;
+let rate = 0;
+
+/** The live growth total since this visit began, and its rate in growth/second. */
+export function getGrowthState() {
+  return { growth, rate };
+}
+
+/**
+ * Put the live growth back to a known point — the snapshot a caller took. Out
+ * of range or missing values fall back to nothing grown rather than to `NaN`.
+ */
+export function setGrowth(growthValue, rateValue = 0) {
+  growth = Number.isFinite(growthValue) && growthValue > 0 ? growthValue : 0;
+  rate = Number.isFinite(rateValue) && rateValue > 0 ? rateValue : 0;
+  notify();
+}
+
+/**
+ * Tend the soil: earn growth now, and raise the rate the garden grows at so the
+ * number keeps climbing afterwards. Returns the state after the action.
+ */
+export function tend() {
+  growth += TEND_YIELD;
+  rate += TEND_RATE_STEP;
+  notify();
+  return getGrowthState();
+}
+
+/**
+ * Let the garden grow for `seconds` at the current rate, in one step. Elapsed
+ * time is the only input, so a timer that a hidden tab slowed or skipped still
+ * catches up exactly when it next runs. A zero, negative or non-finite span
+ * grows nothing.
+ */
+export function advance(seconds) {
+  if (Number.isFinite(seconds) && seconds > 0) growth += rate * seconds;
+  notify();
+  return getGrowthState();
 }
