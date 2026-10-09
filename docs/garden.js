@@ -86,11 +86,11 @@ function assertBeds(value) {
 }
 
 /**
- * A growth amount or rate written to a save. A finite number of zero or more is
- * kept as it is; anything missing, negative or not a number is written as zero,
- * so a caller that never knew about growth still produces a valid save.
+ * A growth total or rate, kept to a finite number of zero or more. Anything
+ * missing, negative or not a number becomes zero, so a save or a garden state
+ * that never knew about growth reads as "nothing grown" rather than as `NaN`.
  */
-function savedAmount(value) {
+function amountOrZero(value) {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
 }
 
@@ -145,8 +145,8 @@ export function encodeSave(garden) {
     seeds: sprouts.length,
     plants: garden.plants ?? 0,
     sprouts,
-    growth: savedAmount(garden.growth),
-    rate: savedAmount(garden.rate),
+    growth: amountOrZero(garden.growth),
+    rate: amountOrZero(garden.rate),
     beds,
   });
   return SAVE_PREFIX + btoa(body);
@@ -458,40 +458,70 @@ export function tend() {
 }
 
 /**
- * Let the garden grow for `seconds`, and let every seed that is due mature.
+ * Wind a garden state forward by `seconds`, and return the garden it becomes.
  *
- * Elapsed time is the only input, so a timer a hidden tab slowed or skipped
- * still catches up exactly when it next runs. The span is walked by jumping to
- * the next seed that matures, so a month away resolves in at most one step per
- * plot in the garden rather than one per tick: played and offline time land in
- * the same place, with no cap on how long the absence was. A zero, negative or
- * non-finite span grows nothing.
+ * This is the one place the growth rule lives. A state is `{growth, rate,
+ * sprouts, plants, beds}` and the result is the same shape, so any caller can
+ * run a span against a copy without touching the live garden — that is how the
+ * sandbox rehearses time. The span is walked by jumping to the next seed that
+ * matures, so a month resolves in at most one step per plot rather than one per
+ * tick, and a rehearsal lands exactly where played time would, with no cap on
+ * how long the span was. A zero, negative or non-finite span grows nothing, and
+ * a state missing a field reads as a garden that never grew.
+ *
+ * Pure: it never notifies, never writes, and never touches the live garden.
  */
-export function advance(seconds) {
+export function simulateGarden(state, seconds) {
+  const source = state ?? {};
+  const beds = bedCount(source.beds);
+  const capacity = beds * PLOTS_PER_BED;
+  let growth = amountOrZero(source.growth);
+  let rate = amountOrZero(source.rate);
+  let sprouts = Array.isArray(source.sprouts)
+    ? source.sprouts.filter((timer) => Number.isFinite(timer) && timer > 0).slice(0, capacity)
+    : [];
+  let plants = Number.isInteger(source.plants) && source.plants > 0 ? source.plants : 0;
+
   if (!(Number.isFinite(seconds) && seconds > 0)) {
-    notify();
-    return getGrowthState();
+    return { growth, rate, sprouts, plants, beds };
   }
 
   let remaining = seconds;
   // Each pass matures at least one seed, so the passes are bounded by the plots.
-  const capacity = bedCount(garden.beds) * PLOTS_PER_BED;
   for (let pass = 0; remaining > 0 && pass <= capacity; pass += 1) {
-    const nextSprout = garden.sprouts.length ? Math.min(...garden.sprouts) : Infinity;
+    const nextSprout = sprouts.length ? Math.min(...sprouts) : Infinity;
     const gap = Math.min(remaining, nextSprout);
     growth += rate * gap;
     remaining -= gap;
-    if (garden.sprouts.length) {
-      garden.sprouts = garden.sprouts.map((timer) => Math.max(0, timer - gap));
-      const matured = garden.sprouts.filter((timer) => timer <= 0).length;
+    if (sprouts.length) {
+      sprouts = sprouts.map((timer) => Math.max(0, timer - gap));
+      const matured = sprouts.filter((timer) => timer <= 0).length;
       if (matured > 0) {
-        garden.sprouts = garden.sprouts.filter((timer) => timer > 0);
-        garden.plants += matured;
+        sprouts = sprouts.filter((timer) => timer > 0);
+        plants += matured;
         rate += matured * PLANT_PRODUCTION;
       }
     }
     if (!(gap > 0)) break;
   }
+  return { growth, rate, sprouts, plants, beds };
+}
+
+/**
+ * Let the live garden grow for `seconds`, and let every seed that is due mature.
+ *
+ * A thin wrapper over `simulateGarden`: the live garden is wound forward with
+ * the same rule a rehearsal or a return uses, so nothing can disagree about how
+ * time changes the garden.
+ */
+export function advance(seconds) {
+  const next = simulateGarden(
+    { growth, rate, sprouts: garden.sprouts, plants: garden.plants, beds: garden.beds },
+    seconds
+  );
+  growth = next.growth;
+  rate = next.rate;
+  garden = { ...garden, sprouts: next.sprouts, plants: next.plants };
   notify();
   return getGrowthState();
 }

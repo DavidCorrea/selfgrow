@@ -41,11 +41,23 @@ import {
   readStoredGarden,
   setGarden,
   setGrowth,
+  simulateGarden,
   storageAvailable,
   writeLastSeen,
   writeStoredGarden,
 } from "./garden.js";
-import { applyReturn, exportSave, getDisplayedState, loadGardenSave, summarizeReturn } from "./app.js";
+import {
+  applyReturn,
+  buildAwayReport,
+  exportSave,
+  fastForwardSandbox,
+  getDisplayedState,
+  getSandboxState,
+  loadGardenSave,
+  openSandbox,
+  resetSandbox,
+  summarizeReturn,
+} from "./app.js";
 import { FORMS, gardenForm } from "./plotview.js";
 
 const numberFormat = new Intl.NumberFormat("en");
@@ -1427,6 +1439,194 @@ function checkReturnSummary(problems) {
   }
 }
 
+/**
+ * The pure simulation behind both a return and a sandbox rehearsal: one span in
+ * one step lands where played time would, and a span that cannot be trusted
+ * grows nothing.
+ */
+function checkSimulateGarden(problems) {
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const DAY = 86400;
+  try {
+    setGarden({ seeds: 3, plants: 0 });
+    setGrowth(0, 1);
+    advance(30 * DAY);
+    const lived = { growth: getGrowthState().growth, garden: getGarden() };
+
+    const played = simulateGarden(
+      { growth: 0, rate: 1, sprouts: [GROW_SECONDS, GROW_SECONDS, GROW_SECONDS], plants: 0, beds: 1 },
+      30 * DAY
+    );
+    const tolerance = Math.max(1e-6, Math.abs(lived.growth) * 1e-9);
+    if (Math.abs(played.growth - lived.growth) > tolerance) {
+      problems.push(
+        `simulateGarden over a month gave ${played.growth} growth, but advance gave ${lived.growth}; ` +
+          "a rehearsal must land where played time does."
+      );
+    }
+    if (played.plants !== lived.garden.plants || played.sprouts.length !== lived.garden.seeds) {
+      problems.push(
+        `simulateGarden ended with ${played.sprouts.length} seeds / ${played.plants} plants, but advance ` +
+          `ended with ${lived.garden.seeds} / ${lived.garden.plants}.`
+      );
+    }
+
+    // A span that cannot be trusted must grow nothing at all, and a state that
+    // never knew about growth must read as nothing grown rather than as NaN.
+    const start = { growth: 4, rate: 0.5, sprouts: [GROW_SECONDS], plants: 0, beds: 1 };
+    const spans = [
+      ["a negative span", -3600],
+      ["a NaN span", Number.NaN],
+      ["a missing span", undefined],
+    ];
+    for (const [label, span] of spans) {
+      const held = simulateGarden(start, span);
+      if (held.growth !== 4 || held.plants !== 0 || held.sprouts.length !== 1) {
+        problems.push(
+          `simulateGarden grew on ${label}: it returned ${held.growth} growth / ${held.plants} plants / ` +
+            `${held.sprouts.length} seeds, expected the untouched 4 / 0 / 1.`
+        );
+      }
+    }
+    const empty = simulateGarden(undefined, 3600);
+    if (empty.growth !== 0 || empty.rate !== 0 || empty.plants !== 0 || empty.sprouts.length !== 0) {
+      problems.push(
+        `simulateGarden on a missing state returned ${JSON.stringify(empty)}, expected an empty garden of zeros.`
+      );
+    }
+  } finally {
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate);
+  }
+}
+
+/**
+ * The sandbox rehearsal: it copies the real garden, winds forward without ever
+ * touching the real one, reads exactly as the real absence would, and resets to
+ * its start.
+ */
+function checkSandbox(problems) {
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const storageBefore = rawStorage();
+  const seenBefore = rawLastSeen();
+  const DAY = 86400;
+  try {
+    const panel = document.getElementById("sandbox");
+    const openButton = document.getElementById("open-sandbox");
+    const summary = document.getElementById("sandbox-summary");
+    const goalTitle = document.getElementById("sandbox-goal-title");
+    if (!panel) problems.push("the page has no sandbox panel (#sandbox) to rehearse time in.");
+    if (!openButton) problems.push("the page has no way to open the sandbox (#open-sandbox).");
+    if (!summary) problems.push("the sandbox has no summary element (#sandbox-summary) to say what the time away did.");
+    if (!goalTitle) problems.push("the sandbox has no next-goal title (#sandbox-goal-title).");
+    for (const id of ["sandbox-hour", "sandbox-day", "sandbox-month", "sandbox-reset"]) {
+      if (!document.getElementById(id)) problems.push(`the sandbox has no ${id} control.`);
+    }
+
+    setGarden({ seeds: 2, plants: 1 });
+    setGrowth(0, 0.5);
+    const realGarden = getGarden();
+    const realGrowth = getGrowthState();
+    const realStorage = rawStorage();
+
+    const opened = openSandbox();
+    if (!opened.open || opened.seconds !== 0) {
+      problems.push(`opening the sandbox should start at 0 seconds, but it is ${JSON.stringify(opened)}.`);
+    }
+    if (opened.growth !== 0 || opened.seeds !== 2 || opened.plants !== 1) {
+      problems.push(
+        `the opened sandbox holds ${opened.growth} growth / ${opened.seeds} seeds / ${opened.plants} plants, ` +
+          "expected a copy of the real 0 / 2 / 1."
+      );
+    }
+    if (panel && panel.hidden) problems.push("opening the sandbox left its panel hidden.");
+
+    const hour = fastForwardSandbox(3600);
+    const day = fastForwardSandbox(DAY);
+    const month = fastForwardSandbox(30 * DAY);
+    if (!(hour.growth > opened.growth && day.growth > hour.growth && month.growth > day.growth)) {
+      problems.push(
+        `fast-forwarding does not grow the sandbox more each time: hour ${hour.growth}, day ${day.growth}, ` +
+          `month ${month.growth}.`
+      );
+    }
+    if (!(hour.seeds <= day.seeds && day.seeds <= month.seeds)) {
+      problems.push("fast-forwarding the sandbox turned grown plants back into ungrown seeds.");
+    }
+    if (month.seconds !== 3600 + DAY + 30 * DAY) {
+      problems.push(`the sandbox reports ${month.seconds} seconds wound forward, expected ${3600 + DAY + 30 * DAY}.`);
+    }
+
+    const back = resetSandbox();
+    if (back.seconds !== 0 || back.growth !== 0 || back.seeds !== 2 || back.plants !== 1) {
+      problems.push(
+        `resetting the sandbox left ${back.seconds} seconds / ${back.growth} growth / ${back.seeds} seeds / ` +
+          `${back.plants} plants, expected its start of 0 / 0 / 2 / 1.`
+      );
+    }
+
+    // Nothing in the sandbox may reach the real garden, its save or its clock.
+    const afterGarden = getGarden();
+    const afterGrowth = getGrowthState();
+    if (
+      afterGarden.seeds !== realGarden.seeds ||
+      afterGarden.plants !== realGarden.plants ||
+      afterGrowth.growth !== realGrowth.growth ||
+      afterGrowth.rate !== realGrowth.rate
+    ) {
+      problems.push(
+        `rehearsing time changed the real garden to ${afterGrowth.growth} growth / ${afterGarden.seeds} seeds / ` +
+          `${afterGarden.plants} plants; it must stay ${realGrowth.growth} / ${realGarden.seeds} / ` +
+          `${realGarden.plants}.`
+      );
+    }
+    if (rawStorage().value !== realStorage.value) {
+      problems.push("rehearsing time wrote to the garden's save; the sandbox must never touch it.");
+    }
+    if (rawLastSeen() !== seenBefore) {
+      problems.push("rehearsing time changed when the visitor was last seen; the sandbox must never touch it.");
+    }
+
+    // A month of rehearsal must read exactly as a month really away would.
+    fastForwardSandbox(30 * DAY);
+    const rehearsal = getSandboxState();
+    const nowMs = 1_700_000_000_000;
+    const away = applyReturn({ growth: 0, rate: 0.5 }, nowMs - 30 * DAY * 1000, nowMs);
+    const realGoalTitle = document.getElementById("goal-title")?.textContent;
+    const realGoalDetail = document.getElementById("goal-detail")?.textContent;
+    const realSummary = document.getElementById("return-summary")?.textContent;
+    const expected = summarizeReturn(buildAwayReport(
+      { growth: 0, rate: 0.5, sprouts: [GROW_SECONDS, GROW_SECONDS], plants: 1, beds: 1 },
+      30 * DAY
+    ));
+    if (rehearsal.summary !== realSummary || rehearsal.summary !== away.summary || rehearsal.summary !== expected) {
+      problems.push(
+        `the sandbox summary ${JSON.stringify(rehearsal.summary)} does not match the real garden's ` +
+          `${JSON.stringify(realSummary)}.`
+      );
+    }
+    if (rehearsal.goalTitle !== realGoalTitle || rehearsal.goalDetail !== realGoalDetail) {
+      problems.push(
+        `the sandbox next goal ${JSON.stringify(rehearsal.goalTitle)} / ${JSON.stringify(rehearsal.goalDetail)} ` +
+          `does not match the real garden's ${JSON.stringify(realGoalTitle)} / ${JSON.stringify(realGoalDetail)}.`
+      );
+    }
+    if (rehearsal.growth !== away.growth || rehearsal.matured !== away.matured) {
+      problems.push(
+        `after a month the sandbox holds ${rehearsal.growth} growth and matured ${rehearsal.matured} seeds, ` +
+          `but the real return reports ${away.growth} / ${away.matured}.`
+      );
+    }
+  } finally {
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate);
+    restoreRawStorage(storageBefore);
+    restoreRawLastSeen(seenBefore);
+  }
+}
+
 async function checkAgentTools(problems) {
   let tools;
   try {
@@ -1647,6 +1847,79 @@ async function checkAgentTools(problems) {
     }
   }
 
+  const openSandboxTool = find("open-sandbox");
+  const fastForwardTool = find("fast-forward-sandbox");
+  const resetSandboxTool = find("reset-sandbox");
+  if (!openSandboxTool || !fastForwardTool || !resetSandboxTool) {
+    problems.push(
+      "agenttools.js must expose open-sandbox, fast-forward-sandbox and reset-sandbox, " +
+        "so an agent can rehearse time the way the page's sandbox can."
+    );
+  } else {
+    const gardenBefore = getGarden();
+    const growthBefore = getGrowthState();
+    const storageBefore = rawStorage();
+    const seenBefore = rawLastSeen();
+    try {
+      setGarden({ seeds: 2, plants: 1 });
+      setGrowth(0, 0.5);
+
+      const opened = await openSandboxTool.execute({}, {});
+      if (!opened.sandbox?.open || opened.sandbox.seconds !== 0) {
+        problems.push("the open-sandbox tool did not report an open sandbox at its start.");
+      }
+      const copied = getSandboxState();
+      if (copied.growth !== 0 || copied.seeds !== 2 || copied.plants !== 1) {
+        problems.push(
+          `the open sandbox holds ${copied.growth} growth / ${copied.seeds} seeds / ${copied.plants} plants, ` +
+            "expected a copy of the real 0 / 2 / 1."
+        );
+      }
+      if (!getDisplayedState().sandbox?.open) {
+        problems.push("get-state does not report the sandbox the open-sandbox tool opened.");
+      }
+
+      const forwarded = await fastForwardTool.execute({ span: "day" }, {});
+      if (!forwarded.sandbox?.open || forwarded.sandbox.seconds !== 86400) {
+        problems.push(
+          `the fast-forward-sandbox tool left the sandbox at ` +
+            `${forwarded.sandbox?.seconds ?? "no"} seconds, expected 86400.`
+        );
+      }
+      if (!(forwarded.sandbox.growth > copied.growth)) {
+        problems.push("fast-forwarding the sandbox a day grew nothing.");
+      }
+
+      // The real garden, its save and its clock must be exactly where they were.
+      const realGarden = getGarden();
+      const realGrowth = getGrowthState();
+      if (
+        realGarden.seeds !== 2 ||
+        realGarden.plants !== 1 ||
+        realGrowth.growth !== 0 ||
+        Math.abs(realGrowth.rate - 0.5) > 1e-9
+      ) {
+        problems.push(
+          `a sandbox fast-forward changed the real garden to ${realGrowth.growth} growth / ` +
+            `${realGarden.seeds} seeds / ${realGarden.plants} plants; it must stay 0 / 2 / 1.`
+        );
+      }
+      if (rawStorage().value !== storageBefore.value) {
+        problems.push("a sandbox tool wrote to the garden's save; the sandbox must never touch it.");
+      }
+
+      const reset = await resetSandboxTool.execute({}, {});
+      if (!reset.sandbox?.open || reset.sandbox.seconds !== 0 || reset.sandbox.growth !== 0) {
+        problems.push("the reset-sandbox tool did not put the sandbox back to its start.");
+      }
+    } finally {
+      setGarden(gardenBefore);
+      setGrowth(growthBefore.growth, growthBefore.rate);
+      restoreRawStorage(storageBefore);
+      restoreRawLastSeen(seenBefore);
+    }
+  }
+
   const exported = await exportTool.execute({}, {});
   if (exported.save !== shown.save) {
     problems.push("export-save returned a different save than the page shows.");
@@ -1681,6 +1954,23 @@ function restoreRawStorage(snapshot) {
   try {
     if (snapshot.value == null) localStorage.removeItem(STORAGE_KEY);
     else localStorage.setItem(STORAGE_KEY, snapshot.value);
+  } catch {
+    // Storage is unusable; there is nothing to put back.
+  }
+}
+
+function rawLastSeen() {
+  try {
+    return localStorage.getItem(LAST_SEEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function restoreRawLastSeen(snapshot) {
+  try {
+    if (snapshot == null) localStorage.removeItem(LAST_SEEN_KEY);
+    else localStorage.setItem(LAST_SEEN_KEY, snapshot);
   } catch {
     // Storage is unusable; there is nothing to put back.
   }
@@ -1730,7 +2020,9 @@ export async function checks() {
     checkLargeCounts(problems);
     checkPortableSave(problems);
     checkNoOverflow(problems);
+    checkSimulateGarden(problems);
     checkReturnSummary(problems);
+    checkSandbox(problems);
     await checkAgentTools(problems);
   } finally {
     setGarden(gardenBefore);

@@ -4,12 +4,22 @@
  * Derived from what the page shows a visitor and what it lets them do — nothing
  * more. `get-state` returns every value on the page; `tend` is the Tend the soil
  * button; `plant-seed` is the Plant a seed button; `open-bed` is the Open the
- * next bed button; `export-save` is the Copy save button; `import-save` is the
- * Load save button, and returns the same fields afterwards so the caller can see
- * what it changed.
+ * next bed button; `open-sandbox`, `fast-forward-sandbox` and `reset-sandbox`
+ * are the Rehearse time panel; `export-save` is the Copy save button;
+ * `import-save` is the Load save button, and returns the same fields afterwards
+ * so the caller can see what it changed.
  */
 
-import { getDisplayedState, exportSave, loadGardenSave } from "./app.js";
+import {
+  SANDBOX_SPANS,
+  exportSave,
+  fastForwardSandbox,
+  getDisplayedState,
+  loadGardenSave,
+  openSandbox,
+  resetSandbox,
+  sandboxSpanSeconds,
+} from "./app.js";
 import { openBed, plantSeed, tend } from "./garden.js";
 
 // The save for the starting garden, so `import-save`'s example always validates
@@ -46,8 +56,14 @@ export function tools() {
         "since the visitor was last here and what it grew — seconds (0 on a " +
         "first visit or a quick reload), earned growth, how many seeds " +
         "matured (matured), the form it started at (from) and reached (to), " +
-        "the formsFound on the way, and a plain summary sentence. Ask it " +
-        "before acting so you know what the visitor sees.",
+        "the formsFound on the way, and a plain summary sentence. It also " +
+        "reports sandbox: the time rehearsal when one is open — how many " +
+        "seconds it has been wound forward and a readable elapsed label, the " +
+        "growth, form, ungrown seeds and grown plants it reached, how many " +
+        "seeds matured (matured), the return summary the real garden would " +
+        "show, and the next goal it would offer (goalTitle, goalDetail) — or " +
+        "{open: false} when no sandbox is open. Rehearsing never touches the " +
+        "real garden. Ask it before acting so you know what the visitor sees.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
       example: {},
@@ -122,6 +138,76 @@ export function tools() {
           beds: result.beds,
           state: getDisplayedState(),
         };
+      },
+    },
+    {
+      name: "open-sandbox",
+      title: "Open a sandbox garden to rehearse time",
+      description:
+        "Opens the page's time rehearsal: a copy of the garden kept only in " +
+        "memory and wound forward on demand, so a caller can see what an hour, " +
+        "a day or a month away would grow without risking the real garden. " +
+        "Opening copies the garden as it is now, wound back to its start; " +
+        "opening again re-copies it. Nothing the sandbox does is ever saved, " +
+        "and the real garden, its save and its last-seen moment are left " +
+        "untouched. Use fast-forward-sandbox to wind it forward and " +
+        "reset-sandbox to put it back. Returns the state afterwards, whose " +
+        "sandbox field is the rehearsal and whose other fields are the " +
+        "untouched real garden.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      annotations: { readOnlyHint: false },
+      example: {},
+      async execute() {
+        openSandbox();
+        return getDisplayedState();
+      },
+    },
+    {
+      name: "fast-forward-sandbox",
+      title: "Wind a sandbox garden forward",
+      description:
+        "Winds the sandbox garden forward by one span — an hour, a day or a " +
+        "month — from the snapshot it was opened at, so the result never " +
+        "drifts however many times it is called. It opens the sandbox first " +
+        "if it is closed, copying the real garden as it is now. Rehearsing " +
+        "changes nothing real: the real garden's growth, seeds, plants and " +
+        "save stay exactly as they were. Returns the state afterwards; its " +
+        "sandbox field carries the wound-forward growth, form, ungrown seeds " +
+        "and grown plants, the return summary the real garden would show, and " +
+        "the next goal it would offer.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          span: {
+            type: "string",
+            enum: SANDBOX_SPANS.map((entry) => entry.key),
+            description: "How far to wind the sandbox: \"hour\", \"day\" or \"month\".",
+          },
+        },
+        required: ["span"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false },
+      example: { span: "day" },
+      async execute({ span }) {
+        fastForwardSandbox(sandboxSpanSeconds(String(span)));
+        return getDisplayedState();
+      },
+    },
+    {
+      name: "reset-sandbox",
+      title: "Reset a sandbox garden to its start",
+      description:
+        "Puts the sandbox garden back to the moment it was opened, undoing " +
+        "every fast-forward. Safe to call when the sandbox is closed: it does " +
+        "nothing then, and the state reports sandbox.open false. Changes " +
+        "nothing real. Returns the state afterwards.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      annotations: { readOnlyHint: false },
+      example: {},
+      async execute() {
+        resetSandbox();
+        return getDisplayedState();
       },
     },
     {
