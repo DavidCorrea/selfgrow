@@ -5,7 +5,7 @@
 // closing such a ticket quietly. Both are pinned here.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isManualIssue } from "./shared.mjs";
+import { isManualIssue } from "./backlog.mjs";
 import { gatherWeek, renderDigest } from "./weekly-report.mjs";
 
 const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);

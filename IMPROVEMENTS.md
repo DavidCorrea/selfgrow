@@ -4,28 +4,17 @@ Quality concerns noticed while working, kept out of the change that found them.
 Each entry says what was observed, where, and why it matters. An entry leaves
 only when the concern is actually addressed.
 
-## `shared.mjs` is five modules in one file
+## Least privilege stops at the token
 
-**Where:** `agents/shared.mjs`, ~3,550 lines (and growing — it was ~2,500 when
-this was written).
+**Where:** every agent entrypoint; the tokens `.github/actions/secrets` writes.
 
-It holds the model chain, the agent runner, prompt loading, git, GitHub issues,
-the project board, PRs, and a Playwright build verifier. Every agent imports from
-it, so every agent depends on all of it.
-
-The seams already exist as banner comments, and the split falls out along them:
-`agent.mjs`, `github.mjs`, `verify.mjs`.
-
-**Why it matters:** every agent can reach every capability, so the Playtester
-*can* call anything its GitHub token allows — least privilege is enforced at the
-token level and by nothing at all in code. (Partly narrowed: the git push token
-now reaches only the jobs that push, so the Playtester can no longer `git push`;
-it still holds a token that writes through the API.) The ESLint config also has to grant
-browser globals to the whole directory, because the DOM-measuring code that runs
-inside Chromium lives in the same file as the git helpers.
-
-Deliberately not done as part of a cleanup: it touches every import in the repo,
-and it should be its own change with the test suite green on both sides.
+`shared.mjs` is now split into one module per concern, so what each agent
+depends on is visible in its imports — but nothing enforces it. Any agent can
+import any module, so the Playtester *can* call anything its GitHub token
+allows; least privilege is enforced at the token level and by nothing at all in
+code. (Partly narrowed: the git push token now reaches only the jobs that push,
+so the Playtester can no longer `git push`; it still holds a token that writes
+through the API.)
 
 ## The Reviewer shares a model chain with the Builder it reviews
 
@@ -53,7 +42,7 @@ that are "concrete, checkable", and nothing checks them.
 
 ## Nothing measures the cost of the pipeline any more
 
-**Where:** `agents/shared.mjs` — `printRunSummary`; `agents/health.mjs`.
+**Where:** `agents/agent.mjs` — `printRunSummary`; `agents/health.mjs`.
 
 Spend enforcement moved to a cap on the OpenRouter key, which is the right place
 for it. What went with the ledger was the only place the pipeline could SEE its
@@ -217,7 +206,7 @@ reads a diff. That argument holds only while `checks()` is right.
 
 ## An agent's tools can still reach the runner's secrets through root
 
-**Where:** `agents/secrets.mjs`, `agents/shared.mjs` — `confinedTools`,
+**Where:** `agents/secrets.mjs`, `agents/agent.mjs` — `confinedTools`,
 `gitExec`, `ghExec`; the GitHub-hosted runner itself.
 
 Secrets no longer sit in any agent's start environment, the bash tool's children
@@ -244,7 +233,7 @@ separate user, or in a container, with no `sudo`.
 
 ## Closed-issue listings are truncated without anyone noticing
 
-**Where:** `agents/shared.mjs` — `fetchShippedIssues` (`--limit 200`);
+**Where:** `agents/shipped.mjs` — `fetchShippedIssues` (`--limit 200`);
 `agents/playtest-findings.mjs` — `fetchAnswerHistory` (200 findings, 500
 tickets).
 
@@ -259,7 +248,7 @@ complete — a Health check counting all shipped work since the reset, say.
 
 ## Shipped work depends on GitHub's commit search index
 
-**Where:** `agents/shared.mjs` — `fetchProductStart`, used by
+**Where:** `agents/shipped.mjs` — `fetchProductStart`, used by
 `fetchShippedIssues`.
 
 When the current product began is found by searching commits for the reset's

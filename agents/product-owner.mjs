@@ -10,23 +10,15 @@
 // of a week. Post-mortems record why one ticket failed and are read by the Scout
 // before it plans; this records what a run of tickets adds up to, and is read
 // here, next week, before direction is set again.
-import {
-  log,
-  withLogGroup,
-  printRunSummary,
-  loadPrompt,
-  fillTemplate,
-  runAgent,
-  extractAgentResponse,
-  getBoardSnapshot,
-  readVision,
-  commitToWiki,
-  getCurrentMilestone,
-  startMilestone,
-  isBlocked,
-  fetchOpenIssues,
-  fetchShippedIssues,
-} from "./shared.mjs";
+import { log } from "./log.mjs";
+import { runEntrypoint, runAgent } from "./agent.mjs";
+import { loadPrompt, fillTemplate, extractAgentResponse } from "./prompts.mjs";
+import { getBoardSnapshot } from "./board-snapshot.mjs";
+import { getCurrentMilestone, startMilestone, fetchOpenIssues } from "./github.mjs";
+import { isBlocked } from "./backlog.mjs";
+import { fetchShippedIssues } from "./shipped.mjs";
+import { closedWithin } from "./time.mjs";
+import { readVision, commitToWiki } from "./wiki.mjs";
 import {
   readJournal,
   appendJournal,
@@ -37,9 +29,7 @@ import {
   renderDecisions,
 } from "./discussions.mjs";
 import { PLAYTESTER_JOURNAL, renderOpenFindings, renderPlaytesterVerdicts } from "./playtest-findings.mjs";
-import { pathToFileURL } from "url";
 
-const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 
 /**
  * The week as it actually went, from what the pipeline wrote down: what shipped,
@@ -52,10 +42,9 @@ const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice
  * dark void" never reached the role that decides whether a milestone is done.
  */
 function readWeek() {
-  const since = daysAgo(7);
   const open = fetchOpenIssues();
   return {
-    shipped: fetchShippedIssues().filter((i) => (i.closedAt || "") >= since),
+    shipped: closedWithin(fetchShippedIssues(), 7),
     parked: open.filter(isBlocked),
     open,
     verdicts: readJournal(PLAYTESTER_JOURNAL),
@@ -181,7 +170,6 @@ async function main() {
   const vision = readVision();
   if (vision.startsWith("(Vision unavailable")) {
     log("error", "Wiki not reachable / not seeded — skipping the review.");
-    printRunSummary("Product Owner");
     return;
   }
 
@@ -192,36 +180,28 @@ async function main() {
   // scratch and could contradict last week without noticing.
   const past = readJournal(JOURNAL);
   log("info", `Reviewing a week of ${week.shipped.length} shipped, ${week.parked.length} parked.`);
+  // Most-recurrent first, the same ordering the Scout reads.
+  const lessons = readLessonThreads();
 
-  const rawOutput = await withLogGroup("Product Owner", () =>
-    runAgent({
-      label: "Product Owner",
-      systemPrompt: fillTemplate(loadPrompt("product-owner"), {
-        VISION: vision,
-        BOARD_STATE: boardState,
-        WEEK: renderWeek(week),
-        // Most-recurrent first, the same ordering the Scout reads.
-        LESSONS: (() => {
-          const threads = readLessonThreads();
-          return threads.length ? renderLessonThreads(threads) : "(nothing recorded yet)";
-        })(),
-        PAST: past.length ? past.join("\n\n") : "(nothing recorded yet — this is the first)",
-        // What the project has already settled. This role changes direction, so it
-        // is the one most able to undo a decision without realising there was one.
-        DECISIONS: (() => {
-          const decisions = readDecisions();
-          return decisions.length ? renderDecisions(decisions) : "(nothing settled yet)";
-        })(),
-        MILESTONE: milestone
-          ? `**${milestone.title}** — ${milestone.description || "no description"} (${milestone.closed} closed, ${milestone.open} still open)`
-          : "(none set — this is the first)",
-      }),
-    })
-  );
+  const rawOutput = await runAgent({
+    label: "Product Owner",
+    systemPrompt: fillTemplate(loadPrompt("product-owner"), {
+      VISION: vision,
+      BOARD_STATE: boardState,
+      WEEK: renderWeek(week),
+      LESSONS: lessons.length ? renderLessonThreads(lessons) : "(nothing recorded yet)",
+      PAST: past.length ? past.join("\n\n") : "(nothing recorded yet — this is the first)",
+      // What the project has already settled. This role changes direction, so it
+      // is the one most able to undo a decision without realising there was one.
+      DECISIONS: renderDecisions(readDecisions()),
+      MILESTONE: milestone
+        ? `**${milestone.title}** — ${milestone.description || "no description"} (${milestone.closed} closed, ${milestone.open} still open)`
+        : "(none set — this is the first)",
+    }),
+  });
 
   const parsed = extractAgentResponse("Product Owner", rawOutput, {});
   if (!parsed) {
-    printRunSummary("Product Owner");
     return;
   }
   const data = parsed.data || {};
@@ -251,22 +231,14 @@ async function main() {
   // 4. The Vision, which most weeks should not move at all.
   if (parsed.outcome === "skip") {
     log("info", `Product Owner: vision unchanged. ${parsed.summary || ""}`);
-    printRunSummary("Product Owner");
     return;
   }
   const refinement = applyRefinement(parsed);
   if (refinement && commitToWiki("Vision.md", refinement.refine, refinement.summary)) {
     log("info", `Product Owner: ${refinement.summary}`);
   }
-  printRunSummary("Product Owner");
 }
 
 // Guarded so the week's rendering can be tested without running the retro — the
 // same convention as the Product Manager and the Playtester.
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
-  main().catch((err) => {
-    log("error", `Product Owner failed: ${err.message || err}`);
-    printRunSummary("Product Owner");
-    process.exit(1);
-  });
-}
+runEntrypoint(import.meta.url, "Product Owner", main);

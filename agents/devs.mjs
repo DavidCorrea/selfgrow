@@ -1,11 +1,14 @@
+import { log, withLogGroup, errorData, recordTicket } from "./log.mjs";
 import {
-  log,
-  withLogGroup,
-  printRunSummary,
-  loadPrompt,
-  fillTemplate,
-  extractAgentResponse,
-  errorData,
+  runEntrypoint,
+  isDailyQuotaExhausted,
+  runAgent,
+  BUILDER_SKILLS,
+  runReviewer,
+  getLastModelUsed,
+} from "./agent.mjs";
+import { loadPrompt, fillTemplate, extractAgentResponse } from "./prompts.mjs";
+import {
   gitExec,
   configureGitIdentity,
   createBranchName,
@@ -14,24 +17,24 @@ import {
   abortMerge,
   returnToCleanMain,
   deleteRemoteBranch,
-  fetchOpenIssues,
-  recordTicket,
+  revertMachineEdits,
+  commitAll,
+} from "./git.mjs";
+import { fetchOpenIssues, triggerWorkflow, closeIssue } from "./github.mjs";
+import {
   recordTicketFailure,
   isBlocked,
   isBuildable,
-  dependentsOf,
   chosenCandidate,
-  effectivePriorityRank,
-  isDailyQuotaExhausted,
-  unmetDependencies,
   syncWaitingLabels,
-  triggerWorkflow,
-  readVision,
-  closeIssue,
   createIssue,
   TECH_DEBT_LABEL,
   isAlreadyTracked,
-  moveCard,
+  rankBuildable,
+  describeWaiting,
+} from "./backlog.mjs";
+import { moveCard } from "./board.mjs";
+import {
   createPR,
   agentPullRequestBody,
   fetchOpenAgentPullRequests,
@@ -43,14 +46,9 @@ import {
   closePR,
   whyTicketNoLongerWanted,
   fetchTicketState,
-  appendChangelogEntry,
-  verifyBuild,
-  runAgent,
-  revertMachineEdits,
-  BUILDER_SKILLS,
-  REVIEWER_SKILLS,
-  getLastModelUsed,
-} from "./shared.mjs";
+} from "./pull-requests.mjs";
+import { verifyBuild } from "./verify.mjs";
+import { readVision, appendChangelogEntry } from "./wiki.mjs";
 import {
   appendLessonOccurrence,
   readLessonThreads,
@@ -94,7 +92,7 @@ const PINNED_TICKET = Number(process.env.TICKET_NUMBER || 0) || null;
 
 const MAX_TICKETS_PER_RUN = PINNED_TICKET
   ? 1
-  : Number(process.env.MAX_TICKETS_PER_RUN || 3);
+  : Number(process.env.MAX_TICKETS_PER_RUN || 6);
 const RUN_BUDGET_MS = Number(process.env.BUILD_RUN_BUDGET_MINUTES || 45) * 60 * 1000;
 
 // The Builder's own session caps. The shared 40 turns / 12 minutes was sized for
@@ -113,12 +111,9 @@ const BUILDER_SESSION_LIMITS = {
 // ---------------------------------------------------------------------------
 
 /**
- * Past dead ends, for the Scout to read before planning. Framed as advice rather
- * than prohibition: a lesson explains why something failed once, which is a
- * reason to plan differently, not proof that the work is impossible.
- */
-/**
- * The dead ends the Scout should plan around.
+ * The dead ends the Scout should plan around. Framed as advice rather than
+ * prohibition: a lesson explains why something failed once, which is a reason to
+ * plan differently, not proof that the work is impossible.
  *
  * MOST-RECURRENT first: a failure seen four times is likelier to catch this ticket
  * than one seen once last night, which is the ordering the old wiki page could
@@ -195,18 +190,16 @@ function buildReviewerPrompt(changeContext = "") {
 async function writePostMortem(issue, reason) {
   if (!issue?.number) return;
   try {
-    const raw = await withLogGroup("Post-mortem", () =>
-      runAgent({
-        label: "Post-mortem",
-        systemPrompt: fillTemplate(loadPrompt("post-mortem"), {
-          TICKET_TITLE: issue.title || `#${issue.number}`,
-          TICKET_NUMBER: String(issue.number),
-          TICKET_BODY: (issue.body || "(no description)").slice(0, 2000),
-          FAILURE_REASONS: reason || "(no reason was recorded)",
-        }),
-        tools: [],
-      })
-    );
+    const raw = await runAgent({
+      label: "Post-mortem",
+      systemPrompt: fillTemplate(loadPrompt("post-mortem"), {
+        TICKET_TITLE: issue.title || `#${issue.number}`,
+        TICKET_NUMBER: String(issue.number),
+        TICKET_BODY: (issue.body || "(no description)").slice(0, 2000),
+        FAILURE_REASONS: reason || "(no reason was recorded)",
+      }),
+      tools: [],
+    });
     const parsed = extractAgentResponse("Post-mortem", raw, { requireOutcome: false });
     const lesson = parsed?.data?.lesson;
     if (!lesson) {
@@ -275,7 +268,7 @@ function cleanupBranch(branchName) {
  */
 async function runPlanningAgent(label, opts) {
   try {
-    return await withLogGroup(label, () => runAgent(opts));
+    return await runAgent({ ...opts, group: label });
   } catch (e) {
     if (isDailyQuotaExhausted(e)) throw e;
     log("error", `${label} failed — abandoning this ticket, not the run: ${e.message || e}`, errorData(e));
@@ -443,16 +436,15 @@ async function runBuildReviewLoop(ctx, plan) {
 
     let builderOutput;
     try {
-      builderOutput = await withLogGroup(`Builder (attempt ${attempt})`, () =>
-        runAgent({
-          label: "Builder",
-          systemPrompt: buildBuilderPrompt(plan.output, ctx.reviewerFeedback, ctx.issueObj),
-          tools: ["read", "bash", "edit", "write"],
-          skills: BUILDER_SKILLS,
-          thinkingLevel: "medium",
-          sessionLimits: BUILDER_SESSION_LIMITS,
-        })
-      );
+      builderOutput = await runAgent({
+        label: "Builder",
+        group: `Builder (attempt ${attempt})`,
+        systemPrompt: buildBuilderPrompt(plan.output, ctx.reviewerFeedback, ctx.issueObj),
+        tools: ["read", "bash", "edit", "write"],
+        skills: BUILDER_SKILLS,
+        thinkingLevel: "medium",
+        sessionLimits: BUILDER_SESSION_LIMITS,
+      });
     } catch (e) {
       // A capped session, or an exhausted account, is not transient: every
       // remaining attempt is guaranteed to fail the same way, and retrying just
@@ -557,8 +549,7 @@ async function runBuildReviewLoop(ctx, plan) {
 function pushAttempt(ctx) {
   try {
     if (gitExec(["status", "--porcelain"])) {
-      gitExec(["add", "-A"]);
-      gitExec(["commit", "-m", ctx.commitMessage]);
+      commitAll(ctx.commitMessage);
       log("info", `Committed: ${ctx.commitMessage}`);
     }
     if (gitExec(["rev-list", "--count", `main..${ctx.branchName}`]) === "0") {
@@ -599,17 +590,10 @@ async function reviewOpenPR(ctx, attempt) {
   // Builder and Reviewer used to come off the same chain, usually landing on the
   // same model, so the three review cycles bought three re-rolls of one opinion.
   // Falls back to the same model rather than skipping the review.
-  const reviewerOutput = await withLogGroup(`Reviewer (attempt ${attempt})`, () =>
-    runAgent({
-      label: "Reviewer",
-      systemPrompt: buildReviewerPrompt(reviewContext),
-      tools: ["read", "bash"],
-      skills: REVIEWER_SKILLS,
-      avoidModel: ctx.builderModel,
-    })
-  );
-  const reviewerResult = extractAgentResponse("Reviewer", reviewerOutput, {
-    requiredDataFields: ["issues"],
+  const reviewerResult = await runReviewer({
+    group: `Reviewer (attempt ${attempt})`,
+    systemPrompt: buildReviewerPrompt(reviewContext),
+    avoidModel: ctx.builderModel,
   });
   if (!reviewerResult) {
     return { approved: false, feedback: "The Reviewer output could not be parsed. Check your work for obvious issues." };
@@ -634,14 +618,13 @@ async function reconcileWithMain(ctx) {
   log("warn", "Merge conflict with origin/main — sending to Builder for resolution.", {
     conflictedFiles: mergeResult.conflictedFiles,
   });
-  const resolverOutput = await withLogGroup("Builder (conflict resolution)", () =>
-    runAgent({
-      label: "Builder",
-      systemPrompt: buildMergeConflictPrompt(mergeResult.conflictedFiles, mergeResult.statusOutput, ctx.commitMessage),
-      tools: ["read", "bash", "edit", "write"],
-      thinkingLevel: "medium",
-    })
-  );
+  const resolverOutput = await runAgent({
+    label: "Builder",
+    group: "Builder (conflict resolution)",
+    systemPrompt: buildMergeConflictPrompt(mergeResult.conflictedFiles, mergeResult.statusOutput, ctx.commitMessage),
+    tools: ["read", "bash", "edit", "write"],
+    thinkingLevel: "medium",
+  });
   extractAgentResponse("Builder", resolverOutput, { requireOutcome: false, requiredDataFields: ["resolvedFiles"] });
 
   if (gitExec(["diff", "--name-only", "--diff-filter=U"])) {
@@ -652,8 +635,7 @@ async function reconcileWithMain(ctx) {
     const resolveMsg = ctx.issueNumber
       ? `Resolve merge conflicts with origin/main (refs #${ctx.issueNumber})`
       : "Resolve merge conflicts with origin/main";
-    gitExec(["add", "-A"]);
-    gitExec(["commit", "-m", resolveMsg]);
+    commitAll(resolveMsg);
     gitExec(["push", "origin", ctx.branchName]);
     log("info", "Merge conflicts resolved and pushed.");
     return null;
@@ -748,7 +730,7 @@ async function landAndRecord(ctx) {
 
   // Close the issue with a meaningful summary, mark the card Done.
   if (ctx.issueNumber) {
-    await closeIssue(ctx.issueNumber, {
+    closeIssue(ctx.issueNumber, {
       summary: ctx.builderSummary,
       commitMessage: ctx.commitMessage,
       commitSha,
@@ -986,6 +968,26 @@ async function reconcileOpenAgentPrs(openIssues, awaitedPrs) {
   return claimed;
 }
 
+/** Say why this pass has nothing to build. */
+function explainNothingAvailable({ open, attempted, claimed, pass, mergedCount }) {
+  const untried = open.filter((i) => !attempted.has(i.number) && !claimed.has(i.number) && !isBlocked(i));
+  const waiting = describeWaiting(untried, new Set(open.map((i) => i.number)));
+  if (claimed.size) {
+    // Not an empty board — the work is open as PRs. Naming them is the
+    // difference between "nothing to do" and "everything is waiting on a
+    // check", which look identical from the run's own logs.
+    log("info", `Nothing available: ${[...claimed].map((n) => `#${n}`).join(", ")} still claimed by an open PR.`);
+  } else if (waiting.length) {
+    // Not idle — every remaining ticket is waiting on something. Say what, so
+    // a stuck backlog is diagnosable instead of looking like an empty one.
+    log("info", `Nothing available: ${waiting.join("; ")}.`);
+  } else {
+    log("info", pass === 1
+      ? "No buildable tickets — nothing to build. (The Product Manager grooms the backlog.)"
+      : `Backlog drained this run — built ${mergedCount}.`);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Main — drain the highest-priority tickets within a wall-clock budget.
 // ---------------------------------------------------------------------------
@@ -1001,7 +1003,6 @@ async function main() {
   const awaitedPrs = new Set(); // stalled PRs whose merge this run already waited on
   const deadline = Date.now() + RUN_BUDGET_MS;
   let mergedCount = 0;
-  const pinnedTicket = PINNED_TICKET;
 
   for (let n = 1; n <= MAX_TICKETS_PER_RUN; n++) {
     if (Date.now() > deadline) {
@@ -1014,69 +1015,25 @@ async function main() {
     // before the work that stands on them. Re-read every pass: a merge this run
     // may have just released the next ticket.
     const open = fetchOpenIssues();
-    const openNumbers = new Set(open.map((i) => i.number));
     // Settle what earlier runs left open BEFORE choosing, every pass: a ticket
     // with a live PR is not buildable, and a stale one is retired here so the
     // ticket comes back with its failure written down rather than silently
     // re-planned onto a branch beside the one that already failed.
     const claimed = await withLogGroup("Open pull requests", () => reconcileOpenAgentPrs(open, awaitedPrs));
-    const untried = open.filter((i) => !attempted.has(i.number) && !claimed.has(i.number));
-    let candidates = untried.filter((i) => isBuildable(i, openNumbers));
-
-    // Rank by what each ticket unblocks, not only by its own label, and say so in
-    // the ticket itself. The Scout chooses from labels, so sorting alone would not
-    // move it: #170 is priority:low and gates a chain of three priority:high
-    // tickets, and on its label the Scout will reach past it every time.
-    candidates = [...candidates]
-      .map((issue) => {
-        const unblocks = dependentsOf(issue, open);
-        if (!unblocks.length) return issue;
-        return {
-          ...issue,
-          unblocks: unblocks.map((d) => ({
-            number: d.number,
-            title: d.title,
-            priority: (d.labels || [])
-              .map((l) => l.name || l)
-              .find((n) => n.startsWith("priority:")) || "unlabeled",
-          })),
-        };
-      })
-      .sort(
-        (a, b) =>
-          effectivePriorityRank(a, open) - effectivePriorityRank(b, open) ||
-          a.number - b.number
-      );
+    let candidates = rankBuildable(open, { exclude: new Set([...attempted, ...claimed]) });
 
     // A pinned run sees only its own ticket, so a hand-started rebuild of one
     // ticket cannot drift onto whatever else the board is offering.
-    if (pinnedTicket) {
-      candidates = candidates.filter((i) => i.number === pinnedTicket);
+    if (PINNED_TICKET) {
+      candidates = candidates.filter((i) => i.number === PINNED_TICKET);
       if (!candidates.length) {
-        log("info", `Pinned ticket #${pinnedTicket} is no longer available (closed, parked, or newly blocked) — nothing to do.`);
+        log("info", `Pinned ticket #${PINNED_TICKET} is no longer available (closed, parked, or newly blocked) — nothing to do.`);
         break;
       }
     }
 
     if (candidates.length === 0) {
-      const waiting = untried
-        .filter((i) => !isBlocked(i))
-        .map((i) => `#${i.number} waits on ${unmetDependencies(i, openNumbers).map((d) => `#${d}`).join(", ")}`)
-        .filter((s) => !s.endsWith("waits on "));
-      if (claimed.size) {
-        // Not an empty board — the work is open as PRs. Naming them is the
-        // difference between "nothing to do" and "everything is waiting on a
-        // check", which look identical from the run's own logs.
-        log("info", `Nothing available: ${[...claimed].map((n) => `#${n}`).join(", ")} still claimed by an open PR.`);
-      } else if (waiting.length) {
-        // Not idle — every remaining ticket is waiting on something. Say what, so
-        // a stuck backlog is diagnosable instead of looking like an empty one.
-        log("info", `Nothing available: ${waiting.join("; ")}.`);
-      } else {
-        log("info", n === 1
-          ? "No buildable tickets — nothing to build. (The Product Manager grooms the backlog.)"
-          : `Backlog drained this run — built ${mergedCount}.`);
-      }
+      explainNothingAvailable({ open, attempted, claimed, pass: n, mergedCount });
       break;
     }
 
@@ -1116,11 +1073,6 @@ async function main() {
     `Run complete — ${mergedCount} ticket(s) merged.`
   );
   maybeReplenishBacklog(mergedCount);
-  printRunSummary("Devs");
 }
 
-main().catch((err) => {
-  log("error", `Pipeline failed: ${err.message || err}`);
-  printRunSummary("Devs");
-  process.exit(1);
-});
+runEntrypoint(import.meta.url, "Devs", main);

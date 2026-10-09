@@ -16,7 +16,7 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'agents/models.json'
-      - 'agents/shared.mjs'
+      - 'agents/agent.mjs'
       - 'agents/model-check.mjs'
 
 permissions:

@@ -12,7 +12,7 @@ import fs from "fs";
 import os from "os";
 import { join } from "path";
 import { parseSecrets, takeSecrets, gitAuthEnv } from "./secrets.mjs";
-import { ghExec } from "./shared.mjs";
+import { ghExec } from "./git.mjs";
 
 const tempDir = fs.mkdtempSync(join(os.tmpdir(), "selfgrow-secrets-"));
 after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
@@ -109,7 +109,8 @@ test("an agent loaded from the secrets file", () => {
   const probe = `
     import { execFileSync } from "child_process";
     import { secret } from "./secrets.mjs";
-    import { toolSubprocessEnv, gitExec } from "./shared.mjs";
+    import { toolSubprocessEnv } from "./agent.mjs";
+    import { gitExec } from "./git.mjs";
     const parentEnviron = process.platform === "linux"
       ? execFileSync("sh", ["-c", "cat /proc/$PPID/environ"]).toString()
       : null;

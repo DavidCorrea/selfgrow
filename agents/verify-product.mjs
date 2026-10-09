@@ -8,16 +8,20 @@
 // This is the same function, in a job whose exit code a repository ruleset can
 // require. Nothing here is new verification; it is the existing verification made
 // non-optional.
-import { log, printRunSummary, verifyBuild } from "./shared.mjs";
+import { log } from "./log.mjs";
+import { runEntrypoint } from "./agent.mjs";
+import { verifyBuild } from "./verify.mjs";
 
-const report = await verifyBuild();
-
-if (report.ok) {
-  log("info", "Product verification passed.");
-  printRunSummary("Verify product");
-  process.exit(0);
+async function main() {
+  const report = await verifyBuild();
+  if (report.ok) {
+    log("info", "Product verification passed.");
+    return;
+  }
+  log("error", `Product verification failed at the ${report.layer} layer.`, { errors: report.errors });
+  process.exitCode = 1;
 }
 
-log("error", `Product verification failed at the ${report.layer} layer.`, { errors: report.errors });
-printRunSummary("Verify product");
-process.exit(1);
+// Exit as soon as the verdict is in: a socket the browser left open would
+// otherwise hold this required check until the job's timeout.
+runEntrypoint(import.meta.url, "Verify product", main, { exitWhenDone: true });

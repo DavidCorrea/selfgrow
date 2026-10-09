@@ -5,9 +5,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { planGrooming, groomedBody } from "./product-manager.mjs";
-
-const issue = (number, { body = "", labels = [], title = `Ticket ${number}` } = {}) =>
-  ({ number, title, body, labels: labels.map((name) => ({ name })) });
+import { issue } from "./fixtures.mjs";
 
 const techLeadTicket = issue(5, {
   labels: ["agent"],

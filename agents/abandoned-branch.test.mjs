@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import fs from "fs";
 import os from "os";
 import { join } from "path";
-import { gitExec, returnToCleanMain } from "./shared.mjs";
+import { gitExec, returnToCleanMain } from "./git.mjs";
 
 describe("returning to main after abandoning a ticket", () => {
   let root;

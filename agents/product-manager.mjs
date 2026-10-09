@@ -1,40 +1,38 @@
-import { pathToFileURL } from "url";
-import fs from "fs";
+import { log, errorData, recordTicket } from "./log.mjs";
+import { runEntrypoint, runAgent } from "./agent.mjs";
+import { loadPrompt, fillTemplate, extractAgentResponse } from "./prompts.mjs";
+import { getBoardSnapshot } from "./board-snapshot.mjs";
 import {
-  log,
-  withLogGroup,
-  printRunSummary,
-  loadPrompt,
-  fillTemplate,
-  runAgent,
-  extractAgentResponse,
-  errorData,
-  getBoardSnapshot,
-  readVision,
   createIssue,
-  moveCard,
   ensurePriorityLabels,
   setIssuePriority,
-  recordTicket,
   retireIssue,
-  fetchShippedIssues,
-  fetchOpenIssues,
   isBuildable,
-  triggerWorkflow,
   dependencyLine,
+  criteriaSection,
+  devNotesSection,
   syncWaitingLabels,
   isPlaytestFeedback,
   isManualIssue,
   rewriteIssueBody,
-  getCurrentMilestone,
-  setIssueMilestone,
   GROOMED_LABEL,
   isGroomed,
   isBlocked,
   isNonWorkIssue,
   editIssueLabels,
   PRIORITY_LABELS,
-} from "./shared.mjs";
+  hasDiagnosis,
+  labelNames,
+} from "./backlog.mjs";
+import { moveCard } from "./board.mjs";
+import { fetchShippedIssues } from "./shipped.mjs";
+import {
+  fetchOpenIssues,
+  triggerWorkflow,
+  getCurrentMilestone,
+  setIssueMilestone,
+} from "./github.mjs";
+import { readVision } from "./wiki.mjs";
 import {
   readInboundIdeas,
   renderInboundIdeas,
@@ -51,7 +49,7 @@ import {
   fetchAnswerHistory,
   renderPriorAnswers,
 } from "./playtest-findings.mjs";
-import { listSourceFiles, formatSources, SOURCE_DIR, hasDiagnosis } from "./tech-lead.mjs";
+import { readSources, formatSources } from "./product-source.mjs";
 
 // The day the Product Manager does more than groom: it also reviews the shipped
 // code for what should be REMOVED, and writes the week's report.
@@ -182,28 +180,6 @@ function kickBuilder() {
 // ---------------------------------------------------------------------------
 // Backlog grooming — create prioritized tickets on the board (best-effort)
 // ---------------------------------------------------------------------------
-
-function criteriaSection(acceptanceCriteria) {
-  const criteria = (Array.isArray(acceptanceCriteria) ? acceptanceCriteria : [])
-    .map((criterion) => String(criterion).trim())
-    .filter(Boolean);
-  return criteria.length ? `## Acceptance criteria\n${criteria.map((criterion) => `- [ ] ${criterion}`).join("\n")}` : "";
-}
-
-// Technical detail lives in its own section so the top of a ticket can say what
-// the player gets. Tickets used to carry selectors and CSS properties as their
-// acceptance criteria, which told the Builder how to satisfy a checker rather
-// than what the player should notice.
-function devNotesSection(...notes) {
-  // A model sends a string or a list; a list stringified as-is joins its items
-  // with commas into one unreadable line.
-  const asText = (note) =>
-    Array.isArray(note)
-      ? note.map((item) => `- ${String(item).trim().replace(/^- /, "")}`).join("\n")
-      : String(note || "").trim();
-  const text = notes.map(asText).filter(Boolean).join("\n\n");
-  return text ? `## Dev Notes\n${text}` : "";
-}
 
 // Compose the issue body the Builder reads: the PM's description followed by the
 // acceptance criteria as a checklist, so "what to build" and "how we know it's
@@ -446,17 +422,9 @@ function triageExisting(openIssues, boardItems, triage) {
     }
     const priority = priorityOf.get(iss.number);
     if (priority) {
-      const current = (iss.labels || []).map((l) => l.name || l);
+      const current = labelNames(iss);
       setIssuePriority(iss.number, priority, current);
     }
-  }
-}
-
-function readFileSafely(path) {
-  try {
-    return fs.readFileSync(path, "utf-8");
-  } catch {
-    return "";
   }
 }
 
@@ -523,10 +491,6 @@ function escalateFindings(escalate, openIssues) {
   }
 }
 
-/**
- * Close the tickets the PM chose to retire (blocked tickets it split or dropped).
- * Returns the set of retired issue numbers. Best-effort.
- */
 /**
  * Validate what the PM asked to retire, WITHOUT closing anything yet.
  *
@@ -678,7 +642,7 @@ function groomTickets(groom, openIssues) {
     const body = groomedBody(issue, item);
     if (body && !rewriteIssueBody(issue.number, body)) continue;
     if (!editIssueLabels(issue.number, { add: [GROOMED_LABEL] })) continue;
-    setIssuePriority(issue.number, priority, (issue.labels || []).map((label) => label.name || label));
+    setIssuePriority(issue.number, priority, labelNames(issue));
     count++;
   }
   if (count) log("info", `Groomed ${count} ticket(s).`);
@@ -731,72 +695,11 @@ function answerIdeas(ideas) {
   if (entries.length) log("info", `Answered ${entries.length} idea(s) from people.`);
 }
 
-async function main() {
-  log("info", "=== Product Manager — Backlog Grooming ===");
-
-  const { openIssues, boardItems, boardState } = getBoardSnapshot();
-  const vision = readVision();
-  ensurePriorityLabels();
-
-  // App Review is not run here any more. Its measurements reach this role only
-  // through the Playtester's findings: the accessibility barriers filed as they
-  // are, the rest judged against what a player could notice. Read directly, every
-  // measurement became a ticket in the checker's words.
-
-  const milestone = getCurrentMilestone();
-  log("info", milestone
-    ? `Working toward "${milestone.title}" (${milestone.closed} closed, ${milestone.open} open).`
-    : "No milestone set — the Product Owner sets one each Monday.");
-
-  // Curation is weekly, because it is the one part of grooming that needs the
-  // product's whole source in the prompt. On other days the section says so, and
-  // the run stays cheap.
-  const weekly = isWeeklyRun();
-  const shippedCode = weekly
-    ? formatSources(
-        listSourceFiles(SOURCE_DIR).map((path) => ({
-          name: path.replace(`${SOURCE_DIR}/`, "docs/"),
-          source: readFileSafely(path),
-        }))
-      )
-    : "";
-
-  const rawOutput = await withLogGroup("Product Manager", () =>
-    runAgent({
-      label: "Product Manager",
-      systemPrompt: fillTemplate(loadPrompt("product-manager"), {
-        VISION: vision,
-        // The one input that does not arrive as work. Read here rather than in the
-        // Devs on purpose: an idea is not a ticket until this role says it is, and
-        // an idea from someone without write access must never reach an agent that
-        // can act on text — see renderInboundIdeas for how the trust is marked.
-        IDEAS: (() => {
-          const ideas = readInboundIdeas();
-          return ideas.length ? renderInboundIdeas(ideas) : "(nothing posted)";
-        })(),
-        MILESTONE: renderMilestone(milestone),
-        BOARD_STATE: boardState,
-        UNGROOMED: renderUngroomed(openIssues),
-        PARKED: renderParked(openIssues),
-        // The history costs two listings, so it is read only on a day there is a
-        // finding to answer.
-        PLAYTEST_FEEDBACK: openIssues.some(needsAnswer)
-          ? renderPlaytestFeedback(openIssues, fetchAnswerHistory())
-          : renderPlaytestFeedback(openIssues),
-        CURATION: renderCuration(weekly, shippedCode),
-      }),
-      tools: ["read", "bash"],
-    })
-  );
-
-  // Worker agent — parse JSON but don't require an outcome field.
-  const parsed = extractAgentResponse("Product Manager", rawOutput, { requireOutcome: false });
-  if (!parsed) {
-    printRunSummary("Product Manager");
-    return;
-  }
-
-  const data = parsed.data || {};
+/**
+ * Act on what the Product Manager decided, in the order that keeps nothing
+ * closed before its replacement exists.
+ */
+async function applyDecisions(data, { openIssues, boardItems, milestone }) {
   // 1. Decide what to retire, but do not close it yet. Closing runs LAST, because
   //    a retirement is usually justified by a replacement the grooming pass has
   //    not created yet — see executeRetirements.
@@ -832,6 +735,64 @@ async function main() {
     await retireIssue(number, `Returned smaller as #${replacement}, after the Devs could not ship it as written.`);
     recordTicket("retired", number, issue.title);
   }
+}
+
+async function main() {
+  log("info", "=== Product Manager — Backlog Grooming ===");
+
+  const { openIssues, boardItems, boardState } = getBoardSnapshot();
+  const vision = readVision();
+  ensurePriorityLabels();
+
+  // App Review is not run here any more. Its measurements reach this role only
+  // through the Playtester's findings: the accessibility barriers filed as they
+  // are, the rest judged against what a player could notice. Read directly, every
+  // measurement became a ticket in the checker's words.
+
+  const milestone = getCurrentMilestone();
+  log("info", milestone
+    ? `Working toward "${milestone.title}" (${milestone.closed} closed, ${milestone.open} open).`
+    : "No milestone set — the Product Owner sets one each Monday.");
+
+  // Curation is weekly, because it is the one part of grooming that needs the
+  // product's whole source in the prompt. On other days the section says so, and
+  // the run stays cheap.
+  const weekly = isWeeklyRun();
+  const shippedCode = weekly
+    ? formatSources(readSources())
+    : "";
+
+  // The one input that does not arrive as work. Read here rather than in the
+  // Devs on purpose: an idea is not a ticket until this role says it is, and an
+  // idea from someone without write access must never reach an agent that can
+  // act on text — see renderInboundIdeas for how the trust is marked.
+  const ideas = readInboundIdeas();
+
+  const rawOutput = await runAgent({
+    label: "Product Manager",
+    systemPrompt: fillTemplate(loadPrompt("product-manager"), {
+      VISION: vision,
+      IDEAS: ideas.length ? renderInboundIdeas(ideas) : "(nothing posted)",
+      MILESTONE: renderMilestone(milestone),
+      BOARD_STATE: boardState,
+      UNGROOMED: renderUngroomed(openIssues),
+      PARKED: renderParked(openIssues),
+      // The history costs two listings, so it is read only on a day there is a
+      // finding to answer.
+      PLAYTEST_FEEDBACK: openIssues.some(needsAnswer)
+        ? renderPlaytestFeedback(openIssues, fetchAnswerHistory())
+        : renderPlaytestFeedback(openIssues),
+      CURATION: renderCuration(weekly, shippedCode),
+    }),
+    tools: ["read", "bash"],
+  });
+
+  // Worker agent — parse JSON but don't require an outcome field.
+  const parsed = extractAgentResponse("Product Manager", rawOutput, { requireOutcome: false });
+  if (!parsed) return;
+
+  const data = parsed.data || {};
+  await applyDecisions(data, { openIssues, boardItems, milestone });
 
   answerIdeas(data.ideas);
 
@@ -853,8 +814,6 @@ async function main() {
       process.exitCode = 1;
     }
   }
-
-  printRunSummary("Product Manager");
 }
 
 // Only groom when RUN, never when imported — the same guard tech-lead.mjs uses,
@@ -865,10 +824,4 @@ async function main() {
 // is worth asserting directly, and the incident it came from was silent.
 export { titleTokens, planRetirements, executeRetirements, formatTicketBody, findingAddressed };
 
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
-  main().catch((err) => {
-    log("error", `Product Manager failed: ${err.message || err}`);
-    printRunSummary("Product Manager");
-    process.exit(1);
-  });
-}
+runEntrypoint(import.meta.url, "Product Manager", main);

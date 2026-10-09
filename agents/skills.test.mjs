@@ -7,7 +7,7 @@ import fs from "fs";
 import os from "os";
 import { join } from "path";
 import { loadSkillsFromDir } from "@earendil-works/pi-coding-agent";
-import { skillPathsFor, projectSkillProblems, SKILLS_DIR } from "./shared.mjs";
+import { skillPathsFor, projectSkillProblems, SKILLS_DIR } from "./agent.mjs";
 
 const shippedSkills = () =>
   fs.existsSync(SKILLS_DIR)

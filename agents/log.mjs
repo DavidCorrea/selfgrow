@@ -1,8 +1,8 @@
 // Structured logging, run history, and the ticket ledger the end-of-run summary
 // reports from.
 //
-// Split out of shared.mjs so the layers below it — the wiki, in particular — can
-// log without importing the module that imports them. It depends on nothing but
+// Its own module so the layers below the rest — the wiki, in particular — can
+// log without importing the modules that import them. It depends on nothing but
 // the filesystem and the environment, which is what makes it the bottom layer.
 import fs from "fs";
 

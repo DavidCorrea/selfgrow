@@ -10,7 +10,13 @@ import assert from "node:assert/strict";
 import fs from "fs";
 import os from "os";
 import { join } from "path";
-import { isShipped, fetchShippedIssues, retireIssue, productStartedAt, RESET_COMMIT_MESSAGE } from "./shared.mjs";
+import {
+  isShipped,
+  fetchShippedIssues,
+  productStartedAt,
+  RESET_COMMIT_MESSAGE,
+} from "./shipped.mjs";
+import { retireIssue } from "./backlog.mjs";
 
 let fakeBin;
 const realPath = process.env.PATH;

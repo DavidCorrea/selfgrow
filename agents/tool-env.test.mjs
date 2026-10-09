@@ -5,7 +5,7 @@
 // the environment a tool subprocess inherits, and the paths the read tool opens.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { toolSubprocessEnv, isInsideRoots } from "./shared.mjs";
+import { toolSubprocessEnv, isInsideRoots } from "./agent.mjs";
 
 test("the environment a tool subprocess inherits", async (t) => {
   await t.test("drops every secret the runner holds", () => {

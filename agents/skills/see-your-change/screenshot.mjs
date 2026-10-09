@@ -8,7 +8,8 @@
 import os from "os";
 import { join } from "path";
 import { chromium } from "playwright";
-import { repoRoot, startStaticServer, REVIEW_VIEWPORTS, viewportOptions } from "../../shared.mjs";
+import { repoRoot } from "../../paths.mjs";
+import { startStaticServer, REVIEW_VIEWPORTS, viewportOptions } from "../../verify.mjs";
 
 const name = process.argv[2] || "now";
 if (!/^[\w-]+$/.test(name)) {

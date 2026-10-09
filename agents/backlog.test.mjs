@@ -17,14 +17,13 @@ import {
   effectivePriorityRank,
   dependentsOf,
   dependencyLine,
-  slugify,
-  createBranchName,
-  preferDifferentModel,
   chosenCandidate,
-} from "./shared.mjs";
-
-const issue = (number, { body = "", labels = [], title = `Ticket ${number}` } = {}) =>
-  ({ number, title, body, labels: labels.map((name) => ({ name })) });
+  rankBuildable,
+  describeWaiting,
+} from "./backlog.mjs";
+import { slugify, createBranchName } from "./git.mjs";
+import { preferDifferentModel } from "./agent.mjs";
+import { issue } from "./fixtures.mjs";
 
 test("declaring what a ticket waits for", async (t) => {
   await t.test("reads the numbers off a Blocked by: line", () => {
@@ -324,5 +323,33 @@ test("accepting the ticket the Scout chose", async (t) => {
     assert.equal(chosenCandidate("#5", candidates), null);
     assert.equal(chosenCandidate("the first one", candidates), null);
     assert.equal(chosenCandidate(5.5, candidates), null);
+  });
+});
+
+test("choosing what to build next", async (t) => {
+  await t.test("puts a low ticket first when it unblocks high work, and says what it unblocks", () => {
+    const open = [
+      issue(3, { labels: ["groomed", "priority:medium"] }),
+      issue(5, { labels: ["groomed", "priority:low"] }),
+      issue(6, { body: "Blocked by: #5", labels: ["groomed", "priority:high"] }),
+    ];
+    const ranked = rankBuildable(open);
+    assert.deepEqual(ranked.map((candidate) => candidate.number), [5, 3]);
+    assert.deepEqual(ranked[0].unblocks, [{ number: 6, title: "Ticket 6", priority: "priority:high" }]);
+  });
+
+  await t.test("leaves out tickets already claimed or attempted", () => {
+    const open = [issue(3, { labels: ["groomed"] }), issue(4, { labels: ["groomed"] })];
+    assert.deepEqual(rankBuildable(open, { exclude: new Set([3]) }).map((candidate) => candidate.number), [4]);
+  });
+
+  await t.test("breaks a tie by the oldest ticket", () => {
+    const open = [issue(9, { labels: ["groomed"] }), issue(4, { labels: ["groomed"] })];
+    assert.deepEqual(rankBuildable(open).map((candidate) => candidate.number), [4, 9]);
+  });
+
+  await t.test("names what each held-back ticket waits on, and nothing else", () => {
+    const open = [issue(3), issue(4), issue(5, { body: "Blocked by: #3, #4" })];
+    assert.deepEqual(describeWaiting(open, new Set([3, 4, 5])), ["#5 waits on #3, #4"]);
   });
 });

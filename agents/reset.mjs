@@ -33,26 +33,20 @@
 //
 // Guarded by a typed confirmation (see requireConfirmation), because every other
 // agent here only adds and this one is irreversible in the directions that matter.
-import { pathToFileURL } from "url";
+import { log, errorData } from "./log.mjs";
+import { runEntrypoint } from "./agent.mjs";
 import {
-  log,
-  printRunSummary,
-  errorData,
   gitExec,
   ghExec,
   configureGitIdentity,
-  getWikiDir,
-  writePage,
-  closePR,
-  createPR,
-  mergePR,
   createBranch,
   deleteRemoteBranch,
-  fetchOpenIssues,
-  PROJECT_OWNER,
-  PROJECT_NUMBER,
-  RESET_COMMIT_MESSAGE,
-} from "./shared.mjs";
+} from "./git.mjs";
+import { closePR, createPR, mergePR } from "./pull-requests.mjs";
+import { fetchOpenIssues } from "./github.mjs";
+import { PROJECT_OWNER, PROJECT_NUMBER } from "./board.mjs";
+import { RESET_COMMIT_MESSAGE } from "./shipped.mjs";
+import { getWikiDir, writePage } from "./wiki.mjs";
 import { archiveProductMemory } from "./discussions.mjs";
 
 // Everything the agent harness needs in order to keep running. The product is
@@ -98,7 +92,7 @@ export function isHarnessPath(path) {
 }
 
 // Only branches the agents create are touched. A human's work-in-progress branch
-// is not this script's business. Deliberately wider than shared.mjs's
+// is not this script's business. Deliberately wider than pull-requests.mjs's
 // AGENT_BRANCH_PREFIX ("agent/issue-"), which names ticket branches: a reset
 // sweeps every branch any agent ever made, whatever it was for.
 const AGENT_BRANCH_NAMESPACE = "agent/";
@@ -129,22 +123,49 @@ export function incompleteResetMessage(gaps) {
 }
 
 /**
+ * What a step's listing returned, or null when it failed. A failed listing is a
+ * gap the operator has to close by hand, never an empty list to skip past.
+ */
+function listOrRecordGap(list, { warning, gap }) {
+  try {
+    return list();
+  } catch (e) {
+    log("warn", warning, errorData(e));
+    notDone.push(gap);
+    return null;
+  }
+}
+
+/** Act on each item, recording every one that fails and carrying on past it. */
+function actOnEachOrRecordGap(items, act, describeFailure) {
+  for (const item of items) {
+    try {
+      act(item);
+    } catch (e) {
+      const { warning, gap } = describeFailure(item);
+      log("warn", warning, errorData(e));
+      notDone.push(gap);
+    }
+  }
+}
+
+/**
  * Cancel every queued or in-progress run except this one. Without this, the
  * reset races the pipeline it is trying to stop.
  */
 function cancelPendingRuns() {
   const selfRunId = String(process.env.GITHUB_RUN_ID || "");
-  let runs = [];
-  try {
-    runs = [
+  const runs = listOrRecordGap(
+    () => [
       ...ghJson(["run", "list", "--status", "queued", "--json", "databaseId,workflowName", "--limit", "100"]),
       ...ghJson(["run", "list", "--status", "in_progress", "--json", "databaseId,workflowName", "--limit", "100"]),
-    ];
-  } catch (e) {
-    log("warn", "Could not list workflow runs — skipping cancellation.", errorData(e));
-    notDone.push("cancel queued and running workflow runs (could not list them)");
-    return;
-  }
+    ],
+    {
+      warning: "Could not list workflow runs — skipping cancellation.",
+      gap: "cancel queued and running workflow runs (could not list them)",
+    }
+  );
+  if (!runs) return;
 
   const pending = runs.filter((r) => String(r.databaseId) !== selfRunId);
   if (!pending.length) {
@@ -152,15 +173,17 @@ function cancelPendingRuns() {
     return;
   }
   log("info", `Cancelling ${pending.length} pending workflow run(s)...`);
-  for (const run of pending) {
-    try {
+  actOnEachOrRecordGap(
+    pending,
+    (run) => {
       ghExec(["run", "cancel", String(run.databaseId)]);
       log("info", `Cancelled ${run.workflowName} (${run.databaseId}).`);
-    } catch (e) {
-      log("warn", `Could not cancel run ${run.databaseId}`, errorData(e));
-      notDone.push(`cancel workflow run ${run.databaseId} (${run.workflowName})`);
-    }
-  }
+    },
+    (run) => ({
+      warning: `Could not cancel run ${run.databaseId}`,
+      gap: `cancel workflow run ${run.databaseId} (${run.workflowName})`,
+    })
+  );
 }
 
 /**
@@ -176,15 +199,14 @@ function cancelPendingRuns() {
 export function closeAllIssues() {
   const issues = fetchOpenIssues();
   log("info", `Closing ${issues.length} open issue(s)...`);
-  for (const issue of issues) {
-    try {
+  actOnEachOrRecordGap(
+    issues,
+    (issue) => {
       ghExec(["issue", "close", String(issue.number), "--reason", "not planned"]);
       log("info", `Closed #${issue.number}: ${issue.title}`);
-    } catch (e) {
-      log("warn", `Could not close #${issue.number}`, errorData(e));
-      notDone.push(`close issue #${issue.number}`);
-    }
-  }
+    },
+    (issue) => ({ warning: `Could not close #${issue.number}`, gap: `close issue #${issue.number}` })
+  );
 }
 
 /**
@@ -198,24 +220,26 @@ export function closeAllIssues() {
  * Runs after closeAllIssues so the counts it closes on are final.
  */
 export function closeAllMilestones() {
-  let milestones = [];
-  try {
-    milestones = ghJson(["api", "repos/{owner}/{repo}/milestones?state=open&per_page=100"]);
-  } catch (e) {
-    log("warn", "Could not list milestones — skipping milestone cleanup.", errorData(e));
-    notDone.push("close the open milestones (could not list them)");
-    return;
-  }
+  const milestones = listOrRecordGap(
+    () => ghJson(["api", "repos/{owner}/{repo}/milestones?state=open&per_page=100"]),
+    {
+      warning: "Could not list milestones — skipping milestone cleanup.",
+      gap: "close the open milestones (could not list them)",
+    }
+  );
+  if (!milestones) return;
   log("info", `Closing ${milestones.length} open milestone(s)...`);
-  for (const milestone of milestones) {
-    try {
+  actOnEachOrRecordGap(
+    milestones,
+    (milestone) => {
       ghExec(["api", "--method", "PATCH", `repos/{owner}/{repo}/milestones/${milestone.number}`, "-f", "state=closed"]);
       log("info", `Closed milestone "${milestone.title}".`);
-    } catch (e) {
-      log("warn", `Could not close milestone "${milestone.title}"`, errorData(e));
-      notDone.push(`close milestone "${milestone.title}" (#${milestone.number})`);
-    }
-  }
+    },
+    (milestone) => ({
+      warning: `Could not close milestone "${milestone.title}"`,
+      gap: `close milestone "${milestone.title}" (#${milestone.number})`,
+    })
+  );
 }
 
 /**
@@ -223,13 +247,14 @@ export function closeAllMilestones() {
  * orphaned by a crashed run (a branch with no PR still shadows the new project).
  */
 function clearAgentBranches() {
-  let openPRs = [];
-  try {
-    openPRs = ghJson(["pr", "list", "--state", "open", "--json", "number,headRefName", "--limit", "200"]);
-  } catch (e) {
-    log("warn", "Could not list pull requests — skipping PR cleanup.", errorData(e));
-    notDone.push("close open agent PRs (could not list them)");
-  }
+  // A failed PR listing still leaves the orphaned-branch sweep below worth doing.
+  const openPRs = listOrRecordGap(
+    () => ghJson(["pr", "list", "--state", "open", "--json", "number,headRefName", "--limit", "200"]),
+    {
+      warning: "Could not list pull requests — skipping PR cleanup.",
+      gap: "close open agent PRs (could not list them)",
+    }
+  ) ?? [];
 
   // closePR deletes the head branch too, so the sweep below only has to catch
   // branches orphaned by a crashed run — ones that never got a PR.
@@ -241,48 +266,45 @@ function clearAgentBranches() {
     }
   }
 
-  let branches = [];
-  try {
-    branches = gitExec(["ls-remote", "--heads", "origin", `refs/heads/${AGENT_BRANCH_NAMESPACE}*`])
-      .split("\n")
-      .map((line) => line.split("refs/heads/")[1])
-      .filter(Boolean);
-  } catch (e) {
-    log("warn", "Could not list remote branches — skipping branch cleanup.", errorData(e));
-    notDone.push("delete orphaned agent branches (could not list them)");
-    return;
-  }
+  const branches = listOrRecordGap(
+    () =>
+      gitExec(["ls-remote", "--heads", "origin", `refs/heads/${AGENT_BRANCH_NAMESPACE}*`])
+        .split("\n")
+        .map((line) => line.split("refs/heads/")[1])
+        .filter(Boolean),
+    {
+      warning: "Could not list remote branches — skipping branch cleanup.",
+      gap: "delete orphaned agent branches (could not list them)",
+    }
+  );
+  if (!branches?.length) return;
 
-  if (branches.length) {
-    log("info", `Deleting ${branches.length} orphaned agent branch(es)...`);
-    for (const branch of branches) deleteRemoteBranch(branch);
-  }
+  log("info", `Deleting ${branches.length} orphaned agent branch(es)...`);
+  for (const branch of branches) deleteRemoteBranch(branch);
 }
 
 const BOARD_LISTING_LIMIT = 500;
 
 function clearBoard() {
-  let items = [];
-  try {
-    const res = ghJson(["project", "item-list", PROJECT_NUMBER, "--owner", PROJECT_OWNER, "--format", "json", "--limit", String(BOARD_LISTING_LIMIT)]);
-    items = res.items || [];
-  } catch (e) {
-    log("warn", "Could not list board items — skipping board clear.", errorData(e));
-    notDone.push("clear the board (could not list its items)");
-    return;
-  }
+  const items = listOrRecordGap(
+    () =>
+      ghJson(["project", "item-list", PROJECT_NUMBER, "--owner", PROJECT_OWNER, "--format", "json", "--limit", String(BOARD_LISTING_LIMIT)])
+        .items || [],
+    {
+      warning: "Could not list board items — skipping board clear.",
+      gap: "clear the board (could not list its items)",
+    }
+  );
+  if (!items) return;
   if (items.length >= BOARD_LISTING_LIMIT) {
     notDone.push(`clear the board past its first ${BOARD_LISTING_LIMIT} items (the listing stopped there)`);
   }
   log("info", `Removing ${items.length} board item(s)...`);
-  for (const item of items) {
-    try {
-      ghExec(["project", "item-delete", PROJECT_NUMBER, "--owner", PROJECT_OWNER, "--id", item.id]);
-    } catch (e) {
-      log("warn", `Could not remove board item ${item.id}`, errorData(e));
-      notDone.push(`remove board item ${item.id}`);
-    }
-  }
+  actOnEachOrRecordGap(
+    items,
+    (item) => ghExec(["project", "item-delete", PROJECT_NUMBER, "--owner", PROJECT_OWNER, "--id", item.id]),
+    (item) => ({ warning: `Could not remove board item ${item.id}`, gap: `remove board item ${item.id}` })
+  );
 }
 
 // Each page is restored to its canonical empty form, so the first write of the new
@@ -350,28 +372,25 @@ function resetDiscussionMemory() {
  * whose tickets no longer exist. The rest are recreated on demand with --force.
  */
 function deleteAttemptLabels() {
-  let labels = [];
-  try {
-    labels = ghJson(["label", "list", "--json", "name", "--limit", "200"]);
-  } catch (e) {
-    log("warn", "Could not list labels — skipping label cleanup.", errorData(e));
-    notDone.push("delete the attempts:N labels (could not list them)");
-    return;
-  }
+  const labels = listOrRecordGap(
+    () => ghJson(["label", "list", "--json", "name", "--limit", "200"]),
+    {
+      warning: "Could not list labels — skipping label cleanup.",
+      gap: "delete the attempts:N labels (could not list them)",
+    }
+  );
+  if (!labels) return;
   const stale = labels.map((l) => l.name).filter((name) => /^attempts:/.test(name));
   if (!stale.length) {
     log("info", "No attempts:N labels to delete.");
     return;
   }
   log("info", `Deleting ${stale.length} attempts:N label(s)...`);
-  for (const name of stale) {
-    try {
-      ghExec(["label", "delete", name, "--yes"]);
-    } catch (e) {
-      log("warn", `Could not delete label ${name}`, errorData(e));
-      notDone.push(`delete label ${name}`);
-    }
-  }
+  actOnEachOrRecordGap(
+    stale,
+    (name) => ghExec(["label", "delete", name, "--yes"]),
+    (name) => ({ warning: `Could not delete label ${name}`, gap: `delete label ${name}` })
+  );
 }
 
 // The reset's own branch. Not under AGENT_BRANCH_NAMESPACE, which a reset
@@ -508,20 +527,15 @@ async function main() {
   const incomplete = incompleteResetMessage(notDone);
   if (incomplete) {
     log("error", incomplete);
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
   log(
     "info",
     "Reset complete. Remaining manual steps: write the new Vision in the wiki, " +
       "re-enable the paused workflows, then dispatch the Product Manager."
   );
-  printRunSummary("Reset");
 }
 
 // Guarded so the keep-list can be tested without arming the reset.
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
-  main().catch((err) => {
-    log("error", "Reset failed.", errorData(err));
-    process.exit(1);
-  });
-}
+runEntrypoint(import.meta.url, "Reset", main);

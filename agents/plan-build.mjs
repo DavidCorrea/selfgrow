@@ -19,18 +19,20 @@
 //
 // Prints `count` and `queue` to GITHUB_OUTPUT for the workflow to consume.
 import fs from "fs";
+import { log } from "./log.mjs";
+import { runEntrypoint } from "./agent.mjs";
+import { fetchOpenIssues } from "./github.mjs";
 import {
-  log,
-  printRunSummary,
-  fetchOpenIssues,
-  isBuildable,
+  rankBuildable,
+  describeWaiting,
+  priorityRank,
+  effectivePriorityRank,
+} from "./backlog.mjs";
+import {
   fetchOpenAgentPullRequests,
   classifyAgentPullRequest,
   PR_STALE_MS,
-  unmetDependencies,
-  priorityRank,
-  effectivePriorityRank,
-} from "./shared.mjs";
+} from "./pull-requests.mjs";
 
 // Most tickets one run will attempt, one after another. A ceiling on the queue,
 // not a target: the run stops earlier whenever the board empties or the wall
@@ -44,11 +46,10 @@ function writeOutput({ count = 0, queue = 0 } = {}) {
   else console.log(payload.trim()); // local runs just print it
 }
 
-function main() {
+async function main() {
   log("info", `=== Plan build — sizing a run of up to ${MAX_TICKETS} ticket(s) ===`);
 
   const open = fetchOpenIssues();
-  const openNumbers = new Set(open.map((i) => i.number));
   // A ticket whose PR is still in flight is not work — the build job would only
   // open a second PR beside it. A STALE one still counts: the run has to start for
   // anything to reap it, and sizing it out here is how a board full of dead PRs
@@ -60,40 +61,19 @@ function main() {
       .map((v) => v.issueNumber)
   );
   if (claimed.size) log("info", `Claimed by an open PR, not re-planned: ${[...claimed].map((n) => `#${n}`).join(", ")}.`);
-  const buildable = open.filter((i) => isBuildable(i, openNumbers) && !claimed.has(i.number));
+  // The same ranking the Builder re-picks by. See rankBuildable.
+  const ordered = rankBuildable(open, { exclude: claimed });
 
-  if (!buildable.length) {
-    const waiting = open
-      .map((i) => ({ n: i.number, deps: unmetDependencies(i, openNumbers) }))
-      .filter((w) => w.deps.length);
+  if (!ordered.length) {
+    const waiting = describeWaiting(open, new Set(open.map((i) => i.number)));
     if (waiting.length) {
-      log("info", `Nothing buildable: ${waiting.map((w) => `#${w.n} waits on ${w.deps.map((d) => `#${d}`).join(", ")}`).join("; ")}.`);
+      log("info", `Nothing buildable: ${waiting.join("; ")}.`);
     } else {
       log("info", "Nothing buildable — the backlog is empty or entirely parked.");
     }
     writeOutput();
-    printRunSummary("Plan build");
     return;
   }
-
-  // Highest priority first, then oldest, so ordering is stable and a re-run
-  // reaches for the same tickets in the same order.
-  //
-  // Attempt count is deliberately NOT a tiebreak. It used to be, on the reasoning
-  // that a ticket which has burned attempts shouldn't crowd out fresh work — but
-  // that inverts the project's priorities in practice. Hard, foundational tickets
-  // are exactly the ones that fail once, and demoting them means every easy
-  // peripheral ticket overtakes them forever: the runtime core sat at attempts:1
-  // while a skip-link fix shipped ahead of it. Perpetual failures are already
-  // handled properly by parking at MAX_TICKET_ATTEMPTS; they don't need a second
-  // mechanism that quietly reorders the roadmap.
-  // Ranked by what each ticket UNBLOCKS, not only by its own label — a blocker is
-  // worth what waits on it. See effectivePriorityRank.
-  const ordered = [...buildable].sort(
-    (a, b) =>
-      effectivePriorityRank(a, open) - effectivePriorityRank(b, open) ||
-      a.number - b.number
-  );
 
   // Deliberately NOT capped at the number buildable RIGHT NOW. Shipping a ticket
   // is what releases the tickets waiting on it, so the board grows during the run:
@@ -125,7 +105,6 @@ function main() {
   // build job. `queue` is how far the run may go, and is deliberately the larger
   // of the two whenever the board is expected to grow.
   writeOutput({ count: ordered.length, queue });
-  printRunSummary("Plan build");
 }
 
-main();
+runEntrypoint(import.meta.url, "Plan build", main);

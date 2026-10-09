@@ -40,30 +40,16 @@
 // each with real tickets, or drops it. An answered finding comes back here: this
 // role is the only one that can say whether the experience actually changed, so
 // it is the one that closes it (see playtest-findings.mjs).
-import {
-  log,
-  withLogGroup,
-  printRunSummary,
-  loadPrompt,
-  fillTemplate,
-  runAgent,
-  firstVisionModel,
-  extractAgentResponse,
-  errorData,
-  repoRoot,
-  readVision,
-  startStaticServer,
-  fetchOpenIssues,
-  createIssue,
-  recordTicket,
-  reviewApp,
-  PLAYTEST_LABEL,
-  REVIEW_VIEWPORTS,
-  viewportOptions,
-} from "./shared.mjs";
+import { log, withLogGroup, errorData, recordTicket } from "./log.mjs";
+import { runEntrypoint, runAgent, firstVisionModel } from "./agent.mjs";
+import { loadPrompt, fillTemplate, extractAgentResponse } from "./prompts.mjs";
+import { repoRoot } from "./paths.mjs";
+import { startStaticServer, reviewApp, REVIEW_VIEWPORTS, viewportOptions } from "./verify.mjs";
+import { fetchOpenIssues } from "./github.mjs";
+import { createIssue, PLAYTEST_LABEL, notesText } from "./backlog.mjs";
+import { readVision } from "./wiki.mjs";
 import { readJournal, appendJournal, renderJournalEntry } from "./discussions.mjs";
 import { isAnswered, answeringTickets, applyFollowUp, PLAYTESTER_JOURNAL } from "./playtest-findings.mjs";
-import { pathToFileURL } from "url";
 import { join } from "path";
 import fs from "fs";
 
@@ -318,6 +304,44 @@ export function toolInputs(declared) {
 }
 
 /**
+ * What the keyboard alone can reach, in the order it reaches it. The Vision
+ * makes screen-reader visitors first-class, so "can you get to the state layer
+ * without a mouse" is a question about the product, not a checklist.
+ */
+async function walkTabOrder(page) {
+  const tabOrder = [];
+  for (let stop = 0; stop < 8; stop++) {
+    await page.keyboard.press("Tab");
+    const focused = await page.evaluate(() => {
+      const el = document.activeElement;
+      if (!el || el === document.body) return null;
+      const id = el.id ? `#${el.id}` : "";
+      return `${el.tagName.toLowerCase()}${id}: ${(el.innerText || el.getAttribute("aria-label") || "").trim().slice(0, 60)}`;
+    });
+    if (!focused) break;
+    if (tabOrder.includes(focused)) break; // wrapped around
+    tabOrder.push(focused);
+  }
+  return tabOrder;
+}
+
+/**
+ * The actual sit-and-watch. Each sample is what the state layer would tell
+ * someone who asked "what's happening now?" at that moment.
+ */
+async function watch(page) {
+  const timeline = [];
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < OBSERVATION_MS) {
+    await page.waitForTimeout(SAMPLE_EVERY_MS);
+    const seconds = Math.round((Date.now() - startedAt) / 1000);
+    const { state } = await page.evaluate(readPage);
+    timeline.push({ atSeconds: seconds, state });
+  }
+  return timeline;
+}
+
+/**
  * Sit with the app and write down what it says over time.
  *
  * Returns null when there is nothing to play — no product yet, or no browser —
@@ -367,33 +391,8 @@ export async function observeApp() {
 
     const opening = await page.evaluate(readPage);
 
-    // What the keyboard alone can reach, in the order it reaches it. The Vision
-    // makes screen-reader visitors first-class, so "can you get to the state
-    // layer without a mouse" is a question about the product, not a checklist.
-    const tabOrder = [];
-    for (let stop = 0; stop < 8; stop++) {
-      await page.keyboard.press("Tab");
-      const focused = await page.evaluate(() => {
-        const el = document.activeElement;
-        if (!el || el === document.body) return null;
-        const id = el.id ? `#${el.id}` : "";
-        return `${el.tagName.toLowerCase()}${id}: ${(el.innerText || el.getAttribute("aria-label") || "").trim().slice(0, 60)}`;
-      });
-      if (!focused) break;
-      if (tabOrder.includes(focused)) break; // wrapped around
-      tabOrder.push(focused);
-    }
-
-    // The actual sit-and-watch. Each sample is what the state layer would tell
-    // someone who asked "what's happening now?" at that moment.
-    const timeline = [];
-    const startedAt = Date.now();
-    while (Date.now() - startedAt < OBSERVATION_MS) {
-      await page.waitForTimeout(SAMPLE_EVERY_MS);
-      const seconds = Math.round((Date.now() - startedAt) / 1000);
-      const { state } = await page.evaluate(readPage);
-      timeline.push({ atSeconds: seconds, state });
-    }
+    const tabOrder = await walkTabOrder(page);
+    const timeline = await watch(page);
 
     // The page as it stands when watching ends. The controls are read again
     // because they change as the game does: compared with the list from page
@@ -430,14 +429,6 @@ export async function observeApp() {
 }
 
 /**
- * Render the session as something a reader can follow in order: what the page
- * offered, what changed while watching, and what it showed on the way back in.
- *
- * Deliberately prose-shaped rather than a JSON dump. The agent reading it is
- * being asked for an impression of an experience, and a wall of serialized DOM
- * invites it to audit structure instead.
- */
-/**
  * The tool pass, as something a reader can judge rather than a JSON dump: what
  * each tool said it did, and what came back when it was called.
  */
@@ -465,6 +456,14 @@ export function renderToolPass(agentTools) {
   return lines.join("\n");
 }
 
+/**
+ * Render the session as something a reader can follow in order: what the page
+ * offered, what changed while watching, and what it showed on the way back in.
+ *
+ * Deliberately prose-shaped rather than a JSON dump. The agent reading it is
+ * being asked for an impression of an experience, and a wall of serialized DOM
+ * invites it to audit structure instead.
+ */
 export function renderSession(session, { showingFrames = true } = {}) {
   const { opening, tabOrder, timeline, closing, awayMs, returned, agentTools, consoleErrors, url } = session;
   // The transcript must describe the turn it is actually part of. The text-only
@@ -592,12 +591,6 @@ export function measuredFindings(review) {
 
 // A model asked for notes sends a string or a list of them; a list stringified
 // as-is joins its items with commas into one unreadable line.
-function notesText(notes) {
-  return Array.isArray(notes)
-    ? notes.map((note) => `- ${String(note).trim().replace(/^- /, "")}`).join("\n")
-    : String(notes).trim();
-}
-
 /** A finding's issue body. Technical detail goes in Dev Notes, below the player's view. */
 export function findingBody(finding, verdict) {
   return [
@@ -729,19 +722,18 @@ async function report(session, answeredFindings, measurements) {
 
   if (visionModel) {
     try {
-      return await withLogGroup(`Playtester (seeing, ${visionModel})`, () =>
-        runAgent({
-          label: "Playtester",
-          systemPrompt: promptFor(true),
-          // Deliberately still no tools. The frames arrive attached to the turn, so
-          // seeing the product costs the agent no ability to go reading the source —
-          // which is a different job, and one that would pull an impression into an
-          // audit (see renderSession).
-          tools: [],
-          modelId: visionModel,
-          images: frames.map((f) => f.image),
-        })
-      );
+      return await runAgent({
+        label: "Playtester",
+        group: `Playtester (seeing, ${visionModel})`,
+        systemPrompt: promptFor(true),
+        // Deliberately still no tools. The frames arrive attached to the turn, so
+        // seeing the product costs the agent no ability to go reading the source —
+        // which is a different job, and one that would pull an impression into an
+        // audit (see renderSession).
+        tools: [],
+        modelId: visionModel,
+        images: frames.map((f) => f.image),
+      });
     } catch (e) {
       log("warn", `Playtest: ${visionModel} could not report on the frames — retrying from the state layer alone.`, errorData(e));
     }
@@ -750,9 +742,7 @@ async function report(session, answeredFindings, measurements) {
   }
 
   try {
-    return await withLogGroup("Playtester", () =>
-      runAgent({ label: "Playtester", systemPrompt: promptFor(false), tools: [] })
-    );
+    return await runAgent({ label: "Playtester", systemPrompt: promptFor(false), tools: [] });
   } catch (e) {
     log("error", "Playtest: the reporting agent failed.", errorData(e));
     return null;
@@ -763,7 +753,6 @@ async function main() {
   const session = await withLogGroup("Playing the app", () => observeApp());
   if (!session) {
     log("info", "Playtest: no session to report on.");
-    printRunSummary("Playtester");
     return;
   }
 
@@ -787,7 +776,6 @@ async function main() {
   );
   if (output === null) {
     log("warn", "Playtest: the reporting agent failed both with and without the screenshots — nothing filed.");
-    printRunSummary("Playtester");
     return;
   }
 
@@ -800,7 +788,6 @@ async function main() {
   });
   if (!result) {
     log("warn", "Playtest: no usable report — nothing filed.");
-    printRunSummary("Playtester");
     return;
   }
 
@@ -849,15 +836,8 @@ async function main() {
       },
     })
   );
-  printRunSummary("Playtester");
 }
 
 // Guarded so the observation half can be imported and exercised without spending
 // a model request — same convention as the Product Manager and the Tech Lead.
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
-  main().catch((err) => {
-    log("error", `Playtester failed: ${err.message || err}`);
-    printRunSummary("Playtester");
-    process.exit(1);
-  });
-}
+runEntrypoint(import.meta.url, "Playtester", main);

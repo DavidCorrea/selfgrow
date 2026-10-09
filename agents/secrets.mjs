@@ -16,14 +16,14 @@
 // They reach a child only where one needs them and is not model-controlled: gh
 // and git (as GH_TOKEN and a git config header), and pi, in-process.
 //
-// This is the bottom layer beside log.mjs: wiki.mjs and shared.mjs both
-// authenticate with it, and wiki.mjs cannot import shared.mjs.
+// This is the bottom layer beside log.mjs: wiki.mjs, git.mjs and the agent
+// runner all authenticate with it, and wiki.mjs imports nothing above it.
 import fs from "fs";
 
 // Every name this pipeline treats as a secret. Checked in CI against the
 // environment, so a workflow that still passes one the old way fails loudly
 // instead of quietly re-opening the hole.
-export const SECRET_NAMES = ["OPENROUTER_API_KEY", "GH_TOKEN", "AGENT_PAT", "BOT_TOKEN", "GITHUB_TOKEN", "GIT_TOKEN"];
+const SECRET_NAMES = ["OPENROUTER_API_KEY", "GH_TOKEN", "AGENT_PAT", "BOT_TOKEN", "GITHUB_TOKEN", "GIT_TOKEN"];
 
 /**
  * `NAME=value` lines into { NAME: value }. Blank lines are skipped. An unknown

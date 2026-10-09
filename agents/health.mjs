@@ -14,30 +14,28 @@
 // It speaks only on exception. Silence means fine; an issue means something is
 // wrong and names it. A dashboard that reports daily is a dashboard people stop
 // reading, and this one exists to be believed the one time it fires.
-import { pathToFileURL } from "url";
 import { log, withLogGroup, appendJobSummary, errorData } from "./log.mjs";
 import { readPage, wikiPath } from "./wiki.mjs";
-import { postDiscussion, findOpenDiscussion, findDiscussion, resolveDiscussion } from "./discussions.mjs";
+import { postDiscussion, findOpenDiscussion, findDiscussion, resolveDiscussion, mentionLine } from "./discussions.mjs";
 import { DIGEST_CATEGORY, digestTitlePrefix, digestWeekStart } from "./weekly-report.mjs";
+import { ghExec } from "./git.mjs";
+import { runEntrypoint } from "./agent.mjs";
+import { fetchOpenIssues } from "./github.mjs";
+import { fetchShippedIssues } from "./shipped.mjs";
+import { daysAgo, closedWithin } from "./time.mjs";
 import {
-  ghExec,
-  printRunSummary,
-  fetchOpenIssues,
-  fetchShippedIssues,
   isBuildable,
   isBlocked,
   isGroomed,
   isNonWorkIssue,
   attemptCount,
+  PLAYTEST_LABEL,
+} from "./backlog.mjs";
+import {
   fetchOpenAgentPullRequests,
   classifyAgentPullRequest,
   PR_STALE_MS,
-  PLAYTEST_LABEL,
-} from "./shared.mjs";
-
-// Who gets the @-mention. The point of an alert is that it reaches a person, so
-// it falls back to the repo's owner rather than going quietly nowhere.
-const NOTIFY_USER = process.env.GH_NOTIFY_USER || "";
+} from "./pull-requests.mjs";
 
 // Where alerts are published, and how one is recognised on a later run.
 //
@@ -107,7 +105,6 @@ const ABORTED_RUNS_LIMIT = 2;
 const ABORT_PATTERN =
   /session cap|sent nothing for|this operation was aborted|timed out|exceeded the maximum execution time/i;
 
-const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 
 /**
  * Everything the checks below read, gathered once.
@@ -251,8 +248,7 @@ async function fetchSite() {
 
 /** Merges are the pipeline's output; no output for two days is the headline fault. */
 export function checkShipping({ shippedRecently, open }) {
-  const since = daysAgo(QUIET_DAYS_BEFORE_ALARM);
-  const shipped = shippedRecently.filter((i) => (i.closedAt || "") >= since);
+  const shipped = closedWithin(shippedRecently, QUIET_DAYS_BEFORE_ALARM);
   if (shipped.length > 0) return null;
 
   const openNumbers = new Set(open.map((i) => i.number));
@@ -273,7 +269,7 @@ export function checkShipping({ shippedRecently, open }) {
 /** A merge that never reaches the changelog is a merge the digest cannot report. */
 export function checkChangelogKeepingUp({ changelog, shippedRecently }) {
   const since = daysAgo(CHANGELOG_STALE_DAYS);
-  const shipped = shippedRecently.filter((i) => (i.closedAt || "") >= since).length;
+  const shipped = closedWithin(shippedRecently, CHANGELOG_STALE_DAYS).length;
   if (shipped === 0) return null; // nothing to record; silence is correct
 
   const recorded = [...changelog.matchAll(/^## (\d{4}-\d{2}-\d{2})$/gm)].some((m) => m[1] >= since);
@@ -289,7 +285,7 @@ export function checkChangelogKeepingUp({ changelog, shippedRecently }) {
 export function checkAbandonRate({ open, shippedRecently }) {
   const parked = open.filter(isBlocked).length;
   const struggling = open.filter((i) => attemptCount(i) > 0 && !isBlocked(i)).length;
-  const shipped = shippedRecently.filter((i) => (i.closedAt || "") >= daysAgo(7)).length;
+  const shipped = closedWithin(shippedRecently, 7).length;
   const engaged = shipped + parked + struggling;
   if (engaged < 5) return null; // too few to mean anything
 
@@ -455,9 +451,9 @@ const CHECKS = [
  * The numbers, whether or not anything is wrong. Always logged and written to the
  * job summary; never filed as an issue on its own.
  */
-export function renderVitals({ open, shippedRecently, site, agentPrs = [] }) {
+function renderVitals({ open, shippedRecently, site, agentPrs = [] }) {
   const openNumbers = new Set(open.map((i) => i.number));
-  const shipped7 = shippedRecently.filter((i) => (i.closedAt || "") >= daysAgo(7)).length;
+  const shipped7 = closedWithin(shippedRecently, 7).length;
   return [
     site ? `Site: ${site.error ? "unreachable" : `HTTP ${site.status}`}` : "Site: not checked",
     `Shipped (7d): ${shipped7}`,
@@ -532,10 +528,8 @@ function publishAlert({ findings, unknown }, vitals) {
     return;
   }
 
-  const mention = NOTIFY_USER
-    ? `${NOTIFY_USER.startsWith("@") ? NOTIFY_USER : `@${NOTIFY_USER}`} — the pipeline needs a look.\n`
-    : "";
-  const url = postDiscussion({
+  const mention = mentionLine("the pipeline needs a look.");
+  const alert = postDiscussion({
     category: HEALTH_CATEGORY,
     title: `${HEALTH_TITLE_PREFIX} ${findings.length} problem(s)`,
     body: [
@@ -550,7 +544,7 @@ function publishAlert({ findings, unknown }, vitals) {
       "_Posted by the health check, which runs daily, stays quiet unless something breaks, and closes this by itself once nothing here is true any more._",
     ].join("\n"),
   });
-  if (url) log("warn", `Health: ${findings.length} problem(s) — ${url}`);
+  if (alert) log("warn", `Health: ${findings.length} problem(s) — ${alert.url}`);
 }
 
 async function main() {
@@ -579,7 +573,6 @@ async function main() {
   // Called either way: with findings it raises or holds the alert, and with none
   // it closes a standing one that has been fixed — unless a check could not run.
   publishAlert(results, vitals);
-  printRunSummary("Health");
 
   // Reported first, failed after: a run that could not look at everything must
   // not read as a green one.
@@ -590,10 +583,4 @@ async function main() {
 }
 
 // Guarded so the checks above can be exercised without touching the API.
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
-  main().catch((err) => {
-    log("error", `Health failed: ${err.message || err}`);
-    printRunSummary("Health");
-    process.exit(1);
-  });
-}
+runEntrypoint(import.meta.url, "Health", main);

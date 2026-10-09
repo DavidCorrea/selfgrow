@@ -4,7 +4,7 @@
 // whether the review is told what it did not see.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { prioritizeSources, formatSources, renderManifest } from "./tech-lead.mjs";
+import { prioritizeSources, formatSources, renderManifest } from "./product-source.mjs";
 
 const file = (name, size) => ({ name, source: "x".repeat(size) });
 

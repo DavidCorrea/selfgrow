@@ -52,7 +52,7 @@ jobs:
           # The PAT, not GITHUB_TOKEN, pushes the deletion's branch and (as
           # gh-token) opens its PR: GitHub starts no workflows for events made by
           # GITHUB_TOKEN, so the required checks would never run and the PR could
-          # never merge. See the note on Pull Requests in shared.mjs.
+          # never merge. See the note at the top of agents/pull-requests.mjs.
           git-token: ${{ secrets.AGENT_PAT }}
 
       - name: Reset GitHub state

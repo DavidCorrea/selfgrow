@@ -220,8 +220,8 @@ test("showing what has been settled", async (t) => {
     assert.match(out, /- Oldest \(#3\)/);
   });
 
-  await t.test("says nothing when nothing is settled", () => {
-    assert.equal(renderDecisions([]), "");
+  await t.test("says so when nothing is settled", () => {
+    assert.equal(renderDecisions([]), "(nothing settled yet)");
   });
 });
 

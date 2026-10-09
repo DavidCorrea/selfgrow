@@ -20,14 +20,14 @@
 //
 //   node agents/model-check.mjs           # human-readable, exit 1 on any breakage
 //   node agents/model-check.mjs --json    # machine-readable, for the update workflow
+import { log } from "./log.mjs";
 import {
-  log,
   readModelChain,
   listRegistryModels,
-  registryModelId,
+  modelIdOf,
   META_ROUTER_IDS,
   TEXT_MODELS,
-} from "./shared.mjs";
+} from "./agent.mjs";
 
 /**
  * Classify every configured id against the registry. Returns
@@ -36,7 +36,7 @@ import {
  */
 export async function checkModelChain() {
   const all = await listRegistryModels();
-  const byId = new Map(all.map((m) => [registryModelId(m), m]));
+  const byId = new Map(all.map((m) => [modelIdOf(m), m]));
 
   // TEXT_MODEL (env) overrides the file, so check whatever the agents would
   // actually use — a CI run pinning a model deserves the same assertion.

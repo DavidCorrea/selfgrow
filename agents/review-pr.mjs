@@ -31,29 +31,21 @@
 // own PR. Here the author IS the PAT's owner, so the identities flip: the bot
 // approves instead.
 import { execFileSync } from "child_process";
-import { pathToFileURL } from "url";
+import { log, withLogGroup, errorData } from "./log.mjs";
 import {
-  log,
-  withLogGroup,
-  printRunSummary,
-  loadPrompt,
-  fillTemplate,
+  runEntrypoint,
   runAgent,
-  changesTheMachine,
   BUILDER_SKILLS,
-  REVIEWER_SKILLS,
-  extractAgentResponse,
-  errorData,
-  gitExec,
-  configureGitIdentity,
-  verifyBuild,
-  repoRoot,
-  commentIssue,
-  approvePR,
-  mergePR,
-  readVision,
+  runReviewer,
   getLastModelUsed,
-} from "./shared.mjs";
+} from "./agent.mjs";
+import { loadPrompt, fillTemplate, extractAgentResponse } from "./prompts.mjs";
+import { changesTheMachine, gitExec, configureGitIdentity, commitAll } from "./git.mjs";
+import { verifyBuild } from "./verify.mjs";
+import { repoRoot } from "./paths.mjs";
+import { commentIssue } from "./github.mjs";
+import { approvePR, mergePR } from "./pull-requests.mjs";
+import { readVision } from "./wiki.mjs";
 
 const PR_NUMBER = Number(process.env.PR_NUMBER || 0);
 const PR_BRANCH = process.env.PR_BRANCH || "";
@@ -145,8 +137,7 @@ function pushFix(problems) {
     return false;
   }
   try {
-    gitExec(["add", "-A"]);
-    gitExec(["commit", "-m", `Address review on #${PR_NUMBER}\n\n${problems.slice(0, 400)}`]);
+    commitAll(`Address review on #${PR_NUMBER}\n\n${problems.slice(0, 400)}`);
     gitExec(["push", "origin", `HEAD:${PR_BRANCH}`]);
     log("info", "Pushed a fix to the contributor's branch.");
     return true;
@@ -214,15 +205,7 @@ async function main() {
 
     // 2. Review, when there is something worth reviewing.
     if (!problems) {
-      const output = await withLogGroup(`Reviewer (cycle ${cycle})`, () =>
-        runAgent({
-          label: "Reviewer",
-          systemPrompt: buildReviewPrompt(),
-          tools: ["read", "bash"],
-          skills: REVIEWER_SKILLS,
-        })
-      );
-      const review = extractAgentResponse("Reviewer", output, { requiredDataFields: ["issues"] });
+      const review = await runReviewer({ group: `Reviewer (cycle ${cycle})`, systemPrompt: buildReviewPrompt() });
       if (!review) {
         // The reviewer is the only thing that can hold a green build back, so an
         // unreadable answer must not read as approval.
@@ -230,7 +213,6 @@ async function main() {
           "The Devs could not produce a usable review of this change. The automated checks pass, " +
             "so it is safe to merge, but nobody has read it — merge it yourself if you are happy with it."
         );
-        printRunSummary("PR review");
         return;
       }
       if (review.outcome === "approve" && changesTheMachine(changedPaths())) {
@@ -241,7 +223,6 @@ async function main() {
             "will not approve or merge it — that is left to a person. Review and merge it yourself when you are happy with it."
         );
         log("info", `#${PR_NUMBER} changes the machine — reviewed, left for a human to merge.`);
-        printRunSummary("PR review");
         return;
       }
       if (review.outcome === "approve") {
@@ -253,7 +234,6 @@ async function main() {
         } else {
           say("This is approved and passing, but the merge failed — it may need a branch update or a protected-branch rule satisfied.");
         }
-        printRunSummary("PR review");
         return;
       }
       problems = (review.data.issues || []).join("\n- ");
@@ -265,17 +245,16 @@ async function main() {
     //    nobody's authority.
     if (cycle === MAX_CYCLES || Date.now() + TAIL_RESERVE_MS > deadline) break;
 
-    const fix = await withLogGroup(`Builder (cycle ${cycle})`, () =>
-      runAgent({
-        label: "Builder",
-        systemPrompt: buildFixPrompt(problems),
-        tools: ["read", "bash", "edit", "write"],
-        skills: BUILDER_SKILLS,
-        thinkingLevel: "medium",
-        // Whoever reviewed it should not also be the one fixing it.
-        avoidModel: getLastModelUsed(),
-      })
-    );
+    const fix = await runAgent({
+      label: "Builder",
+      group: `Builder (cycle ${cycle})`,
+      systemPrompt: buildFixPrompt(problems),
+      tools: ["read", "bash", "edit", "write"],
+      skills: BUILDER_SKILLS,
+      thinkingLevel: "medium",
+      // Whoever reviewed it should not also be the one fixing it.
+      avoidModel: getLastModelUsed(),
+    });
     extractAgentResponse("Builder", fix, { requireOutcome: false, requiredDataFields: ["commitMessage"] });
     if (!pushFix(problems)) break;
   }
@@ -293,17 +272,13 @@ async function main() {
       `- ${problems || "an unknown problem — see the run log"}`,
     ].join("\n")
   );
-  printRunSummary("PR review");
 }
 
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
-  main().catch((err) => {
-    log("error", `PR review failed: ${err.message || err}`);
-    // Never leave the author guessing: a crashed run is still an answer.
+runEntrypoint(import.meta.url, "PR review", main, {
+  // Never leave the author guessing: a crashed run is still an answer.
+  onCrash: () => {
     if (PR_NUMBER) {
       say("The Devs hit an unexpected error reviewing this and stopped. Your branch is untouched by this run.");
     }
-    printRunSummary("PR review");
-    process.exit(1);
-  });
-}
+  },
+});

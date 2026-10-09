@@ -11,7 +11,10 @@ import {
   sessionAbortError,
   MAX_MODEL_SILENCE_MINUTES,
   MAX_SESSION_MINUTES,
-} from "./shared.mjs";
+  watchSession,
+  countAssistantTurns,
+  assistantText,
+} from "./agent.mjs";
 
 const fakeClock = () => {
   let ms = 0;
@@ -109,5 +112,75 @@ test("saying why we stopped a session", async (t) => {
 
   await t.test("the silence limit sits well under the session cap", () => {
     assert.ok(MAX_MODEL_SILENCE_MINUTES * 2 <= MAX_SESSION_MINUTES);
+  });
+});
+
+// A stand-in for a pi session: the watcher only subscribes, reads the message
+// list and aborts.
+const fakeSession = () => {
+  const listeners = [];
+  const session = {
+    state: { messages: [] },
+    aborts: 0,
+    subscribe: (listener) => listeners.push(listener),
+    abort: async () => {
+      session.aborts++;
+    },
+    assistantSays: (text) => {
+      session.state.messages.push({ role: "assistant", content: text });
+      listeners.forEach((listener) => listener({ type: "message_end" }));
+    },
+  };
+  return session;
+};
+
+test("watching a session against its limits", async (t) => {
+  const watchOptions = { limits: { turns: 2, minutes: 5 }, label: "Builder (model)", startTime: Date.now() };
+
+  await t.test("stops the session once when it reaches the turn cap", () => {
+    const session = fakeSession();
+    const watch = watchSession(session, watchOptions);
+    session.assistantSays("one");
+    assert.equal(watch.abortReason, null);
+    session.assistantSays("two");
+    session.assistantSays("three");
+    assert.equal(watch.abortReason, "turns");
+    assert.equal(session.aborts, 1);
+    watch.settle();
+  });
+
+  await t.test("settling reports the turns spent, however often it is called", () => {
+    const session = fakeSession();
+    const watch = watchSession(session, watchOptions);
+    session.assistantSays("one");
+    // The last message can land with no event to observe it.
+    session.state.messages.push({ role: "assistant", content: "unobserved" });
+    assert.equal(watch.settle(), 2);
+    assert.equal(watch.settle(), 2);
+  });
+
+  await t.test("only the model's messages count as turns", () => {
+    const session = fakeSession();
+    const watch = watchSession(session, watchOptions);
+    session.state.messages.push({ role: "user", content: "go" });
+    assert.equal(watch.settle(), 0);
+  });
+});
+
+test("reading what the model said", async (t) => {
+  await t.test("counts only the assistant's messages", () => {
+    const messages = [{ role: "user" }, { role: "assistant" }, { role: "toolResult" }, { role: "assistant" }];
+    assert.equal(countAssistantTurns(messages), 2);
+    assert.equal(countAssistantTurns(undefined), 0);
+  });
+
+  await t.test("joins the text parts and skips the rest", () => {
+    const message = { content: [{ type: "thinking", thinking: "hm" }, { type: "text", text: "{" }, { type: "text", text: "}" }] };
+    assert.equal(assistantText(message), "{}");
+  });
+
+  await t.test("takes a plain string as it is, and nothing as empty", () => {
+    assert.equal(assistantText({ content: "done" }), "done");
+    assert.equal(assistantText(undefined), "");
   });
 });

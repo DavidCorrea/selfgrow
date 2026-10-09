@@ -17,24 +17,15 @@
 // arrives as a notification, and closes itself immediately — an open issue
 // addressed to a human is a human on the critical path, and this pipeline is
 // meant to run without one.
-import { log, withLogGroup } from "./log.mjs";
-import { findDiscussion, postDiscussion } from "./discussions.mjs";
+import { log } from "./log.mjs";
+import { findDiscussion, postDiscussion, mentionLine } from "./discussions.mjs";
+import { daysAgo, closedWithin } from "./time.mjs";
 // readPage reaches the Story, which now carries the project's long arc so the
 // changelog can be trimmed without amputating its early chapters.
 import { readChangelog, readPage, trimSections, writeStory } from "./wiki.mjs";
-import {
-  loadPrompt,
-  fillTemplate,
-  runAgent,
-  isBlocked,
-  isPlaytestFeedback,
-  isManualIssue,
-} from "./shared.mjs";
-
-// Who the digest @-mentions. Without it the issue is still filed, just silently.
-const NOTIFY_USER = process.env.GH_NOTIFY_USER || "";
-
-const daysAgo = (n, now = Date.now()) => new Date(now - n * 86_400_000).toISOString().slice(0, 10);
+import { loadPrompt, fillTemplate } from "./prompts.mjs";
+import { runAgent } from "./agent.mjs";
+import { isBlocked, isPlaytestFeedback, isManualIssue } from "./backlog.mjs";
 
 /** The first day of the week a report written at `now` covers — the week's key. */
 export const digestWeekStart = (now = new Date()) => daysAgo(7, now.getTime());
@@ -70,8 +61,7 @@ export function cleanMarkdown(text) {
  * No model involved — the numbers are counted, not estimated.
  */
 export function gatherWeek({ shipped, open }) {
-  const since = daysAgo(7);
-  const shippedThisWeek = shipped.filter((i) => (i.closedAt || "") >= since);
+  const shippedThisWeek = closedWithin(shipped, 7);
   return {
     shipped: shippedThisWeek,
     parked: open.filter(isBlocked),
@@ -90,9 +80,7 @@ export function gatherWeek({ shipped, open }) {
 
 /** The digest body: what shipped, what was heard, where things stand. */
 export function renderDigest(week, narrative, milestone) {
-  const mention = NOTIFY_USER
-    ? `${NOTIFY_USER.startsWith("@") ? NOTIFY_USER : `@${NOTIFY_USER}`} — this week in the product.\n`
-    : "";
+  const mention = mentionLine("this week in the product.");
   const lines = [mention, "## What shipped", narrative || "_(nothing shipped this week)_", ""];
 
   const yours = week.yours || { shipped: [], open: [], parked: [] };
@@ -158,28 +146,26 @@ export async function publishWeeklyReport({ shipped, open, milestone, now = new 
   const week = gatherWeek({ shipped, open });
 
   const narrative = cleanMarkdown(
-    await withLogGroup("Weekly report", () =>
-      runAgent({
-        label: "Weekly report",
-        systemPrompt: fillTemplate(loadPrompt("weekly-report"), {
-          // The Story carries the arc; the changelog only has to carry what is
-          // recent. That split is what lets the changelog be trimmed at all —
-          // regenerating the whole history from a trimmed record would quietly
-          // amputate the project's early chapters every time the window moved.
-          STORY_SO_FAR: readPage("Story.md").trim() || "(nothing written yet — this is the first)",
-          CHANGELOG: reportChangelog(readChangelog()),
-          SHIPPED: week.shipped.length
-            ? week.shipped.map((i) => `- ${i.title} (#${i.number})`).join("\n")
-            : "(nothing shipped this week)",
-        }),
-        // This agent's answer IS the artifact, so the JSON envelope every other
-        // agent returns would be the wrong shape — and the chain must not reject
-        // prose for lacking it.
-        task: "Write the two sections now, exactly as described. No JSON, no envelope, no code fences.",
-        expectJson: false,
-        tools: [],
-      })
-    )
+    await runAgent({
+      label: "Weekly report",
+      systemPrompt: fillTemplate(loadPrompt("weekly-report"), {
+        // The Story carries the arc; the changelog only has to carry what is
+        // recent. That split is what lets the changelog be trimmed at all —
+        // regenerating the whole history from a trimmed record would quietly
+        // amputate the project's early chapters every time the window moved.
+        STORY_SO_FAR: readPage("Story.md").trim() || "(nothing written yet — this is the first)",
+        CHANGELOG: reportChangelog(readChangelog()),
+        SHIPPED: week.shipped.length
+          ? week.shipped.map((i) => `- ${i.title} (#${i.number})`).join("\n")
+          : "(nothing shipped this week)",
+      }),
+      // This agent's answer IS the artifact, so the JSON envelope every other
+      // agent returns would be the wrong shape — and the chain must not reject
+      // prose for lacking it.
+      task: "Write the two sections now, exactly as described. No JSON, no envelope, no code fences.",
+      expectJson: false,
+      tools: [],
+    })
   );
   if (!narrative) throw new Error(`Weekly report: the model returned nothing for the week of ${weekStart}.`);
 
@@ -191,14 +177,14 @@ export async function publishWeeklyReport({ shipped, open, milestone, now = new 
     log("warn", "Weekly report: no story produced — leaving Story unchanged.");
   }
 
-  const url = postDiscussion({
+  const digest = postDiscussion({
     category: DIGEST_CATEGORY,
     title: digestTitle(weekStart, week.shipped.length),
     body: renderDigest(week, weekProse, milestone),
   });
-  if (!url) throw new Error(`Weekly report: the digest for the week of ${weekStart} could not be posted to ${DIGEST_CATEGORY}.`);
-  log("info", `Weekly report: published at ${url}`);
-  return url;
+  if (!digest) throw new Error(`Weekly report: the digest for the week of ${weekStart} could not be posted to ${DIGEST_CATEGORY}.`);
+  log("info", `Weekly report: published at ${digest.url}`);
+  return digest.url;
 }
 
 /**

@@ -35,21 +35,12 @@
 // model away from printing the key in a public comment. Everything it needs from
 // the base is read here, by this script, and handed over in the prompt.
 import { isAbsolute } from "path";
-import { pathToFileURL } from "url";
-import {
-  log,
-  withLogGroup,
-  printRunSummary,
-  loadPrompt,
-  fillTemplate,
-  runAgent,
-  extractAgentResponse,
-  errorData,
-  gitExec,
-  ghExec,
-  readVision,
-  commentIssue,
-} from "./shared.mjs";
+import { log, errorData } from "./log.mjs";
+import { runEntrypoint, runAgent } from "./agent.mjs";
+import { loadPrompt, fillTemplate, extractAgentResponse } from "./prompts.mjs";
+import { gitExec, ghExec } from "./git.mjs";
+import { commentIssue } from "./github.mjs";
+import { readVision } from "./wiki.mjs";
 import { secret } from "./secrets.mjs";
 
 const PR_NUMBER = Number(process.env.PR_NUMBER || 0);
@@ -207,30 +198,27 @@ async function main() {
 
   const read = readDiff();
   if (!read) {
-    printRunSummary("Fork triage");
     return;
   }
 
-  const output = await withLogGroup("Fork review", () =>
-    runAgent({
-      label: "Fork review",
-      systemPrompt: fillTemplate(loadPrompt("fork-review"), {
-        PR_NUMBER: String(PR_NUMBER),
-        PR_AUTHOR,
-        PR_TITLE,
-        PR_BODY: PR_BODY || "(no description given)",
-        DIFF: read.diff,
-        TRUNCATED: read.truncated
-          ? "This diff was too large to include in full. You are seeing the beginning of it — say so in your summary, and do not claim to have judged the whole change."
-          : "",
-        BASE_FILES: readBaseFiles(read.diff),
-        VISION: readVision(),
-      }),
-      // None. See the header: a read tool in a job holding secrets, steered by a
-      // stranger's diff, is a way to publish those secrets.
-      tools: [],
-    })
-  );
+  const output = await runAgent({
+    label: "Fork review",
+    systemPrompt: fillTemplate(loadPrompt("fork-review"), {
+      PR_NUMBER: String(PR_NUMBER),
+      PR_AUTHOR,
+      PR_TITLE,
+      PR_BODY: PR_BODY || "(no description given)",
+      DIFF: read.diff,
+      TRUNCATED: read.truncated
+        ? "This diff was too large to include in full. You are seeing the beginning of it — say so in your summary, and do not claim to have judged the whole change."
+        : "",
+      BASE_FILES: readBaseFiles(read.diff),
+      VISION: readVision(),
+    }),
+    // None. See the header: a read tool in a job holding secrets, steered by a
+    // stranger's diff, is a way to publish those secrets.
+    tools: [],
+  });
 
   const review = extractAgentResponse("Fork review", output, {
     requiredDataFields: ["issues"],
@@ -243,7 +231,6 @@ async function main() {
       `Thanks for this, @${PR_AUTHOR}. An automated review ran but could not produce a usable result, ` +
         "so a maintainer will need to look at this by hand."
     );
-    printRunSummary("Fork triage");
     return;
   }
 
@@ -261,13 +248,6 @@ async function main() {
     PR_NUMBER,
     redactSecrets(comment, [secret("OPENROUTER_API_KEY"), secret("GH_TOKEN")])
   );
-  printRunSummary("Fork triage");
 }
 
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
-  main().catch((err) => {
-    log("error", `Fork triage failed: ${err.message || err}`);
-    printRunSummary("Fork triage");
-    process.exit(1);
-  });
-}
+runEntrypoint(import.meta.url, "Fork triage", main);

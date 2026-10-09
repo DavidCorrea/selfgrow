@@ -42,7 +42,7 @@ const PUSH_ATTEMPTS = 5;
  * Returns the directory, or null when the wiki cannot be reached — every caller
  * degrades rather than failing, because a missing wiki must never stop a build.
  */
-export function cloneWiki(dir = DEFAULT_WIKI_DIR, { cwd = process.cwd() } = {}) {
+function cloneWiki(dir = DEFAULT_WIKI_DIR, { cwd = process.cwd() } = {}) {
   try {
     const ghEnv = wikiToken() ? { ...process.env, GH_TOKEN: wikiToken() } : process.env;
     const repo = JSON.parse(
@@ -103,7 +103,7 @@ export function readPage(pageFile) {
 }
 
 // argv, never a shell string: commit messages here carry model-written text (see
-// gitExec in shared.mjs for why that matters on a runner holding a PAT).
+// gitExec in git.mjs for why that matters on a runner holding a PAT).
 function git(dir, argv) {
   return execFileSync("git", ["-C", dir, ...argv], { env: gitEnv(), maxBuffer: 10 * 1024 * 1024, stdio: "pipe" });
 }

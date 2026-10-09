@@ -19,21 +19,26 @@ export default [
     },
   },
   // The pipeline itself (agents/) — Node ES modules. Went unlinted entirely
-  // until now, so a typo in shared.mjs was caught by a 3am cron run failing.
-  //
-  // Browser globals as well as Node ones, because they are both genuinely in
-  // scope here: the bodies of the page.evaluate() callbacks in shared.mjs run
-  // inside Chromium, not in Node, and really do have document and window.
+  // until now, so a typo in the agent code was caught by a 3am cron run failing.
   {
     files: ["agents/**/*.mjs"],
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: "module",
-      globals: { ...globals.node, ...globals.browser },
+      globals: { ...globals.node },
     },
     rules: {
       "no-undef": "error",
       "no-unused-vars": "warn",
+    },
+  },
+  // The two agent files whose page.evaluate() callback bodies run inside
+  // Chromium, not in Node, and really do have document and window. Only these,
+  // so a stray `window` anywhere else in the pipeline is still caught.
+  {
+    files: ["agents/verify.mjs", "agents/playtester.mjs"],
+    languageOptions: {
+      globals: { ...globals.node, ...globals.browser },
     },
   },
 ];

@@ -40,9 +40,20 @@
 // mutation or query, and every string that could contain model-written text is
 // passed as a VARIABLE rather than interpolated into the document.
 import { log, errorData } from "./log.mjs";
-import { ghExec } from "./shared.mjs";
+import { ghExec } from "./git.mjs";
 
 const OWNER = process.env.GITHUB_REPOSITORY_OWNER || "";
+
+// Who a post @-mentions, so it arrives as a notification rather than waiting to
+// be found. The workflows set it to the repository's owner; unset, posts still
+// land, just silently.
+const NOTIFY_USER = process.env.GH_NOTIFY_USER || "";
+
+/** The opening line that @-mentions the person to notify, or "" when nobody is set. */
+export function mentionLine(reason) {
+  if (!NOTIFY_USER) return "";
+  return `${NOTIFY_USER.startsWith("@") ? NOTIFY_USER : `@${NOTIFY_USER}`} — ${reason}\n`;
+}
 
 /**
  * Run one GraphQL document with variables.
@@ -72,10 +83,35 @@ function graphql(query, variables = {}) {
   return JSON.parse(ghExec(args));
 }
 
-/** The repository and the category to post in, resolved together. */
-function resolveTarget(categoryName) {
+/** The owner and name every repository query is addressed to. */
+function repoCoordinates() {
   const repo = process.env.GITHUB_REPOSITORY || "";
   const [owner, name] = repo.includes("/") ? repo.split("/") : [OWNER, ""];
+  return { owner, name };
+}
+
+/** Add a comment to a discussion. Throws; every caller is already best-effort. */
+function commentOnDiscussion(discussionId, body) {
+  graphql(
+    `mutation($discussionId: ID!, $body: String!) {
+       addDiscussionComment(input: {discussionId: $discussionId, body: $body}) { comment { id } }
+     }`,
+    { discussionId, body }
+  );
+}
+
+/** Close a discussion as resolved. Throws; every caller is already best-effort. */
+function closeDiscussionAsResolved(discussionId) {
+  graphql(
+    `mutation($discussionId: ID!) {
+       closeDiscussion(input: {discussionId: $discussionId, reason: RESOLVED}) { discussion { number } }
+     }`,
+    { discussionId }
+  );
+}
+
+/** The repository and the category to post in, resolved together. */
+function resolveTarget(categoryName) {
   const result = graphql(
     `query($owner: String!, $name: String!) {
        repository(owner: $owner, name: $name) {
@@ -83,7 +119,7 @@ function resolveTarget(categoryName) {
          discussionCategories(first: 25) { nodes { id name } }
        }
      }`,
-    { owner, name }
+    repoCoordinates()
   );
   const repository = result?.data?.repository;
   if (!repository) return null;
@@ -188,8 +224,6 @@ export function untilSeen(count) {
 function readCategory(category, fields, { orderBy = "CREATED_AT", filter = "", until } = {}) {
   const target = resolveTarget(category);
   if (!target) return [];
-  const repo = process.env.GITHUB_REPOSITORY || "";
-  const [owner, name] = repo.includes("/") ? repo.split("/") : [OWNER, ""];
   const fetchPage = (after) =>
     graphql(
       `query($owner: String!, $name: String!, $categoryId: ID!, $after: String) {
@@ -202,7 +236,7 @@ function readCategory(category, fields, { orderBy = "CREATED_AT", filter = "", u
          }
        }`,
       // No cursor on the first page: graphql() would send a null as the string "null".
-      { owner, name, categoryId: target.categoryId, ...(after ? { after } : {}) }
+      { ...repoCoordinates(), categoryId: target.categoryId, ...(after ? { after } : {}) }
     )?.data?.repository?.discussions;
   return collectPages(fetchPage, { until, what: `"${category}"` });
 }
@@ -226,7 +260,7 @@ function lockDiscussion(discussionId) {
 }
 
 /**
- * Post a discussion. Returns its URL, or null — never throws, because nothing
+ * Post a discussion. Returns it ({ id, url, number }), or null — never throws, because nothing
  * that publishes a report should be able to fail the run that produced it.
  *
  * Locked by default: see the header. Pass `lock: false` only for a post that is
@@ -251,7 +285,7 @@ export function postDiscussion({ category, title, body, lock = true }) {
     }
     if (lock) lockDiscussion(discussion.id);
     log("info", `Discussions: posted ${discussion.url}${lock ? " (locked)" : ""}`);
-    return discussion.url;
+    return discussion;
   } catch (e) {
     log("warn", `Discussions: could not post "${title}".`, errorData(e));
     return null;
@@ -292,20 +326,8 @@ export function findOpenDiscussion(category, prefix) {
  */
 export function resolveDiscussion(discussionId, comment) {
   try {
-    if (comment) {
-      graphql(
-        `mutation($discussionId: ID!, $body: String!) {
-           addDiscussionComment(input: {discussionId: $discussionId, body: $body}) { comment { id } }
-         }`,
-        { discussionId, body: comment }
-      );
-    }
-    graphql(
-      `mutation($discussionId: ID!) {
-         closeDiscussion(input: {discussionId: $discussionId, reason: RESOLVED}) { discussion { number } }
-       }`,
-      { discussionId }
-    );
+    if (comment) commentOnDiscussion(discussionId, comment);
+    closeDiscussionAsResolved(discussionId);
     log("info", "Discussions: closed a resolved post.");
     return true;
   } catch (e) {
@@ -346,12 +368,12 @@ export function resolveDiscussion(discussionId, comment) {
 // Where journals live. Repo settings, so it cannot be created from here: when it
 // is missing every journal call degrades to a warning and a no-op, which is the
 // same way a missing wiki degrades rather than failing a run.
-export const JOURNAL_CATEGORY = process.env.JOURNAL_CATEGORY || "Journals";
+const JOURNAL_CATEGORY = process.env.JOURNAL_CATEGORY || "Journals";
 
 // Where failures live, one thread per failure CLASS. Same shape as a journal and
 // the same helpers, because the pattern is identical: a thread names a recurring
 // thing, its comments are the times it happened.
-export const LESSON_CATEGORY = process.env.LESSON_CATEGORY || "Lessons";
+const LESSON_CATEGORY = process.env.LESSON_CATEGORY || "Lessons";
 
 // How many past entries a reader gets. Three is enough to see a direction and a
 // contradiction, and short enough that it cannot crowd out the run's real input.
@@ -387,7 +409,7 @@ export function findDiscussion(category, prefix) {
  * with no thread, an unreachable API. A journal is context, never a precondition:
  * no agent may fail because it could not remember.
  */
-export function readThread(category, title, { last = JOURNAL_TAIL } = {}) {
+function readThread(category, title, { last = JOURNAL_TAIL } = {}) {
   try {
     const thread = findDiscussion(category, title);
     if (!thread) return [];
@@ -400,8 +422,7 @@ export function readThread(category, title, { last = JOURNAL_TAIL } = {}) {
          }
        }`,
       {
-        owner: (process.env.GITHUB_REPOSITORY || "").split("/")[0] || OWNER,
-        name: (process.env.GITHUB_REPOSITORY || "").split("/")[1] || "",
+        ...repoCoordinates(),
         // Numbers, so graphql() sends them typed — these are GraphQL Int!.
         number: Number(thread.number),
         last: Math.max(1, Number(last)),
@@ -422,18 +443,19 @@ export function readJournal(title, options) {
 
 /**
  * Append one entry to a role's journal, creating and locking the thread on first
- * use. Returns true when the entry landed.
+ * use. Returns `{ thread, created }` when the entry landed, or null.
  *
  * Best-effort throughout, for the same reason as readJournal: writing down what a
  * run decided must never be able to fail the run that decided it.
  */
-export function appendThread(category, title, entry, { intro = "" } = {}) {
+function appendThread(category, title, entry, { intro = "" } = {}) {
   const body = String(entry || "").trim();
-  if (!body) return false;
+  if (!body) return null;
   try {
     let thread = findDiscussion(category, title);
-    if (!thread) {
-      const url = postDiscussion({
+    const created = !thread;
+    if (created) {
+      thread = postDiscussion({
         category,
         title,
         // The body is the thread's purpose, not its content: entries are comments,
@@ -445,27 +467,20 @@ export function appendThread(category, title, entry, { intro = "" } = {}) {
             `Written by the pipeline and locked — readable by anyone, appendable only by ` +
             `accounts with write access. Each run reads the last ${JOURNAL_TAIL} entries, not the thread.`,
       });
-      if (!url) return false; // postDiscussion already said why
-      thread = findDiscussion(category, title);
-      if (!thread) return false;
+      if (!thread) return null; // postDiscussion already said why
     }
-    graphql(
-      `mutation($discussionId: ID!, $body: String!) {
-         addDiscussionComment(input: {discussionId: $discussionId, body: $body}) { comment { id } }
-       }`,
-      { discussionId: thread.id, body }
-    );
+    commentOnDiscussion(thread.id, body);
     log("info", `Discussions: appended an entry to "${title}".`);
-    return true;
+    return { thread, created };
   } catch (e) {
     log("warn", `Discussions: could not append to "${title}".`, errorData(e));
-    return false;
+    return null;
   }
 }
 
 /** Append one entry to a role's journal. See appendThread. */
 export function appendJournal(title, entry) {
-  return appendThread(JOURNAL_CATEGORY, title, entry);
+  return Boolean(appendThread(JOURNAL_CATEGORY, title, entry));
 }
 
 /**
@@ -513,8 +528,7 @@ export function renderJournalEntry({ decided, because, deferred, extra = {} }) {
  * same thread, which is what makes recurrence visible.
  */
 export function appendLessonOccurrence(title, body, { scope = "product" } = {}) {
-  const created = !findDiscussionSafely(LESSON_CATEGORY, title);
-  const ok = appendThread(LESSON_CATEGORY, title, body, {
+  const appended = appendThread(LESSON_CATEGORY, title, body, {
     intro:
       `A failure the pipeline has hit, and what it cost. **Each comment is one occurrence** — ` +
       `the count is how often this has happened.\n\n` +
@@ -524,20 +538,10 @@ export function appendLessonOccurrence(title, body, { scope = "product" } = {}) 
   });
   // Labelled on creation only: a scope is a property of the failure class, not of
   // each occurrence, and re-adding the same label every time is a wasted call.
-  if (ok && created) {
-    const thread = findDiscussionSafely(LESSON_CATEGORY, title);
-    if (thread) labelDiscussion(thread.id, SCOPE_LABELS[scope] || SCOPE_LABELS.product);
+  if (appended?.created) {
+    labelDiscussion(appended.thread.id, SCOPE_LABELS[scope] || SCOPE_LABELS.product);
   }
-  return ok;
-}
-
-/** findDiscussion, but never throwing — used where a lookup is incidental. */
-function findDiscussionSafely(category, title) {
-  try {
-    return findDiscussion(category, title);
-  } catch {
-    return null;
-  }
+  return Boolean(appended);
 }
 
 /**
@@ -614,17 +618,15 @@ export function renderLessonThreads(lessons) {
 // record that the previous project existed.
 // ---------------------------------------------------------------------------
 
-export const SCOPE_LABELS = { product: "product", machine: "machine" };
+const SCOPE_LABELS = { product: "product", machine: "machine" };
 
 /** The label id for a name, or null when the repository has no such label. */
 function findLabelId(name) {
-  const repo = process.env.GITHUB_REPOSITORY || "";
-  const [owner, repoName] = repo.includes("/") ? repo.split("/") : [OWNER, ""];
   const result = graphql(
     `query($owner: String!, $name: String!, $label: String!) {
        repository(owner: $owner, name: $name) { label(name: $label) { id } }
      }`,
-    { owner, name: repoName, label: name }
+    { ...repoCoordinates(), label: name }
   );
   return result?.data?.repository?.label?.id || null;
 }
@@ -633,7 +635,7 @@ function findLabelId(name) {
  * Label a discussion, best-effort. A missing label is a warning rather than a
  * failure: the thread it would have marked is worth more than the mark.
  */
-export function labelDiscussion(discussionId, labelName) {
+function labelDiscussion(discussionId, labelName) {
   try {
     const labelId = findLabelId(labelName);
     if (!labelId) {
@@ -779,8 +781,8 @@ export function archiveProductMemory({ on = new Date() } = {}) {
 // instruction to follow.
 // ---------------------------------------------------------------------------
 
-export const DECISION_CATEGORY = process.env.DECISION_CATEGORY || "Decisions";
-export const IDEAS_CATEGORY = process.env.IDEAS_CATEGORY || "Ideas";
+const DECISION_CATEGORY = process.env.DECISION_CATEGORY || "Decisions";
+const IDEAS_CATEGORY = process.env.IDEAS_CATEGORY || "Ideas";
 
 // How many decision bodies a prompt gets. Titles are cheap and all of them go;
 // bodies are ~1-2k characters each, so this is the number that has to be bounded.
@@ -824,7 +826,7 @@ export function selectDecisions(nodes, { bodies = DECISION_BODIES } = {}) {
 
 /** Render decisions for a prompt: the reasoning for recent ones, titles for the rest. */
 export function renderDecisions(decisions) {
-  if (!decisions.length) return "";
+  if (!decisions.length) return "(nothing settled yet)";
   const detailed = decisions.filter((d) => d.body);
   const listed = decisions.filter((d) => !d.body);
   const parts = detailed.map((d) => `### ${d.title}\n(#${d.number})\n\n${d.body}`);
@@ -917,30 +919,16 @@ export function renderInboundIdeas(ideas) {
  */
 export function acknowledgeIdea(number, body, { close = false } = {}) {
   try {
-    const repo = process.env.GITHUB_REPOSITORY || "";
-    const [owner, name] = repo.includes("/") ? repo.split("/") : [OWNER, ""];
     const found = graphql(
       `query($owner: String!, $name: String!, $number: Int!) {
          repository(owner: $owner, name: $name) { discussion(number: $number) { id } }
        }`,
-      { owner, name, number: Number(number) }
+      { ...repoCoordinates(), number: Number(number) }
     );
     const id = found?.data?.repository?.discussion?.id;
     if (!id) return false;
-    graphql(
-      `mutation($id: ID!, $body: String!) {
-         addDiscussionComment(input: {discussionId: $id, body: $body}) { comment { id } }
-       }`,
-      { id, body }
-    );
-    if (close) {
-      graphql(
-        `mutation($id: ID!) {
-           closeDiscussion(input: {discussionId: $id, reason: RESOLVED}) { discussion { number } }
-         }`,
-        { id }
-      );
-    }
+    commentOnDiscussion(id, body);
+    if (close) closeDiscussionAsResolved(id);
     log("info", `Discussions: answered idea #${number}${close ? " and closed it" : ""}.`);
     return true;
   } catch (e) {
