@@ -643,11 +643,13 @@ export function projectSkillProblems(projectSkillsDir = PROJECT_SKILLS_DIR) {
 }
 
 // The two roles that decide what a visitor sees. The Builder gets taste, the
-// rules, ways to make what it builds hold up and stay fast, and a way to look at
-// what it built; the Reviewer gets only the rules, because it judges a change against the
-// Vision and the ticket, not against its own sense of what would look better.
+// details that make it feel good, the rules, ways to make what it builds hold up
+// and stay fast, and a way to look at what it built; the Reviewer gets only the
+// rules, because it judges a change against the Vision and the ticket, not
+// against its own sense of what would look better.
 export const BUILDER_SKILLS = [
   "frontend-design",
+  "interface-polish",
   "web-interface-guidelines",
   "harden-the-interface",
   "interface-performance",

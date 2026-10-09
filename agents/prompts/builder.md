@@ -12,7 +12,7 @@ Read the proposal, explore the files you need to modify, and implement the chang
 
 Follow the coding standards above in everything you write — the Reviewer checks against them.
 
-If the change touches anything a visitor sees — markup, CSS, copy, or how the page responds — read the `frontend-design` and `web-interface-guidelines` skills before you write it, and follow `see-your-change` to look at the page before and after. The Reviewer checks the changed lines against the guidelines.
+If the change touches anything a visitor sees — markup, CSS, copy, or how the page responds — read the `frontend-design`, `interface-polish` and `web-interface-guidelines` skills before you write it, and follow `see-your-change` to look at the page before and after. The Reviewer checks the changed lines against the guidelines.
 
 If it displays data, stores state, runs on a timer or responds to input, read `harden-the-interface` and try the cases it lists. If it runs on a timer or every frame, animates, renders many elements, or adds a script, font or image, follow `interface-performance` to measure the page before and after.
 
