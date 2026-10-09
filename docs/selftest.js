@@ -63,9 +63,11 @@ import { FORMS, gardenForm } from "./plotview.js";
 const numberFormat = new Intl.NumberFormat("en");
 const growthFormat = new Intl.NumberFormat("en", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
-// The design system is itself a promise: one palette, one embedded pixel font,
-// square pixel edges. These are the checks for it.
-const PIXEL_FONT = "Press Start 2P";
+// The design system is itself a promise: one palette, two embedded pixel fonts
+// split by role, square pixel edges. These are the checks for it.
+const TITLE_FONT = "Silkscreen";
+const BODY_FONT = "Pixelify Sans";
+const RETIRED_FONT = "Press Start 2P";
 
 /** A colour as {r,g,b,a}, or null for anything that is not one. */
 function parseColor(value) {
@@ -129,38 +131,93 @@ function describe(el, what) {
   return `${what} on ${el.tagName.toLowerCase()}${id}${cls}`;
 }
 
-function checkPixelFont(problems) {
-  const family = getComputedStyle(document.body).fontFamily.toLowerCase();
-  if (!family.includes(PIXEL_FONT.toLowerCase())) {
-    problems.push(
-      `the page is not set in the pixel font: body font-family is "${family}", expected it to include "${PIXEL_FONT}".`
-    );
-  }
-
-  const sources = [];
+function fontFaces() {
+  const faces = [];
   for (const sheet of document.styleSheets) {
     let rules;
     try {
       rules = sheet.cssRules;
     } catch {
-      continue;
+      continue; // a cross-origin sheet we cannot read; none of ours are.
     }
     for (const rule of rules) {
-      if (rule.style && rule.style.getPropertyValue("src")) {
-        sources.push(rule.style.getPropertyValue("src"));
-      }
+      const src = rule.style && rule.style.getPropertyValue("src");
+      if (!src) continue;
+      faces.push({
+        family: rule.style.getPropertyValue("font-family").replace(/["']/g, "").trim(),
+        src,
+      });
     }
   }
-  if (!sources.length) {
+  return faces;
+}
+
+// The type is split by role: Silkscreen sets the titles, Pixelify Sans sets
+// everything else, and Press Start 2P is gone. Each half is checked on its own,
+// so a page that keeps the old face or drops one of the new ones fails here.
+function checkPixelFont(problems) {
+  const faces = fontFaces();
+  if (!faces.length) {
     problems.push("no @font-face is declared, so no pixel font ships with the page.");
   }
-  for (const src of sources) {
-    const urls = [...src.matchAll(/url\(([^)]*)\)/g)].map((m) => m[1].replace(/["']/g, "").trim());
-    if (!urls.length || urls.some((url) => !url.startsWith("data:"))) {
+
+  const shipped = new Set();
+  for (const face of faces) {
+    const family = face.family.toLowerCase();
+    shipped.add(family);
+    if (family.includes(RETIRED_FONT.toLowerCase())) {
+      problems.push(`the page still declares a "${face.family}" @font-face; Press Start 2P must not be used anywhere.`);
+    } else if (family !== TITLE_FONT.toLowerCase() && family !== BODY_FONT.toLowerCase()) {
       problems.push(
-        `the pixel font is loaded from a network location (${src}) — it must ship as an embedded data: URI.`
+        `the page declares an unexpected font family "${face.family}"; only "${TITLE_FONT}" and "${BODY_FONT}" may be embedded.`
       );
     }
+    const urls = [...face.src.matchAll(/url\(([^)]*)\)/g)].map((m) => m[1].replace(/["']/g, "").trim());
+    if (!urls.length || urls.some((url) => !url.startsWith("data:"))) {
+      problems.push(
+        `"${face.family}" is loaded from a network location (${face.src}) — it must ship as an embedded data: URI.`
+      );
+    }
+  }
+  for (const family of [TITLE_FONT, BODY_FONT]) {
+    if (!shipped.has(family.toLowerCase())) {
+      problems.push(`no @font-face embeds "${family}", so text cannot render in it.`);
+    }
+  }
+
+  // Every role computes to the face the design assigns it, so a rule that is
+  // declared but never applied is caught too.
+  const roles = [
+    ["body", document.body, BODY_FONT],
+    [".brand", document.querySelector(".brand"), TITLE_FONT],
+    [".panel-title", document.querySelector(".panel-title"), TITLE_FONT],
+    [".goal-title", document.querySelector(".goal-title"), TITLE_FONT],
+    [".panel-note", document.querySelector(".panel-note"), BODY_FONT],
+    [".btn", document.querySelector(".btn"), BODY_FONT],
+    [".readout-value", document.querySelector(".readout-value"), BODY_FONT],
+  ];
+  for (const [label, el, expected] of roles) {
+    if (!el) {
+      problems.push(`the page has no ${label} to check the type against.`);
+      continue;
+    }
+    const family = getComputedStyle(el).fontFamily;
+    if (!family.toLowerCase().includes(expected.toLowerCase())) {
+      problems.push(`${label} is set in "${family}", expected "${expected}".`);
+    }
+  }
+
+  // Nothing anywhere on the page may still compute to the retired face.
+  const stillRetired = [];
+  for (const el of document.querySelectorAll("body *")) {
+    if (getComputedStyle(el).fontFamily.toLowerCase().includes(RETIRED_FONT.toLowerCase())) {
+      stillRetired.push(describe(el, "text"));
+    }
+  }
+  if (stillRetired.length) {
+    problems.push(
+      `${stillRetired.length} element(s) still render in "${RETIRED_FONT}": ${stillRetired.slice(0, 4).join("; ")}.`
+    );
   }
 }
 
@@ -1989,8 +2046,10 @@ export async function checks() {
 
   try {
     await document.fonts.ready;
-    if (!document.fonts.check(`16px "${PIXEL_FONT}"`)) {
-      problems.push(`the "${PIXEL_FONT}" pixel font did not load, so text cannot render in it.`);
+    for (const family of [TITLE_FONT, BODY_FONT]) {
+      if (!document.fonts.check(`16px "${family}"`)) {
+        problems.push(`the "${family}" pixel font did not load, so text cannot render in it.`);
+      }
     }
 
     checkPixelFont(problems);
