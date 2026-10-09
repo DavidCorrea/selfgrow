@@ -154,6 +154,15 @@ body {
   image-rendering: pixelated;
 }
 
+/* The plot is redrawn discretely — a form appears, it never slides in — so there
+   is no motion to reduce. The description beside it states the same change in
+   words, and this keeps it that way even if a transition is ever added here. */
+@media (prefers-reduced-motion: reduce) {
+  .plot {
+    transition: none;
+  }
+}
+
 .plot-description {
   margin: 0 0 18px;
   font-size: 10px;

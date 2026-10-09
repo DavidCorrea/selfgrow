@@ -23,9 +23,10 @@ export function tools() {
       description:
         "Returns everything the page shows a visitor right now: the growth " +
         "total and the rate it is climbing at (in growth per second), the " +
-        "growing sprouts the plot draws, the ungrown seeds in the soil, the " +
-        "grown plants, how many plots of soil there are, the portable save " +
-        "string, and whether this browser is keeping the garden. Ask it before " +
+        "garden form the plot is drawing (its name and its index among the " +
+        "forms, lowest first), the ungrown seeds in the soil, the grown " +
+        "plants, how many plots of soil there are, the portable save string, " +
+        "and whether this browser is keeping the garden. Ask it before " +
         "acting so you know what the visitor sees.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },

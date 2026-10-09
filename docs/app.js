@@ -3,11 +3,11 @@
  * Tend the soil action that starts the garden growing, and a save the player can
  * copy out and load back.
  *
- * The plot is drawn from the same garden object the readout prints, through one
- * function — `drawGarden` — so the picture and the numbers can never disagree.
- * The canvas is decoration beside the real DOM readout, not the product: a
- * screen reader and the app review read the readout, and the plot is described
- * in words as well as drawn.
+ * The plot is drawn from the live growth number through one function —
+ * `gardenForm` — that also names the form in words, so the picture and the text
+ * beside it can never disagree. The canvas is decoration beside the real DOM
+ * readout, not the product: a screen reader and the app review read the readout,
+ * and the plot is described in words as well as drawn.
  */
 
 import {
@@ -25,11 +25,7 @@ import {
   tend,
   writeStoredGarden,
 } from "./garden.js";
-
-// One pixel-art cell of soil, in canvas pixels. The canvas is scaled up by CSS
-// with `image-rendering: pixelated`, so these stay whole numbers.
-const CELL = 24;
-const COLUMNS = 6;
+import { drawGarden, gardenForm } from "./plotview.js";
 
 const numberFormat = new Intl.NumberFormat("en");
 const growthFormat = new Intl.NumberFormat("en", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -45,6 +41,7 @@ const MAX_STEP_SECONDS = 60;
 const elements = {
   growth: document.getElementById("growth-total"),
   rate: document.getElementById("growth-rate"),
+  form: document.querySelector('[data-field="form"]'),
   tend: document.getElementById("tend"),
   seeds: document.querySelector('[data-field="seeds"]'),
   plants: document.querySelector('[data-field="plants"]'),
@@ -72,83 +69,23 @@ function readPalette() {
     soilDeep: read("--soil-deep"),
     soilLight: read("--soil-light"),
     leaf: read("--leaf"),
+    leafLight: read("--leaf-light"),
     leafDeep: read("--leaf-deep"),
     bloom: read("--bloom"),
-    ink: read("--ink"),
+    sun: read("--sun"),
   };
   return palette;
-}
-
-function drawSoil(ctx, x, y, color) {
-  ctx.fillStyle = color.soilDeep;
-  ctx.fillRect(x, y, CELL, CELL);
-  ctx.fillStyle = color.soil;
-  ctx.fillRect(x + 2, y + 2, CELL - 4, CELL - 4);
-  ctx.fillStyle = color.soilLight;
-  ctx.fillRect(x + 2, y + 2, CELL - 4, 2);
-}
-
-function drawSeed(ctx, x, y, color) {
-  ctx.fillStyle = color.ink;
-  ctx.fillRect(x + CELL / 2 - 2, y + CELL - 9, 4, 5);
-}
-
-function drawPlant(ctx, x, y, color) {
-  ctx.fillStyle = color.leafDeep;
-  ctx.fillRect(x + 11, y + 9, 2, 11); // stem
-  ctx.fillStyle = color.leaf;
-  ctx.fillRect(x + 6, y + 13, 5, 3); // left leaf
-  ctx.fillRect(x + 13, y + 11, 5, 3); // right leaf
-  ctx.fillStyle = color.bloom;
-  ctx.fillRect(x + 10, y + 4, 4, 5); // bloom
-}
-
-/** A short shoot growing on its own: growth earned since the soil was tended. */
-function drawSprout(ctx, x, y, color) {
-  ctx.fillStyle = color.leafDeep;
-  ctx.fillRect(x + CELL / 2 - 1, y + CELL - 10, 2, 6);
-  ctx.fillStyle = color.leaf;
-  ctx.fillRect(x + CELL / 2 - 4, y + CELL - 12, 5, 3);
-}
-
-/**
- * Draw the garden's plot from its state. The same amount always draws the same
- * way, so the picture reads exactly the state the readout prints.
- */
-function drawGarden(canvas, state) {
-  if (!canvas) return;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-
-  const rows = Math.ceil(state.capacity / COLUMNS);
-  const width = COLUMNS * CELL;
-  const height = rows * CELL;
-  if (canvas.width !== width) canvas.width = width;
-  if (canvas.height !== height) canvas.height = height;
-
-  ctx.imageSmoothingEnabled = false;
-  ctx.clearRect(0, 0, width, height);
-  const color = readPalette();
-
-  for (let index = 0; index < state.capacity; index += 1) {
-    const x = (index % COLUMNS) * CELL;
-    const y = Math.floor(index / COLUMNS) * CELL;
-    drawSoil(ctx, x, y, color);
-    if (index < state.plants) drawPlant(ctx, x, y, color);
-    else if (index < state.plants + state.seeds) drawSeed(ctx, x, y, color);
-    else if (index < state.plants + state.seeds + state.sprouts) drawSprout(ctx, x, y, color);
-  }
 }
 
 const countLabel = (count, singular, plural) =>
   `${numberFormat.format(count)} ${count === 1 ? singular : plural}`;
 
+/** The picture, said in words: the same growth and form the plot draws. */
 function describePlot(state) {
   return (
-    `A plot of ${numberFormat.format(state.capacity)} squares of soil: ` +
+    `${growthFormat.format(state.growth)} growth — ${state.formName}. ` +
     `${countLabel(state.seeds, "ungrown seed", "ungrown seeds")}, ` +
-    `${countLabel(state.plants, "grown plant", "grown plants")}, ` +
-    `${countLabel(state.sprouts, "growing sprout", "growing sprouts")}.`
+    `${countLabel(state.plants, "grown plant", "grown plants")}.`
   );
 }
 
@@ -165,15 +102,14 @@ function setText(element, text) {
 export function getDisplayedState() {
   const garden = getGarden();
   const { growth, rate } = getGrowthState();
-  // The plot can only show the squares it has, so growth past them stops adding
-  // sprites rather than overfilling the soil.
-  const sprouts = Math.max(0, Math.min(Math.floor(growth), PLOT_CAPACITY - garden.plants - garden.seeds));
+  const form = gardenForm(growth);
   return {
     seeds: garden.seeds,
     plants: garden.plants,
     growth,
     rate,
-    sprouts,
+    form: form.index,
+    formName: form.name,
     capacity: PLOT_CAPACITY,
     save: encodeSave(garden),
     storageAvailable: isStorageAvailable,
@@ -211,6 +147,7 @@ function render() {
   const state = getDisplayedState();
   setText(elements.growth, growthFormat.format(state.growth));
   setText(elements.rate, `+${growthFormat.format(state.rate)}/s`);
+  setText(elements.form, state.formName);
   setText(elements.seeds, numberFormat.format(state.seeds));
   setText(elements.plants, numberFormat.format(state.plants));
   setText(elements.capacity, numberFormat.format(state.capacity));
@@ -222,9 +159,11 @@ function render() {
     elements.save.value = state.save;
   }
 
-  const plotKey = `${state.seeds},${state.plants},${state.sprouts}`;
+  // The picture follows the growth, not the stored garden, so it redraws when
+  // the amount or the form it falls in changes — and stays put when nothing does.
+  const plotKey = `${state.form}:${state.growth}`;
   if (plotKey !== lastPlotKey) {
-    drawGarden(elements.plot, state);
+    drawGarden(elements.plot, state, readPalette());
     lastPlotKey = plotKey;
   }
 }
