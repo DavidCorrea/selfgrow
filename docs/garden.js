@@ -660,6 +660,81 @@ export function pollinatorSecondsWithin(ageSeconds, spanSeconds) {
   return visitingSecondsUpTo(start + spanSeconds) - visitingSecondsUpTo(start);
 }
 
+// --- The seasons -------------------------------------------------------------
+//
+// The garden passes through a repeating four-season cycle read from its own
+// age, the same way a pollinator's visit is: whether anyone is watching, the
+// season turns as the garden's clock advances. Each season multiplies the rate
+// the garden grows at, and none of them makes it slower than its base rate, so
+// a season is a change of mood rather than a punishment. The cycle starts at
+// winter, where the multiplier is the base 1, so a fresh garden reads exactly as
+// it always has and only grows more generous as time passes.
+
+/** How long each season lasts, in seconds of garden age. */
+export const SEASON_SECONDS = 600;
+
+/**
+ * The four seasons in the order the cycle visits them, as the one source of
+ * each season's name and growth multiplier. Winter is the base rate, and the
+ * three that follow are each more generous, so no season grows slower.
+ */
+export const SEASONS = Object.freeze([
+  Object.freeze({ key: "winter", name: "winter", multiplier: 1 }),
+  Object.freeze({ key: "spring", name: "spring", multiplier: 1.5 }),
+  Object.freeze({ key: "summer", name: "summer", multiplier: 2 }),
+  Object.freeze({ key: "autumn", name: "autumn", multiplier: 1.25 }),
+]);
+
+/** How long one full turn of the four seasons lasts, in seconds of age. */
+export const SEASON_CYCLE_SECONDS = SEASON_SECONDS * SEASONS.length;
+
+/**
+ * The season a garden `ageSeconds` old is in, and how much faster it grows.
+ *
+ * Pure and deterministic — the same age always answers the same season — so the
+ * readout, the state and the simulated growth cannot disagree about it. A
+ * missing or negative age is the start of the cycle, winter.
+ *
+ * @returns {{index: number, key: string, name: string, multiplier: number}}
+ */
+export function seasonAt(ageSeconds) {
+  const gardenAge = Number.isFinite(ageSeconds) && ageSeconds > 0 ? ageSeconds : 0;
+  const index = Math.floor(gardenAge / SEASON_SECONDS) % SEASONS.length;
+  const season = SEASONS[index];
+  return { index, key: season.key, name: season.name, multiplier: season.multiplier };
+}
+
+/** One full turn of the cycle's weighted seconds — the multipliers, summed. */
+const SEASON_CYCLE_MULTIPLIER_SECONDS = SEASON_SECONDS * SEASONS.reduce(
+  (sum, season) => sum + season.multiplier,
+  0
+);
+
+/** The season multipliers seen from the garden's start up to `seconds` of age. */
+function seasonMultiplierSecondsUpTo(seconds) {
+  if (!(seconds > 0)) return 0;
+  const cycles = Math.floor(seconds / SEASON_CYCLE_SECONDS);
+  const phase = seconds - cycles * SEASON_CYCLE_SECONDS;
+  let total = cycles * SEASON_CYCLE_MULTIPLIER_SECONDS;
+  const wholeSeasons = Math.floor(phase / SEASON_SECONDS);
+  for (let index = 0; index < wholeSeasons; index += 1) total += SEASONS[index].multiplier * SEASON_SECONDS;
+  return total + (phase - wholeSeasons * SEASON_SECONDS) * SEASONS[wholeSeasons].multiplier;
+}
+
+/**
+ * The season multipliers integrated over the `spanSeconds` starting at
+ * `ageSeconds` of garden age — the weighted seconds growth is earned at.
+ *
+ * Closed form, so a month resolves in one calculation rather than one step per
+ * season, and a rehearsal lands exactly where played time would. A missing,
+ * negative or non-finite span is no growth time.
+ */
+export function seasonMultiplierSecondsWithin(ageSeconds, spanSeconds) {
+  if (!Number.isFinite(ageSeconds) || !Number.isFinite(spanSeconds) || spanSeconds <= 0) return 0;
+  const start = ageSeconds > 0 ? ageSeconds : 0;
+  return seasonMultiplierSecondsUpTo(start + spanSeconds) - seasonMultiplierSecondsUpTo(start);
+}
+
 /**
  * Tend the soil: earn growth now, and raise the rate the garden grows at so the
  * number keeps climbing afterwards. Returns the state after the action.
@@ -746,11 +821,13 @@ export function simulateGarden(state, seconds) {
     const nextHerb = sprouts.length ? Math.min(...sprouts) : Infinity;
     const nextBloom = bloomSprouts.length ? Math.min(...bloomSprouts) : Infinity;
     const gap = Math.min(remaining, nextHerb, nextBloom);
-    // The plant count is fixed inside a pass, so whether a pollinator is around
-    // is read once for the whole gap: a visit multiplies the rate without ever
-    // compounding it, and the age carries into the next pass.
+    // The plant count is fixed inside a pass, so the rate does not change across
+    // it and the whole gap is earned at once: the season's multipliers are
+    // integrated over the gap and the pollinator's extra seconds are added, not
+    // multiplied, so both stay closed form and the age carries into the next
+    // pass.
     const visited = herbPlants + bloomPlants > 0 ? pollinatorSecondsWithin(age, gap) : 0;
-    growth += rate * (gap + (POLLINATOR_BOOST - 1) * visited);
+    growth += rate * (seasonMultiplierSecondsWithin(age, gap) + (POLLINATOR_BOOST - 1) * visited);
     remaining -= gap;
     age += gap;
     sprouts = matureKind(sprouts, gap, (matured) => {
