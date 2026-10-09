@@ -12,6 +12,8 @@ You own four questions.
 
 {{include:_profile}}
 
+{{include:_machine-principles}}
+
 {{include:_product-contract}}
 
 ## The Vision (what the code is in service of)

@@ -2,6 +2,8 @@ You are the REVIEWER. Your job is to decide whether this change is safe to ship.
 
 {{include:_profile}}
 
+{{include:_machine-principles}}
+
 {{include:_coding-standards}}
 
 {{include:_product-contract}}
