@@ -20,6 +20,9 @@ import {
   LAST_SEEN_KEY,
   PLANT_PRODUCTION,
   PLOTS_PER_BED,
+  POLLINATOR_BOOST,
+  POLLINATOR_CYCLE_SECONDS,
+  POLLINATOR_VISIT_SECONDS,
   PLOT_CAPACITY,
   SAVE_PREFIX,
   SAVE_VERSION,
@@ -37,6 +40,8 @@ import {
   newGarden,
   nextBedCost,
   nextSeedCost,
+  pollinatorAt,
+  pollinatorSecondsWithin,
   readLastSeen,
   readStoredGarden,
   setGarden,
@@ -367,6 +372,24 @@ function checkSaveCodec(problems) {
     problems.push(`a version-3 save should still load, but it was refused: ${e.message}`);
   }
 
+  // The version before age carried real beds. Widening the save format must not
+  // fold a garden's several beds back into one, and a save from before age must
+  // open at age zero rather than in the middle of a pollinator's cycle.
+  const version4 = `${SAVE_PREFIX}${btoa(
+    JSON.stringify({ version: 4, seeds: 2, plants: 1, growth: 5, rate: 0.5, sprouts: [10, 5], beds: 3 })
+  )}`;
+  try {
+    const migrated = decodeSave(version4);
+    if (migrated.beds !== 3) {
+      problems.push(`a version-4 save should keep its 3 beds, but it migrated to ${migrated.beds} bed(s).`);
+    }
+    if (migrated.age !== 0) {
+      problems.push(`a version-4 save should migrate to age 0, but it migrated to age ${migrated.age}.`);
+    }
+  } catch (e) {
+    problems.push(`a version-4 save should still load, but it was refused: ${e.message}`);
+  }
+
   const payload = (value) => `SELFGROW1.${btoa(JSON.stringify(value))}`;
   const rejects = [
     ["an empty string", ""],
@@ -382,6 +405,8 @@ function checkSaveCodec(problems) {
     ["plants missing", payload({ version: SAVE_VERSION, seeds: 1 })],
     ["beds below one", payload({ version: SAVE_VERSION, seeds: 1, plants: 0, beds: 0 })],
     ["a fractional bed count", payload({ version: SAVE_VERSION, seeds: 1, plants: 0, beds: 1.5 })],
+    ["a negative age", payload({ version: SAVE_VERSION, seeds: 1, plants: 0, growth: 0, rate: 0, age: -1 })],
+    ["an age that is not a number", payload({ version: SAVE_VERSION, seeds: 1, plants: 0, growth: 0, rate: 0, age: "1" })],
   ];
   for (const [label, value] of rejects) {
     try {
@@ -554,7 +579,7 @@ function checkPortableSave(problems) {
     }
   } finally {
     setGarden(before);
-    setGrowth(growthBefore.growth, growthBefore.rate);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
     restoreRawStorage(beforeRaw);
   }
 }
@@ -600,7 +625,7 @@ function checkPlotDrawing(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(before.growth, before.rate);
+    setGrowth(before.growth, before.rate, before.age);
   }
 }
 
@@ -710,7 +735,7 @@ function checkPlotMotion(problems) {
       );
     }
   } finally {
-    setGrowth(before.growth, before.rate);
+    setGrowth(before.growth, before.rate, before.age);
   }
 }
 
@@ -762,7 +787,7 @@ function checkTendAnswersImmediately(problems) {
       );
     }
   } finally {
-    setGrowth(before.growth, before.rate);
+    setGrowth(before.growth, before.rate, before.age);
   }
 }
 
@@ -780,7 +805,7 @@ function checkGrowthRateShowsAndRuns(problems) {
       problems.push(`the page shows the growth rate as ${JSON.stringify(rateText)}, expected a "+x/s" form like "+0.5/s".`);
     }
   } finally {
-    setGrowth(before.growth, before.rate);
+    setGrowth(before.growth, before.rate, before.age);
   }
 }
 
@@ -816,7 +841,7 @@ function checkGrowthIsBoundedAndFinite(problems) {
       problems.push(`the growth total shows ${JSON.stringify(total)} after a huge elapsed span.`);
     }
   } finally {
-    setGrowth(before.growth, before.rate);
+    setGrowth(before.growth, before.rate, before.age);
   }
 }
 
@@ -947,7 +972,7 @@ function checkPlantingSpendsAndRaisesProduction(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
     restoreRawStorage(storageBefore);
   }
 }
@@ -1035,7 +1060,7 @@ function checkSeedGoalReadout(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
   }
 }
 
@@ -1081,7 +1106,7 @@ function checkNextPlantReadout(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
   }
 }
 
@@ -1208,7 +1233,7 @@ function checkBedProgression(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
     restoreRawStorage(storageBefore);
   }
 }
@@ -1231,7 +1256,7 @@ function checkLargeCounts(problems) {
     checkNoOverflow(problems);
   } finally {
     setGarden(before);
-    setGrowth(growthBefore.growth, growthBefore.rate);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
     restoreRawStorage(beforeRaw);
   }
 }
@@ -1280,7 +1305,7 @@ function checkCompactReadout(problems) {
 
   // Every number the page tracks keeps a readout in the DOM, even the ones
   // folded to a screen reader so the garden, numbers and buttons share a screen.
-  const fields = ["growth", "form", "seeds", "plants", "beds", "capacity", "next-plant", "next-bed", "storage"];
+  const fields = ["growth", "form", "seeds", "plants", "beds", "capacity", "pollinator", "next-plant", "next-bed", "storage"];
   for (const field of fields) {
     if (!document.querySelector(`[data-field="${field}"]`)) {
       problems.push(
@@ -1373,7 +1398,7 @@ function checkOfflineTime(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(before.growth, before.rate);
+    setGrowth(before.growth, before.rate, before.age);
   }
 }
 
@@ -1469,6 +1494,136 @@ function checkSaveCarriesGrowth(problems) {
 }
 
 /**
+ * The visiting pollinator: a schedule read from the garden's age, a boost the
+ * simulation and the readout agree on, and a return that can find one already
+ * on the plot.
+ */
+function checkPollinator(problems) {
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  try {
+    // Nothing grown means no visit, and a freshly started garden waits for the
+    // first window rather than being boosted from its first second.
+    for (const [label, pollinator] of [
+      ["a garden with no grown plants", pollinatorAt(POLLINATOR_CYCLE_SECONDS - 1, 0)],
+      ["a garden at the very start of its first cycle", pollinatorAt(0, 3)],
+    ]) {
+      if (pollinator.visiting) {
+        problems.push(`${label} reported a pollinator visiting (${JSON.stringify(pollinator)}); it must not.`);
+      }
+    }
+    const visiting = pollinatorAt(POLLINATOR_CYCLE_SECONDS - 1, 3);
+    if (!visiting.visiting || visiting.multiplier !== POLLINATOR_BOOST || visiting.boost !== POLLINATOR_BOOST) {
+      problems.push(
+        `at age ${POLLINATOR_CYCLE_SECONDS - 1} with 3 plants the pollinator should visit at x${POLLINATOR_BOOST}, ` +
+          `but it reported ${JSON.stringify(visiting)}.`
+      );
+    }
+
+    // The closed form must count exactly the seconds the schedule is on the
+    // plot, checked against an independent second-by-second sum.
+    const bruteSeconds = (ageValue, span) => {
+      let total = 0;
+      for (let offset = 0; offset < span; offset += 1) {
+        if (pollinatorAt(ageValue + offset + 0.5, 1).visiting) total += 1;
+      }
+      return total;
+    };
+    for (const [ageValue, span] of [
+      [0, 600],
+      [30, POLLINATOR_VISIT_SECONDS + 30],
+      [POLLINATOR_CYCLE_SECONDS - 1, 2],
+      [POLLINATOR_CYCLE_SECONDS - 5, POLLINATOR_VISIT_SECONDS],
+      [POLLINATOR_CYCLE_SECONDS, POLLINATOR_CYCLE_SECONDS],
+      [1000, 540],
+    ]) {
+      const closed = pollinatorSecondsWithin(ageValue, span);
+      const counted = bruteSeconds(ageValue, span);
+      if (Math.abs(closed - counted) > 1e-6) {
+        problems.push(
+          `pollinatorSecondsWithin(${ageValue}, ${span}) gave ${closed} seconds, but counting the schedule gave ${counted}.`
+        );
+      }
+    }
+
+    // A visit earns more than the base rate; bare soil earns exactly the base.
+    const base = { growth: 0, rate: 1, sprouts: [], plants: 1, beds: 1, age: 0 };
+    const boosted = simulateGarden(base, 600);
+    const visitSeconds = pollinatorSecondsWithin(0, 600);
+    const expectedBoosted = 600 + (POLLINATOR_BOOST - 1) * visitSeconds;
+    if (Math.abs(boosted.growth - expectedBoosted) > 1e-6) {
+      problems.push(
+        `a 600s span with a growing plant earned ${boosted.growth} growth, expected ${expectedBoosted} ` +
+          `(${visitSeconds}s of it under the x${POLLINATOR_BOOST} boost).`
+      );
+    }
+    if (boosted.age !== 600) {
+      problems.push(`simulating 600s advanced the garden's age to ${boosted.age}, expected 600.`);
+    }
+    const unboosted = simulateGarden({ ...base, plants: 0 }, 600);
+    if (unboosted.growth !== 600) {
+      problems.push(
+        `a 600s span with no grown plants earned ${unboosted.growth} growth, expected the plain 600 ` +
+          `(a pollinator must never visit bare soil).`
+      );
+    }
+
+    // The readout and get-state name the visit and the boosted rate.
+    const row = document.querySelector('[data-field="pollinator"]');
+    if (!row) {
+      problems.push('the page has no pollinator readout (expected [data-field="pollinator"]).');
+    }
+    setGarden({ seeds: 0, plants: 3 });
+    setGrowth(0, 1, 0);
+    const quiet = getDisplayedState();
+    if (quiet.pollinator.visiting || quiet.rate !== 1) {
+      problems.push(
+        `a garden out of a visit window reported pollinator ${JSON.stringify(quiet.pollinator)} at ${quiet.rate}/s, ` +
+          `expected none visiting at the base 1/s.`
+      );
+    }
+    if (row && !/none/i.test(String(row.textContent))) {
+      problems.push(
+        `outside a visit the pollinator readout says ${JSON.stringify(row.textContent)}, expected "none visiting".`
+      );
+    }
+
+    setGrowth(0, 1, POLLINATOR_CYCLE_SECONDS - 1);
+    const boostedState = getDisplayedState();
+    if (!boostedState.pollinator.visiting) {
+      problems.push("inside a visit window get-state does not report a visiting pollinator.");
+    }
+    if (boostedState.rate !== POLLINATOR_BOOST || boostedState.baseRate !== 1) {
+      problems.push(
+        `while a pollinator visits the state reports rate ${boostedState.rate}/s on a base of ` +
+          `${boostedState.baseRate}/s, expected ${POLLINATOR_BOOST}/s on 1/s.`
+      );
+    }
+    if (row && !/visiting/i.test(String(row.textContent))) {
+      problems.push(
+        `during a visit the pollinator readout says ${JSON.stringify(row.textContent)}, expected it to name the visit.`
+      );
+    }
+
+    // A return that lands during a visit shows one already there, in the summary
+    // and in the state.
+    const away = buildAwayReport(
+      { growth: 0, rate: 1, sprouts: [], plants: 3, beds: 1, age: 0 },
+      POLLINATOR_CYCLE_SECONDS - 1
+    );
+    if (!away.pollinator?.visiting) {
+      problems.push("a return ending inside a visit window did not report a visiting pollinator.");
+    }
+    if (!/pollinator/i.test(away.summary)) {
+      problems.push(`the return summary does not mention the visiting pollinator: "${away.summary}"`);
+    }
+  } finally {
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
+  }
+}
+
+/**
  * A long absence lands the garden where played time would, and its return is
  * stated in words and shown on the plot.
  */
@@ -1493,7 +1648,14 @@ function checkReturnSummary(problems) {
 
     // The 2 seeds mature after GROW_SECONDS, so the garden earns the old rate for
     // that short while and the higher rate (each plant adding 0.5/s) for the rest.
-    const expectedEarned = 0.5 * GROW_SECONDS + 1.5 * (30 * DAY - GROW_SECONDS);
+    // A pollinator visits once there is a grown plant, and its visit is worth an
+    // extra rate for every second it is on the plot (see pollinatorSecondsWithin),
+    // so the expected total adds those verified seconds at each rate.
+    const visitSecondsEarly = pollinatorSecondsWithin(0, GROW_SECONDS);
+    const visitSecondsRest = pollinatorSecondsWithin(GROW_SECONDS, 30 * DAY - GROW_SECONDS);
+    const expectedEarned =
+      0.5 * (GROW_SECONDS + (POLLINATOR_BOOST - 1) * visitSecondsEarly) +
+      1.5 * (30 * DAY - GROW_SECONDS + (POLLINATOR_BOOST - 1) * visitSecondsRest);
     const tolerance = Math.max(1e-6, expectedEarned * 1e-9);
     if (Math.abs(away.earned - expectedEarned) > tolerance) {
       problems.push(`after 30 days away the garden earned ${away.earned} growth, expected ${expectedEarned}.`);
@@ -1545,7 +1707,7 @@ function checkReturnSummary(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
     restoreRawStorage(storageBefore);
   }
 }
@@ -1608,7 +1770,7 @@ function checkSimulateGarden(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
   }
 }
 
@@ -1732,7 +1894,7 @@ function checkSandbox(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
     restoreRawStorage(storageBefore);
     restoreRawLastSeen(seenBefore);
   }
@@ -1799,6 +1961,13 @@ async function checkAgentTools(problems) {
     }
   }
 
+  if (JSON.stringify(state.pollinator) !== JSON.stringify(shown.pollinator)) {
+    problems.push(
+      `get-state reported the pollinator as ${JSON.stringify(state.pollinator)}, but the page holds ` +
+        `${JSON.stringify(shown.pollinator)}.`
+    );
+  }
+
   if (JSON.stringify(state.away) !== JSON.stringify(shown.away)) {
     problems.push("get-state's away does not match the page's return report.");
   }
@@ -1827,7 +1996,7 @@ async function checkAgentTools(problems) {
         );
       }
     } finally {
-      setGrowth(growthBefore.growth, growthBefore.rate);
+      setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
     }
   }
 
@@ -1900,7 +2069,7 @@ async function checkAgentTools(problems) {
       }
     } finally {
       setGarden(gardenBefore);
-      setGrowth(growthBefore.growth, growthBefore.rate);
+      setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
       restoreRawStorage(storageBefore);
     }
   }
@@ -1953,7 +2122,7 @@ async function checkAgentTools(problems) {
       }
     } finally {
       setGarden(gardenBefore);
-      setGrowth(growthBefore.growth, growthBefore.rate);
+      setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
       restoreRawStorage(storageBefore);
     }
   }
@@ -2025,7 +2194,7 @@ async function checkAgentTools(problems) {
       }
     } finally {
       setGarden(gardenBefore);
-      setGrowth(growthBefore.growth, growthBefore.rate);
+      setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
       restoreRawStorage(storageBefore);
       restoreRawLastSeen(seenBefore);
     }
@@ -2136,11 +2305,12 @@ export async function checks() {
     checkCompactReadout(problems);
     checkSimulateGarden(problems);
     checkReturnSummary(problems);
+    checkPollinator(problems);
     checkSandbox(problems);
     await checkAgentTools(problems);
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
     restoreRawStorage(storageBefore);
   }
 

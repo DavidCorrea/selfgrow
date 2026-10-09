@@ -13,7 +13,7 @@
  */
 
 /** The save format. Bump it only if the shape below actually changes. */
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 
 /** A readable marker, so a save is recognisable and the version is obvious. */
 export const SAVE_PREFIX = "SELFGROW1.";
@@ -53,6 +53,16 @@ export const BED_COST_RATE = 1.15;
  * loop uses, so a return resolves several of these in one calculation.
  */
 export const GROW_SECONDS = 30;
+
+/**
+ * How often a pollinator can visit, how long each visit lasts, and how much
+ * faster the garden grows while one stays. A visit is the last slice of each
+ * cycle, so a garden that has just been planted waits before its first visitor
+ * and the arrival is a small event rather than a permanent upgrade.
+ */
+export const POLLINATOR_CYCLE_SECONDS = 180;
+export const POLLINATOR_VISIT_SECONDS = 60;
+export const POLLINATOR_BOOST = 2;
 
 /** Bare soil, one bed of it, and one ungrown seed. */
 export function newGarden() {
@@ -147,6 +157,7 @@ export function encodeSave(garden) {
     sprouts,
     growth: amountOrZero(garden.growth),
     rate: amountOrZero(garden.rate),
+    age: amountOrZero(garden.age),
     beds,
   });
   return SAVE_PREFIX + btoa(body);
@@ -164,11 +175,12 @@ export function encodeSave(garden) {
  * left, so nothing already planted is lost. Their rate is rewritten to match:
  * the old per-seed production is taken back out and the grown plants' production
  * put in its place. Before version 4 the garden had exactly one bed, so older
- * saves open onto one bed of soil whatever they may say.
+ * saves open onto one bed of soil whatever they may say. Version 5 added the
+ * garden's age, so earlier saves open at age zero with no visit already past.
  *
- * @returns {{version: number, seeds: number, plants: number, sprouts: number[], growth: number, rate: number, beds: number}}
+ * @returns {{version: number, seeds: number, plants: number, sprouts: number[], growth: number, rate: number, age: number, beds: number}}
  * @throws {Error} when the text is empty, not a selfgrow save, damaged,
- *   the wrong version, or carries a bad plot count, growth or rate.
+ *   the wrong version, or carries a bad plot count, growth, rate or age.
  */
 export function decodeSave(text) {
   if (typeof text !== "string" || !text.trim()) {
@@ -188,15 +200,21 @@ export function decodeSave(text) {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("that save is empty or the wrong shape.");
   }
-  if (parsed.version !== 1 && parsed.version !== 2 && parsed.version !== 3 && parsed.version !== SAVE_VERSION) {
+  if (!(Number.isInteger(parsed.version) && parsed.version >= 1 && parsed.version <= SAVE_VERSION)) {
     throw new Error(
       `that save is version ${JSON.stringify(parsed.version)}, but this garden reads version ${SAVE_VERSION}.`
     );
   }
   assertCount(parsed.plants, "plants");
   // Before version 4 there was one bed of soil and no field for it; a save that
-  // carries one anyway is still read as the single bed it must have been.
-  const beds = parsed.version < SAVE_VERSION ? 1 : readBeds(parsed);
+  // carries one anyway is still read as the single bed it must have been. The
+  // bound is the literal 4 on purpose: a version-4 save really did carry beds,
+  // and widening the save format to 5 must not fold them back into one.
+  const beds = parsed.version < 4 ? 1 : readBeds(parsed);
+  // Before version 5 there was no age to count a pollinator against; an older
+  // garden opens as freshly planted rather than as if a pollinator had just
+  // left, so nothing already past is invented for it.
+  const age = parsed.version < 5 ? 0 : readAge(parsed);
   const sprouts = readSproutsFromSave(parsed, beds * PLOTS_PER_BED);
   // Version 1 had no growth of its own; migrating it starts with nothing grown.
   const growth = parsed.version === 1 ? 0 : parsed.growth;
@@ -209,7 +227,25 @@ export function decodeSave(text) {
   if (parsed.version <= 2) {
     rate = Math.max(0, rate - PLANT_PRODUCTION * parsed.seeds) + PLANT_PRODUCTION * parsed.plants;
   }
-  return { version: SAVE_VERSION, seeds: sprouts.length, plants: parsed.plants, sprouts, growth, rate, beds };
+  return { version: SAVE_VERSION, seeds: sprouts.length, plants: parsed.plants, sprouts, growth, rate, age, beds };
+}
+
+/**
+ * The age a save carries, in seconds of elapsed garden time. A save that never
+ * knew about age opens at zero; a negative or non-finite one is refused with a
+ * reason, because it would put a pollinator somewhere the clock never was.
+ */
+function readAge(parsed) {
+  if (parsed.age === undefined || parsed.age === null) return 0;
+  assertAge(parsed.age);
+  return parsed.age;
+}
+
+/** Refuse an age written into a save that is not a finite number of seconds. */
+function assertAge(value) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    throw new Error(`the save's age must be a number of seconds of 0 or more, but it is ${JSON.stringify(value)}.`);
+  }
 }
 
 /** The bed count a save carries, defaulting to one when it does not say. */
@@ -420,9 +456,9 @@ export function subscribe(listener) {
 //
 // Growth is the garden's first resource: one tap of the soil earns a little of
 // it and raises the rate it keeps arriving at, so the number climbs on its own
-// after the click. The live amount and rate are written with the garden's save
-// (see `writeStoredGarden`) so a visit can resume where the last one stopped,
-// and time away can be counted from the rate it was left at.
+// after the click. The live amount, rate and age are written with the garden's
+// save (see `writeStoredGarden`) so a visit can resume where the last one
+// stopped, and time away can be counted from the rate it was left at.
 
 /** What one tend of the soil earns, and how much faster it makes the garden. */
 export const TEND_YIELD = 1;
@@ -430,20 +466,81 @@ export const TEND_RATE_STEP = 0.1;
 
 let growth = 0;
 let rate = 0;
+let age = 0;
 
-/** The live growth total since this visit began, and its rate in growth/second. */
+/**
+ * The live growth since this visit began, its rate in growth/second, and the
+ * garden's age in seconds of elapsed time. Age is what a pollinator's schedule
+ * is read from, so it is kept beside the growth rather than derived from a
+ * foreground timer: a hidden tab still ages the garden.
+ */
 export function getGrowthState() {
-  return { growth, rate };
+  return { growth, rate, age };
 }
 
 /**
  * Put the live growth back to a known point — the snapshot a caller took. Out
- * of range or missing values fall back to nothing grown rather than to `NaN`.
+ * of range or missing values fall back to nothing grown rather than to `NaN`,
+ * and a missing age restarts at zero rather than leaving the clock somewhere
+ * unknown.
  */
-export function setGrowth(growthValue, rateValue = 0) {
+export function setGrowth(growthValue, rateValue = 0, ageValue = 0) {
   growth = Number.isFinite(growthValue) && growthValue > 0 ? growthValue : 0;
   rate = Number.isFinite(rateValue) && rateValue > 0 ? rateValue : 0;
+  age = Number.isFinite(ageValue) && ageValue > 0 ? ageValue : 0;
   notify();
+}
+
+// --- The visiting pollinator -------------------------------------------------
+//
+// A pollinator is not a resource the visitor spends or loses: it is derived
+// from the garden's age, the same way growth is derived from elapsed time, so
+// a tab that was hidden or a device that slept sees exactly the visit a watched
+// garden would. It only visits a garden with something grown in it, and it is
+// the last slice of each cycle, so a fresh garden waits for its first visitor.
+
+/**
+ * Whether a pollinator is visiting a garden `ageSeconds` old that holds
+ * `plants` grown plants, and how much faster the garden grows while it stays.
+ *
+ * Pure and deterministic: the same age and plants always answer the same, so
+ * the readout, the picture and the simulated growth cannot disagree about it.
+ *
+ * @returns {{visiting: boolean, multiplier: number, boost: number}}
+ */
+export function pollinatorAt(ageSeconds, plants) {
+  const grown = Number.isFinite(plants) && plants > 0;
+  const gardenAge = Number.isFinite(ageSeconds) && ageSeconds > 0 ? ageSeconds : 0;
+  const phase = gardenAge % POLLINATOR_CYCLE_SECONDS;
+  const visiting = grown && phase >= POLLINATOR_CYCLE_SECONDS - POLLINATOR_VISIT_SECONDS;
+  return {
+    visiting,
+    multiplier: visiting ? POLLINATOR_BOOST : 1,
+    boost: POLLINATOR_BOOST,
+  };
+}
+
+/** The visit seconds seen from the garden's start up to `seconds` of age. */
+function visitingSecondsUpTo(seconds) {
+  if (!(seconds > 0)) return 0;
+  const cycles = Math.floor(seconds / POLLINATOR_CYCLE_SECONDS);
+  const phase = seconds - cycles * POLLINATOR_CYCLE_SECONDS;
+  const visitStart = POLLINATOR_CYCLE_SECONDS - POLLINATOR_VISIT_SECONDS;
+  const partial = Math.min(POLLINATOR_VISIT_SECONDS, Math.max(0, phase - visitStart));
+  return cycles * POLLINATOR_VISIT_SECONDS + partial;
+}
+
+/**
+ * How many of the `spanSeconds` starting at `ageSeconds` of garden age fall
+ * inside a pollinator visit, for a garden with grown plants.
+ *
+ * Closed form, so a month resolves in one calculation rather than one step per
+ * three-minute cycle. A missing, negative or non-finite span is no visit time.
+ */
+export function pollinatorSecondsWithin(ageSeconds, spanSeconds) {
+  if (!Number.isFinite(ageSeconds) || !Number.isFinite(spanSeconds) || spanSeconds <= 0) return 0;
+  const start = ageSeconds > 0 ? ageSeconds : 0;
+  return visitingSecondsUpTo(start + spanSeconds) - visitingSecondsUpTo(start);
 }
 
 /**
@@ -477,13 +574,14 @@ export function simulateGarden(state, seconds) {
   const capacity = beds * PLOTS_PER_BED;
   let growth = amountOrZero(source.growth);
   let rate = amountOrZero(source.rate);
+  let age = Number.isFinite(source.age) && source.age > 0 ? source.age : 0;
   let sprouts = Array.isArray(source.sprouts)
     ? source.sprouts.filter((timer) => Number.isFinite(timer) && timer > 0).slice(0, capacity)
     : [];
   let plants = Number.isInteger(source.plants) && source.plants > 0 ? source.plants : 0;
 
   if (!(Number.isFinite(seconds) && seconds > 0)) {
-    return { growth, rate, sprouts, plants, beds };
+    return { growth, rate, sprouts, plants, beds, age };
   }
 
   let remaining = seconds;
@@ -491,8 +589,13 @@ export function simulateGarden(state, seconds) {
   for (let pass = 0; remaining > 0 && pass <= capacity; pass += 1) {
     const nextSprout = sprouts.length ? Math.min(...sprouts) : Infinity;
     const gap = Math.min(remaining, nextSprout);
-    growth += rate * gap;
+    // The plant count is fixed inside a pass, so whether a pollinator is around
+    // is read once for the whole gap: a visit multiplies the rate without ever
+    // compounding it, and the age carries into the next pass.
+    const visitSeconds = plants > 0 ? pollinatorSecondsWithin(age, gap) : 0;
+    growth += rate * (gap + (POLLINATOR_BOOST - 1) * visitSeconds);
     remaining -= gap;
+    age += gap;
     if (sprouts.length) {
       sprouts = sprouts.map((timer) => Math.max(0, timer - gap));
       const matured = sprouts.filter((timer) => timer <= 0).length;
@@ -504,7 +607,7 @@ export function simulateGarden(state, seconds) {
     }
     if (!(gap > 0)) break;
   }
-  return { growth, rate, sprouts, plants, beds };
+  return { growth, rate, sprouts, plants, beds, age };
 }
 
 /**
@@ -516,11 +619,12 @@ export function simulateGarden(state, seconds) {
  */
 export function advance(seconds) {
   const next = simulateGarden(
-    { growth, rate, sprouts: garden.sprouts, plants: garden.plants, beds: garden.beds },
+    { growth, rate, age, sprouts: garden.sprouts, plants: garden.plants, beds: garden.beds },
     seconds
   );
   growth = next.growth;
   rate = next.rate;
+  age = next.age;
   garden = { ...garden, sprouts: next.sprouts, plants: next.plants };
   notify();
   return getGrowthState();
