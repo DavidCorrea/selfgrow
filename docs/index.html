@@ -50,6 +50,16 @@
                 <dt class="readout-term">Grown plants</dt>
                 <dd class="readout-value" data-field="plants">0</dd>
               </div>
+              <!-- One row per kind of seed: what the plot draws in two ways,
+                   named here with its price and what a grown plant earns. -->
+              <div class="readout-row readout-kind">
+                <dt class="readout-term">Herb</dt>
+                <dd class="readout-value readout-kind-value" data-field="kind-herb">1 seed · 0 plants — next 6 · +0.5/s each</dd>
+              </div>
+              <div class="readout-row readout-kind">
+                <dt class="readout-term">Bloom</dt>
+                <dd class="readout-value readout-kind-value" data-field="kind-bloom">0 seeds · 0 plants — next 40 · +5.0/s each</dd>
+              </div>
               <div class="readout-row">
                 <dt class="readout-term">Beds of soil</dt>
                 <dd class="readout-value" data-field="beds">1</dd>
@@ -80,13 +90,14 @@
 
             <div class="actions">
               <button type="button" class="btn" id="tend">Tend the soil</button>
-              <button type="button" class="btn" id="plant-seed">Plant a seed — 6 growth</button>
+              <button type="button" class="btn" id="plant-seed">Plant a herb seed — 6 growth</button>
+              <button type="button" class="btn" id="plant-bloom">Plant a bloom seed — 40 growth</button>
             </div>
 
             <button type="button" class="btn plant" id="open-bed" hidden>Open the next bed — 230 growth</button>
 
             <div class="goal">
-              <p class="goal-title" id="goal-title">Plant seed #2</p>
+              <p class="goal-title" id="goal-title">Plant herb seed — 6 growth</p>
               <div
                 class="meter"
                 id="seed-meter"

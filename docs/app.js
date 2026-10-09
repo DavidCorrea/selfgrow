@@ -14,13 +14,16 @@
 import {
   GROW_SECONDS,
   PLOTS_PER_BED,
+  SEED_KINDS,
   STORAGE_KEY,
   advance,
   decodeSave,
   elapsedSeconds,
   encodeSave,
+  gardenKinds,
   getGarden,
   getGrowthState,
+  kindIndex,
   nextBedCost,
   nextSeedCost,
   openBed,
@@ -94,6 +97,9 @@ const elements = {
   form: document.querySelector('[data-field="form"]'),
   tend: document.getElementById("tend"),
   plant: document.getElementById("plant-seed"),
+  plantBloom: document.getElementById("plant-bloom"),
+  kindHerb: document.querySelector('[data-field="kind-herb"]'),
+  kindBloom: document.querySelector('[data-field="kind-bloom"]'),
   goalTitle: document.getElementById("goal-title"),
   goalDetail: document.getElementById("goal-detail"),
   meter: document.getElementById("seed-meter"),
@@ -198,18 +204,36 @@ export function getDisplayedState() {
 function describeGardenState(garden, growth, rate, age) {
   const form = gardenForm(growth);
   const planted = garden.seeds + garden.plants;
-  const seedCost = nextSeedCost(planted);
   const plotFull = planted >= garden.capacity;
   const bedCost = nextBedCost(garden.beds);
-  // A visiting pollinator multiplies what is displayed, but never the rate the
-  // garden keeps: `rate` is the boosted number a visitor reads, `baseRate` is
-  // the one that is saved and compounded, so the boost is applied once.
+  // Each kind's price, counts and timers, read the same way the plot draws
+  // them: one source, so the buttons, the readout and the goal cannot disagree.
+  const kinds = gardenKinds({ ...garden, capacity: garden.capacity }).map((kind) => ({
+    index: kind.index,
+    key: kind.key,
+    name: kind.name,
+    cost: kind.cost,
+    production: kind.production,
+    growSeconds: kind.growSeconds,
+    seeds: kind.seeds,
+    plants: kind.plants,
+    total: kind.total,
+    canPlant: !plotFull && growth >= kind.cost,
+  }));
+  // The visiting pollinator multiplies what is displayed, but never the rate
+  // the garden keeps: `rate` is the boosted number a visitor reads, `baseRate`
+  // is the one that is saved and compounded, so the boost is applied once.
   const pollinator = pollinatorAt(age, garden.plants);
   const displayRate = rate * pollinator.multiplier;
+  const goal = nextSeedGoal({ growth, plotFull, capacity: garden.capacity, kinds });
+  const goalCost = goal ? goal.cost : kinds[0].cost;
   return {
     seeds: garden.seeds,
     plants: garden.plants,
     totalPlanted: planted,
+    kinds,
+    seedCounts: kinds.map((kind) => kind.seeds),
+    plantCounts: kinds.map((kind) => kind.plants),
     growth,
     rate: displayRate,
     baseRate: rate,
@@ -220,12 +244,14 @@ function describeGardenState(garden, growth, rate, age) {
     beds: garden.beds,
     capacity: garden.capacity,
     growSeconds: GROW_SECONDS,
-    secondsToNextPlant: secondsToNextPlant(garden.sprouts),
-    nextSeedCost: seedCost,
-    canPlantSeed: !plotFull && growth >= seedCost,
+    secondsToNextPlant: secondsToNextPlant(garden.sprouts, garden.bloomSprouts),
+    // The next seed the goal names: its kind, its price, and how far off it is.
+    nextSeedKind: goal ? goal.key : null,
+    nextSeedCost: goalCost,
+    canPlantSeed: Boolean(goal) && growth >= goalCost,
     plotFull,
-    seedCostProgress: seedCost > 0 ? Math.min(1, Math.max(0, growth / seedCost)) : 1,
-    secondsToNextSeed: plotFull || !(displayRate > 0) ? null : Math.max(0, (seedCost - growth) / displayRate),
+    seedCostProgress: goalCost > 0 ? Math.min(1, Math.max(0, growth / goalCost)) : 1,
+    secondsToNextSeed: !goal || !(displayRate > 0) ? null : Math.max(0, (goalCost - growth) / displayRate),
     nextBedCost: bedCost,
     canOpenBed: plotFull && growth >= bedCost,
     bedCostProgress: bedCost > 0 ? Math.min(1, Math.max(0, growth / bedCost)) : 1,
@@ -233,10 +259,36 @@ function describeGardenState(garden, growth, rate, age) {
   };
 }
 
-/** How long until the soonest ungrown seed becomes a plant, or null if none. */
-function secondsToNextPlant(sprouts) {
-  if (!Array.isArray(sprouts) || !sprouts.length) return null;
-  return Math.max(0, Math.min(...sprouts));
+/**
+ * The next seed worth planting, named by kind: the seed a visitor reads off the
+ * goal panel and an agent reads off `get-state`.
+ *
+ * Pure. It picks, among the kinds the free soil can still take, the most
+ * expensive one the garden can already afford — an ambitious but reachable
+ * plant — and when nothing is affordable yet, the cheapest kind, the one the
+ * garden will reach first. No free soil for any kind means no seed goal: the
+ * plot is full and the next goal is a bed.
+ *
+ * @returns {{key: string, name: string, cost: number, production: number, growSeconds: number}|null}
+ */
+export function nextSeedGoal(state) {
+  const candidates = (state?.kinds ?? []).filter((kind) => !state.plotFull && kind.total < state.capacity);
+  if (!candidates.length) return null;
+  const affordable = candidates.filter((kind) => state.growth >= kind.cost);
+  return affordable.length
+    ? affordable.reduce((best, kind) => (kind.cost > best.cost ? kind : best))
+    : candidates.reduce((best, kind) => (kind.cost < best.cost ? kind : best));
+}
+
+/**
+ * How long until the soonest ungrown seed of either kind becomes a plant, or
+ * null when nothing is growing.
+ */
+function secondsToNextPlant(sprouts, bloomSprouts = []) {
+  const timers = [...(Array.isArray(sprouts) ? sprouts : []), ...(Array.isArray(bloomSprouts) ? bloomSprouts : [])]
+    .filter((timer) => Number.isFinite(timer) && timer > 0);
+  if (!timers.length) return null;
+  return Math.max(0, Math.min(...timers));
 }
 
 /** The one portable string a player can copy out of the page. */
@@ -331,7 +383,7 @@ export function buildAwayReport(start, seconds) {
   const report = {
     seconds: Number.isFinite(seconds) && seconds > 0 ? seconds : 0,
     earned: after.growth - before.growth,
-    matured: after.plants - before.plants,
+    matured: after.plants + after.bloomPlants - (before.plants + before.bloomPlants),
     from: fromForm.index,
     fromName: fromForm.name,
     to: toForm.index,
@@ -340,7 +392,7 @@ export function buildAwayReport(start, seconds) {
     growth: after.growth,
     nextFormName: nextIndex < FORMS.length ? FORMS[nextIndex].name : null,
     growthToNextForm: Math.max(0, toForm.nextAt - after.growth),
-    nextSeedCost: nextSeedCost(after.sprouts.length + after.plants),
+    nextSeedCost: nextSeedCost(after.sprouts.length + after.bloomSprouts.length + after.plants + after.bloomPlants),
   };
   // Whether a pollinator is on the plot at the end of the span, so a return
   // that arrives during a visit can say so rather than only showing bigger
@@ -371,14 +423,21 @@ export function applyReturn(saved, lastSeenMs, nowMs) {
     rate: saved.rate,
     age: saved.age,
     sprouts: live.sprouts,
-    plants: live.plants,
+    bloomSprouts: live.bloomSprouts,
+    plantCounts: live.plantCounts,
     beds: live.beds,
   };
   const away = buildAwayReport(start, seconds);
   const after = simulateGarden(start, seconds);
 
   setGrowth(after.growth, after.rate, after.age);
-  setGarden({ beds: start.beds, plants: after.plants, sprouts: after.sprouts });
+  setGarden({
+    beds: start.beds,
+    plants: after.plants,
+    bloomPlants: after.bloomPlants,
+    sprouts: after.sprouts,
+    bloomSprouts: after.bloomSprouts,
+  });
 
   lastReturn = away;
   showReturnSummary(away);
@@ -429,7 +488,15 @@ let sandbox = null;
 function gardenSnapshot() {
   const garden = getGarden();
   const { growth, rate, age } = getGrowthState();
-  return { growth, rate, age, sprouts: garden.sprouts, plants: garden.plants, beds: garden.beds };
+  return {
+    growth,
+    rate,
+    age,
+    sprouts: garden.sprouts,
+    bloomSprouts: garden.bloomSprouts,
+    plantCounts: garden.plantCounts,
+    beds: garden.beds,
+  };
 }
 
 /** Start a fresh sandbox from the garden as it is now, wound back to zero. */
@@ -444,9 +511,11 @@ function rehearseSandbox() {
   const away = buildAwayReport(sandbox.snapshot, sandbox.seconds);
   const display = describeGardenState(
     {
-      seeds: end.sprouts.length,
-      plants: end.plants,
+      seeds: end.sprouts.length + end.bloomSprouts.length,
+      plants: end.plants + end.bloomPlants,
       sprouts: end.sprouts,
+      bloomSprouts: end.bloomSprouts,
+      plantCounts: end.plantCounts,
       beds: end.beds,
       capacity: end.beds * PLOTS_PER_BED,
     },
@@ -600,9 +669,11 @@ function describeNextPlant(state) {
 
 /**
  * The next thing worth reaching for, as a title, a sentence and 0-to-1
- * progress. While every plot is full the goal becomes the next bed, so the
- * garden always has something to reach for instead of ending at "every plot
- * holds a seed" — and a sandbox rehearsal asks for the same goal afterwards.
+ * progress. The title names the kind the goal is worth planting — herb or
+ * bloom — and its cost. While every plot is full the goal becomes the next
+ * bed, so the garden always has something to reach for instead of ending at
+ * "every plot holds a seed" — and a sandbox rehearsal asks for the same goal
+ * afterwards.
  */
 function describeNextGoal(state) {
   if (state.plotFull) {
@@ -612,18 +683,29 @@ function describeNextGoal(state) {
       progress: state.bedCostProgress,
     };
   }
+  const goal = nextSeedGoal(state);
+  const cost = formatAmount(goal ? goal.cost : state.nextSeedCost);
   return {
-    title: `Plant seed #${formatAmount(state.totalPlanted + 1)}`,
+    title: `Plant ${goal ? goal.name : "herb"} seed — ${cost} growth`,
     detail: describeGoal(state),
     progress: state.seedCostProgress,
   };
 }
 
-/** The Plant a seed button, the goal it is reaching for, and the meter between. */
+/**
+ * The two Plant buttons — one per kind, each naming the seed it plants and
+ * what it costs — with the goal and the meter between them.
+ */
 function renderPlanting(state) {
-  const cost = formatAmount(state.nextSeedCost);
-  setText(elements.plant, state.plotFull ? "Plant a seed — the plot is full" : `Plant a seed — ${cost} growth`);
-  if (elements.plant) elements.plant.disabled = !state.canPlantSeed;
+  for (const [button, kind] of [
+    [elements.plant, state.kinds[0]],
+    [elements.plantBloom, state.kinds[1]],
+  ]) {
+    if (!button || !kind) continue;
+    const cost = formatAmount(kind.cost);
+    setText(button, state.plotFull ? `Plant a ${kind.name} seed — the plot is full` : `Plant a ${kind.name} seed — ${cost} growth`);
+    button.disabled = !kind.canPlant;
+  }
 
   const goal = describeNextGoal(state);
   setText(elements.goalTitle, goal.title);
@@ -631,6 +713,16 @@ function renderPlanting(state) {
   setText(elements.goalDetail, goal.detail);
 
   renderOpenBed(state);
+}
+
+/**
+ * The two kinds as the readout reads them: each kind's seeds and plants, the
+ * price of its next seed, and what one grown plant adds to the rate.
+ */
+function describeKind(kind) {
+  const count = `${formatAmount(kind.seeds)} ${kind.seeds === 1 ? "seed" : "seeds"} · ` +
+    `${formatAmount(kind.plants)} ${kind.plants === 1 ? "plant" : "plants"}`;
+  return `${count} — next ${formatAmount(kind.cost)} · +${formatGrowth(kind.production)}/s each`;
 }
 
 /** Point a goal meter at `progress`, from 0 to 1. */
@@ -648,8 +740,9 @@ function renderOpenBed(state) {
   button.disabled = !state.canOpenBed;
 }
 
-function plantSeedFromButton() {
-  const result = plantSeed();
+/** Plant one kind's seed from its button, and say what was planted. */
+function plantSeedFromButton(kind = "herb") {
+  const result = plantSeed(kind);
   if (!result.ok) {
     announce(
       result.reason === "the plot is full"
@@ -658,9 +751,10 @@ function plantSeedFromButton() {
     );
     return;
   }
+  const entry = SEED_KINDS[kindIndex(result.kind)];
   announce(
-    `Planted a seed for ${formatAmount(result.cost)} growth — it will grow into a plant in ` +
-      `${formatDuration(GROW_SECONDS)}.`
+    `Planted a ${entry.name} seed for ${formatAmount(result.cost)} growth — it will grow into a plant in ` +
+      `${formatDuration(entry.growSeconds)}.`
   );
 }
 
@@ -696,6 +790,8 @@ function render() {
   setText(elements.beds, formatAmount(state.beds));
   setText(elements.capacity, formatAmount(state.capacity));
   setText(elements.pollinator, describePollinator(state));
+  setText(elements.kindHerb, describeKind(state.kinds[0]));
+  setText(elements.kindBloom, describeKind(state.kinds[1]));
   setText(elements.nextPlant, describeNextPlant(state));
   setText(elements.nextBed, describeNextBed(state));
   setText(elements.storage, state.storageAvailable ? "Yes" : "No");
@@ -709,9 +805,11 @@ function render() {
   }
 
   // The picture follows the growth, not the stored garden, so it redraws when
-  // the amount or the form it falls in changes — and stays put when nothing does.
+  // the amount, the form it falls in or the kinds on the plot change — and
+  // stays put when nothing does.
   const plotKey =
-    `${state.form}:${state.growth}:${state.seeds}:${state.plants}:${state.beds}:${state.pollinator.visiting}`;
+    `${state.form}:${state.growth}:${state.seedCounts.join(",")}:${state.plantCounts.join(",")}:` +
+    `${state.beds}:${state.pollinator.visiting}`;
   if (plotKey !== lastPlotKey) {
     drawGarden(elements.plot, state, readPalette());
     lastPlotKey = plotKey;
@@ -802,7 +900,11 @@ function start() {
     persist();
   });
   elements.plant?.addEventListener("click", () => {
-    plantSeedFromButton();
+    plantSeedFromButton("herb");
+    persist();
+  });
+  elements.plantBloom?.addEventListener("click", () => {
+    plantSeedFromButton("bloom");
     persist();
   });
   elements.openBed?.addEventListener("click", () => {

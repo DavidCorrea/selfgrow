@@ -20,7 +20,7 @@ import {
   resetSandbox,
   sandboxSpanSeconds,
 } from "./app.js";
-import { openBed, plantSeed, tend } from "./garden.js";
+import { SEED_KINDS, openBed, plantSeed, tend } from "./garden.js";
 
 // The save for the starting garden, so `import-save`'s example always validates
 // and runs. Importing it leaves the garden exactly as it starts.
@@ -42,18 +42,18 @@ export function tools() {
         "takes (growSeconds), the seconds until the next seed matures into a " +
         "plant (secondsToNextPlant, null when no seed is growing), the " +
         "portable save string, and whether this browser is keeping the " +
-        "garden. It reports the visiting pollinator as `pollinator`: whether " +
-        "one is on the plot now (visiting), the factor it is multiplying the " +
-        "growth rate by (multiplier, 1 when none), and the constant boost a " +
-        "visit is worth (boost). While one visits, `rate` is the boosted rate " +
-        "the page shows and `baseRate` is the rate without it, so a caller can " +
-        "see how much faster the garden is growing than it would without the " +
-        "visitor. It also returns the garden's age in seconds (age), which is " +
-        "what the visit schedule is read from. It also returns the next seed: what it costs (nextSeedCost), " +
-        "whether the garden can afford it now (canPlantSeed), whether the " +
-        "plot is full (plotFull), how far along the cost the garden is as a " +
-        "0-to-1 fraction (seedCostProgress), and the seconds until it can " +
-        "afford it (secondsToNextSeed, null when full or not growing). Once " +
+        "garden. It reports the two kinds of seed a visitor can plant as " +
+        "`kinds`, herb first: each entry carries the kind's name (key), the " +
+        "price of its next seed (cost), how much one grown plant adds to the " +
+        "growth rate (production), how long its sprouts take (growSeconds), " +
+        "how many of its seeds are ungrown and how many plants are grown, and " +
+        "whether the garden can afford it now (canPlant). It also returns the " +
+        "next seed the goal panel names (nextSeedKind) and what it costs " +
+        "(nextSeedCost), whether the garden can afford it now (canPlantSeed), " +
+        "whether the plot is full (plotFull), how far along the cost the " +
+        "garden is as a 0-to-1 fraction (seedCostProgress), and the seconds " +
+        "until it can afford it (secondsToNextSeed, null when full or not " +
+        "growing). Once " +
         "every plot is full it also returns the next bed: what opening it " +
         "costs (nextBedCost), whether the garden can afford it now " +
         "(canOpenBed — only ever true on a full plot), how far along that " +
@@ -99,23 +99,39 @@ export function tools() {
       name: "plant-seed",
       title: "Plant a seed",
       description:
-        "Does what the page's Plant a seed button does: spends the garden's " +
-        "growth on another seed and puts a sprouting seed in the soil. The " +
-        "sprout speeds nothing up yet — after growSeconds it matures into a " +
-        "grown plant, and it is the grown plant that raises the rate the " +
+        "Does what the page's Plant a seed buttons do: spends the garden's " +
+        "growth on another seed and puts a sprouting seed in the soil. Give " +
+        "`kind` as " +
+        SEED_KINDS.map((entry) => `"${entry.key}"`).join(" or ") +
+        " — herb is the cheap, quick seed and bloom costs more, earns more " +
+        "and matures slower; get-state's kinds array reports each kind's " +
+        "cost, production and growing time, and its nextSeedKind names the " +
+        "seed the goal panel is worth reaching for. The " +
+        "sprout speeds nothing up yet — after its growSeconds it matures into " +
+        "a grown plant, and it is the grown plant that raises the rate the " +
         "garden keeps growing at. The price rises with every seed or plant " +
-        "already in the plot, so get-state's nextSeedCost is what this will " +
+        "already in the plot, so get-state's kinds costs are what this will " +
         "charge. It refuses, changing nothing, when the garden has not saved " +
         "enough growth or every plot is full — capacity comes from the number " +
         "of beds the garden owns, so open-bed is how a full plot grows. " +
-        "Returns whether it planted, the cost, the reason when it refused, " +
-        "and the state afterwards.",
-      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        "Returns whether it planted, the kind and cost, the reason when it " +
+        "refused, and the state afterwards.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          kind: {
+            type: "string",
+            enum: SEED_KINDS.map((entry) => entry.key),
+            description: "Which seed to plant: \"herb\" (default) or \"bloom\".",
+          },
+        },
+        additionalProperties: false,
+      },
       annotations: { readOnlyHint: false },
       example: {},
-      async execute() {
-        const result = plantSeed();
-        return { ok: result.ok, reason: result.reason, cost: result.cost, state: getDisplayedState() };
+      async execute(input) {
+        const result = plantSeed(input?.kind ?? "herb");
+        return { ok: result.ok, reason: result.reason, cost: result.cost, kind: result.kind, state: getDisplayedState() };
       },
     },
     {
