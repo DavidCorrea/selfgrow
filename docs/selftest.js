@@ -70,10 +70,11 @@ import {
   getSandboxState,
   loadGardenSave,
   openSandbox,
+  readPalette,
   resetSandbox,
   summarizeReturn,
 } from "./app.js";
-import { FORMS, gardenForm } from "./plotview.js";
+import { FORMS, drawGarden, gardenForm, motionPhase, plotBounds } from "./plotview.js";
 
 // The design system is itself a promise: one palette, two embedded pixel fonts
 // split by role, square pixel edges. These are the checks for it.
@@ -950,79 +951,129 @@ function checkKindReadout(problems) {
   }
 }
 
+/**
+ * Draw a state on a fresh offscreen canvas at a pinned phase, as a data URL.
+ *
+ * The live canvas is animated, so two snapshots of it would differ between
+ * ticks for reasons that have nothing to do with the state; a pinned phase on
+ * an offscreen canvas makes each picture a pure function of state and phase, so
+ * a difference proves a difference in what is drawn.
+ */
+function plotImage(state, phase = 0) {
+  const canvas = document.createElement("canvas");
+  drawGarden(canvas, state, readPalette(), phase);
+  return canvas.toDataURL();
+}
+
 /** The plot draws the two kinds differently, plants and sprouts alike. */
 function checkPlotDrawsKinds(problems) {
-  const canvas = document.getElementById("garden-plot");
-  if (!canvas || !canvas.getContext) {
+  const live = document.getElementById("garden-plot");
+  if (!live || !live.getContext) {
     problems.push("the page has no plot canvas (#garden-plot) to draw the kinds into.");
     return;
   }
-  const gardenBefore = getGarden();
-  const growthBefore = getGrowthState();
-  try {
-    const image = (state) => {
-      setGarden(state);
-      setGrowth(0, 0);
-      return canvas.toDataURL();
-    };
-    const herbPlant = image({ plants: 1 });
-    const bloomPlant = image({ plantCounts: [0, 1] });
-    const herbSprout = image({ seeds: 1 });
-    const bloomSprout = image({ bloomSprouts: [SEED_KINDS[1].growSeconds] });
-    if (herbPlant === bloomPlant) {
-      problems.push("a grown herb and a grown bloom draw the same picture, so the two kinds are not visible on the plot.");
-    }
-    if (herbSprout === bloomSprout) {
-      problems.push("a herb sprout and a bloom sprout draw the same picture, so the two kinds are not visible on the plot.");
-    }
-  } finally {
-    setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age);
+  const herbPlant = plotImage({ plants: 1 });
+  const bloomPlant = plotImage({ plantCounts: [0, 1] });
+  const herbSprout = plotImage({ seeds: 1 });
+  const bloomSprout = plotImage({ bloomSprouts: [SEED_KINDS[1].growSeconds] });
+  if (herbPlant === bloomPlant) {
+    problems.push("a grown herb and a grown bloom draw the same picture, so the two kinds are not visible on the plot.");
+  }
+  if (herbSprout === bloomSprout) {
+    problems.push("a herb sprout and a bloom sprout draw the same picture, so the two kinds are not visible on the plot.");
   }
 }
 
 function checkPlotDrawing(problems) {
-  const canvas = document.getElementById("garden-plot");
-  if (!canvas || !canvas.getContext) {
+  const live = document.getElementById("garden-plot");
+  if (!live || !live.getContext) {
     problems.push("the page has no plot canvas (#garden-plot) to draw the garden into.");
     return;
   }
-  const before = getGrowthState();
-  const gardenBefore = getGarden();
-  try {
-    const snapshot = (growth, seeds, plants) => {
-      setGarden({ seeds, plants });
-      setGrowth(growth, 0);
-      return canvas.toDataURL();
-    };
-    const bare = snapshot(0, 0, 0);
-    const oneSprout = snapshot(0, 1, 0);
-    const onePlant = snapshot(0, 0, 1);
-    const seedling = snapshot(10, 0, 3);
-    const far = snapshot(1e12, 0, 12);
-    if (bare === oneSprout) {
-      problems.push("a sprouting seed in the soil draws the same picture as bare soil, so planting is invisible on the plot.");
-    }
-    if (oneSprout === onePlant) {
-      problems.push(
-        "a sprouting seed and a grown plant draw the same picture, so the plot does not show a seed growing up."
-      );
-    }
-    if (onePlant === seedling) {
-      problems.push("the plot draws the same picture at a low and a higher form, so it does not change form at the threshold.");
-    }
-    if (seedling === far) {
-      problems.push("the plot draws the same picture at 10 and 1e12 growth, so the far end is frozen.");
-    }
-    if (snapshot(1e12, 0, 12) !== far) {
-      problems.push("the same amount of growth drew two different pictures, so the plot is not a pure view of the state.");
-    }
-    if (snapshot(1e12, 0, 1e9) !== snapshot(1e12, 0, 1000)) {
-      problems.push("a garden carrying more plants than plots drew a different picture, so the sprites are not bounded by the plot.");
-    }
-  } finally {
-    setGarden(gardenBefore);
-    setGrowth(before.growth, before.rate, before.age);
+  const snapshot = (growth, seeds, plants) => plotImage({ growth, seeds, plants, beds: 1 });
+  const bare = snapshot(0, 0, 0);
+  const oneSprout = snapshot(0, 1, 0);
+  const onePlant = snapshot(0, 0, 1);
+  const seedling = snapshot(10, 0, 3);
+  const far = snapshot(1e12, 0, 12);
+  if (bare === oneSprout) {
+    problems.push("a sprouting seed in the soil draws the same picture as bare soil, so planting is invisible on the plot.");
+  }
+  if (oneSprout === onePlant) {
+    problems.push(
+      "a sprouting seed and a grown plant draw the same picture, so the plot does not show a seed growing up."
+    );
+  }
+  if (onePlant === seedling) {
+    problems.push("the plot draws the same picture at a low and a higher form, so it does not change form at the threshold.");
+  }
+  if (seedling === far) {
+    problems.push("the plot draws the same picture at 10 and 1e12 growth, so the far end is frozen.");
+  }
+  if (snapshot(1e12, 0, 12) !== far) {
+    problems.push("the same amount of growth drew two different pictures, so the plot is not a pure view of the state.");
+  }
+  if (snapshot(1e12, 0, 1e9) !== snapshot(1e12, 0, 1000)) {
+    problems.push("a garden carrying more plants than plots drew a different picture, so the sprites are not bounded by the plot.");
+  }
+}
+
+/**
+ * The garden breathes without ever depending on motion to show its state.
+ *
+ * The phase is pinned to a still frame under reduced motion and on bare soil,
+ * advances otherwise so something moves, stays a pure function of state and
+ * phase, still shows the planted garden in that one frame, and draws a huge
+ * garden inside the plot's own bounded grid.
+ */
+function checkPlotAnimation(problems) {
+  if (motionPhase({ reduced: true, frame: 7, living: true }) !== 0) {
+    problems.push(
+      "with reduced motion preferred the plot still advances a phase; it must pin to the single still frame (phase 0)."
+    );
+  }
+  if (motionPhase({ reduced: false, frame: 7, living: false }) !== 0) {
+    problems.push("a plot with nothing growing still advances a phase; bare soil must stay a still frame (phase 0).");
+  }
+  if (motionPhase({ reduced: false, frame: 7, living: true }) === 0) {
+    problems.push("a living plot under normal motion never advances a phase, so the garden would never visibly breathe.");
+  }
+
+  const grown = { growth: 100, beds: 1, plants: 3, seeds: 0, pollinator: { visiting: false } };
+  const stillFrame = plotImage(grown, 0);
+  if (plotImage(grown, 0) !== stillFrame) {
+    problems.push("the plot drew two different pictures at the same state and phase, so it is not a pure view of them.");
+  }
+  if (plotImage(grown, 1) === stillFrame) {
+    problems.push("a grown garden drew the same picture on two different phases, so nothing in it visibly moves.");
+  }
+
+  const bare = { growth: 0, beds: 1, plants: 0, seeds: 0, pollinator: { visiting: false } };
+  if (plotImage(bare, 0) === stillFrame) {
+    problems.push("the still frame of a planted garden equals bare soil, so reduced motion would hide the garden's state.");
+  }
+
+  const huge = {
+    growth: 1e12,
+    beds: 5000,
+    plants: 1e12,
+    seeds: 1e12,
+    plantCounts: [1e12, 1e12],
+    seedCounts: [1e12, 1e12],
+    pollinator: { visiting: true },
+  };
+  const canvas = document.createElement("canvas");
+  drawGarden(canvas, huge, readPalette(), 5);
+  const bounds = plotBounds(huge);
+  if (canvas.width !== bounds.width || canvas.height !== bounds.height) {
+    problems.push(
+      `a huge garden drew ${canvas.width}x${canvas.height}px, outside the plot's own bounds ${bounds.width}x${bounds.height}px.`
+    );
+  }
+  if (canvas.height > bounds.maxRows * bounds.cell) {
+    problems.push(
+      `a huge garden drew ${canvas.height}px tall over ${bounds.maxRows} capped rows of soil, so the sprite count is not bounded.`
+    );
   }
 }
 
@@ -1196,9 +1247,9 @@ function checkNextFormMeter(problems) {
 }
 
 /**
- * The plot is redrawn discretely, never animated, so a visitor who asks for no
- * motion still sees the change — and the description states the same form in
- * words when the garden advances.
+ * The plot breathes by being redrawn, never by CSS motion on the canvas, so a
+ * visitor who asks for no motion still gets a still frame — and the description
+ * states the same form in words when the garden advances.
  */
 function checkPlotMotion(problems) {
   const canvas = document.getElementById("garden-plot");
@@ -3158,6 +3209,7 @@ export async function checks() {
     checkKindReadout(problems);
     checkPlotDrawing(problems);
     checkPlotDrawsKinds(problems);
+    checkPlotAnimation(problems);
     checkGardenFormMapping(problems);
     checkNextFormMeter(problems);
     checkPlotMotion(problems);

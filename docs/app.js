@@ -42,7 +42,7 @@ import {
   writeLastSeen,
   writeStoredGarden,
 } from "./garden.js";
-import { FORMS, drawGarden, gardenForm } from "./plotview.js";
+import { FORMS, drawGarden, gardenForm, motionPhase } from "./plotview.js";
 
 const numberFormat = new Intl.NumberFormat("en");
 const decimalFormat = new Intl.NumberFormat("en", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -152,7 +152,7 @@ const isStorageAvailable = storageAvailable();
 let palette = null;
 
 /** The palette, read once from the `:root` CSS variables rather than repeated. */
-function readPalette() {
+export function readPalette() {
   if (palette) return palette;
   const style = getComputedStyle(document.documentElement);
   const read = (name) => style.getPropertyValue(name).trim();
@@ -816,6 +816,15 @@ function openBedFromButton() {
 }
 
 let lastPlotKey = null;
+// The plot's animation phase: it advances one step per tick so the garden
+// breathes between milestones, and is pinned to a still frame by reduced motion.
+let plotFrame = 0;
+let plotReducedMotion = false;
+
+/** Whether anything on the plot can move — a growing seed, a plant, a visitor. */
+function plotIsLiving(state) {
+  return state.seeds + state.plants > 0 || Boolean(state.pollinator && state.pollinator.visiting);
+}
 
 function render() {
   // A hidden tab still keeps the garden growing (the timer derives growth from
@@ -850,12 +859,19 @@ function render() {
 
   // The picture follows the growth, not the stored garden, so it redraws when
   // the amount, the form it falls in or the kinds on the plot change — and
-  // stays put when nothing does.
+  // stays put when nothing does. Its breathing phase is part of the key, so a
+  // still plot (bare soil, or reduced motion) is redrawn only when the state
+  // changes, while a living one advances a frame each tick.
+  const phase = motionPhase({
+    reduced: plotReducedMotion,
+    frame: plotFrame,
+    living: plotIsLiving(state),
+  });
   const plotKey =
     `${state.form}:${state.growth}:${state.seedCounts.join(",")}:${state.plantCounts.join(",")}:` +
-    `${state.beds}:${state.pollinator.visiting}`;
+    `${state.beds}:${state.pollinator.visiting}:${phase}`;
   if (plotKey !== lastPlotKey) {
-    drawGarden(elements.plot, state, readPalette());
+    drawGarden(elements.plot, state, readPalette(), phase);
     lastPlotKey = plotKey;
   }
 }
@@ -975,6 +991,7 @@ function start() {
     const now = Date.now();
     const elapsed = Math.max(0, (now - lastTick) / 1000);
     lastTick = now;
+    plotFrame += 1;
     if (elapsed > 0) advance(elapsed);
     if (now - lastPersist >= PERSIST_MS) {
       lastPersist = now;
@@ -982,6 +999,18 @@ function start() {
     }
   };
   setInterval(tick, TICK_MS);
+
+  // Read the visitor's motion preference once and keep it current; a change
+  // pins the plot to a still frame (or releases it) and redraws at once.
+  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+  if (reducedMotion) {
+    plotReducedMotion = reducedMotion.matches;
+    reducedMotion.addEventListener("change", (event) => {
+      plotReducedMotion = event.matches;
+      lastPlotKey = null;
+      render();
+    });
+  }
 
   // Counting the gap on the way back in covers a tab that was hidden or a
   // device that slept; the garden is never cheated of time nobody watched.
