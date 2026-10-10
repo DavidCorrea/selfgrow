@@ -30,6 +30,30 @@
           </div>
 
           <div class="garden-side">
+            <div class="actions">
+              <button type="button" class="btn" id="tend">Tend the soil</button>
+              <button type="button" class="btn" id="plant-seed">Plant a herb seed — 6 growth</button>
+              <button type="button" class="btn" id="plant-bloom">Plant a bloom seed — 40 growth</button>
+            </div>
+
+            <button type="button" class="btn plant" id="open-bed" hidden>Open the next bed — 230 growth</button>
+
+            <div class="goal">
+              <p class="goal-title" id="goal-title">Plant herb seed — 6 growth</p>
+              <div
+                class="meter"
+                id="seed-meter"
+                role="progressbar"
+                aria-labelledby="goal-title"
+                aria-valuemin="0"
+                aria-valuemax="1"
+                aria-valuenow="0"
+              >
+                <div class="meter-fill" id="seed-meter-fill"></div>
+              </div>
+              <p class="goal-detail" id="goal-detail"></p>
+            </div>
+
             <dl class="readout" aria-label="What the garden holds">
               <div class="readout-row">
                 <dt class="readout-term">Growth</dt>
@@ -118,30 +142,6 @@
                 <dd class="readout-value" data-field="storage">Yes</dd>
               </div>
             </dl>
-
-            <div class="actions">
-              <button type="button" class="btn" id="tend">Tend the soil</button>
-              <button type="button" class="btn" id="plant-seed">Plant a herb seed — 6 growth</button>
-              <button type="button" class="btn" id="plant-bloom">Plant a bloom seed — 40 growth</button>
-            </div>
-
-            <button type="button" class="btn plant" id="open-bed" hidden>Open the next bed — 230 growth</button>
-
-            <div class="goal">
-              <p class="goal-title" id="goal-title">Plant herb seed — 6 growth</p>
-              <div
-                class="meter"
-                id="seed-meter"
-                role="progressbar"
-                aria-labelledby="goal-title"
-                aria-valuemin="0"
-                aria-valuemax="1"
-                aria-valuenow="0"
-              >
-                <div class="meter-fill" id="seed-meter-fill"></div>
-              </div>
-              <p class="goal-detail" id="goal-detail"></p>
-            </div>
           </div>
         </div>
       </section>

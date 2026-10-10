@@ -2250,6 +2250,72 @@ function checkCompactReadout(problems) {
   }
 }
 
+/**
+ * The garden fits a phone's first screen: the plot, the growing actions and the
+ * next goal all end within 390x844, with the long readout below them. The order
+ * is asserted in the DOM as well as measured, because a CSS reorder would show
+ * the buttons first while leaving a keyboard or a screen reader stuck inside
+ * the numbers — shown order and reading order have to be the same.
+ */
+function checkFirstScreenGarden(problems) {
+  // A 390x844 phone's first screen, in document coordinates so the window the
+  // suite happens to run in cannot hide something that fell off the page.
+  const FIRST_SCREEN_PX = 844;
+
+  const plot = document.getElementById("garden-plot");
+  const actions = document.querySelector(".garden-side > .actions");
+  const goal = document.querySelector(".garden-side > .goal");
+  const readout = document.querySelector(".garden-side > .readout");
+  if (!plot || !actions || !goal || !readout) {
+    problems.push(
+      "the garden's first screen cannot be checked: it needs #garden-plot and a .garden-side " +
+        "holding .actions, .goal and .readout."
+    );
+    return;
+  }
+
+  const precedes = (first, second) =>
+    Boolean(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING);
+  if (!precedes(plot, actions)) {
+    problems.push("the plot must precede the growing actions in the DOM, so reading order matches the page.");
+  }
+  for (const [label, el] of [["actions", actions], ["goal", goal]]) {
+    if (!precedes(el, readout)) {
+      problems.push(`the ${label} must precede the readout in the DOM, but the readout stands before it.`);
+    }
+  }
+
+  const bounds = (el) => {
+    const rect = el.getBoundingClientRect();
+    return { top: rect.top + window.scrollY, bottom: rect.bottom + window.scrollY };
+  };
+  const plotBox = bounds(plot);
+  const actionsBox = bounds(actions);
+  const goalBox = bounds(goal);
+  const readoutBox = bounds(readout);
+
+  // The actions matter most: their box holds every growing control, so it ends
+  // within the first screen only when at least one is reachable without a
+  // scroll.
+  for (const [label, box] of [["plot", plotBox], ["growing actions", actionsBox], ["next goal", goalBox]]) {
+    if (box.bottom > FIRST_SCREEN_PX) {
+      problems.push(
+        `the ${label} ends at ${Math.round(box.bottom)}px, past the ${FIRST_SCREEN_PX}px first screen, so a fresh ` +
+          "visitor cannot reach it without scrolling."
+      );
+    }
+  }
+
+  // The readout is moved, never dropped: it must start below both the actions
+  // and the goal, or it fills the first screen with numbers again.
+  if (readoutBox.top < actionsBox.bottom || readoutBox.top < goalBox.bottom) {
+    problems.push(
+      `the readout starts at ${Math.round(readoutBox.top)}px, above the actions (${Math.round(actionsBox.bottom)}px) ` +
+        `or the goal (${Math.round(goalBox.bottom)}px); it must sit below both.`
+    );
+  }
+}
+
 // --- Time away ---------------------------------------------------------------
 
 /**
@@ -3547,6 +3613,7 @@ export async function checks() {
     checkPortableSave(problems);
     checkNoOverflow(problems);
     checkCompactReadout(problems);
+    checkFirstScreenGarden(problems);
     checkSimulateGarden(problems);
     checkReturnSummary(problems);
     checkPollinator(problems);
