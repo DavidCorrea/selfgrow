@@ -325,6 +325,13 @@ body {
   min-width: 0;
 }
 
+/* A row that is only shown at a particular time (the return marks) must stay
+   hidden while its state is absent, even though `.readout-row` is a flex box
+   and so would otherwise override the browser's `[hidden]` rule. */
+.readout-row[hidden] {
+  display: none;
+}
+
 /* Growth is the hero number, so it keeps a line of its own across the grid. */
 .readout-row:first-child {
   grid-column: 1 / -1;

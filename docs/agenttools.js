@@ -12,6 +12,7 @@
 
 import {
   SANDBOX_SPANS,
+  clearReturnMarks,
   exportSave,
   fastForwardSandbox,
   getDisplayedState,
@@ -84,6 +85,11 @@ export function tools() {
         "first visit or a quick reload), earned growth, how many seeds " +
         "matured (matured), the form it started at (from) and reached (to), " +
         "the formsFound on the way, and a plain summary sentence. It also " +
+        "reports returnMarks: what the last return marked on the plot and the " +
+        "readout — how many plants matured (plants) and whether a new form was " +
+        "reached (form), or null once the marks clear (a first visit or a quick " +
+        "reload marks nothing, and any of tend, plant-seed, open-bed or " +
+        "import-save clears the marks). It also " +
         "reports sandbox: the time rehearsal when one is open — how many " +
         "seconds it has been wound forward and a readable elapsed label, the " +
         "growth, form, ungrown seeds and grown plants it reached, how many " +
@@ -111,6 +117,7 @@ export function tools() {
       annotations: { readOnlyHint: false },
       example: {},
       async execute() {
+        clearReturnMarks();
         tend();
         return getDisplayedState();
       },
@@ -150,6 +157,7 @@ export function tools() {
       annotations: { readOnlyHint: false },
       example: {},
       async execute(input) {
+        clearReturnMarks();
         const result = plantSeed(input?.kind ?? "herb");
         return { ok: result.ok, reason: result.reason, cost: result.cost, kind: result.kind, state: getDisplayedState() };
       },
@@ -173,6 +181,7 @@ export function tools() {
       annotations: { readOnlyHint: false },
       example: {},
       async execute() {
+        clearReturnMarks();
         const result = openBed();
         return {
           ok: result.ok,

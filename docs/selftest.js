@@ -65,8 +65,10 @@ import {
   writeStoredGarden,
 } from "./garden.js";
 import {
+  MIN_AWAY_SECONDS,
   applyReturn,
   buildAwayReport,
+  clearReturnMarks,
   exportSave,
   fastForwardSandbox,
   formatAmount,
@@ -77,9 +79,20 @@ import {
   openSandbox,
   readPalette,
   resetSandbox,
+  returnMarkFor,
   summarizeReturn,
 } from "./app.js";
-import { FORMS, drawGarden, gardenForm, groundCover, motionPhase, plotBounds, seasonLook, soilFace } from "./plotview.js";
+import {
+  FORMS,
+  drawGarden,
+  gardenForm,
+  groundCover,
+  motionPhase,
+  plotBounds,
+  returnMarkCells,
+  seasonLook,
+  soilFace,
+} from "./plotview.js";
 
 // The design system is itself a promise: one palette, two embedded pixel fonts
 // split by role, square pixel edges. These are the checks for it.
@@ -3145,6 +3158,105 @@ function checkReturnSummary(problems) {
 }
 
 /**
+ * What a return marks on the garden: only a real absence marks anything, the
+ * marks say what grew, they show on the plot and in the readout and in
+ * `get-state`, and acting on the garden clears them.
+ */
+function checkReturnMarks(problems) {
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const storageBefore = rawStorage();
+  const DAY = 86400;
+  const row = document.getElementById("return-marks-row");
+  const field = document.querySelector('[data-field="return-marks"]');
+  if (!row || !field) {
+    problems.push(
+      'the page has no return-marks readout row (#return-marks-row / [data-field="return-marks"]).'
+    );
+  }
+  try {
+    // A first visit or a quick reload marks nothing, even if a seed matured in
+    // the few seconds: only an absence past the threshold is worth a mark.
+    const start = { growth: 0, rate: 0.5, sprouts: [GROW_SECONDS], plants: 0, beds: 1 };
+    const none = [
+      ["a first visit", buildAwayReport(start, 0)],
+      ["a 30-second reload", buildAwayReport(start, 30)],
+    ];
+    for (const [label, away] of none) {
+      if (returnMarkFor(away, MIN_AWAY_SECONDS) !== null) {
+        problems.push(`${label} left return marks on the garden; only a real absence should.`);
+      }
+    }
+
+    // A month away matures the garden's seeds and reaches a new form.
+    const saved = { version: SAVE_VERSION, seeds: 2, plants: 1, growth: 0, rate: 0.5 };
+    setGarden({ seeds: 2, plants: 1 });
+    setGrowth(saved.growth, saved.rate);
+    const nowMs = 1_700_000_000_000;
+    const away = applyReturn(saved, nowMs - 30 * DAY * 1000, nowMs);
+    const marks = returnMarkFor(away, MIN_AWAY_SECONDS);
+    if (!marks) {
+      problems.push("a 30-day return marked nothing; the matured seeds and the new form should be marked.");
+    } else {
+      if (marks.plants !== away.matured || marks.plants < 1) {
+        problems.push(`a 30-day return marked ${marks.plants} plants, expected the ${away.matured} it matured.`);
+      }
+      if (!marks.form || away.formsFound.length === 0) {
+        problems.push("a 30-day return reached new forms but did not mark one.");
+      }
+    }
+
+    // The page says what it marked, and `get-state` returns the same thing.
+    const shown = getDisplayedState();
+    if (JSON.stringify(shown.returnMarks) !== JSON.stringify(marks)) {
+      problems.push(
+        `get-state's returnMarks ${JSON.stringify(shown.returnMarks)} does not match the return's ` +
+          `${JSON.stringify(marks)}.`
+      );
+    }
+    if (row && field) {
+      if (row.hidden || !field.textContent.trim()) {
+        problems.push("the return did not show the New since you left readout row.");
+      } else if (marks && !field.textContent.includes(formatAmount(marks.plants))) {
+        problems.push(
+          `the return readout does not state the ${marks.plants} matured plants: "${field.textContent}".`
+        );
+      }
+    }
+
+    // The marks land on the plot, on the newest plants it draws, and they make
+    // the picture differ from the same garden unmarked.
+    const bounds = plotBounds(shown);
+    const cells = returnMarkCells(shown, bounds);
+    if (marks && (!cells.form || cells.cells.length !== marks.plants)) {
+      problems.push(
+        `returnMarkCells gave ${cells.cells.length} cells / form ${cells.form}, expected ` +
+          `${marks.plants} / true for a 30-day return.`
+      );
+    }
+    const unmarked = { ...shown, returnMarks: null };
+    if (marks && plotImage(shown, 0) === plotImage(unmarked, 0)) {
+      problems.push("the plot drew the same picture with and without the return marks, so the growth did not show on it.");
+    }
+
+    // Acting on the garden clears the marks, the readout and the plot together.
+    document.getElementById("tend")?.click();
+    const cleared = getDisplayedState();
+    if (cleared.returnMarks !== null) {
+      problems.push(`Tending the soil left returnMarks ${JSON.stringify(cleared.returnMarks)}; an action must clear them.`);
+    }
+    if (row && !row.hidden) {
+      problems.push("Tending the soil left the New since you left row showing.");
+    }
+  } finally {
+    clearReturnMarks();
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreRawStorage(storageBefore);
+  }
+}
+
+/**
  * The pure simulation behind both a return and a sandbox rehearsal: one span in
  * one step lands where played time would, and a span that cannot be trusted
  * grows nothing.
@@ -3848,6 +3960,7 @@ export async function checks() {
     checkFirstScreenGarden(problems);
     checkSimulateGarden(problems);
     checkReturnSummary(problems);
+    checkReturnMarks(problems);
     checkPollinator(problems);
     checkSeason(problems);
     checkSeasonDrawing(problems);

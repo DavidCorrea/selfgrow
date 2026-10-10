@@ -96,7 +96,8 @@ const TICK_MS = 250;
 // without warning still loses almost nothing.
 const PERSIST_MS = 5000;
 // A gap shorter than this is a reload, not an absence worth a welcome-back note.
-const MIN_AWAY_SECONDS = 60;
+// Exported so the return marks and the welcome-back note use the one threshold.
+export const MIN_AWAY_SECONDS = 60;
 
 const elements = {
   growth: document.getElementById("growth-total"),
@@ -129,6 +130,8 @@ const elements = {
   plot: document.getElementById("garden-plot"),
   description: document.getElementById("plot-description"),
   returnSummary: document.getElementById("return-summary"),
+  returnMarks: document.querySelector('[data-field="return-marks"]'),
+  returnMarksRow: document.getElementById("return-marks-row"),
   save: document.getElementById("save-value"),
   copy: document.getElementById("copy-save"),
   load: document.getElementById("load-save"),
@@ -234,6 +237,9 @@ export function getDisplayedState() {
     replantBonus: replantBonus(lifetime),
     save: exportSave(),
     away: lastReturn,
+    // What the last return marked on the garden, so an agent sees the same
+    // change the plot draws; null once the marks clear.
+    returnMarks,
     sandbox: getSandboxState(),
     storageAvailable: isStorageAvailable,
   };
@@ -358,6 +364,16 @@ export function exportSave() {
 /** The last return this visit, for `get-state`, or null before the first one. */
 let lastReturn = null;
 
+/**
+ * What the last return marked on the garden, shown until the visitor acts or it
+ * times out, so a returning player sees the change rather than reading about it.
+ */
+let returnMarks = null;
+let returnMarkTimer = null;
+// The marks clear on their own after a short while, so a returning player who
+// does not act still finds the garden uncluttered.
+const RETURN_MARK_MS = 30000;
+
 /** Write the garden and the moment it was written, so time away can be counted. */
 function persist(nowMs = Date.now()) {
   writeStoredGarden(getGarden());
@@ -467,6 +483,38 @@ export function buildAwayReport(start, seconds) {
 }
 
 /**
+ * What a return marked on the garden, or `null` when there is nothing to mark.
+ *
+ * Pure, and the one rule for whether an absence leaves a mark: a span shorter
+ * than `minSeconds` is a reload rather than an absence, and an absence that
+ * matured no seed and reached no new form has nothing to point at. Otherwise
+ * `plants` is how many seeds matured and `form` says the garden reached a form
+ * it did not have, both of which the return report already knows.
+ */
+export function returnMarkFor(away, minSeconds) {
+  if (!away || !(away.seconds >= minSeconds)) return null;
+  const plants = Number.isFinite(away.matured) && away.matured > 0 ? away.matured : 0;
+  const form = Array.isArray(away.formsFound) && away.formsFound.length > 0;
+  if (plants === 0 && !form) return null;
+  return { plants, form };
+}
+
+/**
+ * Drop the return marks and stop their timer, redrawing so the plot and the
+ * readout stop showing them. A no-op when nothing is marked, so any action can
+ * call it freely.
+ */
+export function clearReturnMarks() {
+  if (returnMarkTimer !== null) {
+    clearTimeout(returnMarkTimer);
+    returnMarkTimer = null;
+  }
+  if (returnMarks === null) return;
+  returnMarks = null;
+  render();
+}
+
+/**
  * Count the time since `lastSeenMs` against the garden's growth and rate, with
  * no cap, and put the garden where that much played time would have left it.
  *
@@ -509,6 +557,11 @@ export function applyReturn(saved, lastSeenMs, nowMs) {
   });
 
   lastReturn = away;
+  // Mark what the absence changed until the visitor notices, then let it clear
+  // on its own after a short while so the garden never stays cluttered.
+  returnMarks = returnMarkFor(away, MIN_AWAY_SECONDS);
+  if (returnMarkTimer !== null) clearTimeout(returnMarkTimer);
+  returnMarkTimer = returnMarks ? setTimeout(clearReturnMarks, RETURN_MARK_MS) : null;
   showReturnSummary(away);
   render();
   return away;
@@ -667,6 +720,7 @@ export function getSandboxState() {
  */
 export function loadGardenSave(text) {
   const garden = decodeSave(text);
+  clearReturnMarks();
   setGarden(garden);
   setGrowth(garden.growth, garden.rate, garden.age, garden.lifetime);
   const persisted = writeStoredGarden(getGarden());
@@ -725,6 +779,15 @@ function describeNextBed(state) {
   const cost = formatAmount(state.nextBedCost);
   const percent = Math.round(state.bedCostProgress * 100);
   return `${cost} growth · ${percent}% saved`;
+}
+
+/** What the return marked on the garden, as the readout states it. */
+function describeReturnMarks(marks) {
+  if (!marks) return "";
+  const parts = [];
+  if (marks.plants > 0) parts.push(`${countLabel(marks.plants, "plant", "plants")} matured`);
+  if (marks.form) parts.push("a new form reached");
+  return parts.join(" · ");
 }
 
 /** The season the garden is in, and how much faster it grows for it. */
@@ -893,6 +956,8 @@ function render() {
   setText(elements.beds, formatAmount(state.beds));
   setText(elements.capacity, formatAmount(state.capacity));
   setText(elements.pollinator, describePollinator(state));
+  setText(elements.returnMarks, describeReturnMarks(state.returnMarks));
+  if (elements.returnMarksRow) elements.returnMarksRow.hidden = !state.returnMarks;
   setText(elements.season, describeSeason(state));
   setText(elements.kindHerb, describeKind(state.kinds[0]));
   setText(elements.kindBloom, describeKind(state.kinds[1]));
@@ -920,7 +985,8 @@ function render() {
   });
   const plotKey =
     `${state.form}:${state.growth}:${state.seedCounts.join(",")}:${state.plantCounts.join(",")}:` +
-    `${state.beds}:${state.pollinator.visiting}:${state.season.key}:${phase}`;
+    `${state.beds}:${state.pollinator.visiting}:${state.season.key}:${phase}:` +
+    `${JSON.stringify(state.returnMarks ?? null)}`;
   if (plotKey !== lastPlotKey) {
     drawGarden(elements.plot, state, readPalette(), phase);
     lastPlotKey = plotKey;
@@ -1007,19 +1073,24 @@ function start() {
     setGrowth(next.garden.growth, next.garden.rate, next.garden.age, next.garden.lifetime);
   });
 
+  // Acting on the garden is noticing it: any of these clears the return marks.
   elements.tend?.addEventListener("click", () => {
+    clearReturnMarks();
     tend();
     persist();
   });
   elements.plant?.addEventListener("click", () => {
+    clearReturnMarks();
     plantSeedFromButton("herb");
     persist();
   });
   elements.plantBloom?.addEventListener("click", () => {
+    clearReturnMarks();
     plantSeedFromButton("bloom");
     persist();
   });
   elements.openBed?.addEventListener("click", () => {
+    clearReturnMarks();
     openBedFromButton();
     persist();
   });
