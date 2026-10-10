@@ -43,6 +43,13 @@ export function tools() {
         "season the garden's age falls in (season: its key, name and growth " +
         "multiplier — the cycle repeats on its own and no season grows slower " +
         "than the base rate), the " +
+        "pollinator's visit (pollinator: visiting, its multiplier, how long the " +
+        "visit lasts in seconds (visitSeconds), the visit a garden with no " +
+        "blooms keeps (baseVisitSeconds), and how many grown blooms are " +
+        "lengthening it (bloomsKeeping) — each bloom adds seconds to the visit " +
+        "up to a cap, so a bed of blooms keeps the x2 boost on the plot for " +
+        "most of the cycle while a garden with no blooms keeps the base visit), " +
+        "the " +
         "garden form the plot is drawing (its name and its index among the " +
         "forms, lowest first), the next named form it is growing toward " +
         "(nextFormName, null past the last form), how much growth still " +
