@@ -16,7 +16,9 @@
 import {
   GROW_SECONDS,
   PLOTS_PER_BED,
+  POLLINATOR_BLOOM_VISIT_SECONDS,
   POLLINATOR_BOOST,
+  POLLINATOR_VISIT_MAX_SECONDS,
   SEED_KINDS,
   STORAGE_KEY,
   advance,
@@ -266,7 +268,7 @@ function describeGardenState(garden, growth, rate, age) {
   // number a visitor reads, `baseRate` is the one that is saved and compounded,
   // so each boost is applied once. Season and pollinator are added here just as
   // the simulation adds their seconds, so the readout matches what it earns.
-  const pollinator = pollinatorAt(age, garden.plants);
+  const pollinator = pollinatorAt(age, garden.plants, kinds[1] ? kinds[1].plants : 0);
   const season = seasonAt(age);
   const displayRate = rate * (season.multiplier + (pollinator.visiting ? POLLINATOR_BOOST - 1 : 0));
   const goal = nextSeedGoal({ growth, plotFull, capacity: garden.capacity, kinds });
@@ -392,7 +394,11 @@ export function summarizeReturn(away) {
       `${countLabel(away.matured, "plant", "plants")}.`
     : "";
   const pollinator = away.pollinator?.visiting
-    ? ` A pollinator is visiting — the garden is growing ${away.pollinator.multiplier} times as fast while it stays.`
+    ? ` A pollinator is visiting — the garden is growing ${away.pollinator.multiplier} times as fast while it stays` +
+      (away.pollinator.bloomsKeeping > 0
+        ? `, and the ${countLabel(away.pollinator.bloomsKeeping, "bloom", "blooms")} are keeping it for ` +
+          `${formatDuration(away.pollinator.visitSeconds)}.`
+        : ".")
     : "";
   const season = away.crossedSeason
     ? ` The garden turned from ${away.fromSeason.name} into ${away.toSeason.name} — its growth is now ` +
@@ -451,7 +457,7 @@ export function buildAwayReport(start, seconds) {
   // Whether a pollinator is on the plot at the end of the span, so a return
   // that arrives during a visit can say so rather than only showing bigger
   // numbers.
-  report.pollinator = pollinatorAt(after.age, after.plants);
+  report.pollinator = pollinatorAt(after.age, after.plants + after.bloomPlants, after.bloomPlants);
   // The season at each end, so a return that crossed a boundary can name it.
   report.fromSeason = seasonAt(before.age);
   report.toSeason = seasonAt(after.age);
@@ -726,11 +732,23 @@ function describeSeason(state) {
   return `${state.season.name} — x${state.season.multiplier} growth`;
 }
 
-/** Whether a pollinator is visiting, and how much faster the garden grows. */
+/**
+ * The pollinator: whether one is visiting, how long the visit lasts, and how
+ * many blooms are stretching it. The visit length is always stated, so a
+ * visitor sees what blooms are buying even when no visitor is present.
+ */
 function describePollinator(state) {
   const pollinator = state.pollinator;
-  if (!pollinator || !pollinator.visiting) return "none visiting";
-  return `visiting — x${pollinator.multiplier} growth`;
+  if (!pollinator) return "none visiting";
+  const visit = formatDuration(pollinator.visitSeconds);
+  const cap = formatDuration(POLLINATOR_VISIT_MAX_SECONDS);
+  const rule = `+${formatDuration(POLLINATOR_BLOOM_VISIT_SECONDS)} per bloom, max ${cap}`;
+  if (!pollinator.visiting) return `none visiting — a ${visit} visit (${rule})`;
+  const blooms = pollinator.bloomsKeeping > 0
+    ? `, kept by ${countLabel(pollinator.bloomsKeeping, "bloom", "blooms")}`
+    : "";
+  const capped = pollinator.visitSeconds >= POLLINATOR_VISIT_MAX_SECONDS ? " (max)" : "";
+  return `visiting — x${pollinator.multiplier} growth · ${visit} visit${capped}${blooms}`;
 }
 
 /** The next plant maturing, as words, for the readout beside the numbers. */

@@ -20,8 +20,10 @@ import {
   LAST_SEEN_KEY,
   PLANT_PRODUCTION,
   PLOTS_PER_BED,
+  POLLINATOR_BLOOM_VISIT_SECONDS,
   POLLINATOR_BOOST,
   POLLINATOR_CYCLE_SECONDS,
+  POLLINATOR_VISIT_MAX_SECONDS,
   POLLINATOR_VISIT_SECONDS,
   PLOT_CAPACITY,
   SAVE_PREFIX,
@@ -48,6 +50,7 @@ import {
   nextSeedCost,
   pollinatorAt,
   pollinatorSecondsWithin,
+  pollinatorVisitSeconds,
   readLastSeen,
   replantBonus,
   seasonAt,
@@ -2622,6 +2625,50 @@ function checkPollinator(problems) {
       );
     }
 
+    // A garden with no blooms keeps exactly the base visit, and each grown bloom
+    // lengthens it by a fixed step up to a stated cap that more blooms cannot
+    // pass. This is the whole reason to plant a bloom over a herb.
+    const noBloomVisit = pollinatorAt(POLLINATOR_CYCLE_SECONDS - 1, 3, 0);
+    if (noBloomVisit.visitSeconds !== POLLINATOR_VISIT_SECONDS || noBloomVisit.bloomsKeeping !== 0) {
+      problems.push(
+        `a garden with no blooms reported visit ${JSON.stringify(noBloomVisit)}, expected the base ` +
+          `${POLLINATOR_VISIT_SECONDS}s visit kept by no blooms.`
+      );
+    }
+    for (const blooms of [0, 1, 3, 9, 100]) {
+      const expected = Math.min(
+        POLLINATOR_VISIT_MAX_SECONDS,
+        POLLINATOR_VISIT_SECONDS + blooms * POLLINATOR_BLOOM_VISIT_SECONDS
+      );
+      const got = pollinatorVisitSeconds(blooms);
+      if (got !== expected) {
+        problems.push(`pollinatorVisitSeconds(${blooms}) gave ${got}s, expected ${expected}s.`);
+      }
+    }
+    if (pollinatorVisitSeconds(9) !== POLLINATOR_VISIT_MAX_SECONDS) {
+      problems.push(
+        `9 blooms gave a ${pollinatorVisitSeconds(9)}s visit, expected it to reach the cap ` +
+          `${POLLINATOR_VISIT_MAX_SECONDS}s.`
+      );
+    }
+
+    // At a phase 100s before the cycle turns, no blooms are not yet visited
+    // while 6 blooms already are — so a bed of blooms is visibly worth more.
+    const latePhase = POLLINATOR_CYCLE_SECONDS - 100;
+    const noBloomLate = pollinatorAt(latePhase, 1, 0);
+    const sixBloomLate = pollinatorAt(latePhase, 1, 6);
+    if (noBloomLate.visiting) {
+      problems.push(`at age ${latePhase} a garden with no blooms should not be visited, but it was.`);
+    }
+    if (!sixBloomLate.visiting) {
+      problems.push(`at age ${latePhase} with 6 blooms the pollinator should already be visiting, but it was not.`);
+    }
+    if (sixBloomLate.bloomsKeeping !== 6) {
+      problems.push(
+        `a visit stretched by 6 blooms reported bloomsKeeping ${sixBloomLate.bloomsKeeping}, expected 6.`
+      );
+    }
+
     // The closed form must count exactly the seconds the schedule is on the
     // plot, checked against an independent second-by-second sum.
     const bruteSeconds = (ageValue, span) => {
@@ -2648,6 +2695,25 @@ function checkPollinator(problems) {
       }
     }
 
+    // The closed form counts a bloom-lengthened visit exactly too, against an
+    // independent second-by-second sum that reads the same visit length.
+    const bruteBloomSeconds = (ageValue, span, blooms) => {
+      let total = 0;
+      for (let offset = 0; offset < span; offset += 1) {
+        if (pollinatorAt(ageValue + offset + 0.5, 1, blooms).visiting) total += 1;
+      }
+      return total;
+    };
+    for (const blooms of [0, 3, 6, 9, 20]) {
+      const closed = pollinatorSecondsWithin(0, 600, blooms);
+      const counted = bruteBloomSeconds(0, 600, blooms);
+      if (Math.abs(closed - counted) > 1e-6) {
+        problems.push(
+          `pollinatorSecondsWithin(0, 600, ${blooms}) gave ${closed} seconds, but counting the schedule gave ${counted}.`
+        );
+      }
+    }
+
     // A visit earns more than the base rate; bare soil earns exactly the base.
     const base = { growth: 0, rate: 1, sprouts: [], plants: 1, beds: 1, age: 0 };
     const boosted = simulateGarden(base, 600);
@@ -2667,6 +2733,34 @@ function checkPollinator(problems) {
       problems.push(
         `a 600s span with no grown plants earned ${unboosted.growth} growth, expected the plain 600 ` +
           `(a pollinator must never visit bare soil).`
+      );
+    }
+
+    // Six grown blooms keep the visitor longer, so the simulated garden earns
+    // the boost for those extra seconds — and more than a single herb earns.
+    const bloomGarden = {
+      growth: 0,
+      rate: 1,
+      sprouts: [],
+      bloomSprouts: [],
+      plantCounts: [0, 6],
+      beds: 1,
+      age: 0,
+    };
+    const bloomed = simulateGarden(bloomGarden, 600);
+    const bloomVisitSeconds = pollinatorSecondsWithin(0, 600, 6);
+    const expectedBloomed = 600 + (POLLINATOR_BOOST - 1) * bloomVisitSeconds;
+    if (Math.abs(bloomed.growth - expectedBloomed) > 1e-6) {
+      problems.push(
+        `a 600s span with 6 blooms earned ${bloomed.growth} growth, expected ${expectedBloomed} ` +
+          `(${bloomVisitSeconds}s of it under the x${POLLINATOR_BOOST} boost).`
+      );
+    }
+    const herbOnly = simulateGarden({ ...bloomGarden, plantCounts: [1, 0] }, 600);
+    if (!(bloomed.growth > herbOnly.growth)) {
+      problems.push(
+        `6 blooms earned ${bloomed.growth} growth over 600s, no more than the ${herbOnly.growth} a single herb ` +
+          "earned, so blooms are not keeping the pollinator any longer."
       );
     }
 
@@ -2707,6 +2801,32 @@ function checkPollinator(problems) {
       );
     }
 
+    // A garden kept by 6 blooms states the longer visit, the blooms keeping it
+    // and the boosted rate beside the garden.
+    setGarden({ seeds: 0, plants: 0, bloomPlants: 6 });
+    setGrowth(0, 1, latePhase);
+    const bloomState = getDisplayedState();
+    const bloomVisitLength = POLLINATOR_VISIT_SECONDS + 6 * POLLINATOR_BLOOM_VISIT_SECONDS;
+    if (!bloomState.pollinator.visiting || bloomState.pollinator.visitSeconds !== bloomVisitLength) {
+      problems.push(
+        `a garden kept by 6 blooms reported pollinator ${JSON.stringify(bloomState.pollinator)}, expected a ` +
+          `${bloomVisitLength}s visit in progress.`
+      );
+    }
+    if (bloomState.rate !== POLLINATOR_BOOST || bloomState.baseRate !== 1) {
+      problems.push(
+        `a garden kept by 6 blooms reported rate ${bloomState.rate}/s on a base of ${bloomState.baseRate}/s, ` +
+          `expected ${POLLINATOR_BOOST}/s on 1/s.`
+      );
+    }
+    const bloomRow = String(row ? row.textContent : "");
+    if (!/visiting/i.test(bloomRow) || !/bloom/i.test(bloomRow) || !/visit/i.test(bloomRow)) {
+      problems.push(
+        `the pollinator readout for a bloom-lengthened visit says ${JSON.stringify(bloomRow)}, expected it to name the ` +
+          `visit and the blooms keeping it.`
+      );
+    }
+
     // A return that lands during a visit shows one already there, in the summary
     // and in the state.
     const away = buildAwayReport(
@@ -2718,6 +2838,22 @@ function checkPollinator(problems) {
     }
     if (!/pollinator/i.test(away.summary)) {
       problems.push(`the return summary does not mention the visiting pollinator: "${away.summary}"`);
+    }
+
+    // A return that lands inside a bloom-lengthened visit names the blooms that
+    // kept it, in the state and in the sentence.
+    const bloomAway = buildAwayReport(
+      { growth: 0, rate: 1, sprouts: [], bloomSprouts: [], plantCounts: [0, 6], beds: 1, age: 0 },
+      latePhase
+    );
+    if (!bloomAway.pollinator?.visiting) {
+      problems.push("a return ending inside a bloom-lengthened visit did not report a visiting pollinator.");
+    }
+    if (!(bloomAway.pollinator?.bloomsKeeping > 0)) {
+      problems.push("a return inside a bloom-lengthened visit did not report the blooms keeping it.");
+    }
+    if (!/bloom/i.test(bloomAway.summary)) {
+      problems.push(`the return summary does not name the blooms keeping the visit: "${bloomAway.summary}"`);
     }
   } finally {
     setGarden(gardenBefore);

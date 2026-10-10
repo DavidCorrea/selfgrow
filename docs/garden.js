@@ -74,10 +74,20 @@ export const GROW_SECONDS = SEED_KINDS[0].growSeconds;
  * faster the garden grows while one stays. A visit is the last slice of each
  * cycle, so a garden that has just been planted waits before its first visitor
  * and the arrival is a small event rather than a permanent upgrade.
+ *
+ * A visit is longer when the plot holds grown blooms: each one keeps the
+ * pollinator `POLLINATOR_BLOOM_VISIT_SECONDS` more, up to
+ * `POLLINATOR_VISIT_MAX_SECONDS`. A garden with no blooms keeps exactly the
+ * base visit, so blooms only ever add. The boost stays the same, so the reason
+ * to plant a bloom is its longer visit rather than a bigger multiplier.
  */
 export const POLLINATOR_CYCLE_SECONDS = 180;
 export const POLLINATOR_VISIT_SECONDS = 60;
 export const POLLINATOR_BOOST = 2;
+/** How much longer each grown bloom keeps the pollinator on the plot. */
+export const POLLINATOR_BLOOM_VISIT_SECONDS = 10;
+/** The longest a visit can stretch, however many blooms a garden holds. */
+export const POLLINATOR_VISIT_MAX_SECONDS = 150;
 
 /** Bare soil, one bed of it, and one ungrown seed. */
 export function newGarden() {
@@ -661,47 +671,83 @@ export function replantBonus(lifetimeGrowth) {
 // the last slice of each cycle, so a fresh garden waits for its first visitor.
 
 /**
- * Whether a pollinator is visiting a garden `ageSeconds` old that holds
- * `plants` grown plants, and how much faster the garden grows while it stays.
+ * How long a visit lasts when `bloomPlants` grown blooms are keeping the
+ * pollinator. The base visit plus each bloom's extension, never past the cap,
+ * so a bed of blooms keeps the visitor for most of the cycle and no garden
+ * grows a visit without bound.
  *
- * Pure and deterministic: the same age and plants always answer the same, so
- * the readout, the picture and the simulated growth cannot disagree about it.
- *
- * @returns {{visiting: boolean, multiplier: number, boost: number}}
+ * Pure: the readout, the picture, the simulation and an agent's state all read
+ * the visit length from here.
  */
-export function pollinatorAt(ageSeconds, plants) {
+export function pollinatorVisitSeconds(bloomPlants) {
+  const blooms = Number.isFinite(bloomPlants) && bloomPlants > 0 ? Math.floor(bloomPlants) : 0;
+  return Math.min(
+    POLLINATOR_VISIT_MAX_SECONDS,
+    POLLINATOR_VISIT_SECONDS + blooms * POLLINATOR_BLOOM_VISIT_SECONDS
+  );
+}
+
+/** How many blooms it takes to stretch a visit to the cap. */
+const BLOOMS_TO_MAX_VISIT = Math.floor(
+  (POLLINATOR_VISIT_MAX_SECONDS - POLLINATOR_VISIT_SECONDS) / POLLINATOR_BLOOM_VISIT_SECONDS
+);
+
+/**
+ * Whether a pollinator is visiting a garden `ageSeconds` old that holds
+ * `plants` grown plants — `bloomPlants` of them blooms that lengthen the
+ * visit — and how much faster the garden grows while it stays.
+ *
+ * Pure and deterministic: the same age, plants and blooms always answer the
+ * same, so the readout, the picture and the simulated growth cannot disagree
+ * about it. `visitSeconds` is how long the visit lasts, `baseVisitSeconds` the
+ * visit a garden with no blooms keeps, and `bloomsKeeping` how many blooms are
+ * stretching it (capped at the number that reaches the cap).
+ *
+ * @returns {{visiting: boolean, multiplier: number, boost: number, visitSeconds: number, baseVisitSeconds: number, bloomsKeeping: number}}
+ */
+export function pollinatorAt(ageSeconds, plants, bloomPlants = 0) {
   const grown = Number.isFinite(plants) && plants > 0;
   const gardenAge = Number.isFinite(ageSeconds) && ageSeconds > 0 ? ageSeconds : 0;
+  const visitSeconds = pollinatorVisitSeconds(bloomPlants);
   const phase = gardenAge % POLLINATOR_CYCLE_SECONDS;
-  const visiting = grown && phase >= POLLINATOR_CYCLE_SECONDS - POLLINATOR_VISIT_SECONDS;
+  const visiting = grown && phase >= POLLINATOR_CYCLE_SECONDS - visitSeconds;
+  const blooms = Number.isFinite(bloomPlants) && bloomPlants > 0 ? Math.floor(bloomPlants) : 0;
   return {
     visiting,
     multiplier: visiting ? POLLINATOR_BOOST : 1,
     boost: POLLINATOR_BOOST,
+    visitSeconds,
+    baseVisitSeconds: POLLINATOR_VISIT_SECONDS,
+    bloomsKeeping: Math.min(blooms, BLOOMS_TO_MAX_VISIT),
   };
 }
 
 /** The visit seconds seen from the garden's start up to `seconds` of age. */
-function visitingSecondsUpTo(seconds) {
+function visitingSecondsUpTo(seconds, visitSeconds) {
   if (!(seconds > 0)) return 0;
   const cycles = Math.floor(seconds / POLLINATOR_CYCLE_SECONDS);
   const phase = seconds - cycles * POLLINATOR_CYCLE_SECONDS;
-  const visitStart = POLLINATOR_CYCLE_SECONDS - POLLINATOR_VISIT_SECONDS;
-  const partial = Math.min(POLLINATOR_VISIT_SECONDS, Math.max(0, phase - visitStart));
-  return cycles * POLLINATOR_VISIT_SECONDS + partial;
+  const visitStart = POLLINATOR_CYCLE_SECONDS - visitSeconds;
+  const partial = Math.min(visitSeconds, Math.max(0, phase - visitStart));
+  return cycles * visitSeconds + partial;
 }
 
 /**
  * How many of the `spanSeconds` starting at `ageSeconds` of garden age fall
- * inside a pollinator visit, for a garden with grown plants.
+ * inside a pollinator visit, for a garden with grown plants that holds
+ * `bloomPlants` blooms lengthening the visit.
  *
  * Closed form, so a month resolves in one calculation rather than one step per
- * three-minute cycle. A missing, negative or non-finite span is no visit time.
+ * three-minute cycle. The visit length is constant across the span because the
+ * bloom count does not change inside it: the simulation winds forward one
+ * maturation gap at a time, so each call sees one bloom count. A missing,
+ * negative or non-finite span is no visit time.
  */
-export function pollinatorSecondsWithin(ageSeconds, spanSeconds) {
+export function pollinatorSecondsWithin(ageSeconds, spanSeconds, bloomPlants = 0) {
   if (!Number.isFinite(ageSeconds) || !Number.isFinite(spanSeconds) || spanSeconds <= 0) return 0;
   const start = ageSeconds > 0 ? ageSeconds : 0;
-  return visitingSecondsUpTo(start + spanSeconds) - visitingSecondsUpTo(start);
+  const visitSeconds = pollinatorVisitSeconds(bloomPlants);
+  return visitingSecondsUpTo(start + spanSeconds, visitSeconds) - visitingSecondsUpTo(start, visitSeconds);
 }
 
 // --- The seasons -------------------------------------------------------------
@@ -866,12 +912,12 @@ export function simulateGarden(state, seconds) {
     const nextHerb = sprouts.length ? Math.min(...sprouts) : Infinity;
     const nextBloom = bloomSprouts.length ? Math.min(...bloomSprouts) : Infinity;
     const gap = Math.min(remaining, nextHerb, nextBloom);
-    // The plant count is fixed inside a pass, so the rate does not change across
-    // it and the whole gap is earned at once: the season's multipliers are
-    // integrated over the gap and the pollinator's extra seconds are added, not
-    // multiplied, so both stay closed form and the age carries into the next
-    // pass.
-    const visited = herbPlants + bloomPlants > 0 ? pollinatorSecondsWithin(age, gap) : 0;
+    // The plant and bloom counts are fixed inside a pass, so neither the rate
+    // nor the visit length changes across it and the whole gap is earned at
+    // once: the season's multipliers are integrated over the gap and the
+    // pollinator's extra seconds are added, not multiplied, so both stay closed
+    // form and the age carries into the next pass.
+    const visited = herbPlants + bloomPlants > 0 ? pollinatorSecondsWithin(age, gap, bloomPlants) : 0;
     growth += rate * (seasonMultiplierSecondsWithin(age, gap) + (POLLINATOR_BOOST - 1) * visited);
     remaining -= gap;
     age += gap;
