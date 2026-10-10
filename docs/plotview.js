@@ -242,17 +242,106 @@ export function seasonLook(palette, seasonKey) {
   };
 }
 
+// --- The soil's own face ----------------------------------------------------
+//
+// A plot of one flat square repeated reads as a grid of holes rather than as
+// ground, so each cell carries its own small marks — a furrow, a damp patch, a
+// pebble, a stray weed — chosen by hashing the cell and the season together.
+// The plot is filled once, as a single field of soil, and the marks are drawn
+// inside it, so neighbouring cells share no seam and the ground reads as one
+// patch that changes with the garden's year rather than twelve copies of a
+// square. Nothing here reads the animation phase, so the soil is a still frame
+// whatever the motion preference: only the foliage sways.
+
 /**
- * One cell of soil. In autumn a few fallen leaves lie on some of the cells, so
- * the turned season reads on the ground and not only in the canopy.
+ * Each season's own shift in the soil hash, so the ground changes with the
+ * garden's year. An unknown or missing season hashes as the base garden, which
+ * is what a caller that never knew about seasons has always drawn.
  */
-function drawSoil(ctx, x, y, palette, foliage, cell) {
-  ctx.fillStyle = palette.soilDeep;
-  ctx.fillRect(x, y, CELL, CELL);
-  ctx.fillStyle = palette.soil;
-  ctx.fillRect(x + 2, y + 2, CELL - 4, CELL - 4);
-  ctx.fillStyle = palette.soilLight;
-  ctx.fillRect(x + 2, y + 2, CELL - 4, 2);
+const SEASON_SOIL_SEED = Object.freeze({
+  winter: 13,
+  spring: 47,
+  summer: 0,
+  autumn: 89,
+});
+
+/** A stable number in [0, 1) for one cell, one season and one mark. */
+function soilHash(cell, seasonSeed, salt) {
+  const value = Math.sin((cell + 1) * 12.9898 + seasonSeed * 7.13 + salt * 78.233) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+/**
+ * The marks one cell of soil carries, from the cell index and the season alone.
+ *
+ * Every mark sits off the cell's first columns, so the seam between two cells
+ * stays plain soil and the field reads as one patch rather than a grid of
+ * tiles. The same cell and season always hash the same way, and an unknown or
+ * missing season falls back to the base garden's soil.
+ *
+ * @returns {{lip: boolean, furrow: boolean, furrowY: number, damp: boolean,
+ *   dampX: number, dampY: number, pebble: boolean, pebbleX: number,
+ *   pebbleY: number, weed: boolean, weedX: number}}
+ */
+export function soilFace(cell, seasonKey) {
+  const seasonSeed = SEASON_SOIL_SEED[seasonKey] ?? 0;
+  const at = (salt) => soilHash(cell, seasonSeed, salt);
+  const lipAt = at(1);
+  const furrowAt = at(2);
+  const dampAt = at(3);
+  const pebbleAt = at(4);
+  const weedAt = at(5);
+  return {
+    lip: lipAt < 0.5,
+    furrow: furrowAt < 0.4,
+    furrowY: 8 + 2 * Math.floor(furrowAt * 5),
+    damp: dampAt < 0.35,
+    dampX: 4 + Math.floor(dampAt * 16),
+    dampY: 8 + Math.floor(dampAt * 11),
+    pebble: pebbleAt < 0.35,
+    pebbleX: 5 + Math.floor(pebbleAt * 14),
+    pebbleY: 10 + Math.floor(pebbleAt * 9),
+    weed: weedAt < 0.25,
+    weedX: 6 + Math.floor(weedAt * 12),
+  };
+}
+
+/**
+ * The marks of one cell on the field of soil. In autumn a few fallen leaves lie
+ * on some of the cells too, so the turned season reads on the ground and not
+ * only in the canopy. Every colour comes from the palette, so the marks stay in
+ * the same garden as the panels around them.
+ */
+function drawSoil(ctx, x, y, palette, foliage, face, cell) {
+  if (face.lip) {
+    ctx.fillStyle = palette.soilLight;
+    ctx.fillRect(x + 3, y + 2, 6, 2);
+  }
+  if (face.furrow) {
+    ctx.fillStyle = palette.soilDeep;
+    ctx.fillRect(x + 3, y + face.furrowY, CELL - 6, 1);
+    ctx.fillStyle = palette.soilLight;
+    ctx.fillRect(x + 5, y + face.furrowY + 1, CELL - 10, 1);
+  }
+  if (face.damp) {
+    ctx.fillStyle = palette.soilDeep;
+    ctx.fillRect(x + face.dampX, y + face.dampY, 4, 2);
+  }
+  if (face.pebble) {
+    ctx.fillStyle = palette.soilLight;
+    ctx.fillRect(x + face.pebbleX, y + face.pebbleY, 3, 2);
+    ctx.fillStyle = palette.soilDeep;
+    ctx.fillRect(x + face.pebbleX, y + face.pebbleY + 2, 3, 1);
+  }
+  if (face.weed) {
+    // A low tuft, well short of a planted sprite, so the soil reads as weedy
+    // ground rather than as another plant standing on it.
+    ctx.fillStyle = palette.leafDeep;
+    ctx.fillRect(x + face.weedX, y + CELL - 3, 1, 3);
+    ctx.fillRect(x + face.weedX + 2, y + CELL - 4, 1, 4);
+    ctx.fillStyle = palette.leafLight;
+    ctx.fillRect(x + face.weedX + 2, y + CELL - 5, 1, 1);
+  }
   if (foliage === "turning" && cell % 3 === 1) {
     ctx.fillStyle = palette.leafDeep;
     ctx.fillRect(x + 5, y + CELL - 8, 3, 2);
@@ -501,6 +590,10 @@ export function drawGarden(canvas, state, palette, phase = 0) {
   if (!ctx) return;
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, width, height);
+  // One field of soil, not a tile per cell: the whole plot is filled once, so
+  // neighbouring cells share no seam and the plot reads as continuous ground.
+  ctx.fillStyle = paint.soil;
+  ctx.fillRect(0, 0, width, height);
 
   const kinds = kindsOnPlot(state);
   // Seeds only take the ground the grown plants have not already filled.
@@ -513,7 +606,7 @@ export function drawGarden(canvas, state, palette, phase = 0) {
     const x = (cell % COLUMNS) * CELL;
     const y = Math.floor(cell / COLUMNS) * CELL;
     const sway = swayPixels(phase, cell);
-    drawSoil(ctx, x, y, paint, look.foliage, cell);
+    drawSoil(ctx, x, y, paint, look.foliage, soilFace(cell, look.key), cell);
     // Ground growth goes on first, so the planted sprites stand out of it.
     if (cellHash(cell) < cover.ratio) drawGroundGrowth(ctx, x, y, paint, cell);
     if (cell < kinds.herbPlants) drawPlant(ctx, x, y, paint, look.foliage, form.index, growthTier, sway);

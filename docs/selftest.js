@@ -76,7 +76,7 @@ import {
   resetSandbox,
   summarizeReturn,
 } from "./app.js";
-import { FORMS, drawGarden, gardenForm, groundCover, motionPhase, plotBounds, seasonLook } from "./plotview.js";
+import { FORMS, drawGarden, gardenForm, groundCover, motionPhase, plotBounds, seasonLook, soilFace } from "./plotview.js";
 
 // The design system is itself a promise: one palette, two embedded pixel fonts
 // split by role, square pixel edges. These are the checks for it.
@@ -1117,17 +1117,112 @@ function checkKindReadout(problems) {
 }
 
 /**
- * Draw a state on a fresh offscreen canvas at a pinned phase, as a data URL.
+ * Draw a state on a fresh offscreen canvas at a pinned phase.
  *
  * The live canvas is animated, so two snapshots of it would differ between
  * ticks for reasons that have nothing to do with the state; a pinned phase on
  * an offscreen canvas makes each picture a pure function of state and phase, so
  * a difference proves a difference in what is drawn.
  */
-function plotImage(state, phase = 0) {
+function plotCanvas(state, phase = 0) {
   const canvas = document.createElement("canvas");
   drawGarden(canvas, state, readPalette(), phase);
-  return canvas.toDataURL();
+  return canvas;
+}
+
+/** The same picture as a data URL, so two states can be compared at a glance. */
+function plotImage(state, phase = 0) {
+  return plotCanvas(state, phase).toDataURL();
+}
+
+/**
+ * The soil is one field of ground, not a grid of identical tiles.
+ *
+ * Each cell carries its own small marks — a furrow, a damp patch, a pebble, a
+ * stray weed — chosen by hashing the cell and the season together, so the plot
+ * reads as one patch of earth that changes with the garden's year. The marks
+ * are a pure function of the cell and the season, so the ground is a still
+ * frame whatever the motion preference, and the whole plot is filled once with
+ * one colour, so no cell is outlined as its own tile.
+ */
+function checkSoilField(problems) {
+  const palette = readPalette();
+  const bounds = plotBounds({ growth: 0, beds: 1 });
+  const cells = bounds.cells;
+  const seasons = ["winter", "spring", "summer", "autumn"];
+
+  // Neighbouring cells carry different marks, so the plot is not one stamp
+  // repeated across the grid.
+  const faces = Array.from({ length: cells }, (_, cell) => JSON.stringify(soilFace(cell, "summer")));
+  const distinctFaces = new Set(faces).size;
+  if (distinctFaces < Math.min(cells, 4)) {
+    problems.push(
+      `the plot's ${cells} soil cells share only ${distinctFaces} distinct faces, so they still read as copies of one square.`
+    );
+  }
+
+  // The same cell and season always draw the same face, and the seasons differ.
+  for (let cell = 0; cell < cells; cell += 1) {
+    if (JSON.stringify(soilFace(cell, "spring")) !== JSON.stringify(soilFace(cell, "spring"))) {
+      problems.push(`soilFace(${cell}, "spring") is not stable, so the soil is not a pure view of the cell and season.`);
+      break;
+    }
+  }
+  const seasonFaces = new Set(
+    seasons.map((key) => Array.from({ length: cells }, (_, cell) => JSON.stringify(soilFace(cell, key))).join("|"))
+  );
+  if (seasonFaces.size < 2) {
+    problems.push(
+      `the ${seasons.length} seasons draw the same soil faces, so the ground does not change with the garden's year.`
+    );
+  }
+
+  // The ground is a still frame: the soil stays put between phases even while a
+  // planted plot as a whole changes, so only the foliage sways.
+  const planted = { growth: 100, beds: 1, plants: 2, seeds: 0, pollinator: { visiting: false } };
+  const plantedStill = plotImage(planted, 0);
+  const plantedMoved = plotImage(planted, 1);
+  if (plantedStill === plantedMoved) {
+    problems.push("a planted plot drew the same picture on two phases, so nothing in it visibly moves.");
+  }
+  const soilPixel = (x, y, phase) => {
+    const data = plotCanvas(planted, phase).getContext("2d").getImageData(x, y, 1, 1).data;
+    return `${data[0]},${data[1]},${data[2]}`;
+  };
+  const soilProbes = [
+    [0, 0],
+    [bounds.cell, bounds.cell / 2],
+    [bounds.cell * 5 + 10, bounds.height - 2],
+  ];
+  for (const [x, y] of soilProbes) {
+    if (soilPixel(x, y, 0) !== soilPixel(x, y, 1)) {
+      problems.push(
+        `the soil at (${x}, ${y}) changed between phase 0 and phase 1 ` +
+          `(${soilPixel(x, y, 0)} → ${soilPixel(x, y, 1)}), so the ground moves as well as the foliage.`
+      );
+    }
+  }
+
+  // The plot is one field of soil, not bordered tiles: the seam between two
+  // cells is plain soil, so no cell edge is outlined dark.
+  const bare = { growth: 0, beds: 1, seeds: 0, plants: 0, pollinator: { visiting: false } };
+  const context = plotCanvas(bare, 0).getContext("2d");
+  const soilKey = colorKey(parseColor(palette.soil));
+  const seams = [
+    [0, 0],
+    [bounds.cell, bounds.cell / 2],
+    [bounds.cell * 2, bounds.cell + bounds.cell / 2],
+  ];
+  for (const [x, y] of seams) {
+    const data = context.getImageData(x, y, 1, 1).data;
+    const key = `${data[0]},${data[1]},${data[2]}`;
+    if (key !== soilKey) {
+      problems.push(
+        `the soil at (${x}, ${y}) is rgb(${key}) rather than the palette soil rgb(${soilKey}), ` +
+          "so the plot outlines its cells as tiles instead of drawing one continuous field."
+      );
+    }
+  }
 }
 
 /** The plot draws the two kinds differently, plants and sprouts alike. */
@@ -3594,6 +3689,7 @@ export async function checks() {
     checkPlotDrawing(problems);
     checkPlotDrawsKinds(problems);
     checkPlotCoverage(problems);
+    checkSoilField(problems);
     checkPlotAnimation(problems);
     checkGardenFormMapping(problems);
     checkNextFormMeter(problems);
