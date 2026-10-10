@@ -76,7 +76,7 @@ import {
   resetSandbox,
   summarizeReturn,
 } from "./app.js";
-import { FORMS, drawGarden, gardenForm, motionPhase, plotBounds, seasonLook } from "./plotview.js";
+import { FORMS, drawGarden, gardenForm, groundCover, motionPhase, plotBounds, seasonLook } from "./plotview.js";
 
 // The design system is itself a promise: one palette, two embedded pixel fonts
 // split by role, square pixel edges. These are the checks for it.
@@ -1146,6 +1146,74 @@ function checkPlotDrawsKinds(problems) {
   }
   if (herbSprout === bloomSprout) {
     problems.push("a herb sprout and a bloom sprout draw the same picture, so the two kinds are not visible on the plot.");
+  }
+}
+
+/**
+ * The plot fills with the garden's own growth, not only the plants it owns.
+ *
+ * A low-plant, high-growth garden — a single plant named "a stand of plants" —
+ * must still draw most of the plot under growth, so the picture carries the
+ * growth rather than leaving a field of bare squares. The cover must rise from
+ * one form to the next, be a pure function of the state, and be drawn from the
+ * growth itself rather than only from how tall one sprite stands.
+ */
+function checkPlotCoverage(problems) {
+  const stand = { growth: 1e3, beds: 1, seeds: 0, plants: 1 };
+  const cover = groundCover(stand);
+  if (!(cover.ratio > 0.5) || !(cover.covered > cover.cells / 2)) {
+    problems.push(
+      `a stand of plants at 1000 growth covers ${cover.covered}/${cover.cells} cells (ratio ${cover.ratio}), ` +
+        "so a garden with one plant and a thousand growth still draws an empty plot."
+    );
+  }
+
+  const bed = groundCover({ growth: 1e2, beds: 1, seeds: 0, plants: 1 });
+  const fuller = groundCover({ growth: 2e3, beds: 1, seeds: 0, plants: 1 });
+  const hedge = groundCover({ growth: 1e4, beds: 1, seeds: 0, plants: 1 });
+  if (!(fuller.covered > cover.covered) || !(fuller.ratio > cover.ratio)) {
+    problems.push(
+      `within "a stand of plants" the plot covers ${cover.covered} cells at 1000 growth and ${fuller.covered} at 2000, ` +
+        "so the plot does not fill as growth rises within a form."
+    );
+  }
+  if (!(hedge.covered > bed.covered) || !(hedge.ratio > bed.ratio)) {
+    problems.push(
+      `the plot covers ${bed.covered} cells at 100 growth and ${hedge.covered} at 10000, ` +
+        "so advancing a form does not visibly fill it."
+    );
+  }
+
+  // The same state must draw the same cover, so the still frame and reduced
+  // motion show a stable picture.
+  if (JSON.stringify(groundCover(stand)) !== JSON.stringify(groundCover(stand))) {
+    problems.push("groundCover drew two different covers for the same state, so the plot is not a pure view of it.");
+  }
+
+  // The filling is drawn from growth alone: two states in one form with no
+  // plant at all, and so the very same bare soil, differ by the ground growth.
+  const groundLow = plotImage({ growth: 1e3, beds: 1, seeds: 0, plants: 0 });
+  const groundFull = plotImage({ growth: 2e3, beds: 1, seeds: 0, plants: 0 });
+  if (groundLow === groundFull) {
+    problems.push(
+      "the plot drew the same bare soil at 1000 and 2000 growth, so the garden's growth is not drawn on the plot."
+    );
+  }
+
+  // Under a single sprite the fill still shows, so a fuller plot is not just a
+  // taller plant.
+  const low = plotImage({ growth: 1e3, beds: 1, seeds: 0, plants: 1 });
+  const higher = plotImage({ growth: 2e3, beds: 1, seeds: 0, plants: 1 });
+  if (low === higher) {
+    problems.push(
+      "the plot drew the same picture at 1000 and 2000 growth under one plant, so it fills only by growing that sprite."
+    );
+  }
+  const bareWithPlant = plotImage({ growth: 0, beds: 1, seeds: 0, plants: 1 });
+  if (low === bareWithPlant) {
+    problems.push(
+      "a stand of plants drew the same picture as bare soil with one plant, so the growth does not fill the plot."
+    );
   }
 }
 
@@ -3459,6 +3527,7 @@ export async function checks() {
     checkKindReadout(problems);
     checkPlotDrawing(problems);
     checkPlotDrawsKinds(problems);
+    checkPlotCoverage(problems);
     checkPlotAnimation(problems);
     checkGardenFormMapping(problems);
     checkNextFormMeter(problems);

@@ -74,6 +74,60 @@ export function gardenForm(growth) {
   return { index, name: FORMS[index].name, at, nextAt, fill: fillWithin(amount, at, nextAt) };
 }
 
+// --- Filling the plot with the garden's own growth --------------------------
+//
+// The plot draws one sprite per plant and seed, so its bare count alone says
+// little about how grown the garden is: a garden named "a stand of plants" can
+// hold a single plant. The picture therefore carries the growth too, covering
+// the soil with ground growth chosen from the form and how far through it the
+// garden is, and growing that cover as the form advances.
+
+/**
+ * How much of the plot the garden's own growth has covered, from 0 on bare soil
+ * toward 1 as the garden fills.
+ *
+ * Growth fills both within a form and from one form to the next, so a garden
+ * holding a single plant but carrying a thousand growth still reads as a plot
+ * the garden has taken over. It runs `(index + fill) / 5`, which puts most of
+ * the plot under growth by "a stand of plants" and all of it from "a hedge"
+ * on, and saturates past that so the top of the scale stays full.
+ */
+function coverRatio(form) {
+  return clamp01((form.index + form.fill) / 5);
+}
+
+/**
+ * A stable number in [0, 1) for one cell of soil.
+ *
+ * The ground the garden covers is chosen by hashing each cell rather than by
+ * storing where it grew, so the same cell always hashes the same way and the
+ * covered set only ever grows as the ratio rises. The same state and phase
+ * therefore draw the same picture — what a still frame and reduced motion need.
+ */
+function cellHash(cell) {
+  const value = Math.sin(cell * 12.9898 + 78.233) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+/**
+ * The ground the garden has grown over, as `{ cells, covered, ratio }`.
+ *
+ * `cells` is the soil the plot draws, `covered` how many of those cells carry
+ * ground growth, and `ratio` the share of the plot that growth has reached. A
+ * cell is covered when its own hash falls below the ratio, so the covered set
+ * is nested as the garden rises and two calls on one state always agree.
+ */
+export function groundCover(state) {
+  const growth = state && Number.isFinite(state.growth) ? state.growth : 0;
+  const ratio = coverRatio(gardenForm(growth));
+  const { cells } = plotBounds(state);
+  let covered = 0;
+  for (let cell = 0; cell < cells; cell += 1) {
+    if (cellHash(cell) < ratio) covered += 1;
+  }
+  return { cells, covered, ratio };
+}
+
 // --- Drawing the form on the soil -------------------------------------------
 //
 // The plot is a small grid of soil cells drawn at whole-pixel sizes and scaled
@@ -205,6 +259,30 @@ function drawSoil(ctx, x, y, palette, foliage, cell) {
     ctx.fillStyle = palette.leafLight;
     ctx.fillRect(x + CELL - 9, y + CELL - 12, 3, 2);
   }
+}
+
+/**
+ * The low growth the garden's own form lays over a covered cell: short blades of
+ * young leaf spread across the soil.
+ *
+ * It is drawn in the season's own leaf colours and kept well below the planted
+ * sprites, so it reads as ground the garden has taken rather than a plant — and
+ * the taller herb and bloom silhouettes still stand out of it. `cell` varies
+ * the blades, so a filled plot looks like many shoots and not one stamp.
+ */
+function drawGroundGrowth(ctx, x, y, palette, cell) {
+  const base = y + CELL;
+  // Four blades whose spacing and height come from the cell's own hash, so the
+  // cover is uneven ground rather than a mown lawn.
+  for (let i = 0; i < 4; i += 1) {
+    const across = 2 + i * 5 + Math.floor(cellHash(cell + i * 29) * 3);
+    const height = 2 + Math.floor(cellHash(cell + i * 71) * 3);
+    ctx.fillStyle = palette.leaf;
+    ctx.fillRect(x + across, base - height, 2, height);
+  }
+  ctx.fillStyle = palette.leafLight;
+  ctx.fillRect(x + 3, base - 3, 4, 1);
+  ctx.fillRect(x + CELL - 9, base - 4, 5, 1);
 }
 
 /**
@@ -398,10 +476,12 @@ function drawPollinator(ctx, x, y, palette, driftX, driftY) {
  *
  * The picture is a pure view of the state and the animation `phase`: the form and
  * the beds of soil set how much ground there is and how big a grown plant is,
- * the season the state names sets the foliage colours and shape, and the plot's
- * own counts say what stands on it — the grown plants first, then the sprouting
- * seeds, then bare soil. The season is read from `state.season.key`, which is the
- * same value the readout and `get-state` report, so the picture and the words
+ * the garden's own growth covers that ground with low growth so a low-plant,
+ * high-growth garden still visibly fills, the season the state names sets the
+ * foliage colours and shape, and the plot's own counts say what stands on it —
+ * the grown plants first, then the sprouting seeds, then bare soil. The season
+ * is read from `state.season.key`, which is the same value the readout and
+ * `get-state` report, so the picture and the words
  * cannot disagree. The same state and phase always draw the same way, and every
  * colour comes from the palette read off `:root`, so the plot belongs to the same
  * garden as the panels around it. The number of sprites is bounded by the cells
@@ -427,11 +507,15 @@ export function drawGarden(canvas, state, palette, phase = 0) {
   const plants = Math.min(cells, kinds.herbPlants + kinds.bloomPlants);
   const sprouts = Math.min(cells - plants, kinds.herbSeeds + kinds.bloomSeeds);
   const growthTier = Math.min(2, Math.floor(form.fill * 3));
+  // The garden's own growth, not only the plants it owns, fills the soil.
+  const cover = groundCover(state);
   for (let cell = 0; cell < cells; cell += 1) {
     const x = (cell % COLUMNS) * CELL;
     const y = Math.floor(cell / COLUMNS) * CELL;
     const sway = swayPixels(phase, cell);
     drawSoil(ctx, x, y, paint, look.foliage, cell);
+    // Ground growth goes on first, so the planted sprites stand out of it.
+    if (cellHash(cell) < cover.ratio) drawGroundGrowth(ctx, x, y, paint, cell);
     if (cell < kinds.herbPlants) drawPlant(ctx, x, y, paint, look.foliage, form.index, growthTier, sway);
     else if (cell < plants) drawBloomPlant(ctx, x, y, paint, look.foliage, form.index, growthTier, sway);
     else if (cell < plants + kinds.herbSeeds) drawSprout(ctx, x, y, paint, sway);
