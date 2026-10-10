@@ -540,6 +540,38 @@ function drawTree(ctx, x, y, palette, index, growthTier, flowered, dx, foliage) 
 }
 
 /**
+ * The marks a return leaves on the plot: a still sun tick over each cell whose
+ * plant matured while away, and a still sun frame around the ground when the
+ * garden reached a form it did not have.
+ *
+ * They are drawn over the garden and never move, so they read the same under
+ * reduced motion as under any other preference, and a returning player sees the
+ * change itself rather than only a sentence about it. `marks` is the object
+ * `returnMarkCells` returns: the cells to tick and whether to frame the plot.
+ */
+function drawReturnMarks(ctx, palette, width, height, marks) {
+  ctx.fillStyle = palette.sun;
+  for (const cell of marks.cells) {
+    const x = (cell % COLUMNS) * CELL;
+    const y = Math.floor(cell / COLUMNS) * CELL;
+    const centre = x + CELL / 2;
+    // A small downward chevron at the top of the cell, pointing at the plant
+    // that has just matured.
+    ctx.fillRect(centre - 2, y + 1, 5, 2);
+    ctx.fillRect(centre - 1, y + 3, 3, 2);
+    ctx.fillRect(centre, y + 5, 1, 1);
+  }
+  if (marks.form) {
+    // Brackets at opposite corners frame the whole plot, because the garden's
+    // shape itself is new.
+    ctx.fillRect(0, 0, 7, 2);
+    ctx.fillRect(0, 0, 2, 7);
+    ctx.fillRect(width - 7, height - 2, 7, 2);
+    ctx.fillRect(width - 2, height - 7, 2, 7);
+  }
+}
+
+/**
  * A visitor on the plot: a small bee hovering above the first grown plant.
  *
  * Drawn from the same `:root` palette as everything else — a sun body with
@@ -622,6 +654,10 @@ export function drawGarden(canvas, state, palette, phase = 0) {
   if (plants > 0 && state && state.pollinator && state.pollinator.visiting) {
     drawPollinator(ctx, 0, 0, paint, swayPixels(phase, 1), swayPixels(phase, 3));
   }
+  // The return marks go on last, over the garden: what grew while the visitor
+  // was away stands out until they notice it.
+  const marks = returnMarkCells(state, { cells });
+  if (marks.cells.length > 0 || marks.form) drawReturnMarks(ctx, paint, width, height, marks);
 }
 
 /**
@@ -661,4 +697,28 @@ function kindsOnPlot(state) {
     bloomSeeds = 0;
   }
   return { herbPlants, bloomPlants, herbSeeds, bloomSeeds };
+}
+
+/**
+ * Where a return's marks land on the plot: the cells whose plants matured while
+ * the visitor was away, and whether a new form was reached.
+ *
+ * Per-plant age is not tracked, so a mark lands on the newest plants the plot
+ * draws — the tail of the grown-plant run, which is where a seed that has just
+ * matured sits. The count is bounded by the plants on screen, and a state with
+ * no marks returns none. Pure, so a test can assert it without a canvas.
+ *
+ * @returns {{cells: number[], form: boolean}}
+ */
+export function returnMarkCells(state, bounds) {
+  const marks = state && state.returnMarks;
+  if (!marks) return { cells: [], form: false };
+  const limit = bounds && Number.isFinite(bounds.cells) ? bounds.cells : plotBounds(state).cells;
+  const { herbPlants, bloomPlants } = kindsOnPlot(state);
+  const plants = Math.min(limit, herbPlants + bloomPlants);
+  const marked = Number.isFinite(marks.plants) && marks.plants > 0 ? Math.floor(marks.plants) : 0;
+  const count = Math.min(plants, marked);
+  const cells = [];
+  for (let step = 0; step < count; step += 1) cells.push(plants - 1 - step);
+  return { cells, form: Boolean(marks.form) };
 }
