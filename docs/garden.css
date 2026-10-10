@@ -166,6 +166,18 @@ body {
   min-width: 0;
 }
 
+/* The growing actions open the column, so the layout gap above them is all the
+   space they need. The readout follows the goal's borderless bottom edge with
+   the same gap, and both rules stay scoped to this column so the sandbox's own
+   readout is untouched. */
+.garden-side > .actions:first-child {
+  margin-top: 0;
+}
+
+.garden-side > .readout {
+  margin-top: 16px;
+}
+
 /* Folded panels and their summary: the save and rehearsal, out of the way. */
 .fold {
   border: 4px solid var(--outline);
