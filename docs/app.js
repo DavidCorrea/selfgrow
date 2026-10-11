@@ -31,6 +31,7 @@ import {
   getGarden,
   getGrowthState,
   kindIndex,
+  kindSeasonMultiplier,
   nextBedCost,
   nextSeedCost,
   openBed,
@@ -269,6 +270,7 @@ function describeGardenState(garden, growth, rate, age, bonus = 0) {
   const bedCost = nextBedCost(garden.beds);
   // Each kind's price, counts and timers, read the same way the plot draws
   // them: one source, so the buttons, the readout and the goal cannot disagree.
+  const season = seasonAt(age);
   const kinds = gardenKinds({ ...garden, capacity: garden.capacity }).map((kind) => ({
     index: kind.index,
     key: kind.key,
@@ -279,6 +281,11 @@ function describeGardenState(garden, growth, rate, age, bonus = 0) {
     seeds: kind.seeds,
     plants: kind.plants,
     total: kind.total,
+    // The season this kind thrives in, and its own growth boost right now —
+    // its seasonBoost in its best season, 1 the rest of the year. Both are
+    // reported so a person and an agent can see which kind the year favours.
+    bestSeason: SEED_KINDS[kind.index].bestSeason,
+    seasonMultiplier: kindSeasonMultiplier(kind.index, season.key),
     canPlant: !plotFull && growth >= kind.cost,
   }));
   // The season the age falls in and the visiting pollinator multiply what is
@@ -287,9 +294,17 @@ function describeGardenState(garden, growth, rate, age, bonus = 0) {
   // the rate the garden actually grows at before a boost, and `rate` is the
   // boosted number a visitor reads, applied once.
   const pollinator = pollinatorAt(age, garden.plants, kinds[1] ? kinds[1].plants : 0);
-  const season = seasonAt(age);
   const baseRate = rate + bonus;
-  const displayRate = baseRate * (season.multiplier + (pollinator.visiting ? POLLINATOR_BOOST - 1 : 0));
+  // The rate the page shows is the instantaneous slope of the simulation: the
+  // shared season multiplier on the kept rate, each kind's own share lifted to
+  // its boost in its best season, and the pollinator's flat extra while one
+  // visits. Every kind's own boost is visible in its `seasonMultiplier` above.
+  const herbRate = kinds[0].plants * SEED_KINDS[0].production;
+  const bloomRate = kinds[1].plants * SEED_KINDS[1].production;
+  const perKindRate =
+    baseRate + herbRate * (kinds[0].seasonMultiplier - 1) + bloomRate * (kinds[1].seasonMultiplier - 1);
+  const displayRate =
+    season.multiplier * perKindRate + (pollinator.visiting ? baseRate * (POLLINATOR_BOOST - 1) : 0);
   const goal = nextSeedGoal({ growth, plotFull, capacity: garden.capacity, kinds });
   const goalCost = goal ? goal.cost : kinds[0].cost;
   return {
@@ -430,8 +445,11 @@ export function summarizeReturn(away) {
         : ".")
     : "";
   const season = away.crossedSeason
-    ? ` The garden turned from ${away.fromSeason.name} into ${away.toSeason.name} — its growth is now ` +
-      `x${away.toSeason.multiplier}.`
+    ? ` The garden turned from ${away.fromSeason.name} into ${away.toSeason.name} — ` +
+      (away.seasonChangedKinds?.length
+        ? `${away.seasonChangedKinds.join(" and ")} growth changed, and its growth is now ` +
+          `x${away.toSeason.multiplier}.`
+        : `its growth is now x${away.toSeason.multiplier}.`)
     : "";
   const grown = `While you were away ${formatAway(away.seconds)}, the garden earned ` +
     `${formatGrowth(away.earned)} growth and is now ${away.form}.` + matured + pollinator + season;
@@ -487,10 +505,18 @@ export function buildAwayReport(start, seconds) {
   // that arrives during a visit can say so rather than only showing bigger
   // numbers.
   report.pollinator = pollinatorAt(after.age, after.plants, after.bloomPlants);
-  // The season at each end, so a return that crossed a boundary can name it.
+  // The season at each end, so a return that crossed a boundary can name it —
+  // and which kind's own growth changed with it, so a return that carried the
+  // garden into a kind's best season says which kind is thriving now.
   report.fromSeason = seasonAt(before.age);
   report.toSeason = seasonAt(after.age);
   report.crossedSeason = report.fromSeason.key !== report.toSeason.key;
+  report.seasonChangedKinds = SEED_KINDS
+    .filter(
+      (_kind, index) =>
+        kindSeasonMultiplier(index, report.fromSeason.key) !== kindSeasonMultiplier(index, report.toSeason.key)
+    )
+    .map((kind) => kind.name);
   report.summary = summarizeReturn(report);
   return report;
 }
@@ -673,6 +699,7 @@ function rehearseSandbox() {
     growth: display.growth,
     rate: display.rate,
     season: display.season,
+    kinds: display.kinds,
     pollinator: display.pollinator,
     form: display.form,
     formName: display.formName,
@@ -810,8 +837,10 @@ function describeReturnMarks(marks) {
   return parts.join(" · ");
 }
 
-/** The season the garden is in, and how much faster it grows for it. */
+/** The season the garden is in, and which kind the year is favouring now. */
 function describeSeason(state) {
+  const thriving = (state.kinds ?? []).find((kind) => (kind.seasonMultiplier ?? 1) > 1);
+  if (thriving) return `${state.season.name} — ${thriving.name} x${thriving.seasonMultiplier} growth`;
   return `${state.season.name} — x${state.season.multiplier} growth`;
 }
 

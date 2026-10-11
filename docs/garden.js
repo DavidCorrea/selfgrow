@@ -51,13 +51,33 @@ export const BED_COST_RATE = 1.15;
  * every kind's numbers. `key` is the word an agent names it by, `name` is the
  * word the readout uses, `costBase`/`costRate` price it, `production` is how
  * much faster the garden grows per grown plant, and `growSeconds` is how long
- * its sprouts take to mature. Herb is the first kind and keeps the numbers the
+ * its sprouts take to mature. `bestSeason` is the season that kind thrives in
+ * and `seasonBoost` how much faster it grows there, so the year keeps moving
+ * which seed is worth planting. Herb is the first kind and keeps the numbers the
  * garden always had, so an existing save, test or habit still reads the same;
  * bloom costs more and earns more but matures slower, so neither kind dominates.
  */
 export const SEED_KINDS = Object.freeze([
-  Object.freeze({ key: "herb", name: "herb", costBase: 5, costRate: 1.15, production: 0.5, growSeconds: 30 }),
-  Object.freeze({ key: "bloom", name: "bloom", costBase: 40, costRate: 1.15, production: 5, growSeconds: 45 }),
+  Object.freeze({
+    key: "herb",
+    name: "herb",
+    costBase: 5,
+    costRate: 1.15,
+    production: 0.5,
+    growSeconds: 30,
+    bestSeason: "spring",
+    seasonBoost: 2,
+  }),
+  Object.freeze({
+    key: "bloom",
+    name: "bloom",
+    costBase: 40,
+    costRate: 1.15,
+    production: 5,
+    growSeconds: 45,
+    bestSeason: "summer",
+    seasonBoost: 2,
+  }),
 ]);
 
 /**
@@ -881,21 +901,53 @@ export function seasonAt(ageSeconds) {
   return { index, key: season.key, name: season.name, multiplier: season.multiplier };
 }
 
-/** One full turn of the cycle's weighted seconds — the multipliers, summed. */
-const SEASON_CYCLE_MULTIPLIER_SECONDS = SEASON_SECONDS * SEASONS.reduce(
-  (sum, season) => sum + season.multiplier,
-  0
+/**
+ * A kind's own growth boost in one season: its `seasonBoost` while that season
+ * is its best and the neutral 1 the rest of the year. Pure, so the readout, the
+ * simulation and an agent's state cannot disagree about whether a kind is
+ * thriving. An unknown kind or season is never a boost.
+ */
+export function kindSeasonMultiplier(kindIndex, seasonKey) {
+  const kind = SEED_KINDS[kindIndex];
+  return kind && seasonKey === kind.bestSeason ? kind.seasonBoost : 1;
+}
+
+/** The four seasons' shared multipliers in cycle order, as a plain array. */
+const SEASON_MULTIPLIERS = SEASONS.map((season) => season.multiplier);
+
+/**
+ * Each kind's own season multipliers in cycle order: the season's shared
+ * multiplier, times the kind's `seasonBoost` in the one season it thrives in.
+ * A kind outside its best season keeps the shared multiplier exactly, so the
+ * year adds a preference and never a punishment: no entry is below the shared
+ * schedule it is compared against.
+ */
+const KIND_SEASON_MULTIPLIERS = SEED_KINDS.map((_kind, index) =>
+  SEASONS.map((season) => season.multiplier * kindSeasonMultiplier(index, season.key))
 );
 
-/** The season multipliers seen from the garden's start up to `seconds` of age. */
-function seasonMultiplierSecondsUpTo(seconds) {
+/** One full turn of a per-season multiplier array's weighted seconds. */
+function cycleWeightedSeconds(multipliers) {
+  return SEASON_SECONDS * multipliers.reduce((sum, multiplier) => sum + multiplier, 0);
+}
+
+/** The weighted seconds a per-season multiplier array has up to `seconds`. */
+function weightedSecondsUpTo(seconds, multipliers) {
   if (!(seconds > 0)) return 0;
-  const cycles = Math.floor(seconds / SEASON_CYCLE_SECONDS);
-  const phase = seconds - cycles * SEASON_CYCLE_SECONDS;
-  let total = cycles * SEASON_CYCLE_MULTIPLIER_SECONDS;
+  const cycleSeconds = SEASON_SECONDS * multipliers.length;
+  const cycles = Math.floor(seconds / cycleSeconds);
+  const phase = seconds - cycles * cycleSeconds;
+  let total = cycles * cycleWeightedSeconds(multipliers);
   const wholeSeasons = Math.floor(phase / SEASON_SECONDS);
-  for (let index = 0; index < wholeSeasons; index += 1) total += SEASONS[index].multiplier * SEASON_SECONDS;
-  return total + (phase - wholeSeasons * SEASON_SECONDS) * SEASONS[wholeSeasons].multiplier;
+  for (let index = 0; index < wholeSeasons; index += 1) total += multipliers[index] * SEASON_SECONDS;
+  return total + (phase - wholeSeasons * SEASON_SECONDS) * multipliers[wholeSeasons];
+}
+
+/** The weighted seconds a per-season multiplier array sees within an age span. */
+function weightedSecondsWithin(ageSeconds, spanSeconds, multipliers) {
+  if (!Number.isFinite(ageSeconds) || !Number.isFinite(spanSeconds) || spanSeconds <= 0) return 0;
+  const start = ageSeconds > 0 ? ageSeconds : 0;
+  return weightedSecondsUpTo(start + spanSeconds, multipliers) - weightedSecondsUpTo(start, multipliers);
 }
 
 /**
@@ -907,9 +959,7 @@ function seasonMultiplierSecondsUpTo(seconds) {
  * negative or non-finite span is no growth time.
  */
 export function seasonMultiplierSecondsWithin(ageSeconds, spanSeconds) {
-  if (!Number.isFinite(ageSeconds) || !Number.isFinite(spanSeconds) || spanSeconds <= 0) return 0;
-  const start = ageSeconds > 0 ? ageSeconds : 0;
-  return seasonMultiplierSecondsUpTo(start + spanSeconds) - seasonMultiplierSecondsUpTo(start);
+  return weightedSecondsWithin(ageSeconds, spanSeconds, SEASON_MULTIPLIERS);
 }
 
 /**
@@ -1007,14 +1057,22 @@ export function simulateGarden(state, seconds) {
     const nextHerb = sprouts.length ? Math.min(...sprouts) : Infinity;
     const nextBloom = bloomSprouts.length ? Math.min(...bloomSprouts) : Infinity;
     const gap = Math.min(remaining, nextHerb, nextBloom);
-    // The plant and bloom counts are fixed inside a pass, so neither the rate
-    // nor the visit length changes across it and the whole gap is earned at
-    // once: the season's multipliers are integrated over the gap and the
+    const visited = herbPlants + bloomPlants > 0 ? pollinatorSecondsWithin(age, gap, bloomPlants) : 0;
+    // The shared season's multipliers are integrated over the gap and the
     // pollinator's extra seconds are added, not multiplied, so both stay closed
     // form and the age carries into the next pass. The lasting bonus is added
     // flat to the earned rate, so it earns the same way played time does.
-    const visited = herbPlants + bloomPlants > 0 ? pollinatorSecondsWithin(age, gap, bloomPlants) : 0;
-    growth += (rate + bonus) * (seasonMultiplierSecondsWithin(age, gap) + (POLLINATOR_BOOST - 1) * visited);
+    const sharedWeighted = weightedSecondsWithin(age, gap, SEASON_MULTIPLIERS);
+    growth += (rate + bonus) * (sharedWeighted + (POLLINATOR_BOOST - 1) * visited);
+    // Each kind's own season schedule then corrects its share of the rate up to
+    // its boost in its best season — and never down, since a kind's schedule is
+    // never below the shared one. The counts are constant across the pass, so
+    // both corrections integrate in closed form beside the shared term.
+    growth +=
+      herbPlants * SEED_KINDS[0].production *
+        (weightedSecondsWithin(age, gap, KIND_SEASON_MULTIPLIERS[0]) - sharedWeighted) +
+      bloomPlants * SEED_KINDS[1].production *
+        (weightedSecondsWithin(age, gap, KIND_SEASON_MULTIPLIERS[1]) - sharedWeighted);
     remaining -= gap;
     age += gap;
     sprouts = matureKind(sprouts, gap, (matured) => {
