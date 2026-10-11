@@ -2928,6 +2928,33 @@ function checkPollinator(problems) {
     if (!/bloom/i.test(bloomAway.summary)) {
       problems.push(`the return summary does not name the blooms keeping the visit: "${bloomAway.summary}"`);
     }
+
+    // A garden holding only grown blooms reads its visit from the same grown
+    // total a herb garden of the same size does, so a bloom-only garden reports
+    // the visit it used to miss while it was being pollinated.
+    const bloomOnlyAway = buildAwayReport(
+      { growth: 0, rate: 1, sprouts: [], bloomSprouts: [], plantCounts: [0, 6], beds: 1, age: 0 },
+      POLLINATOR_CYCLE_SECONDS - 1
+    );
+    const herbOnlyAway = buildAwayReport(
+      { growth: 0, rate: 1, sprouts: [], bloomSprouts: [], plantCounts: [6, 0], beds: 1, age: 0 },
+      POLLINATOR_CYCLE_SECONDS - 1
+    );
+    if (!bloomOnlyAway.pollinator?.visiting) {
+      problems.push(
+        "a return for a garden of 6 grown blooms and no herbs reported no pollinator; a bloom-only garden must " +
+          "report its visit exactly as a herb garden of the same size does."
+      );
+    }
+    if (
+      bloomOnlyAway.pollinator?.visiting !== herbOnlyAway.pollinator?.visiting ||
+      bloomOnlyAway.pollinator?.multiplier !== herbOnlyAway.pollinator?.multiplier
+    ) {
+      problems.push(
+        `a garden of 6 blooms reported pollinator ${JSON.stringify(bloomOnlyAway.pollinator)}, but 6 herbs ` +
+          `reported ${JSON.stringify(herbOnlyAway.pollinator)}; the two must agree on whether a pollinator visits.`
+      );
+    }
   } finally {
     setGarden(gardenBefore);
     setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
@@ -3371,6 +3398,31 @@ function checkSimulateGarden(problems) {
       problems.push(
         `simulateGarden on a missing state returned ${JSON.stringify(empty)}, expected an empty garden of zeros.`
       );
+    }
+
+    // `plants` has one meaning everywhere a garden is described: the total grown
+    // plants of every kind, with the per-kind counts beside it. A herb-only, a
+    // bloom-only and a mixed garden must all report the same total the live
+    // garden does, whichever shape the state came in.
+    for (const [label, state, counts] of [
+      ["a herb-only garden", { seeds: 0, plants: 3 }, [3, 0]],
+      ["a bloom-only garden", { seeds: 0, plants: 0, bloomPlants: 3 }, [0, 3]],
+      ["a mixed garden", { seeds: 0, plants: 2, bloomPlants: 3 }, [2, 3]],
+    ]) {
+      setGarden(state);
+      const live = getGarden();
+      const simulated = simulateGarden(state, 0);
+      if (
+        simulated.plants !== simulated.plantCounts[0] + simulated.plantCounts[1] ||
+        simulated.plants !== live.plants ||
+        JSON.stringify(simulated.plantCounts) !== JSON.stringify(counts)
+      ) {
+        problems.push(
+          `simulateGarden on ${label} reported ${simulated.plants} plants ` +
+            `(${JSON.stringify(simulated.plantCounts)} by kind), but the live garden holds ${live.plants} ` +
+            `(${JSON.stringify(live.plantCounts)}); the total must be the sum of the kinds everywhere.`
+        );
+      }
     }
   } finally {
     setGarden(gardenBefore);

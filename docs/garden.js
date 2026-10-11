@@ -886,9 +886,11 @@ function kindSproutTimers(source, index, capacity) {
  *
  * This is the one place the growth rule lives. A state carries each kind's
  * ungrown seeds (`sprouts` and `bloomSprouts`) and grown plants (`plantCounts`
- * or `plants`/`bloomPlants`), and the result is the same shape, so any caller
- * can run a span against a copy without touching the live garden — that is how
- * the sandbox rehearses time. The span is walked by jumping to the next seed
+ * or `plants`/`bloomPlants`), and the result reports each kind in `plantCounts`
+ * with `plants` as the total across both — the same meaning `getGarden` gives
+ * it — so any caller can run a span against a copy without touching the live
+ * garden, and no caller can read one kind's count as the whole garden's. That
+ * is how the sandbox rehearses time. The span is walked by jumping to the next seed
  * that matures, so a month resolves in at most one step per plot rather than
  * one per tick, and a rehearsal lands exactly where played time would, with no
  * cap on how long the span was. A zero, negative or non-finite span grows
@@ -908,12 +910,16 @@ export function simulateGarden(state, seconds) {
   let herbPlants = wholeCount(plantsForKind(source, 0), Number.MAX_SAFE_INTEGER);
   let bloomPlants = wholeCount(plantsForKind(source, 1), Number.MAX_SAFE_INTEGER);
 
+  // `plants` is the grown-plant total across both kinds, the same meaning
+  // `getGarden` and `decodeSave` give it; the per-kind counts live only in
+  // `plantCounts` (and `bloomPlants` for the second kind), so no consumer can
+  // read one kind's count as the whole garden's.
   const result = () => ({
     growth,
     rate,
     sprouts,
     bloomSprouts,
-    plants: herbPlants,
+    plants: herbPlants + bloomPlants,
     bloomPlants,
     plantCounts: [herbPlants, bloomPlants],
     beds,
@@ -976,12 +982,15 @@ export function advance(seconds) {
   growth = next.growth;
   rate = next.rate;
   age = next.age;
+  // The live garden keeps each kind's grown plants apart (`plants` is the
+  // first kind), while the simulation's result carries the total in `plants`,
+  // so read the per-kind counts back out of `plantCounts`.
   garden = {
     ...garden,
     sprouts: next.sprouts,
-    plants: next.plants,
+    plants: next.plantCounts[0],
     bloomSprouts: next.bloomSprouts,
-    bloomPlants: next.bloomPlants,
+    bloomPlants: next.plantCounts[1],
   };
   notify();
   return getGrowthState();
