@@ -23,6 +23,8 @@ import {
   MILESTONE_MULTIPLIER,
   SEED_KINDS,
   STORAGE_KEY,
+  TEND_RATE_STEP,
+  TEND_YIELD,
   advance,
   canReplant,
   decodeSave,
@@ -849,7 +851,12 @@ function describeGoal(state) {
   const ripening =
     state.secondsToNextPlant == null ? "" : ` Next plant matures in ${formatDuration(state.secondsToNextPlant)}.`;
   if (state.canPlantSeed) return `Ready to plant — ${cost} growth saved.${ripening}`;
-  if (!(state.rate > 0)) return `Tend the soil to grow faster — ${cost} growth needed.${ripening}`;
+  if (!(state.rate > 0)) {
+    return (
+      `+${formatAmount(TEND_YIELD)} growth and +${formatGrowth(TEND_RATE_STEP)}/s per tend — ` +
+      `${cost} growth to the ${state.nextSeedKind} seed.${ripening}`
+    );
+  }
   return (
     `${formatGrowth(state.growth)} / ${cost} growth — about ` +
     `${formatDuration(state.secondsToNextSeed)} at +${formatGrowth(state.rate)}/s.${ripening}`
@@ -934,6 +941,16 @@ function describeNextGoal(state) {
       title: `Open bed #${formatAmount(state.beds + 1)}`,
       detail: describeBedGoal(state),
       progress: state.bedCostProgress,
+    };
+  }
+  // With nothing growing yet and the next seed still out of reach, the goal is
+  // the action that works right now — tending the soil — rather than a price
+  // the player cannot pay.
+  if (!(state.rate > 0) && !state.canPlantSeed) {
+    return {
+      title: `Tend the soil — +${formatAmount(TEND_YIELD)} growth, +${formatGrowth(TEND_RATE_STEP)}/s`,
+      detail: describeGoal(state),
+      progress: state.seedCostProgress,
     };
   }
   const goal = nextSeedGoal(state);
