@@ -91,7 +91,9 @@ export function tools() {
         "until it can afford it (secondsToNextBed, null unless the plot is " +
         "full and the garden is growing). It also reports away: the time " +
         "since the visitor was last here and what it grew — seconds (0 on a " +
-        "first visit or a quick reload), earned growth, how many seeds " +
+        "first visit or a quick reload), earned growth, how many seeds it " +
+        "sowed into the free plots while away (sown) and what those seeds cost " +
+        "out of the growth (sownCost), how many seeds " +
         "matured (matured), the form it started at (from) and reached (to), " +
         "the formsFound on the way, and a plain summary sentence. It also " +
         "reports returnMarks: what the last return marked on the plot and the " +
