@@ -17,7 +17,9 @@
 
 import {
   GROW_SECONDS,
+  KIND_MILESTONES,
   LAST_SEEN_KEY,
+  MILESTONE_MULTIPLIER,
   PLANT_PRODUCTION,
   PLOTS_PER_BED,
   POLLINATOR_BLOOM_VISIT_SECONDS,
@@ -47,9 +49,12 @@ import {
   getGarden,
   getGrowthState,
   kindIndex,
+  kindMilestoneMultiplier,
   kindSeasonMultiplier,
+  milestoneBoost,
   newGarden,
   nextBedCost,
+  nextKindMilestone,
   nextSeedCost,
   pollinatorAt,
   pollinatorSecondsWithin,
@@ -1347,6 +1352,189 @@ function checkKindReadout(problems) {
       problems.push(
         `with ${poorState.growth} growth saved the next seed worth planting is ` +
           `${poorState.nextSeedKind}, expected the soonest kind (herb).`
+      );
+    }
+  } finally {
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+  }
+}
+
+/**
+ * Each kind's plant milestones: a small ladder at different counts per kind
+ * that steps that kind's output up when reached. The two ladders differ, so the
+ * best seed to plant keeps changing; the readout names the next step and how
+ * many plants remain; the boost is real growth rather than a display figure;
+ * and it is derived from the planted counts, so it survives a save round-trip
+ * with no migration.
+ */
+function checkKindMilestones(problems) {
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  try {
+    // The ladders sit at different counts on purpose: as the garden grows, one
+    // kind reaches its step before the other, so the choice moves.
+    if (JSON.stringify(KIND_MILESTONES[0]) === JSON.stringify(KIND_MILESTONES[1])) {
+      problems.push(
+        `both kinds share the milestone counts ${JSON.stringify(KIND_MILESTONES[0])}, so reaching a milestone never ` +
+          "moves which seed is worth planting."
+      );
+    }
+    if (!(MILESTONE_MULTIPLIER > 1)) {
+      problems.push(`MILESTONE_MULTIPLIER is ${MILESTONE_MULTIPLIER}; a milestone must step a kind's output up.`);
+    }
+
+    // A kind's output is the step raised to the milestones reached: untouched
+    // below the first, doubled at it, and doubled again at each step after.
+    const multiplierCases = [
+      [0, 9, 1],
+      [0, 10, 2],
+      [0, 25, 4],
+      [0, 50, 8],
+      [0, 500, 8],
+      [1, 14, 1],
+      [1, 15, 2],
+      [1, 30, 4],
+      [1, 60, 8],
+    ];
+    for (const [index, plants, expected] of multiplierCases) {
+      const got = kindMilestoneMultiplier(index, plants);
+      if (got !== expected) {
+        problems.push(
+          `kindMilestoneMultiplier(${index}, ${plants}) is ${got}, expected ${expected}; a kind's output doubles at ` +
+            "each milestone it reaches and never before it."
+        );
+      }
+    }
+
+    // The next rung of the ladder, and null once it is climbed.
+    const nextCases = [
+      [0, 0, 10],
+      [0, 9, 10],
+      [0, 10, 25],
+      [0, 50, null],
+      [0, 60, null],
+      [1, 0, 15],
+      [1, 14, 15],
+      [1, 15, 30],
+      [1, 60, null],
+    ];
+    for (const [index, plants, expected] of nextCases) {
+      const got = nextKindMilestone(index, plants);
+      if (got !== expected) {
+        problems.push(
+          `nextKindMilestone(${index}, ${plants}) is ${JSON.stringify(got)}, expected ${JSON.stringify(expected)}.`
+        );
+      }
+    }
+
+    // The boost is real growth, not only a display figure. At winter, where no
+    // kind's season correction applies, ten herb plants at their raw 5/s must
+    // earn exactly twice what those plants alone would, while nine plants just
+    // below the step earn the plain rate.
+    const span = 100;
+    const herbProduction = SEED_KINDS[0].production;
+    const expectedBoost = 10 * herbProduction * (MILESTONE_MULTIPLIER - 1);
+    const below = simulateGarden({ growth: 0, rate: 9 * herbProduction, plantCounts: [9, 0], beds: 1, age: 0 }, span);
+    const at = simulateGarden({ growth: 0, rate: 10 * herbProduction, plantCounts: [10, 0], beds: 1, age: 0 }, span);
+    if (Math.abs(milestoneBoost([9, 0])) > 1e-9 || Math.abs(milestoneBoost([10, 0]) - expectedBoost) > 1e-9) {
+      problems.push(
+        `milestoneBoost gave ${milestoneBoost([9, 0])}/s at 9 herb plants and ${milestoneBoost([10, 0])}/s at 10, ` +
+          `expected 0 before the first milestone and ${expectedBoost} at it.`
+      );
+    }
+    if (Math.abs(at.growth - 2 * (10 * herbProduction) * span) > 1e-6) {
+      problems.push(
+        `10 herb plants at their milestone earned ${at.growth} growth over ${span}s, expected twice the ` +
+          `${10 * herbProduction * span} their raw ${10 * herbProduction}/s would earn (${2 * (10 * herbProduction) * span}) — ` +
+          "the boost must reach the simulation, not only the readout."
+      );
+    }
+    if (Math.abs(below.growth - 9 * herbProduction * span) > 1e-6) {
+      problems.push(
+        `9 herb plants one short of the milestone earned ${below.growth} growth over ${span}s, expected the plain ` +
+          `${9 * herbProduction * span} with no boost.`
+      );
+    }
+    if (!(at.growth > below.growth)) {
+      problems.push(
+        `crossing the first herb milestone did not raise the earned growth: ${below.growth} at 9 plants, ` +
+          `${at.growth} at 10.`
+      );
+    }
+
+    // The readout names the same step the simulation rewards: the next milestone
+    // and how many more plants that kind needs, and the kind's output rate.
+    setGarden({ seeds: 0, plants: 0 });
+    setGrowth(0, 0);
+    const fresh = getDisplayedState();
+    const rows = {
+      herb: document.querySelector('[data-field="kind-herb"]'),
+      bloom: document.querySelector('[data-field="kind-bloom"]'),
+    };
+    if (fresh.kinds[0].nextMilestone === fresh.kinds[1].nextMilestone) {
+      problems.push(
+        `both kinds name the same next milestone (${fresh.kinds[0].nextMilestone}), so the readout never moves ` +
+          "which seed is worth planting."
+      );
+    }
+    for (const kind of fresh.kinds) {
+      const text = String(rows[kind.key]?.textContent ?? "");
+      const expectedMilestone = `${formatAmount(kind.nextMilestone)} plants`;
+      const expectedRemaining = `${formatAmount(kind.plantsToMilestone)} to go`;
+      if (!text.includes(expectedMilestone) || !text.includes(expectedRemaining)) {
+        problems.push(
+          `the ${kind.key} readout says ${JSON.stringify(text)}, expected it to name its next milestone ` +
+            `(${expectedMilestone}) and how many plants remain (${expectedRemaining}).`
+        );
+      }
+    }
+
+    // Once a kind's ladder is climbed it says so, with no count left to reach.
+    setGarden({ seeds: 0, plantCounts: [50, 0], beds: 1 });
+    setGrowth(0, 0);
+    const climbed = getDisplayedState();
+    if (climbed.kinds[0].nextMilestone !== null || climbed.kinds[0].plantsToMilestone !== null) {
+      problems.push(
+        `a herb garden past its last milestone still names ${JSON.stringify(climbed.kinds[0].nextMilestone)} plants ` +
+          `with ${JSON.stringify(climbed.kinds[0].plantsToMilestone)} to go, expected neither.`
+      );
+    }
+    if (!/all milestones reached/i.test(String(rows.herb?.textContent ?? ""))) {
+      problems.push(
+        `a herb garden past its last milestone says ${JSON.stringify(String(rows.herb?.textContent ?? ""))}, ` +
+          "expected it to say all milestones are reached."
+      );
+    }
+
+    // Reaching the milestone lifts the kind's output rate as well as the garden's
+    // base rate, so the step lands in the number the visitor watches.
+    setGarden({ seeds: 0, plantCounts: [10, 0], beds: 1 });
+    setGrowth(0, 10 * herbProduction, 0);
+    const lifted = getDisplayedState();
+    if (
+      lifted.kinds[0].milestoneMultiplier !== MILESTONE_MULTIPLIER ||
+      Math.abs(lifted.kinds[0].output - herbProduction * MILESTONE_MULTIPLIER) > 1e-9 ||
+      !(Math.abs(lifted.baseRate - (10 * herbProduction + expectedBoost)) < 1e-9)
+    ) {
+      problems.push(
+        `10 herb plants reported multiplier ${lifted.kinds[0].milestoneMultiplier}, output ${lifted.kinds[0].output}/s ` +
+          `and base rate ${lifted.baseRate}/s, expected x${MILESTONE_MULTIPLIER}, ` +
+          `${herbProduction * MILESTONE_MULTIPLIER}/s and ${10 * herbProduction + expectedBoost}/s.`
+      );
+    }
+
+    // The boost is derived from the planted counts, so a garden keeps it across
+    // a save round-trip with no version bump or migration.
+    const saved = encodeSave({ seeds: 0, plantCounts: [10, 16], beds: 1 });
+    const decoded = decodeSave(saved);
+    const boostBefore = milestoneBoost([10, 16]);
+    const boostAfter = milestoneBoost(decoded.plantCounts);
+    if (!(boostBefore > 0) || Math.abs(boostAfter - boostBefore) > 1e-9) {
+      problems.push(
+        `a garden of 10 herb and 16 bloom plants is worth ${boostBefore}/s of milestone boost, but after a save ` +
+          `round-trip (${JSON.stringify(decoded.plantCounts)}) it is ${boostAfter}/s; the boost must survive a reload ` +
+          "with no migration."
       );
     }
   } finally {
@@ -3540,7 +3728,10 @@ function checkReturnSummary(problems) {
     // that short while and the higher rate (each plant adding 0.5/s) for the rest.
     // A pollinator visits once there is a grown plant, and its visit is worth an
     // extra rate for every second it is on the plot (see pollinatorSecondsWithin),
-    // so the expected total adds those verified seconds at each rate.
+    // so the expected total adds those verified seconds at each rate. A bed of 10
+    // grown plants has already reached the herb kind's first milestone, so its
+    // output is doubled — the boost is part of the rate each stretch earns at, and
+    // it is lifted again when the two seeds mature into a twelfth plant.
     const visitSecondsEarly = pollinatorSecondsWithin(0, GROW_SECONDS);
     const visitSecondsRest = pollinatorSecondsWithin(GROW_SECONDS, 30 * DAY - GROW_SECONDS);
     // Each stretch weighs its seconds by the season they fall in, the same way
@@ -3557,11 +3748,15 @@ function checkReturnSummary(problems) {
     const latePlants = earlyPlants + 2;
     const earlyRate = 0.5;
     const lateRate = earlyRate + 2 * PLANT_PRODUCTION;
+    const earlyMultiplier = kindMilestoneMultiplier(0, earlyPlants);
+    const lateMultiplier = kindMilestoneMultiplier(0, latePlants);
+    const earlyBoost = earlyPlants * PLANT_PRODUCTION * (earlyMultiplier - 1);
+    const lateBoost = latePlants * PLANT_PRODUCTION * (lateMultiplier - 1);
     const expectedEarned =
-      earlyRate * (seasonEarly + (POLLINATOR_BOOST - 1) * visitSecondsEarly) +
-      earlyPlants * PLANT_PRODUCTION * (herbWeightedEarly - seasonEarly) +
-      lateRate * (seasonRest + (POLLINATOR_BOOST - 1) * visitSecondsRest) +
-      latePlants * PLANT_PRODUCTION * (herbWeightedRest - seasonRest);
+      (earlyRate + earlyBoost) * (seasonEarly + (POLLINATOR_BOOST - 1) * visitSecondsEarly) +
+      earlyPlants * PLANT_PRODUCTION * earlyMultiplier * (herbWeightedEarly - seasonEarly) +
+      (lateRate + lateBoost) * (seasonRest + (POLLINATOR_BOOST - 1) * visitSecondsRest) +
+      latePlants * PLANT_PRODUCTION * lateMultiplier * (herbWeightedRest - seasonRest);
     const tolerance = Math.max(1e-6, expectedEarned * 1e-9);
     if (Math.abs(away.earned - expectedEarned) > tolerance) {
       problems.push(`after 30 days away the garden earned ${away.earned} growth, expected ${expectedEarned}.`);
@@ -4803,6 +4998,7 @@ export async function checks() {
     checkDurableSave(problems);
     checkPageReadout(problems);
     checkKindReadout(problems);
+    checkKindMilestones(problems);
     checkPlotDrawing(problems);
     checkPlotDrawsKinds(problems);
     checkPlotCoverage(problems);

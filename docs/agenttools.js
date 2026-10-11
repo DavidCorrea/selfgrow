@@ -72,12 +72,23 @@ export function tools() {
         "garden. It reports the two kinds of seed a visitor can plant as " +
         "`kinds`, herb first: each entry carries the kind's name (key), the " +
         "price of its next seed (cost), how much one grown plant adds to the " +
-        "growth rate (production), how long its sprouts take (growSeconds), " +
+        "growth rate before milestones (production) and what it actually " +
+        "earns now (output — production lifted by the milestones that kind " +
+        "has reached), how long its sprouts take (growSeconds), " +
         "the season it thrives in (bestSeason) and its own growth boost right " +
         "now (seasonMultiplier — its seasonBoost in its best season and 1 the " +
         "rest of the year), how many of its seeds are ungrown and how many " +
         "plants are grown, and whether the garden can afford it now " +
-        "(canPlant). It also returns the " +
+        "(canPlant). Each kind also has a small ladder of plant-count " +
+        "milestones, shown at different counts for each kind: reaching one " +
+        "immediately multiplies that kind's output, so the boost is derived " +
+        "from the grown-plant counts alone and survives a reload or a return " +
+        "with no save change. The entry carries the multiplier its plant " +
+        "count has earned (milestoneMultiplier), the next milestone it is " +
+        "reaching for (nextMilestone, null once its ladder is climbed) and " +
+        "how many more plants of that kind it needs (plantsToMilestone, null " +
+        "beside a null nextMilestone), so the caller can say which seed is " +
+        "worth planting next. It also returns the " +
         "next seed the goal panel names (nextSeedKind) and what it costs " +
         "(nextSeedCost), whether the garden can afford it now (canPlantSeed), " +
         "whether the plot is full (plotFull), how far along the cost the " +

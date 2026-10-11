@@ -50,11 +50,12 @@ export const BED_COST_RATE = 1.15;
  * The kinds of seed a visitor can plant, lowest first, as the one source of
  * every kind's numbers. `key` is the word an agent names it by, `name` is the
  * word the readout uses, `costBase`/`costRate` price it, `production` is how
- * much faster the garden grows per grown plant, and `growSeconds` is how long
- * its sprouts take to mature. `bestSeason` is the season that kind thrives in
- * and `seasonBoost` how much faster it grows there, so the year keeps moving
- * which seed is worth planting. Herb is the first kind and keeps the numbers the
- * garden always had, so an existing save, test or habit still reads the same;
+ * much faster the garden grows per grown plant before milestones, and
+ * `growSeconds` is how long its sprouts take to mature. `bestSeason` is the
+ * season that kind thrives in and `seasonBoost` how much faster it grows there,
+ * so the year keeps moving which seed is worth planting. Herb is the first kind
+ * and keeps the numbers the garden always had, so an existing save, test or
+ * habit still reads the same;
  * bloom costs more and earns more but matures slower, so neither kind dominates.
  */
 export const SEED_KINDS = Object.freeze([
@@ -79,6 +80,68 @@ export const SEED_KINDS = Object.freeze([
     seasonBoost: 2,
   }),
 ]);
+
+/**
+ * The grown-plant counts at which each kind's output doubles, one ladder per
+ * kind in `SEED_KINDS` order. This is the nearer goal the garden always has: a
+ * kind's next step is a handful of plants away rather than "one more",
+ * whatever the garden has already grown. The two ladders sit at different
+ * counts on purpose, so which seed is worth planting keeps changing as the
+ * garden grows.
+ */
+export const KIND_MILESTONES = Object.freeze([
+  Object.freeze([10, 25, 50]),
+  Object.freeze([15, 30, 60]),
+]);
+
+/** How much a kind's output is multiplied by at each milestone it reaches. */
+export const MILESTONE_MULTIPLIER = 2;
+
+/** A whole plant count of 0 or more; anything else counts as none. */
+function plantedCount(value) {
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+}
+
+/**
+ * How much faster a kind produces once `plants` of it have grown: the milestone
+ * multiplier raised to the number of that kind's milestones reached. Pure, so
+ * the readout, the simulation and an agent's state cannot disagree about it. A
+ * kind the garden does not know never earns a milestone.
+ */
+export function kindMilestoneMultiplier(index, plants) {
+  const milestones = KIND_MILESTONES[index];
+  if (!milestones) return 1;
+  const count = plantedCount(plants);
+  return MILESTONE_MULTIPLIER ** milestones.filter((step) => count >= step).length;
+}
+
+/**
+ * The grown-plant count of `index`'s next milestone, or null once its ladder is
+ * climbed. Pure: the readout names the same next step the simulation rewards.
+ */
+export function nextKindMilestone(index, plants) {
+  const milestones = KIND_MILESTONES[index];
+  if (!milestones) return null;
+  const count = plantedCount(plants);
+  return milestones.find((step) => count < step) ?? null;
+}
+
+/**
+ * The extra growth per second the garden earns from the milestones its kinds
+ * have already reached: each kind's grown plants times its production times the
+ * multiplier it has earned above the base one.
+ *
+ * Derived from the plant counts alone, so a garden keeps its boost across a
+ * reload or a return without any change to the save format — there is no
+ * migration to write and no version to bump.
+ */
+export function milestoneBoost(plantCounts) {
+  const counts = Array.isArray(plantCounts) ? plantCounts : [];
+  return SEED_KINDS.reduce((total, kind, index) => {
+    const plants = plantedCount(counts[index]);
+    return total + plants * kind.production * (kindMilestoneMultiplier(index, plants) - 1);
+  }, 0);
+}
 
 /**
  * How long the first kind's planted seed stays an ungrown sprout before it
@@ -1097,35 +1160,46 @@ export function simulateGarden(state, seconds, options = {}) {
     // Sow before this pass's earning so a seed planted early has time to
     // mature, and a balance that was already affordable is spent at once.
     if (sow) sowHerbs();
+    // Each kind's grown plants carry a milestone multiplier, and the boost it
+    // earns is real growth rather than a display figure: it is added to this
+    // pass's base rate. The counts are constant across the pass, so both the
+    // boost and the corrections below integrate in closed form, and a
+    // maturation that crosses a milestone steps the rate up on the next pass.
+    const herbMultiplier = kindMilestoneMultiplier(0, herbPlants);
+    const bloomMultiplier = kindMilestoneMultiplier(1, bloomPlants);
+    const boost =
+      herbPlants * SEED_KINDS[0].production * (herbMultiplier - 1) +
+      bloomPlants * SEED_KINDS[1].production * (bloomMultiplier - 1);
     const nextHerb = sprouts.length ? Math.min(...sprouts) : Infinity;
     const nextBloom = bloomSprouts.length ? Math.min(...bloomSprouts) : Infinity;
     let gap = Math.min(remaining, nextHerb, nextBloom);
     // While there is a plot to sow and the balance is short, wind only as far
     // as the next seed becomes affordable so it still has time to grow. The
-    // base rate is a safe lower bound on what the garden earns — every season
-    // and kind correction only adds — so this never spends before the balance
-    // can pay, and the final sow below catches a balance that only arrives at
-    // the very end.
+    // base rate is a safe lower bound on what the garden earns — every season,
+    // kind correction and milestone only adds — so this never spends before
+    // the balance can pay, and the final sow below catches a balance that only
+    // arrives at the very end.
     if (sow && hasFreePlot() && growth < nextSeedCost(sprouts.length + herbPlants, 0)) {
       const deficit = nextSeedCost(sprouts.length + herbPlants, 0) - growth;
-      const baseRate = rate + bonus;
+      const baseRate = rate + bonus + boost;
       if (baseRate > 0) gap = Math.min(gap, (deficit / baseRate) * 1.001 + 1e-9);
     }
     const visited = herbPlants + bloomPlants > 0 ? pollinatorSecondsWithin(age, gap, bloomPlants) : 0;
     // The shared season's multipliers are integrated over the gap and the
     // pollinator's extra seconds are added, not multiplied, so both stay closed
-    // form and the age carries into the next pass. The lasting bonus is added
-    // flat to the earned rate, so it earns the same way played time does.
+    // form and the age carries into the next pass. The lasting bonus and the
+    // milestone boost are added flat to the earned rate, so they earn the same
+    // way played time does.
     const sharedWeighted = weightedSecondsWithin(age, gap, SEASON_MULTIPLIERS);
-    growth += (rate + bonus) * (sharedWeighted + (POLLINATOR_BOOST - 1) * visited);
+    growth += (rate + bonus + boost) * (sharedWeighted + (POLLINATOR_BOOST - 1) * visited);
     // Each kind's own season schedule then corrects its share of the rate up to
     // its boost in its best season — and never down, since a kind's schedule is
-    // never below the shared one. The counts are constant across the pass, so
-    // both corrections integrate in closed form beside the shared term.
+    // never below the shared one. The share is itself lifted by the kind's
+    // milestone multiplier, so its best season rewards the milestones too.
     growth +=
-      herbPlants * SEED_KINDS[0].production *
+      herbPlants * SEED_KINDS[0].production * herbMultiplier *
         (weightedSecondsWithin(age, gap, KIND_SEASON_MULTIPLIERS[0]) - sharedWeighted) +
-      bloomPlants * SEED_KINDS[1].production *
+      bloomPlants * SEED_KINDS[1].production * bloomMultiplier *
         (weightedSecondsWithin(age, gap, KIND_SEASON_MULTIPLIERS[1]) - sharedWeighted);
     remaining -= gap;
     age += gap;
@@ -1236,9 +1310,9 @@ export function nextSeedCost(planted, kind = 0) {
 /**
  * Every seed kind as the page and an agent read it: the price of its next seed
  * (against how many of that kind already grow), how many of its seeds are
- * ungrown and how many plants are grown, and how long its sprouts take and how
- * much they produce. Pure, so the readout, the goal and an agent's state cannot
- * disagree about a kind.
+ * ungrown and how many plants are grown, how long its sprouts take and how
+ * much they produce, and the milestone ladder that lifts that production. Pure,
+ * so the readout, the goal and an agent's state cannot disagree about a kind.
  */
 export function gardenKinds(garden) {
   const source = garden ?? {};
@@ -1247,6 +1321,8 @@ export function gardenKinds(garden) {
     const seeds = kindSeedCount(source, index, capacity);
     const plants = wholeCount(plantsForKind(source, index), Number.MAX_SAFE_INTEGER);
     const planted = seeds + plants;
+    const milestoneMultiplier = kindMilestoneMultiplier(index, plants);
+    const nextMilestone = nextKindMilestone(index, plants);
     return {
       index,
       key: entry.key,
@@ -1256,6 +1332,14 @@ export function gardenKinds(garden) {
       total: planted,
       growSeconds: entry.growSeconds,
       production: entry.production,
+      // What one grown plant actually earns right now: the kind's production
+      // lifted by the milestones its plant count has already reached. The next
+      // step of the ladder and how many more plants it needs are beside it, so
+      // a kind always has a goal nearer than "one more".
+      output: entry.production * milestoneMultiplier,
+      milestoneMultiplier,
+      nextMilestone,
+      plantsToMilestone: nextMilestone === null ? null : nextMilestone - plants,
       cost: nextSeedCost(planted, index),
       sproutTimers: kindSproutTimers(source, index, capacity),
     };

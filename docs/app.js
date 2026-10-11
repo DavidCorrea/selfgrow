@@ -20,6 +20,7 @@ import {
   POLLINATOR_BLOOM_VISIT_SECONDS,
   POLLINATOR_BOOST,
   POLLINATOR_VISIT_MAX_SECONDS,
+  MILESTONE_MULTIPLIER,
   SEED_KINDS,
   STORAGE_KEY,
   advance,
@@ -32,6 +33,7 @@ import {
   getGrowthState,
   kindIndex,
   kindSeasonMultiplier,
+  milestoneBoost,
   nextBedCost,
   nextSeedCost,
   openBed,
@@ -278,6 +280,14 @@ function describeGardenState(garden, growth, rate, age, bonus = 0) {
     name: kind.name,
     cost: kind.cost,
     production: kind.production,
+    // What one grown plant of this kind actually earns now, lifted by the
+    // milestones its plant count has already reached, and the next rung of its
+    // ladder with how many more plants it needs. Both are read from the same
+    // counts the simulation rewards, so the readout and the growth agree.
+    output: kind.output,
+    milestoneMultiplier: kind.milestoneMultiplier,
+    nextMilestone: kind.nextMilestone,
+    plantsToMilestone: kind.plantsToMilestone,
     growSeconds: kind.growSeconds,
     seeds: kind.seeds,
     plants: kind.plants,
@@ -289,19 +299,22 @@ function describeGardenState(garden, growth, rate, age, bonus = 0) {
     seasonMultiplier: kindSeasonMultiplier(kind.index, season.key),
     canPlant: !plotFull && growth >= kind.cost,
   }));
+  const plantCounts = kinds.map((kind) => kind.plants);
   // The season the age falls in and the visiting pollinator multiply what is
   // displayed, but never the rate the garden keeps. The lasting bonus is part
-  // of that kept rate: it is added flat to the earned rate, so `baseRate` is
-  // the rate the garden actually grows at before a boost, and `rate` is the
-  // boosted number a visitor reads, applied once.
+  // of that kept rate, and so is the milestone boost the grown plants have
+  // earned: both are added flat to the earned rate, so `baseRate` is the rate
+  // the garden actually grows at before a boost, and `rate` is the boosted
+  // number a visitor reads, applied once.
   const pollinator = pollinatorAt(age, garden.plants, kinds[1] ? kinds[1].plants : 0);
-  const baseRate = rate + bonus;
+  const baseRate = rate + bonus + milestoneBoost(plantCounts);
   // The rate the page shows is the instantaneous slope of the simulation: the
-  // shared season multiplier on the kept rate, each kind's own share lifted to
-  // its boost in its best season, and the pollinator's flat extra while one
-  // visits. Every kind's own boost is visible in its `seasonMultiplier` above.
-  const herbRate = kinds[0].plants * SEED_KINDS[0].production;
-  const bloomRate = kinds[1].plants * SEED_KINDS[1].production;
+  // shared season multiplier on the kept rate, each kind's own share — its
+  // plants lifted by its milestone multiplier — raised to its kind's boost in
+  // its best season, and the pollinator's flat extra while one visits. Every
+  // kind's own boost and milestones are visible in its row above.
+  const herbRate = kinds[0].plants * SEED_KINDS[0].production * kinds[0].milestoneMultiplier;
+  const bloomRate = kinds[1].plants * SEED_KINDS[1].production * kinds[1].milestoneMultiplier;
   const perKindRate =
     baseRate + herbRate * (kinds[0].seasonMultiplier - 1) + bloomRate * (kinds[1].seasonMultiplier - 1);
   const displayRate =
@@ -314,7 +327,7 @@ function describeGardenState(garden, growth, rate, age, bonus = 0) {
     totalPlanted: planted,
     kinds,
     seedCounts: kinds.map((kind) => kind.seeds),
-    plantCounts: kinds.map((kind) => kind.plants),
+    plantCounts,
     growth,
     rate: displayRate,
     baseRate,
@@ -957,12 +970,18 @@ function renderPlanting(state) {
 
 /**
  * The two kinds as the readout reads them: each kind's seeds and plants, the
- * price of its next seed, and what one grown plant adds to the rate.
+ * price of its next seed, what one grown plant adds to the rate now that its
+ * milestones are counted, and the nearer goal — its next plant milestone and
+ * how many more plants of that kind it needs.
  */
 function describeKind(kind) {
   const count = `${formatAmount(kind.seeds)} ${kind.seeds === 1 ? "seed" : "seeds"} · ` +
     `${formatAmount(kind.plants)} ${kind.plants === 1 ? "plant" : "plants"}`;
-  return `${count} — next ${formatAmount(kind.cost)} · +${formatGrowth(kind.production)}/s each`;
+  const milestone = kind.nextMilestone == null
+    ? "all milestones reached"
+    : `x${MILESTONE_MULTIPLIER} at ${formatAmount(kind.nextMilestone)} plants · ` +
+      `${formatAmount(kind.plantsToMilestone)} to go`;
+  return `${count} — next ${formatAmount(kind.cost)} · +${formatGrowth(kind.output)}/s each · ${milestone}`;
 }
 
 /** Point a goal meter at `progress`, from 0 to 1. */
