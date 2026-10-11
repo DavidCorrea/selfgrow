@@ -1017,9 +1017,21 @@ function kindSproutTimers(source, index, capacity) {
  * cap on how long the span was. A zero, negative or non-finite span grows
  * nothing, and a state missing a field reads as a garden that never grew.
  *
+ * A third `options` argument may carry `sow: true`, which makes the garden
+ * spend the growth it earns on the cheapest kind's seed: at the top of every
+ * pass, and once more after the last earning, it sows a herb seed into each
+ * free plot it can afford and lets it mature on the same clock as any other.
+ * That is what turns an absence into a garden that has visibly grown rather
+ * than only a bigger number. Sowing is off by default — the live tick leaves
+ * the planting to the visitor — and only ever sows the cheapest kind, so a
+ * bloom stays the visitor's choice. Every sown seed is paid for out of the
+ * growth balance and reported back as `sown` and `sownCost`, so a caller can
+ * account for exactly what was produced and what was spent.
+ *
  * Pure: it never notifies, never writes, and never touches the live garden.
  */
-export function simulateGarden(state, seconds) {
+export function simulateGarden(state, seconds, options = {}) {
+  const sow = options.sow === true;
   const source = state ?? {};
   const beds = bedCount(source.beds);
   const capacity = beds * PLOTS_PER_BED;
@@ -1031,6 +1043,10 @@ export function simulateGarden(state, seconds) {
   let bloomSprouts = kindSproutTimers(source, 1, capacity);
   let herbPlants = wholeCount(plantsForKind(source, 0), Number.MAX_SAFE_INTEGER);
   let bloomPlants = wholeCount(plantsForKind(source, 1), Number.MAX_SAFE_INTEGER);
+  // What an absence sowed into the free plots, and what those seeds cost out of
+  // the growth, so a return can account for both.
+  let sown = 0;
+  let sownCost = 0;
 
   // `plants` is the grown-plant total across both kinds, the same meaning
   // `getGarden` and `decodeSave` give it; the per-kind counts live only in
@@ -1047,16 +1063,54 @@ export function simulateGarden(state, seconds) {
     plantCounts: [herbPlants, bloomPlants],
     beds,
     age,
+    sown,
+    sownCost,
   });
 
   if (!(Number.isFinite(seconds) && seconds > 0)) return result();
 
+  /**
+   * Spend the growth balance on the cheapest kind wherever a plot is free.
+   * Only the first kind is ever sown, so choosing a bloom stays the visitor's
+   * decision, and a full plot sows nothing and keeps banking its growth.
+   */
+  const sowHerbs = () => {
+    while (
+      sprouts.length + bloomSprouts.length + herbPlants + bloomPlants < capacity &&
+      growth >= nextSeedCost(sprouts.length + herbPlants, 0)
+    ) {
+      const cost = nextSeedCost(sprouts.length + herbPlants, 0);
+      growth -= cost;
+      sown += 1;
+      sownCost += cost;
+      sprouts = [...sprouts, SEED_KINDS[0].growSeconds];
+    }
+  };
+
+  // Each pass matures at least one seed or reaches the moment the next seed can
+  // be paid for, and sowing adds at most one seed per plot, so the passes stay
+  // bounded by the plots.
+  const maxPasses = 2 * capacity + sprouts.length + bloomSprouts.length + 2;
+  const hasFreePlot = () => sprouts.length + bloomSprouts.length + herbPlants + bloomPlants < capacity;
   let remaining = seconds;
-  // Each pass matures at least one seed, so the passes are bounded by the plots.
-  for (let pass = 0; remaining > 0 && pass <= capacity; pass += 1) {
+  for (let pass = 0; remaining > 0 && pass <= maxPasses; pass += 1) {
+    // Sow before this pass's earning so a seed planted early has time to
+    // mature, and a balance that was already affordable is spent at once.
+    if (sow) sowHerbs();
     const nextHerb = sprouts.length ? Math.min(...sprouts) : Infinity;
     const nextBloom = bloomSprouts.length ? Math.min(...bloomSprouts) : Infinity;
-    const gap = Math.min(remaining, nextHerb, nextBloom);
+    let gap = Math.min(remaining, nextHerb, nextBloom);
+    // While there is a plot to sow and the balance is short, wind only as far
+    // as the next seed becomes affordable so it still has time to grow. The
+    // base rate is a safe lower bound on what the garden earns — every season
+    // and kind correction only adds — so this never spends before the balance
+    // can pay, and the final sow below catches a balance that only arrives at
+    // the very end.
+    if (sow && hasFreePlot() && growth < nextSeedCost(sprouts.length + herbPlants, 0)) {
+      const deficit = nextSeedCost(sprouts.length + herbPlants, 0) - growth;
+      const baseRate = rate + bonus;
+      if (baseRate > 0) gap = Math.min(gap, (deficit / baseRate) * 1.001 + 1e-9);
+    }
     const visited = herbPlants + bloomPlants > 0 ? pollinatorSecondsWithin(age, gap, bloomPlants) : 0;
     // The shared season's multipliers are integrated over the gap and the
     // pollinator's extra seconds are added, not multiplied, so both stay closed
@@ -1085,6 +1139,9 @@ export function simulateGarden(state, seconds) {
     });
     if (!(gap > 0)) break;
   }
+  // One last sow once the earning stops, so a balance that only became
+  // affordable at the very end still buys the seeds it can.
+  if (sow) sowHerbs();
   return result();
 }
 

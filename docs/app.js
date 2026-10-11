@@ -437,6 +437,9 @@ export function summarizeReturn(away) {
     ? ` ${countLabel(away.matured, "seed", "seeds")} matured into ` +
       `${countLabel(away.matured, "plant", "plants")}.`
     : "";
+  const sown = away.sown > 0
+    ? ` The garden sowed ${countLabel(away.sown, "seed", "seeds")} into the free soil while you were away.`
+    : "";
   const pollinator = away.pollinator?.visiting
     ? ` A pollinator is visiting — the garden is growing ${away.pollinator.multiplier} times as fast while it stays` +
       (away.pollinator.bloomsKeeping > 0
@@ -452,7 +455,7 @@ export function summarizeReturn(away) {
         : `its growth is now x${away.toSeason.multiplier}.`)
     : "";
   const grown = `While you were away ${formatAway(away.seconds)}, the garden earned ` +
-    `${formatGrowth(away.earned)} growth and is now ${away.form}.` + matured + pollinator + season;
+    `${formatGrowth(away.earned)} growth and is now ${away.form}.` + matured + sown + pollinator + season;
 
   // "What was found": the forms the absence grew it into, named at the top.
   let found = "";
@@ -475,21 +478,30 @@ export function summarizeReturn(away) {
  * Pure, and the one place a return report is built: `start` is a garden state
  * (`{growth, rate, sprouts, plants, beds}`) and the result is the same `away`
  * report the page shows after an absence — the span, what it earned and grew
- * into (including how many seeds matured), the summary sentence, and what to
- * reach for next. The sandbox rehearses with it, so a rehearsal reads exactly
- * as the real absence would.
+ * into (including how many seeds it sowed into free plots and how many
+ * matured), the summary sentence, and what to reach for next. The sandbox
+ * rehearses with it, so a rehearsal reads exactly as the real absence would.
  *
  * @returns {object} the `away` report, its `summary` included.
  */
 export function buildAwayReport(start, seconds) {
   const before = simulateGarden(start, 0);
-  const after = simulateGarden(start, seconds);
+  // A real absence sows: the garden spends its earned growth on affordable
+  // seeds in free plots, so a return finds a garden that has grown rather than
+  // only a bigger number. The live tick does not sow; that planting is the
+  // visitor's.
+  const after = simulateGarden(start, seconds, { sow: true });
   const fromForm = gardenForm(before.growth);
   const toForm = gardenForm(after.growth);
   const nextIndex = toForm.index + 1;
   const report = {
     seconds: Number.isFinite(seconds) && seconds > 0 ? seconds : 0,
-    earned: after.growth - before.growth,
+    // `earned` is what the garden produced, not what survived the sowing: the
+    // seeds the absence sowed were paid for out of it, so the growth balance on
+    // return is `start.growth + earned - sownCost`.
+    earned: after.growth - before.growth + after.sownCost,
+    sown: after.sown,
+    sownCost: after.sownCost,
     matured: after.plants - before.plants,
     from: fromForm.index,
     fromName: fromForm.name,
@@ -583,7 +595,7 @@ export function applyReturn(saved, lastSeenMs, nowMs) {
     beds: live.beds,
   };
   const away = buildAwayReport(start, seconds);
-  const after = simulateGarden(start, seconds);
+  const after = simulateGarden(start, seconds, { sow: true });
 
   // Everything the absence earned joins the lifetime, on top of the lifetime
   // the garden was left with, so time away is part of the garden's history
@@ -674,7 +686,7 @@ function startSandbox() {
 /** Recompute what the open sandbox shows, from its snapshot and its span. */
 function rehearseSandbox() {
   if (!sandbox) return;
-  const end = simulateGarden(sandbox.snapshot, sandbox.seconds);
+  const end = simulateGarden(sandbox.snapshot, sandbox.seconds, { sow: true });
   const away = buildAwayReport(sandbox.snapshot, sandbox.seconds);
   const display = describeGardenState(
     {

@@ -3521,8 +3521,11 @@ function checkReturnSummary(problems) {
     problems.push("the page has no return-summary element (#return-summary) to say what happened while away.");
   }
   try {
-    const saved = { version: SAVE_VERSION, seeds: 2, plants: 1, growth: 0, rate: 0.5 };
-    setGarden({ seeds: 2, plants: 1 });
+    // A full bed of 12 plots (2 ungrown seeds and 10 grown plants): time away
+    // has nowhere to sow, so this isolates the growth the absence earns from
+    // what it would plant if there were room.
+    const saved = { version: SAVE_VERSION, seeds: 2, plants: 10, growth: 0, rate: 0.5 };
+    setGarden({ seeds: 2, plants: 10 });
     setGrowth(saved.growth, saved.rate);
     const beforeImage = canvas ? canvas.toDataURL() : null;
 
@@ -3542,12 +3545,19 @@ function checkReturnSummary(problems) {
     const seasonRest = seasonWeightSecondsByBruteForce(GROW_SECONDS, 30 * DAY - GROW_SECONDS);
     // Every plant is herb, and the year lifts herb above the shared rate in
     // spring, so the rest stretch is counted on the herb's own schedule as well
-    // as the shared one. The early stretch has no grown plant yet to lift.
+    // as the shared one. The early stretch is winter, where herb keeps the
+    // shared rate, so its own correction adds nothing there.
+    const herbWeightedEarly = kindSeasonWeightSecondsByBruteForce(0, 0, GROW_SECONDS);
     const herbWeightedRest = kindSeasonWeightSecondsByBruteForce(0, GROW_SECONDS, 30 * DAY - GROW_SECONDS);
+    const earlyPlants = 10; // the full bed's grown plants before its 2 seeds mature
+    const latePlants = earlyPlants + 2;
+    const earlyRate = 0.5;
+    const lateRate = earlyRate + 2 * PLANT_PRODUCTION;
     const expectedEarned =
-      0.5 * (seasonEarly + (POLLINATOR_BOOST - 1) * visitSecondsEarly) +
-      1.5 * (seasonRest + (POLLINATOR_BOOST - 1) * visitSecondsRest) +
-      1.5 * (herbWeightedRest - seasonRest);
+      earlyRate * (seasonEarly + (POLLINATOR_BOOST - 1) * visitSecondsEarly) +
+      earlyPlants * PLANT_PRODUCTION * (herbWeightedEarly - seasonEarly) +
+      lateRate * (seasonRest + (POLLINATOR_BOOST - 1) * visitSecondsRest) +
+      latePlants * PLANT_PRODUCTION * (herbWeightedRest - seasonRest);
     const tolerance = Math.max(1e-6, expectedEarned * 1e-9);
     if (Math.abs(away.earned - expectedEarned) > tolerance) {
       problems.push(`after 30 days away the garden earned ${away.earned} growth, expected ${expectedEarned}.`);
@@ -3596,6 +3606,137 @@ function checkReturnSummary(problems) {
     const shown = getDisplayedState();
     if (JSON.stringify(shown.away) !== JSON.stringify(away)) {
       problems.push("get-state's away does not match the return the page just reported.");
+    }
+  } finally {
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreRawStorage(storageBefore);
+  }
+}
+
+/**
+ * Time away sows: an absence spends its earned growth on the cheapest seed in
+ * every free plot and lets those seeds grow, so a return finds a taller garden
+ * rather than an enormous number beside one plant — while a garden whose plots
+ * are already full just keeps banking and still reaches for the next bed.
+ *
+ * The balance identity is the promise: `growth on return` is `growth left`
+ * plus the gross earned less exactly what the sown seeds cost.
+ */
+function checkAwaySowing(problems) {
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const storageBefore = rawStorage();
+  const DAY = 86400;
+  try {
+    // A long absence with free plots sows and matures: more grown plants than
+    // it left, with the sown seeds paid for out of the growth.
+    const start = { growth: 0, rate: 0.5, sprouts: [GROW_SECONDS], plants: 1, beds: 1 };
+    const away = buildAwayReport(start, 30 * DAY);
+    const after = simulateGarden(start, 30 * DAY, { sow: true });
+    if (!(away.sown > 0)) {
+      problems.push(
+        `30 days away with 10 free plots sowed ${away.sown} seeds; an absence should sow the seeds it can afford.`
+      );
+    }
+    if (!(away.matured > 0)) {
+      problems.push(`30 days away sowed seeds but matured ${away.matured}; the sown seeds should grow.`);
+    }
+    if (!(after.plants > start.plants)) {
+      problems.push(
+        `30 days away left ${after.plants} grown plants where ${start.plants} stood; the absence should grow more.`
+      );
+    }
+    if (!(after.sprouts.length + after.plants > start.sprouts.length + start.plants)) {
+      problems.push(
+        `30 days away kept the garden at ${after.sprouts.length} seeds / ${after.plants} plants; the absence ` +
+          "should sow into its free plots."
+      );
+    }
+    // Only the cheapest kind is sown, so choosing a bloom stays the player's.
+    if (after.plantCounts[1] !== 0 || after.bloomSprouts.length !== 0) {
+      problems.push(
+        `time away sowed blooms (${after.plantCounts[1]} grown / ${after.bloomSprouts.length} growing); ` +
+          "only herb should be sown."
+      );
+    }
+    // The sown seeds are paid for out of the growth: the balance on return is
+    // the start plus the gross earned less exactly their cost.
+    const identity = start.growth + away.earned - away.sownCost;
+    const tolerance = Math.max(1e-6, Math.abs(identity) * 1e-9);
+    if (Math.abs(away.growth - identity) > tolerance) {
+      problems.push(
+        `after sowing, the garden holds ${away.growth} growth but ${start.growth} start + ${away.earned} earned - ` +
+          `${away.sownCost} sown = ${identity}; the sown seeds must be paid out of the balance.`
+      );
+    }
+    if (!(away.growth < away.earned)) {
+      problems.push(
+        `after sowing, the balance ${away.growth} is not below the ${away.earned} the absence earned, so nothing was spent.`
+      );
+    }
+    // The return account names both what was sown and what matured.
+    if (!/sow/i.test(away.summary) || !away.summary.includes(formatAmount(away.sown))) {
+      problems.push(`the return summary does not name the ${away.sown} seeds sown while away: "${away.summary}"`);
+    }
+    if (!away.summary.includes(formatAmount(away.matured))) {
+      problems.push(`the return summary does not name the ${away.matured} seeds that matured: "${away.summary}"`);
+    }
+
+    // The reported symptom: an hour away from a bed of grown plants and no
+    // ungrown seeds must find several plants where one stood, not the same one
+    // plant beside an enormous number.
+    const grownStart = { growth: 0, rate: 0.5, sprouts: [], plants: 1, beds: 1 };
+    const grownAfter = simulateGarden(grownStart, 3600, { sow: true });
+    if (!(grownAfter.plants > grownStart.plants + 1)) {
+      problems.push(
+        `an hour away from ${grownStart.plants} grown plant and no ungrown seeds left ${grownAfter.plants} ` +
+          "plants; the absence should sow seeds that grow into several plants."
+      );
+    }
+
+    // A short absence still leaves more ungrown seeds than it started with: the
+    // balance it earned at the very end buys the seeds it can.
+    const shortStart = { growth: 0, rate: 1, sprouts: [], plants: 4, beds: 1 };
+    const shortAway = buildAwayReport(shortStart, 30);
+    const shortAfter = simulateGarden(shortStart, 30, { sow: true });
+    if (!(shortAfter.sprouts.length > shortStart.sprouts.length)) {
+      problems.push(
+        `a 30-second absence left ${shortAfter.sprouts.length} ungrown seeds where ${shortStart.sprouts.length} ` +
+          "stood; it should sow the seeds it can afford."
+      );
+    }
+    if (!(shortAway.sown > 0)) {
+      problems.push(`a 30-second absence sowed ${shortAway.sown} seeds; it had free plots and growth to sow with.`);
+    }
+
+    // A garden whose plots are already full is unchanged: nothing is sown,
+    // nothing is spent, and the next bed is still the goal.
+    setGarden({ seeds: 0, plants: PLOTS_PER_BED, beds: 1 });
+    setGrowth(0, 0.5);
+    const fullStart = { growth: 0, rate: 0.5, sprouts: [], plantCounts: [PLOTS_PER_BED, 0], beds: 1 };
+    const fullAway = buildAwayReport(fullStart, 30 * DAY);
+    if (fullAway.sown !== 0 || fullAway.sownCost !== 0) {
+      problems.push(
+        `a full garden sowed ${fullAway.sown} seeds for ${fullAway.sownCost} growth; a full plot must sow nothing.`
+      );
+    }
+    if (fullAway.matured !== 0) {
+      problems.push(`a full garden matured ${fullAway.matured} seeds; it had none to grow.`);
+    }
+    const fullAfter = simulateGarden(fullStart, 30 * DAY, { sow: true });
+    if (fullAfter.plants !== PLOTS_PER_BED || fullAfter.sprouts.length !== 0) {
+      problems.push(
+        `a full garden became ${fullAfter.sprouts.length} seeds / ${fullAfter.plants} plants over time away; ` +
+          `it should stay full with ${PLOTS_PER_BED} plants.`
+      );
+    }
+    openSandbox();
+    fastForwardSandbox(30 * DAY);
+    const fullGoal = getSandboxState().goalTitle;
+    resetSandbox();
+    if (!/bed/i.test(fullGoal)) {
+      problems.push(`after a full-bed absence the goal is ${JSON.stringify(fullGoal)}, expected the next bed.`);
     }
   } finally {
     setGarden(gardenBefore);
@@ -4498,6 +4639,7 @@ export async function checks() {
     checkFirstScreenGarden(problems);
     checkSimulateGarden(problems);
     checkReturnSummary(problems);
+    checkAwaySowing(problems);
     checkReturnMarks(problems);
     checkPollinator(problems);
     checkSeason(problems);
