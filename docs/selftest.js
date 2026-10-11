@@ -26,6 +26,7 @@ import {
   POLLINATOR_VISIT_MAX_SECONDS,
   POLLINATOR_VISIT_SECONDS,
   PLOT_CAPACITY,
+  REPLANT_MIN_BONUS,
   SAVE_PREFIX,
   SAVE_VERSION,
   SEASONS,
@@ -53,7 +54,9 @@ import {
   pollinatorSecondsWithin,
   pollinatorVisitSeconds,
   readLastSeen,
+  replant,
   replantBonus,
+  canReplant,
   seasonAt,
   seasonMultiplierSecondsWithin,
   readStoredGarden,
@@ -671,8 +674,8 @@ function checkPortableSave(problems) {
  * against its own count, and both read off a mixed garden correctly.
  */
 function checkSeedKindsDiffer(problems) {
-  if (SAVE_VERSION !== 7) {
-    problems.push(`SAVE_VERSION should be 7 (the lifetime total), but it is ${SAVE_VERSION}.`);
+  if (SAVE_VERSION !== 8) {
+    problems.push(`SAVE_VERSION should be 8 (the lasting bonus), but it is ${SAVE_VERSION}.`);
   }
   const [herb, bloom] = SEED_KINDS;
   if (bloom.costBase <= herb.costBase) {
@@ -1076,10 +1079,173 @@ function checkLifetimeGrowth(problems) {
 }
 
 /**
- * The two kinds are named on the page: a readout row each, with counts, price
- * and production, a Plant control each naming its kind and price, and a goal
- * that names the kind worth planting next and what it costs.
+ * Replanting: offered only once the garden is flourishing, it starts a fresh
+ * garden that keeps the lifetime and carries a lasting bonus into its rate.
+ *
+ * The action is the deeper layer that keeps the garden from ending at a wall,
+ * so it is checked at both ends: the wall that gates it, the reset it performs,
+ * the bonus it sets and saves, the faster fresh run it buys, and the readout
+ * and control a visitor and an agent both read. Declining is checked to be a
+ * pure no-op.
  */
+function checkReplant(problems) {
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const storageBefore = rawStorage();
+  const payload = (value) => `${SAVE_PREFIX}${btoa(JSON.stringify(value))}`;
+  const belowWall = REPLANT_MIN_BONUS * REPLANT_MIN_BONUS - 1;
+  try {
+    // Below the wall the replant is refused and changes nothing at all.
+    setGarden({ seeds: 1, plants: 0, beds: 1 });
+    setGrowth(5, 0.5, 12, belowWall);
+    if (canReplant()) {
+      problems.push("a garden below the wall reports it can be replanted.");
+    }
+    const refused = replant();
+    const untouchedGarden = getGarden();
+    const untouchedGrowth = getGrowthState();
+    if (refused.ok) {
+      problems.push("a replant below the wall was performed instead of refused.");
+    }
+    if (
+      untouchedGarden.seeds !== 1 ||
+      untouchedGarden.plants !== 0 ||
+      untouchedGrowth.growth !== 5 ||
+      Math.abs(untouchedGrowth.rate - 0.5) > 1e-9 ||
+      untouchedGrowth.lifetime !== belowWall
+    ) {
+      problems.push("a refused replant changed the garden even though it refused.");
+    }
+
+    // At the wall the replant resets the run and keeps its history.
+    setGarden({ beds: 3, seeds: 4, plants: 5 });
+    setGrowth(999, 2.5, 300, REPLANT_MIN_BONUS * REPLANT_MIN_BONUS);
+    const earnedBonus = replantBonus(getGrowthState().lifetime);
+    if (!canReplant()) {
+      problems.push(`a garden worth a ${earnedBonus} bonus reports it cannot be replanted.`);
+    }
+
+    // Declining is a pure no-op: opening the confirmation and choosing Keep
+    // growing leaves every number exactly where it was.
+    document.getElementById("replant")?.click();
+    document.getElementById("replant-cancel")?.click();
+    if (getGarden().seeds !== 4 || getGarden().plants !== 5 || getGrowthState().growth !== 999) {
+      problems.push("declining a replant (Keep growing) changed the garden.");
+    }
+
+    const done = replant();
+    const freshGarden = getGarden();
+    const freshGrowth = getGrowthState();
+    if (!done.ok) {
+      problems.push(`an eligible replant was refused: ${done.reason}.`);
+    }
+    if (freshGarden.beds !== 1 || freshGarden.seeds !== 1 || freshGarden.plants !== 0) {
+      problems.push(
+        `a replant left ${freshGarden.beds} beds / ${freshGarden.seeds} seeds / ${freshGarden.plants} plants, ` +
+          "expected a fresh 1 / 1 / 0."
+      );
+    }
+    if (freshGrowth.growth !== 0 || freshGrowth.rate !== 0 || freshGrowth.age !== 0) {
+      problems.push(
+        `a replant left ${freshGrowth.growth} growth at ${freshGrowth.rate}/s, age ${freshGrowth.age}, ` +
+          "expected the fresh run to start at 0 / 0 / 0."
+      );
+    }
+    if (freshGrowth.lifetime !== REPLANT_MIN_BONUS * REPLANT_MIN_BONUS) {
+      problems.push(
+        `a replant reset the lifetime to ${freshGrowth.lifetime}, expected the ` +
+          `${REPLANT_MIN_BONUS * REPLANT_MIN_BONUS} kept.`
+      );
+    }
+    if (freshGrowth.bonus !== earnedBonus || freshGrowth.bonus < REPLANT_MIN_BONUS) {
+      problems.push(
+        `a replant set the lasting bonus to ${freshGrowth.bonus}, expected the ${earnedBonus} the lifetime earned.`
+      );
+    }
+    if (done.bonus !== freshGrowth.bonus || done.lifetime !== freshGrowth.lifetime) {
+      problems.push("the replant result does not report the bonus and lifetime the garden now holds.");
+    }
+
+    // The bonus is in the save and comes straight back; an older save was never
+    // replanted, so it opens with none, and a bad bonus is refused rather than
+    // slowing the garden.
+    const back = decodeSave(encodeSave({ ...newGarden(), bonus: 12.5, lifetime: 156.25 }));
+    if (back.bonus !== 12.5) {
+      problems.push(`a save put in a bonus of 12.5 and gave back ${back.bonus}.`);
+    }
+    const migrated = decodeSave(payload({ version: 7, seeds: 1, plants: 1, growth: 200, rate: 1, lifetime: 200 }));
+    if (migrated.bonus !== 0) {
+      problems.push(`a version-7 save should open with no bonus, but it carried ${migrated.bonus}.`);
+    }
+    for (const [label, value] of [
+      ["a negative bonus", payload({ version: SAVE_VERSION, seeds: 1, plants: 0, bonus: -1 })],
+      ["a bonus that is not a number", payload({ version: SAVE_VERSION, seeds: 1, plants: 0, bonus: "5" })],
+    ]) {
+      try {
+        decodeSave(value);
+        problems.push(`the save reader accepted ${label}; it should refuse it.`);
+      } catch {
+        // refused, as it must be.
+      }
+    }
+
+    // The fresh garden grows faster than the same one without the bonus over the
+    // same span: the lasting bonus is the whole point of replanting.
+    const withBonus = simulateGarden(
+      { growth: 0, rate: 0, age: 0, bonus: freshGrowth.bonus, sprouts: [STARTING_GROW_SECONDS], beds: 1 },
+      60
+    );
+    const withoutBonus = simulateGarden(
+      { growth: 0, rate: 0, age: 0, bonus: 0, sprouts: [STARTING_GROW_SECONDS], beds: 1 },
+      60
+    );
+    if (!(withBonus.growth > withoutBonus.growth)) {
+      problems.push(
+        `a fresh garden carrying a ${freshGrowth.bonus}/s bonus grew ${withBonus.growth} in a minute, no more ` +
+          `than the ${withoutBonus.growth} a bonusless one grew.`
+      );
+    }
+
+    // The readout and the control a visitor and an agent both read, shown only
+    // once the garden is eligible.
+    setGrowth(0, 0, 0, 400, 20);
+    const state = getDisplayedState();
+    if (state.bonus !== 20 || !state.canReplant) {
+      problems.push(
+        `the displayed state reports bonus ${state.bonus} / canReplant ${state.canReplant}, expected 20 / true.`
+      );
+    }
+    if (state.baseRate !== 20) {
+      problems.push(`the displayed base rate is ${state.baseRate}, expected the bonus's 20.`);
+    }
+    const button = document.getElementById("replant");
+    const bonusEl = document.querySelector('[data-field="bonus"]');
+    if (!button || !bonusEl) {
+      problems.push(
+        'the page has no replant control or lasting-bonus readout (expected #replant and [data-field="bonus"]).'
+      );
+    } else {
+      if (button.hidden) problems.push("the page hides the Replant control while the garden is eligible.");
+      const shownBonus = String(bonusEl.textContent).trim();
+      if (!shownBonus.includes(formatGrowth(state.bonus))) {
+        problems.push(
+          `the page shows ${JSON.stringify(shownBonus)} for the lasting bonus, but the garden holds ${state.bonus}.`
+        );
+      }
+    }
+    setGrowth(0, 0, 0, belowWall, 0);
+    if (getDisplayedState().canReplant) {
+      problems.push("a garden below the wall reports canReplant true.");
+    }
+    if (button && !button.hidden) {
+      problems.push("the page offers the Replant control before the garden is eligible.");
+    }
+  } finally {
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime, growthBefore.bonus);
+    restoreRawStorage(storageBefore);
+  }
+}
 function checkKindReadout(problems) {
   const gardenBefore = getGarden();
   const growthBefore = getGrowthState();
@@ -3646,6 +3812,18 @@ async function checkAgentTools(problems) {
         `worth ${replantBonus(state.lifetimeGrowth)}.`
     );
   }
+  if (state.bonus !== shown.bonus || state.canReplant !== shown.canReplant) {
+    problems.push(
+      `get-state reported bonus ${state.bonus} / canReplant ${state.canReplant}, but the page holds ` +
+        `${shown.bonus} / ${shown.canReplant}.`
+    );
+  }
+  if (state.canReplant !== canReplant(state.lifetimeGrowth)) {
+    problems.push(
+      `get-state's canReplant is ${state.canReplant}, but a lifetime of ${state.lifetimeGrowth} is ` +
+        `worth ${canReplant(state.lifetimeGrowth)}.`
+    );
+  }
   if (state.save !== shown.save) {
     problems.push("get-state's save does not match the save the page shows.");
   }
@@ -3882,6 +4060,58 @@ async function checkAgentTools(problems) {
     }
   }
 
+  const replantTool = find("replant");
+  if (!replantTool) {
+    problems.push("agenttools.js has no replant tool, so an agent cannot do what the Replant button does.");
+  } else {
+    const gardenBefore = getGarden();
+    const growthBefore = getGrowthState();
+    const storageBefore = rawStorage();
+    try {
+      // Refused below the wall, changing nothing.
+      setGarden({ seeds: 1, plants: 0 });
+      setGrowth(999, 2.5, 300, 99);
+      const early = await replantTool.execute({}, {});
+      if (early.ok || getGarden().seeds !== 1 || getGrowthState().growth !== 999) {
+        problems.push("the replant tool replanted a garden below the wall.");
+      }
+
+      // Performed at the wall, carrying the lifetime into the bonus.
+      setGarden({ beds: 2, seeds: 3, plants: 4 });
+      setGrowth(500, 3, 120, 144);
+      const done = await replantTool.execute({}, {});
+      const afterGarden = getGarden();
+      const afterGrowth = getGrowthState();
+      if (!done.ok || done.bonus !== replantBonus(144) || done.lifetime !== 144) {
+        problems.push(
+          `the replant tool reported ${JSON.stringify({ ok: done.ok, bonus: done.bonus, lifetime: done.lifetime })}, ` +
+            `expected ok=true, bonus ${replantBonus(144)}, lifetime 144.`
+        );
+      }
+      if (
+        afterGarden.beds !== 1 ||
+        afterGarden.seeds !== 1 ||
+        afterGarden.plants !== 0 ||
+        afterGrowth.growth !== 0 ||
+        afterGrowth.lifetime !== 144 ||
+        afterGrowth.bonus !== replantBonus(144)
+      ) {
+        problems.push(
+          `the replant tool left ${afterGarden.beds} beds / ${afterGarden.seeds} seeds / ` +
+            `${afterGarden.plants} plants / ${afterGrowth.growth} growth / ${afterGrowth.lifetime} lifetime / ` +
+            `${afterGrowth.bonus} bonus, expected 1 / 1 / 0 / 0 / 144 / ${replantBonus(144)}.`
+        );
+      }
+      if (!done.state || done.state.bonus !== afterGrowth.bonus || done.state.canReplant !== canReplant(afterGrowth.lifetime)) {
+        problems.push("the replant tool did not return the state after replanting.");
+      }
+    } finally {
+      setGarden(gardenBefore);
+      setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime, growthBefore.bonus);
+      restoreRawStorage(storageBefore);
+    }
+  }
+
   const openSandboxTool = find("open-sandbox");
   const fastForwardTool = find("fast-forward-sandbox");
   const resetSandboxTool = find("reset-sandbox");
@@ -4059,6 +4289,7 @@ export async function checks() {
     checkSeedKindsDiffer(problems);
     checkSaveMigratesKinds(problems);
     checkLifetimeGrowth(problems);
+    checkReplant(problems);
     checkPlantControl(problems);
     checkPlantingSpendsAndRaisesProduction(problems);
     checkBloomPlanting(problems);

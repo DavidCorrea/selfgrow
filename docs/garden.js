@@ -13,7 +13,7 @@
  */
 
 /** The save format. Bump it only if the shape below actually changes. */
-export const SAVE_VERSION = 7;
+export const SAVE_VERSION = 8;
 
 /** A readable marker, so a save is recognisable and the version is obvious. */
 export const SAVE_PREFIX = "SELFGROW1.";
@@ -229,6 +229,7 @@ export function encodeSave(garden) {
     rate: amountOrZero(source.rate),
     age: amountOrZero(source.age),
     lifetime: amountOrZero(source.lifetime),
+    bonus: amountOrZero(source.bonus),
     beds,
   });
   return SAVE_PREFIX + btoa(body);
@@ -252,12 +253,14 @@ export function encodeSave(garden) {
  * to 5 save carries is the first kind, and the second kind opens empty, so no
  * existing save loses a plant it had. Version 7 added the lifetime growth a
  * garden has produced over its whole life; an older save starts it at the
- * growth it currently holds, so nothing already earned is forgotten.
+ * growth it currently holds, so nothing already earned is forgotten. Version 8
+ * added the lasting bonus a replant earns; an older save was never replanted,
+ * so it opens with no bonus.
  *
- * @returns {{version: number, seeds: number, plants: number, sprouts: number[], bloomSprouts: number[], plantCounts: number[], growth: number, rate: number, age: number, lifetime: number, beds: number}}
+ * @returns {{version: number, seeds: number, plants: number, sprouts: number[], bloomSprouts: number[], plantCounts: number[], growth: number, rate: number, age: number, lifetime: number, bonus: number, beds: number}}
  * @throws {Error} when the text is empty, not a selfgrow save, damaged,
- *   the wrong version, or carries a bad plot count, growth, rate, age or
- *   lifetime.
+ *   the wrong version, or carries a bad plot count, growth, rate, age,
+ *   lifetime or bonus.
  */
 export function decodeSave(text) {
   if (typeof text !== "string" || !text.trim()) {
@@ -314,6 +317,9 @@ export function decodeSave(text) {
   // has still produced everything it holds, so its lifetime starts at exactly
   // the growth it carries rather than at nothing.
   const lifetime = parsed.version < 7 ? growth : readLifetime(parsed);
+  // Before version 8 there was no lasting bonus. An older save was never
+  // replanted, so it opens with the bonus it never earned.
+  const bonus = parsed.version < 8 ? 0 : readBonus(parsed);
   return {
     version: SAVE_VERSION,
     seeds: sprouts.length + bloomSprouts.length,
@@ -325,6 +331,7 @@ export function decodeSave(text) {
     rate,
     age,
     lifetime,
+    bonus,
     beds,
   };
 }
@@ -339,6 +346,17 @@ function readLifetime(parsed) {
   if (parsed.lifetime === undefined || parsed.lifetime === null) return 0;
   assertAmount(parsed.lifetime, "lifetime");
   return parsed.lifetime;
+}
+
+/**
+ * The lasting bonus a save carries, zero or more growth per second. A save that
+ * does not say opens with no bonus; a negative or non-finite one is refused
+ * with a reason, because it would slow the garden below its earned rate.
+ */
+function readBonus(parsed) {
+  if (parsed.bonus === undefined || parsed.bonus === null) return 0;
+  assertAmount(parsed.bonus, "bonus");
+  return parsed.bonus;
 }
 
 /** The second kind's grown plants a save carries, whole and zero or more. */
@@ -637,30 +655,39 @@ let growth = 0;
 let rate = 0;
 let age = 0;
 let lifetime = 0;
+// The lasting bonus a replant has earned, in growth/second. It is added flat to
+// the rate the garden grows at, and unlike the spent balance it is kept across
+// a replant: it is the one thing a fresh run starts with that the first run did
+// not have.
+let bonus = 0;
 
 /**
  * The live growth since this visit began, its rate in growth/second, the
- * garden's age in seconds of elapsed time, and the growth it has produced over
- * its whole life. Age is what a pollinator's schedule is read from, so it is
- * kept beside the growth rather than derived from a foreground timer: a hidden
- * tab still ages the garden. Lifetime is kept the same way, so the garden's
- * whole history is not something a visitor could lose by not watching.
+ * garden's age in seconds of elapsed time, the growth it has produced over its
+ * whole life, and the lasting bonus a replant has earned. Age is what a
+ * pollinator's schedule is read from, so it is kept beside the growth rather
+ * than derived from a foreground timer: a hidden tab still ages the garden.
+ * Lifetime is kept the same way, so the garden's whole history is not something
+ * a visitor could lose by not watching. The bonus is kept here so offline time,
+ * the sandbox and the live tick all add it the same way.
  */
 export function getGrowthState() {
-  return { growth, rate, age, lifetime };
+  return { growth, rate, age, lifetime, bonus };
 }
 
 /**
  * Put the live growth back to a known point — the snapshot a caller took. Out
  * of range or missing values fall back to nothing grown rather than to `NaN`,
  * a missing age restarts at zero rather than leaving the clock somewhere
- * unknown, and a missing lifetime starts the garden's history at nothing.
+ * unknown, a missing lifetime starts the garden's history at nothing, and a
+ * missing bonus starts the fresh run with no lasting head start.
  */
-export function setGrowth(growthValue, rateValue = 0, ageValue = 0, lifetimeValue = 0) {
+export function setGrowth(growthValue, rateValue = 0, ageValue = 0, lifetimeValue = 0, bonusValue = 0) {
   growth = Number.isFinite(growthValue) && growthValue > 0 ? growthValue : 0;
   rate = Number.isFinite(rateValue) && rateValue > 0 ? rateValue : 0;
   age = Number.isFinite(ageValue) && ageValue > 0 ? ageValue : 0;
   lifetime = Number.isFinite(lifetimeValue) && lifetimeValue > 0 ? lifetimeValue : 0;
+  bonus = Number.isFinite(bonusValue) && bonusValue > 0 ? bonusValue : 0;
   notify();
 }
 
@@ -676,6 +703,50 @@ export function setGrowth(growthValue, rateValue = 0, ageValue = 0, lifetimeValu
  */
 export function replantBonus(lifetimeGrowth) {
   return Math.floor(Math.sqrt(amountOrZero(lifetimeGrowth)));
+}
+
+/**
+ * The bonus a garden must already be worth for a replant to be offered.
+ *
+ * A wall, not a gate: the garden reaches it when its lifetime hits 100 — the
+ * `a bed of seedlings` form — so a replant is offered once the garden is
+ * flourishing and never before. A garden below it has nothing worth carrying.
+ */
+export const REPLANT_MIN_BONUS = 10;
+
+/**
+ * Whether the garden has grown far enough to be replanted. Pure: the page, the
+ * button and an agent's state all read the same wall from here.
+ */
+export function canReplant(lifetimeGrowth = lifetime) {
+  return replantBonus(lifetimeGrowth) >= REPLANT_MIN_BONUS;
+}
+
+/**
+ * Replant the garden: start a fresh one whose growth rate carries the lasting
+ * bonus it has earned from its whole life.
+ *
+ * The soil, seeds, plants, beds, current growth, rate and age all start over,
+ * while the lifetime growth and the save are kept and the bonus becomes the
+ * part of the rate the new run keeps. Refuses with a reason, changing nothing,
+ * while the garden is below `REPLANT_MIN_BONUS` — a replant before the wall
+ * would trade a run's work for nothing, so it is never offered or performed.
+ *
+ * @returns {{ok: boolean, reason: string|null, bonus: number, lifetime: number}}
+ */
+export function replant() {
+  const earned = replantBonus(lifetime);
+  if (earned < REPLANT_MIN_BONUS) {
+    return { ok: false, reason: "not enough lifetime growth", bonus: earned, lifetime };
+  }
+  const keptLifetime = lifetime;
+  // A fresh garden object, wound back to its first sprout, with the growth
+  // loop reset and the lifetime carried over — the same shape `newGarden`
+  // gives, so a replant and a first visit start identically.
+  setGarden(newGarden());
+  setGrowth(0, 0, 0, keptLifetime, earned);
+  writeStoredGarden(garden);
+  return { ok: true, reason: null, bonus: earned, lifetime: keptLifetime };
 }
 
 // --- The visiting pollinator -------------------------------------------------
@@ -905,6 +976,7 @@ export function simulateGarden(state, seconds) {
   let growth = amountOrZero(source.growth);
   let rate = amountOrZero(source.rate);
   let age = Number.isFinite(source.age) && source.age > 0 ? source.age : 0;
+  const bonus = amountOrZero(source.bonus);
   let sprouts = kindSproutTimers(source, 0, capacity);
   let bloomSprouts = kindSproutTimers(source, 1, capacity);
   let herbPlants = wholeCount(plantsForKind(source, 0), Number.MAX_SAFE_INTEGER);
@@ -917,6 +989,7 @@ export function simulateGarden(state, seconds) {
   const result = () => ({
     growth,
     rate,
+    bonus,
     sprouts,
     bloomSprouts,
     plants: herbPlants + bloomPlants,
@@ -938,9 +1011,10 @@ export function simulateGarden(state, seconds) {
     // nor the visit length changes across it and the whole gap is earned at
     // once: the season's multipliers are integrated over the gap and the
     // pollinator's extra seconds are added, not multiplied, so both stay closed
-    // form and the age carries into the next pass.
+    // form and the age carries into the next pass. The lasting bonus is added
+    // flat to the earned rate, so it earns the same way played time does.
     const visited = herbPlants + bloomPlants > 0 ? pollinatorSecondsWithin(age, gap, bloomPlants) : 0;
-    growth += rate * (seasonMultiplierSecondsWithin(age, gap) + (POLLINATOR_BOOST - 1) * visited);
+    growth += (rate + bonus) * (seasonMultiplierSecondsWithin(age, gap) + (POLLINATOR_BOOST - 1) * visited);
     remaining -= gap;
     age += gap;
     sprouts = matureKind(sprouts, gap, (matured) => {
@@ -969,6 +1043,7 @@ export function advance(seconds) {
       growth,
       rate,
       age,
+      bonus,
       sprouts: garden.sprouts,
       bloomSprouts: garden.bloomSprouts,
       plantCounts: [garden.plants, garden.bloomPlants],
@@ -982,6 +1057,7 @@ export function advance(seconds) {
   growth = next.growth;
   rate = next.rate;
   age = next.age;
+  bonus = next.bonus;
   // The live garden keeps each kind's grown plants apart (`plants` is the
   // first kind), while the simulation's result carries the total in `plants`,
   // so read the per-kind counts back out of `plantCounts`.

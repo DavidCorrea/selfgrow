@@ -4,10 +4,10 @@
  * Derived from what the page shows a visitor and what it lets them do — nothing
  * more. `get-state` returns every value on the page; `tend` is the Tend the soil
  * button; `plant-seed` is the Plant a seed button; `open-bed` is the Open the
- * next bed button; `open-sandbox`, `fast-forward-sandbox` and `reset-sandbox`
- * are the Rehearse time panel; `export-save` is the Copy save button;
- * `import-save` is the Load save button, and returns the same fields afterwards
- * so the caller can see what it changed.
+ * next bed button; `replant` is the Replant the garden button; `open-sandbox`,
+ * `fast-forward-sandbox` and `reset-sandbox` are the Rehearse time panel;
+ * `export-save` is the Copy save button; `import-save` is the Load save button,
+ * and returns the same fields afterwards so the caller can see what it changed.
  */
 
 import {
@@ -21,7 +21,7 @@ import {
   resetSandbox,
   sandboxSpanSeconds,
 } from "./app.js";
-import { SEED_KINDS, openBed, plantSeed, tend } from "./garden.js";
+import { SEED_KINDS, openBed, plantSeed, replant, tend } from "./garden.js";
 
 // The save for the starting garden, so `import-save`'s example always validates
 // and runs. Importing it leaves the garden exactly as it starts.
@@ -40,7 +40,12 @@ export function tools() {
         "or opening a bed and keeps climbing across a replant), and what " +
         "replanting right now would earn from that lifetime as a lasting " +
         "bonus (replantBonus — sublinear in the lifetime, so going further in " +
-        "one run is worth more than replanting early), the " +
+        "one run is worth more than replanting early), whether the garden is " +
+        "far enough along to be replanted at all (canReplant — false below the " +
+        "bed-of-seedlings wall, so a replant is only ever offered once the " +
+        "garden is flourishing), and the lasting bonus a replant has already " +
+        "earned (bonus — in growth per second, added flat to the rate the " +
+        "garden grows at, 0 before the first replant), the " +
         "season the garden's age falls in (season: its key, name and growth " +
         "multiplier — the cycle repeats on its own and no season grows slower " +
         "than the base rate), the " +
@@ -188,6 +193,38 @@ export function tools() {
           reason: result.reason,
           cost: result.cost,
           beds: result.beds,
+          state: getDisplayedState(),
+        };
+      },
+    },
+    {
+      name: "replant",
+      title: "Replant the garden for a lasting bonus",
+      description:
+        "Does what the page's Replant the garden button does, after the same " +
+        "confirmation: it starts a fresh garden — the same soil, one ungrown " +
+        "seed and one bed a first visit has — keeping the lifetime growth and " +
+        "the save, and sets a lasting bonus earned from that lifetime " +
+        "(replantBonus, added flat to the growth rate for every run after). " +
+        "get-state's canReplant says whether the garden is far enough along " +
+        "(false below the bed-of-seedlings wall) and what a replant would earn " +
+        "(replantBonus); a replant is only worth it once the fresh garden will " +
+        "pass the old wall faster than the first run did. It refuses, changing " +
+        "nothing at all, when the garden is not yet eligible — declining is " +
+        "exactly a no-op. Returns whether it replanted, the bonus it set, the " +
+        "lifetime growth kept, the reason when it refused, and the state " +
+        "afterwards.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      annotations: { readOnlyHint: false, consequentialHint: true },
+      example: {},
+      async execute() {
+        clearReturnMarks();
+        const result = replant();
+        return {
+          ok: result.ok,
+          reason: result.reason,
+          bonus: result.bonus,
+          lifetime: result.lifetime,
           state: getDisplayedState(),
         };
       },

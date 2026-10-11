@@ -3,8 +3,9 @@
  * Tend the soil action that starts the garden growing, the Plant a seed action
  * that spends that growth to grow faster, the next seed always shown as progress
  * and time away, the growth the garden has produced over its whole life beside
- * what a replant right now would earn from it, and a save the player can copy
- * out and load back.
+ * what a replant right now would earn from it, the Replant action that resets
+ * the run for a lasting bonus once the garden is flourishing, and a save the
+ * player can copy out and load back.
  *
  * The plot is drawn from the live growth number through one function —
  * `gardenForm` — that also names the form in words, so the picture and the text
@@ -22,6 +23,7 @@ import {
   SEED_KINDS,
   STORAGE_KEY,
   advance,
+  canReplant,
   decodeSave,
   elapsedSeconds,
   encodeSave,
@@ -35,6 +37,7 @@ import {
   plantSeed,
   pollinatorAt,
   readLastSeen,
+  replant,
   replantBonus,
   seasonAt,
   readStoredGarden,
@@ -104,6 +107,13 @@ const elements = {
   rate: document.getElementById("growth-rate"),
   lifetime: document.getElementById("lifetime-total"),
   replantBonus: document.getElementById("replant-bonus"),
+  bonus: document.getElementById("bonus-total"),
+  bonusRow: document.getElementById("bonus-row"),
+  replant: document.getElementById("replant"),
+  replantDialog: document.getElementById("replant-dialog"),
+  replantDialogBonus: document.getElementById("replant-dialog-bonus"),
+  replantConfirm: document.getElementById("replant-confirm"),
+  replantCancel: document.getElementById("replant-cancel"),
   form: document.querySelector('[data-field="form"]'),
   nextForm: document.querySelector('[data-field="next-form"]'),
   formMeter: document.getElementById("form-meter"),
@@ -226,15 +236,17 @@ function setText(element, text) {
  * they are the same values from the same place, never two sources to drift.
  */
 export function getDisplayedState() {
-  const { growth, rate, age, lifetime } = getGrowthState();
+  const { growth, rate, age, lifetime, bonus } = getGrowthState();
   return {
-    ...describeGardenState(getGarden(), growth, rate, age),
-    // The garden's whole history, and what replanting right now would earn from
-    // it. They live here rather than in `describeGardenState` because a
-    // rehearsal has no lifetime of its own: a sandbox describes one span of a
-    // garden, not a life.
+    ...describeGardenState(getGarden(), growth, rate, age, bonus),
+    // The garden's whole history, what replanting right now would earn from it,
+    // and the lasting bonus a replant has already earned. They live here rather
+    // than in `describeGardenState` because a rehearsal has no lifetime or bonus
+    // of its own: a sandbox describes one span of a garden, not a life.
     lifetimeGrowth: lifetime,
     replantBonus: replantBonus(lifetime),
+    bonus,
+    canReplant: canReplant(lifetime),
     save: exportSave(),
     away: lastReturn,
     // What the last return marked on the garden, so an agent sees the same
@@ -250,7 +262,7 @@ export function getDisplayedState() {
  * one. `garden` is `getGarden()`'s shape (or an equivalent), so a simulated
  * garden and the live one are described by one function and cannot disagree.
  */
-function describeGardenState(garden, growth, rate, age) {
+function describeGardenState(garden, growth, rate, age, bonus = 0) {
   const form = gardenForm(growth);
   const planted = garden.seeds + garden.plants;
   const plotFull = planted >= garden.capacity;
@@ -270,13 +282,14 @@ function describeGardenState(garden, growth, rate, age) {
     canPlant: !plotFull && growth >= kind.cost,
   }));
   // The season the age falls in and the visiting pollinator multiply what is
-  // displayed, but never the rate the garden keeps: `rate` is the boosted
-  // number a visitor reads, `baseRate` is the one that is saved and compounded,
-  // so each boost is applied once. Season and pollinator are added here just as
-  // the simulation adds their seconds, so the readout matches what it earns.
+  // displayed, but never the rate the garden keeps. The lasting bonus is part
+  // of that kept rate: it is added flat to the earned rate, so `baseRate` is
+  // the rate the garden actually grows at before a boost, and `rate` is the
+  // boosted number a visitor reads, applied once.
   const pollinator = pollinatorAt(age, garden.plants, kinds[1] ? kinds[1].plants : 0);
   const season = seasonAt(age);
-  const displayRate = rate * (season.multiplier + (pollinator.visiting ? POLLINATOR_BOOST - 1 : 0));
+  const baseRate = rate + bonus;
+  const displayRate = baseRate * (season.multiplier + (pollinator.visiting ? POLLINATOR_BOOST - 1 : 0));
   const goal = nextSeedGoal({ growth, plotFull, capacity: garden.capacity, kinds });
   const goalCost = goal ? goal.cost : kinds[0].cost;
   return {
@@ -288,7 +301,7 @@ function describeGardenState(garden, growth, rate, age) {
     plantCounts: kinds.map((kind) => kind.plants),
     growth,
     rate: displayRate,
-    baseRate: rate,
+    baseRate,
     age,
     season,
     pollinator,
@@ -530,10 +543,14 @@ export function clearReturnMarks() {
 export function applyReturn(saved, lastSeenMs, nowMs) {
   const seconds = elapsedSeconds(lastSeenMs, nowMs);
   const live = getGarden();
+  // The lasting bonus is part of the rate the absence grows at, so it travels
+  // into the simulation and back out again rather than being assumed zero.
+  const savedBonus = Number.isFinite(saved.bonus) && saved.bonus > 0 ? saved.bonus : 0;
   const start = {
     growth: saved.growth,
     rate: saved.rate,
     age: saved.age,
+    bonus: savedBonus,
     sprouts: live.sprouts,
     bloomSprouts: live.bloomSprouts,
     plantCounts: live.plantCounts,
@@ -547,7 +564,7 @@ export function applyReturn(saved, lastSeenMs, nowMs) {
   // exactly as played time is. A caller that never knew about lifetime (a bare
   // `{growth, rate}`) starts it at nothing rather than at `NaN`.
   const savedLifetime = Number.isFinite(saved.lifetime) && saved.lifetime > 0 ? saved.lifetime : 0;
-  setGrowth(after.growth, after.rate, after.age, savedLifetime + away.earned);
+  setGrowth(after.growth, after.rate, after.age, savedLifetime + away.earned, savedBonus);
   // `after.plants` is the total across both kinds, so the per-kind counts go
   // back in as `plantCounts` — passing the total as `plants` would double it.
   setGarden({
@@ -610,11 +627,12 @@ let sandbox = null;
 /** A copy of the live garden's state — the point a rehearsal runs forward from. */
 function gardenSnapshot() {
   const garden = getGarden();
-  const { growth, rate, age } = getGrowthState();
+  const { growth, rate, age, bonus } = getGrowthState();
   return {
     growth,
     rate,
     age,
+    bonus,
     sprouts: garden.sprouts,
     bloomSprouts: garden.bloomSprouts,
     plantCounts: garden.plantCounts,
@@ -644,7 +662,8 @@ function rehearseSandbox() {
     },
     end.growth,
     end.rate,
-    end.age
+    end.age,
+    end.bonus
   );
   const goal = describeNextGoal(display);
   sandbox.shown = {
@@ -723,7 +742,7 @@ export function loadGardenSave(text) {
   const garden = decodeSave(text);
   clearReturnMarks();
   setGarden(garden);
-  setGrowth(garden.growth, garden.rate, garden.age, garden.lifetime);
+  setGrowth(garden.growth, garden.rate, garden.age, garden.lifetime, garden.bonus);
   const persisted = writeStoredGarden(getGarden());
   writeLastSeen(Date.now());
   return { ok: true, persisted, state: getDisplayedState() };
@@ -894,6 +913,44 @@ function renderOpenBed(state) {
   button.disabled = !state.canOpenBed;
 }
 
+/**
+ * The Replant control and the lasting-bonus row: offered only once the garden
+ * is far enough along to earn a bonus, and the bonus row only once one exists,
+ * so a fresh garden is never shown a control that would trade work for nothing.
+ */
+function renderReplant(state) {
+  const button = elements.replant;
+  if (button) {
+    button.hidden = !state.canReplant;
+    setText(button, `Replant the garden — +${formatAmount(state.replantBonus)}/s bonus`);
+  }
+  if (elements.bonusRow) elements.bonusRow.hidden = !(state.bonus > 0);
+  setText(elements.bonus, `+${formatGrowth(state.bonus)}/s`);
+}
+
+/** Open the replant confirmation, stating what resets, what is kept and the bonus. */
+function openReplantDialog() {
+  const state = getDisplayedState();
+  if (!state.canReplant) return;
+  setText(elements.replantDialogBonus, `+${formatAmount(state.replantBonus)}/s`);
+  if (typeof elements.replantDialog?.showModal === "function") elements.replantDialog.showModal();
+}
+
+/** Replant the garden after the visitor confirms, and say what was kept. */
+function replantFromButton() {
+  const result = replant();
+  if (typeof elements.replantDialog?.close === "function") elements.replantDialog.close();
+  if (!result.ok) {
+    announce("The garden is not far enough along to replant yet.");
+    return;
+  }
+  persist();
+  announce(
+    `Replanted — the fresh garden grows at +${formatGrowth(result.bonus)}/s from its lasting bonus, and ` +
+      `${formatAmount(result.lifetime)} lifetime growth is kept.`
+  );
+}
+
 /** Plant one kind's seed from its button, and say what was planted. */
 function plantSeedFromButton(kind = "herb") {
   const result = plantSeed(kind);
@@ -967,6 +1024,7 @@ function render() {
   setText(elements.storage, state.storageAvailable ? "Yes" : "No");
   setText(elements.description, describePlot(state));
   renderPlanting(state);
+  renderReplant(state);
   renderSandbox(state);
   // Leave the field alone while the visitor is editing it; a re-render should
   // not erase a save they are about to paste.
@@ -1071,7 +1129,7 @@ function start() {
     const next = readStoredGarden();
     if (next.damaged) return;
     setGarden(next.garden);
-    setGrowth(next.garden.growth, next.garden.rate, next.garden.age, next.garden.lifetime);
+    setGrowth(next.garden.growth, next.garden.rate, next.garden.age, next.garden.lifetime, next.garden.bonus);
   });
 
   // Acting on the garden is noticing it: any of these clears the return marks.
@@ -1095,6 +1153,16 @@ function start() {
     openBedFromButton();
     persist();
   });
+  elements.replant?.addEventListener("click", () => {
+    // Opening the confirmation changes nothing by itself; only Replant now does.
+    openReplantDialog();
+  });
+  elements.replantConfirm?.addEventListener("click", () => {
+    clearReturnMarks();
+    replantFromButton();
+  });
+  // Keep growing (or Esc) is a pure no-op: it closes the dialog and nothing else.
+  elements.replantCancel?.addEventListener("click", () => elements.replantDialog?.close());
   elements.copy?.addEventListener("click", copySave);
   elements.load?.addEventListener("click", loadSave);
   elements.save?.addEventListener("input", () => announce(""));

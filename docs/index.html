@@ -38,6 +38,10 @@
 
             <button type="button" class="btn plant" id="open-bed" hidden>Open the next bed — 230 growth</button>
 
+            <!-- Offered only once the garden is far enough along to earn a
+                 lasting bonus, never before. -->
+            <button type="button" class="btn plant" id="replant" hidden>Replant the garden — +10/s bonus</button>
+
             <div class="goal">
               <p class="goal-title" id="goal-title">Plant herb seed — 6 growth</p>
               <div
@@ -72,6 +76,12 @@
                   <span id="lifetime-total" data-field="lifetime">0.0</span>
                   <span class="readout-rate" id="replant-bonus" data-field="replant-bonus">replant now +0</span>
                 </dd>
+              </div>
+              <!-- The lasting bonus a replant has earned, added flat to the
+                   growth rate. Shown only once a replant has happened. -->
+              <div class="readout-row" id="bonus-row" hidden>
+                <dt class="readout-term">Lasting bonus</dt>
+                <dd class="readout-value"><span id="bonus-total" data-field="bonus">+0.0/s</span></dd>
               </div>
               <div class="readout-row">
                 <dt class="readout-term">Garden form</dt>
@@ -250,5 +260,30 @@
     <footer class="foot">
       <p>Titles are set in Silkscreen, © 2001 The Silkscreen Project Authors; everything else in Pixelify Sans, © 2021 The Pixelify Sans Project Authors. Both are under the SIL Open Font License 1.1, and both ship inside this page rather than from a network.</p>
     </footer>
+
+    <!-- The replant confirmation. Plain DOM rows, not prose: it names what a
+         replant resets, what it keeps and the lasting bonus it earns, so
+         nothing is lost by accident. Keep growing (or Esc) changes nothing. -->
+    <dialog id="replant-dialog" class="panel replant-dialog" aria-labelledby="replant-dialog-title">
+      <h2 id="replant-dialog-title" class="panel-title">Replant the garden?</h2>
+      <dl class="replant-facts" aria-label="What a replant changes">
+        <div class="replant-fact">
+          <dt class="replant-fact-term">Resets</dt>
+          <dd class="replant-fact-value">Soil, seeds, plants, beds and current growth</dd>
+        </div>
+        <div class="replant-fact">
+          <dt class="replant-fact-term">Keeps</dt>
+          <dd class="replant-fact-value">The lasting bonus, lifetime growth and the save</dd>
+        </div>
+        <div class="replant-fact">
+          <dt class="replant-fact-term">Lasting bonus</dt>
+          <dd class="replant-fact-value" id="replant-dialog-bonus" data-field="replant-dialog-bonus">+10/s</dd>
+        </div>
+      </dl>
+      <div class="save-actions">
+        <button type="button" class="btn" id="replant-confirm">Replant now</button>
+        <button type="button" class="btn" id="replant-cancel">Keep growing</button>
+      </div>
+    </dialog>
   </body>
 </html>
