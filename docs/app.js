@@ -459,7 +459,7 @@ export function buildAwayReport(start, seconds) {
   const report = {
     seconds: Number.isFinite(seconds) && seconds > 0 ? seconds : 0,
     earned: after.growth - before.growth,
-    matured: after.plants + after.bloomPlants - (before.plants + before.bloomPlants),
+    matured: after.plants - before.plants,
     from: fromForm.index,
     fromName: fromForm.name,
     to: toForm.index,
@@ -468,12 +468,12 @@ export function buildAwayReport(start, seconds) {
     growth: after.growth,
     nextFormName: nextIndex < FORMS.length ? FORMS[nextIndex].name : null,
     growthToNextForm: Math.max(0, toForm.nextAt - after.growth),
-    nextSeedCost: nextSeedCost(after.sprouts.length + after.bloomSprouts.length + after.plants + after.bloomPlants),
+    nextSeedCost: nextSeedCost(after.sprouts.length + after.bloomSprouts.length + after.plants),
   };
   // Whether a pollinator is on the plot at the end of the span, so a return
   // that arrives during a visit can say so rather than only showing bigger
   // numbers.
-  report.pollinator = pollinatorAt(after.age, after.plants + after.bloomPlants, after.bloomPlants);
+  report.pollinator = pollinatorAt(after.age, after.plants, after.bloomPlants);
   // The season at each end, so a return that crossed a boundary can name it.
   report.fromSeason = seasonAt(before.age);
   report.toSeason = seasonAt(after.age);
@@ -548,10 +548,11 @@ export function applyReturn(saved, lastSeenMs, nowMs) {
   // `{growth, rate}`) starts it at nothing rather than at `NaN`.
   const savedLifetime = Number.isFinite(saved.lifetime) && saved.lifetime > 0 ? saved.lifetime : 0;
   setGrowth(after.growth, after.rate, after.age, savedLifetime + away.earned);
+  // `after.plants` is the total across both kinds, so the per-kind counts go
+  // back in as `plantCounts` — passing the total as `plants` would double it.
   setGarden({
     beds: start.beds,
-    plants: after.plants,
-    bloomPlants: after.bloomPlants,
+    plantCounts: after.plantCounts,
     sprouts: after.sprouts,
     bloomSprouts: after.bloomSprouts,
   });
@@ -634,7 +635,7 @@ function rehearseSandbox() {
   const display = describeGardenState(
     {
       seeds: end.sprouts.length + end.bloomSprouts.length,
-      plants: end.plants + end.bloomPlants,
+      plants: end.plants,
       sprouts: end.sprouts,
       bloomSprouts: end.bloomSprouts,
       plantCounts: end.plantCounts,
