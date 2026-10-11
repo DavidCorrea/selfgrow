@@ -2371,6 +2371,89 @@ function checkSeedGoalReadout(problems) {
 }
 
 /**
+ * The first goal points at the action that works right now: before the garden
+ * has a rate it names tending the soil and what one tend earns, and once growth
+ * is arriving it names the next seed, its cost and how long that will take.
+ */
+function checkFirstGoalNamesTending(problems) {
+  const titleEl = document.getElementById("goal-title");
+  const detailEl = document.getElementById("goal-detail");
+  if (!titleEl || !detailEl) {
+    problems.push("the page has no goal block (expected #goal-title and #goal-detail).");
+    return;
+  }
+
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  try {
+    // A fresh visit: a seed in the soil, nothing grown, no rate yet.
+    setGarden(newGarden());
+    setGrowth(0, 0);
+    const freshTitle = String(titleEl.textContent);
+    if (!/tend/i.test(freshTitle)) {
+      problems.push(
+        `at zero growth and no rate the goal title is ${JSON.stringify(freshTitle)}, ` +
+          `expected it to name tending the soil.`
+      );
+    }
+    if (/plant/i.test(freshTitle)) {
+      problems.push(
+        `at zero growth and no rate the goal title is ${JSON.stringify(freshTitle)}, ` +
+          `expected the unreachable seed not to be named yet.`
+      );
+    }
+    const earned = `+${formatAmount(TEND_YIELD)} growth`;
+    const earnedRate = `+${formatGrowth(TEND_RATE_STEP)}/s`;
+    if (!freshTitle.includes(earned) || !freshTitle.includes(earnedRate)) {
+      problems.push(
+        `at zero growth and no rate the goal title does not state what one tend earns (${earned}, ${earnedRate}): ` +
+          `${JSON.stringify(freshTitle)}`
+      );
+    }
+    const freshDetail = String(detailEl.textContent);
+    if (!/tend/i.test(freshDetail) || !freshDetail.includes(earned) || !freshDetail.includes(earnedRate)) {
+      problems.push(
+        `at zero growth and no rate the goal detail does not name tending and what it earns ` +
+          `(${earned}, ${earnedRate}): ${JSON.stringify(freshDetail)}`
+      );
+    }
+
+    // Growth arriving: the goal is the next seed, its cost and the time to it.
+    setGarden(newGarden());
+    setGrowth(0, 1);
+    const state = getDisplayedState();
+    const growingTitle = String(titleEl.textContent);
+    if (state.nextSeedKind && !growingTitle.toLowerCase().includes(state.nextSeedKind)) {
+      problems.push(
+        `with a rate of 1/s the goal title is ${JSON.stringify(growingTitle)}, ` +
+          `expected it to name the ${state.nextSeedKind} seed.`
+      );
+    }
+    if (!growingTitle.includes(formatAmount(state.nextSeedCost))) {
+      problems.push(
+        `with a rate of 1/s the goal title ${JSON.stringify(growingTitle)} does not state its ` +
+          `${state.nextSeedCost}-growth cost.`
+      );
+    }
+    const growingDetail = String(detailEl.textContent);
+    if (!growingDetail.includes(formatAmount(state.nextSeedCost))) {
+      problems.push(
+        `with a rate of 1/s the goal does not state the ${state.nextSeedCost}-growth cost: ` +
+          `${JSON.stringify(growingDetail)}`
+      );
+    }
+    if (!/\d+s\b/.test(growingDetail)) {
+      problems.push(
+        `with a rate of 1/s the goal does not say how long the seed is away: ${JSON.stringify(growingDetail)}`
+      );
+    }
+  } finally {
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+  }
+}
+
+/**
  * The page says how long until the next plant matures, and it matches the
  * soonest sprout in the soil — an agent and a visitor read the same number.
  */
@@ -5016,6 +5099,7 @@ export async function checks() {
     checkPlantingSpendsAndRaisesProduction(problems);
     checkBloomPlanting(problems);
     checkSeedGoalReadout(problems);
+    checkFirstGoalNamesTending(problems);
     checkNextPlantReadout(problems);
     checkBedProgression(problems);
     checkLargeCounts(problems);
