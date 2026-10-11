@@ -70,6 +70,16 @@ export const SEED_KINDS = Object.freeze([
 export const GROW_SECONDS = SEED_KINDS[0].growSeconds;
 
 /**
+ * How long the one seed a fresh garden starts with takes to mature.
+ *
+ * Shorter than the herb kind's growing time on purpose: a first visit should
+ * see the garden begin on its own within seconds rather than wait out a full
+ * kind. It is the starter's own timer, so the herb kind's pace — and every save
+ * that planted one — is unchanged.
+ */
+export const STARTING_GROW_SECONDS = 3;
+
+/**
  * How often a pollinator can visit, how long each visit lasts, and how much
  * faster the garden grows while one stays. A visit is the last slice of each
  * cycle, so a garden that has just been planted waits before its first visitor
@@ -89,9 +99,15 @@ export const POLLINATOR_BLOOM_VISIT_SECONDS = 10;
 /** The longest a visit can stretch, however many blooms a garden holds. */
 export const POLLINATOR_VISIT_MAX_SECONDS = 150;
 
-/** Bare soil, one bed of it, and one ungrown seed. */
+/** Bare soil, one bed of it, and one ungrown starter seed. */
 export function newGarden() {
-  return { version: SAVE_VERSION, seeds: 1, plants: 0, beds: 1 };
+  return {
+    version: SAVE_VERSION,
+    seeds: 1,
+    plants: 0,
+    beds: 1,
+    sprouts: [STARTING_GROW_SECONDS],
+  };
 }
 
 /**
@@ -501,7 +517,7 @@ export function elapsedSeconds(lastSeenMs, nowMs) {
 // read the same; the second kind adds `bloomSprouts`/`bloomPlants`.
 let garden = {
   version: SAVE_VERSION,
-  sprouts: [GROW_SECONDS],
+  sprouts: [STARTING_GROW_SECONDS],
   plants: 0,
   bloomSprouts: [],
   bloomPlants: 0,

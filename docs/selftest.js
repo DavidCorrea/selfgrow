@@ -34,6 +34,7 @@ import {
   SEED_COST_BASE,
   SEED_COST_RATE,
   SEED_KINDS,
+  STARTING_GROW_SECONDS,
   STORAGE_KEY,
   TEND_RATE_STEP,
   TEND_YIELD,
@@ -335,6 +336,57 @@ function checkStartState(problems) {
     problems.push(
       `a first visit with nothing saved should open the starting garden (1 bed, 1 seed, 0 plants), ` +
       `but it opened ${garden.beds} bed(s), ${garden.seeds} seed(s) and ${garden.plants} plant(s).`
+    );
+  }
+}
+
+/**
+ * A fresh garden has to be alive from the first frame: its starter seed matures
+ * within seconds, so growth and the rate both move without the visitor waiting
+ * on anything, and the garden leaves bare soil well inside the first half
+ * minute. Pure: it only reads `newGarden` and the simulation, so it cannot
+ * disturb the live garden.
+ */
+function checkFreshGardenStartsGrowing(problems) {
+  const start = newGarden();
+  const starterTimers = Array.isArray(start.sprouts) ? start.sprouts : [];
+  if (starterTimers.length !== 1 || !(starterTimers[0] > 0 && starterTimers[0] <= 5)) {
+    problems.push(
+      `a fresh garden should start with one seed maturing within 5s, but its sprout timers are ` +
+        `${JSON.stringify(start.sprouts)}.`
+    );
+  }
+
+  // The starter is shorter than the herb kind on purpose; the kind's own pace
+  // must not change, so every planted herb seed and every existing save keeps it.
+  const herb = SEED_KINDS[0];
+  if (herb.growSeconds !== GROW_SECONDS || !(STARTING_GROW_SECONDS < herb.growSeconds)) {
+    problems.push(
+      `the starter seed should mature faster than the herb kind while the kind keeps its ` +
+        `${GROW_SECONDS}s, but the starter is ${STARTING_GROW_SECONDS}s and the herb kind is ${herb.growSeconds}s.`
+    );
+  }
+
+  const afterFive = simulateGarden(newGarden(), 5);
+  if (!(afterFive.rate > 0)) {
+    problems.push(
+      `five seconds into a fresh garden the rate is still ${afterFive.rate}/s; the starter seed should have ` +
+        `matured and started it rising.`
+    );
+  }
+  if (!(afterFive.growth > 0)) {
+    problems.push(
+      `five seconds into a fresh garden growth is still ${afterFive.growth}; the garden should have earned ` +
+        `something on its own.`
+    );
+  }
+
+  const afterThirty = simulateGarden(newGarden(), 30);
+  const form = gardenForm(afterThirty.growth);
+  if (!(form.index >= 1)) {
+    problems.push(
+      `half a minute into a fresh garden it is still "${form.name}" (form ${form.index}); it should have ` +
+        `moved off bare soil into its first named form.`
     );
   }
 }
@@ -1671,6 +1723,14 @@ function checkTendAnswersImmediately(problems) {
     if (shown !== after.growth) {
       problems.push(
         `after pressing Tend the page shows ${JSON.stringify(total.textContent)} growth, but the garden holds ${after.growth}.`
+      );
+    }
+    // The rate the tap earned is on the same screen at once, not one tick later.
+    const rateText = String(document.getElementById("growth-rate")?.textContent ?? "").trim();
+    if (rateText !== `+${formatGrowth(after.rate)}/s`) {
+      problems.push(
+        `right after pressing Tend the page shows the growth rate as ${JSON.stringify(rateText)}, ` +
+          `but the garden holds +${formatGrowth(after.rate)}/s.`
       );
     }
   } finally {
@@ -3928,6 +3988,7 @@ export async function checks() {
     checkGrowthIsBoundedAndFinite(problems);
 
     checkStartState(problems);
+    checkFreshGardenStartsGrowing(problems);
     checkSaveCodec(problems);
     checkSaveCarriesGrowth(problems);
     checkOfflineTime(problems);
