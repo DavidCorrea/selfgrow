@@ -47,8 +47,9 @@ export function tools() {
         "earned (bonus — in growth per second, added flat to the rate the " +
         "garden grows at, 0 before the first replant), the " +
         "season the garden's age falls in (season: its key, name and growth " +
-        "multiplier — the cycle repeats on its own and no season grows slower " +
-        "than the base rate), the " +
+        "multiplier — the cycle repeats on its own, no season grows slower " +
+        "than the base rate, and the season readout names the kind the year " +
+        "is favouring now, if any), the " +
         "pollinator's visit (pollinator: visiting, its multiplier, how long the " +
         "visit lasts in seconds (visitSeconds), the visit a garden with no " +
         "blooms keeps (baseVisitSeconds), and how many grown blooms are " +
@@ -72,8 +73,11 @@ export function tools() {
         "`kinds`, herb first: each entry carries the kind's name (key), the " +
         "price of its next seed (cost), how much one grown plant adds to the " +
         "growth rate (production), how long its sprouts take (growSeconds), " +
-        "how many of its seeds are ungrown and how many plants are grown, and " +
-        "whether the garden can afford it now (canPlant). It also returns the " +
+        "the season it thrives in (bestSeason) and its own growth boost right " +
+        "now (seasonMultiplier — its seasonBoost in its best season and 1 the " +
+        "rest of the year), how many of its seeds are ungrown and how many " +
+        "plants are grown, and whether the garden can afford it now " +
+        "(canPlant). It also returns the " +
         "next seed the goal panel names (nextSeedKind) and what it costs " +
         "(nextSeedCost), whether the garden can afford it now (canPlantSeed), " +
         "whether the plot is full (plotFull), how far along the cost the " +

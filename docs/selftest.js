@@ -47,6 +47,7 @@ import {
   getGarden,
   getGrowthState,
   kindIndex,
+  kindSeasonMultiplier,
   newGarden,
   nextBedCost,
   nextSeedCost,
@@ -2670,6 +2671,21 @@ function seasonWeightSecondsByBruteForce(ageSeconds, spanSeconds) {
 }
 
 /**
+ * One kind's own season multipliers seen over a span, summed second by second —
+ * an independent count of the per-kind schedule `simulateGarden` closes into one
+ * calculation, so a kind's boost is checked against the season it actually
+ * falls in rather than against the closed form's arithmetic.
+ */
+function kindSeasonWeightSecondsByBruteForce(kindIndex, ageSeconds, spanSeconds) {
+  let total = 0;
+  for (let offset = 0; offset < spanSeconds; offset += 1) {
+    const season = seasonAt(ageSeconds + offset + 0.5);
+    total += season.multiplier * kindSeasonMultiplier(kindIndex, season.key);
+  }
+  return total;
+}
+
+/**
  * Elapsed time is counted, not invented: a missing or backdated span grows
  * nothing, a month in one step equals thirty daily steps, and no cap eats a long
  * absence.
@@ -3224,7 +3240,149 @@ function checkSeason(problems) {
       problems.push(`the season readout says ${JSON.stringify(row.textContent)}, expected it to name spring.`);
     }
 
-    // A return that crosses a season boundary reports both seasons.
+    // Each kind thrives in its own season: its own multiplier is its boost in
+    // that season and the neutral 1 the rest of the year. The two kinds thrive
+    // in different seasons, so the year moves which seed is worth planting.
+    const bestSeasons = SEED_KINDS.map((kind) => kind.bestSeason);
+    if (bestSeasons.filter(Boolean).length !== SEED_KINDS.length) {
+      problems.push(`every seed kind needs a bestSeason, but they are ${JSON.stringify(bestSeasons)}.`);
+    }
+    if (new Set(bestSeasons).size < 2) {
+      problems.push(
+        `the kinds share a best season (${JSON.stringify(bestSeasons)}), so the year never changes which seed is ` +
+          "worth planting."
+      );
+    }
+    const kindSeasonCases = [
+      [0, "spring", 2],
+      [0, "summer", 1],
+      [0, "winter", 1],
+      [1, "summer", 2],
+      [1, "spring", 1],
+      [1, "autumn", 1],
+    ];
+    for (const [index, key, expected] of kindSeasonCases) {
+      const got = kindSeasonMultiplier(index, key);
+      if (got !== expected) {
+        problems.push(
+          `kindSeasonMultiplier(${index}, ${key}) is ${got}, expected ${expected}; a kind is only boosted in its ` +
+            "best season and never below its base outside it."
+        );
+      }
+    }
+
+    const seasonAges = {
+      winter: 0,
+      spring: SEASON_SECONDS,
+      summer: SEASON_SECONDS * 2,
+      autumn: SEASON_SECONDS * 3,
+    };
+    const seasonMultiplierOf = (key) => SEASONS.find((season) => season.key === key).multiplier;
+
+    // Measured with the kept rate at zero, so only a kind's own season term
+    // shows and the pollinator (which multiplies that zero) contributes nothing.
+    const kindSeasonEarn = (kindIndex, ageSeconds, spanSeconds) =>
+      simulateGarden(
+        {
+          growth: 0,
+          rate: 0,
+          bonus: 0,
+          plantCounts: kindIndex === 0 ? [1, 0] : [0, 1],
+          beds: 1,
+          age: ageSeconds,
+        },
+        spanSeconds
+      ).growth;
+    for (const [kindIndex, key] of [[0, "spring"], [1, "summer"]]) {
+      const inBest = kindSeasonEarn(kindIndex, seasonAges[key], SEASON_SECONDS);
+      const inWinter = kindSeasonEarn(kindIndex, seasonAges.winter, SEASON_SECONDS);
+      if (!(inBest > inWinter)) {
+        problems.push(
+          `the ${SEED_KINDS[kindIndex].name} earns ${inBest} in ${key} but ${inWinter} in winter; its best season ` +
+            "must earn it more."
+        );
+      }
+    }
+    const herbOutside = kindSeasonEarn(0, seasonAges.summer, SEASON_SECONDS);
+    const bloomOutside = kindSeasonEarn(1, seasonAges.spring, SEASON_SECONDS);
+    if (herbOutside !== 0 || bloomOutside !== 0) {
+      problems.push(
+        `a kind outside its best season added ${herbOutside} (herb, summer) / ${bloomOutside} (bloom, spring) on ` +
+          "top of the shared rate, expected the neutral 0 — no season may slow a kind below its base."
+      );
+    }
+
+    // The per-kind closed form matches an independent second-by-second count of
+    // the kind's own schedule above the shared one, over a span crossing a
+    // season boundary.
+    const crossAge = SEASON_SECONDS - 100;
+    const crossSpan = SEASON_SECONDS * 2;
+    const herbClosed = kindSeasonEarn(0, crossAge, crossSpan);
+    const herbCounted =
+      SEED_KINDS[0].production *
+      (kindSeasonWeightSecondsByBruteForce(0, crossAge, crossSpan) -
+        seasonWeightSecondsByBruteForce(crossAge, crossSpan));
+    const herbTolerance = Math.max(1e-6, herbCounted * 1e-9);
+    if (Math.abs(herbClosed - herbCounted) > herbTolerance) {
+      problems.push(
+        `the herb's season term over ${crossSpan}s gave ${herbClosed} growth, but counting its schedule second by ` +
+          `second gave ${herbCounted}.`
+      );
+    }
+
+    // The displayed rate and each kind's seasonMultiplier follow the kind's own
+    // season: boosted in its best season, the plain base outside it.
+    setGarden({ seeds: 0, plantCounts: [1, 0], beds: 1 });
+    setGrowth(0, SEED_KINDS[0].production, seasonAges.spring);
+    const herbSpringState = getDisplayedState();
+    const herbSpringMultipliers = herbSpringState.kinds.map((kind) => kind.seasonMultiplier);
+    if (herbSpringMultipliers[0] !== 2 || herbSpringMultipliers[1] !== 1) {
+      problems.push(
+        `in spring the kinds report seasonMultiplier ${JSON.stringify(herbSpringMultipliers)}, expected herb 2 and bloom 1.`
+      );
+    }
+    const herbSpringRate = SEED_KINDS[0].production * seasonMultiplierOf("spring") * 2;
+    if (Math.abs(herbSpringState.rate - herbSpringRate) > 1e-9) {
+      problems.push(
+        `one herb in spring shows ${herbSpringState.rate}/s, expected its x2 boost on the season's ${herbSpringRate}/s.`
+      );
+    }
+    if (row && !/herb/i.test(String(row.textContent))) {
+      problems.push(`the spring season readout says ${JSON.stringify(row.textContent)}, expected it to name herb.`);
+    }
+
+    setGarden({ seeds: 0, plantCounts: [0, 1], beds: 1 });
+    setGrowth(0, SEED_KINDS[1].production, seasonAges.summer + 90); // outside the visit window
+    const bloomSummerState = getDisplayedState();
+    if (bloomSummerState.kinds[1].seasonMultiplier !== 2 || bloomSummerState.kinds[0].seasonMultiplier !== 1) {
+      problems.push(
+        `in summer the kinds report seasonMultiplier ${JSON.stringify(bloomSummerState.kinds.map((k) => k.seasonMultiplier))}, ` +
+          "expected bloom 2 and herb 1."
+      );
+    }
+    const bloomSummerRate = SEED_KINDS[1].production * seasonMultiplierOf("summer") * 2;
+    if (Math.abs(bloomSummerState.rate - bloomSummerRate) > 1e-9) {
+      problems.push(
+        `one bloom in summer shows ${bloomSummerState.rate}/s, expected its x2 boost on the season's ${bloomSummerRate}/s.`
+      );
+    }
+    if (row && !/bloom/i.test(String(row.textContent))) {
+      problems.push(`the summer season readout says ${JSON.stringify(row.textContent)}, expected it to name bloom.`);
+    }
+
+    // Outside its best season a kind is back to the plain base rate.
+    setGarden({ seeds: 0, plantCounts: [1, 0], beds: 1 });
+    setGrowth(0, SEED_KINDS[0].production, seasonAges.winter);
+    const herbWinterState = getDisplayedState();
+    if (herbWinterState.kinds[0].seasonMultiplier !== 1 || herbWinterState.rate !== SEED_KINDS[0].production) {
+      problems.push(
+        `a herb in winter reports multiplier ${herbWinterState.kinds[0].seasonMultiplier} and ${herbWinterState.rate}/s, ` +
+          `expected the plain 1 and ${SEED_KINDS[0].production}/s.`
+      );
+    }
+
+    // A return that crosses a season boundary reports both seasons, and names
+    // the kind whose own growth changed with it.
     const away = buildAwayReport(
       { growth: 0, rate: 1, sprouts: [], plants: 0, beds: 1, age: SEASON_SECONDS - 100 },
       SEASON_SECONDS
@@ -3237,6 +3395,37 @@ function checkSeason(problems) {
     }
     if (!/winter/i.test(away.summary) || !/spring/i.test(away.summary)) {
       problems.push(`the return summary does not name the season it crossed: "${away.summary}"`);
+    }
+    if (!Array.isArray(away.seasonChangedKinds) || away.seasonChangedKinds.join(",") !== "herb") {
+      problems.push(
+        `a return from winter into spring reported seasonChangedKinds ${JSON.stringify(away.seasonChangedKinds)}, ` +
+          "expected herb alone."
+      );
+    }
+    if (!/herb/i.test(away.summary)) {
+      problems.push(`the return summary does not name the kind whose growth changed: "${away.summary}"`);
+    }
+
+    // Spring into summer hands the boost from herb to bloom; the return names
+    // bloom as the kind whose growth changed.
+    const handover = buildAwayReport(
+      { growth: 0, rate: 1, sprouts: [], plants: 0, beds: 1, age: SEASON_SECONDS * 2 - 100 },
+      SEASON_SECONDS
+    );
+    if (handover.fromSeason?.key !== "spring" || handover.toSeason?.key !== "summer") {
+      problems.push(
+        `a return from spring across the boundary reported from ${handover.fromSeason?.key} to ${handover.toSeason?.key}, ` +
+          "expected spring into summer."
+      );
+    }
+    if (!(handover.seasonChangedKinds ?? []).includes("bloom")) {
+      problems.push(
+        `a return from spring into summer reported seasonChangedKinds ${JSON.stringify(handover.seasonChangedKinds)}, ` +
+          "expected it to name bloom."
+      );
+    }
+    if (!/bloom/i.test(handover.summary)) {
+      problems.push(`the spring-into-summer return summary does not name bloom: "${handover.summary}"`);
     }
   } finally {
     setGarden(gardenBefore);
@@ -3351,9 +3540,14 @@ function checkReturnSummary(problems) {
     // the simulation does, on top of the pollinator's extra seconds.
     const seasonEarly = seasonWeightSecondsByBruteForce(0, GROW_SECONDS);
     const seasonRest = seasonWeightSecondsByBruteForce(GROW_SECONDS, 30 * DAY - GROW_SECONDS);
+    // Every plant is herb, and the year lifts herb above the shared rate in
+    // spring, so the rest stretch is counted on the herb's own schedule as well
+    // as the shared one. The early stretch has no grown plant yet to lift.
+    const herbWeightedRest = kindSeasonWeightSecondsByBruteForce(0, GROW_SECONDS, 30 * DAY - GROW_SECONDS);
     const expectedEarned =
       0.5 * (seasonEarly + (POLLINATOR_BOOST - 1) * visitSecondsEarly) +
-      1.5 * (seasonRest + (POLLINATOR_BOOST - 1) * visitSecondsRest);
+      1.5 * (seasonRest + (POLLINATOR_BOOST - 1) * visitSecondsRest) +
+      1.5 * (herbWeightedRest - seasonRest);
     const tolerance = Math.max(1e-6, expectedEarned * 1e-9);
     if (Math.abs(away.earned - expectedEarned) > tolerance) {
       problems.push(`after 30 days away the garden earned ${away.earned} growth, expected ${expectedEarned}.`);
