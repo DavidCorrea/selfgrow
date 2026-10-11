@@ -141,6 +141,7 @@ const elements = {
   plot: document.getElementById("garden-plot"),
   description: document.getElementById("plot-description"),
   returnSummary: document.getElementById("return-summary"),
+  gardenStatus: document.getElementById("garden-status"),
   returnMarks: document.querySelector('[data-field="return-marks"]'),
   returnMarksRow: document.getElementById("return-marks-row"),
   save: document.getElementById("save-value"),
@@ -602,15 +603,22 @@ export function applyReturn(saved, lastSeenMs, nowMs) {
   // exactly as played time is. A caller that never knew about lifetime (a bare
   // `{growth, rate}`) starts it at nothing rather than at `NaN`.
   const savedLifetime = Number.isFinite(saved.lifetime) && saved.lifetime > 0 ? saved.lifetime : 0;
-  setGrowth(after.growth, after.rate, after.age, savedLifetime + away.earned, savedBonus);
-  // `after.plants` is the total across both kinds, so the per-kind counts go
-  // back in as `plantCounts` — passing the total as `plants` would double it.
-  setGarden({
-    beds: start.beds,
-    plantCounts: after.plantCounts,
-    sprouts: after.sprouts,
-    bloomSprouts: after.bloomSprouts,
-  });
+  // The absence lands all at once: record where it lands without announcing
+  // every form and goal it crossed, then say the return once as one line.
+  announcementsSuppressed = true;
+  try {
+    setGrowth(after.growth, after.rate, after.age, savedLifetime + away.earned, savedBonus);
+    // `after.plants` is the total across both kinds, so the per-kind counts go
+    // back in as `plantCounts` — passing the total as `plants` would double it.
+    setGarden({
+      beds: start.beds,
+      plantCounts: after.plantCounts,
+      sprouts: after.sprouts,
+      bloomSprouts: after.bloomSprouts,
+    });
+  } finally {
+    announcementsSuppressed = false;
+  }
 
   lastReturn = away;
   // Mark what the absence changed until the visitor notices, then let it clear
@@ -619,7 +627,9 @@ export function applyReturn(saved, lastSeenMs, nowMs) {
   if (returnMarkTimer !== null) clearTimeout(returnMarkTimer);
   returnMarkTimer = returnMarks ? setTimeout(clearReturnMarks, RETURN_MARK_MS) : null;
   showReturnSummary(away);
+  lastAnnounced = null;
   render();
+  announceEvent(returnAnnouncement(away));
   return away;
 }
 
@@ -789,6 +799,22 @@ export function loadGardenSave(text) {
 
 function announce(message) {
   setText(elements.status, message);
+}
+
+/**
+ * The one place the garden speaks a discrete event — a new form reached, a goal
+ * now affordable, a pollinator arriving, a return. Kept apart from the per-tick
+ * readout so a screen reader hears what happened once, never the numbers
+ * climbing several times a second.
+ */
+function announceEvent(message) {
+  if (!message) return;
+  setText(elements.gardenStatus, message);
+}
+
+/** What the garden last said out loud, so a check can read the announcement. */
+export function getAnnouncement() {
+  return elements.gardenStatus ? elements.gardenStatus.textContent : "";
 }
 
 /**
@@ -1037,6 +1063,83 @@ function plotIsLiving(state) {
   return state.seeds + state.plants > 0 || Boolean(state.pollinator && state.pollinator.visiting);
 }
 
+/** The announce snapshot as of the last render, and whether this render is part
+ * of a bulk jump (a return) that must land without announcing every milestone
+ * it crossed. The first render records its snapshot silently. */
+let lastAnnounced = null;
+let announcementsSuppressed = false;
+
+/**
+ * The part of the garden's state that can change what the garden says out loud:
+ * the form it is in, the goals it can now afford, and whether a pollinator is
+ * visiting. Everything else — the growth total, the rate, the meters — changes
+ * every tick and is never announced, so a screen reader is told what happened
+ * rather than the same climbing numbers over and over.
+ *
+ * Pure, and small on purpose: two snapshots of it are compared to find the
+ * discrete events that happened between them.
+ */
+export function announceSnapshot(state) {
+  const pollinator = state.pollinator;
+  return {
+    form: state.form,
+    formName: state.formName,
+    canPlantSeed: Boolean(state.canPlantSeed),
+    canOpenBed: Boolean(state.canOpenBed),
+    nextSeedKind: state.nextSeedKind,
+    nextSeedCost: state.nextSeedCost,
+    beds: state.beds,
+    nextBedCost: state.nextBedCost,
+    pollinatorVisiting: Boolean(pollinator && pollinator.visiting),
+    pollinatorMultiplier: pollinator ? pollinator.multiplier : 1,
+  };
+}
+
+/**
+ * The discrete events that happened between two announce snapshots, one short
+ * label-and-value line each, in the order they matter: a new form, a goal the
+ * garden can now afford, then a pollinator arriving. `prev` null is a fresh
+ * load with nothing to compare, and no change means nothing to say — which is
+ * what keeps the per-tick numbers out of a screen reader's ear.
+ *
+ * Pure, so a check can hand it snapshots directly.
+ *
+ * @returns {Array<{key: string, text: string}>}
+ */
+export function describeAnnouncements(prev, next) {
+  if (!prev || !next) return [];
+  const events = [];
+  if (next.form !== prev.form) {
+    events.push({ key: "form", text: `New garden form · ${next.formName}` });
+  }
+  if (!prev.canPlantSeed && next.canPlantSeed) {
+    events.push({
+      key: "seed-goal",
+      text: `Goal reached · Plant ${next.nextSeedKind} seed — ${formatAmount(next.nextSeedCost)} growth`,
+    });
+  }
+  if (!prev.canOpenBed && next.canOpenBed) {
+    events.push({
+      key: "bed-goal",
+      text: `Open bed #${formatAmount(next.beds + 1)} — ${formatAmount(next.nextBedCost)} growth`,
+    });
+  }
+  if (!prev.pollinatorVisiting && next.pollinatorVisiting) {
+    events.push({ key: "pollinator", text: `Pollinator visiting · x${next.pollinatorMultiplier} growth` });
+  }
+  return events;
+}
+
+/**
+ * A return as one short line: what the absence earned and the form the garden
+ * is in now. Empty for a gap too short to be an absence, so a reload says
+ * nothing rather than reading a stale welcome-back.
+ */
+export function returnAnnouncement(away) {
+  if (!away || !(away.seconds >= MIN_AWAY_SECONDS)) return "";
+  return `Return · ${formatGrowth(away.earned)} growth · now ${away.form}`;
+}
+
 function render() {
   // A hidden tab still keeps the garden growing (the timer derives growth from
   // elapsed time), but there is nobody to see it redraw.
@@ -1072,6 +1175,15 @@ function render() {
   if (elements.save && document.activeElement !== elements.save) {
     elements.save.value = state.save;
   }
+
+  // Speak only the discrete events since the last render; the numbers above
+  // change every tick and are for a sighted player to watch, not to hear.
+  const snapshot = announceSnapshot(state);
+  if (!announcementsSuppressed) {
+    const events = describeAnnouncements(lastAnnounced, snapshot);
+    if (events.length) announceEvent(events.map((event) => event.text).join(" · "));
+  }
+  lastAnnounced = snapshot;
 
   // The picture follows the growth, not the stored garden, so it redraws when
   // the amount, the form it falls in, the kinds on the plot or the season

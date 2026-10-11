@@ -21,7 +21,12 @@
     <main id="main" class="stage">
       <section class="panel garden-panel" aria-labelledby="garden-heading">
         <h2 id="garden-heading" class="panel-title">The garden</h2>
-        <p class="panel-note" id="return-summary" role="status" hidden></p>
+        <p class="panel-note" id="return-summary" role="note" hidden></p>
+        <!-- The one place the garden speaks a discrete event — a goal reached,
+             a new form, a pollinator arriving, a return. Kept visually hidden
+             and apart from the per-tick readout, so a screen reader hears what
+             happened once each instead of the climbing numbers every tick. -->
+        <p class="sr-only" id="garden-status" role="status" aria-live="polite"></p>
 
         <div class="garden-layout">
           <div class="garden-view">
@@ -62,7 +67,7 @@
               <div class="readout-row">
                 <dt class="readout-term">Growth</dt>
                 <dd class="readout-value readout-growth">
-                  <span id="growth-total" data-field="growth" aria-live="polite">0.0</span>
+                  <span id="growth-total" data-field="growth">0.0</span>
                   <span class="readout-rate" id="growth-rate">+0.0/s</span>
                 </dd>
               </div>
@@ -85,7 +90,7 @@
               </div>
               <div class="readout-row">
                 <dt class="readout-term">Garden form</dt>
-                <dd class="readout-value" data-field="form" aria-live="polite">bare soil</dd>
+                <dd class="readout-value" data-field="form">bare soil</dd>
                 <!-- The form the garden is becoming shares this line, so the
                      goal is visible without taking a row of the one screen. -->
                 <dd class="readout-next">

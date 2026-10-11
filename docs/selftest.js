@@ -71,19 +71,23 @@ import {
 } from "./garden.js";
 import {
   MIN_AWAY_SECONDS,
+  announceSnapshot,
   applyReturn,
   buildAwayReport,
   clearReturnMarks,
+  describeAnnouncements,
   exportSave,
   fastForwardSandbox,
   formatAmount,
   formatGrowth,
+  getAnnouncement,
   getDisplayedState,
   getSandboxState,
   loadGardenSave,
   openSandbox,
   readPalette,
   resetSandbox,
+  returnAnnouncement,
   returnMarkFor,
   summarizeReturn,
 } from "./app.js";
@@ -3845,6 +3849,193 @@ function checkReturnMarks(problems) {
 }
 
 /**
+ * A screen reader is told what happened, not the same numbers over and over.
+ * The per-tick readouts (the growth total, the garden form) are out of every
+ * live region, and the one polite status region speaks only the discrete
+ * events: a new form, a goal now affordable, a pollinator arriving, a return.
+ * The transitions are pure and tested directly, so the anti-flood promise holds
+ * without watching a clock.
+ */
+function checkLiveAnnouncements(problems) {
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const storageBefore = rawStorage();
+  const DAY = 86400;
+
+  // No per-tick readout may live in a live region, directly or through an
+  // ancestor, or a screen reader is read it every TICK_MS.
+  for (const [label, selector] of [
+    ["the growth total", "#growth-total"],
+    ["the garden form", '[data-field="form"]'],
+  ]) {
+    const el = document.querySelector(selector);
+    if (!el) {
+      problems.push(`${label} (${selector}) is gone, so its announcement behavior cannot be checked.`);
+      continue;
+    }
+    if (el.hasAttribute("aria-live")) {
+      problems.push(
+        `${label} (${selector}) still carries aria-live=${JSON.stringify(el.getAttribute("aria-live"))}, ` +
+          "so a screen reader is read its every tick."
+      );
+    }
+    for (let ancestor = el.parentElement; ancestor; ancestor = ancestor.parentElement) {
+      const role = ancestor.getAttribute("role");
+      if (ancestor.hasAttribute("aria-live") || role === "status" || role === "alert" || role === "log") {
+        problems.push(
+          `${label} (${selector}) sits inside a live region (${describe(ancestor, "element")}), ` +
+            "so its every tick is spoken."
+        );
+        break;
+      }
+    }
+  }
+
+  // The single event region: a polite status that a sighted visitor never sees
+  // and never takes a line of the screen.
+  const status = document.getElementById("garden-status");
+  if (!status) {
+    problems.push("the page has no garden-status region (#garden-status) to announce discrete events once each.");
+  } else {
+    const role = status.getAttribute("role");
+    const live = status.getAttribute("aria-live");
+    if (role !== "status" || live !== "polite") {
+      problems.push(
+        `#garden-status is role=${JSON.stringify(role)} aria-live=${JSON.stringify(live)}, expected a polite status region.`
+      );
+    }
+    const rect = status.getBoundingClientRect();
+    if (rect.width > 1 || rect.height > 1) {
+      problems.push("#garden-status takes visible space; the event region must reach a screen reader only.");
+    }
+  }
+
+  // The visible return summary must not be a live region, or the same return is
+  // read twice — once as its long sentence and once as the short announcement.
+  const strip = document.getElementById("return-summary");
+  if (strip) {
+    const role = strip.getAttribute("role");
+    if (strip.hasAttribute("aria-live") || role === "status" || role === "alert" || role === "log") {
+      problems.push(
+        "#return-summary is still a live region, so its long sentence is read out on top of the events."
+      );
+    }
+  }
+
+  try {
+    // The pure transition rules, on real snapshots of the page's state.
+    const base = announceSnapshot(getDisplayedState());
+
+    if (describeAnnouncements(null, base).length) {
+      problems.push("a fresh load (no previous snapshot) announced an event instead of starting silently.");
+    }
+    if (describeAnnouncements(base, { ...base }).length) {
+      problems.push("an unchanged snapshot announced an event, so the per-tick numbers would still flood a screen reader.");
+    }
+
+    const formBefore = { ...base, form: 1, formName: "a sprout" };
+    const formEvents = describeAnnouncements(formBefore, { ...formBefore, form: 2, formName: "a seedling" });
+    if (formEvents.length !== 1 || !formEvents[0].text.includes("a seedling")) {
+      problems.push(
+        `reaching a new form gave ${formEvents.length} announcements ` +
+          `(${JSON.stringify(formEvents.map((e) => e.text))}), expected one naming "a seedling".`
+      );
+    }
+
+    const goalBefore = { ...base, canPlantSeed: false, nextSeedKind: "herb", nextSeedCost: 6 };
+    const goalEvents = describeAnnouncements(goalBefore, { ...goalBefore, canPlantSeed: true });
+    if (goalEvents.length !== 1 || !/goal reached/i.test(goalEvents[0].text) || !goalEvents[0].text.includes("herb")) {
+      problems.push(
+        `becoming able to plant gave ${goalEvents.length} announcements ` +
+          `(${JSON.stringify(goalEvents.map((e) => e.text))}), expected one naming the affordable goal.`
+      );
+    }
+
+    const bedBefore = { ...base, canOpenBed: false, beds: 1, nextBedCost: 230 };
+    const bedEvents = describeAnnouncements(bedBefore, { ...bedBefore, canOpenBed: true });
+    if (bedEvents.length !== 1 || !bedEvents[0].text.includes("bed #2")) {
+      problems.push(
+        `becoming able to open a bed gave ${bedEvents.length} announcements ` +
+          `(${JSON.stringify(bedEvents.map((e) => e.text))}), expected one naming "bed #2".`
+      );
+    }
+
+    const pollinationBefore = { ...base, pollinatorVisiting: false, pollinatorMultiplier: 1 };
+    const pollinationEvents = describeAnnouncements(pollinationBefore, {
+      ...pollinationBefore,
+      pollinatorVisiting: true,
+      pollinatorMultiplier: 2,
+    });
+    if (pollinationEvents.length !== 1 || !pollinationEvents[0].text.includes("x2")) {
+      problems.push(
+        `a pollinator arriving gave ${pollinationEvents.length} announcements ` +
+          `(${JSON.stringify(pollinationEvents.map((e) => e.text))}), expected one naming the x2 boost.`
+      );
+    }
+
+    // A goal whose price rises while it is still unaffordable is not an event:
+    // only a discrete change may be spoken.
+    const costTick = describeAnnouncements(
+      { ...base, canPlantSeed: false, nextSeedCost: 6 },
+      { ...base, canPlantSeed: false, nextSeedCost: 36 }
+    );
+    if (costTick.length) {
+      problems.push("a rising seed price with no change in what is affordable announced an event.");
+    }
+
+    // A return, as one short line; a reload says nothing.
+    if (returnAnnouncement(null) !== "" || returnAnnouncement({ seconds: MIN_AWAY_SECONDS - 1 }) !== "") {
+      problems.push("a gap shorter than MIN_AWAY_SECONDS produced a return announcement; only a real absence should.");
+    }
+    const away = {
+      seconds: 30 * DAY,
+      earned: 1234.5,
+      form: "a bed of seedlings",
+    };
+    const line = returnAnnouncement(away);
+    if (!line) {
+      problems.push("a 30-day return produced no announcement at all.");
+    } else {
+      if (line.length > 80) {
+        problems.push(`the return announcement is ${line.length} characters long; it must stay a short label and value.`);
+      }
+      if (!line.includes(formatGrowth(away.earned)) || !line.includes(away.form)) {
+        problems.push(`the return announcement "${line}" does not state the earned growth and the form reached.`);
+      }
+    }
+
+    // On the real page, returning after an absence leaves one short line in
+    // #garden-status — not the long visible summary, and not every milestone
+    // the jump crossed.
+    const saved = { version: SAVE_VERSION, seeds: 2, plants: 10, growth: 0, rate: 0.5 };
+    setGarden({ seeds: 2, plants: 10 });
+    setGrowth(saved.growth, saved.rate);
+    const nowMs = 1_700_000_000_000;
+    const returned = applyReturn(saved, nowMs - 30 * DAY * 1000, nowMs);
+    const spoken = getAnnouncement();
+    if (!spoken) {
+      problems.push("returning after 30 days announced nothing into #garden-status.");
+    } else {
+      if (spoken.length > 80) {
+        problems.push(`#garden-status holds ${spoken.length} characters after a return; it must stay short.`);
+      }
+      const summary = strip ? strip.textContent : "";
+      if (summary && spoken === summary) {
+        problems.push("the return announcement is the whole visible summary rather than a short line.");
+      }
+      if (!spoken.includes(formatGrowth(returned.earned))) {
+        problems.push(`the return announcement "${spoken}" does not state the earned growth.`);
+      }
+    }
+  } finally {
+    clearReturnMarks();
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreRawStorage(storageBefore);
+  }
+}
+
+/**
  * The pure simulation behind both a return and a sandbox rehearsal: one span in
  * one step lands where played time would, and a span that cannot be trusted
  * grows nothing.
@@ -4641,6 +4832,7 @@ export async function checks() {
     checkReturnSummary(problems);
     checkAwaySowing(problems);
     checkReturnMarks(problems);
+    checkLiveAnnouncements(problems);
     checkPollinator(problems);
     checkSeason(problems);
     checkSeasonDrawing(problems);
