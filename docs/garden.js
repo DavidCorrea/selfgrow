@@ -173,6 +173,12 @@ export const STARTING_GROW_SECONDS = 3;
  * `POLLINATOR_VISIT_MAX_SECONDS`. A garden with no blooms keeps exactly the
  * base visit, so blooms only ever add. The boost stays the same, so the reason
  * to plant a bloom is its longer visit rather than a bigger multiplier.
+ *
+ * The season sets both the cycle and the base visit — each entry in `SEASONS`
+ * carries them — so the year is felt at the plot as well as in the growth
+ * rate. Winter carries the constants below, the garden's unchanged base; the
+ * other seasons set their own rhythm, and a visit only ever adds to the garden's
+ * base growth, so no season's schedule can slow it below that base.
  */
 export const POLLINATOR_CYCLE_SECONDS = 180;
 export const POLLINATOR_VISIT_SECONDS = 60;
@@ -839,28 +845,49 @@ export function replant() {
 // a tab that was hidden or a device that slept sees exactly the visit a watched
 // garden would. It only visits a garden with something grown in it, and it is
 // the last slice of each cycle, so a fresh garden waits for its first visitor.
+//
+// The season sets how often it comes and how long it stays, so the same garden
+// behaves differently in spring and in autumn. Winter carries the base schedule,
+// and a visit only ever adds to the garden's own growth, so no season's rhythm
+// can make the garden grow slower than its base rate.
+
+/** The season a key names, or winter — the base schedule — for anything else. */
+function seasonDescriptor(seasonKey) {
+  return SEASONS.find((season) => season.key === seasonKey) || SEASONS[0];
+}
+
+/** How many seconds apart the season's pollinator visits come. */
+export function pollinatorCycleSeconds(seasonKey) {
+  return seasonDescriptor(seasonKey).pollinatorCycleSeconds;
+}
+
+/** The visit a garden with no blooms keeps in the season. */
+export function pollinatorBaseVisitSeconds(seasonKey) {
+  return seasonDescriptor(seasonKey).pollinatorBaseVisitSeconds;
+}
+
+/** How many blooms it takes to stretch the season's visit to the cap. */
+function bloomsToMaxVisit(seasonKey) {
+  const baseVisit = pollinatorBaseVisitSeconds(seasonKey);
+  return Math.max(0, Math.floor((POLLINATOR_VISIT_MAX_SECONDS - baseVisit) / POLLINATOR_BLOOM_VISIT_SECONDS));
+}
 
 /**
- * How long a visit lasts when `bloomPlants` grown blooms are keeping the
- * pollinator. The base visit plus each bloom's extension, never past the cap,
- * so a bed of blooms keeps the visitor for most of the cycle and no garden
- * grows a visit without bound.
+ * How long a visit lasts in `seasonKey` when `bloomPlants` grown blooms are
+ * keeping the pollinator. The season's base visit plus each bloom's extension,
+ * never past the cap, so a bed of blooms keeps the visitor for most of the
+ * season's cycle and no garden grows a visit without bound.
  *
  * Pure: the readout, the picture, the simulation and an agent's state all read
- * the visit length from here.
+ * the visit length from here. A missing season is winter, the garden's base.
  */
-export function pollinatorVisitSeconds(bloomPlants) {
+export function pollinatorVisitSeconds(bloomPlants, seasonKey) {
   const blooms = Number.isFinite(bloomPlants) && bloomPlants > 0 ? Math.floor(bloomPlants) : 0;
   return Math.min(
     POLLINATOR_VISIT_MAX_SECONDS,
-    POLLINATOR_VISIT_SECONDS + blooms * POLLINATOR_BLOOM_VISIT_SECONDS
+    pollinatorBaseVisitSeconds(seasonKey) + blooms * POLLINATOR_BLOOM_VISIT_SECONDS
   );
 }
-
-/** How many blooms it takes to stretch a visit to the cap. */
-const BLOOMS_TO_MAX_VISIT = Math.floor(
-  (POLLINATOR_VISIT_MAX_SECONDS - POLLINATOR_VISIT_SECONDS) / POLLINATOR_BLOOM_VISIT_SECONDS
-);
 
 /**
  * Whether a pollinator is visiting a garden `ageSeconds` old that holds
@@ -869,55 +896,126 @@ const BLOOMS_TO_MAX_VISIT = Math.floor(
  *
  * Pure and deterministic: the same age, plants and blooms always answer the
  * same, so the readout, the picture and the simulated growth cannot disagree
- * about it. `visitSeconds` is how long the visit lasts, `baseVisitSeconds` the
- * visit a garden with no blooms keeps, and `bloomsKeeping` how many blooms are
- * stretching it (capped at the number that reaches the cap).
+ * about it. The season the age falls in sets how often the visitor comes
+ * (`cycleSeconds`) and the visit a garden with no blooms keeps
+ * (`baseVisitSeconds`); `visitSeconds` is how long this visit lasts and
+ * `bloomsKeeping` how many blooms are stretching it, capped at the number that
+ * reaches the cap.
  *
- * @returns {{visiting: boolean, multiplier: number, boost: number, visitSeconds: number, baseVisitSeconds: number, bloomsKeeping: number}}
+ * @returns {{visiting: boolean, multiplier: number, boost: number, visitSeconds: number, cycleSeconds: number, baseVisitSeconds: number, maxVisitSeconds: number, seasonKey: string, bloomsKeeping: number}}
  */
 export function pollinatorAt(ageSeconds, plants, bloomPlants = 0) {
   const grown = Number.isFinite(plants) && plants > 0;
   const gardenAge = Number.isFinite(ageSeconds) && ageSeconds > 0 ? ageSeconds : 0;
-  const visitSeconds = pollinatorVisitSeconds(bloomPlants);
-  const phase = gardenAge % POLLINATOR_CYCLE_SECONDS;
-  const visiting = grown && phase >= POLLINATOR_CYCLE_SECONDS - visitSeconds;
+  const season = seasonAt(gardenAge);
+  const cycleSeconds = season.pollinatorCycleSeconds;
+  const baseVisitSeconds = season.pollinatorBaseVisitSeconds;
+  const visitSeconds = pollinatorVisitSeconds(bloomPlants, season.key);
+  const phase = gardenAge % cycleSeconds;
+  const visiting = grown && phase >= cycleSeconds - visitSeconds;
   const blooms = Number.isFinite(bloomPlants) && bloomPlants > 0 ? Math.floor(bloomPlants) : 0;
   return {
     visiting,
     multiplier: visiting ? POLLINATOR_BOOST : 1,
     boost: POLLINATOR_BOOST,
     visitSeconds,
-    baseVisitSeconds: POLLINATOR_VISIT_SECONDS,
-    bloomsKeeping: Math.min(blooms, BLOOMS_TO_MAX_VISIT),
+    cycleSeconds,
+    baseVisitSeconds,
+    maxVisitSeconds: POLLINATOR_VISIT_MAX_SECONDS,
+    seasonKey: season.key,
+    bloomsKeeping: Math.min(blooms, bloomsToMaxVisit(season.key)),
   };
 }
 
-/** The visit seconds seen from the garden's start up to `seconds` of age. */
-function visitingSecondsUpTo(seconds, visitSeconds) {
+/**
+ * The visit seconds seen from the garden's start up to `seconds` of age, for a
+ * fixed cycle and visit.
+ */
+function visitingSecondsUpTo(seconds, cycleSeconds, visitSeconds) {
   if (!(seconds > 0)) return 0;
-  const cycles = Math.floor(seconds / POLLINATOR_CYCLE_SECONDS);
-  const phase = seconds - cycles * POLLINATOR_CYCLE_SECONDS;
-  const visitStart = POLLINATOR_CYCLE_SECONDS - visitSeconds;
+  const cycles = Math.floor(seconds / cycleSeconds);
+  const phase = seconds - cycles * cycleSeconds;
+  const visitStart = cycleSeconds - visitSeconds;
   const partial = Math.min(visitSeconds, Math.max(0, phase - visitStart));
   return cycles * visitSeconds + partial;
 }
 
 /**
+ * The visit seconds between `start` and `end` of garden age, walked one season
+ * at a time. Inside each season the cycle and visit are constant, so the visit
+ * seconds are the difference of the cumulative count at the two ends. A span
+ * of one year's pattern or less holds only a handful of seasons, so the walk is
+ * cheap and never runs for as long as the span.
+ */
+function pollinatorSecondsBetween(start, end, bloomPlants) {
+  let cursor = start;
+  let total = 0;
+  while (cursor < end) {
+    const season = seasonAt(cursor);
+    const nextBoundary = (Math.floor(cursor / SEASON_SECONDS) + 1) * SEASON_SECONDS;
+    // A span shorter than the rest of its season, or an age so large the next
+    // boundary rounds back onto the cursor, ends the segment here rather than
+    // stalling the walk.
+    const segmentEnd = nextBoundary > cursor && nextBoundary < end ? nextBoundary : end;
+    const cycleSeconds = season.pollinatorCycleSeconds;
+    const visitSeconds = pollinatorVisitSeconds(bloomPlants, season.key);
+    total +=
+      visitingSecondsUpTo(segmentEnd, cycleSeconds, visitSeconds) -
+      visitingSecondsUpTo(cursor, cycleSeconds, visitSeconds);
+    cursor = segmentEnd;
+  }
+  return total;
+}
+
+/** The largest whole number that divides both of two whole numbers (Euclid). */
+function greatestCommonDivisor(a, b) {
+  return b === 0 ? a : greatestCommonDivisor(b, a % b);
+}
+
+/**
+ * The span after which the pollinator's whole schedule repeats: the common
+ * multiple of every season's cycle and of one turn of the seasons, so the
+ * visitor is in the same season, the same way through its cycle, at both ends
+ * of it. Cached, since the seasons are fixed.
+ */
+let pollinatorPeriodCache = null;
+function pollinatorPeriodSeconds() {
+  if (pollinatorPeriodCache === null) {
+    let period = SEASON_SECONDS * SEASONS.length;
+    for (const season of SEASONS) {
+      period =
+        (period / greatestCommonDivisor(period, season.pollinatorCycleSeconds)) * season.pollinatorCycleSeconds;
+    }
+    pollinatorPeriodCache = period;
+  }
+  return pollinatorPeriodCache;
+}
+
+/**
  * How many of the `spanSeconds` starting at `ageSeconds` of garden age fall
  * inside a pollinator visit, for a garden with grown plants that holds
- * `bloomPlants` blooms lengthening the visit.
+ * `bloomPlants` blooms lengthening each visit.
  *
- * Closed form, so a month resolves in one calculation rather than one step per
- * three-minute cycle. The visit length is constant across the span because the
- * bloom count does not change inside it: the simulation winds forward one
- * maturation gap at a time, so each call sees one bloom count. A missing,
- * negative or non-finite span is no visit time.
+ * Exact across season boundaries, and bounded: the schedule repeats after one
+ * whole-year pattern, so whole patterns are counted in one multiplication and
+ * only the tail is walked season by season. That matches a played-by-play
+ * simulation second for second, so a rehearsal, a return and played time all
+ * land in the same place, and even an enormous span costs only a few seasons of
+ * work. The visit length is constant across the span because the bloom count
+ * does not change inside it: the simulation winds forward one maturation gap at
+ * a time, so each call sees one bloom count. A missing, negative or non-finite
+ * span is no visit time.
  */
 export function pollinatorSecondsWithin(ageSeconds, spanSeconds, bloomPlants = 0) {
   if (!Number.isFinite(ageSeconds) || !Number.isFinite(spanSeconds) || spanSeconds <= 0) return 0;
   const start = ageSeconds > 0 ? ageSeconds : 0;
-  const visitSeconds = pollinatorVisitSeconds(bloomPlants);
-  return visitingSecondsUpTo(start + spanSeconds, visitSeconds) - visitingSecondsUpTo(start, visitSeconds);
+  const end = start + spanSeconds;
+  const period = pollinatorPeriodSeconds();
+  const patterns = Math.floor(spanSeconds / period);
+  let total = patterns * pollinatorSecondsBetween(0, period, bloomPlants);
+  const tailStart = start + patterns * period;
+  if (tailStart < end) total += pollinatorSecondsBetween(tailStart, end, bloomPlants);
+  return total;
 }
 
 // --- The seasons -------------------------------------------------------------
@@ -935,14 +1033,39 @@ export const SEASON_SECONDS = 600;
 
 /**
  * The four seasons in the order the cycle visits them, as the one source of
- * each season's name and growth multiplier. Winter is the base rate, and the
- * three that follow are each more generous, so no season grows slower.
+ * each season's name, growth multiplier and pollinator schedule. Winter is the
+ * base rate and the base pollinator cycle and visit, and every entry carries the
+ * rhythm the year gives the pollinator.
  */
 export const SEASONS = Object.freeze([
-  Object.freeze({ key: "winter", name: "winter", multiplier: 1 }),
-  Object.freeze({ key: "spring", name: "spring", multiplier: 1.5 }),
-  Object.freeze({ key: "summer", name: "summer", multiplier: 2 }),
-  Object.freeze({ key: "autumn", name: "autumn", multiplier: 1.25 }),
+  Object.freeze({
+    key: "winter",
+    name: "winter",
+    multiplier: 1,
+    pollinatorCycleSeconds: POLLINATOR_CYCLE_SECONDS,
+    pollinatorBaseVisitSeconds: POLLINATOR_VISIT_SECONDS,
+  }),
+  Object.freeze({
+    key: "spring",
+    name: "spring",
+    multiplier: 1.5,
+    pollinatorCycleSeconds: 200,
+    pollinatorBaseVisitSeconds: 90,
+  }),
+  Object.freeze({
+    key: "summer",
+    name: "summer",
+    multiplier: 2,
+    pollinatorCycleSeconds: 240,
+    pollinatorBaseVisitSeconds: 120,
+  }),
+  Object.freeze({
+    key: "autumn",
+    name: "autumn",
+    multiplier: 1.25,
+    pollinatorCycleSeconds: 300,
+    pollinatorBaseVisitSeconds: 75,
+  }),
 ]);
 
 /** How long one full turn of the four seasons lasts, in seconds of age. */
@@ -955,13 +1078,20 @@ export const SEASON_CYCLE_SECONDS = SEASON_SECONDS * SEASONS.length;
  * readout, the state and the simulated growth cannot disagree about it. A
  * missing or negative age is the start of the cycle, winter.
  *
- * @returns {{index: number, key: string, name: string, multiplier: number}}
+ * @returns {{index: number, key: string, name: string, multiplier: number, pollinatorCycleSeconds: number, pollinatorBaseVisitSeconds: number}}
  */
 export function seasonAt(ageSeconds) {
   const gardenAge = Number.isFinite(ageSeconds) && ageSeconds > 0 ? ageSeconds : 0;
   const index = Math.floor(gardenAge / SEASON_SECONDS) % SEASONS.length;
   const season = SEASONS[index];
-  return { index, key: season.key, name: season.name, multiplier: season.multiplier };
+  return {
+    index,
+    key: season.key,
+    name: season.name,
+    multiplier: season.multiplier,
+    pollinatorCycleSeconds: season.pollinatorCycleSeconds,
+    pollinatorBaseVisitSeconds: season.pollinatorBaseVisitSeconds,
+  };
 }
 
 /**

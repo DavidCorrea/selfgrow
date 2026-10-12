@@ -57,6 +57,8 @@ import {
   nextKindMilestone,
   nextSeedCost,
   pollinatorAt,
+  pollinatorBaseVisitSeconds,
+  pollinatorCycleSeconds,
   pollinatorSecondsWithin,
   pollinatorVisitSeconds,
   readLastSeen,
@@ -3448,6 +3450,179 @@ function checkPollinator(problems) {
 }
 
 /**
+ * The season's effect on the pollinator: each season sets its own visit cycle
+ * and visit length, the closed form matches played time across season
+ * boundaries, no season drops the garden below its base rate, and the season
+ * and pollinator readouts and get-state state the effect in numbers.
+ */
+function checkPollinatorSeasons(problems) {
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  try {
+    // Every season carries its own rhythm, and every base visit fits inside its
+    // cycle, so a visit is always a slice of the wait rather than the whole of
+    // it. Winter is the garden's unchanged base.
+    const rhythms = new Set();
+    for (const season of SEASONS) {
+      const cycle = pollinatorCycleSeconds(season.key);
+      const baseVisit = pollinatorBaseVisitSeconds(season.key);
+      if (!(cycle > 0) || !(baseVisit > 0) || !(baseVisit < cycle)) {
+        problems.push(
+          `the ${season.key} pollinator schedule is a ${baseVisit}s visit every ${cycle}s; a visit must be a ` +
+            "positive slice shorter than its cycle."
+        );
+      }
+      if (
+        season.key === "winter" &&
+        (cycle !== POLLINATOR_CYCLE_SECONDS || baseVisit !== POLLINATOR_VISIT_SECONDS)
+      ) {
+        problems.push(
+          `winter's pollinator schedule is a ${baseVisit}s visit every ${cycle}s, expected the garden's base ` +
+            `${POLLINATOR_VISIT_SECONDS}s every ${POLLINATOR_CYCLE_SECONDS}s.`
+        );
+      }
+      rhythms.add(`${cycle}:${baseVisit}`);
+    }
+    if (rhythms.size < 2) {
+      problems.push(
+        "every season gives the pollinator the same cycle and visit, so the year is not felt at the plot."
+      );
+    }
+
+    // pollinatorAt reads its cycle and base visit from the season the age falls
+    // in, so an agent asking during spring cannot be told winter's rhythm.
+    const atSeason = [
+      ["winter", 0],
+      ["spring", SEASON_SECONDS],
+      ["summer", SEASON_SECONDS * 2],
+      ["autumn", SEASON_SECONDS * 3],
+    ];
+    for (const [key, ageValue] of atSeason) {
+      const pollinator = pollinatorAt(ageValue, 3, 0);
+      if (pollinator.seasonKey !== key) {
+        problems.push(`at age ${ageValue}s the pollinator reports season ${pollinator.seasonKey}, expected ${key}.`);
+      }
+      if (
+        pollinator.cycleSeconds !== pollinatorCycleSeconds(key) ||
+        pollinator.baseVisitSeconds !== pollinatorBaseVisitSeconds(key)
+      ) {
+        problems.push(
+          `the ${key} pollinator reports a ${pollinator.baseVisitSeconds}s visit every ${pollinator.cycleSeconds}s, ` +
+            `expected ${pollinatorBaseVisitSeconds(key)}s every ${pollinatorCycleSeconds(key)}s.`
+        );
+      }
+    }
+
+    // The visit length reads each season's base and still caps.
+    for (const season of SEASONS) {
+      const baseVisit = pollinatorBaseVisitSeconds(season.key);
+      for (const blooms of [0, 1, 4, 40]) {
+        const expected = Math.min(POLLINATOR_VISIT_MAX_SECONDS, baseVisit + blooms * POLLINATOR_BLOOM_VISIT_SECONDS);
+        const got = pollinatorVisitSeconds(blooms, season.key);
+        if (got !== expected) {
+          problems.push(`pollinatorVisitSeconds(${blooms}, ${season.key}) gave ${got}s, expected ${expected}s.`);
+        }
+      }
+    }
+
+    // The closed form counts exactly what the schedule shows, across season
+    // boundaries included, checked against an independent second-by-second
+    // count of pollinatorAt.
+    const bruteSeasonSeconds = (ageValue, span, blooms) => {
+      let total = 0;
+      for (let offset = 0; offset < span; offset += 1) {
+        if (pollinatorAt(ageValue + offset + 0.5, 1, blooms).visiting) total += 1;
+      }
+      return total;
+    };
+    for (const [ageValue, span] of [
+      [SEASON_SECONDS - 30, SEASON_SECONDS + 90],
+      [SEASON_SECONDS * 2 - 5, SEASON_SECONDS * 2 + 50],
+      [SEASON_SECONDS * 3 - 200, SEASON_SECONDS * 2],
+      [0, SEASON_CYCLE_SECONDS],
+    ]) {
+      for (const blooms of [0, 4]) {
+        const closed = pollinatorSecondsWithin(ageValue, span, blooms);
+        const counted = bruteSeasonSeconds(ageValue, span, blooms);
+        if (Math.abs(closed - counted) > 1e-6) {
+          problems.push(
+            `pollinatorSecondsWithin(${ageValue}, ${span}, ${blooms}) gave ${closed}s, but counting the schedule ` +
+              `gave ${counted}s across the season boundary.`
+          );
+        }
+      }
+    }
+
+    // No season drops the garden below its base rate, and a month in any season
+    // lands where played time would: one step equals thirty daily steps.
+    const DAY = 86400;
+    for (const [key, ageValue] of atSeason) {
+      const monthStart = { growth: 0, rate: 1, sprouts: [], bloomSprouts: [], plants: 3, beds: 1, age: ageValue };
+      const oneStep = simulateGarden(monthStart, 30 * DAY);
+      let stepped = { ...monthStart };
+      for (let day = 0; day < 30; day += 1) stepped = simulateGarden(stepped, DAY);
+      const tolerance = Math.max(1e-6, oneStep.growth * 1e-9);
+      if (Math.abs(oneStep.growth - stepped.growth) > tolerance) {
+        problems.push(
+          `a month in ${key} in one step gave ${oneStep.growth} growth but thirty daily steps gave ` +
+            `${stepped.growth}; a rehearsal must land where played time does.`
+        );
+      }
+      if (oneStep.growth < 30 * DAY - tolerance) {
+        problems.push(
+          `a month in ${key} earned ${oneStep.growth} growth, below the plain ${30 * DAY} a first-season base ` +
+            "rate of 1/s earns; no season may slow the garden below its base rate."
+        );
+      }
+    }
+
+    // The season and pollinator readouts and get-state state the year's effect
+    // in numbers, season by season.
+    const seasonRow = document.querySelector('[data-field="season"]');
+    const pollinatorRow = document.querySelector('[data-field="pollinator"]');
+    if (!seasonRow) problems.push('the page has no season readout (expected [data-field="season"]).');
+    if (!pollinatorRow) problems.push('the page has no pollinator readout (expected [data-field="pollinator"]).');
+    setGarden({ seeds: 0, plants: 3 });
+    for (const [key, ageValue] of atSeason) {
+      setGrowth(0, 1, ageValue);
+      const state = getDisplayedState();
+      const cycle = pollinatorCycleSeconds(key);
+      const baseVisit = pollinatorBaseVisitSeconds(key);
+      if (state.season.key !== key || state.season.pollinatorCycleSeconds !== cycle) {
+        problems.push(
+          `at age ${ageValue}s get-state reports season ${JSON.stringify(state.season)}, expected ${key} with a ` +
+            `${cycle}s pollinator cycle.`
+        );
+      }
+      if (state.pollinator.seasonKey !== key || state.pollinator.cycleSeconds !== cycle) {
+        problems.push(
+          `at age ${ageValue}s get-state reports pollinator ${JSON.stringify(state.pollinator)}, expected the ` +
+            `${key} cycle of ${cycle}s.`
+        );
+      }
+      if (seasonRow) {
+        const text = String(seasonRow.textContent);
+        if (!text.includes(formatDuration(cycle)) || !text.includes(formatDuration(baseVisit))) {
+          problems.push(
+            `the season readout says ${JSON.stringify(text)}, expected it to state the ${key} pollinator cycle ` +
+              `${formatDuration(cycle)} and base visit ${formatDuration(baseVisit)}.`
+          );
+        }
+      }
+      if (pollinatorRow && !String(pollinatorRow.textContent).includes(formatDuration(cycle))) {
+        problems.push(
+          `the pollinator readout says ${JSON.stringify(pollinatorRow.textContent)}, expected it to state the ` +
+            `${key} cycle ${formatDuration(cycle)}.`
+        );
+      }
+    }
+  } finally {
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+  }
+}
+
+/**
  * The season cycle: a repeating four-season turn read from the garden's age,
  * each season growing the garden at least at its base rate and at least one
  * faster, and a return that crosses a boundary says so.
@@ -5300,6 +5475,7 @@ export async function checks() {
     checkReturnMarks(problems);
     checkLiveAnnouncements(problems);
     checkPollinator(problems);
+    checkPollinatorSeasons(problems);
     checkSeason(problems);
     checkSeasonDrawing(problems);
     checkSandbox(problems);
