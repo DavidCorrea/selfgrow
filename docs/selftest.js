@@ -3827,7 +3827,9 @@ function checkPollinatorSeasons(problems) {
     }
 
     // The season and pollinator readouts and get-state state the year's effect
-    // in numbers, season by season.
+    // in numbers, season by season. The season row names the season and the
+    // growth it gives the garden and leaves the pollinator's rhythm to the
+    // pollinator row, which is the one place that schedule is stated.
     const seasonRow = document.querySelector('[data-field="season"]');
     const pollinatorRow = document.querySelector('[data-field="pollinator"]');
     if (!seasonRow) problems.push('the page has no season readout (expected [data-field="season"]).');
@@ -3852,18 +3854,27 @@ function checkPollinatorSeasons(problems) {
       }
       if (seasonRow) {
         const text = String(seasonRow.textContent);
-        if (!text.includes(formatDuration(cycle)) || !text.includes(formatDuration(baseVisit))) {
+        if (!text.toLowerCase().includes(key) || !text.includes(`x${state.season.multiplier}`)) {
           problems.push(
-            `the season readout says ${JSON.stringify(text)}, expected it to state the ${key} pollinator cycle ` +
-              `${formatDuration(cycle)} and base visit ${formatDuration(baseVisit)}.`
+            `the season readout says ${JSON.stringify(text)}, expected it to name ${key} and the x` +
+              `${state.season.multiplier} growth the season gives the garden.`
+          );
+        }
+        if (text.toLowerCase().includes("pollinator") || text.includes(formatDuration(cycle))) {
+          problems.push(
+            `the season readout says ${JSON.stringify(text)}, expected it to leave the pollinator's schedule to ` +
+              `the pollinator row rather than repeat ${formatDuration(cycle)}.`
           );
         }
       }
-      if (pollinatorRow && !String(pollinatorRow.textContent).includes(formatDuration(cycle))) {
-        problems.push(
-          `the pollinator readout says ${JSON.stringify(pollinatorRow.textContent)}, expected it to state the ` +
-            `${key} cycle ${formatDuration(cycle)}.`
-        );
+      if (pollinatorRow) {
+        const text = String(pollinatorRow.textContent);
+        if (!text.includes(formatDuration(cycle)) || !text.includes(formatDuration(baseVisit))) {
+          problems.push(
+            `the pollinator readout says ${JSON.stringify(text)}, expected it to state the ${key} cycle ` +
+              `${formatDuration(cycle)} and base visit ${formatDuration(baseVisit)}.`
+          );
+        }
       }
     }
   } finally {
