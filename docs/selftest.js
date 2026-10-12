@@ -107,6 +107,7 @@ import {
   groundCover,
   motionPhase,
   plotBounds,
+  pollinatorPlot,
   returnMarkCells,
   seasonLook,
   soilFace,
@@ -3450,6 +3451,120 @@ function checkPollinator(problems) {
 }
 
 /**
+ * The pollinator's home on the plot answers who lives here and whether it is
+ * working, and answers it the same way `get-state` does.
+ *
+ * A garden with grown plants draws a home — the hive with a resting bee between
+ * visits, and a visibly busier visit during one — while a garden with no grown
+ * plants draws nothing. The state the picture draws is exactly the
+ * `pollinator.visiting` an agent reads, so the two cannot disagree.
+ */
+function checkPollinatorHome(problems) {
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  try {
+    // Nowhere grown means no home at all, whatever the pollinator schedule says.
+    const none = pollinatorPlot({ plantCounts: [0, 0], pollinator: { visiting: true } });
+    if (none.home || none.visiting || none.resting) {
+      problems.push(
+        `a garden with no grown plants reported pollinator ${JSON.stringify(none)}; it must show no home.`
+      );
+    }
+    // A bare plot must draw the same with the pollinator visiting as without:
+    // with nowhere to live, a visit leaves no mark on the picture.
+    const bare = { growth: 0, beds: 1, seeds: 0, plants: 0 };
+    if (
+      plotImage({ ...bare, pollinator: { visiting: true } }) !== plotImage({ ...bare, pollinator: { visiting: false } })
+    ) {
+      problems.push("a bare plot drew differently with the pollinator visiting, so it shows a home where no plant grows.");
+    }
+
+    // Grown plants: a home that rests between visits and is out during one.
+    const resting = pollinatorPlot({ plantCounts: [1, 0], pollinator: { visiting: false } });
+    if (!resting.home || !resting.resting || resting.visiting) {
+      problems.push(`a garden with one grown plant reported pollinator ${JSON.stringify(resting)}; it should rest.`);
+    }
+    const out = pollinatorPlot({ plantCounts: [1, 0], pollinator: { visiting: true } });
+    if (!out.home || !out.visiting || out.resting) {
+      problems.push(`a garden with one grown plant, visiting, reported pollinator ${JSON.stringify(out)}; it should be out.`);
+    }
+
+    // The home appears on the plot when the first plant does, and the visit is
+    // visibly busier than the rest — at a pinned still frame, so reduced motion
+    // shows the difference too.
+    const grown = { growth: 0, beds: 1, seeds: 0, plants: 1 };
+    const noHome = plotImage({ ...grown, plants: 0 });
+    const restingPlot = plotImage({ ...grown, pollinator: { visiting: false } });
+    const visitingPlot = plotImage({ ...grown, pollinator: { visiting: true } });
+    if (noHome === restingPlot) {
+      problems.push("a garden with a grown plant drew the same as bare soil, so its pollinator home is invisible.");
+    }
+    if (restingPlot === visitingPlot) {
+      problems.push("the plot drew the same picture resting and visiting, so a visit is not visible on the garden.");
+    }
+
+    // The hive paints the plot's top-right cell, so a pixel its roof covers is
+    // the home's own anchor: bare soil must not carry it, and it must stay put
+    // while the bee is out visiting.
+    const bounds = plotBounds(grown);
+    const anchorX = bounds.width - bounds.cell + 12;
+    const anchorY = 12;
+    const anchorPixel = (state) => {
+      const data = plotCanvas(state).getContext("2d").getImageData(anchorX, anchorY, 1, 1).data;
+      return `${data[0]},${data[1]},${data[2]}`;
+    };
+    if (anchorPixel({ ...grown, plants: 0 }) === anchorPixel({ ...grown, pollinator: { visiting: false } })) {
+      problems.push(
+        `the pollinator home's anchor pixel (${anchorX}, ${anchorY}) is the same with and without a grown plant, ` +
+          "so the home is not drawn on the plot."
+      );
+    }
+    if (anchorPixel({ ...grown, pollinator: { visiting: false } }) !== anchorPixel({ ...grown, pollinator: { visiting: true } })) {
+      problems.push("the hive left the plot while the pollinator was visiting; its home must stay put between visits.");
+    }
+
+    // The state the picture draws is the one the agent tools report: with the
+    // live readout, the plot's visit flag is exactly `pollinator.visiting` the
+    // tools return, both at rest and during a visit.
+    setGarden({ seeds: 0, plants: 3 });
+    setGrowth(0, 1, 0);
+    const quietState = getDisplayedState();
+    const quietPlot = pollinatorPlot(quietState);
+    if (!quietPlot.home) {
+      problems.push("a garden of grown plants reported no pollinator home on the plot.");
+    }
+    if (
+      quietPlot.visiting !== Boolean(quietState.pollinator.visiting) ||
+      quietPlot.resting !== !quietState.pollinator.visiting
+    ) {
+      problems.push(
+        `the plot shows pollinator ${JSON.stringify(quietPlot)} while get-state reports visiting ` +
+          `${quietState.pollinator.visiting}, so the picture and the tools disagree.`
+      );
+    }
+
+    setGrowth(0, 1, POLLINATOR_CYCLE_SECONDS - 1);
+    const visitState = getDisplayedState();
+    if (!visitState.pollinator.visiting) {
+      problems.push("the live garden is not visiting at the end of the pollinator's cycle, so the visit cannot be checked.");
+    }
+    const visitPlot = pollinatorPlot(visitState);
+    if (
+      visitPlot.visiting !== Boolean(visitState.pollinator.visiting) ||
+      visitPlot.resting !== !visitState.pollinator.visiting
+    ) {
+      problems.push(
+        `the plot shows pollinator ${JSON.stringify(visitPlot)} while get-state reports visiting ` +
+          `${visitState.pollinator.visiting}, so the picture and the tools disagree during a visit.`
+      );
+    }
+  } finally {
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+  }
+}
+
+/**
  * The season's effect on the pollinator: each season sets its own visit cycle
  * and visit length, the closed form matches played time across season
  * boundaries, no season drops the garden below its base rate, and the season
@@ -5638,6 +5753,7 @@ export async function checks() {
     checkLiveAnnouncements(problems);
     checkActionConfirmationsAreSpoken(problems);
     checkPollinator(problems);
+    checkPollinatorHome(problems);
     checkPollinatorSeasons(problems);
     checkSeason(problems);
     checkSeasonDrawing(problems);
