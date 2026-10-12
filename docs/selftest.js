@@ -181,6 +181,33 @@ function describe(el, what) {
   return `${what} on ${el.tagName.toLowerCase()}${id}${cls}`;
 }
 
+/**
+ * A growing control's availability, as the page must present it: a control the
+ * garden cannot use right now stays reachable — focusable and pressable, never
+ * the `disabled` attribute, which would swallow the press — and says it is
+ * unavailable through `aria-disabled` so assistive technology knows. Returns a
+ * failure message, or "" when the control presents exactly `canAct`.
+ */
+function availabilityProblem(button, canAct, context) {
+  if (button.disabled) {
+    return (
+      `${context} is switched off with the disabled attribute, so pressing it does nothing and the visitor ` +
+      "is never told why it cannot act."
+    );
+  }
+  const markedUnavailable = button.getAttribute("aria-disabled") === "true";
+  if (canAct && markedUnavailable) {
+    return `${context} can act but is marked aria-disabled="true".`;
+  }
+  if (!canAct && !markedUnavailable) {
+    return (
+      `${context} cannot act but is not marked aria-disabled="true", so assistive technology is not told ` +
+      "it is unavailable."
+    );
+  }
+  return "";
+}
+
 function fontFaces() {
   const faces = [];
   for (const sheet of document.styleSheets) {
@@ -799,14 +826,20 @@ function checkBloomPlanting(problems) {
         `the Plant a bloom label is ${JSON.stringify(button.textContent)}, which does not state its ${cost}-growth cost.`
       );
     }
-    if (!button.disabled) {
-      problems.push(`the Plant a bloom control is enabled at ${cost - 1} growth, one short of its ${cost}-growth cost.`);
-    }
+    const tooShort = availabilityProblem(
+      button,
+      false,
+      `the Plant a bloom control at ${cost - 1} growth, one short of its ${cost}-growth cost`
+    );
+    if (tooShort) problems.push(tooShort);
 
     setGrowth(cost, 0.2);
-    if (button.disabled) {
-      problems.push(`the Plant a bloom control is disabled at ${cost} growth, exactly its ${cost}-growth cost.`);
-    }
+    const affordable = availabilityProblem(
+      button,
+      true,
+      `the Plant a bloom control at ${cost} growth, exactly its ${cost}-growth cost`
+    );
+    if (affordable) problems.push(affordable);
     button.click();
 
     const after = getGrowthState();
@@ -2236,14 +2269,20 @@ function checkPlantingSpendsAndRaisesProduction(problems) {
     if (!label.includes(formatAmount(cost))) {
       problems.push(`the Plant a seed label is ${JSON.stringify(label)}, which does not state its ${cost}-growth cost.`);
     }
-    if (!button.disabled) {
-      problems.push(`the Plant a seed control is enabled at ${cost - 1} growth, one short of its ${cost}-growth cost.`);
-    }
+    const tooShort = availabilityProblem(
+      button,
+      false,
+      `the Plant a seed control at ${cost - 1} growth, one short of its ${cost}-growth cost`
+    );
+    if (tooShort) problems.push(tooShort);
 
     setGrowth(cost, 0.2);
-    if (button.disabled) {
-      problems.push(`the Plant a seed control is disabled at ${cost} growth, exactly its ${cost}-growth cost.`);
-    }
+    const affordable = availabilityProblem(
+      button,
+      true,
+      `the Plant a seed control at ${cost} growth, exactly its ${cost}-growth cost`
+    );
+    if (affordable) problems.push(affordable);
     button.click();
 
     const after = getGrowthState();
@@ -2397,8 +2436,8 @@ function checkSeedGoalReadout(problems) {
     }
 
     // Full: the goal becomes the next bed, stating its cost and time under the
-    // bed's own labels, while the Plant a seed control stays disabled and says
-    // the plot is full.
+    // bed's own labels, while the Plant a seed control stays marked unavailable
+    // and says the plot is full.
     setGarden({ beds: 1, seeds: PLOT_CAPACITY, plants: 0 });
     setGrowth(0, 1);
     const bedCost = nextBedCost(1);
@@ -2421,8 +2460,9 @@ function checkSeedGoalReadout(problems) {
       problems.push(`with every plot full the goal title does not name the next bed: ${JSON.stringify(goalTitle)}`);
     }
     const button = document.getElementById("plant-seed");
-    if (button && !button.disabled) {
-      problems.push("with every plot full the Plant a seed control is still enabled.");
+    if (button) {
+      const problem = availabilityProblem(button, false, "with every plot full the Plant a seed control");
+      if (problem) problems.push(problem);
     }
     if (button && !String(button.textContent).toLowerCase().includes("full")) {
       problems.push(`with every plot full the Plant a seed label does not say so: ${JSON.stringify(button.textContent)}`);
@@ -2623,6 +2663,15 @@ function checkBedProgression(problems) {
     if (state.secondsToNextBed == null) {
       problems.push("with a full plot and growth climbing, secondsToNextBed should be reported, but it is null.");
     }
+    const shortBed = document.getElementById("open-bed");
+    if (shortBed) {
+      const problem = availabilityProblem(
+        shortBed,
+        false,
+        `the Open the next bed control at ${cost - 1} growth, one short of its ${cost}-growth cost`
+      );
+      if (problem) problems.push(problem);
+    }
 
     // Exactly the price: the next bed is ready.
     setGrowth(cost, 1);
@@ -2637,7 +2686,12 @@ function checkBedProgression(problems) {
       if (button.hidden || getComputedStyle(button).display === "none") {
         problems.push("with every plot full the Open the next bed control is not shown.");
       }
-      if (button.disabled) problems.push(`with ${cost} growth saved the Open the next bed control is disabled.`);
+      const readyProblem = availabilityProblem(
+        button,
+        true,
+        `the Open the next bed control with ${cost} growth saved`
+      );
+      if (readyProblem) problems.push(readyProblem);
       if (!String(button.textContent).includes(formatAmount(cost))) {
         problems.push(
           `the Open the next bed label is ${JSON.stringify(button.textContent)}, which does not state its ${cost}-growth cost.`
@@ -4742,9 +4796,9 @@ function liveRegionsSaying(text) {
  * An action's confirmation reaches a screen reader whether or not the Save &
  * rehearsal fold is open. The words a sighted visitor reads live inside that
  * fold, which leaves the accessibility tree while it is closed, so every
- * confirmation is written to the always-exposed #garden-status as well. This
- * drives the real controls with the fold shut, so a confirmation that lands
- * only in the folded line fails here.
+ * confirmation — a planting, or a garden action's refusal — is written to the
+ * always-exposed #garden-status as well. This drives the real controls with the
+ * fold shut, so a confirmation that lands only in the folded line fails here.
  */
 function checkActionConfirmationsAreSpoken(problems) {
   const fold = document.querySelector("details.fold");
@@ -4832,7 +4886,34 @@ function checkActionConfirmationsAreSpoken(problems) {
       }
     }
 
-    // A refused action: an unreadable save is refused with the same words a
+    // A refused garden action: with every plot full a press on Plant a seed is
+    // refused, and the reason must reach the exposed region with the fold shut
+    // — no save field is involved, so the whole exchange happens outside it.
+    if (plant) {
+      setGarden({ beds: 1, seeds: PLOT_CAPACITY, plants: 0 });
+      setGrowth(0, 1);
+      plant.click();
+      const gardenRefusal = spoken.textContent;
+      if (gardenRefusal !== "Every plot already holds a seed.") {
+        problems.push(
+          `a refused planting announced ${JSON.stringify(gardenRefusal)} into #garden-status, ` +
+            'expected "Every plot already holds a seed."'
+        );
+      } else if (gardenRefusal !== visible.textContent) {
+        problems.push(
+          `a refused planting announced ${JSON.stringify(gardenRefusal)} into #garden-status but ` +
+            `${JSON.stringify(visible.textContent)} into #save-status; the words must match.`
+        );
+      }
+      const refusalHiddenBy = hiddenFromAssistiveTech(spoken);
+      if (refusalHiddenBy) {
+        problems.push(
+          `a refused planting's reason is out of the accessibility tree with the fold closed (${refusalHiddenBy}).`
+        );
+      }
+    }
+
+    // A refused save action: an unreadable save is refused with the same words a
     // sighted visitor reads. The fold is opened only to reach the field and the
     // button that live inside it; the refusal must still be there, in the
     // exposed region, once the fold is shut again.
@@ -4869,6 +4950,103 @@ function checkActionConfirmationsAreSpoken(problems) {
   } finally {
     fold.open = foldWasOpen;
     if (saveField) saveField.value = saveFieldValue;
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreRawStorage(storageBefore);
+  }
+}
+
+/**
+ * A growing control the garden is not ready for stays reachable and says why.
+ * The Plant and Open-the-next-bed controls are never switched off, so a press
+ * reaches the refusal that explains it — the same reason the goal already
+ * shows — and lands in the always-exposed #garden-status, while the garden
+ * itself is left exactly as it was.
+ */
+function checkGardenActionRefusals(problems) {
+  const plant = document.getElementById("plant-seed");
+  const openBed = document.getElementById("open-bed");
+  const spoken = document.getElementById("garden-status");
+  if (!plant || !openBed || !spoken) {
+    problems.push(
+      "the garden-action refusals cannot be checked: the page needs #plant-seed, #open-bed and #garden-status."
+    );
+    return;
+  }
+
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const storageBefore = rawStorage();
+  try {
+    // Every plot full: planting is refused for the full plot, not for a price.
+    setGarden({ beds: 1, seeds: PLOT_CAPACITY, plants: 0 });
+    setGrowth(0, 1);
+    const fullPlot = availabilityProblem(plant, false, "the Plant a seed control on a full plot");
+    if (fullPlot) problems.push(fullPlot);
+    plant.focus();
+    if (document.activeElement !== plant) {
+      problems.push(
+        "the Plant a seed control cannot take focus while the garden cannot plant, so a keyboard visitor " +
+          "cannot reach the refusal."
+      );
+    }
+    plant.click();
+    if (spoken.textContent !== "Every plot already holds a seed.") {
+      problems.push(
+        `pressing Plant a seed on a full plot announced ${JSON.stringify(spoken.textContent)} into ` +
+          '#garden-status, expected "Every plot already holds a seed."'
+      );
+    }
+    if (getGarden().seeds !== PLOT_CAPACITY) {
+      problems.push(
+        `pressing Plant a seed on a full plot planted anyway: the garden holds ${getGarden().seeds} seeds, ` +
+          `expected the unchanged ${PLOT_CAPACITY}.`
+      );
+    }
+
+    // Room to plant but nothing saved: the refusal names the missing growth.
+    setGarden({ beds: 1, seeds: 1, plants: 0 });
+    const cost = nextSeedCost(1);
+    setGrowth(0, 1);
+    const shortGrowth = availabilityProblem(
+      plant,
+      false,
+      `the Plant a seed control at 0 growth, short of its ${cost}-growth cost`
+    );
+    if (shortGrowth) problems.push(shortGrowth);
+    plant.click();
+    if (spoken.textContent !== "Not enough growth for another seed yet.") {
+      problems.push(
+        `pressing Plant a seed with too little growth announced ${JSON.stringify(spoken.textContent)} into ` +
+          '#garden-status, expected "Not enough growth for another seed yet."'
+      );
+    }
+    if (getGarden().seeds !== 1 || getGrowthState().growth !== 0) {
+      problems.push(
+        `pressing Plant a seed with too little growth planted anyway: the garden holds ${getGarden().seeds} ` +
+          `seeds at ${getGrowthState().growth} growth, expected 1 seed at 0 growth.`
+      );
+    }
+
+    // Every plot full and too little saved: the bed's own refusal, and no bed.
+    setGarden({ beds: 1, seeds: PLOT_CAPACITY, plants: 0 });
+    setGrowth(0, 1);
+    const shortBed = availabilityProblem(openBed, false, "the Open the next bed control on a full plot with no growth");
+    if (shortBed) problems.push(shortBed);
+    openBed.click();
+    if (spoken.textContent !== "Not enough growth for the next bed yet.") {
+      problems.push(
+        `pressing Open the next bed with too little growth announced ${JSON.stringify(spoken.textContent)} into ` +
+          '#garden-status, expected "Not enough growth for the next bed yet."'
+      );
+    }
+    if (getGarden().beds !== 1) {
+      problems.push(
+        `pressing Open the next bed with too little growth opened one anyway: the garden has ` +
+          `${getGarden().beds} beds, expected 1.`
+      );
+    }
+  } finally {
     setGarden(gardenBefore);
     setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
     restoreRawStorage(storageBefore);
@@ -5193,6 +5371,44 @@ function checkSandbox(problems) {
     }
     if (getGarden().beds !== 1) {
       problems.push(`opening a bed in the rehearsal changed the real garden to ${getGarden().beds} beds; it must stay 1.`);
+    }
+
+    // A rehearsal action the copy cannot take stays reachable and says why in
+    // the rehearsal's own status line, exactly as the real panel's does.
+    setGarden({ beds: 1, seeds: PLOT_CAPACITY, plants: 0 });
+    setGrowth(0, 0);
+    openSandbox();
+    const rehearsalPlant = document.getElementById("sandbox-plant-herb");
+    const rehearsalOpenBed = document.getElementById("sandbox-open-bed");
+    const rehearsalStatus = document.getElementById("sandbox-status");
+    if (!rehearsalPlant || !rehearsalOpenBed || !rehearsalStatus) {
+      problems.push("the sandbox has no plant control, open-bed control or status line, so its refusals cannot be checked.");
+    } else {
+      const plantProblem = availabilityProblem(
+        rehearsalPlant,
+        false,
+        "the rehearsal's Plant a herb seed control on a full plot"
+      );
+      if (plantProblem) problems.push(plantProblem);
+      const bedProblem = availabilityProblem(
+        rehearsalOpenBed,
+        false,
+        "the rehearsal's Open the next bed control with no growth"
+      );
+      if (bedProblem) problems.push(bedProblem);
+      rehearsalPlant.click();
+      if (rehearsalStatus.textContent !== "The rehearsal's plot is full — open the next bed.") {
+        problems.push(
+          `pressing the rehearsal's Plant a herb seed control announced ${JSON.stringify(rehearsalStatus.textContent)} ` +
+            'in #sandbox-status, expected "The rehearsal\'s plot is full — open the next bed."'
+        );
+      }
+      if (getSandboxState().seeds !== PLOT_CAPACITY) {
+        problems.push(
+          `pressing the rehearsal's Plant a herb seed control on a full plot planted anyway: the rehearsal holds ` +
+            `${getSandboxState().seeds} seeds, expected the unchanged ${PLOT_CAPACITY}.`
+        );
+      }
     }
   } finally {
     setGarden(gardenBefore);
@@ -5833,6 +6049,7 @@ export async function checks() {
     checkReturnMarks(problems);
     checkLiveAnnouncements(problems);
     checkActionConfirmationsAreSpoken(problems);
+    checkGardenActionRefusals(problems);
     checkPollinator(problems);
     checkPollinatorHome(problems);
     checkPollinatorSeasons(problems);
