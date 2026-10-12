@@ -473,8 +473,12 @@ body {
 }
 
 /* A control that cannot be used yet says so plainly, in the same flat palette
-   rather than a dimmed copy that a low-contrast visitor cannot read. */
-.btn:disabled {
+   rather than a dimmed copy that a low-contrast visitor cannot read. A growing
+   control is marked `aria-disabled` rather than `disabled`, so it stays
+   reachable and a press can be answered with the reason — the two read the
+   same on screen. */
+.btn:disabled,
+.btn[aria-disabled="true"] {
   color: var(--ink);
   background: var(--panel-shade);
   box-shadow: inset 3px 3px 0 var(--panel-light), inset -3px -3px 0 var(--ink-soft);
@@ -482,9 +486,18 @@ body {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .btn:disabled:hover {
+  .btn:disabled:hover,
+  .btn[aria-disabled="true"]:hover {
     background: var(--panel-shade);
   }
+}
+
+/* An unavailable control is still pressable, but the press must not look like
+   it acted: it answers in the status line instead, so it gets no press
+   feedback. */
+.btn[aria-disabled="true"]:active {
+  transform: none;
+  box-shadow: inset 3px 3px 0 var(--panel-light), inset -3px -3px 0 var(--ink-soft);
 }
 
 .goal {

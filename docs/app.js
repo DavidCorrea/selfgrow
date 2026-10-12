@@ -1155,7 +1155,11 @@ function renderPlanting(state) {
     if (!button || !kind) continue;
     const cost = formatAmount(kind.cost);
     setText(button, state.plotFull ? `Plant a ${kind.name} seed — the plot is full` : `Plant a ${kind.name} seed — ${cost} growth`);
-    button.disabled = !kind.canPlant;
+    // Left enabled on purpose: a seed the garden cannot afford yet stays
+    // focusable and pressable, so a press reaches the refusal that says why
+    // (see plantSeedFromButton) instead of doing nothing. `aria-disabled` is
+    // how assistive technology is told the control is unavailable right now.
+    button.setAttribute("aria-disabled", String(!kind.canPlant));
   }
 
   const goal = describeNextGoal(state);
@@ -1194,7 +1198,10 @@ function renderOpenBed(state) {
   if (!button) return;
   button.hidden = !state.plotFull;
   setText(button, `Open the next bed — ${formatAmount(state.nextBedCost)} growth`);
-  button.disabled = !state.canOpenBed;
+  // Kept enabled for the same reason as the Plant controls: a bed the garden
+  // cannot pay for yet must still be pressable, so the press is answered with
+  // the reason rather than silence.
+  button.setAttribute("aria-disabled", String(!state.canOpenBed));
 }
 
 /**
@@ -1235,7 +1242,11 @@ function replantFromButton() {
   );
 }
 
-/** Plant one kind's seed from its button, and say what was planted. */
+/**
+ * Plant one kind's seed from its button, and say what was planted. Returns
+ * whether the seed was planted, so a caller can tell a real action from a press
+ * the garden refused and keep the two apart.
+ */
 function plantSeedFromButton(kind = "herb") {
   const result = plantSeed(kind);
   if (!result.ok) {
@@ -1244,15 +1255,20 @@ function plantSeedFromButton(kind = "herb") {
         ? "Every plot already holds a seed."
         : "Not enough growth for another seed yet."
     );
-    return;
+    return false;
   }
   const entry = SEED_KINDS[kindIndex(result.kind)];
   announce(
     `Planted a ${entry.name} seed for ${formatAmount(result.cost)} growth — it will grow into a plant in ` +
       `${formatDuration(entry.growSeconds)}.`
   );
+  return true;
 }
 
+/**
+ * Open the next bed from its button, and say what it opened. Returns whether the
+ * bed was opened, for the same reason as plantSeedFromButton.
+ */
 function openBedFromButton() {
   const result = openBed();
   if (!result.ok) {
@@ -1261,12 +1277,13 @@ function openBedFromButton() {
         ? "Not enough growth for the next bed yet."
         : "Every plot still has room — plant in it first."
     );
-    return;
+    return false;
   }
   announce(
     `Opened bed #${formatAmount(result.beds)} for ${formatAmount(result.cost)} growth — ` +
       `${formatAmount(result.beds * PLOTS_PER_BED)} plots of soil now.`
   );
+  return true;
 }
 
 let lastPlotKey = null;
@@ -1442,8 +1459,9 @@ function renderSandbox(state) {
   renderGoalFacts(elements.sandboxGoalDetail, rehearsal.goalFacts ?? []);
   setMeter(rehearsal.goalProgress, elements.sandboxMeter, elements.sandboxMeterFill);
 
-  // The rehearsal's own four actions, labelled and enabled exactly as the real
-  // panel's are, so a visitor tries the same decisions on the sandbox copy.
+  // The rehearsal's own four actions, labelled and made unavailable exactly as
+  // the real panel's are — the same reachable control that answers a press with
+  // its refusal — so a visitor tries the same decisions on the sandbox copy.
   setText(
     elements.sandboxTend,
     `Tend the soil — +${formatAmount(TEND_YIELD)} growth, +${formatGrowth(TEND_RATE_STEP)}/s`
@@ -1459,12 +1477,12 @@ function renderSandbox(state) {
         ? `Plant a ${kind.name} seed — the plot is full`
         : `Plant a ${kind.name} seed — ${formatAmount(kind.cost)} growth`
     );
-    button.disabled = !kind.canPlant;
+    button.setAttribute("aria-disabled", String(!kind.canPlant));
   }
   if (elements.sandboxOpenBed) {
     elements.sandboxOpenBed.hidden = !rehearsal.plotFull;
     setText(elements.sandboxOpenBed, `Open the next bed — ${formatAmount(rehearsal.nextBedCost)} growth`);
-    elements.sandboxOpenBed.disabled = !rehearsal.canOpenBed;
+    elements.sandboxOpenBed.setAttribute("aria-disabled", String(!rehearsal.canOpenBed));
   }
   setText(elements.sandboxStatus, rehearsal.status);
 }
@@ -1529,24 +1547,26 @@ function start() {
   });
 
   // Acting on the garden is noticing it: any of these clears the return marks.
+  // A press the garden refuses is not an action, so it neither clears the marks
+  // nor writes the save — it only says why in the status line.
   elements.tend?.addEventListener("click", () => {
     clearReturnMarks();
     tend();
     persist();
   });
   elements.plant?.addEventListener("click", () => {
+    if (!plantSeedFromButton("herb")) return;
     clearReturnMarks();
-    plantSeedFromButton("herb");
     persist();
   });
   elements.plantBloom?.addEventListener("click", () => {
+    if (!plantSeedFromButton("bloom")) return;
     clearReturnMarks();
-    plantSeedFromButton("bloom");
     persist();
   });
   elements.openBed?.addEventListener("click", () => {
+    if (!openBedFromButton()) return;
     clearReturnMarks();
-    openBedFromButton();
     persist();
   });
   elements.replant?.addEventListener("click", () => {
