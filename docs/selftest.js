@@ -2288,9 +2288,32 @@ function checkPlantingSpendsAndRaisesProduction(problems) {
   }
 }
 
+/** The goal block's short labelled facts, in the order the page shows them. */
+function readGoalFacts(container) {
+  if (!container) return [];
+  return [...container.querySelectorAll(":scope > .goal-fact")].map((fact) => ({
+    label: fact.querySelector(".goal-fact-label")?.textContent ?? "",
+    value: fact.querySelector(".goal-fact-value")?.textContent ?? "",
+  }));
+}
+
+/** One labelled fact's value, or undefined when the goal does not show it. */
+function goalFactValue(container, label) {
+  return readGoalFacts(container).find((fact) => fact.label === label)?.value;
+}
+
+/** True when the goal block is only labelled facts — no prose between them. */
+function goalFactsAreOnlyContent(container) {
+  if (!container) return false;
+  return [...container.childNodes].every(
+    (node) => node.nodeType !== Node.TEXT_NODE || !node.textContent.trim()
+  );
+}
+
 /**
- * The next goal is always on the page as progress and as time, never only as a
- * number, and it is honest when the plot is full.
+ * The next goal is always on the page as short labelled facts — the growth
+ * saved against the cost, the time to the next seed and the time to the next
+ * plant — never as a sentence, and it is honest when the plot is full.
  */
 function checkSeedGoalReadout(problems) {
   const meter = document.getElementById("seed-meter");
@@ -2309,16 +2332,31 @@ function checkSeedGoalReadout(problems) {
     setGarden({ seeds: 1, plants: 0 });
     const cost = nextSeedCost(1);
 
-    // Halfway there, at 1 growth per second: the detail must carry both the
-    // cost and how long it will take, and the meter must track the fraction.
+    // Halfway there, at 1 growth per second: the goal states the growth saved
+    // against the cost and how far the seed is, each under its own short label,
+    // and the meter must track the fraction.
     setGrowth(cost / 2, 1);
-    const halfDetail = String(detailEl.textContent);
-    if (!halfDetail.includes(formatAmount(cost))) {
-      problems.push(`the next-seed goal does not state its ${cost}-growth cost: ${JSON.stringify(halfDetail)}`);
-    }
-    if (!halfDetail.includes(`${Math.ceil((cost - cost / 2) / 1)}s`)) {
+    const halfway = readGoalFacts(detailEl);
+    const expectedSaved = `${formatGrowth(cost / 2)} / ${formatAmount(cost)}`;
+    if (goalFactValue(detailEl, "Saved") !== expectedSaved) {
       problems.push(
-        `the next-seed goal does not state how many seconds away the seed is: ${JSON.stringify(halfDetail)}`
+        `at half the cost the goal's Saved fact is ${JSON.stringify(goalFactValue(detailEl, "Saved"))}, ` +
+          `expected ${JSON.stringify(expectedSaved)} (growth saved / cost).`
+      );
+    }
+    const expectedSeconds = `${Math.ceil((cost - cost / 2) / 1)}s`;
+    if (goalFactValue(detailEl, "Next seed") !== expectedSeconds) {
+      problems.push(
+        `at half the cost the goal's Next seed fact is ${JSON.stringify(goalFactValue(detailEl, "Next seed"))}, ` +
+          `expected ${JSON.stringify(expectedSeconds)}.`
+      );
+    }
+    if (halfway.length !== 3 || halfway.some((fact) => !fact.label || !fact.value)) {
+      problems.push(`the goal under the title is not three labelled facts: ${JSON.stringify(halfway)}.`);
+    }
+    if (!goalFactsAreOnlyContent(detailEl)) {
+      problems.push(
+        `the goal block shows text outside its labelled facts: ${JSON.stringify(String(detailEl.textContent))}.`
       );
     }
     const now = Number(meter.getAttribute("aria-valuenow"));
@@ -2333,29 +2371,49 @@ function checkSeedGoalReadout(problems) {
       );
     }
 
-    // Affordable: the goal says it is ready, not how far away it is.
+    // Affordable: the goal's next seed reads ready, not how far away it is.
     setGrowth(cost, 1);
-    if (!String(detailEl.textContent).toLowerCase().includes("ready")) {
-      problems.push(`with enough growth the goal does not say the seed is ready: ${JSON.stringify(detailEl.textContent)}`);
-    }
-
-    // Not growing at all: the goal points at what to do about it.
-    setGrowth(0, 0);
-    if (!String(detailEl.textContent).toLowerCase().includes("tend")) {
+    if (goalFactValue(detailEl, "Next seed") !== "ready") {
       problems.push(
-        `with no growth and no rate the goal does not say to tend the soil: ${JSON.stringify(detailEl.textContent)}`
+        `with enough growth the goal's Next seed fact is ${JSON.stringify(goalFactValue(detailEl, "Next seed"))}, ` +
+          `expected "ready".`
       );
     }
 
-    // Full: the goal becomes the next bed, naming it and its cost, while the
-    // Plant a seed control stays disabled and says the plot is full.
+    // Not growing at all: the saved amount is stated, and no time is invented
+    // for a seed the garden has no rate to reach.
+    setGrowth(0, 0);
+    if (goalFactValue(detailEl, "Next seed") !== "—") {
+      problems.push(
+        `with no growth and no rate the goal's Next seed fact is ` +
+          `${JSON.stringify(goalFactValue(detailEl, "Next seed"))}, expected "—".`
+      );
+    }
+    if (goalFactValue(detailEl, "Saved") !== `0.0 / ${formatAmount(cost)}`) {
+      problems.push(
+        `with no growth the goal's Saved fact is ${JSON.stringify(goalFactValue(detailEl, "Saved"))}, ` +
+          `expected ${JSON.stringify(`0.0 / ${formatAmount(cost)}`)}.`
+      );
+    }
+
+    // Full: the goal becomes the next bed, stating its cost and time under the
+    // bed's own labels, while the Plant a seed control stays disabled and says
+    // the plot is full.
     setGarden({ beds: 1, seeds: PLOT_CAPACITY, plants: 0 });
     setGrowth(0, 1);
     const bedCost = nextBedCost(1);
-    const fullDetail = String(detailEl.textContent);
-    if (!fullDetail.includes(formatAmount(bedCost))) {
+    if (goalFactValue(detailEl, "Saved") !== `0.0 / ${formatAmount(bedCost)}`) {
       problems.push(
-        `with every plot full the goal does not state the next bed's ${bedCost}-growth cost: ${JSON.stringify(fullDetail)}`
+        `with every plot full the goal's Saved fact is ${JSON.stringify(goalFactValue(detailEl, "Saved"))}, ` +
+          `expected ${JSON.stringify(`0.0 / ${formatAmount(bedCost)}`)} (the next bed's cost).`
+      );
+    }
+    const bedSeconds = getDisplayedState().secondsToNextBed;
+    const expectedBed = bedSeconds == null ? "—" : formatDuration(bedSeconds);
+    if (goalFactValue(detailEl, "Next bed") !== expectedBed) {
+      problems.push(
+        `with every plot full the goal's Next bed fact is ${JSON.stringify(goalFactValue(detailEl, "Next bed"))}, ` +
+          `expected ${JSON.stringify(expectedBed)}.`
       );
     }
     const goalTitle = String(document.getElementById("goal-title")?.textContent ?? "");
@@ -2415,11 +2473,34 @@ function checkFirstGoalNamesTending(problems) {
           `${JSON.stringify(freshTitle)}`
       );
     }
-    const freshDetail = String(detailEl.textContent);
-    if (!/tend/i.test(freshDetail) || !freshDetail.includes(earned) || !freshDetail.includes(earnedRate)) {
+    // The detail under the title is short labelled facts, not a sentence: what
+    // is saved against the cost, that no seed has a time yet, and when the
+    // starting sprout matures. A returning sentence is the shape this forbids.
+    const freshState = getDisplayedState();
+    if (goalFactValue(detailEl, "Saved") !== `0.0 / ${formatAmount(freshState.nextSeedCost)}`) {
       problems.push(
-        `at zero growth and no rate the goal detail does not name tending and what it earns ` +
-          `(${earned}, ${earnedRate}): ${JSON.stringify(freshDetail)}`
+        `at zero growth the goal's Saved fact is ${JSON.stringify(goalFactValue(detailEl, "Saved"))}, ` +
+          `expected ${JSON.stringify(`0.0 / ${formatAmount(freshState.nextSeedCost)}`)}.`
+      );
+    }
+    if (goalFactValue(detailEl, "Next seed") !== "—") {
+      problems.push(
+        `at zero growth and no rate the goal's Next seed fact is ` +
+          `${JSON.stringify(goalFactValue(detailEl, "Next seed"))}, expected "—".`
+      );
+    }
+    const freshPlantSeconds = freshState.secondsToNextPlant;
+    const expectedFreshPlant = freshPlantSeconds == null ? "none growing" : formatDuration(freshPlantSeconds);
+    if (goalFactValue(detailEl, "Next plant") !== expectedFreshPlant) {
+      problems.push(
+        `at zero growth the goal's Next plant fact is ${JSON.stringify(goalFactValue(detailEl, "Next plant"))}, ` +
+          `expected ${JSON.stringify(expectedFreshPlant)}.`
+      );
+    }
+    const freshDetail = String(detailEl.textContent);
+    if (/ about |matures in|growth to the/.test(freshDetail) || !goalFactsAreOnlyContent(detailEl)) {
+      problems.push(
+        `at zero growth the goal detail reads as a sentence, not labelled facts: ${JSON.stringify(freshDetail)}`
       );
     }
 
