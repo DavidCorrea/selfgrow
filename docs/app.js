@@ -39,7 +39,9 @@ import {
   nextBedCost,
   nextSeedCost,
   openBed,
+  openBedInState,
   plantSeed,
+  plantSeedInState,
   pollinatorAt,
   readLastSeen,
   replant,
@@ -52,6 +54,7 @@ import {
   storageAvailable,
   subscribe,
   tend,
+  tendInState,
   writeLastSeen,
   writeStoredGarden,
 } from "./garden.js";
@@ -171,6 +174,11 @@ const elements = {
   sandboxDay: document.getElementById("sandbox-day"),
   sandboxMonth: document.getElementById("sandbox-month"),
   sandboxReset: document.getElementById("sandbox-reset"),
+  sandboxTend: document.getElementById("sandbox-tend"),
+  sandboxPlantHerb: document.getElementById("sandbox-plant-herb"),
+  sandboxPlantBloom: document.getElementById("sandbox-plant-bloom"),
+  sandboxOpenBed: document.getElementById("sandbox-open-bed"),
+  sandboxStatus: document.getElementById("sandbox-status"),
 };
 
 const isStorageAvailable = storageAvailable();
@@ -669,7 +677,10 @@ function showReturnSummary(away) {
 // snapshot and span, and the real garden, its save and its last-seen moment are
 // exactly as they were. The summary and the next goal come from the same
 // `summarizeReturn` and `describeNextGoal` the real return uses, so a rehearsal
-// reads exactly as the real absence would.
+// reads exactly as the real absence would. The garden's own actions — Tend the
+// soil, both Plant buttons and Open the next bed — run against the rehearsal
+// copy too, so time away can be tried with the decisions a visitor would
+// actually make, and reset back to the moment the rehearsal opened.
 
 /** The three fast-forward jumps the page offers, in the order it offers them. */
 export const SANDBOX_SPANS = Object.freeze([
@@ -684,7 +695,7 @@ export function sandboxSpanSeconds(key) {
   return span ? span.seconds : 0;
 }
 
-/** The open sandbox: its opening snapshot, how far it has wound, and its read. */
+/** The open sandbox: its opening snapshot, the rehearsal it has become, and its read. */
 let sandbox = null;
 
 /** A copy of the live garden's state — the point a rehearsal runs forward from. */
@@ -703,16 +714,74 @@ function gardenSnapshot() {
   };
 }
 
-/** Start a fresh sandbox from the garden as it is now, wound back to zero. */
-function startSandbox() {
-  sandbox = { snapshot: gardenSnapshot(), seconds: 0, shown: null };
+/** A garden state copied so a rehearsal can change it without touching the original. */
+function copyGardenState(state) {
+  return {
+    ...state,
+    sprouts: [...(state.sprouts ?? [])],
+    bloomSprouts: [...(state.bloomSprouts ?? [])],
+    plantCounts: [...(state.plantCounts ?? [0, 0])],
+  };
 }
 
-/** Recompute what the open sandbox shows, from its snapshot and its span. */
+/**
+ * Start a fresh sandbox from the garden as it is now, wound back to zero. The
+ * rehearsal begins as a copy of the opening snapshot, and `away` accumulates
+ * the totals every settling produces so the summary can account for the whole
+ * rehearsal across several windings and actions.
+ */
+function startSandbox() {
+  const snapshot = gardenSnapshot();
+  sandbox = {
+    snapshot,
+    state: copyGardenState(snapshot),
+    seconds: 0,
+    wound: 0,
+    away: { earned: 0, sown: 0, sownCost: 0, matured: 0 },
+    status: "",
+    shown: null,
+  };
+}
+
+/**
+ * Materialise the time the sandbox has been wound forward into its rehearsal
+ * state, and bank what it produced. Called before every action so an action
+ * runs against a garden at the moment the rehearsal has reached, then the
+ * pending window starts again from there.
+ */
+function settleSandbox() {
+  if (!sandbox) return;
+  const segment = buildAwayReport(sandbox.state, sandbox.seconds);
+  sandbox.away.earned += segment.earned;
+  sandbox.away.sown += segment.sown;
+  sandbox.away.sownCost += segment.sownCost;
+  sandbox.away.matured += segment.matured;
+  sandbox.state = simulateGarden(sandbox.state, sandbox.seconds, { sow: true });
+  sandbox.wound += sandbox.seconds;
+  sandbox.seconds = 0;
+}
+
+/** Recompute what the open sandbox shows, from its rehearsal state and its span. */
 function rehearseSandbox() {
   if (!sandbox) return;
-  const end = simulateGarden(sandbox.snapshot, sandbox.seconds, { sow: true });
-  const away = buildAwayReport(sandbox.snapshot, sandbox.seconds);
+  const end = simulateGarden(sandbox.state, sandbox.seconds, { sow: true });
+  const segment = buildAwayReport(sandbox.state, sandbox.seconds);
+  // The summary is written against the whole rehearsal, not only this last
+  // winding: its own totals accumulate across the actions, and its start and
+  // the forms it found are read from the opening snapshot the sandbox copied.
+  const fromForm = gardenForm(sandbox.snapshot.growth);
+  const away = {
+    ...segment,
+    seconds: sandbox.wound + sandbox.seconds,
+    earned: sandbox.away.earned + segment.earned,
+    sown: sandbox.away.sown + segment.sown,
+    sownCost: sandbox.away.sownCost + segment.sownCost,
+    matured: sandbox.away.matured + segment.matured,
+    from: fromForm.index,
+    fromName: fromForm.name,
+    formsFound: FORMS.slice(fromForm.index + 1, segment.to + 1).map((entry) => entry.name),
+  };
+  away.summary = summarizeReturn(away);
   const display = describeGardenState(
     {
       seeds: end.sprouts.length + end.bloomSprouts.length,
@@ -731,8 +800,8 @@ function rehearseSandbox() {
   const goal = describeNextGoal(display);
   sandbox.shown = {
     open: true,
-    seconds: sandbox.seconds,
-    elapsed: formatAway(sandbox.seconds),
+    seconds: sandbox.wound + sandbox.seconds,
+    elapsed: formatAway(sandbox.wound + sandbox.seconds),
     growth: display.growth,
     rate: display.rate,
     season: display.season,
@@ -747,8 +816,14 @@ function rehearseSandbox() {
     plants: display.plants,
     beds: display.beds,
     capacity: display.capacity,
+    plotFull: display.plotFull,
+    canPlantHerb: display.kinds[0].canPlant,
+    canPlantBloom: display.kinds[1].canPlant,
+    canOpenBed: display.canOpenBed,
+    nextBedCost: display.nextBedCost,
     matured: away.matured,
     summary: away.summary,
+    status: sandbox.status,
     goalTitle: goal.title,
     goalDetail: goal.detail,
     goalProgress: goal.progress,
@@ -783,10 +858,64 @@ export function fastForwardSandbox(seconds) {
 /** Put the sandbox back to the moment it was opened. Safe while it is closed. */
 export function resetSandbox() {
   if (!sandbox) return getSandboxState();
+  sandbox.state = copyGardenState(sandbox.snapshot);
   sandbox.seconds = 0;
+  sandbox.wound = 0;
+  sandbox.away = { earned: 0, sown: 0, sownCost: 0, matured: 0 };
+  sandbox.status = "Reset to the moment the rehearsal opened.";
   rehearseSandbox();
   render();
   return getSandboxState();
+}
+
+/** The kinds an action name plants, or null for any other action. */
+const SANDBOX_PLANT_ACTIONS = Object.freeze({ "plant-herb": "herb", "plant-bloom": "bloom" });
+
+/**
+ * Take one of the garden's own actions inside the rehearsal, changing only the
+ * sandbox copy. `action` is `"tend"`, `"plant-herb"`, `"plant-bloom"` or
+ * `"open-bed"`; it opens the sandbox first if it is closed, settles whatever
+ * time has been wound forward so the action runs at the moment the rehearsal
+ * has reached, then runs the same rule the live action uses against the sandbox
+ * state and rehearses the result. Nothing here writes the save, the real garden
+ * or the last-seen moment.
+ */
+export function actInSandbox(action) {
+  const name = String(action ?? "");
+  if (!sandbox) startSandbox();
+  settleSandbox();
+  let result;
+  if (name === "tend") result = tendInState(sandbox.state);
+  else if (name === "open-bed") result = openBedInState(sandbox.state);
+  else if (SANDBOX_PLANT_ACTIONS[name]) result = plantSeedInState(sandbox.state, SANDBOX_PLANT_ACTIONS[name]);
+  else {
+    sandbox.status = "That is not an action the rehearsal knows.";
+    rehearseSandbox();
+    render();
+    return { ...getSandboxState(), ok: false, action: name, reason: "unknown sandbox action" };
+  }
+  if (result.ok) sandbox.state = result.state;
+  sandbox.status = describeSandboxAction(name, result);
+  rehearseSandbox();
+  render();
+  return { ...getSandboxState(), ok: result.ok, action: name, reason: result.reason, cost: result.cost };
+}
+
+/** What the rehearsal's own status line says after an action, or a refusal. */
+function describeSandboxAction(action, result) {
+  if (!result.ok) {
+    if (result.reason === "the plot is full") return "The rehearsal's plot is full — open the next bed.";
+    if (result.reason === "the plot still has room") return "The rehearsal's plot still has room — plant in it first.";
+    return "The rehearsal has not saved enough growth yet.";
+  }
+  if (action === "tend") {
+    return `Tended the rehearsal's soil — +${formatAmount(TEND_YIELD)} growth, +${formatGrowth(TEND_RATE_STEP)}/s.`;
+  }
+  if (action === "open-bed") {
+    return `Opened bed #${formatAmount(result.beds)} in the rehearsal for ${formatAmount(result.cost)} growth.`;
+  }
+  const entry = SEED_KINDS[kindIndex(result.kind)];
+  return `Planted a ${entry.name} seed in the rehearsal for ${formatAmount(result.cost)} growth.`;
 }
 
 /** What the sandbox shows, or `{open: false}` while it is closed. */
@@ -1266,6 +1395,32 @@ function renderSandbox(state) {
   setText(elements.sandboxGoalTitle, rehearsal.goalTitle);
   setText(elements.sandboxGoalDetail, rehearsal.goalDetail);
   setMeter(rehearsal.goalProgress, elements.sandboxMeter, elements.sandboxMeterFill);
+
+  // The rehearsal's own four actions, labelled and enabled exactly as the real
+  // panel's are, so a visitor tries the same decisions on the sandbox copy.
+  setText(
+    elements.sandboxTend,
+    `Tend the soil — +${formatAmount(TEND_YIELD)} growth, +${formatGrowth(TEND_RATE_STEP)}/s`
+  );
+  for (const [button, kind] of [
+    [elements.sandboxPlantHerb, rehearsal.kinds[0]],
+    [elements.sandboxPlantBloom, rehearsal.kinds[1]],
+  ]) {
+    if (!button || !kind) continue;
+    setText(
+      button,
+      rehearsal.plotFull
+        ? `Plant a ${kind.name} seed — the plot is full`
+        : `Plant a ${kind.name} seed — ${formatAmount(kind.cost)} growth`
+    );
+    button.disabled = !kind.canPlant;
+  }
+  if (elements.sandboxOpenBed) {
+    elements.sandboxOpenBed.hidden = !rehearsal.plotFull;
+    setText(elements.sandboxOpenBed, `Open the next bed — ${formatAmount(rehearsal.nextBedCost)} growth`);
+    elements.sandboxOpenBed.disabled = !rehearsal.canOpenBed;
+  }
+  setText(elements.sandboxStatus, rehearsal.status);
 }
 
 async function copySave() {
@@ -1367,6 +1522,10 @@ function start() {
   elements.sandboxDay?.addEventListener("click", () => fastForwardSandbox(sandboxSpanSeconds("day")));
   elements.sandboxMonth?.addEventListener("click", () => fastForwardSandbox(sandboxSpanSeconds("month")));
   elements.sandboxReset?.addEventListener("click", () => resetSandbox());
+  elements.sandboxTend?.addEventListener("click", () => actInSandbox("tend"));
+  elements.sandboxPlantHerb?.addEventListener("click", () => actInSandbox("plant-herb"));
+  elements.sandboxPlantBloom?.addEventListener("click", () => actInSandbox("plant-bloom"));
+  elements.sandboxOpenBed?.addEventListener("click", () => actInSandbox("open-bed"));
 
   // The live clock is wall time, not ticks, because ticks stop while a tab sleeps
   // and the visitor still expects that time to count. A backwards or missing

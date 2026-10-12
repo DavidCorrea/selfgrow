@@ -76,6 +76,7 @@ import {
 } from "./garden.js";
 import {
   MIN_AWAY_SECONDS,
+  actInSandbox,
   announceSnapshot,
   applyReturn,
   buildAwayReport,
@@ -4546,6 +4547,120 @@ function checkSandbox(problems) {
           `but the real return reports ${away.growth} / ${away.matured}.`
       );
     }
+
+    // The garden's own actions run inside the rehearsal, changing only the
+    // sandbox copy. A known garden and span let the checks state exact values.
+    for (const id of ["sandbox-tend", "sandbox-plant-herb", "sandbox-plant-bloom", "sandbox-open-bed", "sandbox-status"]) {
+      if (!document.getElementById(id)) problems.push(`the sandbox has no ${id} control for its own actions.`);
+    }
+
+    setGarden({ seeds: 2, plants: 1 });
+    setGrowth(1000, 0.5);
+    const realGardenBeforeActs = getGarden();
+    const realGrowthBeforeActs = getGrowthState();
+    const realStorageBeforeActs = rawStorage();
+    const seenBeforeActs = rawLastSeen();
+
+    const opening = openSandbox();
+    const tended = actInSandbox("tend");
+    if (!tended.ok || tended.growth !== opening.growth + TEND_YIELD || Math.abs(tended.rate - (opening.rate + TEND_RATE_STEP)) > 1e-6) {
+      problems.push(
+        `tending the rehearsal left ${tended.growth} growth / ${tended.rate} rate, expected ` +
+          `${opening.growth + TEND_YIELD} / ${opening.rate + TEND_RATE_STEP}.`
+      );
+    }
+
+    const herbCost = nextSeedCost(3, 0);
+    const herbPlanted = actInSandbox("plant-herb");
+    if (!herbPlanted.ok || herbPlanted.cost !== herbCost) {
+      problems.push(`planting a herb seed in the rehearsal cost ${herbPlanted.cost}, expected ${herbCost}.`);
+    }
+    if (herbPlanted.growth !== tended.growth - herbCost || herbPlanted.seeds !== tended.seeds + 1) {
+      problems.push(
+        `planting a herb seed in the rehearsal left ${herbPlanted.growth} growth / ${herbPlanted.seeds} seeds, ` +
+          `expected ${tended.growth - herbCost} / ${tended.seeds + 1}.`
+      );
+    }
+
+    const bloomCost = nextSeedCost(0, "bloom");
+    const bloomPlanted = actInSandbox("plant-bloom");
+    if (!bloomPlanted.ok || bloomPlanted.cost !== bloomCost || bloomPlanted.seeds !== herbPlanted.seeds + 1) {
+      problems.push(
+        `planting a bloom seed in the rehearsal left ${bloomPlanted.growth} growth / ${bloomPlanted.seeds} seeds, ` +
+          `expected ${herbPlanted.growth - bloomCost} / ${herbPlanted.seeds + 1}.`
+      );
+    }
+
+    // The readout, goal and status on the page follow the acted rehearsal.
+    const acted = getSandboxState();
+    if (document.getElementById("sandbox-growth")?.textContent !== formatGrowth(acted.growth)) {
+      problems.push(
+        `the rehearsal readout shows ${JSON.stringify(document.getElementById("sandbox-growth")?.textContent)} ` +
+          `growth, expected ${formatGrowth(acted.growth)}.`
+      );
+    }
+    if (document.querySelector('[data-field="sandbox-seeds"]')?.textContent !== formatAmount(acted.seeds)) {
+      problems.push(
+        `the rehearsal readout shows ${JSON.stringify(document.querySelector('[data-field="sandbox-seeds"]')?.textContent)} ` +
+          `seeds, expected ${formatAmount(acted.seeds)}.`
+      );
+    }
+    if (document.getElementById("sandbox-summary")?.textContent !== acted.summary) {
+      problems.push("the rehearsal summary does not match the acted rehearsal state.");
+    }
+    if (document.getElementById("sandbox-goal-title")?.textContent !== acted.goalTitle) {
+      problems.push("the rehearsal goal does not match the acted rehearsal state.");
+    }
+    if (!acted.status) problems.push("acting in the rehearsal said nothing in its status line.");
+
+    // None of it may reach the real garden, its save or its clock.
+    const realGardenAfterActs = getGarden();
+    const realGrowthAfterActs = getGrowthState();
+    if (
+      realGardenAfterActs.seeds !== realGardenBeforeActs.seeds ||
+      realGardenAfterActs.plants !== realGardenBeforeActs.plants ||
+      realGardenAfterActs.beds !== realGardenBeforeActs.beds ||
+      realGrowthAfterActs.growth !== realGrowthBeforeActs.growth
+    ) {
+      problems.push(
+        `acting in the rehearsal changed the real garden to ${realGrowthAfterActs.growth} growth / ` +
+          `${realGardenAfterActs.seeds} seeds / ${realGardenAfterActs.plants} plants / ${realGardenAfterActs.beds} beds; ` +
+          `it must stay ${realGrowthBeforeActs.growth} / ${realGardenBeforeActs.seeds} / ${realGardenBeforeActs.plants} / ` +
+          `${realGardenBeforeActs.beds}.`
+      );
+    }
+    if (rawStorage().value !== realStorageBeforeActs.value) {
+      problems.push("acting in the rehearsal wrote to the garden's save; the sandbox must never touch it.");
+    }
+    if (rawLastSeen() !== seenBeforeActs) {
+      problems.push("acting in the rehearsal changed when the visitor was last seen; the sandbox must never touch it.");
+    }
+
+    // Reset puts the acted rehearsal back to the moment it opened.
+    const resetBack = resetSandbox();
+    if (resetBack.growth !== 1000 || resetBack.seeds !== 2 || resetBack.plants !== 1 || resetBack.beds !== 1) {
+      problems.push(
+        `resetting the acted rehearsal left ${resetBack.growth} growth / ${resetBack.seeds} seeds / ` +
+          `${resetBack.plants} plants / ${resetBack.beds} beds, expected its start of 1000 / 2 / 1 / 1.`
+      );
+    }
+
+    // Opening a bed inside the rehearsal widens the rehearsal alone, and is
+    // only offered once the plot is full.
+    const bedCost = nextBedCost(1);
+    setGarden({ seeds: PLOT_CAPACITY });
+    setGrowth(bedCost, 0);
+    openSandbox();
+    const openedBed = actInSandbox("open-bed");
+    if (!openedBed.ok || openedBed.beds !== 2 || openedBed.capacity !== 2 * PLOT_CAPACITY) {
+      problems.push(
+        `opening a bed in the rehearsal left ${openedBed.beds} beds / ${openedBed.capacity} plots, ` +
+          `expected 2 / ${2 * PLOT_CAPACITY}.`
+      );
+    }
+    if (getGarden().beds !== 1) {
+      problems.push(`opening a bed in the rehearsal changed the real garden to ${getGarden().beds} beds; it must stay 1.`);
+    }
   } finally {
     setGarden(gardenBefore);
     setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
@@ -5008,6 +5123,49 @@ async function checkAgentTools(problems) {
       const reset = await resetSandboxTool.execute({}, {});
       if (!reset.sandbox?.open || reset.sandbox.seconds !== 0 || reset.sandbox.growth !== 0) {
         problems.push("the reset-sandbox tool did not put the sandbox back to its start.");
+      }
+
+      const actTool = find("act-in-sandbox");
+      if (!actTool) {
+        problems.push(
+          "agenttools.js must expose act-in-sandbox so an agent can tend, plant and open a bed inside the rehearsal."
+        );
+      } else {
+        for (let i = 0; i < 8; i += 1) await actTool.execute({ action: "tend" }, {});
+        const planted = await actTool.execute({ action: "plant-herb" }, {});
+        if (!planted.ok || !planted.state?.sandbox?.open) {
+          problems.push("the act-in-sandbox tool did not plant a herb seed in the rehearsal.");
+        } else if (planted.state.sandbox.seeds !== 3) {
+          problems.push(
+            `the act-in-sandbox tool left the rehearsal with ${planted.state.sandbox.seeds} seeds, expected 3.`
+          );
+        }
+        if (!planted.state?.sandbox?.status) {
+          problems.push("the act-in-sandbox tool returned no status for the action it took.");
+        }
+        const readBack = await readTool.execute({}, {});
+        if (!readBack.sandbox?.open || readBack.sandbox.seeds !== 3) {
+          problems.push("get-state does not report the rehearsal the act-in-sandbox tool acted on.");
+        }
+        const realAfterActs = getGarden();
+        if (realAfterActs.seeds !== 2 || realAfterActs.plants !== 1 || getGrowthState().growth !== 0) {
+          problems.push("acting in the sandbox tool changed the real garden.");
+        }
+        if (rawStorage().value !== storageBefore.value) {
+          problems.push("an act-in-sandbox call wrote to the garden's save; the sandbox must never touch it.");
+        }
+
+        // Opening a bed inside the rehearsal widens only the rehearsal's soil.
+        setGarden({ seeds: PLOT_CAPACITY });
+        setGrowth(nextBedCost(1), 0);
+        await openSandboxTool.execute({}, {});
+        const bedAct = await actTool.execute({ action: "open-bed" }, {});
+        if (!bedAct.ok || bedAct.beds !== 2) {
+          problems.push(`the act-in-sandbox open-bed left ${bedAct.beds} beds, expected 2.`);
+        }
+        if (getGarden().beds !== 1) {
+          problems.push("the act-in-sandbox open-bed changed the real garden's beds.");
+        }
       }
     } finally {
       setGarden(gardenBefore);

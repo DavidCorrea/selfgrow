@@ -5,13 +5,15 @@
  * more. `get-state` returns every value on the page; `tend` is the Tend the soil
  * button; `plant-seed` is the Plant a seed button; `open-bed` is the Open the
  * next bed button; `replant` is the Replant the garden button; `open-sandbox`,
- * `fast-forward-sandbox` and `reset-sandbox` are the Rehearse time panel;
- * `export-save` is the Copy save button; `import-save` is the Load save button,
+ * `fast-forward-sandbox`, `act-in-sandbox` and `reset-sandbox` are the Rehearse
+ * time panel — the last but one tending, planting and opening a bed inside the
+ * rehearsal rather than the real garden; `export-save` is the Copy save button; `import-save` is the Load save button,
  * and returns the same fields afterwards so the caller can see what it changed.
  */
 
 import {
   SANDBOX_SPANS,
+  actInSandbox,
   clearReturnMarks,
   exportSave,
   fastForwardSandbox,
@@ -117,7 +119,10 @@ export function tools() {
         "growth, form, ungrown seeds and grown plants it reached, how many " +
         "seeds matured (matured), the return summary the real garden would " +
         "show, and the next goal it would offer (goalTitle, goalDetail) — or " +
-        "{open: false} when no sandbox is open. Rehearsing never touches the " +
+        "{open: false} when no sandbox is open. The sandbox carries the " +
+        "garden's own controls too: act-in-sandbox can tend, plant-herb, " +
+        "plant-bloom and open-bed inside the rehearsal copy, and the sandbox's " +
+        "status string says what the last one did. Rehearsing never touches the " +
         "real garden. Ask it before acting so you know what the visitor sees.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
@@ -298,6 +303,56 @@ export function tools() {
       async execute({ span }) {
         fastForwardSandbox(sandboxSpanSeconds(String(span)));
         return getDisplayedState();
+      },
+    },
+    {
+      name: "act-in-sandbox",
+      title: "Take a garden action inside the rehearsal",
+      description:
+        "Does what the page's rehearsal buttons do: runs one of the garden's " +
+        "own actions against the sandbox copy instead of the real garden, so a " +
+        "visitor can try the decisions they would make over an hour or a month " +
+        "away. Give `action` as \"tend\" (earn growth and raise the rate), " +
+        "\"plant-herb\" or \"plant-bloom\" (spend the rehearsal's growth on a " +
+        "seed), or \"open-bed\" (spend it on another bed once the plot is " +
+        "full). It opens the sandbox first if it is closed, settling any time " +
+        "already wound forward so the action runs at the moment the rehearsal " +
+        "has reached. The rules — cost, capacity and refusals — are the same " +
+        "ones the real tend, plant-seed and open-bed apply, but only the " +
+        "rehearsal changes: the real garden, its save and its last-seen moment " +
+        "stay exactly as they were. Use fast-forward-sandbox to wind the " +
+        "rehearsal forward around the actions, and reset-sandbox to put it back " +
+        "to the moment it opened. Returns whether it took, the action, the " +
+        "reason when it refused, the cost it spent, how many beds the rehearsal " +
+        "now owns, and the whole state afterwards — whose sandbox field is the " +
+        "acted rehearsal beside the untouched real garden.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          action: {
+            type: "string",
+            enum: ["tend", "plant-herb", "plant-bloom", "open-bed"],
+            description:
+              "Which garden action to take inside the rehearsal: tend, " +
+              "plant-herb, plant-bloom or open-bed.",
+          },
+        },
+        required: ["action"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false },
+      example: { action: "tend" },
+      async execute({ action }) {
+        const result = actInSandbox(String(action));
+        const state = getDisplayedState();
+        return {
+          ok: result.ok,
+          action: result.action,
+          reason: result.reason ?? null,
+          cost: result.cost ?? 0,
+          beds: state.sandbox?.open ? state.sandbox.beds : null,
+          state,
+        };
       },
     },
     {
