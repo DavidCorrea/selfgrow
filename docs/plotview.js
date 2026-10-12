@@ -593,6 +593,77 @@ function drawPollinator(ctx, x, y, palette, driftX, driftY) {
 }
 
 /**
+ * The pollinator's home: a small hive of stacked sun bars, its stripes and
+ * entrance cut in the soil's own dark, standing still in the plot's top-right
+ * cell.
+ *
+ * It is drawn with no phase, so the hive never moves while the garden breathes
+ * around it, and every colour comes from the same palette as the plants, so it
+ * belongs to this garden rather than looking pasted on. The plot draws it
+ * whenever grown plants stand on the garden — the place a pollinator lives —
+ * which is exactly what `pollinatorPlot` reads off the state.
+ */
+function drawPollinatorHome(ctx, x, y, palette) {
+  ctx.fillStyle = palette.sun;
+  ctx.fillRect(x + 7, y + 10, 10, 3);
+  ctx.fillRect(x + 5, y + 13, 14, 4);
+  ctx.fillRect(x + 6, y + 17, 12, 4);
+  ctx.fillStyle = palette.soilDeep;
+  ctx.fillRect(x + 5, y + 13, 14, 1);
+  ctx.fillRect(x + 6, y + 17, 12, 1);
+  // The entrance, so the stack reads as a hive rather than a pile of bars.
+  ctx.fillRect(x + 10, y + 18, 4, 3);
+}
+
+/**
+ * The pollinator at rest, perched on the hive roof between visits: the same bee
+ * the visiting frame draws, set still on the home so a garden between visits
+ * still shows that a pollinator lives here.
+ */
+function drawRestingBee(ctx, x, y, palette) {
+  drawPollinator(ctx, x, y + 3, palette, 0, 0);
+}
+
+/**
+ * The pollen a visiting bee has stirred up: a few still sun specks across the
+ * plants, so a visit looks busier than a resting home at a glance.
+ *
+ * Their count and positions come from the grown plants, not the animation
+ * phase, so the visit differs from the rest in the single still frame that
+ * reduced motion pins to and that a pixel probe reads.
+ */
+function drawPollenSpecks(ctx, palette, plants) {
+  const count = Math.min(5, 1 + plants);
+  const span = (COLUMNS - 1) * CELL - 12;
+  ctx.fillStyle = palette.sun;
+  for (let i = 0; i < count; i += 1) {
+    const x = 6 + ((i * 29) % span);
+    const y = 3 + ((i * 7) % 12);
+    ctx.fillRect(x, y, 2, 2);
+  }
+}
+
+/**
+ * What the pollinator is doing on the plot, as a pure reading of `state`:
+ * whether its home stands here, and whether it is out visiting right now.
+ *
+ * `home` is a garden with grown plants — the place a pollinator lives — which
+ * is the same grown-plant count the plot draws and `get-state` reports;
+ * `visiting` is that home with a visit on now, and `resting` the visits
+ * between. No new saved field: it reads exactly the `plants`/`plantCounts` and
+ * `pollinator.visiting` the readout already carries, so the picture and the
+ * agent tools cannot disagree about the pollinator's state.
+ *
+ * @returns {{home: boolean, visiting: boolean, resting: boolean}}
+ */
+export function pollinatorPlot(state) {
+  const { herbPlants, bloomPlants } = kindsOnPlot(state);
+  const home = herbPlants + bloomPlants > 0;
+  const visiting = home && Boolean(state?.pollinator?.visiting);
+  return { home, visiting, resting: home && !visiting };
+}
+
+/**
  * Draw `state`'s garden onto `canvas`, painting only with `palette`.
  *
  * The picture is a pure view of the state and the animation `phase`: the form and
@@ -600,9 +671,10 @@ function drawPollinator(ctx, x, y, palette, driftX, driftY) {
  * the garden's own growth covers that ground with low growth so a low-plant,
  * high-growth garden still visibly fills, the season the state names sets the
  * foliage colours and shape, and the plot's own counts say what stands on it —
- * the grown plants first, then the sprouting seeds, then bare soil. The season
- * is read from `state.season.key`, which is the same value the readout and
- * `get-state` report, so the picture and the words
+ * the grown plants first, then the sprouting seeds, then bare soil — and
+ * whether a pollinator lives here and is out working the plants right now. The
+ * season is read from `state.season.key`, which is the same value the readout
+ * and `get-state` report, so the picture and the words
  * cannot disagree. The same state and phase always draw the same way, and every
  * colour comes from the palette read off `:root`, so the plot belongs to the same
  * garden as the panels around it. The number of sprites is bounded by the cells
@@ -648,11 +720,20 @@ export function drawGarden(canvas, state, palette, phase = 0) {
     // beat than the sway.
     else if (cell < plants + sprouts) drawBud(ctx, x, y, paint, Math.floor((phase + cell) / 2) % 2 === 0);
   }
-  // A visit is drawn over the first plant, the one the bee lands on; with no
-  // plants there is nowhere for it to visit. It drifts a pixel or two on the
-  // breeze rather than hovering dead still.
-  if (plants > 0 && state && state.pollinator && state.pollinator.visiting) {
-    drawPollinator(ctx, 0, 0, paint, swayPixels(phase, 1), swayPixels(phase, 3));
+  // The pollinator's home stands on the plot whenever grown plants do. Between
+  // visits the bee rests still on the hive; during one the hive stays and the
+  // bee is out over the plants with pollen in the air, so the picture says both
+  // that a pollinator lives here and whether it is busy right now.
+  const pollinator = pollinatorPlot(state);
+  if (pollinator.home) {
+    drawPollinatorHome(ctx, width - CELL, 0, paint);
+    if (pollinator.visiting) {
+      drawPollinator(ctx, 0, 0, paint, swayPixels(phase, 1), swayPixels(phase, 3));
+      if (plants > 1) drawPollinator(ctx, CELL, 0, paint, swayPixels(phase, 2), swayPixels(phase, 4));
+      drawPollenSpecks(ctx, paint, plants);
+    } else {
+      drawRestingBee(ctx, width - CELL, 0, paint);
+    }
   }
   // The return marks go on last, over the garden: what grew while the visitor
   // was away stands out until they notice it.
