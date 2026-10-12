@@ -1347,40 +1347,142 @@ export function gardenKinds(garden) {
 }
 
 /**
+ * The live garden as the plain state `simulateGarden` reads and returns.
+ *
+ * The live actions and a rehearsal then run the same rules against the same
+ * shape, so planting in the sandbox cannot drift from planting for real. Pure
+ * in the sense that it reads the live numbers and copies nothing the caller
+ * could mutate back.
+ */
+function liveGardenState() {
+  return {
+    growth,
+    rate,
+    age,
+    bonus,
+    sprouts: garden.sprouts,
+    bloomSprouts: garden.bloomSprouts ?? [],
+    plantCounts: [garden.plants, garden.bloomPlants ?? 0],
+    beds: garden.beds,
+  };
+}
+
+/** How many seeds and plants of both kinds fill a state's `beds` of soil. */
+function plantedInState(state, capacity) {
+  return SEED_KINDS.reduce(
+    (sum, _entry, i) =>
+      sum + kindSeedCount(state, i, capacity) + wholeCount(plantsForKind(state, i), Number.MAX_SAFE_INTEGER),
+    0
+  );
+}
+
+/**
+ * Tend a garden state's soil: add `TEND_YIELD` growth and `TEND_RATE_STEP` to
+ * its rate. Pure — a rehearsal tends its own copy, while the live `tend` keeps
+ * raising the garden's lifetime beside it.
+ *
+ * @returns {{ok: boolean, reason: string|null, cost: number, state: object}}
+ */
+export function tendInState(state) {
+  const source = state ?? {};
+  return {
+    ok: true,
+    reason: null,
+    cost: 0,
+    state: {
+      ...source,
+      growth: amountOrZero(source.growth) + TEND_YIELD,
+      rate: amountOrZero(source.rate) + TEND_RATE_STEP,
+    },
+  };
+}
+
+/**
+ * Plant a seed of `kind` into a garden state, spending its growth under the
+ * same rules the live `plantSeed` applies: the same cost, capacity and refusal
+ * order. Pure — a refusal returns the state unchanged with the reason, and a
+ * rehearsal's planting never reaches the real garden or its save.
+ *
+ * @returns {{ok: boolean, reason: string|null, cost: number, kind: string, state: object}}
+ */
+export function plantSeedInState(state, kind = 0) {
+  const source = state ?? {};
+  const index = kindIndex(kind);
+  const entry = SEED_KINDS[index];
+  const capacity = bedCount(source.beds) * PLOTS_PER_BED;
+  const plantsOfKind = wholeCount(plantsForKind(source, index), Number.MAX_SAFE_INTEGER);
+  const plantedOfKind = kindSeedCount(source, index, capacity) + plantsOfKind;
+  const totalPlanted = plantedInState(source, capacity);
+  const growthOf = amountOrZero(source.growth);
+  const cost = nextSeedCost(plantedOfKind, index);
+  if (totalPlanted >= capacity) {
+    return { ok: false, reason: "the plot is full", cost, kind: entry.key, state: source };
+  }
+  if (growthOf < cost) {
+    return { ok: false, reason: "not enough growth", cost, kind: entry.key, state: source };
+  }
+  const field = index === 0 ? "sprouts" : "bloomSprouts";
+  const timers = Array.isArray(source[field]) ? source[field] : [];
+  return {
+    ok: true,
+    reason: null,
+    cost,
+    kind: entry.key,
+    state: { ...source, growth: growthOf - cost, [field]: [...timers, entry.growSeconds] },
+  };
+}
+
+/**
+ * Open the next bed in a garden state, spending its growth under the same rules
+ * the live `openBed` applies: refused while any plot still has room, then only
+ * when the growth can pay. Pure; a refusal returns the state unchanged.
+ *
+ * @returns {{ok: boolean, reason: string|null, cost: number, beds: number, state: object}}
+ */
+export function openBedInState(state) {
+  const source = state ?? {};
+  const beds = bedCount(source.beds);
+  const capacity = beds * PLOTS_PER_BED;
+  const planted = plantedInState(source, capacity);
+  const growthOf = amountOrZero(source.growth);
+  const cost = nextBedCost(beds);
+  if (planted < capacity) {
+    return { ok: false, reason: "the plot still has room", cost, beds, state: source };
+  }
+  if (growthOf < cost) {
+    return { ok: false, reason: "not enough growth", cost, beds, state: source };
+  }
+  return {
+    ok: true,
+    reason: null,
+    cost,
+    beds: beds + 1,
+    state: { ...source, growth: growthOf - cost, beds: beds + 1 },
+  };
+}
+
+/**
  * Plant a seed of `kind` (herb by default): spend growth for it, and put a
  * sprouting seed in the soil that will become a grown plant after that kind's
  * growing time. The rate does not change yet — it rises when the seed matures.
  * Refuses with a reason when the plot is full or the garden has not saved enough
- * growth, and changes nothing when it refuses.
+ * growth, and changes nothing when it refuses. This is `plantSeedInState`
+ * applied to the live garden and written back, so the rules have one home.
  *
  * @returns {{ok: boolean, reason: string|null, cost: number, kind: string}}
  */
 export function plantSeed(kind = 0) {
-  const index = kindIndex(kind);
-  const entry = SEED_KINDS[index];
-  const capacity = bedCount(garden.beds) * PLOTS_PER_BED;
-  const plantsOfKind = wholeCount(plantsForKind(garden, index), Number.MAX_SAFE_INTEGER);
-  const plantedOfKind = kindSeedCount(garden, index, capacity) + plantsOfKind;
-  const totalPlanted = SEED_KINDS.reduce(
-    (sum, _entry, i) =>
-      sum + kindSeedCount(garden, i, capacity) + wholeCount(plantsForKind(garden, i), Number.MAX_SAFE_INTEGER),
-    0
-  );
-  const cost = nextSeedCost(plantedOfKind, index);
-  if (totalPlanted >= capacity) {
-    return { ok: false, reason: "the plot is full", cost, kind: entry.key };
+  const result = plantSeedInState(liveGardenState(), kind);
+  if (!result.ok) {
+    return { ok: false, reason: result.reason, cost: result.cost, kind: result.kind };
   }
-  if (growth < cost) {
-    return { ok: false, reason: "not enough growth", cost, kind: entry.key };
-  }
-
-  growth -= cost;
-  garden = index === 0
-    ? { ...garden, sprouts: [...garden.sprouts, entry.growSeconds] }
-    : { ...garden, bloomSprouts: [...(garden.bloomSprouts ?? []), entry.growSeconds] };
+  growth = result.state.growth;
+  garden = kindIndex(result.kind) === 0
+    ? { ...garden, sprouts: result.state.sprouts }
+    : { ...garden, bloomSprouts: result.state.bloomSprouts };
   writeStoredGarden(garden);
   notify();
-  return { ok: true, reason: null, cost, kind: entry.key };
+  return { ok: true, reason: null, cost: result.cost, kind: result.kind };
 }
 
 // --- Opening a new bed -------------------------------------------------------
@@ -1414,25 +1516,13 @@ export function nextBedCost(beds) {
  * @returns {{ok: boolean, reason: string|null, cost: number, beds: number}}
  */
 export function openBed() {
-  const beds = bedCount(garden.beds);
-  const capacity = beds * PLOTS_PER_BED;
-  // Every plot taken by either kind counts: soil is soil, whatever grows in it.
-  const planted = SEED_KINDS.reduce(
-    (sum, _entry, i) =>
-      sum + kindSeedCount(garden, i, capacity) + wholeCount(plantsForKind(garden, i), Number.MAX_SAFE_INTEGER),
-    0
-  );
-  const cost = nextBedCost(beds);
-  if (planted < capacity) {
-    return { ok: false, reason: "the plot still has room", cost, beds };
+  const result = openBedInState(liveGardenState());
+  if (!result.ok) {
+    return { ok: false, reason: result.reason, cost: result.cost, beds: result.beds };
   }
-  if (growth < cost) {
-    return { ok: false, reason: "not enough growth", cost, beds };
-  }
-
-  growth -= cost;
-  garden = { ...garden, beds: beds + 1 };
+  growth = result.state.growth;
+  garden = { ...garden, beds: result.state.beds };
   writeStoredGarden(garden);
   notify();
-  return { ok: true, reason: null, cost, beds: beds + 1 };
+  return { ok: true, reason: null, cost: result.cost, beds: result.beds };
 }

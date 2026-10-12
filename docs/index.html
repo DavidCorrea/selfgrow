@@ -235,6 +235,16 @@
 
             <p class="panel-note" id="sandbox-summary" role="status"></p>
 
+            <!-- The garden's own actions, run against the rehearsal copy only:
+                 visit it away with the decisions you would actually make. -->
+            <div class="actions">
+              <button type="button" class="btn" id="sandbox-tend" aria-label="Tend the soil in the rehearsal">Tend the soil</button>
+              <button type="button" class="btn" id="sandbox-plant-herb" aria-label="Plant a herb seed in the rehearsal">Plant a herb seed</button>
+              <button type="button" class="btn" id="sandbox-plant-bloom" aria-label="Plant a bloom seed in the rehearsal">Plant a bloom seed</button>
+            </div>
+            <button type="button" class="btn plant" id="sandbox-open-bed" aria-label="Open the next bed in the rehearsal" hidden>Open the next bed</button>
+            <p class="sr-only" id="sandbox-status" role="status" aria-live="polite"></p>
+
             <div class="goal">
               <p class="goal-title" id="sandbox-goal-title"></p>
               <div
