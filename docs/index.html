@@ -191,7 +191,11 @@
               <button type="button" class="btn" id="copy-save">Copy save</button>
               <button type="button" class="btn" id="load-save">Load save</button>
             </div>
-            <p class="save-status" id="save-status" role="status" aria-live="polite"></p>
+            <!-- The same words #garden-status speaks, where a sighted visitor
+                 expects them. It is not itself a live region: the always-exposed
+                 region announces the confirmation once, and a second live
+                 region here would read it out again while the fold is open. -->
+            <p class="save-status" id="save-status"></p>
           </section>
 
           <button type="button" class="btn plant" id="open-sandbox">Rehearse time in a sandbox</button>

@@ -4518,6 +4518,168 @@ function checkLiveAnnouncements(problems) {
 }
 
 /**
+ * Why `element` is out of the accessibility tree — the element itself or the
+ * nearest ancestor that is display:none, visibility:hidden or aria-hidden — or
+ * "" when a screen reader can reach it.
+ */
+function hiddenFromAssistiveTech(element) {
+  for (let node = element; node; node = node.parentElement) {
+    if (node.getAttribute("aria-hidden") === "true") return `aria-hidden on ${describe(node, "element")}`;
+    const style = getComputedStyle(node);
+    if (style.display === "none") return `display:none on ${describe(node, "element")}`;
+    if (style.visibility === "hidden") return `visibility:hidden on ${describe(node, "element")}`;
+  }
+  return "";
+}
+
+/**
+ * Every live region that would speak `text` right now — the elements carrying it
+ * that are themselves a polite status, alert or log and are in the accessibility
+ * tree. One is what a visitor should hear; two is the same words read twice.
+ */
+function liveRegionsSaying(text) {
+  const regions = document.querySelectorAll('[aria-live], [role="status"], [role="alert"], [role="log"]');
+  return [...regions].filter((el) => el.textContent === text && !hiddenFromAssistiveTech(el));
+}
+
+/**
+ * An action's confirmation reaches a screen reader whether or not the Save &
+ * rehearsal fold is open. The words a sighted visitor reads live inside that
+ * fold, which leaves the accessibility tree while it is closed, so every
+ * confirmation is written to the always-exposed #garden-status as well. This
+ * drives the real controls with the fold shut, so a confirmation that lands
+ * only in the folded line fails here.
+ */
+function checkActionConfirmationsAreSpoken(problems) {
+  const fold = document.querySelector("details.fold");
+  const spoken = document.getElementById("garden-status");
+  const visible = document.getElementById("save-status");
+  if (!fold || !spoken || !visible) {
+    problems.push(
+      "the action confirmations cannot be checked: the page needs a <details class=\"fold\"> holding " +
+        "#save-status, and a #garden-status region outside it."
+    );
+    return;
+  }
+
+  const foldWasOpen = fold.open;
+  const saveField = document.getElementById("save-value");
+  const saveFieldValue = saveField ? saveField.value : "";
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const storageBefore = rawStorage();
+
+  try {
+    fold.open = false;
+
+    // With the fold shut the confirmation region must still be in the
+    // accessibility tree — that is the whole promise.
+    if (fold.contains(spoken)) {
+      problems.push(
+        "#garden-status sits inside the Save & rehearsal fold, so closing the fold takes an action's " +
+          "confirmation out of the accessibility tree."
+      );
+    }
+    const hiddenBy = hiddenFromAssistiveTech(spoken);
+    if (hiddenBy) {
+      problems.push(
+        `#garden-status is out of the accessibility tree while the fold is closed (${hiddenBy}), so an action's ` +
+          "confirmation is never spoken."
+      );
+    }
+
+    // A real action: plant a herb seed from the button a visitor presses, with
+    // the fold closed.
+    const plant = document.getElementById("plant-seed");
+    if (!plant) {
+      problems.push("the page has no #plant-seed control, so a planting confirmation cannot be checked.");
+    } else {
+      setGarden({ seeds: 1, plants: 0 });
+      setGrowth(nextSeedCost(1), 0.2);
+      plant.click();
+      const said = spoken.textContent;
+      if (!said.trim()) {
+        problems.push("planting a seed with the fold closed announced nothing into #garden-status.");
+      } else {
+        if (!/planted a .+ seed/i.test(said)) {
+          problems.push(
+            `planting a seed announced ${JSON.stringify(said)} into #garden-status, which does not say what was planted.`
+          );
+        }
+        if (said !== visible.textContent) {
+          problems.push(
+            `planting a seed announced ${JSON.stringify(said)} into #garden-status but ` +
+              `${JSON.stringify(visible.textContent)} into #save-status; a screen reader and a sighted visitor must be ` +
+              "told the same words."
+          );
+        }
+
+        // Spoken exactly once, with the fold shut and again with it open: a
+        // second live region carrying the same words is read out on top of the
+        // first.
+        const speaking = liveRegionsSaying(said).length;
+        if (speaking !== 1) {
+          problems.push(
+            `planting a seed with the fold closed left ${speaking} live regions saying ${JSON.stringify(said)}, ` +
+              "expected exactly one."
+          );
+        }
+        fold.open = true;
+        const speakingOpen = liveRegionsSaying(said).length;
+        fold.open = false;
+        if (speakingOpen !== 1) {
+          problems.push(
+            `planting a seed with the fold open left ${speakingOpen} live regions saying ${JSON.stringify(said)}, ` +
+              "so a screen reader would hear the confirmation more than once."
+          );
+        }
+      }
+    }
+
+    // A refused action: an unreadable save is refused with the same words a
+    // sighted visitor reads. The fold is opened only to reach the field and the
+    // button that live inside it; the refusal must still be there, in the
+    // exposed region, once the fold is shut again.
+    fold.open = true;
+    const load = document.getElementById("load-save");
+    if (!saveField || !load) {
+      problems.push("the page has no #save-value field or #load-save control, so a refused action cannot be checked.");
+    } else {
+      saveField.value = "not a selfgrow save";
+      load.click();
+      const refusal = spoken.textContent;
+      if (!refusal.trim()) {
+        problems.push("a refused action announced nothing into #garden-status.");
+      } else if (refusal !== visible.textContent) {
+        problems.push(
+          `a refused action announced ${JSON.stringify(refusal)} into #garden-status but ` +
+            `${JSON.stringify(visible.textContent)} into #save-status; the words must match.`
+        );
+      }
+      fold.open = false;
+      const stillHiddenBy = hiddenFromAssistiveTech(spoken);
+      if (stillHiddenBy) {
+        problems.push(
+          `a refused action's confirmation is out of the accessibility tree once the fold is closed (${stillHiddenBy}).`
+        );
+      }
+      if (spoken.textContent !== refusal) {
+        problems.push(
+          `closing the fold changed the refused action's confirmation from ${JSON.stringify(refusal)} to ` +
+            `${JSON.stringify(spoken.textContent)}.`
+        );
+      }
+    }
+  } finally {
+    fold.open = foldWasOpen;
+    if (saveField) saveField.value = saveFieldValue;
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreRawStorage(storageBefore);
+  }
+}
+
+/**
  * The pure simulation behind both a return and a sandbox rehearsal: one span in
  * one step lands where played time would, and a span that cannot be trusted
  * grows nothing.
@@ -5474,6 +5636,7 @@ export async function checks() {
     checkAwaySowing(problems);
     checkReturnMarks(problems);
     checkLiveAnnouncements(problems);
+    checkActionConfirmationsAreSpoken(problems);
     checkPollinator(problems);
     checkPollinatorSeasons(problems);
     checkSeason(problems);

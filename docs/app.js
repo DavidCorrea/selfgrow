@@ -941,15 +941,27 @@ export function loadGardenSave(text) {
   return { ok: true, persisted, state: getDisplayedState() };
 }
 
+/**
+ * An action's own confirmation — a seed planted, a bed opened, a replant, a
+ * refusal — in the same words a sighted visitor reads. The visible line
+ * (#save-status) lives inside the Save & rehearsal fold, which leaves the
+ * accessibility tree while it is closed, so the confirmation goes to the
+ * always-exposed status region (#garden-status) as well. Only that region is a
+ * live region: the visible line mirrors it silently, or a screen reader would
+ * hear the confirmation twice with the fold open.
+ */
 function announce(message) {
   setText(elements.status, message);
+  setText(elements.gardenStatus, message);
 }
 
 /**
- * The one place the garden speaks a discrete event — a new form reached, a goal
- * now affordable, a pollinator arriving, a return. Kept apart from the per-tick
- * readout so a screen reader hears what happened once, never the numbers
- * climbing several times a second.
+ * The one status region a screen reader always hears: a new form reached, a goal
+ * now affordable, a pollinator arriving, a return, or an action's confirmation
+ * (see `announce`). It is visually hidden and sits outside the fold, so it stays
+ * in the accessibility tree whether or not Save & rehearsal is open, and apart
+ * from the per-tick readout so a screen reader hears what happened once, never
+ * the numbers climbing several times a second.
  */
 function announceEvent(message) {
   if (!message) return;
