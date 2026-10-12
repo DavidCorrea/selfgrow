@@ -48,16 +48,21 @@ export function tools() {
         "garden is flourishing), and the lasting bonus a replant has already " +
         "earned (bonus — in growth per second, added flat to the rate the " +
         "garden grows at, 0 before the first replant), the " +
-        "season the garden's age falls in (season: its key, name and growth " +
-        "multiplier — the cycle repeats on its own, no season grows slower " +
-        "than the base rate, and the season readout names the kind the year " +
-        "is favouring now, if any), the " +
+        "season the garden's age falls in (season: its key, name, growth " +
+        "multiplier and the pollinator rhythm the season gives — " +
+        "pollinatorCycleSeconds and pollinatorBaseVisitSeconds — the cycle " +
+        "repeats on its own, no season grows slower than the base rate, and " +
+        "the season readout names the kind the year is favouring now, if " +
+        "any), the " +
         "pollinator's visit (pollinator: visiting, its multiplier, how long the " +
-        "visit lasts in seconds (visitSeconds), the visit a garden with no " +
-        "blooms keeps (baseVisitSeconds), and how many grown blooms are " +
-        "lengthening it (bloomsKeeping) — each bloom adds seconds to the visit " +
-        "up to a cap, so a bed of blooms keeps the x2 boost on the plot for " +
-        "most of the cycle while a garden with no blooms keeps the base visit), " +
+        "visit lasts in seconds (visitSeconds), the season it is following " +
+        "(seasonKey), how often that season brings it (cycleSeconds), the " +
+        "visit a garden with no blooms keeps in its season (baseVisitSeconds), " +
+        "the longest a visit can stretch (maxVisitSeconds), and how many grown " +
+        "blooms are lengthening it (bloomsKeeping) — each bloom adds seconds to " +
+        "the visit up to a cap and the season sets the cycle and the base " +
+        "visit, so a bed of blooms keeps the x2 boost on the plot for most of " +
+        "the season's cycle), " +
         "the " +
         "garden form the plot is drawing (its name and its index among the " +
         "forms, lowest first), the next named form it is growing toward " +

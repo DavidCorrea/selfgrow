@@ -1024,36 +1024,42 @@ function describeReturnMarks(marks) {
   return parts.join(" · ");
 }
 
-/** The season the garden is in, and which kind the year is favouring now. */
+/** The season the garden is in, which kind the year favours, and the year's pollinator rhythm. */
 function describeSeason(state) {
+  const season = state.season;
   const thriving = (state.kinds ?? []).find((kind) => (kind.seasonMultiplier ?? 1) > 1);
-  if (thriving) return `${state.season.name} — ${thriving.name} x${thriving.seasonMultiplier} growth`;
-  return `${state.season.name} — x${state.season.multiplier} growth`;
+  const growth = thriving
+    ? `${thriving.name} x${thriving.seasonMultiplier} growth`
+    : `x${season.multiplier} growth`;
+  const every = formatDuration(season.pollinatorCycleSeconds);
+  const visit = formatDuration(season.pollinatorBaseVisitSeconds);
+  return `${season.name} — ${growth} · pollinator every ${every}, ${visit} visits`;
 }
 
 /**
  * The pollinator as short labelled values: whether one is visiting and the
- * boost it brings, how long the visit lasts, what each bloom adds and the cap
- * that reaches. The visit length is always stated, so a visitor sees what
- * blooms are buying even when no visitor is present; a visit in progress says
- * how long it stays and how many blooms are keeping it, each its own label
- * rather than a rule to decode.
+ * boost it brings, how long the visit lasts, how often the season brings it,
+ * what each bloom adds and the cap that reaches. The visit length is always
+ * stated, so a visitor sees what blooms are buying even when no visitor is
+ * present; a visit in progress says how long it stays and how many blooms are
+ * keeping it, each its own label rather than a rule to decode.
  */
 function describePollinator(state) {
   const pollinator = state.pollinator;
   if (!pollinator) return "none visiting";
   const boost = `boost x${pollinator.boost ?? pollinator.multiplier} while visiting`;
+  const every = `every ${formatDuration(pollinator.cycleSeconds)}`;
   const perBloom = `each bloom +${formatDuration(POLLINATOR_BLOOM_VISIT_SECONDS)}`;
   const cap = `max ${formatDuration(POLLINATOR_VISIT_MAX_SECONDS)}`;
   if (!pollinator.visiting) {
     const visit = formatDuration(pollinator.visitSeconds);
-    return `none visiting · ${boost} · visit ${visit} · ${perBloom} · ${cap}`;
+    return `none visiting · ${boost} · visit ${visit} ${every} · ${perBloom} · ${cap}`;
   }
   const stays = formatDuration(pollinator.visitSeconds);
   const kept = pollinator.bloomsKeeping > 0
     ? ` · kept by ${countLabel(pollinator.bloomsKeeping, "bloom", "blooms")}`
     : "";
-  return `visiting · ${boost} · stays ${stays} · ${perBloom} · ${cap}${kept}`;
+  return `visiting · ${boost} · stays ${stays} ${every} · ${perBloom} · ${cap}${kept}`;
 }
 
 /** The next plant maturing, as words, for the readout beside the numbers. */
