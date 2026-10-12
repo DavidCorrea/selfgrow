@@ -825,6 +825,7 @@ function rehearseSandbox() {
     summary: away.summary,
     status: sandbox.status,
     goalTitle: goal.title,
+    goalFacts: goal.facts,
     goalDetail: goal.detail,
     goalProgress: goal.progress,
   };
@@ -986,38 +987,35 @@ export function formatDuration(seconds) {
   return rest ? `${minutes}m ${rest}s` : `${minutes}m`;
 }
 
-/** The next seed as words: always how far away it is, never only its price. */
-function describeGoal(state) {
-  const cost = formatAmount(state.nextSeedCost);
-  const ripening =
-    state.secondsToNextPlant == null ? "" : ` Next plant matures in ${formatDuration(state.secondsToNextPlant)}.`;
-  if (state.canPlantSeed) return `Ready to plant — ${cost} growth saved.${ripening}`;
-  if (!(state.rate > 0)) {
-    return (
-      `+${formatAmount(TEND_YIELD)} growth and +${formatGrowth(TEND_RATE_STEP)}/s per tend — ` +
-      `${cost} growth to the ${state.nextSeedKind} seed.${ripening}`
-    );
-  }
-  return (
-    `${formatGrowth(state.growth)} / ${cost} growth — about ` +
-    `${formatDuration(state.secondsToNextSeed)} at +${formatGrowth(state.rate)}/s.${ripening}`
-  );
+/**
+ * The next goal's progress as three short labelled values — the growth saved
+ * against the cost, how far the next seed is, and how far the next plant is.
+ * `bed` switches the middle value to the next bed, once every plot is full.
+ * Pure, so the real page and a sandbox rehearsal build the same facts from the
+ * same state and their two readings can never disagree.
+ *
+ * @returns {Array<{label: string, value: string}>}
+ */
+function goalFacts(state, { bed = false } = {}) {
+  const cost = bed ? state.nextBedCost : state.nextSeedCost;
+  const ready = bed ? state.canOpenBed : state.canPlantSeed;
+  const seconds = bed ? state.secondsToNextBed : state.secondsToNextSeed;
+  return [
+    { label: "Saved", value: `${formatGrowth(state.growth)} / ${formatAmount(cost)}` },
+    {
+      label: bed ? "Next bed" : "Next seed",
+      value: ready ? "ready" : seconds == null ? "—" : formatDuration(seconds),
+    },
+    {
+      label: "Next plant",
+      value: state.secondsToNextPlant == null ? "none growing" : formatDuration(state.secondsToNextPlant),
+    },
+  ];
 }
 
-/**
- * The next bed as words, once every plot is full: what it costs, how far along
- * that the garden is, and when it can be opened.
- */
-function describeBedGoal(state) {
-  const cost = formatAmount(state.nextBedCost);
-  const ripening =
-    state.secondsToNextPlant == null ? "" : ` Next plant matures in ${formatDuration(state.secondsToNextPlant)}.`;
-  if (state.canOpenBed) return `Ready to open — ${cost} growth saved.${ripening}`;
-  if (!(state.rate > 0)) return `Tend the soil to grow faster — ${cost} growth needed.${ripening}`;
-  return (
-    `${formatGrowth(state.growth)} / ${cost} growth — about ` +
-    `${formatDuration(state.secondsToNextBed)} at +${formatGrowth(state.rate)}/s.${ripening}`
-  );
+/** The facts as plain text, so a stored reading equals the DOM's textContent. */
+function goalFactsText(facts) {
+  return facts.map((fact) => `${fact.label}${fact.value}`).join("");
 }
 
 /** The next bed's price and progress, always on the page once shown. */
@@ -1081,18 +1079,21 @@ function describeNextPlant(state) {
 }
 
 /**
- * The next thing worth reaching for, as a title, a sentence and 0-to-1
- * progress. The title names the kind the goal is worth planting — herb or
- * bloom — and its cost. While every plot is full the goal becomes the next
+ * The next thing worth reaching for, as a title, three labelled facts and
+ * 0-to-1 progress. The title names the kind the goal is worth planting — herb
+ * or bloom — and its cost. While every plot is full the goal becomes the next
  * bed, so the garden always has something to reach for instead of ending at
  * "every plot holds a seed" — and a sandbox rehearsal asks for the same goal
- * afterwards.
+ * afterwards. `detail` is the facts as plain text, so a stored reading equals
+ * the DOM's own textContent.
  */
 function describeNextGoal(state) {
   if (state.plotFull) {
+    const facts = goalFacts(state, { bed: true });
     return {
       title: `Open bed #${formatAmount(state.beds + 1)}`,
-      detail: describeBedGoal(state),
+      facts,
+      detail: goalFactsText(facts),
       progress: state.bedCostProgress,
     };
   }
@@ -1100,19 +1101,46 @@ function describeNextGoal(state) {
   // the action that works right now — tending the soil — rather than a price
   // the player cannot pay.
   if (!(state.rate > 0) && !state.canPlantSeed) {
+    const facts = goalFacts(state);
     return {
       title: `Tend the soil — +${formatAmount(TEND_YIELD)} growth, +${formatGrowth(TEND_RATE_STEP)}/s`,
-      detail: describeGoal(state),
+      facts,
+      detail: goalFactsText(facts),
       progress: state.seedCostProgress,
     };
   }
   const goal = nextSeedGoal(state);
   const cost = formatAmount(goal ? goal.cost : state.nextSeedCost);
+  const facts = goalFacts(state);
   return {
     title: `Plant ${goal ? goal.name : "herb"} seed — ${cost} growth`,
-    detail: describeGoal(state),
+    facts,
+    detail: goalFactsText(facts),
     progress: state.seedCostProgress,
   };
+}
+
+/**
+ * Draw `facts` into `container` as real label/value elements — a short label a
+ * screen reader reads and a value beside it, never a sentence. Rebuilt each
+ * time so the page states exactly the facts the state holds.
+ */
+function renderGoalFacts(container, facts) {
+  if (!container) return;
+  container.replaceChildren(
+    ...facts.map((fact) => {
+      const row = document.createElement("span");
+      row.className = "goal-fact";
+      const label = document.createElement("span");
+      label.className = "goal-fact-label";
+      label.textContent = fact.label;
+      const value = document.createElement("span");
+      value.className = "goal-fact-value";
+      value.textContent = fact.value;
+      row.append(label, value);
+      return row;
+    })
+  );
 }
 
 /**
@@ -1133,7 +1161,7 @@ function renderPlanting(state) {
   const goal = describeNextGoal(state);
   setText(elements.goalTitle, goal.title);
   setMeter(goal.progress);
-  setText(elements.goalDetail, goal.detail);
+  renderGoalFacts(elements.goalDetail, goal.facts);
 
   renderOpenBed(state);
 }
@@ -1411,7 +1439,7 @@ function renderSandbox(state) {
   setText(elements.sandboxSeason, describeSeason(rehearsal));
   setText(elements.sandboxSummary, rehearsal.summary);
   setText(elements.sandboxGoalTitle, rehearsal.goalTitle);
-  setText(elements.sandboxGoalDetail, rehearsal.goalDetail);
+  renderGoalFacts(elements.sandboxGoalDetail, rehearsal.goalFacts ?? []);
   setMeter(rehearsal.goalProgress, elements.sandboxMeter, elements.sandboxMeterFill);
 
   // The rehearsal's own four actions, labelled and enabled exactly as the real

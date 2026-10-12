@@ -516,12 +516,32 @@ body {
 }
 
 .goal-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
   margin: 0;
   font-size: 13px;
-  line-height: 1.9;
+  line-height: 1.4;
   color: var(--ink-soft);
   font-variant-numeric: tabular-nums;
-  overflow-wrap: anywhere;
+}
+
+.goal-fact {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.goal-fact-label {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.goal-fact-value {
+  color: var(--ink);
+  font-weight: 600;
 }
 
 .save-actions {
