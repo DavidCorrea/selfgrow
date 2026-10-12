@@ -1034,16 +1034,18 @@ function describeReturnMarks(marks) {
   return parts.join(" · ");
 }
 
-/** The season the garden is in, which kind the year favours, and the year's pollinator rhythm. */
+/**
+ * The season as short labelled values: the season's name, the growth it gives
+ * the garden, and the kind it favours — each its own label, so the year reads
+ * at a glance. The pollinator's rhythm belongs to the Pollinator row alone, so
+ * it is not repeated here.
+ */
 function describeSeason(state) {
   const season = state.season;
-  const thriving = (state.kinds ?? []).find((kind) => (kind.seasonMultiplier ?? 1) > 1);
-  const growth = thriving
-    ? `${thriving.name} x${thriving.seasonMultiplier} growth`
-    : `x${season.multiplier} growth`;
-  const every = formatDuration(season.pollinatorCycleSeconds);
-  const visit = formatDuration(season.pollinatorBaseVisitSeconds);
-  return `${season.name} — ${growth} · pollinator every ${every}, ${visit} visits`;
+  const favoured = (state.kinds ?? []).find((kind) => (kind.seasonMultiplier ?? 1) > 1);
+  const labels = [season.name, `x${season.multiplier} growth`];
+  if (favoured) labels.push(`favours ${favoured.name} x${favoured.seasonMultiplier}`);
+  return labels.join(" · ");
 }
 
 /**
