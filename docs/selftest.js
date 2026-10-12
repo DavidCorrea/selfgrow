@@ -84,6 +84,7 @@ import {
   exportSave,
   fastForwardSandbox,
   formatAmount,
+  formatDuration,
   formatGrowth,
   getAnnouncement,
   getDisplayedState,
@@ -3294,11 +3295,39 @@ function checkPollinator(problems) {
       );
     }
 
-    // The readout and get-state name the visit and the boosted rate.
+    // The readout and get-state name the visit and the boosted rate. The
+    // readout states the pollinator as short labelled values — whether one is
+    // visiting and the boost it brings, how long the visit lasts, what each
+    // bloom adds and the cap it can reach — never a bracketed rule to decode,
+    // and every value it states is the one get-state reports.
     const row = document.querySelector('[data-field="pollinator"]');
     if (!row) {
       problems.push('the page has no pollinator readout (expected [data-field="pollinator"]).');
     }
+    // Two labels every pollinator readout carries, whatever the state: what a
+    // bloom adds to a visit and the longest a visit can stretch.
+    const pollinatorLabels = [
+      `each bloom +${formatDuration(POLLINATOR_BLOOM_VISIT_SECONDS)}`,
+      `max ${formatDuration(POLLINATOR_VISIT_MAX_SECONDS)}`,
+    ];
+    const expectPollinatorRow = (label, required) => {
+      if (!row) return;
+      const text = String(row.textContent);
+      if (/[()\[\]]/.test(text)) {
+        problems.push(
+          `the pollinator readout ${label} says ${JSON.stringify(text)}, expected short labelled values with no ` +
+            "bracketed rule to decode."
+        );
+      }
+      for (const part of [...pollinatorLabels, ...required]) {
+        if (!text.includes(part)) {
+          problems.push(
+            `the pollinator readout ${label} says ${JSON.stringify(text)}, expected it to state ${JSON.stringify(part)}.`
+          );
+        }
+      }
+    };
+
     setGarden({ seeds: 0, plants: 3 });
     setGrowth(0, 1, 0);
     const quiet = getDisplayedState();
@@ -3308,11 +3337,11 @@ function checkPollinator(problems) {
           `expected none visiting at the base 1/s.`
       );
     }
-    if (row && !/none/i.test(String(row.textContent))) {
-      problems.push(
-        `outside a visit the pollinator readout says ${JSON.stringify(row.textContent)}, expected "none visiting".`
-      );
-    }
+    expectPollinatorRow("outside a visit", [
+      "none visiting",
+      `boost x${quiet.pollinator.boost} while visiting`,
+      `visit ${formatDuration(quiet.pollinator.visitSeconds)}`,
+    ]);
 
     setGrowth(0, 1, POLLINATOR_CYCLE_SECONDS - 1);
     const boostedState = getDisplayedState();
@@ -3325,11 +3354,11 @@ function checkPollinator(problems) {
           `${boostedState.baseRate}/s, expected ${POLLINATOR_BOOST}/s on 1/s.`
       );
     }
-    if (row && !/visiting/i.test(String(row.textContent))) {
-      problems.push(
-        `during a visit the pollinator readout says ${JSON.stringify(row.textContent)}, expected it to name the visit.`
-      );
-    }
+    expectPollinatorRow("during a visit", [
+      "visiting",
+      `boost x${boostedState.pollinator.boost} while visiting`,
+      `stays ${formatDuration(boostedState.pollinator.visitSeconds)}`,
+    ]);
 
     // A garden kept by 6 blooms states the longer visit, the blooms keeping it
     // and the boosted rate beside the garden.
@@ -3349,13 +3378,12 @@ function checkPollinator(problems) {
           `expected ${POLLINATOR_BOOST}/s on 1/s.`
       );
     }
-    const bloomRow = String(row ? row.textContent : "");
-    if (!/visiting/i.test(bloomRow) || !/bloom/i.test(bloomRow) || !/visit/i.test(bloomRow)) {
-      problems.push(
-        `the pollinator readout for a bloom-lengthened visit says ${JSON.stringify(bloomRow)}, expected it to name the ` +
-          `visit and the blooms keeping it.`
-      );
-    }
+    expectPollinatorRow("during a bloom-lengthened visit", [
+      "visiting",
+      `boost x${bloomState.pollinator.boost} while visiting`,
+      `stays ${formatDuration(bloomState.pollinator.visitSeconds)}`,
+      `kept by ${bloomState.pollinator.bloomsKeeping} blooms`,
+    ]);
 
     // A return that lands during a visit shows one already there, in the summary
     // and in the state.

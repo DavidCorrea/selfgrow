@@ -836,7 +836,7 @@ export function getAnnouncement() {
  * How long until the next seed, in the shortest unit that still says something:
  * seconds under a minute, then minutes and seconds. A missing span says nothing.
  */
-function formatDuration(seconds) {
+export function formatDuration(seconds) {
   if (!Number.isFinite(seconds) || seconds < 0) return "";
   const whole = Math.ceil(seconds);
   if (whole < 60) return `${whole}s`;
@@ -903,22 +903,28 @@ function describeSeason(state) {
 }
 
 /**
- * The pollinator: whether one is visiting, how long the visit lasts, and how
- * many blooms are stretching it. The visit length is always stated, so a
- * visitor sees what blooms are buying even when no visitor is present.
+ * The pollinator as short labelled values: whether one is visiting and the
+ * boost it brings, how long the visit lasts, what each bloom adds and the cap
+ * that reaches. The visit length is always stated, so a visitor sees what
+ * blooms are buying even when no visitor is present; a visit in progress says
+ * how long it stays and how many blooms are keeping it, each its own label
+ * rather than a rule to decode.
  */
 function describePollinator(state) {
   const pollinator = state.pollinator;
   if (!pollinator) return "none visiting";
-  const visit = formatDuration(pollinator.visitSeconds);
-  const cap = formatDuration(POLLINATOR_VISIT_MAX_SECONDS);
-  const rule = `+${formatDuration(POLLINATOR_BLOOM_VISIT_SECONDS)} per bloom, max ${cap}`;
-  if (!pollinator.visiting) return `none visiting — a ${visit} visit (${rule})`;
-  const blooms = pollinator.bloomsKeeping > 0
-    ? `, kept by ${countLabel(pollinator.bloomsKeeping, "bloom", "blooms")}`
+  const boost = `boost x${pollinator.boost ?? pollinator.multiplier} while visiting`;
+  const perBloom = `each bloom +${formatDuration(POLLINATOR_BLOOM_VISIT_SECONDS)}`;
+  const cap = `max ${formatDuration(POLLINATOR_VISIT_MAX_SECONDS)}`;
+  if (!pollinator.visiting) {
+    const visit = formatDuration(pollinator.visitSeconds);
+    return `none visiting · ${boost} · visit ${visit} · ${perBloom} · ${cap}`;
+  }
+  const stays = formatDuration(pollinator.visitSeconds);
+  const kept = pollinator.bloomsKeeping > 0
+    ? ` · kept by ${countLabel(pollinator.bloomsKeeping, "bloom", "blooms")}`
     : "";
-  const capped = pollinator.visitSeconds >= POLLINATOR_VISIT_MAX_SECONDS ? " (max)" : "";
-  return `visiting — x${pollinator.multiplier} growth · ${visit} visit${capped}${blooms}`;
+  return `visiting · ${boost} · stays ${stays} · ${perBloom} · ${cap}${kept}`;
 }
 
 /** The next plant maturing, as words, for the readout beside the numbers. */
