@@ -569,6 +569,20 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* The flex display above would otherwise defeat the `hidden` attribute, so a
+   hidden return block must be hidden from layout as well as from assistive
+   technology. */
+.goal-detail[hidden] {
+  display: none;
+}
+
+/* A return states more facts than the goal block and must still read as a
+   couple of short lines on a phone, so its facts sit a touch tighter. */
+.return-facts {
+  column-gap: 8px;
+  font-size: 12px;
+}
+
 .goal-fact {
   display: inline-flex;
   align-items: baseline;

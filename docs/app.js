@@ -528,16 +528,53 @@ export function summarizeReturn(away) {
 }
 
 /**
+ * The return report as short labelled facts — what was earned, what matured,
+ * whether a season turned or a pollinator arrived, and what to reach for next.
+ * Each fact is a label and a value, never a sentence, so a return reads in two
+ * or three short lines instead of pushing the garden down the page. A fact that
+ * would say nothing — no seed matured, no season crossed — is left out.
+ *
+ * Pure, so the real return and a sandbox rehearsal build the same facts from
+ * the same report and their two readings can never disagree.
+ *
+ * @returns {Array<{label: string, value: string}>}
+ */
+export function returnFacts(away) {
+  if (!away || !(away.seconds > 0)) return [];
+  const facts = [{ label: "Earned", value: `${formatGrowth(away.earned)} growth` }];
+  if (away.matured > 0) {
+    facts.push({ label: "Matured", value: countLabel(away.matured, "seed", "seeds") });
+  }
+  if (away.sown > 0) {
+    facts.push({ label: "Sown", value: countLabel(away.sown, "seed", "seeds") });
+  }
+  facts.push({ label: "Now", value: away.form });
+  if (away.crossedSeason) {
+    facts.push({ label: "Season", value: `${away.fromSeason.name} → ${away.toSeason.name}` });
+  }
+  if (away.pollinator?.visiting) {
+    facts.push({ label: "Pollinator", value: `x${away.pollinator.multiplier}` });
+  }
+  facts.push(
+    away.nextFormName
+      ? { label: "Next", value: `${away.nextFormName} in ${formatGrowth(away.growthToNextForm)}` }
+      : { label: "Next seed", value: formatAmount(away.nextSeedCost) }
+  );
+  return facts;
+}
+
+/**
  * Describe a span of time against a garden state, with no cap on the span.
  *
  * Pure, and the one place a return report is built: `start` is a garden state
  * (`{growth, rate, sprouts, plants, beds}`) and the result is the same `away`
  * report the page shows after an absence — the span, what it earned and grew
  * into (including how many seeds it sowed into free plots and how many
- * matured), the summary sentence, and what to reach for next. The sandbox
- * rehearses with it, so a rehearsal reads exactly as the real absence would.
+ * matured), the summary sentence, the same facts as short labels, and what to
+ * reach for next. The sandbox rehearses with it, so a rehearsal reads exactly
+ * as the real absence would.
  *
- * @returns {object} the `away` report, its `summary` included.
+ * @returns {object} the `away` report, its `summary` and `facts` included.
  */
 export function buildAwayReport(start, seconds) {
   const before = simulateGarden(start, 0);
@@ -585,6 +622,9 @@ export function buildAwayReport(start, seconds) {
     )
     .map((kind) => kind.name);
   report.summary = summarizeReturn(report);
+  // The same facts as short labels, so the return reads in a couple of short
+  // lines rather than one long sentence.
+  report.facts = returnFacts(report);
   return report;
 }
 
@@ -687,16 +727,16 @@ export function applyReturn(saved, lastSeenMs, nowMs) {
   return away;
 }
 
-/** Show the welcome-back sentence, or keep it out of the way for a short gap. */
+/** Show the welcome-back facts, or keep them out of the way for a short gap. */
 function showReturnSummary(away) {
   const element = elements.returnSummary;
   if (!element) return;
   if (!away || !(away.seconds >= MIN_AWAY_SECONDS)) {
     element.hidden = true;
-    element.textContent = "";
+    renderGoalFacts(element, []);
     return;
   }
-  element.textContent = away.summary;
+  renderGoalFacts(element, away.facts ?? []);
   element.hidden = false;
 }
 
@@ -813,6 +853,7 @@ function rehearseSandbox() {
     formsFound: FORMS.slice(fromForm.index + 1, segment.to + 1).map((entry) => entry.name),
   };
   away.summary = summarizeReturn(away);
+  away.facts = returnFacts(away);
   const display = describeGardenState(
     {
       seeds: end.sprouts.length + end.bloomSprouts.length,
@@ -854,6 +895,7 @@ function rehearseSandbox() {
     nextBedCost: display.nextBedCost,
     matured: away.matured,
     summary: away.summary,
+    facts: away.facts,
     status: sandbox.status,
     goalTitle: goal.title,
     goalFacts: goal.facts,
@@ -1528,7 +1570,7 @@ function renderSandbox(state) {
   setText(elements.sandboxSeeds, formatAmount(rehearsal.seeds));
   setText(elements.sandboxPlants, formatAmount(rehearsal.plants));
   setText(elements.sandboxSeason, describeSeason(rehearsal));
-  setText(elements.sandboxSummary, rehearsal.summary);
+  renderGoalFacts(elements.sandboxSummary, rehearsal.facts ?? []);
   setText(elements.sandboxGoalTitle, rehearsal.goalTitle);
   renderGoalFacts(elements.sandboxGoalDetail, rehearsal.goalFacts ?? []);
   setMeter(rehearsal.goalProgress, elements.sandboxMeter, elements.sandboxMeterFill);
