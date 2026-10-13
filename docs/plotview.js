@@ -138,13 +138,17 @@ export function groundCover(state) {
 
 /** One cell of soil, in canvas pixels. */
 const CELL = 24;
-const COLUMNS = 6;
-const BASE_ROWS = 2;
+// Four columns by three rows on bare soil — the twelve plots one bed holds — so
+// the bitmap starts out a 4:3 field rather than the long thin band it used to
+// be, and fits the column the layout gives it. Every bed opened adds three more
+// rows, which with four columns is exactly one more bed's worth of plots.
+const COLUMNS = 4;
+const BASE_ROWS = 3;
 const MAX_ROWS = 10;
 const FORMS_PER_ROW = 3;
-// Every bed beyond the first widens the drawn ground by two rows of soil, so
-// opening a bed is visible, while the row cap keeps the sprite count bounded.
-const ROWS_PER_BED = 2;
+// Every bed beyond the first widens the drawn ground by one more bed of plots,
+// so opening a bed is visible, while the row cap keeps the sprite count bounded.
+const ROWS_PER_BED = 3;
 
 /** How many rows of soil this form has spread to. */
 function rowsForForm(index) {

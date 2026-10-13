@@ -146,12 +146,14 @@ body {
 }
 
 /* The garden, its numbers and the actions that grow it share one screen: the
-   plot on the left, the readout and buttons beside it, stacking on a phone. */
+   plot on the left, the readout and buttons beside it, stacking on a phone.
+   The columns stretch to one another, so the plot takes the full height of the
+   card however tall the readout beside it grows. */
 .garden-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
 }
 
 @media (min-width: 760px) {
@@ -164,6 +166,14 @@ body {
 .garden-view,
 .garden-side {
   min-width: 0;
+}
+
+/* The plot is the garden's state drawn, so it is the column, not a band in the
+   corner of one: the view is a column flex box and the canvas grows to fill it
+   top to bottom. */
+.garden-view {
+  display: flex;
+  flex-direction: column;
 }
 
 /* The growing actions open the column, so the layout gap above them is all the
@@ -289,15 +299,22 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* The canvas fills its column and the bitmap is fitted inside it without
+   smoothing, so the pixel art stays crisp and square however tall the column
+   beside the readout turns out. `contain` never distorts the drawing; the
+   element paints the soil colour itself, so the few pixels the bitmap does not
+   reach read as the same ground continuing rather than as a gap. */
 .plot {
   display: block;
+  flex: 1 1 auto;
   width: 100%;
-  height: auto;
-  margin: 0 0 12px;
-  background: var(--soil-deep);
+  min-height: 0;
+  margin: 0;
+  background: var(--soil);
   border: 4px solid var(--outline);
   border-radius: 0;
   image-rendering: pixelated;
+  object-fit: contain;
 }
 
 /* The plot is redrawn discretely — a form appears, it never slides in — so there
@@ -306,6 +323,19 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .plot {
     transition: none;
+  }
+}
+
+/* On one column the plot's own height comes from the drawing, which grows with
+   the garden: another bed of soil is three more rows of pixels. Left alone, a
+   long-grown garden would fill a phone's first screen with ground and push
+   every growing control below the fold. The cap is in screen units, so the
+   plot stays the tallest thing on it while the actions stay on it too, and it
+   never touches a fresh garden, whose plot is shorter than the cap. A wide
+   window needs no cap: there the column sets the height and the plot fills it. */
+@media (max-width: 759px) {
+  .plot {
+    max-height: 55dvh;
   }
 }
 

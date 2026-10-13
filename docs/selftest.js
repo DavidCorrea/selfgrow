@@ -1657,7 +1657,7 @@ function checkSoilField(problems) {
   const soilProbes = [
     [0, 0],
     [bounds.cell, bounds.cell / 2],
-    [bounds.cell * 5 + 10, bounds.height - 2],
+    [(bounds.columns - 1) * bounds.cell, bounds.height - 2],
   ];
   for (const [x, y] of soilProbes) {
     if (soilPixel(x, y, 0) !== soilPixel(x, y, 1)) {
@@ -3014,6 +3014,11 @@ function checkFirstScreenGarden(problems) {
   // A 390x844 phone's first screen, in document coordinates so the window the
   // suite happens to run in cannot hide something that fell off the page.
   const FIRST_SCREEN_PX = 844;
+  // The one-screen promise is a phone promise. On a wide window the garden card
+  // is a tall column the plot is meant to fill, so it is legitimately taller
+  // than a phone screen; there the plot, actions and the goal sit side by side
+  // within the window instead.
+  const onOneColumn = window.innerWidth < 760;
 
   const plot = document.getElementById("garden-plot");
   const actions = document.querySelector(".garden-side > .actions");
@@ -3051,7 +3056,7 @@ function checkFirstScreenGarden(problems) {
   // within the first screen only when at least one is reachable without a
   // scroll.
   for (const [label, box] of [["plot", plotBox], ["growing actions", actionsBox], ["next goal", goalBox]]) {
-    if (box.bottom > FIRST_SCREEN_PX) {
+    if (onOneColumn && box.bottom > FIRST_SCREEN_PX) {
       problems.push(
         `the ${label} ends at ${Math.round(box.bottom)}px, past the ${FIRST_SCREEN_PX}px first screen, so a fresh ` +
           "visitor cannot reach it without scrolling."
@@ -3065,6 +3070,72 @@ function checkFirstScreenGarden(problems) {
     problems.push(
       `the readout starts at ${Math.round(readoutBox.top)}px, above the actions (${Math.round(actionsBox.bottom)}px) ` +
         `or the goal (${Math.round(goalBox.bottom)}px); it must sit below both.`
+    );
+  }
+}
+
+/**
+ * The drawn garden, not the numbers, is the largest thing in the garden card.
+ *
+ * The picture is the state drawn, so a visitor who reads no number must still
+ * be able to size up the garden at a glance: the plot is the tallest thing a
+ * visitor meets above the numbers, and on a wide window it fills its column top
+ * to bottom — no blank cream left under a short band — and covers more of the
+ * card than the whole readout column does.
+ */
+function checkPlotDominatesGarden(problems) {
+  const plot = document.getElementById("garden-plot");
+  const view = document.querySelector(".garden-view");
+  const side = document.querySelector(".garden-side");
+  const actions = document.querySelector(".garden-side > .actions");
+  const goal = document.querySelector(".garden-side > .goal");
+  if (!plot || !view || !side || !actions || !goal) {
+    problems.push(
+      "the plot's prominence cannot be checked: the page needs #garden-plot inside .garden-view " +
+        "beside a .garden-side holding .actions and .goal."
+    );
+    return;
+  }
+
+  // The promise is a phone's, and a phone is at least this wide. Below it the
+  // three growing buttons wrap taller than any undistorted plot that still
+  // leaves the next goal on the same screen, so the layout makes no promise
+  // there — the phone this garden is built around is 390x844.
+  const PHONE_MIN_WIDTH_PX = 360;
+  if (window.innerWidth < PHONE_MIN_WIDTH_PX) return;
+
+  const box = (el) => el.getBoundingClientRect();
+  const plotBox = box(plot);
+
+  // The plot is the tallest thing a visitor meets above the numbers: taller
+  // than the growing actions and taller than the next goal, at every width.
+  for (const [label, el] of [["growing actions", actions], ["next goal", goal]]) {
+    const other = box(el);
+    if (plotBox.height <= other.height) {
+      problems.push(
+        `the plot is ${Math.round(plotBox.height)}px tall and the ${label} ${Math.round(other.height)}px, ` +
+          "so the numbers still outrank the garden they describe."
+      );
+    }
+  }
+
+  // A wide window gives the plot a column of its own to fill. A plot shorter
+  // than that column leaves the panel's cream bare beneath it, which is what
+  // makes the picture read as decoration in the corner beside the numbers.
+  if (window.innerWidth < 760) return;
+  const slack = box(view).bottom - plotBox.bottom;
+  if (slack > 1) {
+    problems.push(
+      `the plot ends ${Math.round(slack)}px above the bottom of its column, so the garden card is left with ` +
+        "blank space below the picture."
+    );
+  }
+  const plotArea = plotBox.width * plotBox.height;
+  const sideArea = box(side).width * box(side).height;
+  if (plotArea <= sideArea) {
+    problems.push(
+      `the plot covers ${Math.round(plotArea)}px² of the card against the readout column's ${Math.round(sideArea)}px², ` +
+        "so the numbers are still the largest thing in the garden."
     );
   }
 }
@@ -6054,6 +6125,7 @@ export async function checks() {
     checkNoOverflow(problems);
     checkCompactReadout(problems);
     checkFirstScreenGarden(problems);
+    checkPlotDominatesGarden(problems);
     checkSimulateGarden(problems);
     checkReturnSummary(problems);
     checkAwaySowing(problems);
