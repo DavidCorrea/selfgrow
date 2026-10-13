@@ -1452,31 +1452,85 @@ function checkKindReadout(problems) {
       }
     }
 
+    // A known garden: two herb seeds and one herb plant, so the herb's next
+    // seed costs its third-seed price and the bloom's costs its first.
     setGarden({ seeds: 2, plants: 1 });
     setGrowth(0, 0.5);
-    const herbRow = rows.get("herb");
-    const bloomRow = rows.get("bloom");
+    const planted = getDisplayedState();
     const herbCost = nextSeedCost(3, "herb");
     const bloomCost = nextSeedCost(0, "bloom");
-    if (herbRow && !String(herbRow.textContent).includes(formatAmount(2))) {
-      problems.push(`the herb readout says ${JSON.stringify(herbRow.textContent)}, expected it to count 2 seeds.`);
-    }
-    if (herbRow && !String(herbRow.textContent).includes(formatAmount(1))) {
-      problems.push(`the herb readout says ${JSON.stringify(herbRow.textContent)}, expected it to count 1 plant.`);
-    }
-    if (herbRow && !String(herbRow.textContent).includes(formatAmount(herbCost))) {
-      problems.push(`the herb readout says ${JSON.stringify(herbRow.textContent)}, expected its ${herbCost}-growth price.`);
-    }
-    if (herbRow && !String(herbRow.textContent).includes("0.5")) {
-      problems.push(`the herb readout says ${JSON.stringify(herbRow.textContent)}, expected its 0.5/s production.`);
-    }
-    if (bloomRow && !String(bloomRow.textContent).includes(formatAmount(bloomCost))) {
+    if (planted.kinds[0].cost !== herbCost || planted.kinds[1].cost !== bloomCost) {
       problems.push(
-        `the bloom readout says ${JSON.stringify(bloomRow.textContent)}, expected its ${bloomCost}-growth price.`
+        `a garden of 2 herb seeds and 1 herb plant prices its kinds at ${planted.kinds[0].cost} and ` +
+          `${planted.kinds[1].cost} growth, expected ${herbCost} and ${bloomCost}.`
       );
     }
-    if (bloomRow && !String(bloomRow.textContent).includes("5")) {
-      problems.push(`the bloom readout says ${JSON.stringify(bloomRow.textContent)}, expected its 5/s production.`);
+    // Below a kind's first milestone a plant earns its raw production, so the
+    // rate the row shows is anchored to the seeds themselves.
+    if (
+      planted.kinds[0].output !== SEED_KINDS[0].production ||
+      planted.kinds[1].output !== SEED_KINDS[1].production
+    ) {
+      problems.push(
+        `a kind below its first milestone earns its raw ${SEED_KINDS[0].production}/s or ` +
+          `${SEED_KINDS[1].production}/s, but the state reports ${planted.kinds[0].output}/s and ` +
+          `${planted.kinds[1].output}/s.`
+      );
+    }
+
+    // Every fact in a kind's row is its own element under its own word, and
+    // reads back exactly what get-state says about that kind — the same six
+    // numbers, not a parallel copy of them that can drift.
+    for (const kind of planted.kinds) {
+      const row = rows.get(kind.key);
+      if (!row) continue;
+      const expected = {
+        seeds: formatAmount(kind.seeds),
+        plants: formatAmount(kind.plants),
+        cost: formatAmount(kind.cost),
+        output: `+${formatGrowth(kind.output)} a second`,
+        milestone: kind.nextMilestone == null ? "all reached" : `${formatAmount(kind.nextMilestone)} plants`,
+        "to-go": formatAmount(kind.plantsToMilestone ?? 0),
+      };
+      for (const [field, want] of Object.entries(expected)) {
+        const value = row.querySelector(`[data-field="kind-${kind.key}-${field}"]`);
+        if (!value) {
+          problems.push(
+            `the ${kind.key} readout has no ${field} value (expected [data-field="kind-${kind.key}-${field}"]), ` +
+              "so that fact is missing from the row."
+          );
+          continue;
+        }
+        const label = String(value.closest(".kind-fact")?.querySelector(".kind-fact-label")?.textContent ?? "").trim();
+        if (!label) {
+          problems.push(`the ${kind.key} ${field} value sits under no label, so it reads as a bare number.`);
+        }
+        const got = String(value.textContent).trim();
+        if (got !== want) {
+          problems.push(
+            `the ${kind.key} readout says ${JSON.stringify(got)} for ${field}, but get-state reports ` +
+              `${JSON.stringify(want)}; the row must show the garden's own number.`
+          );
+        }
+      }
+      const facts = [...row.querySelectorAll(".kind-fact")];
+      if (facts.length !== Object.keys(expected).length || facts.some((fact) => !fact.textContent.trim())) {
+        problems.push(
+          `the ${kind.key} readout holds ${facts.length} labelled values, expected ` +
+            `${Object.keys(expected).length}, one per fact.`
+        );
+      }
+      // Short labelled values, not one packed string: the middot, the em dash
+      // and the slash are what made the old row need decoding.
+      const rowText = String(row.textContent).replace(/\s+/g, " ").trim();
+      for (const separator of ["·", "—", "/"]) {
+        if (rowText.includes(separator)) {
+          problems.push(
+            `the ${kind.key} readout reads ${JSON.stringify(rowText)}; the ${JSON.stringify(separator)} ` +
+              "separator was replaced by short labelled values and must not come back."
+          );
+        }
+      }
     }
 
     const bloomButton = document.getElementById("plant-bloom");
@@ -1650,13 +1704,17 @@ function checkKindMilestones(problems) {
       );
     }
     for (const kind of fresh.kinds) {
-      const text = String(rows[kind.key]?.textContent ?? "");
+      const row = rows[kind.key];
+      const shown = (field) =>
+        String(row?.querySelector(`[data-field="kind-${kind.key}-${field}"]`)?.textContent ?? "").trim();
       const expectedMilestone = `${formatAmount(kind.nextMilestone)} plants`;
-      const expectedRemaining = `${formatAmount(kind.plantsToMilestone)} to go`;
-      if (!text.includes(expectedMilestone) || !text.includes(expectedRemaining)) {
+      const expectedRemaining = formatAmount(kind.plantsToMilestone);
+      if (shown("milestone") !== expectedMilestone || shown("to-go") !== expectedRemaining) {
         problems.push(
-          `the ${kind.key} readout says ${JSON.stringify(text)}, expected it to name its next milestone ` +
-            `(${expectedMilestone}) and how many plants remain (${expectedRemaining}).`
+          `the ${kind.key} readout says ${JSON.stringify(shown("milestone"))} at ` +
+            `${JSON.stringify(shown("to-go"))} to go, expected it to name its next milestone ` +
+            `(${JSON.stringify(expectedMilestone)}) and how many plants remain ` +
+            `(${JSON.stringify(expectedRemaining)}).`
         );
       }
     }
@@ -1671,10 +1729,14 @@ function checkKindMilestones(problems) {
           `with ${JSON.stringify(climbed.kinds[0].plantsToMilestone)} to go, expected neither.`
       );
     }
-    if (!/all milestones reached/i.test(String(rows.herb?.textContent ?? ""))) {
+    const climbedMilestone = String(
+      rows.herb?.querySelector('[data-field="kind-herb-milestone"]')?.textContent ?? ""
+    ).trim();
+    const climbedToGo = String(rows.herb?.querySelector('[data-field="kind-herb-to-go"]')?.textContent ?? "").trim();
+    if (climbedMilestone !== "all reached" || climbedToGo !== formatAmount(0)) {
       problems.push(
-        `a herb garden past its last milestone says ${JSON.stringify(String(rows.herb?.textContent ?? ""))}, ` +
-          "expected it to say all milestones are reached."
+        `a herb garden past its last milestone reads ${JSON.stringify(climbedMilestone)} at ` +
+          `${JSON.stringify(climbedToGo)} to go, expected it to say all milestones are reached with none to go.`
       );
     }
 
