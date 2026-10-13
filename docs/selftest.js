@@ -5001,6 +5001,125 @@ function checkReturnSummary(problems) {
 }
 
 /**
+ * The return's facts sit beside the numbers, never over the garden: the drawn
+ * plot, the season the absence turned to and the next goal it names all share a
+ * phone's first screen, and every fact the return reported is still on the page
+ * as a labelled value and still exposed by `get-state`.
+ */
+function checkReturnSummaryPlacement(problems) {
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const storageBefore = rawStorage();
+  const strip = document.getElementById("return-summary");
+  const plot = document.getElementById("garden-plot");
+  const side = document.querySelector(".garden-side");
+  const stripHiddenBefore = strip ? strip.hidden : null;
+  const stripHtmlBefore = strip ? strip.innerHTML : null;
+  // A 390x844 phone's first screen, in document coordinates so the window the
+  // suite happens to run in cannot hide something that fell off the page.
+  const FIRST_SCREEN_PX = 844;
+  const DAY = 86400;
+
+  try {
+    if (!strip || !plot || !side) {
+      problems.push(
+        "the return's placement cannot be checked: the page needs #return-summary, #garden-plot and a .garden-side."
+      );
+      return;
+    }
+
+    // The garden comes first: the return's facts belong to the numbers column
+    // and follow the plot in the document, never as a block over the picture.
+    if (!side.contains(strip)) {
+      problems.push(
+        "the return's facts are not in the numbers column (.garden-side), so they still stand over the garden."
+      );
+    }
+    const precedes = (first, second) =>
+      Boolean(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING);
+    if (precedes(strip, plot)) {
+      problems.push(
+        "the return's facts precede the drawn garden in the document, so a visitor reads them before the picture."
+      );
+    }
+
+    // A real return fills the panel with the report's own labelled facts.
+    const saved = { version: SAVE_VERSION, seeds: 2, plants: 1, growth: 0, rate: 0.5 };
+    setGarden({ seeds: 2, plants: 1 });
+    setGrowth(saved.growth, saved.rate);
+    const nowMs = 1_700_000_000_000;
+    const away = applyReturn(saved, nowMs - 30 * DAY * 1000, nowMs);
+
+    const expected = returnFacts(away);
+    const shown = readGoalFacts(strip);
+    if (JSON.stringify(shown) !== JSON.stringify(expected)) {
+      problems.push(
+        `the return's panel shows ${JSON.stringify(shown)}, expected the report's short labelled facts ` +
+          `${JSON.stringify(expected)}.`
+      );
+    }
+    // Every fact the return reported is still present: what it earned and the
+    // next goal it names always, and the season whenever the absence crossed one.
+    for (const label of ["Earned", "Next"]) {
+      if (!shown.some((fact) => fact.label === label)) {
+        problems.push(
+          `the return's panel does not state its "${label}" fact, so the page drops something the return reported.`
+        );
+      }
+    }
+    if (away.crossedSeason !== shown.some((fact) => fact.label === "Season")) {
+      problems.push(
+        away.crossedSeason
+          ? "the return crossed a season but its panel does not say which."
+          : "the return's panel states a season change the report did not make."
+      );
+    }
+
+    // The plot and the return's own season and next goal share the first
+    // screen: the facts start below the picture and, on a phone, end within it.
+    const bounds = (el) => {
+      const rect = el.getBoundingClientRect();
+      return { top: rect.top + window.scrollY, bottom: rect.bottom + window.scrollY };
+    };
+    const stripBox = bounds(strip);
+    const plotBox = bounds(plot);
+    if (strip.hidden) {
+      problems.push("returning after 30 days did not show the return's facts beside the numbers.");
+    } else {
+      if (stripBox.top < plotBox.top - 1) {
+        problems.push(
+          `the return's facts start at ${Math.round(stripBox.top)}px, above the drawn garden at ` +
+            `${Math.round(plotBox.top)}px, so the garden is no longer the first thing on the page.`
+        );
+      }
+      if (window.innerWidth < 760 && stripBox.bottom > FIRST_SCREEN_PX) {
+        problems.push(
+          `the return's facts end at ${Math.round(stripBox.bottom)}px, past the ${FIRST_SCREEN_PX}px first screen, so a ` +
+            "returning visitor cannot see the season and next goal without scrolling."
+        );
+      }
+    }
+
+    // `get-state` still exposes every fact the panel shows.
+    const facts = getDisplayedState().away?.facts ?? [];
+    if (JSON.stringify(facts) !== JSON.stringify(expected)) {
+      problems.push(
+        `get-state's away.facts ${JSON.stringify(facts)} do not match the return's panel ${JSON.stringify(expected)}.`
+      );
+    }
+  } finally {
+    clearReturnMarks();
+    if (strip) {
+      strip.innerHTML = stripHtmlBefore ?? "";
+      strip.hidden = stripHiddenBefore ?? true;
+    }
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreRawStorage(storageBefore);
+  }
+}
+
+/**
  * Time away sows: an absence spends its earned growth on the cheapest seed in
  * every free plot and lets those seeds grow, so a return finds a taller garden
  * rather than an enormous number beside one plant — while a garden whose plots
@@ -6836,6 +6955,7 @@ export async function checks() {
     checkPlotDominatesGarden(problems);
     checkSimulateGarden(problems);
     checkReturnSummary(problems);
+    checkReturnSummaryPlacement(problems);
     checkAwaySowing(problems);
     checkReturnMarks(problems);
     checkLiveAnnouncements(problems);

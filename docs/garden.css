@@ -176,12 +176,14 @@ body {
   flex-direction: column;
 }
 
-/* The growing actions open the column, so the layout gap above them is all the
-   space they need. The readout follows the goal's borderless bottom edge with
-   the same gap, and both rules stay scoped to this column so the sandbox's own
+/* The return's facts open the numbers column, under the plot on one column and
+   beside it on a wide window, so the drawn garden comes first and the return
+   still reads beside the numbers. The actions keep their usual top margin
+   beneath the facts, and the readout follows the goal's borderless bottom edge
+   with the same gap; both rules stay scoped to this column so the sandbox's own
    readout is untouched. */
-.garden-side > .actions:first-child {
-  margin-top: 0;
+.garden-side > .return-facts {
+  padding-bottom: 4px;
 }
 
 .garden-side > .readout {
