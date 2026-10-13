@@ -47,10 +47,10 @@ function fillWithin(amount, at, nextAt) {
   return clamp01(Math.log10(amount / at) / span);
 }
 
-/** The growth at which the form at `index` gives way to the next one. */
-function nextThreshold(index) {
-  if (index + 1 < FORMS.length) return FORMS[index + 1].at;
-  return FORMS[index].at * LAST_STRIDE;
+/** The amount at which the tier at `index` gives way to the next one. */
+function nextThreshold(tiers, index) {
+  if (index + 1 < tiers.length) return tiers[index + 1].at;
+  return tiers[index].at * LAST_STRIDE;
 }
 
 /**
@@ -70,8 +70,66 @@ export function gardenForm(growth) {
     }
   }
   const at = FORMS[index].at;
-  const nextAt = nextThreshold(index);
+  const nextAt = nextThreshold(FORMS, index);
   return { index, name: FORMS[index].name, at, nextAt, fill: fillWithin(amount, at, nextAt) };
+}
+
+// --- Every mark the garden has ever grown -----------------------------------
+//
+// Current growth is what the garden holds right now; the lifetime is everything
+// it has ever produced, and a replant trades the first for a lasting bonus while
+// keeping the second. The plot therefore carries a second layer drawn from the
+// lifetime alone — ground the garden has worked long enough to age, and the
+// structures it has built on it — so a replanted plot still reads as a garden
+// with a history rather than as soil nothing has ever touched, while the current
+// growth still decides how full the plot is today.
+
+/**
+ * The tiers a garden's lifetime passes through, lowest first: what the ground
+ * itself has become, from everything the garden has ever produced.
+ *
+ * The thresholds are powers of ten, like the forms, so each tier is the same
+ * proportional step of history. The first one sits on the replant wall — the
+ * lifetime of 100 a replant is first earned at — so the ground is already
+ * turning over by the time a replant can hand the garden a lasting bonus.
+ */
+export const ESTABLISHMENTS = Object.freeze([
+  { at: 0, name: "fresh ground" },
+  { at: 1e2, name: "turned soil" },
+  { at: 1e4, name: "worked ground" },
+  { at: 1e6, name: "old ground" },
+  { at: 1e9, name: "deep soil" },
+  { at: 1e12, name: "ancient ground" },
+]);
+
+/**
+ * How established the ground is, from the garden's lifetime growth alone, as
+ * `{ index, name, at, nextAt, fill }` — the shape `gardenForm` returns for the
+ * current growth.
+ *
+ * One pure mapping, so the aged ground and the structures the plot draws, the
+ * readout beside them and `get-state` all come from this call and cannot
+ * disagree. Zero, negative, missing or non-finite lifetime is fresh ground with
+ * no fill: a garden with no history draws exactly what the plot drew before
+ * this layer existed, which is also what a sandbox — one span of a garden, not
+ * a life — carries. `fill` runs from 0 at the tier's threshold to 1 at the next
+ * one, and past the last threshold the ground keeps filling.
+ */
+export function establishment(lifetime) {
+  const amount = Number.isFinite(lifetime) && lifetime > 0 ? lifetime : 0;
+  let index = 0;
+  for (let i = ESTABLISHMENTS.length - 1; i > 0; i -= 1) {
+    if (amount >= ESTABLISHMENTS[i].at) {
+      index = i;
+      break;
+    }
+  }
+  const at = ESTABLISHMENTS[index].at;
+  const nextAt = nextThreshold(ESTABLISHMENTS, index);
+  // Fresh ground has nothing grown into it to be part-way through, so it holds
+  // no fill at all rather than the first tier's share of one.
+  const fill = at === 0 ? 0 : fillWithin(amount, at, nextAt);
+  return { index, name: ESTABLISHMENTS[index].name, at, nextAt, fill };
 }
 
 // --- Filling the plot with the garden's own growth --------------------------
@@ -126,6 +184,31 @@ export function groundCover(state) {
     if (cellHash(cell) < ratio) covered += 1;
   }
   return { cells, covered, ratio };
+}
+
+/**
+ * The share of the plot the garden's lifetime has aged, from 0 on fresh ground
+ * toward 1 as the whole plot holds the garden's history.
+ *
+ * It runs `(index + fill) / ESTABLISHMENTS.length` — one tier's worth of ground
+ * per tier of lifetime — so each step of the garden's history visibly darkens
+ * more of the plot than the last, and the last tier keeps filling toward every
+ * cell however far the lifetime climbs past it.
+ */
+function agedRatio(established) {
+  return clamp01((established.index + established.fill) / ESTABLISHMENTS.length);
+}
+
+/**
+ * A stable number in [0, 1) for one cell of aged ground.
+ *
+ * Salted apart from `cellHash`, so the ground the garden's history has aged and
+ * the ground its current growth covers are different sets of cells: the two
+ * layers sit beside each other instead of the younger one hiding the older.
+ */
+function agedHash(cell) {
+  const value = Math.sin((cell + 1) * 24.317 + 173.931) * 43758.5453;
+  return value - Math.floor(value);
 }
 
 // --- Drawing the form on the soil -------------------------------------------
@@ -394,6 +477,87 @@ function drawGroundGrowth(ctx, x, y, palette, cell) {
   ctx.fillStyle = palette.leafLight;
   ctx.fillRect(x + 3, base - 3, 4, 1);
   ctx.fillRect(x + CELL - 9, base - 4, 5, 1);
+}
+
+/**
+ * The aged ground one cell carries: clods of old humus dug through the soil.
+ *
+ * In the soil's own two tones, drawn under the garden's current ground growth,
+ * so a long-worked plot reads as deeper, looser earth and a replanted one still
+ * shows the history standing under its fresh seedling. Each clod is a low mound
+ * with a lit crown, and every position comes from the cell alone — no phase is
+ * read, so the layer is a still frame whatever the motion preference.
+ */
+function drawAgedGround(ctx, x, y, palette, cell) {
+  for (let i = 0; i < 2; i += 1) {
+    const clodX = x + 2 + Math.floor(agedHash(cell + i * 37) * 14);
+    const clodY = y + 3 + Math.floor(agedHash(cell + i * 53) * 15);
+    ctx.fillStyle = palette.soilDeep;
+    ctx.fillRect(clodX + 1, clodY, 4, 2);
+    ctx.fillRect(clodX, clodY + 2, 6, 2);
+    ctx.fillStyle = palette.soilLight;
+    ctx.fillRect(clodX + 2, clodY, 2, 1);
+    ctx.fillRect(clodX + 1, clodY + 2, 1, 1);
+  }
+}
+
+// The garden's lasting structures: one course of stones per tier of history, up
+// to a cap so the tallest wall still leaves the plot's ground readable, and one
+// cairn per tier, capped so the markers never crowd the wall they stand on.
+const STONE_WIDTH = 6;
+const STONE_HEIGHT = 3;
+const WALL_COURSES_MAX = 3;
+const CAIRNS_MAX = 4;
+
+/** How many courses of wall the garden's history has laid: one per tier, capped. */
+function wallCourses(established) {
+  return Math.min(WALL_COURSES_MAX, established.index);
+}
+
+/**
+ * The stone wall along the plot's bottom edge: a course of stones per tier of
+ * the garden's lifetime.
+ *
+ * It is the garden's oldest structure — the retaining wall of ground the
+ * visitor has worked — so it is drawn from the lifetime alone and stands in
+ * front of the garden, where a replant that has left the plot bare again still
+ * shows it. Alternate courses are offset by half a stone, so the wall reads as
+ * laid stonework rather than as one striped band.
+ */
+function drawStoneWall(ctx, palette, width, height, courses) {
+  for (let course = 0; course < courses; course += 1) {
+    const y = height - STONE_HEIGHT * (course + 1);
+    const offset = course % 2 === 0 ? 0 : STONE_WIDTH / 2;
+    for (let x = -offset; x < width; x += STONE_WIDTH) {
+      ctx.fillStyle = palette.soilLight;
+      ctx.fillRect(x, y, STONE_WIDTH - 1, STONE_HEIGHT - 1);
+      ctx.fillStyle = palette.soilDeep;
+      ctx.fillRect(x + STONE_WIDTH - 1, y, 1, STONE_HEIGHT);
+      ctx.fillRect(x, y + STONE_HEIGHT - 1, STONE_WIDTH - 1, 1);
+    }
+  }
+}
+
+/**
+ * The cairns standing on the wall, one per tier of the garden's lifetime
+ * (capped): a small pile of stones the visitor's history has raised.
+ *
+ * They are spaced along the plot's width rather than placed on cells, so they
+ * never claim the plot a seed or plant stands on, and they are drawn with no
+ * phase, so they hold still while the garden breathes and under reduced motion.
+ */
+function drawCairns(ctx, palette, width, height, count, courses) {
+  const ground = height - STONE_HEIGHT * courses;
+  for (let i = 0; i < count; i += 1) {
+    const x = Math.round((i + 1) * (width / (count + 1)) - STONE_WIDTH / 2);
+    ctx.fillStyle = palette.soilLight;
+    ctx.fillRect(x + 1, ground - 3, 6, 3);
+    ctx.fillRect(x + 2, ground - 6, 4, 3);
+    ctx.fillRect(x + 3, ground - 8, 3, 2);
+    ctx.fillStyle = palette.soilDeep;
+    ctx.fillRect(x + 1, ground - 1, 6, 1);
+    ctx.fillRect(x + 2, ground - 4, 4, 1);
+  }
 }
 
 /**
@@ -749,11 +913,21 @@ function drawMark(ctx, mark, palette, foliage, formIndex, growthTier, sway) {
  * palette read off `:root`, so the plot belongs to the same garden as the panels
  * around it. The number of marks is bounded by the cells on screen, so a save
  * carrying more plants than plots cannot flood the picture.
+ *
+ * The lifetime is a second, lasting layer under all of it: `state.lifetimeGrowth`
+ * — the same value the readout and `get-state` report — decides how much of the
+ * ground has aged and how much wall and how many cairns the garden has built, so
+ * an old, well-kept garden reads as established at a glance and a replanted plot
+ * is never drawn as soil nothing has touched. It is hash-derived and reads no
+ * phase, so it holds in the still frame reduced motion pins to.
  */
 export function drawGarden(canvas, state, palette, phase = 0) {
   if (!canvas || !palette) return;
   const growth = state && Number.isFinite(state.growth) ? state.growth : 0;
   const form = gardenForm(growth);
+  const established = establishment(state?.lifetimeGrowth);
+  const aged = agedRatio(established);
+  const courses = wallCourses(established);
   const look = seasonLook(palette, state?.season?.key);
   const paint = look.palette;
   const { cells, width, height } = plotBounds(state);
@@ -779,12 +953,24 @@ export function drawGarden(canvas, state, palette, phase = 0) {
     const x = (cell % COLUMNS) * CELL;
     const y = Math.floor(cell / COLUMNS) * CELL;
     drawSoil(ctx, x, y, paint, look.foliage, soilFace(cell, look.key), cell, occupied.has(cell));
+    // The ground the garden's lifetime has aged goes on under the ground its
+    // current growth covers, so an old plot reads as deeper soil and a
+    // replanted one still shows what its growth no longer does.
+    if (agedHash(cell) < aged) drawAgedGround(ctx, x, y, paint, cell);
     // Ground growth goes on first, so the planted sprites stand out of it.
     if (cellHash(cell) < cover.ratio) drawGroundGrowth(ctx, x, y, paint, cell);
   }
   // Every seed and plant the readout counts, drawn on its own cell. The herb
   // plants stand first, then the blooms, then the seeds of each kind.
   for (const mark of marks) drawMark(ctx, mark, paint, look.foliage, form.index, growthTier, swayPixels(phase, mark.cell));
+  // The garden's lasting structures stand in front of it: the wall its lifetime
+  // has laid along the foot of the plot and a cairn per tier, so an established
+  // garden reads as established at a glance and a replant does not erase what
+  // was built. Nothing here reads the phase, so they hold still.
+  if (established.index > 0) {
+    drawStoneWall(ctx, paint, width, height, courses);
+    drawCairns(ctx, paint, width, height, Math.min(CAIRNS_MAX, established.index), courses);
+  }
   // The pollinator's home stands on the plot whenever grown plants do. Between
   // visits the bee rests still on the hive; during one the hive stays and the
   // bee is out over the plants with pollen in the air, so the picture says both

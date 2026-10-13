@@ -49,7 +49,13 @@ export function tools() {
         "bed-of-seedlings wall, so a replant is only ever offered once the " +
         "garden is flourishing), and the lasting bonus a replant has already " +
         "earned (bonus — in growth per second, added flat to the rate the " +
-        "garden grows at, 0 before the first replant), the " +
+        "garden grows at, 0 before the first replant), and what the garden's " +
+        "lifetime has made of the ground, the lasting layer the plot draws " +
+        "under its current growth and a replant never resets (established: " +
+        "the ground's name and its index among the tiers, the lifetime it " +
+        "began at (at) and the next tier's threshold (nextAt), and how far " +
+        "through the tier the lifetime is as a 0-to-1 fraction (fill) — " +
+        "fresh ground at 0 is a garden that has never produced), the " +
         "season the garden's age falls in (season: its key, name, growth " +
         "multiplier and the pollinator rhythm the season gives — " +
         "pollinatorCycleSeconds and pollinatorBaseVisitSeconds — the cycle " +
