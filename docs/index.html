@@ -21,7 +21,6 @@
     <main id="main" class="stage">
       <section class="panel garden-panel" aria-labelledby="garden-heading">
         <h2 id="garden-heading" class="panel-title">The garden</h2>
-        <div class="goal-detail return-facts" id="return-summary" role="note" aria-label="What happened while you were away" hidden></div>
         <!-- The one place the garden speaks a discrete event — a goal reached,
              a new form, a pollinator arriving, a return. Kept visually hidden
              and apart from the per-tick readout, so a screen reader hears what
@@ -35,6 +34,11 @@
           </div>
 
           <div class="garden-side">
+            <!-- What the absence changed opens the numbers column, under the plot
+                 on one column and beside it on a wide window, so the drawn garden
+                 is the first thing a returning visitor meets and the return's
+                 season and next goal still share the phone's first screen. -->
+            <div class="goal-detail return-facts" id="return-summary" role="note" aria-label="What happened while you were away" hidden></div>
             <div class="actions">
               <button type="button" class="btn" id="tend">Tend the soil</button>
               <button type="button" class="btn" id="plant-seed">Plant a herb seed — 6 growth</button>
