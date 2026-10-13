@@ -108,6 +108,7 @@ import {
   groundCover,
   motionPhase,
   plotBounds,
+  plotMarks,
   pollinatorPlot,
   returnMarkCells,
   seasonLook,
@@ -1730,6 +1731,51 @@ function plotImage(state, phase = 0) {
 }
 
 /**
+ * The bounding box, in canvas pixels, of the pixels that differ between two
+ * plot renders inside one cell's column — the sprite drawn on that cell, told
+ * apart from everything else on the plot.
+ */
+function changedBoxInCell(before, after, cell, column = 0) {
+  const width = Math.min(before.width, after.width);
+  const height = Math.min(before.height, after.height);
+  const a = before.getContext("2d").getImageData(0, 0, width, height).data;
+  const b = after.getContext("2d").getImageData(0, 0, width, height).data;
+  const left = column * cell;
+  const right = left + cell;
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = left; x < right; x += 1) {
+      const i = (y * width + x) * 4;
+      if (a[i] === b[i] && a[i + 1] === b[i + 1] && a[i + 2] === b[i + 2] && a[i + 3] === b[i + 3]) continue;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+  if (maxX < 0) return { width: 0, height: 0 };
+  return { width: maxX - minX + 1, height: maxY - minY + 1 };
+}
+
+/** Whether one cell of a plot render carries a pixel of the given palette colour. */
+function cellHasColor(canvas, color, cell, column = 0) {
+  const key = colorKey(parseColor(color));
+  const data = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+  const left = column * cell;
+  const right = left + cell;
+  for (let y = 0; y < canvas.height; y += 1) {
+    for (let x = left; x < right; x += 1) {
+      const i = (y * canvas.width + x) * 4;
+      if (`${data[i]},${data[i + 1]},${data[i + 2]}` === key) return true;
+    }
+  }
+  return false;
+}
+
+/**
  * The soil is one field of ground, not a grid of identical tiles.
  *
  * Each cell carries its own small marks — a furrow, a damp patch, a pebble, a
@@ -1835,6 +1881,149 @@ function checkPlotDrawsKinds(problems) {
   }
   if (herbSprout === bloomSprout) {
     problems.push("a herb sprout and a bloom sprout draw the same picture, so the two kinds are not visible on the plot.");
+  }
+}
+
+/**
+ * Every kind of growing thing is a mark a visitor can point at: each sprite
+ * spans a real share of the cell at the plot's own size, and a bloom is in
+ * flower where a herb is not.
+ *
+ * Each picture is taken at phase 0 — the still frame reduced motion pins to —
+ * and only the mark's own cell is measured, so a sprite shrunk back into a
+ * speck, or a bloom recoloured to a herb's green, trips this.
+ */
+function checkPlotSpritesLegible(problems) {
+  const bounds = plotBounds({ growth: 0, beds: 1, capacity: PLOT_CAPACITY });
+  const cell = bounds.cell;
+  const planted = (extra) => ({ growth: 0, beds: 1, capacity: PLOT_CAPACITY, pollinator: { visiting: false }, ...extra });
+  const bare = plotCanvas(planted({ seeds: 0, plants: 0 }));
+
+  // A sprite has to fill enough of its cell to be told apart at the plot's
+  // on-screen size: the seed is the smallest, the grown plants the tallest.
+  const sprites = [
+    ["an ungrown herb seed", planted({ seeds: 1 }), 10, 8],
+    ["a grown herb", planted({ plants: 1 }), 12, 16],
+    ["a grown bloom", planted({ plantCounts: [0, 1] }), 13, 16],
+  ];
+  for (const [label, state, leastWide, leastTall] of sprites) {
+    const box = changedBoxInCell(plotCanvas(state), bare, cell);
+    if (box.width < leastWide || box.height < leastTall) {
+      problems.push(
+        `${label} draws a ${box.width}x${box.height}px mark, smaller than the ${leastWide}x${leastTall}px a ` +
+          "visitor needs to tell it apart on the plot."
+      );
+    }
+  }
+
+  // The bee is measured against the same garden at rest, so only the bee out
+  // visiting is in the difference.
+  const flying = planted({ plants: 1, pollinator: { visiting: true } });
+  const resting = planted({ plants: 1, pollinator: { visiting: false } });
+  const bee = changedBoxInCell(plotCanvas(flying), plotCanvas(resting), cell);
+  if (bee.width < 10 || bee.height < 6) {
+    problems.push(
+      `the visiting pollinator draws a ${bee.width}x${bee.height}px mark, smaller than the 10x6px a visitor ` +
+        "needs to find it on the plot."
+    );
+  }
+
+  // The two grown kinds are told apart by flower, not only by silhouette.
+  const palette = readPalette();
+  if (cellHasColor(plotCanvas(planted({ plants: 1 })), palette.bloom, cell)) {
+    problems.push("a grown herb carries the bloom colour, so a herb and a bloom cannot be told apart by their flower.");
+  }
+  if (!cellHasColor(plotCanvas(planted({ plantCounts: [0, 1] })), palette.bloom, cell)) {
+    problems.push("a grown bloom carries no bloom-coloured pixel, so it does not read as a bloom.");
+  }
+}
+
+/**
+ * The picture cannot disagree with the numbers: the plot draws one mark for
+ * every seed and plant the readout counts, up to the cells it has.
+ *
+ * A garden always has a cell for each plot of a full bed, a save far larger
+ * than the grid stays bounded with one mark per cell, and the kinds the marks
+ * carry are the kinds `get-state` reports.
+ */
+function checkPlotMarksMatchCounts(problems) {
+  for (let beds = 1; beds <= 4; beds += 1) {
+    const capacity = beds * PLOTS_PER_BED;
+    const state = { growth: 1e3, beds, capacity, seeds: capacity, plants: 0 };
+    const bounds = plotBounds(state);
+    if (bounds.cells < capacity) {
+      problems.push(
+        `a ${beds}-bed garden of ${capacity} plots draws only ${bounds.cells} cells, so it cannot show every ` +
+          "seed the readout counts."
+      );
+    }
+    const marks = plotMarks(state);
+    if (marks.length < capacity) {
+      problems.push(
+        `a full ${beds}-bed garden counts ${capacity} seeds but the plot draws ${marks.length} marks, so the ` +
+          "picture and the numbers disagree."
+      );
+    }
+  }
+
+  // A garden far larger than the grid is drawn bounded, one mark per cell.
+  const huge = {
+    growth: 1e12,
+    beds: 5000,
+    capacity: 60000,
+    plantCounts: [1e12, 1e12],
+    seedCounts: [1e12, 1e12],
+  };
+  const hugeBounds = plotBounds(huge);
+  const hugeMarks = plotMarks(huge);
+  if (hugeMarks.length !== hugeBounds.cells) {
+    problems.push(
+      `a huge garden drew ${hugeMarks.length} marks over ${hugeBounds.cells} cells, so the marks are not bounded ` +
+        "by the plot."
+    );
+  }
+  if (hugeBounds.cells > hugeBounds.maxRows * hugeBounds.columns) {
+    problems.push(
+      `a huge garden drew ${hugeBounds.cells} cells over a ${hugeBounds.maxRows}-row cap, so the picture is not bounded.`
+    );
+  }
+  const drawnCells = new Set(hugeMarks.map((mark) => mark.cell));
+  if (drawnCells.size !== hugeMarks.length) {
+    problems.push("two marks landed on the same plot cell, so the picture draws some seeds on top of others.");
+  }
+
+  // Each kind the picture draws is the kind the readout counts, in order.
+  const mixed = { growth: 100, beds: 1, capacity: PLOT_CAPACITY, plantCounts: [3, 1], seedCounts: [2, 1] };
+  const mixedMarks = plotMarks(mixed);
+  const counted = (kind) => mixedMarks.filter((mark) => mark.kind === kind).length;
+  if (counted("herb-plant") !== 3 || counted("bloom-plant") !== 1 || counted("herb-seed") !== 2 || counted("bloom-seed") !== 1) {
+    problems.push(
+      "a garden of 3 herb plants / 1 bloom plant / 2 herb seeds / 1 bloom seed drew " +
+        `${JSON.stringify(mixedMarks.map((mark) => mark.kind))}, which does not match the readout.`
+    );
+  }
+
+  // The live readout and the plot's marks are the same garden, so an agent
+  // reading get-state and a visitor looking at the plot cannot disagree.
+  const live = getDisplayedState();
+  const liveMarks = plotMarks(live);
+  const liveBounds = plotBounds(live);
+  if (live.seeds + live.plants <= liveBounds.cells) {
+    const kindCount = (kind) => liveMarks.filter((mark) => mark.kind === kind).length;
+    const reported = [
+      ["herb plant", "herb-plant", live.plantCounts[0]],
+      ["bloom plant", "bloom-plant", live.plantCounts[1]],
+      ["herb seed", "herb-seed", live.seedCounts[0]],
+      ["bloom seed", "bloom-seed", live.seedCounts[1]],
+    ];
+    for (const [label, kind, count] of reported) {
+      if (kindCount(kind) !== count) {
+        problems.push(
+          `get-state reports ${count} ${label}(s) but the plot draws ${kindCount(kind)}, so the picture and the ` +
+            "numbers disagree."
+        );
+      }
+    }
   }
 }
 
@@ -6356,6 +6545,8 @@ export async function checks() {
     checkKindMilestones(problems);
     checkPlotDrawing(problems);
     checkPlotDrawsKinds(problems);
+    checkPlotSpritesLegible(problems);
+    checkPlotMarksMatchCounts(problems);
     checkPlotCoverage(problems);
     checkSoilField(problems);
     checkPlotAnimation(problems);
