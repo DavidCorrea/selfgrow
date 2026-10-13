@@ -60,7 +60,7 @@ import {
   writeLastSeen,
   writeStoredGarden,
 } from "./garden.js";
-import { FORMS, drawGarden, gardenForm, motionPhase } from "./plotview.js";
+import { FORMS, drawGarden, establishment, gardenForm, motionPhase } from "./plotview.js";
 
 const numberFormat = new Intl.NumberFormat("en");
 const decimalFormat = new Intl.NumberFormat("en", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -142,6 +142,7 @@ const elements = {
   beds: document.querySelector('[data-field="beds"]'),
   capacity: document.querySelector('[data-field="capacity"]'),
   pollinator: document.querySelector('[data-field="pollinator"]'),
+  established: document.querySelector('[data-field="established"]'),
   season: document.querySelector('[data-field="season"]'),
   nextPlant: document.querySelector('[data-field="next-plant"]'),
   nextBed: document.querySelector('[data-field="next-bed"]'),
@@ -244,10 +245,14 @@ export function readPalette() {
 const countLabel = (count, singular, plural) =>
   `${formatAmount(count)} ${count === 1 ? singular : plural}`;
 
-/** The picture, said in words: the same growth, beds, form and season the plot draws. */
+/**
+ * The picture, said in words: the same growth, ground, beds, form and season the
+ * plot draws.
+ */
 function describePlot(state) {
   return (
-    `${formatGrowth(state.growth)} growth — ${state.formName}, in ${state.season.name}. ` +
+    `${formatGrowth(state.growth)} growth — ${state.formName} on ${state.established.name}, ` +
+    `in ${state.season.name}. ` +
     `${countLabel(state.beds, "bed of soil", "beds of soil")}, ` +
     `${countLabel(state.seeds, "ungrown seed", "ungrown seeds")}, ` +
     `${countLabel(state.plants, "grown plant", "grown plants")}.`
@@ -277,12 +282,15 @@ export function getDisplayedState() {
   return {
     ...describeGardenState(getGarden(), growth, rate, age, bonus),
     // The garden's whole history, what replanting right now would earn from it,
-    // and the lasting bonus a replant has already earned. They live here rather
-    // than in `describeGardenState` because a rehearsal has no lifetime or bonus
-    // of its own: a sandbox describes one span of a garden, not a life.
+    // the lasting bonus a replant has already earned, and what that history has
+    // made of the ground — the lasting layer the plot draws under the current
+    // growth. They live here rather than in `describeGardenState` because a
+    // rehearsal has no lifetime or bonus of its own: a sandbox describes one
+    // span of a garden, not a life.
     lifetimeGrowth: lifetime,
     replantBonus: replantBonus(lifetime),
     bonus,
+    established: establishment(lifetime),
     canReplant: canReplant(lifetime),
     save: exportSave(),
     away: lastReturn,
@@ -1446,6 +1454,7 @@ function render() {
   setText(elements.growth, formatGrowth(state.growth));
   setText(elements.rate, `+${formatGrowth(state.rate)}/s`);
   setText(elements.lifetime, formatGrowth(state.lifetimeGrowth));
+  setText(elements.established, state.established.name);
   setText(elements.replantBonus, `replant now +${formatAmount(state.replantBonus)}`);
   setText(elements.form, state.formName);
   setText(elements.nextForm, describeNextForm(state));
@@ -1483,10 +1492,11 @@ function render() {
   lastAnnounced = snapshot;
 
   // The picture follows the growth, not the stored garden, so it redraws when
-  // the amount, the form it falls in, the kinds on the plot or the season
-  // change — and stays put when nothing does. Its breathing phase is part of
-  // the key, so a still plot (bare soil, or reduced motion) is redrawn only
-  // when the state changes, while a living one advances a frame each tick.
+  // the amount, the form it falls in, the kinds on the plot, the season or the
+  // establishment the lasting layer is drawn from change — and stays put when
+  // nothing does. Its breathing phase is part of the key, so a still plot (bare
+  // soil, or reduced motion) is redrawn only when the state changes, while a
+  // living one advances a frame each tick.
   const phase = motionPhase({
     reduced: plotReducedMotion,
     frame: plotFrame,
@@ -1495,6 +1505,7 @@ function render() {
   const plotKey =
     `${state.form}:${state.growth}:${state.seedCounts.join(",")}:${state.plantCounts.join(",")}:` +
     `${state.beds}:${state.pollinator.visiting}:${state.season.key}:${phase}:` +
+    `${state.established.index}:${state.established.fill}:` +
     `${JSON.stringify(state.returnMarks ?? null)}`;
   if (plotKey !== lastPlotKey) {
     drawGarden(elements.plot, state, readPalette(), phase);

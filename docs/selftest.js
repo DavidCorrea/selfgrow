@@ -102,8 +102,10 @@ import {
   summarizeReturn,
 } from "./app.js";
 import {
+  ESTABLISHMENTS,
   FORMS,
   drawGarden,
+  establishment,
   gardenForm,
   groundCover,
   motionPhase,
@@ -2092,6 +2094,173 @@ function checkPlotCoverage(problems) {
     problems.push(
       "a stand of plants drew the same picture as bare soil with one plant, so the growth does not fill the plot."
     );
+  }
+}
+
+/**
+ * The garden's lifetime is drawn as a lasting layer of its own: an old,
+ * well-kept garden reads as established, a replanted plot is never drawn as
+ * bare soil, and the current growth still decides how full the plot is.
+ *
+ * The layer is one pure mapping from the lifetime the readout and `get-state`
+ * report, hash-derived and phase-free, so it holds in the still frame reduced
+ * motion pins to and cannot drift from the numbers beside it.
+ */
+function checkPlotEstablishment(problems) {
+  // The mapping: no history is fresh ground with no fill at all, and the ground
+  // is turning over by the time a replant is first earned.
+  const fresh = establishment(0);
+  if (fresh.index !== 0 || fresh.name !== ESTABLISHMENTS[0].name || fresh.fill !== 0) {
+    problems.push(
+      `zero lifetime is establishment ${fresh.index} "${fresh.name}" at ${fresh.fill} fill; it must be tier 0 ` +
+        `"${ESTABLISHMENTS[0].name}" with no fill, which is what the plot drew before this layer existed.`
+    );
+  }
+  for (const missing of [undefined, null, Number.NaN, -5, "100"]) {
+    const mapped = establishment(missing);
+    if (mapped.index !== 0 || mapped.fill !== 0) {
+      problems.push(
+        `lifetime ${JSON.stringify(missing)} maps to establishment tier ${mapped.index} at ${mapped.fill} fill; ` +
+          "a garden with no readable history must draw fresh ground."
+      );
+    }
+  }
+  const atWall = establishment(1e2);
+  const ancient = establishment(1e9);
+  if (atWall.index < 1) {
+    problems.push(
+      `a lifetime of 100 — the replant wall — is still establishment tier ${atWall.index} "${atWall.name}", so the ` +
+        "ground has not aged by the time a replant is first earned."
+    );
+  }
+  if (!(ancient.index > atWall.index)) {
+    problems.push(
+      `lifetimes of 100 and 1e9 are the same establishment tier (${atWall.index}), so the ground stops aging however ` +
+        "much the garden produces."
+    );
+  }
+  for (const [index, tier] of ESTABLISHMENTS.entries()) {
+    const mapped = establishment(tier.at);
+    if (mapped.index !== index || mapped.name !== tier.name) {
+      problems.push(
+        `lifetime ${tier.at} should be tier ${index} "${tier.name}", but it maps to tier ${mapped.index} "${mapped.name}".`
+      );
+    }
+  }
+  for (const amount of [1e2, 1e3, 1e4, 1e6, 1e12, 1e15]) {
+    const { fill } = establishment(amount);
+    if (!(fill >= 0 && fill <= 1)) {
+      problems.push(`lifetime ${amount} has fill ${fill}; it must stay between 0 and 1.`);
+    }
+  }
+  if (JSON.stringify(establishment(1e9)) !== JSON.stringify(establishment(1e9))) {
+    problems.push("the same lifetime mapped to two different establishments, so the lasting layer is not pure.");
+  }
+
+  // Two gardens holding the same growth and the same plants, one young and one
+  // with a long life, draw differently: the older one reads as established.
+  const young = { growth: 1e3, beds: 1, seeds: 0, plants: 1, lifetimeGrowth: 1e2 };
+  const old = { ...young, lifetimeGrowth: 1e9 };
+  if (plotImage(young, 0) === plotImage(old, 0)) {
+    problems.push(
+      "two gardens with the same growth but lifetimes of 100 and 1e9 drew the same plot, so an old garden does not " +
+        "read as more established than a young one."
+    );
+  }
+
+  // The current crop is still the current growth's: the lasting layer changes
+  // neither the ground grid nor the marks standing on it, so a small garden
+  // with a long life is not drawn as a large current crop.
+  if (JSON.stringify(plotBounds(young)) !== JSON.stringify(plotBounds(old))) {
+    problems.push("the lifetime changed the plot's bounds, so a small garden with a long life draws a larger grid.");
+  }
+  if (JSON.stringify(plotMarks(young)) !== JSON.stringify(plotMarks(old))) {
+    problems.push("the lifetime changed the marks on the plot, so the current crop is drawn from the garden's history.");
+  }
+
+  // A replant resets the growth but keeps the history: fresh growth on worked
+  // ground is not the picture of ground nothing has ever grown on.
+  const replanted = { growth: 0, beds: 1, seeds: 1, plants: 0, lifetimeGrowth: 1e9 };
+  const untouched = { growth: 0, beds: 1, seeds: 1, plants: 0 };
+  if (gardenForm(replanted.growth).name !== "bare soil") {
+    problems.push(
+      `a replanted garden's current growth (${replanted.growth}) draws form ` +
+        `"${gardenForm(replanted.growth).name}" rather than the bare soil this check compares against.`
+    );
+  }
+  if (plotImage(replanted, 0) === plotImage(untouched, 0)) {
+    problems.push(
+      "a replanted plot drew the same picture as ground that has never grown anything, so a replant erased the " +
+        "garden's history from the plot."
+    );
+  }
+  // The layer is hash-derived and reads no phase, so one state is one still
+  // frame — the frame reduced motion pins to.
+  if (plotImage(replanted, 0) !== plotImage(replanted, 0)) {
+    problems.push("the same replanted state drew two different plots, so the lasting layer is not a still frame.");
+  }
+
+  // The picture draws from the lifetime the readout and get-state report. The
+  // garden is put at a lifetime inside a tier so the check reads the layer the
+  // page is actually drawing from, not an empty one.
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  try {
+    setGrowth(250, 0.5, 0, 1e9, 40);
+    const state = getDisplayedState();
+    const drawnFrom = establishment(state.lifetimeGrowth);
+    if (state.lifetimeGrowth !== 1e9) {
+      problems.push(`get-state reports lifetime growth ${state.lifetimeGrowth} for a garden holding 1e9.`);
+    }
+    if (JSON.stringify(state.established) !== JSON.stringify(drawnFrom)) {
+      problems.push(
+        `get-state reports establishment ${JSON.stringify(state.established)} for lifetime ${state.lifetimeGrowth}, ` +
+          `but the plot draws from ${JSON.stringify(drawnFrom)}.`
+      );
+    }
+    const groundEl = document.querySelector('[data-field="established"]');
+    if (!groundEl) {
+      problems.push(
+        'the page has no ground readout (expected [data-field="established"]), so the lasting layer is not stated ' +
+          "in words."
+      );
+    } else if (String(groundEl.textContent).trim() !== state.established.name) {
+      problems.push(
+        `the page names the ground ${JSON.stringify(String(groundEl.textContent).trim())}, but the plot draws ` +
+          `${JSON.stringify(state.established.name)}.`
+      );
+    }
+    const lifetimeEl = document.querySelector('[data-field="lifetime"]');
+    if (lifetimeEl && String(lifetimeEl.textContent).trim() !== formatGrowth(state.lifetimeGrowth)) {
+      problems.push(
+        `the page shows ${JSON.stringify(String(lifetimeEl.textContent).trim())} for the lifetime the plot draws, ` +
+          `but the garden holds ${formatGrowth(state.lifetimeGrowth)}.`
+      );
+    }
+    const bonusEl = document.querySelector('[data-field="replant-bonus"]');
+    if (state.replantBonus !== replantBonus(state.lifetimeGrowth)) {
+      problems.push(
+        `the readout's replant bonus ${state.replantBonus} is not the replantBonus of the lifetime ` +
+          `${state.lifetimeGrowth} (${replantBonus(state.lifetimeGrowth)}) the plot draws its ground from.`
+      );
+    } else if (bonusEl && !String(bonusEl.textContent).includes(formatAmount(state.replantBonus))) {
+      problems.push(
+        `the page shows ${JSON.stringify(String(bonusEl.textContent).trim())} for the replant bonus, but the lifetime ` +
+          `the plot draws from (${state.lifetimeGrowth}) is worth ${state.replantBonus}.`
+      );
+    }
+    // The number the picture draws from is the number the readout holds: the
+    // same plot drawn with no history at all is a different picture.
+    const drawn = { growth: 0, beds: 1, seeds: 1, plants: 0, lifetimeGrowth: state.lifetimeGrowth };
+    if (plotImage(drawn, 0) === plotImage({ ...drawn, lifetimeGrowth: 0 }, 0)) {
+      problems.push(
+        `the plot drew the same ground for the reported lifetime ${state.lifetimeGrowth} as for a garden with no ` +
+          "history, so the lifetime the readout shows is not what the picture draws from."
+      );
+    }
+  } finally {
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
   }
 }
 
@@ -6548,6 +6717,7 @@ export async function checks() {
     checkPlotSpritesLegible(problems);
     checkPlotMarksMatchCounts(problems);
     checkPlotCoverage(problems);
+    checkPlotEstablishment(problems);
     checkSoilField(problems);
     checkPlotAnimation(problems);
     checkGardenFormMapping(problems);
