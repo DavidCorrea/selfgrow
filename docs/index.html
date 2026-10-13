@@ -185,7 +185,7 @@
               autocapitalize="off"
               aria-describedby="save-hint"
             ></textarea>
-            <p class="field-hint" id="save-hint">Starts with SELFGROW1. Load replaces the current garden.</p>
+            <p class="field-hint" id="save-hint">Starts with SELFGROW1. Load shows what the save holds before replacing this garden.</p>
 
             <div class="save-actions">
               <button type="button" class="btn" id="copy-save">Copy save</button>
@@ -302,6 +302,49 @@
       <div class="save-actions">
         <button type="button" class="btn" id="replant-confirm">Replant now</button>
         <button type="button" class="btn" id="replant-cancel">Keep growing</button>
+      </div>
+    </dialog>
+
+    <!-- Load save shows what the pasted save holds beside what the garden holds
+         now, one row per value, and replaces nothing until Load now is pressed.
+         Keep this garden (or Esc) closes it and changes nothing. -->
+    <dialog id="load-dialog" class="panel replant-dialog" aria-labelledby="load-dialog-title">
+      <h2 id="load-dialog-title" class="panel-title">Load this save?</h2>
+      <dl class="replant-facts" aria-label="What loading this save would change">
+        <div class="replant-fact">
+          <dt class="replant-fact-term">Growth</dt>
+          <dd class="replant-fact-value" id="load-dialog-growth" data-field="load-dialog-growth">
+            now 0 · in this save 0
+          </dd>
+        </div>
+        <div class="replant-fact">
+          <dt class="replant-fact-term">Seeds</dt>
+          <dd class="replant-fact-value" id="load-dialog-seeds" data-field="load-dialog-seeds">
+            now 0 · in this save 0
+          </dd>
+        </div>
+        <div class="replant-fact">
+          <dt class="replant-fact-term">Plants</dt>
+          <dd class="replant-fact-value" id="load-dialog-plants" data-field="load-dialog-plants">
+            now 0 · in this save 0
+          </dd>
+        </div>
+        <div class="replant-fact">
+          <dt class="replant-fact-term">Beds</dt>
+          <dd class="replant-fact-value" id="load-dialog-beds" data-field="load-dialog-beds">
+            now 0 · in this save 0
+          </dd>
+        </div>
+        <div class="replant-fact">
+          <dt class="replant-fact-term">Lifetime growth</dt>
+          <dd class="replant-fact-value" id="load-dialog-lifetime" data-field="load-dialog-lifetime">
+            now 0 · in this save 0
+          </dd>
+        </div>
+      </dl>
+      <div class="save-actions">
+        <button type="button" class="btn" id="load-confirm">Load now</button>
+        <button type="button" class="btn" id="load-cancel">Keep this garden</button>
       </div>
     </dialog>
   </body>

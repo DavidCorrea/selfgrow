@@ -7,8 +7,9 @@
  * next bed button; `replant` is the Replant the garden button; `open-sandbox`,
  * `fast-forward-sandbox`, `act-in-sandbox` and `reset-sandbox` are the Rehearse
  * time panel — the last but one tending, planting and opening a bed inside the
- * rehearsal rather than the real garden; `export-save` is the Copy save button; `import-save` is the Load save button,
- * and returns the same fields afterwards so the caller can see what it changed.
+ * rehearsal rather than the real garden; `export-save` is the Copy save button; `import-save` is the Load save button —
+ * a two-step, so a call without a confirmation previews what a load would
+ * replace and writes nothing, and only a call with `confirm: true` loads it.
  */
 
 import {
@@ -20,6 +21,7 @@ import {
   getDisplayedState,
   loadGardenSave,
   openSandbox,
+  previewGardenSave,
   resetSandbox,
   sandboxSpanSeconds,
 } from "./app.js";
@@ -394,11 +396,17 @@ export function tools() {
       name: "import-save",
       title: "Load a garden save",
       description:
-        "Replaces the whole garden with the one encoded in a save string from " +
-        "export-save, writes it to this browser, and returns the state " +
-        "afterwards. It overwrites the current garden, so prefer it when the " +
-        "visitor is deliberately restoring one. An unreadable save is refused " +
-        "and the garden is left as it was.",
+        "Loads a save string from export-save into the whole garden and writes " +
+        "it to this browser. A load replaces everything the visitor is watching, " +
+        "so it is deliberately two steps and does not change the garden until " +
+        "confirmed: a call without confirm: true applies nothing and returns what " +
+        "the save holds beside what the garden holds now — current and incoming, " +
+        "each with growth, seeds, plants, beds and lifetime, and changes listing " +
+        "the fields that differ (from, to) — plus needsConfirmation: true and " +
+        "applied: false. Call again with confirm: true to load it; the return then " +
+        "carries applied: true, whether the browser kept it (persisted), and the " +
+        "state afterwards. An unreadable save is refused with its reason and the " +
+        "garden is left exactly as it was, confirmed or not.",
       inputSchema: {
         type: "object",
         properties: {
@@ -406,18 +414,30 @@ export function tools() {
             type: "string",
             description: "A save string produced by export-save (starts with SELFGROW1.).",
           },
+          confirm: {
+            type: "boolean",
+            description:
+              "Set true to actually load the save. Omitted or false returns the " +
+              "preview and changes nothing.",
+          },
         },
         required: ["save"],
         additionalProperties: false,
       },
       annotations: { readOnlyHint: false, consequentialHint: true },
       example: { save: EXAMPLE_SAVE },
-      async execute({ save }) {
+      async execute({ save, confirm }) {
+        const text = String(save);
+        let preview;
         try {
-          return loadGardenSave(String(save));
+          preview = previewGardenSave(text);
         } catch (e) {
-          return { ok: false, error: e.message, state: getDisplayedState() };
+          return { ok: false, applied: false, error: e.message, state: getDisplayedState() };
         }
+        if (confirm !== true) {
+          return { ok: true, applied: false, needsConfirmation: true, preview, state: getDisplayedState() };
+        }
+        return { ...loadGardenSave(text), applied: true, preview };
       },
     },
   ];

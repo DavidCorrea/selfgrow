@@ -94,6 +94,7 @@ import {
   getSandboxState,
   loadGardenSave,
   openSandbox,
+  previewGardenSave,
   readPalette,
   resetSandbox,
   returnAnnouncement,
@@ -705,6 +706,134 @@ function checkPortableSave(problems) {
     setGarden(before);
     setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
     restoreRawStorage(beforeRaw);
+  }
+}
+
+/**
+ * Loading a save is confirm-first on the page too: pressing Load save shows
+ * what the pasted save holds beside the garden now and changes nothing, only
+ * Load now applies it, and Keep this garden closes the dialog as a pure no-op.
+ * `previewGardenSave` itself must only read — it never writes the garden or the
+ * stored save.
+ */
+function checkLoadConfirm(problems) {
+  const dialog = document.getElementById("load-dialog");
+  const confirm = document.getElementById("load-confirm");
+  const cancel = document.getElementById("load-cancel");
+  const load = document.getElementById("load-save");
+  if (!dialog || !confirm || !cancel || !load) {
+    problems.push(
+      "the page has no Load-this-save confirmation (expected #load-dialog, #load-confirm, #load-cancel and #load-save)."
+    );
+    return;
+  }
+  if (
+    typeof dialog.showModal !== "function" ||
+    confirm.tagName !== "BUTTON" ||
+    cancel.tagName !== "BUTTON" ||
+    confirm.disabled ||
+    cancel.disabled ||
+    !confirm.textContent.trim() ||
+    !cancel.textContent.trim()
+  ) {
+    problems.push("the Load dialog's Load now and Keep this garden controls are not named, focusable buttons.");
+  }
+
+  const fold = document.querySelector("details.fold");
+  const foldWasOpen = fold ? fold.open : null;
+  const saveField = document.getElementById("save-value");
+  const saveFieldValue = saveField ? saveField.value : null;
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const storageBefore = rawStorage();
+  try {
+    setGarden({ beds: 2, seeds: 3, plants: 2 });
+    setGrowth(70, 1.5, 120, 700, 6);
+    writeStoredGarden(getGarden());
+
+    const portable = encodeSave({ beds: 1, seeds: 5, plants: 4, growth: 45, lifetime: 2500 });
+    const incoming = decodeSave(portable);
+    if (saveField) saveField.value = portable;
+    const storedLive = rawStorage().value;
+    const liveGarden = getGarden();
+    const liveGrowth = getGrowthState();
+
+    // The preview only reads: the garden, the growth and the stored save are all
+    // left exactly where they were.
+    const preview = previewGardenSave(portable);
+    if (
+      preview.current.growth !== liveGrowth.growth ||
+      preview.current.seeds !== liveGarden.seeds ||
+      preview.current.beds !== liveGarden.beds ||
+      preview.incoming.growth !== incoming.growth ||
+      preview.incoming.lifetime !== incoming.lifetime ||
+      !Array.isArray(preview.changes)
+    ) {
+      problems.push("previewGardenSave did not report the garden now beside what the save holds.");
+    }
+    if (
+      JSON.stringify(getGarden()) !== JSON.stringify(liveGarden) ||
+      JSON.stringify(getGrowthState()) !== JSON.stringify(liveGrowth) ||
+      rawStorage().value !== storedLive
+    ) {
+      problems.push("previewGardenSave changed the garden or the stored save — it must only read.");
+    }
+
+    // Pressing Load save shows the dialog and writes nothing.
+    if (fold) fold.open = true;
+    load.click();
+    if (!dialog.open) {
+      problems.push("pressing Load save did not open the Load-this-save dialog.");
+    }
+    const growthRow = document.getElementById("load-dialog-growth");
+    if (growthRow && !String(growthRow.textContent).includes(formatGrowth(incoming.growth))) {
+      problems.push(
+        `the Load dialog's Growth row is ${JSON.stringify(growthRow.textContent)}, expected it to name the save's ` +
+          `${formatGrowth(incoming.growth)}.`
+      );
+    }
+    const afterOpen = getGarden();
+    const afterOpenGrowth = getGrowthState();
+    if (
+      afterOpen.seeds !== liveGarden.seeds ||
+      afterOpen.beds !== liveGarden.beds ||
+      afterOpenGrowth.growth !== liveGrowth.growth ||
+      rawStorage().value !== storedLive
+    ) {
+      problems.push("pressing Load save changed the garden before it was confirmed.");
+    }
+
+    // Keep this garden (or Esc) closes the dialog and changes nothing.
+    cancel.click();
+    if (dialog.open) problems.push("Keep this garden did not close the Load dialog.");
+    if (getGarden().seeds !== liveGarden.seeds || getGrowthState().growth !== liveGrowth.growth) {
+      problems.push("Keep this garden changed the garden even though it was declined.");
+    }
+
+    // Load now applies the previewed save.
+    load.click();
+    confirm.click();
+    if (dialog.open) problems.push("Load now did not close the Load dialog.");
+    const loaded = getGarden();
+    const loadedGrowth = getGrowthState();
+    if (
+      loaded.seeds !== incoming.seeds ||
+      loaded.plants !== incoming.plants ||
+      loaded.beds !== incoming.beds ||
+      loadedGrowth.growth !== incoming.growth
+    ) {
+      problems.push(
+        `Load now left ${loaded.seeds} seeds / ${loaded.plants} plants / ${loaded.beds} beds / ${loadedGrowth.growth} ` +
+          `growth, expected the save's ${incoming.seeds} / ${incoming.plants} / ${incoming.beds} / ${incoming.growth}.`
+      );
+    }
+  } finally {
+    if (dialog.open) dialog.close();
+    if (fold && foldWasOpen !== null) fold.open = foldWasOpen;
+    if (saveField && saveFieldValue !== null) saveField.value = saveFieldValue;
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime, growthBefore.bonus);
+    restoreRawStorage(storageBefore);
   }
 }
 
@@ -6011,19 +6140,145 @@ async function checkAgentTools(problems) {
     problems.push("export-save returned a different save than the page shows.");
   }
 
-  const started = getGarden();
-  const loaded = await importTool.execute({ save: exportSave() }, {});
-  if (!loaded.ok) {
-    problems.push(`import-save refused a valid save: ${loaded.error ?? "no reason given"}`);
-  }
+  await checkImportSaveGate(importTool, problems);
+}
 
-  const refused = await importTool.execute({ save: "not a save" }, {});
-  if (refused.ok) {
-    problems.push("import-save accepted an invalid save instead of reporting failure.");
-  }
-  const after = getGarden();
-  if (after.seeds !== started.seeds || after.plants !== started.plants) {
-    problems.push("import-save changed the garden even though the save was refused.");
+/**
+ * import-save must be confirm-first: a call with a save but no confirmation
+ * changes nothing — not the garden, not the stored save — and reports what the
+ * load would replace; only `confirm: true` applies it. An unreadable save is
+ * refused either way and leaves the garden exactly as it was.
+ */
+async function checkImportSaveGate(importTool, problems) {
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const storageBefore = rawStorage();
+  const seenBefore = rawLastSeen();
+  try {
+    setGarden({ beds: 2, seeds: 3, plants: 2 });
+    setGrowth(70, 1.5, 120, 700, 6);
+    writeStoredGarden(getGarden());
+
+    // A different but valid garden to load.
+    const portable = encodeSave({ beds: 1, seeds: 5, plants: 4, growth: 45, lifetime: 2500 });
+    const incoming = decodeSave(portable);
+    const liveGarden = getGarden();
+    const liveGrowth = getGrowthState();
+    const storedLive = rawStorage().value;
+
+    const preview = await importTool.execute({ save: portable }, {});
+    if (preview.ok !== true || preview.applied !== false || preview.needsConfirmation !== true) {
+      problems.push(
+        `import-save without confirmation returned ok=${preview.ok} / applied=${preview.applied} / ` +
+          `needsConfirmation=${preview.needsConfirmation}, expected a preview that applied nothing.`
+      );
+    }
+    if (!preview.preview || !preview.preview.current || !preview.preview.incoming) {
+      problems.push("import-save without confirmation did not report what a load would replace.");
+    } else {
+      const { current, incoming: next } = preview.preview;
+      if (
+        current.growth !== liveGrowth.growth ||
+        current.seeds !== liveGarden.seeds ||
+        current.plants !== liveGarden.plants ||
+        current.beds !== liveGarden.beds ||
+        current.lifetime !== liveGrowth.lifetime
+      ) {
+        problems.push(
+          `the import-save preview reported the garden now as ${JSON.stringify(current)}, but it holds ` +
+            `${JSON.stringify({
+              growth: liveGrowth.growth,
+              seeds: liveGarden.seeds,
+              plants: liveGarden.plants,
+              beds: liveGarden.beds,
+              lifetime: liveGrowth.lifetime,
+            })}.`
+        );
+      }
+      if (
+        next.growth !== incoming.growth ||
+        next.seeds !== incoming.seeds ||
+        next.plants !== incoming.plants ||
+        next.beds !== incoming.beds ||
+        next.lifetime !== incoming.lifetime
+      ) {
+        problems.push(
+          `the import-save preview said the save holds ${JSON.stringify(next)}, but it decodes to ` +
+            `${JSON.stringify({
+              growth: incoming.growth,
+              seeds: incoming.seeds,
+              plants: incoming.plants,
+              beds: incoming.beds,
+              lifetime: incoming.lifetime,
+            })}.`
+        );
+      }
+      if (!Array.isArray(preview.preview.changes) || preview.preview.changes.length === 0) {
+        problems.push("the import-save preview reported no changes for a save that differs from the garden.");
+      }
+    }
+
+    const afterPreview = getGarden();
+    const afterPreviewGrowth = getGrowthState();
+    if (
+      afterPreview.seeds !== liveGarden.seeds ||
+      afterPreview.plants !== liveGarden.plants ||
+      afterPreview.beds !== liveGarden.beds ||
+      afterPreviewGrowth.growth !== liveGrowth.growth ||
+      afterPreviewGrowth.lifetime !== liveGrowth.lifetime
+    ) {
+      problems.push("import-save without confirmation changed the garden even though nothing was applied.");
+    }
+    if (rawStorage().value !== storedLive) {
+      problems.push("import-save without confirmation wrote the stored save even though nothing was applied.");
+    }
+
+    const applied = await importTool.execute({ save: portable, confirm: true }, {});
+    if (applied.ok !== true || applied.applied !== true) {
+      problems.push(
+        `import-save with confirm: true returned ok=${applied.ok} / applied=${applied.applied}, expected it to load the save.`
+      );
+    }
+    const loaded = getGarden();
+    const loadedGrowth = getGrowthState();
+    if (
+      loaded.seeds !== incoming.seeds ||
+      loaded.plants !== incoming.plants ||
+      loaded.beds !== incoming.beds ||
+      loadedGrowth.growth !== incoming.growth ||
+      loadedGrowth.lifetime !== incoming.lifetime
+    ) {
+      problems.push(
+        `import-save with confirm: true left ${loaded.seeds} seeds / ${loaded.plants} plants / ${loaded.beds} beds / ` +
+          `${loadedGrowth.growth} growth / ${loadedGrowth.lifetime} lifetime, expected the save's ` +
+          `${incoming.seeds} / ${incoming.plants} / ${incoming.beds} / ${incoming.growth} / ${incoming.lifetime}.`
+      );
+    }
+    if (exportSave() !== portable) {
+      problems.push("loading a save through import-save did not round-trip back to the same save string.");
+    }
+
+    const storedLoaded = rawStorage().value;
+    const refused = await importTool.execute({ save: "not a save" }, {});
+    if (refused.ok || refused.applied) {
+      problems.push("import-save accepted an invalid save instead of reporting failure.");
+    }
+    const refusedConfirmed = await importTool.execute({ save: "not a save", confirm: true }, {});
+    if (refusedConfirmed.ok || refusedConfirmed.applied) {
+      problems.push("import-save with confirm: true applied an invalid save instead of refusing it.");
+    }
+    const afterRefused = getGarden();
+    if (afterRefused.seeds !== loaded.seeds || afterRefused.plants !== loaded.plants) {
+      problems.push("import-save changed the garden even though the save was refused.");
+    }
+    if (rawStorage().value !== storedLoaded) {
+      problems.push("a refused import-save wrote the stored save anyway.");
+    }
+  } finally {
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime, growthBefore.bonus);
+    restoreRawStorage(storageBefore);
+    restoreRawLastSeen(seenBefore);
   }
 }
 
@@ -6122,6 +6377,7 @@ export async function checks() {
     checkLargeCounts(problems);
     checkCompactAmounts(problems);
     checkPortableSave(problems);
+    checkLoadConfirm(problems);
     checkNoOverflow(problems);
     checkCompactReadout(problems);
     checkFirstScreenGarden(problems);
