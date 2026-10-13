@@ -402,12 +402,50 @@ body {
 }
 
 /* Each kind of seed keeps a row of its own — the two things the plot draws in
-   two different ways, named here. Their values run longer than a plain count,
-   so they read at the rate's size rather than the hero number's. */
+   two different ways, named here. Six facts per kind do not fit half a phone's
+   readout, so each row takes the full width and its facts wrap into a couple of
+   short lines rather than four half-width ones. */
+.readout-kind {
+  grid-column: 1 / -1;
+}
+
 .readout-kind-value {
-  font-size: 14px;
-  line-height: 1.6;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* The facts sit on two lines by design — what the kind holds and what a plant
+   earns, then what comes next — because the six of them in one wrapping line
+   need three at a phone's width. Each line still wraps if a number outgrows
+   it rather than running off the row. */
+.kind-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+}
+
+/* One labelled value: the label names the fact in a word, the number reads at
+   the rate's size rather than the hero number's. Spacing alone separates the
+   facts, so the row holds no separator to be decoded. */
+.kind-fact {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.kind-fact-label {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.kind-fact-value {
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
 
 /* The next form shares the garden-form line: a short label above a slim meter,

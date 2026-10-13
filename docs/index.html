@@ -124,14 +124,76 @@
                 <dd class="readout-value" data-field="plants">0</dd>
               </div>
               <!-- One row per kind of seed: what the plot draws in two ways,
-                   named here with its price and what a grown plant earns. -->
+                   named here as a block of short labelled values — its seeds
+                   and plants, the price of its next seed, what each grown
+                   plant earns, and the next milestone with the plants still
+                   needed. Each value has its own element, so the row is read
+                   rather than decoded and any one fact can be checked. -->
               <div class="readout-row readout-kind">
                 <dt class="readout-term">Herb</dt>
-                <dd class="readout-value readout-kind-value" data-field="kind-herb">1 seed · 0 plants — next 6 · +0.5/s each</dd>
+                <dd class="readout-value readout-kind-value" data-field="kind-herb">
+                  <span class="kind-facts">
+                    <span class="kind-fact">
+                      <span class="kind-fact-label">Seeds</span>
+                      <span class="kind-fact-value" data-field="kind-herb-seeds">1</span>
+                    </span>
+                    <span class="kind-fact">
+                      <span class="kind-fact-label">Plants</span>
+                      <span class="kind-fact-value" data-field="kind-herb-plants">0</span>
+                    </span>
+                    <span class="kind-fact">
+                      <span class="kind-fact-label">Per plant</span>
+                      <span class="kind-fact-value" data-field="kind-herb-output">+0.5 a second</span>
+                    </span>
+                  </span>
+                  <span class="kind-facts">
+                    <span class="kind-fact">
+                      <span class="kind-fact-label">Next seed</span>
+                      <span class="kind-fact-value" data-field="kind-herb-cost">6</span>
+                    </span>
+                    <span class="kind-fact">
+                      <span class="kind-fact-label">Milestone</span>
+                      <span class="kind-fact-value" data-field="kind-herb-milestone">10 plants</span>
+                    </span>
+                    <span class="kind-fact">
+                      <span class="kind-fact-label">To go</span>
+                      <span class="kind-fact-value" data-field="kind-herb-to-go">10</span>
+                    </span>
+                  </span>
+                </dd>
               </div>
               <div class="readout-row readout-kind">
                 <dt class="readout-term">Bloom</dt>
-                <dd class="readout-value readout-kind-value" data-field="kind-bloom">0 seeds · 0 plants — next 40 · +5.0/s each</dd>
+                <dd class="readout-value readout-kind-value" data-field="kind-bloom">
+                  <span class="kind-facts">
+                    <span class="kind-fact">
+                      <span class="kind-fact-label">Seeds</span>
+                      <span class="kind-fact-value" data-field="kind-bloom-seeds">0</span>
+                    </span>
+                    <span class="kind-fact">
+                      <span class="kind-fact-label">Plants</span>
+                      <span class="kind-fact-value" data-field="kind-bloom-plants">0</span>
+                    </span>
+                    <span class="kind-fact">
+                      <span class="kind-fact-label">Per plant</span>
+                      <span class="kind-fact-value" data-field="kind-bloom-output">+5.0 a second</span>
+                    </span>
+                  </span>
+                  <span class="kind-facts">
+                    <span class="kind-fact">
+                      <span class="kind-fact-label">Next seed</span>
+                      <span class="kind-fact-value" data-field="kind-bloom-cost">40</span>
+                    </span>
+                    <span class="kind-fact">
+                      <span class="kind-fact-label">Milestone</span>
+                      <span class="kind-fact-value" data-field="kind-bloom-milestone">15 plants</span>
+                    </span>
+                    <span class="kind-fact">
+                      <span class="kind-fact-label">To go</span>
+                      <span class="kind-fact-value" data-field="kind-bloom-to-go">15</span>
+                    </span>
+                  </span>
+                </dd>
               </div>
               <div class="readout-row">
                 <dt class="readout-term">Beds of soil</dt>

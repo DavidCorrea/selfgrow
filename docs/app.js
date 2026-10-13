@@ -22,7 +22,6 @@ import {
   POLLINATOR_BLOOM_VISIT_SECONDS,
   POLLINATOR_BOOST,
   POLLINATOR_VISIT_MAX_SECONDS,
-  MILESTONE_MULTIPLIER,
   SEED_KINDS,
   STORAGE_KEY,
   TEND_RATE_STEP,
@@ -131,8 +130,8 @@ const elements = {
   tend: document.getElementById("tend"),
   plant: document.getElementById("plant-seed"),
   plantBloom: document.getElementById("plant-bloom"),
-  kindHerb: document.querySelector('[data-field="kind-herb"]'),
-  kindBloom: document.querySelector('[data-field="kind-bloom"]'),
+  kindHerb: readKindRow("herb"),
+  kindBloom: readKindRow("bloom"),
   goalTitle: document.getElementById("goal-title"),
   goalDetail: document.getElementById("goal-detail"),
   meter: document.getElementById("seed-meter"),
@@ -1284,19 +1283,50 @@ function renderPlanting(state) {
 }
 
 /**
+ * One kind's readout: its row and the labelled value spans inside it, found
+ * once so a re-render writes into the spans that are already there rather than
+ * querying the row again on every tick.
+ */
+function readKindRow(key) {
+  const row = document.querySelector(`[data-field="kind-${key}"]`);
+  const values = new Map(
+    [...(row?.querySelectorAll("[data-field]") ?? [])].map((span) => [span.dataset.field, span])
+  );
+  return { row, values };
+}
+
+/**
  * The two kinds as the readout reads them: each kind's seeds and plants, the
  * price of its next seed, what one grown plant adds to the rate now that its
  * milestones are counted, and the nearer goal — its next plant milestone and
- * how many more plants of that kind it needs.
+ * how many more plants of that kind it needs. Pure, so the row and get-state
+ * cannot disagree about a kind; the label each value sits under is part of the
+ * markup, because it never changes.
  */
 function describeKind(kind) {
-  const count = `${formatAmount(kind.seeds)} ${kind.seeds === 1 ? "seed" : "seeds"} · ` +
-    `${formatAmount(kind.plants)} ${kind.plants === 1 ? "plant" : "plants"}`;
-  const milestone = kind.nextMilestone == null
-    ? "all milestones reached"
-    : `x${MILESTONE_MULTIPLIER} at ${formatAmount(kind.nextMilestone)} plants · ` +
-      `${formatAmount(kind.plantsToMilestone)} to go`;
-  return `${count} — next ${formatAmount(kind.cost)} · +${formatGrowth(kind.output)}/s each · ${milestone}`;
+  return [
+    { field: "seeds", value: formatAmount(kind.seeds) },
+    { field: "plants", value: formatAmount(kind.plants) },
+    { field: "cost", value: formatAmount(kind.cost) },
+    // Spelled out rather than the panel's `+0.5/s`: this row carries no slash,
+    // so it reads as words rather than as a formula to decode.
+    { field: "output", value: `+${formatGrowth(kind.output)} a second` },
+    {
+      field: "milestone",
+      value: kind.nextMilestone == null ? "all reached" : `${formatAmount(kind.nextMilestone)} plants`,
+    },
+    // Past the last milestone nothing is left to reach, and that reads as the 0
+    // it is: every other fact in the row is a number.
+    { field: "to-go", value: formatAmount(kind.plantsToMilestone ?? 0) },
+  ];
+}
+
+/** One kind's row: its facts, each written into its own labelled span. */
+function renderKind(kindRow, kind) {
+  if (!kindRow?.row || !kind) return;
+  for (const { field, value } of describeKind(kind)) {
+    setText(kindRow.values.get(`kind-${kind.key}-${field}`), value);
+  }
 }
 
 /** Point a goal meter at `progress`, from 0 to 1. */
@@ -1509,8 +1539,8 @@ function render() {
   setText(elements.returnMarks, describeReturnMarks(state.returnMarks));
   if (elements.returnMarksRow) elements.returnMarksRow.hidden = !state.returnMarks;
   setText(elements.season, describeSeason(state));
-  setText(elements.kindHerb, describeKind(state.kinds[0]));
-  setText(elements.kindBloom, describeKind(state.kinds[1]));
+  renderKind(elements.kindHerb, state.kinds[0]);
+  renderKind(elements.kindBloom, state.kinds[1]);
   setText(elements.nextPlant, describeNextPlant(state));
   setText(elements.nextBed, describeNextBed(state));
   setText(elements.storage, state.storageAvailable ? "Yes" : "No");
