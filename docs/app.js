@@ -5,7 +5,9 @@
  * and time away, the growth the garden has produced over its whole life beside
  * what a replant right now would earn from it, the Replant action that resets
  * the run for a lasting bonus once the garden is flourishing, and a save the
- * player can copy out and load back.
+ * player can copy out and, after seeing what it holds beside the live garden,
+ * load back. A load is confirm-first: pasting and pressing Load save opens a
+ * preview and changes nothing until Load now is pressed.
  *
  * The plot is drawn from the live growth number through one function —
  * `gardenForm` — that also names the form in words, so the picture and the text
@@ -155,6 +157,14 @@ const elements = {
   copy: document.getElementById("copy-save"),
   load: document.getElementById("load-save"),
   status: document.getElementById("save-status"),
+  loadDialog: document.getElementById("load-dialog"),
+  loadConfirm: document.getElementById("load-confirm"),
+  loadCancel: document.getElementById("load-cancel"),
+  loadGrowth: document.getElementById("load-dialog-growth"),
+  loadSeeds: document.getElementById("load-dialog-seeds"),
+  loadPlants: document.getElementById("load-dialog-plants"),
+  loadBeds: document.getElementById("load-dialog-beds"),
+  loadLifetime: document.getElementById("load-dialog-lifetime"),
   openSandbox: document.getElementById("open-sandbox"),
   sandbox: document.getElementById("sandbox"),
   sandboxElapsed: document.getElementById("sandbox-elapsed"),
@@ -180,6 +190,19 @@ const elements = {
   sandboxOpenBed: document.getElementById("sandbox-open-bed"),
   sandboxStatus: document.getElementById("sandbox-status"),
 };
+
+/**
+ * The values a load compares, one Load-this-save dialog row each, in the order
+ * the rows appear. `format` is the same formatter the readout uses, so the
+ * dialog and the page state an amount the same way.
+ */
+const LOAD_FACTS = [
+  { field: "growth", format: formatGrowth, element: elements.loadGrowth },
+  { field: "seeds", format: formatAmount, element: elements.loadSeeds },
+  { field: "plants", format: formatAmount, element: elements.loadPlants },
+  { field: "beds", format: formatAmount, element: elements.loadBeds },
+  { field: "lifetime", format: formatGrowth, element: elements.loadLifetime },
+];
 
 const isStorageAvailable = storageAvailable();
 
@@ -942,6 +965,44 @@ export function loadGardenSave(text) {
   return { ok: true, persisted, state: getDisplayedState() };
 }
 
+/** The five values a save settles, read off a garden and its live growth. */
+function saveContents(garden, growth, lifetime) {
+  return {
+    growth,
+    seeds: garden.seeds,
+    plants: garden.plants,
+    beds: garden.beds,
+    lifetime,
+  };
+}
+
+/**
+ * Read a save and say what it holds beside what the garden holds now, without
+ * changing or storing anything.
+ *
+ * The one path that writes the garden is `loadGardenSave`; this only reads, so
+ * a paste and a click — or an agent's `import-save` — can show what a load
+ * would replace before anything is committed. It reads the live garden and the
+ * decoded save and keeps nothing of either: no `setGarden`, no persist, no
+ * return-mark clearing.
+ *
+ * @returns {{ok: true, current: object, incoming: object, changes: Array<{field: string, from: number, to: number}>}}
+ * @throws {Error} when the save cannot be read; the garden is left untouched.
+ */
+export function previewGardenSave(text) {
+  const incoming = decodeSave(text);
+  const live = getGarden();
+  const { growth, lifetime } = getGrowthState();
+  const current = saveContents(live, growth, lifetime);
+  const next = saveContents(incoming, incoming.growth, incoming.lifetime);
+  const changes = LOAD_FACTS.filter(({ field }) => current[field] !== next[field]).map(({ field }) => ({
+    field,
+    from: current[field],
+    to: next[field],
+  }));
+  return { ok: true, current, incoming: next, changes };
+}
+
 /**
  * An action's own confirmation — a seed planted, a bed opened, a replant, a
  * refusal — in the same words a sighted visitor reads. The visible line
@@ -1503,18 +1564,52 @@ async function copySave() {
   }
 }
 
-function loadSave() {
+/** The save text the open Load dialog is previewing, or null while it is closed. */
+let pendingLoad = null;
+
+/**
+ * Show what the pasted save holds beside the garden now, and replace nothing.
+ *
+ * Nothing is loaded here: the dialog lists growth, seeds, plants, beds and
+ * lifetime, each as the garden now beside the garden in this save, and holds
+ * the pasted text until Load now is pressed. Keep this garden (or Esc) closes
+ * the dialog and changes nothing. An unreadable save is announced and opens no
+ * dialog.
+ */
+function openLoadDialog() {
   const text = elements.save ? elements.save.value : "";
+  let preview;
   try {
-    const result = loadGardenSave(text);
-    announce(
-      result.persisted
-        ? "Garden loaded and saved in this browser."
-        : "Garden loaded, but this browser will not keep it — copy the save to be safe."
-    );
+    preview = previewGardenSave(text);
   } catch (e) {
     announce(e.message);
+    return;
   }
+  pendingLoad = text;
+  for (const { field, format, element } of LOAD_FACTS) {
+    setText(element, `now ${format(preview.current[field])} · in this save ${format(preview.incoming[field])}`);
+  }
+  if (typeof elements.loadDialog?.showModal === "function" && !elements.loadDialog.open) {
+    elements.loadDialog.showModal();
+  }
+}
+
+/**
+ * Load the save the dialog previewed, once the visitor has confirmed it, and
+ * say what was kept. The text is the one captured when the dialog opened, so an
+ * edit made after the preview is never applied silently.
+ */
+function loadPreviewedSave() {
+  const text = pendingLoad;
+  pendingLoad = null;
+  if (typeof elements.loadDialog?.close === "function") elements.loadDialog.close();
+  if (text == null) return;
+  const result = loadGardenSave(text);
+  announce(
+    result.persisted
+      ? "Garden loaded and saved in this browser."
+      : "Garden loaded, but this browser will not keep it — copy the save to be safe."
+  );
 }
 
 function start() {
@@ -1582,7 +1677,10 @@ function start() {
   // Keep growing (or Esc) is a pure no-op: it closes the dialog and nothing else.
   elements.replantCancel?.addEventListener("click", () => elements.replantDialog?.close());
   elements.copy?.addEventListener("click", copySave);
-  elements.load?.addEventListener("click", loadSave);
+  elements.load?.addEventListener("click", openLoadDialog);
+  elements.loadConfirm?.addEventListener("click", loadPreviewedSave);
+  // Keep this garden (or Esc) is a pure no-op: it closes the dialog and nothing else.
+  elements.loadCancel?.addEventListener("click", () => elements.loadDialog?.close());
   elements.save?.addEventListener("input", () => announce(""));
 
   elements.openSandbox?.addEventListener("click", () => openSandbox());
