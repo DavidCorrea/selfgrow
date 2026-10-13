@@ -140,15 +140,16 @@ export function groundCover(state) {
 const CELL = 24;
 // Four columns by three rows on bare soil — the twelve plots one bed holds — so
 // the bitmap starts out a 4:3 field rather than the long thin band it used to
-// be, and fits the column the layout gives it. Every bed opened adds three more
-// rows, which with four columns is exactly one more bed's worth of plots.
+// be, and fits the column the layout gives it. Every bed opened widens the
+// drawn ground to hold that bed's plots, so a garden always has a cell for
+// every seed and plant its readout counts, while the row cap keeps the sprite
+// count bounded however large the save grows.
 const COLUMNS = 4;
 const BASE_ROWS = 3;
-const MAX_ROWS = 10;
+const MAX_ROWS = 12;
 const FORMS_PER_ROW = 3;
-// Every bed beyond the first widens the drawn ground by one more bed of plots,
-// so opening a bed is visible, while the row cap keeps the sprite count bounded.
-const ROWS_PER_BED = 3;
+// The plots one bed holds, as the plot itself defines a bed: three rows of four.
+const BED_CELLS = COLUMNS * BASE_ROWS;
 
 /** How many rows of soil this form has spread to. */
 function rowsForForm(index) {
@@ -162,14 +163,27 @@ function bedsFor(state) {
 }
 
 /**
+ * The plots `state` owns: the capacity the readout counts against when the
+ * state carries one, and one bed's worth per bed otherwise.
+ */
+function capacityFor(state) {
+  if (state && Number.isFinite(state.capacity) && state.capacity > 0) return Math.floor(state.capacity);
+  return bedsFor(state) * BED_CELLS;
+}
+
+/**
  * The plot's pixel bounds for `state`: the grid of soil cells it draws and the
- * sprite cap that grid imposes. Every garden, however large, is drawn inside
- * these bounds, so the number of sprites can never grow with the save.
+ * sprite cap that grid imposes.
+ *
+ * The grid holds the garden's form — a bigger garden is drawn larger — and its
+ * capacity, so a full bed of plots always has a cell for every seed and plant
+ * the readout counts. Both are bounded by the row cap, so a save carrying more
+ * plots than the plot can show still draws a bounded picture.
  */
 export function plotBounds(state) {
   const growth = state && Number.isFinite(state.growth) ? state.growth : 0;
-  const wanted = rowsForForm(gardenForm(growth).index) + (bedsFor(state) - 1) * ROWS_PER_BED;
-  const rows = Math.min(MAX_ROWS, wanted);
+  const forCapacity = Math.ceil(capacityFor(state) / COLUMNS);
+  const rows = Math.min(MAX_ROWS, Math.max(rowsForForm(gardenForm(growth).index), forCapacity));
   return {
     cell: CELL,
     columns: COLUMNS,
@@ -315,8 +329,12 @@ export function soilFace(cell, seasonKey) {
  * on some of the cells too, so the turned season reads on the ground and not
  * only in the canopy. Every colour comes from the palette, so the marks stay in
  * the same garden as the panels around them.
+ *
+ * A cell that carries a seed or plant draws no weed tuft, so the ground stops
+ * growing a shoot that a visitor would read as another sprout standing beside
+ * the one the readout counts.
  */
-function drawSoil(ctx, x, y, palette, foliage, face, cell) {
+function drawSoil(ctx, x, y, palette, foliage, face, cell, occupied) {
   if (face.lip) {
     ctx.fillStyle = palette.soilLight;
     ctx.fillRect(x + 3, y + 2, 6, 2);
@@ -337,7 +355,7 @@ function drawSoil(ctx, x, y, palette, foliage, face, cell) {
     ctx.fillStyle = palette.soilDeep;
     ctx.fillRect(x + face.pebbleX, y + face.pebbleY + 2, 3, 1);
   }
-  if (face.weed) {
+  if (face.weed && !occupied) {
     // A low tuft, well short of a planted sprite, so the soil reads as weedy
     // ground rather than as another plant standing on it.
     ctx.fillStyle = palette.leafDeep;
@@ -379,42 +397,35 @@ function drawGroundGrowth(ctx, x, y, palette, cell) {
 }
 
 /**
- * A herb seed that has just sprouted: a low shoot on a fresh mound of soil. Its
- * leaves `dx` sway while the shoot stays rooted.
+ * An ungrown seed in the ground: a mound of turned soil with the seed itself
+ * standing proud of it and two tiny leaves pushing out.
+ *
+ * It fills most of the cell, so an ungrown seed is a mark a visitor can point
+ * at rather than a speck lost in the soil. A herb seed's pip is the soil's own
+ * dark; a bloom seed's is a closed bloom-coloured bud, so the two kinds are
+ * told apart before either has grown. The leaves `dx` sway while the seed stays
+ * rooted.
  */
-function drawSprout(ctx, x, y, palette, dx) {
+function drawSeed(ctx, x, y, palette, dx, bloom) {
   const base = y + CELL;
   const centre = x + CELL / 2;
+  // The mound: a pale ridge of turned soil across the cell's foot.
   ctx.fillStyle = palette.soilLight;
-  ctx.fillRect(centre - 4, base - 2, 8, 2);
+  ctx.fillRect(centre - 8, base - 3, 16, 3);
+  ctx.fillRect(centre - 5, base - 5, 10, 2);
+  ctx.fillStyle = palette.soilDeep;
+  ctx.fillRect(centre - 8, base - 1, 16, 1);
+  // The seed itself, standing out of the mound.
+  ctx.fillStyle = bloom ? palette.bloom : palette.soilDeep;
+  ctx.fillRect(centre - 2, base - 11, 5, 6);
+  ctx.fillStyle = bloom ? palette.sun : palette.soilLight;
+  ctx.fillRect(centre - 1, base - 10, 2, 2);
+  // Two tiny leaves, the first sign of the plant to come.
   ctx.fillStyle = palette.leafDeep;
-  ctx.fillRect(centre - 1, base - 6, 2, 5);
+  ctx.fillRect(centre - 1 + dx, base - 13, 2, 3);
   ctx.fillStyle = palette.leafLight;
-  ctx.fillRect(centre - 4 + dx, base - 6, 3, 2);
-  ctx.fillRect(centre + 2 + dx, base - 6, 3, 2);
-}
-
-/**
- * A bloom seed that has just sprouted: a bud on a fresh mound of soil. `open`
- * is the second step of the animation — the closed bud opens its petals around
- * a sun centre, so a sprout visibly opens into a plant.
- */
-function drawBud(ctx, x, y, palette, open) {
-  const base = y + CELL;
-  const centre = x + CELL / 2;
-  ctx.fillStyle = palette.soilLight;
-  ctx.fillRect(centre - 4, base - 2, 8, 2);
-  ctx.fillStyle = palette.leafDeep;
-  ctx.fillRect(centre - 1, base - 5, 2, 4);
-  ctx.fillStyle = palette.bloom;
-  if (open) {
-    ctx.fillRect(centre - 4, base - 8, 3, 3);
-    ctx.fillRect(centre + 1, base - 8, 3, 3);
-    ctx.fillStyle = palette.sun;
-    ctx.fillRect(centre - 1, base - 7, 2, 2);
-  } else {
-    ctx.fillRect(centre - 2, base - 8, 4, 3);
-  }
+  ctx.fillRect(centre - 6 + dx, base - 14, 4, 3);
+  ctx.fillRect(centre + 3 + dx, base - 14, 4, 3);
 }
 
 /** One herb plant on the soil, chosen by the form and grown by how full it is. */
@@ -426,86 +437,94 @@ function drawPlant(ctx, x, y, palette, foliage, index, growthTier, dx) {
 
 /**
  * One bloom plant: the same silhouette the form gives a herb, but always in
- * flower, so the two kinds read differently at every size — petals and a sun
- * centre where the herb carries bare leaf.
+ * flower, so the two kinds read differently at every size — a large bloom head
+ * where the herb carries bare leaf.
  */
 function drawBloomPlant(ctx, x, y, palette, foliage, index, growthTier, dx) {
   const base = y + CELL;
   const centre = x + CELL / 2;
   if (index <= 4) {
-    const height = 7 + index * 2 + growthTier * 3;
+    const height = Math.min(CELL - 10, 13 + growthTier * 2 + Math.min(index, 3));
     ctx.fillStyle = palette.leafDeep;
     ctx.fillRect(centre - 1, base - height, 2, height);
     ctx.fillStyle = palette.leaf;
-    ctx.fillRect(centre - 5 + dx, base - height + 3, 4, 3);
-    ctx.fillRect(centre + 2 + dx, base - height + 5, 4, 3);
-    // The head: petals in the bloom colour around a sun centre.
+    ctx.fillRect(centre - 7 + dx, base - Math.round(height * 0.35), 5, 3);
+    ctx.fillRect(centre + 2 + dx, base - Math.round(height * 0.65), 5, 3);
+    // The head: a large bloom around a sun centre, sitting on the stem.
+    const headY = base - height;
     ctx.fillStyle = palette.bloom;
-    ctx.fillRect(centre - 3 + dx, base - height - 4, 6, 4);
-    ctx.fillRect(centre - 1 + dx, base - height - 6, 2, 2);
+    ctx.fillRect(centre - 5 + dx, headY - 8, 10, 8);
+    ctx.fillRect(centre - 7 + dx, headY - 5, 14, 4);
     ctx.fillStyle = palette.sun;
-    ctx.fillRect(centre - 1 + dx, base - height - 3, 2, 2);
+    ctx.fillRect(centre - 2 + dx, headY - 6, 4, 4);
   } else if (index === 5) {
     drawHedge(ctx, x, y, palette, growthTier, dx, foliage);
     ctx.fillStyle = palette.bloom;
-    ctx.fillRect(x + 5 + dx, y + CELL - 12, 2, 2);
-    ctx.fillRect(x + CELL - 9 + dx, y + CELL - 8, 2, 2);
+    ctx.fillRect(x + 4 + dx, y + CELL - 14, 4, 4);
+    ctx.fillRect(x + CELL - 8 + dx, y + CELL - 10, 4, 4);
     ctx.fillStyle = palette.sun;
-    ctx.fillRect(x + CELL - 12 + dx, y + CELL - 11, 2, 2);
+    ctx.fillRect(x + 5 + dx, y + CELL - 13, 2, 2);
+    ctx.fillRect(x + CELL - 7 + dx, y + CELL - 9, 2, 2);
   } else {
     drawTree(ctx, x, y, palette, index, growthTier, true, dx, foliage);
   }
 }
 
-/** A thin shoot — a sprout, a seedling, or a stand of them, taller as it grows. */
+/**
+ * A herb plant: a full-height stem with three pairs of leaves and no flower, so
+ * it stands the height of the cell and stays plainly a herb beside a bloom.
+ */
 function drawHerb(ctx, x, y, palette, index, growthTier, dx) {
   const base = y + CELL;
   const centre = x + CELL / 2;
-  const height = 7 + index * 2 + growthTier * 3;
+  const height = Math.min(CELL - 2, 18 + growthTier * 2 + Math.min(index, 3));
   ctx.fillStyle = palette.leafDeep;
   ctx.fillRect(centre - 1, base - height, 2, height);
   ctx.fillStyle = palette.leaf;
-  ctx.fillRect(centre - 5 + dx, base - height + 1, 4, 3);
-  ctx.fillRect(centre + 2 + dx, base - height + 4, 4, 3);
-  if (index >= 2) ctx.fillRect(centre - 5 + dx, base - height + 7, 4, 3);
-  if (index >= 4) {
-    ctx.fillStyle = palette.sun;
-    ctx.fillRect(centre - 2 + dx, base - height - 3, 4, 4);
+  for (const at of [0.25, 0.55, 0.85]) {
+    const leafY = base - Math.round(height * at);
+    ctx.fillRect(centre - 7 + dx, leafY - 1, 5, 3);
+    ctx.fillRect(centre + 2 + dx, leafY - 3, 5, 3);
   }
+  ctx.fillStyle = palette.leafLight;
+  ctx.fillRect(centre - 6 + dx, base - Math.round(height * 0.55) - 1, 3, 1);
+  ctx.fillRect(centre + 3 + dx, base - Math.round(height * 0.85) - 3, 3, 1);
 }
 
-/** A low leafy mass, close to the ground; its whole crown sways by `dx`. */
+/** A leafy mass that fills the cell, close to the ground; its crown sways by `dx`. */
 function drawHedge(ctx, x, y, palette, growthTier, dx, foliage) {
   const base = y + CELL;
-  const height = 8 + growthTier * 3;
+  const height = Math.min(CELL - 2, 18 + growthTier * 2);
   ctx.fillStyle = palette.leafDeep;
-  ctx.fillRect(x + 2 + dx, base - height, CELL - 4, height);
+  ctx.fillRect(x + 3 + dx, base - height, CELL - 6, height);
   ctx.fillStyle = palette.leaf;
-  ctx.fillRect(x + 4 + dx, base - height + 2, CELL - 8, height - 4);
+  ctx.fillRect(x + 5 + dx, base - height + 2, CELL - 10, height - 4);
   ctx.fillStyle = palette.leafLight;
-  ctx.fillRect(x + 6 + dx, base - height + 3, CELL - 12, 2);
+  ctx.fillRect(x + 7 + dx, base - height + 3, CELL - 14, 2);
+  ctx.fillRect(x + 8 + dx, base - height + 8, CELL - 16, 2);
   if (foliage === "blossom") {
     ctx.fillStyle = palette.bloom;
-    ctx.fillRect(x + 7 + dx, base - height + 5, 2, 2);
-    ctx.fillRect(x + CELL - 11 + dx, base - height + 7, 2, 2);
+    ctx.fillRect(x + 6 + dx, base - height + 5, 3, 3);
+    ctx.fillRect(x + CELL - 10 + dx, base - height + 7, 3, 3);
   }
 }
 
 /**
- * A trunk under a canopy that grows with the form. A herb carries its own
- * bloom only from the eighth form on; a bloom plant (`flowered`) is covered in
- * flower from the first tree on, so the kinds stay apart however tall they grow.
- * In winter the canopy falls to bare twigs; in spring it carries blossom.
+ * A trunk under a canopy that fills the cell and grows with the form. A herb
+ * carries its own bloom only from the eighth form on; a bloom plant (`flowered`)
+ * is covered in flower from the first tree on, so the kinds stay apart however
+ * tall they grow. In winter the canopy falls to bare twigs; in spring it carries
+ * blossom.
  */
 function drawTree(ctx, x, y, palette, index, growthTier, flowered, dx, foliage) {
   const base = y + CELL;
   const centre = x + CELL / 2;
-  const trunkHeight = 6 + growthTier * 2;
+  const trunkHeight = 5 + growthTier;
   ctx.fillStyle = palette.soilDeep;
   ctx.fillRect(centre - 2, base - trunkHeight, 4, trunkHeight);
 
-  const canopyHeight = 6 + (index - 6) + growthTier * 2;
-  const canopyWidth = Math.min(CELL - 2, 10 + (index - 6) * 2);
+  const canopyHeight = Math.min(CELL - trunkHeight - 1, 12 + (index - 6) + growthTier * 2);
+  const canopyWidth = Math.min(CELL - 2, 14 + (index - 6) * 2);
   const canopyBottom = base - trunkHeight;
   const canopyTop = canopyBottom - canopyHeight;
   // The canopy, not the trunk, catches the breeze.
@@ -525,9 +544,9 @@ function drawTree(ctx, x, y, palette, index, growthTier, flowered, dx, foliage) 
   }
   if (index >= 8 || flowered) {
     ctx.fillStyle = palette.bloom;
-    ctx.fillRect(left + 3, canopyTop + 3, 2, 2);
-    ctx.fillRect(left + canopyWidth - 6, canopyTop + 5, 2, 2);
-    ctx.fillRect(left + Math.floor(canopyWidth / 2), canopyTop + 1, 2, 2);
+    ctx.fillRect(left + 3, canopyTop + 3, 3, 3);
+    ctx.fillRect(left + canopyWidth - 6, canopyTop + 5, 3, 3);
+    ctx.fillRect(left + Math.floor(canopyWidth / 2), canopyTop + 1, 3, 3);
     ctx.fillStyle = palette.sun;
     ctx.fillRect(left + 6, canopyTop + 5, 2, 2);
   } else if (foliage === "blossom") {
@@ -576,24 +595,29 @@ function drawReturnMarks(ctx, palette, width, height, marks) {
 }
 
 /**
- * A visitor on the plot: a small bee hovering above the first grown plant.
+ * A visitor on the plot: a bee large enough to be a mark of its own, hovering
+ * over the first grown plant.
  *
- * Drawn from the same `:root` palette as everything else — a sun body with
- * dark stripes and bloom wings — so it belongs to the garden rather than
- * looking pasted on. It is never the only account of the visit: the readout
- * and `get-state` name the pollinator and the boost it brings.
+ * Drawn from the same `:root` palette as everything else — a head, a striped
+ * sun body and bloom wings — so it belongs to the garden rather than looking
+ * pasted on. It is never the only account of the visit: the readout and
+ * `get-state` name the pollinator and the boost it brings.
  */
 function drawPollinator(ctx, x, y, palette, driftX, driftY) {
   const centre = x + CELL / 2 + driftX;
-  const top = y + 2 + driftY;
+  const top = y + 3 + driftY;
+  // Bloom wings above the body, one either side of the head.
   ctx.fillStyle = palette.bloom;
-  ctx.fillRect(centre - 6, top - 2, 4, 3);
-  ctx.fillRect(centre + 2, top - 2, 4, 3);
-  ctx.fillStyle = palette.sun;
-  ctx.fillRect(centre - 4, top, 8, 5);
+  ctx.fillRect(centre - 7, top - 1, 5, 4);
+  ctx.fillRect(centre + 2, top - 1, 5, 4);
+  // A dark head at the front, then the striped sun body.
   ctx.fillStyle = palette.soilDeep;
-  ctx.fillRect(centre - 4, top + 1, 8, 1);
-  ctx.fillRect(centre - 4, top + 3, 8, 1);
+  ctx.fillRect(centre - 7, top + 1, 3, 4);
+  ctx.fillStyle = palette.sun;
+  ctx.fillRect(centre - 4, top + 1, 10, 6);
+  ctx.fillStyle = palette.soilDeep;
+  ctx.fillRect(centre - 1, top + 1, 2, 6);
+  ctx.fillRect(centre + 3, top + 1, 2, 6);
 }
 
 /**
@@ -623,9 +647,12 @@ function drawPollinatorHome(ctx, x, y, palette) {
  * The pollinator at rest, perched on the hive roof between visits: the same bee
  * the visiting frame draws, set still on the home so a garden between visits
  * still shows that a pollinator lives here.
+ *
+ * It sits above the hive's top bar, so the home's anchor pixel stays the hive's
+ * own colour whether the bee is resting or out visiting.
  */
 function drawRestingBee(ctx, x, y, palette) {
-  drawPollinator(ctx, x, y + 3, palette, 0, 0);
+  drawPollinator(ctx, x, y, palette, 0, 0);
 }
 
 /**
@@ -668,21 +695,60 @@ export function pollinatorPlot(state) {
 }
 
 /**
+ * Every mark the plot draws, in the order it draws them: one per grown plant
+ * and one per ungrown seed the readout counts, herb before bloom in each pair.
+ *
+ * `drawGarden` draws exactly these, and nothing else, so the picture cannot
+ * disagree with the numbers beside it: a garden counting twelve plots of soil
+ * draws twelve marks. Each mark carries the cell it lands on, and the list is
+ * cut off at the cells the plot actually has, so a save carrying more plants
+ * than plots is drawn bounded rather than flooded.
+ *
+ * @returns {Array<{kind: "herb-plant"|"bloom-plant"|"herb-seed"|"bloom-seed", cell: number}>}
+ */
+export function plotMarks(state) {
+  const { cells } = plotBounds(state);
+  const { herbPlants, bloomPlants, herbSeeds, bloomSeeds } = kindsOnPlot(state);
+  const marks = [];
+  const add = (kind, count) => {
+    for (let i = 0; i < count && marks.length < cells; i += 1) marks.push({ kind, cell: marks.length });
+  };
+  add("herb-plant", herbPlants);
+  add("bloom-plant", bloomPlants);
+  add("herb-seed", herbSeeds);
+  add("bloom-seed", bloomSeeds);
+  return marks;
+}
+
+/**
+ * Draw one mark on the plot: a grown plant, an ungrown seed or a bloom's bud,
+ * each in its own recognisable sprite, at the cell it landed on.
+ */
+function drawMark(ctx, mark, palette, foliage, formIndex, growthTier, sway) {
+  const x = (mark.cell % COLUMNS) * CELL;
+  const y = Math.floor(mark.cell / COLUMNS) * CELL;
+  if (mark.kind === "herb-plant") drawPlant(ctx, x, y, palette, foliage, formIndex, growthTier, sway);
+  else if (mark.kind === "bloom-plant") drawBloomPlant(ctx, x, y, palette, foliage, formIndex, growthTier, sway);
+  else if (mark.kind === "herb-seed") drawSeed(ctx, x, y, palette, sway, false);
+  else drawSeed(ctx, x, y, palette, sway, true); // the remaining kind, a bloom seed
+}
+
+/**
  * Draw `state`'s garden onto `canvas`, painting only with `palette`.
  *
  * The picture is a pure view of the state and the animation `phase`: the form and
- * the beds of soil set how much ground there is and how big a grown plant is,
+ * the garden's capacity set how much ground there is and how big a grown plant is,
  * the garden's own growth covers that ground with low growth so a low-plant,
  * high-growth garden still visibly fills, the season the state names sets the
- * foliage colours and shape, and the plot's own counts say what stands on it —
- * the grown plants first, then the sprouting seeds, then bare soil — and
- * whether a pollinator lives here and is out working the plants right now. The
- * season is read from `state.season.key`, which is the same value the readout
- * and `get-state` report, so the picture and the words
- * cannot disagree. The same state and phase always draw the same way, and every
- * colour comes from the palette read off `:root`, so the plot belongs to the same
- * garden as the panels around it. The number of sprites is bounded by the cells
- * on screen, so a save carrying more plants than plots cannot flood the picture.
+ * foliage colours and shape, and `plotMarks` says what stands on it — the grown
+ * plants first, then the ungrown seeds, herb before bloom — and whether a
+ * pollinator lives here and is out working the plants right now. The season is
+ * read from `state.season.key`, which is the same value the readout and
+ * `get-state` report, so the picture and the words cannot disagree. The same
+ * state and phase always draw the same way, and every colour comes from the
+ * palette read off `:root`, so the plot belongs to the same garden as the panels
+ * around it. The number of marks is bounded by the cells on screen, so a save
+ * carrying more plants than plots cannot flood the picture.
  */
 export function drawGarden(canvas, state, palette, phase = 0) {
   if (!canvas || !palette) return;
@@ -703,27 +769,22 @@ export function drawGarden(canvas, state, palette, phase = 0) {
   ctx.fillStyle = paint.soil;
   ctx.fillRect(0, 0, width, height);
 
-  const kinds = kindsOnPlot(state);
-  // Seeds only take the ground the grown plants have not already filled.
-  const plants = Math.min(cells, kinds.herbPlants + kinds.bloomPlants);
-  const sprouts = Math.min(cells - plants, kinds.herbSeeds + kinds.bloomSeeds);
+  const marks = plotMarks(state);
+  const occupied = new Set(marks.map((mark) => mark.cell));
+  const plants = marks.filter((mark) => mark.kind === "herb-plant" || mark.kind === "bloom-plant").length;
   const growthTier = Math.min(2, Math.floor(form.fill * 3));
   // The garden's own growth, not only the plants it owns, fills the soil.
   const cover = groundCover(state);
   for (let cell = 0; cell < cells; cell += 1) {
     const x = (cell % COLUMNS) * CELL;
     const y = Math.floor(cell / COLUMNS) * CELL;
-    const sway = swayPixels(phase, cell);
-    drawSoil(ctx, x, y, paint, look.foliage, soilFace(cell, look.key), cell);
+    drawSoil(ctx, x, y, paint, look.foliage, soilFace(cell, look.key), cell, occupied.has(cell));
     // Ground growth goes on first, so the planted sprites stand out of it.
     if (cellHash(cell) < cover.ratio) drawGroundGrowth(ctx, x, y, paint, cell);
-    if (cell < kinds.herbPlants) drawPlant(ctx, x, y, paint, look.foliage, form.index, growthTier, sway);
-    else if (cell < plants) drawBloomPlant(ctx, x, y, paint, look.foliage, form.index, growthTier, sway);
-    else if (cell < plants + kinds.herbSeeds) drawSprout(ctx, x, y, paint, sway);
-    // A bud holds each step for two ticks, so it opens and closes at a calmer
-    // beat than the sway.
-    else if (cell < plants + sprouts) drawBud(ctx, x, y, paint, Math.floor((phase + cell) / 2) % 2 === 0);
   }
+  // Every seed and plant the readout counts, drawn on its own cell. The herb
+  // plants stand first, then the blooms, then the seeds of each kind.
+  for (const mark of marks) drawMark(ctx, mark, paint, look.foliage, form.index, growthTier, swayPixels(phase, mark.cell));
   // The pollinator's home stands on the plot whenever grown plants do. Between
   // visits the bee rests still on the hive; during one the hive stays and the
   // bee is out over the plants with pollen in the air, so the picture says both
@@ -741,8 +802,8 @@ export function drawGarden(canvas, state, palette, phase = 0) {
   }
   // The return marks go on last, over the garden: what grew while the visitor
   // was away stands out until they notice it.
-  const marks = returnMarkCells(state, { cells });
-  if (marks.cells.length > 0 || marks.form) drawReturnMarks(ctx, paint, width, height, marks);
+  const returns = returnMarkCells(state, { cells });
+  if (returns.cells.length > 0 || returns.form) drawReturnMarks(ctx, paint, width, height, returns);
 }
 
 /**
@@ -752,7 +813,7 @@ export function drawGarden(canvas, state, palette, phase = 0) {
  * A state carries its per-kind counts in `plantCounts`/`seedCounts` (what the
  * page passes); a state that only knew the one kind falls back to its totals as
  * herb, so an old caller draws exactly what it always drew. The counts are
- * floored at the cells on screen by `drawGarden`, not here.
+ * floored at the cells on screen by `plotMarks`, not here.
  */
 function kindsOnPlot(state) {
   const wanted = (value) => (Number.isFinite(value) && value > 0 ? Math.floor(value) : 0);
