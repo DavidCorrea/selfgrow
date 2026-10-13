@@ -98,6 +98,7 @@ import {
   readPalette,
   resetSandbox,
   returnAnnouncement,
+  returnFacts,
   returnMarkFor,
   summarizeReturn,
 } from "./app.js";
@@ -4888,19 +4889,37 @@ function checkReturnSummary(problems) {
     }
 
     if (strip) {
-      if (strip.hidden || !strip.textContent.trim()) {
+      if (strip.hidden) {
         problems.push("returning after 30 days did not show the return summary.");
-      } else {
-        const text = strip.textContent;
-        const expected = [
-          ["the earned growth", formatGrowth(away.earned)],
-          ["the form reached", expectedForm.name],
-        ];
-        const nextIndex = expectedForm.index + 1;
-        if (nextIndex < FORMS.length) expected.push(["the next form", FORMS[nextIndex].name]);
-        for (const [what, value] of expected) {
-          if (!text.includes(value)) problems.push(`the return summary does not state ${what} (${value}): "${text}"`);
+      }
+      const facts = readGoalFacts(strip);
+      const expectedFacts = returnFacts(away);
+      if (JSON.stringify(facts) !== JSON.stringify(expectedFacts)) {
+        problems.push(
+          `the return block shows ${JSON.stringify(facts)}, expected the report's short labelled facts ` +
+            `${JSON.stringify(expectedFacts)}.`
+        );
+      }
+      if (!goalFactsAreOnlyContent(strip)) {
+        problems.push("the return block carries prose beside its labelled facts instead of only the facts.");
+      }
+      for (const fact of facts) {
+        if (!fact.label.trim() || !fact.value.trim()) {
+          problems.push(`the return block has a fact with an empty label or value: ${JSON.stringify(fact)}.`);
         }
+      }
+      const earned = facts.find((fact) => fact.label === "Earned");
+      if (!earned || !earned.value.includes(formatGrowth(away.earned))) {
+        problems.push(`the return block does not state the growth earned while away (${formatGrowth(away.earned)}).`);
+      }
+      const now = facts.find((fact) => fact.label === "Now");
+      if (!now || now.value !== expectedForm.name) {
+        problems.push(`the return block does not state the form reached (${expectedForm.name}).`);
+      }
+      const next = facts.find((fact) => fact.label === "Next");
+      const nextIndex = expectedForm.index + 1;
+      if (nextIndex < FORMS.length && (!next || !next.value.includes(FORMS[nextIndex].name))) {
+        problems.push(`the return block does not state the next form (${FORMS[nextIndex].name}).`);
       }
     }
 
@@ -5804,15 +5823,25 @@ function checkSandbox(problems) {
     const away = applyReturn({ growth: 0, rate: 0.5 }, nowMs - 30 * DAY * 1000, nowMs);
     const realGoalTitle = document.getElementById("goal-title")?.textContent;
     const realGoalDetail = document.getElementById("goal-detail")?.textContent;
-    const realSummary = document.getElementById("return-summary")?.textContent;
-    const expected = summarizeReturn(buildAwayReport(
+    const realFacts = readGoalFacts(document.getElementById("return-summary"));
+    const expected = returnFacts(buildAwayReport(
       { growth: 0, rate: 0.5, sprouts: [GROW_SECONDS, GROW_SECONDS], plants: 1, beds: 1 },
       30 * DAY
     ));
-    if (rehearsal.summary !== realSummary || rehearsal.summary !== away.summary || rehearsal.summary !== expected) {
+    if (
+      JSON.stringify(rehearsal.facts) !== JSON.stringify(realFacts) ||
+      JSON.stringify(rehearsal.facts) !== JSON.stringify(returnFacts(away)) ||
+      JSON.stringify(rehearsal.facts) !== JSON.stringify(expected)
+    ) {
+      problems.push(
+        `the sandbox return facts ${JSON.stringify(rehearsal.facts)} do not match the real garden's ` +
+          `${JSON.stringify(realFacts)}.`
+      );
+    }
+    if (rehearsal.summary !== away.summary) {
       problems.push(
         `the sandbox summary ${JSON.stringify(rehearsal.summary)} does not match the real garden's ` +
-          `${JSON.stringify(realSummary)}.`
+          `${JSON.stringify(away.summary)}.`
       );
     }
     if (rehearsal.goalTitle !== realGoalTitle || rehearsal.goalDetail !== realGoalDetail) {
@@ -5885,8 +5914,8 @@ function checkSandbox(problems) {
           `seeds, expected ${formatAmount(acted.seeds)}.`
       );
     }
-    if (document.getElementById("sandbox-summary")?.textContent !== acted.summary) {
-      problems.push("the rehearsal summary does not match the acted rehearsal state.");
+    if (JSON.stringify(readGoalFacts(document.getElementById("sandbox-summary"))) !== JSON.stringify(acted.facts)) {
+      problems.push("the rehearsal's labelled facts do not match the acted rehearsal state.");
     }
     if (document.getElementById("sandbox-goal-title")?.textContent !== acted.goalTitle) {
       problems.push("the rehearsal goal does not match the acted rehearsal state.");

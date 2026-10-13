@@ -121,7 +121,9 @@ export function tools() {
         "sowed into the free plots while away (sown) and what those seeds cost " +
         "out of the growth (sownCost), how many seeds " +
         "matured (matured), the form it started at (from) and reached (to), " +
-        "the formsFound on the way, and a plain summary sentence. It also " +
+        "the formsFound on the way, a plain summary sentence, and the same " +
+        "facts the page shows as short labelled values (facts, each " +
+        "{label, value}). It also " +
         "reports returnMarks: what the last return marked on the plot and the " +
         "readout — how many plants matured (plants) and whether a new form was " +
         "reached (form), or null once the marks clear (a first visit or a quick " +
@@ -131,7 +133,8 @@ export function tools() {
         "seconds it has been wound forward and a readable elapsed label, the " +
         "growth, form, ungrown seeds and grown plants it reached, how many " +
         "seeds matured (matured), the return summary the real garden would " +
-        "show, and the next goal it would offer (goalTitle, goalDetail) — or " +
+        "show and the same facts as short labelled values (facts), and the " +
+        "next goal it would offer (goalTitle, goalDetail) — or " +
         "{open: false} when no sandbox is open. The sandbox carries the " +
         "garden's own controls too: act-in-sandbox can tend, plant-herb, " +
         "plant-bloom and open-bed inside the rehearsal copy, and the sandbox's " +
@@ -297,7 +300,8 @@ export function tools() {
         "changes nothing real: the real garden's growth, seeds, plants and " +
         "save stay exactly as they were. Returns the state afterwards; its " +
         "sandbox field carries the wound-forward growth, form, ungrown seeds " +
-        "and grown plants, the return summary the real garden would show, and " +
+        "and grown plants, the return summary the real garden would show plus " +
+        "the same facts as short labelled values (facts), and " +
         "the next goal it would offer.",
       inputSchema: {
         type: "object",

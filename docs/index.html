@@ -21,7 +21,7 @@
     <main id="main" class="stage">
       <section class="panel garden-panel" aria-labelledby="garden-heading">
         <h2 id="garden-heading" class="panel-title">The garden</h2>
-        <p class="panel-note" id="return-summary" role="note" hidden></p>
+        <div class="goal-detail return-facts" id="return-summary" role="note" aria-label="What happened while you were away" hidden></div>
         <!-- The one place the garden speaks a discrete event — a goal reached,
              a new form, a pollinator arriving, a return. Kept visually hidden
              and apart from the per-tick readout, so a screen reader hears what
@@ -244,7 +244,7 @@
               </div>
             </dl>
 
-            <p class="panel-note" id="sandbox-summary" role="status"></p>
+            <div class="goal-detail return-facts" id="sandbox-summary" role="status" aria-label="What the rehearsal grew"></div>
 
             <!-- The garden's own actions, run against the rehearsal copy only:
                  visit it away with the decisions you would actually make. -->
