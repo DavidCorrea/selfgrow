@@ -985,6 +985,30 @@ export function plotCells(state, marks = plotMarks(state)) {
 }
 
 /**
+ * The plots the visitor sowed by hand, as the cells that carry a standing sign.
+ *
+ * The visit record counts how many plots the visitor sowed, not which ones — the
+ * plot model has no per-plot identity to name them by — so the mark lands on the
+ * first that many occupied cells, the same cells `plotMarks` fills in order. The
+ * count is bounded by the marks actually drawn and reads zero when there is no
+ * visit or the visitor has sown nothing, so a save that sowed more plots than
+ * the picture holds is drawn bounded rather than flooded. Pure, so the drawn
+ * signs and the words beside them can be checked without a canvas.
+ *
+ * `marks` is the list `plotMarks` already returned, so a caller that has it can
+ * hand it back instead of rebuilding it.
+ *
+ * @returns {number[]} the cells carrying a hand-worked sign, in draw order.
+ */
+export function tendedMarkCells(state, marks = plotMarks(state)) {
+  const sown = state && state.visit && Number.isFinite(state.visit.sown) ? Math.floor(state.visit.sown) : 0;
+  const count = Math.min(Math.max(0, sown), marks.length);
+  const cells = [];
+  for (let i = 0; i < count; i += 1) cells.push(marks[i].cell);
+  return cells;
+}
+
+/**
  * Draw one mark on the plot: a grown plant, an ungrown seed or a bloom's bud,
  * each in its own recognisable sprite, at the cell it landed on. A grown plant
  * whose kind has earned a milestone wears its crown over the sprite, so the
@@ -1005,6 +1029,33 @@ function drawMark(ctx, mark, palette, foliage, formIndex, growthTier, sway, mile
   if (mark.kind === "herb-plant") drawPlant(ctx, x, y, palette, foliage, formIndex, growthTier, sway);
   else drawBloomPlant(ctx, x, y, palette, foliage, formIndex, growthTier, sway);
   if (milestoneTier > 0) drawMilestoneCrown(ctx, x, y, palette, milestoneTier);
+}
+
+/**
+ * The sign a plot the visitor sowed by hand carries: a small standing marker — a
+ * pale board on a dark stake, planted in the soil — so the ground the visitor
+ * worked reads differently from ground the garden sowed on its own.
+ *
+ * It is cut in the soil's own two tones rather than the leaf green or sun of a
+ * growing thing, so it belongs to the ground it stands in and no mark of an
+ * untouched plot can be mistaken for one. It reads no animation phase, so it
+ * holds still in the single frame reduced motion pins to, and it is drawn over
+ * the sprite on its cell, where the visitor can point at the plots they worked.
+ */
+function drawTendedSign(ctx, x, y, palette) {
+  const base = y + CELL;
+  const centre = x + CELL / 2;
+  // The stake, planted in the soil under the board.
+  ctx.fillStyle = palette.soilDeep;
+  ctx.fillRect(centre - 1, base - 10, 2, 10);
+  // The board: a dark backing with a pale face set inside it, so the sign reads
+  // as a marker standing in the plot rather than a bar laid across it.
+  ctx.fillStyle = palette.soilDeep;
+  ctx.fillRect(centre - 5, base - 17, 10, 7);
+  ctx.fillStyle = palette.soilLight;
+  ctx.fillRect(centre - 4, base - 16, 8, 4);
+  // A dark post showing through the face, so the board is plainly a sign.
+  ctx.fillRect(centre - 1, base - 16, 2, 2);
 }
 
 // How far a plot's bed edge is held inside its left and right edges, in pixels:
@@ -1077,6 +1128,12 @@ function drawPlotEdges(ctx, palette, width, grid) {
  * an old, well-kept garden reads as established at a glance and a replanted plot
  * is never drawn as soil nothing has touched. It is hash-derived and reads no
  * phase, so it holds in the still frame reduced motion pins to.
+ *
+ * The plots the visitor sowed by hand carry a still standing sign, drawn from
+ * `state.visit.sown` — the same hand-work count the readout and `get-state`
+ * report — so a garden the visitor worked reads differently from one they only
+ * watched. The signs read no phase and go on over the sprites, and a replant
+ * clears the visit with the rest of the plot, so the signs go with it.
  */
 export function drawGarden(canvas, state, palette, phase = 0) {
   if (!canvas || !palette) return;
@@ -1129,6 +1186,12 @@ export function drawGarden(canvas, state, palette, phase = 0) {
   for (const mark of marks) {
     const tier = mark.kind === "herb-plant" ? tiers[0] : mark.kind === "bloom-plant" ? tiers[1] : 0;
     drawMark(ctx, mark, paint, look.foliage, form.index, growthTier, swayPixels(phase, mark.cell), tier);
+  }
+  // The plots the visitor sowed by hand carry a standing sign over the sprite,
+  // so the ground they worked reads differently from ground the garden sowed on
+  // its own. The sign reads no phase, so it holds in the still frame.
+  for (const cell of tendedMarkCells(state, marks)) {
+    drawTendedSign(ctx, (cell % COLUMNS) * CELL, Math.floor(cell / COLUMNS) * CELL, paint);
   }
   // The garden's lasting structures stand in front of it: the wall its lifetime
   // has laid along the foot of the plot and a cairn per tier, so an established
