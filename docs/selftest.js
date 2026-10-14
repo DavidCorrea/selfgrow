@@ -86,7 +86,9 @@ import {
   buildAwayReport,
   clearReturnMarks,
   describeAnnouncements,
+  describeKind,
   describePlot,
+  describePollinator,
   exportSave,
   fastForwardSandbox,
   formatAmount,
@@ -7045,6 +7047,52 @@ function checkSandbox(problems) {
       problems.push("the rehearsal goal does not match the acted rehearsal state.");
     }
     if (!acted.status) problems.push("acting in the rehearsal said nothing in its status line.");
+
+    // The pollinator and one row per kind, in the same short labelled values
+    // the real garden's own rows carry — read from the same describe
+    // functions, so the two readings cannot drift. Each row lives inside
+    // #sandbox, so it shows only while a rehearsal is open.
+    const sandboxPanel = document.getElementById("sandbox");
+    const pollinatorRow = document.querySelector('[data-field="sandbox-pollinator"]');
+    if (!pollinatorRow) {
+      problems.push('the rehearsal readout has no pollinator row ([data-field="sandbox-pollinator"]).');
+    } else {
+      if (sandboxPanel && !sandboxPanel.contains(pollinatorRow)) {
+        problems.push("the rehearsal's pollinator row is outside #sandbox, so it would show while no rehearsal is open.");
+      }
+      if (pollinatorRow.textContent !== describePollinator(acted)) {
+        problems.push(
+          `the rehearsal pollinator row reads ${JSON.stringify(pollinatorRow.textContent)}, expected ` +
+            `${JSON.stringify(describePollinator(acted))}.`
+        );
+      }
+    }
+    for (const [key, kind] of [["herb", acted.kinds[0]], ["bloom", acted.kinds[1]]]) {
+      const row = document.querySelector(`[data-field="sandbox-kind-${key}"]`);
+      if (!row) {
+        problems.push(`the rehearsal readout has no ${key} row ([data-field="sandbox-kind-${key}"]).`);
+        continue;
+      }
+      if (sandboxPanel && !sandboxPanel.contains(row)) {
+        problems.push(`the rehearsal's ${key} row is outside #sandbox, so it would show while no rehearsal is open.`);
+      }
+      for (const { field, value } of describeKind(kind)) {
+        // The rehearsal shows three facts per kind; the markup decides which,
+        // but any span it carries must hold the garden's own value.
+        const span = row.querySelector(`[data-field="sandbox-kind-${key}-${field}"]`);
+        if (!span) continue;
+        if (span.textContent !== value) {
+          problems.push(
+            `the rehearsal ${key} ${field} reads ${JSON.stringify(span.textContent)}, expected ${JSON.stringify(value)}.`
+          );
+        }
+      }
+      for (const field of ["seeds", "plants", "cost"]) {
+        if (!row.querySelector(`[data-field="sandbox-kind-${key}-${field}"]`)) {
+          problems.push(`the rehearsal's ${key} row has no ${field} value, which the readout promises to show.`);
+        }
+      }
+    }
 
     // None of it may reach the real garden, its save or its clock.
     const realGardenAfterActs = getGarden();
