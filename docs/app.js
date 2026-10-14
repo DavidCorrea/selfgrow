@@ -257,6 +257,7 @@ function describePlot(state) {
     `${formatGrowth(state.growth)} growth — ${state.formName} on ${state.established.name}, ` +
     `in ${state.season.name}. ` +
     `${countLabel(state.beds, "bed of soil", "beds of soil")}, ` +
+    `${countLabel(state.capacity, "plot of soil", "plots of soil")}, ` +
     `${countLabel(state.seeds, "ungrown seed", "ungrown seeds")}, ` +
     `${countLabel(state.plants, "grown plant", "grown plants")}.`
   );

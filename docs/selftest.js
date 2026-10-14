@@ -112,6 +112,7 @@ import {
   groundCover,
   motionPhase,
   plotBounds,
+  plotCells,
   plotMarks,
   plotMilestoneTiers,
   pollinatorPlot,
@@ -2013,7 +2014,9 @@ function firstPixelOfColors(canvas, colorKeys) {
  * reads as one patch of earth that changes with the garden's year. The marks
  * are a pure function of the cell and the season, so the ground is a still
  * frame whatever the motion preference, and the whole plot is filled once with
- * one colour, so no cell is outlined as its own tile.
+ * one colour, so no cell is outlined as its own tile. The bed edge each plot
+ * carries is drawn in the soil's own tones and only along the plot's top, so the
+ * seams this check reads between two columns are still plain soil.
  */
 function checkSoilField(problems) {
   const palette = readPalette();
@@ -2353,6 +2356,197 @@ function checkPlotMarksMatchCounts(problems) {
             "numbers disagree."
         );
       }
+    }
+  }
+}
+
+/**
+ * Every plot of soil is drawn as its own plot, so the picture can be counted
+ * against the panel beside it.
+ *
+ * `plotCells` is the picture's own reading of what it owns: one plot per plot of
+ * the garden's capacity, grouped into beds of `PLOTS_PER_BED`, each marked with
+ * whether a seed or plant holds it. The drawn plot gives each plot a low bed
+ * edge in the soil's own tones — a lit ridge along its top with a dark line
+ * beneath, held inside the plot's left and right edges so the seams between
+ * columns stay plain soil — and closes a bed whose every plot is held with a
+ * full-width lit rim along its first row and its last row's foot. The edges read
+ * no animation phase, so reduced motion draws them too.
+ */
+function checkPlotBedEdges(problems) {
+  const palette = readPalette();
+  const soilKey = colorKey(parseColor(palette.soil));
+  const lightKey = colorKey(parseColor(palette.soilLight));
+  const leafKey = colorKey(parseColor(palette.leafDeep));
+
+  // One plot per plot of the capacity, one bed of plots per bed, and opening a
+  // bed widens the picture by exactly one bed of plots — up to the row cap the
+  // grid has always had.
+  for (let beds = 1; beds <= 4; beds += 1) {
+    const capacity = beds * PLOTS_PER_BED;
+    const grid = plotCells({ growth: 0, beds, capacity, seeds: capacity, plants: 0 });
+    if (grid.plots.length !== capacity) {
+      problems.push(
+        `a ${beds}-bed garden of ${capacity} plots draws ${grid.plots.length} plots, so the picture cannot be ` +
+          "counted against the panel's 'Plots of soil'."
+      );
+    }
+    const perBed = new Map();
+    for (const plot of grid.plots) perBed.set(plot.bed, (perBed.get(plot.bed) ?? 0) + 1);
+    if (perBed.size !== beds || [...perBed.values()].some((count) => count !== PLOTS_PER_BED)) {
+      problems.push(
+        `a ${beds}-bed garden of ${capacity} plots draws bed groups ${JSON.stringify([...perBed.values()])}, ` +
+          `expected ${beds} beds of ${PLOTS_PER_BED} plots.`
+      );
+    }
+    if (grid.fullBeds.length !== beds) {
+      problems.push(
+        `a ${beds}-bed garden with a seed on every one of its ${capacity} plots reports ${grid.fullBeds.length} ` +
+          `full beds, expected all ${beds}.`
+      );
+    }
+    if (beds < 4) {
+      const opened = plotCells({ growth: 0, beds: beds + 1, capacity: (beds + 1) * PLOTS_PER_BED, seeds: 0, plants: 0 });
+      const added = opened.plots.length - grid.plots.length;
+      if (added !== PLOTS_PER_BED) {
+        problems.push(
+          `opening a bed onto a ${beds}-bed garden of ${grid.plots.length} drawn plots added ${added} plots, ` +
+            `expected exactly one bed's ${PLOTS_PER_BED}.`
+        );
+      }
+    }
+  }
+
+  // The live picture owns the plots the panel counts: get-state's capacity is
+  // the 'Plots of soil' beside the plot, and the drawn grid holds that many.
+  const live = getDisplayedState();
+  const liveGrid = plotCells(live);
+  if (live.capacity <= liveGrid.cells && liveGrid.plots.length !== live.capacity) {
+    problems.push(
+      `the panel reports ${live.capacity} plots of soil but the plot draws ${liveGrid.plots.length}, so the ` +
+        "picture cannot be counted against the number beside it."
+    );
+  }
+
+  // A plot's occupancy is what the picture draws on it, so an empty plot can be
+  // told from one holding a seed or plant.
+  const mixed = { growth: 0, beds: 2, capacity: 2 * PLOTS_PER_BED, plantCounts: [3, 1], seedCounts: [2, 1] };
+  const marked = new Set(plotMarks(mixed).map((mark) => mark.cell));
+  for (const plot of plotCells(mixed).plots) {
+    if (plot.occupied !== marked.has(plot.cell)) {
+      problems.push(
+        `the plot at cell ${plot.cell} is reported ${plot.occupied ? "held" : "empty"} while the picture draws ` +
+          `${marked.has(plot.cell) ? "a mark" : "nothing"} on it, so an empty plot cannot be told from a held one.`
+      );
+      break;
+    }
+  }
+
+  // Every leaf-green pixel of a garden holding one seed lands on the plot the
+  // picture says holds it, so the seed is seen on its own plot and an empty plot
+  // carries no growing thing.
+  const oneSeed = { growth: 0, beds: 1, capacity: PLOT_CAPACITY, seeds: 1, plants: 0, pollinator: { visiting: false } };
+  const bounds = plotBounds(oneSeed);
+  const cell = bounds.cell;
+  const imageOf = (state, phase = 0) =>
+    plotCanvas(state, phase).getContext("2d").getImageData(0, 0, bounds.width, bounds.height).data;
+  const pixelOf = (data, x, y) => {
+    const i = (y * bounds.width + x) * 4;
+    return `${data[i]},${data[i + 1]},${data[i + 2]}`;
+  };
+  const seedData = imageOf(oneSeed);
+  const seeded = new Set();
+  for (let y = 0; y < bounds.height; y += 1) {
+    for (let x = 0; x < bounds.width; x += 1) {
+      if (pixelOf(seedData, x, y) !== leafKey) continue;
+      seeded.add(Math.floor(y / cell) * bounds.columns + Math.floor(x / cell));
+    }
+  }
+  for (const plot of plotCells(oneSeed).plots) {
+    if (plot.occupied !== seeded.has(plot.cell)) {
+      problems.push(
+        `the plot at column ${plot.column}, row ${plot.row} is reported ${plot.occupied ? "held" : "empty"} but the ` +
+          `picture ${seeded.has(plot.cell) ? "draws a growing thing" : "draws none"} on it, so a plot holding a ` +
+          "seed cannot be told from an empty one."
+      );
+      break;
+    }
+  }
+
+  // Every plot carries a lit ridge along its top, and the seam between two
+  // columns stays plain soil, so the picture can be counted plot by plot without
+  // reading as a grid of outlined tiles.
+  const bare = { growth: 0, beds: 1, capacity: PLOT_CAPACITY, seeds: 0, plants: 0, pollinator: { visiting: false } };
+  const bareData = imageOf(bare);
+  for (const plot of plotCells(bare).plots) {
+    const left = plot.column * cell;
+    const top = plot.row * cell;
+    let lit = 0;
+    for (let x = left; x < left + cell; x += 1) if (pixelOf(bareData, x, top) === lightKey) lit += 1;
+    if (lit < 8) {
+      problems.push(
+        `the plot at column ${plot.column}, row ${plot.row} carries ${lit} lit pixels along its top edge, so it ` +
+          "cannot be counted in the picture."
+      );
+      break;
+    }
+    const seamY = top + Math.floor(cell / 2);
+    if (pixelOf(bareData, left, seamY) !== soilKey) {
+      problems.push(
+        `the seam at (${left}, ${seamY}) between two plots is not plain soil, so the field reads as a grid of ` +
+          "outlined tiles rather than one patch of ground."
+      );
+      break;
+    }
+  }
+
+  // A bed whose every plot is held is closed by a lit rim along its first row and
+  // its last row's foot; a bed with an empty plot is left plain, so a bed reads
+  // as full exactly when it is full.
+  const holding = (plants) => ({
+    growth: 0,
+    beds: 1,
+    capacity: PLOT_CAPACITY,
+    plantCounts: [plants, 0],
+    pollinator: { visiting: false },
+  });
+  const fullBed = holding(PLOTS_PER_BED);
+  const partBed = holding(PLOTS_PER_BED - 1);
+  const fullBeds = plotCells(fullBed).fullBeds.length;
+  const partBeds = plotCells(partBed).fullBeds.length;
+  if (fullBeds !== 1 || partBeds !== 0) {
+    problems.push(
+      `a bed of ${PLOTS_PER_BED} plants and one of ${PLOTS_PER_BED - 1} report ${fullBeds} / ${partBeds} full ` +
+        "beds, expected 1 / 0."
+    );
+  }
+  const fullData = imageOf(fullBed);
+  const partData = imageOf(partBed);
+  const lastRowFoot = bounds.rows * cell - 1;
+  for (const [x, y] of [[0, 0], [bounds.width - 1, 0], [0, lastRowFoot], [bounds.width - 1, lastRowFoot]]) {
+    if (pixelOf(fullData, x, y) !== lightKey) {
+      problems.push(
+        `a full bed's edge pixel (${x}, ${y}) is rgb(${pixelOf(fullData, x, y)}) rather than the palette soil-light ` +
+          `rgb(${lightKey}), so a full bed is not closed by its rim.`
+      );
+    }
+    if (pixelOf(partData, x, y) !== soilKey) {
+      problems.push(
+        `a partly filled bed's edge pixel (${x}, ${y}) is rgb(${pixelOf(partData, x, y)}) rather than the palette soil ` +
+          `rgb(${soilKey}), so a bed that is not full is still lit.`
+      );
+    }
+  }
+
+  // The edge reads no animation phase, so a bed's rim is the same lit pixel in
+  // the still frame reduced motion pins to as at any moving one.
+  const movedData = imageOf(fullBed, 3);
+  for (const x of [0, bounds.width - 1]) {
+    if (pixelOf(movedData, x, 0) !== lightKey) {
+      problems.push(
+        `a full bed's rim pixel (${x}, 0) is rgb(${pixelOf(movedData, x, 0)}) at another phase rather than the ` +
+          `palette soil-light rgb(${lightKey}), so the bed edge does not hold still under reduced motion.`
+      );
     }
   }
 }
@@ -7472,6 +7666,7 @@ export async function checks() {
     checkPlotSpritesLegible(problems);
     checkPlotMilestoneCrowns(problems);
     checkPlotMarksMatchCounts(problems);
+    checkPlotBedEdges(problems);
     checkPlotCoverage(problems);
     checkGroundIsNotGrowth(problems);
     checkPlotEstablishment(problems);

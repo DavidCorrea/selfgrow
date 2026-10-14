@@ -944,6 +944,47 @@ export function plotMarks(state) {
 }
 
 /**
+ * The plots the picture owns, plot by plot.
+ *
+ * The plot draws one cell of soil per plot of the garden's capacity, so this
+ * reads `plotBounds` for the grid and `plotMarks` for what stands on it and
+ * names each plot the picture can be counted by: its cell, the column and row it
+ * sits in, the bed it belongs to and whether a seed or plant holds it. The plot
+ * count is `min(capacity, ground cells)` — the ground the garden's form spreads
+ * beyond the plots carries no plot, and a save with more plots than the grid can
+ * hold is drawn bounded rather than flooded. `beds` is how many beds those plots
+ * fill and `fullBeds` the beds whose every plot is held, so a bed reads as full
+ * exactly when its plots do. Pure, so the drawn garden can be counted against
+ * the readout beside it without a canvas.
+ *
+ * `marks` is the list `plotMarks` already returned, so a caller that has it can
+ * hand it back instead of rebuilding it.
+ */
+export function plotCells(state, marks = plotMarks(state)) {
+  const { columns, rows, cells } = plotBounds(state);
+  const capacity = capacityFor(state);
+  const occupied = new Set(marks.map((mark) => mark.cell));
+  const count = Math.min(capacity, cells);
+  const plots = [];
+  for (let cell = 0; cell < count; cell += 1) {
+    plots.push({
+      cell,
+      column: cell % columns,
+      row: Math.floor(cell / columns),
+      bed: Math.floor(cell / BED_CELLS),
+      occupied: occupied.has(cell),
+    });
+  }
+  const beds = Math.ceil(count / BED_CELLS);
+  const fullBeds = [];
+  for (let bed = 0; bed < beds; bed += 1) {
+    const inBed = plots.filter((plot) => plot.bed === bed);
+    if (inBed.length > 0 && inBed.every((plot) => plot.occupied)) fullBeds.push(bed);
+  }
+  return { columns, rows, cells, capacity, plots, beds, fullBeds };
+}
+
+/**
  * Draw one mark on the plot: a grown plant, an ungrown seed or a bloom's bud,
  * each in its own recognisable sprite, at the cell it landed on. A grown plant
  * whose kind has earned a milestone wears its crown over the sprite, so the
@@ -966,6 +1007,47 @@ function drawMark(ctx, mark, palette, foliage, formIndex, growthTier, sway, mile
   if (milestoneTier > 0) drawMilestoneCrown(ctx, x, y, palette, milestoneTier);
 }
 
+// How far a plot's bed edge is held inside its left and right edges, in pixels:
+// enough that the edges of neighbouring plots never meet, so the soil between
+// two columns stays plain ground and the field is not ruled into a grid.
+const PLOT_EDGE_INSET = 3;
+
+/**
+ * A low bed edge on every plot of soil, in the soil's own tones.
+ *
+ * Each plot carries a one-pixel lit ridge along its top with a dark line beneath
+ * it, held inside the plot's left and right edges, so the horizontal seams break
+ * into one segment per plot and a visitor can count the plots across and down.
+ * The gap the inset leaves between neighbouring columns keeps the vertical seams
+ * plain soil, so the plot still reads as one patch of ground rather than a grid
+ * of outlined tiles. A bed whose every plot is held is then closed by a
+ * full-width lit rim along its first row and the foot of its last, so a bed reads
+ * as full exactly when its plots are full. Nothing here reads the animation
+ * phase, so the edges hold in the still frame reduced motion pins to.
+ *
+ * `grid` is the `plotCells` reading of the same state, so the drawn edge and the
+ * counted plot are one and the same.
+ */
+function drawPlotEdges(ctx, palette, width, grid) {
+  for (const plot of grid.plots) {
+    const x = plot.column * CELL;
+    const y = plot.row * CELL;
+    ctx.fillStyle = palette.soilLight;
+    ctx.fillRect(x + PLOT_EDGE_INSET, y, CELL - PLOT_EDGE_INSET * 2, 1);
+    ctx.fillStyle = palette.soilDeep;
+    ctx.fillRect(x + PLOT_EDGE_INSET, y + 1, CELL - PLOT_EDGE_INSET * 2, 1);
+  }
+  // A bed is BASE_ROWS rows of COLUMNS plots, so its first row and its foot are
+  // named by its index alone.
+  for (const bed of grid.fullBeds) {
+    const top = bed * BASE_ROWS * CELL;
+    const foot = (bed + 1) * BASE_ROWS * CELL - 1;
+    ctx.fillStyle = palette.soilLight;
+    ctx.fillRect(0, top, width, 1);
+    ctx.fillRect(0, foot, width, 1);
+  }
+}
+
 /**
  * Draw `state`'s garden onto `canvas`, painting only with `palette`.
  *
@@ -983,7 +1065,11 @@ function drawMark(ctx, mark, palette, foliage, formIndex, growthTier, sway, mile
  * state and phase always draw the same way, and every colour comes from the
  * palette read off `:root`, so the plot belongs to the same garden as the panels
  * around it. The number of marks is bounded by the cells on screen, so a save
- * carrying more plants than plots cannot flood the picture.
+ * carrying more plants than plots cannot flood the picture. Every plot of soil
+ * carries a low bed edge in the soil's own tones — a lit ridge along its top with
+ * the vertical seams left plain — and a bed whose plots are all held is closed by
+ * a lit rim, so the picture can be counted plot by plot against the panel's
+ * 'Plots of soil' beside it.
  *
  * The lifetime is a second, lasting layer under all of it: `state.lifetimeGrowth`
  * — the same value the readout and `get-state` report — decides how much of the
@@ -1016,6 +1102,10 @@ export function drawGarden(canvas, state, palette, phase = 0) {
 
   const marks = plotMarks(state);
   const occupied = new Set(marks.map((mark) => mark.cell));
+  // The bed edge goes on the bare field, before the soil's face and the sprites
+  // are drawn over it: every plot of soil is drawn as its own plot, so a visitor
+  // can count the picture against the 'Plots of soil' the panel beside it reports.
+  drawPlotEdges(ctx, paint, width, plotCells(state, marks));
   const plants = marks.filter((mark) => mark.kind === "herb-plant" || mark.kind === "bloom-plant").length;
   const growthTier = Math.min(2, Math.floor(form.fill * 3));
   // The garden's own growth, not only the plants it owns, fills the soil.
