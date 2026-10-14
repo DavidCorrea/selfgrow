@@ -215,6 +215,30 @@
                 <dt class="readout-term">Pollinator</dt>
                 <dd class="readout-value" data-field="pollinator">none visiting · boost x2 while visiting · visit 1m every 3m · each bloom +10s · max 2m 30s</dd>
               </div>
+              <!-- What the visitor did by hand this visit: how long it has
+                   lasted and how many plots they sowed and tended. Kept apart
+                   from the seeds the garden sows itself and the plants that
+                   matured while they were away, so a garden they tended reads
+                   differently from one left alone. -->
+              <div class="readout-row readout-kind">
+                <dt class="readout-term">This visit</dt>
+                <dd class="readout-value readout-kind-value" data-field="visit">
+                  <span class="kind-facts">
+                    <span class="kind-fact">
+                      <span class="kind-fact-label">Lasted</span>
+                      <span class="kind-fact-value" data-field="visit-seconds">0s</span>
+                    </span>
+                    <span class="kind-fact">
+                      <span class="kind-fact-label">Sown by hand</span>
+                      <span class="kind-fact-value" data-field="visit-sown">0</span>
+                    </span>
+                    <span class="kind-fact">
+                      <span class="kind-fact-label">Tended</span>
+                      <span class="kind-fact-value" data-field="visit-tended">0</span>
+                    </span>
+                  </span>
+                </dd>
+              </div>
               <!-- What a long absence changed, labelled and paired with the
                    still marks on the plot. It stays until the visitor acts on
                    the garden or dismisses it, so the evidence of the absence

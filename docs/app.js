@@ -28,6 +28,7 @@ import {
   STORAGE_KEY,
   TEND_RATE_STEP,
   TEND_YIELD,
+  addVisitTime,
   advance,
   canReplant,
   decodeSave,
@@ -155,6 +156,9 @@ const elements = {
   gardenStatus: document.getElementById("garden-status"),
   returnMarks: document.querySelector('[data-field="return-marks"]'),
   returnMarksRow: document.getElementById("return-marks-row"),
+  visitSeconds: document.querySelector('[data-field="visit-seconds"]'),
+  visitSown: document.querySelector('[data-field="visit-sown"]'),
+  visitTended: document.querySelector('[data-field="visit-tended"]'),
   dismissReturn: document.getElementById("dismiss-return"),
   save: document.getElementById("save-value"),
   copy: document.getElementById("copy-save"),
@@ -283,8 +287,13 @@ function setText(element, text) {
  */
 export function getDisplayedState() {
   const { growth, rate, age, lifetime, bonus } = getGrowthState();
+  const garden = getGarden();
   return {
-    ...describeGardenState(getGarden(), growth, rate, age, bonus),
+    ...describeGardenState(garden, growth, rate, age, bonus),
+    // The visitor's own hand-work this visit — how long it has lasted and how
+    // many plots they sowed and tended — kept apart from the seeds the garden
+    // sows itself and the plants that matured while they were away.
+    visit: garden.visit,
     // The garden's whole history, what replanting right now would earn from it,
     // the lasting bonus a replant has already earned, and what that history has
     // made of the ground — the lasting layer the plot draws under the current
@@ -1591,6 +1600,9 @@ function render() {
   setText(elements.pollinator, describePollinator(state));
   setText(elements.returnMarks, describeReturnMarks(state.returnMarks));
   if (elements.returnMarksRow) elements.returnMarksRow.hidden = !state.returnMarks;
+  setText(elements.visitSeconds, formatDuration(state.visit.seconds));
+  setText(elements.visitSown, formatAmount(state.visit.sown));
+  setText(elements.visitTended, formatAmount(state.visit.tended));
   setText(elements.season, describeSeason(state));
   renderKind(elements.kindHerb, state.kinds[0]);
   renderKind(elements.kindBloom, state.kinds[1]);
@@ -1866,6 +1878,9 @@ function start() {
     const elapsed = Math.max(0, (now - lastTick) / 1000);
     lastTick = now;
     plotFrame += 1;
+    // Count this visit before the advance, which notifies and redraws the
+    // readout, so the two are stated together and cannot drift apart.
+    addVisitTime(elapsed);
     if (elapsed > 0) advance(elapsed);
     if (now - lastPersist >= PERSIST_MS) {
       lastPersist = now;

@@ -41,6 +41,7 @@ import {
   STORAGE_KEY,
   TEND_RATE_STEP,
   TEND_YIELD,
+  addVisitTime,
   advance,
   decodeSave,
   elapsedSeconds,
@@ -61,6 +62,7 @@ import {
   pollinatorCycleSeconds,
   pollinatorSecondsWithin,
   pollinatorVisitSeconds,
+  plantSeed,
   readLastSeen,
   replant,
   replantBonus,
@@ -1000,8 +1002,8 @@ function checkRestorePoint(problems) {
  * against its own count, and both read off a mixed garden correctly.
  */
 function checkSeedKindsDiffer(problems) {
-  if (SAVE_VERSION !== 8) {
-    problems.push(`SAVE_VERSION should be 8 (the lasting bonus), but it is ${SAVE_VERSION}.`);
+  if (SAVE_VERSION !== 9) {
+    problems.push(`SAVE_VERSION should be 9 (the visit record), but it is ${SAVE_VERSION}.`);
   }
   const [herb, bloom] = SEED_KINDS;
   if (bloom.costBase <= herb.costBase) {
@@ -4079,6 +4081,7 @@ function checkCompactReadout(problems) {
   const fields = [
     "growth", "lifetime", "replant-bonus", "form", "seeds", "plants", "kind-herb", "kind-bloom", "beds",
     "capacity", "season", "pollinator", "next-plant", "next-bed", "storage",
+    "visit-seconds", "visit-sown", "visit-tended",
   ];
   for (const field of fields) {
     if (!document.querySelector(`[data-field="${field}"]`)) {
@@ -5954,6 +5957,195 @@ function checkReturnMarks(problems) {
 }
 
 /**
+ * The visitor's own hand-work, kept apart from what the garden does alone.
+ *
+ * A garden the visitor tended must read differently from one they only watched:
+ * the visit record states how long the visit has lasted and how many plots they
+ * sowed and tended by hand, rises only when they act, survives a reload and a
+ * return, is cleared by a replant, and is read the same by an agent through
+ * get-state and a person off the page.
+ */
+function checkVisitRecord(problems) {
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const storageBefore = rawStorage();
+  const payload = (value) => `${SAVE_PREFIX}${btoa(JSON.stringify(value))}`;
+  const EMPTY = { seconds: 0, sown: 0, tended: 0 };
+  try {
+    // A fresh garden has done nothing by hand yet.
+    if (JSON.stringify(newGarden().visit) !== JSON.stringify(EMPTY)) {
+      problems.push(`newGarden() should open with an empty visit, but it is ${JSON.stringify(newGarden().visit)}.`);
+    }
+    setGarden(newGarden());
+    setGrowth(0, 0);
+    if (JSON.stringify(getGarden().visit) !== JSON.stringify(EMPTY)) {
+      problems.push(`a fresh garden's visit should start at zero, but it is ${JSON.stringify(getGarden().visit)}.`);
+    }
+
+    // Only a successful hand-action raises the counts: planting raises sown,
+    // tending raises tended, and neither touches the other.
+    setGarden(newGarden());
+    setGrowth(100000, 0);
+    const before = getGarden().visit;
+    if (!plantSeed("herb").ok) {
+      problems.push("checkVisitRecord could not plant a seed to test the visit record.");
+    }
+    const afterPlant = getGarden().visit;
+    if (afterPlant.sown !== before.sown + 1) {
+      problems.push(
+        `planting a seed by hand should raise visit.sown from ${before.sown} to ${before.sown + 1}, but it is ` +
+          `${afterPlant.sown} (whole visit ${JSON.stringify(afterPlant)}).`
+      );
+    }
+    if (afterPlant.tended !== before.tended) {
+      problems.push(`planting a seed changed visit.tended from ${before.tended} to ${afterPlant.tended}; only tending should.`);
+    }
+    tend();
+    const afterTend = getGarden().visit;
+    if (afterTend.tended !== afterPlant.tended + 1) {
+      problems.push(
+        `tending the soil by hand should raise visit.tended from ${afterPlant.tended} to ${afterPlant.tended + 1}, ` +
+          `but it is ${afterTend.tended} (whole visit ${JSON.stringify(afterTend)}).`
+      );
+    }
+    if (afterTend.sown !== afterPlant.sown) {
+      problems.push(`tending the soil changed visit.sown from ${afterPlant.sown} to ${afterTend.sown}; only planting should.`);
+    }
+
+    // The garden climbing on its own never touches the hand-work counts.
+    const beforePassive = getGarden().visit;
+    advance(120);
+    const afterPassive = getGarden().visit;
+    if (afterPassive.sown !== beforePassive.sown || afterPassive.tended !== beforePassive.tended) {
+      problems.push(
+        `passive growth changed the hand-work counts from ${JSON.stringify(beforePassive)} to ` +
+          `${JSON.stringify(afterPassive)}; only the visitor's own actions may.`
+      );
+    }
+    if (!(afterPassive.seconds >= beforePassive.seconds)) {
+      problems.push(`passive growth lowered visit.seconds from ${beforePassive.seconds} to ${afterPassive.seconds}.`);
+    }
+
+    // A return grows the garden on its own — sowing into the free plots — but
+    // the visitor's own counts stay exactly where they were.
+    setGarden(newGarden());
+    setGrowth(0, 0.5, 0, 100);
+    const beforeReturn = getGarden().visit;
+    const nowMs = 1_700_000_000_000;
+    applyReturn({ growth: 0, rate: 0.5, age: 0, lifetime: 100, bonus: 0 }, nowMs - 3600 * 1000, nowMs);
+    const afterReturn = getGarden().visit;
+    if (afterReturn.sown !== beforeReturn.sown || afterReturn.tended !== beforeReturn.tended) {
+      problems.push(
+        `a return's away-sown seeds changed the hand-work counts from ${JSON.stringify(beforeReturn)} to ` +
+          `${JSON.stringify(afterReturn)}; the garden's own work must not count as the visitor's.`
+      );
+    }
+
+    // The visit only ever lengthens: a real span adds, a zero or negative one
+    // adds nothing.
+    const beforeTime = getGarden().visit.seconds;
+    addVisitTime(5);
+    const afterTime = getGarden().visit.seconds;
+    if (afterTime < beforeTime + 5) {
+      problems.push(
+        `addVisitTime(5) should raise visit.seconds from ${beforeTime} to at least ${beforeTime + 5}, but it is ${afterTime}.`
+      );
+    }
+    addVisitTime(0);
+    addVisitTime(-3);
+    if (getGarden().visit.seconds !== afterTime) {
+      problems.push(
+        `addVisitTime ignores a zero or negative span, but it changed visit.seconds from ${afterTime} to ` +
+          `${getGarden().visit.seconds}.`
+      );
+    }
+
+    // A save round-trips all three values exactly.
+    const crafted = { ...newGarden(), growth: 0, rate: 0, visit: { seconds: 125.5, sown: 3, tended: 4 } };
+    const back = decodeSave(encodeSave(crafted));
+    if (JSON.stringify(back.visit) !== JSON.stringify(crafted.visit)) {
+      problems.push(
+        `a visit did not round-trip: put in ${JSON.stringify(crafted.visit)}, got back ${JSON.stringify(back.visit)}.`
+      );
+    }
+
+    // The browser keeps it, so it survives a reload.
+    setGarden({ ...newGarden(), visit: { seconds: 60, sown: 2, tended: 1 } });
+    writeStoredGarden(getGarden());
+    const stored = readStoredGarden().garden.visit;
+    if (stored.seconds !== 60 || stored.sown !== 2 || stored.tended !== 1) {
+      problems.push(`a stored visit did not come back: expected {60,2,1}, got ${JSON.stringify(stored)}.`);
+    }
+
+    // A save from before the visit record opens with an empty one.
+    const migrated = decodeSave(payload({ version: 8, seeds: 1, plants: 0, growth: 0, rate: 0 }));
+    if (JSON.stringify(migrated.visit) !== JSON.stringify(EMPTY)) {
+      problems.push(`a version-8 save should migrate to an empty visit, but it migrated to ${JSON.stringify(migrated.visit)}.`);
+    }
+
+    // A visit field that is negative, fractional or not a number is refused.
+    const badVisits = [
+      ["a negative duration", { seconds: -1, sown: 0, tended: 0 }],
+      ["a fractional sown count", { seconds: 0, sown: 1.5, tended: 0 }],
+      ["a tended count given as text", { seconds: 0, sown: 0, tended: "2" }],
+    ];
+    for (const [label, visit] of badVisits) {
+      try {
+        decodeSave(payload({ version: SAVE_VERSION, seeds: 1, plants: 0, growth: 0, rate: 0, visit }));
+        problems.push(`the save reader accepted ${label} in the visit record; it should refuse it.`);
+      } catch {
+        // refused, as it must be.
+      }
+    }
+
+    // A replant clears the visit with the rest of the plot.
+    setGarden(newGarden());
+    setGrowth(0, 0, 0, 100);
+    plantSeed("herb");
+    tend();
+    addVisitTime(30);
+    const beforeReplant = getGarden().visit;
+    if (!replant().ok) {
+      problems.push("checkVisitRecord could not replant an eligible garden to test that it clears the visit.");
+    }
+    const afterReplant = getGarden().visit;
+    if (JSON.stringify(afterReplant) !== JSON.stringify(EMPTY)) {
+      problems.push(
+        `a replant should clear the visit with the plot, but it left ${JSON.stringify(afterReplant)} ` +
+          `(was ${JSON.stringify(beforeReplant)}).`
+      );
+    }
+
+    // A person and an agent read the same visit: the state and the page's
+    // labelled fields all equal the garden's record.
+    setGarden({ ...newGarden(), visit: { seconds: 125, sown: 2, tended: 3 } });
+    const state = getDisplayedState();
+    const live = getGarden().visit;
+    if (JSON.stringify(state.visit) !== JSON.stringify(live)) {
+      problems.push(`get-state's visit ${JSON.stringify(state.visit)} does not match the garden's ${JSON.stringify(live)}.`);
+    }
+    for (const [field, expected] of [
+      ["visit-seconds", formatDuration(live.seconds)],
+      ["visit-sown", formatAmount(live.sown)],
+      ["visit-tended", formatAmount(live.tended)],
+    ]) {
+      const el = document.querySelector(`[data-field="${field}"]`);
+      if (!el) {
+        problems.push(`the page has no [data-field="${field}"] readout for the visitor's own work this visit.`);
+      } else if (String(el.textContent).trim() !== expected) {
+        problems.push(
+          `the page shows ${JSON.stringify(String(el.textContent).trim())} for ${field}, but the visit holds ${expected}.`
+        );
+      }
+    }
+  } finally {
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime, growthBefore.bonus);
+    restoreRawStorage(storageBefore);
+  }
+}
+
+/**
  * A screen reader is told what happened, not the same numbers over and over.
  * The per-tick readouts (the growth total, the garden form) are out of every
  * live region, and the one polite status region speaks only the discrete
@@ -6949,10 +7141,18 @@ async function checkAgentTools(problems) {
     problems.push("get-state's away does not match the page's return report.");
   }
 
+  if (JSON.stringify(state.visit) !== JSON.stringify(shown.visit)) {
+    problems.push(
+      `get-state's visit ${JSON.stringify(state.visit)} does not match the page's visit record ` +
+        `${JSON.stringify(shown.visit)}.`
+    );
+  }
+
   const tendTool = find("tend");
   if (!tendTool) {
     problems.push("agenttools.js has no tend tool, so an agent cannot do what the Tend button does.");
   } else {
+    const gardenBefore = getGarden();
     const growthBefore = getGrowthState();
     try {
       const result = await tendTool.execute({}, {});
@@ -6972,7 +7172,16 @@ async function checkAgentTools(problems) {
           `${after.growth} at ${after.rate}/s.`
         );
       }
+      // The tend tool records the visitor's own tending, exactly as the button
+      // does: the visit's tended count rises by one.
+      if (getGarden().visit.tended !== gardenBefore.visit.tended + 1) {
+        problems.push(
+          `the tend tool left the visit at ${getGarden().visit.tended} tended, expected ` +
+            `${gardenBefore.visit.tended + 1} — the same count the Tend button records.`
+        );
+      }
     } finally {
+      setGarden(gardenBefore);
       setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
     }
   }
@@ -7701,6 +7910,7 @@ export async function checks() {
     checkReturnSummaryPlacement(problems);
     checkAwaySowing(problems);
     checkReturnMarks(problems);
+    checkVisitRecord(problems);
     checkLiveAnnouncements(problems);
     checkActionConfirmationsAreSpoken(problems);
     checkGardenActionRefusals(problems);

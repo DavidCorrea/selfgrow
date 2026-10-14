@@ -13,7 +13,7 @@
  */
 
 /** The save format. Bump it only if the shape below actually changes. */
-export const SAVE_VERSION = 8;
+export const SAVE_VERSION = 9;
 
 /** A readable marker, so a save is recognisable and the version is obvious. */
 export const SAVE_PREFIX = "SELFGROW1.";
@@ -196,6 +196,7 @@ export function newGarden() {
     plants: 0,
     beds: 1,
     sprouts: [STARTING_GROW_SECONDS],
+    visit: emptyVisit(),
   };
 }
 
@@ -242,6 +243,55 @@ function assertAmount(value, field) {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
     throw new Error(`the save's ${field} must be a number of 0 or more, but it is ${JSON.stringify(value)}.`);
   }
+}
+
+/**
+ * A fresh visit record: the visitor has just arrived, so nothing has lasted
+ * and nothing has been done by hand yet.
+ */
+function emptyVisit() {
+  return { seconds: 0, sown: 0, tended: 0 };
+}
+
+/**
+ * The visit record a garden carries, kept to a finite duration and whole
+ * counts of zero or more. Anything missing, negative or not a number reads as
+ * the zero it never was, so a garden that never knew about the visit opens
+ * with an empty one rather than as `NaN`.
+ */
+function visitOrZero(value) {
+  const source = value && typeof value === "object" ? value : {};
+  return {
+    seconds: amountOrZero(source.seconds),
+    sown: plantedCount(source.sown),
+    tended: plantedCount(source.tended),
+  };
+}
+
+/**
+ * The visit record a save carries, or an empty one when it does not say.
+ *
+ * A field that is present must be a finite number: the seconds lasted are of
+ * zero or more, and the two counts are whole numbers of zero or more. A
+ * negative, fractional or non-numeric field is refused with a reason, the same
+ * way the age and the bonus are, because it would state a visit that never
+ * happened.
+ */
+function readVisit(parsed) {
+  if (parsed.visit === undefined || parsed.visit === null) return emptyVisit();
+  const visit = parsed.visit;
+  if (typeof visit !== "object" || Array.isArray(visit)) {
+    throw new Error(
+      `the save's visit must be an object of seconds, sown and tended, but it is ${JSON.stringify(visit)}.`
+    );
+  }
+  const seconds = visit.seconds === undefined || visit.seconds === null ? 0 : visit.seconds;
+  const sown = visit.sown === undefined || visit.sown === null ? 0 : visit.sown;
+  const tended = visit.tended === undefined || visit.tended === null ? 0 : visit.tended;
+  assertAmount(seconds, "visit seconds");
+  assertCount(sown, "visit sown");
+  assertCount(tended, "visit tended");
+  return { seconds, sown, tended };
 }
 
 /**
@@ -320,6 +370,7 @@ export function encodeSave(garden) {
     lifetime: amountOrZero(source.lifetime),
     bonus: amountOrZero(source.bonus),
     beds,
+    visit: visitOrZero(source.visit),
   });
   return SAVE_PREFIX + btoa(body);
 }
@@ -344,9 +395,11 @@ export function encodeSave(garden) {
  * garden has produced over its whole life; an older save starts it at the
  * growth it currently holds, so nothing already earned is forgotten. Version 8
  * added the lasting bonus a replant earns; an older save was never replanted,
- * so it opens with no bonus.
+ * so it opens with no bonus. Version 9 added the record of the visitor's own
+ * visit; an older save opens with an empty one, nothing lasted and nothing
+ * done by hand.
  *
- * @returns {{version: number, seeds: number, plants: number, sprouts: number[], bloomSprouts: number[], plantCounts: number[], growth: number, rate: number, age: number, lifetime: number, bonus: number, beds: number}}
+ * @returns {{version: number, seeds: number, plants: number, sprouts: number[], bloomSprouts: number[], plantCounts: number[], growth: number, rate: number, age: number, lifetime: number, bonus: number, beds: number, visit: {seconds: number, sown: number, tended: number}}}
  * @throws {Error} when the text is empty, not a selfgrow save, damaged,
  *   the wrong version, or carries a bad plot count, growth, rate, age,
  *   lifetime or bonus.
@@ -409,6 +462,10 @@ export function decodeSave(text) {
   // Before version 8 there was no lasting bonus. An older save was never
   // replanted, so it opens with the bonus it never earned.
   const bonus = parsed.version < 8 ? 0 : readBonus(parsed);
+  // Before version 9 there was no record of the visitor's own visit. An older
+  // save opens with an empty one — nothing lasted, nothing done by hand — so
+  // nothing the visitor did not do is invented for it.
+  const visit = parsed.version < 9 ? emptyVisit() : readVisit(parsed);
   return {
     version: SAVE_VERSION,
     seeds: sprouts.length + bloomSprouts.length,
@@ -422,6 +479,7 @@ export function decodeSave(text) {
     lifetime,
     bonus,
     beds,
+    visit,
   };
 }
 
@@ -629,6 +687,7 @@ let garden = {
   bloomSprouts: [],
   bloomPlants: 0,
   beds: 1,
+  visit: emptyVisit(),
 };
 const listeners = new Set();
 
@@ -643,7 +702,8 @@ function notify() {
  * plots that is), the ungrown seeds (and their timers), and the grown plants.
  * `seeds`/`plants` are the totals across both kinds; the per-kind counts and
  * timers are beside them. Growth and rate live beside this (see
- * `getGrowthState`).
+ * `getGrowthState`), and `visit` is the record of the visitor's own hand-work
+ * this visit: how long it has lasted and how many plots they sowed and tended.
  */
 export function getGarden() {
   const beds = bedCount(garden.beds);
@@ -657,6 +717,7 @@ export function getGarden() {
     plantCounts: [garden.plants, garden.bloomPlants ?? 0],
     beds,
     capacity: beds * PLOTS_PER_BED,
+    visit: visitOrZero(garden.visit),
   };
 }
 
@@ -706,6 +767,11 @@ export function setGarden(next) {
   const bloom = kindSproutsForState(next, 1, Math.max(0, capacity - herb.growing.length));
   const herbPlants = wholeCount(plantsForKind(next, 0), Number.MAX_SAFE_INTEGER) + herb.matured;
   const bloomPlants = wholeCount(plantsForKind(next, 1), Number.MAX_SAFE_INTEGER) + bloom.matured;
+  // The visit record is preserved when the caller does not speak of it — a
+  // return's partial state, for one — so a return never wipes what the visitor
+  // did. A caller that passes its own record (a fresh garden's zeros, or a
+  // loaded save's) states it outright.
+  const visit = next.visit === undefined ? visitOrZero(garden.visit) : visitOrZero(next.visit);
   garden = {
     version: SAVE_VERSION,
     sprouts: herb.growing,
@@ -713,8 +779,25 @@ export function setGarden(next) {
     bloomSprouts: bloom.growing,
     bloomPlants,
     beds,
+    visit,
   };
   notify();
+}
+
+/**
+ * Add `seconds` to how long this visit has lasted. The visit is only ever
+ * lengthened: a missing, zero or negative span adds nothing. It does not
+ * notify, because the tick that calls it advances the garden just afterwards
+ * and that advance redraws the readout.
+ *
+ * @returns {{seconds: number, sown: number, tended: number}} the visit record.
+ */
+export function addVisitTime(seconds) {
+  const span = Number.isFinite(seconds) && seconds > 0 ? seconds : 0;
+  const visit = visitOrZero(garden.visit);
+  if (span === 0) return visit;
+  garden = { ...garden, visit: { ...visit, seconds: visit.seconds + span } };
+  return { ...garden.visit };
 }
 
 /** Listen for changes; returns a function that stops listening. */
@@ -1163,6 +1246,10 @@ export function tend() {
   growth += TEND_YIELD;
   rate += TEND_RATE_STEP;
   lifetime += TEND_YIELD;
+  // The visitor tended the soil by hand, so the visit records it. This is the
+  // live action only: `tendInState` is the pure rehearsal and never reaches here.
+  const visit = visitOrZero(garden.visit);
+  garden = { ...garden, visit: { ...visit, tended: visit.tended + 1 } };
   notify();
   return getGrowthState();
 }
@@ -1607,9 +1694,15 @@ export function plantSeed(kind = 0) {
     return { ok: false, reason: result.reason, cost: result.cost, kind: result.kind };
   }
   growth = result.state.growth;
-  garden = kindIndex(result.kind) === 0
-    ? { ...garden, sprouts: result.state.sprouts }
-    : { ...garden, bloomSprouts: result.state.bloomSprouts };
+  const index = kindIndex(result.kind);
+  // The visitor sowed this plot by hand, so the visit records it. Only the live
+  // action counts: `plantSeedInState` is the pure rehearsal and never reaches here.
+  const visit = visitOrZero(garden.visit);
+  garden = {
+    ...garden,
+    ...(index === 0 ? { sprouts: result.state.sprouts } : { bloomSprouts: result.state.bloomSprouts }),
+    visit: { ...visit, sown: visit.sown + 1 },
+  };
   writeStoredGarden(garden);
   notify();
   return { ok: true, reason: null, cost: result.cost, kind: result.kind };
