@@ -12,6 +12,12 @@
  * left to show for the rest of the game.
  */
 
+// The milestone ladder belongs to the simulation, not the picture: the plot
+// draws a crown from the very same function the readout and `get-state` are
+// built from, so what stands on the soil can never disagree with the number
+// beside it.
+import { MILESTONE_MULTIPLIER, kindMilestoneMultiplier } from "./garden.js";
+
 /**
  * The forms a garden passes through, lowest first. Each `at` is the growth at
  * which that form begins; the last one keeps filling past its own threshold
@@ -727,6 +733,33 @@ function drawTree(ctx, x, y, palette, index, growthTier, flowered, dx, foliage) 
 }
 
 /**
+ * The crown a plant wears once its kind has earned a milestone: a still golden
+ * crest across the top of its cell, one peak wider for each rung of the kind's
+ * ladder, so the doubled output the readout states stands on the plot itself.
+ *
+ * It reads no animation phase, so the reward holds in the single still frame
+ * reduced motion pins to, and it is drawn in the same sun the plot marks every
+ * event with, over a dark band that keeps it legible against the foliage.
+ */
+function drawMilestoneCrown(ctx, x, y, palette, tier) {
+  const peaks = tier + 2;
+  const spacing = 3;
+  const width = (peaks - 1) * spacing + 2;
+  const left = Math.round(x + CELL / 2 - width / 2);
+  const foot = y + 5;
+  // A dark band first, so the crest reads as a crown set on the plant rather
+  // than as flecks of light lost in the leaves behind it.
+  ctx.fillStyle = palette.soilDeep;
+  ctx.fillRect(left - 1, foot, width + 2, 1);
+  ctx.fillStyle = palette.sun;
+  for (let peak = 0; peak < peaks; peak += 1) {
+    // The middle peak stands a pixel taller, so the crest points upward.
+    const height = peak === Math.floor(peaks / 2) ? 4 : 3;
+    ctx.fillRect(left + peak * spacing, foot - height, 2, height);
+  }
+}
+
+/**
  * The marks a return leaves on the plot: a still sun tick over each cell whose
  * plant matured while away, and a still sun frame around the ground when the
  * garden reached a form it did not have.
@@ -859,6 +892,26 @@ export function pollinatorPlot(state) {
 }
 
 /**
+ * How many milestones each kind on the plot has earned, as
+ * `[herbTier, bloomTier]` — the degree of reward the plot draws on that kind's
+ * plants.
+ *
+ * The counts are the ones the plot already draws and `get-state` reports, and
+ * the degree is read off `kindMilestoneMultiplier` — the exact function behind
+ * the readout's milestone multiplier and the simulation's boost — so the crown
+ * on the plot can never drift from the figure beside it. It is the multiplier's
+ * logarithm in base `MILESTONE_MULTIPLIER`: 0 for a kind that has earned none,
+ * 1 for the first rung, and so on. Pure, so the tiers can be asserted without a
+ * canvas.
+ */
+export function plotMilestoneTiers(state) {
+  const { herbPlants, bloomPlants } = kindsOnPlot(state);
+  const tierOf = (index, plants) =>
+    Math.round(Math.log(kindMilestoneMultiplier(index, plants)) / Math.log(MILESTONE_MULTIPLIER));
+  return [tierOf(0, herbPlants), tierOf(1, bloomPlants)];
+}
+
+/**
  * Every mark the plot draws, in the order it draws them: one per grown plant
  * and one per ungrown seed the readout counts, herb before bloom in each pair.
  *
@@ -886,15 +939,25 @@ export function plotMarks(state) {
 
 /**
  * Draw one mark on the plot: a grown plant, an ungrown seed or a bloom's bud,
- * each in its own recognisable sprite, at the cell it landed on.
+ * each in its own recognisable sprite, at the cell it landed on. A grown plant
+ * whose kind has earned a milestone wears its crown over the sprite, so the
+ * reward is seen on the plot and not only stated in a label; a seed never does,
+ * because a milestone counts grown plants.
  */
-function drawMark(ctx, mark, palette, foliage, formIndex, growthTier, sway) {
+function drawMark(ctx, mark, palette, foliage, formIndex, growthTier, sway, milestoneTier) {
   const x = (mark.cell % COLUMNS) * CELL;
   const y = Math.floor(mark.cell / COLUMNS) * CELL;
+  if (mark.kind === "herb-seed") {
+    drawSeed(ctx, x, y, palette, sway, false);
+    return;
+  }
+  if (mark.kind === "bloom-seed") {
+    drawSeed(ctx, x, y, palette, sway, true);
+    return;
+  }
   if (mark.kind === "herb-plant") drawPlant(ctx, x, y, palette, foliage, formIndex, growthTier, sway);
-  else if (mark.kind === "bloom-plant") drawBloomPlant(ctx, x, y, palette, foliage, formIndex, growthTier, sway);
-  else if (mark.kind === "herb-seed") drawSeed(ctx, x, y, palette, sway, false);
-  else drawSeed(ctx, x, y, palette, sway, true); // the remaining kind, a bloom seed
+  else drawBloomPlant(ctx, x, y, palette, foliage, formIndex, growthTier, sway);
+  if (milestoneTier > 0) drawMilestoneCrown(ctx, x, y, palette, milestoneTier);
 }
 
 /**
@@ -906,7 +969,9 @@ function drawMark(ctx, mark, palette, foliage, formIndex, growthTier, sway) {
  * high-growth garden still visibly fills, the season the state names sets the
  * foliage colours and shape, and `plotMarks` says what stands on it — the grown
  * plants first, then the ungrown seeds, herb before bloom — and whether a
- * pollinator lives here and is out working the plants right now. The season is
+ * pollinator lives here and is out working the plants right now. A grown plant
+ * whose kind has reached a milestone wears a still crown over it, so the doubled
+ * output the readout states shows on the plot as well. The season is
  * read from `state.season.key`, which is the same value the readout and
  * `get-state` report, so the picture and the words cannot disagree. The same
  * state and phase always draw the same way, and every colour comes from the
@@ -961,8 +1026,14 @@ export function drawGarden(canvas, state, palette, phase = 0) {
     if (cellHash(cell) < cover.ratio) drawGroundGrowth(ctx, x, y, paint, cell);
   }
   // Every seed and plant the readout counts, drawn on its own cell. The herb
-  // plants stand first, then the blooms, then the seeds of each kind.
-  for (const mark of marks) drawMark(ctx, mark, paint, look.foliage, form.index, growthTier, swayPixels(phase, mark.cell));
+  // plants stand first, then the blooms, then the seeds of each kind. A grown
+  // plant of a kind that has earned a milestone wears a crown, so the doubled
+  // output the readout states is drawn on the plot too.
+  const tiers = plotMilestoneTiers(state);
+  for (const mark of marks) {
+    const tier = mark.kind === "herb-plant" ? tiers[0] : mark.kind === "bloom-plant" ? tiers[1] : 0;
+    drawMark(ctx, mark, paint, look.foliage, form.index, growthTier, swayPixels(phase, mark.cell), tier);
+  }
   // The garden's lasting structures stand in front of it: the wall its lifetime
   // has laid along the foot of the plot and a cairn per tier, so an established
   // garden reads as established at a glance and a replant does not erase what

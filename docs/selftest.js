@@ -113,6 +113,7 @@ import {
   motionPhase,
   plotBounds,
   plotMarks,
+  plotMilestoneTiers,
   pollinatorPlot,
   returnMarkCells,
   seasonLook,
@@ -2149,6 +2150,106 @@ function checkPlotSpritesLegible(problems) {
   }
   if (!cellHasColor(plotCanvas(planted({ plantCounts: [0, 1] })), palette.bloom, cell)) {
     problems.push("a grown bloom carries no bloom-coloured pixel, so it does not read as a bloom.");
+  }
+}
+
+/**
+ * A kind that has reached a plant milestone draws its plants in a form a kind
+ * that has not reached it does not: a still crown the readout's milestone
+ * multiplier accounts for.
+ *
+ * The tiers are read from the same `kindMilestoneMultiplier` the readout and
+ * `get-state` are built from, so the crown cannot drift from the number beside
+ * it, and the crown reads no animation phase, so it holds in the still frame
+ * reduced motion pins to and a visitor sees the reward the moment it is earned.
+ */
+function checkPlotMilestoneCrowns(problems) {
+  // The ladder itself: one tier per rung earned, and no crown below the first.
+  const ladder = [
+    ["9 herb plants", { plantCounts: [9, 0] }, [0, 0]],
+    ["10 herb plants", { plantCounts: [10, 0] }, [1, 0]],
+    ["25 herb plants", { plantCounts: [25, 0] }, [2, 0]],
+    ["14 bloom plants", { plantCounts: [0, 14] }, [0, 0]],
+    ["15 bloom plants", { plantCounts: [0, 15] }, [0, 1]],
+  ];
+  for (const [label, state, expected] of ladder) {
+    const tiers = plotMilestoneTiers(state);
+    if (tiers[0] !== expected[0] || tiers[1] !== expected[1]) {
+      problems.push(
+        `a garden of ${label} reports milestone tiers [${tiers}], expected [${expected}]; a crown must appear exactly ` +
+          "when a rung is reached."
+      );
+    }
+  }
+  // A caller that only knew the one kind's total still earns the first kind's
+  // crown, exactly as `kindsOnPlot` draws its plants.
+  const legacy = plotMilestoneTiers({ plants: 10 })[0];
+  if (legacy !== 1) {
+    problems.push(
+      `a state with a bare 10-plant total reports milestone tier ${legacy}, expected 1, so the crown is lost on a ` +
+        "caller that counts plants the old way."
+    );
+  }
+
+  // The tiers are the readout's own milestone multiplier: the plot and the
+  // number beside it are derived from one function and cannot disagree.
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  try {
+    setGarden({ seeds: 0, plantCounts: [25, 15], beds: 1 });
+    setGrowth(1e2, 0);
+    const live = getDisplayedState();
+    const tiers = plotMilestoneTiers(live);
+    const expected = live.kinds.map((kind) =>
+      Math.round(Math.log(kind.milestoneMultiplier) / Math.log(MILESTONE_MULTIPLIER))
+    );
+    for (const index of [0, 1]) {
+      if (tiers[index] !== expected[index]) {
+        problems.push(
+          `get-state reports the ${live.kinds[index].name}'s milestone multiplier ` +
+            `${live.kinds[index].milestoneMultiplier} (tier ${expected[index]}) but the plot draws tier ${tiers[index]}, ` +
+            "so the crown and the readout disagree."
+        );
+      }
+    }
+  } finally {
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime, growthBefore.bonus);
+  }
+
+  // The picture itself: two gardens differing only in crossing the herb
+  // threshold draw differently at the still frame reduced motion pins to, and
+  // the crowned one carries the crown's own colour on its plant's cell.
+  const palette = readPalette();
+  const before = { growth: 0, beds: 1, seeds: 0, plantCounts: [9, 0], pollinator: { visiting: false } };
+  const earned = { ...before, plantCounts: [10, 0] };
+  const cell = plotBounds(earned).cell;
+  if (!cellHasColor(plotCanvas(earned, 0), palette.sun, cell, 0)) {
+    problems.push(
+      "a kind at its first plant milestone drew no crown-coloured pixel on its plant, so the reward the readout " +
+        "states is not visible on the plot."
+    );
+  }
+  if (cellHasColor(plotCanvas(before, 0), palette.sun, cell, 0)) {
+    problems.push(
+      "a kind below its first plant milestone already drew a crown-coloured pixel, so the crown does not mark a " +
+        "milestone."
+    );
+  }
+  const crown = changedBoxInCell(plotCanvas(before, 0), plotCanvas(earned, 0), cell, 0);
+  if (crown.width === 0 || crown.height === 0) {
+    problems.push(
+      "crossing the first plant milestone changed nothing inside the plant's cell, so a kind that earned a " +
+        "milestone looks exactly like one that has not."
+    );
+  }
+  // The crown is drawn from the milestone alone, not the animation: it is on
+  // the plant at another phase too, so reduced motion and a still frame keep it.
+  if (!cellHasColor(plotCanvas(earned, 3), palette.sun, cell, 0)) {
+    problems.push(
+      "the milestone crown vanished at another animation phase, so it relies on the breathing frame instead of " +
+        "standing on its own."
+    );
   }
 }
 
@@ -7267,6 +7368,7 @@ export async function checks() {
     checkPlotDrawing(problems);
     checkPlotDrawsKinds(problems);
     checkPlotSpritesLegible(problems);
+    checkPlotMilestoneCrowns(problems);
     checkPlotMarksMatchCounts(problems);
     checkPlotCoverage(problems);
     checkPlotEstablishment(problems);
