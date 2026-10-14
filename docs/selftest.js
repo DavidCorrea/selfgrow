@@ -1991,6 +1991,21 @@ function cellHasColor(canvas, color, cell, column = 0) {
 }
 
 /**
+ * The first pixel of any of `colorKeys` in a plot render, as its rgb key, or
+ * null when the whole picture carries none of them. Used to prove a colour is
+ * absent — a growing thing's leaf green must not appear where nothing grows.
+ */
+function firstPixelOfColors(canvas, colorKeys) {
+  const data = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] === 0) continue;
+    const key = `${data[i]},${data[i + 1]},${data[i + 2]}`;
+    if (colorKeys.has(key)) return key;
+  }
+  return null;
+}
+
+/**
  * The soil is one field of ground, not a grid of identical tiles.
  *
  * Each cell carries its own small marks — a furrow, a damp patch, a pebble, a
@@ -2406,6 +2421,93 @@ function checkPlotCoverage(problems) {
   if (low === bareWithPlant) {
     problems.push(
       "a stand of plants drew the same picture as bare soil with one plant, so the growth does not fill the plot."
+    );
+  }
+}
+
+/**
+ * Ground is never drawn as growth: no mark of bare soil or of the garden's own
+ * ground cover wears the leaf green a seed or a plant carries, in any season,
+ * and the cover stays far shorter than the smallest growing thing, so a covered
+ * plot cannot read as a field of plants.
+ *
+ * The cover blades are the one ground layer a visitor could otherwise mistake
+ * for a sprout, so this pins both its colour — soil tones only — and its height,
+ * measured against an ungrown seed's sprite from the very same
+ * `changedBoxInCell` the seed's own legibility check uses.
+ */
+function checkGroundIsNotGrowth(problems) {
+  const palette = readPalette();
+  const leafKeys = new Set(
+    [
+      palette.leaf,
+      palette.leafLight,
+      palette.leafDeep,
+      ...Object.values(palette.leafSeasons).flatMap((trio) => [trio.leaf, trio.leafLight, trio.leafDeep]),
+    ].map((color) => colorKey(parseColor(color)))
+  );
+
+  const bare = { growth: 0, beds: 1, seeds: 0, plants: 0, pollinator: { visiting: false } };
+  // One form-row up from bare soil (a seedling), so the canvas is the same size
+  // and a covered plot differs from a bare one in the ground cover alone.
+  const covered = { ...bare, growth: 99 };
+
+  // A covered, plantless plot carries no leaf green in any season: its soil
+  // marks and its ground cover are drawn in the soil's tones only.
+  for (const season of [null, ...SEASONS.map((entry) => entry.key)]) {
+    const state = season ? { ...covered, season: { key: season } } : covered;
+    const leafPixel = firstPixelOfColors(plotCanvas(state), leafKeys);
+    if (leafPixel) {
+      problems.push(
+        `a covered plot with no ungrown seed or grown plant draws a leaf-green pixel rgb(${leafPixel}) ` +
+          (season ? `in ${season}` : "with no season") +
+          ", so a mark of bare soil or ground cover reads as a growing thing."
+      );
+    }
+  }
+
+  // The same plot with one plant does carry leaf green, so the sprite stands out
+  // of plainly-read ground rather than the ground masking it.
+  if (!firstPixelOfColors(plotCanvas({ ...covered, plants: 1 }), leafKeys)) {
+    problems.push(
+      "a covered plot with one grown plant draws no leaf-green pixel, so a plant cannot be told from the ground it stands on."
+    );
+  }
+
+  // The ground cover rises only a few pixels off each cell's foot, and strictly
+  // less than the sprite of an ungrown seed — the smallest growing thing the
+  // panel counts — so a covered plot does not read as a field of plants.
+  const bareCanvas = plotCanvas(bare);
+  const coveredCanvas = plotCanvas(covered);
+  const width = Math.min(bareCanvas.width, coveredCanvas.width);
+  const height = Math.min(bareCanvas.height, coveredCanvas.height);
+  const before = bareCanvas.getContext("2d").getImageData(0, 0, width, height).data;
+  const after = coveredCanvas.getContext("2d").getImageData(0, 0, width, height).data;
+  const cell = plotBounds(bare).cell;
+  let tallestCover = 0;
+  let changed = 0;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const i = (y * width + x) * 4;
+      if (before[i] === after[i] && before[i + 1] === after[i + 1] && before[i + 2] === after[i + 2] && before[i + 3] === after[i + 3]) {
+        continue;
+      }
+      changed += 1;
+      const rise = (Math.floor(y / cell) + 1) * cell - y;
+      if (rise > tallestCover) tallestCover = rise;
+    }
+  }
+  if (changed === 0) {
+    problems.push("a covered plot drew the same soil as a bare one, so the garden's growth is not drawn on the plot at all.");
+    return;
+  }
+  const seedHeight = changedBoxInCell(plotCanvas({ ...bare, seeds: 1 }), bareCanvas, cell, 0).height;
+  if (seedHeight === 0) {
+    problems.push("an ungrown seed drew nothing on the plot, so its height cannot be compared with the ground cover.");
+  } else if (tallestCover >= seedHeight) {
+    problems.push(
+      `the ground cover rises ${tallestCover}px above a cell's foot, no shorter than the ${seedHeight}px an ungrown ` +
+        "seed stands, so a covered plot reads as a field of plants."
     );
   }
 }
@@ -7371,6 +7473,7 @@ export async function checks() {
     checkPlotMilestoneCrowns(problems);
     checkPlotMarksMatchCounts(problems);
     checkPlotCoverage(problems);
+    checkGroundIsNotGrowth(problems);
     checkPlotEstablishment(problems);
     checkSoilField(problems);
     checkPlotAnimation(problems);

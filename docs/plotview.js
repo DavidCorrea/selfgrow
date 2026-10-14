@@ -445,30 +445,36 @@ function drawSoil(ctx, x, y, palette, foliage, face, cell, occupied) {
     ctx.fillRect(x + face.pebbleX, y + face.pebbleY + 2, 3, 1);
   }
   if (face.weed && !occupied) {
-    // A low tuft, well short of a planted sprite, so the soil reads as weedy
-    // ground rather than as another plant standing on it.
-    ctx.fillStyle = palette.leafDeep;
+    // A low tuft in the soil's own dark and light tones: it reads as weedy
+    // ground, and never wears the leaf green of a growing thing, so no mark of
+    // bare soil can be mistaken for a seed or a plant standing beside it.
+    ctx.fillStyle = palette.soilDeep;
     ctx.fillRect(x + face.weedX, y + CELL - 3, 1, 3);
     ctx.fillRect(x + face.weedX + 2, y + CELL - 4, 1, 4);
-    ctx.fillStyle = palette.leafLight;
+    ctx.fillStyle = palette.soilLight;
     ctx.fillRect(x + face.weedX + 2, y + CELL - 5, 1, 1);
   }
   if (foliage === "turning" && cell % 3 === 1) {
-    ctx.fillStyle = palette.leafDeep;
+    // Fallen leaves on the turned ground, in the soil's two tones rather than
+    // the season's leaf green: the ground may not share the colour of the
+    // plants growing out of it.
+    ctx.fillStyle = palette.soilDeep;
     ctx.fillRect(x + 5, y + CELL - 8, 3, 2);
-    ctx.fillStyle = palette.leafLight;
+    ctx.fillStyle = palette.soilLight;
     ctx.fillRect(x + CELL - 9, y + CELL - 12, 3, 2);
   }
 }
 
 /**
- * The low growth the garden's own form lays over a covered cell: short blades of
- * young leaf spread across the soil.
+ * The low growth the garden's own form lays over a covered cell: short blades the
+ * garden has taken the soil with.
  *
- * It is drawn in the season's own leaf colours and kept well below the planted
- * sprites, so it reads as ground the garden has taken rather than a plant — and
- * the taller herb and bloom silhouettes still stand out of it. `cell` varies
- * the blades, so a filled plot looks like many shoots and not one stamp.
+ * It is drawn in the soil's own dark and light tones — never the leaf green a
+ * seed or a plant carries — and kept far shorter and flatter than any planted
+ * sprite, so it reads as ground the garden has covered rather than a field of
+ * plants, and the taller herb and bloom silhouettes still stand out of it.
+ * `cell` varies the blades, so a filled plot looks like many shoots and not one
+ * stamp.
  */
 function drawGroundGrowth(ctx, x, y, palette, cell) {
   const base = y + CELL;
@@ -477,10 +483,10 @@ function drawGroundGrowth(ctx, x, y, palette, cell) {
   for (let i = 0; i < 4; i += 1) {
     const across = 2 + i * 5 + Math.floor(cellHash(cell + i * 29) * 3);
     const height = 2 + Math.floor(cellHash(cell + i * 71) * 3);
-    ctx.fillStyle = palette.leaf;
+    ctx.fillStyle = palette.soilDeep;
     ctx.fillRect(x + across, base - height, 2, height);
   }
-  ctx.fillStyle = palette.leafLight;
+  ctx.fillStyle = palette.soilLight;
   ctx.fillRect(x + 3, base - 3, 4, 1);
   ctx.fillRect(x + CELL - 9, base - 4, 5, 1);
 }
