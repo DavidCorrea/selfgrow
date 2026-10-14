@@ -9,7 +9,9 @@
  * time panel — the last but one tending, planting and opening a bed inside the
  * rehearsal rather than the real garden; `export-save` is the Copy save button; `import-save` is the Load save button —
  * a two-step, so a call without a confirmation previews what a load would
- * replace and writes nothing, and only a call with `confirm: true` loads it.
+ * replace and writes nothing, and only a call with `confirm: true` loads it;
+ * `restore-save` is the Restore previous garden button — the one undo for a
+ * load.
  */
 
 import {
@@ -23,6 +25,7 @@ import {
   openSandbox,
   previewGardenSave,
   resetSandbox,
+  restoreGardenSave,
   sandboxSpanSeconds,
 } from "./app.js";
 import { SEED_KINDS, openBed, plantSeed, replant, tend } from "./garden.js";
@@ -83,8 +86,11 @@ export function tools() {
         "(capacity = beds times the plots per bed), the growing time a seed " +
         "takes (growSeconds), the seconds until the next seed matures into a " +
         "plant (secondsToNextPlant, null when no seed is growing), the " +
-        "portable save string, and whether this browser is keeping the " +
-        "garden. It reports the two kinds of seed a visitor can plant as " +
+        "portable save string, whether this browser is keeping the garden, " +
+        "and whether a load can still be put back (restoreAvailable — true " +
+        "only while a garden a load replaced is kept, which restore-save " +
+        "spends and another load replaces). It reports the two kinds of seed " +
+        "a visitor can plant as " +
         "`kinds`, herb first: each entry carries the kind's name (key), the " +
         "price of its next seed (cost), how much one grown plant adds to the " +
         "growth rate before milestones (production) and what it actually " +
@@ -448,6 +454,30 @@ export function tools() {
           return { ok: true, applied: false, needsConfirmation: true, preview, state: getDisplayedState() };
         }
         return { ...loadGardenSave(text), applied: true, preview };
+      },
+    },
+    {
+      name: "restore-save",
+      title: "Restore the garden the last load replaced",
+      description:
+        "Does what the page's Restore previous garden button does, and is the " +
+        "one undo for import-save: it puts back the garden the most recent " +
+        "load replaced — the same growth, seeds, plants, beds, lifetime and " +
+        "lasting bonus it had — and writes it to this browser, so a wrong or " +
+        "regretted load costs the visitor nothing. get-state's restoreAvailable " +
+        "says whether there is such a garden: it is true only after a load has " +
+        "replaced one this session, and false once this tool has spent it or " +
+        "another load has replaced it. Safe to repeat: the first call spends " +
+        "the kept garden, so a second call changes nothing and reports " +
+        "restored: false with the reason. Returns whether it restored, what " +
+        "came back (restoredContents: growth, seeds, plants, beds and " +
+        "lifetime), whether the browser kept it (persisted), and the state " +
+        "afterwards.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      annotations: { readOnlyHint: false, consequentialHint: true },
+      example: {},
+      async execute() {
+        return restoreGardenSave();
       },
     },
   ];
