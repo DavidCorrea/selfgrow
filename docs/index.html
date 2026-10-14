@@ -216,11 +216,15 @@
                 <dd class="readout-value" data-field="pollinator">none visiting · boost x2 while visiting · visit 1m every 3m · each bloom +10s · max 2m 30s</dd>
               </div>
               <!-- What a long absence changed, labelled and paired with the
-                   still marks on the plot. Shown only until the visitor acts
-                   or it times out, so the readout stays uncluttered. -->
+                   still marks on the plot. It stays until the visitor acts on
+                   the garden or dismisses it, so the evidence of the absence
+                   is never lost to a timer. -->
               <div class="readout-row" id="return-marks-row" hidden>
                 <dt class="readout-term">New since you left</dt>
-                <dd class="readout-value" data-field="return-marks"></dd>
+                <dd class="readout-value return-marks-value">
+                  <span data-field="return-marks"></span>
+                  <button type="button" class="btn return-dismiss" id="dismiss-return">Dismiss</button>
+                </dd>
               </div>
               <!-- State that is implied by the goal above it reaches a screen
                    reader without taking a line of the one screen. -->
