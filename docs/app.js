@@ -155,6 +155,7 @@ const elements = {
   gardenStatus: document.getElementById("garden-status"),
   returnMarks: document.querySelector('[data-field="return-marks"]'),
   returnMarksRow: document.getElementById("return-marks-row"),
+  dismissReturn: document.getElementById("dismiss-return"),
   save: document.getElementById("save-value"),
   copy: document.getElementById("copy-save"),
   load: document.getElementById("load-save"),
@@ -453,14 +454,12 @@ export function exportSave() {
 let lastReturn = null;
 
 /**
- * What the last return marked on the garden, shown until the visitor acts or it
- * times out, so a returning player sees the change rather than reading about it.
+ * What the last return marked on the garden, shown until the visitor
+ * acknowledges it — by taking a garden action or pressing the dismiss control.
+ * It never clears on its own, so a returning player can look at the change in
+ * their own time rather than lose it to a timer.
  */
 let returnMarks = null;
-let returnMarkTimer = null;
-// The marks clear on their own after a short while, so a returning player who
-// does not act still finds the garden uncluttered.
-const RETURN_MARK_MS = 30000;
 
 /** Write the garden and the moment it was written, so time away can be counted. */
 function persist(nowMs = Date.now()) {
@@ -651,15 +650,12 @@ export function returnMarkFor(away, minSeconds) {
 }
 
 /**
- * Drop the return marks and stop their timer, redrawing so the plot and the
- * readout stop showing them. A no-op when nothing is marked, so any action can
- * call it freely.
+ * Drop the return marks, redrawing so the plot and the readout stop showing
+ * them. This is the acknowledgement: a garden action, a load, or the dismiss
+ * control calls it, and nothing else ever does. A no-op when nothing is marked,
+ * so any action can call it freely.
  */
 export function clearReturnMarks() {
-  if (returnMarkTimer !== null) {
-    clearTimeout(returnMarkTimer);
-    returnMarkTimer = null;
-  }
   if (returnMarks === null) return;
   returnMarks = null;
   render();
@@ -720,11 +716,11 @@ export function applyReturn(saved, lastSeenMs, nowMs) {
   }
 
   lastReturn = away;
-  // Mark what the absence changed until the visitor notices, then let it clear
-  // on its own after a short while so the garden never stays cluttered.
+  // Mark what the absence changed and keep it until the visitor acknowledges it
+  // — by tending, planting, opening a bed, replanting, loading a save, or
+  // pressing the dismiss control — so a return can be looked at in the
+  // visitor's own time rather than vanishing on a timer.
   returnMarks = returnMarkFor(away, MIN_AWAY_SECONDS);
-  if (returnMarkTimer !== null) clearTimeout(returnMarkTimer);
-  returnMarkTimer = returnMarks ? setTimeout(clearReturnMarks, RETURN_MARK_MS) : null;
   showReturnSummary(away);
   lastAnnounced = null;
   render();
@@ -1834,6 +1830,13 @@ function start() {
   });
   // Keep growing (or Esc) is a pure no-op: it closes the dialog and nothing else.
   elements.replantCancel?.addEventListener("click", () => elements.replantDialog?.close());
+  // The dismiss control acknowledges the return without touching the garden:
+  // the same clear the actions do, and the only way to clear marks when the
+  // visitor does not want to act yet.
+  elements.dismissReturn?.addEventListener("click", () => {
+    clearReturnMarks();
+    announce("Return notice dismissed.");
+  });
   elements.copy?.addEventListener("click", copySave);
   elements.load?.addEventListener("click", openLoadDialog);
   elements.loadConfirm?.addEventListener("click", loadPreviewedSave);

@@ -570,6 +570,29 @@ body {
   box-shadow: inset 3px 3px 0 var(--panel-light), inset -3px -3px 0 var(--ink-soft);
 }
 
+/* The marks a return left and the control that dismisses them share one row:
+   the note reads at the readout's size, the dismiss press sits beside it. The
+   row takes the full width — it is a rare, transient fact with a control of its
+   own, and half a phone's width wraps it to several lines. */
+#return-marks-row {
+  grid-column: 1 / -1;
+}
+
+.return-marks-value {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+/* A smaller press than the garden's main actions, but still a thumb-sized
+   target, so dismissing is as reachable as the actions beside it. */
+.return-dismiss {
+  min-height: 40px;
+  padding: 6px 14px;
+  font-size: 13px;
+}
+
 .goal {
   margin-top: 16px;
   padding-top: 14px;

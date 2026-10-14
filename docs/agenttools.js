@@ -4,7 +4,8 @@
  * Derived from what the page shows a visitor and what it lets them do — nothing
  * more. `get-state` returns every value on the page; `tend` is the Tend the soil
  * button; `plant-seed` is the Plant a seed button; `open-bed` is the Open the
- * next bed button; `replant` is the Replant the garden button; `open-sandbox`,
+ * next bed button; `replant` is the Replant the garden button; `dismiss-return`
+ * is the Dismiss control beside the New since you left marks; `open-sandbox`,
  * `fast-forward-sandbox`, `act-in-sandbox` and `reset-sandbox` are the Rehearse
  * time panel — the last but one tending, planting and opening a bed inside the
  * rehearsal rather than the real garden; `export-save` is the Copy save button; `import-save` is the Load save button —
@@ -132,9 +133,10 @@ export function tools() {
         "{label, value}). It also " +
         "reports returnMarks: what the last return marked on the plot and the " +
         "readout — how many plants matured (plants) and whether a new form was " +
-        "reached (form), or null once the marks clear (a first visit or a quick " +
-        "reload marks nothing, and any of tend, plant-seed, open-bed or " +
-        "import-save clears the marks). It also " +
+        "reached (form), or null once the marks clear. A first visit or a quick " +
+        "reload marks nothing, and the marks never clear on a timer: they stay " +
+        "until the visitor acknowledges the return, which tend, plant-seed, " +
+        "open-bed, replant, import-save or dismiss-return all do. It also " +
         "reports sandbox: the time rehearsal when one is open — how many " +
         "seconds it has been wound forward and a readable elapsed label, the " +
         "growth, form, ungrown seeds and grown plants it reached, how many " +
@@ -271,6 +273,27 @@ export function tools() {
           lifetime: result.lifetime,
           state: getDisplayedState(),
         };
+      },
+    },
+    {
+      name: "dismiss-return",
+      title: "Dismiss the return notice",
+      description:
+        "Does what the page's Dismiss control beside the New since you left " +
+        "marks does: acknowledges the last return and clears its marks from " +
+        "the plot and the readout, without changing the garden itself. The " +
+        "marks never clear on their own, so use this when a visitor has seen " +
+        "what the absence grew and wants the readout uncluttered; any garden " +
+        "action (tend, plant-seed, open-bed, replant) or import-save clears " +
+        "them too. get-state's returnMarks says whether there is anything to " +
+        "dismiss. Safe to repeat: with nothing marked it changes nothing. " +
+        "Returns the state afterwards, whose returnMarks is null.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      annotations: { readOnlyHint: false },
+      example: {},
+      async execute() {
+        clearReturnMarks();
+        return getDisplayedState();
       },
     },
     {

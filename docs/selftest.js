@@ -5411,10 +5411,31 @@ function checkReturnMarks(problems) {
   const DAY = 86400;
   const row = document.getElementById("return-marks-row");
   const field = document.querySelector('[data-field="return-marks"]');
+  const dismiss = document.getElementById("dismiss-return");
   if (!row || !field) {
     problems.push(
       'the page has no return-marks readout row (#return-marks-row / [data-field="return-marks"]).'
     );
+  }
+  // A return is acknowledged by a visible, keyboard-reachable press, not only by
+  // acting on the garden — the button is the visitor's way out when they have
+  // seen what the absence grew and do not want to act yet.
+  if (!dismiss || dismiss.tagName.toLowerCase() !== "button") {
+    problems.push(
+      "the page has no dismiss-return button, so a visitor cannot acknowledge the return notice without acting on the garden."
+    );
+  } else {
+    if (dismiss.disabled) {
+      problems.push("the dismiss-return control is disabled, so a visitor cannot press it.");
+    }
+    if (!dismiss.textContent.trim()) {
+      problems.push("the dismiss-return button has no visible label saying what it dismisses.");
+    }
+    if (row && !row.contains(dismiss)) {
+      problems.push(
+        "the dismiss-return button is outside the New since you left row, so it is not shown beside the marks it clears."
+      );
+    }
   }
   try {
     // A first visit or a quick reload marks nothing, even if a seed matured in
@@ -5435,7 +5456,26 @@ function checkReturnMarks(problems) {
     setGarden({ seeds: 2, plants: 1 });
     setGrowth(saved.growth, saved.rate);
     const nowMs = 1_700_000_000_000;
-    const away = applyReturn(saved, nowMs - 30 * DAY * 1000, nowMs);
+    // A return must never schedule its own clearing: the marks stay until the
+    // visitor acknowledges them. Watch every timer the return arms and fail if
+    // any of them would clear the marks.
+    const originalSetTimeout = window.setTimeout;
+    const armed = [];
+    window.setTimeout = function captureTimeout(handler, ...rest) {
+      armed.push(handler);
+      return originalSetTimeout.call(window, handler, ...rest);
+    };
+    let away;
+    try {
+      away = applyReturn(saved, nowMs - 30 * DAY * 1000, nowMs);
+    } finally {
+      window.setTimeout = originalSetTimeout;
+    }
+    if (armed.some((handler) => handler === clearReturnMarks || String(handler).includes("clearReturnMarks"))) {
+      problems.push(
+        "a 30-day return armed a timer to clear its marks, so they vanish on their own instead of waiting for the visitor to acknowledge them."
+      );
+    }
     const marks = returnMarkFor(away, MIN_AWAY_SECONDS);
     if (!marks) {
       problems.push("a 30-day return marked nothing; the matured seeds and the new form should be marked.");
@@ -5481,7 +5521,25 @@ function checkReturnMarks(problems) {
       problems.push("the plot drew the same picture with and without the return marks, so the growth did not show on it.");
     }
 
-    // Acting on the garden clears the marks, the readout and the plot together.
+    // The dismiss control acknowledges the return without touching the garden,
+    // clearing the marks, the readout and the plot together.
+    dismiss?.click();
+    const dismissed = getDisplayedState();
+    if (dismissed.returnMarks !== null) {
+      problems.push(
+        `the dismiss-return control left returnMarks ${JSON.stringify(dismissed.returnMarks)}; dismissing must clear them.`
+      );
+    }
+    if (row && !row.hidden) {
+      problems.push("the dismiss-return control left the New since you left row showing.");
+    }
+
+    // Acting on the garden acknowledges the return too, so dismissing is not
+    // the only way out. Put a return back and tend the soil.
+    applyReturn(saved, nowMs - 30 * DAY * 1000, nowMs);
+    if (getDisplayedState().returnMarks === null) {
+      problems.push("a second 30-day return marked nothing, so the action-clears-the-marks check could not run.");
+    }
     document.getElementById("tend")?.click();
     const cleared = getDisplayedState();
     if (cleared.returnMarks !== null) {
@@ -6739,6 +6797,44 @@ async function checkAgentTools(problems) {
     } finally {
       setGarden(gardenBefore);
       setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime, growthBefore.bonus);
+      restoreRawStorage(storageBefore);
+    }
+  }
+
+  const dismissTool = find("dismiss-return");
+  if (!dismissTool) {
+    problems.push(
+      "agenttools.js has no dismiss-return tool, so an agent cannot do what the page's Dismiss control does."
+    );
+  } else {
+    if (dismissTool.annotations?.readOnlyHint !== false) {
+      problems.push("dismiss-return must be annotated readOnlyHint: false — it clears the return marks.");
+    }
+    const gardenBefore = getGarden();
+    const growthBefore = getGrowthState();
+    const storageBefore = rawStorage();
+    try {
+      // A return leaves marks; the tool acknowledges them and reports the clear,
+      // matching what the plot and the readout now show.
+      const saved = { version: SAVE_VERSION, seeds: 2, plants: 1, growth: 0, rate: 0.5 };
+      setGarden({ seeds: 2, plants: 1 });
+      setGrowth(saved.growth, saved.rate);
+      const nowMs = 1_700_000_000_000;
+      applyReturn(saved, nowMs - 30 * 86400 * 1000, nowMs);
+      if (getDisplayedState().returnMarks === null) {
+        problems.push("a 30-day return before the dismiss-return tool marked nothing, so the tool could not be checked.");
+      } else {
+        const result = await dismissTool.execute({}, {});
+        if (result.returnMarks !== null || getDisplayedState().returnMarks !== null) {
+          problems.push(
+            `the dismiss-return tool returned returnMarks ${JSON.stringify(result.returnMarks)}; dismissing must clear them.`
+          );
+        }
+      }
+    } finally {
+      clearReturnMarks();
+      setGarden(gardenBefore);
+      setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
       restoreRawStorage(storageBefore);
     }
   }
