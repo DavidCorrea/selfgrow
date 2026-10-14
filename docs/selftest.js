@@ -86,6 +86,7 @@ import {
   buildAwayReport,
   clearReturnMarks,
   describeAnnouncements,
+  describePlot,
   exportSave,
   fastForwardSandbox,
   formatAmount,
@@ -121,6 +122,7 @@ import {
   returnMarkCells,
   seasonLook,
   soilFace,
+  tendedMarkCells,
 } from "./plotview.js";
 
 // The design system is itself a promise: one palette, two embedded pixel fonts
@@ -6146,6 +6148,151 @@ function checkVisitRecord(problems) {
 }
 
 /**
+ * The plots the visitor sowed by hand carry a mark ground the garden sowed on
+ * its own never does, so a garden the visitor worked reads differently from one
+ * they only watched.
+ *
+ * `tendedMarkCells` is the picture's own reading of the visitor's hand-work:
+ * the visit record counts how many plots they sowed, so the first that many
+ * occupied cells carry a standing sign — a subset of the marks `plotMarks`
+ * draws, bounded by the cells on screen. The sign reads no animation phase, so
+ * it shows in the still frame reduced motion pins to and changes only with the
+ * hand-work; a replant clears the visit with the rest of the plot, and so clears
+ * the signs; the plot's description and `get-state` name the same count.
+ */
+function checkTendedMarks(problems) {
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const storageBefore = rawStorage();
+
+  try {
+    // A garden nothing has been sowed by hand carries no sign, and the marks
+    // land on occupied cells only, never twice on one, and never past the cells
+    // the plot has.
+    const sownNothing = { growth: 0, beds: 1, capacity: PLOT_CAPACITY, seeds: 3, plants: 0 };
+    if (tendedMarkCells(sownNothing).length !== 0) {
+      problems.push(
+        `a garden with no hand-sown plots drew ${tendedMarkCells(sownNothing).length} tended signs; it must draw none.`
+      );
+    }
+    const sownFive = {
+      ...sownNothing,
+      seeds: 8,
+      visit: { seconds: 0, sown: 5, tended: 0 },
+    };
+    const marked = new Set(plotMarks(sownFive).map((mark) => mark.cell));
+    const cells = tendedMarkCells(sownFive);
+    if (cells.length !== 5) {
+      problems.push(`a garden whose visit sowed 5 plots drew ${cells.length} tended signs; it must draw 5.`);
+    }
+    if (new Set(cells).size !== cells.length) {
+      problems.push(`two tended signs landed on one plot cell (${JSON.stringify(cells)}); each plot carries at most one.`);
+    }
+    for (const cell of cells) {
+      if (!marked.has(cell)) {
+        problems.push(`a tended sign landed on empty plot cell ${cell}, which carries no seed or plant.`);
+      }
+    }
+
+    // The count is bounded by the cells on screen, so a save that sowed more
+    // plots than the picture holds signs a bounded number of them.
+    const huge = {
+      growth: 1e12,
+      beds: 5000,
+      capacity: 60000,
+      plantCounts: [1e12, 0],
+      seedCounts: [1e12, 0],
+      visit: { seconds: 0, sown: 1e12, tended: 0 },
+    };
+    const hugeCells = tendedMarkCells(huge);
+    const hugeBounds = plotBounds(huge);
+    if (hugeCells.length !== hugeBounds.cells) {
+      problems.push(
+        `a garden that sowed 1e12 plots drew ${hugeCells.length} tended signs over ${hugeBounds.cells} cells; the signs ` +
+          "must be bounded by the plot."
+      );
+    }
+
+    // The sign shows in the picture: the same garden with one hand-sown plot
+    // differs from the same garden with none, and only on the plot the sign
+    // landed on — nothing else about the state changed.
+    const oneSown = { ...sownFive, seeds: 3, visit: { seconds: 0, sown: 1, tended: 0 } };
+    const noneSown = { ...oneSown, visit: { seconds: 0, sown: 0, tended: 0 } };
+    const bounds = plotBounds(oneSown);
+    const before = plotCanvas(noneSown, 0);
+    const after = plotCanvas(oneSown, 0);
+    const differing = new Set();
+    {
+      const a = before.getContext("2d").getImageData(0, 0, before.width, before.height).data;
+      const b = after.getContext("2d").getImageData(0, 0, after.width, after.height).data;
+      for (let y = 0; y < bounds.height; y += 1) {
+        for (let x = 0; x < bounds.width; x += 1) {
+          const i = (y * bounds.width + x) * 4;
+          if (a[i] === b[i] && a[i + 1] === b[i + 1] && a[i + 2] === b[i + 2] && a[i + 3] === b[i + 3]) continue;
+          differing.add(Math.floor(y / bounds.cell) * bounds.columns + Math.floor(x / bounds.cell));
+        }
+      }
+    }
+    if (differing.size === 0) {
+      problems.push("the plot drew the same picture for a garden with a hand-sown plot and one without, so the sign is not drawn.");
+    } else if (differing.size !== 1 || !differing.has(0)) {
+      problems.push(
+        `the hand-work changed plot cells ${JSON.stringify([...differing].sort())}; it must change only the cell of the ` +
+          "hand-sown plot (cell 0)."
+      );
+    }
+    // The sign reads no phase, so a still frame draws it whatever the motion
+    // preference — the fixed frame reduced motion pins to.
+    if (plotImage(oneSown, 0) !== plotImage(oneSown, 0)) {
+      problems.push("the same hand-sown garden drew two different plots, so the tended sign is not a still frame.");
+    }
+
+    // The picture's description and `get-state` name the same count as the
+    // signs drawn: for a garden under the grid cap, all three are visit.sown.
+    setGarden(newGarden());
+    setGrowth(0, 0);
+    setGarden({ beds: 1, seeds: 3, visit: { seconds: 10, sown: 2, tended: 0 } });
+    const shown = getDisplayedState();
+    const worked = tendedMarkCells(shown).length;
+    if (shown.visit.sown !== 2 || worked !== 2) {
+      problems.push(
+        `a garden whose visit sowed 2 plots reports visit.sown ${shown.visit.sown} and draws ${worked} signs; both must be 2.`
+      );
+    }
+    const description = describePlot(shown);
+    const expected = `${formatAmount(worked)} ${worked === 1 ? "plot" : "plots"} sowed by hand`;
+    if (!description.includes(expected)) {
+      problems.push(
+        `the plot description ${JSON.stringify(description)} does not name the ${expected} the picture draws.`
+      );
+    }
+
+    // A replant clears the signs with the rest of the plot: the visit goes to
+    // zero and no cell carries a tended mark.
+    setGarden(newGarden());
+    setGrowth(1e5, 0, 0, 100);
+    plantSeed("herb");
+    if (tendedMarkCells(getDisplayedState()).length !== 1) {
+      problems.push("a hand-planted plot did not raise a tended sign, so the replant check could not run.");
+    }
+    if (!replant().ok) {
+      problems.push("checkTendedMarks could not replant an eligible garden to test that a replant clears the signs.");
+    }
+    const afterReplant = getDisplayedState();
+    if (afterReplant.visit.sown !== 0 || tendedMarkCells(afterReplant).length !== 0) {
+      problems.push(
+        `a replant left visit.sown ${afterReplant.visit.sown} and ${tendedMarkCells(afterReplant).length} tended signs; ` +
+          "a replant must clear the signs with the plot."
+      );
+    }
+  } finally {
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime, growthBefore.bonus);
+    restoreRawStorage(storageBefore);
+  }
+}
+
+/**
  * A screen reader is told what happened, not the same numbers over and over.
  * The per-tick readouts (the growth total, the garden form) are out of every
  * live region, and the one polite status region speaks only the discrete
@@ -7911,6 +8058,7 @@ export async function checks() {
     checkAwaySowing(problems);
     checkReturnMarks(problems);
     checkVisitRecord(problems);
+    checkTendedMarks(problems);
     checkLiveAnnouncements(problems);
     checkActionConfirmationsAreSpoken(problems);
     checkGardenActionRefusals(problems);

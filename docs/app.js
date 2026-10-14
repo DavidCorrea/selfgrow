@@ -62,7 +62,7 @@ import {
   writeLastSeen,
   writeStoredGarden,
 } from "./garden.js";
-import { FORMS, drawGarden, establishment, gardenForm, motionPhase } from "./plotview.js";
+import { FORMS, drawGarden, establishment, gardenForm, motionPhase, tendedMarkCells } from "./plotview.js";
 
 const numberFormat = new Intl.NumberFormat("en");
 const decimalFormat = new Intl.NumberFormat("en", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -253,17 +253,23 @@ const countLabel = (count, singular, plural) =>
   `${formatAmount(count)} ${count === 1 ? singular : plural}`;
 
 /**
- * The picture, said in words: the same growth, ground, beds, form and season the
- * plot draws.
+ * The picture, said in words: the same growth, ground, beds, form, season and
+ * plots the visitor sowed by hand that the plot draws.
+ *
+ * The hand-worked count is the plots the plot actually signs — `tendedMarkCells`
+ * cut off at the cells on screen — so the words cannot name more worked plots
+ * than the picture can show, exactly as the drawn marks are bounded.
  */
-function describePlot(state) {
+export function describePlot(state) {
+  const worked = tendedMarkCells(state).length;
   return (
     `${formatGrowth(state.growth)} growth — ${state.formName} on ${state.established.name}, ` +
     `in ${state.season.name}. ` +
     `${countLabel(state.beds, "bed of soil", "beds of soil")}, ` +
     `${countLabel(state.capacity, "plot of soil", "plots of soil")}, ` +
     `${countLabel(state.seeds, "ungrown seed", "ungrown seeds")}, ` +
-    `${countLabel(state.plants, "grown plant", "grown plants")}.`
+    `${countLabel(state.plants, "grown plant", "grown plants")}, ` +
+    `${countLabel(worked, "plot sowed by hand", "plots sowed by hand")}.`
   );
 }
 
@@ -1643,7 +1649,7 @@ function render() {
   const plotKey =
     `${state.form}:${state.growth}:${state.seedCounts.join(",")}:${state.plantCounts.join(",")}:` +
     `${state.beds}:${state.pollinator.visiting}:${state.season.key}:${phase}:` +
-    `${state.established.index}:${state.established.fill}:` +
+    `${state.established.index}:${state.established.fill}:${state.visit.sown}:` +
     `${JSON.stringify(state.returnMarks ?? null)}`;
   if (plotKey !== lastPlotKey) {
     drawGarden(elements.plot, state, readPalette(), phase);
