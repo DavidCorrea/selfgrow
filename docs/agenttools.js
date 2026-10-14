@@ -146,7 +146,10 @@ export function tools() {
         "survive a reload and a return, and are cleared by a replant. It also " +
         "reports sandbox: the time rehearsal when one is open — how many " +
         "seconds it has been wound forward and a readable elapsed label, the " +
-        "growth, form, ungrown seeds and grown plants it reached, how many " +
+        "growth, form, ungrown seeds and grown plants it reached, whether a " +
+        "pollinator is visiting and the boost it brings (pollinator) and each " +
+        "kind's seeds, plants and next-seed price (kinds, the two of them in " +
+        "the same shape the garden's own kinds carry), how many " +
         "seeds matured (matured), the return summary the real garden would " +
         "show and the same facts as short labelled values (facts), and the " +
         "next goal it would offer (goalTitle, goalDetail) — or " +

@@ -183,6 +183,9 @@ const elements = {
   sandboxSeeds: document.querySelector('[data-field="sandbox-seeds"]'),
   sandboxPlants: document.querySelector('[data-field="sandbox-plants"]'),
   sandboxSeason: document.querySelector('[data-field="sandbox-season"]'),
+  sandboxPollinator: document.querySelector('[data-field="sandbox-pollinator"]'),
+  sandboxKindHerb: readKindRow("herb", "sandbox-kind"),
+  sandboxKindBloom: readKindRow("bloom", "sandbox-kind"),
   sandboxSummary: document.getElementById("sandbox-summary"),
   sandboxGoalTitle: document.getElementById("sandbox-goal-title"),
   sandboxGoalDetail: document.getElementById("sandbox-goal-detail"),
@@ -1234,7 +1237,7 @@ function describeSeason(state) {
  * present; a visit in progress says how long it stays and how many blooms are
  * keeping it, each its own label rather than a rule to decode.
  */
-function describePollinator(state) {
+export function describePollinator(state) {
   const pollinator = state.pollinator;
   if (!pollinator) return "none visiting";
   const boost = `boost x${pollinator.boost ?? pollinator.multiplier} while visiting`;
@@ -1353,10 +1356,12 @@ function renderPlanting(state) {
 /**
  * One kind's readout: its row and the labelled value spans inside it, found
  * once so a re-render writes into the spans that are already there rather than
- * querying the row again on every tick.
+ * querying the row again on every tick. `prefix` names the row's own data-field
+ * family — the garden's rows use `kind`, the rehearsal's use `sandbox-kind` —
+ * so the same describe functions can write either readout.
  */
-function readKindRow(key) {
-  const row = document.querySelector(`[data-field="kind-${key}"]`);
+function readKindRow(key, prefix = "kind") {
+  const row = document.querySelector(`[data-field="${prefix}-${key}"]`);
   const values = new Map(
     [...(row?.querySelectorAll("[data-field]") ?? [])].map((span) => [span.dataset.field, span])
   );
@@ -1371,7 +1376,7 @@ function readKindRow(key) {
  * cannot disagree about a kind; the label each value sits under is part of the
  * markup, because it never changes.
  */
-function describeKind(kind) {
+export function describeKind(kind) {
   return [
     { field: "seeds", value: formatAmount(kind.seeds) },
     { field: "plants", value: formatAmount(kind.plants) },
@@ -1390,10 +1395,10 @@ function describeKind(kind) {
 }
 
 /** One kind's row: its facts, each written into its own labelled span. */
-function renderKind(kindRow, kind) {
+function renderKind(kindRow, kind, prefix = "kind") {
   if (!kindRow?.row || !kind) return;
   for (const { field, value } of describeKind(kind)) {
-    setText(kindRow.values.get(`kind-${kind.key}-${field}`), value);
+    setText(kindRow.values.get(`${prefix}-${kind.key}-${field}`), value);
   }
 }
 
@@ -1672,6 +1677,9 @@ function renderSandbox(state) {
   setText(elements.sandboxSeeds, formatAmount(rehearsal.seeds));
   setText(elements.sandboxPlants, formatAmount(rehearsal.plants));
   setText(elements.sandboxSeason, describeSeason(rehearsal));
+  setText(elements.sandboxPollinator, describePollinator(rehearsal));
+  renderKind(elements.sandboxKindHerb, rehearsal.kinds[0], "sandbox-kind");
+  renderKind(elements.sandboxKindBloom, rehearsal.kinds[1], "sandbox-kind");
   renderGoalFacts(elements.sandboxSummary, rehearsal.facts ?? []);
   setText(elements.sandboxGoalTitle, rehearsal.goalTitle);
   renderGoalFacts(elements.sandboxGoalDetail, rehearsal.goalFacts ?? []);
