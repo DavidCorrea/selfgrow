@@ -7,7 +7,9 @@
  * the run for a lasting bonus once the garden is flourishing, and a save the
  * player can copy out and, after seeing what it holds beside the live garden,
  * load back. A load is confirm-first: pasting and pressing Load save opens a
- * preview and changes nothing until Load now is pressed.
+ * preview and changes nothing until Load now is pressed. A load is also
+ * reversible once: the garden it replaced is kept, and Restore previous garden
+ * puts it back.
  *
  * The plot is drawn from the live growth number through one function —
  * `gardenForm` — that also names the form in words, so the picture and the text
@@ -156,6 +158,7 @@ const elements = {
   save: document.getElementById("save-value"),
   copy: document.getElementById("copy-save"),
   load: document.getElementById("load-save"),
+  restore: document.getElementById("restore-save"),
   status: document.getElementById("save-status"),
   loadDialog: document.getElementById("load-dialog"),
   loadConfirm: document.getElementById("load-confirm"),
@@ -292,6 +295,9 @@ export function getDisplayedState() {
     established: establishment(lifetime),
     canReplant: canReplant(lifetime),
     save: exportSave(),
+    // Whether a load can still be put back, so the Restore previous garden
+    // button and an agent read the same one fact.
+    restoreAvailable: restorePoint !== null,
     away: lastReturn,
     // What the last return marked on the garden, so an agent sees the same
     // change the plot draws; null once the marks clear.
@@ -997,21 +1003,71 @@ export function getSandboxState() {
 }
 
 /**
- * Replace the garden with the one in `text` and keep it.
+ * The garden the most recent load replaced, kept so a wrong or regretted load
+ * can be put back. One deep: another load overwrites it with the garden that
+ * load replaces, and a restore spends it. It lives in memory only — nothing of
+ * it enters `encodeSave`, so an exported save string is unchanged by it.
+ */
+let restorePoint = null;
+
+/**
+ * Replace the garden with the one in `text` and keep it, remembering the
+ * garden it replaced so `restoreGardenSave` can put it back.
  *
  * The moment of the load is recorded, so a deliberate load is not later read as
- * a long absence.
+ * a long absence. The garden being replaced is captured only once the save has
+ * been read, so a refused save replaces nothing and leaves the kept garden as
+ * it was.
  *
  * @throws {Error} when the save cannot be read; the garden is left untouched.
  */
 export function loadGardenSave(text) {
   const garden = decodeSave(text);
+  restorePoint = { garden: getGarden(), growth: getGrowthState() };
   clearReturnMarks();
   setGarden(garden);
   setGrowth(garden.growth, garden.rate, garden.age, garden.lifetime, garden.bonus);
   const persisted = writeStoredGarden(getGarden());
   writeLastSeen(Date.now());
   return { ok: true, persisted, state: getDisplayedState() };
+}
+
+/**
+ * Put back the garden the last load replaced, with the same growth, seeds,
+ * plants, beds, lifetime and lasting bonus it had, and keep it.
+ *
+ * The one undo for `loadGardenSave`. Safe to repeat: the kept garden is spent
+ * by the restore that uses it, so a second call changes nothing and reports
+ * `restored: false` with the reason, and a later load replaces it wholesale.
+ *
+ * @returns {{ok: boolean, restored: boolean, reason?: string, persisted?: boolean, restoredContents?: object, state: object}}
+ */
+export function restoreGardenSave() {
+  const point = restorePoint;
+  if (!point) {
+    return {
+      ok: false,
+      restored: false,
+      reason: "no earlier garden to restore — nothing has been loaded over one",
+      state: getDisplayedState(),
+    };
+  }
+  // Spend the kept garden before it is used, so a repeat has nothing to put
+  // back and the garden can never be restored twice.
+  restorePoint = null;
+  clearReturnMarks();
+  setGarden(point.garden);
+  setGrowth(point.growth.growth, point.growth.rate, point.growth.age, point.growth.lifetime, point.growth.bonus);
+  const persisted = writeStoredGarden(getGarden());
+  writeLastSeen(Date.now());
+  render();
+  return {
+    ok: true,
+    restored: true,
+    persisted,
+    restoredContents: saveContents(getGarden(), point.growth.growth, point.growth.lifetime),
+    state: getDisplayedState(),
+  };
 }
 
 /** The five values a save settles, read off a garden and its live growth. */
@@ -1544,6 +1600,7 @@ function render() {
   setText(elements.nextPlant, describeNextPlant(state));
   setText(elements.nextBed, describeNextBed(state));
   setText(elements.storage, state.storageAvailable ? "Yes" : "No");
+  if (elements.restore) elements.restore.hidden = !state.restoreAvailable;
   setText(elements.description, describePlot(state));
   renderPlanting(state);
   renderReplant(state);
@@ -1695,6 +1752,24 @@ function loadPreviewedSave() {
   );
 }
 
+/**
+ * Put back the garden the last load replaced, from the Restore previous garden
+ * button, and say what came back. A press with nothing kept is answered with
+ * the reason rather than silence.
+ */
+function restoreFromButton() {
+  const result = restoreGardenSave();
+  if (!result.ok) {
+    announce("There is no earlier garden to put back — loading a save replaces one, and this undoes that load.");
+    return;
+  }
+  const { growth, seeds, plants, beds, lifetime } = result.restoredContents;
+  announce(
+    `Restored the garden the last load replaced — ${formatGrowth(growth)} growth, ${formatAmount(seeds)} seeds, ` +
+      `${formatAmount(plants)} plants, ${formatAmount(beds)} beds, ${formatGrowth(lifetime)} lifetime.`
+  );
+}
+
 function start() {
   subscribe(render);
 
@@ -1762,6 +1837,7 @@ function start() {
   elements.copy?.addEventListener("click", copySave);
   elements.load?.addEventListener("click", openLoadDialog);
   elements.loadConfirm?.addEventListener("click", loadPreviewedSave);
+  elements.restore?.addEventListener("click", restoreFromButton);
   // Keep this garden (or Esc) is a pure no-op: it closes the dialog and nothing else.
   elements.loadCancel?.addEventListener("click", () => elements.loadDialog?.close());
   elements.save?.addEventListener("input", () => announce(""));

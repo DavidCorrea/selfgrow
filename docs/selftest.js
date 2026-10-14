@@ -97,6 +97,7 @@ import {
   previewGardenSave,
   readPalette,
   resetSandbox,
+  restoreGardenSave,
   returnAnnouncement,
   returnFacts,
   returnMarkFor,
@@ -835,6 +836,154 @@ function checkLoadConfirm(problems) {
     if (dialog.open) dialog.close();
     if (fold && foldWasOpen !== null) fold.open = foldWasOpen;
     if (saveField && saveFieldValue !== null) saveField.value = saveFieldValue;
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime, growthBefore.bonus);
+    restoreRawStorage(storageBefore);
+  }
+}
+
+/**
+ * A load is reversible once. Loading a save keeps the garden it replaced as a
+ * one-deep restore point; the Restore previous garden button puts that garden
+ * back with the same growth, seeds, plants, beds, lifetime and lasting bonus;
+ * the point is spent by the restore and replaced by the next load; and it never
+ * enters the save string, so a load still round-trips byte for byte.
+ */
+function checkRestorePoint(problems) {
+  const restore = document.getElementById("restore-save");
+  if (!restore) {
+    problems.push("the page has no Restore previous garden control (expected #restore-save).");
+    return;
+  }
+
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const storageBefore = rawStorage();
+  try {
+    // A known garden, which the load below replaces.
+    setGarden({ beds: 2, seeds: 3, plants: 2 });
+    setGrowth(70, 1.5, 120, 700, 6);
+    const kept = getGarden();
+    const keptGrowth = getGrowthState();
+
+    // A refused save replaces nothing, so it leaves the restore point as it was.
+    const offeredBefore = getDisplayedState().restoreAvailable;
+    try {
+      loadGardenSave("definitely not a save");
+      problems.push("loading an invalid save did not refuse it.");
+    } catch {
+      // refused, as it must be.
+    }
+    if (getDisplayedState().restoreAvailable !== offeredBefore) {
+      problems.push("a refused load kept a restore point even though it replaced nothing.");
+    }
+
+    loadGardenSave(encodeSave({ beds: 3, seeds: 5, plants: 4, growth: 45, lifetime: 2500 }));
+    if (getDisplayedState().restoreAvailable !== true) {
+      problems.push("after a load replaced the garden, the page offered no way to put it back.");
+    }
+    if (restore.tagName !== "BUTTON" || restore.disabled || restore.hidden || !restore.textContent.trim()) {
+      problems.push("the Restore previous garden control is not a named, focusable button once there is one to restore.");
+    }
+
+    const restored = restoreGardenSave();
+    const back = getGarden();
+    const backGrowth = getGrowthState();
+    if (!restored.ok || !restored.restored) {
+      problems.push(
+        `restoring the garden the last load replaced reported ok=${restored.ok} / restored=${restored.restored} ` +
+          `(reason: ${restored.reason ?? "none"}), expected the kept garden back.`
+      );
+    }
+    if (
+      back.seeds !== kept.seeds ||
+      back.plants !== kept.plants ||
+      back.beds !== kept.beds ||
+      backGrowth.growth !== keptGrowth.growth ||
+      backGrowth.rate !== keptGrowth.rate ||
+      backGrowth.lifetime !== keptGrowth.lifetime ||
+      backGrowth.bonus !== keptGrowth.bonus
+    ) {
+      problems.push(
+        `restoring left ${back.seeds} seeds / ${back.plants} plants / ${back.beds} beds / ${backGrowth.growth} ` +
+          `growth / ${backGrowth.lifetime} lifetime / ${backGrowth.bonus} bonus, expected the kept ` +
+          `${kept.seeds} / ${kept.plants} / ${kept.beds} / ${keptGrowth.growth} / ${keptGrowth.lifetime} / ` +
+          `${keptGrowth.bonus}.`
+      );
+    }
+    if (
+      !restored.restoredContents ||
+      restored.restoredContents.growth !== keptGrowth.growth ||
+      restored.restoredContents.seeds !== kept.seeds ||
+      restored.restoredContents.plants !== kept.plants ||
+      restored.restoredContents.beds !== kept.beds ||
+      restored.restoredContents.lifetime !== keptGrowth.lifetime
+    ) {
+      problems.push(
+        `restoring reported ${JSON.stringify(restored.restoredContents)}, expected the kept garden's growth, ` +
+          "seeds, plants, beds and lifetime."
+      );
+    }
+    if (rawStorage().value !== exportSave()) {
+      problems.push("restoring the kept garden did not write it to this browser.");
+    }
+    if (getDisplayedState().restoreAvailable !== false || !restore.hidden) {
+      problems.push("after a restore, the page still offers a garden to put back.");
+    }
+
+    // The kept garden is spent: a second restore is a safe no-op.
+    const second = restoreGardenSave();
+    const afterSecond = getGarden();
+    const afterSecondGrowth = getGrowthState();
+    if (second.ok || second.restored) {
+      problems.push(
+        `a second restore reported ok=${second.ok} / restored=${second.restored}, expected a no-op with a reason.`
+      );
+    }
+    if (
+      afterSecond.seeds !== back.seeds ||
+      afterSecond.plants !== back.plants ||
+      afterSecond.beds !== back.beds ||
+      afterSecondGrowth.growth !== backGrowth.growth ||
+      afterSecondGrowth.lifetime !== backGrowth.lifetime
+    ) {
+      problems.push("a second restore changed the garden even though there was nothing kept.");
+    }
+
+    // Another load replaces the point with the garden that load replaces.
+    const firstOfTwo = encodeSave({ beds: 2, seeds: 1, plants: 1, growth: 5, lifetime: 40 });
+    const secondOfTwo = encodeSave({ beds: 1, seeds: 2, plants: 0, growth: 3, lifetime: 10 });
+    const middle = decodeSave(firstOfTwo);
+    loadGardenSave(firstOfTwo);
+    loadGardenSave(secondOfTwo);
+    const replaced = restoreGardenSave();
+    const backAgain = getGarden();
+    const backAgainGrowth = getGrowthState();
+    if (
+      !replaced.ok ||
+      backAgain.seeds !== middle.seeds ||
+      backAgain.plants !== middle.plants ||
+      backAgain.beds !== middle.beds ||
+      backAgainGrowth.growth !== middle.growth ||
+      backAgainGrowth.lifetime !== middle.lifetime
+    ) {
+      problems.push(
+        `after two loads, restoring put back ${backAgain.seeds} seeds / ${backAgain.plants} plants / ` +
+          `${backAgain.beds} beds / ${backAgainGrowth.growth} growth / ${backAgainGrowth.lifetime} lifetime, ` +
+          `expected the garden the second load replaced (${middle.seeds} / ${middle.plants} / ${middle.beds} / ` +
+          `${middle.growth} / ${middle.lifetime}).`
+      );
+    }
+
+    // The point lives only in memory: a save loaded and exported straight back
+    // is the same string, byte for byte.
+    loadGardenSave(secondOfTwo);
+    if (exportSave() !== secondOfTwo) {
+      problems.push("exporting the garden right after a load did not give the same save string back.");
+    }
+    // Spend what is left so no later check inherits a restore point.
+    restoreGardenSave();
+  } finally {
     setGarden(gardenBefore);
     setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime, growthBefore.bonus);
     restoreRawStorage(storageBefore);
@@ -6211,8 +6360,9 @@ async function checkAgentTools(problems) {
   const readTool = find("get-state");
   const exportTool = find("export-save");
   const importTool = find("import-save");
-  if (!readTool || !exportTool || !importTool) {
-    problems.push("agenttools.js must expose get-state, export-save and import-save.");
+  const restoreTool = find("restore-save");
+  if (!readTool || !exportTool || !importTool || !restoreTool) {
+    problems.push("agenttools.js must expose get-state, export-save, import-save and restore-save.");
     return;
   }
 
@@ -6301,6 +6451,12 @@ async function checkAgentTools(problems) {
   }
   if (state.save !== shown.save) {
     problems.push("get-state's save does not match the save the page shows.");
+  }
+  if (typeof state.restoreAvailable !== "boolean" || state.restoreAvailable !== shown.restoreAvailable) {
+    problems.push(
+      `get-state reported restoreAvailable=${JSON.stringify(state.restoreAvailable)}, expected the boolean the page ` +
+        `holds (${JSON.stringify(shown.restoreAvailable)}).`
+    );
   }
   if (
     state.secondsToNextPlant !== shown.secondsToNextPlant ||
@@ -6709,6 +6865,96 @@ async function checkAgentTools(problems) {
   }
 
   await checkImportSaveGate(importTool, problems);
+  await checkRestoreSaveTool(restoreTool, readTool, importTool, problems);
+}
+
+/**
+ * The restore-save tool is the agent's half of the page's Restore previous
+ * garden button: after a load has replaced a garden it puts that garden back
+ * with the same values, reports what came back, and spends the kept garden so a
+ * second call is a safe no-op and get-state stops offering it.
+ */
+async function checkRestoreSaveTool(restoreTool, readTool, importTool, problems) {
+  if (restoreTool.annotations?.readOnlyHint !== false || restoreTool.annotations?.consequentialHint !== true) {
+    problems.push(
+      "restore-save must be annotated readOnlyHint: false and consequentialHint: true — it replaces the garden."
+    );
+  }
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const storageBefore = rawStorage();
+  const seenBefore = rawLastSeen();
+  try {
+    // A known garden, then an agent's own confirmed load replaces it.
+    setGarden({ beds: 2, seeds: 3, plants: 2 });
+    setGrowth(70, 0, 120, 700, 6);
+    const kept = getGarden();
+    const keptGrowth = getGrowthState();
+    const loaded = await importTool.execute(
+      { save: encodeSave({ beds: 3, seeds: 5, plants: 4, growth: 45, lifetime: 2500 }), confirm: true },
+      {}
+    );
+    if (loaded.applied !== true) {
+      problems.push("a confirmed import-save did not load, so restore-save could not be checked against it.");
+    }
+
+    const readBefore = await readTool.execute({}, {});
+    if (readBefore.restoreAvailable !== true) {
+      problems.push("get-state reported nothing to restore right after a load had replaced the garden.");
+    }
+
+    const restored = await restoreTool.execute({}, {});
+    const back = getGarden();
+    const backGrowth = getGrowthState();
+    if (
+      restored.restored !== true ||
+      back.seeds !== kept.seeds ||
+      back.plants !== kept.plants ||
+      back.beds !== kept.beds ||
+      backGrowth.growth !== keptGrowth.growth ||
+      backGrowth.lifetime !== keptGrowth.lifetime ||
+      backGrowth.bonus !== keptGrowth.bonus
+    ) {
+      problems.push(
+        `restore-save left ${back.seeds} seeds / ${back.plants} plants / ${back.beds} beds / ${backGrowth.growth} ` +
+          `growth / ${backGrowth.lifetime} lifetime / ${backGrowth.bonus} bonus, expected the kept ` +
+          `${kept.seeds} / ${kept.plants} / ${kept.beds} / ${keptGrowth.growth} / ${keptGrowth.lifetime} / ` +
+          `${keptGrowth.bonus}.`
+      );
+    }
+    if (
+      !restored.restoredContents ||
+      restored.restoredContents.growth !== keptGrowth.growth ||
+      restored.restoredContents.seeds !== kept.seeds ||
+      restored.restoredContents.beds !== kept.beds
+    ) {
+      problems.push(
+        `restore-save reported ${JSON.stringify(restored.restoredContents)}, expected the kept garden's growth, ` +
+          "seeds and beds."
+      );
+    }
+
+    const readAfter = await readTool.execute({}, {});
+    if (readAfter.restoreAvailable !== false) {
+      problems.push("get-state still offers a garden to restore after restore-save spent it.");
+    }
+
+    const second = await restoreTool.execute({}, {});
+    const afterSecond = getGarden();
+    if (second.ok !== false || second.restored !== false) {
+      problems.push(
+        `a second restore-save reported ok=${second.ok} / restored=${second.restored}, expected a no-op with a reason.`
+      );
+    }
+    if (afterSecond.seeds !== back.seeds || afterSecond.plants !== back.plants || afterSecond.beds !== back.beds) {
+      problems.push("a second restore-save changed the garden even though there was nothing kept.");
+    }
+  } finally {
+    setGarden(gardenBefore);
+    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime, growthBefore.bonus);
+    restoreRawStorage(storageBefore);
+    restoreRawLastSeen(seenBefore);
+  }
 }
 
 /**
@@ -6949,6 +7195,7 @@ export async function checks() {
     checkCompactAmounts(problems);
     checkPortableSave(problems);
     checkLoadConfirm(problems);
+    checkRestorePoint(problems);
     checkNoOverflow(problems);
     checkCompactReadout(problems);
     checkFirstScreenGarden(problems);
