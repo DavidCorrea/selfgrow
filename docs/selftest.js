@@ -5538,6 +5538,106 @@ function checkSeason(problems) {
 }
 
 /**
+ * The rate the page shows is the slope the garden actually grows at.
+ *
+ * The displayed rate and `simulateGarden` work the same formula out in two
+ * different words — the readout adds the season, each kind's own boost and the
+ * pollinator's extra by hand, while the simulation integrates them — so a term
+ * added to or dropped from the display side would ship silently and a visitor
+ * would watch a rate their garden is not growing at. This measures the slope
+ * the live garden earns over a short span and compares it with the rate the
+ * page shows, across the states that exercise each layer: a kind in its best
+ * season, a kind at a plant milestone, a garden carrying a lasting bonus, one
+ * during a pollinator visit, and a combination of them.
+ *
+ * The span is asserted to sit inside one season and to keep the same visiting
+ * status at both ends before anything is compared, so a boundary cannot make it
+ * flaky, and it holds no ungrown seeds, so the plant counts — and the rate —
+ * stay constant across it.
+ */
+function checkShownRateMatchesEarned(problems) {
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  try {
+    const spanSeconds = 5;
+    // Each state names the layer it exercises, the plants it holds, the age it
+    // sits at, the lasting bonus it carries and whether a pollinator must be
+    // visiting across the whole span.
+    const states = [
+      { label: "a herb in its best season", plantCounts: [3, 0], age: 700, bonus: 0, visiting: false },
+      { label: "a bloom in its best season", plantCounts: [0, 3], age: 1250, bonus: 0, visiting: false },
+      { label: "a herb at its first milestone", plantCounts: [10, 0], age: 0, bonus: 0, visiting: false },
+      { label: "a garden carrying a lasting bonus", plantCounts: [3, 2], age: 0, bonus: 4, visiting: false },
+      { label: "a garden during a pollinator visit", plantCounts: [3, 0], age: 130, bonus: 0, visiting: true },
+      {
+        label: "a milestone kind in its best season, with a lasting bonus, during a pollinator visit",
+        plantCounts: [10, 2],
+        age: 750,
+        bonus: 4,
+        visiting: true,
+      },
+    ];
+    for (const state of states) {
+      const { label, plantCounts, age, bonus, visiting } = state;
+      // No ungrown seeds: the plant counts, and so the rate, are constant
+      // across the span, and the only thing that changes is the growth.
+      setGarden({ seeds: 0, plantCounts, beds: 1 });
+      setGrowth(0, 1, age, 0, bonus);
+      const live = getGarden();
+      const plants = live.plants;
+      const blooms = live.plantCounts[1];
+      const shown = getDisplayedState().rate;
+      const startSeason = seasonAt(age);
+      const endSeason = seasonAt(age + spanSeconds);
+      if (startSeason.key !== endSeason.key) {
+        problems.push(
+          `the rate check for ${label} spans ${spanSeconds}s from age ${age} in ${startSeason.key} into ` +
+            `${endSeason.key}; its span must sit inside one season.`
+        );
+        continue;
+      }
+      const startsVisiting = pollinatorAt(age, plants, blooms).visiting;
+      const endsVisiting = pollinatorAt(age + spanSeconds, plants, blooms).visiting;
+      if (startsVisiting !== visiting || endsVisiting !== visiting) {
+        problems.push(
+          `the rate check for ${label} expects a pollinator ${visiting ? "visiting" : "away"} across its ` +
+            `${spanSeconds}s span, but it is ${startsVisiting ? "visiting" : "away"} at age ${age} and ` +
+            `${endsVisiting ? "visiting" : "away"} at age ${age + spanSeconds}.`
+        );
+        continue;
+      }
+      const earned =
+        simulateGarden(
+          {
+            growth: 0,
+            // The simulation reads the kept rate — never the displayed one,
+            // which already carries the season, each kind's boost and the
+            // pollinator, and would count them twice.
+            rate: getGrowthState().rate,
+            bonus,
+            plantCounts: live.plantCounts,
+            beds: live.beds,
+            age,
+            sprouts: live.sprouts,
+            bloomSprouts: live.bloomSprouts,
+          },
+          spanSeconds
+        ).growth / spanSeconds;
+      const tolerance = Math.max(1e-9, Math.abs(shown) * 1e-9);
+      if (Math.abs(shown - earned) > tolerance) {
+        problems.push(
+          `the rate the page shows for ${label} is ${shown}/s, but the garden earned ${earned}/s over ` +
+            `${spanSeconds}s (a difference of ${shown - earned}).`
+        );
+      }
+    }
+  } finally {
+    setGarden(gardenBefore);
+    restoreGrowth(growthBefore);
+  }
+}
+
+/**
  * The plot is drawn in the season the state names, and every season looks
  * different from the others.
  *
@@ -8593,6 +8693,7 @@ export async function checks() {
     checkPollinatorHome(problems);
     checkPollinatorSeasons(problems);
     checkSeason(problems);
+    checkShownRateMatchesEarned(problems);
     checkSeasonDrawing(problems);
     checkSandbox(problems);
     checkSandboxClose(problems);
