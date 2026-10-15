@@ -1586,6 +1586,194 @@ function checkReplant(problems) {
     restoreRawStorage(storageBefore);
   }
 }
+
+/**
+ * The garden numbers a Replant confirmation is forbidden to move: what the
+ * dialog names beside what a replant would cost. One flat object, so the same
+ * six numbers are compared before and after every press.
+ */
+function replantNumbers() {
+  const garden = getGarden();
+  const growth = getGrowthState();
+  return {
+    beds: garden.beds,
+    seeds: garden.seeds,
+    plants: garden.plants,
+    growth: growth.growth,
+    lifetime: growth.lifetime,
+    bonus: growth.bonus,
+  };
+}
+
+/**
+ * Report a failure for every number a press moved, naming the control and both
+ * values. A confirmation the visitor only sees or declines must leave the
+ * garden exactly as it was, and a silent change is the bug this catches.
+ */
+function reportMovedNumbers(problems, control, before, after) {
+  for (const [field, was] of Object.entries(before)) {
+    if (after[field] !== was) {
+      problems.push(
+        `pressing ${control} changed ${field} from ${was} to ${after[field]}; it must leave the garden as it was.`
+      );
+    }
+  }
+}
+
+/**
+ * The confirming half of the Replant confirmation.
+ *
+ * The Replant dialog is the one moment the page shows a visitor what a replant
+ * would cost and what it would earn before it happens, and only Replant now
+ * performs it. This drives those real controls on the live page: it opens the
+ * dialog on an eligible garden and reads the bonus it promises, declines it,
+ * confirms it and reads the fresh garden back, then checks a garden below the
+ * wall is never asked at all. Every failure names the control and both numbers,
+ * so an unwired #replant-confirm, a dialog that never opens, or a dialog
+ * stating the wrong lasting bonus cannot ship green.
+ */
+function checkReplantConfirm(problems) {
+  const dialog = document.getElementById("replant-dialog");
+  const replantButton = document.getElementById("replant");
+  const confirm = document.getElementById("replant-confirm");
+  const cancel = document.getElementById("replant-cancel");
+  const bonusRow = document.getElementById("replant-dialog-bonus");
+  if (!dialog || !replantButton || !confirm || !cancel || !bonusRow) {
+    problems.push(
+      "the page has no Replant confirmation (expected #replant-dialog, #replant, #replant-confirm, " +
+        "#replant-cancel and #replant-dialog-bonus)."
+    );
+    return;
+  }
+  if (
+    typeof dialog.showModal !== "function" ||
+    confirm.tagName !== "BUTTON" ||
+    cancel.tagName !== "BUTTON" ||
+    confirm.disabled ||
+    cancel.disabled ||
+    !confirm.textContent.trim() ||
+    !cancel.textContent.trim()
+  ) {
+    problems.push("the Replant dialog's Replant now and Keep growing controls are not named, focusable buttons.");
+  }
+
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const storageBefore = rawStorage();
+  const wallLifetime = REPLANT_MIN_BONUS * REPLANT_MIN_BONUS - 1;
+  try {
+    // An eligible garden whose 2,500 lifetime earns a 50/s bonus — deliberately
+    // not the +10/s the dialog's markup ships with, so a bonus row never
+    // written from the garden being shown reads wrong here.
+    setGarden({ beds: 3, seeds: 4, plants: 5 });
+    setGrowth(999, 2.5, 300, 2500);
+    const promised = replantNumbers();
+    const earnedBonus = replantBonus(promised.lifetime);
+    if (!canReplant()) {
+      problems.push(`a ${promised.lifetime} lifetime garden reports it cannot be replanted.`);
+    }
+
+    // Opening the confirmation shows it and changes nothing at all.
+    replantButton.click();
+    if (!dialog.open) {
+      problems.push("pressing #replant on an eligible garden did not open #replant-dialog.");
+    }
+    const shownBonus = String(bonusRow.textContent).trim();
+    const statedBonus = `+${formatAmount(earnedBonus)}/s`;
+    if (!shownBonus.includes(statedBonus)) {
+      problems.push(
+        `#replant-dialog-bonus reads ${JSON.stringify(shownBonus)}, expected it to state ` +
+          `${JSON.stringify(statedBonus)} — the replantBonus of the ${promised.lifetime} lifetime the dialog was ` +
+          "opened for."
+      );
+    }
+    reportMovedNumbers(problems, "#replant", promised, replantNumbers());
+
+    // Keep growing closes the dialog and still changes nothing.
+    cancel.click();
+    if (dialog.open) {
+      problems.push("pressing #replant-cancel did not close #replant-dialog.");
+    }
+    reportMovedNumbers(problems, "#replant-cancel", promised, replantNumbers());
+
+    // Replant now closes the dialog and performs the replant: a fresh garden
+    // that keeps its lifetime and starts with the lasting bonus it earned. A
+    // cancel that failed to close the dialog is already reported; close
+    // whatever it left open so this half is still checked rather than a second
+    // showModal throwing.
+    if (dialog.open) dialog.close();
+    replantButton.click();
+    confirm.click();
+    if (dialog.open) {
+      problems.push("pressing #replant-confirm did not close #replant-dialog.");
+    }
+    const freshGarden = getGarden();
+    const freshGrowth = getGrowthState();
+    if (freshGarden.beds !== 1 || freshGarden.seeds !== 1 || freshGarden.plants !== 0) {
+      problems.push(
+        `#replant-confirm left ${freshGarden.beds} beds / ${freshGarden.seeds} seeds / ${freshGarden.plants} plants, ` +
+          "expected the fresh 1 / 1 / 0."
+      );
+    }
+    if (freshGrowth.growth !== 0 || freshGrowth.rate !== 0 || freshGrowth.age !== 0) {
+      problems.push(
+        `#replant-confirm left ${freshGrowth.growth} growth at ${freshGrowth.rate}/s, age ${freshGrowth.age}, ` +
+          "expected the fresh run at 0 / 0 / 0."
+      );
+    }
+    if (freshGrowth.lifetime !== promised.lifetime) {
+      problems.push(
+        `#replant-confirm reset the lifetime to ${freshGrowth.lifetime}, expected the ${promised.lifetime} kept.`
+      );
+    }
+    if (freshGrowth.bonus !== earnedBonus) {
+      problems.push(
+        `#replant-confirm set the lasting bonus to ${freshGrowth.bonus}, expected the ${earnedBonus} the ` +
+          `${promised.lifetime} lifetime earned.`
+      );
+    }
+    const displayed = getDisplayedState();
+    if (
+      displayed.beds !== freshGarden.beds ||
+      displayed.seeds !== freshGarden.seeds ||
+      displayed.plants !== freshGarden.plants ||
+      displayed.growth !== freshGrowth.growth ||
+      displayed.lifetimeGrowth !== freshGrowth.lifetime ||
+      displayed.bonus !== freshGrowth.bonus ||
+      !displayed.canReplant
+    ) {
+      problems.push(
+        `after #replant-confirm the page reports ${displayed.beds} beds / ${displayed.seeds} seeds / ` +
+          `${displayed.plants} plants / ${displayed.growth} growth / ${displayed.lifetimeGrowth} lifetime / ` +
+          `${displayed.bonus} bonus / canReplant ${displayed.canReplant}, but the garden holds ` +
+          `${freshGarden.beds} / ${freshGarden.seeds} / ${freshGarden.plants} / ${freshGrowth.growth} / ` +
+          `${freshGrowth.lifetime} / ${freshGrowth.bonus}, expected the fresh garden at canReplant true.`
+      );
+    }
+
+    // Below the wall there is nothing to confirm: pressing Replant opens no
+    // dialog and leaves the garden alone. A confirm that failed to close the
+    // dialog is already reported; close it here so this press is judged on its
+    // own, not on a leftover from the step above.
+    if (dialog.open) dialog.close();
+    setGrowth(5, 0.5, 12, wallLifetime, 0);
+    const belowWall = replantNumbers();
+    replantButton.click();
+    if (dialog.open) {
+      problems.push(
+        `pressing #replant below the wall opened #replant-dialog; a ${wallLifetime} lifetime earns ` +
+          `${replantBonus(wallLifetime)}/s, less than the ${REPLANT_MIN_BONUS} the wall needs.`
+      );
+    }
+    reportMovedNumbers(problems, "#replant", belowWall, replantNumbers());
+  } finally {
+    if (dialog.open) dialog.close();
+    setGarden(gardenBefore);
+    restoreGrowth(growthBefore);
+    restoreRawStorage(storageBefore);
+  }
+}
+
 function checkKindReadout(problems) {
   const gardenBefore = getGarden();
   const growthBefore = getGrowthState();
@@ -8374,6 +8562,7 @@ export async function checks() {
     checkSaveMigratesKinds(problems);
     checkLifetimeGrowth(problems);
     checkReplant(problems);
+    checkReplantConfirm(problems);
     checkPlantControl(problems);
     checkPlantingSpendsAndRaisesProduction(problems);
     checkBloomPlanting(problems);
