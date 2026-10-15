@@ -4,7 +4,10 @@
  * Derived from what the page shows a visitor and what it lets them do — nothing
  * more. `get-state` returns every value on the page; `tend` is the Tend the soil
  * button; `plant-seed` is the Plant a seed button; `open-bed` is the Open the
- * next bed button; `replant` is the Replant the garden button; `dismiss-return`
+ * next bed button; `replant` is the Replant the garden button — a two-step, so
+ * a call without a confirmation previews what a replant would reset and keep
+ * and changes nothing, and only a call with `confirm: true` replants;
+ * `dismiss-return`
  * is the Dismiss control beside the New since you left marks; `open-sandbox`,
  * `fast-forward-sandbox`, `act-in-sandbox` and `reset-sandbox` are the Rehearse
  * time panel — the last but one tending, planting and opening a bed inside the
@@ -258,29 +261,59 @@ export function tools() {
       title: "Replant the garden for a lasting bonus",
       description:
         "Does what the page's Replant the garden button does, after the same " +
-        "confirmation: it starts a fresh garden — the same soil, one ungrown " +
-        "seed and one bed a first visit has — keeping the lifetime growth and " +
-        "the save, and sets a lasting bonus earned from that lifetime " +
-        "(replantBonus, added flat to the growth rate for every run after). " +
-        "get-state's canReplant says whether the garden is far enough along " +
-        "(false below the bed-of-seedlings wall) and what a replant would earn " +
-        "(replantBonus); a replant is only worth it once the fresh garden will " +
-        "pass the old wall faster than the first run did. It refuses, changing " +
-        "nothing at all, when the garden is not yet eligible — declining is " +
-        "exactly a no-op. Returns whether it replanted, the bonus it set, the " +
-        "lifetime growth kept, the reason when it refused, and the state " +
-        "afterwards.",
-      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        "confirmation, and like loading a save it is deliberately two steps: a " +
+        "replant must be confirmed. A call without confirm: true changes nothing " +
+        "and returns what a replant would reset (the current growth, seeds, " +
+        "plants and beds), what it would keep (the lifetime growth and the " +
+        "lasting bonus already earned), and the bonus it would earn (replantBonus, " +
+        "added flat to the growth rate for every run after), plus " +
+        "needsConfirmation: true and applied: false. Call again with confirm: true " +
+        "to actually replant: it starts a fresh garden — the same soil, one " +
+        "ungrown seed and one bed a first visit has — keeping the lifetime growth " +
+        "and the save and setting that lasting bonus, and the return then carries " +
+        "applied: true, whether it replanted, the bonus it set, the lifetime kept " +
+        "and the state afterwards. get-state's canReplant says whether the garden " +
+        "is far enough along (false below the bed-of-seedlings wall) and what a " +
+        "replant would earn (replantBonus); a replant is only worth it once the " +
+        "fresh garden will pass the old wall faster than the first run did. It " +
+        "refuses, changing nothing at all, when the garden is not yet eligible — " +
+        "declining is exactly a no-op.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          confirm: {
+            type: "boolean",
+            description:
+              "Set true to actually replant. Omitted or false returns the " +
+              "preview and changes nothing.",
+          },
+        },
+        additionalProperties: false,
+      },
       annotations: { readOnlyHint: false, consequentialHint: true },
       example: {},
-      async execute() {
-        clearReturnMarks();
+      async execute({ confirm } = {}) {
+        const state = getDisplayedState();
+        const preview = {
+          canReplant: state.canReplant,
+          bonus: state.replantBonus,
+          resets: { growth: state.growth, seeds: state.seeds, plants: state.plants, beds: state.beds },
+          keeps: { lifetime: state.lifetimeGrowth, bonus: state.bonus },
+        };
+        if (confirm !== true) {
+          return { ok: true, applied: false, needsConfirmation: true, preview, state };
+        }
         const result = replant();
+        // A replant is an action; one the garden refuses is a no-op, so the
+        // return marks clear only when it actually replanted.
+        if (result.ok) clearReturnMarks();
         return {
           ok: result.ok,
+          applied: result.ok,
           reason: result.reason,
           bonus: result.bonus,
           lifetime: result.lifetime,
+          preview,
           state: getDisplayedState(),
         };
       },
