@@ -7558,24 +7558,86 @@ async function checkAgentTools(problems) {
     const growthBefore = getGrowthState();
     const storageBefore = rawStorage();
     try {
-      // Refused below the wall, changing nothing.
-      setGarden({ seeds: 1, plants: 0 });
-      setGrowth(999, 2.5, 300, 99);
-      const early = await replantTool.execute({}, {});
-      if (early.ok || getGarden().seeds !== 1 || getGrowthState().growth !== 999) {
-        problems.push("the replant tool replanted a garden below the wall.");
+      // The requirement must be discoverable from the tool's own words.
+      if (!/confirm/i.test(replantTool.description ?? "")) {
+        problems.push("the replant tool's description does not tell an agent that a replant must be confirmed.");
       }
 
-      // Performed at the wall, carrying the lifetime into the bonus.
+      // Below the wall, a call without confirmation previews and changes nothing.
+      setGarden({ seeds: 1, plants: 0, beds: 1 });
+      setGrowth(999, 2.5, 300, REPLANT_MIN_BONUS * REPLANT_MIN_BONUS - 1);
+      const belowPreview = await replantTool.execute({}, {});
+      if (belowPreview.applied !== false || belowPreview.needsConfirmation !== true || belowPreview.preview?.canReplant !== false) {
+        problems.push(
+          `the replant tool below the wall returned ${JSON.stringify({
+            applied: belowPreview.applied,
+            needsConfirmation: belowPreview.needsConfirmation,
+            canReplant: belowPreview.preview?.canReplant,
+          })}, expected an unconfirmed preview that reports the garden cannot be replanted.`
+        );
+      }
+      const stillBelow = getGarden();
+      if (stillBelow.seeds !== 1 || stillBelow.plants !== 0 || getGrowthState().growth !== 999) {
+        problems.push("the replant tool changed a garden below the wall without confirmation.");
+      }
+
+      // Eligible: a call without confirmation reports what a replant would
+      // reset, what it would keep and the bonus it would earn, and touches
+      // nothing.
+      const wallLifetime = REPLANT_MIN_BONUS * REPLANT_MIN_BONUS;
       setGarden({ beds: 2, seeds: 3, plants: 4 });
-      setGrowth(500, 3, 120, 144);
-      const done = await replantTool.execute({}, {});
+      setGrowth(500, 3, 120, wallLifetime);
+      const preview = await replantTool.execute({}, {});
+      if (preview.ok !== true || preview.applied !== false || preview.needsConfirmation !== true) {
+        problems.push(
+          `the replant tool without confirmation returned ok=${preview.ok} / applied=${preview.applied} / ` +
+            `needsConfirmation=${preview.needsConfirmation}, expected a preview that applied nothing.`
+        );
+      }
+      if (preview.preview?.canReplant !== true || preview.preview?.bonus !== replantBonus(wallLifetime)) {
+        problems.push(
+          `the replant preview reported canReplant=${preview.preview?.canReplant} / bonus=${preview.preview?.bonus}, ` +
+            `expected true / ${replantBonus(wallLifetime)}.`
+        );
+      }
+      const resets = preview.preview?.resets;
+      if (!resets || resets.growth !== 500 || resets.seeds !== 3 || resets.plants !== 4 || resets.beds !== 2) {
+        problems.push(
+          `the replant preview said it would reset ${JSON.stringify(resets)}, expected growth 500 / seeds 3 / ` +
+            "plants 4 / beds 2."
+        );
+      }
+      const keeps = preview.preview?.keeps;
+      if (!keeps || keeps.lifetime !== wallLifetime || keeps.bonus !== 0) {
+        problems.push(
+          `the replant preview said it would keep ${JSON.stringify(keeps)}, expected lifetime ${wallLifetime} / bonus 0.`
+        );
+      }
+      const beforeConfirm = getGarden();
+      const beforeConfirmGrowth = getGrowthState();
+      if (
+        beforeConfirm.seeds !== 3 ||
+        beforeConfirm.plants !== 4 ||
+        beforeConfirm.beds !== 2 ||
+        beforeConfirmGrowth.growth !== 500 ||
+        beforeConfirmGrowth.lifetime !== wallLifetime ||
+        beforeConfirmGrowth.bonus !== 0
+      ) {
+        problems.push("the replant tool changed an eligible garden without confirmation.");
+      }
+
+      // Only confirm: true actually replants, carrying the lifetime into the bonus.
+      const done = await replantTool.execute({ confirm: true }, {});
       const afterGarden = getGarden();
       const afterGrowth = getGrowthState();
-      if (!done.ok || done.bonus !== replantBonus(144) || done.lifetime !== 144) {
+      if (done.applied !== true || !done.ok || done.bonus !== replantBonus(wallLifetime) || done.lifetime !== wallLifetime) {
         problems.push(
-          `the replant tool reported ${JSON.stringify({ ok: done.ok, bonus: done.bonus, lifetime: done.lifetime })}, ` +
-            `expected ok=true, bonus ${replantBonus(144)}, lifetime 144.`
+          `the confirmed replant tool reported ${JSON.stringify({
+            ok: done.ok,
+            applied: done.applied,
+            bonus: done.bonus,
+            lifetime: done.lifetime,
+          })}, expected ok=true, applied=true, bonus ${replantBonus(wallLifetime)}, lifetime ${wallLifetime}.`
         );
       }
       if (
@@ -7583,13 +7645,13 @@ async function checkAgentTools(problems) {
         afterGarden.seeds !== 1 ||
         afterGarden.plants !== 0 ||
         afterGrowth.growth !== 0 ||
-        afterGrowth.lifetime !== 144 ||
-        afterGrowth.bonus !== replantBonus(144)
+        afterGrowth.lifetime !== wallLifetime ||
+        afterGrowth.bonus !== replantBonus(wallLifetime)
       ) {
         problems.push(
-          `the replant tool left ${afterGarden.beds} beds / ${afterGarden.seeds} seeds / ` +
+          `the confirmed replant tool left ${afterGarden.beds} beds / ${afterGarden.seeds} seeds / ` +
             `${afterGarden.plants} plants / ${afterGrowth.growth} growth / ${afterGrowth.lifetime} lifetime / ` +
-            `${afterGrowth.bonus} bonus, expected 1 / 1 / 0 / 0 / 144 / ${replantBonus(144)}.`
+            `${afterGrowth.bonus} bonus, expected 1 / 1 / 0 / 0 / ${wallLifetime} / ${replantBonus(wallLifetime)}.`
         );
       }
       if (!done.state || done.state.bonus !== afterGrowth.bonus || done.state.canReplant !== canReplant(afterGrowth.lifetime)) {
