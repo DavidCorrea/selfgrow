@@ -307,120 +307,128 @@
           <section class="panel" id="sandbox" aria-labelledby="sandbox-heading" hidden>
             <h2 id="sandbox-heading" class="panel-title">Rehearse time</h2>
 
-            <dl class="readout" aria-label="What the rehearsal garden holds">
-              <div class="readout-row">
-                <dt class="readout-term">Time wound forward</dt>
-                <dd class="readout-value" id="sandbox-elapsed" data-field="sandbox-elapsed">none yet</dd>
+            <div class="garden-layout">
+              <div class="garden-view">
+                <canvas id="sandbox-plot" class="plot" width="96" height="72" aria-hidden="true"></canvas>
               </div>
-              <div class="readout-row">
-                <dt class="readout-term">Growth</dt>
-                <dd class="readout-value readout-growth">
-                  <span id="sandbox-growth">0.0</span>
-                  <span class="readout-rate" id="sandbox-rate">+0.0/s</span>
-                </dd>
-              </div>
-              <div class="readout-row">
-                <dt class="readout-term">Garden form</dt>
-                <dd class="readout-value" data-field="sandbox-form">bare soil</dd>
-              </div>
-              <div class="readout-row">
-                <dt class="readout-term">Seeds matured</dt>
-                <dd class="readout-value" data-field="sandbox-matured">0</dd>
-              </div>
-              <div class="readout-row">
-                <dt class="readout-term">Ungrown seeds</dt>
-                <dd class="readout-value" data-field="sandbox-seeds">1</dd>
-              </div>
-              <div class="readout-row">
-                <dt class="readout-term">Grown plants</dt>
-                <dd class="readout-value" data-field="sandbox-plants">0</dd>
-              </div>
-              <div class="readout-row">
-                <dt class="readout-term">Season</dt>
-                <dd class="readout-value" data-field="sandbox-season">winter · x1 growth</dd>
-              </div>
-              <div class="readout-row">
-                <dt class="readout-term">Pollinator</dt>
-                <dd class="readout-value" data-field="sandbox-pollinator">none visiting · boost x2 while visiting · visit 1m every 3m · each bloom +10s · max 2m 30s</dd>
-              </div>
-              <!-- One row per kind of seed, the same short labelled values the
-                   real garden's own rows carry — its seeds and plants and the
-                   price of its next seed. Each value has its own element, so a
-                   rehearsal is read rather than decoded and any one fact can
-                   be checked. -->
-              <div class="readout-row readout-kind">
-                <dt class="readout-term">Herb</dt>
-                <dd class="readout-value readout-kind-value" data-field="sandbox-kind-herb">
-                  <span class="kind-facts">
-                    <span class="kind-fact">
-                      <span class="kind-fact-label">Seeds</span>
-                      <span class="kind-fact-value" data-field="sandbox-kind-herb-seeds">1</span>
-                    </span>
-                    <span class="kind-fact">
-                      <span class="kind-fact-label">Plants</span>
-                      <span class="kind-fact-value" data-field="sandbox-kind-herb-plants">0</span>
-                    </span>
-                    <span class="kind-fact">
-                      <span class="kind-fact-label">Next seed</span>
-                      <span class="kind-fact-value" data-field="sandbox-kind-herb-cost">6</span>
-                    </span>
-                  </span>
-                </dd>
-              </div>
-              <div class="readout-row readout-kind">
-                <dt class="readout-term">Bloom</dt>
-                <dd class="readout-value readout-kind-value" data-field="sandbox-kind-bloom">
-                  <span class="kind-facts">
-                    <span class="kind-fact">
-                      <span class="kind-fact-label">Seeds</span>
-                      <span class="kind-fact-value" data-field="sandbox-kind-bloom-seeds">0</span>
-                    </span>
-                    <span class="kind-fact">
-                      <span class="kind-fact-label">Plants</span>
-                      <span class="kind-fact-value" data-field="sandbox-kind-bloom-plants">0</span>
-                    </span>
-                    <span class="kind-fact">
-                      <span class="kind-fact-label">Next seed</span>
-                      <span class="kind-fact-value" data-field="sandbox-kind-bloom-cost">40</span>
-                    </span>
-                  </span>
-                </dd>
-              </div>
-            </dl>
 
-            <div class="goal-detail return-facts" id="sandbox-summary" role="status" aria-label="What the rehearsal grew"></div>
+              <div class="garden-side">
+                <dl class="readout" aria-label="What the rehearsal garden holds">
+                  <div class="readout-row">
+                    <dt class="readout-term">Time wound forward</dt>
+                    <dd class="readout-value" id="sandbox-elapsed" data-field="sandbox-elapsed">none yet</dd>
+                  </div>
+                  <div class="readout-row">
+                    <dt class="readout-term">Growth</dt>
+                    <dd class="readout-value readout-growth">
+                      <span id="sandbox-growth">0.0</span>
+                      <span class="readout-rate" id="sandbox-rate">+0.0/s</span>
+                    </dd>
+                  </div>
+                  <div class="readout-row">
+                    <dt class="readout-term">Garden form</dt>
+                    <dd class="readout-value" data-field="sandbox-form">bare soil</dd>
+                  </div>
+                  <div class="readout-row">
+                    <dt class="readout-term">Seeds matured</dt>
+                    <dd class="readout-value" data-field="sandbox-matured">0</dd>
+                  </div>
+                  <div class="readout-row">
+                    <dt class="readout-term">Ungrown seeds</dt>
+                    <dd class="readout-value" data-field="sandbox-seeds">1</dd>
+                  </div>
+                  <div class="readout-row">
+                    <dt class="readout-term">Grown plants</dt>
+                    <dd class="readout-value" data-field="sandbox-plants">0</dd>
+                  </div>
+                  <div class="readout-row">
+                    <dt class="readout-term">Season</dt>
+                    <dd class="readout-value" data-field="sandbox-season">winter · x1 growth</dd>
+                  </div>
+                  <div class="readout-row">
+                    <dt class="readout-term">Pollinator</dt>
+                    <dd class="readout-value" data-field="sandbox-pollinator">none visiting · boost x2 while visiting · visit 1m every 3m · each bloom +10s · max 2m 30s</dd>
+                  </div>
+                  <!-- One row per kind of seed, the same short labelled values the
+                       real garden's own rows carry — its seeds and plants and the
+                       price of its next seed. Each value has its own element, so a
+                       rehearsal is read rather than decoded and any one fact can
+                       be checked. -->
+                  <div class="readout-row readout-kind">
+                    <dt class="readout-term">Herb</dt>
+                    <dd class="readout-value readout-kind-value" data-field="sandbox-kind-herb">
+                      <span class="kind-facts">
+                        <span class="kind-fact">
+                          <span class="kind-fact-label">Seeds</span>
+                          <span class="kind-fact-value" data-field="sandbox-kind-herb-seeds">1</span>
+                        </span>
+                        <span class="kind-fact">
+                          <span class="kind-fact-label">Plants</span>
+                          <span class="kind-fact-value" data-field="sandbox-kind-herb-plants">0</span>
+                        </span>
+                        <span class="kind-fact">
+                          <span class="kind-fact-label">Next seed</span>
+                          <span class="kind-fact-value" data-field="sandbox-kind-herb-cost">6</span>
+                        </span>
+                      </span>
+                    </dd>
+                  </div>
+                  <div class="readout-row readout-kind">
+                    <dt class="readout-term">Bloom</dt>
+                    <dd class="readout-value readout-kind-value" data-field="sandbox-kind-bloom">
+                      <span class="kind-facts">
+                        <span class="kind-fact">
+                          <span class="kind-fact-label">Seeds</span>
+                          <span class="kind-fact-value" data-field="sandbox-kind-bloom-seeds">0</span>
+                        </span>
+                        <span class="kind-fact">
+                          <span class="kind-fact-label">Plants</span>
+                          <span class="kind-fact-value" data-field="sandbox-kind-bloom-plants">0</span>
+                        </span>
+                        <span class="kind-fact">
+                          <span class="kind-fact-label">Next seed</span>
+                          <span class="kind-fact-value" data-field="sandbox-kind-bloom-cost">40</span>
+                        </span>
+                      </span>
+                    </dd>
+                  </div>
+                </dl>
 
-            <!-- The garden's own actions, run against the rehearsal copy only:
-                 visit it away with the decisions you would actually make. -->
-            <div class="actions">
-              <button type="button" class="btn" id="sandbox-tend" aria-label="Tend the soil in the rehearsal">Tend the soil</button>
-              <button type="button" class="btn" id="sandbox-plant-herb" aria-label="Plant a herb seed in the rehearsal">Plant a herb seed</button>
-              <button type="button" class="btn" id="sandbox-plant-bloom" aria-label="Plant a bloom seed in the rehearsal">Plant a bloom seed</button>
-            </div>
-            <button type="button" class="btn plant" id="sandbox-open-bed" aria-label="Open the next bed in the rehearsal" hidden>Open the next bed</button>
-            <p class="sr-only" id="sandbox-status" role="status" aria-live="polite"></p>
+                <div class="goal-detail return-facts" id="sandbox-summary" role="status" aria-label="What the rehearsal grew"></div>
 
-            <div class="goal">
-              <p class="goal-title" id="sandbox-goal-title"></p>
-              <div
-                class="meter"
-                id="sandbox-meter"
-                role="progressbar"
-                aria-labelledby="sandbox-goal-title"
-                aria-valuemin="0"
-                aria-valuemax="1"
-                aria-valuenow="0"
-              >
-                <div class="meter-fill" id="sandbox-meter-fill"></div>
+                <!-- The garden's own actions, run against the rehearsal copy only:
+                     visit it away with the decisions you would actually make. -->
+                <div class="actions">
+                  <button type="button" class="btn" id="sandbox-tend" aria-label="Tend the soil in the rehearsal">Tend the soil</button>
+                  <button type="button" class="btn" id="sandbox-plant-herb" aria-label="Plant a herb seed in the rehearsal">Plant a herb seed</button>
+                  <button type="button" class="btn" id="sandbox-plant-bloom" aria-label="Plant a bloom seed in the rehearsal">Plant a bloom seed</button>
+                </div>
+                <button type="button" class="btn plant" id="sandbox-open-bed" aria-label="Open the next bed in the rehearsal" hidden>Open the next bed</button>
+                <p class="sr-only" id="sandbox-status" role="status" aria-live="polite"></p>
+
+                <div class="goal">
+                  <p class="goal-title" id="sandbox-goal-title"></p>
+                  <div
+                    class="meter"
+                    id="sandbox-meter"
+                    role="progressbar"
+                    aria-labelledby="sandbox-goal-title"
+                    aria-valuemin="0"
+                    aria-valuemax="1"
+                    aria-valuenow="0"
+                  >
+                    <div class="meter-fill" id="sandbox-meter-fill"></div>
+                  </div>
+                  <div class="goal-detail" id="sandbox-goal-detail" role="group" aria-label="Next goal progress"></div>
+                </div>
+
+                <div class="save-actions">
+                  <button type="button" class="btn" id="sandbox-hour">Fast-forward 1 hour</button>
+                  <button type="button" class="btn" id="sandbox-day">Fast-forward 1 day</button>
+                  <button type="button" class="btn" id="sandbox-month">Fast-forward 1 month</button>
+                  <button type="button" class="btn" id="sandbox-reset">Reset to the start</button>
+                </div>
               </div>
-              <div class="goal-detail" id="sandbox-goal-detail" role="group" aria-label="Next goal progress"></div>
-            </div>
-
-            <div class="save-actions">
-              <button type="button" class="btn" id="sandbox-hour">Fast-forward 1 hour</button>
-              <button type="button" class="btn" id="sandbox-day">Fast-forward 1 day</button>
-              <button type="button" class="btn" id="sandbox-month">Fast-forward 1 month</button>
-              <button type="button" class="btn" id="sandbox-reset">Reset to the start</button>
             </div>
           </section>
         </div>
