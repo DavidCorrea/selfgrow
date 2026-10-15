@@ -9,9 +9,12 @@
  * and changes nothing, and only a call with `confirm: true` replants;
  * `dismiss-return`
  * is the Dismiss control beside the New since you left marks; `open-sandbox`,
- * `fast-forward-sandbox`, `act-in-sandbox` and `reset-sandbox` are the Rehearse
- * time panel — the last but one tending, planting and opening a bed inside the
- * rehearsal rather than the real garden; `export-save` is the Copy save button; `import-save` is the Load save button —
+ * `fast-forward-sandbox`, `act-in-sandbox`, `reset-sandbox` and `close-sandbox`
+ * are the Rehearse time panel — `act-in-sandbox` tending, planting and opening
+ * a bed inside the rehearsal rather than the real garden, `reset-sandbox`
+ * putting the rehearsal back to its start and `close-sandbox` closing it for
+ * the page's own Close the rehearsal button; `export-save` is the Copy save
+ * button; `import-save` is the Load save button —
  * a two-step, so a call without a confirmation previews what a load would
  * replace and writes nothing, and only a call with `confirm: true` loads it;
  * `restore-save` is the Restore previous garden button — the one undo for a
@@ -22,6 +25,7 @@ import {
   SANDBOX_SPANS,
   actInSandbox,
   clearReturnMarks,
+  closeSandbox,
   exportSave,
   fastForwardSandbox,
   getDisplayedState,
@@ -349,8 +353,9 @@ export function tools() {
         "Opening copies the garden as it is now, wound back to its start; " +
         "opening again re-copies it. Nothing the sandbox does is ever saved, " +
         "and the real garden, its save and its last-seen moment are left " +
-        "untouched. Use fast-forward-sandbox to wind it forward and " +
-        "reset-sandbox to put it back. Returns the state afterwards, whose " +
+        "untouched. Use fast-forward-sandbox to wind it forward, " +
+        "reset-sandbox to put it back and close-sandbox to put it away. " +
+        "Returns the state afterwards, whose " +
         "sandbox field is the rehearsal and whose other fields are the " +
         "untouched real garden.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
@@ -457,6 +462,28 @@ export function tools() {
       example: {},
       async execute() {
         resetSandbox();
+        return getDisplayedState();
+      },
+    },
+    {
+      name: "close-sandbox",
+      title: "Close the sandbox garden",
+      description:
+        "Closes the page's time rehearsal and puts the page back to the real " +
+        "garden — the undo of open-sandbox. The rehearsal is for trying time " +
+        "away, so it must be put away again: this hides the rehearsal panel, " +
+        "offers the Rehearse time control once more, and discards the " +
+        "rehearsal whole. Nothing real changes — the real garden, its save " +
+        "and its last-seen moment are exactly as they were, and anything " +
+        "already earned or spent is not carried over. Safe to call when no " +
+        "sandbox is open: it does nothing then. Returns the state afterwards, " +
+        "whose sandbox field is {open: false} beside the untouched real " +
+        "garden.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      annotations: { readOnlyHint: false },
+      example: {},
+      async execute() {
+        closeSandbox();
         return getDisplayedState();
       },
     },

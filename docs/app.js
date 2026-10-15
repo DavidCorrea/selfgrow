@@ -196,6 +196,7 @@ const elements = {
   sandboxDay: document.getElementById("sandbox-day"),
   sandboxMonth: document.getElementById("sandbox-month"),
   sandboxReset: document.getElementById("sandbox-reset"),
+  sandboxClose: document.getElementById("sandbox-close"),
   sandboxTend: document.getElementById("sandbox-tend"),
   sandboxPlantHerb: document.getElementById("sandbox-plant-herb"),
   sandboxPlantBloom: document.getElementById("sandbox-plant-bloom"),
@@ -959,6 +960,20 @@ export function resetSandbox() {
   sandbox.away = { earned: 0, sown: 0, sownCost: 0, matured: 0 };
   sandbox.status = "Reset to the moment the rehearsal opened.";
   rehearseSandbox();
+  render();
+  return getSandboxState();
+}
+
+/**
+ * Close the rehearsal and put the page back to the real garden.
+ *
+ * The sandbox is dropped whole. Nothing of it was ever saved, so the real
+ * garden, its save and its last-seen moment are exactly as they were, the
+ * panel hides and Rehearse time is offered again — the exit, where resetting
+ * goes back to the start of the same rehearsal. Safe while it is closed.
+ */
+export function closeSandbox() {
+  sandbox = null;
   render();
   return getSandboxState();
 }
@@ -1929,6 +1944,7 @@ function start() {
   elements.save?.addEventListener("input", () => announce(""));
 
   elements.openSandbox?.addEventListener("click", () => openSandbox());
+  elements.sandboxClose?.addEventListener("click", () => closeSandbox());
   elements.sandboxHour?.addEventListener("click", () => fastForwardSandbox(sandboxSpanSeconds("hour")));
   elements.sandboxDay?.addEventListener("click", () => fastForwardSandbox(sandboxSpanSeconds("day")));
   elements.sandboxMonth?.addEventListener("click", () => fastForwardSandbox(sandboxSpanSeconds("month")));

@@ -85,6 +85,7 @@ import {
   applyReturn,
   buildAwayReport,
   clearReturnMarks,
+  closeSandbox,
   describeAnnouncements,
   describeKind,
   describePlot,
@@ -718,7 +719,7 @@ function checkPortableSave(problems) {
     }
   } finally {
     setGarden(before);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreGrowth(growthBefore);
     restoreRawStorage(beforeRaw);
   }
 }
@@ -846,7 +847,7 @@ function checkLoadConfirm(problems) {
     if (fold && foldWasOpen !== null) fold.open = foldWasOpen;
     if (saveField && saveFieldValue !== null) saveField.value = saveFieldValue;
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime, growthBefore.bonus);
+    restoreGrowth(growthBefore);
     restoreRawStorage(storageBefore);
   }
 }
@@ -994,7 +995,7 @@ function checkRestorePoint(problems) {
     restoreGardenSave();
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime, growthBefore.bonus);
+    restoreGrowth(growthBefore);
     restoreRawStorage(storageBefore);
   }
 }
@@ -1178,7 +1179,7 @@ function checkBloomPlanting(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreGrowth(growthBefore);
     restoreRawStorage(storageBefore);
   }
 }
@@ -1413,7 +1414,7 @@ function checkLifetimeGrowth(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreGrowth(growthBefore);
   }
 }
 
@@ -1581,7 +1582,7 @@ function checkReplant(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime, growthBefore.bonus);
+    restoreGrowth(growthBefore);
     restoreRawStorage(storageBefore);
   }
 }
@@ -1739,7 +1740,7 @@ function checkKindReadout(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreGrowth(growthBefore);
   }
 }
 
@@ -1930,7 +1931,7 @@ function checkKindMilestones(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreGrowth(growthBefore);
   }
 }
 
@@ -2239,7 +2240,7 @@ function checkPlotMilestoneCrowns(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime, growthBefore.bonus);
+    restoreGrowth(growthBefore);
   }
 
   // The picture itself: two gardens differing only in crossing the herb
@@ -2876,7 +2877,7 @@ function checkPlotEstablishment(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreGrowth(growthBefore);
   }
 }
 
@@ -3138,7 +3139,7 @@ function checkNextFormMeter(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreGrowth(growthBefore);
   }
 }
 
@@ -3174,7 +3175,7 @@ function checkPlotMotion(problems) {
       );
     }
   } finally {
-    setGrowth(before.growth, before.rate, before.age, before.lifetime);
+    restoreGrowth(before);
   }
 }
 
@@ -3234,7 +3235,7 @@ function checkTendAnswersImmediately(problems) {
       );
     }
   } finally {
-    setGrowth(before.growth, before.rate, before.age, before.lifetime);
+    restoreGrowth(before);
   }
 }
 
@@ -3252,7 +3253,7 @@ function checkGrowthRateShowsAndRuns(problems) {
       problems.push(`the page shows the growth rate as ${JSON.stringify(rateText)}, expected a "+x/s" form like "+0.5/s".`);
     }
   } finally {
-    setGrowth(before.growth, before.rate, before.age, before.lifetime);
+    restoreGrowth(before);
   }
 }
 
@@ -3288,7 +3289,7 @@ function checkGrowthIsBoundedAndFinite(problems) {
       problems.push(`the growth total shows ${JSON.stringify(total)} after a huge elapsed span.`);
     }
   } finally {
-    setGrowth(before.growth, before.rate, before.age, before.lifetime);
+    restoreGrowth(before);
   }
 }
 
@@ -3425,7 +3426,7 @@ function checkPlantingSpendsAndRaisesProduction(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreGrowth(growthBefore);
     restoreRawStorage(storageBefore);
   }
 }
@@ -3572,7 +3573,7 @@ function checkSeedGoalReadout(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreGrowth(growthBefore);
   }
 }
 
@@ -3678,7 +3679,7 @@ function checkFirstGoalNamesTending(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreGrowth(growthBefore);
   }
 }
 
@@ -3724,7 +3725,7 @@ function checkNextPlantReadout(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreGrowth(growthBefore);
   }
 }
 
@@ -3865,7 +3866,7 @@ function checkBedProgression(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreGrowth(growthBefore);
     restoreRawStorage(storageBefore);
   }
 }
@@ -3891,7 +3892,7 @@ function checkLargeCounts(problems) {
     checkNoOverflow(problems);
   } finally {
     setGarden(before);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreGrowth(growthBefore);
     restoreRawStorage(beforeRaw);
   }
 }
@@ -4034,7 +4035,7 @@ function checkCompactAmounts(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreGrowth(growthBefore);
     restoreRawStorage(storageBefore);
   }
 }
@@ -4348,7 +4349,7 @@ function checkOfflineTime(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(before.growth, before.rate, before.age, before.lifetime);
+    restoreGrowth(before);
   }
 }
 
@@ -4756,7 +4757,7 @@ function checkPollinator(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreGrowth(growthBefore);
   }
 }
 
@@ -4870,7 +4871,7 @@ function checkPollinatorHome(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreGrowth(growthBefore);
   }
 }
 
@@ -5054,7 +5055,7 @@ function checkPollinatorSeasons(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreGrowth(growthBefore);
   }
 }
 
@@ -5344,7 +5345,7 @@ function checkSeason(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreGrowth(growthBefore);
   }
 }
 
@@ -5417,7 +5418,7 @@ function checkSeasonDrawing(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreGrowth(growthBefore);
   }
 }
 
@@ -5549,7 +5550,7 @@ function checkReturnSummary(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreGrowth(growthBefore);
     restoreRawStorage(storageBefore);
   }
 }
@@ -5668,7 +5669,7 @@ function checkReturnSummaryPlacement(problems) {
       strip.hidden = stripHiddenBefore ?? true;
     }
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreGrowth(growthBefore);
     restoreRawStorage(storageBefore);
   }
 }
@@ -5799,7 +5800,7 @@ function checkAwaySowing(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreGrowth(growthBefore);
     restoreRawStorage(storageBefore);
   }
 }
@@ -5956,7 +5957,7 @@ function checkReturnMarks(problems) {
   } finally {
     clearReturnMarks();
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreGrowth(growthBefore);
     restoreRawStorage(storageBefore);
   }
 }
@@ -6145,7 +6146,7 @@ function checkVisitRecord(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime, growthBefore.bonus);
+    restoreGrowth(growthBefore);
     restoreRawStorage(storageBefore);
   }
 }
@@ -6290,7 +6291,7 @@ function checkTendedMarks(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime, growthBefore.bonus);
+    restoreGrowth(growthBefore);
     restoreRawStorage(storageBefore);
   }
 }
@@ -6477,7 +6478,7 @@ function checkLiveAnnouncements(problems) {
   } finally {
     clearReturnMarks();
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreGrowth(growthBefore);
     restoreRawStorage(storageBefore);
   }
 }
@@ -6666,7 +6667,7 @@ function checkActionConfirmationsAreSpoken(problems) {
     fold.open = foldWasOpen;
     if (saveField) saveField.value = saveFieldValue;
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreGrowth(growthBefore);
     restoreRawStorage(storageBefore);
   }
 }
@@ -6763,7 +6764,7 @@ function checkGardenActionRefusals(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreGrowth(growthBefore);
     restoreRawStorage(storageBefore);
   }
 }
@@ -6851,7 +6852,7 @@ function checkSimulateGarden(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreGrowth(growthBefore);
   }
 }
 
@@ -7266,9 +7267,112 @@ function checkSandbox(problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreGrowth(growthBefore);
     restoreRawStorage(storageBefore);
     restoreRawLastSeen(seenBefore);
+  }
+}
+
+/**
+ * The rehearsal has a way out. The panel carries a Close the rehearsal control
+ * that puts the page back to the real garden: pressing it hides the panel,
+ * offers Rehearse time again and reports no open sandbox, while the real garden,
+ * its save and its last-seen moment are exactly as they were — the same promise
+ * resetting makes, for the exit rather than the start.
+ */
+function checkSandboxClose(problems) {
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const storageBefore = rawStorage();
+  const seenBefore = rawLastSeen();
+  try {
+    const panel = document.getElementById("sandbox");
+    const openButton = document.getElementById("open-sandbox");
+    const closeButton = document.getElementById("sandbox-close");
+    if (!closeButton) {
+      problems.push(
+        "the rehearsal panel has no Close the rehearsal control (#sandbox-close), so a rehearsal can be opened " +
+          "but never closed."
+      );
+      return;
+    }
+    if (panel && !panel.contains(closeButton)) {
+      problems.push("#sandbox-close is outside #sandbox, so it is not part of the rehearsal panel it closes.");
+    }
+    if (closeButton.tagName !== "BUTTON") {
+      problems.push(
+        `#sandbox-close is a ${closeButton.tagName}, not a BUTTON a keyboard can reach and a press can fire.`
+      );
+    }
+    const label = String(closeButton.textContent ?? "").trim();
+    if (!label) {
+      problems.push("#sandbox-close has no visible label, so a visitor cannot tell what it does.");
+    } else if (!/close/i.test(label) || !/rehearsal/i.test(label)) {
+      problems.push(
+        `the rehearsal's close control reads ${JSON.stringify(label)}, which does not name closing the rehearsal.`
+      );
+    }
+
+    // Open a rehearsal on a known garden, then use the control to close it.
+    setGarden({ seeds: 2, plants: 1 });
+    setGrowth(0, 0.5, 0, 0, 3);
+    const realGarden = getGarden();
+    const realGrowth = getGrowthState();
+    const realStorage = rawStorage();
+
+    openSandbox();
+    if (!getDisplayedState().sandbox.open) {
+      problems.push("opening the rehearsal reported it closed, so its close control cannot be checked.");
+      return;
+    }
+    if (closeButton.hidden || closeButton.tabIndex < 0) {
+      problems.push(
+        "the rehearsal's close control is hidden or out of the tab order, so it cannot be reached by keyboard."
+      );
+    }
+    closeButton.click();
+
+    if (panel && !panel.hidden) {
+      problems.push("pressing Close the rehearsal left the rehearsal panel (#sandbox) showing.");
+    }
+    if (openButton && openButton.hidden) {
+      problems.push(
+        "pressing Close the rehearsal left #open-sandbox hidden, so there is no way back into a rehearsal."
+      );
+    }
+    if (getDisplayedState().sandbox.open) {
+      problems.push("pressing Close the rehearsal still reports an open sandbox.");
+    }
+
+    // Closing is not a change to the real garden: the same promise resetting
+    // makes, so a visitor's garden, save and last-seen survive their rehearsal.
+    const afterGarden = getGarden();
+    const afterGrowth = getGrowthState();
+    if (
+      afterGarden.seeds !== realGarden.seeds ||
+      afterGarden.plants !== realGarden.plants ||
+      afterGrowth.growth !== realGrowth.growth ||
+      afterGrowth.rate !== realGrowth.rate ||
+      afterGrowth.bonus !== realGrowth.bonus
+    ) {
+      problems.push(
+        `closing the rehearsal changed the real garden to ${afterGrowth.growth} growth / ${afterGrowth.rate}/s / ` +
+          `${afterGrowth.bonus} bonus / ${afterGarden.seeds} seeds / ${afterGarden.plants} plants; it must stay ` +
+          `${realGrowth.growth} / ${realGrowth.rate} / ${realGrowth.bonus} / ${realGarden.seeds} / ${realGarden.plants}.`
+      );
+    }
+    if (rawStorage().value !== realStorage.value) {
+      problems.push("closing the rehearsal wrote to the garden's save; the sandbox must never touch it.");
+    }
+    if (rawLastSeen() !== seenBefore) {
+      problems.push("closing the rehearsal changed when the visitor was last seen; the sandbox must never touch it.");
+    }
+  } finally {
+    setGarden(gardenBefore);
+    restoreGrowth(growthBefore);
+    restoreRawStorage(storageBefore);
+    restoreRawLastSeen(seenBefore);
+    closeSandbox();
   }
 }
 
@@ -7461,7 +7565,7 @@ async function checkAgentTools(problems) {
       }
     } finally {
       setGarden(gardenBefore);
-      setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+      restoreGrowth(growthBefore);
     }
   }
 
@@ -7576,7 +7680,7 @@ async function checkAgentTools(problems) {
       }
     } finally {
       setGarden(gardenBefore);
-      setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+      restoreGrowth(growthBefore);
       restoreRawStorage(storageBefore);
     }
   }
@@ -7629,7 +7733,7 @@ async function checkAgentTools(problems) {
       }
     } finally {
       setGarden(gardenBefore);
-      setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+      restoreGrowth(growthBefore);
       restoreRawStorage(storageBefore);
     }
   }
@@ -7743,7 +7847,7 @@ async function checkAgentTools(problems) {
       }
     } finally {
       setGarden(gardenBefore);
-      setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime, growthBefore.bonus);
+      restoreGrowth(growthBefore);
       restoreRawStorage(storageBefore);
     }
   }
@@ -7781,7 +7885,7 @@ async function checkAgentTools(problems) {
     } finally {
       clearReturnMarks();
       setGarden(gardenBefore);
-      setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+      restoreGrowth(growthBefore);
       restoreRawStorage(storageBefore);
     }
   }
@@ -7789,6 +7893,7 @@ async function checkAgentTools(problems) {
   const openSandboxTool = find("open-sandbox");
   const fastForwardTool = find("fast-forward-sandbox");
   const resetSandboxTool = find("reset-sandbox");
+  const closeSandboxTool = find("close-sandbox");
   if (!openSandboxTool || !fastForwardTool || !resetSandboxTool) {
     problems.push(
       "agenttools.js must expose open-sandbox, fast-forward-sandbox and reset-sandbox, " +
@@ -7852,6 +7957,32 @@ async function checkAgentTools(problems) {
         problems.push("the reset-sandbox tool did not put the sandbox back to its start.");
       }
 
+      // Closing is the one undo for opening: an agent that opened a rehearsal
+      // can always put the page back, and the sandbox reports it closed without
+      // touching anything real.
+      if (!closeSandboxTool) {
+        problems.push("agenttools.js must expose close-sandbox, so an agent can put away a rehearsal it opened.");
+      } else {
+        const description = closeSandboxTool.description ?? "";
+        if (!/undo/i.test(description) || !/open-sandbox/i.test(description)) {
+          problems.push(
+            "the close-sandbox tool's description does not say it undoes open-sandbox, so a caller cannot know it " +
+              "is the way out of the rehearsal."
+          );
+        }
+        const closed = await closeSandboxTool.execute({}, {});
+        if (closed.sandbox?.open || getDisplayedState().sandbox?.open) {
+          problems.push("the close-sandbox tool left the sandbox open; it must put the rehearsal away.");
+        }
+        const realAfterClose = getGarden();
+        if (realAfterClose.seeds !== 2 || realAfterClose.plants !== 1 || getGrowthState().growth !== 0) {
+          problems.push("the close-sandbox tool changed the real garden.");
+        }
+        if (rawStorage().value !== storageBefore.value) {
+          problems.push("a close-sandbox call wrote to the garden's save; the sandbox must never touch it.");
+        }
+      }
+
       const actTool = find("act-in-sandbox");
       if (!actTool) {
         problems.push(
@@ -7896,7 +8027,7 @@ async function checkAgentTools(problems) {
       }
     } finally {
       setGarden(gardenBefore);
-      setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+      restoreGrowth(growthBefore);
       restoreRawStorage(storageBefore);
       restoreRawLastSeen(seenBefore);
     }
@@ -7994,7 +8125,7 @@ async function checkRestoreSaveTool(restoreTool, readTool, importTool, problems)
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime, growthBefore.bonus);
+    restoreGrowth(growthBefore);
     restoreRawStorage(storageBefore);
     restoreRawLastSeen(seenBefore);
   }
@@ -8133,10 +8264,22 @@ async function checkImportSaveGate(importTool, problems) {
     }
   } finally {
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime, growthBefore.bonus);
+    restoreGrowth(growthBefore);
     restoreRawStorage(storageBefore);
     restoreRawLastSeen(seenBefore);
   }
+}
+
+/**
+ * Put the whole growth state back, lasting bonus included.
+ *
+ * Every check that changes the growth restores through this, so no `finally`
+ * has to remember that `setGrowth`'s fifth argument is the bonus: a garden that
+ * carried one comes out of the suite with it still, instead of silently losing
+ * it to the default of 0.
+ */
+function restoreGrowth(snapshot) {
+  setGrowth(snapshot.growth, snapshot.rate, snapshot.age, snapshot.lifetime, snapshot.bonus);
 }
 
 function rawStorage() {
@@ -8184,6 +8327,7 @@ export async function checks() {
   const gardenBefore = getGarden();
   const growthBefore = getGrowthState();
   const storageBefore = rawStorage();
+  const seenBefore = rawLastSeen();
 
   try {
     await document.fonts.ready;
@@ -8262,11 +8406,21 @@ export async function checks() {
     checkSeason(problems);
     checkSeasonDrawing(problems);
     checkSandbox(problems);
+    checkSandboxClose(problems);
     await checkAgentTools(problems);
   } finally {
+    // Leave the page exactly as a visitor found it: the garden, the whole growth
+    // state and the browser's storage back, the last-seen moment restored, no
+    // rehearsal left open, and #garden-status cleared of whatever the last
+    // check announced. Everything that measures the page afterwards measures
+    // the product, not the suite's leftovers.
     setGarden(gardenBefore);
-    setGrowth(growthBefore.growth, growthBefore.rate, growthBefore.age, growthBefore.lifetime);
+    restoreGrowth(growthBefore);
     restoreRawStorage(storageBefore);
+    restoreRawLastSeen(seenBefore);
+    closeSandbox();
+    const status = document.getElementById("garden-status");
+    if (status) status.textContent = "";
   }
 
   return problems;
