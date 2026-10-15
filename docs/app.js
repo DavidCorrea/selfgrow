@@ -175,6 +175,7 @@ const elements = {
   loadLifetime: document.getElementById("load-dialog-lifetime"),
   openSandbox: document.getElementById("open-sandbox"),
   sandbox: document.getElementById("sandbox"),
+  sandboxPlot: document.getElementById("sandbox-plot"),
   sandboxElapsed: document.getElementById("sandbox-elapsed"),
   sandboxGrowth: document.getElementById("sandbox-growth"),
   sandboxRate: document.getElementById("sandbox-rate"),
@@ -1018,6 +1019,34 @@ export function getSandboxState() {
 }
 
 /**
+ * The rehearsal's own garden in the shape the plot renderer draws.
+ *
+ * Reads only the sandbox's reported values — its growth, form, season,
+ * pollinator and per-kind counts — so the drawn rehearsal can never carry the
+ * live garden's. It deliberately passes no lifetime: a sandbox is one span of
+ * a garden, not a life, so the rehearsal draws on fresh ground, exactly as the
+ * plot does for a garden with no history.
+ *
+ * Pure, so a check can compare the state the page draws against the rehearsal
+ * it came from without a canvas.
+ */
+export function sandboxPlotState(rehearsal) {
+  return {
+    growth: rehearsal.growth,
+    form: rehearsal.form,
+    formName: rehearsal.formName,
+    seeds: rehearsal.seeds,
+    plants: rehearsal.plants,
+    beds: rehearsal.beds,
+    capacity: rehearsal.capacity,
+    season: rehearsal.season,
+    pollinator: rehearsal.pollinator,
+    seedCounts: rehearsal.kinds.map((kind) => kind.seeds),
+    plantCounts: rehearsal.kinds.map((kind) => kind.plants),
+  };
+}
+
+/**
  * The garden the most recent load replaced, kept so a wrong or regretted load
  * can be put back. One deep: another load overwrites it with the garden that
  * load replaces, and a restore spends it. It lives in memory only — nothing of
@@ -1503,6 +1532,9 @@ function openBedFromButton() {
 }
 
 let lastPlotKey = null;
+// The rehearsal plot is memoised on its own key, so winding the sandbox forward
+// redraws the rehearsal without touching the live plot's memo.
+let lastSandboxPlotKey = null;
 // The plot's animation phase: it advances one step per tick so the garden
 // breathes between milestones, and is pinned to a still frame by reduced motion.
 let plotFrame = 0;
@@ -1711,6 +1743,30 @@ function renderSandbox(state) {
     elements.sandboxOpenBed.setAttribute("aria-disabled", String(!rehearsal.canOpenBed));
   }
   setText(elements.sandboxStatus, rehearsal.status);
+
+  // The rehearsal's garden drawn beside its values, with the live plot's own
+  // renderer and palette, so winding time, tending and planting are seen and
+  // not only counted. The phase breathes for a rehearsal with anything growing
+  // on it, exactly as the live plot does, and the memo redraws only when the
+  // rehearsal's own form, growth, kinds, beds, pollinator, season, capacity or
+  // phase change — so a fast-forward is visibly a different picture while a
+  // still one stays put.
+  if (elements.sandboxPlot) {
+    const phase = motionPhase({
+      reduced: plotReducedMotion,
+      frame: plotFrame,
+      living: plotIsLiving(rehearsal),
+    });
+    const rehearsalPlot = sandboxPlotState(rehearsal);
+    const sandboxPlotKey =
+      `${rehearsal.form}:${rehearsal.growth}:${rehearsalPlot.seedCounts.join(",")}:` +
+      `${rehearsalPlot.plantCounts.join(",")}:${rehearsal.beds}:${rehearsal.pollinator?.visiting}:` +
+      `${rehearsal.season?.key}:${phase}:${rehearsal.capacity}`;
+    if (sandboxPlotKey !== lastSandboxPlotKey) {
+      drawGarden(elements.sandboxPlot, rehearsalPlot, readPalette(), phase);
+      lastSandboxPlotKey = sandboxPlotKey;
+    }
+  }
 }
 
 async function copySave() {

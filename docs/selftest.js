@@ -106,6 +106,7 @@ import {
   returnAnnouncement,
   returnFacts,
   returnMarkFor,
+  sandboxPlotState,
   summarizeReturn,
 } from "./app.js";
 import {
@@ -6878,6 +6879,21 @@ function checkSandbox(problems) {
       if (!document.getElementById(id)) problems.push(`the sandbox has no ${id} control.`);
     }
 
+    // The rehearsal's own garden is drawn in the panel, with the live plot's
+    // renderer: a canvas beside the values, inside #sandbox so it shows only
+    // while a rehearsal is open.
+    const plot = document.getElementById("sandbox-plot");
+    if (!plot) {
+      problems.push("the rehearsal panel has no plot (#sandbox-plot) to draw the rehearsal garden in.");
+    } else {
+      if (plot.tagName !== "CANVAS") {
+        problems.push(`#sandbox-plot is a ${plot.tagName}, not a CANVAS the rehearsal garden can be drawn on.`);
+      }
+      if (panel && !panel.contains(plot)) {
+        problems.push("#sandbox-plot is outside #sandbox, so the rehearsal plot would show while no rehearsal is open.");
+      }
+    }
+
     setGarden({ seeds: 2, plants: 1 });
     setGrowth(0, 0.5);
     const realGarden = getGarden();
@@ -6910,6 +6926,52 @@ function checkSandbox(problems) {
     }
     if (month.seconds !== 3600 + DAY + 30 * DAY) {
       problems.push(`the sandbox reports ${month.seconds} seconds wound forward, expected ${3600 + DAY + 30 * DAY}.`);
+    }
+
+    // The drawn rehearsal follows its own state: its growth, seeds, plants and
+    // season are the rehearsal's reported ones, and after a month it is not the
+    // live garden's picture — the open sandbox copied a bare 0-growth garden and
+    // wound it forward, while the live garden never moved.
+    const liveSeason = getDisplayedState().season.key;
+    const drawnMonth = sandboxPlotState(month);
+    if (drawnMonth.growth !== month.growth || drawnMonth.seeds !== month.seeds || drawnMonth.plants !== month.plants) {
+      problems.push(
+        `the drawn rehearsal garden carries ${drawnMonth.growth} growth / ${drawnMonth.seeds} seeds / ` +
+          `${drawnMonth.plants} plants, but the rehearsal holds ${month.growth} / ${month.seeds} / ${month.plants}.`
+      );
+    }
+    if (drawnMonth.season?.key !== month.season.key) {
+      problems.push(
+        `the drawn rehearsal garden is in ${JSON.stringify(drawnMonth.season?.key)}, but the rehearsal reports ` +
+          `${JSON.stringify(month.season.key)}.`
+      );
+    }
+    if (getDisplayedState().season.key !== liveSeason) {
+      problems.push(
+        `winding the rehearsal forward turned the live garden from ${liveSeason} to ` +
+          `${getDisplayedState().season.key}; the live garden must not move.`
+      );
+    }
+    if (plotImage(drawnMonth, 0) === plotImage(getDisplayedState(), 0)) {
+      problems.push(
+        "the drawn rehearsal garden is identical to the live garden's picture after a month, so it is not drawing " +
+          "the rehearsal's own garden."
+      );
+    }
+    if (plotImage(sandboxPlotState(hour), 0) === plotImage(drawnMonth, 0)) {
+      problems.push(
+        "winding the rehearsal from an hour to a month left the drawn rehearsal garden unchanged, so a " +
+          "fast-forward cannot be seen."
+      );
+    }
+    if (plot) {
+      const bounds = plotBounds(drawnMonth);
+      if (plot.width !== bounds.width || plot.height !== bounds.height) {
+        problems.push(
+          `the rehearsal plot on the page is ${plot.width}x${plot.height} pixels, but the drawn rehearsal ` +
+            `(@ form ${drawnMonth.form}) is ${bounds.width}x${bounds.height}.`
+        );
+      }
     }
 
     const back = resetSandbox();
@@ -6983,6 +7045,23 @@ function checkSandbox(problems) {
       );
     }
 
+    // Tending a fresh rehearsal is drawn, not only counted: the first pick of
+    // growth turns bare soil into a sprout, so the drawn garden must change.
+    setGarden({ seeds: 1, plants: 0 });
+    setGrowth(0, 0.5);
+    const fresh = openSandbox();
+    const bareRehearsal = plotImage(sandboxPlotState(fresh), 0);
+    const firstTend = actInSandbox("tend");
+    if (!firstTend.ok || firstTend.growth !== 1) {
+      problems.push(`tending a fresh rehearsal left ${firstTend.growth} growth, expected 1.`);
+    }
+    if (plotImage(sandboxPlotState(firstTend), 0) === bareRehearsal) {
+      problems.push(
+        "tending a fresh rehearsal left its drawn garden unchanged; +1 growth turns bare soil into a sprout, " +
+          "which the plot must show."
+      );
+    }
+
     // The garden's own actions run inside the rehearsal, changing only the
     // sandbox copy. A known garden and span let the checks state exact values.
     for (const id of ["sandbox-tend", "sandbox-plant-herb", "sandbox-plant-bloom", "sandbox-open-bed", "sandbox-status"]) {
@@ -7014,6 +7093,11 @@ function checkSandbox(problems) {
       problems.push(
         `planting a herb seed in the rehearsal left ${herbPlanted.growth} growth / ${herbPlanted.seeds} seeds, ` +
           `expected ${tended.growth - herbCost} / ${tended.seeds + 1}.`
+      );
+    }
+    if (plotImage(sandboxPlotState(herbPlanted), 0) === plotImage(sandboxPlotState(tended), 0)) {
+      problems.push(
+        "planting a herb seed in the rehearsal left its drawn garden unchanged, so the new seed cannot be seen."
       );
     }
 
