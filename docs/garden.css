@@ -328,19 +328,6 @@ body {
   }
 }
 
-/* On one column the plot's own height comes from the drawing, which grows with
-   the garden: another bed of soil is three more rows of pixels. Left alone, a
-   long-grown garden would fill a phone's first screen with ground and push
-   every growing control below the fold. The cap is in screen units, so the
-   plot stays the tallest thing on it while the actions stay on it too, and it
-   never touches a fresh garden, whose plot is shorter than the cap. A wide
-   window needs no cap: there the column sets the height and the plot fills it. */
-@media (max-width: 759px) {
-  .plot {
-    max-height: 55dvh;
-  }
-}
-
 /* A compact two-column grid of label-above-value pairs: the numbers read at a
    glance and take about half the height of stacked rows. */
 .readout {
@@ -777,4 +764,106 @@ body {
   line-height: 1.6;
   color: var(--ink);
   overflow-wrap: anywhere;
+}
+
+/* On a phone the drawing grows with the garden — another bed of soil is three
+   more rows of pixels — so left alone a long-grown plot fills the first screen
+   with ground and pushes its own controls below the fold. On a 390x844 phone
+   the second planting, the replant and the whole readout were reached only by
+   scrolling: a returning visitor's first look could not tell how the garden was
+   doing, nor reach the replant their return had just made worth a bonus. So a
+   phone caps the plot in screen units and tightens the chrome around it until
+   the four garden actions and the growth and form numbers share the first
+   screen, while the plot stays the largest thing above the numbers. A wide
+   window needs none of this: there the column sets the plot's height and the
+   chrome keeps its room. Every rule below lives inside this query, so the
+   desktop layout and page height are untouched.
+
+   It sits at the end of the sheet on purpose. Rules of equal specificity are
+   won by whichever comes later, and the .btn/.readout/.goal rules it tightens
+   are declared further down the file; earlier, this block would simply be
+   overridden and the phone would keep its desktop-sized chrome. */
+@media (max-width: 759px) {
+  .hud {
+    padding: 8px 16px 4px;
+  }
+
+  .brand {
+    font-size: 22px;
+  }
+
+  .tagline {
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .stage {
+    padding: 6px 16px;
+  }
+
+  .panel {
+    padding: 12px;
+  }
+
+  .panel-title {
+    margin: 0 0 4px;
+  }
+
+  /* The cap that makes the room: 20dvh of a 390x844 phone is ~169px, still a
+     head taller than the actions (~138px) and the goal (~89px) beside it. The
+     bitmap is only ever fitted, never stretched — object-fit: contain keeps the
+     pixel art crisp and square as the element shrinks. */
+  .plot {
+    max-height: 20dvh;
+  }
+
+  .actions {
+    gap: 6px;
+    margin-top: 6px;
+  }
+
+  /* A 42px press keeps the 40px thumb floor while shedding the padding a
+     mouse-sized screen has room for. */
+  .btn {
+    min-height: 42px;
+    padding: 8px 12px;
+  }
+
+  .plant {
+    margin-top: 6px;
+  }
+
+  .goal {
+    margin-top: 6px;
+    padding-top: 4px;
+  }
+
+  .meter {
+    height: 12px;
+    margin: 4px 0;
+  }
+
+  .garden-side > .readout {
+    margin-top: 4px;
+  }
+
+  .readout {
+    gap: 4px 12px;
+  }
+
+  .readout-value {
+    font-size: 16px;
+  }
+
+  .readout-row:first-child .readout-value {
+    font-size: 20px;
+  }
+
+  .readout-term {
+    font-size: 11px;
+  }
+
+  .readout-next-label {
+    font-size: 12px;
+  }
 }

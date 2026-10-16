@@ -4297,11 +4297,12 @@ function checkCompactReadout(problems) {
 }
 
 /**
- * The garden fits a phone's first screen: the plot, the growing actions and the
- * next goal all end within 390x844, with the long readout below them. The order
- * is asserted in the DOM as well as measured, because a CSS reorder would show
- * the buttons first while leaving a keyboard or a screen reader stuck inside
- * the numbers — shown order and reading order have to be the same.
+ * The garden fits a phone's first screen: the plot, the growing actions, the
+ * next goal and the two headline numbers — growth and the garden form — all end
+ * within 390x844, with the long readout below them. The order is asserted in the
+ * DOM as well as measured, because a CSS reorder would show the buttons first
+ * while leaving a keyboard or a screen reader stuck inside the numbers — shown
+ * order and reading order have to be the same.
  */
 function checkFirstScreenGarden(problems) {
   // A 390x844 phone's first screen, in document coordinates so the window the
@@ -4357,12 +4358,96 @@ function checkFirstScreenGarden(problems) {
     }
   }
 
+  // The two numbers a returning visitor came back for. The plot is only soil
+  // without them, so they share the first screen with the actions rather than
+  // waiting below the fold — the growth total and the form the garden has grown
+  // into, each read as a field so a reworded label cannot hide its absence.
+  for (const [label, field] of [
+    ["growth total", "growth"],
+    ["garden form", "form"],
+  ]) {
+    const value = document.querySelector(`.garden-side > .readout [data-field="${field}"]`);
+    if (!value) continue; // a missing readout field is another check's to report.
+    const box = bounds(value);
+    if (onOneColumn && box.bottom > FIRST_SCREEN_PX) {
+      problems.push(
+        `the ${label} ends at ${Math.round(box.bottom)}px, past the ${FIRST_SCREEN_PX}px first screen, so a ` +
+          "visitor cannot tell how the garden is doing without scrolling."
+      );
+    }
+  }
+
   // The readout is moved, never dropped: it must start below both the actions
   // and the goal, or it fills the first screen with numbers again.
   if (readoutBox.top < actionsBox.bottom || readoutBox.top < goalBox.bottom) {
     problems.push(
       `the readout starts at ${Math.round(readoutBox.top)}px, above the actions (${Math.round(actionsBox.bottom)}px) ` +
         `or the goal (${Math.round(goalBox.bottom)}px); it must sit below both.`
+    );
+  }
+}
+
+/**
+ * The phone keeps its garden small enough for its own controls.
+ *
+ * The first-screen measurement above only runs when the window itself is narrow,
+ * and the suite runs in a desktop-sized one, so nothing there would notice the
+ * phone cap being removed. This reads the stylesheet instead — no viewport
+ * needed — and states the promise where a width cannot hide it: a phone-sized
+ * media query must cap the plot well below the 55dvh that let a long-grown
+ * garden fill the first screen and push its own controls below the fold.
+ */
+function checkPhonePlotCap(problems) {
+  // The phone the promise is made to, and the plot height above which the four
+  // actions and the growth and form numbers no longer share its first screen.
+  // A cap in pixels is read as a share of that phone's height.
+  const PHONE_WIDTH_PX = 390;
+  const PHONE_HEIGHT_PX = 844;
+  const MAX_CAP_DVH = 30;
+
+  const capInDvh = (value) => {
+    const trimmed = value.trim();
+    const viewport = /^(\d+(?:\.\d+)?)(?:d?vh)$/.exec(trimmed);
+    if (viewport) return Number(viewport[1]);
+    const pixels = /^(\d+(?:\.\d+)?)px$/.exec(trimmed);
+    return pixels ? (Number(pixels[1]) / PHONE_HEIGHT_PX) * 100 : null;
+  };
+  const appliesAtPhoneWidth = (conditionText) => {
+    const maxWidth = /max-width:\s*(\d+(?:\.\d+)?)px/.exec(conditionText);
+    return maxWidth !== null && PHONE_WIDTH_PX <= Number(maxWidth[1]);
+  };
+
+  let smallestCap = null;
+  for (const sheet of document.styleSheets) {
+    let rules;
+    try {
+      rules = sheet.cssRules;
+    } catch {
+      continue; // a sheet the page cannot read is not the product's.
+    }
+    for (const rule of rules) {
+      const condition = rule.conditionText || rule.media?.mediaText || "";
+      if (!(rule instanceof CSSMediaRule) || !appliesAtPhoneWidth(condition)) continue;
+      for (const inner of rule.cssRules) {
+        if (!inner.selectorText) continue;
+        if (!inner.selectorText.split(",").some((part) => part.trim() === ".plot")) continue;
+        const cap = capInDvh(inner.style.getPropertyValue("max-height"));
+        if (cap !== null && (smallestCap === null || cap < smallestCap)) smallestCap = cap;
+      }
+    }
+  }
+
+  if (smallestCap === null) {
+    problems.push(
+      "no phone-sized media query caps .plot's max-height, so a long-grown garden fills a 390x844 first " +
+        "screen with ground and pushes its own actions below the fold."
+    );
+    return;
+  }
+  if (smallestCap > MAX_CAP_DVH) {
+    problems.push(
+      `.plot's phone cap is ${smallestCap}dvh, above the ${MAX_CAP_DVH}dvh that keeps the four actions and the ` +
+        "growth and form numbers on a 390x844 first screen, so the garden pushes its controls below the fold."
     );
   }
 }
@@ -8678,6 +8763,7 @@ export async function checks() {
     checkNoOverflow(problems);
     checkCompactReadout(problems);
     checkFirstScreenGarden(problems);
+    checkPhonePlotCap(problems);
     checkPlotDominatesGarden(problems);
     checkSimulateGarden(problems);
     checkReturnSummary(problems);
