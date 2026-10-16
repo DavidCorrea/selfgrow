@@ -4433,6 +4433,183 @@ function checkPlotDominatesGarden(problems) {
   }
 }
 
+/** The width past which the two-column layout takes over and the phone promise ends. */
+const PHONE_WIDTH_MAX_PX = 759;
+/** The loosest the phone plot's cap may be, in dvh, and still leave the actions on the first screen. */
+const PHONE_PLOT_CAP_MAX_DVH = 40;
+
+/**
+ * A long-grown garden still fits a phone's first screen: Tend the soil, both
+ * Plant buttons and Replant, plus the growth total and the garden form, all end
+ * within 390x844, and the drawn plot still stands taller than the numbers it
+ * sits above.
+ *
+ * The whole promise is about phone pixels, so the measured half only means
+ * something when the suite itself runs at a phone width. The cap the layout
+ * rests on is read from the CSSOM, which is width-independent, so the build's
+ * own desktop-width run still catches the cap being deleted or loosened.
+ */
+function checkPhoneFirstScreen(problems) {
+  if (window.innerWidth <= PHONE_WIDTH_MAX_PX) checkPhoneFirstScreenLayout(problems);
+  checkPhonePlotCap(problems);
+}
+
+/** The measured half of `checkPhoneFirstScreen`, run only at a phone width. */
+function checkPhoneFirstScreenLayout(problems) {
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const storageBefore = rawStorage();
+  const summary = document.getElementById("return-summary");
+  const summaryHiddenBefore = summary ? summary.hidden : null;
+  const summaryHtmlBefore = summary ? summary.innerHTML : null;
+  // A 390x844 phone's first screen, in document coordinates so the window the
+  // suite happens to run in cannot hide something that fell off the page.
+  const FIRST_SCREEN_PX = 844;
+  const DAY = 86400;
+
+  try {
+    // The garden the ticket measures: long grown, with every control on offer,
+    // and a return just reported, so nothing the fit is judged on is missing.
+    setGarden({ beds: 3, seeds: 6, plants: 6, plantCounts: [4, 2], bloomSeeds: 2 });
+    setGrowth(999, 2.5, 300, 100000);
+    const nowMs = Date.now();
+    applyReturn(
+      { version: SAVE_VERSION, seeds: 6, plants: 6, growth: 999, rate: 2.5 },
+      nowMs - 30 * DAY * 1000,
+      nowMs
+    );
+
+    const bottom = (el) => el.getBoundingClientRect().bottom + window.scrollY;
+
+    for (const [label, id] of [
+      ["Tend the soil", "tend"],
+      ["Plant a herb seed", "plant-seed"],
+      ["Plant a bloom seed", "plant-bloom"],
+      ["Replant the garden", "replant"],
+    ]) {
+      const control = document.getElementById(id);
+      if (!control) {
+        problems.push(`the phone's first screen cannot be checked: the page has no #${id} control.`);
+      } else if (bottom(control) > FIRST_SCREEN_PX) {
+        problems.push(
+          `the ${label} control ends at ${Math.round(bottom(control))}px, past the ${FIRST_SCREEN_PX}px first phone screen, ` +
+            "so a long-grown garden cannot be acted on without scrolling."
+        );
+      }
+    }
+
+    for (const [label, field] of [
+      ["growth total", "growth"],
+      ["garden form", "form"],
+    ]) {
+      const value = document.querySelector(`[data-field="${field}"]`);
+      if (!value) {
+        problems.push(`the phone's first screen cannot be checked: the page has no ${label} value.`);
+      } else if (bottom(value) > FIRST_SCREEN_PX) {
+        problems.push(
+          `the ${label} ends at ${Math.round(bottom(value))}px, past the ${FIRST_SCREEN_PX}px first phone screen, ` +
+            "so a returning visitor cannot read how the garden is doing without scrolling."
+        );
+      }
+    }
+
+    // The drawn garden still leads the first screen: taller than the growing
+    // actions and the next goal it sits above.
+    const plot = document.getElementById("garden-plot");
+    for (const [label, selector] of [
+      ["growing actions", ".garden-side > .actions"],
+      ["next goal", ".garden-side > .goal"],
+    ]) {
+      const other = document.querySelector(selector);
+      if (!plot || !other) continue;
+      const plotHeight = plot.getBoundingClientRect().height;
+      const otherHeight = other.getBoundingClientRect().height;
+      if (plotHeight <= otherHeight) {
+        problems.push(
+          `the phone plot is ${Math.round(plotHeight)}px tall and the ${label} ${Math.round(otherHeight)}px, ` +
+            "so the numbers outrank the garden on the first phone screen."
+        );
+      }
+    }
+  } finally {
+    clearReturnMarks();
+    if (summary) {
+      summary.innerHTML = summaryHtmlBefore ?? "";
+      summary.hidden = summaryHiddenBefore ?? true;
+    }
+    setGarden(gardenBefore);
+    restoreGrowth(growthBefore);
+    restoreRawStorage(storageBefore);
+  }
+}
+
+/**
+ * The phone plot's cap, read from the stylesheets rather than the rendered page
+ * so it holds whatever width the suite runs at: the `max-height` a `.plot` rule
+ * inside a phone `max-width` media query declares, or null when there is none.
+ */
+function phonePlotMaxHeight() {
+  for (const sheet of document.styleSheets) {
+    let rules;
+    try {
+      rules = sheet.cssRules;
+    } catch {
+      continue; // a cross-origin sheet we cannot read; none of ours are.
+    }
+    const cap = findPhonePlotCap(rules);
+    if (cap) return cap;
+  }
+  return null;
+}
+
+/** The first `.plot` max-height declared inside a phone `max-width` media query, or null. */
+function findPhonePlotCap(rules) {
+  for (const rule of rules) {
+    const media = rule.media && rule.media.mediaText;
+    const maxWidth = media && media.match(/max-width\s*:\s*(\d+(?:\.\d+)?)px/i);
+    if (maxWidth && Number(maxWidth[1]) <= PHONE_WIDTH_MAX_PX && rule.cssRules) {
+      for (const inner of rule.cssRules) {
+        if (!inner.selectorText || !inner.style) continue;
+        const isPlot = inner.selectorText.split(",").some((selector) => selector.trim() === ".plot");
+        if (!isPlot) continue;
+        const value = inner.style.getPropertyValue("max-height").trim();
+        if (value) return value;
+      }
+    }
+    if (rule.cssRules) {
+      const nested = findPhonePlotCap(rule.cssRules);
+      if (nested) return nested;
+    }
+  }
+  return null;
+}
+
+/** The cap itself: a phone's first screen needs the plot held back in screen units. */
+function checkPhonePlotCap(problems) {
+  const cap = phonePlotMaxHeight();
+  if (!cap) {
+    problems.push(
+      "the phone plot has no max-height inside a max-width media query, so a long-grown garden fills the " +
+        "phone's first screen and pushes the growing actions below the fold."
+    );
+    return;
+  }
+  const length = cap.match(/^([\d.]+)(dvh|vh|px|%)$/i);
+  if (!length || !/^(dvh|vh)$/i.test(length[2])) {
+    problems.push(
+      `the phone plot's max-height is "${cap}"; it must be in dvh so it scales with the phone's screen rather ` +
+        "than overflowing a shorter one."
+    );
+    return;
+  }
+  if (Number(length[1]) > PHONE_PLOT_CAP_MAX_DVH) {
+    problems.push(
+      `the phone plot's max-height is ${length[1]}${length[2]}, looser than the ${PHONE_PLOT_CAP_MAX_DVH}dvh the ` +
+        "phone's first screen allows, so the actions will not all fit above the fold."
+    );
+  }
+}
+
 // --- Time away ---------------------------------------------------------------
 
 /**
@@ -8679,6 +8856,7 @@ export async function checks() {
     checkCompactReadout(problems);
     checkFirstScreenGarden(problems);
     checkPlotDominatesGarden(problems);
+    checkPhoneFirstScreen(problems);
     checkSimulateGarden(problems);
     checkReturnSummary(problems);
     checkReturnSummaryPlacement(problems);
