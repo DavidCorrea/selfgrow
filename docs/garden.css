@@ -328,19 +328,6 @@ body {
   }
 }
 
-/* On one column the plot's own height comes from the drawing, which grows with
-   the garden: another bed of soil is three more rows of pixels. Left alone, a
-   long-grown garden would fill a phone's first screen with ground and push
-   every growing control below the fold. The cap is in screen units, so the
-   plot stays the tallest thing on it while the actions stay on it too, and it
-   never touches a fresh garden, whose plot is shorter than the cap. A wide
-   window needs no cap: there the column sets the height and the plot fills it. */
-@media (max-width: 759px) {
-  .plot {
-    max-height: 55dvh;
-  }
-}
-
 /* A compact two-column grid of label-above-value pairs: the numbers read at a
    glance and take about half the height of stacked rows. */
 .readout {
@@ -777,4 +764,116 @@ body {
   line-height: 1.6;
   color: var(--ink);
   overflow-wrap: anywhere;
+}
+
+/* The phone's first screen, 390x844, is budgeted for the whole garden: the
+   header and panel chrome, the drawn plot, the return's summary, the four
+   growing actions (Tend, both Plant buttons and Replant), the next goal, and
+   the readout's growth and garden-form rows all have to end within 844px —
+   the first screen, with nothing gained by scrolling to find out how the
+   garden is doing. On one column the plot's own height comes from the drawing,
+   which grows with the garden: another bed of soil is three more rows of
+   pixels, and left alone a long-grown garden fills the first screen with
+   ground and pushes every growing control below the fold. So the plot is
+   capped in screen units and everything around it is tightened — header,
+   panel padding, gaps, the buttons' padding and the meters — until the
+   actions and the two headline numbers share the first screen while the plot
+   still stands taller than any one of them. A wide window needs none of it:
+   the cap and the tightening live only here, so 1440x900 is unchanged. */
+@media (max-width: 759px) {
+  .hud {
+    gap: 0 16px;
+    padding: 12px clamp(16px, 4vw, 48px) 10px;
+  }
+
+  .brand {
+    line-height: 1.1;
+  }
+
+  .tagline {
+    line-height: 1.4;
+  }
+
+  .stage {
+    padding-top: 8px;
+  }
+
+  .panel {
+    padding: 12px;
+  }
+
+  .panel-title {
+    margin-bottom: 8px;
+    line-height: 1.2;
+  }
+
+  .garden-layout {
+    gap: 8px;
+  }
+
+  .plot {
+    max-height: 24dvh;
+  }
+
+  /* The return's facts still open the numbers column, but tighter and a shade
+     smaller so the three lines they wrap to on a phone stay cheap. */
+  .garden-side > .return-facts {
+    padding-bottom: 2px;
+    font-size: 11px;
+    line-height: 1.3;
+  }
+
+  .actions {
+    margin-top: 8px;
+    gap: 8px;
+  }
+
+  /* A shorter press, still taller than the 44px minimum tap target, so all
+     four actions fit without shrinking the target a thumb has to hit. */
+  .actions .btn,
+  .plant {
+    padding: 9px 12px;
+  }
+
+  .plant {
+    margin-top: 8px;
+  }
+
+  .goal {
+    margin-top: 10px;
+    padding-top: 8px;
+  }
+
+  .goal-title {
+    line-height: 1.35;
+  }
+
+  .meter {
+    height: 12px;
+    margin: 6px 0;
+  }
+
+  .goal-detail {
+    line-height: 1.3;
+  }
+
+  .garden-side > .readout {
+    margin-top: 10px;
+  }
+
+  .readout {
+    gap: 6px 12px;
+  }
+
+  .readout-term {
+    line-height: 1.4;
+  }
+
+  .readout-value {
+    line-height: 1.2;
+  }
+
+  .readout-row:first-child .readout-value {
+    line-height: 1.15;
+  }
 }
