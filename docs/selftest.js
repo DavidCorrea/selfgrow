@@ -2172,6 +2172,46 @@ function changedBoxInCell(before, after, cell, column = 0) {
   return { width: maxX - minX + 1, height: maxY - minY + 1 };
 }
 
+/**
+ * The share of pixels, 0 to 1, that differ between two same-sized plot renders.
+ *
+ * Comparing two pictures whole, rather than one cell, is how a scene change
+ * that belongs to the ground itself — a season's own soil tone — is measured: a
+ * whole-field colour cannot hide in the marks of a handful of cells.
+ */
+function differingPixelShare(a, b) {
+  const width = Math.min(a.width, b.width);
+  const height = Math.min(a.height, b.height);
+  const before = a.getContext("2d").getImageData(0, 0, width, height).data;
+  const after = b.getContext("2d").getImageData(0, 0, width, height).data;
+  let changed = 0;
+  for (let i = 0; i < before.length; i += 4) {
+    if (before[i] !== after[i] || before[i + 1] !== after[i + 1] || before[i + 2] !== after[i + 2]) changed += 1;
+  }
+  return changed / (width * height);
+}
+
+/**
+ * The cells of a plot whose pixels differ between two renders, as a Set of cell
+ * indices. Used to prove that only the sprite standing on a cell moves, and the
+ * ground everywhere else holds still.
+ */
+function changedPixelCells(a, b, cell, columns) {
+  const width = Math.min(a.width, b.width);
+  const height = Math.min(a.height, b.height);
+  const before = a.getContext("2d").getImageData(0, 0, width, height).data;
+  const after = b.getContext("2d").getImageData(0, 0, width, height).data;
+  const cells = new Set();
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const i = (y * width + x) * 4;
+      if (before[i] === after[i] && before[i + 1] === after[i + 1] && before[i + 2] === after[i + 2]) continue;
+      cells.add(Math.floor(y / cell) * columns + Math.floor(x / cell));
+    }
+  }
+  return cells;
+}
+
 /** Whether one cell of a plot render carries a pixel of the given palette colour. */
 function cellHasColor(canvas, color, cell, column = 0) {
   const key = colorKey(parseColor(color));
@@ -5924,6 +5964,130 @@ function checkSeasonDrawing(problems) {
 }
 
 /**
+ * The ground itself wears the season: with nothing grown — bare soil or a single
+ * ungrown seed — every season draws a plot a visitor can tell apart without
+ * reading a number, from the soil's own tone and a small still seasonal mark.
+ *
+ * The tone and the mark come from the palette and are keyed on the season the
+ * readout, the sr-only plot description and `get-state` all name, and they read
+ * no animation phase, so the ground is a still frame under reduced motion. The
+ * pixel comparison is deliberately far above the few per cent a hash-shuffled
+ * soil mark moved before this: a revert that fills the plot with one base soil
+ * colour in every season fails it.
+ */
+function checkSeasonalGround(problems) {
+  const palette = readPalette();
+  const seasons = SEASONS.map((season) => season.key);
+  const looks = new Map(seasons.map((key) => [key, seasonLook(palette, key)]));
+
+  // Each season has its own ground trio. The whole plot is filled with the
+  // season's soil tone, so four identical trios would draw four identical
+  // grounds; and every tone must be a colour declared in the page palette.
+  const tokens = new Set(paletteTokens().values());
+  for (const field of ["soil", "soilDeep", "soilLight"]) {
+    const tones = new Set(seasons.map((key) => String(looks.get(key).palette[field])));
+    if (tones.size !== seasons.length) {
+      problems.push(
+        `the ${seasons.length} seasons resolve to ${tones.size} distinct ground ${field} tones, expected ` +
+          `${seasons.length}; the ground must change with the garden's year.`
+      );
+    }
+    for (const key of seasons) {
+      const value = looks.get(key).palette[field];
+      const color = parseColor(value);
+      if (!color || !tokens.has(colorKey(color))) {
+        problems.push(
+          `the ${key} ground's ${field} (${value}) is not a colour declared in the page palette, so the ground ` +
+            "does not belong to the same garden as the panels around it."
+        );
+      }
+    }
+  }
+  // An unknown season must not invent ground: it stays the base soil.
+  const unknown = seasonLook(palette, "nonexistent");
+  if (unknown.palette.soil !== palette.soil) {
+    problems.push("seasonLook() invented a ground tone for an unknown season instead of the base soil.");
+  }
+
+  const state = (key, extra) => ({
+    growth: 0,
+    beds: 1,
+    pollinator: { visiting: false },
+    season: { key },
+    ...extra,
+  });
+  // Bare soil and a single ungrown seed: the moment a visitor most needs the
+  // picture to say the season, because no plant carries it yet. The third entry
+  // of each scene is the cell a growing thing stands on, which is allowed to
+  // sway; every other cell is ground and must hold still.
+  const scenes = [
+    ["bare soil", { seeds: 0, plants: 0 }, new Set()],
+    ["one ungrown seed", { seeds: 1, plants: 0 }, new Set([0])],
+  ];
+  for (const [label, extra, moving] of scenes) {
+    const canvases = new Map(seasons.map((key) => [key, plotCanvas(state(key, extra))]));
+    for (let i = 0; i < seasons.length; i += 1) {
+      for (let j = i + 1; j < seasons.length; j += 1) {
+        const share = differingPixelShare(canvases.get(seasons[i]), canvases.get(seasons[j]));
+        if (share < 0.3) {
+          problems.push(
+            `a ${label} plot differs by only ${Math.round(share * 100)}% of its pixels between ${seasons[i]} and ` +
+              `${seasons[j]}; the ground must read its season at a glance (at least 30%).`
+          );
+        }
+      }
+    }
+    // The ground is a still frame: nothing about the seasonal mark moves.
+    const bounds = plotBounds(state(seasons[0], extra));
+    for (const key of seasons) {
+      const moved = changedPixelCells(
+        canvases.get(key),
+        plotCanvas(state(key, extra), 1),
+        bounds.cell,
+        bounds.columns
+      );
+      const stray = [...moved].filter((cell) => !moving.has(cell));
+      if (stray.length > 0) {
+        problems.push(
+          `a ${label} plot in ${key} moved on ground cell(s) ${stray.join(", ")} between phase 0 and phase 1, so ` +
+            "the seasonal ground does not hold still under reduced motion."
+        );
+      }
+    }
+  }
+
+  // The words beside the picture name the same season the ground draws.
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  try {
+    for (const [index, season] of SEASONS.entries()) {
+      setGarden({ seeds: 1, plants: 0, beds: 1 });
+      setGrowth(0, 1, index * SEASON_SECONDS + 1);
+      const shown = getDisplayedState();
+      const look = seasonLook(palette, shown.season.key);
+      if (look.key !== season.key) {
+        problems.push(
+          `seasonLook() resolved ${shown.season.key} to ${look.key}, so the season the ground draws is not the ` +
+            "season the state names."
+        );
+      }
+      const description = document.getElementById("plot-description");
+      if (!description) {
+        problems.push("the page has no sr-only plot description (#plot-description) to name the drawn season.");
+      } else if (!String(description.textContent).toLowerCase().includes(season.name)) {
+        problems.push(
+          `the plot draws ${season.name} on the ground but its description says ` +
+            `${JSON.stringify(description.textContent)}.`
+        );
+      }
+    }
+  } finally {
+    setGarden(gardenBefore);
+    restoreGrowth(growthBefore);
+  }
+}
+
+/**
  * A long absence lands the garden where played time would, and its return is
  * stated in words and shown on the plot.
  */
@@ -8909,6 +9073,7 @@ export async function checks() {
     checkSeason(problems);
     checkShownRateMatchesEarned(problems);
     checkSeasonDrawing(problems);
+    checkSeasonalGround(problems);
     checkSandbox(problems);
     checkSandboxClose(problems);
     await checkAgentTools(problems);

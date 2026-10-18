@@ -327,14 +327,16 @@ const SEASON_FOLIAGE = Object.freeze({
 });
 
 /**
- * How a season looks on the plot: the season's own leaf colours, the foliage it
- * draws, and the key it resolves to.
+ * How a season looks on the plot: the season's own leaf colours, the ground tone
+ * it draws over, the foliage it draws, and the key it resolves to.
  *
  * The season is the one already in the state — the same value the readout and
  * `get-state` report — so the picture and the words cannot disagree. An unknown
  * or missing key falls back to the base leaf colours and the full canopy, which
  * is what a caller that never knew about seasons has always drawn, and resolves
  * to `key: null` so the fallback is visible rather than passed off as a season.
+ * A palette without `soilSeasons`, or a season whose ground variables are unset,
+ * keeps the base soil, so a tone a caller never asked for cannot be invented.
  * Pure, so the look a season draws can be asserted without a canvas.
  *
  * @returns {{key: string|null, foliage: string, palette: object}}
@@ -342,10 +344,17 @@ const SEASON_FOLIAGE = Object.freeze({
 export function seasonLook(palette, seasonKey) {
   const leaves = palette && palette.leafSeasons ? palette.leafSeasons[seasonKey] : null;
   if (!leaves) return { key: null, foliage: "lush", palette };
+  const ground = palette.soilSeasons ? palette.soilSeasons[seasonKey] : null;
+  const paint = { ...palette, leaf: leaves.leaf, leafLight: leaves.leafLight, leafDeep: leaves.leafDeep };
+  if (ground) {
+    paint.soil = ground.soil;
+    paint.soilLight = ground.soilLight;
+    paint.soilDeep = ground.soilDeep;
+  }
   return {
     key: seasonKey,
     foliage: SEASON_FOLIAGE[seasonKey] ?? "lush",
-    palette: { ...palette, leaf: leaves.leaf, leafLight: leaves.leafLight, leafDeep: leaves.leafDeep },
+    palette: paint,
   };
 }
 
@@ -414,16 +423,78 @@ export function soilFace(cell, seasonKey) {
 }
 
 /**
+ * The small mark the season lays on one cell of ground: a still sign of the time
+ * of year, drawn with nothing growing on the plot.
+ *
+ * Its shape is keyed on the resolved season, and whether the cell carries it —
+ * and where — come from hashing the cell, so the mark spreads unevenly over the
+ * field rather than stamping every cell. Every colour is the season's own
+ * soil-light or soil-deep, the ground's tones and never the leaf green of a
+ * growing thing, so no mark of bare soil can be mistaken for a sprout. No
+ * animation phase is read, so the mark is a still frame under reduced motion,
+ * and an unknown or missing season draws nothing at all.
+ */
+function drawSeasonGroundMark(ctx, x, y, palette, cell, seasonKey) {
+  if (!seasonKey) return;
+  const seasonSeed = SEASON_SOIL_SEED[seasonKey] ?? 0;
+  const at = (salt) => soilHash(cell, seasonSeed, salt);
+  if (seasonKey === "winter") {
+    // A pale crust of frost along some cells' ground, where the cold settles.
+    if (at(6) < 0.6) {
+      ctx.fillStyle = palette.soilLight;
+      ctx.fillRect(x + 3, y + CELL - 3, 7, 1);
+      ctx.fillRect(x + 12, y + CELL - 2, 5, 1);
+    }
+    return;
+  }
+  if (seasonKey === "spring") {
+    // Two dark specks of damp earth, so the thawed ground reads wet.
+    if (at(6) < 0.7) {
+      ctx.fillStyle = palette.soilDeep;
+      ctx.fillRect(x + 4 + Math.floor(at(7) * 8), y + 4 + Math.floor(at(7) * 5), 2, 2);
+      ctx.fillRect(x + 12 + Math.floor(at(8) * 6), y + 12 + Math.floor(at(8) * 5), 2, 2);
+    }
+    return;
+  }
+  if (seasonKey === "summer") {
+    // A short baked crack with a lit lip, so the ground reads dry and hot.
+    if (at(6) < 0.6) {
+      const crackX = x + 8 + Math.floor(at(7) * 6);
+      const crackY = y + 5 + Math.floor(at(7) * 5);
+      ctx.fillStyle = palette.soilDeep;
+      ctx.fillRect(crackX, crackY, 1, 7);
+      ctx.fillRect(crackX - 2, crackY + 3, 3, 1);
+      ctx.fillStyle = palette.soilLight;
+      ctx.fillRect(crackX + 1, crackY, 1, 7);
+    }
+    return;
+  }
+  if (seasonKey === "autumn") {
+    // An extra fallen leaf on some cells, joining the 'turning' leaves so the
+    // ground itself reads as shedding.
+    if (at(6) < 0.6) {
+      const leafX = x + 6 + Math.floor(at(7) * 8);
+      const leafY = y + 6 + Math.floor(at(7) * 5);
+      ctx.fillStyle = palette.soilDeep;
+      ctx.fillRect(leafX, leafY, 4, 2);
+      ctx.fillStyle = palette.soilLight;
+      ctx.fillRect(leafX + 1, leafY - 1, 2, 2);
+    }
+  }
+}
+
+/**
  * The marks of one cell on the field of soil. In autumn a few fallen leaves lie
  * on some of the cells too, so the turned season reads on the ground and not
  * only in the canopy. Every colour comes from the palette, so the marks stay in
- * the same garden as the panels around them.
+ * the same garden as the panels around them, and the season's own ground mark is
+ * laid on last so a bare or freshly planted plot tells the year on its own.
  *
  * A cell that carries a seed or plant draws no weed tuft, so the ground stops
  * growing a shoot that a visitor would read as another sprout standing beside
  * the one the readout counts.
  */
-function drawSoil(ctx, x, y, palette, foliage, face, cell, occupied) {
+function drawSoil(ctx, x, y, palette, foliage, face, cell, occupied, seasonKey) {
   if (face.lip) {
     ctx.fillStyle = palette.soilLight;
     ctx.fillRect(x + 3, y + 2, 6, 2);
@@ -463,6 +534,7 @@ function drawSoil(ctx, x, y, palette, foliage, face, cell, occupied) {
     ctx.fillStyle = palette.soilLight;
     ctx.fillRect(x + CELL - 9, y + CELL - 12, 3, 2);
   }
+  drawSeasonGroundMark(ctx, x, y, palette, cell, seasonKey);
 }
 
 /**
@@ -1186,7 +1258,7 @@ export function drawGarden(canvas, state, palette, phase = 0) {
   for (let cell = 0; cell < cells; cell += 1) {
     const x = (cell % COLUMNS) * CELL;
     const y = Math.floor(cell / COLUMNS) * CELL;
-    drawSoil(ctx, x, y, paint, look.foliage, soilFace(cell, look.key), cell, occupied.has(cell));
+    drawSoil(ctx, x, y, paint, look.foliage, soilFace(cell, look.key), cell, occupied.has(cell), look.key);
     // The ground the garden's lifetime has aged goes on under the ground its
     // current growth covers, so an old plot reads as deeper soil and a
     // replanted one still shows what its growth no longer does.
