@@ -896,18 +896,49 @@ function drawMilestoneCrown(ctx, x, y, palette, tier) {
 }
 
 /**
+ * The ring a seed the garden sowed while the visitor was away carries: a thin,
+ * still sun outline around the sprouting seed, its head and its first leaves,
+ * leaving the mound of soil at the cell's foot clear.
+ *
+ * It reads no animation phase, so it holds in the single still frame reduced
+ * motion pins to. Its shape — one thin per-cell outline — shares nothing with
+ * the matured-plant chevron at the cell top, the corner form brackets, the
+ * season's sun disc or the soil-toned board of a plot sowed by hand, so a seed
+ * the garden sowed is never read as any of them: it is a seed that was not there
+ * before the visitor left.
+ */
+function drawSownSeedMark(ctx, x, y, palette) {
+  const base = y + CELL;
+  const centre = x + CELL / 2;
+  const left = centre - 7;
+  const top = base - 16;
+  const width = 15;
+  const height = 12;
+  ctx.fillStyle = palette.sun;
+  ctx.fillRect(left, top, width, 1);
+  ctx.fillRect(left, top + height - 1, width, 1);
+  ctx.fillRect(left, top, 1, height);
+  ctx.fillRect(left + width - 1, top, 1, height);
+}
+
+/**
  * The marks a return leaves on the plot: a still sun tick over each cell whose
- * plant matured while away, a still sun frame around the ground when the garden
- * reached a form it did not have, and a still sun disc when the year turned.
+ * plant matured while away, a still sun ring around each seed the garden sowed
+ * into the free plots while away, a still sun frame around the ground when the
+ * garden reached a form it did not have, and a still sun disc when the year
+ * turned.
  *
  * They are drawn over the garden and never move, so they read the same under
  * reduced motion as under any other preference, and a returning player sees the
  * change itself rather than only a sentence about it. `marks` is the object
- * `returnMarkCells` returns: the cells to tick, whether to frame the plot, and
- * whether the season turned.
+ * `returnMarkCells` returns: the cells to tick, the seed cells to ring, whether
+ * to frame the plot, and whether the season turned.
  */
 function drawReturnMarks(ctx, palette, width, height, marks) {
   ctx.fillStyle = palette.sun;
+  for (const cell of marks.seeds) {
+    drawSownSeedMark(ctx, (cell % COLUMNS) * CELL, Math.floor(cell / COLUMNS) * CELL, palette);
+  }
   for (const cell of marks.cells) {
     const x = (cell % COLUMNS) * CELL;
     const y = Math.floor(cell / COLUMNS) * CELL;
@@ -1315,6 +1346,13 @@ function drawPlotEdges(ctx, palette, grid) {
  * report — so a garden the visitor worked reads differently from one they only
  * watched. The signs read no phase and go on over the sprites, and a replant
  * clears the visit with the rest of the plot, so the signs go with it.
+ *
+ * The return marks go on last, over everything: a still sun tick on each cell
+ * whose plant matured while the visitor was away, a still sun ring around each
+ * seed the garden sowed into the free plots while away, the corner frame of a
+ * new form and the season's disc. They all read `state.returnMarks`, the same
+ * object the readout and `get-state` report, so the picture, the words and the
+ * agent's reading cannot disagree.
  */
 export function drawGarden(canvas, state, palette, phase = 0) {
   if (!canvas || !palette) return;
@@ -1402,7 +1440,7 @@ export function drawGarden(canvas, state, palette, phase = 0) {
   // The return marks go on last, over the garden: what grew while the visitor
   // was away stands out until they notice it.
   const returns = returnMarkCells(state, { cells });
-  if (returns.cells.length > 0 || returns.form || returns.season) {
+  if (returns.cells.length > 0 || returns.seeds.length > 0 || returns.form || returns.season) {
     drawReturnMarks(ctx, paint, width, height, returns);
   }
 }
@@ -1448,25 +1486,35 @@ function kindsOnPlot(state) {
 
 /**
  * Where a return's marks land on the plot: the cells whose plants matured while
- * the visitor was away, whether a new form was reached, and whether the season
- * turned.
+ * the visitor was away, the seed cells the garden itself sowed into the free
+ * plots, whether a new form was reached, and whether the season turned.
  *
- * Per-plant age is not tracked, so a mark lands on the newest plants the plot
- * draws — the tail of the grown-plant run, which is where a seed that has just
- * matured sits. The count is bounded by the plants on screen, and a state with
- * no marks returns none. Pure, so a test can assert it without a canvas.
+ * Per-plant age is not tracked, so a matured-plant mark lands on the newest
+ * plants the plot draws — the tail of the grown-plant run, which is where a seed
+ * that has just matured sits. The sown seeds sit after the grown plants in
+ * `plotMarks` order, so their mark lands on the tail of the herb-seed run: the
+ * garden sows by appending to the ungrown sprouts, so the newest seeds are the
+ * last cells and the ones still ungrown after an absence are exactly those.
+ * Both counts are bounded by the marks actually drawn, and a state with no marks
+ * returns none. Pure, so a test can assert it without a canvas.
  *
- * @returns {{cells: number[], form: boolean, season: boolean}}
+ * @returns {{cells: number[], seeds: number[], form: boolean, season: boolean}}
  */
 export function returnMarkCells(state, bounds) {
   const marks = state && state.returnMarks;
-  if (!marks) return { cells: [], form: false, season: false };
+  if (!marks) return { cells: [], seeds: [], form: false, season: false };
   const limit = bounds && Number.isFinite(bounds.cells) ? bounds.cells : plotBounds(state).cells;
-  const { herbPlants, bloomPlants } = kindsOnPlot(state);
+  const { herbPlants, bloomPlants, herbSeeds } = kindsOnPlot(state);
   const plants = Math.min(limit, herbPlants + bloomPlants);
   const marked = Number.isFinite(marks.plants) && marks.plants > 0 ? Math.floor(marks.plants) : 0;
   const count = Math.min(plants, marked);
   const cells = [];
   for (let step = 0; step < count; step += 1) cells.push(plants - 1 - step);
-  return { cells, form: Boolean(marks.form), season: Boolean(marks.season) };
+  // The herb seeds the garden sowed while away are the tail of the herb-seed run
+  // that begins right after the grown plants, bounded by the seeds on screen.
+  const seedsDrawn = Math.max(0, Math.min(herbSeeds, limit - plants));
+  const sown = Number.isFinite(marks.sown) ? Math.floor(marks.sown) : 0;
+  const seeds = [];
+  for (let step = 0; step < Math.min(seedsDrawn, sown); step += 1) seeds.push(plants + seedsDrawn - 1 - step);
+  return { cells, seeds, form: Boolean(marks.form), season: Boolean(marks.season) };
 }

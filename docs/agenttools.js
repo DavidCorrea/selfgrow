@@ -139,7 +139,9 @@ export function tools() {
         "facts the page shows as short labelled values (facts, each " +
         "{label, value}). It also " +
         "reports returnMarks: what the last return marked on the plot and the " +
-        "readout — how many plants matured (plants), whether a new form was " +
+        "readout — how many plants matured (plants), how many seeds the garden " +
+        "sowed into the free plots while away (sown) and the plots it points " +
+        "out, whether a new form was " +
         "reached (form), and the season turn (season: {from, to}, the season the " +
         "garden turned from and into, present when the absence crossed a " +
         "boundary even with no seed matured and no new form), or null once the " +
