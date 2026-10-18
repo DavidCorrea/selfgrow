@@ -3900,6 +3900,20 @@ function goalFactValue(container, label) {
   return readGoalFacts(container).find((fact) => fact.label === label)?.value;
 }
 
+/** The short labelled facts a season or pollinator readout shows, in order. */
+function readReadoutFacts(row) {
+  if (!row) return [];
+  return [...row.querySelectorAll(":scope > .kind-facts > .kind-fact")].map((fact) => ({
+    label: fact.querySelector(".kind-fact-label")?.textContent ?? "",
+    value: fact.querySelector(".kind-fact-value")?.textContent ?? "",
+  }));
+}
+
+/** One readout fact's value, or undefined when the row does not show it. */
+function readoutFactValue(row, label) {
+  return readReadoutFacts(row).find((fact) => fact.label === label)?.value;
+}
+
 /** True when the goal block is only labelled facts — no prose between them. */
 function goalFactsAreOnlyContent(container) {
   if (!container) return false;
@@ -5243,35 +5257,46 @@ function checkPollinator(problems) {
     }
 
     // The readout and get-state name the visit and the boosted rate. The
-    // readout states the pollinator as short labelled values — whether one is
-    // visiting and the boost it brings, how long the visit lasts, what each
-    // bloom adds and the cap it can reach — never a bracketed rule to decode,
-    // and every value it states is the one get-state reports.
+    // readout states the pollinator as short labelled facts — whether one is
+    // visiting and the boost it brings, how long the visit lasts, how often it
+    // comes, what each bloom adds and the cap it can reach — never a joined
+    // sentence or a bracketed rule to decode, and every fact it states is the
+    // one the same describe function reads off get-state.
     const row = document.querySelector('[data-field="pollinator"]');
     if (!row) {
       problems.push('the page has no pollinator readout (expected [data-field="pollinator"]).');
     }
-    // Two labels every pollinator readout carries, whatever the state: what a
-    // bloom adds to a visit and the longest a visit can stretch.
-    const pollinatorLabels = [
-      `each bloom +${formatDuration(POLLINATOR_BLOOM_VISIT_SECONDS)}`,
-      `max ${formatDuration(POLLINATOR_VISIT_MAX_SECONDS)}`,
-    ];
-    const expectPollinatorRow = (label, required) => {
+    // The six labels every pollinator readout carries, whatever the state.
+    const pollinatorLabels = ["State", "Boost", "Stays", "Every", "Each bloom", "Max"];
+    const expectPollinatorRow = (label, state) => {
       if (!row) return;
       const text = String(row.textContent);
+      if (text.includes(" · ")) {
+        problems.push(
+          `the pollinator readout ${label} reads ${JSON.stringify(text)}, expected short labelled facts rather than ` +
+            "a dot-joined sentence."
+        );
+      }
       if (/[()\[\]]/.test(text)) {
         problems.push(
-          `the pollinator readout ${label} says ${JSON.stringify(text)}, expected short labelled values with no ` +
+          `the pollinator readout ${label} reads ${JSON.stringify(text)}, expected short labelled facts with no ` +
             "bracketed rule to decode."
         );
       }
-      for (const part of [...pollinatorLabels, ...required]) {
-        if (!text.includes(part)) {
+      const facts = readReadoutFacts(row);
+      const labels = facts.map((fact) => fact.label);
+      for (const required of pollinatorLabels) {
+        if (!labels.includes(required)) {
           problems.push(
-            `the pollinator readout ${label} says ${JSON.stringify(text)}, expected it to state ${JSON.stringify(part)}.`
+            `the pollinator readout ${label} is missing the ${required} fact; it reads ${JSON.stringify(text)}.`
           );
         }
+      }
+      const expected = describePollinator(state);
+      if (JSON.stringify(facts) !== JSON.stringify(expected)) {
+        problems.push(
+          `the pollinator readout ${label} reads ${JSON.stringify(facts)}, expected ${JSON.stringify(expected)}.`
+        );
       }
     };
 
@@ -5284,11 +5309,7 @@ function checkPollinator(problems) {
           `expected none visiting at the base 1/s.`
       );
     }
-    expectPollinatorRow("outside a visit", [
-      "none visiting",
-      `boost x${quiet.pollinator.boost} while visiting`,
-      `visit ${formatDuration(quiet.pollinator.visitSeconds)}`,
-    ]);
+    expectPollinatorRow("outside a visit", quiet);
 
     setGrowth(0, 1, POLLINATOR_CYCLE_SECONDS - 1);
     const boostedState = getDisplayedState();
@@ -5301,11 +5322,7 @@ function checkPollinator(problems) {
           `${boostedState.baseRate}/s, expected ${POLLINATOR_BOOST}/s on 1/s.`
       );
     }
-    expectPollinatorRow("during a visit", [
-      "visiting",
-      `boost x${boostedState.pollinator.boost} while visiting`,
-      `stays ${formatDuration(boostedState.pollinator.visitSeconds)}`,
-    ]);
+    expectPollinatorRow("during a visit", boostedState);
 
     // A garden kept by 6 blooms states the longer visit, the blooms keeping it
     // and the boosted rate beside the garden.
@@ -5325,12 +5342,7 @@ function checkPollinator(problems) {
           `expected ${POLLINATOR_BOOST}/s on 1/s.`
       );
     }
-    expectPollinatorRow("during a bloom-lengthened visit", [
-      "visiting",
-      `boost x${bloomState.pollinator.boost} while visiting`,
-      `stays ${formatDuration(bloomState.pollinator.visitSeconds)}`,
-      `kept by ${bloomState.pollinator.bloomsKeeping} blooms`,
-    ]);
+    expectPollinatorRow("during a bloom-lengthened visit", bloomState);
 
     // A return that lands during a visit shows one already there, in the summary
     // and in the state.
@@ -5785,13 +5797,19 @@ function checkPollinatorSeasons(problems) {
       }
       if (seasonRow) {
         const text = String(seasonRow.textContent);
-        if (!text.toLowerCase().includes(key) || !text.includes(`x${state.season.multiplier}`)) {
+        if (
+          readoutFactValue(seasonRow, "Season") !== state.season.name ||
+          readoutFactValue(seasonRow, "Growth") !== `x${state.season.multiplier}`
+        ) {
           problems.push(
-            `the season readout says ${JSON.stringify(text)}, expected it to name ${key} and the x` +
-              `${state.season.multiplier} growth the season gives the garden.`
+            `the season readout says ${JSON.stringify(text)}, expected a Season fact naming ${key} and a Growth ` +
+              `fact of x${state.season.multiplier}.`
           );
         }
-        if (text.toLowerCase().includes("pollinator") || text.includes(formatDuration(cycle))) {
+        const repeatsSchedule = readReadoutFacts(seasonRow).some((fact) =>
+          fact.value.includes(formatDuration(cycle))
+        );
+        if (text.toLowerCase().includes("pollinator") || repeatsSchedule) {
           problems.push(
             `the season readout says ${JSON.stringify(text)}, expected it to leave the pollinator's schedule to ` +
               `the pollinator row rather than repeat ${formatDuration(cycle)}.`
@@ -5799,11 +5817,14 @@ function checkPollinatorSeasons(problems) {
         }
       }
       if (pollinatorRow) {
-        const text = String(pollinatorRow.textContent);
-        if (!text.includes(formatDuration(cycle)) || !text.includes(formatDuration(baseVisit))) {
+        if (
+          readoutFactValue(pollinatorRow, "Every") !== formatDuration(cycle) ||
+          readoutFactValue(pollinatorRow, "Stays") !== formatDuration(baseVisit)
+        ) {
           problems.push(
-            `the pollinator readout says ${JSON.stringify(text)}, expected it to state the ${key} cycle ` +
-              `${formatDuration(cycle)} and base visit ${formatDuration(baseVisit)}.`
+            `the pollinator readout says ${JSON.stringify(String(pollinatorRow.textContent))}, expected its Every ` +
+              `fact to state the ${key} cycle ${formatDuration(cycle)} and its Stays fact the base visit ` +
+              `${formatDuration(baseVisit)}.`
           );
         }
       }
@@ -5907,8 +5928,19 @@ function checkSeason(problems) {
     if (springState.rate !== 1.5) {
       problems.push(`in spring the displayed rate is ${springState.rate}/s on a base of 1/s, expected 1.5/s.`);
     }
-    if (row && !/spring/i.test(String(row.textContent))) {
-      problems.push(`the season readout says ${JSON.stringify(row.textContent)}, expected it to name spring.`);
+    if (row) {
+      const text = String(row.textContent);
+      if (text.includes(" · ")) {
+        problems.push(
+          `the season readout reads ${JSON.stringify(text)}, expected short labelled facts rather than a joined sentence.`
+        );
+      }
+      if (readoutFactValue(row, "Season") !== "spring" || readoutFactValue(row, "Growth") !== "x1.5") {
+        problems.push(
+          `the spring season readout says ${JSON.stringify(text)}, expected a Season fact of spring and a Growth ` +
+            "fact of x1.5."
+        );
+      }
     }
 
     // Each kind thrives in its own season: its own multiplier is its boost in
@@ -6018,8 +6050,10 @@ function checkSeason(problems) {
         `one herb in spring shows ${herbSpringState.rate}/s, expected its x2 boost on the season's ${herbSpringRate}/s.`
       );
     }
-    if (row && !/herb/i.test(String(row.textContent))) {
-      problems.push(`the spring season readout says ${JSON.stringify(row.textContent)}, expected it to name herb.`);
+    if (row && readoutFactValue(row, "Favours") !== "herb x2") {
+      problems.push(
+        `the spring season readout says ${JSON.stringify(row.textContent)}, expected a Favours fact of herb x2.`
+      );
     }
 
     setGarden({ seeds: 0, plantCounts: [0, 1], beds: 1 });
@@ -6037,8 +6071,10 @@ function checkSeason(problems) {
         `one bloom in summer shows ${bloomSummerState.rate}/s, expected its x2 boost on the season's ${bloomSummerRate}/s.`
       );
     }
-    if (row && !/bloom/i.test(String(row.textContent))) {
-      problems.push(`the summer season readout says ${JSON.stringify(row.textContent)}, expected it to name bloom.`);
+    if (row && readoutFactValue(row, "Favours") !== "bloom x2") {
+      problems.push(
+        `the summer season readout says ${JSON.stringify(row.textContent)}, expected a Favours fact of bloom x2.`
+      );
     }
 
     // Outside its best season a kind is back to the plain base rate.
@@ -8235,16 +8271,41 @@ function checkSandbox(problems) {
     // #sandbox, so it shows only while a rehearsal is open.
     const sandboxPanel = document.getElementById("sandbox");
     const pollinatorRow = document.querySelector('[data-field="sandbox-pollinator"]');
+    const seasonRow = document.querySelector('[data-field="sandbox-season"]');
     if (!pollinatorRow) {
       problems.push('the rehearsal readout has no pollinator row ([data-field="sandbox-pollinator"]).');
     } else {
       if (sandboxPanel && !sandboxPanel.contains(pollinatorRow)) {
         problems.push("the rehearsal's pollinator row is outside #sandbox, so it would show while no rehearsal is open.");
       }
-      if (pollinatorRow.textContent !== describePollinator(acted)) {
+      const pollinatorFacts = readReadoutFacts(pollinatorRow);
+      if (JSON.stringify(pollinatorFacts) !== JSON.stringify(describePollinator(acted))) {
         problems.push(
-          `the rehearsal pollinator row reads ${JSON.stringify(pollinatorRow.textContent)}, expected ` +
+          `the rehearsal pollinator row reads ${JSON.stringify(pollinatorFacts)}, expected ` +
             `${JSON.stringify(describePollinator(acted))}.`
+        );
+      }
+    }
+    if (!seasonRow) {
+      problems.push('the rehearsal readout has no season row ([data-field="sandbox-season"]).');
+    } else {
+      if (sandboxPanel && !sandboxPanel.contains(seasonRow)) {
+        problems.push("the rehearsal's season row is outside #sandbox, so it would show while no rehearsal is open.");
+      }
+      const text = String(seasonRow.textContent);
+      if (
+        readoutFactValue(seasonRow, "Season") !== acted.season?.name ||
+        readoutFactValue(seasonRow, "Growth") !== `x${acted.season?.multiplier}`
+      ) {
+        problems.push(
+          `the rehearsal season row reads ${JSON.stringify(text)}, expected a Season fact naming ${acted.season?.name} ` +
+            `and a Growth fact of x${acted.season?.multiplier}.`
+        );
+      }
+      if (text.includes(" · ")) {
+        problems.push(
+          `the rehearsal season row reads ${JSON.stringify(text)}, expected short labelled facts rather than a ` +
+            "joined sentence."
         );
       }
     }
