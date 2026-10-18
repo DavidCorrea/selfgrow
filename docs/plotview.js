@@ -839,13 +839,14 @@ function drawMilestoneCrown(ctx, x, y, palette, tier) {
 
 /**
  * The marks a return leaves on the plot: a still sun tick over each cell whose
- * plant matured while away, and a still sun frame around the ground when the
- * garden reached a form it did not have.
+ * plant matured while away, a still sun frame around the ground when the garden
+ * reached a form it did not have, and a still sun disc when the year turned.
  *
  * They are drawn over the garden and never move, so they read the same under
  * reduced motion as under any other preference, and a returning player sees the
  * change itself rather than only a sentence about it. `marks` is the object
- * `returnMarkCells` returns: the cells to tick and whether to frame the plot.
+ * `returnMarkCells` returns: the cells to tick, whether to frame the plot, and
+ * whether the season turned.
  */
 function drawReturnMarks(ctx, palette, width, height, marks) {
   ctx.fillStyle = palette.sun;
@@ -867,6 +868,33 @@ function drawReturnMarks(ctx, palette, width, height, marks) {
     ctx.fillRect(width - 7, height - 2, 7, 2);
     ctx.fillRect(width - 2, height - 7, 2, 7);
   }
+  if (marks.season) {
+    // A small sun at the top of the plot, above the soil between the cells the
+    // per-plant ticks land on and clear of the form brackets in the corners and
+    // the pollinator's home in the top-right cell, because the year itself
+    // moved on.
+    drawSeasonMark(ctx, width);
+  }
+}
+
+/**
+ * The sun a season turn leaves: a still disc with four rays, set on the top
+ * edge of the plot between the second and third columns.
+ *
+ * It reads no phase, so it holds in the single still frame reduced motion pins
+ * to, and it shares no shape or place with the per-plant ticks or the corner
+ * form frame, so a turn of the year is never read as a seed maturing or a new
+ * form.
+ */
+function drawSeasonMark(ctx, width) {
+  const centreX = Math.round(width / 2);
+  const centreY = 8;
+  // The disc, then a ray out of each of its four sides.
+  ctx.fillRect(centreX - 2, centreY - 2, 5, 5);
+  ctx.fillRect(centreX, centreY - 5, 1, 2);
+  ctx.fillRect(centreX, centreY + 3, 1, 2);
+  ctx.fillRect(centreX - 5, centreY, 2, 1);
+  ctx.fillRect(centreX + 3, centreY, 2, 1);
 }
 
 /**
@@ -1312,7 +1340,9 @@ export function drawGarden(canvas, state, palette, phase = 0) {
   // The return marks go on last, over the garden: what grew while the visitor
   // was away stands out until they notice it.
   const returns = returnMarkCells(state, { cells });
-  if (returns.cells.length > 0 || returns.form) drawReturnMarks(ctx, paint, width, height, returns);
+  if (returns.cells.length > 0 || returns.form || returns.season) {
+    drawReturnMarks(ctx, paint, width, height, returns);
+  }
 }
 
 /**
@@ -1356,18 +1386,19 @@ function kindsOnPlot(state) {
 
 /**
  * Where a return's marks land on the plot: the cells whose plants matured while
- * the visitor was away, and whether a new form was reached.
+ * the visitor was away, whether a new form was reached, and whether the season
+ * turned.
  *
  * Per-plant age is not tracked, so a mark lands on the newest plants the plot
  * draws — the tail of the grown-plant run, which is where a seed that has just
  * matured sits. The count is bounded by the plants on screen, and a state with
  * no marks returns none. Pure, so a test can assert it without a canvas.
  *
- * @returns {{cells: number[], form: boolean}}
+ * @returns {{cells: number[], form: boolean, season: boolean}}
  */
 export function returnMarkCells(state, bounds) {
   const marks = state && state.returnMarks;
-  if (!marks) return { cells: [], form: false };
+  if (!marks) return { cells: [], form: false, season: false };
   const limit = bounds && Number.isFinite(bounds.cells) ? bounds.cells : plotBounds(state).cells;
   const { herbPlants, bloomPlants } = kindsOnPlot(state);
   const plants = Math.min(limit, herbPlants + bloomPlants);
@@ -1375,5 +1406,5 @@ export function returnMarkCells(state, bounds) {
   const count = Math.min(plants, marked);
   const cells = [];
   for (let step = 0; step < count; step += 1) cells.push(plants - 1 - step);
-  return { cells, form: Boolean(marks.form) };
+  return { cells, form: Boolean(marks.form), season: Boolean(marks.season) };
 }

@@ -666,16 +666,23 @@ export function buildAwayReport(start, seconds) {
  *
  * Pure, and the one rule for whether an absence leaves a mark: a span shorter
  * than `minSeconds` is a reload rather than an absence, and an absence that
- * matured no seed and reached no new form has nothing to point at. Otherwise
- * `plants` is how many seeds matured and `form` says the garden reached a form
- * it did not have, both of which the return report already knows.
+ * matured no seed, reached no new form and crossed no season has nothing to
+ * point at. Otherwise `plants` is how many seeds matured, `form` says the
+ * garden reached a form it did not have, and `season` names the year's turn —
+ * the season it left and the season it turned into — because a ten-minute
+ * season lands in almost any real absence and the garden's growth changed with
+ * it. All three are what the return report already knows.
  */
 export function returnMarkFor(away, minSeconds) {
   if (!away || !(away.seconds >= minSeconds)) return null;
   const plants = Number.isFinite(away.matured) && away.matured > 0 ? away.matured : 0;
   const form = Array.isArray(away.formsFound) && away.formsFound.length > 0;
-  if (plants === 0 && !form) return null;
-  return { plants, form };
+  const season =
+    away.crossedSeason === true && away.fromSeason && away.toSeason
+      ? { from: away.fromSeason.name, to: away.toSeason.name }
+      : null;
+  if (plants === 0 && !form && !season) return null;
+  return { plants, form, season };
 }
 
 /**
@@ -1264,6 +1271,7 @@ function describeReturnMarks(marks) {
   const parts = [];
   if (marks.plants > 0) parts.push(`${countLabel(marks.plants, "plant", "plants")} matured`);
   if (marks.form) parts.push("a new form reached");
+  if (marks.season) parts.push(`turned into ${marks.season.to}`);
   return parts.join(" · ");
 }
 
