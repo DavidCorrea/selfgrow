@@ -1276,7 +1276,7 @@ function describeReturnMarks(marks) {
 }
 
 /**
- * The season as short labelled values: the season's name, the growth it gives
+ * The season as short labelled facts: the season's name, the growth it gives
  * the garden, and the kind it favours — each its own label, so the year reads
  * at a glance. The pollinator's rhythm belongs to the Pollinator row alone, so
  * it is not repeated here.
@@ -1284,35 +1284,36 @@ function describeReturnMarks(marks) {
 function describeSeason(state) {
   const season = state.season;
   const favoured = (state.kinds ?? []).find((kind) => (kind.seasonMultiplier ?? 1) > 1);
-  const labels = [season.name, `x${season.multiplier} growth`];
-  if (favoured) labels.push(`favours ${favoured.name} x${favoured.seasonMultiplier}`);
-  return labels.join(" · ");
+  const facts = [
+    { label: "Season", value: season.name },
+    { label: "Growth", value: `x${season.multiplier}` },
+  ];
+  if (favoured) facts.push({ label: "Favours", value: `${favoured.name} x${favoured.seasonMultiplier}` });
+  return facts;
 }
 
 /**
- * The pollinator as short labelled values: whether one is visiting and the
+ * The pollinator as short labelled facts: whether one is visiting and the
  * boost it brings, how long the visit lasts, how often the season brings it,
  * what each bloom adds and the cap that reaches. The visit length is always
  * stated, so a visitor sees what blooms are buying even when no visitor is
- * present; a visit in progress says how long it stays and how many blooms are
- * keeping it, each its own label rather than a rule to decode.
+ * present; a visit in progress also says how many blooms are keeping it, each
+ * its own label rather than a rule to decode.
  */
 export function describePollinator(state) {
   const pollinator = state.pollinator;
-  if (!pollinator) return "none visiting";
-  const boost = `boost x${pollinator.boost ?? pollinator.multiplier} while visiting`;
-  const every = `every ${formatDuration(pollinator.cycleSeconds)}`;
-  const perBloom = `each bloom +${formatDuration(POLLINATOR_BLOOM_VISIT_SECONDS)}`;
-  const cap = `max ${formatDuration(POLLINATOR_VISIT_MAX_SECONDS)}`;
-  if (!pollinator.visiting) {
-    const visit = formatDuration(pollinator.visitSeconds);
-    return `none visiting · ${boost} · visit ${visit} ${every} · ${perBloom} · ${cap}`;
+  const facts = [
+    { label: "State", value: pollinator.visiting ? "visiting" : "none visiting" },
+    { label: "Boost", value: `x${pollinator.boost ?? pollinator.multiplier} while visiting` },
+    { label: "Stays", value: formatDuration(pollinator.visitSeconds) },
+    { label: "Every", value: formatDuration(pollinator.cycleSeconds) },
+    { label: "Each bloom", value: `+${formatDuration(POLLINATOR_BLOOM_VISIT_SECONDS)}` },
+    { label: "Max", value: formatDuration(POLLINATOR_VISIT_MAX_SECONDS) },
+  ];
+  if (pollinator.visiting && pollinator.bloomsKeeping > 0) {
+    facts.push({ label: "Kept by", value: countLabel(pollinator.bloomsKeeping, "bloom", "blooms") });
   }
-  const stays = formatDuration(pollinator.visitSeconds);
-  const kept = pollinator.bloomsKeeping > 0
-    ? ` · kept by ${countLabel(pollinator.bloomsKeeping, "bloom", "blooms")}`
-    : "";
-  return `visiting · ${boost} · stays ${stays} ${every} · ${perBloom} · ${cap}${kept}`;
+  return facts;
 }
 
 /** The next plant maturing, as words, for the readout beside the numbers. */
@@ -1361,6 +1362,33 @@ function describeNextGoal(state) {
     detail: goalFactsText(facts),
     progress: state.seedCostProgress,
   };
+}
+
+/**
+ * Draw `facts` into `container` as the same short label/value spans the Herb
+ * and Bloom rows use — a short label a screen reader reads and a value beside
+ * it, never a sentence. Rebuilt each time so the page states exactly the facts
+ * the state holds.
+ */
+function renderReadoutFacts(container, facts) {
+  if (!container) return;
+  const list = document.createElement("span");
+  list.className = "kind-facts";
+  list.append(
+    ...facts.map((fact) => {
+      const row = document.createElement("span");
+      row.className = "kind-fact";
+      const label = document.createElement("span");
+      label.className = "kind-fact-label";
+      label.textContent = fact.label;
+      const value = document.createElement("span");
+      value.className = "kind-fact-value";
+      value.textContent = fact.value;
+      row.append(label, value);
+      return row;
+    })
+  );
+  container.replaceChildren(list);
 }
 
 /**
@@ -1671,13 +1699,13 @@ function render() {
   setText(elements.plants, formatAmount(state.plants));
   setText(elements.beds, formatAmount(state.beds));
   setText(elements.capacity, formatAmount(state.capacity));
-  setText(elements.pollinator, describePollinator(state));
+  renderReadoutFacts(elements.pollinator, describePollinator(state));
   setText(elements.returnMarks, describeReturnMarks(state.returnMarks));
   if (elements.returnMarksRow) elements.returnMarksRow.hidden = !state.returnMarks;
   setText(elements.visitSeconds, formatDuration(state.visit.seconds));
   setText(elements.visitSown, formatAmount(state.visit.sown));
   setText(elements.visitTended, formatAmount(state.visit.tended));
-  setText(elements.season, describeSeason(state));
+  renderReadoutFacts(elements.season, describeSeason(state));
   renderKind(elements.kindHerb, state.kinds[0]);
   renderKind(elements.kindBloom, state.kinds[1]);
   setText(elements.nextPlant, describeNextPlant(state));
@@ -1739,8 +1767,8 @@ function renderSandbox(state) {
   setText(elements.sandboxMatured, formatAmount(rehearsal.matured));
   setText(elements.sandboxSeeds, formatAmount(rehearsal.seeds));
   setText(elements.sandboxPlants, formatAmount(rehearsal.plants));
-  setText(elements.sandboxSeason, describeSeason(rehearsal));
-  setText(elements.sandboxPollinator, describePollinator(rehearsal));
+  renderReadoutFacts(elements.sandboxSeason, describeSeason(rehearsal));
+  renderReadoutFacts(elements.sandboxPollinator, describePollinator(rehearsal));
   renderKind(elements.sandboxKindHerb, rehearsal.kinds[0], "sandbox-kind");
   renderKind(elements.sandboxKindBloom, rehearsal.kinds[1], "sandbox-kind");
   renderGoalFacts(elements.sandboxSummary, rehearsal.facts ?? []);
