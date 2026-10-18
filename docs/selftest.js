@@ -3416,9 +3416,10 @@ function checkPlotAnimation(problems) {
   const canvas = document.createElement("canvas");
   drawGarden(canvas, huge, readPalette(), 5);
   const bounds = plotBounds(huge);
-  if (canvas.width !== bounds.width || canvas.height !== bounds.height) {
+  if (canvas.width !== bounds.canvasWidth || canvas.height !== bounds.height) {
     problems.push(
-      `a huge garden drew ${canvas.width}x${canvas.height}px, outside the plot's own bounds ${bounds.width}x${bounds.height}px.`
+      `a huge garden drew ${canvas.width}x${canvas.height}px, outside the plot's own bounds ` +
+        `${bounds.canvasWidth}x${bounds.height}px.`
     );
   }
   if (canvas.height > bounds.maxRows * bounds.cell) {
@@ -5445,12 +5446,12 @@ function checkPollinatorHome(problems) {
       problems.push("the plot drew the same picture resting and visiting, so a visit is not visible on the garden.");
     }
 
-    // The hive paints the plot's top-right cell, so a pixel its roof covers is
-    // the home's own anchor: bare soil must not carry it, and it must stay put
-    // while the bee is out visiting.
+    // The hive stands on the home's own strip of ground beside the plots, and a
+    // pixel its roof covers is the home's own anchor: bare soil must not carry
+    // it, and it must stay put while the bee is out visiting.
     const bounds = plotBounds(grown);
-    const anchorX = bounds.width - bounds.cell + 12;
-    const anchorY = 12;
+    const anchorX = bounds.home.x + 12;
+    const anchorY = bounds.home.y + 12;
     const anchorPixel = (state) => {
       const data = plotCanvas(state).getContext("2d").getImageData(anchorX, anchorY, 1, 1).data;
       return `${data[0]},${data[1]},${data[2]}`;
@@ -5503,6 +5504,129 @@ function checkPollinatorHome(problems) {
   } finally {
     setGarden(gardenBefore);
     restoreGrowth(growthBefore);
+  }
+}
+
+/**
+ * The pollinator's home stands on ground of its own, beside the plots rather
+ * than on one of them, so every plot a seed or plant holds stays visible and the
+ * drawn garden can be counted against the 'Grown plants' beside it.
+ *
+ * `plotBounds` lays the home's strip past the last plot column and `drawGarden`
+ * draws the hive there, so the home's ground meets no plot cell and no mark
+ * stands on it. The picture says the same thing: every plot of a full bed shows
+ * as much of its plant as any other, and the plot cells a bed of plants changes
+ * from bare soil are exactly the cells its plants hold, at every size up to a
+ * full bed.
+ */
+function checkPollinatorHomeOffPlots(problems) {
+  // The home's ground is past the last plot column, it fits the canvas, and no
+  // plot a seed or plant holds ever meets it.
+  for (let beds = 1; beds <= 3; beds += 1) {
+    const capacity = beds * PLOTS_PER_BED;
+    const bounds = plotBounds({ growth: 0, beds, capacity });
+    const home = bounds.home;
+    if (!home) {
+      problems.push(
+        `a ${beds}-bed garden reports no ground for the pollinator's home, so the hive can only stand on a plot.`
+      );
+      continue;
+    }
+    if (home.x < bounds.width) {
+      problems.push(
+        `the pollinator's home starts at x=${home.x} while the plot's own ground runs to x=${bounds.width}, so the ` +
+          "hive is drawn over a plot."
+      );
+    }
+    if (home.x + home.width > bounds.canvasWidth) {
+      problems.push(
+        `the pollinator's home runs to x=${home.x + home.width} past the canvas' ${bounds.canvasWidth}px, so the ` +
+          "hive is cut off."
+      );
+    }
+    const full = { growth: 0, beds, capacity, plantCounts: [capacity, 0], pollinator: { visiting: false } };
+    const covered = plotMarks(full).find((mark) => {
+      const left = (mark.cell % bounds.columns) * bounds.cell;
+      const top = Math.floor(mark.cell / bounds.columns) * bounds.cell;
+      return (
+        left < home.x + home.width &&
+        home.x < left + bounds.cell &&
+        top < home.y + home.height &&
+        home.y < top + bounds.cell
+      );
+    });
+    if (covered) {
+      problems.push(
+        `the pollinator's home covers the plot at cell ${covered.cell} of a full ${beds}-bed garden, so the ` +
+          `${covered.kind} standing there cannot be counted against the 'Grown plants' beside it.`
+      );
+    }
+  }
+
+  // Every plot of a full bed shows its own plant: a bed of one kind holds the
+  // same sprite on every plot, so each planted plot carries the same count of
+  // leaf-green pixels, which only a growing thing draws. A hive painted over a
+  // plot would leave that plot's plant partly buried and short of the others.
+  const palette = readPalette();
+  const leafKeys = new Set(
+    [palette.leaf, palette.leafLight, palette.leafDeep].map((color) => colorKey(parseColor(color)))
+  );
+  const bed = { growth: 0, beds: 1, capacity: PLOT_CAPACITY, plantCounts: [PLOT_CAPACITY, 0], pollinator: { visiting: false } };
+  const bedBounds = plotBounds(bed);
+  const bedData = plotCanvas(bed).getContext("2d").getImageData(0, 0, bedBounds.width, bedBounds.height).data;
+  const leavesPerCell = new Map();
+  for (let y = 0; y < bedBounds.height; y += 1) {
+    for (let x = 0; x < bedBounds.width; x += 1) {
+      const i = (y * bedBounds.width + x) * 4;
+      if (!leafKeys.has(`${bedData[i]},${bedData[i + 1]},${bedData[i + 2]}`)) continue;
+      const cell = Math.floor(y / bedBounds.cell) * bedBounds.columns + Math.floor(x / bedBounds.cell);
+      leavesPerCell.set(cell, (leavesPerCell.get(cell) ?? 0) + 1);
+    }
+  }
+  const wholePlant = leavesPerCell.get(0) ?? 0;
+  for (let cell = 0; cell < PLOT_CAPACITY; cell += 1) {
+    const leaves = leavesPerCell.get(cell) ?? 0;
+    if (leaves !== wholePlant) {
+      problems.push(
+        `of a full bed of ${PLOT_CAPACITY} plants, the plot at cell ${cell} shows ${leaves} leaf pixels against the ` +
+          `${wholePlant} of the first plot, so its plant is not drawn whole and cannot be counted against the ` +
+          "'Grown plants' beside it."
+      );
+      break;
+    }
+  }
+
+  // Every plot the bed plants is drawn, and only those plots: a bed of n plants
+  // differs from bare soil on exactly the cells 0..n-1, at every size up to a
+  // full bed, so a visitor counting the planted marks counts the 'Grown plants'
+  // value beside them.
+  const bare = plotCanvas({ ...bed, plantCounts: [0, 0] });
+  const bareData = bare.getContext("2d").getImageData(0, 0, bedBounds.width, bedBounds.height).data;
+  for (let plants = 1; plants <= PLOT_CAPACITY; plants += 1) {
+    const planted = plotCanvas({ ...bed, plantCounts: [plants, 0] });
+    const plantedData = planted.getContext("2d").getImageData(0, 0, bedBounds.width, bedBounds.height).data;
+    const drawn = new Set();
+    for (let y = 0; y < bedBounds.height; y += 1) {
+      for (let x = 0; x < bedBounds.width; x += 1) {
+        const i = (y * bedBounds.width + x) * 4;
+        if (
+          plantedData[i] === bareData[i] &&
+          plantedData[i + 1] === bareData[i + 1] &&
+          plantedData[i + 2] === bareData[i + 2]
+        ) {
+          continue;
+        }
+        drawn.add(Math.floor(y / bedBounds.cell) * bedBounds.columns + Math.floor(x / bedBounds.cell));
+      }
+    }
+    const expected = Array.from({ length: plants }, (_, cell) => cell);
+    if (drawn.size !== plants || expected.some((cell) => !drawn.has(cell))) {
+      problems.push(
+        `a bed of ${plants} grown ${plants === 1 ? "plant" : "plants"} draws marks on plot cells ` +
+          `${JSON.stringify([...drawn].sort((a, b) => a - b))}, expected exactly ${JSON.stringify(expected)}, so the ` +
+          "planted marks cannot be counted against the 'Grown plants' value beside them."
+      );
+    }
   }
 }
 
@@ -7199,8 +7323,8 @@ function checkTendedMarks(problems) {
     const after = plotCanvas(oneSown, 0);
     const differing = new Set();
     {
-      const a = before.getContext("2d").getImageData(0, 0, before.width, before.height).data;
-      const b = after.getContext("2d").getImageData(0, 0, after.width, after.height).data;
+      const a = before.getContext("2d").getImageData(0, 0, bounds.width, bounds.height).data;
+      const b = after.getContext("2d").getImageData(0, 0, bounds.width, bounds.height).data;
       for (let y = 0; y < bounds.height; y += 1) {
         for (let x = 0; x < bounds.width; x += 1) {
           const i = (y * bounds.width + x) * 4;
@@ -7939,10 +8063,10 @@ function checkSandbox(problems) {
     }
     if (plot) {
       const bounds = plotBounds(drawnMonth);
-      if (plot.width !== bounds.width || plot.height !== bounds.height) {
+      if (plot.width !== bounds.canvasWidth || plot.height !== bounds.height) {
         problems.push(
           `the rehearsal plot on the page is ${plot.width}x${plot.height} pixels, but the drawn rehearsal ` +
-            `(@ form ${drawnMonth.form}) is ${bounds.width}x${bounds.height}.`
+            `(@ form ${drawnMonth.form}) is ${bounds.canvasWidth}x${bounds.height}.`
         );
       }
     }
@@ -9377,6 +9501,7 @@ export async function checks() {
     checkGardenActionRefusals(problems);
     checkPollinator(problems);
     checkPollinatorHome(problems);
+    checkPollinatorHomeOffPlots(problems);
     checkPollinatorSeasons(problems);
     checkSeason(problems);
     checkShownRateMatchesEarned(problems);

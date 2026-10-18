@@ -240,6 +240,11 @@ const MAX_ROWS = 12;
 const FORMS_PER_ROW = 3;
 // The plots one bed holds, as the plot itself defines a bed: three rows of four.
 const BED_CELLS = COLUMNS * BASE_ROWS;
+// The ground the pollinator's home stands on, in canvas pixels: one cell wide,
+// laid beside the plot rather than on one of its plots. The plots keep their own
+// width, so a hive can never be drawn over a plot a visitor counts against the
+// 'Grown plants' beside it; the canvas is that one strip wider than the plot.
+const HOME_CELL = CELL;
 
 /** How many rows of soil this form has spread to. */
 function rowsForForm(index) {
@@ -262,26 +267,36 @@ function capacityFor(state) {
 }
 
 /**
- * The plot's pixel bounds for `state`: the grid of soil cells it draws and the
- * sprite cap that grid imposes.
+ * The plot's pixel bounds for `state`: the grid of soil cells it draws, the
+ * sprite cap that grid imposes, and the strip of ground beside it where the
+ * pollinator's home stands.
  *
  * The grid holds the garden's form — a bigger garden is drawn larger — and its
  * capacity, so a full bed of plots always has a cell for every seed and plant
  * the readout counts. Both are bounded by the row cap, so a save carrying more
  * plots than the plot can show still draws a bounded picture.
+ *
+ * `width` is the plot's own ground, `canvasWidth` that ground plus the home's
+ * strip, and `home` the strip itself — always past the last plot column, so the
+ * hive stands off the plots and no seed or plant among them is ever covered by
+ * it, while the drawn garden still shows a home whenever grown plants stand on
+ * it.
  */
 export function plotBounds(state) {
   const growth = state && Number.isFinite(state.growth) ? state.growth : 0;
   const forCapacity = Math.ceil(capacityFor(state) / COLUMNS);
   const rows = Math.min(MAX_ROWS, Math.max(rowsForForm(gardenForm(growth).index), forCapacity));
+  const width = COLUMNS * CELL;
   return {
     cell: CELL,
     columns: COLUMNS,
     maxRows: MAX_ROWS,
     rows,
-    width: COLUMNS * CELL,
+    width,
     height: rows * CELL,
     cells: rows * COLUMNS,
+    canvasWidth: width + HOME_CELL,
+    home: { x: width, y: 0, width: HOME_CELL, height: CELL },
   };
 }
 
@@ -914,8 +929,8 @@ function drawReturnMarks(ctx, palette, width, height, marks) {
   if (marks.season) {
     // A small sun at the top of the plot, above the soil between the cells the
     // per-plant ticks land on and clear of the form brackets in the corners and
-    // the pollinator's home in the top-right cell, because the year itself
-    // moved on.
+    // of the pollinator's home, which stands on its own ground beside the
+    // plots, because the year itself moved on.
     drawSeasonMark(ctx, width);
   }
 }
@@ -968,14 +983,15 @@ function drawPollinator(ctx, x, y, palette, driftX, driftY) {
 
 /**
  * The pollinator's home: a small hive of stacked sun bars, its stripes and
- * entrance cut in the soil's own dark, standing still in the plot's top-right
- * cell.
+ * entrance cut in the soil's own dark, standing still on the home's own strip of
+ * ground beside the plots.
  *
  * It is drawn with no phase, so the hive never moves while the garden breathes
  * around it, and every colour comes from the same palette as the plants, so it
  * belongs to this garden rather than looking pasted on. The plot draws it
  * whenever grown plants stand on the garden — the place a pollinator lives —
- * which is exactly what `pollinatorPlot` reads off the state.
+ * which is exactly what `pollinatorPlot` reads off the state, and it draws it
+ * off the plots so the home covers no seed or plant the readout counts.
  */
 function drawPollinatorHome(ctx, x, y, palette) {
   ctx.fillStyle = palette.sun;
@@ -1283,7 +1299,9 @@ function drawPlotEdges(ctx, palette, grid) {
  * a lit seam down its left — and every bed the grid holds is closed by a lit rim
  * over that soil, empty plots and all, so the picture can be counted plot by
  * plot against the panel's 'Plots of soil' beside it and one bed reads as its own
- * room of soil.
+ * room of soil. The pollinator's home stands on a strip of ground past the last
+ * plot column, outside that rim, so it is drawn beside the garden rather than
+ * over a plot and every seed and plant among the plots stays countable.
  *
  * The lifetime is a second, lasting layer under all of it: `state.lifetimeGrowth`
  * — the same value the readout and `get-state` report — decides how much of the
@@ -1306,18 +1324,20 @@ export function drawGarden(canvas, state, palette, phase = 0) {
   const aged = agedRatio(established);
   const look = seasonLook(palette, state?.season?.key);
   const paint = look.palette;
-  const { cells, width, height } = plotBounds(state);
-  if (canvas.width !== width) canvas.width = width;
+  const { cells, width, height, canvasWidth, home } = plotBounds(state);
+  if (canvas.width !== canvasWidth) canvas.width = canvasWidth;
   if (canvas.height !== height) canvas.height = height;
 
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
   ctx.imageSmoothingEnabled = false;
-  ctx.clearRect(0, 0, width, height);
-  // One field of soil, not a tile per cell: the whole plot is filled once, so
-  // neighbouring cells share no seam and the plot reads as continuous ground.
+  ctx.clearRect(0, 0, canvasWidth, height);
+  // One field of soil, not a tile per cell: the whole plot is filled once — the
+  // home's strip beside the plots included, so the hive stands on the same
+  // ground as the garden — so neighbouring cells share no seam and the plot
+  // reads as continuous ground.
   ctx.fillStyle = paint.soil;
-  ctx.fillRect(0, 0, width, height);
+  ctx.fillRect(0, 0, canvasWidth, height);
 
   const marks = plotMarks(state);
   const occupied = new Set(marks.map((mark) => mark.cell));
@@ -1363,19 +1383,20 @@ export function drawGarden(canvas, state, palette, phase = 0) {
   for (const cell of tendedMarkCells(state, marks)) {
     drawTendedSign(ctx, (cell % COLUMNS) * CELL, Math.floor(cell / COLUMNS) * CELL, paint);
   }
-  // The pollinator's home stands on the plot whenever grown plants do. Between
-  // visits the bee rests still on the hive; during one the hive stays and the
-  // bee is out over the plants with pollen in the air, so the picture says both
-  // that a pollinator lives here and whether it is busy right now.
+  // The pollinator's home stands on its own ground beside the plots whenever
+  // grown plants do, so it never covers a plot a visitor counts. Between visits
+  // the bee rests still on the hive; during one the hive stays and the bee is
+  // out over the plants with pollen in the air, so the picture says both that a
+  // pollinator lives here and whether it is busy right now.
   const pollinator = pollinatorPlot(state);
   if (pollinator.home) {
-    drawPollinatorHome(ctx, width - CELL, 0, paint);
+    drawPollinatorHome(ctx, home.x, home.y, paint);
     if (pollinator.visiting) {
       drawPollinator(ctx, 0, 0, paint, swayPixels(phase, 1), swayPixels(phase, 3));
       if (plants > 1) drawPollinator(ctx, CELL, 0, paint, swayPixels(phase, 2), swayPixels(phase, 4));
       drawPollenSpecks(ctx, paint, plants);
     } else {
-      drawRestingBee(ctx, width - CELL, 0, paint);
+      drawRestingBee(ctx, home.x, home.y, paint);
     }
   }
   // The return marks go on last, over the garden: what grew while the visitor
