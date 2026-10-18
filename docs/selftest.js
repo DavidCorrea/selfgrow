@@ -6619,6 +6619,123 @@ function checkReturnMarks(problems) {
     if (row && !row.hidden) {
       problems.push("Tending the soil left the New since you left row showing.");
     }
+
+    // An absence that only crossed a season boundary — a ten-minute season
+    // lands in almost any real gap — matured no seed and reached no new form,
+    // and the garden's growth changed with the turn all the same. It must
+    // leave a mark of its own: drawn on the plot, named in the readout and
+    // reported by get-state.
+    setGarden({ seeds: 0, plants: 0 });
+    setGrowth(0, 0, SEASON_SECONDS - 1);
+    const seasonAway = applyReturn(
+      {
+        growth: 0,
+        rate: 0,
+        age: SEASON_SECONDS - 1,
+        sprouts: [],
+        bloomSprouts: [],
+        plants: 0,
+        plantCounts: [0, 0],
+        beds: 1,
+      },
+      nowMs - MIN_AWAY_SECONDS * 1000,
+      nowMs
+    );
+    const seasonMarks = returnMarkFor(seasonAway, MIN_AWAY_SECONDS);
+    if (seasonAway.matured !== 0 || seasonAway.formsFound.length !== 0 || !seasonAway.crossedSeason) {
+      problems.push(
+        `the season-only absence matured ${seasonAway.matured} seeds, reached ` +
+          `${seasonAway.formsFound.length} new forms and crossed a season ${seasonAway.crossedSeason}, ` +
+          "so it does not exercise a return whose only change was the year turning."
+      );
+    }
+    if (!seasonMarks) {
+      problems.push(
+        "an absence that only crossed a season boundary marked nothing; the year turning is a change of its own."
+      );
+    } else {
+      if (seasonMarks.plants !== 0) {
+        problems.push(`the season-only return marked ${seasonMarks.plants} plants, expected none.`);
+      }
+      if (seasonMarks.form) {
+        problems.push("the season-only return marked a new form, but the garden reached none.");
+      }
+      if (!seasonMarks.season || seasonMarks.season.to !== seasonAway.toSeason.name) {
+        problems.push(
+          `a season-crossing absence marked ${JSON.stringify(seasonMarks.season)}, expected the season it ` +
+            `turned into (${seasonAway.toSeason.name}).`
+        );
+      }
+    }
+
+    // get-state says exactly what the plot draws, and the readout row stays up
+    // naming the season until the visitor acknowledges it.
+    const seasonShown = getDisplayedState();
+    if (JSON.stringify(seasonShown.returnMarks) !== JSON.stringify(seasonMarks)) {
+      problems.push(
+        `get-state's returnMarks ${JSON.stringify(seasonShown.returnMarks)} does not name the season turn ` +
+          `${JSON.stringify(seasonMarks)}.`
+      );
+    }
+    if (seasonShown.returnMarks?.season?.to !== seasonAway.toSeason.name) {
+      problems.push(
+        `get-state's returnMarks season is ${JSON.stringify(seasonShown.returnMarks?.season)}, expected ` +
+          `${seasonAway.toSeason.name}.`
+      );
+    }
+    if (row && field) {
+      if (row.hidden) {
+        problems.push("a season-crossing absence left the New since you left row hidden.");
+      } else if (!field.textContent.includes(seasonAway.toSeason.name)) {
+        problems.push(
+          `the return readout does not name the season the garden turned into ` +
+            `(${seasonAway.toSeason.name}): "${field.textContent}".`
+        );
+      }
+    }
+    const seasonCells = returnMarkCells(seasonShown, plotBounds(seasonShown));
+    if (!seasonCells.season || seasonCells.cells.length > 0 || seasonCells.form) {
+      problems.push(
+        `returnMarkCells gave ${JSON.stringify(seasonCells)} for a season-only return, expected the season mark alone.`
+      );
+    }
+
+    // The mark reaches the picture, and it is a mark of its own: the season
+    // alone draws something the unmarked garden does not, and something
+    // different from a matured-plant tick or a new-form frame.
+    const seasonPlot = plotImage(seasonShown, 0);
+    if (seasonPlot === plotImage({ ...seasonShown, returnMarks: null }, 0)) {
+      problems.push("the plot drew the same picture with and without a season mark, so the year turning did not show on it.");
+    }
+    // A plant standing on the plot, so the per-plant tick has a cell to land on
+    // and the two marks can be compared rather than both being absent.
+    const planted = { ...seasonShown, plants: 1, plantCounts: [1, 0] };
+    const plantedSeason = { ...planted, returnMarks: { plants: 0, form: false, season: { from: "winter", to: "spring" } } };
+    const plantedTick = { ...planted, returnMarks: { plants: 1, form: false, season: null } };
+    const plantedForm = { ...planted, returnMarks: { plants: 0, form: true, season: null } };
+    if (plotImage(plantedSeason, 0) === plotImage(plantedTick, 0)) {
+      problems.push("the plot drew a season turn exactly as it draws a matured plant, so the two marks cannot be told apart.");
+    }
+    if (plotImage(plantedSeason, 0) === plotImage(plantedForm, 0)) {
+      problems.push("the plot drew a season turn exactly as it draws a new form, so the two marks cannot be told apart.");
+    }
+    if (seasonPlot !== plotImage(seasonShown, 1)) {
+      problems.push("the season mark moved between animation phases, so it does not hold under reduced motion.");
+    }
+
+    // The same acknowledgement clears it: the dismiss control, like a garden
+    // action, takes the season mark with the rest.
+    dismiss?.click();
+    const seasonDismissed = getDisplayedState();
+    if (seasonDismissed.returnMarks !== null) {
+      problems.push(
+        `the dismiss-return control left a season mark ${JSON.stringify(seasonDismissed.returnMarks)}; ` +
+          "dismissing must clear it."
+      );
+    }
+    if (row && !row.hidden) {
+      problems.push("the dismiss-return control left the New since you left row showing after a season-only return.");
+    }
   } finally {
     clearReturnMarks();
     setGarden(gardenBefore);

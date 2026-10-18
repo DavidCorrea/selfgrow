@@ -139,8 +139,11 @@ export function tools() {
         "facts the page shows as short labelled values (facts, each " +
         "{label, value}). It also " +
         "reports returnMarks: what the last return marked on the plot and the " +
-        "readout — how many plants matured (plants) and whether a new form was " +
-        "reached (form), or null once the marks clear. A first visit or a quick " +
+        "readout — how many plants matured (plants), whether a new form was " +
+        "reached (form), and the season turn (season: {from, to}, the season the " +
+        "garden turned from and into, present when the absence crossed a " +
+        "boundary even with no seed matured and no new form), or null once the " +
+        "marks clear. A first visit or a quick " +
         "reload marks nothing, and the marks never clear on a timer: they stay " +
         "until the visitor acknowledges the return, which tend, plant-seed, " +
         "open-bed, replant, import-save or dismiss-return all do. It also " +
