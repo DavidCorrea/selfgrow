@@ -86,9 +86,10 @@ export function gardenForm(growth) {
 // it has ever produced, and a replant trades the first for a lasting bonus while
 // keeping the second. The plot therefore carries a second layer drawn from the
 // lifetime alone — ground the garden has worked long enough to age, and the
-// structures it has built on it — so a replanted plot still reads as a garden
-// with a history rather than as soil nothing has ever touched, while the current
-// growth still decides how full the plot is today.
+// worked edge and tier markers it has built at the foot of the plot — so a
+// replanted plot still reads as a garden with a history rather than as soil
+// nothing has ever touched, while the current growth still decides how full the
+// plot is today.
 
 /**
  * The tiers a garden's lifetime passes through, lowest first: what the ground
@@ -113,7 +114,7 @@ export const ESTABLISHMENTS = Object.freeze([
  * `{ index, name, at, nextAt, fill }` — the shape `gardenForm` returns for the
  * current growth.
  *
- * One pure mapping, so the aged ground and the structures the plot draws, the
+ * One pure mapping, so the aged ground and the worked edge the plot draws, the
  * readout beside them and `get-state` all come from this call and cannot
  * disagree. Zero, negative, missing or non-finite lifetime is fresh ground with
  * no fill: a garden with no history draws exactly what the plot drew before
@@ -585,63 +586,105 @@ function drawAgedGround(ctx, x, y, palette, cell) {
   }
 }
 
-// The garden's lasting structures: one course of stones per tier of history, up
-// to a cap so the tallest wall still leaves the plot's ground readable, and one
-// cairn per tier, capped so the markers never crowd the wall they stand on.
-const STONE_WIDTH = 6;
-const STONE_HEIGHT = 3;
-const WALL_COURSES_MAX = 3;
-const CAIRNS_MAX = 4;
+// The garden's worked ground: a low retaining lip at the foot of the plot, the
+// band of aged earth the lip holds, and one tier marker per step of history,
+// capped so the built ground never swallows a plot of soil.
+const LIP_HEIGHT = 2;
+const BAND_HEIGHT_MAX = 8;
+const MARKERS_MAX = 4;
 
-/** How many courses of wall the garden's history has laid: one per tier, capped. */
-function wallCourses(established) {
-  return Math.min(WALL_COURSES_MAX, established.index);
+/**
+ * The edge the garden's lifetime has built at the foot of the plot, as
+ * `{ lipHeight, bandHeight, markers }`.
+ *
+ * A garden with no history builds no edge at all — every field zero — so a plot
+ * that has never produced anything draws exactly the ground it always did. From
+ * the first tier on, the low retaining lip stands two pixels deep and the aged
+ * ground it holds deepens with every tier and with how far through the current
+ * one the lifetime has run, capped so the band never swallows a plot of soil.
+ * One marker is raised per tier, capped, so the built edge says how much ground
+ * the garden has worked without a visitor reading a number.
+ *
+ * Monotonic in the lifetime and free of the animation phase, so the edge the
+ * still frame draws is the edge every frame draws. Pure, so the mapping can be
+ * asserted without a canvas.
+ */
+export function groundEdge(established) {
+  const index =
+    established && Number.isFinite(established.index) ? Math.max(0, Math.floor(established.index)) : 0;
+  const fill = established && Number.isFinite(established.fill) ? clamp01(established.fill) : 0;
+  if (index === 0) return { lipHeight: 0, bandHeight: 0, markers: 0 };
+  return {
+    lipHeight: LIP_HEIGHT,
+    bandHeight: Math.min(BAND_HEIGHT_MAX, 2 * index + Math.floor(fill * 2)),
+    markers: Math.min(MARKERS_MAX, index),
+  };
+}
+
+/** A stable number in [0, 1) for one mark of the built ground. */
+function edgeHash(key) {
+  const value = Math.sin((key + 1) * 57.13 + 91.7) * 43758.5453;
+  return value - Math.floor(value);
 }
 
 /**
- * The stone wall along the plot's bottom edge: a course of stones per tier of
- * the garden's lifetime.
+ * Where the marker in `slot` of `slots` sits across a `width`-pixel plot.
  *
- * It is the garden's oldest structure — the retaining wall of ground the
- * visitor has worked — so it is drawn from the lifetime alone and stands in
- * front of the garden, where a replant that has left the plot bare again still
- * shows it. Alternate courses are offset by half a stone, so the wall reads as
- * laid stonework rather than as one striped band.
+ * The slots are spread along the width so no marker claims a cell's centre, and
+ * each is nudged by its own hash, so the markers never line up like pickets.
+ * The position comes from the width and the slot alone, so it holds still.
  */
-function drawStoneWall(ctx, palette, width, height, courses) {
-  for (let course = 0; course < courses; course += 1) {
-    const y = height - STONE_HEIGHT * (course + 1);
-    const offset = course % 2 === 0 ? 0 : STONE_WIDTH / 2;
-    for (let x = -offset; x < width; x += STONE_WIDTH) {
-      ctx.fillStyle = palette.soilLight;
-      ctx.fillRect(x, y, STONE_WIDTH - 1, STONE_HEIGHT - 1);
-      ctx.fillStyle = palette.soilDeep;
-      ctx.fillRect(x + STONE_WIDTH - 1, y, 1, STONE_HEIGHT);
-      ctx.fillRect(x, y + STONE_HEIGHT - 1, STONE_WIDTH - 1, 1);
+function markerX(slot, slots, width) {
+  const span = width / (slots + 1);
+  const offCentre = edgeHash(slot * 31 + 7) - 0.5;
+  return Math.round(span * (slot + 1) + offCentre * span * 0.5 - 3);
+}
+
+/**
+ * The garden's worked ground at the foot of the plot: the low retaining lip its
+ * lifetime has laid and the band of aged earth the lip holds.
+ *
+ * The lip is one lit ridge row over a deep seam row — the same two-tone edge the
+ * beds above it are closed with — drawn as one unbroken line across the whole
+ * width, so the foot of the plot reads as ground held in place rather than as a
+ * wall of tiles standing in front of it. The band behind it is mottled with
+ * clods of old humus in the soil's own dark and light, deepening with the
+ * garden's history, and carries a low marker for each tier it has reached. Every
+ * colour is the soil's, so the built ground belongs to the garden rather than
+ * standing apart from it, and no animation phase is read, so the edge holds in
+ * the still frame reduced motion pins to.
+ */
+function drawGroundEdge(ctx, palette, width, height, edge) {
+  const lipTop = height - edge.lipHeight;
+  const bandTop = lipTop - edge.bandHeight;
+  // The aged ground the lip holds, laid down before the lip crosses its foot.
+  for (let y = bandTop; y < lipTop; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const spot = edgeHash(x * 13 + y * 71);
+      if (spot < 0.3) {
+        ctx.fillStyle = palette.soilDeep;
+        ctx.fillRect(x, y, 3, 1);
+      } else if (spot < 0.55) {
+        ctx.fillStyle = palette.soilLight;
+        ctx.fillRect(x, y, 2, 1);
+      }
     }
   }
-}
-
-/**
- * The cairns standing on the wall, one per tier of the garden's lifetime
- * (capped): a small pile of stones the visitor's history has raised.
- *
- * They are spaced along the plot's width rather than placed on cells, so they
- * never claim the plot a seed or plant stands on, and they are drawn with no
- * phase, so they hold still while the garden breathes and under reduced motion.
- */
-function drawCairns(ctx, palette, width, height, count, courses) {
-  const ground = height - STONE_HEIGHT * courses;
-  for (let i = 0; i < count; i += 1) {
-    const x = Math.round((i + 1) * (width / (count + 1)) - STONE_WIDTH / 2);
-    ctx.fillStyle = palette.soilLight;
-    ctx.fillRect(x + 1, ground - 3, 6, 3);
-    ctx.fillRect(x + 2, ground - 6, 4, 3);
-    ctx.fillRect(x + 3, ground - 8, 3, 2);
+  // A low mound of laid ground per tier, standing on the band the lip holds.
+  for (let slot = 0; slot < edge.markers; slot += 1) {
+    const x = markerX(slot, edge.markers, width);
     ctx.fillStyle = palette.soilDeep;
-    ctx.fillRect(x + 1, ground - 1, 6, 1);
-    ctx.fillRect(x + 2, ground - 4, 4, 1);
+    ctx.fillRect(x, bandTop - 4, 6, 4);
+    ctx.fillRect(x + 1, bandTop - 6, 4, 2);
+    ctx.fillStyle = palette.soilLight;
+    ctx.fillRect(x + 1, bandTop - 4, 4, 1);
+    ctx.fillRect(x + 2, bandTop - 6, 2, 1);
   }
+  // The lip last, so it is one unbroken edge across the whole width.
+  ctx.fillStyle = palette.soilLight;
+  ctx.fillRect(0, lipTop, width, 1);
+  ctx.fillStyle = palette.soilDeep;
+  ctx.fillRect(0, lipTop + 1, width, edge.lipHeight - 1);
 }
 
 /**
@@ -1244,10 +1287,10 @@ function drawPlotEdges(ctx, palette, grid) {
  *
  * The lifetime is a second, lasting layer under all of it: `state.lifetimeGrowth`
  * — the same value the readout and `get-state` report — decides how much of the
- * ground has aged and how much wall and how many cairns the garden has built, so
- * an old, well-kept garden reads as established at a glance and a replanted plot
- * is never drawn as soil nothing has touched. It is hash-derived and reads no
- * phase, so it holds in the still frame reduced motion pins to.
+ * ground has aged and what worked ground the garden has built at the foot of the
+ * plot, so an old, well-kept garden reads as established at a glance and a
+ * replanted plot is never drawn as soil nothing has touched. It is hash-derived
+ * and reads no phase, so it holds in the still frame reduced motion pins to.
  *
  * The plots the visitor sowed by hand carry a still standing sign, drawn from
  * `state.visit.sown` — the same hand-work count the readout and `get-state`
@@ -1261,7 +1304,6 @@ export function drawGarden(canvas, state, palette, phase = 0) {
   const form = gardenForm(growth);
   const established = establishment(state?.lifetimeGrowth);
   const aged = agedRatio(established);
-  const courses = wallCourses(established);
   const look = seasonLook(palette, state?.season?.key);
   const paint = look.palette;
   const { cells, width, height } = plotBounds(state);
@@ -1299,6 +1341,13 @@ export function drawGarden(canvas, state, palette, phase = 0) {
   // every bed is closed, empty or not, so a visitor can count the picture against
   // the 'Plots of soil' the panel beside it reports. The sprites still go on top.
   drawPlotEdges(ctx, paint, plotCells(state, marks));
+  // The garden's worked ground goes under the sprites it holds: the low
+  // retaining lip its lifetime has laid at the foot of the plot and the band of
+  // aged earth behind it, so an established garden's bottom edge reads as the
+  // ground the garden has worked rather than a wall standing in front of it.
+  // Nothing here reads the phase, so it holds in the still frame.
+  const edge = groundEdge(established);
+  if (edge.lipHeight > 0) drawGroundEdge(ctx, paint, width, height, edge);
   // Every seed and plant the readout counts, drawn on its own cell. The herb
   // plants stand first, then the blooms, then the seeds of each kind. A grown
   // plant of a kind that has earned a milestone wears a crown, so the doubled
@@ -1313,14 +1362,6 @@ export function drawGarden(canvas, state, palette, phase = 0) {
   // its own. The sign reads no phase, so it holds in the still frame.
   for (const cell of tendedMarkCells(state, marks)) {
     drawTendedSign(ctx, (cell % COLUMNS) * CELL, Math.floor(cell / COLUMNS) * CELL, paint);
-  }
-  // The garden's lasting structures stand in front of it: the wall its lifetime
-  // has laid along the foot of the plot and a cairn per tier, so an established
-  // garden reads as established at a glance and a replant does not erase what
-  // was built. Nothing here reads the phase, so they hold still.
-  if (established.index > 0) {
-    drawStoneWall(ctx, paint, width, height, courses);
-    drawCairns(ctx, paint, width, height, Math.min(CAIRNS_MAX, established.index), courses);
   }
   // The pollinator's home stands on the plot whenever grown plants do. Between
   // visits the bee rests still on the hive; during one the hive stays and the

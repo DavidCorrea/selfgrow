@@ -117,6 +117,7 @@ import {
   establishment,
   gardenForm,
   groundCover,
+  groundEdge,
   motionPhase,
   plotBounds,
   plotCells,
@@ -3142,6 +3143,195 @@ function checkPlotEstablishment(problems) {
   } finally {
     setGarden(gardenBefore);
     restoreGrowth(growthBefore);
+  }
+}
+
+/**
+ * The garden's worked ground reads as ground, not as a fence.
+ *
+ * A garden with a lifetime behind it draws a low retaining lip at the foot of
+ * the plot over a band of aged earth in the soil's own tones, deepening with its
+ * history, and a marker per tier — never an evenly spaced band of tiles a
+ * visitor reads as an unrelated structure at the foot of the picture. The whole
+ * edge is drawn from the lifetime the readout and `get-state` report and reads
+ * no animation phase, so a still frame and reduced motion draw it identically.
+ */
+function checkPlotGroundEdge(problems) {
+  const palette = readPalette();
+  const leafKeys = new Set(
+    [
+      palette.leaf,
+      palette.leafLight,
+      palette.leafDeep,
+      ...Object.values(palette.leafSeasons).flatMap((trio) => [trio.leaf, trio.leafLight, trio.leafDeep]),
+    ].map((color) => colorKey(parseColor(color)))
+  );
+  const deepKey = colorKey(parseColor(palette.soilDeep));
+  const lightKey = colorKey(parseColor(palette.soilLight));
+
+  // The mapping: no history builds no edge at all, and the band and its markers
+  // only ever deepen or hold as the lifetime grows.
+  const fresh = groundEdge(establishment(0));
+  if (fresh.lipHeight !== 0 || fresh.bandHeight !== 0 || fresh.markers !== 0) {
+    problems.push(
+      `a garden with no history draws worked ground ${JSON.stringify(fresh)}; fresh ground must draw no edge at all.`
+    );
+  }
+  const tiers = [0, 1e2, 1e4, 1e6, 1e9, 1e12, 1e15];
+  let lastBand = -1;
+  let lastMarkers = -1;
+  for (const lifetime of tiers) {
+    const edge = groundEdge(establishment(lifetime));
+    if (edge.bandHeight < lastBand || edge.markers < lastMarkers) {
+      problems.push(
+        `lifetime ${lifetime} draws worked ground ${JSON.stringify(edge)}, less than the tier below it, so the ` +
+          "edge shrinks as the garden's history grows."
+      );
+    }
+    lastBand = edge.bandHeight;
+    lastMarkers = edge.markers;
+    if (edge.markers > 4) {
+      problems.push(`lifetime ${lifetime} raises ${edge.markers} edge markers; they must be capped so the band stays readable.`);
+    }
+  }
+
+  // The edge is bounded on both the narrow and the wide plot: it never swallows
+  // a row of soil however large the garden's capacity.
+  for (const state of [
+    { growth: 0, beds: 1, seeds: 0, plants: 0 },
+    { growth: 0, beds: 2, seeds: 0, plants: 0 },
+  ]) {
+    const { cell, height } = plotBounds(state);
+    for (const lifetime of tiers) {
+      const edge = groundEdge(establishment(lifetime));
+      if (edge.lipHeight + edge.bandHeight >= cell || edge.lipHeight + edge.bandHeight >= height / 4) {
+        problems.push(
+          `the worked ground is ${edge.lipHeight + edge.bandHeight}px tall on a ${height}px plot of ${cell}px cells; ` +
+            "it must stay a low edge and never swallow a plot of soil."
+        );
+      }
+    }
+  }
+
+  if (JSON.stringify(groundEdge(establishment(1e9))) !== JSON.stringify(groundEdge(establishment(1e9)))) {
+    problems.push("the same lifetime mapped to two different worked edges, so the edge is not pure.");
+  }
+
+  // A pixel render helper and a count of the soil tones in the foot rows, so
+  // the drawn edge can be measured rather than trusted.
+  const countFootTones = (state, rows) => {
+    if (rows <= 0) return 0;
+    const bounds = plotBounds(state);
+    const top = Math.max(0, bounds.height - rows);
+    const height = bounds.height - top;
+    const canvas = plotCanvas(state);
+    const data = canvas.getContext("2d").getImageData(0, top, bounds.width, height).data;
+    let count = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const key = `${data[i]},${data[i + 1]},${data[i + 2]}`;
+      if (key === deepKey || key === lightKey) count += 1;
+    }
+    return count;
+  };
+
+  // The foot of an established plot is one unbroken run of one soil tone across
+  // the full width, in the narrow and the wide frame alike — not the evenly
+  // spaced 6px tiles a visitor reads as a fence.
+  for (const beds of [1, 2]) {
+    const state = { growth: 0, beds, seeds: 0, plants: 0, lifetimeGrowth: 1e9 };
+    const bounds = plotBounds(state);
+    const canvas = plotCanvas(state);
+    const row = canvas.getContext("2d").getImageData(0, bounds.height - 1, bounds.width, 1).data;
+    const tones = new Set();
+    for (let x = 0; x < bounds.width; x += 1) {
+      const i = x * 4;
+      tones.add(`${row[i]},${row[i + 1]},${row[i + 2]}`);
+    }
+    if (tones.size !== 1) {
+      problems.push(
+        `the foot of a ${beds}-bed established plot is drawn in ${tones.size} tones (${[...tones].join(" / ")}), so ` +
+          "the bottom edge reads as a band of tiles rather than one piece of ground."
+      );
+    } else if (!tones.has(deepKey)) {
+      problems.push(
+        `the foot of a ${beds}-bed established plot is one tone, but not the soil's own deep seam ` +
+          `(${[...tones][0]}); the retaining lip must be drawn in the soil's tones.`
+      );
+    }
+  }
+
+  // The aged band carries no leaf green in any season: the built ground stays
+  // ground, and never wears the colour of a growing thing.
+  const plantless = { growth: 0, beds: 1, seeds: 0, plants: 0, lifetimeGrowth: 1e9 };
+  const edgeRows = (() => {
+    const edge = groundEdge(establishment(plantless.lifetimeGrowth));
+    return edge.lipHeight + edge.bandHeight;
+  })();
+  for (const season of [null, ...SEASONS.map((entry) => entry.key)]) {
+    const state = season ? { ...plantless, season: { key: season } } : plantless;
+    const bounds = plotBounds(state);
+    const top = bounds.height - edgeRows;
+    const data = plotCanvas(state).getContext("2d").getImageData(0, top, bounds.width, edgeRows).data;
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i + 3] === 0) continue;
+      const key = `${data[i]},${data[i + 1]},${data[i + 2]}`;
+      if (leafKeys.has(key)) {
+        problems.push(
+          `the worked ground at the foot of an established plot draws a leaf-green pixel rgb(${key})` +
+            (season ? ` in ${season}` : " with no season") +
+            ", so the built ground reads as a growing thing."
+        );
+        break;
+      }
+    }
+  }
+
+  // The drawn edge matches the ground the garden has: a fresh lifetime draws no
+  // band at all, and a longer history lays down more of it.
+  const probeRows = edgeRows;
+  const freshState = { growth: 0, beds: 1, seeds: 0, plants: 0 };
+  const freshTones = countFootTones(freshState, probeRows);
+  const oldTones = countFootTones(plantless, probeRows);
+  if (!(oldTones > freshTones)) {
+    problems.push(
+      `an established plot draws ${oldTones} soil-tone pixels in its foot ${probeRows} rows and a fresh one draws ` +
+        `${freshTones}; the built ground must add ground the garden has worked.`
+    );
+  }
+  const tier2 = { growth: 0, beds: 1, seeds: 0, plants: 0, lifetimeGrowth: 1e4 };
+  const tier5 = { growth: 0, beds: 1, seeds: 0, plants: 0, lifetimeGrowth: 1e12 };
+  const tier2Rows = groundEdge(establishment(tier2.lifetimeGrowth));
+  const tier5Rows = groundEdge(establishment(tier5.lifetimeGrowth));
+  const tier2Tones = countFootTones(tier2, tier2Rows.lipHeight + tier2Rows.bandHeight);
+  const tier5Tones = countFootTones(tier5, tier5Rows.lipHeight + tier5Rows.bandHeight);
+  if (!(tier5Tones > tier2Tones)) {
+    problems.push(
+      `an ancient garden (tier 5) draws ${tier5Tones} soil-tone pixels of foot band and a worked one (tier 2) ` +
+        `${tier2Tones}; the band must deepen with the garden's history.`
+    );
+  }
+
+  // The edge reads no phase: the same established state draws the same foot at
+  // two phases, so it holds still under reduced motion.
+  const grown = { growth: 1e3, beds: 1, seeds: 0, plants: 0, lifetimeGrowth: 1e9 };
+  const first = plotCanvas(grown, 0).getContext("2d");
+  const later = plotCanvas(grown, 7).getContext("2d");
+  const bounds = plotBounds(grown);
+  const top = bounds.height - edgeRows;
+  const a = first.getImageData(0, top, bounds.width, edgeRows).data;
+  const b = later.getImageData(0, top, bounds.width, edgeRows).data;
+  if (a.length !== b.length) {
+    problems.push("two phases of an established plot drew different-sized foot bands, so the edge is not a still frame.");
+  } else {
+    for (let i = 0; i < a.length; i += 1) {
+      if (a[i] !== b[i]) {
+        problems.push(
+          "the foot of an established plot moved between two animation phases, so the worked ground does not hold still " +
+            "under reduced motion."
+        );
+        break;
+      }
+    }
   }
 }
 
@@ -9146,6 +9336,7 @@ export async function checks() {
     checkPlotCoverage(problems);
     checkGroundIsNotGrowth(problems);
     checkPlotEstablishment(problems);
+    checkPlotGroundEdge(problems);
     checkSoilField(problems);
     checkPlotAnimation(problems);
     checkGardenFormMapping(problems);
