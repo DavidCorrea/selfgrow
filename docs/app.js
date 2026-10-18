@@ -666,23 +666,25 @@ export function buildAwayReport(start, seconds) {
  *
  * Pure, and the one rule for whether an absence leaves a mark: a span shorter
  * than `minSeconds` is a reload rather than an absence, and an absence that
- * matured no seed, reached no new form and crossed no season has nothing to
- * point at. Otherwise `plants` is how many seeds matured, `form` says the
- * garden reached a form it did not have, and `season` names the year's turn —
- * the season it left and the season it turned into — because a ten-minute
+ * matured no seed, sowed no seed, reached no new form and crossed no season has
+ * nothing to point at. Otherwise `plants` is how many seeds matured, `sown` is
+ * how many seeds the garden sowed into the free plots while away, `form` says
+ * the garden reached a form it did not have, and `season` names the year's turn
+ * — the season it left and the season it turned into — because a ten-minute
  * season lands in almost any real absence and the garden's growth changed with
- * it. All three are what the return report already knows.
+ * it. All four are what the return report already knows.
  */
 export function returnMarkFor(away, minSeconds) {
   if (!away || !(away.seconds >= minSeconds)) return null;
   const plants = Number.isFinite(away.matured) && away.matured > 0 ? away.matured : 0;
+  const sown = Number.isFinite(away.sown) && away.sown > 0 ? Math.floor(away.sown) : 0;
   const form = Array.isArray(away.formsFound) && away.formsFound.length > 0;
   const season =
     away.crossedSeason === true && away.fromSeason && away.toSeason
       ? { from: away.fromSeason.name, to: away.toSeason.name }
       : null;
-  if (plants === 0 && !form && !season) return null;
-  return { plants, form, season };
+  if (plants === 0 && sown === 0 && !form && !season) return null;
+  return { plants, sown, form, season };
 }
 
 /**
@@ -1270,6 +1272,7 @@ function describeReturnMarks(marks) {
   if (!marks) return "";
   const parts = [];
   if (marks.plants > 0) parts.push(`${countLabel(marks.plants, "plant", "plants")} matured`);
+  if (marks.sown > 0) parts.push(countLabel(marks.sown, "seed sown", "seeds sown"));
   if (marks.form) parts.push("a new form reached");
   if (marks.season) parts.push(`turned into ${marks.season.to}`);
   return parts.join(" · ");

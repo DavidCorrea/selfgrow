@@ -2193,6 +2193,28 @@ function differingPixelShare(a, b) {
 }
 
 /**
+ * The pixels that differ between two plot renders, as sorted "x,y" keys. Two
+ * marks that read the same state the same way add the same pixels, so comparing
+ * this list across phases proves a mark holds still even when the sprite under
+ * it sways.
+ */
+function differingPixels(a, b) {
+  const width = Math.min(a.width, b.width);
+  const height = Math.min(a.height, b.height);
+  const before = a.getContext("2d").getImageData(0, 0, width, height).data;
+  const after = b.getContext("2d").getImageData(0, 0, width, height).data;
+  const pixels = [];
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const i = (y * width + x) * 4;
+      if (before[i] === after[i] && before[i + 1] === after[i + 1] && before[i + 2] === after[i + 2]) continue;
+      pixels.push(`${x},${y}`);
+    }
+  }
+  return pixels;
+}
+
+/**
  * The cells of a plot whose pixels differ between two renders, as a Set of cell
  * indices. Used to prove that only the sprite standing on a cell moves, and the
  * ground everywhere else holds still.
@@ -7085,6 +7107,172 @@ function checkReturnMarks(problems) {
     }
     if (row && !row.hidden) {
       problems.push("the dismiss-return control left the New since you left row showing after a season-only return.");
+    }
+
+    // An absence whose only change is seeds the garden sowed into free soil: it
+    // matured nothing, reached no form and crossed no season, so a plot that
+    // only counted them in the summary would read the same as a garden the
+    // visitor planted by hand. It must leave a mark of its own pointing at the
+    // seed cells the absence added.
+    const sownOnly = {
+      seconds: MIN_AWAY_SECONDS,
+      matured: 0,
+      sown: 3,
+      formsFound: [],
+      crossedSeason: false,
+      fromSeason: null,
+      toSeason: null,
+    };
+    const sownMarks = returnMarkFor(sownOnly, MIN_AWAY_SECONDS);
+    if (!sownMarks) {
+      problems.push(
+        "an absence that only sowed 3 seeds into free soil marked nothing; the seeds the garden sowed while away are a change of its own."
+      );
+    } else {
+      if (sownMarks.sown !== 3) {
+        problems.push(`the sown-only return marked ${sownMarks.sown} seeds, expected the 3 it sowed.`);
+      }
+      if (sownMarks.plants !== 0) {
+        problems.push(`the sown-only return marked ${sownMarks.plants} plants, but no seed matured.`);
+      }
+      if (sownMarks.form || sownMarks.season) {
+        problems.push(
+          `the sown-only return marked form ${sownMarks.form} / season ${JSON.stringify(sownMarks.season)}, ` +
+            "but it reached no form and crossed no season."
+        );
+      }
+    }
+    // A short gap is a reload, not an absence, even when it sowed.
+    if (returnMarkFor({ ...sownOnly, seconds: MIN_AWAY_SECONDS - 1 }, MIN_AWAY_SECONDS) !== null) {
+      problems.push("a gap shorter than the away threshold left return marks; only a real absence should.");
+    }
+
+    // The same through the real return path: a ~60-second absence at rate 0.09
+    // sows one herb seed whose 30-second timer keeps it ungrown at return, and
+    // whose leftover balance stays under the first form's threshold.
+    setGarden({ seeds: 0, plants: 0, visit: { seconds: 0, sown: 0, tended: 0 } });
+    setGrowth(0, 0.09, 0);
+    const sownAway = applyReturn(
+      { growth: 0, rate: 0.09, age: 0, sprouts: [], bloomSprouts: [], plants: 0, plantCounts: [0, 0], beds: 1 },
+      nowMs - 62_000,
+      nowMs
+    );
+    if (
+      sownAway.sown !== 1 ||
+      sownAway.matured !== 0 ||
+      sownAway.formsFound.length !== 0 ||
+      sownAway.crossedSeason
+    ) {
+      problems.push(
+        `a 62-second absence at rate 0.09 reported ${sownAway.sown} sown / ${sownAway.matured} matured / ` +
+          `${sownAway.formsFound.length} new forms / season turned ${sownAway.crossedSeason}, so it does not ` +
+          "exercise a return whose only change was the seeds the garden sowed."
+      );
+    }
+    const sownShown = getDisplayedState();
+    if (sownShown.returnMarks?.sown !== 1) {
+      problems.push(
+        `get-state's returnMarks ${JSON.stringify(sownShown.returnMarks)} did not report the 1 seed the garden sowed while away.`
+      );
+    }
+    if (row && field) {
+      if (row.hidden) {
+        problems.push("an absence that only sowed seeds left the New since you left row hidden.");
+      } else if (!/sow/i.test(field.textContent) || !field.textContent.includes("1 seed sown")) {
+        problems.push(
+          `the New since you left readout does not name the seed the garden sowed while away: "${field.textContent}".`
+        );
+      }
+    }
+
+    // The mark lands on the seed cell the absence added, and the picture differs
+    // from the same garden unmarked.
+    const sownCells = returnMarkCells(sownShown, plotBounds(sownShown));
+    if (sownCells.seeds.length !== 1) {
+      problems.push(
+        `returnMarkCells gave ${JSON.stringify(sownCells.seeds)} seed cells for a one-seed sown return, expected one.`
+      );
+    }
+    if (sownCells.cells.length !== 0 || sownCells.form || sownCells.season) {
+      problems.push(
+        `returnMarkCells gave ${JSON.stringify(sownCells)} for a sown-only return, expected the seed mark alone.`
+      );
+    }
+    const sownPlot = plotImage(sownShown, 0);
+    if (sownPlot === plotImage({ ...sownShown, returnMarks: null }, 0)) {
+      problems.push(
+        "the plot drew the same picture with and without a sown-seed mark, so the seeds the garden sowed did not show on it."
+      );
+    }
+
+    // A state holding three ungrown seeds and nothing grown marks three cells,
+    // and one claiming far more seeds than the plot draws stays bounded at the
+    // seeds actually on screen.
+    const seedsOnly = {
+      ...sownShown,
+      plants: 0,
+      plantCounts: [0, 0],
+      seeds: 3,
+      seedCounts: [3, 0],
+      sprouts: [GROW_SECONDS, GROW_SECONDS, GROW_SECONDS],
+      returnMarks: { plants: 0, sown: 3, form: false, season: null },
+    };
+    const threeSeeds = returnMarkCells(seedsOnly, plotBounds(seedsOnly));
+    if (threeSeeds.cells.length !== 0 || threeSeeds.seeds.length !== 3 || threeSeeds.form || threeSeeds.season) {
+      problems.push(
+        `returnMarkCells gave ${JSON.stringify(threeSeeds)} for a three-seed, no-plant sown return, expected the 3 seed cells alone.`
+      );
+    }
+    const flooded = returnMarkCells(
+      { ...seedsOnly, returnMarks: { ...seedsOnly.returnMarks, sown: 9999 } },
+      plotBounds(seedsOnly)
+    );
+    if (flooded.seeds.length !== 3) {
+      problems.push(
+        `returnMarkCells marked ${flooded.seeds.length} seed cells for a garden drawing 3 seeds, expected it bounded at 3.`
+      );
+    }
+
+    // The sown ring is a mark of its own: on the one-seed return it differs from
+    // the hand-sown sign on the very same cell and from a season mark, and it
+    // holds still across animation phases.
+    const handSown = { ...sownShown, visit: { ...sownShown.visit, sown: 1 } };
+    const seasonOnly = {
+      ...sownShown,
+      returnMarks: { plants: 0, sown: 0, form: false, season: { from: "winter", to: "spring" } },
+    };
+    if (sownPlot === plotImage(handSown, 0)) {
+      problems.push(
+        "the plot drew a seed the garden sowed while away exactly as it draws a plot the visitor sowed by hand, so the two marks cannot be told apart."
+      );
+    }
+    if (sownPlot === plotImage(seasonOnly, 0)) {
+      problems.push("the plot drew a sown seed exactly as it draws a season turn, so the two marks cannot be told apart.");
+    }
+    // The seed sprite sways with the phase, so the whole picture naturally
+    // differs between phases. The mark itself must not: the pixels it adds over
+    // the unmarked garden — the sprite cancels out — read the same at any phase.
+    const unmarkedSown = { ...sownShown, returnMarks: null };
+    const markPixels = (phase) =>
+      differingPixels(plotCanvas(sownShown, phase), plotCanvas(unmarkedSown, phase)).join(";");
+    if (markPixels(0) !== markPixels(1)) {
+      problems.push(
+        "the pixels the sown-seed mark adds changed between animation phases, so it does not hold under reduced motion."
+      );
+    }
+
+    // The same acknowledgement clears it: the dismiss control takes the sown
+    // mark with the rest.
+    dismiss?.click();
+    const sownDismissed = getDisplayedState();
+    if (sownDismissed.returnMarks !== null) {
+      problems.push(
+        `the dismiss-return control left a sown-seed mark ${JSON.stringify(sownDismissed.returnMarks)}; ` +
+          "dismissing must clear it."
+      );
+    }
+    if (row && !row.hidden) {
+      problems.push("the dismiss-return control left the New since you left row showing after a sown-only return.");
     }
   } finally {
     clearReturnMarks();
