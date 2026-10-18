@@ -2210,12 +2210,12 @@ function firstPixelOfColors(canvas, colorKeys) {
  * reads as one patch of earth that changes with the garden's year. The marks
  * are a pure function of the cell and the season, so the ground is a still
  * frame whatever the motion preference, and the whole plot is filled once with
- * one colour, so no cell is outlined as its own tile. The bed edge each plot
- * carries is drawn in the soil's own tones and only along the plot's top, so the
- * seams this check reads between two columns are still plain soil.
+ * one colour, so the ground itself outlines no cell as its own tile. The bed
+ * edge each plot carries is drawn in the soil's own tones — over the ground, so
+ * the soil's own marks cannot bury it — and reads no phase, which the pixels
+ * this check probes between two phases prove.
  */
 function checkSoilField(problems) {
-  const palette = readPalette();
   const bounds = plotBounds({ growth: 0, beds: 1 });
   const cells = bounds.cells;
   const seasons = ["winter", "spring", "summer", "autumn"];
@@ -2268,27 +2268,6 @@ function checkSoilField(problems) {
       problems.push(
         `the soil at (${x}, ${y}) changed between phase 0 and phase 1 ` +
           `(${soilPixel(x, y, 0)} → ${soilPixel(x, y, 1)}), so the ground moves as well as the foliage.`
-      );
-    }
-  }
-
-  // The plot is one field of soil, not bordered tiles: the seam between two
-  // cells is plain soil, so no cell edge is outlined dark.
-  const bare = { growth: 0, beds: 1, seeds: 0, plants: 0, pollinator: { visiting: false } };
-  const context = plotCanvas(bare, 0).getContext("2d");
-  const soilKey = colorKey(parseColor(palette.soil));
-  const seams = [
-    [0, 0],
-    [bounds.cell, bounds.cell / 2],
-    [bounds.cell * 2, bounds.cell + bounds.cell / 2],
-  ];
-  for (const [x, y] of seams) {
-    const data = context.getImageData(x, y, 1, 1).data;
-    const key = `${data[0]},${data[1]},${data[2]}`;
-    if (key !== soilKey) {
-      problems.push(
-        `the soil at (${x}, ${y}) is rgb(${key}) rather than the palette soil rgb(${soilKey}), ` +
-          "so the plot outlines its cells as tiles instead of drawing one continuous field."
       );
     }
   }
@@ -2564,14 +2543,55 @@ function checkPlotMarksMatchCounts(problems) {
  * the garden's capacity, grouped into beds of `PLOTS_PER_BED`, each marked with
  * whether a seed or plant holds it. The drawn plot gives each plot a low bed
  * edge in the soil's own tones — a lit ridge along its top with a dark line
- * beneath, held inside the plot's left and right edges so the seams between
- * columns stay plain soil — and closes a bed whose every plot is held with a
- * full-width lit rim along its first row and its last row's foot. The edges read
- * no animation phase, so reduced motion draws them too.
+ * beneath, and a lit seam down its left boundary — so the plots can be counted
+ * across a row as well as down a column, and closes every bed the grid holds
+ * with a lit rim along its first row, its last row's foot and both its sides, so
+ * an empty bed reads as a bed of soil and two beds can be told apart. The edges
+ * read no animation phase, so reduced motion draws them too.
  */
+/**
+ * The lit ridge and left seam every plot of `state` must carry, as problem
+ * messages: each plot's own edge is drawn in the soil's own tones, so the picture
+ * can be counted across a row as well as down a column. `label` names the garden
+ * in the message, so a failure says which picture could not be counted.
+ */
+function plotEdgeProblems(state, label) {
+  const lightKey = colorKey(parseColor(readPalette().soilLight));
+  const bounds = plotBounds(state);
+  const data = plotCanvas(state).getContext("2d").getImageData(0, 0, bounds.width, bounds.height).data;
+  const pixelAt = (x, y) => {
+    const i = (y * bounds.width + x) * 4;
+    return `${data[i]},${data[i + 1]},${data[i + 2]}`;
+  };
+  const problems = [];
+  for (const plot of plotCells(state).plots) {
+    const left = plot.column * bounds.cell;
+    const top = plot.row * bounds.cell;
+    let lit = 0;
+    for (let x = left; x < left + bounds.cell; x += 1) if (pixelAt(x, top) === lightKey) lit += 1;
+    if (lit < 8) {
+      problems.push(
+        `${label}: the plot at column ${plot.column}, row ${plot.row} carries ${lit} lit pixels along its top edge, ` +
+          "so it cannot be counted in the picture."
+      );
+      break;
+    }
+    if (plot.column === 0) continue;
+    const seamY = top + Math.floor(bounds.cell / 2);
+    if (pixelAt(left, seamY) !== lightKey) {
+      problems.push(
+        `${label}: the seam at (${left}, ${seamY}) beside the plot at column ${plot.column}, row ${plot.row} is ` +
+          `rgb(${pixelAt(left, seamY)}) rather than the palette soil-light rgb(${lightKey}), so the plots cannot be ` +
+          "counted across the row."
+      );
+      break;
+    }
+  }
+  return problems;
+}
+
 function checkPlotBedEdges(problems) {
   const palette = readPalette();
-  const soilKey = colorKey(parseColor(palette.soil));
   const lightKey = colorKey(parseColor(palette.soilLight));
   const leafKey = colorKey(parseColor(palette.leafDeep));
 
@@ -2669,36 +2689,56 @@ function checkPlotBedEdges(problems) {
     }
   }
 
-  // Every plot carries a lit ridge along its top, and the seam between two
-  // columns stays plain soil, so the picture can be counted plot by plot without
-  // reading as a grid of outlined tiles.
+  // Every plot carries a lit ridge along its top and, wherever a plot sits to
+  // its left, a lit seam down its left boundary, so the picture can be counted
+  // across a row as well as down a column.
   const bare = { growth: 0, beds: 1, capacity: PLOT_CAPACITY, seeds: 0, plants: 0, pollinator: { visiting: false } };
-  const bareData = imageOf(bare);
-  for (const plot of plotCells(bare).plots) {
-    const left = plot.column * cell;
-    const top = plot.row * cell;
-    let lit = 0;
-    for (let x = left; x < left + cell; x += 1) if (pixelOf(bareData, x, top) === lightKey) lit += 1;
-    if (lit < 8) {
-      problems.push(
-        `the plot at column ${plot.column}, row ${plot.row} carries ${lit} lit pixels along its top edge, so it ` +
-          "cannot be counted in the picture."
-      );
-      break;
-    }
-    const seamY = top + Math.floor(cell / 2);
-    if (pixelOf(bareData, left, seamY) !== soilKey) {
-      problems.push(
-        `the seam at (${left}, ${seamY}) between two plots is not plain soil, so the field reads as a grid of ` +
-          "outlined tiles rather than one patch of ground."
-      );
-      break;
+  problems.push(...plotEdgeProblems(bare, "a bed of bare soil"));
+
+  // The ticket's own scene: two beds open and the first bed's plots planted, so
+  // the readout says 24 plots of soil while only half the picture holds anything.
+  // All 24 plots carry their ridge and their left seam — the emptied bed under a
+  // full ground cover too — and each bed is closed by its own rim, so a visitor
+  // who reads no number can still count the room there is to plant in and tell
+  // the two beds apart.
+  const twoBeds = {
+    growth: 1e6,
+    beds: 2,
+    capacity: 2 * PLOTS_PER_BED,
+    plantCounts: [PLOTS_PER_BED, 0],
+    pollinator: { visiting: false },
+  };
+  const twoBounds = plotBounds(twoBeds);
+  const twoGrid = plotCells(twoBeds);
+  if (twoBounds.rows !== 6 || twoGrid.plots.length !== 2 * PLOTS_PER_BED || twoGrid.beds !== 2) {
+    problems.push(
+      `two open beds of ${2 * PLOTS_PER_BED} plots draw ${twoGrid.plots.length} plots in ${twoGrid.beds} beds over ` +
+        `${twoBounds.rows} rows, expected ${2 * PLOTS_PER_BED} plots in 2 beds over 6 rows.`
+    );
+  }
+  problems.push(...plotEdgeProblems(twoBeds, "two open beds with one of them emptied"));
+  const twoData = plotCanvas(twoBeds).getContext("2d").getImageData(0, 0, twoBounds.width, twoBounds.height).data;
+  const twoPixel = (x, y) => {
+    const i = (y * twoBounds.width + x) * 4;
+    return `${twoData[i]},${twoData[i + 1]},${twoData[i + 2]}`;
+  };
+  for (let bed = 0; bed < twoGrid.beds; bed += 1) {
+    const inBed = twoGrid.plots.filter((plot) => plot.bed === bed);
+    const top = Math.min(...inBed.map((plot) => plot.row)) * cell;
+    const foot = (Math.max(...inBed.map((plot) => plot.row)) + 1) * cell - 1;
+    for (const [x, y] of [[0, top], [twoBounds.width - 1, top], [0, foot], [twoBounds.width - 1, foot]]) {
+      if (twoPixel(x, y) !== lightKey) {
+        problems.push(
+          `of two open beds, bed ${bed}'s rim pixel (${x}, ${y}) is rgb(${twoPixel(x, y)}) rather than the palette ` +
+            `soil-light rgb(${lightKey}), so the boundary between the beds is not visible on the plot.`
+        );
+      }
     }
   }
 
-  // A bed whose every plot is held is closed by a lit rim along its first row and
-  // its last row's foot; a bed with an empty plot is left plain, so a bed reads
-  // as full exactly when it is full.
+  // A bed is closed by a lit rim along its first row, its last row's foot and
+  // both sides — whether its plots are held or empty — so a bed of soil reads as
+  // a bed whatever is planted in it.
   const holding = (plants) => ({
     growth: 0,
     beds: 1,
@@ -2719,18 +2759,14 @@ function checkPlotBedEdges(problems) {
   const fullData = imageOf(fullBed);
   const partData = imageOf(partBed);
   const lastRowFoot = bounds.rows * cell - 1;
-  for (const [x, y] of [[0, 0], [bounds.width - 1, 0], [0, lastRowFoot], [bounds.width - 1, lastRowFoot]]) {
-    if (pixelOf(fullData, x, y) !== lightKey) {
-      problems.push(
-        `a full bed's edge pixel (${x}, ${y}) is rgb(${pixelOf(fullData, x, y)}) rather than the palette soil-light ` +
-          `rgb(${lightKey}), so a full bed is not closed by its rim.`
-      );
-    }
-    if (pixelOf(partData, x, y) !== soilKey) {
-      problems.push(
-        `a partly filled bed's edge pixel (${x}, ${y}) is rgb(${pixelOf(partData, x, y)}) rather than the palette soil ` +
-          `rgb(${soilKey}), so a bed that is not full is still lit.`
-      );
+  for (const [name, data] of [["a full", fullData], ["a partly filled", partData]]) {
+    for (const [x, y] of [[0, 0], [bounds.width - 1, 0], [0, lastRowFoot], [bounds.width - 1, lastRowFoot]]) {
+      if (pixelOf(data, x, y) !== lightKey) {
+        problems.push(
+          `${name} bed's edge pixel (${x}, ${y}) is rgb(${pixelOf(data, x, y)}) rather than the palette soil-light ` +
+            `rgb(${lightKey}), so the bed is not closed by its rim.`
+        );
+      }
     }
   }
 
