@@ -221,15 +221,17 @@ const isStorageAvailable = storageAvailable();
 
 let palette = null;
 
-/** The seasons the plot has its own foliage colours for, in the cycle's order. */
-const LEAF_SEASONS = ["winter", "spring", "summer", "autumn"];
+/** The seasons the plot has its own foliage and ground colours for, in the cycle's order. */
+const SEASON_KEYS = ["winter", "spring", "summer", "autumn"];
 
 /**
  * The palette, read once from the `:root` CSS variables rather than repeated.
  *
- * `leafSeasons` holds each season's own leaf trio beside the base one, so the
- * plot can swap the foliage for the season it is drawing without a second
- * source of colour anywhere.
+ * `leafSeasons` and `soilSeasons` hold each season's own leaf and ground trios
+ * beside the base ones, so the plot can swap the foliage and the ground for the
+ * season it is drawing without a second source of colour anywhere. A season
+ * whose ground variables are unset falls back to the base soil, which is how
+ * summer stays the brown the plot has always been drawn in.
  */
 export function readPalette() {
   if (palette) return palette;
@@ -240,6 +242,11 @@ export function readPalette() {
     leafLight: read(`--leaf-${season}-light`),
     leafDeep: read(`--leaf-${season}-deep`),
   });
+  const readSoil = (season) => ({
+    soil: read(`--soil-${season}`) || read("--soil"),
+    soilLight: read(`--soil-${season}-light`) || read("--soil-light"),
+    soilDeep: read(`--soil-${season}-deep`) || read("--soil-deep"),
+  });
   palette = {
     soil: read("--soil"),
     soilDeep: read("--soil-deep"),
@@ -249,7 +256,8 @@ export function readPalette() {
     leafDeep: read("--leaf-deep"),
     bloom: read("--bloom"),
     sun: read("--sun"),
-    leafSeasons: Object.fromEntries(LEAF_SEASONS.map((season) => [season, readLeaves(season)])),
+    leafSeasons: Object.fromEntries(SEASON_KEYS.map((season) => [season, readLeaves(season)])),
+    soilSeasons: Object.fromEntries(SEASON_KEYS.map((season) => [season, readSoil(season)])),
   };
   return palette;
 }

@@ -55,6 +55,20 @@
   --leaf-winter:       #6c7660;
   --leaf-winter-light: #8e987c;
   --leaf-winter-deep:  #3b4433;
+  /* The ground in each season, in the same brown family as the base soil so the
+     plot stays one garden. Summer is the base trio it has always been drawn in;
+     winter is cold and grey, spring is damp and dark, autumn warm and dry. The
+     plot fills with this tone and draws its seasonal mark from it, so a bare or
+     freshly planted plot tells the season with nothing growing on it. */
+  --soil-winter:       #6a5a4a;
+  --soil-winter-deep:  #322a22;
+  --soil-winter-light: #8c7a66;
+  --soil-spring:       #5a3d20;
+  --soil-spring-deep:  #2a1a0c;
+  --soil-spring-light: #7d5730;
+  --soil-autumn:       #8f5f2a;
+  --soil-autumn-deep:  #4a2c12;
+  --soil-autumn-light: #b57a3e;
   --bloom:       #e0699f;
   --sun:         #f4c542;
   --water:       #4aa3df;
