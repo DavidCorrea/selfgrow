@@ -604,6 +604,37 @@ function drawWorkedGround(ctx, x, y, palette) {
 }
 
 /**
+ * The mark a plot the visitor tended by hand carries: a compact hand-hoe cut
+ * struck across the cell's upper band, with a turned clod laid beside it.
+ *
+ * It is cut in the soil's own two tones rather than the leaf green or sun of a
+ * growing thing, so it belongs to the ground it lies in, and its shape shares
+ * nothing with the visit's presence furrows — two full-width trenches — or with
+ * the standing board a hand-sown plot carries, so the three hand-work marks can
+ * be told apart. It stays inside the cell's upper and middle band, clear of the
+ * foot where a seed's mound is turned and where a plant stands, and it is drawn
+ * beneath every sprite and edge, so it can never obscure a seed, a plant or the
+ * plot it sits in. It reads no animation phase, so it holds still in the single
+ * frame reduced motion pins to.
+ */
+function drawTendedWorkMark(ctx, x, y, palette) {
+  // The hoe's cut: a short diagonal scar down the cell's upper band, deep on
+  // its lower edge with a lit lip above it.
+  ctx.fillStyle = palette.soilDeep;
+  ctx.fillRect(x + 4, y + 3, 2, 1);
+  ctx.fillRect(x + 6, y + 4, 2, 1);
+  ctx.fillRect(x + 8, y + 5, 2, 1);
+  ctx.fillStyle = palette.soilLight;
+  ctx.fillRect(x + 4, y + 4, 2, 1);
+  ctx.fillRect(x + 6, y + 5, 2, 1);
+  // The clod the hoe turned up, a low mound at the cut's foot.
+  ctx.fillStyle = palette.soilDeep;
+  ctx.fillRect(x + 12, y + 6, 4, 2);
+  ctx.fillStyle = palette.soilLight;
+  ctx.fillRect(x + 13, y + 5, 2, 1);
+}
+
+/**
  * The aged ground one cell carries: clods of old humus dug through the soil.
  *
  * In the soil's own two tones, drawn under the garden's current ground growth,
@@ -1227,6 +1258,31 @@ export function tendedMarkCells(state, marks = plotMarks(state)) {
 }
 
 /**
+ * The plots the visitor tended by hand this visit, as the cells that carry a
+ * still worked mark.
+ *
+ * Tending the soil is the first and most repeated thing a visitor does, and
+ * the visit record counts how many times they did it (`visit.tended`) — the same
+ * hand-work `get-state` reports and the 'Tended' readout says. The plot has no
+ * per-plot identity to say which plots those were, so the mark lands on the
+ * first that many cells of the ground in draw order. The count is bounded by the
+ * cells the plot actually has, so a save whose number climbs without end is
+ * drawn bounded rather than flooded, and it reads zero when there is no visit or
+ * the visitor has tended nothing, so a garden that was only watched draws no
+ * mark. Pure, so the drawn marks and the words beside them can be checked
+ * without a canvas.
+ *
+ * @returns {number[]} the cells carrying a hand-tended mark, in draw order.
+ */
+export function tendedWorkCells(state) {
+  const tended = state && state.visit && Number.isFinite(state.visit.tended) ? Math.floor(state.visit.tended) : 0;
+  const count = Math.min(Math.max(0, tended), plotBounds(state).cells);
+  const cells = [];
+  for (let i = 0; i < count; i += 1) cells.push(i);
+  return cells;
+}
+
+/**
  * Draw one mark on the plot: a grown plant, an ungrown seed or a bloom's bud,
  * each in its own recognisable sprite, at the cell it landed on. A grown plant
  * whose kind has earned a milestone wears its crown over the sprite, so the
@@ -1389,6 +1445,16 @@ function drawPlotEdges(ctx, palette, grid) {
  * watched. The signs read no phase and go on over the sprites, and a replant
  * clears the visit with the rest of the plot, so the signs go with it.
  *
+ * The plots the visitor tended by hand carry a third, distinct still mark:
+ * a compact hoe cut with a turned clod, drawn from `state.visit.tended` — the
+ * same count the 'Tended' readout and `get-state` report — so the soil someone
+ * worked by hand shows on the plot and grows with how much they tended. It sits
+ * in the cell's upper band beneath every sprite and edge, so it never covers a
+ * plot of soil, a seed or a plant, and it reads no phase, so it holds still.
+ * It is a different mark from the visit's presence furrows and the sown sign,
+ * so a garden merely watched, one watched and sown, and one tended by hand are
+ * each drawn differently.
+ *
  * The return marks go on last, over everything: a still sun tick on each cell
  * whose plant matured while the visitor was away, a still sun ring around each
  * seed the garden sowed into the free plots while away, the corner frame of a
@@ -1420,6 +1486,7 @@ export function drawGarden(canvas, state, palette, phase = 0) {
   ctx.fillRect(0, 0, canvasWidth, height);
 
   const marks = plotMarks(state);
+  const workedCells = new Set(tendedWorkCells(state));
   const occupied = new Set(marks.map((mark) => mark.cell));
   const plants = marks.filter((mark) => mark.kind === "herb-plant" || mark.kind === "bloom-plant").length;
   const growthTier = Math.min(2, Math.floor(form.fill * 3));
@@ -1443,6 +1510,10 @@ export function drawGarden(canvas, state, palette, phase = 0) {
     // The furrows of a tended visit go on over the ground, under the edges and
     // the sprites, so every plot of a garden with a visitor reads as worked.
     if (tended) drawWorkedGround(ctx, x, y, paint);
+    // The plots the visitor tended by hand this visit carry a still hoe cut,
+    // under the edges and the sprites, so the 'Tended' number beside the garden
+    // is drawn on the plot and grows with the visitor's own hand-work.
+    if (workedCells.has(cell)) drawTendedWorkMark(ctx, x, y, paint);
   }
   // The bed edge goes on over the soil's own face, furrows and growth, so the
   // soil's marks cannot bury it: every plot of soil is drawn as its own plot and
