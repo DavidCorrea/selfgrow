@@ -159,6 +159,7 @@ const elements = {
   visitSeconds: document.querySelector('[data-field="visit-seconds"]'),
   visitSown: document.querySelector('[data-field="visit-sown"]'),
   visitTended: document.querySelector('[data-field="visit-tended"]'),
+  visitPresent: document.querySelector('[data-field="visit-present"]'),
   dismissReturn: document.getElementById("dismiss-return"),
   save: document.getElementById("save-value"),
   copy: document.getElementById("copy-save"),
@@ -313,6 +314,12 @@ export function getDisplayedState() {
     // many plots they sowed and tended — kept apart from the seeds the garden
     // sows itself and the plants that matured while they were away.
     visit: garden.visit,
+    // Whether someone is at the page right now. It is the page's own presence,
+    // not a saved field: a garden with a visitor at it is drawn as tended and
+    // one growing alone is not, so the picture and the state agree that someone
+    // is here. It sits beside `visit` rather than inside it, so the visit record
+    // stays exactly the hand-work the garden stores.
+    visitPresent: !document.hidden,
     // The garden's whole history, what replanting right now would earn from it,
     // the lasting bonus a replant has already earned, and what that history has
     // made of the ground — the lasting layer the plot draws under the current
@@ -762,7 +769,7 @@ export function applyReturn(saved, lastSeenMs, nowMs) {
   showReturnSummary(away);
   lastAnnounced = null;
   render();
-  announceEvent(returnAnnouncement(away));
+  announceEvent(arrivalAnnouncement(away));
   return away;
 }
 
@@ -1684,6 +1691,24 @@ export function returnAnnouncement(away) {
   return `Return · ${formatGrowth(away.earned)} growth · now ${away.form}`;
 }
 
+/**
+ * A visit beginning as one short line: the garden is drawn as tended while
+ * someone is at the page.
+ */
+export function visitAnnouncement() {
+  return "Visit · the garden is tended while you are here";
+}
+
+/**
+ * The one line the page announces when it opens: the absence's return if there
+ * was one, and the visit itself otherwise. Exactly one garden event, whether the
+ * visitor arrived after a long gap or a quick reload, so the tended garden they
+ * see is always named.
+ */
+export function arrivalAnnouncement(away) {
+  return returnAnnouncement(away) || visitAnnouncement();
+}
+
 function render() {
   // A hidden tab still keeps the garden growing (the timer derives growth from
   // elapsed time), but there is nobody to see it redraw.
@@ -1708,6 +1733,7 @@ function render() {
   setText(elements.visitSeconds, formatDuration(state.visit.seconds));
   setText(elements.visitSown, formatAmount(state.visit.sown));
   setText(elements.visitTended, formatAmount(state.visit.tended));
+  setText(elements.visitPresent, state.visitPresent ? "Yes" : "No");
   renderReadoutFacts(elements.season, describeSeason(state));
   renderKind(elements.kindHerb, state.kinds[0]);
   renderKind(elements.kindBloom, state.kinds[1]);
@@ -1749,7 +1775,7 @@ function render() {
     `${state.form}:${state.growth}:${state.seedCounts.join(",")}:${state.plantCounts.join(",")}:` +
     `${state.beds}:${state.pollinator.visiting}:${state.season.key}:${phase}:` +
     `${state.established.index}:${state.established.fill}:${state.visit.sown}:` +
-    `${JSON.stringify(state.returnMarks ?? null)}`;
+    `${state.visitPresent}:${JSON.stringify(state.returnMarks ?? null)}`;
   if (plotKey !== lastPlotKey) {
     drawGarden(elements.plot, state, readPalette(), phase);
     lastPlotKey = plotKey;

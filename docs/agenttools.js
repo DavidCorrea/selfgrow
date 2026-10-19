@@ -155,7 +155,12 @@ export function tools() {
         "how many plots the visitor sowed (sown) and tended (tended) by hand. " +
         "The three start at zero, rise only when the visitor acts (the " +
         "garden's own growth and its away-sown seeds never change them), " +
-        "survive a reload and a return, and are cleared by a replant. It also " +
+        "survive a reload and a return, and are cleared by a replant. Whether " +
+        "someone is at the page right now is reported as visitPresent — true " +
+        "while the page is open and visible, false while it is hidden, so a " +
+        "garden with a visitor at it is told apart from one growing alone. It " +
+        "is the same presence the plot draws as worked ground and standing " +
+        "plants, and it is not a saved field. It also " +
         "reports sandbox: the time rehearsal when one is open — how many " +
         "seconds it has been wound forward and a readable elapsed label, the " +
         "growth, form, ungrown seeds and grown plants it reached, whether a " +

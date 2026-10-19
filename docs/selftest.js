@@ -83,6 +83,7 @@ import {
   actInSandbox,
   announceSnapshot,
   applyReturn,
+  arrivalAnnouncement,
   buildAwayReport,
   clearReturnMarks,
   closeSandbox,
@@ -109,6 +110,7 @@ import {
   returnMarkFor,
   sandboxPlotState,
   summarizeReturn,
+  visitAnnouncement,
 } from "./app.js";
 import {
   ESTABLISHMENTS,
@@ -4578,7 +4580,7 @@ function checkCompactReadout(problems) {
   const fields = [
     "growth", "lifetime", "replant-bonus", "form", "seeds", "plants", "kind-herb", "kind-bloom", "beds",
     "capacity", "season", "pollinator", "next-plant", "next-bed", "storage",
-    "visit-seconds", "visit-sown", "visit-tended",
+    "visit-seconds", "visit-sown", "visit-tended", "visit-present",
   ];
   for (const field of fields) {
     if (!document.querySelector(`[data-field="${field}"]`)) {
@@ -7617,6 +7619,130 @@ function checkTendedMarks(problems) {
 }
 
 /**
+ * A visit in progress is its own drawn state: while someone is at the page the
+ * garden is drawn as tended — every plot's ground worked and its standing plants
+ * a pixel taller — and it returns to the untended look for a garden growing
+ * alone. Presence is read off the page (`visitPresent`), carried in `get-state`
+ * and the readout, and announced once when the page opens.
+ *
+ * It is not the hand-work count: presence alone changes the picture, so the plot
+ * says someone is here before they have done anything, and a garden with no
+ * visit in progress draws exactly the plot it always did.
+ */
+function checkVisitPresence(problems) {
+  // The one line the page opens with: a real absence still gets its return
+  // line, and anything shorter names the visit itself, so opening the page
+  // always announces exactly one garden event.
+  if (arrivalAnnouncement(null) !== visitAnnouncement() || !visitAnnouncement()) {
+    problems.push(
+      `arrivalAnnouncement(null) was ${JSON.stringify(arrivalAnnouncement(null))}, expected the visit line ` +
+        `${JSON.stringify(visitAnnouncement())}.`
+    );
+  }
+  const away = { seconds: 30 * 86400, earned: 1234.5, form: "a bed of seedlings" };
+  if (arrivalAnnouncement(away) !== returnAnnouncement(away)) {
+    problems.push(
+      `arrivalAnnouncement of a real absence was ${JSON.stringify(arrivalAnnouncement(away))}, expected the return ` +
+        `line ${JSON.stringify(returnAnnouncement(away))}.`
+    );
+  }
+
+  // The page's own presence, in the state and in the readout, is a boolean a
+  // person and an agent read the same way.
+  const shown = getDisplayedState();
+  const field = document.querySelector('[data-field="visit-present"]');
+  if (typeof shown.visitPresent !== "boolean") {
+    problems.push(`get-state's visitPresent is ${JSON.stringify(shown.visitPresent)}, expected a boolean.`);
+  }
+  if (!field) {
+    problems.push('the page has no [data-field="visit-present"] readout for whether a visit is in progress.');
+  } else {
+    const expected = shown.visitPresent ? "Yes" : "No";
+    if (String(field.textContent).trim() !== expected) {
+      problems.push(
+        `the page shows ${JSON.stringify(String(field.textContent).trim())} for visit-present, but the state holds ` +
+          `${expected}.`
+      );
+    }
+  }
+
+  // The picture reads the presence: the cell numbers whose pixels change when
+  // only `visitPresent` does, at the still phase reduced motion pins to.
+  const differingCells = (a, b) => {
+    const bounds = plotBounds(a);
+    const before = plotCanvas(a, 0).getContext("2d").getImageData(0, 0, bounds.width, bounds.height).data;
+    const after = plotCanvas(b, 0).getContext("2d").getImageData(0, 0, bounds.width, bounds.height).data;
+    const cells = new Set();
+    for (let y = 0; y < bounds.height; y += 1) {
+      for (let x = 0; x < bounds.width; x += 1) {
+        const i = (y * bounds.width + x) * 4;
+        if (before[i] === after[i] && before[i + 1] === after[i + 1] && before[i + 2] === after[i + 2] && before[i + 3] === after[i + 3]) continue;
+        cells.add(Math.floor(y / bounds.cell) * bounds.columns + Math.floor(x / bounds.cell));
+      }
+    }
+    return cells;
+  };
+  const countsTheSame = (a, b) =>
+    JSON.stringify(plotMarks(a)) === JSON.stringify(plotMarks(b)) &&
+    JSON.stringify(plotMilestoneTiers(a)) === JSON.stringify(plotMilestoneTiers(b)) &&
+    JSON.stringify(groundCover(a)) === JSON.stringify(groundCover(b));
+
+  // A garden with a visitor at it draws worked ground on every bare plot, and
+  // everything the plot counts — its marks, its crowns and its cover — is
+  // unchanged, so presence alone is what differs.
+  const bare = { growth: 0, beds: 1, capacity: PLOT_CAPACITY, seeds: 0, plants: 0 };
+  const bareTended = { ...bare, visitPresent: true };
+  const bareAlone = { ...bare, visitPresent: false };
+  if (!countsTheSame(bareTended, bareAlone)) {
+    problems.push("a state that only changed visitPresent changed what the plot counts; only the drawn ground may differ.");
+  }
+  if (differingCells(bareTended, bareAlone).size === 0) {
+    problems.push("a garden with a visit in progress drew the same bare ground as one growing alone, so presence is not drawn.");
+  }
+  // A garden with no presence field at all — a sandbox rehearsal — is drawn
+  // exactly as one that says the visit is over.
+  if (plotImage(bare, 0) !== plotImage(bareAlone, 0)) {
+    problems.push("a garden with no visitPresent drew differently from one whose visit has ended; the untended look must match.");
+  }
+
+  // A standing plant is drawn a pixel taller for the visit, so a planted cell
+  // changes as well as the ground under it.
+  const grown = { growth: 1, beds: 1, capacity: PLOT_CAPACITY, seeds: 0, plants: 1 };
+  const grownTended = { ...grown, visitPresent: true };
+  const grownAlone = { ...grown, visitPresent: false };
+  const grownCells = differingCells(grownTended, grownAlone);
+  if (!grownCells.has(0)) {
+    problems.push("the plot did not change on the cell a grown plant stands on when a visit began, so a standing plant is not lifted for the visit.");
+  }
+  // The visit's look reads no animation phase, so the same state draws the same
+  // picture twice — the still frame reduced motion shows.
+  if (plotImage(bareTended, 0) !== plotImage(bareTended, 0)) {
+    problems.push("the same tended garden drew two different plots, so the visit's look is not a still frame.");
+  }
+
+  // Opening the page on a garden says the visit once into the status region.
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const storageBefore = rawStorage();
+  try {
+    const nowMs = 1_700_000_000_000;
+    applyReturn({ growth: 0, rate: 0 }, nowMs - 1000, nowMs);
+    const spoken = getAnnouncement();
+    if (!spoken || spoken !== visitAnnouncement()) {
+      problems.push(
+        `opening the page on a garden announced ${JSON.stringify(spoken)}, expected the visit line ` +
+          `${JSON.stringify(visitAnnouncement())}.`
+      );
+    }
+  } finally {
+    clearReturnMarks();
+    setGarden(gardenBefore);
+    restoreGrowth(growthBefore);
+    restoreRawStorage(storageBefore);
+  }
+}
+
+/**
  * A screen reader is told what happened, not the same numbers over and over.
  * The per-tick readouts (the growth total, the garden form) are out of every
  * live region, and the one polite status region speaks only the discrete
@@ -8833,6 +8959,14 @@ async function checkAgentTools(problems) {
         `holds (${JSON.stringify(shown.restoreAvailable)}).`
     );
   }
+  // A garden with a visitor at it is told apart from one growing alone: the
+  // presence is a boolean an agent reads, the same one the page holds.
+  if (typeof state.visitPresent !== "boolean" || state.visitPresent !== shown.visitPresent) {
+    problems.push(
+      `get-state reported visitPresent=${JSON.stringify(state.visitPresent)}, expected the boolean the page holds ` +
+        `(${JSON.stringify(shown.visitPresent)}).`
+    );
+  }
   if (
     state.secondsToNextPlant !== shown.secondsToNextPlant ||
     state.growSeconds !== shown.growSeconds ||
@@ -9745,6 +9879,7 @@ export async function checks() {
     checkReturnMarks(problems);
     checkVisitRecord(problems);
     checkTendedMarks(problems);
+    checkVisitPresence(problems);
     checkLiveAnnouncements(problems);
     checkActionConfirmationsAreSpoken(problems);
     checkGardenActionRefusals(problems);
