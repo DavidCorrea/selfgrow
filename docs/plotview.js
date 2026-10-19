@@ -240,11 +240,15 @@ const MAX_ROWS = 12;
 const FORMS_PER_ROW = 3;
 // The plots one bed holds, as the plot itself defines a bed: three rows of four.
 const BED_CELLS = COLUMNS * BASE_ROWS;
-// The ground the pollinator's home stands on, in canvas pixels: one cell wide,
+// The ground the pollinator's home stands on, in canvas pixels: two cells wide,
 // laid beside the plot rather than on one of its plots. The plots keep their own
 // width, so a hive can never be drawn over a plot a visitor counts against the
-// 'Grown plants' beside it; the canvas is that one strip wider than the plot.
-const HOME_CELL = CELL;
+// 'Grown plants' beside it; the canvas is that strip wider than the plot. The
+// second cell is where the bee hovers while it is out visiting, so a visit is
+// never drawn over a plot either. For a one-bed garden that makes the canvas
+// 144px against the plots' 96px, which the plot's own `object-fit: contain`
+// absorbs.
+const HOME_CELL = CELL * 2;
 
 /** How many rows of soil this form has spread to. */
 function rowsForForm(index) {
@@ -278,9 +282,10 @@ function capacityFor(state) {
  *
  * `width` is the plot's own ground, `canvasWidth` that ground plus the home's
  * strip, and `home` the strip itself — always past the last plot column, so the
- * hive stands off the plots and no seed or plant among them is ever covered by
- * it, while the drawn garden still shows a home whenever grown plants stand on
- * it.
+ * hive and the bee visiting it stand off the plots and no seed or plant among
+ * them is ever covered, while the drawn garden still shows a home whenever grown
+ * plants stand on it. The strip is two cells wide: the hive stands on its first
+ * cell and the visiting bee hovers over its second.
  */
 export function plotBounds(state) {
   const growth = state && Number.isFinite(state.growth) ? state.growth : 0;
@@ -1006,29 +1011,33 @@ function drawSeasonMark(ctx, width) {
 }
 
 /**
- * A visitor on the plot: a bee large enough to be a mark of its own, hovering
- * over the first grown plant.
+ * A visitor on the home's strip: a bee large enough to be a mark of its own,
+ * hovering beside its hive rather than over a plot.
  *
- * Drawn from the same `:root` palette as everything else — a head, a striped
- * sun body and bloom wings — so it belongs to the garden rather than looking
- * pasted on. It is never the only account of the visit: the readout and
- * `get-state` name the pollinator and the boost it brings.
+ * Drawn from the same `:root` palette as everything else — a dark head, a
+ * striped sun body, and wings held a pixel clear of it in the palest panel tone
+ * — so it belongs to the garden rather than looking pasted on, and its silhouette
+ * reads as a bee rather than a blossom: a flower's petals rest against its
+ * centre, while this bee's wings hang above its body with ground showing between.
+ * It is never the only account of the visit: the readout and `get-state` name the
+ * pollinator and the boost it brings.
  */
 function drawPollinator(ctx, x, y, palette, driftX, driftY) {
   const centre = x + CELL / 2 + driftX;
   const top = y + 3 + driftY;
-  // Bloom wings above the body, one either side of the head.
-  ctx.fillStyle = palette.bloom;
-  ctx.fillRect(centre - 7, top - 1, 5, 4);
-  ctx.fillRect(centre + 2, top - 1, 5, 4);
+  // Pale wings held clear above the body, a pixel of ground showing between, so
+  // the bee is never read as a bloom-coloured blossom.
+  ctx.fillStyle = palette.panelLight;
+  ctx.fillRect(centre - 6, top - 2, 5, 3);
+  ctx.fillRect(centre + 1, top - 2, 5, 3);
   // A dark head at the front, then the striped sun body.
   ctx.fillStyle = palette.soilDeep;
-  ctx.fillRect(centre - 7, top + 1, 3, 4);
+  ctx.fillRect(centre - 7, top + 2, 3, 4);
   ctx.fillStyle = palette.sun;
-  ctx.fillRect(centre - 4, top + 1, 10, 6);
+  ctx.fillRect(centre - 4, top + 2, 10, 6);
   ctx.fillStyle = palette.soilDeep;
-  ctx.fillRect(centre - 1, top + 1, 2, 6);
-  ctx.fillRect(centre + 3, top + 1, 2, 6);
+  ctx.fillRect(centre - 1, top + 2, 2, 6);
+  ctx.fillRect(centre + 3, top + 2, 2, 6);
 }
 
 /**
@@ -1464,15 +1473,16 @@ export function drawGarden(canvas, state, palette, phase = 0) {
   }
   // The pollinator's home stands on its own ground beside the plots whenever
   // grown plants do, so it never covers a plot a visitor counts. Between visits
-  // the bee rests still on the hive; during one the hive stays and the bee is
-  // out over the plants with pollen in the air, so the picture says both that a
-  // pollinator lives here and whether it is busy right now.
+  // the bee rests still on the hive; during one the hive stays and the bee is out
+  // on the home's second cell beside it with pollen stirred over the plants, so
+  // the picture says both that a pollinator lives here and whether it is busy
+  // right now — and neither the resting nor the visiting bee ever lands on a plot
+  // cell a visitor counts against the 'Grown plants' beside it.
   const pollinator = pollinatorPlot(state);
   if (pollinator.home) {
     drawPollinatorHome(ctx, home.x, home.y, paint);
     if (pollinator.visiting) {
-      drawPollinator(ctx, 0, 0, paint, swayPixels(phase, 1), swayPixels(phase, 3));
-      if (plants > 1) drawPollinator(ctx, CELL, 0, paint, swayPixels(phase, 2), swayPixels(phase, 4));
+      drawPollinator(ctx, home.x + CELL, home.y, paint, swayPixels(phase, 1), swayPixels(phase, 3));
       drawPollenSpecks(ctx, paint, plants);
     } else {
       drawRestingBee(ctx, home.x, home.y, paint);

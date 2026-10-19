@@ -257,6 +257,9 @@ export function readPalette() {
     leafDeep: read("--leaf-deep"),
     bloom: read("--bloom"),
     sun: read("--sun"),
+    // The palest panel tone, which the pollinator's wings are held clear in so
+    // the bee reads as a bee rather than as a bloom-coloured blossom.
+    panelLight: read("--panel-light"),
     leafSeasons: Object.fromEntries(SEASON_KEYS.map((season) => [season, readLeaves(season)])),
     soilSeasons: Object.fromEntries(SEASON_KEYS.map((season) => [season, readSoil(season)])),
   };

@@ -2390,14 +2390,17 @@ function checkPlotSpritesLegible(problems) {
   }
 
   // The bee is measured against the same garden at rest, so only the bee out
-  // visiting is in the difference.
+  // visiting is in the difference. It hovers on the home's own strip beside its
+  // hive, not over a plot, so it is sought in the strip's second cell — the
+  // column past the last plot column — where nothing a visitor counts stands.
   const flying = planted({ plants: 1, pollinator: { visiting: true } });
   const resting = planted({ plants: 1, pollinator: { visiting: false } });
-  const bee = changedBoxInCell(plotCanvas(flying), plotCanvas(resting), cell);
+  const homeColumn = Math.round(bounds.home.x / cell) + 1;
+  const bee = changedBoxInCell(plotCanvas(flying), plotCanvas(resting), cell, homeColumn);
   if (bee.width < 10 || bee.height < 6) {
     problems.push(
-      `the visiting pollinator draws a ${bee.width}x${bee.height}px mark, smaller than the 10x6px a visitor ` +
-        "needs to find it on the plot."
+      `the visiting pollinator draws a ${bee.width}x${bee.height}px mark on its home's strip, smaller than the ` +
+        "10x6px a visitor needs to find it on the plot."
     );
   }
 
@@ -2408,6 +2411,22 @@ function checkPlotSpritesLegible(problems) {
   }
   if (!cellHasColor(plotCanvas(planted({ plantCounts: [0, 1] })), palette.bloom, cell)) {
     problems.push("a grown bloom carries no bloom-coloured pixel, so it does not read as a bloom.");
+  }
+
+  // While the pollinator is out, no plot cell a herb-only garden counts carries
+  // the bloom colour: the bee is drawn beside its hive, off the plots, so the
+  // picture agrees with the 'Bloom PLANTS 0' the readout states. This is the
+  // regression the visiting bee used to trip by painting bloom-coloured wings
+  // over the top-left plots.
+  const visitingHerbs = plotCanvas(planted({ plantCounts: [PLOT_CAPACITY, 0], pollinator: { visiting: true } }));
+  for (let column = 0; column < bounds.columns; column += 1) {
+    if (cellHasColor(visitingHerbs, palette.bloom, cell, column)) {
+      problems.push(
+        `a herb-only garden draws the bloom colour on plot column ${column} while the pollinator is out visiting, ` +
+          "so the picture shows a bloom the 'Bloom PLANTS 0' beside it does not count."
+      );
+      break;
+    }
   }
 }
 
