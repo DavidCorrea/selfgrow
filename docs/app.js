@@ -62,7 +62,15 @@ import {
   writeLastSeen,
   writeStoredGarden,
 } from "./garden.js";
-import { FORMS, drawGarden, establishment, gardenForm, motionPhase, tendedMarkCells } from "./plotview.js";
+import {
+  FORMS,
+  drawGarden,
+  establishment,
+  gardenForm,
+  motionPhase,
+  tendedMarkCells,
+  tendedWorkCells,
+} from "./plotview.js";
 
 const numberFormat = new Intl.NumberFormat("en");
 const decimalFormat = new Intl.NumberFormat("en", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -271,14 +279,16 @@ const countLabel = (count, singular, plural) =>
 
 /**
  * The picture, said in words: the same growth, ground, beds, form, season and
- * plots the visitor sowed by hand that the plot draws.
+ * plots the visitor sowed and tended by hand that the plot draws.
  *
- * The hand-worked count is the plots the plot actually signs — `tendedMarkCells`
- * cut off at the cells on screen — so the words cannot name more worked plots
- * than the picture can show, exactly as the drawn marks are bounded.
+ * The hand-worked counts are the plots the plot actually marks — `tendedMarkCells`
+ * for the stands and `tendedWorkCells` for the hoe cuts, each cut off at the
+ * cells on screen — so the words cannot name more worked plots than the picture
+ * can show, exactly as the drawn marks are bounded.
  */
 export function describePlot(state) {
   const worked = tendedMarkCells(state).length;
+  const tended = tendedWorkCells(state).length;
   return (
     `${formatGrowth(state.growth)} growth — ${state.formName} on ${state.established.name}, ` +
     `in ${state.season.name}. ` +
@@ -286,7 +296,8 @@ export function describePlot(state) {
     `${countLabel(state.capacity, "plot of soil", "plots of soil")}, ` +
     `${countLabel(state.seeds, "ungrown seed", "ungrown seeds")}, ` +
     `${countLabel(state.plants, "grown plant", "grown plants")}, ` +
-    `${countLabel(worked, "plot sowed by hand", "plots sowed by hand")}.`
+    `${countLabel(worked, "plot sowed by hand", "plots sowed by hand")}, ` +
+    `${countLabel(tended, "plot tended by hand", "plots tended by hand")}.`
   );
 }
 
@@ -1778,7 +1789,7 @@ function render() {
     `${state.form}:${state.growth}:${state.seedCounts.join(",")}:${state.plantCounts.join(",")}:` +
     `${state.beds}:${state.pollinator.visiting}:${state.season.key}:${phase}:` +
     `${state.established.index}:${state.established.fill}:${state.visit.sown}:` +
-    `${state.visitPresent}:${JSON.stringify(state.returnMarks ?? null)}`;
+    `${state.visit.tended}:${state.visitPresent}:${JSON.stringify(state.returnMarks ?? null)}`;
   if (plotKey !== lastPlotKey) {
     drawGarden(elements.plot, state, readPalette(), phase);
     lastPlotKey = plotKey;

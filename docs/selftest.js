@@ -130,6 +130,7 @@ import {
   seasonLook,
   soilFace,
   tendedMarkCells,
+  tendedWorkCells,
 } from "./plotview.js";
 
 // The design system is itself a promise: one palette, two embedded pixel fonts
@@ -7638,6 +7639,158 @@ function checkTendedMarks(problems) {
 }
 
 /**
+ * The picture draws the visitor's own hand-tended soil, and the words beside it
+ * name the same count.
+ *
+ * Tending the soil is the first and most repeated thing a visitor does, and the
+ * 'Tended' readout states it while the picture used to stay exactly as it was.
+ * `tendedWorkCells` is that hand-work drawn: one still mark per tended plot, on
+ * the first that many cells of the ground, bounded by the plot and changing only
+ * with `visit.tended`. The mark reads no animation phase, stays in its cell's
+ * upper band beneath every sprite so it cannot cover a seed or a plant, and the
+ * plot's description names the same bounded count.
+ */
+function checkHandWorkMarks(problems) {
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const storageBefore = rawStorage();
+
+  try {
+    // No visit, or a visitor who tended nothing, draws no mark.
+    if (tendedWorkCells({ growth: 0, beds: 1, capacity: PLOT_CAPACITY, seeds: 3 }).length !== 0) {
+      problems.push("a garden with no visit drew a hand-tended mark; it must draw none.");
+    }
+    const tendedZero = {
+      growth: 0,
+      beds: 1,
+      capacity: PLOT_CAPACITY,
+      seeds: 3,
+      visit: { seconds: 0, sown: 0, tended: 0 },
+    };
+    if (tendedWorkCells(tendedZero).length !== 0) {
+      problems.push("a garden whose visitor tended nothing drew a hand-tended mark; it must draw none.");
+    }
+
+    // Exactly N marks for tended N, each on its own cell inside the grid.
+    const tendedThree = { ...tendedZero, visit: { seconds: 0, sown: 0, tended: 3 } };
+    const three = tendedWorkCells(tendedThree);
+    const bounds = plotBounds(tendedThree);
+    if (three.length !== 3) {
+      problems.push(`a garden tended 3 times drew ${three.length} hand-tended marks; it must draw 3.`);
+    }
+    if (new Set(three).size !== three.length) {
+      problems.push(`two hand-tended marks landed on one cell (${JSON.stringify(three)}).`);
+    }
+    for (const cell of three) {
+      if (!(cell >= 0 && cell < bounds.cells)) {
+        problems.push(`a hand-tended mark landed off the plot at cell ${cell}.`);
+      }
+    }
+
+    // The count is bounded by the cells on screen, however far it climbs.
+    const huge = {
+      growth: 1e12,
+      beds: 5000,
+      capacity: 60000,
+      plantCounts: [1e12, 0],
+      seedCounts: [1e12, 0],
+      visit: { seconds: 0, sown: 0, tended: 1e12 },
+    };
+    const hugeBounds = plotBounds(huge);
+    if (tendedWorkCells(huge).length !== hugeBounds.cells) {
+      problems.push(
+        `a garden tended 1e12 times drew ${tendedWorkCells(huge).length} hand-tended marks over ${hugeBounds.cells} cells; ` +
+          "the marks must be bounded by the plot."
+      );
+    }
+
+    // The cell numbers whose pixels change between two states, at the still
+    // phase, so a difference proves a difference in what is drawn.
+    const differingCells = (a, b) => {
+      const size = plotBounds(a);
+      const before = plotCanvas(a, 0).getContext("2d").getImageData(0, 0, size.width, size.height).data;
+      const after = plotCanvas(b, 0).getContext("2d").getImageData(0, 0, size.width, size.height).data;
+      const cells = new Set();
+      for (let y = 0; y < size.height; y += 1) {
+        for (let x = 0; x < size.width; x += 1) {
+          const i = (y * size.width + x) * 4;
+          if (before[i] === after[i] && before[i + 1] === after[i + 1] && before[i + 2] === after[i + 2] && before[i + 3] === after[i + 3]) continue;
+          cells.add(Math.floor(y / size.cell) * size.columns + Math.floor(x / size.cell));
+        }
+      }
+      return cells;
+    };
+
+    // Tending once changes the picture, and only on the cell the mark lands on.
+    const oneTended = { ...tendedZero, visit: { seconds: 0, sown: 0, tended: 1 } };
+    const markedCells = differingCells(oneTended, tendedZero);
+    if (markedCells.size === 0) {
+      problems.push("the plot drew the same picture for a garden tended once and one tended not at all, so the mark is not drawn.");
+    } else if (markedCells.size !== 1 || !markedCells.has(0)) {
+      problems.push(
+        `tending once changed plot cells ${JSON.stringify([...markedCells].sort())}; it must change only the cell of the ` +
+          "first tended plot (cell 0)."
+      );
+    }
+
+    // A garden merely watched, one watched and sown by hand, and one tended by
+    // hand are three different pictures, so the three hand-work marks can be
+    // told apart.
+    const watched = { ...tendedZero, visitPresent: true, visit: { seconds: 0, sown: 0, tended: 0 } };
+    const sownByHand = { ...watched, visit: { seconds: 0, sown: 1, tended: 0 } };
+    const tendedByHand = { ...watched, visit: { seconds: 0, sown: 0, tended: 1 } };
+    if (plotImage(watched, 0) === plotImage(sownByHand, 0)) {
+      problems.push("a garden only watched drew the same as one sown by hand, so the sown sign is not told apart.");
+    }
+    if (plotImage(watched, 0) === plotImage(tendedByHand, 0)) {
+      problems.push("a garden only watched drew the same as one tended by hand, so the tend mark is not told apart.");
+    }
+    if (plotImage(sownByHand, 0) === plotImage(tendedByHand, 0)) {
+      problems.push("a garden sown by hand drew the same as one tended by hand, so the two hand-work marks are not distinguishable.");
+    }
+
+    // The mark reads no animation phase: its own band of the cell is identical
+    // across phases, while the seeding sprite below it may still sway.
+    const bandOf = (canvas) => Array.from(canvas.getContext("2d").getImageData(0, 3, canvas.width, 6).data).join(",");
+    if (bandOf(plotCanvas(oneTended, 0)) !== bandOf(plotCanvas(oneTended, 5))) {
+      problems.push("the hand-tended mark changed between animation phases, so it does not hold in the still frame.");
+    }
+
+    // The mark stays out of a seed's way: the cell's foot rows are unchanged
+    // when the tend mark appears, so a seed's mound is never covered.
+    const seedOnly = { growth: 0, beds: 1, capacity: PLOT_CAPACITY, seeds: 1, visit: { seconds: 0, sown: 0, tended: 0 } };
+    const seedTended = { ...seedOnly, visit: { seconds: 0, sown: 0, tended: 1 } };
+    const seedBounds = plotBounds(seedOnly);
+    const footRows = (canvas) =>
+      Array.from(canvas.getContext("2d").getImageData(0, seedBounds.height - 5, seedBounds.width, 5).data).join(",");
+    if (footRows(plotCanvas(seedOnly, 0)) !== footRows(plotCanvas(seedTended, 0))) {
+      problems.push("a seed's plot foot changed when the hand-tended mark appeared, so the mark can cover a seed.");
+    }
+
+    // The plot's description names the same bounded count as the draw.
+    setGarden(newGarden());
+    setGrowth(0, 0);
+    setGarden({ beds: 1, seeds: 3, visit: { seconds: 10, sown: 0, tended: 2 } });
+    const shown = getDisplayedState();
+    const drawn = tendedWorkCells(shown).length;
+    if (shown.visit.tended !== 2 || drawn !== 2) {
+      problems.push(
+        `a garden tended twice reports visit.tended ${shown.visit.tended} and draws ${drawn} marks; both must be 2.`
+      );
+    }
+    const description = describePlot(shown);
+    const expected = `${formatAmount(drawn)} ${drawn === 1 ? "plot" : "plots"} tended by hand`;
+    if (!description.includes(expected)) {
+      problems.push(`the plot description ${JSON.stringify(description)} does not name the ${expected} the picture draws.`);
+    }
+  } finally {
+    setGarden(gardenBefore);
+    restoreGrowth(growthBefore);
+    restoreRawStorage(storageBefore);
+  }
+}
+
+/**
  * A visit in progress is its own drawn state: while someone is at the page the
  * garden is drawn as tended — every plot's ground worked and its standing plants
  * a pixel taller — and it returns to the untended look for a garden growing
@@ -9898,6 +10051,7 @@ export async function checks() {
     checkReturnMarks(problems);
     checkVisitRecord(problems);
     checkTendedMarks(problems);
+    checkHandWorkMarks(problems);
     checkVisitPresence(problems);
     checkLiveAnnouncements(problems);
     checkActionConfirmationsAreSpoken(problems);
