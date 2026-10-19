@@ -65,6 +65,7 @@ import {
 import {
   FORMS,
   drawGarden,
+  drawKindSwatch,
   establishment,
   gardenForm,
   motionPhase,
@@ -143,6 +144,8 @@ const elements = {
   plantBloom: document.getElementById("plant-bloom"),
   kindHerb: readKindRow("herb"),
   kindBloom: readKindRow("bloom"),
+  kindHerbSwatch: document.getElementById("kind-herb-swatch"),
+  kindBloomSwatch: document.getElementById("kind-bloom-swatch"),
   goalTitle: document.getElementById("goal-title"),
   goalDetail: document.getElementById("goal-detail"),
   meter: document.getElementById("seed-meter"),
@@ -1792,6 +1795,11 @@ function render() {
     `${state.visit.tended}:${state.visitPresent}:${JSON.stringify(state.returnMarks ?? null)}`;
   if (plotKey !== lastPlotKey) {
     drawGarden(elements.plot, state, readPalette(), phase);
+    // Each kind's own seed and grown plant drawn beside the label that counts
+    // them, from the plot's own sprites, so a visitor can point at a plant or
+    // seed on the plot and find the row that counts it.
+    drawKindSwatch(elements.kindHerbSwatch, "herb", state, readPalette());
+    drawKindSwatch(elements.kindBloomSwatch, "bloom", state, readPalette());
     lastPlotKey = plotKey;
   }
 }

@@ -1568,6 +1568,49 @@ export function drawGarden(canvas, state, palette, phase = 0) {
 }
 
 /**
+ * Draw one kind's own two sprites into a small legend canvas: its ungrown seed
+ * on the left cell and its grown plant on the right, drawn exactly as the plot
+ * draws them.
+ *
+ * The readout counts each kind and the plot draws each kind's plants and seeds,
+ * but nothing else ties a drawn sprite to the row that counts it, so a visitor
+ * has to guess which plant on the soil is a herb and which is a bloom. This
+ * draws the same sprites — `drawSeed`, `drawPlant` and `drawBloomPlant`, the
+ * very functions `drawGarden` draws with — from the same form, growth tier and
+ * season, so a swatch and the sprite on the plot can never show a different
+ * shape or colour. The canvas carries no text, so the row it sits beside still
+ * reads as a label and its values.
+ *
+ * `kind` is the kind's key (`"herb"` or `"bloom"`) and `state` the same state
+ * `drawGarden` is given, so the swatch follows the garden's growth, form and
+ * season with the plot. The sprites are drawn at the still frame's sway, so the
+ * swatch is the sprite itself rather than one frame of its breathing.
+ */
+export function drawKindSwatch(canvas, kind, state, palette) {
+  if (!canvas || !palette) return;
+  const bloom = kind === "bloom";
+  const growth = state && Number.isFinite(state.growth) ? state.growth : 0;
+  const form = gardenForm(growth);
+  const look = seasonLook(palette, state?.season?.key);
+  const paint = look.palette;
+  const growthTier = Math.min(2, Math.floor(form.fill * 3));
+  const width = CELL * 2;
+  if (canvas.width !== width) canvas.width = width;
+  if (canvas.height !== CELL) canvas.height = CELL;
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.imageSmoothingEnabled = false;
+  // The same ground the plot draws the kind on, so the swatch reads as a little
+  // plot of soil and the sprites stand out of it.
+  ctx.fillStyle = paint.soil;
+  ctx.fillRect(0, 0, width, CELL);
+  drawSeed(ctx, 0, 0, paint, 0, bloom);
+  if (bloom) drawBloomPlant(ctx, CELL, 0, paint, look.foliage, form.index, growthTier, 0);
+  else drawPlant(ctx, CELL, 0, paint, look.foliage, form.index, growthTier, 0);
+}
+
+/**
  * How many of each kind stand on the plot: grown plants and ungrown seeds,
  * herb and bloom.
  *
