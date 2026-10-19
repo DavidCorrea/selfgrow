@@ -580,6 +580,25 @@ function drawGroundGrowth(ctx, x, y, palette, cell) {
 }
 
 /**
+ * The ground a visiting garden is drawn as: two still hoe furrows cut across the
+ * cell's soil, each a deep trench with a lit lip.
+ *
+ * Drawn in the soil's own two tones and on every plot cell, so a garden someone
+ * is at the page for reads as ground being worked rather than the ground an
+ * absence left. It reads no animation phase and takes no argument but the cell,
+ * so the tended ground is drawn in the single still frame reduced motion pins to
+ * and the same plot always draws the same furrows.
+ */
+function drawWorkedGround(ctx, x, y, palette) {
+  ctx.fillStyle = palette.soilDeep;
+  ctx.fillRect(x + 2, y + 7, CELL - 4, 1);
+  ctx.fillRect(x + 3, y + 14, CELL - 6, 1);
+  ctx.fillStyle = palette.soilLight;
+  ctx.fillRect(x + 3, y + 8, CELL - 6, 1);
+  ctx.fillRect(x + 4, y + 15, CELL - 8, 1);
+}
+
+/**
  * The aged ground one cell carries: clods of old humus dug through the soil.
  *
  * In the soil's own two tones, drawn under the garden's current ground growth,
@@ -1204,8 +1223,13 @@ export function tendedMarkCells(state, marks = plotMarks(state)) {
  * whose kind has earned a milestone wears its crown over the sprite, so the
  * reward is seen on the plot and not only stated in a label; a seed never does,
  * because a milestone counts grown plants.
+ *
+ * `tended` lifts a grown plant and its crown one pixel off the worked ground,
+ * so a garden with a visitor at it draws its standing plants a little taller
+ * than one growing alone. Seeds and their mounds stay put: presence is said by
+ * the ground and the plants that stand in it, not by the seeds still in it.
  */
-function drawMark(ctx, mark, palette, foliage, formIndex, growthTier, sway, milestoneTier) {
+function drawMark(ctx, mark, palette, foliage, formIndex, growthTier, sway, milestoneTier, tended) {
   const x = (mark.cell % COLUMNS) * CELL;
   const y = Math.floor(mark.cell / COLUMNS) * CELL;
   if (mark.kind === "herb-seed") {
@@ -1216,9 +1240,10 @@ function drawMark(ctx, mark, palette, foliage, formIndex, growthTier, sway, mile
     drawSeed(ctx, x, y, palette, sway, true);
     return;
   }
-  if (mark.kind === "herb-plant") drawPlant(ctx, x, y, palette, foliage, formIndex, growthTier, sway);
-  else drawBloomPlant(ctx, x, y, palette, foliage, formIndex, growthTier, sway);
-  if (milestoneTier > 0) drawMilestoneCrown(ctx, x, y, palette, milestoneTier);
+  const standing = tended ? y - 1 : y;
+  if (mark.kind === "herb-plant") drawPlant(ctx, x, standing, palette, foliage, formIndex, growthTier, sway);
+  else drawBloomPlant(ctx, x, standing, palette, foliage, formIndex, growthTier, sway);
+  if (milestoneTier > 0) drawMilestoneCrown(ctx, x, standing, palette, milestoneTier);
 }
 
 /**
@@ -1341,6 +1366,14 @@ function drawPlotEdges(ctx, palette, grid) {
  * replanted plot is never drawn as soil nothing has touched. It is hash-derived
  * and reads no phase, so it holds in the still frame reduced motion pins to.
  *
+ * A visit in progress — `state.visitPresent`, the same presence the readout and
+ * `get-state` report — is drawn as a tended garden: every plot's ground is cut
+ * with still hoe furrows and its grown plants and crowns stand a pixel higher,
+ * so the picture says someone is here even before they have done anything. It
+ * reads no phase, so the tended look holds in the still frame reduced motion
+ * pins to, and a garden with no visit in progress (a sandbox rehearsal, or a
+ * plot drawn from a bare state) is drawn exactly as it always was.
+ *
  * The plots the visitor sowed by hand carry a still standing sign, drawn from
  * `state.visit.sown` — the same hand-work count the readout and `get-state`
  * report — so a garden the visitor worked reads differently from one they only
@@ -1381,6 +1414,11 @@ export function drawGarden(canvas, state, palette, phase = 0) {
   const occupied = new Set(marks.map((mark) => mark.cell));
   const plants = marks.filter((mark) => mark.kind === "herb-plant" || mark.kind === "bloom-plant").length;
   const growthTier = Math.min(2, Math.floor(form.fill * 3));
+  // Whether a visitor is at the page right now. A visit in progress is drawn as
+  // a tended garden — every plot's ground worked and its standing plants lifted
+  // a pixel — so a garden someone is watching is visibly not the garden an
+  // absence left, and the picture agrees with `state.visitPresent`.
+  const tended = Boolean(state && state.visitPresent);
   // The garden's own growth, not only the plants it owns, fills the soil.
   const cover = groundCover(state);
   for (let cell = 0; cell < cells; cell += 1) {
@@ -1393,6 +1431,9 @@ export function drawGarden(canvas, state, palette, phase = 0) {
     if (agedHash(cell) < aged) drawAgedGround(ctx, x, y, paint, cell);
     // Ground growth goes on first, so the planted sprites stand out of it.
     if (cellHash(cell) < cover.ratio) drawGroundGrowth(ctx, x, y, paint, cell);
+    // The furrows of a tended visit go on over the ground, under the edges and
+    // the sprites, so every plot of a garden with a visitor reads as worked.
+    if (tended) drawWorkedGround(ctx, x, y, paint);
   }
   // The bed edge goes on over the soil's own face, furrows and growth, so the
   // soil's marks cannot bury it: every plot of soil is drawn as its own plot and
@@ -1413,7 +1454,7 @@ export function drawGarden(canvas, state, palette, phase = 0) {
   const tiers = plotMilestoneTiers(state);
   for (const mark of marks) {
     const tier = mark.kind === "herb-plant" ? tiers[0] : mark.kind === "bloom-plant" ? tiers[1] : 0;
-    drawMark(ctx, mark, paint, look.foliage, form.index, growthTier, swayPixels(phase, mark.cell), tier);
+    drawMark(ctx, mark, paint, look.foliage, form.index, growthTier, swayPixels(phase, mark.cell), tier, tended);
   }
   // The plots the visitor sowed by hand carry a standing sign over the sprite,
   // so the ground they worked reads differently from ground the garden sowed on
