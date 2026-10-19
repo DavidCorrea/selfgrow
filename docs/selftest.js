@@ -116,6 +116,7 @@ import {
   ESTABLISHMENTS,
   FORMS,
   drawGarden,
+  drawKindSwatch,
   establishment,
   gardenForm,
   groundCover,
@@ -1937,6 +1938,177 @@ function checkKindReadout(problems) {
 }
 
 /**
+ * Each kind's row shows the same two sprites the plot draws for it — its
+ * ungrown seed and its grown plant — so a visitor can point at a plant or seed
+ * on the plot and find the row that counts it.
+ *
+ * The swatch is drawn from the plot's own sprite code, so the two can never
+ * differ in shape or colour, and it is a picture rather than a fact: it holds
+ * no text and is hidden from assistive technology. A missing swatch, one that
+ * reads as a fact of the row, one that no longer tells the kinds apart, one
+ * left stale against the current garden, or one that stopped following the
+ * garden's form trips this.
+ */
+function checkKindSwatches(problems) {
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  try {
+    const palette = readPalette();
+    const leafKeys = new Set(
+      [palette.leaf, palette.leafLight, palette.leafDeep].map((color) => colorKey(parseColor(color)))
+    );
+    const bloomKeys = new Set([colorKey(parseColor(palette.bloom))]);
+
+    // Each kind's row holds its own swatch, beside the label that names the
+    // kind, and the swatch is a picture: no text, hidden from assistive
+    // technology, and no part of a labelled value.
+    const kinds = [
+      ["herb", "kind-herb", "kind-herb-swatch"],
+      ["bloom", "kind-bloom", "kind-bloom-swatch"],
+    ];
+    for (const [key, field, id] of kinds) {
+      const facts = document.querySelector(`[data-field="${field}"]`);
+      const swatch = document.getElementById(id);
+      const row = (swatch ?? facts)?.closest(".readout-row") ?? null;
+      if (!swatch || !facts || !row || !row.contains(facts)) {
+        problems.push(
+          `the ${key} row has no sprite swatch beside it (expected a canvas #${id} in the same readout row as ` +
+            `[data-field="${field}"]), so the sprite the plot draws for a ${key} cannot be matched to the label that ` +
+            "counts it."
+        );
+        continue;
+      }
+      if (swatch.tagName.toLowerCase() !== "canvas") {
+        problems.push(
+          `the ${key} swatch #${id} is a <${swatch.tagName.toLowerCase()}>, expected a canvas the plot's own sprite ` +
+            "code can draw into."
+        );
+      }
+      if (swatch.getAttribute("aria-hidden") !== "true") {
+        problems.push(
+          `the ${key} swatch #${id} is not aria-hidden, so a screen reader reaches a drawn picture instead of the ` +
+            "row's label and values."
+        );
+      }
+      if (String(swatch.textContent).trim() !== "" || swatch.closest(".kind-fact")) {
+        problems.push(
+          `the ${key} swatch #${id} reads as one of the row's facts (it carries text or sits inside a labelled ` +
+            "value), but it must only illustrate the row beside its label."
+        );
+      }
+      const named = String(row.querySelector(".readout-term")?.textContent ?? "").replace(/\s+/g, " ").trim();
+      if (!named.toLowerCase().includes(key)) {
+        problems.push(
+          `the ${key} swatch sits beside the label ${JSON.stringify(named)}, so it does not name the kind it draws.`
+        );
+      }
+    }
+
+    // One known garden, so the swatches are read from a fixed growth rather
+    // than from the live garden, whose season and form are whatever the
+    // visitor's clock has made of them.
+    const known = { growth: 100, beds: 1, capacity: PLOT_CAPACITY, pollinator: { visiting: false } };
+    const swatchOf = (kind) => {
+      const canvas = document.createElement("canvas");
+      drawKindSwatch(canvas, kind, known, palette);
+      return canvas;
+    };
+    const herb = swatchOf("herb");
+    const bloom = swatchOf("bloom");
+
+    // The swatch shows the kind: a herb carries leaf and no flower, a bloom
+    // carries both, so the two rows are told apart by the picture beside them.
+    if (!colorPixels(herb, leafKeys, 0, 0, herb.width, herb.height).length) {
+      problems.push(
+        "the herb swatch drew no leaf-coloured pixel, so the sprite the plot draws for a herb is not shown beside " +
+          "its label."
+      );
+    }
+    if (!colorPixels(bloom, bloomKeys, 0, 0, bloom.width, bloom.height).length) {
+      problems.push(
+        "the bloom swatch drew no bloom-coloured pixel, so the sprite the plot draws for a bloom is not shown beside " +
+          "its label."
+      );
+    }
+    if (colorPixels(herb, bloomKeys, 0, 0, herb.width, herb.height).length) {
+      problems.push(
+        "the herb swatch drew a bloom-coloured pixel, so a herb's swatch and a bloom's cannot be told apart by " +
+          "their flower."
+      );
+    }
+    if (herb.toDataURL() === bloom.toDataURL()) {
+      problems.push("the herb and bloom swatches draw the same picture, so the kind is not visible beside its label.");
+    }
+
+    // The swatch is the plot's own sprite, pixel for pixel: a garden holding
+    // both kinds' plants and seeds draws them at the same places inside a cell
+    // as the swatches beside the labels do. Only the sprite's own colours are
+    // compared — the plot's soil, its bed edges and the garden's ground growth
+    // all draw in the soil's tones — and every cell compared stands still at
+    // phase 0, so what differs is the sprite and never the sway.
+    const planted = { ...known, plantCounts: [3, 1], seedCounts: [5, 1] };
+    const plot = plotCanvas(planted, 0);
+    const bounds = plotBounds(planted);
+    const cell = bounds.cell;
+    const cellAt = (mark) => ({ left: (mark % bounds.columns) * cell, top: Math.floor(mark / bounds.columns) * cell });
+    // In `plotMarks` order: three herb plants, one bloom plant, five herb seeds
+    // and one bloom seed. Each of the cells named sways by nothing at phase 0.
+    for (const [label, swatch, mark, swatchLeft] of [
+      ["a grown herb", herb, 0, cell],
+      ["a grown bloom", bloom, 3, cell],
+      ["an ungrown herb seed", herb, 6, 0],
+      ["an ungrown bloom seed", bloom, 9, 0],
+    ]) {
+      const at = cellAt(mark);
+      const onPlot = colorPixels(plot, leafKeys, at.left, at.top, cell, cell);
+      const onSwatch = colorPixels(swatch, leafKeys, swatchLeft, 0, cell, cell);
+      if (onPlot.join("|") !== onSwatch.join("|")) {
+        problems.push(
+          `the swatch and the plot draw ${label} differently — ${onSwatch.length} sprite pixels against ` +
+            `${onPlot.length} on the plot — so the swatch is not drawn from the plot's own sprite.`
+        );
+      }
+    }
+
+    // The swatch on the page is the swatch the current garden draws: one left
+    // over from an earlier form, or never drawn at all, fails here.
+    setGarden({ beds: 1, seeds: 1, plants: 0 });
+    setGrowth(100, 0.5);
+    const shown = getDisplayedState();
+    for (const [key, id] of [
+      ["herb", "kind-herb-swatch"],
+      ["bloom", "kind-bloom-swatch"],
+    ]) {
+      const live = document.getElementById(id);
+      if (!live) continue;
+      const expected = document.createElement("canvas");
+      drawKindSwatch(expected, key, shown, palette);
+      if (live.toDataURL() !== expected.toDataURL()) {
+        problems.push(
+          `the ${key} swatch beside the label does not show the sprite the plot draws for the current garden ` +
+            `(${shown.formName}), so the swatch is stale or was never drawn.`
+        );
+      }
+    }
+
+    // The swatch follows the garden's form: a garden that has grown into a wood
+    // draws a different herb from one just sprouting.
+    const sprouting = document.createElement("canvas");
+    drawKindSwatch(sprouting, "herb", { growth: 1, beds: 1, capacity: PLOT_CAPACITY }, palette);
+    const wooded = document.createElement("canvas");
+    drawKindSwatch(wooded, "herb", { growth: 1e6, beds: 1, capacity: PLOT_CAPACITY }, palette);
+    if (sprouting.toDataURL() === wooded.toDataURL()) {
+      problems.push(
+        "a sprouting garden and a wood draw the same herb swatch, so the swatch does not follow the garden's form."
+      );
+    }
+  } finally {
+    setGarden(gardenBefore);
+    restoreGrowth(growthBefore);
+  }
+}
+
+/**
  * Each kind's plant milestones: a small ladder at different counts per kind
  * that steps that kind's output up when reached. The two ladders differ, so the
  * best seed to plant keeps changing; the readout names the next step and how
@@ -2251,6 +2423,28 @@ function cellHasColor(canvas, color, cell, column = 0) {
     }
   }
   return false;
+}
+
+/**
+ * The pixels of one region of a render that carry any of `colorKeys`, as "x,y"
+ * keys relative to the region's top-left corner, in row-major order.
+ *
+ * Only a sprite's own colours are ever compared, never the ground: the plot's
+ * soil, its bed edges and the garden's ground growth all draw in the soil's
+ * tones, so a sprite's leaf and flower pixels are the sprite and nothing else.
+ * That is how the swatch beside a kind's label is held to the very sprite the
+ * plot draws for that kind.
+ */
+function colorPixels(canvas, colorKeys, left, top, width, height) {
+  const data = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+  const pixels = [];
+  for (let y = top; y < top + height; y += 1) {
+    for (let x = left; x < left + width; x += 1) {
+      const i = (y * canvas.width + x) * 4;
+      if (colorKeys.has(`${data[i]},${data[i + 1]},${data[i + 2]}`)) pixels.push(`${x - left},${y - top}`);
+    }
+  }
+  return pixels;
 }
 
 /**
@@ -10005,6 +10199,7 @@ export async function checks() {
     checkDurableSave(problems);
     checkPageReadout(problems);
     checkKindReadout(problems);
+    checkKindSwatches(problems);
     checkKindMilestones(problems);
     checkPlotDrawing(problems);
     checkPlotDrawsKinds(problems);

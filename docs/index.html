@@ -134,7 +134,21 @@
                    needed. Each value has its own element, so the row is read
                    rather than decoded and any one fact can be checked. -->
               <div class="readout-row readout-kind">
-                <dt class="readout-term">Herb</dt>
+                <!-- The kind's own seed and grown plant, drawn from the plot's
+                     own sprites, so the picture and the label that counts it
+                     can be matched on sight. The swatch is a picture, not a
+                     fact: hidden from assistive technology, it adds nothing to
+                     the row's label and values. -->
+                <dt class="readout-term">
+                  <canvas
+                    id="kind-herb-swatch"
+                    class="kind-swatch"
+                    width="48"
+                    height="24"
+                    aria-hidden="true"
+                  ></canvas>
+                  Herb
+                </dt>
                 <dd class="readout-value readout-kind-value" data-field="kind-herb">
                   <span class="kind-facts">
                     <span class="kind-fact">
@@ -167,7 +181,16 @@
                 </dd>
               </div>
               <div class="readout-row readout-kind">
-                <dt class="readout-term">Bloom</dt>
+                <dt class="readout-term">
+                  <canvas
+                    id="kind-bloom-swatch"
+                    class="kind-swatch"
+                    width="48"
+                    height="24"
+                    aria-hidden="true"
+                  ></canvas>
+                  Bloom
+                </dt>
                 <dd class="readout-value readout-kind-value" data-field="kind-bloom">
                   <span class="kind-facts">
                     <span class="kind-fact">

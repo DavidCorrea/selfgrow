@@ -418,6 +418,22 @@ body {
   gap: 2px;
 }
 
+/* Each kind's swatch: the same ungrown seed and grown plant the plot draws for
+   that kind, shown beside the label that counts it so a visitor can point at a
+   plant on the plot and find the row that counts it. It is a picture rather
+   than a fact — it holds no text and is hidden from assistive technology — so
+   the row still reads as a label and its values. Laid out at the plot's own
+   pixel size and rendered pixelated, so the sprite stays as crisp on the panel
+   as it is on the soil. */
+.kind-swatch {
+  display: inline-block;
+  width: 48px;
+  height: 24px;
+  margin-right: 6px;
+  vertical-align: middle;
+  image-rendering: pixelated;
+}
+
 /* The facts sit on two lines by design — what the kind holds and what a plant
    earns, then what comes next — because the six of them in one wrapping line
    need three at a phone's width. Each line still wraps if a number outgrows
