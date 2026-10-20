@@ -116,7 +116,10 @@ import {
   ESTABLISHMENTS,
   FORMS,
   drawGarden,
+  drawHandWorkGlyph,
   drawKindSwatch,
+  drawTendedSign,
+  drawTendedWorkMark,
   establishment,
   gardenForm,
   groundCover,
@@ -2101,6 +2104,126 @@ function checkKindSwatches(problems) {
       problems.push(
         "a sprouting garden and a wood draw the same herb swatch, so the swatch does not follow the garden's form."
       );
+    }
+  } finally {
+    setGarden(gardenBefore);
+    restoreGrowth(growthBefore);
+  }
+}
+
+/**
+ * The hand-work facts carry the plot's own mark.
+ *
+ * The plot draws still marks for the visitor's own work; the readout counts the
+ * plots they sowed by hand and tended by hand in words beside it. Each of those
+ * two facts carries the very glyph the plot draws for its mark — the standing
+ * sign and the hoe cut, each painted by the same function the plot paints with —
+ * so a mark on the soil can be traced to the fact that counts it. The glyph is a
+ * picture, not a fact: it holds no text and is hidden from assistive technology,
+ * so the facts still read as labels and their values.
+ */
+function checkHandWorkGlyphs(problems) {
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  try {
+    const palette = readPalette();
+
+    // Each hand-work fact carries a glyph in its own readout row, beside the
+    // [data-field] the words are written into.
+    for (const [kind, field, id] of [
+      ["sown", "visit-sown", "visit-sown-glyph"],
+      ["tended", "visit-tended", "visit-tended-glyph"],
+    ]) {
+      const value = document.querySelector(`[data-field="${field}"]`);
+      const glyph = document.getElementById(id);
+      const row = (glyph ?? value)?.closest(".readout-row") ?? null;
+      if (!glyph || !value || !row || !row.contains(value)) {
+        problems.push(
+          `the ${kind} hand-work fact has no glyph beside it (expected a canvas #${id} in the same readout row as ` +
+            `[data-field="${field}"]), so a mark on the plot cannot be traced to the fact that counts it.`
+        );
+        continue;
+      }
+      if (glyph.tagName.toLowerCase() !== "canvas") {
+        problems.push(
+          `the ${kind} hand-work glyph #${id} is a <${glyph.tagName.toLowerCase()}>, expected a canvas the plot's ` +
+            "own mark code can draw into."
+        );
+      }
+      if (glyph.getAttribute("aria-hidden") !== "true") {
+        problems.push(
+          `the ${kind} hand-work glyph #${id} is not aria-hidden, so a screen reader reaches a drawn picture instead ` +
+            "of the fact's label and value."
+        );
+      }
+      if (String(glyph.textContent).trim() !== "") {
+        problems.push(`the ${kind} hand-work glyph #${id} carries text, so the fact no longer reads as a label and value.`);
+      }
+    }
+
+    // One known garden, so the glyphs are read from a fixed season rather than
+    // from the live garden, whose season is whatever the visitor's clock made.
+    const known = { growth: 100, beds: 1, capacity: PLOT_CAPACITY, season: { key: "summer" }, pollinator: { visiting: false } };
+    const glyphOf = (kind) => {
+      const canvas = document.createElement("canvas");
+      drawHandWorkGlyph(canvas, kind, known, palette);
+      return canvas;
+    };
+    const sown = glyphOf("sown");
+    const tended = glyphOf("tended");
+
+    // The glyph is the plot's own mark, pixel for pixel: a soil cell painted
+    // with exactly the function the plot paints that mark with. A hand-drawn
+    // copy that drifted from the plot would part company here.
+    const paint = seasonLook(palette, known.season.key).palette;
+    const plotMark = (drawMarkFn) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = sown.width;
+      canvas.height = sown.height;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = paint.soil;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      drawMarkFn(ctx, 0, 0, paint);
+      return canvas;
+    };
+    for (const [kind, glyph, drawMarkFn] of [
+      ["sown", sown, drawTendedSign],
+      ["tended", tended, drawTendedWorkMark],
+    ]) {
+      if (glyph.toDataURL() !== plotMark(drawMarkFn).toDataURL()) {
+        problems.push(
+          `the ${kind} glyph is not drawn from the plot's own mark — it differs from a cell painted with ` +
+            `draw${kind === "sown" ? "TendedSign" : "TendedWorkMark"}, so the picture and the label can show ` +
+            "different shapes."
+        );
+      }
+    }
+    if (sown.toDataURL() === tended.toDataURL()) {
+      problems.push(
+        "the sown and tended glyphs draw the same picture, so a standing sign and a hoe cut on the plot cannot be " +
+          "told apart by the facts beside them."
+      );
+    }
+
+    // The glyph on the page is the glyph the current garden draws: one left over
+    // from another season, or never drawn at all, fails here.
+    setGarden({ beds: 1, seeds: 1, plants: 0 });
+    setGrowth(100, 0.5);
+    const shown = getDisplayedState();
+    for (const [kind, id] of [
+      ["sown", "visit-sown-glyph"],
+      ["tended", "visit-tended-glyph"],
+    ]) {
+      const live = document.getElementById(id);
+      if (!live) continue;
+      const expected = document.createElement("canvas");
+      drawHandWorkGlyph(expected, kind, shown, palette);
+      if (live.toDataURL() !== expected.toDataURL()) {
+        problems.push(
+          `the ${kind} glyph beside the fact does not show the mark the plot draws for the current garden ` +
+            `(${shown.formName}), so the glyph is stale or was never drawn.`
+        );
+      }
     }
   } finally {
     setGarden(gardenBefore);
@@ -10295,6 +10418,7 @@ export async function checks() {
     checkPageReadout(problems);
     checkKindReadout(problems);
     checkKindSwatches(problems);
+    checkHandWorkGlyphs(problems);
     checkKindMilestones(problems);
     checkPlotDrawing(problems);
     checkPlotDrawsKinds(problems);
