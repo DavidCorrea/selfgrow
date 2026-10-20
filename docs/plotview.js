@@ -1338,31 +1338,64 @@ function drawTendedSign(ctx, x, y, palette) {
   ctx.fillRect(centre - 1, base - 16, 2, 2);
 }
 
-// How far a plot's own edge is held inside its outer boundary, in pixels: enough
-// that the ridge of one row and the ridge of the next are separate marks rather
-// than one ruled line, so each plot is a countable plot and not a grid line.
-const PLOT_EDGE_INSET = 3;
+// How thick a plot's own tile boundary is drawn, in canvas pixels. The bitmap
+// is 24px cells the browser scales down on a phone, so the old one-pixel seam
+// scaled away there; two pixels is a boundary a visitor can still count.
+const PLOT_TILE_EDGE = 2;
+
+// How much of the soil's deep tone is mixed into the open field's soil to make
+// the flat interior an unplanted plot is drawn in. It reads as soil kept in a
+// bed — a shade of the same ground rather than the open field around it — which
+// is the whole point: an empty plot must not disappear into the ground.
+const BARE_PLOT_TONE_MIX = 0.5;
+
+/** The three channels of a `#rrggbb` colour, or `null` if it is not one. */
+function parseHexColor(color) {
+  const hex = /^#([0-9a-f]{6})$/i.exec(String(color).trim());
+  if (!hex) return null;
+  const value = parseInt(hex[1], 16);
+  return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
+}
 
 /**
- * A low bed edge on every plot of soil, in the soil's own tones.
+ * Two palette colours blended, `from` toward `to` by `share` (0 keeps `from`, 1
+ * takes `to`), as a CSS `rgb()` string. The palette's own colours are `#rrggbb`
+ * as `:root` declares them; a colour that cannot be read falls back to `to`, so
+ * a caller is never handed a malformed style.
+ */
+function blendColors(from, to, share) {
+  const start = parseHexColor(from);
+  const end = parseHexColor(to);
+  if (!start || !end) return to;
+  const mix = (channel) => Math.round(start[channel] + (end[channel] - start[channel]) * share);
+  return `rgb(${mix(0)}, ${mix(1)}, ${mix(2)})`;
+}
+
+/**
+ * The flat tone an unplanted plot's interior is drawn in: the open field's soil
+ * mixed a step toward the soil's own deep tone, so an empty plot is plainly its
+ * own ground and not the field the garden stands in.
+ */
+function barePlotTone(palette) {
+  return blendColors(palette.soil, palette.soilDeep, BARE_PLOT_TONE_MIX);
+}
+
+/**
+ * A complete tile boundary on every plot of soil, in the soil's own tones.
  *
- * Each plot carries a one-pixel lit ridge along its top with a dark line beneath
- * it, held inside the plot's left and right edges, and — everywhere but the
- * leftmost column — a lit seam down its left boundary with the same dark line
- * beside it, held inside the plot's top and foot. The ridge and the seam are two
- * perpendicular marks, so a visitor can count the plots across the picture and
- * down it alike, and every plot of an opened bed reads as its own plot whether a
- * seed or plant holds it or not. The insets keep the edges short of the plot's
- * corners, so the field reads as plots of soil rather than as a ruled grid.
+ * Each plot is closed on all four sides by a `PLOT_TILE_EDGE`-pixel boundary: a
+ * lit top and left over a deep body, drawn to the plot's full width and height
+ * so the boundary survives the phone's downscale. Every plot of an opened bed
+ * therefore reads as its own room of soil whether a seed or plant holds it or
+ * not, and a visitor can count the plots across the picture and down it alike.
  *
  * Every bed the grid actually holds is then closed by a lit rim along its first
- * row, the foot of its last row and both its sides — which supply the leftmost
- * column's edge and the plot's outer edges — so an opened bed is a room of its
- * own and the boundary between one bed and the next is visible without reading a
- * number. The rim follows the rows and columns that bed's own plots occupy, so a
- * partly filled last bed is closed without lighting ground it does not have.
- * Nothing here reads the animation phase, so the edges hold in the still frame
- * reduced motion pins to.
+ * row, the foot of its last row and both its sides, so an opened bed is a room
+ * of its own and the boundary between one bed and the next is visible without
+ * reading a number. The rim follows the rows and columns that bed's own plots
+ * occupy, so a partly filled last bed is closed without lighting ground it does
+ * not have. Nothing here reads the animation phase, so the edges hold in the
+ * still frame reduced motion pins to.
  *
  * `grid` is the `plotCells` reading of the same state, so the drawn edge and the
  * counted plot are one and the same.
@@ -1371,17 +1404,17 @@ function drawPlotEdges(ctx, palette, grid) {
   for (const plot of grid.plots) {
     const x = plot.column * CELL;
     const y = plot.row * CELL;
-    ctx.fillStyle = palette.soilLight;
-    ctx.fillRect(x + PLOT_EDGE_INSET, y, CELL - PLOT_EDGE_INSET * 2, 1);
+    // The deep body of the tile first, on all four sides, then the lit top and
+    // left over it, so each plot is a raised room of soil with a boundary a
+    // visitor can count around.
     ctx.fillStyle = palette.soilDeep;
-    ctx.fillRect(x + PLOT_EDGE_INSET, y + 1, CELL - PLOT_EDGE_INSET * 2, 1);
-    // The leftmost column's side is the bed rim's job, so only the seams inside
-    // the row are drawn here.
-    if (plot.column === 0) continue;
+    ctx.fillRect(x, y, CELL, PLOT_TILE_EDGE);
+    ctx.fillRect(x, y + CELL - PLOT_TILE_EDGE, CELL, PLOT_TILE_EDGE);
+    ctx.fillRect(x, y, PLOT_TILE_EDGE, CELL);
+    ctx.fillRect(x + CELL - PLOT_TILE_EDGE, y, PLOT_TILE_EDGE, CELL);
     ctx.fillStyle = palette.soilLight;
-    ctx.fillRect(x, y + PLOT_EDGE_INSET, 1, CELL - PLOT_EDGE_INSET * 2);
-    ctx.fillStyle = palette.soilDeep;
-    ctx.fillRect(x + 1, y + PLOT_EDGE_INSET, 1, CELL - PLOT_EDGE_INSET * 2);
+    ctx.fillRect(x, y, CELL, 1);
+    ctx.fillRect(x, y, 1, CELL);
   }
   for (let bed = 0; bed < grid.beds; bed += 1) {
     const inBed = grid.plots.filter((plot) => plot.bed === bed);
@@ -1416,13 +1449,17 @@ function drawPlotEdges(ctx, palette, grid) {
  * palette read off `:root`, so the plot belongs to the same garden as the panels
  * around it. The number of marks is bounded by the cells on screen, so a save
  * carrying more plants than plots cannot flood the picture. Every plot of soil
- * carries a low bed edge in the soil's own tones — a lit ridge along its top and
- * a lit seam down its left — and every bed the grid holds is closed by a lit rim
- * over that soil, empty plots and all, so the picture can be counted plot by
- * plot against the panel's 'Plots of soil' beside it and one bed reads as its own
- * room of soil. The pollinator's home stands on a strip of ground past the last
- * plot column, outside that rim, so it is drawn beside the garden rather than
- * over a plot and every seed and plant among the plots stays countable.
+ * is closed on all four sides by a full tile boundary in the soil's own tones, so
+ * the picture can be counted plot by plot against the panel's 'Plots of soil'
+ * beside it. A plot with nothing planted in it is drawn as a flat bare-soil tone
+ * of its own, with the garden's mottled ground layers — aged, worked and ground
+ * growth — kept out of it, so an opened bed reads as a countable set of empty
+ * rooms rather than as the same worked ground the planted plots carry. Every bed
+ * the grid holds is in turn closed by a lit rim over that soil, empty plots and
+ * all, so one bed reads as its own room of soil. The pollinator's home stands on
+ * a strip of ground past the last plot column, outside that rim, so it is drawn
+ * beside the garden rather than over a plot and every seed and plant among the
+ * plots stays countable.
  *
  * The lifetime is a second, lasting layer under all of it: `state.lifetimeGrowth`
  * — the same value the readout and `get-state` report — decides how much of the
@@ -1486,8 +1523,15 @@ export function drawGarden(canvas, state, palette, phase = 0) {
   ctx.fillRect(0, 0, canvasWidth, height);
 
   const marks = plotMarks(state);
+  const grid = plotCells(state, marks);
   const workedCells = new Set(tendedWorkCells(state));
   const occupied = new Set(marks.map((mark) => mark.cell));
+  // The plots with nothing planted in them. Their interiors are drawn as flat
+  // bare soil, and the garden's mottled ground layers are kept out of them, so
+  // an opened bed reads as a countable set of empty rooms instead of the same
+  // worked ground the planted plots above it carry.
+  const unplanted = new Set(grid.plots.filter((plot) => !plot.occupied).map((plot) => plot.cell));
+  const bareTone = barePlotTone(paint);
   const plants = marks.filter((mark) => mark.kind === "herb-plant" || mark.kind === "bloom-plant").length;
   const growthTier = Math.min(2, Math.floor(form.fill * 3));
   // Whether a visitor is at the page right now. A visit in progress is drawn as
@@ -1500,16 +1544,23 @@ export function drawGarden(canvas, state, palette, phase = 0) {
   for (let cell = 0; cell < cells; cell += 1) {
     const x = (cell % COLUMNS) * CELL;
     const y = Math.floor(cell / COLUMNS) * CELL;
-    drawSoil(ctx, x, y, paint, look.foliage, soilFace(cell, look.key), cell, occupied.has(cell), look.key);
-    // The ground the garden's lifetime has aged goes on under the ground its
-    // current growth covers, so an old plot reads as deeper soil and a
-    // replanted one still shows what its growth no longer does.
-    if (agedHash(cell) < aged) drawAgedGround(ctx, x, y, paint, cell);
-    // Ground growth goes on first, so the planted sprites stand out of it.
-    if (cellHash(cell) < cover.ratio) drawGroundGrowth(ctx, x, y, paint, cell);
-    // The furrows of a tended visit go on over the ground, under the edges and
-    // the sprites, so every plot of a garden with a visitor reads as worked.
-    if (tended) drawWorkedGround(ctx, x, y, paint);
+    if (unplanted.has(cell)) {
+      // An empty plot: one flat tone of its own and none of the garden's
+      // mottled ground, so it reads as bare soil held in a bed.
+      ctx.fillStyle = bareTone;
+      ctx.fillRect(x, y, CELL, CELL);
+    } else {
+      drawSoil(ctx, x, y, paint, look.foliage, soilFace(cell, look.key), cell, occupied.has(cell), look.key);
+      // The ground the garden's lifetime has aged goes on under the ground its
+      // current growth covers, so an old plot reads as deeper soil and a
+      // replanted one still shows what its growth no longer does.
+      if (agedHash(cell) < aged) drawAgedGround(ctx, x, y, paint, cell);
+      // Ground growth goes on first, so the planted sprites stand out of it.
+      if (cellHash(cell) < cover.ratio) drawGroundGrowth(ctx, x, y, paint, cell);
+      // The furrows of a tended visit go on over the ground, under the edges and
+      // the sprites, so every plot of a garden with a visitor reads as worked.
+      if (tended) drawWorkedGround(ctx, x, y, paint);
+    }
     // The plots the visitor tended by hand this visit carry a still hoe cut,
     // under the edges and the sprites, so the 'Tended' number beside the garden
     // is drawn on the plot and grows with the visitor's own hand-work.
@@ -1519,7 +1570,7 @@ export function drawGarden(canvas, state, palette, phase = 0) {
   // soil's marks cannot bury it: every plot of soil is drawn as its own plot and
   // every bed is closed, empty or not, so a visitor can count the picture against
   // the 'Plots of soil' the panel beside it reports. The sprites still go on top.
-  drawPlotEdges(ctx, paint, plotCells(state, marks));
+  drawPlotEdges(ctx, paint, grid);
   // The garden's worked ground goes under the sprites it holds: the low
   // retaining lip its lifetime has laid at the foot of the plot and the band of
   // aged earth behind it, so an established garden's bottom edge reads as the

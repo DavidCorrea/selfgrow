@@ -2820,19 +2820,20 @@ function checkPlotMarksMatchCounts(problems) {
  *
  * `plotCells` is the picture's own reading of what it owns: one plot per plot of
  * the garden's capacity, grouped into beds of `PLOTS_PER_BED`, each marked with
- * whether a seed or plant holds it. The drawn plot gives each plot a low bed
- * edge in the soil's own tones — a lit ridge along its top with a dark line
- * beneath, and a lit seam down its left boundary — so the plots can be counted
- * across a row as well as down a column, and closes every bed the grid holds
- * with a lit rim along its first row, its last row's foot and both its sides, so
- * an empty bed reads as a bed of soil and two beds can be told apart. The edges
- * read no animation phase, so reduced motion draws them too.
+ * whether a seed or plant holds it. The drawn plot closes each plot on all four
+ * sides with a tile boundary of readable thickness in the soil's own tones — a
+ * lit top and left over a deep body — so the plots can be counted across a row
+ * as well as down a column, and closes every bed the grid holds with a lit rim
+ * along its first row, its last row's foot and both its sides, so an empty bed
+ * reads as a bed of soil and two beds can be told apart. The edges read no
+ * animation phase, so reduced motion draws them too.
  */
 /**
- * The lit ridge and left seam every plot of `state` must carry, as problem
- * messages: each plot's own edge is drawn in the soil's own tones, so the picture
- * can be counted across a row as well as down a column. `label` names the garden
- * in the message, so a failure says which picture could not be counted.
+ * The lit top edge and left edge every plot of `state` must carry, as problem
+ * messages: each plot's tile boundary is drawn in the soil's own tones, so the
+ * picture can be counted across a row as well as down a column. `label` names
+ * the garden in the message, so a failure says which picture could not be
+ * counted.
  */
 function plotEdgeProblems(state, label) {
   const lightKey = colorKey(parseColor(readPalette().soilLight));
@@ -2976,10 +2977,10 @@ function checkPlotBedEdges(problems) {
 
   // The ticket's own scene: two beds open and the first bed's plots planted, so
   // the readout says 24 plots of soil while only half the picture holds anything.
-  // All 24 plots carry their ridge and their left seam — the emptied bed under a
-  // full ground cover too — and each bed is closed by its own rim, so a visitor
-  // who reads no number can still count the room there is to plant in and tell
-  // the two beds apart.
+  // All 24 plots carry their tile boundary — the emptied bed under a full ground
+  // cover too — and each bed is closed by its own rim, so a visitor who reads no
+  // number can still count the room there is to plant in and tell the two beds
+  // apart.
   const twoBeds = {
     growth: 1e6,
     beds: 2,
@@ -2993,6 +2994,13 @@ function checkPlotBedEdges(problems) {
     problems.push(
       `two open beds of ${2 * PLOTS_PER_BED} plots draw ${twoGrid.plots.length} plots in ${twoGrid.beds} beds over ` +
         `${twoBounds.rows} rows, expected ${2 * PLOTS_PER_BED} plots in 2 beds over 6 rows.`
+    );
+  }
+  const twoHeld = twoGrid.plots.filter((plot) => plot.occupied).length;
+  if (twoHeld !== PLOTS_PER_BED) {
+    problems.push(
+      `two open beds with the first planted full report ${twoHeld} held plots, expected ${PLOTS_PER_BED}, so ` +
+        "the second bed's empty plots cannot be counted against the readout."
     );
   }
   problems.push(...plotEdgeProblems(twoBeds, "two open beds with one of them emptied"));
@@ -3063,6 +3071,234 @@ function checkPlotBedEdges(problems) {
 }
 
 /**
+ * Every unplanted plot is a bounded room of soil of its own, distinct from the
+ * ground around it.
+ *
+ * The tile boundary is a readable thickness at the plot's native resolution —
+ * the size every drawn size scales down from, the phone's capped plot height
+ * included — so it survives a downscale where a one-pixel seam would vanish,
+ * and the interior is one flat bare-soil tone that is neither the field's own
+ * soil nor the boundary's deep or lit tones. The garden's mottled ground
+ * layers — the aged ground of the lifetime, the ground growth of the current
+ * growth, a visit's furrows — are kept out of that interior, so an opened bed
+ * reads as a countable set of empty rooms while the planted plots keep the
+ * full ground treatment, and a garden of one bed is drawn the same way.
+ */
+function checkUnplantedPlotRooms(problems) {
+  const palette = readPalette();
+  const soilKey = colorKey(parseColor(palette.soil));
+  const deepKey = colorKey(parseColor(palette.soilDeep));
+  const lightKey = colorKey(parseColor(palette.soilLight));
+
+  // The ticket's own scene: two beds open, the first planted full and the
+  // second empty — 24 plots, 12 of them held. The ground growth of 1e6 and the
+  // aged ground of a 1e9 lifetime would dress every cell they reach, so any
+  // texture inside an unplanted plot is a layer the picture failed to keep out.
+  const rooms = {
+    growth: 1e6,
+    lifetimeGrowth: 1e9,
+    beds: 2,
+    capacity: 2 * PLOTS_PER_BED,
+    plantCounts: [PLOTS_PER_BED, 0],
+    pollinator: { visiting: false },
+  };
+  const grid = plotCells(rooms);
+  if (grid.plots.length !== 2 * PLOTS_PER_BED || grid.beds !== 2) {
+    problems.push(
+      `two open beds of ${2 * PLOTS_PER_BED} plots draw ${grid.plots.length} plots in ${grid.beds} beds, expected ` +
+        `${2 * PLOTS_PER_BED} plots in 2 beds, so the opened bed's empty plots cannot be counted.`
+    );
+  }
+  const held = grid.plots.filter((plot) => plot.occupied).length;
+  if (held !== PLOTS_PER_BED) {
+    problems.push(
+      `two open beds with the first planted full report ${held} held plots, expected ${PLOTS_PER_BED}, so the ` +
+        "empty plots of the second bed cannot be counted against the readout."
+    );
+  }
+
+  const bounds = plotBounds(rooms);
+  const data = plotCanvas(rooms).getContext("2d").getImageData(0, 0, bounds.width, bounds.height).data;
+  const pixelAt = (x, y) => {
+    const i = (y * bounds.width + x) * 4;
+    return `${data[i]},${data[i + 1]},${data[i + 2]}`;
+  };
+  const centre = (plot) => ({
+    x: plot.column * bounds.cell + Math.floor(bounds.cell / 2),
+    y: plot.row * bounds.cell + Math.floor(bounds.cell / 2),
+  });
+  // The worked edge the lifetime lays at the canvas foot is drawn over the
+  // ground there on purpose — it is the garden's built edge, not the mottled
+  // ground of a cell — so the room checks keep to the unplanted plots that
+  // stand above it: the band and its markers reach a little above the band's
+  // own top.
+  const edge = groundEdge(establishment(rooms.lifetimeGrowth));
+  const edgeTop = bounds.height - edge.lipHeight - edge.bandHeight - 6;
+  const aboveEdge = (plot) => (plot.row + 1) * bounds.cell <= edgeTop;
+  const emptyPlots = grid.plots.filter((plot) => !plot.occupied && aboveEdge(plot));
+  if (emptyPlots.length === 0) {
+    problems.push("two open beds with the second empty left no unplanted plot to check the bare rooms against.");
+    return;
+  }
+
+  // The bare room's tone: read off one unplanted plot's centre, then demanded
+  // of every unplanted plot the grid holds, so the second bed reads as a set
+  // of rooms in one ground rather than a scatter of textures.
+  const firstCentre = centre(emptyPlots[0]);
+  const roomKey = pixelAt(firstCentre.x, firstCentre.y);
+  if (roomKey === soilKey) {
+    problems.push(
+      "an unplanted plot's interior is drawn in the open field's own soil tone, so an empty plot reads as " +
+        "open ground rather than as soil kept in a bed."
+    );
+  }
+  if (roomKey === deepKey || roomKey === lightKey) {
+    problems.push(
+      "an unplanted plot's interior is drawn in the tile boundary's own deep or lit tone, so the boundary " +
+        "and the room it bounds cannot be told apart."
+    );
+  }
+  for (const plot of emptyPlots) {
+    const at = centre(plot);
+    if (pixelAt(at.x, at.y) !== roomKey) {
+      problems.push(
+        `the unplanted plot at column ${plot.column}, row ${plot.row} draws ${pixelAt(at.x, at.y)} at its centre ` +
+          `while the first empty plot draws ${roomKey}, so the empty rooms do not read as one ground.`
+      );
+      break;
+    }
+  }
+
+  // The interior is flat: the whole inside of the second bed's first row of
+  // plots — the row of empty rooms highest above the worked edge — carries the
+  // room tone and nothing else, so neither the aged ground of the lifetime nor
+  // the ground growth of 1e6 reaches it. The inset clears the tile's own
+  // boundary, whose deep bands and lit lines are checked below.
+  const inset = 3;
+  for (const plot of emptyPlots.filter((entry) => entry.row === emptyPlots[0].row)) {
+    const x = plot.column * bounds.cell;
+    const y = plot.row * bounds.cell;
+    for (let dy = inset; dy < bounds.cell - inset; dy += 1) {
+      for (let dx = inset; dx < bounds.cell - inset; dx += 1) {
+        if (pixelAt(x + dx, y + dy) !== roomKey) {
+          problems.push(
+            `the unplanted plot at column ${plot.column}, row ${plot.row} is textured at (${x + dx}, ${y + dy}) ` +
+              `rather than flat ${roomKey}, so the garden's mottled ground layers fill its empty rooms.`
+          );
+          return;
+        }
+      }
+    }
+  }
+
+  // The boundary on all four sides of an unplanted tile, at native resolution:
+  // a lit top edge and lit left edge over a deep band that runs the tile's
+  // full width and height, so the room is closed on every side.
+  const tile = emptyPlots.find((plot) => plot.row === emptyPlots[0].row + 1 && plot.column > 0);
+  if (tile) {
+    const x = tile.column * bounds.cell;
+    const y = tile.row * bounds.cell;
+    // The room is lit from its top and left, so those two lit lines own the
+    // corners: the deep foot band runs from the second pixel across, and the
+    // deep right band from the second row down.
+    const rowOf = (dy, from = 0) => Array.from({ length: bounds.cell - from }, (_, dx) => pixelAt(x + from + dx, y + dy));
+    const columnOf = (dx, from = 0) => Array.from({ length: bounds.cell - from }, (_, dy) => pixelAt(x + dx, y + from + dy));
+    const all = (pixels, key) => pixels.every((pixel) => pixel === key);
+    if (!all(rowOf(0), lightKey)) {
+      problems.push(
+        `the unplanted tile at column ${tile.column}, row ${tile.row} has no lit edge along its top, so the ` +
+          "empty plot cannot be counted from above."
+      );
+    }
+    if (!all(columnOf(0), lightKey)) {
+      problems.push(
+        `the unplanted tile at column ${tile.column}, row ${tile.row} has no lit edge down its left, so the ` +
+          "empty plot cannot be counted down the column."
+      );
+    }
+    if (!all(rowOf(bounds.cell - 1, 1), deepKey)) {
+      problems.push(
+        `the unplanted tile at column ${tile.column}, row ${tile.row} has no deep edge along its foot, so the ` +
+          "empty plot is not closed below."
+      );
+    }
+    if (!all(columnOf(bounds.cell - 1, 1), deepKey)) {
+      problems.push(
+        `the unplanted tile at column ${tile.column}, row ${tile.row} has no deep edge down its right, so the ` +
+          "empty plot is not closed beside."
+      );
+    }
+    // The deep edge is a band, not a one-pixel seam: two pixels thick at native
+    // resolution, because the plot is drawn at this size and scaled down to the
+    // phone's capped height, where a single pixel scales away and the plots
+    // stop being countable. The band's inner row — the second pixel in from
+    // the tile's foot and right — must still be boundary, not room interior.
+    if (!all(rowOf(bounds.cell - 2, 1), deepKey) || !all(columnOf(bounds.cell - 2, 1), deepKey)) {
+      problems.push(
+        `the unplanted tile at column ${tile.column}, row ${tile.row} carries a one-pixel deep edge, too thin ` +
+          "to survive the phone's downscale, so the empty plots stop being countable there."
+      );
+    }
+  }
+
+  // A garden of one bed is drawn the same way and reports the same counts: 12
+  // plots, half held, and its empty plots drawn as bare rooms against open
+  // ground the bed does not hold — a wild garden's six rows leave the row band
+  // below the bed as field, so the rooms can be told from the ground around
+  // them and not only from each other.
+  const oneBed = {
+    growth: 1e12,
+    beds: 1,
+    capacity: PLOTS_PER_BED,
+    plantCounts: [PLOTS_PER_BED / 2, 0],
+    pollinator: { visiting: false },
+  };
+  const oneGrid = plotCells(oneBed);
+  if (oneGrid.plots.length !== PLOTS_PER_BED || oneGrid.beds !== 1) {
+    problems.push(
+      `a one-bed garden of ${PLOTS_PER_BED} plots draws ${oneGrid.plots.length} plots in ${oneGrid.beds} beds, ` +
+        `expected ${PLOTS_PER_BED} plots in 1 bed.`
+    );
+  }
+  const oneHeld = oneGrid.plots.filter((plot) => plot.occupied).length;
+  if (oneHeld !== PLOTS_PER_BED / 2) {
+    problems.push(
+      `a one-bed garden with ${PLOTS_PER_BED / 2} plants reports ${oneHeld} held plots, expected ${PLOTS_PER_BED / 2}.`
+    );
+  }
+  const oneBounds = plotBounds(oneBed);
+  const oneData = plotCanvas(oneBed).getContext("2d").getImageData(0, 0, oneBounds.width, oneBounds.height).data;
+  const onePixel = (x, y) => {
+    const i = (y * oneBounds.width + x) * 4;
+    return `${oneData[i]},${oneData[i + 1]},${oneData[i + 2]}`;
+  };
+  const oneEmpty = oneGrid.plots.find((plot) => !plot.occupied);
+  const openCell = { column: 2, row: 4 };
+  if (oneEmpty) {
+    const x = oneEmpty.column * oneBounds.cell + Math.floor(oneBounds.cell / 2);
+    const y = oneEmpty.row * oneBounds.cell + Math.floor(oneBounds.cell / 2);
+    const oneRoomKey = onePixel(x, y);
+    if (oneRoomKey === soilKey) {
+      problems.push(
+        "a one-bed garden's unplanted plot is drawn in the open field's own soil tone, so its empty plots " +
+          "read as open ground."
+      );
+    }
+    // The field cell past the bed is drawn with the full ground treatment, so
+    // its centre is not the flat room tone: the rooms differ from the ground
+    // around the bed, not only from one another.
+    const openX = openCell.column * oneBounds.cell + Math.floor(oneBounds.cell / 2);
+    const openY = openCell.row * oneBounds.cell + Math.floor(oneBounds.cell / 2);
+    if (onePixel(openX, openY) === oneRoomKey) {
+      problems.push(
+        `the open ground at column ${openCell.column}, row ${openCell.row} draws ${onePixel(openX, openY)}, the ` +
+          "same tone as an unplanted plot's interior, so an empty plot reads as open ground."
+      );
+    }
+  }
+}
+
+/**
  * The plot fills with the garden's own growth, not only the plants it owns.
  *
  * A low-plant, high-growth garden — a single plant named "a stand of plants" —
@@ -3103,26 +3339,32 @@ function checkPlotCoverage(problems) {
     problems.push("groundCover drew two different covers for the same state, so the plot is not a pure view of it.");
   }
 
-  // The filling is drawn from growth alone: two states in one form with no
-  // plant at all, and so the very same bare soil, differ by the ground growth.
-  const groundLow = plotImage({ growth: 1e3, beds: 1, seeds: 0, plants: 0 });
-  const groundFull = plotImage({ growth: 2e3, beds: 1, seeds: 0, plants: 0 });
+  // The filling is drawn from growth alone: two states in one form whose six
+  // ungrown seeds hold six plots planted — the only ground the cover dresses,
+  // an unplanted plot being flat bare soil — differ by the ground growth. Seed
+  // sprites read no growth tier and both states sit in the same form, so the
+  // sprites cannot account for the difference; the covered set is chosen by
+  // hashing each planted cell, and one of the six crosses the rise between
+  // these two growths.
+  const groundLow = plotImage({ growth: 1e3, beds: 1, seeds: 6, plants: 0 });
+  const groundFull = plotImage({ growth: 2e3, beds: 1, seeds: 6, plants: 0 });
   if (groundLow === groundFull) {
     problems.push(
       "the plot drew the same bare soil at 1000 and 2000 growth, so the garden's growth is not drawn on the plot."
     );
   }
 
-  // Under a single sprite the fill still shows, so a fuller plot is not just a
-  // taller plant.
-  const low = plotImage({ growth: 1e3, beds: 1, seeds: 0, plants: 1 });
-  const higher = plotImage({ growth: 2e3, beds: 1, seeds: 0, plants: 1 });
+  // Under a standing sprite the fill still shows, so a fuller plot is not just
+  // a taller plant: the plant holds cell 0, the seeds hold the five beside it,
+  // and the plant reads the same form and tier at both growths.
+  const low = plotImage({ growth: 1e3, beds: 1, plants: 1, seeds: 5 });
+  const higher = plotImage({ growth: 2e3, beds: 1, plants: 1, seeds: 5 });
   if (low === higher) {
     problems.push(
       "the plot drew the same picture at 1000 and 2000 growth under one plant, so it fills only by growing that sprite."
     );
   }
-  const bareWithPlant = plotImage({ growth: 0, beds: 1, seeds: 0, plants: 1 });
+  const bareWithPlant = plotImage({ growth: 0, beds: 1, plants: 1, seeds: 5 });
   if (low === bareWithPlant) {
     problems.push(
       "a stand of plants drew the same picture as bare soil with one plant, so the growth does not fill the plot."
@@ -3131,15 +3373,17 @@ function checkPlotCoverage(problems) {
 }
 
 /**
- * Ground is never drawn as growth: no mark of bare soil or of the garden's own
- * ground cover wears the leaf green a seed or a plant carries, in any season,
- * and the cover stays far shorter than the smallest growing thing, so a covered
- * plot cannot read as a field of plants.
+ * Ground is never drawn as growth: no mark of the garden's own ground cover
+ * wears the leaf green a seed or a plant carries, in any season, and the cover
+ * stays far shorter than the smallest growing thing, so a covered plot cannot
+ * read as a field of plants.
  *
  * The cover blades are the one ground layer a visitor could otherwise mistake
- * for a sprout, so this pins both its colour — soil tones only — and its height,
- * measured against an ungrown seed's sprite from the very same
- * `changedBoxInCell` the seed's own legibility check uses.
+ * for a sprout, so this pins both its colour — soil tones only — and its height.
+ * The cover dresses only the ground a growing thing stands in — an unplanted
+ * plot is flat bare soil — so both scenes here hold one ungrown seed, whose
+ * planted cell the cover can fill, and the cover is measured against that
+ * seed's own leaf-green extent, the smallest growing thing the plot draws.
  */
 function checkGroundIsNotGrowth(problems) {
   const palette = readPalette();
@@ -3152,21 +3396,60 @@ function checkGroundIsNotGrowth(problems) {
     ].map((color) => colorKey(parseColor(color)))
   );
 
-  const bare = { growth: 0, beds: 1, seeds: 0, plants: 0, pollinator: { visiting: false } };
+  const bare = { growth: 0, beds: 1, seeds: 1, plants: 0, pollinator: { visiting: false } };
   // One form-row up from bare soil (a seedling), so the canvas is the same size
   // and a covered plot differs from a bare one in the ground cover alone.
   const covered = { ...bare, growth: 99 };
 
-  // A covered, plantless plot carries no leaf green in any season: its soil
-  // marks and its ground cover are drawn in the soil's tones only.
+  // The leaf-green pixels of a covered plot are the ungrown seed's and nothing
+  // else, in every season: the ground cover drawn around the seed is confined
+  // to the seed's own leaf-green extent, so no blade of it reads as a sprout.
+  const leafBoxOf = (state) => {
+    const canvas = plotCanvas(state);
+    const image = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+    let minX = Infinity;
+    let maxX = -1;
+    let minY = Infinity;
+    let maxY = -1;
+    for (let y = 0; y < canvas.height; y += 1) {
+      for (let x = 0; x < canvas.width; x += 1) {
+        const i = (y * canvas.width + x) * 4;
+        if (image[i + 3] === 0 || !leafKeys.has(`${image[i]},${image[i + 1]},${image[i + 2]}`)) continue;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+    return maxX < 0 ? null : { minX, maxX, minY, maxY };
+  };
   for (const season of [null, ...SEASONS.map((entry) => entry.key)]) {
-    const state = season ? { ...covered, season: { key: season } } : covered;
-    const leafPixel = firstPixelOfColors(plotCanvas(state), leafKeys);
-    if (leafPixel) {
+    const withSeason = season ? { season: { key: season } } : {};
+    const seedBox = leafBoxOf({ ...bare, ...withSeason });
+    if (!seedBox) {
       problems.push(
-        `a covered plot with no ungrown seed or grown plant draws a leaf-green pixel rgb(${leafPixel}) ` +
+        `an ungrown seed drew no leaf-green pixel${season ? ` in ${season}` : ""}, so the ground cover's ` +
+          "colours cannot be told from the seed's own."
+      );
+      continue;
+    }
+    const canvas = plotCanvas({ ...covered, ...withSeason });
+    const image = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+    let stray = null;
+    for (let y = 0; y < canvas.height && !stray; y += 1) {
+      for (let x = 0; x < canvas.width; x += 1) {
+        const i = (y * canvas.width + x) * 4;
+        if (image[i + 3] === 0 || !leafKeys.has(`${image[i]},${image[i + 1]},${image[i + 2]}`)) continue;
+        if (x < seedBox.minX || x > seedBox.maxX || y < seedBox.minY || y > seedBox.maxY) {
+          stray = `rgb(${image[i]},${image[i + 1]},${image[i + 2]}) at (${x}, ${y})`;
+        }
+      }
+    }
+    if (stray) {
+      problems.push(
+        `a covered plot's ground draws a leaf-green pixel ${stray} outside the ungrown seed's own sprite ` +
           (season ? `in ${season}` : "with no season") +
-          ", so a mark of bare soil or ground cover reads as a growing thing."
+          ", so a mark of ground cover reads as a growing thing."
       );
     }
   }
@@ -3206,14 +3489,21 @@ function checkGroundIsNotGrowth(problems) {
     problems.push("a covered plot drew the same soil as a bare one, so the garden's growth is not drawn on the plot at all.");
     return;
   }
-  const seedHeight = changedBoxInCell(plotCanvas({ ...bare, seeds: 1 }), bareCanvas, cell, 0).height;
-  if (seedHeight === 0) {
-    problems.push("an ungrown seed drew nothing on the plot, so its height cannot be compared with the ground cover.");
-  } else if (tallestCover >= seedHeight) {
-    problems.push(
-      `the ground cover rises ${tallestCover}px above a cell's foot, no shorter than the ${seedHeight}px an ungrown ` +
-        "seed stands, so a covered plot reads as a field of plants."
-    );
+  // The seed's own stand — how high its leaf tip rises above its cell's foot,
+  // the same measure the cover's rise is taken in: the smallest growing thing
+  // the plot draws, so the cover must stay strictly shorter than it.
+  const seedBox = leafBoxOf(bare);
+  if (!seedBox) {
+    problems.push("an ungrown seed drew no leaf green, so its height cannot be compared with the ground cover.");
+  } else {
+    const seedRow = Math.floor(seedBox.minY / cell);
+    const seedStand = (seedRow + 1) * cell - seedBox.minY;
+    if (tallestCover >= seedStand) {
+      problems.push(
+        `the ground cover rises ${tallestCover}px above a cell's foot, no shorter than the ${seedStand}px an ` +
+          "ungrown seed stands, so a covered plot reads as a field of plants."
+      );
+    }
   }
 }
 
@@ -8053,22 +8343,39 @@ function checkVisitPresence(problems) {
     JSON.stringify(plotMilestoneTiers(a)) === JSON.stringify(plotMilestoneTiers(b)) &&
     JSON.stringify(groundCover(a)) === JSON.stringify(groundCover(b));
 
-  // A garden with a visitor at it draws worked ground on every bare plot, and
+  // A garden with a visitor at it draws worked ground on its planted plots, and
   // everything the plot counts — its marks, its crowns and its cover — is
-  // unchanged, so presence alone is what differs.
+  // unchanged, so presence alone is what differs. An unplanted plot keeps its
+  // flat bare ground: the visit's furrows are kept out of the empty rooms of an
+  // opened bed, so they still read as countable rooms, and presence is carried
+  // by the planted ground and the visit-present readout instead.
+  const planted = { growth: 0, beds: 1, capacity: PLOT_CAPACITY, seeds: 0, plants: PLOT_CAPACITY };
+  const plantedTended = { ...planted, visitPresent: true };
+  const plantedAlone = { ...planted, visitPresent: false };
+  if (!countsTheSame(plantedTended, plantedAlone)) {
+    problems.push("a state that only changed visitPresent changed what the plot counts; only the drawn ground may differ.");
+  }
+  if (differingCells(plantedTended, plantedAlone).size === 0) {
+    problems.push("a garden with a visit in progress drew the same planted ground as one growing alone, so presence is not drawn.");
+  }
   const bare = { growth: 0, beds: 1, capacity: PLOT_CAPACITY, seeds: 0, plants: 0 };
   const bareTended = { ...bare, visitPresent: true };
   const bareAlone = { ...bare, visitPresent: false };
   if (!countsTheSame(bareTended, bareAlone)) {
     problems.push("a state that only changed visitPresent changed what the plot counts; only the drawn ground may differ.");
   }
-  if (differingCells(bareTended, bareAlone).size === 0) {
-    problems.push("a garden with a visit in progress drew the same bare ground as one growing alone, so presence is not drawn.");
+  if (differingCells(bareTended, bareAlone).size !== 0) {
+    problems.push(
+      "a visit's furrows were drawn into unplanted plots, so an opened bed no longer reads as a set of bare rooms of soil."
+    );
   }
   // A garden with no presence field at all — a sandbox rehearsal — is drawn
-  // exactly as one that says the visit is over.
+  // exactly as one that says the visit is over, planted or not.
   if (plotImage(bare, 0) !== plotImage(bareAlone, 0)) {
     problems.push("a garden with no visitPresent drew differently from one whose visit has ended; the untended look must match.");
+  }
+  if (plotImage(planted, 0) !== plotImage(plantedAlone, 0)) {
+    problems.push("a planted garden with no visitPresent drew differently from one whose visit has ended; the untended look must match.");
   }
 
   // A standing plant is drawn a pixel taller for the visit, so a planted cell
@@ -10207,6 +10514,7 @@ export async function checks() {
     checkPlotMilestoneCrowns(problems);
     checkPlotMarksMatchCounts(problems);
     checkPlotBedEdges(problems);
+    checkUnplantedPlotRooms(problems);
     checkPlotCoverage(problems);
     checkGroundIsNotGrowth(problems);
     checkPlotEstablishment(problems);
