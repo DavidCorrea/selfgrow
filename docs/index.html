@@ -238,15 +238,23 @@
                 <dt class="readout-term">Pollinator</dt>
                 <dd class="readout-value" data-field="pollinator"></dd>
               </div>
-              <!-- What the visitor did by hand this visit: how long it has
-                   lasted and how many plots they sowed and tended. Kept apart
-                   from the seeds the garden sows itself and the plants that
-                   matured while they were away, so a garden they tended reads
-                   differently from one left alone. -->
+              <!-- What this visit holds: whether someone is here right now,
+                   how long it has lasted and how many plots they sowed and
+                   tended by hand. Presence leads the row so a visitor who only
+                   watches is acknowledged beside the plot rather than reading
+                   three zeroes, and the hand-work is kept apart from the seeds
+                   the garden sows itself and the plants that matured while they
+                   were away, so a garden they tended reads differently from one
+                   left alone. Presence is the same value the tended ground and
+                   lifted plants are drawn from. -->
               <div class="readout-row readout-kind">
                 <dt class="readout-term">This visit</dt>
                 <dd class="readout-value readout-kind-value" data-field="visit">
                   <span class="kind-facts">
+                    <span class="kind-fact">
+                      <span class="kind-fact-label">Here now</span>
+                      <span class="kind-fact-value" data-field="visit-present">Yes</span>
+                    </span>
                     <span class="kind-fact">
                       <span class="kind-fact-label">Lasted</span>
                       <span class="kind-fact-value" data-field="visit-seconds">0s</span>
@@ -261,14 +269,6 @@
                     </span>
                   </span>
                 </dd>
-              </div>
-              <!-- Whether someone is at the page right now, the presence the
-                   tended ground and lifted plants are drawn from. Folded to a
-                   screen reader, like the other implied state, so a garden
-                   with a visitor is told apart from one growing alone. -->
-              <div class="readout-row readout-row-sr">
-                <dt class="readout-term">Visit in progress</dt>
-                <dd class="readout-value" data-field="visit-present">Yes</dd>
               </div>
               <!-- What a long absence changed, labelled and paired with the
                    still marks on the plot. It stays until the visitor acts on

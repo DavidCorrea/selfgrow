@@ -8014,7 +8014,10 @@ function checkVisitPresence(problems) {
   }
 
   // The page's own presence, in the state and in the readout, is a boolean a
-  // person and an agent read the same way.
+  // person and an agent read the same way — and it is a fact a person can
+  // actually see. A visitor who only watches meets the acknowledgement inside
+  // the visible 'This visit' facts rather than reading three zeroes beside the
+  // plot while presence hides in a folded-away row of its own.
   const shown = getDisplayedState();
   const field = document.querySelector('[data-field="visit-present"]');
   if (typeof shown.visitPresent !== "boolean") {
@@ -8023,6 +8026,31 @@ function checkVisitPresence(problems) {
   if (!field) {
     problems.push('the page has no [data-field="visit-present"] readout for whether a visit is in progress.');
   } else {
+    const visitValue = document.querySelector('[data-field="visit"]');
+    if (!visitValue || field.closest('[data-field="visit"]') !== visitValue) {
+      problems.push(
+        "the presence readout does not sit in the visible 'This visit' facts (it must live inside " +
+          '[data-field="visit"]), so a watching visitor never meets it beside the plot.'
+      );
+    }
+    if (field.closest(".readout-row-sr")) {
+      problems.push(
+        "the presence readout is folded into a .readout-row-sr, so a visitor who only watches cannot see it; " +
+          "it must be a visible fact of the 'This visit' row."
+      );
+    }
+    const fact = field.closest(".kind-fact");
+    const label = fact ? String(fact.querySelector(".kind-fact-label")?.textContent ?? "").trim() : "";
+    if (!label) {
+      problems.push("the presence readout sits under no label, so a visitor reads Yes/No with nothing naming it.");
+    }
+    const rect = field.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) {
+      problems.push(
+        `the presence readout takes no visible space (${Math.round(rect.width)}x${Math.round(rect.height)}px), ` +
+          "so a visitor cannot see whether someone is here now."
+      );
+    }
     const expected = shown.visitPresent ? "Yes" : "No";
     if (String(field.textContent).trim() !== expected) {
       problems.push(
