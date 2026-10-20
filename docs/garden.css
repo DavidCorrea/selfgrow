@@ -404,6 +404,28 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* The ground the lifetime has made shares the lifetime's own line, beside the
+   number it is derived from: a short label and the tier it has reached, at the
+   rate's size rather than the hero number's. The band the plot draws at its
+   foot is thus named on screen without the readout taking a line of its own,
+   and it wraps within the row rather than pushing the garden below the fold. */
+.readout-ground {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.readout-ground-label {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
 /* Each kind of seed keeps a row of its own — the two things the plot draws in
    two different ways, named here. Six facts per kind do not fit half a phone's
    readout, so each row takes the full width and its facts wrap into a couple of

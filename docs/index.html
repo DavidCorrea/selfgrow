@@ -75,23 +75,23 @@
                   <span class="readout-rate" id="growth-rate">+0.0/s</span>
                 </dd>
               </div>
-              <!-- What the garden has grown over its whole life, and what a
-                   replant right now would earn from it. One row, because the
-                   bonus is a reading of the lifetime rather than a second
-                   number of its own. -->
+              <!-- What the garden has grown over its whole life, what a replant
+                   right now would earn from it, and the ground that history
+                   has made. One row, because the bonus and the ground are both
+                   readings of the lifetime rather than numbers of their own —
+                   and the ground shares this line so the band the plot draws
+                   at its foot carries a visible name without the readout
+                   taking a row of a phone's first screen. -->
               <div class="readout-row">
                 <dt class="readout-term">Lifetime growth</dt>
                 <dd class="readout-value readout-growth">
                   <span id="lifetime-total" data-field="lifetime">0.0</span>
                   <span class="readout-rate" id="replant-bonus" data-field="replant-bonus">replant now +0</span>
+                  <span class="readout-ground">
+                    <span class="readout-ground-label">Ground</span>
+                    <span id="established-total" data-field="established">fresh ground</span>
+                  </span>
                 </dd>
-              </div>
-              <!-- The lasting layer the plot draws from the lifetime: the ground
-                   the garden's history has made, named so a screen reader hears
-                   what the picture shows without taking a line of the screen. -->
-              <div class="readout-row readout-row-sr">
-                <dt class="readout-term">Ground</dt>
-                <dd class="readout-value" data-field="established">fresh ground</dd>
               </div>
               <!-- The lasting bonus a replant has earned, added flat to the
                    growth rate. Shown only once a replant has happened. -->
