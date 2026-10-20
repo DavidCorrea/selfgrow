@@ -3344,11 +3344,38 @@ function checkPlotEstablishment(problems) {
         'the page has no ground readout (expected [data-field="established"]), so the lasting layer is not stated ' +
           "in words."
       );
-    } else if (String(groundEl.textContent).trim() !== state.established.name) {
-      problems.push(
-        `the page names the ground ${JSON.stringify(String(groundEl.textContent).trim())}, but the plot draws ` +
-          `${JSON.stringify(state.established.name)}.`
-      );
+    } else {
+      if (String(groundEl.textContent).trim() !== state.established.name) {
+        problems.push(
+          `the page names the ground ${JSON.stringify(String(groundEl.textContent).trim())}, but the plot draws ` +
+            `${JSON.stringify(state.established.name)}.`
+        );
+      }
+      // The band at the foot of the plot is a lasting layer of the lifetime, so
+      // the label that names it must be one a sighted visitor can read: an
+      // unnamed dark band reads as a fence. It folds into an existing visible
+      // line rather than taking a row of its own, which is what keeps the
+      // phone's first screen intact.
+      if (groundEl.closest(".readout-row-sr")) {
+        problems.push(
+          "the ground readout is folded into a .readout-row-sr, so a sighted visitor sees an unnamed band at the " +
+            "foot of the plot and reads it as a fence; it must be a visible fact beside the lifetime."
+        );
+      }
+      const groundFact = groundEl.closest(".readout-ground");
+      const label = groundFact ? String(groundFact.querySelector(".readout-ground-label")?.textContent ?? "").trim() : "";
+      if (!label) {
+        problems.push("the ground readout sits under no label, so a visitor reads a tier name with nothing naming it.");
+      } else if (!/ground/i.test(label)) {
+        problems.push(`the ground readout is labelled ${JSON.stringify(label)}, expected a label naming the ground.`);
+      }
+      const rect = groundEl.getBoundingClientRect();
+      if (rect.width < 1 || rect.height < 1) {
+        problems.push(
+          `the ground readout takes no visible space (${Math.round(rect.width)}x${Math.round(rect.height)}px), so a ` +
+            "visitor cannot match the band at the foot of the plot to a label."
+        );
+      }
     }
     const lifetimeEl = document.querySelector('[data-field="lifetime"]');
     if (lifetimeEl && String(lifetimeEl.textContent).trim() !== formatGrowth(state.lifetimeGrowth)) {
@@ -3369,6 +3396,46 @@ function checkPlotEstablishment(problems) {
           `the plot draws from (${state.lifetimeGrowth}) is worth ${state.replantBonus}.`
       );
     }
+
+    // The label is in step with the band: the same lifetime the plot draws its
+    // ground from names it on the line, and crossing a tier's threshold renames
+    // both together, so the words and the picture can never name different
+    // grounds.
+    const turned = establishment(250);
+    const deep = establishment(1e9);
+    if (turned.name === deep.name) {
+      problems.push(
+        `lifetimes of 250 and 1e9 are the same establishment tier (${turned.name}), so this check cannot tell one ` +
+          "ground from another."
+      );
+    } else {
+      const namedAt = (lifetime) => {
+        setGrowth(0, 0, 0, lifetime, 0);
+        const el = document.querySelector('[data-field="established"]');
+        return el ? String(el.textContent).trim() : "";
+      };
+      const shownTurned = namedAt(250);
+      const shownDeep = namedAt(1e9);
+      if (shownTurned !== turned.name) {
+        problems.push(
+          `the page names the ground ${JSON.stringify(shownTurned)} at a lifetime of 250, but the plot draws ` +
+            `${JSON.stringify(turned.name)}.`
+        );
+      }
+      if (shownDeep !== deep.name) {
+        problems.push(
+          `the page names the ground ${JSON.stringify(shownDeep)} at a lifetime of 1e9, but the plot draws ` +
+            `${JSON.stringify(deep.name)}.`
+        );
+      }
+      if (shownTurned === shownDeep) {
+        problems.push(
+          `the page names the same ground ${JSON.stringify(shownTurned)} at lifetimes of 250 and 1e9, so the label ` +
+            "does not follow the band into a new tier."
+        );
+      }
+    }
+
     // The number the picture draws from is the number the readout holds: the
     // same plot drawn with no history at all is a different picture.
     const drawn = { growth: 0, beds: 1, seeds: 1, plants: 0, lifetimeGrowth: state.lifetimeGrowth };
