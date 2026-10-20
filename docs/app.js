@@ -65,6 +65,7 @@ import {
 import {
   FORMS,
   drawGarden,
+  drawHandWorkGlyph,
   drawKindSwatch,
   establishment,
   gardenForm,
@@ -146,6 +147,8 @@ const elements = {
   kindBloom: readKindRow("bloom"),
   kindHerbSwatch: document.getElementById("kind-herb-swatch"),
   kindBloomSwatch: document.getElementById("kind-bloom-swatch"),
+  visitSownGlyph: document.getElementById("visit-sown-glyph"),
+  visitTendedGlyph: document.getElementById("visit-tended-glyph"),
   goalTitle: document.getElementById("goal-title"),
   goalDetail: document.getElementById("goal-detail"),
   meter: document.getElementById("seed-meter"),
@@ -1800,6 +1803,11 @@ function render() {
     // seed on the plot and find the row that counts it.
     drawKindSwatch(elements.kindHerbSwatch, "herb", state, readPalette());
     drawKindSwatch(elements.kindBloomSwatch, "bloom", state, readPalette());
+    // The plot's own hand-work marks drawn beside the facts that count them, so
+    // a standing sign or a hoe cut on the soil can be traced to its label. Each
+    // depends only on the season, so the state-change redraw above is enough.
+    drawHandWorkGlyph(elements.visitSownGlyph, "sown", state, readPalette());
+    drawHandWorkGlyph(elements.visitTendedGlyph, "tended", state, readPalette());
     lastPlotKey = plotKey;
   }
 }

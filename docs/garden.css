@@ -456,6 +456,22 @@ body {
   image-rendering: pixelated;
 }
 
+/* A hand-work mark the plot draws — the standing sign of a plot the visitor
+   sowed by hand and the hoe cut of one they tended — shown beside the fact that
+   counts it, so a mark on the soil can be traced to its label. Like the kind
+   swatches it is a picture, not a fact: it holds no text and is hidden from
+   assistive technology, so each fact still reads as a label and a value.
+   Rendered pixelated at the plot's own cell size, so the mark stays as crisp on
+   the panel as it is on the soil. */
+.hand-work-glyph {
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+  margin-right: 4px;
+  vertical-align: middle;
+  image-rendering: pixelated;
+}
+
 /* The facts sit on two lines by design — what the kind holds and what a plant
    earns, then what comes next — because the six of them in one wrapping line
    need three at a phone's width. Each line still wraps if a number outgrows

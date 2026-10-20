@@ -616,8 +616,12 @@ function drawWorkedGround(ctx, x, y, palette) {
  * beneath every sprite and edge, so it can never obscure a seed, a plant or the
  * plot it sits in. It reads no animation phase, so it holds still in the single
  * frame reduced motion pins to.
+ *
+ * It is exported because the readout draws the very same cut as a small glyph
+ * beside the 'Tended' fact, so the mark on the plot and the label that counts it
+ * come from one function and cannot show a different shape.
  */
-function drawTendedWorkMark(ctx, x, y, palette) {
+export function drawTendedWorkMark(ctx, x, y, palette) {
   // The hoe's cut: a short diagonal scar down the cell's upper band, deep on
   // its lower edge with a lit lip above it.
   ctx.fillStyle = palette.soilDeep;
@@ -1321,8 +1325,12 @@ function drawMark(ctx, mark, palette, foliage, formIndex, growthTier, sway, mile
  * untouched plot can be mistaken for one. It reads no animation phase, so it
  * holds still in the single frame reduced motion pins to, and it is drawn over
  * the sprite on its cell, where the visitor can point at the plots they worked.
+ *
+ * It is exported because the readout draws the very same sign as a small glyph
+ * beside the 'Sown by hand' fact, so the mark on the plot and the label that
+ * counts it come from one function and cannot show a different shape.
  */
-function drawTendedSign(ctx, x, y, palette) {
+export function drawTendedSign(ctx, x, y, palette) {
   const base = y + CELL;
   const centre = x + CELL / 2;
   // The stake, planted in the soil under the board.
@@ -1608,6 +1616,40 @@ export function drawKindSwatch(canvas, kind, state, palette) {
   drawSeed(ctx, 0, 0, paint, 0, bloom);
   if (bloom) drawBloomPlant(ctx, CELL, 0, paint, look.foliage, form.index, growthTier, 0);
   else drawPlant(ctx, CELL, 0, paint, look.foliage, form.index, growthTier, 0);
+}
+
+/**
+ * Draw one hand-work mark into a small legend cell: the standing sign a plot the
+ * visitor sowed by hand carries, or the hoe cut of a plot they tended by hand,
+ * drawn exactly as the plot draws them.
+ *
+ * The readout counts the hand-work and the plot marks the plots it happened on,
+ * but nothing else ties a drawn mark to the row that counts it, so a visitor has
+ * to guess what a sign or a cut on the soil means. This fills one plot cell with
+ * the same ground the plot lays under its marks and calls the very function the
+ * plot paints the mark with — `drawTendedSign` or `drawTendedWorkMark` — from
+ * the same season, so a glyph and the mark on the plot can never show a
+ * different shape or colour. The canvas carries no text, so the fact it sits
+ * beside still reads as a label and its value.
+ *
+ * `kind` is the mark's own key (`"sown"` or `"tended"`) and `state` the same
+ * state `drawGarden` is given, so the glyph follows the plot's season with it.
+ */
+export function drawHandWorkGlyph(canvas, kind, state, palette) {
+  if (!canvas || !palette) return;
+  const paint = seasonLook(palette, state?.season?.key).palette;
+  if (canvas.width !== CELL) canvas.width = CELL;
+  if (canvas.height !== CELL) canvas.height = CELL;
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.imageSmoothingEnabled = false;
+  // The same ground the plot draws the mark on, so the glyph reads as a little
+  // plot of soil with the visitor's own mark on it.
+  ctx.fillStyle = paint.soil;
+  ctx.fillRect(0, 0, CELL, CELL);
+  if (kind === "sown") drawTendedSign(ctx, 0, 0, paint);
+  else drawTendedWorkMark(ctx, 0, 0, paint);
 }
 
 /**
