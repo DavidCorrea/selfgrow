@@ -68,6 +68,7 @@ import {
   drawGarden,
   drawHandWorkGlyph,
   drawKindSwatch,
+  drawReturnMarkGlyph,
   establishment,
   gardenForm,
   motionPhase,
@@ -170,7 +171,7 @@ const elements = {
   description: document.getElementById("plot-description"),
   returnSummary: document.getElementById("return-summary"),
   gardenStatus: document.getElementById("garden-status"),
-  returnMarks: document.querySelector('[data-field="return-marks"]'),
+  returnMarks: readReturnFacts(),
   returnMarksRow: document.getElementById("return-marks-row"),
   visitSeconds: document.querySelector('[data-field="visit-seconds"]'),
   visitSown: document.querySelector('[data-field="visit-sown"]'),
@@ -1306,15 +1307,41 @@ function describeNextBed(state) {
   return `${cost} growth · ${percent}% saved`;
 }
 
-/** What the return marked on the garden, as the readout states it. */
-function describeReturnMarks(marks) {
-  if (!marks) return "";
-  const parts = [];
-  if (marks.plants > 0) parts.push(`${countLabel(marks.plants, "plant", "plants")} matured`);
-  if (marks.sown > 0) parts.push(countLabel(marks.sown, "seed sown", "seeds sown"));
-  if (marks.form) parts.push("a new form reached");
-  if (marks.season) parts.push(`turned into ${marks.season.to}`);
-  return parts.join(" · ");
+/**
+ * What the return marked on the garden, as the facts the readout states. Each
+ * mark the plot draws — a tick, a ring, the frame of a new form, the disc of a
+ * turned season — is one of these facts, keyed by the mark it counts and
+ * carrying only the value: the label sits in the markup beside the glyph, which
+ * never changes. A mark the return did not leave is left out entirely, so the
+ * row states exactly what stands on the soil.
+ *
+ * @returns {Map<string, string>} the mark's key and the value beside its glyph.
+ */
+function returnMarkFacts(state) {
+  const marks = state.returnMarks;
+  const facts = new Map();
+  if (!marks) return facts;
+  if (marks.plants > 0) facts.set("matured", countLabel(marks.plants, "plant", "plants"));
+  if (marks.sown > 0) facts.set("sown", countLabel(marks.sown, "seed", "seeds"));
+  if (marks.form) facts.set("form", state.formName);
+  if (marks.season) facts.set("season", marks.season.to);
+  return facts;
+}
+
+/**
+ * The return's account: the row itself, and each fact's count beside the glyph
+ * the plot draws for that mark. A fact is shown only while the return still
+ * marks it, so the glyphs go with the row when the visitor dismisses the return
+ * or acts on the garden.
+ */
+function renderReturnMarks(state) {
+  if (elements.returnMarksRow) elements.returnMarksRow.hidden = !state.returnMarks;
+  const facts = returnMarkFacts(state);
+  for (const [mark, fact] of elements.returnMarks) {
+    const value = facts.get(mark);
+    if (fact.row) fact.row.hidden = value === undefined;
+    if (value !== undefined) setText(fact.value, value);
+  }
 }
 
 /**
@@ -1496,6 +1523,26 @@ function readKindRow(key, prefix = "kind") {
     [...(row?.querySelectorAll("[data-field]") ?? [])].map((span) => [span.dataset.field, span])
   );
   return { row, values };
+}
+
+/**
+ * The four facts a return can leave, keyed by the mark each counts: the element
+ * the fact sits in, the value beside its label, and the canvas the plot's own
+ * mark is drawn into. The markup holds all four; which of them a return shows is
+ * decided by the state it left.
+ */
+function readReturnFacts() {
+  const marks = ["matured", "sown", "form", "season"];
+  return new Map(
+    marks.map((mark) => [
+      mark,
+      {
+        row: document.querySelector(`[data-return-fact="${mark}"]`),
+        value: document.querySelector(`[data-field="return-${mark}"]`),
+        glyph: document.getElementById(`return-${mark}-glyph`),
+      },
+    ])
+  );
 }
 
 /**
@@ -1764,8 +1811,7 @@ function render() {
   setText(elements.beds, formatAmount(state.beds));
   setText(elements.capacity, formatAmount(state.capacity));
   renderReadoutFacts(elements.pollinator, describePollinator(state));
-  setText(elements.returnMarks, describeReturnMarks(state.returnMarks));
-  if (elements.returnMarksRow) elements.returnMarksRow.hidden = !state.returnMarks;
+  renderReturnMarks(state);
   setText(elements.visitSeconds, formatDuration(state.visit.seconds));
   setText(elements.visitSown, formatAmount(state.visit.sown));
   setText(elements.visitTended, formatAmount(state.visit.tended));
@@ -1824,6 +1870,15 @@ function render() {
     // depends only on the season, so the state-change redraw above is enough.
     drawHandWorkGlyph(elements.visitSownGlyph, "sown", state, readPalette());
     drawHandWorkGlyph(elements.visitTendedGlyph, "tended", state, readPalette());
+    // The plot's own return marks drawn beside the facts that count them, so a
+    // tick, a ring, a form's frame or a season's disc on the soil can be traced
+    // to its label. Only drawn while the return still marks something; the row
+    // that holds them goes when it does not.
+    if (state.returnMarks) {
+      for (const [mark, fact] of elements.returnMarks) {
+        drawReturnMarkGlyph(fact.glyph, mark, state, readPalette());
+      }
+    }
     lastPlotKey = plotKey;
   }
 }

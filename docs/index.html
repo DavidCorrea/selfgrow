@@ -296,11 +296,57 @@
               <!-- What a long absence changed, labelled and paired with the
                    still marks on the plot. It stays until the visitor acts on
                    the garden or dismisses it, so the evidence of the absence
-                   is never lost to a timer. -->
+                   is never lost to a timer. Each mark the plot draws has its
+                   own fact here — a matured plant's tick, the ring of a seed
+                   the garden sowed, the frame of a new form, the disc of a
+                   turned season — and each fact carries that very mark as a
+                   small picture, hidden from assistive technology, so a mark
+                   on the soil can be pointed at and found in this account. -->
               <div class="readout-row" id="return-marks-row" hidden>
                 <dt class="readout-term">New since you left</dt>
-                <dd class="readout-value return-marks-value">
-                  <span data-field="return-marks"></span>
+                <dd class="readout-value return-marks-value" data-field="return-marks">
+                  <span class="kind-facts">
+                    <span class="kind-fact" data-return-fact="matured" hidden>
+                      <span class="kind-fact-label"><canvas
+                        id="return-matured-glyph"
+                        class="return-mark-glyph"
+                        width="24"
+                        height="24"
+                        aria-hidden="true"
+                      ></canvas>Matured</span>
+                      <span class="kind-fact-value" data-field="return-matured">0</span>
+                    </span>
+                    <span class="kind-fact" data-return-fact="sown" hidden>
+                      <span class="kind-fact-label"><canvas
+                        id="return-sown-glyph"
+                        class="return-mark-glyph"
+                        width="24"
+                        height="24"
+                        aria-hidden="true"
+                      ></canvas>Sown</span>
+                      <span class="kind-fact-value" data-field="return-sown">0</span>
+                    </span>
+                    <span class="kind-fact" data-return-fact="form" hidden>
+                      <span class="kind-fact-label"><canvas
+                        id="return-form-glyph"
+                        class="return-mark-glyph"
+                        width="24"
+                        height="24"
+                        aria-hidden="true"
+                      ></canvas>New form</span>
+                      <span class="kind-fact-value" data-field="return-form"></span>
+                    </span>
+                    <span class="kind-fact" data-return-fact="season" hidden>
+                      <span class="kind-fact-label"><canvas
+                        id="return-season-glyph"
+                        class="return-mark-glyph"
+                        width="24"
+                        height="24"
+                        aria-hidden="true"
+                      ></canvas>Turned to</span>
+                      <span class="kind-fact-value" data-field="return-season"></span>
+                    </span>
+                  </span>
                   <button type="button" class="btn return-dismiss" id="dismiss-return">Dismiss</button>
                 </dd>
               </div>
