@@ -249,6 +249,15 @@ const BED_CELLS = COLUMNS * BASE_ROWS;
 // 144px against the plots' 96px, which the plot's own `object-fit: contain`
 // absorbs.
 const HOME_CELL = CELL * 2;
+// The two cells across the home's strip: the one the hive stands on and the one
+// the visiting bee hovers over.
+const HOME_STRIP_COLUMNS = HOME_CELL / CELL;
+// Where the strip's own cells start in the hashing space, past the row cap's
+// last plot cell. The strip is garden ground and carries the same soil marks,
+// aged ground and ground growth as the plots, so it needs cells of its own: keyed
+// past every plot cell they never collide with a plot's mark and stay bounded by
+// the row cap however large the save grows.
+const HOME_STRIP_CELL_BASE = MAX_ROWS * COLUMNS;
 
 /** How many rows of soil this form has spread to. */
 function rowsForForm(index) {
@@ -303,6 +312,33 @@ export function plotBounds(state) {
     canvasWidth: width + HOME_CELL,
     home: { x: width, y: 0, width: HOME_CELL, height: CELL },
   };
+}
+
+/**
+ * The ground beside the plots, cell by cell: the whole strip the pollinator's
+ * home stands on, every row of it rather than only the row the hive occupies.
+ *
+ * The strip is the garden's own ground, drawn with the same soil marks, aged
+ * ground and ground growth as every plot, so the ground beside the beds reads as
+ * garden rather than as a bare margin. Its cells are keyed past every plot cell,
+ * so their marks are stable, never collide with a plot's and stay bounded by the
+ * row cap. Pure, so the strip's ground can be asserted without a canvas.
+ *
+ * @returns {Array<{cell: number, x: number, y: number}>}
+ */
+export function homeGroundCells(state) {
+  const { rows, home } = plotBounds(state);
+  const ground = [];
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < HOME_STRIP_COLUMNS; column += 1) {
+      ground.push({
+        cell: HOME_STRIP_CELL_BASE + row * HOME_STRIP_COLUMNS + column,
+        x: home.x + column * CELL,
+        y: row * CELL,
+      });
+    }
+  }
+  return ground;
 }
 
 // --- Breathing --------------------------------------------------------------
@@ -1454,7 +1490,12 @@ function drawPlotEdges(ctx, palette, grid) {
  * plot against the panel's 'Plots of soil' beside it and one bed reads as its own
  * room of soil. The pollinator's home stands on a strip of ground past the last
  * plot column, outside that rim, so it is drawn beside the garden rather than
- * over a plot and every seed and plant among the plots stays countable.
+ * over a plot and every seed and plant among the plots stays countable. That
+ * strip is the garden's own ground: every cell of it, in every row, carries the
+ * same soil marks, aged ground and ground growth the plots carry, so the ground
+ * beside the beds reads as garden rather than as a flat band that belongs to
+ * nothing — while no bed rim or mark stands on it, so nothing on the strip can
+ * be miscounted as a plot or a seed.
  *
  * The lifetime is a second, lasting layer under all of it: `state.lifetimeGrowth`
  * — the same value the readout and `get-state` report — decides how much of the
@@ -1529,16 +1570,22 @@ export function drawGarden(canvas, state, palette, phase = 0) {
   const tended = Boolean(state && state.visitPresent);
   // The garden's own growth, not only the plants it owns, fills the soil.
   const cover = groundCover(state);
-  for (let cell = 0; cell < cells; cell += 1) {
-    const x = (cell % COLUMNS) * CELL;
-    const y = Math.floor(cell / COLUMNS) * CELL;
-    drawSoil(ctx, x, y, paint, look.foliage, soilFace(cell, look.key), cell, occupied.has(cell), look.key);
+  // One cell of the garden's ground: the soil's own face, the ground its history
+  // has aged and the growth it covers that ground with. Every plot and every
+  // cell of the home's strip beside them carry these same three layers.
+  const drawCellGround = (x, y, cell, isOccupied) => {
+    drawSoil(ctx, x, y, paint, look.foliage, soilFace(cell, look.key), cell, isOccupied, look.key);
     // The ground the garden's lifetime has aged goes on under the ground its
     // current growth covers, so an old plot reads as deeper soil and a
     // replanted one still shows what its growth no longer does.
     if (agedHash(cell) < aged) drawAgedGround(ctx, x, y, paint, cell);
     // Ground growth goes on first, so the planted sprites stand out of it.
     if (cellHash(cell) < cover.ratio) drawGroundGrowth(ctx, x, y, paint, cell);
+  };
+  for (let cell = 0; cell < cells; cell += 1) {
+    const x = (cell % COLUMNS) * CELL;
+    const y = Math.floor(cell / COLUMNS) * CELL;
+    drawCellGround(x, y, cell, occupied.has(cell));
     // The furrows of a tended visit go on over the ground, under the edges and
     // the sprites, so every plot of a garden with a visitor reads as worked.
     if (tended) drawWorkedGround(ctx, x, y, paint);
@@ -1546,6 +1593,16 @@ export function drawGarden(canvas, state, palette, phase = 0) {
     // under the edges and the sprites, so the 'Tended' number beside the garden
     // is drawn on the plot and grows with the visitor's own hand-work.
     if (workedCells.has(cell)) drawTendedWorkMark(ctx, x, y, paint);
+  }
+  // The ground beside the plots is the garden's own ground, so the strip the
+  // pollinator's home stands on carries the plots' soil marks, aged ground and
+  // ground growth in every row — not only the row the hive occupies, which would
+  // leave the rest of the strip a flat band belonging to nothing. Its cells are
+  // marked as occupied, so no weed tuft on uncounted ground can be read as a
+  // seed standing beside the plots, and it is drawn before the hive so the home
+  // and the bee stand on top of it.
+  for (const { cell, x, y } of homeGroundCells(state)) {
+    drawCellGround(x, y, cell, true);
   }
   // The bed edge goes on over the soil's own face, furrows and growth, so the
   // soil's marks cannot bury it: every plot of soil is drawn as its own plot and
@@ -1556,9 +1613,11 @@ export function drawGarden(canvas, state, palette, phase = 0) {
   // retaining lip its lifetime has laid at the foot of the plot and the band of
   // aged earth behind it, so an established garden's bottom edge reads as the
   // ground the garden has worked rather than a wall standing in front of it.
-  // Nothing here reads the phase, so it holds in the still frame.
+  // It runs across the whole canvas — the home's strip included — so the foot of
+  // the ground is one unbroken edge to the panel's edge beside the beds. Nothing
+  // here reads the phase, so it holds in the still frame.
   const edge = groundEdge(established);
-  if (edge.lipHeight > 0) drawGroundEdge(ctx, paint, width, height, edge);
+  if (edge.lipHeight > 0) drawGroundEdge(ctx, paint, canvasWidth, height, edge);
   // Every seed and plant the readout counts, drawn on its own cell. The herb
   // plants stand first, then the blooms, then the seeds of each kind. A grown
   // plant of a kind that has earned a milestone wears a crown, so the doubled
