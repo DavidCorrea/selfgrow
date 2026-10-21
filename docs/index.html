@@ -73,6 +73,11 @@
                 <dd class="readout-value readout-growth">
                   <span id="growth-total" data-field="growth">0.0</span>
                   <span class="readout-rate" id="growth-rate">+0.0/s</span>
+                  <!-- The extra the garden earns only while someone is here.
+                       A short labelled rate beside the growth number, so the
+                       watched garden's advantage is named rather than implied.
+                       Hidden while no visit is in progress. -->
+                  <span class="readout-rate readout-presence" id="presence-rate" hidden>+0.5/s here</span>
                 </dd>
               </div>
               <!-- What the garden has grown over its whole life, what a replant
