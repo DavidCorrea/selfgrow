@@ -246,9 +246,11 @@ const SEASON_KEYS = ["winter", "spring", "summer", "autumn"];
  *
  * `leafSeasons` and `soilSeasons` hold each season's own leaf and ground trios
  * beside the base ones, so the plot can swap the foliage and the ground for the
- * season it is drawing without a second source of colour anywhere. A season
- * whose ground variables are unset falls back to the base soil, which is how
- * summer stays the brown the plot has always been drawn in.
+ * season it is drawing without a second source of colour anywhere. Each season's
+ * trio also carries `soilEmpty`, the bare-soil tone its unplanted plots are
+ * filled with; a season whose ground variables are unset falls back to the base
+ * soil, which is how summer stays the brown the plot has always been drawn in,
+ * and a season without its own empty tone falls back to the base one.
  */
 export function readPalette() {
   if (palette) return palette;
@@ -263,11 +265,13 @@ export function readPalette() {
     soil: read(`--soil-${season}`) || read("--soil"),
     soilLight: read(`--soil-${season}-light`) || read("--soil-light"),
     soilDeep: read(`--soil-${season}-deep`) || read("--soil-deep"),
+    soilEmpty: read(`--soil-${season}-empty`) || read("--soil-empty"),
   });
   palette = {
     soil: read("--soil"),
     soilDeep: read("--soil-deep"),
     soilLight: read("--soil-light"),
+    soilEmpty: read("--soil-empty"),
     leaf: read("--leaf"),
     leafLight: read("--leaf-light"),
     leafDeep: read("--leaf-deep"),

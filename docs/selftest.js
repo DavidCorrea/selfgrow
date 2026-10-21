@@ -3081,6 +3081,175 @@ function plotEdgeProblems(state, label) {
   return problems;
 }
 
+/**
+ * Every unplanted plot is drawn as a bounded room of bare soil, distinct from
+ * the open ground around its bed.
+ *
+ * `soilEmpty` is the tone the picture promises for a plot with nothing on it,
+ * and every plot is closed on all four sides by its own boundary, so an opened
+ * bed reads as a countable set of empty rooms at the phone's size as well as on
+ * a desktop. `label` names the garden in each message, so a failure says which
+ * picture could not be counted.
+ */
+function plotRoomProblems(state, label) {
+  const palette = readPalette();
+  const emptyKey = colorKey(parseColor(palette.soilEmpty));
+  const boundaryKeys = new Set([
+    colorKey(parseColor(palette.soilLight)),
+    colorKey(parseColor(palette.soilDeep)),
+  ]);
+  const bounds = plotBounds(state);
+  const canvas = plotCanvas(state);
+  const data = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+  const pixelAt = (x, y) => {
+    const i = (y * canvas.width + x) * 4;
+    return `${data[i]},${data[i + 1]},${data[i + 2]}`;
+  };
+  const occupied = new Set(plotMarks(state).map((mark) => mark.cell));
+  // The open field the bed sits in, read from the same render: the home's strip
+  // past the last plot column carries no plot of its own.
+  const fieldKey = pixelAt(bounds.canvasWidth - 2, bounds.height - 2);
+  // A probe a quarter down the cell, clear of the worked ground the lifetime
+  // may lay at the plot's foot, so the room itself is measured.
+  const probeInset = Math.floor(bounds.cell / 4);
+  const problems = [];
+  if (emptyKey === fieldKey) {
+    problems.push(
+      `${label}: the bare-soil tone rgb(${emptyKey}) is the same as the open field around the bed, so an unplanted ` +
+        "plot cannot be told from open ground."
+    );
+  }
+  let empty = 0;
+  for (const plot of plotCells(state).plots) {
+    if (occupied.has(plot.cell)) continue;
+    empty += 1;
+    const left = plot.column * bounds.cell;
+    const top = plot.row * bounds.cell;
+    const centreX = left + Math.floor(bounds.cell / 2);
+    const probeY = top + probeInset;
+    const where = `the unplanted plot at column ${plot.column}, row ${plot.row}`;
+    if (pixelAt(centreX, probeY) !== emptyKey) {
+      problems.push(
+        `${label}: ${where} has interior rgb(${pixelAt(centreX, probeY)}) in its upper cell, not the palette bare-soil ` +
+          `tone rgb(${emptyKey}), so an empty plot is not drawn as its own room of soil.`
+      );
+      continue;
+    }
+    // Every side carries the plot's own boundary, so the room is a countable
+    // plot and not an unbounded patch of the open field.
+    for (const [side, x, y] of [
+      ["top", centreX, top],
+      ["left", left, probeY],
+      ["foot", centreX, top + bounds.cell - 1],
+      ["right", left + bounds.cell - 1, probeY],
+    ]) {
+      if (!boundaryKeys.has(pixelAt(x, y))) {
+        problems.push(
+          `${label}: ${where} has no boundary at its ${side} side — pixel (${x}, ${y}) is rgb(${pixelAt(x, y)}), ` +
+            "not a palette soil tone — so the plot is not closed and cannot be counted."
+        );
+        break;
+      }
+    }
+  }
+  if (empty === 0) {
+    problems.push(`${label}: the scene draws no unplanted plot, so the empty rooms cannot be checked.`);
+  }
+  return problems;
+}
+
+/**
+ * The garden's own mottle is kept out of an unplanted plot, so an empty room is
+ * flat bare soil however long the garden has worked the field around it.
+ *
+ * An old garden and a fresh one draw the same pixels in every unplanted plot
+ * that the worked ground the lifetime lays at the plot's foot does not reach, so
+ * an aged clod or the open field's own soil face drawn in an empty plot trips
+ * this. The built ground itself — the retaining band, its lip and the tier
+ * markers over it — covers only the plot's last row of cells, so that row is the
+ * lifetime layer that must show and is left to the edge checks.
+ */
+function plotEmptyMottleProblems(state, label) {
+  const bounds = plotBounds(state);
+  const imageOf = (lifetimeGrowth) => {
+    const canvas = plotCanvas({ ...state, lifetimeGrowth });
+    return canvas.getContext("2d").getImageData(0, 0, bounds.width, bounds.height).data;
+  };
+  const old = imageOf(1e9);
+  const fresh = imageOf(0);
+  const occupied = new Set(plotMarks(state).map((mark) => mark.cell));
+  const problems = [];
+  let checked = 0;
+  for (const plot of plotCells(state).plots) {
+    if (occupied.has(plot.cell) || plot.row === bounds.rows - 1) continue;
+    checked += 1;
+    const left = plot.column * bounds.cell;
+    const top = plot.row * bounds.cell;
+    let mismatch = null;
+    for (let y = top; y < top + bounds.cell && !mismatch; y += 1) {
+      for (let x = left; x < left + bounds.cell; x += 1) {
+        const i = (y * bounds.width + x) * 4;
+        if (old[i] !== fresh[i] || old[i + 1] !== fresh[i + 1] || old[i + 2] !== fresh[i + 2]) {
+          mismatch = `(${x}, ${y})`;
+          break;
+        }
+      }
+    }
+    if (mismatch) {
+      problems.push(
+        `${label}: an old and a fresh garden draw different pixels in the unplanted plot at column ${plot.column}, ` +
+          `row ${plot.row} — first difference at ${mismatch} — so the ground's mottle still fills an empty plot.`
+      );
+      break;
+    }
+  }
+  if (checked === 0) {
+    problems.push(`${label}: no unplanted plot sits clear of the built ground, so the mottle cannot be checked.`);
+  }
+  return problems;
+}
+
+/**
+ * A plot's boundary stays visible at the smallest size the plot is ever drawn.
+ *
+ * The drawn plot is scaled to fit the phone's capped height (`24dvh` of 844px)
+ * and the phone's 390px width, where a boundary of whole canvas pixels survives
+ * only if it measures at least one on-screen pixel. The scene fills the grid to
+ * its twelve-row cap — the tallest a phone ever draws — and the boundary is
+ * measured from the render, so a regression to a single-pixel line is caught.
+ */
+function checkPlotBoundaryScale(problems) {
+  const tall = { growth: 1e12, beds: 4, capacity: 4 * PLOTS_PER_BED };
+  const bounds = plotBounds(tall);
+  if (bounds.rows !== bounds.maxRows) {
+    problems.push(
+      `a full four-bed garden draws ${bounds.rows} rows, not the ${bounds.maxRows}-row cap, so the phone's smallest ` +
+        "plot size cannot be measured."
+    );
+    return;
+  }
+  const palette = readPalette();
+  const lightKey = colorKey(parseColor(palette.soilLight));
+  const canvas = plotCanvas(tall);
+  const data = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+  const pixelAt = (x, y) => {
+    const i = (y * canvas.width + x) * 4;
+    return `${data[i]},${data[i + 1]},${data[i + 2]}`;
+  };
+  // The top boundary of the first plot, measured from the render: scan down the
+  // cell's middle until the lit edge gives way to the interior.
+  const probeX = Math.floor(bounds.cell / 2);
+  let thickness = 0;
+  while (thickness < bounds.cell && pixelAt(probeX, thickness) === lightKey) thickness += 1;
+  const phoneScale = Math.min(390 / bounds.canvasWidth, (0.24 * 844) / bounds.height);
+  if (thickness * phoneScale < 1) {
+    problems.push(
+      `a plot's ${thickness}px boundary scales to ${(thickness * phoneScale).toFixed(2)}px at the phone's capped plot ` +
+        "height, so the rooms are not countable on a phone."
+    );
+  }
+}
+
 function checkPlotBedEdges(problems) {
   const palette = readPalette();
   const lightKey = colorKey(parseColor(palette.soilLight));
@@ -3185,6 +3354,15 @@ function checkPlotBedEdges(problems) {
   // across a row as well as down a column.
   const bare = { growth: 0, beds: 1, capacity: PLOT_CAPACITY, seeds: 0, plants: 0, pollinator: { visiting: false } };
   problems.push(...plotEdgeProblems(bare, "a bed of bare soil"));
+  // A one-bed garden still draws its twelve plots and reads its own empty rooms,
+  // so the empty-room treatment never changes how many plots the picture owns.
+  if (plotCells(bare).plots.length !== PLOT_CAPACITY) {
+    problems.push(
+      `a one-bed garden of ${PLOT_CAPACITY} plots draws ${plotCells(bare).plots.length} plots, so the empty-room ` +
+        "treatment lost a plot."
+    );
+  }
+  problems.push(...plotRoomProblems(bare, "a bed of bare soil"));
 
   // The ticket's own scene: two beds open and the first bed's plots planted, so
   // the readout says 24 plots of soil while only half the picture holds anything.
@@ -3208,6 +3386,8 @@ function checkPlotBedEdges(problems) {
     );
   }
   problems.push(...plotEdgeProblems(twoBeds, "two open beds with one of them emptied"));
+  problems.push(...plotRoomProblems(twoBeds, "two open beds with one of them emptied"));
+  problems.push(...plotEmptyMottleProblems(twoBeds, "two open beds with one of them emptied"));
   const twoData = plotCanvas(twoBeds).getContext("2d").getImageData(0, 0, twoBounds.width, twoBounds.height).data;
   const twoPixel = (x, y) => {
     const i = (y * twoBounds.width + x) * 4;
@@ -3272,6 +3452,8 @@ function checkPlotBedEdges(problems) {
       );
     }
   }
+
+  checkPlotBoundaryScale(problems);
 }
 
 /**

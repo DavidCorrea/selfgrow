@@ -37,6 +37,10 @@
   --soil:        #7a5230;
   --soil-deep:   #3a2716;
   --soil-light:  #9a6b40;
+  /* The tone an unplanted plot is filled with: a lighter, dustier bare soil than
+     the open ground around the bed, so an opened bed reads as a countable set of
+     empty rooms kept in beds rather than as more of the field it sits in. */
+  --soil-empty:  #a5895f;
   --leaf:        #56a83a;
   --leaf-light:  #86d15a;
   --leaf-deep:   #2f6b28;
@@ -59,16 +63,22 @@
      plot stays one garden. Summer is the base trio it has always been drawn in;
      winter is cold and grey, spring is damp and dark, autumn warm and dry. The
      plot fills with this tone and draws its seasonal mark from it, so a bare or
-     freshly planted plot tells the season with nothing growing on it. */
+     freshly planted plot tells the season with nothing growing on it. Each
+     season's `-empty` tone fills its unplanted plots and falls back to the base
+     `--soil-empty`, so the empty rooms take the garden's year with the rest of
+     the ground. */
   --soil-winter:       #6a5a4a;
   --soil-winter-deep:  #322a22;
   --soil-winter-light: #8c7a66;
+  --soil-winter-empty: #a49a88;
   --soil-spring:       #5a3d20;
   --soil-spring-deep:  #2a1a0c;
   --soil-spring-light: #7d5730;
+  --soil-spring-empty: #93704a;
   --soil-autumn:       #8f5f2a;
   --soil-autumn-deep:  #4a2c12;
   --soil-autumn-light: #b57a3e;
+  --soil-autumn-empty: #c79a5a;
   --bloom:       #e0699f;
   --sun:         #f4c542;
   --water:       #4aa3df;
