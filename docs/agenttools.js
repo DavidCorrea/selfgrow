@@ -160,7 +160,15 @@ export function tools() {
         "while the page is open and visible, false while it is hidden, so a " +
         "garden with a visitor at it is told apart from one growing alone. It " +
         "is the same presence the plot draws as worked ground and standing " +
-        "plants, and it is not a saved field. It also " +
+        "plants, and it is not a saved field. What that presence earns the " +
+        "garden is reported as presenceRate — the extra growth per second " +
+        "added while someone is at the page, a flat amount added to the rate " +
+        "the garden already grows at, so the garden grows at rate + " +
+        "presenceRate while it is watched and at rate alone while it is not. " +
+        "It is the fixed amount the readout names beside the rate while the " +
+        "visit lasts and 0 the moment the visit ends, so two minutes watched " +
+        "end larger than the same garden left alone and an absence is never " +
+        "punished. It also " +
         "reports sandbox: the time rehearsal when one is open — how many " +
         "seconds it has been wound forward and a readable elapsed label, the " +
         "growth, form, ungrown seeds and grown plants it reached, whether a " +

@@ -47,6 +47,7 @@ import {
   plantSeed,
   plantSeedInState,
   pollinatorAt,
+  presenceBonus,
   readLastSeen,
   replant,
   replantBonus,
@@ -127,6 +128,7 @@ export const MIN_AWAY_SECONDS = 60;
 const elements = {
   growth: document.getElementById("growth-total"),
   rate: document.getElementById("growth-rate"),
+  presenceRate: document.getElementById("presence-rate"),
   lifetime: document.getElementById("lifetime-total"),
   replantBonus: document.getElementById("replant-bonus"),
   bonus: document.getElementById("bonus-total"),
@@ -340,6 +342,12 @@ export function getDisplayedState() {
     // is here. It sits beside `visit` rather than inside it, so the visit record
     // stays exactly the hand-work the garden stores.
     visitPresent: !document.hidden,
+    // What presence itself earns the garden: a flat growth/second bonus added
+    // while someone is at the page and nothing once the visit ends. The garden
+    // grows at `rate + presenceRate` while it is watched and at `rate` alone
+    // while it is not, so a visit is worth more than an absence and neither is
+    // punished. Named beside the rate in the readout and read by an agent here.
+    presenceRate: presenceBonus(!document.hidden),
     // The garden's whole history, what replanting right now would earn from it,
     // the lasting bonus a replant has already earned, and what that history has
     // made of the ground — the lasting layer the plot draws under the current
@@ -1737,6 +1745,10 @@ function render() {
   const state = getDisplayedState();
   setText(elements.growth, formatGrowth(state.growth));
   setText(elements.rate, `+${formatGrowth(state.rate)}/s`);
+  // The extra presence earns, named beside the rate it is added to and shown
+  // only while someone is at the page: a garden left alone shows no bonus.
+  setText(elements.presenceRate, `+${formatGrowth(state.presenceRate)}/s here`);
+  if (elements.presenceRate) elements.presenceRate.hidden = !state.visitPresent;
   setText(elements.lifetime, formatGrowth(state.lifetimeGrowth));
   setText(elements.established, state.established.name);
   setText(elements.replantBonus, `replant now +${formatAmount(state.replantBonus)}`);
@@ -2062,6 +2074,10 @@ function start() {
   // clock is clamped to no time rather than run in reverse.
   let lastTick = Date.now();
   let lastPersist = lastTick;
+  // Whether the visitor was at the page during the span just counted. The tick
+  // credits each span with the presence it was spent in, so the bonus stops the
+  // instant the visit does and hidden time earns the garden's own rate alone.
+  let lastPresent = !document.hidden;
   const tick = () => {
     const now = Date.now();
     const elapsed = Math.max(0, (now - lastTick) / 1000);
@@ -2070,7 +2086,10 @@ function start() {
     // Count this visit before the advance, which notifies and redraws the
     // readout, so the two are stated together and cannot drift apart.
     addVisitTime(elapsed);
-    if (elapsed > 0) advance(elapsed);
+    if (elapsed > 0) advance(elapsed, { present: lastPresent });
+    // The next span is spent in the presence the page has now, so a hide and a
+    // return between two ticks are each credited without the other's bonus.
+    lastPresent = !document.hidden;
     if (now - lastPersist >= PERSIST_MS) {
       lastPersist = now;
       persist(now);
@@ -2093,11 +2112,14 @@ function start() {
   // Counting the gap on the way back in covers a tab that was hidden or a
   // device that slept; the garden is never cheated of time nobody watched.
   document.addEventListener("visibilitychange", () => {
+    // Tick first, on both edges: the span just ended is credited with the
+    // presence it was spent in — the watched span when the tab hides, the
+    // hidden span when it returns — before `lastPresent` flips to the new one.
+    tick();
     if (document.hidden) {
       persist();
       return;
     }
-    tick();
     render();
   });
   window.addEventListener("pagehide", () => persist());

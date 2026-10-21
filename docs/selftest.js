@@ -63,6 +63,7 @@ import {
   pollinatorSecondsWithin,
   pollinatorVisitSeconds,
   plantSeed,
+  presenceBonus,
   readLastSeen,
   replant,
   replantBonus,
@@ -77,6 +78,7 @@ import {
   tend,
   writeLastSeen,
   writeStoredGarden,
+  PRESENCE_BONUS,
 } from "./garden.js";
 import {
   MIN_AWAY_SECONDS,
@@ -8414,6 +8416,110 @@ function checkVisitPresence(problems) {
 }
 
 /**
+ * A garden someone is watching tends itself faster than one growing alone: the
+ * presence bonus is a flat rate added while the page is open and gone the
+ * moment it is not, so a visit is worth more than an absence and neither is
+ * punished.
+ *
+ * The two minutes watched must earn exactly `PRESENCE_BONUS` more growth than
+ * the two minutes alone — no more, no less, and in every season — and the live
+ * state, the agent's state and the readout must all name the same fixed rate.
+ */
+function checkPresenceBonus(problems) {
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const storageBefore = rawStorage();
+
+  try {
+    // The pure rule: presence earns the fixed bonus, absence earns nothing.
+    if (presenceBonus(true) !== PRESENCE_BONUS || presenceBonus(false) !== 0) {
+      problems.push(
+        `presenceBonus(true) was ${presenceBonus(true)} and presenceBonus(false) was ${presenceBonus(false)}; ` +
+          `expected ${PRESENCE_BONUS} and 0.`
+      );
+    }
+    if (typeof PRESENCE_BONUS !== "number" || !Number.isFinite(PRESENCE_BONUS) || PRESENCE_BONUS <= 0) {
+      problems.push(`PRESENCE_BONUS is ${JSON.stringify(PRESENCE_BONUS)}, expected a positive finite number.`);
+    }
+
+    const SPAN = 120;
+    const state = { growth: 0, rate: 2, beds: 1, capacity: PLOT_CAPACITY, seeds: 0, plants: 2 };
+    const watched = simulateGarden(state, SPAN, { present: true });
+    const alone = simulateGarden(state, SPAN);
+    const expectedGap = PRESENCE_BONUS * SPAN;
+    const gap = watched.growth - alone.growth;
+    if (Math.abs(gap - expectedGap) > 1e-9) {
+      problems.push(
+        `a garden watched for ${SPAN} seconds earned ${gap} more growth than one left alone, ` +
+          `expected exactly ${expectedGap} (${PRESENCE_BONUS} growth/second for ${SPAN} seconds).`
+      );
+    }
+
+    // The default (no options) is an absent span: it must match `present: false`.
+    const defaultState = simulateGarden(state, SPAN);
+    const falseState = simulateGarden(state, SPAN, { present: false });
+    if (defaultState.growth !== falseState.growth) {
+      problems.push(
+        `a span without options earned ${defaultState.growth}, but one with { present: false } earned ` +
+          `${falseState.growth}; the default must grow as if no one is there.`
+      );
+    }
+
+    // The bonus survives the live tick and is reported by the state.
+    setGarden({ ...state, visit: { seconds: 0, sown: 0, tended: 0 } });
+    setGrowth(0, state.rate, 0, 0, 0);
+    const advanced = advance(SPAN, { present: true });
+    const expectedGrowth = state.rate * SPAN + PRESENCE_BONUS * SPAN;
+    if (Math.abs(advanced.growth - expectedGrowth) > 1e-9) {
+      problems.push(
+        `advance(${SPAN}, { present: true }) earned ${advanced.growth}, expected ${expectedGrowth} ` +
+          `(the rate the garden grows at plus the presence bonus).`
+      );
+    }
+
+    const live = getDisplayedState();
+    if (live.presenceRate !== presenceBonus(!document.hidden)) {
+      problems.push(
+        `the live state reports presenceRate ${live.presenceRate}, expected the bonus the page is ` +
+          `currently present for (${presenceBonus(!document.hidden)}).`
+      );
+    }
+    if (live.visitPresent === true && live.presenceRate !== PRESENCE_BONUS) {
+      problems.push(
+        `the page is present but reports presenceRate ${live.presenceRate}, expected the fixed ` +
+          `${PRESENCE_BONUS} bonus.`
+      );
+    }
+    if (live.visitPresent === false && live.presenceRate !== 0) {
+      problems.push(
+        `the page is hidden but reports presenceRate ${live.presenceRate}, expected 0 while no one is here.`
+      );
+    }
+
+    // The readout names the fixed amount beside the rate when the visit lasts.
+    const span = document.getElementById("presence-rate");
+    if (!span) {
+      problems.push("the page has no #presence-rate readout for the presence bonus beside the growth rate.");
+    } else if (live.visitPresent === true) {
+      const expected = `+${formatGrowth(PRESENCE_BONUS)}/s here`;
+      if (String(span.textContent).trim() !== expected) {
+        problems.push(
+          `the presence readout says ${JSON.stringify(String(span.textContent).trim())}, expected ${JSON.stringify(expected)} ` +
+            "so the rate the garden earns from being watched is named on the page."
+        );
+      }
+      if (span.hidden) {
+        problems.push("the presence readout is hidden while someone is at the page, so the extra rate is not shown.");
+      }
+    }
+  } finally {
+    setGarden(gardenBefore);
+    restoreGrowth(growthBefore);
+    restoreRawStorage(storageBefore);
+  }
+}
+
+/**
  * A screen reader is told what happened, not the same numbers over and over.
  * The per-tick readouts (the growth total, the garden form) are out of every
  * live region, and the one polite status region speaks only the discrete
@@ -10554,6 +10660,7 @@ export async function checks() {
     checkTendedMarks(problems);
     checkHandWorkMarks(problems);
     checkVisitPresence(problems);
+    checkPresenceBonus(problems);
     checkLiveAnnouncements(problems);
     checkActionConfirmationsAreSpoken(problems);
     checkGardenActionRefusals(problems);

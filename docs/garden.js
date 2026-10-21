@@ -823,6 +823,28 @@ export function subscribe(listener) {
 export const TEND_YIELD = 1;
 export const TEND_RATE_STEP = 0.1;
 
+/**
+ * How much faster the garden grows for each second someone is at the page.
+ *
+ * A flat, always-on bonus: presence itself tends the garden, so two minutes
+ * watched end larger than two minutes left alone. It is added to the earned
+ * rate after the season and pollinator integration, so it is the same in every
+ * season, and it stops the instant the visit does — the garden's own rate and
+ * its away growth are untouched, so an absence is never punished.
+ */
+export const PRESENCE_BONUS = 0.5;
+
+/**
+ * The growth per second the garden earns for someone being at the page: the
+ * fixed bonus while present and nothing while the visit is over.
+ *
+ * Pure, so the readout, the live tick and an agent's state all read the one
+ * rule and cannot disagree about what presence is worth.
+ */
+export function presenceBonus(present) {
+  return present === true ? PRESENCE_BONUS : 0;
+}
+
 let growth = 0;
 let rate = 0;
 let age = 0;
@@ -1308,10 +1330,18 @@ function kindSproutTimers(source, index, capacity) {
  * growth balance and reported back as `sown` and `sownCost`, so a caller can
  * account for exactly what was produced and what was spent.
  *
+ * The same `options` argument may carry `present: true`, which adds the
+ * presence bonus to the growth the garden earns over the span. Only the live
+ * tick passes it — a rehearsal, an absence and a return all leave it out, so
+ * what the garden grows while nobody is at the page is unchanged. It is added
+ * flat, after the season and pollinator integration, so a watched second is
+ * worth the same bonus in every season.
+ *
  * Pure: it never notifies, never writes, and never touches the live garden.
  */
 export function simulateGarden(state, seconds, options = {}) {
   const sow = options.sow === true;
+  const present = options.present === true;
   const source = state ?? {};
   const beds = bedCount(source.beds);
   const capacity = beds * PLOTS_PER_BED;
@@ -1418,6 +1448,9 @@ export function simulateGarden(state, seconds, options = {}) {
         (weightedSecondsWithin(age, gap, KIND_SEASON_MULTIPLIERS[0]) - sharedWeighted) +
       bloomPlants * SEED_KINDS[1].production * bloomMultiplier *
         (weightedSecondsWithin(age, gap, KIND_SEASON_MULTIPLIERS[1]) - sharedWeighted);
+    // The presence bonus is a flat term over the whole gap, so a watched second
+    // is worth the same in every season. An absent span earns nothing from it.
+    growth += presenceBonus(present) * gap;
     remaining -= gap;
     age += gap;
     sprouts = matureKind(sprouts, gap, (matured) => {
@@ -1441,9 +1474,10 @@ export function simulateGarden(state, seconds, options = {}) {
  *
  * A thin wrapper over `simulateGarden`: the live garden is wound forward with
  * the same rule a rehearsal or a return uses, so nothing can disagree about how
- * time changes the garden.
+ * time changes the garden. `options.present` is forwarded unchanged, so only a
+ * caller that watched the span earns the presence bonus.
  */
-export function advance(seconds) {
+export function advance(seconds, options) {
   const next = simulateGarden(
     {
       growth,
@@ -1455,7 +1489,8 @@ export function advance(seconds) {
       plantCounts: [garden.plants, garden.bloomPlants],
       beds: garden.beds,
     },
-    seconds
+    seconds,
+    options
   );
   // Everything the garden earned over the span is added to its lifetime, so
   // the total it can never spend counts exactly the growth that arrived.
