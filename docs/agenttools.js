@@ -149,13 +149,15 @@ export function tools() {
         "reload marks nothing, and the marks never clear on a timer: they stay " +
         "until the visitor acknowledges the return, which tend, plant-seed, " +
         "open-bed, replant, import-save or dismiss-return all do. It also " +
-        "reports visit: the visitor's own hand-work this visit, kept apart " +
-        "from the seeds the garden sows itself and the plants that matured " +
-        "while away — how long the visit has lasted in seconds (seconds), and " +
-        "how many plots the visitor sowed (sown) and tended (tended) by hand. " +
+        "reports visit: the garden's hand-work since it was last replanted, " +
+        "kept apart from the seeds the garden sows itself and the plants that " +
+        "matured while away — how long the record has run in seconds " +
+        "(seconds), and how many plots were sowed (sown) and tended (tended) " +
+        "by hand. " +
         "The three start at zero, rise only when the visitor acts (the " +
         "garden's own growth and its away-sown seeds never change them), " +
-        "survive a reload and a return, and are cleared by a replant. Whether " +
+        "survive a reload and a return, and are cleared only by a replant. " +
+        "Whether " +
         "someone is at the page right now is reported as visitPresent — true " +
         "while the page is open and visible, false while it is hidden, so a " +
         "garden with a visitor at it is told apart from one growing alone. It " +

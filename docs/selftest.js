@@ -7778,13 +7778,15 @@ function checkReturnMarks(problems) {
 }
 
 /**
- * The visitor's own hand-work, kept apart from what the garden does alone.
+ * The garden's hand-work since it was last replanted, kept apart from what the
+ * garden does alone.
  *
  * A garden the visitor tended must read differently from one they only watched:
- * the visit record states how long the visit has lasted and how many plots they
- * sowed and tended by hand, rises only when they act, survives a reload and a
- * return, is cleared by a replant, and is read the same by an agent through
- * get-state and a person off the page.
+ * the record states how long the run has lasted and how many plots were sowed
+ * and tended by hand, rises only when they act, survives a reload and a return,
+ * is cleared by a replant, and is read the same by an agent through get-state
+ * and a person off the page — named as the run's hand-work, never as this
+ * visit's.
  */
 function checkVisitRecord(problems) {
   const gardenBefore = getGarden();
@@ -7952,12 +7954,54 @@ function checkVisitRecord(problems) {
     ]) {
       const el = document.querySelector(`[data-field="${field}"]`);
       if (!el) {
-        problems.push(`the page has no [data-field="${field}"] readout for the visitor's own work this visit.`);
+        problems.push(`the page has no [data-field="${field}"] readout for the garden's hand-work since its last replant.`);
       } else if (String(el.textContent).trim() !== expected) {
         problems.push(
           `the page shows ${JSON.stringify(String(el.textContent).trim())} for ${field}, but the visit holds ${expected}.`
         );
       }
+    }
+
+    // The row is named for the run it counts: a returning visitor must not read
+    // the saved counts as this visit's, so the term above them names the run
+    // since the last replant and never "this visit".
+    const secondsField = document.querySelector('[data-field="visit-seconds"]');
+    const rowTerm = secondsField?.closest(".readout-row")?.querySelector(".readout-term");
+    const term = rowTerm ? String(rowTerm.textContent).trim() : "";
+    if (!term) {
+      problems.push(
+        "the hand-work row has no term beside [data-field=\"visit-seconds\"], so a returning visitor is not told " +
+          "which run its counts belong to."
+      );
+    } else {
+      if (!/replant/i.test(term)) {
+        problems.push(
+          `the hand-work row is titled ${JSON.stringify(term)}, which does not name the run since the last replant, ` +
+            "so its saved counts read as this visit's."
+        );
+      }
+      if (/this visit/i.test(term)) {
+        problems.push(`the hand-work row is titled ${JSON.stringify(term)}, still calling the saved run "this visit".`);
+      }
+    }
+
+    // A garden saved with hand-work and reopened still shows those counts under
+    // that label: arrival preserves the record instead of zeroing it.
+    setGarden({ ...newGarden(), visit: { seconds: 200, sown: 5, tended: 2 } });
+    writeStoredGarden(getGarden());
+    setGarden(newGarden()); // a fresh page with nothing yet in memory
+    setGarden(readStoredGarden().garden); // start() reopens the saved garden
+    const reopened = getGarden().visit;
+    if (reopened.seconds !== 200 || reopened.sown !== 5 || reopened.tended !== 2) {
+      problems.push(
+        `reopening a saved garden with hand-work lost the record: expected {200,5,2}, got ${JSON.stringify(reopened)}.`
+      );
+    }
+    if (JSON.stringify(getDisplayedState().visit) !== JSON.stringify(reopened)) {
+      problems.push(
+        `a reopened garden's page shows visit ${JSON.stringify(getDisplayedState().visit)}, expected the saved ` +
+          `${JSON.stringify(reopened)} — arrival must not zero the run.`
+      );
     }
   } finally {
     setGarden(gardenBefore);
@@ -8293,10 +8337,9 @@ function checkVisitPresence(problems) {
   }
 
   // The page's own presence, in the state and in the readout, is a boolean a
-  // person and an agent read the same way — and it is a fact a person can
-  // actually see. A visitor who only watches meets the acknowledgement inside
-  // the visible 'This visit' facts rather than reading three zeroes beside the
-  // plot while presence hides in a folded-away row of its own.
+  // person and an agent read the same way — and it is an unmistakable fact
+  // about this moment: a labelled "Here now" beside the plot, kept out of the
+  // run's counts rather than hidden in a folded-away row of its own.
   const shown = getDisplayedState();
   const field = document.querySelector('[data-field="visit-present"]');
   if (typeof shown.visitPresent !== "boolean") {
@@ -8308,20 +8351,38 @@ function checkVisitPresence(problems) {
     const visitValue = document.querySelector('[data-field="visit"]');
     if (!visitValue || field.closest('[data-field="visit"]') !== visitValue) {
       problems.push(
-        "the presence readout does not sit in the visible 'This visit' facts (it must live inside " +
+        "the presence readout does not sit in the visible hand-work row (it must live inside " +
           '[data-field="visit"]), so a watching visitor never meets it beside the plot.'
       );
     }
     if (field.closest(".readout-row-sr")) {
       problems.push(
         "the presence readout is folded into a .readout-row-sr, so a visitor who only watches cannot see it; " +
-          "it must be a visible fact of the 'This visit' row."
+          "it must be a visible fact of the hand-work row."
       );
     }
     const fact = field.closest(".kind-fact");
     const label = fact ? String(fact.querySelector(".kind-fact-label")?.textContent ?? "").trim() : "";
-    if (!label) {
-      problems.push("the presence readout sits under no label, so a visitor reads Yes/No with nothing naming it.");
+    if (!/here now/i.test(label)) {
+      problems.push(
+        `the presence readout sits under the label ${JSON.stringify(label)}, expected "Here now" so the fact reads ` +
+          "as this moment rather than as one of the run's counts."
+      );
+    }
+    // This moment's presence must not restate the run's counts, or a returning
+    // visitor cannot tell which moment each number is about.
+    const factText = fact ? String(fact.textContent).trim() : "";
+    for (const [name, value] of [
+      ["length", formatDuration(shown.visit.seconds)],
+      ["sown", formatAmount(shown.visit.sown)],
+      ["tended", formatAmount(shown.visit.tended)],
+    ]) {
+      if (value && factText.includes(value)) {
+        problems.push(
+          `the "Here now" fact reads ${JSON.stringify(factText)}, which carries the run's ${name} (${value}); ` +
+            "this moment's presence must not restate the run's counts."
+        );
+      }
     }
     const rect = field.getBoundingClientRect();
     if (rect.width < 1 || rect.height < 1) {
@@ -9785,6 +9846,30 @@ async function checkAgentTools(problems) {
       `get-state's visit ${JSON.stringify(state.visit)} does not match the page's visit record ` +
         `${JSON.stringify(shown.visit)}.`
     );
+  }
+
+  // The page names the saved counts as the garden's hand-work since the last
+  // replant; the tool must say the same, or an agent and a visitor describe the
+  // same three counts differently.
+  const description = String(readTool.description ?? "");
+  const visitStart = description.indexOf("visit:");
+  if (visitStart < 0) {
+    problems.push('get-state\'s description does not report "visit", so an agent cannot find the run\'s hand-work.');
+  } else {
+    const presenceStart = description.indexOf("visitPresent", visitStart);
+    const visitPart = description.slice(visitStart, presenceStart < 0 ? undefined : presenceStart);
+    if (!/replant/i.test(visitPart)) {
+      problems.push(
+        "get-state's description of visit does not tie the record to a replant, so an agent reads the saved counts " +
+          "as this visit's while the page names them as the run's hand-work since the last replant."
+      );
+    }
+    if (/this visit/i.test(visitPart)) {
+      problems.push(
+        'get-state\'s description of visit still calls the record "this visit", disagreeing with the page\'s ' +
+          "run-since-replant label."
+      );
+    }
   }
 
   const tendTool = find("tend");

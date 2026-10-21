@@ -332,15 +332,19 @@ export function getDisplayedState() {
   const garden = getGarden();
   return {
     ...describeGardenState(garden, growth, rate, age, bonus),
-    // The visitor's own hand-work this visit — how long it has lasted and how
-    // many plots they sowed and tended — kept apart from the seeds the garden
-    // sows itself and the plants that matured while they were away.
+    // The garden's hand-work since it was last replanted — how long the record
+    // has run and how many plots were sowed and tended by hand. It is kept apart
+    // from the seeds the garden sows itself and the plants that matured while
+    // the visitor was away, survives a reload and a return, and only a replant
+    // clears it, so it is named for the run it counts rather than for this
+    // visit.
     visit: garden.visit,
-    // Whether someone is at the page right now. It is the page's own presence,
-    // not a saved field: a garden with a visitor at it is drawn as tended and
-    // one growing alone is not, so the picture and the state agree that someone
-    // is here. It sits beside `visit` rather than inside it, so the visit record
-    // stays exactly the hand-work the garden stores.
+    // Whether someone is at the page right now — the page's own presence, not a
+    // saved field: a garden with a visitor at it is drawn as tended and one
+    // growing alone is not, so the picture and the state agree that someone is
+    // here this moment. It sits beside `visit` rather than inside it, so the
+    // saved record stays exactly the run's hand-work and its presence is never
+    // read as one of those counts.
     visitPresent: !document.hidden,
     // What presence itself earns the garden: a flat growth/second bonus added
     // while someone is at the page and nothing once the visit ends. The garden
@@ -2083,7 +2087,7 @@ function start() {
     const elapsed = Math.max(0, (now - lastTick) / 1000);
     lastTick = now;
     plotFrame += 1;
-    // Count this visit before the advance, which notifies and redraws the
+    // Count the run's time before the advance, which notifies and redraws the
     // readout, so the two are stated together and cannot drift apart.
     addVisitTime(elapsed);
     if (elapsed > 0) advance(elapsed, { present: lastPresent });
