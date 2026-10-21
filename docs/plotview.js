@@ -868,18 +868,20 @@ function drawHedge(ctx, x, y, palette, growthTier, dx, foliage) {
   ctx.fillRect(x + 7 + dx, base - height + 3, CELL - 14, 2);
   ctx.fillRect(x + 8 + dx, base - height + 8, CELL - 16, 2);
   if (foliage === "blossom") {
-    ctx.fillStyle = palette.bloom;
+    // Spring's pale new growth, in the leaf's own light tone rather than the
+    // bloom colour: a herb hedge may never be read as a flower.
+    ctx.fillStyle = palette.leafLight;
     ctx.fillRect(x + 6 + dx, base - height + 5, 3, 3);
     ctx.fillRect(x + CELL - 10 + dx, base - height + 7, 3, 3);
   }
 }
 
 /**
- * A trunk under a canopy that fills the cell and grows with the form. A herb
- * carries its own bloom only from the eighth form on; a bloom plant (`flowered`)
- * is covered in flower from the first tree on, so the kinds stay apart however
- * tall they grow. In winter the canopy falls to bare twigs; in spring it carries
- * blossom.
+ * A trunk under a canopy that fills the cell and grows with the form. Only a
+ * bloom plant (`flowered`) is covered in flower from the first tree on, so the
+ * kinds stay apart however tall they grow and a herb tree never carries the
+ * bloom colour. In winter the canopy falls to bare twigs; in spring it carries
+ * pale new growth in the leaf's own light tone.
  */
 function drawTree(ctx, x, y, palette, index, growthTier, flowered, dx, foliage) {
   const base = y + CELL;
@@ -907,7 +909,7 @@ function drawTree(ctx, x, y, palette, index, growthTier, flowered, dx, foliage) 
     ctx.fillStyle = palette.leaf;
     ctx.fillRect(left + 2, canopyTop + 2, canopyWidth - 4, canopyHeight - 4);
   }
-  if (index >= 8 || flowered) {
+  if (flowered) {
     ctx.fillStyle = palette.bloom;
     ctx.fillRect(left + 3, canopyTop + 3, 3, 3);
     ctx.fillRect(left + canopyWidth - 6, canopyTop + 5, 3, 3);
@@ -915,7 +917,9 @@ function drawTree(ctx, x, y, palette, index, growthTier, flowered, dx, foliage) 
     ctx.fillStyle = palette.sun;
     ctx.fillRect(left + 6, canopyTop + 5, 2, 2);
   } else if (foliage === "blossom") {
-    ctx.fillStyle = palette.bloom;
+    // Spring's pale new growth, in the leaf's own light tone rather than the
+    // bloom colour: a herb tree may never be read as a flower.
+    ctx.fillStyle = palette.leafLight;
     ctx.fillRect(left + 4, canopyTop + 3, 2, 2);
     ctx.fillRect(left + canopyWidth - 7, canopyTop + 4, 2, 2);
   }
@@ -1591,8 +1595,13 @@ export function drawGarden(canvas, state, palette, phase = 0) {
  *
  * `kind` is the kind's key (`"herb"` or `"bloom"`) and `state` the same state
  * `drawGarden` is given, so the swatch follows the garden's growth, form and
- * season with the plot. The sprites are drawn at the still frame's sway, so the
- * swatch is the sprite itself rather than one frame of its breathing.
+ * season with the plot. Each sprite is drawn only when the row beside it counts
+ * that kind: the grown plant when the kind has a plant and the ungrown seed when
+ * it has a seed. A row counting no plants and no seeds therefore draws empty
+ * soil rather than a flower, so the legend beside a zero never reads as the kind
+ * the plot refuses to draw, and the swatch and the row count one and the same
+ * kind. The sprites are drawn at the still frame's sway, so the swatch is the
+ * sprite itself rather than one frame of its breathing.
  */
 export function drawKindSwatch(canvas, kind, state, palette) {
   if (!canvas || !palette) return;
@@ -1613,9 +1622,16 @@ export function drawKindSwatch(canvas, kind, state, palette) {
   // plot of soil and the sprites stand out of it.
   ctx.fillStyle = paint.soil;
   ctx.fillRect(0, 0, width, CELL);
-  drawSeed(ctx, 0, 0, paint, 0, bloom);
-  if (bloom) drawBloomPlant(ctx, CELL, 0, paint, look.foliage, form.index, growthTier, 0);
-  else drawPlant(ctx, CELL, 0, paint, look.foliage, form.index, growthTier, 0);
+  // The swatch follows its own row: it shows the kind only when the row counts
+  // it, so a zero row is empty soil and never a flower the plot does not draw.
+  const { herbPlants, bloomPlants, herbSeeds, bloomSeeds } = kindsOnPlot(state);
+  const plants = bloom ? bloomPlants : herbPlants;
+  const seeds = bloom ? bloomSeeds : herbSeeds;
+  if (seeds > 0) drawSeed(ctx, 0, 0, paint, 0, bloom);
+  if (plants > 0) {
+    if (bloom) drawBloomPlant(ctx, CELL, 0, paint, look.foliage, form.index, growthTier, 0);
+    else drawPlant(ctx, CELL, 0, paint, look.foliage, form.index, growthTier, 0);
+  }
 }
 
 /**

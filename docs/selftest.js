@@ -2009,8 +2009,16 @@ function checkKindSwatches(problems) {
 
     // One known garden, so the swatches are read from a fixed growth rather
     // than from the live garden, whose season and form are whatever the
-    // visitor's clock has made of them.
-    const known = { growth: 100, beds: 1, capacity: PLOT_CAPACITY, pollinator: { visiting: false } };
+    // visitor's clock has made of them. It counts both kinds, plants and seeds
+    // alike, so each swatch has the sprite its row counts to show.
+    const known = {
+      growth: 100,
+      beds: 1,
+      capacity: PLOT_CAPACITY,
+      plantCounts: [3, 1],
+      seedCounts: [5, 1],
+      pollinator: { visiting: false },
+    };
     const swatchOf = (kind) => {
       const canvas = document.createElement("canvas");
       drawKindSwatch(canvas, kind, known, palette);
@@ -2041,6 +2049,52 @@ function checkKindSwatches(problems) {
     }
     if (herb.toDataURL() === bloom.toDataURL()) {
       problems.push("the herb and bloom swatches draw the same picture, so the kind is not visible beside its label.");
+    }
+
+    // The swatch follows its row's counts at every form and season: the herb
+    // swatch never carries the bloom colour, a bloom swatch the Bloom row counts
+    // nothing draws no flower, and a swatch beside a counted bloom still does.
+    // This is the legend half of the plot-and-labels story: a row that says zero
+    // must not show a flower beside it.
+    const swatchAcrossGarden = (kind, extra) =>
+      FORMS.flatMap((form) =>
+        SEASONS.map((season) => {
+          const canvas = document.createElement("canvas");
+          drawKindSwatch(
+            canvas,
+            kind,
+            { growth: form.at, beds: 1, capacity: PLOT_CAPACITY, season: { key: season.key }, ...extra },
+            palette
+          );
+          return {
+            at: `${form.name} in ${season.key}`,
+            hasBloom: colorPixels(canvas, bloomKeys, 0, 0, canvas.width, canvas.height).length > 0,
+          };
+        })
+      );
+    const herbSwatches = swatchAcrossGarden("herb", { plantCounts: [1, 0], seedCounts: [1, 0] });
+    const bloomSwatches = swatchAcrossGarden("bloom", { plantCounts: [0, 0], seedCounts: [0, 0] });
+    const countedBloomSwatches = swatchAcrossGarden("bloom", { plantCounts: [0, 1], seedCounts: [0, 0] });
+    const herbFlower = herbSwatches.find((swatch) => swatch.hasBloom);
+    if (herbFlower) {
+      problems.push(
+        `the herb swatch draws a bloom-coloured pixel at ${herbFlower.at}, so the row that counts no bloom shows a ` +
+          "flower beside it."
+      );
+    }
+    const emptyBloom = bloomSwatches.find((swatch) => swatch.hasBloom);
+    if (emptyBloom) {
+      problems.push(
+        `the bloom swatch draws a bloom-coloured pixel at ${emptyBloom.at} while its row counts zero, so a visitor ` +
+          "reads a flower beside a zero."
+      );
+    }
+    const missingBloom = countedBloomSwatches.find((swatch) => !swatch.hasBloom);
+    if (missingBloom) {
+      problems.push(
+        `the bloom swatch draws no bloom-coloured pixel at ${missingBloom.at} while its row counts a bloom, so the ` +
+          "sprite beside the row that counts it is not the flower the plot draws."
+      );
     }
 
     // The swatch is the plot's own sprite, pixel for pixel: a garden holding
@@ -2097,9 +2151,10 @@ function checkKindSwatches(problems) {
     // The swatch follows the garden's form: a garden that has grown into a wood
     // draws a different herb from one just sprouting.
     const sprouting = document.createElement("canvas");
-    drawKindSwatch(sprouting, "herb", { growth: 1, beds: 1, capacity: PLOT_CAPACITY }, palette);
+    const formState = (growth) => ({ growth, beds: 1, capacity: PLOT_CAPACITY, plantCounts: [1, 0], seedCounts: [0, 0] });
+    drawKindSwatch(sprouting, "herb", formState(1), palette);
     const wooded = document.createElement("canvas");
-    drawKindSwatch(wooded, "herb", { growth: 1e6, beds: 1, capacity: PLOT_CAPACITY }, palette);
+    drawKindSwatch(wooded, "herb", formState(1e6), palette);
     if (sprouting.toDataURL() === wooded.toDataURL()) {
       problems.push(
         "a sprouting garden and a wood draw the same herb swatch, so the swatch does not follow the garden's form."
@@ -2722,29 +2777,61 @@ function checkPlotSpritesLegible(problems) {
     );
   }
 
-  // The two grown kinds are told apart by flower, not only by silhouette.
+  // The plot and the per-kind rows tell one story at every form and season: a
+  // garden the readout counts as herb-only — the full twelve plots, the
+  // pollinator resting or out visiting — never carries the bloom colour, and a
+  // bloom-counted garden still does. This is the regression the herb tree and
+  // the spring hedge used to trip by wearing the bloom palette, and the visiting
+  // bee tripped by painting bloom-coloured wings over the plots.
   const palette = readPalette();
-  if (cellHasColor(plotCanvas(planted({ plants: 1 })), palette.bloom, cell)) {
-    problems.push("a grown herb carries the bloom colour, so a herb and a bloom cannot be told apart by their flower.");
-  }
-  if (!cellHasColor(plotCanvas(planted({ plantCounts: [0, 1] })), palette.bloom, cell)) {
-    problems.push("a grown bloom carries no bloom-coloured pixel, so it does not read as a bloom.");
-  }
-
-  // While the pollinator is out, no plot cell a herb-only garden counts carries
-  // the bloom colour: the bee is drawn beside its hive, off the plots, so the
-  // picture agrees with the 'Bloom PLANTS 0' the readout states. This is the
-  // regression the visiting bee used to trip by painting bloom-coloured wings
-  // over the top-left plots.
-  const visitingHerbs = plotCanvas(planted({ plantCounts: [PLOT_CAPACITY, 0], pollinator: { visiting: true } }));
-  for (let column = 0; column < bounds.columns; column += 1) {
-    if (cellHasColor(visitingHerbs, palette.bloom, cell, column)) {
-      problems.push(
-        `a herb-only garden draws the bloom colour on plot column ${column} while the pollinator is out visiting, ` +
-          "so the picture shows a bloom the 'Bloom PLANTS 0' beside it does not count."
-      );
-      break;
+  const bloomKeys = new Set([colorKey(parseColor(palette.bloom))]);
+  // Half plants and half seeds, so a herb's grown sprite and its ungrown sprite
+  // are both drawn across the full twelve plots at every form and season.
+  const herbOnly = (form, seasonKey, visiting) => ({
+    growth: form.at,
+    beds: 1,
+    capacity: PLOT_CAPACITY,
+    season: { key: seasonKey },
+    plantCounts: [PLOT_CAPACITY / 2, 0],
+    seedCounts: [PLOT_CAPACITY / 2, 0],
+    pollinator: { visiting },
+  });
+  const bloomOnly = (form, seasonKey) => ({
+    growth: form.at,
+    beds: 1,
+    capacity: PLOT_CAPACITY,
+    season: { key: seasonKey },
+    plantCounts: [0, PLOT_CAPACITY],
+    seedCounts: [0, 1],
+    pollinator: { visiting: false },
+  });
+  let herbFlower = null;
+  let missingBloom = null;
+  for (const form of FORMS) {
+    for (const season of SEASONS) {
+      if (!herbFlower) {
+        const visiting = plotCanvas(herbOnly(form, season.key, true));
+        const atRest = plotCanvas(herbOnly(form, season.key, false));
+        if (firstPixelOfColors(visiting, bloomKeys) || firstPixelOfColors(atRest, bloomKeys)) {
+          herbFlower = `${form.name} in ${season.key}`;
+        }
+      }
+      if (!missingBloom && !firstPixelOfColors(plotCanvas(bloomOnly(form, season.key)), bloomKeys)) {
+        missingBloom = `${form.name} in ${season.key}`;
+      }
     }
+  }
+  if (herbFlower) {
+    problems.push(
+      `a herb-only garden (Bloom PLANTS 0) draws the bloom colour at ${herbFlower}, so the plot shows a flower the ` +
+        "Bloom row beside it does not count."
+    );
+  }
+  if (missingBloom) {
+    problems.push(
+      `a bloom-counted garden draws no bloom-coloured pixel at ${missingBloom}, so a bloom does not read as a bloom ` +
+        "at every form and season."
+    );
   }
 }
 
