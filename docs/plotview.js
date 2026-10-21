@@ -970,7 +970,7 @@ function drawMilestoneCrown(ctx, x, y, palette, tier) {
  * the garden sowed is never read as any of them: it is a seed that was not there
  * before the visitor left.
  */
-function drawSownSeedMark(ctx, x, y, palette) {
+export function drawSownSeedMark(ctx, x, y, palette) {
   const base = y + CELL;
   const centre = x + CELL / 2;
   const left = centre - 7;
@@ -982,6 +982,36 @@ function drawSownSeedMark(ctx, x, y, palette) {
   ctx.fillRect(left, top + height - 1, width, 1);
   ctx.fillRect(left, top, 1, height);
   ctx.fillRect(left + width - 1, top, 1, height);
+}
+
+/**
+ * The tick a plant that matured while the visitor was away carries: a small
+ * downward chevron at the top of its cell, pointing at the plant that has just
+ * grown up.
+ *
+ * It reads no animation phase, so it holds in the single still frame reduced
+ * motion pins to. The caller sets the fill it is drawn in — the plot lays it in
+ * the sun it marks every event with.
+ */
+export function drawMaturedMark(ctx, x, y) {
+  const centre = x + CELL / 2;
+  ctx.fillRect(centre - 2, y + 1, 5, 2);
+  ctx.fillRect(centre - 1, y + 3, 3, 2);
+  ctx.fillRect(centre, y + 5, 1, 1);
+}
+
+/**
+ * The brackets a new form leaves: an L at two opposite corners, framing the
+ * ground as a whole because the garden's own shape is what changed.
+ *
+ * `right` and `bottom` are the far edges of what is framed — the whole plot on
+ * the soil, or one cell when the frame is drawn as a glyph.
+ */
+export function drawFormFrameMark(ctx, right, bottom) {
+  ctx.fillRect(0, 0, 7, 2);
+  ctx.fillRect(0, 0, 2, 7);
+  ctx.fillRect(right - 7, bottom - 2, 7, 2);
+  ctx.fillRect(right - 2, bottom - 7, 2, 7);
 }
 
 /**
@@ -1003,22 +1033,12 @@ function drawReturnMarks(ctx, palette, width, height, marks) {
     drawSownSeedMark(ctx, (cell % COLUMNS) * CELL, Math.floor(cell / COLUMNS) * CELL, palette);
   }
   for (const cell of marks.cells) {
-    const x = (cell % COLUMNS) * CELL;
-    const y = Math.floor(cell / COLUMNS) * CELL;
-    const centre = x + CELL / 2;
-    // A small downward chevron at the top of the cell, pointing at the plant
-    // that has just matured.
-    ctx.fillRect(centre - 2, y + 1, 5, 2);
-    ctx.fillRect(centre - 1, y + 3, 3, 2);
-    ctx.fillRect(centre, y + 5, 1, 1);
+    drawMaturedMark(ctx, (cell % COLUMNS) * CELL, Math.floor(cell / COLUMNS) * CELL);
   }
   if (marks.form) {
     // Brackets at opposite corners frame the whole plot, because the garden's
     // shape itself is new.
-    ctx.fillRect(0, 0, 7, 2);
-    ctx.fillRect(0, 0, 2, 7);
-    ctx.fillRect(width - 7, height - 2, 7, 2);
-    ctx.fillRect(width - 2, height - 7, 2, 7);
+    drawFormFrameMark(ctx, width, height);
   }
   if (marks.season) {
     // A small sun at the top of the plot, above the soil between the cells the
@@ -1038,7 +1058,7 @@ function drawReturnMarks(ctx, palette, width, height, marks) {
  * form frame, so a turn of the year is never read as a seed maturing or a new
  * form.
  */
-function drawSeasonMark(ctx, width) {
+export function drawSeasonMark(ctx, width) {
   const centreX = Math.round(width / 2);
   const centreY = 8;
   // The disc, then a ray out of each of its four sides.
@@ -1666,6 +1686,43 @@ export function drawHandWorkGlyph(canvas, kind, state, palette) {
   ctx.fillRect(0, 0, CELL, CELL);
   if (kind === "sown") drawTendedSign(ctx, 0, 0, paint);
   else drawTendedWorkMark(ctx, 0, 0, paint);
+}
+
+/**
+ * Draw one return mark into a small legend cell: the tick over a plant that
+ * matured while the visitor was away, the ring around a seed the garden sowed,
+ * the corner frame of a new form or the sun of a turned season, drawn exactly as
+ * the plot draws them.
+ *
+ * The readout counts what the absence changed and the plot marks the change on
+ * the soil, but nothing else ties a mark to its fact, so a returning visitor sees
+ * evidence they cannot name. This fills one plot cell with the same ground the
+ * plot lays under its marks and calls the very function the plot paints each mark
+ * with — `drawMaturedMark`, `drawSownSeedMark`, `drawFormFrameMark` or
+ * `drawSeasonMark` — so a glyph and the mark on the plot can never show a
+ * different shape or colour. The canvas carries no text, so the fact it sits
+ * beside still reads as a label and its value.
+ *
+ * `kind` is the mark's own key (`"matured"`, `"sown"`, `"form"` or `"season"`).
+ */
+export function drawReturnMarkGlyph(canvas, kind, state, palette) {
+  if (!canvas || !palette) return;
+  const paint = seasonLook(palette, state?.season?.key).palette;
+  if (canvas.width !== CELL) canvas.width = CELL;
+  if (canvas.height !== CELL) canvas.height = CELL;
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.imageSmoothingEnabled = false;
+  // The same ground the plot draws the mark on, so the glyph reads as a little
+  // plot of soil with the absence's own mark on it.
+  ctx.fillStyle = paint.soil;
+  ctx.fillRect(0, 0, CELL, CELL);
+  ctx.fillStyle = paint.sun;
+  if (kind === "matured") drawMaturedMark(ctx, 0, 0);
+  else if (kind === "sown") drawSownSeedMark(ctx, 0, 0, paint);
+  else if (kind === "form") drawFormFrameMark(ctx, CELL, CELL);
+  else if (kind === "season") drawSeasonMark(ctx, CELL);
 }
 
 /**

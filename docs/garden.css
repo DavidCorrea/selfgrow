@@ -456,14 +456,15 @@ body {
   image-rendering: pixelated;
 }
 
-/* A hand-work mark the plot draws — the standing sign of a plot the visitor
-   sowed by hand and the hoe cut of one they tended — shown beside the fact that
-   counts it, so a mark on the soil can be traced to its label. Like the kind
-   swatches it is a picture, not a fact: it holds no text and is hidden from
-   assistive technology, so each fact still reads as a label and a value.
-   Rendered pixelated at the plot's own cell size, so the mark stays as crisp on
-   the panel as it is on the soil. */
-.hand-work-glyph {
+/* A mark the plot draws — the standing sign of a plot the visitor sowed by hand,
+   the hoe cut of one they tended, and the tick, ring, frame and season's disc a
+   return leaves — shown beside the fact that counts it, so a mark on the soil can
+   be traced to its label. Like the kind swatches they are pictures, not facts:
+   they hold no text and are hidden from assistive technology, so each fact still
+   reads as a label and a value. Rendered pixelated at the plot's own cell size,
+   so the mark stays as crisp on the panel as it is on the soil. */
+.hand-work-glyph,
+.return-mark-glyph {
   display: inline-block;
   width: 24px;
   height: 24px;
@@ -491,6 +492,12 @@ body {
   gap: 5px;
   font-size: 13px;
   line-height: 1.5;
+}
+
+/* A fact the row holds but this moment has nothing to say about stays out of the
+   layout, even though it is an inline box by default. */
+.kind-fact[hidden] {
+  display: none;
 }
 
 .kind-fact-label {
@@ -626,8 +633,9 @@ body {
 }
 
 /* The marks a return left and the control that dismisses them share one row:
-   the note reads at the readout's size, the dismiss press sits beside it. The
-   row takes the full width — it is a rare, transient fact with a control of its
+   the facts — each count beside the mark the plot draws for it — read as a
+   short label and a value, and the dismiss press sits beside them. The row
+   takes the full width — it is a rare, transient account with a control of its
    own, and half a phone's width wraps it to several lines. */
 #return-marks-row {
   grid-column: 1 / -1;

@@ -118,8 +118,13 @@ import {
   ESTABLISHMENTS,
   FORMS,
   drawGarden,
+  drawFormFrameMark,
   drawHandWorkGlyph,
   drawKindSwatch,
+  drawMaturedMark,
+  drawReturnMarkGlyph,
+  drawSeasonMark,
+  drawSownSeedMark,
   drawTendedSign,
   drawTendedWorkMark,
   establishment,
@@ -2285,6 +2290,175 @@ function checkHandWorkGlyphs(problems) {
   } finally {
     setGarden(gardenBefore);
     restoreGrowth(growthBefore);
+  }
+}
+
+/**
+ * The return's facts carry the plot's own mark.
+ *
+ * After an absence the plot marks what changed — a tick on each plant that
+ * matured while the visitor was away, a ring on each seed the garden sowed, the
+ * frame of a new form and the disc of a turned season — and the readout counts
+ * those in the 'New since you left' row. Each of the four facts carries the very
+ * glyph the plot draws for its mark, painted by the same functions the plot
+ * paints with, so a returning visitor can point at a mark on the soil and find
+ * the fact beside it that counts it. The glyph is a picture, not a fact: it
+ * holds no text and is hidden from assistive technology, and it is shown only
+ * while the return still marks something.
+ */
+function checkReturnMarkGlyphs(problems) {
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const storageBefore = rawStorage();
+  const MARKS = ["matured", "sown", "form", "season"];
+  try {
+    const palette = readPalette();
+
+    // Each of the four facts sits in the return's own row, beside a canvas the
+    // plot's own mark code can draw into and the value it states.
+    const row = document.getElementById("return-marks-row");
+    if (!row) {
+      problems.push(
+        "the page has no New since you left row (#return-marks-row), so the marks a return leaves have no facts beside them."
+      );
+      return;
+    }
+    for (const mark of MARKS) {
+      const fact = document.querySelector(`[data-return-fact="${mark}"]`);
+      const value = document.querySelector(`[data-field="return-${mark}"]`);
+      const glyph = document.getElementById(`return-${mark}-glyph`);
+      if (!fact || !value || !glyph || !row.contains(fact) || !fact.contains(value)) {
+        problems.push(
+          `the ${mark} return fact has no glyph beside it (expected a canvas #return-${mark}-glyph with ` +
+            `[data-field="return-${mark}"] in the same fact of the New since you left row), so a mark on the plot ` +
+            "cannot be traced to the fact that counts it."
+        );
+        continue;
+      }
+      if (glyph.tagName.toLowerCase() !== "canvas") {
+        problems.push(
+          `the ${mark} return glyph #return-${mark}-glyph is a <${glyph.tagName.toLowerCase()}>, expected a ` +
+            "canvas the plot's own mark code can draw into."
+        );
+      }
+      if (glyph.getAttribute("aria-hidden") !== "true") {
+        problems.push(
+          `the ${mark} return glyph #return-${mark}-glyph is not aria-hidden, so a screen reader reaches a drawn ` +
+            "picture instead of the fact's label and value."
+        );
+      }
+      if (String(glyph.textContent).trim() !== "") {
+        problems.push(
+          `the ${mark} return glyph #return-${mark}-glyph carries text, so the fact no longer reads as a label and value.`
+        );
+      }
+    }
+
+    // One known garden, so the glyphs are read from a fixed season rather than
+    // from the live garden, whose season is whatever the visitor's clock made.
+    const known = { growth: 100, beds: 1, capacity: PLOT_CAPACITY, season: { key: "summer" } };
+    const glyphOf = (mark) => {
+      const canvas = document.createElement("canvas");
+      drawReturnMarkGlyph(canvas, mark, known, palette);
+      return canvas;
+    };
+    const glyphSize = glyphOf("matured");
+
+    // Each glyph is the plot's own mark, pixel for pixel: a soil cell painted
+    // with exactly the function the plot paints that mark with. A hand-drawn
+    // copy that drifted from the plot would part company here.
+    const paint = seasonLook(palette, known.season.key).palette;
+    const cellPainted = (paintMark) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = glyphSize.width;
+      canvas.height = glyphSize.height;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = paint.soil;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = paint.sun;
+      paintMark(ctx, canvas);
+      return canvas;
+    };
+    const painters = {
+      matured: ["drawMaturedMark", (ctx) => drawMaturedMark(ctx, 0, 0)],
+      sown: ["drawSownSeedMark", (ctx) => drawSownSeedMark(ctx, 0, 0, paint)],
+      form: ["drawFormFrameMark", (ctx, canvas) => drawFormFrameMark(ctx, canvas.width, canvas.height)],
+      season: ["drawSeasonMark", (ctx, canvas) => drawSeasonMark(ctx, canvas.width)],
+    };
+    for (const mark of MARKS) {
+      const [paintedBy, paintMark] = painters[mark];
+      if (glyphOf(mark).toDataURL() !== cellPainted(paintMark).toDataURL()) {
+        problems.push(
+          `the ${mark} return glyph is not drawn from the plot's own mark — it differs from a cell painted with ` +
+            `${paintedBy}, so the picture and the label can show different shapes.`
+        );
+      }
+    }
+
+    // A tick, a ring, a form's frame and a season's disc are four different
+    // marks on the soil, so their four glyphs must read apart too.
+    for (let first = 0; first < MARKS.length; first += 1) {
+      for (let second = first + 1; second < MARKS.length; second += 1) {
+        if (glyphOf(MARKS[first]).toDataURL() === glyphOf(MARKS[second]).toDataURL()) {
+          problems.push(
+            `the ${MARKS[first]} and ${MARKS[second]} return glyphs draw the same picture, so those two marks on ` +
+              "the plot cannot be told apart by the facts beside them."
+          );
+        }
+      }
+    }
+
+    // The glyphs on the page are the ones the current garden draws, and each
+    // fact is shown only while the return still marks it.
+    const nowMs = 1_700_000_000_000;
+    const saved = { version: SAVE_VERSION, seeds: 2, plants: 1, growth: 0, rate: 0.5 };
+    setGarden({ seeds: 2, plants: 1 });
+    setGrowth(0, 0.5);
+    applyReturn(saved, nowMs - 30 * 86400 * 1000, nowMs);
+    const shown = getDisplayedState();
+    if (!shown.returnMarks) {
+      problems.push("a 30-day return left no returnMarks, so there are no facts for the glyphs to sit beside.");
+      return;
+    }
+    const left = [];
+    if (shown.returnMarks.plants > 0) left.push("matured");
+    if (shown.returnMarks.sown > 0) left.push("sown");
+    if (shown.returnMarks.form) left.push("form");
+    if (shown.returnMarks.season) left.push("season");
+    for (const mark of MARKS) {
+      const fact = document.querySelector(`[data-return-fact="${mark}"]`);
+      const live = document.getElementById(`return-${mark}-glyph`);
+      if (!fact) continue;
+      const marked = left.includes(mark);
+      if (fact.hidden === marked) {
+        problems.push(
+          `the ${mark} return fact is ${marked ? "hidden" : "shown"} after a return that ` +
+            `${marked ? "did" : "did not"} leave that mark, so the facts do not follow what the plot marks.`
+        );
+      }
+      const expected = document.createElement("canvas");
+      drawReturnMarkGlyph(expected, mark, shown, palette);
+      if (marked && live && live.toDataURL() !== expected.toDataURL()) {
+        problems.push(
+          `the ${mark} glyph beside the fact does not show the mark the plot draws for the current garden ` +
+            `(${shown.formName}), so the glyph is stale or was never drawn.`
+        );
+      }
+    }
+
+    // Dismissing the return takes the glyphs with the facts that carry them.
+    document.getElementById("dismiss-return")?.click();
+    for (const mark of MARKS) {
+      const fact = document.querySelector(`[data-return-fact="${mark}"]`);
+      if (fact && !fact.hidden) {
+        problems.push(`dismissing the return left the ${mark} fact and its glyph showing.`);
+      }
+    }
+  } finally {
+    clearReturnMarks();
+    setGarden(gardenBefore);
+    restoreGrowth(growthBefore);
+    restoreRawStorage(storageBefore);
   }
 }
 
@@ -7435,11 +7609,13 @@ function checkReturnMarks(problems) {
       );
     }
     if (row && field) {
+      const maturedValue = document.querySelector('[data-field="return-matured"]');
       if (row.hidden || !field.textContent.trim()) {
         problems.push("the return did not show the New since you left readout row.");
-      } else if (marks && !field.textContent.includes(formatAmount(marks.plants))) {
+      } else if (marks && !String(maturedValue?.textContent).includes(formatAmount(marks.plants))) {
         problems.push(
-          `the return readout does not state the ${marks.plants} matured plants: "${field.textContent}".`
+          `the return readout does not state the ${marks.plants} matured plants: ` +
+            `"${maturedValue?.textContent}".`
         );
       }
     }
@@ -7673,9 +7849,16 @@ function checkReturnMarks(problems) {
     if (row && field) {
       if (row.hidden) {
         problems.push("an absence that only sowed seeds left the New since you left row hidden.");
-      } else if (!/sow/i.test(field.textContent) || !field.textContent.includes("1 seed sown")) {
+      } else if (!/sow/i.test(field.textContent)) {
         problems.push(
           `the New since you left readout does not name the seed the garden sowed while away: "${field.textContent}".`
+        );
+      } else if (
+        !String(document.querySelector('[data-field="return-sown"]')?.textContent ?? "").includes("1 seed")
+      ) {
+        problems.push(
+          `the New since you left readout does not count the 1 seed the garden sowed while away: ` +
+            `"${document.querySelector('[data-field="return-sown"]')?.textContent}".`
         );
       }
     }
@@ -10697,6 +10880,7 @@ export async function checks() {
     checkKindReadout(problems);
     checkKindSwatches(problems);
     checkHandWorkGlyphs(problems);
+    checkReturnMarkGlyphs(problems);
     checkKindMilestones(problems);
     checkPlotDrawing(problems);
     checkPlotDrawsKinds(problems);
