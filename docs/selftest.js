@@ -131,6 +131,7 @@ import {
   gardenForm,
   groundCover,
   groundEdge,
+  homeGroundCells,
   motionPhase,
   plotBounds,
   plotCells,
@@ -6334,6 +6335,141 @@ function checkPollinatorHomeOffPlots(problems) {
 }
 
 /**
+ * The ground beside the plots is the garden's own ground.
+ *
+ * The pollinator's home stands on a strip of ground past the last plot column.
+ * Only the hive's own row of that strip used to be drawn, so the rest of it was
+ * one flat band of soil beside the beds — too large to be a margin and neither a
+ * plot a visitor counts nor ground the garden has grown. The whole strip now
+ * carries the same soil marks, aged ground and ground growth the plots carry, so
+ * every cell of it reads as garden ground, while its cells stay past every plot
+ * cell so no seed or plant is covered and the plots stay countable.
+ */
+function checkHomeStripGround(problems) {
+  const palette = readPalette();
+  const lightKey = colorKey(parseColor(palette.soilLight));
+  const deepKey = colorKey(parseColor(palette.soilDeep));
+  const leafKeys = new Set(
+    [palette.leaf, palette.leafLight, palette.leafDeep].map((color) => colorKey(parseColor(color)))
+  );
+
+  // The strip's cells tile it exactly: from the home's first pixel to the
+  // canvas' edge and from its first row to the plot's foot, in a narrow and a
+  // wide plot alike, with every cell its own and none of them a plot's.
+  for (const state of [
+    { growth: 0, beds: 1, capacity: PLOT_CAPACITY },
+    { growth: 1e12, beds: 2, capacity: PLOT_CAPACITY * 2 },
+  ]) {
+    const bounds = plotBounds(state);
+    const strip = homeGroundCells(state);
+    const label = `a ${bounds.rows}-row plot`;
+    const stripColumns = (bounds.canvasWidth - bounds.home.x) / bounds.cell;
+    if (strip.length !== bounds.rows * stripColumns) {
+      problems.push(
+        `the ground beside the plots is ${strip.length} cells on ${label}, expected ` +
+          `${bounds.rows * stripColumns}; the whole strip beside the beds is the garden's ground.`
+      );
+    }
+    const left = Math.min(...strip.map((ground) => ground.x));
+    const right = Math.max(...strip.map((ground) => ground.x + bounds.cell));
+    const top = Math.min(...strip.map((ground) => ground.y));
+    const bottom = Math.max(...strip.map((ground) => ground.y + bounds.cell));
+    if (left !== bounds.home.x || right !== bounds.canvasWidth || top !== bounds.home.y || bottom !== bounds.height) {
+      problems.push(
+        `the ground beside the plots covers x ${left}..${right} and y ${top}..${bottom} on ${label}, but the strip ` +
+          `runs x ${bounds.home.x}..${bounds.canvasWidth} and y ${bounds.home.y}..${bounds.height}, so part of the strip ` +
+          "is left with no ground of its own."
+      );
+    }
+    if (new Set(strip.map((ground) => ground.cell)).size !== strip.length) {
+      problems.push(`two cells of the ground beside the plots share a cell key on ${label}, so their marks collide.`);
+    }
+    const clash = strip.find((ground) => ground.cell < bounds.cells);
+    if (clash) {
+      problems.push(
+        `the ground beside the plots claims cell ${clash.cell}, which is one of the plot's own ${bounds.cells} cells, ` +
+          "so a mark on the strip could be counted as a plot."
+      );
+    }
+  }
+
+  // A grown, established garden's strip carries both soil tones in every cell
+  // below the hive's row: the soil's marks, the ground its lifetime aged and the
+  // ground growth its growth covers all draw in the soil's two tones, so a cell
+  // with either missing is bare base soil. Nothing on the strip is leaf green —
+  // it is ground, not a growing thing — and the hive's own row is left out,
+  // because that is where the home and its bee stand.
+  const grown = {
+    growth: 1e12,
+    lifetimeGrowth: 1e12,
+    beds: 2,
+    capacity: PLOT_CAPACITY * 2,
+    plantCounts: [PLOT_CAPACITY, 6],
+    pollinator: { visiting: false },
+  };
+  const bounds = plotBounds(grown);
+  const belowHive = bounds.home.y + bounds.home.height;
+  const stripWidth = bounds.canvasWidth - bounds.home.x;
+  const stripHeight = bounds.height - belowHive;
+  const data = plotCanvas(grown).getContext("2d").getImageData(bounds.home.x, belowHive, stripWidth, stripHeight).data;
+  for (const ground of homeGroundCells(grown)) {
+    if (ground.y < belowHive) continue;
+    const left = ground.x - bounds.home.x;
+    const top = ground.y - belowHive;
+    const tones = new Set();
+    let hasLeaf = false;
+    for (let row = 0; row < bounds.cell; row += 1) {
+      for (let column = 0; column < bounds.cell; column += 1) {
+        const i = ((top + row) * stripWidth + left + column) * 4;
+        const key = `${data[i]},${data[i + 1]},${data[i + 2]}`;
+        tones.add(key);
+        if (leafKeys.has(key)) hasLeaf = true;
+      }
+    }
+    if (!tones.has(lightKey) || !tones.has(deepKey)) {
+      problems.push(
+        `the ground beside the plots at x=${ground.x}, y=${ground.y} of a grown, established garden carries ` +
+          `${tones.size} tone(s) with ${tones.has(lightKey) ? "" : "no soil-light and "}` +
+          `${tones.has(deepKey) ? "" : "no soil-deep "}pixel, so that part of the strip is bare soil rather than ` +
+          "the garden's own ground."
+      );
+    }
+    if (hasLeaf) {
+      problems.push(
+        `the ground beside the plots at x=${ground.x}, y=${ground.y} draws a leaf-green pixel, so ground no plot ` +
+          "counts reads as a seed or a plant standing beside the beds."
+      );
+    }
+  }
+
+  // The strip reads the garden's own state and no animation phase: a fresh
+  // garden's ground beside the beds is not drawn as an established one's, and
+  // two phases of one garden draw it alike, so it follows the growth and
+  // lifetime the readout reports and holds still under reduced motion.
+  const fresh = { growth: 0, lifetimeGrowth: 0, beds: 1, capacity: PLOT_CAPACITY, plantCounts: [0, 0] };
+  const stripPixels = (state, phase = 0) => {
+    const strip = plotBounds(state);
+    const top = strip.home.y + strip.home.height;
+    const image = plotCanvas(state, phase)
+      .getContext("2d")
+      .getImageData(strip.home.x, top, strip.canvasWidth - strip.home.x, strip.height - top).data;
+    return image.join(",");
+  };
+  if (stripPixels(fresh) === stripPixels(grown)) {
+    problems.push(
+      "the ground beside the plots is drawn the same for a fresh garden and an established one, so the strip is a " +
+        "flat fill rather than the garden's own ground."
+    );
+  }
+  if (stripPixels(grown, 0) !== stripPixels(grown, 5)) {
+    problems.push(
+      "the ground beside the plots changes with the animation phase, so it moves under reduced motion instead of " +
+        "holding still like the rest of the ground."
+    );
+  }
+}
+
+/**
  * The season's effect on the pollinator: each season sets its own visit cycle
  * and visit length, the closed form matches played time across season
  * boundaries, no season drops the garden below its base rate, and the season
@@ -10936,6 +11072,7 @@ export async function checks() {
     checkPollinator(problems);
     checkPollinatorHome(problems);
     checkPollinatorHomeOffPlots(problems);
+    checkHomeStripGround(problems);
     checkPollinatorSeasons(problems);
     checkSeason(problems);
     checkShownRateMatchesEarned(problems);
