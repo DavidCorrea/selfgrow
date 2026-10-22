@@ -7517,6 +7517,139 @@ function checkReturnSummaryPlacement(problems) {
 }
 
 /**
+ * The return strip's next goal reads the garden growing now: the distance it
+ * states for the next form is always the same number the garden-form row states,
+ * both move as the garden keeps growing after the return, and get-state reports
+ * the same reading — while every other fact the return reported stays the
+ * absence's own record and does not change.
+ */
+async function checkReturnGoalStaysLive(problems) {
+  let tools;
+  try {
+    ({ tools } = await import("./agenttools.js"));
+  } catch (e) {
+    problems.push(`the return strip's live goal cannot be checked: agenttools.js could not be imported — ${e.message}`);
+    return;
+  }
+  const readTool = tools().find((tool) => tool.name === "get-state");
+  if (!readTool) {
+    problems.push("the return strip's live goal cannot be checked: get-state is not among the tools.");
+    return;
+  }
+
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const storageBefore = rawStorage();
+  const strip = document.getElementById("return-summary");
+  const formRow = document.querySelector('[data-field="next-form"]');
+  const stripHtmlBefore = strip ? strip.innerHTML : null;
+  const stripHiddenBefore = strip ? strip.hidden : null;
+
+  try {
+    if (!strip || !formRow) {
+      problems.push(
+        'the return strip\'s live goal cannot be checked: the page needs #return-summary and [data-field="next-form"].'
+      );
+      return;
+    }
+
+    // A short return on a young garden, so the next form is named and its
+    // distance is an ordinary number rather than a compacted one.
+    const saved = { version: SAVE_VERSION, seeds: 1, plants: 0, growth: 0, rate: 0.5 };
+    setGarden({ seeds: 1, plants: 0 });
+    setGrowth(saved.growth, saved.rate);
+    const nowMs = 1_700_000_000_000;
+    applyReturn(saved, nowMs - 120_000, nowMs);
+
+    const state = getDisplayedState();
+    if (!state.nextFormName) {
+      problems.push(
+        `the return left the garden past its last form at ${formatGrowth(state.growth)} growth, so there is no ` +
+          "next goal for the strip and the garden-form row to agree on."
+      );
+      return;
+    }
+
+    // The strip's distance is the same number the garden-form row states, and
+    // both are the live state's own next-form distance.
+    const expected = { label: "Next", value: `${state.nextFormName} in ${formatGrowth(state.growthToNextForm)}` };
+    const shown = readGoalFacts(strip).at(-1);
+    if (JSON.stringify(shown) !== JSON.stringify(expected)) {
+      problems.push(
+        `the return strip states ${JSON.stringify(shown)}, expected the live next goal ${JSON.stringify(expected)}.`
+      );
+    }
+    if (!String(formRow.textContent).includes(`${formatGrowth(state.growthToNextForm)} growth away`)) {
+      problems.push(
+        `the garden-form row reads ${JSON.stringify(String(formRow.textContent))}, expected it to state the live ` +
+          `${formatGrowth(state.growthToNextForm)} growth to the next form.`
+      );
+    }
+    const agentFact = (await readTool.execute({}, {})).away?.facts?.at(-1);
+    if (JSON.stringify(agentFact) !== JSON.stringify(shown)) {
+      problems.push(
+        `get-state's next-goal fact ${JSON.stringify(agentFact)} does not match the page's ${JSON.stringify(shown)}.`
+      );
+    }
+
+    // The garden keeps growing after the return: the strip's next goal follows
+    // it, in step with the garden-form row, while the absence's own facts stay
+    // exactly as the return reported them. closeSandbox forces the redraw, so
+    // nothing here waits on a tick.
+    const frozenBefore = readGoalFacts(strip).slice(0, -1);
+    setGrowth(state.growth + 15, state.rate);
+    closeSandbox();
+
+    const moved = getDisplayedState();
+    const movedDistance = formatGrowth(moved.growthToNextForm);
+    if (movedDistance === formatGrowth(state.growthToNextForm) && moved.nextFormName === state.nextFormName) {
+      problems.push(
+        `the strip's next goal did not move after the garden grew 15 growth; it still states ` +
+          `${JSON.stringify(expected.value)}.`
+      );
+    }
+    const expectedMoved = { label: "Next", value: `${moved.nextFormName} in ${movedDistance}` };
+    const shownMoved = readGoalFacts(strip).at(-1);
+    if (JSON.stringify(shownMoved) !== JSON.stringify(expectedMoved)) {
+      problems.push(
+        `after 15 more growth the strip states ${JSON.stringify(shownMoved)}, expected the live next goal ` +
+          `${JSON.stringify(expectedMoved)}.`
+      );
+    }
+    if (!String(formRow.textContent).includes(`${movedDistance} growth away`)) {
+      problems.push(
+        `after 15 more growth the garden-form row reads ${JSON.stringify(String(formRow.textContent))}, expected ` +
+          `${movedDistance} growth to the next form.`
+      );
+    }
+    const frozenAfter = readGoalFacts(strip).slice(0, -1);
+    if (JSON.stringify(frozenAfter) !== JSON.stringify(frozenBefore)) {
+      problems.push(
+        `the strip's absence facts changed as the garden grew: ${JSON.stringify(frozenAfter)}, expected ` +
+          `${JSON.stringify(frozenBefore)}.`
+      );
+    }
+    const agentMoved = (await readTool.execute({}, {})).away?.facts?.at(-1);
+    if (JSON.stringify(agentMoved) !== JSON.stringify(shownMoved)) {
+      problems.push(
+        `after 15 more growth get-state's next-goal fact ${JSON.stringify(agentMoved)} does not match the page's ` +
+          `${JSON.stringify(shownMoved)}.`
+      );
+    }
+  } finally {
+    closeSandbox();
+    if (strip) {
+      strip.innerHTML = stripHtmlBefore ?? "";
+      strip.hidden = stripHiddenBefore ?? true;
+    }
+    setGarden(gardenBefore);
+    restoreGrowth(growthBefore);
+    restoreRawStorage(storageBefore);
+    clearReturnMarks();
+  }
+}
+
+/**
  * Time away sows: an absence spends its earned growth on the cheapest seed in
  * every free plot and lets those seeds grow, so a return finds a taller garden
  * rather than an enormous number beside one plant — while a garden whose plots
@@ -11059,6 +11192,7 @@ export async function checks() {
     checkSimulateGarden(problems);
     checkReturnSummary(problems);
     checkReturnSummaryPlacement(problems);
+    await checkReturnGoalStaysLive(problems);
     checkAwaySowing(problems);
     checkReturnMarks(problems);
     checkVisitRecord(problems);

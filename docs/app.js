@@ -331,7 +331,7 @@ function setText(element, text) {
 export function getDisplayedState() {
   const { growth, rate, age, lifetime, bonus } = getGrowthState();
   const garden = getGarden();
-  return {
+  const shown = {
     ...describeGardenState(garden, growth, rate, age, bonus),
     // The garden's hand-work since it was last replanted — how long the record
     // has run and how many plots were sowed and tended by hand. It is kept apart
@@ -375,6 +375,14 @@ export function getDisplayedState() {
     sandbox: getSandboxState(),
     storageAvailable: isStorageAvailable,
   };
+  // The return strip's forward-looking Next fact is read from the garden
+  // growing now, not from the value it held at the moment of returning, so an
+  // agent reading `away` sees the same next-goal distance a visitor reads off
+  // the page beside the garden-form row. The absence's own facts stay exactly
+  // as the return reported them; only the last fact is replaced.
+  const facts = shown.away?.facts ?? [];
+  const live = facts.length ? liveGoalFact(shown) : null;
+  return live ? { ...shown, away: { ...shown.away, facts: [...facts.slice(0, -1), live] } } : shown;
 }
 
 /**
@@ -601,6 +609,25 @@ export function summarizeReturn(away) {
 }
 
 /**
+ * The return strip's forward-looking fact: the next form the garden is reaching
+ * for and how far off it is *now*.
+ *
+ * Pure, and the one place that wording lives: `returnFacts` uses it for the
+ * fact a return reports, `render` calls it again on every tick to keep the strip
+ * reading the garden growing now, and `getDisplayedState` reports the same
+ * reading. A report carries `nextFormName`/`growthToNextForm` and a displayed
+ * state carries them too, so the strip and the garden-form row state one
+ * distance. Null past the last form, where there is no next form to compare and
+ * the strip's own "Next seed" fact is the absence's record of what to reach.
+ *
+ * @returns {{label: string, value: string}|null}
+ */
+function liveGoalFact(state) {
+  if (!state?.nextFormName) return null;
+  return { label: "Next", value: `${state.nextFormName} in ${formatGrowth(state.growthToNextForm)}` };
+}
+
+/**
  * The return report as short labelled facts — what was earned, what matured,
  * whether a season turned or a pollinator arrived, and what to reach for next.
  * Each fact is a label and a value, never a sentence, so a return reads in two
@@ -608,7 +635,9 @@ export function summarizeReturn(away) {
  * would say nothing — no seed matured, no season crossed — is left out.
  *
  * Pure, so the real return and a sandbox rehearsal build the same facts from
- * the same report and their two readings can never disagree.
+ * the same report and their two readings can never disagree. The last fact is
+ * the forward-looking one the strip keeps live (see `liveGoalFact`); the rest
+ * are the absence's own record and never change while the strip is shown.
  *
  * @returns {Array<{label: string, value: string}>}
  */
@@ -628,11 +657,7 @@ export function returnFacts(away) {
   if (away.pollinator?.visiting) {
     facts.push({ label: "Pollinator", value: `x${away.pollinator.multiplier}` });
   }
-  facts.push(
-    away.nextFormName
-      ? { label: "Next", value: `${away.nextFormName} in ${formatGrowth(away.growthToNextForm)}` }
-      : { label: "Next seed", value: formatAmount(away.nextSeedCost) }
-  );
+  facts.push(liveGoalFact(away) ?? { label: "Next seed", value: formatAmount(away.nextSeedCost) });
   return facts;
 }
 
@@ -816,7 +841,30 @@ function showReturnSummary(away) {
     return;
   }
   renderGoalFacts(element, away.facts ?? []);
+  // The last fact is the forward-looking one — the next goal — so it is marked
+  // and rewritten from the live garden on every render beneath, keeping the
+  // strip's distance the same number as the garden-form row's. Past the last
+  // form there is no form distance to compare (the report falls back to the
+  // absence's own "Next seed" fact), so `renderReturnGoal` leaves it alone.
+  if (element.lastElementChild) element.lastElementChild.dataset.liveGoal = "true";
   element.hidden = false;
+}
+
+/**
+ * Rewrite the return strip's forward-looking Next fact from the live garden,
+ * so the distance it states for the next goal is the same number the
+ * garden-form row states, moving with the garden rather than frozen at the
+ * moment of returning. The absence's other facts are left exactly as the
+ * return reported them.
+ */
+function renderReturnGoal(state) {
+  const element = elements.returnSummary;
+  if (!element || element.hidden) return;
+  const fact = liveGoalFact(state);
+  const row = element.querySelector('[data-live-goal="true"]');
+  if (!fact || !row) return;
+  setText(row.querySelector(".goal-fact-label"), fact.label);
+  setText(row.querySelector(".goal-fact-value"), fact.value);
 }
 
 // --- Rehearsing time in a sandbox -------------------------------------------
@@ -1805,6 +1853,10 @@ function render() {
   setText(elements.replantBonus, `replant now +${formatAmount(state.replantBonus)}`);
   setText(elements.form, state.formName);
   setText(elements.nextForm, describeNextForm(state));
+  // The return strip's next-goal fact is a live reading too, from the same
+  // state as the garden-form row further down, so the two distances can never
+  // disagree while the strip is shown.
+  renderReturnGoal(state);
   setMeter(state.formProgress, elements.formMeter, elements.formMeterFill);
   setText(elements.seeds, formatAmount(state.seeds));
   setText(elements.plants, formatAmount(state.plants));

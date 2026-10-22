@@ -137,7 +137,12 @@ export function tools() {
         "matured (matured), the form it started at (from) and reached (to), " +
         "the formsFound on the way, a plain summary sentence, and the same " +
         "facts the page shows as short labelled values (facts, each " +
-        "{label, value}). It also " +
+        "{label, value}) — the last of those facts is the next goal, and it is " +
+        "read from the garden growing now rather than frozen at the moment of " +
+        "returning, so the distance it states is the same number the page's " +
+        "garden-form row states and moves as the garden keeps growing; every " +
+        "other fact is the absence's own record and never changes while the " +
+        "return is shown. It also " +
         "reports returnMarks: what the last return marked on the plot and the " +
         "readout — how many plants matured (plants), how many seeds the garden " +
         "sowed into the free plots while away (sown) and the plots it points " +
