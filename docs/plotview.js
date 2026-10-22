@@ -647,11 +647,12 @@ function drawWorkedGround(ctx, x, y, palette) {
  * growing thing, so it belongs to the ground it lies in, and its shape shares
  * nothing with the visit's presence furrows — two full-width trenches — or with
  * the standing board a hand-sown plot carries, so the three hand-work marks can
- * be told apart. It stays inside the cell's upper and middle band, clear of the
- * foot where a seed's mound is turned and where a plant stands, and it is drawn
- * beneath every sprite and edge, so it can never obscure a seed, a plant or the
- * plot it sits in. It reads no animation phase, so it holds still in the single
- * frame reduced motion pins to.
+ * be told apart. It stays inside the cell's upper band, a few thin pixels that
+ * cannot bury a plant's silhouette or its leaf or bloom colour, and it is drawn
+ * over every sprite so the visitor's own repeated action always leaves a mark
+ * they can point at even on a plot already holding a seed or a plant. It reads
+ * no animation phase, so it holds still in the single frame reduced motion pins
+ * to.
  *
  * It is exported because the readout draws the very same cut as a small glyph
  * beside the 'Tended' fact, so the mark on the plot and the label that counts it
@@ -1521,12 +1522,14 @@ function drawPlotEdges(ctx, palette, grid) {
  * The plots the visitor tended by hand carry a third, distinct still mark:
  * a compact hoe cut with a turned clod, drawn from `state.visit.tended` — the
  * same count the 'Tended' readout and `get-state` report — so the soil someone
- * worked by hand shows on the plot and grows with how much they tended. It sits
- * in the cell's upper band beneath every sprite and edge, so it never covers a
- * plot of soil, a seed or a plant, and it reads no phase, so it holds still.
- * It is a different mark from the visit's presence furrows and the sown sign,
- * so a garden merely watched, one watched and sown, and one tended by hand are
- * each drawn differently.
+ * worked by hand shows on the plot and grows with how much they tended. It goes
+ * on last of the garden's own marks, over every sprite and the sown signs, in
+ * the cell's upper band and in the soil's own tones, so a planted plot still
+ * carries a mark a visitor can point at without the few thin pixels burying the
+ * plant's kind. It reads no phase, so it holds in the still frame. It is a
+ * different mark from the visit's presence furrows and the sown sign, so a
+ * garden merely watched, one watched and sown, and one tended by hand are each
+ * drawn differently.
  *
  * The return marks go on last, over everything: a still sun tick on each cell
  * whose plant matured while the visitor was away, a still sun ring around each
@@ -1559,7 +1562,6 @@ export function drawGarden(canvas, state, palette, phase = 0) {
   ctx.fillRect(0, 0, canvasWidth, height);
 
   const marks = plotMarks(state);
-  const workedCells = new Set(tendedWorkCells(state));
   const occupied = new Set(marks.map((mark) => mark.cell));
   const plants = marks.filter((mark) => mark.kind === "herb-plant" || mark.kind === "bloom-plant").length;
   const growthTier = Math.min(2, Math.floor(form.fill * 3));
@@ -1589,10 +1591,6 @@ export function drawGarden(canvas, state, palette, phase = 0) {
     // The furrows of a tended visit go on over the ground, under the edges and
     // the sprites, so every plot of a garden with a visitor reads as worked.
     if (tended) drawWorkedGround(ctx, x, y, paint);
-    // The plots the visitor tended by hand this visit carry a still hoe cut,
-    // under the edges and the sprites, so the 'Tended' number beside the garden
-    // is drawn on the plot and grows with the visitor's own hand-work.
-    if (workedCells.has(cell)) drawTendedWorkMark(ctx, x, y, paint);
   }
   // The ground beside the plots is the garden's own ground, so the strip the
   // pollinator's home stands on carries the plots' soil marks, aged ground and
@@ -1632,6 +1630,16 @@ export function drawGarden(canvas, state, palette, phase = 0) {
   // its own. The sign reads no phase, so it holds in the still frame.
   for (const cell of tendedMarkCells(state, marks)) {
     drawTendedSign(ctx, (cell % COLUMNS) * CELL, Math.floor(cell / COLUMNS) * CELL, paint);
+  }
+  // The plots the visitor tended by hand carry their own still hoe cut, drawn
+  // over every sprite and the sown signs alike: tending is the most repeated
+  // thing a visitor does, so the 'Tended' number beside the garden must leave a
+  // mark on the plot it was done to even when a seed or plant already stands in
+  // that cell. The cut stays in the cell's upper band in the soil's own tones,
+  // a few thin pixels that cannot bury a plant's kind, and it reads no phase,
+  // so it holds in the still frame.
+  for (const cell of tendedWorkCells(state)) {
+    drawTendedWorkMark(ctx, (cell % COLUMNS) * CELL, Math.floor(cell / COLUMNS) * CELL, paint);
   }
   // The pollinator's home stands on its own ground beside the plots whenever
   // grown plants do, so it never covers a plot a visitor counts. Between visits

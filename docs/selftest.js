@@ -8615,8 +8615,9 @@ function checkTendedMarks(problems) {
  * 'Tended' readout states it while the picture used to stay exactly as it was.
  * `tendedWorkCells` is that hand-work drawn: one still mark per tended plot, on
  * the first that many cells of the ground, bounded by the plot and changing only
- * with `visit.tended`. The mark reads no animation phase, stays in its cell's
- * upper band beneath every sprite so it cannot cover a seed or a plant, and the
+ * with `visit.tended`. The mark reads no animation phase and stays in its cell's
+ * upper band in the soil's own tones, drawn over every sprite so a planted plot
+ * still shows it without the few thin pixels burying the plant's kind, and the
  * plot's description names the same bounded count.
  */
 function checkHandWorkMarks(problems) {
@@ -8734,6 +8735,105 @@ function checkHandWorkMarks(problems) {
       Array.from(canvas.getContext("2d").getImageData(0, seedBounds.height - 5, seedBounds.width, 5).data).join(",");
     if (footRows(plotCanvas(seedOnly, 0)) !== footRows(plotCanvas(seedTended, 0))) {
       problems.push("a seed's plot foot changed when the hand-tended mark appeared, so the mark can cover a seed.");
+    }
+
+    // A garden whose plots already hold plants is the case a visitor meets: the
+    // mark must show on the plot even when a plant stands in that cell, so the
+    // 'Tended' count beside the garden answers to the picture. Six hand-tends are
+    // visible on the six plots they were done to and twelve on all twelve.
+    const plantedNothing = {
+      growth: 1,
+      beds: 1,
+      capacity: PLOT_CAPACITY,
+      plantCounts: [PLOT_CAPACITY / 2, PLOT_CAPACITY / 2],
+      seedCounts: [0, 0],
+      visit: { seconds: 0, sown: 0, tended: 0 },
+    };
+    const plantedTends = (tended) => ({ ...plantedNothing, visit: { seconds: 0, sown: 0, tended } });
+    const plantedBounds = plotBounds(plantedNothing);
+    const sixPlanted = differingCells(plantedTends(6), plantedNothing);
+    const sixExpected = new Set([0, 1, 2, 3, 4, 5]);
+    if (sixPlanted.size !== 6 || [...sixPlanted].some((cell) => !sixExpected.has(cell))) {
+      problems.push(
+        `tending a fully planted garden six times changed plot cells ` +
+          `${JSON.stringify([...sixPlanted].sort((a, b) => a - b))}; the six tends must be visible on the six plots ` +
+          "they were done to (cells 0-5)."
+      );
+    }
+    const twelvePlanted = differingCells(plantedTends(PLOT_CAPACITY), plantedNothing);
+    if (twelvePlanted.size !== plantedBounds.cells) {
+      problems.push(
+        `tending a fully planted garden ${PLOT_CAPACITY} times changed ${twelvePlanted.size} of the ` +
+          `${plantedBounds.cells} plot cells; every tended plot of a planted garden must show the mark.`
+      );
+    }
+
+    // The mark is visible on a planted plot at every form and season, and the
+    // plant standing under it still reads as its kind: a leaf-coloured pixel on
+    // every tended herb plot and a bloom-coloured one on every tended bloom
+    // plot. The growths cover each form's own threshold and a part-way point
+    // where the sprites are tallest, which is exactly where a mark drawn beneath
+    // the sprite disappeared behind a hedge or a canopy.
+    const palette = readPalette();
+    const bloomKeys = new Set([colorKey(parseColor(palette.bloom))]);
+    const leafKeysFor = (seasonKey) => {
+      const paint = seasonLook(palette, seasonKey).palette;
+      return new Set([paint.leaf, paint.leafLight, paint.leafDeep].map((color) => colorKey(parseColor(color))));
+    };
+    let hiddenPlantedMark = null;
+    let buriedHerb = null;
+    let buriedBloom = null;
+    for (const [index, form] of FORMS.entries()) {
+      const nextAt = index + 1 < FORMS.length ? FORMS[index + 1].at : form.at * 1000;
+      const tallGrowth = form.at === 0 ? 0.9 : form.at * Math.pow(nextAt / form.at, 0.95);
+      for (const growth of [form.at, tallGrowth]) {
+        for (const season of SEASONS) {
+          const planted = { ...plantedNothing, growth, season: { key: season.key } };
+          const tended = { ...planted, visit: { seconds: 0, sown: 0, tended: PLOT_CAPACITY } };
+          const where = `${form.name} in ${season.key}`;
+          if (!hiddenPlantedMark && differingCells(tended, planted).size !== plantedBounds.cells) {
+            hiddenPlantedMark = where;
+          }
+          const canvas = plotCanvas(tended, 0);
+          const leafKeys = leafKeysFor(season.key);
+          for (let cell = 0; cell < PLOT_CAPACITY; cell += 1) {
+            const left = (cell % plantedBounds.columns) * plantedBounds.cell;
+            const top = Math.floor(cell / plantedBounds.columns) * plantedBounds.cell;
+            const carries = (keys) =>
+              colorPixels(canvas, keys, left, top, plantedBounds.cell, plantedBounds.cell).length > 0;
+            if (cell < PLOT_CAPACITY / 2 && !carries(leafKeys) && !buriedHerb) {
+              buriedHerb = `${where} on plant cell ${cell}`;
+            }
+            if (cell >= PLOT_CAPACITY / 2 && !carries(bloomKeys) && !buriedBloom) {
+              buriedBloom = `${where} on plant cell ${cell}`;
+            }
+          }
+        }
+      }
+    }
+    if (hiddenPlantedMark) {
+      problems.push(
+        `a fully planted garden tended on all ${PLOT_CAPACITY} plots drew no visible mark at ${hiddenPlantedMark}, ` +
+          "so a plant still hides the visitor's own hand-work."
+      );
+    }
+    if (buriedHerb) {
+      problems.push(`the hand-tended mark left no leaf-coloured pixel at ${buriedHerb}, so it buries a herb's kind.`);
+    }
+    if (buriedBloom) {
+      problems.push(`the hand-tended mark left no bloom-coloured pixel at ${buriedBloom}, so it buries a bloom's kind.`);
+    }
+
+    // The mark reads no animation phase on a planted garden either: the pixels
+    // it adds over the plants are the same in every phase, so a still frame
+    // under reduced motion shows where the visitor tended.
+    const plantedMarkPixels = (phase) =>
+      differingPixels(plotCanvas(plantedTends(PLOT_CAPACITY), phase), plotCanvas(plantedNothing, phase)).join("|");
+    if (plantedMarkPixels(0) !== plantedMarkPixels(5)) {
+      problems.push(
+        "the hand-tended mark on a planted garden changed between animation phases, so it does not hold in the still " +
+          "frame reduced motion pins to."
+      );
     }
 
     // The plot's description names the same bounded count as the draw.
