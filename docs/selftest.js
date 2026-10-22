@@ -10004,6 +10004,155 @@ function checkSandboxClose(problems) {
   }
 }
 
+/**
+ * The page's own rows and an agent's reading are one account of the garden.
+ *
+ * A visitor reads the garden off the page's rows — the beds, plots, ungrown
+ * seeds and grown plants, each kind's counts, and the sentence under the plot.
+ * An agent reads the same garden through `get-state`. They must be the same
+ * numbers from the same moment, or a person and an agent are shown two
+ * different gardens. The page's rows can lag the garden by a tick or an action,
+ * and a hidden tab's rows can lag it for as long as nobody is looking while its
+ * tools still run — so this check writes deliberately stale text onto every row
+ * and the sentence, then reads the garden through the tool and requires the
+ * page to agree with what it returned. A reading that is really of the page
+ * must leave the page saying exactly what it returned.
+ */
+async function checkReadingsAgree(problems) {
+  let tools;
+  try {
+    ({ tools } = await import("./agenttools.js"));
+  } catch (e) {
+    problems.push(`docs/agenttools.js could not be imported for the reading check — ${e.message}`);
+    return;
+  }
+  const readTool = tools().find((tool) => tool.name === "get-state");
+  if (!readTool) {
+    problems.push(
+      "agenttools.js has no get-state tool, so the page's rows cannot be checked against an agent's reading."
+    );
+    return;
+  }
+
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const storageBefore = rawStorage();
+  const seenBefore = rawLastSeen();
+
+  // The page's count rows, each keyed by the same field the page labels it with.
+  const fields = {
+    beds: document.querySelector('[data-field="beds"]'),
+    capacity: document.querySelector('[data-field="capacity"]'),
+    seeds: document.querySelector('[data-field="seeds"]'),
+    plants: document.querySelector('[data-field="plants"]'),
+    "kind-herb-seeds": document.querySelector('[data-field="kind-herb-seeds"]'),
+    "kind-herb-plants": document.querySelector('[data-field="kind-herb-plants"]'),
+    "kind-bloom-seeds": document.querySelector('[data-field="kind-bloom-seeds"]'),
+    "kind-bloom-plants": document.querySelector('[data-field="kind-bloom-plants"]'),
+  };
+  const description = document.getElementById("plot-description");
+  const absent = Object.entries(fields)
+    .filter(([, el]) => !el)
+    .map(([name]) => name);
+  if (absent.length || !description) {
+    problems.push(
+      `the page is missing the ${absent.join(", ")}${description ? "" : " plot-description"} row(s), so its ` +
+        "counts cannot be checked against an agent's reading."
+    );
+    return;
+  }
+
+  // What each row must say for the state an agent just read.
+  const expectedRows = (state) => ({
+    beds: formatAmount(state.beds),
+    capacity: formatAmount(state.capacity),
+    seeds: formatAmount(state.seeds),
+    plants: formatAmount(state.plants),
+    "kind-herb-seeds": formatAmount(state.kinds[0].seeds),
+    "kind-herb-plants": formatAmount(state.kinds[0].plants),
+    "kind-bloom-seeds": formatAmount(state.kinds[1].seeds),
+    "kind-bloom-plants": formatAmount(state.kinds[1].plants),
+  });
+
+  // The counts a tick could move between the tool's read and this comparison;
+  // when one moves, the round is retried rather than failed for timing.
+  const countsOf = (state) => [state.beds, state.capacity, state.seeds, state.plants].join(",");
+
+  const staleText = "— lagging —";
+  // Leave every row and the sentence saying something the garden does not hold,
+  // the way a stale render does: whatever an agent reads must overwrite it.
+  const staleTheRows = () => {
+    for (const el of Object.values(fields)) el.textContent = staleText;
+    description.textContent = staleText;
+  };
+
+  const readOnce = async (label) => {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      staleTheRows();
+      const state = await readTool.execute({}, {});
+      // A tick that matured a seed, or a visitor's own action, between the
+      // tool's render and this moment moves both the returned state and the
+      // live one; only then is the round retried, three times at most.
+      if (countsOf(state) !== countsOf(getDisplayedState())) continue;
+      const expected = expectedRows(state);
+      for (const [name, el] of Object.entries(fields)) {
+        if (el.textContent !== expected[name]) {
+          problems.push(
+            `${label}: the page's ${name} row says "${el.textContent}", but get-state read ${expected[name]} — ` +
+              "an agent and the page disagree about the same garden."
+          );
+        }
+      }
+      const sentence = describePlot(state);
+      if (description.textContent !== sentence) {
+        problems.push(
+          `${label}: the page's plot description says "${description.textContent}", but get-state's own counts ` +
+            `describe "${sentence}" — the words and the reading disagree about the same garden.`
+        );
+      }
+      return;
+    }
+  };
+
+  try {
+    // A fresh garden: one bed, one ungrown seed.
+    setGarden(newGarden());
+    setGrowth(0, 0);
+    await readOnce("a fresh garden");
+
+    // A second bed just opened, its new plots free, one seed still growing.
+    setGarden({ beds: 2, plantCounts: [12, 0], sprouts: [30], bloomSprouts: [] });
+    setGrowth(1e4, 12);
+    await readOnce("a garden with a second bed open");
+
+    // Every plot of both beds full, so the next bed is the goal.
+    setGarden({ beds: 2, seeds: 2 * PLOTS_PER_BED });
+    setGrowth(1e4, 12);
+    await readOnce("a full two-bed plot");
+
+    // A return in progress on a two-bed garden: the marks are still up, and the
+    // rows the visitor reads must agree with the reading just as they do for a
+    // live garden.
+    setGarden({ beds: 2, plantCounts: [12, 0], sprouts: [10, 10], bloomSprouts: [] });
+    setGrowth(60, 1, 0, 4000, 0);
+    writeStoredGarden(getGarden());
+    writeLastSeen(Date.now() - 3_600_000);
+    applyReturn(getGrowthState(), readLastSeen(), Date.now());
+    await readOnce("a return in progress");
+
+    // And again once the return is acknowledged, so the two agree in both
+    // states of the same return.
+    clearReturnMarks();
+    await readOnce("a garden after the return is acknowledged");
+  } finally {
+    clearReturnMarks();
+    setGarden(gardenBefore);
+    restoreGrowth(growthBefore);
+    restoreRawStorage(storageBefore);
+    restoreRawLastSeen(seenBefore);
+  }
+}
+
 async function checkAgentTools(problems) {
   let tools;
   try {
@@ -11080,6 +11229,7 @@ export async function checks() {
     checkSeasonalGround(problems);
     checkSandbox(problems);
     checkSandboxClose(problems);
+    await checkReadingsAgree(problems);
     await checkAgentTools(problems);
   } finally {
     // Leave the page exactly as a visitor found it: the garden, the whole growth

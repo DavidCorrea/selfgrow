@@ -32,6 +32,7 @@ import {
   loadGardenSave,
   openSandbox,
   previewGardenSave,
+  refreshDisplay,
   resetSandbox,
   restoreGardenSave,
   sandboxSpanSeconds,
@@ -41,6 +42,19 @@ import { SEED_KINDS, openBed, plantSeed, replant, tend } from "./garden.js";
 // The save for the starting garden, so `import-save`'s example always validates
 // and runs. Importing it leaves the garden exactly as it starts.
 const EXAMPLE_SAVE = "SELFGROW1.eyJ2ZXJzaW9uIjoxLCJzZWVkcyI6MSwicGxhbnRzIjowfQ==";
+
+/**
+ * Read the garden as the page shows it: write the page's own rows from the live
+ * garden first, then hand back that state. Every reading an agent makes goes
+ * through here, so the rows a visitor reads and the state an agent gets are one
+ * account of the garden at the same instant — never two snapshots that can
+ * drift apart by a tick, an action, or a hidden tab whose rows lag while its
+ * tools still run.
+ */
+function readState() {
+  refreshDisplay();
+  return getDisplayedState();
+}
 
 export function tools() {
   return [
@@ -189,7 +203,7 @@ export function tools() {
       annotations: { readOnlyHint: true },
       example: {},
       async execute() {
-        return getDisplayedState();
+        return readState();
       },
     },
     {
@@ -207,7 +221,7 @@ export function tools() {
       async execute() {
         clearReturnMarks();
         tend();
-        return getDisplayedState();
+        return readState();
       },
     },
     {
@@ -247,7 +261,7 @@ export function tools() {
       async execute(input) {
         clearReturnMarks();
         const result = plantSeed(input?.kind ?? "herb");
-        return { ok: result.ok, reason: result.reason, cost: result.cost, kind: result.kind, state: getDisplayedState() };
+        return { ok: result.ok, reason: result.reason, cost: result.cost, kind: result.kind, state: readState() };
       },
     },
     {
@@ -276,7 +290,7 @@ export function tools() {
           reason: result.reason,
           cost: result.cost,
           beds: result.beds,
-          state: getDisplayedState(),
+          state: readState(),
         };
       },
     },
@@ -317,7 +331,7 @@ export function tools() {
       annotations: { readOnlyHint: false, consequentialHint: true },
       example: {},
       async execute({ confirm } = {}) {
-        const state = getDisplayedState();
+        const state = readState();
         const preview = {
           canReplant: state.canReplant,
           bonus: state.replantBonus,
@@ -338,7 +352,7 @@ export function tools() {
           bonus: result.bonus,
           lifetime: result.lifetime,
           preview,
-          state: getDisplayedState(),
+          state: readState(),
         };
       },
     },
@@ -360,7 +374,7 @@ export function tools() {
       example: {},
       async execute() {
         clearReturnMarks();
-        return getDisplayedState();
+        return readState();
       },
     },
     {
@@ -383,7 +397,7 @@ export function tools() {
       example: {},
       async execute() {
         openSandbox();
-        return getDisplayedState();
+        return readState();
       },
     },
     {
@@ -416,7 +430,7 @@ export function tools() {
       example: { span: "day" },
       async execute({ span }) {
         fastForwardSandbox(sandboxSpanSeconds(String(span)));
-        return getDisplayedState();
+        return readState();
       },
     },
     {
@@ -458,7 +472,7 @@ export function tools() {
       example: { action: "tend" },
       async execute({ action }) {
         const result = actInSandbox(String(action));
-        const state = getDisplayedState();
+        const state = readState();
         return {
           ok: result.ok,
           action: result.action,
@@ -482,7 +496,7 @@ export function tools() {
       example: {},
       async execute() {
         resetSandbox();
-        return getDisplayedState();
+        return readState();
       },
     },
     {
@@ -504,7 +518,7 @@ export function tools() {
       example: {},
       async execute() {
         closeSandbox();
-        return getDisplayedState();
+        return readState();
       },
     },
     {
@@ -561,12 +575,17 @@ export function tools() {
         try {
           preview = previewGardenSave(text);
         } catch (e) {
-          return { ok: false, applied: false, error: e.message, state: getDisplayedState() };
+          return { ok: false, applied: false, error: e.message, state: readState() };
         }
         if (confirm !== true) {
-          return { ok: true, applied: false, needsConfirmation: true, preview, state: getDisplayedState() };
+          return { ok: true, applied: false, needsConfirmation: true, preview, state: readState() };
         }
-        return { ...loadGardenSave(text), applied: true, preview };
+        // The load writes the garden (and its own rows, through the notify the
+        // write fires); reading the state back through readState keeps the
+        // returned state and the rows a visitor now sees the same account of
+        // the loaded garden rather than two reads a tick apart.
+        const result = loadGardenSave(text);
+        return { ...result, applied: true, preview, state: readState() };
       },
     },
     {
@@ -590,7 +609,11 @@ export function tools() {
       annotations: { readOnlyHint: false, consequentialHint: true },
       example: {},
       async execute() {
-        return restoreGardenSave();
+        // Refresh and read together, for the same reason import-save does: the
+        // returned state and the rows a visitor now reads must be one account
+        // of the restored garden, not two snapshots at slightly different ticks.
+        const result = restoreGardenSave();
+        return { ...result, state: readState() };
       },
     },
   ];

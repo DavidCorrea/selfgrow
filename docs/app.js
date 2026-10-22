@@ -1790,9 +1790,11 @@ export function arrivalAnnouncement(away) {
 
 function render() {
   // A hidden tab still keeps the garden growing (the timer derives growth from
-  // elapsed time), but there is nobody to see it redraw.
-  if (document.hidden) return;
-
+  // elapsed time), and its rows are still the account a tool reads the garden
+  // through — an agent acts on a background tab and reports what it finds — so
+  // the text layer below is written whether or not anyone is looking. Only the
+  // picture waits for a visitor: there is nobody to see the plot redraw, so it
+  // is marked stale (in the draw guard below) and painted whole on return.
   const state = getDisplayedState();
   setText(elements.growth, formatGrowth(state.growth));
   setText(elements.rate, `+${formatGrowth(state.rate)}/s`);
@@ -1834,13 +1836,19 @@ function render() {
   }
 
   // Speak only the discrete events since the last render; the numbers above
-  // change every tick and are for a sighted player to watch, not to hear.
-  const snapshot = announceSnapshot(state);
-  if (!announcementsSuppressed) {
-    const events = describeAnnouncements(lastAnnounced, snapshot);
-    if (events.length) announceEvent(events.map((event) => event.text).join(" · "));
+  // change every tick and are for a sighted player to watch, not to hear. A
+  // hidden tab has nobody to hear it and no live region anyone is listening to,
+  // so speech waits for a visitor too: leaving `lastAnnounced` untouched lets
+  // the milestones crossed while away be announced on the render that welcomes
+  // the visitor back, exactly as they were before the rows kept updating.
+  if (!document.hidden) {
+    const snapshot = announceSnapshot(state);
+    if (!announcementsSuppressed) {
+      const events = describeAnnouncements(lastAnnounced, snapshot);
+      if (events.length) announceEvent(events.map((event) => event.text).join(" · "));
+    }
+    lastAnnounced = snapshot;
   }
-  lastAnnounced = snapshot;
 
   // The picture follows the growth, not the stored garden, so it redraws when
   // the amount, the form it falls in, the kinds on the plot, the season or the
@@ -1858,7 +1866,11 @@ function render() {
     `${state.beds}:${state.pollinator.visiting}:${state.season.key}:${phase}:` +
     `${state.established.index}:${state.established.fill}:${state.visit.sown}:` +
     `${state.visit.tended}:${state.visitPresent}:${JSON.stringify(state.returnMarks ?? null)}`;
-  if (plotKey !== lastPlotKey) {
+  if (document.hidden) {
+    // Nobody is looking at the plot, so it is not painted — but it is marked
+    // stale, so it is drawn whole the moment the visitor returns.
+    lastPlotKey = null;
+  } else if (plotKey !== lastPlotKey) {
     drawGarden(elements.plot, state, readPalette(), phase);
     // Each kind's own seed and grown plant drawn beside the label that counts
     // them, from the plot's own sprites, so a visitor can point at a plant or
@@ -1881,6 +1893,19 @@ function render() {
     }
     lastPlotKey = plotKey;
   }
+}
+
+/**
+ * Write the page's own rows from the garden now.
+ *
+ * A tool reads the garden by refreshing the page first: `getDisplayedState`
+ * reads the live garden and `render` writes that state into the rows a visitor
+ * sees, so the reading and the rows are the same account of the garden at the
+ * same instant rather than two snapshots that can drift apart by a tick, an
+ * action or a hidden tab. See `readState` in docs/agenttools.js.
+ */
+export function refreshDisplay() {
+  render();
 }
 
 /** The rehearsal panel: the garden it wound forward, or hidden while it is shut. */
