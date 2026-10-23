@@ -1455,6 +1455,49 @@ export function drawTendedSign(ctx, x, y, palette) {
 const PLOT_EDGE_INSET = 3;
 
 /**
+ * The band of open ground that separates one bed from the next, in canvas
+ * pixels — a run of ground several pixels deep rather than the one-pixel line a
+ * plot's own seam is drawn as.
+ *
+ * The plot is scaled down into its panel, so a mark has to be bed-scale to
+ * survive it: a boundary drawn as one more grid line reads as one more seam and
+ * the beds run together into a single field. A band this deep is still a clear
+ * gap of ground on a phone, where the whole bitmap is scaled to about half, and
+ * a visitor can point at the boundary between two beds without reading a number.
+ */
+export const BED_BAND = 6;
+
+/**
+ * The band of open ground between every pair of neighbouring beds.
+ *
+ * The band is laid into the foot of the bed above the boundary — its last row of
+ * plots keeps its own ridge, its own seam and its foot rim — so the drawn grid
+ * never needs a gap row of its own, and `plotBounds`, the cells' pixel mapping
+ * and every per-plot mark stay exactly what they were. A lit lip at the top of
+ * the band and dark ground below it close the bed off from the next one, which
+ * begins on fresh soil past its own lit rim.
+ *
+ * Bed 0 has no boundary above it, so a one-bed garden draws exactly what it
+ * drew before this band existed, and every bed opened after it is closed off the
+ * same way, however many of them there are.
+ */
+function drawBedBands(ctx, palette, grid) {
+  for (let bed = 0; bed < grid.beds - 1; bed += 1) {
+    const inBed = grid.plots.filter((plot) => plot.bed === bed);
+    if (inBed.length === 0) continue;
+    const left = Math.min(...inBed.map((plot) => plot.column)) * CELL;
+    const right = (Math.max(...inBed.map((plot) => plot.column)) + 1) * CELL - 1;
+    const foot = (Math.max(...inBed.map((plot) => plot.row)) + 1) * CELL;
+    const bandTop = foot - 1 - BED_BAND;
+    if (bandTop < 0) continue;
+    ctx.fillStyle = palette.soilLight;
+    ctx.fillRect(left, bandTop, right - left + 1, 1);
+    ctx.fillStyle = palette.soilDeep;
+    ctx.fillRect(left, bandTop + 1, right - left + 1, BED_BAND - 1);
+  }
+}
+
+/**
  * A low bed edge on every plot of soil, in the soil's own tones.
  *
  * Each plot carries a one-pixel lit ridge along its top with a dark line beneath
@@ -1472,8 +1515,11 @@ const PLOT_EDGE_INSET = 3;
  * own and the boundary between one bed and the next is visible without reading a
  * number. The rim follows the rows and columns that bed's own plots occupy, so a
  * partly filled last bed is closed without lighting ground it does not have.
- * Nothing here reads the animation phase, so the edges hold in the still frame
- * reduced motion pins to.
+ * Between neighbouring beds a band of open ground several pixels deep goes on
+ * under those rims (`drawBedBands`), so the boundary reads as a gap between two
+ * rooms of soil rather than as one more grid line, even at the size the plot is
+ * scaled down to in a phone's panel. Nothing here reads the animation phase, so
+ * the edges hold in the still frame reduced motion pins to.
  *
  * `grid` is the `plotCells` reading of the same state, so the drawn edge and the
  * counted plot are one and the same.
@@ -1494,6 +1540,9 @@ function drawPlotEdges(ctx, palette, grid) {
     ctx.fillStyle = palette.soilDeep;
     ctx.fillRect(x + 1, y + PLOT_EDGE_INSET, 1, CELL - PLOT_EDGE_INSET * 2);
   }
+  // The band goes on before the rims, so each bed is still closed by its own lit
+  // rim above and below the gap of dark ground between them.
+  drawBedBands(ctx, palette, grid);
   for (let bed = 0; bed < grid.beds; bed += 1) {
     const inBed = grid.plots.filter((plot) => plot.bed === bed);
     if (inBed.length === 0) continue;

@@ -117,6 +117,7 @@ import {
   visitAnnouncement,
 } from "./app.js";
 import {
+  BED_BAND,
   ESTABLISHMENTS,
   FORMS,
   drawGarden,
@@ -3449,6 +3450,129 @@ function checkPlotBedEdges(problems) {
           `palette soil-light rgb(${lightKey}), so the bed edge does not hold still under reduced motion.`
       );
     }
+  }
+}
+
+/**
+ * Every bed a garden owns is drawn as its own room of soil, separated from the
+ * bed before it by a band of open ground, so the beds drawn on the plot can be
+ * counted against the 'Beds' readout beside it.
+ *
+ * A bed counted by `plotCells` and no bed drawn behind it is exactly the failure
+ * ticket #1362 reports: opening a second bed raises the readout to 2 while the
+ * plots run together into one taller field. The band is several pixels deep in
+ * the soil's own tones rather than another one-pixel seam, so it survives the
+ * scale-down into a phone's panel; the starting bed carries no band, so a
+ * one-bed garden is drawn exactly as it was.
+ */
+function checkPlotBedSeparation(problems) {
+  const deepKey = colorKey(parseColor(readPalette().soilDeep));
+  // Bare soil with every plot open, so no sprite stands over the ground the
+  // band is drawn on and the band can be measured across the whole width.
+  const bare = (beds) => ({
+    growth: 0,
+    beds,
+    capacity: beds * PLOTS_PER_BED,
+    seeds: 0,
+    plants: 0,
+    pollinator: { visiting: false },
+  });
+  const bandRows = BED_BAND - 1;
+
+  /** How many rows of dark ground end at row `y`, across the plot's interior. */
+  const darkRowsEndingAt = (data, bounds, y) => {
+    const isDarkAcross = (row) => {
+      // The outer rim pixels are a bed's own sides, so the band is measured
+      // between them.
+      for (let x = 2; x < bounds.width - 2; x += 1) {
+        const i = (row * bounds.width + x) * 4;
+        if (`${data[i]},${data[i + 1]},${data[i + 2]}` !== deepKey) return false;
+      }
+      return true;
+    };
+    let rows = 0;
+    for (let row = y; row >= 0 && isDarkAcross(row); row -= 1) rows += 1;
+    return rows;
+  };
+
+  for (let beds = 1; beds <= 4; beds += 1) {
+    const state = bare(beds);
+    const bounds = plotBounds(state);
+    const grid = plotCells(state);
+    const canvas = plotCanvas(state);
+    const data = canvas.getContext("2d").getImageData(0, 0, bounds.width, bounds.height).data;
+
+    // The plot draws exactly the bed groups the readout counts.
+    const groups = new Set(grid.plots.map((plot) => plot.bed));
+    if (groups.size !== beds || grid.beds !== beds) {
+      problems.push(
+        `a ${beds}-bed garden of ${grid.plots.length} drawn plots fills ${groups.size} bed groups ` +
+          `(${grid.beds} by plotCells), so the picture cannot be counted as ${beds} beds.`
+      );
+    }
+
+    // The starting bed is drawn as it always was: a one-bed garden carries no
+    // band of open ground at all.
+    if (beds === 1) {
+      let longest = 0;
+      for (let y = 0; y < bounds.height; y += 1) longest = Math.max(longest, darkRowsEndingAt(data, bounds, y));
+      if (longest >= bandRows) {
+        problems.push(
+          `a one-bed garden draws ${longest} rows of dark ground across its whole width, so its starting bed is no ` +
+            "longer drawn as it was before beds were separated."
+        );
+      }
+      continue;
+    }
+
+    // Every boundary between two beds carries a full-width band of open ground.
+    for (let bed = 0; bed < beds - 1; bed += 1) {
+      const inBed = grid.plots.filter((plot) => plot.bed === bed);
+      const foot = (Math.max(...inBed.map((plot) => plot.row)) + 1) * bounds.cell;
+      const rows = darkRowsEndingAt(data, bounds, foot - 2);
+      if (rows < bandRows) {
+        problems.push(
+          `a ${beds}-bed garden draws ${rows} rows of open ground between bed ${bed} and bed ${bed + 1} at ` +
+            `y=${foot - 2}, expected a band of at least ${bandRows}, so the two beds read as one field.`
+        );
+      }
+    }
+  }
+
+  // Three beds at the size the plot is actually shown on a phone: the bitmap is
+  // the whole grid, uncropped, and the band is still more than a single device
+  // pixel once the panel scales it down — so the boundary can be pointed at
+  // without reading a number.
+  const PHONE_PLOT_BOX = { width: 326, height: 203 };
+  const three = bare(3);
+  const threeBounds = plotBounds(three);
+  const threeCanvas = plotCanvas(three);
+  const threeCellRows = Math.ceil((3 * PLOTS_PER_BED) / threeBounds.columns);
+  const threePhoneRows = plotRowsForPanel(three, PHONE_PLOT_BOX);
+  if (threeBounds.rows < threeCellRows || threePhoneRows < threeCellRows) {
+    problems.push(
+      `a three-bed garden of ${3 * PLOTS_PER_BED} plots is drawn over ${threeBounds.rows} rows ` +
+        `(${threePhoneRows} in a 326x203 phone panel) against the ${threeCellRows} its plots need, so part of the ` +
+        "garden is cropped out of its panel."
+    );
+  }
+  if (threeCanvas.width !== threeBounds.canvasWidth || threeCanvas.height !== threeBounds.height) {
+    problems.push(
+      `a three-bed garden draws a ${threeCanvas.width}x${threeCanvas.height}px bitmap over its ` +
+        `${threeBounds.canvasWidth}x${threeBounds.height}px grid, so part of the plot is cropped or overflows its ` +
+        "panel."
+    );
+  }
+  const phoneScale = Math.min(
+    PHONE_PLOT_BOX.width / threeCanvas.width,
+    PHONE_PLOT_BOX.height / threeCanvas.height
+  );
+  const bandOnPhone = bandRows * phoneScale;
+  if (!(bandOnPhone >= 2)) {
+    problems.push(
+      `the band between two of three beds is ${bandOnPhone.toFixed(1)} device pixels in a 326x203 phone panel, ` +
+        "so the boundary between beds cannot be seen on a phone."
+    );
   }
 }
 
@@ -11486,6 +11610,7 @@ export async function checks() {
     checkPlotMilestoneCrowns(problems);
     checkPlotMarksMatchCounts(problems);
     checkPlotBedEdges(problems);
+    checkPlotBedSeparation(problems);
     checkPlotCoverage(problems);
     checkGroundIsNotGrowth(problems);
     checkPlotEstablishment(problems);
