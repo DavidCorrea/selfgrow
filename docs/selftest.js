@@ -39,6 +39,8 @@ import {
   SEED_KINDS,
   STARTING_GROW_SECONDS,
   STORAGE_KEY,
+  TEND_HURRY_FLOOR,
+  TEND_HURRY_SECONDS,
   TEND_RATE_STEP,
   TEND_YIELD,
   addVisitTime,
@@ -4888,6 +4890,131 @@ function checkNextPlantReadout(problems) {
   } finally {
     setGarden(gardenBefore);
     restoreGrowth(growthBefore);
+  }
+}
+
+/**
+ * Tending by hand hurries the nearest ungrown seed, so a visit leaves a deed
+ * the clock alone could not. One tend shortens the labelled next-plant distance
+ * by exactly the hurry; repeated tending can never finish the seed on its own;
+ * a tended garden reaches its next plant in fewer seconds than the same garden
+ * left alone, and the earlier plant is drawn on the plot; and the offline
+ * simulation an absence runs still never hurries a seed.
+ */
+function checkTendHurries(problems) {
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const storageBefore = rawStorage();
+  const button = document.getElementById("tend");
+  const readoutEl = document.querySelector('[data-field="next-plant"]');
+  try {
+    // One tend shortens the soonest seed by exactly the hurry, and the page
+    // reads the shorter distance off the next-goal line at once.
+    setGarden({ sprouts: [20], plants: 1 });
+    setGrowth(0, 0.5);
+    const beforeSeconds = getDisplayedState().secondsToNextPlant;
+    if (beforeSeconds !== 20) {
+      problems.push(`a garden with one seed at 20s should have 20s to its next plant, but it reports ${beforeSeconds}.`);
+    }
+    button?.click();
+    const afterSeconds = getDisplayedState().secondsToNextPlant;
+    const expectedSeconds = beforeSeconds - TEND_HURRY_SECONDS;
+    if (afterSeconds !== expectedSeconds) {
+      problems.push(
+        `tending once should shorten the next plant from ${beforeSeconds}s to ${expectedSeconds}s, but it reads ` +
+          `${afterSeconds}s.`
+      );
+    }
+    if (readoutEl && !String(readoutEl.textContent).includes(`${expectedSeconds}s`)) {
+      problems.push(
+        `after tending the next-plant readout says ${JSON.stringify(readoutEl.textContent)}, expected it to mention ` +
+          `${expectedSeconds}s.`
+      );
+    }
+
+    // The hurry is bounded: enough tending to finish the seed brings it to the
+    // floor and no further, so only the clock can mature it.
+    setGarden({ sprouts: [30], plants: 0 });
+    setGrowth(0, 0);
+    for (let i = 0; i < 100; i += 1) button?.click();
+    const rushed = getGarden();
+    if (rushed.plants !== 0 || rushed.sprouts[0] !== TEND_HURRY_FLOOR) {
+      problems.push(
+        `100 tends on a 30s seed left ${rushed.sprouts[0]}s and ${rushed.plants} plants, expected the seed ungrown at ` +
+          `the ${TEND_HURRY_FLOOR}s floor.`
+      );
+    }
+
+    // A tended garden reaches its next plant in fewer seconds than the same
+    // garden left alone, and the earlier plant is drawn on the plot.
+    const startSproutSeconds = 12;
+    const stepsToPlant = (tendFirst) => {
+      setGarden({ sprouts: [startSproutSeconds], plants: 0 });
+      setGrowth(0, 0);
+      if (tendFirst) button?.click();
+      let steps = 0;
+      while (getGarden().plants < 1 && steps < startSproutSeconds + TEND_HURRY_SECONDS) {
+        advance(1);
+        steps += 1;
+      }
+      return steps;
+    };
+    const tendedSteps = stepsToPlant(true);
+    const tendedMarks = plotMarks(getDisplayedState());
+    if (tendedSteps !== startSproutSeconds - TEND_HURRY_SECONDS) {
+      problems.push(
+        `a tended ${startSproutSeconds}s seed should become a plant after ` +
+          `${startSproutSeconds - TEND_HURRY_SECONDS} seconds, but it took ${tendedSteps}.`
+      );
+    }
+    if (!tendedMarks.some((mark) => mark.kind === "herb-plant")) {
+      problems.push("the tended garden reached a plant but the plot draws no grown herb on it.");
+    }
+    const aloneSteps = stepsToPlant(false);
+    if (aloneSteps !== startSproutSeconds) {
+      problems.push(
+        `a ${startSproutSeconds}s seed left alone should become a plant after ${startSproutSeconds} seconds, but it took ` +
+          `${aloneSteps}.`
+      );
+    }
+    if (!(tendedSteps < aloneSteps)) {
+      problems.push(
+        `the tended garden took ${tendedSteps} seconds to its next plant and the untended ${aloneSteps}; tending must ` +
+          "be faster."
+      );
+    }
+    // At the moment the tended garden has grown, the same garden left alone has
+    // not yet: the deed, not the clock, is what put the plant there.
+    setGarden({ sprouts: [startSproutSeconds], plants: 0 });
+    setGrowth(0, 0);
+    for (let i = 0; i < tendedSteps; i += 1) advance(1);
+    const aloneAtSame = getDisplayedState();
+    if (aloneAtSame.plants > 0) {
+      problems.push(`the same garden left alone grew a plant in ${tendedSteps} seconds, so the hurry did nothing.`);
+    }
+    if (plotMarks(aloneAtSame).some((mark) => mark.kind === "herb-plant")) {
+      problems.push(
+        "the garden left alone drew a grown plant in the seconds the tended one did, so the hurry did nothing."
+      );
+    }
+
+    // An absence is untouched: the simulation that sows time away never hurries
+    // a seed, so a garden left alone grows at the clock's own pace.
+    const away = simulateGarden(
+      { growth: 0, rate: 0, age: 0, sprouts: [startSproutSeconds], bloomSprouts: [], plantCounts: [0, 0], beds: 1 },
+      1,
+      { sow: true }
+    );
+    if (away.sprouts[0] !== startSproutSeconds - 1) {
+      problems.push(
+        `an offline second left the seed at ${away.sprouts[0]}s, expected ${startSproutSeconds - 1}s — an absence ` +
+          "must not hurry a seed."
+      );
+    }
+  } finally {
+    setGarden(gardenBefore);
+    restoreGrowth(growthBefore);
+    restoreRawStorage(storageBefore);
   }
 }
 
@@ -10521,6 +10648,9 @@ async function checkAgentTools(problems) {
     const gardenBefore = getGarden();
     const growthBefore = getGrowthState();
     try {
+      // A known seed, so the tool's hurry can be read off the same garden the
+      // Tend the soil button would change.
+      setGarden({ sprouts: [20], plants: 1 });
       const result = await tendTool.execute({}, {});
       const after = getGrowthState();
       if (
@@ -10536,6 +10666,15 @@ async function checkAgentTools(problems) {
         problems.push(
           `the tend tool returned growth ${result.growth} at ${result.rate}/s, but the garden now holds ` +
           `${after.growth} at ${after.rate}/s.`
+        );
+      }
+      // The tend tool hurries the nearest ungrown seed exactly as the button
+      // does, so a person and an agent each leave the same mark.
+      const hurried = getGarden().sprouts[0];
+      if (hurried !== 20 - TEND_HURRY_SECONDS) {
+        problems.push(
+          `the tend tool left the nearest seed at ${hurried}s, but the Tend button would leave it at ` +
+            `${20 - TEND_HURRY_SECONDS}s.`
         );
       }
       // The tend tool records the visitor's own tending, exactly as the button
@@ -11368,6 +11507,7 @@ export async function checks() {
     checkSeedGoalReadout(problems);
     checkFirstGoalNamesTending(problems);
     checkNextPlantReadout(problems);
+    checkTendHurries(problems);
     checkBedProgression(problems);
     checkLargeCounts(problems);
     checkCompactAmounts(problems);

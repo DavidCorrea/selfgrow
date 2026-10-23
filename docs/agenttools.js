@@ -203,9 +203,12 @@ export function tools() {
       description:
         "Does what the page's Tend the soil button does: earns the garden's " +
         "growth now and raises the rate it keeps growing at, so the total " +
-        "climbs on its own afterwards. Safe to repeat, each tend adds more. " +
-        "Returns the state afterwards so the caller can see the new total and " +
-        "rate.",
+        "climbs on its own afterwards, and hurries the nearest ungrown seed " +
+        "along — get-state's secondsToNextPlant drops by the hurry, so a " +
+        "tended garden reaches its next plant before the same garden left " +
+        "alone. Safe to repeat, each tend adds more; the hurry is bounded, so " +
+        "only the clock can finish a seed. Returns the state afterwards so the " +
+        "caller can see the new total, rate and next-plant distance.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: false },
       example: {},

@@ -824,6 +824,52 @@ export const TEND_YIELD = 1;
 export const TEND_RATE_STEP = 0.1;
 
 /**
+ * How far one tend pulls the nearest ungrown seed along, and the floor it can
+ * never be hurried below.
+ *
+ * A tend is a deed, not only a rate: it shortens the wait for the very next
+ * plant, so a garden someone tended reaches its next plant before the same
+ * garden left alone. The floor is the invisible bound — repeated tending can
+ * bring the soonest seed to a second, but only the clock can finish it, so a
+ * seed is never matured outright by clicking.
+ */
+export const TEND_HURRY_SECONDS = 3;
+export const TEND_HURRY_FLOOR = 1;
+
+/**
+ * Hurry the nearest ungrown seed of either kind by `TEND_HURRY_SECONDS`.
+ *
+ * Finds the soonest positive timer across both kinds and shortens only that
+ * one, so one tend pulls the very next plant closer rather than spreading the
+ * hurry across the plot. A seed already at or below the floor is left exactly
+ * where it is, never pushed back up. Pure: it returns new timer lists and
+ * leaves the garden it was read from untouched.
+ *
+ * @returns {{sprouts: number[], bloomSprouts: number[]}}
+ */
+export function hurryNearestSprouts(sprouts, bloomSprouts = []) {
+  const herb = Array.isArray(sprouts) ? [...sprouts] : [];
+  const bloom = Array.isArray(bloomSprouts) ? [...bloomSprouts] : [];
+  let target = null;
+  let soonest = Infinity;
+  const consider = (timers) => {
+    timers.forEach((timer, index) => {
+      if (Number.isFinite(timer) && timer > 0 && timer < soonest) {
+        soonest = timer;
+        target = { timers, index };
+      }
+    });
+  };
+  consider(herb);
+  consider(bloom);
+  if (target) {
+    const current = target.timers[target.index];
+    target.timers[target.index] = Math.min(current, Math.max(TEND_HURRY_FLOOR, current - TEND_HURRY_SECONDS));
+  }
+  return { sprouts: herb, bloomSprouts: bloom };
+}
+
+/**
  * How much faster the garden grows for each second someone is at the page.
  *
  * A flat, always-on bonus: presence itself tends the garden, so two minutes
@@ -1261,17 +1307,30 @@ export function seasonMultiplierSecondsWithin(ageSeconds, spanSeconds) {
 }
 
 /**
- * Tend the soil: earn growth now, and raise the rate the garden grows at so the
- * number keeps climbing afterwards. Returns the state after the action.
+ * Tend the soil: earn growth now, raise the rate the garden grows at so the
+ * number keeps climbing afterwards, and hurry the nearest ungrown seed along so
+ * the next plant arrives before the clock alone would bring it. Returns the
+ * state after the action.
  */
 export function tend() {
   growth += TEND_YIELD;
   rate += TEND_RATE_STEP;
   lifetime += TEND_YIELD;
+  // Tending by hand hurries the nearest ungrown seed along, so a visit leaves a
+  // deed the clock alone could not: the next plant arrives sooner than the same
+  // garden left alone. Bounded by the hurry's floor, so only the clock finishes
+  // a seed. This is the live action only: the offline simulation that sows an
+  // absence never hurries a seed.
+  const hurried = hurryNearestSprouts(garden.sprouts, garden.bloomSprouts);
   // The visitor tended the soil by hand, so the visit records it. This is the
   // live action only: `tendInState` is the pure rehearsal and never reaches here.
   const visit = visitOrZero(garden.visit);
-  garden = { ...garden, visit: { ...visit, tended: visit.tended + 1 } };
+  garden = {
+    ...garden,
+    sprouts: hurried.sprouts,
+    bloomSprouts: hurried.bloomSprouts,
+    visit: { ...visit, tended: visit.tended + 1 },
+  };
   notify();
   return getGrowthState();
 }
@@ -1629,14 +1688,18 @@ function plantedInState(state, capacity) {
 }
 
 /**
- * Tend a garden state's soil: add `TEND_YIELD` growth and `TEND_RATE_STEP` to
- * its rate. Pure — a rehearsal tends its own copy, while the live `tend` keeps
- * raising the garden's lifetime beside it.
+ * Tend a garden state's soil: add `TEND_YIELD` growth, `TEND_RATE_STEP` to its
+ * rate, and the same bounded hurry to its nearest ungrown seed that the live
+ * `tend` gives. Pure — a rehearsal tends its own copy, while the live `tend`
+ * keeps raising the garden's lifetime beside it.
  *
  * @returns {{ok: boolean, reason: string|null, cost: number, state: object}}
  */
 export function tendInState(state) {
   const source = state ?? {};
+  // The rehearsal obeys the same rule the live garden does, so a sandbox tend
+  // hurries the nearest ungrown seed exactly as the Tend the soil button would.
+  const hurried = hurryNearestSprouts(source.sprouts, source.bloomSprouts);
   return {
     ok: true,
     reason: null,
@@ -1645,6 +1708,8 @@ export function tendInState(state) {
       ...source,
       growth: amountOrZero(source.growth) + TEND_YIELD,
       rate: amountOrZero(source.rate) + TEND_RATE_STEP,
+      sprouts: hurried.sprouts,
+      bloomSprouts: hurried.bloomSprouts,
     },
   };
 }
