@@ -137,6 +137,7 @@ import {
   plotCells,
   plotMarks,
   plotMilestoneTiers,
+  plotRowsForPanel,
   pollinatorPlot,
   returnMarkCells,
   seasonLook,
@@ -5403,6 +5404,95 @@ function checkPlotDominatesGarden(problems) {
       `the plot covers ${Math.round(plotArea)}px² of the card against the readout column's ${Math.round(sideArea)}px², ` +
         "so the numbers are still the largest thing in the garden."
     );
+  }
+}
+
+/**
+ * The drawn garden fills the panel it is given, at phone and desktop sizes: a
+ * long-grown garden's own ground reaches the near edges of the plot panel,
+ * rather than sitting in the corner of a larger brown field, while the phone's
+ * first-screen cap is left exactly where it was.
+ *
+ * The measured half drives a real 600x900 `.plot` box, so it proves the fit the
+ * browser makes rather than only the arithmetic behind it. When the suite runs
+ * at a phone width the box is capped by the phone CSS, so the fit is measured
+ * against whatever panel the canvas actually gets and passes either way.
+ */
+function checkPlotFillsPanel(problems) {
+  const hedge = {
+    growth: 1e4,
+    beds: 1,
+    plants: 12,
+    seeds: 0,
+    plantCounts: [6, 6],
+    seedCounts: [0, 0],
+    pollinator: { visiting: false },
+  };
+  const cell = plotBounds(hedge).cell;
+  const ownRows = plotBounds(hedge).rows;
+
+  // A panel taller than it is wide calls for more rows of the garden's own
+  // ground than the hedge's form alone draws — otherwise a large panel keeps
+  // showing a small garden centred in it.
+  const fittedRows = plotRowsForPanel(hedge, { width: 600, height: 900 });
+  if (!(fittedRows > ownRows)) {
+    problems.push(
+      `a hedge in a 600x900 panel is drawn at ${fittedRows} rows, no more than the ${ownRows} its form draws, ` +
+        "so a large panel still holds a small garden rather than more of the garden's ground."
+    );
+  }
+
+  // The phone panel is where the first-screen cap bites: at its measured size
+  // the hedge must stay at exactly its own rows, so filling the panel never
+  // grows the drawing past the cap that keeps the plot, the return strip and
+  // the four actions on the phone's first screen.
+  const phoneRows = plotRowsForPanel(hedge, { width: 326, height: 203 });
+  if (phoneRows !== ownRows) {
+    problems.push(
+      `a hedge in a 326x203 phone panel is drawn at ${phoneRows} rows against the ${ownRows} its form draws, ` +
+        "so filling the panel would push the phone's first-screen controls off the screen."
+    );
+  }
+
+  // The fit itself, measured on a real `.plot` box: the fitted bitmap must
+  // leave at most one cell of flat soil on any side, and its grid must stay
+  // whole-pixel so the art is crisp and never smoothed or stretched.
+  const holder = document.createElement("div");
+  holder.style.cssText = "position:fixed;left:-10000px;top:0;width:600px;height:900px;";
+  const canvas = document.createElement("canvas");
+  canvas.className = "plot";
+  canvas.setAttribute("aria-hidden", "true");
+  canvas.style.cssText = "width:100%;height:100%;max-height:none;";
+  holder.appendChild(canvas);
+  document.body.appendChild(holder);
+  try {
+    drawGarden(canvas, hedge, readPalette(), 0);
+    if (canvas.width % cell !== 0 || canvas.height % cell !== 0) {
+      problems.push(
+        `the drawn garden is ${canvas.width}x${canvas.height}px, off the ${cell}px pixel grid, so the art is no longer crisp.`
+      );
+    }
+    const panelWidth = canvas.clientWidth;
+    const panelHeight = canvas.clientHeight;
+    if (!(panelWidth > 0) || !(panelHeight > 0)) {
+      problems.push(
+        `the plot's panel could not be measured (${panelWidth}x${panelHeight}px), so filling it cannot be checked.`
+      );
+      return;
+    }
+    const scale = Math.min(panelWidth / canvas.width, panelHeight / canvas.height);
+    const marginX = (panelWidth - canvas.width * scale) / 2;
+    const marginY = (panelHeight - canvas.height * scale) / 2;
+    const oneCell = cell * scale;
+    if (marginX > oneCell || marginY > oneCell) {
+      problems.push(
+        `the drawn garden leaves ${Math.round(marginX)}x${Math.round(marginY)}px of flat soil in a ` +
+          `${Math.round(panelWidth)}x${Math.round(panelHeight)}px panel (one cell is ${Math.round(oneCell)}px), ` +
+          "so the ground does not reach the panel's edges."
+      );
+    }
+  } finally {
+    holder.remove();
   }
 }
 
@@ -11288,6 +11378,7 @@ export async function checks() {
     checkCompactReadout(problems);
     checkFirstScreenGarden(problems);
     checkPlotDominatesGarden(problems);
+    checkPlotFillsPanel(problems);
     checkPhoneFirstScreen(problems);
     checkSimulateGarden(problems);
     checkReturnSummary(problems);

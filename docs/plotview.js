@@ -280,6 +280,18 @@ function capacityFor(state) {
 }
 
 /**
+ * The rows the garden's own form and capacity call for, before the panel it is
+ * drawn into is considered: the taller of what its form has spread to and what
+ * its plots need, capped by the row cap so a huge save still draws a bounded
+ * picture.
+ */
+function baseRowsFor(state) {
+  const growth = state && Number.isFinite(state.growth) ? state.growth : 0;
+  const forCapacity = Math.ceil(capacityFor(state) / COLUMNS);
+  return Math.min(MAX_ROWS, Math.max(rowsForForm(gardenForm(growth).index), forCapacity));
+}
+
+/**
  * The plot's pixel bounds for `state`: the grid of soil cells it draws, the
  * sprite cap that grid imposes, and the strip of ground beside it where the
  * pollinator's home stands.
@@ -287,7 +299,9 @@ function capacityFor(state) {
  * The grid holds the garden's form — a bigger garden is drawn larger — and its
  * capacity, so a full bed of plots always has a cell for every seed and plant
  * the readout counts. Both are bounded by the row cap, so a save carrying more
- * plots than the plot can show still draws a bounded picture.
+ * plots than the plot can show still draws a bounded picture. When `state`
+ * carries the panel rows `plotRowsForPanel` measured, the grid grows with them
+ * too, so a large panel is filled with more of the garden's ground.
  *
  * `width` is the plot's own ground, `canvasWidth` that ground plus the home's
  * strip, and `home` the strip itself — always past the last plot column, so the
@@ -297,9 +311,13 @@ function capacityFor(state) {
  * cell and the visiting bee hovers over its second.
  */
 export function plotBounds(state) {
-  const growth = state && Number.isFinite(state.growth) ? state.growth : 0;
-  const forCapacity = Math.ceil(capacityFor(state) / COLUMNS);
-  const rows = Math.min(MAX_ROWS, Math.max(rowsForForm(gardenForm(growth).index), forCapacity));
+  const base = baseRowsFor(state);
+  // The rows the panel the plot is given calls for, when the caller measured
+  // one. A call with no `panelRows` — a pure plot with no canvas behind it —
+  // keeps the garden's own rows, so the drawing's bounds stay a function of
+  // state alone unless a panel is there to be filled.
+  const panelRows = state && Number.isFinite(state.panelRows) ? Math.floor(state.panelRows) : 0;
+  const rows = Math.min(MAX_ROWS, Math.max(base, panelRows));
   const width = COLUMNS * CELL;
   return {
     cell: CELL,
@@ -312,6 +330,30 @@ export function plotBounds(state) {
     canvasWidth: width + HOME_CELL,
     home: { x: width, y: 0, width: HOME_CELL, height: CELL },
   };
+}
+
+/**
+ * The rows of the garden's own ground that fill the panel `box` the plot is
+ * drawn into, given the state's form and capacity.
+ *
+ * A plot letterboxed inside a large panel leaves the panel's soil background
+ * bare above and below a small bitmap, so the one thing the garden is meant to
+ * do — look bigger as its number rises — is what a glance misses. The bitmap
+ * is the plot's ground plus the home's strip beside it; adding rows of that
+ * same ground until its aspect matches the panel's fills both axes at the same
+ * cell size, so the extra area is more of the garden's own ground rather than a
+ * small garden zoomed up. The row cap bounds the sprite and hash space, and a
+ * box the caller has not measured (zero or missing, as for a detached canvas)
+ * leaves the garden at its own rows.
+ */
+export function plotRowsForPanel(state, box) {
+  const base = baseRowsFor(state);
+  const panelWidth = box && Number.isFinite(box.width) ? box.width : 0;
+  const panelHeight = box && Number.isFinite(box.height) ? box.height : 0;
+  if (!(panelWidth > 0) || !(panelHeight > 0)) return base;
+  const canvasWidth = (COLUMNS + HOME_STRIP_COLUMNS) * CELL;
+  const fitted = Math.round((canvasWidth * panelHeight) / (panelWidth * CELL));
+  return Math.min(MAX_ROWS, Math.max(base, fitted));
 }
 
 /**
@@ -1540,6 +1582,14 @@ function drawPlotEdges(ctx, palette, grid) {
  */
 export function drawGarden(canvas, state, palette, phase = 0) {
   if (!canvas || !palette) return;
+  // The panel the canvas is given decides how many rows of the garden's own
+  // ground it draws, so a large panel is filled with more garden rather than a
+  // small garden centred in it. A canvas with no measured box — a detached one
+  // in a test, or one mid-layout — keeps the state's own rows.
+  state = {
+    ...state,
+    panelRows: plotRowsForPanel(state, { width: canvas.clientWidth, height: canvas.clientHeight }),
+  };
   const growth = state && Number.isFinite(state.growth) ? state.growth : 0;
   const form = gardenForm(growth);
   const established = establishment(state?.lifetimeGrowth);
