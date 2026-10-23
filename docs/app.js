@@ -1909,7 +1909,11 @@ function render() {
     `${state.form}:${state.growth}:${state.seedCounts.join(",")}:${state.plantCounts.join(",")}:` +
     `${state.beds}:${state.pollinator.visiting}:${state.season.key}:${phase}:` +
     `${state.established.index}:${state.established.fill}:${state.visit.sown}:` +
-    `${state.visit.tended}:${state.visitPresent}:${JSON.stringify(state.returnMarks ?? null)}`;
+    `${state.visit.tended}:${state.visitPresent}:${JSON.stringify(state.returnMarks ?? null)}:` +
+    // The plot's measured panel is part of the key, so a resize redraws at the
+    // number of ground rows that now fill it. Render runs every tick, so no
+    // resize listener is needed to catch the new box.
+    `${elements.plot?.clientWidth ?? 0}»${elements.plot?.clientHeight ?? 0}`;
   if (plotKey !== lastPlotKey) {
     drawGarden(elements.plot, state, readPalette(), phase);
     // Each kind's own seed and grown plant drawn beside the label that counts
@@ -2002,7 +2006,9 @@ function renderSandbox(state) {
     const sandboxPlotKey =
       `${rehearsal.form}:${rehearsal.growth}:${rehearsalPlot.seedCounts.join(",")}:` +
       `${rehearsalPlot.plantCounts.join(",")}:${rehearsal.beds}:${rehearsal.pollinator?.visiting}:` +
-      `${rehearsal.season?.key}:${phase}:${rehearsal.capacity}`;
+      `${rehearsal.season?.key}:${phase}:${rehearsal.capacity}:` +
+      // The rehearsal panel's own box, so it fills at whatever size it is shown.
+      `${elements.sandboxPlot.clientWidth}»${elements.sandboxPlot.clientHeight}`;
     if (sandboxPlotKey !== lastSandboxPlotKey) {
       drawGarden(elements.sandboxPlot, rehearsalPlot, readPalette(), phase);
       lastSandboxPlotKey = sandboxPlotKey;
