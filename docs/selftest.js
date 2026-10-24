@@ -59,6 +59,7 @@ import {
   nextBedCost,
   nextKindMilestone,
   nextSeedCost,
+  openBed,
   pollinatorAt,
   pollinatorBaseVisitSeconds,
   pollinatorCycleSeconds,
@@ -700,6 +701,123 @@ function checkPageReadout(problems) {
 
   if (state.capacity !== PLOT_CAPACITY) {
     problems.push(`the displayed capacity is ${state.capacity}, expected the garden's ${PLOT_CAPACITY} plots.`);
+  }
+}
+
+/**
+ * A person and an agent must never get two answers from the same garden.
+ *
+ * Every count the page shows — beds of soil, plots of soil, ungrown seeds,
+ * grown plants, each kind's seeds and plants, and the plot's own description —
+ * is written from `getDisplayedState`, and `render` writes that state into the
+ * DOM even while the tab is hidden. This drives the page through a fresh
+ * garden, a mixed one, a bed opened out of sight and a return that lands while
+ * hidden, comparing the DOM's rows against the state at each; the hidden cases
+ * are the ones a readout that lagged the state would fail.
+ */
+function checkReadoutMatchesAgent(problems) {
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  // `document.hidden` is an inherited accessor; shadow it so a scenario can run
+  // as a background tab and put the descriptor back exactly as it was found.
+  const hiddenBefore = Object.getOwnPropertyDescriptor(document, "hidden");
+  const DAY = 86400;
+
+  const showHidden = (value) =>
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => value });
+  const restoreHidden = () => {
+    if (hiddenBefore) Object.defineProperty(document, "hidden", hiddenBefore);
+    else delete document.hidden;
+  };
+  const readField = (field) => {
+    const element = document.querySelector(`[data-field="${field}"]`);
+    return element ? String(element.textContent).trim() : null;
+  };
+
+  // The rows as a person reads them, beside the state an agent reads: one entry
+  // per count that must match, so a failure names exactly which one disagreed.
+  const disagreementsWith = (state) => {
+    const disagreements = [];
+    for (const [field, expected] of [
+      ["beds", formatAmount(state.beds)],
+      ["capacity", formatAmount(state.capacity)],
+      ["seeds", formatAmount(state.seeds)],
+      ["plants", formatAmount(state.plants)],
+    ]) {
+      const shown = readField(field);
+      if (shown !== expected) disagreements.push(`${field} reads ${JSON.stringify(shown)}, state holds ${expected}`);
+    }
+    for (const kind of state.kinds) {
+      for (const [field, expected] of [
+        ["seeds", formatAmount(kind.seeds)],
+        ["plants", formatAmount(kind.plants)],
+      ]) {
+        const shown = readField(`kind-${kind.key}-${field}`);
+        if (shown !== expected) {
+          disagreements.push(`${kind.key} ${field} reads ${JSON.stringify(shown)}, state holds ${expected}`);
+        }
+      }
+    }
+    const description = document.getElementById("plot-description");
+    const expectedDescription = describePlot(state);
+    const shownDescription = description ? description.textContent.trim() : null;
+    if (shownDescription !== expectedDescription) {
+      disagreements.push(
+        `the plot description reads ${JSON.stringify(shownDescription)}, expected ${JSON.stringify(expectedDescription)}`
+      );
+    }
+    return disagreements;
+  };
+
+  const checkScenario = (label, state) => {
+    const disagreements = disagreementsWith(state);
+    if (disagreements.length) {
+      problems.push(
+        `with ${label}, the page's readout and the state an agent reads disagree: ${disagreements.join("; ")}.`
+      );
+    }
+  };
+
+  try {
+    // A fresh garden: one bed of soil, one ungrown seed, nothing grown.
+    setGarden(newGarden());
+    setGrowth(0, 0.5);
+    checkScenario("a fresh garden", getDisplayedState());
+
+    // A mixed garden: both kinds sown and grown, so the per-kind rows are not
+    // trivially zero and the description's counts are not all the same shape.
+    setGarden({
+      beds: 1,
+      plantCounts: [3, 2],
+      sprouts: [GROW_SECONDS],
+      bloomSprouts: [GROW_SECONDS, GROW_SECONDS],
+    });
+    setGrowth(120, 2.5);
+    checkScenario("a mixed one-bed garden", getDisplayedState());
+
+    // A second bed opened while the tab is hidden: the bed and plot counts the
+    // playtest saw disagree must move together with the soil that holds them.
+    showHidden(true);
+    setGrowth(100000, 0.5);
+    setGarden({ beds: 1, plants: 12 });
+    const opened = openBed();
+    if (!opened.ok) {
+      problems.push(`opening a second bed in a full, well-funded garden was refused (${opened.reason}).`);
+    }
+    checkScenario("a second bed opened while the tab is hidden", getDisplayedState());
+
+    // A return landing while the tab is hidden: the absence reseeds the garden,
+    // so every count on the page must change with the state, out of sight too.
+    const nowMs = 1_700_000_000_000;
+    const saved = { version: SAVE_VERSION, growth: 0, rate: 0.5, age: 0, lifetime: 5000, bonus: 0, beds: 2 };
+    setGrowth(saved.growth, saved.rate, saved.age, saved.lifetime, saved.bonus);
+    applyReturn(saved, nowMs - 30 * DAY * 1000, nowMs);
+    checkScenario("a return landing while the tab is hidden", getDisplayedState());
+  } finally {
+    restoreHidden();
+    setGarden(gardenBefore);
+    restoreGrowth(growthBefore);
+    clearReturnMarks();
   }
 }
 
@@ -11475,6 +11593,7 @@ export async function checks() {
     checkOfflineTime(problems);
     checkDurableSave(problems);
     checkPageReadout(problems);
+    checkReadoutMatchesAgent(problems);
     checkKindReadout(problems);
     checkKindSwatches(problems);
     checkHandWorkGlyphs(problems);

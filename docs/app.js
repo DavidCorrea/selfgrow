@@ -1837,10 +1837,12 @@ export function arrivalAnnouncement(away) {
 }
 
 function render() {
-  // A hidden tab still keeps the garden growing (the timer derives growth from
-  // elapsed time), but there is nobody to see it redraw.
-  if (document.hidden) return;
-
+  // The readout is written even while the tab is hidden. The garden keeps
+  // growing on elapsed time whether or not it is watched, and an agent can read
+  // the live state at any moment, so the page's own rows must never lag behind
+  // it — a return, a load or an action that lands in a hidden tab would
+  // otherwise leave the counts stale and give a person and an agent two answers
+  // from one garden.
   const state = getDisplayedState();
   setText(elements.growth, formatGrowth(state.growth));
   setText(elements.rate, `+${formatGrowth(state.rate)}/s`);
@@ -1886,13 +1888,23 @@ function render() {
   }
 
   // Speak only the discrete events since the last render; the numbers above
-  // change every tick and are for a sighted player to watch, not to hear.
-  const snapshot = announceSnapshot(state);
-  if (!announcementsSuppressed) {
-    const events = describeAnnouncements(lastAnnounced, snapshot);
-    if (events.length) announceEvent(events.map((event) => event.text).join(" · "));
+  // change every tick and are for a sighted player to watch, not to hear. A
+  // hidden tab has nobody to hear it, and its snapshot is left where it was, so
+  // the events that happened out of sight are spoken on the next visible render
+  // rather than shouted at an empty room.
+  if (!document.hidden) {
+    const snapshot = announceSnapshot(state);
+    if (!announcementsSuppressed) {
+      const events = describeAnnouncements(lastAnnounced, snapshot);
+      if (events.length) announceEvent(events.map((event) => event.text).join(" · "));
+    }
+    lastAnnounced = snapshot;
   }
-  lastAnnounced = snapshot;
+
+  // A hidden tab has no pixels on screen to redraw for, so the plot is left
+  // alone: `lastPlotKey` stays stale and the next visible render catches the
+  // picture up. The text readout above is already current either way.
+  if (document.hidden) return;
 
   // The picture follows the growth, not the stored garden, so it redraws when
   // the amount, the form it falls in, the kinds on the plot, the season or the
