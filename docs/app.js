@@ -201,6 +201,8 @@ const elements = {
   sandboxMatured: document.querySelector('[data-field="sandbox-matured"]'),
   sandboxSeeds: document.querySelector('[data-field="sandbox-seeds"]'),
   sandboxPlants: document.querySelector('[data-field="sandbox-plants"]'),
+  sandboxBeds: document.querySelector('[data-field="sandbox-beds"]'),
+  sandboxCapacity: document.querySelector('[data-field="sandbox-capacity"]'),
   sandboxSeason: document.querySelector('[data-field="sandbox-season"]'),
   sandboxPollinator: document.querySelector('[data-field="sandbox-pollinator"]'),
   sandboxKindHerb: readKindRow("herb", "sandbox-kind"),
@@ -1965,6 +1967,8 @@ function renderSandbox(state) {
   setText(elements.sandboxMatured, formatAmount(rehearsal.matured));
   setText(elements.sandboxSeeds, formatAmount(rehearsal.seeds));
   setText(elements.sandboxPlants, formatAmount(rehearsal.plants));
+  setText(elements.sandboxBeds, formatAmount(rehearsal.beds));
+  setText(elements.sandboxCapacity, formatAmount(rehearsal.capacity));
   renderReadoutFacts(elements.sandboxSeason, describeSeason(rehearsal));
   renderReadoutFacts(elements.sandboxPollinator, describePollinator(rehearsal));
   renderKind(elements.sandboxKindHerb, rehearsal.kinds[0], "sandbox-kind");

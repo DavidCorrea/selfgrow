@@ -10375,6 +10375,42 @@ function checkSandbox(problems) {
       }
     }
 
+    // The rehearsal names its soil beside its other facts: the beds it holds
+    // and the plots those beds make. The readout, get-state's sandbox state and
+    // the rehearsal's drawn plot must all state the same two numbers, so a
+    // visitor trying an opened bed can count the drawn garden against a label.
+    const sandboxBedsRow = document.querySelector('[data-field="sandbox-beds"]');
+    const sandboxPlotsRow = document.querySelector('[data-field="sandbox-capacity"]');
+    for (const [row, label, value] of [
+      [sandboxBedsRow, "beds", acted.beds],
+      [sandboxPlotsRow, "plots", acted.capacity],
+    ]) {
+      if (!row) {
+        problems.push(`the rehearsal readout has no ${label} row, so its drawn garden cannot be counted against a number.`);
+        continue;
+      }
+      if (sandboxPanel && !sandboxPanel.contains(row)) {
+        problems.push(`the rehearsal's ${label} row is outside #sandbox, so it would show while no rehearsal is open.`);
+      }
+      if (row.textContent !== formatAmount(value)) {
+        problems.push(
+          `the rehearsal readout shows ${JSON.stringify(row.textContent)} ${label}, but its state holds ` +
+            `${formatAmount(value)}.`
+        );
+      }
+    }
+    // The drawn rehearsal is the same reading the panel and get-state make: one
+    // drawn plot per plot of the capacity, grouped into beds of twelve, so the
+    // number beside the rehearsal's garden counts what is drawn on it.
+    const actedGrid = plotCells(sandboxPlotState(acted));
+    const actedBedGroups = new Set(actedGrid.plots.map((drawnPlot) => drawnPlot.bed));
+    if (actedGrid.plots.length !== acted.capacity || actedBedGroups.size !== acted.beds) {
+      problems.push(
+        `the rehearsal's drawn plot holds ${actedGrid.plots.length} plots in ${actedBedGroups.size} bed groups, ` +
+          `but its readout and get-state say ${acted.capacity} plots / ${acted.beds} beds.`
+      );
+    }
+
     // None of it may reach the real garden, its save or its clock.
     const realGardenAfterActs = getGarden();
     const realGrowthAfterActs = getGrowthState();
@@ -10413,6 +10449,8 @@ function checkSandbox(problems) {
     setGarden({ seeds: PLOT_CAPACITY });
     setGrowth(bedCost, 0);
     openSandbox();
+    const bedsBeforeOpen = Number(sandboxBedsRow?.textContent);
+    const plotsBeforeOpen = Number(sandboxPlotsRow?.textContent);
     const openedBed = actInSandbox("open-bed");
     if (!openedBed.ok || openedBed.beds !== 2 || openedBed.capacity !== 2 * PLOT_CAPACITY) {
       problems.push(
@@ -10422,6 +10460,31 @@ function checkSandbox(problems) {
     }
     if (getGarden().beds !== 1) {
       problems.push(`opening a bed in the rehearsal changed the real garden to ${getGarden().beds} beds; it must stay 1.`);
+    }
+
+    // The opened bed states itself in the rehearsal's own labels: the bed row
+    // rises by one and the plot row by a bed's twelve, while the rehearsal's
+    // drawn plot gains that same bed of plots and no more.
+    if (Number.isFinite(bedsBeforeOpen) && Number(sandboxBedsRow?.textContent) !== bedsBeforeOpen + 1) {
+      problems.push(
+        `opening a bed in the rehearsal left the readout showing ${JSON.stringify(sandboxBedsRow?.textContent)} beds, ` +
+          `expected ${bedsBeforeOpen + 1}.`
+      );
+    }
+    if (Number.isFinite(plotsBeforeOpen) && Number(sandboxPlotsRow?.textContent) !== plotsBeforeOpen + PLOTS_PER_BED) {
+      problems.push(
+        `opening a bed in the rehearsal left the readout showing ${JSON.stringify(sandboxPlotsRow?.textContent)} plots, ` +
+          `expected ${plotsBeforeOpen + PLOTS_PER_BED}.`
+      );
+    }
+    const openedGrid = plotCells(sandboxPlotState(openedBed));
+    const openedBedGroups = new Set(openedGrid.plots.map((drawnPlot) => drawnPlot.bed));
+    if (openedGrid.plots.length !== openedBed.capacity || openedBedGroups.size !== openedBed.beds) {
+      problems.push(
+        `after an opened bed the rehearsal's drawn plot holds ${openedGrid.plots.length} plots in ` +
+          `${openedBedGroups.size} bed groups, but its readout and get-state say ${openedBed.capacity} plots / ` +
+          `${openedBed.beds} beds.`
+      );
     }
 
     // A rehearsal action the copy cannot take stays reachable and says why in

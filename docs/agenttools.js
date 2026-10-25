@@ -178,7 +178,9 @@ export function tools() {
         "punished. It also " +
         "reports sandbox: the time rehearsal when one is open — how many " +
         "seconds it has been wound forward and a readable elapsed label, the " +
-        "growth, form, ungrown seeds and grown plants it reached, whether a " +
+        "growth, form, ungrown seeds and grown plants it reached, how many " +
+        "beds of soil it holds and how many plots those beds make (beds, " +
+        "capacity), whether a " +
         "pollinator is visiting and the boost it brings (pollinator) and each " +
         "kind's seeds, plants and next-seed price (kinds, the two of them in " +
         "the same shape the garden's own kinds carry), how many " +
