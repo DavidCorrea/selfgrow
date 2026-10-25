@@ -240,6 +240,18 @@ const MAX_ROWS = 12;
 const FORMS_PER_ROW = 3;
 // The plots one bed holds, as the plot itself defines a bed: three rows of four.
 const BED_CELLS = COLUMNS * BASE_ROWS;
+// One full row of open ground between one bed and the next, drawn in the same
+// base soil every setback is drawn in: a band a visitor can point at rather than
+// another one-pixel seam in the soil's own tones, which at the panel's scale-down
+// would read as one more plot grid line. The first bed has no band before it, so
+// a one-bed garden draws exactly as it always did.
+const BED_GAP_ROWS = 1;
+// The beds the row cap can hold — a bed is three rows — and the rows the plot
+// reaches once every bed after the first carries its own band of open ground.
+// The cap stays on the plots the picture draws, so a huge save is drawn as the
+// same bounded garden it always was, with a band between each pair of beds.
+const MAX_BEDS = Math.floor(MAX_ROWS / BASE_ROWS);
+const MAX_VISUAL_ROWS = MAX_ROWS + (MAX_BEDS - 1) * BED_GAP_ROWS;
 // The ground the pollinator's home stands on, in canvas pixels: two cells wide,
 // laid beside the plot rather than on one of its plots. The plots keep their own
 // width, so a hive can never be drawn over a plot a visitor counts against the
@@ -268,6 +280,35 @@ function rowsForForm(index) {
 function bedsFor(state) {
   const beds = state && Number.isFinite(state.beds) ? Math.floor(state.beds) : 1;
   return beds >= 1 ? beds : 1;
+}
+
+/**
+ * Where one cell of soil sits on the plot, cell by cell.
+ *
+ * Cells run in plot order — column by column across a bed, then down it, then
+ * on to the next bed — so `floor(cell / COLUMNS)` is the cell's plot row. Every
+ * bed after the first is pushed down by one band of open ground (`BED_GAP_ROWS`
+ * rows), which is what separates the beds the picture draws, so a cell's visual
+ * row is its plot row plus one band for each bed boundary before it. Ground
+ * cells a form spreads past the last bed (`bed >= beds`) are laid straight after
+ * it rather than given a phantom bed's band. Pure, so the drawn position of
+ * every plot can be asserted without a canvas.
+ *
+ * @returns {{column: number, row: number, x: number, y: number}}
+ */
+export function cellOrigin(cell, beds) {
+  const column = cell % COLUMNS;
+  const plotRow = Math.floor(cell / COLUMNS);
+  const bed = Math.floor(plotRow / BASE_ROWS);
+  const gapRows = Math.min(bed, Math.max(0, beds - 1)) * BED_GAP_ROWS;
+  const row = plotRow + gapRows;
+  return { column, row, x: column * CELL, y: row * CELL };
+}
+
+/** The rows of open ground within `plotRows` plot rows once `beds` are drawn. */
+function bedGapsIn(plotRows, beds) {
+  if (plotRows <= 0) return 0;
+  return Math.min(Math.floor((plotRows - 1) / BASE_ROWS), Math.max(0, beds - 1)) * BED_GAP_ROWS;
 }
 
 /**
@@ -317,16 +358,27 @@ export function plotBounds(state) {
   // keeps the garden's own rows, so the drawing's bounds stay a function of
   // state alone unless a panel is there to be filled.
   const panelRows = state && Number.isFinite(state.panelRows) ? Math.floor(state.panelRows) : 0;
-  const rows = Math.min(MAX_ROWS, Math.max(base, panelRows));
+  const plotRows = Math.min(MAX_ROWS, Math.max(base, panelRows));
+  const cells = plotRows * COLUMNS;
+  // The beds the picture actually draws: the plots it holds, grouped as the
+  // plot defines a bed. Ground a form spreads past the last bed carries no plot
+  // and so extends no bed, so `beds` is what the readout's 'Beds' is counted
+  // against, not the raw state field.
+  const beds = Math.max(1, Math.ceil(Math.min(capacityFor(state), cells) / BED_CELLS));
+  // The visual rows: the plot rows plus one band of open ground per bed drawn
+  // after the first, so the bitmap is exactly as tall as the beds it shows.
+  const rows = plotRows + bedGapsIn(plotRows, beds);
   const width = COLUMNS * CELL;
   return {
     cell: CELL,
     columns: COLUMNS,
-    maxRows: MAX_ROWS,
+    maxRows: MAX_VISUAL_ROWS,
     rows,
+    plotRows,
+    cells,
+    beds,
     width,
     height: rows * CELL,
-    cells: rows * COLUMNS,
     canvasWidth: width + HOME_CELL,
     home: { x: width, y: 0, width: HOME_CELL, height: CELL },
   };
@@ -1104,15 +1156,19 @@ export function drawFormFrameMark(ctx, right, bottom) {
  * reduced motion as under any other preference, and a returning player sees the
  * change itself rather than only a sentence about it. `marks` is the object
  * `returnMarkCells` returns: the cells to tick, the seed cells to ring, whether
- * to frame the plot, and whether the season turned.
+ * to frame the plot, and whether the season turned. `beds` is how many beds the
+ * drawn grid holds, so each mark lands on its own plot's visual row rather than
+ * sharing the seam of a bed it is not in.
  */
-function drawReturnMarks(ctx, palette, width, height, marks) {
+function drawReturnMarks(ctx, palette, width, height, marks, beds) {
   ctx.fillStyle = palette.sun;
   for (const cell of marks.seeds) {
-    drawSownSeedMark(ctx, (cell % COLUMNS) * CELL, Math.floor(cell / COLUMNS) * CELL, palette);
+    const { x, y } = cellOrigin(cell, beds);
+    drawSownSeedMark(ctx, x, y, palette);
   }
   for (const cell of marks.cells) {
-    drawMaturedMark(ctx, (cell % COLUMNS) * CELL, Math.floor(cell / COLUMNS) * CELL);
+    const { x, y } = cellOrigin(cell, beds);
+    drawMaturedMark(ctx, x, y);
   }
   if (marks.form) {
     // Brackets at opposite corners frame the whole plot, because the garden's
@@ -1317,21 +1373,21 @@ export function plotMarks(state) {
  * hand it back instead of rebuilding it.
  */
 export function plotCells(state, marks = plotMarks(state)) {
-  const { columns, rows, cells } = plotBounds(state);
+  const { columns, rows, cells, beds } = plotBounds(state);
   const capacity = capacityFor(state);
   const occupied = new Set(marks.map((mark) => mark.cell));
   const count = Math.min(capacity, cells);
   const plots = [];
   for (let cell = 0; cell < count; cell += 1) {
+    const origin = cellOrigin(cell, beds);
     plots.push({
       cell,
-      column: cell % columns,
-      row: Math.floor(cell / columns),
+      column: origin.column,
+      row: origin.row,
       bed: Math.floor(cell / BED_CELLS),
       occupied: occupied.has(cell),
     });
   }
-  const beds = Math.ceil(count / BED_CELLS);
   const fullBeds = [];
   for (let bed = 0; bed < beds; bed += 1) {
     const inBed = plots.filter((plot) => plot.bed === bed);
@@ -1400,10 +1456,11 @@ export function tendedWorkCells(state) {
  * so a garden with a visitor at it draws its standing plants a little taller
  * than one growing alone. Seeds and their mounds stay put: presence is said by
  * the ground and the plants that stand in it, not by the seeds still in it.
+ * `beds` is how many beds the drawn grid holds, so a mark on a later bed stands
+ * on that bed's own rows and never on the band of open ground before it.
  */
-function drawMark(ctx, mark, palette, foliage, formIndex, growthTier, sway, milestoneTier, tended) {
-  const x = (mark.cell % COLUMNS) * CELL;
-  const y = Math.floor(mark.cell / COLUMNS) * CELL;
+function drawMark(ctx, mark, palette, foliage, formIndex, growthTier, sway, milestoneTier, tended, beds) {
+  const { x, y } = cellOrigin(mark.cell, beds);
   if (mark.kind === "herb-seed") {
     drawSeed(ctx, x, y, palette, sway, false);
     return;
@@ -1612,6 +1669,12 @@ export function drawGarden(canvas, state, palette, phase = 0) {
   ctx.fillRect(0, 0, canvasWidth, height);
 
   const marks = plotMarks(state);
+  // The picture's own reading of what it owns: the plots it draws, grouped into
+  // the beds they fill. `beds` is what the readout's 'Beds' is counted against,
+  // so the rims and the drawn sprites are laid out by the same bed groups the
+  // panel counts.
+  const grid = plotCells(state, marks);
+  const beds = grid.beds;
   const occupied = new Set(marks.map((mark) => mark.cell));
   const plants = marks.filter((mark) => mark.kind === "herb-plant" || mark.kind === "bloom-plant").length;
   const growthTier = Math.min(2, Math.floor(form.fill * 3));
@@ -1635,13 +1698,18 @@ export function drawGarden(canvas, state, palette, phase = 0) {
     if (cellHash(cell) < cover.ratio) drawGroundGrowth(ctx, x, y, paint, cell);
   };
   for (let cell = 0; cell < cells; cell += 1) {
-    const x = (cell % COLUMNS) * CELL;
-    const y = Math.floor(cell / COLUMNS) * CELL;
+    const { x, y } = cellOrigin(cell, beds);
     drawCellGround(x, y, cell, occupied.has(cell));
     // The furrows of a tended visit go on over the ground, under the edges and
     // the sprites, so every plot of a garden with a visitor reads as worked.
     if (tended) drawWorkedGround(ctx, x, y, paint);
   }
+  // The band of open ground between one bed and the next is left as the base
+  // soil the whole plot is filled with: no plot cell is ever laid on it, so it
+  // carries none of the soil's own marks, ground growth or bed rims, and the gap
+  // reads as a clear band of ground in the garden's palette rather than one more
+  // seam in the soil's own tones. At any scale it is one whole row of cells, so a
+  // visitor can point at the boundary between two beds without reading a number.
   // The ground beside the plots is the garden's own ground, so the strip the
   // pollinator's home stands on carries the plots' soil marks, aged ground and
   // ground growth in every row — not only the row the hive occupies, which would
@@ -1656,7 +1724,7 @@ export function drawGarden(canvas, state, palette, phase = 0) {
   // soil's marks cannot bury it: every plot of soil is drawn as its own plot and
   // every bed is closed, empty or not, so a visitor can count the picture against
   // the 'Plots of soil' the panel beside it reports. The sprites still go on top.
-  drawPlotEdges(ctx, paint, plotCells(state, marks));
+  drawPlotEdges(ctx, paint, grid);
   // The garden's worked ground goes under the sprites it holds: the low
   // retaining lip its lifetime has laid at the foot of the plot and the band of
   // aged earth behind it, so an established garden's bottom edge reads as the
@@ -1673,13 +1741,14 @@ export function drawGarden(canvas, state, palette, phase = 0) {
   const tiers = plotMilestoneTiers(state);
   for (const mark of marks) {
     const tier = mark.kind === "herb-plant" ? tiers[0] : mark.kind === "bloom-plant" ? tiers[1] : 0;
-    drawMark(ctx, mark, paint, look.foliage, form.index, growthTier, swayPixels(phase, mark.cell), tier, tended);
+    drawMark(ctx, mark, paint, look.foliage, form.index, growthTier, swayPixels(phase, mark.cell), tier, tended, beds);
   }
   // The plots the visitor sowed by hand carry a standing sign over the sprite,
   // so the ground they worked reads differently from ground the garden sowed on
   // its own. The sign reads no phase, so it holds in the still frame.
   for (const cell of tendedMarkCells(state, marks)) {
-    drawTendedSign(ctx, (cell % COLUMNS) * CELL, Math.floor(cell / COLUMNS) * CELL, paint);
+    const { x, y } = cellOrigin(cell, beds);
+    drawTendedSign(ctx, x, y, paint);
   }
   // The plots the visitor tended by hand carry their own still hoe cut, drawn
   // over every sprite and the sown signs alike: tending is the most repeated
@@ -1689,7 +1758,8 @@ export function drawGarden(canvas, state, palette, phase = 0) {
   // a few thin pixels that cannot bury a plant's kind, and it reads no phase,
   // so it holds in the still frame.
   for (const cell of tendedWorkCells(state)) {
-    drawTendedWorkMark(ctx, (cell % COLUMNS) * CELL, Math.floor(cell / COLUMNS) * CELL, paint);
+    const { x, y } = cellOrigin(cell, beds);
+    drawTendedWorkMark(ctx, x, y, paint);
   }
   // The pollinator's home stands on its own ground beside the plots whenever
   // grown plants do, so it never covers a plot a visitor counts. Between visits
@@ -1712,7 +1782,7 @@ export function drawGarden(canvas, state, palette, phase = 0) {
   // was away stands out until they notice it.
   const returns = returnMarkCells(state, { cells });
   if (returns.cells.length > 0 || returns.seeds.length > 0 || returns.form || returns.season) {
-    drawReturnMarks(ctx, paint, width, height, returns);
+    drawReturnMarks(ctx, paint, width, height, returns, beds);
   }
 }
 

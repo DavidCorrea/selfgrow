@@ -3497,10 +3497,16 @@ function checkPlotBedEdges(problems) {
   };
   const twoBounds = plotBounds(twoBeds);
   const twoGrid = plotCells(twoBeds);
-  if (twoBounds.rows !== 6 || twoGrid.plots.length !== 2 * PLOTS_PER_BED || twoGrid.beds !== 2) {
+  if (
+    twoBounds.plotRows !== 6 ||
+    twoBounds.rows !== 7 ||
+    twoGrid.plots.length !== 2 * PLOTS_PER_BED ||
+    twoGrid.beds !== 2
+  ) {
     problems.push(
       `two open beds of ${2 * PLOTS_PER_BED} plots draw ${twoGrid.plots.length} plots in ${twoGrid.beds} beds over ` +
-        `${twoBounds.rows} rows, expected ${2 * PLOTS_PER_BED} plots in 2 beds over 6 rows.`
+        `${twoBounds.plotRows} plot rows and ${twoBounds.rows} drawn rows, expected ${2 * PLOTS_PER_BED} plots in 2 ` +
+        "beds over 6 plot rows and 7 drawn rows with a band of open ground between them."
     );
   }
   problems.push(...plotEdgeProblems(twoBeds, "two open beds with one of them emptied"));
@@ -3566,6 +3572,141 @@ function checkPlotBedEdges(problems) {
         `a full bed's rim pixel (${x}, 0) is rgb(${pixelOf(movedData, x, 0)}) at another phase rather than the ` +
           `palette soil-light rgb(${lightKey}), so the bed edge does not hold still under reduced motion.`
       );
+    }
+  }
+}
+
+/**
+ * Every opened bed is drawn as its own room of soil, so the picture counts the
+ * beds the readout beside it does.
+ *
+ * `plotCells` names each plot's bed and the visual row it sits on. A garden
+ * with one bed draws exactly that one bed and no band; a garden with more draws
+ * that many distinct bed groups, each on its own run of rows with a full row of
+ * open ground between one bed and the next, so a visitor who reads no number can
+ * count the beds by looking at the plot alone. The band is a genuine gap, not
+ * another one-pixel seam: the row between two beds carries the palette's own
+ * base soil clear across the plot's width, with no bed rim or soil mark on it.
+ * A three-bed plot still fits the panel it is drawn into — contained rather than
+ * cropped or overflowing — and stays within the row cap however many beds it
+ * names.
+ */
+function checkPlotBedRooms(problems) {
+  const palette = readPalette();
+  const soilKey = colorKey(parseColor(palette.soil));
+
+  // A garden of n beds draws n distinct, non-overlapping bed groups, with a full
+  // row of open ground between each bed and the one before it.
+  for (let beds = 1; beds <= 4; beds += 1) {
+    const capacity = beds * PLOTS_PER_BED;
+    const state = { growth: 0, beds, capacity, seeds: 0, plants: 0 };
+    const bounds = plotBounds(state);
+    const grid = plotCells(state);
+    if (grid.beds !== beds) {
+      problems.push(
+        `a ${beds}-bed garden of ${capacity} plots draws ${grid.beds} bed groups on the plot, expected ${beds}, so ` +
+          "the picture under-counts the beds the readout reports."
+      );
+      continue;
+    }
+    if (beds === 1) {
+      // The starting bed is unchanged: no band is inserted for it.
+      if (bounds.rows !== bounds.plotRows) {
+        problems.push(
+          `a one-bed garden draws ${bounds.rows} rows for ${bounds.plotRows} plot rows, so the starting bed's ` +
+            "picture has changed."
+        );
+      }
+      continue;
+    }
+    const rowsByBed = new Map();
+    for (const plot of grid.plots) {
+      if (!rowsByBed.has(plot.bed)) rowsByBed.set(plot.bed, []);
+      rowsByBed.get(plot.bed).push(plot.row);
+    }
+    const ordered = [...rowsByBed.keys()].sort((a, b) => a - b);
+    let previousFoot = null;
+    let previousBed = null;
+    const gaps = [];
+    for (const bed of ordered) {
+      const rows = rowsByBed.get(bed);
+      const top = Math.min(...rows);
+      const foot = Math.max(...rows);
+      if (previousFoot !== null) {
+        if (top - previousFoot < 2) {
+          problems.push(
+            `of ${beds} open beds, bed ${bed} starts on row ${top} right below bed ${previousBed}'s foot at row ` +
+              `${previousFoot}, so the two beds share a seam instead of a band of open ground.`
+          );
+          break;
+        }
+        gaps.push({ from: previousBed, to: bed, row: top - 1 });
+      }
+      previousFoot = foot;
+      previousBed = bed;
+    }
+    // Every band between two beds is drawn as open ground: the whole of the gap
+    // row across the plot's own width carries the palette's base soil, with no
+    // bed rim or soil mark on it.
+    const canvas = plotCanvas(state);
+    for (const gap of gaps) {
+      const data = canvas.getContext("2d").getImageData(0, gap.row * bounds.cell, bounds.width, 1).data;
+      for (let x = 0; x < bounds.width; x += 1) {
+        const i = x * 4;
+        const key = `${data[i]},${data[i + 1]},${data[i + 2]}`;
+        if (key !== soilKey) {
+          problems.push(
+            `the band of open ground between bed ${gap.from} and bed ${gap.to} carries rgb(${key}) at ` +
+              `(${x}, ${gap.row * bounds.cell}) rather than the palette's base soil rgb(${soilKey}), so the boundary ` +
+              "reads as another mark rather than a clear gap."
+          );
+          break;
+        }
+      }
+    }
+  }
+
+  // A three-bed plot still fits the panel it is drawn into: the contained bitmap
+  // never overflows or crops, and stays within the row cap.
+  const three = { growth: 0, beds: 3, capacity: 3 * PLOTS_PER_BED, seeds: 0, plants: 0 };
+  const bounds = plotBounds(three);
+  for (const [label, width, height] of [
+    ["desktop", 600, 900],
+    ["phone", 326, 203],
+  ]) {
+    const holder = document.createElement("div");
+    holder.style.cssText = `position:fixed;left:-10000px;top:0;width:${width}px;height:${height}px;`;
+    const canvas = document.createElement("canvas");
+    canvas.className = "plot";
+    canvas.setAttribute("aria-hidden", "true");
+    canvas.style.cssText = "width:100%;height:100%;max-height:none;";
+    holder.appendChild(canvas);
+    document.body.appendChild(holder);
+    try {
+      drawGarden(canvas, three, palette, 0);
+      const panelWidth = canvas.clientWidth;
+      const panelHeight = canvas.clientHeight;
+      if (!(panelWidth > 0) || !(panelHeight > 0)) {
+        problems.push(`the ${label} panel for a three-bed garden could not be measured, so its fit cannot be checked.`);
+        continue;
+      }
+      const scale = Math.min(panelWidth / canvas.width, panelHeight / canvas.height);
+      const marginX = (panelWidth - canvas.width * scale) / 2;
+      const marginY = (panelHeight - canvas.height * scale) / 2;
+      if (marginX < -1 || marginY < -1) {
+        problems.push(
+          `a three-bed garden's ${canvas.width}x${canvas.height}px bitmap overflows the ${label} panel ` +
+            `${Math.round(panelWidth)}x${Math.round(panelHeight)}px (margins ${Math.round(marginX)}x${Math.round(marginY)}px), ` +
+            "so the plot is cropped."
+        );
+      }
+      if (canvas.height > bounds.maxRows * bounds.cell) {
+        problems.push(
+          `a three-bed garden draws ${canvas.height}px tall over the ${bounds.maxRows}-row cap, so the drawing is not bounded.`
+        );
+      }
+    } finally {
+      holder.remove();
     }
   }
 }
@@ -11668,6 +11809,7 @@ export async function checks() {
     checkPlotMilestoneCrowns(problems);
     checkPlotMarksMatchCounts(problems);
     checkPlotBedEdges(problems);
+    checkPlotBedRooms(problems);
     checkPlotCoverage(problems);
     checkGroundIsNotGrowth(problems);
     checkPlotEstablishment(problems);
