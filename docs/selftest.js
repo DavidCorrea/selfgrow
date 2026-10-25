@@ -2030,24 +2030,35 @@ function checkKindReadout(problems) {
       );
     }
 
-    // The goal names the kind worth planting next: with the herb line grown
-    // long and only some growth saved, bloom is the affordable reach.
+    // The goal names the nearest seed still ahead: with 200 growth the herb is
+    // the one it cannot yet afford (the bloom is cheaper and already reachable),
+    // so the goal line names herb and its own fraction. nextSeedKind stays the
+    // seed the garden can plant now, which is the bloom.
     setGarden({ beds: 3, seeds: 0, plants: 30 });
     setGrowth(200, 1);
     const state = getDisplayedState();
+    const herbGoalCost = state.kinds[0].cost;
     const goalTitle = String(document.getElementById("goal-title")?.textContent ?? "");
-    if (!/bloom/i.test(goalTitle)) {
+    if (state.goal.kind !== "seed" || state.goal.key !== "herb" || state.goal.cost !== herbGoalCost) {
       problems.push(
-        `with herb at ${state.kinds[0].cost} growth and bloom affordable, the goal title is ` +
-          `${JSON.stringify(goalTitle)}, expected it to name bloom.`
+        `with the herb at ${herbGoalCost} growth and only 200 saved, the goal is ${JSON.stringify(state.goal)}, ` +
+          `expected the unreached herb seed.`
       );
     }
-    if (!goalTitle.includes(formatAmount(state.nextSeedCost))) {
-      problems.push(`the goal title ${JSON.stringify(goalTitle)} does not state its ${state.nextSeedCost}-growth cost.`);
+    if (!/herb/i.test(goalTitle)) {
+      problems.push(
+        `with the herb at ${herbGoalCost} growth and only 200 saved, the goal title is ` +
+          `${JSON.stringify(goalTitle)}, expected it to name herb.`
+      );
+    }
+    if (!goalTitle.includes(formatAmount(state.goal.cost))) {
+      problems.push(
+        `the goal title ${JSON.stringify(goalTitle)} does not state its ${state.goal.cost}-growth cost.`
+      );
     }
     if (state.nextSeedKind !== "bloom" || state.nextSeedCost !== nextSeedCost(0, "bloom")) {
       problems.push(
-        `the state names the next seed ${state.nextSeedKind} at ${state.nextSeedCost} growth, ` +
+        `the state names the seed the garden can plant now as ${state.nextSeedKind} at ${state.nextSeedCost} growth, ` +
           `expected bloom at ${nextSeedCost(0, "bloom")}.`
       );
     }
@@ -4899,10 +4910,11 @@ function checkSeedGoalReadout(problems) {
     const cost = nextSeedCost(1);
 
     // Halfway there, at 1 growth per second: the goal states the growth saved
-    // against the cost and how far the seed is, each under its own short label,
-    // and the meter must track the fraction.
+    // against the cost and how far the target ahead still is, each under its
+    // own short label, and the meter must track the fraction.
     setGrowth(cost / 2, 1);
     const halfway = readGoalFacts(detailEl);
+    const halfwayState = getDisplayedState();
     const expectedSaved = `${formatGrowth(cost / 2)} / ${formatAmount(cost)}`;
     if (goalFactValue(detailEl, "Saved") !== expectedSaved) {
       problems.push(
@@ -4910,11 +4922,12 @@ function checkSeedGoalReadout(problems) {
           `expected ${JSON.stringify(expectedSaved)} (growth saved / cost).`
       );
     }
-    const expectedSeconds = `${Math.ceil((cost - cost / 2) / 1)}s`;
-    if (goalFactValue(detailEl, "Next seed") !== expectedSeconds) {
+    const expectedDistance =
+      `${formatGrowth(halfwayState.goal.growthToGo)} growth · ` + `${formatDuration(halfwayState.goal.secondsToGo)}`;
+    if (goalFactValue(detailEl, "Next seed") !== expectedDistance) {
       problems.push(
         `at half the cost the goal's Next seed fact is ${JSON.stringify(goalFactValue(detailEl, "Next seed"))}, ` +
-          `expected ${JSON.stringify(expectedSeconds)}.`
+          `expected ${JSON.stringify(expectedDistance)} (growth still needed and the time to it).`
       );
     }
     if (halfway.length !== 3 || halfway.some((fact) => !fact.label || !fact.value)) {
@@ -4937,22 +4950,54 @@ function checkSeedGoalReadout(problems) {
       );
     }
 
-    // Affordable: the goal's next seed reads ready, not how far away it is.
+    // Affordable: the goal advances by itself to the next kind still ahead —
+    // the bloom — and its meter resets to that target's own fraction.
     setGrowth(cost, 1);
-    if (goalFactValue(detailEl, "Next seed") !== "ready") {
+    const advanced = getDisplayedState();
+    if (advanced.goal.kind !== "seed" || advanced.goal.key !== "bloom") {
       problems.push(
-        `with enough growth the goal's Next seed fact is ${JSON.stringify(goalFactValue(detailEl, "Next seed"))}, ` +
-          `expected "ready".`
+        `with enough growth for the ${formatAmount(cost)}-growth herb the goal is ` +
+          `${JSON.stringify(advanced.goal)}, expected the next unreached seed (bloom).`
+      );
+    }
+    const bloomCost = nextSeedCost(0, "bloom");
+    if (goalFactValue(detailEl, "Saved") !== `${formatGrowth(cost)} / ${formatAmount(bloomCost)}`) {
+      problems.push(
+        `with enough growth the goal's Saved fact is ${JSON.stringify(goalFactValue(detailEl, "Saved"))}, ` +
+          `expected ${JSON.stringify(`${formatGrowth(cost)} / ${formatAmount(bloomCost)}`)} (the bloom's cost).`
+      );
+    }
+    const advancedNow = Number(meter.getAttribute("aria-valuenow"));
+    if (!(advancedNow < 1) || Math.abs(advancedNow - cost / bloomCost) > 0.01) {
+      problems.push(
+        `with enough growth the goal meter reads ${advancedNow}, expected the bloom's own fraction ` +
+          `${cost / bloomCost} rather than a bar pegged full.`
+      );
+    }
+    const advancedDetail = String(detailEl.textContent);
+    if (!advancedDetail.includes(`${formatGrowth(bloomCost - cost)} growth`) || !/\d+s\b|\d+m\b/.test(advancedDetail)) {
+      problems.push(
+        `with enough growth the goal does not state how far the bloom is and roughly how long: ` +
+          `${JSON.stringify(advancedDetail)}`
       );
     }
 
-    // Not growing at all: the saved amount is stated, and no time is invented
-    // for a seed the garden has no rate to reach.
+    // Not growing at all: the saved amount is stated, the target ahead is
+    // named with the growth still needed, and no time is invented for a seed
+    // the garden has no rate to reach.
     setGrowth(0, 0);
-    if (goalFactValue(detailEl, "Next seed") !== "—") {
+    const idle = getDisplayedState();
+    if (idle.goal.key !== "herb" || idle.goal.growthToGo !== cost) {
+      problems.push(
+        `with no growth the goal is ${JSON.stringify(idle.goal)}, expected the unreached herb ${cost} growth away.`
+      );
+    }
+    if (goalFactValue(detailEl, "Next seed") !== `${formatGrowth(cost)} growth`) {
       problems.push(
         `with no growth and no rate the goal's Next seed fact is ` +
-          `${JSON.stringify(goalFactValue(detailEl, "Next seed"))}, expected "—".`
+          `${JSON.stringify(goalFactValue(detailEl, "Next seed"))}, expected ${JSON.stringify(
+            `${formatGrowth(cost)} growth`
+          )} with no time invented.`
       );
     }
     if (goalFactValue(detailEl, "Saved") !== `0.0 / ${formatAmount(cost)}`) {
@@ -4962,20 +5007,21 @@ function checkSeedGoalReadout(problems) {
       );
     }
 
-    // Full: the goal becomes the next bed, stating its cost and time under the
-    // bed's own labels, while the Plant a seed control stays marked unavailable
-    // and says the plot is full.
+    // Full: the goal becomes the next bed, stating its distance and time under
+    // the bed's own labels, while the Plant a seed control stays marked
+    // unavailable and says the plot is full.
     setGarden({ beds: 1, seeds: PLOT_CAPACITY, plants: 0 });
     setGrowth(0, 1);
     const bedCost = nextBedCost(1);
+    const fullState = getDisplayedState();
     if (goalFactValue(detailEl, "Saved") !== `0.0 / ${formatAmount(bedCost)}`) {
       problems.push(
         `with every plot full the goal's Saved fact is ${JSON.stringify(goalFactValue(detailEl, "Saved"))}, ` +
           `expected ${JSON.stringify(`0.0 / ${formatAmount(bedCost)}`)} (the next bed's cost).`
       );
     }
-    const bedSeconds = getDisplayedState().secondsToNextBed;
-    const expectedBed = bedSeconds == null ? "—" : formatDuration(bedSeconds);
+    const expectedBed =
+      `${formatGrowth(fullState.goal.growthToGo)} growth · ${formatDuration(fullState.goal.secondsToGo)}`;
     if (goalFactValue(detailEl, "Next bed") !== expectedBed) {
       problems.push(
         `with every plot full the goal's Next bed fact is ${JSON.stringify(goalFactValue(detailEl, "Next bed"))}, ` +
@@ -4993,6 +5039,207 @@ function checkSeedGoalReadout(problems) {
     }
     if (button && !String(button.textContent).toLowerCase().includes("full")) {
       problems.push(`with every plot full the Plant a seed label does not say so: ${JSON.stringify(button.textContent)}`);
+    }
+  } finally {
+    setGarden(gardenBefore);
+    restoreGrowth(growthBefore);
+  }
+}
+
+/** The short label the goal's middle fact sits under, one per target kind. */
+function goalFactLabelFor(kind) {
+  if (kind === "bed") return "Next bed";
+  if (kind === "form") return "Next form";
+  return "Next seed";
+}
+
+/**
+ * The goal line always names a target the garden has NOT reached, and says how
+ * far away it is — so its meter is never already full and it never reads
+ * "ready". It advances by itself from the cheapest seed ahead to the next one,
+ * then to the bed on a full plot, then to the next form; the title, the middle
+ * fact and the meter all name the same target; and an agent reads the same
+ * target and distance the panel shows.
+ */
+async function checkNextGoalIsAlwaysAhead(problems) {
+  const meter = document.getElementById("seed-meter");
+  const fill = document.getElementById("seed-meter-fill");
+  const titleEl = document.getElementById("goal-title");
+  const detailEl = document.getElementById("goal-detail");
+  if (!meter || !fill || !titleEl || !detailEl) {
+    problems.push("the page has no goal block (expected #goal-title, #goal-detail, #seed-meter, #seed-meter-fill).");
+    return;
+  }
+
+  let tools;
+  try {
+    ({ tools } = await import("./agenttools.js"));
+  } catch (e) {
+    problems.push(`docs/agenttools.js could not be imported — ${e.message}`);
+    return;
+  }
+  const readTool = tools().find((tool) => tool.name === "get-state");
+  if (!readTool) {
+    problems.push("agenttools.js has no get-state tool, so an agent cannot read the garden's next goal.");
+    return;
+  }
+
+  const gardenBefore = getGarden();
+  const growthBefore = getGrowthState();
+  const shownMeter = () => Number(meter.getAttribute("aria-valuenow"));
+  const claimTarget = (context, state, growth) => {
+    const goal = state.goal;
+    if (!(goal.cost > growth)) {
+      problems.push(`${context}: the goal costs ${goal.cost} but the garden already holds ${growth}, so it is not ahead.`);
+    }
+    if (!(goal.growthToGo > 0) || Math.abs(goal.growthToGo - (goal.cost - growth)) > 1e-9) {
+      problems.push(`${context}: the goal's growthToGo is ${goal.growthToGo}, expected ${goal.cost - growth}.`);
+    }
+    if (!(goal.progress >= 0) || !(goal.progress < 1)) {
+      problems.push(`${context}: the goal meter fraction is ${goal.progress}, expected a partial bar below 1.`);
+    }
+    const now = shownMeter();
+    if (!(now < 1)) {
+      problems.push(`${context}: the goal meter on the page reads ${now}, expected a partial bar rather than a full one.`);
+    }
+    if (Math.abs(now - goal.progress) > 1e-9) {
+      problems.push(`${context}: the goal meter reads ${now} while the state's fraction is ${goal.progress}.`);
+    }
+    const title = String(titleEl.textContent ?? "");
+    // The fresh garden keeps its deliberate "Tend the soil" title — the action
+    // that works right now — with the target and its distance still stated by
+    // the facts and the meter underneath. Every other reading names the target
+    // in the title too.
+    const namesTending = state.rate === 0 && !state.canPlantSeed;
+    if (namesTending && !/tend/i.test(title)) {
+      problems.push(`${context}: with no rate and nothing affordable the goal title is ${JSON.stringify(title)}, expected it to name tending the soil.`);
+    }
+    if (!namesTending) {
+      if (!title.includes(goal.name)) {
+        problems.push(`${context}: the goal title ${JSON.stringify(title)} does not name the target ${JSON.stringify(goal.name)}.`);
+      }
+      if (!title.includes(formatAmount(goal.cost))) {
+        problems.push(`${context}: the goal title ${JSON.stringify(title)} does not state its ${goal.cost}-growth cost.`);
+      }
+    }
+    const factLabel = goalFactLabelFor(goal.kind);
+    const distance = `${formatGrowth(goal.growthToGo)} growth`;
+    if (
+      goalFactValue(detailEl, factLabel) !== distance &&
+      goalFactValue(detailEl, factLabel) !== `${distance} · ${formatDuration(goal.secondsToGo)}`
+    ) {
+      problems.push(
+        `${context}: the goal's ${factLabel} fact is ${JSON.stringify(goalFactValue(detailEl, factLabel))}, ` +
+          `expected ${JSON.stringify(distance)} (with its time when there is a rate).`
+      );
+    }
+    if (goalFactValue(detailEl, "Saved") !== `${formatGrowth(growth)} / ${formatAmount(goal.cost)}`) {
+      problems.push(
+        `${context}: the goal's Saved fact is ${JSON.stringify(goalFactValue(detailEl, "Saved"))}, ` +
+          `expected ${JSON.stringify(`${formatGrowth(growth)} / ${formatAmount(goal.cost)}`)}.`
+      );
+    }
+    if (/ready/i.test(String(detailEl.textContent))) {
+      problems.push(`${context}: the goal line reads "ready" — it must always name a target the garden has not reached.`);
+    }
+  };
+
+  try {
+    // A fresh garden: the goal is the herb seed it cannot yet afford, saved 0
+    // against 6, with 6 growth still to go and an empty — not full — meter.
+    setGarden(newGarden());
+    setGrowth(0, 0);
+    const fresh = getDisplayedState();
+    const herbCost = nextSeedCost(1, "herb");
+    if (fresh.goal.kind !== "seed" || fresh.goal.key !== "herb" || fresh.goal.cost !== herbCost) {
+      problems.push(
+        `at a fresh garden the goal is ${JSON.stringify(fresh.goal)}, expected the unreached herb at ${herbCost} growth.`
+      );
+    }
+    if (fresh.goal.growthToGo !== herbCost) {
+      problems.push(
+        `at a fresh garden the goal is ${fresh.goal.growthToGo} growth away, expected the full cost ${herbCost}.`
+      );
+    }
+    claimTarget("at a fresh garden", fresh, 0);
+
+    // The moment the herb is affordable the goal advances by itself to the
+    // bloom, and the meter resets to that target's own fraction and time.
+    setGrowth(herbCost, 1);
+    const advanced = getDisplayedState();
+    const bloomCost = nextSeedCost(0, "bloom");
+    if (advanced.goal.kind !== "seed" || advanced.goal.key !== "bloom" || advanced.goal.cost !== bloomCost) {
+      problems.push(
+        `at ${herbCost} growth (the herb's price) the goal is ${JSON.stringify(advanced.goal)}, ` +
+          `expected it to advance to the bloom at ${bloomCost}.`
+      );
+    }
+    if (Math.abs(advanced.goal.progress - herbCost / bloomCost) > 1e-9 || advanced.goal.secondsToGo == null) {
+      problems.push(
+        `at ${herbCost} growth the goal's fraction is ${advanced.goal.progress} and its time ` +
+          `${advanced.goal.secondsToGo}, expected ${herbCost / bloomCost} at a real estimate.`
+      );
+    }
+    claimTarget(`at ${herbCost} growth`, advanced, herbCost);
+
+    // Across a sweep from nothing to far past the last form, the goal is always
+    // a target ahead: unreached, with a positive distance and a partial meter.
+    setGarden(newGarden());
+    for (const growth of [0, 3, 5, 6, 7, 40, 41, 99, 100, 101, 1e3, 1e4, 1e6, 1e9, 1e12, 1e13]) {
+      setGrowth(growth, 1);
+      claimTarget(`at ${growth} growth`, getDisplayedState(), growth);
+    }
+
+    // On a full plot the goal is the next bed while it is out of reach, and the
+    // next form once it is affordable — never the bed the garden already owns.
+    setGarden({ beds: 1, seeds: PLOT_CAPACITY, plants: 0 });
+    const bedCost = nextBedCost(1);
+    setGrowth(0, 1);
+    const bedGoal = getDisplayedState();
+    if (bedGoal.goal.kind !== "bed" || bedGoal.goal.cost !== bedCost) {
+      problems.push(
+        `on a full plot at 0 growth the goal is ${JSON.stringify(bedGoal.goal)}, expected the next bed at ${bedCost}.`
+      );
+    }
+    claimTarget("on a full plot at 0 growth", bedGoal, 0);
+    setGrowth(bedCost + 1, 1);
+    const pastBed = getDisplayedState();
+    if (pastBed.goal.kind !== "form") {
+      problems.push(
+        `once the ${bedCost}-growth bed is affordable the goal is ${JSON.stringify(pastBed.goal)}, ` +
+          `expected it to advance to the next form.`
+      );
+    }
+    claimTarget(`once the bed is affordable at ${bedCost + 1} growth`, pastBed, bedCost + 1);
+
+    // An agent reads the same target and distance the panel shows.
+    setGarden(newGarden());
+    setGrowth(3, 1);
+    const pageState = getDisplayedState();
+    const agentState = await readTool.execute({}, {});
+    if (
+      JSON.stringify(agentState.goal) !== JSON.stringify(pageState.goal) ||
+      agentState.goal?.name !== pageState.goal.name ||
+      agentState.goal?.growthToGo !== pageState.goal.growthToGo
+    ) {
+      problems.push(
+        `get-state reports the goal ${JSON.stringify(agentState.goal)} while the panel shows ` +
+          `${JSON.stringify(pageState.goal)}; an agent must read the same target and distance.`
+      );
+    }
+    const agentTitle = String(titleEl.textContent ?? "");
+    const agentDetail = String(detailEl.textContent ?? "");
+    if (!agentTitle.includes(agentState.goal.name)) {
+      problems.push(
+        `the page's goal title ${JSON.stringify(agentTitle)} does not name the target get-state reports ` +
+          `(${JSON.stringify(agentState.goal.name)}).`
+      );
+    }
+    if (!agentDetail.includes(`${formatGrowth(agentState.goal.growthToGo)} growth`)) {
+      problems.push(
+        `the page's goal facts ${JSON.stringify(agentDetail)} do not state the ` +
+          `${formatGrowth(agentState.goal.growthToGo)}-growth distance get-state reports.`
+      );
     }
   } finally {
     setGarden(gardenBefore);
@@ -5041,19 +5288,22 @@ function checkFirstGoalNamesTending(problems) {
       );
     }
     // The detail under the title is short labelled facts, not a sentence: what
-    // is saved against the cost, that no seed has a time yet, and when the
-    // starting sprout matures. A returning sentence is the shape this forbids.
+    // is saved against the cost, how far the unreached target still is with no
+    // time invented yet, and when the starting sprout matures. A returning
+    // sentence is the shape this forbids.
     const freshState = getDisplayedState();
-    if (goalFactValue(detailEl, "Saved") !== `0.0 / ${formatAmount(freshState.nextSeedCost)}`) {
+    if (goalFactValue(detailEl, "Saved") !== `0.0 / ${formatAmount(freshState.goal.cost)}`) {
       problems.push(
         `at zero growth the goal's Saved fact is ${JSON.stringify(goalFactValue(detailEl, "Saved"))}, ` +
-          `expected ${JSON.stringify(`0.0 / ${formatAmount(freshState.nextSeedCost)}`)}.`
+          `expected ${JSON.stringify(`0.0 / ${formatAmount(freshState.goal.cost)}`)}.`
       );
     }
-    if (goalFactValue(detailEl, "Next seed") !== "—") {
+    const freshDistance = `${formatGrowth(freshState.goal.growthToGo)} growth`;
+    if (goalFactValue(detailEl, "Next seed") !== freshDistance) {
       problems.push(
         `at zero growth and no rate the goal's Next seed fact is ` +
-          `${JSON.stringify(goalFactValue(detailEl, "Next seed"))}, expected "—".`
+          `${JSON.stringify(goalFactValue(detailEl, "Next seed"))}, expected ${JSON.stringify(freshDistance)} ` +
+          `with no time invented.`
       );
     }
     const freshPlantSeconds = freshState.secondsToNextPlant;
@@ -5535,10 +5785,10 @@ function checkCompactAmounts(problems) {
       );
     }
     const seedGoal = String(document.getElementById("goal-detail")?.textContent ?? "");
-    if (!seedGoal.includes(formatAmount(state.nextSeedCost))) {
+    if (!seedGoal.includes(formatAmount(state.goal.cost))) {
       problems.push(
-        `the next-seed goal ${JSON.stringify(seedGoal)} does not state its compact ` +
-          `${JSON.stringify(formatAmount(state.nextSeedCost))}-growth cost.`
+        `the next-goal line ${JSON.stringify(seedGoal)} does not state its target's compact ` +
+          `${JSON.stringify(formatAmount(state.goal.cost))}-growth cost.`
       );
     }
     const nextBed = textOf('[data-field="next-bed"]');
@@ -5550,7 +5800,8 @@ function checkCompactAmounts(problems) {
     }
 
     // A full plot of 29 beds: the next bed costs five figures, and its button
-    // and goal both have to say it compactly.
+    // and goal both have to say it compactly. One growth short of the bed keeps
+    // it the target still ahead, so the goal line names the bed.
     const beds = 29;
     setGarden({ beds, seeds: beds * PLOTS_PER_BED, plants: 0 });
     const full = getDisplayedState();
@@ -5560,7 +5811,7 @@ function checkCompactAmounts(problems) {
           `${full.nextBedCost}-growth bed; it must be full with a bed over 10,000.`
       );
     }
-    setGrowth(full.nextBedCost + 1, 1);
+    setGrowth(full.nextBedCost - 1, 1);
     const openLabel = String(document.getElementById("open-bed")?.textContent ?? "");
     if (!openLabel.includes(formatAmount(full.nextBedCost))) {
       problems.push(
@@ -8244,10 +8495,16 @@ function checkAwaySowing(problems) {
     }
     openSandbox();
     fastForwardSandbox(30 * DAY);
-    const fullGoal = getSandboxState().goalTitle;
+    const fullShown = getSandboxState();
+    const fullGoal = fullShown.goalTitle;
     resetSandbox();
-    if (!/bed/i.test(fullGoal)) {
-      problems.push(`after a full-bed absence the goal is ${JSON.stringify(fullGoal)}, expected the next bed.`);
+    // Thirty days of a full garden has long since afforded the next bed, so the
+    // goal advances past it to the next form the garden has not reached.
+    if (fullShown.goal.kind !== "form" || !fullGoal.includes(fullShown.goal.name)) {
+      problems.push(
+        `after a full-bed absence the goal is ${JSON.stringify(fullGoal)}, expected the next form ` +
+          `${JSON.stringify(fullShown.goal.name)} the garden has not reached.`
+      );
     }
   } finally {
     setGarden(gardenBefore);
@@ -11829,6 +12086,7 @@ export async function checks() {
     checkPlantingSpendsAndRaisesProduction(problems);
     checkBloomPlanting(problems);
     checkSeedGoalReadout(problems);
+    await checkNextGoalIsAlwaysAhead(problems);
     checkFirstGoalNamesTending(problems);
     checkNextPlantReadout(problems);
     checkTendHurries(problems);

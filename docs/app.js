@@ -445,8 +445,12 @@ function describeGardenState(garden, growth, rate, age, bonus = 0) {
     baseRate + herbRate * (kinds[0].seasonMultiplier - 1) + bloomRate * (kinds[1].seasonMultiplier - 1);
   const displayRate =
     season.multiplier * perKindRate + (pollinator.visiting ? baseRate * (POLLINATOR_BOOST - 1) : 0);
-  const goal = nextSeedGoal({ growth, plotFull, capacity: garden.capacity, kinds });
-  const goalCost = goal ? goal.cost : kinds[0].cost;
+  const seedGoal = nextSeedGoal({ growth, plotFull, capacity: garden.capacity, kinds });
+  const goalCost = seedGoal ? seedGoal.cost : kinds[0].cost;
+  // The reach ahead — always a target the garden has not yet reached. It is
+  // what the goal line names and its meter measures, so the line can never
+  // read "ready" against a bar already pegged full.
+  const goal = resolveNextGoal({ growth, rate: displayRate, plotFull, capacity: garden.capacity, kinds, beds: garden.beds });
   return {
     seeds: garden.seeds,
     plants: garden.plants,
@@ -471,29 +475,37 @@ function describeGardenState(garden, growth, rate, age, bonus = 0) {
     capacity: garden.capacity,
     growSeconds: GROW_SECONDS,
     secondsToNextPlant: secondsToNextPlant(garden.sprouts, garden.bloomSprouts),
-    // The next seed the goal names: its kind, its price, and how far off it is.
-    nextSeedKind: goal ? goal.key : null,
+    // The next seed the goal panel can plant right now: its kind, its price,
+    // and how far off it is. The Plant controls and the "Goal reached"
+    // announcement read these; the goal line itself reads `goal`.
+    nextSeedKind: seedGoal ? seedGoal.key : null,
     nextSeedCost: goalCost,
-    canPlantSeed: Boolean(goal) && growth >= goalCost,
+    canPlantSeed: Boolean(seedGoal) && growth >= goalCost,
     plotFull,
     seedCostProgress: goalCost > 0 ? Math.min(1, Math.max(0, growth / goalCost)) : 1,
-    secondsToNextSeed: !goal || !(displayRate > 0) ? null : Math.max(0, (goalCost - growth) / displayRate),
+    secondsToNextSeed: !seedGoal || !(displayRate > 0) ? null : Math.max(0, (goalCost - growth) / displayRate),
     nextBedCost: bedCost,
     canOpenBed: plotFull && growth >= bedCost,
     bedCostProgress: bedCost > 0 ? Math.min(1, Math.max(0, growth / bedCost)) : 1,
     secondsToNextBed: !plotFull || !(displayRate > 0) ? null : Math.max(0, (bedCost - growth) / displayRate),
+    // The next thing ahead, always a target the garden has not reached: the
+    // nearest seed it cannot afford, then the next bed on a full plot, then the
+    // next form. The goal title, its facts and its meter all read this one
+    // object, so they can never name different targets.
+    goal,
   };
 }
 
 /**
- * The next seed worth planting, named by kind: the seed a visitor reads off the
- * goal panel and an agent reads off `get-state`.
+ * The seed worth planting right now, named by kind: the one the Plant controls
+ * offer and the "Goal reached" announcement waits for. The goal line reads
+ * `resolveNextGoal` instead, which names the target still ahead.
  *
  * Pure. It picks, among the kinds the free soil can still take, the most
  * expensive one the garden can already afford — an ambitious but reachable
  * plant — and when nothing is affordable yet, the cheapest kind, the one the
- * garden will reach first. No free soil for any kind means no seed goal: the
- * plot is full and the next goal is a bed.
+ * garden will reach first. No free soil for any kind means no seed to plant
+ * now: the plot is full and the next bed is what widens it.
  *
  * @returns {{key: string, name: string, cost: number, production: number, growSeconds: number}|null}
  */
@@ -504,6 +516,82 @@ export function nextSeedGoal(state) {
   return affordable.length
     ? affordable.reduce((best, kind) => (kind.cost > best.cost ? kind : best))
     : candidates.reduce((best, kind) => (kind.cost < best.cost ? kind : best));
+}
+
+/**
+ * The next thing worth reaching for that the garden has not reached yet: the
+ * nearest seed the free soil cannot yet afford, then the next bed once every
+ * plot is full, then the next form. Pure, and the one source for the goal line.
+ *
+ * `nextSeedGoal` names the seed the garden can plant *now*, which the Plant
+ * controls and the "Goal reached" announcement want; this names the seed (or
+ * bed, or form) still ahead, which is what a goal line is for — its cost is
+ * always above the current growth, so saved/cost is always below 1 and the
+ * meter always shows a distance. Past the last form's threshold the stride
+ * continues by decades, so the line never runs out.
+ *
+ * @returns {{kind: string, key: string|null, name: string, cost: number,
+ *   growthToGo: number, progress: number, secondsToGo: number|null}}
+ */
+function resolveNextGoal({ growth, rate, plotFull, capacity, kinds, beds }) {
+  const amount = Number.isFinite(growth) && growth > 0 ? growth : 0;
+  if (!plotFull) {
+    const ahead = (kinds ?? []).filter((kind) => kind.total < capacity && kind.cost > amount);
+    if (ahead.length) {
+      const kind = ahead.reduce((cheapest, entry) => (entry.cost < cheapest.cost ? entry : cheapest));
+      return seedGoal(kind, amount, rate);
+    }
+  }
+  const bedCost = nextBedCost(beds);
+  if (plotFull && amount < bedCost) {
+    return {
+      kind: "bed",
+      key: null,
+      name: `bed #${Number(beds) + 1}`,
+      cost: bedCost,
+      growthToGo: bedCost - amount,
+      progress: amount / bedCost,
+      secondsToGo: secondsToGo(bedCost - amount, rate),
+    };
+  }
+  return formGoal(amount, rate);
+}
+
+/** One seed kind as the goal ahead: its price, its distance and its meter. */
+function seedGoal(kind, growth, rate) {
+  return {
+    kind: "seed",
+    key: kind.key,
+    name: kind.name,
+    cost: kind.cost,
+    growthToGo: kind.cost - growth,
+    progress: growth / kind.cost,
+    secondsToGo: secondsToGo(kind.cost - growth, rate),
+  };
+}
+
+/** The next form as the goal ahead, and how full the stretch to it is. */
+function formGoal(growth, rate) {
+  const form = gardenForm(growth);
+  const within = form.nextAt > growth;
+  // Past the last tier's threshold the same decades-apart step keeps going, so
+  // the goal still names an amount ahead rather than the one already reached.
+  const cost = within ? form.nextAt : Math.pow(10, Math.floor(Math.log10(growth)) + 1);
+  const progress = within ? form.fill : Math.log10(growth / (cost / 10));
+  return {
+    kind: "form",
+    key: null,
+    name: FORMS[form.index + 1]?.name ?? form.name,
+    cost,
+    growthToGo: cost - growth,
+    progress,
+    secondsToGo: secondsToGo(cost - growth, rate),
+  };
+}
+
+/** A growth distance at a rate, or null when nothing is growing. */
+function secondsToGo(distance, rate) {
+  return rate > 0 ? distance / rate : null;
 }
 
 /**
@@ -1018,6 +1106,9 @@ function rehearseSandbox() {
     beds: display.beds,
     capacity: display.capacity,
     plotFull: display.plotFull,
+    // The same target the goal title, facts and meter on the sandbox panel read,
+    // so a rehearsal and the real garden name one thing.
+    goal: display.goal,
     canPlantHerb: display.kinds[0].canPlant,
     canPlantBloom: display.kinds[1].canPlant,
     canOpenBed: display.canOpenBed,
@@ -1321,28 +1412,34 @@ export function formatDuration(seconds) {
 
 /**
  * The next goal's progress as three short labelled values — the growth saved
- * against the cost, how far the next seed is, and how far the next plant is.
- * `bed` switches the middle value to the next bed, once every plot is full.
- * Pure, so the real page and a sandbox rehearsal build the same facts from the
- * same state and their two readings can never disagree.
+ * against the cost, how far the target ahead still is, and how far the next
+ * plant is. The middle fact is labelled for the target's kind and states the
+ * growth still needed (and roughly how long), never "ready": the target is
+ * always one the garden has not reached. Pure, so the real page and a sandbox
+ * rehearsal build the same facts from the same state and their two readings
+ * can never disagree.
  *
  * @returns {Array<{label: string, value: string}>}
  */
-function goalFacts(state, { bed = false } = {}) {
-  const cost = bed ? state.nextBedCost : state.nextSeedCost;
-  const ready = bed ? state.canOpenBed : state.canPlantSeed;
-  const seconds = bed ? state.secondsToNextBed : state.secondsToNextSeed;
+function goalFacts(state) {
+  const goal = state.goal;
+  const distance = `${formatGrowth(goal.growthToGo)} growth`;
+  const value = goal.secondsToGo == null ? distance : `${distance} · ${formatDuration(goal.secondsToGo)}`;
   return [
-    { label: "Saved", value: `${formatGrowth(state.growth)} / ${formatAmount(cost)}` },
-    {
-      label: bed ? "Next bed" : "Next seed",
-      value: ready ? "ready" : seconds == null ? "—" : formatDuration(seconds),
-    },
+    { label: "Saved", value: `${formatGrowth(state.growth)} / ${formatAmount(goal.cost)}` },
+    { label: goalFactLabel(goal.kind), value },
     {
       label: "Next plant",
       value: state.secondsToNextPlant == null ? "none growing" : formatDuration(state.secondsToNextPlant),
     },
   ];
+}
+
+/** The short label the goal's middle fact sits under, one per target kind. */
+function goalFactLabel(kind) {
+  if (kind === "bed") return "Next bed";
+  if (kind === "form") return "Next form";
+  return "Next seed";
 }
 
 /** The facts as plain text, so a stored reading equals the DOM's textContent. */
@@ -1451,36 +1548,32 @@ function describeNextPlant(state) {
  * the DOM's own textContent.
  */
 function describeNextGoal(state) {
-  if (state.plotFull) {
-    const facts = goalFacts(state, { bed: true });
-    return {
-      title: `Open bed #${formatAmount(state.beds + 1)}`,
-      facts,
-      detail: goalFactsText(facts),
-      progress: state.bedCostProgress,
-    };
-  }
-  // With nothing growing yet and the next seed still out of reach, the goal is
-  // the action that works right now — tending the soil — rather than a price
-  // the player cannot pay.
+  const facts = goalFacts(state);
+  // With nothing growing yet and no seed affordable, the title names the action
+  // that works right now — tending the soil — rather than a price the player
+  // cannot pay; the facts and the meter underneath still state the target ahead.
   if (!(state.rate > 0) && !state.canPlantSeed) {
-    const facts = goalFacts(state);
     return {
       title: `Tend the soil — +${formatAmount(TEND_YIELD)} growth, +${formatGrowth(TEND_RATE_STEP)}/s`,
       facts,
       detail: goalFactsText(facts),
-      progress: state.seedCostProgress,
+      progress: state.goal.progress,
     };
   }
-  const goal = nextSeedGoal(state);
-  const cost = formatAmount(goal ? goal.cost : state.nextSeedCost);
-  const facts = goalFacts(state);
   return {
-    title: `Plant ${goal ? goal.name : "herb"} seed — ${cost} growth`,
+    title: goalTitle(state.goal),
     facts,
     detail: goalFactsText(facts),
-    progress: state.seedCostProgress,
+    progress: state.goal.progress,
   };
+}
+
+/** The goal line's title, naming the same target the meter measures. */
+function goalTitle(goal) {
+  const cost = formatAmount(goal.cost);
+  if (goal.kind === "bed") return `Open ${goal.name} — ${cost} growth`;
+  if (goal.kind === "form") return `Reach ${goal.name} — ${cost} growth`;
+  return `Plant ${goal.name} seed — ${cost} growth`;
 }
 
 /**

@@ -118,12 +118,26 @@ export function tools() {
         "how many more plants of that kind it needs (plantsToMilestone, null " +
         "beside a null nextMilestone), so the caller can say which seed is " +
         "worth planting next. It also returns the " +
-        "next seed the goal panel names (nextSeedKind) and what it costs " +
+        "seed the garden can plant right now (nextSeedKind) and what it costs " +
         "(nextSeedCost), whether the garden can afford it now (canPlantSeed), " +
         "whether the plot is full (plotFull), how far along the cost the " +
         "garden is as a 0-to-1 fraction (seedCostProgress), and the seconds " +
         "until it can afford it (secondsToNextSeed, null when full or not " +
-        "growing). Once " +
+        "growing) — these are the seed the Plant controls and the goal-reached " +
+        "announcement read, so they name what the garden can do now rather " +
+        "than the target still ahead, which is `goal` below. " +
+        "The one target the goal line is reaching for is returned as goal: " +
+        "always a thing the garden has NOT reached, so its meter is never " +
+        "already full and it never reads ready — the nearest seed the free " +
+        "soil cannot yet afford (kind \"seed\", key and name the kind), then " +
+        "the next bed once every plot is full (kind \"bed\", name \"bed #N\"), " +
+        "then the next form (kind \"form\", name the form, e.g. \"a grove\"). " +
+        "It carries the target's cost, how much growth is still needed to " +
+        "reach it (growthToGo), how full the stretch to it is as a 0-to-1 " +
+        "fraction (progress, the meter the page draws), and the estimated " +
+        "seconds until the garden can afford it (secondsToGo, null when " +
+        "nothing is growing). The goal title and the three labelled facts on " +
+        "the page name this same target and state this same distance. Once " +
         "every plot is full it also returns the next bed: what opening it " +
         "costs (nextBedCost), whether the garden can afford it now " +
         "(canOpenBed — only ever true on a full plot), how far along that " +
