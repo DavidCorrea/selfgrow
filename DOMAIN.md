@@ -547,6 +547,21 @@ deletes work without naming its reason is not auditable."
 
 ---
 
+**Pictures come from an image model, in the product's own style.** The chain is
+text models, so everything the Builder drew was drawn in code — right for frames,
+icons and layouts, and wrong for an illustration: a product about cards or
+creatures shipped them as boxes of text, because nothing could draw one. The
+Builder's `generate-image` tool asks an image model on the same OpenRouter key
+(`IMAGE_MODEL`, about $0.004 a picture) and saves a WebP into `docs/`. It refuses
+to draw until the product has a **style guide** at `docs/art/style.md`, and sends
+it with every request, so "the fortieth picture belongs with the first." The
+guide is product, not machine: the Builder writes it to fit the Vision, and a
+reset deletes it. Pictures are committed files, never generator URLs, so every
+load and every review sees the same one; a session may make at most twelve. The
+**Shown, not described** principle is what makes anyone reach for it: every role
+reads it, so the PM asks for pictures, the Playtester reports text standing in
+for one, and the Builder knows the tool is there.
+
 ## Memory
 
 Agents are stateless; every run starts from a fresh checkout.

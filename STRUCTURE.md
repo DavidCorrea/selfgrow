@@ -86,6 +86,8 @@ uses. Listed from the bottom layer up:
   and classifying the open agent PRs.
 - `verify.mjs` — `verifyBuild` (the merge gate) and `reviewApp` (the layout
   measurements the Playtester reads).
+- `image-generation.mjs` — the Builder's `generate-image` tool: a picture from
+  the product's style guide (`docs/art/style.md`), saved into `docs/` as WebP.
 - `wiki.mjs` — the wiki repo as long-term memory (Vision, Changelog, Story).
   Every write is a retried read-modify-write via `commitToWiki`.
 - `discussions.mjs` — the Discussions layer: journals, lessons, decisions, ideas,

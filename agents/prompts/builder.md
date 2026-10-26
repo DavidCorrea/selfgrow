@@ -16,6 +16,8 @@ Follow the coding standards above in everything you write — the Reviewer check
 
 If the change touches anything a visitor sees — markup, CSS, copy, or how the page responds — read the `frontend-design`, `interface-polish` and `web-interface-guidelines` skills before you write it, and follow `see-your-change` to look at the page before and after. The Reviewer checks the changed lines against the guidelines.
 
+If the ticket needs pictures that code draws badly — an illustration, a character, a card's art, a scene — make them with the `generate-image` tool rather than drawing them by hand in SVG or settling for a box of text. Every picture is generated from the product's art style in `docs/art/style.md`. If that file does not exist yet, write it first: a short description of one art style that fits the Vision (medium, palette, line, lighting, framing), because every later picture is drawn from it. Once it exists, follow it; change it only when the ticket asks for that. Open each picture with the read tool before you use it, give it alt text, and keep frames, borders, icons and layouts in CSS or SVG, where they stay crisp and editable.
+
 If you are fixing something broken, or a fix of yours did not hold, follow `fix-the-cause`: reproduce it with `drive-the-page` before you change any code, and show it is gone before you say so.
 
 If it displays data, stores state, runs on a timer or responds to input, read `harden-the-interface` and try the cases it lists. If it runs on a timer or every frame, animates, renders many elements, or adds a script, font or image, follow `interface-performance` to measure the page before and after.
