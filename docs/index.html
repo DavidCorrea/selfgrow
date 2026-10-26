@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0f1322" />
+    <meta
+      name="description"
+      content="selfgrow — a trading card game you play in the browser: collect cards, build a deck, and play it against an opponent."
+    />
+    <title>selfgrow — trading card game</title>
+    <link rel="preload" href="./fonts/bricolage-grotesque.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="./styles.css" />
+    <script type="module">
+      import "./app.js";
+      import "./webmcp.js";
+    </script>
+  </head>
+
+  <body>
+    <!-- The home screen is the game's face card: the page is one card lying on a
+         table, and every screen of the game is printed on it. Everything the card
+         says is text, so a screen reader, the Playtester and an agent all read
+         the same surface. -->
+    <main class="card">
+      <header class="nameplate">
+        <h1 class="wordmark" translate="no">selfgrow</h1>
+        <p class="type-line">Trading card game</p>
+      </header>
+
+      <p class="rules" id="game-description">Collect cards, build a deck, and play it against an opponent.</p>
+
+      <section id="screen-home" class="screen" aria-labelledby="home-heading">
+        <h2 class="screen-heading" id="home-heading" tabindex="-1">Where you stand</h2>
+
+        <dl class="standings">
+          <div class="standing">
+            <dt class="standing-label">Cards owned</dt>
+            <dd class="standing-value"><span id="cards-owned" data-field="cardsOwned">0</span></dd>
+          </div>
+          <div class="standing">
+            <dt class="standing-label">Deck size</dt>
+            <dd class="standing-value"><span id="deck-size" data-field="deckSize">0</span></dd>
+          </div>
+        </dl>
+
+        <div class="actions">
+          <button type="button" class="btn btn-primary" id="action-play" data-screen-target="play">Play</button>
+          <button type="button" class="btn btn-secondary" id="action-collection" data-screen-target="collection">
+            Collection
+          </button>
+        </div>
+      </section>
+
+      <section id="screen-collection" class="screen" aria-labelledby="collection-heading" hidden>
+        <h2 class="screen-heading" id="collection-heading" tabindex="-1">Your collection</h2>
+        <p class="screen-note">You own <span data-field="cardsOwned">0</span> cards.</p>
+        <div class="actions">
+          <button type="button" class="btn btn-secondary" data-screen-target="home">Back to home</button>
+        </div>
+      </section>
+
+      <section id="screen-play" class="screen" aria-labelledby="play-heading" hidden>
+        <h2 class="screen-heading" id="play-heading" tabindex="-1">Play a match</h2>
+        <p class="screen-note">Your deck holds <span data-field="deckSize">0</span> cards.</p>
+        <div class="actions">
+          <button type="button" class="btn btn-secondary" data-screen-target="home">Back to home</button>
+        </div>
+      </section>
+
+      <!-- Which screen is open, said in words: a screen reader hears the change
+           when a button swaps the screen under it. -->
+      <p class="sr-only" id="screen-status" role="status" aria-live="polite"></p>
+    </main>
+  </body>
+</html>
