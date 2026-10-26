@@ -12,9 +12,11 @@
  * the match untouched — including any move at all once the match is over.
  *
  * A match ends the moment either hero's health reaches zero: `over` turns true,
- * `winner` names the side that dealt the final blow, and the log's last line is
- * that blow, in words a player can read back. Health is clamped at zero as it
- * lands, so the number on the board and the number here never disagree.
+ * `winner` names the side that dealt the final blow, `outcome` says it from the
+ * player's side ("win" or "loss"), and the log's last line is that blow, in
+ * words a player can read back. Health is clamped at zero as it lands, so the
+ * number on the board and the number here never disagree. `recorded` is false
+ * until the result has been saved, so a finished match is never counted twice.
  *
  * Damage goes to heroes only, so a card is never damaged and the rule that a
  * card at zero health leaves the table is unreachable — there is nothing here
@@ -35,6 +37,14 @@ export const MAX_ENERGY = 3;
 // Where each card sits in the catalog, so a tie between two affordable cards is
 // broken the same way every time rather than by hand order.
 const CATALOG_ORDER = new Map(CARDS.map((card, index) => [card.id, index]));
+
+// A match is given a fresh id as it is dealt, so the result of one match can be
+// told apart from the result of the next — the save records the id it counted.
+let matchesStarted = 0;
+function createMatchId() {
+  matchesStarted += 1;
+  return `match-${Date.now().toString(36)}-${matchesStarted}`;
+}
 
 /** A card the match can hold, copied out of the catalog so nothing mutates it. */
 function cardOf(cardId) {
@@ -80,9 +90,12 @@ export function createMatch(deckIds, { rng = Math.random } = {}) {
   }
 
   const match = {
+    id: createMatchId(),
     turn: "player",
     over: false,
     winner: null,
+    outcome: null,
+    recorded: false,
     player: createSide(deckIds, rng),
     opponent: createSide(deckIds, rng),
     log: [],
@@ -193,6 +206,7 @@ function dealDamage(match, attacker, defender, attackerWord, defenderWord, healt
 
     match.over = true;
     match.winner = defender === match.player ? "opponent" : "player";
+    match.outcome = match.winner === "player" ? "win" : "loss";
     match.turn = null;
     return true;
   }

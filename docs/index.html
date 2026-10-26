@@ -42,6 +42,14 @@
             <dt class="standing-label">Deck size</dt>
             <dd class="standing-value"><span id="deck-size" data-field="deckSize">0</span></dd>
           </div>
+          <div class="standing">
+            <dt class="standing-label">Wins</dt>
+            <dd class="standing-value"><span id="matches-won" data-field="wins">0</span></dd>
+          </div>
+          <div class="standing">
+            <dt class="standing-label">Matches played</dt>
+            <dd class="standing-value"><span id="matches-played" data-field="matchesPlayed">0</span></dd>
+          </div>
         </dl>
 
         <!-- The saved deck, said in words: a returning player sees what they are
@@ -145,11 +153,25 @@
 
           <!-- The match as a result, not a second screen: when a hero falls the
                board stays where it is and this states plainly who won, with both
-               heroes' final health and the way to another match. The heading is
-               filled in from the match, so the outcome is what gets announced. -->
+               heroes' final health, how many matches have been won and played,
+               and the card a win added. The heading is filled in from the
+               match, so the outcome is what gets announced. -->
           <section class="match-result" id="match-result" aria-labelledby="match-result-heading" hidden>
             <h3 class="result-heading" id="match-result-heading" tabindex="-1"></h3>
             <p class="result-health" id="match-final-health"></p>
+            <!-- What the result did to the collection: the one card a win
+                 earned, or plainly that nothing was earned. -->
+            <p class="result-reward" id="result-reward"></p>
+            <dl class="standings result-standings">
+              <div class="standing">
+                <dt class="standing-label">Wins</dt>
+                <dd class="standing-value"><span data-field="wins">0</span></dd>
+              </div>
+              <div class="standing">
+                <dt class="standing-label">Matches played</dt>
+                <dd class="standing-value"><span data-field="matchesPlayed">0</span></dd>
+              </div>
+            </dl>
             <button type="button" class="btn btn-primary" id="action-play-again" hidden>Play again</button>
           </section>
 

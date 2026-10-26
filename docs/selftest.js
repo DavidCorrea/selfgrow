@@ -382,6 +382,103 @@ export async function checks() {
     );
   }
 
+  // --- A win grows the collection; a loss does not --------------------------
+
+  const cardCatalog = await import("./cards.js");
+
+  // A save of the real collection with no matches played yet, so the first win
+  // earns the first card in the reward pool.
+  const progressStore = stubStorage();
+  collection.saveCollection(owned.cards, progressStore);
+  const wonFirst = collection.recordResult("win", "match-a", progressStore);
+  if (!wonFirst.recorded) {
+    fail("recording a win reported the match was not recorded, so a win would not count");
+  }
+  if (!wonFirst.awarded || wonFirst.awarded.id !== cardCatalog.REWARD_POOL[0]) {
+    fail(
+      `a first win awarded ${JSON.stringify(wonFirst.awarded)} instead of the first reward card ` +
+        `"${cardCatalog.REWARD_POOL[0]}"`
+    );
+  }
+  const awardedId = wonFirst.awarded?.id;
+  const ownedBefore = owned.cards.find((card) => card.id === awardedId)?.copies ?? 0;
+  const ownedAfter = wonFirst.cards.find((card) => card.id === awardedId)?.copies ?? 0;
+  if (ownedAfter !== ownedBefore + 1) {
+    fail(
+      `a win left ${ownedAfter} copies of "${awardedId}" instead of exactly one more than the ${ownedBefore} owned`
+    );
+  }
+  if (wonFirst.wins !== 1 || wonFirst.matches !== 1) {
+    fail(`a first win reported ${wonFirst.wins} win(s) and ${wonFirst.matches} match(es) instead of 1 and 1`);
+  }
+
+  // Recording the same match again counts nothing and awards nothing, so a
+  // result screen revisited cannot grow the collection twice.
+  const replayed = collection.recordResult("win", "match-a", progressStore);
+  if (replayed.recorded || replayed.awarded) {
+    fail(
+      `the same match recorded twice was counted again (recorded ${replayed.recorded}, awarded ` +
+        `${JSON.stringify(replayed.awarded)})`
+    );
+  }
+  if (replayed.wins !== 1 || replayed.matches !== 1) {
+    fail(
+      `recording the same match twice reported ${replayed.wins} win(s) and ${replayed.matches} match(es) instead of 1 and 1`
+    );
+  }
+
+  // A second, different win gives the next card in the pool.
+  const wonSecond = collection.recordResult("win", "match-b", progressStore);
+  if (wonSecond.awarded?.id !== cardCatalog.REWARD_POOL[1]) {
+    fail(
+      `a second win awarded "${wonSecond.awarded?.id}" instead of the next reward card "${cardCatalog.REWARD_POOL[1]}"`
+    );
+  }
+
+  // A loss is counted but earns nothing, and leaves the collection untouched.
+  const cardsBeforeLoss = JSON.stringify(asIdCopies(wonSecond.cards));
+  const lost = collection.recordResult("loss", "match-c", progressStore);
+  if (lost.awarded !== null || lost.recorded !== true) {
+    fail(`a loss awarded ${JSON.stringify(lost.awarded)} instead of nothing`);
+  }
+  if (lost.wins !== 2 || lost.matches !== 3) {
+    fail(`after two wins and a loss the record reads ${lost.wins} win(s) and ${lost.matches} match(es) instead of 2 and 3`);
+  }
+  if (JSON.stringify(asIdCopies(lost.cards)) !== cardsBeforeLoss) {
+    fail("a loss changed the collection, though only a win may add a card");
+  }
+
+  // All of it survives a reload: the totals and the cards that were earned.
+  const savedProgress = collection.readProgress(progressStore);
+  if (savedProgress.wins !== 2 || savedProgress.matches !== 3) {
+    fail(
+      `the saved record read back ${savedProgress.wins} win(s) and ${savedProgress.matches} match(es) instead of 2 and 3`
+    );
+  }
+  const reloadedAwarded = collection
+    .readCollection(progressStore)
+    .find((card) => card.id === cardCatalog.REWARD_POOL[0]);
+  if (!reloadedAwarded || reloadedAwarded.copies < 1) {
+    fail(`the card won in a match did not survive a save and load: ${JSON.stringify(collection.readCollection(progressStore))}`);
+  }
+
+  // A save written before wins and matches existed still opens, reading as a
+  // player who has played nothing yet rather than as a broken record.
+  const olderSave = stubStorage({
+    [collection.STORAGE_KEY]: JSON.stringify({
+      version: 1,
+      cards: owned.cards.map(({ id, copies }) => ({ id, copies })),
+      deck: [],
+    }),
+  });
+  const olderProgress = collection.readProgress(olderSave);
+  if (olderProgress.wins !== 0 || olderProgress.matches !== 0) {
+    fail(
+      `a save written before wins and matches existed read back ${olderProgress.wins} win(s) and ` +
+        `${olderProgress.matches} match(es) instead of 0 and 0`
+    );
+  }
+
   // --- The deck: chosen from the collection, capped, and kept ---------------
 
   const deckList = document.getElementById("deck-list");
@@ -641,6 +738,12 @@ export async function checks() {
       if (race.winner !== "player" && race.winner !== "opponent") {
         fail(`a finished match reports "${race.winner}" as its winner instead of the player or the opponent`);
       }
+      const expectedOutcome = race.winner === "player" ? "win" : "loss";
+      if (race.outcome !== expectedOutcome) {
+        fail(
+          `a match won by the "${race.winner}" reports outcome "${race.outcome}" instead of "${expectedOutcome}"`
+        );
+      }
       const champion = race.winner === "player" ? race.player : race.opponent;
       const fallen = race.winner === "player" ? race.opponent : race.player;
       if (fallen.health !== 0) {
@@ -710,6 +813,8 @@ export async function checks() {
       ["cardsOwned", "cards owned"],
       ["distinctCards", "different cards"],
       ["deckSize", "deck size"],
+      ["wins", "wins"],
+      ["matchesPlayed", "matches played"],
     ]) {
       if (reported[field] !== game.readState()[field]) {
         fail(`get-state reports ${reported[field]} ${label} while the page's state says ${game.readState()[field]}`);
@@ -1101,6 +1206,7 @@ export async function checks() {
   const resultBlock = document.getElementById("match-result");
   const resultHeading = document.getElementById("match-result-heading");
   const resultHealth = document.getElementById("match-final-health");
+  const resultReward = document.getElementById("result-reward");
   const handSide = document.getElementById("match-hand-side");
   const endTurnButton = document.getElementById("action-end-turn");
 
@@ -1222,8 +1328,35 @@ export async function checks() {
     }
   }
 
+  const cardsHeldBefore = collection.collectionSize(game.readCollection().cards);
   game.startMatch();
-  checkResult("playing the strongest card your energy covers, turn after turn", playToResult());
+  const playedOut = playToResult();
+  checkResult("playing the strongest card your energy covers, turn after turn", playedOut);
+
+  // A win grows the collection by exactly one card and names it; a loss adds
+  // none. Which side wins a real match is the shuffle's choice, so each branch
+  // is checked for what it must do when it happens.
+  const afterPlay = game.readState();
+  const cardsHeldAfter = collection.collectionSize(game.readCollection().cards);
+  if (playedOut?.outcome === "win") {
+    const awarded = afterPlay.result?.awarded;
+    if (!awarded) {
+      fail("the player won a match but the result reports no card was awarded");
+    } else if (!cardCatalog.REWARD_POOL.includes(awarded.id)) {
+      fail(`a win awarded "${awarded.id}", which is not one of the reward cards ${JSON.stringify(cardCatalog.REWARD_POOL)}`);
+    } else if (cardsHeldAfter !== cardsHeldBefore + 1) {
+      fail(`a won match left the collection holding ${cardsHeldAfter} card(s) instead of exactly one more than ${cardsHeldBefore}`);
+    } else if (!textOf(resultReward).includes(awarded.name)) {
+      fail(`a win added "${awarded.name}" but the result does not say which card: it reads "${textOf(resultReward)}"`);
+    }
+  } else if (playedOut?.outcome === "loss") {
+    if (afterPlay.result?.awarded !== null) {
+      fail(`a lost match awarded ${JSON.stringify(afterPlay.result?.awarded)} instead of nothing`);
+    }
+    if (cardsHeldAfter !== cardsHeldBefore) {
+      fail(`a lost match grew the collection from ${cardsHeldBefore} to ${cardsHeldAfter} card(s)`);
+    }
+  }
 
   // A finished match takes no further move, and a refused move leaves it alone.
   const finished = game.readState().match;
@@ -1277,7 +1410,9 @@ export async function checks() {
   }
 
   // Idling loses: end turn after turn without playing a card and the opponent's
-  // table cuts your hero down. The page has to say so, with your hero at zero.
+  // table cuts your hero down. The page has to say so, with your hero at zero,
+  // record the match, and earn nothing for the loss.
+  const beforeIdle = game.readState();
   game.startMatch();
   for (let turn = 0; turn < 30 && !game.readState().match?.over; turn += 1) {
     endTurnButton.click();
@@ -1290,6 +1425,53 @@ export async function checks() {
     }
     if (idled.playerHealth !== 0) {
       fail(`idling left your hero at ${idled.playerHealth} health instead of a fallen 0`);
+    }
+
+    // Finishing the match recorded it: the count climbed, the win count held,
+    // and the result says plainly that no card was earned.
+    const afterIdle = game.readState();
+    if (afterIdle.matchesPlayed !== beforeIdle.matchesPlayed + 1) {
+      fail(
+        `finishing a match left matchesPlayed at ${afterIdle.matchesPlayed} instead of ` +
+          `${beforeIdle.matchesPlayed + 1}`
+      );
+    }
+    if (afterIdle.wins !== beforeIdle.wins) {
+      fail(`a loss moved the win count from ${beforeIdle.wins} to ${afterIdle.wins}`);
+    }
+    if (afterIdle.result?.outcome !== "loss" || afterIdle.result?.awarded !== null) {
+      fail(
+        `after a loss the page's result reads ${JSON.stringify(afterIdle.result)} instead of a loss that awarded nothing`
+      );
+    }
+    if (!textOf(resultReward).toLowerCase().includes("no card")) {
+      fail(`after a loss the page does not say no card was earned: it reads "${textOf(resultReward) || "(nothing)"}"`);
+    }
+
+    // The record survives being closed and opened again.
+    const reopened = collection.loadGame();
+    if (reopened.wins !== afterIdle.wins || reopened.matches !== afterIdle.matchesPlayed) {
+      fail(
+        `a reload read back ${reopened.wins} win(s) and ${reopened.matches} match(es) instead of ` +
+          `${afterIdle.wins} and ${afterIdle.matchesPlayed}`
+      );
+    }
+
+    // The home screen shows the same wins and matches the state holds.
+    game.showScreen("home");
+    for (const [field, label] of [
+      ["wins", "wins"],
+      ["matchesPlayed", "matches played"],
+    ]) {
+      const shown = home.querySelector(`[data-field="${field}"]`);
+      if (!shown) {
+        fail(`the home screen shows no ${label} (nothing carries data-field="${field}")`);
+      } else if (Number(textOf(shown)) !== afterIdle[field]) {
+        fail(`the home screen shows ${textOf(shown)} ${label} while the state holds ${afterIdle[field]}`);
+      }
+    }
+    if (!textOf(home).toLowerCase().includes("matches played")) {
+      fail("the home screen gives a matches-played number without naming it");
     }
   }
 
@@ -1318,6 +1500,37 @@ export async function checks() {
     }
     if (!Array.isArray(reported?.log) || reported.log.length !== live.log.length) {
       fail(`get-match returns ${reported?.log?.length} log lines while the page holds ${live.log.length}`);
+    }
+    if (reported?.outcome !== live.outcome || reported?.recorded !== live.recorded) {
+      fail(
+        `get-match reports outcome "${reported?.outcome}" (recorded ${reported?.recorded}) while the page says ` +
+          `"${live.outcome}" (recorded ${live.recorded})`
+      );
+    }
+  }
+
+  // get-state is how an agent sees the collection grow: the totals, and the card
+  // a win awarded. After the loss just played, it has to say nothing was added.
+  if (getState) {
+    const reportedState = await getState.execute({});
+    const liveState = game.readState();
+    if (reportedState.wins !== liveState.wins || reportedState.matchesPlayed !== liveState.matchesPlayed) {
+      fail(
+        `get-state reports ${reportedState.wins} win(s) and ${reportedState.matchesPlayed} match(es) while the page says ` +
+          `${liveState.wins} and ${liveState.matchesPlayed}`
+      );
+    }
+    if (JSON.stringify(reportedState.result) !== JSON.stringify(liveState.result)) {
+      fail(
+        `get-state reports result ${JSON.stringify(reportedState.result)} while the page says ` +
+          `${JSON.stringify(liveState.result)}`
+      );
+    }
+    if (liveState.result?.outcome === "loss" && reportedState.result?.awarded !== null) {
+      fail(
+        `after a loss get-state reports an awarded card ${JSON.stringify(reportedState.result?.awarded)}, ` +
+          "so an agent cannot tell nothing was earned"
+      );
     }
   }
 

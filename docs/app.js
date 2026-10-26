@@ -15,6 +15,7 @@ import {
   listDeckCards,
   listOwnedCards,
   loadGame,
+  recordResult,
   saveDeck,
 } from "./collection.js";
 import { createMatch, endTurn, playCard } from "./match.js";
@@ -40,6 +41,13 @@ const state = {
   deckLimit: DECK_LIMIT,
   minimumDeckSize: MINIMUM_DECK_SIZE,
   saved: opened.saved,
+  // How the player has done across every finished match — kept in the same save
+  // as the cards, so a reload keeps both what was won and what was earned.
+  wins: opened.wins,
+  matchesPlayed: opened.matches,
+  // The result of the most recently finished match, or null until one ends:
+  // whether it was a win or a loss, and the card a win awarded, if any.
+  result: null,
   // The match in progress, or null before one is started. It lives only in this
   // page session: closing the page ends the match, the way leaving the table does.
   match: null,
@@ -82,6 +90,7 @@ const matchLogList = document.getElementById("match-log");
 const matchResult = document.getElementById("match-result");
 const matchResultHeading = document.getElementById("match-result-heading");
 const matchFinalHealth = document.getElementById("match-final-health");
+const resultReward = document.getElementById("result-reward");
 const playAgainButton = document.getElementById("action-play-again");
 
 /**
@@ -230,8 +239,9 @@ function renderMatchLog(match) {
 }
 
 /**
- * The result of a finished match, said once: who won, and both heroes' final
- * health. Shown only once a hero has fallen, in the same board the match was
+ * The result of a finished match, said once: who won, both heroes' final health,
+ * how many matches the player has now finished and won, and the one card a win
+ * added. Shown only once a hero has fallen, in the same board the match was
  * played on, so a result is a state of the match rather than a second screen.
  */
 function renderMatchResult(match) {
@@ -241,11 +251,31 @@ function renderMatchResult(match) {
   if (matchHandSide) matchHandSide.hidden = finished;
   if (!finished) return;
 
-  if (matchResultHeading) matchResultHeading.textContent = match.winner === "player" ? "You won" : "You lost";
+  const won = match.winner === "player";
+  if (matchResultHeading) matchResultHeading.textContent = won ? "You won" : "You lost";
   if (matchFinalHealth) {
     matchFinalHealth.textContent =
       `Final health: your hero ${match.player.health}, the opponent hero ${match.opponent.health}.`;
   }
+  if (resultReward) resultReward.textContent = rewardText(won);
+}
+
+/**
+ * What a finished match added, in words: the card a win earned, or plainly that
+ * nothing was earned. Read from the result the match was recorded with, so what
+ * the page says and what the save holds are the same thing.
+ */
+function rewardText(won) {
+  const awarded = state.result?.awarded;
+  if (awarded) {
+    return (
+      `New card: ${awarded.name} — cost ${awarded.cost}, attack ${awarded.attack}, ` +
+      `health ${awarded.health} — was added to your collection.`
+    );
+  }
+  return won
+    ? "No new card this time."
+    : "A loss records the match but earns no card — win a match to grow your collection.";
 }
 
 /**
@@ -315,10 +345,32 @@ function runMatchAction(action) {
  */
 export function startMatch() {
   state.match = createMatch(state.deck);
+  state.result = null;
   state.screen = "play";
   setMatchMessage("");
   render();
   return readState();
+}
+
+/**
+ * Record a match that has just ended, exactly once, and redraw what it changed.
+ * A match is marked recorded the moment it is saved, so a result shown again
+ * cannot count the match twice or award a second card.
+ */
+function finishMatch() {
+  const match = state.match;
+  if (!match?.over || match.recorded) return;
+  match.recorded = true;
+
+  const record = recordResult(match.outcome, match.id);
+  state.cards = record.cards;
+  state.cardsOwned = collectionSize(record.cards);
+  state.distinctCards = record.cards.length;
+  state.wins = record.wins;
+  state.matchesPlayed = record.matches;
+  state.saved = record.saved;
+  state.result = { outcome: match.outcome, awarded: record.awarded };
+  renderCollection();
 }
 
 /**
@@ -339,6 +391,7 @@ export function playAgain() {
 export function playMatchCard(cardId) {
   if (!state.match) throw new Error("no match is in progress — start one first");
   playCard(state.match, cardId);
+  finishMatch();
   render();
   return readState();
 }
@@ -351,6 +404,7 @@ export function playMatchCard(cardId) {
 export function endMatchTurn() {
   if (!state.match) throw new Error("no match is in progress — start one first");
   endTurn(state.match);
+  finishMatch();
   render();
   return readState();
 }
@@ -520,8 +574,10 @@ function commitDeck() {
  * Everything the page currently shows: the screen that is open, how many cards
  * the player owns and how many are different, the deck — its size, its limit,
  * the fewest cards a match needs and the cards themselves — whether it will
- * survive closing the page, and the actions they can take from here. This is
- * what the get-state tool returns.
+ * survive closing the page, how many matches have been played and won, the
+ * result of the last finished match (whether it was a win or a loss, and the
+ * card a win awarded), and the actions they can take from here. This is what
+ * the get-state tool returns.
  */
 export function readState() {
   // Only the actions a visitor can actually reach: a control this screen hides
@@ -538,6 +594,9 @@ export function readState() {
     deckLimit: state.deckLimit,
     minimumDeckSize: state.minimumDeckSize,
     deck: listDeckCards(state.deck),
+    wins: state.wins,
+    matchesPlayed: state.matchesPlayed,
+    result: state.result ? { ...state.result } : null,
     saved: state.saved,
     match: readMatch(),
     actions,
@@ -556,7 +615,9 @@ function describeMatchCard(card) {
  * ordered log of what happened — its last line the final blow — and the moves
  * available now, of which a finished match offers none. With no match it says
  * so, so a reader can tell the difference between "nothing has happened yet"
- * and "a match with an empty hand".
+ * and "a match with an empty hand". A finished match also carries its
+ * `outcome` — "win" or "loss" from the player's side — and whether it has been
+ * recorded to the save yet.
  */
 export function readMatch() {
   const match = state.match;
@@ -565,6 +626,8 @@ export function readMatch() {
       active: false,
       over: false,
       winner: null,
+      outcome: null,
+      recorded: false,
       turn: null,
       playerHealth: null,
       opponentHealth: null,
@@ -583,6 +646,8 @@ export function readMatch() {
     active: true,
     over: match.over,
     winner: match.winner,
+    outcome: match.outcome,
+    recorded: match.recorded,
     turn: match.turn,
     playerHealth: match.player.health,
     opponentHealth: match.opponent.health,
