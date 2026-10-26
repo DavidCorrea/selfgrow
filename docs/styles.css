@@ -448,6 +448,50 @@ body {
   font-size: clamp(1.4rem, 1.1rem + 1vw, 2rem);
 }
 
+/* The match as a result. It lands under the health row so the outcome is read
+   where the player last looked, and only draws its frame once a hero has
+   fallen — the one moment in a match worth marking. */
+.match-result {
+  display: grid;
+  justify-items: start;
+  gap: 0.45rem;
+  padding: clamp(0.85rem, 1.8vw, 1.15rem) clamp(1rem, 2.4vw, 1.4rem);
+  border: 1px solid var(--foil);
+  border-radius: var(--radius-control);
+  background-color: rgba(242, 193, 78, 0.09);
+  animation: result-land 260ms var(--ease-out) both;
+}
+
+/* Without this a hidden result keeps its `display: grid` and stays on screen. */
+.match-result[hidden] {
+  display: none;
+}
+
+@keyframes result-land {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+
+.result-heading {
+  margin: 0;
+  font-size: clamp(1.35rem, 1.1rem + 1.2vw, 1.85rem);
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+.result-health {
+  margin: 0;
+  color: var(--ink);
+  text-wrap: pretty;
+}
+
+/* The result's way back into a match, sized like the board's other controls. */
+.match-result .btn {
+  margin-top: 0.2rem;
+}
+
 /* On a wide window the two tables sit side by side, with the log under them. */
 @media (min-width: 860px) {
   .match-board {
@@ -456,6 +500,7 @@ body {
   }
 
   .match-standings,
+  .match-result,
   .match-hand-side,
   .match-log-wrap {
     grid-column: 1 / -1;
@@ -470,6 +515,13 @@ body {
   border: 1px solid var(--edge);
   border-radius: var(--radius-control);
   background-color: rgba(15, 19, 34, 0.4);
+}
+
+/* The hand goes when a hero falls, and `display: grid` would otherwise keep its
+   empty frame standing over the result. */
+.match-side[hidden],
+.match-log-wrap[hidden] {
+  display: none;
 }
 
 .match-heading {
@@ -670,7 +722,8 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .screen {
+  .screen,
+  .match-result {
     animation: none;
   }
 

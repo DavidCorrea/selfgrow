@@ -7,8 +7,10 @@
 import {
   addCardToDeck,
   endMatchTurn,
+  playAgain,
   playMatchCard,
   readCollection,
+  readMatch,
   readState,
   removeCardFromDeck,
   showScreen,
@@ -40,7 +42,7 @@ export function tools() {
       name: "get-state",
       title: "Read what the page shows",
       description:
-        "Returns everything the page shows a visitor right now: which screen is open (home, collection or play), how many cards you own, how many of them are different, the deck — how many cards it holds, the most it may hold, the fewest a match needs, and each card in it — whether progress is saved for next time, and the actions you can take from here. When a match is running its `match` field carries the whole board: whose turn it is, both heroes' health, your energy and its maximum, your hand (with the ids play-card wants), both tables, how many cards are left to draw, the ordered log of what has happened, and the moves available now. Ask it first to see where you stand, and again after every move to see what changed.",
+        "Returns everything the page shows a visitor right now: which screen is open (home, collection or play), how many cards you own, how many of them are different, the deck — how many cards it holds, the most it may hold, the fewest a match needs, and each card in it — whether progress is saved for next time, and the actions you can take from here. When a match is running its `match` field carries the whole board: whether the match is over and who won (`over` and `winner`), whose turn it is, both heroes' health, your energy and its maximum, your hand (with the ids play-card wants), both tables, how many cards are left to draw, the ordered log of what has happened — its last line the blow that ended the match — and the moves available now. Ask it first to see where you stand, and again after every move to see what changed.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
       example: {},
@@ -108,7 +110,7 @@ export function tools() {
       name: "start-match",
       title: "Start a match against the opponent",
       description:
-        "Shuffles your saved deck, deals you and the opponent a starting hand, and opens the Play screen on the match. Returns the whole match — both heroes' health, your energy, your hand and table, the opponent's table and the ordered log — so the caller can begin playing. When your deck holds fewer cards than a match needs it changes nothing and returns an `error` field naming the shortfall instead.",
+        "Shuffles your saved deck, deals you and the opponent a starting hand, and opens the Play screen on the match. Any match already running or finished is replaced, so this is also how you play another one after a result. Returns the whole match — `over` false, both heroes' health, your energy, your hand and table, the opponent's table and the ordered log — so the caller can begin playing. When your deck holds fewer cards than a match needs it changes nothing and returns an `error` field naming the shortfall instead.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: false, consequentialHint: false },
       example: {},
@@ -120,7 +122,7 @@ export function tools() {
       name: "play-card",
       title: "Play a card from your hand",
       description:
-        "Plays a card from your hand by spending its energy cost, exactly as pressing its \"Play …\" button does: the card moves to your table, your energy drops by its cost, and a line is added to the match log. Pass a cardId from get-state's match.hand to choose the card; when cardId is omitted, the most expensive card you can afford is played. Returns the whole match afterwards, or an `error` field saying why when there is no match, the card is not in your hand, or it costs more energy than you have.",
+        "Plays a card from your hand by spending its energy cost, exactly as pressing its \"Play …\" button does: the card moves to your table, your energy drops by its cost, and a line is added to the match log. Your table deals its damage when you end the turn, so no card played here decides the match by itself. Pass a cardId from get-state's match.hand to choose the card; when cardId is omitted, the most expensive card you can afford is played. Returns the whole match afterwards, or an `error` field saying why when there is no match, the match is already over, the card is not in your hand, or it costs more energy than you have.",
       inputSchema: {
         type: "object",
         properties: {
@@ -142,12 +144,36 @@ export function tools() {
       name: "end-turn",
       title: "End your turn",
       description:
-        "Ends your turn: your table's cards each deal their attack to the opponent's hero, the opponent takes a turn of its own — playing the most expensive cards it can afford from its own deck — its table deals its attack to your hero, and the turn comes back to you with your energy refreshed. Every step is added to the match log. Returns the whole match afterwards so you can read what changed, or an `error` field saying why when there is no match or it is not your turn.",
+        "Ends your turn: your table's cards each deal their attack to the opponent's hero, the opponent takes a turn of its own — playing the most expensive cards it can afford from its own deck — its table deals its attack to your hero, and the turn comes back to you with your energy refreshed. The match ends the moment either hero's health reaches zero: the log's last line is that final blow, `over` turns true, `winner` names the side that won, and the turn is not handed back to anyone. Every step is added to the match log. Returns the whole match afterwards so you can read what changed, or an `error` field saying why when there is no match, the match is already over, or it is not your turn.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: false, consequentialHint: false },
       example: {},
       async execute() {
         return attempted(endMatchTurn);
+      },
+    },
+    {
+      name: "get-match",
+      title: "Read the match on the Play screen",
+      description:
+        "Returns the match on its own, without the rest of the page. `active` is false when no match has been started. While a match is running `over` is false and `turn` says whose move it is, with both heroes' health, your energy and its maximum, your hand (with the ids play-card wants), both tables, how many cards are left to draw, the ordered log, and the moves available now. Once a hero has fallen `over` is true, `winner` is \"player\" or \"opponent\", the loser's health is 0, the log's last line is the final blow, and `actions` is empty because a finished match accepts no more moves — so this is the tool to ask whether the match is still going and who won.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      annotations: { readOnlyHint: true },
+      example: {},
+      async execute() {
+        return readMatch();
+      },
+    },
+    {
+      name: "play-again",
+      title: "Play another match after one has finished",
+      description:
+        "Deals a fresh match from your saved deck and opens the Play screen on it, exactly as pressing \"Play again\" on a finished match does: a new shuffle, both heroes back to their full health, and the finished match replaced. Ask get-match for `over` first to see whether there is a result waiting; a match that is still running is replaced too, which start-match does as well. Refused, with an `error` field naming the shortfall, when your deck holds fewer cards than a match needs.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      annotations: { readOnlyHint: false, consequentialHint: false },
+      example: {},
+      async execute() {
+        return attempted(playAgain);
       },
     },
     {
