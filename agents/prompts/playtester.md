@@ -115,6 +115,7 @@ These are all legitimate findings, and the prompt used to leave them unsaid:
 - that what the Vision promises read as emptiness rather than as the experience it describes
 - that the state layer described more than the scene showed, so it explained instead of depicting
 - that the page made you read before it let you play, or said in sentences what the picture and the numbers already showed
+- that something the product is about — a card, a character, a place — appeared as text where a person would expect a picture, or that its pictures did not look like they belonged together
 - that the type was tiring to read, or the page looked cluttered, cramped or assembled from defaults
 - that what you came to do was not on the first screen, on the desktop or on the phone
 

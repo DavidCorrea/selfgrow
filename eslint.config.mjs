@@ -36,7 +36,7 @@ export default [
   // inside Chromium, not in Node, and really do have document and window. Only
   // these, so a stray `window` anywhere else in the pipeline is still caught.
   {
-    files: ["agents/verify.mjs", "agents/playtester.mjs", "agents/skills/interface-performance/measure.mjs"],
+    files: ["agents/verify.mjs", "agents/playtester.mjs", "agents/image-generation.mjs", "agents/skills/interface-performance/measure.mjs"],
     languageOptions: {
       globals: { ...globals.node, ...globals.browser },
     },

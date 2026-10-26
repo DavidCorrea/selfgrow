@@ -54,6 +54,7 @@ import {
   readLessonThreads,
   renderLessonThreads,
 } from "./discussions.mjs";
+import { createImageTool, IMAGE_TOOL } from "./image-generation.mjs";
 
 const MAX_SCOUT_RETRIES = 2;
 // Up to this many build → review cycles on a PR before we revoke (close) it.
@@ -442,7 +443,8 @@ async function runBuildReviewLoop(ctx, plan) {
         label: "Builder",
         group: `Builder (attempt ${attempt})`,
         systemPrompt: buildBuilderPrompt(plan.output, ctx.reviewerFeedback, ctx.issueObj),
-        tools: ["read", "bash", "edit", "write"],
+        tools: ["read", "bash", "edit", "write", IMAGE_TOOL],
+        customTools: [createImageTool()],
         skills: BUILDER_SKILLS,
         thinkingLevel: "medium",
         sessionLimits: BUILDER_SESSION_LIMITS,
