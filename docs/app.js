@@ -71,6 +71,7 @@ import {
   drawReturnMarkGlyph,
   establishment,
   gardenForm,
+  goalPlotMark,
   motionPhase,
   tendedMarkCells,
   tendedWorkCells,
@@ -384,7 +385,13 @@ export function getDisplayedState() {
   // as the return reported them; only the last fact is replaced.
   const facts = shown.away?.facts ?? [];
   const live = facts.length ? liveGoalFact(shown) : null;
-  return live ? { ...shown, away: { ...shown.away, facts: [...facts.slice(0, -1), live] } } : shown;
+  const state = live ? { ...shown, away: { ...shown.away, facts: [...facts.slice(0, -1), live] } } : shown;
+  // The place the goal ahead will land on the plot, read from the very state the
+  // picture and the goal line are read from: the free plot the next seed will
+  // fill, the next bed once every plot is full, or null for a form goal with no
+  // place on the soil. It is reported here so an agent can point a visitor at the
+  // same patch of empty soil the goal panel is saving for.
+  return { ...state, goalPlot: goalPlotMark(state) };
 }
 
 /**
@@ -2017,6 +2024,9 @@ function render() {
     `${state.beds}:${state.pollinator.visiting}:${state.season.key}:${phase}:` +
     `${state.established.index}:${state.established.fill}:${state.visit.sown}:` +
     `${state.visit.tended}:${state.visitPresent}:${JSON.stringify(state.returnMarks ?? null)}:` +
+    // The goal ahead and where it lands, so a new seed's goal mark is drawn on
+    // the plot the moment the target moves — a change of target alone redraws.
+    `${state.goal.kind}:${state.goal.key ?? ""}:` +
     // The plot's measured panel is part of the key, so a resize redraws at the
     // number of ground rows that now fill it. Render runs every tick, so no
     // resize listener is needed to catch the new box.

@@ -130,8 +130,10 @@ import {
   drawSownSeedMark,
   drawTendedSign,
   drawTendedWorkMark,
+  cellOrigin,
   establishment,
   gardenForm,
+  goalPlotMark,
   groundCover,
   groundEdge,
   homeGroundCells,
@@ -3386,6 +3388,252 @@ function plotEdgeProblems(state, label) {
     }
   }
   return problems;
+}
+
+/**
+ * The goal ahead points at a place on the soil.
+ *
+ * The goal panel says which seed to plant next and what it costs; this check
+ * holds the plot to saying where it will go. While the goal is a seed, one free
+ * plot carries a still silhouette of that kind's seed, in the cell the seed will
+ * actually be drawn on once it is planted; once every plot is full the mark
+ * moves to the next bed's own band instead, and a form goal marks nothing. The
+ * mark never joins the counts, so the ungrown seeds, the grown plants and the
+ * plot-by-plot count read exactly as they did, and it reads no phase, so it
+ * holds under reduced motion.
+ */
+function checkGoalPlotMark(problems) {
+  const bare = (extra) => ({
+    growth: 0,
+    beds: 1,
+    capacity: PLOT_CAPACITY,
+    seedCounts: [0, 0],
+    plantCounts: [0, 0],
+    pollinator: { visiting: false },
+    ...extra,
+  });
+  const goal = (kind, key = null) => ({ kind, key, name: key ?? kind, cost: 10, growthToGo: 5, progress: 0.5 });
+
+  // A seed goal marks the first free plot, in the goal's own kind.
+  const fresh = bare({ goal: goal("seed", "herb") });
+  const freshMark = goalPlotMark(fresh);
+  if (!freshMark || freshMark.kind !== "seed") {
+    problems.push(`a fresh garden's seed goal returned ${JSON.stringify(freshMark)} rather than the free plot to mark.`);
+  } else {
+    if (freshMark.cell !== plotMarks(fresh).length) {
+      problems.push(
+        `the goal's seed mark landed on plot ${freshMark.cell} while the plot draws ${plotMarks(fresh).length} ` +
+          "marks, so the silhouette is not on the first free plot."
+      );
+    }
+    if (freshMark.seedKind !== "herb" || freshMark.bloom) {
+      problems.push(
+        `the goal named a herb seed but the mark reads seedKind ${freshMark.seedKind} / bloom ${freshMark.bloom}, ` +
+          "so the silhouette is not the kind the goal names."
+      );
+    }
+  }
+  const bloomGoal = goalPlotMark(bare({ goal: goal("seed", "bloom") }));
+  if (!bloomGoal || bloomGoal.seedKind !== "bloom" || !bloomGoal.bloom) {
+    problems.push(
+      `a bloom seed goal returned ${JSON.stringify(bloomGoal)}, so the mark does not name the bloom kind it will plant.`
+    );
+  }
+
+  // Planting moves the mark on by one free plot, and the plot it leaves is now
+  // held — so the silhouette always stands where the next seed will land.
+  const planted = bare({ plantCounts: [1, 0], goal: goal("seed", "herb") });
+  const plantedMark = goalPlotMark(planted);
+  const plantedGrid = plotCells(planted);
+  if (!plantedMark || plantedMark.cell !== plotMarks(planted).length || plantedMark.cell !== 1) {
+    problems.push(
+      `after one herb grew the goal's seed mark reads ${JSON.stringify(plantedMark)} rather than plot 1, the next ` +
+        "free plot."
+    );
+  }
+  if (plantedGrid.plots[plantedMark ? plantedMark.cell - 1 : 0]?.occupied !== true) {
+    problems.push("the plot the goal's seed mark left is drawn as free, so the mark is not on the first free plot.");
+  }
+
+  // The silhouette stands where the planting actually lands: a herb seed planted
+  // beside bloom seeds still in the soil goes on the end of the herb-seed run,
+  // ahead of them, so the mark follows it there rather than to the last cell.
+  const mixed = bare({ plantCounts: [1, 0], seedCounts: [0, 2], goal: goal("seed", "herb") });
+  const mixedMark = goalPlotMark(mixed);
+  const afterHerb = plotMarks({ ...mixed, seedCounts: [1, 2] });
+  if (!mixedMark || afterHerb[mixedMark.cell]?.kind !== "herb-seed") {
+    problems.push(
+      `with bloom seeds still in the soil a herb seed goal marks ${JSON.stringify(mixedMark)}, which is not the ` +
+        "plot a planted herb seed fills."
+    );
+  }
+  const bloomMixed = goalPlotMark({ ...mixed, goal: goal("seed", "bloom") });
+  const afterBloom = plotMarks({ ...mixed, seedCounts: [0, 3] });
+  if (!bloomMixed || afterBloom[bloomMixed.cell]?.kind !== "bloom-seed") {
+    problems.push(
+      `with bloom seeds in the soil a bloom seed goal marks ${JSON.stringify(bloomMixed)}, which is not the plot ` +
+        "a planted bloom seed fills."
+    );
+  }
+
+  // Every plot full: the goal becomes a bed, so the mark names that bed and no
+  // plot carries a seed silhouette any more. A form goal marks no place at all.
+  const full = bare({ plantCounts: [PLOT_CAPACITY, 0], goal: goal("bed") });
+  const fullMark = goalPlotMark(full);
+  if (!fullMark || fullMark.kind !== "bed" || fullMark.bed !== 1 || "cell" in fullMark) {
+    problems.push(
+      `with every plot full and a bed goal the mark reads ${JSON.stringify(fullMark)} rather than the next bed's ` +
+        "band with no plot."
+    );
+  }
+  const formMark = goalPlotMark(bare({ goal: goal("form") }));
+  if (formMark !== null) {
+    problems.push(`a form goal returned ${JSON.stringify(formMark)} instead of marking no place on the soil.`);
+  }
+  if (goalPlotMark(bare({})) !== null) {
+    problems.push("a state with no goal still marked a place on the soil.");
+  }
+
+  // A grid already full of marks has no free plot drawn, so nothing is marked
+  // rather than a silhouette drawn off the ground.
+  const huge = { growth: 1e9, beds: 6, capacity: 72, plantCounts: [60, 0], goal: goal("seed", "herb") };
+  if (goalPlotMark(huge) !== null) {
+    problems.push(
+      `a garden with a mark on every one of the ${plotBounds(huge).cells} plots it draws still marked plot ` +
+        `${JSON.stringify(goalPlotMark(huge))}, which is off the ground.`
+    );
+  }
+
+  // The mark is not a mark: the counts beside the plot read exactly as they did.
+  const countsPlain = bare({ plantCounts: [2, 1], seedCounts: [1, 0] });
+  const countsGoal = { ...countsPlain, goal: goal("seed", "bloom") };
+  if (JSON.stringify(plotMarks(countsGoal)) !== JSON.stringify(plotMarks(countsPlain))) {
+    problems.push("the goal's seed mark changed plotMarks, so it is being counted as a seed the plot draws.");
+  }
+  if (JSON.stringify(plotCells(countsGoal)) !== JSON.stringify(plotCells(countsPlain))) {
+    problems.push("the goal's seed mark changed the plot-by-plot count, so a plot reads as held that is not.");
+  }
+
+  // Drawn: the silhouette touches the target plot and nothing else, in the
+  // soil's own tone rather than a growing thing's leaf or flower, and it holds
+  // still between phases.
+  const withPlants = bare({ plantCounts: [2, 0], goal: goal("seed", "bloom") });
+  const withoutGoal = bare({ plantCounts: [2, 0] });
+  const mark = goalPlotMark(withPlants);
+  const plain = plotCanvas(withoutGoal);
+  const marked = plotCanvas(withPlants);
+  if (!mark) {
+    problems.push("a garden with free plots and a seed goal drew no goal mark at all.");
+  } else {
+    const bounds = plotBounds(withPlants);
+    const origin = cellOrigin(mark.cell, bounds.beds);
+    const a = plain.getContext("2d").getImageData(0, 0, plain.width, plain.height).data;
+    const b = marked.getContext("2d").getImageData(0, 0, marked.width, marked.height).data;
+    let changed = 0;
+    let stray = null;
+    for (let y = 0; y < plain.height; y += 1) {
+      for (let x = 0; x < plain.width; x += 1) {
+        const i = (y * plain.width + x) * 4;
+        if (a[i] === b[i] && a[i + 1] === b[i + 1] && a[i + 2] === b[i + 2] && a[i + 3] === b[i + 3]) continue;
+        changed += 1;
+        const inside =
+          x >= origin.x && x < origin.x + bounds.cell && y >= origin.y && y < origin.y + bounds.cell;
+        if (!inside && !stray) stray = `${x},${y}`;
+      }
+    }
+    if (!changed) {
+      problems.push("a seed goal changed no pixel of the plot, so no silhouette is drawn on the free plot.");
+    }
+    if (stray) {
+      problems.push(
+        `the goal's seed mark drew a pixel at (${stray}), outside the free plot at cell ${mark.cell}, so the ` +
+          "silhouette points at the wrong soil."
+      );
+    }
+    const bloomKeys = new Set([colorKey(parseColor(readPalette().bloom))]);
+    if (colorPixels(marked, bloomKeys, origin.x, origin.y, bounds.cell, bounds.cell).length) {
+      problems.push(
+        "the goal's seed silhouette draws a bloom-coloured pixel, so the mark reads as a flower the plot counts."
+      );
+    }
+    // The garden around the mark breathes, so only the mark's own cell is
+    // compared between two phases: a silhouette that swayed with the foliage
+    // would move here even under reduced motion.
+    const still = cellImagePixels(withPlants, mark.cell, 0);
+    const later = cellImagePixels(withPlants, mark.cell, 3);
+    if (still !== later) {
+      problems.push("the goal's seed silhouette moves between phases, so it does not hold under reduced motion.");
+    }
+  }
+
+  // Drawn for a bed goal too: a dashed band across the plots at the foot of the
+  // garden, and nothing on the home's own strip beside them.
+  const fullPlots = bare({ plantCounts: [PLOT_CAPACITY, 0] });
+  const fullWithGoal = { ...fullPlots, goal: goal("bed") };
+  const fullPlain = plotCanvas(fullPlots);
+  const fullMarked = plotCanvas(fullWithGoal);
+  const fullBounds = plotBounds(fullPlots);
+  const fx = fullPlain.getContext("2d");
+  const fxA = fx.getImageData(0, 0, fullPlain.width, fullPlain.height).data;
+  const fxB = fullMarked.getContext("2d").getImageData(0, 0, fullMarked.width, fullMarked.height).data;
+  let bandPixels = 0;
+  let bandStray = null;
+  for (let y = 0; y < fullPlain.height; y += 1) {
+    for (let x = 0; x < fullPlain.width; x += 1) {
+      const i = (y * fullPlain.width + x) * 4;
+      if (fxA[i] === fxB[i] && fxA[i + 1] === fxB[i + 1] && fxA[i + 2] === fxB[i + 2] && fxA[i + 3] === fxB[i + 3]) {
+        continue;
+      }
+      bandPixels += 1;
+      const onGround = x < fullBounds.width && y >= fullBounds.height - fullBounds.cell;
+      if (!onGround && !bandStray) bandStray = `${x},${y}`;
+    }
+  }
+  if (!bandPixels) {
+    problems.push("a full plot with a bed goal drew no band, so the goal marks nowhere on the soil.");
+  }
+  if (bandStray) {
+    problems.push(
+      `a bed goal's band drew a pixel at (${bandStray}), off the plots' own ground at the garden's foot, so the ` +
+        "mark does not read as the next bed's place."
+    );
+  }
+
+  // The page reports the same mark an agent reads: one source, so the goal line
+  // and the silhouette cannot point at different plots.
+  const shown = getDisplayedState();
+  const expected = goalPlotMark(shown);
+  if (JSON.stringify(shown.goalPlot ?? null) !== JSON.stringify(expected ?? null)) {
+    problems.push(
+      `getDisplayedState reports goalPlot ${JSON.stringify(shown.goalPlot ?? null)} while the plot marks ` +
+        `${JSON.stringify(expected ?? null)}, so the agent and the picture disagree about where the goal lands.`
+    );
+  }
+  if (shown.goalPlot && shown.goalPlot.kind === "seed") {
+    const plot = plotCells(shown).plots.find((entry) => entry.cell === shown.goalPlot.cell);
+    if (!plot) {
+      problems.push(
+        `the live goal marks plot ${shown.goalPlot.cell}, which is not one of the ${plotCells(shown).plots.length} ` +
+          "plots the picture draws."
+      );
+    } else if (plot.occupied) {
+      problems.push(
+        `the live goal marks plot ${shown.goalPlot.cell}, which already holds a seed or plant, so the silhouette ` +
+          "is not on a free plot."
+      );
+    }
+  }
+  if (shown.goal && shown.goal.kind === "form" && shown.goalPlot !== null) {
+    problems.push(`a form goal reported goalPlot ${JSON.stringify(shown.goalPlot)} rather than null.`);
+  }
+}
+
+/** The pixels of one plot cell of a rendered state, as a comparable string. */
+function cellImagePixels(state, cell, phase) {
+  const canvas = plotCanvas(state, phase);
+  const { cell: size, beds } = plotBounds(state);
+  const { x, y } = cellOrigin(cell, beds);
+  return Array.from(canvas.getContext("2d").getImageData(x, y, size, size).data).join(",");
 }
 
 function checkPlotBedEdges(problems) {
@@ -12065,6 +12313,7 @@ export async function checks() {
     checkPlotSpritesLegible(problems);
     checkPlotMilestoneCrowns(problems);
     checkPlotMarksMatchCounts(problems);
+    checkGoalPlotMark(problems);
     checkPlotBedEdges(problems);
     checkPlotBedRooms(problems);
     checkPlotCoverage(problems);

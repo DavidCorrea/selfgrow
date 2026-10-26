@@ -1397,6 +1397,54 @@ export function plotCells(state, marks = plotMarks(state)) {
 }
 
 /**
+ * The plots the marks take before a new seed of `kind` joins them: exactly the
+ * cell `plotMarks` draws that seed on once it is planted, so a silhouette drawn
+ * there stands where the planting lands.
+ *
+ * `plotMarks` draws the grown plants first — herb, then bloom — and the ungrown
+ * seeds after them — herb, then bloom — so a new herb seed goes on the end of the
+ * herb-seed run, ahead of any bloom seed still in the soil, and a new bloom seed
+ * goes after every mark there is. Nothing here is capped: a count that runs past
+ * the grid reads past it, and the caller marks no plot rather than one drawn off
+ * the ground.
+ */
+function marksBeforeSeed(state, kind) {
+  const { herbPlants, bloomPlants, herbSeeds, bloomSeeds } = kindsOnPlot(state);
+  const plants = herbPlants + bloomPlants;
+  return kind === "bloom" ? plants + herbSeeds + bloomSeeds : plants + herbSeeds;
+}
+
+/**
+ * The place the goal ahead will land on the plot, so the goal line beside the
+ * garden and the soil in the garden name the same spot.
+ *
+ * While the goal is a seed, the mark names the free plot the next planting of
+ * that kind will actually fill — the cell `plotMarks` will draw it on, bounded
+ * by the plots the grid can show — rather than a patch of empty soil the seed
+ * would not go to. When every plot is full the goal becomes a new bed, and the
+ * mark names that bed instead; a form goal, or no goal at all, has no place on
+ * the soil and reads null. The mark is read off the state alone and is never one
+ * of `plotMarks`, so the counts beside the garden read exactly as they did.
+ *
+ * @returns {{kind: "seed", seedKind: string, bloom: boolean, cell: number}
+ *   |{kind: "bed", bed: number}|null}
+ */
+export function goalPlotMark(state) {
+  const goal = state && state.goal;
+  if (!goal) return null;
+  // The next bed's own band: the bed the garden does not have yet, counted from
+  // the beds it already holds, so the mark moves as beds are opened.
+  if (goal.kind === "bed") return { kind: "bed", bed: bedsFor(state) };
+  if (goal.kind !== "seed") return null;
+  const { cells } = plotBounds(state);
+  const cell = marksBeforeSeed(state, goal.key);
+  // A grid already carrying a mark on every plot it shows draws no free plot,
+  // so there is no cell to point at rather than a mark drawn off the ground.
+  if (cell >= Math.min(capacityFor(state), cells)) return null;
+  return { kind: "seed", seedKind: goal.key, bloom: goal.key === "bloom", cell };
+}
+
+/**
  * The plots the visitor sowed by hand, as the cells that carry a standing sign.
  *
  * The visit record counts how many plots the visitor sowed, not which ones — the
@@ -1566,6 +1614,75 @@ function drawPlotEdges(ctx, palette, grid) {
   }
 }
 
+// The band where the next bed will open: how many pixels tall it is, and the
+// length of one dash and of the gap after it, so the band reads as a dashed
+// outline of ground to come rather than as soil the garden already holds.
+const GOAL_BAND_HEIGHT = 3;
+const GOAL_BAND_DASH = 7;
+const GOAL_BAND_GAP = 5;
+
+/**
+ * The palette a goal's silhouette is drawn in: every colour the seed sprite
+ * uses replaced by the soil's own light tone.
+ *
+ * A muted copy of `drawSeed`'s palette, so the mark keeps the shape of the seed
+ * that will be planted while nothing about it wears the leaf green or the flower
+ * of a growing thing. That is what keeps it from being read as a seed the
+ * readout counts — a real seed carries a dark pip or a bloom-coloured bud, and
+ * this silhouette is one flat, faint tone.
+ */
+function silhouettePalette(palette) {
+  const tone = palette.soilLight;
+  return { ...palette, soilDeep: tone, leaf: tone, leafLight: tone, leafDeep: tone, bloom: tone, sun: tone };
+}
+
+/**
+ * A dashed band across the plot at `row`, held inside the drawn ground.
+ *
+ * `row` is where the next bed's own rows would begin, which on a garden holding
+ * every plot it draws is the row just past the last one; it is clamped to the
+ * canvas so the band always lands on the ground that is drawn, at the foot of
+ * the garden where the next bed attaches. It reads no animation phase, so the
+ * band holds still in the single frame reduced motion pins to, and it is drawn
+ * in the soil's own tones across the plots alone, so nothing on the home's strip
+ * is marked and no plot is coloured as a seed.
+ */
+function drawGoalBedBand(ctx, palette, width, height, row) {
+  const top = Math.max(0, Math.min(height - GOAL_BAND_HEIGHT, row * CELL));
+  for (let x = 0; x < width; x += GOAL_BAND_DASH + GOAL_BAND_GAP) {
+    const run = Math.min(GOAL_BAND_DASH, width - x);
+    ctx.fillStyle = palette.soilLight;
+    ctx.fillRect(x, top, run, 2);
+    ctx.fillStyle = palette.soilDeep;
+    ctx.fillRect(x, top + 2, run, 1);
+  }
+}
+
+/**
+ * The goal marked on the soil it names: a still silhouette of the next seed in
+ * the very plot it will fill, or a dashed band at the foot of the garden where
+ * the next bed will open.
+ *
+ * The seed is `drawSeed` held at rest, so the mark is the same sprite the plot
+ * will carry once the seed is planted — only in the flat faint tone of
+ * `silhouettePalette`, never the leaf or flower of a counted sprite. It reads no
+ * phase, so reduced motion sees it unchanged, and it is drawn over the garden
+ * without joining `plotMarks`, so the ungrown seeds, the grown plants and the
+ * plot-by-plot count beside it read exactly as they did.
+ *
+ * `mark` is what `goalPlotMark` returns and `beds` the beds the drawn grid holds,
+ * so the mark stands on the same rows the sprites beside it do.
+ */
+function drawGoalPlotMark(ctx, mark, palette, beds, width, height) {
+  if (mark.kind === "bed") {
+    const bedRow = cellOrigin(mark.bed * BED_CELLS, mark.bed + 1).row;
+    drawGoalBedBand(ctx, palette, width, height, bedRow);
+    return;
+  }
+  const { x, y } = cellOrigin(mark.cell, beds);
+  drawSeed(ctx, x, y, silhouettePalette(palette), 0, mark.bloom);
+}
+
 /**
  * Draw `state`'s garden onto `canvas`, painting only with `palette`.
  *
@@ -1629,6 +1746,15 @@ function drawPlotEdges(ctx, palette, grid) {
  * different mark from the visit's presence furrows and the sown sign, so a
  * garden merely watched, one watched and sown, and one tended by hand are each
  * drawn differently.
+ *
+ * The goal ahead is marked on the soil it names, so the goal line beside the
+ * garden and the soil in the garden point at one place: `state.goal` — the same
+ * target the goal panel's title and facts state — decides whether a faint, still
+ * silhouette of the next seed stands in the first free plot, or a dashed band
+ * marks the foot of the garden where the next bed will open. It goes on over the
+ * garden and never joins `plotMarks`, so the counts beside the plot read exactly
+ * as they did, and it reads no phase, so it holds in the still frame reduced
+ * motion pins to.
  *
  * The return marks go on last, over everything: a still sun tick on each cell
  * whose plant matured while the visitor was away, a still sun ring around each
@@ -1778,6 +1904,13 @@ export function drawGarden(canvas, state, palette, phase = 0) {
       drawRestingBee(ctx, home.x, home.y, paint);
     }
   }
+  // The goal ahead is marked on the soil it names — a still silhouette of the
+  // next seed in the very plot it will fill, or a dashed band where the next
+  // bed opens — so the goal panel beside the garden and the plot itself point at
+  // one place. It is drawn over the garden and under the return marks, and it is
+  // never one of `plotMarks`, so no count beside the plot changes.
+  const goalMark = goalPlotMark(state);
+  if (goalMark) drawGoalPlotMark(ctx, goalMark, paint, beds, width, height);
   // The return marks go on last, over the garden: what grew while the visitor
   // was away stands out until they notice it.
   const returns = returnMarkCells(state, { cells });
