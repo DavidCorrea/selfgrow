@@ -72,10 +72,6 @@ test("what a stopped session means for the chain", async (t) => {
     assert.equal(chainVerdict(sessionAbortError("Weekly report", "silent", 1)), "next");
   });
 
-  await t.test("a turn cap stops the chain", () => {
-    assert.equal(chainVerdict(sessionAbortError("Builder", "turns", 40)), "capped");
-  });
-
   await t.test("a time cap stops the chain", () => {
     assert.equal(chainVerdict(sessionAbortError("Builder", "minutes", 12)), "capped");
   });
@@ -96,8 +92,7 @@ test("saying why we stopped a session", async (t) => {
     assert.doesNotMatch(message, /operation was aborted/);
   });
 
-  await t.test("names which cap it was", () => {
-    assert.match(sessionAbortError("Builder", "turns", 40).message, /-turn session cap/);
+  await t.test("names the time cap", () => {
     assert.match(
       sessionAbortError("Builder", "minutes", 3).message,
       new RegExp(`${MAX_SESSION_MINUTES}-minute session cap`)
@@ -105,8 +100,7 @@ test("saying why we stopped a session", async (t) => {
   });
 
   await t.test("names the cap the session actually had, when a role brings its own", () => {
-    const builderLimits = { turns: 80, minutes: 20 };
-    assert.match(sessionAbortError("Builder", "turns", 80, builderLimits).message, /80-turn session cap/);
+    const builderLimits = { minutes: 20 };
     assert.match(sessionAbortError("Builder", "minutes", 61, builderLimits).message, /20-minute session cap/);
   });
 
@@ -135,17 +129,30 @@ const fakeSession = () => {
 };
 
 test("watching a session against its limits", async (t) => {
-  const watchOptions = { limits: { turns: 2, minutes: 5 }, label: "Builder (model)", startTime: Date.now() };
+  const watchOptions = { limits: { minutes: 5 }, label: "Builder (model)", startTime: Date.now() };
 
-  await t.test("stops the session once when it reaches the turn cap", () => {
+  await t.test("stops the session once when its minutes run out", (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
     const session = fakeSession();
     const watch = watchSession(session, watchOptions);
-    session.assistantSays("one");
+    session.assistantSays("working");
+    t.mock.timers.tick(4 * 60_000);
     assert.equal(watch.abortReason, null);
-    session.assistantSays("two");
-    session.assistantSays("three");
-    assert.equal(watch.abortReason, "turns");
+    t.mock.timers.tick(60_000);
+    assert.equal(watch.abortReason, "minutes");
     assert.equal(session.aborts, 1);
+    watch.settle();
+  });
+
+  // A turn costs about a tenth of a cent; a cap on them kept throwing away real
+  // work — a Builder six minutes into a new game's engine, a Reviewer one minute
+  // into a large diff.
+  await t.test("never stops a session for how many turns it takes", () => {
+    const session = fakeSession();
+    const watch = watchSession(session, watchOptions);
+    for (let turn = 0; turn < 500; turn++) session.assistantSays(`turn ${turn}`);
+    assert.equal(watch.abortReason, null);
+    assert.equal(session.aborts, 0);
     watch.settle();
   });
 

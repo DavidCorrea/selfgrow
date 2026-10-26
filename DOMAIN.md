@@ -507,15 +507,18 @@ and the prediction was the fragile part." Spend is capped on the OpenRouter key:
 leaves an orphaned branch." So every limit is nested comfortably under the job's
 `timeout-minutes`.
 
-**Session caps are per role.** The default is 40 turns and 12 minutes, sized for
-the roles that plan or review, where it only ever stops a loop — a Scout once ran
-101 turns without producing a plan. The **Builder's build session** carries its
-own, 80 turns and 20 minutes: merged Builder sessions ran 34–36 turns, and every
-Devs "abort" in September was the shared cap cutting real work off, with the
-ticket abandoned as if the model had failed. 80 is about twice a merged build,
-so it still stops a loop. A role passes its own caps "rather than every role
-inheriting the longest one's budget"; the Builder's conflict resolution keeps
-the default.
+**Session caps are per role, and they count minutes, not turns.** The default is
+12 minutes; the **Builder's build session** carries its own 20, because a build
+takes longer than a plan or a review, and cutting it off abandons the ticket as if
+the model had failed. A role passes its own cap "rather than every role
+inheriting the longest one's budget." There used to be a **turn cap** as well (40,
+and 80 for the Builder), meant to stop a session looping rather than working — a
+Scout once ran 101 turns without producing a plan. It was removed because it
+counted the wrong thing: a turn costs about a tenth of a cent, its stated reason
+("protects the day's remaining requests") outlived the request budget it
+protected, and it kept throwing away real work — a Builder six minutes into a new
+game's engine, a Reviewer one minute into a large diff. A loop still ends when
+its minutes run out, and the key's spend cap bounds what it costs.
 
 **A silent model is a failed model, not a stopped session.** A model that sends
 nothing — no token, no event — for `MAX_MODEL_SILENCE_MINUTES` (3) while no tool

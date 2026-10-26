@@ -169,22 +169,20 @@ export function isDailyQuotaExhausted(err) {
 // back as an error, isDailyQuotaExhausted recognises it, and runAgent stops the
 // chain. One stop signal, and it cannot disagree with the truth.
 //
-// What survives are the two limits that were never about money. Both bound a
-// SINGLE session, and both exist because of a specific failure.
+// What survives is the one limit that was never about money: how long a SINGLE
+// session may run.
 // ---------------------------------------------------------------------------
 
-// Hard ceiling on TURNS INSIDE one session. Nothing else stops a session that is
-// looping rather than working: a Scout once ran 101 turns without producing a
-// plan. 40 is comfortably above what the planning and reviewing roles need, so for
-// them it only stops a loop. The Builder is the exception — its merged sessions
-// ran 34-36 turns, and every devs "abort" in September was this cap cutting real
-// work off — so it carries its own, larger limits (BUILDER_SESSION_LIMITS).
-const MAX_SESSION_TURNS = Number(process.env.MAX_SESSION_TURNS || 40);
-
-// The same guard in the other unit the runner can kill us over. A turn cap does
-// nothing about a session that is slow rather than looping, and the runner's job
-// timeout does not negotiate: the Product Owner was killed at 20 minutes, losing
-// the whole session.
+// There is no cap on TURNS. One used to stop a session that looped rather than
+// worked — a Scout once ran 101 turns without producing a plan — but it counted
+// the wrong thing: a turn costs about a tenth of a cent, and the cap kept cutting
+// off real work instead. A Builder making a new game's engine was stopped at 80
+// turns six minutes in, and a Reviewer reading a large diff at 40 turns in one,
+// each thrown away as if the model had failed. A loop still ends here, when its
+// minutes run out, and the key's spend cap bounds what it costs.
+//
+// The runner's job timeout does not negotiate: the Product Owner was killed at 20
+// minutes, losing the whole session.
 //
 // Which limit bites first still matters. An agent that stops itself closes its PR
 // cleanly and lets the next ticket continue; an agent stopped by the runner leaves
@@ -192,10 +190,10 @@ const MAX_SESSION_TURNS = Number(process.env.MAX_SESSION_TURNS || 40);
 // timeout-minutes — see the workflows, where the job cap is 2-3x this.
 export const MAX_SESSION_MINUTES = Number(process.env.MAX_SESSION_MINUTES || 12);
 
-// Both caps together, as a session receives them. A role whose healthy sessions
-// are longer than the default passes its own — see BUILDER_SESSION_LIMITS in
-// devs.mjs — rather than every role inheriting the longest one's budget.
-const DEFAULT_SESSION_LIMITS = { turns: MAX_SESSION_TURNS, minutes: MAX_SESSION_MINUTES };
+// The limit as a session receives it. A role whose healthy sessions are longer
+// than the default passes its own — see BUILDER_SESSION_LIMITS in devs.mjs —
+// rather than every role inheriting the longest one's budget.
+const DEFAULT_SESSION_LIMITS = { minutes: MAX_SESSION_MINUTES };
 
 // How long the MODEL may go without a word — no token, no event — before it
 // counts as that model failing. The session cap alone let one hung request spend
@@ -232,10 +230,6 @@ export function createModelSilenceClock(now = Date.now) {
 // Why we stop a session ourselves, worded once for both the log line at the
 // moment we stop it and the error the caller receives.
 const SESSION_STOPS = {
-  turns: {
-    cap: (limits) => `the ${limits.turns}-turn session cap`,
-    why: "The session is looping; stopping it here protects the day's remaining requests.",
-  },
   minutes: {
     cap: (limits) => `the ${limits.minutes}-minute session cap`,
     why: "Stopping here keeps the job's own timeout from killing the run mid-session.",
@@ -253,7 +247,7 @@ function stopLogMessage(reason, limits) {
 /**
  * The error for a session WE stopped, saying why in our words. pi reports its
  * own abort as "This operation was aborted", which is what the devs and PM runs
- * logged for every turn-capped session — indistinguishable from a provider
+ * logged for every capped session — indistinguishable from a provider
  * failure. The flag decides what runAgent does next (see chainVerdict).
  */
 export function sessionAbortError(label, reason, turns, limits = DEFAULT_SESSION_LIMITS) {
@@ -465,7 +459,7 @@ async function runAgentChain(callerOpts) {
     } catch (e) {
       lastErr = e;
       // A capped session is not the fault of the model that ran it: a runaway
-      // usually repeats, so walking the chain buys another MAX_SESSION_TURNS per
+      // usually repeats, so walking the chain buys another session's minutes per
       // model to watch the same loop. Rethrow the original so the marker survives
       // for callers that branch on it.
       const verdict = chainVerdict(e);
@@ -695,9 +689,9 @@ export function assistantText(message) {
 }
 
 /**
- * Watch one session against its limits: the turn cap, the session deadline and
- * the model-silence clock. Stops the session at the first limit to bite and
- * remembers which one it was (`abortReason`: "turns", "minutes" or "silent").
+ * Watch one session against its limits: the session deadline and the
+ * model-silence clock. Stops the session at the first limit to bite and
+ * remembers which one it was (`abortReason`: "minutes" or "silent").
  *
  * Spend is charged AS IT HAPPENS rather than in one lump when the session
  * settles, because a session that never settles — the runner's timeout, a
@@ -748,11 +742,7 @@ export function watchSession(session, { limits, label, startTime }) {
     // message COUNT, so don't walk the list for them — only for the events that
     // can mean a message was appended.
     if (event.type === "message_update" || event.type === "bash_execution_update") return;
-    const turns = turnsSoFar();
-    chargeTurns(turns);
-    // A session this long is looping, not thinking: every further turn is a
-    // charged request the run will not get a merge out of.
-    if (turns >= limits.turns) stop("turns");
+    chargeTurns(turnsSoFar());
   });
 
   return {
@@ -912,13 +902,13 @@ async function runAgentOnce({
     // An aborted session that produced nothing is a failure, and a loud one.
     // Marked as capped rather than a model fault so runAgent does NOT walk the
     // rest of the chain — a runaway usually repeats, and proving it costs another
-    // MAX_SESSION_TURNS per model.
+    // session's minutes per model.
     if (watch.abortReason && !output.trim()) throw sessionAbortError(label, watch.abortReason, turns, sessionLimits);
     return output;
   } catch (err) {
     // An abort can surface here instead of above, depending on where the session
     // was when it was stopped. Name our reason either way: a cap must stop
-    // runAgent rather than pay another MAX_SESSION_TURNS per remaining model to
+    // runAgent rather than pay another session's minutes per remaining model to
     // watch the same runaway repeat, and a silent model must let it move on.
     if (watch.abortReason && !err?.sessionCapped && !err?.modelSilent) {
       throw sessionAbortError(label, watch.abortReason, watch.settle(), sessionLimits);

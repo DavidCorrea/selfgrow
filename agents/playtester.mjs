@@ -543,9 +543,9 @@ async function play(page) {
       tools: session.tools.map((tool) => tool.name),
       customTools: session.tools,
       expectJson: false,
-      // Above the play budget on purpose: running out of moves is the normal end
-      // of a session, and the tools say so. These only stop a player that ignores them.
-      sessionLimits: { turns: PLAY_MOVES + 10, minutes: PLAY_MINUTES + 4 },
+      // Above the play budget on purpose: running out of time is the normal end
+      // of a session, and the tools say so. This only stops a player that ignores them.
+      sessionLimits: { minutes: PLAY_MINUTES + 4 },
     });
   } catch (e) {
     log("warn", "Playtest: the player stopped before writing its account — judging the moves it made.", errorData(e));

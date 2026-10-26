@@ -329,7 +329,7 @@ test("noticing a playtest finding the loop is not fixing", async (t) => {
 
 test("noticing a role whose sessions keep aborting", async (t) => {
   const run = (...annotations) => ({ createdAt: "2026-09-24T05:00:00Z", annotations });
-  const capped = run("Builder (m): hit the 40-turn session cap — aborting it.");
+  const capped = run("Builder (m): hit the 20-minute session cap — aborting it.");
   const clean = run("Reviewer: REVISE — 3 issue(s)");
 
   await t.test("names a role with two aborted runs among its last five", () => {
