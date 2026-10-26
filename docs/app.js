@@ -17,6 +17,7 @@ import {
   loadGame,
   saveDeck,
 } from "./collection.js";
+import { createMatch, endTurn, playCard } from "./match.js";
 
 // The screens the page has, and the word each is announced by. A screen name is
 // also the value an agent passes to the show-screen tool.
@@ -39,6 +40,9 @@ const state = {
   deckLimit: DECK_LIMIT,
   minimumDeckSize: MINIMUM_DECK_SIZE,
   saved: opened.saved,
+  // The match in progress, or null before one is started. It lives only in this
+  // page session: closing the page ends the match, the way leaving the table does.
+  match: null,
 };
 
 const screens = new Map(
@@ -55,6 +59,25 @@ const screenStatus = document.getElementById("screen-status");
 const storageNote = document.getElementById("storage-note");
 const deckMessage = document.getElementById("deck-message");
 const deckSummary = document.getElementById("deck-summary");
+
+// The match board's places, gathered once. Each is optional so a missing one
+// degrades to a missing readout rather than a page that will not render.
+const matchBoard = document.getElementById("match-board");
+const matchIntro = document.getElementById("match-intro");
+const matchMessage = document.getElementById("match-message");
+const startMatchButton = document.getElementById("action-start-match");
+const endTurnButton = document.getElementById("action-end-turn");
+const matchFields = {
+  playerHealth: document.getElementById("match-player-health"),
+  opponentHealth: document.getElementById("match-opponent-health"),
+  energy: document.getElementById("match-energy"),
+  opponentHand: document.getElementById("match-opponent-hand"),
+  deckRemaining: document.getElementById("match-deck-remaining"),
+};
+const matchHandList = document.getElementById("match-hand");
+const matchTableList = document.getElementById("match-table");
+const matchOpponentTableList = document.getElementById("match-opponent-table");
+const matchLogList = document.getElementById("match-log");
 
 /**
  * The counts the page prints, with the deck size derived from the deck itself so
@@ -82,6 +105,8 @@ function render() {
   if (storageNote) storageNote.hidden = state.saved;
   if (deckSummary) deckSummary.textContent = deckSummaryText();
 
+  renderMatch();
+
   screenStatus.textContent = `${SCREEN_LABELS[state.screen]} screen`;
 }
 
@@ -97,6 +122,181 @@ function deckSummaryText() {
 /** The name of a card the player owns, or the id when it is not a real card. */
 function cardName(cardId) {
   return CARD_BY_ID.get(cardId)?.name ?? String(cardId);
+}
+
+/** A card in the match as the page prints it: its name, then cost/attack/health. */
+function matchCardItem(card, { playable = false, affordable = true } = {}) {
+  const item = document.createElement("li");
+  item.className = "match-card";
+  item.dataset.cardId = card.id;
+
+  const name = document.createElement("span");
+  name.className = "match-card-name";
+  name.textContent = card.name;
+
+  const stats = document.createElement("span");
+  stats.className = "match-card-stats";
+  stats.setAttribute("aria-label", `cost ${card.cost}, attack ${card.attack}, health ${card.health}`);
+  stats.textContent = `${card.cost}/${card.attack}/${card.health}`;
+
+  const head = document.createElement("span");
+  head.className = "match-card-head";
+  head.append(name, stats);
+  item.append(head);
+
+  // A card in hand is also the control that plays it, labelled with what it
+  // costs, so a keyboard visitor never has to guess which card a button means.
+  if (playable) {
+    item.classList.add("match-card-playable");
+    // A card the energy cannot cover yet is dimmed and says so, but stays
+    // pressable so pressing it can explain the shortfall rather than be dead.
+    if (!affordable) item.classList.add("is-unaffordable");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "btn btn-secondary match-play";
+    button.textContent = `Play ${card.name} (cost ${card.cost})`;
+    button.setAttribute(
+      "aria-label",
+      `Play ${card.name} — cost ${card.cost}, attack ${card.attack}, health ${card.health}` +
+        (affordable ? "" : ", which you cannot afford yet")
+    );
+    button.addEventListener("click", () => runMatchAction(() => playMatchCard(card.id)));
+    item.append(button);
+  }
+
+  return item;
+}
+
+/** A table list, or a single line saying it is empty. */
+function renderMatchTable(list, cards, emptyText) {
+  if (!list) return;
+  if (!cards.length) {
+    const empty = document.createElement("li");
+    empty.className = "match-empty";
+    empty.textContent = emptyText;
+    list.replaceChildren(empty);
+    return;
+  }
+  list.replaceChildren(...cards.map((card) => matchCardItem(card)));
+}
+
+/** The player's hand, each card with the button that plays it. */
+function renderMatchHand(match) {
+  if (!matchHandList) return;
+  if (!match.player.hand.length) {
+    const empty = document.createElement("li");
+    empty.className = "match-empty";
+    empty.textContent = "Your hand is empty.";
+    matchHandList.replaceChildren(empty);
+    return;
+  }
+  matchHandList.replaceChildren(
+    ...match.player.hand.map((card) =>
+      matchCardItem(card, { playable: true, affordable: card.cost <= match.player.energy })
+    )
+  );
+}
+
+/** The ordered log, one line per thing that happened, oldest first. */
+function renderMatchLog(match) {
+  if (!matchLogList) return;
+  matchLogList.replaceChildren(
+    ...match.log.map((line) => {
+      const item = document.createElement("li");
+      item.className = "match-log-line";
+      item.textContent = line;
+      return item;
+    })
+  );
+}
+
+/**
+ * Draw the match board: both heroes' health, the player's energy, the hand, both
+ * tables and the log — all of it text, so a sighted player, a screen reader and
+ * an agent read the same match. With no match in progress the board is hidden
+ * and the note about the deck and the Start match button stand in its place.
+ */
+function renderMatch() {
+  const match = state.match;
+  if (matchBoard) matchBoard.hidden = !match;
+  if (matchIntro) matchIntro.hidden = Boolean(match);
+  if (startMatchButton) startMatchButton.hidden = Boolean(match);
+  if (endTurnButton) endTurnButton.hidden = !match || match.turn !== "player";
+  if (!match) return;
+
+  if (matchFields.playerHealth) matchFields.playerHealth.textContent = String(match.player.health);
+  if (matchFields.opponentHealth) matchFields.opponentHealth.textContent = String(match.opponent.health);
+  if (matchFields.energy) matchFields.energy.textContent = `${match.player.energy} of ${match.player.maxEnergy}`;
+  if (matchFields.opponentHand) matchFields.opponentHand.textContent = String(match.opponent.hand.length);
+  if (matchFields.deckRemaining) matchFields.deckRemaining.textContent = String(match.player.deck.length);
+
+  renderMatchHand(match);
+  renderMatchTable(matchTableList, match.player.table, "Your table is empty.");
+  renderMatchTable(matchOpponentTableList, match.opponent.table, "The opponent's table is empty.");
+  renderMatchLog(match);
+}
+
+/** Put the refusal or confirmation in the match's always-present status line. */
+function setMatchMessage(message) {
+  if (matchMessage) matchMessage.textContent = message;
+}
+
+/**
+ * Run a match action, keeping the player on their feet: a refusal is shown in
+ * the status line, and when the control that was pressed is gone with the hand
+ * it lived in, focus lands on the match heading instead of dropping to the body.
+ */
+function runMatchAction(action) {
+  setMatchMessage("");
+  const focused = document.activeElement;
+  try {
+    action();
+  } catch (error) {
+    setMatchMessage(error.message);
+    return;
+  }
+  if (focused && !document.contains(focused)) {
+    document.getElementById("play-heading")?.focus();
+  }
+}
+
+/**
+ * Start a match from the saved deck — what a visitor does by pressing Start
+ * match, and what the start-match tool does on their behalf. Refused, with the
+ * reason, when the deck holds fewer cards than a match needs. Opens the Play
+ * screen and returns the state afterwards.
+ */
+export function startMatch() {
+  state.match = createMatch(state.deck);
+  state.screen = "play";
+  setMatchMessage("");
+  render();
+  return readState();
+}
+
+/**
+ * Play a card from the hand — what a visitor does by pressing its "Play …"
+ * button, and what the play-card tool does on their behalf. Refused, with the
+ * reason, when there is no match or the card cannot be played. Returns the state
+ * afterwards.
+ */
+export function playMatchCard(cardId) {
+  if (!state.match) throw new Error("no match is in progress — start one first");
+  playCard(state.match, cardId);
+  render();
+  return readState();
+}
+
+/**
+ * End the player's turn — what a visitor does by pressing End turn, and what the
+ * end-turn tool does on their behalf. Refused, with the reason, when there is no
+ * match. Returns the state afterwards.
+ */
+export function endMatchTurn() {
+  if (!state.match) throw new Error("no match is in progress — start one first");
+  endTurn(state.match);
+  render();
+  return readState();
 }
 
 /**
@@ -268,9 +468,11 @@ function commitDeck() {
  * what the get-state tool returns.
  */
 export function readState() {
-  const actions = [...screens.get(state.screen).querySelectorAll("button")].map((button) =>
-    button.textContent.trim()
-  );
+  // Only the actions a visitor can actually reach: a control this screen hides
+  // is not something they can press, so an agent should not be told it can.
+  const actions = [...screens.get(state.screen).querySelectorAll("button")]
+    .filter((button) => !button.hidden)
+    .map((button) => button.textContent.trim());
 
   return {
     screen: state.screen,
@@ -281,7 +483,58 @@ export function readState() {
     minimumDeckSize: state.minimumDeckSize,
     deck: listDeckCards(state.deck),
     saved: state.saved,
+    match: readMatch(),
     actions,
+  };
+}
+
+/** A match card as plain data, so a tool can carry it across the JSON boundary. */
+function describeMatchCard(card) {
+  return { id: card.id, name: card.name, cost: card.cost, attack: card.attack, health: card.health };
+}
+
+/**
+ * Everything the match currently shows: whether one is in progress, whose turn
+ * it is, both heroes' health, the player's energy, the hand, both tables, how
+ * many cards are left to draw, the ordered log, and the moves available now.
+ * With no match it says so, so a reader can tell the difference between "nothing
+ * has happened yet" and "a match with an empty hand".
+ */
+export function readMatch() {
+  const match = state.match;
+  if (!match) {
+    return {
+      active: false,
+      turn: null,
+      playerHealth: null,
+      opponentHealth: null,
+      energy: null,
+      maxEnergy: null,
+      hand: [],
+      table: [],
+      opponentTable: [],
+      deckRemaining: state.deck.length,
+      log: [],
+      actions: [],
+    };
+  }
+
+  return {
+    active: true,
+    turn: match.turn,
+    playerHealth: match.player.health,
+    opponentHealth: match.opponent.health,
+    energy: match.player.energy,
+    maxEnergy: match.player.maxEnergy,
+    hand: match.player.hand.map(describeMatchCard),
+    table: match.player.table.map(describeMatchCard),
+    opponentTable: match.opponent.table.map(describeMatchCard),
+    deckRemaining: match.player.deck.length,
+    log: [...match.log],
+    actions:
+      match.turn === "player"
+        ? [...match.player.hand.map((card) => `Play ${card.name} (cost ${card.cost})`), "End turn"]
+        : [],
   };
 }
 
@@ -364,6 +617,9 @@ export function showScreen(screen) {
 for (const button of document.querySelectorAll("[data-screen-target]")) {
   button.addEventListener("click", () => showScreen(button.dataset.screenTarget));
 }
+
+startMatchButton?.addEventListener("click", () => runMatchAction(() => startMatch()));
+endTurnButton?.addEventListener("click", () => runMatchAction(() => endMatchTurn()));
 
 render();
 renderCollection();

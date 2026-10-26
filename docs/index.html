@@ -107,11 +107,71 @@
 
       <section id="screen-play" class="screen" aria-labelledby="play-heading" hidden>
         <h2 class="screen-heading" id="play-heading" tabindex="-1">Play a match</h2>
-        <p class="screen-note">
+
+        <!-- What stands in for the board before a match begins: the deck the
+             match would be dealt from, and the fewest cards it needs. -->
+        <p class="screen-note" id="match-intro">
           Your deck holds <span data-field="deckSize">0</span> cards; a match needs at least
           <span data-field="minimumDeckSize">5</span>.
         </p>
+
+        <!-- The whole match, as labelled text: both heroes' health, the player's
+             energy, the hand, both tables, and an ordered log. Nothing here is
+             drawn into a canvas, so a screen reader and an agent read the same
+             game a sighted player does. -->
+        <div class="match-board" id="match-board" hidden>
+          <dl class="match-standings">
+            <div class="standing">
+              <dt class="standing-label">Your health</dt>
+              <dd class="standing-value"><span id="match-player-health">20</span></dd>
+            </div>
+            <div class="standing">
+              <dt class="standing-label">Opponent health</dt>
+              <dd class="standing-value"><span id="match-opponent-health">20</span></dd>
+            </div>
+            <div class="standing">
+              <dt class="standing-label">Energy</dt>
+              <dd class="standing-value"><span id="match-energy">3 of 3</span></dd>
+            </div>
+            <div class="standing">
+              <dt class="standing-label">Opponent hand</dt>
+              <dd class="standing-value"><span id="match-opponent-hand">3</span></dd>
+            </div>
+            <div class="standing">
+              <dt class="standing-label">Cards left in deck</dt>
+              <dd class="standing-value"><span id="match-deck-remaining">7</span></dd>
+            </div>
+          </dl>
+
+          <section class="match-side match-hand-side" aria-labelledby="match-hand-heading">
+            <h3 class="match-heading" id="match-hand-heading">Your hand</h3>
+            <ul class="match-hand" id="match-hand" aria-label="Cards in your hand"></ul>
+          </section>
+
+          <section class="match-side" aria-labelledby="match-table-heading">
+            <h3 class="match-heading" id="match-table-heading">Your table</h3>
+            <ul class="match-table" id="match-table" aria-label="Cards on your table"></ul>
+          </section>
+
+          <section class="match-side" aria-labelledby="match-opponent-table-heading">
+            <h3 class="match-heading" id="match-opponent-table-heading">Opponent's table</h3>
+            <ul class="match-table" id="match-opponent-table" aria-label="Cards on the opponent's table"></ul>
+          </section>
+
+          <section class="match-log-wrap" aria-labelledby="match-log-heading">
+            <h3 class="match-heading" id="match-log-heading">Match log</h3>
+            <ol class="match-log" id="match-log" aria-label="What happened in the match" aria-live="polite"></ol>
+          </section>
+        </div>
+
+        <!-- What just happened in the match, and why a move was refused. Always
+             present, so the reason is reachable instead of hidden behind a
+             disabled control. -->
+        <p class="match-message" id="match-message" role="status" aria-live="polite"></p>
+
         <div class="actions">
+          <button type="button" class="btn btn-primary" id="action-start-match">Start match</button>
+          <button type="button" class="btn btn-primary" id="action-end-turn" hidden>End turn</button>
           <button type="button" class="btn btn-secondary" data-screen-target="home">Back to home</button>
         </div>
       </section>
