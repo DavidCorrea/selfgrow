@@ -207,6 +207,98 @@ body {
 }
 
 /* --------------------------------------------------------------------------
+   The collection
+   -------------------------------------------------------------------------- */
+
+/* The counts and the cards belong to each other and to the whole card, not to
+   the left column the home screen's numbers sit in. */
+#screen-collection .standings,
+#screen-collection .collection-list,
+#screen-collection .storage-note {
+  grid-column: 1 / -1;
+}
+
+.collection-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.7rem;
+  grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr));
+}
+
+/* Each owned card is a small card face: its name, then the three numbers that
+   decide a match, with the count of copies when there is more than one. */
+.owned-card {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.85rem 1rem 0.95rem;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-control);
+  background-color: rgba(15, 19, 34, 0.4);
+}
+
+.owned-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.15rem 0.75rem;
+  min-width: 0;
+}
+
+.owned-name {
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.owned-copies {
+  color: var(--ink-muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.owned-stats {
+  display: flex;
+  gap: 1.1rem;
+  margin: 0;
+}
+
+.owned-stat {
+  display: grid;
+}
+
+.owned-stat dt {
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+}
+
+.owned-stat dd {
+  margin: 0;
+  color: var(--foil);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.collection-empty {
+  grid-column: 1 / -1;
+  color: var(--ink-muted);
+}
+
+/* Shown only when the browser refuses to store anything: a statement of what is
+   true, in the same frame as the cards it is about. */
+.storage-note {
+  margin: 0;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--edge);
+  border-left: 3px solid var(--foil);
+  border-radius: var(--radius-control);
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+/* --------------------------------------------------------------------------
    Actions
    -------------------------------------------------------------------------- */
 

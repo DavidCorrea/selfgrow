@@ -54,7 +54,26 @@
 
       <section id="screen-collection" class="screen" aria-labelledby="collection-heading" hidden>
         <h2 class="screen-heading" id="collection-heading" tabindex="-1">Your collection</h2>
-        <p class="screen-note">You own <span data-field="cardsOwned">0</span> cards.</p>
+
+        <dl class="standings">
+          <div class="standing">
+            <dt class="standing-label">Cards owned</dt>
+            <dd class="standing-value"><span data-field="cardsOwned">0</span></dd>
+          </div>
+          <div class="standing">
+            <dt class="standing-label">Different cards</dt>
+            <dd class="standing-value"><span data-field="distinctCards">0</span></dd>
+          </div>
+        </dl>
+
+        <!-- Every owned card, filled in from what was saved. A list of text, so a
+             sighted player, a screen reader and an agent read the same cards. -->
+        <ul class="collection-list" id="collection-list" aria-label="Cards you own"></ul>
+
+        <p class="storage-note" id="storage-note" hidden>
+          Your collection is not being saved in this browser, so it will be lost when you close the page.
+        </p>
+
         <div class="actions">
           <button type="button" class="btn btn-secondary" data-screen-target="home">Back to home</button>
         </div>

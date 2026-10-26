@@ -1,12 +1,15 @@
 /**
  * selfgrow — the page's state, and the one place it is written onto the page.
  *
- * `state` is the whole truth about what is on screen: which screen is open, and
- * where the player stands. `render()` writes it into the page's text and
- * `readState()` hands the same fields back, so a screen reader, the Playtester
- * and an agent's tool all read one surface — whatever the page says is what a
- * tool returns, and what a tool does is what the page shows.
+ * `state` is the whole truth about what is on screen: which screen is open, what
+ * the player owns, and where they stand. `render()` writes it into the page's
+ * text and `readState()` / `readCollection()` hand the same fields back, so a
+ * screen reader, the Playtester and an agent's tool all read one surface —
+ * whatever the page says is what a tool returns, and what a tool does is what the
+ * page shows.
  */
+
+import { collectionSize, listOwnedCards, loadCollection } from "./collection.js";
 
 // The screens the page has, and the word each is announced by. A screen name is
 // also the value an agent passes to the show-screen tool.
@@ -16,10 +19,17 @@ const SCREEN_LABELS = {
   play: "Play",
 };
 
+// The cards are read once, here, the same way a returning player's saved
+// collection is: everything below works from whatever this opener produced.
+const opened = loadCollection();
+
 const state = {
   screen: "home",
-  cardsOwned: 0,
+  cards: opened.cards,
+  cardsOwned: collectionSize(opened.cards),
+  distinctCards: opened.cards.length,
   deckSize: 0,
+  collectionSaved: opened.saved,
 };
 
 const screens = new Map(
@@ -27,14 +37,15 @@ const screens = new Map(
 );
 
 // Every place on the page a count is printed, wherever the card prints it.
-const countFields = {
-  cardsOwned: [...document.querySelectorAll('[data-field="cardsOwned"]')],
-  deckSize: [...document.querySelectorAll('[data-field="deckSize"]')],
-};
+const countFields = {};
+for (const element of document.querySelectorAll("[data-field]")) {
+  (countFields[element.dataset.field] ??= []).push(element);
+}
 
 const screenStatus = document.getElementById("screen-status");
+const storageNote = document.getElementById("storage-note");
 
-/** Write the state onto the page: the open screen, and every count it belongs to. */
+/** Write the state onto the page: the open screen, every count, and the save note. */
 function render() {
   for (const [name, section] of screens) {
     const isOpen = name === state.screen;
@@ -47,13 +58,78 @@ function render() {
     for (const element of elements) element.textContent = String(state[field]);
   }
 
+  if (storageNote) storageNote.hidden = state.collectionSaved;
+
   screenStatus.textContent = `${SCREEN_LABELS[state.screen]} screen`;
+}
+
+/** One owned card, as a list item that reads its name, cost, attack and health. */
+function ownedCardRow(card) {
+  const item = document.createElement("li");
+  item.className = "owned-card";
+  item.dataset.cardId = card.id;
+
+  const head = document.createElement("div");
+  head.className = "owned-head";
+
+  const name = document.createElement("span");
+  name.className = "owned-name";
+  name.textContent = card.name;
+  head.append(name);
+
+  // A count only where there is more than one to count; one copy is the default.
+  if (card.copies > 1) {
+    const copies = document.createElement("span");
+    copies.className = "owned-copies";
+    copies.dataset.copies = String(card.copies);
+    copies.textContent = `${card.copies} copies`;
+    head.append(copies);
+  }
+
+  const stats = document.createElement("dl");
+  stats.className = "owned-stats";
+  for (const [label, key] of [
+    ["Cost", "cost"],
+    ["Attack", "attack"],
+    ["Health", "health"],
+  ]) {
+    const stat = document.createElement("div");
+    stat.className = "owned-stat";
+    const term = document.createElement("dt");
+    term.textContent = label;
+    const value = document.createElement("dd");
+    value.dataset.stat = key;
+    value.textContent = String(card[key]);
+    stat.append(term, value);
+    stats.append(stat);
+  }
+
+  item.append(head, stats);
+  return item;
+}
+
+/** Draw the whole collection, once, from the cards the page loaded. */
+function renderCollection() {
+  const list = document.getElementById("collection-list");
+  if (!list) return;
+
+  const cards = listOwnedCards(state.cards);
+  if (!cards.length) {
+    const empty = document.createElement("li");
+    empty.className = "collection-empty";
+    empty.textContent = "You own no cards yet.";
+    list.replaceChildren(empty);
+    return;
+  }
+
+  list.replaceChildren(...cards.map(ownedCardRow));
 }
 
 /**
  * Everything the page currently shows: the screen that is open, how many cards
- * the player owns, how many are in the deck, and the actions they can take from
- * here. This is what the get-state tool returns.
+ * the player owns and how many are different, how many are in the deck, whether
+ * the collection will survive closing the page, and the actions they can take
+ * from here. This is what the get-state tool returns.
  */
 export function readState() {
   const actions = [...screens.get(state.screen).querySelectorAll("button")].map((button) =>
@@ -63,8 +139,24 @@ export function readState() {
   return {
     screen: state.screen,
     cardsOwned: state.cardsOwned,
+    distinctCards: state.distinctCards,
     deckSize: state.deckSize,
+    collectionSaved: state.collectionSaved,
     actions,
+  };
+}
+
+/**
+ * Every card the player owns, with its name, cost, attack, health and how many
+ * copies — the same list the Collection screen prints. This is what the
+ * list-collection tool returns.
+ */
+export function readCollection() {
+  return {
+    cards: listOwnedCards(state.cards),
+    cardsOwned: state.cardsOwned,
+    distinctCards: state.distinctCards,
+    collectionSaved: state.collectionSaved,
   };
 }
 
@@ -95,3 +187,4 @@ for (const button of document.querySelectorAll("[data-screen-target]")) {
 }
 
 render();
+renderCollection();
