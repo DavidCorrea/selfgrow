@@ -44,6 +44,10 @@
           </div>
         </dl>
 
+        <!-- The saved deck, said in words: a returning player sees what they are
+             about to play with before they play it. -->
+        <p class="deck-summary" id="deck-summary"></p>
+
         <div class="actions">
           <button type="button" class="btn btn-primary" id="action-play" data-screen-target="play">Play</button>
           <button type="button" class="btn btn-secondary" id="action-collection" data-screen-target="collection">
@@ -64,14 +68,36 @@
             <dt class="standing-label">Different cards</dt>
             <dd class="standing-value"><span data-field="distinctCards">0</span></dd>
           </div>
+          <div class="standing">
+            <dt class="standing-label">Deck size</dt>
+            <dd class="standing-value"><span data-field="deckSize">0</span></dd>
+          </div>
         </dl>
+
+        <!-- The deck being built: its size, the rules it is built to, and its
+             cards as a list of names. Every part is text, so a sighted player, a
+             screen reader and an agent read the same deck. -->
+        <section class="deck" aria-labelledby="deck-heading">
+          <h3 class="deck-heading" id="deck-heading">Your deck</h3>
+          <p class="deck-rule">
+            A match needs at least <span data-field="minimumDeckSize">5</span> cards, and holds at most
+            <span data-field="deckLimit">10</span>.
+          </p>
+          <ul class="deck-list" id="deck-list" aria-label="Cards in your deck"></ul>
+        </section>
 
         <!-- Every owned card, filled in from what was saved. A list of text, so a
              sighted player, a screen reader and an agent read the same cards. -->
         <ul class="collection-list" id="collection-list" aria-label="Cards you own"></ul>
 
+        <!-- What just happened to the deck, and why an add was refused. Always
+             present, so the reason is reachable instead of hidden behind a
+             disabled control. -->
+        <p class="deck-message" id="deck-message" role="status" aria-live="polite"></p>
+
         <p class="storage-note" id="storage-note" hidden>
-          Your collection is not being saved in this browser, so it will be lost when you close the page.
+          Your cards and deck are not being saved in this browser, so they will be lost when you close
+          the page.
         </p>
 
         <div class="actions">
@@ -81,7 +107,10 @@
 
       <section id="screen-play" class="screen" aria-labelledby="play-heading" hidden>
         <h2 class="screen-heading" id="play-heading" tabindex="-1">Play a match</h2>
-        <p class="screen-note">Your deck holds <span data-field="deckSize">0</span> cards.</p>
+        <p class="screen-note">
+          Your deck holds <span data-field="deckSize">0</span> cards; a match needs at least
+          <span data-field="minimumDeckSize">5</span>.
+        </p>
         <div class="actions">
           <button type="button" class="btn btn-secondary" data-screen-target="home">Back to home</button>
         </div>

@@ -165,6 +165,17 @@ body {
   .screen-heading {
     grid-column: 1 / -1;
   }
+
+  /* Home keeps its shape with the summary added: where you stand on the left,
+     what you can do on the right, and the deck's cards under the numbers. */
+  #screen-home .deck-summary {
+    grid-column: 1;
+  }
+
+  #screen-home .actions {
+    grid-column: 2;
+    grid-row: 2 / span 2;
+  }
 }
 
 @keyframes screen-in {
@@ -213,7 +224,9 @@ body {
 /* The counts and the cards belong to each other and to the whole card, not to
    the left column the home screen's numbers sit in. */
 #screen-collection .standings,
+#screen-collection .deck,
 #screen-collection .collection-list,
+#screen-collection .deck-message,
 #screen-collection .storage-note {
   grid-column: 1 / -1;
 }
@@ -279,6 +292,109 @@ body {
   color: var(--foil);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+
+/* The toggle at the foot of each card face: which cards are chosen is shown in
+   the label, and the chosen ones carry a foil keyline so the state is visible
+   even before the deck list is read. */
+.deck-toggle {
+  width: 100%;
+  padding: 0.55rem 0.9rem;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.deck-toggle.is-in-deck {
+  border-color: rgba(242, 193, 78, 0.6);
+  background-color: rgba(242, 193, 78, 0.12);
+}
+
+/* --------------------------------------------------------------------------
+   The deck
+   -------------------------------------------------------------------------- */
+
+.deck {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.9rem 1rem 1rem;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-control);
+  background-color: rgba(15, 19, 34, 0.4);
+}
+
+.deck-heading {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.deck-rule {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 0.9rem;
+}
+
+.deck-rule span {
+  color: var(--ink);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.deck-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.5rem;
+}
+
+.deck-card {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  background-color: rgba(34, 42, 69, 0.7);
+}
+
+.deck-card-name {
+  font-weight: 600;
+}
+
+.deck-card-stats {
+  color: var(--foil);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.deck-empty {
+  color: var(--ink-muted);
+  font-size: 0.9rem;
+}
+
+/* The home screen's one-line deck summary, beside the numbers it restates. */
+.deck-summary {
+  margin: 0;
+  color: var(--ink-muted);
+  text-wrap: pretty;
+}
+
+/* What just happened to the deck. The live region is always in the page — never
+   display: none, or a screen reader may not announce the change — but only
+   draws its frame once it has something to say. */
+.deck-message {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.deck-message:not(:empty) {
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--edge);
+  border-left: 3px solid var(--foil);
+  border-radius: var(--radius-control);
 }
 
 .collection-empty {

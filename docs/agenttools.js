@@ -4,7 +4,7 @@
  * an agent plays the game through the same surface, at the same pace.
  */
 
-import { readCollection, readState, showScreen } from "./app.js";
+import { addCardToDeck, readCollection, readState, removeCardFromDeck, showScreen } from "./app.js";
 
 // The screens the page has. The list is the tool's own schema as well as the
 // page's, so a caller cannot ask for a screen that does not exist.
@@ -16,7 +16,7 @@ export function tools() {
       name: "get-state",
       title: "Read what the page shows",
       description:
-        "Returns everything the page shows a visitor right now: which screen is open (home, collection or play), how many cards you own, how many of them are different, how many cards your deck holds, whether the collection is saved for next time, and the actions you can take from here. Ask it first to see where you stand, and again after every move to see what changed.",
+        "Returns everything the page shows a visitor right now: which screen is open (home, collection or play), how many cards you own, how many of them are different, the deck — how many cards it holds, the most it may hold, the fewest a match needs, and each card in it — whether progress is saved for next time, and the actions you can take from here. Ask it first to see where you stand, and again after every move to see what changed.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
       example: {},
@@ -34,6 +34,50 @@ export function tools() {
       example: {},
       async execute() {
         return readCollection();
+      },
+    },
+    {
+      name: "add-card-to-deck",
+      title: "Add an owned card to your deck",
+      description:
+        "Adds one card you already own to your deck, exactly as pressing its \"Add … to deck\" button on the Collection screen does. Refused, with the reason, when the card is not owned, is already in the deck, or the deck is already at its limit of ten. Returns the state afterwards so you can see the deck it changed.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          cardId: {
+            type: "string",
+            description: "The id of the owned card to add, as list-collection reports it.",
+          },
+        },
+        required: ["cardId"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, consequentialHint: false },
+      example: { cardId: "sprout" },
+      async execute(input = {}) {
+        return addCardToDeck(input.cardId);
+      },
+    },
+    {
+      name: "remove-card-to-deck",
+      title: "Remove a card from your deck",
+      description:
+        "Removes one card from your deck and returns it to the collection, exactly as pressing its \"Remove … from deck\" button on the Collection screen does. Refused, with the reason, when the card is not in the deck. Returns the state afterwards so you can see the deck it changed.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          cardId: {
+            type: "string",
+            description: "The id of the card to take out of the deck, as get-state reports it.",
+          },
+        },
+        required: ["cardId"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, consequentialHint: false },
+      example: { cardId: "sprout" },
+      async execute(input = {}) {
+        return removeCardFromDeck(input.cardId);
       },
     },
     {

@@ -27,6 +27,15 @@ export const CARDS = [
 export const CARD_BY_ID = new Map(CARDS.map((card) => [card.id, card]));
 
 /**
+ * The rules a deck is built to: no more than ten cards may be chosen, and a
+ * match needs at least five before it is worth starting. Both are stated in the
+ * UI beside the deck, and both are what the page enforces rather than merely
+ * printing.
+ */
+export const DECK_LIMIT = 10;
+export const MINIMUM_DECK_SIZE = 5;
+
+/**
  * What a new player owns the first time they open the game: twelve different
  * cards, with a few of the cheap ones held in more than one copy.
  */
