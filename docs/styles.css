@@ -487,6 +487,26 @@ body {
   text-wrap: pretty;
 }
 
+/* What the result did to the collection — the reason a player comes back, so it
+   sits with the outcome and reads at the same weight as the rest of the card. */
+.result-reward {
+  margin: 0;
+  color: var(--ink);
+  text-wrap: pretty;
+}
+
+.result-reward:empty {
+  display: none;
+}
+
+.result-standings {
+  margin-top: 0.15rem;
+}
+
+.result-standings .standing-value {
+  font-size: clamp(1.2rem, 1rem + 0.8vw, 1.6rem);
+}
+
 /* The result's way back into a match, sized like the board's other controls. */
 .match-result .btn {
   margin-top: 0.2rem;

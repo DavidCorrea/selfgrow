@@ -21,6 +21,12 @@ export const CARDS = [
   { id: "emberling", name: "Emberling", cost: 4, attack: 3, health: 3 },
   { id: "root-colossus", name: "Root Colossus", cost: 5, attack: 5, health: 6 },
   { id: "elder-oak", name: "Elder Oak", cost: 6, attack: 4, health: 9 },
+  // The reward cards, earned by winning rather than dealt at the start. They are
+  // real cards — playable, and saved like any other — so a win grows what a
+  // player can put in a deck.
+  { id: "moon-bloom", name: "Moon Bloom", cost: 2, attack: 2, health: 3 },
+  { id: "amber-antler", name: "Amber Antler", cost: 4, attack: 4, health: 3 },
+  { id: "cinder-shrike", name: "Cinder Shrike", cost: 3, attack: 4, health: 1 },
 ];
 
 /** Lookup by id — the shape the saved collection speaks in. */
@@ -40,6 +46,9 @@ export const MINIMUM_DECK_SIZE = 5;
  * cards, with a few of the cheap ones held in more than one copy.
  */
 export const STARTER_COLLECTION = [
+  // A reward card is deliberately absent here: winning is the only way to own
+  // one, which is what makes a match worth playing again.
+
   { id: "sprout", copies: 3 },
   { id: "pebble-toad", copies: 2 },
   { id: "bramble-hound", copies: 2 },
@@ -53,3 +62,10 @@ export const STARTER_COLLECTION = [
   { id: "root-colossus", copies: 1 },
   { id: "elder-oak", copies: 1 },
 ];
+
+/**
+ * The cards a win can add, in the order they are earned: the first win gives the
+ * first, the next gives the second, and it cycles. None of them is in the starter
+ * collection, so every reward is a card the player did not already have.
+ */
+export const REWARD_POOL = ["moon-bloom", "amber-antler", "cinder-shrike"];

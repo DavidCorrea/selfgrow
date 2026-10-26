@@ -11,12 +11,13 @@
  * cards.
  */
 
-import { CARDS, CARD_BY_ID, DECK_LIMIT, STARTER_COLLECTION } from "./cards.js";
+import { CARDS, CARD_BY_ID, DECK_LIMIT, REWARD_POOL, STARTER_COLLECTION } from "./cards.js";
 
 /**
- * The single key a save lives under — the collection and the deck beside it. A
- * change to the cards' shape needs a new key; the deck was added additively, so
- * a save written before it existed still reads as one with no deck.
+ * The single key a save lives under — the collection, the deck and the progress
+ * beside them. A change to their shape needs a new key; the deck, the wins and
+ * the matches were each added additively, so a save written before one existed
+ * still reads as one that simply has none of it yet.
  */
 export const STORAGE_KEY = "selfgrow.collection.v1";
 
@@ -138,6 +139,27 @@ export function readCollection(storage = defaultStorage()) {
   return normalizeCollection(readPayload(storage));
 }
 
+/** A whole, sane count — anything else (negative, fractional, absurd) reads as 0. */
+function wholeCount(value) {
+  return Number.isSafeInteger(value) && value >= 0 ? value : 0;
+}
+
+/**
+ * The progress saved beside the cards: how many matches have been finished, how
+ * many of them were won, and the id of the last result recorded. The id is what
+ * keeps a single match from being counted twice when its result is revisited.
+ * A save written before these fields existed reads as a player who has played
+ * nothing yet, rather than as a broken save.
+ */
+export function readProgress(storage = defaultStorage()) {
+  const payload = readPayload(storage);
+  return {
+    wins: wholeCount(payload?.wins),
+    matches: wholeCount(payload?.matches),
+    lastMatchId: typeof payload?.lastMatchId === "string" ? payload.lastMatchId : null,
+  };
+}
+
 /**
  * The saved deck, in the order it was chosen, or an empty one when there is no
  * usable save. Only cards the saved collection owns can be in it.
@@ -149,13 +171,20 @@ export function readDeck(storage = defaultStorage()) {
   return normalizeDeck(payload, cards);
 }
 
-/** Write a collection and a deck to storage, returning false when the write fails. */
-function writeSave(cards, deck, storage) {
+/** Write a collection, a deck and progress to storage, returning false when the write fails. */
+function writeSave(cards, deck, storage, progress = readProgress(storage)) {
   const cleanDeck = normalizeDeck({ deck }, cards);
   try {
     storage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ version: STORAGE_VERSION, cards, deck: cleanDeck })
+      JSON.stringify({
+        version: STORAGE_VERSION,
+        cards,
+        deck: cleanDeck,
+        wins: wholeCount(progress?.wins),
+        matches: wholeCount(progress?.matches),
+        lastMatchId: progress?.lastMatchId ?? null,
+      })
     );
     return true;
   } catch {
@@ -163,7 +192,7 @@ function writeSave(cards, deck, storage) {
   }
 }
 
-/** Save a collection, keeping whatever deck is already stored beside it. */
+/** Save a collection, keeping whatever deck and progress are already stored beside it. */
 export function saveCollection(cards, storage = defaultStorage()) {
   return writeSave(cards, readDeck(storage), storage);
 }
@@ -171,6 +200,63 @@ export function saveCollection(cards, storage = defaultStorage()) {
 /** Save a deck beside the collection it was chosen from. */
 export function saveDeck(cards, deck, storage = defaultStorage()) {
   return writeSave(cards, deck, storage);
+}
+
+/** The collection with one more copy of `cardId`, still in catalog order. */
+function withExtraCopy(cards, cardId) {
+  const copiesById = new Map(cards.map((card) => [card.id, card.copies]));
+  copiesById.set(cardId, (copiesById.get(cardId) ?? 0) + 1);
+  return CARDS.filter((card) => copiesById.has(card.id)).map((card) => ({
+    id: card.id,
+    copies: copiesById.get(card.id),
+  }));
+}
+
+/**
+ * Record a finished match. The match counts toward the matches played; a win
+ * adds exactly one reward card to the collection, and a loss adds none. The
+ * reward cycles through `REWARD_POOL` by how many matches have been won, so the
+ * first win gives the first card and the next gives the next.
+ *
+ * `matchId` is remembered so that recording the same match again — a result
+ * screen asked for twice — does nothing instead of awarding a second card.
+ * Returns the collection this produced, the new totals, the card that was
+ * added (or null), and whether it will survive closing the page.
+ */
+export function recordResult(outcome, matchId, storage = defaultStorage()) {
+  const cards = readCollection(storage) ?? starterCards();
+  const progress = readProgress(storage);
+
+  if (matchId != null && progress.lastMatchId === matchId) {
+    return {
+      cards,
+      wins: progress.wins,
+      matches: progress.matches,
+      awarded: null,
+      recorded: false,
+      saved: storage?.durable !== false,
+    };
+  }
+
+  const won = outcome === "win";
+  const awardedId = won ? REWARD_POOL[progress.wins % REWARD_POOL.length] : null;
+  const nextCards = awardedId ? withExtraCopy(cards, awardedId) : cards;
+  const wins = progress.wins + (won ? 1 : 0);
+  const matches = progress.matches + 1;
+  const wrote = writeSave(nextCards, readDeck(storage), storage, {
+    wins,
+    matches,
+    lastMatchId: matchId ?? progress.lastMatchId,
+  });
+
+  return {
+    cards: nextCards,
+    wins,
+    matches,
+    awarded: awardedId ? { ...CARD_BY_ID.get(awardedId) } : null,
+    recorded: true,
+    saved: wrote && storage?.durable !== false,
+  };
 }
 
 /**
@@ -183,12 +269,21 @@ export function saveDeck(cards, deck, storage = defaultStorage()) {
  * page shows rather than pretending they are safe.
  */
 export function loadGame(storage = defaultStorage()) {
+  const progress = readProgress(storage);
   const cards = readCollection(storage);
-  if (cards) return { cards, deck: readDeck(storage), saved: storage?.durable !== false };
+  if (cards) {
+    return {
+      cards,
+      deck: readDeck(storage),
+      wins: progress.wins,
+      matches: progress.matches,
+      saved: storage?.durable !== false,
+    };
+  }
 
   const starter = starterCards();
   const wrote = saveDeck(starter, [], storage);
-  return { cards: starter, deck: [], saved: wrote && storage?.durable !== false };
+  return { cards: starter, deck: [], wins: 0, matches: 0, saved: wrote && storage?.durable !== false };
 }
 
 /** How many cards the collection holds, copies counted. */
