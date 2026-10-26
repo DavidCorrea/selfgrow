@@ -137,7 +137,18 @@ export function tools() {
         "fraction (progress, the meter the page draws), and the estimated " +
         "seconds until the garden can afford it (secondsToGo, null when " +
         "nothing is growing). The goal title and the three labelled facts on " +
-        "the page name this same target and state this same distance. Once " +
+        "the page name this same target and state this same distance. Where " +
+        "that target lands on the soil is reported as goalPlot, so a caller " +
+        "can point a visitor at the same patch of ground the goal panel is " +
+        "saving for: while the goal is a seed it carries that seed's own kind " +
+        "(seedKind), whether it is the bloom kind (bloom) and the plot cell " +
+        "it will fill (cell, the first free plot, counting the picture's " +
+        "plots from 0), which is the very cell the seed is drawn on once " +
+        "planted; once every plot is full and the goal becomes a bed it " +
+        "carries that bed's index instead (bed) and no cell; and a form goal " +
+        "carries no place on the soil at all, so it is null. The mark is " +
+        "drawn on the plot but never counted: the ungrown seeds, the grown " +
+        "plants and the plot-by-plot count are exactly what they were. Once " +
         "every plot is full it also returns the next bed: what opening it " +
         "costs (nextBedCost), whether the garden can afford it now " +
         "(canOpenBed — only ever true on a full plot), how far along that " +
