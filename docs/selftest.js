@@ -299,7 +299,7 @@ export async function checks() {
     fail(`nothing is saved under "${collection.STORAGE_KEY}", so the collection is lost when the page closes`);
   }
 
-  const reloaded = collection.loadCollection();
+  const reloaded = collection.loadGame();
   if (!sameCards(reloaded.cards, owned.cards)) {
     fail(
       `reloading the saved collection (what a browser reload does) gave different cards: ` +
@@ -309,7 +309,7 @@ export async function checks() {
     fail("the saved collection was read back but not reported as saved, so the page says it may be lost");
   }
 
-  if (state.collectionSaved !== true) {
+  if (state.saved !== true) {
     fail("storage works in this browser, but the page reports the collection as not saved");
   }
 
@@ -330,7 +330,7 @@ export async function checks() {
     );
   }
 
-  const blocked = collection.loadCollection(blockedStorage());
+  const blocked = collection.loadGame(blockedStorage());
   if (blocked.cards.length < 10) {
     fail(
       `when the browser blocks storage, a new visitor should still be dealt the starter collection, ` +
@@ -344,7 +344,7 @@ export async function checks() {
     fail("saving to blocked storage reported success, so a lost collection is treated as saved");
   }
 
-  const corrupt = collection.loadCollection(stubStorage({ [collection.STORAGE_KEY]: "}{ not json" }));
+  const corrupt = collection.loadGame(stubStorage({ [collection.STORAGE_KEY]: "}{ not json" }));
   if (corrupt.cards.length < 10) {
     fail(
       `an unreadable save was not replaced by a valid starter collection: the player would open with ` +
@@ -352,7 +352,7 @@ export async function checks() {
     );
   }
 
-  const foreign = collection.loadCollection(
+  const foreign = collection.loadGame(
     stubStorage({ [collection.STORAGE_KEY]: JSON.stringify({ version: 99, cards: [] }) })
   );
   if (foreign.cards.length < 10) {
@@ -379,6 +379,143 @@ export async function checks() {
       `a save naming an unknown card, a zero copy count and an impossible one was not cleaned up: read ` +
         `${JSON.stringify(partial)} instead of just the one real card`
     );
+  }
+
+  // --- The deck: chosen from the collection, capped, and kept ---------------
+
+  const deckList = document.getElementById("deck-list");
+  if (!deckList) {
+    fail("the collection screen has no deck list (#deck-list), so the deck's contents cannot be read");
+  } else if (!deckList.getAttribute("aria-label")) {
+    fail("the deck list has no accessible name (aria-label), so it is read as an unlabelled list");
+  }
+
+  const collectionScreenText = textOf(screen("collection"));
+  if (!collectionScreenText.toLowerCase().includes("deck")) {
+    fail("the collection screen never names the deck a player is building there");
+  }
+  for (const [field, why] of [
+    ["deckLimit", "the most cards a deck may hold"],
+    ["minimumDeckSize", "the fewest cards a match needs"],
+  ]) {
+    if (!screen("collection").querySelector(`[data-field="${field}"]`)) {
+      fail(`the collection screen does not state ${why} (nothing carries data-field="${field}")`);
+    }
+  }
+
+  const ownedIds = owned.cards.map((card) => card.id);
+  const deckIds = () => game.readState().deck.map((card) => card.id);
+
+  // A visit with no save at all is dealt the starter collection and starts with
+  // an empty deck — the state a reload builds from nothing.
+  const fresh = collection.loadGame(stubStorage());
+  if (fresh.cards.length < 10) {
+    fail(`a first visit with no save should be dealt the starter collection, but loadGame gave ${fresh.cards.length} card(s)`);
+  }
+  if (fresh.deck.length !== 0) {
+    fail(`a first visit should start with an empty deck, but loadGame gave ${fresh.deck.length} card(s) in it`);
+  }
+
+  for (const id of ownedIds.slice(0, 10)) game.addCardToDeck(id);
+  if (deckIds().length !== 10) {
+    fail(`ten cards were added to the deck but it reports ${deckIds().length}`);
+  }
+  if (game.readState().deckSize !== 10) {
+    fail(`the deck holds ten cards but get-state reports deckSize ${game.readState().deckSize}`);
+  }
+
+  // The list on screen is that deck, as readable names.
+  const deckRows = deckList ? [...deckList.querySelectorAll(".deck-card")] : [];
+  const expectedDeckNames = game.readState().deck.map((card) => card.name);
+  if (deckRows.length !== 10) {
+    fail(`the deck holds ten cards but the collection screen lists ${deckRows.length}`);
+  }
+  const deckNames = deckRows.map((row) => textOf(row.querySelector(".deck-card-name")));
+  if (JSON.stringify(deckNames) !== JSON.stringify(expectedDeckNames)) {
+    fail(
+      `the deck list on the page reads ${JSON.stringify(deckNames)} while the state holds ${JSON.stringify(expectedDeckNames)}`
+    );
+  }
+
+  // The home screen summarises the same deck, by size and by name.
+  const deckSummary = textOf(document.getElementById("deck-summary"));
+  if (!deckSummary.includes("10")) {
+    fail(`the home screen's deck summary does not state the deck's size: it reads "${deckSummary || "(nothing)"}"`);
+  }
+  if (!expectedDeckNames.every((name) => deckSummary.includes(name))) {
+    fail(`the home screen's deck summary does not name every card in the deck: it reads "${deckSummary}"`);
+  }
+
+  // The eleventh card is refused, and the page says why.
+  const eleventhId = ownedIds[10];
+  const eleventhButton = document.querySelector(`[data-deck-toggle="${eleventhId}"]`);
+  if (!eleventhButton) {
+    fail(`the collection screen has no control to add "${eleventhId}", so a deck cannot be built from it`);
+  } else {
+    eleventhButton.click();
+    if (deckIds().length !== 10) {
+      fail(`adding an eleventh card changed the deck to ${deckIds().length} cards — a deck holds at most ten`);
+    }
+    const refusal = textOf(document.getElementById("deck-message"));
+    if (!refusal.includes("10")) {
+      fail(`an eleventh card was refused but the page does not say why: it reads "${refusal || "(nothing)"}"`);
+    }
+  }
+
+  // Taking one out frees a slot, and the page says what happened.
+  const firstDeckId = deckIds()[0];
+  const removeButton = document.querySelector(`[data-deck-toggle="${firstDeckId}"]`);
+  if (!removeButton) {
+    fail(`the collection screen has no control to remove "${firstDeckId}" from the deck`);
+  } else {
+    removeButton.click();
+    if (deckIds().length !== 9) {
+      fail(`removing a card left the deck at ${deckIds().length} cards instead of nine`);
+    }
+    if (!textOf(document.getElementById("deck-message")).toLowerCase().includes("removed")) {
+      fail("removing a card did not tell the player what happened");
+    }
+  }
+
+  // What the page holds now is what a reload reads back.
+  const savedDeck = deckIds();
+  const reloadedGame = collection.loadGame();
+  if (JSON.stringify(reloadedGame.deck) !== JSON.stringify(savedDeck)) {
+    fail(
+      `the deck did not survive a reload: the page holds ${JSON.stringify(savedDeck)} but loadGame ` +
+        `read back ${JSON.stringify(reloadedGame.deck)}`
+    );
+  }
+  const savedPayload = JSON.parse(window.localStorage.getItem(collection.STORAGE_KEY) ?? "null");
+  if (!savedPayload || !Array.isArray(savedPayload.deck)) {
+    fail("the saved record holds no deck, so the deck is lost when the page closes");
+  }
+
+  const savedWithDeck = (deck) =>
+    collection.loadGame(
+      stubStorage({
+        [collection.STORAGE_KEY]: JSON.stringify({
+          version: 1,
+          cards: owned.cards.map(({ id, copies }) => ({ id, copies })),
+          deck,
+        }),
+      })
+    );
+
+  // A saved deck naming a card the player does not own, or one card twice, is
+  // cleaned up on the way in rather than reaching the page.
+  const dirtyDeck = savedWithDeck([ownedIds[0], ownedIds[0], "not-a-real-card", ownedIds[1], ownedIds[2]]);
+  if (JSON.stringify(dirtyDeck.deck) !== JSON.stringify(ownedIds.slice(0, 3))) {
+    fail(
+      `a saved deck with a duplicate and an unowned card was not cleaned up: read ${JSON.stringify(dirtyDeck.deck)} ` +
+        `instead of ${JSON.stringify(ownedIds.slice(0, 3))}`
+    )
+  }
+
+  // A saved deck with more than ten cards is capped at the limit.
+  const overfullDeck = savedWithDeck(ownedIds);
+  if (overfullDeck.deck.length !== 10) {
+    fail(`a saved deck of ${ownedIds.length} ids was read back as ${overfullDeck.deck.length} cards, not a clean ten`);
   }
 
   // --- The same surface, for an agent ---------------------------------------
@@ -414,6 +551,24 @@ export async function checks() {
       if (!actions.includes(label)) {
         fail(`get-state does not list the "${label}" action a visitor can press from home (it lists ${actions.join(", ") || "nothing"})`);
       }
+    }
+
+    // The deck is part of what the page shows, so it is part of what get-state
+    // returns: its size, the limit it is built to, the minimum a match needs,
+    // and the cards themselves.
+    const live = game.readState();
+    if (reported.deckLimit !== live.deckLimit) {
+      fail(`get-state reports a deck limit of ${reported.deckLimit} while the page says ${live.deckLimit}`);
+    }
+    if (reported.minimumDeckSize !== live.minimumDeckSize) {
+      fail(`get-state reports a minimum deck size of ${reported.minimumDeckSize} while the page says ${live.minimumDeckSize}`);
+    }
+    const reportedDeck = Array.isArray(reported.deck) ? reported.deck : [];
+    if (reportedDeck.length !== live.deck.length) {
+      fail(`get-state returns ${reportedDeck.length} deck card(s) while the page holds ${live.deck.length}`);
+    }
+    for (const card of reportedDeck) {
+      if (!card.name) fail(`get-state returns a deck card "${card.id}" with no name, so an agent cannot read the deck`);
     }
   }
 
@@ -464,6 +619,51 @@ export async function checks() {
     await showScreen.execute({ screen: "home" });
     if (openScreens().join(", ") !== "home") {
       fail("the show-screen tool could not bring the page back to the home screen");
+    }
+  }
+
+  const addToDeckTool = toolNamed("add-card-to-deck");
+  const removeFromDeckTool = toolNamed("remove-card-to-deck");
+  if (!addToDeckTool) {
+    fail('no "add-card-to-deck" tool is declared, so an agent cannot add a card the way a visitor can');
+  }
+  if (!removeFromDeckTool) {
+    fail('no "remove-card-to-deck" tool is declared, so an agent cannot take a card out the way a visitor can');
+  }
+  for (const tool of [addToDeckTool, removeFromDeckTool]) {
+    if (tool && (!tool.annotations || tool.annotations.readOnlyHint !== false)) {
+      fail(`"${tool.name}" changes the deck but is not marked as changing anything (readOnlyHint: false)`);
+    }
+  }
+
+  if (addToDeckTool && removeFromDeckTool) {
+    const alreadyInDeck = new Set(deckIds());
+    const candidate = ownedIds.find((id) => !alreadyInDeck.has(id));
+
+    const added = await addToDeckTool.execute({ cardId: candidate });
+    if (!(added.deck ?? []).some((card) => card.id === candidate)) {
+      fail(`the add-card-to-deck tool returned a deck without the "${candidate}" it was asked to add`);
+    }
+    if (!deckIds().includes(candidate)) {
+      fail(`the add-card-to-deck tool reported adding "${candidate}" but the page does not hold it`);
+    }
+
+    const removed = await removeFromDeckTool.execute({ cardId: candidate });
+    if ((removed.deck ?? []).some((card) => card.id === candidate)) {
+      fail(`the remove-card-to-deck tool left "${candidate}" in the deck it returned`);
+    }
+    if (deckIds().includes(candidate)) {
+      fail(`the remove-card-to-deck tool reported removing "${candidate}" but the page still holds it`);
+    }
+
+    let refusedUnknown = false;
+    try {
+      await addToDeckTool.execute({ cardId: "not-a-real-card" });
+    } catch {
+      refusedUnknown = true;
+    }
+    if (!refusedUnknown) {
+      fail('add-card-to-deck accepted a card the player does not own ("not-a-real-card")');
     }
   }
 
