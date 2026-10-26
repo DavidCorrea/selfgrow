@@ -1,8 +1,9 @@
 /**
  * Check that selfgrow still opens on a home screen that says what the game is
  * and where the player stands, that every new player is dealt a starter
- * collection which survives closing the page, and that an agent reads and drives
- * that same surface rather than a second one nobody can see.
+ * collection which survives closing the page, that a match played to the last
+ * blow ends with a result both a player and an agent can read, and that an agent
+ * reads and drives that same surface rather than a second one nobody can see.
  *
  * Runs on the real page, in the real browser. Returns plain-language failures,
  * empty when everything holds.
@@ -620,6 +621,70 @@ export async function checks() {
         fail(`the opponent's attack cut the player's hero to ${dealt.player.health}, below the floor a match should hold`);
       }
     }
+
+    // A match always reaches a result: two small decks race each other, and the
+    // moment a hero falls the match is over, the winner is named, and no move is
+    // accepted any more.
+    const race = matchEngine.createMatch(cheapDeck);
+    for (let move = 0; move < 40 && !race.over; move += 1) {
+      const playable = race.player.hand.find((card) => card.cost <= race.player.energy);
+      if (playable) matchEngine.playCard(race, playable.id);
+      else matchEngine.endTurn(race);
+    }
+
+    if (!race.over) {
+      fail(
+        `40 moves into a match both heroes were still standing (${race.player.health} and ` +
+          `${race.opponent.health} health), so a match never reaches the result it is played for`
+      );
+    } else {
+      if (race.winner !== "player" && race.winner !== "opponent") {
+        fail(`a finished match reports "${race.winner}" as its winner instead of the player or the opponent`);
+      }
+      const champion = race.winner === "player" ? race.player : race.opponent;
+      const fallen = race.winner === "player" ? race.opponent : race.player;
+      if (fallen.health !== 0) {
+        fail(`the losing hero of a finished match is at ${fallen.health} health instead of 0`);
+      }
+      if (champion.health < 1) {
+        fail(`the winning hero of a finished match is at ${champion.health} health, so nobody really won it`);
+      }
+      if (race.player.health < 0 || race.opponent.health < 0) {
+        fail(
+          `hero health fell below zero (${race.player.health} and ${race.opponent.health}), so the board ` +
+            "would print a number smaller than a hero can have"
+        );
+      }
+
+      const finalLine = race.log[race.log.length - 1] ?? "";
+      if (!champion.table.some((card) => finalLine.includes(card.name))) {
+        fail(`the match log's last line does not name the card that won the match: it reads "${finalLine}"`);
+      }
+      if (!finalLine.toLowerCase().includes(race.winner === "player" ? "you won" : "you lost")) {
+        fail(`the match log's last line does not say who won: it reads "${finalLine}"`);
+      }
+
+      const frozen = JSON.stringify([race.player.health, race.opponent.health, race.log.length]);
+      for (const [what, move] of [
+        ["playing a card", () => matchEngine.playCard(race, race.player.hand[0]?.id)],
+        ["ending the turn", () => matchEngine.endTurn(race)],
+      ]) {
+        let refusal = null;
+        try {
+          move();
+        } catch (error) {
+          refusal = error.message;
+        }
+        if (!refusal) {
+          fail(`a match that is over still accepted ${what}`);
+        } else if (!refusal.includes("over")) {
+          fail(`a finished match refused ${what} without saying the match is over: "${refusal}"`);
+        }
+      }
+      if (JSON.stringify([race.player.health, race.opponent.health, race.log.length]) !== frozen) {
+        fail("a move on a finished match changed the match anyway");
+      }
+    }
   }
 
   // --- The same surface, for an agent ---------------------------------------
@@ -1029,6 +1094,254 @@ export async function checks() {
     // Leave the page on a freshly started match, so whoever opens it next finds
     // the state these checks last described rather than one mid-turn.
     await startMatchTool.execute({});
+  }
+
+  // --- A match played to a result, and what the page shows of it -------------
+
+  const resultBlock = document.getElementById("match-result");
+  const resultHeading = document.getElementById("match-result-heading");
+  const resultHealth = document.getElementById("match-final-health");
+  const handSide = document.getElementById("match-hand-side");
+  const endTurnButton = document.getElementById("action-end-turn");
+
+  /**
+   * Everything a finished match has to show, whichever side won: the state says
+   * who won, the health agrees with it, the page says the same in words, the
+   * log's last line is the winning play, and the only things left to press are
+   * the ways out of the result.
+   */
+  const checkResult = (played, ended) => {
+    if (!ended || !ended.over) {
+      fail(
+        `${played}, but the match never ended — both heroes were still standing at ` +
+          `${ended?.playerHealth} and ${ended?.opponentHealth} health`
+      );
+      return;
+    }
+
+    if (ended.winner !== "player" && ended.winner !== "opponent") {
+      fail(`the finished match names "${ended.winner}" as its winner instead of the player or the opponent`);
+    }
+    const youWon = ended.winner === "player";
+    const champion = youWon ? ended.playerHealth : ended.opponentHealth;
+    const fallen = youWon ? ended.opponentHealth : ended.playerHealth;
+    if (fallen !== 0 || champion < 1) {
+      fail(
+        `the match ended with your hero at ${ended.playerHealth} and the opponent's at ${ended.opponentHealth} ` +
+          "health, so either the losing hero is not at 0 or the winning hero is not standing"
+      );
+    }
+
+    if (!resultBlock || resultBlock.hidden) {
+      fail(`${played}, but the page shows no result, so a player never learns how the match ended`);
+    } else {
+      const outcome = youWon ? "You won" : "You lost";
+      if (textOf(resultHeading) !== outcome) {
+        fail(`the result reads "${textOf(resultHeading) || "(nothing)"}" where the match says "${outcome}"`);
+      }
+      const finalHealth = textOf(resultHealth);
+      for (const health of [ended.playerHealth, ended.opponentHealth]) {
+        if (!finalHealth.includes(String(health))) {
+          fail(`the result does not state both heroes' final health: it reads "${finalHealth}"`);
+        }
+      }
+      if (endTurnButton && !endTurnButton.hidden) {
+        fail("a finished match still offers End turn, so a player can keep playing a match that is over");
+      }
+      if (handSide && !handSide.hidden) {
+        fail("a finished match still shows the hand, so a player can keep playing a match that is over");
+      }
+      const again = buttonNamed("play", "Play again");
+      if (!again || again.hidden) {
+        fail("a finished match offers no Play again, so a player cannot start another one from the result");
+      }
+      const home = buttonNamed("play", "Back to home");
+      if (!home || home.hidden) {
+        fail("a finished match cannot get back home, so a player is stuck on the result");
+      }
+    }
+
+    const finalLine = (ended.log || [])[ended.log.length - 1] ?? "";
+    const winnerTable = youWon ? ended.table : ended.opponentTable;
+    if (!(winnerTable || []).some((card) => finalLine.includes(card.name))) {
+      fail(`the last line of the match log does not name the play that won the match: it reads "${finalLine}"`);
+    }
+    if (!finalLine.toLowerCase().includes(youWon ? "you won" : "you lost")) {
+      fail(`the last line of the match log does not say who won: it reads "${finalLine}"`);
+    }
+    if ((ended.log || []).length < 2) {
+      fail("the match log holds a result but nothing that led to it");
+    }
+    if ((ended.actions || []).length) {
+      fail(`a finished match still lists the moves ${ended.actions.join(", ")}, though none of them can be made`);
+    }
+    const offered = game.readState().actions.filter((label) => label !== "Play again" && label !== "Back to home");
+    if (offered.length) {
+      fail(`a finished match still offers an agent ${offered.join(", ")}, which a player cannot press`);
+    }
+    if (document.activeElement !== resultHeading) {
+      fail("when the match ended, focus was left off the result, so a keyboard visitor is not told how it went");
+    }
+  };
+
+  // Play the strongest card your energy covers, then end the turn, until the
+  // match is over — how a sensible player finishes a game. Bounded, so a match
+  // that will not end fails this check instead of hanging the whole suite.
+  const playToResult = () => {
+    for (let move = 0; move < 30; move += 1) {
+      const live = game.readState().match;
+      if (!live || live.over) return live;
+      const strongest = live.hand
+        .filter((card) => card.cost <= live.energy)
+        .sort((a, b) => b.attack - a.attack)[0];
+      if (strongest) {
+        document.querySelector(`#match-hand [data-card-id="${strongest.id}"] button`)?.click();
+      } else {
+        endTurnButton.click();
+      }
+    }
+    return game.readState().match;
+  };
+
+  // A match deals three cards and never draws, so these checks play from a known
+  // deck a match can always play out of: every card but the two dearest is one
+  // the starting energy covers, so a dealt hand always holds something playable.
+  // Built from the player's own cards and through the deck's own controls, so
+  // the checks do not depend on what the collection happens to hold later.
+  if (matchEngine) {
+    const byCost = [...owned.cards].sort((a, b) => b.cost - a.cost);
+    const tooDear = byCost.filter((card) => card.cost > matchEngine.MAX_ENERGY).slice(0, 2);
+    const affordable = byCost.filter((card) => card.cost <= matchEngine.MAX_ENERGY);
+    const knownDeck = [...tooDear, ...affordable].slice(0, game.readState().deckLimit);
+
+    for (const card of game.readState().deck) {
+      if (!knownDeck.some((wanted) => wanted.id === card.id)) game.removeCardFromDeck(card.id);
+    }
+    for (const card of knownDeck) {
+      if (!deckIds().includes(card.id)) game.addCardToDeck(card.id);
+    }
+  }
+
+  game.startMatch();
+  checkResult("playing the strongest card your energy covers, turn after turn", playToResult());
+
+  // A finished match takes no further move, and a refused move leaves it alone.
+  const finished = game.readState().match;
+  if (finished?.over) {
+    const frozen = JSON.stringify(finished);
+    for (const [what, move] of [
+      ["a card", () => game.playMatchCard(finished.hand[0]?.id)],
+      ["the turn", () => game.endMatchTurn()],
+    ]) {
+      let refusal = null;
+      try {
+        move();
+      } catch (error) {
+        refusal = error.message;
+      }
+      if (!refusal) {
+        fail(`a finished match still accepted ${what} through the page`);
+      } else if (!refusal.toLowerCase().includes("over")) {
+        fail(`a finished match refused ${what} without saying the match is over: "${refusal}"`);
+      }
+    }
+    if (JSON.stringify(game.readState().match) !== frozen) {
+      fail("a move on a finished match changed the match anyway");
+    }
+  }
+
+  // Play again deals the same deck into a fresh match and clears the result.
+  const playAgainButton = buttonNamed("play", "Play again");
+  if (playAgainButton) {
+    playAgainButton.click();
+    const restarted = game.readState();
+    if (!restarted.match || restarted.match.active !== true || restarted.match.over) {
+      fail("pressing Play again did not leave a fresh match running");
+    } else {
+      if (restarted.match.playerHealth !== 20 || restarted.match.opponentHealth !== 20) {
+        fail(
+          `Play again started a match at ${restarted.match.playerHealth} and ${restarted.match.opponentHealth} ` +
+            "health instead of both heroes at 20"
+        );
+      }
+      if (restarted.screen !== "play") {
+        fail(`Play again left the page on the "${restarted.screen}" screen instead of the match`);
+      }
+      if (resultBlock && !resultBlock.hidden) {
+        fail("the result of the finished match is still on screen after Play again");
+      }
+      if (!playAgainButton.hidden) {
+        fail("Play again is still offered in a match that has only just begun");
+      }
+    }
+  }
+
+  // Idling loses: end turn after turn without playing a card and the opponent's
+  // table cuts your hero down. The page has to say so, with your hero at zero.
+  game.startMatch();
+  for (let turn = 0; turn < 30 && !game.readState().match?.over; turn += 1) {
+    endTurnButton.click();
+  }
+  const idled = game.readState().match;
+  checkResult("ending every turn without playing a card", idled);
+  if (idled?.over) {
+    if (idled.winner !== "opponent") {
+      fail(`a player who played no card at all won the match (winner "${idled.winner}"), which no card on the table can have done`);
+    }
+    if (idled.playerHealth !== 0) {
+      fail(`idling left your hero at ${idled.playerHealth} health instead of a fallen 0`);
+    }
+  }
+
+  // --- The result, through an agent's tools ---------------------------------
+
+  const getMatchTool = toolNamed("get-match");
+  if (!getMatchTool) {
+    fail('no "get-match" tool is declared, so an agent cannot read the match on its own');
+  } else {
+    if (!getMatchTool.annotations || getMatchTool.annotations.readOnlyHint !== true) {
+      fail('"get-match" does not declare itself read-only, though it changes nothing');
+    }
+    const reported = await getMatchTool.execute({});
+    const live = game.readState().match;
+    if (!reported || reported.over !== live.over || reported.winner !== live.winner) {
+      fail(
+        `get-match reports over ${reported?.over} and winner ${reported?.winner} while the page says ` +
+          `over ${live?.over} and winner ${live?.winner}`
+      );
+    }
+    if (reported?.playerHealth !== live.playerHealth || reported?.opponentHealth !== live.opponentHealth) {
+      fail(
+        `get-match reports ${reported?.playerHealth} and ${reported?.opponentHealth} health while the page says ` +
+          `${live.playerHealth} and ${live.opponentHealth}`
+      );
+    }
+    if (!Array.isArray(reported?.log) || reported.log.length !== live.log.length) {
+      fail(`get-match returns ${reported?.log?.length} log lines while the page holds ${live.log.length}`);
+    }
+  }
+
+  const playAgainTool = toolNamed("play-again");
+  if (!playAgainTool) {
+    fail('no "play-again" tool is declared, so an agent cannot start another match the way a visitor can');
+  } else {
+    if (!playAgainTool.annotations || playAgainTool.annotations.readOnlyHint !== false) {
+      fail('"play-again" starts a match but is not marked as changing anything (readOnlyHint: false)');
+    }
+    const restarted = await playAgainTool.execute({});
+    if (!restarted.match || restarted.match.active !== true || restarted.match.over) {
+      fail("the play-again tool did not leave a fresh match running");
+    } else {
+      if (restarted.match.playerHealth !== 20 || restarted.match.opponentHealth !== 20) {
+        fail(
+          `the play-again tool left the heroes at ${restarted.match.playerHealth} and ` +
+            `${restarted.match.opponentHealth} health instead of both at 20`
+        );
+      }
+      if (openScreens().join(", ") !== "play") {
+        fail(`the play-again tool left "${openScreens().join(", ")}" open instead of the match`);
+      }
+    }
   }
 
   return problems;

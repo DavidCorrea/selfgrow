@@ -75,9 +75,14 @@ const matchFields = {
   deckRemaining: document.getElementById("match-deck-remaining"),
 };
 const matchHandList = document.getElementById("match-hand");
+const matchHandSide = document.getElementById("match-hand-side");
 const matchTableList = document.getElementById("match-table");
 const matchOpponentTableList = document.getElementById("match-opponent-table");
 const matchLogList = document.getElementById("match-log");
+const matchResult = document.getElementById("match-result");
+const matchResultHeading = document.getElementById("match-result-heading");
+const matchFinalHealth = document.getElementById("match-final-health");
+const playAgainButton = document.getElementById("action-play-again");
 
 /**
  * The counts the page prints, with the deck size derived from the deck itself so
@@ -180,9 +185,17 @@ function renderMatchTable(list, cards, emptyText) {
   list.replaceChildren(...cards.map((card) => matchCardItem(card)));
 }
 
-/** The player's hand, each card with the button that plays it. */
+/**
+ * The player's hand, each card with the button that plays it. A finished match
+ * has no playable hand, so the list is emptied rather than left holding buttons
+ * for moves nobody can make any more.
+ */
 function renderMatchHand(match) {
   if (!matchHandList) return;
+  if (match.over) {
+    matchHandList.replaceChildren();
+    return;
+  }
   if (!match.player.hand.length) {
     const empty = document.createElement("li");
     empty.className = "match-empty";
@@ -197,7 +210,12 @@ function renderMatchHand(match) {
   );
 }
 
-/** The ordered log, one line per thing that happened, oldest first. */
+/**
+ * The ordered log, one line per thing that happened, oldest first. The list
+ * scrolls in place, so the newest line — and the final blow at the end of a
+ * match — is scrolled into view rather than left below the fold for the player
+ * to find.
+ */
 function renderMatchLog(match) {
   if (!matchLogList) return;
   matchLogList.replaceChildren(
@@ -208,6 +226,26 @@ function renderMatchLog(match) {
       return item;
     })
   );
+  matchLogList.scrollTop = matchLogList.scrollHeight;
+}
+
+/**
+ * The result of a finished match, said once: who won, and both heroes' final
+ * health. Shown only once a hero has fallen, in the same board the match was
+ * played on, so a result is a state of the match rather than a second screen.
+ */
+function renderMatchResult(match) {
+  const finished = Boolean(match?.over);
+  if (matchResult) matchResult.hidden = !finished;
+  if (playAgainButton) playAgainButton.hidden = !finished;
+  if (matchHandSide) matchHandSide.hidden = finished;
+  if (!finished) return;
+
+  if (matchResultHeading) matchResultHeading.textContent = match.winner === "player" ? "You won" : "You lost";
+  if (matchFinalHealth) {
+    matchFinalHealth.textContent =
+      `Final health: your hero ${match.player.health}, the opponent hero ${match.opponent.health}.`;
+  }
 }
 
 /**
@@ -215,13 +253,16 @@ function renderMatchLog(match) {
  * tables and the log — all of it text, so a sighted player, a screen reader and
  * an agent read the same match. With no match in progress the board is hidden
  * and the note about the deck and the Start match button stand in its place.
+ * Once a hero has fallen the hand and the End turn button go with it and the
+ * result stands in their place, so there is nothing left to press.
  */
 function renderMatch() {
   const match = state.match;
   if (matchBoard) matchBoard.hidden = !match;
   if (matchIntro) matchIntro.hidden = Boolean(match);
   if (startMatchButton) startMatchButton.hidden = Boolean(match);
-  if (endTurnButton) endTurnButton.hidden = !match || match.turn !== "player";
+  if (endTurnButton) endTurnButton.hidden = !match || match.over || match.turn !== "player";
+  renderMatchResult(match);
   if (!match) return;
 
   if (matchFields.playerHealth) matchFields.playerHealth.textContent = String(match.player.health);
@@ -244,20 +285,26 @@ function setMatchMessage(message) {
 /**
  * Run a match action, keeping the player on their feet: a refusal is shown in
  * the status line, and when the control that was pressed is gone with the hand
- * it lived in, focus lands on the match heading instead of dropping to the body.
+ * it lived in, focus lands on something that is still on screen — the result
+ * when the move ended the match, so the outcome is heard rather than lost.
  */
 function runMatchAction(action) {
   setMatchMessage("");
-  const focused = document.activeElement;
+  const endedBefore = Boolean(state.match?.over);
   try {
     action();
   } catch (error) {
     setMatchMessage(error.message);
     return;
   }
-  if (focused && !document.contains(focused)) {
-    document.getElementById("play-heading")?.focus();
+
+  if (state.match?.over && !endedBefore) {
+    matchResultHeading?.focus();
+    return;
   }
+  const focused = document.activeElement;
+  const stillOnScreen = focused && focused !== document.body && document.contains(focused) && !focused.hidden;
+  if (!stillOnScreen) document.getElementById("play-heading")?.focus();
 }
 
 /**
@@ -272,6 +319,15 @@ export function startMatch() {
   setMatchMessage("");
   render();
   return readState();
+}
+
+/**
+ * Deal a fresh match after one has been played out — what a visitor does by
+ * pressing Play again on the result, and what the play-again tool does on their
+ * behalf. It is the same act as starting a match: the finished one is replaced.
+ */
+export function playAgain() {
+  return startMatch();
 }
 
 /**
@@ -494,17 +550,21 @@ function describeMatchCard(card) {
 }
 
 /**
- * Everything the match currently shows: whether one is in progress, whose turn
- * it is, both heroes' health, the player's energy, the hand, both tables, how
- * many cards are left to draw, the ordered log, and the moves available now.
- * With no match it says so, so a reader can tell the difference between "nothing
- * has happened yet" and "a match with an empty hand".
+ * Everything the match currently shows: whether one is in progress, whether it
+ * is over and which hero won, whose turn it is, both heroes' health, the
+ * player's energy, the hand, both tables, how many cards are left to draw, the
+ * ordered log of what happened — its last line the final blow — and the moves
+ * available now, of which a finished match offers none. With no match it says
+ * so, so a reader can tell the difference between "nothing has happened yet"
+ * and "a match with an empty hand".
  */
 export function readMatch() {
   const match = state.match;
   if (!match) {
     return {
       active: false,
+      over: false,
+      winner: null,
       turn: null,
       playerHealth: null,
       opponentHealth: null,
@@ -521,6 +581,8 @@ export function readMatch() {
 
   return {
     active: true,
+    over: match.over,
+    winner: match.winner,
     turn: match.turn,
     playerHealth: match.player.health,
     opponentHealth: match.opponent.health,
@@ -532,7 +594,7 @@ export function readMatch() {
     deckRemaining: match.player.deck.length,
     log: [...match.log],
     actions:
-      match.turn === "player"
+      !match.over && match.turn === "player"
         ? [...match.player.hand.map((card) => `Play ${card.name} (cost ${card.cost})`), "End turn"]
         : [],
   };
@@ -619,6 +681,7 @@ for (const button of document.querySelectorAll("[data-screen-target]")) {
 }
 
 startMatchButton?.addEventListener("click", () => runMatchAction(() => startMatch()));
+playAgainButton?.addEventListener("click", () => runMatchAction(() => playAgain()));
 endTurnButton?.addEventListener("click", () => runMatchAction(() => endMatchTurn()));
 
 render();

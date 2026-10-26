@@ -9,12 +9,16 @@
  *
  * `playCard` and `endTurn` mutate the match they are given and return it. A move
  * they cannot make is refused by throwing a sentence a player can read, leaving
- * the match untouched.
+ * the match untouched — including any move at all once the match is over.
  *
- * Damage goes to heroes only this ticket, so a card is never damaged and the
- * rule that a card at zero health leaves the table is unreachable — there is
- * nothing here that could reach it. Ending a match, and what happens when a hero
- * reaches zero health, belongs to the next ticket.
+ * A match ends the moment either hero's health reaches zero: `over` turns true,
+ * `winner` names the side that dealt the final blow, and the log's last line is
+ * that blow, in words a player can read back. Health is clamped at zero as it
+ * lands, so the number on the board and the number here never disagree.
+ *
+ * Damage goes to heroes only, so a card is never damaged and the rule that a
+ * card at zero health leaves the table is unreachable — there is nothing here
+ * that could reach it.
  */
 
 import { CARDS, CARD_BY_ID, MINIMUM_DECK_SIZE } from "./cards.js";
@@ -77,6 +81,8 @@ export function createMatch(deckIds, { rng = Math.random } = {}) {
 
   const match = {
     turn: "player",
+    over: false,
+    winner: null,
     player: createSide(deckIds, rng),
     opponent: createSide(deckIds, rng),
     log: [],
@@ -122,10 +128,14 @@ function appendLog(match, line) {
  * Play the card named by `cardId` from the player's hand: it moves to the table,
  * its cost leaves the player's energy, and the log gains a line. When `cardId`
  * is omitted the best card the player can afford is played instead. Refused,
- * with a reason and without changing anything, when it is not the player's turn,
- * the named card is not in hand, or it costs more energy than the player has.
+ * with a reason and without changing anything, when the match is over, it is not
+ * the player's turn, the named card is not in hand, or it costs more energy than
+ * the player has.
  */
 export function playCard(match, cardId) {
+  if (match.over) {
+    throw new Error("the match is over — press Play again");
+  }
   if (match.turn !== "player") {
     throw new Error("it is not your turn — the opponent is taking its turn");
   }
@@ -158,18 +168,42 @@ export function playCard(match, cardId) {
   return match;
 }
 
-/** Every card on `attacker`'s table deals its attack to `defender`'s hero. */
+/** How the final blow reads, said from the player's side of the table. */
+function fallLine(loserIsPlayer) {
+  return loserIsPlayer ? "Your hero falls — you lost." : "The opponent hero falls — you won.";
+}
+
+/**
+ * Every card on `attacker`'s table deals its attack to `defender`'s hero, in
+ * order, until the table is spent or the hero falls. Health is clamped at zero,
+ * so the number a player reads is the number the match holds. Returns true when
+ * this was the blow that ended the match — the match is then over, its winner is
+ * the side that dealt it, and no side is taking turns any more.
+ */
 function dealDamage(match, attacker, defender, attackerWord, defenderWord, healthWord) {
   for (const card of attacker.table) {
     defender.health = Math.max(0, defender.health - card.attack);
+    const fell = defender.health === 0;
     appendLog(
       match,
-      `${attackerWord} ${card.name} deals ${card.attack} to ${defenderWord} — ${healthWord} ${defender.health}.`
+      `${attackerWord} ${card.name} deals ${card.attack} to ${defenderWord} — ${healthWord} ` +
+        `${defender.health}.${fell ? ` ${fallLine(defender === match.player)}` : ""}`
     );
+    if (!fell) continue;
+
+    match.over = true;
+    match.winner = defender === match.player ? "opponent" : "player";
+    match.turn = null;
+    return true;
   }
+  return false;
 }
 
-/** The opponent's turn: refresh its energy, play what it can afford, then attack. */
+/**
+ * The opponent's turn: refresh its energy, play what it can afford, then attack.
+ * Returns true when its table's attack ended the match, so the caller stops
+ * rather than handing the turn back to a hero that is no longer standing.
+ */
 function takeOpponentTurn(match) {
   const opponent = match.opponent;
   opponent.energy = opponent.maxEnergy;
@@ -189,27 +223,34 @@ function takeOpponentTurn(match) {
   }
   if (played === 0) appendLog(match, "Opponent plays no cards.");
 
-  dealDamage(match, opponent, match.player, "Opponent's", "you", "your health");
+  return dealDamage(match, opponent, match.player, "Opponent's", "you", "your health");
 }
 
 /**
  * End the player's turn: the player's table attacks the opponent's hero, the
  * opponent takes a turn of its own, and the turn comes back to the player with
  * energy refreshed. Every step appends one line to the log, in order. Refused
- * when it is not the player's turn.
+ * when the match is over or it is not the player's turn. The turn stops the
+ * moment either hero falls: the surviving side's blow is the last line logged,
+ * and nothing after it happens.
  */
 export function endTurn(match) {
+  if (match.over) {
+    throw new Error("the match is over — press Play again");
+  }
   if (match.turn !== "player") {
     throw new Error("it is not your turn to end");
   }
 
   match.turn = "opponent";
   const opponentHealthBefore = match.opponent.health;
-  dealDamage(match, match.player, match.opponent, "Your", "the opponent", "opponent health");
+  if (dealDamage(match, match.player, match.opponent, "Your", "the opponent", "opponent health")) {
+    return match;
+  }
   if (match.opponent.health === opponentHealthBefore) appendLog(match, "Your table deals no damage.");
 
   appendLog(match, "Opponent's turn.");
-  takeOpponentTurn(match);
+  if (takeOpponentTurn(match)) return match;
 
   match.turn = "player";
   match.player.energy = match.player.maxEnergy;
