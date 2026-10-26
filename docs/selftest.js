@@ -518,6 +518,110 @@ export async function checks() {
     fail(`a saved deck of ${ownedIds.length} ids was read back as ${overfullDeck.deck.length} cards, not a clean ten`);
   }
 
+  // --- The match engine: a dealt hand, a refused play, a turn taken ---------
+
+  let matchEngine;
+  try {
+    matchEngine = await import("./match.js");
+  } catch (e) {
+    fail(`docs/match.js could not be imported, so the match engine cannot be checked — ${e.message}`);
+  }
+
+  if (matchEngine) {
+    // A deck smaller than a match needs cannot start one.
+    try {
+      matchEngine.createMatch(["sprout", "pebble-toad"]);
+      fail("a match started from a deck smaller than the minimum, which no visitor can do");
+    } catch {
+      // Refusing is the expected path.
+    }
+
+    // A fixed random source deals a repeatable game, so the turn below has one
+    // known outcome instead of whatever the shuffle happened to give.
+    const fixedRng = () => 0;
+
+    // Every hand card costs more than the starting energy, so any play is refused.
+    const pricey = matchEngine.createMatch(
+      ["storm-crow", "emberling", "root-colossus", "elder-oak", "vine-lasher"],
+      { rng: fixedRng }
+    );
+    const tooExpensive = pricey.player.hand.find((card) => card.cost > pricey.player.energy);
+    if (!tooExpensive) {
+      fail("the controlled expensive deck dealt no unaffordable card, so a play refusal cannot be tested");
+    } else {
+      const handBefore = pricey.player.hand.map((card) => card.id);
+      let refusal = null;
+      try {
+        matchEngine.playCard(pricey, tooExpensive.id);
+      } catch (error) {
+        refusal = error.message;
+      }
+      if (!refusal) {
+        fail(
+          `"${tooExpensive.name}" costs ${tooExpensive.cost} energy with only ${pricey.player.energy} available, ` +
+            "but playing it was allowed"
+        );
+      } else if (!refusal.includes(String(tooExpensive.cost)) || !refusal.includes(String(pricey.player.energy))) {
+        fail(`an unaffordable card was refused without naming the shortfall: "${refusal}"`);
+      }
+      if (JSON.stringify(pricey.player.hand.map((card) => card.id)) !== JSON.stringify(handBefore)) {
+        fail("a refused card play changed the hand anyway");
+      }
+      if (pricey.player.table.length !== 0) {
+        fail("a refused card play put a card on the table anyway");
+      }
+    }
+
+    // A cheap deck: one card on the table, then the turn handed over and back.
+    const cheapDeck = ["sprout", "pebble-toad", "thornling", "sun-moth", "bramble-hound"];
+    const dealt = matchEngine.createMatch(cheapDeck, { rng: fixedRng });
+    if (dealt.player.hand.length !== 3) {
+      fail(`a match dealt ${dealt.player.hand.length} cards instead of a starting hand of 3`);
+    }
+    const deckIdSet = new Set(cheapDeck);
+    for (const card of dealt.player.hand) {
+      if (!deckIdSet.has(card.id)) {
+        fail(`a match dealt "${card.id}", which is not in the deck it was dealt from`);
+      }
+    }
+    if (dealt.player.deck.length !== cheapDeck.length - 3) {
+      fail(`a match left ${dealt.player.deck.length} cards in the deck instead of ${cheapDeck.length - 3}`);
+    }
+
+    const affordable = dealt.player.hand.find((card) => card.cost <= dealt.player.energy);
+    if (!affordable) {
+      fail("the controlled cheap deck dealt nothing affordable, so the turn loop cannot be tested");
+    } else {
+      matchEngine.playCard(dealt, affordable.id);
+      const attackTotal = dealt.player.table.reduce((total, card) => total + card.attack, 0);
+      const opponentHealthBefore = dealt.opponent.health;
+      const logBefore = dealt.log.length;
+      matchEngine.endTurn(dealt);
+
+      if (dealt.opponent.health !== Math.max(0, opponentHealthBefore - attackTotal)) {
+        fail(
+          `ending the turn left the opponent at ${dealt.opponent.health} instead of ` +
+            `${Math.max(0, opponentHealthBefore - attackTotal)} after ${attackTotal} damage from your table`
+        );
+      }
+      if (dealt.turn !== "player") {
+        fail(`ending the turn left it as the ${dealt.turn}'s turn instead of handing it back to the player`);
+      }
+      if (dealt.player.energy !== dealt.player.maxEnergy) {
+        fail(`the new turn began with ${dealt.player.energy} energy instead of a refreshed ${dealt.player.maxEnergy}`);
+      }
+      if (dealt.opponent.table.length === 0) {
+        fail("the opponent took a turn without playing any card from its affordable hand");
+      }
+      if (dealt.log.length <= logBefore) {
+        fail("ending the turn added no line to the match log");
+      }
+      if (dealt.player.health < 1) {
+        fail(`the opponent's attack cut the player's hero to ${dealt.player.health}, below the floor a match should hold`);
+      }
+    }
+  }
+
   // --- The same surface, for an agent ---------------------------------------
 
   let declared;
@@ -665,6 +769,266 @@ export async function checks() {
     if (!refusedUnknown) {
       fail('add-card-to-deck accepted a card the player does not own ("not-a-real-card")');
     }
+  }
+
+  // --- A match on the page: dealt, played and turned over -------------------
+
+  const deckAtStart = deckIds();
+  let started = null;
+  try {
+    started = game.startMatch();
+  } catch (e) {
+    fail(`starting a match with a deck of ${deckAtStart.length} cards was refused — ${e.message}`);
+  }
+
+  if (started) {
+    const m = started.match;
+    if (!m || m.active !== true) {
+      fail("starting a match did not report an active match");
+    }
+    if (started.screen !== "play") {
+      fail(`starting a match left the page on the "${started.screen}" screen instead of opening Play`);
+    }
+    if (openScreens().join(", ") !== "play") {
+      fail(`starting a match left "${openScreens().join(", ")}" open on the page instead of the match`);
+    }
+    if (m) {
+      if (m.turn !== "player") {
+        fail(`a new match begins on the ${m.turn}'s turn instead of the player's`);
+      }
+      if (m.playerHealth !== 20 || m.opponentHealth !== 20) {
+        fail(`a new match starts at ${m.playerHealth} and ${m.opponentHealth} health instead of both heroes at 20`);
+      }
+      if (m.energy !== m.maxEnergy) {
+        fail(`a new match starts with ${m.energy} energy instead of a full ${m.maxEnergy}`);
+      }
+      if (m.hand.length !== 3) {
+        fail(`a new match dealt ${m.hand.length} cards instead of a starting hand of 3`);
+      }
+      if (m.table.length !== 0 || m.opponentTable.length !== 0) {
+        fail("a new match begins with cards already on a table");
+      }
+      if (m.deckRemaining !== deckAtStart.length - 3) {
+        fail(`a match from a deck of ${deckAtStart.length} left ${m.deckRemaining} cards to draw instead of ${deckAtStart.length - 3}`);
+      }
+      const handIds = m.hand.map((card) => card.id);
+      if (!handIds.every((id) => deckAtStart.includes(id))) {
+        fail(`the match dealt a hand from outside the saved deck: ${handIds.join(", ")} is not among ${deckAtStart.join(", ")}`);
+      }
+      if (!Array.isArray(m.log) || m.log.length === 0) {
+        fail("a new match has an empty log, so nothing it has done can be read back");
+      }
+
+      // The board prints that same match.
+      const board = document.getElementById("match-board");
+      const intro = document.getElementById("match-intro");
+      if (!board || board.hidden) {
+        fail("a match is running but the board is not on screen");
+      }
+      if (intro && !intro.hidden) {
+        fail("a match is running but the pre-match note is still shown instead of the board");
+      }
+      const startButton = buttonNamed("play", "Start match");
+      if (startButton && !startButton.hidden) {
+        fail("a match is running but the Start match button is still offered");
+      }
+      const endButton = buttonNamed("play", "End turn");
+      if (!endButton || endButton.hidden) {
+        fail("a match is running on the player's turn but there is no End turn button");
+      }
+      if (textOf(document.getElementById("match-player-health")) !== String(m.playerHealth)) {
+        fail(`the board prints your health as ${textOf(document.getElementById("match-player-health"))} instead of ${m.playerHealth}`);
+      }
+      if (textOf(document.getElementById("match-opponent-health")) !== String(m.opponentHealth)) {
+        fail(`the board prints the opponent's health as ${textOf(document.getElementById("match-opponent-health"))} instead of ${m.opponentHealth}`);
+      }
+      if (!textOf(document.getElementById("match-energy")).includes(String(m.energy))) {
+        fail(`the board prints your energy as "${textOf(document.getElementById("match-energy"))}", not the ${m.energy} the match holds`);
+      }
+      const handRows = [...document.querySelectorAll("#match-hand .match-card")];
+      if (handRows.length !== m.hand.length) {
+        fail(`the board shows ${handRows.length} card(s) in hand while the match holds ${m.hand.length}`);
+      }
+      for (const card of m.hand) {
+        const row = document.querySelector(`#match-hand [data-card-id="${card.id}"]`);
+        if (!row) {
+          fail(`the board does not show "${card.name}", which the match holds in hand`);
+          continue;
+        }
+        const button = row.querySelector("button");
+        if (!button) {
+          fail(`the card "${card.name}" in hand has no control to play it`);
+        } else if (!button.textContent.includes(card.name)) {
+          fail(`the control for "${card.name}" does not name the card: it reads "${textOf(button)}"`);
+        }
+      }
+      const printedLog = [...document.querySelectorAll("#match-log li")].map(textOf);
+      if (JSON.stringify(printedLog) !== JSON.stringify(m.log.map((line) => line.replace(/\s+/g, " ").trim()))) {
+        fail(`the match log on the page does not match the match's log: it reads ${JSON.stringify(printedLog)}`);
+      }
+
+      // A card the player can afford, played by pressing its button.
+      const affordable = m.hand.find((card) => card.cost <= m.energy);
+      if (!affordable) {
+        fail("the freshly dealt hand holds nothing affordable, so playing a card cannot be checked");
+      } else {
+        const button = document.querySelector(`#match-hand [data-card-id="${affordable.id}"] button`);
+        const energyBefore = m.energy;
+        const handBefore = m.hand.length;
+        const logBefore = m.log.length;
+        button.click();
+        const afterPlay = game.readState().match;
+        if (!afterPlay.table.some((card) => card.id === affordable.id)) {
+          fail(`playing "${affordable.name}" did not put it on the table`);
+        }
+        if (afterPlay.hand.length !== handBefore - 1) {
+          fail(`playing a card left ${afterPlay.hand.length} cards in hand instead of ${handBefore - 1}`);
+        }
+        if (afterPlay.energy !== energyBefore - affordable.cost) {
+          fail(`playing a ${affordable.cost}-cost card left ${afterPlay.energy} energy instead of ${energyBefore - affordable.cost}`);
+        }
+        if (afterPlay.log.length <= logBefore) {
+          fail("playing a card added no line to the match log");
+        }
+      }
+
+      // Play every card the energy allows, then the card that is left cannot be
+      // afforded and the page has to say so rather than silently do nothing.
+      for (;;) {
+        const live = game.readState().match;
+        const next = live.hand.find((card) => card.cost <= live.energy);
+        if (!next) break;
+        document.querySelector(`#match-hand [data-card-id="${next.id}"] button`).click();
+      }
+      const stuck = game.readState().match;
+      const stuckCard = stuck.hand[0];
+      if (stuckCard) {
+        document.querySelector(`#match-hand [data-card-id="${stuckCard.id}"] button`).click();
+        const refusal = textOf(document.getElementById("match-message"));
+        if (!refusal.toLowerCase().includes("afford")) {
+          fail(`a card that cannot be afforded was refused without saying so: "${refusal || "(nothing)"}"`);
+        }
+        if (game.readState().match.hand.length !== stuck.hand.length) {
+          fail("a card that could not be afforded was played anyway");
+        }
+      }
+
+      // Ending the turn: the opponent acts, the turn returns and energy is full.
+      const beforeEnd = game.readState().match;
+      const ourAttack = beforeEnd.table.reduce((total, card) => total + card.attack, 0);
+      game.endMatchTurn();
+      const afterEnd = game.readState().match;
+      if (afterEnd.opponentHealth !== Math.max(0, beforeEnd.opponentHealth - ourAttack)) {
+        fail(
+          `ending the turn left the opponent at ${afterEnd.opponentHealth} instead of ` +
+            `${Math.max(0, beforeEnd.opponentHealth - ourAttack)} after ${ourAttack} damage from your table`
+        );
+      }
+      if (afterEnd.turn !== "player") {
+        fail(`the turn did not come back to the player — it is the ${afterEnd.turn}'s turn`);
+      }
+      if (afterEnd.energy !== afterEnd.maxEnergy) {
+        fail(`the new turn began with ${afterEnd.energy} energy instead of a refreshed ${afterEnd.maxEnergy}`);
+      }
+      if (afterEnd.opponentTable.length === 0) {
+        fail("the opponent took its turn without playing any affordable card");
+      }
+      if (afterEnd.log.length <= beforeEnd.log.length) {
+        fail("ending the turn added no lines to the match log");
+      }
+    }
+  }
+
+  // --- The match through an agent's tools -----------------------------------
+
+  const startMatchTool = toolNamed("start-match");
+  const playCardTool = toolNamed("play-card");
+  const endTurnTool = toolNamed("end-turn");
+  for (const [name, tool] of [
+    ["start-match", startMatchTool],
+    ["play-card", playCardTool],
+    ["end-turn", endTurnTool],
+  ]) {
+    if (!tool) {
+      fail(`no "${name}" tool is declared, so an agent cannot make the move a visitor can`);
+      continue;
+    }
+    if (!tool.annotations || tool.annotations.readOnlyHint !== false) {
+      fail(`"${name}" changes the match but is not marked as changing anything (readOnlyHint: false)`);
+    }
+  }
+
+  if (startMatchTool && playCardTool && endTurnTool) {
+    const fresh = await startMatchTool.execute({});
+    if (!fresh.match || fresh.match.active !== true) {
+      fail('the start-match tool did not report an active match');
+    }
+    if (openScreens().join(", ") !== "play") {
+      fail(`the start-match tool did not open the match: "${openScreens().join(", ")}" is open on the page`);
+    }
+    if (!fresh.match || !Array.isArray(fresh.match.log) || fresh.match.log.length === 0) {
+      fail("the start-match tool returned a match with no log, so an agent cannot read what happened");
+    }
+
+    if (getState) {
+      const reported = await getState.execute({});
+      const live = game.readState().match;
+      if (!reported.match || reported.match.active !== true) {
+        fail("get-state does not return the active match, so an agent cannot read the game in progress");
+      } else {
+        for (const field of ["playerHealth", "opponentHealth", "energy", "maxEnergy"]) {
+          if (reported.match[field] !== live[field]) {
+            fail(`get-state reports match ${field} ${reported.match[field]} while the page says ${live[field]}`);
+          }
+        }
+        if ((reported.match.hand || []).length !== live.hand.length) {
+          fail(`get-state reports ${(reported.match.hand || []).length} cards in hand while the page holds ${live.hand.length}`);
+        }
+        if ((reported.match.log || []).length !== live.log.length) {
+          fail(`get-state reports ${(reported.match.log || []).length} log lines while the page holds ${live.log.length}`);
+        }
+      }
+    }
+
+    const beforePlay = game.readState().match;
+    const playable = beforePlay.hand.find((card) => card.cost <= beforePlay.energy);
+    if (!playable) {
+      fail("the started match's hand holds nothing affordable, so the play-card tool cannot be checked");
+    } else {
+      const afterPlay = await playCardTool.execute({ cardId: playable.id });
+      if (!(afterPlay.match.table || []).some((card) => card.id === playable.id)) {
+        fail(`the play-card tool reported a table without the "${playable.name}" it played`);
+      }
+      if (afterPlay.match.energy !== beforePlay.energy - playable.cost) {
+        fail(`the play-card tool left ${afterPlay.match.energy} energy instead of ${beforePlay.energy - playable.cost}`);
+      }
+      let refused = false;
+      try {
+        const bad = await playCardTool.execute({ cardId: "not-a-real-card" });
+        refused = Boolean(bad && bad.error);
+      } catch {
+        refused = true;
+      }
+      if (!refused) {
+        fail('the play-card tool accepted a card that is not in the hand ("not-a-real-card")');
+      }
+    }
+
+    const beforeTurn = game.readState().match;
+    const afterTurn = await endTurnTool.execute({});
+    if (afterTurn.match.turn !== "player") {
+      fail(`the end-turn tool left it as the ${afterTurn.match.turn}'s turn instead of the player's`);
+    }
+    if (afterTurn.match.energy !== afterTurn.match.maxEnergy) {
+      fail(`the end-turn tool did not refresh the player's energy (${afterTurn.match.energy} of ${afterTurn.match.maxEnergy})`);
+    }
+    if (!(afterTurn.match.log || []).length || afterTurn.match.log.length <= beforeTurn.log.length) {
+      fail("the end-turn tool added no lines to the match log");
+    }
+
+    // Leave the page on a freshly started match, so whoever opens it next finds
+    // the state these checks last described rather than one mid-turn.
+    await startMatchTool.execute({});
   }
 
   return problems;

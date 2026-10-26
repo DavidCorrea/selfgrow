@@ -415,6 +415,183 @@ body {
 }
 
 /* --------------------------------------------------------------------------
+   The match
+   -------------------------------------------------------------------------- */
+
+/* The Play screen is the board: one width, its own internal grid below, rather
+   than the numbers-left/actions-right split the other screens use. */
+#screen-play > * {
+  grid-column: 1 / -1;
+}
+
+.match-board {
+  display: grid;
+  gap: clamp(0.9rem, 2vw, 1.4rem);
+}
+
+/* Without this a hidden board keeps its `display: grid` and stays on screen. */
+.match-board[hidden] {
+  display: none;
+}
+
+/* Both heroes and the numbers a turn turns on, in one row above the table. */
+.match-standings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(1.1rem, 2.5vw, 2.25rem);
+  margin: 0;
+  padding-bottom: clamp(0.6rem, 1.4vw, 0.9rem);
+  border-bottom: 1px solid var(--edge-soft);
+}
+
+.match-standings .standing-value {
+  font-size: clamp(1.4rem, 1.1rem + 1vw, 2rem);
+}
+
+/* On a wide window the two tables sit side by side, with the log under them. */
+@media (min-width: 860px) {
+  .match-board {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .match-standings,
+  .match-hand-side,
+  .match-log-wrap {
+    grid-column: 1 / -1;
+  }
+}
+
+.match-side,
+.match-log-wrap {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.9rem 1rem 1rem;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-control);
+  background-color: rgba(15, 19, 34, 0.4);
+}
+
+.match-heading {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* Table cards are chips; hand cards are small faces, since each carries the
+   control that plays it. */
+.match-hand {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: 0.6rem;
+}
+
+.match-table {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.match-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-control);
+  background-color: rgba(34, 42, 69, 0.7);
+}
+
+.match-card-head {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.match-card-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.match-card-stats {
+  color: var(--foil);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.match-card-playable {
+  display: grid;
+  align-content: start;
+  gap: 0.55rem;
+  padding: 0.7rem 0.8rem 0.8rem;
+}
+
+.match-card-playable .match-play {
+  width: 100%;
+}
+
+/* A card the player cannot afford yet: still pressable, quieter to look at. */
+.match-card-playable.is-unaffordable .match-play {
+  border-color: var(--edge-soft);
+  color: var(--ink-muted);
+  background-color: rgba(168, 177, 212, 0.03);
+}
+
+.match-play {
+  padding: 0.45rem 0.8rem;
+  font-size: 0.85rem;
+}
+
+.match-empty {
+  color: var(--ink-muted);
+  font-size: 0.9rem;
+}
+
+/* The log grows with the match; it scrolls in place rather than pushing the
+   table off the screen, and keeps its own scroll contained. */
+.match-log {
+  margin: 0;
+  padding-left: 1.4rem;
+  display: grid;
+  gap: 0.2rem;
+  max-height: 15rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.match-log-line {
+  color: var(--ink);
+  text-wrap: pretty;
+}
+
+.match-log-line::marker {
+  color: var(--ink-muted);
+}
+
+/* What just happened in the match. The live region is always in the page, only
+   drawing its frame once it has something to say. */
+.match-message {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.match-message:not(:empty) {
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--edge);
+  border-left: 3px solid var(--foil);
+  border-radius: var(--radius-control);
+}
+
+/* --------------------------------------------------------------------------
    Actions
    -------------------------------------------------------------------------- */
 
