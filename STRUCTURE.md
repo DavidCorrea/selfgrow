@@ -35,7 +35,7 @@ Each is invoked as `node agents/<name>.mjs` by the workflow named beside it.
 | `product-manager.mjs` | `product-manager.yml` — daily 00:30 + 12:30 | grooms the backlog; the Sunday 00:30 run also curates and writes the weekly report |
 | `product-owner.mjs` | `product-owner.yml` — Mon 08:00 | weekly retro; sets Vision and milestone |
 | `tech-lead.mjs` | `tech-lead.yml` — Thu 09:00 | whole-codebase shape review, selftest health, diagnoses of parked tickets |
-| `playtester.mjs` | `playtester.yml` — daily 23:00 | plays the live site, runs App Review, files experiential findings and measured accessibility barriers |
+| `playtester.mjs` | `playtester.yml` — daily 23:00 | plays the live site through its tools, runs App Review, files experiential findings and measured accessibility barriers |
 | `health.mjs` | `health.yml` — daily 16:00 | measures the pipeline; silent unless something is broken |
 | `review-pr.mjs` | `review-pr.yml` — `pull_request` | the Devs applied to a human PR on a same-repo branch |
 | `triage-fork-pr.mjs` | `triage-fork-pr.yml` — `pull_request_target` | read-only review of a fork PR; never runs its code |

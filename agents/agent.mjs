@@ -407,6 +407,8 @@ export async function firstVisionModel() {
  *                                          actual system prompt (not a user message).
  * @param {string} [opts.task]           - The user turn that kicks the agent off.
  * @param {string[]} [opts.tools]        - Allowed tool names.
+ * @param {object[]} [opts.customTools]  - Extra pi tool definitions, enabled by
+ *                                          naming them in `tools`.
  * @param {string[]} [opts.skills]       - Names of skills under agents/skills/ the
  *                                          agent may load. Needs read or bash.
  * @param {string} [opts.thinkingLevel]  - "off" | "low" | "medium" | "high".
@@ -776,6 +778,7 @@ async function runAgentOnce({
   systemPrompt,
   task = DEFAULT_TASK,
   tools = ["read"],
+  customTools = [],
   skillPaths = [],
   thinkingLevel = MIN_THINKING_LEVEL,
   modelId,
@@ -845,7 +848,7 @@ async function runAgentOnce({
     thinkingLevel,
     modelRuntime,
     tools,
-    customTools: confinedTools(),
+    customTools: [...confinedTools(), ...customTools],
   });
   const watch = watchSession(session, {
     limits: sessionLimits,

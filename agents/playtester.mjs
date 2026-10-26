@@ -378,6 +378,181 @@ export function toolInputs(declared) {
   );
 }
 
+// How long the Playtester plays. Watching was the whole session once, and it
+// suited a product that moves on by itself; a product that waits for a choice
+// sat unchanged for two minutes and was reported as inert, whatever it was like
+// to play. So the session is now spent playing, through the product's own tools,
+// which every product here must offer for everything a person can do. Moves
+// bound the requests, minutes bound the waiting, and both leave the reporting
+// session and the return well inside the job's thirty minutes.
+const PLAY_MOVES = Number(process.env.PLAYTEST_PLAY_MOVES || 25);
+const PLAY_MINUTES = Number(process.env.PLAYTEST_PLAY_MINUTES || 6);
+
+// The one tool the harness adds. A product that moves on by itself can only show
+// it to a player who stops acting for a while, and an agent has no other way to
+// do that. Capped so a single call cannot spend the session.
+export const WAIT_TOOL = "let-time-pass";
+const MAX_WAIT_SECONDS = 60;
+
+// What a tool hands back to the player. Long enough for any state a product
+// returns; a runaway return should not fill the player's context.
+const RETURN_LIMIT = 2000;
+
+const OUT_OF_TIME = "Your time is up. That move was not made. Stop playing and write your account.";
+const DECLINED =
+  "Not done. This tool is marked consequential, so a caller must ask a person first, and there is nobody here to ask.";
+
+const textResult = (text) => ({ content: [{ type: "text", text }], details: undefined });
+
+/**
+ * The tools a playing agent gets: every tool the product declares, under its own
+ * name, description and schema, and WAIT_TOOL. Every call is a move, written down
+ * with what the page showed afterwards, so the report can set what the player was
+ * told beside what a visitor would have seen.
+ *
+ * The browser is injected (`callTool`, `waitFor`, `readState`) so the rules — the
+ * budget, refusing consequential tools, the record — can be tested without one.
+ */
+export function createPlay({ declared, callTool, waitFor, readState, moves = PLAY_MOVES, minutes = PLAY_MINUTES, now = Date.now }) {
+  const startedAt = now();
+  const record = [];
+  const outOfTime = () => record.length >= moves || now() - startedAt >= minutes * 60_000;
+
+  const asMove = (name, run) => async (_toolCallId, params) => {
+    if (outOfTime()) return textResult(OUT_OF_TIME);
+    const atSeconds = Math.round((now() - startedAt) / 1000);
+    const outcome = await run(params ?? {});
+    record.push({ atSeconds, tool: name, input: params ?? {}, ...outcome, state: await readState() });
+    if (outcome.declined) return textResult(DECLINED);
+    return textResult(outcome.ok ? String(outcome.returned).slice(0, RETURN_LIMIT) : `The tool failed: ${outcome.error}`);
+  };
+
+  const productTools = declared.map((tool) => ({
+    name: tool.name,
+    label: tool.name,
+    description: tool.consequential ? `${tool.description} (Marked consequential.)` : tool.description,
+    parameters: tool.inputSchema || { type: "object", properties: {} },
+    execute: asMove(tool.name, (input) => (tool.consequential ? { declined: true } : callTool(tool.name, input))),
+  }));
+
+  const waitTool = {
+    name: WAIT_TOOL,
+    label: WAIT_TOOL,
+    description:
+      `Stop acting and let the product run on its own for a number of seconds (at most ${MAX_WAIT_SECONDS}). ` +
+      "Returns nothing about the product; use its own tools afterwards to see what changed.",
+    parameters: {
+      type: "object",
+      properties: { seconds: { type: "integer", minimum: 1, maximum: MAX_WAIT_SECONDS } },
+      required: ["seconds"],
+    },
+    execute: asMove(WAIT_TOOL, async ({ seconds }) => {
+      const waited = Math.min(Math.max(1, Number(seconds) || 1), MAX_WAIT_SECONDS);
+      await waitFor(waited * 1000);
+      return { ok: true, returned: `${waited} seconds passed.` };
+    }),
+  };
+
+  return { tools: [...productTools, waitTool], record };
+}
+
+/**
+ * The tools the product declares, as a player meets them: through the browser's
+ * agent API when there is one, and by importing agenttools.js when there is not.
+ */
+async function declaredTools(page) {
+  return page.evaluate(async () => {
+    const describe = (descriptor) => {
+      let inputSchema = descriptor.inputSchema;
+      if (typeof inputSchema === "string") {
+        try {
+          inputSchema = JSON.parse(inputSchema);
+        } catch {
+          inputSchema = undefined;
+        }
+      }
+      return {
+        name: descriptor.name,
+        description: descriptor.description || "",
+        inputSchema,
+        consequential: !!(descriptor.annotations && descriptor.annotations.consequentialHint),
+      };
+    };
+    if (document.modelContext && typeof document.modelContext.getTools === "function") {
+      return { path: "the browser's own agent API", tools: (await document.modelContext.getTools()).map(describe) };
+    }
+    try {
+      const mod = await import("./agenttools.js");
+      const tools = typeof mod.tools === "function" ? mod.tools().map(describe) : [];
+      return { path: "a direct import — this browser has no agent API", tools };
+    } catch {
+      return { path: "nothing — the product declares no tools", tools: [] };
+    }
+  });
+}
+
+/** One call to one of the product's tools, by the same path declaredTools found it. */
+function callProductTool(page, name, input) {
+  return page.evaluate(async ({ name, input }) => {
+    try {
+      if (document.modelContext && typeof document.modelContext.getTools === "function") {
+        const descriptor = (await document.modelContext.getTools()).find((tool) => tool.name === name);
+        if (!descriptor) return { ok: false, error: `no tool named "${name}" is registered` };
+        return { ok: true, returned: String(await document.modelContext.executeTool(descriptor, JSON.stringify(input))) };
+      }
+      const mod = await import("./agenttools.js");
+      const descriptor = mod.tools().find((tool) => tool.name === name);
+      if (!descriptor) return { ok: false, error: `no tool named "${name}" is declared` };
+      const returned = await descriptor.execute(input, { signal: new AbortController().signal });
+      return { ok: true, returned: JSON.stringify(returned) };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  }, { name, input });
+}
+
+/**
+ * Play the product through its tools, as an agent arriving cold would.
+ *
+ * Returns null when the product declares no tools, so there is nothing an agent
+ * could play with; the caller watches instead. A player that stops early still
+ * leaves its moves behind, and those are judged without its account.
+ */
+async function play(page) {
+  const declared = await declaredTools(page);
+  if (!declared.tools.length) {
+    log("info", `Playtest: reached ${declared.path}, so there is nothing to play with — watching instead.`);
+    return null;
+  }
+  const session = createPlay({
+    declared: declared.tools,
+    callTool: (name, input) => callProductTool(page, name, input),
+    waitFor: (ms) => page.waitForTimeout(ms),
+    readState: async () => (await page.evaluate(readPage)).state,
+  });
+  let account = "";
+  try {
+    account = await runAgent({
+      label: "Player",
+      systemPrompt: fillTemplate(loadPrompt("player"), {
+        MOVES: String(PLAY_MOVES),
+        MINUTES: String(PLAY_MINUTES),
+        WAIT_TOOL,
+      }),
+      task: "Start playing now. When you stop, write your account.",
+      tools: session.tools.map((tool) => tool.name),
+      customTools: session.tools,
+      expectJson: false,
+      // Above the play budget on purpose: running out of moves is the normal end
+      // of a session, and the tools say so. These only stop a player that ignores them.
+      sessionLimits: { turns: PLAY_MOVES + 10, minutes: PLAY_MINUTES + 4 },
+    });
+  } catch (e) {
+    log("warn", "Playtest: the player stopped before writing its account — judging the moves it made.", errorData(e));
+  }
+  return { path: declared.path, moves: session.record, account: (account || "").trim() };
+}
+
 /**
  * What the keyboard alone can reach, in the order it reaches it. The Vision
  * makes screen-reader visitors first-class, so "can you get to the state layer
@@ -467,7 +642,10 @@ export async function observeApp() {
     const opening = await page.evaluate(readPage);
 
     const tabOrder = await walkTabOrder(page);
-    const timeline = await watch(page);
+    // A product with no tools gives an agent nothing to play with, so it is
+    // watched, the way every session ran before the Playtester played.
+    const played = await play(page);
+    const timeline = played ? [] : await watch(page);
 
     // The page as it stands when watching ends. The controls are read again
     // because they change as the game does: compared with the list from page
@@ -493,7 +671,7 @@ export async function observeApp() {
     // layout, which is why nothing is measured after this point.
     const { frames, pageLengths } = await captureFrames(page);
 
-    return { opening, tabOrder, timeline, closing, awayMs: AWAY_MS, returned, agentTools, consoleErrors, url, frames, pageLengths };
+    return { opening, tabOrder, played, timeline, closing, awayMs: AWAY_MS, returned, agentTools, consoleErrors, url, frames, pageLengths };
   } catch (e) {
     log("warn", "Playtest: the session broke off early — reporting what was seen.", errorData(e));
     return null;
@@ -531,6 +709,62 @@ export function renderToolPass(agentTools) {
   return lines.join("\n");
 }
 
+/** The session of a product with no tools: what the state layer said while watching. */
+function renderWatch(timeline) {
+  const seconds = Math.round(OBSERVATION_MS / 1000);
+  const unchanged = timeline.length > 1 && timeline.every((sample) => sample.state === timeline[0].state);
+  return [
+    `## What the state layer said, watching for ${seconds}s`,
+    "The product declares no tools, so there was nothing to play with; you watched instead.",
+    "",
+    timeline.map((sample) => `### at ${sample.atSeconds}s\n${sample.state || "(the panel said nothing)"}`).join("\n\n"),
+    "",
+    unchanged
+      ? `**Nothing in the state layer changed across the whole ${seconds} seconds.**`
+      : "The state layer changed while watching — compare the samples above to see what moved and what stayed put.",
+  ].join("\n");
+}
+
+// How much of the page one move's record carries. Every move would otherwise
+// repeat the whole panel, and a session of twenty-five would bury the moves.
+const MOVE_STATE_LIMIT = 600;
+
+/**
+ * The session as it was played: each move, what the tool said, and what the page
+ * showed afterwards — stated only when it changed, because the difference is
+ * what a move did. Then the player's own account of it.
+ */
+export function renderPlay(played) {
+  const { path, moves, account } = played;
+  const lines = [
+    "## What you did, playing through its tools",
+    `You arrived knowing nothing and played the product through its tools, reached through ${path}. ` +
+      "Each move is what you called, what the tool told you, and what the page showed a visitor afterwards.",
+    "",
+  ];
+  if (!moves.length) lines.push("**You made no moves at all.**", "");
+  let shown = null;
+  moves.forEach((move, index) => {
+    const call = move.tool === WAIT_TOOL ? `waited (${move.returned})` : `called \`${move.tool}\` with \`${JSON.stringify(move.input)}\``;
+    lines.push(`### Move ${index + 1}, at ${move.atSeconds}s: ${call}`);
+    if (move.declined) lines.push("Refused: it is marked consequential, and nobody was there to confirm it.");
+    else if (!move.ok) lines.push(`**It failed: ${move.error}**`);
+    else if (move.tool !== WAIT_TOOL) lines.push(`It told you:\n\n\`\`\`\n${String(move.returned).slice(0, 800)}\n\`\`\``);
+    lines.push(
+      move.state === shown
+        ? "The page did not change."
+        : `The page then showed:\n${(move.state || "(the panel said nothing)").slice(0, MOVE_STATE_LIMIT)}`
+    );
+    lines.push("");
+    shown = move.state;
+  });
+  lines.push(
+    "## What you said when you stopped",
+    account || "(you stopped without writing an account — judge from the moves alone)"
+  );
+  return lines.join("\n");
+}
+
 /**
  * Render the session as something a reader can follow in order: what the page
  * offered, what changed while watching, and what it showed on the way back in.
@@ -540,14 +774,13 @@ export function renderToolPass(agentTools) {
  * invites it to audit structure instead.
  */
 export function renderSession(session, { showingFrames = true } = {}) {
-  const { opening, tabOrder, timeline, closing, awayMs, returned, agentTools, consoleErrors, url } = session;
+  const { opening, tabOrder, played, timeline, closing, awayMs, returned, agentTools, consoleErrors, url } = session;
   // The transcript must describe the turn it is actually part of. The text-only
   // fallback in report() sends this same session with no images attached, and a
   // transcript that still announced its screenshots would have the agent describe
   // frames it was never shown.
   const frames = showingFrames ? session.frames || [] : [];
 
-  const unchanged = timeline.length > 1 && timeline.every((s) => s.state === timeline[0].state);
   const sameAfterReturn = returned.state === closing.state && returned.controls.join() === closing.controls.join();
   const away = formatAbsence(awayMs);
 
@@ -562,18 +795,13 @@ export function renderSession(session, { showingFrames = true } = {}) {
     `## What the keyboard reached, in order`,
     tabOrder.length ? tabOrder.map((t, i) => `${i + 1}. ${t}`).join("\n") : "(nothing — Tab moved focus nowhere)",
     "",
-    `## What the state layer said, watching for ${Math.round(OBSERVATION_MS / 1000)}s`,
-    timeline.map((s) => `### at ${s.atSeconds}s\n${s.state || "(the panel said nothing)"}`).join("\n\n"),
+    played ? renderPlay(played) : renderWatch(timeline),
     "",
-    unchanged
-      ? `**Nothing in the state layer changed across the whole ${Math.round(OBSERVATION_MS / 1000)} seconds.**`
-      : `The state layer changed while watching — compare the samples above to see what moved and what stayed put.`,
-    "",
-    `## The page when you stopped watching`,
+    `## The page when you stopped ${played ? "playing" : "watching"}`,
     `Interactive elements: ${closing.controls.join(", ") || "(none)"}`,
     "",
     `## Coming back ${away} later`,
-    `You closed the page and opened it again ${away} later. The browser's clock was moved forward; the game ` +
+    `You closed the page and opened it again ${away} later. The browser's clock was moved forward; the product ` +
       "was not touched, so what it shows is what it makes of a real absence.",
     "",
     returned.dialog

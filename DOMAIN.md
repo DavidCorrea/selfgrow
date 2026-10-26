@@ -127,7 +127,7 @@ each session and reads its measurements as evidence. The **accessibility
 barriers** — faint text, tap targets too small, content off the screen, a control
 that throws — are filed as findings **without a model**, worded for the player,
 one per kind with the measurements as Dev Notes: a barrier is a barrier for
-somebody whether or not it spoiled a two-minute session, and a model deciding
+somebody whether or not it spoiled a session, and a model deciding
 whether faint text "matters" could drop it. Everything else is filed only when a
 player would notice it. Fed to the PM directly, every measurement became a ticket
 in the checker's words, and a hidden overlay was "fixed" three times for a defect
@@ -140,17 +140,24 @@ we merged works' and 'what a visitor gets works'" — and plays through the **DO
 state layer**, never the canvas, because "the surface this agent reads is the
 same one a blind visitor gets."
 
-It also uses the product **through its agent tools**, calling each with its
-declared example — the same input verify uses. Calling with nothing meant any
-tool that needs input "always failed, so the Playtester could only ever judge
-its error, never what it does." (The browser does not hand the example back, so
-it is read from `agenttools.js`.) Tools marked consequential are described but
-never called. Two minutes of watching cannot show **the return** — "you never
-left" — so where the product offers a sandboxed time rehearsal, what it returned
-is judged *as* the return; where the Vision asks for one and there is none, that
-is a finding. And where the Vision treats agents as players, the tools are held
-to that: a set of tools that reads the state but never says what any of it means
-"is usable by a tester and not by a player."
+It **plays the product through its agent tools**, as an agent arriving cold
+would: the tools the browser registers (WebMCP), under their own names,
+descriptions and schemas, plus one the harness adds to let time pass. It used to
+only watch for two minutes, which suited an idle game and nothing else: "a
+product that waits for a choice sat unchanged for two minutes and was reported
+as inert, whatever it was like to play." Every move is recorded beside what the
+page showed afterwards, so a tool that disagrees with the panel is visible. The
+player is not shown the Vision, because a visitor is not either, and whether the
+tools alone teach what the product is is part of the judgement. A product with
+no tools is watched instead. Tools marked consequential are refused, not called.
+After the return, every tool is also called once with its declared example, so a
+tool the player never reached is still judged. **The questions it answers hold
+for any product** — could you tell what this is, did what you did matter, would
+you come back, could you use it without seeing it, was it pleasant — and the
+Vision decides what a good answer is: the return is held to showing what
+happened while you were away only where the Vision promises that. Agents are
+players, not testers: a set of tools that reads the state but never says what
+any of it means "is usable by a tester and not by a player."
 
 **📊 Health** (daily 16:00) — "not a role, a dashboard." Exists because the
 changelog silently stopped growing for three days and ~100 merges, and "nobody
