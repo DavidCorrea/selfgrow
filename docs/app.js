@@ -383,12 +383,23 @@ function renderMatchResult(match) {
     if (awarded) {
       const label = document.createElement("span");
       label.className = "award-card-label";
-      label.textContent = "New card — added to your collection:";
+      label.textContent = awardLabelText(state.result?.setComplete);
       resultReward.replaceChildren(label, awardCardFigure(awarded));
     } else {
       resultReward.textContent = rewardText(won);
     }
   }
+}
+
+/**
+ * The words beside the card a win earned. A win that had nothing left to earn
+ * says so — the collection is complete, and the card it added is a duplicate —
+ * instead of claiming a new card was added.
+ */
+export function awardLabelText(setComplete) {
+  return setComplete
+    ? "Set complete — a duplicate copy added to your collection:"
+    : "New card — added to your collection:";
 }
 
 /**
@@ -538,7 +549,7 @@ function finishMatch() {
   state.wins = record.wins;
   state.matchesPlayed = record.matches;
   state.saved = record.saved;
-  state.result = { outcome: match.outcome, awarded: record.awarded };
+  state.result = { outcome: match.outcome, awarded: record.awarded, setComplete: record.setComplete };
   renderCollection();
 }
 
@@ -829,9 +840,9 @@ function commitDeck() {
  * the player owns and how many are different, the deck — its size, its limit,
  * the fewest cards a match needs and the cards themselves — whether it will
  * survive closing the page, how many matches have been played and won, the
- * result of the last finished match (whether it was a win or a loss, and the
- * card a win awarded), and the actions they can take from here. This is what
- * the get-state tool returns.
+ * result of the last finished match (whether it was a win or a loss, the card a
+ * win awarded, and whether that completed the set), and the actions they can
+ * take from here. This is what the get-state tool returns.
  */
 export function readState() {
   // Only the actions a visitor can actually reach: a control this screen hides

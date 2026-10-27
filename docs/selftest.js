@@ -571,6 +571,9 @@ export async function checks() {
         `${JSON.stringify(replayed.awarded)})`
     );
   }
+  if (replayed.setComplete) {
+    fail("re-recording a match reported the collection as complete, though the replay earned no card");
+  }
   if (replayed.wins !== 1 || replayed.matches !== 1) {
     fail(
       `recording the same match twice reported ${replayed.wins} win(s) and ${replayed.matches} match(es) instead of 1 and 1`
@@ -610,6 +613,124 @@ export async function checks() {
     .find((card) => card.id === cardCatalog.REWARD_POOL[0]);
   if (!reloadedAwarded || reloadedAwarded.copies < 1) {
     fail(`the card won in a match did not survive a save and load: ${JSON.stringify(collection.readCollection(progressStore))}`);
+  }
+
+  // --- A win earns a card you do not own yet ---------------------------------
+
+  // A win prefers a reward card the player holds none of, rather than the next
+  // card in the cycle. This save holds every reward card but the last, and has
+  // exactly as many wins behind it as the pool is long — so the old cycle would
+  // hand back the first reward card, which the save already owns, while a win
+  // that prefers what is unowned earns the one it does not have.
+  const pool = cardCatalog.REWARD_POOL;
+  const heldRewards = pool.slice(0, -1);
+  const unownedReward = pool[pool.length - 1];
+  const winsBehind = pool.length;
+  const partialRewards = stubStorage({
+    [collection.STORAGE_KEY]: JSON.stringify({
+      version: 1,
+      cards: [
+        ...owned.cards.map(({ id, copies }) => ({ id, copies })),
+        ...heldRewards.map((id) => ({ id, copies: 1 })),
+      ],
+      deck: [],
+      wins: winsBehind,
+      matches: winsBehind,
+      lastMatchId: "match-earlier",
+    }),
+  });
+  const wonUnowned = collection.recordResult("win", "match-next", partialRewards);
+  if (wonUnowned.awarded?.id !== unownedReward) {
+    fail(
+      `a win against a save owning ${JSON.stringify(heldRewards)} but not "${unownedReward}" awarded ` +
+        `"${wonUnowned.awarded?.id}" instead of the card it did not own`
+    );
+  }
+  if (wonUnowned.setComplete) {
+    fail("a win with a reward card still unowned reported the whole collection as complete");
+  }
+  const partialCards = collection.readCollection(partialRewards);
+  if ((partialCards.find((card) => card.id === unownedReward)?.copies ?? 0) !== 1) {
+    fail(
+      `the unowned reward "${unownedReward}" a win added was not saved once: ` + JSON.stringify(partialCards)
+    );
+  }
+  const untouchedRewards = heldRewards.filter(
+    (id) => (partialCards.find((card) => card.id === id)?.copies ?? 0) !== 1
+  );
+  if (untouchedRewards.length) {
+    fail(`a win changed the copies owned of ${JSON.stringify(untouchedRewards)}, though it may only add one card`);
+  }
+
+  // --- Once every card is owned, a win adds a duplicate and says so ----------
+
+  // The whole set is held, so there is nothing new left to earn: the win falls
+  // back to the cycle — a reward card the player already owns — and reports the
+  // collection as complete instead of claiming a new card.
+  const fullRewards = stubStorage({
+    [collection.STORAGE_KEY]: JSON.stringify({
+      version: 1,
+      cards: [
+        ...owned.cards.map(({ id, copies }) => ({ id, copies })),
+        ...pool.map((id) => ({ id, copies: 1 })),
+      ],
+      deck: [],
+      wins: 5,
+      matches: 5,
+      lastMatchId: "match-earlier",
+    }),
+  });
+  const completeCards = collection.readCollection(fullRewards);
+  const completeSize = collection.collectionSize(completeCards);
+  const wonComplete = collection.recordResult("win", "match-complete", fullRewards);
+  if (!wonComplete.setComplete) {
+    fail("a win against a save owning every card in the game did not report the collection as complete");
+  }
+  if (!wonComplete.awarded || !pool.includes(wonComplete.awarded.id)) {
+    fail(
+      `a win on a complete collection awarded ${JSON.stringify(wonComplete.awarded)} instead of a reward card`
+    );
+  } else {
+    const ownedBefore = completeCards.find((card) => card.id === wonComplete.awarded.id)?.copies ?? 0;
+    const ownedAfter = wonComplete.cards.find((card) => card.id === wonComplete.awarded.id)?.copies ?? 0;
+    if (ownedBefore < 1) {
+      fail(`a win on a complete collection awarded "${wonComplete.awarded.id}", which the player did not own`);
+    }
+    if (ownedAfter !== ownedBefore + 1) {
+      fail(
+        `a win on a complete collection left ${ownedAfter} copies of "${wonComplete.awarded.id}" instead of one ` +
+          `duplicate on top of the ${ownedBefore} owned`
+      );
+    }
+  }
+  if (collection.collectionSize(wonComplete.cards) !== completeSize + 1) {
+    fail(
+      `a win on a complete collection added ${collection.collectionSize(wonComplete.cards) - completeSize} card(s) ` +
+        "instead of exactly one duplicate"
+    );
+  }
+
+  // The result's own words: a completed collection says so, and does not claim a
+  // new card; a win that earned a card the player did not own still says it was
+  // new. Read from the same function the result panel uses, so what is checked
+  // here is what a player reads.
+  if (typeof game.awardLabelText !== "function") {
+    fail("app.js does not export awardLabelText, so the result's words for an earned card cannot be checked");
+  } else {
+    const completeWords = game.awardLabelText(true);
+    const newCardWords = game.awardLabelText(false);
+    if (!completeWords.toLowerCase().includes("complete")) {
+      fail(`a completed collection's result does not say the set is complete: it reads "${completeWords}"`);
+    }
+    if (completeWords.toLowerCase().includes("new card")) {
+      fail(`a completed collection's result claims a new card was added: it reads "${completeWords}"`);
+    }
+    if (!newCardWords.toLowerCase().includes("new card")) {
+      fail(`a win that earned an unowned card does not say it was new: it reads "${newCardWords}"`);
+    }
+    if (newCardWords === completeWords) {
+      fail("the result says the same thing whether or not a new card was earned");
+    }
   }
 
   // A save written before wins and matches existed still opens, reading as a
@@ -2511,6 +2632,9 @@ export async function checks() {
   }
 
   const cardsHeldBefore = collection.collectionSize(game.readCollection().cards);
+  // What the player owned before the match, so the reward can be told apart from
+  // a card they already held — which is what decides how the result reads.
+  const ownedIdsBeforeMatch = game.readCollection().cards.map((card) => card.id);
   game.startMatch();
   const playedOut = playToResult();
   checkResult("playing the strongest card your energy covers, turn after turn", playedOut);
@@ -2554,6 +2678,26 @@ export async function checks() {
       const ownedIds = (game.readCollection().cards || []).map((card) => card.id);
       if (!ownedIds.includes(awarded.id)) {
         fail(`the result shows "${awarded.id}", which is not a card the win added to the collection`);
+      }
+
+      // A card the player already held can only have come from a collection with
+      // nothing new left to earn, so the two must agree: a new card is what a win
+      // without anything unowned to give looks like, and a duplicate is what a
+      // completed set looks like. The result's own words follow from that.
+      const alreadyOwned = ownedIdsBeforeMatch.includes(awarded.id);
+      if (afterPlay.result?.setComplete !== alreadyOwned) {
+        fail(
+          `the result reports the set as complete ${afterPlay.result?.setComplete} after a win that awarded ` +
+            `"${awarded.id}", which the player ${alreadyOwned ? "already owned" : "did not own"}`
+        );
+      }
+      const expectedLabel = alreadyOwned
+        ? "Set complete — a duplicate copy added to your collection:"
+        : "New card — added to your collection:";
+      if (!textOf(resultReward).startsWith(expectedLabel)) {
+        fail(
+          `a win that awarded "${awarded.id}" is labelled "${textOf(resultReward)}" instead of "${expectedLabel}"`
+        );
       }
     }
   }

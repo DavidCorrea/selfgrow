@@ -65,9 +65,12 @@ export const STARTER_COLLECTION = [
 ];
 
 /**
- * The cards a win can add, in the order they are earned: the first win gives the
- * first, the next gives the second, and it cycles. None of them is in the starter
- * collection, so every reward is a card the player did not already have.
+ * The cards a win can add, in the order they are preferred: a win earns the
+ * first one the player does not hold yet, so the order is the order the pool is
+ * exhausted in. None of them is in the starter collection, so the first wins are
+ * always cards the player did not already have. Once every one of them is held,
+ * a win falls back to walking this list by how many matches have been won — a
+ * duplicate.
  */
 export const REWARD_POOL = ["moon-bloom", "amber-antler", "cinder-shrike"];
 
