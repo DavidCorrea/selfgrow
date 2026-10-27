@@ -1599,6 +1599,45 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* The one target an ending turn is about to hit, said in words: the card at the
+   front of the opponent's table, or their hero once that table is empty. It is a
+   label, not a control — ending the turn is the move, and where the blows land
+   follows from it — so it takes no pointer and never reads as something
+   pressable. Its foil keyline is the accent the numbers wear, so a player
+   scanning the board finds where the next blow lands without reading the log. */
+.match-strike-mark {
+  /* A chip rather than a full-width bar, wherever it lands: on a card's face or
+     under the empty battlefield. */
+  width: fit-content;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid rgba(242, 193, 78, 0.5);
+  border-radius: 999px;
+  color: var(--foil);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-wrap: pretty;
+}
+
+/* On a card the mark heads the face while it reads last, after the card's own
+   name and numbers: a table surface is a fixed height on a wide window, and a
+   tall card's lower edge is the part that scrolls out of it, so the wording must
+   not be the part a player has to go looking for. */
+.match-card .match-strike-mark {
+  order: -1;
+}
+
+/* Under an emptied battlefield it follows the cards that stood there. */
+.match-surface > .match-strike-mark {
+  margin: 0.6rem 0 0;
+}
+
+/* The card the mark names carries the same keyline, so the chip and the card it
+   sits on read as one mark rather than a label dropped on any face. */
+.match-card.is-end-turn-target {
+  border-color: rgba(242, 193, 78, 0.5);
+}
+
 /* A blow landing on the table: the card that struck lifts into it, the card it
    hit shakes under the blow, and a card worn out fades and drops off the row.
    All three are decoration — the health figure and the log carry the same fact

@@ -3139,6 +3139,65 @@ export async function checks() {
           `${priceyDeck.player.health} and ${priceyDeck.opponent.health} health, so the match never reached a result`
       );
     }
+
+    // What an ending turn would strike, read from the one answer the board and
+    // the state a tool reads share: the front card of the opponent's table, the
+    // hero once that table is empty, and nothing at all when no turn of the
+    // player's is in progress.
+    if (typeof game.endOfTurnTarget !== "function") {
+      fail(
+        "docs/app.js exports no endOfTurnTarget, so neither the board nor the state can say what an ending turn strikes"
+      );
+    } else {
+      const emptyTableMatch = matchEngine.createMatch(cheapDeck, { rng: fixedRng });
+      const heroTarget = game.endOfTurnTarget(emptyTableMatch);
+      if (!heroTarget || heroTarget.kind !== "hero") {
+        fail(
+          `with the opponent's table empty on the player's turn the end-of-turn target is ` +
+            `${JSON.stringify(heroTarget)} instead of their hero`
+        );
+      } else if (heroTarget.name !== emptyTableMatch.opponentName || heroTarget.cardId !== null) {
+        fail(
+          `the end-of-turn target at the opponent's hero is ${JSON.stringify(heroTarget)} instead of the hero ` +
+            `named "${emptyTableMatch.opponentName}" with no card id`
+        );
+      }
+
+      const wallMatch = matchEngine.createMatch(cheapDeck, { rng: fixedRng });
+      const wallFront = wallMatch.opponent.hand.pop();
+      wallMatch.opponent.table.push(wallFront);
+      const cardTarget = game.endOfTurnTarget(wallMatch);
+      if (!cardTarget || cardTarget.kind !== "card") {
+        fail(
+          `with "${wallFront.name}" at the front of the opponent's table the end-of-turn target is ` +
+            `${JSON.stringify(cardTarget)} instead of that card`
+        );
+      } else if (cardTarget.cardId !== wallFront.id || cardTarget.name !== wallFront.name) {
+        fail(
+          `the end-of-turn target is ${JSON.stringify(cardTarget)} instead of the front card ` +
+            `"${wallFront.name}" (${wallFront.id})`
+        );
+      }
+
+      const theirTurnMatch = matchEngine.createMatch(cheapDeck, { rng: fixedRng });
+      theirTurnMatch.turn = "opponent";
+      if (game.endOfTurnTarget(theirTurnMatch) !== null) {
+        fail(
+          `the end-of-turn target is ${JSON.stringify(game.endOfTurnTarget(theirTurnMatch))} on the opponent's turn, ` +
+            "when no blow of the player's is coming"
+        );
+      }
+
+      const overMatch = matchEngine.createMatch(cheapDeck, { rng: fixedRng });
+      overMatch.over = true;
+      overMatch.turn = null;
+      if (game.endOfTurnTarget(overMatch) !== null) {
+        fail(
+          `the end-of-turn target is ${JSON.stringify(game.endOfTurnTarget(overMatch))} in a finished match, ` +
+            "where no turn will strike anything"
+        );
+      }
+    }
   }
 
   // --- The same surface, for an agent ---------------------------------------
@@ -3177,6 +3236,16 @@ export async function checks() {
       if (!actions.includes(label)) {
         fail(`get-state does not list the "${label}" action a visitor can press from home (it lists ${actions.join(", ") || "nothing"})`);
       }
+    }
+
+    // With no match on the board nothing is about to strike anything, so the
+    // target an ending turn would carry is null rather than naming a card or a
+    // hero that is not there.
+    if (reported.match && reported.match.endOfTurnTarget !== null) {
+      fail(
+        `get-state reports an end-of-turn target of ${JSON.stringify(reported.match.endOfTurnTarget)} before a ` +
+          "match has started, when no turn of the player's is coming"
+      );
     }
 
     // The deck is part of what the page shows, so it is part of what get-state
@@ -4297,6 +4366,57 @@ export async function checks() {
       if (m.table.length !== 0 || m.opponentTable.length !== 0) {
         fail("a new match begins with cards already on a table");
       }
+
+      // The opponent's table is empty on the player's turn, so the thing an
+      // ending turn would strike is their hero: the board labels the hero in
+      // words, and the state a tool reads names the same target.
+      const emptyTableTarget = m.endOfTurnTarget;
+      if (!emptyTableTarget || emptyTableTarget.kind !== "hero") {
+        fail(
+          `a new match, with the opponent's table empty on the player's turn, reports its end-of-turn ` +
+            `target as ${JSON.stringify(emptyTableTarget)} instead of the opponent hero`
+        );
+      } else if (emptyTableTarget.name !== m.opponentName) {
+        fail(
+          `the end-of-turn target names "${emptyTableTarget.name}" instead of the opponent being faced ` +
+            `("${m.opponentName}")`
+        );
+      } else if (emptyTableTarget.cardId !== null) {
+        fail(
+          `the end-of-turn target at the opponent's hero carries cardId ${JSON.stringify(emptyTableTarget.cardId)} ` +
+            "rather than null, though no card is being struck"
+        );
+      }
+      const heroStrikeMark = document.getElementById("match-opponent-strike-target");
+      if (!heroStrikeMark) {
+        fail("the board has no label for the hero an ending turn would strike (#match-opponent-strike-target)");
+      } else if (heroStrikeMark.hidden || getComputedStyle(heroStrikeMark).display === "none") {
+        fail(
+          "the opponent's table is empty and it is the player's turn, but the board hides the label naming " +
+            "the hero an ending turn would strike"
+        );
+      } else if (!heroStrikeMark.closest("#match-opponent-table-side")) {
+        fail(
+          "the hero an ending turn would strike is labelled outside the opponent's own side of the board, so the " +
+            "label is not read with the empty table the blows cross"
+        );
+      } else {
+        const heroLabel = textOf(heroStrikeMark);
+        if (!/end of turn/i.test(heroLabel)) {
+          fail(
+            `the label for the hero an ending turn would strike reads "${heroLabel}", which does not say the ` +
+              "end of turn is what strikes"
+          );
+        } else if (!heroLabel.includes(m.opponentName)) {
+          fail(
+            `the label for the hero an ending turn would strike reads "${heroLabel}", which never names the ` +
+              `opponent being faced ("${m.opponentName}")`
+          );
+        }
+      }
+      if (document.querySelector("#match-opponent-table .match-strike-mark")) {
+        fail("a card carries an end-of-turn mark on a new match, when the opponent's table is empty");
+      }
       if (m.deckRemaining !== deckAtStart.length - openingDeal) {
         fail(`a match from a deck of ${deckAtStart.length} left ${m.deckRemaining} cards to draw instead of ${deckAtStart.length - openingDeal}`);
       }
@@ -4654,6 +4774,69 @@ export async function checks() {
           `the opponent played ${JSON.stringify(outsideOpponentDeck)}, which is not in the deck it was dealt from ` +
             JSON.stringify(cardCatalog.OPPONENT_DECK)
         );
+      }
+
+      // The card at the front of the opponent's table is what every card of
+      // yours that has not already struck will hit when you end your turn, so
+      // the board marks it: exactly one mark, on the first card of the table,
+      // and the hero label it wore an empty table earlier is gone. The state a
+      // tool reads names the same card.
+      const endTurnFrontCard = afterEnd.opponentTable[0];
+      if (!afterEnd.over && afterEnd.turn === "player" && endTurnFrontCard) {
+        const endTurnTarget = afterEnd.endOfTurnTarget;
+        if (!endTurnTarget || endTurnTarget.kind !== "card") {
+          fail(
+            `"${endTurnFrontCard.name}" stands at the front of the opponent's table on the player's turn, but ` +
+              `the state reports the end-of-turn target as ${JSON.stringify(endTurnTarget)} instead of that card`
+          );
+        } else if (endTurnTarget.cardId !== endTurnFrontCard.id) {
+          fail(
+            `the end-of-turn target is "${endTurnTarget.name}" (${endTurnTarget.cardId}) instead of the front ` +
+              `card "${endTurnFrontCard.name}" (${endTurnFrontCard.id})`
+          );
+        }
+        const endTurnMarks = [...document.querySelectorAll("#match-opponent-table .match-strike-mark")];
+        if (endTurnMarks.length !== 1) {
+          fail(
+            `the board carries ${endTurnMarks.length} end-of-turn mark(s) on the opponent's table, but exactly ` +
+              `one card — the front card — is what an ending turn strikes`
+          );
+        } else {
+          const markedRow = endTurnMarks[0].closest(".match-card");
+          const markedId = markedRow?.dataset.cardId ?? null;
+          if (markedId !== endTurnFrontCard.id) {
+            fail(
+              `the end-of-turn mark is on the card "${markedId}" instead of the front card ` +
+                `"${endTurnFrontCard.name}" (${endTurnFrontCard.id})`
+            );
+          } else if (document.querySelector("#match-opponent-table .match-card") !== markedRow) {
+            fail(
+              `the end-of-turn mark is not on the first card of the opponent's table, though the first card ` +
+                `is the one every blow of the turn hits`
+            );
+          }
+          if (endTurnMarks[0].closest("button")) {
+            fail("the end-of-turn mark is a control, so the board offers a move that ending the turn already makes");
+          }
+          if (!/end of turn/i.test(textOf(endTurnMarks[0]))) {
+            fail(
+              `the end-of-turn mark on "${endTurnFrontCard.name}" reads "${textOf(endTurnMarks[0])}", which ` +
+                "does not say the end of turn is what strikes"
+            );
+          }
+          if (getComputedStyle(endTurnMarks[0]).display === "none") {
+            fail(
+              `the end-of-turn mark on "${endTurnFrontCard.name}" is not shown, so a sighted player is never told ` +
+                "which card ending the turn will strike"
+            );
+          }
+        }
+        if (heroStrikeMark && !heroStrikeMark.hidden) {
+          fail(
+            `"${endTurnFrontCard.name}" stands in front of the opponent hero, but the board still labels their ` +
+              "hero as the thing an ending turn strikes"
+          );
+        }
       }
       if (afterEnd.log.length <= beforeEnd.log.length) {
         fail("ending the turn added no lines to the match log");
@@ -5237,6 +5420,29 @@ export async function checks() {
     const offered = game.readState().actions.filter((label) => label !== "Play again" && label !== "Back to home");
     if (offered.length) {
       fail(`a finished match still offers an agent ${offered.join(", ")}, which a player cannot press`);
+    }
+    // Nothing is going to strike anything once the match is over, so the card and
+    // hero labels an ending turn would carry are gone, and the state names no
+    // target at all.
+    if (ended.endOfTurnTarget !== null) {
+      fail(
+        `${played}, but the finished match still reports an end-of-turn target ` +
+          `(${JSON.stringify(ended.endOfTurnTarget)}) though no turn will strike anything`
+      );
+    }
+    const finishedMarks = [...document.querySelectorAll("#match-opponent-table .match-strike-mark")];
+    if (finishedMarks.length) {
+      fail(
+        `${played}, but the board still marks ${finishedMarks.length} card(s) of the opponent's table as what an ` +
+          "ending turn strikes, though no turn is coming"
+      );
+    }
+    const finishedHeroMark = document.getElementById("match-opponent-strike-target");
+    if (finishedHeroMark && !finishedHeroMark.hidden) {
+      fail(
+        `${played}, but the board still labels the opponent's hero as what an ending turn strikes, though no ` +
+          "turn is coming"
+      );
     }
     if (document.activeElement !== resultHeading) {
       fail("when the match ended, focus was left off the result, so a keyboard visitor is not told how it went");
