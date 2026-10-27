@@ -293,6 +293,124 @@ export async function checks() {
     }
   }
 
+  // --- Every card has its own picture, in the one shared style ----------------
+
+  const cardCatalog = await import("./cards.js");
+  let cardArt;
+  try {
+    cardArt = await import("./cardart.js");
+  } catch (e) {
+    fail(`docs/cardart.js could not be imported, so no card's picture can be checked — ${e.message}`);
+  }
+
+  if (cardArt) {
+    // A card the page has no drawing for is a fallback, not a blank frame: an
+    // unknown id has to answer null so the caller can print the card's name.
+    if (cardArt.cardArt("no-such-card") !== null) {
+      fail("cardArt() invented a picture for a card that does not exist instead of answering null");
+    }
+
+    const style = cardArt.ART_STYLE;
+    if (!style?.palette?.body || !style?.palette?.frame || !style?.shapeLanguage) {
+      fail(
+        "the art style is not written down beside the pictures (no palette and shape language), " +
+          "so a card added later cannot be drawn to match the ones already here"
+      );
+    }
+
+    const drawings = new Map();
+    for (const card of cardCatalog.CARDS) {
+      const art = cardArt.cardArt(card.id);
+      if (!art) {
+        fail(`"${card.name}" has no picture, so a player has nothing to know the card by`);
+        continue;
+      }
+      const drawing = (art.inner || "").replace(/\s+/g, " ").trim();
+      if (!drawing) {
+        fail(`"${card.name}" has a picture with nothing drawn in it`);
+        continue;
+      }
+      if (!art.description?.trim()) {
+        fail(`"${card.name}"'s picture is not described, so it cannot be checked against the style`);
+      }
+      drawings.set(card.id, drawing);
+
+      // Every drawing is built from the same shape classes, so the set stays one
+      // set however many cards are added.
+      const classes = [...drawing.matchAll(/class="([^"]+)"/g)].flatMap((match) => match[1].split(/\s+/));
+      const stray = classes.filter((name) => name !== "art-body" && name !== "art-accent");
+      if (stray.length) {
+        fail(
+          `"${card.id}"'s drawing uses the shape class(es) ${stray.join(", ")} that no other card uses, ` +
+            "so it would not match the rest of the set"
+        );
+      }
+      if (!classes.includes("art-body")) {
+        fail(`"${card.id}"'s drawing has no creature in it (nothing carries the art-body shape)`);
+      }
+
+      // A picture that points anywhere would be fetched, and this page loads
+      // with nothing leaving its own origin.
+      if (/https?:|<image|href=/i.test(drawing)) {
+        fail(`"${card.id}"'s drawing points outside the page, so showing it would need a request of its own`);
+      }
+    }
+
+    // Two cards drawn identically are one card to a player's eye.
+    const drawnBy = new Map();
+    for (const [id, drawing] of drawings) {
+      const twin = drawnBy.get(drawing);
+      if (twin) fail(`"${id}" and "${twin}" are drawn identically, so the two cards cannot be told apart by sight`);
+      else drawnBy.set(drawing, id);
+    }
+
+    // The picture on each owned card: the card's name as its text alternative,
+    // inside the one shared frame, drawn in the card's own palette.
+    const probe = document.createElement("span");
+    probe.style.color = "var(--foil)";
+    document.body.append(probe);
+    const foil = getComputedStyle(probe).color;
+    probe.remove();
+
+    for (const row of document.querySelectorAll("#collection-list .owned-card")) {
+      const name = textOf(row.querySelector(".owned-name")) || row.dataset.cardId;
+      const picture = row.querySelector("svg.card-art");
+      if (!picture) {
+        fail(`the card "${name}" is shown with no picture, so it cannot be learned by sight`);
+        continue;
+      }
+      if (picture.getAttribute("role") !== "img") {
+        fail(`the picture on "${name}" is not announced as an image (role="${picture.getAttribute("role")}")`);
+      }
+      if (picture.getAttribute("aria-label") !== name) {
+        fail(
+          `the picture on "${name}" is described as "${picture.getAttribute("aria-label") || "(nothing)"}" ` +
+            "instead of the card's own name"
+        );
+      }
+      if (!picture.querySelector(".art-frame")) {
+        fail(`the picture on "${name}" is not drawn in the frame every other card uses`);
+      }
+      const creature = picture.querySelector(".art-body");
+      if (!creature) {
+        fail(`the picture on "${name}" has no creature in it, only its frame`);
+      } else if (getComputedStyle(creature).fill !== foil) {
+        fail(
+          `the creature on "${name}" is filled ${getComputedStyle(creature).fill} where the card's ` +
+            `palette prints it ${foil}, so the pictures are not in the card's palette`
+        );
+      }
+      for (const node of picture.querySelectorAll("*")) {
+        const pointsOut = node.tagName.toLowerCase() === "image"
+          ? "an <image>"
+          : [...node.attributes].find((attribute) => /https?:|url\(/i.test(attribute.value))?.value;
+        if (pointsOut) {
+          fail(`the picture on "${name}" points outside the page (${pointsOut}), so drawing it would need a request`);
+        }
+      }
+    }
+  }
+
   // --- The collection survives closing the page ------------------------------
 
   const raw = window.localStorage.getItem(collection.STORAGE_KEY);
@@ -383,8 +501,6 @@ export async function checks() {
   }
 
   // --- A win grows the collection; a loss does not --------------------------
-
-  const cardCatalog = await import("./cards.js");
 
   // A save of the real collection with no matches played yet, so the first win
   // earns the first card in the reward pool.

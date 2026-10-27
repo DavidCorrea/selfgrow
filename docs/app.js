@@ -9,6 +9,7 @@
  * page says is what a tool returns, and what a tool does is what the page shows.
  */
 
+import { cardArtSvg } from "./cardart.js";
 import { CARD_BY_ID, DECK_LIMIT, MINIMUM_DECK_SIZE } from "./cards.js";
 import {
   collectionSize,
@@ -426,11 +427,18 @@ function deckToggleButton(card) {
   return button;
 }
 
-/** One owned card, as a list item that reads its name, numbers and deck toggle. */
+/** One owned card, as a list item that shows its picture and reads its name,
+ * numbers and deck toggle. */
 function ownedCardRow(card) {
   const item = document.createElement("li");
   item.className = "owned-card";
   item.dataset.cardId = card.id;
+
+  // The card's picture, first, so a player learns the card by sight. A card the
+  // art module does not know yet gets no picture rather than an empty frame, and
+  // the name below is what stands in for it.
+  const art = cardArtSvg(card.id, card.name);
+  if (art) item.append(art);
 
   const head = document.createElement("div");
   head.className = "owned-head";
