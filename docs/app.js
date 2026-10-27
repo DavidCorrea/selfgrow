@@ -34,6 +34,11 @@ const SCREEN_LABELS = {
   play: "Play",
 };
 
+// The two views the Collection screen's set list can be in: every card in the
+// game, or only the ones not collected yet. The list is also the schema a tool
+// checks against, so a caller cannot ask for a view the page does not show.
+const COLLECTION_VIEWS = ["all", "missing"];
+
 // What a match asks of a player, in the three things a newcomer cannot yet read
 // for themselves: what a card costs, how the table fights, and which hero loses.
 // They are written once, here, and both the Play screen and the get-match-rules
@@ -98,6 +103,10 @@ const state = {
   // when none is picked — so End turn still sends the whole table at the front
   // card by default. It is a page-only choice, cleared with each new turn.
   selectedAttacker: null,
+  // Which cards the Collection screen's set list shows: "all" for every card in
+  // the game, "missing" for only the ones not collected yet. It is a page-only
+  // choice, so switching it never touches the collection or the deck.
+  collectionView: "all",
   // The opponent the next match will be against, chosen from the picker on the
   // Play screen. It belongs to the page rather than to a match: a match already
   // running keeps the opponent it was started against.
@@ -118,6 +127,9 @@ const screenStatus = document.getElementById("screen-status");
 const storageNote = document.getElementById("storage-note");
 const deckMessage = document.getElementById("deck-message");
 const deckSummary = document.getElementById("deck-summary");
+// The two buttons that switch the set list between the whole set and only what
+// is still to collect, gathered once so their pressed state can be redrawn.
+const collectionViewButtons = [...document.querySelectorAll("[data-collection-view]")];
 // The home screen's promise of what the next win will add, and the place its
 // card is drawn. Both optional, so a missing one degrades to no figure.
 const nextRewardHeading = document.getElementById("next-reward-heading");
@@ -1269,6 +1281,23 @@ export function toggleMatchRules() {
 }
 
 /**
+ * Choose which cards the Collection screen's set list shows — what a visitor
+ * does by pressing the "All cards" or "Still to collect" button, and what the
+ * set-collection-view tool does on their behalf. It only changes what the list
+ * shows: the collection and the deck are untouched. Refused, with the reason,
+ * when the view names neither "all" nor "missing". Returns the state
+ * afterwards, the same shape readState() gives.
+ */
+export function setCollectionView(view) {
+  if (!COLLECTION_VIEWS.includes(view)) {
+    throw new Error(`there is no "${view}" view of the collection to show — pick one of: ${COLLECTION_VIEWS.join(", ")}`);
+  }
+  state.collectionView = view;
+  renderCollection();
+  return readState();
+}
+
+/**
  * Pick up the match that was left: set it running again from the saved record —
  * both sides' health, energy, hands, tables, decks and the log exactly as they
  * were, on the same side's turn — open the Play screen and return the state.
@@ -1564,15 +1593,47 @@ function deckCardRow(card) {
 }
 
 /**
- * Draw every card in the game: the ones the player holds with their deck
- * controls, and the ones they do not yet with a note saying so — so the screen
- * shows the whole set and how much of it is collected, not only what is held.
+ * Draw the card set: every card in the game — the ones the player holds with
+ * their deck controls, and the ones they do not yet with a note saying so — or,
+ * in the "missing" view, only the cards not collected yet, so a player working
+ * toward a full set can hide what they already have. When nothing is missing,
+ * the list says so rather than reading as an empty set.
  */
 function renderCollectionCards() {
   const list = document.getElementById("collection-list");
   if (!list) return;
 
-  list.replaceChildren(...listAllCards(state.cards).map(collectionCardRow));
+  const showingMissing = state.collectionView === "missing";
+  const cards = listAllCards(state.cards).filter((card) => !showingMissing || !card.owned);
+
+  // The list names what it is showing, so a screen reader hears the same view
+  // the buttons say is selected.
+  list.setAttribute(
+    "aria-label",
+    showingMissing
+      ? "Cards in the game not collected yet"
+      : "Every card in the game, with the cards in your collection marked"
+  );
+
+  if (!cards.length) {
+    const empty = document.createElement("li");
+    empty.className = "collection-empty";
+    empty.textContent = "You have collected every card in the game.";
+    list.replaceChildren(empty);
+    return;
+  }
+
+  list.replaceChildren(...cards.map(collectionCardRow));
+}
+
+/**
+ * Mark which of the set's view buttons is pressed, so the view on screen is read
+ * without relying on colour: the word and `aria-pressed` carry the fact.
+ */
+function renderCollectionView() {
+  for (const button of collectionViewButtons) {
+    button.setAttribute("aria-pressed", String(button.dataset.collectionView === state.collectionView));
+  }
 }
 
 /** Draw the deck's current contents, each card as a face that shows its picture
@@ -1593,9 +1654,10 @@ function renderDeck() {
   list.replaceChildren(...cards.map(deckCardRow));
 }
 
-/** Draw the whole Collection screen: every card in the game and the deck beside it. */
+/** Draw the whole Collection screen: the card set, which view it is in, and the deck beside it. */
 function renderCollection() {
   renderCollectionCards();
+  renderCollectionView();
   renderDeck();
 }
 
@@ -1698,6 +1760,8 @@ export function readState() {
     cardsOwned: state.cardsOwned,
     distinctCards: state.distinctCards,
     setTotal: state.setTotal,
+    // Which cards the Collection screen's set list is showing: "all" or "missing".
+    collectionView: state.collectionView,
     deckSize: state.deck.length,
     deckLimit: state.deckLimit,
     minimumDeckSize: state.minimumDeckSize,
@@ -1848,7 +1912,9 @@ export function readMatch() {
  * copies are held — the whole set the Collection screen shows, which is what
  * the list-collection tool returns. `ownedCards` narrows it to what is actually
  * held, and `setTotal` is how many different cards the game has, so
- * `distinctCards` of `setTotal` is how close the set is to complete.
+ * `distinctCards` of `setTotal` is how close the set is to complete. `view`
+ * says which cards the Collection screen's set list is showing — every card, or
+ * only the ones not collected yet.
  */
 export function readCollection() {
   return {
@@ -1857,6 +1923,8 @@ export function readCollection() {
     cardsOwned: state.cardsOwned,
     distinctCards: state.distinctCards,
     setTotal: state.setTotal,
+    // Which cards the Collection screen's set list is showing: "all" or "missing".
+    view: state.collectionView,
     saved: state.saved,
   };
 }
@@ -1974,6 +2042,9 @@ opponentPicker?.addEventListener("change", (event) => {
 });
 
 matchRulesToggle?.addEventListener("click", () => toggleMatchRules());
+for (const button of collectionViewButtons) {
+  button.addEventListener("click", () => setCollectionView(button.dataset.collectionView));
+}
 startMatchButton?.addEventListener("click", () => runMatchAction(() => startMatch()));
 continueSavedButton?.addEventListener("click", () => runMatchAction(() => continueMatch()));
 discardSavedButton?.addEventListener("click", () => runMatchAction(() => discardSavedMatch()));

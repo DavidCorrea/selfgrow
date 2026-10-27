@@ -3012,6 +3012,117 @@ export async function checks() {
     }
   }
 
+  // --- The set can show only the cards still to collect ----------------------
+
+  // A player working toward a full set can hide the cards they already hold. The
+  // view is a page choice, so switching it must leave the collection and the
+  // deck exactly as they were, and both a visitor and an agent can read which
+  // view is showing.
+  const setCollectionViewTool = toolNamed("set-collection-view");
+  const setViewButtons = [...document.querySelectorAll("[data-collection-view]")];
+  const setList = document.getElementById("collection-list");
+  if (!setCollectionViewTool) {
+    fail('no "set-collection-view" tool is declared, so an agent cannot choose between every card and only those still to collect');
+  } else if (setList) {
+    if (setViewButtons.length !== 2) {
+      fail(
+        `the Collection screen offers ${setViewButtons.length} view control(s) where it should offer two — every card and only those still to collect`
+      );
+    }
+
+    // The default is the whole set, as get-state, list-collection and the page
+    // all agree, and every card id is listed.
+    const beforeView = game.readCollection();
+    const beforeState = game.readState();
+    const setIds = cardCatalog.CARDS.map((card) => card.id);
+    if (beforeView.view !== "all") {
+      fail(`the collection opens showing the "${beforeView.view}" view where "all" — every card — is expected`);
+    }
+    if (beforeState.collectionView !== beforeView.view) {
+      fail(
+        `get-state reports the collection view as "${beforeState.collectionView}" while list-collection reports "${beforeView.view}"`
+      );
+    }
+    const allRows = [...setList.querySelectorAll("[data-card-id]")].map((row) => row.dataset.cardId);
+    if (allRows.length !== setIds.length) {
+      fail(`the collection's "all" view lists ${allRows.length} card(s) where the game has ${setIds.length}`);
+    }
+
+    // Switching to "missing" lists only the cards the player does not hold.
+    const afterMissingView = await setCollectionViewTool.execute({ view: "missing" });
+    if (afterMissingView.collectionView !== "missing") {
+      fail(`switching the set to "missing" reports the view as "${afterMissingView.collectionView}" instead of "missing"`);
+    }
+    const heldIds = new Set(beforeView.ownedCards.map((card) => card.id));
+    const expectedMissing = setIds.filter((id) => !heldIds.has(id));
+    const missingRows = [...setList.querySelectorAll("[data-card-id]")].map((row) => row.dataset.cardId);
+    const wrongMissing = missingRows.filter((id) => heldIds.has(id));
+    const stillShowing = expectedMissing.filter((id) => !missingRows.includes(id));
+    if (missingRows.length !== expectedMissing.length || wrongMissing.length || stillShowing.length) {
+      fail(
+        `the "missing" view lists ${missingRows.length} card(s) where ${expectedMissing.length} are uncollected` +
+          `${wrongMissing.length ? `; it still shows collected ${wrongMissing.join(", ")}` : ""}` +
+          `${stillShowing.length ? `; it hides uncollected ${stillShowing.join(", ")}` : ""}`
+      );
+    }
+    if (setList.querySelectorAll(".owned-card").length) {
+      fail(
+        `the "missing" view marks ${setList.querySelectorAll(".owned-card").length} card(s) as owned, though it should list only cards not yet collected`
+      );
+    }
+    const pressedMissing = setViewButtons
+      .filter((button) => button.getAttribute("aria-pressed") === "true")
+      .map((button) => button.dataset.collectionView);
+    if (pressedMissing.length !== 1 || pressedMissing[0] !== "missing") {
+      fail(`the "missing" view does not mark its own button pressed (pressed: ${pressedMissing.join(", ") || "none"})`);
+    }
+
+    // Switching the view touches neither the collection nor the deck.
+    const afterState = game.readState();
+    const afterView = game.readCollection();
+    if (JSON.stringify(asIdCopies(afterView.ownedCards)) !== JSON.stringify(asIdCopies(beforeView.ownedCards))) {
+      fail("switching the set view changed the cards in the collection");
+    }
+    if (JSON.stringify(afterState.deck) !== JSON.stringify(beforeState.deck)) {
+      fail("switching the set view changed the deck");
+    }
+    const missingState = await getState.execute({});
+    if (missingState.collectionView !== "missing") {
+      fail(`get-state reports the collection view as "${missingState.collectionView}" while the "missing" view is showing`);
+    }
+
+    // Switching back restores the whole set and marks "all" pressed.
+    const backState = await setCollectionViewTool.execute({ view: "all" });
+    if (backState.collectionView !== "all") {
+      fail(`switching the set back to "all" reports the view as "${backState.collectionView}"`);
+    }
+    const backRows = [...setList.querySelectorAll("[data-card-id]")].map((row) => row.dataset.cardId);
+    if (backRows.length !== setIds.length) {
+      fail(`the collection's "all" view lists ${backRows.length} card(s) after switching back where the game has ${setIds.length}`);
+    }
+    const backOwned = setList.querySelectorAll(".owned-card").length;
+    if (backOwned !== beforeView.distinctCards) {
+      fail(
+        `the collection's "all" view marks ${backOwned} card(s) as owned after switching back, where the player owns ${beforeView.distinctCards} different one(s)`
+      );
+    }
+    const pressedAll = setViewButtons
+      .filter((button) => button.getAttribute("aria-pressed") === "true")
+      .map((button) => button.dataset.collectionView);
+    if (pressedAll.length !== 1 || pressedAll[0] !== "all") {
+      fail(`the "all" view does not mark its own button pressed (pressed: ${pressedAll.join(", ") || "none"})`);
+    }
+
+    // A view the page does not have is refused with a reason, and changes nothing.
+    const refusedView = await setCollectionViewTool.execute({ view: "everything" });
+    if (!refusedView.error) {
+      fail('setting the collection view to "everything" was accepted, though the page has only "all" and "missing"');
+    }
+    if (game.readCollection().view !== "all") {
+      fail(`a refused view left the collection showing "${game.readCollection().view}" instead of "all"`);
+    }
+  }
+
   const showScreen = toolNamed("show-screen");
   if (!showScreen) {
     fail('no "show-screen" tool is declared, so an agent cannot open a screen the way a visitor can');
@@ -3853,15 +3964,27 @@ export async function checks() {
         }
       }
 
-      // Ending the turn: the opponent acts, the turn returns and energy is full.
+      // Ending the turn: the player's table strikes, then the opponent takes
+      // its turn, the turn returns and energy is full. The opponent's own turn
+      // can mend its hero (a when-played heal), so the health the player's blow
+      // left is read from the log's own words before the opponent's turn
+      // begins — the final total may already have been restored.
       const beforeEnd = game.readState().match;
       const ourAttack = beforeEnd.table.reduce((total, card) => total + card.attack, 0);
       game.endMatchTurn();
       const afterEnd = game.readState().match;
-      if (afterEnd.opponentHealth !== Math.max(0, beforeEnd.opponentHealth - ourAttack)) {
+      const blowLines = afterEnd.log.slice(beforeEnd.log.length);
+      const opponentTurnAt = blowLines.indexOf("Opponent's turn.");
+      const playerBlowLines = opponentTurnAt === -1 ? blowLines : blowLines.slice(0, opponentTurnAt);
+      const healthAfterBlow = playerBlowLines.reduce((health, line) => {
+        const shown = /opponent health (\d+)\.$/.exec(line);
+        return shown ? Number(shown[1]) : health;
+      }, beforeEnd.opponentHealth);
+      const expectedOpponentHealth = Math.max(0, beforeEnd.opponentHealth - ourAttack);
+      if (healthAfterBlow !== expectedOpponentHealth) {
         fail(
-          `ending the turn left the opponent at ${afterEnd.opponentHealth} instead of ` +
-            `${Math.max(0, beforeEnd.opponentHealth - ourAttack)} after ${ourAttack} damage from your table`
+          `your table's ${ourAttack} damage left the opponent at ${healthAfterBlow} instead of ` +
+            `${expectedOpponentHealth} (the turn ended with the opponent at ${afterEnd.opponentHealth})`
         );
       }
       if (afterEnd.turn !== "player") {
