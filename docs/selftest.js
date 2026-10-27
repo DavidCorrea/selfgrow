@@ -4649,8 +4649,9 @@ export async function checks() {
     }
 
     // The player directs an attack with their own hand on the keyboard: every
-    // card on their table offers a control that picks it to strike with, every
-    // card on the opponent's table offers a target, and picking both lands the
+    // card on their table offers a control that picks it to strike with, but the
+    // opponent's side offers a target only once one of those cards is picked, so
+    // the board never invites a blow that cannot be made. Picking both lands the
     // blow on the chosen card — with the pick and the spent card carried in the
     // state an agent reads, not only in colour.
     {
@@ -4666,11 +4667,33 @@ export async function checks() {
       if (!attackerCard || !targetCard) {
         fail("no attacker and opponent card were on the table, so choosing an attack cannot be checked on the page");
       } else {
+        // Nothing is picked yet, so the opponent's side must offer no target at
+        // all — on any card or, when the table is empty, as the hero button.
+        if (live.selectedAttacker !== null) {
+          fail(
+            `this check began with ${JSON.stringify(live.selectedAttacker)} already picked to attack with, ` +
+              "so the un-picked board cannot be read"
+          );
+        }
+        if (document.querySelector("#match-opponent-table .match-attack-target")) {
+          fail("an attack target was offered on the opponent's side while no card was picked to attack with");
+        }
+        if (document.querySelector("#match-opponent-table .match-attack-hero")) {
+          fail("the attack-the-hero control was offered while no card was picked to attack with");
+        }
+        if (
+          document.querySelector(
+            `#match-opponent-table [data-card-id="${targetCard.id}"] .match-attack-target`
+          )
+        ) {
+          fail(
+            `an attack target was offered on the opponent's "${targetCard.name}" while no card was picked ` +
+              "to attack with"
+          );
+        }
+
         const selectButton = document.querySelector(
           `#match-table [data-card-id="${attackerCard.id}"] .match-attack-select`
-        );
-        const targetButton = document.querySelector(
-          `#match-opponent-table [data-card-id="${targetCard.id}"] .match-attack-target`
         );
         if (!selectButton) {
           fail(`"${attackerCard.name}" on your table offers no control to attack with it`);
@@ -4679,13 +4702,10 @@ export async function checks() {
         } else if (!textOf(selectButton).includes(attackerCard.name)) {
           fail(`the control to attack with "${attackerCard.name}" does not name the card: "${textOf(selectButton)}"`);
         }
-        if (!targetButton) {
-          fail(`"${targetCard.name}" on the opponent's table offers no control to attack it`);
-        } else if (!textOf(targetButton).includes(targetCard.name)) {
-          fail(`the control to attack "${targetCard.name}" does not name the card: "${textOf(targetButton)}"`);
-        }
 
-        if (selectButton && targetButton) {
+        if (selectButton) {
+          // Picking the card reveals the legal targets: a control on each
+          // opponent table card (or the hero button once that table is empty).
           selectButton.click();
           const chosen = game.readState().match;
           if (chosen.selectedAttacker !== attackerCard.id) {
@@ -4699,6 +4719,51 @@ export async function checks() {
           );
           if (!pressed || pressed.getAttribute("aria-pressed") !== "true") {
             fail(`choosing "${attackerCard.name}" did not mark its control pressed`);
+          }
+          const revealedTarget = document.querySelector(
+            `#match-opponent-table [data-card-id="${targetCard.id}"] .match-attack-target`
+          );
+          if (!revealedTarget) {
+            fail(
+              `picking "${attackerCard.name}" revealed no control to attack "${targetCard.name}" ` +
+                "on the opponent's table"
+            );
+          } else if (!textOf(revealedTarget).includes(targetCard.name)) {
+            fail(`the control to attack "${targetCard.name}" does not name the card: "${textOf(revealedTarget)}"`);
+          }
+
+          // Picking the same card again clears the pick, and the targets go with
+          // it: the board returns to offering no target.
+          document
+            .querySelector(`#match-table [data-card-id="${attackerCard.id}"] .match-attack-select`)
+            ?.click();
+          const cleared = game.readState().match;
+          if (cleared.selectedAttacker !== null) {
+            fail(
+              `picking "${attackerCard.name}" a second time did not clear the pick: it still names ` +
+                `${JSON.stringify(cleared.selectedAttacker)}`
+            );
+          }
+          if (
+            document.querySelector("#match-opponent-table .match-attack-target") ||
+            document.querySelector("#match-opponent-table .match-attack-hero")
+          ) {
+            fail(
+              `the attack targets stayed on the opponent's side after "${attackerCard.name}" was unpicked, ` +
+                "so the board still invites a blow with no card picked"
+            );
+          }
+
+          // Re-pick and let the blow land on the chosen card.
+          document
+            .querySelector(`#match-table [data-card-id="${attackerCard.id}"] .match-attack-select`)
+            ?.click();
+          const chosenAgain = game.readState().match;
+          if (chosenAgain.selectedAttacker !== attackerCard.id) {
+            fail(
+              `re-picking "${attackerCard.name}" left the match's picked attacker as ` +
+                `${JSON.stringify(chosenAgain.selectedAttacker)}`
+            );
           }
 
           const healthBefore = targetCard.health;
