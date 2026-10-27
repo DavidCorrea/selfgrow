@@ -255,7 +255,7 @@ body {
 #screen-collection .set,
 #screen-collection .deck-message,
 #screen-collection .storage-note,
-#screen-collection .save-code {
+#screen-collection .save-restore {
   grid-column: 1 / -1;
 }
 
@@ -771,6 +771,49 @@ body {
   border-radius: var(--radius-control);
   color: var(--ink);
   font-size: 0.9rem;
+}
+
+/* The save code and the restore controls, folded behind this heading and button
+   so the deck a player came to work on is what the Collection screen opens on.
+   The collapsed section is just the head; the body holds both panels. */
+.save-restore {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-control);
+  background-color: rgba(168, 177, 212, 0.05);
+}
+
+.save-restore-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.save-restore-heading {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* Sized quieter than the rail's big actions, but .btn's own min-height is what
+   still holds the thumb's 44px target — only the padding gives way. */
+.btn.save-restore-toggle {
+  padding: 0.3rem 0.7rem;
+  font-size: 0.78rem;
+}
+
+.save-restore-body {
+  display: grid;
+  gap: 0.75rem;
+}
+
+/* Without this the body keeps its `display: grid` and refuses to fold. */
+.save-restore-body[hidden] {
+  display: none;
 }
 
 /* The whole game as one save code: a heading, a line about what it is for, and

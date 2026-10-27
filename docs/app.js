@@ -171,6 +171,11 @@ const state = {
   // Play screen. It belongs to the page rather than to a match: a match already
   // running keeps the opponent it was started against.
   opponentId: DEFAULT_OPPONENT.id,
+  // Whether the Collection screen's save-and-restore section is open. It holds
+  // the save code and the restore controls, folded away so the deck a player
+  // came to work on is what the screen opens on; opening it only shows those
+  // controls. Page-only, so it is never written to a save.
+  saveRestoreOpen: false,
   // Whether the Collection screen's save-code panel is open, so a caller can
   // read the same fact the button's label carries. Revealing the code only sets
   // this and fills the box: it reads the save and writes nothing, so the
@@ -212,6 +217,12 @@ const collectionOrderButtons = [...document.querySelectorAll("[data-collection-o
 // card is drawn. Both optional, so a missing one degrades to no figure.
 const nextRewardHeading = document.getElementById("next-reward-heading");
 const nextRewardBody = document.getElementById("next-reward-body");
+
+// The Collection screen's fold over the save and restore controls: the body
+// holding both panels, and the one button that shows and hides it. Optional for
+// the same reason the panels are, so a missing one degrades to a missing fold.
+const saveRestoreBody = document.getElementById("save-restore-body");
+const saveRestoreToggle = document.getElementById("action-toggle-save-restore");
 
 // The Collection screen's save-code control: the one button that reveals and
 // hides the code, the panel holding the box and the copy button, and the status
@@ -344,10 +355,28 @@ function render() {
   renderMatchRules();
   renderContinueOffer();
   renderNextReward();
+  renderSaveRestore();
   renderSaveCode();
   renderRestore();
 
   screenStatus.textContent = `${SCREEN_LABELS[state.screen]} screen`;
+}
+
+/**
+ * Draw the Collection screen's save-and-restore fold: whether the body holding
+ * the save-code and restore panels is open, and what the one button offers
+ * next. The button says in words the same thing `aria-expanded` says silently,
+ * so the fold is read whether or not the styling is.
+ */
+function renderSaveRestore() {
+  if (!saveRestoreBody) return;
+  saveRestoreBody.hidden = !state.saveRestoreOpen;
+  if (saveRestoreToggle) {
+    saveRestoreToggle.setAttribute("aria-expanded", String(state.saveRestoreOpen));
+    saveRestoreToggle.textContent = state.saveRestoreOpen
+      ? "Hide save and restore"
+      : "Show save and restore";
+  }
 }
 
 /**
@@ -1620,6 +1649,20 @@ export function toggleMatchRules() {
 }
 
 /**
+ * Open or fold away the Collection screen's save-and-restore section — what a
+ * visitor does by pressing its "Show save and restore"/"Hide save and restore"
+ * button, and what the toggle-save-restore tool does on their behalf. Opening
+ * it only shows the save code and restore controls; folding it hides them and
+ * says so to a screen reader. Returns the state afterwards, the same shape
+ * readState() gives.
+ */
+export function toggleSaveRestore() {
+  state.saveRestoreOpen = !state.saveRestoreOpen;
+  render();
+  return readState();
+}
+
+/**
  * Choose which cards the Collection screen's set list shows — what a visitor
  * does by pressing the "All cards", "Still to collect", "Acts when played" or
  * "Acts when they fall" button, and what the set-collection-view tool does on
@@ -1676,9 +1719,14 @@ export function readSaveCode() {
  */
 export function setSaveCodeShown(shown) {
   state.saveCodeShown = Boolean(shown);
+  // Revealing the code is pointless while the section holding it is folded, so
+  // asking for it open also opens the fold; hiding the code leaves the fold as
+  // the player left it.
+  if (state.saveCodeShown) state.saveRestoreOpen = true;
   saveCodeMessage = state.saveCodeShown
     ? "Your save code is on screen — copy it, or select it by hand."
     : "";
+  renderSaveRestore();
   renderSaveCode();
   return readSaveCode();
 }
@@ -2395,9 +2443,13 @@ function commitDeck() {
  * card the last win added to the collection, or null when nothing was newly
  * earned: no result yet, a loss, or a win whose only card was a duplicate), the
  * card the next win would add (`nextReward`, with `nextRewardComplete` true once
- * every reward card is owned), whether the Collection screen's save-code panel
- * is open (`saveCodeShown`, the same fact the "Show save code"/"Hide save code"
- * button carries — the get-save-code tool returns the code itself),
+ * every reward card is owned), whether the Collection screen's save-and-restore
+ * section is open (`saveRestoreShown`, the fold holding both the save code and
+ * the restore controls, the same fact its "Show save and restore"/"Hide save and
+ * restore" button carries — the toggle-save-restore tool flips it), whether the
+ * Collection screen's save-code panel is open (`saveCodeShown`, the same fact
+ * the "Show save code"/"Hide save code" button carries — the get-save-code tool
+ * returns the code itself),
  * whether the Collection screen is waiting on the player's answer about a pasted
  * save code before it replaces the game (`restorePending`) and what its restore
  * status line says (`restoreMessage` — why a code was refused, or what a
@@ -2453,6 +2505,11 @@ export function readState() {
     collectionView: state.collectionView,
     // How that list is read: "catalog" for the game's own order, "cost" cheapest first.
     collectionOrder: state.collectionOrder,
+    // Whether the Collection screen's save-and-restore section is open right
+    // now — the fold holding both the save code and the restore controls, the
+    // same fact the "Show save and restore"/"Hide save and restore" button's
+    // label carries. The toggle-save-restore tool flips it.
+    saveRestoreShown: state.saveRestoreOpen,
     // Whether the Collection screen's save-code panel is open right now, so a
     // caller reads the same fact the "Show save code"/"Hide save code" button's
     // label carries. The get-save-code tool returns the code itself.
@@ -2822,6 +2879,7 @@ for (const button of collectionViewButtons) {
 for (const button of collectionOrderButtons) {
   button.addEventListener("click", () => setCollectionOrder(button.dataset.collectionOrder));
 }
+saveRestoreToggle?.addEventListener("click", () => toggleSaveRestore());
 saveCodeButton?.addEventListener("click", () => setSaveCodeShown(!state.saveCodeShown));
 copySaveCodeButton?.addEventListener("click", () => copySaveCode());
 restoreCodeButton?.addEventListener("click", () => {

@@ -10419,10 +10419,82 @@ export async function checks() {
     }
   }
 
+  // The save code and the restore controls are folded behind one "Save and
+  // restore" section, so the deck a player came to work on is what the
+  // Collection screen opens on. The fold opens on one control that names its
+  // action, opening it paints both panels, and the fold reaches the state an
+  // agent reads.
+  game.showScreen("collection");
+  const saveRestoreBodyEl = document.getElementById("save-restore-body");
+  const saveRestoreToggleEl = document.getElementById("action-toggle-save-restore");
+  if (!saveRestoreBodyEl || !saveRestoreToggleEl) {
+    fail(
+      'the Collection screen has no "Save and restore" fold — the section, its one toggle button and the ' +
+        "body holding the save-code and restore controls must all be present"
+    );
+  } else {
+    if (!saveRestoreBodyEl.hidden) {
+      fail(
+        "the save-and-restore section is open before anything was pressed, so the deck a player came to " +
+          "build is pushed off the first screen"
+      );
+    }
+    if (saveRestoreToggleEl.getAttribute("aria-expanded") !== "false") {
+      fail("the save-and-restore button does not say the section is folded on arrival");
+    }
+    if (saveRestoreToggleEl.getAttribute("aria-controls") !== "save-restore-body") {
+      fail(
+        `the save-and-restore button controls ` +
+          `${JSON.stringify(saveRestoreToggleEl.getAttribute("aria-controls"))} instead of the body it shows, ` +
+          "so a screen reader cannot follow it"
+      );
+    }
+    if (!/save and restore/i.test(textOf(saveRestoreToggleEl))) {
+      fail(
+        `the save-and-restore button reads "${textOf(saveRestoreToggleEl)}", which does not name what it shows`
+      );
+    }
+    if (game.readState().saveRestoreShown !== false) {
+      fail("get-state does not report the save-and-restore section as folded on arrival");
+    }
+
+    saveRestoreToggleEl.click();
+
+    if (saveRestoreBodyEl.hidden) {
+      fail('pressing "Show save and restore" left the section folded, so the save code is not reachable');
+    }
+    if (saveRestoreToggleEl.getAttribute("aria-expanded") !== "true") {
+      fail("the save-and-restore button does not say it is expanded after the section is opened");
+    }
+    if (!/hide/i.test(textOf(saveRestoreToggleEl))) {
+      fail(
+        `the save-and-restore button reads "${textOf(saveRestoreToggleEl)}" after opening instead of offering ` +
+          "to fold it"
+      );
+    }
+    if (game.readState().saveRestoreShown !== true) {
+      fail("get-state still reports the save-and-restore section as folded after it was opened");
+    }
+    for (const [what, id] of [
+      ["the save-code control", "action-save-code"],
+      ["the restore box", "restore-code-text"],
+      ["the restore control", "action-restore-save-code"],
+    ]) {
+      const box = document.getElementById(id)?.getBoundingClientRect();
+      if (!box || box.height === 0) {
+        fail(`opening the save-and-restore section does not put ${what} on screen`);
+      }
+    }
+
+    saveRestoreToggleEl.click();
+    if (!saveRestoreBodyEl.hidden || game.readState().saveRestoreShown !== false) {
+      fail("folding the save-and-restore section did not put it away again");
+    }
+  }
+
   // The one control on the Collection screen: revealing the code shows it, says
   // so in words, and changes nothing about the collection, the deck or the
   // record; hiding it puts the panel away again.
-  game.showScreen("collection");
   const saveCodeButtonEl = document.getElementById("action-save-code");
   const saveCodePanelEl = document.getElementById("save-code-panel");
   const saveCodeTextEl = document.getElementById("save-code-text");
@@ -10537,12 +10609,50 @@ export async function checks() {
     if (game.readState().saveCodeShown !== true) {
       fail("set-save-code-shown did not open the save-code panel");
     }
+    if (game.readState().saveRestoreShown !== true) {
+      fail(
+        "set-save-code-shown revealed the code without opening the save-and-restore section that holds it, " +
+          "so an agent's reveal leaves the code out of sight"
+      );
+    }
     if (JSON.stringify(collection.readProgress()) !== progressBeforeTool) {
       fail("set-save-code-shown changed the recorded wins, matches or opponent record");
     }
     await setSaveCodeShownTool.execute({ shown: false });
     if (game.readState().saveCodeShown !== false) {
       fail("set-save-code-shown did not close the save-code panel again");
+    }
+    // Hiding the code leaves the section as the player left it, so fold it back
+    // for the checks that follow.
+    if (saveRestoreBodyEl && !saveRestoreBodyEl.hidden) game.toggleSaveRestore();
+  }
+
+  // The fold is a move a visitor can make, so it is a tool too: it flips the
+  // section and reports the flip, and leaves it where it was put.
+  const toggleSaveRestoreTool = toolNamed("toggle-save-restore");
+  if (!toggleSaveRestoreTool) {
+    fail(
+      'no "toggle-save-restore" tool is declared, so an agent cannot show the save and restore controls as a ' +
+        "visitor can"
+    );
+  } else if (toggleSaveRestoreTool.annotations?.readOnlyHint !== false) {
+    fail(
+      '"toggle-save-restore" changes what is on screen but is not marked as changing anything ' +
+        "(readOnlyHint: false)"
+    );
+  } else {
+    const wasShown = game.readState().saveRestoreShown;
+    const toggled = await toggleSaveRestoreTool.execute({});
+    if (!toggled || toggled.saveRestoreShown === wasShown) {
+      fail(
+        `the toggle-save-restore tool returned ${JSON.stringify(toggled)}, which does not report the section flipped`
+      );
+    } else if (game.readState().saveRestoreShown === wasShown) {
+      fail("the toggle-save-restore tool reported flipping the section but the page did not change");
+    }
+    await toggleSaveRestoreTool.execute({});
+    if (game.readState().saveRestoreShown !== wasShown) {
+      fail("toggling the save-and-restore section twice through the tool did not leave it as it was");
     }
   }
 
@@ -11015,6 +11125,17 @@ async function collectionCardPhoneProblems() {
     doc.getElementById("action-collection")?.click();
     await waitFor(() => !doc.getElementById("screen-collection")?.hidden, 400);
 
+    // What a phone's Collection screen opens on: with the save-and-restore
+    // section folded, the deck a player came to work on has to reach the first
+    // screen rather than starting below two save panels.
+    frame.contentWindow.scrollTo(0, 0);
+    await new Promise((resolve) =>
+      frame.contentWindow.requestAnimationFrame(() =>
+        frame.contentWindow.requestAnimationFrame(resolve)
+      )
+    );
+    problems.push(...firstScreenProblemsAt(doc, 390, 844));
+
     for (const width of [390, 280]) {
       frame.style.width = `${width}px`;
       // Two frames so the new width is laid out before it is read.
@@ -11029,6 +11150,36 @@ async function collectionCardPhoneProblems() {
     frame.remove();
   }
 
+  return problems;
+}
+
+/**
+ * What is wrong with what a phone's Collection screen puts on its first screen:
+ * the deck a player came to work on has to be there, with the save code and the
+ * restore controls folded away behind one control rather than pushing it down.
+ */
+function firstScreenProblemsAt(doc, width, height) {
+  const problems = [];
+  const deckHeading = doc.getElementById("deck-heading");
+  const foldBody = doc.getElementById("save-restore-body");
+  if (!deckHeading || !foldBody) {
+    return [
+      `the Collection screen has no deck heading or save-and-restore fold at a ${width}x${height} phone`,
+    ];
+  }
+  if (!foldBody.hidden) {
+    problems.push(
+      `the save-and-restore section is open when the Collection screen opens at a ${width}x${height} phone, ` +
+        "so the deck is pushed below the fold"
+    );
+  }
+  const top = deckHeading.getBoundingClientRect().top;
+  if (top > height + 1) {
+    problems.push(
+      `the deck heading starts ${Math.round(top)}px down a ${width}x${height} phone, below the fold, so a ` +
+        "player who came to build a deck sees none of it"
+    );
+  }
   return problems;
 }
 
