@@ -117,9 +117,13 @@
       <section id="screen-play" class="screen" aria-labelledby="play-heading" hidden>
         <h2 class="screen-heading" id="play-heading" tabindex="-1">Play a match</h2>
 
-        <!-- What stands in for the board before a match begins: the deck the
-             match would be dealt from, and the fewest cards it needs. -->
+        <!-- What stands in for the board before a match begins: who you are
+             about to face, the deck the match would be dealt from, and the
+             fewest cards it needs. The opponent's name is filled in from the
+             one place the opponent is defined, so the page and the match cannot
+             disagree about who it is. -->
         <p class="screen-note" id="match-intro">
+          You face <span id="match-intro-opponent">the opponent</span>, who brings a deck of their own.
           Your deck holds <span data-field="deckSize">0</span> cards; a match needs at least
           <span data-field="minimumDeckSize">5</span>.
         </p>
@@ -129,13 +133,18 @@
              drawn into a canvas, so a screen reader and an agent read the same
              game a sighted player does. -->
         <div class="match-board" id="match-board" hidden>
+          <!-- Who the match is against, said as a single line as well as in the
+               board's own labels, so the name is read out wherever a reader
+               arrives on the board. -->
+          <p class="sr-only" id="match-opponent-name"></p>
+
           <dl class="match-standings">
             <div class="standing">
               <dt class="standing-label">Your health</dt>
               <dd class="standing-value"><span id="match-player-health">20</span></dd>
             </div>
             <div class="standing">
-              <dt class="standing-label">Opponent health</dt>
+              <dt class="standing-label" id="match-opponent-health-label">Opponent health</dt>
               <dd class="standing-value"><span id="match-opponent-health">20</span></dd>
             </div>
             <div class="standing">
@@ -143,7 +152,7 @@
               <dd class="standing-value"><span id="match-energy">3 of 3</span></dd>
             </div>
             <div class="standing">
-              <dt class="standing-label">Opponent hand</dt>
+              <dt class="standing-label" id="match-opponent-hand-label">Opponent hand</dt>
               <dd class="standing-value"><span id="match-opponent-hand">3</span></dd>
             </div>
             <div class="standing">
@@ -187,6 +196,9 @@
             <ul class="match-table" id="match-table" aria-label="Cards on your table"></ul>
           </section>
 
+          <!-- The opponent's side of the table. Its heading is filled in with
+               the opponent's own name, so the table reads as theirs rather than
+               as an anonymous other side. -->
           <section class="match-side" aria-labelledby="match-opponent-table-heading">
             <h3 class="match-heading" id="match-opponent-table-heading">Opponent's table</h3>
             <ul class="match-table" id="match-opponent-table" aria-label="Cards on the opponent's table"></ul>
