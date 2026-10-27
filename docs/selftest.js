@@ -11035,6 +11035,152 @@ export async function checks() {
     }
   }
 
+  // --- Growing cards spread across the cost curve ----------------------------
+
+  // A mechanic is only an archetype once a deck can be built around it, so
+  // growth is carried by three cards at different points on the cost curve: a
+  // cheap one to commit to early, a mid-cost one to hold the middle, and a heavy
+  // one for a long game. Each is a reward, so a player can collect toward the
+  // archetype at any deck size, and each grows exactly as every other growing
+  // card does. The three are named here, so a growing card that is left out of
+  // the set the collection pays out is caught.
+  const growthCurveIds = ["budding-sapling", "sunroot-treant", "worldroot-ancient"];
+  const growthCurveCards = growthCurveIds.map((id) => cardCatalog.CARD_BY_ID.get(id));
+
+  if (growthCurveCards.some((card) => !card)) {
+    fail(
+      `the growth deck is missing ${JSON.stringify(growthCurveIds.filter((id) => !cardCatalog.CARD_BY_ID.get(id)))} ` +
+        "from the card catalog, so it has no body to play at that point in a match"
+    );
+  } else if (growthCurveCards.some((card) => card.growthAbility !== growthWords)) {
+    fail(
+      `the growth deck's cards ${JSON.stringify(
+        growthCurveCards.filter((card) => card.growthAbility !== growthWords).map((card) => card.name)
+      )} do not all print the shared growth words ${JSON.stringify(growthWords)}`
+    );
+  } else {
+    // Spread across the curve: a cheap, a mid-cost and an expensive card, no two
+    // at the same cost, so a growth deck can be played at every point.
+    const curveCosts = growthCurveCards.map((card) => card.cost);
+    const orderedCosts = [...curveCosts].sort((a, b) => a - b);
+    if (orderedCosts[0] > 3 || orderedCosts[orderedCosts.length - 1] < 5) {
+      fail(
+        `the growth cards' costs ${JSON.stringify(curveCosts)} do not reach from a cheap early play to an expensive ` +
+          "late one, so the archetype has no card at every point in the match"
+      );
+    }
+    if (new Set(curveCosts).size !== curveCosts.length) {
+      fail(`two growth cards share a cost (${JSON.stringify(curveCosts)}), so the curve is not spread`);
+    }
+
+    const curveStarterIds = new Set(cardCatalog.STARTER_COLLECTION.map((entry) => entry.id));
+    for (const card of growthCurveCards) {
+      // A reward the pool pays out in order, and not dealt at the start, so a
+      // player collects toward the archetype rather than already owning it.
+      if (!cardCatalog.REWARD_POOL.includes(card.id)) {
+        fail(`the growth card "${card.name}" is not in the reward pool, so a win can never add it to a collection`);
+      }
+      if (curveStarterIds.has(card.id)) {
+        fail(`the growth card "${card.name}" is dealt at the start as well as earned, so a win for it is not new`);
+      }
+
+      // A described picture, unique in the set and drawn only from its shapes.
+      const curveArt = cardArt?.cardArt(card.id);
+      if (!curveArt || !(curveArt.inner || "").trim() || !curveArt.description?.trim()) {
+        fail(`the growth card "${card.name}" has no described picture, so it cannot be known by sight`);
+        continue;
+      }
+      const curveClasses = [...curveArt.inner.matchAll(/class="([^"]*)"/g)].map(([, className]) => className);
+      const outsideStyle = curveClasses.filter((className) => !["art-body", "art-accent"].includes(className));
+      if (curveClasses.length === 0 || outsideStyle.length > 0) {
+        fail(
+          `the growth card "${card.name}" is drawn with ${JSON.stringify(curveClasses)} instead of only the set's ` +
+            "art-body and art-accent shapes"
+        );
+      }
+      const curveTwin = cardCatalog.CARDS.find(
+        (other) => other.id !== card.id && (cardArt?.cardArt(other.id)?.inner || "") === curveArt.inner
+      );
+      if (curveTwin) {
+        fail(`the growth card "${card.name}" is drawn identically to "${curveTwin.name}", so the two cannot be told apart`);
+      }
+
+      // The words are on the face in the collection, and an agent reads them
+      // from the field written for the ability.
+      const curveFace = document.querySelector(`#collection-list [data-card-id="${card.id}"]`);
+      if (faceAbility(curveFace) !== growthWords) {
+        fail(
+          `the growth card "${card.name}" in the collection does not print ${JSON.stringify(growthWords)} on its ` +
+            `face (it reads ${JSON.stringify(faceAbility(curveFace))})`
+        );
+      }
+      if (listCollection) {
+        const curveEntry = (await listCollection.execute()).cards.find((listed) => listed.id === card.id);
+        if (!curveEntry) {
+          fail(`list-collection does not return the growth card "${card.name}", so an agent cannot find it in the set`);
+        } else if (curveEntry.growthAbility !== growthWords) {
+          fail(
+            `list-collection returns "${card.name}" with growthAbility ` +
+              `${JSON.stringify(curveEntry.growthAbility ?? null)} instead of ${JSON.stringify(growthWords)}`
+          );
+        }
+      }
+    }
+
+    // The set grew by exactly these three, so both the count a player sees and
+    // the "still to collect" behind it include them: setTotal is the catalog's
+    // own length, and the cards are listed, so the uncollected count follows.
+    if (listCollection) {
+      const listedSet = await listCollection.execute();
+      if (listedSet.setTotal !== cardCatalog.CARDS.length) {
+        fail(
+          `list-collection reports a set of ${listedSet.setTotal} cards while the catalog holds ` +
+            `${cardCatalog.CARDS.length}, so the growth cards are not counted in the set`
+        );
+      }
+      const listedIds = new Set((listedSet.cards ?? []).map((listed) => listed.id));
+      const missingFromSet = growthCurveIds.filter((id) => !listedIds.has(id));
+      if (missingFromSet.length) {
+        fail(
+          `list-collection leaves ${JSON.stringify(missingFromSet)} out of the set, so they cannot be collected to`
+        );
+      }
+    }
+
+    // A match played with each of them grows it exactly as a growing card does:
+    // +1 attack at the start of its owner's turn, named in the log.
+    if (!matchEngine) {
+      fail("docs/match.js could not be imported, so the growth cards cannot be played");
+    } else {
+      const curveDeck = ["sprout", "pebble-toad", "thornling", "sun-moth", "bramble-hound"];
+      for (const card of growthCurveCards) {
+        const curveMatch = matchEngine.createMatch(curveDeck, { rng: () => 0 });
+        curveMatch.player.table = [{ ...card, hasAttacked: false }];
+        curveMatch.player.hand = [];
+        curveMatch.player.deck = [];
+        curveMatch.opponent.table = [];
+        curveMatch.opponent.hand = [];
+        curveMatch.opponent.deck = [];
+        const curveLogBefore = curveMatch.log.length;
+        matchEngine.endTurn(curveMatch);
+        const curveGrown = curveMatch.player.table.find((onTable) => onTable.id === card.id);
+        if (curveGrown?.attack !== card.attack + 1) {
+          fail(
+            `"${card.name}" has ${curveGrown?.attack} attack after one of its owner's turns instead of the ` +
+              `${card.attack + 1} a single +1 growth gives`
+          );
+        }
+        const curveLine = curveMatch.log.slice(curveLogBefore).find((line) => /grows \+1 attack/i.test(line));
+        if (!curveLine || !curveLine.includes(card.name)) {
+          fail(
+            `the log does not name the growth of "${card.name}": the turn added ` +
+              `${JSON.stringify(curveMatch.log.slice(curveLogBefore))}`
+          );
+        }
+      }
+    }
+  }
+
   // --- A first win is announced where the win happens -----------------------
 
   // The result screen is where a win lands, so that is where a first against an

@@ -599,6 +599,57 @@ const CARD_ART = new Map([
       `,
     },
   ],
+  [
+    "budding-sapling",
+    {
+      description:
+        "A young sapling: a short shoot with two broad leaves low down and a bud at its tip",
+      inner: `
+        <rect class="art-body" x="45.5" y="22" width="5" height="32" rx="2.5" />
+        <path class="art-body" d="M47 42 C35 44 24 37 21 24 C34 23 45 31 47 42 Z" />
+        <path class="art-body" d="M49 36 C61 38 72 31 75 18 C62 17 51 25 49 36 Z" />
+        <ellipse class="art-body" cx="48" cy="13" rx="6.5" ry="8" />
+        <circle class="art-accent" cx="48" cy="13" r="2.6" />
+      `,
+    },
+  ],
+  [
+    "sunroot-treant",
+    {
+      description:
+        "A walking tree: a thick trunk on two root legs, two branch arms and a sun-crown of rays above its head",
+      inner: `
+        <path class="art-body" d="M38 50 L24 62 L34 62 L44 52 Z" />
+        <path class="art-body" d="M58 50 L72 62 L62 62 L52 52 Z" />
+        <path class="art-body" d="M48 8 C58 8 65 18 65 30 C65 40 63 46 65 52 L31 52 C33 46 31 40 31 30 C31 18 38 8 48 8 Z" />
+        <path class="art-body" d="M31 28 L15 21 L14 30 L29 34 Z" />
+        <path class="art-body" d="M65 28 L81 21 L82 30 L67 34 Z" />
+        <circle class="art-body" cx="48" cy="11" r="7" />
+        <path class="art-body" d="M48 1 L51 6 L45 6 Z" />
+        <path class="art-body" d="M37 6 L41 10 L36 12 Z" />
+        <path class="art-body" d="M59 6 L55 10 L60 12 Z" />
+        <circle class="art-accent" cx="41" cy="26" r="2.6" />
+        <circle class="art-accent" cx="55" cy="26" r="2.6" />
+      `,
+    },
+  ],
+  [
+    "worldroot-ancient",
+    {
+      description:
+        "A gnarled ancient: a wide knot-holed trunk over arching roots, with a branch crown of leaves",
+      inner: `
+        <path class="art-body" d="M12 54 C20 43 32 41 48 41 C64 41 76 43 84 54 Z" />
+        <path class="art-body" d="M34 54 C32 40 35 26 41 16 L55 16 C61 26 64 40 62 54 Z" />
+        <path class="art-body" d="M41 18 C34 12 26 10 19 13 L20 20 C27 18 34 21 41 27 Z" />
+        <path class="art-body" d="M55 18 C62 12 70 10 77 13 L76 20 C69 18 62 21 55 27 Z" />
+        <circle class="art-body" cx="20" cy="13" r="6.5" />
+        <circle class="art-body" cx="76" cy="13" r="6.5" />
+        <circle class="art-body" cx="48" cy="12" r="8" />
+        <circle class="art-accent" cx="48" cy="45" r="3.4" />
+      `,
+    },
+  ],
 ]);
 
 /**

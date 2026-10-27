@@ -241,6 +241,15 @@ export const CARDS = [
   // is a reward card, cheap enough to play on the opening turn, so a player meets
   // the ability by collecting toward it and can then build a deck around it.
   { id: "climbing-ivy", name: "Climbing Ivy", cost: 1, attack: 1, health: 2, growthAbility: GROWTH_ABILITY },
+  // Three more cards that grow, spread across the cost curve so the ability is
+  // an archetype a deck can be built around rather than one lucky card: a cheap
+  // sapling to commit to on the opening turn, a mid-cost treant to hold the
+  // middle, and a heavy ancient to finish a long game. Each carries the same
+  // growth words and no other ability, so the grow ability is what the card is
+  // for, and each is a reward card so a win at any deck size can pay one out.
+  { id: "budding-sapling", name: "Budding Sapling", cost: 2, attack: 2, health: 2, growthAbility: GROWTH_ABILITY },
+  { id: "sunroot-treant", name: "Sunroot Treant", cost: 4, attack: 3, health: 5, growthAbility: GROWTH_ABILITY },
+  { id: "worldroot-ancient", name: "Worldroot Ancient", cost: 6, attack: 6, health: 7, growthAbility: GROWTH_ABILITY },
 ];
 
 /** Lookup by id — the shape the saved collection speaks in. */
@@ -320,6 +329,12 @@ export const REWARD_POOL = [
   // Appended again, so a save written before the ivy existed keeps its next
   // reward and its place in the queue untouched.
   "climbing-ivy",
+  // The three growth cards are appended for the same reason: a save written
+  // before they existed keeps the next-reward order and the place it already
+  // had in the queue.
+  "budding-sapling",
+  "sunroot-treant",
+  "worldroot-ancient",
 ];
 
 /**
