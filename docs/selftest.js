@@ -4511,5 +4511,167 @@ export async function checks() {
     }
   }
 
+  // --- A blow is shown on the table, not only in the log ---------------------
+
+  // A turn's blows land as movement on the cards: the strikers lift, the cards
+  // they hit shake while their health figures drop in place, and a card worn out
+  // visibly leaves its table — while the log still names every blow, and the
+  // controls stay where they were. Reduced motion turns the movement off and
+  // leaves the numbers and the log to carry the turn alone.
+  if (matchEngine && typeof game.continueMatch === "function") {
+    // A controlled board, dealt through the engine's own save shape: three
+    // strikers, each dealing two — one bloodies the opponent's front card, one
+    // finishes it, and one bloodies the card behind. So one blow is shown on a
+    // card that falls and another on a card that survives it.
+    const controlled = {
+      id: "check-match-blows",
+      opponentName: cardCatalog.OPPONENT_NAME,
+      turn: "player",
+      over: false,
+      winner: null,
+      outcome: null,
+      recorded: false,
+      player: {
+        health: 20,
+        energy: 3,
+        maxEnergy: 3,
+        turns: 0,
+        hand: [],
+        table: [
+          { id: "glowcap", health: 4, hasAttacked: false },
+          { id: "moon-bloom", health: 3, hasAttacked: false },
+          { id: "twilight-fox", health: 2, hasAttacked: false },
+        ],
+        deck: [],
+      },
+      opponent: {
+        health: 20,
+        energy: 3,
+        maxEnergy: 3,
+        turns: 0,
+        hand: [],
+        table: [
+          { id: "emberling", health: 3, hasAttacked: false },
+          { id: "mudback-turtle", health: 5, hasAttacked: false },
+        ],
+        deck: [],
+      },
+      log: ["A match set up to show a blow landing."],
+    };
+
+    if (!collection.saveMatch(controlled)) {
+      fail("a controlled match could not be saved, so the blows it shows cannot be checked");
+    } else {
+      game.refreshSavedMatch();
+      let loaded = null;
+      try {
+        loaded = game.continueMatch();
+      } catch (e) {
+        fail(`a controlled match could not be loaded to check the blows it shows — ${e.message}`);
+      }
+
+      if (loaded?.match) {
+        // The first draw is a clean baseline: nothing has struck or been hit yet.
+        const atLoad = [...document.querySelectorAll("#match-table .match-card")];
+        if (atLoad.some((card) => card.classList.contains("is-striking") || card.classList.contains("is-hit"))) {
+          fail(
+            "a freshly loaded match already shows a card as striking or hit, so a blow cannot be told " +
+              "from the first draw"
+          );
+        }
+
+        const logBefore = loaded.match.log.length;
+        const fallenId = "emberling";
+        game.endMatchTurn();
+
+        const shown = game.readState().match;
+        const newLines = shown.log.slice(logBefore).join(" | ");
+
+        // The card that struck lifts.
+        const striking = document.querySelector('#match-table [data-card-id="glowcap"]');
+        if (!striking?.classList.contains("is-striking")) {
+          fail("a card that struck during the turn is not marked as striking on the table");
+        }
+
+        // The card behind the fallen one survives its wound and shows the new
+        // health figure in place: a Mudback Turtle at 3 health reads 3/1/3.
+        const wounded = document.querySelector('#match-opponent-table [data-card-id="mudback-turtle"]');
+        if (!wounded?.classList.contains("is-hit")) {
+          fail("a card that took damage and survived is not marked as hit on the table");
+        }
+        const woundedStats = wounded?.querySelector(".match-card-stats");
+        if (woundedStats && woundedStats.textContent !== "3/1/3") {
+          fail(
+            `a card that took damage reads "${textOf(woundedStats)}" instead of the new "3/1/3" ` +
+              "(cost/attack/health)"
+          );
+        }
+
+        // The fallen card is gone from the table but visibly leaving it, on a
+        // marker that says nothing to assistive technology — the log carries the
+        // fall to everyone.
+        if (document.querySelector(`#match-opponent-table [data-card-id="${fallenId}"]`)) {
+          fail(`a card worn to zero ("${fallenId}") is still standing on the opponent's table`);
+        }
+        const leaving = document.querySelector("#match-opponent-table .match-card-falling");
+        if (!leaving) {
+          fail("a card that fell left the table without any visible mark of it leaving");
+        } else if (leaving.getAttribute("aria-hidden") !== "true") {
+          fail(
+            "the marker for a falling card is not hidden from assistive technology, so the fall is " +
+              "announced a second time"
+          );
+        } else if (leaving.dataset.cardId) {
+          fail("the falling marker carries a data-card-id, so it reads as a card still on the table");
+        } else if (!textOf(leaving).toLowerCase().includes("fall")) {
+          fail("the marker for a falling card does not say the card is leaving the table");
+        }
+        if (!newLines.toLowerCase().includes("falls")) {
+          fail(`the log does not name the fall: the turn added ${JSON.stringify(newLines)}`);
+        }
+
+        // The board stayed usable throughout: the End turn control is still there
+        // to make the next move.
+        const endButton = document.getElementById("action-end-turn");
+        if (!endButton || endButton.hidden) {
+          fail("the End turn control is gone while the reaction plays, so the board could not be used");
+        }
+      }
+    }
+
+    // Reduced motion: one media block turns every reaction off and hides the
+    // leaving card, so nothing moves and the numbers and log carry the turn.
+    const reducedRules = [];
+    for (const sheet of document.styleSheets) {
+      let rules;
+      try {
+        rules = sheet.cssRules;
+      } catch {
+        continue; // a stylesheet this page does not own is not this page's to answer for
+      }
+      for (const rule of rules) {
+        if (rule.media?.mediaText?.includes("prefers-reduced-motion")) reducedRules.push(...rule.cssRules);
+      }
+    }
+    for (const selector of [".match-card.is-striking", ".match-card.is-hit", ".match-card-falling"]) {
+      const off = reducedRules.some(
+        (rule) => rule.selectorText?.includes(selector) && /(^|\s)none(\s|$|,)/.test(rule.style.animation ?? "")
+      );
+      if (!off) {
+        fail(
+          `reduced motion does not turn the "${selector}" reaction off, so it still moves for a visitor ` +
+            "who asked it not to"
+        );
+      }
+    }
+    const hidesFalling = reducedRules.some(
+      (rule) =>
+        rule.selectorText?.includes(".match-card-falling") && /(^|\s)none(\s|$|,)/.test(rule.style.display ?? "")
+    );
+    if (!hidesFalling) {
+      fail("reduced motion does not hide the falling-card marker, so a card could still appear to leave the table");
+    }
+  }
+
   return problems;
 }
