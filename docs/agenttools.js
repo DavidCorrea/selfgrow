@@ -125,7 +125,7 @@ export function tools() {
           opponentId: {
             type: "string",
             description:
-              "The id of the opponent to face, as get-state's `opponents` lists it (for example \"thornmere\" or \"emberwake\"). Omit to face the opponent already chosen.",
+              "The id of the opponent to face, as get-state's `opponents` lists it (for example \"thornmere\", \"emberwake\" or \"mistfen\"). Omit to face the opponent already chosen.",
           },
         },
         additionalProperties: false,
@@ -140,14 +140,14 @@ export function tools() {
       name: "choose-opponent",
       title: "Choose who the next match is against",
       description:
-        "Chooses which opponent the next match will be against, exactly as picking one in the Play screen's picker does — it changes `selectedOpponentId` in the state get-state returns, and the name the Play screen prints before a match, without dealing a match or touching one already running. Both opponents' deck kinds are listed in get-state's `opponents`, so a caller can choose by what it wants to play against. Returns the state afterwards; a match already in progress keeps the opponent it was started against. Refused, with an `error` field naming the ids that do exist, when the id names no opponent.",
+        "Chooses which opponent the next match will be against, exactly as picking one in the Play screen's picker does — it changes `selectedOpponentId` in the state get-state returns, and the name the Play screen prints before a match, without dealing a match or touching one already running. Every opponent's deck kind is listed in get-state's `opponents`, so a caller can choose by what it wants to play against. Returns the state afterwards; a match already in progress keeps the opponent it was started against. Refused, with an `error` field naming the ids that do exist, when the id names no opponent.",
       inputSchema: {
         type: "object",
         properties: {
           opponentId: {
             type: "string",
             description:
-              "The id of the opponent to face next, as get-state's `opponents` lists it (for example \"thornmere\" or \"emberwake\").",
+              "The id of the opponent to face next, as get-state's `opponents` lists it (for example \"thornmere\", \"emberwake\" or \"mistfen\").",
           },
         },
         required: ["opponentId"],
@@ -185,7 +185,7 @@ export function tools() {
       name: "end-turn",
       title: "End your turn",
       description:
-        "Ends your turn, and the two tables fight. Your cards each deal their attack to the front card of the opponent's table while it holds one: that card's health drops, and at zero it leaves the table with a log line naming it — the opponent's hero is untouched until its table is empty. A card you already sent at a chosen target with the attack tool has struck and is spent, so it is skipped here and only the rest attack the front card — which is why ending the turn without attacking is always safe. The opponent then takes a turn of its own — drawing a card while its deck holds one, its energy growing and refilling, and playing cards the way its character chooses — Thornmere the dearest it can afford, Emberwake the cheapest, so its table fills with several small strikers — each of which is logged as an \"Opponent plays …\" line naming the card and its cost, so the log shows how that opponent plays — and its cards do the same to the front card of your table, reaching your hero only once your table is empty. The turn comes back to you with your energy grown and refilled and a card drawn while your deck holds one. The match ends the moment either hero's health reaches zero: the log's last line is that final blow, `over` turns true, `winner` names the side that won, and the turn is not handed back to anyone. Every step is added to the match log. Returns the whole match afterwards so you can read what changed, or an `error` field saying why when there is no match, the match is already over, or it is not your turn.",
+        "Ends your turn, and the two tables fight. Your cards each deal their attack to the front card of the opponent's table while it holds one: that card's health drops, and at zero it leaves the table with a log line naming it — the opponent's hero is untouched until its table is empty. A card you already sent at a chosen target with the attack tool has struck and is spent, so it is skipped here and only the rest attack the front card — which is why ending the turn without attacking is always safe. The opponent then takes a turn of its own — drawing a card while its deck holds one, its energy growing and refilling, and playing cards the way its character chooses — Thornmere the dearest it can afford, Emberwake and Mistfen the cheapest, so their tables fill with several small strikers — each of which is logged as an \"Opponent plays …\" line naming the card and its cost, so the log shows how that opponent plays — and its cards do the same to the front card of your table, reaching your hero only once your table is empty. The turn comes back to you with your energy grown and refilled and a card drawn while your deck holds one. The match ends the moment either hero's health reaches zero: the log's last line is that final blow, `over` turns true, `winner` names the side that won, and the turn is not handed back to anyone. Every step is added to the match log. Returns the whole match afterwards so you can read what changed, or an `error` field saying why when there is no match, the match is already over, or it is not your turn.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: false, consequentialHint: false },
       example: {},

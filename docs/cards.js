@@ -161,6 +161,27 @@ export const OPPONENTS = [
       "emberling",
     ],
   },
+  {
+    id: "mistfen",
+    name: "Mistfen",
+    look: "a fog-bound fen where wet things creep and gather",
+    description: "Cheap, creeping things that rise from the fen in numbers",
+    cardPreference: "cheapest",
+    accent: "--opponent-mistfen",
+    sigil: "reed",
+    deck: [
+      "dewdrop-nymph",
+      "sprout",
+      "pebble-toad",
+      "moss-glider",
+      "thornling",
+      "sun-moth",
+      "bramble-hound",
+      "twilight-fox",
+      "moon-bloom",
+      "fern-drake",
+    ],
+  },
 ];
 
 /** The opponents a match can be fought against, looked up by the id a caller names. */
