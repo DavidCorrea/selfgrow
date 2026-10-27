@@ -743,7 +743,8 @@ body {
   display: none;
 }
 
-/* Both heroes and the numbers a turn turns on, in one row above the table. */
+/* Both heroes, the numbers a turn turns on, and whose turn it is, in one row
+   above the table. */
 .match-standings {
   display: flex;
   flex-wrap: wrap;
@@ -755,6 +756,13 @@ body {
 
 .match-standings .standing-value {
   font-size: clamp(1.4rem, 1.1rem + 1vw, 2rem);
+}
+
+/* A standing that is not being shown must give up its place in the row: it is
+   laid out with `display: flex`, which outweighs what `hidden` does on its own,
+   so the turn would stay on the board once the match is over. */
+.match-standings .standing[hidden] {
+  display: none;
 }
 
 /* The match as a result. It lands under the health row so the outcome is read
@@ -1573,9 +1581,9 @@ body {
     gap: 0.6rem;
   }
 
-  /* Five numbers a turn turns on, in two compact columns with the label beside
-     its value, so the health row costs a line or two rather than half the
-     screen. */
+  /* The numbers a turn turns on — including whose turn it is — in two compact
+     columns with the label beside its value, so the health row costs a line or
+     two rather than half the screen. */
   .match-standings {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));

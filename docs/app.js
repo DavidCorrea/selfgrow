@@ -105,6 +105,8 @@ const matchMessage = document.getElementById("match-message");
 const startMatchButton = document.getElementById("action-start-match");
 const endTurnButton = document.getElementById("action-end-turn");
 const concedeButton = document.getElementById("action-concede");
+const matchTurnStanding = document.getElementById("match-turn-standing");
+const matchTurn = document.getElementById("match-turn");
 const matchFields = {
   playerHealth: document.getElementById("match-player-health"),
   opponentHealth: document.getElementById("match-opponent-health"),
@@ -703,6 +705,15 @@ function renderOpponentChoice() {
 }
 
 /**
+ * Whose turn it is, in the board's words: the player is "Your turn", the
+ * opponent is named, so a player waiting on a turn that is not theirs can see
+ * who it is waiting on rather than guess.
+ */
+export function turnLabel(turn, opponentName) {
+  return turn === "player" ? "Your turn" : `${opponentName}'s turn`;
+}
+
+/**
  * Draw the match board: who the match is against, both heroes' health, the
  * player's energy, the hand, both tables and the log — all of it text, so a
  * sighted player, a screen reader and an agent read the same match. With no
@@ -721,6 +732,17 @@ function renderMatch() {
   renderOpponentChoice();
   if (startMatchButton) startMatchButton.hidden = Boolean(match);
   if (endTurnButton) endTurnButton.hidden = !match || match.over || match.turn !== "player";
+  // Whose move it is, said plainly for as long as the match runs: the log's last
+  // line is a record of what happened, not a standing answer to "am I waiting on
+  // the opponent or is the board waiting on me?". It goes with the match, so no
+  // side is named a turn before one starts or after it ends.
+  if (matchTurnStanding) matchTurnStanding.hidden = !match || match.over;
+  if (matchTurn && match && !match.over) {
+    const label = turnLabel(match.turn, match.opponentName);
+    // Written only when it changes, so the live region speaks on the turn
+    // passing rather than on every redraw of the board.
+    if (matchTurn.textContent !== label) matchTurn.textContent = label;
+  }
   // Giving up is offered right up until a match is over, so a player who is
   // losing, or who picked the wrong deck, always has a way out that keeps the
   // record honest; once there is nothing left to give up, it goes with the hand.

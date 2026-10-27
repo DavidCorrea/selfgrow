@@ -178,8 +178,8 @@
           </fieldset>
         </div>
 
-        <!-- The whole match, as labelled text: both heroes' health, the player's
-             energy, the hand, both tables, and an ordered log. Nothing here is
+        <!-- The whole match, as labelled text: whose turn it is, both heroes'
+             health, the player's energy, the hand, both tables, and an ordered log. Nothing here is
              drawn into a canvas, so a screen reader and an agent read the same
              game a sighted player does. -->
         <div class="match-board" id="match-board" hidden>
@@ -200,6 +200,16 @@
             <div class="standing">
               <dt class="standing-label">Energy</dt>
               <dd class="standing-value"><span id="match-energy">3 of 3</span></dd>
+            </div>
+            <!-- Whose move it is, said in words for as long as the match runs,
+                 so a player never has to work it out from the log's last line
+                 or from the End turn button appearing. It is a live region, so
+                 the turn changing is heard as well as seen, and it goes with
+                 the match: before one starts and after it ends, no side has a
+                 turn to name. -->
+            <div class="standing" id="match-turn-standing" hidden>
+              <dt class="standing-label">Turn</dt>
+              <dd class="standing-value"><span id="match-turn" role="status" aria-live="polite"></span></dd>
             </div>
             <div class="standing">
               <dt class="standing-label" id="match-opponent-hand-label">Opponent hand</dt>
