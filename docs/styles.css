@@ -43,6 +43,7 @@
   --opponent-thornmere: #7fd6a6;
   --opponent-emberwake: #ffa06b;
   --opponent-mistfen: #8fc7e6;
+  --opponent-barrowmere: #c4a0e8;
 
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --radius-card: 20px;
@@ -787,21 +788,26 @@ body {
 
 /* Options share a row when the width can hold more than one and stack when it
    cannot, so a phone in portrait reads one character per row and the first
-   screen still holds all of them. The 15rem floor is what a portrait and the
-   words beside it need to sit next to each other without squeezing the look and
-   the deck into a column of two words. */
+   screen still holds all of them. The 13rem floor is the least a portrait and
+   the words beside it need to sit next to each other without squeezing the look
+   and the deck into a column of two words, and it is narrow enough that all
+   four opponents stand in one row on a laptop window rather than wrapping to a
+   second one and pushing Start match off the first screen. */
 .opponent-options {
   display: grid;
-  align-items: start;
-  gap: 0.55rem;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  align-items: stretch;
+  gap: 0.45rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
 }
 
 /* An option is the character being picked and the deck they bring: the label
-   above, which is the radio, and the deck folded in under it. */
+   above, which is the radio, and the deck folded in under it. The label takes
+   the room it needs and the fold is held at the foot, so the four options in a
+   row are the same height and their deck lines read as one line across the
+   picker however differently the four characters' words wrap. */
 .opponent-option {
   display: grid;
-  align-content: start;
+  grid-template-rows: 1fr auto;
   border: 1px solid var(--edge);
   border-radius: var(--radius-control);
   background-color: rgba(168, 177, 212, 0.04);
@@ -813,14 +819,14 @@ body {
 /* The character is the radio's label — its mark in its own accent, its name and
    the record against it, then the look it cuts and the kind of deck it brings —
    so pressing any part of this top half picks that opponent. The padding is what
-   the picker has to spare once each character carries a record line: three
+   the picker has to spare once each character carries a record line: four
    options and the rules strip still share the first screen. */
 .opponent-choice {
   display: grid;
   grid-template-columns: auto auto minmax(0, 1fr);
   align-items: center;
-  gap: 0.15rem 0.55rem;
-  padding: 0.45rem 0.7rem;
+  gap: 0.1rem 0.45rem;
+  padding: 0.3rem 0.55rem;
   cursor: pointer;
 }
 
@@ -851,12 +857,12 @@ body {
 }
 
 /* The portrait of each option is the character itself, drawn in that opponent's
-   accent, the one detail cut into it in the ink that prints on foil. Three rem
-   is big enough to know a face at a glance, and small enough that the picker
-   keeps the height it had on a phone. */
+   accent, the one detail cut into it in the ink that prints on foil. Two and a
+   quarter rem is big enough to know a face at a glance, and small enough that
+   four options still stand in one row on a laptop window. */
 .opponent-portrait {
-  width: 3rem;
-  height: 3rem;
+  width: 2.25rem;
+  height: 2.25rem;
   opacity: 0.8;
 }
 
@@ -898,8 +904,8 @@ body {
 .opponent-look,
 .opponent-deck {
   color: var(--ink-muted);
-  font-size: 0.8rem;
-  line-height: 1.3;
+  font-size: 0.72rem;
+  line-height: 1.2;
 }
 
 .opponent-deck {
@@ -913,8 +919,8 @@ body {
    lift in weight here — never by colour alone. */
 .opponent-record {
   color: var(--ink-muted);
-  font-size: 0.78rem;
-  line-height: 1.35;
+  font-size: 0.72rem;
+  line-height: 1.3;
   font-variant-numeric: tabular-nums;
 }
 
@@ -925,12 +931,12 @@ body {
 
 /* The deck an opponent brings, folded under the character: one line saying how
    many cards it holds, and the faces a match against them is dealt. Ten faces
-   under each of three opponents would push the picker and Start match off the
+   under each of four opponents would push the picker and Start match off the
    first screen, so the deck waits one press away, in the option that promises
    it. */
 .opponent-deck-fold {
   border-top: 1px solid var(--edge-soft);
-  padding: 0.15rem 0.7rem 0.35rem;
+  padding: 0.1rem 0.55rem 0.2rem;
 }
 
 .opponent-deck-toggle {
@@ -938,10 +944,10 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  min-height: 1.75rem;
+  min-height: 1.4rem;
   padding: 0 0.1rem;
   color: var(--ink-muted);
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   letter-spacing: 0.01em;
   cursor: pointer;
   list-style: none;
@@ -1986,7 +1992,7 @@ body {
 
   /* The deck line under each character keeps its press and its thumb-sized
      height, and takes no other room, so the picker stays as short on a phone as
-     three options can be. */
+     four stacked options can be. */
   .opponent-deck-fold {
     padding: 0 0.6rem 0.15rem;
   }

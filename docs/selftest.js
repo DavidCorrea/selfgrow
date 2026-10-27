@@ -2335,19 +2335,42 @@ export async function checks() {
         }
       }
 
+      // Every opponent's deck holds at least one card that acts the moment it
+      // moves — as it lands or as it falls — so facing any character shows a
+      // player an ability rather than a table of plain numbers. Which half a
+      // character leans on is its own business (Barrowmere's deck is built
+      // around the fall half, the one no other opponent centres on), but a deck
+      // holding neither is a deck that teaches nothing new.
+      for (const opponent of opponentChoices) {
+        const acting = opponent.deck.filter((id) => {
+          const card = cardCatalog.CARD_BY_ID.get(id);
+          return Boolean(card?.ability || card?.fallAbility);
+        });
+        if (!acting.length) {
+          fail(
+            `the opponent "${opponent.name}" brings no card that acts as it lands or as it falls ` +
+              `(${JSON.stringify(opponent.deck)}), so facing it teaches a player nothing about what a card does`
+          );
+        }
+      }
+
       // Each opponent brings a card that does something as it lands, chosen so
       // the ability suits the match its description promises: the slow, wearing
-      // character mends its hero, the fast ones strike the board. A player meets
-      // the ability inside a match and learns to watch for it on the opponent's
-      // turn, so each fixed deck is required to hold such a card and each is seen
-      // to fire it on its own turn. The ability assigned to each opponent is the
-      // product's own claim about what kind of match it plays, so it is written
-      // down here and a new opponent has to be placed deliberately rather than
-      // slipping through unchecked.
+      // character mends its hero, the fast ones strike the board, and the one
+      // that trades bodies on purpose brings the striking drake — its fall cards
+      // carry the abilities its kind of play is about, so its when-played card is
+      // the one that answers the board it is feeding. A player meets the ability
+      // inside a match and learns to watch for it on the opponent's turn, so each
+      // fixed deck is required to hold such a card and each is seen to fire it on
+      // its own turn. The ability assigned to each opponent is the product's own
+      // claim about what kind of match it plays, so it is written down here and a
+      // new opponent has to be placed deliberately rather than slipping through
+      // unchecked.
       const promisedAbility = new Map([
         ["thornmere", cardCatalog.HEAL_ON_PLAY],
         ["emberwake", cardCatalog.STRIKE_ON_PLAY],
         ["mistfen", cardCatalog.STRIKE_ON_PLAY],
+        ["barrowmere", cardCatalog.STRIKE_ON_PLAY],
       ]);
       for (const opponent of opponentChoices) {
         const promised = promisedAbility.get(opponent.id);
@@ -6342,9 +6365,9 @@ export async function checks() {
   // reload picks back up.
   const opponentChoices = cardCatalog.OPPONENTS ?? [];
   if (opponentChoices.length >= 2) {
-    // The third opponent, where there is one: the newest character is the one
-    // most likely to be half-wired in, so the picker is exercised against it.
-    const chosenOpponent = opponentChoices[2] ?? opponentChoices[1];
+    // The last opponent offered: the newest character is the one most likely to
+    // be half-wired in, so the picker is exercised against it.
+    const chosenOpponent = opponentChoices[opponentChoices.length - 1];
     const defaultOpponent = opponentChoices[0];
     const chooseTool = toolNamed("choose-opponent");
     const startTool = toolNamed("start-match");
@@ -6460,7 +6483,7 @@ export async function checks() {
 
     // And the same thing through the tool an agent uses, with the ids a caller
     // would take from get-state's opponents — the default character and the
-    // newest one, so the third is driven end to end through the tool too.
+    // newest one, so the newest is driven end to end through the tool too.
     if (startTool) {
       for (const viaToolOpponent of [defaultOpponent, chosenOpponent]) {
         const viaTool = await startTool.execute({ opponentId: viaToolOpponent.id });

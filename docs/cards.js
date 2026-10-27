@@ -271,8 +271,10 @@ export const REWARD_POOL = [
  * to suit that same promise — the slow, wearing character mends, scythes the
  * player's whole table at once and strikes back as one of its bodies falls, the
  * fast ones strike — so a player meets the ability inside a match and learns to
- * watch for it on the opponent's turn. The first entry is the opponent a match is
- * against unless the player picks another.
+ * watch for it on the opponent's turn. One deck trades bodies on purpose and is
+ * built around what a card does as it falls, the half of a card's behaviour no
+ * other opponent centres on, so the fourth character is a lesson of its own. The
+ * first entry is the opponent a match is against unless the player picks another.
  */
 export const OPPONENTS = [
   {
@@ -333,6 +335,34 @@ export const OPPONENTS = [
       "twilight-fox",
       "moon-bloom",
       "fern-drake",
+    ],
+  },
+  {
+    id: "barrowmere",
+    name: "Barrowmere",
+    look: "a grave-tender in a wide hat, wreathed in drifting leaves",
+    description: "Cheap bodies traded away — they pay you back when they fall",
+    cardPreference: "cheapest",
+    accent: "--opponent-barrowmere",
+    // The one deck built around what a card does as it falls rather than as it
+    // lands: every body here is cheap enough to trade without regret, and three
+    // of them pay their owner back the moment they are removed — a card drawn, a
+    // hero mended, a blow struck. It plays cheapest for that same reason: the
+    // more small bodies on the table at once, the more of them the player has to
+    // choose to kill, and the more of them answer being killed. Fern Drake keeps
+    // a when-played card in the deck, so the opponent still meets the player with
+    // one card that acts as it lands as every other opponent does.
+    deck: [
+      "seed-pod",
+      "comfrey-root",
+      "whipthorn",
+      "pebble-toad",
+      "moss-glider",
+      "thornling",
+      "bramble-hound",
+      "fern-drake",
+      "twilight-fox",
+      "vine-lasher",
     ],
   },
 ];
