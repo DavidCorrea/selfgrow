@@ -155,16 +155,26 @@
       <section id="screen-play" class="screen" aria-labelledby="play-heading" hidden>
         <h2 class="screen-heading" id="play-heading" tabindex="-1">Play a match</h2>
 
-        <!-- What stands in for the board before a match begins: who you are
-             about to face, the deck the match would be dealt from, and the
-             fewest cards it needs. The opponent's name is filled in from the
-             one place the opponent is defined, so the page and the match cannot
-             disagree about who it is. -->
-        <p class="screen-note" id="match-intro">
-          You face <span id="match-intro-opponent">the opponent</span>, who brings a deck of their own.
-          Your deck holds <span data-field="deckSize">0</span> cards; a match needs at least
-          <span data-field="minimumDeckSize">5</span>.
-        </p>
+        <!-- What stands in for the board before a match begins: who you choose
+             to face, the deck the match would be dealt from, and the fewest
+             cards it needs. The opponent's name is filled in from the one place
+             the opponents are defined, so the page and the match cannot disagree
+             about who it is. The picker is filled in from that same list, and is
+             hidden with this note once a match is running — a match is against
+             the character it was started against. -->
+        <div class="match-intro" id="match-intro">
+          <p class="screen-note" id="match-intro-line">
+            You face <span id="match-intro-opponent">the opponent</span>, who brings
+            <span id="match-intro-deck">a deck of their own</span>. Your deck holds
+            <span data-field="deckSize">0</span> cards; a match needs at least
+            <span data-field="minimumDeckSize">5</span>.
+          </p>
+
+          <fieldset class="opponent-picker" id="opponent-picker" hidden>
+            <legend class="opponent-picker-legend">Choose your opponent</legend>
+            <div class="opponent-options" id="opponent-options"></div>
+          </fieldset>
+        </div>
 
         <!-- The whole match, as labelled text: both heroes' health, the player's
              energy, the hand, both tables, and an ordered log. Nothing here is

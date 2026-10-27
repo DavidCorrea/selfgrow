@@ -1403,6 +1403,106 @@ export async function checks() {
       }
     }
 
+    // Who a match is against is a choice, so there has to be more than one
+    // character to choose: each named, each described by the kind of deck it
+    // brings, each bringing real cards of its own. Thornmere stays first, with
+    // the deck the checks above were written against.
+    const opponentChoices = cardCatalog.OPPONENTS;
+    if (!Array.isArray(opponentChoices) || opponentChoices.length < 2) {
+      fail(
+        `docs/cards.js offers ${Array.isArray(opponentChoices) ? opponentChoices.length : "no"} opponent(s), so ` +
+          "every match is against the same character and a player has nothing to choose"
+      );
+    } else {
+      const choiceIds = opponentChoices.map((opponent) => opponent.id);
+      if (new Set(choiceIds).size !== choiceIds.length) {
+        fail(`two opponents share an id, so one of them cannot be chosen: ${JSON.stringify(choiceIds)}`);
+      }
+      for (const opponent of opponentChoices) {
+        for (const field of ["id", "name", "look", "description"]) {
+          if (typeof opponent[field] !== "string" || !opponent[field].trim()) {
+            fail(
+              `the opponent ${JSON.stringify(opponent.id)} has no ${field}, so the Play screen cannot offer it ` +
+                "as a character with a deck of its own"
+            );
+          }
+        }
+        if (!Array.isArray(opponent.deck) || opponent.deck.length < cardCatalog.MINIMUM_DECK_SIZE) {
+          fail(
+            `the opponent "${opponent.name}" brings ${Array.isArray(opponent.deck) ? opponent.deck.length : "no"} ` +
+              `cards instead of a deck of at least ${cardCatalog.MINIMUM_DECK_SIZE}`
+          );
+          continue;
+        }
+        for (const id of opponent.deck) {
+          if (!cardCatalog.CARD_BY_ID.has(id)) {
+            fail(`the opponent "${opponent.name}" brings "${id}", which is not a card in the catalog`);
+          }
+        }
+      }
+      if (opponentChoices[0]?.name !== cardCatalog.OPPONENT_NAME) {
+        fail(
+          `the first opponent offered is ${JSON.stringify(opponentChoices[0]?.name)} while a match without a ` +
+            `choice is against ${JSON.stringify(cardCatalog.OPPONENT_NAME)}, so the default is not the one offered first`
+        );
+      }
+
+      // Facing the second opponent is a different match: its id and name on the
+      // match, its name in the opening line, and cards from its own deck alone.
+      const otherOpponent = opponentChoices[1];
+      let againstOther = null;
+      try {
+        againstOther = matchEngine.createMatch(cheapDeck, { rng: fixedRng, opponentId: otherOpponent.id });
+      } catch (error) {
+        fail(`a match against "${otherOpponent.id}" was refused — ${error.message}`);
+      }
+      if (againstOther) {
+        if (againstOther.opponentName !== otherOpponent.name) {
+          fail(
+            `a match started against "${otherOpponent.id}" reports its opponent as ` +
+              `${JSON.stringify(againstOther.opponentName)} instead of ${JSON.stringify(otherOpponent.name)}`
+          );
+        }
+        if (againstOther.opponentId !== otherOpponent.id) {
+          fail(
+            `a match started against "${otherOpponent.id}" carries the id ` +
+              `${JSON.stringify(againstOther.opponentId)}, so which opponent it was dealt against is lost`
+          );
+        }
+        if (!String(againstOther.log[0] ?? "").includes(otherOpponent.name)) {
+          fail(
+            `the opening log line of a match against "${otherOpponent.name}" reads ` +
+              `${JSON.stringify(againstOther.log[0])} instead of naming who it is against`
+          );
+        }
+        const dealtSide = [...againstOther.opponent.hand, ...againstOther.opponent.table, ...againstOther.opponent.deck];
+        const fromOtherDeck = dealtSide.filter((card) => !otherOpponent.deck.includes(card.id));
+        if (fromOtherDeck.length) {
+          fail(
+            `the opponent "${otherOpponent.name}" was dealt ${JSON.stringify(fromOtherDeck.map((card) => card.id))}, ` +
+              `which is not in that opponent's own deck`
+          );
+        }
+        if (dealtSide.length !== otherOpponent.deck.length) {
+          fail(
+            `the opponent "${otherOpponent.name}" holds ${dealtSide.length} cards instead of the ` +
+              `${otherOpponent.deck.length} it brings`
+          );
+        }
+      }
+
+      // An opponent this game does not have is refused before anything is dealt.
+      let unknownRefused = false;
+      try {
+        matchEngine.createMatch(cheapDeck, { rng: fixedRng, opponentId: "no-such-opponent" });
+      } catch {
+        unknownRefused = true;
+      }
+      if (!unknownRefused) {
+        fail('a match was started against "no-such-opponent", which is not an opponent this game has');
+      }
+    }
+
     const affordable = dealt.player.hand.find((card) => card.cost <= dealt.player.energy);
     if (!affordable) {
       fail("the controlled cheap deck dealt nothing affordable, so the turn loop cannot be tested");
@@ -2190,6 +2290,77 @@ export async function checks() {
     }
   }
 
+  // Before a match, the Play screen offers who to face: one option per opponent,
+  // each naming its character and the kind of deck it brings, with one of them
+  // chosen already so Start match opens a board without a second decision.
+  game.showScreen("play");
+  const beforeMatchState = game.readState();
+  const offeredOpponents = beforeMatchState.opponents;
+  if (!Array.isArray(offeredOpponents) || offeredOpponents.length < 2) {
+    fail(
+      `the state offers ${Array.isArray(offeredOpponents) ? offeredOpponents.length : "no"} opponent(s) before a ` +
+        "match, so an agent cannot tell who could be faced"
+    );
+  } else {
+    for (const opponent of offeredOpponents) {
+      if (!opponent.id || !opponent.name || !opponent.description) {
+        fail(`an opponent on offer is not named and described by its deck: ${JSON.stringify(opponent)}`);
+      }
+    }
+    if (!offeredOpponents.some((opponent) => opponent.id === beforeMatchState.selectedOpponentId)) {
+      fail(
+        `the state says the chosen opponent is ${JSON.stringify(beforeMatchState.selectedOpponentId)}, which is not ` +
+          "one of the opponents it offers"
+      );
+    }
+  }
+
+  const picker = document.getElementById("opponent-picker");
+  const pickerRadios = [...(picker?.querySelectorAll("input[type='radio']") ?? [])];
+  if (!picker || picker.hidden) {
+    fail("the Play screen offers no opponents to choose from before a match");
+  } else {
+    if (pickerRadios.length !== (offeredOpponents ?? []).length) {
+      fail(
+        `the Play screen offers ${pickerRadios.length} opponent(s) to pick while the state lists ` +
+          `${(offeredOpponents ?? []).length}`
+      );
+    }
+    const checkedRadios = pickerRadios.filter((radio) => radio.checked);
+    if (checkedRadios.length !== 1) {
+      fail(
+        `the opponent picker has ${checkedRadios.length} opponent(s) chosen instead of exactly one, so what Start ` +
+          "match would face is not clear"
+      );
+    } else if (checkedRadios[0].value !== beforeMatchState.selectedOpponentId) {
+      fail(
+        `the picker shows "${checkedRadios[0].value}" chosen while the state says ` +
+          `"${beforeMatchState.selectedOpponentId}" is`
+      );
+    }
+    for (const radio of pickerRadios) {
+      const option = radio.closest("label") ?? radio.parentElement;
+      const words = textOf(option);
+      const opponent = (offeredOpponents ?? []).find((entry) => entry.id === radio.value);
+      if (!opponent) {
+        fail(`the picker offers "${radio.value}", which the state does not list as an opponent`);
+        continue;
+      }
+      if (!words.includes(opponent.name)) {
+        fail(`the picker's option for "${opponent.id}" reads "${words}" instead of naming ${opponent.name}`);
+      }
+      if (!words.includes(opponent.description)) {
+        fail(
+          `the picker's option for "${opponent.name}" does not say what kind of deck it brings (` +
+            `${JSON.stringify(opponent.description)})`
+        );
+      }
+      if (!option?.querySelector("svg")) {
+        fail(`the picker's option for "${opponent.name}" has no mark, only its name`);
+      }
+    }
+  }
+
   const deckAtStart = deckIds();
   let started = null;
   try {
@@ -2276,6 +2447,10 @@ export async function checks() {
       if (intro && !intro.hidden) {
         fail("a match is running but the pre-match note is still shown instead of the board");
       }
+      if (picker && !picker.hidden) {
+        fail("a match is running but the Play screen still offers a choice of opponents");
+      }
+
       const startButton = buttonNamed("play", "Start match");
       if (startButton && !startButton.hidden) {
         fail("a match is running but the Start match button is still offered");
@@ -3647,6 +3822,167 @@ export async function checks() {
     // Leave a fresh live match, so the checks that follow measure a board rather
     // than a finished game.
     game.startMatch();
+  }
+
+  // --- Choosing an opponent before a match ----------------------------------
+
+  // Which character a match is against is a choice the page offers and an agent
+  // makes with the same ids: the chosen one's name and deck follow the whole
+  // match — the intro, the board's labels, the opening log line and the save a
+  // reload picks back up.
+  const opponentChoices = cardCatalog.OPPONENTS ?? [];
+  if (opponentChoices.length >= 2) {
+    const chosenOpponent = opponentChoices[1];
+    const defaultOpponent = opponentChoices[0];
+    const chooseTool = toolNamed("choose-opponent");
+    const startTool = toolNamed("start-match");
+
+    if (!chooseTool) {
+      fail('no "choose-opponent" tool is declared, so an agent cannot pick who to face the way a visitor can');
+    } else if (!chooseTool.annotations || chooseTool.annotations.readOnlyHint !== false) {
+      fail('"choose-opponent" changes the page but is not marked as changing anything (readOnlyHint: false)');
+    }
+
+    // Picking an opponent changes who the next match would be against, and the
+    // Play screen's own note follows.
+    if (chooseTool) {
+      const chosen = await chooseTool.execute({ opponentId: chosenOpponent.id });
+      if (chosen.selectedOpponentId !== chosenOpponent.id) {
+        fail(
+          `the choose-opponent tool reports "${chosen.selectedOpponentId}" chosen after being asked for ` +
+            `"${chosenOpponent.id}"`
+        );
+      }
+      const chosenName = textOf(document.getElementById("match-intro-opponent"));
+      if (!chosenName.includes(chosenOpponent.name)) {
+        fail(
+          `the Play screen still names "${chosenName || "(nobody)"}" before a match after choosing ` +
+            `"${chosenOpponent.name}"`
+        );
+      }
+      const checkedNow = [...document.querySelectorAll("#opponent-picker input[type='radio']")].filter(
+        (radio) => radio.checked
+      );
+      if (checkedNow.length !== 1 || checkedNow[0].value !== chosenOpponent.id) {
+        fail(
+          `the picker shows ${JSON.stringify(checkedNow.map((radio) => radio.value))} chosen after choosing ` +
+            `"${chosenOpponent.id}"`
+        );
+      }
+
+      let refusedUnknownOpponent = false;
+      try {
+        await chooseTool.execute({ opponentId: "no-such-opponent" });
+      } catch {
+        refusedUnknownOpponent = true;
+      }
+      const refusedByError = game.readState().selectedOpponentId;
+      if (!refusedUnknownOpponent && refusedByError === "no-such-opponent") {
+        fail('choose-opponent accepted "no-such-opponent", which is not an opponent this game has');
+      }
+    }
+
+    // The page's own act of starting a match, against the chosen opponent.
+    let againstChosen = null;
+    try {
+      againstChosen = game.startMatch(chosenOpponent.id);
+    } catch (error) {
+      fail(`starting a match against "${chosenOpponent.id}" was refused — ${error.message}`);
+    }
+    if (againstChosen) {
+      const m = againstChosen.match;
+      if (m?.opponentName !== chosenOpponent.name || m?.opponentId !== chosenOpponent.id) {
+        fail(
+          `a match started against "${chosenOpponent.id}" reports ${JSON.stringify(m?.opponentName)} ` +
+            `(${JSON.stringify(m?.opponentId)}) instead of "${chosenOpponent.name}"`
+        );
+      }
+      if (!String(m?.log?.[0] ?? "").includes(chosenOpponent.name)) {
+        fail(
+          `the opening log line reads ${JSON.stringify(m?.log?.[0])} instead of naming the opponent ` +
+            `"${chosenOpponent.name}"`
+        );
+      }
+      for (const [what, element] of [
+        ["the opponent's health", "match-opponent-health-label"],
+        ["the opponent's hand", "match-opponent-hand-label"],
+        ["the opponent's table", "match-opponent-table-heading"],
+        ["the board's opponent line", "match-opponent-name"],
+      ]) {
+        const shown = textOf(document.getElementById(element));
+        if (!shown.includes(chosenOpponent.name)) {
+          fail(
+            `${what} reads "${shown || "(nothing)"}" instead of naming the opponent "${chosenOpponent.name}"`
+          );
+        }
+      }
+
+      // The choice belongs to the match it started: the unfinished match saved
+      // in the browser is against that character, so picking it back up later
+      // does not quietly face somebody else.
+      const savedChosen = collection.readSavedMatch();
+      if (!savedChosen) {
+        fail("a match against a chosen opponent was not saved, so reloading would lose who it is against");
+      } else if (savedChosen.opponentName !== chosenOpponent.name || savedChosen.opponentId !== chosenOpponent.id) {
+        fail(
+          `the saved match is against ${JSON.stringify(savedChosen.opponentName)} ` +
+            `(${JSON.stringify(savedChosen.opponentId)}) instead of "${chosenOpponent.name}"`
+        );
+      }
+
+      // The state an agent reads says who is on offer and who is being faced.
+      const afterChoose = game.readState();
+      if (!Array.isArray(afterChoose.opponents) || afterChoose.opponents.length !== opponentChoices.length) {
+        fail(
+          `get-state lists ${(afterChoose.opponents ?? []).length} opponent(s) while the game has ` +
+            `${opponentChoices.length}`
+        );
+      }
+      if (afterChoose.selectedOpponentId !== chosenOpponent.id) {
+        fail(
+          `get-state says the chosen opponent is "${afterChoose.selectedOpponentId}" after a match was started ` +
+            `against "${chosenOpponent.id}"`
+        );
+      }
+    }
+
+    // And the same thing through the tool an agent uses, with the id a caller
+    // would take from get-state's opponents.
+    if (startTool) {
+      const viaTool = await startTool.execute({ opponentId: defaultOpponent.id });
+      if (viaTool?.match?.opponentName !== defaultOpponent.name) {
+        fail(
+          `the start-match tool reports ${JSON.stringify(viaTool?.match?.opponentName)} after being asked for ` +
+            `"${defaultOpponent.id}"`
+        );
+      } else if (!String(viaTool.match.log?.[0] ?? "").includes(defaultOpponent.name)) {
+        fail(
+          `a match started by the tool against "${defaultOpponent.name}" opens with ` +
+            `${JSON.stringify(viaTool.match.log?.[0])}, which does not name it`
+        );
+      }
+      if (viaTool?.selectedOpponentId !== defaultOpponent.id) {
+        fail(
+          `after the start-match tool faced "${defaultOpponent.id}" the state says the chosen opponent is ` +
+            `"${viaTool?.selectedOpponentId}"`
+        );
+      }
+
+      // An id no opponent answers to is refused rather than dealt as anybody.
+      let refusedByTool = false;
+      try {
+        const refused = await startTool.execute({ opponentId: "no-such-opponent" });
+        refusedByTool = Boolean(refused?.error);
+      } catch {
+        refusedByTool = true;
+      }
+      if (!refusedByTool) {
+        fail('the start-match tool started a match against "no-such-opponent", which is not an opponent');
+      }
+      if (game.readState().match?.opponentId !== defaultOpponent.id) {
+        fail("a refused start-match changed which opponent the live match is against");
+      }
+    }
   }
 
   // --- Every screen fits the window it is opened in -------------------------

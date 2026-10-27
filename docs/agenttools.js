@@ -15,6 +15,7 @@ import {
   readMatch,
   readState,
   removeCardFromDeck,
+  selectOpponent,
   showScreen,
   startMatch,
 } from "./app.js";
@@ -44,7 +45,7 @@ export function tools() {
       name: "get-state",
       title: "Read what the page shows",
       description:
-        "Returns everything the page shows a visitor right now: which screen is open (home, collection or play), how many cards you own, how many of them are different, and how many different cards the game holds in all (`setTotal`, so `distinctCards` of `setTotal` is how much of the set is collected), the deck — how many cards it holds, the most it may hold, the fewest a match needs, and each card in it — whether progress is saved for next time, how many matches you have finished (`matchesPlayed`) and won (`wins`), the result of the last finished match (`result`: `outcome` is \"win\" or \"loss\", `awarded` is the card a win added or null, and `setComplete` says whether that card was a duplicate added only because you already owned every card in the game), and the actions you can take from here. Its `match` field always names the opponent — `opponentName`, the character whose fixed deck a match is against, named before a match starts as well as during one. When a match is running that field carries the whole board: whether the match is over and who won (`over` and `winner`), whose turn it is, both heroes' health, your energy and its maximum, your hand (with the ids play-card wants), both tables — each card with the health it has left, which drops as the tables fight — how many cards the opponent holds (`opponentHand`, shown on the board as one face-down card back per card) and how many you have left to draw, the ordered log of what has happened, naming every card that fell, its last line the blow that ended the match — and the moves available now. `canContinue` and `savedMatch` report an unfinished match the browser kept from a page left behind (`savedMatch` is a short summary — `opponentName`, `turn`, both healths and `logLength` — and is null while that match is the one loaded), which the continue-match tool picks back up. Ask it first to see where you stand, and again after every move to see what changed.",
+        "Returns everything the page shows a visitor right now: which screen is open (home, collection or play), how many cards you own, how many of them are different, and how many different cards the game holds in all (`setTotal`, so `distinctCards` of `setTotal` is how much of the set is collected), the deck — how many cards it holds, the most it may hold, the fewest a match needs, and each card in it — whether progress is saved for next time, how many matches you have finished (`matchesPlayed`) and won (`wins`), the result of the last finished match (`result`: `outcome` is \"win\" or \"loss\", `awarded` is the card a win added or null, and `setComplete` says whether that card was a duplicate added only because you already owned every card in the game), and the actions you can take from here. Its `match` field always names the opponent — `opponentName`, the character whose fixed deck a match is against, named before a match starts as well as during one. When a match is running that field carries the whole board: whether the match is over and who won (`over` and `winner`), whose turn it is, both heroes' health, your energy and its maximum, your hand (with the ids play-card wants), both tables — each card with the health it has left, which drops as the tables fight — how many cards the opponent holds (`opponentHand`, shown on the board as one face-down card back per card) and how many you have left to draw, the ordered log of what has happened, naming every card that fell, its last line the blow that ended the match — and the moves available now. `canContinue` and `savedMatch` report an unfinished match the browser kept from a page left behind (`savedMatch` is a short summary — `opponentName`, `turn`, both healths and `logLength` — and is null while that match is the one loaded), which the continue-match tool picks back up. `opponents` lists every character a match can be against — each with the `id` start-match and choose-opponent take, its name, the look it cuts and the kind of deck it brings — and `selectedOpponentId` says which of them the Play screen's picker has chosen, and so which one the next match would be against. Ask it first to see where you stand, and again after every move to see what changed.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
       example: {},
@@ -114,14 +115,47 @@ export function tools() {
     },
     {
       name: "start-match",
-      title: "Start a match against the opponent",
+      title: "Start a match against a chosen opponent",
       description:
-        "Shuffles your saved deck, deals you a starting hand, and opens the Play screen on the match against a named character — `opponentName` in the match it returns — who plays a fixed deck of their own rather than a copy of yours, so the deck you built is what you are up against. At the start of each side's own turn it draws a card while its deck holds one, and a side's energy maximum grows by one per own turn up to the dearest card, so a spent hand refills and every deck can be played to an end. Any match already running or finished is replaced, so this is also how you play another one after a result. Returns the whole match — `opponentName`, `over` false, both heroes' health, your energy, your hand and table, the opponent's table and the ordered log — so the caller can begin playing. When your deck holds fewer cards than a match needs it changes nothing and returns an `error` field naming the shortfall instead.",
-      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        "Shuffles your saved deck, deals you a starting hand, and opens the Play screen on a match against one of the characters in get-state's `opponents` — `opponentName` and `opponentId` in the match it returns — each of whom plays a fixed deck of their own rather than a copy of yours, so the deck you built is what you are up against and who you face is a choice. Pass `opponentId` to name who to face, exactly as picking one in the Play screen's picker does; omit it to face the one already chosen (`selectedOpponentId`). The chosen character's name follows the whole match — the intro, the board's labels and the opening log line — and a match saved in the browser keeps the opponent it was started against when it is picked back up. At the start of each side's own turn it draws a card while its deck holds one, and a side's energy maximum grows by one per own turn up to the dearest card, so a spent hand refills and every deck can be played to an end. Any match already running or finished is replaced, so this is also how you play another one after a result. Returns the whole match — `opponentId`, `opponentName`, `over` false, both heroes' health, your energy, your hand and table, the opponent's table and the ordered log — so the caller can begin playing. When your deck holds fewer cards than a match needs, or the id names no opponent, it changes nothing and returns an `error` field naming the problem instead.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          opponentId: {
+            type: "string",
+            description:
+              "The id of the opponent to face, as get-state's `opponents` lists it (for example \"thornmere\" or \"emberwake\"). Omit to face the opponent already chosen.",
+          },
+        },
+        additionalProperties: false,
+      },
       annotations: { readOnlyHint: false, consequentialHint: false },
-      example: {},
-      async execute() {
-        return attempted(startMatch);
+      example: { opponentId: "emberwake" },
+      async execute(input = {}) {
+        return attempted(() => startMatch(input.opponentId));
+      },
+    },
+    {
+      name: "choose-opponent",
+      title: "Choose who the next match is against",
+      description:
+        "Chooses which opponent the next match will be against, exactly as picking one in the Play screen's picker does — it changes `selectedOpponentId` in the state get-state returns, and the name the Play screen prints before a match, without dealing a match or touching one already running. Both opponents' deck kinds are listed in get-state's `opponents`, so a caller can choose by what it wants to play against. Returns the state afterwards; a match already in progress keeps the opponent it was started against. Refused, with an `error` field naming the ids that do exist, when the id names no opponent.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          opponentId: {
+            type: "string",
+            description:
+              "The id of the opponent to face next, as get-state's `opponents` lists it (for example \"thornmere\" or \"emberwake\").",
+          },
+        },
+        required: ["opponentId"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, consequentialHint: false },
+      example: { opponentId: "thornmere" },
+      async execute(input = {}) {
+        return attempted(() => selectOpponent(input.opponentId));
       },
     },
     {
@@ -201,7 +235,7 @@ export function tools() {
       name: "play-again",
       title: "Play another match after one has finished",
       description:
-        "Deals a fresh match from your saved deck against the same named opponent and opens the Play screen on it, exactly as pressing \"Play again\" on a finished match does: a new shuffle of both decks — yours and the opponent's own fixed one — both heroes back to their full health, and the finished match replaced. Ask get-match for `over` first to see whether there is a result waiting; a match that is still running is replaced too, which start-match does as well. Refused, with an `error` field naming the shortfall, when your deck holds fewer cards than a match needs.",
+        "Deals a fresh match from your saved deck against the opponent you last faced and opens the Play screen on it, exactly as pressing \"Play again\" on a finished match does: a new shuffle of both decks — yours and the opponent's own fixed one — both heroes back to their full health, and the finished match replaced. To face a different character after a result, use choose-opponent or start-match with an `opponentId` instead. Ask get-match for `over` first to see whether there is a result waiting; a match that is still running is replaced too, which start-match does as well. Refused, with an `error` field naming the shortfall, when your deck holds fewer cards than a match needs.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: false, consequentialHint: false },
       example: {},

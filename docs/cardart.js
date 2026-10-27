@@ -25,6 +25,10 @@
  *   - Framing. One 96x64 viewBox with a rounded frame inset 1.5 units. The frame
  *     is drawn once, by cardArtSvg, and each card's `inner` markup is only the
  *     creature inside it — so no card can be framed differently from another.
+ *   - Marks. An opponent's sigil is the same language without the card frame: one
+ *     solid mark in a 24x24 square, drawn in that opponent's accent instead of
+ *     the foil, so opponents are told apart by what their mark is, not only by
+ *     its colour.
  */
 
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
@@ -361,6 +365,55 @@ export function cardArtSvg(cardId, label) {
   svg.setAttribute("role", "img");
   svg.setAttribute("aria-label", label);
   svg.innerHTML = FRAME + art.inner;
+  return svg;
+}
+
+/**
+ * The mark each opponent is known by, drawn in the same shape language as the
+ * creatures: flat wedges and circles, one solid mass, no outline of its own.
+ * Each is one drawing in a square frame, so an opponent is recognised by its
+ * mark at a glance as well as by its name.
+ */
+const OPPONENT_SIGILS = new Map([
+  [
+    "bramble",
+    {
+      description: "A thorned stem leaning left",
+      inner: `
+        <path class="sigil-body" d="M10 23 L14 23 L12 2 Z" />
+        <path class="sigil-body" d="M12 16 L2 10 L11 20 Z" />
+        <path class="sigil-body" d="M12 10 L22 5 L13 14 Z" />
+      `,
+    },
+  ],
+  [
+    "flame",
+    {
+      description: "A flame licking up from a bright core",
+      inner: `
+        <path class="sigil-body" d="M12 1 C14 7 19 9 19 15 a7 7 0 0 1 -14 0 C5 11 8 9 9 4 C10 8 12 9 12 12 Z" />
+        <path class="sigil-accent" d="M12 11 C13 14 15 15 15 17.5 a3 3 0 0 1 -6 0 C9 15 11 14 11 12 Z" />
+      `,
+    },
+  ],
+]);
+
+/**
+ * One opponent's mark, as an <svg> the page can drop beside their name: a square
+ * drawing in the opponent's own accent colour, hidden from assistive technology
+ * because the opponent's name is written beside it — the picture is what a
+ * sighted player sees, not a second thing to be read out.
+ */
+export function opponentSigilSvg(opponent) {
+  const sigil = OPPONENT_SIGILS.get(opponent.sigil);
+  if (!sigil) return null;
+
+  const svg = document.createElementNS(SVG_NAMESPACE, "svg");
+  svg.setAttribute("class", "opponent-sigil");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  svg.innerHTML = sigil.inner;
   return svg;
 }
 

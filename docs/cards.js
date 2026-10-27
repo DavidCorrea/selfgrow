@@ -1,6 +1,6 @@
 /**
- * The cards selfgrow knows about, the hand a new player is dealt, and the deck
- * the opponent brings.
+ * The cards selfgrow knows about, the hand a new player is dealt, and the
+ * opponents a match can be fought against, each with the deck it brings.
  *
  * Everything here is plain data defined in the product — no card is fetched, and
  * no stat is computed from another. A card is identified by its `id`, and that is
@@ -85,34 +85,83 @@ export const REWARD_POOL = [
 ];
 
 /**
- * The opponent the player faces: a character, with a deck of their own.
+ * The opponents a player can face: characters, each with a look and a deck of
+ * their own.
  *
- * The deck is fixed — the same ten cards in every match — and drawn from the
- * same catalog a player's deck is, so every card the opponent draws and plays
- * is a real card the player can own. It is deliberately not the player's deck:
- * what you choose for your own deck is what you are up against, instead of a
- * race against a copy of yourself.
+ * Every deck is fixed — the same ten cards in every match against that
+ * character — and drawn from the same catalog a player's deck is, so every card
+ * an opponent draws and plays is a real card the player can own. None of them is
+ * the player's own deck: what you choose for your deck is what you are up
+ * against, instead of a race against a copy of yourself. Facing a different
+ * character is what changes the game from one puzzle into a choice.
+ *
+ * `accent` names a colour token from styles.css rather than a colour, so the one
+ * place a colour is written stays the stylesheet. `sigil` names the mark the
+ * opponent is known by in docs/cardart.js. The first entry is the opponent a
+ * match is against unless the player picks another.
  */
-export const OPPONENT_NAME = "Thornmere";
+export const OPPONENTS = [
+  {
+    id: "thornmere",
+    name: "Thornmere",
+    look: "a thorned warden of the deep wood, mud-backed and slow to fall",
+    description: "Slow, thorned growth — big bodies that wear you down",
+    accent: "--opponent-thornmere",
+    sigil: "bramble",
+    deck: [
+      "vine-lasher",
+      "mudback-turtle",
+      "thornling",
+      "glowcap",
+      "bramble-hound",
+      "moon-bloom",
+      "cinder-shrike",
+      "sun-moth",
+      "root-colossus",
+      "elder-oak",
+    ],
+  },
+  {
+    id: "emberwake",
+    name: "Emberwake",
+    look: "a burning herald, all sparks and lit grass",
+    description: "Fast, cheap strikers that hit before you can answer",
+    accent: "--opponent-emberwake",
+    sigil: "flame",
+    deck: [
+      "dewdrop-nymph",
+      "sprout",
+      "pebble-toad",
+      "bramble-hound",
+      "cinder-shrike",
+      "thornling",
+      "twilight-fox",
+      "moon-bloom",
+      "vine-lasher",
+      "emberling",
+    ],
+  },
+];
+
+/** The opponents a match can be fought against, looked up by the id a caller names. */
+export const OPPONENT_BY_ID = new Map(OPPONENTS.map((opponent) => [opponent.id, opponent]));
 
 /**
- * The fixed deck the opponent is dealt from: slow, thorned, mud-backed growth,
- * the opposite of a deck built for speed.
+ * The opponent a match is against until another is chosen: Thornmere, first in
+ * the list, whose deck is the fixture the match's own checks were written
+ * against.
+ */
+export const DEFAULT_OPPONENT = OPPONENTS[0];
+
+export const OPPONENT_NAME = DEFAULT_OPPONENT.name;
+
+/**
+ * Thornmere's fixed deck: slow, thorned, mud-backed growth, the opposite of a
+ * deck built for speed.
  *
  * The order is part of the fixture, not an accident: a deal with a fixed random
  * source leaves the second, third and fourth cards in the opponent's opening
  * hand, so the turtle and the thornling there are what the match's own checks
  * fight with. Reordering this list means rethinking those checks.
  */
-export const OPPONENT_DECK = [
-  "vine-lasher",
-  "mudback-turtle",
-  "thornling",
-  "glowcap",
-  "bramble-hound",
-  "moon-bloom",
-  "cinder-shrike",
-  "sun-moth",
-  "root-colossus",
-  "elder-oak",
-];
+export const OPPONENT_DECK = DEFAULT_OPPONENT.deck;
