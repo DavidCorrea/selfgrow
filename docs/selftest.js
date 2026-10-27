@@ -72,6 +72,9 @@ export async function checks() {
   // The ability a card carries for when it falls, read the same way — null for a
   // card that does nothing as it leaves the table.
   const catalogFallAbility = (id) => cardCatalog.CARD_BY_ID.get(id)?.fallAbility ?? null;
+  // The ability a card carries for growing while it stays on the table, read the
+  // same way — null for a card that never grows stronger by staying.
+  const catalogGrowthAbility = (id) => cardCatalog.CARD_BY_ID.get(id)?.growthAbility ?? null;
   const snapshot = game.readCollection();
   // The Collection screen now shows the whole card set, so `snapshot.cards` is
   // every card in the game. The checks that speak of what the player holds read
@@ -7875,10 +7878,11 @@ export async function checks() {
     const abilityOnFace = (face) => textOf(face?.querySelector(".card-ability"));
     for (const face of document.querySelectorAll("#collection-list [data-card-id]")) {
       const id = face.dataset.cardId;
-      // A card prints its when-played ability first and its fall ability as the
-      // only line when it carries no when-played one, so the face's first
-      // ability line is whichever of the two the card carries.
-      const expected = catalogAbility(id) ?? catalogFallAbility(id) ?? "";
+      // A card prints its abilities in the order they are written — the
+      // when-played line first, then the growth line, then the fall line — so the
+      // face's first ability line is whichever of the three the card carries
+      // first.
+      const expected = catalogAbility(id) ?? catalogGrowthAbility(id) ?? catalogFallAbility(id) ?? "";
       if (abilityOnFace(face) !== expected) {
         const name = cardCatalog.CARD_BY_ID.get(id)?.name ?? id;
         fail(
@@ -10530,12 +10534,22 @@ export async function checks() {
       fail(
         `"${sunspear.name}" acts twice but is not in the reward pool, so a win can never add it to a collection`
       );
-    } else if (cardCatalog.REWARD_POOL[cardCatalog.REWARD_POOL.length - 1] !== sunspear.id) {
-      fail(
-        `the reward pool reads ${JSON.stringify(cardCatalog.REWARD_POOL)}, so "${sunspear.name}" is not appended ` +
-          "behind the rewards that were already there and a save made before it existed would be handed a " +
-          "different next reward"
+    } else {
+      // A growth card appended behind the bloom is allowed — it is reached once
+      // the bloom is held — so the bloom must still be last once those newer
+      // reward cards are set aside. Nothing may be slotted in before or between
+      // the rewards that were already there.
+      const growthRewardIds = new Set(
+        cardCatalog.CARDS.filter((card) => card.growthAbility).map((card) => card.id)
       );
+      const rewardsBeforeGrowth = cardCatalog.REWARD_POOL.filter((id) => !growthRewardIds.has(id));
+      if (rewardsBeforeGrowth[rewardsBeforeGrowth.length - 1] !== sunspear.id) {
+        fail(
+          `the reward pool reads ${JSON.stringify(cardCatalog.REWARD_POOL)}, so "${sunspear.name}" is not appended ` +
+            "behind the rewards that were already there and a save made before it existed would be handed a " +
+            "different next reward"
+        );
+      }
     }
     if (cardCatalog.STARTER_COLLECTION.some((entry) => entry.id === sunspear.id)) {
       fail(`"${sunspear.name}" is a reward card but is also dealt at the start, so a new player already owns it`);
@@ -10671,6 +10685,352 @@ export async function checks() {
         );
       } else if (!fallDrawLine.includes("Mudback Turtle")) {
         fail(`the log line for the bloom's fall draw does not name the card drawn: "${fallDrawLine}"`);
+      }
+    }
+  }
+
+  // --- A card that grows stronger each turn it stays -------------------------
+
+  // A match rewards a big body once, and a small card is only as strong as the
+  // turn it was played. A card whose face says it grows gains one attack at the
+  // start of each of its owner's turns while it remains on that table, so a
+  // cheap card left standing becomes a threat the other side must answer and
+  // holding a card back becomes a real decision. The grown attack is what the
+  // card strikes with, the table shows it, the log names each growth, and an
+  // agent reads the same words and the same attack through the product's tools.
+  const growthWords = cardCatalog.GROWTH_ABILITY;
+  const growthCards = cardCatalog.CARDS.filter((card) => card.growthAbility);
+  const growthCard = growthCards[0] ?? null;
+
+  if (growthCards.length === 0) {
+    fail("no card carries a growth ability, so a card can never grow stronger by staying on the table");
+  } else if (typeof growthWords !== "string" || !growthWords.trim()) {
+    fail("cards.js does not export GROWTH_ABILITY, so the growth ability has no words for a card's face");
+  } else if (!growthWords.includes(String(cardCatalog.GROWTH_ABILITY_AMOUNT))) {
+    fail(
+      `the growth ability reads ${JSON.stringify(growthWords)}, which does not name the ` +
+        `${cardCatalog.GROWTH_ABILITY_AMOUNT} it adds, so the card's face and the trigger can disagree`
+    );
+  } else {
+    for (const card of growthCards) {
+      if (card.growthAbility !== growthWords) {
+        fail(
+          `"${card.name}" carries the growth ability ${JSON.stringify(card.growthAbility)} instead of the shared ` +
+            `${JSON.stringify(growthWords)}, so two cards that grow print different words`
+        );
+      }
+      if (catalogGrowthAbility(card.id) !== growthWords) {
+        fail(`the catalog lookup for "${card.name}" does not report the growth ability the card carries`);
+      }
+    }
+
+    // The card is a reward dealt to nobody, appended behind every reward before
+    // it, so a save made before it existed keeps the next-reward order it had.
+    if (!cardCatalog.REWARD_POOL.includes(growthCard.id)) {
+      fail(`"${growthCard.name}" grows but is not in the reward pool, so a win can never add it to a collection`);
+    } else {
+      const appendedTail = cardCatalog.REWARD_POOL.slice(-growthCards.length);
+      if (appendedTail.join(",") !== growthCards.map((card) => card.id).join(",")) {
+        fail(
+          `the reward pool reads ${JSON.stringify(cardCatalog.REWARD_POOL)}, so a growth card is not appended ` +
+            "behind the rewards that were already there and a save made before it existed would be handed a " +
+            "different next reward"
+        );
+      }
+    }
+    if (cardCatalog.STARTER_COLLECTION.some((entry) => entry.id === growthCard.id)) {
+      fail(`"${growthCard.name}" is a reward card but is also dealt at the start, so a new player already owns it`);
+    }
+
+    // A described picture in the shared flat-silhouette style, drawn only from the
+    // two art classes the whole set uses, and not a copy of another card's.
+    const growthArt = cardArt?.cardArt(growthCard.id);
+    if (!growthArt || !(growthArt.inner || "").trim()) {
+      fail(`"${growthCard.name}" has no picture, so the card that grows cannot be known by sight`);
+    } else if (!growthArt.description?.trim()) {
+      fail(`"${growthCard.name}"'s picture is not described, so it cannot be checked against the style`);
+    } else if (!/art-body/.test(growthArt.inner)) {
+      fail(`"${growthCard.name}" is drawn without a creature in the foil the whole set is drawn in`);
+    } else {
+      const drawnClasses = [...growthArt.inner.matchAll(/class="([^"]*)"/g)].map(([, className]) => className);
+      const outsideStyle = drawnClasses.filter((className) => !["art-body", "art-accent"].includes(className));
+      if (drawnClasses.length === 0 || outsideStyle.length > 0) {
+        fail(
+          `"${growthCard.name}" is drawn with ${JSON.stringify(drawnClasses)} instead of only the set's art-body ` +
+            "and art-accent shapes, so its picture does not follow the shared art style"
+        );
+      }
+      const twin = cardCatalog.CARDS.find(
+        (other) => other.id !== growthCard.id && (cardArt?.cardArt(other.id)?.inner || "") === growthArt.inner
+      );
+      if (twin) {
+        fail(
+          `"${growthCard.name}" is drawn identically to "${twin.name}", so the two cards cannot be told apart by sight`
+        );
+      }
+    }
+
+    // The words are printed on the face wherever the card is shown — in the set
+    // list, on the card a win earns, and on the hand and table of a real board.
+    const collectionGrowthFace = document.querySelector(`#collection-list [data-card-id="${growthCard.id}"]`);
+    if (faceAbility(collectionGrowthFace) !== growthWords) {
+      fail(
+        `the growth card shown in the collection does not say ${JSON.stringify(growthWords)} on its face ` +
+          `(it reads ${JSON.stringify(faceAbility(collectionGrowthFace))})`
+      );
+    }
+    if (faceAbility(game.awardCardFigure(growthCard)) !== growthWords) {
+      fail(
+        `the earned-card face of "${growthCard.name}" does not say ${JSON.stringify(growthWords)} on its face ` +
+          `(it reads ${JSON.stringify(faceAbility(game.awardCardFigure(growthCard)))})`
+      );
+    }
+
+    // An agent that lists the set reads the ability in the field written for it,
+    // so the word on the card and the field a caller reads are one answer.
+    if (listCollection) {
+      const entry = (await listCollection.execute()).cards.find((card) => card.id === growthCard.id);
+      if (entry?.growthAbility !== growthWords) {
+        fail(
+          `list-collection returns "${growthCard.name}" with growthAbility ` +
+            `${JSON.stringify(entry?.growthAbility ?? null)} instead of ${JSON.stringify(growthWords)}`
+        );
+      }
+    }
+
+    // The board a player sees: a controlled saved match with the growth card in
+    // hand and one already grown on the table, loaded the way a save is. The
+    // grown attack must survive the reload, and both faces must print the words.
+    const growthGrownAttack = growthCard.attack + 2;
+    const growthBoard = {
+      id: "check-growth-ability",
+      opponentId: cardCatalog.DEFAULT_OPPONENT?.id,
+      opponentName: cardCatalog.OPPONENT_NAME,
+      turn: "player",
+      over: false,
+      winner: null,
+      outcome: null,
+      recorded: false,
+      player: {
+        health: 20,
+        energy: 3,
+        maxEnergy: 3,
+        turns: 5,
+        hand: [{ id: growthCard.id, health: growthCard.health, hasAttacked: false }],
+        table: [{ id: growthCard.id, health: growthCard.health, attack: growthGrownAttack, hasAttacked: false }],
+        deck: [],
+      },
+      opponent: { health: 20, energy: 1, maxEnergy: 1, turns: 0, hand: [], table: [], deck: [] },
+      log: ["A match set up to read a card that grows."],
+    };
+
+    if (!matchEngine || typeof game.continueMatch !== "function") {
+      fail("the match engine or the continue-match action is missing, so the growth ability cannot be read on the board");
+    } else if (!collection.saveMatch(growthBoard)) {
+      fail("a controlled board with a growing card could not be saved, so the growth ability cannot be read on the board");
+    } else {
+      game.refreshSavedMatch();
+      let growthLoaded = null;
+      try {
+        growthLoaded = game.continueMatch();
+      } catch (e) {
+        fail(`a controlled board with a growing card could not be loaded — ${e.message}`);
+      }
+      if (growthLoaded?.match) {
+        for (const [where, selector] of [
+          ["your hand", "#match-hand"],
+          ["your table", "#match-table"],
+        ]) {
+          const face = document.querySelector(`${selector} [data-card-id="${growthCard.id}"]`);
+          if (faceAbility(face) !== growthWords) {
+            fail(
+              `"${growthCard.name}" in ${where} does not say ${JSON.stringify(growthWords)} on its face ` +
+                `(it reads ${JSON.stringify(faceAbility(face))})`
+            );
+          }
+        }
+        const grownRow = document.querySelector(`#match-table [data-card-id="${growthCard.id}"]`);
+        const printedStats = textOf(grownRow?.querySelector(".match-card-stats"));
+        const expectedStats = `${growthCard.cost}/${growthGrownAttack}/${growthCard.health}`;
+        if (printedStats !== expectedStats) {
+          fail(
+            `"${growthCard.name}" on the table prints ${JSON.stringify(printedStats)} instead of ` +
+              `${JSON.stringify(expectedStats)} (cost/attack/health), so the grown attack is not what the table shows`
+          );
+        }
+        const loadedGrown = growthLoaded.match.table.find((card) => card.id === growthCard.id);
+        if (loadedGrown?.attack !== growthGrownAttack) {
+          fail(
+            `loading a saved board left "${growthCard.name}" at ${loadedGrown?.attack} attack instead of the ` +
+              `grown ${growthGrownAttack}, so a reload silently undoes the growth`
+          );
+        }
+        if (getState) {
+          const reported = (await getState.execute()).match;
+          const reportedHand = reported?.hand?.find((card) => card.id === growthCard.id);
+          const reportedTable = reported?.table?.find((card) => card.id === growthCard.id);
+          if (reportedHand?.growthAbility !== growthWords) {
+            fail(
+              `get-state reports the growth card in hand with growthAbility ` +
+                `${JSON.stringify(reportedHand?.growthAbility ?? null)} instead of ${JSON.stringify(growthWords)}`
+            );
+          }
+          if (reportedTable?.growthAbility !== growthWords) {
+            fail(
+              `get-state reports the grown table card with growthAbility ` +
+                `${JSON.stringify(reportedTable?.growthAbility ?? null)} instead of ${JSON.stringify(growthWords)}`
+            );
+          }
+          if (reportedTable?.attack !== growthGrownAttack) {
+            fail(
+              `get-state reports the grown table card's attack as ${reportedTable?.attack} instead of the grown ` +
+                `${growthGrownAttack}`
+            );
+          }
+        }
+      }
+    }
+
+    // A saved attack beyond what growth could have earned is not trusted, so a
+    // damaged save cannot hand a card an impossible attack.
+    collection.saveMatch({
+      ...growthBoard,
+      id: "check-growth-absurd",
+      player: {
+        ...growthBoard.player,
+        table: [
+          { id: growthCard.id, health: growthCard.health, attack: growthCard.attack + 999, hasAttacked: false },
+        ],
+      },
+    });
+    const absurdCard = collection.readSavedMatch()?.player?.table?.find((card) => card.id === growthCard.id);
+    if (absurdCard && absurdCard.attack !== growthCard.attack) {
+      fail(
+        `a saved attack of ${growthCard.attack + 999} was trusted instead of falling back to the catalog value ` +
+          `${growthCard.attack}`
+      );
+    }
+
+    // The trigger itself, in a real match: a card grows exactly +1 at the start
+    // of each of its owner's turns and never more than once a turn, a plain card
+    // never grows, and the grown attack is what the card strikes for both when
+    // its owner ends the turn and when it is sent at a chosen target.
+    if (!matchEngine) {
+      fail("docs/match.js could not be imported, so the growth ability cannot be played");
+    } else {
+      const growthDeck = ["sprout", "pebble-toad", "thornling", "sun-moth", "bramble-hound"];
+      const freshGrowth = () => ({ ...growthCard, hasAttacked: false });
+      const plainCard = () => ({ ...cardCatalog.CARD_BY_ID.get("pebble-toad"), hasAttacked: false });
+      const baseAttack = growthCard.attack;
+
+      // A controlled match with the growth card and a plain card on the player's
+      // table: end a turn and read what grew.
+      const growMatch = matchEngine.createMatch(growthDeck, { rng: () => 0 });
+      growMatch.player.table = [freshGrowth(), plainCard()];
+      growMatch.player.hand = [];
+      growMatch.player.deck = [];
+      growMatch.opponent.table = [];
+      growMatch.opponent.hand = [];
+      growMatch.opponent.deck = [];
+      const plainBase = growMatch.player.table[1].attack;
+
+      const growthLogBefore = growMatch.log.length;
+      matchEngine.endTurn(growMatch);
+      const afterFirstTurn = growMatch.player.table.find((card) => card.id === growthCard.id);
+      if (afterFirstTurn.attack !== baseAttack + 1) {
+        fail(
+          `"${growthCard.name}" has ${afterFirstTurn.attack} attack after one of its owner's turns instead of ` +
+            `the ${baseAttack + 1} a single +1 growth gives`
+        );
+      }
+      const growthLine = growMatch.log.slice(growthLogBefore).find((line) => /grows \+1 attack/i.test(line));
+      if (!growthLine) {
+        fail(
+          `the match log does not name the growth: the turn added ` +
+            `${JSON.stringify(growMatch.log.slice(growthLogBefore))}`
+        );
+      } else if (!growthLine.includes(growthCard.name) || !growthLine.includes(String(baseAttack + 1))) {
+        fail(`the growth log line does not name the card and its new attack: "${growthLine}"`);
+      }
+      if (growMatch.player.table[1].attack !== plainBase) {
+        fail(
+          `a plain card grew to ${growMatch.player.table[1].attack} attack although it carries no growth ability`
+        );
+      }
+
+      // A second own turn grows it exactly once more, never twice in one turn.
+      matchEngine.endTurn(growMatch);
+      const afterSecondTurn = growMatch.player.table.find((card) => card.id === growthCard.id);
+      if (afterSecondTurn.attack !== baseAttack + 2) {
+        fail(
+          `"${growthCard.name}" has ${afterSecondTurn.attack} attack after two of its owner's turns instead of ` +
+            `the ${baseAttack + 2} two single growths give`
+        );
+      }
+
+      // The grown attack is what the card strikes for when its owner ends the
+      // turn: the second end-of-turn blow lands for the attack it had grown to.
+      const strikeMatch = matchEngine.createMatch(growthDeck, { rng: () => 0 });
+      strikeMatch.player.table = [freshGrowth()];
+      strikeMatch.player.hand = [];
+      strikeMatch.player.deck = [];
+      strikeMatch.opponent.table = [];
+      strikeMatch.opponent.hand = [];
+      strikeMatch.opponent.deck = [];
+      matchEngine.endTurn(strikeMatch);
+      const heroAfterFirstStrike = strikeMatch.opponent.health;
+      matchEngine.endTurn(strikeMatch);
+      const endOfTurnDealt = heroAfterFirstStrike - strikeMatch.opponent.health;
+      if (endOfTurnDealt !== baseAttack + 1) {
+        fail(
+          `ending the turn struck the opponent hero for ${endOfTurnDealt} instead of the ${baseAttack + 1} ` +
+            `attack "${growthCard.name}" had grown to`
+        );
+      }
+
+      // The grown attack is also what a chosen attack deals.
+      const chosenTarget = { ...cardCatalog.CARD_BY_ID.get("elder-oak"), hasAttacked: false };
+      const chosenMatch = matchEngine.createMatch(growthDeck, { rng: () => 0 });
+      chosenMatch.player.table = [{ ...growthCard, attack: baseAttack + 3, hasAttacked: false }];
+      chosenMatch.player.hand = [];
+      chosenMatch.player.deck = [];
+      chosenMatch.opponent.table = [chosenTarget];
+      chosenMatch.opponent.hand = [];
+      chosenMatch.opponent.deck = [];
+      const chosenTargetBefore = chosenMatch.opponent.table[0].health;
+      matchEngine.attack(chosenMatch, growthCard.id, chosenTarget.id);
+      const chosenTargetAfter = chosenMatch.opponent.table[0]?.health;
+      if (chosenTargetAfter !== chosenTargetBefore - (baseAttack + 3)) {
+        fail(
+          `a chosen attack from a "${growthCard.name}" with ${baseAttack + 3} attack dealt ` +
+            `${chosenTargetBefore - chosenTargetAfter} instead, so the grown attack is not what the card strikes for`
+        );
+      }
+
+      // A card on the opponent's table grows on the opponent's own turn, and its
+      // grown attack is what it strikes the player's hero with.
+      const opponentMatch = matchEngine.createMatch(growthDeck, { rng: () => 0 });
+      opponentMatch.player.table = [];
+      opponentMatch.player.hand = [];
+      opponentMatch.player.deck = [];
+      opponentMatch.opponent.table = [freshGrowth()];
+      opponentMatch.opponent.hand = [];
+      opponentMatch.opponent.deck = [];
+      const playerHeroBefore = opponentMatch.player.health;
+      matchEngine.endTurn(opponentMatch);
+      const opponentGrown = opponentMatch.opponent.table.find((card) => card.id === growthCard.id);
+      if (opponentGrown?.attack !== baseAttack + 1) {
+        fail(
+          `the opponent's "${growthCard.name}" has ${opponentGrown?.attack} attack after its own turn instead of ` +
+            `the ${baseAttack + 1} its growth gives`
+        );
+      }
+      const opponentBlow = playerHeroBefore - opponentMatch.player.health;
+      if (opponentBlow !== baseAttack + 1) {
+        fail(
+          `the opponent's grown "${growthCard.name}" struck your hero for ${opponentBlow} instead of the ` +
+            `${baseAttack + 1} it had grown to`
+        );
       }
     }
   }

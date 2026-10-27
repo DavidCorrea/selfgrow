@@ -272,6 +272,7 @@ function catalogCard(cardId) {
     health: card.health,
     ability: card.ability ?? null,
     fallAbility: card.fallAbility ?? null,
+    growthAbility: card.growthAbility ?? null,
     hasAttacked: false,
   };
 }
@@ -279,10 +280,11 @@ function catalogCard(cardId) {
 /**
  * One pile of a restored side, or null when a card in it is not one a match
  * could hold. A card in hand or in the deck takes its catalog stats, as it was
- * dealt; a card on the table keeps the health it is down to and whether it has
- * already struck, so a wounded card comes back wounded rather than healed.
+ * dealt; a card on the table keeps the health it is down to, the attack it has
+ * grown to and whether it has already struck, so a wounded or grown card comes
+ * back as it was rather than healed or reset.
  */
-function restorePile(cards, onTable) {
+function restorePile(cards, onTable, maxGrowth = 0) {
   if (!Array.isArray(cards)) return null;
 
   const restored = [];
@@ -293,6 +295,14 @@ function restorePile(cards, onTable) {
     if (onTable) {
       if (!isWholeInRange(entry.health, 1, known.health)) return null;
       card.health = entry.health;
+      // A card that grows keeps the attack it earned while it stayed on the
+      // table, so reloading never undoes the growth. It can have grown at most
+      // once per own turn its side has taken, from its catalog attack, so an
+      // attack outside that range is a broken card rather than a grown one and
+      // the catalog value is used instead.
+      if (isWholeInRange(entry.attack, known.attack, known.attack + maxGrowth)) {
+        card.attack = entry.attack;
+      }
       card.hasAttacked = Boolean(entry.hasAttacked);
     }
     restored.push(card);
@@ -311,7 +321,7 @@ function restoreSide(saved) {
   if (!Number.isSafeInteger(saved.turns) || saved.turns < 0) return null;
 
   const hand = restorePile(saved.hand, false);
-  const table = restorePile(saved.table, true);
+  const table = restorePile(saved.table, true, saved.turns);
   const deck = restorePile(saved.deck, false);
   if (!hand || !table || !deck) return null;
 
@@ -828,9 +838,11 @@ export function collectionSize(cards) {
 }
 
 /**
- * The collection with each card's name, cost, attack, health and both abilities
- * filled in — `ability` for the text it prints when played and `fallAbility` for
- * the text it prints when it falls, each `null` for a card that carries none.
+ * The collection with each card's name, cost, attack, health and all three
+ * abilities filled in — `ability` for the text it prints when played,
+ * `growthAbility` for the text it prints for growing each turn it stays, and
+ * `fallAbility` for the text it prints when it falls, each `null` for a card
+ * that carries none.
  */
 export function listOwnedCards(cards) {
   return cards.map(({ id, copies }) => {
@@ -842,6 +854,7 @@ export function listOwnedCards(cards) {
       attack: card.attack,
       health: card.health,
       ability: card.ability ?? null,
+      growthAbility: card.growthAbility ?? null,
       fallAbility: card.fallAbility ?? null,
       copies,
     };
@@ -850,7 +863,8 @@ export function listOwnedCards(cards) {
 
 /**
  * Every card in the game, in catalog order, each with its name, cost, attack,
- * health and its two abilities (`ability` for when it is played and `fallAbility`
+ * health and its three abilities (`ability` for when it is played,
+ * `growthAbility` for growing while it stays on the table, and `fallAbility`
  * for when it falls, each the text on its face or `null` when it has none), how
  * many copies the collection holds, and whether it holds any at all. A card the player
  * does not own appears too — zero copies, `owned` false — so the whole set can be
@@ -867,6 +881,7 @@ export function listAllCards(cards) {
       attack: card.attack,
       health: card.health,
       ability: card.ability ?? null,
+      growthAbility: card.growthAbility ?? null,
       fallAbility: card.fallAbility ?? null,
       copies,
       owned: copies > 0,
@@ -876,8 +891,8 @@ export function listAllCards(cards) {
 
 /**
  * The deck as full card descriptions, in the order the player chose them, each
- * with its when-played and fall ability text, or `null` for either it does not
- * carry.
+ * with its when-played, growth and fall ability text, or `null` for any it does
+ * not carry.
  */
 export function listDeckCards(deck) {
   return deck.map((id) => {
@@ -889,6 +904,7 @@ export function listDeckCards(deck) {
       attack: card.attack,
       health: card.health,
       ability: card.ability ?? null,
+      growthAbility: card.growthAbility ?? null,
       fallAbility: card.fallAbility ?? null,
     };
   });
