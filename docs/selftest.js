@@ -2217,6 +2217,54 @@ export async function checks() {
         fail(`the match log on the page does not match the match's log: it reads ${JSON.stringify(printedLog)}`);
       }
 
+      // The board is a battlefield, not a diagram: both tables lie on their own
+      // playing surface, the opponent's hand is one face-down back per card it
+      // holds, the deck is a stack of backs that shrinks, and an empty table
+      // still reads as a table — in a picture and in words.
+      if (game.readState().match.opponentHand !== m.opponentHand) {
+        fail(
+          `the match reports the opponent holding ${game.readState().match.opponentHand} card(s) instead of ` +
+            `the ${m.opponentHand} it holds, so a tool cannot see the hand the board shows`
+        );
+      }
+      const opponentHandBacks = [...document.querySelectorAll("#match-opponent-hand-backs .card-back")];
+      if (opponentHandBacks.length !== m.opponentHand) {
+        fail(
+          `the opponent holds ${m.opponentHand} card(s) but their hand shows ` +
+            `${opponentHandBacks.length} face-down card(s)`
+        );
+      }
+      if (
+        opponentHandBacks.length &&
+        !opponentHandBacks.every((back) => back.getAttribute("aria-hidden") === "true")
+      ) {
+        fail(
+          "the opponent's face-down cards are not hidden from assistive technology, so a screen reader " +
+            "hears a stack of unnamed pictures"
+        );
+      }
+      const deckStack = [...document.querySelectorAll("#match-deck-stack .card-back")];
+      if (deckStack.length !== m.deckRemaining) {
+        fail(
+          `the deck holds ${m.deckRemaining} card(s) but its stack shows ${deckStack.length} face-down card(s)`
+        );
+      }
+      for (const [where, selector, sentence] of [
+        ["your table", "#match-table", "Your table is empty."],
+        ["the opponent's table", "#match-opponent-table", `${m.opponentName}'s table is empty.`],
+      ]) {
+        const tableList = document.querySelector(selector);
+        if (!tableList?.closest(".match-surface")) {
+          fail(`${where} is not drawn on a playing surface, so the board reads as an empty panel`);
+        }
+        if (!textOf(tableList).includes(sentence)) {
+          fail(
+            `${where} does not say it is empty in words: ${selector} reads ` +
+              `"${textOf(tableList) || "(nothing)"}"`
+          );
+        }
+      }
+
       // A card the player can afford, played by pressing its button.
       const affordable = m.hand.find((card) => card.cost <= m.energy);
       if (!affordable) {
@@ -2326,6 +2374,29 @@ export async function checks() {
         if (!turnLines.some((line) => /^You draw /.test(line))) {
           fail(`the new turn drew a card without logging it: the turn added ${JSON.stringify(turnLines)}`);
         }
+      }
+
+      // The deck stack shrinks with the deck, and the opponent's backs follow
+      // their hand as it draws and plays — so the counts a visitor sees change
+      // with the game, not only the numbers beside them.
+      const shrunkStack = [...document.querySelectorAll("#match-deck-stack .card-back")];
+      if (shrunkStack.length !== afterEnd.deckRemaining) {
+        fail(
+          `after a turn the deck holds ${afterEnd.deckRemaining} card(s) but its stack shows ${shrunkStack.length}`
+        );
+      }
+      if (afterEnd.deckRemaining < beforeEnd.deckRemaining && shrunkStack.length >= deckStack.length) {
+        fail(
+          `the deck drew a card (from ${beforeEnd.deckRemaining} to ${afterEnd.deckRemaining}) but its stack did not ` +
+            `shrink (from ${deckStack.length} to ${shrunkStack.length})`
+        );
+      }
+      const handBacksAfter = [...document.querySelectorAll("#match-opponent-hand-backs .card-back")];
+      if (handBacksAfter.length !== afterEnd.opponentHand) {
+        fail(
+          `the opponent holds ${afterEnd.opponentHand} card(s) after its turn but their hand shows ` +
+            `${handBacksAfter.length} face-down card(s)`
+        );
       }
 
       // Every card in the match — your hand and both tables — is drawn with the
@@ -2600,7 +2671,7 @@ export async function checks() {
       if (!reported.match || reported.match.active !== true) {
         fail("get-state does not return the active match, so an agent cannot read the game in progress");
       } else {
-        for (const field of ["playerHealth", "opponentHealth", "energy", "maxEnergy"]) {
+        for (const field of ["playerHealth", "opponentHealth", "energy", "maxEnergy", "opponentHand"]) {
           if (reported.match[field] !== live[field]) {
             fail(`get-state reports match ${field} ${reported.match[field]} while the page says ${live[field]}`);
           }

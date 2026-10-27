@@ -202,17 +202,41 @@
             <ul class="match-hand" id="match-hand" aria-label="Cards in your hand"></ul>
           </section>
 
+          <!-- Your side of the battlefield. The cards you have played lie on a
+               lit playing surface, and the cards still to draw sit beside it as
+               a stack of face-down backs that shrinks as it is drawn from. The
+               backs are a picture of the count the board prints in words, so
+               they are hidden from assistive technology and the text carries
+               the same fact. -->
           <section class="match-side" aria-labelledby="match-table-heading">
             <h3 class="match-heading" id="match-table-heading">Your table</h3>
-            <ul class="match-table" id="match-table" aria-label="Cards on your table"></ul>
+            <div class="match-surface">
+              <ul class="match-table" id="match-table" aria-label="Cards on your table"></ul>
+            </div>
+            <div class="match-pile" id="match-deck" aria-hidden="true">
+              <p class="match-pile-label">Your deck</p>
+              <ul class="card-pile card-pile-stack" id="match-deck-stack"></ul>
+            </div>
           </section>
 
           <!-- The opponent's side of the table. Its heading is filled in with
                the opponent's own name, so the table reads as theirs rather than
-               as an anonymous other side. -->
+               as an anonymous other side. Their hand sits above their table as
+               one face-down back per card they hold, and grows and thins as
+               they draw and play. -->
           <section class="match-side" aria-labelledby="match-opponent-table-heading">
             <h3 class="match-heading" id="match-opponent-table-heading">Opponent's table</h3>
-            <ul class="match-table" id="match-opponent-table" aria-label="Cards on the opponent's table"></ul>
+            <div class="match-pile" id="match-opponent-hand" aria-hidden="true">
+              <p class="match-pile-label">Their hand</p>
+              <ul class="card-pile" id="match-opponent-hand-backs"></ul>
+            </div>
+            <div class="match-surface">
+              <ul
+                class="match-table"
+                id="match-opponent-table"
+                aria-label="Cards on the opponent's table"
+              ></ul>
+            </div>
           </section>
 
           <section class="match-log-wrap" aria-labelledby="match-log-heading">

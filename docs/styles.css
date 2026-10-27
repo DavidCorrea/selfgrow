@@ -712,6 +712,112 @@ body {
   letter-spacing: -0.01em;
 }
 
+/* Each table sits on its own lit playing surface: a raised edge, a soft sheen
+   from above and a faint weave, so a card is laid on a surface rather than
+   floating in the panel around it. The surface does not change with its
+   contents — an empty one is the same table, waiting. */
+.match-surface {
+  position: relative;
+  padding: 0.6rem;
+  border: 1px solid var(--edge-soft);
+  border-radius: var(--radius-control);
+  background-color: rgba(27, 34, 64, 0.72);
+  background-image:
+    radial-gradient(120% 90% at 50% 0%, rgba(255, 255, 255, 0.06), transparent 58%),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.018) 0 5px, transparent 5px 10px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    inset 0 14px 26px -20px rgba(2, 4, 12, 0.95);
+}
+
+/* An empty table: the sentence still reads as text, and above it a dashed card
+   slot waits on the surface, so the table looks half-played rather than blank. */
+.match-table .match-empty {
+  grid-column: 1 / -1;
+  display: grid;
+  justify-items: center;
+  gap: 0.45rem;
+  padding: 0.9rem 0.75rem;
+  color: var(--ink-muted);
+}
+
+.match-empty-slot {
+  width: 4.25rem;
+  aspect-ratio: 96 / 64;
+  border: 1px dashed var(--edge-soft);
+  border-radius: calc(var(--radius-control) - 4px);
+  background-color: rgba(15, 19, 34, 0.35);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+.match-empty-text {
+  font-size: 0.9rem;
+}
+
+/* A pile of face-down cards — the opponent's hand and the deck still to draw.
+   The label stays quiet; the backs are the picture of the count printed beside
+   them on the board. */
+.match-pile {
+  display: grid;
+  gap: 0.3rem;
+  justify-items: start;
+}
+
+.match-pile-label {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+}
+
+.card-pile {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.28rem;
+}
+
+.card-pile-card {
+  display: block;
+  line-height: 0;
+}
+
+.card-pile-empty {
+  color: var(--ink-muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+/* The back of a card, drawn by cardart.js in the same frame as a face. */
+.card-pile-card .card-back {
+  display: block;
+  width: 3rem;
+  border-radius: 0.3rem;
+  box-shadow: 0 3px 6px -4px rgba(2, 4, 12, 0.9);
+}
+
+/* The deck is a stack seen from the side: each back overlaps the one before it
+   and steps a little to the right, so the pile's height follows how many cards
+   are left and it visibly shrinks as they are drawn. */
+.card-pile-stack {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.card-pile-stack .card-pile-card {
+  transform: translateX(calc(var(--i, 0) * 3px));
+}
+
+.card-pile-stack .card-pile-card + .card-pile-card {
+  margin-top: -1.35rem;
+}
+
+.card-pile-stack .card-back {
+  width: 2.6rem;
+}
+
 /* Every card in a match — in hand and on either table — is the same
    picture-first face the collection uses: one shared face width, so the same
    card is the same size wherever it appears and a creature is known by sight

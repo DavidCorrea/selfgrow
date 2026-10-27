@@ -9,7 +9,7 @@
  * page says is what a tool returns, and what a tool does is what the page shows.
  */
 
-import { cardArtSvg } from "./cardart.js";
+import { cardArtSvg, cardBackSvg } from "./cardart.js";
 import { CARDS, CARD_BY_ID, DECK_LIMIT, MINIMUM_DECK_SIZE, OPPONENT_NAME } from "./cards.js";
 import {
   collectionSize,
@@ -100,6 +100,8 @@ const matchHandList = document.getElementById("match-hand");
 const matchHandSide = document.getElementById("match-hand-side");
 const matchTableList = document.getElementById("match-table");
 const matchOpponentTableList = document.getElementById("match-opponent-table");
+const matchOpponentHandBacks = document.getElementById("match-opponent-hand-backs");
+const matchDeckStack = document.getElementById("match-deck-stack");
 const matchLogList = document.getElementById("match-log");
 const matchResult = document.getElementById("match-result");
 const matchResultHeading = document.getElementById("match-result-heading");
@@ -251,6 +253,24 @@ function attackTargetControl(card) {
 }
 
 /**
+ * An empty table, said twice: the sentence a screen reader and an agent read,
+ * and — beside it — the outline of a card slot on the playing surface, so an
+ * empty table looks like a table waiting for a card rather than a blank panel.
+ */
+function emptyTableItem(sentence) {
+  const item = document.createElement("li");
+  item.className = "match-empty";
+  const slot = document.createElement("span");
+  slot.className = "match-empty-slot";
+  slot.setAttribute("aria-hidden", "true");
+  const text = document.createElement("span");
+  text.className = "match-empty-text";
+  text.textContent = sentence;
+  item.append(slot, text);
+  return item;
+}
+
+/**
  * The player's table, each card with the control that picks it to strike with.
  * The controls appear only on the player's own turn in a live match, so a
  * finished match or the opponent's turn offers no move nobody can make.
@@ -258,10 +278,7 @@ function attackTargetControl(card) {
 function renderPlayerTable(match, canAttack) {
   if (!matchTableList) return;
   if (!match.player.table.length) {
-    const empty = document.createElement("li");
-    empty.className = "match-empty";
-    empty.textContent = "Your table is empty.";
-    matchTableList.replaceChildren(empty);
+    matchTableList.replaceChildren(emptyTableItem("Your table is empty."));
     return;
   }
   matchTableList.replaceChildren(
@@ -285,10 +302,7 @@ function renderPlayerTable(match, canAttack) {
 function renderOpponentTable(match, canAttack) {
   if (!matchOpponentTableList) return;
   if (!match.opponent.table.length) {
-    const empty = document.createElement("li");
-    empty.className = "match-empty";
-    empty.textContent = `${match.opponentName}'s table is empty.`;
-    const children = [empty];
+    const children = [emptyTableItem(`${match.opponentName}'s table is empty.`)];
     if (canAttack) {
       const item = document.createElement("li");
       item.className = "match-card match-card-action match-attack-hero-item";
@@ -341,6 +355,33 @@ function renderMatchHand(match) {
     ...match.player.hand.map((card) =>
       matchCardItem(card, { playable: true, affordable: card.cost <= match.player.energy })
     )
+  );
+}
+
+/**
+ * A pile of face-down cards: one back per card it holds. It is how a count of
+ * cards reads as cards — the opponent's hand and the deck still to draw — and
+ * each back carries its own place in the pile (`--i`) so a stack fans out and
+ * its height follows how many cards are left. The pile is decorative; the count
+ * is printed in words beside it.
+ */
+function renderCardPile(list, count, emptyLabel) {
+  if (!list) return;
+  if (count === 0) {
+    const item = document.createElement("li");
+    item.className = "card-pile-empty";
+    item.textContent = emptyLabel;
+    list.replaceChildren(item);
+    return;
+  }
+  list.replaceChildren(
+    ...Array.from({ length: count }, (_, index) => {
+      const item = document.createElement("li");
+      item.className = "card-pile-card";
+      item.style.setProperty("--i", String(index));
+      item.append(cardBackSvg());
+      return item;
+    })
   );
 }
 
@@ -485,6 +526,8 @@ function renderMatch() {
 
   const canAttack = !match.over && match.turn === "player";
   renderMatchHand(match);
+  renderCardPile(matchOpponentHandBacks, match.opponent.hand.length, "No cards in hand");
+  renderCardPile(matchDeckStack, match.player.deck.length, "Deck empty");
   renderPlayerTable(match, canAttack);
   renderOpponentTable(match, canAttack);
   renderMatchLog(match);
@@ -904,7 +947,8 @@ function describeMatchCard(card) {
  * cards is picked to attack with (`selectedAttacker`, a card id or null), both
  * heroes' health, the player's energy, the hand, both tables — each table card
  * saying whether it has already attacked this turn (`hasAttacked`) — how many
- * cards are left to draw, the ordered log of what happened — its last line the
+ * cards the opponent holds (`opponentHand`, the face-down backs the board shows)
+ * and how many are left to draw, the ordered log of what happened — its last line the
  * final blow — and the moves
  * available now, of which a finished match offers none. `opponentName` names the
  * character being faced, whose deck is its own rather than a copy of the
@@ -934,6 +978,7 @@ export function readMatch() {
       hand: [],
       table: [],
       opponentTable: [],
+      opponentHand: 0,
       deckRemaining: state.deck.length,
       log: [],
       actions: [],
@@ -956,6 +1001,7 @@ export function readMatch() {
     hand: match.player.hand.map(describeMatchCard),
     table: match.player.table.map(describeMatchCard),
     opponentTable: match.opponent.table.map(describeMatchCard),
+    opponentHand: match.opponent.hand.length,
     deckRemaining: match.player.deck.length,
     log: [...match.log],
     actions:
