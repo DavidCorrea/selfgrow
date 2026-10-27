@@ -110,7 +110,7 @@ export function tools() {
       name: "start-match",
       title: "Start a match against the opponent",
       description:
-        "Shuffles your saved deck, deals you and the opponent a starting hand, and opens the Play screen on the match. Any match already running or finished is replaced, so this is also how you play another one after a result. Returns the whole match — `over` false, both heroes' health, your energy, your hand and table, the opponent's table and the ordered log — so the caller can begin playing. When your deck holds fewer cards than a match needs it changes nothing and returns an `error` field naming the shortfall instead.",
+        "Shuffles your saved deck, deals you and the opponent a starting hand, and opens the Play screen on the match. At the start of each side's own turn it draws a card while its deck holds one, and a side's energy maximum grows by one per own turn up to the dearest card, so a spent hand refills and every deck can be played to an end. Any match already running or finished is replaced, so this is also how you play another one after a result. Returns the whole match — `over` false, both heroes' health, your energy, your hand and table, the opponent's table and the ordered log — so the caller can begin playing. When your deck holds fewer cards than a match needs it changes nothing and returns an `error` field naming the shortfall instead.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: false, consequentialHint: false },
       example: {},
@@ -144,7 +144,7 @@ export function tools() {
       name: "end-turn",
       title: "End your turn",
       description:
-        "Ends your turn: your table's cards each deal their attack to the opponent's hero, the opponent takes a turn of its own — playing the most expensive cards it can afford from its own deck — its table deals its attack to your hero, and the turn comes back to you with your energy refreshed. The match ends the moment either hero's health reaches zero: the log's last line is that final blow, `over` turns true, `winner` names the side that won, and the turn is not handed back to anyone. Every step is added to the match log. Returns the whole match afterwards so you can read what changed, or an `error` field saying why when there is no match, the match is already over, or it is not your turn.",
+        "Ends your turn: your table's cards each deal their attack to the opponent's hero, the opponent takes a turn of its own — drawing a card while its deck holds one, its energy growing and refilling, and playing the most expensive cards it can afford — its table deals its attack to your hero, and the turn comes back to you with your energy grown and refilled and a card drawn while your deck holds one. The match ends the moment either hero's health reaches zero: the log's last line is that final blow, `over` turns true, `winner` names the side that won, and the turn is not handed back to anyone. Every step is added to the match log. Returns the whole match afterwards so you can read what changed, or an `error` field saying why when there is no match, the match is already over, or it is not your turn.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: false, consequentialHint: false },
       example: {},
@@ -156,7 +156,7 @@ export function tools() {
       name: "get-match",
       title: "Read the match on the Play screen",
       description:
-        "Returns the match on its own, without the rest of the page. `active` is false when no match has been started. While a match is running `over` is false and `turn` says whose move it is, with both heroes' health, your energy and its maximum, your hand (with the ids play-card wants), both tables, how many cards are left to draw, the ordered log, and the moves available now. Once a hero has fallen `over` is true, `winner` is \"player\" or \"opponent\", `outcome` says \"win\" or \"loss\" from your side, `recorded` says whether the result has already been saved, the loser's health is 0, the log's last line is the final blow, and `actions` is empty because a finished match accepts no more moves — so this is the tool to ask whether the match is still going and who won.",
+        "Returns the match on its own, without the rest of the page. `active` is false when no match has been started. While a match is running `over` is false and `turn` says whose move it is, with both heroes' health, your energy and its maximum, your hand (with the ids play-card wants), both tables, how many cards are left to draw, the ordered log — including a line each time a side draws a card at the start of its own turn — and the moves available now. Once a hero has fallen `over` is true, `winner` is \"player\" or \"opponent\", `outcome` says \"win\" or \"loss\" from your side, `recorded` says whether the result has already been saved, the loser's health is 0, the log's last line is the final blow, and `actions` is empty because a finished match accepts no more moves — so this is the tool to ask whether the match is still going and who won.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
       example: {},
