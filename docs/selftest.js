@@ -3228,9 +3228,9 @@ export async function checks() {
   if (!setCollectionViewTool) {
     fail('no "set-collection-view" tool is declared, so an agent cannot choose between every card and only those still to collect');
   } else if (setList) {
-    if (setViewButtons.length !== 3) {
+    if (setViewButtons.length !== 4) {
       fail(
-        `the Collection screen offers ${setViewButtons.length} view control(s) where it should offer three — every card, only those still to collect, and only those that act when played`
+        `the Collection screen offers ${setViewButtons.length} view control(s) where it should offer four — every card, only those still to collect, only those that act when played, and only those that act when they fall`
       );
     }
 
@@ -3384,10 +3384,69 @@ export async function checks() {
       fail(`switching the set back from "abilities" reports the view as "${backFromAbilityView.collectionView}"`);
     }
 
+    // The "falls" view lists only the cards whose face carries a fall ability —
+    // owned and unowned alike — so a player building around a card they take on
+    // purpose to trade away can see the cards that carry it. Which cards those
+    // are is the catalog's answer, not the page's.
+    const fallIds = setIds.filter((id) => catalogFallAbility(id) !== null);
+    if (!fallIds.length) {
+      fail('no card in the game carries a fall ability, so the "falls" view has nothing to list');
+    }
+    const afterFallView = await setCollectionViewTool.execute({ view: "falls" });
+    if (afterFallView.collectionView !== "falls") {
+      fail(`switching the set to "falls" reports the view as "${afterFallView.collectionView}" instead of "falls"`);
+    }
+    const fallRows = [...setList.querySelectorAll("[data-card-id]")].map((row) => row.dataset.cardId);
+    if (fallRows.join(", ") !== fallIds.join(", ")) {
+      const withoutFall = fallRows.filter((id) => catalogFallAbility(id) === null);
+      const hidden = fallIds.filter((id) => !fallRows.includes(id));
+      fail(
+        `the "falls" view lists ${fallRows.length} card(s) in the order ${fallRows.slice(0, 4).join(", ")}, … where the game's ` +
+          `${fallIds.length} fall card(s) in catalog order are ${fallIds.join(", ")}` +
+          `${withoutFall.length ? `; it shows ${withoutFall.join(", ")}, which carry no fall ability` : ""}` +
+          `${hidden.length ? `; it hides ${hidden.join(", ")}, which carry one` : ""}`
+      );
+    }
+    const pressedFalls = setViewButtons
+      .filter((button) => button.getAttribute("aria-pressed") === "true")
+      .map((button) => button.dataset.collectionView);
+    if (pressedFalls.length !== 1 || pressedFalls[0] !== "falls") {
+      fail(`the "falls" view does not mark its own button pressed (pressed: ${pressedFalls.join(", ") || "none"})`);
+    }
+    if (setList.getAttribute("aria-label") === allViewListLabel) {
+      fail(
+        'the set list names what it lists the same way in the "falls" view as in the "all" view, so a screen reader cannot tell which cards are showing'
+      );
+    }
+
+    // The empty note a view prints when it has nothing to list is part of the
+    // view's contract, not decoration: it must exist and name the fall behaviour
+    // so a player meeting an empty "falls" view is told why, not shown a blank.
+    const fallsViewText = game.COLLECTION_VIEW_TEXT?.falls;
+    if (!fallsViewText || typeof fallsViewText.empty !== "string" || !fallsViewText.empty.trim()) {
+      fail('the "falls" view has no empty note, so an empty list would read as a blank rather than saying no card acts when it falls');
+    } else if (!/fall/i.test(fallsViewText.empty)) {
+      fail(`the "falls" view's empty note reads "${fallsViewText.empty}" without naming the fall behaviour it stands for`);
+    }
+
+    // Both readers agree on the view while the fall list is showing.
+    const fallState = await getState.execute({});
+    if (fallState.collectionView !== "falls") {
+      fail(`get-state reports the collection view as "${fallState.collectionView}" while the "falls" view is showing`);
+    }
+    if (game.readCollection().view !== "falls") {
+      fail(`list-collection reports the collection view as "${game.readCollection().view}" while the "falls" view is showing`);
+    }
+
+    const backFromFallView = await setCollectionViewTool.execute({ view: "all" });
+    if (backFromFallView.collectionView !== "all") {
+      fail(`switching the set back from "falls" reports the view as "${backFromFallView.collectionView}"`);
+    }
+
     // A view the page does not have is refused with a reason, and changes nothing.
     const refusedView = await setCollectionViewTool.execute({ view: "everything" });
     if (!refusedView.error) {
-      fail('setting the collection view to "everything" was accepted, though the page has only "all", "missing" and "abilities"');
+      fail('setting the collection view to "everything" was accepted, though the page has only "all", "missing", "abilities" and "falls"');
     }
     if (game.readCollection().view !== "all") {
       fail(`a refused view left the collection showing "${game.readCollection().view}" instead of "all"`);
