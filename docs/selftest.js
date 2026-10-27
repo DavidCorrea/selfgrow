@@ -2688,6 +2688,15 @@ export async function checks() {
     }
   }
 
+  // Before a match the board has no opponent to show, so its portrait slot is
+  // empty and hidden even while the Play screen stands ready.
+  const beforeMatchPortrait = document.getElementById("match-opponent-portrait");
+  if (!beforeMatchPortrait) {
+    fail("the board has no portrait slot (#match-opponent-portrait), so the opponent's character can never stand on it");
+  } else if (!beforeMatchPortrait.hidden || beforeMatchPortrait.querySelector("svg.opponent-portrait")) {
+    fail("the board shows an opponent's portrait before a match, when there is no one being faced");
+  }
+
   const deckAtStart = deckIds();
   let started = null;
   try {
@@ -2762,6 +2771,60 @@ export async function checks() {
             `the board's own line for the opponent reads "${opponentLine || "(nothing)"}" instead of naming ` +
               `"${m.opponentName}"`
           );
+        }
+      }
+
+      // The character the picker showed leads the board: the opponent's portrait
+      // stands beside the name and health the board prints, drawn in that
+      // opponent's own accent and hidden from assistive technology because the
+      // name is already written into the health label. A portrait of the wrong
+      // opponent, or one missing, is a character the player cannot know.
+      const boardPortrait = document.getElementById("match-opponent-portrait");
+      const facing =
+        cardCatalog.OPPONENT_BY_ID.get(m.opponentId) ??
+        (offeredOpponents ?? []).find((opponent) => opponent.name === m.opponentName) ??
+        null;
+      if (!boardPortrait) {
+        fail("the board has no portrait slot (#match-opponent-portrait), so the opponent's character is not on the board");
+      } else if (boardPortrait.hidden) {
+        fail(`a match against ${m.opponentName} is running but the board hides the opponent's portrait`);
+      } else {
+        const portrait = boardPortrait.querySelector("svg.opponent-portrait");
+        if (!portrait) {
+          fail(`a match against ${m.opponentName} is running but the board shows no portrait of the opponent beside their name`);
+        } else {
+          if (portrait.getAttribute("aria-hidden") !== "true") {
+            fail(
+              `the board's portrait of "${m.opponentName}" is not hidden from assistive technology, so its shape ` +
+                "would be read beside the name the health label already carries"
+            );
+          }
+          const figure = portrait.querySelector(".portrait-body");
+          if (!figure) {
+            fail(`the board's portrait of "${m.opponentName}" has no figure in it`);
+          }
+          if (facing) {
+            const pickerPortrait = cardArt?.opponentPortraitSvg(facing);
+            if (!pickerPortrait || portrait.innerHTML !== pickerPortrait.innerHTML) {
+              fail(
+                `the board's portrait of "${m.opponentName}" is not the drawing the picker showed for that ` +
+                  "opponent, so the choice made in the picker does not carry onto the table"
+              );
+            }
+            const accentToken = facing.accent;
+            const probe = document.createElement("span");
+            probe.style.color = `var(${accentToken})`;
+            boardPortrait.append(probe);
+            const accent = getComputedStyle(probe).color;
+            probe.remove();
+            const painted = getComputedStyle(figure).fill;
+            if (painted !== accent) {
+              fail(
+                `the board's portrait of "${facing.name}" is filled ${painted} where that opponent's accent ` +
+                  `(${accentToken}) is ${accent}, so the character is not drawn in its own colour`
+              );
+            }
+          }
         }
       }
 
@@ -3491,6 +3554,13 @@ export async function checks() {
       const home = buttonNamed("play", "Back to home");
       if (!home || home.hidden) {
         fail("a finished match cannot get back home, so a player is stuck on the result");
+      }
+      // A finished match has no opponent left to face, so the board's portrait
+      // gives up its place with the match even though the board still stands
+      // showing the result.
+      const finishedPortrait = document.getElementById("match-opponent-portrait");
+      if (finishedPortrait && (!finishedPortrait.hidden || finishedPortrait.querySelector("svg.opponent-portrait"))) {
+        fail(`${played}, but the board still shows the opponent's portrait though the match is over`);
       }
     }
 

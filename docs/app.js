@@ -98,6 +98,7 @@ const matchIntroDeck = document.getElementById("match-intro-deck");
 const opponentPicker = document.getElementById("opponent-picker");
 const opponentOptions = document.getElementById("opponent-options");
 const matchOpponentName = document.getElementById("match-opponent-name");
+const matchOpponentPortrait = document.getElementById("match-opponent-portrait");
 const matchOpponentHealthLabel = document.getElementById("match-opponent-health-label");
 const matchOpponentHandLabel = document.getElementById("match-opponent-hand-label");
 const matchOpponentTableHeading = document.getElementById("match-opponent-table-heading");
@@ -646,6 +647,41 @@ function selectedOpponent() {
 }
 
 /**
+ * The opponent a running match is against, out of the one list of them: the one
+ * the match's `opponentId` names, then the one its `opponentName` names, then
+ * the default — so a match saved before opponents carried an id still resolves.
+ */
+function matchOpponent(match) {
+  return (
+    OPPONENTS.find((opponent) => opponent.id === match.opponentId) ??
+    OPPONENTS.find((opponent) => opponent.name === match.opponentName) ??
+    DEFAULT_OPPONENT
+  );
+}
+
+/**
+ * Draw the opponent's portrait at the head of the board, beside the name and
+ * health the board already prints, for as long as a match runs. Before a match
+ * and once one is over there is no opponent on the board to show, so the slot is
+ * emptied and hidden — the result stands where the character did.
+ */
+function renderMatchOpponentPortrait(match) {
+  if (!matchOpponentPortrait) return;
+  const opponent = match && !match.over ? matchOpponent(match) : null;
+  const portrait = opponent ? opponentPortraitSvg(opponent) : null;
+  if (!portrait) {
+    matchOpponentPortrait.replaceChildren();
+    matchOpponentPortrait.hidden = true;
+    return;
+  }
+  // The accent names a token in styles.css, so the portrait is painted in the
+  // opponent's own colour the same way the picker paints it.
+  matchOpponentPortrait.style.setProperty("--opponent-accent", `var(${opponent.accent})`);
+  matchOpponentPortrait.replaceChildren(portrait);
+  matchOpponentPortrait.hidden = false;
+}
+
+/**
  * One opponent in the picker, as a radio a keyboard can reach and a thumb can
  * tap: the opponent's portrait, their name, their look and the kind of deck they
  * bring, with the whole option as the radio's label so pressing any part of it
@@ -748,6 +784,7 @@ function renderMatch() {
   // record honest; once there is nothing left to give up, it goes with the hand.
   if (concedeButton) concedeButton.hidden = !match || match.over;
   renderMatchResult(match);
+  renderMatchOpponentPortrait(match);
   if (!match) {
     shownBoard = null;
     return;

@@ -765,6 +765,48 @@ body {
   display: none;
 }
 
+/* The opponent's standing is led by their portrait, so the character the picker
+   showed is beside the name and health it already prints for the whole match.
+   The drawing sits left of the label and the number, centred on the pair, and
+   the slot is empty outside a match. */
+.standing-opponent {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 0.6rem;
+  align-items: center;
+}
+
+.match-opponent-portrait {
+  grid-area: 1 / 1 / 3 / 2;
+  display: grid;
+  place-items: center;
+}
+
+/* A portrait that is not being shown must give up its place in the grid, which
+   outranks what `hidden` does on its own. */
+.match-opponent-portrait[hidden] {
+  display: none;
+}
+
+/* The board's portrait is the character itself, at full strength: nothing here
+   chooses between opponents, so it is not dimmed the way the picker's are. */
+.match-opponent-portrait .opponent-portrait {
+  width: 2.75rem;
+  height: 2.75rem;
+  opacity: 1;
+}
+
+.standing-opponent .standing-label {
+  grid-area: 1 / 2 / 2 / 3;
+  align-self: end;
+}
+
+.standing-opponent .standing-value {
+  grid-area: 2 / 2 / 3 / 3;
+  align-self: start;
+}
+
 /* The match as a result. It lands under the health row so the outcome is read
    where the player last looked, and only draws its frame once a hero has
    fallen — the one moment in a match worth marking. */
@@ -1595,6 +1637,17 @@ body {
     flex-direction: row;
     align-items: baseline;
     gap: 0.35rem;
+  }
+
+  /* The opponent's portrait shrinks with the row's numbers so it sits inside the
+     standing rather than growing the compact health row by a line. */
+  .match-standings .standing-opponent {
+    align-items: center;
+  }
+
+  .match-standings .standing-opponent .opponent-portrait {
+    width: 2.25rem;
+    height: 2.25rem;
   }
 
   .match-standings .standing-label {
