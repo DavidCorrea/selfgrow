@@ -41,6 +41,11 @@
   --radius-card: 20px;
   --radius-control: 12px;
 
+  /* The one width every card face in a match is drawn at, so the same card is the
+     same size in hand and on either table: the picture fills that width at the
+     drawing's own 96/64 ratio. */
+  --match-face: minmax(8.5rem, 9.5rem);
+
   -webkit-tap-highlight-color: rgba(242, 193, 78, 0.18);
 }
 
@@ -707,54 +712,48 @@ body {
   letter-spacing: -0.01em;
 }
 
-/* Table cards are chips; hand cards are small faces, since each carries the
-   control that plays it. */
-.match-hand {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
-  gap: 0.6rem;
-}
-
+/* Every card in a match — in hand and on either table — is the same
+   picture-first face the collection uses: one shared face width, so the same
+   card is the same size wherever it appears and a creature is known by sight
+   rather than by a thumbnail beside its name. */
+.match-hand,
 .match-table {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, var(--match-face));
   gap: 0.5rem;
 }
 
+/* The face itself: the picture on top, then its name and cost/attack/health as
+   a caption, then the control that plays or attacks with it. */
 .match-card {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.55rem;
+  display: grid;
+  align-content: start;
+  gap: 0.4rem;
   min-width: 0;
-  padding: 0.35rem 0.6rem;
+  padding: 0.5rem 0.45rem 0.55rem;
   border: 1px solid var(--edge);
   border-radius: var(--radius-control);
   background-color: rgba(34, 42, 69, 0.7);
 }
 
-/* The card's picture in a match, at a thumbnail size rather than the
-   collection's full width, so a chip stays a chip. The shared 96/64 aspect
-   ratio keeps it identical to the same card in the collection. */
+/* The shared .card-art rule already sizes a picture to the full width at the
+   drawing's own 96/64 ratio, so a face's picture is simply the top of the card,
+   the same drawing as the collection's at the same aspect. */
 .match-card .card-art {
-  width: 3.5rem;
-  flex: none;
+  width: 100%;
 }
 
 .match-card-head {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.45rem;
+  display: grid;
+  gap: 0.05rem;
   min-width: 0;
 }
 
 .match-card-name {
-  font-weight: 600;
+  font-weight: 700;
   overflow-wrap: anywhere;
 }
 
@@ -764,14 +763,10 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-.match-card-playable {
-  display: grid;
-  align-content: start;
-  gap: 0.55rem;
-  padding: 0.7rem 0.8rem 0.8rem;
-}
-
-.match-card-playable .match-play {
+/* The control that plays a hand card, or attacks with a table card, sits under
+   the face at the face's own width rather than beside it. */
+.match-card-playable .match-play,
+.match-card-action .btn {
   width: 100%;
 }
 
@@ -789,25 +784,14 @@ body {
   font-size: 0.85rem;
 }
 
-/* A table card carrying a control — the one that picks it to attack with, or the
-   one that sends an attack at it — keeps its picture and numbers as a chip and
-   sets the control beside them rather than pushing the card off its row. */
-.match-card-action {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.45rem;
-  padding: 0.4rem 0.55rem;
-}
-
 /* The battle controls read quieter than the rail's own actions, the same way a
-   hand card's Play does, so a table of many cards is not a wall of loud buttons. */
+   hand card's Play does, so a table of many cards is not a wall of loud buttons.
+   Their labels wrap rather than push past the face they sit under. */
 .btn.match-attack-select,
 .btn.match-attack-target,
 .btn.match-attack-hero {
   padding: 0.45rem 0.8rem;
   font-size: 0.85rem;
-  white-space: nowrap;
 }
 
 /* The picked card's control is filled, so the choice is read without relying on
@@ -1060,75 +1044,38 @@ body {
     grid-row: 1 / span 3;
   }
 
-  /* A hand card face puts the card's name and numbers on one line and the
-     control that plays it beside them, so three cards stack in the height of
-     three rows rather than three boxes — the only way a short phone can show
-     the whole hand above the action bar. */
-  .match-hand {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 0.3rem;
-  }
-
-  /* Picture, name-and-numbers, then the control: three columns so a hand card
-     stays one short row and the hand grid never overflows a portrait phone. */
-  .match-card-playable {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    align-items: center;
+  /* A phone shows the same faces as a wide window, two to a row, so the hand
+     and both tables are read by the same pictures at the size the creature is
+     recognised by — the card never shrinks back into a chip. */
+  .match-hand,
+  .match-table {
     gap: 0.4rem;
-    padding: 0.25rem 0.55rem;
   }
 
-  .match-hand .match-card .card-art {
-    width: 2.75rem;
+  /* A phone's face saves the line a caption would spend stacking the name over
+     the numbers: they share one line under the picture, so a two-row hand still
+     clears the action bar docked at the foot of the window. */
+  .match-card-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.05rem 0.5rem;
   }
 
-  .match-hand .match-card-head {
-    flex-wrap: nowrap;
-    min-width: 0;
+  .match-card {
+    gap: 0.3rem;
+    padding: 0.4rem 0.45rem 0.55rem;
   }
 
-  .match-hand .match-card-name {
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-  }
-
-  .match-card-playable .match-play {
-    width: auto;
-    white-space: nowrap;
-    padding: 0.35rem 0.55rem;
-    /* The label spells out the card and its cost; a smaller face keeps the
-       longest one on a single line — and leaves the card's own name enough
-       room to be read — instead of pushing the card off the edge. */
-    font-size: 0.72rem;
-  }
-
-  /* A table card carrying a battle control lays out like a hand card: picture,
-     name and numbers, then the control, so a table row stays short and the
-     board keeps the hand and the action bar in view. */
-  .match-card-action {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    gap: 0.35rem;
-    padding: 0.3rem 0.5rem;
-  }
-
-  .match-card-action .card-art {
-    width: 2.6rem;
-  }
-
-  .match-card-action .match-card-name {
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-  }
-
+  /* A card control stays quieter than the rail's own actions — and the smaller
+     font keeps a long "Play … (cost …)" label under its face. */
+  .match-card-playable .match-play,
   .match-card-action .match-attack-select,
   .match-card-action .match-attack-target,
   .match-attack-hero {
-    width: auto;
-    padding: 0.3rem 0.5rem;
-    font-size: 0.72rem;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.78rem;
   }
 
   /* A refusal rides in the docked bar, which is fixed — so it is bounded to a
