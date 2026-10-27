@@ -548,6 +548,45 @@ body {
   display: none;
 }
 
+/* The label above the earned card, so the picture is read as the reward rather
+   than as another card in play. */
+.award-card-label {
+  display: block;
+  color: var(--ink-muted);
+}
+
+/* The card a win earned, shown as the card itself: its picture beside its name
+   and three numbers, at a size big enough to recognise and small enough to sit
+   in the result. */
+.award-card {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin: 0.4rem 0 0.1rem;
+}
+
+.award-card .card-art {
+  width: clamp(5rem, 22vw, 7rem);
+  flex: none;
+}
+
+.award-card-caption {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.award-card-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.award-card-stats {
+  color: var(--foil);
+  font-variant-numeric: tabular-nums;
+}
+
 .result-standings {
   margin-top: 0.15rem;
 }

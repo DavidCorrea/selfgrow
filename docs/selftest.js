@@ -411,6 +411,38 @@ export async function checks() {
     }
   }
 
+  // --- The card a win earns is shown as the card itself ----------------------
+
+  // A reward is the reason a match is played again, so it is shown as the card
+  // a player will recognise, not only named. Built from a known reward card so
+  // this holds regardless of which card the match happened to award.
+  const rewardCard = cardCatalog.CARD_BY_ID.get(cardCatalog.REWARD_POOL[0]);
+  if (typeof game.awardCardFigure !== "function") {
+    fail("app.js does not export awardCardFigure, so the card a win earns cannot be shown as a card");
+  } else {
+    const figure = game.awardCardFigure(rewardCard);
+    if (figure.dataset.cardId !== rewardCard.id) {
+      fail(`the earned-card figure is labelled "${figure.dataset.cardId}" instead of the awarded card "${rewardCard.id}"`);
+    }
+    const picture = figure.querySelector(".card-art");
+    if (!picture) {
+      fail(`the earned-card figure for "${rewardCard.name}" shows no picture`);
+    } else if (picture.getAttribute("aria-label") !== rewardCard.name) {
+      fail(`the earned card's picture is announced as "${picture.getAttribute("aria-label")}" instead of "${rewardCard.name}"`);
+    }
+    if (figure.querySelector(".award-card-name")?.textContent !== rewardCard.name) {
+      fail(`the earned-card figure does not name the awarded card "${rewardCard.name}"`);
+    }
+    const numbers = `${rewardCard.cost}/${rewardCard.attack}/${rewardCard.health}`;
+    const stats = figure.querySelector(".award-card-stats");
+    if (stats?.textContent !== numbers) {
+      fail(`the earned-card figure reads "${stats?.textContent}" instead of the awarded card's "${numbers}"`);
+    }
+    if (stats.getAttribute("aria-label") !== `cost ${rewardCard.cost}, attack ${rewardCard.attack}, health ${rewardCard.health}`) {
+      fail(`the earned card's numbers are not their own labelled values: "${stats.getAttribute("aria-label")}"`);
+    }
+  }
+
   // --- The collection survives closing the page ------------------------------
 
   const raw = window.localStorage.getItem(collection.STORAGE_KEY);
@@ -1700,12 +1732,42 @@ export async function checks() {
     } else if (!textOf(resultReward).includes(awarded.name)) {
       fail(`a win added "${awarded.name}" but the result does not say which card: it reads "${textOf(resultReward)}"`);
     }
-  } else if (playedOut?.outcome === "loss") {
+  }
+
+  // A win shows the card it earned as the card itself: its picture beside its
+  // own name and numbers, and the same card that joined the collection.
+  if (playedOut?.outcome === "win" && afterPlay.result?.awarded) {
+    const awarded = afterPlay.result.awarded;
+    const figure = resultReward?.querySelector(".award-card");
+    if (!figure) {
+      fail(`a win added "${awarded.name}" but the result shows no card, only the words "${textOf(resultReward)}"`);
+    } else if (figure.dataset.cardId !== awarded.id) {
+      fail(`the result shows card "${figure.dataset.cardId}" instead of the awarded "${awarded.id}"`);
+    } else {
+      const picture = figure.querySelector(".card-art");
+      if (!picture || picture.getAttribute("aria-label") !== awarded.name) {
+        fail(`the picture in the result is not the awarded "${awarded.name}"`);
+      }
+      const numbers = `${awarded.cost}/${awarded.attack}/${awarded.health}`;
+      if (figure.querySelector(".award-card-stats")?.textContent !== numbers) {
+        fail(`the card shown in the result reads "${figure.querySelector(".award-card-stats")?.textContent}" instead of the awarded "${numbers}"`);
+      }
+      const ownedIds = (game.readCollection().cards || []).map((card) => card.id);
+      if (!ownedIds.includes(awarded.id)) {
+        fail(`the result shows "${awarded.id}", which is not a card the win added to the collection`);
+      }
+    }
+  }
+
+  if (playedOut?.outcome === "loss") {
     if (afterPlay.result?.awarded !== null) {
       fail(`a lost match awarded ${JSON.stringify(afterPlay.result?.awarded)} instead of nothing`);
     }
     if (cardsHeldAfter !== cardsHeldBefore) {
       fail(`a lost match grew the collection from ${cardsHeldBefore} to ${cardsHeldAfter} card(s)`);
+    }
+    if (resultReward?.querySelector(".card-art")) {
+      fail("a lost match shows a card in the result, but a loss earns nothing");
     }
   }
 
@@ -1797,6 +1859,9 @@ export async function checks() {
     }
     if (!textOf(resultReward).toLowerCase().includes("no card")) {
       fail(`after a loss the page does not say no card was earned: it reads "${textOf(resultReward) || "(nothing)"}"`);
+    }
+    if (resultReward?.querySelector(".card-art")) {
+      fail("after a loss the result shows a card, but a loss earns nothing");
     }
 
     // The record survives being closed and opened again.
