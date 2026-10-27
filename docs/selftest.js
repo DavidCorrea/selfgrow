@@ -673,8 +673,12 @@ export async function checks() {
     // A cheap deck: one card on the table, then the turn handed over and back.
     const cheapDeck = ["sprout", "pebble-toad", "thornling", "sun-moth", "bramble-hound"];
     const dealt = matchEngine.createMatch(cheapDeck, { rng: fixedRng });
-    if (dealt.player.hand.length !== 3) {
-      fail(`a match dealt ${dealt.player.hand.length} cards instead of a starting hand of 3`);
+    const openingHand = matchEngine.STARTING_HAND + 1; // the dealt hand plus the card drawn on the opening turn
+    if (dealt.player.hand.length !== openingHand) {
+      fail(
+        `a match dealt ${dealt.player.hand.length} cards instead of an opening hand of ${openingHand} ` +
+          `(${matchEngine.STARTING_HAND} dealt plus the card drawn at the start of the player's first turn)`
+      );
     }
     const deckIdSet = new Set(cheapDeck);
     for (const card of dealt.player.hand) {
@@ -682,8 +686,11 @@ export async function checks() {
         fail(`a match dealt "${card.id}", which is not in the deck it was dealt from`);
       }
     }
-    if (dealt.player.deck.length !== cheapDeck.length - 3) {
-      fail(`a match left ${dealt.player.deck.length} cards in the deck instead of ${cheapDeck.length - 3}`);
+    if (dealt.player.deck.length !== cheapDeck.length - openingHand) {
+      fail(`a match left ${dealt.player.deck.length} cards in the deck instead of ${cheapDeck.length - openingHand}`);
+    }
+    if (!dealt.log.some((line) => /draw/i.test(line))) {
+      fail("the opening turn drew a card but the match log never says a card was drawn");
     }
 
     const affordable = dealt.player.hand.find((card) => card.cost <= dealt.player.energy);
@@ -693,8 +700,31 @@ export async function checks() {
       matchEngine.playCard(dealt, affordable.id);
       const attackTotal = dealt.player.table.reduce((total, card) => total + card.attack, 0);
       const opponentHealthBefore = dealt.opponent.health;
+      const handBefore = dealt.player.hand.length;
+      const deckBefore = dealt.player.deck.length;
+      const opponentDeckBefore = dealt.opponent.deck.length;
       const logBefore = dealt.log.length;
       matchEngine.endTurn(dealt);
+      const addedLines = dealt.log.slice(logBefore);
+
+      if (deckBefore > 0 && dealt.player.deck.length !== deckBefore - 1) {
+        fail(
+          `the new turn left ${dealt.player.deck.length} cards in the deck instead of drawing one from ${deckBefore}`
+        );
+      }
+      if (dealt.player.hand.length !== handBefore + 1) {
+        fail(
+          `the new turn left ${dealt.player.hand.length} cards in hand instead of drawing one onto ${handBefore}`
+        );
+      }
+      if (!addedLines.some((line) => /^You draw /.test(line))) {
+        fail(`the new turn drew a card without logging it: the turn added ${JSON.stringify(addedLines)}`);
+      }
+      if (opponentDeckBefore > 0 && !addedLines.some((line) => /^The opponent draws /.test(line))) {
+        fail(
+          `the opponent's turn drew a card without logging it: the turn added ${JSON.stringify(addedLines)}`
+        );
+      }
 
       if (dealt.opponent.health !== Math.max(0, opponentHealthBefore - attackTotal)) {
         fail(
@@ -787,6 +817,60 @@ export async function checks() {
       if (JSON.stringify([race.player.health, race.opponent.health, race.log.length]) !== frozen) {
         fail("a move on a finished match changed the match anyway");
       }
+    }
+
+    // A draw moves a card rather than making one: through every draw so far,
+    // each side's cards still add up to the deck it was dealt from.
+    for (const [who, side] of [
+      ["player", dealt.player],
+      ["opponent", dealt.opponent],
+    ]) {
+      const held = side.hand.length + side.table.length + side.deck.length;
+      if (held !== cheapDeck.length) {
+        fail(
+          `the ${who}'s cards add up to ${held} after drawing, instead of the ${cheapDeck.length} it was dealt ` +
+            "— a draw duplicated or dropped one"
+        );
+      }
+    }
+
+    // An exhausted deck draws nothing and says nothing, but the turn still runs.
+    const spent = matchEngine.createMatch(cheapDeck, { rng: fixedRng });
+    spent.player.deck = [];
+    spent.opponent.deck = [];
+    const spentLogBefore = spent.log.length;
+    matchEngine.endTurn(spent);
+    const spentLines = spent.log.slice(spentLogBefore);
+    if (spent.over) {
+      fail("a turn with both decks spent ended the match instead of continuing it");
+    } else {
+      const drew = spentLines.filter((line) => /draw/i.test(line));
+      if (drew.length) {
+        fail(`an empty deck still drew a card: ${JSON.stringify(drew)}`);
+      }
+      if (spent.turn !== "player") {
+        fail(`a turn with both decks spent left it as the ${spent.turn}'s turn instead of the player's`);
+      }
+    }
+
+    // The regression this ticket is about: a deck of nothing but the dearest
+    // cards — none affordable on the first turn — still plays to a result,
+    // because each side's energy grows by one per turn up to the dearest card.
+    const dearest = [...cardCatalog.CARDS]
+      .sort((a, b) => b.cost - a.cost || b.attack - a.attack)
+      .slice(0, 5)
+      .map((card) => card.id);
+    const priceyDeck = matchEngine.createMatch(dearest, { rng: fixedRng });
+    for (let move = 0; move < 30 && !priceyDeck.over; move += 1) {
+      const playable = priceyDeck.player.hand.find((card) => card.cost <= priceyDeck.player.energy);
+      if (playable) matchEngine.playCard(priceyDeck, playable.id);
+      else matchEngine.endTurn(priceyDeck);
+    }
+    if (!priceyDeck.over) {
+      fail(
+        `a deck of only the dearest cards stalled: 30 moves in, both heroes stood at ` +
+          `${priceyDeck.player.health} and ${priceyDeck.opponent.health} health, so the match never reached a result`
+      );
     }
   }
 
@@ -953,6 +1037,7 @@ export async function checks() {
 
   if (started) {
     const m = started.match;
+    const openingDeal = matchEngine.STARTING_HAND + 1; // dealt hand plus the card drawn on the opening turn
     if (!m || m.active !== true) {
       fail("starting a match did not report an active match");
     }
@@ -972,14 +1057,20 @@ export async function checks() {
       if (m.energy !== m.maxEnergy) {
         fail(`a new match starts with ${m.energy} energy instead of a full ${m.maxEnergy}`);
       }
-      if (m.hand.length !== 3) {
-        fail(`a new match dealt ${m.hand.length} cards instead of a starting hand of 3`);
+      if (m.hand.length !== openingDeal) {
+        fail(
+          `a new match dealt ${m.hand.length} cards instead of an opening hand of ${openingDeal} ` +
+            "(the dealt hand plus the card drawn at the start of the player's first turn)"
+        );
       }
       if (m.table.length !== 0 || m.opponentTable.length !== 0) {
         fail("a new match begins with cards already on a table");
       }
-      if (m.deckRemaining !== deckAtStart.length - 3) {
-        fail(`a match from a deck of ${deckAtStart.length} left ${m.deckRemaining} cards to draw instead of ${deckAtStart.length - 3}`);
+      if (m.deckRemaining !== deckAtStart.length - openingDeal) {
+        fail(`a match from a deck of ${deckAtStart.length} left ${m.deckRemaining} cards to draw instead of ${deckAtStart.length - openingDeal}`);
+      }
+      if (!m.log.some((line) => /draw/i.test(line))) {
+        fail("the opening turn drew a card but the match log never says a card was drawn");
       }
       const handIds = m.hand.map((card) => card.id);
       if (!handIds.every((id) => deckAtStart.includes(id))) {
@@ -1014,6 +1105,12 @@ export async function checks() {
       }
       if (!textOf(document.getElementById("match-energy")).includes(String(m.energy))) {
         fail(`the board prints your energy as "${textOf(document.getElementById("match-energy"))}", not the ${m.energy} the match holds`);
+      }
+      if (textOf(document.getElementById("match-deck-remaining")) !== String(m.deckRemaining)) {
+        fail(
+          `the board prints ${textOf(document.getElementById("match-deck-remaining"))} cards left in deck ` +
+            `instead of the ${m.deckRemaining} the match holds`
+        );
       }
       const handRows = [...document.querySelectorAll("#match-hand .match-card")];
       if (handRows.length !== m.hand.length) {
@@ -1105,6 +1202,18 @@ export async function checks() {
       }
       if (afterEnd.log.length <= beforeEnd.log.length) {
         fail("ending the turn added no lines to the match log");
+      }
+      const turnLines = afterEnd.log.slice(beforeEnd.log.length);
+      if (beforeEnd.deckRemaining > 0) {
+        if (afterEnd.deckRemaining !== beforeEnd.deckRemaining - 1) {
+          fail(
+            `the new turn left ${afterEnd.deckRemaining} cards in the deck instead of drawing one from ` +
+              `${beforeEnd.deckRemaining}`
+          );
+        }
+        if (!turnLines.some((line) => /^You draw /.test(line))) {
+          fail(`the new turn drew a card without logging it: the turn added ${JSON.stringify(turnLines)}`);
+        }
       }
     }
   }
@@ -1309,11 +1418,12 @@ export async function checks() {
     return game.readState().match;
   };
 
-  // A match deals three cards and never draws, so these checks play from a known
-  // deck a match can always play out of: every card but the two dearest is one
-  // the starting energy covers, so a dealt hand always holds something playable.
-  // Built from the player's own cards and through the deck's own controls, so
-  // the checks do not depend on what the collection happens to hold later.
+  // These checks play from a known deck a match can always play out of: every
+  // card but the two dearest is one the opening energy covers, and a side draws
+  // one card at the start of each of its own turns, so a dealt hand always
+  // holds something playable and the deck refills instead of emptying. Built
+  // from the player's own cards and through the deck's own controls, so the
+  // checks do not depend on what the collection happens to hold later.
   if (matchEngine) {
     const byCost = [...owned.cards].sort((a, b) => b.cost - a.cost);
     const tooDear = byCost.filter((card) => card.cost > matchEngine.MAX_ENERGY).slice(0, 2);

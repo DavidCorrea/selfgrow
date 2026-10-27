@@ -11,6 +11,13 @@
  * they cannot make is refused by throwing a sentence a player can read, leaving
  * the match untouched — including any move at all once the match is over.
  *
+ * Each side begins its own turn with a draw step: while its deck still holds a
+ * card it draws the top one, so a spent hand refills and the deck wears down to
+ * nothing. Its energy also grows — refilled to its maximum, and its maximum up
+ * by one after the first turn, never past ENERGY_CAP — so a deck of cards the
+ * opening energy cannot cover still becomes playable, and no match can stall
+ * with both sides unable to act.
+ *
  * A match ends the moment either hero's health reaches zero: `over` turns true,
  * `winner` names the side that dealt the final blow, `outcome` says it from the
  * player's side ("win" or "loss"), and the log's last line is that blow, in
@@ -31,8 +38,16 @@ export const HERO_HEALTH = 20;
 /** How many cards each side is dealt from its shuffled deck at the start. */
 export const STARTING_HAND = 3;
 
-/** The most energy a side has at the start of each of its own turns. */
+/** The energy a side has at the start of its first own turn. */
 export const MAX_ENERGY = 3;
+
+/**
+ * The most energy a side can ever grow to: one more than the dearest card, so a
+ * deck of nothing but the most expensive cards can still be played to an end.
+ * A side's maximum rises by one at the start of each of its own turns after the
+ * first, and stops here.
+ */
+export const ENERGY_CAP = Math.max(...CARDS.map((card) => card.cost));
 
 // Where each card sits in the catalog, so a tie between two affordable cards is
 // broken the same way every time rather than by hand order.
@@ -72,6 +87,7 @@ function createSide(deckIds, rng) {
     health: HERO_HEALTH,
     energy: MAX_ENERGY,
     maxEnergy: MAX_ENERGY,
+    turns: 0,
     hand: order.slice(0, STARTING_HAND).map(cardOf),
     table: [],
     deck: order.slice(STARTING_HAND),
@@ -79,9 +95,27 @@ function createSide(deckIds, rng) {
 }
 
 /**
+ * Begin one side's own turn: count it, let its energy grow by one after the
+ * first turn (never past ENERGY_CAP), refill its energy to its maximum, and draw
+ * the top card of its deck while there is one. Returns the card drawn, or null
+ * when the deck is spent — so the caller can say in the match log what happened,
+ * in the words of the side whose turn it is.
+ */
+function beginTurn(side) {
+  side.turns += 1;
+  if (side.turns > 1) side.maxEnergy = Math.min(ENERGY_CAP, side.maxEnergy + 1);
+  side.energy = side.maxEnergy;
+  if (side.deck.length === 0) return null;
+  const card = cardOf(side.deck.shift());
+  side.hand.push(card);
+  return card;
+}
+
+/**
  * Start a match from the player's deck ids. Both sides play a mirror of the same
- * deck, each shuffled separately, and each is dealt a starting hand. Refused
- * when the deck holds fewer cards than a match needs.
+ * deck, each shuffled separately, and each is dealt a starting hand — then the
+ * player's first turn begins at once, drawing a card while the deck holds one.
+ * Refused when the deck holds fewer cards than a match needs.
  */
 export function createMatch(deckIds, { rng = Math.random } = {}) {
   const held = Array.isArray(deckIds) ? deckIds.length : 0;
@@ -100,10 +134,16 @@ export function createMatch(deckIds, { rng = Math.random } = {}) {
     opponent: createSide(deckIds, rng),
     log: [],
   };
+  // The match opens on the player's first turn, which draws a card. The line is
+  // logged after the opening note so the note counts the hand after the draw.
+  const openingDraw = beginTurn(match.player);
   appendLog(
     match,
     `Match started. You hold ${match.player.hand.length} cards; the opponent holds ${match.opponent.hand.length}.`
   );
+  if (openingDraw) {
+    appendLog(match, `You draw ${openingDraw.name} — ${match.player.deck.length} left in deck.`);
+  }
   return match;
 }
 
@@ -214,13 +254,15 @@ function dealDamage(match, attacker, defender, attackerWord, defenderWord, healt
 }
 
 /**
- * The opponent's turn: refresh its energy, play what it can afford, then attack.
- * Returns true when its table's attack ended the match, so the caller stops
- * rather than handing the turn back to a hero that is no longer standing.
+ * The opponent's turn: grow and refill its energy, draw a card while it can,
+ * play what it can afford, then attack. Returns true when its table's attack
+ * ended the match, so the caller stops rather than handing the turn back to a
+ * hero that is no longer standing.
  */
 function takeOpponentTurn(match) {
   const opponent = match.opponent;
-  opponent.energy = opponent.maxEnergy;
+  const drawn = beginTurn(opponent);
+  if (drawn) appendLog(match, `The opponent draws ${drawn.name} — ${opponent.deck.length} left in deck.`);
 
   let played = 0;
   for (;;) {
@@ -242,11 +284,11 @@ function takeOpponentTurn(match) {
 
 /**
  * End the player's turn: the player's table attacks the opponent's hero, the
- * opponent takes a turn of its own, and the turn comes back to the player with
- * energy refreshed. Every step appends one line to the log, in order. Refused
- * when the match is over or it is not the player's turn. The turn stops the
- * moment either hero falls: the surviving side's blow is the last line logged,
- * and nothing after it happens.
+ * opponent takes a turn of its own, and the turn comes back to the player — its
+ * energy grown and refilled, a card drawn while the deck holds one. Every step
+ * appends one line to the log, in order. Refused when the match is over or it is
+ * not the player's turn. The turn stops the moment either hero falls: the
+ * surviving side's blow is the last line logged, and nothing after it happens.
  */
 export function endTurn(match) {
   if (match.over) {
@@ -267,10 +309,11 @@ export function endTurn(match) {
   if (takeOpponentTurn(match)) return match;
 
   match.turn = "player";
-  match.player.energy = match.player.maxEnergy;
+  const drawn = beginTurn(match.player);
   appendLog(
     match,
     `Your turn — energy refreshed to ${match.player.energy} of ${match.player.maxEnergy}.`
   );
+  if (drawn) appendLog(match, `You draw ${drawn.name} — ${match.player.deck.length} left in deck.`);
   return match;
 }
