@@ -679,15 +679,17 @@ body {
     background-color 160ms var(--ease-out);
 }
 
-/* The character is the radio's label — its mark in its own accent, its name,
-   then the look it cuts and the kind of deck it brings — so pressing any part of
-   this top half picks that opponent. */
+/* The character is the radio's label — its mark in its own accent, its name and
+   the record against it, then the look it cuts and the kind of deck it brings —
+   so pressing any part of this top half picks that opponent. The padding is what
+   the picker has to spare once each character carries a record line: three
+   options and the rules strip still share the first screen. */
 .opponent-choice {
   display: grid;
   grid-template-columns: auto auto minmax(0, 1fr);
   align-items: center;
   gap: 0.15rem 0.55rem;
-  padding: 0.55rem 0.7rem;
+  padding: 0.45rem 0.7rem;
   cursor: pointer;
 }
 
@@ -747,17 +749,47 @@ body {
 .opponent-name {
   font-weight: 700;
   letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
+/* The character's name and how the player has fared against it share a row while
+   the width allows it, and the record takes its own line under the name when it
+   does not — so a narrow option loses nothing and a phone keeps the picker's
+   height. */
+.opponent-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0 0.5rem;
 }
 
 .opponent-look,
 .opponent-deck {
   color: var(--ink-muted);
   font-size: 0.8rem;
-  line-height: 1.35;
+  line-height: 1.3;
 }
 
 .opponent-deck {
   color: var(--ink);
+}
+
+/* How the player has fared against this opponent: a short record beside the name
+   and above the deck they bring, in the same muted weight as the look, so it
+   reads as a record rather than as part of the character's description. An
+   opponent already beaten is marked by the word "Beaten" in the line and by the
+   lift in weight here — never by colour alone. */
+.opponent-record {
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+}
+
+.opponent-record-beaten {
+  color: var(--ink);
+  font-weight: 600;
 }
 
 /* The deck an opponent brings, folded under the character: one line saying how
@@ -775,7 +807,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  min-height: 2rem;
+  min-height: 1.75rem;
   padding: 0 0.1rem;
   color: var(--ink-muted);
   font-size: 0.78rem;
@@ -1032,6 +1064,15 @@ body {
 .result-health {
   margin: 0;
   color: var(--ink);
+  text-wrap: pretty;
+}
+
+/* The one win the result marks as a first against that opponent: said under the
+   heading, before the numbers, because it is the payoff rather than a count. */
+.result-first-win {
+  margin: 0;
+  color: var(--foil);
+  font-weight: 600;
   text-wrap: pretty;
 }
 
@@ -1768,18 +1809,18 @@ body {
   }
 
   /* The how-a-match-works strip and the opponent picker share the first screen,
-     so on a phone the options tighten: the name, the look and the deck all still
-     read, in fewer lines. */
+     so on a phone the options tighten: the name, the record against the
+     opponent, the look and the deck all still read, in fewer lines. */
   .opponent-picker-legend {
-    margin-bottom: 0.3rem;
+    margin-bottom: 0.15rem;
   }
 
   .opponent-options {
-    gap: 0.3rem;
+    gap: 0.2rem;
   }
 
   .opponent-choice {
-    padding: 0.3rem 0.6rem;
+    padding: 0.25rem 0.6rem;
     gap: 0.1rem 0.5rem;
   }
 
@@ -1791,12 +1832,13 @@ body {
   }
 
   .opponent-deck-toggle {
-    min-height: 1.5rem;
+    min-height: 1.4rem;
     font-size: 0.75rem;
   }
 
   .opponent-look,
-  .opponent-deck {
+  .opponent-deck,
+  .opponent-record {
     font-size: 0.75rem;
     line-height: 1.25;
   }

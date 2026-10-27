@@ -73,6 +73,10 @@ const state = {
   // as the cards, so a reload keeps both what was won and what was earned.
   wins: opened.wins,
   matchesPlayed: opened.matches,
+  // How the player has fared against each opponent, keyed by opponent id: the
+  // wins and the matches played against them. It is kept in the same save as
+  // the cards, so whom a player has beaten survives closing the page.
+  opponentsRecord: opened.opponents,
   // Whether the Play screen's how-a-match-works strip is open. A player who has
   // not finished a match meets it open; once they have, it stays folded.
   rulesOpen: opened.matches === 0,
@@ -164,6 +168,7 @@ const matchLogList = document.getElementById("match-log");
 const matchResult = document.getElementById("match-result");
 const matchResultHeading = document.getElementById("match-result-heading");
 const matchFinalHealth = document.getElementById("match-final-health");
+const resultFirstWin = document.getElementById("result-first-win");
 const resultReward = document.getElementById("result-reward");
 const playAgainButton = document.getElementById("action-play-again");
 
@@ -581,9 +586,10 @@ function renderMatchLog(match) {
 /**
  * The result of a finished match, said once: whether the player won, lost or gave
  * the match up, both heroes' final health, how many matches the player has now
- * finished and won, and the one card a win added. Shown only once the match is
- * over — a hero fallen or a match conceded — in the same board it was played on,
- * so a result is a state of the match rather than a second screen.
+ * finished and won, the one card a win added, and — when the win was the first
+ * against that opponent — that it was. Shown only once the match is over — a
+ * hero fallen or a match conceded — in the same board it was played on, so a
+ * result is a state of the match rather than a second screen.
  */
 function renderMatchResult(match) {
   const finished = Boolean(match?.over);
@@ -603,6 +609,13 @@ function renderMatchResult(match) {
     matchFinalHealth.textContent = match.conceded
       ? `Conceded with no hero fallen: ${standing}.`
       : `Final health: ${standing}.`;
+  }
+  // The payoff of a first win, said where the win happened: the picker's record
+  // alone would be a screen away from the result that moved it.
+  if (resultFirstWin) {
+    const firstWin = won && state.result?.firstWin;
+    resultFirstWin.textContent = firstWin ? `Your first win against ${match.opponentName}.` : "";
+    resultFirstWin.hidden = !firstWin;
   }
   if (resultReward) {
     const awarded = state.result?.awarded;
@@ -764,11 +777,43 @@ function renderMatchOpponentPortrait(match) {
 }
 
 /**
+ * How the player has fared against one opponent, in words: "No matches yet"
+ * before the first meeting, then how many of the matches played were won, and
+ * the word "Beaten" in front of it once they have been beaten. The beaten mark
+ * is that word rather than a colour, so a player who cannot tell colours apart
+ * reads the same record as anyone else.
+ */
+export function opponentRecordText(wins, matches) {
+  const played = Number.isSafeInteger(matches) && matches > 0 ? matches : 0;
+  if (played === 0) return "No matches yet";
+  const won = Number.isSafeInteger(wins) && wins > 0 ? Math.min(wins, played) : 0;
+  const record = `${won} of ${played} ${played === 1 ? "match" : "matches"} won`;
+  return won > 0 ? `Beaten — ${record}` : record;
+}
+
+/** The record the page holds against an opponent, read as a pair of counts. */
+function opponentRecord(opponentId) {
+  const record = state.opponentsRecord?.[opponentId];
+  return { wins: record?.wins ?? 0, matches: record?.matches ?? 0 };
+}
+
+/**
+ * Write one opponent's record onto its line in the picker: the words from
+ * `opponentRecordText`, and the emphasis that marks an opponent already beaten.
+ * Called on every draw, so the line is right after a match has moved it.
+ */
+function writeOpponentRecord(line, opponentId) {
+  const { wins, matches } = opponentRecord(opponentId);
+  line.textContent = opponentRecordText(wins, matches);
+  line.classList.toggle("opponent-record-beaten", wins > 0);
+}
+
+/**
  * One opponent in the picker, as a radio a keyboard can reach and a thumb can
- * tap: the opponent's portrait, their name, their look and the kind of deck they
- * bring, with all of that as the radio's label so pressing any part of it picks
- * that opponent — and, under it, the deck itself, so who to face is not chosen on
- * words alone.
+ * tap: the opponent's portrait, their name, their look, the kind of deck they
+ * bring and how the player has fared against them so far, with all of that as
+ * the radio's label so pressing any part of it picks that opponent — and, under
+ * it, the deck itself, so who to face is not chosen on words alone.
  */
 function opponentOption(opponent) {
   const option = document.createElement("div");
@@ -791,6 +836,20 @@ function opponentOption(opponent) {
   name.className = "opponent-name";
   name.textContent = opponent.name;
 
+  // How the player has fared against this opponent, filled in on every draw
+  // rather than only here, because the options are built once and a match moves
+  // the record behind them.
+  const record = document.createElement("span");
+  record.className = "opponent-record";
+  writeOpponentRecord(record, opponent.id);
+
+  // The name and the record share a row where the width allows it — the record
+  // is about the character, and on a phone one row for both keeps the picker
+  // from costing a line of its own on each of three stacked options.
+  const head = document.createElement("span");
+  head.className = "opponent-head";
+  head.append(name, record);
+
   const look = document.createElement("span");
   look.className = "opponent-look";
   look.textContent = opponent.look;
@@ -799,7 +858,7 @@ function opponentOption(opponent) {
   deck.className = "opponent-deck";
   deck.textContent = opponent.description;
 
-  text.append(name, look, deck);
+  text.append(head, look, deck);
 
   const choice = document.createElement("label");
   choice.className = "opponent-choice";
@@ -861,8 +920,13 @@ function renderOpponentChoice() {
   // With a result on the board the note about the deck has had its say: the
   // picker alone stands above the board, to choose who the next match is against.
   if (matchIntroLine) matchIntroLine.hidden = Boolean(state.match);
-  for (const radio of opponentOptions?.querySelectorAll("input") ?? []) {
-    radio.checked = radio.value === state.opponentId;
+  for (const option of opponentOptions?.querySelectorAll(".opponent-option") ?? []) {
+    const radio = option.querySelector("input");
+    if (radio) radio.checked = radio.value === state.opponentId;
+    // The record line is written on every draw, so a result that has just moved
+    // it is read from the picker the moment the player looks back at it.
+    const record = option.querySelector(".opponent-record");
+    if (record) writeOpponentRecord(record, option.dataset.opponentId);
   }
   const opponent = selectedOpponent();
   if (matchIntroOpponent) matchIntroOpponent.textContent = opponent.name;
@@ -1217,16 +1281,24 @@ function finishMatch() {
   if (!match?.over || match.recorded) return;
   match.recorded = true;
 
-  const record = recordResult(match.outcome, match.id);
+  const record = recordResult(match.outcome, match.id, undefined, match.opponentId);
   state.cards = record.cards;
   state.cardsOwned = collectionSize(record.cards);
   state.distinctCards = record.cards.length;
   state.wins = record.wins;
   state.matchesPlayed = record.matches;
+  state.opponentsRecord = record.opponents;
   // The newcomer's strip has had its say: a returning player opens it folded.
   state.rulesOpen = false;
   state.saved = record.saved;
-  state.result = { outcome: match.outcome, awarded: record.awarded, setComplete: record.setComplete };
+  state.result = {
+    outcome: match.outcome,
+    awarded: record.awarded,
+    setComplete: record.setComplete,
+    // Whether this win was the player's first against this opponent, so the
+    // result can say so where the win happened.
+    firstWin: record.firstWin,
+  };
   renderCollection();
 }
 
@@ -1553,15 +1625,18 @@ function commitDeck() {
  * size, its limit, the fewest cards a match needs and the cards themselves —
  * whether it will survive closing the page, how many matches have been played and
  * won, the result of the last finished match (whether it was a win or a loss, the
- * card a win awarded, and whether that completed the set), the card the next win
+ * card a win awarded, whether that completed the set, and `firstWin` — whether
+ * that win was the player's first against that opponent), the card the next win
  * would add (`nextReward`, with `nextRewardComplete` true once every reward card
  * is owned), the three points the Play screen tells a newcomer about a match and
  * whether that strip is showing
  * (`matchRules`), the opponents a match can be fought against (`opponents` — each
  * with the id to start a match with, its name, its look, the kind of deck it
  * brings, the `deck` of card ids it is dealt, whose cards list-collection names
- * the costs and numbers of, and whether that deck's cards are open in the picker,
- * `deckShown`) and which of them the next match would be against
+ * the costs and numbers of, whether that deck's cards are open in the picker,
+ * `deckShown`, and `record` — the `wins` and `matches` held against that
+ * opponent and whether they have been `beaten`, as the picker's own record line
+ * reads it) and which of them the next match would be against
  * (`selectedOpponentId`), the match the home screen offers to continue
  * (`canContinue` and the `savedMatch` summary of an unfinished game left in the
  * browser), the choice a Start match is waiting on rather than throwing that
@@ -1626,6 +1701,7 @@ export function readState() {
     // says whether those cards are open in the picker right now.
     opponents: OPPONENTS.map(({ id, name, look, description, deck }) => {
       const fold = opponentDeckFoldFor(id);
+      const { wins, matches } = opponentRecord(id);
       return {
         id,
         name,
@@ -1633,6 +1709,10 @@ export function readState() {
         description,
         deck: [...deck],
         deckShown: Boolean(fold && fold.open && !fold.closest("[hidden]")),
+        // How the player has fared against this opponent, as the picker's own
+        // record line reads it: the matches played, the wins, and whether they
+        // have been beaten at all.
+        record: { wins, matches, beaten: wins > 0 },
       };
     }),
     selectedOpponentId: state.opponentId,
