@@ -383,27 +383,34 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* The deck's cards as a hand: small card faces that fill the row on a wide
+   window and fall to two per row on a phone, so the deck reads by sight and
+   stays short to scroll instead of becoming a list of names. */
 .deck-list {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem 0.5rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: 0.5rem;
 }
 
+/* One deck card, a small face: the picture, then its name and three numbers.
+   Sized so the 96x64 drawing stays legible at two columns on a phone. */
 .deck-card {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.5rem;
-  padding: 0.3rem 0.6rem;
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.4rem 0.45rem 0.55rem;
   border: 1px solid var(--edge);
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   background-color: rgba(34, 42, 69, 0.7);
 }
 
 .deck-card-name {
   font-weight: 600;
+  font-size: 0.9rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .deck-card-stats {
