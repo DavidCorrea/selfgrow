@@ -10,7 +10,17 @@
  */
 
 import { cardArtSvg, cardBackSvg, opponentPortraitSvg } from "./cardart.js";
-import { CARDS, CARD_BY_ID, DECK_LIMIT, DEFAULT_OPPONENT, MINIMUM_DECK_SIZE, OPPONENTS } from "./cards.js";
+import {
+  CARDS,
+  CARD_BY_ID,
+  DECK_LIMIT,
+  DEFAULT_OPPONENT,
+  DRAW_ON_PLAY,
+  HEAL_ON_PLAY,
+  MINIMUM_DECK_SIZE,
+  OPPONENTS,
+  STRIKE_ON_PLAY,
+} from "./cards.js";
 import {
   clearSavedMatch,
   collectionSize,
@@ -44,10 +54,20 @@ const COLLECTION_VIEWS = ["all", "missing"];
 // against, so a caller cannot ask for an order the page does not show.
 const COLLECTION_ORDERS = ["catalog", "cost"];
 
-// What a match asks of a player, in the three things a newcomer cannot yet read
-// for themselves: what a card costs, how the table fights, and which hero loses.
-// They are written once, here, and both the Play screen and the get-match-rules
-// tool read them, so the page and the tool cannot drift apart.
+// The three things a card can do the moment it is played, in the very words its
+// face prints them. Each ability is written once in docs/cards.js; the shared
+// "When played:" prefix is dropped here because the rule's own label already
+// says a card acts as it lands. So the rule a newcomer reads and the ability a
+// card prints are one list and cannot say different things.
+const whenPlayedEffects = [DRAW_ON_PLAY, HEAL_ON_PLAY, STRIKE_ON_PLAY].map((ability) =>
+  ability.replace(/^When played:\s*/, "")
+);
+
+// What a match asks of a player, in the four things a newcomer cannot yet read
+// for themselves: what a card costs, how the table fights, which hero loses, and
+// what a card does the moment it is played. They are written once, here, and
+// both the Play screen and the get-match-rules tool read them, so the page and
+// the tool cannot drift apart.
 const MATCH_RULES = [
   {
     label: "Cards cost energy",
@@ -60,6 +80,10 @@ const MATCH_RULES = [
   {
     label: "First hero to 0 loses",
     text: "both heroes start at 20 health; the first to reach 0 ends it",
+  },
+  {
+    label: "Some cards act when played",
+    text: `a card can ${whenPlayedEffects.slice(0, -1).join(", ")}, or ${whenPlayedEffects.at(-1)}`,
   },
 ];
 
@@ -990,7 +1014,7 @@ function renderOpponentChoice() {
 }
 
 /**
- * The Play screen's how-a-match-works strip: the three points open or fold with
+ * The Play screen's how-a-match-works strip: the four points open or fold with
  * `state.rulesOpen` — open for a player who has not finished a match, folded
  * once they have, with the one control still naming what it does.
  */
@@ -1864,7 +1888,7 @@ function commitDeck() {
  * card the last win added to the collection, or null when nothing was newly
  * earned: no result yet, a loss, or a win whose only card was a duplicate), the
  * card the next win would add (`nextReward`, with `nextRewardComplete` true once
- * every reward card is owned), the three points the Play screen tells a newcomer about a match and
+ * every reward card is owned), the four points the Play screen tells a newcomer about a match and
  * whether that strip is showing
  * (`matchRules`), the opponents a match can be fought against (`opponents` — each
  * with the id to start a match with, its name, its look, the kind of deck it

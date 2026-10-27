@@ -982,14 +982,14 @@ body {
   font-size: 0.7rem;
 }
 
-/* The how-a-match-works strip: the three things a newcomer cannot yet read for
-   themselves, said in three short labelled lines that stand before the picker
+/* The how-a-match-works strip: the four things a newcomer cannot yet read for
+   themselves, said in four short labelled lines that stand before the picker
    and the Start match button. It folds away behind one control, so a returning
    player gets the space back. */
 .match-rules {
   display: grid;
-  gap: 0.35rem;
-  padding: 0.35rem 0.7rem;
+  gap: 0.3rem;
+  padding: 0.25rem 0.6rem;
   border: 1px solid var(--edge);
   border-radius: var(--radius-control);
   background-color: rgba(168, 177, 212, 0.05);
@@ -1023,7 +1023,7 @@ body {
 
 .match-rules-points {
   display: grid;
-  gap: 0.2rem;
+  gap: 0.1rem;
   margin: 0;
 }
 
@@ -1031,11 +1031,13 @@ body {
   display: none;
 }
 
-/* The label and its line share a row, so three points cost three lines rather
-   than six and the picker stays on the first screen. */
+/* The label and its line share a row, so four points cost four rows rather than
+   eight. The longest runs onto a further line at a phone's width, so the leading
+   is the tightest this size reads at — that is what keeps the picker and the
+   Start match button on the first screen with all four points open. */
 .match-rule {
-  font-size: 0.78rem;
-  line-height: 1.3;
+  font-size: 0.76rem;
+  line-height: 1.2;
 }
 
 .match-rule-label,
