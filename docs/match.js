@@ -49,13 +49,16 @@
  * hero, so a wall of cards is worn down card by card before the hero behind it
  * is touched.
  *
- * A card can also do something as it lands. A card whose face says "When
- * played: draw a card" takes the top card of its owner's deck into that hand
- * the moment it is played — by the player or by the opponent, by one shared
- * trigger — and the log names the card drawn. The cost still leaves that side's
- * energy, so the card trades energy for a fresh option rather than being free;
- * a side whose deck is spent simply draws nothing and the log says nothing
- * extra.
+ * A card can also do something as it lands, by one shared trigger for both
+ * sides. A card whose face says "When played: draw a card" takes the top card of
+ * its owner's deck into that hand the moment it is played, and the log names the
+ * card drawn; a side whose deck is spent simply draws nothing and the log says
+ * nothing extra. A card whose face says "When played: heal your hero 2" mends
+ * its owner's hero instead — raising its health by the amount on its face, never
+ * past the 20 a hero starts a match with — and the log states the health
+ * afterwards, in the same words the board prints it, so a slow deck has an
+ * answer to an early rush. In either case the cost still leaves that side's
+ * energy, so the card trades energy for a fresh option rather than being free.
  *
  * The front card is only the default. During their own turn the player may send
  * one of their table cards at a card of their choosing on the opponent's table —
@@ -69,6 +72,8 @@ import {
   CARD_BY_ID,
   DEFAULT_OPPONENT,
   DRAW_ON_PLAY,
+  HEAL_ON_PLAY,
+  HEAL_ON_PLAY_AMOUNT,
   MINIMUM_DECK_SIZE,
   OPPONENT_BY_ID,
   OPPONENTS,
@@ -307,24 +312,44 @@ function appendLog(match, line) {
 }
 
 /**
- * Fire the ability a card carries the moment it is played: a card that says it
- * draws a card takes the top card of its owner's deck into that hand, and the
- * log gains a line naming the card drawn. `beneficiary` is how the log's words
- * name the side that benefits — "you" for the player, "the opponent" for the
- * other — so one trigger serves both and a match stays symmetric.
- *
- * A side whose deck is spent draws nothing, and nothing extra is logged: the
- * card still lands on the table and its cost still left its energy. Doing
- * nothing when there is nothing to draw keeps a card from being a worse play
- * than its numbers — the match never stalls on a trigger it cannot pay out.
+ * Fire the ability a card carries the moment it is played, by one shared trigger
+ * for both sides. `beneficiary` is how the log's words name the side that
+ * benefits — "you" for the player, "the opponent" for the other — so a match
+ * stays symmetric.
  */
 function firePlayAbility(match, side, card, beneficiary) {
-  if (card.ability !== DRAW_ON_PLAY) return;
+  if (card.ability === DRAW_ON_PLAY) drawFromPlay(match, side, card, beneficiary);
+  else if (card.ability === HEAL_ON_PLAY) healFromPlay(match, side, card, beneficiary);
+}
+
+/**
+ * A card that draws a card when played takes the top card of its owner's deck
+ * into that hand, and the log names the card drawn. A side whose deck is spent
+ * draws nothing, and nothing extra is logged: the card still lands on the table
+ * and its cost still left its energy. Doing nothing when there is nothing to
+ * draw keeps a card from being a worse play than its numbers — the match never
+ * stalls on a trigger it cannot pay out.
+ */
+function drawFromPlay(match, side, card, beneficiary) {
   if (side.deck.length === 0) return;
 
   const drawn = side.deck.shift();
   side.hand.push(drawn);
   appendLog(match, `${card.name} draws ${drawn.name} for ${beneficiary} — ${side.deck.length} left in deck.`);
+}
+
+/**
+ * A card that heals its owner's hero when played raises that hero's health by
+ * the amount on its face, never past the health a hero starts a match with: a
+ * mend can undo damage but cannot make a hero tougher than new. The log states
+ * the health afterwards in the same words the board prints it — "your health"
+ * for the player, "opponent health" for the other — so the number a reader sees
+ * is the number the board shows.
+ */
+function healFromPlay(match, side, card, beneficiary) {
+  side.health = Math.min(HERO_HEALTH, side.health + HEAL_ON_PLAY_AMOUNT);
+  const healthWord = side === match.player ? "your health" : "opponent health";
+  appendLog(match, `${card.name} heals ${beneficiary} for ${HEAL_ON_PLAY_AMOUNT} — ${healthWord} ${side.health}.`);
 }
 
 /**

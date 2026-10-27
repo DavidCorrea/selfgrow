@@ -9,18 +9,34 @@
  */
 
 /**
- * The one ability a card can carry, in the words printed on its face. A card
- * with it draws its owner a card the moment it is played — see `playCard` and
- * the opponent's turn in match.js. It is written once here so the text on the
- * card, the trigger in the match and the text a tool reports can never drift
- * apart.
+ * The when-played abilities a card can carry, in the words printed on its face.
+ * Each is written once here so the text on the card, the trigger in the match
+ * and the text a tool reports can never drift apart.
+ *
+ * `DRAW_ON_PLAY` takes the top card of its owner's deck into that hand as the
+ * card lands. `HEAL_ON_PLAY` mends its owner's hero instead — the other half of
+ * what a card can do as it lands, and a slow deck's answer to an early rush.
  */
 export const DRAW_ON_PLAY = "When played: draw a card";
+
+/** How much health a card that heals its owner's hero when played restores. */
+export const HEAL_ON_PLAY_AMOUNT = 2;
+
+/**
+ * The ability a card carries when it mends its owner's hero as it lands. The
+ * amount is written into the words on the face from the same constant the match
+ * heals by, so the card can never promise a number the trigger does not pay.
+ */
+export const HEAL_ON_PLAY = `When played: heal your hero ${HEAL_ON_PLAY_AMOUNT}`;
 
 /** Every card in the game: id, name, cost to play, attack, health, and the
  * ability printed on its face (absent on a card with none). */
 export const CARDS = [
-  { id: "sprout", name: "Sprout", cost: 1, attack: 1, health: 1 },
+  // A seedling and a water spirit: the two living things that read as mending
+  // what they touch, so each carries the heal ability below. Sprout is dealt at
+  // the start and Dewdrop Nymph is a reward, so the ability is met early and
+  // then collected for, as the draw ability is.
+  { id: "sprout", name: "Sprout", cost: 1, attack: 1, health: 1, ability: HEAL_ON_PLAY },
   { id: "pebble-toad", name: "Pebble Toad", cost: 1, attack: 1, health: 2 },
   { id: "thornling", name: "Thornling", cost: 2, attack: 2, health: 1 },
   { id: "sun-moth", name: "Sun Moth", cost: 2, attack: 1, health: 3 },
@@ -40,7 +56,7 @@ export const CARDS = [
   { id: "moon-bloom", name: "Moon Bloom", cost: 2, attack: 2, health: 3, ability: DRAW_ON_PLAY },
   { id: "amber-antler", name: "Amber Antler", cost: 4, attack: 4, health: 3 },
   { id: "cinder-shrike", name: "Cinder Shrike", cost: 3, attack: 4, health: 1 },
-  { id: "dewdrop-nymph", name: "Dewdrop Nymph", cost: 1, attack: 1, health: 3 },
+  { id: "dewdrop-nymph", name: "Dewdrop Nymph", cost: 1, attack: 1, health: 3, ability: HEAL_ON_PLAY },
   { id: "twilight-fox", name: "Twilight Fox", cost: 3, attack: 2, health: 2 },
   { id: "bark-sentinel", name: "Bark Sentinel", cost: 5, attack: 3, health: 8 },
   // Six more reward cards, spread across the cost curve so a collection keeps
