@@ -8,7 +8,10 @@
  * character that is, is the caller's choice: `createMatch` takes an opponent id,
  * stamps its id and name on the match and deals that opponent's deck, so the
  * whole match — its labels, its log and a saved game picked up later — speaks of
- * the character it was started against.
+ * the character it was started against. Each opponent also plays that deck the
+ * way its description says: one that wants size plays its dearest affordable
+ * card, one that wants speed its cheapest, so who you face changes how the game
+ * in front of you is played and not only what the labels say.
  *
  * The match is a plain object — two sides of numbers and card lists, whose turn
  * it is, and an ordered log of plain sentences. There is no DOM here and no
@@ -220,8 +223,9 @@ function catalogRank(card) {
 
 /**
  * The best card a side can afford: the most expensive, then the stronger, then
- * the one earliest in the catalog. This is how the opponent chooses, and the
- * same rule backs a `playCard` that was given no particular card.
+ * the one earliest in the catalog. This is how an opponent that wants size
+ * chooses, and the same rule backs a `playCard` that was given no particular
+ * card.
  */
 function bestAffordable(hand, energy) {
   let best = null;
@@ -237,6 +241,46 @@ function bestAffordable(hand, energy) {
     }
   }
   return best;
+}
+
+/**
+ * The cheapest card a side can afford: the least expensive, then the stronger,
+ * then the one earliest in the catalog — the same tie-breaks as `bestAffordable`
+ * with cost inverted. This is how an opponent that wants speed chooses: it
+ * empties its hand onto the table a small card at a time instead of holding out
+ * for one big one.
+ */
+function cheapestAffordable(hand, energy) {
+  let best = null;
+  for (const card of hand) {
+    if (card.cost > energy) continue;
+    if (
+      best === null ||
+      card.cost < best.cost ||
+      (card.cost === best.cost && card.attack > best.attack) ||
+      (card.cost === best.cost && card.attack === best.attack && catalogRank(card) < catalogRank(best))
+    ) {
+      best = card;
+    }
+  }
+  return best;
+}
+
+/**
+ * How the opponent chooses a card this turn, read off the character the match is
+ * against: `"cheapest"` for one that wants speed, and `"dearest"` for everything
+ * else — including a character that names no preference, and a match saved before
+ * ids were stamped, which is resolved by name. The character is the one the
+ * match's `opponentId` names, then the one its `opponentName` names, then the
+ * default opponent; a preference the match cannot place reads as `"dearest"`,
+ * which is the rule every opponent played by before the choice existed.
+ */
+function opponentChooser(match) {
+  const opponent =
+    (match.opponentId ? OPPONENT_BY_ID.get(match.opponentId) : undefined) ??
+    OPPONENTS.find((entry) => entry.name === match.opponentName) ??
+    DEFAULT_OPPONENT;
+  return opponent.cardPreference === "cheapest" ? cheapestAffordable : bestAffordable;
 }
 
 function appendLog(match, line) {
@@ -409,7 +453,8 @@ export function attack(match, attackerId, target) {
 
 /**
  * The opponent's turn: grow and refill its energy, draw a card while it can,
- * play what it can afford, then attack. Returns true when its table's attack
+ * play what it can afford the way its character chooses — dearest or cheapest,
+ * per `opponentChooser` — then attack. Returns true when its table's attack
  * ended the match, so the caller stops rather than handing the turn back to a
  * hero that is no longer standing.
  */
@@ -418,9 +463,10 @@ function takeOpponentTurn(match) {
   const drawn = beginTurn(opponent);
   if (drawn) appendLog(match, `The opponent draws ${drawn.name} — ${opponent.deck.length} left in deck.`);
 
+  const chooseCard = opponentChooser(match);
   let played = 0;
   for (;;) {
-    const card = bestAffordable(opponent.hand, opponent.energy);
+    const card = chooseCard(opponent.hand, opponent.energy);
     if (!card) break;
     opponent.hand.splice(opponent.hand.indexOf(card), 1);
     opponent.table.push(card);

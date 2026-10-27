@@ -111,8 +111,12 @@ export const REWARD_POOL = [
  *
  * `accent` names a colour token from styles.css rather than a colour, so the one
  * place a colour is written stays the stylesheet. `sigil` names the mark the
- * opponent is known by in docs/cardart.js. The first entry is the opponent a
- * match is against unless the player picks another.
+ * opponent is known by in docs/cardart.js. `cardPreference` is how the opponent
+ * spends its turn: `"dearest"` plays the biggest body it can afford, `"cheapest"`
+ * plays its smallest cards first so its table fills with several at once — the
+ * choice that makes the kind of deck its `description` promises the kind of match
+ * it plays. The first entry is the opponent a match is against unless the player
+ * picks another.
  */
 export const OPPONENTS = [
   {
@@ -120,6 +124,7 @@ export const OPPONENTS = [
     name: "Thornmere",
     look: "a thorned warden of the deep wood, mud-backed and slow to fall",
     description: "Slow, thorned growth — big bodies that wear you down",
+    cardPreference: "dearest",
     accent: "--opponent-thornmere",
     sigil: "bramble",
     deck: [
@@ -140,6 +145,7 @@ export const OPPONENTS = [
     name: "Emberwake",
     look: "a burning herald, all sparks and lit grass",
     description: "Fast, cheap strikers that hit before you can answer",
+    cardPreference: "cheapest",
     accent: "--opponent-emberwake",
     sigil: "flame",
     deck: [
