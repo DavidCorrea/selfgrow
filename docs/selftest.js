@@ -651,6 +651,46 @@ export async function checks() {
     );
   }
 
+  // Each card in the deck is shown as its picture — the same name as its text
+  // alternative, in the one shared frame and creature — so the deck reads as a
+  // hand of cards rather than a list of names. Its numbers stay printed beside
+  // the picture so the card still reads as text.
+  const deckPictureRows = () => (deckList ? [...deckList.querySelectorAll(".deck-card")] : []).filter((row) => {
+    const picture = row.querySelector("svg.card-art");
+    if (!picture) {
+      fail(`the deck card "${row.dataset.cardId}" is shown with no picture, so the deck cannot be read by sight`);
+      return false;
+    }
+    const name = textOf(row.querySelector(".deck-card-name")) || row.dataset.cardId;
+    if (picture.getAttribute("role") !== "img") {
+      fail(`the picture on deck card "${name}" is not announced as an image (role="${picture.getAttribute("role")}")`);
+    }
+    if (picture.getAttribute("aria-label") !== name) {
+      fail(
+        `the picture on deck card "${name}" is described as ` +
+          `"${picture.getAttribute("aria-label") || "(nothing)"}" instead of the card's own name`
+      );
+    }
+    if (!picture.querySelector(".art-frame") || !picture.querySelector(".art-body")) {
+      fail(`the picture on deck card "${name}" is not drawn in the shared frame and creature`);
+    }
+    const card = game.readState().deck.find((entry) => entry.id === row.dataset.cardId);
+    const printed = textOf(row.querySelector(".deck-card-stats"));
+    const numbers = card ? `${card.cost}/${card.attack}/${card.health}` : "";
+    if (!card) {
+      fail(`the deck list shows a card "${row.dataset.cardId}" the state does not hold`);
+    } else if (printed !== numbers) {
+      fail(`deck card "${name}" prints its cost/attack/health as "${printed}" instead of "${numbers}"`);
+    }
+    return true;
+  });
+  if (deckPictureRows().length !== game.readState().deck.length) {
+    fail(
+      `the deck holds ${game.readState().deck.length} card(s) but only ${deckPictureRows().length} of them ` +
+        `are shown as a picture in the deck list`
+    );
+  }
+
   // The home screen summarises the same deck, by size and by name.
   const deckSummary = textOf(document.getElementById("deck-summary"));
   if (!deckSummary.includes("10")) {
@@ -674,6 +714,14 @@ export async function checks() {
     if (!refusal.includes("10")) {
       fail(`an eleventh card was refused but the page does not say why: it reads "${refusal || "(nothing)"}"`);
     }
+    // A refused add leaves the deck's pictures as they were: it redraws them
+    // together with the size it reports.
+    if (deckPictureRows().length !== game.readState().deck.length) {
+      fail(
+        `after a refused add the deck holds ${game.readState().deck.length} card(s) but ` +
+          `${deckPictureRows().length} are shown as a picture`
+      );
+    }
   }
 
   // Taking one out frees a slot, and the page says what happened.
@@ -688,6 +736,14 @@ export async function checks() {
     }
     if (!textOf(document.getElementById("deck-message")).toLowerCase().includes("removed")) {
       fail("removing a card did not tell the player what happened");
+    }
+    // The same redraw that drops the size to nine drops its picture too, so the
+    // deck's pictures never disagree with the deck the state holds.
+    if (deckPictureRows().length !== game.readState().deck.length) {
+      fail(
+        `after removing a card the deck holds ${game.readState().deck.length} card(s) but ` +
+          `${deckPictureRows().length} are shown as a picture`
+      );
     }
   }
 

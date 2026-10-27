@@ -485,11 +485,18 @@ function ownedCardRow(card) {
   return item;
 }
 
-/** One card in the deck, read as its name and its three numbers. */
+/** One card in the deck, shown as its picture and read as its name and three
+ * numbers, so the deck reads as a hand of cards. */
 function deckCardRow(card) {
   const item = document.createElement("li");
   item.className = "deck-card";
   item.dataset.cardId = card.id;
+
+  // The card's picture, first, so the deck is known by sight the way the owned
+  // cards are. A card the art module does not know yet gets no picture rather
+  // than an empty frame, and the name below is what stands in for it.
+  const art = cardArtSvg(card.id, card.name);
+  if (art) item.append(art);
 
   const name = document.createElement("span");
   name.className = "deck-card-name";
@@ -521,7 +528,8 @@ function renderOwnedCards() {
   list.replaceChildren(...cards.map(ownedCardRow));
 }
 
-/** Draw the deck's current contents, as a list of readable card names. */
+/** Draw the deck's current contents, each card as a face that shows its picture
+ * and reads its name and numbers. */
 function renderDeck() {
   const list = document.getElementById("deck-list");
   if (!list) return;
