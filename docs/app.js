@@ -287,17 +287,31 @@ function cardName(cardId) {
 }
 
 /**
- * The line that prints the ability on a card's face, in the same words on every
- * card everywhere it is shown, or null when the card carries none. The caller
- * adds it to the face it builds, so a card reads the same in the collection, the
- * deck, the hand and on the match table.
+ * The text box a card's face prints, in the same words on every card everywhere
+ * it is shown, or null when the card carries no ability at all. A card that
+ * carries both a when-played and a fall ability prints them as two lines of one
+ * box, the when-played line first, so the text a reader looks for stays first
+ * and a card that carries only a fall ability still reads its fall text. The
+ * caller adds the result to the face it builds, so a card reads the same in the
+ * collection, the deck, the hand and on the match table.
  */
 function cardAbilityNote(card) {
-  if (!card.ability) return null;
-  const note = document.createElement("p");
-  note.className = "card-ability";
-  note.textContent = card.ability;
-  return note;
+  const lines = [card.ability, card.fallAbility].filter(Boolean);
+  if (lines.length === 0) return null;
+  if (lines.length === 1) return cardAbilityLine(lines[0]);
+
+  const box = document.createElement("div");
+  box.className = "card-abilities";
+  box.append(...lines.map(cardAbilityLine));
+  return box;
+}
+
+/** One line of a card's text box, in the words printed on its face. */
+function cardAbilityLine(text) {
+  const line = document.createElement("p");
+  line.className = "card-ability";
+  line.textContent = text;
+  return line;
 }
 
 /** A card in the match as the page prints it: its name, then cost/attack/health. */
@@ -2059,6 +2073,10 @@ function describeMatchCard(card) {
     attack: card.attack,
     health: card.health,
     ability: card.ability ?? null,
+    // The ability the card carries for when it leaves the table, resolved from
+    // the catalog by id too, so a match card dealt before the field existed
+    // still reports it.
+    fallAbility: card.fallAbility ?? CARD_BY_ID.get(card.id)?.fallAbility ?? null,
     hasAttacked: Boolean(card.hasAttacked),
   };
 }

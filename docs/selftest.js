@@ -69,6 +69,9 @@ export async function checks() {
   // card that does nothing when played. Every surface that reports a card is
   // held to this one answer.
   const catalogAbility = (id) => cardCatalog.CARD_BY_ID.get(id)?.ability ?? null;
+  // The ability a card carries for when it falls, read the same way — null for a
+  // card that does nothing as it leaves the table.
+  const catalogFallAbility = (id) => cardCatalog.CARD_BY_ID.get(id)?.fallAbility ?? null;
   const snapshot = game.readCollection();
   // The Collection screen now shows the whole card set, so `snapshot.cards` is
   // every card in the game. The checks that speak of what the player holds read
@@ -6788,7 +6791,10 @@ export async function checks() {
     const abilityOnFace = (face) => textOf(face?.querySelector(".card-ability"));
     for (const face of document.querySelectorAll("#collection-list [data-card-id]")) {
       const id = face.dataset.cardId;
-      const expected = catalogAbility(id) ?? "";
+      // A card prints its when-played ability first and its fall ability as the
+      // only line when it carries no when-played one, so the face's first
+      // ability line is whichever of the two the card carries.
+      const expected = catalogAbility(id) ?? catalogFallAbility(id) ?? "";
       if (abilityOnFace(face) !== expected) {
         const name = cardCatalog.CARD_BY_ID.get(id)?.name ?? id;
         fail(
@@ -8248,6 +8254,320 @@ export async function checks() {
     );
     if (!hidesFalling) {
       fail("reduced motion does not hide the falling-card marker, so a card could still appear to leave the table");
+    }
+  }
+
+  // --- A card that draws its owner a card when it falls ----------------------
+
+  // The first fall ability: a card whose face says so draws its owner a card the
+  // moment it leaves the table, whichever blow removed it — a chosen attack, a
+  // turn's blows or a sweeping card. It lives in a `fallAbility` field of its own
+  // rather than overloading `ability`, so the when-played text keeps its exact
+  // meaning and the one trigger in docs/match.js fires it from every removal path.
+  // The pod that carries it is a reward card, so removing it hands the opponent a
+  // card instead of only taking a body.
+  const fallText = cardCatalog.DRAW_ON_FALL;
+  const seedPod = cardCatalog.CARD_BY_ID.get("seed-pod");
+
+  if (typeof fallText !== "string" || !fallText.trim()) {
+    fail("docs/cards.js names no fall ability, so no card can say what it does when it leaves the table");
+  } else if (!seedPod) {
+    fail('"seed-pod" is not a card in the game, so the fall ability has no card that carries it');
+  } else {
+    if (seedPod.fallAbility !== fallText) {
+      fail(
+        `"${seedPod.name}" carries the fall ability ${JSON.stringify(seedPod.fallAbility ?? null)} instead of ` +
+          `${JSON.stringify(fallText)}, so the pod does not draw its owner a card when it falls`
+      );
+    }
+    if (seedPod.ability !== undefined) {
+      fail(
+        `"${seedPod.name}" carries a when-played ability ${JSON.stringify(seedPod.ability)}, though the fall ` +
+          "ability belongs in a field of its own so the when-played text keeps its meaning"
+      );
+    }
+    if (!cardCatalog.REWARD_POOL.includes(seedPod.id)) {
+      fail(
+        `"${seedPod.name}" carries the fall ability but is not in the reward pool, so a win can never add it ` +
+          "to a collection"
+      );
+    }
+
+    // The pod is a real card: it has its own described picture, and it can be
+    // played like any other card.
+    const podArt = cardArt?.cardArt(seedPod.id);
+    if (!podArt || !(podArt.inner || "").trim()) {
+      fail(`"${seedPod.name}" has no picture, so the card that carries the fall ability cannot be known by sight`);
+    } else if (!podArt.description?.trim()) {
+      fail(`"${seedPod.name}"'s picture is not described, so it cannot be checked against the style`);
+    }
+    if (matchEngine) {
+      const playPod = matchEngine.createMatch(
+        ["sprout", "pebble-toad", "thornling", "sun-moth", "bramble-hound"],
+        { rng: () => 0 }
+      );
+      playPod.player.hand = [{ ...seedPod, hasAttacked: false }];
+      playPod.player.deck = [];
+      playPod.player.energy = seedPod.cost;
+      playPod.player.maxEnergy = seedPod.cost;
+      matchEngine.playCard(playPod, "seed-pod");
+      if (!playPod.player.table.some((card) => card.id === "seed-pod")) {
+        fail(`playing "${seedPod.name}" did not put it on the table, so the pod is not a card a deck can play`);
+      }
+    }
+
+    // The line is on the face wherever the pod is shown: the collection, and the
+    // card a win earns.
+    const collectionPodFace = document.querySelector('#collection-list [data-card-id="seed-pod"]');
+    if (faceAbility(collectionPodFace) !== fallText) {
+      fail(
+        `the pod shown in the collection does not say ${JSON.stringify(fallText)} on its face ` +
+          `(it reads ${JSON.stringify(faceAbility(collectionPodFace))})`
+      );
+    }
+    const rewardPodFace = game.awardCardFigure(seedPod);
+    if (faceAbility(rewardPodFace) !== fallText) {
+      fail(
+        `the earned-card face of the pod does not say ${JSON.stringify(fallText)} ` +
+          `(it reads ${JSON.stringify(faceAbility(rewardPodFace))})`
+      );
+    }
+
+    // A card may carry both abilities, and then prints both lines of its text
+    // box — the when-played line first, the fall line under it — so neither text
+    // is lost when a card does two things.
+    const bothFace = game.awardCardFigure({ ...seedPod, ability: cardCatalog.DRAW_ON_PLAY });
+    const bothLines = [...bothFace.querySelectorAll(".card-ability")].map((line) => textOf(line));
+    if (bothLines.length !== 2 || bothLines[0] !== cardCatalog.DRAW_ON_PLAY || bothLines[1] !== fallText) {
+      fail(
+        `a card carrying both abilities prints ${JSON.stringify(bothLines)} on its face instead of the ` +
+          `when-played line ${JSON.stringify(cardCatalog.DRAW_ON_PLAY)} above the fall line ${JSON.stringify(fallText)}`
+      );
+    }
+
+    // An agent that lists the set reads the fall ability in the field written for
+    // it, so the word on the card and the field a caller reads are one answer.
+    if (listCollection) {
+      const podEntry = (await listCollection.execute()).cards.find((card) => card.id === "seed-pod");
+      if (podEntry?.fallAbility !== fallText) {
+        fail(
+          `list-collection returns the pod with fallAbility ${JSON.stringify(podEntry?.fallAbility ?? null)} ` +
+            `instead of ${JSON.stringify(fallText)}`
+        );
+      }
+    }
+
+    // The trigger itself, through the engine the board runs on: a pod is killed
+    // in each of the ways a table card can be removed, and each time its owner
+    // draws the top of its own deck and the log names the pod and the card.
+    if (!matchEngine) {
+      fail("docs/match.js could not be imported, so the fall trigger cannot be checked");
+    } else {
+      const fallDeck = ["sprout", "pebble-toad", "thornling", "sun-moth", "bramble-hound"];
+      const topOfDeck = { ...cardCatalog.CARD_BY_ID.get("elder-oak"), hasAttacked: false };
+      // A fresh striker per board: a match marks the card that attacked, so one
+      // shared object would carry that mark into the next board and be refused.
+      const sproutFor = () => ({ ...cardCatalog.CARD_BY_ID.get("sprout"), health: 1, hasAttacked: false });
+
+      // (1) An ordinary chosen attack.
+      const attackBoard = matchEngine.createMatch(fallDeck, { rng: () => 0 });
+      attackBoard.player.table = [sproutFor()];
+      attackBoard.player.hand = [];
+      attackBoard.player.deck = [];
+      attackBoard.opponent.table = [{ ...seedPod, health: 1, hasAttacked: false }];
+      attackBoard.opponent.hand = [];
+      attackBoard.opponent.deck = [{ ...topOfDeck }];
+      const attackLogBefore = attackBoard.log.length;
+      matchEngine.attack(attackBoard, "sprout", "seed-pod");
+      const attackLines = attackBoard.log.slice(attackLogBefore);
+      if (attackBoard.opponent.table.some((card) => card.id === "seed-pod")) {
+        fail("a chosen attack left the pod on the table, so the fall trigger was never reached");
+      }
+      if (!attackLines.some((line) => line.includes(seedPod.name) && /falls/i.test(line))) {
+        fail(`the log never says the fallen pod left the table: ${JSON.stringify(attackLines)}`);
+      }
+      if (attackBoard.opponent.hand.length !== 1) {
+        fail(
+          `killing the pod with an attack left its owner holding ${attackBoard.opponent.hand.length} card(s) ` +
+            "instead of the one it drew as the pod fell"
+        );
+      }
+      const attackDrawLine = attackLines.find((line) => line.includes(seedPod.name) && /draws/i.test(line));
+      if (!attackDrawLine) {
+        fail(`the log does not say the fallen pod drew its owner a card: ${JSON.stringify(attackLines)}`);
+      } else if (!attackDrawLine.includes("Elder Oak")) {
+        fail(`the log line for the pod's fall draw does not name the card drawn: "${attackDrawLine}"`);
+      } else if (!/for the opponent/.test(attackDrawLine)) {
+        fail(`the log does not say the pod's owner drew the card: "${attackDrawLine}"`);
+      }
+
+      // (2) A turn's blows, through endTurn.
+      const turnBoard = matchEngine.createMatch(fallDeck, { rng: () => 0 });
+      turnBoard.player.table = [sproutFor()];
+      turnBoard.player.hand = [];
+      turnBoard.player.deck = [];
+      turnBoard.opponent.table = [{ ...seedPod, health: 1, hasAttacked: false }];
+      turnBoard.opponent.hand = [];
+      turnBoard.opponent.deck = [{ ...topOfDeck }];
+      const turnLogBefore = turnBoard.log.length;
+      matchEngine.endTurn(turnBoard);
+      const turnLines = turnBoard.log.slice(turnLogBefore);
+      if (!turnLines.some((line) => line.includes(seedPod.name) && /falls/i.test(line))) {
+        fail(`ending the turn did not make the pod fall: ${JSON.stringify(turnLines)}`);
+      }
+      const turnDrawLine = turnLines.find((line) => line.includes(seedPod.name) && /draws/i.test(line));
+      if (!turnDrawLine || !turnDrawLine.includes("Elder Oak")) {
+        fail(
+          "a turn's blows did not make the fallen pod draw its owner a card: the turn added " +
+            JSON.stringify(turnLines)
+        );
+      }
+
+      // (3) A sweeping card, through the clear ability it fires as it lands.
+      const sweepBoard = matchEngine.createMatch(fallDeck, { rng: () => 0 });
+      sweepBoard.player.hand = [{ ...cardCatalog.CARD_BY_ID.get("thorn-gale"), hasAttacked: false }];
+      sweepBoard.player.table = [];
+      sweepBoard.player.deck = [];
+      sweepBoard.player.energy = 6;
+      sweepBoard.player.maxEnergy = 6;
+      sweepBoard.opponent.table = [
+        { ...seedPod, health: 1, hasAttacked: false },
+        { ...cardCatalog.CARD_BY_ID.get("mudback-turtle"), health: 5, hasAttacked: false },
+      ];
+      sweepBoard.opponent.hand = [];
+      sweepBoard.opponent.deck = [{ ...topOfDeck }];
+      const sweepLogBefore = sweepBoard.log.length;
+      matchEngine.playCard(sweepBoard, "thorn-gale");
+      const sweepLines = sweepBoard.log.slice(sweepLogBefore);
+      if (sweepBoard.opponent.table.some((card) => card.id === "seed-pod")) {
+        fail("a sweeping card left the pod on the table, so the fall trigger was never reached");
+      }
+      const sweepDrawLine = sweepLines.find((line) => line.includes(seedPod.name) && /draws/i.test(line));
+      if (!sweepDrawLine || !sweepDrawLine.includes("Elder Oak")) {
+        fail(
+          "a sweeping card did not make the fallen pod draw its owner a card: the play added " +
+            JSON.stringify(sweepLines)
+        );
+      }
+
+      // (4) A pod held without the field, as a match saved before it existed
+      // holds one: the ability is resolved from the catalog by id, so it still
+      // fires.
+      const legacyPod = {
+        id: "seed-pod",
+        name: seedPod.name,
+        cost: seedPod.cost,
+        attack: seedPod.attack,
+        health: 1,
+        hasAttacked: false,
+      };
+      const legacyBoard = matchEngine.createMatch(fallDeck, { rng: () => 0 });
+      legacyBoard.player.table = [sproutFor()];
+      legacyBoard.player.hand = [];
+      legacyBoard.player.deck = [];
+      legacyBoard.opponent.table = [{ ...legacyPod }];
+      legacyBoard.opponent.hand = [];
+      legacyBoard.opponent.deck = [{ ...topOfDeck }];
+      matchEngine.attack(legacyBoard, "sprout", "seed-pod");
+      if (!legacyBoard.opponent.hand.some((card) => card.id === "elder-oak")) {
+        fail("a pod card without the field, as a match saved before it existed holds, did not draw when it fell");
+      }
+
+      // (5) A card with no fall ability changes nothing beyond the fall line the
+      // log already prints: no draw, and no extra line.
+      const plainBoard = matchEngine.createMatch(fallDeck, { rng: () => 0 });
+      plainBoard.player.table = [sproutFor()];
+      plainBoard.player.hand = [];
+      plainBoard.player.deck = [];
+      plainBoard.opponent.table = [{ ...cardCatalog.CARD_BY_ID.get("pebble-toad"), health: 1, hasAttacked: false }];
+      plainBoard.opponent.hand = [];
+      plainBoard.opponent.deck = [{ ...topOfDeck }];
+      const plainLogBefore = plainBoard.log.length;
+      matchEngine.attack(plainBoard, "sprout", "pebble-toad");
+      const plainLines = plainBoard.log.slice(plainLogBefore);
+      if (plainBoard.opponent.hand.length !== 0) {
+        fail(
+          `killing a card with no fall ability left its owner holding ${plainBoard.opponent.hand.length} card(s)`
+        );
+      }
+      if (plainBoard.opponent.deck.length !== 1) {
+        fail("killing a card with no fall ability drew from its owner's deck");
+      }
+      if (plainLines.some((line) => /draws/i.test(line))) {
+        fail(`killing a card with no fall ability drew a card: ${JSON.stringify(plainLines)}`);
+      }
+      if (!plainLines.some((line) => line.includes("Pebble Toad") && /falls/i.test(line))) {
+        fail(`the log does not print the usual fall line for a card with no fall ability: ${JSON.stringify(plainLines)}`);
+      }
+    }
+
+    // The pod's face in a match, and the field an agent reads of a match card, as
+    // the page shows them: a controlled board with the pod in hand is loaded the
+    // way a saved match is.
+    if (!matchEngine || typeof game.continueMatch !== "function") {
+      fail("the match engine or the continue-match action is missing, so the pod in a match cannot be checked");
+    } else if (
+      !collection.saveMatch({
+        id: "check-fall-ability",
+        opponentName: cardCatalog.OPPONENT_NAME,
+        turn: "player",
+        over: false,
+        winner: null,
+        outcome: null,
+        recorded: false,
+        player: {
+          health: 20,
+          energy: 3,
+          maxEnergy: 3,
+          turns: 1,
+          hand: [
+            { id: "seed-pod", health: 1, hasAttacked: false },
+            { id: "sprout", health: 1, hasAttacked: false },
+          ],
+          table: [],
+          deck: [{ id: "pebble-toad", health: 2, hasAttacked: false }],
+        },
+        opponent: { health: 20, energy: 1, maxEnergy: 1, turns: 0, hand: [], table: [], deck: [] },
+        log: ["A match set up to hold the pod that draws a card when it falls."],
+      })
+    ) {
+      fail("a controlled board with the pod in hand could not be saved, so the pod in a match cannot be checked");
+    } else {
+      game.refreshSavedMatch();
+      let fallBoard = null;
+      try {
+        fallBoard = game.continueMatch();
+      } catch (e) {
+        fail(`a controlled board with the pod in hand could not be loaded — ${e.message}`);
+      }
+
+      if (fallBoard?.match) {
+        const podInHand = document.querySelector('#match-hand [data-card-id="seed-pod"]');
+        if (faceAbility(podInHand) !== fallText) {
+          fail(
+            `the pod in your hand does not say ${JSON.stringify(fallText)} on its face ` +
+              `(it reads ${JSON.stringify(faceAbility(podInHand))})`
+          );
+        }
+        const podInState = fallBoard.match.hand.find((card) => card.id === "seed-pod");
+        if (podInState?.fallAbility !== fallText) {
+          fail(
+            `an agent reading your hand sees the pod's fallAbility as ` +
+              `${JSON.stringify(podInState?.fallAbility ?? null)} instead of ${JSON.stringify(fallText)}`
+          );
+        }
+        if (getState) {
+          const podViaTool = ((await getState.execute({})).match?.hand ?? []).find(
+            (card) => card.id === "seed-pod"
+          );
+          if (podViaTool?.fallAbility !== fallText) {
+            fail(
+              `get-state returns the pod in your hand with fallAbility ` +
+                `${JSON.stringify(podViaTool?.fallAbility ?? null)} instead of ${JSON.stringify(fallText)}`
+            );
+          }
+        }
+      }
     }
   }
 

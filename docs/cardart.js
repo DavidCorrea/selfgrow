@@ -483,6 +483,18 @@ const CARD_ART = new Map([
       `,
     },
   ],
+  [
+    "seed-pod",
+    {
+      description: "A seed pod split open: a rounded pod parted into a cup below and a lifted lid above, with two seeds inside",
+      inner: `
+        <path class="art-body" d="M28 34 C28 46 36 54 48 54 C60 54 68 46 68 34 Z" />
+        <path class="art-body" d="M30 30 C32 18 40 12 48 12 C56 12 64 18 66 30 C60 26 54 24 48 24 C42 24 36 26 30 30 Z" />
+        <circle class="art-accent" cx="40" cy="38" r="3.4" />
+        <circle class="art-accent" cx="56" cy="38" r="3.4" />
+      `,
+    },
+  ],
 ]);
 
 /**

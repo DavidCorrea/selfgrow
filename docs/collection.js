@@ -264,6 +264,7 @@ function catalogCard(cardId) {
     attack: card.attack,
     health: card.health,
     ability: card.ability ?? null,
+    fallAbility: card.fallAbility ?? null,
     hasAttacked: false,
   };
 }
@@ -618,8 +619,9 @@ export function collectionSize(cards) {
 }
 
 /**
- * The collection with each card's name, cost, attack, health and ability filled
- * in — the ability text `null` for a card whose face carries none.
+ * The collection with each card's name, cost, attack, health and both abilities
+ * filled in — `ability` for the text it prints when played and `fallAbility` for
+ * the text it prints when it falls, each `null` for a card that carries none.
  */
 export function listOwnedCards(cards) {
   return cards.map(({ id, copies }) => {
@@ -631,6 +633,7 @@ export function listOwnedCards(cards) {
       attack: card.attack,
       health: card.health,
       ability: card.ability ?? null,
+      fallAbility: card.fallAbility ?? null,
       copies,
     };
   });
@@ -638,8 +641,9 @@ export function listOwnedCards(cards) {
 
 /**
  * Every card in the game, in catalog order, each with its name, cost, attack,
- * health and ability (the text on its face, or `null` when it has none), how many
- * copies the collection holds, and whether it holds any at all. A card the player
+ * health and its two abilities (`ability` for when it is played and `fallAbility`
+ * for when it falls, each the text on its face or `null` when it has none), how
+ * many copies the collection holds, and whether it holds any at all. A card the player
  * does not own appears too — zero copies, `owned` false — so the whole set can be
  * shown beside what has been collected from it.
  */
@@ -654,6 +658,7 @@ export function listAllCards(cards) {
       attack: card.attack,
       health: card.health,
       ability: card.ability ?? null,
+      fallAbility: card.fallAbility ?? null,
       copies,
       owned: copies > 0,
     };
@@ -662,7 +667,8 @@ export function listAllCards(cards) {
 
 /**
  * The deck as full card descriptions, in the order the player chose them, each
- * with its ability text or `null`.
+ * with its when-played and fall ability text, or `null` for either it does not
+ * carry.
  */
 export function listDeckCards(deck) {
   return deck.map((id) => {
@@ -674,6 +680,7 @@ export function listDeckCards(deck) {
       attack: card.attack,
       health: card.health,
       ability: card.ability ?? null,
+      fallAbility: card.fallAbility ?? null,
     };
   });
 }

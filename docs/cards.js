@@ -57,8 +57,22 @@ export const CLEAR_ON_PLAY_AMOUNT = 1;
  */
 export const CLEAR_ON_PLAY = `When played: deal ${CLEAR_ON_PLAY_AMOUNT} damage to each card on the opponent's table`;
 
-/** Every card in the game: id, name, cost to play, attack, health, and the
- * ability printed on its face (absent on a card with none). */
+/**
+ * The ability a card carries when it draws its owner a card the moment it leaves
+ * the table. It is the first ability that answers what happens to a card after it
+ * lands rather than only when it is played — so taking a card off the table can
+ * cost the side that removed it something, and removing a card becomes a choice
+ * rather than always a gain.
+ *
+ * It lives in a `fallAbility` field of its own rather than overloading `ability`,
+ * so the when-played text keeps its exact meaning and a card may carry both
+ * abilities at once.
+ */
+export const DRAW_ON_FALL = "When this falls: draw a card";
+
+/** Every card in the game: id, name, cost to play, attack, health, the ability
+ * printed on its face for when it is played, and the ability it carries for when
+ * it falls (each absent on a card with none). */
 export const CARDS = [
   // A seedling and a water spirit: the two living things that read as mending
   // what they touch, so each carries the heal ability below. Sprout is dealt at
@@ -110,6 +124,13 @@ export const CARDS = [
   // table and both print the clear ability in the same words as Thorn Gale.
   { id: "gustling", name: "Gustling", cost: 3, attack: 2, health: 2, ability: CLEAR_ON_PLAY },
   { id: "storm-roc", name: "Storm Roc", cost: 6, attack: 5, health: 6, ability: CLEAR_ON_PLAY },
+  // The first card that carries a fall ability: a cheap seed pod that bursts when
+  // it is crushed, so the moment it leaves the table it hands its owner a card.
+  // Its `fallAbility` is a field of its own, so the text it prints for being
+  // played — none — is unchanged, and taking it off the board costs the side that
+  // removed it a card instead of only a body. It is a reward card, so a player
+  // meets the ability by collecting toward it and can then build a deck around it.
+  { id: "seed-pod", name: "Seed Pod", cost: 1, attack: 1, health: 1, fallAbility: DRAW_ON_FALL },
 ];
 
 /** Lookup by id — the shape the saved collection speaks in. */
@@ -170,6 +191,9 @@ export const REWARD_POOL = [
   "thorn-gale",
   "gustling",
   "storm-roc",
+  // Appended rather than slotted in, so a save written before the pod existed
+  // keeps the same next-reward order it already had.
+  "seed-pod",
 ];
 
 /**
