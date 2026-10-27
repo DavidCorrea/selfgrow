@@ -415,6 +415,16 @@
               <dt class="standing-label" id="match-opponent-hand-label">Opponent hand</dt>
               <dd class="standing-value"><span id="match-opponent-hand">3</span></dd>
             </div>
+            <!-- What the opponent has to spend on its own turn, standing beside
+                 the hand it would spend it on: the same "X of Y" the player's
+                 own energy row prints, so a player can see what the opponent
+                 could afford and why it stopped playing. It refills to its
+                 maximum at the start of each of the opponent's turns and drops
+                 as it plays, and it goes with the match. -->
+            <div class="standing">
+              <dt class="standing-label" id="match-opponent-energy-label">Opponent energy</dt>
+              <dd class="standing-value"><span id="match-opponent-energy">3 of 3</span></dd>
+            </div>
             <div class="standing">
               <dt class="standing-label">Cards left in deck</dt>
               <dd class="standing-value"><span id="match-deck-remaining">7</span></dd>
