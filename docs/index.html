@@ -167,6 +167,50 @@
           <p class="save-code-status" id="save-code-status" role="status" aria-live="polite"></p>
         </section>
 
+        <!-- Putting a saved game back: a box to paste a code into, and the one
+             control that checks it. A code is checked before anything is
+             touched, so a paste by accident changes nothing; a code that is
+             ours raises the question underneath instead, with the two answers
+             beside it, because replacing the game cannot be undone. The status
+             line says in plain words why a code was refused or what a restore
+             replaced. -->
+        <section class="save-code" aria-labelledby="restore-code-heading">
+          <h3 class="save-code-heading" id="restore-code-heading">Restore from a save code</h3>
+          <p class="screen-note">
+            Paste a save code from another device or a backup to put that game back. It replaces
+            the cards, deck and record you have now.
+          </p>
+          <label class="save-code-label" for="restore-code-text">Save code to restore</label>
+          <textarea
+            class="save-code-text"
+            id="restore-code-text"
+            rows="4"
+            spellcheck="false"
+            autocomplete="off"
+            placeholder="Paste your save code…"
+          ></textarea>
+          <button type="button" class="btn btn-secondary" id="action-restore-save-code">
+            Restore save code
+          </button>
+          <div class="restore-confirm" id="restore-confirm" hidden>
+            <p class="restore-confirm-text" id="restore-confirm-text"></p>
+            <div class="restore-confirm-actions">
+              <button
+                type="button"
+                class="btn btn-primary"
+                id="action-replace-game"
+                aria-describedby="restore-confirm-text"
+              >
+                Replace my game
+              </button>
+              <button type="button" class="btn btn-secondary" id="action-cancel-restore">
+                Cancel
+              </button>
+            </div>
+          </div>
+          <p class="save-code-status" id="restore-code-status" role="status" aria-live="polite"></p>
+        </section>
+
         <!-- The deck being built: its size, the rules it is built to, and its
              cards as a list of faces that show each card's picture and read its
              name and numbers. Every card is still text under the picture, so a

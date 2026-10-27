@@ -6739,9 +6739,19 @@ export async function checks() {
     return { left, right };
   }
 
-  /** What a control says it does: its own words, or the name given to it. */
+  /**
+   * What a control says it does: its own words, the name given to it, or the
+   * label it is associated with — a `<textarea>` or an `<input>` is named by a
+   * `<label for>`, so a labelled but empty box is named too.
+   */
   const controlName = (control) =>
-    (control.innerText || control.value || control.getAttribute("aria-label") || "").trim();
+    (
+      control.innerText ||
+      control.value ||
+      control.getAttribute("aria-label") ||
+      control.labels?.[0]?.textContent ||
+      ""
+    ).trim();
 
   // A match on the Play screen is what the phone layout is measured with: both
   // heroes, the energy, the hand and the actions have to share the first screen,
@@ -9897,6 +9907,402 @@ export async function checks() {
     await setSaveCodeShownTool.execute({ shown: false });
     if (game.readState().saveCodeShown !== false) {
       fail("set-save-code-shown did not close the save-code panel again");
+    }
+  }
+
+  // --- A game put back from a save code -------------------------------------
+
+  // Restoring is the other half of keeping a code: the game a code carries has
+  // to come back whole, through the same normalizers the game reads with, and a
+  // code that is not ours or is damaged has to be refused with nothing changed.
+  // The storage-level checks use a stub so they never touch the live game; the
+  // page-level checks drive the real control and put the game back afterwards.
+  const restoreCardIds = (cardCatalog.CARDS ?? []).slice(0, 2).map((card) => card.id);
+  const restoreOpponentId = (cardCatalog.OPPONENTS ?? [])[0]?.id;
+
+  if (restoreCardIds.length < 2 || !restoreOpponentId) {
+    fail(
+      "the card catalog could not be read, so putting a game back from a save code is left unverified"
+    );
+  } else {
+    const restoreSavedGame = {
+      version: 1,
+      cards: [
+        { id: restoreCardIds[0], copies: 2 },
+        { id: restoreCardIds[1], copies: 1 },
+      ],
+      deck: [restoreCardIds[0], restoreCardIds[1]],
+      wins: 3,
+      matches: 5,
+      lastMatchId: "check-restore",
+      opponents: { [restoreOpponentId]: { wins: 2, matches: 3 } },
+    };
+    const restoreSourceStore = stubStorage({
+      [collection.STORAGE_KEY]: JSON.stringify(restoreSavedGame),
+    });
+    const restoreCode = collection.saveCode(restoreSourceStore);
+
+    // A whole code reads back as the game it carries, in its own numbers.
+    const restoreChecked = collection.checkSaveCode(restoreCode);
+    if (!restoreChecked?.ok) {
+      fail(`checkSaveCode refused a valid save code: ${restoreChecked?.reason}`);
+    } else if (
+      restoreChecked.summary?.cards !== 3 ||
+      restoreChecked.summary?.distinct !== 2 ||
+      restoreChecked.summary?.deck !== 2 ||
+      restoreChecked.summary?.wins !== 3 ||
+      restoreChecked.summary?.matches !== 5
+    ) {
+      fail(
+        `checkSaveCode read ${JSON.stringify(restoreChecked.summary)} from a code holding 3 cards ` +
+          "(2 different), a deck of 2, and 3 wins in 5 matches"
+      );
+    }
+
+    // The code's game replaces whatever the destination held, whole, and the
+    // normal save key keeps its shape.
+    const restoreStore = stubStorage({
+      [collection.STORAGE_KEY]: JSON.stringify({
+        version: 1,
+        cards: [{ id: restoreCardIds[1], copies: 5 }],
+        deck: [restoreCardIds[1]],
+        wins: 99,
+        matches: 99,
+        lastMatchId: "old-game",
+        opponents: {},
+      }),
+      [collection.MATCH_STORAGE_KEY]: JSON.stringify({ version: 1 }),
+    });
+    const restoreApplied = collection.restoreSaveCode(restoreCode, restoreStore);
+    if (!restoreApplied?.ok) {
+      fail(`restoreSaveCode refused a valid save code: ${restoreApplied?.reason}`);
+    } else {
+      const restoredCards = collection.readCollection(restoreStore) ?? [];
+      if (!sameCards(restoredCards, collection.readCollection(restoreSourceStore) ?? [])) {
+        fail(
+          `restoring wrote the cards ${JSON.stringify(asIdCopies(restoredCards))} instead of the code's ` +
+            `${JSON.stringify(asIdCopies(collection.readCollection(restoreSourceStore) ?? []))}`
+        );
+      }
+      const restoredDeck = collection.readDeck(restoreStore);
+      if (JSON.stringify(restoredDeck) !== JSON.stringify(collection.readDeck(restoreSourceStore))) {
+        fail(
+          `restoring wrote the deck ${JSON.stringify(restoredDeck)} instead of the code's ` +
+            `${JSON.stringify(collection.readDeck(restoreSourceStore))}`
+        );
+      }
+      const restoredProgress = collection.readProgress(restoreStore);
+      if (restoredProgress.wins !== 3 || restoredProgress.matches !== 5) {
+        fail(
+          `restoring wrote ${restoredProgress.wins} win(s) and ${restoredProgress.matches} match(es) ` +
+            "instead of the code's 3 and 5"
+        );
+      }
+      if (
+        JSON.stringify(restoredProgress.opponents) !==
+        JSON.stringify({ [restoreOpponentId]: { wins: 2, matches: 3 } })
+      ) {
+        fail(
+          `restoring wrote the record ${JSON.stringify(restoredProgress.opponents)} instead of the code's ` +
+            `record ${JSON.stringify({ [restoreOpponentId]: { wins: 2, matches: 3 } })}`
+        );
+      }
+      if (restoreStore.getItem(collection.MATCH_STORAGE_KEY) !== null) {
+        fail(
+          "a restore left the unfinished match saved beside the old game in place, so the restored " +
+            "record and the board on screen can disagree"
+        );
+      }
+      const restoredPayload = JSON.parse(restoreStore.getItem(collection.STORAGE_KEY) ?? "null");
+      if (
+        !restoredPayload ||
+        restoredPayload.version !== 1 ||
+        !Array.isArray(restoredPayload.cards) ||
+        !Array.isArray(restoredPayload.deck) ||
+        !Number.isInteger(restoredPayload.wins) ||
+        !Number.isInteger(restoredPayload.matches) ||
+        typeof restoredPayload.opponents !== "object"
+      ) {
+        fail(
+          `a restore wrote a save the game cannot read back through the normal key: ` +
+            `${JSON.stringify(restoredPayload)}`
+        );
+      }
+    }
+
+    // A code that is not ours, a code from another version, a code that is not
+    // even a code, and an empty box are each refused with nothing written.
+    const restoreStoredBefore = restoreStore.getItem(collection.STORAGE_KEY);
+    const foreignCode = btoa(JSON.stringify({ app: "anothergame", version: 1, cards: [] }));
+    const wrongVersionCode = btoa(
+      JSON.stringify({ app: collection.SAVE_CODE_APP, version: 999, cards: [] })
+    );
+    const damagedCode = btoa("this is not json at all");
+    const refusedCodes = [
+      ["a code from another game", foreignCode],
+      ["a code from another version", wrongVersionCode],
+      ["a damaged code", damagedCode],
+      ["empty text", "   "],
+    ];
+    for (const [what, code] of refusedCodes) {
+      const refused = collection.checkSaveCode(code);
+      if (refused?.ok) {
+        fail(`checkSaveCode accepted ${what}, which is not a selfgrow save code`);
+      } else if (typeof refused?.reason !== "string" || refused.reason.length === 0) {
+        fail(`checkSaveCode refused ${what} without a plain reason`);
+      }
+
+      const tried = collection.restoreSaveCode(code, restoreStore);
+      if (tried?.ok) {
+        fail(`restoreSaveCode accepted ${what}, which is not a selfgrow save code`);
+      }
+      if (restoreStore.getItem(collection.STORAGE_KEY) !== restoreStoredBefore) {
+        fail(`restoreSaveCode changed the saved game while refusing ${what}`);
+      }
+    }
+
+    // A code naming a card this game does not have, or an absurd copy count, is
+    // cleaned by the normalizers rather than stored.
+    const messyCode = btoa(
+      JSON.stringify({
+        app: collection.SAVE_CODE_APP,
+        version: 1,
+        cards: [
+          { id: "no-such-card", copies: 4 },
+          { id: restoreCardIds[0], copies: 1e21 },
+          { id: restoreCardIds[1], copies: 2 },
+        ],
+        deck: ["no-such-card", restoreCardIds[1], restoreCardIds[1], restoreCardIds[1]],
+        wins: -5,
+        matches: 2.5,
+        opponents: { "no-such-opponent": { wins: 9, matches: 9 } },
+      })
+    );
+    const messyStore = stubStorage();
+    const messyApplied = collection.restoreSaveCode(messyCode, messyStore);
+    if (!messyApplied?.ok) {
+      fail(`restoreSaveCode refused a code whose bad parts should have been cleaned: ${messyApplied?.reason}`);
+    } else {
+      const messyHeld = collection.readCollection(messyStore) ?? [];
+      if (
+        messyHeld.length !== 1 ||
+        messyHeld[0].id !== restoreCardIds[1] ||
+        messyHeld[0].copies !== 2
+      ) {
+        fail(
+          `a code naming an unknown card and an absurd copy count restored ` +
+            `${JSON.stringify(asIdCopies(messyHeld))} instead of just "${restoreCardIds[1]}" with 2 copies`
+        );
+      }
+      const messyDeck = collection.readDeck(messyStore);
+      if (messyDeck.length !== 2 || messyDeck.some((id) => id !== restoreCardIds[1])) {
+        fail(
+          `a code naming an unknown card put ${JSON.stringify(messyDeck)} in the deck instead of just two ` +
+            `owned copies of "${restoreCardIds[1]}"`
+        );
+      }
+      const messyProgress = collection.readProgress(messyStore);
+      if (
+        messyProgress.wins !== 0 ||
+        messyProgress.matches !== 0 ||
+        Object.keys(messyProgress.opponents).length !== 0
+      ) {
+        fail(
+          `a code with a negative win count, a fractional match count and an unknown opponent restored ` +
+            `${JSON.stringify(messyProgress)} instead of a record of nothing`
+        );
+      }
+    }
+
+    // --- The same flow on the page, driven the way a visitor drives it --------
+
+    game.setCollectionView("all");
+    game.setCollectionOrder("catalog");
+    game.showScreen("collection");
+
+    const restoreTextEl = document.getElementById("restore-code-text");
+    const restoreButtonEl = document.getElementById("action-restore-save-code");
+    const restoreConfirmEl = document.getElementById("restore-confirm");
+    const replaceButtonEl = document.getElementById("action-replace-game");
+    const cancelButtonEl = document.getElementById("action-cancel-restore");
+    const restoreStatusEl = document.getElementById("restore-code-status");
+
+    if (
+      !restoreTextEl ||
+      !restoreButtonEl ||
+      !restoreConfirmEl ||
+      !replaceButtonEl ||
+      !cancelButtonEl ||
+      !restoreStatusEl
+    ) {
+      fail(
+        "the Collection screen has no restore control — a paste box, a restore button, a " +
+          "confirmation with its two answers, and a status line must all be present"
+      );
+    } else {
+      // The game the suite arrived with, so the check can put it back — and a
+      // controlled code that is plainly a different game.
+      const restoreOriginalCode = collection.saveCode();
+      const restoreOriginalOwned = JSON.stringify(asIdCopies(game.readCollection().ownedCards));
+      const restoreStoredAtStart = window.localStorage.getItem(collection.STORAGE_KEY);
+      const restoreMatchAtStart = window.localStorage.getItem(collection.MATCH_STORAGE_KEY);
+      const restoreCollectionAtStart = JSON.stringify(game.readCollection());
+      const restoreDeckAtStart = JSON.stringify(game.readState().deck);
+
+      const restoreLiveStore = stubStorage({
+        [collection.STORAGE_KEY]: JSON.stringify({
+          version: 1,
+          cards: [{ id: restoreCardIds[0], copies: 3 }],
+          deck: [restoreCardIds[0]],
+          wins: 41,
+          matches: 57,
+          lastMatchId: "check-live-restore",
+          opponents: {},
+        }),
+      });
+      const restoreLiveCode = collection.saveCode(restoreLiveStore);
+      const restoredField = (screenName, field) =>
+        textOf(screen(screenName)?.querySelector(`[data-field="${field}"]`));
+
+      // Pressing Restore only asks: nothing is written until the player answers.
+      restoreTextEl.value = restoreLiveCode;
+      restoreButtonEl.click();
+
+      if (restoreConfirmEl.hidden) {
+        fail('pressing "Restore save code" with a valid code did not ask before replacing the game');
+      }
+      if (textOf(restoreConfirmEl).length === 0) {
+        fail("the restore confirmation asks nothing about the code it is about to apply");
+      }
+      if (game.readState().restorePending !== true) {
+        fail("get-state does not report a restore waiting on an answer after a code was pasted");
+      }
+      if (
+        window.localStorage.getItem(collection.STORAGE_KEY) !== restoreStoredAtStart ||
+        window.localStorage.getItem(collection.MATCH_STORAGE_KEY) !== restoreMatchAtStart ||
+        JSON.stringify(game.readCollection()) !== restoreCollectionAtStart ||
+        JSON.stringify(game.readState().deck) !== restoreDeckAtStart
+      ) {
+        fail('asking about a pasted save code changed the game before the player confirmed');
+      }
+
+      // Declining leaves everything exactly as it was.
+      cancelButtonEl.click();
+      if (!restoreConfirmEl.hidden) {
+        fail("Cancel left the restore confirmation on screen");
+      }
+      if (game.readState().restorePending !== false) {
+        fail("Cancel left a restore waiting on an answer");
+      }
+      if (textOf(restoreStatusEl).length === 0) {
+        fail("Cancel says nothing about the game being left as it was");
+      }
+      if (
+        window.localStorage.getItem(collection.STORAGE_KEY) !== restoreStoredAtStart ||
+        window.localStorage.getItem(collection.MATCH_STORAGE_KEY) !== restoreMatchAtStart
+      ) {
+        fail("Cancel changed the saved game");
+      }
+
+      // Confirming replaces the game, and both screens print the restored game.
+      restoreTextEl.value = restoreLiveCode;
+      restoreButtonEl.click();
+      replaceButtonEl.click();
+
+      const restoreAfter = game.readState();
+      if (restoreAfter.wins !== 41 || restoreAfter.matchesPlayed !== 57) {
+        fail(
+          `restoring reported ${restoreAfter.wins} win(s) and ${restoreAfter.matchesPlayed} match(es) ` +
+            "instead of the code's 41 and 57"
+        );
+      }
+      if (restoreAfter.cardsOwned !== 3 || restoreAfter.distinctCards !== 1) {
+        fail(
+          `restoring left ${restoreAfter.cardsOwned} card(s) in ${restoreAfter.distinctCards} distinct ` +
+            "card(s) instead of the code's 3 in 1"
+        );
+      }
+      if (restoreAfter.deck.length !== 1 || restoreAfter.deck[0].id !== restoreCardIds[0]) {
+        fail(
+          `restoring left the deck ${JSON.stringify(restoreAfter.deck.map((card) => card.id))} instead of ` +
+            `the code's one "${restoreCardIds[0]}"`
+        );
+      }
+      if (!restoreConfirmEl.hidden || restoreAfter.restorePending !== false) {
+        fail("the restore confirmation stayed on screen after the game was replaced");
+      }
+      if (window.localStorage.getItem(collection.MATCH_STORAGE_KEY) !== null) {
+        fail(
+          "restoring on the page left an unfinished match saved, so the restored record and the " +
+            "board on screen can disagree"
+        );
+      }
+      if (restoredField("collection", "cardsOwned") !== "3") {
+        fail(
+          `the Collection screen prints ${JSON.stringify(restoredField("collection", "cardsOwned"))} ` +
+            "cards owned after a restore instead of 3"
+        );
+      }
+      if (restoredField("collection", "distinctCards") !== "1") {
+        fail(
+          `the Collection screen prints ${JSON.stringify(restoredField("collection", "distinctCards"))} ` +
+            "distinct cards after a restore instead of 1"
+        );
+      }
+      if (restoredField("collection", "deckSize") !== "1") {
+        fail(
+          `the Collection screen prints a deck size of ` +
+            `${JSON.stringify(restoredField("collection", "deckSize"))} after a restore instead of 1`
+        );
+      }
+      if (restoredField("home", "wins") !== "41" || restoredField("home", "matchesPlayed") !== "57") {
+        fail(
+          `the home screen prints ${JSON.stringify(restoredField("home", "wins"))} win(s) and ` +
+            `${JSON.stringify(restoredField("home", "matchesPlayed"))} match(es) after a restore instead ` +
+            "of 41 and 57"
+        );
+      }
+      if (!document.querySelector(`#collection-list [data-card-id="${restoreCardIds[0]}"]`)) {
+        fail("the Collection screen does not list the card the restored game holds");
+      }
+
+      // An agent restores through the tool: a code that is not ours is refused
+      // without changing anything, and a real code puts a game back.
+      const restoreTool = toolNamed("restore-save-code");
+      if (!restoreTool) {
+        fail('no "restore-save-code" tool is declared, so an agent cannot put a saved game back');
+      } else {
+        if (restoreTool.annotations?.readOnlyHint !== false) {
+          fail('the "restore-save-code" tool is not marked as changing the game (readOnlyHint: false)');
+        }
+        if (restoreTool.annotations?.consequentialHint !== true) {
+          fail(
+            '"restore-save-code" replaces the whole game but is not marked consequentialHint, so a ' +
+              "caller cannot tell it should ask first"
+          );
+        }
+
+        const restoreStoredBeforeBad = window.localStorage.getItem(collection.STORAGE_KEY);
+        const restoreBad = await restoreTool.execute({ code: "not-a-selfgrow-save-code" });
+        if (!restoreBad?.error) {
+          fail(
+            `restore-save-code did not refuse a code that is not one of ours: it returned ` +
+              `${JSON.stringify(restoreBad)}`
+          );
+        }
+        if (window.localStorage.getItem(collection.STORAGE_KEY) !== restoreStoredBeforeBad) {
+          fail("restore-save-code changed the saved game while refusing a bad code");
+        }
+
+        // The tool puts the game the suite started with back, which is also the
+        // proof that a real code works through it.
+        const restoreBack = await restoreTool.execute({ code: restoreOriginalCode });
+        if (restoreBack?.error) {
+          fail(`restore-save-code refused the game's own save code: ${restoreBack.error}`);
+        } else if (JSON.stringify(asIdCopies(game.readCollection().ownedCards)) !== restoreOriginalOwned) {
+          fail("restoring the game's own save code did not put its collection back");
+        }
+      }
     }
   }
 

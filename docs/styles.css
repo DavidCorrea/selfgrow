@@ -828,6 +828,14 @@ body {
   resize: vertical;
 }
 
+/* The example the paste box shows is worth reading, so it is drawn in the page's
+   own muted ink rather than the browser's default grey, which is too faint on
+   the card to be legible. */
+.save-code-text::placeholder {
+  color: var(--ink-muted);
+  opacity: 1;
+}
+
 /* The words that say whether the code is on screen or was copied, in the same
    live-region frame as the deck message. Always in the page, never displayed
    away, so a screen reader hears the change. */
@@ -841,6 +849,36 @@ body {
   border: 1px solid var(--edge);
   border-left: 3px solid var(--foil);
   border-radius: var(--radius-control);
+}
+
+/* The question a pasted save code raises, and the two answers beside it. It is
+   drawn only while an answer is waited on, so the restore control is one button
+   until the player has a decision to make. */
+.restore-confirm {
+  display: grid;
+  gap: 0.6rem;
+  width: 100%;
+  min-width: 0;
+  padding: 0.85rem 1rem 0.95rem;
+  border: 1px solid var(--edge);
+  border-left: 3px solid var(--foil);
+  border-radius: var(--radius-control);
+}
+
+.restore-confirm[hidden] {
+  display: none;
+}
+
+.restore-confirm-text {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.restore-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
 /* --------------------------------------------------------------------------
