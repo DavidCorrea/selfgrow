@@ -2902,7 +2902,8 @@ export async function checks() {
     for (const [id, expected] of [
       ["glowcap", "When played: draw a card"],
       ["moon-bloom", "When played: draw a card"],
-      ["sprout", null],
+      ["sprout", cardCatalog.HEAL_ON_PLAY],
+      ["dewdrop-nymph", cardCatalog.HEAL_ON_PLAY],
     ]) {
       const entry = listedCards.find((card) => card.id === id);
       if (!entry) {
@@ -3705,7 +3706,9 @@ export async function checks() {
         }
         // A card that draws a card when played trades its own place in the hand
         // for the one it draws, so the hand shrinks by one only when it does not.
-        const drawnByPlay = catalogAbility(affordable.id) ? 1 : 0;
+        // A card with any other when-played ability — one that mends the hero —
+        // leaves the hand the same size.
+        const drawnByPlay = catalogAbility(affordable.id) === cardCatalog.DRAW_ON_PLAY ? 1 : 0;
         if (afterPlay.hand.length !== handBefore - 1 + drawnByPlay) {
           fail(
             `playing ${affordable.name} left ${afterPlay.hand.length} cards in hand instead of ` +
@@ -6060,7 +6063,7 @@ export async function checks() {
   const abilityText = cardCatalog.DRAW_ON_PLAY;
   const glowcapCard = cardCatalog.CARD_BY_ID.get("glowcap");
   const moonBloomCard = cardCatalog.CARD_BY_ID.get("moon-bloom");
-  const plainCard = cardCatalog.CARD_BY_ID.get("sprout");
+  const plainCard = cardCatalog.CARD_BY_ID.get("pebble-toad");
 
   if (typeof abilityText !== "string" || !abilityText.trim()) {
     fail("docs/cards.js names no ability for a card that draws a card when played, so no card can say what it does");
@@ -6311,6 +6314,268 @@ export async function checks() {
       }
       if (emptyLines.some((line) => /draw/i.test(line))) {
         fail(`a card that draws from an empty deck claimed a draw: ${JSON.stringify(emptyLines)}`);
+      }
+    }
+  }
+
+  // --- A card that mends its owner's hero when it is played ------------------
+
+  // The second when-played ability: a card whose face says so raises its owner's
+  // hero as it lands, never past the 20 a hero starts with. It shares the draw
+  // ability's trigger and its card-face line, so nothing new is invented to show
+  // it — and, like the draw ability, it is dealt at the start and then collected
+  // for, so a slow deck has an answer to an early rush.
+  const healText = cardCatalog.HEAL_ON_PLAY;
+  const healAmount = cardCatalog.HEAL_ON_PLAY_AMOUNT;
+  const healerInStarter = cardCatalog.CARD_BY_ID.get("sprout");
+  const healerInReward = cardCatalog.CARD_BY_ID.get("dewdrop-nymph");
+  const heroHealth = matchEngine?.HERO_HEALTH ?? 20;
+  // How a card face prints the ability, read off the page rather than its data.
+  const faceAbility = (face) => textOf(face?.querySelector(".card-ability"));
+
+  if (typeof healText !== "string" || !healText.trim()) {
+    fail("docs/cards.js names no ability for a card that heals its hero when played, so no card can say what it does");
+  } else if (!Number.isInteger(healAmount) || healAmount < 1) {
+    fail(`the heal ability restores ${JSON.stringify(healAmount)} health, which is not a whole positive number`);
+  } else if (!healText.includes(String(healAmount))) {
+    fail(
+      `the heal ability reads ${JSON.stringify(healText)}, which does not name the ${healAmount} it heals by, ` +
+        "so the card's face and the trigger can disagree"
+    );
+  } else {
+    // One healer the player starts with, one they have to collect.
+    for (const [card, where] of [
+      [healerInStarter, "the starter collection"],
+      [healerInReward, "the reward pool"],
+    ]) {
+      if (card?.ability !== healText) {
+        fail(
+          `"${card?.name ?? "?"}" (${where}) carries the ability ${JSON.stringify(card?.ability ?? null)} instead ` +
+            `of ${JSON.stringify(healText)}, so the card does not mend its hero when played`
+        );
+      }
+    }
+
+    // The line is on the face wherever the card is shown: the collection, an
+    // opponent's deck fold, and the card a win earns.
+    for (const [where, face] of [
+      ["the collection", document.querySelector('#collection-list [data-card-id="dewdrop-nymph"]')],
+      [
+        "Emberwake's deck",
+        document.querySelector(
+          '#opponent-options [data-opponent-id="emberwake"] .opponent-deck-cards [data-card-id="dewdrop-nymph"]'
+        ),
+      ],
+      [
+        "Mistfen's deck",
+        document.querySelector(
+          '#opponent-options [data-opponent-id="mistfen"] .opponent-deck-cards [data-card-id="sprout"]'
+        ),
+      ],
+    ]) {
+      if (faceAbility(face) !== healText) {
+        fail(
+          `the healer shown in ${where} does not say "${healText}" on its face ` +
+            `(it reads ${JSON.stringify(faceAbility(face))})`
+        );
+      }
+    }
+    const rewardHealFace = game.awardCardFigure(healerInReward);
+    if (faceAbility(rewardHealFace) !== healText) {
+      fail(
+        `the earned-card face of Dewdrop Nymph does not say "${healText}" on its face ` +
+          `(it reads ${JSON.stringify(faceAbility(rewardHealFace))})`
+      );
+    }
+
+    if (!matchEngine || typeof game.continueMatch !== "function") {
+      fail("the match engine or the continue-match action is missing, so the heal-on-play trigger cannot be checked");
+    } else {
+      // Through the board a player sees: a healer in hand and a damaged hero,
+      // loaded the way a saved match is.
+      const savedHealBoard = collection.saveMatch({
+        id: "check-heal-on-play",
+        opponentName: cardCatalog.OPPONENT_NAME,
+        turn: "player",
+        over: false,
+        winner: null,
+        outcome: null,
+        recorded: false,
+        player: {
+          health: 11,
+          energy: 3,
+          maxEnergy: 3,
+          turns: 1,
+          hand: [
+            { id: "sprout", health: 1, hasAttacked: false },
+            { id: "pebble-toad", health: 2, hasAttacked: false },
+          ],
+          table: [],
+          deck: [{ id: "sun-moth", health: 3, hasAttacked: false }],
+        },
+        opponent: { health: 20, energy: 1, maxEnergy: 1, turns: 0, hand: [], table: [], deck: [] },
+        log: ["A match set up to play a card that heals its hero."],
+      });
+      if (!savedHealBoard) {
+        fail("a controlled board with a healer in hand could not be saved, so the heal-on-play trigger cannot be checked");
+      } else {
+        game.refreshSavedMatch();
+        let healBoard = null;
+        try {
+          healBoard = game.continueMatch();
+        } catch (e) {
+          fail(`a controlled board with a healer in hand could not be loaded — ${e.message}`);
+        }
+
+        if (healBoard?.match) {
+          const healerInHand = document.querySelector('#match-hand [data-card-id="sprout"]');
+          if (faceAbility(healerInHand) !== healText) {
+            fail(
+              `the healer in your hand does not say "${healText}" on its face ` +
+                `(it reads ${JSON.stringify(faceAbility(healerInHand))})`
+            );
+          }
+
+          const beforePlay = game.readState().match;
+          const healerInState = beforePlay.hand.find((card) => card.id === "sprout");
+          if (healerInState?.ability !== healText) {
+            fail(
+              `an agent reading your hand sees the healer's ability as ` +
+                `${JSON.stringify(healerInState?.ability ?? null)} instead of ${JSON.stringify(healText)}`
+            );
+          }
+
+          // Played through the tool an agent uses, so the ability is usable by
+          // an agent and not only by a visitor; it falls back to the page action
+          // only so the checks below still run when the tool is missing.
+          const playHealerTool = toolNamed("play-card");
+          if (!playHealerTool) {
+            fail('no "play-card" tool is declared, so an agent cannot play the healer a visitor can');
+          }
+          const healthBefore = beforePlay.playerHealth;
+          const logBefore = beforePlay.log.length;
+          const played = playHealerTool
+            ? await playHealerTool.execute({ cardId: "sprout" })
+            : game.playMatchCard("sprout");
+          const afterPlay = played.match;
+          const expectedHealth = Math.min(heroHealth, healthBefore + healAmount);
+
+          if (afterPlay.playerHealth !== expectedHealth) {
+            fail(
+              `playing the healer left your hero at ${afterPlay.playerHealth} health instead of ${expectedHealth} ` +
+                `(${healthBefore} before plus the ${healAmount} on the card's face)`
+            );
+          }
+          if (textOf(document.getElementById("match-player-health")) !== String(afterPlay.playerHealth)) {
+            fail(
+              `the board prints your health as "${textOf(document.getElementById("match-player-health"))}" after ` +
+                `the heal while the match holds ${afterPlay.playerHealth}`
+            );
+          }
+          if (
+            !afterPlay.log
+              .slice(logBefore)
+              .some((line) => line.includes(`your health ${afterPlay.playerHealth}`))
+          ) {
+            fail(
+              `the log does not state your health after the heal: the play added ` +
+                `${JSON.stringify(afterPlay.log.slice(logBefore))}`
+            );
+          }
+          if (faceAbility(document.querySelector('#match-table [data-card-id="sprout"]')) !== healText) {
+            fail(
+              `the healer on the table does not say "${healText}" on its face, so the card reads differently ` +
+                "there than in the collection"
+            );
+          }
+        }
+      }
+
+      // The clamp, through the engine: a mend can undo damage but cannot make a
+      // hero tougher than new — at one short of full it reaches full, and at
+      // full it stays there.
+      for (const startHealth of [heroHealth - 1, heroHealth]) {
+        const clampBoard = matchEngine.createMatch(
+          ["sprout", "pebble-toad", "thornling", "sun-moth", "bramble-hound"],
+          { rng: () => 0 }
+        );
+        clampBoard.player.hand = [{ ...healerInStarter, hasAttacked: false }];
+        clampBoard.player.energy = 1;
+        clampBoard.player.maxEnergy = 1;
+        clampBoard.player.health = startHealth;
+        const clampLogBefore = clampBoard.log.length;
+        matchEngine.playCard(clampBoard, "sprout");
+        if (clampBoard.player.health !== heroHealth) {
+          fail(
+            `a heal from ${startHealth} health left the hero at ${clampBoard.player.health} instead of the ` +
+              `${heroHealth} a hero starts with, so a heal can make a hero tougher than new`
+          );
+        }
+        if (!clampBoard.log.slice(clampLogBefore).some((line) => line.includes(`your health ${heroHealth}`))) {
+          fail(
+            `the log does not state the hero's health after a clamped heal: the play added ` +
+              `${JSON.stringify(clampBoard.log.slice(clampLogBefore))}`
+          );
+        }
+      }
+
+      // A damaged hero is mended by exactly the amount on the card's face, and
+      // the cost still leaves the energy.
+      const mended = matchEngine.createMatch(
+        ["sprout", "pebble-toad", "thornling", "sun-moth", "bramble-hound"],
+        { rng: () => 0 }
+      );
+      mended.player.hand = [{ ...healerInStarter, hasAttacked: false }];
+      mended.player.energy = 1;
+      mended.player.maxEnergy = 1;
+      mended.player.health = 7;
+      matchEngine.playCard(mended, "sprout");
+      if (mended.player.health !== 7 + healAmount) {
+        fail(
+          `playing a healer left your hero at ${mended.player.health} health instead of the ${7 + healAmount} it ` +
+            `started at plus the ${healAmount} on the card's face`
+        );
+      }
+      if (mended.player.energy !== 0) {
+        fail(`playing the healer (cost 1) left ${mended.player.energy} energy instead of spending its cost`);
+      }
+      if (!mended.player.table.some((card) => card.id === "sprout")) {
+        fail("playing the healer did not put it on the table");
+      }
+
+      // The opponent heals the same way when it plays one: the same trigger, the
+      // same clamp, and the log states its health afterwards.
+      const opponentHeal = matchEngine.createMatch(
+        ["sprout", "pebble-toad", "thornling", "sun-moth", "bramble-hound"],
+        { rng: () => 0 }
+      );
+      const tooDear = { ...cardCatalog.CARD_BY_ID.get("elder-oak"), hasAttacked: false };
+      opponentHeal.opponent.hand = [{ ...healerInReward, hasAttacked: false }];
+      opponentHeal.opponent.deck = [{ ...tooDear }, { ...tooDear }, { ...tooDear }];
+      opponentHeal.opponent.health = 8;
+      opponentHeal.opponent.energy = 1;
+      opponentHeal.opponent.maxEnergy = 1;
+      const opponentHealLogBefore = opponentHeal.log.length;
+      matchEngine.endTurn(opponentHeal);
+      const opponentHealLines = opponentHeal.log.slice(opponentHealLogBefore);
+
+      if (!opponentHeal.opponent.table.some((card) => card.id === "dewdrop-nymph")) {
+        fail(
+          `the opponent did not play the healer in its hand on its turn ` +
+            `(its table holds ${JSON.stringify(opponentHeal.opponent.table.map((card) => card.id))})`
+        );
+      }
+      if (opponentHeal.opponent.health !== 8 + healAmount) {
+        fail(
+          `the opponent's healer left it at ${opponentHeal.opponent.health} health instead of the ` +
+            `${8 + healAmount} it started at plus the ${healAmount} on the card's face`
+        );
+      }
+      if (!opponentHealLines.some((line) => line.includes(`opponent health ${opponentHeal.opponent.health}`))) {
+        fail(
+          `the log does not state the opponent's health after its heal: the turn added ` +
+            `${JSON.stringify(opponentHealLines)}`
+        );
       }
     }
   }
