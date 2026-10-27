@@ -5,8 +5,10 @@
  * named opponent who brings a deck of their own rather than a copy of the
  * player's, that a match in progress is saved as it changes so the home screen
  * can offer to continue it, that a match played to the last blow ends with a
- * result both a player and an agent can read, and that an agent reads and drives
- * that same surface rather than a second one nobody can see.
+ * result both a player and an agent can read, that a collection card's parts
+ * stay in their own column at a phone's width with nothing off the edge, and
+ * that an agent reads and drives that same surface rather than a second one
+ * nobody can see.
  *
  * Runs on the real page, in the real browser. Returns plain-language failures,
  * empty when everything holds.
@@ -7733,6 +7735,159 @@ export async function checks() {
     }
   } else {
     fail("a controlled match could not be saved, so what a first win says cannot be checked");
+  }
+
+  // Last, because it opens the page a second time in a narrow frame: the build
+  // runs this suite at a desktop width, where the phone layout is inert.
+  problems.push(...(await collectionCardPhoneProblems()));
+
+  return problems;
+}
+
+/**
+ * The collection at a phone's width, measured in a real frame.
+ *
+ * The build opens the page at a desktop width, where the `max-width: 719px`
+ * rules in styles.css never apply, so measuring the live page would silently
+ * pass whatever the phone draws. This loads index.html again in a narrow,
+ * off-screen iframe and measures every collection card: only the picture may
+ * sit in the picture's column, and nothing may run past the frame's right edge.
+ * The owned cards that carry a when-played ability are exactly the ones the
+ * picture's fixed row span used to break, so the frame lists the real set rather
+ * than a fixture.
+ */
+async function collectionCardPhoneProblems() {
+  const problems = [];
+  const frame = document.createElement("iframe");
+  frame.setAttribute("aria-hidden", "true");
+  frame.setAttribute("tabindex", "-1");
+  frame.style.cssText =
+    "position: fixed; left: -10000px; top: 0; width: 390px; height: 900px; border: 0;";
+  frame.src = new URL("./index.html", import.meta.url).href;
+
+  const waitFor = (test, timeoutMs) =>
+    new Promise((resolve) => {
+      const started = Date.now();
+      const poll = () => {
+        let ok = false;
+        try {
+          ok = test();
+        } catch {
+          ok = false;
+        }
+        if (ok || Date.now() - started > timeoutMs) resolve(ok);
+        else setTimeout(poll, 25);
+      };
+      poll();
+    });
+
+  try {
+    const whenLoaded = new Promise((resolve) => {
+      let settled = false;
+      const done = () => {
+        if (!settled) {
+          settled = true;
+          resolve();
+        }
+      };
+      frame.addEventListener("load", done, { once: true });
+      setTimeout(done, 2000);
+    });
+    document.body.append(frame);
+    await whenLoaded;
+
+    const listAppeared = await waitFor(
+      () => frame.contentDocument?.querySelector("#collection-list > li"),
+      1000
+    );
+    if (!listAppeared) {
+      return [
+        "the page was opened in a 390px frame but never listed a collection card, so a phone's card layout could not be measured",
+      ];
+    }
+
+    const doc = frame.contentDocument;
+    doc.getElementById("action-collection")?.click();
+    await waitFor(() => !doc.getElementById("screen-collection")?.hidden, 400);
+
+    for (const width of [390, 280]) {
+      frame.style.width = `${width}px`;
+      // Two frames so the new width is laid out before it is read.
+      await new Promise((resolve) =>
+        frame.contentWindow.requestAnimationFrame(() =>
+          frame.contentWindow.requestAnimationFrame(resolve)
+        )
+      );
+      problems.push(...collectionCardProblemsAt(doc, frame.contentWindow.innerWidth, width));
+    }
+  } finally {
+    frame.remove();
+  }
+
+  return problems;
+}
+
+/**
+ * What is wrong with the collection's layout at one frame width: a card part
+ * that overlaps the picture's column, or a part that runs past the frame.
+ */
+function collectionCardProblemsAt(doc, frameWidth, width) {
+  const problems = [];
+  const list = doc.getElementById("collection-list");
+  if (!list) return [`the collection list is missing at a ${width}px window`];
+
+  const partName = (element) =>
+    element.classList.contains("card-art")
+      ? "picture"
+      : element.className.split(" ").find(Boolean) || element.tagName.toLowerCase();
+
+  const measure = (element) => element.getBoundingClientRect();
+  const horizontalOverlap = (a, b) => a.left < b.right - 0.5 && a.right > b.left + 0.5;
+  const verticalOverlap = (a, b) => a.bottom > b.top + 0.5 && a.top < b.bottom - 0.5;
+
+  const rows = [...list.querySelectorAll(":scope > li")];
+  for (const row of rows) {
+    const cardId = row.dataset.cardId ?? "(unknown)";
+    const art = row.querySelector(":scope > .card-art");
+    const artRect = art ? measure(art) : null;
+
+    if (artRect) {
+      const others = [...row.children]
+        .filter((part) => part !== art)
+        .map((part) => ({ part, rect: measure(part) }));
+      // A card is drawn beside its picture when any part sits to the picture's
+      // right on the same band; a card that has fallen back to one column for a
+      // narrow window stacks every part below it instead.
+      const beside = others.some(({ rect }) => rect.left >= artRect.right - 0.5);
+
+      for (const { part, rect } of others) {
+        const inPictureColumn = horizontalOverlap(rect, artRect);
+        const overPicture = inPictureColumn && verticalOverlap(rect, artRect);
+        if (overPicture || (beside && inPictureColumn)) {
+          problems.push(
+            `the "${cardId}" card lays ${partName(part)} in its picture's column at a ${width}px window`
+          );
+        }
+      }
+    }
+
+    // Every box the row draws, down to each of the three numbers, so a part
+    // that overflows its own column is caught rather than hidden inside it.
+    for (const element of [row, ...row.querySelectorAll("*")]) {
+      const rect = measure(element);
+      if (rect.right > frameWidth + 1) {
+        const over = Math.round(rect.right - frameWidth);
+        problems.push(
+          `the "${cardId}" card's ${partName(element)} runs ${over}px past the right edge at a ${width}px window`
+        );
+      }
+    }
+  }
+
+  const listRect = measure(list);
+  if (listRect.right > frameWidth + 1) {
+    const over = Math.round(listRect.right - frameWidth);
+    problems.push(`the collection list runs ${over}px past the right edge at a ${width}px window`);
   }
 
   return problems;

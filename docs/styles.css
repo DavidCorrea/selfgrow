@@ -312,7 +312,7 @@ body {
   padding: 0;
   display: grid;
   gap: 0.7rem;
-  grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 13.5rem), 1fr));
 }
 
 /* Each card in the collection is a small card face: its name, then the three
@@ -2077,9 +2077,28 @@ body {
     column-gap: 0.75rem;
   }
 
+  /* The picture keeps the first column, and every other part of the face —
+     the head, the numbers, the ability text when there is one and the deck
+     controls — is pinned to the second column explicitly. Auto-placement would
+     otherwise drop the fourth part of a card that carries an ability into the
+     narrow picture column once the picture stops at three rows. */
   .owned-card .card-art,
   .unowned-card .card-art {
-    grid-row: 1 / span 3;
+    grid-column: 1;
+    grid-row: 1 / span 4;
+  }
+
+  .owned-card:has(.card-art) > *:not(.card-art),
+  .unowned-card:has(.card-art) > *:not(.card-art) {
+    grid-column: 2;
+    min-width: 0;
+  }
+
+  /* The three numbers share one line while there is room, and wrap onto two
+     rather than run past the right edge on the narrowest phones. */
+  .card-face-stats {
+    flex-wrap: wrap;
+    row-gap: 0.15rem;
   }
 
   /* A phone shows the same faces as a wide window, two to a row, so the hand
@@ -2122,6 +2141,35 @@ body {
   #screen-play .match-message:not(:empty) {
     max-height: 3.4rem;
     overflow-y: auto;
+  }
+}
+
+/* Below the width where a picture column and a card's own parts can share a
+   row, a card falls back to one column — picture, then name, numbers, ability
+   and deck controls beneath it — so nothing is squeezed past the right edge.
+   The two-column phone layout above this keeps the cards the size they read at
+   on a phone. */
+@media (max-width: 340px) {
+  .owned-card:has(.card-art),
+  .unowned-card:has(.card-art) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .owned-card .card-art,
+  .unowned-card .card-art {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .owned-card:has(.card-art) > *:not(.card-art),
+  .unowned-card:has(.card-art) > *:not(.card-art) {
+    grid-column: 1;
+  }
+
+  /* Add and Remove take a row each here, so a long card name beside them does
+     not push the pair past the card's edge. */
+  .deck-actions {
+    grid-template-columns: 1fr;
   }
 }
 
