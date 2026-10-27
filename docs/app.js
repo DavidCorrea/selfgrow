@@ -1043,10 +1043,15 @@ export function nextRewardHeadingText(setComplete) {
 
 /**
  * The reward card the next win would add, read from the same choice `recordResult`
- * awards by, or null once the player owns every reward card.
+ * awards by, or null once the player owns every reward card. It is read against
+ * the opponent the picker has chosen and whether that opponent has already been
+ * beaten, so the home screen promises a first win's signature card while it is
+ * still to collect and the usual reward once the opponent is beaten.
  */
 export function nextRewardCard() {
-  const id = nextRewardId(state.cards);
+  const opponent = selectedOpponent();
+  const { wins } = opponentRecord(opponent.id);
+  const id = nextRewardId(state.cards, opponent, wins > 0);
   return id ? CARD_BY_ID.get(id) : null;
 }
 
@@ -2551,9 +2556,10 @@ export function readState() {
     // to mark: no result yet, a loss, or a win whose only card was a duplicate.
     newlyCollected: newlyCollectedId(state.result),
     // The card a win would add next, as the home screen shows it under "Next win
-    // earns": the first reward card not yet owned, with its name, cost, attack
-    // and health — or null, with `nextRewardComplete` true, once every reward
-    // card is owned.
+    // earns": the signature card of the opponent the picker has chosen while
+    // that opponent is unbeaten and the card is unowned, otherwise the first
+    // reward card not yet owned — with its name, cost, attack and health, or
+    // null, with `nextRewardComplete` true, once every reward card is owned.
     nextReward: nextReward ? { ...nextReward } : null,
     nextRewardComplete: nextReward === null,
     saved: state.saved,
@@ -2562,7 +2568,7 @@ export function readState() {
     // deck the match will deal it, as the card ids list-collection describes, so
     // the cards the picker promises and the ones played are one list; `deckShown`
     // says whether those cards are open in the picker right now.
-    opponents: OPPONENTS.map(({ id, name, look, description, deck }) => {
+    opponents: OPPONENTS.map(({ id, name, look, description, deck, signature }) => {
       const fold = opponentDeckFoldFor(id);
       const { wins, matches } = opponentRecord(id);
       return {
@@ -2570,6 +2576,10 @@ export function readState() {
         name,
         look,
         description,
+        // The card that stands for how this opponent plays, and so the one a
+        // first win against them earns while it is still to collect. It is the
+        // id list-collection names, so a caller can point a player at it.
+        signature,
         deck: [...deck],
         deckShown: Boolean(fold && fold.open && !fold.closest("[hidden]")),
         // How the player has fared against this opponent, as the picker's own
