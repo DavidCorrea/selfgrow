@@ -7470,12 +7470,40 @@ export async function checks() {
           );
         }
       }
+      // The hand is the row of cards a player has to press, and the action bar is
+      // docked over the foot of the page. Comparing their positions with any
+      // fixed tolerance is brittle: a few pixels added anywhere above the hand
+      // move the hand and the page that holds it together, so a layout that is
+      // fine reads as a regression. What actually breaks a player is measured
+      // instead — a panel that clips its own cards, or one the page can no longer
+      // scroll clear of the bar.
+      for (const [what, panel] of [
+        ["the hand", document.getElementById("match-hand")],
+        ["the hand panel", document.getElementById("match-hand-side")],
+      ]) {
+        if (!panel || panel.hidden) continue;
+        const clipped = panel.scrollHeight - panel.clientHeight;
+        if (clipped > 1) {
+          fail(
+            `${what} cuts off ${Math.round(clipped)}px of its own cards on a ` +
+              `${viewportWidth}x${viewportHeight} phone, so a card the player has to press is out of reach`
+          );
+        }
+      }
       const hand = document.getElementById("match-hand");
-      if (hand && rectOf(hand).bottom > barTop + 1) {
-        fail(
-          `the hand reaches ${Math.round(rectOf(hand).bottom)}px while the action bar starts at ` +
-            `${Math.round(barTop)}px, so the bar covers the cards a player has to press`
-        );
+      if (hand && !hand.hidden) {
+        // How far the hand sits behind the bar against how far the page can still
+        // scroll it up. A scrolling phone layout lets the hand start behind the
+        // bar as long as the page can bring every card clear of it.
+        const behindBar = rectOf(hand).bottom - barTop;
+        const roomToScroll = scrolling.scrollHeight - viewportHeight - scrolling.scrollTop;
+        if (behindBar > roomToScroll + 1) {
+          fail(
+            `the hand reaches ${Math.round(rectOf(hand).bottom)}px, ${Math.round(behindBar)}px behind the ` +
+              `action bar at ${Math.round(barTop)}px, and the page can only scroll it up ` +
+              `${Math.round(roomToScroll)}px, so the bar covers the cards a player has to press`
+          );
+        }
       }
     }
   }
