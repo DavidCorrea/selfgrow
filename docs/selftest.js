@@ -2173,6 +2173,95 @@ export async function checks() {
           );
         }
       }
+
+      // Each opponent brings a card that does something as it lands, chosen so
+      // the ability suits the match its description promises: the slow, wearing
+      // character mends its hero, the fast ones strike the board. A player meets
+      // the ability inside a match and learns to watch for it on the opponent's
+      // turn, so each fixed deck is required to hold such a card and each is seen
+      // to fire it on its own turn. The ability assigned to each opponent is the
+      // product's own claim about what kind of match it plays, so it is written
+      // down here and a new opponent has to be placed deliberately rather than
+      // slipping through unchecked.
+      const promisedAbility = new Map([
+        ["thornmere", cardCatalog.HEAL_ON_PLAY],
+        ["emberwake", cardCatalog.STRIKE_ON_PLAY],
+        ["mistfen", cardCatalog.STRIKE_ON_PLAY],
+      ]);
+      for (const opponent of opponentChoices) {
+        const promised = promisedAbility.get(opponent.id);
+        if (!promised) {
+          fail(
+            `the opponent "${opponent.name}" is not assigned a when-played ability, so whether its deck suits ` +
+              "the match its description promises cannot be checked"
+          );
+          continue;
+        }
+        const carried = opponent.deck.filter((id) => cardCatalog.CARD_BY_ID.get(id)?.ability === promised);
+        if (!carried.length) {
+          fail(
+            `the opponent "${opponent.name}" brings no card that says ${JSON.stringify(promised)}, so the match ` +
+              "it advertises never shows the ability its kind of play promises"
+          );
+          continue;
+        }
+
+        // One bounded turn in which the opponent holds only its ability card, so
+        // that card is played whatever way the character chooses, and its trigger
+        // is seen to fire and to be logged. The hand is set up rather than dealt
+        // so the turn proves the ability, not the shuffle.
+        const abilityCard = cardCatalog.CARD_BY_ID.get(carried[0]);
+        const tooDear = { ...cardCatalog.CARD_BY_ID.get("elder-oak"), hasAttacked: false };
+        const firing = matchEngine.createMatch(cheapDeck, { rng: fixedRng, opponentId: opponent.id });
+        firing.opponent.hand = [{ ...abilityCard, hasAttacked: false }];
+        firing.opponent.deck = [{ ...tooDear }, { ...tooDear }, { ...tooDear }];
+        firing.opponent.energy = abilityCard.cost;
+        firing.opponent.maxEnergy = abilityCard.cost;
+        // The mend is read off the opponent's own hero, so nothing is placed in
+        // front of it to wound it on the way; a strike needs a card to land on.
+        firing.opponent.health = 8;
+        if (promised === cardCatalog.STRIKE_ON_PLAY) {
+          firing.player.table = [{ ...cardCatalog.CARD_BY_ID.get("mudback-turtle"), hasAttacked: false }];
+        }
+        const firingLogBefore = firing.log.length;
+        matchEngine.endTurn(firing);
+        const firedLines = firing.log.slice(firingLogBefore);
+
+        if (!firing.opponent.table.some((card) => card.id === abilityCard.id)) {
+          fail(
+            `the opponent "${opponent.name}" did not play "${abilityCard.name}", the only card in its hand, on ` +
+              `its turn (its table holds ${JSON.stringify(firing.opponent.table.map((card) => card.id))})`
+          );
+          continue;
+        }
+        if (promised === cardCatalog.HEAL_ON_PLAY) {
+          const healed = 8 + cardCatalog.HEAL_ON_PLAY_AMOUNT;
+          if (firing.opponent.health !== healed) {
+            fail(
+              `the opponent "${opponent.name}" played "${abilityCard.name}" but its hero stands at ` +
+                `${firing.opponent.health} health instead of ${healed}, so its mend did not fire`
+            );
+          }
+          if (
+            !firedLines.some(
+              (line) => line.includes(abilityCard.name) && line.includes(`opponent health ${firing.opponent.health}`)
+            )
+          ) {
+            fail(
+              `the opponent "${opponent.name}" mended its hero but the log does not say so: the turn added ` +
+                JSON.stringify(firedLines)
+            );
+          }
+        } else if (promised === cardCatalog.STRIKE_ON_PLAY) {
+          const strikeLine = `Opponent's ${abilityCard.name} deals ${cardCatalog.STRIKE_ON_PLAY_AMOUNT} to your `;
+          if (!firedLines.some((line) => line.startsWith(strikeLine))) {
+            fail(
+              `the opponent "${opponent.name}" struck with "${abilityCard.name}" but the log does not say so: ` +
+                `the turn added ${JSON.stringify(firedLines)}`
+            );
+          }
+        }
+      }
     }
 
     const affordable = dealt.player.hand.find((card) => card.cost <= dealt.player.energy);
@@ -6360,6 +6449,12 @@ export async function checks() {
     // opponent's deck fold, and the card a win earns.
     for (const [where, face] of [
       ["the collection", document.querySelector('#collection-list [data-card-id="dewdrop-nymph"]')],
+      [
+        "Thornmere's deck",
+        document.querySelector(
+          '#opponent-options [data-opponent-id="thornmere"] .opponent-deck-cards [data-card-id="dewdrop-nymph"]'
+        ),
+      ],
       [
         "Emberwake's deck",
         document.querySelector(
