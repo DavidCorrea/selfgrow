@@ -2593,6 +2593,21 @@ export async function checks() {
       if (!opponent.id || !opponent.name || !opponent.description) {
         fail(`an opponent on offer is not named and described by its deck: ${JSON.stringify(opponent)}`);
       }
+      // What each opponent brings is part of what is on offer, so an agent can
+      // read the same deck a visitor is shown rather than only its kind. The ids
+      // are the cards list-collection describes in full.
+      const catalogDeck = cardCatalog.OPPONENT_BY_ID.get(opponent.id)?.deck;
+      if (!Array.isArray(opponent.deck) || !opponent.deck.length) {
+        fail(
+          `the state does not say which cards "${opponent.name}" brings (that opponent has no deck of card ids), ` +
+            "so an agent cannot read the deck the picker shows"
+        );
+      } else if (catalogDeck && opponent.deck.join(", ") !== catalogDeck.join(", ")) {
+        fail(
+          `the state says "${opponent.name}" brings ${JSON.stringify(opponent.deck)} while docs/cards.js gives it ` +
+            JSON.stringify(catalogDeck)
+        );
+      }
     }
     if (!offeredOpponents.some((opponent) => opponent.id === beforeMatchState.selectedOpponentId)) {
       fail(
@@ -2684,6 +2699,122 @@ export async function checks() {
             );
           }
         }
+      }
+
+      // Choosing who to face is done with the deck in sight, not on the promise
+      // of a sentence: the option carries the faces of the very cards a match
+      // against this opponent is dealt — each its picture, its name and the
+      // three numbers list-collection reports — read out of the option's own
+      // fold so the picker promises what the board will hold.
+      const optionCard = radio.closest(".opponent-option");
+      const fold = optionCard?.querySelector("details.opponent-deck-fold");
+      if (!optionCard || !fold) {
+        fail(
+          `the picker's option for "${opponent.name}" shows no cards of the deck that opponent brings, ` +
+            "only the kind of deck in words"
+        );
+        continue;
+      }
+
+      const faces = [...fold.querySelectorAll("[data-card-id]")];
+      const shownIds = faces.map((face) => face.dataset.cardId);
+      if (shownIds.join(", ") !== (opponent.deck ?? []).join(", ")) {
+        fail(
+          `the picker's option for "${opponent.name}" shows ${JSON.stringify(shownIds)} while a match against ` +
+            `them is dealt ${JSON.stringify(opponent.deck)}`
+        );
+      }
+
+      for (const face of faces) {
+        const card = cardCatalog.CARD_BY_ID.get(face.dataset.cardId);
+        if (!card) continue; // an unknown id is already reported by the comparison above
+        const nameRead = textOf(face.querySelector(".deck-card-name"));
+        const statsRead = textOf(face.querySelector(".deck-card-stats"));
+        const statsExpected = `${card.cost}/${card.attack}/${card.health}`;
+        if (nameRead !== card.name || statsRead !== statsExpected) {
+          fail(
+            `the card "${card.id}" in "${opponent.name}"'s deck reads "${nameRead} ${statsRead}" where it ` +
+              `should read "${card.name} ${statsExpected}" (cost/attack/health)`
+          );
+        }
+        if (!face.querySelector("svg.card-art")) {
+          fail(`the card "${card.id}" in "${opponent.name}"'s deck is a name and numbers with no picture`);
+        }
+      }
+
+      // The deck is the one the match deals, not a second list kept beside it:
+      // the engine, given this opponent, deals exactly the cards the option shows.
+      if (matchEngine) {
+        const engineDeal = matchEngine.createMatch(deckIds(), { opponentId: opponent.id }).opponent;
+        const dealtIds = [...engineDeal.hand, ...engineDeal.table, ...engineDeal.deck]
+          .map((card) => card.id)
+          .sort();
+        if (dealtIds.join(", ") !== [...shownIds].sort().join(", ")) {
+          fail(
+            `a match against "${opponent.name}" is dealt ${JSON.stringify(dealtIds)} while the picker promised ` +
+              JSON.stringify(shownIds)
+          );
+        }
+      }
+
+      // The fold says how many cards it holds, and is closed until asked, so the
+      // picker and the Start match button stay on the first screen; opening it
+      // paints every face it holds.
+      const toggle = fold.querySelector("summary");
+      if (!toggle || !textOf(toggle).includes(String(faces.length))) {
+        fail(
+          `"${opponent.name}"'s deck fold reads ${JSON.stringify(textOf(toggle))}, which does not say it holds ` +
+            `${faces.length} cards`
+        );
+      }
+      if (fold.open) {
+        fail(
+          `"${opponent.name}"'s deck starts open, so ten faces per opponent push the picker down the page ` +
+            "before anyone has asked to see them"
+        );
+      } else {
+        fold.open = true;
+        const painted = faces.filter((face) => face.getBoundingClientRect().height > 0).length;
+        fold.open = false;
+        if (painted !== faces.length) {
+          fail(
+            `opening "${opponent.name}"'s deck painted ${painted} of the ${faces.length} card faces it holds`
+          );
+        }
+        if (game.readState().opponents.find((entry) => entry.id === opponent.id)?.deckShown) {
+          fail(`the state says "${opponent.name}"'s deck is on screen while the picker has it folded away`);
+        }
+      }
+    }
+
+    // Opening a deck is a move a visitor makes, so it is a tool too: it flips one
+    // opponent's cards and leaves every other deck where it was, which the state
+    // reports back.
+    const deckTool = toolNamed("toggle-opponent-deck");
+    const foldedOpponent = offeredOpponents?.[0];
+    if (!deckTool) {
+      fail('no "toggle-opponent-deck" tool is declared, so an agent cannot open an opponent\'s cards as a visitor can');
+    } else if (!deckTool.annotations || deckTool.annotations.readOnlyHint !== false) {
+      fail('"toggle-opponent-deck" changes what the picker shows but is not marked as changing anything');
+    } else if (foldedOpponent) {
+      const opened = await deckTool.execute({ opponentId: foldedOpponent.id });
+      const shownAfter = game
+        .readState()
+        .opponents.filter((entry) => entry.deckShown)
+        .map((entry) => entry.id);
+      if (opened?.deckShown !== true || shownAfter.join(", ") !== foldedOpponent.id) {
+        fail(
+          `the toggle-opponent-deck tool reports ${JSON.stringify(opened?.deckShown)} open while the state says ` +
+            `${JSON.stringify(shownAfter)} is — opening one opponent's deck should show that one and only that one`
+        );
+      }
+      const closed = await deckTool.execute({ opponentId: foldedOpponent.id });
+      if (closed?.deckShown !== false || game.readState().opponents.some((entry) => entry.deckShown)) {
+        fail("folding an opponent's deck away again through the tool did not leave every deck closed");
+      }
+      const refused = await deckTool.execute({ opponentId: "no-such-opponent" });
+      if (!refused?.error) {
+        fail("toggle-opponent-deck opened a deck for an id that is not an opponent, instead of refusing it");
       }
     }
   }

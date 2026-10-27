@@ -21,6 +21,7 @@ import {
   showScreen,
   startMatch,
   toggleMatchRules,
+  toggleOpponentDeck,
 } from "./app.js";
 
 // The screens the page has. The list is the tool's own schema as well as the
@@ -48,7 +49,7 @@ export function tools() {
       name: "get-state",
       title: "Read what the page shows",
       description:
-        "Returns everything the page shows a visitor right now: which screen is open (home, collection or play), how many cards you own, how many of them are different, and how many different cards the game holds in all (`setTotal`, so `distinctCards` of `setTotal` is how much of the set is collected), the deck — how many cards it holds, the most it may hold, the fewest a match needs, and each card in it — whether progress is saved for next time, how many matches you have finished (`matchesPlayed`) and won (`wins`), the result of the last finished match (`result`: `outcome` is \"win\" or \"loss\", `awarded` is the card a win added or null, and `setComplete` says whether that card was a duplicate added only because you already owned every card in the game), what the Play screen tells a newcomer about a match (`matchRules`: `shown`, whether the how-a-match-works strip is on screen rather than folded away, and `points`, the same three labelled lines a visitor reads), and the actions you can take from here. Its `match` field always names the opponent — `opponentName`, the character whose fixed deck a match is against, named before a match starts as well as during one. When a match is running that field carries the whole board: whether the match is over and who won (`over` and `winner`), whose turn it is (`turn`, `\"player\"` or `\"opponent\"` — the same words the board prints as \"Your turn\" or \"<opponentName>'s turn\"), both heroes' health, your energy and its maximum, your hand (with the ids play-card wants), both tables — each card with the health it has left, which drops as the tables fight — how many cards the opponent holds (`opponentHand`, shown on the board as one face-down card back per card) and how many you have left to draw, the ordered log of what has happened, naming every card that fell, its last line the blow that ended the match — and the moves available now. `canContinue` and `savedMatch` report an unfinished match the browser kept from a page left behind (`savedMatch` is a short summary — `opponentName`, `turn`, both healths and `logLength` — and is null while that match is the one loaded), which the continue-match tool picks back up. If starting a match would throw an unfinished saved match away, `startConflict` names what is in the way rather than the save being replaced: it is null unless a start is waiting on that answer, and otherwise carries a `reason` naming the waiting opponent beside the same `savedMatch` summary — continue that match, or discard it with the discard-saved-match tool and deal a new one. `opponents` lists every character a match can be against — each with the `id` start-match and choose-opponent take, its name, the look it cuts and the kind of deck it brings — and `selectedOpponentId` says which of them the Play screen's picker has chosen, and so which one the next match would be against. Ask it first to see where you stand, and again after every move to see what changed.",
+        "Returns everything the page shows a visitor right now: which screen is open (home, collection or play), how many cards you own, how many of them are different, and how many different cards the game holds in all (`setTotal`, so `distinctCards` of `setTotal` is how much of the set is collected), the deck — how many cards it holds, the most it may hold, the fewest a match needs, and each card in it — whether progress is saved for next time, how many matches you have finished (`matchesPlayed`) and won (`wins`), the result of the last finished match (`result`: `outcome` is \"win\" or \"loss\", `awarded` is the card a win added or null, and `setComplete` says whether that card was a duplicate added only because you already owned every card in the game), what the Play screen tells a newcomer about a match (`matchRules`: `shown`, whether the how-a-match-works strip is on screen rather than folded away, and `points`, the same three labelled lines a visitor reads), and the actions you can take from here. Its `match` field always names the opponent — `opponentName`, the character whose fixed deck a match is against, named before a match starts as well as during one. When a match is running that field carries the whole board: whether the match is over and who won (`over` and `winner`), whose turn it is (`turn`, `\"player\"` or `\"opponent\"` — the same words the board prints as \"Your turn\" or \"<opponentName>'s turn\"), both heroes' health, your energy and its maximum, your hand (with the ids play-card wants), both tables — each card with the health it has left, which drops as the tables fight — how many cards the opponent holds (`opponentHand`, shown on the board as one face-down card back per card) and how many you have left to draw, the ordered log of what has happened, naming every card that fell, its last line the blow that ended the match — and the moves available now. `canContinue` and `savedMatch` report an unfinished match the browser kept from a page left behind (`savedMatch` is a short summary — `opponentName`, `turn`, both healths and `logLength` — and is null while that match is the one loaded), which the continue-match tool picks back up. If starting a match would throw an unfinished saved match away, `startConflict` names what is in the way rather than the save being replaced: it is null unless a start is waiting on that answer, and otherwise carries a `reason` naming the waiting opponent beside the same `savedMatch` summary — continue that match, or discard it with the discard-saved-match tool and deal a new one. `opponents` lists every character a match can be against — each with the `id` start-match and choose-opponent take, its name, the look it cuts, the kind of deck it brings, `deck` — the ids of the fixed cards that opponent is dealt, in the order the picker shows their faces, whose names, costs, attacks, healths and the copies you own are what list-collection returns — and `deckShown`, whether those faces are open in the picker right now, which toggle-opponent-deck changes — and `selectedOpponentId` says which of them the Play screen's picker has chosen, and so which one the next match would be against. Ask it first to see where you stand — comparing the decks on offer card by card — and again after every move to see what changed.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
       example: {},
@@ -188,7 +189,7 @@ export function tools() {
       name: "choose-opponent",
       title: "Choose who the next match is against",
       description:
-        "Chooses which opponent the next match will be against, exactly as picking one in the Play screen's picker does — it changes `selectedOpponentId` in the state get-state returns, and the name the Play screen prints before a match, without dealing a match or touching one already running. Every opponent's deck kind is listed in get-state's `opponents`, so a caller can choose by what it wants to play against. Returns the state afterwards; a match already in progress keeps the opponent it was started against. Refused, with an `error` field naming the ids that do exist, when the id names no opponent.",
+        "Chooses which opponent the next match will be against, exactly as picking one in the Play screen's picker does — it changes `selectedOpponentId` in the state get-state returns, and the name the Play screen prints before a match, without dealing a match or touching one already running. Every opponent's deck kind and the ids of the cards it brings are listed in get-state's `opponents`, so a caller can choose by the deck it wants to play against — exactly the cards the Play screen's picker shows under each character. Returns the state afterwards; a match already in progress keeps the opponent it was started against. Refused, with an `error` field naming the ids that do exist, when the id names no opponent.",
       inputSchema: {
         type: "object",
         properties: {
@@ -205,6 +206,32 @@ export function tools() {
       example: { opponentId: "thornmere" },
       async execute(input = {}) {
         return attempted(() => selectOpponent(input.opponentId));
+      },
+    },
+    {
+      name: "toggle-opponent-deck",
+      title: "Show or fold away an opponent's cards in the picker",
+      description:
+        "Opens or folds away the cards of one opponent's deck in the Play screen's picker, exactly as pressing that character's \"Their deck\" line does, and returns that opponent afterwards — `deck`, the ids of the cards it is dealt, and `deckShown`, whether their faces are now on screen — so the caller can see which way it went. `deckShown` is false while the picker itself is not on screen, because the picker stands only before a match: the cards a match is fought with never change with this, and are always readable from get-state's `opponents[].deck` whether the deck is open or not. Ask get-state first to read the deck before opening it.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          opponentId: {
+            type: "string",
+            description:
+              "The id of the opponent whose deck to fold or open, as get-state's `opponents` lists it (for example \"thornmere\", \"emberwake\" or \"mistfen\").",
+          },
+        },
+        required: ["opponentId"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, consequentialHint: false },
+      example: { opponentId: "mistfen" },
+      async execute(input = {}) {
+        return attempted(() => {
+          const state = toggleOpponentDeck(input.opponentId);
+          return state.opponents.find((opponent) => opponent.id === input.opponentId);
+        });
       },
     },
     {

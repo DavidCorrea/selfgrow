@@ -633,25 +633,34 @@ body {
    the deck into a column of two words. */
 .opponent-options {
   display: grid;
+  align-items: start;
   gap: 0.55rem;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
 }
 
-/* The whole option is the radio's label: its mark in its own accent, its name,
-   then the look it cuts and the kind of deck it brings. */
+/* An option is the character being picked and the deck they bring: the label
+   above, which is the radio, and the deck folded in under it. */
 .opponent-option {
+  display: grid;
+  align-content: start;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-control);
+  background-color: rgba(168, 177, 212, 0.04);
+  transition:
+    border-color 160ms var(--ease-out),
+    background-color 160ms var(--ease-out);
+}
+
+/* The character is the radio's label — its mark in its own accent, its name,
+   then the look it cuts and the kind of deck it brings — so pressing any part of
+   this top half picks that opponent. */
+.opponent-choice {
   display: grid;
   grid-template-columns: auto auto minmax(0, 1fr);
   align-items: center;
   gap: 0.15rem 0.55rem;
   padding: 0.55rem 0.7rem;
-  border: 1px solid var(--edge);
-  border-radius: var(--radius-control);
-  background-color: rgba(168, 177, 212, 0.04);
   cursor: pointer;
-  transition:
-    border-color 160ms var(--ease-out),
-    background-color 160ms var(--ease-out);
 }
 
 .opponent-option:hover {
@@ -721,6 +730,84 @@ body {
 
 .opponent-deck {
   color: var(--ink);
+}
+
+/* The deck an opponent brings, folded under the character: one line saying how
+   many cards it holds, and the faces a match against them is dealt. Ten faces
+   under each of three opponents would push the picker and Start match off the
+   first screen, so the deck waits one press away, in the option that promises
+   it. */
+.opponent-deck-fold {
+  border-top: 1px solid var(--edge-soft);
+  padding: 0.15rem 0.7rem 0.35rem;
+}
+
+.opponent-deck-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 2rem;
+  padding: 0 0.1rem;
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  list-style: none;
+  transition: color 160ms var(--ease-out);
+}
+
+/* The browser's own triangle is drawn in a colour from no palette on this page,
+   and the caret below takes its place. */
+.opponent-deck-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.opponent-deck-toggle:hover {
+  color: var(--ink);
+}
+
+/* A caret that turns as the deck opens, so the press is answered before the
+   faces under it have been read. */
+.opponent-deck-toggle::after {
+  content: "";
+  width: 0.42rem;
+  height: 0.42rem;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg) translate(-0.1rem, -0.1rem);
+  transition: transform 160ms var(--ease-out);
+}
+
+.opponent-deck-fold[open] .opponent-deck-toggle::after {
+  transform: rotate(-135deg) translate(-0.1rem, -0.1rem);
+}
+
+/* The opponent's ten cards, sized to sit inside their option: the same faces
+   the deck screen draws — picture, name, three numbers — small enough that a
+   whole deck reads as a hand rather than as a second deck screen. */
+.opponent-deck-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(4.4rem, 1fr));
+  gap: 0.3rem;
+  margin: 0.1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.opponent-deck-cards .deck-card {
+  gap: 0.15rem;
+  padding: 0.25rem 0.3rem 0.35rem;
+  background-color: rgba(34, 42, 69, 0.55);
+}
+
+.opponent-deck-cards .deck-card-name {
+  font-size: 0.72rem;
+  line-height: 1.2;
+}
+
+.opponent-deck-cards .deck-card-stats {
+  font-size: 0.7rem;
 }
 
 /* The how-a-match-works strip: the three things a newcomer cannot yet read for
@@ -1585,7 +1672,7 @@ body {
 /* Every control on the card shows where the keyboard is, in the card's own foil
    keyline — whether it is one of the game's buttons or a plain control the
    browser drew, so no control is ever focusable without showing it. */
-:where(button, a[href], input, select, textarea):focus-visible {
+:where(button, a[href], input, select, textarea, summary):focus-visible {
   outline: 2px solid var(--foil);
   outline-offset: 2px;
 }
@@ -1660,12 +1747,24 @@ body {
   }
 
   .opponent-options {
-    gap: 0.4rem;
+    gap: 0.3rem;
   }
 
-  .opponent-option {
-    padding: 0.4rem 0.6rem;
+  .opponent-choice {
+    padding: 0.3rem 0.6rem;
     gap: 0.1rem 0.5rem;
+  }
+
+  /* The deck line under each character keeps its press and its thumb-sized
+     height, and takes no other room, so the picker stays as short on a phone as
+     three options can be. */
+  .opponent-deck-fold {
+    padding: 0 0.6rem 0.15rem;
+  }
+
+  .opponent-deck-toggle {
+    min-height: 1.5rem;
+    font-size: 0.75rem;
   }
 
   .opponent-look,
@@ -1885,5 +1984,12 @@ body {
 
   .btn:active {
     transform: none;
+  }
+
+  /* The deck opens at once rather than being watched open, and the caret shows
+     which way it went without turning. */
+  .opponent-deck-toggle,
+  .opponent-deck-toggle::after {
+    transition: none;
   }
 }
