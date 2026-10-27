@@ -37,6 +37,12 @@
  * it. Only once a side's table is empty do that side's attackers reach the enemy
  * hero, so a wall of cards is worn down card by card before the hero behind it
  * is touched.
+ *
+ * The front card is only the default. During their own turn the player may send
+ * one of their table cards at a card of their choosing on the opponent's table —
+ * or at the hero, once that table is empty — with `attack`. A card that has
+ * struck this way is spent for the rest of the turn, so it is skipped when the
+ * turn is ended and neither player nor opponent strikes twice with one card.
  */
 
 import { CARDS, CARD_BY_ID, MINIMUM_DECK_SIZE, OPPONENT_DECK, OPPONENT_NAME } from "./cards.js";
@@ -46,6 +52,12 @@ export const HERO_HEALTH = 20;
 
 /** How many cards each side is dealt from its shuffled deck at the start. */
 export const STARTING_HAND = 3;
+
+/**
+ * The target a player names to send a table card straight at the opponent hero
+ * rather than at a card. It is the one target that is not a card id.
+ */
+export const HERO_TARGET = "hero";
 
 /** The energy a side has at the start of its first own turn. */
 export const MAX_ENERGY = 3;
@@ -74,7 +86,17 @@ function createMatchId() {
 function cardOf(cardId) {
   const card = CARD_BY_ID.get(cardId);
   if (!card) throw new Error(`"${cardId}" is not a card, so it cannot be in a match`);
-  return { id: card.id, name: card.name, cost: card.cost, attack: card.attack, health: card.health };
+  return {
+    id: card.id,
+    name: card.name,
+    cost: card.cost,
+    attack: card.attack,
+    health: card.health,
+    // Whether the card has already struck during its owner's current turn. It
+    // is reset as each of that side's own turns begins, so a card strikes at
+    // most once per turn whichever way the player directs it.
+    hasAttacked: false,
+  };
 }
 
 /** A fresh copy of the ids, shuffled with `rng` using Fisher–Yates. */
@@ -121,6 +143,9 @@ function beginTurn(side) {
   side.turns += 1;
   if (side.turns > 1) side.maxEnergy = Math.min(ENERGY_CAP, side.maxEnergy + 1);
   side.energy = side.maxEnergy;
+  // A new own turn freshens every card on the table, so each may strike once
+  // again, however it struck on the turn before.
+  for (const card of side.table) card.hasAttacked = false;
   if (side.deck.length === 0) return null;
   const card = side.deck.shift();
   side.hand.push(card);
@@ -246,11 +271,9 @@ function fallLine(loserIsPlayer) {
 }
 
 /**
- * Every card on `attacker`'s table deals its attack, in order. While `defender`
- * still holds a card on its table the blow lands on that front card instead of
- * the hero — its health drops, and at zero it leaves the table on a line naming
- * it — so a table is worn down card by card. Only once that table is empty do
- * the blows reach the hero, exactly as they always did. Health is clamped at
+ * One blow from `card`: its attack lands on `targetCard` when one is named,
+ * otherwise on the hero behind the table. A card worn to zero leaves its table
+ * on a line naming it; a hero worn to zero ends the match. Health is clamped at
  * zero, so the number a player reads is the number the match holds.
  *
  * `attackerWord` and `defenderWord` name the two sides in the log's words
@@ -260,46 +283,106 @@ function fallLine(loserIsPlayer) {
  * is then over, its winner is the side that dealt it, and no side is taking
  * turns any more.
  */
-function dealDamage(match, attacker, defender, attackerWord, defenderWord, healthWord) {
+function landBlow(match, card, defender, attackerWord, defenderWord, healthWord, targetCard) {
   const defenderIsPlayer = defender === match.player;
-  // A table is named from the side that owns it, so a fall reads from the side
-  // that lost the card: "your table" mid-sentence, "Your Thornling falls" at
-  // the start of a line.
   const tableOwner = defenderIsPlayer ? "your" : "the opponent's";
   const tableOwnerOpening = defenderIsPlayer ? "Your" : "The opponent's";
 
-  for (const card of attacker.table) {
-    const front = defender.table[0];
-    if (front) {
-      front.health = Math.max(0, front.health - card.attack);
-      const fell = front.health === 0;
-      appendLog(
-        match,
-        `${attackerWord} ${card.name} deals ${card.attack} to ${tableOwner} ${front.name} — ` +
-          `it has ${front.health} health left.`
-      );
-      if (!fell) continue;
-      defender.table.shift();
-      appendLog(match, `${tableOwnerOpening} ${front.name} falls — it leaves ${tableOwner} table.`);
-      continue;
-    }
-
-    defender.health = Math.max(0, defender.health - card.attack);
-    const fell = defender.health === 0;
+  if (targetCard) {
+    targetCard.health = Math.max(0, targetCard.health - card.attack);
+    const fell = targetCard.health === 0;
     appendLog(
       match,
-      `${attackerWord} ${card.name} deals ${card.attack} to ${defenderWord} — ${healthWord} ` +
-        `${defender.health}.${fell ? ` ${fallLine(defenderIsPlayer)}` : ""}`
+      `${attackerWord} ${card.name} deals ${card.attack} to ${tableOwner} ${targetCard.name} — ` +
+        `it has ${targetCard.health} health left.`
     );
-    if (!fell) continue;
+    if (!fell) return false;
+    defender.table.splice(defender.table.indexOf(targetCard), 1);
+    appendLog(match, `${tableOwnerOpening} ${targetCard.name} falls — it leaves ${tableOwner} table.`);
+    return false;
+  }
 
-    match.over = true;
-    match.winner = defenderIsPlayer ? "opponent" : "player";
-    match.outcome = match.winner === "player" ? "win" : "loss";
-    match.turn = null;
-    return true;
+  defender.health = Math.max(0, defender.health - card.attack);
+  const fell = defender.health === 0;
+  appendLog(
+    match,
+    `${attackerWord} ${card.name} deals ${card.attack} to ${defenderWord} — ${healthWord} ` +
+      `${defender.health}.${fell ? ` ${fallLine(defenderIsPlayer)}` : ""}`
+  );
+  if (!fell) return false;
+
+  match.over = true;
+  match.winner = defenderIsPlayer ? "opponent" : "player";
+  match.outcome = match.winner === "player" ? "win" : "loss";
+  match.turn = null;
+  return true;
+}
+
+/**
+ * Every unspent card on `attacker`'s table deals its attack, in order. While
+ * `defender` still holds a card on its table the blow lands on that front card
+ * instead of the hero — its health drops, and at zero it leaves the table on a
+ * line naming it — so a table is worn down card by card. Only once that table
+ * is empty do the blows reach the hero, exactly as they always did. A card the
+ * player already sent at a chosen target with `attack` is spent and skipped, so
+ * it does not strike twice in one turn. Returns true when this was the blow that
+ * ended the match.
+ */
+function dealDamage(match, attacker, defender, attackerWord, defenderWord, healthWord) {
+  for (const card of attacker.table) {
+    if (card.hasAttacked) continue;
+    card.hasAttacked = true;
+    const front = defender.table[0];
+    if (landBlow(match, card, defender, attackerWord, defenderWord, healthWord, front)) return true;
   }
   return false;
+}
+
+/** The name a refusal uses for a card: its catalog name, or the id as it came. */
+function nameFor(cardId) {
+  return CARD_BY_ID.get(cardId)?.name ?? String(cardId);
+}
+
+/**
+ * Direct one of the player's table cards at the opponent card named by `target`,
+ * or — when `target` is `HERO_TARGET` and no card stands in front of it — at the
+ * opponent's hero. Exactly one blow lands, with the same log wording, card-fall
+ * and hero-fall rules as ending the turn, and the attacker is spent for the rest
+ * of the turn so it will not strike again when the turn is ended. Refused, with
+ * a reason and without changing anything, when the match is over, it is not the
+ * player's turn, no such card is on the player's table, that card has already
+ * struck this turn, the named target is not on the opponent's table, or the hero
+ * is named while a card still stands in front of it.
+ */
+export function attack(match, attackerId, target) {
+  if (match.over) {
+    throw new Error("the match is over — press Play again");
+  }
+  if (match.turn !== "player") {
+    throw new Error("it is not your turn — the opponent is taking its turn");
+  }
+
+  const named = match.player.table.filter((card) => card.id === attackerId);
+  if (named.length === 0) {
+    throw new Error(`"${nameFor(attackerId)}" is not on your table, so it cannot attack`);
+  }
+  const attacker = named.find((card) => !card.hasAttacked);
+  if (!attacker) {
+    throw new Error(`"${named[0].name}" has already attacked this turn`);
+  }
+
+  if (target === HERO_TARGET) {
+    if (match.opponent.table.length) {
+      throw new Error("the opponent's hero is behind its table — attack one of its cards first");
+    }
+  } else if (typeof target !== "string" || !match.opponent.table.some((card) => card.id === target)) {
+    throw new Error(`"${nameFor(target)}" is not on the opponent's table, so it cannot be attacked`);
+  }
+
+  attacker.hasAttacked = true;
+  const targetCard = target === HERO_TARGET ? null : match.opponent.table.find((card) => card.id === target);
+  landBlow(match, attacker, match.opponent, "Your", "the opponent", "opponent health", targetCard);
+  return match;
 }
 
 /**

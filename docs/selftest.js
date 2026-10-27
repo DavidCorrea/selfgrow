@@ -1251,6 +1251,192 @@ export async function checks() {
       }
     }
 
+    // The player directs a blow, rather than leaving every attack to the front
+    // line. A card on the player's table can be sent at any card on the
+    // opponent's table: that card takes the damage while the front card and the
+    // hero behind it are untouched, and a card worn to zero leaves the table,
+    // named in the log. A target that is not there, and the hero while a card
+    // still stands in front of it, are refused without changing anything.
+    if (typeof matchEngine.attack !== "function") {
+      fail("docs/match.js exports no attack(), so a player cannot choose which card to strike");
+    } else {
+      const aimed = matchEngine.createMatch(fightDeck, { rng: fixedRng });
+      const shooter = takeFromHand(aimed.player, "sprout");
+      const aimedFront = takeFromHand(aimed.opponent, "mudback-turtle");
+      const aimedBack = takeFromHand(aimed.opponent, "glowcap");
+      if (!shooter || !aimedFront || !aimedBack) {
+        fail("the controlled fight deck did not deal the cards a chosen-target check needs");
+      } else {
+        aimed.player.table = [shooter];
+        aimed.opponent.table = [aimedFront, aimedBack];
+        const frontBefore = aimedFront.health;
+        const backBefore = aimedBack.health;
+        const heroBefore = aimed.opponent.health;
+        const aimedLogBefore = aimed.log.length;
+        matchEngine.attack(aimed, shooter.id, aimedBack.id);
+        const aimedLines = aimed.log.slice(aimedLogBefore);
+
+        if (aimedBack.health !== backBefore - shooter.attack) {
+          fail(
+            `attacking the opponent's "${aimedBack.name}" with "${shooter.name}" left it at ${aimedBack.health} ` +
+              `health instead of ${backBefore - shooter.attack}`
+          );
+        }
+        if (aimedFront.health !== frontBefore || aimed.opponent.health !== heroBefore) {
+          fail(
+            `attacking past the opponent's front card left the front "${aimedFront.name}" at ${aimedFront.health} ` +
+              `health and the hero at ${aimed.opponent.health} instead of untouched`
+          );
+        }
+        if (!aimedLines.some((line) => line.includes(shooter.name) && line.includes(aimedBack.name))) {
+          fail(
+            `the attack on the chosen "${aimedBack.name}" was not logged against that card: ${JSON.stringify(aimedLines)}`
+          );
+        }
+      }
+
+      // A chosen card can be felled even though another card stands in front of it.
+      const pickOff = matchEngine.createMatch(fightDeck, { rng: fixedRng });
+      const hitter = takeFromHand(pickOff.player, "thornling");
+      const guard = takeFromHand(pickOff.opponent, "mudback-turtle");
+      const mark = takeFromHand(pickOff.opponent, "thornling");
+      if (!hitter || !guard || !mark || mark.health > hitter.attack) {
+        fail(
+          "the controlled fight deck did not deal a card the player can fell behind the front, " +
+            "so a chosen fall cannot be checked"
+        );
+      } else {
+        pickOff.player.table = [hitter];
+        pickOff.opponent.table = [guard, mark];
+        const heroBeforeFall = pickOff.opponent.health;
+        const pickLogBefore = pickOff.log.length;
+        matchEngine.attack(pickOff, hitter.id, mark.id);
+        const pickLines = pickOff.log.slice(pickLogBefore);
+        if (pickOff.opponent.table.includes(mark)) {
+          fail(`the chosen "${mark.name}" was worn to 0 health but stayed on the opponent's table`);
+        }
+        if (pickOff.opponent.table[0] !== guard) {
+          fail("the front card left the table when a card behind it was the one felled");
+        }
+        if (pickOff.opponent.health !== heroBeforeFall) {
+          fail("a blow at a chosen card past the front one reached the opponent's hero");
+        }
+        if (!pickLines.some((line) => line.includes(mark.name) && /falls/i.test(line))) {
+          fail(`the log never says the chosen "${mark.name}" fell: ${JSON.stringify(pickLines)}`);
+        }
+      }
+
+      // A target that is not on the opponent's table is refused, and nothing moves.
+      const bogus = matchEngine.createMatch(fightDeck, { rng: fixedRng });
+      const bogusAttacker = takeFromHand(bogus.player, "sprout");
+      const bogusFront = takeFromHand(bogus.opponent, "mudback-turtle");
+      if (!bogusAttacker || !bogusFront) {
+        fail("the controlled fight deck did not deal the cards a refused-target check needs");
+      } else {
+        bogus.player.table = [bogusAttacker];
+        bogus.opponent.table = [bogusFront];
+        const frozen = JSON.stringify([bogusFront.health, bogus.opponent.health, bogus.log.length]);
+        let refusal = null;
+        try {
+          matchEngine.attack(bogus, bogusAttacker.id, "not-a-real-card");
+        } catch (error) {
+          refusal = error.message;
+        }
+        if (!refusal) {
+          fail("attacking a card that is not on the opponent's table was allowed");
+        } else if (!refusal.includes("not-a-real-card")) {
+          fail(`a target that is not on the opponent's table was refused without naming it: "${refusal}"`);
+        }
+        if (JSON.stringify([bogusFront.health, bogus.opponent.health, bogus.log.length]) !== frozen) {
+          fail("a refused attack changed the match anyway");
+        }
+
+        // The hero is refused while a card still stands in front of it.
+        const heroGuardBefore = bogus.opponent.health;
+        let heroRefusal = null;
+        try {
+          matchEngine.attack(bogus, bogusAttacker.id, "hero");
+        } catch (error) {
+          heroRefusal = error.message;
+        }
+        if (!heroRefusal) {
+          fail("attacking the opponent hero was allowed while its table still held a card");
+        } else if (!/table|card/i.test(heroRefusal)) {
+          fail(`a hero attack behind a card was refused without saying the table stands in front: "${heroRefusal}"`);
+        }
+        if (bogus.opponent.health !== heroGuardBefore || bogus.opponent.table.length !== 1) {
+          fail("a refused hero attack changed the opponent's board anyway");
+        }
+      }
+
+      // With nothing in front of it, the hero can be struck instead.
+      const openField = matchEngine.createMatch(fightDeck, { rng: fixedRng });
+      const heroStriker = takeFromHand(openField.player, "thornling");
+      if (!heroStriker) {
+        fail("the controlled fight deck did not deal a card a clear swing at the hero needs");
+      } else {
+        openField.player.table = [heroStriker];
+        openField.opponent.table = [];
+        const openHeroBefore = openField.opponent.health;
+        const openLogBefore = openField.log.length;
+        matchEngine.attack(openField, heroStriker.id, "hero");
+        if (openField.opponent.health !== openHeroBefore - heroStriker.attack) {
+          fail(
+            `an attack at the empty opponent table left its hero at ${openField.opponent.health} instead of ` +
+              `${openHeroBefore - heroStriker.attack} after ${heroStriker.attack} damage`
+          );
+        }
+        const openLines = openField.log.slice(openLogBefore);
+        if (!openLines.some((line) => line.includes(heroStriker.name) && /opponent health/.test(line))) {
+          fail(`the blow at the opponent hero was not logged as hero damage: ${JSON.stringify(openLines)}`);
+        }
+      }
+
+      // A card strikes once a turn: a second attack with the same card is
+      // refused, and ending the turn skips it rather than letting it strike again.
+      const spentOnce = matchEngine.createMatch(fightDeck, { rng: fixedRng });
+      const spentCard = takeFromHand(spentOnce.player, "sprout");
+      const spentTarget = takeFromHand(spentOnce.opponent, "mudback-turtle");
+      if (!spentCard || !spentTarget) {
+        fail("the controlled fight deck did not deal the cards a spent-attacker check needs");
+      } else {
+        spentOnce.player.table = [spentCard];
+        spentOnce.opponent.table = [spentTarget];
+        matchEngine.attack(spentOnce, spentCard.id, spentTarget.id);
+        const targetAfterFirst = spentTarget.health;
+        let repeatRefusal = null;
+        try {
+          matchEngine.attack(spentOnce, spentCard.id, spentTarget.id);
+        } catch (error) {
+          repeatRefusal = error.message;
+        }
+        if (!repeatRefusal) {
+          fail("a card that had already attacked was allowed to attack again in the same turn");
+        } else if (!/already/i.test(repeatRefusal)) {
+          fail(`a repeat attack was refused without saying the card had already attacked: "${repeatRefusal}"`);
+        }
+        if (spentTarget.health !== targetAfterFirst) {
+          fail("a refused second attack changed the target anyway");
+        }
+
+        const spentLogBefore = spentOnce.log.length;
+        matchEngine.endTurn(spentOnce);
+        const spentTurnLines = spentOnce.log.slice(spentLogBefore);
+        const opponentAt = spentTurnLines.indexOf("Opponent's turn.");
+        const playerLines = opponentAt >= 0 ? spentTurnLines.slice(0, opponentAt) : spentTurnLines;
+        if (playerLines.some((line) => line.includes(spentCard.name))) {
+          fail(
+            `a card that had already attacked struck again when the turn was ended: ${JSON.stringify(playerLines)}`
+          );
+        }
+        if (!playerLines.includes("Your table deals no damage.")) {
+          fail(
+            `a turn whose only table card was already spent did not say no damage was dealt: ${JSON.stringify(playerLines)}`
+          );
+        }
+      }
+    }
+
     // A match always reaches a result: two small decks race each other, and the
     // moment a hero falls the match is over, the winner is named, and no move is
     // accepted any more.
@@ -1826,6 +2012,89 @@ export async function checks() {
         }
       }
     }
+
+    // The player directs an attack with their own hand on the keyboard: every
+    // card on their table offers a control that picks it to strike with, every
+    // card on the opponent's table offers a target, and picking both lands the
+    // blow on the chosen card — with the pick and the spent card carried in the
+    // state an agent reads, not only in colour.
+    {
+      let live = game.readState().match;
+      for (let i = 0; i < 6 && !live.table.length; i += 1) {
+        const playableAgain = live.hand.find((card) => card.cost <= live.energy);
+        if (!playableAgain) break;
+        game.playMatchCard(playableAgain.id);
+        live = game.readState().match;
+      }
+      const attackerCard = live.table.find((card) => !card.hasAttacked);
+      const targetCard = live.opponentTable[0];
+      if (!attackerCard || !targetCard) {
+        fail("no attacker and opponent card were on the table, so choosing an attack cannot be checked on the page");
+      } else {
+        const selectButton = document.querySelector(
+          `#match-table [data-card-id="${attackerCard.id}"] .match-attack-select`
+        );
+        const targetButton = document.querySelector(
+          `#match-opponent-table [data-card-id="${targetCard.id}"] .match-attack-target`
+        );
+        if (!selectButton) {
+          fail(`"${attackerCard.name}" on your table offers no control to attack with it`);
+        } else if (selectButton.getAttribute("aria-pressed") !== "false") {
+          fail(`the attack control for "${attackerCard.name}" is pressed before it has been picked`);
+        } else if (!textOf(selectButton).includes(attackerCard.name)) {
+          fail(`the control to attack with "${attackerCard.name}" does not name the card: "${textOf(selectButton)}"`);
+        }
+        if (!targetButton) {
+          fail(`"${targetCard.name}" on the opponent's table offers no control to attack it`);
+        } else if (!textOf(targetButton).includes(targetCard.name)) {
+          fail(`the control to attack "${targetCard.name}" does not name the card: "${textOf(targetButton)}"`);
+        }
+
+        if (selectButton && targetButton) {
+          selectButton.click();
+          const chosen = game.readState().match;
+          if (chosen.selectedAttacker !== attackerCard.id) {
+            fail(
+              `choosing "${attackerCard.name}" left the match's picked attacker as ` +
+                `${JSON.stringify(chosen.selectedAttacker)}`
+            );
+          }
+          const pressed = document.querySelector(
+            `#match-table [data-card-id="${attackerCard.id}"] .match-attack-select`
+          );
+          if (!pressed || pressed.getAttribute("aria-pressed") !== "true") {
+            fail(`choosing "${attackerCard.name}" did not mark its control pressed`);
+          }
+
+          const healthBefore = targetCard.health;
+          document
+            .querySelector(`#match-opponent-table [data-card-id="${targetCard.id}"] .match-attack-target`)
+            ?.click();
+          const afterAttack = game.readState().match;
+          const hit = afterAttack.opponentTable.find((card) => card.id === targetCard.id);
+          if (healthBefore > attackerCard.attack) {
+            if (!hit || hit.health !== healthBefore - attackerCard.attack) {
+              fail(
+                `attacking the chosen "${targetCard.name}" from "${attackerCard.name}" left it at ` +
+                  `${hit ? hit.health : "(gone)"} health instead of ${healthBefore - attackerCard.attack}`
+              );
+            }
+          } else if (hit) {
+            fail(
+              `the chosen "${targetCard.name}" was struck for ${attackerCard.attack} from ${healthBefore} ` +
+                "health but stayed on the table"
+            );
+          }
+          if (afterAttack.selectedAttacker !== null) {
+            fail(`the pick was not cleared after an attack: it still names ${JSON.stringify(afterAttack.selectedAttacker)}`);
+          }
+          const spent = afterAttack.table.find((card) => card.id === attackerCard.id);
+          if (spent && !spent.hasAttacked) {
+            fail(`"${attackerCard.name}" was not marked spent after attacking`);
+          }
+        }
+      }
+    }
   }
 
   // --- The match through an agent's tools -----------------------------------
@@ -1833,10 +2102,12 @@ export async function checks() {
   const startMatchTool = toolNamed("start-match");
   const playCardTool = toolNamed("play-card");
   const endTurnTool = toolNamed("end-turn");
+  const attackTool = toolNamed("attack");
   for (const [name, tool] of [
     ["start-match", startMatchTool],
     ["play-card", playCardTool],
     ["end-turn", endTurnTool],
+    ["attack", attackTool],
   ]) {
     if (!tool) {
       fail(`no "${name}" tool is declared, so an agent cannot make the move a visitor can`);
@@ -1847,7 +2118,7 @@ export async function checks() {
     }
   }
 
-  if (startMatchTool && playCardTool && endTurnTool) {
+  if (startMatchTool && playCardTool && endTurnTool && attackTool) {
     const fresh = await startMatchTool.execute({});
     if (!fresh.match || fresh.match.active !== true) {
       fail('the start-match tool did not report an active match');
@@ -1913,6 +2184,54 @@ export async function checks() {
     }
     if (!(afterTurn.match.log || []).length || afterTurn.match.log.length <= beforeTurn.log.length) {
       fail("the end-turn tool added no lines to the match log");
+    }
+
+    // The attack tool directs one of the player's cards at a chosen target. The
+    // opponent has cards on its table after its turn, so an agent can send one
+    // of its own at a chosen card and read the damage back. The player's earlier
+    // card may have fallen to the opponent's blow, so a card is played first if
+    // the table has emptied.
+    for (let i = 0; i < 6 && !(game.readState().match.table || []).length; i += 1) {
+      const liveNow = game.readState().match;
+      const playableNow = liveNow.hand.find((card) => card.cost <= liveNow.energy);
+      if (!playableNow) break;
+      await playCardTool.execute({ cardId: playableNow.id });
+    }
+    const beforeAttack = game.readState().match;
+    const attacker = (beforeAttack.table || []).find((card) => !card.hasAttacked);
+    const target = (beforeAttack.opponentTable || [])[0];
+    if (!attacker || !target) {
+      fail("no attacker and opponent card were on the table, so the attack tool cannot be checked");
+    } else {
+      const targetHealthBefore = target.health;
+      const afterAttack = await attackTool.execute({ attackerId: attacker.id, target: target.id });
+      const hit = (afterAttack.match.opponentTable || []).find((card) => card.id === target.id);
+      if (targetHealthBefore > attacker.attack) {
+        if (!hit || hit.health !== targetHealthBefore - attacker.attack) {
+          fail(
+            `the attack tool left "${target.name}" at ${hit ? hit.health : "(gone)"} instead of ` +
+              `${targetHealthBefore - attacker.attack}`
+          );
+        }
+      } else if (hit) {
+        fail(
+          `the attack tool struck "${target.name}" for ${attacker.attack} from ${targetHealthBefore} health ` +
+            "but it stayed on the table"
+        );
+      }
+      const struck = (afterAttack.match.table || []).find((card) => card.id === attacker.id);
+      if (!struck || !struck.hasAttacked) {
+        fail(`the attack tool did not mark "${attacker.name}" spent for the rest of the turn`);
+      }
+      if (!(afterAttack.match.log || []).some((line) => line.includes(attacker.name) && line.includes(target.name))) {
+        fail(`the attack tool's blow on "${target.name}" was not logged by name`);
+      }
+    }
+
+    // A refused attack comes back as an `error` field, not a thrown handler.
+    const refusedAttack = await attackTool.execute({ attackerId: "not-a-real-card", target: "hero" });
+    if (!refusedAttack || !refusedAttack.error) {
+      fail('the attack tool accepted an attacker that is not on the table ("not-a-real-card")');
     }
 
     // Leave the page on a freshly started match, so whoever opens it next finds

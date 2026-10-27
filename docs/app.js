@@ -19,7 +19,7 @@ import {
   recordResult,
   saveDeck,
 } from "./collection.js";
-import { createMatch, endTurn, playCard } from "./match.js";
+import { attack, createMatch, endTurn, HERO_TARGET, playCard } from "./match.js";
 
 // The screens the page has, and the word each is announced by. A screen name is
 // also the value an agent passes to the show-screen tool.
@@ -52,6 +52,10 @@ const state = {
   // The match in progress, or null before one is started. It lives only in this
   // page session: closing the page ends the match, the way leaving the table does.
   match: null,
+  // Which of the player's table cards the next chosen attack comes from, or null
+  // when none is picked — so End turn still sends the whole table at the front
+  // card by default. It is a page-only choice, cleared with each new turn.
+  selectedAttacker: null,
 };
 
 const screens = new Map(
@@ -193,17 +197,122 @@ function matchCardItem(card, { playable = false, affordable = true } = {}) {
   return item;
 }
 
-/** A table list, or a single line saying it is empty. */
-function renderMatchTable(list, cards, emptyText) {
-  if (!list) return;
-  if (!cards.length) {
+/** Return focus to a control after the board was redrawn under it. */
+function focusMatchControl(selector) {
+  document.querySelector(selector)?.focus();
+}
+
+/**
+ * The control that picks a card on the player's own table to attack with. Its
+ * label names the card, and `aria-pressed` says whether it is the one picked, so
+ * a keyboard or screen-reader player reads the choice without seeing a colour.
+ */
+function attackSelectControl(card) {
+  const control = document.createElement("button");
+  control.type = "button";
+  control.className = "btn btn-secondary match-attack-select";
+  control.setAttribute("aria-pressed", String(state.selectedAttacker === card.id));
+  control.textContent = `Attack with ${card.name}`;
+  control.setAttribute(
+    "aria-label",
+    `Attack with ${card.name} — attack ${card.attack}, health ${card.health}` +
+      (card.hasAttacked ? ", which has already attacked this turn" : "")
+  );
+  control.addEventListener("click", () =>
+    runMatchAction(() => {
+      selectMatchAttacker(card.id);
+      focusMatchControl(`#match-table [data-card-id="${card.id}"] .match-attack-select`);
+    })
+  );
+  return control;
+}
+
+/** The control that sends the picked card at this opponent table card. */
+function attackTargetControl(card) {
+  const control = document.createElement("button");
+  control.type = "button";
+  control.className = "btn btn-secondary match-attack-target";
+  control.textContent = `Attack ${card.name}`;
+  control.setAttribute(
+    "aria-label",
+    `Attack ${card.name} — cost ${card.cost}, attack ${card.attack}, health ${card.health}`
+  );
+  control.addEventListener("click", () =>
+    runMatchAction(() => {
+      attackMatch(state.selectedAttacker, card.id);
+      focusMatchControl(`#match-opponent-table [data-card-id="${card.id}"] .match-attack-target`);
+    })
+  );
+  return control;
+}
+
+/**
+ * The player's table, each card with the control that picks it to strike with.
+ * The controls appear only on the player's own turn in a live match, so a
+ * finished match or the opponent's turn offers no move nobody can make.
+ */
+function renderPlayerTable(match, canAttack) {
+  if (!matchTableList) return;
+  if (!match.player.table.length) {
     const empty = document.createElement("li");
     empty.className = "match-empty";
-    empty.textContent = emptyText;
-    list.replaceChildren(empty);
+    empty.textContent = "Your table is empty.";
+    matchTableList.replaceChildren(empty);
     return;
   }
-  list.replaceChildren(...cards.map((card) => matchCardItem(card)));
+  matchTableList.replaceChildren(
+    ...match.player.table.map((card) => {
+      const item = matchCardItem(card);
+      if (!canAttack) return item;
+      item.classList.add("match-card-action");
+      if (card.hasAttacked) item.classList.add("is-spent");
+      item.append(attackSelectControl(card));
+      return item;
+    })
+  );
+}
+
+/**
+ * The opponent's table, each card with the control that sends the picked card at
+ * it, and — once the table is empty — the one control that sends it at the hero
+ * behind. Like the player's own controls, these appear only on the player's own
+ * turn in a live match.
+ */
+function renderOpponentTable(match, canAttack) {
+  if (!matchOpponentTableList) return;
+  if (!match.opponent.table.length) {
+    const empty = document.createElement("li");
+    empty.className = "match-empty";
+    empty.textContent = `${match.opponentName}'s table is empty.`;
+    const children = [empty];
+    if (canAttack) {
+      const item = document.createElement("li");
+      item.className = "match-card match-card-action match-attack-hero-item";
+      const control = document.createElement("button");
+      control.type = "button";
+      control.className = "btn btn-secondary match-attack-hero";
+      control.textContent = "Attack the opponent hero";
+      control.addEventListener("click", () =>
+        runMatchAction(() => {
+          attackMatch(state.selectedAttacker, HERO_TARGET);
+          focusMatchControl(".match-attack-hero");
+        })
+      );
+      item.append(control);
+      children.push(item);
+    }
+    matchOpponentTableList.replaceChildren(...children);
+    return;
+  }
+  matchOpponentTableList.replaceChildren(
+    ...match.opponent.table.map((card) => {
+      const item = matchCardItem(card);
+      if (!canAttack) return item;
+      item.classList.add("match-card-action");
+      item.append(attackTargetControl(card));
+      return item;
+    })
+  );
 }
 
 /**
@@ -359,9 +468,10 @@ function renderMatch() {
   if (matchFields.opponentHand) matchFields.opponentHand.textContent = String(match.opponent.hand.length);
   if (matchFields.deckRemaining) matchFields.deckRemaining.textContent = String(match.player.deck.length);
 
+  const canAttack = !match.over && match.turn === "player";
   renderMatchHand(match);
-  renderMatchTable(matchTableList, match.player.table, "Your table is empty.");
-  renderMatchTable(matchOpponentTableList, match.opponent.table, `${match.opponentName}'s table is empty.`);
+  renderPlayerTable(match, canAttack);
+  renderOpponentTable(match, canAttack);
   renderMatchLog(match);
 }
 
@@ -405,6 +515,7 @@ export function startMatch() {
   state.match = createMatch(state.deck);
   state.result = null;
   state.screen = "play";
+  state.selectedAttacker = null;
   setMatchMessage("");
   render();
   return readState();
@@ -462,9 +573,51 @@ export function playMatchCard(cardId) {
 export function endMatchTurn() {
   if (!state.match) throw new Error("no match is in progress — start one first");
   endTurn(state.match);
+  state.selectedAttacker = null;
   finishMatch();
   render();
   return readState();
+}
+
+/**
+ * Send one of the player's table cards at a chosen opponent card, or at the
+ * opponent's hero once its table is empty — what a visitor does by picking their
+ * card and pressing a target, and what the attack tool does on their behalf.
+ * Refused, with the reason, when there is no match, no attacker is picked, or
+ * the engine refuses the blow; the pick is cleared once the blow has landed.
+ * Returns the state afterwards.
+ */
+export function attackMatch(attackerId, target) {
+  if (!state.match) throw new Error("no match is in progress — start one first");
+  if (!attackerId) throw new Error("pick one of your table cards to attack with first");
+  attack(state.match, attackerId, target);
+  state.selectedAttacker = null;
+  finishMatch();
+  render();
+  return readState();
+}
+
+/**
+ * Pick which of the player's table cards the next chosen attack comes from, or
+ * clear the pick when the same card is pressed again. A card that has already
+ * attacked cannot be picked, and says so rather than being silently ignored.
+ * Picking changes nothing on the board by itself; the target controls only act
+ * on the card it names.
+ */
+function selectMatchAttacker(attackerId) {
+  const match = state.match;
+  if (!match || match.over || match.turn !== "player") return;
+  const canStrike = match.player.table.some((card) => card.id === attackerId && !card.hasAttacked);
+  if (state.selectedAttacker === attackerId) {
+    state.selectedAttacker = null;
+  } else if (!canStrike) {
+    setMatchMessage(`${cardName(attackerId)} has already attacked this turn.`);
+    return;
+  } else {
+    state.selectedAttacker = attackerId;
+  }
+  setMatchMessage("");
+  render();
 }
 
 /**
@@ -678,14 +831,24 @@ export function readState() {
 
 /** A match card as plain data, so a tool can carry it across the JSON boundary. */
 function describeMatchCard(card) {
-  return { id: card.id, name: card.name, cost: card.cost, attack: card.attack, health: card.health };
+  return {
+    id: card.id,
+    name: card.name,
+    cost: card.cost,
+    attack: card.attack,
+    health: card.health,
+    hasAttacked: Boolean(card.hasAttacked),
+  };
 }
 
 /**
  * Everything the match currently shows: whether one is in progress, whether it
- * is over and which hero won, whose turn it is, both heroes' health, the
- * player's energy, the hand, both tables, how many cards are left to draw, the
- * ordered log of what happened — its last line the final blow — and the moves
+ * is over and which hero won, whose turn it is, which of the player's table
+ * cards is picked to attack with (`selectedAttacker`, a card id or null), both
+ * heroes' health, the player's energy, the hand, both tables — each table card
+ * saying whether it has already attacked this turn (`hasAttacked`) — how many
+ * cards are left to draw, the ordered log of what happened — its last line the
+ * final blow — and the moves
  * available now, of which a finished match offers none. `opponentName` names the
  * character being faced, whose deck is its own rather than a copy of the
  * player's. With no match it says so — `active` false, and `opponentName` the
@@ -706,6 +869,7 @@ export function readMatch() {
       outcome: null,
       recorded: false,
       turn: null,
+      selectedAttacker: null,
       playerHealth: null,
       opponentHealth: null,
       energy: null,
@@ -727,6 +891,7 @@ export function readMatch() {
     outcome: match.outcome,
     recorded: match.recorded,
     turn: match.turn,
+    selectedAttacker: state.selectedAttacker,
     playerHealth: match.player.health,
     opponentHealth: match.opponent.health,
     energy: match.player.energy,
