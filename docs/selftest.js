@@ -1294,6 +1294,25 @@ export async function checks() {
         if (game.readState().match.hand.length !== stuck.hand.length) {
           fail("a card that could not be afforded was played anyway");
         }
+
+        // While it cannot be paid for the card still says so, stays pressable
+        // and keeps its full "Play <name> (cost N)" label, so a keyboard or
+        // screen-reader player loses nothing.
+        const row = document.querySelector(`#match-hand [data-card-id="${stuckCard.id}"]`);
+        const button = row ? row.querySelector("button") : null;
+        if (!row || !row.classList.contains("is-unaffordable")) {
+          fail(
+            `the card "${stuckCard.name}", costing ${stuckCard.cost} against ${stuck.energy} energy, ` +
+              "is not marked unaffordable"
+          );
+        }
+        if (button && button.disabled) {
+          fail(`the control for the unaffordable "${stuckCard.name}" is disabled, so pressing it cannot explain the shortfall`);
+        }
+        const wanted = `Play ${stuckCard.name} (cost ${stuckCard.cost})`;
+        if (button && button.textContent.trim() !== wanted) {
+          fail(`the control for the unaffordable "${stuckCard.name}" reads "${textOf(button)}" instead of "${wanted}"`);
+        }
       }
 
       // Ending the turn: the opponent acts, the turn returns and energy is full.
@@ -1329,6 +1348,56 @@ export async function checks() {
         }
         if (!turnLines.some((line) => /^You draw /.test(line))) {
           fail(`the new turn drew a card without logging it: the turn added ${JSON.stringify(turnLines)}`);
+        }
+      }
+
+      // Every card in the match — your hand and both tables — is drawn with the
+      // same picture it has in the collection, its name as the text alternative
+      // and its numbers still readable, so a card is known by sight wherever it
+      // appears.
+      for (const [where, selector, cards] of [
+        ["your hand", "#match-hand", afterEnd.hand],
+        ["your table", "#match-table", afterEnd.table],
+        ["the opponent's table", "#match-opponent-table", afterEnd.opponentTable],
+      ]) {
+        for (const card of cards) {
+          const row = document.querySelector(`${selector} [data-card-id="${card.id}"]`);
+          if (!row) {
+            fail(`the board does not show "${card.name}" on ${where}, which the match holds there`);
+            continue;
+          }
+          const picture = row.querySelector("svg.card-art");
+          if (!picture) {
+            fail(`the card "${card.name}" on ${where} is shown with no picture, so it cannot be learned by sight`);
+            continue;
+          }
+          if (picture.getAttribute("role") !== "img") {
+            fail(
+              `the picture on "${card.name}" (${where}) is not announced as an image ` +
+                `(role="${picture.getAttribute("role")}")`
+            );
+          }
+          if (picture.getAttribute("aria-label") !== card.name) {
+            fail(
+              `the picture on "${card.name}" (${where}) is described as ` +
+                `"${picture.getAttribute("aria-label") || "(nothing)"}" instead of the card's own name`
+            );
+          }
+          if (!picture.querySelector(".art-frame") || !picture.querySelector(".art-body")) {
+            fail(`the picture on "${card.name}" (${where}) is not drawn in the shared frame and creature`);
+          }
+          // The same card is the same picture wherever it appears.
+          const inCollection = document.querySelector(`#collection-list [data-card-id="${card.id}"] svg.card-art`);
+          if (inCollection && inCollection.outerHTML !== picture.outerHTML) {
+            fail(
+              `"${card.name}" looks different in the match (${where}) than in the collection, so one card has two pictures`
+            );
+          }
+          const printed = textOf(row.querySelector(".match-card-stats"));
+          const numbers = `${card.cost}/${card.attack}/${card.health}`;
+          if (printed !== numbers) {
+            fail(`"${card.name}" (${where}) prints its cost/attack/health as "${printed}" instead of "${numbers}"`);
+          }
         }
       }
     }
@@ -1732,6 +1801,16 @@ export async function checks() {
         `get-match reports outcome "${reported?.outcome}" (recorded ${reported?.recorded}) while the page says ` +
           `"${live.outcome}" (recorded ${live.recorded})`
       );
+    }
+    // The hand and both tables are still the same lists the page draws, so an
+    // agent reads the same cards a visitor sees.
+    for (const field of ["hand", "table", "opponentTable"]) {
+      if (JSON.stringify(reported?.[field]) !== JSON.stringify(live[field])) {
+        fail(
+          `get-match returns ${JSON.stringify(reported?.[field])} for ${field} while the page holds ` +
+            `${JSON.stringify(live[field])}`
+        );
+      }
     }
   }
 
