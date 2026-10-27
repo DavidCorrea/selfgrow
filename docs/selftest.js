@@ -1357,8 +1357,23 @@ export async function checks() {
   };
   const curveSum = () => (curve() ?? []).reduce((total, row) => total + row.count, 0);
 
+  // The deck's strength beside the curve, read the same two ways: as the state
+  // an agent asks for, and as the labelled totals a visitor sees.
+  const attackValue = () => document.getElementById("deck-total-attack");
+  const healthValue = () => document.getElementById("deck-total-health");
+  // The sum over the deck the state holds, derived here so a wrong total on the
+  // page or in the state fails rather than agreeing with itself.
+  const deckSum = (field) => game.readState().deck.reduce((total, card) => total + card[field], 0);
+  const shownTotal = (element) => (element ? Number(textOf(element)) : NaN);
+
   if (!curveBlock()) {
     fail("the collection screen has no cost curve under the deck (#deck-curve), so the deck's shape cannot be read");
+  }
+  if (!attackValue() || !healthValue()) {
+    fail(
+      "the deck panel does not show its total attack and total health beside the cost curve " +
+        `(#deck-total-attack: ${attackValue() ? "found" : "missing"}, #deck-total-health: ${healthValue() ? "found" : "missing"})`
+    );
   }
 
   // A visit with no save at all is dealt the starter collection and a
@@ -1481,6 +1496,20 @@ export async function checks() {
   if (curveRows().length !== 0) {
     fail(`an empty deck draws ${curveRows().length} cost-curve row(s) although it holds no cards`);
   }
+  // An empty deck has no strength to sum: the state says null and the page
+  // prints nothing, so no totals of zero stand where there is nothing to total.
+  if (game.readState().deckAttack !== null || game.readState().deckHealth !== null) {
+    fail(
+      "an empty deck reports totals instead of null: " +
+        `deckAttack ${JSON.stringify(game.readState().deckAttack)}, deckHealth ${JSON.stringify(game.readState().deckHealth)}`
+    );
+  }
+  if (textOf(attackValue()) || textOf(healthValue())) {
+    fail(
+      `an empty deck still shows totals ("${textOf(attackValue())}" attack, "${textOf(healthValue())}" health) ` +
+        "instead of only its own empty note"
+    );
+  }
 
   // One card in the deck puts exactly one row on the curve, at that card's cost
   // and counting one — the curve follows the deck the moment it changes.
@@ -1511,6 +1540,22 @@ export async function checks() {
       fail(`a one-card deck's cost-curve row does not say 1 card in the singular: it reads "${loneText}"`);
     }
   }
+  // A one-card deck's strength is that card's own numbers: the state and the
+  // page agree with the sum taken over the deck, not with each other.
+  const loneAttack = deckSum("attack");
+  const loneHealth = deckSum("health");
+  if (game.readState().deckAttack !== loneAttack || game.readState().deckHealth !== loneHealth) {
+    fail(
+      `a one-card deck reports ${JSON.stringify(game.readState().deckAttack)}/${JSON.stringify(game.readState().deckHealth)} ` +
+        `attack/health instead of the summed ${loneAttack}/${loneHealth}`
+    );
+  }
+  if (shownTotal(attackValue()) !== loneAttack) {
+    fail(`a one-card deck shows a total attack of ${textOf(attackValue())} instead of the summed ${loneAttack}`);
+  }
+  if (shownTotal(healthValue()) !== loneHealth) {
+    fail(`a one-card deck shows a total health of ${textOf(healthValue())} instead of the summed ${loneHealth}`);
+  }
 
   // Taking that card back out returns the deck to empty: the block hides again.
   game.removeCardFromDeck(loneId);
@@ -1522,6 +1567,14 @@ export async function checks() {
   }
   if (curveBlock() && !curveBlock().hidden) {
     fail("a deck emptied again still shows a cost curve instead of only the empty-deck note");
+  }
+  // Emptying the deck again takes its totals with it: both go back to null, and
+  // the page stops printing them.
+  if (game.readState().deckAttack !== null || game.readState().deckHealth !== null) {
+    fail("emptying the deck again left totals on the state instead of null");
+  }
+  if (textOf(attackValue()) || textOf(healthValue())) {
+    fail("emptying the deck again left its totals printed on the page");
   }
 
   // A card owned in several copies can be put in the deck that many times, so a
@@ -1625,6 +1678,24 @@ export async function checks() {
   }
   if (curveSum() !== 10) {
     fail(`a ten-card deck's cost curve counts ${curveSum()} card(s) instead of 10`);
+  }
+
+  // The deck's strength stands beside its curve: the total attack and health of
+  // the ten cards, each the independent sum over the deck the state holds, and
+  // the page prints the same two numbers.
+  const fullAttack = deckSum("attack");
+  const fullHealth = deckSum("health");
+  if (game.readState().deckAttack !== fullAttack || game.readState().deckHealth !== fullHealth) {
+    fail(
+      `a ten-card deck reports ${JSON.stringify(game.readState().deckAttack)}/${JSON.stringify(game.readState().deckHealth)} ` +
+        `attack/health instead of the summed ${fullAttack}/${fullHealth}`
+    );
+  }
+  if (shownTotal(attackValue()) !== fullAttack) {
+    fail(`the deck panel shows a total attack of ${textOf(attackValue())} instead of the summed ${fullAttack}`);
+  }
+  if (shownTotal(healthValue()) !== fullHealth) {
+    fail(`the deck panel shows a total health of ${textOf(healthValue())} instead of the summed ${fullHealth}`);
   }
 
   // Each card in the deck is shown as its picture — the same name as its text
@@ -1748,6 +1819,7 @@ export async function checks() {
   // Taking one copy out drops exactly one, and the page says what happened.
   const firstDeckId = deckIds()[0];
   const firstCopiesBefore = heldCopies(firstDeckId);
+  const firstCardRemoved = game.readState().deck.find((card) => card.id === firstDeckId);
   const removeButton = removeControl(firstDeckId);
   if (!removeButton) {
     fail(`the collection screen has no control to remove "${firstDeckId}" from the deck`);
@@ -1783,6 +1855,29 @@ export async function checks() {
     }
     if (curveSum() !== 9) {
       fail(`after removing a card the cost curve counts ${curveSum()} card(s) instead of nine`);
+    }
+    // The totals follow the deck on the spot too: each drops by the removed
+    // card's own number, and the page prints the same two sums.
+    const expectedAttack = fullAttack - firstCardRemoved.attack;
+    const expectedHealth = fullHealth - firstCardRemoved.health;
+    if (game.readState().deckAttack !== expectedAttack || game.readState().deckHealth !== expectedHealth) {
+      fail(
+        `after removing "${firstDeckId}" the deck reports ` +
+          `${JSON.stringify(game.readState().deckAttack)}/${JSON.stringify(game.readState().deckHealth)} attack/health ` +
+          `instead of the summed ${expectedAttack}/${expectedHealth}`
+      );
+    }
+    if (shownTotal(attackValue()) !== expectedAttack) {
+      fail(
+        `after removing "${firstDeckId}" the deck panel shows a total attack of ${textOf(attackValue())} ` +
+          `instead of the summed ${expectedAttack}`
+      );
+    }
+    if (shownTotal(healthValue()) !== expectedHealth) {
+      fail(
+        `after removing "${firstDeckId}" the deck panel shows a total health of ${textOf(healthValue())} ` +
+          `instead of the summed ${expectedHealth}`
+      );
     }
   }
 
@@ -3125,6 +3220,24 @@ export async function checks() {
       fail(
         `get-state's deck curve counts ${reportedCurveSum} card(s) across its costs while the deck holds ` +
           `${live.deckSize}`
+      );
+    }
+
+    // The deck's strength is part of what the page shows, so it is part of what
+    // get-state returns: its total attack and total health, the sums over the
+    // deck the page holds.
+    const liveAttackSum = live.deck.reduce((total, card) => total + card.attack, 0);
+    const liveHealthSum = live.deck.reduce((total, card) => total + card.health, 0);
+    if (reported.deckAttack !== live.deckAttack || reported.deckHealth !== live.deckHealth) {
+      fail(
+        `get-state reports ${JSON.stringify(reported.deckAttack)}/${JSON.stringify(reported.deckHealth)} deck attack/health ` +
+          `while the page says ${JSON.stringify(live.deckAttack)}/${JSON.stringify(live.deckHealth)}`
+      );
+    }
+    if (reported.deckAttack !== liveAttackSum || reported.deckHealth !== liveHealthSum) {
+      fail(
+        `get-state reports ${JSON.stringify(reported.deckAttack)}/${JSON.stringify(reported.deckHealth)} deck attack/health ` +
+          `instead of the summed ${liveAttackSum}/${liveHealthSum}`
       );
     }
 
