@@ -1728,7 +1728,7 @@ function renderCollectionOrder() {
 }
 
 /** Draw the deck's current contents, each card as a face that shows its picture
- * and reads its name and numbers. */
+ * and reads its name and numbers, and its cost curve under them. */
 function renderDeck() {
   const list = document.getElementById("deck-list");
   if (!list) return;
@@ -1739,10 +1739,64 @@ function renderDeck() {
     empty.className = "deck-empty";
     empty.textContent = "No cards in your deck yet.";
     list.replaceChildren(empty);
-    return;
+  } else {
+    list.replaceChildren(...cards.map(deckCardRow));
   }
 
-  list.replaceChildren(...cards.map(deckCardRow));
+  renderDeckCurve();
+}
+
+/**
+ * The deck's shape as a cost curve: one row for each energy cost the deck holds,
+ * saying the cost and how many of the deck's cards are at it, cheapest first.
+ * Derived from the same cards the deck panel draws, so the curve and the deck
+ * can never disagree.
+ */
+function deckCostCurve() {
+  const countsByCost = new Map();
+  for (const card of listDeckCards(state.deck)) {
+    countsByCost.set(card.cost, (countsByCost.get(card.cost) ?? 0) + 1);
+  }
+  return [...countsByCost.entries()]
+    .sort(([costA], [costB]) => costA - costB)
+    .map(([cost, count]) => ({ cost, count }));
+}
+
+/** One row of the cost curve: the cost it is at, and how many of the deck's cards have it. */
+function deckCurveRow({ cost, count }) {
+  const item = document.createElement("li");
+  item.className = "deck-curve-row";
+  item.dataset.cost = String(cost);
+
+  const costLabel = document.createElement("span");
+  costLabel.className = "deck-curve-cost";
+  costLabel.textContent = `Cost ${cost}`;
+
+  const countLabel = document.createElement("span");
+  countLabel.className = "deck-curve-count";
+  countLabel.textContent = count === 1 ? "1 card" : `${count} cards`;
+
+  // A real space between the labels, so the row reads "Cost 2 3 cards" rather
+  // than running the numbers together as "Cost 23 cards". Layout drops a
+  // whitespace-only text run between flex items, so only the two labels show.
+  item.append(costLabel, document.createTextNode(" "), countLabel);
+  return item;
+}
+
+/**
+ * Draw the deck's cost curve under its cards. The whole block, heading and all,
+ * is hidden for a deck holding no cards, so an empty deck shows only its own
+ * empty note and there is no curve to read.
+ */
+function renderDeckCurve() {
+  const block = document.getElementById("deck-curve");
+  if (!block) return;
+
+  const rows = deckCostCurve();
+  block.hidden = rows.length === 0;
+
+  const list = document.getElementById("deck-curve-list");
+  if (list) list.replaceChildren(...rows.map(deckCurveRow));
 }
 
 /** Draw the whole Collection screen: the card set, which view it is in, and the deck beside it. */
@@ -1800,7 +1854,8 @@ function commitDeck() {
 /**
  * Everything the page currently shows: the screen that is open, how many cards
  * the player owns and how many are different out of the whole set, the deck — its
- * size, its limit, the fewest cards a match needs and the cards themselves —
+ * size, its limit, the fewest cards a match needs, the cards themselves, and its
+ * `deckCurve` shape (one `{ cost, count }` per energy cost the deck holds) —
  * whether it will survive closing the page, how many matches have been played and
  * won, the result of the last finished match (whether it was a win or a loss, the
  * card a win awarded, whether that completed the set, and `firstWin` — whether
@@ -1863,6 +1918,11 @@ export function readState() {
     deckLimit: state.deckLimit,
     minimumDeckSize: state.minimumDeckSize,
     deck: listDeckCards(state.deck),
+    // The deck's shape as a cost curve: one row per energy cost it holds, each
+    // saying the cost and how many of the deck's cards are at it, cheapest first
+    // — the same rows the Collection screen draws under the deck. Empty for an
+    // empty deck, matching the note the screen shows instead of a curve.
+    deckCurve: deckCostCurve(),
     wins: state.wins,
     matchesPlayed: state.matchesPlayed,
     // What the Play screen tells a newcomer about a match, and whether that strip

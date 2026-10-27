@@ -135,6 +135,20 @@
             <span data-field="deckLimit">10</span>.
           </p>
           <ul class="deck-list" id="deck-list" aria-label="Cards in your deck"></ul>
+
+          <!-- The deck's shape while it is being built: one row per energy cost
+               the deck holds, saying the cost and how many of its cards are at
+               it, so a player builds toward a curve instead of discovering it
+               after losing. Hidden for an empty deck, which shows only its own
+               empty note above. -->
+          <div class="deck-curve" id="deck-curve" hidden>
+            <h4 class="deck-curve-heading" id="deck-curve-heading">Cost curve</h4>
+            <ul
+              class="deck-curve-list"
+              id="deck-curve-list"
+              aria-labelledby="deck-curve-heading"
+            ></ul>
+          </div>
         </section>
 
         <!-- The card set, filled in from what was saved: the ones the player
