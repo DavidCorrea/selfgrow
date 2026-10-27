@@ -512,6 +512,22 @@ const CARD_ART = new Map([
       `,
     },
   ],
+  [
+    "whipthorn",
+    {
+      description:
+        "A thorned whip: a gripped handle with a lash curling up and over into a barbed tip, thorns along its back",
+      inner: `
+        <path class="art-body" d="M43 54 L43 45 L53 45 L53 54 Z" />
+        <path class="art-body" d="M48 46 C48 30 56 18 70 18 C80 18 86 26 84 36 L78 36 C79 30 76 24 70 24 C60 24 54 34 54 46 Z" />
+        <path class="art-body" d="M83 36 L88 46 L78 42 Z" />
+        <path class="art-body" d="M62 20 L60 8 L70 16 Z" />
+        <path class="art-body" d="M74 17 L79 6 L85 16 Z" />
+        <path class="art-body" d="M47 34 L39 27 L49 26 Z" />
+        <circle class="art-accent" cx="48" cy="50" r="2.6" />
+      `,
+    },
+  ],
 ]);
 
 /**

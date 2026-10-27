@@ -8774,6 +8774,247 @@ export async function checks() {
     }
   }
 
+  // --- A card that strikes the board when it falls --------------------------
+
+  // The third fall ability: a card whose face says so lands the same blow a
+  // when-played strike lands the moment it leaves the table — on the front card
+  // of the opponent's table, or on that side's hero once its table is empty — so
+  // wiping a table with a sweeping card costs something. The blow reuses the same
+  // tree as every other blow, so a card killed by a fall leaves the table on the
+  // same line as one killed any other way, a fall caused by a fall fires its own
+  // ability in turn, and a chain of falls stops once a hero has fallen.
+  const fallStrikeText = cardCatalog.STRIKE_ON_FALL;
+  const fallStrikeAmount = cardCatalog.STRIKE_ON_PLAY_AMOUNT;
+  const whipthorn = cardCatalog.CARD_BY_ID.get("whipthorn");
+
+  if (typeof fallStrikeText !== "string" || !fallStrikeText.trim()) {
+    fail("docs/cards.js names no ability for a card that strikes the board when it falls, so no card can say what it does");
+  } else if (!fallStrikeText.includes(String(fallStrikeAmount))) {
+    fail(
+      `the fall strike reads ${JSON.stringify(fallStrikeText)}, which does not name the ${fallStrikeAmount} it deals, ` +
+        "so the card's face and the trigger can disagree"
+    );
+  } else if (!whipthorn) {
+    fail('"whipthorn" is not a card in the game, so the fall strike has no card that carries it');
+  } else {
+    if (whipthorn.fallAbility !== fallStrikeText) {
+      fail(
+        `"${whipthorn.name}" carries the fall ability ${JSON.stringify(whipthorn.fallAbility ?? null)} instead of ` +
+          `${JSON.stringify(fallStrikeText)}, so it does not strike the board when it falls`
+      );
+    }
+    if (!cardCatalog.REWARD_POOL.includes(whipthorn.id)) {
+      fail(
+        `"${whipthorn.name}" carries the fall strike but is not in the reward pool, so a win can never add it ` +
+          "to a collection"
+      );
+    }
+
+    // The card is a real card: its own described picture, in the shared style,
+    // and playable like any other.
+    const whipArt = cardArt?.cardArt(whipthorn.id);
+    if (!whipArt || !(whipArt.inner || "").trim()) {
+      fail(`"${whipthorn.name}" has no picture, so the card that carries the fall strike cannot be known by sight`);
+    } else if (!whipArt.description?.trim()) {
+      fail(`"${whipthorn.name}"'s picture is not described, so it cannot be checked against the style`);
+    } else if (!/art-body/.test(whipArt.inner)) {
+      fail(`"${whipthorn.name}" is drawn without a creature in the foil the whole set is drawn in`);
+    }
+    if (matchEngine) {
+      const playWhip = matchEngine.createMatch(
+        ["sprout", "pebble-toad", "thornling", "sun-moth", "bramble-hound"],
+        { rng: () => 0 }
+      );
+      playWhip.player.hand = [{ ...whipthorn, hasAttacked: false }];
+      playWhip.player.deck = [];
+      playWhip.player.energy = whipthorn.cost;
+      playWhip.player.maxEnergy = whipthorn.cost;
+      matchEngine.playCard(playWhip, "whipthorn");
+      if (!playWhip.player.table.some((card) => card.id === "whipthorn")) {
+        fail(`playing "${whipthorn.name}" did not put it on the table, so it is not a card a deck can play`);
+      }
+      // A deck built from it is dealt from the catalog like any other deck, so
+      // the card is one a player can collect, put in a deck and draw.
+      const whipDeck = matchEngine.createMatch(
+        ["whipthorn", "whipthorn", "whipthorn", "whipthorn", "whipthorn"],
+        { rng: () => 0 }
+      );
+      const dealt = [...whipDeck.player.hand, ...whipDeck.player.deck];
+      if (dealt.length !== 5 || dealt.some((card) => card.id !== "whipthorn")) {
+        fail(
+          `a deck of five Whipthorns was dealt as ${JSON.stringify(dealt.map((card) => card.id))}, so the card ` +
+            "cannot be built into a deck"
+        );
+      }
+    }
+
+    // The line is on the face wherever the card is shown: the set list, and the
+    // card a win earns.
+    const collectionWhipFace = document.querySelector('#collection-list [data-card-id="whipthorn"]');
+    if (faceAbility(collectionWhipFace) !== fallStrikeText) {
+      fail(
+        `the Whipthorn shown in the collection does not say ${JSON.stringify(fallStrikeText)} on its face ` +
+          `(it reads ${JSON.stringify(faceAbility(collectionWhipFace))})`
+      );
+    }
+    const rewardWhipFace = game.awardCardFigure(whipthorn);
+    if (faceAbility(rewardWhipFace) !== fallStrikeText) {
+      fail(
+        `the earned-card face of the Whipthorn does not say ${JSON.stringify(fallStrikeText)} ` +
+          `(it reads ${JSON.stringify(faceAbility(rewardWhipFace))})`
+      );
+    }
+
+    // An agent that lists the set reads the fall strike in the field written for
+    // it, so the word on the card and the field a caller reads are one answer.
+    if (listCollection) {
+      const whipEntry = (await listCollection.execute()).cards.find((card) => card.id === "whipthorn");
+      if (whipEntry?.fallAbility !== fallStrikeText) {
+        fail(
+          `list-collection returns the Whipthorn with fallAbility ${JSON.stringify(whipEntry?.fallAbility ?? null)} ` +
+            `instead of ${JSON.stringify(fallStrikeText)}`
+        );
+      }
+    }
+
+    // The trigger itself, through the engine the board runs on.
+    if (!matchEngine) {
+      fail("docs/match.js could not be imported, so the fall strike cannot be checked");
+    } else {
+      const fallDeck = ["sprout", "pebble-toad", "thornling", "sun-moth", "bramble-hound"];
+      const turtleAt = (health) => ({ ...cardCatalog.CARD_BY_ID.get("mudback-turtle"), health, hasAttacked: false });
+      const whipAt = (health) => ({ ...whipthorn, health, hasAttacked: false });
+
+      // (1) A fall striking a card that is still standing: the player kills the
+      // opponent's Whipthorn, and its dying blow lands on the player's front
+      // card in exactly the words a turn's blow uses.
+      const strikeBoard = matchEngine.createMatch(fallDeck, { rng: () => 0 });
+      strikeBoard.player.table = [turtleAt(3)];
+      strikeBoard.player.hand = [];
+      strikeBoard.player.deck = [];
+      strikeBoard.opponent.table = [whipAt(1)];
+      strikeBoard.opponent.hand = [];
+      strikeBoard.opponent.deck = [];
+      const strikeLogBefore = strikeBoard.log.length;
+      matchEngine.attack(strikeBoard, "mudback-turtle", "whipthorn");
+      const strikeLines = strikeBoard.log.slice(strikeLogBefore);
+      const struckTurtle = strikeBoard.player.table.find((card) => card.id === "mudback-turtle");
+      if (!struckTurtle || struckTurtle.health !== 2) {
+        fail(
+          `a fallen Whipthorn left your front card at ${struckTurtle?.health ?? "(gone)"} health instead of 2 ` +
+            `(3 less the ${fallStrikeAmount} its fall deals)`
+        );
+      }
+      const expectedStrikeLine =
+        `Opponent's Whipthorn deals ${fallStrikeAmount} to your Mudback Turtle — it has 2 health left.`;
+      if (!strikeLines.includes(expectedStrikeLine)) {
+        fail(
+          `the log does not read a fallen Whipthorn's blow as a turn's blow does: expected ` +
+            `${JSON.stringify(expectedStrikeLine)} among ${JSON.stringify(strikeLines)}`
+        );
+      }
+      if (strikeBoard.over) {
+        fail("a fall's blow at a card that survived ended the match");
+      }
+
+      // (2) A fall caused by a fall fires in turn, and the chain ends the match:
+      // the player's turtle fells the opponent's Whipthorn, whose fall fells the
+      // player's, whose fall reaches the opponent's last health. The blow that
+      // ends the match is the last line, and the board is not still being played.
+      const chainBoard = matchEngine.createMatch(fallDeck, { rng: () => 0 });
+      chainBoard.player.table = [whipAt(1), turtleAt(5)];
+      chainBoard.player.hand = [];
+      chainBoard.player.deck = [];
+      chainBoard.opponent.health = 1;
+      chainBoard.opponent.table = [whipAt(1)];
+      chainBoard.opponent.hand = [];
+      chainBoard.opponent.deck = [];
+      const chainLogBefore = chainBoard.log.length;
+      matchEngine.attack(chainBoard, "mudback-turtle", "whipthorn");
+      const chainLines = chainBoard.log.slice(chainLogBefore);
+      if (chainBoard.player.table.some((card) => card.id === "whipthorn")) {
+        fail("a fall's own blow left the second Whipthorn on the table, so the chain of falls stopped early");
+      }
+      if (!chainBoard.over || chainBoard.winner !== "player" || chainBoard.turn !== null) {
+        fail(
+          `a chain of falls that emptied the opponent's health left the match over=${chainBoard.over}, ` +
+            `winner=${JSON.stringify(chainBoard.winner)}, turn=${JSON.stringify(chainBoard.turn)} — expected an ` +
+            "ended match won by the player"
+        );
+      }
+      const chainLastLine = chainLines[chainLines.length - 1] ?? "";
+      if (!chainLastLine.endsWith("The opponent hero falls — you won.")) {
+        fail(
+          `the last line of a chain of falls is ${JSON.stringify(chainLastLine)} instead of the blow that ended ` +
+            "the match"
+        );
+      }
+      // The turtle's blow, the blow the first fallen Whipthorn landed, and the
+      // blow the second one landed: three blows from one attack.
+      const chainBlows = chainLines.filter((line) => /deals/.test(line)).length;
+      if (chainBlows !== 3) {
+        fail(`a chain of two falls logged ${chainBlows} blow(s) instead of the three the attack and the two falls dealt`);
+      }
+
+      // (3) A fall's blow reached through a sweeping card ends the match on the
+      // same line a turn's blow would, and nothing is logged after it — so wiping
+      // a table with a sweep is no longer a free move, and a board that answers
+      // its own removal can win a match the sweep alone could not.
+      const sweepBoard = matchEngine.createMatch(fallDeck, { rng: () => 0 });
+      sweepBoard.player.table = [whipAt(1)];
+      sweepBoard.player.hand = [{ ...cardCatalog.CARD_BY_ID.get("thorn-gale"), hasAttacked: false }];
+      sweepBoard.player.deck = [];
+      sweepBoard.player.energy = 6;
+      sweepBoard.player.maxEnergy = 6;
+      sweepBoard.opponent.health = 1;
+      sweepBoard.opponent.table = [whipAt(1)];
+      sweepBoard.opponent.hand = [];
+      sweepBoard.opponent.deck = [];
+      const sweepLogBefore = sweepBoard.log.length;
+      matchEngine.playCard(sweepBoard, "thorn-gale");
+      const sweepLines = sweepBoard.log.slice(sweepLogBefore);
+      if (!sweepBoard.over || sweepBoard.winner !== "player" || sweepBoard.turn !== null) {
+        fail(
+          `a sweeping card that felled a Whipthorn left the match over=${sweepBoard.over}, ` +
+            `winner=${JSON.stringify(sweepBoard.winner)}, turn=${JSON.stringify(sweepBoard.turn)} — expected the ` +
+            "fallen Whipthorn's own blow to win it"
+        );
+      }
+      const sweepLastLine = sweepLines[sweepLines.length - 1] ?? "";
+      if (!sweepLastLine.endsWith("The opponent hero falls — you won.")) {
+        fail(
+          `the last line of a sweep that ended in a chain of falls is ${JSON.stringify(sweepLastLine)} instead ` +
+            "of the blow that ended the match"
+        );
+      }
+
+      // (4) A card with no fall ability still strikes nothing as it falls.
+      const plainBoard = matchEngine.createMatch(fallDeck, { rng: () => 0 });
+      plainBoard.player.table = [turtleAt(5)];
+      plainBoard.player.hand = [];
+      plainBoard.player.deck = [];
+      plainBoard.opponent.table = [{ ...cardCatalog.CARD_BY_ID.get("pebble-toad"), health: 1, hasAttacked: false }];
+      plainBoard.opponent.hand = [];
+      plainBoard.opponent.deck = [];
+      const plainStrikeBefore = plainBoard.log.length;
+      matchEngine.attack(plainBoard, "mudback-turtle", "pebble-toad");
+      const plainStrikeLines = plainBoard.log.slice(plainStrikeBefore);
+      const untouchedTurtle = plainBoard.player.table.find((card) => card.id === "mudback-turtle");
+      if (untouchedTurtle?.health !== 5) {
+        fail(
+          `killing a card with no fall ability struck the killer's table: your Mudback Turtle has ` +
+            `${untouchedTurtle?.health ?? "(none)"} health instead of 5`
+        );
+      }
+      if (plainStrikeLines.filter((line) => /deals/.test(line)).length !== 1) {
+        fail(
+          `killing a card with no fall ability logged ${plainStrikeLines.filter((line) => /deals/.test(line)).length} ` +
+            "blow(s) instead of the one the attack dealt"
+        );
+      }
+    }
+  }
+
   // --- A first win is announced where the win happens -----------------------
 
   // The result screen is where a win lands, so that is where a first against an

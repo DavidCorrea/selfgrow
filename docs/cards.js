@@ -91,6 +91,21 @@ export const HEAL_ON_FALL_AMOUNT = HEAL_ON_PLAY_AMOUNT;
  */
 export const HEAL_ON_FALL = `When this falls: heal your hero ${HEAL_ON_FALL_AMOUNT}`;
 
+/**
+ * The ability a card carries when it hits back as it leaves the table: the damage
+ * it deals to the front card of the opponent's table, or to that side's hero once
+ * its table is empty. It is the same amount the when-played strike deals, so one
+ * number names the blow however a card lands it.
+ *
+ * Where the other fall abilities pay their owner back, this one makes removing a
+ * card cost the side that removed it: a sweeping card cannot wipe a table for
+ * free, and a player has a reason to leave a body standing rather than trade it
+ * away. The blow runs through the same targeting and the same log lines as a
+ * blow at the end of a turn, so a card killed by it leaves the table on the same
+ * line as one killed any other way.
+ */
+export const STRIKE_ON_FALL = `When this falls: deal ${STRIKE_ON_PLAY_AMOUNT} damage to the opponent's front card`;
+
 /** Every card in the game: id, name, cost to play, attack, health, the ability
  * printed on its face for when it is played, and the ability it carries for when
  * it falls (each absent on a card with none). */
@@ -155,9 +170,17 @@ export const CARDS = [
   // The second card that carries a fall ability, and the first that mends: a
   // root crown a slow deck can hold back, expected to trade, so losing it pays
   // health back to the hero rather than only taking a body. Its `fallAbility` is
-  // the same field the pod uses, so the two fall abilities never overload the
+  // the same field the pod uses, so the fall abilities never overload the
   // when-played text and a card may still carry a when-played ability as well.
   { id: "comfrey-root", name: "Comfrey Root", cost: 2, attack: 1, health: 3, fallAbility: HEAL_ON_FALL },
+  // The third card that carries a fall ability, and the first that hits back: a
+  // thorned whip that lashes out as it is cut down, so it deals its damage to the
+  // opponent's front card the moment it leaves the table. With sweeping cards in
+  // the game, wiping a table would otherwise be a free move; a body that answers
+  // its own removal makes clearing a board cost something, and gives a player a
+  // reason to leave one standing. It is a reward card, like the other two, so the
+  // ability is met by collecting toward it and can then be built around.
+  { id: "whipthorn", name: "Whipthorn", cost: 2, attack: 2, health: 2, fallAbility: STRIKE_ON_FALL },
 ];
 
 /** Lookup by id — the shape the saved collection speaks in. */
@@ -222,6 +245,9 @@ export const REWARD_POOL = [
   // keeps the same next-reward order it already had.
   "seed-pod",
   "comfrey-root",
+  // Appended for the same reason: a save written before the whip existed keeps
+  // the next-reward order it already had.
+  "whipthorn",
 ];
 
 /**
