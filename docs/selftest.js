@@ -3202,9 +3202,9 @@ export async function checks() {
   if (!setCollectionViewTool) {
     fail('no "set-collection-view" tool is declared, so an agent cannot choose between every card and only those still to collect');
   } else if (setList) {
-    if (setViewButtons.length !== 2) {
+    if (setViewButtons.length !== 3) {
       fail(
-        `the Collection screen offers ${setViewButtons.length} view control(s) where it should offer two — every card and only those still to collect`
+        `the Collection screen offers ${setViewButtons.length} view control(s) where it should offer three — every card, only those still to collect, and only those that act when played`
       );
     }
 
@@ -3291,10 +3291,77 @@ export async function checks() {
       fail(`the "all" view does not mark its own button pressed (pressed: ${pressedAll.join(", ") || "none"})`);
     }
 
+    // The "abilities" view lists only the cards whose face carries a when-played
+    // ability — owned and unowned alike — so a player building around one can see
+    // the cards that carry it instead of reading the whole set. Which cards those
+    // are is the catalog's answer, not the page's.
+    const abilityIds = setIds.filter((id) => catalogAbility(id) !== null);
+    if (!abilityIds.length) {
+      fail('no card in the game carries a when-played ability, so the "abilities" view has nothing to list');
+    }
+    const allViewListLabel = setList.getAttribute("aria-label");
+    const afterAbilityView = await setCollectionViewTool.execute({ view: "abilities" });
+    if (afterAbilityView.collectionView !== "abilities") {
+      fail(`switching the set to "abilities" reports the view as "${afterAbilityView.collectionView}" instead of "abilities"`);
+    }
+    const abilityRows = [...setList.querySelectorAll("[data-card-id]")].map((row) => row.dataset.cardId);
+    if (abilityRows.join(", ") !== abilityIds.join(", ")) {
+      const withoutAbility = abilityRows.filter((id) => catalogAbility(id) === null);
+      const hidden = abilityIds.filter((id) => !abilityRows.includes(id));
+      fail(
+        `the "abilities" view lists ${abilityRows.length} card(s) in the order ${abilityRows.slice(0, 4).join(", ")}, … where the game's ` +
+          `${abilityIds.length} ability card(s) in catalog order are ${abilityIds.join(", ")}` +
+          `${withoutAbility.length ? `; it shows ${withoutAbility.join(", ")}, which carry no when-played ability` : ""}` +
+          `${hidden.length ? `; it hides ${hidden.join(", ")}, which carry one` : ""}`
+      );
+    }
+    const pressedAbilities = setViewButtons
+      .filter((button) => button.getAttribute("aria-pressed") === "true")
+      .map((button) => button.dataset.collectionView);
+    if (pressedAbilities.length !== 1 || pressedAbilities[0] !== "abilities") {
+      fail(`the "abilities" view does not mark its own button pressed (pressed: ${pressedAbilities.join(", ") || "none"})`);
+    }
+    if (setList.getAttribute("aria-label") === allViewListLabel) {
+      fail(
+        'the set list names what it lists the same way in the "abilities" view as in the "all" view, so a screen reader cannot tell which cards are showing'
+      );
+    }
+
+    // Both readers agree on the view, and switching it leaves the count of cards
+    // collected, the collection and the deck exactly as they were.
+    const abilityState = await getState.execute({});
+    if (abilityState.collectionView !== "abilities") {
+      fail(`get-state reports the collection view as "${abilityState.collectionView}" while the "abilities" view is showing`);
+    }
+    if (game.readCollection().view !== "abilities") {
+      fail(`list-collection reports the collection view as "${game.readCollection().view}" while the "abilities" view is showing`);
+    }
+    const collectedWhileShowing = textOf(
+      document.querySelector('#screen-collection [data-field="distinctCards"]')?.closest(".standing-value")
+    );
+    const collectedExpected = `${beforeView.distinctCards} of ${beforeView.setTotal}`;
+    if (collectedWhileShowing !== collectedExpected) {
+      fail(
+        `the "abilities" view leaves the cards collected reading "${collectedWhileShowing}" where the set stands at "${collectedExpected}"`
+      );
+    }
+    const afterAbilityCollection = game.readCollection();
+    if (JSON.stringify(asIdCopies(afterAbilityCollection.ownedCards)) !== JSON.stringify(asIdCopies(beforeView.ownedCards))) {
+      fail('switching the set to the "abilities" view changed the cards in the collection');
+    }
+    if (JSON.stringify(game.readState().deck) !== JSON.stringify(beforeState.deck)) {
+      fail('switching the set to the "abilities" view changed the deck');
+    }
+
+    const backFromAbilityView = await setCollectionViewTool.execute({ view: "all" });
+    if (backFromAbilityView.collectionView !== "all") {
+      fail(`switching the set back from "abilities" reports the view as "${backFromAbilityView.collectionView}"`);
+    }
+
     // A view the page does not have is refused with a reason, and changes nothing.
     const refusedView = await setCollectionViewTool.execute({ view: "everything" });
     if (!refusedView.error) {
-      fail('setting the collection view to "everything" was accepted, though the page has only "all" and "missing"');
+      fail('setting the collection view to "everything" was accepted, though the page has only "all", "missing" and "abilities"');
     }
     if (game.readCollection().view !== "all") {
       fail(`a refused view left the collection showing "${game.readCollection().view}" instead of "all"`);
@@ -3404,6 +3471,19 @@ export async function checks() {
     if (missingCostRows.join(", ") !== expectedMissingCost.join(", ")) {
       fail(
         `the "missing" view in cost order reads ${missingCostRows.slice(0, 4).join(", ")}, … where the uncollected cards cheapest first are expected`
+      );
+    }
+
+    // The same holds for the "abilities" view: exactly the cards that act when
+    // played, cheapest first, so what a deck around an ability would cost reads
+    // off the list.
+    await setCollectionViewTool.execute({ view: "abilities" });
+    const abilityCostRows = setRowIds();
+    const expectedAbilityCost = expectedCostRows.filter((id) => catalogAbility(id) !== null);
+    if (abilityCostRows.join(", ") !== expectedAbilityCost.join(", ")) {
+      fail(
+        `the "abilities" view in cost order reads ${abilityCostRows.slice(0, 4).join(", ")}, … where the game's ability cards ` +
+          `cheapest first are ${expectedAbilityCost.join(", ")}`
       );
     }
     await setCollectionViewTool.execute({ view: "all" });

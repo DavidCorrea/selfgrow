@@ -279,8 +279,9 @@ body {
   letter-spacing: -0.01em;
 }
 
-/* The two view buttons above the set: a small pair that switches the list
-   between the whole set and what is still to collect. */
+/* The view buttons above the set: a small row that switches the list between
+   the whole set, what is still to collect, and the cards that act when played.
+   They wrap onto more than one row at a phone's width rather than squeezing. */
 .collection-view {
   display: flex;
   flex-wrap: wrap;
@@ -295,8 +296,9 @@ body {
   color: var(--on-foil);
 }
 
-/* When nothing is left to collect, the missing view says so rather than reading
-   as an empty set. */
+/* A view with nothing to list says so rather than reading as an empty set —
+   every card collected in the "missing" view, no ability cards in the
+   "abilities" one. */
 .collection-empty {
   grid-column: 1 / -1;
   margin: 0;
