@@ -25,9 +25,12 @@
  * number on the board and the number here never disagree. `recorded` is false
  * until the result has been saved, so a finished match is never counted twice.
  *
- * Damage goes to heroes only, so a card is never damaged and the rule that a
- * card at zero health leaves the table is unreachable — there is nothing here
- * that could reach it.
+ * A table is fought over. When a side ends its turn, each of its cards deals its
+ * attack to the front card of the other table while that table has one: the
+ * front card's health drops, and at zero it leaves the table with a line naming
+ * it. Only once a side's table is empty do that side's attackers reach the enemy
+ * hero, so a wall of cards is worn down card by card before the hero behind it
+ * is touched.
  */
 
 import { CARDS, CARD_BY_ID, MINIMUM_DECK_SIZE } from "./cards.js";
@@ -227,25 +230,55 @@ function fallLine(loserIsPlayer) {
 }
 
 /**
- * Every card on `attacker`'s table deals its attack to `defender`'s hero, in
- * order, until the table is spent or the hero falls. Health is clamped at zero,
- * so the number a player reads is the number the match holds. Returns true when
- * this was the blow that ended the match — the match is then over, its winner is
- * the side that dealt it, and no side is taking turns any more.
+ * Every card on `attacker`'s table deals its attack, in order. While `defender`
+ * still holds a card on its table the blow lands on that front card instead of
+ * the hero — its health drops, and at zero it leaves the table on a line naming
+ * it — so a table is worn down card by card. Only once that table is empty do
+ * the blows reach the hero, exactly as they always did. Health is clamped at
+ * zero, so the number a player reads is the number the match holds.
+ *
+ * `attackerWord` and `defenderWord` name the two sides in the log's words
+ * ("Your"/"you" and "Opponent's"/"the opponent"); the table a fallen card stood
+ * on is named from the side that owns it, so a fall reads from the side that
+ * lost it. Returns true when this was the blow that ended the match — the match
+ * is then over, its winner is the side that dealt it, and no side is taking
+ * turns any more.
  */
 function dealDamage(match, attacker, defender, attackerWord, defenderWord, healthWord) {
+  const defenderIsPlayer = defender === match.player;
+  // A table is named from the side that owns it, so a fall reads from the side
+  // that lost the card: "your table" mid-sentence, "Your Thornling falls" at
+  // the start of a line.
+  const tableOwner = defenderIsPlayer ? "your" : "the opponent's";
+  const tableOwnerOpening = defenderIsPlayer ? "Your" : "The opponent's";
+
   for (const card of attacker.table) {
+    const front = defender.table[0];
+    if (front) {
+      front.health = Math.max(0, front.health - card.attack);
+      const fell = front.health === 0;
+      appendLog(
+        match,
+        `${attackerWord} ${card.name} deals ${card.attack} to ${tableOwner} ${front.name} — ` +
+          `it has ${front.health} health left.`
+      );
+      if (!fell) continue;
+      defender.table.shift();
+      appendLog(match, `${tableOwnerOpening} ${front.name} falls — it leaves ${tableOwner} table.`);
+      continue;
+    }
+
     defender.health = Math.max(0, defender.health - card.attack);
     const fell = defender.health === 0;
     appendLog(
       match,
       `${attackerWord} ${card.name} deals ${card.attack} to ${defenderWord} — ${healthWord} ` +
-        `${defender.health}.${fell ? ` ${fallLine(defender === match.player)}` : ""}`
+        `${defender.health}.${fell ? ` ${fallLine(defenderIsPlayer)}` : ""}`
     );
     if (!fell) continue;
 
     match.over = true;
-    match.winner = defender === match.player ? "opponent" : "player";
+    match.winner = defenderIsPlayer ? "opponent" : "player";
     match.outcome = match.winner === "player" ? "win" : "loss";
     match.turn = null;
     return true;
@@ -283,10 +316,11 @@ function takeOpponentTurn(match) {
 }
 
 /**
- * End the player's turn: the player's table attacks the opponent's hero, the
- * opponent takes a turn of its own, and the turn comes back to the player — its
- * energy grown and refilled, a card drawn while the deck holds one. Every step
- * appends one line to the log, in order. Refused when the match is over or it is
+ * End the player's turn: the player's table attacks the opponent's front table
+ * card while it has one and its hero once the table is empty, the opponent takes
+ * a turn of its own, and the turn comes back to the player — its energy grown
+ * and refilled, a card drawn while the deck holds one. Every step appends one
+ * line to the log, in order. Refused when the match is over or it is
  * not the player's turn. The turn stops the moment either hero falls: the
  * surviving side's blow is the last line logged, and nothing after it happens.
  */
@@ -299,11 +333,13 @@ export function endTurn(match) {
   }
 
   match.turn = "opponent";
-  const opponentHealthBefore = match.opponent.health;
+  const logBefore = match.log.length;
   if (dealDamage(match, match.player, match.opponent, "Your", "the opponent", "opponent health")) {
     return match;
   }
-  if (match.opponent.health === opponentHealthBefore) appendLog(match, "Your table deals no damage.");
+  // A table with no cards at all is the one case that lands nothing — and so
+  // the only case that logs nothing. Damage to a card counts as damage.
+  if (match.log.length === logBefore) appendLog(match, "Your table deals no damage.");
 
   appendLog(match, "Opponent's turn.");
   if (takeOpponentTurn(match)) return match;
