@@ -18,6 +18,7 @@ import {
   DEFAULT_OPPONENT,
   DRAW_ON_FALL,
   DRAW_ON_PLAY,
+  GROWTH_ABILITY,
   HEAL_ON_FALL,
   HEAL_ON_PLAY,
   MINIMUM_DECK_SIZE,
@@ -81,14 +82,22 @@ const fallEffects = [DRAW_ON_FALL, HEAL_ON_FALL, STRIKE_ON_FALL].map((ability) =
   ability.replace(/^When this falls:\s*/, "")
 );
 
+// The one thing a card can do while it stays, read from the same constant a
+// card's face prints. The shared "Grows:" prefix is dropped for the same reason
+// the other prefixes are: the rule's own words say a card grows as it stays. So
+// the rule a newcomer reads and the growth a card prints are one line and
+// cannot say different things.
+const growthEffect = GROWTH_ABILITY.replace(/^Grows:\s*/, "");
+
 // "a, b, or c", so a rule listing abilities reads as one sentence.
 const listed = (words) => `${words.slice(0, -1).join(", ")}, or ${words.at(-1)}`;
 
 // What a match asks of a player, in the four things a newcomer cannot yet read
 // for themselves: what a card costs, how the table fights, which hero loses, and
-// what a card's face can say it does when it is played or when it falls. They
-// are written once, here, and both the Play screen and the get-match-rules tool
-// read them, so the page and the tool cannot drift apart.
+// what a card's face can say it does when it is played, when it falls or while
+// it stays growing. They are written once, here, and both the Play screen and
+// the get-match-rules tool read them, so the page and the tool cannot drift
+// apart.
 const MATCH_RULES = [
   {
     label: "Cards cost energy",
@@ -102,13 +111,15 @@ const MATCH_RULES = [
     label: "First hero to 0 loses",
     text: "both heroes start at 20 health; the first to reach 0 ends it",
   },
-  // One point covers both, rather than two rows: the strip stands before the
-  // picker, and a fifth row pushed the opponent picker past the fold on a short
-  // window. Folding them keeps the strip reading in one breath and the picker
-  // where a newcomer can reach it.
+  // One point covers all three, rather than three rows: the strip stands before
+  // the picker, and extra rows pushed the opponent picker past the fold on a
+  // short window. Folding them keeps the strip reading in one breath and the
+  // picker where a newcomer can reach it. The played half is named before the
+  // word "fall" and the fall and growth halves after it, so each half reads on
+  // its own.
   {
-    label: "Some cards act when played or when they fall",
-    text: `a played card can ${listed(whenPlayedEffects)}; a card that falls can ${listed(fallEffects)}`,
+    label: "Some cards act when played, when they fall or while they stay",
+    text: `a played card can ${listed(whenPlayedEffects)}; a card that falls can ${listed(fallEffects)}; a card that stays grows ${growthEffect}`,
   },
 ];
 
